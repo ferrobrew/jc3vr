@@ -8,7 +8,7 @@ fn current_availability_persists_without_a_command_and_across_transition_pulses(
     ] {
         let mut h = History::new(mode);
         for _ in 0..20 {
-            assert_eq!(h.observe(Some(FLIGHT)), GestureCommands::default());
+            assert_eq!(h.observe(Some(FOLDED)), GestureCommands::default());
             assert_eq!(h.state.current(), availability);
         }
         h.hold(FOLDED, 5);
@@ -76,6 +76,7 @@ fn backward_samples_and_large_gaps_remove_current_availability() {
             GestureInput {
                 sample,
                 mode: SUIT,
+                airborne: false,
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(FLIGHT),

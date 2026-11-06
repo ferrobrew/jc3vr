@@ -660,6 +660,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         config: &config,
         dimensions: &flight_dimensions,
         detection,
+        airborne: locomotion::anchor::status().airborne,
         ready: !controls.masked_hands.contains(&true),
         ragdoll: controls.ragdolling,
         // Tethers left in the world do not occupy a hand; only a held button or a live line does.

@@ -7,6 +7,7 @@ fn observation(sample: GestureSample, pose: Option<FlightPose>) -> GestureInput 
     GestureInput {
         sample,
         mode: SUIT,
+        airborne: false,
         gameplay: true,
         canopy_requested: false,
         pose,
@@ -240,7 +241,7 @@ fn isolated_folded_and_flight_samples_do_not_receive_the_previous_interval() {
         input.mode = FALLING;
         assert_eq!(state.step(input, &CONFIG), GestureCommands::default());
     }
-    assert!(!state.ready && !state.armed);
+    assert!(!state.armed && state.flight.since_ns == Some(400_000_000));
     let mut h = History::new(SUIT);
     h.arm();
     h.sample.time_ns += 150_000_000;
@@ -357,14 +358,14 @@ fn old_observations_cannot_lower_the_watermark_on_any_cancellation_path() {
         let mut state = WingsuitGestures::default();
         state.step(observation(high, Some(FOLDED)), &CONFIG);
         assert_eq!(state.step(rejected, &CONFIG), GestureCommands::default());
-        assert_eq!(state.last, Some((high, SUIT)));
+        assert_eq!(state.last, Some((high, Stage::Suit)));
         let disabled = WingsuitGesturesConfig {
             enabled: false,
             ..CONFIG
         };
         assert_eq!(state.step(rejected, &disabled), GestureCommands::default());
         assert_eq!(state.config, Some(CONFIG));
-        assert_eq!(state.last, Some((high, SUIT)));
+        assert_eq!(state.last, Some((high, Stage::Suit)));
         assert_eq!(
             state.step(observation(high, Some(FOLDED)), &CONFIG),
             GestureCommands::default()
@@ -429,7 +430,7 @@ fn time_sequence_and_epoch_rollback_are_rejected_before_mode_or_config_updates()
             ),
             GestureCommands::default()
         );
-        assert_eq!(state.last, Some((high, SUIT)));
+        assert_eq!(state.last, Some((high, Stage::Suit)));
         assert_eq!(state.config, Some(CONFIG));
         assert_eq!(
             state.step(observation(high, Some(FOLDED)), &CONFIG),
@@ -437,20 +438,20 @@ fn time_sequence_and_epoch_rollback_are_rejected_before_mode_or_config_updates()
         );
         assert!(!state.ready);
         state.reset();
-        assert_eq!(state.last, Some((high, SUIT)));
+        assert_eq!(state.last, Some((high, Stage::Suit)));
         let new_epoch = GestureSample {
             epoch: 4,
             sequence: 1,
             time_ns: 0,
         };
         state.step(observation(new_epoch, Some(FOLDED)), &CONFIG);
-        assert_eq!(state.last, Some((new_epoch, SUIT)));
+        assert_eq!(state.last, Some((new_epoch, Stage::Suit)));
         assert_eq!(state.neutral.since_ns, Some(0));
         assert_eq!(
             state.step(observation(high, Some(FOLDED)), &CONFIG),
             GestureCommands::default()
         );
-        assert_eq!(state.last, Some((new_epoch, SUIT)));
+        assert_eq!(state.last, Some((new_epoch, Stage::Suit)));
     }
 }
 
@@ -475,6 +476,7 @@ fn repeated_samples_retain_only_held_commands_and_cancellation_does_not_rearm_th
         },
         GestureInput {
             mode: CANOPY,
+            airborne: false,
             ..same
         },
         GestureInput { pose: None, ..same },

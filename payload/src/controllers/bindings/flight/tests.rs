@@ -73,6 +73,7 @@ impl History {
             GestureInput {
                 sample: self.sample,
                 mode: SUIT,
+                airborne: false,
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(pose),
@@ -244,6 +245,7 @@ fn commit_history(
         Some(GestureInput {
             sample: history.sample,
             mode: SUIT,
+            airborne: false,
             gameplay: true,
             canopy_requested: canopy(desired),
             pose: Some(BRAKE),
@@ -359,6 +361,7 @@ fn missing_packet_still_resets_the_wrapper_without_a_default_frame_fixture() {
             mode: SUIT,
             ..Default::default()
         },
+        airborne: false,
         ready: true,
         ragdoll: false,
         grapple: false,
@@ -406,6 +409,7 @@ fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
                 mode: Mode::Airborne(AirborneVariant::Falling),
                 ..Default::default()
             },
+            airborne: false,
             ready: true,
             ragdoll: false,
             grapple: false,

@@ -17,6 +17,7 @@ const CONFIG: WingsuitGesturesConfig = WingsuitGesturesConfig::new();
 const FALLING: Mode = Mode::Airborne(AirborneVariant::Falling);
 const SUIT: Mode = Mode::Airborne(AirborneVariant::Wingsuit);
 const CANOPY: Mode = Mode::Airborne(AirborneVariant::Parachute);
+const GROUND: Mode = Mode::OnFoot(OnFootVariant::Ground);
 const FLIGHT: FlightPose = FlightPose {
     lateral: [0.30; 2],
     reach: [0.32; 2],
@@ -40,6 +41,7 @@ struct History {
     state: WingsuitGestures,
     sample: GestureSample,
     mode: Mode,
+    airborne: bool,
     gameplay: bool,
     canopy: bool,
     claims: [HandClaims; 2],
@@ -55,6 +57,7 @@ impl History {
                 time_ns: 0,
             },
             mode,
+            airborne: false,
             gameplay: true,
             canopy: false,
             claims: [HandClaims::default(); 2],
@@ -68,6 +71,7 @@ impl History {
             GestureInput {
                 sample: self.sample,
                 mode: self.mode,
+                airborne: self.airborne,
                 gameplay: self.gameplay,
                 canopy_requested: self.canopy,
                 pose,
@@ -88,20 +92,89 @@ impl History {
     }
 }
 
+fn deploys(commands: &[GestureCommands]) -> usize {
+    commands
+        .iter()
+        .filter(|c| c.transition == Some(SuitTransition::Deploy))
+        .count()
+}
+
 #[test]
-fn deployment_requires_a_fresh_folded_then_flight_sequence_in_freefall() {
+fn a_flight_pose_held_from_the_start_of_a_fall_deploys_after_the_dwell() {
     let mut h = History::new(FALLING);
-    assert!(h.hold(FLIGHT, 20).iter().all(|c| c.transition.is_none()));
+    // The dwell starts on the first sample and is met on the sixth, past 0.2 s later.
+    assert_eq!(deploys(&h.hold(FLIGHT, 5)), 0);
+    assert_eq!(h.state.phase(), GesturePhase::AwaitingFlight);
+    assert_eq!(deploys(&h.hold(FLIGHT, 1)), 1);
+}
+
+#[test]
+fn a_refused_deploy_is_asked_again_only_after_the_retry_pause() {
+    let mut h = History::new(FALLING);
+    let commands = h.hold(FLIGHT, 30);
+    let at: Vec<usize> = commands
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.transition == Some(SuitTransition::Deploy))
+        .map(|(i, _)| i)
+        .collect();
+    // Samples are 50 ms apart: the first request on the sixth, the next 0.5 s later.
+    assert_eq!(at, [5, 15, 25]);
+}
+
+#[test]
+fn arms_spread_under_a_canopy_deploy_the_suit_once_it_is_cut() {
+    let mut h = History::new(CANOPY);
+    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
+    h.mode = FALLING;
+    assert_eq!(deploys(&h.hold(FLIGHT, 5)), 0);
+    assert_eq!(deploys(&h.hold(FLIGHT, 1)), 1);
+}
+
+#[test]
+fn the_recognizer_watches_through_the_jump_and_deploys_during_it() {
+    // Arms spread on stepping off: the dwell is met in the jump, and the deploy goes in there.
+    let mut h = History::new(GROUND);
+    assert_eq!(deploys(&h.hold(FLIGHT, 10)), 0);
+    assert_eq!(h.state.phase(), GesturePhase::Unavailable);
+    h.airborne = true;
+    assert_eq!(deploys(&h.hold(FLIGHT, 5)), 0);
+    assert_eq!(deploys(&h.hold(FLIGHT, 1)), 1);
+    // The game's fall continues the jump's: the dwell carries over rather than restarting.
+    let mut h = History::new(GROUND);
+    h.airborne = true;
+    assert_eq!(deploys(&h.hold(FLIGHT, 3)), 0);
+    h.mode = FALLING;
+    assert_eq!(deploys(&h.hold(FLIGHT, 2)), 0);
+    assert_eq!(deploys(&h.hold(FLIGHT, 1)), 1);
+}
+
+#[test]
+fn a_fall_out_of_the_suit_needs_the_neutral_before_it_deploys() {
+    let mut h = History::new(SUIT);
+    h.hold(FLIGHT, 6);
+    h.mode = FALLING;
+    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
+    assert_eq!(h.state.phase(), GesturePhase::AwaitingNeutral);
     h.hold(FOLDED, 5);
-    let deployed = h.hold(FLIGHT, 6);
-    assert_eq!(
-        deployed
-            .iter()
-            .filter(|c| c.transition == Some(SuitTransition::Deploy))
-            .count(),
-        1
-    );
-    assert!(h.hold(FLIGHT, 20).iter().all(|c| c.transition.is_none()));
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+    // A menu over the fall leaves the fall's origin as it was.
+    let mut h = History::new(SUIT);
+    h.hold(FLIGHT, 2);
+    h.mode = Mode::Ui;
+    h.observe(Some(FLIGHT));
+    h.mode = FALLING;
+    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
+}
+
+#[test]
+fn a_claim_in_the_middle_of_a_fall_does_not_ask_for_the_neutral() {
+    let mut h = History::new(FALLING);
+    h.hold(FOLDED, 2);
+    h.claims[Hand::Left.index()].grip = true;
+    assert_eq!(deploys(&h.hold(FLIGHT, 10)), 0);
+    h.claims = [HandClaims::default(); 2];
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
 }
 
 #[test]
@@ -259,7 +332,8 @@ fn canopy_request_cancels_pending_close_and_brake_before_the_mode_changes() {
     h.hold(BRAKE, 6);
     h.canopy = false;
     h.mode = FALLING;
-    assert!(h.hold(FLIGHT, 20).iter().all(|c| c.transition.is_none()));
+    // Cutting the canopy starts a fall afresh: the arms still spread open the suit.
+    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 2);
 }
 
 #[test]
@@ -278,13 +352,14 @@ fn every_mode_and_epoch_boundary_discards_a_stale_flight_pose() {
         h.mode = mode;
         h.observe(Some(FLIGHT));
         h.mode = FALLING;
-        assert!(h.hold(FLIGHT, 12).iter().all(|c| c.transition.is_none()));
-        h.hold(FOLDED, 5);
-        assert!(
-            h.hold(FLIGHT, 6)
-                .iter()
-                .any(|c| c.transition == Some(SuitTransition::Deploy))
-        );
+        if mode == Mode::Ui {
+            // A menu hides nothing of the fall's origin: out of the suit, it needs the neutral.
+            assert_eq!(deploys(&h.hold(FLIGHT, 12)), 0);
+            h.hold(FOLDED, 5);
+        }
+        // The flight pose's dwell restarts in the fall rather than carrying over.
+        assert_eq!(deploys(&h.hold(FLIGHT, 5)), 0);
+        assert_eq!(deploys(&h.hold(FLIGHT, 1)), 1);
     }
     let mut h = History::new(SUIT);
     h.arm();
@@ -313,6 +388,7 @@ fn menus_focus_and_repeated_samples_do_not_accumulate_pose_dwell() {
             GestureInput {
                 sample: h.sample,
                 mode: SUIT,
+                airborne: false,
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(FOLDED),
@@ -458,10 +534,9 @@ fn a_spread_flight_pose_arms_the_suit_without_a_neutral_first() {
     assert_eq!(h.state.phase(), GesturePhase::Armed);
     assert!(h.hold(BRAKE, 6).iter().any(|c| c.brake));
     assert_eq!(h.state.phase(), GesturePhase::Braking);
-    // Falling still needs the neutral first, so a held T-pose does not deploy the suit.
+    // A fall's start needs no neutral either.
     let mut h = History::new(FALLING);
-    assert!(h.hold(FLIGHT, 20).iter().all(|c| c.transition.is_none()));
-    assert_eq!(h.state.phase(), GesturePhase::AwaitingNeutral);
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
 }
 
 #[test]
@@ -509,6 +584,7 @@ fn tuning_rejects_nonfinite_values_and_overlapping_pose_ranges() {
             GestureInput {
                 sample: h.sample,
                 mode: SUIT,
+                airborne: false,
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(FOLDED),

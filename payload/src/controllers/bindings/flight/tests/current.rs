@@ -20,6 +20,7 @@ fn input(mode: Mode) -> GestureInput {
             time_ns: 1,
         },
         mode,
+        airborne: false,
         gameplay: true,
         canopy_requested: false,
         pose: Some(FLIGHT),
@@ -44,6 +45,8 @@ fn evaluation_and_commit_retain_current_availability_without_emitting_actions() 
                     time_ns: sequence as i64 * 50_000_000,
                     ..input(mode).sample
                 },
+                // Lowered arms, so a fall's start does not deploy the suit.
+                pose: Some(LOWERED),
                 ..input(mode)
             };
             let commands = evaluate_input(&mut state, calibration(), Some(input), &CONFIG);
@@ -220,6 +223,7 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
             mode: SUIT,
             ..Default::default()
         },
+        airborne: false,
         ready: true,
         ragdoll: false,
         grapple: false,

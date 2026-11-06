@@ -19,7 +19,7 @@ use crate::controllers::{
     config::GripOffset,
     frame::{ControllerFrame, Hand, Pose, TrackedPose},
     hands::pose::cockpit_hand,
-    mode::{AirborneVariant, Mode},
+    mode::{AirborneVariant, Mode, OnFootVariant},
     vehicles::{arm_steering::wrist_tilt, config::WingsuitGesturesConfig},
 };
 
@@ -54,9 +54,9 @@ pub(crate) enum GestureAvailability {
 pub(crate) enum GesturePhase {
     #[default]
     Unavailable,
-    /// Falling, waiting for both arms lowered or drawn in.
+    /// Falling out of the suit, waiting for both arms lowered or drawn in.
     AwaitingNeutral,
-    /// Falling after the neutral, or in the suit, waiting for a stable flight pose.
+    /// Falling, or in the suit, waiting for a stable flight pose.
     AwaitingFlight,
     /// In the suit, with closing and braking armed.
     Armed,
@@ -89,6 +89,29 @@ pub(crate) enum Blocked {
     NoPose,
     /// The player is neither falling nor in the suit.
     Mode,
+}
+
+/// Where the player is, as far as the gestures are concerned.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Stage {
+    /// Falling, or off the ground on foot while the game still plays its jump: the game's jump
+    /// states take the suit's opening as its falls do.
+    Fall,
+    Suit,
+    /// Anywhere the gestures do not run.
+    Other,
+}
+
+impl Stage {
+    /// The stage of `mode`, with `airborne` telling a jump from standing on the ground.
+    pub(crate) fn of(mode: Mode, airborne: bool) -> Self {
+        match mode {
+            Mode::Airborne(AirborneVariant::Falling) => Self::Fall,
+            Mode::OnFoot(OnFootVariant::Ground) if airborne => Self::Fall,
+            Mode::Airborne(AirborneVariant::Wingsuit) => Self::Suit,
+            _ => Self::Other,
+        }
+    }
 }
 
 impl fmt::Display for Blocked {
@@ -328,6 +351,9 @@ impl FlightPose {
 pub(crate) struct GestureInput {
     pub sample: GestureSample,
     pub mode: Mode,
+    /// Rico is off the ground on foot, from the jump's grace on: a jump, or a step off a ledge,
+    /// before the game reports a fall.
+    pub airborne: bool,
     pub gameplay: bool,
     /// A contextual canopy request, including a held request, cancels pending suit gestures.
     pub canopy_requested: bool,
@@ -338,10 +364,16 @@ pub(crate) struct GestureInput {
 /// Stateful recognizer owned by the binding tick, independently of physical vehicles.
 #[derive(Debug, Default)]
 pub(crate) struct WingsuitGestures {
-    last: Option<(GestureSample, Mode)>,
+    last: Option<(GestureSample, Stage)>,
     current: GestureAvailability,
     config: Option<WingsuitGesturesConfig>,
+    /// The stage last observed outside a menu, which tells a fall's start from its middle.
+    stage: Option<Stage>,
+    /// The flight pose may deploy the suit in this fall: from the fall's start, unless the fall
+    /// came out of the suit, where the neutral sets it.
     ready: bool,
+    /// The sample time before which a deploy request may not follow the last one in this fall.
+    retry_at_ns: Option<i64>,
     armed: bool,
     brake: bool,
     reserve_pitch: bool,
@@ -380,7 +412,7 @@ impl WingsuitGestures {
         input: GestureInput,
         config: &WingsuitGesturesConfig,
     ) -> GestureAvailability {
-        if self.last != Some((input.sample, input.mode))
+        if self.last != Some((input.sample, input.stage()))
             || self.config != Some(*config)
             || input.availability(config) != self.current
         {
@@ -409,14 +441,19 @@ impl WingsuitGestures {
         } else {
             false
         };
-        let changed = previous
-            .is_none_or(|(last, mode)| last.epoch != input.sample.epoch || mode != input.mode);
+        let stage = input.stage();
+        self.enter(stage, input.mode);
+        let new_epoch = previous.is_none_or(|(last, _)| last.epoch != input.sample.epoch);
+        if new_epoch {
+            self.retry_at_ns = None;
+        }
+        let changed = new_epoch || previous.is_some_and(|(_, last)| last != stage);
         if changed || self.config != Some(*config) {
             self.clear_pose();
         }
         self.config = Some(*config);
         if !repeated {
-            self.last = Some((input.sample, input.mode));
+            self.last = Some((input.sample, stage));
         }
         self.current = input.availability(config);
         if self.current == GestureAvailability::Unavailable {
@@ -440,7 +477,7 @@ impl WingsuitGestures {
             return GestureCommands::default();
         }
         let pose = input.pose.unwrap();
-        let in_suit = input.mode == Mode::Airborne(AirborneVariant::Wingsuit);
+        let in_suit = stage == Stage::Suit;
         let wide = pose.lateral.into_iter().all(|v| {
             v >= config.flight_lateral_span
                 - if self.brake {
@@ -487,22 +524,33 @@ impl WingsuitGestures {
         {
             self.ready = true;
         }
-        // Deploying needs the neutral first, so a T-pose held through a fall does not open the suit
-        // by itself. In the suit, the flight pose alone arms: a player who opened the suit with the
-        // button often has their arms spread already, and the suit's own entry is the fresh start.
+        // A fall's start is a fresh start: arms spread as the player steps off, or still spread
+        // under a canopy they cut, deploy the suit. Only a fall out of the suit needs the neutral
+        // first, so arms spread as the suit closes do not open it again. In the suit, the flight
+        // pose alone arms: a player who opened the suit with the button often has their arms
+        // spread already, and the suit's own entry is the fresh start.
+        let retry = self.retry_at_ns.is_none_or(|at| input.sample.time_ns >= at);
         if self.flight.update(
             (self.ready || in_suit) && flight,
             input.sample.time_ns,
             config.flight_dwell_s,
         ) {
-            if !in_suit {
+            if !in_suit && retry {
                 self.clear_pose();
+                self.retry_at_ns = Some(
+                    input
+                        .sample
+                        .time_ns
+                        .saturating_add((DEPLOY_RETRY_S * 1e9) as i64),
+                );
                 return GestureCommands {
                     transition: Some(SuitTransition::Deploy),
                     ..Default::default()
                 };
             }
-            self.armed = true;
+            if in_suit {
+                self.armed = true;
+            }
         }
         if self.close.update(
             in_suit && self.armed && withdrawn,
@@ -518,8 +566,18 @@ impl WingsuitGestures {
         GestureCommands::default()
     }
 
+    /// Track the stage outside menus, and start each fall afresh. A menu over a fall leaves the
+    /// fall's start where it was.
+    fn enter(&mut self, stage: Stage, mode: Mode) {
+        if mode == Mode::Ui || self.stage == Some(stage) {
+            return;
+        }
+        self.ready = stage == Stage::Fall && self.stage != Some(Stage::Suit);
+        self.retry_at_ns = None;
+        self.stage = Some(stage);
+    }
+
     fn clear_pose(&mut self) {
-        self.ready = false;
         self.armed = false;
         self.brake = false;
         self.reserve_pitch = false;
@@ -554,20 +612,25 @@ impl GestureInput {
         if !self.pose.is_some_and(FlightPose::valid) {
             return Some(Blocked::NoPose);
         }
-        match self.mode {
-            Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Wingsuit) => None,
-            _ => Some(Blocked::Mode),
+        match self.stage() {
+            Stage::Fall | Stage::Suit => None,
+            Stage::Other => Some(Blocked::Mode),
         }
+    }
+
+    /// Where the player is, as far as the gestures are concerned.
+    pub(crate) fn stage(self) -> Stage {
+        Stage::of(self.mode, self.airborne)
     }
 
     fn availability(self, config: &WingsuitGesturesConfig) -> GestureAvailability {
         if self.blocked(config).is_some() {
             return GestureAvailability::Unavailable;
         }
-        match self.mode {
-            Mode::Airborne(AirborneVariant::Falling) => GestureAvailability::Deploy,
-            Mode::Airborne(AirborneVariant::Wingsuit) => GestureAvailability::CloseAndBrake,
-            _ => GestureAvailability::Unavailable,
+        match self.stage() {
+            Stage::Fall => GestureAvailability::Deploy,
+            Stage::Suit => GestureAvailability::CloseAndBrake,
+            Stage::Other => GestureAvailability::Unavailable,
         }
     }
 }
@@ -608,6 +671,12 @@ fn flight_heading(wrists: [Pose; 2], head: Pose) -> Quat {
     // About the vertical alone, so a player turned to face the cockpit's back still stands upright.
     yaw_of(forward).map_or(head_heading, Quat::from_rotation_y)
 }
+
+/// How long after a deploy request another may follow in the same fall, seconds. The suit's entry
+/// reaches the mode detection within a few ticks, so a fall still running this long after a request
+/// is one the game refused it in (still rising from a jump, or too near the ground), and a repeat
+/// never lands in the suit, where the same action closes it.
+const DEPLOY_RETRY_S: f64 = 0.5;
 
 /// The wrists' smallest horizontal separation that gives the body's facing, metres. Closer, the
 /// line between them turns with any small movement of either hand.

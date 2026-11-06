@@ -45,6 +45,10 @@ pub struct AnchorStatus {
     /// Whether Rico is on foot on the ground, out of a ragdoll and the water, whatever the
     /// settings say.
     pub on_ground: bool,
+    /// Whether Rico is off the ground on foot, from the jump's grace on: a jump, a step off a
+    /// ledge, or a fall the mode detection has not reported yet. Read only in the headset with the
+    /// controllers on.
+    pub airborne: bool,
     /// The measured neutral head, neck, and eyes, model space.
     pub neutral: Option<Neutral>,
     /// The seconds of standing still sampled toward the measurement.
@@ -97,6 +101,7 @@ pub(crate) unsafe fn stabilize(
     // anchor's own history; the movement task's stamp it reads is written only then. Elsewhere the
     // mode alone decides, as it always has.
     let mut tracker = STATE.lock().tracker;
+    let mut airborne = false;
     let case = (controllers_enabled && source() == Source::Vr).then(|| {
         let config = Config::lock_query(|c| c.controllers.body.procedural);
         let step = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
@@ -107,6 +112,7 @@ pub(crate) unsafe fn stabilize(
         read.movement_task = locomotion.at.is_some_and(|at| {
             now.saturating_duration_since(at).as_secs_f32() <= MOVEMENT_TASK_GRACE_S
         });
+        airborne = read.jump || read.flight;
         classify(&read)
     });
     let ragdoll = character.m_CurrentMotionState == Character::MOTION_STATE_RAGDOLL
@@ -167,6 +173,7 @@ pub(crate) unsafe fn stabilize(
         weight,
         eligible,
         on_ground: on_ground && grounded && !ragdoll,
+        airborne,
         neutral: state.neutral,
         capture_progress: state.capture.progress(),
         height_offset: height.current - world_t1.w_axis.y,
@@ -233,6 +240,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         weight: 0.0,
         eligible: false,
         on_ground: false,
+        airborne: false,
         neutral: None,
         capture_progress: 0.0,
         height_offset: 0.0,

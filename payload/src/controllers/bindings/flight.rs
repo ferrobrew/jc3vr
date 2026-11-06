@@ -17,12 +17,12 @@ use crate::{
         fingers::grip::{self, GripSource},
         frame::{Button, ControllerFrame, Hand},
         grab::GrabVolume,
-        mode::{AirborneVariant, Detection, Mode},
+        mode::{Detection, Mode},
         vehicles::{
             config::WingsuitGesturesConfig,
             wingsuit_gestures::{
                 Blocked, FlightPose, GestureAvailability, GestureCommands, GestureInput,
-                GesturePhase, HandClaims, SuitTransition, WingsuitGestures,
+                GesturePhase, HandClaims, Stage, SuitTransition, WingsuitGestures,
             },
         },
         weapons,
@@ -67,6 +67,9 @@ pub(super) struct Tick<'a> {
     pub config: &'a ControllersConfig,
     pub dimensions: &'a BodyDimensions,
     pub detection: Detection,
+    /// Rico is off the ground on foot, from the jump's grace on, as the view anchor last read it
+    /// ([`crate::controllers::locomotion::anchor::AnchorStatus::airborne`]).
+    pub airborne: bool,
     pub ready: bool,
     pub ragdoll: bool,
     pub grapple: bool,
@@ -92,7 +95,7 @@ pub(super) fn evaluate(
         input,
         config,
     );
-    note(state, tick, input, config, Stage::Evaluate);
+    note(state, tick, input, config, Pass::Evaluate);
     if let Some(transition) = commands.transition {
         tracing::info!(
             target: "controllers",
@@ -122,7 +125,7 @@ pub(super) fn commit(
     let input = observation(tick, desired, Instant::now());
     let config = &tick.config.vehicles.wingsuit_gestures;
     let reserve_pitch = commit_input(state, commands, input, config, desired);
-    note(state, tick, input, config, Stage::Commit);
+    note(state, tick, input, config, Pass::Commit);
     reserve_pitch
 }
 
@@ -179,24 +182,21 @@ impl fmt::Display for Suspension {
 
 /// Where in the tick a phase is noted.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-enum Stage {
+enum Pass {
     Evaluate,
     Commit,
 }
 
 /// Log the recognizer's phase when it, or the gate behind it, changed since the last log. Outside
-/// falling and the suit, only the first tick there is logged.
+/// a fall (a jump included) and the suit, only the first tick there is logged.
 fn note(
     state: &mut FlightState,
     tick: &Tick<'_>,
     input: Option<GestureInput>,
     config: &WingsuitGesturesConfig,
-    stage: Stage,
+    pass: Pass,
 ) {
-    let airborne = matches!(
-        tick.detection.mode,
-        Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Wingsuit)
-    );
+    let airborne = Stage::of(tick.detection.mode, tick.airborne) != Stage::Other;
     let phase = state.gestures.phase();
     let entry = airborne.then(|| {
         let why = (phase == GesturePhase::Unavailable).then(|| match input {
@@ -204,9 +204,9 @@ fn note(
             Some(input) => suspension(tick)
                 .map(Why::Suspended)
                 .or_else(|| input.blocked(config).map(Why::Blocked))
-                .unwrap_or(match stage {
-                    Stage::Evaluate => Why::Interrupted,
-                    Stage::Commit => Why::Revalidated,
+                .unwrap_or(match pass {
+                    Pass::Evaluate => Why::Interrupted,
+                    Pass::Commit => Why::Revalidated,
                 }),
         });
         (phase, why)
@@ -307,6 +307,7 @@ fn observation(tick: &Tick<'_>, desired: &[Desired], now: Instant) -> Option<Ges
     Some(GestureInput {
         sample: packet.sample(),
         mode: tick.detection.mode,
+        airborne: tick.airborne,
         gameplay: suspension(tick).is_none(),
         canopy_requested: canopy(desired),
         pose: packet.measure(
@@ -349,7 +350,7 @@ fn commit_input(
         state.reset();
         return false;
     }
-    match flight_pose::desired_for(commands, input.mode, canopy(desired)) {
+    match flight_pose::desired_for(commands, input.stage(), canopy(desired)) {
         Ok(inputs) => {
             desired.extend(inputs);
             commands.reserve_pitch

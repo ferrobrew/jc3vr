@@ -197,3 +197,19 @@ fn the_recorded_flight_arms_and_brakes_without_a_neutral() {
     assert!(h.hold(measure(BRAKES[1]), 6).iter().any(|c| c.brake));
     assert_eq!(h.state.phase(), GesturePhase::Braking);
 }
+
+#[test]
+fn the_recorded_glide_held_off_a_ledge_deploys_in_the_jump() {
+    // Arms spread before the step off: the jump's dwell deploys, with no neutral in between.
+    let mut h = History::new(GROUND);
+    h.hold(measure(GLIDE), 10);
+    h.airborne = true;
+    let commands = h.hold(measure(GLIDE), 6);
+    assert_eq!(
+        commands
+            .iter()
+            .filter(|c| c.transition == Some(SuitTransition::Deploy))
+            .count(),
+        1
+    );
+}

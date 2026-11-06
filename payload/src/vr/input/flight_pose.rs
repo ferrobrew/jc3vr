@@ -15,9 +15,8 @@ use crate::{
         body::BodyDimensions,
         config::GripOffset,
         frame::{ControllerFrame, Pose, TrackedPose},
-        mode::{AirborneVariant, Mode},
         vehicles::wingsuit_gestures::{
-            FlightPose, GestureCommands, GestureHead, GestureObservation, GestureSample,
+            FlightPose, GestureCommands, GestureHead, GestureObservation, GestureSample, Stage,
             SuitTransition,
         },
     },
@@ -135,22 +134,23 @@ pub(crate) enum CommandRejection {
     ConflictingCommands,
 }
 
-/// Translate typed transitions through the existing narrow player-map action, with mode guards.
-/// Both suit transitions use `OPEN_WINGSUIT`; the broad use/vehicle-entry family is not emitted.
+/// Translate typed transitions through the existing narrow player-map action, with stage guards.
+/// Both suit transitions use `OPEN_WINGSUIT`; the broad use/vehicle-entry family is not emitted. A
+/// deploy goes in during the game's jump as in its fall: both take the suit's opening.
 pub(crate) fn desired_for(
     commands: GestureCommands,
-    mode: Mode,
+    stage: Stage,
     canopy_requested: bool,
 ) -> Result<Vec<Desired>, CommandRejection> {
     if canopy_requested {
         return Err(CommandRejection::CanopyRequested);
     }
-    let suit = mode == Mode::Airborne(AirborneVariant::Wingsuit);
+    let suit = stage == Stage::Suit;
     if commands.transition.is_some() && (commands.brake || commands.reserve_pitch) {
         return Err(CommandRejection::ConflictingCommands);
     }
     let transition = match commands.transition {
-        Some(SuitTransition::Deploy) if mode == Mode::Airborne(AirborneVariant::Falling) => true,
+        Some(SuitTransition::Deploy) if stage == Stage::Fall => true,
         Some(SuitTransition::Close) if suit => true,
         Some(SuitTransition::Deploy | SuitTransition::Close) => {
             return Err(CommandRejection::WrongMode);
@@ -572,22 +572,16 @@ mod tests {
 
     #[test]
     fn typed_transitions_emit_only_the_narrow_player_action_in_the_correct_mode() {
-        for (transition, mode) in [
-            (
-                SuitTransition::Deploy,
-                Mode::Airborne(AirborneVariant::Falling),
-            ),
-            (
-                SuitTransition::Close,
-                Mode::Airborne(AirborneVariant::Wingsuit),
-            ),
+        for (transition, stage) in [
+            (SuitTransition::Deploy, Stage::Fall),
+            (SuitTransition::Close, Stage::Suit),
         ] {
             let commands = GestureCommands {
                 transition: Some(transition),
                 ..Default::default()
             };
             assert_eq!(
-                desired_for(commands, mode, false).unwrap(),
+                desired_for(commands, stage, false).unwrap(),
                 vec![Desired {
                     target: Target {
                         map: MapKind::Player,
@@ -597,11 +591,11 @@ mod tests {
                 }]
             );
             assert_eq!(
-                desired_for(commands, Mode::Ui, false),
+                desired_for(commands, Stage::Other, false),
                 Err(CommandRejection::WrongMode)
             );
             assert_eq!(
-                desired_for(commands, mode, true),
+                desired_for(commands, stage, true),
                 Err(CommandRejection::CanopyRequested)
             );
         }
@@ -609,13 +603,13 @@ mod tests {
 
     #[test]
     fn brake_uses_existing_held_pair_and_rejects_conflicts_or_nonflight_contexts() {
-        let mode = Mode::Airborne(AirborneVariant::Wingsuit);
+        let stage = Stage::Suit;
         let commands = GestureCommands {
             brake: true,
             reserve_pitch: true,
             ..Default::default()
         };
-        let desired = desired_for(commands, mode, false).unwrap();
+        let desired = desired_for(commands, stage, false).unwrap();
         assert_eq!(desired.len(), 2);
         assert_eq!(desired[0].target.action, CANCEL);
         assert_eq!(desired[1].target.action, WINGSUIT_AIRBRAKE);
@@ -625,12 +619,12 @@ mod tests {
                 .all(|input| input.target.map == MapKind::Player && input.want == Want::Hold(1.0))
         );
         assert!(
-            desired_for(GestureCommands::default(), mode, false)
+            desired_for(GestureCommands::default(), stage, false)
                 .unwrap()
                 .is_empty()
         );
         assert_eq!(
-            desired_for(commands, Mode::Airborne(AirborneVariant::Parachute), false),
+            desired_for(commands, Stage::Other, false),
             Err(CommandRejection::WrongMode)
         );
         assert_eq!(
@@ -639,7 +633,7 @@ mod tests {
                     transition: Some(SuitTransition::Close),
                     ..commands
                 },
-                mode,
+                stage,
                 false
             ),
             Err(CommandRejection::ConflictingCommands)
@@ -650,7 +644,7 @@ mod tests {
                     transition: Some(SuitTransition::Deploy),
                     ..Default::default()
                 },
-                mode,
+                stage,
                 false
             ),
             Err(CommandRejection::WrongMode)

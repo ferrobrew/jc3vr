@@ -13,7 +13,7 @@ use crate::{
         vehicles::{
             config::WingsuitGesturesConfig,
             wingsuit_gestures::{
-                FlightPose, GestureInput, GestureSample, HandClaims, WingsuitGestures,
+                FlightPose, GestureInput, GestureSample, HandClaims, Stage, WingsuitGestures,
             },
         },
     },
@@ -120,6 +120,7 @@ fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
                 GestureInput {
                     sample,
                     mode,
+                    airborne: false,
                     gameplay: true,
                     canopy_requested: false,
                     pose: Some(pose),
@@ -127,7 +128,7 @@ fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
                 },
                 &config,
             );
-            for desired in desired_for(commands, mode, false).unwrap() {
+            for desired in desired_for(commands, Stage::of(mode, false), false).unwrap() {
                 assert_eq!(desired.target.map, MapKind::Player, "{mode:?}: {desired:?}");
                 assert_eq!(
                     desired.want,
