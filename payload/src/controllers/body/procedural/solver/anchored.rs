@@ -19,13 +19,18 @@
 //! 4. The chest is kept out of the camera's near field: a chest within `chest_clear_below_m` below
 //!    the eyes is swung back about the spine's base until it is `chest_clear_back_m` behind them,
 //!    along the view's level forward, so a camera that sits low, or a spine bent back, never puts
-//!    the chest in front of the eyes. A look down at a chest further below is left alone.
+//!    the chest in front of the eyes. A look down at a chest further below is left alone. The
+//!    view's level forward is the head's heading, which stays defined looking straight down, and
+//!    the swing never passes `CLEAR_LIMIT`, so no pose of the head folds the spine over.
 //! 5. The neck takes a share of the head's turn: the head's rotation against the body is a turn on
 //!    top of the clip's head, so the neck's share is a share of it.
 //!
 //! The legs are not touched.
 
-use body_rig::smooth::smoothstep_between;
+use body_rig::{
+    angle::{direction, head_heading},
+    smooth::smoothstep_between,
+};
 use glam::{Quat, Vec3};
 
 use crate::controllers::body::procedural::{
@@ -120,17 +125,17 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralBodyConfig) -> RigP
 
 /// Swing the spine back about its base `base` until none of the chest's points within
 /// `chest_clear_below_m` below the eyes is less than `chest_clear_back_m` behind them, along the
-/// view's level forward.
+/// view's level forward (the head's heading), swinging no further than [`CLEAR_LIMIT`] in all.
 fn keep_chest_clear(
     pose: &mut RigPose,
     input: &SolveInput,
     base: Vec3,
     config: &ProceduralBodyConfig,
 ) {
-    let look = input.head_rotation.normalize() * Vec3::NEG_Z;
-    let Some(forward) = Vec3::new(look.x, 0.0, look.z).try_normalize() else {
+    let Some(heading) = head_heading(input.head_rotation.normalize()) else {
         return;
     };
+    let forward = direction(heading);
     let Some(axis) = Vec3::Y.cross(forward).try_normalize() else {
         return;
     };
@@ -138,6 +143,7 @@ fn keep_chest_clear(
         config.chest_clear_below_m.max(0.0),
         config.chest_clear_back_m.max(0.0),
     );
+    let mut swung = 0.0f32;
     for _ in 0..CLEAR_ITERATIONS {
         let worst = chest_points(pose)
             .into_iter()
@@ -153,8 +159,15 @@ fn keep_chest_clear(
         }
         // Turning about `axis` (up crossed with forward) carries up toward forward, so a negative
         // angle carries the chest back.
-        let angle = -(over / radius).clamp(0.0, 1.0).asin();
-        pose.rotate_about(RigBone::Spine, Quat::from_axis_angle(axis, angle), base);
+        let angle = (over / radius)
+            .clamp(0.0, 1.0)
+            .asin()
+            .min(CLEAR_LIMIT - swung);
+        if angle <= 0.0 {
+            return;
+        }
+        swung += angle;
+        pose.rotate_about(RigBone::Spine, Quat::from_axis_angle(axis, -angle), base);
     }
 }
 
@@ -172,6 +185,10 @@ fn chest_points(pose: &RigPose) -> [Vec3; 4] {
 /// How many times the chest clearance swings: the radius changes with the swing, so a second pass
 /// takes up what the first left.
 const CLEAR_ITERATIONS: usize = 3;
+
+/// The furthest the chest clearance swings the spine back in all, radians: forty-five degrees. A
+/// camera far inside the chest would otherwise fold the spine over backwards to clear it.
+const CLEAR_LIMIT: f32 = std::f32::consts::FRAC_PI_4;
 
 /// How much of the torso's turn and of the look down a spine pointing along `upright` takes: all
 /// of it within [`UPRIGHT_FULL`] of the vertical, none past [`UPRIGHT_NONE`], eased between.
@@ -244,6 +261,53 @@ mod tests {
             pose.position(RigBone::Hips)
                 .abs_diff_eq(input.animated.position(RigBone::Hips), 1e-5)
         );
+    }
+
+    /// The spine's swing back from the clip's, radians.
+    fn spine_swing(pose: &RigPose, input: &SolveInput) -> f32 {
+        let base = input.animated.position(RigBone::Spine);
+        (pose.position(RigBone::Neck) - base)
+            .angle_between(input.animated.position(RigBone::Neck) - base)
+    }
+
+    #[test]
+    fn looking_straight_down_keeps_the_clearance_steady() {
+        let (mut input, config) = setup();
+        let shoulders = (input.animated.position(RigBone::LeftShoulder)
+            + input.animated.position(RigBone::RightShoulder))
+            * 0.5;
+        input.eye = shoulders + Vec3::new(0.0, 0.1, 0.0);
+        // Just short of and just past straight down: the forward axis's level part flips, the
+        // heading does not.
+        let swings: Vec<f32> = [-1.55f32, -std::f32::consts::FRAC_PI_2, -1.59]
+            .into_iter()
+            .map(|pitch| {
+                input.head_rotation = Quat::from_rotation_x(pitch);
+                spine_swing(&solve_anchored(&input, &config), &input)
+            })
+            .collect();
+        for swing in &swings {
+            assert!(swing.is_finite() && *swing < 1.2, "{swings:?}");
+        }
+        assert!(
+            (swings[0] - swings[2]).abs() < 0.2,
+            "the clearance flipped: {swings:?}"
+        );
+    }
+
+    #[test]
+    fn the_clearance_swings_no_further_than_its_limit() {
+        let (mut input, config) = setup();
+        let mut no_look = config;
+        no_look.lean_limit_deg = 0.0;
+        // The eyes well behind the chest, a little below the sternum.
+        let sternum = input.animated.position(RigBone::Sternum);
+        input.eye = sternum + Vec3::new(0.0, -0.05, 0.25);
+        input.head = input.animated.position(RigBone::Head);
+        let pose = solve_anchored(&input, &no_look);
+        let swing = spine_swing(&pose, &input);
+        assert!(swing <= CLEAR_LIMIT + 1e-3, "{}", swing.to_degrees());
+        assert!(swing > CLEAR_LIMIT * 0.5, "{}", swing.to_degrees());
     }
 
     #[test]
