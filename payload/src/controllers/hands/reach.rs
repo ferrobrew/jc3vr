@@ -245,8 +245,8 @@ impl ArmSample {
 ///
 /// The bone lengths are constant across animation (the rig carries no scale), so they settle over
 /// a fixed half-second time constant and then hold. The eye-to-shoulder offset changes with the
-/// animation and follows it over the configured time constant, and the offset in the clip's chest
-/// over [`ReachTuning::chest_shoulder_smoothing_s`].
+/// animation and follows it over [`ReachTuning::shoulder_smoothing_s`], and the offset in the clip's
+/// chest over [`ReachTuning::chest_shoulder_smoothing_s`].
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ArmTracker {
     arm: Option<MeasuredArm>,
@@ -277,9 +277,9 @@ impl ArmTracker {
         self.rejected
     }
 
-    /// Fold in one tick's sample, `dt` seconds after the last, with `shoulder_smoothing_s` the
-    /// time constant of the eye-to-shoulder offset. An implausible sample is dropped and counted.
-    pub fn update(&mut self, sample: ArmSample, dt: f32, shoulder_smoothing_s: f32) {
+    /// Fold in one tick's sample, `dt` seconds after the last, smoothing the offsets over
+    /// [`REACH`]'s time constants. An implausible sample is dropped and counted.
+    pub fn update(&mut self, sample: ArmSample, dt: f32) {
         if !sample.plausible() {
             self.rejected = self.rejected.saturating_add(1);
             return;
@@ -295,7 +295,7 @@ impl ArmTracker {
             None => reading,
             Some(previous) => {
                 let lengths = follow_factor(dt, LENGTH_SMOOTHING_S);
-                let offset = follow_factor(dt, shoulder_smoothing_s);
+                let offset = follow_factor(dt, REACH.shoulder_smoothing_s);
                 let chest = follow_factor(dt, REACH.chest_shoulder_smoothing_s);
                 MeasuredArm {
                     upper_arm: previous.upper_arm.lerp(reading.upper_arm, lengths),
@@ -527,13 +527,13 @@ mod tests {
         let mut tracker = ArmTracker::default();
         assert!(tracker.arm().is_none());
         let offset = Vec3::new(0.2, -0.2, 0.1);
-        tracker.update(sample(0.27, 0.25, offset), 0.0, 0.1);
+        tracker.update(sample(0.27, 0.25, offset), 0.0);
         let arm = tracker.arm().unwrap();
         assert!((arm.upper_arm - 0.27).abs() < EPS);
         assert!((arm.forearm - 0.25).abs() < EPS);
         assert!(arm.eye_to_shoulder.distance(offset) < EPS);
         for _ in 0..200 {
-            tracker.update(sample(0.27, 0.25, offset), 1.0 / 30.0, 0.1);
+            tracker.update(sample(0.27, 0.25, offset), 1.0 / 30.0);
         }
         assert!((tracker.arm().unwrap().length() - 0.52).abs() < EPS);
         assert_eq!(tracker.samples(), 201);
@@ -542,8 +542,8 @@ mod tests {
     #[test]
     fn the_shoulder_offset_follows_over_its_time_constant() {
         let mut tracker = ArmTracker::default();
-        tracker.update(sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0)), 0.0, 0.1);
-        tracker.update(sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.1)), 0.1, 0.1);
+        tracker.update(sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0)), 0.0);
+        tracker.update(sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.1)), 0.1);
         let z = tracker.arm().unwrap().eye_to_shoulder.z;
         assert!((z - 0.1 * (1.0 - (-1.0f32).exp())).abs() < EPS);
     }
@@ -553,7 +553,7 @@ mod tests {
         let mut tracker = ArmTracker::default();
         let mut s = sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0));
         s.to_body = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
-        tracker.update(s, 0.0, 0.1);
+        tracker.update(s, 0.0);
         let offset = tracker.arm().unwrap().eye_to_shoulder;
         assert!(offset.distance(Vec3::new(0.0, -0.2, -0.2)) < EPS);
     }
@@ -562,18 +562,14 @@ mod tests {
     fn a_stride_swing_of_the_shoulders_barely_moves_the_remap() {
         let mut tracker = ArmTracker::default();
         let rest = Vec3::new(0.2, -0.2, 0.05);
-        tracker.update(sample(0.27, 0.25, rest), 0.0, REACH.shoulder_smoothing_s);
+        tracker.update(sample(0.27, 0.25, rest), 0.0);
         // A run swinging the shoulder ten centimetres forward and back, a stride every 0.7 s.
         let dt = 1.0 / 60.0;
         let mut furthest = 0.0f32;
         for i in 0..600 {
             let t = i as f32 * dt;
             let swing = Vec3::Z * 0.1 * (t * std::f32::consts::TAU / 0.7).sin();
-            tracker.update(
-                sample(0.27, 0.25, rest + swing),
-                dt,
-                REACH.shoulder_smoothing_s,
-            );
+            tracker.update(sample(0.27, 0.25, rest + swing), dt);
             if t > 2.0 {
                 let arm = tracker.arm().unwrap();
                 furthest = furthest.max(arm.shoulder_in_chest.distance(rest));
@@ -591,7 +587,7 @@ mod tests {
         bladed.elbow = bladed.shoulder + Vec3::NEG_Y * 0.27;
         bladed.wrist = bladed.elbow + Vec3::NEG_Z * 0.25;
         bladed.to_chest = Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2);
-        tracker.update(bladed, 0.0, 0.1);
+        tracker.update(bladed, 0.0);
         let arm = tracker.arm().unwrap();
         assert!(arm.shoulder_in_chest.distance(Vec3::new(0.2, -0.2, 0.0)) < EPS);
         let head = Pose {
@@ -612,13 +608,13 @@ mod tests {
     #[test]
     fn an_implausible_sample_is_dropped() {
         let mut tracker = ArmTracker::default();
-        tracker.update(sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0)), 0.0, 0.1);
+        tracker.update(sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0)), 0.0);
         let before = tracker.arm();
-        tracker.update(sample(2.0, 0.25, Vec3::new(0.2, -0.2, 0.0)), 0.03, 0.1);
-        tracker.update(sample(0.27, 0.0, Vec3::new(0.2, -0.2, 0.0)), 0.03, 0.1);
+        tracker.update(sample(2.0, 0.25, Vec3::new(0.2, -0.2, 0.0)), 0.03);
+        tracker.update(sample(0.27, 0.0, Vec3::new(0.2, -0.2, 0.0)), 0.03);
         let mut nan = sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0));
         nan.wrist = Vec3::NAN;
-        tracker.update(nan, 0.03, 0.1);
+        tracker.update(nan, 0.03);
         assert_eq!(tracker.arm(), before);
         assert_eq!(tracker.rejected(), 3);
     }

@@ -131,7 +131,6 @@ pub struct TickArm {
 pub(crate) unsafe fn measure(
     character: &Character,
     controller: &mut AnimationController,
-    shoulder_smoothing_s: f32,
 ) -> [Option<TickArm>; 2] {
     if !pose::eligible(character) {
         STATE.lock().invalidate();
@@ -156,11 +155,10 @@ pub(crate) unsafe fn measure(
     let shoulder = |effector: Effector| {
         unsafe { body_ik::bone_for_effector(&character.m_HIK, effector as i32) }.and_then(point)
     };
-    // The clip's chest faces square to the line across its shoulders.
-    let to_chest = shoulder(Effector::LEFT_SHOULDER)
-        .zip(shoulder(Effector::RIGHT_SHOULDER))
-        .and_then(|(left, right)| line_yaw(left, right))
-        .map_or(Quat::IDENTITY, |yaw| Quat::from_rotation_y(-yaw));
+    let to_chest = chest_rotation(
+        shoulder(Effector::LEFT_SHOULDER),
+        shoulder(Effector::RIGHT_SHOULDER),
+    );
 
     let now = Instant::now();
     let mut state = STATE.lock();
@@ -192,8 +190,11 @@ pub(crate) unsafe fn measure(
             bone(elbow).and_then(point),
             bone(wrist).and_then(point),
             eyes,
+            to_chest,
         );
-        let (Some(shoulder), Some(elbow), Some(wrist), Some(eyes)) = joints else {
+        // Without the clip's chest, the offset in it would be the raw model-frame offset, so the
+        // tick's sample is dropped as for a joint that does not resolve.
+        let (Some(shoulder), Some(elbow), Some(wrist), Some(eyes), Some(to_chest)) = joints else {
             state.resolved[hand.index()] = false;
             return None;
         };
@@ -207,13 +208,21 @@ pub(crate) unsafe fn measure(
         };
         state.resolved[hand.index()] = sample.plausible();
         let tracker = &mut state.trackers[hand.index()];
-        tracker.update(sample, dt, shoulder_smoothing_s);
+        tracker.update(sample, dt);
         let arm = tracker.arm().filter(|_| sample.plausible());
         arm.map(|arm| TickArm {
             shoulder_model: sample.shoulder,
             length: arm.length(),
         })
     })
+}
+
+/// The rotation from Rico's model space into the clip's chest frame, which faces square to the line
+/// from the left shoulder joint `left` to the right one `right`, or `None` when either does not
+/// resolve or the line is vertical.
+fn chest_rotation(left: Option<Vec3>, right: Option<Vec3>) -> Option<Quat> {
+    let (left, right) = left.zip(right)?;
+    line_yaw(left, right).map(|yaw| Quat::from_rotation_y(-yaw))
 }
 
 struct State {
@@ -294,7 +303,6 @@ pub(crate) fn seed_test_measurement() {
                 to_chest: Quat::IDENTITY,
             },
             0.0,
-            0.1,
         );
     }
 }

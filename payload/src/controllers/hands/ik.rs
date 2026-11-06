@@ -453,9 +453,8 @@ unsafe fn queue(character: *mut Character, plan: &HandPlan, arms: Option<&ArmCon
     }
     LOCAL_CHARACTER.store(character as *mut Character as usize, Ordering::Relaxed);
 
-    let smoothing = reach::REACH.shoulder_smoothing_s;
     let measured = match unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() } {
-        Some(controller) => unsafe { rig::measure(character, controller, smoothing) },
+        Some(controller) => unsafe { rig::measure(character, controller) },
         None => {
             rig::invalidate();
             [None; 2]

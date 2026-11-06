@@ -59,7 +59,7 @@ fn replacement_failure_expiry_and_view_changes_do_not_reuse_authoritative_old_ar
     state.last = Some(now);
     state.resolved = [true; 2];
     for tracker in &mut state.trackers {
-        tracker.update(sample, 0.0, 0.1);
+        tracker.update(sample, 0.0);
     }
     let original = state.arms(now, Quat::IDENTITY)[0].unwrap();
     let turn = Quat::from_rotation_y(0.7);
@@ -81,10 +81,20 @@ fn replacement_failure_expiry_and_view_changes_do_not_reuse_authoritative_old_ar
     assert!(state.trackers.iter().all(|tracker| tracker.arm().is_none()));
     assert!(state.arms(now, turn).iter().all(Option::is_none));
     for tracker in &mut state.trackers {
-        tracker.update(sample, 0.0, 0.1);
+        tracker.update(sample, 0.0);
     }
     let mut replacement: Skeleton = unsafe { std::mem::zeroed() };
     let replacement_key = key(&mut controller, &mut replacement, &mut havok);
     state.prepare((replacement_key, 2), Quat::IDENTITY);
     assert!(state.trackers.iter().all(|tracker| tracker.arm().is_none()));
+}
+
+#[test]
+fn a_chest_without_both_shoulders_drops_the_sample() {
+    let left = Vec3::new(-0.2, 1.4, 0.0);
+    let right = Vec3::new(0.2, 1.4, 0.0);
+    assert!(chest_rotation(Some(left), None).is_none());
+    assert!(chest_rotation(None, Some(right)).is_none());
+    let square = chest_rotation(Some(left), Some(right)).unwrap();
+    assert!(square.angle_between(Quat::IDENTITY) < 1e-5, "{square}");
 }
