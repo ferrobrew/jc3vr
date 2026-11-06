@@ -51,6 +51,32 @@ impl std::convert::AsMut<hkAabb16> for hkAabb16 {
         self
     }
 }
+#[repr(C, align(8))]
+/// The allocator behind Havok containers declared with `hkContainerHeapAllocator`, such as the
+/// body-id array [`hknpWorld::queryAabb`](crate::physics::hknpWorld::queryAabb) fills. A container grows
+/// its storage from [`s_alloc`](hkContainerHeapAllocator::get_s_alloc) and its owner frees it there with
+/// [`bufFree`](crate::havok::hkMemoryAllocator::bufFree), giving the capacity in bytes, unless the array's flags
+/// say it does not own the storage
+/// ([`HK_ARRAY_DONT_DEALLOCATE_FLAG`](crate::animation::skeleton::HK_ARRAY_DONT_DEALLOCATE_FLAG)).
+pub struct hkContainerHeapAllocator {}
+impl hkContainerHeapAllocator {}
+impl hkContainerHeapAllocator {
+    /// The process-wide allocator object (`hkContainerHeapAllocator::s_alloc`), constructed at
+    /// static initialization; callers pass its address as `this`.
+    pub unsafe fn get_s_alloc() -> &'static mut crate::havok::hkMemoryAllocator {
+        unsafe { &mut *(0x142DAD020 as *mut crate::havok::hkMemoryAllocator) }
+    }
+}
+impl std::convert::AsRef<hkContainerHeapAllocator> for hkContainerHeapAllocator {
+    fn as_ref(&self) -> &hkContainerHeapAllocator {
+        self
+    }
+}
+impl std::convert::AsMut<hkContainerHeapAllocator> for hkContainerHeapAllocator {
+    fn as_mut(&mut self) -> &mut hkContainerHeapAllocator {
+        self
+    }
+}
 #[repr(C, align(16))]
 /// The mapping between Havok space and a world's integer space (`hkIntSpaceUtil`), in which the
 /// broad phase keeps every body's box ([`hknpBody::m_aabb`](crate::physics::hknpBody::m_aabb)). A
@@ -114,6 +140,13 @@ impl hkMemoryAllocator {
             f(self as *mut Self as _, p, num_bytes)
         }
     }
+    /// Frees the buffer `p` of `num_bytes` bytes, as a growable container returns its storage.
+    pub unsafe fn bufFree(&mut self, p: *mut ::std::ffi::c_void, num_bytes: i32) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).bufFree).read();
+            f(self as *mut Self as _, p, num_bytes)
+        }
+    }
 }
 impl std::convert::AsRef<hkMemoryAllocator> for hkMemoryAllocator {
     fn as_ref(&self) -> &hkMemoryAllocator {
@@ -139,10 +172,17 @@ pub struct hkMemoryAllocatorVftable {
         p: *mut ::std::ffi::c_void,
         num_bytes: i32,
     ),
+    _vfunc_3: unsafe extern "system" fn(this: *mut crate::havok::hkMemoryAllocator),
+    /// Frees the buffer `p` of `num_bytes` bytes, as a growable container returns its storage.
+    pub bufFree: unsafe extern "system" fn(
+        this: *mut crate::havok::hkMemoryAllocator,
+        p: *mut ::std::ffi::c_void,
+        num_bytes: i32,
+    ),
 }
 fn _hkMemoryAllocatorVftable_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x18], hkMemoryAllocatorVftable>([0u8; 0x18]);
+        ::std::mem::transmute::<[u8; 0x28], hkMemoryAllocatorVftable>([0u8; 0x28]);
     }
     unreachable!()
 }

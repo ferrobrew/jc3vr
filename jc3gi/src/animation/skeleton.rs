@@ -1,4 +1,11 @@
 #![cfg_attr(any(), rustfmt::skip)]
+/// The bits of an [`HkArray`](crate::animation::skeleton::HkArray)'s [`capacity_and_flags`](crate::animation::skeleton::HkArray::capacity_and_flags), read as
+/// unsigned, that hold the capacity.
+pub const HK_ARRAY_CAPACITY_MASK: u32 = 1073741823;
+/// The [`HkArray::capacity_and_flags`](crate::animation::skeleton::HkArray::capacity_and_flags) flag of an array that does not own its storage, such as an
+/// empty array or one over a caller's buffer. Growing past the capacity moves the elements to new
+/// storage the array owns and clears the flag; an owner frees only storage whose flag is clear.
+pub const HK_ARRAY_DONT_DEALLOCATE_FLAG: u32 = 2147483648;
 #[repr(C, align(8))]
 /// A Havok dynamic array (`hkArray<T>`): a data pointer, the element count, and the capacity, whose
 /// top bits carry the array's ownership flags.

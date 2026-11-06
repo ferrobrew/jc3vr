@@ -1,5 +1,7 @@
 use std::mem::MaybeUninit;
 
+use crate::controllers::physical_hands::human_hull::{geometry::Bounds, query};
+
 use super::*;
 
 #[test]

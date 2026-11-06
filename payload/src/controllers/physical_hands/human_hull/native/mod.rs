@@ -1,5 +1,6 @@
 //! Retained native shape tables and bounded world-body transactions.
 
+mod restore;
 mod scan;
 
 use std::{
@@ -10,7 +11,7 @@ use std::{
 
 use jc3gi::{
     character::character::Character,
-    havok::{hkAabb, hkReferencedObject, hknpShape},
+    havok::{hkReferencedObject, hknpShape},
     physics::{ProxyState, SharedPfxCharacterSettings, hknpBody, hknpWorld},
 };
 
@@ -19,10 +20,12 @@ use crate::controllers::physical_hands::{
     characters::engine::proxy_body,
     human_hull::{
         ClearanceUnavailableReason,
-        geometry::{self, Bounds, GeometryError},
+        geometry::{self, GeometryError},
         kept::{self, KeptPair},
-        native::scan::{DiscoveryClock, Lookup, Migrated, scan},
-        query::{self, Budget},
+        native::{
+            restore::{Allowance, Plan, RetryBackoff, Surroundings, check_body, plan},
+            scan::{DiscoveryClock, Lookup, Migrated, scan},
+        },
     },
 };
 
@@ -47,6 +50,7 @@ pub(super) struct NativeState {
     /// The adopted pairs by shape, dropped whenever the tables change and rebuilt on next use.
     lookup: Option<Lookup>,
     discovery: DiscoveryClock,
+    retry: RetryBackoff,
 }
 
 // SAFETY: STATE serializes access. Shape mutations run in settings hooks or the native phase;
@@ -71,6 +75,7 @@ impl NativeState {
             kept: None,
             lookup: None,
             discovery: DiscoveryClock::new(),
+            retry: RetryBackoff::new(),
         }
     }
 
@@ -291,6 +296,15 @@ impl NativeState {
         world: &mut hknpWorld,
         bodies: &[u32],
     ) -> Result<(), ClearanceUnavailableReason> {
+        let restore = self.shutdown_requested || !self.enabled;
+        // A disabled hull with a body that stays obstructed waits out its backoff untouched; a
+        // shutdown's attempts are bounded instead.
+        if restore && !self.shutdown_requested && !self.original_active && !self.retry.ready() {
+            return Ok(());
+        }
+        if !restore {
+            self.retry.reset();
+        }
         self.advance_generation();
         self.original_active = false;
         if self.mutation_fault {
@@ -299,7 +313,6 @@ impl NativeState {
         for table in &self.tables {
             unsafe { table.validate_slots()? };
         }
-        let restore = self.shutdown_requested || !self.enabled;
         let lookup = self
             .lookup
             .get_or_insert_with(|| Lookup::build(&self.tables));
@@ -310,9 +323,11 @@ impl NativeState {
         });
         let scan = scan(shapes, lookup);
         self.migrated_bodies = scan.migrated.len();
+        let mut blocked = None;
         let changes = if restore {
-            unsafe { self.check_restore(world, bodies, &scan.migrated)? };
-            scan.migrated
+            let plan = unsafe { self.plan_restore(world, bodies, &scan.migrated) };
+            blocked = plan.blocked;
+            plan.approved
                 .iter()
                 .map(|body| Change {
                     id: body.id,
@@ -337,7 +352,14 @@ impl NativeState {
         };
         unsafe { self.report_player(world) };
         if restore && self.migrated_bodies != 0 {
-            return Err(ClearanceUnavailableReason::MutationRejected);
+            // The tables keep the replacements until every body is restored: a narrowed body that
+            // changes proxy state takes its new shape from them, and must not take an authored one
+            // that no check has cleared. A restored body that changes state is narrowed again and
+            // restored on a later pass.
+            if !self.shutdown_requested {
+                self.retry.record(!changes.is_empty());
+            }
+            return Err(blocked.unwrap_or(ClearanceUnavailableReason::MutationRejected));
         }
         for table in &mut self.tables {
             unsafe { table.set_installed(!restore) };
@@ -404,79 +426,37 @@ impl NativeState {
             .count()
     }
 
-    unsafe fn check_restore(
+    /// Decide which migrated bodies this pass restores ([`restore`]), each against the live
+    /// bodies around it and the live bodies not yet in the broad phase.
+    unsafe fn plan_restore(
         &self,
         world: &hknpWorld,
         bodies: &[u32],
         migrated: &[Migrated],
-    ) -> Result<(), ClearanceUnavailableReason> {
-        let lookup = self
-            .lookup
-            .as_ref()
-            .ok_or(ClearanceUnavailableReason::IncompleteInventory)?;
-        let mut comparisons = 0usize;
-        let mut budget = Budget::new();
-        for pair in migrated {
-            let id = pair.id;
-            let body = unsafe { &*world.m_bodies.add(id as usize) };
-            if body.m_broadPhaseId == hknpBody::INVALID_BROAD_PHASE_ID {
-                return Err(ClearanceUnavailableReason::PendingBody);
-            }
-            let proposed = unsafe { query::world_bounds(pair.original, &body.m_transform)? };
-            for &other_id in bodies {
-                if id == other_id {
-                    continue;
-                }
-                comparisons += 1;
-                if comparisons > MAXIMUM_RESTORE_COMPARISONS {
-                    return Err(ClearanceUnavailableReason::BudgetExhausted);
-                }
-                let other = unsafe { &*world.m_bodies.add(other_id as usize) };
-                if other.m_broadPhaseId == hknpBody::INVALID_BROAD_PHASE_ID {
-                    let shape = NonNull::new(other.m_shape)
-                        .ok_or(ClearanceUnavailableReason::IncompleteInventory)?;
-                    let pending_bounds = unsafe { query::world_bounds(shape, &other.m_transform)? };
-                    if query::intersects(proposed, pending_bounds) {
-                        return Err(ClearanceUnavailableReason::PendingBody);
-                    }
-                    continue;
-                }
-                let (target_shape, target_bounds) =
-                    if let Some(original) = lookup.original_of(other.m_shape) {
-                        (original, unsafe {
-                            query::world_bounds(original, &other.m_transform)?
-                        })
-                    } else {
-                        let mut aabb = hkAabb::default();
-                        unsafe { world.getBodyAabb(other_id, &mut aabb) };
-                        let bounds = Bounds {
-                            min: aabb.m_min.data,
-                            max: aabb.m_max.data,
-                        };
-                        if !query::valid_bounds(bounds) {
-                            return Err(ClearanceUnavailableReason::InvalidBounds);
-                        }
-                        (
-                            NonNull::new(other.m_shape)
-                                .ok_or(ClearanceUnavailableReason::IncompleteInventory)?,
-                            bounds,
-                        )
-                    };
-                if query::intersects(proposed, target_bounds) {
-                    unsafe {
-                        query::check_target(
-                            pair.original,
-                            pair.replacement,
-                            &body.m_transform,
-                            target_shape,
-                            &other.m_transform,
-                            &mut budget,
-                        )?
-                    };
-                }
-            }
-        }
-        Ok(())
+    ) -> Plan {
+        let Some(lookup) = &self.lookup else {
+            return Plan {
+                approved: Vec::new(),
+                blocked: Some(ClearanceUnavailableReason::IncompleteInventory),
+            };
+        };
+        let pending: Vec<u32> = bodies
+            .iter()
+            .copied()
+            .filter(|&id| {
+                let broad_phase = unsafe { (*world.m_bodies.add(id as usize)).m_broadPhaseId };
+                broad_phase == hknpBody::INVALID_BROAD_PHASE_ID
+            })
+            .collect();
+        let surroundings = Surroundings {
+            world,
+            lookup,
+            pending: &pending,
+        };
+        let mut allowance = Allowance::new();
+        plan(migrated, |body, approved| unsafe {
+            check_body(&surroundings, body, approved, &mut allowance)
+        })
     }
 }
 
@@ -712,7 +692,6 @@ const HUMAN_STATES: [ProxyState; 7] = [
     ProxyState::WINGSUITING,
 ];
 const MAXIMUM_BODY_INDEX: u32 = 262_144;
-const MAXIMUM_RESTORE_COMPARISONS: usize = 1_000_000;
 
 #[cfg(test)]
 mod tests;

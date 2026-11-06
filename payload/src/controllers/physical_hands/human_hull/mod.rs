@@ -223,8 +223,8 @@ static ACTIVE_ENTRIES: AtomicUsize = AtomicUsize::new(0);
 
 /// How many shutdown attempts wait for the native phase to restore every narrowed body before the
 /// eject leaves the hulls in place. The lifecycle retries every few frames, so this is a second or
-/// two: restoration needs one native pass that finds the whole world clear, which a crowded scene
-/// may never offer, and an idle subsystem must not hold the eject indefinitely.
+/// two: each body restores once its own surroundings are clear, which a body pressed against a
+/// wall may never be, and an idle subsystem must not hold the eject indefinitely.
 const RESTORE_ATTEMPTS: u32 = 8;
 
 /// How a shutdown attempt settles the narrowed hulls.

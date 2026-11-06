@@ -2210,6 +2210,44 @@ impl std::convert::AsMut<WaterProxyVftable> for WaterProxyVftable {
         self
     }
 }
+#[repr(C, align(16))]
+/// A box query against a world's bodies (`hknpAabbQuery`), as
+/// [`hknpWorld::queryAabb`](crate::physics::hknpWorld::queryAabb) takes it. The engine's callers zero it, with the material
+/// `0xFFFF`, and fill in the box.
+pub struct hknpAabbQuery {
+    /// The collision filter that decides which layers and bodies the query sees
+    /// (`hknpCollisionFilter*`), or null for all of them.
+    pub m_filter: *mut ::std::ffi::c_void,
+    /// The query's material (`hknpQueryFilterData::m_materialId`), for the filter.
+    pub m_materialId: u16,
+    _field_a: [u8; 2],
+    /// The query's collision filter info, for the filter.
+    pub m_collisionFilterInfo: u32,
+    /// The query's user data, for the filter.
+    pub m_userData: u64,
+    /// The shape level of detail the query asks for.
+    pub m_levelOfDetail: u8,
+    _field_19: [u8; 7],
+    /// The box, Havok space.
+    pub m_aabb: crate::havok::hkAabb,
+}
+fn _hknpAabbQuery_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x40], hknpAabbQuery>([0u8; 0x40]);
+    }
+    unreachable!()
+}
+impl hknpAabbQuery {}
+impl std::convert::AsRef<hknpAabbQuery> for hknpAabbQuery {
+    fn as_ref(&self) -> &hknpAabbQuery {
+        self
+    }
+}
+impl std::convert::AsMut<hknpAabbQuery> for hknpAabbQuery {
+    fn as_mut(&mut self) -> &mut hknpAabbQuery {
+        self
+    }
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// `hknpWorld::AdditionMode`: whether [`hknpWorld::createDynamicBody`](crate::physics::hknpWorld::createDynamicBody) adds the new body to the
@@ -2911,6 +2949,29 @@ impl hknpWorld {
                 shape: *const ::std::ffi::c_void,
             ) = ::std::mem::transmute(Self::setBodyShape_ADDRESS);
             f(self as *mut Self as _, body_id, shape)
+        }
+    }
+    pub const queryAabb_ADDRESS: usize = 0x1415012D0;
+    /// Appends to `hits` the id of every body in the broad phase whose box overlaps the query's
+    /// box ([`hknpAabbQuery::m_aabb`](crate::physics::hknpAabbQuery::m_aabb), Havok space), on every broad-phase layer. The query box is
+    /// quantized outwards into [`m_intSpaceUtil`](crate::physics::hknpWorld::m_intSpaceUtil) and compared with each
+    /// body's [`hknpBody::m_aabb`](crate::physics::hknpBody::m_aabb), so the hits can include bodies whose real boxes only come close;
+    /// a body is never tested against its shape. A query with a [`m_filter`](crate::physics::hknpAabbQuery::m_filter)
+    /// asks it per layer and per body; a null filter keeps every hit. A body not in the broad phase
+    /// is never a hit. `hits` grows from [`hkContainerHeapAllocator::s_alloc`](crate::havok::hkContainerHeapAllocator::get_s_alloc), and the caller frees
+    /// what it grew.
+    pub unsafe fn queryAabb(
+        &self,
+        query: *const crate::physics::hknpAabbQuery,
+        hits: *mut crate::animation::skeleton::HkArray<u32>,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                query: *const crate::physics::hknpAabbQuery,
+                hits: *mut crate::animation::skeleton::HkArray<u32>,
+            ) = ::std::mem::transmute(Self::queryAabb_ADDRESS);
+            f(self as *const Self as _, query, hits)
         }
     }
     pub const getBodyAabb_ADDRESS: usize = 0x1414CC220;
