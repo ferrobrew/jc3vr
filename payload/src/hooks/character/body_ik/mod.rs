@@ -417,9 +417,9 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         UNMAPPED_LOGGED.store(false, Ordering::Relaxed);
         let eff = effector as usize;
 
-        // The head world target is the head bone's place under the headpose: the eye point (already
-        // anchored to this frame's animated head plus the roomscale offset) carried back onto the
-        // neck pivot, so a look down turns the head on the neck instead of sinking it below the
+        // The head world target is the head bone's place under the headpose: the published head
+        // (already anchored to this frame's animated head plus the roomscale offset; the camera's
+        // eyes hang ahead of it) carried back onto the neck pivot, so a look down turns the head on the neck instead of sinking it below the
         // shoulders. It is transformed into character-model space — the space
         // AddEffectorTargetPosition expects (docs/engine/character/humanik.md) — plus the optional
         // tuning offset.

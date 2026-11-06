@@ -1,13 +1,15 @@
 //! The player's head as the torso reads it. Pure, but for [`read`], which reads the headpose and
 //! the steady view's anchor.
 //!
-//! The headpose is the eye point: the animated head anchor plus the HMD's travel from where it was
-//! at the recenter. A head that looks down turns the eyes about the neck, so the eye point drops and
-//! comes forward although nothing below the neck moved. The torso swings toward the neck pivot
-//! instead ([`neck_pivot_offset`]): the eye point less the HMD's rotation of the arm from the pivot
-//! to the eyes, which is where the head bone is. The body IK's head target is the same point
-//! ([`head_bone_world`]), so the head bone stays on the neck as the player looks down while the
-//! camera stays at the eye point.
+//! The published head is the animated head anchor plus the HMD's travel from where it was at the
+//! recenter; the camera renders from an eye point hung ahead of it
+//! ([`crate::hooks::camera::eye_point`]), which the cockpit composes the hands from. A head that
+//! looks down turns the eyes about the neck, so the HMD's travel, and with it the published head,
+//! drops and comes forward although nothing below the neck moved. The torso swings toward the neck
+//! pivot instead ([`neck_pivot_offset`]): the published head less the HMD's rotation of the arm
+//! from the pivot to the eyes, which is where the head bone is. The body IK's head target is the
+//! same point ([`head_bone_world`]), so the head bone stays on the neck as the player looks down
+//! while the camera follows the eyes.
 
 use body_rig::body::EYES_TO_NECK;
 use glam::{Mat4, Quat, Vec3};
@@ -31,16 +33,16 @@ pub(super) fn read(world: &Mat4, scale: f32) -> Vec3 {
 }
 
 /// Where the head bone goes in the world, for the character at the rotation `character_rotation`
-/// and the VR world scale `scale`: the eye point carried back onto the neck pivot by
+/// and the VR world scale `scale`: the published head carried back onto the neck pivot by
 /// [`neck_pivot_offset`]. A look down turns the eyes about the pivot, so aiming the head bone at
-/// the eye point would drop it below the shoulders; the pivot does not move, and the head bone's
+/// the published head would drop it below the shoulders; the pivot does not move, and the head bone's
 /// orientation, which follows the HMD, is what puts the drawn eyes back in front of it.
 pub fn head_bone_world(character_rotation: Quat, scale: f32) -> Vec3 {
     let eye = character_rotation.inverse() * query().position;
     character_rotation * head_bone_target(eye, body_relative_rotation(), scale)
 }
 
-/// [`head_bone_world`] in the character's body axes: the head bone's place for the eye point
+/// [`head_bone_world`] in the character's body axes: the head bone's place for the published head
 /// `eye`, with the head turned `head_rotation` against the body, at the world scale `scale`.
 pub fn head_bone_target(eye: Vec3, head_rotation: Quat, scale: f32) -> Vec3 {
     eye + neck_pivot_offset(head_rotation, scale)
@@ -48,7 +50,7 @@ pub fn head_bone_target(eye: Vec3, head_rotation: Quat, scale: f32) -> Vec3 {
 
 /// The neck pivot's place relative to the eye point, model space, for a head turned
 /// `head_rotation` from neutral against the body, at the world scale `scale`: what to add to the
-/// eye-derived head to have the pivot. Zero for a neutral head, since the anchor already is the
+/// published head to have the pivot. Zero for a neutral head, since the anchor already is the
 /// pivot then.
 pub fn neck_pivot_offset(head_rotation: Quat, scale: f32) -> Vec3 {
     let scale = if scale.is_finite() && scale > 0.0 {

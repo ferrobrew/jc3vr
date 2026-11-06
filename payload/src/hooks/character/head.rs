@@ -154,8 +154,8 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             joint.m_Orientation.data = [composed.x, composed.y, composed.z, composed.w];
 
             // The roomscale positional offset, brought into the body frame — but only when HumanIK
-            // is not already placing the head: both paths aim at the same place, the eye point
-            // carried back onto the neck pivot, so applying both displaces it twice. "Placing"
+            // is not already placing the head: both paths aim at the same place, the published
+            // head carried back onto the neck pivot, so applying both displaces it twice. "Placing"
             // requires an effective reach, not just a queued target — with the reach dialled to
             // zero the solve moves nothing and this add must take over, or roomscale placement
             // silently dies.
