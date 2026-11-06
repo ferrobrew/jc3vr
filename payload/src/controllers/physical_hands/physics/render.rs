@@ -9,7 +9,10 @@ use std::time::Instant;
 use body_rig::rotation::shortest;
 use glam::{Quat, Vec3};
 
-use crate::controllers::{frame::Pose, hands::CockpitHand};
+use crate::controllers::{
+    frame::{Hand, Pose},
+    hands::CockpitHand,
+};
 
 /// The offset that draws a hand where its body is.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -66,11 +69,48 @@ impl RenderOffset {
     }
 
     /// Carry the hand's poses about the palm centre, which sits in the wrist frame.
+    #[cfg(test)]
     pub fn apply(&self, hand: &mut CockpitHand, palm_offset: Vec3) {
-        let pivot = hand.wrist.position + hand.wrist.orientation * palm_offset;
+        self.apply_about(hand, palm_centre(hand, palm_offset));
+    }
+
+    /// Carry the hand's poses about `pivot`: another hand's palm centre, for a hand that rides
+    /// that hand's correction.
+    pub fn apply_about(&self, hand: &mut CockpitHand, pivot: Vec3) {
         for pose in [&mut hand.wrist, &mut hand.grip, &mut hand.aim] {
             pose.position = pivot + self.turn * (pose.position - pivot) + self.shift;
             pose.orientation = (self.turn * pose.orientation).normalize();
+        }
+    }
+}
+
+/// The palm centre of `hand`, at `palm_offset` in its wrist frame.
+pub fn palm_centre(hand: &CockpitHand, palm_offset: Vec3) -> Vec3 {
+    hand.wrist.position + hand.wrist.orientation * palm_offset
+}
+
+/// Apply each hand's offset to it, but for the hand bracing the other's gun (`brace`, the holding
+/// hand of an engaged two-handed hold), which rides the holding hand's offset about the holding
+/// palm: the hold placed it on the gun, and the gun follows the holding hand's correction, so it
+/// stays on the gun as drawn whatever its own body met.
+pub fn apply_offsets(
+    cockpit: &mut [Option<CockpitHand>; 2],
+    offsets: [Option<RenderOffset>; 2],
+    palm_offset: Vec3,
+    brace: Option<Hand>,
+) {
+    let pivots = cockpit.map(|hand| hand.map(|hand| palm_centre(&hand, palm_offset)));
+    for hand in Hand::BOTH {
+        let source = match brace {
+            Some(holder) if hand == holder.other() => holder,
+            _ => hand,
+        };
+        if let (Some(posed), Some(offset), Some(pivot)) = (
+            cockpit[hand.index()].as_mut(),
+            offsets[source.index()],
+            pivots[source.index()],
+        ) {
+            offset.apply_about(posed, pivot);
         }
     }
 }
@@ -225,5 +265,51 @@ mod tests {
         assert_eq!(timeline.at(now + Duration::from_millis(20)), Some(latest));
         timeline.reset();
         assert!(timeline.at(now).is_none());
+    }
+
+    #[test]
+    fn the_bracing_hand_rides_the_holding_hands_offset_about_the_holding_palm() {
+        let at = |x: f32| {
+            let pose = pose(Vec3::new(x, 0.0, 0.0), Quat::IDENTITY);
+            CockpitHand {
+                wrist: pose,
+                grip: pose,
+                aim: pose,
+            }
+        };
+        let holder = Hand::Right;
+        let mut hands = [Some(at(-0.3)), Some(at(0.0))];
+        let shift = RenderOffset {
+            shift: Vec3::new(0.0, 0.05, 0.0),
+            turn: Quat::IDENTITY,
+        };
+        // The bracing hand's own body was held 10 cm off the gun; it is not drawn there.
+        let held_off = RenderOffset {
+            shift: Vec3::new(0.0, 0.0, 0.1),
+            turn: Quat::IDENTITY,
+        };
+        let mut offsets = [Some(held_off), Some(shift)];
+        apply_offsets(&mut hands, offsets, Vec3::ZERO, Some(holder));
+        assert_eq!(hands[0].unwrap().grip.position, Vec3::new(-0.3, 0.05, 0.0));
+        assert_eq!(hands[1].unwrap().grip.position, Vec3::new(0.0, 0.05, 0.0));
+
+        // A turn of the holding hand swings the bracing hand about the holding palm.
+        let mut hands = [Some(at(-0.3)), Some(at(0.0))];
+        offsets[holder.index()] = Some(RenderOffset {
+            shift: Vec3::ZERO,
+            turn: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+        });
+        apply_offsets(&mut hands, offsets, Vec3::ZERO, Some(holder));
+        assert!(
+            (hands[0].unwrap().grip.position - Vec3::new(0.0, 0.0, 0.3)).length() < 1e-5,
+            "{:?}",
+            hands[0]
+        );
+
+        // Without a hold each hand takes its own.
+        let mut hands = [Some(at(-0.3)), Some(at(0.0))];
+        apply_offsets(&mut hands, [Some(held_off), None], Vec3::ZERO, None);
+        assert_eq!(hands[0].unwrap().grip.position, Vec3::new(-0.3, 0.0, 0.1));
+        assert_eq!(hands[1].unwrap().grip.position, Vec3::ZERO);
     }
 }

@@ -23,7 +23,7 @@ use crate::{
                 drive::rig_jumped,
                 guns,
                 lifecycle::HANDS,
-                render::RenderOffset,
+                render::{RenderOffset, apply_offsets},
                 state::{
                     CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
                     RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
@@ -33,6 +33,7 @@ use crate::{
             state::VELOCITY_SMOOTHING_S,
         },
         roomscale::teleport,
+        weapons::foregrip,
     },
     headpose, hooks,
     vr::recenter_count,
@@ -206,13 +207,17 @@ pub(crate) fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
         }
         shared.cockpit_offsets
     };
-    for (hand, offset) in cockpit.iter_mut().zip(offsets) {
-        if let Some(hand) = hand.as_mut()
-            && !offset.is_none()
-        {
-            offset.apply(hand, palm_offset);
-        }
-    }
+    apply_offsets(
+        cockpit,
+        offsets.map(|offset| (!offset.is_none()).then_some(offset)),
+        palm_offset,
+        braced_by_hold(),
+    );
+}
+
+/// The holding hand of the engaged two-handed hold, whose bracing hand rides its offset.
+fn braced_by_hold() -> Option<Hand> {
+    foregrip::two_hand_grip().map(|grip| grip.holder)
 }
 
 /// Freeze post-step presentation offsets against the published palms, in their transport frame.
@@ -292,11 +297,7 @@ pub(crate) fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offse
         apply(cockpit, palm_offset);
         return;
     }
-    for (hand, offset) in cockpit.iter_mut().zip(offsets) {
-        if let (Some(hand), Some(offset)) = (hand.as_mut(), offset) {
-            offset.apply(hand, palm_offset);
-        }
-    }
+    apply_offsets(cockpit, offsets, palm_offset, braced_by_hold());
 }
 
 static RENDER_OFFSETS: Mutex<Option<(Instant, [Option<RenderOffset>; 2])>> = Mutex::new(None);
