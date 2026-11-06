@@ -163,9 +163,9 @@ pub unsafe fn cast_on_with<R>(
     }
     let physics = unsafe { PhysicsSystem::get() }.ok_or(RaycastError::NoPhysicsSystem)?;
 
-    // Both are plain stack objects in the engine too: nothing they hold is heap-owned, so neither
-    // needs a destructor call. Every field is a pointer, an integer, or a float, so all-zero is a
-    // valid value to construct over.
+    // A plain stack object in the engine too: nothing it holds is heap-owned, so it needs no
+    // destructor call. Every field is a pointer, an integer, or a float, so all-zero is a valid
+    // value to construct over.
     let mut filter = unsafe { MaybeUninit::<PlayerAimRaycastFilter>::zeroed().assume_init() };
     unsafe {
         filter.ConstructPlayerAim(
@@ -182,12 +182,7 @@ pub unsafe fn cast_on_with<R>(
         }
     }
 
-    let mut info = unsafe { MaybeUninit::<CastRayInfo>::zeroed().assume_init() };
-    info.base.__vftable = CastRayInfoBase::VFTABLE;
-    info.base.m_HitObjectId = 0;
-    unsafe { info.base.Reset() };
-    info.base.__vftable = CastRayInfo::VFTABLE;
-    info.m_GameObject = ptr::null_mut();
+    let mut info = unsafe { hit_info() };
 
     let query = Ray3 {
         Origin: vector(ray.origin),
@@ -237,17 +232,13 @@ pub unsafe fn cast_terrain(ray: &Ray, max_distance: f32) -> Result<Option<Vec3>,
         return Err(RaycastError::InvalidDistance);
     }
     let physics = unsafe { PhysicsSystem::get() }.ok_or(RaycastError::NoPhysicsSystem)?;
-    // A plain stack object in the engine too, as in `cast_on_with`.
-    let mut info = unsafe { MaybeUninit::<CastRayInfoBase>::zeroed().assume_init() };
-    info.__vftable = CastRayInfoBase::VFTABLE;
-    info.m_HitObjectId = 0;
-    unsafe { info.Reset() };
+    let mut info = unsafe { hit_info() };
     let query = Ray3 {
         Origin: vector(ray.origin),
         Direction: vector(ray.direction),
     };
-    let hit = unsafe { physics.CastRayTerrain(&query, 0.0, max_distance, &mut info) };
-    let fraction = info.m_HitDistance;
+    let hit = unsafe { physics.CastRayTerrain(&query, 0.0, max_distance, &mut info.base) };
+    let fraction = info.base.m_HitDistance;
     if !hit || !(0.0..1.0).contains(&fraction) {
         return Ok(None);
     }
@@ -277,6 +268,26 @@ pub unsafe fn line_of_sight(
         Ok(None) => true,
         Err(_) => false,
     }
+}
+
+/// A hit info constructed as the engine's callers construct one: the base, then the derived virtual
+/// table. The base's virtual table is abstract, and the query calls into it on a miss, so a cast
+/// must never be handed the base alone.
+///
+/// # Safety
+///
+/// The game's image must be loaded: the virtual tables and [`CastRayInfoBase::Reset`] are its.
+unsafe fn hit_info() -> CastRayInfo {
+    // A plain stack object in the engine too: nothing it holds is heap-owned, so it needs no
+    // destructor call. Every field is a pointer, an integer, or a float, so all-zero is a valid
+    // value to construct over.
+    let mut info = unsafe { MaybeUninit::<CastRayInfo>::zeroed().assume_init() };
+    info.base.__vftable = CastRayInfoBase::VFTABLE;
+    info.base.m_HitObjectId = 0;
+    unsafe { info.base.Reset() };
+    info.base.__vftable = CastRayInfo::VFTABLE;
+    info.m_GameObject = ptr::null_mut();
+    info
 }
 
 fn vector(v: Vec3) -> Vector3 {
