@@ -151,9 +151,12 @@ pub struct SnatchTuning {
     pub coast_s: f32,
     pub slack_min_m: f32,
     pub slack_max_m: f32,
-    /// How near a catching hand the target's centre must pass for the hand to catch it, metres:
+    /// How near a hand's palm the target's centre must pass for the hand to catch it, metres:
     /// the hand's own reach around the target, with no pull toward the hand.
-    pub catch_radius_m: f32,
+    pub catch_zone_m: f32,
+    /// How long after the target was last within a hand's catch zone the hand's grip may still
+    /// close on it and catch it, seconds.
+    pub catch_grace_s: f32,
     /// How long a slack target may fly before it counts as missed, seconds.
     pub max_slack_s: f32,
     /// The fastest the line's pull at the hook may spin the target, radians per second.
@@ -194,7 +197,8 @@ pub const SNATCH: SnatchTuning = SnatchTuning {
     coast_s: 0.07,
     slack_min_m: 0.4,
     slack_max_m: 1.0,
-    catch_radius_m: 0.25,
+    catch_zone_m: 0.4,
+    catch_grace_s: 0.15,
     max_slack_s: 0.5,
     max_spin_rps: 25.0,
     stall_distance_m: 0.1,

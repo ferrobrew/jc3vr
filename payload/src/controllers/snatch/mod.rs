@@ -18,13 +18,14 @@
 //!    ([`ArmedLine`], [`pull`]): a gun on a
 //!    character is first let go of, with the steal's drop and stagger; then the game's hook flies
 //!    to the target as a ghost wire through the custom fire ([`engine::fire`]). Once it bites a
-//!    weapon or an object, the line yanks the body toward the hand through the hold solve, pulling
+//!    weapon or an object, the line yanks the body toward its receiver, the free, empty hand
+//!    nearest the target's incoming path ([`catch::receiver`]), through the hold solve, pulling
 //!    at the hook's point so the body spins, then over the final approach slows and pulls at the
 //!    body's centre, and a couple of ticks out goes slack: the body flies on by its momentum, and
-//!    when its path passes through a free hand whose grip is held, the grapple hand or the other,
-//!    that hand has caught it ([`rules::verdict`]), the wire is ended, and the weapon is taken into
-//!    that hand through the loadout table, as a pickup is, or the object handed to the hand's
-//!    ordinary hold. While the line is out the other free hand's grip is held for the catch: it
+//!    when a hand's grip closes on it within the hand's catch zone, or a moment after it passed
+//!    ([`catch::CatchWatch`]), that hand has caught it, the wire is ended, and the weapon is taken
+//!    into that hand through the loadout table, as a pickup is, or the object handed to the hand's
+//!    ordinary hold. The grapple hand, whose grip holds the line, catches only as the receiver. While the line is out the other free hand's grip is held for the catch: it
 //!    takes nothing else and drives no game action ([`reserved_hands`]). A body no hand is where it
 //!    arrives flies past or hits the player and drops. Once the hook holds a
 //!    door, the door comes open and swings outward, and the wire is ended. Opening the grip at any
@@ -48,6 +49,7 @@
 
 mod arrival;
 mod brace;
+pub mod catch;
 pub mod config;
 mod engine;
 mod hooks;
@@ -512,10 +514,10 @@ impl Phase {
     }
 }
 
-/// The hands that may catch the snatch's target this tick, by [`Hand::index`]: the grapple hand
-/// `hand`, and the other hand when it is free and empty, each with its grip held and closed on
-/// nothing or on the snatch.
-fn catchers(hand: Hand, input: &FinishInput) -> [bool; 2] {
+/// The hands that may receive and catch the snatch's target this tick, by [`Hand::index`]: each
+/// free, empty hand, with whether its grip is closed on nothing or, for the grapple hand `hand`, on
+/// the snatch. Whether a grip is closed does not decide which hand the line steers to.
+fn catch_hands(hand: Hand, input: &FinishInput) -> [Option<bool>; 2] {
     let free = physical_hands::free_hands();
     let props = physical_hands::held_props();
     Hand::BOTH.map(|h| {
@@ -525,7 +527,7 @@ fn catchers(hand: Hand, input: &FinishInput) -> [bool; 2] {
             GripLatch::Grab(GrabVolume::Snatch(_)) => h == hand,
             GripLatch::Open | GripLatch::Grab(_) | GripLatch::Default => false,
         };
-        input.grips[i].held() && latched && free[i] && props[i].is_none()
+        (free[i] && props[i].is_none()).then(|| input.grips[i].held() && latched)
     })
 }
 
@@ -792,8 +794,8 @@ impl State {
                             flight.resume();
                             tracing::info!(target: "controllers", "snatch: released B; pulling to the hand");
                         }
-                        let catchers = catchers(hand, input);
-                        unsafe { pull::pull(hand, &target, wire, &mut flight, catchers, input) }
+                        let hands = catch_hands(hand, input);
+                        unsafe { pull::pull(hand, &target, wire, &mut flight, hands, input) }
                     }
                     sling::AttachedMode::Cancel => Err(Refusal::Gone),
                 };

@@ -34,6 +34,7 @@ use crate::{
             FinishInput, Refusal, SNATCH,
             arrival::{self, Landing, LandingInput},
             brace::{self, Brace, BraceInput, BraceReach},
+            catch::{self, CatchHand, CatchTuning, CatchWatch},
             engine, juice, landing,
             rules::{self, FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
             sling::{LineTuning, Sling, SlingStep},
@@ -54,6 +55,7 @@ use crate::{
         },
     },
     grapple::rope::{self, GRAVITY_MPS2, RopeFault},
+    hooks::camera,
 };
 
 /// What the snatch fired at, held alive from the fire to the end.
@@ -339,6 +341,9 @@ pub(super) struct Flight {
     /// How long the line has been slack, seconds, or `None` while it pulls.
     slack_s: Option<f32>,
     stall: StallWatch,
+    /// The hand the line steers toward, kept across ticks for the hysteresis.
+    receiver: Option<Hand>,
+    catch: CatchWatch,
 }
 
 impl Flight {
@@ -352,6 +357,7 @@ impl Flight {
         self.last_centre = None;
         self.slack_s = None;
         self.stall = StallWatch::default();
+        self.catch = CatchWatch::default();
     }
 }
 
@@ -398,13 +404,17 @@ pub(super) unsafe fn bite(
         landing,
         slack_s: None,
         stall: StallWatch::default(),
+        receiver: None,
+        catch: CatchWatch::default(),
     })
 }
 
-/// One tick of the flight: the line yanks the target toward the line's hand `hand`, slowing over
-/// the final approach, then goes slack a couple of ticks out, and a hand of `catchers` (by
-/// [`Hand::index`], the hands free with their grips held) catches the target if the target passes
-/// through it.
+/// One tick of the flight: the line yanks the target toward its receiver, the free, empty hand of
+/// `hands` nearest the target's incoming path ([`catch::receiver`]), slowing over the final
+/// approach, then goes slack a couple of ticks out, and a hand catches the target when its grip
+/// closes on it within its catch zone or the zone's grace ([`CatchWatch`]). `hands` gives, by
+/// [`Hand::index`], each free, empty hand's grip, closed or not. The grapple hand `hand` holds its
+/// grip throughout, so it catches only as the receiver.
 ///
 /// The line's pull goes through the hold solve, the physics every hand's hold on a body goes
 /// through, with the line's strength and no twist of its own: the target keeps its momentum and its
@@ -420,7 +430,7 @@ pub(super) unsafe fn pull(
     grabbed: &Grabbed,
     wire: NonZeroUsize,
     flight: &mut Flight,
-    catchers: [bool; 2],
+    hands: [Option<bool>; 2],
     input: &FinishInput,
 ) -> Result<Step, Refusal> {
     let (reading, line_m) = unsafe { engine::read_wire(wire) };
@@ -432,11 +442,30 @@ pub(super) unsafe fn pull(
     let palms = ik::tick_records()
         .current
         .map(|t| t.map(|t| t.wrist.position));
-    let Some(palm) = palms[hand.index()] else {
+    if palms[hand.index()].is_none() {
         // An untracked hand keeps the line where it is.
         return Ok(Step::Flying);
-    };
+    }
     let centre = state.pose.centre;
+    // Once the line is slack the target flies on by itself, so its receiver stays the hand it was
+    // steered to.
+    if !flight.slack() {
+        let offered = Hand::BOTH.map(|h| palms[h.index()].filter(|_| hands[h.index()].is_some()));
+        flight.receiver = catch::receiver(
+            flight.receiver,
+            offered,
+            centre,
+            camera::eye_point(),
+            SNATCH.landing.hysteresis_m,
+        );
+    }
+    let receiver = flight
+        .receiver
+        .filter(|r| palms[r.index()].is_some())
+        .unwrap_or(hand);
+    let Some(palm) = palms[receiver.index()] else {
+        return Ok(Step::Flying);
+    };
     let stalled = flight.stall.step(
         input.dt,
         centre,
@@ -452,27 +481,43 @@ pub(super) unsafe fn pull(
             body: state.pose,
             velocity: state.velocities.linear,
             angular: state.velocities.angular,
-            hand,
+            receiver,
             palm,
-            catchers,
             dt: input.dt,
         })
     });
     let at = landed.map_or(centre, |l| l.grip);
+    let from = flight.last_centre.unwrap_or(at);
+    flight.last_centre = Some(at);
+    let catchers = Hand::BOTH.map(|h| {
+        let gripping = hands[h.index()].filter(|_| h != hand || h == receiver)?;
+        let target = landed
+            .and_then(|l| l.targets[h.index()])
+            .map(|t| t.position)
+            .or(palms[h.index()])?;
+        Some(CatchHand {
+            palm: target,
+            gripping,
+        })
+    });
+    let caught = flight.catch.step(
+        input.dt,
+        from,
+        at,
+        catchers,
+        &CatchTuning {
+            zone_m: SNATCH.catch_zone_m,
+            grace_s: SNATCH.catch_grace_s,
+        },
+    );
     let sample = FlightSample {
-        from: flight.last_centre.unwrap_or(at),
         to: at,
         velocity: state.velocities.linear,
         hand: palm,
-        catchers: Hand::BOTH.map(|h| {
-            let target = landed
-                .and_then(|l| l.targets[h.index()])
-                .map(|t| t.position);
-            target.or(palms[h.index()]).filter(|_| catchers[h.index()])
-        }),
+        catchers: catchers.map(|c| c.map(|c| c.palm)),
+        catch: caught,
         slack_s: flight.slack_s,
     };
-    flight.last_centre = Some(at);
     let limits = FlightLimits {
         slack_radius_m: rules::slack_radius(
             state.velocities.linear.length(),
@@ -480,7 +525,6 @@ pub(super) unsafe fn pull(
             SNATCH.slack_min_m,
             SNATCH.slack_max_m,
         ),
-        catch_radius_m: SNATCH.catch_radius_m,
         line_m: line_m.unwrap_or(SNATCH.range_m),
         max_slack_s: SNATCH.max_slack_s,
     };

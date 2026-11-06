@@ -27,7 +27,7 @@ use crate::controllers::{
     physical_hands::rigid::BodyPose,
     snatch::{
         SNATCH,
-        landing::{self, HandOffer, Turning},
+        landing::{self, Turning},
     },
     weapons::{engine::gun_pose, hold::act},
 };
@@ -37,8 +37,6 @@ use crate::controllers::{
 pub(super) struct Landing {
     /// The gun's body frame (its centre of mass and its rotation) in the gun's own frame.
     body_in_gun: Pose,
-    /// The hand the drive steers toward, kept across ticks for the hysteresis.
-    catcher: Option<Hand>,
     /// How far from the line's hand the drive started, metres.
     start_m: Option<f32>,
     /// Ticks since the drive started.
@@ -50,8 +48,8 @@ pub(super) struct Landing {
 pub(super) struct LandingTick {
     /// The gun's grip point now.
     pub grip: Vec3,
-    /// Where each catching hand will hold the gun, by [`Hand::index`]: the gun's own pose on that
-    /// hand's canonical grip.
+    /// Where each hand would hold the gun, by [`Hand::index`]: the gun's own pose on that hand's
+    /// canonical grip.
     pub targets: [Option<Pose>; 2],
     /// The body's angular velocity the drive asks for, when it drives.
     pub angular: Option<Vec3>,
@@ -65,11 +63,9 @@ pub(super) struct LandingInput {
     pub body: BodyPose,
     pub velocity: Vec3,
     pub angular: Vec3,
-    /// The line's hand and its palm.
-    pub hand: Hand,
+    /// The hand the line steers toward, and its palm.
+    pub receiver: Hand,
     pub palm: Vec3,
-    /// The hands that may catch, by [`Hand::index`].
-    pub catchers: [bool; 2],
     pub dt: f32,
 }
 
@@ -90,7 +86,6 @@ impl Landing {
         );
         (body_in_gun.position.is_finite() && body_in_gun.orientation.is_finite()).then_some(Self {
             body_in_gun,
-            catcher: None,
             start_m: None,
             ticks: 0,
         })
@@ -117,7 +112,7 @@ impl Landing {
             let previous = records.previous[hand.index()].map(|t| t.wrist);
             Some((current, previous, canonical))
         });
-        let catch_reach = SNATCH.catch_radius_m;
+        let catch_reach = SNATCH.catch_zone_m;
         let targets = Hand::BOTH.map(|hand| {
             let (current, previous, canonical) = wrists[hand.index()]?;
             let now = hand_pose::mul(current, canonical);
@@ -135,14 +130,6 @@ impl Landing {
             };
             Some((hand_pose::mul(wrist, canonical), angular))
         });
-        let offers = Hand::BOTH.map(|hand| {
-            let (target, _) = targets[hand.index()].filter(|_| input.catchers[hand.index()])?;
-            Some(HandOffer {
-                miss_m: landing::miss_distance(grip, input.velocity, target.position),
-            })
-        });
-        let catcher = landing::catching_hand(self.catcher, offers, tuning.hysteresis_m, input.hand);
-        self.catcher = Some(catcher);
         let distance = input.body.centre.distance(input.palm);
         let mut tick = LandingTick {
             grip,
@@ -156,7 +143,7 @@ impl Landing {
         let start = *self.start_m.get_or_insert(distance);
         self.ticks = self.ticks.saturating_add(1);
         let weight = landing::drive_weight(start, distance, self.ticks, tuning);
-        let Some((target, hand_angular)) = targets[catcher.index()] else {
+        let Some((target, hand_angular)) = targets[input.receiver.index()] else {
             return tick;
         };
         let target_body = hand_pose::mul(target, self.body_in_gun);

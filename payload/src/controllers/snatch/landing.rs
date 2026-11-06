@@ -8,13 +8,11 @@
 //! and an angular acceleration cap. The position is
 //! corrected only while the line pulls, and only sideways to the line by a capped shift of its aim
 //! ([`aim_shift`]), so the gun's grip rather than its centre heads for the palm, and a hand that
-//! moves away after the line goes slack still misses. The catching hand is the free hand the path passes nearer, with hysteresis
-//! ([`catching_hand`]).
+//! moves away after the line goes slack still misses. The hand it steers toward is the line's
+//! receiver ([`receiver`](crate::controllers::snatch::catch::receiver)).
 
 use body_rig::rotation::{angular_velocity, rotation_error};
 use glam::{Quat, Vec3};
-
-use crate::controllers::frame::Hand;
 
 /// The landing's tuning.
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -33,7 +31,8 @@ pub struct LandingTuning {
     pub max_angular_accel: f32,
     /// The farthest the line's aim moves sideways off the palm, metres.
     pub lateral_window_m: f32,
-    /// How much nearer the other hand must be to the path to take the catch over, metres.
+    /// How much nearer the target's incoming path the other hand must be to become the line's
+    /// receiver, metres.
     pub hysteresis_m: f32,
     /// How far ahead the hand's pose is extrapolated by its motion, at most, seconds.
     pub max_extrapolate_s: f32,
@@ -43,46 +42,6 @@ pub struct LandingTuning {
     pub settled_m: f32,
     /// The residual angle at which the arrival takes its full slide, radians.
     pub full_slide_rad: f32,
-}
-
-/// A catching hand's distance from the target's path, for the choice of hand.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct HandOffer {
-    /// How far the hand's grip point is from the target's path, metres.
-    pub miss_m: f32,
-}
-
-/// The hand that catches: of the hands offered (by [`Hand::index`]), the one the target's path
-/// passes nearer, keeping `current` unless the other is nearer by `hysteresis` metres or more.
-/// `fallback` when no hand is offered.
-pub fn catching_hand(
-    current: Option<Hand>,
-    offers: [Option<HandOffer>; 2],
-    hysteresis: f32,
-    fallback: Hand,
-) -> Hand {
-    let nearest = Hand::BOTH
-        .into_iter()
-        .filter_map(|hand| offers[hand.index()].map(|o| (hand, o.miss_m)))
-        .filter(|(_, miss)| miss.is_finite())
-        .min_by(|a, b| a.1.total_cmp(&b.1));
-    let Some((nearest, nearest_miss)) = nearest else {
-        return current.unwrap_or(fallback);
-    };
-    match current.and_then(|hand| offers[hand.index()].map(|o| (hand, o.miss_m))) {
-        Some((hand, miss)) if miss.is_finite() && miss - nearest_miss < hysteresis.max(0.0) => hand,
-        _ => nearest,
-    }
-}
-
-/// How far `point` is from the path a body at `at` flying at `velocity` takes ahead of it, metres:
-/// its distance from the ray, or from `at` for a point behind it or a body at rest.
-pub fn miss_distance(at: Vec3, velocity: Vec3, point: Vec3) -> f32 {
-    let Some(direction) = velocity.try_normalize() else {
-        return at.distance(point);
-    };
-    let along = (point - at).dot(direction).max(0.0);
-    (at + direction * along).distance(point)
 }
 
 /// The time left until a body at `at` flying at `velocity` comes within `reach` metres of
@@ -338,18 +297,6 @@ mod tests {
     }
 
     #[test]
-    fn the_catching_hand_switches_only_for_a_clearly_nearer_one() {
-        let offer = |miss_m| Some(HandOffer { miss_m });
-        let pick = |current, left, right| catching_hand(current, [left, right], 0.1, Hand::Right);
-        assert_eq!(pick(None, offer(0.3), offer(0.2)), Hand::Right);
-        assert_eq!(pick(Some(Hand::Left), offer(0.25), offer(0.2)), Hand::Left);
-        assert_eq!(pick(Some(Hand::Left), offer(0.35), offer(0.2)), Hand::Right);
-        assert_eq!(pick(Some(Hand::Left), None, offer(0.6)), Hand::Right);
-        assert_eq!(pick(None, None, None), Hand::Right);
-        assert_eq!(pick(Some(Hand::Left), None, None), Hand::Left);
-    }
-
-    #[test]
     fn the_arrival_slides_only_what_is_left() {
         let tuning = tuning();
         assert_eq!(arrival_slide(0.01, 0.005, 12.0, 0.12, &tuning), 0.0);
@@ -399,14 +346,6 @@ mod tests {
             ),
             tuning.min_t_go_s
         );
-    }
-
-    #[test]
-    fn the_miss_is_measured_ahead_of_the_body() {
-        let miss = miss_distance(Vec3::ZERO, Vec3::NEG_Z, Vec3::new(0.2, 0.0, -3.0));
-        assert!((miss - 0.2).abs() < 1e-6);
-        let behind = miss_distance(Vec3::ZERO, Vec3::NEG_Z, Vec3::new(0.0, 0.0, 1.0));
-        assert!((behind - 1.0).abs() < 1e-6);
     }
 
     #[test]
