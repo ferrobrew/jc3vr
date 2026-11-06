@@ -27,7 +27,7 @@ The usable rows alone left the wrist nearly empty in the moments a player looks 
 | Mode | Essentials |
 | --- | --- |
 | On foot and swimming | fire the grapple, retract the tethers, release the tethers (double tap), jump, use, reload, detonate (the stick click held, and the wrist detonator) |
-| Vehicles, every class and seat | the vehicle's weapons and the personal weapon on the face buttons, fire the grapple (the stick click), release the tethers, stunt (tap) and exit (hold) |
+| Vehicles, every class and seat | the vehicle's weapons and the personal weapon on the face buttons, fire the grapple (the stick click), release the tethers, stunt (tap) and exit (hold), which at speed in a seat with the bail reads as the bail out |
 | Falling | fire the grapple, release the tethers, open the parachute, open the wingsuit, the ripcord |
 | Wingsuit | fire the grapple, release the tethers, open the parachute, boost, the suit's two weapons, the ripcord |
 | Parachute | fire the grapple, retract the tethers, release the tethers, open the wingsuit, the handles |

@@ -54,17 +54,18 @@ pub fn all_contexts() -> Vec<(Hand, TableCtx)> {
             for weapon_cycle in [false, true] {
                 for pointer_hand in [None, Some(Hand::Left), Some(Hand::Right)] {
                     for trackpad_paging in [false, true] {
-                        contexts.push((
-                            dominant,
-                            TableCtx {
-                                dual_wield,
-                                weapon_cycle,
-                                pointer_hand,
-                                trackpad_paging,
-                                // The parachute bail has its own tests (`tests::vehicles`).
-                                bail: false,
-                            },
-                        ));
+                        for bail in [false, true] {
+                            contexts.push((
+                                dominant,
+                                TableCtx {
+                                    dual_wield,
+                                    weapon_cycle,
+                                    pointer_hand,
+                                    trackpad_paging,
+                                    bail,
+                                },
+                            ));
+                        }
                     }
                 }
             }
@@ -96,6 +97,7 @@ pub fn injected_with(
         weapon_cycle: ctx.weapon_cycle,
         pointer_hand: ctx.pointer_hand,
         trackpad_paging: ctx.trackpad_paging,
+        bail: ctx.bail,
         ..Default::default()
     };
     let everything = |stick: Vec2, grip: bool, pad: Vec2| {

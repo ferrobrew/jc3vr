@@ -102,6 +102,8 @@ fn essential_action(mode: Mode, action: Action) -> bool {
                 | MC_FIRE
                 | STUNT_JUMP
                 | EXIT_VEHICLE
+                // The exit's long press at speed, the parachute bail.
+                | OPEN_PARACHUTE
         ),
         Mode::Airborne(AirborneVariant::Falling) => {
             matches!(action, FIRE_GRAPPLE | OPEN_PARACHUTE | OPEN_WINGSUIT)
@@ -268,6 +270,7 @@ mod tests {
             FIRE_GRAPPLE,
             STUNT_JUMP,
             EXIT_VEHICLE,
+            OPEN_PARACHUTE,
         ] {
             assert!(essential_action(car, action), "{action:?}");
         }

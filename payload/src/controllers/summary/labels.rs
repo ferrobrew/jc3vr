@@ -98,6 +98,8 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
         RELEASE_GRAPPLE | VEHICLE_RELEASE_GRAPPLE => tap("buttonhint_release_tethers"),
         PUSH_GRAPPLE => tap("buttonhint_hammer"),
         JUMP => shown_if(matches!(mode, Mode::OnFoot(_)), "buttonhint_jump"),
+        // In a seat it is the exit's long press at speed, the parachute bail.
+        OPEN_PARACHUTE if class.is_some() => mod_tap(ModText::BailOut),
         OPEN_PARACHUTE => shown_if(
             matches!(
                 airborne,
@@ -374,6 +376,7 @@ pub enum ModText {
     C4,
     Climb,
     OpenVehicleDoor,
+    BailOut,
     WristDetonator,
     ParachuteHandles,
     PullParachuteHandle,
@@ -442,6 +445,7 @@ impl ModText {
             ModText::C4 => "At the Chest Pouch: Grab C4, Let Go to Throw",
             ModText::Climb => "Grip to climb",
             ModText::OpenVehicleDoor => "Open vehicle door",
+            ModText::BailOut => "Bail Out",
             ModText::WristDetonator => "Fingertip into the Wrist Button: Detonate C4",
             ModText::ParachuteHandles => "At a Handle: Hold, Pull Down to Steer, Both to Brake",
             ModText::PullParachuteHandle => "Pull down to steer; pull both handles to brake",
@@ -490,9 +494,15 @@ impl ModText {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::bindings::tables::{
-        coverage::{all_contexts, all_modes, injected},
-        describe::{DescribeCtx, Effect, Features, PhysicalFeatures, describe},
+    use crate::controllers::{
+        bindings::tables::{
+            coverage::{all_contexts, all_modes, injected},
+            declare::TableCtx,
+            describe::{
+                Control, DescribeCtx, Effect, Features, Gesture, PhysicalFeatures, describe,
+            },
+        },
+        frame::Hand,
     };
 
     #[test]
@@ -552,6 +562,40 @@ mod tests {
                         }
                     }
                 }
+            }
+        }
+    }
+
+    /// The exit's long press is shown in every seat whichever way it goes: as the exit, and at
+    /// speed as the parachute bail, so the row does not leave the summary as the speed changes.
+    #[test]
+    fn the_long_exit_is_shown_as_the_exit_or_the_bail() {
+        for mode in all_modes() {
+            if !matches!(mode, Mode::Vehicle(_)) {
+                continue;
+            }
+            for bail in [false, true] {
+                let rows = describe(&DescribeCtx {
+                    mode,
+                    dominant: Hand::Right,
+                    table: TableCtx {
+                        bail,
+                        ..TableCtx::default()
+                    },
+                    features: Features::default(),
+                });
+                let shown = rows
+                    .iter()
+                    .filter(|row| row.control == Control::A(Hand::Right))
+                    .filter(|row| row.gesture == Gesture::Hold)
+                    .filter_map(|row| match &row.effect {
+                        Effect::Actions(actions) => Some(actions),
+                        Effect::Mod(_) => None,
+                    })
+                    .flatten()
+                    .filter_map(|&action| action_label(action, mode))
+                    .any(|label| matches!(label, ActionLabel::Shown { .. }));
+                assert!(shown, "{mode:?} with bail {bail}");
             }
         }
     }
