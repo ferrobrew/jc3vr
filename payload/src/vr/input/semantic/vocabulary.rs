@@ -224,8 +224,8 @@ semantic_actions! {
         FireSecondary => ("fire_secondary", Bool, "Fire vehicle weapon 2 (a gun in the hand: fire it)"),
         /// A short press; it shares its button with the exit by default.
         Stunt => ("stunt", Bool, "Stunt position (tap)"),
-        /// A long press; held on, it moves to the gunner seat.
-        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold; keep holding: gunner seat)"),
+        /// A long press; it exits as the press becomes long.
+        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold)"),
         VehicleMod => ("vehicle_mod", Bool, "Nitrous (tap: turbo jump)"),
         Handbrake => ("handbrake", Bool, "Handbrake"),
         /// Unbound by default: the cockpit's horn button sounds it.
@@ -253,8 +253,8 @@ semantic_actions! {
         FireSecondary => ("fire_secondary", Bool, "Fire vehicle weapon 2 (a gun in the hand: fire it)"),
         /// A short press; it shares its button with the exit by default.
         Stunt => ("stunt", Bool, "Stunt position (tap)"),
-        /// A long press; held on, it moves to the gunner seat.
-        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold; keep holding: gunner seat)"),
+        /// A long press; it exits as the press becomes long.
+        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold)"),
         VehicleMod => ("vehicle_mod", Bool, "Vehicle mod"),
         /// Unbound by default: the cockpit's horn button sounds it.
         Horn => ("horn", Bool, "Horn or magnet"),
@@ -282,8 +282,8 @@ semantic_actions! {
         FireSecondary => ("fire_secondary", Bool, "Fire vehicle weapon 2 (a gun in the hand: fire it)"),
         /// A short press; it shares its button with the exit by default.
         Stunt => ("stunt", Bool, "Stunt position (tap)"),
-        /// A long press; held on, it moves to the gunner seat.
-        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold; keep holding: gunner seat)"),
+        /// A long press; it exits as the press becomes long.
+        ExitVehicle => ("exit_vehicle", Bool, "Exit the vehicle (hold)"),
         /// Unbound by default: the cockpit's horn button sounds it.
         Horn => ("horn", Bool, "Horn or magnet"),
         /// Read out of the driver's seat.

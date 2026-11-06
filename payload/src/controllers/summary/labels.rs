@@ -129,11 +129,8 @@ pub fn action_label(action: Action, mode: Mode) -> Option<ActionLabel> {
         },
         MC_RELOAD => ActionLabel::Hidden,
         USE_ITEM => tap("buttonhint_use_item"),
-        // On foot the vehicle is entered by the same press that interacts.
-        ENTER_VEHICLE if class.is_some() => ActionLabel::Shown {
-            tap: None,
-            hold: Some(Text::Game("buttonhint_enter_gunner_seat")),
-        },
+        // On foot the vehicle is entered by the same press that interacts. In a vehicle the
+        // controllers only tap it, as the exit, so its hold (the seat change) is not offered.
         ENTER_VEHICLE => ActionLabel::Hidden,
         CANCEL if wingsuit => tap("buttonhint_air_brake"),
         // On foot and falling the use button carries it only while a ragdoll, to stay one.

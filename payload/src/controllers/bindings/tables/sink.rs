@@ -43,8 +43,8 @@ pub enum Input {
     /// A short press of a semantic action: held for the one tick at which a press released before
     /// the long-press time ends ([`PressTimer`]).
     Short(ActionId),
-    /// A long press of a semantic action: held from the tick the press reaches the long-press time
-    /// until it is released ([`PressTimer`]).
+    /// A long press of a semantic action: held for the one tick at which the press reaches the
+    /// long-press time, a tap however long the press goes on ([`PressTimer`]).
     Long(ActionId),
 }
 
@@ -255,7 +255,7 @@ pub struct Latches {
 pub const MAX_TIMED: usize = 4;
 
 /// One hand's presses of the timed actions as of this tick: for each, whether a short press ended
-/// this tick and whether a long press is held.
+/// this tick and whether a press reached the long-press time this tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct TimedLatch {
     pub presses: [Option<(ActionId, TimedPress)>; MAX_TIMED],
@@ -277,7 +277,7 @@ impl TimedLatch {
 pub struct TimedPress {
     /// A press released before the long-press time ended this tick.
     pub short: bool,
-    /// The press has been held past the long-press time and is still held.
+    /// The press reached the long-press time this tick.
     pub long: bool,
 }
 
@@ -294,11 +294,12 @@ impl PressTimer {
     pub fn step(&mut self, button: ButtonControl, dt: f32, long_press_s: f32) -> TimedPress {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         if button.held() {
-            let seconds = self.held.map_or(0.0, |s| s + dt);
+            let before = self.held;
+            let seconds = before.map_or(0.0, |s| s + dt);
             self.held = Some(seconds);
             TimedPress {
                 short: false,
-                long: seconds >= long_press_s,
+                long: seconds >= long_press_s && before.is_none_or(|s| s < long_press_s),
             }
         } else {
             let ended = self.held.take();
@@ -423,9 +424,10 @@ impl<'a> EvalSink<'a> {
                 self.latches.pads[hand.index()].zone(action) == Some(zone)
                     && self.intents.hand(action, hand).button.pressed
             }
-            // A short press is held for one tick, so its tick is its press.
+            // A short or a long press is held for one tick, so its tick is its press.
             Input::Short(action) => self.latches.timed[hand.index()].of(action).short,
-            Input::MenuStick(_) | Input::Long(_) => false,
+            Input::Long(action) => self.latches.timed[hand.index()].of(action).long,
+            Input::MenuStick(_) => false,
         }
     }
 

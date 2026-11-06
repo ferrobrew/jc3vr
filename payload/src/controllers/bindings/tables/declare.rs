@@ -106,7 +106,7 @@ fn short(action: impl Into<ActionId>) -> Press {
     Press::new(Input::Short(action.into()))
 }
 
-/// A long press of `action`: held past the long-press time, until its release.
+/// A long press of `action`: a tap at the tick it reaches the long-press time.
 fn long(action: impl Into<ActionId>) -> Press {
     Press::new(Input::Long(action.into()))
 }
@@ -250,9 +250,11 @@ fn vehicle_weapon(action: ActionId) -> Press {
 /// drive nothing, and the triggers fire the weapon in the hands or on the mount instead.
 ///
 /// The stunt and the exit share one button by default, told apart by the press's length: a tap
-/// takes the stunt position, and a hold exits. The exit's gamepad button is held from the moment
-/// the press becomes long, so the game sees the button pressed then: let go soon after, it is the
-/// game's tap of the button, which exits, and held on, its hold, which moves to the gunner seat.
+/// takes the stunt position, and a hold exits. The exit is a tap of the gamepad's Y at the moment
+/// the press becomes long, however long the press goes on: the game's exit task exits on the
+/// button's release, and only when it was held no longer than the task's time, so a Y held from
+/// then on until the press ends would exit only from a hold let go at once, and otherwise reach
+/// the game's own Y hold (the seat change) where there is a seat to change to, or nothing.
 fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
     let v = VehicleActions::of(seat.class);
     s.hold(&[short(v.stunt)], PAD_A);

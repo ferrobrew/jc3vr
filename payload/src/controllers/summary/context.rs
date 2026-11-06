@@ -105,6 +105,9 @@ pub fn lines(
 ) -> Vec<Line> {
     let mut out: Vec<Line> = Vec::new();
     for hint in hints {
+        if seat_change(hint, mode) {
+            continue;
+        }
         let Some(row) = row_for(rows, hint.action) else {
             continue;
         };
@@ -130,6 +133,13 @@ pub fn lines(
         }
     }
     out
+}
+
+/// Whether `hint` asks for the seat change, `ENTER_VEHICLE` held while seated. The controllers
+/// only tap that action in a vehicle, as the exit, so no row reaches the seat change, though the
+/// exit's row injects the action.
+fn seat_change(hint: &ContextHint, mode: Mode) -> bool {
+    hint.hold && hint.action == Action::ENTER_VEHICLE && matches!(mode, Mode::Vehicle(_))
 }
 
 /// The row that drives `action`: one that injects it, or for the tethers' release and the reel-in's
@@ -208,13 +218,34 @@ mod tests {
 
     #[test]
     fn a_hint_takes_the_control_that_drives_its_action() {
-        let car = Mode::Vehicle(VehicleSeat {
-            class: VehicleClass::Car,
-            driver: false,
-        });
         let rows = [row(
             Control::B(Hand::Right),
             Gesture::Press,
+            Effect::Actions(vec![Action::USE_ITEM, Action::ENTER_VEHICLE]),
+        )];
+        let lines = lines(
+            &[hint(Action::ENTER_VEHICLE, true, 1)],
+            &rows,
+            ON_FOOT,
+            "HOLD",
+            &described,
+            &english,
+        );
+        assert_eq!(lines.len(), 1);
+        assert_eq!(lines[0].control, Control::B(Hand::Right));
+        assert_eq!(lines[0].prefix.as_deref(), Some("HOLD"));
+        assert_eq!(lines[0].text, "Enter gunner seat");
+    }
+
+    #[test]
+    fn the_seat_change_hint_is_left_out_in_a_vehicle() {
+        let car = Mode::Vehicle(VehicleSeat {
+            class: VehicleClass::Car,
+            driver: true,
+        });
+        let rows = [row(
+            Control::A(Hand::Right),
+            Gesture::Hold,
             Effect::Actions(vec![Action::EXIT_VEHICLE, Action::ENTER_VEHICLE]),
         )];
         let lines = lines(
@@ -225,10 +256,7 @@ mod tests {
             &described,
             &english,
         );
-        assert_eq!(lines.len(), 1);
-        assert_eq!(lines[0].control, Control::B(Hand::Right));
-        assert_eq!(lines[0].prefix.as_deref(), Some("HOLD"));
-        assert_eq!(lines[0].text, "Enter gunner seat");
+        assert_eq!(lines, []);
     }
 
     #[test]

@@ -244,6 +244,165 @@ impl std::convert::AsMut<Helicopter> for Helicopter {
         self
     }
 }
+#[repr(C, align(4))]
+/// The per-instance loaded properties of [`NStateTask_InputVehicleEnterTask`](crate::vehicle::vehicle::NStateTask_InputVehicleEnterTask)
+/// (`NStateTask_InputVehicleEnterTask::SProperties`).
+pub struct InputVehicleEnterTaskProperties {
+    /// The action read.
+    pub m_Button: crate::input::input_action_map::Action,
+    /// How long the action must be held to move to another seat rather than enter, seconds.
+    pub m_Holdtime: f32,
+    /// How long an entry requested through the character's blackboard stays honoured, seconds.
+    pub m_Buffertime: f32,
+}
+fn _InputVehicleEnterTaskProperties_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC], InputVehicleEnterTaskProperties>([0u8; 0xC]);
+    }
+    unreachable!()
+}
+impl InputVehicleEnterTaskProperties {}
+impl std::convert::AsRef<InputVehicleEnterTaskProperties>
+for InputVehicleEnterTaskProperties {
+    fn as_ref(&self) -> &InputVehicleEnterTaskProperties {
+        self
+    }
+}
+impl std::convert::AsMut<InputVehicleEnterTaskProperties>
+for InputVehicleEnterTaskProperties {
+    fn as_mut(&mut self) -> &mut InputVehicleEnterTaskProperties {
+        self
+    }
+}
+#[repr(C, align(4))]
+/// The per-instance loaded properties of [`NStateTask_InputVehicleExitTask`](crate::vehicle::vehicle::NStateTask_InputVehicleExitTask)
+/// (`NStateTask_InputVehicleExitTask::SProperties`).
+pub struct InputVehicleExitTaskProperties {
+    /// The act the task queues to leave the seat (the runtime `idstring` value of an `ACT_*` id).
+    pub m_Act: u32,
+    /// The action whose release leaves the seat.
+    pub m_Button: crate::input::input_action_map::Action,
+    /// The longest the action may have been pressed before its release for the release to leave
+    /// the seat, seconds.
+    pub m_Time: f32,
+}
+fn _InputVehicleExitTaskProperties_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC], InputVehicleExitTaskProperties>([0u8; 0xC]);
+    }
+    unreachable!()
+}
+impl InputVehicleExitTaskProperties {}
+impl std::convert::AsRef<InputVehicleExitTaskProperties>
+for InputVehicleExitTaskProperties {
+    fn as_ref(&self) -> &InputVehicleExitTaskProperties {
+        self
+    }
+}
+impl std::convert::AsMut<InputVehicleExitTaskProperties>
+for InputVehicleExitTaskProperties {
+    fn as_mut(&mut self) -> &mut InputVehicleExitTaskProperties {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The input state task that enters a vehicle and changes seat in it
+/// (`NStateTask_InputVehicleEnterTask`), for the local player outside cinematic mode.
+pub struct NStateTask_InputVehicleEnterTask {}
+impl NStateTask_InputVehicleEnterTask {
+    pub const Update_ADDRESS: usize = 0x140824690;
+    /// The per-frame update. With no seat change available, a press of
+    /// [`InputVehicleEnterTaskProperties::m_Button`](crate::vehicle::vehicle::InputVehicleEnterTaskProperties::m_Button) queues `ACT_ENTER_VEHICLE` on every pressed
+    /// frame. A seat change is available when the player's interaction node has a transition to a
+    /// gunner seat ([`HasAvailableGunnerDestination`](crate::vehicle::vehicle::NStateTask_InputVehicleEnterTask::HasAvailableGunnerDestination)), when
+    /// the player is in a gunner seat (the change is back to the driver's seat), or when the player
+    /// is in the driver's seat of a vehicle with a reachable cargo bay. Then a press held for
+    /// [`InputVehicleEnterTaskProperties::m_Holdtime`](crate::vehicle::vehicle::InputVehicleEnterTaskProperties::m_Holdtime) targets that seat and queues
+    /// `ACT_ENTER_VEHICLE_MOUNTED_WEAPON` (or `ACT_ENTER_VEHICLE_CARGO_BAY` for the cargo bay),
+    /// once per press, and a release sooner than that queues `ACT_ENTER_VEHICLE`.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        properties: *const crate::vehicle::vehicle::InputVehicleEnterTaskProperties,
+        instance: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                properties: *const crate::vehicle::vehicle::InputVehicleEnterTaskProperties,
+                instance: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, properties, instance)
+        }
+    }
+    pub const HasAvailableGunnerDestination_ADDRESS: usize = 0x14081A200;
+    /// Whether the user's current interaction node has a transition to a gunner seat node, or, off
+    /// a node, whether any available graph entry leads to one.
+    pub unsafe fn HasAvailableGunnerDestination(
+        user: *const ::std::ffi::c_void,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(user: *const ::std::ffi::c_void) -> bool = ::std::mem::transmute(
+                Self::HasAvailableGunnerDestination_ADDRESS,
+            );
+            f(user)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_InputVehicleEnterTask>
+for NStateTask_InputVehicleEnterTask {
+    fn as_ref(&self) -> &NStateTask_InputVehicleEnterTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_InputVehicleEnterTask>
+for NStateTask_InputVehicleEnterTask {
+    fn as_mut(&mut self) -> &mut NStateTask_InputVehicleEnterTask {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The input state task of a seated player that leaves the vehicle
+/// (`NStateTask_InputVehicleExitTask`). The exit is a tap: the task reads the release of
+/// [`InputVehicleExitTaskProperties::m_Button`](crate::vehicle::vehicle::InputVehicleExitTaskProperties::m_Button), and a press held longer than
+/// [`InputVehicleExitTaskProperties::m_Time`](crate::vehicle::vehicle::InputVehicleExitTaskProperties::m_Time) before its release leaves nothing behind.
+pub struct NStateTask_InputVehicleExitTask {}
+impl NStateTask_InputVehicleExitTask {
+    pub const Update_ADDRESS: usize = 0x140824990;
+    /// The per-frame update, skipped while the `CROMManager` shows either of its availability
+    /// notices. For the local player, when another occupant of the interaction graph is on the
+    /// player's node, it queues [`InputVehicleExitTaskProperties::m_Act`](crate::vehicle::vehicle::InputVehicleExitTaskProperties::m_Act). For a character with an
+    /// avatar, it queues the act on the frame the avatar's action map reports
+    /// [`InputVehicleExitTaskProperties::m_Button`](crate::vehicle::vehicle::InputVehicleExitTaskProperties::m_Button) released with its time pressed before the
+    /// release at most [`InputVehicleExitTaskProperties::m_Time`](crate::vehicle::vehicle::InputVehicleExitTaskProperties::m_Time). Both queue the act with a
+    /// callback that runs [`NStateTask_InputVehicleExitTask_TeleportUpwards`](crate::vehicle::vehicle::NStateTask_InputVehicleExitTask_TeleportUpwards) when the queued
+    /// action reports that it did not exit.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        properties: *const crate::vehicle::vehicle::InputVehicleExitTaskProperties,
+        instance: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                properties: *const crate::vehicle::vehicle::InputVehicleExitTaskProperties,
+                instance: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, properties, instance)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_InputVehicleExitTask>
+for NStateTask_InputVehicleExitTask {
+    fn as_ref(&self) -> &NStateTask_InputVehicleExitTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_InputVehicleExitTask>
+for NStateTask_InputVehicleExitTask {
+    fn as_mut(&mut self) -> &mut NStateTask_InputVehicleExitTask {
+        self
+    }
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// A vehicle seat identifier (`NVehicle::ESeat`): an index into [`Vehicle::m_Seats`](crate::vehicle::vehicle::Vehicle::m_Seats), with the

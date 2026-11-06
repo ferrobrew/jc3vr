@@ -1,6 +1,7 @@
 //! Vehicle, wingsuit, and parachute bindings.
 
 use super::*;
+use crate::controllers::bindings::hold::{ActionWrite, HoldTracker, Phase};
 
 #[test]
 fn vehicle_stunt_routes_physical_right_a_in_land_helicopter_and_plane_modes() {
@@ -74,8 +75,9 @@ fn the_car_reads_left_a_for_handbrake_and_right_a_for_stunt() {
     }
 }
 
-/// The right A: a tap takes the stunt position on its release, and a hold exits from the moment
-/// the press becomes long, with the gamepad's Y held on for the game's own hold (the gunner seat).
+/// The right A: a tap takes the stunt position on its release, and a hold exits at the moment the
+/// press becomes long, with a one-tick tap of the gamepad's Y however long the press goes on: the
+/// game's exit task leaves the seat only on a release held no longer than its time.
 #[test]
 fn the_right_a_taps_for_the_stunt_and_holds_to_exit() {
     for class in [
@@ -109,26 +111,70 @@ fn the_right_a_taps_for_the_stunt_and_holds_to_exit() {
                 let last = b.sim_step(mode, &released, DT, &CONFIG);
                 assert_eq!(player(&last, STUNT_JUMP), Some(Want::Hold(1.0)), "{mode:?}");
                 assert_eq!(player(&last, EXIT_VEHICLE), None);
-                // A long press: the exit from the long-press time, held while the press is, and
-                // no stunt on the release.
+                // A long press: the gamepad's Y on the one tick the press becomes long, and no
+                // stunt on the release.
                 let mut b = Bindings::default();
                 let mut t = 0.0;
-                let mut exited = false;
-                while t < CONFIG.long_press_s * 2.0 {
+                let mut exits = 0;
+                while t < CONFIG.long_press_s * 4.0 {
                     let step = b.sim_step(mode, &held, DT, &CONFIG);
                     let exit = player(&step, EXIT_VEHICLE).is_some();
-                    assert_eq!(exit, t >= CONFIG.long_press_s, "{mode:?} at {t} s");
+                    let becomes_long = t >= CONFIG.long_press_s && t - DT < CONFIG.long_press_s;
+                    assert_eq!(exit, becomes_long, "{mode:?} at {t} s");
+                    for action in [ENTER_VEHICLE, BTN_Y] {
+                        assert_eq!(player(&step, action).is_some(), exit, "{action:?} at {t} s");
+                    }
                     assert_eq!(player(&step, STUNT_JUMP), None);
-                    exited |= exit;
+                    exits += usize::from(exit);
                     t += DT;
                 }
-                assert!(exited);
+                assert_eq!(exits, 1, "{mode:?}");
                 let last = b.sim_step(mode, &released, DT, &CONFIG);
                 assert_eq!(player(&last, STUNT_JUMP), None);
                 assert_eq!(player(&last, EXIT_VEHICLE), None);
             }
         }
     }
+}
+
+/// However long the right A is held, the game sees the exit as a tap: the press edge on the tick
+/// the press becomes long, and the release on the next, after one tick's hold.
+#[test]
+fn a_long_hold_writes_the_exit_as_a_tap() {
+    let mode = Mode::Vehicle(VehicleSeat {
+        class: VehicleClass::Car,
+        driver: true,
+    });
+    let mut c = Controls::default();
+    c.hands[Hand::Right.index()].a = down();
+    let mut b = Bindings::default();
+    let mut tracker = HoldTracker::new();
+    let exit = |writes: &[ActionWrite]| {
+        writes
+            .iter()
+            .find(|w| {
+                w.target
+                    == Target {
+                        map: MapKind::Player,
+                        action: EXIT_VEHICLE,
+                    }
+            })
+            .map(|w| w.phase)
+    };
+    let mut phases = Vec::new();
+    let ticks = (CONFIG.long_press_s * 4.0 / DT) as usize;
+    for _ in 0..ticks {
+        let step = b.sim_step(mode, &c, DT, &CONFIG);
+        phases.extend(exit(&tracker.resolve(&step.desired, DT)));
+    }
+    c.hands[Hand::Right.index()].a = up();
+    let step = b.sim_step(mode, &c, DT, &CONFIG);
+    phases.extend(exit(&tracker.resolve(&step.desired, DT)));
+    assert_eq!(
+        phases,
+        [Phase::Clicked, Phase::Released { seconds: DT }],
+        "the exit is a one-tick tap",
+    );
 }
 
 /// The upper faces fire vehicle weapons 1 and 2 while held, and on a hand holding a gun they fire
