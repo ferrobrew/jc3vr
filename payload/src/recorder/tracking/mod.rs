@@ -778,7 +778,8 @@ fn save_lookback() -> Result<PathBuf, StartError> {
     Ok(path)
 }
 
-/// The settings as their file holds them, for the recording to open with.
+/// Every setting, for the recording to open with: the file holds only the changed ones, which
+/// would leave the defaults of the recording's build unsaid.
 fn settings_toml() -> Option<String> {
     match toml::to_string(&crate::config::get()) {
         Ok(toml) => Some(toml),

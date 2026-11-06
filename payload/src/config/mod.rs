@@ -6,7 +6,8 @@
 //! session (a value discovered at runtime, a diagnostic armed for one capture) is `#[serde(skip)]`.
 //!
 //! The configuration is saved to `settings.toml` in the per-user configuration directory
-//! ([`paths`]). It is loaded once at startup, before VR initialization reads it ([`init`]); the
+//! ([`paths`]), which holds only the settings that differ from their defaults ([`format`]), so a
+//! setting the user never changed follows its default when a later build changes it. It is loaded once at startup, before VR initialization reads it ([`init`]); the
 //! load is tolerant ([`load`]), so a file from another build costs at most the settings it gets
 //! wrong. A change the user meant goes through [`edit`], which marks the configuration changed;
 //! [`tick`] saves it from the game thread's frame once the changes settle, handing the write to a
@@ -46,6 +47,7 @@
 //! [`BodyDimensions`](crate::controllers::body::BodyDimensions) in `controllers::body`.
 
 mod automatic;
+pub(crate) mod format;
 pub(crate) mod load;
 pub(crate) mod paths;
 mod persist;

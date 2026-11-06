@@ -244,11 +244,11 @@ fn a_file_from_before_the_two_handed_inventory_skips_the_retired_weapon_settings
     }
     set(
         &mut table,
-        &["controllers", "weapons", "hold", "grip_to_hold"],
+        &["controllers", "weapons", "hold", "dock_attraction"],
         false.into(),
     );
     let Loaded { config, report } = load(table);
-    assert!(!config.controllers.weapons.hold.grip_to_hold);
+    assert!(!config.controllers.weapons.hold.dock_attraction);
     assert_eq!(
         report.ignored,
         [

@@ -3,10 +3,12 @@
 //! The configuration types change as settings are added, renamed, and removed, and the file can be
 //! edited by hand, so the load bridges drift in both directions rather than rejecting the file:
 //!
-//! 1. The file is parsed into a TOML value tree and merged over the defaults serialized the same
-//!    way. A setting the file lacks takes its default; a setting the file has that the defaults do
-//!    not stays in the tree, since it is either an optional setting (a `None` default is left out
-//!    of the defaults' tree as it is left out of the file) or one this build does not know.
+//! 1. The file is parsed into a TOML value tree, its format's version is taken out, and a file of
+//!    format zero loses the defaults a later build replaced ([`crate::config::format`]). The tree
+//!    is merged over the defaults serialized the same way. A setting the file lacks takes its
+//!    default; a setting the file has that the defaults do not stays in the tree, since it is
+//!    either an optional setting (a `None` default is left out of the defaults' tree as it is left
+//!    out of the file) or one this build does not know.
 //! 2. The tree is deserialized. Settings this build does not know are skipped and reported. A
 //!    value that cannot be read (the wrong type, an unknown enum variant, a list of the wrong
 //!    length) fails the deserialization at a path; that one value is replaced by its default (or
@@ -27,7 +29,11 @@ use serde::{Serialize, de::DeserializeOwned};
 use toml::{Table, Value};
 
 use crate::{
-    config::{Config, validate},
+    config::{
+        Config,
+        format::{self, Format},
+        validate,
+    },
     controllers::config::{ControllersConfig, SightTable},
     headpose::config::VrTurnConfig,
 };
@@ -38,11 +44,17 @@ pub(crate) struct Loaded {
     pub report: LoadReport,
 }
 
-/// The settings a load defaulted, skipped, or reset, by path (`controllers.hands.grip`).
+/// The settings a load defaulted, migrated, skipped, or reset, by path (`controllers.hands.grip`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(crate) struct LoadReport {
-    /// Settings the file lacked, which took their defaults.
+    /// Settings a file of format zero lacked, which took their defaults. A file of the current
+    /// format leaves out every setting at its default, so its missing settings are not listed.
     pub defaulted: Vec<String>,
+    /// Settings a file of format zero held at a default a later build replaced, which take the
+    /// current default.
+    pub migrated: Vec<String>,
+    /// The version of a file a newer build wrote, which loads as the current format.
+    pub newer_version: Option<i64>,
     /// Settings the file had that this build does not know, which were skipped.
     pub ignored: Vec<String>,
     /// Settings the file had that could not be used, which were reset to their defaults.
@@ -87,7 +99,11 @@ impl std::error::Error for LoadError {
 
 impl LoadReport {
     pub fn is_empty(&self) -> bool {
-        self.defaulted.is_empty() && self.ignored.is_empty() && self.reset.is_empty()
+        self.defaulted.is_empty()
+            && self.migrated.is_empty()
+            && self.newer_version.is_none()
+            && self.ignored.is_empty()
+            && self.reset.is_empty()
     }
 
     /// Log what the load changed, against the file at `path`.
@@ -97,6 +113,21 @@ impl LoadReport {
                 path,
                 defaulted = ?self.defaulted,
                 "settings: the file lacks some settings; they take their defaults",
+            );
+        }
+        if !self.migrated.is_empty() {
+            tracing::info!(
+                path,
+                migrated = ?self.migrated,
+                "settings: the file holds defaults a later build replaced; they take the new defaults",
+            );
+        }
+        if let Some(version) = self.newer_version {
+            tracing::warn!(
+                path,
+                version,
+                current = format::VERSION,
+                "settings: a newer build wrote the file; it loads as this build's format",
             );
         }
         if !self.ignored.is_empty() {
@@ -120,15 +151,28 @@ impl LoadReport {
 /// Load a settings file's text: parse it, merge it over the defaults, deserialize it resetting the
 /// values that cannot be read, and validate it. Fails only when the text is not TOML.
 pub(crate) fn parse(text: &str) -> Result<Loaded, LoadError> {
-    let file: Table = toml::from_str(text).map_err(LoadError::Syntax)?;
+    let mut file: Table = toml::from_str(text).map_err(LoadError::Syntax)?;
     let defaults = Value::try_from(Config::new()).map_err(LoadError::Defaults)?;
-    let mut report = LoadReport::default();
-    let mut merged = merge(
-        defaults.clone(),
-        Value::Table(file),
-        &[],
-        &mut report.defaulted,
-    );
+    let upgrade = format::upgrade(&mut file);
+    let mut report = LoadReport {
+        migrated: upgrade.migrated,
+        ..LoadReport::default()
+    };
+    match upgrade.format {
+        Format::Newer(version) => report.newer_version = Some(version),
+        Format::Unreadable => report.reset.push(Reset {
+            path: format::VERSION_KEY.to_owned(),
+            reason: "the version is not an integer; the file loads as this build's format"
+                .to_owned(),
+        }),
+        Format::Zero | Format::Current => {}
+    }
+    let mut defaulted = Vec::new();
+    let mut merged = merge(defaults.clone(), Value::Table(file), &[], &mut defaulted);
+    if upgrade.format.complete() {
+        defaulted.retain(|path| !report.migrated.contains(path));
+        report.defaulted = defaulted;
+    }
     let mut config = None;
     for _ in 0..MAX_RESETS {
         match deserialize(&merged) {

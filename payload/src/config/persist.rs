@@ -3,9 +3,10 @@
 //! The save has explicit write points: [`crate::config::edit`] marks the configuration changed
 //! ([`note_edit`]), and the game thread's per-frame [`tick`] saves once the changes settle, at
 //! most [`MAX_DELAY`] after the first unsaved one so that a control held through every frame (an
-//! open debug UI tab edits each frame) still saves. A save serializes a snapshot and compares it
-//! with the text the file was last given; only a difference is written, by a short-lived writer
-//! thread, so the frame never waits on the disk. Writes are serialized and numbered: a writer that
+//! open debug UI tab edits each frame) still saves. A save serializes a snapshot (the settings
+//! that differ from their defaults, [`format::to_text`]) and compares it with the text the file
+//! was last given; only a difference is written, by a short-lived writer thread, so the frame
+//! never waits on the disk. Writes are serialized and numbered: a writer that
 //! finds a newer save already written skips its own. A failed save is retried after a backoff
 //! that grows with each failure, without waiting for another change. [`shutdown`] flushes a
 //! pending save, and one that failed.
@@ -24,7 +25,7 @@ use std::{
 use parking_lot::Mutex;
 
 use crate::config::{
-    CONFIG, Config, automatic, load, paths,
+    CONFIG, Config, automatic, format, load, paths,
     write::{self, WriteError},
 };
 
@@ -58,7 +59,7 @@ pub(crate) fn init() {
     }
     // The baseline the first save compares against: what the configuration was loaded as, so that
     // nothing is written (and a broken file is not replaced) until a setting changes.
-    let baseline = toml::to_string(&config)
+    let baseline = format::to_text(&config)
         .inspect_err(|error| {
             tracing::warn!("settings: could not serialize the loaded settings: {error}")
         })
@@ -99,7 +100,7 @@ pub(crate) fn tick() {
     saver.compared = Some(now);
     saver.unchanged = saver.last_text.as_deref() == Some(text.as_str());
     if due && !saver.unchanged {
-        crate::controllers::diagnostics::note_settings(&text);
+        note_settings();
     }
     if due || retry {
         saver.hand_off(text, now);
@@ -480,7 +481,7 @@ impl Saver {
 #[derive(Debug)]
 enum SaveError {
     /// The configuration could not be serialized.
-    Serialize(toml::ser::Error),
+    Serialize(format::TextError),
     /// The writer thread could not be started.
     Spawn(io::Error),
     /// The writer thread panicked.
@@ -499,7 +500,7 @@ impl fmt::Display for SaveError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "settings: ")?;
         match self {
-            Self::Serialize(source) => write!(f, "could not serialize the settings: {source}"),
+            Self::Serialize(source) => write!(f, "{source}"),
             Self::Spawn(source) => write!(f, "could not start the writer: {source}"),
             Self::WriterPanicked => write!(f, "the writer panicked"),
             Self::Write(source) => write!(f, "{source}"),
@@ -615,19 +616,31 @@ fn set_aside_path(path: &Path, stamp: &str) -> PathBuf {
 /// Serialize the configuration as a save writes it: with the user's values for the switches the
 /// payload turned off on its own. Takes the saver state so that the lock order is explicit.
 fn serialize_snapshot(saver: &mut Saver) -> Option<String> {
-    let snapshot = {
-        let config = CONFIG.lock();
-        let mut snapshot = config.clone();
-        automatic::apply(&mut snapshot);
-        snapshot
-    };
-    match toml::to_string(&snapshot) {
+    match format::to_text(&snapshot()) {
         Ok(text) => Some(text),
         Err(source) => {
             saver.failed = true;
             tracing::warn!("{}", SaveError::Serialize(source));
             None
         }
+    }
+}
+
+/// The configuration as a save writes it, with the user's values for the switches the payload
+/// turned off on its own.
+fn snapshot() -> Config {
+    let config = CONFIG.lock();
+    let mut snapshot = config.clone();
+    automatic::apply(&mut snapshot);
+    snapshot
+}
+
+/// Note a saved change for a tracking recording, with every setting rather than the file's
+/// changes alone, so that a take says what it ran with whatever the defaults of its build.
+fn note_settings() {
+    match toml::to_string(&snapshot()) {
+        Ok(text) => crate::controllers::diagnostics::note_settings(&text),
+        Err(error) => tracing::warn!("settings: could not serialize the settings to note: {error}"),
     }
 }
 
