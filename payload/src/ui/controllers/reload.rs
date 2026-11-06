@@ -74,7 +74,8 @@ pub(super) fn reload_readout(ui: &mut Ui, r: &ReloadStatus) {
                 match r.belt[i] {
                     PushStage::Outside => "clear",
                     PushStage::Pushing => "pushing",
-                    PushStage::Spent => "in the pouch",
+                    PushStage::Reloaded => "reloaded in the pouch",
+                    PushStage::Brushed => "brushed the pouch",
                 },
                 r.fire_held[i].map_or("free", FireHold::label),
                 r.flick_dps[i]

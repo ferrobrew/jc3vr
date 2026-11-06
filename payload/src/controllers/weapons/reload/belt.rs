@@ -5,9 +5,10 @@
 //! the pouch with the gun upright enough that its insertion axis (which points up into the gun from
 //! the mouth) leans no further than the tilt limit from straight up, and then goes the push depth
 //! into the sphere. How fast it comes does not matter: a hand bringing a gun to its hip slows as it
-//! arrives. An entry that misses the tilt is a brush past the belt and does nothing until the point
-//! leaves the sphere. After a reload the push stays latched until the point leaves the sphere, so a
-//! gun held on the belt reloads once, and the fire stays held until then.
+//! arrives. An entry that misses the tilt, or comes while the gun cannot be reloaded, is a brush
+//! past the belt and does nothing until the point leaves the sphere; the gun fires as ever. After a
+//! reload the push stays latched until the point leaves the sphere, so a gun held on the belt
+//! reloads once, and the fire stays held until then.
 
 use glam::Vec3;
 
@@ -21,9 +22,11 @@ pub enum PushStage {
     Outside,
     /// The mouth entered the pouch as a push and is on its way to the push depth.
     Pushing,
-    /// The mouth entered the pouch without a push, or a push reloaded; nothing happens until it
-    /// leaves.
-    Spent,
+    /// A push reloaded: nothing happens, and the gun's fire is held, until the mouth leaves.
+    Reloaded,
+    /// The mouth entered the pouch without a push: tilted, or while the gun could not be reloaded.
+    /// Nothing happens until it leaves.
+    Brushed,
 }
 
 /// One tick's inputs for one gun, in the frame the pouch is placed in.
@@ -91,10 +94,10 @@ impl BeltPush {
             return false;
         }
         if !i.eligible {
-            self.stage = if self.stage == PushStage::Pushing {
-                PushStage::Outside
-            } else {
-                PushStage::Spent
+            self.stage = match self.stage {
+                PushStage::Pushing => PushStage::Outside,
+                PushStage::Reloaded => PushStage::Reloaded,
+                PushStage::Outside | PushStage::Brushed => PushStage::Brushed,
             };
             return false;
         }
@@ -103,23 +106,23 @@ impl BeltPush {
                 self.stage = if upright(i.axis, config) {
                     PushStage::Pushing
                 } else {
-                    PushStage::Spent
+                    PushStage::Brushed
                 };
                 self.reach(distance, i.pouch_radius, config)
             }
             PushStage::Pushing => self.reach(distance, i.pouch_radius, config),
-            PushStage::Spent => false,
+            PushStage::Reloaded | PushStage::Brushed => false,
         }
     }
 
     /// Whether the push holds the gun's fire: from the reload until the mouth leaves the pouch.
     pub fn holds_fire(&self) -> bool {
-        self.stage != PushStage::Outside
+        self.stage == PushStage::Reloaded
     }
 
     fn reach(&mut self, distance: f32, radius: f32, config: &BeltTuning) -> bool {
         if self.stage == PushStage::Pushing && radius - distance >= config.depth_m {
-            self.stage = PushStage::Spent;
+            self.stage = PushStage::Reloaded;
             return true;
         }
         false
@@ -159,6 +162,13 @@ mod tests {
         assert_eq!(b.stage, PushStage::Pushing);
         assert!(b.step(at(0.09), &CONFIG));
         assert!(b.holds_fire());
+        // The reload filled the magazine, so the gun is no longer eligible: the hold stays.
+        let full = at(0.0).map(|i| PushInputs {
+            eligible: false,
+            ..i
+        });
+        assert!(!b.step(full, &CONFIG));
+        assert!(b.holds_fire());
         assert!(!b.step(at(0.0), &CONFIG));
         assert!(!b.step(at(0.2), &CONFIG));
         assert!(!b.holds_fire());
@@ -179,7 +189,8 @@ mod tests {
         let mut b = BeltPush::new();
         b.step(tilted(65.0), &CONFIG);
         assert!(!b.step(at(0.0), &CONFIG));
-        assert_eq!(b.stage, PushStage::Spent);
+        assert_eq!(b.stage, PushStage::Brushed);
+        assert!(!b.holds_fire());
     }
 
     #[test]
@@ -192,7 +203,11 @@ mod tests {
             })
         };
         b.step(ineligible(0.1), &CONFIG);
+        // A gun brushing the pouch with nothing to reload (a full magazine, no reserve, a fresh
+        // draw beside its pouch) fires as ever.
+        assert!(!b.holds_fire());
         assert!(!b.step(at(0.0), &CONFIG));
+        assert!(!b.holds_fire());
         assert!(!b.step(None, &CONFIG));
         assert_eq!(b.stage, PushStage::Outside);
     }

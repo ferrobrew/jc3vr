@@ -13,7 +13,7 @@
 //!   through.
 //! - The fire hold ([`holds_fire`], from the ammunition check in
 //!   [`crate::controllers::weapons::empty`]): a gun whose chamber is empty, whose magazine is out,
-//!   or that sits in the belt pouch cannot fire. The input tick already keeps its trigger from the
+//!   or that sits in the belt pouch after a push reloaded it cannot fire. The input tick already keeps its trigger from the
 //!   game; the check clears the gun's shot as well, so that a buffered shot cannot slip through.
 //! - The shots ([`on_shot`], from the per-shot seam in [`crate::controllers::weapons::fire`]): each
 //!   shot of a weapon reloaded by hand, the hand it came from, and the rounds left, which the input
