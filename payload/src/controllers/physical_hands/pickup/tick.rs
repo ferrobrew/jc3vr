@@ -282,7 +282,7 @@ unsafe fn tick_with(
     for hand in Hand::BOTH {
         let i = hand.index();
         if joints.lost[i] && state.held[i].is_some_and(|h| h.joined) {
-            state.held[i] = None;
+            state.set_held(i, None);
             outcome.released[i] = true;
             outcome.lost += 1;
             outcome.losses[i] = Some(HoldLoss::JointEnded);
@@ -317,7 +317,7 @@ unsafe fn tick_with(
                 if state.regrips[i].take().is_some() {
                     outcome.released[i] = true;
                 }
-                if let Some(held) = state.held[i].take() {
+                if let Some(held) = state.take_held(i) {
                     let shared = state.held[hand.other().index()].is_some_and(|o| o.same(&held));
                     // A joined object leaves with the velocity the hand gave it.
                     if !shared && !held.joined {
@@ -497,7 +497,7 @@ unsafe fn tick_with(
             None => {}
         }
         if state.held[i].is_some() && palms[i].is_none() {
-            state.held[i] = None;
+            state.set_held(i, None);
             outcome.lost += 1;
             outcome.losses[i] = Some(HoldLoss::Untracked);
         }
@@ -633,8 +633,7 @@ unsafe fn tick_with(
             };
             if strain.torn(&sample, dt, time_scale, config) {
                 holds[k] = None;
-                state.held[k] = None;
-                state.strains[k] = None;
+                state.set_held(k, None);
                 outcome.released[k] = true;
                 outcome.lost += 1;
                 outcome.losses[k] = Some(HoldLoss::TornAway);
@@ -867,14 +866,17 @@ pub(super) fn take_body(
                 let mass_kg = held_mass(&reach.kind, bone_kg);
                 let (kind, joined) =
                     state.body_mode(reach.object, reach.body, HeldKind::of(&reach.kind), joined);
-                state.held[i] = Some(Held {
-                    object: reach.object,
-                    body: reach.body,
-                    grip: Grip::of(palm.pose, body.pose, reach.point),
-                    mass_kg,
-                    joined,
-                    kind,
-                });
+                state.set_held(
+                    i,
+                    Some(Held {
+                        object: reach.object,
+                        body: reach.body,
+                        grip: Grip::of(palm.pose, body.pose, reach.point),
+                        mass_kg,
+                        joined,
+                        kind,
+                    }),
+                );
                 outcome.taken[i] = true;
                 if let TargetKind::Character(target) = reach.kind {
                     tracing::info!(
@@ -1045,7 +1047,7 @@ fn lose(
     for hand in Hand::BOTH {
         let i = hand.index();
         if state.held[i].is_some_and(|h| h.same(held)) {
-            state.held[i] = None;
+            state.set_held(i, None);
             outcome.released[i] = true;
             outcome.losses[i] = Some(loss);
         }

@@ -410,3 +410,52 @@ fn two_hands_on_a_joined_heavy_object_pull_as_a_carry_of_it_would() {
     assert!(outcome.reports.iter().flatten().all(|r| r.liftable));
     assert!(fake.calls.iter().all(|&c| c != "drive"));
 }
+
+#[test]
+fn a_hold_that_ends_takes_its_strain_with_it() {
+    // A caught hold builds up stuck time, then ends without a tear: a later hold of the same
+    // body starts fresh rather than inheriting it.
+    let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+    let caught = PalmMotion {
+        pose: Pose {
+            position: lag,
+            ..palm().pose
+        },
+        ..palm()
+    };
+    let mut fake = FakeBodies {
+        body: body(),
+        calls: Vec::new(),
+        driven: None,
+    };
+    let endings: [fn(&mut PickupState) -> TickInputs; 2] = [
+        // The hand stops being tracked.
+        |_| TickInputs {
+            palms: [None; 2],
+            ..inputs(false)
+        },
+        // The grips stop being read.
+        |state| {
+            state.input_at = None;
+            inputs(false)
+        },
+    ];
+    for end in endings {
+        let mut state = PickupState::new();
+        state.held[0] = Some(held(false, HeldKind::Prop));
+        for _ in 0..2 {
+            state.input_at = Some(Instant::now());
+            let inputs = TickInputs {
+                palms: [Some(caught), None],
+                ..inputs(false)
+            };
+            unsafe { tick_with(&mut state, inputs, &PICKUP, &mut fake) };
+        }
+        assert!(state.held[0].is_some() && state.strains[0].is_some());
+        state.input_at = Some(Instant::now());
+        let inputs = end(&mut state);
+        unsafe { tick_with(&mut state, inputs, &PICKUP, &mut fake) };
+        assert_eq!(state.held[0], None);
+        assert_eq!(state.strains[0], None);
+    }
+}

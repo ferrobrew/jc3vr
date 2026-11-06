@@ -44,7 +44,7 @@ impl Observation {
 pub(super) fn acquired(state: &mut PickupState, index: usize, result: Option<Acquisition>) -> bool {
     state.doors[index] = None;
     let Some(result) = result else {
-        state.held[index] = None;
+        state.set_held(index, None);
         return false;
     };
     match result {
@@ -252,7 +252,7 @@ pub(super) fn apply(
                 state.doors[k] = None;
             }
             TearResult::Lost => {
-                state.held[k] = None;
+                state.set_held(k, None);
                 state.doors[k] = None;
                 outcome.joints[k] = None;
                 outcome.reports[k] = None;

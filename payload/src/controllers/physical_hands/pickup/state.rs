@@ -20,6 +20,8 @@ use crate::controllers::{
 /// The pickups' state across ticks.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PickupState {
+    /// Each hand's hold. A hold is set, replaced, or ended through [`Self::set_held`] or
+    /// [`Self::take_held`], which end its strain with it.
     pub(crate) held: [Option<Held>; 2],
     /// Each hand's grip on a latched door, before the latch gives.
     pub(crate) latches: [Option<Latch>; 2],
@@ -61,6 +63,19 @@ impl PickupState {
             carrier_velocity: None,
             strains: [None; 2],
         }
+    }
+
+    /// Set, replace, or end the hold of the hand at `index`, and with it the hand's strain: a new
+    /// hold of the same body starts fresh rather than inheriting a caught hold's stuck time.
+    pub(crate) fn set_held(&mut self, index: usize, held: Option<Held>) {
+        self.held[index] = held;
+        self.strains[index] = None;
+    }
+
+    /// End the hold of the hand at `index`, and with it the hand's strain ([`Self::set_held`]).
+    pub(crate) fn take_held(&mut self, index: usize) -> Option<Held> {
+        self.strains[index] = None;
+        self.held[index].take()
     }
 
     /// The strain of `hand`'s hold of `held`, fresh for a hold it was not measured on.
@@ -221,6 +236,7 @@ impl PickupState {
         }
         self.evidence_holds = [None; 2];
         self.held = [None; 2];
+        self.strains = [None; 2];
         crate::controllers::physical_hands::impacts::publish([None; 2]);
         self.latches = [None; 2];
         self.doors = [None; 2];

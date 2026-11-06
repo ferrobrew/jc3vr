@@ -80,16 +80,20 @@ pub(super) unsafe fn keep_latch(
                     );
                     let world = unsafe { doors::engine::vehicle_frame(latch.door.vehicle) };
                     state.carry_body(object, body);
-                    state.held[i] = Some(Held {
-                        object,
-                        body,
-                        grip: Grip::of(latch.handoff_palm(world), read.pose, grab),
-                        mass_kg: read.mass_kg.unwrap_or(f32::INFINITY),
-                        // A new fixed joint would retain the pre-opening relative pose and discard
-                        // the pull that undid the latch. The carry drive keeps that pull active.
-                        joined: false,
-                        kind: HeldKind::Door,
-                    });
+                    state.set_held(
+                        i,
+                        Some(Held {
+                            object,
+                            body,
+                            grip: Grip::of(latch.handoff_palm(world), read.pose, grab),
+                            mass_kg: read.mass_kg.unwrap_or(f32::INFINITY),
+                            // A new fixed joint would retain the pre-opening relative pose and
+                            // discard the pull that undid the latch. The carry drive keeps that
+                            // pull active.
+                            joined: false,
+                            kind: HeldKind::Door,
+                        }),
+                    );
                     crate::controllers::physical_hands::pickup::tearing::acquired(
                         state,
                         i,
@@ -280,14 +284,17 @@ pub(super) unsafe fn keep_regrip(
                 );
                 let (kind, joined) =
                     state.body_mode(reach.object, reach.body, HeldKind::Ragdoll, joints.join[i]);
-                state.held[i] = Some(Held {
-                    object: reach.object,
-                    body: reach.body,
-                    grip: Grip::of(palm.pose, body.pose, reach.point),
-                    mass_kg,
-                    joined,
-                    kind,
-                });
+                state.set_held(
+                    i,
+                    Some(Held {
+                        object: reach.object,
+                        body: reach.body,
+                        grip: Grip::of(palm.pose, body.pose, reach.point),
+                        mass_kg,
+                        joined,
+                        kind,
+                    }),
+                );
                 outcome.regrips += 1;
             }
             Ok(_) => {
