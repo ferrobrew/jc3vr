@@ -34,7 +34,7 @@ The native viewer decodes H.264 through `ffmpeg` on `PATH`. The export is behind
 
 ## What it shows
 
-Everything is on the `recording` timeline, in seconds on the recording's clock. A `wall_clock` timeline is added when the take's sidecar sits beside the recording (each frame's wall-clock stamp), or otherwise when the recording has a take marker (which anchors it, running at real time). The default layout has the 3D scene and the plots on the left, and the video, the event log, the state lanes, and the export's notes (`about`) on the right.
+Everything is on the `recording` timeline, in seconds on the recording's clock. A `wall_clock` timeline is added when the take's sidecar sits beside the recording (each frame's wall-clock stamp), or otherwise when the recording has a take marker (which anchors it, running at real time). The default layout has the 3D scene and the plots on the left, and the video, the event log, the state lanes, and the export's notes (`about`) on the right, with the coarse movement lane (`states/move`, below) as a thin state timeline across the bottom, so what Rico was doing is in view whichever tabs are open.
 
 ### The 3D scene
 
@@ -80,7 +80,7 @@ Under `events/`, as text log entries with levels:
 - `events/injected`: the actions the mod injected on each input tick, at debug level so they can be filtered out.
 - `events/haptics`: each haptic cue. `events/settings`: each settings note; the settings' text is the `settings` document, shown in its own tab. `events/rig`: the rig's calibration and tuning (a repeat at debug level). `events/bodies`: a body joining the near set, at debug level. `events/timing`: each frame-time breakdown, at debug level.
 
-Under `states/`, as lanes in the state timeline: the action set, the session state, the controller mode with its refinements, the posture, the root's owner and support, the body's rule state and hand-over case, the offline rig's step phase and the recorded rig's (`rig_step_recorded`), the wingsuit gesture, each hand's snatch phase, what placed the cockpit, and, in a recording that has them, the grapple's hook and wire states and the vehicle with the player's seat and what each hand holds.
+Under `states/`, as lanes in the state timeline: the action set, the session state, the controller mode with its refinements, the posture, the root's owner and support, the body's rule state and hand-over case, the offline rig's step phase and the recorded rig's (`rig_step_recorded`), the wingsuit gesture, each hand's snatch phase, what placed the cockpit, and, in a recording that has them, the grapple's hook and wire states and the vehicle with the player's seat and what each hand holds. `states/move` is the coarse one: the controller mode alone (on foot, swimming, falling, wingsuit, parachute, or menu), and in a vehicle its class from the vehicle lane (car, motorcycle, boat, helicopter, plane, mech, or unknown; plain "vehicle" in a recording without the vehicle group). Its labels and colours are fixed by a static state configuration logged once (`MOVE_STATES` in `rerun_export/character.rs`), so a mode reads the same colour in every take; a mode it does not know passes through in a colour of the viewer's choosing.
 
 ## What the file does not hold
 

@@ -1,11 +1,14 @@
 //! The controller states: Rico's root and motion, the aim targets, the grapple's aim and its line,
 //! the vehicle, and the drawn wrists in the world, with their scalars, their state lanes, and the
-//! log lines for a standing error that starts or a root move the tick does not explain.
+//! log lines for a standing error that starts or a root move the tick does not explain. One lane,
+//! `states/move`, is coarse on purpose: the mode alone, with a vehicle's class, in fixed colours
+//! ([`MOVE_STATES`]), for the always-visible row across the bottom of the layout.
 
 use glam::Vec3;
 use rerun::{
     Arrows3D, Clear, Color, LineStrips3D, Points3D, RecordingStreamResult, Rgba32, Scalars,
-    StateChange, TextLog, Transform3D, TransformAxes3D, components::TextLogLevel,
+    StateChange, StateConfiguration, TextLog, Transform3D, TransformAxes3D,
+    components::TextLogLevel,
 };
 use tracking_format::{
     event::{ControllerState, GrappleState, VehicleState},
@@ -28,6 +31,7 @@ pub(crate) fn log(context: &Context<'_>) -> RecordingStreamResult<()> {
             .with_colors([RICO])
             .with_labels(["Rico"]),
     )?;
+    rec.log_static(MOVE_LANE, &move_configuration())?;
     let mut lanes = Lanes::default();
     let mut previous: Option<&ControllerState> = None;
     for &(time_ns, state) in &context.states.all {
@@ -59,6 +63,46 @@ pub(crate) fn lane(
         .log(path, &StateChange::single(value.as_str()))?;
     *last = Some(value);
     Ok(())
+}
+
+/// The coarse movement lane's entity path.
+pub(crate) const MOVE_LANE: &str = "states/move";
+
+/// The coarse movement lane's known values, each with its label and its colour (RGBA): the
+/// controller modes, a vehicle by its class, and a vehicle whose class the recording lacks.
+pub(crate) const MOVE_STATES: [(&str, &str, u32); 14] = [
+    ("on_foot", "on foot", 0x4C_AF_50_FF),
+    ("swimming", "swimming", 0x29_B6_F6_FF),
+    ("falling", "falling", 0xEF_53_50_FF),
+    ("wingsuit", "wingsuit", 0xAB_47_BC_FF),
+    ("parachute", "parachute", 0xFF_A7_26_FF),
+    ("vehicle", "vehicle", 0x78_90_9C_FF),
+    ("vehicle_car", "car", 0x8D_6E_63_FF),
+    ("vehicle_motorcycle", "motorcycle", 0xD4_A0_17_FF),
+    ("vehicle_sea", "boat", 0x00_83_8F_FF),
+    ("vehicle_helicopter", "helicopter", 0x5C_6B_C0_FF),
+    ("vehicle_plane", "plane", 0x9C_CC_65_FF),
+    ("vehicle_mech", "mech", 0xEC_40_7A_FF),
+    ("vehicle_unknown", "vehicle (unknown)", 0x60_7D_8B_FF),
+    ("ui", "menu", 0xBD_BD_BD_FF),
+];
+
+/// The coarse movement lane's value for a controller `mode` and, in a vehicle, the vehicle lane's
+/// `class`: the mode alone, or `vehicle_` and the class in lower case. A mode the lane does not
+/// know passes through, and draws in a colour of the viewer's choosing.
+pub(crate) fn move_state(mode: &str, class: Option<&str>) -> String {
+    match (mode, class) {
+        ("vehicle", Some(class)) => format!("vehicle_{}", class.to_lowercase()),
+        (mode, _) => mode.to_owned(),
+    }
+}
+
+/// The coarse movement lane's static configuration: every known value's label and colour.
+fn move_configuration() -> StateConfiguration {
+    StateConfiguration::new()
+        .with_values(MOVE_STATES.map(|(value, _, _)| value))
+        .with_labels(MOVE_STATES.map(|(_, label, _)| label))
+        .with_colors(MOVE_STATES.map(|(_, _, colour)| colour))
 }
 
 const RICO: Color = Color(Rgba32::from_rgb(255, 140, 0));
@@ -377,6 +421,7 @@ fn log_scalars(context: &Context<'_>, state: &ControllerState) -> RecordingStrea
 /// The state lanes the controller states feed, each logged when it changes.
 #[derive(Debug, Default)]
 struct Lanes {
+    motion: Option<String>,
     mode: Option<String>,
     posture: Option<String>,
     support: Option<String>,
@@ -395,6 +440,13 @@ impl Lanes {
             (None, None) => state.mode.to_string(),
         };
         lane(context, "states/mode", &mut self.mode, mode)?;
+        let class = state.vehicle.as_ref().map(|v| v.class.as_ref());
+        lane(
+            context,
+            MOVE_LANE,
+            &mut self.motion,
+            move_state(state.mode.as_ref(), class),
+        )?;
         lane(
             context,
             "states/posture",

@@ -1,5 +1,6 @@
 //! The default layout: the 3D scene and the plots on the left, the video, the event log, the state
-//! lanes, and the export's notes on the right.
+//! lanes, and the export's notes on the right, and the coarse movement lane as a thin row across
+//! the bottom, always in view.
 
 use rerun::{
     RecordingStream, RecordingStreamResult,
@@ -10,7 +11,7 @@ use rerun::{
     },
 };
 
-use crate::rerun_export::TIMELINE;
+use crate::rerun_export::{TIMELINE, character::MOVE_LANE};
 
 /// Send the layout, with a video view when the export has a video.
 pub(crate) fn send(rec: &RecordingStream, video: bool) -> RecordingStreamResult<()> {
@@ -44,11 +45,19 @@ pub(crate) fn send(rec: &RecordingStream, video: bool) -> RecordingStreamResult<
     } else {
         Vertical::new([log.into()])
     };
-    Blueprint::new(Horizontal::new([left.into(), right.into()]).with_column_shares([0.58, 0.42]))
-        .with_auto_views(false)
-        .with_time_panel(TimePanel::new().with_timeline(TIMELINE))
-        .send(rec, BlueprintActivation::default())
+    let main = Horizontal::new([left.into(), right.into()]).with_column_shares([0.58, 0.42]);
+    let motion = StateTimelineView::new("move").with_origin(format!("/{MOVE_LANE}"));
+    Blueprint::new(
+        Vertical::new([main.into(), motion.into()])
+            .with_row_shares([1.0 - MOVE_ROW_SHARE, MOVE_ROW_SHARE]),
+    )
+    .with_auto_views(false)
+    .with_time_panel(TimePanel::new().with_timeline(TIMELINE))
+    .send(rec, BlueprintActivation::default())
 }
+
+/// The share of the layout's height the movement lane's row takes: a thin strip.
+const MOVE_ROW_SHARE: f32 = 0.06;
 
 /// The plot tabs and the entities each shows.
 const PLOTS: [(&str, &[&str]); 10] = [

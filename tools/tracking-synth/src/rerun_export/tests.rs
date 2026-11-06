@@ -19,7 +19,13 @@ use tracking_format::{
 
 use crate::{
     dump::Range,
-    rerun_export::{ExportOptions, export, path_part, registration::Placement, scene, view},
+    rerun_export::{
+        ExportOptions,
+        character::{MOVE_STATES, move_state},
+        export, path_part,
+        registration::Placement,
+        scene, view,
+    },
     rig_eval::EvalOptions,
     schema::Schema,
     scripts,
@@ -53,6 +59,55 @@ fn a_version_8_recording_exports_with_the_cockpit_placed_by_its_view() {
     // Every text entry the version 8 events add is counted: one of each of the notes per frame,
     // and the forces.
     assert!(summary.events >= frames * 6, "{summary:?}");
+}
+
+/// The movement lane is the mode alone, a vehicle taking its class, and every value the recorded
+/// modes and classes produce has its own label and colour.
+#[test]
+fn the_movement_lane_is_the_mode_with_a_vehicles_class() {
+    assert_eq!(move_state("on_foot", None), "on_foot");
+    assert_eq!(move_state("swimming", None), "swimming");
+    assert_eq!(move_state("vehicle", Some("Car")), "vehicle_car");
+    assert_eq!(move_state("vehicle", Some("unknown")), "vehicle_unknown");
+    assert_eq!(move_state("vehicle", None), "vehicle");
+    // A class left over from a vehicle being left does not colour another mode.
+    assert_eq!(move_state("parachute", Some("Car")), "parachute");
+    let known: Vec<&str> = MOVE_STATES.iter().map(|(value, _, _)| *value).collect();
+    let modes = [
+        "on_foot",
+        "swimming",
+        "falling",
+        "wingsuit",
+        "parachute",
+        "ui",
+    ];
+    let classes = [
+        "Helicopter",
+        "Plane",
+        "Motorcycle",
+        "Car",
+        "Sea",
+        "Mech",
+        "unknown",
+    ];
+    let produced = modes
+        .iter()
+        .map(|mode| move_state(mode, None))
+        .chain(
+            classes
+                .iter()
+                .map(|class| move_state("vehicle", Some(class))),
+        )
+        .chain([move_state("vehicle", None)]);
+    for value in produced {
+        assert!(known.contains(&value.as_str()), "{value}");
+    }
+    for (i, (value, _, colour)) in MOVE_STATES.iter().enumerate() {
+        for (other, _, other_colour) in &MOVE_STATES[i + 1..] {
+            assert_ne!(value, other);
+            assert_ne!(colour, other_colour, "{value} and {other}");
+        }
+    }
 }
 
 #[test]
