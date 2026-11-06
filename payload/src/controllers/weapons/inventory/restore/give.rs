@@ -1,6 +1,7 @@
-//! The debug UI's give: a weapon of any kind the game ships put straight onto a socket, a socket
-//! cleared, the grenade stock set, and the placed C4 charges removed. The design is in
-//! `docs/mod/input/two-handed-inventory.md`, "Giving weapons from the debug UI".
+//! The debug UI's give: a weapon of any kind the game ships put straight onto a socket or into a
+//! hand, a socket cleared or a hand's weapon let go of, the grenade stock set, and the placed C4
+//! charges removed. The design is in `docs/mod/input/two-handed-inventory.md`, "Giving weapons from
+//! the debug UI".
 //!
 //! A give takes the restore's path for a carried weapon: the shipped definition's tag set names
 //! its definition's unique tag ([`SpawnSystem::GetUniqueTag`]), the spawn system spawns that one
@@ -10,6 +11,11 @@
 //! socket that holds a weapon is cleared first, its weapon falling clear of the player as a swap's
 //! does ([`swap::eject`]), so the give writes straight into it. The requests are queued from the UI
 //! and carried out on the game thread at the restore's input tick ([`input_tick`]).
+//!
+//! A give into a hand comes onto a socket that fits it ([`hand_socket`]) the same way, and on the
+//! next tick the hand draws it off through the ordinary draw, as a grab at that socket would, but
+//! only while the hand's grip is closed and the hand is empty. A hand whose grip is open holds
+//! nothing, so the weapon then stays on the socket.
 //!
 //! Nothing in the spawn path locks a definition: the game's own completion reward gives its golden
 //! pistol through the same unique tag. What can stop a give is the definition's exported entity:
@@ -30,20 +36,27 @@ use jc3gi::{
     equipment::weapon::WeaponBase,
     spawn_system::{SpawnResourceDefStatus, SpawnSystem},
     types::math::Matrix4,
+    ui::locator::Locale,
 };
 use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        loadout::Socket,
+        frame::{self, Button, Hand},
+        loadout::{Socket, live},
+        summary::localise,
         weapons::{
             c4,
             dual_wield::single,
             grenade::stock,
-            hold::{refs::Strong, swap},
+            hold::{self, act, refs::Strong, swap},
             inventory::{
                 engine as inventory_engine,
-                restore::{PLAN, SpawnToken, adoption, spawned},
+                restore::{
+                    PLAN, SpawnToken,
+                    adoption::{self, Outcome},
+                    spawned,
+                },
                 spawn_safety::{self, RequestKind},
             },
         },
@@ -56,8 +69,13 @@ use crate::{
 pub enum GiveRequest {
     /// Spawn a weapon of the shipped definition named `name` onto `socket`.
     Weapon { socket: Socket, name: String },
+    /// Spawn a weapon of the shipped definition named `name` for `hand`: onto a socket that fits
+    /// it, then drawn into the hand if its grip is closed.
+    Hand { hand: Hand, name: String },
     /// Let the weapon on `socket` fall clear of the player.
     Clear(Socket),
+    /// Let go of the weapon `hand` holds.
+    LetGo(Hand),
     /// Set the grenade stock to this many, within its capacity.
     Grenades(i32),
     /// Remove the player's placed C4 charges without detonating them.
@@ -80,6 +98,69 @@ pub fn weapons_for(socket: Socket) -> Vec<&'static SpawnDefinition> {
         .iter()
         .filter(|def| giveable(def) == Some(small))
         .collect()
+}
+
+/// The shipped weapon definitions a hand can be given: every hand weapon, in table order.
+pub fn weapons_for_hand() -> Vec<&'static SpawnDefinition> {
+    spawn::definitions()
+        .iter()
+        .filter(|def| giveable(def).is_some())
+        .collect()
+}
+
+/// The socket a give of a weapon for `hand` comes onto, by whether the weapon is one-handed
+/// (`small`) and which sockets are `occupied`: the first empty one of the sockets that fit it, the
+/// hand's own side first, else the first of them, which the give clears.
+pub fn hand_socket(hand: Hand, small: bool, occupied: impl Fn(Socket) -> bool) -> Socket {
+    let candidates = if small {
+        [Socket::Hip(hand), Socket::Hip(hand.other()), Socket::Chest]
+    } else {
+        [
+            Socket::Shoulder(hand),
+            Socket::Shoulder(hand.other()),
+            Socket::BackOuter,
+        ]
+    };
+    candidates
+        .into_iter()
+        .find(|&socket| !occupied(socket))
+        .unwrap_or(candidates[0])
+}
+
+/// The display name of the shipped definition `def`, as the game names a weapon of it, in the
+/// game's language: looked up on the game thread ([`input_tick`]) once per language, by the
+/// definition's name hash ([`SpawnDefinition::name_hash`]). Falls back to the definition's name
+/// before the lookup, for a definition the localisation store has no name for, and in a language
+/// the debug UI's fonts cannot draw.
+pub fn display_name(def: &SpawnDefinition) -> String {
+    NAMES
+        .lock()
+        .names
+        .iter()
+        .find(|(name, _)| *name == def.name)
+        .and_then(|(_, display)| display.clone())
+        .unwrap_or_else(|| def.name.clone())
+}
+
+/// The definition name of each give on its way to `target`.
+pub fn pending(target: GiveTarget) -> Vec<&'static str> {
+    let target_of = |p: &Pending| match p.hand {
+        Some(hand) => GiveTarget::Hand(hand),
+        None => GiveTarget::Socket(p.socket),
+    };
+    PENDING
+        .lock()
+        .iter()
+        .filter(|p| target_of(p) == target)
+        .map(|p| p.name)
+        .collect()
+}
+
+/// Where a give goes.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum GiveTarget {
+    Hand(Hand),
+    Socket(Socket),
 }
 
 /// What the last give did, for the readout.
@@ -106,11 +187,32 @@ pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
     if !ready {
         return;
     }
+    unsafe { refresh_names() };
+    unsafe { draw_given() };
     let queued = std::mem::take(&mut *QUEUE.lock());
     for request in queued {
         let outcome = match request {
-            GiveRequest::Weapon { socket, name } => unsafe { give(owner, socket, &name) },
+            GiveRequest::Weapon { socket, name } => unsafe { give(owner, socket, None, &name) },
+            GiveRequest::Hand { hand, name } => match live::snapshot_now() {
+                Some(table) => {
+                    let small = spawn::definitions()
+                        .iter()
+                        .find(|def| def.name == name)
+                        .and_then(giveable)
+                        .unwrap_or(true);
+                    let socket = hand_socket(hand, small, |socket| table.docked(socket).is_some());
+                    unsafe { give(owner, socket, Some(hand), &name) }
+                }
+                None => "give: there is no loadout table".to_owned(),
+            },
             GiveRequest::Clear(socket) => unsafe { clear(socket) },
+            GiveRequest::LetGo(hand) => match unsafe { act::let_go(hand, 0.0) } {
+                Ok(_) => format!("give: the {} hand let go of its weapon", hand.label()),
+                Err(refusal) => format!(
+                    "give: the {} hand let go of nothing: {refusal}",
+                    hand.label()
+                ),
+            },
             GiveRequest::Grenades(count) => match unsafe { stock::set(count) } {
                 Some(count) => format!("give: the grenade stock is {count}"),
                 None => "give: the player has no grenade weapon".to_owned(),
@@ -130,6 +232,7 @@ pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
 /// Forget the gives on their way. Called when the restore forgets its own.
 pub(super) fn clear_pending() {
     PENDING.lock().clear();
+    DRAWS.lock().clear();
     GIVEN.lock().clear();
     EMPTY.lock().clear();
 }
@@ -146,6 +249,8 @@ const GIVE_WAIT_LOADING: Duration = Duration::from_secs(45);
 struct Pending {
     token: SpawnToken,
     socket: Socket,
+    /// The hand the weapon is given to, which draws it off the socket once it is there.
+    hand: Option<Hand>,
     name: &'static str,
     /// The definition's unique spawn tag.
     tag_index: i32,
@@ -173,12 +278,27 @@ impl Refusal {
 }
 
 static QUEUE: Mutex<Vec<GiveRequest>> = Mutex::new(Vec::new());
+/// The weapons given to a hand that came onto their socket on the last tick, for the hand to draw
+/// on the next: the hand, the socket, and the definition's name.
+static DRAWS: Mutex<Vec<(Hand, Socket, &'static str)>> = Mutex::new(Vec::new());
 static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
 /// The weapons the spawn callback ([`spawned`]) handed over, with their request's token.
 pub(super) static GIVEN: Mutex<Vec<(SpawnToken, Strong)>> = Mutex::new(Vec::new());
 /// The gives the spawn callback answered with no weapon, with how many objects it handed over.
 pub(super) static EMPTY: Mutex<Vec<(SpawnToken, usize)>> = Mutex::new(Vec::new());
 static LAST: Mutex<Option<String>> = Mutex::new(None);
+/// The giveable definitions' display names, by definition name, for the language they were looked
+/// up in ([`display_name`]).
+static NAMES: Mutex<DefinitionNames> = Mutex::new(DefinitionNames {
+    locale: None,
+    names: Vec::new(),
+});
+
+/// The giveable definitions' display names in one language.
+struct DefinitionNames {
+    locale: Option<Locale>,
+    names: Vec<(&'static str, Option<String>)>,
+}
 /// The shipped definitions a give has shown cannot be given, by name.
 static REFUSED: Mutex<Vec<(&'static str, Refusal)>> = Mutex::new(Vec::new());
 
@@ -207,8 +327,9 @@ fn giveable(def: &SpawnDefinition) -> Option<bool> {
     Some(one_handed)
 }
 
-/// Spawn a weapon of the definition `name` for `socket`, clearing the socket first.
-unsafe fn give(owner: &Character, socket: Socket, name: &str) -> String {
+/// Spawn a weapon of the definition `name` for `socket`, clearing the socket first, and for `hand`
+/// to draw once it is there.
+unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str) -> String {
     let Some(def) = spawn::definitions().iter().find(|def| def.name == name) else {
         return format!("give: no shipped definition is named {name}");
     };
@@ -256,15 +377,86 @@ unsafe fn give(owner: &Character, socket: Socket, name: &str) -> String {
     PENDING.lock().push(Pending {
         token,
         socket,
+        hand,
         name,
         tag_index,
         at: Instant::now(),
         noted_loading: false,
     });
-    format!(
-        "give: asked the spawn system for {name} for the {}",
-        socket.label()
-    )
+    match hand {
+        Some(hand) => format!(
+            "give: asked the spawn system for {name} for the {} hand, by the {}",
+            hand.label(),
+            socket.label()
+        ),
+        None => format!(
+            "give: asked the spawn system for {name} for the {}",
+            socket.label()
+        ),
+    }
+}
+
+/// Draw each weapon given to a hand off the socket it came onto, while the hand's grip is closed
+/// and the hand is empty.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+unsafe fn draw_given() {
+    let draws = std::mem::take(&mut *DRAWS.lock());
+    for (hand, socket, name) in draws {
+        let empty = live::snapshot_now().is_some_and(|table| table.held(hand).is_none());
+        let line = if !grip_closed(hand) {
+            format!(
+                "give: {name} stays on the {}: the {} hand's grip is open",
+                socket.label(),
+                hand.label()
+            )
+        } else if !empty {
+            format!(
+                "give: {name} stays on the {}: the {} hand holds something",
+                socket.label(),
+                hand.label()
+            )
+        } else {
+            match unsafe { act::draw(hand, socket, hold::SNAP_S) } {
+                Ok(()) => format!("give: {name} is in the {} hand", hand.label()),
+                Err(refusal) => format!("give: {name} stays on the {}: {refusal}", socket.label()),
+            }
+        };
+        tracing::info!(target: "controllers", "{line}");
+        *LAST.lock() = Some(line);
+    }
+}
+
+/// Whether `hand`'s grip is closed on the latest controller frame.
+fn grip_closed(hand: Hand) -> bool {
+    frame::with_latest(|f| {
+        let state = f.hand(hand);
+        f.focused && state.active && state.buttons.contains(Button::SqueezePress)
+    })
+    .unwrap_or(false)
+}
+
+/// Look the giveable definitions' display names up again when the game's language has changed.
+///
+/// # Safety
+///
+/// The game thread, past startup.
+unsafe fn refresh_names() {
+    let locale = unsafe { localise::current_locale() };
+    if locale.is_none() || NAMES.lock().locale == locale {
+        return;
+    }
+    let names = weapons_for_hand()
+        .into_iter()
+        .map(|def| {
+            // SAFETY: per the contract.
+            let display = unsafe { localise::weapon_name(def.name_hash()) };
+            (def.name.as_str(), display)
+        })
+        .collect();
+    *NAMES.lock() = DefinitionNames { locale, names };
 }
 
 /// Remember that `name` cannot be given, and why.
@@ -335,11 +527,14 @@ unsafe fn adopt(owner: &mut Character) {
                 unsafe {
                     single::designate_if_active(&mut *(object as *mut WeaponBase), "a given pistol")
                 };
-                format!(
-                    "give: {} is on the {}",
-                    pending.name,
-                    pending.socket.label()
-                )
+                let landed = match outcome {
+                    Outcome::Restored(socket) => socket,
+                    _ => pending.socket,
+                };
+                if let Some(hand) = pending.hand {
+                    DRAWS.lock().push((hand, landed, pending.name));
+                }
+                format!("give: {} is on the {}", pending.name, landed.label())
             }
             None => format!("give: {} was not carried: {outcome:?}", pending.name),
         };
@@ -467,6 +662,7 @@ mod tests {
             category: category.to_owned(),
             tags: tags.to_owned(),
             pool: "weapon".to_owned(),
+            entity_hash: None,
         }
     }
 
@@ -535,6 +731,37 @@ mod tests {
         refuse(name, Refusal::LoadError);
         assert_eq!(refusal(name), Some(Refusal::LoadError.label()));
         assert_eq!(REFUSED.lock().iter().filter(|(n, _)| *n == name).count(), 1);
+    }
+
+    #[test]
+    fn a_hand_give_takes_the_first_free_socket_on_the_hands_side() {
+        let none = |_: Socket| false;
+        assert_eq!(hand_socket(Hand::Left, true, none), Socket::Hip(Hand::Left));
+        assert_eq!(
+            hand_socket(Hand::Right, false, none),
+            Socket::Shoulder(Hand::Right)
+        );
+        let own_hip = |socket: Socket| socket == Socket::Hip(Hand::Left);
+        assert_eq!(
+            hand_socket(Hand::Left, true, own_hip),
+            Socket::Hip(Hand::Right)
+        );
+        let both_hips = |socket: Socket| matches!(socket, Socket::Hip(_));
+        assert_eq!(hand_socket(Hand::Left, true, both_hips), Socket::Chest);
+        let back_full = |socket: Socket| !matches!(socket, Socket::Hip(_) | Socket::Chest);
+        assert_eq!(
+            hand_socket(Hand::Left, false, back_full),
+            Socket::Shoulder(Hand::Left)
+        );
+    }
+
+    #[test]
+    fn a_hand_is_offered_every_hand_weapon() {
+        let hand = weapons_for_hand();
+        assert_eq!(
+            hand.len(),
+            weapons_for(Socket::Chest).len() + weapons_for(Socket::BackOuter).len()
+        );
     }
 
     #[test]

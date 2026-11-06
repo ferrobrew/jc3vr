@@ -2106,7 +2106,10 @@ pub struct WeaponBase {
     pub m_Class: crate::equipment::weapon::WeaponClass,
     _field_430: [u8; 48],
     /// The hash of the weapon type's name, which identifies the weapon type (the damage messages
-    /// carry it, and type-specific code compares it against named hashes).
+    /// carry it, and type-specific code compares it against named hashes). The name is the weapon
+    /// entity's (`w011_pistol_u_pozhar_98`), hashed with `hashlittle`, and the localisation store
+    /// keys the weapon's display name by the same hash: the HUD shows
+    /// [`UIMenu::GetWeaponNameById`](crate::ui::ui_menu::UIMenu::GetWeaponNameById) of it.
     pub m_WeaponNameHash: u32,
     _field_464: [u8; 2],
     /// Whether precision aim is disabled for this weapon; the player's aim-input handling zeroes

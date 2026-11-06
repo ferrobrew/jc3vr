@@ -17,6 +17,8 @@ use jc3gi::{spawn_system::SpawnSystem, types::math::Matrix4};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
+use crate::hash::hashlittle;
+
 /// What the spawner spawns and where.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct SpawnConfig {
@@ -93,6 +95,21 @@ pub struct SpawnDefinition {
     pub tags: String,
     /// The budget pool the definition file belongs to (`vehicle`, `aircraft`, `combatant`, ...).
     pub pool: String,
+    /// The `hashlittle` hash of the definition's entity name, which is a weapon's name hash
+    /// ([`WeaponBase::m_WeaponNameHash`](jc3gi::equipment::weapon::WeaponBase::m_WeaponNameHash)).
+    /// Absent from a table extracted before the tool wrote it; see [`Self::name_hash`].
+    #[serde(default)]
+    pub entity_hash: Option<u32>,
+}
+
+impl SpawnDefinition {
+    /// The name hash a weapon of this definition carries, by which the game names it: the entity
+    /// name's hash, or, from a table without it, the hash of the definition's name, which for the
+    /// shipped weapons is their entity's name.
+    pub fn name_hash(&self) -> u32 {
+        self.entity_hash
+            .unwrap_or_else(|| hashlittle(self.name.as_bytes()))
+    }
 }
 
 /// Every shipped definition the picker offers, parsed once from the embedded table.
@@ -372,5 +389,32 @@ mod tests {
         let m = placement([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 1.0, false);
         assert_eq!(&m.data[8..11], &[0.0, 0.0, 1.0]);
         assert_eq!(&m.data[0..3], &[1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_shipped_weapon_carries_its_entity_names_hash() {
+        // The sight table's key for the same weapon, taken from its entity's name.
+        let pistol = definitions()
+            .iter()
+            .find(|def| def.name == "w011_pistol_u_pozhar_98")
+            .expect("the shipped table has the pistol");
+        assert_eq!(pistol.name_hash(), 4040374394);
+    }
+
+    #[test]
+    fn an_extracted_entity_hash_wins_over_the_name() {
+        let def = SpawnDefinition {
+            name: "Display name".to_owned(),
+            category: String::new(),
+            tags: "weapon".to_owned(),
+            pool: "weapon".to_owned(),
+            entity_hash: Some(7),
+        };
+        assert_eq!(def.name_hash(), 7);
+        let unhashed = SpawnDefinition {
+            entity_hash: None,
+            ..def
+        };
+        assert_eq!(unhashed.name_hash(), hashlittle(b"Display name"));
     }
 }

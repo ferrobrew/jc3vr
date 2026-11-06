@@ -10,3 +10,4 @@ pub mod poi;
 pub mod scaleform;
 pub mod ui_base;
 pub mod ui_manager;
+pub mod ui_menu;

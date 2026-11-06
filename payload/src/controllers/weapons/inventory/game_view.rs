@@ -1,13 +1,11 @@
 //! The game's own inventory as the readouts show it: each slot's weapon with its ammunition, the
-//! selected slot, the wielded weapon, the pistol slot's pair or single pistol, and the grenade and
-//! explosive stock. Captured on the input tick and published with the inventory's readout, so the
-//! debug UI never reads the game's memory.
+//! weapons the carry set keeps beyond the slots, the selected slot, the wielded weapon, the pistol
+//! slot's pair or single pistol, and the grenade and explosive stock. Captured on the input tick
+//! and published with the inventory's readout, so the debug UI never reads the game's memory.
 //!
-//! A weapon's display name is looked up on the same tick ([`weapon_name`]), on the hypothesis that
-//! the HUD names a weapon by passing [`WeaponBase::m_WeaponNameHash`] to the localisation store as
-//! a key hash, as [`HUDUI::OnPickupWeapon`](jc3gi::ui::hud_ui::HUDUI::OnPickupWeapon) takes its name
-//! from that field. The hypothesis is unverified in-game; a hash the store does not have shows as
-//! the bare hash.
+//! A weapon's display name is looked up on the same tick ([`weapon_name`]) as the HUD looks it up:
+//! [`WeaponBase::m_WeaponNameHash`] through
+//! [`UIMenu::GetWeaponNameById`](jc3gi::ui::ui_menu::UIMenu::GetWeaponNameById).
 
 use std::collections::BTreeMap;
 
@@ -21,9 +19,12 @@ use smol_str::SmolStr;
 
 use crate::controllers::{
     loadout::ObjectAddress,
-    summary::localise::{current_locale, game_string_by_hash, renders},
+    summary::localise::{self, current_locale, renders},
     weapons::{
-        dual_wield::single, engine as weapons_engine, engine::slot_from_raw, inventory::traversal,
+        dual_wield::single,
+        engine as weapons_engine,
+        engine::slot_from_raw,
+        inventory::{carry, traversal},
     },
 };
 
@@ -40,6 +41,8 @@ pub(crate) struct GameInventory {
     /// ([`traversal::wield_skipped`]), so that the hands' weapons are armed rather than wielded.
     pub wield_skipped: bool,
     pub pistols: Pistols,
+    /// The weapons the carry set keeps beyond the slots.
+    pub carried: Vec<GameWeapon>,
     /// The reserves of hand grenades and planted explosives.
     pub grenades: i32,
     pub explosives: i32,
@@ -103,24 +106,12 @@ pub(crate) unsafe fn capture(owner: &Character) -> GameInventory {
             .filter(|&index| index < AmmunitionType::NOF_AMMO_TYPES as usize)
             .and_then(|index| inventory.m_Ammunition.get(index).copied())
     };
+    // SAFETY: the caller keeps `weapon` alive, on the game thread past startup.
+    let read = |weapon: &WeaponBase| unsafe { game_weapon(weapon, reserve) };
     let slots = std::array::from_fn(|index| {
         let slot = slot_from_raw(index as i32).unwrap_or(WeaponSlot::E_NONE);
         // SAFETY: a slot's strong reference keeps its weapon alive.
-        let weapon = unsafe { inventory.m_Weapons[index].px.as_ref() }.and_then(|weapon| {
-            // SAFETY: the weapon is live, as above.
-            let raw = |field: *const i32| unsafe { field.read() };
-            let ammo = raw((&raw const weapon.m_AmmunitionType).cast());
-            Some(GameWeapon {
-                object: ObjectAddress::from_address(weapon as *const WeaponBase as usize)?,
-                name_hash: weapon.m_WeaponNameHash,
-                // SAFETY: the game stage runs on the game thread past startup.
-                name: unsafe { weapon_name(weapon.m_WeaponNameHash) },
-                class: raw((&raw const weapon.m_Class).cast()),
-                state: raw((&raw const weapon.m_State).cast()),
-                magazine: weapon.m_MagazineAmmo,
-                reserve: reserve(ammo),
-            })
-        });
+        let weapon = unsafe { inventory.m_Weapons[index].px.as_ref() }.and_then(read);
         GameSlot {
             slot,
             weapon,
@@ -132,6 +123,13 @@ pub(crate) unsafe fn capture(owner: &Character) -> GameInventory {
         Some(weapon) if single::is(weapon.object.get()) => Pistols::Single,
         Some(_) => Pistols::Pair,
     };
+    let carried = carry::objects()
+        .into_iter()
+        // SAFETY: the carry set's strong reference keeps the weapon alive through the tick, which
+        // removes nothing from the set meanwhile.
+        .filter_map(|object| unsafe { carry::weapon_handle(object) })
+        .filter_map(|weapon| read(unsafe { weapon.as_ref() }))
+        .collect();
     // SAFETY: as this function's own contract.
     let selected = unsafe { (&raw const owner.m_SelectedWeaponSlot).cast::<i32>().read() };
     GameInventory {
@@ -143,16 +141,52 @@ pub(crate) unsafe fn capture(owner: &Character) -> GameInventory {
         // SAFETY: as this function's own contract.
         wield_skipped: unsafe { traversal::wield_skipped(owner) },
         pistols,
+        carried,
         grenades: reserve(AmmunitionType::AMMO_HAND_GRENADE as i32).unwrap_or(0),
         explosives: reserve(AmmunitionType::AMMO_EXPLOSIVES as i32).unwrap_or(0),
     }
 }
 
+impl GameInventory {
+    /// The weapon at `object`, in a slot or the carry set.
+    pub fn weapon(&self, object: ObjectAddress) -> Option<&GameWeapon> {
+        self.slots
+            .iter()
+            .filter_map(|slot| slot.weapon.as_ref())
+            .chain(&self.carried)
+            .find(|weapon| weapon.object == object)
+    }
+}
+
 const SLOT_COUNT: usize = WeaponSlot::E_NUM_WEAPON_SLOTS as usize;
 
+/// `weapon` as the readout shows it, with `reserve` giving the holder's reserve of an ammunition
+/// type by its raw value.
+///
+/// # Safety
+///
+/// `weapon` must be live, on the game thread past startup.
+unsafe fn game_weapon(
+    weapon: &WeaponBase,
+    reserve: impl Fn(i32) -> Option<i32>,
+) -> Option<GameWeapon> {
+    // SAFETY: the weapon is live, per the contract.
+    let raw = |field: *const i32| unsafe { field.read() };
+    let ammo = raw((&raw const weapon.m_AmmunitionType).cast());
+    Some(GameWeapon {
+        object: ObjectAddress::from_address(weapon as *const WeaponBase as usize)?,
+        name_hash: weapon.m_WeaponNameHash,
+        // SAFETY: per the contract.
+        name: unsafe { weapon_name(weapon.m_WeaponNameHash) },
+        class: raw((&raw const weapon.m_Class).cast()),
+        state: raw((&raw const weapon.m_State).cast()),
+        magazine: weapon.m_MagazineAmmo,
+        reserve: reserve(ammo),
+    })
+}
+
 /// The display name for the weapon type whose name hash is `hash`, looked up once per hash and
-/// language: the localisation store's string for `hash` used as a key hash. Unverified in-game (see
-/// the module docs).
+/// language ([`localise::weapon_name`]).
 ///
 /// # Safety
 ///
@@ -172,7 +206,7 @@ unsafe fn weapon_name(hash: u32) -> Option<SmolStr> {
         .names
         .entry(hash)
         // SAFETY: per the contract.
-        .or_insert_with(|| unsafe { game_string_by_hash(hash) }.map(SmolStr::from))
+        .or_insert_with(|| unsafe { localise::weapon_name(hash) }.map(SmolStr::from))
         .clone()
 }
 

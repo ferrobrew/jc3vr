@@ -1,5 +1,6 @@
 //! Resolving the summary's strings: the game's through its localisation store
-//! ([`Locator::GetLocalizedStringRaw`]), the mod's from [`ModText`].
+//! ([`Locator::GetLocalizedStringRaw`]), the mod's from [`ModText`]. Weapon names resolve the same
+//! way, through the menu's lookup the HUD uses ([`UIMenu::GetWeaponNameById`]).
 //!
 //! The panel draws with Libre Franklin and egui's bundled fallbacks, which cover the Latin and
 //! Cyrillic languages but not Japanese or Arabic (egui neither carries a CJK font nor shapes Arabic).
@@ -8,7 +9,10 @@
 
 use std::ffi::{CStr, c_char};
 
-use jc3gi::ui::locator::{Locale, Locator};
+use jc3gi::ui::{
+    locator::{Locale, Locator},
+    ui_menu::UIMenu,
+};
 
 use crate::{
     controllers::summary::labels::{ModText, Text},
@@ -63,6 +67,32 @@ pub unsafe fn game_string_by_hash(hash: u32) -> Option<String> {
     unsafe {
         let locator = Locator::get()?;
         let raw = locator.GetLocalizedStringRaw(hash);
+        if raw.is_null() {
+            return None;
+        }
+        let text = CStr::from_ptr(raw as *const c_char).to_str().ok()?;
+        (!text.is_empty()).then(|| text.to_owned())
+    }
+}
+
+/// The display name of the weapon type whose name hash is `name_hash`
+/// ([`WeaponBase::m_WeaponNameHash`](jc3gi::equipment::weapon::WeaponBase::m_WeaponNameHash)), as
+/// the HUD shows it, or `None` when the store has none or the panel's fonts cannot draw the
+/// current language.
+///
+/// # Safety
+///
+/// As [`game_string`].
+pub unsafe fn weapon_name(name_hash: u32) -> Option<String> {
+    // SAFETY: per the contract.
+    let locale = unsafe { current_locale() }?;
+    if !renders(locale) {
+        return None;
+    }
+    // SAFETY: per the contract; the string is the store's, or the lookup's own empty fallback, and
+    // is copied out at once.
+    unsafe {
+        let raw = UIMenu::GetWeaponNameById(name_hash);
         if raw.is_null() {
             return None;
         }

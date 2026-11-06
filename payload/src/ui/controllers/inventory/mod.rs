@@ -1,13 +1,12 @@
-//! The VR inventory's feature: its switches, its status rows, and a read-only view of three sources
-//! side by side, each read from its owner's publication: the game's own inventory ([`game`]), the
-//! live loadout table, which places the player's weapons ([`table`]), and what each hand holds
-//! ([`hands`]). Where the game's slots and the table disagree ([`mismatch`]) the rows are marked.
+//! The VR inventory's feature: its switches, its status rows, and two views, each read from its
+//! owner's publication: the live loadout, edited in place, with one dropdown per hand and per body
+//! socket that shows what is there and gives another weapon there ([`loadout`]), and the game's own
+//! inventory ([`game`]). Where the game's slots and the table disagree ([`mismatch`]) the rows are
+//! marked.
 
 mod game;
-mod give;
-mod hands;
+mod loadout;
 mod mismatch;
-mod table;
 
 use std::{sync::Arc, time::Instant};
 
@@ -24,7 +23,13 @@ use crate::{
     },
     status::inventory::{CARRIED, LAST_LOAD, LOADOUT, PINNED, SEPARATE_PISTOLS, SIDECAR, TRACKED},
     ui::{
-        controllers::{inventory::mismatch::Mismatches, pouch_models::pouch_model_settings},
+        controllers::{
+            inventory::{
+                loadout::{LoadoutInputs, loadout_section},
+                mismatch::Mismatches,
+            },
+            pouch_models::pouch_model_settings,
+        },
         status_row::headlines,
     },
 };
@@ -76,22 +81,24 @@ pub(super) fn inventory_view(ui: &mut Ui, view: &InventoryView) {
             "The game's inventory disagrees with the table on the marked rows.",
         );
     }
-    CollapsingHeader::new("Give weapons")
-        .default_open(false)
-        .show(ui, |ui| give::give_section(ui, table));
+    CollapsingHeader::new("The loadout")
+        .default_open(true)
+        .show(ui, |ui| {
+            loadout_section(
+                ui,
+                &LoadoutInputs {
+                    live: &view.live,
+                    inventory,
+                    physical: &view.physical,
+                    grips: &view.grips,
+                },
+            )
+        });
     CollapsingHeader::new("The game's inventory")
         .default_open(true)
         .show(ui, |ui| match &view.inventory {
             Ok(readout) => game::game_section(ui, readout, table, &mismatches),
             Err(reason) => unavailable(ui, *reason),
-        });
-    CollapsingHeader::new("The loadout table")
-        .default_open(true)
-        .show(ui, |ui| table::table_section(ui, &view.live, inventory));
-    CollapsingHeader::new("The hands")
-        .default_open(true)
-        .show(ui, |ui| {
-            hands::hands_section(ui, table, &view.physical, &view.grips)
         });
 }
 
