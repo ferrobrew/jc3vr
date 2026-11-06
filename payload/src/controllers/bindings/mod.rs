@@ -69,7 +69,9 @@ use std::{
 
 use body_rig::angle::{head_heading, yaw_of};
 use glam::Vec3;
-use jc3gi::{input::input_action_map::Action, state::StateBitFlag};
+use jc3gi::{
+    character::character::Character, input::input_action_map::Action, state::StateBitFlag,
+};
 use parking_lot::Mutex;
 
 pub use crate::controllers::bindings::{
@@ -539,7 +541,10 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
     controls.bail = match detection.mode {
         Mode::Vehicle(seat) => {
-            let seat_bails = bails_by_parachute(seat, vehicles::summary().mounted);
+            // SAFETY: the game stage runs on the game thread before the world update.
+            let mounted_gun = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
+                .is_some_and(|character| unsafe { character.IsInMountedGunState() });
+            let seat_bails = bails_by_parachute(seat, mounted_gun);
             let press_long = state
                 .bindings
                 .exit_press_long(seat, config.bindings.long_press_s);

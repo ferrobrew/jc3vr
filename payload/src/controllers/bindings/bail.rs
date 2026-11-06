@@ -34,8 +34,17 @@ pub const BAIL_ENTER_MARGIN_MPS: f32 = 1.0;
 pub const BAIL_LEAVE_MARGIN_MPS: f32 = 0.5;
 
 /// Whether the game's states for `seat` bail out by parachute at speed: the car's driver, the
-/// motorcycle's rider, and a spinning mounted gun's gunner (`mounted_gun`). A passenger seat, the
-/// boats, the aircraft, and the mech have no bail.
+/// motorcycle's rider, and a mounted gun's gunner (`mounted_gun`, the game's mounted gun state,
+/// [`Character::IsInMountedGunState`]). A passenger seat, the boats, the aircraft, and the mech
+/// have no bail.
+///
+/// Of the mounted gun states, only the spinning mounted weapon's idle state has the bail; the
+/// fixed mounted weapon's do not. The two are not told apart here, so a fixed mount at speed takes
+/// the long press as the bail, which the game would not act on. Whether a fixed mount ever rides a
+/// moving land vehicle is unverified; an emplacement does not move, so its speed keeps the plain
+/// exit.
+///
+/// [`Character::IsInMountedGunState`]: jc3gi::character::character::Character::IsInMountedGunState
 pub const fn bails_by_parachute(seat: VehicleSeat, mounted_gun: bool) -> bool {
     match seat.class {
         VehicleClass::Car | VehicleClass::Motorcycle | VehicleClass::Unknown => {
