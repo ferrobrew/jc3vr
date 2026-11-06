@@ -4497,7 +4497,11 @@ fn _WeaponComponentType_size_check() {
 /// attach bones, muzzle fire points, cached world matrices, and fire effects. A weapon holds one per
 /// gun in [`WeaponBase::m_lWeaponData`](crate::equipment::weapon::WeaponBase::m_lWeaponData); a dual-wield weapon holds two.
 pub struct WeaponData {
-    _field_0: [u8; 192],
+    /// The gun's attached effects and sounds (its `CAttachedEffectContainer` base), loaded from the
+    /// weapon's effect file. The weapon plays its one-off sounds on each gun's container: the reload
+    /// start and end, the dry-fire click, and the usages its clips' track messages name.
+    pub m_AttachedEffects: crate::equipment::attached_effects::AttachedEffectContainer,
+    _field_90: [u8; 48],
     /// The weapon this gun belongs to.
     pub m_Owner: *mut crate::equipment::weapon::WeaponBase,
     _field_c8: [u8; 8],
@@ -4545,7 +4549,18 @@ pub struct WeaponData {
     /// through [`GetWorldMatrixT1`](crate::equipment::weapon::WeaponData::GetWorldMatrixT1); the render update interpolates from
     /// [`m_WorldMatrixT0`](crate::equipment::weapon::WeaponData::m_WorldMatrixT0) toward it.
     pub m_WorldMatrixT1: crate::types::math::Matrix4,
-    _field_1d8: [u8; 152],
+    _field_1d8: [u8; 64],
+    /// The gun's attach offset. [`UpdateAttachmentTransforms`](crate::equipment::weapon::WeaponData::UpdateAttachmentTransforms)
+    /// places a gun on a holster or back bone
+    /// ([`RIGHT_HOLSTER`](crate::character::character::SafeBoneIndex::RIGHT_HOLSTER),
+    /// [`LEFT_HOLSTER`](crate::character::character::SafeBoneIndex::LEFT_HOLSTER),
+    /// [`BACK_ATTACH`](crate::character::character::SafeBoneIndex::BACK_ATTACH), or
+    /// [`BACK_ATTACH_2`](crate::character::character::SafeBoneIndex::BACK_ATTACH_2)), when the weapon's
+    /// attach tuning asks for it, at this offset composed with the bone's model-space pose and the
+    /// holder's world matrix, rather than at the bone's world matrix as it is. Each gun carries
+    /// its own, so the offset follows the gun, not the bone it rides.
+    pub m_AttachOffset: crate::types::math::Matrix4,
+    _field_258: [u8; 24],
     /// The gun's measured world velocity, metres per second.
     /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) gives it to the dropped magazine.
     pub m_MeasuredWorldVelocity: crate::types::math::Vector3,
@@ -4596,6 +4611,84 @@ fn _WeaponData_size_check() {
     unreachable!()
 }
 impl WeaponData {
+    /// Advances the container by `dt`: for each playing instance, runs
+    /// [`AttachedInstance::UpdateTransform`](crate::equipment::attached_effects::AttachedInstance::UpdateTransform) and the instance update, and frees instances whose
+    /// effects and sounds have all finished; then re-evaluates the parameter sources and pushes
+    /// changed values to their sound and effect outputs.
+    pub unsafe fn UpdateAttachedEffects(&mut self, dt: f32) {
+        unsafe { self.m_AttachedEffects.UpdateAttachedEffects(dt) }
+    }
+    /// The one-off effect and sound the container's dynamic usage `usage_hash` plays against
+    /// `target_material` (an `EGameMaterialId`), for the usage's variant whose source material is
+    /// `source_material`, falling back to its
+    /// [`EGameMaterialId_Default`](crate::physics::GameMaterialId::EGameMaterialId_Default) variant. Writes the
+    /// variant's retrigger time to `retrigger_time` when it is not null. A usage the container has
+    /// not loaded returns a shared empty pair, both of whose pointers are null.
+    pub unsafe fn GetDynamicAttachedEffects(
+        &mut self,
+        usage_hash: u32,
+        source_material: crate::physics::GameMaterialId,
+        target_material: u32,
+        retrigger_time: *mut f32,
+    ) -> *const crate::equipment::attached_effects::EffectAndSoundPair {
+        unsafe {
+            self.m_AttachedEffects
+                .GetDynamicAttachedEffects(
+                    usage_hash,
+                    source_material,
+                    target_material,
+                    retrigger_time,
+                )
+        }
+    }
+    /// The container's attached effect usage whose hash is `usage_hash`
+    /// (`hashlittle` of the usage's name), or null when the container did not load one. Owners
+    /// resolve their usages once, when their properties are set, and play them through
+    /// [`ActivateAttachedEffect`](crate::equipment::weapon::WeaponData::ActivateAttachedEffect).
+    pub unsafe fn FindAttachedEffectUsage(
+        &mut self,
+        usage_hash: u32,
+    ) -> *mut crate::equipment::attached_effects::AttachedEffectUsage {
+        unsafe { self.m_AttachedEffects.FindAttachedEffectUsage(usage_hash) }
+    }
+    /// Starts `usage`'s effect and sound for `material` (an `EGameMaterialId`, usually
+    /// [`EGameMaterialId_Default`](crate::physics::GameMaterialId::EGameMaterialId_Default)), attached to the
+    /// container's owner. With `restart_if_playing`, an instance of the usage that is still
+    /// playing is stopped and started again; without it, a playing instance for the same material
+    /// is left to play. A null `usage` does nothing. Returns whether an instance plays.
+    pub unsafe fn ActivateAttachedEffect(
+        &mut self,
+        usage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+        restart_if_playing: bool,
+        material: crate::physics::GameMaterialId,
+    ) -> bool {
+        unsafe {
+            self.m_AttachedEffects
+                .ActivateAttachedEffect(usage, restart_if_playing, material)
+        }
+    }
+    /// Stops `usage`'s playing instances: its effects with `effect_stop_mode` and its sounds with
+    /// `sound_stop_mode`.
+    pub unsafe fn DeactivateAttachedEffect(
+        &mut self,
+        usage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+        effect_stop_mode: crate::equipment::attached_effects::EffectStopMode,
+        sound_stop_mode: crate::equipment::attached_effects::SoundStopMode,
+    ) {
+        unsafe {
+            self.m_AttachedEffects
+                .DeactivateAttachedEffect(usage, effect_stop_mode, sound_stop_mode)
+        }
+    }
+    /// Whether `usage` loops for `material`: whether any of its variants resolves to an effect or a
+    /// sound that loops. A looping usage plays until it is deactivated.
+    pub unsafe fn IsAttachedEffectLooping(
+        &self,
+        usage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+        material: crate::physics::GameMaterialId,
+    ) -> bool {
+        unsafe { self.m_AttachedEffects.IsAttachedEffectLooping(usage, material) }
+    }
     pub const AddToWorld_ADDRESS: usize = 0x140959570;
     /// Puts the gun's own body ([`m_PfxInstance`](crate::equipment::weapon::WeaponData::m_PfxInstance)) into the physics world
     /// (`CWeaponData::AddToWorld`, which the disassembler names `CPfxVehicle::OnStoppedTrailing`).
@@ -4683,7 +4776,8 @@ impl WeaponData {
     /// `state`
     /// ([`Character::GetWorldMatrixForBone`](crate::character::character::Character::GetWorldMatrixForBone)):
     /// a hand attach bone's matrix as it is, and a holster or back bone's composed with the gun's
-    /// attach offset when the weapon's attach tuning asks for it. So a hand-held gun's pose in the
+    /// attach offset ([`m_AttachOffset`](crate::equipment::weapon::WeaponData::m_AttachOffset)) when the weapon's attach tuning
+    /// asks for it. So a hand-held gun's pose in the
     /// hand is the attach bone's pose relative to the wrist, which the animation sets. While
     /// [`m_SkipRenderInterpolation`](crate::equipment::weapon::WeaponData::m_SkipRenderInterpolation) or
     /// `skip_render_interpolation` is set, and for the initial placement (`update_type` 0), it
@@ -4805,15 +4899,42 @@ impl WeaponData {
     pub const NO_MAGAZINE_MODEL_NAME_HASH: u32 = 423049129;
     /// The [`m_MagazineUniqueTag`](crate::equipment::weapon::WeaponData::m_MagazineUniqueTag) of a gun without a magazine prop.
     pub const NO_MAGAZINE_UNIQUE_TAG: i32 = -1;
+    /// The hash of the usage `OutOfAmmoFire` (`hashlittle` of the name): the click of a trigger
+    /// pulled on an empty gun, which [`WeaponBase::CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase) plays on the
+    /// firing gun of a player with nothing left to reload.
+    pub const OUT_OF_AMMO_FIRE_USAGE: u32 = 1403406868;
     /// The name hash (`hashlittle` of `Pump`) of the pump bone in a pump-action gun's own skeleton,
     /// the U-Rys 96's: the skeleton's one bone besides its `Reference` root, which carries the pump
     /// and which the gun's pump clip moves. Resolved to an index through the gun's animation
     /// controller ([`AnimationController::GetBoneIndex`](crate::character::character::AnimationController::GetBoneIndex)).
     pub const PUMP_BONE_HASH: u32 = 2521734759;
+    /// The hash of the usage `ReloadEnd` (`hashlittle` of the name): the sound of a reload
+    /// finishing. [`WeaponBase::CheckIfReloadShouldBeTriggeredBase`](crate::equipment::weapon::WeaponBase::CheckIfReloadShouldBeTriggeredBase) plays it on every gun of a
+    /// weapon whose timed reload with no animation has run out.
+    pub const RELOAD_END_USAGE: u32 = 3006225402;
+    /// The hash of the usage a gun's effect file names `ReloadInsertAmmo` (`hashlittle` of the
+    /// name): the sound of one shell or grenade going in, which only the shell-fed shotgun's and the
+    /// Bildt Negotiator's effect files carry. No code names it; a reload clip's track message
+    /// plays it.
+    pub const RELOAD_INSERT_AMMO_USAGE: u32 = 150649730;
     /// The name hash (`hashlittle` of `Slider`) of the bolt bone in a bolt-action rifle's own
     /// skeleton, the CS111 Archangel's and the Final Argument's: the skeleton's one bone besides its
     /// `Reference` root, which carries the bolt and which the rifle's bolt-action clip moves.
     pub const SLIDER_BONE_HASH: u32 = 2064990683;
+}
+impl std::convert::AsRef<crate::equipment::attached_effects::AttachedEffectContainer>
+for WeaponData {
+    fn as_ref(&self) -> &crate::equipment::attached_effects::AttachedEffectContainer {
+        &self.m_AttachedEffects
+    }
+}
+impl std::convert::AsMut<crate::equipment::attached_effects::AttachedEffectContainer>
+for WeaponData {
+    fn as_mut(
+        &mut self,
+    ) -> &mut crate::equipment::attached_effects::AttachedEffectContainer {
+        &mut self.m_AttachedEffects
+    }
 }
 impl std::convert::AsRef<WeaponData> for WeaponData {
     fn as_ref(&self) -> &WeaponData {

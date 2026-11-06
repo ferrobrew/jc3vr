@@ -39,6 +39,10 @@ pub struct OverlayConfig {
     /// Draw the grounded rig's neck pivot, waist pivot, and the spine between them, and its lean
     /// rings on the floor around the pelvis, coloured by the step phase (`docs/mod/body/rig.md`).
     pub body_rig: bool,
+    /// Mark each gun docked on a socket of the body where its placement puts it, with a line along
+    /// its barrel, green while its model is shown and red while hidden
+    /// ([`crate::controllers::weapons::inventory::docked_view`]).
+    pub docked_guns: bool,
     /// How far behind the scene's depth, in metres, a primitive still counts as visible, so that a
     /// marker on a surface is not hidden by that surface.
     pub depth_tolerance_m: f32,
@@ -65,6 +69,7 @@ impl OverlayConfig {
             body_mirror: false,
             body_mirror_distance_m: 1.2,
             body_rig: true,
+            docked_guns: true,
             depth_tolerance_m: 0.05,
             depth_tolerance_rel: 0.01,
             min_line_px: 1.5,

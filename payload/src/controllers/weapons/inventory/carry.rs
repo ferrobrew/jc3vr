@@ -12,7 +12,9 @@
 //!   has it ([`crate::controllers::loadout::live::place_of`]): on a socket, through the weapon's
 //!   placement virtual ([`WeaponBase::UpdateAttachmentTransforms`]) with its guns' holstered
 //!   attach-bone entries naming the socket's bone, and then moved by the socket's offset in the
-//!   character's frame; in a hand, on the hand's bone that the second weapon writes ([`place`]);
+//!   character's frame; in a hand, on the hand's bone that the second weapon writes ([`place`]); a
+//!   single pistol on the left hip takes its second gun's attach offset for the placement
+//!   ([`borrows_second_offset`]), as the pair's left pistol does;
 //! - it shows or hides the carried weapons the table has on the body whenever the inventory's
 //!   weapons are ([`Inventory::UpdateWeaponVisibility`], detoured);
 //! - it ends each pose-finalization pass for them as the game ends it for the slots' weapons
@@ -57,7 +59,7 @@ use crate::controllers::{
     loadout::{ObjectAddress, Place, Socket, live},
     weapons::{
         dual_wield::single,
-        engine::{character_object, gun_ptr, skip_interpolation, slot_of},
+        engine::{character_object, gun_count, gun_ptr, skip_interpolation, slot_of},
         hold::{armed, refs::Strong},
         inventory::{
             engine::{self as inventory_engine, ObjectKey, Seen, kind_of, refresh_hud, strong_to},
@@ -332,8 +334,12 @@ pub(crate) unsafe fn place(
     let to_world = Mat4::from(character.m_WorldMatrixT1);
     let offsets = *OFFSETS.lock();
     // The inventory placed its own weapons; those the table has on another socket move by its
-    // offset, as a carried weapon does.
+    // offset, as a carried weapon does. A single pistol on the left hip is placed again with the
+    // left gun's attach offset, which the inventory's placement did not use.
     for (weapon, socket) in unsafe { off_dock(inventory) } {
+        if unsafe { borrows_second_offset(weapon, socket) } {
+            unsafe { place_again(weapon, p3, p4, transform_type) };
+        }
         unsafe { shift(weapon, to_world.transform_vector3(offsets[socket.index()])) };
     }
     if COUNT.load(Ordering::Relaxed) == 0 {
@@ -358,7 +364,15 @@ pub(crate) unsafe fn place(
             Some(Place::World(_)) | None => continue,
         };
         unsafe { write_bone(weapon, socket) };
-        unsafe { weapon.UpdateAttachmentTransforms(p3, p4, transform_type) };
+        if unsafe { borrows_second_offset(weapon, socket) } {
+            unsafe {
+                with_second_offset(weapon, |weapon| {
+                    weapon.UpdateAttachmentTransforms(p3, p4, transform_type)
+                })
+            };
+        } else {
+            unsafe { weapon.UpdateAttachmentTransforms(p3, p4, transform_type) };
+        }
         unsafe { shift(weapon, to_world.transform_vector3(offsets[socket.index()])) };
     }
 }
@@ -538,6 +552,91 @@ unsafe fn write_bone(weapon: &mut WeaponBase, socket: Socket) {
     }
 }
 
+/// Whether `weapon` on `socket` is placed with its second gun's attach offset
+/// ([`WeaponData::m_AttachOffset`]): a single pistol on the left hip. A single pistol shows its first
+/// gun alone ([`single`]), and that gun's offset is the one its pair places it with in the right
+/// holster, relative to that holster's bone; on the left holster's bone it does not put the gun
+/// where the pair's left pistol sits. The second gun's offset is the one the pair uses there.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+unsafe fn borrows_second_offset(weapon: &WeaponBase, socket: Socket) -> bool {
+    takes_left_offset(
+        socket,
+        single::is(weapon as *const WeaponBase as usize),
+        unsafe { gun_count(weapon) },
+    )
+}
+
+/// [`borrows_second_offset`] from the socket, whether the weapon is a single pistol, and its count
+/// of guns.
+fn takes_left_offset(socket: Socket, single: bool, guns: usize) -> bool {
+    socket == Socket::Hip(Hand::Left) && single && guns > 1
+}
+
+/// Run `place` on `weapon` with its first two guns' attach offsets exchanged, and exchange them
+/// back afterwards. The second gun is hidden, so the offset it holds meanwhile shows nowhere.
+///
+/// # Safety
+///
+/// `weapon` must be live, on the thread running its holder's pass.
+unsafe fn with_second_offset<R>(
+    weapon: &mut WeaponBase,
+    place: impl FnOnce(&mut WeaponBase) -> R,
+) -> R {
+    let (Some(first), Some(second)) =
+        (unsafe { gun_ptr(weapon, 0) }, unsafe { gun_ptr(weapon, 1) })
+    else {
+        return place(weapon);
+    };
+    let exchange = || unsafe {
+        std::ptr::swap(
+            &raw mut (*first.as_ptr()).m_AttachOffset,
+            &raw mut (*second.as_ptr()).m_AttachOffset,
+        )
+    };
+    exchange();
+    let placed = place(weapon);
+    exchange();
+    placed
+}
+
+/// Place the inventory's weapon `weapon` a second time this pass, with its second gun's attach
+/// offset ([`with_second_offset`]), keeping each gun's previous matrix as the first placement left
+/// it: an advancing placement copies the current matrix into the previous one first, so a second
+/// advance would leave the render interpolating from the first placement's pose.
+///
+/// # Safety
+///
+/// `weapon` must be live, on the thread running its holder's pass.
+unsafe fn place_again(weapon: &mut WeaponBase, p3: f32, p4: f32, transform_type: u32) {
+    let before: [Option<(Matrix4, bool)>; gun::MAX_GUNS] = std::array::from_fn(|i| {
+        unsafe { gun_ptr(weapon, i) }.map(|gun| {
+            // SAFETY: the weapon's list keeps its guns alive.
+            let gun = unsafe { gun.as_ref() };
+            let copied = Mat4::from(gun.m_WorldMatrixT0) == Mat4::from(gun.m_WorldMatrixT1);
+            (gun.m_WorldMatrixT0, copied)
+        })
+    });
+    unsafe {
+        with_second_offset(weapon, |weapon| {
+            weapon.UpdateAttachmentTransforms(p3, p4, transform_type)
+        })
+    };
+    for (i, before) in before.into_iter().enumerate() {
+        let (Some((previous, copied)), Some(mut gun)) = (before, unsafe { gun_ptr(weapon, i) })
+        else {
+            continue;
+        };
+        // A placement that copied its matrix into the previous one does so again, and stays so.
+        if !copied {
+            // SAFETY: the weapon's list keeps its guns alive.
+            unsafe { gun.as_mut() }.m_WorldMatrixT0 = previous;
+        }
+    }
+}
+
 /// Move `weapon`'s guns by `shift`, in the world, after their placement.
 unsafe fn shift(weapon: &mut WeaponBase, shift: Vec3) {
     if shift == Vec3::ZERO || !shift.is_finite() {
@@ -592,5 +691,21 @@ fn update_weapon_visibility(inventory: *mut Inventory, visible: bool) {
         }
         // SAFETY: the set's strong reference keeps the weapon alive.
         unsafe { (*carried.weapon()).SetVisible(visible, false, false) };
+    }
+}
+
+#[cfg(test)]
+mod left_offset_tests {
+    use super::*;
+
+    #[test]
+    fn only_a_single_pistol_on_the_left_hip_takes_the_left_guns_offset() {
+        assert!(takes_left_offset(Socket::Hip(Hand::Left), true, 2));
+        assert!(!takes_left_offset(Socket::Hip(Hand::Right), true, 2));
+        // The game's pair places each of its guns with its own offset.
+        assert!(!takes_left_offset(Socket::Hip(Hand::Left), false, 2));
+        // A weapon of one gun has no second offset to take.
+        assert!(!takes_left_offset(Socket::Hip(Hand::Left), true, 1));
+        assert!(!takes_left_offset(Socket::BackOuter, true, 2));
     }
 }

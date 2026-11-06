@@ -36,6 +36,7 @@ mod ammo;
 pub(crate) mod carry;
 mod challenges;
 pub mod config;
+mod docked_view;
 pub(crate) mod engine;
 pub(crate) mod game_view;
 pub(crate) mod gives;
@@ -415,6 +416,8 @@ pub(crate) unsafe fn input_tick(
     // SAFETY: the slots were read live this tick.
     unsafe { ammo::publish(&slot_objects) };
     STATE.lock().game = Some(unsafe { game_view::capture(owner) });
+    // SAFETY: the live local player, on the game thread before the world update.
+    unsafe { docked_view::submit(owner) };
     publish_status();
     arrival
 }

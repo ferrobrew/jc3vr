@@ -46,6 +46,9 @@ pub enum Source {
     /// The grounded body rig's neck and waist pivots, spine, and lean rings
     /// ([`crate::controllers::body::rig::visual`]).
     BodyRig,
+    /// The docked guns' marks: where each gun on a socket of the body is placed, and whether its
+    /// model is shown ([`crate::controllers::weapons::inventory::docked_view`]).
+    DockedGuns,
     /// The grab view: the reach rays, the lines to the grip targets, the palms' state, the refused
     /// grabs, and the candidates near the hands
     /// ([`crate::controllers::physical_hands::grab_view`]).
@@ -56,7 +59,7 @@ pub enum Source {
 }
 
 impl Source {
-    pub const COUNT: usize = 18;
+    pub const COUNT: usize = 19;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -76,6 +79,7 @@ impl Source {
         Source::BodyMirror,
         Source::BodyMirrorPouches,
         Source::BodyRig,
+        Source::DockedGuns,
         Source::GrabView,
         Source::ColliderView,
     ];
@@ -98,8 +102,9 @@ impl Source {
             Source::BodyMirror => 13,
             Source::BodyMirrorPouches => 14,
             Source::BodyRig => 15,
-            Source::GrabView => 16,
-            Source::ColliderView => 17,
+            Source::DockedGuns => 16,
+            Source::GrabView => 17,
+            Source::ColliderView => 18,
         }
     }
 
@@ -121,6 +126,7 @@ impl Source {
             Source::BodyMirror => "body mirror",
             Source::BodyMirrorPouches => "body mirror pouch render placement",
             Source::BodyRig => "body rig",
+            Source::DockedGuns => "docked guns",
             Source::GrabView => "grab view",
             Source::ColliderView => "collider view",
         }

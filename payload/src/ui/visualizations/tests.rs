@@ -69,6 +69,7 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
             ViewId::WristDetonator,
             "/controllers/weapons/c4/detonator/overlay",
         ),
+        (ViewId::DockedGuns, "/controllers/overlay/docked_guns"),
     ];
     assert_eq!(paths.len(), ENTRIES.len());
     for (id, path) in paths {
@@ -276,8 +277,9 @@ fn the_inventory_maps_every_switch_to_the_exact_ten_output_sources() {
         (ViewId::ColliderView, Source::ColliderView),
         (ViewId::PalmBoxes, Source::PhysicalHands),
         (ViewId::WristDetonator, Source::WristDetonator),
+        (ViewId::DockedGuns, Source::DockedGuns),
     ];
-    assert_eq!(ENTRIES.len(), 16);
+    assert_eq!(ENTRIES.len(), 17);
     assert_eq!(expected.len(), ENTRIES.len());
     for (id, source) in expected {
         assert_eq!(ENTRIES.iter().filter(|entry| entry.id == id).count(), 1);
@@ -297,7 +299,7 @@ fn the_inventory_maps_every_switch_to_the_exact_ten_output_sources() {
             .into_iter()
             .filter(|source| mask.contains(*source))
             .count(),
-        11
+        12
     );
     for source in Source::ALL {
         assert_eq!(

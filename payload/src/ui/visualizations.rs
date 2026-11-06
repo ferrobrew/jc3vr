@@ -184,6 +184,7 @@ enum ViewId {
     ColliderView,
     PalmBoxes,
     WristDetonator,
+    DockedGuns,
 }
 
 impl ViewId {
@@ -205,6 +206,7 @@ impl ViewId {
             Self::ColliderView => Source::ColliderView,
             Self::PalmBoxes => Source::PhysicalHands,
             Self::WristDetonator => Source::WristDetonator,
+            Self::DockedGuns => Source::DockedGuns,
         }
     }
 
@@ -228,6 +230,7 @@ impl ViewId {
             Self::ColliderView => config.controllers.physical_hands.collider_view.enabled,
             Self::PalmBoxes => config.controllers.physical_hands.show_boxes,
             Self::WristDetonator => config.controllers.weapons.c4.detonator.overlay,
+            Self::DockedGuns => overlay.docked_guns,
         }
     }
 
@@ -253,6 +256,7 @@ impl ViewId {
             }
             Self::PalmBoxes => config.controllers.physical_hands.show_boxes = requested,
             Self::WristDetonator => config.controllers.weapons.c4.detonator.overlay = requested,
+            Self::DockedGuns => overlay.docked_guns = requested,
         }
     }
 
@@ -398,6 +402,12 @@ const ENTRIES: &[Entry] = &[
         label: "Wrist detonator button",
         group: Group::GameplayCues,
         feature: FeatureId::Explosives,
+    },
+    Entry {
+        id: ViewId::DockedGuns,
+        label: "Docked guns",
+        group: Group::DebugGeometry,
+        feature: FeatureId::Inventory,
     },
 ];
 
