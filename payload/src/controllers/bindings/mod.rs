@@ -649,7 +649,8 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         line: yank_armed_in(line, &detection),
         aim_target: aim::status().grapple.is_some_and(|g| g.valid),
         reeling: physical_grapple.lockable && !snatch_button_owned,
-        seated: matches!(detection.mode, Mode::Vehicle(_)) && config.grapple.seat,
+        // SAFETY: the game stage runs on the game thread before the world update.
+        seated: config.grapple.seat && unsafe { grapple::seat::stands_in_for_local() },
     };
     controls.lock_yank = physical_grapple.lock_yank;
     let mut step = state.bindings.step(

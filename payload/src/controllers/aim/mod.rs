@@ -70,6 +70,7 @@ use crate::{
         },
     },
     frame_timing::{self, Slot},
+    grapple::seat::{rides_in_seat, stands_in},
     hooks,
 };
 
@@ -419,8 +420,9 @@ unsafe fn finish(
             ))
         }),
     );
+    // SAFETY: the owner is the live local player character, on the simulation thread.
     let seat = match mode::current().mode {
-        Mode::Vehicle(seat) => Some(seat),
+        Mode::Vehicle(seat) if unsafe { rides_in_seat(owner) } => Some(seat),
         _ => None,
     };
     // SAFETY: the owner is the live local player character, on the simulation thread.
@@ -458,7 +460,7 @@ unsafe fn finish(
     let fire_enabled = hook.is_some_and(|hook| unsafe { hook.GetFireInputEnabled() });
     // SAFETY: as above.
     let seat_range_m = hook
-        .filter(|_| !fire_enabled && tick.config.grapple.seat && unsafe { seated(owner) })
+        .filter(|hook| tick.config.grapple.seat && unsafe { stands_in(owner, hook) })
         .and_then(|hook| unsafe { hook.GetTuning().as_ref() })
         .map(|tuning| tuning.m_GrappleDistance)
         .filter(|range| range.is_finite() && *range > 0.0);
@@ -539,16 +541,6 @@ fn seat_readout(ray: Ray, hit: Option<RayHit>, range_m: f32) -> GrappleAim {
         seat: true,
         assist: None,
     }
-}
-
-/// Whether `character` rides in a vehicle seat, as the game's own vehicle grapple tests it.
-///
-/// # Safety
-///
-/// `character` must be live, on the game thread.
-unsafe fn seated(character: &Character) -> bool {
-    !unsafe { character.GetVehiclePtr() }.is_null()
-        && unsafe { character.IsInRidingInVehicleState() }
 }
 
 /// What the grapple slot says of its target, before the fire gate.

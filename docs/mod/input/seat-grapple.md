@@ -6,13 +6,13 @@ The code is `payload/src/grapple/seat/`, with the button's part in `payload/src/
 
 ## The aim
 
-Every seat's animation state clears the hook's fire input, and the game's targeting does not refresh the grapple slot there, so the slot would keep the boarding point for the whole ride. In a seat (the character rides in a vehicle, as [`Character::IsInRidingInVehicleState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInRidingInVehicleState) says) with the game refusing the fire, the aim update casts the off-hand's grapple ray itself, ignoring Rico and the vehicle and seeing through what the game's aim ray sees through, out to the grapple's range ([`GrappleTuning::m_GrappleDistance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrappleTuning##field-m_GrappleDistance)). The hit is the grapple's readout: valid while there is one, tetherable when it is an object. The overlay's highlight and beam draw it as they draw the game's target on foot.
+Every seat's animation state clears the hook's fire input, and the game's targeting does not refresh the grapple slot there, so the slot would keep the boarding point for the whole ride. In a seat (the character has a vehicle and is in one of the riding states, as [`Character::IsInRidingInVehicleState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-IsInRidingInVehicleState) says) with the game refusing the fire (`grapple::seat::stands_in`), the aim update casts the off-hand's grapple ray itself, ignoring Rico and the vehicle and seeing through what the game's aim ray sees through, out to the grapple's range ([`GrappleTuning::m_GrappleDistance`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrappleTuning##field-m_GrappleDistance)). The hit is the grapple's readout: valid while there is one, tetherable when it is an object. The overlay's highlight and beam draw it as they draw the game's target on foot.
 
 With the seat grapple off, or whenever the game refuses the fire outside a seat, the readout reports nothing hit or valid and marks its point as not current, and the beam is not drawn: the target never freezes at a stale point ([controllers.md](controllers.md)).
 
 ## The button
 
-In a seat the button's fire is the seat grapple's, and the game sees no grapple fire input:
+In a seat, by the same test as the aim's, the button's fire is the seat grapple's, and the game sees no grapple fire input. The one test decides the button, the aim, and whether a flying hook is still seated, so the button never fires the seat grapple where the aim casts nothing; in a vehicle where the game takes the fire, the button is the game's grapple:
 
 | Press | Effect |
 |---|---|

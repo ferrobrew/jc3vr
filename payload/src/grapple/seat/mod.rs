@@ -22,16 +22,20 @@ use std::num::NonZeroUsize;
 
 pub(crate) use engine::WireReading;
 use glam::Vec3;
+use jc3gi::{character::character::Character, equipment::grappling_hook::GrapplingHook};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    frame::Hand,
-    haptics::{self, Event},
+use crate::{
+    controllers::{
+        frame::Hand,
+        haptics::{self, Event},
+    },
+    grapple::hook::local,
 };
 
 /// What the bindings hand the seat grapple's tick.
 pub(crate) struct SeatTickInput {
-    /// The character sits in a vehicle seat with the seat grapple switched on.
+    /// The seat grapple is switched on and stands in for the game's ([`stands_in`]).
     pub seated: bool,
     /// The grapple button fired this tick.
     pub fire: bool,
@@ -77,6 +81,40 @@ impl Refusal {
             Refusal::FireRefused => "fire refused",
         }
     }
+}
+
+/// Whether `character` rides in a vehicle seat, as the game's own vehicle grapple tests it: it has
+/// a vehicle, and is in one of the riding states ([`Character::IsInRidingInVehicleState`]). The one
+/// test of being in a seat for the seat grapple's button, aim, and hook, and for the passenger's
+/// body aim.
+///
+/// # Safety
+///
+/// `character` must be live, on the game thread.
+///
+/// [`Character::IsInRidingInVehicleState`]: jc3gi::character::character::Character::IsInRidingInVehicleState
+pub(crate) unsafe fn rides_in_seat(character: &Character) -> bool {
+    !unsafe { character.GetVehiclePtr() }.is_null()
+        && unsafe { character.IsInRidingInVehicleState() }
+}
+
+/// Whether the seat grapple stands in for the game's grapple for `character` with its hook `hook`:
+/// it rides in a seat ([`rides_in_seat`]) and the game refuses the hook's fire there.
+///
+/// # Safety
+///
+/// `character` and `hook` must be live, on the game thread.
+pub(crate) unsafe fn stands_in(character: &Character, hook: &GrapplingHook) -> bool {
+    unsafe { !hook.GetFireInputEnabled() && rides_in_seat(character) }
+}
+
+/// [`stands_in`] for the local player.
+///
+/// # Safety
+///
+/// The game thread.
+pub(crate) unsafe fn stands_in_for_local() -> bool {
+    unsafe { local() }.is_some_and(|(character, hook)| unsafe { stands_in(character, hook) })
 }
 
 /// The seat grapple's readout. Safe from any thread: it takes only a leaf lock.

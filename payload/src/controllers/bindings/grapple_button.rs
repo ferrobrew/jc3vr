@@ -54,7 +54,8 @@ pub struct GrappleContext {
     /// the button is the lock's. Were the wind-up's presses the game's, a press held into the reel
     /// would be the game's dual tether hold, whose release replaces the reel's line.
     pub reeling: bool,
-    /// The character sits in a vehicle seat: the button's fire is the seat grapple's.
+    /// The seat grapple stands in for the game's ([`crate::grapple::seat::stands_in`]): the
+    /// button's fire is the seat grapple's.
     pub seated: bool,
 }
 
