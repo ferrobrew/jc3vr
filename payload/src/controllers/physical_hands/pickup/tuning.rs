@@ -34,8 +34,20 @@ pub struct PickupTuning {
     /// The radius around the player's body a held object's centre is kept out of, metres; zero
     /// keeps nothing out.
     pub keep_out_radius_m: f32,
-    /// How far the grab point can lag behind the hand before it is let go, metres.
+    /// How far the grab point can lag behind the hand before a hold that is stuck is let go,
+    /// metres ([`grasp::Strain`](crate::controllers::physical_hands::grasp::Strain)). A heavy
+    /// object that drags behind the hand while it still follows stays held past it.
     pub break_distance_m: f32,
+    /// How far the grab point can lag behind the hand before the hold is let go however the
+    /// object moves, metres: further than the hand could reach for it.
+    pub tear_distance_m: f32,
+    /// The slowest the grab point can come toward the hand while it is past
+    /// [`break_distance_m`](Self::break_distance_m) and still count as following it, metres per
+    /// second of real time.
+    pub stuck_speed_mps: f32,
+    /// How long a grab point past [`break_distance_m`](Self::break_distance_m) can fail to follow
+    /// the hand before the hold is let go, seconds of real time.
+    pub stuck_s: f32,
     /// The share of the character's own change of velocity a carried loose object the hands can
     /// lift takes on each tick, `0..=1`. The hands ride on the character, so a jump, a landing, or
     /// a launch moves what they carry with them rather than through the hands' strength, which
@@ -77,6 +89,9 @@ pub const PICKUP: PickupTuning = PickupTuning {
     gravity_mps2: GRAVITY_MPS2,
     keep_out_radius_m: 0.3,
     break_distance_m: 0.6,
+    tear_distance_m: 1.0,
+    stuck_speed_mps: 0.1,
+    stuck_s: 0.4,
     carrier_motion_share: 1.0,
     throw_scale: 1.0,
     max_throw_speed_mps: 25.0,

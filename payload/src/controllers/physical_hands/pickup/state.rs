@@ -12,7 +12,7 @@ use crate::controllers::{
     physical_hands::{
         characters::{Regrip, Seize},
         doors::{Latch, tearing::TearGrip},
-        grasp::{Grip, Reach, TargetKind},
+        grasp::{Grip, Reach, Strain, TargetKind},
         pickup::diagnostics::{self, ConsumerResult, RequestKey, scan::Scan},
     },
 };
@@ -40,6 +40,8 @@ pub(crate) struct PickupState {
     /// The player character's world velocity at the last tick, from which a carried object takes
     /// on the character's change of velocity.
     pub(crate) carrier_velocity: Option<Vec3>,
+    /// How far each hand's hold strains from it, for the body it was measured on.
+    pub(crate) strains: [Option<HeldStrain>; 2],
 }
 
 impl PickupState {
@@ -57,7 +59,23 @@ impl PickupState {
             input_at: None,
             joints_enabled: None,
             carrier_velocity: None,
+            strains: [None; 2],
         }
+    }
+
+    /// The strain of `hand`'s hold of `held`, fresh for a hold it was not measured on.
+    pub(crate) fn strain(&self, hand: Hand, held: &Held) -> Strain {
+        self.strains[hand.index()]
+            .filter(|s| s.object == held.object && s.body == held.body)
+            .map_or_else(Strain::default, |s| s.strain)
+    }
+
+    pub(crate) fn set_strain(&mut self, hand: Hand, held: &Held, strain: Strain) {
+        self.strains[hand.index()] = Some(HeldStrain {
+            object: held.object,
+            body: held.body,
+            strain,
+        });
     }
 
     /// A second holder inherits the existing body's mode and classification.
@@ -136,6 +154,7 @@ impl PickupState {
             input_at: _,
             joints_enabled: _,
             carrier_velocity: _,
+            strains: _,
         } = self;
         let i = hand.index();
         held[i].is_some()
@@ -242,6 +261,14 @@ impl Held {
     pub(crate) fn same(&self, other: &Held) -> bool {
         self.object == other.object && self.body == other.body
     }
+}
+
+/// A hold's [`Strain`], with the body it was measured on.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct HeldStrain {
+    object: NonZeroUsize,
+    body: u32,
+    strain: Strain,
 }
 
 /// What a held body is to the hand, for its finger pose.

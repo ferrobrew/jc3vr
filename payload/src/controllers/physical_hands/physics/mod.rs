@@ -82,8 +82,12 @@ pub use self::{
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
+    use glam::Vec3;
+
     use crate::controllers::physical_hands::{
-        physics::{HAND_BODIES, drive::DriveTuning, state::holding_tuning},
+        physics::{HAND_BODIES, HoldTarget, drive::DriveTuning, state::holding_tuning},
         pickup::PICKUP,
     };
 
@@ -99,11 +103,26 @@ mod tests {
             max_speed_mps: b.max_speed_mps,
             max_angular_speed_rps: b.max_angular_speed_rps,
         };
-        let one = holding_tuning(&tuning, false);
+        let hold = HoldTarget {
+            object: NonZeroUsize::new(100).unwrap(),
+            body: 7,
+            keep_out: Vec3::ZERO,
+            shared: false,
+            hand_force_n: PICKUP.hand_force_n,
+        };
+        let one = holding_tuning(&tuning, &hold);
         assert_eq!(one.max_force_n, PICKUP.hand_force_n);
         assert_eq!(one.max_torque_nm, PICKUP.hand_torque_nm);
-        let two = holding_tuning(&tuning, true);
-        assert_eq!(two.max_force_n, PICKUP.hand_force_n);
+        // Two hands on a heavy object pull as a carry of it would.
+        let two = holding_tuning(
+            &tuning,
+            &HoldTarget {
+                shared: true,
+                hand_force_n: PICKUP.hand_force_n * 1.5,
+                ..hold
+            },
+        );
+        assert_eq!(two.max_force_n, PICKUP.hand_force_n * 1.5);
         assert!(
             (two.max_torque_nm - PICKUP.hand_torque_nm * PICKUP.two_hand_angular_share).abs()
                 < 1e-5
@@ -113,6 +132,11 @@ mod tests {
             max_force_n: 10.0,
             ..tuning
         };
-        assert_eq!(holding_tuning(&weak, false).max_force_n, 10.0);
+        assert_eq!(holding_tuning(&weak, &hold).max_force_n, 10.0);
+        let broken = HoldTarget {
+            hand_force_n: f32::NAN,
+            ..hold
+        };
+        assert_eq!(holding_tuning(&tuning, &broken).max_force_n, 0.0);
     }
 }

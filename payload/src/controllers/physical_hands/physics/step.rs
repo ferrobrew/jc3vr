@@ -33,6 +33,7 @@ use crate::{
                 },
                 types::{BodyPhase, HandBodyStatus},
             },
+            pickup::PICKUP,
             stunt, vault,
         },
     },
@@ -166,6 +167,11 @@ pub(crate) unsafe fn step() {
         deadband_rad: 0.0,
         ..render
     };
+    // A hand holding through a joint stays drawn on what it holds as far as the hold can trail.
+    let render_holding = RenderTuning {
+        max_shift_m: PICKUP.tear_distance_m,
+        ..render
+    };
     let push_tuning = PushTuning {
         stiffness_n_per_m: b.push_stiffness_n_per_m,
         max_force_n: b.force_n(strength),
@@ -256,7 +262,7 @@ pub(crate) unsafe fn step() {
                 let held_tuning = if on_gun[i] {
                     gun_tuning(&tuning, guns::carried_mass(hand, b.mass_kg))
                 } else {
-                    holding.map_or(tuning, |h| holding_tuning(&tuning, h.shared))
+                    holding.map_or(tuning, |h| holding_tuning(&tuning, &h))
                 };
                 let hand_tuning = DriveTuning {
                     linear_gain,
@@ -274,10 +280,18 @@ pub(crate) unsafe fn step() {
                     } else {
                         target.carrier
                     },
-                    render: if on_gun[i] { &render_on_gun } else { &render },
+                    render: if on_gun[i] {
+                        &render_on_gun
+                    } else if holding.is_some() {
+                        &render_holding
+                    } else {
+                        &render
+                    },
                     anchor: grips[i].map_or(target.position, |g| g.position),
                     clear: &mut clear,
-                    break_distance_m: b.break_distance_m * scale,
+                    // A joined hold is torn away by its strain, as a carried one is, so a heavy
+                    // object that drags the hand's body behind stays held.
+                    break_distance_m: holding.is_none().then_some(b.break_distance_m * scale),
                     tuning: &hand_tuning,
                     step_s,
                 };

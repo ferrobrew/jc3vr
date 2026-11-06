@@ -74,8 +74,8 @@ impl HoldTuning {
     /// `1 / time_scale²` times as hard. The hold therefore closes its error and caps its speeds per
     /// real second, and its strength (an impulse over the tick, so an acceleration's worth) is
     /// raised by the square: a held body follows the hand in slow motion as it does at full speed,
-    /// rather than falling behind as far as the world is slowed and being torn away at
-    /// [`PickupTuning::break_distance_m`]. Gravity is the world's, on the world's clock, so in slow
+    /// rather than falling behind as far as the world is slowed and being torn away
+    /// ([`Strain`](crate::controllers::physical_hands::grasp::Strain)). Gravity is the world's, on the world's clock, so in slow
     /// motion a heavy body is easier to hold up, as it falls slower. A `time_scale` that is not
     /// finite and positive is taken as real time.
     pub fn in_real_time(self, time_scale: f32) -> Self {
@@ -271,7 +271,8 @@ pub fn resist_push(
 /// A carried loose object (`prop`) trails the hand a little whenever it is carried near the hands'
 /// strength, which must not drift the player, so it pushes only once it lags by
 /// [`CARRY_RESIST_DEADBAND_M`]: a heavy object the hands cannot keep up with holds the player back
-/// before it trails far enough to be torn away at [`PickupTuning::break_distance_m`].
+/// well before it trails past [`PickupTuning::break_distance_m`], where a hold that stops
+/// following is torn away.
 pub fn resist_deadband_m(prop: bool, config: &PalmTuning) -> f32 {
     if prop {
         CARRY_RESIST_DEADBAND_M

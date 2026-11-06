@@ -397,23 +397,27 @@ pub(super) struct ActingPalms {
 }
 
 /// The drive of a hand that holds an object through a joint: a holding hand's pull and twist
-/// ([`PickupTuning::hand_force_n`], [`PickupTuning::hand_torque_nm`]), no stronger than the hand's
-/// own, and with both hands on the object, the twist at
-/// [`PickupTuning::two_hand_angular_share`], so one hand lifts about what it carries and two hands
-/// twice that, and the two grab points set the object's line.
+/// (`hold`'s [`HoldTarget::hand_force_n`], the pull a carry of the object would have, and
+/// [`PickupTuning::hand_torque_nm`]), no stronger than the hand's own, and with both hands on the
+/// object, the twist at [`PickupTuning::two_hand_angular_share`], so the hands lift what they
+/// would carry and the two grab points set the object's line.
 ///
-/// [`PickupTuning::hand_force_n`]: crate::controllers::physical_hands::pickup::PickupTuning::hand_force_n
 /// [`PickupTuning::hand_torque_nm`]: crate::controllers::physical_hands::pickup::PickupTuning::hand_torque_nm
 /// [`PickupTuning::two_hand_angular_share`]: crate::controllers::physical_hands::pickup::PickupTuning::two_hand_angular_share
-pub(super) fn holding_tuning(tuning: &DriveTuning, shared: bool) -> DriveTuning {
+pub(super) fn holding_tuning(tuning: &DriveTuning, hold: &HoldTarget) -> DriveTuning {
     let pickup = &PICKUP;
-    let twist_share = if shared {
+    let twist_share = if hold.shared {
         pickup.two_hand_angular_share.clamp(0.0, 1.0)
     } else {
         1.0
     };
+    let pull = if hold.hand_force_n.is_finite() {
+        hold.hand_force_n.max(0.0)
+    } else {
+        0.0
+    };
     DriveTuning {
-        max_force_n: tuning.max_force_n.min(pickup.hand_force_n.max(0.0)),
+        max_force_n: tuning.max_force_n.min(pull),
         max_torque_nm: tuning
             .max_torque_nm
             .min(pickup.hand_torque_nm.max(0.0) * twist_share),

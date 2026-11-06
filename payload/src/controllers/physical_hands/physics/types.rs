@@ -94,4 +94,8 @@ pub struct HoldTarget {
     pub keep_out: Vec3,
     /// Whether both hands hold the object.
     pub shared: bool,
+    /// The hand's strongest pull on the object, newtons: what a carry of it would have
+    /// ([`HoldTuning::carrying`](crate::controllers::physical_hands::hold::HoldTuning::carrying)),
+    /// so a joined object is lifted as a carried one is.
+    pub hand_force_n: f32,
 }

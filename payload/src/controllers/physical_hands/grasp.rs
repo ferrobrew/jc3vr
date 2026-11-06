@@ -13,6 +13,7 @@ use body_rig::{geometry::point_velocity, rotation::angular_velocity, smooth::fol
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
+    clock::TimeScale,
     frame::Pose,
     physical_hands::{
         characters::CharacterTarget, doors::DoorTarget, pickup::PickupTuning, rigid::BodyPose,
@@ -109,11 +110,74 @@ impl Grip {
     }
 }
 
-/// Whether the grab point has been torn from the hand: it lies farther than `break_distance_m`
-/// from where the hand holds it, as when the body is caught on something the hand moved past.
-pub fn torn_away(anchor: Vec3, target: Vec3, break_distance_m: f32) -> bool {
-    let distance = anchor.distance(target);
-    !distance.is_finite() || distance > break_distance_m.max(0.0)
+/// How far a hold's grab point strains from the hand across ticks, which decides when the hold is
+/// torn away. A heavy object drags behind the hand, slowly, and stays held while it follows; a
+/// hold is let go when its grab point is caught, past [`PickupTuning::break_distance_m`] and not
+/// coming toward the hand for [`PickupTuning::stuck_s`] (a crate snagged on a wall, a door at its
+/// hinge's limit), or at once past [`PickupTuning::tear_distance_m`], further than the hand
+/// could reach. An object the hands cannot lift is measured across the ground only: its sag
+/// below the hand is its weight resting on what supports it, not a snag.
+///
+/// The watch runs in real time, as the hold does: the palm moves in real time, so in slow motion
+/// a grab point keeps up with it as at full speed and a snag is let go as soon.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct Strain {
+    /// How long the grab point has been past the break distance without following the hand,
+    /// seconds of real time.
+    stuck_s: f32,
+}
+
+/// One tick of a hold, as its [`Strain`] measures it, world space.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct StrainSample {
+    /// The grab point on the body now.
+    pub anchor: Vec3,
+    /// Where the hand would have the grab point.
+    pub target: Vec3,
+    /// The grab point's velocity, metres per second of game time.
+    pub velocity: Vec3,
+    /// Whether the hands holding the body can lift it.
+    pub liftable: bool,
+}
+
+impl Strain {
+    /// Fold in one tick of `dt` game seconds at `time_scale` game seconds per real second, and
+    /// return whether the hold is torn away.
+    pub fn torn(
+        &mut self,
+        sample: &StrainSample,
+        dt: f32,
+        time_scale: f32,
+        config: &PickupTuning,
+    ) -> bool {
+        let across = |v: Vec3| {
+            if sample.liftable {
+                v
+            } else {
+                Vec3::new(v.x, 0.0, v.z)
+            }
+        };
+        let lag = across(sample.target - sample.anchor);
+        let distance = lag.length();
+        if !distance.is_finite() || distance > config.tear_distance_m.max(0.0) {
+            return true;
+        }
+        let scale = TimeScale::new(time_scale);
+        let velocity = if sample.velocity.is_finite() {
+            sample.velocity
+        } else {
+            Vec3::ZERO
+        };
+        let approach = across(velocity).dot(lag.normalize_or_zero()) * scale.get();
+        let caught = distance > config.break_distance_m.max(0.0)
+            && approach < config.stuck_speed_mps.max(0.0);
+        self.stuck_s = if caught {
+            self.stuck_s + scale.real_dt(dt)
+        } else {
+            0.0
+        };
+        self.stuck_s >= config.stuck_s.max(0.0) && caught
+    }
 }
 
 /// Whether `hands` hands can lift a body of `mass_kg` against gravity with their strength.
@@ -345,11 +409,97 @@ mod tests {
         assert_eq!(mass_of(0.0), None);
     }
 
+    const TICK: f32 = 1.0 / 30.0;
+
+    fn sample(lag: Vec3, velocity: Vec3, liftable: bool) -> StrainSample {
+        StrainSample {
+            anchor: Vec3::ZERO,
+            target: lag,
+            velocity,
+            liftable,
+        }
+    }
+
+    /// The ticks a hold lasts at `sample` and `time_scale`, up to `limit`.
+    fn ticks_held(sample: &StrainSample, time_scale: f32, limit: usize) -> usize {
+        let mut strain = Strain::default();
+        (0..limit)
+            .take_while(|_| !strain.torn(sample, TICK, time_scale, &PICKUP))
+            .count()
+    }
+
     #[test]
-    fn a_grab_point_far_from_the_hand_is_torn_away() {
-        assert!(!torn_away(Vec3::ZERO, Vec3::new(0.2, 0.0, 0.0), 0.5));
-        assert!(torn_away(Vec3::ZERO, Vec3::new(0.8, 0.0, 0.0), 0.5));
-        assert!(torn_away(Vec3::NAN, Vec3::ZERO, 0.5));
+    fn a_heavy_object_dragged_behind_the_hand_stays_held() {
+        // Past the break distance, but coming toward the hand at a walk's drag.
+        let lag = Vec3::new(0.0, 0.0, -(PICKUP.break_distance_m + 0.2));
+        let dragged = sample(lag, lag.normalize() * 0.8, true);
+        assert_eq!(ticks_held(&dragged, 1.0, 300), 300);
+    }
+
+    #[test]
+    fn a_caught_grab_point_is_torn_away_after_the_stuck_time() {
+        let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+        let caught = sample(lag, Vec3::ZERO, true);
+        let ticks = ticks_held(&caught, 1.0, 300);
+        let expected = (PICKUP.stuck_s / TICK).ceil() as usize;
+        assert!(ticks.abs_diff(expected) <= 1, "{ticks} vs {expected}");
+        // Moving away from the hand is no better than standing still.
+        let pulled_away = sample(lag, -lag.normalize(), true);
+        assert!(ticks_held(&pulled_away, 1.0, 300).abs_diff(expected) <= 1);
+        // Inside the break distance nothing is caught, however still.
+        let near = sample(
+            lag.normalize() * PICKUP.break_distance_m * 0.9,
+            Vec3::ZERO,
+            true,
+        );
+        assert_eq!(ticks_held(&near, 1.0, 300), 300);
+    }
+
+    #[test]
+    fn following_again_restarts_the_stuck_time() {
+        let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+        let caught = sample(lag, Vec3::ZERO, true);
+        let following = sample(lag, lag.normalize(), true);
+        let mut strain = Strain::default();
+        for _ in 0..200 {
+            for _ in 0..((PICKUP.stuck_s / TICK) as usize - 2) {
+                assert!(!strain.torn(&caught, TICK, 1.0, &PICKUP));
+            }
+            assert!(!strain.torn(&following, TICK, 1.0, &PICKUP));
+        }
+    }
+
+    #[test]
+    fn past_the_tear_distance_the_hold_is_torn_at_once() {
+        let far = Vec3::new(0.0, 0.0, PICKUP.tear_distance_m + 0.05);
+        assert_eq!(ticks_held(&sample(far, far.normalize(), true), 1.0, 10), 0);
+        assert_eq!(ticks_held(&sample(Vec3::NAN, Vec3::ZERO, true), 1.0, 10), 0);
+    }
+
+    #[test]
+    fn an_object_too_heavy_to_lift_sags_without_being_torn() {
+        // Hanging well below the hand, still, with its weight on the ground.
+        let sag = Vec3::new(0.0, PICKUP.tear_distance_m + 0.3, 0.0);
+        assert_eq!(ticks_held(&sample(sag, Vec3::ZERO, false), 1.0, 300), 300);
+        // The same lag on one the hands can lift is a snag.
+        assert_eq!(ticks_held(&sample(sag, Vec3::ZERO, true), 1.0, 300), 0);
+        // Its drag across the ground still counts.
+        let snagged = Vec3::new(PICKUP.break_distance_m + 0.1, 0.8, 0.0);
+        assert!(ticks_held(&sample(snagged, Vec3::ZERO, false), 1.0, 300) < 300);
+    }
+
+    #[test]
+    fn the_stuck_time_and_the_follow_run_in_real_time() {
+        let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+        let caught = sample(lag, Vec3::ZERO, true);
+        let full = ticks_held(&caught, 1.0, 300);
+        let slow = ticks_held(&caught, 0.5, 300);
+        assert!(slow.abs_diff(full / 2) <= 1, "{slow} vs {full}");
+        // A grab point following at the real-time threshold in game time is, at half speed,
+        // following at half of it in real time.
+        let creeping = sample(lag, lag.normalize() * PICKUP.stuck_speed_mps * 1.5, true);
+        assert_eq!(ticks_held(&creeping, 1.0, 300), 300);
+        assert!(ticks_held(&creeping, 0.5, 300) < 300);
     }
 
     #[test]

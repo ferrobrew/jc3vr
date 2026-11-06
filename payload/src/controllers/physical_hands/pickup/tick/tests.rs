@@ -6,7 +6,8 @@ use super::*;
 use crate::controllers::{
     frame::Pose,
     physical_hands::{
-        characters::CharacterTarget, doors::config::TEARING, pickup::PICKUP, rigid::BodyPose,
+        characters::CharacterTarget, doors::config::TEARING, grasp::GripTarget, pickup::PICKUP,
+        rigid::BodyPose,
     },
 };
 
@@ -267,4 +268,145 @@ fn a_ragdolls_body_is_held_as_the_whole_ragdolls_weight() {
     assert_eq!(held_mass(&target(true, f32::NAN), 6.0), 6.0);
     assert_eq!(held_mass(&target(false, 72.0), 6.0), 6.0);
     assert_eq!(held_mass(&TargetKind::Prop { mass_kg: 6.0 }, 6.0), 6.0);
+}
+
+/// The ticks a one-handed hold of `held` lasts, up to `limit`, with the hand `lag` from the grab
+/// point and the body moving at `velocity`.
+fn ticks_held(held: Held, lag: Vec3, velocity: Vec3, limit: usize) -> (usize, TickOutcome) {
+    let mut state = PickupState::new();
+    state.held[0] = Some(held);
+    let mut fake = FakeBodies {
+        body: bodies::BodyState {
+            velocities: Velocities {
+                linear: velocity,
+                angular: Vec3::ZERO,
+            },
+            mass_kg: Some(held.mass_kg),
+            ..body()
+        },
+        calls: Vec::new(),
+        driven: None,
+    };
+    let moved = PalmMotion {
+        pose: Pose {
+            position: lag,
+            ..palm().pose
+        },
+        ..palm()
+    };
+    let mut last = TickOutcome::default();
+    for tick in 0..limit {
+        state.input_at = Some(Instant::now());
+        let inputs = TickInputs {
+            palms: [Some(moved), None],
+            ..inputs(held.joined)
+        };
+        last = unsafe { tick_with(&mut state, inputs, &PICKUP, &mut fake) };
+        if state.held[0].is_none() {
+            return (tick, last);
+        }
+    }
+    (limit, last)
+}
+
+#[test]
+fn a_heavy_object_dragging_behind_the_hand_stays_held_carried_or_joined() {
+    // Too heavy for one hand to lift, past the break distance, and coming after the hand.
+    let lag = Vec3::new(0.0, 0.0, -(PICKUP.break_distance_m + 0.2));
+    for (joined, kind) in [(false, HeldKind::Prop), (true, HeldKind::Articulated)] {
+        let heavy = Held {
+            mass_kg: 75.0,
+            ..held(joined, kind)
+        };
+        let (ticks, outcome) = ticks_held(heavy, lag, lag.normalize() * 0.6, 90);
+        assert_eq!(ticks, 90, "joined {joined}: {outcome:?}");
+        let report = outcome.reports[0].unwrap();
+        assert!(!report.liftable && report.joined == joined);
+    }
+}
+
+#[test]
+fn a_caught_hold_is_torn_away_the_same_way_carried_or_joined() {
+    let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+    let expected = (PICKUP.stuck_s / inputs(false).dt).ceil() as usize;
+    for (joined, kind) in [(false, HeldKind::Prop), (true, HeldKind::Articulated)] {
+        let (ticks, outcome) = ticks_held(held(joined, kind), lag, Vec3::ZERO, 90);
+        assert!(
+            ticks.abs_diff(expected) <= 1,
+            "joined {joined}: {ticks} vs {expected}"
+        );
+        assert_eq!(outcome.losses[0], Some(HoldLoss::TornAway));
+        assert_eq!(outcome.joints, [None; 2]);
+    }
+    // Past the tear distance it goes at once.
+    let far = Vec3::new(PICKUP.tear_distance_m + 0.1, 0.0, 0.0);
+    for (joined, kind) in [(false, HeldKind::Prop), (true, HeldKind::Articulated)] {
+        let (ticks, _) = ticks_held(held(joined, kind), far, far.normalize(), 10);
+        assert_eq!(ticks, 0, "joined {joined}");
+    }
+}
+
+#[test]
+fn two_hands_on_a_joined_heavy_object_pull_as_a_carry_of_it_would() {
+    // A torn-off door held at both ends, joined to both hands' bodies.
+    let ends = [Vec3::new(-0.4, 0.0, 0.0), Vec3::new(0.4, 0.0, 0.0)];
+    let mut state = PickupState::new();
+    for (k, end) in ends.into_iter().enumerate() {
+        let at = Pose {
+            position: end,
+            ..palm().pose
+        };
+        state.held[k] = Some(Held {
+            grip: Grip::of(at, body().pose, end),
+            mass_kg: 75.0,
+            ..held(true, HeldKind::Prop)
+        });
+    }
+    let mut fake = FakeBodies {
+        body: bodies::BodyState {
+            mass_kg: Some(75.0),
+            ..body()
+        },
+        calls: Vec::new(),
+        driven: None,
+    };
+    state.input_at = Some(Instant::now());
+    let palms = ends.map(|end| {
+        Some(PalmMotion {
+            pose: Pose {
+                position: end,
+                ..palm().pose
+            },
+            ..palm()
+        })
+    });
+    let inputs = TickInputs {
+        palms,
+        ..inputs(true)
+    };
+    let outcome = unsafe { tick_with(&mut state, inputs, &PICKUP, &mut fake) };
+    let carry = HoldTuning::carrying(
+        &PICKUP,
+        75.0,
+        &ends.map(|end| {
+            Some(HandHold {
+                anchor: end,
+                target: GripTarget {
+                    point: end,
+                    orientation: Quat::IDENTITY,
+                },
+                velocity: Vec3::ZERO,
+                angular_velocity: Vec3::ZERO,
+            })
+        }),
+    );
+    assert!(carry.hand_force_n > PICKUP.hand_force_n);
+    for joint in outcome.joints {
+        let joint = joint.unwrap();
+        assert!(joint.shared);
+        assert_eq!(joint.hand_force_n, carry.hand_force_n);
+    }
+    // The pull lifts it, and the report says so, as it would for the carry.
+    assert!(outcome.reports.iter().flatten().all(|r| r.liftable));
+    assert!(fake.calls.iter().all(|&c| c != "drive"));
 }

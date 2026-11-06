@@ -535,7 +535,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             if let (Some(pin), Some(palm)) = (pins[i], palms[i])
                 && !physics::drives(hand)
             {
-                let offset = (pin - palm.pose.position).clamp_length_max(PICKUP.break_distance_m);
+                let offset = (pin - palm.pose.position).clamp_length_max(PICKUP.tear_distance_m);
                 clamp[i] = xf.offset_to_cockpit(offset);
             }
         }
@@ -546,7 +546,7 @@ unsafe fn run(owner: &Character, dt: f32) {
             };
             // Physical hand bodies follow carry pins; only nonphysical hands need this offset.
             if !physics::drives(hand) {
-                let offset = (held.anchor - held.target).clamp_length_max(PICKUP.break_distance_m);
+                let offset = (held.anchor - held.target).clamp_length_max(PICKUP.tear_distance_m);
                 clamp[i] = xf.offset_to_cockpit(offset);
             }
             if config.push {

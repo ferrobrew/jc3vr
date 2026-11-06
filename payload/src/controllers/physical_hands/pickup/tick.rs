@@ -13,7 +13,7 @@ use crate::controllers::{
         STALE_AFTER, bodies,
         characters::{self, CharactersConfig, Regrip, Seize},
         doors::{self, Latch},
-        grasp::{self, Grip, PalmMotion, Reach, TargetKind},
+        grasp::{self, Grip, PalmMotion, Reach, StrainSample, TargetKind},
         hold::{self, HandHold, HoldTuning, PlayerKeepOut},
         physics::{self, HoldTarget, Shove, ShoveForce},
         pickup::{
@@ -587,37 +587,83 @@ unsafe fn tick_with(
                 observed[k] = Some(Observation::of(&held, body));
             }
         }
-        let holding = holders.iter().flatten().count();
+        // Where each hand holds the body and would have it, the target moved out of the
+        // player's body: a carried object's centre is kept out of it, and a joined one's through
+        // the hand's goal.
+        let mut keep_outs = [Vec3::ZERO; 2];
         let mut holds = [None; 2];
         for k in 0..2 {
             let (Some(holder), Some(palm)) = (holders[k], palms[k]) else {
                 continue;
             };
-            let anchor = holder.grip.anchor(body.pose);
-            if holder.joined {
-                let grip_target = holder.grip.target(palm.pose);
+            let mut target = holder.grip.target(palm.pose);
+            keep_outs[k] = space.as_ref().map_or(Vec3::ZERO, |space| {
+                space.offset(holder.grip.centre_at(target))
+            });
+            target.point += keep_outs[k];
+            holds[k] = Some(HandHold {
+                anchor: holder.grip.anchor(body.pose),
+                target,
+                velocity: palm.point_velocity(target.point),
+                angular_velocity: palm.angular_velocity,
+            });
+        }
+        // Every hold, carried or joined, is torn away by the same strain, against the same lift.
+        let liftable = lifts(
+            &held,
+            &holds,
+            &carry_tuning(&held, &holds, config).in_real_time(time_scale),
+        );
+        let moving = body.rigid();
+        for (k, hand) in Hand::BOTH.into_iter().enumerate() {
+            let Some(hold) = holds[k] else {
+                continue;
+            };
+            let mut strain = state.strain(hand, &held);
+            let sample = StrainSample {
+                anchor: hold.anchor,
+                target: hold.target.point,
+                velocity: moving.point_velocity(hold.anchor),
+                liftable,
+            };
+            if strain.torn(&sample, dt, time_scale, config) {
+                holds[k] = None;
+                state.held[k] = None;
+                state.strains[k] = None;
+                outcome.released[k] = true;
+                outcome.lost += 1;
+                outcome.losses[k] = Some(HoldLoss::TornAway);
+                outcome.error = Some("physical hands: pickup: the object was torn away".to_owned());
+                continue;
+            }
+            state.set_strain(hand, &held, strain);
+        }
+        if joined {
+            let tuning = carry_tuning(&held, &holds, config);
+            let liftable = lifts(&held, &holds, &tuning.in_real_time(time_scale));
+            let shared = holds.iter().flatten().count() > 1;
+            for (k, hold) in holds.iter().enumerate() {
+                let Some(hold) = hold else {
+                    continue;
+                };
                 // The hand's body carries the object through the joint, so the keep-out moves the
-                // hand's goal: the object's centre stays out of the player's body as a carried
-                // one does.
-                let keep_out = space.as_ref().map_or(Vec3::ZERO, |space| {
-                    space.offset(holder.grip.centre_at(grip_target))
-                });
-                let target = grip_target.point + keep_out;
+                // hand's goal, and the hand pulls with the strength a carry of it would have.
                 outcome.joints[k] = Some(HoldTarget {
                     object: held.object,
                     body: held.body,
-                    keep_out,
-                    shared: holding > 1,
+                    keep_out: keep_outs[k],
+                    shared,
+                    hand_force_n: tuning.hand_force_n,
                 });
                 let (load, twist) = joints.loads[k];
                 outcome.reports[k] = Some(HeldReport {
                     mass_kg: held.mass_kg,
-                    liftable: grasp::can_lift(held.mass_kg, holding, config),
-                    shared: holding > 1,
+                    liftable,
+                    shared,
                     centre: body.pose.centre,
-                    anchor,
-                    target,
-                    lag_m: anchor.distance(target),
+                    anchor: hold.anchor,
+                    target: hold.target.point,
+                    lag_m: hold.anchor.distance(hold.target.point),
                     load,
                     twist,
                     joined: true,
@@ -635,26 +681,8 @@ unsafe fn tick_with(
                         report: outcome.reports[k],
                     },
                 );
-                continue;
             }
-            let mut target = holder.grip.target(palm.pose);
-            if let Some(space) = &space {
-                target.point += space.offset(holder.grip.centre_at(target));
-            }
-            if grasp::torn_away(anchor, target.point, config.break_distance_m) {
-                state.held[k] = None;
-                outcome.released[k] = true;
-                outcome.lost += 1;
-                outcome.losses[k] = Some(HoldLoss::TornAway);
-                outcome.error = Some("physical hands: pickup: the object was torn away".to_owned());
-                continue;
-            }
-            holds[k] = Some(HandHold {
-                anchor,
-                target,
-                velocity: palm.point_velocity(target.point),
-                angular_velocity: palm.angular_velocity,
-            });
+            continue;
         }
         let hands = holds.iter().flatten().count();
         if hands == 0 {
@@ -671,9 +699,7 @@ unsafe fn tick_with(
         // character's own change of velocity outright, and the hands' strength works only on
         // their motion relative to the body: a jump carries the object along instead of tearing
         // it from the hands.
-        if held.kind == HeldKind::Prop
-            && held.mass_kg * tuning.gravity.length() <= hands as f32 * tuning.hand_force_n
-        {
+        if held.kind == HeldKind::Prop && lifts(&held, &holds, &tuning) {
             rigid.velocities.linear += carried;
         }
         let solution = hold::solve(&rigid, holds, dt, &tuning);
@@ -716,8 +742,7 @@ unsafe fn tick_with(
             }
             outcome.reports[k] = Some(HeldReport {
                 mass_kg: held.mass_kg,
-                liftable: held.mass_kg * tuning.gravity.length()
-                    <= hands as f32 * tuning.hand_force_n,
+                liftable: lifts(&held, &holds, &tuning),
                 shared: hands > 1,
                 centre: body.pose.centre,
                 anchor: hold.anchor,
@@ -944,6 +969,13 @@ pub(super) fn carry_tuning(
     } else {
         HoldTuning::of(config)
     }
+}
+
+/// Whether the hands holding `held` at `holds` can lift it with the strength of `tuning`.
+fn lifts(held: &Held, holds: &[Option<HandHold>; 2], tuning: &HoldTuning) -> bool {
+    let hands = holds.iter().flatten().count();
+    held.mass_kg.is_finite()
+        && held.mass_kg * tuning.gravity.length() <= hands as f32 * tuning.hand_force_n
 }
 
 fn record_drive(state: &PickupState, index: usize, held: &Held, drive: DriveRecord) {

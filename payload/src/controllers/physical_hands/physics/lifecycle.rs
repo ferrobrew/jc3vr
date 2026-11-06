@@ -37,7 +37,11 @@ pub(super) struct ActRequest<'a> {
     /// Where the body is measured against for [`break_distance_m`](Self::break_distance_m): the
     /// controller's palm now, without the lead of the goal, or a grip's pin.
     pub anchor: Vec3,
-    pub break_distance_m: f32,
+    /// How far the body may fall behind [`anchor`](Self::anchor) before it is put back on its
+    /// hand; none for a hand that holds an object through a joint, whose hold's strain decides
+    /// when it is torn away
+    /// ([`grasp::Strain`](crate::controllers::physical_hands::grasp::Strain)).
+    pub break_distance_m: Option<f32>,
     /// Whether nothing solid lies between two points, game space: a body put back on its hand
     /// must not pass through a wall or a character to get there.
     pub clear: &'a mut dyn FnMut(Vec3, Vec3) -> bool,
@@ -239,7 +243,7 @@ impl Hands {
         };
         // A body far from its hand is put back on it only along a clear path; one held back by
         // a wall or a character keeps pressing into it, so it never passes through.
-        if (anchor - motion.position).length() > break_distance_m
+        if break_distance_m.is_some_and(|limit| (anchor - motion.position).length() > limit)
             && clear(motion.position, goal.position)
         {
             // A body put back on its hand would drag what it is joined to with it.
