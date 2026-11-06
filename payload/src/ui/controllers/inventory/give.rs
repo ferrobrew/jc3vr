@@ -22,7 +22,8 @@ pub(super) fn give_section(ui: &mut Ui, table: Option<&LoadoutSnapshot>) {
     };
     ui.label(
         "A give spawns the weapon and puts it on the socket, or on the next free socket that \
-         fits it; a socket that holds a weapon drops it first.",
+         fits it; a socket that holds a weapon drops it first, where it can be picked up. A \
+         weapon a give has shown cannot be spawned is greyed, with the reason on hover.",
     );
     let mut chosen = CHOSEN.lock();
     Grid::new("inventory_give").striped(true).show(ui, |ui| {
@@ -42,7 +43,16 @@ pub(super) fn give_section(ui: &mut Ui, table: Option<&LoadoutSnapshot>) {
                 .width(260.0)
                 .show_ui(ui, |ui| {
                     for def in give::weapons_for(socket) {
-                        ui.selectable_value(choice, Some(def.name.as_str()), def.name.as_str());
+                        let name = def.name.as_str();
+                        match give::refusal(name) {
+                            Some(why) => {
+                                ui.add_enabled(false, Button::new(name).frame(false))
+                                    .on_disabled_hover_text(why);
+                            }
+                            None => {
+                                ui.selectable_value(choice, Some(name), name);
+                            }
+                        }
                     }
                 });
             if ui

@@ -698,7 +698,9 @@ pub(super) unsafe extern "system" fn spawned(
     let Some(token) = SpawnToken::decode(userdata as usize as u64) else {
         return;
     };
-    for object in unsafe { objects.as_slice() } {
+    let objects = unsafe { objects.as_slice() };
+    let mut weapons = 0;
+    for object in objects {
         // SAFETY: the vector's reference keeps the object alive for the call.
         if object.px.is_null() || !unsafe { (*object.px).IsType(WeaponBase::TYPE_ID()) } {
             continue;
@@ -707,11 +709,15 @@ pub(super) unsafe extern "system" fn spawned(
         let Some(strong) = (unsafe { inventory_engine::strong_to(&*weapon_at(object.px)) }) else {
             continue;
         };
+        weapons += 1;
         match token {
             SpawnToken::Respawn { generation } => SPAWNED.lock().push((generation, strong)),
             SpawnToken::Twin { generation } => TWINS.lock().push((generation, strong)),
             SpawnToken::Give { .. } => give::GIVEN.lock().push((token, strong)),
         }
+    }
+    if weapons == 0 && matches!(token, SpawnToken::Give { .. }) {
+        give::EMPTY.lock().push((token, objects.len()));
     }
 }
 

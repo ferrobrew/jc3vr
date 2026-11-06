@@ -128,8 +128,38 @@ impl std::convert::AsMut<SpawnFactoryImpl> for SpawnFactoryImpl {
     }
 }
 #[repr(C, align(8))]
-/// An opaque `CSpawnSystem::SResourceDef`: one spawnable resource's definition.
-pub struct SpawnResourceDef {}
+/// `CSpawnSystem::SResourceDef`: one spawnable resource's definition, built at initialization from
+/// an entry of a budget pool's definition file (its exported entity, its tags, and its selection
+/// weight). Partial: only the members below are mapped.
+pub struct SpawnResourceDef {
+    _field_0: [u8; 148],
+    /// Whether the definition came from its pool's prototype definition file. Only a request with
+    /// [`FF_PROTOTYPE_SPAWN`](crate::spawn_system::SpawnSystem::FF_PROTOTYPE_SPAWN) matches it, unless the system's
+    /// debug switch for prototypes is on.
+    pub m_PrototypeContent: bool,
+    /// Whether the definition came from its pool's premium definition file. Only a request with
+    /// [`FF_PREMIUM_SPAWN`](crate::spawn_system::SpawnSystem::FF_PREMIUM_SPAWN) matches it, and such a request that
+    /// matches any premium definition takes only the premium ones.
+    pub m_PremiumContent: bool,
+    _field_96: [u8; 138],
+    /// The load state of the definition's exported entity.
+    pub m_Status: crate::spawn_system::SpawnResourceDefStatus,
+    /// How many live factories want the definition loaded: each factory that matched it counts
+    /// once, unless it was created with
+    /// [`FF_NO_RESOURCE_REQUEST`](crate::spawn_system::SpawnSystem::FF_NO_RESOURCE_REQUEST).
+    pub m_RequestCount: u32,
+    _field_128: [u8; 60],
+    /// How many objects one spawn of the definition creates, counted from the exported entity when
+    /// its load completes.
+    pub m_ObjectsPerSpawn: i32,
+    _field_168: [u8; 336],
+}
+fn _SpawnResourceDef_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x2B8], SpawnResourceDef>([0u8; 0x2B8]);
+    }
+    unreachable!()
+}
 impl SpawnResourceDef {}
 impl std::convert::AsRef<SpawnResourceDef> for SpawnResourceDef {
     fn as_ref(&self) -> &SpawnResourceDef {
@@ -140,6 +170,22 @@ impl std::convert::AsMut<SpawnResourceDef> for SpawnResourceDef {
     fn as_mut(&mut self) -> &mut SpawnResourceDef {
         self
     }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// The load state of a [`SpawnResourceDef`](crate::spawn_system::SpawnResourceDef)'s exported entity (`SResourceDef::EStatus`).
+pub enum SpawnResourceDefStatus {
+    UNLOADED = 0isize as _,
+    LOADING = 1isize as _,
+    LOADED = 2isize as _,
+    UNLOADING = 3isize as _,
+    LOAD_ERROR = 4isize as _,
+}
+fn _SpawnResourceDefStatus_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], SpawnResourceDefStatus>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 /// The spawn system: manages streaming (de)spawn of dynamic objects around the player. Each
@@ -427,6 +473,41 @@ impl SpawnSystem {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self, tag_hash: u32) -> i32 = ::std::mem::transmute(
                 Self::GetTagIndexFromTagHash_ADDRESS,
+            );
+            f(self as *const Self as _, tag_hash)
+        }
+    }
+    pub const GetUniqueTag_ADDRESS: usize = 0x140E83A90;
+    /// The unique spawn tag of the first resource definition matching the tag string `tags`
+    /// (parsed and matched as [`Spawn`](crate::spawn_system::SpawnSystem::Spawn) does, with premium and prototype definitions
+    /// included and no shuffle), or zero when the string has no valid tag or nothing matches. A
+    /// definition's unique tag is the first of its tags, the one only it carries. The game's
+    /// completion reward looks up its weapon's definition by name this way and hands the tag to the
+    /// inventory's weapon give.
+    pub unsafe fn GetUniqueTag(&mut self, tags: *const u8) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, tags: *const u8) -> i32 = ::std::mem::transmute(
+                Self::GetUniqueTag_ADDRESS,
+            );
+            f(self as *mut Self as _, tags)
+        }
+    }
+    pub const GetResourceDefFromTagHash_ADDRESS: usize = 0x140E5D750;
+    /// The first resource definition carrying the spawn tag whose hash is `tag_hash` (a unique
+    /// tag's hash names exactly one), or null when no loaded tag has that hash or no definition
+    /// carries it. [`GetTagHashFromTagIndex`](crate::spawn_system::SpawnSystem::GetTagHashFromTagIndex) turns a tag index such
+    /// as [`GetUniqueTag`](crate::spawn_system::SpawnSystem::GetUniqueTag)'s into the hash. The definitions are built once when
+    /// the system initializes, so the pointer stays valid until the system is released.
+    pub unsafe fn GetResourceDefFromTagHash(
+        &self,
+        tag_hash: u32,
+    ) -> *mut crate::spawn_system::SpawnResourceDef {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                tag_hash: u32,
+            ) -> *mut crate::spawn_system::SpawnResourceDef = ::std::mem::transmute(
+                Self::GetResourceDefFromTagHash_ADDRESS,
             );
             f(self as *const Self as _, tag_hash)
         }
