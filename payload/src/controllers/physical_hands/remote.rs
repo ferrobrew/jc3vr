@@ -166,9 +166,9 @@ pub(crate) unsafe fn dynamic_near(keep: impl FnMut(&Aabb) -> bool) -> Vec<NearBo
             let object = unsafe { bodies::owner_of(body) }?;
             let kind = match unsafe { bodies::classify(object, body) } {
                 Ok(TargetKind::Weapon) => NearKind::Weapon,
-                Ok(TargetKind::Prop { .. }) => NearKind::Prop {
-                    mass_kg: unsafe { loose_mass(object, body) }?,
-                },
+                Ok(TargetKind::Prop { mass_kg }) if !unsafe { engine::is_character(object) } => {
+                    NearKind::Prop { mass_kg }
+                }
                 _ => return None,
             };
             let state = unsafe { bodies::read(body, object) }.ok()?;
