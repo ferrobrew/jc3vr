@@ -64,7 +64,7 @@ A head held steady a little off the legs, inside all three of those, would other
 
 Looking down at the body, the head's heading points at a holster or a hand, not where the player means to face, and bending over swings it about. Past `yaw.look_down_deg` of downward pitch, only the large turn starts, the sustain's, the moving sustain's, and the steady spell's clocks start again, and the chest's follow fades linearly until, past `yaw.look_down_full_deg`, the chest holds where it is. The clamp still holds the chest to a large turn of the legs.
 
-The procedural body twists Rico's chest by the chest's heading relative to his facing ([procedural-body.md](procedural-body.md)), and the hands' estimated shoulders lie across the chest's heading and the hips across the legs'.
+The procedural body twists Rico's chest by the chest's heading relative to his facing ([procedural-body.md](procedural-body.md)), and the hands' estimated shoulders lie across the chest's heading and the hips across the legs'. Off the ground there is no grounded rig, so every estimate of the player's shoulders (the hands' shoulders, the arm remap, the wingsuit's arms, and the ripcord) takes the torso's heading from one follower in the air (`rig::torso_heading`, reading `procedural::wings::WingHeading`; [procedural-states.md](procedural-states.md#the-wingsuit)): the line between the wrists while they are spread, and otherwise a slow follower of the head that no glance turns. Elsewhere without a grounded rig (a seat, for example) the head's heading stands in.
 
 ### Where the yaw comes from
 

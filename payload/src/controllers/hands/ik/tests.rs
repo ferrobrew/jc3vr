@@ -110,6 +110,7 @@ fn replacement_before_measure_cannot_seed_new_or_deferred_plans_with_old_arms() 
             head: Pose::IDENTITY,
             hands: [Some(hand); 2],
             world_scale: 1.0,
+            torso: Quat::IDENTITY,
         });
         retained.weights = [1.0; 2];
         DEFERRED.replace(Some(retained.clone()));

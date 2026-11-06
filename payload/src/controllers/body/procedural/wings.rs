@@ -96,11 +96,7 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
     })?;
     let torso = match shoulder_heading() {
         Some(torso) => level(torso),
-        None => WING_HEADING.lock().update(
-            head.orientation,
-            wrists.map(|w| w.map(|w| w.position)),
-            Instant::now(),
-        ),
+        None => airborne_torso_heading(head.orientation, wrists.map(|w| w.map(|w| w.position))),
     };
     let player = body::player();
     Some(PlayerArms {
@@ -109,6 +105,14 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
         wrists,
         arm_length: player.shoulder_to_wrist(),
     })
+}
+
+/// The torso's heading in flight ([`WingHeading`]) for the head's cockpit orientation `head` and
+/// the player's tracked wrists `wrists` (cockpit frame, by [`Hand::index`]). Every in-flight
+/// estimate of the player's shoulders reads this one follower, so the arms, the hands' shoulders,
+/// the arm remap, and the ripcord agree.
+pub(crate) fn airborne_torso_heading(head: Quat, wrists: [Option<Vec3>; 2]) -> Quat {
+    WING_HEADING.lock().update(head, wrists, Instant::now())
 }
 
 impl State {

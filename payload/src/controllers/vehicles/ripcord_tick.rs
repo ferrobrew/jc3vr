@@ -14,12 +14,12 @@ use crate::controllers::{
         controls::Controls,
         hold::{Desired, MapKind, Target, Want},
     },
-    body::{self, rig::shoulder_heading},
+    body,
     config::ControllersConfig,
     fingers::grip::{self, Grip, GripSource},
     frame::Hand,
     grab::{GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
-    hands::{self, ActiveHands, reach::torso_heading},
+    hands::{self, ActiveHands},
     haptics::{self, Event},
     mode::{AirborneVariant, Mode},
     vehicles::ripcord::{self, RipcordEvent, RipcordState, StepInputs},
@@ -48,7 +48,7 @@ pub(super) fn targets(mode: Mode, active: &ActiveHands) -> Vec<GripTarget> {
     }
     let side = active.config.acting_hand();
     let player = body::player();
-    let torso = torso_heading(active.head, shoulder_heading());
+    let torso = active.torso;
     let shoulders = body::shoulder_positions(active.head.position, torso, &player);
     let centre = ripcord::centre(shoulders, torso, &player, side);
     state.side = Some(side);

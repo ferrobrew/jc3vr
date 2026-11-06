@@ -33,7 +33,7 @@ use crate::{
         body::{
             self, BodyDimensions,
             rig::{
-                shoulder_heading,
+                self as body_rig, shoulder_heading,
                 skeleton::{SkeletonSource, skeleton_in_cockpit},
             },
         },
@@ -81,6 +81,9 @@ pub struct ActiveHands {
     pub hands: [Option<CockpitHand>; 2],
     /// The VR world scale the head pose composes with.
     pub world_scale: f32,
+    /// The torso's heading the player's shoulders are estimated at ([`body_rig::torso_heading`]),
+    /// in the cockpit frame.
+    pub torso: Quat,
 }
 
 /// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
@@ -111,7 +114,7 @@ pub(crate) fn active_hands_from_frame(
         active.head.position,
         &active.config.weapons.heft,
     );
-    let torso = reach::torso_heading(active.head, shoulder_heading());
+    let torso = active.torso;
     let shoulders = shoulder_joints(&active.config, active.head, active.world_scale, torso);
     ads::apply(
         &mut active.hands,
@@ -154,7 +157,16 @@ fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
         position: cockpit.position,
         orientation: cockpit.orientation,
     };
-    let remaps = arm_remaps(&config, head, world_scale);
+    // The player's own wrists, before the remap that the torso's heading places.
+    let wrists = Hand::BOTH.map(|hand| {
+        frame
+            .focused
+            .then(|| cockpit_hand(frame, hand, &config.hands, None))
+            .flatten()
+            .map(|h| h.wrist.position)
+    });
+    let torso = body_rig::torso_heading(head, wrists);
+    let remaps = arm_remaps(&config, head, torso, world_scale);
     let limits = reach_limits(head, world_scale);
     let hands = Hand::BOTH.map(|hand| {
         let i = hand.index();
@@ -172,6 +184,7 @@ fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
         head,
         hands,
         world_scale,
+        torso,
     })
 }
 
@@ -237,7 +250,7 @@ fn shoulder_joints(
     world_scale: f32,
     torso: Quat,
 ) -> [Option<Vec3>; 2] {
-    let remaps = arm_remaps(config, head, world_scale);
+    let remaps = arm_remaps(config, head, torso, world_scale);
     let estimated = body::shoulder_positions(head.position, torso, &body::player());
     Hand::BOTH.map(|hand| {
         Some(remaps[hand.index()].map_or(estimated[hand.index()], |r| r.character_shoulder))
@@ -246,7 +259,12 @@ fn shoulder_joints(
 
 /// Each hand's remap: about the character's measured shoulder when that is on and the arm is
 /// measured, else about the estimated shoulders when `body.remap_hands` is on, else none.
-fn arm_remaps(config: &ControllersConfig, head: Pose, world_scale: f32) -> [Option<ArmRemap>; 2] {
+fn arm_remaps(
+    config: &ControllersConfig,
+    head: Pose,
+    torso: Quat,
+    world_scale: f32,
+) -> [Option<ArmRemap>; 2] {
     let measured = reach::REACH
         .measured_remap
         .then(rig::arms)
@@ -256,7 +274,6 @@ fn arm_remaps(config: &ControllersConfig, head: Pose, world_scale: f32) -> [Opti
     }
     let player = body::player();
     let chest = shoulder_heading();
-    let torso = reach::torso_heading(head, chest);
     Hand::BOTH.map(|hand| {
         measured[hand.index()]
             .and_then(|arm| {

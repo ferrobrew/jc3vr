@@ -22,15 +22,20 @@ pub mod torso;
 pub(crate) mod visual;
 
 use body_rig::angle::{direction, wrap, yaw_of};
-use glam::Quat;
+use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
 pub use crate::controllers::body::rig::config::RigConfig;
 use crate::{
     config::Config,
-    controllers::body::{
-        procedural::hips::hip_yaw,
-        rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
+    controllers::{
+        body::{
+            procedural::{hips::hip_yaw, wings::airborne_torso_heading},
+            rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
+        },
+        frame::Pose,
+        hands::reach,
+        mode::{self, Mode},
     },
     headpose::{self, xr::FollowSettings},
     hooks,
@@ -83,9 +88,22 @@ pub fn chest_turn(character_rotation: Quat) -> Option<f32> {
     turn
 }
 
-/// The torso's heading for the hands' estimated shoulders.
+/// The grounded rig's torso heading, which the procedural chest faces on foot.
 pub fn shoulder_heading() -> Option<Quat> {
     estimate().map(|e| e.rotation())
+}
+
+/// The torso's heading the player's shoulders are estimated at, in the cockpit frame of the head
+/// `head`: the grounded rig's ([`shoulder_heading`]) on the ground, the one read from the player's
+/// tracked wrists `wrists` and a slow follower of the head in the air
+/// ([`airborne_torso_heading`]), and the head's heading otherwise. The head's heading in the air
+/// would turn the shoulders with every glance.
+pub fn torso_heading(head: Pose, wrists: [Option<Vec3>; 2]) -> Quat {
+    let torso = shoulder_heading().or_else(|| {
+        matches!(mode::current().mode, Mode::Airborne(_))
+            .then(|| airborne_torso_heading(head.orientation, wrists))
+    });
+    reach::torso_heading(head, torso)
 }
 
 /// What the torso did on its latest frames, for the debug UI.
