@@ -351,7 +351,8 @@ pub(crate) fn finish_tick(
     let release_active =
         config.weapons.hold.grip_to_hold && capabilities.release && active.is_some();
     let released = if release_active {
-        hold::act::release_tick(grips.map(ButtonControl::held), action_hands)
+        // SAFETY: the game stage runs on the game thread before the world update.
+        unsafe { hold::act::release_tick(grips.map(ButtonControl::held), action_hands) }
     } else {
         hold::act::cancel_releases();
         [false; 2]

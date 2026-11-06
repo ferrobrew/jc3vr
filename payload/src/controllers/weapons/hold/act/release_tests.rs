@@ -106,3 +106,114 @@ fn ready_pump_foregrip_at_home_uses_normal_brace_or_drop_release() {
         assert!(watch.observe_release(hand, Some(1), [false; 2], [false; 2], None));
     }
 }
+
+#[test]
+fn a_stand_down_ends_with_the_grip_as_it_is_then() {
+    for hand in Hand::BOTH {
+        // Held through the stand-down: the hold's grip reads open until the hand opens, so the
+        // controller's grip keeps the gun, and its opening lets go of it, once.
+        let mut watch = arm(hand);
+        stand_down(&mut watch);
+        let closed = grips(hand, true, false);
+        assert_eq!(
+            watch.observe(hand, Some(1), masked(closed), [false; 2], None),
+            GripRelease::Kept
+        );
+        assert_eq!(
+            watch.observe(hand, Some(1), masked(closed), [false; 2], None),
+            GripRelease::Kept
+        );
+        assert_eq!(
+            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+            GripRelease::LetGo
+        );
+        assert_eq!(
+            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+            GripRelease::Kept
+        );
+        // Held through, and the hold's grip reads the hand again: the ordinary watch takes over.
+        let mut watch = arm(hand);
+        stand_down(&mut watch);
+        assert_eq!(
+            watch.observe(hand, Some(1), masked(closed), [false; 2], None),
+            GripRelease::Kept
+        );
+        assert_eq!(
+            watch.observe(hand, Some(1), unmasked(closed), [false; 2], None),
+            GripRelease::Kept
+        );
+        assert_eq!(
+            watch.observe(hand, Some(1), unmasked([false; 2]), [false; 2], None),
+            GripRelease::LetGo
+        );
+        // Opened during the stand-down: the gun goes back on the body, once.
+        let mut watch = arm(hand);
+        stand_down(&mut watch);
+        assert_eq!(
+            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+            GripRelease::Stow
+        );
+        assert_eq!(
+            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+            GripRelease::Kept
+        );
+        // A stand-down with nothing in the hand changes nothing.
+        let mut watch = Watch::new();
+        stand_down(&mut watch);
+        assert_eq!(
+            watch.observe(hand, None, masked([false; 2]), [false; 2], None),
+            GripRelease::Kept
+        );
+        assert_eq!(
+            watch.observe(hand, Some(1), masked([false; 2]), [false; 2], None),
+            GripRelease::Kept
+        );
+    }
+}
+
+/// A returning hand's grips: the hold's reads open, the controller's are `physical`.
+fn masked(physical: [bool; 2]) -> GripReading {
+    GripReading {
+        grips: [false; 2],
+        physical,
+    }
+}
+
+/// Grips the hold reads as the controller's are.
+fn unmasked(grips: [bool; 2]) -> GripReading {
+    GripReading {
+        grips,
+        physical: grips,
+    }
+}
+
+#[test]
+fn a_grab_waits_for_its_weapon_to_reach_the_hand() {
+    for hand in Hand::BOTH {
+        let mut watch = Watch::new();
+        watch.pending = true;
+        assert!(!watch.observe_release(hand, None, grips(hand, true, false), [false; 2], None));
+        assert!(!watch.observe_release(hand, Some(1), grips(hand, true, false), [false; 2], None));
+        assert!(watch.observe_release(hand, Some(1), [false; 2], [false; 2], None));
+    }
+}
+
+#[test]
+fn a_stowed_gun_goes_back_where_it_was_drawn_from_when_free() {
+    let left = Socket::Hip(Hand::Left);
+    let right = Socket::Hip(Hand::Right);
+    assert_eq!(stow_socket(Some(left), |_| true), Some(left));
+    assert_eq!(stow_socket(Some(left), |s| s == right), Some(right));
+    assert_eq!(stow_socket(None, |s| s == right), Some(right));
+    assert_eq!(stow_socket(Some(left), |_| false), None);
+}
+
+/// What [`cancel_releases`] does to one watch.
+fn stand_down(watch: &mut Watch) {
+    watch.release.disarm();
+    watch.pending = false;
+    watch.weapon = None;
+    watch.since_s = None;
+    watch.resumed = true;
+    watch.held_through = None;
+}

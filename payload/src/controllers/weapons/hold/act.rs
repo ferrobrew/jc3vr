@@ -35,7 +35,7 @@ use crate::{
         aim::gun,
         clock::TimeScale,
         diagnostics,
-        frame::{self, Hand, Pose},
+        frame::{self, Button, Hand, Pose},
         hands::grip,
         loadout::{ObjectAddress, Socket, grab, live},
         motion,
@@ -275,22 +275,68 @@ pub(crate) fn arm(hand: Hand) {
 /// Fold in one input tick of the grips, by [`Hand::index`]: returns, by hand, whether the hand's
 /// grip opened on the weapon the table has in it: one it took by a grab, or one it closed on after
 /// it came into the hand some other way ([`ReleaseWatch::latch_press`]).
-pub(crate) fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> [bool; 2] {
+///
+/// On the first tick after the release stood down ([`cancel_releases`]), a hand still holding a gun
+/// reads its controller's grip as it is ([`physical_grips`]), since `grips` stays open for a grip
+/// held through the stand-down until the hand opens: closed, the hand keeps the gun until the grip
+/// opens, and then lets go of it; open, it puts the gun back on a socket of the body ([`stow`]), or
+/// lets it fall when none takes it. The hold ends with the grip, even when the grip opened while
+/// the release stood down (the debug panel, the pause menu, a tracking loss).
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> [bool; 2] {
     let held = Hand::BOTH.map(live::in_hand);
     let now_s = motion::latest_time();
-    let mut state = STATE.lock();
-    Hand::BOTH.map(|hand| {
-        state.watches[hand.index()].observe_release(
-            hand,
-            held[hand.index()],
-            grips,
-            action_hands,
-            now_s,
-        )
+    let physical = physical_grips();
+    let outcomes = {
+        let mut state = STATE.lock();
+        Hand::BOTH.map(|hand| {
+            state.watches[hand.index()].observe(
+                hand,
+                held[hand.index()],
+                GripReading { grips, physical },
+                action_hands,
+                now_s,
+            )
+        })
+    };
+    Hand::BOTH.map(|hand| match outcomes[hand.index()] {
+        GripRelease::Kept => false,
+        GripRelease::LetGo => true,
+        GripRelease::Stow => {
+            // SAFETY: forwarded from the caller.
+            match unsafe { stow(hand) } {
+                Ok(socket) => tracing::info!(
+                    target: "controllers",
+                    hand = hand.label(),
+                    socket = socket.label(),
+                    "hold: the {} hand's grip opened while the release stood down; its weapon went back on the {}",
+                    hand.label(),
+                    socket.label()
+                ),
+                Err(refusal) => {
+                    tracing::info!(
+                        target: "controllers",
+                        hand = hand.label(),
+                        %refusal,
+                        "hold: the {} hand's grip opened while the release stood down, and no socket takes its weapon; it falls",
+                        hand.label()
+                    );
+                    // SAFETY: forwarded from the caller.
+                    if let Err(refusal) = unsafe { let_go(hand, hold::MAX_THROW_MPS) } {
+                        hold::refused(refusal);
+                    }
+                }
+            }
+            false
+        }
     })
 }
 
 /// Cancel grip-release intent while its input route is inactive, without stopping snap motion.
+/// The next [`release_tick`] reads each hand's grip afresh.
 pub(crate) fn cancel_releases() {
     let mut state = STATE.lock();
     for watch in &mut state.watches {
@@ -298,7 +344,72 @@ pub(crate) fn cancel_releases() {
         watch.pending = false;
         watch.weapon = None;
         watch.since_s = None;
+        watch.resumed = true;
+        watch.held_through = None;
     }
+}
+
+/// Whether each controller's grip is squeezed on the latest frame, by [`Hand::index`], unmasked by
+/// the bindings' wait for a returning hand's controls to rest.
+fn physical_grips() -> [bool; 2] {
+    frame::with_latest(|f| {
+        Hand::BOTH.map(|hand| {
+            let state = f.hand(hand);
+            f.focused && state.active && state.buttons.contains(Button::SqueezePress)
+        })
+    })
+    .unwrap_or([false; 2])
+}
+
+/// One tick's grips, by [`Hand::index`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct GripReading {
+    /// The grips as a hold reads them, masked for a returning hand until its controls rest.
+    grips: [bool; 2],
+    /// The controllers' grips as they are ([`physical_grips`]).
+    physical: [bool; 2],
+}
+
+/// Put the gun `hand` holds back on a socket of the body that takes it: the one it was last drawn
+/// off when that one is free ([`stow_socket`]), sliding there as a dock does. Returns the socket.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+unsafe fn stow(hand: Hand) -> Result<Socket, DockRefusal> {
+    let snapshot = live::snapshot_now().ok_or(DockRefusal::NoTable)?;
+    let object = live::in_hand(hand).ok_or(DockRefusal::NothingHeld)?;
+    let remembered = STATE
+        .lock()
+        .offsets
+        .iter()
+        .rev()
+        .find(|(weapon, _, _)| *weapon == object)
+        .map(|&(_, socket, _)| socket);
+    let socket = stow_socket(remembered, |socket| grab::fits(&snapshot, hand, socket))
+        .ok_or(DockRefusal::DoesNotFit)?;
+    // SAFETY: forwarded from the caller.
+    unsafe { dock(hand, socket, hold::SNAP_S) }?;
+    Ok(socket)
+}
+
+/// The socket a stowed gun goes back on: `remembered`, the one it was last drawn off, when it
+/// `fits`, else the first socket that does.
+fn stow_socket(remembered: Option<Socket>, fits: impl Fn(Socket) -> bool) -> Option<Socket> {
+    remembered
+        .filter(|&socket| fits(socket))
+        .or_else(|| Socket::ALL.into_iter().find(|&socket| fits(socket)))
+}
+
+/// What one tick of a hand's grip does to the gun the hand holds.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum GripRelease {
+    /// The hand keeps it.
+    Kept,
+    /// The grip opened on it: it is let go of, docking on a socket under the hand.
+    LetGo,
+    /// The grip opened while the release stood down: it goes back on a socket of the body.
+    Stow,
 }
 
 /// Which hands' guns a dock's snap is moving onto their sockets, which holds them back from firing,
@@ -401,8 +512,14 @@ struct Seat {
 struct Watch {
     release: ReleaseWatch,
     weapon: Option<usize>,
+    /// A grab put the weapon in the hand, and the grip has not yet been seen holding it. It waits
+    /// for the weapon to reach the table's hand.
     pending: bool,
     since_s: Option<f64>,
+    /// The release stood down since the last tick ([`cancel_releases`]).
+    resumed: bool,
+    /// The weapon a grip held through a stand-down keeps, until the controller's grip opens.
+    held_through: Option<usize>,
 }
 
 impl Watch {
@@ -412,6 +529,54 @@ impl Watch {
             weapon: None,
             pending: false,
             since_s: None,
+            resumed: false,
+            held_through: None,
+        }
+    }
+
+    /// Fold in one input tick ([`release_tick`]): [`Self::observe_release`], after the first tick
+    /// back from a stand-down has read the controller's grip as it is: a gun under a closed grip is
+    /// kept until that grip opens, and one under an open grip is stowed.
+    fn observe(
+        &mut self,
+        hand: Hand,
+        weapon: Option<usize>,
+        reading: GripReading,
+        action_hands: [bool; 2],
+        now_s: Option<f64>,
+    ) -> GripRelease {
+        let GripReading { grips, physical } = reading;
+        let i = hand.index();
+        if std::mem::take(&mut self.resumed) && weapon.is_some() {
+            if physical[i] {
+                self.held_through = weapon;
+            } else {
+                self.weapon = weapon;
+                self.since_s = now_s;
+                self.release.unarm();
+                self.release.latch_press(None, grips);
+                return GripRelease::Stow;
+            }
+        }
+        if let Some(through) = self.held_through {
+            if weapon != Some(through) {
+                self.held_through = None;
+            } else if grips[i] {
+                // The masked grip reads the hand again: the ordinary watch takes over.
+                self.held_through = None;
+                self.pending = true;
+            } else if !physical[i] {
+                self.held_through = None;
+                self.weapon = weapon;
+                self.release.unarm();
+                self.release.latch_press(None, grips);
+                return GripRelease::LetGo;
+            }
+        }
+        if self.observe_release(hand, weapon, grips, action_hands, now_s) {
+            GripRelease::LetGo
+        } else {
+            GripRelease::Kept
         }
     }
 
@@ -429,8 +594,12 @@ impl Watch {
             self.since_s = now_s;
             self.release.unarm();
         }
-        if std::mem::take(&mut self.pending) && weapon.is_some() && grips[hand.index()] {
-            self.release.arm(hand);
+        // A grab whose weapon has not reached the table's hand yet keeps waiting for it.
+        if self.pending && weapon.is_some() {
+            self.pending = false;
+            if grips[hand.index()] {
+                self.release.arm(hand);
+            }
         }
         if self.release.latch_press(holder, grips).is_some() {
             self.since_s = now_s;
