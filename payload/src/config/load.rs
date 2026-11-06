@@ -31,7 +31,7 @@ use toml::{Table, Value};
 use crate::{
     config::{
         Config,
-        format::{self, Format},
+        format::{self, Format, Migrated},
         validate,
     },
     controllers::config::{ControllersConfig, SightTable},
@@ -54,7 +54,7 @@ pub(crate) struct LoadReport {
     pub defaulted: Vec<String>,
     /// Settings a file of format zero held at a default a later build replaced, which take the
     /// current default.
-    pub migrated: Vec<String>,
+    pub migrated: Vec<Migrated>,
     /// The version of a file a newer build wrote, which loads as the current format.
     pub newer_version: Option<i64>,
     /// Settings the file had that this build does not know, which were skipped.
@@ -117,11 +117,12 @@ impl LoadReport {
                 "settings: the file lacks some settings; they take their defaults",
             );
         }
-        if !self.migrated.is_empty() {
-            tracing::info!(
+        for migrated in &self.migrated {
+            tracing::warn!(
                 path,
-                migrated = ?self.migrated,
-                "settings: the file holds defaults a later build replaced; they take the new defaults",
+                setting = migrated.path,
+                removed = migrated.removed,
+                "settings: the file holds a default a later build replaced; it takes the new default",
             );
         }
         if let Some(version) = self.newer_version {
@@ -172,7 +173,7 @@ pub(crate) fn parse(text: &str) -> Result<Loaded, LoadError> {
     let mut defaulted = Vec::new();
     let mut merged = merge(defaults.clone(), Value::Table(file), &[], &mut defaulted);
     if upgrade.format.complete() {
-        defaulted.retain(|path| !report.migrated.contains(path));
+        defaulted.retain(|path| !report.migrated.iter().any(|entry| entry.path == *path));
         report.defaulted = defaulted;
     }
     let mut config = None;

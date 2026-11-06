@@ -7,9 +7,10 @@
 //!
 //! Format zero, a file without a version, holds every setting, each default as it stood when the
 //! file was written, so a default changed since is indistinguishable from the player's choice.
-//! [`upgrade`] removes each setting of such a file that holds a default a later build replaced
-//! ([`SUPERSEDED`]), so that it takes the current default, as it would have had the file been
-//! written in the current format.
+//! [`upgrade`] removes each numeric tuning of such a file that holds a default a later build
+//! replaced ([`SUPERSEDED`]), so that it takes the current default, as it would have had the file
+//! been written in the current format. A switch or a mode is kept as written, since a player who
+//! set it back to its old default cannot be told from one who never touched it.
 
 use std::fmt;
 
@@ -31,8 +32,17 @@ pub(crate) const VERSION_KEY: &str = "version";
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Upgrade {
     pub format: Format,
-    /// The settings that held a superseded default and were removed, by path.
-    pub migrated: Vec<String>,
+    /// The settings that held a superseded default and were removed.
+    pub migrated: Vec<Migrated>,
+}
+
+/// A setting that held a superseded default and was removed, so that it takes the current one.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Migrated {
+    /// The setting's path (`controllers.body.rig.yaw.moving_deadzone_deg`).
+    pub path: String,
+    /// The value the file held, as TOML.
+    pub removed: String,
 }
 
 /// The format a file was written in.
@@ -138,9 +148,12 @@ pub(crate) fn upgrade(file: &mut Table) -> Upgrade {
             if table
                 .get(*last)
                 .is_some_and(|value| superseded.iter().any(|old| same(value, old)))
+                && let Some(removed) = table.remove(*last)
             {
-                table.remove(*last);
-                migrated.push(path);
+                migrated.push(Migrated {
+                    path,
+                    removed: removed.to_string(),
+                });
             }
         }
     }
@@ -186,12 +199,13 @@ fn same(a: &Value, b: &Value) -> bool {
 }
 
 /// The defaults a later build replaced, by setting: each list holds the values the setting's
-/// default once had. A file of format zero that holds one of them never had it chosen, as far as
-/// can be told, so [`upgrade`] removes it. A default changed after the current format was
+/// default once had. Only numeric tunings are listed: a file of format zero that holds one of
+/// their exact old values never had it chosen, as far as can be told, so [`upgrade`] removes it. A
+/// switch or a mode has too few values for that to hold (a player may have set it back to its old
+/// default on purpose), so it is kept as written. A default changed after the current format was
 /// introduced needs no entry here, since the current format does not write defaults.
 const SUPERSEDED: &str = r#"
 [controllers.body.procedural]
-mode = ["Off"]
 blend_s = [0.3]
 chest_clear_back_m = [0.05]
 
@@ -206,45 +220,17 @@ settle_s = [1.0]
 [controllers.body.rig.yaw]
 moving_deadzone_deg = [15.0]
 
-[controllers.overlay]
-ghost_hands = [true]
-debug_gizmos = [true]
-
 [controllers.physical_hands.bodies.brace]
 distance_m = [0.002]
 angle_rad = [0.01]
-
-[controllers.physical_hands.climb]
-enabled = [false]
-
-[controllers.physical_hands.grab_view]
-wrist = [true]
 
 [controllers.vehicles.wingsuit_gestures]
 flight_angle_deg = [35.0]
 brake_hysteresis_deg = [12.0]
 
-[controllers.weapons.hold]
-grip_to_hold = [false]
-
-[controllers.weapons.holsters]
-stick_click_cycles = [true]
-
-[controllers.weapons.reload]
-flick_eject = [true]
-
 [controllers.weapons.snatch.yank]
 min_distance_m = [0.12]
 min_speed_mps = [1.5, 1.0]
-
-[controllers.weapons.wheel]
-enabled = [true]
-
-[hud.atlas]
-enabled = [false]
-
-[hud.world_markers]
-enabled = [false]
 "#;
 
 /// The superseded defaults, by path: [`SUPERSEDED`], and the director's key bindings as they stood
@@ -364,7 +350,10 @@ back_bend_deg = 12.0
         assert_eq!(upgrade.format, Format::Zero);
         assert_eq!(
             upgrade.migrated,
-            ["controllers.body.rig.yaw.moving_deadzone_deg"]
+            [Migrated {
+                path: "controllers.body.rig.yaw.moving_deadzone_deg".to_owned(),
+                removed: "15.0".to_owned(),
+            }]
         );
         let file = Value::Table(file);
         assert!(lookup(&file, "controllers.body.rig.yaw.moving_deadzone_deg").is_none());
@@ -401,9 +390,35 @@ back_bend_deg = 12.0
             Config::new().controllers.body.rig.yaw.moving_deadzone_deg
         );
         assert_eq!(
-            loaded.report.migrated,
+            paths(&loaded.report.migrated),
             ["controllers.body.rig.yaw.moving_deadzone_deg"]
         );
+    }
+
+    fn paths(migrated: &[Migrated]) -> Vec<&str> {
+        migrated.iter().map(|entry| entry.path.as_str()).collect()
+    }
+
+    #[test]
+    fn a_format_zero_file_keeps_its_switches_and_modes_at_old_defaults() {
+        let text = r#"
+[controllers.weapons.wheel]
+enabled = true
+[controllers.body.procedural]
+mode = "Off"
+[controllers.overlay]
+debug_gizmos = true
+[controllers.physical_hands.climb]
+enabled = false
+[hud.world_markers]
+enabled = false
+"#;
+        let mut file: Table = toml::from_str(text).unwrap();
+        let kept = file.clone();
+        let upgrade = upgrade(&mut file);
+        assert_eq!(upgrade.format, Format::Zero);
+        assert_eq!(upgrade.migrated, []);
+        assert_eq!(file, kept);
     }
 
     #[test]
@@ -443,14 +458,14 @@ back_bend_deg = 12.0
         binding.chord = COLLIDER_VIEW_CHORD_BEFORE_F3;
         let mut file: Table = toml::from_str(&toml::to_string(&stale).unwrap()).unwrap();
         let upgrade = upgrade(&mut file);
-        assert_eq!(upgrade.migrated, ["director.keymap.bindings"]);
+        assert_eq!(paths(&upgrade.migrated), ["director.keymap.bindings"]);
     }
 
     #[test]
-    fn every_superseded_default_names_a_setting_whose_default_changed() {
+    fn every_superseded_default_names_a_numeric_setting_whose_default_changed() {
         let defaults = defaults();
         let entries = superseded();
-        assert!(entries.len() > 20, "{}", entries.len());
+        assert!(entries.len() > 10, "{}", entries.len());
         for (path, values) in entries {
             let current =
                 lookup(&defaults, &path).unwrap_or_else(|| panic!("{path} is not a setting"));
@@ -464,6 +479,10 @@ back_bend_deg = 12.0
                     std::mem::discriminant(value),
                     std::mem::discriminant(current),
                     "{path}: {value} is not of the setting's type"
+                );
+                assert!(
+                    matches!(value, Value::Float(_) | Value::Integer(_) | Value::Array(_)),
+                    "{path}: {value} is a switch or a mode, which a player may have chosen"
                 );
             }
         }
