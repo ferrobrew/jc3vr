@@ -328,8 +328,8 @@ fn giveable(def: &SpawnDefinition) -> Option<bool> {
     Some(one_handed)
 }
 
-/// Spawn a weapon of the definition `name` for `socket`, clearing the socket first, and for `hand`
-/// to draw once it is there.
+/// Spawn a weapon of the definition `name` for `socket`, clearing the socket once the spawn is asked
+/// for, and for `hand` to draw once it is there.
 unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str) -> String {
     let Some(def) = spawn::definitions().iter().find(|def| def.name == name) else {
         return format!("give: no shipped definition is named {name}");
@@ -356,8 +356,6 @@ unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str
             Refusal::LoadError.label()
         );
     }
-    // A refusal here only means the socket was empty.
-    let _ = unsafe { swap::eject(socket) };
     let generation = PLAN.lock().generation;
     let token = SpawnToken::Give { generation, socket };
     let transform = owner.m_WorldMatrixT1;
@@ -375,6 +373,10 @@ unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str
     if let Err(refusal) = submitted {
         return format!("give: {refusal}");
     }
+    // The socket is cleared only once the spawn is asked for, so a closed admission (a shutdown)
+    // leaves the weapon there. The spawned weapon lands from a later tick ([`GIVEN`]), never inside
+    // the request. A refusal here only means the socket was empty.
+    let _ = unsafe { swap::eject(socket) };
     PENDING.lock().push(Pending {
         token,
         socket,
