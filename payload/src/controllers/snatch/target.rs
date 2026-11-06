@@ -19,7 +19,7 @@ use crate::controllers::{
         collider_view::model::Aabb,
         doors::DoorTarget,
         game_object_of,
-        remote::{self, DroppedWeapon, RagdollTarget},
+        remote::{self, NearBody, NearKind, RagdollTarget},
     },
     snatch::{
         OfferInput, Refusal, SNATCH, engine,
@@ -363,8 +363,9 @@ pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
 }
 
 /// The target the grapple's aim picks along `ray`: the weapon, object, or car door under it, or a
-/// weapon or an inert grenade lying in the world or a gun in a character's hands or holster near
-/// its line, within the range, in sight.
+/// weapon, a loose object, or an inert grenade lying in the world or a gun in a character's hands
+/// or holster near its line, within the range, in sight. A loose object is the player's other
+/// hand's own only while that hand does not hold it.
 ///
 /// # Safety
 ///
@@ -374,6 +375,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     enum Kind {
         Aimed,
         Floor(usize),
+        Prop(usize),
         Loose(usize),
         Held(usize),
         Holstered(usize),
@@ -387,13 +389,30 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     let aimed_weapon = aimed
         .as_ref()
         .and_then(|(aimed, _, _)| aimed.weapon.then_some(aimed.object));
-    let floor: Vec<DroppedWeapon> = unsafe { remote::dropped_weapons(|aabb| near_aim(ray, aabb)) }
+    let aimed_object = aimed.as_ref().map(|(aimed, _, _)| aimed.object);
+    let held = physical_hands::held_props();
+    let (floor, props): (Vec<NearBody>, Vec<NearBody>) =
+        unsafe { remote::dynamic_near(|aabb| near_aim(ray, aabb)) }
+            .into_iter()
+            .filter(|near| {
+                Some(near.object) != aimed_weapon
+                    && Some(near.object) != aimed_object
+                    && !held.contains(&Some(near.object))
+            })
+            .partition(|near| near.kind == NearKind::Weapon);
+    // A loose object off the ray is offered within the floor's cone as a weapon lying there is, by
+    // what the snatch would do with its mass.
+    let props: Vec<(NearBody, f32, PropHandling)> = props
         .into_iter()
-        .filter(|weapon| Some(weapon.object) != aimed_weapon)
+        .filter_map(|near| {
+            let NearKind::Prop { mass_kg } = near.kind else {
+                return None;
+            };
+            handling(mass_kg, config).map(|handling| (near, mass_kg, handling))
+        })
         .collect();
     // An inert grenade lying in the world is small, so it is offered within the floor's cone as a
     // weapon lying there is, not only under a direct hit of the aim.
-    let aimed_object = aimed.as_ref().map(|(aimed, _, _)| aimed.object);
     let loose: Vec<(NonZeroUsize, u32, Vec3)> = grenade::inert_lying()
         .into_iter()
         .filter(|(object, _, _)| Some(*object) != aimed_object)
@@ -405,7 +424,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             Some(rack.weapon) != aimed_weapon && !floor.iter().any(|w| w.object == rack.weapon)
         })
         .collect();
-    let held: Vec<WorldTarget> = if takes_held {
+    let in_hands: Vec<WorldTarget> = if takes_held {
         steal::targets(|p| p)
             .into_iter()
             .filter(|t| matches!(t.kind, TargetKind::Held { .. }))
@@ -431,6 +450,10 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             kind: Kind::Floor(i),
             point: weapon.centre,
         }))
+        .chain(props.iter().enumerate().map(|(i, (near, _, _))| Candidate {
+            kind: Kind::Prop(i),
+            point: near.centre,
+        }))
         .chain(
             loose
                 .iter()
@@ -440,7 +463,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
                     point: *centre,
                 }),
         )
-        .chain(held.iter().enumerate().map(|(i, target)| Candidate {
+        .chain(in_hands.iter().enumerate().map(|(i, target)| Candidate {
             kind: Kind::Held(i),
             point: target.points[0],
         }))
@@ -457,7 +480,10 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         candidates,
         |kind, distance| {
             cone(
-                matches!(kind, Kind::Floor(_) | Kind::Loose(_) | Kind::Rack(_)),
+                matches!(
+                    kind,
+                    Kind::Floor(_) | Kind::Prop(_) | Kind::Loose(_) | Kind::Rack(_)
+                ),
                 distance,
             )
         },
@@ -488,6 +514,20 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
                 Some(false) => return None,
             }
         }
+        Kind::Prop(i) => {
+            let (near, mass_kg, handling) = props[i];
+            if !unsafe { in_sight(ray, point, near.object.get()) } {
+                return None;
+            }
+            OfferKind::Prop {
+                object: near.object,
+                body: near.body,
+                mass_kg,
+                handling,
+                // SAFETY: its body was read as its own on this thread this tick.
+                weak: unsafe { weak_of(near.object) },
+            }
+        }
         Kind::Loose(i) => {
             let (object, body, _) = loose[i];
             if !unsafe { in_sight(ray, point, object.get()) } {
@@ -501,7 +541,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             }
         }
         Kind::Held(i) => {
-            let target = held[i];
+            let target = in_hands[i];
             let TargetKind::Held { character } = target.kind else {
                 return None;
             };
@@ -551,8 +591,9 @@ fn cone(on_ground: bool, distance: f32) -> f32 {
     }
 }
 
-/// Whether a dynamic body's box could hold a weapon lying in the world that [`choose`] would take
-/// from `ray`: within the range and the widest floor cone, allowing for the box's own size.
+/// Whether a dynamic body's box could hold a weapon lying in the world or a loose object that
+/// [`choose`] would take from `ray`: within the range and the widest floor cone, allowing for the
+/// box's own size.
 fn near_aim(ray: &Ray, aabb: &Aabb) -> bool {
     let half_size = (aabb.max - aabb.min).length() * 0.5;
     if !half_size.is_finite() {
@@ -711,14 +752,20 @@ unsafe fn prop_handling(
     body: u32,
     config: &ControllersConfig,
 ) -> Option<(f32, PropHandling)> {
+    let mass_kg = unsafe { remote::loose_mass(object, body) }?;
+    handling(mass_kg, config).map(|h| (mass_kg, h))
+}
+
+/// What the snatch does with a loose object of `mass_kg`: carried when one hand could carry it,
+/// swung, while the swing is on, up to its ceiling.
+fn handling(mass_kg: f32, config: &ControllersConfig) -> Option<PropHandling> {
     let snatch = &config.weapons.snatch;
     let ceiling = if snatch.sling {
         snatch.swing.ceiling_kg
     } else {
         0.0
     };
-    let mass_kg = unsafe { remote::loose_mass(object, body) }?;
-    rules::prop_handling(mass_kg, remote::carry_max_kg(), ceiling).map(|h| (mass_kg, h))
+    rules::prop_handling(mass_kg, remote::carry_max_kg(), ceiling)
 }
 
 /// A weak reference to the physics game object at `object`, from its own.

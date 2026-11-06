@@ -127,51 +127,64 @@ pub(crate) fn carry_max_kg() -> f32 {
     }
 }
 
-/// A weapon lying in the world, found by its box rather than by a cast.
+/// A weapon lying in the world or a loose object, found by its box rather than by a cast.
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct DroppedWeapon {
-    /// The weapon (its physics game object, a `CWeaponBase`).
+pub(crate) struct NearBody {
+    /// The object (its physics game object: a `CWeaponBase` for a weapon).
     pub object: NonZeroUsize,
     pub body: u32,
     /// The body's centre, world space.
     pub centre: Vec3,
+    pub kind: NearKind,
 }
 
-/// The weapons lying in the world whose dynamic bodies' boxes `keep` accepts, at most
-/// [`MAX_DROPPED_WEAPONS`] boxes considered. A weapon's body is on a layer the ordinary casts never
-/// meet, so a thin gun far off is found by its box and then checked as a dropped weapon whose body
-/// still reads as its own.
+/// What a body found by its box is.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) enum NearKind {
+    /// A weapon lying in the world.
+    Weapon,
+    /// A loose object of this mass, kilograms ([`loose_mass`]).
+    Prop { mass_kg: f32 },
+}
+
+/// The weapons lying in the world and the loose objects whose dynamic bodies' boxes `keep` accepts,
+/// at most [`MAX_NEAR_BODIES`] boxes considered. A weapon's body is on a layer the ordinary casts
+/// never meet, and a small object far off subtends too little for a cast to be asked to hit it, so
+/// either is found by its box and then checked by the reach's classification on a body that still
+/// reads as its owner's.
 ///
 /// # Safety
 ///
 /// The main thread, outside the physics step.
-pub(crate) unsafe fn dropped_weapons(keep: impl FnMut(&Aabb) -> bool) -> Vec<DroppedWeapon> {
-    let Ok(boxes) = (unsafe { collider_view::dynamic_boxes(keep, MAX_DROPPED_WEAPONS) }) else {
+pub(crate) unsafe fn dynamic_near(keep: impl FnMut(&Aabb) -> bool) -> Vec<NearBody> {
+    let Ok(boxes) = (unsafe { collider_view::dynamic_boxes(keep, MAX_NEAR_BODIES) }) else {
         return Vec::new();
     };
     boxes
         .into_iter()
         .filter_map(|(body, _)| {
             let object = unsafe { bodies::owner_of(body) }?;
-            if !matches!(
-                unsafe { bodies::classify(object, body) },
-                Ok(TargetKind::Weapon)
-            ) {
-                return None;
-            }
+            let kind = match unsafe { bodies::classify(object, body) } {
+                Ok(TargetKind::Weapon) => NearKind::Weapon,
+                Ok(TargetKind::Prop { .. }) => NearKind::Prop {
+                    mass_kg: unsafe { loose_mass(object, body) }?,
+                },
+                _ => return None,
+            };
             let state = unsafe { bodies::read(body, object) }.ok()?;
-            Some(DroppedWeapon {
+            Some(NearBody {
                 object,
                 body,
                 centre: state.pose.centre,
+                kind,
             })
         })
         .collect()
 }
 
-/// The most boxes [`dropped_weapons`] considers: its filter keeps only boxes near the aim, so this
+/// The most boxes [`dynamic_near`] considers: its filter keeps only boxes near the aim, so this
 /// bounds a pathological pile of debris, not an ordinary scene.
-const MAX_DROPPED_WEAPONS: usize = 32;
+const MAX_NEAR_BODIES: usize = 48;
 
 /// The closed door of the vehicle `object` (or the vehicle a part of it belongs to) whose handle
 /// area is within `reach_m` of `point`, a point the grapple's aim hit on its body `body` with the
