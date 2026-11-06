@@ -42,8 +42,6 @@ pub struct PhysicalControlsTuning {
     pub buttons: CockpitButtonsTuning,
     /// How far from a control a hand's grip may be for a grip press to grab it, metres.
     pub grab_radius_m: f32,
-    /// How far a holding hand may move from the control before it lets go, metres.
-    pub release_distance_m: f32,
 }
 
 impl PhysicalControlsTuning {
@@ -104,7 +102,6 @@ impl PhysicalControlsTuning {
                 throttle_twist_deg: 30.0,
             },
             grab_radius_m: 0.09,
-            release_distance_m: 0.25,
         }
     }
 

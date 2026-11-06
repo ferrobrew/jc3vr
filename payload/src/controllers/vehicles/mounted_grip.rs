@@ -3,8 +3,8 @@
 //! Pure.
 //!
 //! Each hand takes its own handle like a physical control: a grip press with the hand's grip near
-//! the handle takes it, and releasing the grip, or moving further than the release distance from
-//! it, lets go. Only a holding hand is drawn on its handle and aims the gun, so one hand can let go
+//! the handle takes it, and only releasing the grip lets go: a holding hand that drifts off its
+//! handle keeps aiming from where it is, however far it goes. Only a holding hand is drawn on its handle and aims the gun, so one hand can let go
 //! to throw a grenade or reach for something while the other keeps the gun, and with both hands off
 //! the gun stays where they left it. Off, both hands sit on the handles and aim the gun whenever
 //! the character mans it.
@@ -15,7 +15,7 @@ use crate::controllers::{
     frame::Hand,
     grab::{Candidate, GrabVolume},
     hands::tiers,
-    vehicles::config::MountedConfig,
+    vehicles::{config::MountedConfig, physical::Release},
 };
 
 /// The hands' hold on the handles.
@@ -54,11 +54,11 @@ impl MountedGrip {
     }
 }
 
-/// A grab or a release of a handle.
+/// A grab or a release of a handle, the release with why.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum MountedGripEvent {
     Grabbed(Hand),
-    Released(Hand),
+    Released(Hand, Release),
 }
 
 /// One tick's inputs.
@@ -96,8 +96,8 @@ pub fn candidates(config: &MountedConfig, handles: [Option<Vec3>; 2]) -> Vec<Can
         .collect()
 }
 
-/// Advance the hold by one tick: take the grabbed handles, let go of those whose grip is released
-/// or whose hand moved away, and blend the hands' shares.
+/// Advance the hold by one tick: take the grabbed handles, let go of those whose grip is released,
+/// and blend the hands' shares.
 pub fn step(state: &mut MountedGrip, inputs: &GripStep, events: &mut Vec<MountedGripEvent>) {
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -105,17 +105,23 @@ pub fn step(state: &mut MountedGrip, inputs: &GripStep, events: &mut Vec<Mounted
         let was = state.holds[i];
         let now = match (handle, inputs.grips[i]) {
             _ if !inputs.config.grip_handles => false,
-            (Some(handle), Some(grip)) => {
-                (was || inputs.grabs[i])
-                    && inputs.held[i]
-                    && grip.distance(handle) <= RELEASE_DISTANCE_M
-            }
+            (Some(_), Some(_)) => (was || inputs.grabs[i]) && inputs.held[i],
             _ => false,
         };
         state.holds[i] = now;
         match (was, now) {
             (false, true) => events.push(MountedGripEvent::Grabbed(hand)),
-            (true, false) => events.push(MountedGripEvent::Released(hand)),
+            (true, false) => {
+                let why = if inputs.config.grip_handles
+                    && handle.is_some()
+                    && inputs.grips[i].is_some()
+                {
+                    Release::GripReleased
+                } else {
+                    Release::Gone
+                };
+                events.push(MountedGripEvent::Released(hand, why));
+            }
             _ => {}
         }
         let target = if now { 1.0 } else { 0.0 };
@@ -131,9 +137,6 @@ pub fn step(state: &mut MountedGrip, inputs: &GripStep, events: &mut Vec<Mounted
 
 /// How far from a handle a hand's grip may be for a grip press to take it, metres.
 pub(super) const GRAB_RADIUS_M: f32 = 0.12;
-
-/// How far a holding hand may move from its handle before it lets go, metres.
-const RELEASE_DISTANCE_M: f32 = 0.3;
 
 #[cfg(test)]
 mod tests {
@@ -180,12 +183,15 @@ mod tests {
         assert_eq!(state.holds, [false; 2]);
         assert_eq!(
             events.last(),
-            Some(&MountedGripEvent::Released(Hand::Right))
+            Some(&MountedGripEvent::Released(
+                Hand::Right,
+                Release::GripReleased
+            ))
         );
     }
 
     #[test]
-    fn a_hand_moved_away_lets_go() {
+    fn a_hand_that_drifts_off_its_handle_keeps_it_until_the_grip_opens() {
         let config = MountedConfig::new();
         let mut state = MountedGrip::new();
         let mut events = Vec::new();
@@ -194,9 +200,21 @@ mod tests {
         grab.grabs = [true, false];
         step(&mut state, &grab, &mut events);
         assert!(state.holds[0]);
-        let far = [Some(Vec3::new(-0.2, 0.0, 0.2)), None];
+        let far = [Some(Vec3::new(-0.2, 0.0, 0.7)), None];
         step(&mut state, &inputs(&config, far), &mut events);
+        assert!(state.holds[0]);
+        assert_eq!(state.aiming(&config, [true, false]), [true, false]);
+        let mut open = inputs(&config, far);
+        open.held = [false; 2];
+        step(&mut state, &open, &mut events);
         assert!(!state.holds[0]);
+        assert_eq!(
+            events.last(),
+            Some(&MountedGripEvent::Released(
+                Hand::Left,
+                Release::GripReleased
+            ))
+        );
     }
 
     #[test]

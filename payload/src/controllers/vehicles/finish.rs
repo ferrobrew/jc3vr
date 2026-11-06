@@ -234,8 +234,13 @@ fn log_mounted_events(events: &[MountedGripEvent]) {
                 tracing::info!(target: "controllers", hand = hand.label(), "the hand took the mounted gun's handle");
                 haptics::play(hand, Event::HandleGrab);
             }
-            MountedGripEvent::Released(hand) => {
-                tracing::info!(target: "controllers", hand = hand.label(), "the hand let go of the mounted gun's handle");
+            MountedGripEvent::Released(hand, why) => {
+                tracing::info!(
+                    target: "controllers",
+                    hand = hand.label(),
+                    reason = why.label(),
+                    "the hand let go of the mounted gun's handle"
+                );
             }
         }
     }

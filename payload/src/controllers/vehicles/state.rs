@@ -369,7 +369,28 @@ pub(super) fn move_grip(hand: CockpitHand, point: Vec3, weight: f32) -> CockpitH
 
 pub(super) fn push_events(status: &mut VehiclesStatus, events: Vec<ControlEvent>) {
     for event in &events {
-        tracing::debug!(target: "controllers", ?event, "vehicle control");
+        match *event {
+            ControlEvent::Grabbed(hand, kind) => {
+                tracing::info!(
+                    target: "controllers",
+                    hand = hand.label(),
+                    control = kind.label(),
+                    "vehicle control: took the control"
+                );
+            }
+            ControlEvent::Released(hand, kind, why) => {
+                tracing::info!(
+                    target: "controllers",
+                    hand = hand.label(),
+                    control = kind.label(),
+                    reason = why.label(),
+                    "vehicle control: let go of the control"
+                );
+            }
+            ControlEvent::Button(_) => {
+                tracing::debug!(target: "controllers", ?event, "vehicle control");
+            }
+        }
     }
     status.events.extend(events);
     let excess = status.events.len().saturating_sub(MAX_EVENTS);

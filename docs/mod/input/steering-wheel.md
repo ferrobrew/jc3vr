@@ -18,7 +18,7 @@ The input tick captures the actual attached vehicle once through [`Character::Ge
 
 The design follows the VR wheels of other games: Sacchan's SaccGroundVehicle for VRChat (hold to grip, per-hand accumulators seeded from the current steering, ±450° for a car) and BNG's VR Interaction Framework wheel (position-tracked, hold to grip, ±360°, a linear return).
 
-A hand holds the wheel only while its grip is held. A grip press with the hand within `PHYSICAL.grab_radius_m` (`controllers::vehicles::tuning`) of the rim takes the wheel, and releasing the grip lets go; so does moving further than `PHYSICAL.release_distance_m` from the rim. A hand that passes through the rim, or rests on it with the grip open, takes nothing. The press is latched at its edge as for every grab volume; the grip fires nothing in a vehicle, so a press that misses the rim only closes the hand.
+A hand holds the wheel only while its grip is held. A grip press with the hand within `PHYSICAL.grab_radius_m` (`controllers::vehicles::tuning`) of the rim takes the wheel, and only releasing the grip lets go: a holding hand that drifts off the rim keeps turning the wheel from its position and rotation however far it goes. A hand that passes through the rim, or rests on it with the grip open, takes nothing. The press is latched at its edge as for every grab volume; the grip fires nothing in a vehicle, so a press that misses the rim only closes the hand.
 
 Each holding hand turns the wheel by how far it turned since the last tick, measured one of two ways (`physical.wheel.turned_by`):
 
@@ -126,3 +126,4 @@ The Vehicles feature's live status shows the wheel's angle and the steering writ
 9. The rendered wheel turns with the held wheel, the right way, and with the stick when no hand holds it; it stops turning when it is shot off.
 10. A left-handed layout: the wheel and the handlebars stay where they are; the sticks and levers swap sides.
 11. On a motorcycle, ride a straight with both hands on the bars: it holds its line with no weave. Turn the bars a little, then fully: the bike turns gently, then fully, and a hand dropping as the bars turn does not add a turn of its own. Compare `physical.bars_steering.response` at 1 and at 2.
+12. Drift a hand off the held wheel while driving (pull it a hand's width or more away, keeping the grip closed): the wheel stays held and keeps turning with the hand, and only opening the hand lets go. Each take and let-go logs `vehicle control: took the control` or `vehicle control: let go of the control` with its reason at info level.

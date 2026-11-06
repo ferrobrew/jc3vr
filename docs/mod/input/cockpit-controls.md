@@ -6,7 +6,7 @@ A hand holding anything of the loadout table's takes no stick, lever, or button,
 
 ## The sticks
 
-A stick is grabbed like every physical control: a grip press with the hand's grip within `PHYSICAL.grab_radius_m` of the stick's top takes it, and releasing the grip, or moving further than `PHYSICAL.release_distance_m` from it, lets go. The grab is relative. The hand's offset from the top is taken when it grabs, wherever the top is at that moment, so a hand that takes the stick off-centre, or takes it again while it is still springing back, moves it only by moving. The holding hand is drawn on the top at that offset.
+A stick is grabbed like every physical control: a grip press with the hand's grip within `PHYSICAL.grab_radius_m` of the stick's top takes it, and only releasing the grip lets go: a holding hand that drifts off the stick keeps moving it from where it is, however far it goes. The grab is relative. The hand's offset from the top is taken when it grabs, wherever the top is at that moment, so a hand that takes the stick off-centre, or takes it again while it is still springing back, moves it only by moving. The holding hand is drawn on the top at that offset.
 
 The top follows the hand across the horizontal plane of the cockpit frame, up to `max_deflection_m` from centre (0.10 m for the flight stick, 0.12 m for the cyclic). The output is the deflection's share of the full deflection past `deadzone` (5%), rescaled so that it still reaches one, so the tremor of a resting hand flies nothing. Pushing forward pitches the plane's nose down and the helicopter forward, and pushing right rolls right.
 
@@ -86,3 +86,4 @@ Each press of a button and each twist that opens a grip logs `the hand worked th
 7. With the nitrous upgrade, find the faint button right of the wheel and push it: the nitrous burns while it is held, and a short press is a turbo jump. The COCKPIT BUTTONS status row shows `NITROUS ON` while it is pressed.
 8. On a motorcycle and on a jetski, twist the right grip forward (its top rolling away from you) while riding: the throttle opens from a few degrees to full at about 30°, a click marks it, no nitrous burns, and twisting back does nothing. Twist the left grip forward the same way: the bike brakes, and held at a stop it reverses. In a helicopter, twist the collective's grip either way: the nitrous burns.
 9. In a plane, check that the gear still comes down and goes up by itself.
+10. Take the flight stick, the cyclic, or the collective and pull the hand well off it with the grip closed: the control stays held and keeps following the hand, and only opening the hand lets go, with `vehicle control: let go of the control` and the reason `grip released` in the log.

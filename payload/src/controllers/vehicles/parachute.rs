@@ -4,11 +4,9 @@
 //! parachute rig places it ([`crate::controllers::vehicles::parachute_rig`]), and only that side's
 //! hand takes it. The hands are not on the handles until the player takes them: like the other grab
 //! volumes, a grip press with the hand inside a handle's volume takes it, and it is held only while
-//! the grip is: releasing the grip lets go ([`step`]). A hand that has clearly left its handle without opening (further than the let-go distance from
-//! the handle's pull line, a generous distance) lets go too, but a pull, which goes down and back
-//! rather than straight down, never does: the pull line runs straight below where the handle was
-//! taken, and a tight distance from it let go of a handle mid-pull. A handle's volume wins over the body's volumes it
-//! overlaps. Around it a wider reach ([`reach_candidates`]) takes the handle for a press that no
+//! the grip is: only releasing the grip lets go ([`step`]), however far the hand goes from the
+//! handle, so a pull that runs down and back toward the body keeps it. A handle's volume wins over
+//! the body's volumes it overlaps. Around it a wider reach ([`reach_candidates`]) takes the handle for a press that no
 //! other volume claims, so that a hand that misses the handle by a little takes it rather than
 //! firing the grapple.
 //!
@@ -89,12 +87,6 @@ pub const REACH_M: f32 = 0.30;
 /// Pulls shorter than this act on nothing, metres.
 pub const DEADZONE_M: f32 = 0.03;
 
-/// How far a holding hand may move from its handle's pull line (straight below where it took the
-/// handle, down to a full pull) before it lets go, metres. Generous, since a natural pull goes down
-/// and back and the grip opening is what lets go; this only catches a hand that has clearly left
-/// the handle without opening.
-pub const LET_GO_DISTANCE_M: f32 = 0.6;
-
 /// The handles' grab volumes: a free hand's handle at its place by the shoulder, a held one where
 /// the hand holds it, each for its own side's hand only.
 pub fn candidates(
@@ -132,8 +124,8 @@ pub fn reach_candidates(
         })
 }
 
-/// Advance the handles by one input tick: act on the grabs, and let go of the handles whose hands
-/// were lost or moved away. Returns each hand's pull, `0..=1`.
+/// Advance the handles by one input tick: act on the grabs, and let go of the handles whose grips
+/// were released or whose hands were lost. Returns each hand's pull, `0..=1`.
 pub fn step(
     state: &mut HandleState,
     config: &ParachuteHandlesConfig,
@@ -155,11 +147,6 @@ pub fn step(
             }
         } else if !inputs.held[i] {
             release(state, hand, Release::GripReleased, events);
-        }
-        if let Some(hold) = state.holds[i]
-            && anchor_point(config, hold, grip).distance(grip) > LET_GO_DISTANCE_M
-        {
-            release(state, hand, Release::MovedAway, events);
         }
     }
     Hand::BOTH.map(|hand| {
@@ -335,16 +322,20 @@ mod tests {
     }
 
     #[test]
-    fn a_hand_that_leaves_its_handle_or_tracking_lets_go() {
+    fn a_hand_far_from_its_handle_keeps_it_and_one_that_loses_tracking_lets_go() {
         let (mut state, centres) = both_taken();
-        let away = centres[0] + Vec3::new(0.0, 0.0, LET_GO_DISTANCE_M + 0.1);
-        let (_, events) = tick(&mut state, [Some(away), None], [false; 2]);
+        let away = centres[0] + Vec3::new(0.0, -0.1, 1.0);
+        let (pulls, events) = tick(&mut state, [Some(away), None], [false; 2]);
         assert_eq!(
             events,
-            vec![
-                HandleEvent::Released(Hand::Left, Release::MovedAway),
-                HandleEvent::Released(Hand::Right, Release::Gone),
-            ]
+            vec![HandleEvent::Released(Hand::Right, Release::Gone)]
+        );
+        assert!(state.holds[0].is_some());
+        assert!(pulls[0] > 0.0, "{pulls:?}");
+        let (_, events) = tick_held(&mut state, [Some(away), None], [false; 2], [false; 2]);
+        assert_eq!(
+            events,
+            vec![HandleEvent::Released(Hand::Left, Release::GripReleased)]
         );
         assert_eq!(state, HandleState::new());
     }

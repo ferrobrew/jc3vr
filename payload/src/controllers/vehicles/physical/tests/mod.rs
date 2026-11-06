@@ -209,7 +209,7 @@ fn grabbing_the_wheel_does_not_jump_it_and_a_hand_over_carries_on() {
 }
 
 #[test]
-fn a_hand_that_leaves_the_wheel_lets_go() {
+fn a_hand_that_drifts_off_the_wheel_keeps_it_until_the_grip_opens() {
     let p = placement(|c| c.wheel.enabled = true);
     let kinds = [ControlKind::Wheel];
     let mut state = ControlState::default();
@@ -221,14 +221,26 @@ fn a_hand_that_leaves_the_wheel_lets_go() {
         [None, Some(on)],
         [None, Some(ControlKind::Wheel)],
     );
-    let away = on + Vec3::new(0.0, 0.0, 0.5);
-    let (_, events) = step_with(&mut state, &p, &kinds, [None, Some(away)], [None; 2]);
+    // A metre off the rim, the hand still holds the wheel and turns it from where it is.
+    let away = p.wheel.rim_point(0.6) + Vec3::new(0.0, 0.0, 1.0);
+    let (out, events) = step_with(&mut state, &p, &kinds, [None, Some(away)], [None; 2]);
+    assert!(events.is_empty(), "{events:?}");
+    assert!(state.holds[1].is_some());
+    assert!(out.steer.is_some_and(|s| s > 0.0), "{out:?}");
+    let (_, events) = step_held(
+        &mut state,
+        &p,
+        &kinds,
+        [None, Some(away)],
+        [None; 2],
+        [false; 2],
+    );
     assert_eq!(
         events,
         vec![ControlEvent::Released(
             Hand::Right,
             ControlKind::Wheel,
-            Release::MovedAway
+            Release::GripReleased
         )]
     );
 }

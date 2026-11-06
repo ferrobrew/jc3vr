@@ -5,9 +5,10 @@
 //! [`crate::controllers::vehicles::config`]); the wheel and the handlebars are placed where the
 //! vehicle's own are where they are found ([`crate::controllers::vehicles::wheel`]), so they arrive
 //! here as frames already in the cockpit frame. A control is held only while the grip is: a grip
-//! press with the hand's grip near the control takes it, and releasing the grip, or moving the hand
-//! further than the release distance from where it holds the control, lets go. A hand that merely
-//! passes through a control, or rests there with the grip open, takes nothing. While held:
+//! press with the hand's grip near the control takes it, and only releasing the grip lets go. A
+//! holding hand that drifts off the control keeps working it from its position and rotation however
+//! far it goes. A hand that merely passes through a control, or rests there with the grip open,
+//! takes nothing. While held:
 //!
 //! - the wheel turns by the holding hands' turns ([`crate::controllers::vehicles::steering`]), and
 //!   its angle over the lock is the steering; let go, it returns to centre, steering as it goes,
@@ -147,8 +148,6 @@ pub struct Hold {
 pub enum Release {
     /// The hand released its grip.
     GripReleased,
-    /// The hand moved away from the control.
-    MovedAway,
     /// The other hand took a control only one hand holds.
     TakenOver,
     /// The hand lost tracking, the seat changed, or the control was switched off.
@@ -159,7 +158,6 @@ impl Release {
     pub const fn label(self) -> &'static str {
         match self {
             Release::GripReleased => "grip released",
-            Release::MovedAway => "moved away",
             Release::TakenOver => "taken by the other hand",
             Release::Gone => "gone",
         }
@@ -419,8 +417,8 @@ pub struct StepInputs<'a> {
     pub dt: f32,
 }
 
-/// Advance the controls by one input tick: act on the grabs, move the held controls with their
-/// hands, let go of controls the hands moved away from, and return the outputs.
+/// Advance the controls by one input tick: act on the grabs and the releases, move the held controls
+/// with their hands, and return the outputs.
 pub fn step(
     state: &mut ControlState,
     placement: &Placement,
@@ -521,17 +519,6 @@ pub fn step(
                         placement.gate(kind).is_some() && lever.value.is_some_and(|v| v >= 1.0);
                 }
             }
-        }
-    }
-
-    for hand in Hand::BOTH {
-        let i = hand.index();
-        let (Some(hold), Some(point)) = (state.holds[i], inputs.grips[i]) else {
-            continue;
-        };
-        let anchored = anchor_point(state, placement, hold, hand, inputs.grips);
-        if anchored.is_some_and(|a| a.distance(point) > placement.config.release_distance_m) {
-            release(state, hand, Release::MovedAway, events);
         }
     }
 
