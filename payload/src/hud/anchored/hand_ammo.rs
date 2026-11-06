@@ -8,21 +8,25 @@
 //! ([`observe`], on the game thread where the table keeps the guns alive), and the HUD draws a
 //! counter above each hand holding one: the wielded weapon, a gun armed beside it, and each gun of
 //! the game's own dual-wield pair, which share one magazine. A magazine out of its gun reads as
-//! empty.
+//! empty. The sample carries each gun's model box too, so the HUD can place the counter over the
+//! middle of the drawn gun.
 
 use jc3gi::equipment::weapon::WeaponBase;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::weapons::engine::reserve,
-    hud::palette::{ALERT, BACKING, FRAME, TEXT, premultiply},
+    controllers::weapons::{engine::reserve, regions::engine::model_box},
+    hud::{
+        anchored::place::ModelBox,
+        palette::{ALERT, BACKING, FRAME, TEXT, premultiply},
+    },
 };
 
 /// The counter texture's size, texels.
 pub(crate) const COUNT_TEXELS: (u32, u32) = (192, 40);
 
 /// One hand's gun as the input tick read it.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct HandAmmo {
     /// The gun's address.
     pub weapon: usize,
@@ -32,10 +36,12 @@ pub(crate) struct HandAmmo {
     pub out: bool,
     /// The rounds of its ammunition its user carries.
     pub reserve: i32,
+    /// Its model's box, when it has a model.
+    pub model: Option<ModelBox>,
 }
 
 /// The input tick's sample: each hand's gun, by [`Hand::index`](crate::controllers::frame::Hand::index).
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(crate) struct HandsAmmo {
     pub hands: [Option<HandAmmo>; 2],
 }
@@ -48,16 +54,28 @@ pub(crate) struct HandsAmmo {
 /// Each address must be a live weapon of the local player, read on the game thread before the
 /// world update.
 pub(crate) unsafe fn observe(guns: [Option<usize>; 2]) {
-    let hands = guns.map(|gun| {
-        let weapon = unsafe { (gun? as *const WeaponBase).as_ref() }?;
-        let reserve = unsafe { reserve(weapon) };
-        Some(HandAmmo {
-            weapon: gun?,
+    let previous = *SAMPLE.lock();
+    let mut hands = [None; 2];
+    for (index, gun) in guns.into_iter().enumerate() {
+        let Some(address) = gun else { continue };
+        let Some(weapon) = (unsafe { (address as *const WeaponBase).as_ref() }) else {
+            continue;
+        };
+        // A gun's model does not change while it is held, so its box is read once per gun.
+        let known = previous
+            .and_then(|p| p.hands[index])
+            .filter(|h| h.weapon == address)
+            .and_then(|h| h.model);
+        let model =
+            known.or_else(|| unsafe { model_box(weapon) }.map(|(min, max)| ModelBox { min, max }));
+        hands[index] = Some(HandAmmo {
+            weapon: address,
             magazine: weapon.m_MagazineAmmo,
             out: weapon.m_WeaponIsWithoutMagazine,
-            reserve,
-        })
-    });
+            reserve: unsafe { reserve(weapon) },
+            model,
+        });
+    }
     *SAMPLE.lock() = Some(HandsAmmo { hands });
 }
 
@@ -177,6 +195,7 @@ mod tests {
             magazine: 12,
             out: true,
             reserve: 90,
+            model: None,
         };
         let key = CountKey::new(&ammo);
         assert_eq!(key.magazine, 0);
@@ -192,6 +211,7 @@ mod tests {
             magazine: -3,
             out: false,
             reserve: 123_456,
+            model: None,
         });
         assert_eq!(key.magazine, 0);
         assert_eq!(key.reserve, MAX_SHOWN);

@@ -1,5 +1,5 @@
 //! The body-anchored HUD readouts, under the controller scheme: an ammunition counter above each
-//! hand holding a gun, the tether readout above the off-hand's forearm, the health bar and the heat and grenade
+//! gun in a hand, the tether readout above the off-hand's forearm, the health bar and the heat and grenade
 //! readouts on the inside of the off-hand's wrist, and the weapon selection cross where the hand steering the
 //! weapon wheel was when it opened.
 //!
@@ -57,8 +57,8 @@ use crate::{
             health::{BAR_TEXELS, BarKey, HealthTrail},
             place::{
                 Attention, ammo_anchor, facing_corners, fade_out, follow, forearm_anchor,
-                inner_wrist_pose, pull_toward, sighting, stacked_corners, upright_corners,
-                wants_attention,
+                gun_ammo_anchor, inner_wrist_pose, pull_toward, sighting, stacked_corners,
+                upright_corners, wants_attention,
             },
         },
         atlas::{self, Part},
@@ -157,8 +157,13 @@ const SIGHT_FADE_S: f32 = 0.15;
 /// The gap between the health bar and the heat readout on the wrist, metres.
 const WRIST_GAP_M: f32 = 0.006;
 
-/// How far above the gun hand's grip an ammunition counter's lower edge sits, metres, straight up
-/// in the world whatever the hand's tilt, so the quad clears the hand and the gun in it.
+/// How far above the top of the drawn gun an ammunition counter's lower edge sits, metres,
+/// straight up in the world whatever the gun's turn.
+const AMMO_GUN_CLEARANCE_M: f32 = 0.04;
+
+/// How far above the gun hand's grip an ammunition counter's lower edge sits when the drawn gun is
+/// not known, metres, straight up in the world whatever the hand's tilt, so the quad clears the
+/// hand and the gun in it.
 const AMMO_CLEARANCE_M: f32 = 0.10;
 
 /// How far an ammunition counter is pulled from above the hand toward the head, metres.
@@ -351,7 +356,9 @@ impl State {
         let hands = late::drawn_hands(dtf);
         let grip = |hand: Hand| hands[hand.index()].map(|h| h.grip);
 
-        // A counter above each hand holding a gun.
+        // A counter above each gun in a hand, over the gun as drawn this frame, or above the hand
+        // when the drawn gun is not known.
+        let guns = late::rendered_guns();
         let sampled = hand_ammo::sampled().filter(|_| cfg.ammo.enabled);
         self.status.counts = [false; 2];
         for hand in Hand::BOTH {
@@ -364,13 +371,28 @@ impl State {
             };
             let width = COUNT_WIDTH_M;
             let height = width * COUNT_TEXELS.1 as f32 / COUNT_TEXELS.0 as f32;
-            let target = ammo_anchor(
-                grip.position,
-                head.position,
-                AMMO_CLEARANCE_M,
-                height,
-                AMMO_PULL_M,
-            );
+            let drawn = guns[hand.index()]
+                .filter(|g| g.weapon == ammo.weapon)
+                .zip(ammo.model)
+                .and_then(|(gun, model)| {
+                    gun_ammo_anchor(
+                        gun.matrix,
+                        model,
+                        head.position,
+                        AMMO_GUN_CLEARANCE_M,
+                        height,
+                        AMMO_PULL_M,
+                    )
+                });
+            let target = drawn.unwrap_or_else(|| {
+                ammo_anchor(
+                    grip.position,
+                    head.position,
+                    AMMO_CLEARANCE_M,
+                    height,
+                    AMMO_PULL_M,
+                )
+            });
             let position = follow(count.position, target, dt, AMMO_FOLLOW_HALFLIFE_S, SNAP_M);
             count.position = Some(position);
             count.corners = upright_corners(

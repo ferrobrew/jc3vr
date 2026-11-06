@@ -1,14 +1,59 @@
 //! Where the hand- and wrist-anchored readouts go, and when they show. Pure.
 
 use body_rig::smooth::half_life_factor;
-use glam::{Mat3, Quat, Vec2, Vec3};
+use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
 
 use crate::controllers::{
     frame::{Hand, Pose},
     summary::glance::PanelPose,
 };
 
-/// An ammunition counter's centre for a quad `height` metres tall: straight up in the world from the
+/// A gun model's box in the gun's own frame (+Y up, -Z toward the muzzle, the origin at the
+/// pistol grip), metres.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct ModelBox {
+    pub min: Vec3,
+    pub max: Vec3,
+}
+
+/// An ammunition counter's centre above the gun drawn with the matrix `gun`, for a quad `height`
+/// metres tall: straight up in the world from the middle of the gun's `model` box until the quad's
+/// lower edge is `clearance` metres above the highest point of the box, then `pull` metres toward
+/// the `eye`. The box is measured however the gun is turned, so the quad clears a gun held level,
+/// canted, or pointed up alike, and sits over the gun rather than over the hand behind it. `None`
+/// for a degenerate matrix or box.
+pub(crate) fn gun_ammo_anchor(
+    gun: Mat4,
+    model: ModelBox,
+    eye: Vec3,
+    clearance: f32,
+    height: f32,
+    pull: f32,
+) -> Option<Vec3> {
+    if !gun.is_finite()
+        || !model.min.is_finite()
+        || !model.max.is_finite()
+        || !model.max.cmpge(model.min).all()
+    {
+        return None;
+    }
+    let (scale, rotation, _) = gun.to_scale_rotation_translation();
+    if !scale.cmpgt(Vec3::ZERO).all() {
+        return None;
+    }
+    let middle = gun.transform_point3((model.min + model.max) * 0.5);
+    let half = (model.max - model.min) * 0.5 * scale;
+    let up_in_gun = rotation.inverse() * WORLD_UP;
+    let rise = up_in_gun.abs().dot(half);
+    Some(pull_toward(
+        middle + WORLD_UP * (rise + clearance + height * 0.5),
+        eye,
+        pull,
+    ))
+}
+
+/// An ammunition counter's centre for a quad `height` metres tall, for a gun whose drawn pose or
+/// model is not known: straight up in the world from the
 /// gun hand's `grip` until the quad's lower edge is `clearance` metres above it, then `pull`
 /// metres toward the `eye`. The hand's tilt does not move it, so the quad stays clear of the hand
 /// and the gun however the gun is held.
@@ -213,6 +258,66 @@ mod tests {
         let pulled = ammo_anchor(grip, eye, 0.1, 0.08, 0.05);
         assert!((pulled.distance(placed) - 0.05).abs() < 1e-5);
         assert!(pulled.distance(eye) < placed.distance(eye));
+    }
+
+    /// The readout sits over the middle of the gun, clear of its top, rather than over the grip
+    /// behind it; a gun turned on its side is measured across its width.
+    #[test]
+    fn the_gun_anchor_sits_over_the_middle_of_the_gun() {
+        let model = ModelBox {
+            min: Vec3::new(-0.03, -0.15, -0.8),
+            max: Vec3::new(0.03, 0.08, 0.2),
+        };
+        let grip = Vec3::new(0.2, 1.2, -0.4);
+        let eye = Vec3::new(0.0, 1.7, 0.0);
+        let level = Mat4::from_translation(grip);
+        let placed = gun_ammo_anchor(level, model, eye, 0.04, 0.02, 0.0).unwrap();
+        // The box's middle is 0.3 m ahead of the grip and 0.035 m below it; its top is 0.115 m
+        // above that.
+        let expected = grip + Vec3::new(0.0, -0.035 + 0.115 + 0.04 + 0.01, -0.3);
+        assert!(placed.abs_diff_eq(expected, 1e-5), "{placed} {expected}");
+        assert!(placed.z < grip.z - 0.25, "ahead of the grip");
+
+        // Rolled onto its side, the box's half-width is what rises above its middle.
+        let rolled = Mat4::from_rotation_translation(Quat::from_rotation_z(FRAC_PI_2), grip);
+        let placed = gun_ammo_anchor(rolled, model, eye, 0.04, 0.02, 0.0).unwrap();
+        let middle = rolled.transform_point3(Vec3::new(0.0, -0.035, -0.3));
+        assert!(
+            placed.abs_diff_eq(middle + Vec3::Y * (0.03 + 0.05), 1e-5),
+            "{placed}"
+        );
+
+        // Drawn at half scale, the box shrinks with it.
+        let small = Mat4::from_scale_rotation_translation(Vec3::splat(0.5), Quat::IDENTITY, grip);
+        let placed = gun_ammo_anchor(small, model, eye, 0.04, 0.02, 0.0).unwrap();
+        let expected = grip + Vec3::new(0.0, -0.0175 + 0.0575 + 0.05, -0.15);
+        assert!(placed.abs_diff_eq(expected, 1e-5), "{placed} {expected}");
+
+        // Pulled toward the eye like the grip anchor.
+        let pulled = gun_ammo_anchor(level, model, eye, 0.04, 0.02, 0.05).unwrap();
+        let unpulled = gun_ammo_anchor(level, model, eye, 0.04, 0.02, 0.0).unwrap();
+        assert!((pulled.distance(unpulled) - 0.05).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_degenerate_gun_has_no_anchor() {
+        let model = ModelBox {
+            min: Vec3::splat(-0.1),
+            max: Vec3::splat(0.1),
+        };
+        let eye = Vec3::Y;
+        assert_eq!(
+            gun_ammo_anchor(Mat4::ZERO, model, eye, 0.04, 0.02, 0.0),
+            None
+        );
+        let nan = Mat4::from_translation(Vec3::NAN);
+        assert_eq!(gun_ammo_anchor(nan, model, eye, 0.04, 0.02, 0.0), None);
+        let inverted = ModelBox {
+            min: model.max,
+            max: model.min,
+        };
+        let level = Mat4::IDENTITY;
+        assert_eq!(gun_ammo_anchor(level, inverted, eye, 0.04, 0.02, 0.0), None);
     }
 
     /// The tether readout follows the forearm back from the wrist, and rises straight up however

@@ -29,10 +29,7 @@ use crate::controllers::{
 /// `weapon` must be live, read on the game thread before the world update.
 pub(crate) unsafe fn shape(weapon: &WeaponBase, hand: Hand) -> Option<GunShape> {
     let first = unsafe { gun::guns(weapon) }.next().flatten()?;
-    let model = unsafe { first.m_BaseModelInstance.as_ref() }?;
-    let mut min = Vector3 { data: [0.0; 3] };
-    let mut max = Vector3 { data: [0.0; 3] };
-    unsafe { model.GetModelSpaceBoundingBox(&mut min, &mut max) };
+    let (min, max) = unsafe { model_box(weapon) }?;
     let muzzle = unsafe { gun::fire_point(first) }.w_axis.truncate();
     // The rigid part of the gun's matrix: a holstered gun's is drawn scaled, and its model's box is
     // in the unscaled frame.
@@ -56,8 +53,8 @@ pub(crate) unsafe fn shape(weapon: &WeaponBase, hand: Hand) -> Option<GunShape> 
     let action = entry.and_then(|e| e.handle_m);
     let long = unsafe { slot_of(weapon) }.is_some_and(long_slot);
     let shape = GunShape {
-        min: Vec3::from_array(min.data),
-        max: Vec3::from_array(max.data),
+        min,
+        max,
         muzzle,
         foregrip,
         magazine,
@@ -65,6 +62,21 @@ pub(crate) unsafe fn shape(weapon: &WeaponBase, hand: Hand) -> Option<GunShape> 
         long,
     };
     shape.is_usable().then_some(shape)
+}
+
+/// The model box (minimum and maximum corners) of `weapon`'s first gun, in the gun's own frame,
+/// metres. `None` when the gun has no model.
+///
+/// # Safety
+///
+/// `weapon` must be live, read on the game thread before the world update.
+pub(crate) unsafe fn model_box(weapon: &WeaponBase) -> Option<(Vec3, Vec3)> {
+    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
+    let model = unsafe { first.m_BaseModelInstance.as_ref() }?;
+    let mut min = Vector3 { data: [0.0; 3] };
+    let mut max = Vector3 { data: [0.0; 3] };
+    unsafe { model.GetModelSpaceBoundingBox(&mut min, &mut max) };
+    Some((Vec3::from_array(min.data), Vec3::from_array(max.data)))
 }
 
 /// A long gun docked on a socket of the body.
