@@ -12,9 +12,10 @@ use crate::controllers::{
 };
 
 pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
+    let hull = &status.human_hull;
     ui.label(format!(
-        "Human-hull adapter: {:?}; clearance: {:?}.",
-        status.human_hull.adapter, status.human_hull.clearance,
+        "Human hulls: {:?}, clearance {:?}, {} settings tables, {} narrowed bodies.",
+        hull.adapter, hull.clearance, hull.settings, hull.migrated_bodies,
     ));
     ui.collapsing("Grip acquisition evidence", |ui| {
         let evidence = diagnostics::status();

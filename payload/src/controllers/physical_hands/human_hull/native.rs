@@ -498,8 +498,7 @@ unsafe fn inventory(world: &hknpWorld) -> Result<Vec<u32>, ClearanceUnavailableR
     for id in 0..=world.m_peakBodyIndex {
         let body = unsafe { &*world.m_bodies.add(id as usize) };
         match slot_kind(body.m_flags, body.m_motionId, !body.m_shape.is_null()) {
-            SlotKind::Free => {}
-            SlotKind::Malformed => return Err(ClearanceUnavailableReason::IncompleteInventory),
+            SlotKind::Free | SlotKind::Shapeless => {}
             SlotKind::Live => bodies.push(id),
         }
     }
@@ -511,8 +510,11 @@ unsafe fn inventory(world: &hknpWorld) -> Result<Vec<u32>, ClearanceUnavailableR
 enum SlotKind {
     /// No body: a slot never used, or one whose body was destroyed or freed.
     Free,
-    /// A live body without a shape, which the inventory cannot account for.
-    Malformed,
+    /// A live body without a shape, such as the world's fixed body, which the body manager makes
+    /// static and shapeless when the world is built and which constraints to the world name. It
+    /// cannot hold a narrowed replacement and has nothing to collide with, so it has nothing to
+    /// restore and no clearance to check.
+    Shapeless,
     /// A live body with a shape.
     Live,
 }
@@ -530,7 +532,7 @@ fn slot_kind(flags: u32, motion_id: u32, has_shape: bool) -> SlotKind {
     {
         SlotKind::Free
     } else if !has_shape {
-        SlotKind::Malformed
+        SlotKind::Shapeless
     } else {
         SlotKind::Live
     }
@@ -776,7 +778,20 @@ mod tests {
         assert_eq!(slot_kind(dynamic, 7, true), SlotKind::Live);
         // A static body has the static motion.
         assert_eq!(slot_kind(hknpBody::IS_STATIC, 0, true), SlotKind::Live);
-        assert_eq!(slot_kind(dynamic, 7, false), SlotKind::Malformed);
+    }
+
+    #[test]
+    fn the_worlds_shapeless_fixed_body_does_not_stall_the_inventory() {
+        // The body manager makes the world's fixed body static, with the static motion and no
+        // shape. Every world has one, so counting it as unaccountable refused every native pass.
+        assert_eq!(
+            slot_kind(hknpBody::IS_STATIC, 0, false),
+            SlotKind::Shapeless
+        );
+        assert_eq!(
+            slot_kind(hknpBody::IS_DYNAMIC, 7, false),
+            SlotKind::Shapeless
+        );
     }
 
     #[test]
