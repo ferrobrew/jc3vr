@@ -121,7 +121,9 @@ impl State {
         }
         if weapon.is_none() || linger.step(pending) {
             self.knocks.linger = None;
-            // SAFETY: game thread before the world update; the weapon was read this tick.
+            // SAFETY: game thread before the world update. A gun gone from the hands was not read
+            // this tick, but the part's lookup resolves the address only through the inventory's
+            // slots and the carry set, so a gun the player no longer owns is left alone.
             unsafe { engine::show_magazine_part(linger.weapon, false) };
         } else {
             self.knocks.linger = Some(linger);

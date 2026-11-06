@@ -75,7 +75,7 @@ fn every_volume_for(frame: &BodyFrame, pouches: &PouchTuning, dominant: Hand) ->
     c.push(magazine_pouch(
         frame,
         pouches,
-        dominant,
+        dominant.other(),
         Some(dominant.other()),
     ));
     c
@@ -182,15 +182,15 @@ fn the_magazine_pouch_is_laid_out_around_the_gun_hand_not_the_dominant_hand() {
     // A left-handed player whose gun rides the right hand: the free hand is the left.
     let side = gun_side(Some(Hand::Right), None, Hand::Left);
     assert_eq!(side, Hand::Right);
-    let magazine = magazine_pouch(&frame, &POUCHES, side, Some(Hand::Left));
+    let magazine = magazine_pouch(&frame, &POUCHES, side.other(), Some(Hand::Left));
     assert!(magazine.centre.x < 0.0, "{}", magazine.centre);
     assert_eq!(magazine.hand, Some(Hand::Left));
-    // The free hand decides the side even against the gun side, and with no hand free the pouch
-    // is on the side away from the guns.
-    let free_right = magazine_pouch(&frame, &POUCHES, Hand::Right, Some(Hand::Right));
-    assert!(free_right.centre.x > 0.0);
-    let both_held = magazine_pouch(&frame, &POUCHES, Hand::Right, None);
-    assert!(both_held.centre.x < 0.0);
+    // The pouch sits on the side it is placed on, whichever hand takes from it.
+    let right = magazine_pouch(&frame, &POUCHES, Hand::Right, None);
+    assert!(right.centre.x > 0.0);
+    assert_eq!(right.hand, None);
+    let left = magazine_pouch(&frame, &POUCHES, Hand::Left, Some(Hand::Right));
+    assert!(left.centre.x < 0.0);
     // The chest pouches stay on the dominant hand's sides whichever hand holds the gun.
     let grenade = grenade_pouch(&frame, &POUCHES, Hand::Left, ChestGrabbers::Either).unwrap();
     assert!(grenade.centre.x < 0.0);

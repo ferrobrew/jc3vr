@@ -185,9 +185,7 @@ pub struct BeltTuning {
     /// down at the belt, give or take a gun held at an angle in a hand lowered to the hip.
     pub max_tilt_deg: f32,
     /// The push sphere's radius around the pouch's centre, metres: wider than the pouch's grab
-    /// volume, since the gun hand cannot see the magazine's base beneath the gun. In the 6 November
-    /// 2026 session the closest a dual-wielded gun's well came to the one pouch then placed was about
-    /// 9 cm.
+    /// volume, since the gun hand cannot see the magazine's base beneath the gun.
     pub radius_m: f32,
     /// How far into the push sphere the point must go, metres.
     pub depth_m: f32,

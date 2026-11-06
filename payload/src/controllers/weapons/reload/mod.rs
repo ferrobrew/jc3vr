@@ -242,7 +242,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     let loading_hand = insert::loading_hand(gun_hands, free, tick.dominant);
     let pouch_side = loading_hand.map_or(gun_side.other(), Hand::other);
     let pouch = body.map(|b| {
-        let pouch = volumes::magazine_pouch(b, &POUCHES, pouch_side.other(), Some(pouch_side));
+        let pouch = volumes::magazine_pouch(b, &POUCHES, pouch_side, Some(pouch_side));
         Candidate {
             hand: free,
             ..pouch
@@ -276,13 +276,8 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
     // reaches across the body for the one pouch.
     let belt_pouches = if gun_hands == [true; 2] {
         Hand::BOTH.map(|hand| {
-            body.map(|b| {
-                displayed(
-                    volumes::magazine_pouch(b, &POUCHES, hand.other(), None),
-                    hand,
-                )
-            })
-            .map(|pouch| pouch.centre)
+            body.map(|b| displayed(volumes::magazine_pouch(b, &POUCHES, hand, None), hand))
+                .map(|pouch| pouch.centre)
         })
     } else {
         [target_pouch.map(|pouch| pouch.centre); 2]

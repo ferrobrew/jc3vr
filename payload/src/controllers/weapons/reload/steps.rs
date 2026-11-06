@@ -925,6 +925,14 @@ impl State {
         self.flicks.iter_mut().for_each(FlickDetector::reset);
         self.last_grips = [None; 2];
         self.drawn = None;
+        // A knocked magazine's part kept drawn in the well is hidden now, since no tick follows to
+        // hide it, and its magazine is still out.
+        if let Some(linger) = self.knocks.linger.take() {
+            // SAFETY: the weapon handling stands down in the game stage, on the game thread before
+            // the world update, and the part's lookup resolves the address only through the
+            // inventory's slots and the carry set.
+            unsafe { engine::show_magazine_part(linger.weapon, false) };
+        }
     }
 }
 

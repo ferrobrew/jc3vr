@@ -323,17 +323,17 @@ pub fn c4_pouch(
     grabbers.hand().map(|hand| Candidate { hand, ..pouch })
 }
 
-/// The universal reload pouch at the front of the belt, a volume for `grabber`, the hand without a
-/// gun (see [`crate::controllers::weapons::reload`]), on that hand's side; with no hand free, on the
-/// side away from the guns, `gun_side`. A gun's well pushed onto it reloads in one hand, so it is
-/// placed whether or not a hand is free.
+/// The universal reload pouch at the front of the belt on `side` of the body, a volume for
+/// `grabber`. The reload ([`crate::controllers::weapons::reload`]) picks the side: the free hand's,
+/// or with no hand free the side away from the guns, and with a gun in each hand, one pouch on each
+/// gun's own side. A gun's well pushed onto it reloads in one hand, so it is placed whether or not
+/// a hand is free.
 pub fn magazine_pouch(
     frame: &BodyFrame,
     pouches: &PouchTuning,
-    gun_side: Hand,
+    side: Hand,
     grabber: Option<Hand>,
 ) -> Candidate {
-    let side = grabber.unwrap_or(gun_side.other());
     place(
         GrabVolume::MagazinePouch,
         belt(frame, side),
