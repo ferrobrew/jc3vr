@@ -2456,7 +2456,9 @@ pub struct hknpWorld {
     _field_0: [u8; 32],
     /// The body manager's body array, indexed by body id. A body id below or at
     /// [`m_peakBodyIndex`](crate::physics::hknpWorld::m_peakBodyIndex) has a slot; a freed slot's
-    /// [`hknpBody::m_motionId`](crate::physics::hknpBody::m_motionId) is [`hknpBody::INVALID_MOTION_ID`](crate::physics::hknpBody::INVALID_MOTION_ID).
+    /// [`hknpBody::m_motionId`](crate::physics::hknpBody::m_motionId) is [`hknpBody::INVALID_MOTION_ID`](crate::physics::hknpBody::INVALID_MOTION_ID). Body 0 is the world's fixed
+    /// body, which the body manager's constructor sets up as static and with no shape, so a live
+    /// body without a shape is not by itself a sign of a body still being built.
     pub m_bodies: *mut crate::physics::hknpBody,
     _field_28: [u8; 48],
     /// The body manager's property buffers: per-property arrays indexed by body id, looked up by
