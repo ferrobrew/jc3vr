@@ -30,7 +30,7 @@ use windows::{
     core::Interface,
 };
 
-use crate::{config::Config, stereo::STEREO_STATE};
+use crate::{config::Config, hooks::camera::SCENE_NEAR_CLIP_M, stereo::STEREO_STATE};
 
 /// Per-eye FSR state, recreated together when the render size changes.
 struct EyeState {
@@ -248,7 +248,6 @@ struct CameraParams {
 }
 
 /// Fallbacks when the camera / clock singletons aren't reachable yet.
-const FALLBACK_NEAR: f32 = 0.1;
 const FALLBACK_FAR: f32 = 10000.0;
 const FALLBACK_FOV_VERTICAL: f32 = std::f32::consts::FRAC_PI_2;
 const FALLBACK_FRAME_MS: f32 = 1000.0 / 60.0;
@@ -261,7 +260,7 @@ fn camera_params() -> CameraParams {
     // accessors null-check the underlying pointer.
     unsafe {
         let mut params = CameraParams {
-            near: FALLBACK_NEAR,
+            near: SCENE_NEAR_CLIP_M,
             far: FALLBACK_FAR,
             fov_vertical: FALLBACK_FOV_VERTICAL,
             frame_time_delta_ms: FALLBACK_FRAME_MS,

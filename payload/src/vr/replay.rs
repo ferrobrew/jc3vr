@@ -62,7 +62,7 @@ pub fn drive_replay_frame(vr_frame_rendering: bool, cfg: &VrConfig) {
     let Some(head) = replay::head() else {
         return;
     };
-    let (near, far) = crate::hooks::camera::main_camera_planes_or((cfg.near_clip, cfg.far_clip));
+    let (near, far) = crate::hooks::camera::main_camera_planes_or(cfg.far_clip);
     let eyes = head.eyes.map(|sample| {
         let [left, right, up, down] = sample.fov;
         EyeView {

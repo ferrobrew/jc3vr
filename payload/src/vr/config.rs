@@ -139,12 +139,6 @@ pub struct VrConfig {
     /// Override path to the OpenXR loader DLL. `None` loads `openxr_loader.dll` next to the payload
     /// DLL, falling back to the platform default search path.
     pub loader_path: Option<String>,
-    /// Fallback near clip plane, in metres, for the per-eye off-axis projection, used only until the
-    /// first camera update publishes the engine's live plane. The mod reads the active camera's actual
-    /// `m_Near` each frame as the source of truth (see
-    /// [`crate::hooks::camera::main_camera_planes_or`]); this default (`[Camera::DEFAULT_NEAR_PLANE]`)
-    /// mirrors the engine's `Camera` constructor value (`docs/engine/rendering/rendering.md` §2.9) so the bootstrap frame matches.
-    pub near_clip: f32,
     /// Fallback far clip plane, in metres, for the per-eye off-axis projection, used only until the
     /// first camera update publishes the engine's live plane. The mod reads the active camera's actual
     /// `m_Far` each frame as the source of truth (see
@@ -252,7 +246,6 @@ impl VrConfig {
             retry_interval_secs: 10,
             world_scale: 1.0,
             loader_path: None,
-            near_clip: Camera::DEFAULT_NEAR_PLANE,
             far_clip: Camera::DEFAULT_FAR_PLANE,
             projection_convention: ProjectionConvention::EnginePreReverseZ,
             blit_srgb_gamma: BlitGamma::Linearize,

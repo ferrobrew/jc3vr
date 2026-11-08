@@ -419,7 +419,7 @@ fn perspective_fov_inverse(
 /// main-camera planes (an auxiliary camera -- e.g. a reflection -- whose own symmetric rebuild is
 /// already correct).
 fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
-    let (near_fallback, far_fallback) = Config::lock_query(|c| (c.vr.near_clip, c.vr.far_clip));
+    let far_fallback = Config::lock_query(|c| c.vr.far_clip);
     // A per-eye half run reconstructs for *its* eye, not for the collapse's single dispatch index
     // (which is always eye 0); everything else keeps reading the dispatch's own eye.
     let half = PER_EYE.get();
@@ -431,8 +431,7 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
     // mirrors (38.4 km), so comparing against the config rejected every main pass and the off-axis
     // inverse never engaged. A pass whose near/far differ from the live main camera belongs to another
     // camera (e.g. a reflection) whose symmetric rebuild is already correct, so leave it untouched.
-    let (near_ref, far_ref) =
-        crate::hooks::camera::main_camera_planes_or((near_fallback, far_fallback));
+    let (near_ref, far_ref) = crate::hooks::camera::main_camera_planes_or(far_fallback);
     let near_ok = (near - near_ref).abs() <= near_ref.abs().max(0.01) * 0.1;
     let far_ok = (far - far_ref).abs() <= far_ref.abs() * 0.01;
 

@@ -332,11 +332,7 @@ fn render_frame(
     // top of that to hide edge pop-in under fast motion; the eye-shift margin and the padding are both
     // applied on the vertical axis too (flying pitch shifts the eyes vertically). Written standard-depth
     // to match the cull camera's `m_ProjectionF`.
-    // The engine's live active-camera planes are the single source of truth for near/far (see
-    // `crate::hooks::camera::main_camera_planes_or`), so the cull frustum matches the eyes and the
-    // reconstruction; fall back to the configured planes until the first camera update.
-    let (near_clip, far_clip) =
-        crate::hooks::camera::main_camera_planes_or((cfg.near_clip, cfg.far_clip));
+    let (near_clip, far_clip) = crate::hooks::camera::main_camera_planes_or(cfg.far_clip);
     let ipd = (pos1 - pos0).length();
     let margin = 0.5 * ipd / near_clip.max(1e-3);
     let pad = 1.0 + CULL_FOV_PADDING;

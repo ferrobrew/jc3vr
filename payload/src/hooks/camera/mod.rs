@@ -7,7 +7,7 @@ use body_rig::rotation::twist_about_y;
 use detours_macro::detour;
 use jc3gi::{
     camera::{
-        camera::Camera,
+        camera::{Camera, CameraState},
         camera_context::{CameraContext, CameraControlContext},
         camera_manager::CameraManager,
         game_camera_manager::GameCameraManager,
@@ -30,7 +30,7 @@ use crate::{
 pub(crate) mod authored;
 pub(crate) mod config;
 pub mod height;
-pub(crate) use config::CameraConfig;
+pub(crate) use config::{CameraConfig, SCENE_NEAR_CLIP_M};
 
 use crate::{
     headpose::{
@@ -312,18 +312,16 @@ fn freeze_render_camera(camera: &mut Camera) {
 #[detour(address = jc3gi::camera::camera::Camera::UpdateRender_ADDRESS)]
 fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
     unsafe {
-        if let Some(local_character) = Character::GetLocalPlayerCharacter().as_mut()
+        let is_active_camera = CameraManager::get().is_some_and(|cm| cm.m_ActiveCamera == camera);
+        if is_active_camera && let Some(camera) = camera.as_mut() {
+            set_scene_near_clip(&mut camera.m_Near, &mut camera.m_StateBitfield);
+            *MAIN_CAMERA_PLANES.lock() = Some((camera.m_Near, camera.m_Far));
+        }
+        if is_active_camera
+            && let Some(local_character) = Character::GetLocalPlayerCharacter().as_mut()
             && let Some(camera) = camera.as_mut()
-            && let Some(cm) = CameraManager::get()
-            && cm.m_ActiveCamera == camera
         {
             LAST_DTF.store(dtf.to_bits(), Ordering::Relaxed);
-
-            // Publish the engine's own near/far for the active camera so the reconstruction override
-            // can recognize the main-view depth passes by their planes. The engine sets a runtime far
-            // that differs from the `Camera` constructor default, so keying that override on a
-            // hardcoded plane silently misses every main pass (see `main_camera_planes`).
-            *MAIN_CAMERA_PLANES.lock() = Some((camera.m_Near, camera.m_Far));
 
             if !Config::lock_query(|c| c.camera.enabled) {
                 authored::reset(authored::Refusal::Disabled);
@@ -418,6 +416,13 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
     }
 
     CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
+}
+
+fn set_scene_near_clip(near: &mut f32, state: &mut CameraState) {
+    if *near != SCENE_NEAR_CLIP_M {
+        *near = SCENE_NEAR_CLIP_M;
+        state.insert(CameraState::m_DirtyProjection);
+    }
 }
 
 /// The camera position for a headpose: the eye point hung off the published head position through
@@ -670,12 +675,11 @@ pub fn main_camera_planes() -> Option<(f32, f32)> {
     *MAIN_CAMERA_PLANES.lock()
 }
 
-/// The single source of truth for the VR near/far planes: the engine's live active-camera planes,
-/// falling back to `fallback` (the configured VR planes) only until the first camera update. The
-/// per-eye projections, the cull frustum, and the reconstruction gate all resolve through here, so the
-/// eyes render, cull, and reconstruct against the same planes the engine is actually using.
-pub fn main_camera_planes_or(fallback: (f32, f32)) -> (f32, f32) {
-    main_camera_planes().unwrap_or(fallback)
+pub fn main_camera_planes_or(fallback_far: f32) -> (f32, f32) {
+    (
+        SCENE_NEAR_CLIP_M,
+        main_camera_planes().map_or(fallback_far, |(_, far)| far),
+    )
 }
 
 #[detour(address = jc3gi::camera::camera_tree::CameraTree::UpdateRenderContexts_ADDRESS)]
@@ -892,6 +896,40 @@ mod anchor_tests;
 mod tests {
     use super::*;
     use crate::headpose::xr::CockpitPose;
+
+    #[test]
+    fn scene_near_clip_marks_projection_dirty_and_preserves_other_flags() {
+        for initial in [Camera::DEFAULT_NEAR_PLANE, 0.005, f32::NAN] {
+            let mut near = initial;
+            let mut state = CameraState::m_ComputeView | CameraState::m_UseOffCenter;
+            set_scene_near_clip(&mut near, &mut state);
+            assert_eq!(near, SCENE_NEAR_CLIP_M);
+            assert_eq!(
+                state,
+                CameraState::m_ComputeView
+                    | CameraState::m_UseOffCenter
+                    | CameraState::m_DirtyProjection
+            );
+        }
+    }
+
+    #[test]
+    fn scene_near_clip_does_not_dirty_an_unchanged_projection() {
+        for initial in [CameraState::empty(), CameraState::m_DirtyProjection] {
+            let mut near = SCENE_NEAR_CLIP_M;
+            let mut state = initial;
+            set_scene_near_clip(&mut near, &mut state);
+            assert_eq!(near, SCENE_NEAR_CLIP_M);
+            assert_eq!(state, initial);
+        }
+    }
+
+    #[test]
+    fn scene_planes_use_shared_near_before_camera_publication() {
+        assert!(main_camera_planes().is_none());
+        let far = 40_000.0;
+        assert_eq!(main_camera_planes_or(far), (SCENE_NEAR_CLIP_M, far));
+    }
 
     /// The identity cockpit pose (looking straight ahead at the recenter neutral, no room-scale
     /// translation) reproduces the engine base transform exactly, so the relative composition adds
