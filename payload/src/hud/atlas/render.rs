@@ -1,10 +1,11 @@
 //! The render side of the atlas: on eye 0, choose the capture for the displayed snapshot and size
-//! each part's texture; on every eye, copy each moved part's cell out of the HUD texture into its
-//! texture and clear the bands, so the panel shows the stage only.
+//! each part's texture; copy each moved part's cell out of the HUD texture into its texture and
+//! clear the bands, so the panel shows the stage only.
 //!
-//! The UI renders the same snapshot into the HUD texture once per eye draw, and the texture is
-//! cleared after each eye's panel, so the copies and the clearing are redone per eye. Everything
-//! here runs on the render thread with the engine context mutex held.
+//! Ordinary two-pass rendering copies and clears the bands on every dispatch, after the UI renders
+//! the snapshot into the HUD texture. Collapse does this only on eye 0; both eyes reuse the prepared
+//! textures and the stage, and the HUD texture is cleared after eye 1. Everything here runs on the
+//! render thread with the engine context mutex held.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -141,9 +142,9 @@ pub(crate) fn clear_frame() {
     STATUS.lock().frame = None;
 }
 
-/// Copy this eye's moved parts out of the HUD texture and clear the bands. Call on every eye after
-/// the UI rendered into the HUD texture, after the world markers took their crops, and before the
-/// panel draws.
+/// Copy the moved parts out of the HUD texture and clear the bands after the UI renders, after the
+/// world markers take their crops, and before the panel draws. Call on every dispatch in ordinary
+/// two-pass rendering, but only on eye 0 under collapse; eye 1 reuses the textures and the stage.
 pub(crate) fn prepare_eye(context: &ID3D11DeviceContext, hud: Option<&HudTarget>) {
     let renderer = RENDERER.lock();
     let (Some(frame), Some(hud)) = (renderer.frame.as_ref(), hud) else {

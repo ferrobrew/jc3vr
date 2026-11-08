@@ -1,18 +1,23 @@
-use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicBool, AtomicU32},
+};
 
 use detours_macro::detour;
 use jc3gi::{
     graphics_engine::{
         device::{Context, Device, DeviceInfo},
-        graphics_engine::{GraphicsEngine, HDevice_t},
+        graphics_engine::{DrawThreadTaskParam, GraphicsEngine, HContext_t, HDevice_t},
         render_engine::RenderEngine,
     },
-    ui::ui_manager::GetIUIManager,
+    ui::ui_manager::{GetIUIManager, UIManager},
 };
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{
     Graphics::Direct3D11::{D3D11_BOX, ID3D11Texture2D},
-    System::Threading::{EnterCriticalSection, GetCurrentThreadId, LeaveCriticalSection},
+    System::Threading::{
+        CRITICAL_SECTION, EnterCriticalSection, GetCurrentThreadId, LeaveCriticalSection,
+    },
 };
 
 use crate::{
@@ -31,6 +36,8 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&GRAPHICS_FLIP_BINDER)
         .with_static_binder(&GRAPHICS_ENGINE_DRAW_BINDER)
+        .with_static_binder(&HANDLE_DRAW_THREAD_TASK_BINDER)
+        .with_static_binder(&UI_START_RENDER_IMPL_BINDER)
         .with_static_binder(&RENDER_ENGINE_POST_DRAW_BINDER)
         .with_static_binder(&CREATE_RENDER_SETUPS_BINDER)
         .with_static_binder(&DEVICE_RESIZE_BUFFERS_BINDER)
@@ -179,6 +186,127 @@ fn graphics_engine_draw(graphics_engine: *mut GraphicsEngine, dt: f32) {
     }
 }
 
+#[detour(address = GraphicsEngine::HandleDrawThreadTask_ADDRESS)]
+fn handle_draw_thread_task(engine: *mut GraphicsEngine, param: *mut DrawThreadTaskParam) -> u32 {
+    let _dispatch = UiDispatchGuard::enter(engine);
+    HANDLE_DRAW_THREAD_TASK.get().unwrap().call(engine, param)
+}
+
+#[detour(address = UIManager::StartRenderImpl_ADDRESS)]
+fn ui_start_render_impl(manager: *mut UIManager, context: *const HContext_t) {
+    let main_context = UI_DISPATCH.get().and_then(|dispatch| unsafe {
+        if manager.is_null() || manager != GetIUIManager() {
+            return None;
+        }
+        let engine = dispatch.engine.as_ref()?;
+        let main_context = engine.m_Device.as_ref()?.m_Context;
+        if maintain_ui_redirect(dispatch.engine, manager, main_context) {
+            UI_DISPATCH.set(Some(UiDispatch {
+                maintenance_ran: true,
+                ..dispatch
+            }));
+        }
+        (!main_context.is_null()).then_some(main_context)
+    });
+
+    UI_START_RENDER_IMPL.get().unwrap().call(manager, context);
+
+    if let Some(main_context) = main_context {
+        UI_DISPATCH.set(UI_DISPATCH.get().map(|dispatch| UiDispatch {
+            pending: Some(PendingUiJob {
+                manager,
+                context: main_context,
+            }),
+            ..dispatch
+        }));
+    }
+}
+
+#[derive(Clone, Copy)]
+struct UiDispatch {
+    engine: *mut GraphicsEngine,
+    maintenance_ran: bool,
+    pending: Option<PendingUiJob>,
+}
+
+#[derive(Clone, Copy)]
+struct PendingUiJob {
+    manager: *mut UIManager,
+    context: *mut Context,
+}
+
+thread_local! {
+    static UI_DISPATCH: Cell<Option<UiDispatch>> = const { Cell::new(None) };
+}
+
+struct UiDispatchGuard(Option<UiDispatch>);
+
+impl UiDispatchGuard {
+    fn enter(engine: *mut GraphicsEngine) -> Self {
+        Self(UI_DISPATCH.replace(Some(UiDispatch {
+            engine,
+            maintenance_ran: false,
+            pending: None,
+        })))
+    }
+}
+
+impl Drop for UiDispatchGuard {
+    fn drop(&mut self) {
+        UI_DISPATCH.set(self.0);
+    }
+}
+
+unsafe fn maintain_ui_redirect(
+    engine: *mut GraphicsEngine,
+    manager: *mut UIManager,
+    context: *mut Context,
+) -> bool {
+    unsafe {
+        let Some(engine) = engine.as_ref() else {
+            return false;
+        };
+        let Some(device) = engine.m_Device.as_ref() else {
+            return false;
+        };
+        let Some(back_buffer) = device.m_BackBuffer.as_ref() else {
+            return false;
+        };
+        let Some(context) = context.as_ref() else {
+            return false;
+        };
+        if manager.is_null()
+            || (*manager).m_DeferredRenderLock.is_null()
+            || context.m_Mutex.is_null()
+        {
+            return false;
+        }
+        let _ui_lock = UiCriticalSectionGuard::enter((*manager).m_DeferredRenderLock);
+        let _context_lock = UiCriticalSectionGuard::enter(context.m_Mutex);
+        hud::tick(
+            device,
+            u32::from(back_buffer.m_Width),
+            u32::from(back_buffer.m_Height),
+        );
+        true
+    }
+}
+
+struct UiCriticalSectionGuard(*mut CRITICAL_SECTION);
+
+impl UiCriticalSectionGuard {
+    unsafe fn enter(lock: *mut CRITICAL_SECTION) -> Self {
+        unsafe { EnterCriticalSection(lock) };
+        Self(lock)
+    }
+}
+
+impl Drop for UiCriticalSectionGuard {
+    fn drop(&mut self) {
+        unsafe { LeaveCriticalSection(self.0) };
+    }
+}
+
 pub static BLOCK_FLIP: AtomicBool = AtomicBool::new(false);
 
 #[detour(address = jc3gi::graphics_engine::graphics_engine::graphics_flip_ADDRESS)]
@@ -232,26 +360,47 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
     let _timing = frame_timing::scope(Slot::PostDraw);
 
     unsafe {
-        let Some(context) = context.as_mut() else {
+        let dispatch = UI_DISPATCH.get();
+        let engine = match dispatch {
+            Some(dispatch) => dispatch.engine,
+            None => GraphicsEngine::get().map_or(std::ptr::null_mut(), |engine| engine),
+        };
+        let Some(graphics_engine) = engine.as_ref() else {
             return result;
         };
-
-        let Some(graphics_engine) = GraphicsEngine::get() else {
+        if context.is_null() {
             return result;
-        };
-
-        // Drive the HUD redirect on the render thread: redirect while enabled, restore while disabled.
-        // The rebind is sticky, so applying it here -- before the UI renders later in the frame --
-        // takes effect on the next UI render.
-        if let Some(device) = graphics_engine.m_Device.as_ref()
-            && let Some(back_buffer) = device.m_BackBuffer.as_ref()
-        {
-            hud::tick(
-                device,
-                u32::from(back_buffer.m_Width),
-                u32::from(back_buffer.m_Height),
-            );
         }
+
+        let main_context = graphics_engine
+            .m_Device
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |device| device.m_Context);
+        if !dispatch.is_some_and(|dispatch| dispatch.maintenance_ran)
+            && maintain_ui_redirect(engine, GetIUIManager(), main_context)
+            && let Some(dispatch) = dispatch
+        {
+            UI_DISPATCH.set(Some(UiDispatch {
+                maintenance_ran: true,
+                ..dispatch
+            }));
+        }
+        let pending = UI_DISPATCH.get().and_then(|mut dispatch| {
+            let pending = dispatch
+                .pending
+                .filter(|job| job.context == context && job.context == main_context)?;
+            dispatch.pending = None;
+            UI_DISPATCH.set(Some(dispatch));
+            Some(pending)
+        });
+        if let Some(pending) = pending
+            && hud::redirect_applied()
+        {
+            (*pending.manager).SyncRender();
+            (*pending.manager).Submit();
+        }
+
+        let context = &mut *context;
 
         // Clone (AddRef) the per-eye capture textures under a brief EGUI lock, released before the
         // context work below, mirroring the lock discipline of the other consumers of these captures

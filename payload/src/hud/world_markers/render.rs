@@ -1,11 +1,12 @@
 //! The render side of the world markers: on eye 0, choose the layout for the displayed snapshot
-//! and place each marker; on every eye, crop the markers out of the HUD texture into their slots,
-//! cut them out of the panel, and draw each slot as a billboard at its marker's world point.
+//! and place each marker; crop the markers out of the HUD texture into their slots, cut them out of
+//! the panel, and draw each slot as a billboard at its marker's world point for each eye.
 //!
-//! The UI renders into the HUD texture once per eye draw, and the panel is drawn and the texture
-//! cleared after each, so the crops and the cut are redone per eye from that eye's HUD render. The
-//! placement (and the billboards' world corners) is computed once on eye 0 and shared, like the
-//! panel's. Everything here runs on the render thread with the engine context mutex held.
+//! Ordinary two-pass rendering crops and cuts on every dispatch from that dispatch's UI render,
+//! then clears the HUD texture after the panel draws. Collapse crops and cuts only on eye 0; both
+//! eyes reuse the slots and the cut panel, and the HUD texture is cleared after eye 1. The placement
+//! (and the billboards' world corners) is computed once on eye 0 and shared, like the panel's.
+//! Everything here runs on the render thread with the engine context mutex held.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -93,8 +94,9 @@ pub(crate) fn clear_frame() {
     *STATUS.lock() = None;
 }
 
-/// Crop this eye's markers out of the HUD texture into their slots and cut them out of the panel. Call on every eye after the UI rendered into the HUD texture and before the
-/// panel draws.
+/// Crop the markers out of the HUD texture into their slots and cut them out of the panel after the
+/// UI renders and before the panel draws. Call on every dispatch in ordinary two-pass rendering,
+/// but only on eye 0 under collapse; eye 1 reuses the slots and the cut panel.
 pub(crate) fn prepare_eye(context: &ID3D11DeviceContext, hud: Option<&HudTarget>) {
     let mut renderer = RENDERER.lock();
     let (Some(renderer), Some(hud)) = (renderer.as_mut(), hud) else {
@@ -104,7 +106,7 @@ pub(crate) fn prepare_eye(context: &ID3D11DeviceContext, hud: Option<&HudTarget>
 }
 
 /// Draw this eye's marker billboards over `target`, farthest first. Call on every eye after
-/// [`prepare_eye`].
+/// [`prepare_eye`] prepares the slots for the dispatch, or for both eyes under collapse.
 pub(crate) fn draw_billboards(context: &ID3D11DeviceContext, device: &Device, target: &Texture) {
     let renderer = RENDERER.lock();
     let Some(renderer) = renderer.as_ref() else {

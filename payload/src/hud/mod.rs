@@ -83,6 +83,7 @@ use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 use crate::{
     config::{Config, Switch, disable_automatically},
     hooks::in_gameplay,
+    stereo::single_pass::collapse_active,
 };
 
 /// Which presentation the HUD is in this frame. Drives the panel's aspect (gameplay vs full-screen
@@ -232,8 +233,14 @@ pub fn panel_height(scale: f32, distance: f32, aspect: f32) -> f32 {
     (scale * PANEL_WIDTH_PER_DISTANCE * distance) / aspect.max(f32::EPSILON)
 }
 
+pub(crate) fn redirect_applied() -> bool {
+    state::applied_redirect().is_some()
+}
+
 /// The per-frame render-thread step: redirects the HUD into our texture while enabled, restores the
-/// engine binding while disabled. Called from the render-thread post-draw hook.
+/// engine binding while disabled. Runs before the main UI `StartRender` worker is queued, with the
+/// UI-deferred lock acquired before the graphics context lock. The `PostDraw` hook provides a
+/// fallback when no redirect maintenance ran for the dispatch.
 ///
 /// `window_width`/`window_height` are the swapchain back buffer's dimensions, used only as the
 /// cursor mapping's window basis (its fallback for the client rect). Everything sized against the
@@ -308,8 +315,10 @@ fn hud_target_size(
 /// Draw the redirected HUD as a floating quad for `eye` over `target` (the eye's linear back buffer),
 /// when both the redirect and the quad are enabled. On eye 0, chooses the panel pose for the current
 /// mode (head-following or world-static) and computes the panel's world-space corners (cached for eye
-/// 1). Then draws and clears. Called from the render-thread post-draw hook, before the back buffer is
-/// captured/presented, with the engine context mutex held.
+/// 1). Ordinary two-pass rendering crops and clears the HUD texture on every dispatch. Collapse
+/// crops only on eye 0, reuses the prepared textures for both eyes, and clears after eye 1. Called
+/// from the render-thread post-draw hook, before the back buffer is captured/presented, with the
+/// engine context mutex held.
 pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let cfg = Config::lock_query(|c| c.hud);
     let mut hud = HUD_STATE.lock();
@@ -416,8 +425,11 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     // the bands that held the cells are then cleared, so the panel shows the stage alone. The
     // markers draw behind the panel (they are anchored in the world, beyond it), and the reticles
     // and the hand and wrist readouts in front of it.
-    world_markers::prepare_eye(context, hud.redirected_target());
-    atlas::prepare_eye(context, hud.redirected_target());
+    let collapsed = collapse_active();
+    if !collapsed || eye == 0 {
+        world_markers::prepare_eye(context, hud.redirected_target());
+        atlas::prepare_eye(context, hud.redirected_target());
+    }
     if !crate::director::clean_view::hides_everything() {
         world_markers::draw_billboards(context, device, target);
     }
@@ -427,7 +439,9 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     anchored::draw(context, device, target, eye);
     mark_labels::draw(context, device, target, eye);
     grab_hint::draw(context, device, target, eye, hud.panel_corners());
-    hud.clear(context);
+    if !collapsed || eye == 1 {
+        hud.clear(context);
+    }
 }
 
 /// Whether the last panel drawn on eye 0 lacked the pointer's captured camera basis, so the
