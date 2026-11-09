@@ -384,7 +384,11 @@ impl Seize {
     /// The game thread, outside the physics step. The reached body's owner is checked before the
     /// character is read.
     pub(crate) unsafe fn ragdoll_reach(&self, palm: Vec3) -> Option<Reach> {
-        if unsafe { owner_of(self.target.body) } != Some(self.target.character) {
+        // A ragdoll's bones need not be owned by the character object; the ragdoll itself and the
+        // bone read prove the character live. Every other target still needs the owner proof.
+        if !self.target.ragdoll
+            && unsafe { owner_of(self.target.body) } != Some(self.target.character)
+        {
             return None;
         }
         let character = unsafe { &*(self.target.character.get() as *const Character) };

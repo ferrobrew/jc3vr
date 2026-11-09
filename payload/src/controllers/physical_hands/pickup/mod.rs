@@ -128,6 +128,13 @@ pub struct PickupStatus {
     pub last_error: Option<String>,
 }
 
+/// Whether a hand holds a body of a character's ragdoll.
+pub(crate) fn holds_ragdoll(held: &[Option<Held>; 2]) -> bool {
+    held.iter()
+        .flatten()
+        .any(|held| held.kind == HeldKind::Ragdoll)
+}
+
 /// Act on the input tick's pickup grabs and grip releases: a grab of a weapon clicks the game's
 /// use-item action into `desired`, a grab of an object asks the next simulation tick to take hold
 /// of it, and a released grip asks it to let go. Called from the input tick after the tables.
@@ -143,7 +150,19 @@ pub(crate) fn finish_tick(
     let weapons = input::finish(&mut state.pickup, inputs, reaches, fresh, desired, context);
     state.status.pickup.weapons += weapons.len() as u64;
     let pulses: Vec<_> = weapons.iter().map(|(hand, _)| *hand).collect();
+    let ragdoll = holds_ragdoll(&state.pickup.held);
     drop(state);
+    // The game's cancel input keeps a ragdoll one; a hand holding a ragdoll holds it so the
+    // character cannot get up out of the grip.
+    if ragdoll {
+        desired.push(Desired {
+            target: Target {
+                map: MapKind::Player,
+                action: Action::CANCEL,
+            },
+            want: Want::Hold(1.0),
+        });
+    }
     for (hand, reach) in weapons {
         let refusal = {
             // SAFETY: the game stage runs on the game thread before the world update.
