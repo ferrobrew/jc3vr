@@ -6,6 +6,8 @@
 //! player sees on the button is the one that presses it ([`carry`] brings a point read from the
 //! controllers into it).
 //!
+//! A press needs the pressing palm to face into the button's surface. The detector uses this
+//! surface-relative orientation rather than a head-pose gate.
 //! A press is a touch of the fingertip on the button from any direction in front of the wrist, so
 //! that a poke from above, from the side, or straight in all work, while a brush past it does not:
 //!
@@ -191,16 +193,21 @@ impl PressDetector {
         }
     }
 
-    /// Advance by `dt` seconds with the fingertip at `tip` and the button's `face`, either `None`
-    /// while untracked.
+    /// Advance by `dt` seconds with the fingertip at `tip`, the button's `face`, and the pressing
+    /// hand's outward palm normal in the same frame. Missing tracking resets the detector.
     pub fn step(
         &mut self,
         tip: Option<Vec3>,
         face: Option<ButtonFace>,
+        palm_normal: Option<Vec3>,
         dt: f32,
         tuning: &DetonatorTuning,
     ) -> PressReading {
-        let (Some(tip), Some(face)) = (tip.filter(|t| t.is_finite()), face) else {
+        let (Some(tip), Some(face), Some(palm_normal)) = (
+            tip.filter(|t| t.is_finite()),
+            face.filter(|f| f.centre.is_finite() && f.normal.is_finite()),
+            palm_normal.and_then(Vec3::try_normalize),
+        ) else {
             *self = Self::new();
             return PressReading::default();
         };
@@ -217,10 +224,15 @@ impl PressDetector {
 
         let within = distance <= tuning.touch_radius_m.max(0.0);
         let behind = height < -tuning.max_behind_m.max(0.0);
-        let touching = within && !behind;
+        let palm_facing = palm_normal.dot(face.normal) <= -tuning.min_palm_alignment;
+        let touching = within && !behind && palm_facing;
         let away = distance > tuning.release_radius_m.max(tuning.touch_radius_m);
+        let wrong_side = behind
+            || (distance <= tuning.approach_radius_m.max(tuning.touch_radius_m) && !palm_facing);
         let mut pressed = false;
         self.phase = match self.phase {
+            phase @ PressPhase::Pressed if !away => phase,
+            _ if wrong_side => PressPhase::Blocked,
             PressPhase::Lost if within => PressPhase::Blocked,
             PressPhase::Lost => PressPhase::Armed { approach_mps: 0.0 },
             PressPhase::Armed { approach_mps } => {
@@ -297,7 +309,10 @@ mod tests {
     fn run(d: &mut PressDetector, path: impl IntoIterator<Item = Vec3>) -> usize {
         let t = tuning();
         path.into_iter()
-            .filter(|tip| d.step(Some(*tip), Some(FACE), DT, &t).pressed)
+            .filter(|tip| {
+                d.step(Some(*tip), Some(FACE), Some(-FACE.normal), DT, &t)
+                    .pressed
+            })
             .count()
     }
 
@@ -359,10 +374,20 @@ mod tests {
         };
         assert!(
             !detector
-                .step(Some(expected + Vec3::Y * 0.1), Some(face), DT, &tuning())
+                .step(
+                    Some(expected + Vec3::Y * 0.1),
+                    Some(face),
+                    Some(-face.normal),
+                    DT,
+                    &tuning()
+                )
                 .pressed
         );
-        assert!(detector.step(Some(tip), Some(face), DT, &tuning()).pressed);
+        assert!(
+            detector
+                .step(Some(tip), Some(face), Some(-face.normal), DT, &tuning())
+                .pressed
+        );
     }
 
     #[test]
@@ -483,16 +508,55 @@ mod tests {
     }
 
     #[test]
+    fn a_wrong_palm_cannot_press_by_lingering_or_turning_on_the_button() {
+        let t = tuning();
+        for palm in [FACE.normal, Vec3::Y] {
+            let mut d = PressDetector::new();
+            for point in moving(Vec3::X * 0.12, Vec3::X * 0.01, 0.5)
+                .into_iter()
+                .chain(held(Vec3::X * 0.01, 0.4))
+            {
+                assert!(!d.step(Some(point), Some(FACE), Some(palm), DT, &t).pressed);
+            }
+            assert_eq!(d.phase, PressPhase::Blocked);
+            for point in held(Vec3::X * 0.01, 0.4) {
+                assert!(
+                    !d.step(Some(point), Some(FACE), Some(-FACE.normal), DT, &t)
+                        .pressed
+                );
+            }
+            assert_eq!(run(&mut d, moving(Vec3::X * 0.01, Vec3::X * 0.12, 0.5)), 0);
+            assert_eq!(run(&mut d, moving(Vec3::X * 0.12, Vec3::ZERO, 0.5)), 1);
+        }
+    }
+
+    #[test]
+    fn a_sparse_sample_cannot_press_through_the_back_of_the_button() {
+        let t = tuning();
+        let mut d = PressDetector::new();
+        for point in [Vec3::NEG_X * 0.12, Vec3::ZERO] {
+            assert!(
+                !d.step(Some(point), Some(FACE), Some(-FACE.normal), DT, &t)
+                    .pressed
+            );
+        }
+        assert_eq!(d.phase, PressPhase::Blocked);
+    }
+
+    #[test]
     fn losing_tracking_resets_without_a_press() {
         let t = tuning();
         let mut d = PressDetector::new();
         let near = Vec3::X * (t.touch_radius_m + 0.005);
         assert_eq!(run(&mut d, moving(Vec3::X * 0.1, near, 0.5)), 0);
-        let lost = d.step(None, Some(FACE), DT, &t);
+        let lost = d.step(None, Some(FACE), Some(-FACE.normal), DT, &t);
         assert!(!lost.pressed);
         assert_eq!(lost.phase, PressPhase::Lost);
         // Reappearing on the button is not a press.
-        assert!(!d.step(Some(Vec3::ZERO), Some(FACE), DT, &t).pressed);
+        assert!(
+            !d.step(Some(Vec3::ZERO), Some(FACE), Some(-FACE.normal), DT, &t)
+                .pressed
+        );
         assert_eq!(d.phase, PressPhase::Blocked);
         assert_eq!(run(&mut d, held(Vec3::ZERO, t.dwell_s * 2.0)), 0);
     }

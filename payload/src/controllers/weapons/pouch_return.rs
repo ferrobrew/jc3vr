@@ -1,8 +1,8 @@
 //! Putting a held grenade or C4 charge back by pressing it onto its chest pouch.
 //!
-//! A press counts when the hand holding the item enters the pouch from outside and reaches
-//! [`PRESS`]'s depth into it. An item that came into the hand inside the pouch, as one drawn from
-//! it does, counts only after the hand has left the pouch by the leave margin, so a draw never
+//! A press counts when the hand holding the item enters its return volume from outside. Grenades
+//! use [`PRESS`]'s depth into the pouch; C4 uses [`C4_RETURN`]'s wider return volume. An item drawn
+//! inside that volume counts only after the hand has left it by the leave margin, so a draw never
 //! puts its grenade straight back; after a press, accepted or refused, the hand has to leave the
 //! same way before it can press again. The begin tick, which places the pouches, folds the hands
 //! in ([`observe`]); the grenade's and the charge's own input ticks take the presses
@@ -20,11 +20,22 @@ pub struct PressTuning {
     pub leave_margin_m: f32,
     /// How far into the pouch the hand must go for a press, metres.
     pub depth_m: f32,
+    /// Additional return reach beyond the pouch's surface, metres. Does not widen draws.
+    pub return_margin_m: f32,
 }
 
 pub const PRESS: PressTuning = PressTuning {
     leave_margin_m: 0.03,
     depth_m: 0.02,
+    return_margin_m: 0.0,
+};
+
+/// A held charge returns near the pouch's surface without a deep push into the chest. The larger
+/// leave margin keeps a draw or a hand resting in the return volume from returning immediately.
+const C4_RETURN: PressTuning = PressTuning {
+    leave_margin_m: 0.07,
+    depth_m: 0.0,
+    return_margin_m: 0.04,
 };
 
 /// A pouch's volume in the cockpit frame.
@@ -57,7 +68,7 @@ pub(crate) fn observe(inputs: &Inputs) {
         if state.grenades[i].step(inputs.grenades[i], grip, inputs.grenade_pouch, &PRESS) {
             state.pressed_grenades[i] = true;
         }
-        if state.charges[i].step(inputs.charges[i], grip, inputs.charge_pouch, &PRESS) {
+        if state.charges[i].step(inputs.charges[i], grip, inputs.charge_pouch, &C4_RETURN) {
             state.pressed_charges[i] = true;
         }
     }
@@ -135,7 +146,8 @@ impl<I: Copy + PartialEq> Press<I> {
             self.stage = Stage::Outside;
             return false;
         }
-        if self.stage == Stage::Outside && distance <= pouch.radius - tuning.depth_m {
+        let return_radius = pouch.radius + tuning.return_margin_m - tuning.depth_m;
+        if self.stage == Stage::Outside && distance <= return_radius {
             self.stage = Stage::Spent;
             return true;
         }
@@ -198,6 +210,44 @@ mod tests {
         assert!(!press.step(Some(7), at(0.02), Some(POUCH), &PRESS));
         assert!(!press.step(Some(7), at(0.3), Some(POUCH), &PRESS));
         assert!(press.step(Some(7), at(0.0), Some(POUCH), &PRESS));
+    }
+
+    #[test]
+    fn c4_returns_near_the_surface_without_widening_grenade_returns() {
+        let mut charge = Press::new();
+        let mut grenade = Press::new();
+        let near = POUCH.radius + C4_RETURN.return_margin_m * 0.75;
+        assert!(!charge.step(Some(1), at(0.3), Some(POUCH), &C4_RETURN));
+        assert!(!grenade.step(Some(1), at(0.3), Some(POUCH), &PRESS));
+        assert!(charge.step(Some(1), at(near), Some(POUCH), &C4_RETURN));
+        assert!(!charge.step(Some(1), at(near), Some(POUCH), &C4_RETURN));
+        assert!(!grenade.step(Some(1), at(near), Some(POUCH), &PRESS));
+        assert!(grenade.step(Some(1), at(0.04), Some(POUCH), &PRESS));
+    }
+
+    #[test]
+    fn c4_draws_and_identity_changes_inside_the_return_margin_need_to_leave() {
+        let near = POUCH.radius + C4_RETURN.return_margin_m * 0.75;
+        let mut press = Press::new();
+        assert!(!press.step(Some(1), at(near), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(Some(1), at(0.0), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(Some(1), at(0.3), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(Some(2), at(near), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(Some(2), at(0.0), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(Some(2), at(0.3), Some(POUCH), &C4_RETURN));
+        assert!(press.step(Some(2), at(near), Some(POUCH), &C4_RETURN));
+    }
+
+    #[test]
+    fn an_unrelated_held_item_does_not_arm_a_charge_return() {
+        let mut press = Press::<usize>::new();
+        assert!(!press.step(None, at(0.3), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(None, at(0.0), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(Some(1), at(0.0), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(Some(1), at(POUCH.radius + 0.05), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(Some(1), at(0.0), Some(POUCH), &C4_RETURN));
+        assert!(!press.step(Some(1), at(0.3), Some(POUCH), &C4_RETURN));
+        assert!(press.step(Some(1), at(0.0), Some(POUCH), &C4_RETURN));
     }
 
     #[test]

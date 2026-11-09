@@ -95,6 +95,8 @@ pub struct DetonatorTuning {
     /// How far behind the face's plane a fingertip may be and still touch, metres: further behind,
     /// it has come through the wrist, which a real finger cannot.
     pub max_behind_m: f32,
+    /// Minimum alignment of the pressing palm with the direction into the button's face.
+    pub min_palm_alignment: f32,
     /// How fast the fingertip must be closing on the button as it touches it, metres per second,
     /// for the touch to press at once.
     pub min_entry_speed_mps: f32,
@@ -122,6 +124,7 @@ impl DetonatorTuning {
             release_radius_m: 0.07,
             approach_radius_m: 0.1,
             max_behind_m: 0.015,
+            min_palm_alignment: 0.25,
             min_entry_speed_mps: 0.25,
             dwell_s: 0.15,
             fingertip_pointing_m: Vec3::new(0.0, -0.02, -0.04),

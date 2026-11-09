@@ -286,8 +286,8 @@ impl Default for C4Config {
     }
 }
 
-/// The detonator button on the inside of the off-hand's wrist (see
-/// [`crate::controllers::weapons::c4::press`]).
+/// The detonator button on the inside of the off-hand's wrist, pressed with the other hand's
+/// palm facing into its surface (see [`crate::controllers::weapons::c4::press`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct WristDetonatorConfig {

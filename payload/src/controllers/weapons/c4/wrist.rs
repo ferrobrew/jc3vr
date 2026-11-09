@@ -164,9 +164,13 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         state.near = false;
     }
     state.sample = Some(sample.stamp());
-    let reading = state
-        .detector
-        .step(tip.map(|(t, _)| t), face, inputs.dt, tuning);
+    let reading = state.detector.step(
+        tip.map(|(t, _)| t),
+        face,
+        sample.palm_normal(presser),
+        inputs.dt,
+        tuning,
+    );
     state.status = WristStatus {
         acting: true,
         reading,
@@ -272,6 +276,17 @@ struct HandSample {
 }
 
 impl HandSample {
+    /// The pressing palm's outward normal in the button hand's grip frame.
+    fn palm_normal(&self, hand: Hand) -> Option<Vec3> {
+        let off_grip = self.grips[hand.other().index()]?;
+        let normal = if let Some(wrist) = self.wrists[hand.index()] {
+            wrist.orientation * Vec3::NEG_Y
+        } else {
+            self.grips[hand.index()]?.orientation * hand.mirror_from_left(Vec3::X)
+        };
+        (off_grip.orientation.normalize().inverse() * normal).try_normalize()
+    }
+
     fn fingertip(
         &self,
         hand: Hand,
@@ -706,6 +721,36 @@ mod tests {
                     ..frame::HandFrame::default()
                 }
             }),
+        }
+    }
+
+    #[test]
+    fn palm_orientation_is_relative_to_the_button_for_either_presser() {
+        let source = controller_frame(Instant::now());
+        let rotation = glam::Quat::from_rotation_y(0.8);
+        for presser in Hand::BOTH {
+            let sample = HandSample {
+                grips: [Some(Pose {
+                    orientation: rotation,
+                    ..Pose::IDENTITY
+                }); 2],
+                wrists: [None; 2],
+                drawn_tips: [None; 2],
+                sources: late::HandSources::from_frame(
+                    &source,
+                    1.0,
+                    origin_provenance::begin(Ok(())),
+                ),
+                rendered: true,
+            };
+            let face = press::button_face(presser.other(), Pose::IDENTITY, &C4.detonator).unwrap();
+            let palm = sample.palm_normal(presser).unwrap();
+            assert!(palm.abs_diff_eq(-face.normal, 1e-5));
+            let mut turned = sample;
+            turned.grips[presser.index()].as_mut().unwrap().orientation =
+                rotation * glam::Quat::from_rotation_z(std::f32::consts::PI);
+            let palm = turned.palm_normal(presser).unwrap();
+            assert!(palm.abs_diff_eq(face.normal, 1e-5));
         }
     }
 
