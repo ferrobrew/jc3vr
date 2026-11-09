@@ -32,7 +32,6 @@ impl State {
         let (weapon, gun) = tick.gun(holder)?;
         if !self.status.insertion.holding()
             || self.status.insertion.float.is_some()
-            || weapon.occupied()
             || !self.can_take(weapon)
         {
             return None;
