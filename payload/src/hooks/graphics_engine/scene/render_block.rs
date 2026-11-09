@@ -380,6 +380,13 @@ unsafe fn spoofed_matrices(
     // keep the selective collapse so the hands stay.
     let collapse_whole_batch = collapse_hits > 0 && collapse_hits * 2 >= bones_counted;
 
+    let source_len = hands
+        .filter(|_| hand_hits > 0)
+        .map_or(0, |edit| edit.source_len());
+    if source_len > PALETTE_BUF_LEN {
+        return None;
+    }
+    let source = unsafe { std::slice::from_raw_parts(matrices, source_len.max(max_index + 1)) };
     PALETTE_BUF.with(|buf| {
         let mut buf = buf.borrow_mut();
         for (i, slot) in buf[..=max_index].iter_mut().enumerate() {
@@ -448,7 +455,7 @@ unsafe fn spoofed_matrices(
         // The hands first: a face-gear batch collapsed wholesale below overwrites any bone it
         // shares with them, as it should.
         if let Some(edit) = hands.filter(|_| hand_hits > 0) {
-            edit.apply(&mut buf[..=max_index], layout);
+            edit.apply(&mut buf[..=max_index], source, layout);
             if HIDE_ACTIVE.with(|flag| flag.get()) && crate::stereo::draw_index() == 0 {
                 edit.sample_drawn_arms(&buf[..=max_index], layout);
             }

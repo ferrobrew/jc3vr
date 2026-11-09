@@ -319,16 +319,82 @@ struct HandPaletteEdit {
 }
 
 impl PaletteEdit {
+    pub(crate) fn source_len(&self) -> usize {
+        self.edited_bones()
+            .map(|(bone, _)| bone + 1)
+            .max()
+            .unwrap_or(0)
+    }
+
     /// Whether the edit changes `bone`'s entry.
     pub fn touches(&self, bone: usize) -> bool {
         self.edited_bones().any(|(b, _)| b == bone)
     }
 
     /// Pre-multiply the edited entries of `entries`, which spans the batch's referenced bones.
-    pub fn apply(&self, entries: &mut [Matrix3x4], layout: PaletteLayout) {
-        for (bone, edit) in self.edited_bones() {
-            if let Some(entry) = entries.get_mut(bone) {
-                palette::premultiply_entry(&mut entry.m, layout, edit);
+    pub fn apply(&self, entries: &mut [Matrix3x4], source: &[Matrix3x4], layout: PaletteLayout) {
+        let edits = Hand::BOTH.map(|hand| {
+            let bones = self.bones[hand.index()];
+            let mut edit = self.hands[hand.index()]?;
+            if bones.elbow() == 0 || bones.wrist() == 0 {
+                return None;
+            }
+            let entry = palette::entry_to_matrix(&source.get(bones.elbow() as usize)?.m, layout);
+            let elbow = entry.transform_point3(bones.bind[0].w_axis.truncate());
+            let source_end = entry.transform_point3(bones.bind[1].w_axis.truncate());
+            let wrist_entry =
+                palette::entry_to_matrix(&source.get(bones.wrist() as usize)?.m, layout);
+            let wrist = wrist_entry.transform_point3(bones.bind[1].w_axis.truncate());
+            let target = edit.hand.transform_point3(wrist);
+            edit.forearm =
+                palette::fit_segment(edit.forearm, [elbow, source_end], [elbow, target])?;
+            Some((
+                edit,
+                elbow,
+                target,
+                entry * bones.bind[0],
+                wrist_entry * bones.bind[1],
+            ))
+        });
+        for hand in Hand::BOTH {
+            let Some((edit, elbow, wrist, forearm_frame, hand_frame)) = edits[hand.index()] else {
+                continue;
+            };
+            let bones = self.bones[hand.index()];
+            for bone in bones.hand_bones() {
+                if let Some(entry) = entries.get_mut(bone) {
+                    palette::premultiply_entry(&mut entry.m, layout, &edit.hand);
+                }
+            }
+            for (index, bone) in bones
+                .forearm
+                .iter()
+                .copied()
+                .enumerate()
+                .filter(|(_, bone)| *bone != 0)
+            {
+                if let Some(entry) = entries.get_mut(bone as usize) {
+                    let twist = (wrist - elbow).try_normalize().map_or(0.0, |axis| {
+                        let Some(source) = source.get(bone as usize) else {
+                            return 0.0;
+                        };
+                        let bind = bones.bind.map(palette::bone_rotation);
+                        let [Some(fore_bind), Some(hand_bind)] = bind else {
+                            return 0.0;
+                        };
+                        let roll = edit.forearm
+                            * palette::entry_to_matrix(&source.m, layout)
+                            * Mat4::from_quat(bones.roll_bind[index]);
+                        palette::roll_correction(
+                            [edit.forearm * forearm_frame, edit.hand * hand_frame, roll],
+                            [fore_bind, hand_bind, bones.roll_bind[index]],
+                            axis,
+                            bones.roll[index],
+                        )
+                    });
+                    let transform = palette::roll_about(elbow, wrist, twist) * edit.forearm;
+                    palette::premultiply_entry(&mut entry.m, layout, &transform);
+                }
             }
         }
         PALETTES_EDITED.fetch_add(1, Ordering::Relaxed);
@@ -1058,6 +1124,103 @@ mod tests {
         let mut off = frame(pose(0.35, 0.0), pose(0.3, 0.0), pose(0.3, 0.0), 1.0);
         off.enabled = false;
         assert!(off.hand_delta(Hand::Right, 1.0).is_none());
+    }
+
+    #[test]
+    fn late_arm_uploads_use_full_sources_and_replace_native_roll_in_both_layouts() {
+        let mut bones = [HandBones::default(); 2];
+        bones[1].forearm = [1, 2, 0, 0];
+        bones[1].hand[0] = 5;
+        bones[1].bind = [
+            Mat4::from_quat(Quat::from_rotation_x(0.2)),
+            Mat4::from_rotation_translation(Quat::from_rotation_x(-0.1), Vec3::X),
+        ];
+        bones[1].roll[1] = 0.5;
+        bones[1].roll_bind = [
+            Quat::from_rotation_x(0.2),
+            Quat::from_rotation_x(0.4),
+            Quat::IDENTITY,
+            Quat::IDENTITY,
+        ];
+        for layout in [PaletteLayout::Columns, PaletteLayout::Rows] {
+            let mut source = vec![
+                Matrix3x4 {
+                    m: palette::matrix_to_entry(&Mat4::IDENTITY, layout)
+                };
+                6
+            ];
+            for (bone, bind, angle, point) in [
+                (1, bones[1].bind[0], 0.3, Vec3::ZERO),
+                (5, bones[1].bind[1], 1.1, Vec3::X),
+                (
+                    2,
+                    Mat4::from_rotation_translation(bones[1].roll_bind[1], Vec3::X * 0.5),
+                    1.7,
+                    Vec3::X * 0.5,
+                ),
+            ] {
+                let actual = Mat4::from_rotation_translation(Quat::from_rotation_x(angle), point);
+                source[bone].m = palette::matrix_to_entry(&(actual * bind.inverse()), layout);
+            }
+            for distance in [0.0, 0.001, 0.6, 1.0] {
+                let edit = PaletteEdit {
+                    bones,
+                    hands: [
+                        None,
+                        Some(HandPaletteEdit {
+                            hand: Mat4::from_translation(Vec3::X * (distance - 1.0)),
+                            forearm: palette::forearm_reach(
+                                Vec3::ZERO,
+                                Vec3::X,
+                                Vec3::X * distance,
+                                true,
+                            ),
+                        }),
+                    ],
+                };
+                let mut full = source.clone();
+                edit.apply(&mut full, &source, layout);
+                assert!(
+                    full.iter()
+                        .all(|entry| entry.m.iter().all(|value| value.is_finite()))
+                );
+                let forearm = palette::entry_to_matrix(&full[1].m, layout);
+                let wrist = palette::entry_to_matrix(&full[5].m, layout);
+                assert!(
+                    forearm
+                        .transform_point3(Vec3::ZERO)
+                        .abs_diff_eq(Vec3::ZERO, 1e-5)
+                );
+                assert!(
+                    forearm
+                        .transform_point3(Vec3::X)
+                        .abs_diff_eq(Vec3::X * distance, 1e-5)
+                );
+                assert!(
+                    wrist
+                        .transform_point3(Vec3::X)
+                        .abs_diff_eq(Vec3::X * distance, 1e-5)
+                );
+                let mut short = source[..3].to_vec();
+                assert_eq!(edit.source_len(), 6);
+                edit.apply(&mut short, &source, layout);
+                assert!(
+                    short
+                        .iter()
+                        .zip(&full)
+                        .all(|(short, full)| short.m == full.m)
+                );
+                if distance == 1.0 {
+                    let frame = palette::entry_to_matrix(&full[2].m, layout)
+                        * Mat4::from_quat(bones[1].roll_bind[1]);
+                    assert!(
+                        palette::bone_rotation(frame)
+                            .unwrap()
+                            .abs_diff_eq(Quat::from_rotation_x(1.05), 1e-5)
+                    );
+                }
+            }
+        }
     }
 
     #[test]

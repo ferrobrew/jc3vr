@@ -1,11 +1,14 @@
 //! The skeleton bones the palette edit touches, and the post-solve arm joints each tick publishes
 //! for the edit and the status readout.
 
-use glam::Vec3;
+use glam::{Mat4, Quat, Vec3};
 use jc3gi::character::character::AnimationController;
 use parking_lot::Mutex;
 
-use crate::controllers::{frame::Hand, hands::ik};
+use crate::controllers::{
+    frame::Hand,
+    hands::{ik, palette},
+};
 
 /// The largest skeleton bone index accepted from a name lookup; the engine's bone indices are
 /// `i16`-sized.
@@ -14,10 +17,25 @@ pub const MAX_BONE_INDEX: u32 = 0x7FFF;
 /// The bones the palette edit touches for one hand: the hand group (the wrist, the attach bones,
 /// and the fingers), which takes the hand's whole correction, and the forearm group, which swings
 /// about the elbow. Zero marks a bone that did not resolve.
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct HandBones {
     pub(super) hand: [u16; HAND_BONE_NAMES[0].len()],
     pub(super) forearm: [u16; FOREARM_BONE_NAMES[0].len()],
+    pub(super) bind: [Mat4; 2],
+    pub(super) roll: [f32; FOREARM_BONE_NAMES[0].len()],
+    pub(super) roll_bind: [Quat; FOREARM_BONE_NAMES[0].len()],
+}
+
+impl Default for HandBones {
+    fn default() -> Self {
+        Self {
+            hand: [0; 20],
+            forearm: [0; 4],
+            bind: [Mat4::IDENTITY; 2],
+            roll: [0.0; 4],
+            roll_bind: [Quat::IDENTITY; 4],
+        }
+    }
 }
 
 impl HandBones {
@@ -28,9 +46,33 @@ impl HandBones {
     /// `controller` must be the character's live animation controller, on the thread that owns it.
     pub(crate) unsafe fn resolve(controller: &AnimationController, hand: Hand) -> Self {
         let resolve = |name| unsafe { ik::bone_index(controller, name) }.map_or(0, |i| i as u16);
+        let side = hand.index();
+        let hand = HAND_BONE_NAMES[side].map(resolve);
+        let forearm = FOREARM_BONE_NAMES[side].map(resolve);
+        let matrix = |bone: u16| {
+            let mut matrix = jc3gi::types::math::Matrix4::from(Mat4::IDENTITY);
+            if bone != 0 {
+                unsafe { controller.GetBindPoseBoneMatrix(bone as u32, &mut matrix) };
+            }
+            Mat4::from(matrix)
+        };
+        let bind = [matrix(forearm[0]), matrix(hand[0])];
+        let elbow = bind[0].w_axis.truncate();
+        let axis = bind[1].w_axis.truncate() - elbow;
+        let roll = forearm.map(|bone| {
+            if bone == 0 || axis.length_squared() <= 1e-8 {
+                return 0.0;
+            }
+            ((matrix(bone).w_axis.truncate() - elbow).dot(axis) / axis.length_squared())
+                .clamp(0.0, 1.0)
+        });
         HandBones {
-            hand: HAND_BONE_NAMES[hand.index()].map(resolve),
-            forearm: FOREARM_BONE_NAMES[hand.index()].map(resolve),
+            hand,
+            forearm,
+            bind,
+            roll,
+            roll_bind: forearm
+                .map(|bone| palette::bone_rotation(matrix(bone)).unwrap_or(Quat::IDENTITY)),
         }
     }
 
@@ -157,6 +199,9 @@ static SOLVED: Mutex<Solved> = Mutex::new(Solved {
     bones: [HandBones {
         hand: [0; 20],
         forearm: [0; 4],
+        bind: [Mat4::IDENTITY; 2],
+        roll: [0.0; 4],
+        roll_bind: [Quat::IDENTITY; 4],
     }; 2],
     previous: [None; 2],
     current: [None; 2],

@@ -7,6 +7,7 @@
 //! that follows the corrected wrist, optionally stretched along the forearm so its far end reaches
 //! a hand detached from the arm, so the forearm stays attached at both ends.
 
+use body_rig::rotation::twist_angle;
 use glam::{Mat3, Mat4, Quat, Vec3, Vec4};
 
 /// How a block's palette stores a 3x4 affine matrix (see the layout detection in
@@ -69,10 +70,16 @@ pub fn forearm_swing(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3) -> Mat4 {
 /// The forearm's transform toward the corrected wrist: the swing about the elbow
 /// ([`forearm_swing`]), and with `stretch` a scale along the corrected forearm's axis about the
 /// elbow, so the forearm's far end lands on the corrected wrist even when the hand has moved off the
-/// end of the arm. The stretch is bounded to [`MAX_FOREARM_STRETCH`] either way.
+/// end of the arm. Extension is bounded to [`MAX_FOREARM_STRETCH`]; shortening has no floor,
+/// since a separate floor would leave a close hand detached from the forearm.
 pub fn forearm_reach(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3, stretch: bool) -> Mat4 {
     let swing = forearm_swing(elbow, wrist, wrist_corrected);
-    let (Some(axis), true) = ((wrist_corrected - elbow).try_normalize(), stretch) else {
+    let (Some(axis), true) = (
+        (wrist_corrected - elbow)
+            .try_normalize()
+            .or_else(|| (wrist - elbow).try_normalize()),
+        stretch,
+    ) else {
         return swing;
     };
     let from = (wrist - elbow).length();
@@ -80,13 +87,82 @@ pub fn forearm_reach(elbow: Vec3, wrist: Vec3, wrist_corrected: Vec3, stretch: b
     if !(from.is_finite() && to.is_finite()) || from <= f32::EPSILON {
         return swing;
     }
-    let ratio = (to / from).clamp(1.0 / MAX_FOREARM_STRETCH, MAX_FOREARM_STRETCH);
+    let ratio = (to / from).min(MAX_FOREARM_STRETCH);
     let along = Mat3::IDENTITY
         + Mat3::from_cols(axis * axis.x, axis * axis.y, axis * axis.z) * (ratio - 1.0);
     Mat4::from_translation(elbow) * Mat4::from_mat3(along) * Mat4::from_translation(-elbow) * swing
 }
 
-/// The most the forearm stretches or shrinks along its axis, as a ratio of its length.
+/// Fit a palette segment to shared output joints, preserving its existing roll and radial size.
+/// The source points must come from this segment's palette entry, not a pose snapshot.
+pub(crate) fn fit_segment(edit: Mat4, source: [Vec3; 2], target: [Vec3; 2]) -> Option<Mat4> {
+    let from = edit.transform_vector3(source[1] - source[0]);
+    let to = target[1] - target[0];
+    let Some(from_axis) = from.try_normalize() else {
+        if to != Vec3::ZERO {
+            return None;
+        }
+        let fitted = Mat4::from_translation(target[0] - edit.transform_point3(source[0])) * edit;
+        return fitted.is_finite().then_some(fitted);
+    };
+    let axis = to.try_normalize().unwrap_or(from_axis);
+    let turn = Quat::from_rotation_arc(from_axis, axis);
+    let ratio = to.length() / from.length();
+    let along = Mat3::IDENTITY
+        + Mat3::from_cols(axis * axis.x, axis * axis.y, axis * axis.z) * (ratio - 1.0);
+    let fitted = Mat4::from_translation(target[0])
+        * Mat4::from_mat3(along)
+        * Mat4::from_quat(turn)
+        * Mat4::from_translation(-edit.transform_point3(source[0]))
+        * edit;
+    fitted.is_finite().then_some(fitted)
+}
+
+/// The additional hand roll relative to its carried forearm, about the output segment axis.
+pub(crate) fn wrist_twist(forearm: Mat4, hand: Mat4, reference: [Quat; 2], axis: Vec3) -> f32 {
+    let (Some(fore), Some(palm), Some(axis)) = (
+        bone_rotation(forearm),
+        bone_rotation(hand),
+        axis.try_normalize(),
+    ) else {
+        return 0.0;
+    };
+    let relative = palm * reference[1].inverse() * reference[0] * fore.inverse();
+    if !relative.is_finite() || relative.length_squared() <= f32::EPSILON {
+        return 0.0;
+    }
+    twist_angle(relative.normalize(), axis)
+}
+
+pub(crate) fn roll_correction(frames: [Mat4; 3], bind: [Quat; 3], axis: Vec3, along: f32) -> f32 {
+    let [forearm, hand, roll] = frames;
+    let (Some(fore), Some(current)) = (bone_rotation(forearm), bone_rotation(roll)) else {
+        return 0.0;
+    };
+    let twist = wrist_twist(forearm, hand, [bind[0], bind[1]], axis);
+    let wanted = Quat::from_axis_angle(axis, twist * along) * fore * bind[0].inverse() * bind[2];
+    twist_angle((wanted * current.inverse()).normalize(), axis)
+}
+
+pub(crate) fn bone_rotation(frame: Mat4) -> Option<Quat> {
+    if !frame.is_finite() || frame.determinant().abs() <= f32::MIN_POSITIVE {
+        return None;
+    }
+    let (_, rotation, _) = frame.to_scale_rotation_translation();
+    (rotation.is_finite() && rotation.length_squared() > f32::EPSILON).then(|| rotation.normalize())
+}
+
+/// A roll correction about the segment's common axis, keeping its centre line fixed.
+pub(crate) fn roll_about(elbow: Vec3, wrist: Vec3, angle: f32) -> Mat4 {
+    let Some(axis) = (wrist - elbow).try_normalize() else {
+        return Mat4::IDENTITY;
+    };
+    Mat4::from_translation(elbow)
+        * Mat4::from_quat(Quat::from_axis_angle(axis, angle))
+        * Mat4::from_translation(-elbow)
+}
+
+/// The most the forearm extends along its axis, as a ratio of its length.
 pub const MAX_FOREARM_STRETCH: f32 = 1.5;
 
 #[cfg(test)]
@@ -168,6 +244,75 @@ mod tests {
         assert_eq!(
             forearm_reach(elbow, wrist, corrected, false),
             forearm_swing(elbow, wrist, corrected)
+        );
+    }
+
+    #[test]
+    fn close_and_coincident_wrists_do_not_leave_a_shortening_gap() {
+        let elbow = Vec3::new(0.2, 1.1, -0.1);
+        let wrist = elbow + Vec3::NEG_Z * 0.24;
+        for distance in [0.0, 0.001, 0.04, 0.1] {
+            let target = elbow + Vec3::X * distance;
+            let edit = forearm_reach(elbow, wrist, target, true);
+            assert!(edit.is_finite());
+            assert!(edit.transform_point3(elbow).abs_diff_eq(elbow, 1e-5));
+            assert!(edit.transform_point3(wrist).abs_diff_eq(target, 1e-5));
+        }
+    }
+
+    #[test]
+    fn fitted_segments_keep_radial_geometry_through_bend_stretch_and_roll() {
+        let source = [Vec3::new(0.2, 1.1, 0.0), Vec3::new(0.2, 0.86, 0.0)];
+        let target = [Vec3::new(0.3, 1.2, 0.1), Vec3::new(0.66, 1.2, 0.1)];
+        let edit = fit_segment(Mat4::IDENTITY, source, target).unwrap();
+        let axis = (target[1] - target[0]).normalize();
+        let hand = roll_about(target[0], target[1], 1.2) * edit;
+        let twist = wrist_twist(edit, hand, [Quat::IDENTITY; 2], axis);
+        assert!((twist - 1.2).abs() < 1e-5);
+        let mut previous_angle = 0.0;
+        for along in [0.0, 0.25, 0.5, 0.75, 1.0] {
+            let point = source[0].lerp(source[1], along);
+            let roll = roll_about(target[0], target[1], twist * along) * edit;
+            let centre = target[0].lerp(target[1], along);
+            assert!(roll.transform_point3(point).abs_diff_eq(centre, 1e-5));
+            let offset = roll.transform_point3(point + Vec3::Z * 0.03) - centre;
+            assert!((offset.length() - 0.03).abs() < 1e-5);
+            let radial = edit.transform_vector3(Vec3::Z);
+            let angle = axis
+                .dot(radial.cross(offset.normalize()))
+                .atan2(radial.dot(offset.normalize()));
+            assert!(angle + 1e-5 >= previous_angle);
+            previous_angle = angle;
+            if along == 1.0 {
+                // Any skin weight at the wrist seam has the same off-axis endpoint.
+                let fore = roll.transform_point3(point + Vec3::Z * 0.03);
+                let palm = hand.transform_point3(point + Vec3::Z * 0.03);
+                for weight in [0.0, 0.25, 0.5, 1.0] {
+                    assert!(fore.lerp(palm, weight).abs_diff_eq(palm, 1e-5));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn singular_bone_frames_have_no_extractable_twist() {
+        let collapsed = Mat4::from_scale(Vec3::new(0.0, 1.0, 1.0));
+        assert_eq!(
+            wrist_twist(collapsed, Mat4::IDENTITY, [Quat::IDENTITY; 2], Vec3::X),
+            0.0
+        );
+        assert_eq!(
+            wrist_twist(Mat4::IDENTITY, collapsed, [Quat::IDENTITY; 2], Vec3::X),
+            0.0
+        );
+        assert_eq!(
+            roll_correction(
+                [collapsed, Mat4::IDENTITY, collapsed],
+                [Quat::IDENTITY; 3],
+                Vec3::X,
+                0.5
+            ),
+            0.0
         );
     }
 

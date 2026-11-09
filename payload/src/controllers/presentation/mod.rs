@@ -63,7 +63,7 @@ use crate::{
         hands::{ik, late, pose as hand_pose, reach::REACH},
         mode::{self, Mode},
         presentation::{
-            edit::DrawnArms,
+            edit::{DrawnArms, PaletteRegistration},
             rig::{Group, GroupMap, PresentationRig},
             solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
         },
@@ -206,8 +206,25 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
             bind_points[side][joint] = Mat4::from(matrix).w_axis.truncate();
         }
     }
+    let source = Group::ALL.map(|group| {
+        let mut joint = Joint::default();
+        unsafe { controller.GetJoint(rig.roots[group.index()] as u32, &mut joint) };
+        Mat4::from_scale_rotation_translation(
+            Vec3::from_array(joint.m_Scale.data),
+            Quat::from_array(joint.m_Orientation.data).normalize(),
+            Vec3::from_array(joint.m_Translation.data),
+        )
+    });
+    let bind = Group::ALL.map(|group| {
+        let mut matrix = jc3gi::types::math::Matrix4::from(Mat4::IDENTITY);
+        unsafe { controller.GetBindPoseBoneMatrix(rig.roots[group.index()] as u32, &mut matrix) };
+        Mat4::from(matrix)
+    });
     let pose = TickPose {
         body,
+        roots: rig.roots,
+        source,
+        bind,
         bones,
         bind_points,
         drive,
@@ -305,6 +322,9 @@ pub(crate) fn draw_edit(instance: Mat4, dtf: f32) -> Option<DrawEdit> {
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct TickPose {
     body: UpperBody,
+    roots: [usize; Group::COUNT],
+    source: [Mat4; Group::COUNT],
+    bind: [Mat4; Group::COUNT],
     bones: [[usize; 3]; 2],
     bind_points: [[Vec3; 3]; 2],
     /// The head pose the tick posed the body from, world space.
@@ -365,7 +385,19 @@ unsafe fn rig_for(controller: &AnimationController, key: SkeletonKey) -> Option<
         Ok(snapshot) => {
             let names: Vec<SmolStr> = snapshot.bones.iter().map(|b| b.name.clone()).collect();
             let parents: Vec<Option<usize>> = snapshot.bones.iter().map(|b| b.parent).collect();
-            PresentationRig::build(&names, &parents).map_err(|e| e.to_smolstr())
+            PresentationRig::build(&names, &parents)
+                .map(|mut rig| {
+                    let bind: Vec<Mat4> = (0..names.len())
+                        .map(|bone| {
+                            let mut matrix = jc3gi::types::math::Matrix4::from(Mat4::IDENTITY);
+                            unsafe { controller.GetBindPoseBoneMatrix(bone as u32, &mut matrix) };
+                            Mat4::from(matrix)
+                        })
+                        .collect();
+                    rig.groups = rig.groups.with_rolls(&names, &bind);
+                    rig
+                })
+                .map_err(|e| e.to_smolstr())
         }
         Err(e) => Err(e.to_smolstr()),
     };
@@ -556,7 +588,14 @@ fn solve_frame(frame: &Frame, instance: Mat4, dtf: f32) -> Option<BodyEdit> {
         .all(|e| e.is_finite())
         .then(|| {
             BodyEdit::new(current.groups, edits).map(|edit| {
-                edit.with_arm_sample(DrawnArms {
+                edit.registered(PaletteRegistration {
+                    roots: current.roots,
+                    bind: current.bind,
+                    source: std::array::from_fn(|i| {
+                        late::lerp_transform(previous.source[i], current.source[i], t)
+                    }),
+                })
+                .with_arm_sample(DrawnArms {
                     sequence: frame.sequence,
                     dtf: t,
                     bones: current.bones,

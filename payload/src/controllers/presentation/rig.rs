@@ -10,7 +10,10 @@
 
 use std::fmt;
 
+use glam::{Mat4, Quat};
 use smol_str::SmolStr;
+
+use crate::controllers::hands::palette;
 
 /// A rigidly re-posed group of bones, named by its root bone.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -111,21 +114,65 @@ impl Group {
 pub const MAX_BONES: usize = 256;
 
 /// Each bone's group, by skeleton index; bones past [`MAX_BONES`] have none.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct GroupMap([u8; MAX_BONES]);
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct GroupMap {
+    groups: [u8; MAX_BONES],
+    roll: [f32; MAX_BONES],
+    roll_bind: [Quat; MAX_BONES],
+}
 
 impl GroupMap {
     /// The group bone `bone` rides with, or `None` for a bone the presentation leaves alone.
     pub fn of(&self, bone: usize) -> Option<Group> {
-        let group = *self.0.get(bone)?;
+        let group = *self.groups.get(bone)?;
         Group::ALL.get(group as usize).copied()
+    }
+
+    pub(crate) fn roll(&self, bone: usize) -> Option<f32> {
+        self.roll.get(bone).copied().filter(|along| *along >= 0.0)
+    }
+
+    pub(crate) fn roll_bind(&self, bone: usize) -> Quat {
+        self.roll_bind[bone]
+    }
+
+    pub(crate) fn with_rolls(mut self, names: &[SmolStr], bind: &[Mat4]) -> Self {
+        for (bone, name) in names.iter().enumerate().take(MAX_BONES) {
+            if !name.to_lowercase().contains("roll") {
+                continue;
+            }
+            let Some(group @ (Group::LeftForeArm | Group::RightForeArm)) = self.of(bone) else {
+                continue;
+            };
+            let hand = if group == Group::LeftForeArm {
+                Group::LeftHand
+            } else {
+                Group::RightHand
+            };
+            let root = |group: Group| names.iter().position(|name| name == group.bone());
+            let (Some(start), Some(end), Some(point)) = (root(group), root(hand), bind.get(bone))
+            else {
+                continue;
+            };
+            let (Some(start), Some(end)) = (bind.get(start), bind.get(end)) else {
+                continue;
+            };
+            self.roll_bind[bone] = palette::bone_rotation(*point).unwrap_or(Quat::IDENTITY);
+            let axis = end.w_axis.truncate() - start.w_axis.truncate();
+            if axis.length_squared() > 1e-8 {
+                self.roll[bone] = ((point.w_axis.truncate() - start.w_axis.truncate()).dot(axis)
+                    / axis.length_squared())
+                .clamp(0.0, 1.0);
+            }
+        }
+        self
     }
 }
 
 const NO_GROUP: u8 = u8::MAX;
 
 /// The presentation layer's rig of one skeleton.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub struct PresentationRig {
     /// Each group's root bone's skeleton index, by [`Group::index`].
     pub roots: [usize; Group::COUNT],
@@ -201,7 +248,11 @@ impl PresentationRig {
         }
         Ok(Self {
             roots,
-            groups: GroupMap(map),
+            groups: GroupMap {
+                groups: map,
+                roll: [-1.0; MAX_BONES],
+                roll_bind: [Quat::IDENTITY; MAX_BONES],
+            },
         })
     }
 }
@@ -278,6 +329,21 @@ pub(crate) mod tests {
         }
         assert_eq!(rig.groups.of(MAX_BONES + 3), None);
         assert_eq!(rig.roots[Group::Head.index()], 10);
+    }
+
+    #[test]
+    fn bind_positions_set_roll_shares_without_affecting_the_hand() {
+        let (names, parents) = skeleton();
+        let rig = PresentationRig::build(&names, &parents).unwrap();
+        let mut bind = vec![Mat4::IDENTITY; names.len()];
+        let index = |name: &str| names.iter().position(|n| n == name).unwrap();
+        bind[index("LeftForeArm")] = Mat4::from_translation(glam::Vec3::new(0.2, 1.2, 0.0));
+        bind[index("LeftHand")] = Mat4::from_translation(glam::Vec3::new(0.2, 0.96, 0.0));
+        bind[index("LeftForeArmRoll")] = Mat4::from_translation(glam::Vec3::new(0.2, 1.02, 0.0));
+        let groups = rig.groups.with_rolls(&names, &bind);
+        assert!((groups.roll(index("LeftForeArmRoll")).unwrap() - 0.75).abs() < 1e-5);
+        assert_eq!(groups.roll(index("LeftHand")), None);
+        assert_eq!(groups.roll(index("df_LeftArmRollA01")), None);
     }
 
     #[test]
