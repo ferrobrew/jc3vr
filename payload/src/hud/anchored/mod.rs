@@ -3,7 +3,8 @@
 //! readouts on the inside of the off-hand's wrist, and the weapon selection cross where the hand steering the
 //! weapon wheel was when it opened.
 //!
-//! The readouts above the hand and the forearm stand upright and face the eye. They are drawn
+//! The ammunition counters follow the rendered guns, including their rotation. The forearm readout
+//! stands upright and faces the eye. The readouts are drawn
 //! without a depth test, like every HUD quad, so they are placed clear of the hand and the gun
 //! rather than tested against them: a readout near the hand that the scene's depth could hide
 //! would vanish into the gun or a wall the gun is pushed against.
@@ -56,9 +57,9 @@ use crate::{
             hand_ammo::{COUNT_TEXELS, CountKey},
             health::{BAR_TEXELS, BarKey, HealthTrail},
             place::{
-                Attention, ammo_anchor, facing_corners, fade_out, follow, forearm_anchor,
-                gun_ammo_anchor, inner_wrist_pose, pull_toward, sighting, stacked_corners,
-                upright_corners, wants_attention,
+                Attention, facing_corners, fade_out, follow, forearm_anchor, gun_ammo_corners,
+                inner_wrist_pose, pull_toward, sighting, stacked_corners, upright_corners,
+                wants_attention,
             },
         },
         atlas::{self, Part},
@@ -147,7 +148,7 @@ static SAMPLE: Mutex<Option<StatusSample>> = Mutex::new(None);
 
 static STATE: Mutex<State> = Mutex::new(State::new());
 
-/// How far the hand may jump in a frame before the weapon readout snaps instead of easing, metres.
+/// How far the forearm may jump in a frame before the tether readout snaps instead of easing, metres.
 const SNAP_M: f32 = 0.5;
 
 /// How long the weapon readout takes to fade out as the gun is raised to the eye, and back in,
@@ -157,20 +158,11 @@ const SIGHT_FADE_S: f32 = 0.15;
 /// The gap between the health bar and the heat readout on the wrist, metres.
 const WRIST_GAP_M: f32 = 0.006;
 
-/// How far above the top of the drawn gun an ammunition counter's lower edge sits, metres,
-/// straight up in the world whatever the gun's turn.
+/// The gap above the model's local top, measured along the rendered gun's up axis, metres.
 const AMMO_GUN_CLEARANCE_M: f32 = 0.04;
 
-/// How far above the gun hand's grip an ammunition counter's lower edge sits when the drawn gun is
-/// not known, metres, straight up in the world whatever the hand's tilt, so the quad clears the
-/// hand and the gun in it.
+/// The gap above the rendered gun's origin when its model box is unknown, metres.
 const AMMO_CLEARANCE_M: f32 = 0.10;
-
-/// How far an ammunition counter is pulled from above the hand toward the head, metres.
-const AMMO_PULL_M: f32 = 0.02;
-
-/// The halflife of an ammunition counter's follow of its hand, seconds.
-const AMMO_FOLLOW_HALFLIFE_S: f32 = 0.05;
 
 /// The width of an ammunition counter, metres; its height follows the texture's aspect.
 const COUNT_WIDTH_M: f32 = 0.08;
@@ -245,10 +237,9 @@ struct State {
     gpu: Option<Gpu>,
 }
 
-/// One hand's ammunition counter: where it is, its corners this frame, and its opacity.
+/// One hand's ammunition counter: its corners this frame and its opacity.
 #[derive(Copy, Clone)]
 struct HandCount {
-    position: Option<Vec3>,
     corners: Option<[Vec4; 4]>,
     alpha: f32,
 }
@@ -256,7 +247,6 @@ struct HandCount {
 impl HandCount {
     const fn new() -> Self {
         Self {
-            position: None,
             corners: None,
             alpha: 1.0,
         }
@@ -356,53 +346,28 @@ impl State {
         let hands = late::drawn_hands(dtf);
         let grip = |hand: Hand| hands[hand.index()].map(|h| h.grip);
 
-        // A counter above each gun in a hand, over the gun as drawn this frame, or above the hand
-        // when the drawn gun is not known.
         let guns = late::rendered_guns();
         let sampled = hand_ammo::sampled().filter(|_| cfg.ammo.enabled);
         self.status.counts = [false; 2];
         for hand in Hand::BOTH {
             let count = &mut self.counts[hand.index()];
             let ammo = sampled.and_then(|s| s.hands[hand.index()]);
-            let (Some(ammo), Some(head), Some(grip)) = (ammo, head, grip(hand)) else {
-                count.position = None;
+            let gun = guns[hand.index()].filter(|gun| ammo.is_some_and(|a| a.weapon == gun.weapon));
+            let (Some(ammo), Some(gun), Some(head), Some(grip)) = (ammo, gun, head, grip(hand))
+            else {
                 count.alpha = 1.0;
                 continue;
             };
             let width = COUNT_WIDTH_M;
             let height = width * COUNT_TEXELS.1 as f32 / COUNT_TEXELS.0 as f32;
-            let drawn = guns[hand.index()]
-                .filter(|g| g.weapon == ammo.weapon)
-                .zip(ammo.model)
-                .and_then(|(gun, model)| {
-                    gun_ammo_anchor(
-                        gun.matrix,
-                        model,
-                        head.position,
-                        AMMO_GUN_CLEARANCE_M,
-                        height,
-                        AMMO_PULL_M,
-                    )
-                });
-            let target = drawn.unwrap_or_else(|| {
-                ammo_anchor(
-                    grip.position,
-                    head.position,
-                    AMMO_CLEARANCE_M,
-                    height,
-                    AMMO_PULL_M,
-                )
-            });
-            let position = follow(count.position, target, dt, AMMO_FOLLOW_HALFLIFE_S, SNAP_M);
-            count.position = Some(position);
-            count.corners = upright_corners(
-                position,
-                head.position,
-                head.orientation * Vec3::Y,
-                width,
-                height,
-            )
-            .map(|corners| corners.map(|c| c.extend(1.0)));
+            let clearance = if ammo.model.is_some() {
+                AMMO_GUN_CLEARANCE_M
+            } else {
+                AMMO_CLEARANCE_M
+            };
+            count.corners =
+                gun_ammo_corners(gun.matrix, ammo.model, Vec2::new(width, height), clearance)
+                    .map(|corners| corners.map(|c| c.extend(1.0)));
             let sighted = hands[hand.index()].map(|h| h.aim).is_some_and(|aim| {
                 sighting(
                     grip.position,

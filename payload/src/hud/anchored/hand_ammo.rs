@@ -18,7 +18,8 @@ use crate::{
     controllers::weapons::{engine::reserve, regions::engine::model_box},
     hud::{
         anchored::place::ModelBox,
-        palette::{ALERT, BACKING, FRAME, TEXT, premultiply},
+        label,
+        palette::{ALERT, TEXT, premultiply, with_alpha},
     },
 };
 
@@ -112,40 +113,19 @@ impl CountKey {
     }
 }
 
-/// Paint the counter into premultiplied RGBA texels, row by row: a dark translucent backing with a
-/// light border and the text centred on it, in white, or in red for an empty or absent magazine.
+/// Paint centred, antialiased text into otherwise transparent premultiplied RGBA texels.
+/// An empty or absent magazine reads in red.
 pub(crate) fn paint(width: u32, height: u32, key: CountKey) -> Vec<u8> {
-    let text = key.text();
+    let text = label::rasterise(&key.text(), FONT_PX);
     let colour = if key.magazine == 0 { ALERT } else { TEXT };
-    let glyphs = text.chars().filter_map(glyph).collect::<Vec<_>>();
-    let advance = (GLYPH_W + 1) * SCALE;
-    let text_w = (glyphs.len() as u32 * advance).saturating_sub(SCALE);
-    let text_h = GLYPH_H * SCALE;
-    let left = width.saturating_sub(text_w) / 2;
-    let top = height.saturating_sub(text_h) / 2;
-    let lit = |x: u32, y: u32| -> bool {
-        if x < left || y < top || y >= top + text_h {
-            return false;
-        }
-        let (gx, gy) = ((x - left) / SCALE, (y - top) / SCALE);
-        let (index, column) = ((gx / (GLYPH_W + 1)) as usize, gx % (GLYPH_W + 1));
-        column < GLYPH_W
-            && glyphs
-                .get(index)
-                .is_some_and(|rows| rows[gy as usize] & (1 << (GLYPH_W - 1 - column)) != 0)
-    };
-    let mut texels = Vec::with_capacity((width * height * 4) as usize);
-    for y in 0..height {
-        for x in 0..width {
-            let border = x < BORDER || y < BORDER || x >= width - BORDER || y >= height - BORDER;
-            let c = if border {
-                FRAME
-            } else if lit(x, y) {
-                colour
-            } else {
-                BACKING
-            };
-            texels.extend_from_slice(&premultiply(c));
+    let left = width.saturating_sub(text.width) / 2;
+    let top = height.saturating_sub(text.height) / 2;
+    let mut texels = vec![0; (width * height * 4) as usize];
+    for y in 0..text.height.min(height) {
+        for x in 0..text.width.min(width) {
+            let alpha = (text.at(x, y) * f32::from(colour[3])).round() as u8;
+            let offset = (((top + y) * width + left + x) * 4) as usize;
+            texels[offset..offset + 4].copy_from_slice(&premultiply(with_alpha(colour, alpha)));
         }
     }
     texels
@@ -156,33 +136,8 @@ static SAMPLE: Mutex<Option<HandsAmmo>> = Mutex::new(None);
 /// The largest count drawn; more shows as this.
 const MAX_SHOWN: u32 = 9999;
 
-/// A glyph's size in font cells.
-const GLYPH_W: u32 = 3;
-const GLYPH_H: u32 = 5;
-
-/// The texels per font cell.
-const SCALE: u32 = 5;
-
-/// The frame's width, texels.
-const BORDER: u32 = 2;
-
-/// The rows of a character's 3-by-5 glyph, top first, each row's bits left to right.
-fn glyph(c: char) -> Option<[u8; GLYPH_H as usize]> {
-    Some(match c {
-        '0' => [0b111, 0b101, 0b101, 0b101, 0b111],
-        '1' => [0b010, 0b110, 0b010, 0b010, 0b111],
-        '2' => [0b111, 0b001, 0b111, 0b100, 0b111],
-        '3' => [0b111, 0b001, 0b111, 0b001, 0b111],
-        '4' => [0b101, 0b101, 0b111, 0b001, 0b001],
-        '5' => [0b111, 0b100, 0b111, 0b001, 0b111],
-        '6' => [0b111, 0b100, 0b111, 0b101, 0b111],
-        '7' => [0b111, 0b001, 0b010, 0b010, 0b010],
-        '8' => [0b111, 0b101, 0b111, 0b101, 0b111],
-        '9' => [0b111, 0b101, 0b111, 0b001, 0b111],
-        '/' => [0b001, 0b001, 0b010, 0b100, 0b100],
-        _ => return None,
-    })
-}
+/// The shared HUD label face's size, in texels per em.
+const FONT_PX: f32 = 30.0;
 
 #[cfg(test)]
 mod tests {
@@ -220,16 +175,12 @@ mod tests {
 
     #[test]
     fn the_widest_count_fits_its_texture() {
-        let advance = (GLYPH_W + 1) * SCALE;
-        let widest = "9999/9999".len() as u32 * advance - SCALE;
-        assert!(widest + 2 * BORDER <= COUNT_TEXELS.0);
-        assert!(GLYPH_H * SCALE + 2 * BORDER <= COUNT_TEXELS.1);
-        assert!(
-            "9999/9999"
-                .chars()
-                .chain("0123456789".chars())
-                .all(|c| glyph(c).is_some())
-        );
+        for digit in '0'..='9' {
+            let text = format!("{digit}{digit}{digit}{digit}/{digit}{digit}{digit}{digit}");
+            let mask = label::rasterise(&text, FONT_PX);
+            assert!(mask.width + 4 <= COUNT_TEXELS.0, "{text}: {}", mask.width);
+            assert!(mask.height + 4 <= COUNT_TEXELS.1, "{}", mask.height);
+        }
     }
 
     #[test]
@@ -244,6 +195,17 @@ mod tests {
             },
         );
         assert_eq!(full.len(), (w * h * 4) as usize);
+        let pixels = full.as_chunks::<4>().0;
+        assert!(pixels.iter().any(|p| p[3] > 0 && p[3] < 255));
+        assert!(pixels.iter().all(|p| p.iter().take(3).all(|c| *c <= p[3])));
+        for y in 0..h {
+            for x in 0..w {
+                if x == 0 || x == w - 1 || y == 0 || y == h - 1 {
+                    assert_eq!(pixels[(y * w + x) as usize], [0; 4]);
+                }
+            }
+        }
+        assert!(pixels.iter().filter(|p| p[3] == 0).count() > pixels.len() / 2);
         let lit = |texels: &[u8], colour: [u8; 4]| {
             let (texels, _) = texels.as_chunks::<4>();
             texels.iter().filter(|t| **t == premultiply(colour)).count()
