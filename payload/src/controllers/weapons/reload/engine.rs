@@ -741,10 +741,23 @@ fn update_weapon_parallel(
     if blocked && let Some(weapon) = unsafe { weapon.as_mut() } {
         unsafe { armed::release_fire(weapon) };
     }
+    let filtered = unsafe { input.as_ref() }.map(|input| reload_input(*input, blocked));
+    let input = filtered.as_ref().map_or(input, |input| input as *const _);
     UPDATE_WEAPON_PARALLEL
         .get()
         .unwrap()
         .call(weapon, dt, gun_data, input)
+}
+
+fn reload_input(input: WeaponInputs, blocked: bool) -> WeaponInputs {
+    if blocked {
+        WeaponInputs {
+            m_PrimaryFireInput: 0.0,
+            m_SecondaryFireInput: 0.0,
+        }
+    } else {
+        input
+    }
 }
 
 /// The bolt rifle's update, with its bolt-action setting cleared for the call while the bolt is
@@ -898,6 +911,22 @@ fn cached(cell: &OnceLock<i32>, name: &std::ffi::CStr) -> Option<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_reload_hold_masks_only_the_current_call_and_preserves_future_input() {
+        let input = WeaponInputs {
+            m_PrimaryFireInput: 1.0,
+            m_SecondaryFireInput: 0.75,
+        };
+        let blocked = reload_input(input, true);
+        assert_eq!(blocked.m_PrimaryFireInput, 0.0);
+        assert_eq!(blocked.m_SecondaryFireInput, 0.0);
+        assert_eq!(input.m_PrimaryFireInput, 1.0);
+        assert_eq!(input.m_SecondaryFireInput, 0.75);
+        let resumed = reload_input(input, false);
+        assert_eq!(resumed.m_PrimaryFireInput, input.m_PrimaryFireInput);
+        assert_eq!(resumed.m_SecondaryFireInput, input.m_SecondaryFireInput);
+    }
 
     #[test]
     fn the_bolt_lock_clears_once_the_trigger_falls_below_its_hold() {
