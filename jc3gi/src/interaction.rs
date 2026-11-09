@@ -7,10 +7,15 @@ pub struct InteractionContext {
     /// The game object the context belongs to (`CGameObject::m_Parent`), such as the weapon whose
     /// pickup interaction the context carries.
     pub m_Parent: crate::types::shared_ptr::WeakPtrGameObject,
+    _field_80: [u8; 768],
+    /// The context's state bits, including the `m_Enabled` bit its
+    /// [`GameObject::Enable`](crate::game::GameObject::Enable) override reads and writes.
+    pub m_Flags: crate::interaction::InteractionContextFlags,
+    _field_381: [u8; 7],
 }
 fn _InteractionContext_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x80], InteractionContext>([0u8; 0x80]);
+        ::std::mem::transmute::<[u8; 0x388], InteractionContext>([0u8; 0x388]);
     }
     unreachable!()
 }
@@ -24,6 +29,17 @@ impl std::convert::AsMut<InteractionContext> for InteractionContext {
     fn as_mut(&mut self) -> &mut InteractionContext {
         self
     }
+}
+crate::__bitflags! {
+    #[doc =
+    " The state bits of an interaction context (`CInteractionContext::m_Enabled` and its neighbours)."]
+    pub struct InteractionContextFlags : u8 { const ENABLED = 1usize as _; }
+}
+fn _InteractionContextFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1], InteractionContextFlags>([0u8; 0x1]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 /// A graph of interaction nodes (`CInteractionGraph`), owned by an interaction context. Only some

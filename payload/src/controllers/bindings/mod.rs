@@ -836,6 +836,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             &mut step.desired,
             &interaction_context,
         );
+        unsafe { vehicles::mounted::tick(&finish) };
         if let Some(value) = physical_grapple.retract {
             step.desired.push(Desired {
                 target: Target {
@@ -943,6 +944,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         weapons::wheel::pause();
         physical_hands::pickup::pause();
         snatch::stand_down();
+        unsafe { vehicles::mounted::stand_down() };
     }
     let final_owners = weapons::capabilities::gun_owners_now().map(|gun| TriggerOwner {
         mode: detection.mode,

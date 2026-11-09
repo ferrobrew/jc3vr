@@ -21,6 +21,7 @@ pub mod camera;
 pub mod character;
 pub mod clock;
 pub mod draw_count;
+mod equipment;
 pub mod game;
 pub mod graphics_engine;
 pub mod input;
@@ -84,6 +85,7 @@ pub(super) fn install() {
             .with_hook_library(clock::hook_library())
             .with_hook_library(graphics_engine::hook_library())
             .with_hook_library(draw_count::hook_library())
+            .with_hook_library(equipment::hook_library())
             .with_hook_library(camera::hook_library())
             .with_hook_library(wndproc::hook_library())
             .with_hook_library(window_focus::hook_library())

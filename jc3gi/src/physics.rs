@@ -180,8 +180,21 @@ impl std::convert::AsMut<CharacterInput> for CharacterInput {
 /// socket, stiff spring, hinge, limited hinge, ragdoll, wheel, or prismatic), optionally motored
 /// (position, spring-damper, or velocity motors) and breakable. It names the two objects by object
 /// id and connects them once both exist; the physics step then resolves the constraint with the
-/// bodies' other contacts. Only its type id is bound.
-pub struct Constraint {}
+/// bodies' other contacts. Only some members are mapped.
+pub struct Constraint {
+    _field_0: [u8; 392],
+    /// The constraint's state bits (`CConstraint::m_Flags`). The engine clears and sets
+    /// [`MOTOR_ENABLED`](crate::physics::ConstraintFlags::MOTOR_ENABLED) through
+    /// [`DisableMotor`](crate::physics::Constraint::DisableMotor) and [`EnableMotor`](crate::physics::Constraint::EnableMotor).
+    pub m_Flags: crate::physics::ConstraintFlags,
+    _field_189: [u8; 7],
+}
+fn _Constraint_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x190], Constraint>([0u8; 0x190]);
+    }
+    unreachable!()
+}
 impl Constraint {
     pub const TYPE_ID_ADDRESS: usize = 0x140977BC0;
     /// `CConstraint::TYPE_ID`: the run-time type id of `CConstraint`, for
@@ -194,6 +207,30 @@ impl Constraint {
             f()
         }
     }
+    pub const DisableMotor_ADDRESS: usize = 0x140BA2CD0;
+    /// `CConstraint::DisableMotor`: clears [`MOTOR_ENABLED`](crate::physics::ConstraintFlags::MOTOR_ENABLED) and,
+    /// when the constraint is in the physics world, tells its Havok constraint to stop driving its
+    /// motor, then reactivates its members.
+    pub unsafe fn DisableMotor(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DisableMotor_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const EnableMotor_ADDRESS: usize = 0x140BA2C60;
+    /// `CConstraint::EnableMotor`: sets [`MOTOR_ENABLED`](crate::physics::ConstraintFlags::MOTOR_ENABLED) and,
+    /// when the constraint is in the physics world, tells its Havok constraint to drive its motor
+    /// again, then reactivates its members.
+    pub unsafe fn EnableMotor(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::EnableMotor_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
 }
 impl std::convert::AsRef<Constraint> for Constraint {
     fn as_ref(&self) -> &Constraint {
@@ -204,6 +241,17 @@ impl std::convert::AsMut<Constraint> for Constraint {
     fn as_mut(&mut self) -> &mut Constraint {
         self
     }
+}
+crate::__bitflags! {
+    #[doc = " The state bits of a constraint (`CConstraint::m_Flags`)."] pub struct
+    ConstraintFlags : u8 { const ENABLED = 1usize as _; const MOTOR_ENABLED = 2usize as
+    _; }
+}
+fn _ConstraintFlags_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x1], ConstraintFlags>([0u8; 0x1]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 /// The world's collision filter (`CCustomGroupCollisionFilter`), behind the constraint collision

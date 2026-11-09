@@ -18,6 +18,13 @@
 //! Everything is read on the input tick, and the aim point is published for the simulation that
 //! follows it.
 //!
+//! While the hands physically grip the gun's own body, the runtime gives the weapon a temporary
+//! shooter and drives its user update from the post-simulation phase, so the trigger fires it
+//! without entering the native mounted state. The mount's constraint motors are disabled for the
+//! duration, and the pickup interaction context is suppressed so the game does not offer the
+//! broken use prompt. A sustained pull past the gun's lag tears it off the mount through the
+//! weapon's own detach path.
+//!
 //! [`WeaponBase::GetGripPosition`]: jc3gi::equipment::weapon::WeaponBase::GetGripPosition
 
 use std::time::{Duration, Instant};
@@ -30,6 +37,12 @@ use jc3gi::{
 };
 
 use crate::controllers::{aim::gun, frame::Hand};
+
+mod control;
+mod native;
+mod runtime;
+
+pub(crate) use runtime::{input, observe, shooter, stand_down, tick, with_shooter};
 
 /// The mounted gun the local player mans, as read on the input tick.
 #[derive(Debug, Copy, Clone, PartialEq)]

@@ -2093,7 +2093,23 @@ pub struct WeaponBase {
     /// infinite-pickup setting and its picked-up events, before it puts a rack's weapon in the
     /// rack state. It is not cleared when the weapon leaves the rule's spot.
     pub m_SpawnedFromRule: crate::types::shared_ptr::WeakPtrGameObject,
-    _field_298: [u8; 244],
+    _field_298: [u8; 48],
+    /// The horizontal mount constraint (a `boost::weak_ptr<CConstraint>`): the hinge that limits a
+    /// mounted weapon's yaw. The mounted aim drives its motor, and
+    /// [`GetMountedHorizontalAngularLimits`](crate::equipment::weapon::WeaponBase::GetMountedHorizontalAngularLimits) reads its
+    /// angular limits.
+    pub m_ConstraintHorizontal: crate::types::shared_ptr::WeakPtrGameObject,
+    /// The two vertical mount constraints (a `boost::weak_ptr<CConstraint>[2]`): the hinges that
+    /// limit a mounted weapon's pitch. The mounted aim drives their motors, and
+    /// [`GetMountedVerticalAngularLimits`](crate::equipment::weapon::WeaponBase::GetMountedVerticalAngularLimits) reads the first
+    /// one's angular limits.
+    pub m_ConstraintVertical: [crate::types::shared_ptr::WeakPtrGameObject; 2],
+    _field_2f8: [u8; 56],
+    /// Whether the mounted weapon may be torn off its mount.
+    /// [`Inventory::UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions)
+    /// reads it to decide whether the player may detach the mounted gun they are using.
+    pub m_MountedCanBeDetached: bool,
+    _field_331: [u8; 91],
     /// Whether the weapon overheats.
     pub m_CanBeOverheated: bool,
     /// Whether the weapon is overheated and cannot fire.
@@ -2170,7 +2186,12 @@ pub struct WeaponBase {
     /// ([`UpdatePreSim`](crate::equipment::weapon::WeaponBase::UpdatePreSim)). A shot, a reload's start, and each deferred-operation
     /// request set it and register the weapon when it was clear.
     pub m_RequiresPreSimUpdates: bool,
-    _field_47d: [u8; 19],
+    /// Whether the weapon is registered for post-simulation updates
+    /// ([`UpdatePostSim`](crate::equipment::weapon::WeaponBase::UpdatePostSim)). Its post-simulation update sets it while its guns
+    /// or components still have attached-effect work and registers the weapon through
+    /// [`GameObject::AddToUpdate`](crate::game::GameObject::AddToUpdate) when the flag rises from clear.
+    pub m_RequiresPostSimUpdates: bool,
+    _field_47e: [u8; 18],
     /// The weapon type's tuning, or null.
     pub m_Tuning: *const crate::equipment::weapon::WeaponTuning,
     _field_498: [u8; 96],
@@ -2730,6 +2751,81 @@ impl WeaponBase {
                 context: *mut crate::game::GameObjectUpdateContext,
             ) = ::std::mem::transmute(Self::UpdatePreSim_ADDRESS);
             f(game_object, context)
+        }
+    }
+    pub const UpdatePostSim_ADDRESS: usize = 0x140995CB0;
+    /// The weapon's post-simulation update, the `CGameObject::UpdatePostSim` override, run while
+    /// the weapon is registered ([`m_RequiresPostSimUpdates`](crate::equipment::weapon::WeaponBase::m_RequiresPostSimUpdates)).
+    /// `game_object` is the weapon's `CGameObject` subobject, not the start of the weapon. It runs
+    /// each gun's component update and attached-effect update, and clears the post-simulation flag
+    /// when nothing remains to update.
+    pub unsafe fn UpdatePostSim(
+        game_object: *mut ::std::ffi::c_void,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdatePostSim_ADDRESS);
+            f(game_object, context)
+        }
+    }
+    pub const GetPickupContext_ADDRESS: usize = 0x140983750;
+    /// The weapon's pickup interaction context: the first [`InteractionContext`](crate::interaction::InteractionContext) child of the
+    /// weapon's game object, cached on the weapon. The mounted weapon's "use" prompt is this
+    /// context's.
+    pub unsafe fn GetPickupContext(
+        &mut self,
+    ) -> *mut crate::interaction::InteractionContext {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+            ) -> *mut crate::interaction::InteractionContext = ::std::mem::transmute(
+                Self::GetPickupContext_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const GetMountedHorizontalAngularLimits_ADDRESS: usize = 0x140986730;
+    /// Reads the horizontal mount constraint's angular limits, from the vehicle part's powered
+    /// hinge controller when the holder is a vehicle, or from
+    /// [`m_ConstraintHorizontal`](crate::equipment::weapon::WeaponBase::m_ConstraintHorizontal). Returns whether the limits were
+    /// found.
+    pub unsafe fn GetMountedHorizontalAngularLimits(
+        &self,
+        min: *mut f32,
+        max: *mut f32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                min: *mut f32,
+                max: *mut f32,
+            ) -> bool = ::std::mem::transmute(
+                Self::GetMountedHorizontalAngularLimits_ADDRESS,
+            );
+            f(self as *const Self as _, min, max)
+        }
+    }
+    pub const GetMountedVerticalAngularLimits_ADDRESS: usize = 0x1409862C0;
+    /// Reads the first vertical mount constraint's angular limits, from the vehicle part's powered
+    /// hinge controller when the holder is a vehicle, or from
+    /// [`m_ConstraintVertical`](crate::equipment::weapon::WeaponBase::m_ConstraintVertical). Returns whether the limits were found.
+    pub unsafe fn GetMountedVerticalAngularLimits(
+        &self,
+        min: *mut f32,
+        max: *mut f32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                min: *mut f32,
+                max: *mut f32,
+            ) -> bool = ::std::mem::transmute(
+                Self::GetMountedVerticalAngularLimits_ADDRESS,
+            );
+            f(self as *const Self as _, min, max)
         }
     }
     pub const OnEquipBase_ADDRESS: usize = 0x140991580;

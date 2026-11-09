@@ -246,6 +246,17 @@ impl GameObject {
             f(self as *mut Self as _, enable)
         }
     }
+    /// Registers the object for the updates its update-type virtual asks for
+    /// (`CGameObject::AddToUpdate`). The base implementation queries the object's required
+    /// update types and registers its pre-simulation, post-simulation, and render updates
+    /// accordingly, then adds its children. A weapon's post-simulation update calls it when
+    /// its post-simulation flag rises from clear.
+    pub unsafe fn AddToUpdate(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).AddToUpdate).read();
+            f(self as *mut Self as _)
+        }
+    }
 }
 impl std::convert::AsRef<GameObject> for GameObject {
     fn as_ref(&self) -> &GameObject {
@@ -405,10 +416,19 @@ pub struct GameObjectVftable {
         this: *mut crate::game::GameObject,
         enable: bool,
     ),
+    _vfunc_39: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_40: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_41: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    /// Registers the object for the updates its update-type virtual asks for
+    /// (`CGameObject::AddToUpdate`). The base implementation queries the object's required
+    /// update types and registers its pre-simulation, post-simulation, and render updates
+    /// accordingly, then adds its children. A weapon's post-simulation update calls it when
+    /// its post-simulation flag rises from clear.
+    pub AddToUpdate: unsafe extern "system" fn(this: *mut crate::game::GameObject),
 }
 fn _GameObjectVftable_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x138], GameObjectVftable>([0u8; 0x138]);
+        ::std::mem::transmute::<[u8; 0x158], GameObjectVftable>([0u8; 0x158]);
     }
     unreachable!()
 }
