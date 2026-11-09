@@ -151,7 +151,9 @@ fn weapon_lines(ui: &mut Ui, w: &WeaponReadout) {
 
 pub(super) fn reload_settings(ui: &mut Ui, r: &mut ReloadConfig) {
     ui.checkbox(&mut r.insertion_guide, "Ammo insertion guide")
-        .on_hover_text("Show the loading position and direction while holding the matching ammunition.");
+        .on_hover_text(
+            "Show the loading position and direction while holding the matching ammunition.",
+        );
     ui.checkbox(&mut r.flick_eject, "Flick the gun to eject")
         .on_hover_text("A sharp flick of the hand holding a gun ejects its magazine.");
     ui.checkbox(&mut r.loose.enabled, "Magazines stay in the world")

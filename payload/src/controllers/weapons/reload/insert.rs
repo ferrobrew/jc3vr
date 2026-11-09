@@ -917,7 +917,7 @@ mod tests {
         let near = WELL.mouth - Vec3::Y * 0.08;
         assert_eq!(let_go_at(near, Vec3::X).0, vec![InsertEvent::Dropped]);
         // Beside the gun, past the mouth.
-        let beside = WELL.mouth + Vec3::new(0.1, 0.1, 0.0);
+        let beside = WELL.mouth + Vec3::new(0.04, CONFIG.capture_radius_m * 1.5 + 0.001, 0.0);
         assert_eq!(let_go_at(beside, Vec3::Y).0, vec![InsertEvent::Dropped]);
     }
 

@@ -276,15 +276,6 @@ impl Regrip {
     pub fn expired(&self) -> bool {
         self.remaining_s <= 0.0
     }
-
-    /// Whether `reach` is a body of the regripped character's ragdoll.
-    pub fn takes(&self, reach: &Reach) -> bool {
-        matches!(
-            reach.kind,
-            TargetKind::Character(target)
-                if target.ragdoll && target.character == self.seize.target.character
-        )
-    }
 }
 
 /// What a grip on a character does on a tick.
@@ -469,32 +460,16 @@ mod tests {
         }
     }
 
-    fn reach(kind: TargetKind) -> Reach {
-        Reach {
-            object: NonZeroUsize::new(64).unwrap(),
-            body: 9,
-            point: Vec3::ZERO,
-            distance: 0.05,
-            normal: Vec3::ZERO,
-            kind,
-        }
-    }
-
     #[test]
-    fn a_regrip_takes_only_its_own_characters_ragdoll() {
-        let regrip = Regrip {
-            seize: Seize {
-                target: target(32, false),
-                grab: Vec3::Y,
-                bone: None,
-            },
-            remaining_s: REGRIP_S,
+    fn a_regrip_retains_the_acquired_anatomical_anchor() {
+        let seize = Seize {
+            target: target(32, false),
+            grab: Vec3::new(0.02, -0.03, 0.01),
+            bone: Some(SafeBoneIndex::LEFT_HAND),
         };
-        assert!(regrip.takes(&reach(TargetKind::Character(target(32, true)))));
-        // Not the capsule, not another character's ragdoll, and not a prop.
-        assert!(!regrip.takes(&reach(TargetKind::Character(target(32, false)))));
-        assert!(!regrip.takes(&reach(TargetKind::Character(target(48, true)))));
-        assert!(!regrip.takes(&reach(TargetKind::Prop { mass_kg: 5.0 })));
+        let mut regrip = Regrip::new(seize);
+        assert!(!regrip.run_down(REGRIP_S * 0.5));
+        assert_eq!(regrip.seize, seize);
     }
 
     #[test]

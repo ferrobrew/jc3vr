@@ -189,14 +189,23 @@ mod seated_reach_tests {
         }
         .target(Mark::ring(MarkAt::Cockpit(centre), 0.05));
         let drawn = centre + Vec3::Y * 0.4;
-        assert!(crate::controllers::grab::resolve::reaches(Hand::Right, &[target], Some(drawn)).is_empty());
+        assert!(
+            crate::controllers::grab::resolve::reaches(Hand::Right, &[target], Some(drawn))
+                .is_empty()
+        );
         for offset in [0.05, 0.15] {
             let mut targets = [target];
             reach_raw(&mut targets, [None, Some(centre + Vec3::X * offset)]);
             assert_eq!(targets[0].mark, target.mark);
             if offset < 0.1 {
-                assert!(matches!(targets[0].reach, TargetReach::Measured { distance } if (distance - offset).abs() < 1e-5));
-                assert_eq!(crate::controllers::grab::resolve::reaches(Hand::Right, &targets, Some(drawn)).len(), 1);
+                assert!(
+                    matches!(targets[0].reach, TargetReach::Measured { distance } if (distance - offset).abs() < 1e-5)
+                );
+                assert_eq!(
+                    crate::controllers::grab::resolve::reaches(Hand::Right, &targets, Some(drawn))
+                        .len(),
+                    1
+                );
             } else {
                 assert_eq!(targets[0], target);
             }
