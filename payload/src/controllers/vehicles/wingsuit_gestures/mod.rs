@@ -374,6 +374,7 @@ pub(crate) struct WingsuitGestures {
     ready: bool,
     /// The sample time before which a deploy request may not follow the last one in this fall.
     retry_at_ns: Option<i64>,
+    deploy_since_ns: Option<i64>,
     armed: bool,
     brake: bool,
     reserve_pitch: bool,
@@ -386,6 +387,13 @@ pub(crate) struct WingsuitGestures {
 impl WingsuitGestures {
     /// Cancel gestures without lowering the sample watermark. Only a newer epoch restarts time.
     pub(crate) fn reset(&mut self) {
+        self.current = GestureAvailability::Unavailable;
+        self.deploy_since_ns = None;
+        self.retry_at_ns = None;
+        self.clear_pose();
+    }
+
+    pub(crate) fn tracking_lost(&mut self) {
         self.current = GestureAvailability::Unavailable;
         self.clear_pose();
     }
@@ -412,6 +420,15 @@ impl WingsuitGestures {
         input: GestureInput,
         config: &WingsuitGesturesConfig,
     ) -> GestureAvailability {
+        if self.last == Some((input.sample, input.stage()))
+            && self.config == Some(*config)
+            && !input.pose.is_some_and(FlightPose::valid)
+            && input.stage() == Stage::Fall
+            && input.blocked(config) == Some(Blocked::NoPose)
+        {
+            self.tracking_lost();
+            return self.current;
+        }
         if self.last != Some((input.sample, input.stage()))
             || self.config != Some(*config)
             || input.availability(config) != self.current
@@ -449,6 +466,8 @@ impl WingsuitGestures {
         }
         let changed = new_epoch || previous.is_some_and(|(_, last)| last != stage);
         if changed || self.config != Some(*config) {
+            self.deploy_since_ns = None;
+            self.retry_at_ns = None;
             self.clear_pose();
         }
         self.config = Some(*config);
@@ -456,7 +475,20 @@ impl WingsuitGestures {
             self.last = Some((input.sample, stage));
         }
         self.current = input.availability(config);
+        if self
+            .deploy_since_ns
+            .is_some_and(|since| elapsed_s(since, input.sample.time_ns) >= DEPLOY_INTENT_S)
+        {
+            self.deploy_since_ns = None;
+            self.retry_at_ns = None;
+            self.ready = false;
+            self.clear_pose();
+        }
         if self.current == GestureAvailability::Unavailable {
+            if input.blocked(config) != Some(Blocked::NoPose) || stage != Stage::Fall {
+                self.deploy_since_ns = None;
+                self.retry_at_ns = None;
+            }
             self.clear_pose();
             return GestureCommands::default();
         }
@@ -475,6 +507,24 @@ impl WingsuitGestures {
         if gap_s > f64::from(config.max_sample_gap_s) {
             self.reset();
             return GestureCommands::default();
+        }
+        if stage == Stage::Fall
+            && self.deploy_since_ns.is_some()
+            && self
+                .retry_at_ns
+                .is_some_and(|at| input.sample.time_ns >= at)
+        {
+            self.retry_at_ns = Some(
+                input
+                    .sample
+                    .time_ns
+                    .saturating_add((DEPLOY_RETRY_S * 1e9) as i64),
+            );
+            self.clear_pose();
+            return GestureCommands {
+                transition: Some(SuitTransition::Deploy),
+                ..Default::default()
+            };
         }
         let pose = input.pose.unwrap();
         let in_suit = stage == Stage::Suit;
@@ -537,6 +587,7 @@ impl WingsuitGestures {
         ) {
             if !in_suit && retry {
                 self.clear_pose();
+                self.deploy_since_ns.get_or_insert(input.sample.time_ns);
                 self.retry_at_ns = Some(
                     input
                         .sample
@@ -574,6 +625,7 @@ impl WingsuitGestures {
         }
         self.ready = stage == Stage::Fall && self.stage != Some(Stage::Suit);
         self.retry_at_ns = None;
+        self.deploy_since_ns = None;
         self.stage = Some(stage);
     }
 
@@ -677,6 +729,7 @@ fn flight_heading(wrists: [Pose; 2], head: Pose) -> Quat {
 /// is one the game refused it in (still rising from a jump, or too near the ground), and a repeat
 /// never lands in the suit, where the same action closes it.
 const DEPLOY_RETRY_S: f64 = 0.5;
+const DEPLOY_INTENT_S: f64 = 1.5;
 
 /// The wrists' smallest horizontal separation that gives the body's facing, metres. Closer, the
 /// line between them turns with any small movement of either hand.

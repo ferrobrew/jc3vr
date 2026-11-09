@@ -341,7 +341,7 @@ fn late_canopy_suppresses_an_otherwise_publishable_close() {
 }
 
 #[test]
-fn missing_packet_still_resets_the_wrapper_without_a_default_frame_fixture() {
+fn missing_packets_clear_pose_history_but_only_tracking_loss_preserves_deployment() {
     let _guard = flight_pose::test_guard();
     let frame = ControllerFrame {
         sequence: 1,
@@ -376,6 +376,99 @@ fn missing_packet_still_resets_the_wrapper_without_a_default_frame_fixture() {
         GestureCommands::default()
     );
     assert_eq!(h.repeat(BRAKE), GestureCommands::default());
+
+    for loss in 0..3 {
+        for cancelled in [false, true] {
+            let mut state = FlightState::default();
+            let falling = Mode::Airborne(AirborneVariant::Falling);
+            let observation = |sequence| GestureInput {
+                sample: GestureSample {
+                    epoch: 1,
+                    sequence,
+                    time_ns: sequence as i64 * 62_500_000,
+                },
+                mode: falling,
+                airborne: true,
+                gameplay: true,
+                canopy_requested: false,
+                pose: Some(FLIGHT),
+                claims: [HandClaims::default(); 2],
+            };
+            for sequence in 1..=5 {
+                let commands = evaluate_input(
+                    &mut state,
+                    calibration(),
+                    Some(observation(sequence)),
+                    &CONFIG,
+                );
+                assert_eq!(
+                    commands.transition,
+                    (sequence == 5).then_some(SuitTransition::Deploy)
+                );
+            }
+            let mut config = ControllersConfig::default();
+            config.hands.grip = calibration().grip_offset;
+            config.vehicles.wingsuit_gestures = CONFIG;
+            let missing = Tick {
+                config: &config,
+                detection: Detection {
+                    mode: falling,
+                    ..Default::default()
+                },
+                airborne: true,
+                grabs: [cancelled.then_some(GrabVolume::Foregrip), None],
+                ..tick
+            };
+            if loss == 0 {
+                assert_eq!(
+                    evaluate(&mut state, &missing, &[]),
+                    GestureCommands::default()
+                );
+                assert_eq!(state.current(), GestureAvailability::Unavailable);
+                assert!(!commit(
+                    &mut state,
+                    GestureCommands::default(),
+                    &missing,
+                    &mut Vec::new()
+                ));
+            } else {
+                let absent = GestureInput {
+                    pose: None,
+                    claims: [
+                        HandClaims {
+                            grip: cancelled,
+                            ..Default::default()
+                        },
+                        HandClaims::default(),
+                    ],
+                    ..observation(if loss == 1 { 6 } else { 5 })
+                };
+                if loss == 1 {
+                    assert_eq!(
+                        evaluate_input(&mut state, calibration(), Some(absent), &CONFIG),
+                        GestureCommands::default()
+                    );
+                }
+                assert!(!commit_input(
+                    &mut state,
+                    GestureCommands::default(),
+                    Some(absent),
+                    &CONFIG,
+                    &mut Vec::new()
+                ));
+            }
+            let recovered = GestureInput {
+                pose: Some(LOWERED),
+                ..observation(13)
+            };
+            let commands = evaluate_input(&mut state, calibration(), Some(recovered), &CONFIG);
+            assert_eq!(
+                commands.transition,
+                (!cancelled).then_some(SuitTransition::Deploy),
+                "loss {loss}, cancelled {cancelled}"
+            );
+        }
+    }
 }
 
 /// A hand at a hip socket with its grip open is a lowered arm, which the neutral and the closure

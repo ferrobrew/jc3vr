@@ -123,6 +123,39 @@ fn a_refused_deploy_is_asked_again_only_after_the_retry_pause() {
 }
 
 #[test]
+fn a_pending_deploy_survives_pose_loss_but_expires_without_a_new_gesture() {
+    let mut h = History::new(FALLING);
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+    for _ in 0..4 {
+        assert_eq!(h.observe(None), GestureCommands::default());
+    }
+    assert_eq!(deploys(&h.hold(FOLDED, 6)), 1);
+    for _ in 0..20 {
+        h.observe(None);
+    }
+    assert!(h.state.deploy_since_ns.is_none());
+    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
+}
+
+#[test]
+fn pending_deployment_cancels_on_acknowledgement_and_competing_intents() {
+    for cancellation in 0..5 {
+        let mut h = History::new(FALLING);
+        assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+        match cancellation {
+            0 => h.mode = SUIT,
+            1 => h.mode = CANOPY,
+            2 => h.mode = GROUND,
+            3 => h.canopy = true,
+            _ => h.claims[0].grip = true,
+        }
+        assert_eq!(h.observe(Some(FOLDED)), GestureCommands::default());
+        assert!(h.state.deploy_since_ns.is_none());
+        assert_eq!(deploys(&h.hold(FOLDED, 20)), 0);
+    }
+}
+
+#[test]
 fn arms_spread_under_a_canopy_deploy_the_suit_once_it_is_cut() {
     let mut h = History::new(CANOPY);
     assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);

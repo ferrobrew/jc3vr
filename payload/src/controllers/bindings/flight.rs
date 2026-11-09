@@ -86,6 +86,9 @@ pub(super) fn evaluate(
 ) -> GestureCommands {
     let input = observation(tick, desired, Instant::now());
     let config = &tick.config.vehicles.wingsuit_gestures;
+    if input.is_none() {
+        cancel_without_tracking(state, tick, desired);
+    }
     let commands = evaluate_input(
         state,
         Calibration {
@@ -124,6 +127,9 @@ pub(super) fn commit(
     state.calibrate(calibration);
     let input = observation(tick, desired, Instant::now());
     let config = &tick.config.vehicles.wingsuit_gestures;
+    if input.is_none() {
+        cancel_without_tracking(state, tick, desired);
+    }
     let reserve_pitch = commit_input(state, commands, input, config, desired);
     note(state, tick, input, config, Pass::Commit);
     reserve_pitch
@@ -329,7 +335,11 @@ fn evaluate_input(
 ) -> GestureCommands {
     state.calibrate(calibration);
     let Some(input) = input else {
-        state.reset();
+        if config.enabled && config.valid() {
+            state.gestures.tracking_lost();
+        } else {
+            state.reset();
+        }
         return GestureCommands::default();
     };
     state.gestures.step(input, config)
@@ -342,12 +352,19 @@ fn commit_input(
     config: &WingsuitGesturesConfig,
     desired: &mut Vec<Desired>,
 ) -> bool {
-    let Some(input) = input else {
-        state.reset();
+    let Some(mut input) = input else {
+        if config.enabled && config.valid() && !canopy(desired) {
+            state.gestures.tracking_lost();
+        } else {
+            state.reset();
+        }
         return false;
     };
+    input.canopy_requested |= canopy(desired);
     if state.gestures.revalidate(input, config) == GestureAvailability::Unavailable {
-        state.reset();
+        if input.blocked(config) != Some(Blocked::NoPose) {
+            state.reset();
+        }
         return false;
     }
     match flight_pose::desired_for(commands, input.stage(), canopy(desired)) {
@@ -359,6 +376,16 @@ fn commit_input(
             state.reset();
             false
         }
+    }
+}
+
+fn cancel_without_tracking(state: &mut FlightState, tick: &Tick<'_>, desired: &[Desired]) {
+    if suspension(tick).is_some()
+        || Stage::of(tick.detection.mode, tick.airborne) != Stage::Fall
+        || canopy(desired)
+        || claims(tick, Instant::now()) != [HandClaims::default(); 2]
+    {
+        state.reset();
     }
 }
 
