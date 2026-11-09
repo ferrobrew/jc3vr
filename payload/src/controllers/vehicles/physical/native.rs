@@ -1,6 +1,8 @@
 use glam::{Mat4, Quat, Vec2, Vec3};
 
-use crate::controllers::vehicles::{physical::ControlKind, wheel_render::RenderWheel};
+use crate::controllers::vehicles::{
+    physical::ControlKind, tuning::PhysicalControlsTuning, wheel_render::RenderWheel,
+};
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct NativeStick {
@@ -53,16 +55,49 @@ pub struct CockpitAsset {
     pub lever: Option<(ControlKind, Vec3)>,
 }
 
-/// The live part transform for a cockpit whose controls share its body mesh.
-/// The part identifies the fit but is never submitted for joystick animation.
+/// The live part transform for a cockpit whose controls share its body mesh, and the lever the
+/// mesh does not model. The part identifies the fit but is never submitted for joystick animation.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct CockpitFit {
     pub target: RenderWheel,
     pub part_to_cockpit: Mat4,
     pub asset: CockpitAsset,
+    /// The lever the mesh does not model, placed from the tuning relative to the pilot's eyes and
+    /// kept inside the part's bounds, in the part's own space.
+    pub fallback_lever: Option<(ControlKind, Vec3)>,
 }
 
 impl CockpitFit {
+    /// A fit of `asset` in `part_to_cockpit`. A lever the mesh does not model is placed from
+    /// `physical` relative to the pilot's eyes and kept inside the part's `bounds`, in the part's
+    /// own space.
+    pub fn new(
+        target: RenderWheel,
+        part_to_cockpit: Mat4,
+        asset: CockpitAsset,
+        bounds: (Vec3, Vec3),
+        physical: &PhysicalControlsTuning,
+    ) -> Self {
+        // A missing lever is placed from the tuning relative to the pilot's eyes, not from the
+        // measured stick: the stick's height is the mesh's, while the spec's lever sits by the
+        // seat. The part's bounds keep the placement inside the airframe.
+        let missing = match (asset.lever, asset.stick_kind) {
+            (None, ControlKind::Cyclic) => Some((ControlKind::Collective, physical.collective)),
+            (None, ControlKind::FlightStick) => Some((ControlKind::Throttle, physical.throttle)),
+            _ => None,
+        };
+        let fallback_lever = missing.map(|(kind, spec)| {
+            let rest = part_to_cockpit.inverse().transform_point3(spec.rest_m);
+            (kind, rest.clamp(bounds.0, bounds.1))
+        });
+        Self {
+            target,
+            part_to_cockpit,
+            asset,
+            fallback_lever,
+        }
+    }
+
     pub fn stick_top(self) -> Vec3 {
         self.part_to_cockpit.transform_point3(self.asset.stick_grip)
     }
@@ -89,12 +124,14 @@ impl CockpitFit {
     }
 
     pub fn lever_rest(self, kind: ControlKind) -> Option<Vec3> {
-        let (lever_kind, grip) = self.asset.lever?;
+        let (lever_kind, grip) = self.asset.lever.or(self.fallback_lever)?;
         (kind == lever_kind).then(|| self.part_to_cockpit.transform_point3(grip))
     }
 
     pub fn contains(self, kind: ControlKind) -> bool {
-        self.asset.stick_kind == kind || self.asset.lever.is_some_and(|(lever, _)| lever == kind)
+        self.asset.stick_kind == kind
+            || self.asset.lever.is_some_and(|(lever, _)| lever == kind)
+            || self.fallback_lever.is_some_and(|(lever, _)| lever == kind)
     }
 }
 
@@ -251,15 +288,17 @@ mod tests {
                 Quat::IDENTITY,
                 Quat::from_rotation_y(1.1) * Quat::from_rotation_x(0.4),
             ] {
-                let fit = CockpitFit {
-                    target: stick("lightassault_joystick", Mat4::IDENTITY).target,
-                    part_to_cockpit: Mat4::from_scale_rotation_translation(
+                let fit = CockpitFit::new(
+                    stick("lightassault_joystick", Mat4::IDENTITY).target,
+                    Mat4::from_scale_rotation_translation(
                         Vec3::splat(0.7),
                         rotation,
                         Vec3::new(2.0, -1.0, 4.0),
                     ),
                     asset,
-                };
+                    (Vec3::splat(-10.0), Vec3::splat(10.0)),
+                    &PHYSICAL,
+                );
                 let mut placement = Placement::new(PHYSICAL, dominant);
                 placement.cockpit = Some(fit);
                 let state = ControlState::default();
@@ -299,16 +338,18 @@ mod tests {
 
     #[test]
     fn merged_cockpit_refresh_tracks_the_part_and_seat_but_not_vehicle_motion() {
-        let fit = CockpitFit {
-            target: stick("lightassault_joystick", Mat4::IDENTITY).target,
-            part_to_cockpit: Mat4::IDENTITY,
-            asset: CockpitAsset {
+        let fit = CockpitFit::new(
+            stick("lightassault_joystick", Mat4::IDENTITY).target,
+            Mat4::IDENTITY,
+            CockpitAsset {
                 seat: 0,
                 stick_kind: ControlKind::Cyclic,
                 stick_grip: Vec3::ZERO,
                 lever: Some((ControlKind::Collective, Vec3::NEG_X)),
             },
-        };
+            (Vec3::splat(-10.0), Vec3::splat(10.0)),
+            &PHYSICAL,
+        );
         let mut state = ControlState {
             holds: [ControlKind::Collective, ControlKind::Cyclic].map(|kind| {
                 Some(Hold {
@@ -371,13 +412,21 @@ mod tests {
                 .all()
         );
         assert!(passenger.stick_grip.x > 0.35);
+        let bounds = (
+            Vec3::new(-0.800297, 0.6425335, -3.0365307),
+            Vec3::new(0.9101837, 2.977942, 2.4216115),
+        );
+        let pilot = Vec3::new(-0.35, 1.5, -0.92);
         for dominant in Hand::BOTH {
             let mut placement = Placement::new(PHYSICAL, dominant);
-            placement.cockpit = Some(CockpitFit {
-                target: stick("lightassault_joystick", Mat4::IDENTITY).target,
-                part_to_cockpit: Mat4::IDENTITY,
-                asset: driver,
-            });
+            let fit = CockpitFit::new(
+                stick("lightassault_joystick", Mat4::IDENTITY).target,
+                Mat4::from_translation(-pilot),
+                driver,
+                bounds,
+                &PHYSICAL,
+            );
+            placement.cockpit = Some(fit);
             let collective = placement
                 .grab_point(
                     &ControlState::default(),
@@ -386,12 +435,40 @@ mod tests {
                     Vec3::ZERO,
                 )
                 .unwrap();
-            assert!(collective.x < driver.stick_grip.x);
-            assert!((collective.y - driver.stick_grip.y).abs() < 0.03);
-            assert!((collective.z - driver.stick_grip.z - 0.2).abs() < 1e-5);
+            // The missing lever is placed from the tuning relative to the pilot, not from the
+            // measured cyclic, and it stays inside the part.
+            assert!((collective - PHYSICAL.collective.rest_m).length() < 1e-5);
+            let (_, part_rest) = fit.fallback_lever.unwrap();
+            assert!(part_rest.cmpge(bounds.0).all() && part_rest.cmple(bounds.1).all());
+            assert!(collective.x < fit.stick_top().x);
+            assert!(part_rest.x > bounds.0.x + 0.1);
+            assert!(collective.y < fit.stick_top().y - 0.5);
+            assert!(fit.contains(ControlKind::Collective));
+            assert!(!fit.contains(ControlKind::Throttle));
         }
         assert!(cockpit_asset("utility_body", Vec3::splat(f32::NAN)).is_none());
         assert!(cockpit_asset("unknown_body", Vec3::ZERO).is_none());
+    }
+
+    #[test]
+    fn a_missing_throttle_uses_the_same_placement_rule() {
+        let fit = CockpitFit::new(
+            stick("lightassault_joystick", Mat4::IDENTITY).target,
+            Mat4::IDENTITY,
+            CockpitAsset {
+                seat: 0,
+                stick_kind: ControlKind::FlightStick,
+                stick_grip: Vec3::ZERO,
+                lever: None,
+            },
+            (Vec3::splat(-1.0), Vec3::splat(1.0)),
+            &PHYSICAL,
+        );
+        let (kind, rest) = fit.fallback_lever.unwrap();
+        assert_eq!(kind, ControlKind::Throttle);
+        assert!((rest - PHYSICAL.throttle.rest_m).length() < 1e-5);
+        assert!(fit.lever_rest(ControlKind::Throttle).is_some());
+        assert!(fit.lever_rest(ControlKind::Collective).is_none());
     }
 
     #[test]
@@ -436,11 +513,13 @@ mod tests {
             assert!((0.3..0.5).contains(&(asset.stick_grip.y - pilot.y)));
             for dominant in Hand::BOTH {
                 let mut placement = Placement::new(PHYSICAL, dominant);
-                placement.cockpit = Some(CockpitFit {
-                    target: stick("lightassault_joystick", Mat4::IDENTITY).target,
-                    part_to_cockpit: Mat4::from_translation(-pilot),
+                placement.cockpit = Some(CockpitFit::new(
+                    stick("lightassault_joystick", Mat4::IDENTITY).target,
+                    Mat4::from_translation(-pilot),
                     asset,
-                });
+                    (Vec3::splat(-10.0), Vec3::splat(10.0)),
+                    &PHYSICAL,
+                ));
                 for (kind, measured) in [
                     (ControlKind::FlightStick, asset.stick_grip),
                     (ControlKind::Throttle, throttle),

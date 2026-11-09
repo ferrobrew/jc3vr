@@ -1,3 +1,6 @@
+//! The virtual aircraft controls: each handle's line and grip, and a lever's full travel rail.
+//! Drawn whether or not the vehicle models the control, so the input's motion is always visible.
+
 use std::time::Duration;
 
 use glam::Vec3;
@@ -88,19 +91,12 @@ struct Geometry {
 }
 
 fn geometry(placement: &Placement, state: &ControlState, kind: ControlKind) -> Option<Geometry> {
-    if placement
-        .native_stick
-        .is_some_and(|native| native.kind == kind)
-        || placement.cockpit.is_some_and(|fit| fit.contains(kind))
-    {
-        return None;
-    }
     let handle = placement.grab_point(state, kind, Hand::Right, Vec3::ZERO)?;
     let control = if let Some(spec) = placement.stick(kind) {
         Geometry {
             handle,
             grip_half: Vec3::Y * 0.045,
-            base: placement.mirror(spec.top_m) - Vec3::Y * 0.24,
+            base: placement.stick_top(kind, &spec) - Vec3::Y * STICK_SHAFT_M,
             rail: None,
         }
     } else {
@@ -125,6 +121,8 @@ fn geometry(placement: &Placement, state: &ControlState, kind: ControlKind) -> O
 }
 
 const TTL: Duration = Duration::from_millis(150);
+/// How far below a stick's top its shaft is drawn, metres.
+const STICK_SHAFT_M: f32 = 0.24;
 const DEPTH: DepthMode = DepthMode::XRay {
     occluded_alpha: 0.3,
 };
@@ -135,13 +133,13 @@ const GATE: Rgba = [1.0, 0.55, 0.15, 1.0];
 
 #[cfg(test)]
 mod tests {
-    use glam::{Mat4, Vec2};
+    use glam::{Mat4, Quat, Vec2};
 
     use super::*;
     use crate::controllers::vehicles::{
         physical::{
             Hold, StepInputs, anchor_point,
-            native::{CockpitFit, cockpit_asset},
+            native::{CockpitFit, NativeStick, asset as native_asset, cockpit_asset},
             step,
         },
         tuning::PHYSICAL,
@@ -245,34 +243,128 @@ mod tests {
     }
 
     #[test]
-    fn measured_cockpits_do_not_draw_duplicate_virtual_sticks_or_throttles() {
-        for (name, pilot) in [
-            ("utility_body", Vec3::new(-0.35, 0.74, -0.92)),
-            ("fighterjet_body", Vec3::new(0.0, 1.6, -2.6)),
-            ("fighterbomber_body", Vec3::new(0.0, 2.199951, -2.762207)),
+    fn measured_cockpits_draw_the_virtual_controls_at_their_measured_handles() {
+        let utility = (
+            Vec3::new(-0.800297, 0.6425335, -3.0365307),
+            Vec3::new(0.9101837, 2.977942, 2.4216115),
+        );
+        let large = (Vec3::splat(-10.0), Vec3::splat(10.0));
+        for (name, pilot, bounds) in [
+            ("utility_body", Vec3::new(-0.35, 1.5, -0.92), utility),
+            ("fighterjet_body", Vec3::new(0.0, 2.3, -2.6), large),
+            ("fighterbomber_body", Vec3::new(0.0, 2.9, -2.762207), large),
         ] {
             let asset = cockpit_asset(name, pilot).unwrap();
-            let mut placement = Placement::new(PHYSICAL, Hand::Right);
-            placement.cockpit = Some(CockpitFit {
-                target: RenderWheel {
+            let fit = CockpitFit::new(
+                RenderWheel {
                     vehicle: 1,
                     part_index: 0,
                     properties: 1,
                     hub: Vec3::ZERO,
                     axis: Vec3::Y,
                 },
-                part_to_cockpit: Mat4::IDENTITY,
+                Mat4::from_translation(-pilot),
                 asset,
-            });
+                bounds,
+                &PHYSICAL,
+            );
+            let mut placement = Placement::new(PHYSICAL, Hand::Right);
+            placement.cockpit = Some(fit);
             let state = ControlState::default();
-            assert!(geometry(&placement, &state, asset.stick_kind).is_none());
-            if let Some((kind, _)) = asset.lever {
-                assert!(geometry(&placement, &state, kind).is_none());
-            } else {
-                let collective = geometry(&placement, &state, ControlKind::Collective).unwrap();
-                assert!(collective.handle.is_finite());
-                assert!(collective.handle.x < asset.stick_grip.x);
-            }
+            let stick = geometry(&placement, &state, asset.stick_kind).unwrap();
+            assert!((stick.handle - fit.stick_top()).length() < 1e-5);
+            assert!((stick.base - fit.stick_top() + Vec3::Y * STICK_SHAFT_M).length() < 1e-5);
+            assert!(stick.rail.is_none());
+            let lever_kind = match asset.stick_kind {
+                ControlKind::Cyclic => ControlKind::Collective,
+                ControlKind::FlightStick => ControlKind::Throttle,
+                _ => unreachable!(),
+            };
+            let (_, spec) = placement.lever(lever_kind).unwrap();
+            let lever = geometry(&placement, &state, lever_kind).unwrap();
+            let rest = fit.lever_rest(lever_kind).unwrap();
+            assert!((lever.handle - rest).length() < 1e-5);
+            let (low, high) = lever.rail.unwrap();
+            assert!(((high - low).length() - spec.travel_m).abs() < 1e-5);
+            let (_, part_rest) = fit.fallback_lever.or(fit.asset.lever).unwrap();
+            assert!(part_rest.cmpge(bounds.0).all() && part_rest.cmple(bounds.1).all());
+            let moved = geometry(
+                &placement,
+                &ControlState {
+                    stick: Vec2::new(0.04, -0.03),
+                    levers: [0.5; 2],
+                    ..ControlState::default()
+                },
+                lever_kind,
+            )
+            .unwrap();
+            assert!((moved.rail.unwrap().0 - low).length() < 1e-5);
+            assert!(
+                (moved.handle
+                    - lever.handle
+                    - placement.lever_direction(lever_kind, &spec) * (spec.travel_m * 0.25))
+                    .length()
+                    < 1e-5
+            );
+            let pushed = geometry(
+                &placement,
+                &ControlState {
+                    stick: Vec2::new(0.04, -0.03),
+                    ..ControlState::default()
+                },
+                asset.stick_kind,
+            )
+            .unwrap();
+            assert!(
+                (pushed.handle
+                    - stick.handle
+                    - fit.direction(Vec3::X) * 0.04
+                    - fit.direction(Vec3::Z) * -0.03)
+                    .length()
+                    < 1e-5
+            );
+        }
+    }
+
+    #[test]
+    fn native_sticks_keep_the_virtual_overlay_on_the_measured_handle() {
+        for name in ["lightassault_joystick", "smallfloatprop_controlwheel"] {
+            let (kind, pivot, grip) = native_asset(name).unwrap();
+            let native = NativeStick {
+                kind,
+                target: RenderWheel {
+                    vehicle: 1,
+                    part_index: 2,
+                    properties: 3,
+                    hub: pivot,
+                    axis: Vec3::Y,
+                },
+                part_to_cockpit: Mat4::from_rotation_translation(
+                    Quat::from_rotation_x(std::f32::consts::FRAC_PI_2),
+                    Vec3::new(0.3, 1.2, -0.4),
+                ),
+                pivot,
+                grip,
+            };
+            let mut placement = Placement::new(PHYSICAL, Hand::Right);
+            placement.native_stick = Some(native);
+            let state = ControlState {
+                stick: Vec2::new(0.04, -0.03),
+                ..ControlState::default()
+            };
+            let control = geometry(&placement, &state, kind).unwrap();
+            assert!((control.handle - native.handle(state.stick)).length() < 1e-5);
+            assert!((control.base - native.top() + Vec3::Y * STICK_SHAFT_M).length() < 1e-5);
+            assert!(control.rail.is_none());
+            let lever_kind = match kind {
+                ControlKind::Cyclic => ControlKind::Collective,
+                ControlKind::FlightStick => ControlKind::Throttle,
+                _ => unreachable!(),
+            };
+            let lever = geometry(&placement, &state, lever_kind).unwrap();
+            let (_, spec) = placement.lever(lever_kind).unwrap();
+            let (low, high) = lever.rail.unwrap();
+            assert!(((high - low).length() - spec.travel_m).abs() < 1e-5);
         }
     }
 

@@ -66,7 +66,8 @@ pub struct Fit {
     pub view: Option<Target>,
     pub readout: Option<FitReadout>,
     pub native_stick: Option<NativeStick>,
-    /// Measured handles that share the aircraft's body mesh, never a render-animation target.
+    /// The cockpit's handles measured within its body mesh, with a lever the mesh does not model
+    /// placed from the tuning; never a render-animation target.
     pub cockpit: Option<CockpitFit>,
 }
 
@@ -388,8 +389,8 @@ fn fit_cockpit(
     if !part_to_cockpit.is_finite() || part_to_cockpit.determinant().abs() < 1e-6 {
         return None;
     }
-    Some(CockpitFit {
-        target: RenderWheel {
+    Some(CockpitFit::new(
+        RenderWheel {
             vehicle,
             part_index: part.index,
             properties: part.properties,
@@ -398,7 +399,9 @@ fn fit_cockpit(
         },
         part_to_cockpit,
         asset,
-    })
+        (min, max),
+        inputs.physical,
+    ))
 }
 
 /// What the driving position line logs, once per entry.
@@ -651,6 +654,39 @@ mod tests {
             let fit = fit_cockpit(&inputs, Mat4::IDENTITY, 1, &part).unwrap();
             assert_eq!(fit.asset.seat, u8::from(pilot_x > 0.0));
         }
+    }
+
+    #[test]
+    fn a_missing_collective_is_placed_from_the_tuning_inside_the_part() {
+        let eyes = Vec3::new(-0.35, 1.5, -0.92);
+        let xf = CockpitTransform::from_origin(eyes, Quat::IDENTITY, 1.0);
+        let inputs = inputs(&xf, VehicleClass::Helicopter, eyes);
+        let part = part("utility_body");
+        let (min, max) = part.bounds.unwrap();
+        let fit = fit_cockpit(&inputs, Mat4::IDENTITY, 1, &part).unwrap();
+        let rest = fit.lever_rest(ControlKind::Collective).unwrap();
+        assert!((rest - PHYSICAL.collective.rest_m).length() < 1e-5);
+        let (kind, part_rest) = fit.fallback_lever.unwrap();
+        assert_eq!(kind, ControlKind::Collective);
+        assert!((part_rest - (eyes + PHYSICAL.collective.rest_m)).length() < 1e-5);
+        assert!(part_rest.cmpge(min).all() && part_rest.cmple(max).all());
+    }
+
+    #[test]
+    fn a_missing_collective_outside_the_part_is_clamped_into_its_bounds() {
+        let eyes = Vec3::new(-0.35, 1.5, -0.92);
+        let mut part = part("utility_body");
+        let (min, max) = (Vec3::new(-0.40, 1.40, -1.50), Vec3::new(0.0, 1.60, -1.20));
+        part.bounds = Some((min, max));
+        let xf = CockpitTransform::from_origin(eyes, Quat::IDENTITY, 1.0);
+        let inputs = inputs(&xf, VehicleClass::Helicopter, eyes);
+        let fit = fit_cockpit(&inputs, Mat4::IDENTITY, 1, &part).unwrap();
+        let (_, part_rest) = fit.fallback_lever.unwrap();
+        assert!((part_rest - (eyes + PHYSICAL.collective.rest_m).clamp(min, max)).length() < 1e-5);
+        assert!(part_rest.cmpge(min).all() && part_rest.cmple(max).all());
+        assert!(
+            (fit.lever_rest(ControlKind::Collective).unwrap() - (part_rest - eyes)).length() < 1e-5
+        );
     }
 
     #[test]

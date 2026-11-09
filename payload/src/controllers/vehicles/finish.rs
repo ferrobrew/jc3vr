@@ -2,16 +2,21 @@
 //! write their axes over the tables', add the arm pose to the move stick in the wingsuit, and
 //! steer with the held handles under the parachute.
 
-use jc3gi::input::input_action_map::Action::{TURN_LEFT, TURN_RIGHT};
+use jc3gi::input::input_action_map::Action::{
+    HELI_TURN_LEFT, HELI_TURN_RIGHT, TURN_LEFT, TURN_RIGHT,
+};
 
 use crate::controllers::{
-    bindings::{controls::Controls, hold::Desired},
+    bindings::{
+        controls::Controls,
+        hold::{Desired, MapKind, Target, Want},
+    },
     cockpit::CockpitTransform,
     frame::Hand,
     grab::GrabVolume,
     hands::{self, anchor::ANCHOR_BLEND_S, tiers},
     haptics::{self, Event},
-    mode::Mode,
+    mode::{Mode, VehicleClass},
     vehicles::{
         arm_tick::arm_tick,
         axis_output::{axis_wanted, lever_axes_wanted, stick_axes_wanted},
@@ -105,7 +110,17 @@ pub(crate) fn finish_tick(
         offered,
         &CockpitTransform::current(active.head.position, active.world_scale),
     );
-    write_outputs(&outputs, desired);
+    // The twist is the plane's rudder and the helicopter's yaw, which are different actions: the
+    // shared axis writer takes the plane's, so a helicopter writes its own and leaves that alone.
+    let helicopter = writes_helicopter_yaw(mode);
+    let mut written = outputs;
+    if helicopter {
+        written.rudder = None;
+    }
+    write_outputs(&written, desired);
+    if helicopter && let Some(rudder) = outputs.rudder {
+        write_heli_rudder(desired, rudder);
+    }
     let holds_now = state.controls.holds.map(|h| h.map(|h| h.kind));
     let afterburner_was = std::mem::replace(&mut state.afterburner, outputs.afterburner);
     let rendered = state.render.map(|target| {
@@ -275,4 +290,94 @@ pub(super) fn rendered_angle(
     steering_turn.map_or(0.0, |turn| {
         steering::angle_for_steer(turn.clamp(-1.0, 1.0), &config.wheel)
     })
+}
+
+/// Whether `mode` is a helicopter's driver seat, whose stick twist writes the helicopter's yaw.
+fn writes_helicopter_yaw(mode: Mode) -> bool {
+    matches!(mode, Mode::Vehicle(seat) if seat.driver && seat.class == VehicleClass::Helicopter)
+}
+
+/// Write the held stick's twist over the tables' helicopter yaw, replacing the half-axes the
+/// tables wrote, as [`write_outputs`] does for the plane's rudder.
+fn write_heli_rudder(desired: &mut Vec<Desired>, rudder: f32) {
+    desired.retain(|d| {
+        !(d.target.map == MapKind::Player
+            && matches!(d.target.action, HELI_TURN_LEFT | HELI_TURN_RIGHT))
+    });
+    let rudder = if rudder.is_finite() {
+        rudder.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    };
+    for (action, half) in [(HELI_TURN_LEFT, -rudder), (HELI_TURN_RIGHT, rudder)] {
+        if half > 0.0 {
+            desired.push(Desired {
+                target: Target {
+                    map: MapKind::Player,
+                    action,
+                },
+                want: Want::Analog(half),
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use jc3gi::input::input_action_map::Action::{self, ACCELERATE};
+
+    use super::*;
+    use crate::controllers::mode::VehicleSeat;
+
+    fn analog(desired: &[Desired], action: Action) -> Option<f32> {
+        desired.iter().find_map(|d| match d.want {
+            Want::Analog(v) if d.target.action == action => Some(v),
+            _ => None,
+        })
+    }
+
+    fn want(action: Action, value: f32) -> Desired {
+        Desired {
+            target: Target {
+                map: MapKind::Player,
+                action,
+            },
+            want: Want::Analog(value),
+        }
+    }
+
+    #[test]
+    fn only_a_helicopter_driver_writes_the_helicopter_yaw() {
+        let seat = |class: VehicleClass, driver: bool| Mode::Vehicle(VehicleSeat { class, driver });
+        assert!(writes_helicopter_yaw(seat(VehicleClass::Helicopter, true)));
+        assert!(!writes_helicopter_yaw(seat(
+            VehicleClass::Helicopter,
+            false
+        )));
+        assert!(!writes_helicopter_yaw(seat(VehicleClass::Plane, true)));
+        assert!(!writes_helicopter_yaw(Mode::Ui));
+    }
+
+    #[test]
+    fn the_helicopter_twist_replaces_the_tables_yaw_and_leaves_the_rest() {
+        let mut desired = vec![want(HELI_TURN_LEFT, 0.7), want(ACCELERATE, 1.0)];
+        write_heli_rudder(&mut desired, 0.4);
+        assert_eq!(analog(&desired, HELI_TURN_LEFT), None);
+        assert_eq!(analog(&desired, HELI_TURN_RIGHT), Some(0.4));
+        assert_eq!(analog(&desired, ACCELERATE), Some(1.0));
+        write_heli_rudder(&mut desired, -0.5);
+        assert_eq!(analog(&desired, HELI_TURN_LEFT), Some(0.5));
+        assert_eq!(analog(&desired, HELI_TURN_RIGHT), None);
+        write_heli_rudder(&mut desired, 0.0);
+        assert_eq!(analog(&desired, HELI_TURN_LEFT), None);
+        assert_eq!(analog(&desired, HELI_TURN_RIGHT), None);
+    }
+
+    #[test]
+    fn a_non_finite_twist_writes_nothing() {
+        let mut desired = vec![want(HELI_TURN_RIGHT, 0.7)];
+        write_heli_rudder(&mut desired, f32::NAN);
+        assert_eq!(analog(&desired, HELI_TURN_LEFT), None);
+        assert_eq!(analog(&desired, HELI_TURN_RIGHT), None);
+    }
 }

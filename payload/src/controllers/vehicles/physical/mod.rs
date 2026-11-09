@@ -20,8 +20,8 @@
 //!   grips' change since the hands holding them last changed, so a grab does not jump them;
 //! - a stick's top follows the hand across the horizontal plane, and its deflection over the full
 //!   deflection, past a small deadzone, drives both of its axes; let go, a centring spring returns
-//!   it, still flying the vehicle on its way. The flight stick's twist about its shaft works the
-//!   rudder;
+//!   it, still flying the vehicle on its way. The stick's twist about its shaft works the rudder in
+//!   a plane and the yaw in a helicopter;
 //! - a lever's handle follows the hand along its axis, and its position over half the travel is its
 //!   output, with a detent around neutral. The throttle stays where it is let go, and has an
 //!   afterburner gate at the top of its travel.
@@ -139,7 +139,7 @@ pub struct Hold {
     /// The hand's grip relative to the control's handle when it grabbed, for the sticks and levers,
     /// so that a hand that grabs off-centre does not snap the control to itself.
     pub offset: Vec3,
-    /// The hand's grip orientation when it grabbed, for the flight stick's twist.
+    /// The hand's grip orientation when it grabbed, for the stick's twist.
     pub orientation: Option<Quat>,
 }
 
@@ -237,7 +237,8 @@ pub struct Outputs {
     pub collective: Option<f32>,
     /// The flight stick: +X rolls right, +Y pushes forward (nose down).
     pub flight_stick: Option<Vec2>,
-    /// The flight stick's twist: `-1..=1`, positive yawing right.
+    /// The held stick's twist: `-1..=1`, positive yawing right. It is the flight stick's rudder in
+    /// a plane and the cyclic's yaw in a helicopter.
     pub rudder: Option<f32>,
     /// `-1..=1`, positive accelerating.
     pub throttle: Option<f32>,
@@ -377,24 +378,6 @@ impl Placement {
     pub(super) fn lever_rest(&self, kind: ControlKind, spec: &LeverSpec) -> Vec3 {
         if let Some(rest) = self.cockpit.and_then(|fit| fit.lever_rest(kind)) {
             return rest;
-        }
-        if let Some((fit, stick)) = self
-            .cockpit
-            .filter(|fit| {
-                matches!(
-                    (fit.asset.stick_kind, kind),
-                    (ControlKind::Cyclic, ControlKind::Collective)
-                        | (ControlKind::FlightStick, ControlKind::Throttle)
-                )
-            })
-            .and_then(|fit| self.stick(fit.asset.stick_kind).map(|stick| (fit, stick)))
-        {
-            // A missing modeled lever uses the same pilot seat as the measured stick.
-            let offset = spec.rest_m - stick.top_m;
-            return fit.stick_top()
-                + fit.direction(Vec3::X) * offset.x
-                + fit.direction(Vec3::Y) * offset.y
-                + fit.direction(Vec3::Z) * offset.z;
         }
         self.mirror(spec.rest_m)
     }
@@ -603,8 +586,8 @@ pub fn step(
                     out.cyclic = stick.value;
                 } else {
                     out.flight_stick = stick.value;
-                    out.rudder = stick.rudder;
                 }
+                out.rudder = stick.rudder;
             }
             ControlKind::Collective | ControlKind::Throttle => {
                 let lever = step_lever(state, placement, kind, holding, inputs.lever_moves);
