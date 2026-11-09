@@ -138,7 +138,15 @@ impl ArmRemap {
         })
     }
 
-    /// The remapped wrist position.
+    pub(crate) fn with_player_shoulder(self, player_shoulder: Vec3) -> Self {
+        let shift = (player_shoulder - self.player_shoulder) * self.scale;
+        Self {
+            player_shoulder,
+            character_shoulder: self.character_shoulder + shift,
+            ..self
+        }
+    }
+
     pub fn apply(&self, wrist: Vec3) -> Vec3 {
         self.character_shoulder + (wrist - self.player_shoulder) * self.scale
     }
@@ -366,6 +374,27 @@ mod tests {
             eye_to_shoulder: Vec3::new(0.19, -0.22, 0.12),
             shoulder_in_chest: Vec3::new(0.19, -0.22, 0.12),
         }
+    }
+
+    #[test]
+    fn a_crouched_shoulder_rebases_reach_without_moving_the_registered_wrist() {
+        let remap =
+            ArmRemap::measured(Hand::Left, head(), Quat::IDENTITY, &PLAYER, &rico(), 1.2).unwrap();
+        let offset = Vec3::new(0.12, 0.18, -0.14);
+        let bent = remap.with_player_shoulder(remap.player_shoulder + offset);
+        for wrist in [Vec3::ZERO, Vec3::new(-0.2, 0.4, -0.6)] {
+            assert!(remap.apply(wrist).abs_diff_eq(bent.apply(wrist), EPS));
+        }
+        assert!(
+            bent.character_shoulder
+                .abs_diff_eq(remap.character_shoulder + offset * remap.scale, EPS,)
+        );
+        assert_eq!(bent.scale, remap.scale);
+        let wrist = bent.player_shoulder + Vec3::NEG_Z * PLAYER.shoulder_to_wrist();
+        let target = bent.apply(wrist);
+        let limit = ReachLimit::new(bent.character_shoulder, &rico(), 1.2).unwrap();
+        assert!(limit.apply(target).abs_diff_eq(target, EPS));
+        assert!((target.distance(bent.character_shoulder) - limit.length).abs() < EPS);
     }
 
     #[test]

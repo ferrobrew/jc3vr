@@ -1,16 +1,13 @@
 //! Select socket interaction poses once for the candidate adapter and the copied mirror sample.
 
-use std::time::Instant;
-
 use glam::{Mat4, Vec3};
 
 use crate::controllers::{
     body::rig::frames::Frames,
     frame::Hand,
-    grab::{Candidate, GrabVolume, GripTarget, target::TargetReach},
+    grab::{Candidate, GrabVolume},
     hands::ActiveHands,
     loadout::Socket,
-    roomscale::{self, posture::EffectivePosture},
     weapons::{
         docks::{self, SocketUse, attachments::Sample},
         hold::act,
@@ -41,35 +38,6 @@ pub(super) fn socket_candidates(
         draw,
         docks::publish_targets,
     )
-}
-
-pub(super) fn reach_seated(targets: &mut [GripTarget], controllers: [Option<Vec3>; 2]) {
-    let seated = roomscale::frame_shared().is_some_and(|frame| {
-        frame.fresh(Instant::now()) && frame.posture == EffectivePosture::Seated
-    });
-    if !seated {
-        return;
-    }
-    reach_raw(targets, controllers);
-}
-
-fn reach_raw(targets: &mut [GripTarget], controllers: [Option<Vec3>; 2]) {
-    for target in targets {
-        if !matches!(target.volume, GrabVolume::Socket(_)) {
-            continue;
-        }
-        let (Some(hand), TargetReach::Sphere { centre, radius }) = (target.hand, target.reach)
-        else {
-            continue;
-        };
-        let Some(controller) = controllers[hand.index()].filter(|point| point.is_finite()) else {
-            continue;
-        };
-        let distance = controller.distance(centre);
-        if radius.is_finite() && radius > 0.0 && distance.is_finite() && distance <= radius {
-            target.reach = TargetReach::Measured { distance };
-        }
-    }
 }
 
 /// Build the canonical sample and the actual candidate lists from the same selected offers.
@@ -163,57 +131,3 @@ fn socket_radius(socket: Socket, holsters: &SocketTuning) -> f32 {
 
 #[cfg(test)]
 mod tests;
-
-#[cfg(test)]
-mod seated_reach_tests {
-    use glam::Quat;
-
-    use super::*;
-    use crate::controllers::{
-        cockpit::CockpitTransform,
-        grab::{Mark, MarkAt},
-    };
-
-    #[test]
-    fn raw_reach_uses_the_calibrated_socket_without_moving_its_marker_or_radius() {
-        let cockpit = CockpitTransform {
-            head_world: Vec3::new(10.0, 1.7, -4.0),
-            head_cockpit: Vec3::new(0.2, 1.1, -0.3),
-            body: Quat::from_rotation_y(0.7),
-            world_scale: 1.3,
-        };
-        let centre = cockpit.point_to_cockpit(Vec3::new(10.2, 0.9, -3.8));
-        let target = Candidate {
-            volume: GrabVolume::Socket(Socket::Hip(Hand::Right)),
-            centre,
-            radius: 0.1,
-            hand: Some(Hand::Right),
-        }
-        .target(Mark::ring(MarkAt::Cockpit(centre), 0.05));
-        let drawn = centre + Vec3::Y * 0.4;
-        assert!(
-            crate::controllers::grab::resolve::reaches(Hand::Right, &[target], Some(drawn))
-                .is_empty()
-        );
-        for offset in [0.05, 0.15] {
-            let mut targets = [target];
-            reach_raw(&mut targets, [None, Some(centre + Vec3::X * offset)]);
-            assert_eq!(targets[0].mark, target.mark);
-            if offset < 0.1 {
-                assert!(
-                    matches!(targets[0].reach, TargetReach::Measured { distance } if (distance - offset).abs() < 1e-5)
-                );
-                assert_eq!(
-                    crate::controllers::grab::resolve::reaches(Hand::Right, &targets, Some(drawn))
-                        .len(),
-                    1
-                );
-            } else {
-                assert_eq!(targets[0], target);
-            }
-        }
-        let mut targets = [target];
-        reach_raw(&mut targets, [Some(centre), None]);
-        assert_eq!(targets[0], target);
-    }
-}

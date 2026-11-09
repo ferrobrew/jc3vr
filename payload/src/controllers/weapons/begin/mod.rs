@@ -578,7 +578,6 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     // and the cue on entering a socket.
     let grips = grab::tick::hand_grips(&active);
     let controller_grips = hands::controller_grips(&active);
-    socket_candidates::reach_seated(&mut targets, controller_grips);
     grab::resolve::reach_low(&mut targets, grips, controller_grips);
     let docking = hold::act::docking();
     let holstering = Hand::BOTH.map(|hand| {

@@ -10,6 +10,29 @@ use crate::controllers::{
     overlay::primitive::{Anchor, Primitive},
 };
 
+#[test]
+fn waist_relocation_moves_the_visible_grip_and_the_socket_together_without_scaling() {
+    let native =
+        Mat4::from_rotation_translation(Quat::from_rotation_x(1.1), Vec3::new(-0.2, 0.5, -0.3));
+    let target =
+        Mat4::from_rotation_translation(Quat::from_rotation_y(0.7), Vec3::new(2.2, 1.0, -3.4));
+    let grip = native.transform_point3(Vec3::new(0.03, -0.07, 0.1));
+    let delta = waist_relocation(native, target, grip);
+    let point = delta.transform_point3(grip);
+    assert!(point.abs_diff_eq(target.w_axis.truncate(), 1e-5));
+    let nearby = grip + Vec3::new(0.1, -0.2, 0.3);
+    assert!((delta.transform_point3(nearby).distance(point) - nearby.distance(grip)).abs() < 1e-5);
+    let sample = observation(
+        Placement::Visible {
+            object: 13,
+            grip: Some(point),
+        },
+        Some(target),
+        Occupancy::Occupied { object: Some(13) },
+    );
+    assert_docking_and_mirror(&sample, point);
+}
+
 fn observation(placement: Placement, bone: Option<Mat4>, occupancy: Occupancy) -> Sample {
     let (source, pose) = socket_pose(Mat4::IDENTITY, bone, placement);
     Sample {

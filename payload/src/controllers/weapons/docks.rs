@@ -23,25 +23,29 @@
 
 use std::time::Instant;
 
+use body_rig::body::{PlayerBody, neck_pivot};
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::character::Character,
+    character::character::{Character, SafeBoneIndex},
     equipment::weapon::{WeaponBase, WeaponState},
+    types::math::Matrix4,
 };
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    body::rig::frames::Frames,
+    body::{self, rig::frames::Frames},
     cockpit::CockpitTransform,
     frame::Hand,
-    hands::{ActiveHands, grip},
+    hands::{self, ActiveHands, grip, ik},
     loadout::{
         LoadoutSnapshot, Place, Socket,
         grab::{self, GrabRules, SocketMove},
+        live,
     },
+    roomscale::{self, SeatPhase, posture::EffectivePosture},
     weapons::{
         docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
-        engine::{grip_points, slot_of},
+        engine::{grip_points, gun_count, gun_ptr, slot_of},
         grenade,
         hold::{act, armed},
         inventory::{
@@ -120,9 +124,20 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
     let snapshot = inputs.snapshot;
     let to_world = Mat4::from(owner.m_WorldMatrixT1);
     let docked = unsafe { socket_weapons(owner, snapshot) };
+    let waist = seated_waist(owner);
+    let offset = |socket| {
+        if waist.is_some() && matches!(socket, Socket::Hip(_)) {
+            Vec3::ZERO
+        } else {
+            inputs.offsets.of(socket)
+        }
+    };
     let bones = Socket::ALL.map(|socket| {
         if snapshot.body.has(socket) || snapshot.docked(socket).is_some() {
-            unsafe { bone_world(owner, to_world, socket) }
+            waist
+                .as_ref()
+                .and_then(|waist| waist[socket.index()])
+                .or_else(|| unsafe { bone_world(owner, to_world, socket) })
         } else {
             None
         }
@@ -181,7 +196,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
                     object: None,
                     remembered: None,
                     native: false,
-                    offset: inputs.offsets.of(socket),
+                    offset: offset(socket),
                 },
             )
         } else if let Occupancy::Occupied { object, .. } = occupancy {
@@ -197,7 +212,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
                     object: None,
                     remembered: None,
                     native: false,
-                    offset: inputs.offsets.of(socket),
+                    offset: offset(socket),
                 },
             )
         };
@@ -301,10 +316,14 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
             let (source, pose) = if matches!(base.source, PoseSource::VisibleGrip { .. }) {
                 (base.source, base.pose)
             } else {
-                let remembered = grips
-                    .iter()
-                    .find(|g| g.object == object && g.socket == socket)
-                    .map(|g| g.local);
+                let remembered = (!(waist.is_some() && matches!(socket, Socket::Hip(_))))
+                    .then(|| {
+                        grips
+                            .iter()
+                            .find(|g| g.object == object && g.socket == socket)
+                            .map(|g| g.local)
+                    })
+                    .flatten();
                 // SAFETY: the table holds the weapon in a hand, and a slot or the carry set
                 // keeps it alive, as for the existing dockability read.
                 let native = unsafe { (object as *const WeaponBase).as_ref() }
@@ -317,7 +336,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
                         object: Some(object),
                         remembered,
                         native,
-                        offset: inputs.offsets.of(socket),
+                        offset: offset(socket),
                     },
                 )
             };
@@ -333,6 +352,99 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
     grips.retain(|g| seen.contains(&g.object));
     drop(grips);
     sample
+}
+
+pub(crate) unsafe fn place_waist(owner: &Character) {
+    if ik::local_character() != owner as *const Character as usize {
+        return;
+    }
+    let Some(waist) = seated_waist(owner) else {
+        return;
+    };
+    let Some(snapshot) = live::snapshot_now() else {
+        return;
+    };
+    let character = Mat4::from(owner.m_WorldMatrixT1);
+    for (socket, weapon) in unsafe { socket_weapons(owner, &snapshot) } {
+        let Socket::Hip(side) = socket else {
+            continue;
+        };
+        let Some((grips, _)) = (unsafe { grip_points(weapon) }) else {
+            continue;
+        };
+        for index in 0..unsafe { gun_count(weapon) } {
+            let socket = Socket::Hip(if index == 0 { side } else { side.other() });
+            let Some(target) = waist[socket.index()] else {
+                continue;
+            };
+            let Some(native) = (unsafe { bone_world(owner, character, socket) }) else {
+                continue;
+            };
+            let Some(mut gun) = (unsafe { gun_ptr(weapon, index) }) else {
+                continue;
+            };
+            let gun = unsafe { gun.as_mut() };
+            let current = Mat4::from(gun.m_WorldMatrixT1);
+            let copied = Mat4::from(gun.m_WorldMatrixT0) == current;
+            let grip = grips[index.min(grips.len() - 1)];
+            let delta = attachments::waist_relocation(native, target, grip);
+            let placed = delta * current;
+            if placed.is_finite() {
+                gun.m_WorldMatrixT1 = Matrix4::from(placed);
+                if copied {
+                    gun.m_WorldMatrixT0 = gun.m_WorldMatrixT1;
+                }
+            }
+        }
+    }
+}
+
+fn seated_waist(owner: &Character) -> Option<[Option<Mat4>; Socket::COUNT]> {
+    let frame = roomscale::frame_shared()?;
+    if !frame.fresh(Instant::now())
+        || !(frame.posture == EffectivePosture::Seated || frame.seat == SeatPhase::Locked)
+    {
+        return None;
+    }
+    let active = hands::active_hands_raw()?;
+    let frames = cockpit_frames(&active, Mat4::from(owner.m_WorldMatrixT1))?;
+    let player = body::player();
+    let dimensions = PlayerBody::from_heights(player.height, player.eye_height);
+    let neck = neck_pivot(active.head.position, active.head.orientation);
+    let waist = neck - Vec3::Y * dimensions.spine_length(dimensions.standing_neck());
+    let remaps = hands::arm_remaps(
+        &active.config,
+        active.head,
+        active.torso,
+        active.world_scale,
+    );
+    let controller = unsafe { owner.m_AnimatedModel.m_AnimationController.as_ref() }?;
+    let bind = |bone| {
+        let index = unsafe { owner.GetSafeIndex(bone) };
+        if index == 0 {
+            return None;
+        }
+        let mut matrix = Matrix4::from(Mat4::IDENTITY);
+        unsafe { controller.GetBindPoseBoneMatrix(index, &mut matrix) };
+        let matrix = Mat4::from(matrix);
+        (matrix.is_finite() && matrix.determinant().abs() > 1e-6).then_some(matrix)
+    };
+    let hips = bind(SafeBoneIndex::HIPS)?;
+    let mut sockets = [None; Socket::COUNT];
+    for hand in Hand::BOTH {
+        let socket = Socket::Hip(hand);
+        let local = bind(sockets::bone(socket))?;
+        let (_, rotation, position) = local.to_scale_rotation_translation();
+        let position = position - hips.w_axis.truncate();
+        let cockpit = waist + active.torso * Vec3::new(position.x, 0.0, position.z);
+        let cockpit = remaps[hand.index()].map_or(cockpit, |remap| remap.apply(cockpit));
+        let orientation = frames.cockpit.rotation_to_world(active.torso * rotation);
+        sockets[socket.index()] = Some(Mat4::from_rotation_translation(
+            orientation,
+            frames.cockpit.point_to_world(cockpit),
+        ));
+    }
+    Some(sockets)
 }
 
 /// The weapons the table has on the body's sockets that are seen there: each one live (a slot or

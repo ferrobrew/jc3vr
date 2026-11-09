@@ -95,6 +95,7 @@ use crate::controllers::{
     hands::{grip, late},
     loadout::{ObjectAddress, TakeSource, live},
     weapons::{
+        docks,
         engine::{gun_at_mut, gun_count, slot_of},
         inventory,
     },
@@ -531,6 +532,9 @@ fn update_attachment_transforms(
         .call(inventory, character, p3, p4, transform_type);
     // No inventory places the carried weapons; they follow the slots' weapons.
     unsafe { inventory::carry::place(inventory, character, p3, p4, transform_type) };
+    if let Some(owner) = unsafe { character.as_ref() } {
+        unsafe { docks::place_waist(owner) };
+    }
     if let Some(placement) = placement {
         unsafe { grip::after_placement(character, placement) };
     }

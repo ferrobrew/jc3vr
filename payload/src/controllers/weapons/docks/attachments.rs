@@ -132,6 +132,11 @@ pub(crate) enum Placement {
     },
 }
 
+pub(crate) fn waist_relocation(native: Mat4, target: Mat4, grip: Vec3) -> Mat4 {
+    let rotation = rotation_of(target) * rotation_of(native).inverse();
+    Mat4::from_rotation_translation(rotation, target.w_axis.truncate() - rotation * grip)
+}
+
 /// The production placement rule for both the docking points and the mirror's copied values.
 pub(crate) fn socket_pose(
     character: Mat4,

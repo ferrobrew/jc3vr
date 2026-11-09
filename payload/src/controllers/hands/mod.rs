@@ -161,7 +161,7 @@ fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
     });
     let torso = body_rig::torso_heading(head, wrists);
     let remaps = arm_remaps(&config, head, torso, world_scale);
-    let limits = reach_limits(head, torso, world_scale);
+    let limits = reach_limits(&remaps, world_scale);
     let hands = Hand::BOTH.map(|hand| {
         let i = hand.index();
         let cockpit = frame
@@ -251,7 +251,7 @@ fn shoulder_joints(
     })
 }
 
-fn arm_remaps(
+pub(crate) fn arm_remaps(
     config: &ControllersConfig,
     head: Pose,
     torso: Quat,
@@ -265,8 +265,9 @@ fn arm_remaps(
         return [None; 2];
     }
     let player = body::player();
+    let shoulders = body_rig::grounded::torso().map(|rig| rig.shoulders);
     Hand::BOTH.map(|hand| {
-        measured[hand.index()]
+        let remap = measured[hand.index()]
             .and_then(|arm| ArmRemap::measured(hand, head, torso, &player, &arm, world_scale))
             .or_else(|| {
                 config.body.remap_hands.then(|| {
@@ -278,11 +279,16 @@ fn arm_remaps(
                         &BodyDimensions::CHARACTER_ESTIMATE,
                     )
                 })
+            });
+        remap.map(|remap| {
+            shoulders.map_or(remap, |shoulders| {
+                remap.with_player_shoulder(shoulders[hand.index()])
             })
+        })
     })
 }
 
-fn reach_limits(head: Pose, torso: Quat, world_scale: f32) -> [Option<ReachLimit>; 2] {
+fn reach_limits(remaps: &[Option<ArmRemap>; 2], world_scale: f32) -> [Option<ReachLimit>; 2] {
     if !reach::REACH.reach_limit {
         return [None; 2];
     }
@@ -290,10 +296,9 @@ fn reach_limits(head: Pose, torso: Quat, world_scale: f32) -> [Option<ReachLimit
     if arms.iter().all(Option::is_none) {
         return [None; 2];
     }
-    let player = body::player();
     Hand::BOTH.map(|hand| {
         let arm = arms[hand.index()]?;
-        let remap = ArmRemap::measured(hand, head, torso, &player, &arm, world_scale)?;
+        let remap = remaps[hand.index()]?;
         ReachLimit::new(remap.character_shoulder, &arm, world_scale)
     })
 }
