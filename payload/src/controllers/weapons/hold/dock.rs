@@ -356,7 +356,7 @@ mod tests {
 
     #[test]
     fn regripping_cancels_and_moving_away_ends_holster_retries() {
-        let mut intent = ReleaseIntent::new(7, Some(Socket::Chest));
+        let mut intent = ReleaseIntent::new(7, Some(Socket::Hip(Hand::Left)));
         assert!(!intent.step(Some(7), true, true, 0.01));
         assert!(intent.step(Some(7), false, false, 0.01));
         assert_eq!(intent.socket, None);
@@ -366,10 +366,10 @@ mod tests {
 
     #[test]
     fn release_timeout_ignores_invalid_time() {
-        let mut intent = ReleaseIntent::new(7, Some(Socket::Chest));
+        let mut intent = ReleaseIntent::new(7, Some(Socket::Hip(Hand::Left)));
         for dt in [f32::NAN, f32::INFINITY, -1.0, 0.0] {
             assert!(intent.step(Some(7), false, true, dt));
-            assert_eq!(intent.socket, Some(Socket::Chest));
+            assert_eq!(intent.socket, Some(Socket::Hip(Hand::Left)));
         }
         assert!(intent.step(Some(7), false, true, 0.35));
         assert_eq!(intent.socket, None);

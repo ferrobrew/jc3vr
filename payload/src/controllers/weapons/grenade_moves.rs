@@ -12,7 +12,7 @@ use crate::controllers::{
 /// safe move was relevant but refused, so the caller must not fall through to native weapon code.
 pub(crate) fn grab_socket(hand: Hand, socket: Socket) -> Option<bool> {
     if grenade::safe::in_hand(hand).is_some() {
-        if !matches!(socket, Socket::Hip(_) | Socket::Chest) {
+        if !matches!(socket, Socket::Hip(_)) {
             return Some(false);
         }
         let Some(world) = docks::socket_world_pose(socket) else {
@@ -31,7 +31,7 @@ pub(crate) fn grab_socket(hand: Hand, socket: Socket) -> Option<bool> {
 /// Stow at the socket selected as available and reachable by the release coordinator.
 pub(crate) fn stow_before_open(hand: Hand, socket: Option<Socket>) -> Option<bool> {
     grenade::safe::in_hand(hand)?;
-    let Some(socket) = socket.filter(|socket| matches!(socket, Socket::Hip(_) | Socket::Chest))
+    let Some(socket) = socket.filter(|socket| matches!(socket, Socket::Hip(_)))
     else {
         return Some(false);
     };

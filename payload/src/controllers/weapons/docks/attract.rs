@@ -39,7 +39,6 @@ use crate::controllers::{
 pub(crate) const ATTRACTION: AttractionTuning = AttractionTuning {
     shoulder_m: 0.45,
     hip_m: 0.25,
-    chest_m: 0.18,
     back_front_m: 0.08,
     hip_front_m: 0.1,
     max_speed_mps: 2.5,
@@ -53,7 +52,7 @@ pub(crate) const ATTRACTION: AttractionTuning = AttractionTuning {
 /// may move.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct AttractionTuning {
-    /// The attraction of the shoulders' and the outer back's sockets from their centres, metres: a
+    /// The attraction of the shoulders' sockets from their centres, metres: a
     /// hand let open over the shoulder, beside the head on that side, or behind it, which is about
     /// a forearm's length from the point behind the shoulder blade a long gun's grip sits at. The
     /// sockets are out of sight, so the hand finds them by the body alone.
@@ -61,9 +60,6 @@ pub(crate) struct AttractionTuning {
     /// The attraction of the hips' sockets, metres: about twice their reach, so a hand let open
     /// anywhere beside the thigh docks the pistol.
     pub hip_m: f32,
-    /// The attraction of the chest's socket, metres: twice its reach. The chest socket is in sight
-    /// and between the chest pouches, so it attracts little beyond them.
-    pub chest_m: f32,
     /// How far in front of the line through the shoulder joints a hand may be for a back socket to
     /// attract it, metres: about as far forward as the ear.
     pub back_front_m: f32,
@@ -155,8 +151,7 @@ pub(crate) fn attractors(
             };
             let hand = candidate.hand?;
             let front = match socket {
-                Socket::Chest => None,
-                Socket::Shoulder(_) | Socket::BackOuter => {
+                Socket::Shoulder(_) => {
                     let body = body?;
                     Some(FrontLimit {
                         origin: body.skeleton.chest(),
@@ -334,9 +329,8 @@ impl ZoneWatch {
 
 fn radius_of(socket: Socket, tuning: &AttractionTuning) -> f32 {
     match socket {
-        Socket::Shoulder(_) | Socket::BackOuter => tuning.shoulder_m,
+        Socket::Shoulder(_) => tuning.shoulder_m,
         Socket::Hip(_) => tuning.hip_m,
-        Socket::Chest => tuning.chest_m,
     }
 }
 

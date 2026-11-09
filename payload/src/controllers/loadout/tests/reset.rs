@@ -34,7 +34,7 @@ fn armed() -> (Loadout, [ItemId; 3]) {
     let mut t = table();
     let rifle = take(&mut t, Hand::Right, 1, weapon(a_rifle()));
     let pistol = docked(&mut t, Socket::Hip(Hand::Right), 2, a_pistol());
-    let extra = docked(&mut t, Socket::BackOuter, 3, a_rifle());
+    let extra = docked(&mut t, Socket::Shoulder(Hand::Left), 3, a_rifle());
     (t, [rifle, pistol, extra])
 }
 
@@ -155,10 +155,10 @@ fn a_checkpoint_restore_returns_the_table_to_its_snapshot() {
     t.cache(CacheKind::Checkpoint);
     // Since the checkpoint: the rifle swaps places with the extra one, the pistol is dropped and
     // gone, and a sniper rifle is picked up.
-    t.dock(Hand::Right, Socket::Shoulder(Hand::Left)).unwrap();
-    t.draw(Socket::BackOuter, Hand::Right).unwrap();
-    t.draw(Socket::Shoulder(Hand::Left), Hand::Left).unwrap();
-    t.dock(Hand::Left, Socket::BackOuter).unwrap();
+    t.dock(Hand::Right, Socket::Shoulder(Hand::Right)).unwrap();
+    t.draw(Socket::Shoulder(Hand::Left), Hand::Right).unwrap();
+    t.draw(Socket::Shoulder(Hand::Right), Hand::Left).unwrap();
+    t.dock(Hand::Left, Socket::Shoulder(Hand::Left)).unwrap();
     t.draw(Socket::Hip(Hand::Right), Hand::Left).unwrap();
     t.let_go(Hand::Left, Release::Dropped).unwrap();
     t.remove(Removal::Object(object(2)), RemovalWhy::Gone)
@@ -181,7 +181,7 @@ fn a_checkpoint_restore_returns_the_table_to_its_snapshot() {
         place(&t, rifle),
         Some(Place::Socket(Socket::Shoulder(Hand::Right)))
     );
-    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::BackOuter)));
+    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
     // The pistol's object was gone; the restored slot's new pistol is it again.
     assert_eq!(
         place(&t, pistol),
@@ -201,7 +201,7 @@ fn a_restored_weapon_whose_object_is_gone_waits_for_its_spawn() {
         binding(&t, extra),
         Some(Binding::Awaiting(Awaiting::Respawn))
     );
-    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::BackOuter)));
+    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
     t.spawned(extra, object(20)).unwrap();
     assert_eq!(binding(&t, extra), Some(Binding::Live(object(20))));
 }
@@ -223,7 +223,7 @@ fn a_weapon_the_mod_respawns_binds_the_restored_item_waiting_for_it() {
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].item, extra, "the waiting item keeps its identity");
     assert_eq!(binding(&t, extra), Some(Binding::Live(object(21))));
-    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::BackOuter)));
+    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
     assert_eq!(t.items().count(), before, "nothing is duplicated");
 }
 
@@ -287,7 +287,7 @@ fn a_give_back_uses_its_snapshot_up_and_a_checkpoint_keeps_its_own() {
 
 #[test]
 fn a_returned_weapon_lies_at_the_feet_after_a_restore_with_the_back_full() {
-    let mut t = Loadout::new(BodyLayout::new(Hand::Right, 1, 0, false));
+    let mut t = Loadout::new(BodyLayout::new(Hand::Right, 1, 0));
     let rifle = take(&mut t, Hand::Right, 1, weapon(a_rifle()));
     t.cache(CacheKind::Checkpoint);
     docked(&mut t, Socket::Shoulder(Hand::Right), 2, a_rifle());
@@ -297,7 +297,7 @@ fn a_returned_weapon_lies_at_the_feet_after_a_restore_with_the_back_full() {
         place(&t, rifle),
         Some(Place::Socket(Socket::Shoulder(Hand::Right)))
     );
-    let mut t = Loadout::new(BodyLayout::new(Hand::Right, 0, 0, false));
+    let mut t = Loadout::new(BodyLayout::new(Hand::Right, 0, 0));
     let rifle = take(&mut t, Hand::Right, 1, weapon(a_rifle()));
     t.cache(CacheKind::Checkpoint);
     t.restore(CacheKind::Checkpoint, &[]).unwrap();

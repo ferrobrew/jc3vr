@@ -23,7 +23,7 @@ use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    loadout::{Departure, LostWhy, ObjectAddress, Place, Socket, live},
+    loadout::{Departure, LostWhy, ObjectAddress, Place, live},
     weapons::{
         hold::{equip, refs::Strong, release_diagnostics::ReleaseMotion},
         inventory::{
@@ -187,10 +187,12 @@ unsafe fn bring_back(owner: &mut Character, object: ObjectAddress, why: LostWhy,
         Place::Socket(socket) => socket,
         // With no socket free the weapon is carried on its type's first socket for the tick it
         // takes to be placed there, and then falls.
-        Place::World(Departure::Returned) => live::body_preference(weapon_type)
-            .first()
-            .copied()
-            .unwrap_or(Socket::BackOuter),
+        Place::World(Departure::Returned) => {
+            let Some(socket) = live::body_preference(weapon_type).first().copied() else {
+                return;
+            };
+            socket
+        }
         Place::Hand(_) | Place::World(_) => return,
     };
     if let Err(refusal) = unsafe { carry::carry_loose(owner, strong, socket) } {

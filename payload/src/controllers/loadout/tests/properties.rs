@@ -89,7 +89,6 @@ enum Op {
         dominant: usize,
         back: u8,
         hips: u8,
-        chest: bool,
     },
 }
 
@@ -140,8 +139,8 @@ fn op() -> impl Strategy<Value = Op> {
         1 => Just(Op::ResetBegan),
         1 => (0..ResetKind::ALL.len(), slots())
             .prop_map(|(kind, slots)| Op::ResetCompleted { kind, slots }),
-        1 => (hand, 0..4u8, 0..3u8, any::<bool>())
-            .prop_map(|(dominant, back, hips, chest)| Op::SetBody { dominant, back, hips, chest }),
+        1 => (hand, 0..3u8, 0..3u8)
+            .prop_map(|(dominant, back, hips)| Op::SetBody { dominant, back, hips }),
     ]
 }
 
@@ -245,8 +244,7 @@ fn concrete(op: &Op, table: &Loadout) -> Applied {
             dominant,
             back,
             hips,
-            chest,
-        } => return Applied::Body(BodyLayout::new(Hand::BOTH[dominant], back, hips, chest)),
+        } => return Applied::Body(BodyLayout::new(Hand::BOTH[dominant], back, hips)),
     })
 }
 

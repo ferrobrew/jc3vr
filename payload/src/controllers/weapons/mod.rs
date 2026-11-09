@@ -183,7 +183,7 @@ mod tests {
         assert!(cues_grab(GrabOutcome::Foregrip(Transition::Grabbed)));
         assert!(cues_grab(GrabOutcome::Socket(SocketOutcome::Docked)));
         assert!(!cues_grab(GrabOutcome::Socket(SocketOutcome::Refused(
-            SocketRefusal::Occupied(Socket::Chest)
+            SocketRefusal::Occupied(Socket::Hip(Hand::Left))
         ))));
         assert!(!cues_grab(GrabOutcome::Magazine));
     }

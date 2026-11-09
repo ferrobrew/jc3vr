@@ -12,7 +12,7 @@
 //! The file is TOML:
 //!
 //! ```toml
-//! version = 1
+//! version = 2
 //!
 //! [fingerprint]
 //! slots = [0, 1234, 0, 0, 0, 0, 0, 0]
@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize};
 use crate::controllers::{loadout::Socket, weapons::inventory::sockets};
 
 /// The format's version.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 
 /// How many inventory slots the save stores a weapon type for.
 pub const SLOTS: usize = 8;
@@ -336,7 +336,7 @@ mod tests {
     fn a_sidecar_round_trips_through_its_file() {
         let original = sidecar();
         let text = original.encode();
-        assert!(text.contains("version = 1"));
+        assert!(text.contains("version = 2"));
         assert_eq!(Sidecar::decode(&text), Ok(original));
         let empty = Sidecar {
             fingerprint: fingerprint(),
@@ -404,7 +404,7 @@ mod tests {
                 let _ = Sidecar::decode(&text[..end]);
             }
         }
-        let nine_slots = "version = 1\n[fingerprint]\nslots = [0, 0, 0, 0, 0, 0, 0, 0, 0]\nreserves = \
+        let nine_slots = "version = 2\n[fingerprint]\nslots = [0, 0, 0, 0, 0, 0, 0, 0, 0]\nreserves = \
                           [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]\n";
         assert!(matches!(
             Sidecar::decode(nine_slots),
@@ -413,8 +413,8 @@ mod tests {
         let eight_slots = nine_slots.replacen("0, 0]", "0]", 1);
         assert!(Sidecar::decode(&eight_slots).is_ok(), "{eight_slots}");
         assert_eq!(
-            Sidecar::decode(&text.replacen("version = 1", "version = 2", 1)),
-            Err(SidecarError::Version(2))
+            Sidecar::decode(&text.replacen("version = 2", "version = 1", 1)),
+            Err(SidecarError::Version(1))
         );
         assert_eq!(
             Sidecar::decode(&text.replacen("back_first", "shoulder", 1)),

@@ -236,7 +236,7 @@ impl Loadout {
     fn require_safe_destination(&self, destination: Place) -> Result<(), SafeItemError> {
         match destination {
             Place::Socket(socket)
-                if !self.body.has(socket) || !matches!(socket, Socket::Hip(_) | Socket::Chest) =>
+                if !self.body.has(socket) || !matches!(socket, Socket::Hip(_)) =>
             {
                 return Err(SafeItemError::UnsupportedHolster(socket));
             }

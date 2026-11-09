@@ -93,7 +93,7 @@ fn native_hand_events_cannot_bypass_safe_item_moves_or_release() {
     for event in [
         Event::Dock {
             hand: Hand::Left,
-            socket: Socket::Chest,
+            socket: Socket::Hip(Hand::Right),
         },
         Event::HandOver { from: Hand::Left },
         Event::LetGo {
@@ -107,11 +107,11 @@ fn native_hand_events_cannot_bypass_safe_item_moves_or_release() {
     assert_eq!(live.refusals, 3);
     let stowed = live
         .table
-        .move_safe_item(safe, Place::Socket(Socket::Chest))
+        .move_safe_item(safe, Place::Socket(Socket::Hip(Hand::Right)))
         .unwrap();
     let before = live.table.snapshot();
     live.fold(Event::Draw {
-        socket: Socket::Chest,
+        socket: Socket::Hip(Hand::Right),
         hand: Hand::Right,
     });
     assert_eq!(live.table.snapshot(), before);

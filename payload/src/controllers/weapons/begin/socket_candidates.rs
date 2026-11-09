@@ -124,8 +124,7 @@ fn candidates_from_sample(
 fn socket_radius(socket: Socket, holsters: &SocketTuning) -> f32 {
     match socket {
         Socket::Hip(_) => holsters.hip_radius_m,
-        Socket::Shoulder(_) | Socket::BackOuter => holsters.shoulder_radius_m,
-        Socket::Chest => holsters.chest_radius_m,
+        Socket::Shoulder(_) => holsters.shoulder_radius_m,
     }
 }
 

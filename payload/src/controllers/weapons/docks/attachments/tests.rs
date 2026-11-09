@@ -286,7 +286,7 @@ fn mirror_prefers_actual_hand_offers_without_hiding_an_unoffered_socket() {
     base.usage = None;
     sample.attachments.insert(0, base);
     let mut unoffered = base;
-    unoffered.socket = Socket::Chest;
+    unoffered.socket = Socket::Shoulder(Hand::Left);
     unoffered.source = PoseSource::UnavailableWeapon { object: None };
     unoffered.pose = Err(Missing::Weapon);
     sample.attachments.push(unoffered);

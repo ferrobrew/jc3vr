@@ -361,8 +361,6 @@ pub const fn socket_label(socket: Socket) -> &'static str {
         Socket::Hip(Hand::Right) => "right hip socket",
         Socket::Shoulder(Hand::Left) => "left shoulder socket",
         Socket::Shoulder(Hand::Right) => "right shoulder socket",
-        Socket::BackOuter => "outer back socket",
-        Socket::Chest => "chest socket",
     }
 }
 

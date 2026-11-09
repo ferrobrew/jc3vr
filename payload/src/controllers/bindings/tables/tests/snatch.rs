@@ -128,10 +128,10 @@ fn route_changes_consume_old_release_then_common_neutral_restores_normal_grapple
 fn a_grip_held_for_the_catch_closes_on_nothing_then_holds_what_it_caught() {
     let mut b = Bindings::default();
     let caught = GrabVolume::Snatch(RemoteKind::Weapon);
-    // The dominant hand presses its grip on the chest socket while the snatch's line is out.
+    // The dominant hand presses its grip on the left hip socket while the snatch's line is out.
     let press = controls(Hand::Right, |dom, _| {
         dom.grip = down();
-        dom.grab_volume = Some(GrabVolume::Socket(Socket::Chest));
+        dom.grab_volume = Some(GrabVolume::Socket(Socket::Hip(Hand::Left)));
         dom.catch_reserved = true;
     });
     let step = b.sim_step(ON_FOOT, &press, DT, &CONFIG);
@@ -147,7 +147,7 @@ fn a_grip_held_for_the_catch_closes_on_nothing_then_holds_what_it_caught() {
             down: true,
             ..Default::default()
         };
-        dom.grab_volume = Some(GrabVolume::Socket(Socket::Chest));
+        dom.grab_volume = Some(GrabVolume::Socket(Socket::Hip(Hand::Left)));
         dom.grab_slow = true;
         dom.catch_reserved = true;
     });
@@ -163,7 +163,7 @@ fn a_grip_held_for_the_catch_closes_on_nothing_then_holds_what_it_caught() {
             down: true,
             ..Default::default()
         };
-        dom.grab_volume = Some(GrabVolume::Socket(Socket::Chest));
+        dom.grab_volume = Some(GrabVolume::Socket(Socket::Hip(Hand::Left)));
         dom.grab_slow = true;
     });
     assert_eq!(b.sim_step(ON_FOOT, &after, DT, &CONFIG).grabs, [None; 2]);
@@ -178,12 +178,12 @@ fn a_catch_never_overrides_a_grip_that_holds_something_else() {
     let mut b = Bindings::default();
     let press = controls(Hand::Right, |dom, _| {
         dom.grip = down();
-        dom.grab_volume = Some(GrabVolume::Socket(Socket::Chest));
+        dom.grab_volume = Some(GrabVolume::Socket(Socket::Hip(Hand::Left)));
     });
     b.sim_step(ON_FOOT, &press, DT, &CONFIG);
     b.hold_catch(Hand::Right, GrabVolume::Snatch(RemoteKind::Weapon));
     assert_eq!(
         b.grip_latches()[Hand::Right.index()],
-        GripLatch::Grab(GrabVolume::Socket(Socket::Chest))
+        GripLatch::Grab(GrabVolume::Socket(Socket::Hip(Hand::Left)))
     );
 }

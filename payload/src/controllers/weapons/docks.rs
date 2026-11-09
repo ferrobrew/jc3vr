@@ -188,7 +188,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
                     grip: point,
                 },
             )
-        } else if safe_occupant && matches!(socket, Socket::Hip(_) | Socket::Chest) {
+        } else if safe_occupant && matches!(socket, Socket::Hip(_)) {
             attachments::socket_pose(
                 to_world,
                 bones[socket.index()],
@@ -227,7 +227,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
         };
         sample.attachments.push(attachment);
         if safe_occupant
-            && matches!(socket, Socket::Hip(_) | Socket::Chest)
+            && matches!(socket, Socket::Hip(_))
             && let Ok(pose) = pose
         {
             grenade::safe::place_stowed(
@@ -239,7 +239,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
             for hand in Hand::BOTH {
                 let draws = inputs.free[hand.index()]
                     && if safe_occupant {
-                        matches!(socket, Socket::Hip(_) | Socket::Chest)
+                        matches!(socket, Socket::Hip(_))
                             && snapshot.held(hand).is_none()
                             && (inputs.rules.both_hands
                                 || snapshot
@@ -264,11 +264,7 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
         if grenade::safe::in_hand(hand).is_none() {
             continue;
         }
-        for socket in [
-            Socket::Hip(Hand::Left),
-            Socket::Hip(Hand::Right),
-            Socket::Chest,
-        ] {
+        for socket in Hand::BOTH.map(Socket::Hip) {
             let Some(base) = sample
                 .attachments
                 .iter()

@@ -44,7 +44,7 @@ use crate::{
         aim::gun,
         frame::Hand,
         loadout::{
-            Delivery, Socket, TakeSource, live, slot_label,
+            Delivery, TakeSource, live, slot_label,
             take::{self, TakeOffer, TakeRefusal, TakeRoute, TakeRules},
         },
         weapons::{
@@ -255,7 +255,9 @@ pub(crate) unsafe fn take_by_table(
     } else {
         unsafe { credit_stored(owner, weapon) };
     }
-    let socket = live::free_socket(weapon_type, None).unwrap_or(Socket::BackOuter);
+    let socket = live::free_socket(weapon_type, None)
+        .or_else(|| live::body_preference(weapon_type).first().copied())
+        .ok_or(Refusal::NotTaken)?;
     let object =
         unsafe { carry::carry_loose(owner, strong, socket) }.map_err(|_| Refusal::NotTaken)?;
     let other = live::held_kind(hand.other());

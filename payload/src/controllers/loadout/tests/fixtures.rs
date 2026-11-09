@@ -138,7 +138,7 @@ pub(super) fn check_invariants(table: &Loadout) {
             Place::Socket(socket) => {
                 let fits = if item.binding.safe_item().is_some() {
                     item.kind == ItemKind::Grenade
-                        && matches!(socket, Socket::Hip(_) | Socket::Chest)
+                        && matches!(socket, Socket::Hip(_))
                 } else {
                     item.kind
                         .weapon()

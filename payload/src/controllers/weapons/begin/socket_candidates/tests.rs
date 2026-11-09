@@ -184,7 +184,7 @@ fn published_offers_match_final_candidates_for_long_gun_restrictions() {
                     !(restricted
                         && attachment.hand == Some(dominant.other())
                         && attachment.usage == Some(SocketUse::Draw)
-                        && matches!(attachment.socket, Socket::Shoulder(_) | Socket::BackOuter))
+                        && matches!(attachment.socket, Socket::Shoulder(_)))
                 })
                 .copied()
                 .collect::<Vec<_>>();
@@ -201,7 +201,7 @@ fn restricted_draws_preserve_base_observations_and_missing_pose_diagnostics() {
     let frames = frames(Mat4::IDENTITY);
     let mut native = offer_sample(&frames);
     for attachment in &mut native.attachments {
-        if matches!(attachment.socket, Socket::Shoulder(_) | Socket::BackOuter) {
+        if matches!(attachment.socket, Socket::Shoulder(_)) {
             attachment.source = PoseSource::UnavailableWeapon { object: Some(11) };
             attachment.pose = Err(Missing::Weapon);
         }
@@ -230,7 +230,6 @@ fn restricted_draws_preserve_base_observations_and_missing_pose_diagnostics() {
         for socket in [
             Socket::Shoulder(Hand::Left),
             Socket::Shoulder(Hand::Right),
-            Socket::BackOuter,
         ] {
             let offers = sample
                 .attachments
@@ -260,7 +259,7 @@ fn removing_the_only_hand_offer_keeps_the_base_socket_marker() {
     for dominant in Hand::BOTH {
         let mut native = offer_sample(&frames);
         native.attachments.retain(|attachment| {
-            attachment.socket == Socket::BackOuter
+            attachment.socket == Socket::Shoulder(Hand::Right)
                 && (attachment.hand.is_none()
                     || (attachment.hand == Some(dominant.other())
                         && attachment.usage == Some(SocketUse::Draw)))

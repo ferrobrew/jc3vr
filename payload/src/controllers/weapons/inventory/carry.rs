@@ -706,6 +706,6 @@ mod left_offset_tests {
         assert!(!takes_left_offset(Socket::Hip(Hand::Left), false, 2));
         // A weapon of one gun has no second offset to take.
         assert!(!takes_left_offset(Socket::Hip(Hand::Left), true, 1));
-        assert!(!takes_left_offset(Socket::BackOuter, true, 2));
+        assert!(!takes_left_offset(Socket::Shoulder(Hand::Right), true, 2));
     }
 }

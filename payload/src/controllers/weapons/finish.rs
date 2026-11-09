@@ -264,7 +264,7 @@ pub(crate) fn finish_tick(
     let grenade_opened = Hand::BOTH.map(|hand| {
         if opened[hand.index()] && grenade::safe::in_hand(hand).is_some() {
             let socket = docked_at(hand, |volume| {
-                matches!(volume, GrabVolume::Socket(socket) if matches!(socket, Socket::Hip(_) | Socket::Chest))
+                matches!(volume, GrabVolume::Socket(socket) if matches!(socket, Socket::Hip(_)))
             }).and_then(|volume| match volume {
                 GrabVolume::Socket(socket) => Some(socket),
                 _ => None,

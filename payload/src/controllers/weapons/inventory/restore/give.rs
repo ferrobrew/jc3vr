@@ -90,9 +90,9 @@ pub fn request(request: GiveRequest) {
 }
 
 /// The shipped weapon definitions `socket` can be given, in table order: the one-handed weapons
-/// for a hip or the chest, the rest of the hand weapons for the back.
+/// for a hip, the rest of the hand weapons for the back.
 pub fn weapons_for(socket: Socket) -> Vec<&'static SpawnDefinition> {
-    let small = matches!(socket, Socket::Hip(_) | Socket::Chest);
+    let small = matches!(socket, Socket::Hip(_));
     spawn::definitions()
         .iter()
         .filter(|def| giveable(def) == Some(small))
@@ -112,13 +112,9 @@ pub fn weapons_for_hand() -> Vec<&'static SpawnDefinition> {
 /// hand's own side first, else the first of them, which the give clears.
 pub fn hand_socket(hand: Hand, small: bool, occupied: impl Fn(Socket) -> bool) -> Socket {
     let candidates = if small {
-        [Socket::Hip(hand), Socket::Hip(hand.other()), Socket::Chest]
+        [Socket::Hip(hand), Socket::Hip(hand.other())]
     } else {
-        [
-            Socket::Shoulder(hand),
-            Socket::Shoulder(hand.other()),
-            Socket::BackOuter,
-        ]
+        [Socket::Shoulder(hand), Socket::Shoulder(hand.other())]
     };
     candidates
         .into_iter()
@@ -345,7 +341,7 @@ struct DefinitionNames {
 static REFUSED: Mutex<Vec<(&'static str, Refusal)>> = Mutex::new(Vec::new());
 
 /// Whether `def` is a hand weapon a socket can be given, and if so whether it is one-handed
-/// (`Some(true)`, for a hip or the chest) or not (`Some(false)`, for the back).
+/// (`Some(true)`, for a hip) or not (`Some(false)`, for the back).
 fn giveable(def: &SpawnDefinition) -> Option<bool> {
     let tags: Vec<&str> = def.tags.split(',').map(str::trim).collect();
     let excluded = [
@@ -791,14 +787,14 @@ mod tests {
         let mut queue = RequestQueue::default();
         queue.push(GiveRequest::Grenades(2));
         queue.push(GiveRequest::Grenades(3));
-        queue.push(GiveRequest::Clear(Socket::Chest));
+        queue.push(GiveRequest::Clear(Socket::Hip(Hand::Left)));
         assert!(queue.take(false).is_empty());
         assert_eq!(
             queue.take(true),
             vec![
                 GiveRequest::Grenades(2),
                 GiveRequest::Grenades(3),
-                GiveRequest::Clear(Socket::Chest),
+                GiveRequest::Clear(Socket::Hip(Hand::Left)),
             ]
         );
         assert!(queue.take(true).is_empty());
@@ -835,10 +831,10 @@ mod tests {
 
     #[test]
     fn superseded_callbacks_cannot_consume_a_replacements_request() {
-        let mut pending = vec![pending_request(1, 3, Socket::Chest, None)];
-        let removed = remove_target(&mut pending, Some(Socket::Chest), None);
+        let mut pending = vec![pending_request(1, 3, Socket::Hip(Hand::Left), None)];
+        let removed = remove_target(&mut pending, Some(Socket::Hip(Hand::Left)), None);
         assert_eq!(removed.len(), 1);
-        pending.push(pending_request(2, 3, Socket::Chest, None));
+        pending.push(pending_request(2, 3, Socket::Hip(Hand::Left), None));
         assert!(take_pending(&mut pending, SpawnToken::Give { request: 1 }, 3).is_none());
         assert!(take_pending(&mut pending, SpawnToken::Give { request: 2 }, 3).is_some());
         assert!(take_pending(&mut pending, SpawnToken::Give { request: 2 }, 3).is_none());
@@ -847,15 +843,15 @@ mod tests {
     #[test]
     fn clear_cancels_by_socket_or_hand_and_old_world_results_are_rejected() {
         let mut pending = vec![
-            pending_request(1, 4, Socket::Chest, Some(Hand::Left)),
-            pending_request(2, 4, Socket::BackOuter, Some(Hand::Right)),
+            pending_request(1, 4, Socket::Hip(Hand::Left), Some(Hand::Left)),
+            pending_request(2, 4, Socket::Shoulder(Hand::Right), Some(Hand::Right)),
         ];
         assert_eq!(remove_target(&mut pending, None, Some(Hand::Left)).len(), 1);
         assert!(take_pending(&mut pending, SpawnToken::Give { request: 2 }, 5).is_none());
         assert!(pending.is_empty());
-        pending.push(pending_request(3, 5, Socket::Chest, Some(Hand::Left)));
+        pending.push(pending_request(3, 5, Socket::Hip(Hand::Left), Some(Hand::Left)));
         assert_eq!(
-            remove_target(&mut pending, Some(Socket::Chest), None).len(),
+            remove_target(&mut pending, Some(Socket::Hip(Hand::Left)), None).len(),
             1
         );
         assert!(pending.is_empty());
@@ -952,8 +948,8 @@ mod tests {
             Socket::Hip(Hand::Right)
         );
         let both_hips = |socket: Socket| matches!(socket, Socket::Hip(_));
-        assert_eq!(hand_socket(Hand::Left, true, both_hips), Socket::Chest);
-        let back_full = |socket: Socket| !matches!(socket, Socket::Hip(_) | Socket::Chest);
+        assert_eq!(hand_socket(Hand::Left, true, both_hips), Socket::Hip(Hand::Left));
+        let back_full = |socket: Socket| !matches!(socket, Socket::Hip(_));
         assert_eq!(
             hand_socket(Hand::Left, false, back_full),
             Socket::Shoulder(Hand::Left)
@@ -965,14 +961,14 @@ mod tests {
         let hand = weapons_for_hand();
         assert_eq!(
             hand.len(),
-            weapons_for(Socket::Chest).len() + weapons_for(Socket::BackOuter).len()
+            weapons_for(Socket::Hip(Hand::Left)).len() + weapons_for(Socket::Shoulder(Hand::Right)).len()
         );
     }
 
     #[test]
     fn every_shipped_socket_list_is_nonempty_and_disjoint() {
-        let small = weapons_for(Socket::Chest);
-        let large = weapons_for(Socket::BackOuter);
+        let small = weapons_for(Socket::Hip(Hand::Left));
+        let large = weapons_for(Socket::Shoulder(Hand::Right));
         assert!(!small.is_empty() && !large.is_empty());
         assert!(
             small

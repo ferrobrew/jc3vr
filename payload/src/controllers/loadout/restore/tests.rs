@@ -62,7 +62,7 @@ fn fixture(spare: bool) -> (Fake, Restored, ItemId) {
     let socket = Socket::Hip(Hand::Left);
     let mut expected = None;
     for (index, place) in Socket::ALL.into_iter().enumerate() {
-        if spare && place == Socket::Chest {
+        if spare && place == Socket::Hip(Hand::Right) {
             continue;
         }
         let id = table.allocate();
@@ -113,7 +113,7 @@ fn full_reservations_restore_the_awaited_identity_on_its_original_socket() {
         assert_eq!(item.binding, Binding::Live(restored.object));
         assert_eq!(item.place, Place::Socket(restored.socket));
         if spare {
-            assert!(adapter.table.sockets[Socket::Chest.index()].is_none());
+            assert!(adapter.table.sockets[Socket::Hip(Hand::Right).index()].is_none());
         }
     }
 }

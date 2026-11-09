@@ -3,7 +3,7 @@
 //!
 //! One notion covers the holster sites and the carried weapons' sockets: the two hips, the two
 //! shoulders (where the game docks its two-handed slot's weapon, on the right, and its special
-//! slot's, on the left), a third place across the back, and the chest. Each takes items of its size class or smaller
+//! slot's, on the left). Each takes items of its size class or smaller
 //! ([`Socket::class`]), and which of the hips and shoulders exist follows the dominant hand, so the
 //! layout mirrors for handedness ([`BodyLayout`]).
 
@@ -24,14 +24,11 @@ pub enum Socket {
     /// The shoulder on this side, where the game's long guns dock across the back: the two-handed
     /// and heavy slots' on the right, the special slot's on the left.
     Shoulder(Hand),
-    /// Across the back outside both shoulders, for a third long gun.
-    BackOuter,
-    Chest,
 }
 
 impl Socket {
     /// How many sockets there are.
-    pub const COUNT: usize = 6;
+    pub const COUNT: usize = 4;
 
     /// Every socket, in [`Socket::index`] order.
     pub const ALL: [Socket; Socket::COUNT] = [
@@ -39,8 +36,6 @@ impl Socket {
         Socket::Hip(Hand::Right),
         Socket::Shoulder(Hand::Left),
         Socket::Shoulder(Hand::Right),
-        Socket::BackOuter,
-        Socket::Chest,
     ];
 
     /// The socket's index in the per-socket arrays.
@@ -48,16 +43,14 @@ impl Socket {
         match self {
             Socket::Hip(hand) => hand.index(),
             Socket::Shoulder(hand) => 2 + hand.index(),
-            Socket::BackOuter => 4,
-            Socket::Chest => 5,
         }
     }
 
     /// The largest items the socket takes.
     pub const fn class(self) -> SizeClass {
         match self {
-            Socket::Hip(_) | Socket::Chest => SizeClass::Smg,
-            Socket::Shoulder(_) | Socket::BackOuter => SizeClass::Heavy,
+            Socket::Hip(_) => SizeClass::Smg,
+            Socket::Shoulder(_) => SizeClass::Heavy,
         }
     }
 
@@ -77,7 +70,6 @@ impl Socket {
                 WeaponSlot::E_SLOT_TWO_HANDED | WeaponSlot::E_SLOT_HEAVY
             ),
             Socket::Shoulder(Hand::Left) => slot == WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL,
-            Socket::BackOuter | Socket::Chest => false,
         }
     }
 
@@ -89,8 +81,6 @@ impl Socket {
             Socket::Hip(Hand::Right) => "Right hip",
             Socket::Shoulder(Hand::Left) => "Left back",
             Socket::Shoulder(Hand::Right) => "Right back",
-            Socket::BackOuter => "Outer back",
-            Socket::Chest => "Chest",
         }
     }
 
@@ -100,8 +90,6 @@ impl Socket {
             Socket::Hip(Hand::Right) => "right hip",
             Socket::Shoulder(Hand::Left) => "left shoulder",
             Socket::Shoulder(Hand::Right) => "right shoulder",
-            Socket::BackOuter => "back (outer)",
-            Socket::Chest => "chest",
         }
     }
 }
@@ -116,11 +104,10 @@ impl fmt::Display for Socket {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub struct BodyLayout {
     dominant: Hand,
-    /// How many places on the back, `0..=3`: the dominant shoulder, the other, then the outer.
+    /// How many shoulders, `0..=2`: the dominant shoulder, then the other.
     back: u8,
     /// How many hips, `0..=2`: the dominant hip, then the other.
     hips: u8,
-    chest: bool,
 }
 
 impl BodyLayout {
@@ -128,20 +115,18 @@ impl BodyLayout {
     pub const fn full(dominant: Hand) -> BodyLayout {
         BodyLayout {
             dominant,
-            back: 3,
+            back: 2,
             hips: 2,
-            chest: true,
         }
     }
 
     /// A layout of `back` places on the back and `hips` hips, each clamped to what the body has.
     #[cfg(test)]
-    pub fn new(dominant: Hand, back: u8, hips: u8, chest: bool) -> BodyLayout {
+    pub fn new(dominant: Hand, back: u8, hips: u8) -> BodyLayout {
         BodyLayout {
             dominant,
-            back: back.min(3),
+            back: back.min(2),
             hips: hips.min(2),
-            chest,
         }
     }
 
@@ -154,10 +139,8 @@ impl BodyLayout {
         match socket {
             Socket::Shoulder(side) if side == self.dominant => self.back >= 1,
             Socket::Shoulder(_) => self.back >= 2,
-            Socket::BackOuter => self.back >= 3,
             Socket::Hip(side) if side == self.dominant => self.hips >= 1,
             Socket::Hip(_) => self.hips >= 2,
-            Socket::Chest => self.chest,
         }
     }
 
@@ -168,29 +151,17 @@ impl BodyLayout {
         let dominant = self.dominant;
         let other = dominant.other();
         let by_size: [Socket; Socket::COUNT] = match weapon.size() {
-            SizeClass::Pistol => [
-                Socket::Hip(dominant),
-                Socket::Hip(other),
-                Socket::Chest,
-                Socket::Shoulder(dominant),
-                Socket::Shoulder(other),
-                Socket::BackOuter,
-            ],
-            SizeClass::Smg => [
-                Socket::Chest,
+            SizeClass::Pistol | SizeClass::Smg => [
                 Socket::Hip(dominant),
                 Socket::Hip(other),
                 Socket::Shoulder(dominant),
                 Socket::Shoulder(other),
-                Socket::BackOuter,
             ],
             SizeClass::LongGun | SizeClass::Heavy => [
                 Socket::Shoulder(dominant),
                 Socket::Shoulder(other),
-                Socket::BackOuter,
                 Socket::Hip(dominant),
                 Socket::Hip(other),
-                Socket::Chest,
             ],
         };
         let native = Socket::ALL

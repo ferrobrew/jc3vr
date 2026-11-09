@@ -381,7 +381,7 @@ mod tests {
 
     #[test]
     fn a_full_body_leaves_nowhere_to_dock() {
-        let mut t = Loadout::new(BodyLayout::new(Hand::Right, 0, 0, false));
+        let mut t = Loadout::new(BodyLayout::new(Hand::Right, 0, 0));
         let event = arrival(&t, Hand::Right, rifle(), TakeSource::World);
         apply(&mut t, event);
         assert_eq!(

@@ -230,7 +230,9 @@ unsafe fn slots(
         let Some(desired) = desired else {
             continue;
         };
-        let home = home_of(snapshot, desired).unwrap_or(Socket::BackOuter);
+        let Some(home) = home_of(snapshot, desired) else {
+            continue;
+        };
         changed |= unsafe { put_in(owner, slot, desired, home) };
     }
     changed
@@ -248,11 +250,7 @@ fn home_of(snapshot: &LoadoutSnapshot, object: ObjectKey) -> Option<Socket> {
         Place::Socket(socket) => Some(socket),
         Place::Hand(_) => {
             let weapon = item.kind.weapon()?;
-            snapshot
-                .body
-                .preference(weapon)
-                .next()
-                .or(Some(Socket::BackOuter))
+            snapshot.body.preference(weapon).next()
         }
         Place::World(_) => None,
     }

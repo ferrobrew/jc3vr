@@ -115,12 +115,11 @@ fn an_object_taken_as_another_kind_is_refused() {
 }
 
 #[test_case(a_pistol(), Socket::Hip(Hand::Right) => Ok(()); "a pistol on a hip")]
-#[test_case(an_smg(), Socket::Chest => Ok(()); "a submachine gun on the chest")]
 #[test_case(an_smg(), Socket::Hip(Hand::Left) => Ok(()); "a submachine gun on a hip")]
 #[test_case(a_pistol(), Socket::Shoulder(Hand::Left) => Ok(()); "a pistol fits the back, being smaller")]
 #[test_case(a_rifle(), Socket::Hip(Hand::Right) => Err(SizeClass::LongGun); "no rifle on a hip")]
-#[test_case(a_launcher(), Socket::BackOuter => Ok(()); "a heavy weapon on the back")]
-#[test_case(a_launcher(), Socket::Chest => Err(SizeClass::Heavy); "no heavy weapon on the chest")]
+#[test_case(a_launcher(), Socket::Shoulder(Hand::Right) => Ok(()); "a heavy weapon on a shoulder")]
+#[test_case(a_launcher(), Socket::Hip(Hand::Left) => Err(SizeClass::Heavy); "no heavy weapon on a hip")]
 fn a_socket_takes_its_size_class_or_smaller(
     kind: WeaponType,
     socket: Socket,
@@ -159,9 +158,9 @@ fn a_prop_has_no_socket_and_letting_go_drops_it_out_of_the_table() {
     let mut t = table();
     let prop = take(&mut t, Hand::Left, 1, ItemKind::Prop);
     assert_eq!(
-        t.dock(Hand::Left, Socket::Chest),
+        t.dock(Hand::Left, Socket::Hip(Hand::Left)),
         Err(TransitionError::DoesNotFit {
-            socket: Socket::Chest,
+            socket: Socket::Hip(Hand::Left),
             kind: ItemKind::Prop
         })
     );
@@ -185,7 +184,7 @@ fn a_thrown_grenade_leaves_the_table() {
 
 #[test]
 fn a_dock_needs_a_socket_the_body_has_and_that_is_free() {
-    let mut t = Loadout::new(BodyLayout::new(Hand::Right, 1, 1, false));
+    let mut t = Loadout::new(BodyLayout::new(Hand::Right, 1, 1));
     take(&mut t, Hand::Right, 1, weapon(a_rifle()));
     assert_eq!(
         t.dock(Hand::Right, Socket::Shoulder(Hand::Left)),
@@ -211,14 +210,14 @@ fn a_dock_needs_a_socket_the_body_has_and_that_is_free() {
 #[test]
 fn an_occupied_socket_the_body_no_longer_has_keeps_its_weapon_until_drawn() {
     let mut t = table();
-    let sniper = docked(&mut t, Socket::BackOuter, 1, a_sniper());
-    t.set_body(BodyLayout::new(Hand::Right, 2, 2, true));
-    assert_eq!(place(&t, sniper), Some(Place::Socket(Socket::BackOuter)));
-    t.draw(Socket::BackOuter, Hand::Left).unwrap();
+    let sniper = docked(&mut t, Socket::Shoulder(Hand::Left), 1, a_sniper());
+    t.set_body(BodyLayout::new(Hand::Right, 1, 2));
+    assert_eq!(place(&t, sniper), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
+    t.draw(Socket::Shoulder(Hand::Left), Hand::Left).unwrap();
     take(&mut t, Hand::Right, 2, weapon(a_rifle()));
     assert_eq!(
-        t.dock(Hand::Left, Socket::BackOuter),
-        Err(TransitionError::SocketAbsent(Socket::BackOuter))
+        t.dock(Hand::Left, Socket::Shoulder(Hand::Left)),
+        Err(TransitionError::SocketAbsent(Socket::Shoulder(Hand::Left)))
     );
 }
 
@@ -227,8 +226,8 @@ fn a_draw_takes_the_socket_s_weapon_into_an_empty_hand() {
     let mut t = table();
     let rifle = docked(&mut t, Socket::Shoulder(Hand::Right), 1, a_rifle());
     assert_eq!(
-        t.draw(Socket::Chest, Hand::Left),
-        Err(TransitionError::SocketEmpty(Socket::Chest))
+        t.draw(Socket::Hip(Hand::Left), Hand::Left),
+        Err(TransitionError::SocketEmpty(Socket::Hip(Hand::Left)))
     );
     let pistol = take(&mut t, Hand::Left, 2, weapon(a_pistol()));
     assert_eq!(
@@ -331,7 +330,7 @@ fn a_weapon_returns_only_when_lost_rather_than_dropped(
 
 #[test]
 fn a_lost_weapon_with_no_free_socket_comes_to_the_player_s_feet() {
-    let mut t = Loadout::new(BodyLayout::new(Hand::Right, 1, 2, true));
+    let mut t = Loadout::new(BodyLayout::new(Hand::Right, 1, 2));
     docked(&mut t, Socket::Shoulder(Hand::Right), 1, a_sniper());
     let rifle = take(&mut t, Hand::Left, 2, weapon(a_rifle()));
     t.let_go(Hand::Left, Release::Dropped).unwrap();
@@ -392,7 +391,6 @@ fn a_give_with_the_hands_and_the_back_full_comes_to_the_player_s_feet() {
     for (n, socket) in [
         Socket::Shoulder(Hand::Right),
         Socket::Shoulder(Hand::Left),
-        Socket::BackOuter,
     ]
     .into_iter()
     .enumerate()
@@ -539,29 +537,96 @@ fn a_restored_weapon_docks_where_it_was_recorded_or_where_it_fits() {
         assert_eq!(transitions[0].cause, Cause::Restored);
         transitions[0].item
     };
-    let sniper = restore(&mut t, 1, a_sniper(), Socket::BackOuter);
-    assert_eq!(place(&t, sniper), Some(Place::Socket(Socket::BackOuter)));
+    let sniper = restore(&mut t, 1, a_sniper(), Socket::Shoulder(Hand::Left));
+    assert_eq!(place(&t, sniper), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
     // Its socket is taken now, so the next goes where a weapon of its kind goes.
-    let rifle = restore(&mut t, 2, a_rifle(), Socket::BackOuter);
-    assert!(matches!(
+    let rifle = restore(&mut t, 2, a_rifle(), Socket::Shoulder(Hand::Left));
+    assert_eq!(
         place(&t, rifle),
-        Some(Place::Socket(Socket::Shoulder(_)))
-    ));
-    // A recorded socket that does not fit is not used.
-    let launcher = restore(&mut t, 3, a_launcher(), Socket::Chest);
-    assert!(matches!(
+        Some(Place::Socket(Socket::Shoulder(Hand::Right)))
+    );
+    // Both shoulders are occupied, so no further long gun can be restored.
+    let before = t.snapshot();
+    assert_eq!(
+        t.restored(Restored {
+            object: object(3),
+            weapon: a_launcher(),
+            socket: Socket::Hip(Hand::Left),
+        }),
+        Err(TransitionError::NoRestoreSocket)
+    );
+    assert_eq!(t.snapshot(), before);
+    t.draw(Socket::Shoulder(Hand::Right), Hand::Right).unwrap();
+    t.let_go(Hand::Right, Release::Dropped).unwrap();
+    // A recorded hip cannot hold a launcher; the free shoulder is used instead.
+    let launcher = restore(&mut t, 3, a_launcher(), Socket::Hip(Hand::Left));
+    assert_eq!(
         place(&t, launcher),
-        Some(Place::Socket(Socket::Shoulder(_)))
-    ));
+        Some(Place::Socket(Socket::Shoulder(Hand::Right)))
+    );
     assert!(matches!(
         t.restored(Restored {
             object: object(1),
             weapon: a_sniper(),
-            socket: Socket::Chest,
+            socket: Socket::Hip(Hand::Left),
         }),
         Err(TransitionError::AlreadyInTable { .. })
     ));
     check_invariants(&t);
+}
+
+#[test]
+fn every_socket_has_a_distinct_contiguous_index() {
+    assert_eq!(
+        Socket::ALL,
+        [
+            Socket::Hip(Hand::Left),
+            Socket::Hip(Hand::Right),
+            Socket::Shoulder(Hand::Left),
+            Socket::Shoulder(Hand::Right),
+        ]
+    );
+    for (index, socket) in Socket::ALL.into_iter().enumerate() {
+        assert_eq!(socket.index(), index);
+    }
+}
+
+#[test]
+fn a_layout_mirrors_its_available_hips_and_shoulders_and_clamps_their_counts() {
+    for dominant in Hand::BOTH {
+        for back in 0..=3u8 {
+            for hips in 0..=3u8 {
+                let body = BodyLayout::new(dominant, back, hips);
+                assert_eq!(body.has(Socket::Shoulder(dominant)), back >= 1);
+                assert_eq!(body.has(Socket::Shoulder(dominant.other())), back >= 2);
+                assert_eq!(body.has(Socket::Hip(dominant)), hips >= 1);
+                assert_eq!(body.has(Socket::Hip(dominant.other())), hips >= 2);
+                if back >= 2 && hips >= 2 {
+                    assert_eq!(body, BodyLayout::full(dominant));
+                }
+            }
+        }
+    }
+}
+
+#[test_case(a_pistol(); "a pistol")]
+#[test_case(an_smg(); "a submachine gun")]
+fn a_small_weapon_uses_both_hips_then_both_shoulders_without_repeating_a_socket(
+    weapon: WeaponType,
+) {
+    for dominant in Hand::BOTH {
+        assert_eq!(
+            BodyLayout::full(dominant)
+                .preference(weapon)
+                .collect::<Vec<_>>(),
+            vec![
+                Socket::Hip(dominant),
+                Socket::Hip(dominant.other()),
+                Socket::Shoulder(dominant),
+                Socket::Shoulder(dominant.other()),
+            ]
+        );
+    }
 }
 
 #[test]

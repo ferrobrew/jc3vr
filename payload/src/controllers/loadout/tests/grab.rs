@@ -2,13 +2,14 @@
 
 use pretty_assertions::assert_eq;
 
+use super::fixtures::{a_launcher, a_pistol, a_rifle, docked, table, take, weapon};
+
 use crate::controllers::{
     frame::Hand,
     loadout::{
         grab::{GrabRules, Release, SocketMove, SocketRefusal, grab, refusing, release, swaps},
         item::ItemKind,
         socket::Socket,
-        tests::fixtures::{a_launcher, a_pistol, a_rifle, docked, table, take, weapon},
     },
 };
 
@@ -100,15 +101,14 @@ fn a_prop_fits_no_socket() {
 fn the_sockets_that_refuse_a_held_weapon_are_the_taken_and_the_small() {
     let mut t = table();
     take(&mut t, Hand::Right, 1, weapon(a_launcher()));
-    docked(&mut t, Socket::BackOuter, 2, a_rifle());
+    docked(&mut t, Socket::Shoulder(Hand::Left), 2, a_rifle());
     let refused: Vec<Socket> = refusing(&t.snapshot(), Hand::Right).collect();
     assert_eq!(
         refused,
         [
             Socket::Hip(Hand::Left),
             Socket::Hip(Hand::Right),
-            Socket::BackOuter,
-            Socket::Chest
+            Socket::Shoulder(Hand::Left)
         ]
     );
     assert_eq!(refusing(&t.snapshot(), Hand::Left).count(), 0);
@@ -153,9 +153,9 @@ fn a_release_over_a_taken_back_socket_swaps_and_a_taken_hip_does_not() {
     assert!(!swaps(&s, Hand::Right, LEFT_HIP));
     // An empty hand swaps nothing.
     assert!(!swaps(&s, Hand::Left, RIGHT_SHOULDER));
-    // Every back socket takes the heaviest weapons, so a launcher swaps onto the outer back too.
+    // Either shoulder accepts a launcher in place of a docked rifle.
     let mut t = table();
     take(&mut t, Hand::Right, 1, weapon(a_launcher()));
-    docked(&mut t, Socket::BackOuter, 2, a_rifle());
-    assert!(swaps(&t.snapshot(), Hand::Right, Socket::BackOuter));
+    docked(&mut t, Socket::Shoulder(Hand::Left), 2, a_rifle());
+    assert!(swaps(&t.snapshot(), Hand::Right, Socket::Shoulder(Hand::Left)));
 }

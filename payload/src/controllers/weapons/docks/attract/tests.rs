@@ -39,8 +39,8 @@ fn dock(socket: Socket, hand: Hand, centre: Vec3, radius: f32) -> (Candidate, So
     )
 }
 
-/// The right shoulder's socket behind the shoulder blade, the right hip's beside the thigh, and the
-/// chest's in front of the sternum, each free for the right hand.
+/// The right shoulder's socket behind the shoulder blade and the right hip's beside the thigh,
+/// each free for the right hand.
 fn free_sockets() -> Vec<(Candidate, SocketUse)> {
     vec![
         dock(
@@ -55,7 +55,6 @@ fn free_sockets() -> Vec<(Candidate, SocketUse)> {
             Vec3::new(0.2, 0.85, 0.0),
             0.12,
         ),
-        dock(Socket::Chest, Hand::Right, Vec3::new(0.0, 1.3, -0.12), 0.09),
     ]
 }
 
@@ -120,11 +119,14 @@ fn a_hand_beside_the_thigh_docks_on_the_hip() {
 
 #[test]
 fn the_socket_the_hand_is_deepest_inside_wins() {
-    // Between the chest socket and the back's: nearer the chest socket as a share of its radius.
-    assert_eq!(
-        attracted(Vec3::new(0.03, 1.31, -0.08), 0.2),
-        Some(Socket::Chest)
-    );
+    let grip = Vec3::new(0.2, 1.08, 0.05);
+    let hip_distance = grip.distance(Vec3::new(0.2, 0.85, 0.0));
+    let shoulder_distance = grip.distance(Vec3::new(0.12, 1.3, 0.15));
+    assert!(hip_distance < shoulder_distance);
+    assert!(hip_distance <= ATTRACTION.hip_m);
+    assert!(shoulder_distance <= ATTRACTION.shoulder_m);
+    assert!(shoulder_distance / ATTRACTION.shoulder_m < hip_distance / ATTRACTION.hip_m);
+    assert_eq!(attracted(grip, 0.2), Some(Socket::Shoulder(Hand::Right)));
 }
 
 #[test]
@@ -164,9 +166,11 @@ fn only_free_fitting_sockets_attract_and_only_their_hand() {
     let mut sockets = free_sockets();
     sockets[0].1 = SocketUse::NoFit;
     sockets[1].1 = SocketUse::Draw;
+    assert!(attractors(&sockets, Some(&body), offset, &ATTRACTION).is_empty());
+    sockets[1].1 = SocketUse::Dock;
     let attractors = attractors(&sockets, Some(&body), offset, &ATTRACTION);
     assert_eq!(attractors.len(), 1);
-    assert_eq!(attractors[0].socket, Socket::Chest);
+    assert_eq!(attractors[0].socket, Socket::Hip(Hand::Right));
     let over = Vec3::new(0.18, 1.62, 0.0);
     assert_eq!(
         attract(&attractors, Hand::Right, over, 0.5, &ATTRACTION),
@@ -190,18 +194,19 @@ fn attractors_for_both() -> Vec<Attractor> {
 }
 
 #[test]
-fn without_a_body_only_the_chest_attracts() {
-    let attractors = attractors(&free_sockets(), None, offset, &ATTRACTION);
-    assert_eq!(
-        attractors.iter().map(|a| a.socket).collect::<Vec<_>>(),
-        vec![Socket::Chest]
-    );
+fn without_a_body_no_socket_attracts() {
+    assert!(attractors(&free_sockets(), None, offset, &ATTRACTION).is_empty());
 }
 
 #[test]
 fn an_attraction_never_reaches_less_than_the_sockets_own_reach() {
-    let wide = vec![dock(Socket::Chest, Hand::Right, Vec3::ZERO, 0.5)];
-    let attractors = attractors(&wide, None, offset, &ATTRACTION);
+    let wide = vec![dock(
+        Socket::Shoulder(Hand::Right),
+        Hand::Right,
+        Vec3::ZERO,
+        0.5,
+    )];
+    let attractors = attractors(&wide, Some(&body(0.0)), offset, &ATTRACTION);
     assert_eq!(attractors[0].radius, 0.5);
 }
 

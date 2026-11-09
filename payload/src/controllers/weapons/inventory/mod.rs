@@ -751,7 +751,7 @@ mod status_tests {
                 distance_m: Some(4.5),
                 pinned: true,
             }],
-            carried: vec![(WeaponSlot::E_SLOT_DUAL_WIELD, Socket::Chest)],
+            carried: vec![(WeaponSlot::E_SLOT_DUAL_WIELD, Socket::Hip(Hand::Left))],
             with_others: 2,
             pins: 7,
             forgotten: 8,

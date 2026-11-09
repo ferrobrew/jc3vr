@@ -117,7 +117,7 @@ mod tests {
         let restored = Restored {
             object: ObjectAddress::new(NonZeroUsize::new(100).unwrap()),
             weapon,
-            socket: Socket::BackOuter,
+            socket: Socket::Shoulder(Hand::Left),
         };
         let mut callback = Some(restored);
         assert!(!live.begin_restoration(Hand::Right, &[], true, now));

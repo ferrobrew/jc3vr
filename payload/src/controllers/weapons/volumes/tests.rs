@@ -45,21 +45,15 @@ fn standing(dims: &BodyDimensions) -> BodyFrame {
 
 /// One unclaimed socket volume per socket with a place on the body, for the draw restriction.
 fn sockets() -> Vec<Candidate> {
-    [
-        Socket::Hip(Hand::Left),
-        Socket::Hip(Hand::Right),
-        Socket::Shoulder(Hand::Left),
-        Socket::Shoulder(Hand::Right),
-        Socket::Chest,
-    ]
-    .into_iter()
-    .map(|socket| Candidate {
-        volume: GrabVolume::Socket(socket),
-        centre: Vec3::ZERO,
-        radius: 0.1,
-        hand: None,
-    })
-    .collect()
+    Socket::ALL
+        .into_iter()
+        .map(|socket| Candidate {
+            volume: GrabVolume::Socket(socket),
+            centre: Vec3::ZERO,
+            radius: 0.1,
+            hand: None,
+        })
+        .collect()
 }
 
 /// Every pouch, for a player whose dominant hand is `dominant`.
@@ -507,7 +501,7 @@ fn the_back_sockets_reach_lower_and_further_out_than_their_weapons_sit() {
     let sockets = [
         at(Socket::Shoulder(Hand::Left), -0.1),
         at(Socket::Shoulder(Hand::Right), 0.1),
-        at(Socket::BackOuter, 0.12),
+        at(Socket::Hip(Hand::Left), -0.2),
         at(Socket::Hip(Hand::Right), 0.2),
     ];
     let mut reached = sockets;

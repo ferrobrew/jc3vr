@@ -28,7 +28,7 @@ fn clear_reset_and_expiry_never_erase_callback_exposure_or_block_preparation() {
     let record = Record {
         tag_hash: 7,
         magazine: 5,
-        socket: Socket::BackOuter,
+        socket: Socket::Shoulder(crate::controllers::frame::Hand::Right),
         single: false,
     };
     PLAN.lock().spawning.push(Spawning {

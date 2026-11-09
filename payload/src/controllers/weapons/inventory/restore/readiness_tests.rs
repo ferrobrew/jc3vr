@@ -6,7 +6,7 @@ fn pending() -> Pending {
         records: vec![Record {
             tag_hash: 7,
             magazine: 5,
-            socket: Socket::BackOuter,
+            socket: Socket::Shoulder(crate::controllers::frame::Hand::Right),
             single: false,
         }],
         slot_pistol_single: None,

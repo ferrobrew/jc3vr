@@ -41,7 +41,6 @@ use crate::controllers::{
 pub const SOCKETS: SocketTuning = SocketTuning {
     hip_radius_m: 0.12,
     shoulder_radius_m: 0.17,
-    chest_radius_m: 0.09,
 };
 
 /// The pouches' fixed placement. Each pouch's centre is a few centimetres out from the body's
@@ -60,10 +59,8 @@ pub struct SocketTuning {
     /// The sockets on both hips.
     pub hip_radius_m: f32,
     /// The sockets over the shoulders, the right one where the game docks the two-handed slot and
-    /// the left one where it docks the special slot, and the outer back.
+    /// the left one where it docks the special slot.
     pub shoulder_radius_m: f32,
-    /// The socket on the chest.
-    pub chest_radius_m: f32,
 }
 
 /// The pouches on the front of the body: the magazine pouch at the front of the belt, and the grenade and C4 pouches on either side of the chest. Each is placed only
@@ -178,7 +175,7 @@ impl BodyFrame {
     }
 }
 
-/// Move the back's sockets' volumes (the shoulders' and the outer back's) in `candidates` from where
+/// Move the shoulders' socket volumes in `candidates` from where
 /// a weapon would sit on `body` to where a hand putting one away over the shoulder closes: lower
 /// and further out from the spine, by [`BACK_REACH_OFFSET_M`] in the chest's frame. A long gun on
 /// the back sits with its grip up behind the head, and a hand reaching over the shoulder to put a
@@ -189,10 +186,7 @@ pub fn reach_back_sockets(candidates: &mut [Candidate], body: &BodyFrame) {
     let midline = body.skeleton.chest();
     let right = body.chest * Vec3::X;
     for candidate in candidates {
-        if !matches!(
-            candidate.volume,
-            GrabVolume::Socket(Socket::Shoulder(_) | Socket::BackOuter)
-        ) {
+        if !matches!(candidate.volume, GrabVolume::Socket(Socket::Shoulder(_))) {
             continue;
         }
         let side = if (candidate.centre - midline).dot(right) < 0.0 {
@@ -221,10 +215,7 @@ pub fn reserve_long_guns(candidates: &mut Vec<Candidate>, dominant: Hand, empty:
         return;
     }
     candidates.retain_mut(|c| {
-        if !matches!(
-            c.volume,
-            GrabVolume::Socket(Socket::Shoulder(_) | Socket::BackOuter)
-        ) {
+        if !matches!(c.volume, GrabVolume::Socket(Socket::Shoulder(_))) {
             return true;
         }
         match c.hand {
@@ -462,7 +453,7 @@ const BELLY_FRONT_M: f32 = 0.03 + body::EYES_FORWARD_OF_SHOULDERS;
 const CHEST_POUCH_DROP_FRACTION: f32 = 0.22;
 
 /// How far out from the midline the chest pouches' landmark sits, as a fraction of the shoulder
-/// width: about under the shoulder joint, clear of the chest socket in the middle.
+/// width: about under the shoulder joint.
 const CHEST_POUCH_OUT_FRACTION: f32 = 0.52;
 
 /// How far in front of the shoulder joints' line the front of the chest is, metres: a little deeper

@@ -70,9 +70,9 @@ fn the_other_hand_s_weapon_goes_before_a_socket_s() {
 #[test]
 fn the_socket_the_game_docks_a_slot_on_goes_first() {
     let mut t = table();
-    let outer = docked(&mut t, Socket::BackOuter, 1, a_rifle());
+    let non_native = docked(&mut t, Socket::Shoulder(Hand::Left), 1, a_rifle());
     let native = docked(&mut t, Socket::Shoulder(Hand::Right), 2, a_rifle());
-    assert!(outer < native);
+    assert!(non_native < native);
     assert_eq!(holds(&t, WeaponSlot::E_SLOT_TWO_HANDED), Some(native));
 }
 
@@ -88,13 +88,13 @@ fn a_held_heavy_weapon_is_never_in_the_heavy_slot() {
 #[test]
 fn a_heavy_weapon_on_the_back_stays_out_of_the_heavy_slot_and_in_the_sidecar() {
     let mut t = table();
-    let launcher = docked(&mut t, Socket::BackOuter, 1, a_launcher());
+    let launcher = docked(&mut t, Socket::Shoulder(Hand::Left), 1, a_launcher());
     assert_eq!(holds(&t, WeaponSlot::E_SLOT_HEAVY), None);
     let store = project_store(&t);
     let entry = store.sidecar.iter().find(|e| e.item == launcher);
     assert_eq!(
         entry.map(|e| (e.place, e.slot)),
-        Some((BodyPlace::Socket(Socket::BackOuter), None))
+        Some((BodyPlace::Socket(Socket::Shoulder(Hand::Left)), None))
     );
 }
 
@@ -118,7 +118,7 @@ fn the_consumables_slots_stay_the_game_s() {
 fn the_sidecar_records_every_weapon_on_the_body_and_its_slot() {
     let mut t = table();
     let held = take(&mut t, Hand::Left, 1, weapon(a_rifle()));
-    let extra = docked(&mut t, Socket::BackOuter, 2, a_rifle());
+    let extra = docked(&mut t, Socket::Shoulder(Hand::Left), 2, a_rifle());
     let pistol = docked(&mut t, Socket::Hip(Hand::Left), 3, a_pistol());
     take(&mut t, Hand::Right, 4, ItemKind::Prop);
     let store = project_store(&t);
@@ -140,7 +140,7 @@ fn the_sidecar_records_every_weapon_on_the_body_and_its_slot() {
                 BodyPlace::Socket(Socket::Hip(Hand::Left)),
                 Some(WeaponSlot::E_SLOT_DUAL_WIELD)
             ),
-            (extra, BodyPlace::Socket(Socket::BackOuter), None),
+            (extra, BodyPlace::Socket(Socket::Shoulder(Hand::Left)), None),
         ]
     );
 }
