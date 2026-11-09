@@ -30,7 +30,7 @@ use crate::{
     config::Config,
     controllers::{
         body::{
-            procedural::{hips::hip_yaw, wings::airborne_torso_heading},
+            procedural::wings::airborne_torso_heading,
             rig::torso::{CHEST_LIMIT_DEG, TorsoEstimate},
         },
         frame::Pose,
@@ -62,10 +62,9 @@ pub fn follow_settings() -> FollowSettings {
     let Some(yaw) = grounded::body_yaw() else {
         return FollowSettings::OFF;
     };
-    let hips = follow.square_hips.then(hip_yaw).flatten().unwrap_or(0.0);
     FollowSettings {
         enabled: true,
-        torso: Some(wrap(yaw - hips)),
+        torso: Some(yaw),
         deadband_deg: 0.0,
     }
 }

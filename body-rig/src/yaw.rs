@@ -306,10 +306,13 @@ impl YawFollow {
                 dt
             };
         self.moving_side = side;
-        let steady = self.observe_steady(head, looking_down, dt, tuning);
+        let steady = self.observe_steady(head, looking_down || input.moving, dt, tuning);
         // A settle lasts only while the head stays steady over a standing body; any other turn
         // takes over from there.
-        if looking_down || (self.turning == Some(TurnCause::Steady) && (!steady || input.moving)) {
+        if looking_down
+            || (self.turning == Some(TurnCause::Steady) && (!steady || input.moving))
+            || (self.turning == Some(TurnCause::Moving) && !input.moving)
+        {
             self.turning = None;
         }
         if self.turning.is_none() {
@@ -523,6 +526,44 @@ mod tests {
         moving.moving = true;
         assert!(run(&mut follow, moving, 1.0) > 0.2);
         assert!(!follow.turning());
+    }
+
+    #[test]
+    fn stopping_drops_only_the_travel_turn_and_restarts_the_idle_settle() {
+        let mut follow = YawFollow::new();
+        follow.update(&look(0.0), &TUNING);
+        let mut moving = look(TUNING.moving_deadzone_deg + 10.0);
+        moving.moving = true;
+        for _ in 0..100 {
+            follow.update(&moving, &TUNING);
+            if follow.turn_cause() == Some(TurnCause::Moving) {
+                break;
+            }
+        }
+        assert_eq!(follow.turn_cause(), Some(TurnCause::Moving));
+        let stopped = follow.yaw().unwrap();
+        let standing = YawInput {
+            moving: false,
+            ..moving
+        };
+        for _ in 0..(TUNING.steady_s * 0.9 / DT) as usize {
+            assert_eq!(follow.update(&standing, &TUNING), stopped);
+            assert!(!follow.turning());
+        }
+        run(&mut follow, look(100.0), 2.0);
+        assert!((wrap(follow.yaw().unwrap() - 100.0f32.to_radians())).abs() < 0.1);
+    }
+
+    #[test]
+    fn a_deliberate_large_turn_survives_stopping() {
+        let mut follow = YawFollow::new();
+        follow.update(&look(0.0), &TUNING);
+        let mut moving = look(100.0);
+        moving.moving = true;
+        follow.update(&moving, &TUNING);
+        assert_eq!(follow.turn_cause(), Some(TurnCause::Large));
+        let before = follow.yaw().unwrap();
+        assert!(follow.update(&look(100.0), &TUNING) > before);
     }
 
     #[test]

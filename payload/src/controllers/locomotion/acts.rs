@@ -147,7 +147,7 @@ pub(crate) unsafe fn filter(
     if scope == ActScope::OnFoot
         && wanted == ActDecision::Drop
         && turn_animation
-        && grounded::body_yaw().is_some()
+        && grounded::turning()
         && locomotion_status().standing_still()
     {
         return ActDecision::Pass;

@@ -13,6 +13,7 @@
 use std::time::{Duration, Instant};
 
 use body_rig::angle::{line_yaw, wrap};
+use glam::Quat;
 use parking_lot::Mutex;
 
 use crate::controllers::body::procedural::{authority::Case, rig::RigBone, solver::pose::RigPose};
@@ -133,11 +134,63 @@ const FRESH: Duration = Duration::from_millis(500);
 
 static PUBLISHED: Mutex<Option<(f32, Instant)>> = Mutex::new(None);
 
+pub(super) fn square_pose(animated: &RigPose, target: f32, weight: f32) -> RigPose {
+    let mut pose = *animated;
+    if !target.is_finite() || !weight.is_finite() || weight <= 0.0 {
+        return pose;
+    }
+    let Some(heading) = line_yaw(
+        animated.position(RigBone::LeftUpLeg),
+        animated.position(RigBone::RightUpLeg),
+    ) else {
+        return pose;
+    };
+    pose.rotate_about(
+        RigBone::Pelvis,
+        Quat::from_rotation_y(wrap(target - heading) * weight.clamp(0.0, 1.0)),
+        animated.position(RigBone::Pelvis),
+    );
+    pose
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const DT: f32 = 1.0 / 60.0;
+
+    #[test]
+    fn visual_squaring_keeps_the_root_and_torso_and_preserves_leg_lengths() {
+        let rig = crate::controllers::body::procedural::rig::Rig::from_skeleton(
+            &crate::controllers::body::procedural::rig::tests::skeleton(),
+        )
+        .unwrap();
+        let mut animated = RigPose {
+            bones: rig.reference,
+        };
+        let pivot = animated.position(RigBone::Pelvis);
+        animated.rotate_about(RigBone::Pelvis, Quat::from_rotation_y(-0.6), pivot);
+        let target = 0.35;
+        let squared = square_pose(&animated, target, 1.0);
+        let yaw = line_yaw(
+            squared.position(RigBone::LeftUpLeg),
+            squared.position(RigBone::RightUpLeg),
+        )
+        .unwrap();
+        assert!(wrap(yaw - target).abs() < 1e-5);
+        for bone in RigBone::ALL {
+            if !bone.descends_from(RigBone::Pelvis) {
+                assert_eq!(squared.get(bone), animated.get(bone));
+            } else if let Some(parent) = bone.parent() {
+                let length = animated.position(bone).distance(animated.position(parent));
+                assert!(
+                    (squared.position(bone).distance(squared.position(parent)) - length).abs()
+                        < 1e-5
+                );
+            }
+        }
+        assert_eq!(square_pose(&animated, target, 0.0), animated);
+    }
 
     #[test]
     fn the_first_measurement_is_taken_whole() {

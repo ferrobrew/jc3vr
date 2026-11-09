@@ -218,6 +218,10 @@ pub fn body_yaw() -> Option<f32> {
     fresh(Instant::now()).map(|p| p.frame.output.body_yaw)
 }
 
+pub(crate) fn turning() -> bool {
+    fresh(Instant::now()).is_some_and(|p| p.frame.output.turning)
+}
+
 /// The player's torso in the cockpit frame, as the rig places it: the neck pivot, the spine down to
 /// the waist pivot, the shoulders across it by the chest's heading, and the hips by the legs'.
 pub fn torso() -> Option<TorsoEstimate> {
