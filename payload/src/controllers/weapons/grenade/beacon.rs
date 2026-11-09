@@ -379,7 +379,7 @@ impl Gesture {
     }
 
     fn cancel(&mut self) {
-        self.release = Some(Release::REST);
+        self.release.get_or_insert(Release::REST);
     }
 }
 
@@ -535,7 +535,7 @@ mod tests {
     }
 
     #[test]
-    fn cancellation_overrides_a_throw_and_stays_resting() {
+    fn cancellation_preserves_a_recorded_release_and_only_defaults_to_rest() {
         let mut gesture = Gesture {
             hand: Hand::Right,
             since_s: 0.0,
@@ -547,6 +547,13 @@ mod tests {
             }),
             grip: Grip::Held,
         };
+        let recorded = gesture.release;
+        assert!(should_drop(gesture.grip, false, BODY_WAIT));
+        gesture.cancel();
+        gesture.cancel();
+        assert_eq!(gesture.release, recorded);
+
+        gesture.release = None;
         gesture.cancel();
         gesture.cancel();
         assert_eq!(gesture.release, Some(Release::REST));
