@@ -109,13 +109,11 @@ pub struct SwimStrokeConfig {
     /// A hand slower than this through the water pushes nothing, metres per second, so a hand held
     /// still or drifting does not swim.
     pub min_speed_mps: f32,
-    /// How far the palm may face away from the way the hand moves and still push, degrees; the push
-    /// fades to nothing there, so a palm slicing edge-on through its recovery pushes nothing. A
-    /// hand closed round a controller rarely holds its palm square to the stroke, so the cone is
-    /// wide.
+    /// How far the palm may face away from the way the hand moves before the full-strength cone
+    /// falls to its minimum assistance. A hand closed round a controller rarely holds its palm
+    /// square to the stroke. A palm facing against the motion contributes nothing.
     pub palm_cone_deg: f32,
-    /// The backward push that counts as a stroke catching the water, for the haptic knock, metres
-    /// per second of paddle speed.
+    /// The paddle speed that gives the catch haptic its full strength, metres per second.
     pub catch_mps: f32,
     /// The heading turn per square metre of the hands' smoothed turning push about the head, in
     /// radians per second per square metre per second.
@@ -135,7 +133,7 @@ impl SwimStrokeConfig {
         Self {
             enabled: true,
             speed_per_metre: 4.5,
-            decay_s: 1.5,
+            decay_s: 2.0,
             max_speed_mps: 5.0,
             min_speed_mps: 0.3,
             palm_cone_deg: 75.0,

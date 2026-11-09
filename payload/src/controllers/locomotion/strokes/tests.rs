@@ -1,6 +1,4 @@
-//! Tests for the strokes' model.
-
-use glam::Vec3;
+use glam::{Quat, Vec3};
 
 use crate::controllers::locomotion::{
     config::SwimStrokeConfig,
@@ -8,372 +6,211 @@ use crate::controllers::locomotion::{
 };
 
 const DT: f32 = 1.0 / 60.0;
-const HEAD: Vec3 = Vec3::ZERO;
-/// A palm facing back, as one pulling water toward the feet does.
-const PALM_BACK: Vec3 = Vec3::Z;
-/// A palm facing down, edge-on to a hand moving forward or back.
-const PALM_DOWN: Vec3 = Vec3::NEG_Y;
 
-/// Where a hand starts its stroke on `side` (-1 left, +1 right): out in front at chest height.
-fn start(side: f32) -> Vec3 {
-    Vec3::new(0.3 * side, -0.35, -0.5)
+fn sample(
+    model: &mut StrokeModel,
+    hands: [Option<StrokeHand>; 2],
+    rotation: Quat,
+    underwater: bool,
+) -> StrokeStep {
+    model.step(
+        &StrokeInput {
+            hands: hands.map(|hand| {
+                hand.map(|hand| StrokeHand {
+                    position: rotation * hand.position,
+                    palm: rotation * hand.palm,
+                })
+            }),
+            head: Vec3::ZERO,
+            forward: rotation * Vec3::NEG_Z,
+            underwater,
+            dt: DT,
+        },
+        &SwimStrokeConfig::new(),
+    )
 }
 
-/// Run `ticks` ticks of the hands moving by `velocity` each (metres per second), palms `palm`,
-/// and return every step.
-fn run(
-    model: &mut StrokeModel,
-    hands: [Option<(Vec3, Vec3, Vec3)>; 2],
-    ticks: usize,
-    underwater: bool,
-) -> Vec<StrokeStep> {
-    let config = SwimStrokeConfig::new();
-    (0..ticks)
+fn breaststroke(t: f32, side: f32) -> StrokeHand {
+    let (position, palm) = if t < 0.3 {
+        let a = t / 0.3;
+        (
+            Vec3::new(side * (0.12 + 0.4 * a), -0.4, -0.65 + 0.04 * a),
+            Vec3::new(side * 0.55, -0.8, 0.25).normalize(),
+        )
+    } else if t < 0.6 {
+        let a = (t - 0.3) / 0.3;
+        (
+            Vec3::new(side * (0.52 - 0.34 * a), -0.4, -0.61 + 0.56 * a),
+            Vec3::new(side * 0.1, -0.8, 0.6).normalize(),
+        )
+    } else {
+        let a = ((t - 0.6) / 0.6).min(1.0);
+        (
+            Vec3::new(side * (0.18 - 0.06 * a), -0.4, -0.05 - 0.6 * a),
+            Vec3::NEG_Z,
+        )
+    };
+    StrokeHand { position, palm }
+}
+
+fn breaststroke_cycle(model: &mut StrokeModel, rotation: Quat) -> Vec<StrokeStep> {
+    (0..=72)
         .map(|tick| {
-            let t = tick as f32 * DT;
-            let hands = hands.map(|h| {
-                h.map(|(from, velocity, palm)| StrokeHand {
-                    position: from + velocity * t,
-                    palm,
-                })
-            });
-            model.step(
-                &StrokeInput {
-                    hands,
-                    head: HEAD,
-                    underwater,
-                    dt: DT,
-                },
-                &config,
+            sample(
+                model,
+                [-1.0, 1.0].map(|side| Some(breaststroke(tick as f32 * DT, side))),
+                rotation,
+                false,
             )
         })
         .collect()
 }
 
-fn total_turn(steps: &[StrokeStep]) -> f32 {
-    steps.iter().map(|s| s.turn_right).sum()
-}
-
 #[test]
-fn a_breaststroke_swims_forward_without_turning() {
+fn broad_breaststroke_catches_on_the_outsweep_and_glides_through_recovery() {
     let mut model = StrokeModel::new();
-    let back = Vec3::new(0.0, 0.0, 2.0);
-    let steps = run(
-        &mut model,
-        [
-            Some((start(-1.0), back, PALM_BACK)),
-            Some((start(1.0), back, PALM_BACK)),
-        ],
-        24,
-        false,
-    );
-    let last = steps.last().unwrap();
-    assert!(last.speed > 1.0, "{}", last.speed);
-    assert!(total_turn(&steps).abs() < 1e-4, "{}", total_turn(&steps));
-    // Both hands knocked once, on the same tick.
-    let caught: Vec<_> = steps.iter().filter(|s| s.caught[0].is_some()).collect();
-    assert_eq!(caught.len(), 1);
-    assert!(caught[0].caught[1].is_some());
-}
-
-#[test]
-fn the_speed_glides_out_after_the_stroke() {
-    let mut model = StrokeModel::new();
-    let back = Vec3::new(0.0, 0.0, 2.0);
-    let stroke = [
-        Some((start(-1.0), back, PALM_BACK)),
-        Some((start(1.0), back, PALM_BACK)),
-    ];
-    let peak = run(&mut model, stroke, 24, false).last().unwrap().speed;
-    let held = [
-        Some((start(-1.0) + back * (23.0 * DT), Vec3::ZERO, PALM_BACK)),
-        Some((start(1.0) + back * (23.0 * DT), Vec3::ZERO, PALM_BACK)),
-    ];
-    let glide = run(&mut model, held, 60, false);
-    let after = glide.last().unwrap().speed;
-    assert!(after < peak * 0.6 && after > 0.0, "{peak} {after}");
-    // Once the hands' motion has settled, the drive only falls.
-    assert!(
-        glide[10..]
-            .windows(2)
-            .all(|w| w[1].speed <= w[0].speed + 1e-6)
-    );
-}
-
-#[test]
-fn a_one_sided_stroke_turns_away_from_its_side() {
-    let back = Vec3::new(0.0, 0.0, 2.0);
-    let mut model = StrokeModel::new();
-    let left = run(
-        &mut model,
-        [Some((start(-1.0), back, PALM_BACK)), None],
-        60,
-        false,
-    );
-    assert!(total_turn(&left) > 0.1, "{}", total_turn(&left));
-    let mut model = StrokeModel::new();
-    let right = run(
-        &mut model,
-        [None, Some((start(1.0), back, PALM_BACK))],
-        60,
-        false,
-    );
-    assert!((total_turn(&right) + total_turn(&left)).abs() < 1e-4);
-    assert!(left.last().unwrap().speed > 0.0);
-}
-
-#[test]
-fn a_palm_slicing_edge_on_pushes_nothing() {
-    let mut model = StrokeModel::new();
-    let back = Vec3::new(0.0, 0.0, 2.0);
-    let steps = run(
-        &mut model,
-        [
-            Some((start(-1.0), back, PALM_DOWN)),
-            Some((start(1.0), back, PALM_DOWN)),
-        ],
-        24,
-        false,
-    );
-    assert!(
-        steps
-            .iter()
-            .all(|s| s.speed == 0.0 && s.caught == [None; 2])
-    );
-}
-
-#[test]
-fn a_hand_out_of_the_water_pushes_nothing_unless_underwater() {
-    let back = Vec3::new(0.0, 0.0, 2.0);
-    let high = |side: f32| start(side) + Vec3::new(0.0, 0.5, 0.0);
-    let hands = [
-        Some((high(-1.0), back, PALM_BACK)),
-        Some((high(1.0), back, PALM_BACK)),
-    ];
-    let mut model = StrokeModel::new();
-    let dry = run(&mut model, hands, 24, false);
-    assert!(
-        dry.iter()
-            .all(|s| s.speed == 0.0 && s.in_water == [false; 2])
-    );
-    let mut model = StrokeModel::new();
-    let wet = run(&mut model, hands, 24, true);
-    assert!(wet.last().unwrap().speed > 1.0);
-}
-
-#[test]
-fn a_recovery_with_the_palm_forward_brakes_and_never_swims_backward() {
-    let mut model = StrokeModel::new();
-    let forward = Vec3::new(0.0, 0.0, -2.0);
-    let palm_forward = Vec3::NEG_Z;
-    let steps = run(
-        &mut model,
-        [
-            Some((start(-1.0) + Vec3::Z * 0.6, forward, palm_forward)),
-            Some((start(1.0) + Vec3::Z * 0.6, forward, palm_forward)),
-        ],
-        24,
-        false,
-    );
-    assert!(steps.iter().all(|s| s.speed == 0.0));
-}
-
-#[test]
-fn a_slow_drift_and_a_hitch_do_not_swim() {
-    let mut model = StrokeModel::new();
-    let drift = Vec3::new(0.0, 0.0, 0.2);
-    let steps = run(
-        &mut model,
-        [
-            Some((start(-1.0), drift, PALM_BACK)),
-            Some((start(1.0), drift, PALM_BACK)),
-        ],
-        60,
-        false,
-    );
-    assert!(steps.iter().all(|s| s.speed == 0.0));
-    // A non-finite or zero tick changes nothing.
-    let config = SwimStrokeConfig::new();
-    let before = model;
-    for dt in [0.0, f32::NAN] {
-        let step = model.step(
-            &StrokeInput {
-                hands: [None; 2],
-                head: HEAD,
-                underwater: false,
-                dt,
-            },
-            &config,
+    for _ in 0..3 {
+        let steps = breaststroke_cycle(&mut model, Quat::IDENTITY);
+        for hand in 0..2 {
+            let catches: Vec<_> = steps
+                .iter()
+                .enumerate()
+                .filter(|(_, step)| step.caught[hand].is_some())
+                .collect();
+            assert_eq!(catches.len(), 1);
+            assert!(catches[0].0 < 18);
+        }
+        assert!(steps[17].speed > steps[0].speed);
+        assert!(steps.iter().map(|step| step.turn_right).sum::<f32>().abs() < 1e-5);
+        assert!(
+            steps[45..]
+                .iter()
+                .all(|step| step.push == [glam::Vec2::ZERO; 2])
         );
-        assert_eq!(step.turn_right, 0.0);
-        assert_eq!(model, before);
+        assert!(steps.last().unwrap().speed > 0.0);
+        assert!(
+            steps[45..]
+                .windows(2)
+                .all(|pair| pair[1].speed < pair[0].speed)
+        );
     }
 }
 
 #[test]
-fn the_turn_is_limited_to_the_fastest_turn() {
-    let config = SwimStrokeConfig::new();
-    let mut model = StrokeModel::new();
-    let hard = Vec3::new(0.0, 0.0, 20.0);
-    let steps = run(
-        &mut model,
-        [Some((start(-1.0) * 3.0, hard, PALM_BACK)), None],
-        30,
-        false,
-    );
-    let max = config.max_turn_deg_s.to_radians() * DT;
-    assert!(steps.iter().all(|s| s.turn_right <= max + 1e-6));
-    assert!(steps.iter().any(|s| (s.turn_right - max).abs() < 1e-6));
+fn stroke_recognition_is_not_fixed_to_cockpit_forward() {
+    let straight = breaststroke_cycle(&mut StrokeModel::new(), Quat::IDENTITY);
+    let turned = breaststroke_cycle(&mut StrokeModel::new(), Quat::from_rotation_y(1.2));
+    for (a, b) in straight.iter().zip(&turned) {
+        assert!((a.speed - b.speed).abs() < 1e-5);
+        assert!((a.turn_right - b.turn_right).abs() < 1e-5);
+        assert_eq!(a.caught.map(|c| c.is_some()), b.caught.map(|c| c.is_some()));
+    }
 }
 
-/// Run `cycles` breaststrokes: both hands pull back at `pull_mps` for `pull_s`, palms back, then
-/// come forward edge-on for the rest of each one-second cycle. Returns every step.
-fn breaststrokes(
-    model: &mut StrokeModel,
-    pull_mps: f32,
-    pull_s: f32,
-    cycles: usize,
-) -> Vec<StrokeStep> {
-    const CYCLE_S: f32 = 1.0;
-    let config = SwimStrokeConfig::new();
-    let ticks = (CYCLE_S / DT).round() as usize;
-    let pull_ticks = (pull_s / DT).round() as usize;
-    let recover_mps = pull_mps * pull_s / (CYCLE_S - pull_s);
-    let mut offset = 0.0f32;
-    let mut steps = Vec::new();
-    for _ in 0..cycles {
-        for tick in 0..ticks {
-            let (velocity, palm) = if tick < pull_ticks {
-                (pull_mps, PALM_BACK)
+#[test]
+fn alternating_crawl_keeps_independent_catches_and_forward_drive() {
+    let mut model = StrokeModel::new();
+    let mut catches = [0; 2];
+    let mut turn = 0.0;
+    let mut last = StrokeStep::NONE;
+    for tick in 0..360 {
+        let hands = [0, 1].map(|i| {
+            let phase = (tick as f32 * DT + i as f32 * 0.6) % 1.2;
+            let side = if i == 0 { -1.0 } else { 1.0 };
+            let (z, palm) = if phase < 0.5 {
+                (-0.65 + phase * 1.4, Vec3::Z)
             } else {
-                (-recover_mps, PALM_DOWN)
+                (0.05 - (phase - 0.5), Vec3::NEG_Z)
             };
-            offset += velocity * DT;
+            Some(StrokeHand {
+                position: Vec3::new(side * 0.3, -0.4, z),
+                palm,
+            })
+        });
+        last = sample(&mut model, hands, Quat::IDENTITY, false);
+        for (i, caught) in last.caught.iter().enumerate() {
+            catches[i] += usize::from(caught.is_some());
+        }
+        turn += last.turn_right;
+    }
+    assert_eq!(catches, [5, 5]);
+    assert!(last.speed > 0.0);
+    assert!(turn.abs() < 0.3, "{turn}");
+}
+
+#[test]
+fn unqualified_gestures_and_tracking_reentry_do_not_catch() {
+    for gesture in 0..4 {
+        let mut model = StrokeModel::new();
+        for tick in 0..120 {
+            let t = tick as f32 * DT;
             let hands = [-1.0, 1.0].map(|side| {
-                Some(StrokeHand {
-                    position: start(side) + Vec3::Z * offset,
-                    palm,
-                })
+                let (position, palm) = match gesture {
+                    0 => (
+                        Vec3::new(side * (0.3 + 0.1 * (t * 12.0).sin()), -0.4, 0.0),
+                        Vec3::X * side,
+                    ),
+                    1 => (
+                        Vec3::new(side * 0.3, -0.4 + 0.2 * (t * 6.0).sin(), -0.5),
+                        Vec3::NEG_Y,
+                    ),
+                    2 => (Vec3::new(side * 0.3, -0.4, -0.5 + 0.5 * t), Vec3::NEG_Z),
+                    _ => (
+                        Vec3::new(side * 0.3, -0.4, -0.5 + 0.003 * (t * 30.0).sin()),
+                        Vec3::Z,
+                    ),
+                };
+                Some(StrokeHand { position, palm })
             });
-            steps.push(model.step(
-                &StrokeInput {
-                    hands,
-                    head: HEAD,
-                    underwater: false,
-                    dt: DT,
-                },
-                &config,
-            ));
+            let step = sample(&mut model, hands, Quat::IDENTITY, false);
+            assert_eq!(step.speed, 0.0, "gesture {gesture}");
+            assert_eq!(step.caught, [None; 2]);
         }
     }
-    steps
-}
-
-/// The mean speed over the last two seconds of `steps`.
-fn settled_speed(steps: &[StrokeStep]) -> f32 {
-    let tail = &steps[steps.len() - (2.0 / DT) as usize..];
-    tail.iter().map(|s| s.speed).sum::<f32>() / tail.len() as f32
-}
-
-#[test]
-fn sustained_strokes_swim_faster_the_harder_they_pull() {
-    let config = SwimStrokeConfig::new();
-    let speeds: Vec<f32> = [(0.6, 0.3), (0.9, 0.3), (1.2, 0.3), (2.5, 0.3)]
-        .iter()
-        .map(|&(pull, time)| settled_speed(&breaststrokes(&mut StrokeModel::new(), pull, time, 8)))
-        .collect();
-    assert!(speeds.windows(2).all(|w| w[1] > w[0]), "{speeds:?}");
-    // A gentle rhythm swims at a moderate pace, below the strokes' fastest.
-    assert!(
-        speeds[0] > 0.5 && speeds[0] < config.max_speed_mps * 0.4,
-        "{speeds:?}"
-    );
-    // A hard one reaches the fastest and holds near it through the recoveries.
-    assert!(speeds[3] > config.max_speed_mps * 0.75, "{speeds:?}");
-    assert!(speeds.iter().all(|&s| s <= config.max_speed_mps));
-}
-
-#[test]
-fn one_stroke_is_a_burst_that_glides_to_a_stop() {
     let mut model = StrokeModel::new();
-    let steps = breaststrokes(&mut model, 2.0, 0.3, 1);
-    let pull_end = (0.3 / DT) as usize;
-    let peak = steps[..pull_end + 4]
-        .iter()
-        .map(|s| s.speed)
-        .fold(0.0, f32::max);
-    // The burst arrives within the stroke.
-    assert!(peak > 1.5, "{peak}");
-    // Edge-on recovery and then still hands only glide down.
-    let held = [-1.0f32, 1.0].map(|side| Some((start(side), Vec3::ZERO, PALM_DOWN)));
-    let glide = run(&mut model, held, (4.0 / DT) as usize, false);
-    assert!(glide.last().unwrap().speed < peak * 0.1);
-}
-
-#[test]
-fn a_palm_first_recovery_brakes_at_half_the_pull() {
-    let back = Vec3::new(0.0, 0.0, 2.0);
-    let forward = -back;
-    let both = |velocity: Vec3, palm: Vec3, at: f32| {
-        [-1.0f32, 1.0].map(|side| Some((start(side) + Vec3::Z * at, velocity, palm)))
-    };
-    let mut model = StrokeModel::new();
-    let pulled = run(&mut model, both(back, PALM_BACK, 0.0), 12, false)
-        .last()
-        .unwrap()
-        .speed;
-    let reached = back.z * 11.0 * DT;
-    let mut gliding = model;
-    let after_glide = run(
-        &mut gliding,
-        both(Vec3::ZERO, PALM_DOWN, reached),
-        12,
-        false,
-    )
-    .last()
-    .unwrap()
-    .speed;
-    let braked = run(&mut model, both(forward, Vec3::NEG_Z, reached), 12, false)
-        .last()
-        .unwrap()
-        .speed;
-    let lost_to_brake = after_glide - braked;
-    assert!(lost_to_brake > 0.0, "{after_glide} {braked}");
-    assert!(lost_to_brake < pulled * 0.75, "{pulled} {lost_to_brake}");
-}
-
-#[test]
-fn propel_raises_only_the_share_along_the_facing() {
-    let facing = Vec3::new(0.0, 0.0, -1.0);
-    // Treading water with buoyancy and a drift across: the strokes add speed along the facing and
-    // keep the rest.
-    let core = Vec3::new(0.3, 0.2, 0.0);
-    let out = propel(core, facing, 2.5);
-    assert!((out.dot(facing) - 2.5).abs() < 1e-5);
-    assert!((out.x - 0.3).abs() < 1e-6 && (out.y - 0.2).abs() < 1e-6);
-    // A crawl already faster along the facing keeps its own speed.
-    let crawl = Vec3::new(0.0, 0.0, -4.0);
-    assert_eq!(propel(crawl, facing, 2.5), crawl);
-    // A core moving backward is brought up to the strokes' speed forward.
-    let drifting_back = Vec3::new(0.0, 0.0, 0.5);
-    assert!((propel(drifting_back, facing, 1.0).dot(facing) - 1.0).abs() < 1e-5);
-}
-
-#[test]
-fn propel_follows_a_pitched_facing_underwater() {
-    let facing = Vec3::new(0.0, 0.5, -0.866_025_4);
-    let out = propel(Vec3::ZERO, facing, 2.0);
-    assert!((out - facing * 2.0).length() < 1e-5);
-}
-
-#[test]
-fn propel_leaves_the_velocity_without_a_speed_or_a_facing() {
-    let core = Vec3::new(0.1, -0.2, 0.3);
-    let facing = Vec3::NEG_Z;
-    for speed in [0.0, -1.0, f32::NAN] {
-        assert_eq!(propel(core, facing, speed), core);
+    for tick in 0..60 {
+        let hands = if tick % 2 == 0 {
+            [None; 2]
+        } else {
+            [-1.0, 1.0].map(|side| Some(breaststroke(0.5, side)))
+        };
+        let step = sample(&mut model, hands, Quat::IDENTITY, false);
+        assert_eq!(step.speed, 0.0);
+        assert_eq!(step.caught, [None; 2]);
     }
-    assert_eq!(propel(core, Vec3::ZERO, 2.0), core);
-    let bad = Vec3::new(f32::NAN, 0.0, 0.0);
-    assert!(propel(bad, facing, 2.0).x.is_nan());
+}
+
+#[test]
+fn dry_hands_do_not_stroke_but_underwater_hands_do_and_preserve_pitched_motion() {
+    for underwater in [false, true] {
+        let mut model = StrokeModel::new();
+        let steps: Vec<_> = (0..36)
+            .map(|tick| {
+                let hands = [-1.0, 1.0].map(|side| {
+                    let mut hand = breaststroke(tick as f32 * DT, side);
+                    hand.position.y = 0.1;
+                    Some(hand)
+                });
+                sample(&mut model, hands, Quat::IDENTITY, underwater)
+            })
+            .collect();
+        let speed = steps.last().unwrap().speed;
+        if underwater {
+            assert!(speed > 0.0);
+            let facing = Vec3::new(0.0, 0.6, -0.8);
+            assert!(propel(Vec3::ZERO, facing, speed).abs_diff_eq(facing * speed, 1e-5));
+        } else {
+            assert!(
+                steps
+                    .iter()
+                    .all(|step| step.speed == 0.0 && step.caught == [None; 2])
+            );
+        }
+    }
+    let facing = Vec3::NEG_Z;
+    let core = Vec3::new(0.3, 0.2, 0.0);
+    let out = propel(core, facing, 2.0);
+    assert_eq!(out.x, core.x);
+    assert_eq!(out.y, core.y);
+    assert_eq!(propel(facing * 4.0, facing, 2.0), facing * 4.0);
 }

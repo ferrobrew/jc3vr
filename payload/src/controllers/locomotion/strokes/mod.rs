@@ -3,13 +3,12 @@
 //! (`docs/mod/body/swim-yaw.md`) and acts only while the swim gate reads swimming
 //! ([`crate::hooks::input::swim::swimming`]).
 //!
-//! Each stroking hand is a paddle. Its velocity relative to the body (the cockpit frame rides the
-//! body, so a hand's motion there is its motion relative to the swimmer) pushes the water, and the
-//! water pushes the swimmer the other way, as far as the palm faces the way the hand moves: a palm
-//! slicing edge-on through its recovery pushes nothing. The hands are the player's own, where the
-//! controllers hold them, not the drawn hands the arm remap and the reach limit place, which stop
-//! short at full reach, where a stroke catches. The game moves a swimmer only the way it faces, so
-//! the push is split in two:
+//! Each stroking hand catches after a short travel from a forward reach. A backward pull drives
+//! the swimmer, and a paired outward sweep contributes to a breaststroke. Palm alignment changes
+//! the strength without requiring a square palm. Recovery preserves the glide. The hands are the
+//! player's own, where the controllers hold them, not the drawn hands the arm remap and the reach
+//! limit place. Stroke recognition follows the estimated torso rather than the cockpit's forward.
+//! The game moves a swimmer only the way it faces, so the push is split in two:
 //!
 //! - its share along the body's forward feeds a swim speed that decays over a second or so
 //!   ([`model::StrokeModel`]). The game's swim speed is the animation's root speed, whatever the
@@ -130,6 +129,7 @@ pub(crate) fn tick(
         &StrokeInput {
             hands,
             head: active.head.position,
+            forward: active.torso * glam::Vec3::NEG_Z,
             underwater,
             dt,
         },

@@ -20,7 +20,7 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    controllers::{body::procedural, diagnostics::report, hands::tiers},
+    controllers::{body::procedural, diagnostics::report, hands::tiers, locomotion::strokes},
     headpose::{self, sim::body_yaw_of},
     hooks::input::swim::{
         SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS, SWIM_ROTATE_OVERRIDES,
@@ -83,6 +83,7 @@ pub(crate) fn log_tick(look_x: f32) {
     let rotate = *LAST_ROTATE.lock();
     let procedural = procedural::published_status();
     let tiers = tiers::status();
+    let strokes = strokes::status();
     tracing::info!(
         target: "swim",
         target_yaw_deg = target.map(f32::to_degrees),
@@ -112,6 +113,13 @@ pub(crate) fn log_tick(look_x: f32) {
         torso_weight = procedural.weight,
         hand_tiers = ?tiers.effective,
         hand_weights = ?tiers.weights,
+        stroke_fresh = strokes.fresh(now),
+        stroke_speed_mps = strokes.step.speed,
+        stroke_core_mps = strokes.core_mps,
+        stroke_written_mps = strokes.written_mps,
+        stroke_catches = ?strokes.strokes,
+        stroke_in_water = ?strokes.step.in_water,
+        stroke_push = ?strokes.step.push,
         "swim: the heading"
     );
 }
