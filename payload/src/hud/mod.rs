@@ -73,7 +73,10 @@ use jc3gi::{
     camera::camera_manager::CameraManager,
     graphics_engine::{device::Device, texture::Texture},
     types::math::Matrix4,
-    ui::ui_manager::{GetIUIManager, UIManager},
+    ui::{
+        hud_ui::{HUDState, HUDUI},
+        ui_manager::{GetIUIManager, UIManager},
+    },
 };
 pub use state::HUD_STATE;
 use state::{StageSafeArea, publish_stage_safe_area};
@@ -127,6 +130,18 @@ pub(crate) fn world_quads_active(cfg: &HudConfig) -> bool {
         && cfg.quad
         && current_mode() == HudMode::Hud
         && !crate::director::clean_view::hides_everything()
+}
+
+pub(crate) fn gameplay_hints_active() -> bool {
+    current_mode() == HudMode::Hud
+        && unsafe {
+            HUDUI::get().is_some_and(|hud| {
+                matches!(
+                    hud.m_State,
+                    HUDState::HUD_SHOW_ALL | HUDState::HUD_ROM | HUDState::HUD_MISSION_B
+                )
+            })
+        }
 }
 
 /// Whether the floating panel should world-lock this frame: an in-game modal menu (pause /

@@ -37,6 +37,7 @@ use crate::{
     controllers::{frame::Hand, loadout::Socket, scheme, summary::glance::fade},
     hud::{
         game_icons::{self, IconId, Image, Lookup},
+        gameplay_hints_active,
         grab_hint::{
             layout::{hint_corners, panel_frame},
             paint::{SWAP_TEXELS, TAKE_TEXELS},
@@ -104,7 +105,7 @@ impl Place {
 
 /// Publish each hand's hint, by [`Hand::index`]. Called each input tick of the weapon handling.
 pub(crate) fn publish(hints: [Option<Hint>; 2]) {
-    *SAMPLE.lock() = Some((hints, Instant::now()));
+    *SAMPLE.lock() = gameplay_hints_active().then(|| (hints, Instant::now()));
 }
 
 /// Forget the hints: the weapon handling stood down.
@@ -124,7 +125,13 @@ pub(crate) fn draw(
     let mut state = STATE.lock();
     if eye == 0 {
         let cfg = Config::lock_query(|c| c.hud);
-        let active = cfg.grab_hint.enabled && world_quads_active(&cfg) && scheme::is_controllers();
+        let active = cfg.grab_hint.enabled
+            && world_quads_active(&cfg)
+            && gameplay_hints_active()
+            && scheme::is_controllers();
+        if !active {
+            clear();
+        }
         state.prepare(context, device, active.then_some(panel).flatten());
     }
     state.draw(context, device, target);

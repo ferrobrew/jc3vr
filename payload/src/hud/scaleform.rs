@@ -254,6 +254,7 @@ static GRAPPLE_RETICLE_HIDDEN: std::sync::atomic::AtomicBool =
 /// # Safety
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
 pub unsafe fn apply_hint_suppression(suppress: bool) {
+    let suppress = suppress || !crate::hud::gameplay_hints_active();
     let mut handles = CLIP_HANDLES.lock();
     let Some(handles) = handles.as_mut() else {
         return;
