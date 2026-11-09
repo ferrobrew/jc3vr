@@ -165,8 +165,10 @@ impl Float {
         let axis = axis.try_normalize()?;
         let radius = tuning.radius_m.max(config.capture_radius_m * 2.0);
         let distance = local.length();
-        let slack = config.capture_radius_m * 1.5;
-        let near = distance <= radius && local.y <= slack;
+        let off_axis = Vec3::new(local.x, 0.0, local.z).length();
+        let near = distance <= radius
+            && local.y <= config.seat_depth_m
+            && (local.y <= 0.0 || off_axis <= config.capture_radius_m);
         let angle = tuning.angle_deg.max(config.capture_angle_deg);
         let aligned = axis.y >= angle.to_radians().cos();
         if !(near && aligned && local.is_finite()) {
@@ -327,7 +329,12 @@ impl Insertion {
         let retained = aligned && off_axis <= slack && depth >= -slack;
         self.distance_m = Some(local.length());
         if !inputs.grip_held {
-            if captured.is_some() && retained && depth >= config.seat_depth_m * 0.5 {
+            if captured.is_some()
+                && retained
+                && off_axis <= config.capture_radius_m
+                && depth >= config.seat_depth_m * 0.5
+                && depth <= config.seat_depth_m * 1.5
+            {
                 self.stage = InsertStage::Idle;
                 return Some(InsertEvent::Seated);
             }
@@ -586,6 +593,32 @@ mod tests {
                 assert!(float.top().is_finite());
                 assert!(float.axis().is_finite());
             }
+        }
+    }
+
+    #[test]
+    fn release_assistance_rejects_wrong_depth_and_a_side_entry_past_the_mouth() {
+        for config in [RELOAD, RELOAD.launcher_capture()] {
+            for local in [
+                Vec3::Y * (config.seat_depth_m + 0.001),
+                Vec3::new(config.capture_radius_m * 1.1, 0.001, 0.0),
+            ] {
+                assert!(Float::start(local, Vec3::Y, &config, &FLOAT).is_none());
+            }
+            let mut insertion = Insertion::new();
+            insertion.stage = InsertStage::Captured {
+                elapsed_s: 0.1,
+                depth_m: 0.0,
+            };
+            let released = InsertInputs {
+                grip_held: false,
+                ..inputs(false, WELL.mouth + Vec3::Y, Vec3::ZERO)
+            };
+            assert_eq!(
+                insertion.step(released, &config),
+                Some(InsertEvent::Dropped)
+            );
+            assert_eq!(insertion.seated, 0);
         }
     }
 
