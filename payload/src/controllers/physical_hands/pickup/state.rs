@@ -7,7 +7,7 @@ use glam::Vec3;
 
 use crate::controllers::{
     fingers::grip::GripSource,
-    frame::Hand,
+    frame::{Hand, Pose},
     grab::PickupKind,
     physical_hands::{
         characters::{Regrip, Seize},
@@ -42,6 +42,8 @@ pub(crate) struct PickupState {
     /// The player character's world velocity at the last tick, from which a carried object takes
     /// on the character's change of velocity.
     pub(crate) carrier_velocity: Option<Vec3>,
+    pub(crate) carrier_pose: Option<Pose>,
+    pub(crate) carrier_angular: Vec3,
     /// How far each hand's hold strains from it, for the body it was measured on.
     pub(crate) strains: [Option<HeldStrain>; 2],
 }
@@ -61,6 +63,8 @@ impl PickupState {
             input_at: None,
             joints_enabled: None,
             carrier_velocity: None,
+            carrier_pose: None,
+            carrier_angular: Vec3::ZERO,
             strains: [None; 2],
         }
     }
@@ -169,6 +173,8 @@ impl PickupState {
             input_at: _,
             joints_enabled: _,
             carrier_velocity: _,
+            carrier_pose: _,
+            carrier_angular: _,
             strains: _,
         } = self;
         let i = hand.index();
@@ -238,6 +244,7 @@ impl PickupState {
         self.held = [None; 2];
         self.strains = [None; 2];
         crate::controllers::physical_hands::impacts::publish([None; 2]);
+        crate::controllers::physical_hands::carry_collision::publish([None; 2]);
         self.latches = [None; 2];
         self.doors = [None; 2];
         self.seizes = [None; 2];
@@ -245,6 +252,8 @@ impl PickupState {
         self.hijack_clicks = [false; 2];
         self.requests = [None; 2];
         self.carrier_velocity = None;
+        self.carrier_pose = None;
+        self.carrier_angular = Vec3::ZERO;
     }
 
     /// Preserve the queue's existing replacement semantics and record a displaced local request.

@@ -101,6 +101,7 @@ pub(super) struct State {
     generations: [u64; 2],
     pub leases: [Option<Lease>; 2],
     queue: Vec<(Contact, Instant)>,
+    recent_contacts: Vec<(Contact, Instant)>,
     gate: Gate,
     start: Option<Instant>,
     pub status: Status,
@@ -114,6 +115,7 @@ impl State {
             generations: [0; 2],
             leases: [None; 2],
             queue: Vec::new(),
+            recent_contacts: Vec::new(),
             gate: Gate { last: [None; 2] },
             start: None,
             status: Status {
@@ -137,6 +139,7 @@ impl State {
         }
         self.wanted = held;
         self.published = Some(now);
+        self.prune_contacts(now);
     }
 
     pub fn wanted(&self, now: Instant, enabled: Enabled) -> [Option<Held>; 2] {
@@ -214,6 +217,7 @@ impl State {
                 lease.motion = observed.motion;
             }
         }
+        self.prune_contacts(now);
         self.status.listening = self.leases.iter().flatten().count();
         changes
     }
@@ -236,6 +240,20 @@ impl State {
     }
 
     pub fn queue(&mut self, contact: Contact, now: Instant) {
+        self.prune_contacts(now);
+        if !contact.character
+            && contact.impulse.is_finite()
+            && contact.impulse > 0.0
+            && contact.at.is_finite()
+            && contact.normal.is_finite()
+            && contact.normal.try_normalize().is_some()
+            && self.contact_live(contact, now)
+        {
+            if self.recent_contacts.len() >= 32 {
+                self.recent_contacts.remove(0);
+            }
+            self.recent_contacts.push((contact, now));
+        }
         self.status.contacts += 1;
         if self.queue.len() >= 32 {
             self.status.dropped += 1;
@@ -283,9 +301,86 @@ impl State {
         feedback
     }
 
+    pub fn obstruction(
+        &self,
+        body: u32,
+        owner: NonZeroUsize,
+        lag: Vec3,
+        now: Instant,
+        enabled: Enabled,
+    ) -> Vec3 {
+        if !enabled.active() || !lag.is_finite() {
+            return Vec3::ZERO;
+        }
+        let mut basis = [Vec3::ZERO; 3];
+        let mut count = 0;
+        for &(contact, at) in &self.recent_contacts {
+            if contact.identity.body != body
+                || contact.identity.owner != owner
+                || now
+                    .checked_duration_since(at)
+                    .is_none_or(|age| age > CONTACT_FRESHNESS)
+                || !self.contact_live(contact, now)
+            {
+                continue;
+            }
+            let Some(mut normal) = contact.normal.try_normalize() else {
+                continue;
+            };
+            for axis in &basis[..count] {
+                normal -= *axis * normal.dot(*axis);
+            }
+            if normal.length_squared() <= 1.0e-6 {
+                continue;
+            }
+            let Some(normal) = normal.try_normalize() else {
+                continue;
+            };
+            basis[count] = normal;
+            count += 1;
+            if count == basis.len() {
+                break;
+            }
+        }
+        let projected = basis[..count]
+            .iter()
+            .fold(Vec3::ZERO, |sum, axis| sum + *axis * lag.dot(*axis));
+        if projected.is_finite() {
+            projected
+        } else {
+            Vec3::ZERO
+        }
+    }
+
+    fn contact_live(&self, contact: Contact, now: Instant) -> bool {
+        self.fresh(now)
+            && self.leases.iter().flatten().any(|lease| {
+                lease.armed
+                    && lease.identity == contact.identity
+                    && (0..2).any(|i| {
+                        self.wanted[i] == Some((contact.identity.body, contact.identity.owner))
+                            && contact.holders[i] == Some(self.generations[i])
+                            && lease.holders[i] == contact.holders[i]
+                    })
+            })
+    }
+
+    fn prune_contacts(&mut self, now: Instant) {
+        let contacts = std::mem::take(&mut self.recent_contacts);
+        self.recent_contacts = contacts
+            .into_iter()
+            .filter(|(contact, at)| {
+                now.checked_duration_since(*at)
+                    .is_some_and(|age| age <= CONTACT_FRESHNESS)
+                    && self.contact_live(*contact, now)
+            })
+            .collect();
+    }
+
     pub fn clear(&mut self, now: Instant) {
         self.publish([None; 2], now);
         self.queue.clear();
+        self.recent_contacts.clear();
         self.gate = Gate::default();
     }
 
@@ -296,6 +391,7 @@ impl State {
 }
 
 const STALE_AFTER: Duration = Duration::from_millis(250);
+const CONTACT_FRESHNESS: Duration = Duration::from_millis(100);
 
 fn flag_change(identity: Identity, enable: bool) -> FlagCall {
     FlagCall {

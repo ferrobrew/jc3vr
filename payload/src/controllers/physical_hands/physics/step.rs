@@ -15,8 +15,9 @@ use crate::{
         },
         clock::TimeScale,
         frame::{Hand, Pose},
+        mode,
         physical_hands::{
-            climb,
+            climb, impacts, mode_acts,
             physics::{
                 HAND_BODIES,
                 body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
@@ -120,20 +121,26 @@ pub(crate) unsafe fn step() {
     };
     // Staleness counts steps, not time, so a hitch of the whole simulation tick drops no hold.
     let fresh = current_at(published_step, step_number);
-    let pins = if fresh { pins } else { [None; 2] };
+    let detection = mode::current();
+    let ordinary = mode_acts(detection);
+    let pins = if fresh && ordinary { pins } else { [None; 2] };
     // The hands on a gun act to hold it, with a holding hand's strength.
-    let gun_holds = if fresh {
+    let gun_holds = if fresh && guns::mode_allows_bodies(detection) {
         guns::holds_for_step(&config, step_number)
     } else {
         guns::GunHolds::default()
     };
     let on_gun = gun_holds.hands();
+    let targets = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        targets[i].filter(|_| fresh && (ordinary || on_gun[i]))
+    });
     // A bracing hand rides the gun it braces, so its controller's distance from the gun neither
     // pushes the player nor presses the hand.
     let bracing =
         Hand::BOTH.map(|hand| on_gun[hand.index()] && gun_holds.guns[hand.index()].is_none());
     let mut joint_lost = [false; 2];
-    let holds = if !fresh { [None; 2] } else { holds };
+    let holds = if fresh && ordinary { holds } else { [None; 2] };
     let age_s = published
         .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32())
         .min(MAX_LEAD_S);
@@ -184,7 +191,7 @@ pub(crate) unsafe fn step() {
     let poses = Hand::BOTH.map(|hand| {
         let i = hand.index();
         // A hand on a gun neither climbs nor reaches.
-        let acting = fresh && group.is_some() && targets[i].is_some() && !on_gun[i];
+        let acting = ordinary && group.is_some() && targets[i].is_some() && !on_gun[i];
         let body = hands.bodies[i]
             .as_ref()
             .filter(|_| acting && hands.phase(hand) == BodyPhase::Acting)?;
@@ -315,7 +322,14 @@ pub(crate) unsafe fn step() {
                             press_lags[i] = Some(acted.lag);
                         }
                         if config.push && !bracing[i] {
-                            hand_push += lag_push(acted.lag, &push_tuning, step_s);
+                            let lag = if let Some(held) = holding {
+                                impacts::obstruction(held.body, held.object, acted.lag)
+                            } else if pins[i].is_some() {
+                                Vec3::ZERO
+                            } else {
+                                acted.lag
+                            };
+                            hand_push += lag_push(lag, &push_tuning, step_s);
                         }
                     }
                     Err(e) => {
@@ -329,6 +343,7 @@ pub(crate) unsafe fn step() {
             (_, group) => {
                 let since = *hands.missing_since[i].get_or_insert(now);
                 let park = group.is_none()
+                    || (!ordinary && !on_gun[i])
                     || park_now[i]
                     || now.saturating_duration_since(since) >= PARK_AFTER;
                 let reason = if group.is_none() {
@@ -375,7 +390,12 @@ pub(crate) unsafe fn step() {
             },
         )
     };
-    let may_move = physical_locomotion_allowed(climbing, stunt::game_holds());
+    let may_move = ordinary
+        && physical_locomotion_allowed(
+            climbing,
+            stunt::game_holds(),
+            detection.traversal.is_some(),
+        );
     if may_move {
         let press = vault::Press {
             lags: press_lags,
@@ -444,8 +464,12 @@ pub(crate) unsafe fn step() {
     }
 }
 
-pub(crate) fn physical_locomotion_allowed(climbing: bool, native_owns_movement: bool) -> bool {
-    !climbing && !native_owns_movement
+pub(crate) fn physical_locomotion_allowed(
+    climbing: bool,
+    native_owns_movement: bool,
+    grapple_traversal: bool,
+) -> bool {
+    !climbing && !native_owns_movement && !grapple_traversal
 }
 
 /// The step the physics world takes, seconds: the engine's 30 Hz constant, to which the physics
@@ -472,4 +496,26 @@ unsafe fn path_clear(from: Vec3, to: Vec3, held: usize) -> bool {
         unsafe { raycast::cast(&ray, from.distance(to), &options) },
         Ok(None)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::physical_locomotion_allowed;
+
+    #[test]
+    fn grapple_traversal_never_allows_physical_locomotion() {
+        for climbing in [false, true] {
+            for native_owns_movement in [false, true] {
+                assert!(!physical_locomotion_allowed(
+                    climbing,
+                    native_owns_movement,
+                    true,
+                ));
+                assert_eq!(
+                    physical_locomotion_allowed(climbing, native_owns_movement, false),
+                    !climbing && !native_owns_movement,
+                );
+            }
+        }
+    }
 }

@@ -29,7 +29,7 @@ use crate::{
         frame::Hand,
         haptics::{self, Event},
         physical_hands::{
-            bodies,
+            bodies, carry_collision,
             impacts::{
                 policy::Motion,
                 state::{Contact, Enabled, FlagCall, Identity, Lease, Observation, State},
@@ -63,11 +63,19 @@ pub(super) fn publish(held: [Option<(u32, NonZeroUsize)>; 2]) {
     STATE.lock().publish(held, Instant::now());
 }
 
+pub(super) fn obstruction(body: u32, owner: NonZeroUsize, lag: Vec3) -> Vec3 {
+    let enabled = enabled();
+    STATE
+        .lock()
+        .obstruction(body, owner, lag, Instant::now(), enabled)
+}
+
 /// Refresh motion and event leases immediately before the world step.
 ///
 /// # Safety
 /// The game thread, outside the physics step.
 pub(crate) unsafe fn step() {
+    unsafe { carry_collision::step() };
     let now = Instant::now();
     let enabled = enabled();
     let (wanted, leases) = {
@@ -115,6 +123,7 @@ pub(crate) unsafe fn step() {
 /// # Safety
 /// The game thread, outside the physics step.
 pub(crate) unsafe fn clear() {
+    unsafe { carry_collision::clear() };
     STATE.lock().clear(Instant::now());
     unsafe { step() };
 }

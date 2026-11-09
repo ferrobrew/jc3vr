@@ -8,7 +8,7 @@ use jc3gi::vehicle::vehicle::DoorSlot;
 
 use crate::controllers::{
     diagnostics::{Released, Thrown, note_release, note_throw},
-    frame::Hand,
+    frame::{Hand, Pose},
     physical_hands::{
         STALE_AFTER, bodies,
         characters::{self, CharactersConfig, Regrip, Seize},
@@ -22,6 +22,7 @@ use crate::controllers::{
             grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
             state::{GripSubject, Held, HeldKind, PickupState, Request},
             tearing::{self, Frame as TearFrame, Observation},
+            transport::Transport,
         },
         rigid::Velocities,
     },
@@ -64,6 +65,7 @@ pub(crate) struct TickInputs {
     /// The player character's world velocity, metres per second, whose change a carried object
     /// takes on ([`PickupTuning::carrier_motion_share`]); none when it is not known.
     pub carrier_velocity: Option<Vec3>,
+    pub carrier_pose: Option<Pose>,
 }
 
 /// What a pickup tick did, for the readout, the haptics, and the overlay.
@@ -267,10 +269,35 @@ unsafe fn tick_with(
         characters: character_config,
         reaches,
         carrier_velocity,
+        carrier_pose,
     } = inputs;
     let mut outcome = TickOutcome::default();
+    let previous_holds = state.held;
     let carried = carrier_change(state.carrier_velocity, carrier_velocity, config);
-    state.carrier_velocity = carrier_velocity;
+    let transport = Transport::between(
+        state
+            .carrier_pose
+            .zip(state.carrier_velocity)
+            .map(|(pose, linear)| {
+                (
+                    pose,
+                    Velocities {
+                        linear,
+                        angular: state.carrier_angular,
+                    },
+                )
+            }),
+        carrier_pose.zip(carrier_velocity),
+        dt,
+        config.carrier_motion_share,
+    );
+    state.carrier_velocity = if carrier_pose.is_some() {
+        carrier_velocity.map(|_| transport.linear())
+    } else {
+        carrier_velocity
+    };
+    state.carrier_pose = carrier_pose;
+    state.carrier_angular = transport.angular();
     if state
         .joints_enabled
         .is_some_and(|previous| previous != joints.enabled)
@@ -622,7 +649,19 @@ unsafe fn tick_with(
             )
         };
         let mut liftable = lift(&holds);
-        let moving = body.rigid();
+        let mut moving = body.rigid();
+        if held.kind == HeldKind::Ragdoll && held.mass_kg.is_finite() && held.mass_kg > 0.0 {
+            moving.inverse_mass = moving.inverse_mass.min(1.0 / held.mass_kg);
+        }
+        let transported =
+            !joined && matches!(held.kind, HeldKind::Prop | HeldKind::Ragdoll) && liftable;
+        if transported && previous_holds.iter().flatten().any(|h| h.same(&held)) {
+            if carrier_pose.is_some() {
+                moving.velocities = transport.carry(body.pose.centre, moving.velocities);
+            } else {
+                moving.velocities.linear += carried;
+            }
+        }
         for (k, hand) in Hand::BOTH.into_iter().enumerate() {
             let Some(hold) = holds[k] else {
                 continue;
@@ -698,20 +737,15 @@ unsafe fn tick_with(
         if hands == 0 {
             continue;
         }
-        let mut rigid = body.rigid();
-        // A ragdoll's body drags the rest of the ragdoll, so the hands' strength moves it as the
-        // whole ragdoll's weight.
-        if held.kind == HeldKind::Ragdoll && held.mass_kg.is_finite() && held.mass_kg > 0.0 {
-            rigid.inverse_mass = rigid.inverse_mass.min(1.0 / held.mass_kg);
+        if transported && !liftable {
+            moving.velocities = body.velocities;
         }
-        // The hands ride on the character, so a loose object they can lift takes on the
-        // character's own change of velocity outright, and the hands' strength works only on
-        // their motion relative to the body: a jump carries the object along instead of tearing
-        // it from the hands.
-        if held.kind == HeldKind::Prop && liftable {
-            rigid.velocities.linear += carried;
-        }
-        let solution = hold::solve(&rigid, holds, dt, &tuning);
+        let frame = if transported && liftable {
+            transport.frame(body.pose.centre)
+        } else {
+            Velocities::default()
+        };
+        let solution = hold::solve_in_frame(&moving, holds, dt, &tuning, frame);
         // SAFETY: forwarded from the caller.
         engine.release_joints(&held);
         let result = engine.drive(&held, solution.velocities);
@@ -789,6 +823,9 @@ unsafe fn tick_with(
             &mut outcome,
         )
     };
+    crate::controllers::physical_hands::carry_collision::publish(
+        state.held.map(|h| h.map(|h| (h.body, h.object))),
+    );
     crate::controllers::physical_hands::impacts::publish(state.held.map(|h| {
         h.filter(|h| h.kind != HeldKind::Ragdoll)
             .map(|h| (h.body, h.object))
@@ -882,6 +919,17 @@ pub(super) fn take_body(
                         kind,
                     }),
                 );
+                if !state.held[hand.other().index()]
+                    .is_some_and(|other| state.held[i].is_some_and(|held| other.same(&held)))
+                {
+                    let relative =
+                        body.rigid().point_velocity(reach.point) - palm.point_velocity(reach.point);
+                    let strain =
+                        grasp::Strain::acquired(relative.length(), mass_kg, config.hand_force_n);
+                    if let Some(held) = state.held[i] {
+                        state.set_strain(hand, &held, strain);
+                    }
+                }
                 outcome.taken[i] = true;
                 if let TargetKind::Character(target) = reach.kind {
                     tracing::info!(

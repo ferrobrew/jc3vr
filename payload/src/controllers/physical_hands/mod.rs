@@ -51,6 +51,7 @@
 
 pub mod articulated;
 mod bodies;
+mod carry_collision;
 pub mod characters;
 pub mod climb;
 pub mod collider_view;

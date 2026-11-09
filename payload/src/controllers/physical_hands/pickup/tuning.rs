@@ -1,7 +1,10 @@
 //! The pickups' fixed tuning: the reach, the weight limits, the hand's strength on what it holds,
 //! the drive toward the hand, and the throw.
 
-use crate::{controllers::physical_hands::config::PickupConfig, grapple::rope::GRAVITY_MPS2};
+use crate::{
+    controllers::physical_hands::{config::PickupConfig, physics::config::HAND_BODIES},
+    grapple::rope::GRAVITY_MPS2,
+};
 
 /// The pickups' tuning, fixed at [`PICKUP`] apart from what [`PickupConfig`] sets from the debug UI
 /// ([`PickupTuning::configured`]).
@@ -79,8 +82,8 @@ impl PickupTuning {
 pub const PICKUP: PickupTuning = PickupTuning {
     reach_m: 0.18,
     max_mass_kg: 1500.0,
-    hand_force_n: 350.0,
-    hand_torque_nm: 30.0,
+    hand_force_n: HAND_BODIES.max_force_n,
+    hand_torque_nm: HAND_BODIES.max_torque_nm,
     stiffness_per_s: 18.0,
     max_speed_mps: 20.0,
     angular_stiffness_per_s: 14.0,

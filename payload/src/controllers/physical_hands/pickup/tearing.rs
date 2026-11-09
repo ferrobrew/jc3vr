@@ -407,6 +407,7 @@ mod tests {
             inverse_inertia: Vec3::ONE,
         };
         let config = PickupTuning {
+            hand_force_n: 350.0,
             gravity_mps2: 0.0,
             ..PICKUP
         };

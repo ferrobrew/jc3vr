@@ -87,6 +87,7 @@ fn inputs(enabled: bool) -> TickInputs {
         characters: CharactersConfig::default(),
         reaches: [None; 2],
         carrier_velocity: None,
+        carrier_pose: None,
     }
 }
 
@@ -228,6 +229,8 @@ fn a_carried_object_the_hands_can_lift_takes_on_the_characters_jump() {
         };
         let config = PickupTuning {
             carrier_motion_share: share,
+            hand_force_n: 350.0,
+            hand_torque_nm: 30.0,
             ..PICKUP
         };
         for carrier in [Vec3::ZERO, jump] {
@@ -315,7 +318,7 @@ fn a_heavy_object_dragging_behind_the_hand_stays_held_carried_or_joined() {
     let lag = Vec3::new(0.0, 0.0, -(PICKUP.break_distance_m + 0.2));
     for (joined, kind) in [(false, HeldKind::Prop), (true, HeldKind::Articulated)] {
         let heavy = Held {
-            mass_kg: 75.0,
+            mass_kg: PICKUP.hand_force_n * 1.2 / PICKUP.gravity_mps2,
             ..held(joined, kind)
         };
         let (ticks, outcome) = ticks_held(heavy, lag, lag.normalize() * 0.6, 90);
@@ -400,7 +403,7 @@ fn two_hands_on_a_joined_heavy_object_pull_as_a_carry_of_it_would() {
             })
         }),
     );
-    assert!(carry.hand_force_n > PICKUP.hand_force_n);
+    assert_eq!(carry.hand_force_n, PICKUP.hand_force_n);
     for joint in outcome.joints {
         let joint = joint.unwrap();
         assert!(joint.shared);
@@ -465,7 +468,7 @@ fn a_tear_judges_the_other_hand_with_the_strength_left() {
     // Two hands can lift this, one cannot. The left hand is torn away at once; the right holds it
     // up from straight above, which is a sag for one hand alone and no snag.
     let heavy = Held {
-        mass_kg: 50.0,
+        mass_kg: PICKUP.hand_force_n * 1.2 / PICKUP.gravity_mps2,
         ..held(false, HeldKind::Prop)
     };
     assert!(

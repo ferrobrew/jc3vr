@@ -332,7 +332,14 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
     if !scheme::is_controllers() || !hooks::in_gameplay() {
         return None;
     }
-    if !mode_acts(mode::current()) {
+    let detection = mode::current();
+    let ordinary = mode_acts(detection);
+    let on_gun = if guns::mode_allows_bodies(detection) {
+        guns::acting_hands(config)
+    } else {
+        [false; 2]
+    };
+    if !ordinary && !on_gun.into_iter().any(|acting| acting) {
         return None;
     }
     let mut active = hands::active_hands_raw()?;
@@ -343,7 +350,6 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         let state = STATE.lock();
         Hand::BOTH.map(|hand| state.pickup.carrying(hand))
     };
-    let on_gun = guns::acting_hands(config);
     let tracked_hands = active.hands;
     if guns::enabled(config) {
         guns::targets::apply_physical(
@@ -358,7 +364,9 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
     };
     let palms = Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let cockpit = active.hands[i].filter(|_| (free[i] && !carrying[i]) || on_gun[i])?;
+        tracked_hands[i]?;
+        let cockpit =
+            active.hands[i].filter(|_| (ordinary && free[i] && !carrying[i]) || on_gun[i])?;
         Some(palm_of(cockpit))
     });
     let tracked = Hand::BOTH.map(|hand| {
@@ -376,7 +384,7 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         // acting on purpose: its body leaves at once rather than standing frozen in the world.
         park_now: Hand::BOTH.map(|hand| {
             let i = hand.index();
-            active.hands[i].is_some() && !on_gun[i] && (!free[i] || carrying[i])
+            tracked_hands[i].is_some() && !on_gun[i] && (!ordinary || !free[i] || carrying[i])
         }),
     })
 }
@@ -418,9 +426,9 @@ pub(super) fn holding_tuning(tuning: &DriveTuning, hold: &HoldTarget) -> DriveTu
     };
     DriveTuning {
         max_force_n: tuning.max_force_n.min(pull),
-        max_torque_nm: tuning
-            .max_torque_nm
-            .min(pickup.hand_torque_nm.max(0.0) * twist_share),
+        max_torque_nm: tuning.max_torque_nm.min(
+            pickup.hand_torque_nm.max(0.0) * (pull / pickup.hand_force_n).max(0.0) * twist_share,
+        ),
         ..*tuning
     }
 }

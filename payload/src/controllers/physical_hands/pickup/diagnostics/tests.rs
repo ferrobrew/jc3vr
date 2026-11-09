@@ -197,6 +197,7 @@ fn queue_replacement_and_no_palm_consumer_preserve_the_actual_request_key() {
                 characters: CharactersConfig::default(),
                 reaches: [None; 2],
                 carrier_velocity: None,
+                carrier_pose: None,
             },
             &PICKUP,
         )
@@ -247,6 +248,7 @@ fn an_evicted_observed_request_consumes_the_same_target_as_a_remote_grab() {
                     characters: CharactersConfig::default(),
                     reaches: [None; 2],
                     carrier_velocity: None,
+                    carrier_pose: None,
                 },
                 &PICKUP,
             )
@@ -340,7 +342,7 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
 }
 
 #[test]
-fn actual_prop_consumer_acquires_both_barrel_sides_and_only_assists_that_body() {
+fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
     let config = PICKUP;
     let mut state = PickupState::new();
     let mut outcome = TickOutcome::default();
@@ -401,7 +403,7 @@ fn actual_prop_consumer_acquires_both_barrel_sides_and_only_assists_that_body() 
         })
     });
     let assisted = tick::carry_tuning(&held, &holds, &config);
-    assert!(assisted.hand_force_n > config.hand_force_n);
+    assert_eq!(assisted.hand_force_n, config.hand_force_n);
     let driven = hold::solve(&body.rigid(), holds, 1.0 / 60.0, &assisted);
     assert!(driven.velocities.linear.y > config.gravity_mps2 / 60.0);
     for kind in [HeldKind::Articulated, HeldKind::Door, HeldKind::Ragdoll] {

@@ -138,12 +138,22 @@ pub struct HandBodyTuning {
 impl HandBodyTuning {
     /// The strongest pull of one hand at `strength`, newtons.
     pub fn force_n(&self, strength: f32) -> f32 {
-        self.max_force_n * strength
+        self.max_force_n
+            * if strength.is_finite() {
+                strength.max(0.0)
+            } else {
+                0.0
+            }
     }
 
     /// The strongest twist of one hand at `strength`, newton metres.
     pub fn torque_nm(&self, strength: f32) -> f32 {
-        self.max_torque_nm * strength
+        self.max_torque_nm
+            * if strength.is_finite() {
+                strength.max(0.0)
+            } else {
+                0.0
+            }
     }
 }
 

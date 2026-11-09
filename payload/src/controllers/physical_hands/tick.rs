@@ -50,6 +50,7 @@ use crate::{
             draw, engine, grab_view, grasp,
             grasp::PalmMotion,
             hold::{self, BodySpace, PlayerKeepOut},
+            impacts,
             palm::{PROBE_POINTS, PalmBox},
             physics,
             pickup::{self, PICKUP},
@@ -498,6 +499,16 @@ unsafe fn run(owner: &Character, dt: f32) {
     let mut pins = [None; 2];
     let mut refused = [None, None];
     if pickup_on {
+        let strength = if config.bodies.strength.is_finite() {
+            config.bodies.strength.max(0.0)
+        } else {
+            0.0
+        };
+        let pickup_tuning = pickup::PickupTuning {
+            hand_force_n: PICKUP.hand_force_n * strength,
+            hand_torque_nm: PICKUP.hand_torque_nm * strength,
+            ..PICKUP.configured(&config.pickup)
+        };
         let inputs = pickup::TickInputs {
             palms,
             space,
@@ -514,15 +525,13 @@ unsafe fn run(owner: &Character, dt: f32) {
             characters: config.characters,
             reaches: hand_status.map(|h| h.reach),
             carrier_velocity: Some(Vec3::from_array(owner.m_MeasuredWorldVelocity.data)),
+            carrier_pose: Some(Pose {
+                position: xf.point_to_world(Vec3::ZERO),
+                orientation: body_rotation,
+            }),
         };
         // SAFETY: the simulation phase outside the physics step.
-        let outcome = unsafe {
-            pickup::tick(
-                &mut state.pickup,
-                inputs,
-                &PICKUP.configured(&config.pickup),
-            )
-        };
+        let outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &pickup_tuning) };
         joined = outcome.joints;
         pins = outcome.pins;
         refused.clone_from(&outcome.refused);
@@ -551,8 +560,11 @@ unsafe fn run(owner: &Character, dt: f32) {
             }
             if config.push {
                 let deadband = hold::resist_deadband_m(state.pickup.props()[i].is_some(), &PALMS);
+                let lag = state.pickup.held[i].map_or(Vec3::ZERO, |body| {
+                    impacts::obstruction(body.body, body.object, held.anchor - held.target)
+                });
                 hand_status[i].push =
-                    hold::resist_push(held.anchor, held.target, held.load, deadband, &PALMS);
+                    hold::resist_push(lag, Vec3::ZERO, held.load, deadband, &PALMS);
             }
         }
     }

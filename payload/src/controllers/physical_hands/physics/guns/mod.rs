@@ -60,6 +60,7 @@ pub(crate) use self::engine::read_holds;
 pub use self::math::MassSource;
 use crate::controllers::{
     frame::{Hand, Pose},
+    mode::{AirborneVariant, Detection, Mode, OnFootVariant},
     physical_hands::{
         PhysicalHandsConfig,
         physics::state::{current_at, steps},
@@ -172,6 +173,13 @@ pub fn status() -> GunsStatus {
 /// Whether held guns are bodies: whenever the hand bodies are.
 pub(crate) fn enabled(config: &PhysicalHandsConfig) -> bool {
     super::enabled(config)
+}
+
+pub(crate) fn mode_allows_bodies(detection: Detection) -> bool {
+    matches!(
+        detection.mode,
+        Mode::OnFoot(OnFootVariant::Ground) | Mode::Airborne(AirborneVariant::Falling)
+    )
 }
 
 /// Publish the guns in the hands. Called from the weapon handling's input tick.
@@ -327,6 +335,59 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::controllers::{
+        mode::{Traversal, VehicleClass, VehicleSeat},
+        physical_hands::mode_acts,
+    };
+
+    #[test]
+    fn grapple_traversal_allows_gun_bodies_but_not_ordinary_palms() {
+        for mode in [
+            Mode::OnFoot(OnFootVariant::Ground),
+            Mode::Airborne(AirborneVariant::Falling),
+        ] {
+            let mut detection = Detection {
+                mode,
+                ..Detection::default()
+            };
+            assert!(mode_acts(detection));
+            assert!(mode_allows_bodies(detection));
+            for traversal in [
+                Traversal::PreReel,
+                Traversal::ReelingIn,
+                Traversal::PreHang,
+                Traversal::ReeledIn,
+            ] {
+                detection.traversal = Some(traversal);
+                assert!(!mode_acts(detection));
+                assert!(mode_allows_bodies(detection));
+            }
+        }
+    }
+
+    #[test]
+    fn gun_bodies_do_not_enable_other_modes() {
+        for mode in [
+            Mode::OnFoot(OnFootVariant::Swimming),
+            Mode::Airborne(AirborneVariant::Wingsuit),
+            Mode::Airborne(AirborneVariant::Parachute),
+            Mode::Vehicle(VehicleSeat {
+                class: VehicleClass::Car,
+                driver: true,
+            }),
+            Mode::Ui,
+        ] {
+            for traversal in [None, Some(Traversal::ReelingIn)] {
+                let detection = Detection {
+                    mode,
+                    traversal,
+                    ..Detection::default()
+                };
+                assert!(!mode_acts(detection));
+                assert!(!mode_allows_bodies(detection));
+            }
+        }
+    }
 
     fn gun(at: usize) -> HeldGun {
         HeldGun {

@@ -127,6 +127,7 @@ pub struct Strain {
     /// How long the grab point has been past the break distance without following the hand,
     /// seconds of real time.
     stuck_s: f32,
+    acquisition_s: f32,
 }
 
 /// One tick of a hold, as its [`Strain`] measures it, world space.
@@ -145,6 +146,17 @@ pub struct StrainSample {
 }
 
 impl Strain {
+    pub(crate) fn acquired(speed_mps: f32, mass_kg: f32, force_n: f32) -> Self {
+        let stopping_s = mass_kg * speed_mps / force_n;
+        Self {
+            stuck_s: 0.0,
+            acquisition_s: if stopping_s.is_finite() && stopping_s > 0.0 {
+                (stopping_s * 2.0).min(0.12)
+            } else {
+                0.0
+            },
+        }
+    }
     /// Fold in one tick of `dt` game seconds at `time_scale` game seconds per real second, and
     /// return whether the hold is torn away.
     pub fn torn(
@@ -170,7 +182,9 @@ impl Strain {
         let finite = |v: Vec3| if v.is_finite() { v } else { Vec3::ZERO };
         let closing = finite(sample.velocity) - finite(sample.hand_velocity);
         let approach = across(closing).dot(lag.normalize_or_zero()) * scale.get();
-        let caught = distance > config.break_distance_m.max(0.0)
+        self.acquisition_s = (self.acquisition_s - scale.real_dt(dt).max(0.0)).max(0.0);
+        let caught = self.acquisition_s <= 0.0
+            && distance > config.break_distance_m.max(0.0)
             && approach < config.stuck_speed_mps.max(0.0);
         self.stuck_s = if caught {
             self.stuck_s + scale.real_dt(dt)
@@ -317,6 +331,37 @@ mod tests {
 
     use super::*;
     use crate::controllers::physical_hands::pickup::PICKUP;
+
+    #[test]
+    fn acquisition_is_bounded_and_never_bypasses_the_hard_tear_limit() {
+        let sample = StrainSample {
+            anchor: Vec3::ZERO,
+            target: Vec3::X * (PICKUP.break_distance_m + 0.1),
+            velocity: Vec3::ZERO,
+            hand_velocity: Vec3::ZERO,
+            liftable: true,
+        };
+        let mut strain = Strain::acquired(11.0, 10.0, PICKUP.hand_force_n);
+        assert!(strain.acquisition_s <= 0.12);
+        let mut torn_at = None;
+        for tick in 0..100 {
+            if strain.torn(&sample, 0.01, 1.0, &PICKUP) {
+                torn_at = Some(tick as f32 * 0.01);
+                break;
+            }
+        }
+        assert!(torn_at.unwrap() <= PICKUP.stuck_s + 0.12);
+        let mut strain = Strain::acquired(100.0, 10.0, 1.0);
+        assert!(strain.torn(
+            &StrainSample {
+                target: Vec3::X * (PICKUP.tear_distance_m + 0.01),
+                ..sample
+            },
+            0.01,
+            1.0,
+            &PICKUP
+        ));
+    }
 
     fn pose(position: Vec3, orientation: Quat) -> Pose {
         Pose {

@@ -113,7 +113,6 @@ mod tests {
         let one = holding_tuning(&tuning, &hold);
         assert_eq!(one.max_force_n, PICKUP.hand_force_n);
         assert_eq!(one.max_torque_nm, PICKUP.hand_torque_nm);
-        // Two hands on a heavy object pull as a carry of it would.
         let two = holding_tuning(
             &tuning,
             &HoldTarget {
@@ -122,11 +121,32 @@ mod tests {
                 ..hold
             },
         );
-        assert_eq!(two.max_force_n, PICKUP.hand_force_n * 1.5);
+        assert_eq!(
+            two.max_force_n,
+            tuning.max_force_n.min(PICKUP.hand_force_n * 1.5)
+        );
         assert!(
-            (two.max_torque_nm - PICKUP.hand_torque_nm * PICKUP.two_hand_angular_share).abs()
+            (two.max_torque_nm
+                - tuning
+                    .max_torque_nm
+                    .min(PICKUP.hand_torque_nm * 1.5 * PICKUP.two_hand_angular_share,))
+            .abs()
                 < 1e-5
         );
+        let stronger = DriveTuning {
+            max_force_n: b.force_n(2.0),
+            max_torque_nm: b.torque_nm(2.0),
+            ..tuning
+        };
+        let scaled = holding_tuning(
+            &stronger,
+            &HoldTarget {
+                hand_force_n: PICKUP.hand_force_n * 2.0,
+                ..hold
+            },
+        );
+        assert_eq!(scaled.max_force_n, PICKUP.hand_force_n * 2.0);
+        assert_eq!(scaled.max_torque_nm, PICKUP.hand_torque_nm * 2.0);
         // Never stronger than the hand itself.
         let weak = DriveTuning {
             max_force_n: 10.0,

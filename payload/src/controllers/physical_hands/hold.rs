@@ -91,35 +91,12 @@ impl HoldTuning {
         }
     }
 
-    /// Add bounded lift reserve for a loose prop deliberately held at two separated points.
-    /// One hand retains its configured strength; attached bodies never use this adapter.
     pub(crate) fn carrying(
         config: &PickupTuning,
-        mass_kg: f32,
-        holds: &[Option<HandHold>; 2],
+        _mass_kg: f32,
+        _holds: &[Option<HandHold>; 2],
     ) -> Self {
-        let mut tuning = Self::of(config);
-        let [Some(left), Some(right)] = *holds else {
-            return tuning;
-        };
-        let span = left.anchor.distance(right.anchor);
-        let target_span = left.target.point.distance(right.target.point);
-        if !mass_kg.is_finite()
-            || mass_kg <= 0.0
-            || mass_kg > ASSIST_MAX_MASS_KG.min(config.max_mass_kg)
-            || !span.is_finite()
-            || !target_span.is_finite()
-            || span < ASSIST_MIN_SPAN_M
-            || target_span < ASSIST_MIN_SPAN_M
-        {
-            return tuning;
-        }
-        let weight_per_hand = mass_kg * tuning.gravity.length() * 0.5;
-        tuning.hand_force_n = tuning.hand_force_n.max(
-            (weight_per_hand * ASSIST_LIFT_RESERVE)
-                .min(tuning.hand_force_n * ASSIST_FORCE_MULTIPLIER),
-        );
-        tuning
+        Self::of(config)
     }
 }
 
@@ -148,11 +125,22 @@ pub struct HoldSolution {
 }
 
 /// Solve the holds `holds` (indexed by hand) on `body` over a tick of `dt` seconds.
+#[cfg(test)]
 pub fn solve(
     body: &RigidBody,
     holds: [Option<HandHold>; 2],
     dt: f32,
     tuning: &HoldTuning,
+) -> HoldSolution {
+    solve_in_frame(body, holds, dt, tuning, Velocities::default())
+}
+
+pub fn solve_in_frame(
+    body: &RigidBody,
+    holds: [Option<HandHold>; 2],
+    dt: f32,
+    tuning: &HoldTuning,
+    carrier: Velocities,
 ) -> HoldSolution {
     if !(dt.is_finite() && dt > 0.0) {
         return HoldSolution {
@@ -160,6 +148,10 @@ pub fn solve(
             ..HoldSolution::default()
         };
     }
+    let carrier = Velocities {
+        linear: finite(carrier.linear),
+        angular: finite(carrier.angular),
+    };
     let hands = holds.iter().flatten().count();
     let angular_share = if hands > 1 {
         tuning.two_hand_angular_share
@@ -170,11 +162,14 @@ pub fn solve(
     let angular_stiffness = tuning.angular_stiffness_per_s.min(MAX_CORRECTION / dt);
     let wanted = holds.map(|hold| {
         hold.map(|h| {
-            let linear = (finite(h.velocity) + (h.target.point - h.anchor) * stiffness)
-                .clamp_length_max(tuning.max_speed_mps);
+            let frame_point = carrier.linear + carrier.angular.cross(h.anchor - body.pose.centre);
+            let linear = frame_point
+                + (finite(h.velocity) - frame_point + (h.target.point - h.anchor) * stiffness)
+                    .clamp_length_max(tuning.max_speed_mps);
             let turn = rotation_error(body.pose.orientation, h.target.orientation);
-            let angular = (finite(h.angular_velocity) + turn * angular_stiffness)
-                .clamp_length_max(tuning.max_angular_speed_rps);
+            let angular = carrier.angular
+                + (finite(h.angular_velocity) - carrier.angular + turn * angular_stiffness)
+                    .clamp_length_max(tuning.max_angular_speed_rps);
             (linear, angular)
         })
     });
@@ -216,9 +211,8 @@ pub fn solve(
         }
     };
     let velocities = Velocities {
-        linear: finite(solved.velocities.linear)
-            .clamp_length_max(tuning.max_speed_mps + gravity_step.length()),
-        angular: finite(solved.velocities.angular).clamp_length_max(tuning.max_angular_speed_rps),
+        linear: finite(solved.velocities.linear),
+        angular: finite(solved.velocities.angular),
     };
     HoldSolution {
         velocities,
@@ -334,10 +328,6 @@ pub fn keep_out(point: Vec3, space: &BodySpace) -> Vec3 {
 /// The most of its error a constraint closes in one tick: below one, so that a stiff hold settles
 /// rather than overshoots at a slow tick.
 const MAX_CORRECTION: f32 = 0.8;
-const ASSIST_MAX_MASS_KG: f32 = 150.0;
-const ASSIST_MIN_SPAN_M: f32 = 0.12;
-const ASSIST_LIFT_RESERVE: f32 = 1.25;
-const ASSIST_FORCE_MULTIPLIER: f32 = 3.0;
 /// The solver's passes over the hands.
 const ITERATIONS: usize = 8;
 /// The lag a carried loose object leaves alone before it pushes the player, metres: past what a
@@ -424,7 +414,7 @@ mod tests {
     }
 
     #[test]
-    fn separated_two_hand_grips_lift_a_barrel_with_bounded_assistance() {
+    fn separated_two_hand_grips_lift_a_barrel_with_configured_strength() {
         let config = PICKUP;
         let mut body = crate_body(100.0, Vec3::new(0.6, 0.9, 0.6), Vec3::ZERO, Quat::IDENTITY);
         let ends = [Vec3::new(-0.3, 0.0, 0.0), Vec3::new(0.3, 0.0, 0.0)];
@@ -433,7 +423,7 @@ mod tests {
             let holds =
                 [0, 1].map(|i| Some(hold(body.pose.point(ends[i]), goals[i], Quat::IDENTITY)));
             let tuning = HoldTuning::carrying(&config, 100.0, &holds);
-            assert!(tuning.hand_force_n <= config.hand_force_n * ASSIST_FORCE_MULTIPLIER);
+            assert_eq!(tuning.hand_force_n, config.hand_force_n);
             let solution = solve(&body, holds, DT, &tuning);
             step(&mut body, solution.velocities, &tuning);
         }
@@ -475,10 +465,8 @@ mod tests {
         assert!(unscaled > full + 0.03, "unscaled {unscaled} full {full}");
     }
 
-    /// The farthest a barrel just under the assisted carry's limit, held at both sides, trails
-    /// the hands as they lift it 40 cm over a real second, with the world at `time_scale`.
     fn barrel_trail(time_scale: f32) -> f32 {
-        let mass = ASSIST_MAX_MASS_KG - 1.0;
+        let mass = 149.0;
         let mut body = crate_body(mass, Vec3::new(0.6, 0.9, 0.6), Vec3::ZERO, Quat::IDENTITY);
         let ends = [Vec3::new(-0.3, 0.2, 0.0), Vec3::new(0.3, 0.2, 0.0)];
         let game_dt = DT * time_scale;
@@ -531,7 +519,7 @@ mod tests {
     }
 
     #[test]
-    fn assistance_does_not_strengthen_one_hand_near_coincident_grips_or_large_bodies() {
+    fn carrying_keeps_configured_strength_for_any_mass_or_grip_count() {
         let config = PICKUP;
         let left = hold(Vec3::NEG_X * 0.3, Vec3::NEG_X * 0.3, Quat::IDENTITY);
         let right = hold(Vec3::X * 0.3, Vec3::X * 0.3, Quat::IDENTITY);
@@ -544,14 +532,12 @@ mod tests {
             HoldTuning::carrying(&config, 100.0, &[Some(left), Some(left)]),
             baseline
         );
-        assert_eq!(
-            HoldTuning::carrying(
-                &config,
-                ASSIST_MAX_MASS_KG + 1.0,
-                &[Some(left), Some(right)]
-            ),
-            baseline
-        );
+        for mass in [1.0, 100.0, config.max_mass_kg, f32::INFINITY] {
+            assert_eq!(
+                HoldTuning::carrying(&config, mass, &[Some(left), Some(right)]),
+                baseline
+            );
+        }
         assert_eq!(
             HoldTuning::carrying(&config, f32::NAN, &[Some(left), Some(right)]),
             baseline
@@ -586,9 +572,8 @@ mod tests {
 
     #[test]
     fn a_plank_held_by_its_end_droops_from_the_hand() {
-        // A 1.2 m plank of 8 kg held level at one end: the wrist cannot hold the lever's torque,
-        // so the far end drops while the near end stays at the hand.
-        let mut plank = crate_body(8.0, Vec3::new(0.1, 0.05, 1.2), Vec3::ZERO, Quat::IDENTITY);
+        let mass = PICKUP.hand_torque_nm * 1.5 / (PICKUP.gravity_mps2 * 0.58);
+        let mut plank = crate_body(mass, Vec3::new(0.1, 0.05, 1.2), Vec3::ZERO, Quat::IDENTITY);
         let on_body = Vec3::new(0.0, 0.0, 0.58);
         let point = plank.pose.point(on_body);
         let tuning = tuning();
@@ -684,6 +669,156 @@ mod tests {
         assert_eq!(none.loads, [0.0; 2]);
         let zero_dt = solve(&body, [None, None], 0.0, &tuning);
         assert_eq!(zero_dt.velocities, body.velocities);
+    }
+
+    #[test]
+    fn an_incoming_centre_grip_stops_within_acquisition_grace_at_low_tick_rates() {
+        let tuning = tuning();
+        assert_eq!(tuning.hand_force_n, 5000.0);
+        assert_eq!(tuning.hand_torque_nm, 400.0);
+        for hz in [120.0, 60.0, 30.0, 24.0, 20.0, 15.0, 10.0] {
+            let dt = 1.0 / hz;
+            let mass = 10.0;
+            let mut body = crate_body(mass, Vec3::splat(0.3), Vec3::ZERO, Quat::IDENTITY);
+            body.velocities.linear = Vec3::X * 11.0;
+            let mut elapsed = 0.0;
+            let mut farthest: f32 = 0.0;
+            loop {
+                let solution = solve(
+                    &body,
+                    [
+                        Some(hold(body.pose.centre, Vec3::ZERO, Quat::IDENTITY)),
+                        None,
+                    ],
+                    dt,
+                    &tuning,
+                );
+                let impulse = (solution.velocities.linear - body.velocities.linear) * mass;
+                assert!(impulse.length() <= tuning.hand_force_n * dt + 1e-3);
+                body.velocities = solution.velocities;
+                body.velocities.linear += tuning.gravity * dt;
+                body.pose.centre += body.velocities.linear * dt;
+                elapsed += dt;
+                farthest = farthest.max(body.pose.centre.length());
+                assert!(farthest < 0.25, "hz {hz}, travel {farthest}");
+                assert!(elapsed < 0.12, "hz {hz}, stopping time {elapsed}");
+                if body.velocities.linear.x <= 0.01 {
+                    break;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_carrier_boost_preserves_force_and_torque_budgets_in_any_orientation() {
+        let tuning = HoldTuning {
+            gravity: Vec3::ZERO,
+            ..tuning()
+        };
+        let mut reference: Option<HoldSolution> = None;
+        for rotation in [Quat::IDENTITY, Quat::from_rotation_z(0.9)] {
+            for boost in [Vec3::ZERO, Vec3::new(90.0, -35.0, 70.0)] {
+                let mut body = crate_body(1000.0, Vec3::splat(1.0), Vec3::ZERO, rotation);
+                let carrier = Velocities {
+                    linear: boost,
+                    angular: rotation * Vec3::Y * 45.0,
+                };
+                body.velocities = Velocities {
+                    linear: carrier.linear + rotation * Vec3::X * 80.0,
+                    angular: carrier.angular + rotation * Vec3::Y * 30.0,
+                };
+                let anchor = body.pose.point(Vec3::X * 0.4);
+                let h = HandHold {
+                    velocity: carrier.linear + carrier.angular.cross(anchor - body.pose.centre),
+                    angular_velocity: carrier.angular,
+                    ..hold(anchor, anchor, rotation)
+                };
+                let solution = solve_in_frame(&body, [Some(h), None], DT, &tuning, carrier);
+                let impulse = (solution.velocities.linear - body.velocities.linear) * 1000.0;
+                let moment =
+                    body.inertia_world() * (solution.velocities.angular - body.velocities.angular);
+                let twist = moment - (anchor - body.pose.centre).cross(impulse);
+                assert!(impulse.length() <= tuning.hand_force_n * DT + 0.02);
+                assert!(twist.length() <= tuning.hand_torque_nm * DT + 0.02);
+                let relative = HoldSolution {
+                    velocities: Velocities {
+                        linear: rotation.inverse() * (solution.velocities.linear - carrier.linear),
+                        angular: rotation.inverse()
+                            * (solution.velocities.angular - carrier.angular),
+                    },
+                    ..solution
+                };
+                if let Some(reference) = reference {
+                    assert!(
+                        (reference.velocities.linear - relative.velocities.linear).length() < 1e-4
+                    );
+                    assert!(
+                        (reference.velocities.angular - relative.velocities.angular).length()
+                            < 1e-4
+                    );
+                    assert!((reference.loads[0] - relative.loads[0]).abs() < 1e-4);
+                } else {
+                    reference = Some(relative);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_fast_rotating_frame_uses_the_velocity_at_each_anchor() {
+        let tuning = HoldTuning {
+            gravity: Vec3::ZERO,
+            ..tuning()
+        };
+        let mut body = crate_body(
+            10.0,
+            Vec3::splat(1.0),
+            Vec3::new(7.0, 2.0, -3.0),
+            Quat::IDENTITY,
+        );
+        let carrier = Velocities {
+            linear: Vec3::X * 80.0,
+            angular: Vec3::Y * 50.0,
+        };
+        body.velocities = carrier;
+        let holds = [Vec3::X, Vec3::NEG_X].map(|offset| {
+            let anchor = body.pose.centre + offset;
+            Some(HandHold {
+                velocity: carrier.linear + carrier.angular.cross(offset),
+                angular_velocity: carrier.angular,
+                ..hold(anchor, anchor, Quat::IDENTITY)
+            })
+        });
+        let solution = solve_in_frame(&body, holds, DT, &tuning, carrier);
+        assert!((solution.velocities.linear - carrier.linear).length() < 1e-4);
+        assert!((solution.velocities.angular - carrier.angular).length() < 1e-4);
+        assert!(solution.loads.iter().all(|load| *load < 1e-4));
+        assert!(solution.torque_loads.iter().all(|load| *load < 1e-4));
+    }
+
+    #[test]
+    fn speed_limits_do_not_brake_an_unheld_or_powerless_body() {
+        let mut body = crate_body(1000.0, Vec3::splat(1.0), Vec3::ZERO, Quat::IDENTITY);
+        body.velocities = Velocities {
+            linear: Vec3::X * 100.0,
+            angular: Vec3::Y * 100.0,
+        };
+        assert_eq!(
+            solve(&body, [None, None], DT, &tuning()).velocities,
+            body.velocities
+        );
+        let powerless = HoldTuning {
+            hand_force_n: 0.0,
+            hand_torque_nm: 0.0,
+            ..tuning()
+        };
+        let solution = solve(
+            &body,
+            [Some(hold(Vec3::ZERO, Vec3::ZERO, Quat::IDENTITY)), None],
+            DT,
+            &powerless,
+        );
+        assert_eq!(solution.velocities, body.velocities);
     }
 
     #[test]

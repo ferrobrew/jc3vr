@@ -218,6 +218,7 @@ fn tick_inputs() -> TickInputs {
         characters: CharactersConfig::default(),
         reaches: [None; 2],
         carrier_velocity: None,
+        carrier_pose: None,
     }
 }
 
@@ -283,5 +284,6 @@ fn seize() -> Seize {
             mass_kg: 0.0,
         },
         grab: Vec3::ZERO,
+        bone: None,
     }
 }

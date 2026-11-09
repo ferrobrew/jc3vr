@@ -606,3 +606,130 @@ fn disabled_clear_drops_queue_and_restores_the_valid_lease() {
             .is_empty()
     );
 }
+
+#[test]
+fn obstruction_projects_only_recent_contact_normal_span() {
+    let (mut state, observation, now) = acquire([true, false], false);
+    let body = observation.identity.body;
+    let owner = observation.identity.owner;
+    let lag = Vec3::new(2.0, 3.0, 4.0);
+    assert_eq!(
+        state.obstruction(body, owner, lag, now, active()),
+        Vec3::ZERO
+    );
+    state.queue(contact(&state), now);
+    assert_eq!(
+        state.obstruction(body, owner, lag, now, active()),
+        Vec3::X * 2.0
+    );
+    let mut second = contact(&state);
+    second.normal = Vec3::Y * 7.0;
+    state.queue(second, now);
+    state.queue(second, now);
+    assert_eq!(
+        state.obstruction(body, owner, lag, now, active()),
+        Vec3::new(2.0, 3.0, 0.0)
+    );
+    assert_eq!(
+        state.obstruction(body, owner, lag, now + Duration::from_millis(100), active()),
+        Vec3::new(2.0, 3.0, 0.0)
+    );
+    assert_eq!(
+        state.obstruction(body, owner, lag, now + Duration::from_millis(101), active()),
+        Vec3::ZERO
+    );
+    assert_eq!(
+        state.obstruction(body + 1, owner, lag, now, active()),
+        Vec3::ZERO
+    );
+    assert_eq!(
+        state.obstruction(body, NonZeroUsize::new(9).unwrap(), lag, now, active()),
+        Vec3::ZERO
+    );
+    assert_eq!(
+        state.obstruction(body, owner, Vec3::NAN, now, active()),
+        Vec3::ZERO
+    );
+}
+
+#[test]
+fn obstruction_rejects_invalid_contacts_without_haptic_gating() {
+    let (mut state, observation, now) = acquire([true, false], false);
+    let body = observation.identity.body;
+    let owner = observation.identity.owner;
+    for impulse in [0.0, -1.0, f32::NAN, f32::INFINITY] {
+        let mut invalid = contact(&state);
+        invalid.impulse = impulse;
+        state.queue(invalid, now);
+    }
+    for normal in [Vec3::ZERO, Vec3::NAN, Vec3::INFINITY] {
+        let mut invalid = contact(&state);
+        invalid.normal = normal;
+        state.queue(invalid, now);
+    }
+    let mut character = contact(&state);
+    character.character = true;
+    state.queue(character, now);
+    assert_eq!(
+        state.obstruction(body, owner, Vec3::X, now, active()),
+        Vec3::ZERO
+    );
+    let _ = state.deliver(now, active(), &[observation.identity]);
+    let mut slow = contact(&state);
+    slow.motion.linear = Vec3::ZERO;
+    slow.motion.angular = Vec3::ZERO;
+    state.queue(slow, now);
+    assert!(
+        state
+            .deliver(now, active(), &[observation.identity])
+            .is_empty()
+    );
+    assert_eq!(
+        state.obstruction(body, owner, Vec3::X, now, active()),
+        Vec3::X
+    );
+}
+
+#[test]
+fn obstruction_drops_released_replaced_and_invalid_generations() {
+    let (mut state, observation, now) = acquire([true, false], false);
+    let body = observation.identity.body;
+    let owner = observation.identity.owner;
+    let old = contact(&state);
+    state.queue(old, now);
+    state.publish([None; 2], now);
+    state.publish([held(observation), None], now);
+    state.plan_step(now, active(), &[observation]);
+    state.queue(old, now);
+    assert_eq!(
+        state.obstruction(body, owner, Vec3::X, now, active()),
+        Vec3::ZERO
+    );
+    state.queue(contact(&state), now);
+    assert_eq!(
+        state.obstruction(body, owner, Vec3::X, now, active()),
+        Vec3::X
+    );
+    let mut replacement = observation;
+    replacement.identity.instance += 1;
+    state.plan_step(now, active(), &[replacement]);
+    assert_eq!(
+        state.obstruction(body, owner, Vec3::X, now, active()),
+        Vec3::ZERO
+    );
+    state.plan_step(now, active(), &[replacement]);
+    state.queue(contact(&state), now);
+    state.plan_step(now, active(), &[]);
+    assert_eq!(
+        state.obstruction(body, owner, Vec3::X, now, active()),
+        Vec3::ZERO
+    );
+    state.plan_step(now, active(), &[replacement]);
+    state.plan_step(now, active(), &[replacement]);
+    state.queue(contact(&state), now);
+    state.clear(now);
+    assert_eq!(
+        state.obstruction(body, owner, Vec3::X, now, active()),
+        Vec3::ZERO
+    );
+}
