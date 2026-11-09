@@ -126,18 +126,16 @@ fn a_refused_deploy_is_asked_again_only_after_the_retry_pause() {
 }
 
 #[test]
-fn a_pending_deploy_survives_pose_loss_but_expires_without_a_new_gesture() {
+fn a_pending_deploy_stops_when_the_pose_is_lowered() {
     let mut h = History::new(FALLING);
     assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
-    for _ in 0..4 {
-        assert_eq!(h.observe(None), GestureCommands::default());
-    }
-    assert_eq!(deploys(&h.hold(FOLDED, 6)), 1);
-    for _ in 0..20 {
-        h.observe(None);
-    }
+    // A lowered pose is not the deploy gesture: the pending retry does not fire.
+    assert_eq!(deploys(&h.hold(FOLDED, 6)), 0);
+    // The intent window expires without the pose.
+    assert_eq!(deploys(&h.hold(FOLDED, 30)), 0);
     assert!(h.state.deploy_since_ns.is_none());
-    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
+    // A fresh flight pose is a new gesture and deploys after its own dwell.
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
 }
 
 #[test]

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use glam::{Quat, Vec3};
 use jc3gi::input::input_action_map::Action::{
-    ACCELERATE, FIRE_RIGHT, OPEN_WINGSUIT, RELEASE_GRAPPLE, VEHICLE_RELEASE_GRAPPLE,
+    ACCELERATE, CANCEL, FIRE_RIGHT, OPEN_WINGSUIT, RELEASE_GRAPPLE, VEHICLE_RELEASE_GRAPPLE,
 };
 use openxr as xr;
 
@@ -209,10 +209,9 @@ fn evaluation_and_commit_retain_current_availability_without_emitting_actions() 
     }
 }
 
-/// A flight pose under a canopy requests the suit's own opening act; the game's parachute states
-/// take that act directly, so no canopy action precedes it.
+/// A flight pose under a canopy cuts the canopy; the suit's opening follows once the fall begins.
 #[test]
-fn a_canopy_flight_pose_commits_the_suit_opening() {
+fn a_canopy_flight_pose_cuts_the_canopy_before_the_suit() {
     let mut state = FlightState::default();
     let mut observation = input(Mode::Airborne(AirborneVariant::Parachute));
     let mut commands = GestureCommands::default();
@@ -233,11 +232,40 @@ fn a_canopy_flight_pose_commits_the_suit_opening() {
     assert_eq!(
         desired,
         vec![Desired {
-            target: Target::player(OPEN_WINGSUIT),
+            target: Target::player(CANCEL),
             want: Want::Click,
         }]
     );
     assert!(!state.retract_active_wire);
+    // The fall out of the cut canopy takes the suit's opening act.
+    observation.mode = Mode::Airborne(AirborneVariant::Falling);
+    let mut deployed = false;
+    for sequence in 6..=10 {
+        observation.sample.sequence = sequence;
+        observation.sample.time_ns = sequence as i64 * 62_500_000;
+        let commands = evaluate_input(&mut state, calibration(), Some(observation), &CONFIG);
+        if commands.transition != Some(SuitTransition::Deploy) {
+            continue;
+        }
+        let mut desired = Vec::new();
+        assert!(!commit_input(
+            &mut state,
+            commands,
+            Some(observation),
+            &CONFIG,
+            &mut desired
+        ));
+        assert_eq!(
+            desired,
+            vec![Desired {
+                target: Target::player(OPEN_WINGSUIT),
+                want: Want::Click,
+            }]
+        );
+        deployed = true;
+        break;
+    }
+    assert!(deployed, "the fall out of the canopy opens the suit");
 }
 
 /// A hang yields its line before the suit request: the grapple actions are dropped, the wire is
@@ -279,6 +307,21 @@ fn a_hang_releases_the_line_before_the_suit_request() {
     retract_committed_wire(&mut state, || retracted = true);
     assert!(retracted);
     assert!(!state.retract_active_wire);
+    // A retry in the deploy window does not retract a line the player fired since.
+    assert!(!commit_input(
+        &mut state,
+        GestureCommands {
+            transition: Some(SuitTransition::Deploy),
+            ..Default::default()
+        },
+        Some(observation),
+        &CONFIG,
+        &mut Vec::new()
+    ));
+    assert!(!state.retract_active_wire);
+    let mut retried = false;
+    retract_committed_wire(&mut state, || retried = true);
+    assert!(!retried, "a retry does not retract a new line");
 }
 
 #[test]

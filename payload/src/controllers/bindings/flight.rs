@@ -8,13 +8,13 @@
 use std::{fmt, time::Instant};
 
 use jc3gi::input::input_action_map::Action::{
-    FIRE_GRAPPLE, OPEN_PARACHUTE, PUSH_GRAPPLE, RETRACT_GRAPPLE,
+    CANCEL, FIRE_GRAPPLE, OPEN_PARACHUTE, PUSH_GRAPPLE, RETRACT_GRAPPLE,
 };
 use tracking_format::event::{Label, WingsuitGesture};
 
 use crate::{
     controllers::{
-        bindings::hold::{Desired, MapKind},
+        bindings::hold::{Desired, MapKind, Target, Want},
         body::BodyDimensions,
         config::{ControllersConfig, GripOffset},
         fingers::grip::{self, GripSource},
@@ -41,6 +41,9 @@ pub(super) struct FlightState {
     gestures: WingsuitGestures,
     calibration: Option<Calibration>,
     retract_active_wire: bool,
+    /// The active line was already retracted for this deployment: a retry must not retract a new
+    /// line the player fired during the deploy window.
+    retracted_line: bool,
     /// The phase and its cause last logged, or `None` while the player is not falling, under a
     /// canopy, in the suit, or on a line that can yield.
     logged: Option<(GesturePhase, Option<Why>)>,
@@ -51,6 +54,7 @@ impl FlightState {
     pub(super) fn reset(&mut self) {
         self.gestures.reset();
         self.retract_active_wire = false;
+        self.retracted_line = false;
     }
 
     pub(super) fn current(&self) -> GestureAvailability {
@@ -380,15 +384,32 @@ fn commit_input(
         return false;
     };
     input.canopy_requested |= canopy(desired);
+    // A new line fired after the deployment retracted the old one is not the deployment's to
+    // retract; the guard clears once the player is out of the fall or the suit.
+    if !input.deploy_grapple && !matches!(input.stage(), Stage::Fall | Stage::Parachute) {
+        state.retracted_line = false;
+    }
     if state.gestures.revalidate(input, config) == GestureAvailability::Unavailable {
         if input.blocked(config) != Some(Blocked::NoPose) {
             state.reset();
         }
         return false;
     }
+    // The suit's opening act is taken by the fall out of the parachute, not by the canopy state:
+    // cut the canopy first, and the retry opens the suit once the fall begins.
+    if input.stage() == Stage::Parachute && commands.transition == Some(SuitTransition::Deploy) {
+        desired.push(Desired {
+            target: Target {
+                map: MapKind::Player,
+                action: CANCEL,
+            },
+            want: Want::Click,
+        });
+        return commands.reserve_pitch;
+    }
     let stage = match input.stage() {
-        // The parachute's states take the suit's opening act directly, so a canopy deploy is the
-        // same request as a fall's.
+        // A remaining canopy command (not a deploy, which cuts the canopy above) is read as a fall's:
+        // the parachute has no suit command of its own.
         Stage::Parachute => Stage::Fall,
         stage => stage,
     };
@@ -402,7 +423,7 @@ fn commit_input(
                             FIRE_GRAPPLE | RETRACT_GRAPPLE | PUSH_GRAPPLE
                         )
                 });
-                state.retract_active_wire = input.deploy_grapple;
+                state.retract_active_wire = input.deploy_grapple && !state.retracted_line;
             }
             desired.extend(inputs);
             commands.reserve_pitch
@@ -417,6 +438,7 @@ fn commit_input(
 fn retract_committed_wire(state: &mut FlightState, retract: impl FnOnce()) {
     if std::mem::take(&mut state.retract_active_wire) {
         retract();
+        state.retracted_line = true;
     }
 }
 

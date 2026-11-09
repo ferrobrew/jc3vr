@@ -327,6 +327,18 @@ impl FlightPose {
                 .all(|v| (-180.001..=180.001).contains(&v))
     }
 
+    /// Whether the pose is the flight pose: both arms spread and both palms flat.
+    fn flight(self, config: &WingsuitGesturesConfig) -> bool {
+        self.lateral
+            .into_iter()
+            .all(|v| v >= config.flight_lateral_span)
+            && self
+                .angle_deg
+                .into_iter()
+                .all(|v| v <= config.flight_angle_deg)
+            && self.flat_palms(config.flight_roll_deg)
+    }
+
     /// Whether both palms are turned to face the wind, within the brake's roll band, widened by the
     /// hysteresis while `braking`.
     fn braking_palms(self, config: &WingsuitGesturesConfig, braking: bool) -> bool {
@@ -560,6 +572,7 @@ impl WingsuitGestures {
             return GestureCommands::default();
         }
         if matches!(stage, Stage::Fall | Stage::Parachute)
+            && input.pose.is_some_and(|pose| pose.flight(config))
             && self.deploy_since_ns.is_some()
             && self
                 .retry_at_ns
@@ -609,15 +622,7 @@ impl WingsuitGestures {
             };
         }
         let withdrawn = pose.withdrawn(config);
-        let flight = pose
-            .lateral
-            .into_iter()
-            .all(|v| v >= config.flight_lateral_span)
-            && pose
-                .angle_deg
-                .into_iter()
-                .all(|v| v <= config.flight_angle_deg)
-            && pose.flat_palms(config.flight_roll_deg);
+        let flight = pose.flight(config);
         // A canopy's own pose (anything but the flight pose) arms it: the player who opened the
         // canopy with the arms spread must move them before the spread opens the suit, while a
         // player already holding the canopy's toggles only has to spread them.

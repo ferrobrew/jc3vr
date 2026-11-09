@@ -343,7 +343,7 @@ fn late_canopy_suppresses_an_otherwise_publishable_close() {
 }
 
 #[test]
-fn missing_packets_clear_pose_history_but_only_tracking_loss_preserves_deployment() {
+fn missing_packets_clear_pose_history_and_a_lowered_pose_does_not_deploy() {
     let _guard = flight_pose::test_guard();
     let frame = ControllerFrame {
         sequence: 1,
@@ -466,9 +466,18 @@ fn missing_packets_clear_pose_history_but_only_tracking_loss_preserves_deploymen
             };
             let commands = evaluate_input(&mut state, calibration(), Some(recovered), &CONFIG);
             assert_eq!(
+                commands.transition, None,
+                "a lowered pose does not deploy: loss {loss}, cancelled {cancelled}"
+            );
+            let flying = GestureInput {
+                pose: Some(FLIGHT),
+                ..observation(17)
+            };
+            let commands = evaluate_input(&mut state, calibration(), Some(flying), &CONFIG);
+            assert_eq!(
                 commands.transition,
                 (!cancelled).then_some(SuitTransition::Deploy),
-                "loss {loss}, cancelled {cancelled}"
+                "the pending retry follows the flight pose: loss {loss}, cancelled {cancelled}"
             );
         }
     }
