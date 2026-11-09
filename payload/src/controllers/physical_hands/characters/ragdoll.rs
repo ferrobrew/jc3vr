@@ -13,7 +13,7 @@ use std::num::NonZeroUsize;
 use glam::Vec3;
 use jc3gi::{character::character::Character, physics::hknpRagdoll};
 
-use crate::controllers::physical_hands;
+use crate::controllers::physical_hands::{self, characters::engine};
 
 /// One dynamic body of a character's ragdoll.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -40,7 +40,7 @@ impl Ragdoll {
     ///
     /// `character` must be a live character.
     pub(crate) unsafe fn of(character: &Character) -> Option<Self> {
-        if !unsafe { character.IsRagdolling() } {
+        if !unsafe { character.IsRagdolling() } && !unsafe { engine::dead(character) } {
             return None;
         }
         let instance = unsafe { character.m_Ragdoll.px.as_ref() }?;

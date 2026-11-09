@@ -15,6 +15,7 @@ use crate::controllers::{
         pickup::{
             Held, HeldKind, JointInputs, PickupState, PickupTuning, TickOutcome, tick::held_mass,
         },
+        world::World,
     },
 };
 
@@ -166,6 +167,12 @@ pub(super) unsafe fn keep_seize(
         return;
     };
     let palm = palm.pose.position;
+    if unsafe { seize.ragdoll_reach(palm) }.is_some() {
+        state.seizes[i] = None;
+        state.regrips[i] = Some(Regrip::new(seize));
+        outcome.pins[i] = unsafe { seize.point() };
+        return;
+    }
     // SAFETY: forwarded from the caller.
     match unsafe { seize.step(palm, characters::YANK_M * world_scale) } {
         SeizeStep::Pin(pin) => outcome.pins[i] = Some(pin),
@@ -260,7 +267,7 @@ pub(super) unsafe fn keep_regrip(
     state: &mut PickupState,
     hand: Hand,
     palm: Option<PalmMotion>,
-    reach: Option<Reach>,
+    _reach: Option<Reach>,
     joints: &JointInputs,
     config: &PickupTuning,
     outcome: &mut TickOutcome,
@@ -269,11 +276,16 @@ pub(super) unsafe fn keep_regrip(
     let (Some(regrip), Some(palm)) = (state.regrips[i], palm) else {
         return;
     };
-    if let Some(reach) = reach.filter(|r| regrip.takes(r)) {
+    if let Some(reach) = unsafe { regrip.seize.ragdoll_reach(palm.pose.position) } {
         state.regrips[i] = None;
         // SAFETY: forwarded from the caller; the reach found the body this tick.
         match unsafe { bodies::read(reach.body, reach.object) } {
             Ok(body) if body.mass_kg.is_some_and(|m| grasp::can_hold(m, config)) => {
+                let Some(mut world) = (unsafe { World::get() }) else {
+                    outcome.released[i] = true;
+                    return;
+                };
+                unsafe { world.world_mut().activateBody(reach.body) };
                 let mass_kg = held_mass(&reach.kind, body.mass_kg.unwrap_or(f32::INFINITY));
                 tracing::info!(
                     hand = hand.label(),

@@ -5,6 +5,7 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::{physics::PfxLayer, vehicle::vehicle::Vehicle};
+use parking_lot::Mutex;
 
 use crate::controllers::{
     aim::{
@@ -14,12 +15,10 @@ use crate::controllers::{
     physical_hands::{
         articulated, bodies,
         characters::{self, CharactersConfig},
-        collider_view::{
-            self,
-            model::{Aabb, BodyKind},
-        },
+        collider_view::{model::Aabb, nearby},
         contact::{Surface, SurfaceHit},
         doors::{self, DoorsConfig, acquisition::PanelReach},
+        engine as hand_engine,
         grab_view::model::{RayOutcome, ReachRay},
         grasp::{self, Reach, TargetKind},
         palm::PalmBox,
@@ -27,6 +26,7 @@ use crate::controllers::{
             PickupTuning,
             diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
         },
+        world::World,
     },
 };
 
@@ -78,39 +78,79 @@ pub(crate) unsafe fn floor_weapons(hands: &[Vec3], radius: f32) -> Vec<FloorWeap
         .iter()
         .map(|point| point.distance(*first))
         .fold(0.0, f32::max);
-    let Ok(snapshot) = (unsafe { collider_view::scan_moving(*first, radius + spread, 64) }) else {
+    let Some(world) = (unsafe { World::get() }) else {
         return Vec::new();
     };
-    snapshot
-        .bodies
-        .into_iter()
-        .filter_map(|body| {
-            if body.kind != BodyKind::Dynamic
-                || !hands
-                    .iter()
-                    .any(|point| body.aabb.distance(*point) <= radius)
+    let world_id = world.world() as *const _ as usize;
+    let mut scan = FLOOR_SCAN.lock();
+    if scan.world != world_id {
+        scan.world = world_id;
+        scan.next = 0;
+        scan.bodies.clear();
+    }
+    let discovery_radius = radius + spread + 1.0;
+    let next = scan.next;
+    let result = unsafe {
+        nearby::walk_dynamic(next, 2048, |body, bounds| {
+            if bounds.distance(*first) <= discovery_radius
+                && scan.bodies.len() < 256
+                && !scan.bodies.contains(&body)
             {
-                return None;
+                scan.bodies.push(body);
             }
-            let object = unsafe { bodies::owner_of(body.id) }?;
-            if !matches!(
-                unsafe { bodies::classify(object, body.id) },
-                Ok(TargetKind::Weapon)
-            ) || unsafe { bodies::read(body.id, object) }.is_err()
-            {
-                return None;
-            }
-            Some(FloorWeapon {
-                object,
-                body: body.id,
-                bounds: body.aabb,
-            })
         })
-        .collect()
+    };
+    if let Ok(slice) = result {
+        scan.next = slice.next;
+    }
+    let mut found = Vec::new();
+    scan.bodies.retain(|&body| {
+        let Some(state) = (unsafe { nearby::dynamic_state(body) }) else {
+            return false;
+        };
+        if state.aabb.distance(*first) > discovery_radius {
+            return false;
+        }
+        let Some(object) = (unsafe { bodies::owner_of(body) }) else {
+            return false;
+        };
+        if !unsafe { hand_engine::is_character(object) }
+            && !matches!(
+                unsafe { bodies::classify(object, body) },
+                Ok(TargetKind::Weapon)
+            )
+        {
+            return false;
+        }
+        if hands
+            .iter()
+            .any(|point| state.aabb.distance(*point) <= radius)
+        {
+            found.push(FloorWeapon {
+                object,
+                body,
+                bounds: state.aabb,
+            });
+        }
+        true
+    });
+    found
 }
 
 /// The directions of the reach rays in the wrist frame: out of the palm (-Y), along the fingers
 /// (-Z), between the two, and out of either edge of the hand.
+static FLOOR_SCAN: Mutex<FloorScan> = Mutex::new(FloorScan {
+    world: 0,
+    next: 0,
+    bodies: Vec::new(),
+});
+
+struct FloorScan {
+    world: usize,
+    next: u32,
+    bodies: Vec<u32>,
+}
+
 pub(crate) const REACH_DIRECTIONS: [Vec3; 5] = [
     Vec3::new(0.0, -1.0, 0.0),
     Vec3::new(0.0, 0.0, -1.0),
@@ -200,12 +240,50 @@ pub(crate) unsafe fn reach(
         if standing_on == Some(weapon.body) {
             continue;
         }
-        let Some(reach) = floor_reach(weapon, palm, tuning, &mut |from, to| unsafe {
-            floor_cast(from, to)
+        let Some(mut reach) = floor_reach(weapon, palm, tuning, &mut |from, to| {
+            let hit = unsafe { floor_cast(from, to) }?;
+            if let Some(blocker) = cast(from, to) {
+                let owner = match blocker.surface {
+                    Surface::Character { object, .. } => Some(object),
+                    Surface::Solid { object, .. } => object,
+                };
+                if owner != Some(weapon.object)
+                    && blocker.position.distance_squared(from) < hit.position.distance_squared(from)
+                {
+                    return None;
+                }
+            }
+            Some(hit)
         }) else {
             continue;
         };
-        if !matches!(
+        if unsafe { hand_engine::is_character(reach.object) } {
+            let hit = SurfaceHit {
+                position: reach.point,
+                normal: reach.normal,
+                surface: Surface::Character {
+                    object: reach.object,
+                    body: reach.body,
+                },
+                material: None,
+            };
+            let Ok(character) = (unsafe {
+                characters::reach(
+                    reach.object,
+                    reach.body,
+                    &hit,
+                    palm.centre,
+                    tuning.world_scale,
+                    tuning.characters,
+                )
+            }) else {
+                continue;
+            };
+            if !matches!(character.kind, TargetKind::Character(target) if target.ragdoll) {
+                continue;
+            }
+            reach = character;
+        } else if !matches!(
             unsafe { bodies::classify(reach.object, reach.body) },
             Ok(TargetKind::Weapon)
         ) || unsafe { bodies::read(reach.body, reach.object) }.is_err()
@@ -224,7 +302,7 @@ pub(crate) unsafe fn reach(
         });
         if judged.notes.len() < MAX_REACH_NOTES {
             judged.notes.push(format!(
-                "a dropped weapon, body {}: in surface reach",
+                "a nearby dynamic body, body {}: in surface reach",
                 reach.body
             ));
         }
@@ -342,6 +420,16 @@ unsafe fn judge(
     tuning: &ReachTuning,
     judged: &mut Judged,
 ) {
+    let mut hit = *hit;
+    if let Surface::Solid {
+        object: Some(object),
+        body,
+    } = hit.surface
+        && unsafe { hand_engine::is_character(object) }
+    {
+        hit.surface = Surface::Character { object, body };
+    }
+    let hit = &hit;
     let ReachTuning {
         world_scale,
         pickup: config,

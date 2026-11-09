@@ -38,7 +38,10 @@ use std::num::NonZeroUsize;
 pub use config::CharactersConfig;
 pub use engine::Protection;
 use glam::{Mat4, Vec3};
-use jc3gi::{character::character::Character, vehicle::vehicle::DoorSlot};
+use jc3gi::{
+    character::character::{Character, SafeBoneIndex},
+    vehicle::vehicle::DoorSlot,
+};
 
 use crate::controllers::physical_hands::{
     bodies::owner_of,
@@ -240,6 +243,7 @@ pub struct Seize {
     pub target: CharacterTarget,
     /// The grab point in the character's frame.
     pub grab: Vec3,
+    pub bone: Option<SafeBoneIndex>,
 }
 
 /// A hand that threw a character off their feet, by the grip's topple or a yank, waiting to take
@@ -295,6 +299,43 @@ pub enum SeizeStep {
 }
 
 impl Seize {
+    pub(crate) unsafe fn point(&self) -> Option<Vec3> {
+        if unsafe { owner_of(self.target.body) } != Some(self.target.character) {
+            return None;
+        }
+        let character = unsafe { &*(self.target.character.get() as *const Character) };
+        if unsafe { engine::protection(character) }.is_some() {
+            return None;
+        }
+        let matrix = match self.bone {
+            Some(bone) => unsafe { bone_frame(character, bone) }?,
+            None => unsafe { frame(self.target.character) },
+        };
+        let point = matrix.transform_point3(self.grab);
+        point.is_finite().then_some(point)
+    }
+
+    pub(crate) unsafe fn ragdoll_reach(&self, palm: Vec3) -> Option<Reach> {
+        let at = unsafe { self.point() }?;
+        let character = unsafe { &*(self.target.character.get() as *const Character) };
+        let ragdoll = unsafe { Ragdoll::of(character) }?;
+        let bone = ragdoll.nearest(at)?;
+        Some(Reach {
+            object: bone.owner,
+            body: bone.body,
+            point: at,
+            distance: at.distance(palm),
+            normal: Vec3::ZERO,
+            kind: TargetKind::Character(CharacterTarget {
+                body: bone.body,
+                seated: None,
+                ragdoll: true,
+                mass_kg: ragdoll.mass_kg(),
+                ..self.target
+            }),
+        })
+    }
+
     /// The grip of a hand that took `target` at the world point `point`.
     ///
     /// # Safety
@@ -321,7 +362,9 @@ impl Seize {
         if unsafe { owner_of(self.target.body) } != Some(self.target.character) {
             return SeizeStep::Lost;
         }
-        let at = unsafe { frame(self.target.character) }.transform_point3(self.grab);
+        let Some(at) = (unsafe { self.point() }) else {
+            return SeizeStep::Lost;
+        };
         match yank(at, palm, yank_m) {
             Some(direction) => SeizeStep::Yank { at, direction },
             None => SeizeStep::Pin(at),
@@ -375,6 +418,22 @@ unsafe fn open_door_near(
 /// # Safety
 ///
 /// `character` must be a live character.
+unsafe fn bone_frame(character: &Character, bone: SafeBoneIndex) -> Option<Mat4> {
+    let controller = unsafe { character.m_AnimatedModel.m_AnimationController.as_ref() }?;
+    if !controller.m_Initialized
+        || controller.m_SkeletonResourceHandle.is_null()
+        || controller.m_Skeleton.is_null()
+        || controller.m_PoseProducer.is_null()
+        || unsafe { character.GetSafeIndex(bone) } == 0
+    {
+        return None;
+    }
+    let mut matrix = Mat4::NAN.into();
+    unsafe { character.GetWorldMatrixForBone(bone, &mut matrix) };
+    let matrix = Mat4::from(matrix);
+    (matrix.is_finite() && matrix.determinant().abs() > 1e-6).then_some(matrix)
+}
+
 unsafe fn frame(character: NonZeroUsize) -> Mat4 {
     let character = unsafe { &*(character.get() as *const Character) };
     Mat4::from(character.m_WorldMatrixT1)
@@ -427,6 +486,7 @@ mod tests {
             seize: Seize {
                 target: target(32, false),
                 grab: Vec3::Y,
+                bone: None,
             },
             remaining_s: REGRIP_S,
         };
@@ -442,6 +502,7 @@ mod tests {
         let mut regrip = Regrip::new(Seize {
             target: target(32, false),
             grab: Vec3::Y,
+            bone: None,
         });
         // A second of real time at a quarter speed is a quarter of the wait.
         for _ in 0..60 {
