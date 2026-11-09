@@ -89,6 +89,7 @@ mod tests {
     use crate::controllers::{
         frame::Pose,
         physical_hands::{
+            characters::RAGDOLL_CARRY_STRENGTH,
             physics::{HAND_BODIES, HoldTarget, drive::DriveTuning, state::holding_tuning},
             pickup::PICKUP,
         },
@@ -117,11 +118,34 @@ mod tests {
             keep_out: Vec3::ZERO,
             shared: false,
             hand_force_n: PICKUP.hand_force_n,
+            ragdoll: false,
         };
         let one = holding_tuning(&tuning, &hold);
         assert_eq!(one.mass_kg, tuning.mass_kg + hold.mass_kg);
         assert_eq!(one.max_force_n, PICKUP.hand_force_n);
         assert_eq!(one.max_torque_nm, PICKUP.hand_torque_nm);
+        let ragdoll = holding_tuning(
+            &tuning,
+            &HoldTarget {
+                mass_kg: 100.0,
+                hand_force_n: PICKUP.hand_force_n * RAGDOLL_CARRY_STRENGTH,
+                ragdoll: true,
+                ..hold
+            },
+        );
+        // A ragdoll's pull carries the whole body hanging from the bone, above the hand's own
+        // strength, and its mass is added to the assembly the drive moves.
+        assert_eq!(ragdoll.mass_kg, tuning.mass_kg + 100.0);
+        assert_eq!(
+            ragdoll.max_force_n,
+            PICKUP.hand_force_n * RAGDOLL_CARRY_STRENGTH
+        );
+        assert!(ragdoll.max_force_n > tuning.max_force_n);
+        assert_eq!(
+            ragdoll.max_torque_nm,
+            PICKUP.hand_torque_nm * RAGDOLL_CARRY_STRENGTH
+        );
+        assert!(ragdoll.max_torque_nm > tuning.max_torque_nm);
         let two = holding_tuning(
             &tuning,
             &HoldTarget {

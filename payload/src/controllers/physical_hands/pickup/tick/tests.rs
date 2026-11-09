@@ -8,7 +8,7 @@ use crate::controllers::{
     frame::Pose,
     physical_hands::{
         carry_collision::Assembly,
-        characters::CharacterTarget,
+        characters::{CharacterTarget, RAGDOLL_CARRY_STRENGTH},
         doors::{DoorTarget, config::TEARING},
         grasp::GripTarget,
         pickup::PICKUP,
@@ -425,7 +425,7 @@ fn ticks_held(held: Held, lag: Vec3, velocity: Vec3, limit: usize) -> (usize, Ti
 }
 
 #[test]
-fn ragdoll_contacts_share_the_retained_assembly_and_never_create_a_fixed_joint() {
+fn ragdoll_contacts_share_the_retained_assembly_and_join_when_the_hand_has_a_body() {
     for same_body in [false, true] {
         let mut state = PickupState::new();
         let first = Held {
@@ -449,20 +449,234 @@ fn ragdoll_contacts_share_the_retained_assembly_and_never_create_a_fixed_joint()
             if same_body { 75.0 } else { 37.5 }
         );
         let outcome = run(&mut state, true, &mut fake);
-        assert!(outcome.joints.iter().all(Option::is_none));
+        assert!(outcome.joints.iter().all(Option::is_some));
         assert!(
             outcome
                 .reports
                 .iter()
                 .flatten()
-                .all(|report| !report.joined && report.shared)
+                .all(|report| report.joined && report.shared)
         );
-        assert!(state.held.iter().flatten().all(|held| !held.joined));
+        assert!(state.held.iter().flatten().all(|held| held.joined));
         assert!(outcome.losses.iter().all(Option::is_none));
-        assert!(fake.driven.is_some());
+        assert!(fake.driven.is_none());
+        for joint in outcome.joints {
+            let joint = joint.unwrap();
+            assert!(joint.ragdoll);
+            assert_eq!(joint.mass_kg, 37.5);
+        }
         state.set_held(1, None);
         assert_eq!(assembly_mass_share(&state.held, &first, 1), 75.0);
     }
+}
+
+#[test]
+fn a_joined_ragdoll_hold_persists_and_keeps_its_scoped_joint() {
+    let mut state = PickupState::new();
+    let corpse = Held {
+        mass_kg: 100.0,
+        ..held(true, HeldKind::Ragdoll)
+    };
+    state.held = [Some(corpse); 2];
+    let mut fake = FakeBodies {
+        body: body(),
+        calls: Vec::new(),
+        driven: None,
+    };
+    for tick in 0..90 {
+        let rise = Vec3::Y * 0.5 * tick as f32 / 90.0;
+        let moving = PalmMotion {
+            pose: Pose {
+                position: rise,
+                ..palm().pose
+            },
+            velocity: Vec3::Y * 0.5,
+            ..palm()
+        };
+        state.input_at = Some(Instant::now());
+        let inputs = TickInputs {
+            palms: [Some(moving); 2],
+            ..inputs(true)
+        };
+        let outcome = unsafe { tick_with(&mut state, inputs, &PICKUP, &mut fake) };
+        assert!(
+            state.held.iter().all(Option::is_some),
+            "tick {tick}: {outcome:?}"
+        );
+        assert!(
+            outcome.losses.iter().all(Option::is_none),
+            "tick {tick}: {outcome:?}"
+        );
+        for joint in outcome.joints {
+            let joint = joint.expect("a joined ragdoll hold");
+            assert!(joint.ragdoll);
+            assert_eq!(joint.mass_kg, 50.0);
+            assert_eq!(
+                joint.hand_force_n,
+                PICKUP.hand_force_n * RAGDOLL_CARRY_STRENGTH
+            );
+        }
+    }
+    assert!(fake.driven.is_none());
+}
+
+#[test]
+fn a_ragdoll_carry_is_scoped_stronger_and_shares_one_assembly_between_hands() {
+    let ragdoll = Held {
+        mass_kg: 100.0,
+        ..held(false, HeldKind::Ragdoll)
+    };
+    let scoped = carry_tuning(&ragdoll, &[None; 2], &PICKUP);
+    assert_eq!(
+        scoped.hand_force_n,
+        PICKUP.hand_force_n * RAGDOLL_CARRY_STRENGTH
+    );
+    assert_eq!(
+        scoped.hand_torque_nm,
+        PICKUP.hand_torque_nm * RAGDOLL_CARRY_STRENGTH
+    );
+    for kind in [HeldKind::Prop, HeldKind::Articulated, HeldKind::Door] {
+        let tuning = carry_tuning(&Held { kind, ..ragdoll }, &[None; 2], &PICKUP);
+        assert_eq!(tuning.hand_force_n, PICKUP.hand_force_n);
+        assert_eq!(tuning.hand_torque_nm, PICKUP.hand_torque_nm);
+    }
+    // Two hands on different bones of one ragdoll carry half the whole body each, and the scoped
+    // pull lifts a body the hand's own strength cannot.
+    let other_bone = Held { body: 8, ..ragdoll };
+    let both = [Some(ragdoll), Some(other_bone)];
+    assert_eq!(assembly_hands(&both, &ragdoll, 1), 2);
+    assert_eq!(assembly_mass_share(&both, &ragdoll, 1), 50.0);
+    let heavy = Held {
+        mass_kg: 600.0,
+        ..ragdoll
+    };
+    assert!(!lifts_count(&heavy, 1, &HoldTuning::of(&PICKUP)));
+    assert!(lifts_count(&heavy, 1, &scoped));
+    assert!(can_throw(&heavy, &PICKUP));
+    assert!(!can_throw(
+        &Held {
+            kind: HeldKind::Prop,
+            ..heavy
+        },
+        &PICKUP
+    ));
+    assert!(!can_throw(
+        &Held {
+            mass_kg: 3_000.0,
+            ..heavy
+        },
+        &PICKUP
+    ));
+}
+
+#[test]
+fn a_released_ragdoll_leaves_at_the_hands_velocity_at_its_grab_point() {
+    let body = body();
+    let grip = Grip::of(
+        Pose {
+            position: Vec3::ZERO,
+            orientation: Quat::IDENTITY,
+        },
+        body.pose,
+        Vec3::ZERO,
+    );
+    let held = Held {
+        grip,
+        mass_kg: 100.0,
+        ..held(false, HeldKind::Ragdoll)
+    };
+    let moving = PalmMotion {
+        velocity: Vec3::new(1.0, 2.0, -3.0),
+        ..palm()
+    };
+    let (speed, velocities) = release_velocities(&held, &body, &moving, &PICKUP).unwrap();
+    assert!((velocities.linear - moving.velocity).length() < 1e-4);
+    assert!((speed - moving.velocity.length()) < 1e-4);
+    assert_eq!(velocities.angular, Vec3::ZERO);
+    // The body keeps its spin, and the grab point still leaves at the hand's velocity.
+    let anchor = Vec3::new(0.3, 0.0, 0.0);
+    let spinning = bodies::BodyState {
+        velocities: Velocities {
+            linear: Vec3::ZERO,
+            angular: Vec3::Y * 2.0,
+        },
+        ..body
+    };
+    let held = Held {
+        grip: Grip::of(
+            Pose {
+                position: Vec3::ZERO,
+                orientation: Quat::IDENTITY,
+            },
+            body.pose,
+            anchor,
+        ),
+        ..held
+    };
+    let (_, velocities) = release_velocities(&held, &spinning, &moving, &PICKUP).unwrap();
+    assert_eq!(velocities.angular, Vec3::Y * 2.0);
+    let at_anchor = velocities.linear + velocities.angular.cross(anchor - body.pose.centre);
+    assert!((at_anchor - moving.velocity).length() < 1e-4);
+    // What one hand cannot lift keeps its velocity instead of being thrown.
+    assert_eq!(
+        release_velocities(
+            &Held {
+                mass_kg: 600.0,
+                kind: HeldKind::Prop,
+                ..held
+            },
+            &body,
+            &moving,
+            &PICKUP
+        ),
+        None
+    );
+}
+
+#[test]
+fn a_ragdoll_joins_and_throws_where_a_prop_carries_and_leaves_with_its_joint() {
+    // A ragdoll joins the hand's body, and the last hand throws it rather than leaving it with
+    // the joint's velocity.
+    let ragdoll = held(true, HeldKind::Ragdoll);
+    assert!(ragdoll.joined);
+    assert!(ragdoll.throws_on_release(false));
+    assert!(!ragdoll.throws_on_release(true));
+    // A prop never joins, however the hand acts, and a joined prop keeps its joint's velocity.
+    assert!(!HeldKind::Prop.joined(true));
+    assert!(held(false, HeldKind::Prop).throws_on_release(false));
+    assert!(!held(true, HeldKind::Prop).throws_on_release(false));
+    assert!(!held(true, HeldKind::Door).throws_on_release(false));
+}
+
+#[test]
+fn a_joined_ragdoll_release_unjoins_and_throws_with_the_hand() {
+    let mut state = PickupState::new();
+    state.held[0] = Some(Held {
+        mass_kg: 100.0,
+        ..held(true, HeldKind::Ragdoll)
+    });
+    state.requests[0] = Some(Request::Release);
+    let moving = PalmMotion {
+        velocity: Vec3::new(0.0, 0.0, -6.0),
+        ..palm()
+    };
+    let mut fake = FakeBodies {
+        body: body(),
+        calls: Vec::new(),
+        driven: None,
+    };
+    state.input_at = Some(Instant::now());
+    let inputs = TickInputs {
+        palms: [Some(moving), None],
+        ..inputs(true)
+    };
+    let outcome = unsafe { tick_with(&mut state, inputs, &PICKUP, &mut fake) };
+    assert_eq!(state.held[0], None);
+    assert!(outcome.released[0]);
+    assert_eq!(fake.calls, ["read", "unjoin", "drive"]);
+    assert_eq!(outcome.throw, Some(6.0));
+    let thrown = outcome.thrown[0].unwrap();
+    assert!((thrown.linear - moving.velocity).length() < 1e-4);
 }
 
 #[test]
@@ -477,7 +691,7 @@ fn a_falling_anatomical_contact_converges_only_within_the_soft_hold_force_budget
         state.held[0] = Some(Held {
             grip: Grip::regrip(palm().pose, fallen.pose, contact, Vec3::ZERO),
             mass_kg: 75.0,
-            ..held(true, HeldKind::Ragdoll)
+            ..held(false, HeldKind::Ragdoll)
         });
         let mut fake = FakeBodies {
             body: fallen,
@@ -501,7 +715,12 @@ fn a_falling_anatomical_contact_converges_only_within_the_soft_hold_force_budget
         assert_eq!(fake.body.pose, fallen.pose);
         let driven = fake.driven.unwrap();
         let impulse = (driven.linear - fallen.velocities.linear).length() * 75.0;
-        assert!(impulse <= PICKUP.hand_force_n * dt + 1e-3, "{impulse}");
+        let scoped = PICKUP.hand_force_n * RAGDOLL_CARRY_STRENGTH * dt;
+        assert!(impulse <= scoped + 1e-3, "{impulse} > {scoped}");
+        assert!(
+            impulse > PICKUP.hand_force_n * dt + 1e-3,
+            "{impulse} not scoped"
+        );
         assert!(outcome.reports[0].unwrap().lag_m > 0.4);
     }
 }
@@ -699,9 +918,9 @@ fn a_tear_judges_the_other_hand_with_the_strength_left() {
         mass_kg: PICKUP.hand_force_n * 1.2 / PICKUP.gravity_mps2,
         ..held(false, HeldKind::Prop)
     };
-    assert!(
-        grasp::can_lift(heavy.mass_kg, 2, &PICKUP) && !grasp::can_lift(heavy.mass_kg, 1, &PICKUP)
-    );
+    let liftable =
+        |hands: usize| heavy.mass_kg * PICKUP.gravity_mps2 <= PICKUP.hand_force_n * hands as f32;
+    assert!(liftable(2) && !liftable(1));
     let mut state = PickupState::new();
     state.held = [Some(heavy); 2];
     let mut fake = FakeBodies {

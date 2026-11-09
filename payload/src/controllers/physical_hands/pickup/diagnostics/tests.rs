@@ -7,7 +7,7 @@ use crate::controllers::{
     frame::Pose,
     grab::{GripTarget, Mark, MarkAt, PickupKind, target::Tier},
     physical_hands::{
-        characters::CharactersConfig,
+        characters::{CharactersConfig, RAGDOLL_CARRY_STRENGTH},
         doors::DoorsConfig,
         grasp::{PalmMotion, TargetKind},
         hold::{self, HandHold, HoldTuning},
@@ -408,12 +408,38 @@ fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
     assert_eq!(assisted.hand_force_n, config.hand_force_n);
     let driven = hold::solve(&body.rigid(), holds, 1.0 / 60.0, &assisted);
     assert!(driven.velocities.linear.y > config.gravity_mps2 / 60.0);
-    for kind in [HeldKind::Articulated, HeldKind::Door, HeldKind::Ragdoll] {
+    for kind in [HeldKind::Articulated, HeldKind::Door] {
         assert_eq!(
             tick::carry_tuning(&Held { kind, ..held }, &holds, &config),
             HoldTuning::of(&config)
         );
-        assert_eq!(kind.joined(true), kind != HeldKind::Ragdoll);
+    }
+    // A ragdoll carries with the scoped strength, above the hand's own, and every kind but a
+    // loose prop joins when the hand has a body.
+    let ragdoll = tick::carry_tuning(
+        &Held {
+            kind: HeldKind::Ragdoll,
+            ..held
+        },
+        &holds,
+        &config,
+    );
+    assert_eq!(
+        ragdoll.hand_force_n,
+        config.hand_force_n * RAGDOLL_CARRY_STRENGTH
+    );
+    assert_eq!(
+        ragdoll.hand_torque_nm,
+        config.hand_torque_nm * RAGDOLL_CARRY_STRENGTH
+    );
+    for kind in [
+        HeldKind::Prop,
+        HeldKind::Articulated,
+        HeldKind::Door,
+        HeldKind::Ragdoll,
+    ] {
+        assert_eq!(kind.joined(true), kind != HeldKind::Prop);
+        assert!(!kind.joined(false));
     }
     state.held[0] = None;
     assert_eq!(

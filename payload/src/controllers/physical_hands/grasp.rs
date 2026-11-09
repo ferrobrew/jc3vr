@@ -212,12 +212,6 @@ impl Strain {
     }
 }
 
-/// Whether `hands` hands can lift a body of `mass_kg` against gravity with their strength.
-pub fn can_lift(mass_kg: f32, hands: usize, config: &PickupTuning) -> bool {
-    let strength = hands as f32 * config.hand_force_n.max(0.0);
-    mass_kg.is_finite() && mass_kg > 0.0 && mass_kg * config.gravity_mps2.max(0.0) <= strength
-}
-
 /// Whether a hand may take hold of a body of `mass_kg` at all.
 pub fn can_hold(mass_kg: f32, config: &PickupTuning) -> bool {
     mass_kg.is_finite() && mass_kg > 0.0 && mass_kg <= config.max_mass_kg
@@ -348,6 +342,12 @@ mod tests {
 
     use super::*;
     use crate::controllers::physical_hands::pickup::PICKUP;
+
+    /// Whether `hands` hands can lift a body of `mass_kg` against gravity with their strength.
+    fn can_lift(mass_kg: f32, hands: usize, config: &PickupTuning) -> bool {
+        let strength = hands as f32 * config.hand_force_n.max(0.0);
+        mass_kg.is_finite() && mass_kg > 0.0 && mass_kg * config.gravity_mps2.max(0.0) <= strength
+    }
 
     #[test]
     fn a_regrip_preserves_the_palm_contact_instead_of_accepting_the_fall_as_a_new_offset() {

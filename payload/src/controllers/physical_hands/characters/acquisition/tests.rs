@@ -71,6 +71,33 @@ fn a_valid_seated_grab_refreshes_the_door_and_preserves_hostility_policy() {
 }
 
 #[test]
+fn a_ragdoll_target_is_admitted_by_ownership_without_a_seat_or_attachment() {
+    for seated in [None, Some(seated(64))] {
+        let mut target = target(seated);
+        target.ragdoll = true;
+        let mut engine = engine(Attachment::OnFoot);
+        engine.attachment = None;
+        let seize = acquire(target, &mut engine).unwrap();
+        assert!(seize.target.ragdoll);
+        assert_eq!(seize.target.seated, None);
+        assert_eq!(seize.grab, Vec3::X);
+        assert_eq!(engine.calls, [Call::Owner, Call::Frame]);
+    }
+    // The grab's switch still refuses a ragdoll before any character read.
+    let config = CharactersConfig {
+        grab: false,
+        topple: false,
+        hijack: false,
+    };
+    let mut target = target(None);
+    target.ragdoll = true;
+    let mut engine = engine(Attachment::OnFoot);
+    engine.attachment = None;
+    assert!(take_with(target, Vec3::X, conditions(&config), &mut engine).is_none());
+    assert_eq!(engine.calls, [Call::Owner]);
+}
+
+#[test]
 fn a_valid_on_foot_grab_reads_the_frame_only_after_owner_and_attachment_checks() {
     for hostile in [false, true] {
         let mut target = target(None);
@@ -248,9 +275,11 @@ impl AcquisitionEngine for Engine {
 
     fn frame(&mut self, character: NonZeroUsize) -> Mat4 {
         assert_eq!(self.owner, Some(character));
+        // A ragdoll target reaches its frame after ownership alone; every other target after its
+        // attachment or door.
         assert!(matches!(
             self.calls.last(),
-            Some(Call::Attachment | Call::Door(_))
+            Some(Call::Owner | Call::Attachment | Call::Door(_))
         ));
         self.calls.push(Call::Frame);
         self.frame

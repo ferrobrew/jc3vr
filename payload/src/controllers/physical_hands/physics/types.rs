@@ -106,4 +106,7 @@ pub struct HoldTarget {
     /// ([`HoldTuning::carrying`](crate::controllers::physical_hands::hold::HoldTuning::carrying)),
     /// so a joined object is lifted as a carried one is.
     pub hand_force_n: f32,
+    /// Whether the object is a character's ragdoll: the hand pulls the whole body hanging from the
+    /// bone, so its scoped ragdoll pull stands above the hand's own strength.
+    pub ragdoll: bool,
 }

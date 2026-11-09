@@ -1,7 +1,8 @@
 //! Taking hold of characters with an empty hand. A grip on a character on foot throws them into
 //! their ragdoll at once by the character's own hit reaction ([`topples`]), and the hand takes
-//! hold of the bone of that ragdoll nearest the anatomical contact, which it drags and throws as any loose
-//! object; the game's own get-up takes them back once they lie still. With the topple off, or for
+//! hold of the bone of that ragdoll nearest the anatomical contact, which it drags and throws
+//! through the hand body's joint; the game's own get-up takes them back once they lie still. With
+//! the topple off, or for
 //! a character whose state keeps it on its feet, the grip holds the hand on them instead: a yank
 //! throws a character the player is hostile to off their feet, and letting go with a push shoves
 //! them. A character the game protects, mission-critical or in a scripted sequence, is not
@@ -18,8 +19,9 @@
 //!   ragdoll's mass.
 //!
 //! A ragdolling character, fallen or dead, is taken by the dynamic body of its ragdoll nearest the
-//! point the reach hit, whichever of the character's bodies the hit was on, and held as a loose
-//! object of the whole ragdoll's weight.
+//! point the reach hit, whichever of the character's bodies the hit was on. The hand holds that
+//! bone through the hand body's joint when it has one, the rest of the ragdoll hanging from it by
+//! the ragdoll's own constraints, and carries it within the scoped ragdoll strength otherwise.
 //!
 //! The pickup's reach ([`crate::controllers::physical_hands::pickup::reach`]) asks [`reach`] about
 //! every ray hit on a character. The pickup tick
@@ -131,6 +133,12 @@ pub(crate) const SHOVE_MIN_SPEED_MPS: f32 = 1.5;
 /// blow: just past it, so that the character falls where the hand holds them rather than flying
 /// off.
 pub(crate) const TOPPLE_STRENGTH: f32 = 1.1;
+
+/// How much harder a hand pulls a character's ragdoll than a loose object, as a multiple of the
+/// pickup's hand force. The hand drags the whole body by one of its bones, and the rest hangs from
+/// that bone by the ragdoll's own constraints, so the pull must move the whole body's mass rather
+/// than the bone's. Scoped to ragdolls: every other hold keeps the hand's own strength.
+pub(crate) const RAGDOLL_CARRY_STRENGTH: f32 = 4.0;
 
 /// Whether a grip that took `target` throws the character into their ragdoll at once
 /// ([`CharactersConfig::topple`]): a character on foot, alive, and not one whose state keeps it out
@@ -248,6 +256,46 @@ pub(crate) unsafe fn reach(
     Ok(reach(object, identity, None, None))
 }
 
+/// The ragdoll body a hand that reached `target` at `point` takes when the character has fallen
+/// since the reach: the body the reach hit when it is one of the ragdoll's, or else the bone
+/// nearest `point`, as [`reach`] would have found it. `None` when the reached body no longer proves
+/// the character live, the game protects it, it is not ragdolling, or none of its ragdoll's bodies
+/// could be read.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step; the reached body's owner is checked before the
+/// character is read, which need not still be live.
+pub(crate) unsafe fn fallen_reach(
+    target: CharacterTarget,
+    point: Vec3,
+    palm: Vec3,
+) -> Option<Reach> {
+    if unsafe { owner_of(target.body) } != Some(target.character) {
+        return None;
+    }
+    let character = unsafe { &*(target.character.get() as *const Character) };
+    if unsafe { engine::protection(character) }.is_some() {
+        return None;
+    }
+    let ragdoll = unsafe { Ragdoll::of(character) }?;
+    let bone = ragdoll.bone_at(target.body, point)?;
+    Some(Reach {
+        object: bone.owner,
+        body: bone.body,
+        point,
+        distance: point.distance(palm),
+        normal: Vec3::ZERO,
+        kind: TargetKind::Character(CharacterTarget {
+            body: bone.body,
+            seated: None,
+            ragdoll: true,
+            mass_kg: ragdoll.mass_kg(),
+            ..target
+        }),
+    })
+}
+
 /// A hand holding on to a character.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Seize {
@@ -311,6 +359,12 @@ impl Seize {
         if unsafe { engine::protection(character) }.is_some() {
             return None;
         }
+        unsafe { self.frame_point(character) }
+    }
+
+    /// The grab point in the world from the character's frames, once its body's owner has proved
+    /// it live: the bone's frame while it is readable, or else the character's.
+    unsafe fn frame_point(&self, character: &Character) -> Option<Vec3> {
         let matrix = match self.bone {
             Some(bone) => unsafe { bone_frame(character, bone) }?,
             None => unsafe { frame(self.target.character) },
@@ -319,11 +373,27 @@ impl Seize {
         point.is_finite().then_some(point)
     }
 
+    /// The ragdoll body this grip takes once the character ragdolls: the body the reach hit when
+    /// it is one of the ragdoll's, or else the bone nearest the grab point, or the palm's point
+    /// when the bone's frame is no longer readable, since the hand is where it took hold. `None`
+    /// when the reached body no longer proves the character live, the game protects it, or none of
+    /// its ragdoll's bodies could be read.
+    ///
+    /// # Safety
+    ///
+    /// The game thread, outside the physics step. The reached body's owner is checked before the
+    /// character is read.
     pub(crate) unsafe fn ragdoll_reach(&self, palm: Vec3) -> Option<Reach> {
-        let at = unsafe { self.point() }?;
+        if unsafe { owner_of(self.target.body) } != Some(self.target.character) {
+            return None;
+        }
         let character = unsafe { &*(self.target.character.get() as *const Character) };
+        if unsafe { engine::protection(character) }.is_some() {
+            return None;
+        }
         let ragdoll = unsafe { Ragdoll::of(character) }?;
-        let bone = ragdoll.nearest(at)?;
+        let at = unsafe { self.frame_point(character) }.unwrap_or(palm);
+        let bone = ragdoll.bone_at(self.target.body, at)?;
         Some(Reach {
             object: bone.owner,
             body: bone.body,

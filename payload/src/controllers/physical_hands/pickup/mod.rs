@@ -17,15 +17,17 @@
 //! A held object is held at the point the hand touched, in one of two ways. A hand its body drives
 //! holds it through a joint: a fixed constraint between the
 //! hand's body and the object's, which the physics step makes and ends
-//! ([`crate::controllers::physical_hands::physics`]), so the object has mass, the hand's own
-//! strength carries it, and it leaves with the velocity the hand gave it. Otherwise the object is
+//! ([`crate::controllers::physical_hands::physics`]), so the object has mass, the hand's strength
+//! carries it, and it leaves with the velocity the hand gave it; a ragdoll joined this way is
+//! thrown as a carried one is. Otherwise the object is
 //! carried, not attached: each tick its body is given the velocities that carry the grab point to
 //! where the hand holds it and turn the body as the hand turns, within the hands' strength
 //! ([`crate::controllers::physical_hands::hold`]), and it is let go with the hand's velocity, so
 //! that it is thrown. One hand carries what weighs less than [`PickupTuning::hand_force_n`], and
-//! two hands twice that; a hand that holds what it cannot lift drags it, and a body hinged to the
-//! world swings about its hinge. A hand that holds something does not probe, push off surfaces, or
-//! strike.
+//! two hands twice that; a character's ragdoll, which the hand drags by one of its bones, carries
+//! with `characters::RAGDOLL_CARRY_STRENGTH` times that pull. A hand that holds what it cannot
+//! lift drags it, and a body hinged to the world swings about its hinge. A hand that holds
+//! something does not probe, push off surfaces, or strike.
 //!
 //! The module is split by concern: [`state`] holds the pickups' state across ticks, [`reach`] what
 //! a hand could take, and [`tick`] the simulation tick that drives it; [`grips`] holds the grips a

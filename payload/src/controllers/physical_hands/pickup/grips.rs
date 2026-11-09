@@ -10,7 +10,7 @@ use crate::controllers::{
         bodies,
         characters::{self, CharactersConfig, Regrip, Seize, SeizeStep},
         doors::{self, LatchStep},
-        grasp::{self, Grip, PalmMotion, Reach},
+        grasp::{self, Grip, PalmMotion, Reach, TargetKind},
         physics::{self, Shove, ShoveForce},
         pickup::{
             Held, HeldKind, JointInputs, PickupState, PickupTuning, TickOutcome, tick::held_mass,
@@ -164,11 +164,16 @@ pub(super) unsafe fn keep_seize(
     outcome: &mut TickOutcome,
 ) {
     let i = hand.index();
-    let (Some(seize), Some(palm)) = (state.seizes[i], palm) else {
+    let (Some(mut seize), Some(palm)) = (state.seizes[i], palm) else {
         return;
     };
     let palm = palm.pose.position;
-    if unsafe { seize.ragdoll_reach(palm) }.is_some() {
+    if let Some(reach) = unsafe { seize.ragdoll_reach(palm) } {
+        // The regrip holds the bone the reach found from here on, so a capsule the game frees as
+        // the character ragdolls no longer has to prove the character live.
+        if let TargetKind::Character(target) = reach.kind {
+            seize.target = target;
+        }
         state.seizes[i] = None;
         state.regrips[i] = Some(Regrip::new(seize));
         outcome.pins[i] = unsafe { seize.point() };

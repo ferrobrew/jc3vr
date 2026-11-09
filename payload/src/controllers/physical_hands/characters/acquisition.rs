@@ -78,8 +78,18 @@ fn refresh(
     conditions: Conditions<'_>,
     engine: &mut impl AcquisitionEngine,
 ) -> Option<CharacterTarget> {
-    if target.ragdoll || engine.owner(target.body) != Some(target.character) {
+    if engine.owner(target.body) != Some(target.character) {
         return None;
+    }
+    // A ragdolling character lies free of any seat, and the body the reach took is one of its
+    // ragdoll's, so ownership alone admits it: the hand holds the bone, and the rest of the
+    // ragdoll hangs from it by the ragdoll's own constraints.
+    if target.ragdoll {
+        if !conditions.config.grab {
+            return None;
+        }
+        target.seated = None;
+        return Some(target);
     }
     // Ownership proves the character live before the adapter forms any character reference.
     target.seated = match (target.seated, engine.attachment(target.character)?) {

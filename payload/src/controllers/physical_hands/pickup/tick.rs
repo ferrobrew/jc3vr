@@ -345,11 +345,12 @@ unsafe fn tick_with(
                     outcome.released[i] = true;
                 }
                 if let Some(held) = state.take_held(i) {
-                    let shared = state.held[hand.other().index()].is_some_and(|o| o.same(&held));
-                    // A joined object leaves with the velocity the hand gave it.
-                    if !shared && !held.joined {
-                        // SAFETY: forwarded from the caller.
-                        match unsafe { throw(&held, palms[i], config) } {
+                    let shared = state.held[hand.other().index()]
+                        .is_some_and(|other| other.same_assembly(&held));
+                    // A joined object leaves with the velocity the hand gave it, except a
+                    // ragdoll, which the last hand throws as a carried one is thrown.
+                    if held.throws_on_release(shared) {
+                        match throw(engine, &held, palms[i], config) {
                             Ok(Some((speed, velocities))) => {
                                 outcome.throw = Some(speed);
                                 outcome.thrown[i] = Some(velocities);
@@ -406,9 +407,7 @@ unsafe fn tick_with(
                         break 'grab;
                     }
                 }
-                if let TargetKind::Character(target) = reach.kind
-                    && !target.ragdoll
-                {
+                if let TargetKind::Character(target) = reach.kind {
                     // SAFETY: the queued target is checked before any character access.
                     match unsafe {
                         Seize::take(
@@ -446,6 +445,50 @@ unsafe fn tick_with(
                             outcome.character_grips += 1;
                         }
                         None => {
+                            // The character may have ragdolled between the reach and this tick:
+                            // take the body of its ragdoll nearest the contact instead of
+                            // dropping the grip. A ragdoll the character path could not take, its
+                            // bone's owner not naming the character, is taken directly by the
+                            // body the reach hit, as any loose body is.
+                            // SAFETY: forwarded from the caller; the owner check inside proves
+                            // the character live.
+                            let fallen = if character_config.grab {
+                                unsafe {
+                                    characters::fallen_reach(
+                                        target,
+                                        reach.point,
+                                        palm.pose.position,
+                                    )
+                                }
+                            } else {
+                                None
+                            };
+                            let take = fallen.or_else(|| {
+                                (character_config.grab && target.ragdoll).then_some(reach)
+                            });
+                            if let Some(reach) = take {
+                                let body = engine.read(reach.body, reach.object);
+                                let result = take_body(
+                                    state,
+                                    BodyGrab {
+                                        hand,
+                                        reach,
+                                        palm,
+                                        joined: joints.join[i],
+                                    },
+                                    body,
+                                    config,
+                                    &mut outcome,
+                                );
+                                record(result);
+                                if matches!(result, ConsumerResult::BodyAccepted { .. }) {
+                                    state.evidence_holds[i] = evidence;
+                                    if matches!(reach.kind, TargetKind::Character(_)) {
+                                        outcome.character_grips += 1;
+                                    }
+                                }
+                                break 'grab;
+                            }
                             // SAFETY: forwarded from the caller; only the body's owner is read.
                             let owned =
                                 unsafe { bodies::owner_of(target.body) } == Some(target.character);
@@ -591,13 +634,12 @@ unsafe fn tick_with(
         let Some(held) = state.held[i].filter(|_| !driven[i]) else {
             continue;
         };
-        let joined = held.kind != HeldKind::Ragdoll
-            && state
-                .held
-                .iter()
-                .flatten()
-                .filter(|h| h.same(&held))
-                .all(|h| h.joined);
+        let joined = state
+            .held
+            .iter()
+            .flatten()
+            .filter(|h| h.same(&held))
+            .all(|h| h.joined);
         for holder in state.held.iter_mut().flatten().filter(|h| h.same(&held)) {
             holder.joined = joined;
         }
@@ -693,8 +735,10 @@ unsafe fn tick_with(
         // The holds the strain left, solved in real time; a joint takes the game-time strength.
         let game_tuning = carry_tuning(&held, &holds, config);
         let tuning = game_tuning.in_real_time(time_scale);
+        let hands = holds.iter().flatten().count();
+        let assembly = assembly_hands(&state.held, &held, hands);
         if joined {
-            let shared = holds.iter().flatten().count() > 1;
+            let shared = assembly > 1;
             for (k, hold) in holds.iter().enumerate() {
                 let (Some(hold), Some(holder)) = (hold, holders[k]) else {
                     continue;
@@ -705,10 +749,11 @@ unsafe fn tick_with(
                     object: held.object,
                     body: held.body,
                     palm: holder.grip.palm(body.pose),
-                    mass_kg: held.mass_kg / holds.iter().flatten().count().max(1) as f32,
+                    mass_kg: held.mass_kg / assembly.max(1) as f32,
                     keep_out: keep_outs[k],
                     shared,
                     hand_force_n: game_tuning.hand_force_n,
+                    ragdoll: held.kind == HeldKind::Ragdoll,
                 });
                 let (load, twist) = joints.loads[k];
                 outcome.reports[k] = Some(HeldReport {
@@ -739,7 +784,6 @@ unsafe fn tick_with(
             }
             continue;
         }
-        let hands = holds.iter().flatten().count();
         if hands == 0 {
             continue;
         }
@@ -796,7 +840,7 @@ unsafe fn tick_with(
             outcome.reports[k] = Some(HeldReport {
                 mass_kg: held.mass_kg,
                 liftable,
-                shared: assembly_hands(&state.held, &held, hands) > 1,
+                shared: assembly > 1,
                 centre: body.pose.centre,
                 anchor: hold.anchor,
                 target: hold.target.point,
@@ -938,8 +982,11 @@ pub(super) fn take_body(
                 {
                     let relative =
                         body.rigid().point_velocity(reach.point) - palm.point_velocity(reach.point);
-                    let strain =
-                        grasp::Strain::acquired(relative.length(), mass_kg, config.hand_force_n);
+                    let strain = grasp::Strain::acquired(
+                        relative.length(),
+                        mass_kg,
+                        carry_force_n(kind, config),
+                    );
                     if let Some(held) = state.held[i] {
                         state.set_strain(hand, &held, strain);
                     }
@@ -1047,16 +1094,32 @@ fn carrier_change(previous: Option<Vec3>, now: Option<Vec3>, config: &PickupTuni
         .clamp_length_max(config.max_speed_mps.max(0.0))
 }
 
+/// The pull of one hand on `held`: the pickup's hand force, and the scoped ragdoll carry for a
+/// body of a character's ragdoll, which drags the whole body hanging from the bone.
+fn carry_force_n(kind: HeldKind, config: &PickupTuning) -> f32 {
+    let force = config.hand_force_n.max(0.0);
+    match kind {
+        HeldKind::Ragdoll => force * characters::RAGDOLL_CARRY_STRENGTH,
+        _ => force,
+    }
+}
+
 pub(super) fn carry_tuning(
     held: &Held,
     holds: &[Option<HandHold>; 2],
     config: &PickupTuning,
 ) -> HoldTuning {
-    if held.kind == HeldKind::Prop {
+    let mut tuning = if held.kind == HeldKind::Prop {
         HoldTuning::carrying(config, held.mass_kg, holds)
     } else {
         HoldTuning::of(config)
+    };
+    if held.kind == HeldKind::Ragdoll {
+        let strength = characters::RAGDOLL_CARRY_STRENGTH;
+        tuning.hand_force_n *= strength;
+        tuning.hand_torque_nm *= strength;
     }
+    tuning
 }
 
 fn assembly_hands(held: &[Option<Held>; 2], subject: &Held, local_hands: usize) -> usize {
@@ -1093,33 +1156,62 @@ fn record_drive(state: &PickupState, index: usize, held: &Held, drive: DriveReco
     }
 }
 
-/// Let go of `held` from the palm `palm`, and return the throw's speed: the grab point leaves with
-/// the palm's velocity at it, scaled and capped, and the body keeps its spin. An object one hand
-/// cannot lift, or one let go by an untracked hand, keeps the velocity it has.
-///
-/// # Safety
-///
-/// Main thread, outside the physics step.
-unsafe fn throw(
+/// Whether the last hand lets go of `held` as a throw: what it can lift with the pull it has on
+/// it, so a ragdoll within the scoped ragdoll carry is thrown as a prop is.
+fn can_throw(held: &Held, config: &PickupTuning) -> bool {
+    let mass = held.mass_kg;
+    mass.is_finite()
+        && mass > 0.0
+        && mass * config.gravity_mps2.max(0.0) <= carry_force_n(held.kind, config)
+}
+
+/// The velocities `held` leaves with when the palm lets go of it at its grab point, and the speed
+/// of the throw: the palm's velocity at the grab point, scaled and capped, and the body's spin,
+/// with the linear velocity corrected so that the grab point leaves at the palm's velocity.
+/// `None` when the hold cannot throw what it holds.
+fn release_velocities(
     held: &Held,
-    palm: Option<PalmMotion>,
+    body: &bodies::BodyState,
+    palm: &PalmMotion,
     config: &PickupTuning,
-) -> Result<Option<(f32, Velocities)>, bodies::BodyError> {
-    let body = unsafe { bodies::read(held.body, held.object) }?;
-    let Some(palm) = palm.filter(|_| grasp::can_lift(held.mass_kg, 1, config)) else {
-        return Ok(None);
-    };
+) -> Option<(f32, Velocities)> {
+    if !can_throw(held, config) {
+        return None;
+    }
     let anchor = held.grip.anchor(body.pose);
     let point = grasp::throw_velocity(palm.point_velocity(anchor), config);
     let spin = body.velocities.angular;
     let linear = (point - spin.cross(anchor - body.pose.centre))
-        .clamp_length_max(config.max_throw_speed_mps);
-    let velocities = Velocities {
-        linear,
-        angular: spin,
+        .clamp_length_max(config.max_throw_speed_mps.max(0.0));
+    Some((
+        point.length(),
+        Velocities {
+            linear,
+            angular: spin,
+        },
+    ))
+}
+
+/// Let go of `held` from the palm `palm`, and return the throw's speed: the grab point leaves with
+/// the palm's velocity at it, scaled and capped, and the body keeps its spin. An object one hand
+/// cannot lift, or one let go by an untracked hand, keeps the velocity it has. The joint ends
+/// before the velocity is written, so it cannot hold the body back.
+fn throw(
+    engine: &mut impl BodyEngine,
+    held: &Held,
+    palm: Option<PalmMotion>,
+    config: &PickupTuning,
+) -> Result<Option<(f32, Velocities)>, bodies::BodyError> {
+    let body = engine.read(held.body, held.object)?;
+    let Some(palm) = palm else {
+        return Ok(None);
     };
-    unsafe { bodies::drive(held.body, held.object, velocities) }?;
-    Ok(Some((point.length(), velocities)))
+    let Some((speed, velocities)) = release_velocities(held, &body, &palm, config) else {
+        return Ok(None);
+    };
+    engine.release_joints(held);
+    engine.drive(held, velocities)?;
+    Ok(Some((speed, velocities)))
 }
 
 /// Let go of `held` in every hand that holds it, as a lost hold.

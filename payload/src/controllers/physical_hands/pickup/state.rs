@@ -323,6 +323,13 @@ impl Held {
     pub(crate) fn same_assembly(&self, other: &Held) -> bool {
         self.same(other) || self.ragdoll.is_some() && self.ragdoll == other.ragdoll
     }
+
+    /// Whether letting go throws this hold rather than leaving it with the velocity its joint gave
+    /// it: the last hand lets go, and a ragdoll is thrown even when joined, since its joint would
+    /// otherwise hold the body to the hand.
+    pub(crate) fn throws_on_release(&self, shared: bool) -> bool {
+        !shared && (!self.joined || self.kind == HeldKind::Ragdoll)
+    }
 }
 
 /// A hold's [`Strain`], with the body it was measured on.
@@ -356,9 +363,12 @@ impl HeldKind {
         }
     }
 
-    /// Loose props and ragdolls retain anatomical contacts through the force-limited carry solve.
+    /// Whether a hold of this kind joins the hand's body to what it holds when the hand has one: a
+    /// loose prop is carried rather than joined, so the hand's body never fights it; every other
+    /// kind joins. A ragdoll joins by the bone the hand took, and the rest of it hangs from that
+    /// bone by the ragdoll's own constraints.
     pub(crate) fn joined(self, requested: bool) -> bool {
-        requested && !matches!(self, Self::Prop | Self::Ragdoll)
+        requested && self != Self::Prop
     }
 
     pub(crate) fn carrier_transport(self, joined: bool, liftable: bool) -> bool {

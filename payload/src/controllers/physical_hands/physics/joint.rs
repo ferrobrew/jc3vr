@@ -89,8 +89,9 @@ pub struct Joint {
 }
 
 impl Joint {
-    /// Join at a common world-space frame without introducing an initial constraint error.
-    /// Anatomical grips with a gap use the force-limited carry solve instead.
+    /// Join at a common world-space frame without introducing an initial constraint error: the
+    /// constraint frame is `palm` in both bodies, so an anatomical regrip holds the hand's original
+    /// contact on the object without a snap.
     ///
     /// # Safety
     ///
