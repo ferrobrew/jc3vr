@@ -10,7 +10,7 @@ use crate::controllers::{
     frame::{Hand, Pose},
     grab::PickupKind,
     physical_hands::{
-        carry_collision::Subject,
+        carry_collision::{Assembly, Subject},
         characters::{Regrip, Seize},
         doors::{Latch, tearing::TearGrip},
         grasp::{Grip, Reach, Strain, TargetKind},
@@ -238,21 +238,25 @@ impl PickupState {
                 return Some(Subject {
                     body: held.body,
                     owner: held.object,
-                    assembly: held.kind == HeldKind::Ragdoll,
+                    assembly: match held.kind {
+                        HeldKind::Prop | HeldKind::Articulated => Assembly::Component,
+                        HeldKind::Ragdoll => Assembly::Character,
+                        HeldKind::Door => Assembly::Body,
+                    },
                 });
             }
             if let Some(latch) = self.latches[i] {
                 return Some(Subject {
                     body: latch.vehicle_body,
                     owner: latch.door.vehicle,
-                    assembly: false,
+                    assembly: Assembly::Body,
                 });
             }
             let seize = self.seizes[i].or(self.regrips[i].map(|regrip| regrip.seize))?;
             Some(Subject {
                 body: seize.target.body,
                 owner: seize.target.character,
-                assembly: true,
+                assembly: Assembly::Character,
             })
         })
     }

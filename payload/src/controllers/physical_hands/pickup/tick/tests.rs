@@ -7,6 +7,7 @@ use super::*;
 use crate::controllers::{
     frame::Pose,
     physical_hands::{
+        carry_collision::Assembly,
         characters::CharacterTarget,
         doors::{DoorTarget, config::TEARING},
         grasp::GripTarget,
@@ -228,7 +229,7 @@ fn collision_publication_keeps_character_assembly_after_a_seize() {
     let held = held(false, HeldKind::Ragdoll);
     state.held[0] = Some(held);
     let subject = state.collision_subjects()[0].unwrap();
-    assert!(subject.assembly);
+    assert_eq!(subject.assembly, Assembly::Character);
     assert_eq!(subject.owner, held.object);
     state.held[0] = None;
     state.seizes[0] = Some(Seize {
@@ -272,7 +273,7 @@ fn collision_publication_covers_a_latched_door_without_carrying_the_vehicle() {
     let subject = state.collision_subjects()[0].unwrap();
     assert_eq!(subject.body, 7);
     assert_eq!(subject.owner, owner);
-    assert!(!subject.assembly);
+    assert_eq!(subject.assembly, Assembly::Body);
     assert_eq!(state.props(), [None; 2]);
 }
 

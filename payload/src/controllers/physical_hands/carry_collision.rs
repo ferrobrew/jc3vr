@@ -1,9 +1,11 @@
-use std::{num::NonZeroUsize, time::Instant};
+use std::{collections::HashSet, num::NonZeroUsize, time::Instant};
 
 use jc3gi::{
     character::character::Character,
     havok::hkAabb,
-    physics::{CustomGroupCollisionFilter as Filter, PhysicsSystem, hknpBody, hknpWorld},
+    physics::{
+        CustomGroupCollisionFilter as Filter, PhysicsSystem, hknpBody, hknpConstraint, hknpWorld,
+    },
 };
 use parking_lot::Mutex;
 
@@ -20,13 +22,20 @@ use crate::{
 pub(super) struct Subject {
     pub body: u32,
     pub owner: NonZeroUsize,
-    pub assembly: bool,
+    pub assembly: Assembly,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum Assembly {
+    Body,
+    Component,
+    Character,
 }
 
 impl Subject {
     fn includes(self, body: u32, owner: Option<NonZeroUsize>, seed_group: u32, group: u32) -> bool {
-        owner == Some(self.owner) && (self.assembly || self.body == body)
-            || self.assembly && seed_group != 0 && seed_group == group
+        owner == Some(self.owner) && (self.assembly == Assembly::Character || self.body == body)
+            || self.assembly == Assembly::Character && seed_group != 0 && seed_group == group
     }
 }
 
@@ -81,6 +90,11 @@ pub(super) unsafe fn step() {
             Some((
                 subject,
                 slot.m_collisionFilterInfo >> Filter::SYSTEM_GROUP_SHIFT,
+                if subject.assembly == Assembly::Component {
+                    unsafe { component(world.world(), subject) }
+                } else {
+                    HashSet::new()
+                },
             ))
         })
         .collect();
@@ -103,13 +117,14 @@ pub(super) unsafe fn step() {
             || player_group.is_some_and(|group| {
                 slot.m_collisionFilterInfo >> Filter::SYSTEM_GROUP_SHIFT == group
             });
-        let held = subjects.iter().any(|(subject, group)| {
-            subject.includes(
-                body,
-                owner,
-                *group,
-                slot.m_collisionFilterInfo >> Filter::SYSTEM_GROUP_SHIFT,
-            )
+        let held = subjects.iter().any(|(subject, group, component)| {
+            component.contains(&body)
+                || subject.includes(
+                    body,
+                    owner,
+                    *group,
+                    slot.m_collisionFilterInfo >> Filter::SYSTEM_GROUP_SHIFT,
+                )
         });
         if !player_body && !held {
             continue;
@@ -279,6 +294,67 @@ struct State {
     leases: Vec<Lease>,
 }
 
+unsafe fn component(world: &hknpWorld, subject: Subject) -> HashSet<u32> {
+    let candidates: Vec<_> = (0..=world.m_peakBodyIndex)
+        .filter_map(|body| {
+            let slot = unsafe { live_body(world, body) }?;
+            if unsafe { bodies::body_owner(world, body) } != Some(subject.owner) {
+                return None;
+            }
+            Some((
+                body,
+                unsafe { bodies::instance_of(world, body) },
+                slot.m_motionId,
+                slot.m_flags & hknpBody::IS_DYNAMIC != 0,
+            ))
+        })
+        .collect();
+    let manager = &world.m_constraintManager;
+    let constraints =
+        if manager.m_constraintBuffer.is_null() || manager.m_capacity > MAX_CONSTRAINTS {
+            &[][..]
+        } else {
+            unsafe {
+                std::slice::from_raw_parts(manager.m_constraintBuffer, manager.m_capacity as usize)
+            }
+        };
+    let mut members = HashSet::from([subject.body]);
+    let mut pending = vec![subject.body];
+    while let Some(body) = pending.pop() {
+        let Some(&(_, instance, motion, dynamic)) =
+            candidates.iter().find(|candidate| candidate.0 == body)
+        else {
+            continue;
+        };
+        for &(other, other_instance, other_motion, other_dynamic) in &candidates {
+            if (instance.is_some() && instance == other_instance
+                || dynamic && other_dynamic && motion == other_motion)
+                && members.insert(other)
+            {
+                pending.push(other);
+            }
+        }
+        for constraint in constraints {
+            if constraint.m_bodyIdA == hknpConstraint::INVALID_BODY_ID
+                || constraint.m_flags & hknpConstraint::IS_DISABLED != 0
+            {
+                continue;
+            }
+            let other = if constraint.m_bodyIdA == body {
+                constraint.m_bodyIdB
+            } else if constraint.m_bodyIdB == body {
+                constraint.m_bodyIdA
+            } else {
+                continue;
+            };
+            if candidates.iter().any(|candidate| candidate.0 == other) && members.insert(other) {
+                pending.push(other);
+            }
+        }
+    }
+    members
+}
+
 unsafe fn live_body(world: &hknpWorld, body: u32) -> Option<&hknpBody> {
     let slot = unsafe { bodies::slot(world, body) }?;
     (slot.m_flags & (hknpBody::IS_STATIC | hknpBody::IS_DYNAMIC) != 0 && !slot.m_shape.is_null())
@@ -313,6 +389,7 @@ unsafe fn bounds(world: &hknpWorld, body: u32) -> Option<hkAabb> {
         .then_some(bounds)
 }
 
+const MAX_CONSTRAINTS: u32 = 1 << 16;
 const RELEASE_MARGIN_M: f32 = 0.01;
 const RELEASE_GRACE_S: f32 = 1.0;
 static STATE: Mutex<State> = Mutex::new(State {
@@ -363,7 +440,7 @@ mod tests {
         let subject = Subject {
             body: 7,
             owner,
-            assembly: true,
+            assembly: Assembly::Character,
         };
         assert!(subject.includes(8, Some(owner), 3, 0));
         assert!(subject.includes(9, Some(other), 3, 3));
@@ -377,7 +454,7 @@ mod tests {
         let subject = Subject {
             body: 7,
             owner,
-            assembly: false,
+            assembly: Assembly::Body,
         };
         assert!(subject.includes(7, Some(owner), 3, 3));
         assert!(!subject.includes(8, Some(owner), 3, 3));
