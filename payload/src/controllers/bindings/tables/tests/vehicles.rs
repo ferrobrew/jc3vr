@@ -192,8 +192,62 @@ fn a_long_right_a_that_bails_holds_open_parachute() {
     }
 }
 
-/// Where it does not, the long right A taps the gamepad's Y as ever, and holds no
-/// `OPEN_PARACHUTE`.
+#[test]
+fn a_latched_bail_survives_release_and_cancels_on_a_context_change() {
+    let seat = VehicleSeat {
+        class: VehicleClass::Car,
+        driver: true,
+    };
+    let mode = Mode::Vehicle(seat);
+    let mut bindings = Bindings::new();
+    let mut c = Controls {
+        bail: true,
+        ..Default::default()
+    };
+    c.hands[Hand::Right.index()].a = down();
+    for _ in 0..60 {
+        let step = bindings.sim_step(mode, &c, DT, &CONFIG);
+        assert!(player(&step, EXIT_VEHICLE).is_none());
+        assert!(player(&step, BTN_Y).is_none());
+        if player(&step, OPEN_PARACHUTE).is_some() {
+            break;
+        }
+    }
+    assert!(bindings.bail_hold.active.is_some());
+    c.hands[Hand::Right.index()].a = up();
+    c.bail = false;
+    for _ in 0..10 {
+        let step = bindings.sim_step(mode, &c, DT, &CONFIG);
+        assert!(player(&step, OPEN_PARACHUTE).is_some());
+        assert!(player(&step, EXIT_VEHICLE).is_none());
+        assert!(player(&step, BTN_Y).is_none());
+    }
+    for _ in 0..5 {
+        bindings.sim_step(mode, &c, DT, &CONFIG);
+    }
+    assert!(player(&bindings.sim_step(mode, &c, DT, &CONFIG), OPEN_PARACHUTE).is_none());
+
+    let exit = exit_action(seat.class);
+    let mut timed = [TimedLatch::default(); 2];
+    timed[0].presses[0] = Some((
+        exit,
+        sink::TimedPress {
+            long: true,
+            long_held: true,
+            ..Default::default()
+        },
+    ));
+    let mut hold = BailHold::new();
+    assert!(hold.step(mode, true, &timed, DT));
+    assert!(!hold.step(ON_FOOT, true, &timed, DT));
+    assert!(hold.step(mode, true, &timed, DT));
+    timed[0].presses[0].as_mut().unwrap().1.long = false;
+    for _ in 0..90 {
+        hold.step(mode, true, &timed, DT);
+    }
+    assert!(!hold.step(mode, true, &timed, DT));
+}
+
 #[test]
 fn a_long_right_a_that_does_not_bail_exits() {
     let mode = Mode::Vehicle(VehicleSeat {

@@ -135,6 +135,7 @@ pub struct Bindings {
     /// The press timers of the current mode's timed actions ([`Input::Short`], [`Input::Long`], and
     /// [`Input::LongHeld`]), each hand's by [`Hand::index`].
     timers: Vec<(ActionId, [PressTimer; 2])>,
+    bail_hold: BailHold,
 }
 
 impl Bindings {
@@ -156,6 +157,7 @@ impl Bindings {
             grapple_routes: Vec::new(),
             system_routes: Vec::new(),
             timers: Vec::new(),
+            bail_hold: BailHold::new(),
         }
     }
 
@@ -342,7 +344,7 @@ impl Bindings {
                 dt,
             })
         });
-        let ctx = TableCtx::of(controls);
+        let mut ctx = TableCtx::of(controls);
         let masks = self.effective_masks(mode, controls, input);
         let intents = Intents::build(
             input,
@@ -357,7 +359,29 @@ impl Bindings {
             menu::step(&mut self.menu[i], &intents, hand, config.menu_stick_push);
             menu::step_pad(&mut self.pads[i], &intents, hand);
         }
-        let timed = self.step_timers(mode, &ctx, &intents, dt, config.long_press_s);
+        let mut timed = self.step_timers(mode, &ctx, &intents, dt, config.long_press_s);
+        let bail_active = self.bail_hold.step(mode, ctx.bail, &timed, dt);
+        if bail_active {
+            ctx.bail = true;
+            if let Mode::Vehicle(seat) = mode {
+                let exit = exit_action(seat.class);
+                for latch in &mut timed {
+                    for (id, press) in latch.presses.iter_mut().flatten() {
+                        if *id == exit {
+                            press.short = false;
+                            press.long_held = true;
+                        }
+                    }
+                }
+            }
+        }
+        if ctx.bail && !bail_active {
+            for latch in &mut timed {
+                for (_, press) in latch.presses.iter_mut().flatten() {
+                    press.long_held = false;
+                }
+            }
+        }
         let latches = Latches {
             chord_grip: chord.dominant_grip,
             chord_armed: chord.armed,
@@ -506,6 +530,57 @@ impl Bindings {
             }
         }
         latches
+    }
+}
+
+const BAIL_HOLD_MIN_S: f32 = 0.4;
+const BAIL_HOLD_MAX_S: f32 = 2.0;
+
+#[derive(Debug, Clone, Default)]
+struct BailHold {
+    active: Option<(VehicleSeat, f32)>,
+    spent: bool,
+}
+
+impl BailHold {
+    const fn new() -> Self {
+        Self {
+            active: None,
+            spent: false,
+        }
+    }
+
+    fn step(&mut self, mode: Mode, bail: bool, timed: &[TimedLatch; 2], dt: f32) -> bool {
+        let Mode::Vehicle(seat) = mode else {
+            *self = Self::new();
+            return false;
+        };
+        if self.active.is_some_and(|(previous, _)| previous != seat) {
+            *self = Self::new();
+        }
+        let exit = exit_action(seat.class);
+        let held = timed.iter().any(|latch| latch.of(exit).long_held);
+        let started = timed.iter().any(|latch| latch.of(exit).long);
+        if !held && self.active.is_none() {
+            self.spent = false;
+        }
+        let beginning = self.active.is_none() && !self.spent && bail && started;
+        if beginning {
+            self.active = Some((seat, 0.0));
+        }
+        let Some((_, elapsed)) = self.active.as_mut() else {
+            return false;
+        };
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        if !beginning {
+            *elapsed += dt;
+        }
+        if *elapsed >= BAIL_HOLD_MAX_S || (!held && *elapsed >= BAIL_HOLD_MIN_S) {
+            self.active = None;
+            self.spent = held;
+            return false;
+        }
+        true
     }
 }
 
