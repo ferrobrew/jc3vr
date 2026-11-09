@@ -577,7 +577,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     // The weapon handling's own view of where each hand is, for the release's docking, the heft,
     // and the cue on entering a socket.
     let grips = grab::tick::hand_grips(&active);
-    grab::resolve::reach_low(&mut targets, grips, hands::controller_grips(&active));
+    let controller_grips = hands::controller_grips(&active);
+    socket_candidates::reach_seated(&mut targets, controller_grips);
+    grab::resolve::reach_low(&mut targets, grips, controller_grips);
     let docking = hold::act::docking();
     let holstering = Hand::BOTH.map(|hand| {
         let near = live::snapshot_now().is_some_and(|snapshot| {
