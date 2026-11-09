@@ -1,11 +1,12 @@
 //! Who poses the torso: the hand-over table between the procedural body and the game's animation,
 //! and the spring that blends the torso from one to the other. Pure.
 //!
-//! The game's animation keeps the lower body except in stable vehicle stunt stances, where a tracked
-//! waist carries the native leg animation without changing the attachment or root. The torso (the
-//! spine, the neck, the head, and the clavicles) is posed on the animation's hips where the table
-//! gives it to the player, the arms are the controllers' in every case, through the hand IK, and
-//! the head is the headset's, through the head override. [`classify`] reads the character's state
+//! The game's animation keeps the lower body. Stable roof and wing standing uses the reference body
+//! at the character's own height without changing the attachment or root; the helicopter hang keeps
+//! the animation's hips. The torso (the spine, the neck, the head, and the clavicles) is posed on
+//! the animation's hips where the table gives it to the player, the arms are the controllers' in
+//! every case, through the hand IK, and the head is the headset's, through the head override.
+//! [`classify`] reads the character's state
 //! and names the case, first match winning:
 //!
 //! | Case | Torso |
@@ -16,8 +17,8 @@
 //! | ragdoll | animation, at once |
 //! | getting up from a ragdoll | animation |
 //! | seated and riding in a vehicle | procedural on the seat's hips |
-//! | standing in a vehicle's stunt area (a roof, a deck, a wing) | procedural on the tracked waist |
-//! | hanging in a helicopter's stunt position | procedural on the tracked waist |
+//! | standing in a vehicle's stunt area (a roof, a deck, a wing) | procedural on the reference body at the character's height |
+//! | hanging in a helicopter's stunt position | procedural on the animation's hips |
 //! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a stunt traversal) | animation |
 //! | attached to a wall at the end of a grapple, a hang | procedural on the attach's hips |
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation, after a flight's hold |
@@ -130,9 +131,10 @@ impl Case {
         }
     }
 
-    /// Whether the visual waist and torso use the tracked frame without steering the native root.
+    /// Whether the visual body uses the reference pose at the character's own height without
+    /// steering the native root. The helicopter hang keeps the animation's hips.
     pub const fn tracked_stunt(self) -> bool {
-        matches!(self, Self::StuntStanding | Self::StuntHanging)
+        matches!(self, Self::StuntStanding)
     }
 
     /// Whether a clip, a script, or physics poses Rico's whole body while he is out of a vehicle,
@@ -716,10 +718,13 @@ mod tests {
             stunt_hanging: true,
             ..roof
         };
-        for (state, expected) in [(roof, Case::StuntStanding), (rail, Case::StuntHanging)] {
+        for (state, expected, tracked) in [
+            (roof, Case::StuntStanding, true),
+            (rail, Case::StuntHanging, false),
+        ] {
             assert_eq!(classify(&state), expected);
             assert_eq!(expected.target(), 1.0);
-            assert!(expected.tracked_stunt());
+            assert_eq!(expected.tracked_stunt(), tracked);
             assert!(!relaxes_legs(expected));
             assert!(!expected.player_carries_body());
             assert_eq!(

@@ -8,9 +8,10 @@
 //! attachment refresh, the model-space sync, the hit shapes, the AI's view, and the effects, so all
 //! of them see the pose written there (`docs/engine/character/skeleton.md`).
 //!
-//! The native root and attachment remain authoritative. Stable stunt stances use a tracked visual
-//! waist; other cases retain the animated hips. The torso (the spine, neck, head, and clavicles)
-//! follows the player wherever the hand-over table gives it to them ([`authority`]).
+//! The native root and attachment remain authoritative. Stable roof and wing standing uses the
+//! reference body at the character's own height; other cases, including the helicopter hang, retain
+//! the animated hips. The torso (the spine, neck, head, and clavicles) follows the player wherever
+//! the hand-over table gives it to them ([`authority`]).
 //!
 //! - [`skeleton`]: reading the skeleton, and logging it once per session.
 //! - [`rig`]: the bones the body drives, found by name.
@@ -23,7 +24,7 @@
 //!   moves the body.
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, which the character does not
 //!   keep.
-//! - [`stunt`]: the tracked visual waist and neutral torso in stable stunt stances.
+//! - [`stunt`]: the reference body in stable roof and wing standing.
 //! - [`targets`]: the fade of the HumanIK targets on the owned bones.
 //! - [`wings`]: Rico's arms in the wingsuit, carried over from the player's.
 //! - [`hips`]: the clip's hips against Rico's facing, which the yaw follow squares.
@@ -84,7 +85,7 @@ use crate::{
                     pose::RigPose,
                 },
                 stance::{place_feet, square_stance},
-                stunt::neutral_frame,
+                stunt::reference_frame,
                 targets::{Fade, Slot, TargetFade},
                 wings::{WingRequest, read_player_arms},
             },
@@ -96,7 +97,7 @@ use crate::{
         mode::{AirborneVariant, Mode, current as current_mode},
     },
     grapple::physical::lock,
-    headpose::{animation_rotation, body_relative_rotation, eye_arm, xr},
+    headpose::{body_relative_rotation, eye_arm, xr},
 };
 
 /// What the procedural body did at its last gate.
@@ -474,8 +475,9 @@ struct TorsoGate<'a> {
     arm_shoulders: [Option<Vec3>; 2],
 }
 
-/// The pose to write: the torso follows the player's head on the clip's hips, except in stable
-/// stunt stances, where the tracked frame places the visual waist too. `None` without tracking.
+/// The pose to write: the torso follows the player's head on the clip's hips. In stable roof and
+/// wing standing, the reference body at the character's own height replaces the clip's waist and
+/// legs. `None` without tracking.
 ///
 /// # Safety
 ///
@@ -490,8 +492,7 @@ unsafe fn pose_torso(
     let tracked_stunt = gate.case.tracked_stunt();
     if tracked_stunt {
         let heading = gate.tracked_heading?;
-        input.animated = neutral_frame(
-            &input,
+        input.animated = reference_frame(
             &RigPose {
                 bones: rig.reference,
             },
@@ -501,9 +502,8 @@ unsafe fn pose_torso(
             input.animated.position(RigBone::LeftShoulder),
             input.animated.position(RigBone::RightShoulder),
         );
-        let animation = animation_rotation(true);
-        input.head_rotation = animation * body_relative_rotation() * animation.inverse();
-        input.eye = input.head + animation * body_relative_rotation() * eye_arm();
+        input.head_rotation = body_relative_rotation();
+        input.eye = input.head + input.head_rotation * eye_arm();
     }
     if gate.case == Case::Parachute {
         let (_, character_rotation, _) =
