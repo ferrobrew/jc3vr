@@ -14,7 +14,10 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    controllers::body::rig::origin_provenance,
+    controllers::{
+        body::rig::origin_provenance, frame as controller_frame,
+        vehicles::wingsuit_gestures::GestureSample,
+    },
     recorder::tracking::format::RecenterEvent,
     vr::{
         convert::{posef, quat, vec3},
@@ -356,22 +359,32 @@ pub fn auto_recenter_tick() {
     // in-session transitions (which keep a live character) do not.
     if !in_gameplay || !has_character {
         s.armed = true;
-        s.settled_frames = 0;
+        s.settled_since = None;
         s.last_anchor = None;
         return;
     }
     if !s.armed {
         return;
     }
-    // Wait for the head anchor to hold still (the entry animation to end) before recentering.
+    if lock_state().baseline.is_some() {
+        s.armed = false;
+        s.settled_since = None;
+        s.last_anchor = None;
+        return;
+    }
+    let now = Instant::now();
+    let sample = controller_frame::with_latest(|frame| {
+        flight_pose::for_frame(frame, now).map(|packet| packet.sample())
+    })
+    .flatten();
+    let Some(sample) = sample else {
+        s.settled_since = None;
+        s.last_anchor = None;
+        return;
+    };
     match (on_foot, anchor) {
         (true, Some(a)) => {
-            let settled = s
-                .last_anchor
-                .is_some_and(|prev| (a - prev).length() < ANCHOR_SETTLE_EPS);
-            s.settled_frames = if settled { s.settled_frames + 1 } else { 0 };
-            s.last_anchor = Some(a);
-            if s.settled_frames >= ANCHOR_SETTLE_FRAMES {
+            if s.observe_anchor(a, sample, now) {
                 s.armed = false;
                 drop(s);
                 // In place rather than requested: this is the top of the frame, before it takes
@@ -384,7 +397,7 @@ pub fn auto_recenter_tick() {
             }
         }
         _ => {
-            s.settled_frames = 0;
+            s.settled_since = None;
             s.last_anchor = anchor;
         }
     }
@@ -449,7 +462,8 @@ pub(super) fn mid_pose(a: xr::Posef, b: xr::Posef) -> xr::Posef {
 static AUTO_RECENTER: Mutex<AutoRecenterState> = Mutex::new(AutoRecenterState {
     armed: false,
     last_anchor: None,
-    settled_frames: 0,
+    settled_since: None,
+    last_sample: None,
 });
 
 struct AutoRecenterState {
@@ -457,13 +471,36 @@ struct AutoRecenterState {
     armed: bool,
     /// The head anchor last frame, for the settle test.
     last_anchor: Option<glam::Vec3>,
-    /// Consecutive frames the anchor has stayed within [`ANCHOR_SETTLE_EPS`].
-    settled_frames: u32,
+    settled_since: Option<Instant>,
+    last_sample: Option<GestureSample>,
 }
 
-/// Frames the head anchor must hold within [`ANCHOR_SETTLE_EPS`] before an armed auto-recenter fires
-/// -- long enough for the resume-from-menu entry animation (standing up from the car) to finish.
-const ANCHOR_SETTLE_FRAMES: u32 = 24;
+impl AutoRecenterState {
+    fn observe_anchor(&mut self, anchor: glam::Vec3, sample: GestureSample, now: Instant) -> bool {
+        if self.last_sample == Some(sample) {
+            return false;
+        }
+        let continuous = self.last_sample.is_none_or(|last| {
+            last.epoch == sample.epoch
+                && sample.sequence > last.sequence
+                && sample.time_ns > last.time_ns
+                && sample.time_ns.saturating_sub(last.time_ns) <= 250_000_000
+        });
+        self.last_sample = Some(sample);
+        let settled = continuous
+            && self
+                .last_anchor
+                .is_some_and(|last| (anchor - last).length() < ANCHOR_SETTLE_EPS);
+        if !settled {
+            self.settled_since = None;
+        }
+        self.last_anchor = Some(anchor);
+        let since = *self.settled_since.get_or_insert(now);
+        now.saturating_duration_since(since) >= ANCHOR_SETTLE_TIME
+    }
+}
+
+const ANCHOR_SETTLE_TIME: Duration = Duration::from_millis(400);
 /// Per-frame head-anchor movement (metres) below which the pose counts as settled: above idle sway,
 /// below any scripted or locomotion motion.
 const ANCHOR_SETTLE_EPS: f32 = 0.01;
@@ -471,6 +508,40 @@ const ANCHOR_SETTLE_EPS: f32 = 0.01;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn startup_settles_by_time_and_requires_continuing_tracking_samples() {
+        let mut state = AutoRecenterState {
+            armed: true,
+            last_anchor: None,
+            settled_since: None,
+            last_sample: None,
+        };
+        let now = Instant::now();
+        let sample = |sequence, time_ns| GestureSample {
+            epoch: 1,
+            sequence,
+            time_ns,
+        };
+        let anchor = glam::Vec3::Y;
+        assert!(!state.observe_anchor(anchor, sample(1, 0), now));
+        assert!(!state.observe_anchor(anchor, sample(1, 0), now + Duration::from_secs(1)));
+        assert!(!state.observe_anchor(
+            anchor,
+            sample(2, 200_000_000),
+            now + Duration::from_millis(200)
+        ));
+        assert!(state.observe_anchor(
+            anchor,
+            sample(3, 400_000_000),
+            now + Duration::from_millis(400)
+        ));
+        assert!(!state.observe_anchor(
+            anchor,
+            sample(4, 900_000_000),
+            now + Duration::from_millis(900)
+        ));
+    }
 
     #[test]
     fn requests_merge_full_over_yaw_and_manual_over_seat() {
