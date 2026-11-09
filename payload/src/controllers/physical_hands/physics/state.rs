@@ -408,7 +408,8 @@ pub(super) struct ActingPalms {
 /// (`hold`'s [`HoldTarget::hand_force_n`], the pull a carry of the object would have, and
 /// [`PickupTuning::hand_torque_nm`]), no stronger than the hand's own, and with both hands on the
 /// object, the twist at [`PickupTuning::two_hand_angular_share`], so the hands lift what they
-/// would carry and the two grab points set the object's line.
+/// would carry and the two grab points set the object's line. The combined hand and carried mass
+/// sets the requested impulse; the joined drive applies that impulse through the hand's own mass.
 ///
 /// [`PickupTuning::hand_torque_nm`]: crate::controllers::physical_hands::pickup::PickupTuning::hand_torque_nm
 /// [`PickupTuning::two_hand_angular_share`]: crate::controllers::physical_hands::pickup::PickupTuning::two_hand_angular_share
@@ -424,7 +425,13 @@ pub(super) fn holding_tuning(tuning: &DriveTuning, hold: &HoldTarget) -> DriveTu
     } else {
         0.0
     };
+    let carried_mass = if hold.mass_kg.is_finite() {
+        hold.mass_kg.max(0.0)
+    } else {
+        0.0
+    };
     DriveTuning {
+        mass_kg: (tuning.mass_kg + carried_mass).min(f32::MAX),
         max_force_n: tuning.max_force_n.min(pull),
         max_torque_nm: tuning.max_torque_nm.min(
             pickup.hand_torque_nm.max(0.0) * (pull / pickup.hand_force_n).max(0.0) * twist_share,

@@ -308,6 +308,8 @@ pub(crate) struct Held {
     pub(crate) body: u32,
     pub(crate) grip: Grip,
     pub(crate) mass_kg: f32,
+    /// The character whose ragdoll owns this anatomical contact.
+    pub(crate) ragdoll: Option<NonZeroUsize>,
     /// Whether the hand holds the object through a joint rather than carrying it.
     pub(crate) joined: bool,
     pub(crate) kind: HeldKind,
@@ -316,6 +318,10 @@ pub(crate) struct Held {
 impl Held {
     pub(crate) fn same(&self, other: &Held) -> bool {
         self.object == other.object && self.body == other.body
+    }
+
+    pub(crate) fn same_assembly(&self, other: &Held) -> bool {
+        self.same(other) || self.ragdoll.is_some() && self.ragdoll == other.ragdoll
     }
 }
 
@@ -350,9 +356,9 @@ impl HeldKind {
         }
     }
 
-    /// Loose props use one carry solve for both hands, rather than fixed wrist joints.
+    /// Loose props and ragdolls retain anatomical contacts through the force-limited carry solve.
     pub(crate) fn joined(self, requested: bool) -> bool {
-        requested && self != Self::Prop
+        requested && !matches!(self, Self::Prop | Self::Ragdoll)
     }
 
     pub(crate) fn carrier_transport(self, joined: bool, liftable: bool) -> bool {

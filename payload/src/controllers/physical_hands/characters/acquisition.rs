@@ -61,8 +61,16 @@ fn take_with(
 ) -> Option<Seize> {
     let target = refresh(target, conditions, engine)?;
     let (bone, matrix) = engine.anchor(target.character, point);
+    if !point.is_finite() || !matrix.is_finite() || matrix.determinant().abs() <= 1e-6 {
+        return None;
+    }
     let grab = matrix.inverse().transform_point3(point);
-    grab.is_finite().then_some(Seize { target, grab, bone })
+    grab.is_finite().then_some(Seize {
+        target,
+        grab,
+        bone,
+        in_palm: Vec3::ZERO,
+    })
 }
 
 fn refresh(
@@ -77,10 +85,19 @@ fn refresh(
     target.seated = match (target.seated, engine.attachment(target.character)?) {
         (None, Attachment::OnFoot) if conditions.config.grab => None,
         (Some(before), Attachment::Vehicle(vehicle))
-            if conditions.config.hijack && before.vehicle == vehicle =>
+            if conditions.config.hijack && before.vehicle == vehicle && before.door.is_some() =>
         {
             // The current character supplies this vehicle, not the queued seat observation.
             Some(engine.open_door(vehicle, conditions)?)
+        }
+        (Some(before), Attachment::Exposed(vehicle))
+            if conditions.config.hijack && before.vehicle == vehicle && before.door.is_none() =>
+        {
+            Some(Seated {
+                vehicle,
+                door: None,
+                open_deg: 0.0,
+            })
         }
         _ => return None,
     };
@@ -98,6 +115,7 @@ struct Conditions<'a> {
 enum Attachment {
     OnFoot,
     Vehicle(NonZeroUsize),
+    Exposed(NonZeroUsize),
 }
 
 trait AcquisitionEngine {
@@ -118,9 +136,20 @@ impl AcquisitionEngine for NativeAcquisition {
         [
             SafeBoneIndex::HIPS,
             SafeBoneIndex::SPINE,
+            SafeBoneIndex::SPINE1,
+            SafeBoneIndex::SPINE2,
+            SafeBoneIndex::NECK,
             SafeBoneIndex::HEAD,
+            SafeBoneIndex::LEFT_SHOULDER,
+            SafeBoneIndex::RIGHT_SHOULDER,
+            SafeBoneIndex::LEFT_ARM,
+            SafeBoneIndex::RIGHT_ARM,
             SafeBoneIndex::LEFT_HAND,
             SafeBoneIndex::RIGHT_HAND,
+            SafeBoneIndex::LEFT_UP_LEG,
+            SafeBoneIndex::RIGHT_UP_LEG,
+            SafeBoneIndex::LEFT_LEG,
+            SafeBoneIndex::RIGHT_LEG,
             SafeBoneIndex::LEFT_FOOT,
             SafeBoneIndex::RIGHT_FOOT,
         ]
@@ -155,7 +184,11 @@ impl AcquisitionEngine for NativeAcquisition {
             return Some(Attachment::OnFoot);
         }
         let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)?;
-        Some(Attachment::Vehicle(vehicle))
+        Some(if unsafe { character.IsRidingMC() } {
+            Attachment::Exposed(vehicle)
+        } else {
+            Attachment::Vehicle(vehicle)
+        })
     }
 
     fn open_door(&mut self, vehicle: NonZeroUsize, conditions: Conditions<'_>) -> Option<Seated> {
@@ -164,7 +197,7 @@ impl AcquisitionEngine for NativeAcquisition {
             unsafe { open_door_near(vehicle, conditions.palm, conditions.world_scale) }?;
         Some(Seated {
             vehicle,
-            door,
+            door: Some(door),
             open_deg,
         })
     }

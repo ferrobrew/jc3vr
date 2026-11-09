@@ -46,7 +46,7 @@
 //! the simulation, and every body is destroyed when the game leaves gameplay, the hand bodies are
 //! switched off, the player's character changes, or the payload unloads.
 
-mod blows;
+pub(super) mod blows;
 pub(super) mod body;
 mod callback;
 pub mod config;
@@ -84,11 +84,14 @@ pub use self::{
 mod tests {
     use std::num::NonZeroUsize;
 
-    use glam::Vec3;
+    use glam::{Quat, Vec3};
 
-    use crate::controllers::physical_hands::{
-        physics::{HAND_BODIES, HoldTarget, drive::DriveTuning, state::holding_tuning},
-        pickup::PICKUP,
+    use crate::controllers::{
+        frame::Pose,
+        physical_hands::{
+            physics::{HAND_BODIES, HoldTarget, drive::DriveTuning, state::holding_tuning},
+            pickup::PICKUP,
+        },
     };
 
     #[test]
@@ -106,11 +109,17 @@ mod tests {
         let hold = HoldTarget {
             object: NonZeroUsize::new(100).unwrap(),
             body: 7,
+            palm: Pose {
+                position: Vec3::ZERO,
+                orientation: Quat::IDENTITY,
+            },
+            mass_kg: 75.0,
             keep_out: Vec3::ZERO,
             shared: false,
             hand_force_n: PICKUP.hand_force_n,
         };
         let one = holding_tuning(&tuning, &hold);
+        assert_eq!(one.mass_kg, tuning.mass_kg + hold.mass_kg);
         assert_eq!(one.max_force_n, PICKUP.hand_force_n);
         assert_eq!(one.max_torque_nm, PICKUP.hand_torque_nm);
         let two = holding_tuning(
@@ -158,5 +167,27 @@ mod tests {
             ..hold
         };
         assert_eq!(holding_tuning(&tuning, &broken).max_force_n, 0.0);
+        for mass in [f32::NAN, f32::INFINITY, -1.0] {
+            assert_eq!(
+                holding_tuning(
+                    &tuning,
+                    &HoldTarget {
+                        mass_kg: mass,
+                        ..hold
+                    }
+                )
+                .mass_kg,
+                tuning.mass_kg
+            );
+        }
+        let half = holding_tuning(
+            &tuning,
+            &HoldTarget {
+                mass_kg: 37.5,
+                shared: true,
+                ..hold
+            },
+        );
+        assert_eq!(half.mass_kg, tuning.mass_kg + 37.5);
     }
 }

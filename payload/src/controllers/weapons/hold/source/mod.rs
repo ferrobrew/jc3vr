@@ -21,6 +21,7 @@ use jc3gi::{
 };
 
 use crate::controllers::{
+    aim::grapple_weapons,
     frame::Hand,
     loadout::{Delivery, TakeSource},
     weapons::{
@@ -169,8 +170,16 @@ pub(crate) unsafe fn take(hand: Hand, source: &WeaponSource) -> Result<WeaponSlo
     match source {
         WeaponSource::Ground { weak } => {
             let alive = weak.lock().ok_or(SourceRefusal::Gone)?;
+            let weapon = weapon_of(&alive);
+            if !unsafe {
+                grapple_weapons::is_dropped_weapon(
+                    NonZeroUsize::new(weapon as usize).ok_or(SourceRefusal::Gone)?,
+                )
+            } {
+                return Err(SourceRefusal::Gone);
+            }
             // SAFETY: the strong reference keeps the weapon alive.
-            let weapon = unsafe { &mut *weapon_of(&alive) };
+            let weapon = unsafe { &mut *weapon };
             unsafe { pickup::take(hand, weapon, options(TakeSource::World)) }
                 .map_err(SourceRefusal::Take)
         }
@@ -251,6 +260,13 @@ pub(crate) unsafe fn free(hand: Hand, source: &WeaponSource) -> Result<Yield, So
             let alive = weak.lock().ok_or(SourceRefusal::Gone)?;
             let weapon = weapon_of(&alive);
             // SAFETY: the strong reference keeps the weapon alive.
+            if !unsafe {
+                grapple_weapons::is_dropped_weapon(
+                    NonZeroUsize::new(weapon as usize).ok_or(SourceRefusal::Gone)?,
+                )
+            } {
+                return Err(SourceRefusal::Gone);
+            }
             admit(unsafe { &*weapon }, false)?;
             Ok(Yield::Ready(Freed {
                 weapon,

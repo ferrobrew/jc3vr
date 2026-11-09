@@ -5,7 +5,10 @@ use std::num::NonZeroUsize;
 
 use glam::{Vec2, Vec3};
 
-use crate::controllers::physical_hands::physics::blows::{BlowReport, ShoveReport};
+use crate::controllers::{
+    frame::Pose,
+    physical_hands::physics::blows::{BlowReport, ShoveReport},
+};
 
 /// What a hand body is doing.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
@@ -89,6 +92,11 @@ pub struct CallbackStatus {
 pub struct HoldTarget {
     pub object: NonZeroUsize,
     pub body: u32,
+    /// The desired palm frame on the object, in game space, captured when the joint is created.
+    pub palm: Pose,
+    /// The carried assembly's mass allocated to this hand, excluding the hand body, kilograms.
+    /// The retained holders divide this mass without counting an assembly twice.
+    pub mass_kg: f32,
     /// How far the hand's goal is moved so that the object's centre stays out of the player's
     /// body, world space.
     pub keep_out: Vec3,

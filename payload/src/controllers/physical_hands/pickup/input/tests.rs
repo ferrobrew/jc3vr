@@ -246,6 +246,7 @@ fn held() -> Held {
             Vec3::ZERO,
         ),
         mass_kg: 5.0,
+        ragdoll: None,
         joined: true,
         kind: HeldKind::Articulated,
     }
@@ -285,5 +286,6 @@ fn seize() -> Seize {
         },
         grab: Vec3::ZERO,
         bone: None,
+        in_palm: Vec3::ZERO,
     }
 }

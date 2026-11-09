@@ -29,15 +29,19 @@ use jc3gi::{
     vehicle::{parts::VehiclePartGameObject, vehicle::Vehicle},
 };
 
-use crate::controllers::{
-    diagnostics::{Applied, BodyBefore, note_force},
-    physical_hands::{
-        doors::engine as door_engine,
-        grasp::{TargetKind, mass_of},
-        physics::havok_vector,
-        rigid::{BodyPose, RigidBody, Velocities},
-        world::World,
+use crate::{
+    controllers::{
+        aim::grapple_weapons,
+        diagnostics::{Applied, BodyBefore, note_force},
+        physical_hands::{
+            doors::engine as door_engine,
+            grasp::{TargetKind, mass_of},
+            physics::havok_vector,
+            rigid::{BodyPose, RigidBody, Velocities},
+            world::World,
+        },
     },
+    hash::hashlittle,
 };
 
 /// Why a body could not be read or driven.
@@ -53,6 +57,8 @@ pub enum BodyError {
     Reowned,
     /// The body's motion holds a value that is not finite.
     BadMotion,
+    /// A fixed gameplay fixture is not activated or carried.
+    Fixture,
 }
 
 impl fmt::Display for BodyError {
@@ -63,6 +69,7 @@ impl fmt::Display for BodyError {
             BodyError::NotDynamic => "the body is not dynamic",
             BodyError::Reowned => "the body belongs to another object",
             BodyError::BadMotion => "the body's motion is not finite",
+            BodyError::Fixture => "the object is a fixed gameplay fixture",
         };
         write!(f, "physical hands: pickup: {what}")
     }
@@ -93,29 +100,36 @@ impl BodyState {
 }
 
 /// What the object at `object`, reached on its body `body`, is to a hand: a weapon lying in the
-/// world, or a loose object (a rigid object, or any other object but a vehicle or a part still on
-/// it whose reached body is dynamic and has a mass, such as a barrel or a door torn off), or why it
-/// is neither.
+/// world, or a finite-mass loose body, including a vehicle the player does not occupy. Parts still
+/// attached to a vehicle remain in the door path.
 ///
 /// # Safety
 ///
 /// Main thread, outside the physics step; `object` and `body` must come from a cast this tick.
 pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetKind, Unclassified> {
     let game_object = game_object_of(object);
+    if unsafe { fixed_fixture(object) } {
+        return Err(Unclassified::Fixture);
+    }
     if unsafe { (*game_object).IsType(WeaponBase::TYPE_ID()) } {
         let weapon = object.get() as *const WeaponBase;
         // Read as the raw value, so that a state the enum does not name is still reported.
         let state = unsafe { (&raw const (*weapon).m_State).cast::<i32>().read() };
-        return if state == WeaponState::E_WS_DROPPED as i32 {
-            Ok(TargetKind::Weapon)
-        } else {
-            Err(Unclassified::WeaponNotDropped(state))
-        };
+        if state != WeaponState::E_WS_DROPPED as i32 {
+            return Err(Unclassified::WeaponNotDropped(state));
+        }
+        if !unsafe { grapple_weapons::is_dropped_weapon(object) } {
+            return Err(Unclassified::WeaponOwned);
+        }
+        unsafe { read(body, object) }.map_err(Unclassified::Body)?;
+        return Ok(TargetKind::Weapon);
     }
-    // However light, a vehicle is driven or opened, never carried: its doors are taken at their
-    // handles by the doors' own reach.
     if unsafe { (*game_object).IsType(Vehicle::TYPE_ID()) } {
-        return Err(Unclassified::Vehicle);
+        let occupied =
+            unsafe { Character::GetLocalPlayerCharacter().as_ref() }.is_some_and(|player| unsafe {
+                player.IsAttachedToVehicle() && player.GetVehiclePtr() as usize == object.get()
+            });
+        return vehicle_kind(unsafe { read(body, object) }, occupied);
     }
     // A grenade belongs to the weapon handling, which takes a dropped one into the loadout and
     // catches a live one with its fuse running; held as a loose object it would be neither.
@@ -141,6 +155,21 @@ pub(super) unsafe fn classify(object: NonZeroUsize, body: u32) -> Result<TargetK
             .ok_or(Unclassified::Body(BodyError::NotDynamic)),
         Err(e) => Err(Unclassified::Body(e)),
     }
+}
+
+fn vehicle_kind(
+    state: Result<BodyState, BodyError>,
+    occupied: bool,
+) -> Result<TargetKind, Unclassified> {
+    if occupied {
+        return Err(Unclassified::VehicleMounted);
+    }
+    let mass_kg = state
+        .map_err(Unclassified::Body)?
+        .mass_kg
+        .filter(|mass| mass.is_finite() && *mass > 0.0)
+        .ok_or(Unclassified::NoMass)?;
+    Ok(TargetKind::Prop { mass_kg })
 }
 
 /// The mass of the placed rigid object `object` whose body `body` is still at rest where it was
@@ -179,6 +208,12 @@ pub(super) unsafe fn placed_mass(object: NonZeroUsize, body: u32) -> Option<f32>
 /// Main thread, outside the physics step; `object` and `body` must come from a cast this tick or be
 /// held alive.
 pub(super) unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<bool, BodyError> {
+    if unsafe { owner_of(body) } != Some(object) {
+        return Err(BodyError::Reowned);
+    }
+    if unsafe { fixed_fixture(object) } {
+        return Err(BodyError::Fixture);
+    }
     {
         let world = unsafe { World::get() }.ok_or(BodyError::NoPhysicsWorld)?;
         let slot = unsafe { slot(world.world(), body) }.ok_or(BodyError::NoBody)?;
@@ -225,12 +260,15 @@ pub(super) unsafe fn position(body: u32, owner: NonZeroUsize) -> Result<Vec3, Bo
 pub(crate) enum Unclassified {
     /// A weapon in this state (raw), not lying dropped in the world.
     WeaponNotDropped(i32),
+    WeaponOwned,
     /// The reached body cannot be read as a loose one: static, keyframed, or gone.
     Body(BodyError),
     /// The body's mass is infinite.
     NoMass,
-    /// A vehicle's own body.
-    Vehicle,
+    /// A fixed gameplay fixture is neither carried nor activated.
+    Fixture,
+    /// The player occupies this vehicle.
+    VehicleMounted,
     /// A part still on its vehicle.
     VehiclePart,
     /// A grenade, which the weapon handling takes.
@@ -243,9 +281,11 @@ impl fmt::Display for Unclassified {
             Unclassified::WeaponNotDropped(state) => {
                 write!(f, "a weapon that is not lying dropped (state {state})")
             }
+            Unclassified::WeaponOwned => write!(f, "a weapon still held or used by an object"),
             Unclassified::Body(e) => write!(f, "{e}"),
             Unclassified::NoMass => write!(f, "its body's mass is infinite"),
-            Unclassified::Vehicle => write!(f, "a vehicle is never carried"),
+            Unclassified::Fixture => write!(f, "a fixed gameplay fixture"),
+            Unclassified::VehicleMounted => write!(f, "the player occupies this vehicle"),
             Unclassified::VehiclePart => write!(f, "a part still on its vehicle is never carried"),
             Unclassified::Grenade => write!(f, "a grenade is taken by the weapon handling"),
         }
@@ -523,7 +563,7 @@ unsafe fn owned_motion(
 /// The saved motion of the placed rigid object `object`, when its body `body` is still at rest
 /// where it was placed ([`placed_mass`]).
 unsafe fn placed_motion(object: NonZeroUsize, body: u32) -> Option<u32> {
-    if !unsafe { is_type(object, RigidObject::TYPE_ID()) } {
+    if unsafe { fixed_fixture(object) } || !unsafe { is_type(object, RigidObject::TYPE_ID()) } {
         return None;
     }
     let rigid = unsafe { &*(object.get() as *const RigidObject) };
@@ -545,6 +585,23 @@ unsafe fn placed_motion(object: NonZeroUsize, body: u32) -> Option<u32> {
     .then_some(saved)
 }
 
+/// The military weapon cabinet is a rigid fixture; its displayed weapons are separate actors.
+unsafe fn fixed_fixture(object: NonZeroUsize) -> bool {
+    if !unsafe { is_type(object, RigidObject::TYPE_ID()) } {
+        return false;
+    }
+    let rigid = unsafe { &*(object.get() as *const RigidObject) };
+    let model = unsafe { rigid.m_Model.px.as_ref() };
+    model.is_some_and(|model| fixture_model(model.m_Id.m_Hash))
+}
+
+fn fixture_model(model: u32) -> bool {
+    model
+        == hashlittle(
+            b"models/jc_environments/structures/military/weapon_rack/weapon_rack_greybox.lod",
+        )
+}
+
 /// A Havok `hkHalf`: the upper 16 bits of an `f32`.
 fn half_to_f32(half: u16) -> f32 {
     f32::from_bits(u32::from(half) << 16)
@@ -553,6 +610,56 @@ fn half_to_f32(half: u16) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_weapon_cabinet_model_does_not_exclude_other_rigid_props_or_its_weapons() {
+        assert!(fixture_model(hashlittle(
+            b"models/jc_environments/structures/military/weapon_rack/weapon_rack_greybox.lod"
+        )));
+        for model in [
+            b"models/jc_environments/props/barrel.lod".as_slice(),
+            b"models/jc_weapons/03_thrown/w301_grenade_frag/w301_grenade_frag_body.lod".as_slice(),
+            b"models/jc_environments/structures/military/weapon_rack/weapon_rack_greybox_col.pfxc"
+                .as_slice(),
+        ] {
+            assert!(!fixture_model(hashlittle(model)));
+        }
+    }
+
+    #[test]
+    fn a_vehicle_requires_dynamic_finite_mass_and_an_unoccupied_player_seat() {
+        let state = |mass_kg| {
+            Ok(BodyState {
+                pose: BodyPose {
+                    centre: Vec3::ZERO,
+                    orientation: Quat::IDENTITY,
+                },
+                velocities: Velocities::default(),
+                mass_kg,
+                inverse_inertia: Vec3::ONE,
+            })
+        };
+        assert_eq!(
+            vehicle_kind(state(Some(200.0)), false),
+            Ok(TargetKind::Prop { mass_kg: 200.0 })
+        );
+        assert_eq!(
+            vehicle_kind(state(Some(200.0)), true),
+            Err(Unclassified::VehicleMounted)
+        );
+        for mass in [
+            None,
+            Some(0.0),
+            Some(-1.0),
+            Some(f32::NAN),
+            Some(f32::INFINITY),
+        ] {
+            assert_eq!(vehicle_kind(state(mass), false), Err(Unclassified::NoMass));
+        }
+        for why in [BodyError::NotDynamic, BodyError::NoBody, BodyError::Reowned] {
+            assert_eq!(vehicle_kind(Err(why), false), Err(Unclassified::Body(why)));
+        }
+    }
 
     #[test]
     fn a_half_is_the_top_of_a_float() {

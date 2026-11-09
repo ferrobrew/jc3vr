@@ -22,7 +22,9 @@ use crate::{
                 HAND_BODIES,
                 body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
                 contact,
-                drive::{DriveTuning, Goal, PushTuning, contact_gain, lag_push, smooth_push},
+                drive::{
+                    DriveTuning, Goal, JoinedLoad, PushTuning, contact_gain, lag_push, smooth_push,
+                },
                 guns::{self, step::GunStep},
                 joint::Joint,
                 lifecycle::{ActRequest, HANDS, RenderTuning},
@@ -300,6 +302,10 @@ pub(crate) unsafe fn step() {
                     // object that drags the hand's body behind stays held.
                     break_distance_m: holding.is_none().then_some(b.break_distance_m * scale),
                     tuning: &hand_tuning,
+                    joined: holding.filter(|_| !on_gun[i]).map(|_| JoinedLoad {
+                        hand_mass_kg: spec.mass_kg,
+                        gravity: Vec3::NEG_Y * PICKUP.gravity_mps2.max(0.0),
+                    }),
                     step_s,
                 };
                 // SAFETY: forwarded from the caller.

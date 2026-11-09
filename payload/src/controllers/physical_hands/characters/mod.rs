@@ -1,13 +1,14 @@
 //! Taking hold of characters with an empty hand. A grip on a character on foot throws them into
 //! their ragdoll at once by the character's own hit reaction ([`topples`]), and the hand takes
-//! hold of the bone of that ragdoll nearest the palm, which it drags and throws as any loose
+//! hold of the bone of that ragdoll nearest the anatomical contact, which it drags and throws as any loose
 //! object; the game's own get-up takes them back once they lie still. With the topple off, or for
 //! a character whose state keeps it on its feet, the grip holds the hand on them instead: a yank
 //! throws a character the player is hostile to off their feet, and letting go with a push shoves
 //! them. A character the game protects, mission-critical or in a scripted sequence, is not
-//! taken. A grip on a character seated in
-//! a vehicle, reached through an open door, holds the hand on them too; a yank then pulls them out
-//! the game's own way, by the vehicle-entry action, which hijacks an occupied seat. The design is
+//! taken. A grip on an enclosed vehicle occupant requires an open door. A motorcycle occupant
+//! needs no door; a yank requests the character's hit reaction and retains the anatomical
+//! contact for the resulting ragdoll. Enclosed-seat yanks use the vehicle-entry action, which
+//! hijacks an occupied seat. The design is
 //! in `docs/mod/input/character-grabs.md`, the engine side in
 //! `docs/engine/gameplay/melee-and-damage.md` and `docs/engine/gameplay/vehicle-doors.md`.
 //!
@@ -43,12 +44,15 @@ use jc3gi::{
     vehicle::vehicle::DoorSlot,
 };
 
-use crate::controllers::physical_hands::{
-    bodies::owner_of,
-    characters::ragdoll::Ragdoll,
-    contact::SurfaceHit,
-    doors::engine as door_engine,
-    grasp::{Reach, TargetKind},
+use crate::controllers::{
+    frame::Pose,
+    physical_hands::{
+        bodies::owner_of,
+        characters::ragdoll::Ragdoll,
+        contact::SurfaceHit,
+        doors::engine as door_engine,
+        grasp::{Reach, TargetKind},
+    },
 };
 
 /// A character a hand can take hold of.
@@ -57,7 +61,7 @@ pub struct CharacterTarget {
     pub character: NonZeroUsize,
     /// The body the reach found, which proves the character alive while the hand holds on.
     pub body: u32,
-    /// The vehicle the character is seated in, and the open door the hand reaches in through.
+    /// The vehicle attachment and its access through an open door or an exposed seat.
     pub seated: Option<Seated>,
     /// Whether the body is one of the character's ragdoll's, which the hand holds as a loose
     /// object, rather than its capsule.
@@ -78,8 +82,6 @@ pub enum Unavailable {
     NoOpenDoor,
     /// The character is dead but not yet a ragdoll: the death animation still drives it.
     Dying,
-    /// The hit was on a body of a standing character's ragdoll, which its animation drives.
-    Animated,
     /// The character ragdolls but none of its ragdoll's bodies could be read.
     NoBody,
     /// The game protects the character.
@@ -92,18 +94,18 @@ impl Unavailable {
             Unavailable::Off => "the grab is off",
             Unavailable::NoOpenDoor => "seated with no door open beside the hand",
             Unavailable::Dying => "dying, not yet a ragdoll",
-            Unavailable::Animated => "a limb its animation drives",
             Unavailable::NoBody => "no body of its ragdoll could be read",
             Unavailable::Protected(protection) => protection.label(),
         }
     }
 }
 
-/// A character seated in a vehicle, reached through an open door.
+/// A character attached to a vehicle, either exposed or reached through an open door.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Seated {
     pub vehicle: NonZeroUsize,
-    pub door: DoorSlot,
+    /// The open door, or none for an exposed motorcycle occupant.
+    pub door: Option<DoorSlot>,
     /// How far the door stands open, degrees.
     pub open_deg: f32,
 }
@@ -164,8 +166,8 @@ pub(crate) fn topple_direction(palm_velocity: Vec3, normal: Vec3) -> Option<Vec3
 
 /// What a palm centred at `palm` reaches of the character `object` through the ray hit `hit` on
 /// its body `body`: a character on foot, by its capsule, a ragdolling character, by the body of
-/// its ragdoll nearest the hit, or a character seated in a vehicle with a door open beside the
-/// hand; or why it reaches none of these. A character the game protects
+/// its ragdoll nearest the hit, or a vehicle occupant accessible through an open door or an
+/// exposed motorcycle seat; or why it reaches none of these. A character the game protects
 /// ([`engine::protection`]) is never reached.
 ///
 /// # Safety
@@ -208,12 +210,20 @@ pub(crate) unsafe fn reach(
         }
         let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)
             .ok_or(Unavailable::NoOpenDoor)?;
-        let (door, open_deg) =
-            unsafe { open_door_near(vehicle, palm, world_scale) }.ok_or(Unavailable::NoOpenDoor)?;
-        let seated = Seated {
-            vehicle,
-            door,
-            open_deg,
+        let seated = if unsafe { character.IsRidingMC() } {
+            Seated {
+                vehicle,
+                door: None,
+                open_deg: 0.0,
+            }
+        } else {
+            let (door, open_deg) = unsafe { open_door_near(vehicle, palm, world_scale) }
+                .ok_or(Unavailable::NoOpenDoor)?;
+            Seated {
+                vehicle,
+                door: Some(door),
+                open_deg,
+            }
         };
         return Ok(reach(object, body, Some(seated), None));
     }
@@ -229,12 +239,13 @@ pub(crate) unsafe fn reach(
     if unsafe { engine::dead(character) } {
         return Err(Unavailable::Dying);
     }
-    let capsule = unsafe { engine::proxy_body(character) };
-    if capsule.is_none_or(|capsule| capsule == body) {
-        Ok(reach(object, body, None, None))
-    } else {
-        Err(Unavailable::Animated)
-    }
+    let identity = standing_body(
+        body,
+        unsafe { engine::proxy_body(character) },
+        |body| unsafe { owner_of(body) == Some(object) },
+    )
+    .ok_or(Unavailable::NoBody)?;
+    Ok(reach(object, identity, None, None))
 }
 
 /// A hand holding on to a character.
@@ -244,6 +255,8 @@ pub struct Seize {
     /// The grab point in the character's frame.
     pub grab: Vec3,
     pub bone: Option<SafeBoneIndex>,
+    /// The original contact in the palm's frame, retained through toppling.
+    pub in_palm: Vec3,
 }
 
 /// A hand that threw a character off their feet, by the grip's topple or a yank, waiting to take
@@ -335,12 +348,15 @@ impl Seize {
     pub unsafe fn take(
         target: CharacterTarget,
         point: Vec3,
-        palm: Vec3,
+        palm: Pose,
         world_scale: f32,
         config: &CharactersConfig,
     ) -> Option<Self> {
         // SAFETY: the adapter checks body ownership before any character access.
-        unsafe { acquisition::take(target, point, palm, world_scale, config) }
+        let mut seize =
+            unsafe { acquisition::take(target, point, palm.position, world_scale, config) }?;
+        seize.in_palm = palm.orientation.inverse() * (point - palm.position);
+        seize.in_palm.is_finite().then_some(seize)
     }
 
     /// What the grip does with the palm at `palm`, world space, yanking at `yank_m` from the grab
@@ -363,20 +379,19 @@ impl Seize {
     }
 }
 
-/// Whether the hand still reaches through an open door of the character's current vehicle.
-/// The character must still occupy the vehicle captured by the grip.
+/// Whether the hand still has access to the character's current vehicle seat.
+/// Enclosed seats require an open door; motorcycle occupants are exposed.
 ///
 /// # Safety
 ///
 /// The game thread, outside the physics step. The target's current owner is checked first.
-pub(crate) unsafe fn door_still_open(
+pub(crate) unsafe fn occupant_access(
     target: CharacterTarget,
     palm: Vec3,
     world_scale: f32,
     config: &CharactersConfig,
-) -> Option<(DoorSlot, f32)> {
-    let seated = unsafe { acquisition::seated(target, palm, world_scale, config) }?;
-    Some((seated.door, seated.open_deg))
+) -> Option<Seated> {
+    unsafe { acquisition::seated(target, palm, world_scale, config) }
 }
 
 /// The open door of `vehicle` nearest the palm at `palm`, within the hijack's reach and open at
@@ -402,6 +417,13 @@ unsafe fn open_door_near(
         })
         .min_by(|a, b| a.2.total_cmp(&b.2))
         .map(|(slot, open_deg, _)| (slot, open_deg))
+}
+
+/// Prefer the persistent proxy identity while retaining the hit's anatomical point.
+fn standing_body(hit: u32, proxy: Option<u32>, owned: impl Fn(u32) -> bool) -> Option<u32> {
+    proxy
+        .filter(|&body| owned(body))
+        .or_else(|| owned(hit).then_some(hit))
 }
 
 /// The character's frame: its world transform at the end of the current simulation step.
@@ -461,11 +483,23 @@ mod tests {
     }
 
     #[test]
+    fn an_animated_limb_hit_uses_the_live_proxy_without_losing_the_hit_point() {
+        assert_eq!(
+            standing_body(9, Some(7), |body| [7, 9].contains(&body)),
+            Some(7)
+        );
+        assert_eq!(standing_body(9, Some(7), |body| body == 9), Some(9));
+        assert_eq!(standing_body(9, None, |body| body == 9), Some(9));
+        assert_eq!(standing_body(9, Some(7), |_| false), None);
+    }
+
+    #[test]
     fn a_regrip_retains_the_acquired_anatomical_anchor() {
         let seize = Seize {
             target: target(32, false),
             grab: Vec3::new(0.02, -0.03, 0.01),
             bone: Some(SafeBoneIndex::LEFT_HAND),
+            in_palm: Vec3::new(0.01, 0.02, -0.03),
         };
         let mut regrip = Regrip::new(seize);
         assert!(!regrip.run_down(REGRIP_S * 0.5));
@@ -478,6 +512,7 @@ mod tests {
             target: target(32, false),
             grab: Vec3::Y,
             bone: None,
+            in_palm: Vec3::ZERO,
         });
         // A second of real time at a quarter speed is a quarter of the wait.
         for _ in 0..60 {

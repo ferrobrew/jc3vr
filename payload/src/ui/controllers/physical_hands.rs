@@ -254,11 +254,18 @@ pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus
                             reach.distance * 1000.0
                         ));
                         if let Some(seated) = target.seated {
-                            ui.label(format!(
-                                "the character sits behind the {} door, open {:.0}°",
-                                doors::slot_label(seated.door),
-                                seated.open_deg
-                            ));
+                            match seated.door {
+                                Some(door) => {
+                                    ui.label(format!(
+                                        "the character sits behind the {} door, open {:.0}°",
+                                        doors::slot_label(door),
+                                        seated.open_deg
+                                    ));
+                                }
+                                None => {
+                                    ui.label("the character is an exposed motorcycle occupant");
+                                }
+                            }
                         }
                     }
                     TargetKind::Door(door) => {

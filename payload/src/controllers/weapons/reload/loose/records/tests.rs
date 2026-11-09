@@ -159,6 +159,7 @@ fn every_body_error_preserves_held_unread_rounds_and_capacity() {
         BodyError::NotDynamic,
         BodyError::Reowned,
         BodyError::BadMotion,
+        BodyError::Fixture,
     ] {
         let now = Instant::now();
         let mut state = State {

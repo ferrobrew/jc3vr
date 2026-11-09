@@ -4,7 +4,7 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3gi::{physics::PfxLayer, vehicle::vehicle::Vehicle};
+use jc3gi::{equipment::weapon::WeaponBase, physics::PfxLayer, vehicle::vehicle::Vehicle};
 use parking_lot::Mutex;
 
 use crate::controllers::{
@@ -95,6 +95,9 @@ pub(crate) unsafe fn floor_weapons(hands: &[Vec3], radius: f32) -> Vec<FloorWeap
             if bounds.distance(*first) <= discovery_radius
                 && scan.bodies.len() < 256
                 && !scan.bodies.contains(&body)
+                && let Some(object) = bodies::owner_of(body)
+                && (hand_engine::is_character(object)
+                    || matches!(bodies::classify(object, body), Ok(TargetKind::Weapon)))
             {
                 scan.bodies.push(body);
             }
@@ -179,6 +182,35 @@ pub(crate) unsafe fn reach(
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
     observations: ReachObservations<'_>,
 ) -> Option<Reach> {
+    // SAFETY: forwarded from the caller for the native cast and hit evaluation.
+    unsafe {
+        reach_with(
+            palm,
+            press,
+            standing_on,
+            tuning,
+            cast,
+            &mut |from, to| floor_cast(from, to),
+            observations,
+        )
+    }
+}
+
+/// Evaluate reach with injected ordinary and floor-layer casts.
+///
+/// # Safety
+///
+/// Hits must identify live engine objects on the main thread, outside the physics step.
+/// Missing casts, no press, and no nearby surface hits do not read engine objects.
+pub(crate) unsafe fn reach_with(
+    palm: &PalmBox,
+    press: Option<SurfaceHit>,
+    standing_on: Option<u32>,
+    tuning: &ReachTuning,
+    cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
+    cast_floor: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
+    observations: ReachObservations<'_>,
+) -> Option<Reach> {
     let ReachObservations {
         notes,
         mut rays,
@@ -197,7 +229,28 @@ pub(crate) unsafe fn reach(
     let hits = ends
         .into_iter()
         .enumerate()
-        .map(|(k, to)| (Some(k), to, cast(origin, to)))
+        .flat_map(|(k, to)| {
+            let ordinary = cast(origin, to);
+            let weapon = cast_floor(origin, to).filter(|hit| {
+                let Surface::Solid {
+                    object: Some(object),
+                    body,
+                } = hit.surface
+                else {
+                    return false;
+                };
+                matches!(
+                    unsafe { bodies::classify(object, body) },
+                    Ok(TargetKind::Weapon)
+                ) && surface_visible(origin, hit, ordinary.as_ref())
+            });
+            [
+                Some((Some(k), to, ordinary)),
+                weapon.map(|hit| (Some(k), to, Some(hit))),
+            ]
+            .into_iter()
+            .flatten()
+        })
         .chain(press.map(|hit| (None, hit.position, Some(hit))));
     let mut judged = Judged {
         seen: Vec::new(),
@@ -241,20 +294,15 @@ pub(crate) unsafe fn reach(
             continue;
         }
         let Some(mut reach) = floor_reach(weapon, palm, tuning, &mut |from, to| {
-            let hit = unsafe { floor_cast(from, to) }?;
-            if let Some(blocker) = cast(from, to) {
-                let owner = match blocker.surface {
-                    Surface::Character { object, .. } => Some(object),
-                    Surface::Solid { object, .. } => object,
-                };
-                if owner != Some(weapon.object)
-                    && blocker.position.distance_squared(from) < hit.position.distance_squared(from)
-                {
-                    return None;
-                }
-            }
-            Some(hit)
+            let hit = cast_floor(from, to)?;
+            surface_visible(from, &hit, cast(from, to).as_ref()).then_some(hit)
         }) else {
+            if judged.notes.len() < MAX_REACH_NOTES {
+                judged.notes.push(format!(
+                    "a nearby dynamic body, body {}: no unobstructed surface in reach",
+                    weapon.body
+                ));
+            }
             continue;
         };
         if unsafe { hand_engine::is_character(reach.object) } {
@@ -279,9 +327,6 @@ pub(crate) unsafe fn reach(
             }) else {
                 continue;
             };
-            if !matches!(character.kind, TargetKind::Character(target) if target.ragdoll) {
-                continue;
-            }
             reach = character;
         } else if !matches!(
             unsafe { bodies::classify(reach.object, reach.body) },
@@ -311,6 +356,24 @@ pub(crate) unsafe fn reach(
     let selected = grasp::nearest(judged.reaches);
     judged.scan.ray_selected = selected;
     selected
+}
+
+fn surface_visible(from: Vec3, hit: &SurfaceHit, blocker: Option<&SurfaceHit>) -> bool {
+    blocker.is_none_or(|blocker| {
+        let owner = |surface| match surface {
+            Surface::Character { object, .. } => Some(object),
+            Surface::Solid { object, .. } => object,
+        };
+        (owner(hit.surface).is_some() && owner(hit.surface) == owner(blocker.surface))
+            || blocker.position.distance_squared(from) >= hit.position.distance_squared(from)
+    })
+}
+
+fn palm_surface_distance(palm: &PalmBox, point: Vec3) -> f32 {
+    let local = palm.orientation.inverse() * (point - palm.centre);
+    (local.abs() - palm.half_extents.abs())
+        .max(Vec3::ZERO)
+        .length()
 }
 
 /// The ordinary palm query layer excludes dropped weapons; this cast meets their real bodies.
@@ -348,6 +411,9 @@ fn floor_reach(
     if !reach.is_finite()
         || reach <= 0.0
         || !palm.centre.is_finite()
+        || !palm.orientation.is_finite()
+        || !palm.half_extents.is_finite()
+        || !palm.orientation.is_normalized()
         || !weapon.bounds.min.is_finite()
         || !weapon.bounds.max.is_finite()
         || !weapon.bounds.min.cmple(weapon.bounds.max).all()
@@ -366,10 +432,18 @@ fn floor_reach(
         let Some(hit) = cast(palm.centre, palm.centre + direction * length) else {
             continue;
         };
-        if !matches!(hit.surface, Surface::Solid { object: Some(object), body }
-            if object == weapon.object && body == weapon.body)
+        let matches_body = match hit.surface {
+            Surface::Solid {
+                object: Some(object),
+                body,
+            }
+            | Surface::Character { object, body } => object == weapon.object && body == weapon.body,
+            _ => false,
+        };
+        if !matches_body
             || !hit.position.is_finite()
             || !hit.normal.is_finite()
+            || palm_surface_distance(palm, hit.position) > reach
         {
             continue;
         }
@@ -546,11 +620,14 @@ unsafe fn judge(
     }
     // SAFETY: forwarded from the caller; the hit was found this tick.
     let classified = unsafe { bodies::classify(object, body) };
+    // A rejected semantic class cannot be restored through the articulation fallback.
     // A body joined to the world or another body is taken whatever its weight, since its
     // constraint carries it.
     // SAFETY: forwarded from the caller.
     let articulated = match classified {
         Ok(TargetKind::Weapon) => None,
+        Err(_) => None,
+        _ if unsafe { bodies::is_type(object, WeaponBase::TYPE_ID()) } => None,
         _ => unsafe { articulated_kind(object, body, tuning) },
     };
     let kind = match (articulated, classified) {
@@ -652,6 +729,93 @@ mod tests {
     }
 
     #[test]
+    fn nearby_floor_probes_use_the_injected_layer_without_engine_reads() {
+        let pickup = PICKUP;
+        let doors = DoorsConfig::default();
+        let characters = CharactersConfig::default();
+        let tuning = ReachTuning {
+            world_scale: 1.0,
+            pickup: &pickup,
+            doors: &doors,
+            characters: &characters,
+            hand_bodies: [None; 2],
+            floor_weapons: &[weapon()],
+        };
+        let palm = PalmBox {
+            centre: Vec3::new(0.2, 0.11, 0.0),
+            orientation: Quat::IDENTITY,
+            half_extents: Vec3::splat(0.02),
+        };
+        let mut ordinary_casts = 0;
+        let mut floor_casts = 0;
+        // SAFETY: both cast layers miss, so the fixture's object is never read.
+        let reached = unsafe {
+            reach_with(
+                &palm,
+                None,
+                None,
+                &tuning,
+                &mut |_, _| {
+                    ordinary_casts += 1;
+                    None
+                },
+                &mut |_, _| {
+                    floor_casts += 1;
+                    None
+                },
+                ReachObservations {
+                    notes: &mut Vec::new(),
+                    rays: None,
+                    scan: &mut Scan::new(),
+                    vehicles: &mut Vec::new(),
+                },
+            )
+        };
+        assert!(reached.is_none());
+        assert_eq!(ordinary_casts, REACH_DIRECTIONS.len());
+        assert_eq!(floor_casts, REACH_DIRECTIONS.len() + 2);
+    }
+
+    #[test]
+    fn nearby_character_surface_requires_the_exact_body_and_owner() {
+        let pickup = PICKUP;
+        let doors = DoorsConfig::default();
+        let characters = CharactersConfig::default();
+        let tuning = ReachTuning {
+            world_scale: 1.0,
+            pickup: &pickup,
+            doors: &doors,
+            characters: &characters,
+            hand_bodies: [None; 2],
+            floor_weapons: &[],
+        };
+        let palm = PalmBox {
+            centre: Vec3::new(0.2, 0.11, 0.0),
+            orientation: Quat::IDENTITY,
+            half_extents: Vec3::splat(0.02),
+        };
+        for (owner, body) in [
+            (weapon().object, weapon().body),
+            (weapon().object, 8),
+            (NonZeroUsize::new(2).unwrap(), weapon().body),
+        ] {
+            let reached = floor_reach(&weapon(), &palm, &tuning, &mut |_, _| {
+                Some(SurfaceHit {
+                    surface: Surface::Character {
+                        object: owner,
+                        body,
+                    },
+                    ..hit(weapon(), Vec3::new(0.2, 0.03, 0.0))
+                })
+            });
+            assert_eq!(
+                reached.is_some(),
+                owner == weapon().object && body == weapon().body
+            );
+        }
+    }
+
+    #[test]
     fn floor_surface_reach_does_not_depend_on_the_five_wrist_directions() {
         let pickup = PICKUP;
         let doors = DoorsConfig::default();
@@ -704,6 +868,65 @@ mod tests {
                 1
             );
         }
+    }
+
+    #[test]
+    fn a_diagonal_probe_cannot_extend_reach_beyond_the_palm_surface() {
+        let pickup = PICKUP;
+        let doors = DoorsConfig::default();
+        let characters = CharactersConfig::default();
+        let tuning = ReachTuning {
+            world_scale: 1.0,
+            pickup: &pickup,
+            doors: &doors,
+            characters: &characters,
+            hand_bodies: [None; 2],
+            floor_weapons: &[],
+        };
+        let palm = PalmBox {
+            centre: Vec3::ZERO,
+            orientation: Quat::IDENTITY,
+            half_extents: Vec3::new(0.1, 0.01, 0.01),
+        };
+        let point = Vec3::new(1.0, 1.0, 0.0).normalize() * (pickup.reach_m + 0.07);
+        let weapon = FloorWeapon {
+            bounds: Aabb {
+                min: point,
+                max: point + Vec3::splat(0.01),
+            },
+            ..weapon()
+        };
+        assert!(
+            floor_reach(&weapon, &palm, &tuning, &mut |_, _| {
+                Some(hit(weapon, point))
+            })
+            .is_none()
+        );
+        assert!(palm_surface_distance(&palm, point) > pickup.reach_m);
+    }
+
+    #[test]
+    fn the_weapon_query_does_not_reach_through_ordinary_query_blockers() {
+        let target = hit(weapon(), Vec3::Z * 0.1);
+        let wall = SurfaceHit {
+            position: Vec3::Z * 0.05,
+            surface: Surface::Solid {
+                object: None,
+                body: 99,
+            },
+            ..target
+        };
+        assert!(!surface_visible(Vec3::ZERO, &target, Some(&wall)));
+        assert!(surface_visible(Vec3::ZERO, &target, None));
+        assert!(surface_visible(Vec3::ZERO, &target, Some(&target)));
+        assert!(surface_visible(
+            Vec3::ZERO,
+            &target,
+            Some(&SurfaceHit {
+                position: Vec3::Z * 0.2,
+                ..wall
+            })
+        ));
     }
 
     #[test]

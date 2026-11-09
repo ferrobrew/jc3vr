@@ -49,7 +49,7 @@ fn a_valid_seated_grab_refreshes_the_door_and_preserves_hostility_policy() {
         target.hostile = hostile;
         let mut engine = engine(Attachment::Vehicle(address(64)));
         let current = Seated {
-            door: DoorSlot::REAR_LEFT,
+            door: Some(DoorSlot::REAR_LEFT),
             open_deg: 75.0,
             ..seated(64)
         };
@@ -84,9 +84,47 @@ fn a_valid_on_foot_grab_reads_the_frame_only_after_owner_and_attachment_checks()
 }
 
 #[test]
+fn an_exposed_rider_needs_no_door_but_must_keep_the_same_vehicle_and_access() {
+    let seated = Seated {
+        door: None,
+        open_deg: 0.0,
+        ..seated(64)
+    };
+    let mut engine = engine(Attachment::Exposed(address(64)));
+    let seize = acquire(target(Some(seated)), &mut engine).unwrap();
+    assert_eq!(seize.target.seated, Some(seated));
+    assert_eq!(engine.calls, [Call::Owner, Call::Attachment, Call::Frame]);
+    for attachment in [
+        Attachment::OnFoot,
+        Attachment::Vehicle(address(64)),
+        Attachment::Exposed(address(96)),
+    ] {
+        engine.calls.clear();
+        engine.attachment = Some(attachment);
+        assert!(acquire(target(Some(seated)), &mut engine).is_none());
+        assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
+    }
+}
+
+#[test]
+fn an_enclosed_seat_cannot_reuse_an_exposed_rider_offer() {
+    let mut engine = engine(Attachment::Exposed(address(64)));
+    assert!(acquire(target(Some(seated(64))), &mut engine).is_none());
+    assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
+}
+
+#[test]
 fn a_non_finite_frame_refuses_the_checked_acquisition() {
     let mut engine = engine(Attachment::OnFoot);
     engine.frame = Mat4::NAN;
+    assert!(acquire(target(None), &mut engine).is_none());
+    assert_eq!(engine.calls, [Call::Owner, Call::Attachment, Call::Frame]);
+}
+
+#[test]
+fn a_singular_frame_refuses_after_live_access_checks() {
+    let mut engine = engine(Attachment::OnFoot);
+    engine.frame = Mat4::ZERO;
     assert!(acquire(target(None), &mut engine).is_none());
     assert_eq!(engine.calls, [Call::Owner, Call::Attachment, Call::Frame]);
 }
@@ -154,7 +192,7 @@ fn target(seated: Option<Seated>) -> CharacterTarget {
 fn seated(vehicle: usize) -> Seated {
     Seated {
         vehicle: address(vehicle),
-        door: DoorSlot::FRONT_LEFT,
+        door: Some(DoorSlot::FRONT_LEFT),
         open_deg: 40.0,
     }
 }

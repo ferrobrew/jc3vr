@@ -312,6 +312,7 @@ mod tests {
                 Vec3::X,
             ),
             mass_kg: 15.0,
+            ragdoll: None,
             joined: true,
             kind: HeldKind::Door,
         }

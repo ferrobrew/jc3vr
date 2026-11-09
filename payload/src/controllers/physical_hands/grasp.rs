@@ -91,6 +91,23 @@ impl Grip {
         }
     }
 
+    /// Retain the original palm-local contact when an animated grip becomes dynamic.
+    pub(crate) fn regrip(palm: Pose, body: BodyPose, point: Vec3, in_palm: Vec3) -> Self {
+        Self {
+            in_palm,
+            ..Self::of(palm, body, point)
+        }
+    }
+
+    /// The palm pose that keeps this grip on the body's current anatomical contact.
+    pub(crate) fn palm(&self, body: BodyPose) -> Pose {
+        let orientation = (body.orientation * self.rotation.inverse()).normalize();
+        Pose {
+            position: self.anchor(body) - orientation * self.in_palm,
+            orientation,
+        }
+    }
+
     /// The grab point on the body at `body`, world space.
     pub fn anchor(&self, body: BodyPose) -> Vec3 {
         body.point(self.on_body)
@@ -331,6 +348,38 @@ mod tests {
 
     use super::*;
     use crate::controllers::physical_hands::pickup::PICKUP;
+
+    #[test]
+    fn a_regrip_preserves_the_palm_contact_instead_of_accepting_the_fall_as_a_new_offset() {
+        let palm = pose(Vec3::new(1.0, 1.4, 0.0), Quat::from_rotation_y(0.6));
+        let contact = Vec3::new(0.02, -0.03, -0.04);
+        let point = palm.position + palm.orientation * contact + Vec3::NEG_Y * 0.5;
+        let fallen = body(point, Quat::from_rotation_z(0.8));
+        let grip = Grip::regrip(palm, fallen, point, contact);
+        assert!(grip.anchor(fallen).abs_diff_eq(point, 1e-5));
+        assert!(
+            grip.target(palm)
+                .point
+                .abs_diff_eq(point + Vec3::Y * 0.5, 1e-5)
+        );
+        let attached_palm = grip.palm(fallen);
+        assert!(
+            attached_palm
+                .position
+                .abs_diff_eq(palm.position + Vec3::NEG_Y * 0.5, 1e-5)
+        );
+        assert!(grip.target(attached_palm).point.abs_diff_eq(point, 1e-5));
+    }
+
+    #[test]
+    fn ragdoll_and_motorcycle_scale_loads_fit_strength_without_making_cars_liftable() {
+        for mass_kg in [75.0, 200.0, 400.0] {
+            assert!(can_lift(mass_kg, 1, &PICKUP));
+        }
+        assert!(!can_lift(1500.0, 2, &PICKUP));
+        assert!(!can_hold(f32::INFINITY, &PICKUP));
+        assert!(!can_lift(f32::NAN, 2, &PICKUP));
+    }
 
     #[test]
     fn acquisition_is_bounded_and_never_bypasses_the_hard_tear_limit() {

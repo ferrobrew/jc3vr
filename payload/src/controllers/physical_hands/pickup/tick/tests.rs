@@ -70,6 +70,7 @@ fn held(joined: bool, kind: HeldKind) -> Held {
         body: 7,
         grip: Grip::of(palm().pose, body().pose, Vec3::ZERO),
         mass_kg: 5.0,
+        ragdoll: (kind == HeldKind::Ragdoll).then(|| NonZeroUsize::new(100).unwrap()),
         joined,
         kind,
     }
@@ -99,6 +100,44 @@ fn inputs(enabled: bool) -> TickInputs {
 fn run(state: &mut PickupState, enabled: bool, fake: &mut FakeBodies) -> TickOutcome {
     state.input_at = Some(Instant::now());
     unsafe { tick_with(state, inputs(enabled), &PICKUP, fake) }
+}
+
+#[test]
+fn a_fixture_activation_refusal_stops_before_reading_or_taking_the_body() {
+    struct Fixture;
+    impl BodyEngine for Fixture {
+        fn loosen(&mut self, _: u32, _: NonZeroUsize) -> Result<(), bodies::BodyError> {
+            Err(bodies::BodyError::Fixture)
+        }
+        fn read(
+            &mut self,
+            _: u32,
+            _: NonZeroUsize,
+        ) -> Result<bodies::BodyState, bodies::BodyError> {
+            panic!("a refused fixture must not be read for acquisition");
+        }
+        fn release_joints(&mut self, _: &Held) {
+            panic!("a refused fixture has no joint");
+        }
+        fn drive(&mut self, _: &Held, _: Velocities) -> Result<(), bodies::BodyError> {
+            panic!("a refused fixture must not be driven");
+        }
+    }
+    let mut state = PickupState::new();
+    state.input_at = Some(Instant::now());
+    state.requests[0] = Some(Request::Grab(Reach {
+        object: held(false, HeldKind::Prop).object,
+        body: 7,
+        point: Vec3::ZERO,
+        distance: 0.0,
+        normal: Vec3::Y,
+        kind: TargetKind::Prop { mass_kg: 5.0 },
+    }));
+    let outcome = unsafe { tick_with(&mut state, inputs(false), &PICKUP, &mut Fixture) };
+    assert!(state.held.iter().all(Option::is_none));
+    assert!(!outcome.taken[0]);
+    assert!(outcome.refused[0].is_some());
+    assert_eq!(outcome.error, Some(bodies::BodyError::Fixture.to_string()));
 }
 
 #[test]
@@ -243,6 +282,7 @@ fn collision_publication_keeps_character_assembly_after_a_seize() {
         },
         grab: Vec3::ZERO,
         bone: None,
+        in_palm: Vec3::ZERO,
     });
     assert_eq!(state.collision_subjects()[0], Some(subject));
     state.regrips[0] = Some(Regrip::new(state.seizes[0].take().unwrap()));
@@ -382,6 +422,122 @@ fn ticks_held(held: Held, lag: Vec3, velocity: Vec3, limit: usize) -> (usize, Ti
         }
     }
     (limit, last)
+}
+
+#[test]
+fn ragdoll_contacts_share_the_retained_assembly_and_never_create_a_fixed_joint() {
+    for same_body in [false, true] {
+        let mut state = PickupState::new();
+        let first = Held {
+            mass_kg: 75.0,
+            ..held(true, HeldKind::Ragdoll)
+        };
+        state.held = [
+            Some(first),
+            Some(Held {
+                body: if same_body { first.body } else { 8 },
+                ..first
+            }),
+        ];
+        let mut fake = FakeBodies {
+            body: body(),
+            calls: Vec::new(),
+            driven: None,
+        };
+        assert_eq!(
+            assembly_mass_share(&state.held, &first, if same_body { 2 } else { 1 }),
+            if same_body { 75.0 } else { 37.5 }
+        );
+        let outcome = run(&mut state, true, &mut fake);
+        assert!(outcome.joints.iter().all(Option::is_none));
+        assert!(
+            outcome
+                .reports
+                .iter()
+                .flatten()
+                .all(|report| !report.joined && report.shared)
+        );
+        assert!(state.held.iter().flatten().all(|held| !held.joined));
+        assert!(outcome.losses.iter().all(Option::is_none));
+        assert!(fake.driven.is_some());
+        state.set_held(1, None);
+        assert_eq!(assembly_mass_share(&state.held, &first, 1), 75.0);
+    }
+}
+
+#[test]
+fn a_falling_anatomical_contact_converges_only_within_the_soft_hold_force_budget() {
+    for dt in [1.0 / 30.0, 1.0 / 90.0, 1.0 / 240.0] {
+        let mut state = PickupState::new();
+        let fallen = bodies::BodyState {
+            mass_kg: Some(6.0),
+            ..body()
+        };
+        let contact = Vec3::NEG_Y * 0.5;
+        state.held[0] = Some(Held {
+            grip: Grip::regrip(palm().pose, fallen.pose, contact, Vec3::ZERO),
+            mass_kg: 75.0,
+            ..held(true, HeldKind::Ragdoll)
+        });
+        let mut fake = FakeBodies {
+            body: fallen,
+            calls: Vec::new(),
+            driven: None,
+        };
+        state.input_at = Some(Instant::now());
+        let outcome = unsafe {
+            tick_with(
+                &mut state,
+                TickInputs {
+                    dt,
+                    palms: [Some(palm()), None],
+                    ..inputs(true)
+                },
+                &PICKUP,
+                &mut fake,
+            )
+        };
+        assert!(outcome.joints.iter().all(Option::is_none));
+        assert_eq!(fake.body.pose, fallen.pose);
+        let driven = fake.driven.unwrap();
+        let impulse = (driven.linear - fallen.velocities.linear).length() * 75.0;
+        assert!(impulse <= PICKUP.hand_force_n * dt + 1e-3, "{impulse}");
+        assert!(outcome.reports[0].unwrap().lag_m > 0.4);
+    }
+}
+
+#[test]
+fn different_characters_never_share_a_ragdoll_mass_budget() {
+    let first = Held {
+        mass_kg: 75.0,
+        ..held(false, HeldKind::Ragdoll)
+    };
+    let other = Held {
+        ragdoll: NonZeroUsize::new(200),
+        object: NonZeroUsize::new(201).unwrap(),
+        body: 8,
+        ..first
+    };
+    assert_eq!(
+        assembly_mass_share(&[Some(first), Some(other)], &first, 1),
+        75.0
+    );
+}
+
+#[test]
+fn a_ragdoll_snag_still_tears_without_disabling_world_obstruction() {
+    let corpse = Held {
+        mass_kg: 75.0,
+        ..held(true, HeldKind::Ragdoll)
+    };
+    let (ticks, outcome) = ticks_held(
+        corpse,
+        Vec3::X * (PICKUP.break_distance_m + 0.1),
+        Vec3::ZERO,
+        90,
+    );
+    assert!(ticks < 30);
+    assert_eq!(outcome.losses[0], Some(HoldLoss::TornAway));
 }
 
 #[test]

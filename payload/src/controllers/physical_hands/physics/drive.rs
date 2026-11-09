@@ -16,7 +16,7 @@
 //! ([`contact_gain`]), so it rests on a wall rather than pounding it every step.
 
 use body_rig::{rotation::rotation_error, smooth::follow_factor};
-use glam::{Mat3, Quat, Vec2, Vec3};
+use glam::{DVec3, Mat3, Quat, Vec2, Vec3};
 
 use crate::controllers::clock::TimeScale;
 
@@ -118,6 +118,96 @@ pub fn drive(
         force_share,
         torque_share,
     }
+}
+
+/// The physical hand and gravity for a joined assembly. [`DriveTuning::mass_kg`] includes
+/// the hand and the carried share; only the carried share has gravity enabled.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct JoinedLoad {
+    pub hand_mass_kg: f32,
+    pub gravity: Vec3,
+}
+
+/// Drive a joined assembly by injecting a finite impulse through its hand body. The assembly's
+/// mass determines the requested momentum change, but the actual hand mass converts the capped
+/// impulse into a hand velocity. The constraint solver shares that momentum with the assembly.
+/// Gravity compensation consumes the same force budget and covers only the carried mass.
+/// The speed cap limits the desired assembly velocity, not the hand's pre-solver velocity.
+pub fn drive_joined(
+    body: &BodyMotion,
+    goal: &Goal,
+    carrier: Vec3,
+    tuning: &DriveTuning,
+    load: &JoinedLoad,
+    step_s: f32,
+) -> Drive {
+    let mut kept = Drive {
+        linear: if body.linear.is_finite() {
+            body.linear
+        } else {
+            Vec3::ZERO
+        },
+        angular: if body.angular.is_finite() {
+            body.angular
+        } else {
+            Vec3::ZERO
+        },
+        force_share: 0.0,
+        torque_share: 0.0,
+    };
+    if !(finite(body)
+        && finite_goal(goal)
+        && step_s.is_finite()
+        && step_s > 0.0
+        && load.hand_mass_kg.is_finite()
+        && load.hand_mass_kg > 0.0
+        && load.gravity.is_finite()
+        && tuning.mass_kg.is_finite()
+        && tuning.mass_kg >= load.hand_mass_kg
+        && tuning.max_force_n.is_finite()
+        && tuning.max_speed_mps.is_finite()
+        && tuning.linear_gain.is_finite())
+    {
+        return kept;
+    }
+    // Wider arithmetic keeps finite masses and short steps from overflowing before the cap.
+    let dt = f64::from(step_s);
+    let hand_mass = f64::from(load.hand_mass_kg);
+    let assembly_mass = f64::from(tuning.mass_kg);
+    let carrier = if carrier.is_finite() {
+        carrier
+            .as_dvec3()
+            .clamp_length_max(f64::from(MAX_CARRIER_SPEED_MPS))
+    } else {
+        DVec3::ZERO
+    };
+    let toward = (goal.position.as_dvec3() - body.position.as_dvec3())
+        * f64::from(tuning.linear_gain.clamp(0.0, 1.0))
+        / dt;
+    let wanted =
+        carrier + (toward - carrier).clamp_length_max(f64::from(tuning.max_speed_mps.max(0.0)));
+    let impulse = (wanted - body.linear.as_dvec3()) * assembly_mass
+        - load.gravity.as_dvec3() * (assembly_mass - hand_mass) * dt;
+    let limit = f64::from(tuning.max_force_n.max(0.0)) * dt;
+    let needed = impulse.length();
+    let applied = impulse.clamp_length_max(limit);
+    let linear = (body.linear.as_dvec3() + applied / hand_mass).as_vec3();
+    if linear.is_finite() {
+        kept.linear = linear;
+        kept.force_share = if limit > 0.0 {
+            (needed / limit).min(1.0) as f32
+        } else if needed > 0.0 {
+            1.0
+        } else {
+            0.0
+        };
+    }
+    let (angular, share) = drive_angular(body, goal, tuning, step_s);
+    if angular.is_finite() && share.is_finite() {
+        kept.angular = angular;
+        kept.torque_share = share;
+    }
+    kept
 }
 
 /// The drive's gain for a hand whose body the last step held back by `press`, the share of its
@@ -307,6 +397,152 @@ mod tests {
         Goal {
             position,
             orientation: Quat::IDENTITY,
+        }
+    }
+
+    fn joined_tuning(carried_kg: f32) -> (DriveTuning, JoinedLoad) {
+        (
+            DriveTuning {
+                mass_kg: 3.0 + carried_kg,
+                max_speed_mps: 3.0,
+                linear_gain: 0.35,
+                ..tuning()
+            },
+            JoinedLoad {
+                hand_mass_kg: 3.0,
+                gravity: Vec3::NEG_Y * 9.81,
+            },
+        )
+    }
+
+    // A rigid, translational joint shares momentum before integration. Only the load has gravity.
+    // A ground plane and an optional wall resolve contacts after integration, without moving goals.
+    fn joined_step(
+        body: &mut BodyMotion,
+        target: &Goal,
+        mass_kg: f32,
+        hands: usize,
+        dt: f32,
+        wall: Option<f32>,
+    ) {
+        let (t, load) = joined_tuning(mass_kg / hands as f32);
+        let d = drive_joined(body, target, Vec3::ZERO, &t, &load, dt);
+        assert!(d.linear.is_finite() && d.angular.is_finite());
+        let impulse = (d.linear - body.linear) * load.hand_mass_kg;
+        assert!(
+            impulse.length() <= t.max_force_n * dt + 0.002,
+            "{impulse:?}"
+        );
+        assert!((0.0..=1.0).contains(&d.force_share));
+        let total_mass = mass_kg + hands as f32 * load.hand_mass_kg;
+        let momentum =
+            body.linear * total_mass + impulse * hands as f32 + load.gravity * mass_kg * dt;
+        body.linear = momentum / total_mass;
+        let before = body.position;
+        body.position += body.linear * dt;
+        assert!(body.position.abs_diff_eq(before + body.linear * dt, 1e-5));
+        if body.position.y < 0.0 {
+            body.position.y = 0.0;
+            body.linear.y = body.linear.y.max(0.0);
+        }
+        if let Some(wall) = wall
+            && body.position.x > wall
+        {
+            body.position.x = wall;
+            body.linear.x = body.linear.x.min(0.0);
+        }
+    }
+
+    #[test]
+    fn joined_corpses_and_bikes_lift_but_an_overweight_assembly_does_not() {
+        for dt in [1.0 / 30.0, 1.0 / 60.0, 1.0 / 120.0, 0.005] {
+            for hands in [1, 2] {
+                for mass in [75.0, 200.0, 1500.0] {
+                    let mut body = at_rest(Vec3::ZERO);
+                    for _ in 0..(2.0 / dt) as usize {
+                        joined_step(&mut body, &goal(Vec3::Y), mass, hands, dt, None);
+                    }
+                    if mass < 1500.0 {
+                        assert!(
+                            (body.position.y - 1.0).abs() < 0.002,
+                            "mass={mass} hands={hands} dt={dt} body={body:?}"
+                        );
+                        assert!(body.linear.length() < 0.01);
+                    } else {
+                        assert_eq!(body.position, Vec3::ZERO);
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn joined_drive_supports_only_the_carried_weight_and_shares_momentum() {
+        for dt in [1.0 / 30.0, 1.0 / 60.0, 1.0 / 120.0] {
+            let (t, load) = joined_tuning(75.0);
+            let body = at_rest(Vec3::Y);
+            let d = drive_joined(&body, &goal(body.position), Vec3::ZERO, &t, &load, dt);
+            let impulse = (d.linear - body.linear) * load.hand_mass_kg;
+            assert!(impulse.abs_diff_eq(-load.gravity * 75.0 * dt, 1e-4));
+            assert!((d.force_share - 75.0 * 9.81 / t.max_force_n).abs() < 1e-5);
+            let mut moving = body;
+            joined_step(&mut moving, &goal(Vec3::Y * 1.002), 75.0, 1, dt, None);
+            assert!((moving.position.y - (1.0 + 0.002 * t.linear_gain)).abs() < 1e-5);
+            assert!(moving.linear.y <= t.max_speed_mps + 1e-5);
+        }
+    }
+
+    #[test]
+    fn joined_drive_preserves_world_contacts_and_resumes_without_teleporting() {
+        for dt in [1.0 / 30.0, 1.0 / 120.0] {
+            let mut body = at_rest(Vec3::ZERO);
+            let target = goal(Vec3::new(2.0, 1.0, 0.0));
+            for _ in 0..(2.0 / dt) as usize {
+                joined_step(&mut body, &target, 200.0, 1, dt, Some(0.4));
+                assert!(body.position.x <= 0.4);
+            }
+            assert!((body.position.x - 0.4).abs() < 1e-5);
+            let before = body.position;
+            joined_step(&mut body, &target, 200.0, 1, dt, None);
+            assert!(body.position.x > before.x && body.position.x < target.position.x);
+            for _ in 0..(2.0 / dt) as usize {
+                joined_step(&mut body, &target, 200.0, 1, dt, None);
+            }
+            assert!(body.position.abs_diff_eq(target.position, 0.002));
+        }
+    }
+
+    #[test]
+    fn joined_drive_keeps_finite_velocities_for_invalid_or_extreme_inputs() {
+        let body = at_rest(Vec3::ZERO);
+        let (t, load) = joined_tuning(75.0);
+        for mass in [f32::NAN, f32::INFINITY, -1.0, f32::MAX] {
+            for dt in [0.0, -1.0, f32::NAN, f32::MIN_POSITIVE, STEP] {
+                let d = drive_joined(
+                    &body,
+                    &goal(Vec3::splat(f32::MAX)),
+                    Vec3::NAN,
+                    &DriveTuning { mass_kg: mass, ..t },
+                    &load,
+                    dt,
+                );
+                assert!(d.linear.is_finite() && d.angular.is_finite());
+                assert!(d.force_share.is_finite());
+            }
+        }
+        for hand_mass in [0.0, f32::NAN, f32::MIN_POSITIVE] {
+            let d = drive_joined(
+                &body,
+                &goal(Vec3::Y),
+                Vec3::ZERO,
+                &t,
+                &JoinedLoad {
+                    hand_mass_kg: hand_mass,
+                    ..load
+                },
+                STEP,
+            );
+            assert!(d.linear.is_finite());
         }
     }
 

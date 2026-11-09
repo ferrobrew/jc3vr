@@ -15,7 +15,7 @@ use crate::controllers::{
         BodyPhase, HandBodyStatus, HoldTarget,
         body::{BodyError, BodyShape, BodySpec, HandBody},
         contact,
-        drive::{DriveTuning, Goal, drive, rig_carry},
+        drive::{DriveTuning, Goal, JoinedLoad, drive, drive_joined, rig_carry},
         guns::step::{GunSlot, drop_hand},
         joint::Joint,
         render::RenderOffset,
@@ -46,6 +46,7 @@ pub(super) struct ActRequest<'a> {
     /// must not pass through a wall or a character to get there.
     pub clear: &'a mut dyn FnMut(Vec3, Vec3) -> bool,
     pub tuning: &'a DriveTuning,
+    pub joined: Option<JoinedLoad>,
     pub step_s: f32,
 }
 
@@ -159,6 +160,7 @@ impl Hands {
             break_distance_m,
             clear,
             tuning,
+            joined,
             step_s,
         } = request;
         let i = hand.index();
@@ -275,7 +277,10 @@ impl Hands {
                 joint_lost,
             });
         }
-        let driven = drive(&motion, &goal, carrier, tuning, step_s);
+        let driven = match joined {
+            Some(load) => drive_joined(&motion, &goal, carrier, tuning, &load, step_s),
+            None => drive(&motion, &goal, carrier, tuning, step_s),
+        };
         unsafe { body.set_velocities(driven.linear, driven.angular) }?;
         contact::record_motion(hand, motion.position, driven.linear);
         self.goals[i] = Some(goal);
@@ -319,7 +324,7 @@ impl Hands {
             return true;
         };
         // SAFETY: forwarded from the caller; the body is in the simulation.
-        match unsafe { Joint::create(body.body_id(), wanted.body, wanted.object) } {
+        match unsafe { Joint::create_at(body.body_id(), wanted.body, wanted.object, wanted.palm) } {
             Ok(joint) => {
                 tracing::info!(
                     hand = hand.label(),

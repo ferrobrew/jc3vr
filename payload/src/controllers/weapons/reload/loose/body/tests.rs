@@ -121,6 +121,7 @@ fn temporary_pose_or_write_errors_defer_and_recover_without_consuming_rounds() {
         BodyError::NoPhysicsWorld,
         BodyError::NotDynamic,
         BodyError::BadMotion,
+        BodyError::Fixture,
     ] {
         let (mut state, magazine) = state();
         let mut bodies = FakeBodies {

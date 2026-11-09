@@ -88,6 +88,7 @@ pub(super) unsafe fn keep_latch(
                             body,
                             grip: Grip::of(latch.handoff_palm(world), read.pose, grab),
                             mass_kg: read.mass_kg.unwrap_or(f32::INFINITY),
+                            ragdoll: None,
                             // A new fixed joint would retain the pre-opening relative pose and
                             // discard the pull that undid the latch. The carry drive keeps that
                             // pull active.
@@ -178,10 +179,12 @@ pub(super) unsafe fn keep_seize(
         SeizeStep::Pin(pin) => outcome.pins[i] = Some(pin),
         SeizeStep::Yank { at, direction } => {
             state.seizes[i] = None;
-            if seize.target.seated.is_none() {
-                // A character on foot is thrown off its feet along the yank by its own hit
-                // reaction; the hand then looks for the ragdoll it falls as, and lets go if none
-                // comes.
+            let exposed = seize.target.seated.is_some_and(|seat| seat.door.is_none())
+                && unsafe { characters::occupant_access(seize.target, palm, world_scale, config) }
+                    .is_some_and(|seat| seat.door.is_none());
+            if seize.target.seated.is_none() || exposed {
+                // An exposed rider is pulled by the hit reaction, not the seat-entry action.
+                // The anatomical grip stays pending until the resulting ragdoll is dynamic.
                 physics::queue_shove(Shove {
                     hand,
                     character: seize.target.character,
@@ -203,14 +206,14 @@ pub(super) unsafe fn keep_seize(
             }
             outcome.released[i] = true;
             // SAFETY: the current attachment is read only after rechecking character ownership.
-            match unsafe { characters::door_still_open(seize.target, palm, world_scale, config) } {
-                Some((door, open_deg)) => {
+            match unsafe { characters::occupant_access(seize.target, palm, world_scale, config) } {
+                Some(seated) => {
                     tracing::info!(
                         hand = hand.label(),
-                        door = doors::slot_label(door),
-                        open_deg,
+                        door = seated.door.map(doors::slot_label),
+                        open_deg = seated.open_deg,
                         ?direction,
-                        "physical hands: hijack: a hand pulled an occupant out through the open door"
+                        "physical hands: hijack: a hand pulled an accessible vehicle occupant"
                     );
                     state.hijack_clicks[i] = true;
                     outcome.hijacks += 1;
@@ -218,7 +221,7 @@ pub(super) unsafe fn keep_seize(
                 None => {
                     tracing::info!(
                         hand = hand.label(),
-                        "physical hands: hijack: the door beside the hand closed before the yank"
+                        "physical hands: hijack: the occupant is no longer accessible before the yank"
                     );
                 }
             }
@@ -301,8 +304,9 @@ pub(super) unsafe fn keep_regrip(
                     Some(Held {
                         object: reach.object,
                         body: reach.body,
-                        grip: Grip::of(palm.pose, body.pose, reach.point),
+                        grip: Grip::regrip(palm.pose, body.pose, reach.point, regrip.seize.in_palm),
                         mass_kg,
+                        ragdoll: Some(regrip.seize.target.character),
                         joined,
                         kind,
                     }),

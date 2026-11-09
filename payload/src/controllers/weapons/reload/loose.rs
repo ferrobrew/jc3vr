@@ -90,7 +90,8 @@ fn body_status(result: Result<(), physical_hands::BodyError>) -> Maintenance {
         Err(
             physical_hands::BodyError::NoPhysicsWorld
             | physical_hands::BodyError::NotDynamic
-            | physical_hands::BodyError::BadMotion,
+            | physical_hands::BodyError::BadMotion
+            | physical_hands::BodyError::Fixture,
         ) => Maintenance::Unavailable {
             identity_lost: false,
         },

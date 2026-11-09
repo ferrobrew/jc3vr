@@ -5,7 +5,8 @@
 //! The constraint's data comes from the calling thread's Havok heap ([`hkMemoryRouter::m_heap`]),
 //! is constructed with one reference, the joint's, and is given the two bodies' frames: the
 //! constraint frame is the hand body's own frame, and the same frame in the object's body space,
-//! so the two bodies are held in the pose they had when the joint was made. The world's
+//! so the two bodies are held in the pose they had when the joint was made, or at a supplied palm
+//! frame on the object for an anatomical regrip. The world's
 //! constraint takes a reference of its own ([`hknpWorld::createConstraint`]), and the joint
 //! releases its reference at once, so destroying the constraint ([`hknpWorld::destroyConstraints`])
 //! frees the data. The joint keeps only the constraint's id, and checks that the world's slot for
@@ -29,10 +30,13 @@ use jc3gi::{
 };
 use windows::Win32::System::Threading::TlsGetValue;
 
-use crate::controllers::physical_hands::{
-    bodies::{self, BodyError as ObjectError},
-    physics::body::release,
-    world::World,
+use crate::controllers::{
+    frame::Pose,
+    physical_hands::{
+        bodies::{self, BodyError as ObjectError},
+        physics::body::release,
+        world::World,
+    },
 };
 
 /// Why a joint could not be made.
@@ -50,6 +54,8 @@ pub enum JointError {
     Object(ObjectError),
     /// The world made no constraint, or made it disabled.
     NoConstraint,
+    /// The desired palm frame is not finite or has no rotation.
+    InvalidPalm,
 }
 
 impl fmt::Display for JointError {
@@ -60,6 +66,7 @@ impl fmt::Display for JointError {
             JointError::NoMemory => "the Havok heap gave no memory for the constraint's data",
             JointError::NoBody => "a body's slot is empty",
             JointError::Object(e) => return write!(f, "hand bodies: joint: {e}"),
+            JointError::InvalidPalm => "the desired palm frame is invalid",
             JointError::NoConstraint => "the world made no enabled constraint",
         };
         write!(f, "hand bodies: joint: {what}")
@@ -82,20 +89,21 @@ pub struct Joint {
 }
 
 impl Joint {
-    /// Join the hand body `hand` to the body `object_body` of `object` in their present relative
-    /// pose.
+    /// Join at a common world-space frame without introducing an initial constraint error.
+    /// Anatomical grips with a gap use the force-limited carry solve instead.
     ///
     /// # Safety
     ///
     /// The thread that steps the physics world, outside the step; `hand` must be a live hand body
     /// in the simulation.
-    pub unsafe fn create(
+    pub unsafe fn create_at(
         hand: u32,
         object_body: u32,
         object: NonZeroUsize,
+        palm: Pose,
     ) -> Result<Self, JointError> {
         unsafe { bodies::read(object_body, object) }.map_err(JointError::Object)?;
-        unsafe { Self::join(hand, object_body, Some(object)) }
+        unsafe { Self::join(hand, object_body, Some(object), Some(palm)) }
     }
 
     /// Join the hand body `hand` to the body `body`, one of the mod's own, in their present
@@ -103,22 +111,28 @@ impl Joint {
     ///
     /// # Safety
     ///
-    /// As [`Joint::create`]; `body` must be a live body in the simulation.
+    /// As [`Joint::create_at`]; `body` must be a live body in the simulation.
     pub unsafe fn create_between(hand: u32, body: u32) -> Result<Self, JointError> {
-        unsafe { Self::join(hand, body, None) }
+        unsafe { Self::join(hand, body, None, None) }
     }
 
     unsafe fn join(
         hand: u32,
         object_body: u32,
         object: Option<NonZeroUsize>,
+        palm: Option<Pose>,
     ) -> Result<Self, JointError> {
         let mut world = unsafe { World::get() }.ok_or(JointError::NoPhysicsWorld)?;
         let slot = |body| unsafe { bodies::slot(world.world(), body) }.ok_or(JointError::NoBody);
-        let hand_frame = affine(&slot(hand)?.m_transform);
+        let actual_hand_frame = affine(&slot(hand)?.m_transform);
+        let hand_frame = match palm {
+            Some(palm) => palm_frame(palm, world.shift).ok_or(JointError::InvalidPalm)?,
+            None => actual_hand_frame,
+        };
         let object_frame = affine(&slot(object_body)?.m_transform);
-        let pivot_a = transform(Affine3A::IDENTITY);
-        let pivot_b = transform(pivot_in(object_frame, hand_frame));
+        let (pivot_a, pivot_b) = coincident_pivots(actual_hand_frame, object_frame, hand_frame);
+        let pivot_a = transform(pivot_a);
+        let pivot_b = transform(pivot_b);
 
         let data = unsafe { allocate() }?;
         // SAFETY: fresh heap memory of the data's size, constructed before any other use.
@@ -166,7 +180,8 @@ impl Joint {
     ///
     /// # Safety
     ///
-    /// As [`Joint::create`].
+    /// The thread that steps the physics world, outside the step; `hand` must be a live hand body
+    /// in the simulation.
     pub unsafe fn intact(&self) -> bool {
         let Some(world) = (unsafe { World::get() }) else {
             return false;
@@ -181,7 +196,8 @@ impl Joint {
     ///
     /// # Safety
     ///
-    /// As [`Joint::create`].
+    /// The thread that steps the physics world, outside the step; `hand` must be a live hand body
+    /// in the simulation.
     pub unsafe fn destroy(self) -> bool {
         let Some(mut world) = (unsafe { World::get() }) else {
             return false;
@@ -247,6 +263,17 @@ pub fn transform(a: Affine3A) -> hkTransformf {
     }
 }
 
+fn coincident_pivots(hand: Affine3A, object: Affine3A, contact: Affine3A) -> (Affine3A, Affine3A) {
+    (pivot_in(hand, contact), pivot_in(object, contact))
+}
+
+fn palm_frame(palm: Pose, shift: Vec3) -> Option<Affine3A> {
+    let position = palm.position - shift;
+    let length = palm.orientation.length_squared();
+    (position.is_finite() && length.is_finite() && length > f32::EPSILON)
+        .then(|| Affine3A::from_rotation_translation(palm.orientation.normalize(), position))
+}
+
 /// Fixed constraint data's memory, from the calling thread's Havok heap.
 unsafe fn allocate() -> Result<*mut hkpFixedConstraintData, JointError> {
     // SAFETY: reads this thread's own slot of the engine's thread-local index.
@@ -281,6 +308,45 @@ mod tests {
         let t = transform(a);
         let x = Vec3::from_array(t.m_rotation[0].data);
         assert!(x.abs_diff_eq(a.transform_vector3(Vec3::X), 1e-6));
+    }
+
+    #[test]
+    fn a_regrip_uses_the_original_contact_frame_not_the_lagging_hand() {
+        let shift = Vec3::new(1000.0, 2000.0, -3000.0);
+        let object = frame(Vec3::Y, 0.6, Vec3::new(2.0, 3.0, 4.0));
+        let desired = frame(Vec3::X, -0.3, Vec3::new(2.2, 3.4, 4.1));
+        let palm = Pose {
+            position: Vec3::from(desired.translation) + shift,
+            orientation: Quat::from_mat3a(&desired.matrix3),
+        };
+        let pivot = pivot_in(object, palm_frame(palm, shift).unwrap());
+        assert!((object * pivot).abs_diff_eq(desired, 2e-4));
+        let lagging = frame(Vec3::Z, 0.2, Vec3::new(2.0, 5.0, 4.0));
+        let (on_hand, on_object) =
+            coincident_pivots(lagging, object, palm_frame(palm, shift).unwrap());
+        assert!((lagging * on_hand).abs_diff_eq(object * on_object, 2e-4));
+        assert!(!on_hand.abs_diff_eq(Affine3A::IDENTITY, 0.01));
+        assert!(!pivot.abs_diff_eq(pivot_in(object, lagging), 0.01));
+        assert!(
+            palm_frame(
+                Pose {
+                    position: Vec3::NAN,
+                    ..palm
+                },
+                shift
+            )
+            .is_none()
+        );
+        assert!(
+            palm_frame(
+                Pose {
+                    orientation: Quat::from_xyzw(0.0, 0.0, 0.0, 0.0),
+                    ..palm
+                },
+                shift
+            )
+            .is_none()
+        );
     }
 
     #[test]

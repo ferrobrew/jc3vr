@@ -414,7 +414,7 @@ unsafe fn tick_with(
                         Seize::take(
                             target,
                             reach.point,
-                            palm.pose.position,
+                            palm.pose,
                             world_scale,
                             &character_config,
                         )
@@ -467,8 +467,12 @@ unsafe fn tick_with(
                     break 'grab;
                 }
                 // A placed object at rest turns loose as the hand takes it.
-                if matches!(reach.kind, TargetKind::Prop { .. }) {
-                    engine.loosen(reach.body, reach.object);
+                if matches!(reach.kind, TargetKind::Prop { .. })
+                    && let Err(error) = engine.loosen(reach.body, reach.object)
+                {
+                    record(ConsumerResult::BodyRefused(error));
+                    outcome.refuse(hand, reach.point, error.to_string());
+                    break 'grab;
                 }
                 // SAFETY: forwarded from the caller.
                 let body = engine.read(reach.body, reach.object);
@@ -587,12 +591,13 @@ unsafe fn tick_with(
         let Some(held) = state.held[i].filter(|_| !driven[i]) else {
             continue;
         };
-        let joined = state
-            .held
-            .iter()
-            .flatten()
-            .filter(|h| h.same(&held))
-            .all(|h| h.joined);
+        let joined = held.kind != HeldKind::Ragdoll
+            && state
+                .held
+                .iter()
+                .flatten()
+                .filter(|h| h.same(&held))
+                .all(|h| h.joined);
         for holder in state.held.iter_mut().flatten().filter(|h| h.same(&held)) {
             holder.joined = joined;
         }
@@ -641,18 +646,13 @@ unsafe fn tick_with(
         }
         // Every hold, carried or joined, is torn away by the same strain, against the same lift.
         // A tear leaves the hand judged after it with only its own strength.
-        let lift = |holds: &[Option<HandHold>; 2]| {
-            lifts(
-                &held,
-                holds,
-                &carry_tuning(&held, holds, config).in_real_time(time_scale),
-            )
-        };
-        let mut liftable = lift(&holds);
+        let hands = assembly_hands(&state.held, &held, holds.iter().flatten().count());
+        let mut liftable = lifts_count(
+            &held,
+            hands,
+            &carry_tuning(&held, &holds, config).in_real_time(time_scale),
+        );
         let mut moving = body.rigid();
-        if held.kind == HeldKind::Ragdoll && held.mass_kg.is_finite() && held.mass_kg > 0.0 {
-            moving.inverse_mass = moving.inverse_mass.min(1.0 / held.mass_kg);
-        }
         let transported = held.kind.carrier_transport(joined, liftable);
         if transported && previous_holds.iter().flatten().any(|h| h.same(&held)) {
             if carrier_pose.is_some() {
@@ -676,7 +676,12 @@ unsafe fn tick_with(
             if strain.torn(&sample, dt, time_scale, config) {
                 holds[k] = None;
                 state.set_held(k, None);
-                liftable = lift(&holds);
+                let hands = assembly_hands(&state.held, &held, holds.iter().flatten().count());
+                liftable = lifts_count(
+                    &held,
+                    hands,
+                    &carry_tuning(&held, &holds, config).in_real_time(time_scale),
+                );
                 outcome.released[k] = true;
                 outcome.lost += 1;
                 outcome.losses[k] = Some(HoldLoss::TornAway);
@@ -691,7 +696,7 @@ unsafe fn tick_with(
         if joined {
             let shared = holds.iter().flatten().count() > 1;
             for (k, hold) in holds.iter().enumerate() {
-                let Some(hold) = hold else {
+                let (Some(hold), Some(holder)) = (hold, holders[k]) else {
                     continue;
                 };
                 // The hand's body carries the object through the joint, so the keep-out moves the
@@ -699,6 +704,8 @@ unsafe fn tick_with(
                 outcome.joints[k] = Some(HoldTarget {
                     object: held.object,
                     body: held.body,
+                    palm: holder.grip.palm(body.pose),
+                    mass_kg: held.mass_kg / holds.iter().flatten().count().max(1) as f32,
                     keep_out: keep_outs[k],
                     shared,
                     hand_force_n: game_tuning.hand_force_n,
@@ -744,6 +751,10 @@ unsafe fn tick_with(
         } else {
             Velocities::default()
         };
+        if held.kind == HeldKind::Ragdoll {
+            let share = assembly_mass_share(&state.held, &held, hands);
+            moving.inverse_mass = moving.inverse_mass.min(1.0 / share);
+        }
         let solution = hold::solve_in_frame(&moving, holds, dt, &tuning, frame);
         // SAFETY: forwarded from the caller.
         engine.release_joints(&held);
@@ -785,7 +796,7 @@ unsafe fn tick_with(
             outcome.reports[k] = Some(HeldReport {
                 mass_kg: held.mass_kg,
                 liftable,
-                shared: hands > 1,
+                shared: assembly_hands(&state.held, &held, hands) > 1,
                 centre: body.pose.centre,
                 anchor: hold.anchor,
                 target: hold.target.point,
@@ -839,7 +850,9 @@ trait BodyEngine {
     fn release_joints(&mut self, held: &Held);
     fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError>;
     /// Turn a placed object at rest loose ([`bodies::loosen`]); a dynamic body is left as it is.
-    fn loosen(&mut self, _body: u32, _object: NonZeroUsize) {}
+    fn loosen(&mut self, _body: u32, _object: NonZeroUsize) -> Result<(), bodies::BodyError> {
+        Ok(())
+    }
 }
 
 struct NativeBodies;
@@ -858,17 +871,15 @@ impl BodyEngine for NativeBodies {
     fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError> {
         unsafe { bodies::drive(held.body, held.object, velocity) }
     }
-    fn loosen(&mut self, body: u32, object: NonZeroUsize) {
-        match unsafe { bodies::loosen(object, body) } {
-            Ok(true) => tracing::info!(
+    fn loosen(&mut self, body: u32, object: NonZeroUsize) -> Result<(), bodies::BodyError> {
+        let changed = unsafe { bodies::loosen(object, body) }?;
+        if changed {
+            tracing::info!(
                 body,
                 "physical hands: pickup: a hand turned a placed object loose"
-            ),
-            Ok(false) => {}
-            Err(e) => {
-                tracing::info!(body, %e, "physical hands: pickup: a placed object could not be turned loose")
-            }
+            );
         }
+        Ok(())
     }
 }
 
@@ -912,6 +923,12 @@ pub(super) fn take_body(
                         body: reach.body,
                         grip: Grip::of(palm.pose, body.pose, reach.point),
                         mass_kg,
+                        ragdoll: match reach.kind {
+                            TargetKind::Character(target) if target.ragdoll => {
+                                Some(target.character)
+                            }
+                            _ => None,
+                        },
                         joined,
                         kind,
                     }),
@@ -1042,9 +1059,28 @@ pub(super) fn carry_tuning(
     }
 }
 
-/// Whether the hands holding `held` at `holds` can lift it with the strength of `tuning`.
-fn lifts(held: &Held, holds: &[Option<HandHold>; 2], tuning: &HoldTuning) -> bool {
-    let hands = holds.iter().flatten().count();
+fn assembly_hands(held: &[Option<Held>; 2], subject: &Held, local_hands: usize) -> usize {
+    local_hands
+        + held
+            .iter()
+            .flatten()
+            .filter(|other| !other.same(subject) && other.same_assembly(subject))
+            .count()
+}
+
+fn assembly_mass_share(held: &[Option<Held>; 2], subject: &Held, local_hands: usize) -> f32 {
+    let total_mass = held
+        .iter()
+        .flatten()
+        .filter(|other| other.same_assembly(subject))
+        .map(|other| other.mass_kg)
+        .fold(subject.mass_kg, f32::max);
+    let assembly_count = assembly_hands(held, subject, local_hands).max(1);
+    let body_count = local_hands.max(1);
+    total_mass * body_count as f32 / assembly_count as f32
+}
+
+fn lifts_count(held: &Held, hands: usize, tuning: &HoldTuning) -> bool {
     held.mass_kg.is_finite()
         && held.mass_kg * tuning.gravity.length() <= hands as f32 * tuning.hand_force_n
 }

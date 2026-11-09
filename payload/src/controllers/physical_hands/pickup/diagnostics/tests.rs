@@ -14,6 +14,7 @@ use crate::controllers::{
         palm::PalmBox,
         pickup::{
             PICKUP, ReachObservations, ReachTuning,
+            reach::reach_with,
             state::{Held, HeldKind, PickupState, Request},
             tick::{self, BodyGrab, JointInputs, TickInputs, TickOutcome, take_body},
         },
@@ -329,6 +330,7 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
         BodyError::NotDynamic,
         BodyError::Reowned,
         BodyError::BadMotion,
+        BodyError::Fixture,
     ] {
         let mut state = PickupState::new();
         let mut outcome = TickOutcome::default();
@@ -411,7 +413,7 @@ fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
             tick::carry_tuning(&Held { kind, ..held }, &holds, &config),
             HoldTuning::of(&config)
         );
-        assert!(kind.joined(true));
+        assert_eq!(kind.joined(true), kind != HeldKind::Ragdoll);
     }
     state.held[0] = None;
     assert_eq!(
@@ -438,9 +440,10 @@ fn the_actual_ray_scan_records_misses_without_engine_reads() {
         hand_bodies: [None; 2],
     };
     let mut casts = 0;
-    // SAFETY: every cast misses, so the production scan does not read engine objects.
+    let mut floor_casts = 0;
+    // SAFETY: both cast layers miss, and no press or nearby body needs engine reads.
     let reached = unsafe {
-        crate::controllers::physical_hands::pickup::reach(
+        reach_with(
             &PalmBox {
                 centre: Vec3::ZERO,
                 orientation: Quat::IDENTITY,
@@ -453,6 +456,10 @@ fn the_actual_ray_scan_records_misses_without_engine_reads() {
                 casts += 1;
                 None
             },
+            &mut |_, _| {
+                floor_casts += 1;
+                None
+            },
             ReachObservations {
                 notes: &mut Vec::new(),
                 rays: None,
@@ -463,6 +470,7 @@ fn the_actual_ray_scan_records_misses_without_engine_reads() {
     };
     assert!(reached.is_none());
     assert_eq!(casts, 5);
+    assert_eq!(floor_casts, casts);
     assert!(scan.ray_ran);
     assert_eq!(scan.entries.iter().flatten().count(), casts);
     assert!(

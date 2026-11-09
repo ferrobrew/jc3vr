@@ -104,7 +104,13 @@ pub(crate) unsafe fn is_dropped_weapon(object: NonZeroUsize) -> bool {
     let weapon = object.get() as *const WeaponBase;
     // Read as the raw value: a state the enum does not name is not a dropped one.
     let state = unsafe { (&raw const (*weapon).m_State).cast::<i32>().read() };
-    state == WeaponState::E_WS_DROPPED as i32
+    unowned_dropped(state, unsafe { (*weapon).m_Holder.px.is_null() }, unsafe {
+        (*weapon).m_User[0].is_null()
+    })
+}
+
+fn unowned_dropped(state: i32, no_holder: bool, no_user: bool) -> bool {
+    state == WeaponState::E_WS_DROPPED as i32 && no_holder && no_user
 }
 
 /// How long a published aim stays current.
@@ -286,4 +292,26 @@ unsafe fn find_weapon(
         from = hit.distance + STEP_PAST_M;
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_an_unowned_dropped_weapon_is_a_floor_candidate() {
+        for state in -1..=WeaponState::E_WS_NUM as i32 + 1 {
+            assert_eq!(
+                unowned_dropped(state, true, true),
+                state == WeaponState::E_WS_DROPPED as i32
+            );
+        }
+        for (no_holder, no_user) in [(false, true), (true, false), (false, false)] {
+            assert!(!unowned_dropped(
+                WeaponState::E_WS_DROPPED as i32,
+                no_holder,
+                no_user
+            ));
+        }
+    }
 }
