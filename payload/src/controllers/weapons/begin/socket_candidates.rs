@@ -13,6 +13,7 @@ use crate::controllers::{
     roomscale::{self, posture::EffectivePosture},
     weapons::{
         docks::{self, SocketUse, attachments::Sample},
+        hold::act,
         volumes::{self, SocketTuning},
     },
 };
@@ -95,7 +96,8 @@ fn provide_and_publish(
         publish(None);
         return (Vec::new(), Vec::new());
     };
-    let (targets, draws, others) = provide(native, frames, holsters, draw);
+    let (targets, mut draws, others) = provide(native, frames, holsters, draw);
+    draws.retain(|candidate| candidate.hand.is_some_and(act::draw_ready));
     publish(Some(targets));
     (draws, others)
 }

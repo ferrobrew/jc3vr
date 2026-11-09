@@ -59,6 +59,35 @@ impl ReleaseIntent {
     }
 }
 
+#[derive(Debug, Copy, Clone, Default)]
+pub(crate) struct DrawRearm {
+    blocked: [bool; 2],
+}
+
+impl DrawRearm {
+    pub(crate) const fn new() -> Self {
+        Self {
+            blocked: [false; 2],
+        }
+    }
+
+    pub(crate) fn docked(&mut self) {
+        self.blocked = [true; 2];
+    }
+
+    pub(crate) fn observe(&mut self, grips: [Option<bool>; 2]) {
+        for (blocked, grip) in self.blocked.iter_mut().zip(grips) {
+            if grip == Some(false) {
+                *blocked = false;
+            }
+        }
+    }
+
+    pub(crate) fn blocked(&self, hand: Hand) -> bool {
+        self.blocked[hand.index()]
+    }
+}
+
 pub(crate) fn draw_blocked(docking: bool, docked_this_tick: bool) -> bool {
     docking || docked_this_tick
 }
@@ -292,6 +321,21 @@ mod tests {
         assert!(draw_blocked(true, false));
         assert!(draw_blocked(false, true));
         assert!(draw_blocked(true, true));
+    }
+
+    #[test]
+    fn a_completed_dock_requires_each_closed_hand_to_open_before_drawing() {
+        let mut rearm = DrawRearm::new();
+        rearm.docked();
+        rearm.observe([Some(true), None]);
+        assert!(rearm.blocked(Hand::Left));
+        assert!(rearm.blocked(Hand::Right));
+        rearm.observe([Some(false), Some(true)]);
+        assert!(!rearm.blocked(Hand::Left));
+        assert!(rearm.blocked(Hand::Right));
+        rearm.observe([Some(true), Some(false)]);
+        assert!(!rearm.blocked(Hand::Left));
+        assert!(!rearm.blocked(Hand::Right));
     }
 
     #[test]

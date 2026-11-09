@@ -47,7 +47,9 @@ use crate::{
             engine::{self, grip_points, slot_of},
             hold::{
                 self, armed,
-                dock::{ReleaseIntent, ReleaseWatch, Snap, SnapFrom, SnapKind, draw_blocked},
+                dock::{
+                    DrawRearm, ReleaseIntent, ReleaseWatch, Snap, SnapFrom, SnapKind, draw_blocked,
+                },
                 equip::{self, DockRefusal, Thrown},
                 layout,
                 release_diagnostics::{
@@ -112,7 +114,7 @@ pub fn status() -> DockStatus {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn draw(hand: Hand, socket: Socket, snap_s: f32) -> Result<(), DockRefusal> {
-    if draw_blocked(docking()[hand.index()], false) {
+    if draw_blocked(docking()[hand.index()], false) || !draw_ready(hand) {
         return Err(DockRefusal::NotDone);
     }
     let result = unsafe { draw_off(hand, socket) };
@@ -508,6 +510,10 @@ pub(crate) fn snap_view(weapon: usize, hand: Hand) -> Option<SnapView> {
     })
 }
 
+pub(crate) fn draw_ready(hand: Hand) -> bool {
+    !STATE.lock().draw_rearm.blocked(hand)
+}
+
 /// Advance each hand's snap by `dt` seconds: a finished dock's snap docks the weapon, and a snap
 /// whose weapon left its hand is dropped.
 ///
@@ -518,6 +524,7 @@ pub(crate) unsafe fn tick(dt: f32) {
     STATE.lock().docked_this_tick.clear();
     sample_release_transport(dt);
     let physical = physical_grips();
+    STATE.lock().draw_rearm.observe(physical);
     for hand in Hand::BOTH {
         let finished = {
             let mut state = STATE.lock();
@@ -554,6 +561,7 @@ pub(crate) fn clear() {
     let mut state = STATE.lock();
     state.snaps = [None; 2];
     state.intents = [None; 2];
+    state.draw_rearm = DrawRearm::new();
     state.transport = ReleaseTransport::new();
     state.rig = None;
     state.watches.iter_mut().for_each(Watch::stand_down);
@@ -707,6 +715,7 @@ struct State {
     watches: [Watch; 2],
     intents: [Option<ReleaseIntent>; 2],
     docked_this_tick: Vec<usize>,
+    draw_rearm: DrawRearm,
     transport: ReleaseTransport,
     rig: Option<(Instant, RigMotion)>,
     status: DockStatus,
@@ -812,6 +821,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     watches: [Watch::new(); 2],
     intents: [None; 2],
     docked_this_tick: Vec::new(),
+    draw_rearm: DrawRearm::new(),
     transport: ReleaseTransport::new(),
     rig: None,
     status: DockStatus {
@@ -1047,6 +1057,7 @@ unsafe fn finish_dock(hand: Hand, socket: Socket, weapon: usize) -> Result<(), D
     let mut state = STATE.lock();
     state.status.docks += 1;
     state.docked_this_tick.push(weapon);
+    state.draw_rearm.docked();
     state.intents[hand.index()] = None;
     drop(state);
     tracing::info!(
