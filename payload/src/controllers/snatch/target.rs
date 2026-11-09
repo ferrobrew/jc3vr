@@ -58,9 +58,6 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *weapon) }) else {
                 return false;
             };
-            if !unsafe { in_sight(ray, point, weapon.get()) } {
-                return false;
-            }
             point
         }
         OfferKind::Ground {
@@ -79,11 +76,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             else {
                 return false;
             };
-            let point = centre + orientation * *local_point;
-            if !unsafe { in_sight(ray, point, weapon.get()) } {
-                return false;
-            }
-            point
+            centre + orientation * *local_point
         }
         OfferKind::Held(target) => {
             let Some(current) = steal::targets(|p| p)
@@ -138,9 +131,6 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             let Ok(point) = (unsafe { remote::position(*object, *body) }) else {
                 return false;
             };
-            if !unsafe { in_sight(ray, point, object.get()) } {
-                return false;
-            }
             point
         }
         OfferKind::Ragdoll {
@@ -161,9 +151,6 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
                 return false;
             }
             *mass_kg = current.mass_kg;
-            if !unsafe { in_sight(ray, current.bone.centre, character.get()) } {
-                return false;
-            }
             current.bone.centre
         }
         OfferKind::Grenade { object, body, weak } => {
@@ -176,9 +163,6 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             let Ok((point, _)) = (unsafe { physical_hands::body_pose(*body, *object) }) else {
                 return false;
             };
-            if !unsafe { in_sight(ray, point, object.get()) } {
-                return false;
-            }
             point
         }
         OfferKind::PlacedCharge { charge } => {
@@ -575,7 +559,8 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         },
         SNATCH.range_m,
     )?;
-    let point = chosen.candidate.point;
+    let mut point = chosen.candidate.point;
+    let direct = matches!(chosen.candidate.kind, Kind::Aimed);
     let kind = match chosen.candidate.kind {
         Kind::Aimed => aimed.map(|(_, kind, _alive)| kind)?,
         Kind::Floor(i) => {
@@ -667,6 +652,28 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         OfferKind::Ragdoll { owner, body, .. } => Some((*body, *owner)),
         _ => None,
     };
+    if !direct && !matches!(kind, OfferKind::PlacedCharge { .. }) {
+        let surface_ray = Ray::new(ray.origin, point - ray.origin)?;
+        let surface = unsafe {
+            raycast::cast(
+                &surface_ray,
+                ray.origin.distance(point) + SIGHT_TOLERANCE_M,
+                &CastOptions::ignoring_player(0).seeing_through(),
+            )
+        }
+        .ok()?;
+        if let Some((body, owner)) = body {
+            let surface = surface?;
+            if surface.body != body || surface.object != Some(owner) {
+                return None;
+            }
+            point = surface.position;
+        } else if let Some(surface) = surface
+            && surface.object == kind.object()
+        {
+            point = surface.position;
+        }
+    }
     let hit = body.and_then(|(body, owner)| unsafe { BodyHit::at(body, owner, point) });
     let object_local = match kind {
         OfferKind::PlacedCharge { .. } | OfferKind::Door { .. } => None,
@@ -676,7 +683,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     Some(Offer {
         kind,
         point,
-        distance: chosen.distance,
+        distance: ray.origin.distance(point),
         hit,
         object_local,
     })

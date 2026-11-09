@@ -6,7 +6,10 @@
 use glam::Vec3;
 
 use crate::{
-    controllers::snatch::config::{REFERENCE_MASS_KG, SwingConfig},
+    controllers::{
+        physical_hands::rigid::RigidBody,
+        snatch::config::{REFERENCE_MASS_KG, SwingConfig},
+    },
     grapple::rope::{self, Rope, RopeEnd, RopeFault, RopeOutput, RopeTuning},
 };
 
@@ -149,6 +152,27 @@ pub(super) struct SlingStep {
     pub line: LineTuning,
 }
 
+impl SlingStep {
+    pub fn on_body(
+        body: &RigidBody,
+        local_point: Vec3,
+        mass_kg: f32,
+        anchor: Vec3,
+        dt: f32,
+        line: LineTuning,
+    ) -> Self {
+        let centre = body.pose.point(local_point);
+        Self {
+            centre,
+            velocity: body.point_velocity(centre),
+            mass_kg,
+            anchor,
+            dt,
+            line,
+        }
+    }
+}
+
 impl Sling {
     pub fn new(centre: Vec3, anchor: Vec3) -> Option<Self> {
         Some(Self {
@@ -227,7 +251,50 @@ impl Sling {
 
 #[cfg(test)]
 mod tests {
+    use glam::Quat;
+
     use super::*;
+    use crate::controllers::physical_hands::rigid::{BodyPose, Velocities};
+
+    #[test]
+    fn a_rotating_detached_panel_uses_its_selected_surface_and_point_velocity() {
+        let mut body = RigidBody {
+            pose: BodyPose {
+                centre: Vec3::new(12.0, 4.0, -8.0),
+                orientation: Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+            },
+            velocities: Velocities {
+                linear: Vec3::new(1.0, 0.0, 2.0),
+                angular: Vec3::Y * 3.0,
+            },
+            inverse_mass: 0.1,
+            inverse_inertia: Vec3::splat(0.2),
+        };
+        let local_point = Vec3::new(0.8, 0.2, 0.0);
+        let point = body.pose.point(local_point);
+        let anchor = point + Vec3::Y * 2.0;
+        let input = SlingStep::on_body(&body, local_point, 10.0, anchor, 0.01, line(120.0));
+        assert!(input.centre.distance(point) < 1e-5);
+        assert!(input.centre.distance(body.pose.centre) > 0.8);
+        let expected =
+            body.velocities.linear + body.velocities.angular.cross(point - body.pose.centre);
+        assert!(input.velocity.distance(expected) < 1e-5);
+        let mut rope = Sling::new(point, anchor).unwrap();
+        let out = rope
+            .step(SlingStep {
+                anchor: anchor + Vec3::Y * 0.1,
+                ..input
+            })
+            .unwrap();
+        assert!(out.direction.distance(Vec3::NEG_Y) < 1e-5);
+        let impulse = out.impulse_on_b(input.dt);
+        assert!(impulse.y > 0.0);
+        let before = body.velocities.angular;
+        body.apply_impulse(impulse, input.centre);
+        let torque = (point - body.pose.centre).cross(impulse) * 0.2;
+        assert!((body.velocities.angular - before).distance(torque) < 1e-5);
+        assert!(torque.length() > 0.0);
+    }
 
     #[test]
     fn grip_tracking_context_and_hand_ownership_loss_cancel_before_driving() {

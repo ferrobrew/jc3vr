@@ -3,7 +3,7 @@
 //! the hand on arrival, or swings it on the held line; and the toss a tap of the grapple gives a
 //! gun.
 
-use std::num::NonZeroUsize;
+use std::{cell::Cell, num::NonZeroUsize};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
@@ -63,7 +63,7 @@ pub(super) struct Grabbed {
     /// The physics game object the hook goes to.
     pub object: NonZeroUsize,
     pub kind: Pulled,
-    hit: Option<BodyHit>,
+    hit: Cell<Option<BodyHit>>,
     object_local: Option<Vec3>,
     _alive: Strong,
 }
@@ -149,7 +149,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
                     mass_kg,
                     handling,
                 },
-                hit,
+                hit: Cell::new(hit),
                 object_local,
                 _alive: weak.lock().ok_or(Refusal::Gone)?,
             };
@@ -170,7 +170,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
                     body,
                     mass_kg,
                 },
-                hit,
+                hit: Cell::new(hit),
                 object_local,
                 _alive: weak.lock().ok_or(Refusal::Gone)?,
             };
@@ -181,7 +181,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
             let grabbed = Grabbed {
                 object: weapon,
                 kind: Pulled::WorldGrenade { body },
-                hit,
+                hit: Cell::new(hit),
                 object_local,
                 _alive: weak.lock().ok_or(Refusal::Gone)?,
             };
@@ -193,7 +193,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
             let grabbed = Grabbed {
                 object,
                 kind: Pulled::Grenade { body },
-                hit,
+                hit: Cell::new(hit),
                 object_local,
                 _alive: weak.lock().ok_or(Refusal::Gone)?,
             };
@@ -220,7 +220,7 @@ pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal>
                     door,
                     handle: local,
                 },
-                hit,
+                hit: Cell::new(hit),
                 object_local,
                 _alive: alive,
             };
@@ -289,7 +289,7 @@ fn grabbed(
         kind: Pulled::Weapon {
             source: freed.source,
         },
-        hit,
+        hit: Cell::new(hit),
         object_local,
         _alive: freed.alive,
     })
@@ -307,40 +307,27 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
     ) {
         unsafe { engine::dropped(grabbed.object) }?;
     }
-    if let Some(hit) = grabbed.hit {
-        let at = unsafe { hit.point() }.ok_or(Refusal::Gone)?;
-        return unsafe { engine::fire(grabbed.object, at) };
+    if matches!(grabbed.kind, Pulled::Prop { .. }) {
+        let (body, owner) = unsafe { target_body(grabbed) }?;
+        unsafe { remote::loosen(owner, body) }.map_err(Refusal::Body)?;
     }
-    if let Some(local) = grabbed.object_local {
-        let at = unsafe { engine::object_frame(grabbed.object) }
-            .ok_or(Refusal::Gone)?
-            .transform_point3(local);
-        return unsafe { engine::fire(grabbed.object, at) };
+    if let Some(hit) = grabbed.hit.get() {
+        return unsafe { engine::fire(grabbed.object, hit) };
     }
-    match grabbed.kind {
-        Pulled::Weapon { .. } => {
-            let (_, body) = unsafe { engine::dropped(grabbed.object) }?;
-            let at = unsafe { body_centre(body, grabbed.object) }?;
-            unsafe { engine::fire(grabbed.object, at) }
-        }
-        Pulled::Prop { body, .. } => {
-            // A placed object at rest stays where it was placed until the hook bites.
-            let at = unsafe { remote::position(grabbed.object, body) }.map_err(Refusal::Body)?;
-            unsafe { engine::fire(grabbed.object, at) }
-        }
-        Pulled::Grenade { body } | Pulled::WorldGrenade { body } => {
-            let at = unsafe { body_centre(body, grabbed.object) }?;
-            unsafe { engine::fire(grabbed.object, at) }
-        }
-        Pulled::Ragdoll { owner, body, .. } => {
-            let at = unsafe { body_centre(body, owner) }?;
-            unsafe { engine::fire(grabbed.object, at) }
-        }
+    let (body, owner) = match grabbed.kind {
         Pulled::Door { door, handle } => {
             let at = unsafe { vehicle_frame(door.vehicle) }.transform_point3(handle);
-            unsafe { engine::fire(grabbed.object, at) }
+            return unsafe { engine::fire_object(grabbed.object, at) };
         }
-    }
+        _ => unsafe { target_body(grabbed) }?,
+    };
+    let local = grabbed.object_local.ok_or(Refusal::Gone)?;
+    let at = unsafe { engine::object_frame(grabbed.object) }
+        .ok_or(Refusal::Gone)?
+        .transform_point3(local);
+    let hit = unsafe { BodyHit::at(body, owner, at) }.ok_or(Refusal::Gone)?;
+    grabbed.hit.set(Some(hit));
+    unsafe { engine::fire(grabbed.object, hit) }
 }
 
 /// What the hook taking hold of a grabbed thing does.
@@ -435,15 +422,10 @@ pub(super) unsafe fn bite(
         unsafe { remote::loosen(owner, body) }.map_err(Refusal::Body)?;
     }
     let state = unsafe { physical_hands::body_state(body, owner) }.map_err(Refusal::Body)?;
-    let at = unsafe { engine::hook_end(wire) }
-        .map(|end| Vec3::from_array(end.m_WorldPositionT1.data))
-        .filter(|at| at.is_finite())
-        .ok_or(Refusal::Gone)?;
-    let hit = BodyHit {
-        body,
-        owner,
-        local_point: state.pose.local(at),
-    };
+    let hit = grabbed.hit.get().ok_or(Refusal::Gone)?;
+    if hit.body != body || hit.owner != owner {
+        return Err(Refusal::Gone);
+    }
     unsafe { engine::exclude_rope(wire) };
     if let Some(palm) = ik::tick_records().current[hand.index()].map(|t| t.wrist.position) {
         unsafe { juice::impact(wire, grabbed.object, palm) };
@@ -652,11 +634,7 @@ pub(super) unsafe fn pull(
     };
     let rigid = state.rigid();
     let distance = centre.distance(palm);
-    let anchor = if distance > SNATCH.approach_m {
-        state.pose.point(flight.hit.local_point)
-    } else {
-        centre
-    };
+    let anchor = state.pose.point(flight.hit.local_point);
     let speed = rules::line_speed(
         distance,
         SNATCH.line_speed_mps,
@@ -708,6 +686,9 @@ pub(super) unsafe fn end_line(wire: NonZeroUsize) {
 ///
 /// The game thread, before the world update.
 unsafe fn target_body(grabbed: &Grabbed) -> Result<(u32, NonZeroUsize), Refusal> {
+    if let Some(hit) = grabbed.hit.get() {
+        return Ok((hit.body, hit.owner));
+    }
     match grabbed.kind {
         Pulled::Weapon { .. } => Ok((
             unsafe { engine::dropped(grabbed.object) }?.1,
@@ -843,14 +824,14 @@ pub(super) unsafe fn sling(
     let rigid = state.rigid();
     let hook_point = state.pose.point(flight.hit.local_point);
     let out = rope
-        .step(SlingStep {
-            centre: hook_point,
-            velocity: rigid.point_velocity(hook_point),
+        .step(SlingStep::on_body(
+            &rigid,
+            flight.hit.local_point,
             mass_kg,
             anchor,
-            dt: input.dt,
+            input.dt,
             line,
-        })
+        ))
         .map_err(|fault| match fault {
             RopeFault::Invalid => Refusal::Gone,
             RopeFault::Stretched => Refusal::OutOfLine,

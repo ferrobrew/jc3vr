@@ -11,7 +11,11 @@ use jc3gi::{
         weapon::{WeaponBase, WeaponState},
         wire_end::{HookTargetInfo, WireEnd, WireEndState},
     },
-    types::math::{Matrix4, Vector3},
+    physics::{CastRayInfo, CastRayInfoBase},
+    types::{
+        math::{Matrix4, Vector3},
+        shared_ptr::SharedPtr,
+    },
 };
 
 use crate::{
@@ -19,9 +23,12 @@ use crate::{
         aim::gun,
         physical_hands::game_object_of,
         snatch::{Refusal, sling_hooks},
-        weapons::{engine, grenade, hold::refs::null_weak},
+        weapons::{
+            engine, grenade,
+            hold::refs::{Strong, null_weak},
+        },
     },
-    grapple::hook::{self, CustomOwner, local_hook},
+    grapple::hook::{self, BodyHit, CustomOwner, local_hook},
 };
 
 /// Why the hook cannot fire now, if it cannot: a line is out, or a fire or a reel is under way.
@@ -35,14 +42,27 @@ pub(super) fn busy(hook: &GrapplingHook) -> Option<Refusal> {
     (hook.m_State != GrapplingHookState::GHS_INACTIVE).then_some(Refusal::HookBusy)
 }
 
-/// Fire the hook as a ghost wire at the physics game object `object`, latched at `at` in world
-/// space, and return the wire it fired.
+/// Fire the hook as a ghost wire at the physics game object `object` and its selected body hit,
+/// and return the wire it fired.
 ///
 /// # Safety
 ///
 /// `object` must be a live physics game object held alive, on the game thread before the world
 /// update.
-pub(super) unsafe fn fire(object: NonZeroUsize, at: Vec3) -> Result<NonZeroUsize, Refusal> {
+pub(super) unsafe fn fire(object: NonZeroUsize, hit: BodyHit) -> Result<NonZeroUsize, Refusal> {
+    let at = unsafe { hit.point() }.ok_or(Refusal::Gone)?;
+    unsafe { fire_target(object, at, Some(hit)) }
+}
+
+pub(super) unsafe fn fire_object(object: NonZeroUsize, at: Vec3) -> Result<NonZeroUsize, Refusal> {
+    unsafe { fire_target(object, at, None) }
+}
+
+unsafe fn fire_target(
+    object: NonZeroUsize,
+    at: Vec3,
+    hit: Option<BodyHit>,
+) -> Result<NonZeroUsize, Refusal> {
     let hook = unsafe { local_hook() }.ok_or(Refusal::NoPlayer)?;
     if let Some(refusal) = busy(hook) {
         return Err(refusal);
@@ -70,7 +90,61 @@ pub(super) unsafe fn fire(object: NonZeroUsize, at: Vec3) -> Result<NonZeroUsize
     }
     let wire = wire.unwrap();
     hook::own_custom(CustomOwner::Snatch, wire);
+    if let Some(hit) = hit
+        && !unsafe { attach_body(hook, wire, hit) }
+    {
+        unsafe { cancel(wire) };
+        return Err(Refusal::FireRefused);
+    }
     Ok(wire)
+}
+
+unsafe fn attach_body(hook: &mut GrapplingHook, wire: NonZeroUsize, hit: BodyHit) -> bool {
+    let Some(at) = (unsafe { hit.point() }) else {
+        return false;
+    };
+    let Some(holder) = (unsafe { Strong::lock(&hook.m_Holder) }) else {
+        return false;
+    };
+    let character = unsafe { Character::GetLocalPlayerCharacter() };
+    if character.is_null() {
+        return false;
+    }
+    let owner = SharedPtr::<Character> {
+        px: character,
+        pn: holder.control_block(),
+    };
+    if hook.m_ActiveWire.px as usize != wire.get() {
+        return false;
+    }
+    let active = unsafe { &mut *(wire.get() as *mut GrapplingHookWire) };
+    let end = hook::hook_end_mut(active);
+    if end.m_WireEndState != WireEndState::GWES_EXTENDING || !end.m_PointProxy.is_null() {
+        return false;
+    }
+    let mut cast = unsafe { MaybeUninit::<CastRayInfo>::zeroed().assume_init() };
+    cast.base.__vftable = CastRayInfoBase::VFTABLE;
+    unsafe { cast.base.Reset() };
+    cast.base.__vftable = CastRayInfo::VFTABLE;
+    cast.base.m_Normal = vector(-Vec3::from_array(end.m_HookDirection.data));
+    cast.base.m_BodyId = hit.body;
+    cast.m_GameObject = hit.owner.get() as *mut _;
+    unsafe { end.Attach(&vector(at), &mut cast, &owner, false) };
+    if end.m_WireEndState != WireEndState::GWES_ATTACHED {
+        return false;
+    }
+    let Some(proxy) = (unsafe { end.m_PointProxy.as_ref() }) else {
+        return false;
+    };
+    let mut body = 0;
+    let mut position = vector(Vec3::ZERO);
+    let mut normal = vector(Vec3::ZERO);
+    unsafe {
+        proxy.GetRigidBodyForConstraint(&mut body);
+        body == hit.body
+            && proxy.GetVisualPositionAndNormalWS(&mut position, &mut normal)
+            && Vec3::from_array(position.data).distance(at) <= 0.02
+    }
 }
 
 /// What the custom wire `wire` is doing.
