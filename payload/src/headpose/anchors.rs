@@ -24,6 +24,8 @@ pub(crate) struct Geometry {
     pub head: Vec3,
     pub neck_delta: Vec3,
     pub eye_arm: Vec3,
+    /// The filtered head frame relative to the root, with the bind orientation removed.
+    pub animation_rotation: Quat,
 }
 
 impl Geometry {
@@ -39,6 +41,7 @@ impl Geometry {
             head: anchors.head,
             neck_delta: anchors.neck - anchors.head,
             eye_arm: anchors.eye_arm,
+            animation_rotation: Quat::IDENTITY,
         }
     }
 
@@ -51,6 +54,8 @@ impl Geometry {
             && self.neck_delta.length_squared() < 1.0
             && self.eye_arm.is_finite()
             && self.eye_arm.length_squared() < 1.0
+            && self.animation_rotation.is_finite()
+            && (self.animation_rotation.length_squared() - 1.0).abs() < 0.01
     }
 }
 
@@ -96,7 +101,8 @@ impl Context {
             });
         Self {
             source: crate::headpose::source(),
-            gameplay: crate::hooks::in_gameplay(),
+            gameplay: crate::hooks::in_gameplay()
+                && crate::controllers::mode::current().mode != crate::controllers::mode::Mode::Ui,
             teleport: crate::controllers::roomscale::teleport::epoch(),
             recenter: crate::vr::recenter_count(),
             world_scale: crate::config::Config::lock_query(|c| c.vr.world_scale),
@@ -108,7 +114,7 @@ impl Context {
         self.continuous(next)
     }
 
-    fn continuous(self, next: Self) -> bool {
+    pub(crate) fn continuous(self, next: Self) -> bool {
         if self.source != next.source
             || self.gameplay != next.gameplay
             || self.teleport != next.teleport
@@ -173,6 +179,7 @@ impl Sample {
                 head,
                 neck_delta: neck - head,
                 eye_arm: rotation.inverse() * (root.transform_point3(eyes_model) - neck),
+                animation_rotation: Quat::IDENTITY,
             },
         }
     }
@@ -184,7 +191,9 @@ impl Sample {
             && self.neck_model.is_finite()
             && self.eyes_model.is_finite()
             && self.head_orientation.is_finite()
+            && (self.head_orientation.length_squared() - 1.0).abs() < 0.01
             && self.neck_orientation.is_finite()
+            && (self.neck_orientation.length_squared() - 1.0).abs() < 0.01
             && self.geometry.valid()
     }
 }
@@ -274,6 +283,14 @@ impl History {
                 && entry.tick.checked_add(1) == Some(tick)
                 && entry.context.continuous(context)
                 && entry.pair.current.root == previous_root
+                && entry
+                    .pair
+                    .current
+                    .root
+                    .w_axis
+                    .truncate()
+                    .distance(current.root.w_axis.truncate())
+                    < 10.0
         });
         let pair = Pair {
             collapsed: retained.is_none(),

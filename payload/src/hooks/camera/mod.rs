@@ -442,7 +442,8 @@ fn camera_position(
     geometry: crate::headpose::anchors::Geometry,
     pose_source: Source,
 ) -> glam::Vec3 {
-    let (_, character_rotation, _) = geometry.root.to_scale_rotation_translation();
+    let (_, root_rotation, _) = geometry.root.to_scale_rotation_translation();
+    let character_rotation = root_rotation * geometry.animation_rotation;
     let rig = EyeRig {
         neck_delta: geometry.neck_delta,
         arm: geometry.eye_arm,

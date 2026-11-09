@@ -51,7 +51,7 @@ use crate::{
     controllers::{cockpit::CockpitTransform, frame::Pose},
     grapple,
     headpose::{
-        HeadPose,
+        HeadPose, anchor_pair, animation_rotation,
         config::{HeadPoseConfig, VrTurnMode},
         follow::{BodyFollow, FollowTick},
         sim,
@@ -407,11 +407,14 @@ pub fn body_rotation() -> Quat {
     level_while_swimming(grapple::filter_body_rotation(body_rotation_followed()))
 }
 
-/// The view frame before the grapple filter and the swim levelling: the local player character's
-/// world rotation with its turn under the view ([`follow_turn`]) taken out. The grapple filter
-/// advances against this, so the frame it holds is the one the view composes with.
+/// The synthetic head frame before the grapple filter and swim levelling: the captured root
+/// composed once with the filtered, bind-relative head rotation and the turn under the view.
+/// The grapple filter advances against this same frame.
 pub fn body_rotation_followed() -> Quat {
-    body_rotation_raw() * follow_turn(true)
+    let root = anchor_pair().map_or_else(body_rotation_raw, |pair| {
+        pair[1].root.to_scale_rotation_translation().1
+    });
+    root * animation_rotation(true) * follow_turn(true)
 }
 
 /// The local player character's world rotation as the engine holds it, unfiltered. The body-yaw
@@ -426,9 +429,12 @@ pub fn body_rotation_raw() -> Quat {
 /// engine's sub-frame interpolation smooths body rotation (vehicles, parachuting) rather than
 /// stepping it at the tick rate.
 pub fn body_rotation_prev() -> Quat {
+    let root = anchor_pair().map_or_else(
+        || body_rotation_from(|character| glam::Mat4::from(character.m_WorldMatrixT0)),
+        |pair| pair[0].root.to_scale_rotation_translation().1,
+    );
     level_while_swimming(grapple::filter_body_rotation(
-        body_rotation_from(|character| glam::Mat4::from(character.m_WorldMatrixT0))
-            * follow_turn(false),
+        root * animation_rotation(false) * follow_turn(false),
     ))
 }
 

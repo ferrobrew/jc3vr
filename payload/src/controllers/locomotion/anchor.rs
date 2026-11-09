@@ -84,6 +84,15 @@ pub(crate) unsafe fn stabilize(
 ) -> Anchors {
     let (enabled, controllers_enabled) =
         Config::lock_query(|c| (c.controllers.locomotion.view.enabled, c.controllers.enabled));
+    // A root-stable handover delays entry, deployment, and landing anatomy independently of
+    // the mesh. The tracked view follows the complete pre-IK head translation without that blend.
+    if source() == Source::Vr {
+        let mut state = STATE.lock();
+        state.status = AnchorStatus::default();
+        state.stable = false;
+        state.capture.interrupt();
+        return animated;
+    }
     let now = Instant::now();
     let locomotion = locomotion_status();
     let grounded = locomotion.fresh(now);

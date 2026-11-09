@@ -237,6 +237,69 @@ fn collapsed_eye_points_share_the_current_view_turn() {
     assert!(eyes[0].abs_diff_eq(expected, 1.0e-6));
 }
 
+/// The rendered eye stays on animated anatomy during a roll even when the filtered orientation
+/// differs, and a backward HMD look does not rotate its anatomical offset into the torso.
+#[test]
+fn filtered_animation_keeps_both_eye_endpoints_on_the_animated_face() {
+    let pair = capture_pair(false);
+    let mut geometry = pair.geometry();
+    let hmd = Quat::from_rotation_y(2.9) * Quat::from_rotation_x(-0.5);
+    let travel = Vec3::new(0.1, -0.05, 0.04);
+    let poses = std::array::from_fn(|side| {
+        let sample = [pair.previous, pair.current][side];
+        let (_, root, _) = sample.root.to_scale_rotation_translation();
+        let animation =
+            Quat::from_rotation_x(-0.4 + side as f32 * 0.3) * Quat::from_rotation_z(0.6);
+        geometry[side].animation_rotation = animation;
+        geometry[side].eye_arm = crate::headpose::animation::eye_arm(
+            root,
+            animation,
+            sample.root.transform_point3(sample.eyes_model)
+                - sample.root.transform_point3(sample.neck_model),
+        );
+        compose(travel, hmd, root * animation, geometry[side].head, 1.0)
+    });
+    let eyes = eye_points_from(poses, Some(geometry), [Quat::IDENTITY; 2], Source::Vr);
+    for side in 0..2 {
+        let sample = [pair.previous, pair.current][side];
+        let (_, root, _) = sample.root.to_scale_rotation_translation();
+        let frame = root * geometry[side].animation_rotation;
+        let expected = sample.root.transform_point3(sample.eyes_model) + frame * travel;
+        assert!(eyes[side].abs_diff_eq(expected, 1.0e-5));
+        assert!(
+            body_rig::rotation::angle_between(frame.inverse() * poses[side].orientation, hmd)
+                < 0.001
+        );
+    }
+}
+
+#[test]
+fn simulation_publication_transports_the_unfiltered_tracking_delta_with_the_head_frame() {
+    let mut state = HeadPoseState::default();
+    let geometry = capture_pair(false).geometry();
+    let old = geometry[0];
+    let mut current = geometry[1];
+    current.animation_rotation = Quat::from_rotation_x(0.6);
+    state.publish_anchors([old; 2], None);
+    let (_, old_root, _) = old.root.to_scale_rotation_translation();
+    let (_, root, _) = current.root.to_scale_rotation_translation();
+    let travel = Vec3::new(0.1, -0.2, 0.3);
+    let hmd = Quat::from_rotation_y(1.7);
+    let first = compose(travel, hmd, old_root, old.head, 1.0);
+    state.test_set_poses([first; 2]);
+    state.publish_anchors([old, current], None);
+    let expected = compose(
+        travel,
+        hmd,
+        root * current.animation_rotation,
+        current.head,
+        1.0,
+    );
+    let actual = state.test_poses()[1];
+    assert!(actual.position.abs_diff_eq(expected.position, 1.0e-5));
+    assert!(body_rig::rotation::angle_between(actual.orientation, expected.orientation) < 0.001);
+}
+
 /// Before any anchors are published there is no arm to hang the eyes by.
 #[test]
 fn without_anchors_the_eye_points_are_the_head_positions() {

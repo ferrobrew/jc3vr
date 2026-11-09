@@ -3,15 +3,16 @@
 //! at the very end of the pose-finalization pass, after the HumanIK solve and the model-space pose
 //! computation.
 
+use glam::Quat;
 use jc3gi::character::character::{AnimatedModel, Character, Joint, SafeBoneIndex};
 
 use crate::{
     config::Config,
     controllers::body::procedural::head::head_bone_world,
-    headpose,
+    headpose::{self, Source},
     hooks::{
         self,
-        character::body_ik::{PRE_IK_POSE, body_ik_status, tuning::BODY_IK_TUNING},
+        character::body_ik::{PRE_IK_POSE, PreIkPose, body_ik_status, tuning::BODY_IK_TUNING},
         graphics_engine::render_block,
     },
 };
@@ -112,22 +113,13 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // point comes from the skeleton here.
         render_block::publish_collapse_target(joint_translation(&neck_joint));
 
-        // The pre-IK head/neck orientations captured this frame before the solve. When body_ik is
-        // driving the head, the joints read above are the *post-IK* pose, so composing the
-        // override's body-relative offset onto their orientation would double-count the yaw HumanIK
-        // already bent toward the target. Composing onto the pre-IK base instead makes the override
-        // "set the exact head orientation" — identical to the no-IK case — with HIK's spine/neck
-        // bend sitting underneath it. When body_ik is off the pre-IK and post-IK orientations match,
-        // so the fallback to the freshly read orientation preserves the flatscreen path exactly.
+        // The pre-IK capture retains the bind frame even when body IK is disabled. VR uses that
+        // frame with the filtered animation and fresh tracking, while the sim preserves its
+        // animated-or-post-solve fallback when body IK is disabled.
         let body_ik_enabled = Config::lock_query(|c| c.body_ik.enabled);
-        let pre_ik = body_ik_enabled
-            .then(|| {
-                PRE_IK_POSE
-                    .lock()
-                    .as_ref()
-                    .map(|p| (p.head_orientation, p.neck_orientation))
-            })
-            .flatten();
+        let pre_ik_pose = *PRE_IK_POSE.lock();
+        let pre_ik = body_ik_enabled.then_some(pre_ik_pose).flatten();
+        let source = headpose::source();
 
         // Only drive the head/neck from the headpose while gameplay owns the character. Outside
         // E_GAME_RUN the engine repositions Rico for a teleport (issue #27), so the mod stops driving
@@ -137,19 +129,18 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
         // Only override the pose once a valid anchor exists; until then (loading screens, garbage
         // bone data) the bone keeps its animated pose.
         if in_gameplay && headpose::is_active() && headpose::anchor().is_some() {
-            // Compose the player's body-relative offset onto the *animated* model-space
-            // orientation, exactly like the neck twist below. An absolute write is not used because
-            // the bone's rest frame does not match the model axes: it collapses the head into the
-            // shoulders, which shows in the shadow. Model space is the
-            // body frame, so the sim's body-relative angles apply directly, and the animated
-            // translation is kept (plus the roomscale offset brought into the body frame), so the
-            // head stays anatomically placed while turning where the player looks.
+            // The VR head uses the same filtered synthetic frame as the camera, followed by
+            // tracking and the bone's bind frame. The sim retains its animated head offset.
             let offset_model = headpose::body_relative_rotation();
-            let animated = pre_ik.map(|(head, _)| head).unwrap_or_else(|| {
+            let animated = pre_ik.map(|pose| pose.head_orientation).unwrap_or_else(|| {
                 let [qx, qy, qz, qw] = joint.m_Orientation.data;
-                glam::Quat::from_xyzw(qx, qy, qz, qw)
+                Quat::from_xyzw(qx, qy, qz, qw)
             });
-            let composed = offset_model * animated;
+            let Some(composed) = head_orientation(source, pre_ik_pose, offset_model, animated)
+            else {
+                crate::hooks::character::body_ik::capture_unavailable();
+                return;
+            };
             // glam Quat (x,y,z,w) -> Havok AlignedQuat [x,y,z,w] is a direct copy.
             joint.m_Orientation.data = [composed.x, composed.y, composed.z, composed.w];
 
@@ -176,8 +167,6 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             }
         }
 
-        pose.write(head_index, &mut joint);
-
         // Twist the neck along with the head beyond [`NECK_TWIST_START_DEG`]: the head bone carries
         // the whole body-relative yaw, and past a real head's range the neck must follow or the
         // skinning between the (hidden) head and the animated neck knots up — this is what makes
@@ -194,15 +183,31 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
                 // Pre-multiply onto the pre-IK neck orientation for the same reason as the head
                 // above: when body_ik has bent the neck toward the target, twisting the post-IK
                 // orientation would compound HIK's neck rotation with this manual twist.
-                let animated = pre_ik.map(|(_, neck)| neck).unwrap_or_else(|| {
-                    let [qx, qy, qz, qw] = neck_joint.m_Orientation.data;
-                    glam::Quat::from_xyzw(qx, qy, qz, qw)
-                });
-                let twisted = glam::Quat::from_rotation_y(twist) * animated;
+                let animated = pre_ik_pose
+                    .filter(|_| source == Source::Vr || body_ik_enabled)
+                    .map(|pose| pose.neck_orientation)
+                    .unwrap_or_else(|| {
+                        let [qx, qy, qz, qw] = neck_joint.m_Orientation.data;
+                        Quat::from_xyzw(qx, qy, qz, qw)
+                    });
+                let twisted = Quat::from_rotation_y(twist) * animated;
                 neck_joint.m_Orientation.data = [twisted.x, twisted.y, twisted.z, twisted.w];
                 pose.write(neck_index, &mut neck_joint);
             }
         }
+        pose.write(head_index, &mut joint);
+    }
+}
+
+fn head_orientation(
+    source: Source,
+    pre_ik: Option<PreIkPose>,
+    tracking: Quat,
+    animated: Quat,
+) -> Option<Quat> {
+    match source {
+        Source::Vr => pre_ik.map(|pose| pose.tracked_head_orientation(tracking)),
+        Source::Sim => Some(tracking * animated),
     }
 }
 
@@ -215,3 +220,50 @@ const NECK_TWIST_START_DEG: f32 = 60.0;
 /// The most yaw the neck takes, degrees: the excess beyond [`NECK_TWIST_START_DEG`] goes to the
 /// neck up to this cap.
 const NECK_TWIST_MAX_DEG: f32 = 55.0;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn assert_rotation(actual: Quat, expected: Quat) {
+        assert!(body_rig::rotation::angle_between(actual, expected) < 0.001);
+    }
+
+    #[test]
+    fn vr_uses_the_bind_capture_without_a_body_ik_enable_gate() {
+        let bind = Quat::from_euler(glam::EulerRot::YXZ, 0.3, 1.1, -0.4);
+        let capture = PreIkPose {
+            head_orientation: Quat::from_rotation_x(-0.8) * bind,
+            neck_orientation: Quat::IDENTITY,
+            head_bind_orientation: bind,
+        };
+        let tracking = Quat::from_rotation_y(2.8) * Quat::from_rotation_x(-0.5);
+        let expected = capture.tracked_head_orientation(tracking);
+        for raw_animated in [capture.head_orientation, Quat::from_rotation_z(1.2)] {
+            let actual =
+                head_orientation(Source::Vr, Some(capture), tracking, raw_animated).unwrap();
+            assert_rotation(actual, expected);
+        }
+    }
+
+    #[test]
+    fn vr_without_a_bind_capture_refuses_the_raw_animation_fallback() {
+        assert!(
+            head_orientation(
+                Source::Vr,
+                None,
+                Quat::from_rotation_y(0.7),
+                Quat::from_rotation_x(-1.0),
+            )
+            .is_none()
+        );
+    }
+
+    #[test]
+    fn flatscreen_keeps_its_animated_fallback_without_a_capture() {
+        let tracking = Quat::from_rotation_y(0.7);
+        let animated = Quat::from_rotation_x(-1.0);
+        let actual = head_orientation(Source::Sim, None, tracking, animated).unwrap();
+        assert_rotation(actual, tracking * animated);
+    }
+}

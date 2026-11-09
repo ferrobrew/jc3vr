@@ -32,6 +32,10 @@ pub(crate) struct TrackedView {
 
 /// Capture at the native camera-tree read phase. No pointer escapes this call.
 pub(crate) unsafe fn capture(character: &Character, views: [TrackedView; 2]) -> Option<[Mat4; 2]> {
+    if crate::headpose::source() == crate::headpose::Source::Vr {
+        reset(Refusal::OrdinaryOrUnsupportedState);
+        return None;
+    }
     let now = Instant::now();
     let native = unsafe { read(character) };
     STATE.lock().capture(native, views, now, teleport::epoch())

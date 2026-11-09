@@ -2,6 +2,7 @@
 //! captures the headpose anchors from the freshly animated pose and queues the HumanIK head, torso,
 //! and hand-pin targets on the `MAIN` pass (see `docs/engine/character/humanik.md`).
 
+mod animation;
 pub(crate) mod tuning;
 
 use std::{
@@ -22,7 +23,7 @@ use crate::{
     config::Config,
     controllers::{
         body::{
-            procedural::{head::head_bone_world, torso_weight},
+            procedural::{head::neck_pivot_offset, torso_weight},
             rig::{
                 self,
                 live_observation::{self, NativeCapture},
@@ -148,7 +149,14 @@ pub(crate) const BODY_IK_TARGET: &str = "body_ik";
 pub(crate) struct PreIkPose {
     pub(crate) head_orientation: glam::Quat,
     pub(crate) neck_orientation: glam::Quat,
+    pub(crate) head_bind_orientation: glam::Quat,
 }
+impl PreIkPose {
+    pub(crate) fn tracked_head_orientation(self, tracking: glam::Quat) -> glam::Quat {
+        headpose::animation_rotation(true) * tracking * self.head_bind_orientation
+    }
+}
+
 pub(crate) static PRE_IK_POSE: Mutex<Option<PreIkPose>> = Mutex::new(None);
 
 /// The skeleton bone an effector drives, or `None` if this rig's characterization has no node for
@@ -227,6 +235,7 @@ pub(crate) fn shoulders_driven() -> [bool; 2] {
 }
 
 pub(crate) fn capture_unavailable() {
+    animation::clear();
     headpose::anchors::HISTORY.lock().clear();
     *PRE_IK_POSE.lock() = None;
     *SHOULDERS_DRIVEN.lock() = [false; 2];
@@ -262,6 +271,13 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             return;
         };
 
+        let Some(bind_rotation) = animation::bind_rotation(
+            animation_controller,
+            character.GetSafeIndex(SafeBoneIndex::HEAD),
+        ) else {
+            capture_unavailable();
+            return;
+        };
         let Some(pose) = crate::hooks::character::pose::LivePose::new(animation_controller) else {
             capture_unavailable();
             return;
@@ -297,12 +313,13 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             identity.producer,
             identity.bones,
         );
+        let context = headpose::anchors::Context::current();
         let pair = headpose::anchors::HISTORY.lock().capture(
             headpose::anchors::Capture {
                 identity,
                 tick: game.m_FrameCounter,
                 serial: publication.map(|receipt| receipt.serial),
-                context: headpose::anchors::Context::current(),
+                context,
                 previous_root: character_world_prev,
                 current_root: character_world,
             },
@@ -340,6 +357,14 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                 );
                 sample.geometry =
                     headpose::anchors::Geometry::from_anchors(stabilized, character_world);
+                animation::capture(
+                    bind_rotation,
+                    identity,
+                    context,
+                    &mut sample,
+                    game.m_FrameCounter,
+                    dt,
+                );
                 Some(sample)
             },
         );
@@ -365,10 +390,12 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             current_eye_mid_model: current.eyes_model,
         });
         headpose::set_anchor_pair(pair.geometry());
-        *PRE_IK_POSE.lock() = Some(PreIkPose {
+        let pre_ik_pose = PreIkPose {
             head_orientation: current.head_orientation,
             neck_orientation: current.neck_orientation,
-        });
+            head_bind_orientation: bind_rotation,
+        };
+        *PRE_IK_POSE.lock() = Some(pre_ik_pose);
         let (_, character_rotation, _) = character_world.to_scale_rotation_translation();
         let joint_translation = |joint: &Joint| glam::Vec3::from_array(joint.m_Translation.data);
 
@@ -424,7 +451,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // AddEffectorTargetPosition expects (docs/engine/character/humanik.md) — plus the optional
         // tuning offset.
         let scale = Config::lock_query(|c| c.vr.world_scale);
-        let target_world = head_bone_world(character_rotation, scale);
+        let target_world = headpose::query().position
+            + character_rotation
+                * headpose::animation_rotation(true)
+                * neck_pivot_offset(headpose::body_relative_rotation(), scale);
         let target_model =
             character_world.inverse().transform_point3(target_world) + tuning.target_offset;
         let pos = Vector3 {
@@ -740,12 +770,14 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             }
         }
 
-        // The engine applies a queued rotation as an offset onto the pre-solve state, so the
-        // body-relative rotation targets exactly the orientation the `UpdatePropEffects` override
-        // will set. Not derived from `headpose::query().orientation`: that folds in the grapple
-        // filter's body frame, and dividing out the world rotation assumes the bone's rest frame
-        // matches the model axes.
-        let head_delta = headpose::body_relative_rotation();
+        // Rotation targets are offsets from the animated bone. Remove that bone frame after
+        // composing the same synthetic frame and tracking used by the camera and head override.
+        let head_delta = if headpose::source() == headpose::Source::Vr {
+            pre_ik_pose.tracked_head_orientation(headpose::body_relative_rotation())
+                * current.head_orientation.inverse()
+        } else {
+            headpose::body_relative_rotation()
+        };
 
         let mut reach_r = 0.0;
         if tuning.rotation_target {

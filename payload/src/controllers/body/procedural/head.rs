@@ -16,7 +16,7 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::{
     controllers::locomotion::anchor::status as anchor_status,
-    headpose::{body_relative_rotation, query},
+    headpose::{animation_rotation, body_relative_rotation, query},
 };
 
 /// The player's neck pivot in the model space of the root at `world`, at the VR world scale
@@ -28,8 +28,13 @@ pub(super) fn read(world: &Mat4, scale: f32) -> Vec3 {
     let anchor = anchor_status();
     let hidden = anchor.height_offset * anchor.weight;
     let hidden = Vec3::Y * if hidden.is_finite() { hidden } else { 0.0 };
-    let rotation = body_relative_rotation();
-    world.inverse().transform_point3(query().position - hidden) + neck_pivot_offset(rotation, scale)
+    model_pivot(
+        world,
+        query().position - hidden,
+        animation_rotation(true),
+        body_relative_rotation(),
+        scale,
+    )
 }
 
 /// Where the head bone goes in the world, for the character at the rotation `character_rotation`
@@ -38,12 +43,13 @@ pub(super) fn read(world: &Mat4, scale: f32) -> Vec3 {
 /// the published head would drop it below the shoulders; the pivot does not move, and the head bone's
 /// orientation, which follows the HMD, is what puts the drawn eyes back in front of it.
 pub fn head_bone_world(character_rotation: Quat, scale: f32) -> Vec3 {
-    let head = character_rotation.inverse() * query().position;
-    character_rotation * head_bone_target(head, body_relative_rotation(), scale)
+    let frame = character_rotation * animation_rotation(true);
+    let head = frame.inverse() * query().position;
+    frame * head_bone_target(head, body_relative_rotation(), scale)
 }
 
-/// [`head_bone_world`] in the character's body axes: the head bone's place for the published head
-/// `head`, turned `head_rotation` against the body, at the world scale `scale`.
+/// [`head_bone_world`] in body axes without a synthetic animation frame. `head_rotation` is the
+/// tracking rotation against those axes, at the world scale `scale`.
 pub fn head_bone_target(head: Vec3, head_rotation: Quat, scale: f32) -> Vec3 {
     head + neck_pivot_offset(head_rotation, scale)
 }
@@ -66,9 +72,34 @@ pub fn neck_pivot_offset(head_rotation: Quat, scale: f32) -> Vec3 {
     }
 }
 
+fn model_pivot(world: &Mat4, head: Vec3, animation: Quat, tracking: Quat, scale: f32) -> Vec3 {
+    // The HMD's pivot correction belongs to the filtered animation frame, not the raw root axes.
+    let (_, root, _) = world.to_scale_rotation_translation();
+    world
+        .inverse()
+        .transform_point3(head + root * animation * neck_pivot_offset(tracking, scale))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_neck_pivot_travels_through_the_animation_frame_before_the_raw_root_inverse() {
+        let root = Quat::from_rotation_y(0.8) * Quat::from_rotation_z(0.2);
+        let world = Mat4::from_rotation_translation(root, Vec3::new(12.0, 4.0, -6.0));
+        let animation = Quat::from_rotation_x(-0.7) * Quat::from_rotation_z(0.4);
+        let tracking = Quat::from_rotation_x(-0.6) * Quat::from_rotation_y(0.2);
+        let scale = 1.4;
+        let pivot = Vec3::new(0.1, 1.55, -0.05);
+        let travel = -neck_pivot_offset(tracking, scale);
+        let published = world.transform_point3(pivot) + root * animation * travel;
+        let actual = model_pivot(&world, published, animation, tracking, scale);
+        assert!(actual.abs_diff_eq(pivot, 1e-5), "{actual:?}");
+        let wrong =
+            world.inverse().transform_point3(published) + neck_pivot_offset(tracking, scale);
+        assert!(wrong.distance(pivot) > 0.02);
+    }
 
     #[test]
     fn a_neutral_head_puts_the_pivot_at_the_anchor() {

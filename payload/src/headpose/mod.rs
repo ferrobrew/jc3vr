@@ -31,6 +31,7 @@ use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
 pub(crate) mod anchors;
+pub(crate) mod animation;
 pub mod config;
 pub mod follow;
 pub mod sim;
@@ -172,7 +173,18 @@ pub(crate) fn set_anchor_pair(pair: [anchors::Geometry; 2]) {
         return;
     }
     let sim_orientation = (source() == Source::Sim).then(|| sim::orientation_at(pair[1].root));
-    state().lock().publish_anchors(pair, sim_orientation);
+    let tracking = if sim_orientation.is_none() {
+        xr::cockpit_pose().map(|cockpit| RetainedTracking {
+            cockpit,
+            follow_turn: xr::follow_turn(true),
+            world_scale: Config::lock_query(|c| c.vr.world_scale),
+        })
+    } else {
+        None
+    };
+    state()
+        .lock()
+        .publish_anchors_with_tracking(pair, sim_orientation, tracking);
 }
 
 /// Read both complete endpoints from the same publication.
@@ -180,14 +192,17 @@ pub(crate) fn anchor_pair() -> Option<[anchors::Geometry; 2]> {
     state().lock().anchor_pair
 }
 
+/// The filtered synthetic head frame relative to the captured root. Tracking is not part of it.
+pub(crate) fn animation_rotation(current: bool) -> Quat {
+    let pair = anchor_pair();
+    pair.map_or(Quat::IDENTITY, |pair| {
+        pair[usize::from(current || pair[0].collapsed)].animation_rotation
+    })
+}
+
 /// Withdraw simulation anchor authority while leaving the separately published display pose alone.
 pub(crate) fn withdraw_anchors() {
-    let mut state = state().lock();
-    state.anchor = None;
-    state.anchor_prev = None;
-    state.anchor_pair = None;
-    state.neck_delta = Vec3::ZERO;
-    state.eye_arm = Vec3::ZERO;
+    state().lock().withdraw_anchors();
 }
 
 /// The animated head bone world position, or `None` until the character hook has published a valid
@@ -262,10 +277,20 @@ pub(crate) struct HeadPoseState {
 }
 
 impl HeadPoseState {
+    #[cfg(test)]
     pub(crate) fn publish_anchors(
         &mut self,
         pair: [anchors::Geometry; 2],
         sim_orientation: Option<Quat>,
+    ) {
+        self.publish_anchors_with_tracking(pair, sim_orientation, None);
+    }
+
+    fn publish_anchors_with_tracking(
+        &mut self,
+        pair: [anchors::Geometry; 2],
+        sim_orientation: Option<Quat>,
+        tracking: Option<RetainedTracking>,
     ) {
         let [previous, current] = pair;
         let previous_anchor = self.anchor;
@@ -273,7 +298,6 @@ impl HeadPoseState {
         self.anchor_prev = Some(previous.head);
         self.neck_delta = current.neck_delta;
         self.eye_arm = current.eye_arm;
-        self.anchor_pair = Some(pair);
         if let Some(orientation) = sim_orientation {
             self.pose = HeadPose {
                 position: current.head,
@@ -282,9 +306,42 @@ impl HeadPoseState {
             if current.collapsed {
                 self.prev_pose = self.pose;
             }
-        } else if let Some(previous_anchor) = previous_anchor {
-            self.pose.position += current.head - previous_anchor;
+        } else if let Some(previous_geometry) = self.anchor_pair {
+            // Preserve the last tracked delta in the newly published synthetic frame. The
+            // simulation consumes this before the next display-time HMD publication.
+            let old = previous_geometry[1];
+            let (_, old_root, _) = old.root.to_scale_rotation_translation();
+            let (_, root, _) = current.root.to_scale_rotation_translation();
+            let transport =
+                root * current.animation_rotation * (old_root * old.animation_rotation).inverse();
+            self.pose.position = current.head
+                + transport * (self.pose.position - previous_anchor.unwrap_or(old.head));
+            self.pose.orientation = transport * self.pose.orientation;
+            if current.collapsed {
+                self.prev_pose = self.pose;
+            }
+        } else if let Some(tracking) = tracking {
+            let (_, root, _) = current.root.to_scale_rotation_translation();
+            self.pose = xr::compose(
+                tracking.cockpit.position,
+                tracking.cockpit.orientation,
+                root * current.animation_rotation * tracking.follow_turn,
+                current.head,
+                tracking.world_scale,
+            );
+            if current.collapsed {
+                self.prev_pose = self.pose;
+            }
         }
+        self.anchor_pair = Some(pair);
+    }
+
+    fn withdraw_anchors(&mut self) {
+        self.anchor = None;
+        self.anchor_prev = None;
+        self.anchor_pair = None;
+        self.neck_delta = Vec3::ZERO;
+        self.eye_arm = Vec3::ZERO;
     }
 
     #[cfg(test)]
@@ -298,8 +355,102 @@ impl HeadPoseState {
     }
 }
 
+#[derive(Copy, Clone)]
+struct RetainedTracking {
+    cockpit: xr::CockpitPose,
+    follow_turn: Quat,
+    world_scale: f32,
+}
+
 static STATE: OnceLock<Mutex<HeadPoseState>> = OnceLock::new();
 
 fn state() -> &'static Mutex<HeadPoseState> {
     STATE.get_or_init(|| Mutex::new(HeadPoseState::default()))
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::Mat4;
+
+    use super::*;
+    use crate::headpose::anchors::{
+        History,
+        tests::{identity_fixture, request, rooted},
+    };
+
+    #[test]
+    fn withdrawn_anchors_recompose_relocated_capture_before_immediate_consumption() {
+        let mut history = History::new();
+        let identity = identity_fixture();
+        let old_root =
+            Mat4::from_rotation_translation(Quat::from_rotation_y(0.4), Vec3::new(10.0, 2.0, -3.0));
+        let old_pair = history
+            .capture(request(identity, 20, 1, old_root, old_root), || {
+                Some(rooted(0.0, old_root))
+            })
+            .unwrap();
+        let mut state = HeadPoseState::default();
+        state.publish_anchors_with_tracking(old_pair.geometry(), None, None);
+        let stale = HeadPose {
+            position: old_pair.current.geometry.head + Vec3::new(0.5, -0.2, 0.3),
+            orientation: Quat::from_rotation_z(-0.9),
+        };
+        state.test_set_poses([stale; 2]);
+
+        history.clear();
+        state.withdraw_anchors();
+        assert!(state.anchor_pair.is_none());
+        assert!(state.anchor.is_none() && state.anchor_prev.is_none());
+        assert_eq!(state.neck_delta, Vec3::ZERO);
+        assert_eq!(state.eye_arm, Vec3::ZERO);
+        for pose in state.test_poses() {
+            assert_eq!(pose.position, stale.position);
+            assert_eq!(pose.orientation, stale.orientation);
+        }
+
+        let root_rotation = Quat::from_euler(glam::EulerRot::YXZ, -0.8, 0.4, 0.2);
+        let root = Mat4::from_rotation_translation(root_rotation, Vec3::new(150.0, 12.0, -80.0));
+        let filtered_animation = Quat::from_rotation_x(0.25) * Quat::from_rotation_z(-0.3);
+        let pair = history
+            .capture(request(identity, 21, 2, old_root, root), || {
+                let mut sample = rooted(1.0, root);
+                sample.geometry.animation_rotation = filtered_animation;
+                Some(sample)
+            })
+            .unwrap();
+        assert!(pair.collapsed);
+        let tracking = RetainedTracking {
+            cockpit: xr::CockpitPose {
+                position: Vec3::new(0.17, -0.6, 0.23),
+                orientation: Quat::from_rotation_y(2.1) * Quat::from_rotation_x(-0.7),
+            },
+            follow_turn: Quat::from_rotation_y(-0.45),
+            world_scale: 1.7,
+        };
+        state.publish_anchors_with_tracking(pair.geometry(), None, Some(tracking));
+
+        let current = state.anchor_pair.unwrap()[1];
+        let synthetic = root_rotation * filtered_animation * tracking.follow_turn;
+        assert_eq!(state.anchor, Some(current.head));
+        assert_eq!(state.anchor_prev, Some(current.head));
+        let consumed_model_position = root.inverse().transform_point3(state.pose.position);
+        let expected_world_position =
+            current.head + synthetic * (tracking.cockpit.position * tracking.world_scale);
+        assert!(consumed_model_position.abs_diff_eq(
+            root.inverse().transform_point3(expected_world_position),
+            1.0e-4,
+        ));
+        assert!(!state.pose.position.abs_diff_eq(stale.position, 1.0e-4));
+        for pose in state.test_poses() {
+            assert!(pose.position.abs_diff_eq(expected_world_position, 1.0e-4));
+            assert!(
+                (synthetic.inverse() * (pose.position - current.head) / tracking.world_scale)
+                    .abs_diff_eq(tracking.cockpit.position, 1.0e-4)
+            );
+            assert!(
+                (synthetic.inverse() * pose.orientation)
+                    .abs_diff_eq(tracking.cockpit.orientation, 1.0e-5)
+            );
+        }
+    }
 }
