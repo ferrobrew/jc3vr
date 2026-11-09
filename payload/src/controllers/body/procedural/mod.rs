@@ -70,9 +70,9 @@ use crate::{
     controllers::{
         body::{
             procedural::{
-                authority::{Case, classify},
+                authority::{Case, WeightFollower, classify_locked, relaxes_legs},
                 config::{ProceduralBodyConfig, ProceduralMode},
-                gate_state::{STATE, State},
+                gate_state::{STATE, State, relaxed_legs},
                 rig::{Rig, RigBone},
                 solver::{
                     SolveInput,
@@ -90,6 +90,7 @@ use crate::{
         locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
     },
+    grapple::physical::lock,
     headpose::{body_relative_rotation, eye_arm, xr},
 };
 
@@ -188,6 +189,10 @@ pub(crate) fn gate_skipped() {
     let mut state = STATE.lock();
     state.blend.reset();
     state.stance.reset();
+    state.legs = WeightFollower::new();
+    state.leg_weight = 0.0;
+    state.leg_fade.forget();
+    publish_leg_weight(0.0);
     state.wing_queue = None;
     state.last_wings = None;
     state.status.wing_hands = [false; 2];
@@ -211,6 +216,11 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     // SAFETY: forwarded from the caller.
     let wrote = unsafe { run_gate(character, dt) };
     if !wrote {
+        publish_leg_weight(0.0);
+        let mut state = STATE.lock();
+        state.legs = WeightFollower::new();
+        state.leg_weight = 0.0;
+        state.leg_fade.forget();
         publish_torso_weight(0.0);
     }
     let wing_queue = {
@@ -248,6 +258,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let visual_heading = (mode == Mode::Airborne(AirborneVariant::Parachute))
         .then(|| player_arms.as_ref().map(|arms| arms.torso))
         .flatten();
+    let locked = lock::holds();
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
         dt.clamp(0.0, MAX_STEP_S)
@@ -261,7 +272,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     state.status.mode = config.mode;
     state.arms = None;
     // Switched off, the body blends back to the animation before the gate stops acting.
-    if config.mode == ProceduralMode::Off && state.blend.weight() <= 0.0 {
+    if config.mode == ProceduralMode::Off && state.blend.weight() <= 0.0 && state.leg_weight <= 0.0
+    {
         state.blend.reset();
         state.status.weight = 0.0;
         return false;
@@ -284,7 +296,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let case = if config.mode == ProceduralMode::Off {
         Case::SwitchedOff
     } else {
-        classify(&read)
+        classify_locked(&read, locked)
     };
     state.hips.track(case, &animated, dt, now);
     let stance_authorized = config.stance.enabled && case == Case::OnFoot && locomotion.fresh(now);
@@ -319,7 +331,39 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         dt,
     };
     state.wing_queue = state.step_wings(&wings, &config);
-    if weight <= 0.0 {
+    state.leg_weight = if (relaxes_legs(case)
+        && !read.ledge_climb
+        && !read.swimming
+        && !read.wingsuit
+        && !read.parachute
+        && !read.hit_reaction
+        && !read.hand_climb
+        && !read.authored_motion)
+        || case == Case::SwitchedOff
+    {
+        state.legs.step(
+            if case == Case::GrappleLock { 1.0 } else { 0.0 },
+            dt,
+            config.blend_s,
+            config.blend_out_s,
+        )
+    } else {
+        state.legs = WeightFollower::new();
+        0.0
+    };
+    let leg_weight = state.leg_weight;
+    if config.neutralize_targets {
+        fade_targets(
+            &mut character.m_HIK,
+            LEG_EFFECTORS
+                .into_iter()
+                .map(|e| (e as usize, leg_weight, Fade::All)),
+            &mut state.leg_fade,
+        );
+    } else {
+        state.leg_fade.forget();
+    }
+    if weight <= 0.0 && leg_weight <= 0.0 {
         state.clavicles.reset();
         state.on_hips_logged = None;
         state.status.clavicles = [ClavicleTurn::ZERO; 2];
@@ -335,10 +379,22 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         dt,
         visual_heading,
     };
-    let Some(pose) = (unsafe { pose_torso(&mut state, rig, &gate, &config) }) else {
-        return false;
+    let mut pose = if weight > 0.0 {
+        let Some(pose) = (unsafe { pose_torso(&mut state, rig, &gate, &config) }) else {
+            return false;
+        };
+        pose
+    } else {
+        animated
     };
+    let legs = relaxed_legs(&animated, &rig.reference, leg_weight);
+    for bone in RigBone::ALL {
+        if bone != RigBone::Pelvis && bone.descends_from(RigBone::Pelvis) {
+            pose.bones[bone.index()] = legs.bones[bone.index()];
+        }
+    }
     unsafe { live.write(controller, &pose) };
+    publish_leg_weight(leg_weight);
     finish_write(&mut state, character, &pose, weight, &config);
     true
 }
@@ -454,6 +510,25 @@ const TORSO_EFFECTORS: [Effector; 4] = [
     Effector::RIGHT_SHOULDER,
 ];
 
+const LEG_EFFECTORS: [Effector; 6] = [
+    Effector::LEFT_ANKLE,
+    Effector::RIGHT_ANKLE,
+    Effector::LEFT_KNEE,
+    Effector::RIGHT_KNEE,
+    Effector::LEFT_FOOT,
+    Effector::RIGHT_FOOT,
+];
+
+static LEG_WEIGHT: AtomicU32 = AtomicU32::new(0);
+
+pub(super) fn leg_weight() -> f32 {
+    f32::from_bits(LEG_WEIGHT.load(Ordering::Relaxed))
+}
+
+fn publish_leg_weight(weight: f32) {
+    LEG_WEIGHT.store(weight.to_bits(), Ordering::Relaxed);
+}
+
 /// The torso's weight [`torso_weight`] returns, as its bits.
 static TORSO_WEIGHT: AtomicU32 = AtomicU32::new(0);
 
@@ -511,7 +586,15 @@ fn solve_input(character: &Character, animated: &RigPose, scale: f32) -> Option<
 fn neutralize_owned_targets(hik: &mut HumanIK, weight: f32, fade: &mut TargetFade) {
     let torso = TORSO_EFFECTORS.map(|e| (e as usize, weight, Fade::All));
     let head = [(Effector::HEAD as usize, weight, Fade::Pull)];
-    for (i, weight, kind) in torso.into_iter().chain(head) {
+    fade_targets(hik, torso.into_iter().chain(head), fade);
+}
+
+fn fade_targets(
+    hik: &mut HumanIK,
+    targets: impl IntoIterator<Item = (usize, f32, Fade)>,
+    fade: &mut TargetFade,
+) {
+    for (i, weight, kind) in targets {
         let slot = Slot {
             target_reach_t: hik.m_TargetReachT[i],
             target_reach_r: hik.m_TargetReachR[i],

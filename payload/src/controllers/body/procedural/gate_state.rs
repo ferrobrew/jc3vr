@@ -12,7 +12,8 @@ use crate::controllers::{
         config::ProceduralBodyConfig,
         hips::HipFollower,
         joints::{LiveRig, RigCache},
-        rig::Rig,
+        rig::{Rig, RigBone},
+        skeleton::Transform,
         solver::{
             arms::Side,
             clavicles::{self, ClavicleFollower, ClavicleTuning, ClavicleTurn},
@@ -57,6 +58,9 @@ pub(super) struct State {
     pub(super) hips: HipFollower,
     /// The square stance's blend against the clip's feet.
     pub(super) stance: StanceBlend,
+    pub(super) legs: WeightFollower,
+    pub(super) leg_weight: f32,
+    pub(super) leg_fade: TargetFade,
     pub(super) status: ProceduralStatus,
 }
 
@@ -65,6 +69,9 @@ impl State {
     pub(super) unsafe fn rig_for(&mut self, controller: &AnimationController) -> Option<LiveRig> {
         let lookup = unsafe { self.rig.get(controller) };
         if lookup.rebuilt {
+            self.legs = WeightFollower::new();
+            self.leg_weight = 0.0;
+            self.leg_fade.forget();
             self.status.rig_error = lookup.error;
         }
         lookup.rig
@@ -120,6 +127,48 @@ impl State {
     }
 }
 
+pub(super) fn relaxed_legs(
+    animated: &RigPose,
+    reference: &[Transform; RigBone::COUNT],
+    weight: f32,
+) -> RigPose {
+    let mut pose = *animated;
+    if !weight.is_finite() || weight <= 0.0 {
+        return pose;
+    }
+    let weight = weight.min(1.0);
+    for bone in RigBone::ALL {
+        if bone == RigBone::Pelvis || !bone.descends_from(RigBone::Pelvis) {
+            continue;
+        }
+        let parent = bone.parent().unwrap();
+        let current = animated.get(bone);
+        let old_parent = animated.get(parent);
+        let rest = reference[bone.index()];
+        let rest_parent = reference[parent.index()];
+        let local = old_parent.rotation.inverse() * (current.translation - old_parent.translation)
+            / old_parent.scale;
+        let rest_local = rest_parent.rotation.inverse()
+            * (rest.translation - rest_parent.translation)
+            / rest_parent.scale;
+        let direction = local
+            .lerp(rest_local, weight)
+            .try_normalize()
+            .or_else(|| rest_local.try_normalize());
+        let offset = direction.map_or(local, |direction| direction * local.length());
+        let rotation = (old_parent.rotation.inverse() * current.rotation)
+            .slerp(rest_parent.rotation.inverse() * rest.rotation, weight)
+            .normalize();
+        let parent = *pose.get(parent);
+        pose.bones[bone.index()] = parent.compose(&Transform {
+            translation: offset,
+            rotation,
+            scale: current.scale / old_parent.scale,
+        });
+    }
+    if pose.is_finite() { pose } else { *animated }
+}
+
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
     rig: RigCache::new(),
     blend: TorsoBlend::new(),
@@ -135,5 +184,76 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     arms: None,
     hips: HipFollower::new(),
     stance: StanceBlend::new(),
+    legs: WeightFollower::new(),
+    leg_weight: 0.0,
+    leg_fade: TargetFade::new(),
     status: INITIAL_STATUS,
 });
+
+#[cfg(test)]
+mod tests {
+    use glam::{Quat, Vec3};
+
+    use super::*;
+
+    #[test]
+    fn relaxed_chains_keep_the_animated_pelvis_and_segment_lengths() {
+        let identity = Transform {
+            translation: Vec3::ZERO,
+            rotation: Quat::IDENTITY,
+            scale: Vec3::ONE,
+        };
+        let mut rest = RigPose {
+            bones: [identity; RigBone::COUNT],
+        };
+        for bone in RigBone::ALL {
+            if let Some(parent) = bone.parent() {
+                let offset = match bone {
+                    RigBone::LeftUpLeg => Vec3::new(-0.12, 0.0, 0.0),
+                    RigBone::RightUpLeg => Vec3::new(0.12, 0.0, 0.0),
+                    RigBone::LeftToeBase | RigBone::RightToeBase => Vec3::NEG_Z * 0.15,
+                    _ => Vec3::NEG_Y * 0.4,
+                };
+                rest.bones[bone.index()].translation = rest.position(parent) + offset;
+            }
+        }
+        let mut animated = rest;
+        animated.rotate_about(RigBone::Hips, Quat::from_rotation_y(0.6), Vec3::ZERO);
+        for transform in &mut animated.bones {
+            transform.translation += Vec3::new(2.0, 4.0, -3.0);
+        }
+        animated.rotate_about(
+            RigBone::LeftUpLeg,
+            Quat::from_rotation_x(1.0),
+            animated.position(RigBone::LeftUpLeg),
+        );
+        animated.rotate_about(
+            RigBone::RightLeg,
+            Quat::from_rotation_x(-0.7),
+            animated.position(RigBone::RightLeg),
+        );
+        assert_eq!(relaxed_legs(&animated, &rest.bones, 0.0), animated);
+        for weight in [0.2, 0.6, 1.0] {
+            let relaxed = relaxed_legs(&animated, &rest.bones, weight);
+            for bone in RigBone::ALL {
+                if bone != RigBone::Pelvis && bone.descends_from(RigBone::Pelvis) {
+                    let parent = bone.parent().unwrap();
+                    let length = animated.position(bone).distance(animated.position(parent));
+                    assert!(
+                        (relaxed.position(bone).distance(relaxed.position(parent)) - length).abs()
+                            < 1e-5
+                    );
+                } else {
+                    assert_eq!(relaxed.get(bone), animated.get(bone));
+                }
+            }
+        }
+        let relaxed = relaxed_legs(&animated, &rest.bones, 1.0);
+        assert!(
+            relaxed
+                .position(RigBone::LeftFoot)
+                .distance(animated.position(RigBone::LeftFoot))
+                > 0.1
+        );
+    }
+}

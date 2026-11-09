@@ -57,6 +57,7 @@ impl Track {
             | Case::StuntStanding
             | Case::Vehicle
             | Case::GrappleAttach
+            | Case::GrappleLock
             | Case::Traversal
             | Case::LedgeClimb
             | Case::Swimming

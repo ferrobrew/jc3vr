@@ -21,7 +21,7 @@ use crate::{
     controllers::body::procedural::{
         config::ProceduralMode,
         joints::{from_joint, to_joint},
-        published_status,
+        leg_weight, published_status,
         skeleton::{self, SkeletonKey},
         solver::twist::{Region, TwistRig},
     },
@@ -57,8 +57,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     };
     let mode = Config::lock_query(|c| c.controllers.body.procedural.mode);
     let body = published_status();
-    // The legs are the animation's, so their twist bones are too.
-    let weights = [body.weight, 0.0];
+    let weights = [body.weight, leg_weight()];
     let mut status = TwistStatus {
         at: Some(Instant::now()),
         ..*STATUS.lock()

@@ -63,6 +63,7 @@ pub enum Case {
     /// Attached to a wall at the end of a grapple's reel: a hang the clip holds still.
     GrappleAttach,
     Traversal,
+    GrappleLock,
     LedgeClimb,
     Swimming,
     /// In the wingsuit, or going into it. The arms follow the player's apart from the torso.
@@ -93,6 +94,7 @@ impl Case {
             Self::Vehicle => "vehicle",
             Self::GrappleAttach => "grapple wall attach",
             Self::Traversal => "grapple or stunt traversal",
+            Self::GrappleLock => "grapple line locked",
             Self::LedgeClimb => "grapple ledge climb",
             Self::Swimming => "swimming",
             Self::Wingsuit => "wingsuit",
@@ -135,6 +137,7 @@ impl Case {
                 | Self::GettingUp
                 | Self::GrappleAttach
                 | Self::Traversal
+                | Self::GrappleLock
                 | Self::LedgeClimb
                 | Self::Wingsuit
                 | Self::Parachute
@@ -258,6 +261,38 @@ pub fn classify(state: &CharacterState) -> Case {
     } else {
         Case::OnFoot
     }
+}
+
+pub(super) fn classify_locked(state: &CharacterState, locked: bool) -> Case {
+    let case = classify(state);
+    if locked
+        && !state.ledge_climb
+        && !state.swimming
+        && !state.wingsuit
+        && !state.parachute
+        && !state.hit_reaction
+        && !state.hand_climb
+        && !state.authored_motion
+        && matches!(
+            case,
+            Case::Traversal | Case::GrappleAttach | Case::Flight | Case::NoMovementTask
+        )
+    {
+        Case::GrappleLock
+    } else {
+        case
+    }
+}
+
+pub(super) fn relaxes_legs(case: Case) -> bool {
+    matches!(
+        case,
+        Case::GrappleLock
+            | Case::Traversal
+            | Case::GrappleAttach
+            | Case::Flight
+            | Case::NoMovementTask
+    )
 }
 
 /// How long a flight keeps the torso procedural after a jump or the parachute, seconds of the
@@ -407,6 +442,77 @@ mod tests {
             in_gameplay: true,
             movement_task: true,
             ..CharacterState::default()
+        }
+    }
+
+    #[test]
+    fn the_lock_relaxes_only_safe_airborne_grapple_cases() {
+        let locked = CharacterState {
+            traversal: true,
+            ..on_foot()
+        };
+        assert_eq!(classify_locked(&locked, true), Case::GrappleLock);
+        assert_eq!(classify_locked(&locked, false), Case::Traversal);
+        for excluded in [
+            CharacterState {
+                in_headset: false,
+                ..locked
+            },
+            CharacterState {
+                in_gameplay: false,
+                ..locked
+            },
+            CharacterState {
+                sequence: true,
+                ..locked
+            },
+            CharacterState {
+                dead: true,
+                ..locked
+            },
+            CharacterState {
+                ragdoll: true,
+                ..locked
+            },
+            CharacterState {
+                getting_up: true,
+                ..locked
+            },
+            CharacterState {
+                vehicle: true,
+                ..locked
+            },
+            CharacterState {
+                ledge_climb: true,
+                ..locked
+            },
+            CharacterState {
+                swimming: true,
+                ..locked
+            },
+            CharacterState {
+                wingsuit: true,
+                ..locked
+            },
+            CharacterState {
+                parachute: true,
+                ..locked
+            },
+            CharacterState {
+                hit_reaction: true,
+                ..locked
+            },
+            CharacterState {
+                hand_climb: true,
+                ..locked
+            },
+            CharacterState {
+                authored_motion: true,
+                ..locked
+            },
+            on_foot(),
+        ] {
+            assert_ne!(classify_locked(&excluded, true), Case::GrappleLock);
         }
     }
 
