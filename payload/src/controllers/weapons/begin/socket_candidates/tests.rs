@@ -227,10 +227,7 @@ fn restricted_draws_preserve_base_observations_and_missing_pose_diagnostics() {
         {
             assert!(sample.attachments.contains(base));
         }
-        for socket in [
-            Socket::Shoulder(Hand::Left),
-            Socket::Shoulder(Hand::Right),
-        ] {
+        for socket in [Socket::Shoulder(Hand::Left), Socket::Shoulder(Hand::Right)] {
             let offers = sample
                 .attachments
                 .iter()

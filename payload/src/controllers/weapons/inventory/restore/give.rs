@@ -158,7 +158,7 @@ pub fn requested(target: GiveTarget) -> Option<Requested> {
         return Some(Requested::Weapon(pending.name));
     }
     DRAWS.lock().iter().rev().find_map(|draw| {
-        (target == GiveTarget::Hand(draw.hand)).then(|| Requested::Weapon(draw.name))
+        (target == GiveTarget::Hand(draw.hand)).then_some(Requested::Weapon(draw.name))
     })
 }
 

@@ -197,39 +197,6 @@ fn choice(
         });
 }
 
-#[cfg(test)]
-mod choice_tests {
-    use super::*;
-
-    #[test]
-    fn a_request_selects_its_weapon_without_claiming_the_actual_occupant_changed() {
-        let defs = give::weapons_for_hand();
-        let actual = defs[0];
-        let requested = defs
-            .iter()
-            .find(|def| def.name_hash() != actual.name_hash())
-            .unwrap();
-        let selection = Requested::Weapon(requested.name.as_str());
-        assert!(selected_weapon(
-            Some(&selection),
-            Some(actual.name_hash()),
-            requested
-        ));
-        assert!(!selected_weapon(
-            Some(&selection),
-            Some(actual.name_hash()),
-            actual
-        ));
-        assert!(selected_weapon(None, Some(actual.name_hash()), actual));
-        assert!(!selected_weapon(
-            Some(&Requested::Nothing),
-            Some(actual.name_hash()),
-            actual
-        ));
-        assert!(!selected_weapon(None, None, actual));
-    }
-}
-
 fn actual_note(item: Option<&ItemView>, game: Option<&GameInventory>) -> String {
     format!(
         "Actual: {}",
@@ -466,4 +433,37 @@ fn world_note(
         note.push_str(", single pistol");
     }
     note
+}
+
+#[cfg(test)]
+mod choice_tests {
+    use super::*;
+
+    #[test]
+    fn a_request_selects_its_weapon_without_claiming_the_actual_occupant_changed() {
+        let defs = give::weapons_for_hand();
+        let actual = defs[0];
+        let requested = defs
+            .iter()
+            .find(|def| def.name_hash() != actual.name_hash())
+            .unwrap();
+        let selection = Requested::Weapon(requested.name.as_str());
+        assert!(selected_weapon(
+            Some(&selection),
+            Some(actual.name_hash()),
+            requested
+        ));
+        assert!(!selected_weapon(
+            Some(&selection),
+            Some(actual.name_hash()),
+            actual
+        ));
+        assert!(selected_weapon(None, Some(actual.name_hash()), actual));
+        assert!(!selected_weapon(
+            Some(&Requested::Nothing),
+            Some(actual.name_hash()),
+            actual
+        ));
+        assert!(!selected_weapon(None, None, actual));
+    }
 }

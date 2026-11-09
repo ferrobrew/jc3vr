@@ -269,7 +269,9 @@ pub(crate) fn finish_tick(
                 GrabVolume::Socket(socket) => Some(socket),
                 _ => None,
             });
-            if crate::controllers::weapons::grenade_moves::stow_before_open(hand, socket) == Some(true) {
+            if crate::controllers::weapons::grenade_moves::stow_before_open(hand, socket)
+                == Some(true)
+            {
                 haptics::play(hand, Event::VolumeGrab);
                 return false;
             }
