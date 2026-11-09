@@ -75,6 +75,7 @@ pub struct CatchTick {
 pub struct CatchWatch {
     time: f32,
     near: [Option<f32>; 2],
+    previous: [Option<Vec3>; 2],
 }
 
 impl CatchWatch {
@@ -96,11 +97,15 @@ impl CatchWatch {
         let mut pending = false;
         for hand in Hand::BOTH {
             let i = hand.index();
-            let Some(offered) = hands[i] else {
+            let Some(offered) = hands[i].filter(|offered| offered.palm.is_finite()) else {
                 self.near[i] = None;
+                self.previous[i] = None;
                 continue;
             };
-            let pass = segment_distance(offered.palm, from, to);
+            let previous = self.previous[i]
+                .replace(offered.palm)
+                .unwrap_or(offered.palm);
+            let pass = segment_distance(Vec3::ZERO, from - previous, to - offered.palm);
             if pass <= tuning.zone_m {
                 self.near[i] = Some(self.time);
             }
@@ -204,6 +209,82 @@ mod tests {
             &TUNING,
         );
         assert_eq!(tick.caught, Some(Hand::Left));
+    }
+
+    #[test]
+    fn a_moving_hand_catches_a_target_between_ticks() {
+        let mut watch = CatchWatch::default();
+        let first = watch.step(
+            DT,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            [hand(-Vec3::X, false), None],
+            &TUNING,
+        );
+        assert!(!first.pending);
+        let caught = watch.step(
+            DT,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            [hand(Vec3::X, true), None],
+            &TUNING,
+        );
+        assert_eq!(caught.caught, Some(Hand::Left));
+    }
+
+    #[test]
+    fn a_hand_and_target_moving_together_do_not_cross() {
+        let mut watch = CatchWatch::default();
+        watch.step(
+            DT,
+            Vec3::ZERO,
+            Vec3::ZERO,
+            [hand(-Vec3::X, false), None],
+            &TUNING,
+        );
+        let tick = watch.step(
+            DT,
+            Vec3::ZERO,
+            Vec3::X * 2.0,
+            [hand(Vec3::X, true), None],
+            &TUNING,
+        );
+        assert_eq!(
+            tick,
+            CatchTick {
+                caught: None,
+                pending: false
+            }
+        );
+    }
+
+    #[test]
+    fn an_unavailable_hand_resumes_without_a_stale_sweep() {
+        for unavailable in [None, hand(Vec3::NAN, false)] {
+            let mut watch = CatchWatch::default();
+            watch.step(
+                DT,
+                Vec3::ZERO,
+                Vec3::ZERO,
+                [hand(-Vec3::X, false), None],
+                &TUNING,
+            );
+            watch.step(DT, Vec3::ZERO, Vec3::ZERO, [unavailable, None], &TUNING);
+            let tick = watch.step(
+                DT,
+                Vec3::ZERO,
+                Vec3::ZERO,
+                [hand(Vec3::X, true), None],
+                &TUNING,
+            );
+            assert_eq!(
+                tick,
+                CatchTick {
+                    caught: None,
+                    pending: false
+                }
+            );
+        }
     }
 
     #[test]
