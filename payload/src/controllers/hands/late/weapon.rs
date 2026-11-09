@@ -70,6 +70,9 @@ fn attachment_hand(
     index: usize,
     count: usize,
 ) -> Option<Hand> {
+    if index >= count {
+        return None;
+    }
     if !matches!(
         state,
         WeaponState::E_WS_WIELDING | WeaponState::E_WS_DUAL_WIELDING
@@ -217,6 +220,40 @@ mod tests {
             ),
             Some(Hand::Right)
         );
+    }
+
+    #[test]
+    fn hidden_pistol_meshes_cannot_replace_a_hands_rendered_gun() {
+        for holder in Hand::BOTH {
+            let mut rendered = [None; 2];
+            for index in 0..2 {
+                if let Some(hand) = attachment_hand(
+                    WeaponState::E_WS_WIELDING,
+                    Some(SafeBoneIndex::ATTACH_HAND_LEFT as u32),
+                    Some(holder),
+                    index,
+                    1,
+                ) {
+                    rendered[hand.index()] = Some(index);
+                }
+            }
+            assert_eq!(rendered[holder.index()], Some(0));
+            assert_eq!(rendered[holder.other().index()], None);
+            assert_eq!(
+                attachment_hand(
+                    WeaponState::E_WS_WIELDING,
+                    Some(SafeBoneIndex::ATTACH_HAND_LEFT as u32),
+                    None,
+                    1,
+                    1,
+                ),
+                None
+            );
+            assert_eq!(
+                attachment_hand(WeaponState::E_WS_WIELDING, None, Some(holder), 0, 0),
+                None
+            );
+        }
     }
 
     #[test]
