@@ -20,11 +20,6 @@
 //! The grapple button's gestures ([`crate::controllers::bindings::grapple_button`]) say what the
 //! player asks ([`LockButton`]), and [`lock_tick`] acts on them after the bindings' tables step:
 //!
-//! - a press locks the line at the distance it is at; for [`LockConfig::brake_s`] the lock brakes
-//!   the reel's rush toward the hook, keeping the speed across the line, and the held length
-//!   follows the character in. A press in the reel's wind-up, before the reel task carries the
-//!   character, arms the lock, and the lock takes hold as the reel starts if the button is still
-//!   held;
 //! - pulling the grapple hand back takes line in ([`model::TakeIn`]);
 //! - a quick release unlocks and resumes the reel, the tap going on to the game, which fires again
 //!   from the reel when its upgrade is bought;
@@ -257,7 +252,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
                         .take_in
                         .step(input.real_dt, input.line, input.config.reel_in_mps);
                 active.config = *input.config;
-                active.held.take_in(taken, input.config);
+                active.held.take_in(taken, input.real_dt, input.config);
                 let length_m = active.held.rope.length_m;
                 shared.status.length_m = length_m;
                 shared.status.share()
@@ -368,7 +363,7 @@ pub(crate) unsafe fn drive(
         pending.at = hook_point;
     }
     let status = &mut shared.status;
-    status.braking = active.held.braking();
+    status.braking = false;
     status.length_m = active.held.rope.length_m;
     status.stretch_m = out.stretch_m;
     status.tension_n = out.tension_n;
@@ -428,6 +423,8 @@ unsafe fn start(character: &Character, hook: &GrapplingHook, input: &LockTickInp
     let Some(proxy_id) = NonZeroUsize::new(std::ptr::from_ref(proxy) as usize) else {
         return;
     };
+    let mut take_in = TakeIn::default();
+    take_in.step(input.real_dt, input.line, input.config.reel_in_mps);
     let lock_target = LockTarget {
         kind: kind_label(kind),
         mass_kg: target.map(|t| 1.0 / t.inverse_mass),
@@ -440,7 +437,7 @@ unsafe fn start(character: &Character, hook: &GrapplingHook, input: &LockTickInp
             rider_mass_kg,
             target,
             config: *input.config,
-            take_in: TakeIn::default(),
+            take_in,
             airborne: false,
         });
         shared.fault = None;
@@ -449,7 +446,7 @@ unsafe fn start(character: &Character, hook: &GrapplingHook, input: &LockTickInp
         let locks = shared.status.locks + 1;
         shared.status = LockStatus {
             locked: true,
-            braking: true,
+            braking: false,
             length_m: held.rope.length_m,
             target: Some(lock_target),
             hook: hook_point,

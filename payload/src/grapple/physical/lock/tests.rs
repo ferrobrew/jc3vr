@@ -48,7 +48,6 @@ fn fly(held: &mut Held, mut rider: Vec3, mut velocity: Vec3, ticks: usize) -> Ve
 fn a_static_hook_swings_a_bounded_pendulum_that_keeps_its_energy_roughly() {
     let start = Vec3::new(5.0, 0.0, 0.0);
     let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
-    held.brake_left_s = 0.0;
     let path = fly(&mut held, start, Vec3::ZERO, 300);
     let (lowest, fastest) = path.iter().fold((0.0_f32, 0.0_f32), |(low, fast), (p, v)| {
         (low.min(p.y), fast.max(v.length()))
@@ -62,21 +61,22 @@ fn a_static_hook_swings_a_bounded_pendulum_that_keeps_its_energy_roughly() {
 }
 
 #[test]
-fn the_brake_turns_the_rush_toward_the_hook_into_a_swing() {
+fn locking_keeps_the_inward_rush_and_tangential_momentum() {
     let start = Vec3::new(20.0, 0.0, 0.0);
     let rush = Vec3::new(-25.0, 0.0, 6.0);
     let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
-    let path = fly(&mut held, start, rush, 30);
-    let (rider, velocity) = *path.last().unwrap();
-    let outward = rider.normalize();
-    assert!(
-        velocity.dot(outward) > -1.0,
-        "no rush left: {}",
-        velocity.dot(outward)
-    );
-    assert!(velocity.z > 4.0, "the tangent stays: {velocity}");
-    assert!(held.rope.length_m < 20.0 && held.rope.length_m > 13.0);
-    assert!(!held.braking());
+    let out = swing(
+        &mut held,
+        input(start, rush, Vec3::ZERO, Vec3::ZERO),
+        &CONFIG,
+    )
+    .unwrap();
+    assert!((out.velocity - (rush - Vec3::Y * GRAVITY_MPS2 * DT)).length() < 1e-5);
+    assert_eq!(out.tension_n, 0.0);
+    assert_eq!(held.rope.length_m, 20.0);
+    let path = fly(&mut held, start, rush, 10);
+    assert!((path.last().unwrap().1.x - rush.x).abs() < 1e-5);
+    assert_eq!(held.rope.length_m, 20.0);
 }
 
 #[test]
@@ -86,7 +86,6 @@ fn a_hook_on_a_moving_target_keeps_the_rider_at_its_offset() {
     let mut rider = hook - Vec3::Y * 6.0;
     let mut velocity = carried;
     let mut held = Held::new(hook, rider, &CONFIG).unwrap();
-    held.brake_left_s = 0.0;
     for _ in 0..150 {
         velocity = swing(&mut held, input(rider, velocity, hook, carried), &CONFIG)
             .unwrap()
@@ -101,9 +100,35 @@ fn a_hook_on_a_moving_target_keeps_the_rider_at_its_offset() {
 }
 
 #[test]
+fn arm_take_in_adds_pull_velocity_without_losing_the_tangent() {
+    let rider = Vec3::NEG_Y * 4.0;
+    let mut held = Held::new(Vec3::ZERO, rider, &CONFIG).unwrap();
+    held.take_in(0.05, DT, &CONFIG);
+    let mut stationary = held;
+    stationary.take_in(0.0, DT, &CONFIG);
+    let before = Vec3::X * 5.0;
+    let moving = swing(
+        &mut held,
+        input(rider, before, Vec3::ZERO, Vec3::ZERO),
+        &CONFIG,
+    )
+    .unwrap();
+    let still = swing(
+        &mut stationary,
+        input(rider, before, Vec3::ZERO, Vec3::ZERO),
+        &CONFIG,
+    )
+    .unwrap();
+    assert!(moving.velocity.y > still.velocity.y);
+    assert_eq!(moving.velocity.x, before.x);
+    assert!(moving.tension_n > still.tension_n);
+    let gravity = Vec3::NEG_Y * GRAVITY_MPS2 * DT;
+    assert!(((moving.velocity - before - gravity) * MASS + moving.target_impulse).length() < 1e-2);
+}
+
+#[test]
 fn the_target_feels_the_equal_and_opposite_pull() {
     let mut held = Held::new(Vec3::ZERO, Vec3::Y * -4.0, &CONFIG).unwrap();
-    held.brake_left_s = 0.0;
     let before = Vec3::new(0.0, -3.0, 0.0);
     let out = swing(
         &mut held,
@@ -127,7 +152,6 @@ fn the_target_feels_the_equal_and_opposite_pull() {
 #[test]
 fn the_tension_is_capped_at_the_lines_strength() {
     let mut held = Held::new(Vec3::ZERO, Vec3::X * 4.0, &CONFIG).unwrap();
-    held.brake_left_s = 0.0;
     let out = swing(
         &mut held,
         input(Vec3::X * 6.0, Vec3::X * 30.0, Vec3::ZERO, Vec3::ZERO),
@@ -141,7 +165,6 @@ fn the_tension_is_capped_at_the_lines_strength() {
 #[test]
 fn an_overstretched_line_breaks() {
     let mut held = Held::new(Vec3::ZERO, Vec3::X * 4.0, &CONFIG).unwrap();
-    held.brake_left_s = 0.0;
     assert_eq!(
         swing(
             &mut held,
@@ -157,12 +180,12 @@ fn the_line_is_never_held_shorter_than_its_least_length() {
     let held = Held::new(Vec3::ZERO, Vec3::X * 0.5, &CONFIG).unwrap();
     assert_eq!(held.rope.length_m, CONFIG.min_length_m);
     let mut held = Held::new(Vec3::ZERO, Vec3::X * 3.0, &CONFIG).unwrap();
-    held.take_in(1.0, &CONFIG);
+    held.take_in(1.0, DT, &CONFIG);
     assert!((held.rope.length_m - 2.0).abs() < 1e-6);
-    held.take_in(5.0, &CONFIG);
+    held.take_in(5.0, DT, &CONFIG);
     assert_eq!(held.rope.length_m, CONFIG.min_length_m);
-    held.take_in(f32::NAN, &CONFIG);
-    held.take_in(-2.0, &CONFIG);
+    held.take_in(f32::NAN, DT, &CONFIG);
+    held.take_in(-2.0, DT, &CONFIG);
     assert_eq!(held.rope.length_m, CONFIG.min_length_m);
 }
 

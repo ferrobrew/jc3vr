@@ -247,15 +247,19 @@ impl GrappleButton {
                 if matches!(self.phase, Phase::TapWaiting { .. }) {
                     out.fire = Some(Want::Click);
                 }
-                out.lock = Some(LockButton::Pressed);
                 Phase::Locking { held_s: 0.0 }
             }
             Phase::Locking { .. } if lock_yank => Phase::Spent,
             Phase::Locking { held_s } if held && !(button.released && !button.down) => {
-                out.lock = Some(LockButton::Held);
-                Phase::Locking {
-                    held_s: held_s + dt,
-                }
+                let next_s = held_s + dt;
+                out.lock = if held_s >= TAP_S {
+                    Some(LockButton::Held)
+                } else if next_s >= TAP_S {
+                    Some(LockButton::Pressed)
+                } else {
+                    None
+                };
+                Phase::Locking { held_s: next_s }
             }
             Phase::Locking { held_s } => {
                 if held_s < TAP_S {
@@ -388,7 +392,8 @@ impl GrappleButton {
             }
         };
         if let Some(want) = out.fire.take() {
-            out.seat_fire |= want == Want::Click;
+            out.seat_fire |= want == Want::Click
+                || (matches!(want, Want::Hold(_)) && self.phase != Phase::Firing);
         }
         out.gestures = true;
         out.lock = None;
@@ -833,21 +838,36 @@ mod tests {
     }
 
     #[test]
-    fn a_press_during_the_reel_locks_at_once_and_holds_the_fire_back() {
+    fn a_press_during_the_reel_waits_for_a_hold_and_holds_the_fire_back() {
         let mut g = GrappleButton::new();
         let out = run(&mut g, REELING, &[PRESS, HELD, HELD]);
-        assert_eq!(
-            locks(&out),
-            vec![LockButton::Pressed, LockButton::Held, LockButton::Held]
-        );
+        assert!(locks(&out).is_empty());
         assert!(out.iter().all(|o| o.gestures && o.fire.is_none()));
     }
 
     #[test]
-    fn a_quick_release_unlocks_and_passes_the_tap_to_the_game() {
+    fn the_hold_threshold_emits_one_lock_press_then_held_ticks() {
+        let mut g = GrappleButton::new();
+        assert_eq!(g.step(tick(PRESS, REELING)).lock, None);
+        let before = g.step(GrappleTick {
+            dt: TAP_S - 0.01,
+            ..tick(HELD, REELING)
+        });
+        assert_eq!(before.lock, None);
+        let threshold = g.step(GrappleTick {
+            dt: 0.01,
+            ..tick(HELD, REELING)
+        });
+        assert_eq!(threshold.lock, Some(LockButton::Pressed));
+        assert_eq!(g.step(tick(HELD, REELING)).lock, Some(LockButton::Held));
+        assert_eq!(g.step(tick(RELEASE, REELING)).lock, Some(LockButton::LetGo));
+    }
+
+    #[test]
+    fn a_quick_release_never_locks_and_passes_the_tap_to_the_game() {
         let mut g = GrappleButton::new();
         let out = run(&mut g, REELING, &[PRESS, HELD, RELEASE, UP]);
-        assert_eq!(locks(&out).last(), Some(&LockButton::Tapped));
+        assert_eq!(locks(&out), vec![LockButton::Tapped]);
         assert_eq!(fires(&out), vec![Want::Click]);
         assert!(!g.holding());
     }
@@ -938,6 +958,29 @@ mod tests {
         assert!(out[0].seat_fire, "the press fires at once");
         assert!(out.iter().all(|o| o.gestures && o.fire.is_none()));
         assert!(!g.holding());
+    }
+
+    #[test]
+    fn in_a_seat_an_attached_line_hold_fires_once_at_the_threshold() {
+        let attached = GrappleContext {
+            line: true,
+            ..SEATED
+        };
+        let mut g = GrappleButton::new();
+        let first = g.step(tick(PRESS, attached));
+        assert!(!first.seat_fire);
+        let threshold = g.step(GrappleTick {
+            dt: TAP_S,
+            ..tick(HELD, attached)
+        });
+        assert!(threshold.seat_fire);
+        assert_eq!(threshold.fire, None);
+        let rest = run(&mut g, attached, &[HELD, HELD, RELEASE, UP]);
+        assert_eq!(seat_fires(&rest), 0);
+        assert!(
+            rest.iter()
+                .all(|out| out.fire.is_none() && out.lock.is_none())
+        );
     }
 
     #[test]

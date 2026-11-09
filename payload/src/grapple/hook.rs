@@ -6,6 +6,9 @@
 //! and holds the target) and the device's (on the gauntlet). The engine side is in
 //! `docs/engine/gameplay/grapple-pipeline.md`.
 
+use std::num::NonZeroUsize;
+
+use glam::Vec3;
 use jc3gi::{
     character::character::Character,
     equipment::{
@@ -13,6 +16,86 @@ use jc3gi::{
         wire_end::{WireEnd, WireEndState},
     },
 };
+use parking_lot::Mutex;
+
+use crate::controllers::physical_hands;
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct BodyHit {
+    pub body: u32,
+    pub owner: NonZeroUsize,
+    pub local_point: Vec3,
+}
+
+impl BodyHit {
+    pub(crate) unsafe fn at(body: u32, owner: NonZeroUsize, world: Vec3) -> Option<Self> {
+        let state = unsafe { physical_hands::body_state(body, owner) }.ok()?;
+        let local_point = state.pose.local(world);
+        local_point.is_finite().then_some(Self {
+            body,
+            owner,
+            local_point,
+        })
+    }
+
+    pub(crate) unsafe fn point(self) -> Option<Vec3> {
+        let state = unsafe { physical_hands::body_state(self.body, self.owner) }.ok()?;
+        let point = state.pose.point(self.local_point);
+        point.is_finite().then_some(point)
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum CustomOwner {
+    Seat,
+    Snatch,
+}
+
+pub(crate) unsafe fn claim_custom(owner: CustomOwner) -> bool {
+    let Some(hook) = (unsafe { local_hook() }) else {
+        return false;
+    };
+    let mut claim = CUSTOM.lock();
+    if claim.is_some_and(|claim| {
+        claim
+            .wire
+            .is_some_and(|wire| hook.m_ActiveWire.px as usize != wire.get())
+    }) {
+        *claim = None;
+    }
+    if claim.is_some()
+        || hook.m_State != GrapplingHookState::GHS_INACTIVE
+        || hook.m_ActiveWire.exists()
+        || hook.m_AttachmentWire.exists()
+        || firing(hook)
+    {
+        return false;
+    }
+    *claim = Some(CustomClaim { owner, wire: None });
+    true
+}
+
+pub(crate) fn own_custom(owner: CustomOwner, wire: NonZeroUsize) {
+    let mut claim = CUSTOM.lock();
+    if let Some(claim) = claim.as_mut().filter(|claim| claim.owner == owner) {
+        claim.wire = Some(wire);
+    }
+}
+
+pub(crate) fn release_custom(owner: CustomOwner) {
+    let mut claim = CUSTOM.lock();
+    if claim.is_some_and(|claim| claim.owner == owner) {
+        *claim = None;
+    }
+}
+
+#[derive(Copy, Clone)]
+struct CustomClaim {
+    owner: CustomOwner,
+    wire: Option<NonZeroUsize>,
+}
+
+static CUSTOM: Mutex<Option<CustomClaim>> = Mutex::new(None);
 
 /// The local player's character and grappling hook.
 ///

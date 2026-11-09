@@ -1,80 +1,77 @@
-//! The seat grapple's calls into the game: the hook fired as a scripted wire from the seat, its
-//! wire read, tethered to the vehicle, or called back. The steps are the game's own vehicle
-//! grapple's ([`VehicleGrappleHook::PreSimUpdate`]).
-//!
-//! [`VehicleGrappleHook::PreSimUpdate`]: jc3gi::equipment::grappling_hook::VehicleGrappleHook::PreSimUpdate
-
 use std::{mem::MaybeUninit, num::NonZeroUsize};
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
     equipment::{
-        grappling_hook::{GrapplingHook, GrapplingHookState, GrapplingHookWire, WireState},
+        grappling_hook::{GrapplingHookState, GrapplingHookWire, WireState},
         wire_end::{HookTargetInfo, WireEndState},
     },
-    types::{math::Vector3, shared_ptr::SharedPtr},
+    types::{
+        math::{Matrix4, Vector3},
+        shared_ptr::SharedPtr,
+    },
 };
 
 use crate::{
-    controllers::weapons::hold::refs::Strong,
+    controllers::{
+        aim::{
+            self,
+            ray::Ray,
+            raycast::{self, CastOptions},
+        },
+        physical_hands::game_object_of,
+        weapons::hold::refs::{Strong, null_weak},
+    },
     grapple::{
-        hook::{self, local},
+        hook::{self, CustomOwner, local},
         seat::Refusal,
     },
 };
 
-/// What the seat grapple's wire is doing.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum WireReading {
-    /// The hook is still flying.
     Flying,
-    /// The hook holds what it hit.
     Attached,
-    /// The wire is no longer the hook's active wire, or its hook end is retracting or dead.
     Gone,
+    Ready,
 }
 
-/// Fire the local player's hook from the seat at `at`, ignoring the vehicle, as the game's vehicle
-/// grapple does: a target position in range with no game object and no bone, not a ghost wire.
-/// The hook flies there and holds whatever it meets.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
 pub(super) unsafe fn fire(at: Vec3) -> Result<NonZeroUsize, Refusal> {
     let (character, hook) = unsafe { local() }.ok_or(Refusal::NoPlayer)?;
     let vehicle = unsafe { character.GetVehiclePtr() };
     if vehicle.is_null() {
         return Err(Refusal::NoPlayer);
     }
-    if busy(hook) {
+    if !unsafe { hook::claim_custom(CustomOwner::Seat) } {
         return Err(Refusal::Busy);
     }
-    // Every field is a pointer, an integer, a flag, or a float, so all-zero is a valid value, and
-    // with no game object set there is no reference to release afterwards.
-    let mut info = unsafe { MaybeUninit::<HookTargetInfo>::zeroed().assume_init() };
-    info.m_TargetPosition = Vector3 {
-        data: at.to_array(),
-    };
-    info.m_WasInRange = true;
-    info.m_BoneIndex = NO_BONE;
-    unsafe { hook.FireHookCustom(&mut info, vehicle.cast(), false) };
-    let wire = NonZeroUsize::new(hook.m_ActiveWire.px as usize).ok_or(Refusal::FireRefused)?;
-    if hook.m_State != GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE {
+    let mut info = unsafe { target_info(character, at) };
+    unsafe {
+        hook.FireHookCustom(&mut info, vehicle.cast(), false);
+        info.m_TargetGameObject.Assign(&null_weak());
+    }
+    let wire = NonZeroUsize::new(hook.m_ActiveWire.px as usize);
+    if hook.m_State != GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE || wire.is_none() {
+        hook::release_custom(CustomOwner::Seat);
         return Err(Refusal::FireRefused);
     }
+    let wire = wire.ok_or_else(|| {
+        hook::release_custom(CustomOwner::Seat);
+        Refusal::FireRefused
+    })?;
+    hook::own_custom(CustomOwner::Seat, wire);
     Ok(wire)
 }
 
-/// Read the seat grapple's wire `wire`.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
 pub(super) unsafe fn read(wire: NonZeroUsize) -> WireReading {
     let Some(active) = (unsafe { active_wire(wire) }) else {
-        return WireReading::Gone;
+        hook::release_custom(CustomOwner::Seat);
+        return if unsafe { ready() } {
+            WireReading::Ready
+        } else {
+            WireReading::Gone
+        };
     };
     if active.m_WireState == WireState::GHWS_INVALID {
         return WireReading::Gone;
@@ -87,13 +84,13 @@ pub(super) unsafe fn read(wire: NonZeroUsize) -> WireReading {
     }
 }
 
-/// Turn the wire `wire`, whose hook holds, into a tether between what it holds and the vehicle,
-/// returning whether the hook took it.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn tether(wire: NonZeroUsize) -> bool {
+pub(super) unsafe fn attachment_point(wire: NonZeroUsize) -> Option<Vec3> {
+    let end = hook::attached_hook_end(unsafe { active_wire(wire) }?)?;
+    let at = Vec3::from_array(end.m_WorldPositionT1.data);
+    at.is_finite().then_some(at)
+}
+
+pub(super) unsafe fn tether(wire: NonZeroUsize, second: Option<Vec3>) -> bool {
     if unsafe { active_wire(wire) }.is_none() {
         return false;
     }
@@ -107,42 +104,99 @@ pub(super) unsafe fn tether(wire: NonZeroUsize) -> bool {
     let Some(holder) = (unsafe { Strong::lock(&hook.m_Holder) }) else {
         return false;
     };
-    // A non-owning copy of the holder's reference, valid while `holder` is held: the hook's holder
-    // reference is to the character, so its object pointer is the character's.
     let shared = SharedPtr::<Character> {
-        px: holder.object().cast(),
+        px: std::ptr::from_ref(character).cast_mut(),
         pn: holder.control_block(),
     };
     unsafe { hook.TetherActiveWireToVehicleCOM(&shared, vehicle) };
-    drop(holder);
-    !hook.m_ActiveWire.exists()
+    if hook.m_ActiveWire.exists() {
+        return false;
+    }
+    hook::release_custom(CustomOwner::Seat);
+    let Some(at) = second else { return true };
+    let Some(wire) = (unsafe { hook.m_Wires.as_slice() })
+        .iter()
+        .find(|candidate| candidate.px as usize == wire.get())
+        .and_then(|wire| unsafe { wire.px.as_mut() })
+    else {
+        return false;
+    };
+    let Some(tuning) = (unsafe { hook.GetTuning().as_ref() }) else {
+        return false;
+    };
+    let mut info = unsafe { target_info(character, at) };
+    let start = hook::device_end(wire).m_WorldPositionT1;
+    unsafe {
+        wire.DestroyConstraint();
+        wire.m_WireEnds[1].SetExtend(&start, tuning.m_GrappleFireSpeed, &mut info, false);
+        info.m_TargetGameObject.Assign(&null_weak());
+    }
+    true
 }
 
-/// Call back the seat grapple's wire `wire`, while it is still the hook's active wire.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
 pub(super) unsafe fn cancel(wire: NonZeroUsize) {
-    if unsafe { active_wire(wire) }.is_none() {
-        return;
-    }
-    if let Some(hook) = unsafe { hook::local_hook() } {
+    if unsafe { active_wire(wire) }.is_some()
+        && let Some(hook) = unsafe { hook::local_hook() }
+    {
         unsafe { hook.CancelActiveWire() };
     }
+    hook::release_custom(CustomOwner::Seat);
 }
 
-/// Whether the hook cannot fire now: a line is out, or a fire is under way. The hook's state alone
-/// is not read: it can keep naming the last reel's ending with no line out.
-fn busy(hook: &GrapplingHook) -> bool {
-    hook.m_ActiveWire.exists() || hook.m_AttachmentWire.exists() || hook::firing(hook)
+unsafe fn ready() -> bool {
+    unsafe { hook::local_hook() }.is_some_and(|hook| {
+        hook.m_State == GrapplingHookState::GHS_INACTIVE
+            && !hook.m_ActiveWire.exists()
+            && !hook.m_AttachmentWire.exists()
+            && !hook::firing(hook)
+    })
 }
 
-/// `wire`, while it is the local player's hook's active wire.
-///
-/// # Safety
-///
-/// The game thread; the wire is not kept past the tick.
+unsafe fn target_info(character: &Character, at: Vec3) -> HookTargetInfo {
+    let mut info = unsafe { MaybeUninit::<HookTargetInfo>::zeroed().assume_init() };
+    info.m_TargetPosition = Vector3 {
+        data: at.to_array(),
+    };
+    info.m_WasInRange = true;
+    info.m_BoneIndex = -1;
+    let Some(aim) = aim::status().grapple else {
+        return info;
+    };
+    let Some(ray) = Ray::new(aim.ray.origin, at - aim.ray.origin) else {
+        return info;
+    };
+    let options = unsafe { CastOptions::ignoring_rider(character) };
+    let Some(hit) = (unsafe { raycast::cast(&ray, ray.origin.distance(at) + 0.25, &options) })
+        .ok()
+        .flatten()
+        .filter(|hit| hit.position.distance(at) <= 0.5)
+    else {
+        return info;
+    };
+    let Some(object) = hit.object else {
+        return info;
+    };
+    let object = game_object_of(object);
+    let mut matrix = Matrix4::from(Mat4::IDENTITY);
+    if !unsafe { (*object).GetTransform(&mut matrix) } {
+        return info;
+    }
+    let inverse = Mat4::from(matrix).inverse();
+    let local = inverse.transform_point3(hit.position);
+    if !inverse.is_finite() || !local.is_finite() {
+        return info;
+    }
+    unsafe {
+        info.SetupTargetFromGameObject(
+            object.cast(),
+            &Vector3 {
+                data: local.to_array(),
+            },
+        )
+    };
+    info
+}
+
 unsafe fn active_wire(wire: NonZeroUsize) -> Option<&'static GrapplingHookWire> {
     let hook = unsafe { hook::local_hook() }?;
     if hook.m_ActiveWire.px as usize != wire.get() {
@@ -150,6 +204,3 @@ unsafe fn active_wire(wire: NonZeroUsize) -> Option<&'static GrapplingHookWire> 
     }
     unsafe { hook.m_ActiveWire.px.as_ref() }
 }
-
-/// A target info's bone index for a target with no bone.
-const NO_BONE: i32 = -1;

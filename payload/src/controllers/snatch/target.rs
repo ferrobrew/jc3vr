@@ -5,36 +5,38 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 
-use crate::controllers::{
-    aim::{
-        grapple_weapons,
-        ray::Ray,
-        raycast::{self, CastOptions},
-    },
-    config::ControllersConfig,
-    grab::RemoteKind,
-    mode::Mode,
-    physical_hands::{
-        self,
-        collider_view::model::Aabb,
-        doors::DoorTarget,
-        game_object_of,
-        remote::{self, NearBody, NearKind, RagdollTarget},
-    },
-    snatch::{
-        OfferInput, Refusal, SNATCH, engine,
-        rules::{self, Candidate, PropHandling},
-    },
-    weapons::{
-        c4::placed::{self as placed_charges, PlacedCharge},
-        grenade,
-        hold::{
-            rack::{self, remote::RemoteRack},
-            refs::Weak,
-            steal::{self, HolsteredTarget},
-            world::{TargetKind, WorldTarget},
+use crate::{
+    controllers::{
+        aim::{
+            grapple_weapons,
+            ray::Ray,
+            raycast::{self, CastOptions},
+        },
+        config::ControllersConfig,
+        grab::RemoteKind,
+        physical_hands::{
+            self,
+            collider_view::model::Aabb,
+            doors::DoorTarget,
+            game_object_of,
+            remote::{self, NearBody, NearKind, RagdollTarget},
+        },
+        snatch::{
+            OfferInput, Refusal, SNATCH, engine,
+            rules::{self, Candidate, PropHandling},
+        },
+        weapons::{
+            c4::placed::{self as placed_charges, PlacedCharge},
+            grenade,
+            hold::{
+                rack::{self, remote::RemoteRack},
+                refs::Weak,
+                steal::{self, HolsteredTarget},
+                world::{TargetKind, WorldTarget},
+            },
         },
     },
+    grapple::hook::BodyHit,
 };
 
 /// Revalidate a recent offer without selecting a different object.
@@ -226,6 +228,28 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             point
         }
     };
+    let point = if let Some(hit) = offer.hit {
+        let Some(point) = (unsafe { hit.point() }) else {
+            return false;
+        };
+        point
+    } else if let Some(local) = offer.object_local {
+        let Some(object) = offer.kind.object() else {
+            return false;
+        };
+        let Some(frame) = (unsafe { engine::object_frame(object) }) else {
+            return false;
+        };
+        frame.transform_point3(local)
+    } else {
+        point
+    };
+    let Some(object) = offer.kind.sight_object() else {
+        return false;
+    };
+    if !unsafe { in_sight(ray, point, object) } {
+        return false;
+    }
     let ground = matches!(
         offer.kind,
         OfferKind::Ground { .. }
@@ -255,6 +279,8 @@ pub(super) struct Offer {
     pub point: Vec3,
     /// How far it is from the grapple's ray origin, metres.
     pub distance: f32,
+    pub hit: Option<BodyHit>,
+    pub object_local: Option<Vec3>,
 }
 
 pub(super) enum OfferKind {
@@ -320,6 +346,32 @@ pub(super) enum OfferKind {
 }
 
 impl OfferKind {
+    fn object(&self) -> Option<NonZeroUsize> {
+        match self {
+            Self::Ground { weapon, .. }
+            | Self::Rack { weapon, .. }
+            | Self::WorldGrenade { weapon, .. } => Some(*weapon),
+            Self::Held(target) => NonZeroUsize::new(target.weapon),
+            Self::Holstered(target) => NonZeroUsize::new(target.weapon),
+            Self::Prop { object, .. } | Self::Grenade { object, .. } => Some(*object),
+            Self::Ragdoll { character, .. } => Some(*character),
+            Self::Door { door, .. } => Some(door.vehicle),
+            Self::PlacedCharge { .. } => None,
+        }
+    }
+
+    fn sight_object(&self) -> Option<usize> {
+        match self {
+            Self::Held(target) => match target.kind {
+                TargetKind::Held { character } => Some(character),
+                _ => None,
+            },
+            Self::Holstered(target) => Some(target.character),
+            Self::PlacedCharge { charge } => Some(*charge),
+            _ => self.object().map(NonZeroUsize::get),
+        }
+    }
+
     /// What it is to the grip, for its marker's colour.
     pub(super) const fn remote(&self) -> RemoteKind {
         match self {
@@ -364,8 +416,8 @@ impl OfferKind {
 ///
 /// The game thread, before the world update.
 pub(super) unsafe fn offerable(input: &OfferInput) -> Result<(), &'static str> {
-    if !matches!(input.detection.mode, Mode::OnFoot(_)) || input.detection.traversal.is_some() {
-        return Err("NOT ON FOOT");
+    if !crate::controllers::snatch::available_in(input.detection) {
+        return Err("SNATCH UNAVAILABLE");
     }
     let i = input.hand.index();
     if !physical_hands::free_hands()[i] || physical_hands::held_props()[i].is_some() {
@@ -605,10 +657,28 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             }
         }
     };
+    let body = match &kind {
+        OfferKind::Ground { weapon, body, .. } | OfferKind::WorldGrenade { weapon, body, .. } => {
+            Some((*body, *weapon))
+        }
+        OfferKind::Prop { object, body, .. } | OfferKind::Grenade { object, body, .. } => {
+            Some((*body, *object))
+        }
+        OfferKind::Ragdoll { owner, body, .. } => Some((*body, *owner)),
+        _ => None,
+    };
+    let hit = body.and_then(|(body, owner)| unsafe { BodyHit::at(body, owner, point) });
+    let object_local = match kind {
+        OfferKind::PlacedCharge { .. } | OfferKind::Door { .. } => None,
+        _ if hit.is_some() => None,
+        _ => Some(unsafe { engine::object_local(kind.object()?, point) }?),
+    };
     Some(Offer {
         kind,
         point,
         distance: chosen.distance,
+        hit,
+        object_local,
     })
 }
 

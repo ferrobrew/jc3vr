@@ -68,6 +68,7 @@ mod target;
 
 use std::num::NonZeroUsize;
 
+use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
@@ -89,14 +90,14 @@ use crate::controllers::{
     grab::{GrabVolume, GripTarget, Mark, MarkAt, Provided, latch::GripLatch},
     haptics::{self, Event},
     loadout::slot_label,
-    mode::{Detection, Mode},
+    mode::{Detection, Mode, VehicleClass},
     physical_hands,
     snatch::{
         arrival::ArrivalWatch,
         brace::Brace,
         moment::Moment,
         prearm::Prearm,
-        pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, Step, Swinging},
+        pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, SlingInput, Step, Swinging},
         rules::PropHandling,
         target::{Offer, OfferKind},
     },
@@ -108,6 +109,21 @@ pub(crate) fn hook_library() -> HookLibrary {
     hooks::hook_library()
         .with_hook_library(sling_hooks::hook_library())
         .with_hook_library(juice::hook_library())
+}
+
+pub(crate) fn available_in(detection: &Detection) -> bool {
+    if detection.traversal.is_some() {
+        return false;
+    }
+    match detection.mode {
+        Mode::OnFoot(_) => true,
+        Mode::Vehicle(seat) if seat.class == VehicleClass::Car => unsafe {
+            Character::GetLocalPlayerCharacter()
+                .as_ref()
+                .is_some_and(|character| crate::grapple::seat::rides_in_seat(character))
+        },
+        _ => false,
+    }
 }
 
 /// Only an already-gripped remote target can claim a subsequent fresh B press. A heavy object swings
@@ -560,12 +576,11 @@ impl State {
             self.cancel("another hand took the target");
             return;
         }
-        let on_foot =
-            matches!(input.detection.mode, Mode::OnFoot(_)) && input.detection.traversal.is_none();
+        let available = available_in(input.detection);
         if let Some(hand) = self.phase.hand() {
             let continuation = sling::Continuation {
                 enabled: config.enabled,
-                on_foot,
+                available,
                 tracked: input.line.is_some(),
                 same_hand: hand == input.hand,
                 empty_hand: physical_hands::free_hands()[hand.index()]
@@ -677,12 +692,12 @@ impl State {
                         Err(refusal) => self.failed(hand, refusal),
                     },
                     // A rack's copy or a pair's pistol spawns a few frames later.
-                    Ok(making @ Freeing::Making(_)) if waited_s < timeout_s => Phase::Freeing {
+                    Ok(making @ Freeing::Making(..)) if waited_s < timeout_s => Phase::Freeing {
                         hand,
                         target: making,
                         waited_s,
                     },
-                    Ok(Freeing::Making(_)) => {
+                    Ok(Freeing::Making(..)) => {
                         self.failed(hand, Refusal::Source(SourceRefusal::Gone))
                     }
                     Err(refusal) => self.failed(hand, refusal),
@@ -706,7 +721,15 @@ impl State {
                                     if config.sling && (input.modifier_held || tethered) {
                                         let swinging = unsafe {
                                             pull::sling(
-                                                hand, &target, wire, &mut rope, &mut brace, input,
+                                                hand,
+                                                &target,
+                                                wire,
+                                                SlingInput {
+                                                    flight: &flight,
+                                                    rope: &mut rope,
+                                                    brace: &mut brace,
+                                                },
+                                                input,
                                             )
                                         }?;
                                         self.status.swing =
@@ -778,23 +801,35 @@ impl State {
                     sling::AttachedMode::Swing => {
                         let starting = rope.is_none();
                         let was_braced = brace.braced();
-                        unsafe { pull::sling(hand, &target, wire, &mut rope, &mut brace, input) }
-                            .map(|swinging| {
-                                if starting {
-                                    log_swing_start(&swinging, tethered);
-                                }
-                                if swinging.braced != was_braced {
-                                    tracing::info!(
-                                        target: "controllers",
-                                        braced = swinging.braced,
-                                        max_tension_n = swinging.max_tension_n,
-                                        "snatch: the other hand {} the line",
-                                        if swinging.braced { "braced" } else { "let go of" }
-                                    );
-                                }
-                                self.status.swing = Some(SwingReadout::new(swinging, tethered));
-                                Step::Flying
-                            })
+                        unsafe {
+                            pull::sling(
+                                hand,
+                                &target,
+                                wire,
+                                SlingInput {
+                                    flight: &flight,
+                                    rope: &mut rope,
+                                    brace: &mut brace,
+                                },
+                                input,
+                            )
+                        }
+                        .map(|swinging| {
+                            if starting {
+                                log_swing_start(&swinging, tethered);
+                            }
+                            if swinging.braced != was_braced {
+                                tracing::info!(
+                                    target: "controllers",
+                                    braced = swinging.braced,
+                                    max_tension_n = swinging.max_tension_n,
+                                    "snatch: the other hand {} the line",
+                                    if swinging.braced { "braced" } else { "let go of" }
+                                );
+                            }
+                            self.status.swing = Some(SwingReadout::new(swinging, tethered));
+                            Step::Flying
+                        })
                     }
                     sling::AttachedMode::Resume | sling::AttachedMode::Pull => {
                         if mode == sling::AttachedMode::Resume {

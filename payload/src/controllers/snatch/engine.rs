@@ -3,7 +3,7 @@
 
 use std::{mem::MaybeUninit, num::NonZeroUsize, ptr};
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
     equipment::{
@@ -11,7 +11,7 @@ use jc3gi::{
         weapon::{WeaponBase, WeaponState},
         wire_end::{HookTargetInfo, WireEnd, WireEndState},
     },
-    types::math::Vector3,
+    types::math::{Matrix4, Vector3},
 };
 
 use crate::{
@@ -21,7 +21,7 @@ use crate::{
         snatch::{Refusal, sling_hooks},
         weapons::{engine, grenade, hold::refs::null_weak},
     },
-    grapple::hook::{self, local_hook},
+    grapple::hook::{self, CustomOwner, local_hook},
 };
 
 /// Why the hook cannot fire now, if it cannot: a line is out, or a fire or a reel is under way.
@@ -35,18 +35,14 @@ pub(super) fn busy(hook: &GrapplingHook) -> Option<Refusal> {
     (hook.m_State != GrapplingHookState::GHS_INACTIVE).then_some(Refusal::HookBusy)
 }
 
-/// Fire the hook as a ghost wire at the physics game object `object`, latched at `local` in the
-/// object's space with `at` its world position now, and return the wire it fired.
+/// Fire the hook as a ghost wire at the physics game object `object`, latched at `at` in world
+/// space, and return the wire it fired.
 ///
 /// # Safety
 ///
 /// `object` must be a live physics game object held alive, on the game thread before the world
 /// update.
-pub(super) unsafe fn fire(
-    object: NonZeroUsize,
-    local: Vec3,
-    at: Vec3,
-) -> Result<NonZeroUsize, Refusal> {
+pub(super) unsafe fn fire(object: NonZeroUsize, at: Vec3) -> Result<NonZeroUsize, Refusal> {
     let hook = unsafe { local_hook() }.ok_or(Refusal::NoPlayer)?;
     if let Some(refusal) = busy(hook) {
         return Err(refusal);
@@ -56,17 +52,24 @@ pub(super) unsafe fn fire(
     info.m_TargetPosition = vector(at);
     info.m_WasInRange = true;
     info.m_BoneIndex = NO_BONE;
+    let local = unsafe { object_local(object, at) }.ok_or(Refusal::Gone)?;
     let game_object = game_object_of(object).cast();
+    if !unsafe { hook::claim_custom(CustomOwner::Snatch) } {
+        return Err(Refusal::HookBusy);
+    }
     unsafe {
         info.SetupTargetFromGameObject(game_object, &vector(local));
         hook.FireHookCustom(&mut info, ptr::null_mut(), true);
         // The fire copied the target info into the wire's end; this copy's weak reference is ours.
         info.m_TargetGameObject.Assign(&null_weak());
     }
-    let wire = NonZeroUsize::new(hook.m_ActiveWire.px as usize).ok_or(Refusal::FireRefused)?;
-    if hook.m_State != GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE {
+    let wire = NonZeroUsize::new(hook.m_ActiveWire.px as usize);
+    if hook.m_State != GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE || wire.is_none() {
+        hook::release_custom(CustomOwner::Snatch);
         return Err(Refusal::FireRefused);
     }
+    let wire = wire.unwrap();
+    hook::own_custom(CustomOwner::Snatch, wire);
     Ok(wire)
 }
 
@@ -89,6 +92,7 @@ pub(super) enum WireReading {
 /// The game thread, before the world update.
 pub(super) unsafe fn read_wire(wire: NonZeroUsize) -> (WireReading, Option<f32>) {
     let Some(active) = (unsafe { active_wire(wire) }) else {
+        hook::release_custom(CustomOwner::Snatch);
         return (WireReading::Gone, None);
     };
     let reading = if active.m_WireState == WireState::GHWS_INVALID {
@@ -101,6 +105,9 @@ pub(super) unsafe fn read_wire(wire: NonZeroUsize) -> (WireReading, Option<f32>)
             _ => WireReading::Gone,
         }
     };
+    if reading == WireReading::Gone {
+        hook::release_custom(CustomOwner::Snatch);
+    }
     (reading, Some(active.m_MaxLength))
 }
 
@@ -110,12 +117,12 @@ pub(super) unsafe fn read_wire(wire: NonZeroUsize) -> (WireReading, Option<f32>)
 ///
 /// The game thread, before the world update.
 pub(super) unsafe fn cancel(wire: NonZeroUsize) {
-    if unsafe { active_wire(wire) }.is_none() {
-        return;
-    }
-    if let Some(hook) = unsafe { local_hook() } {
+    if unsafe { active_wire(wire) }.is_some()
+        && let Some(hook) = unsafe { local_hook() }
+    {
         unsafe { hook.CancelActiveWire() };
     }
+    hook::release_custom(CustomOwner::Snatch);
 }
 
 /// The owned native wire's device proxy. No wire address is dereferenced after ownership is lost.
@@ -211,6 +218,21 @@ unsafe fn active_wire(wire: NonZeroUsize) -> Option<&'static GrapplingHookWire> 
         return None;
     }
     unsafe { hook.m_ActiveWire.px.as_ref() }
+}
+
+pub(super) unsafe fn object_local(object: NonZeroUsize, at: Vec3) -> Option<Vec3> {
+    let inverse = unsafe { object_frame(object) }?.inverse();
+    let local = inverse.transform_point3(at);
+    (inverse.is_finite() && local.is_finite()).then_some(local)
+}
+
+pub(super) unsafe fn object_frame(object: NonZeroUsize) -> Option<Mat4> {
+    let mut matrix = Matrix4::from(Mat4::IDENTITY);
+    if !unsafe { (*game_object_of(object)).GetTransform(&mut matrix) } {
+        return None;
+    }
+    let matrix = Mat4::from(matrix);
+    matrix.is_finite().then_some(matrix)
 }
 
 fn vector(v: Vec3) -> Vector3 {

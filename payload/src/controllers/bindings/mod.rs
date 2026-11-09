@@ -625,7 +625,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         snatch::can_claim_button() && config.weapons.snatch.sling,
         semantic.is_some()
             && !controls.masked_hands.contains(&true)
-            && matches!(detection.mode, Mode::OnFoot(_)),
+            && snatch::available_in(&detection),
         neutral_policy.frame_neutral(&original) && source_neutral,
     );
     let line = line_attached() && !snatch_button_owned;
@@ -654,7 +654,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     };
     controls.grapple = GrappleContext {
         tethers: physical_grapple.tethers > 0,
-        line: yank_armed_in(line, &detection),
+        line: yank_armed_in(line, &detection) || grapple::seat::status().flying,
         aim_target: aim::status().grapple.is_some_and(|g| g.valid),
         reeling: physical_grapple.lockable && !snatch_button_owned,
         // SAFETY: the game stage runs on the game thread before the world update.
@@ -685,6 +685,13 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         grapple::seat::tick(&grapple::seat::SeatTickInput {
             seated: controls.grapple.seated,
             fire: step.grapple_seat_fire,
+            held: grapple_held && !snatch_button_owned,
+            release_all: step.desired.iter().any(|d| {
+                matches!(
+                    d.target.action,
+                    Action::RELEASE_GRAPPLE | Action::VEHICLE_RELEASE_GRAPPLE
+                ) && d.want == Want::Click
+            }),
             target: aim::status()
                 .grapple
                 .filter(|g| g.seat && g.valid)

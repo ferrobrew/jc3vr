@@ -13,7 +13,7 @@ use crate::{
 /// The owner facts required before continuing any snatch phase.
 pub(super) struct Continuation {
     pub enabled: bool,
-    pub on_foot: bool,
+    pub available: bool,
     pub tracked: bool,
     pub same_hand: bool,
     pub empty_hand: bool,
@@ -26,8 +26,8 @@ impl Continuation {
             Some("the grapple hand lost tracking")
         } else if !self.same_hand || !self.empty_hand {
             Some("the grapple hand is no longer available")
-        } else if !self.enabled || !self.on_foot {
-            Some("the snatch is off or the player left their feet")
+        } else if !self.enabled || !self.available {
+            Some("the snatch is off or the player context is unavailable")
         } else if !self.grip_held {
             Some("the grip opened")
         } else {
@@ -234,7 +234,7 @@ mod tests {
         for lost in 0..6 {
             let mut input = Continuation {
                 enabled: true,
-                on_foot: true,
+                available: true,
                 tracked: true,
                 same_hand: true,
                 empty_hand: true,
@@ -243,7 +243,7 @@ mod tests {
             assert_eq!(input.cancellation(), None);
             match lost {
                 0 => input.enabled = false,
-                1 => input.on_foot = false,
+                1 => input.available = false,
                 2 => input.tracked = false,
                 3 => input.same_hand = false,
                 4 => input.empty_hand = false,
@@ -379,7 +379,7 @@ mod tests {
         assert_eq!(after.tension_n, 120.0);
         let released = Continuation {
             enabled: true,
-            on_foot: true,
+            available: true,
             tracked: true,
             same_hand: true,
             empty_hand: true,
