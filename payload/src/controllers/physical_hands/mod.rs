@@ -99,6 +99,8 @@ pub(crate) use targets::test_support::DoorProvider;
 pub(crate) use targets::{DoorEligibility, targets};
 pub(crate) use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
+pub(crate) mod lifetime;
+
 use crate::{
     config::Config,
     controllers::{
