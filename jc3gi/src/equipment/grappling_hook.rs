@@ -822,6 +822,19 @@ impl GrapplingHook {
             f(self as *mut Self as _, holder, player, tuning, action_map, dt)
         }
     }
+    pub const ReleaseAllDualTethers_ADDRESS: usize = 0x1408F7A80;
+    /// Releases every non-invalid wire in [`m_Wires`](crate::equipment::grappling_hook::GrapplingHook::m_Wires): plays its detached
+    /// effect, destroys its constraint, detaches both ends, and returns it to
+    /// [`GHWS_ACTIVE_VIRTUAL`](crate::equipment::grappling_hook::WireState::GHWS_ACTIVE_VIRTUAL).
+    /// The disassembler mislabels this function `CGrapplingHook::OnSuccessfulGrappleFromReelIn`.
+    pub unsafe fn ReleaseAllDualTethers(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::ReleaseAllDualTethers_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const SqueezeDualTethers_ADDRESS: usize = 0x140923E00;
     /// Squeezes every wire of the tether list by `squeeze_value` (`0..=1`): each wire rebuilds its
     /// constraint toward a shorter length and smooths its squeeze factor toward the value. It sets

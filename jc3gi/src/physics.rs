@@ -2689,6 +2689,27 @@ fn _hknpWorld_size_check() {
     unreachable!()
 }
 impl hknpWorld {
+    pub const setBodyCollisionFilterInfo_ADDRESS: usize = 0x1414CE460;
+    /// Replaces the body's complete collision-filter word, rebuilds its collision caches when
+    /// `rebuild_mode` is [`REBUILD_COLLISION_CACHES`](crate::physics::hknpWorld::REBUILD_COLLISION_CACHES), and emits the
+    /// body's change signal. An unchanged word does nothing. The disassembler labels this function
+    /// as `CPfxRigidBody::SetCollisionFilterInfo`.
+    pub unsafe fn setBodyCollisionFilterInfo(
+        &mut self,
+        body: u32,
+        filter_info: u32,
+        rebuild_mode: i32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body: u32,
+                filter_info: u32,
+                rebuild_mode: i32,
+            ) = ::std::mem::transmute(Self::setBodyCollisionFilterInfo_ADDRESS);
+            f(self as *mut Self as _, body, filter_info, rebuild_mode)
+        }
+    }
     pub const enableBodyFlags_ADDRESS: usize = 0x1414CE4C0;
     /// Adds collision flags and rebuilds collision caches when `rebuild_mode` selects rebuilding.
     /// The disassembler labels this function as a rigid-body constructor.

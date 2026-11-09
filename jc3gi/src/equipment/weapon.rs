@@ -182,6 +182,37 @@ impl std::convert::AsMut<BarrelSpinWeaponComponent> for BarrelSpinWeaponComponen
     }
 }
 #[repr(C, align(8))]
+/// `CBeaconWeapon`: the rebel-support beacon weapon, sharing the primed explosive slot and
+/// attachment placement of [`ThrownGrenadeWeapon`](crate::equipment::weapon::ThrownGrenadeWeapon).
+pub struct BeaconWeapon {}
+impl BeaconWeapon {
+    pub const Fire_Projectile_ADDRESS: usize = 0x140997EA0;
+    /// Fires the primed beacon through the common thrown-projectile path, re-equips the hand
+    /// grenade, and requests the deferred rebel-support beacon event.
+    pub unsafe fn Fire_Projectile(
+        &mut self,
+        weapon_data: *mut crate::equipment::weapon::WeaponData,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                weapon_data: *mut crate::equipment::weapon::WeaponData,
+            ) = ::std::mem::transmute(Self::Fire_Projectile_ADDRESS);
+            f(self as *mut Self as _, weapon_data)
+        }
+    }
+}
+impl std::convert::AsRef<BeaconWeapon> for BeaconWeapon {
+    fn as_ref(&self) -> &BeaconWeapon {
+        self
+    }
+}
+impl std::convert::AsMut<BeaconWeapon> for BeaconWeapon {
+    fn as_mut(&mut self) -> &mut BeaconWeapon {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// `CBulletWeaponBase`: the base of the fast-projectile weapons. Its layout is unmapped.
 pub struct BulletWeaponBase {}
 impl BulletWeaponBase {
