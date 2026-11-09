@@ -10,7 +10,7 @@ use jc3gi::physics::{hknpBody, hknpWorld};
 
 use crate::controllers::physical_hands::impacts::{
     Status,
-    policy::{Gate, Motion, strength},
+    policy::{Gate, Motion, damage_impulse, strength},
 };
 
 pub(super) type Held = (u32, NonZeroUsize);
@@ -21,6 +21,7 @@ pub(super) struct Identity {
     pub body: u32,
     pub owner: NonZeroUsize,
     pub instance: usize,
+    pub control: usize,
 }
 
 #[derive(Copy, Clone)]
@@ -45,6 +46,9 @@ impl Lease {
             identity: self.identity,
             holders: self.holders,
             motion: self.motion,
+            target: None,
+            target_motion: None,
+            retention: 0,
             at,
             normal,
             impulse,
@@ -58,6 +62,9 @@ pub(super) struct Contact {
     pub identity: Identity,
     holders: [Option<u64>; 2],
     pub motion: Motion,
+    pub target: Option<Identity>,
+    pub target_motion: Option<Motion>,
+    pub retention: u64,
     pub at: Vec3,
     pub normal: Vec3,
     pub impulse: f32,
@@ -68,6 +75,8 @@ pub(super) struct Feedback {
     pub contact: Contact,
     pub share: f32,
     pub hands: [bool; 2],
+    pub damage_impulse: Option<f32>,
+    pub native: [bool; 2],
 }
 
 /// One original world flag call, including the caller's cache-rebuild mode.
@@ -103,6 +112,8 @@ pub(super) struct State {
     queue: Vec<(Contact, Instant)>,
     recent_contacts: Vec<(Contact, Instant)>,
     gate: Gate,
+    damage_gate: Vec<([Identity; 2], f64)>,
+    native: Vec<([Identity; 2], Identity, Instant)>,
     start: Option<Instant>,
     pub status: Status,
 }
@@ -117,6 +128,8 @@ impl State {
             queue: Vec::new(),
             recent_contacts: Vec::new(),
             gate: Gate { last: [None; 2] },
+            damage_gate: Vec::new(),
+            native: Vec::new(),
             start: None,
             status: Status {
                 listening: 0,
@@ -262,11 +275,21 @@ impl State {
         }
     }
 
+    pub fn native(&mut self, pair: [Identity; 2], recipient: Identity, now: Instant) {
+        self.native
+            .retain(|(_, _, at)| now.saturating_duration_since(*at) <= STALE_AFTER);
+        if self.native.len() >= 64 {
+            self.native.remove(0);
+        }
+        self.native.push((pair, recipient, now));
+    }
+
     pub fn deliver(&mut self, now: Instant, enabled: Enabled, valid: &[Identity]) -> Vec<Feedback> {
         let wanted = self.wanted(now, enabled);
         let now_s = now
             .saturating_duration_since(*self.start.get_or_insert(now))
             .as_secs_f64();
+        let native_hits = std::mem::take(&mut self.native);
         let mut feedback = Vec::new();
         for (contact, queued) in std::mem::take(&mut self.queue) {
             let hands = [0, 1].map(|i| {
@@ -274,6 +297,7 @@ impl State {
                     && contact.holders[i] == Some(self.generations[i])
             });
             let live = valid.contains(&contact.identity)
+                && contact.target.is_none_or(|target| valid.contains(&target))
                 && self
                     .leases
                     .iter()
@@ -283,18 +307,57 @@ impl State {
             if now.saturating_duration_since(queued) > STALE_AFTER
                 || !live
                 || !hands.into_iter().any(|h| h)
-                || share.is_none()
             {
                 self.status.suppressed += 1;
                 continue;
             }
-            let hands = [0, 1].map(|i| hands[i] && self.gate.admit(i, now_s));
-            if hands.into_iter().any(|h| h) {
+            let pair = contact.target.map(|target| [contact.identity, target]);
+            self.damage_gate
+                .retain(|(_, at)| now_s >= *at && now_s - *at < 0.35);
+            let damage_impulse = pair.and_then(|pair| {
+                contact
+                    .target_motion
+                    .filter(|_| contact.retention != 0)
+                    .and_then(|target| {
+                        damage_impulse(
+                            contact.motion,
+                            target,
+                            contact.at,
+                            contact.normal,
+                            contact.impulse,
+                        )
+                    })
+                    .filter(|_| {
+                        !self
+                            .damage_gate
+                            .iter()
+                            .any(|(recent, _)| *recent == pair || *recent == [pair[1], pair[0]])
+                    })
+            });
+            let native = pair.map_or([false; 2], |pair| {
+                pair.map(|recipient| {
+                    native_hits.iter().any(|(native_pair, target, at)| {
+                        *target == recipient
+                            && (*native_pair == pair || *native_pair == [pair[1], pair[0]])
+                            && now.saturating_duration_since(*at) <= STALE_AFTER
+                    })
+                })
+            });
+            if let Some(pair) = pair.filter(|_| damage_impulse.is_some()) {
+                if self.damage_gate.len() >= 64 {
+                    self.damage_gate.remove(0);
+                }
+                self.damage_gate.push((pair, now_s));
+            }
+            let hands = [0, 1].map(|i| hands[i] && share.is_some() && self.gate.admit(i, now_s));
+            if hands.into_iter().any(|h| h) || damage_impulse.is_some() {
                 self.status.feedback += 1;
                 feedback.push(Feedback {
                     contact,
-                    share: share.unwrap(),
+                    share: share.unwrap_or(0.0),
                     hands,
+                    damage_impulse,
+                    native,
                 });
             }
         }
@@ -382,6 +445,8 @@ impl State {
         self.queue.clear();
         self.recent_contacts.clear();
         self.gate = Gate::default();
+        self.damage_gate.clear();
+        self.native.clear();
     }
 
     fn fresh(&self, now: Instant) -> bool {

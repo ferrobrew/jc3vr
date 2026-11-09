@@ -32,7 +32,7 @@ use jc3gi::{
     damage::{DamageFlags, DamageMsg},
     faction::GetRelation,
     physics::{PfxInstance, PhysicsGameObject},
-    types::math::Vector3,
+    types::{math::Vector3, shared_ptr::WeakPtrGameObject},
 };
 use parking_lot::Mutex;
 
@@ -268,6 +268,59 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         });
     }
     delivered
+}
+
+/// Strike a character with the calibrated melee policy used by hand bodies.
+///
+/// # Safety
+/// The game thread; both characters stay alive throughout native dispatch.
+pub(crate) unsafe fn held_strike(
+    attacker: &Character,
+    victim: &mut Character,
+    at: Vec3,
+    direction: Vec3,
+    impulse_ns: f32,
+) -> Option<i16> {
+    if std::ptr::eq(attacker, victim) {
+        return None;
+    }
+    let melee_damage = unsafe { engine::melee_damage(attacker) }.unwrap_or(0);
+    let Blow::Strikes(mut plan) = blow(
+        impulse_ns,
+        victim_tuning(victim),
+        melee_damage,
+        &HAND_BODIES.hits,
+    ) else {
+        return None;
+    };
+    plan.damage = plan.damage.map(|damage| damage.min(90));
+    let relation = unsafe { GetRelation(attacker.GetFaction(), victim.GetFaction()) };
+    let mut gate = GATE.lock();
+    let now_s = gate
+        .epoch
+        .get_or_insert_with(Instant::now)
+        .elapsed()
+        .as_secs_f64();
+    let game_now_s = gate.game.at(now_s, unsafe { TimeScale::current() });
+    if plan.damage.is_some()
+        && !gate.damage.admit(
+            ANY_HAND,
+            victim as *mut Character as usize,
+            game_now_s,
+            HAND_BODIES.hits.damage_cooldown_s,
+        )
+    {
+        plan.damage = None;
+    }
+    drop(gate);
+    let dealt = unsafe { strike(attacker, victim, at, direction, &plan) };
+    tracing::debug!(
+        impulse_ns,
+        ?relation,
+        dealt,
+        "held impacts: a prop struck a character"
+    );
+    Some(dealt)
 }
 
 /// Whether a gun contact in `hand` at `now_s` may pulse: none has pulsed in that hand for
@@ -538,6 +591,45 @@ unsafe fn strike(
         }
         return 0;
     };
+    unsafe {
+        dispatch_damage(
+            (victim as *mut Character).cast::<PhysicsGameObject>(),
+            DamageContext {
+                source: &attacker.m_WeakThis,
+                body: None,
+                source_position: character_position(attacker),
+                player: Some(attacker),
+                flags: DamageFlags::DMG_TYPE_MELEE,
+            },
+            at,
+            direction,
+            damage,
+            plan.reaction_impulse,
+        )
+    }
+}
+
+/// Attribution and damage type for one native message.
+pub(crate) struct DamageContext<'a> {
+    pub source: &'a WeakPtrGameObject,
+    pub body: Option<u32>,
+    pub source_position: Vec3,
+    pub player: Option<&'a Character>,
+    pub flags: DamageFlags,
+}
+
+/// Deliver damage through the target's native virtual without bypassing its damage controller.
+///
+/// # Safety
+/// The caller holds the game thread and keeps the source and target alive through the call.
+pub(crate) unsafe fn dispatch_damage(
+    target: *mut PhysicsGameObject,
+    context: DamageContext<'_>,
+    at: Vec3,
+    direction: Vec3,
+    damage: i16,
+    impulse: f32,
+) -> i16 {
     // Every field is a pointer, an integer, or a float, so all-zero is a valid value to construct
     // over: the smart pointers start null, as the engine clears them before `Clear`.
     let mut msg = unsafe { MaybeUninit::<DamageMsg>::zeroed().assume_init() };
@@ -545,17 +637,20 @@ unsafe fn strike(
     unsafe { msg.Clear() };
     msg.m_Damage = damage;
     msg.m_OriginalDamage = damage;
-    msg.m_DamageFlags = DamageFlags::DMG_TYPE_MELEE;
-    unsafe { msg.m_Damager.Assign(&attacker.m_WeakThis) };
+    msg.m_DamageFlags = context.flags;
+    unsafe { msg.m_Damager.Assign(context.source) };
+    if let Some(body) = context.body {
+        msg.m_DamagerRigidBodyID = body;
+    }
     msg.m_Position = vector(at);
     msg.m_Direction = vector(direction);
-    msg.m_DamagerPosition = vector(character_position(attacker));
-    msg.m_Impulse = plan.reaction_impulse;
-    msg.m_Faction = unsafe { attacker.GetFaction() };
-    msg.m_DamagerSourceStateInfo = unsafe { attacker.GetCurrentDamageSourceStateInfo() };
-    // SAFETY: a character is a physics game object, with the damage virtual in its primary table.
-    let dealt =
-        unsafe { (*(victim as *mut Character).cast::<PhysicsGameObject>()).OnDamage(&mut msg) };
+    msg.m_DamagerPosition = vector(context.source_position);
+    msg.m_Impulse = impulse;
+    if let Some(player) = context.player {
+        msg.m_Faction = unsafe { player.GetFaction() };
+        msg.m_DamagerSourceStateInfo = unsafe { player.GetCurrentDamageSourceStateInfo() };
+    }
+    let dealt = unsafe { (*target).OnDamage(&mut msg) };
     unsafe { msg.Destruct() };
     dealt
 }

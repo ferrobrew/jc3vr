@@ -1,5 +1,7 @@
 //! Publication, event-lease, and queued-delivery integration through the production planner.
 
+mod feedback;
+
 use std::{
     num::NonZeroUsize,
     time::{Duration, Instant},
@@ -31,6 +33,7 @@ fn observed(native: bool) -> Observation {
             body: 2,
             owner: NonZeroUsize::new(3).unwrap(),
             instance: 4,
+            control: 5,
         },
         flags: if native {
             hknpBody::RAISE_CONTACT_IMPULSE_EVENTS
@@ -78,10 +81,24 @@ fn acquire(holders: [bool; 2], native: bool) -> (State, Observation, Instant) {
     (state, observation, now)
 }
 
+fn target() -> Identity {
+    Identity {
+        world: 1,
+        body: 20,
+        owner: NonZeroUsize::new(21).unwrap(),
+        instance: 22,
+        control: 23,
+    }
+}
+
 fn contact(state: &State) -> Contact {
-    state.leases[0]
+    let mut contact = state.leases[0]
         .unwrap()
-        .contact(Vec3::ZERO, Vec3::X, 12.0, false)
+        .contact(Vec3::ZERO, Vec3::X, 12.0, false);
+    contact.target = Some(target());
+    contact.target_motion = Some(Motion::STILL);
+    contact.retention = 1;
+    contact
 }
 
 fn flag_call(identity: Identity, enable: bool, flags: u32, mode: i32) -> FlagCall {
@@ -137,7 +154,9 @@ fn an_admitted_event_queues_the_observed_contact() {
         },
     );
     assert_eq!(
-        state.deliver(now, active(), &[observation.identity]).len(),
+        state
+            .deliver(now, active(), &[observation.identity, target()])
+            .len(),
         1
     );
 }
@@ -151,7 +170,7 @@ fn a_queued_contact_expires_without_another_step() {
             .deliver(
                 now + Duration::from_millis(251),
                 active(),
-                &[observation.identity]
+                &[observation.identity, target()]
             )
             .is_empty()
     );
@@ -168,7 +187,7 @@ fn a_fresh_identical_publication_does_not_keep_an_old_contact_alive() {
             .deliver(
                 now + Duration::from_millis(251),
                 active(),
-                &[observation.identity]
+                &[observation.identity, target()]
             )
             .is_empty()
     );
@@ -186,7 +205,7 @@ fn drop_and_reacquire_the_same_body_does_not_resurrect_feedback() {
             .deliver(
                 now + Duration::from_millis(30),
                 active(),
-                &[observation.identity]
+                &[observation.identity, target()]
             )
             .is_empty()
     );
@@ -200,7 +219,7 @@ fn a_released_hand_is_removed_from_a_queued_shared_contact() {
     let feedback = state.deliver(
         now + Duration::from_millis(20),
         active(),
-        &[observation.identity],
+        &[observation.identity, target()],
     );
     assert_eq!(feedback.len(), 1);
     assert_eq!(feedback[0].hands, [false, true]);
@@ -217,7 +236,7 @@ fn a_reacquired_hand_does_not_join_the_other_hands_old_contact() {
         state.deliver(
             now + Duration::from_millis(30),
             active(),
-            &[observation.identity]
+            &[observation.identity, target()]
         )[0]
         .hands,
         [false, true]
@@ -253,12 +272,12 @@ fn each_delivery_gate_rejects_a_contact_queued_before_disable() {
         state.queue(contact(&state), now);
         assert!(
             state
-                .deliver(now, enabled, &[observation.identity])
+                .deliver(now, enabled, &[observation.identity, target()])
                 .is_empty()
         );
         assert!(
             state
-                .deliver(now, active(), &[observation.identity])
+                .deliver(now, active(), &[observation.identity, target()])
                 .is_empty()
         );
     }
@@ -277,7 +296,7 @@ fn repeated_identical_publication_keeps_a_legitimate_contact() {
     let feedback = state.deliver(
         now + Duration::from_millis(40),
         active(),
-        &[observation.identity],
+        &[observation.identity, target()],
     );
     assert_eq!(feedback.len(), 1);
     assert_eq!(feedback[0].hands, [true, false]);
@@ -294,7 +313,7 @@ fn identical_publication_after_a_stale_gap_cannot_refresh_an_old_hold_stamp() {
             .deliver(
                 now + Duration::from_millis(301),
                 active(),
-                &[observation.identity]
+                &[observation.identity, target()]
             )
             .is_empty()
     );
@@ -381,7 +400,11 @@ fn identity_mismatch_never_restores_or_delivers_to_a_reused_body() {
                 )
                 .is_empty()
         );
-        assert!(state.deliver(now, active(), &[identity]).is_empty());
+        assert!(
+            state
+                .deliver(now, active(), &[identity, target()])
+                .is_empty()
+        );
     }
 }
 
@@ -467,7 +490,7 @@ fn a_recent_contact_cannot_deliver_after_the_publication_expires() {
             .deliver(
                 now + Duration::from_millis(251),
                 active(),
-                &[observation.identity]
+                &[observation.identity, target()]
             )
             .is_empty()
     );
@@ -520,7 +543,11 @@ fn delivery_rejects_changed_world_owner_and_wrapper_even_with_a_current_hold() {
     ] {
         let (mut state, _, now) = acquire([true, false], false);
         state.queue(contact(&state), now);
-        assert!(state.deliver(now, active(), &[identity]).is_empty());
+        assert!(
+            state
+                .deliver(now, active(), &[identity, target()])
+                .is_empty()
+        );
     }
 }
 
@@ -577,19 +604,19 @@ fn a_disabled_step_invalidates_old_contacts_before_same_identity_reacquisition()
     );
     assert!(
         state
-            .deliver(enabled_at, active(), &[observation.identity])
+            .deliver(enabled_at, active(), &[observation.identity, target()])
             .is_empty()
     );
 
     state.queue(old, enabled_at);
     assert!(
         state
-            .deliver(enabled_at, active(), &[observation.identity])
+            .deliver(enabled_at, active(), &[observation.identity, target()])
             .is_empty()
     );
     state.queue(contact(&state), enabled_at);
     assert_eq!(
-        state.deliver(enabled_at, active(), &[observation.identity])[0].hands,
+        state.deliver(enabled_at, active(), &[observation.identity, target()])[0].hands,
         [true, false]
     );
 }
@@ -602,8 +629,201 @@ fn disabled_clear_drops_queue_and_restores_the_valid_lease() {
     assert_eq!(state.plan_step(now, active(), &[observation]).len(), 1);
     assert!(
         state
-            .deliver(now, active(), &[observation.identity])
+            .deliver(now, active(), &[observation.identity, target()])
             .is_empty()
+    );
+}
+
+#[test]
+fn native_collision_reactions_suppress_only_the_matching_pair_recipient() {
+    let (mut state, observation, now) = acquire([true, false], false);
+    let event = contact(&state);
+    state.native(
+        [event.target.unwrap(), event.identity],
+        event.target.unwrap(),
+        now,
+    );
+    state.queue(event, now);
+    let feedback = state.deliver(now, active(), &[observation.identity, target()]);
+    assert_eq!(feedback[0].native, [false, true]);
+    assert!(feedback[0].damage_impulse.is_some());
+
+    let (mut state, observation, now) = acquire([true, false], false);
+    let event = contact(&state);
+    state.native([event.identity, event.target.unwrap()], event.identity, now);
+    state.queue(event, now);
+    assert_eq!(
+        state.deliver(now, active(), &[observation.identity, target()])[0].native,
+        [true, false]
+    );
+
+    let (mut state, observation, now) = acquire([true, false], false);
+    let event = contact(&state);
+    let mut different = event.target.unwrap();
+    different.control += 1;
+    state.native([event.identity, different], event.identity, now);
+    state.queue(event, now);
+    assert_eq!(
+        state.deliver(now, active(), &[observation.identity, target()])[0].native,
+        [false, false]
+    );
+}
+
+#[test]
+fn native_observation_is_consumed_by_one_delivery_epoch() {
+    let (mut state, observation, now) = acquire([true, false], false);
+    let event = contact(&state);
+    state.native(
+        [event.identity, event.target.unwrap()],
+        event.target.unwrap(),
+        now,
+    );
+    state.queue(event, now);
+    assert_eq!(
+        state.deliver(now, active(), &[observation.identity, target()])[0].native,
+        [false, true]
+    );
+    let later = now + Duration::from_millis(210);
+    state.publish([held(observation), None], later);
+    state.plan_step(later, active(), &[observation]);
+    state.queue(contact(&state), later);
+    assert_eq!(
+        state.deliver(later, active(), &[observation.identity, target()])[0].native,
+        [false, false]
+    );
+}
+
+#[test]
+fn native_collision_suppression_expires_and_clear_removes_it() {
+    let (mut state, observation, now) = acquire([true, false], false);
+    let event = contact(&state);
+    state.native([event.identity, event.target.unwrap()], event.identity, now);
+    let later = now + Duration::from_millis(251);
+    state.publish([held(observation), None], later);
+    state.plan_step(later, active(), &[observation]);
+    state.queue(contact(&state), later);
+    assert_eq!(
+        state.deliver(later, active(), &[observation.identity, target()])[0].native,
+        [false, false]
+    );
+    state.native(
+        [event.identity, event.target.unwrap()],
+        event.identity,
+        later,
+    );
+    state.clear(later);
+    state.publish([held(observation), None], later);
+    state.plan_step(later, active(), &[observation]);
+    state.queue(contact(&state), later);
+    assert_eq!(
+        state.deliver(later, active(), &[observation.identity, target()])[0].native,
+        [false, false]
+    );
+}
+
+#[test]
+fn damage_cooldown_is_per_body_pair_not_per_hand_or_feedback_pulse() {
+    let (mut state, observation, now) = acquire([true, true], false);
+    let first = contact(&state);
+    state.queue(first, now);
+    state.queue(first, now);
+    let feedback = state.deliver(now, active(), &[observation.identity, target()]);
+    assert_eq!(
+        feedback
+            .iter()
+            .filter(|f| f.damage_impulse.is_some())
+            .count(),
+        1
+    );
+    assert_eq!(feedback[0].hands, [true, true]);
+    let mut other = first;
+    let mut other_target = other.target.unwrap();
+    other_target.body += 1;
+    other_target.instance += 1;
+    other_target.owner = NonZeroUsize::new(31).unwrap();
+    other_target.control += 1;
+    other.target = Some(other_target);
+    state.queue(other, now);
+    let feedback = state.deliver(now, active(), &[observation.identity, other_target]);
+    assert_eq!(feedback.len(), 1);
+    assert_eq!(feedback[0].hands, [false, false]);
+    assert!(feedback[0].damage_impulse.is_some());
+    let later = now + Duration::from_millis(400);
+    state.publish([held(observation); 2], later);
+    state.plan_step(later, active(), &[observation]);
+    state.queue(contact(&state), later);
+    assert!(
+        state.deliver(later, active(), &[observation.identity, target()])[0]
+            .damage_impulse
+            .is_some()
+    );
+}
+
+#[test]
+fn queued_damage_rejects_target_reownership_instance_world_and_control_reuse() {
+    let (state, observation, now) = acquire([true, false], false);
+    let event = contact(&state);
+    for replacement in [
+        Identity {
+            world: 9,
+            ..target()
+        },
+        Identity {
+            body: 9,
+            ..target()
+        },
+        Identity {
+            owner: NonZeroUsize::new(9).unwrap(),
+            ..target()
+        },
+        Identity {
+            instance: 9,
+            ..target()
+        },
+        Identity {
+            control: 9,
+            ..target()
+        },
+    ] {
+        let (mut state, _, _) = acquire([true, false], false);
+        let mut replacement_event = contact(&state);
+        replacement_event.target = event.target;
+        let event = replacement_event;
+        state.queue(event, now);
+        assert!(
+            state
+                .deliver(now, active(), &[observation.identity, replacement])
+                .is_empty()
+        );
+    }
+}
+
+#[test]
+fn damage_is_independent_of_the_haptic_floor_and_rejects_quiet_rest() {
+    let (mut state, observation, now) = acquire([true, false], false);
+    let mut event = contact(&state);
+    state.queue(event, now);
+    let _ = state.deliver(now, active(), &[observation.identity, target()]);
+    event.target.as_mut().unwrap().control += 1;
+    state.queue(event, now);
+    assert!(
+        state.deliver(
+            now,
+            active(),
+            &[observation.identity, event.target.unwrap()]
+        )[0]
+        .damage_impulse
+        .is_some()
+    );
+    let (mut state, observation, now) = acquire([true, false], false);
+    let mut quiet = contact(&state);
+    quiet.motion.linear = Vec3::X;
+    state.queue(quiet, now);
+    assert!(
+        state
+            .deliver(now, active(), &[observation.identity, target()])
+            .iter()
+            .all(|f| f.damage_impulse.is_none())
     );
 }
 
@@ -674,14 +894,14 @@ fn obstruction_rejects_invalid_contacts_without_haptic_gating() {
         state.obstruction(body, owner, Vec3::X, now, active()),
         Vec3::ZERO
     );
-    let _ = state.deliver(now, active(), &[observation.identity]);
+    let _ = state.deliver(now, active(), &[observation.identity, target()]);
     let mut slow = contact(&state);
     slow.motion.linear = Vec3::ZERO;
     slow.motion.angular = Vec3::ZERO;
     state.queue(slow, now);
     assert!(
         state
-            .deliver(now, active(), &[observation.identity])
+            .deliver(now, active(), &[observation.identity, target()])
             .is_empty()
     );
     assert_eq!(

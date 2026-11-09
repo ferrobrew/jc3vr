@@ -5,7 +5,7 @@ use std::ffi::c_void;
 use detours_macro::detour;
 use jc3gi::{
     havok::hknpContactImpulseEvent,
-    physics::{HavokCollisionListener, hknpWorld},
+    physics::{HavokCollisionListener, HitReactInfo, PhysicsGameObject, hknpWorld},
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -14,6 +14,7 @@ use crate::controllers::physical_hands::impacts::{self, state::FlagCall};
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&CONTACT_BINDER)
+        .with_static_binder(&NATIVE_HIT_BINDER)
         .with_static_binder(&ENABLE_FLAGS_BINDER)
         .with_static_binder(&DISABLE_FLAGS_BINDER)
 }
@@ -40,6 +41,12 @@ fn contact(
 ) {
     unsafe { impacts::record(event) };
     CONTACT.get().unwrap().call(this, input, event);
+}
+
+#[detour(address = PhysicsGameObject::DoReactToHit_ADDRESS)]
+fn native_hit(this: *mut PhysicsGameObject, info: *const HitReactInfo) {
+    unsafe { impacts::native_hit(this) };
+    NATIVE_HIT.get().unwrap().call(this, info);
 }
 
 #[detour(address = hknpWorld::enableBodyFlags_ADDRESS)]
