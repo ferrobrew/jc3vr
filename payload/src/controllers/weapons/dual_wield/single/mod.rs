@@ -140,6 +140,16 @@ pub(crate) fn active() -> bool {
     ACTIVE.load(Ordering::Relaxed)
 }
 
+/// Whether `weapon` is one the single-pistol setting may make one pistol: a weapon of the
+/// dual-wield slot. A two-handed weapon is never one, whatever its gun count.
+///
+/// # Safety
+///
+/// `weapon` must be live.
+pub(crate) unsafe fn designatable(weapon: &WeaponBase) -> bool {
+    (unsafe { slot_of(weapon) }) == Some(WeaponSlot::E_SLOT_DUAL_WIELD)
+}
+
 /// Make `weapon` a single pistol: its guns past the first hidden from now on. Returns whether it
 /// became one; a weapon outside the dual-wield slot, one of a single gun, one already single, or
 /// one the table has no room for does not.
@@ -150,9 +160,7 @@ pub(crate) fn active() -> bool {
 /// its holder.
 pub(crate) unsafe fn designate(weapon: &mut WeaponBase, why: &str) -> bool {
     // A weapon of one gun is one weapon already.
-    if unsafe { slot_of(weapon) } != Some(WeaponSlot::E_SLOT_DUAL_WIELD)
-        || unsafe { gun_count(weapon) } < 2
-    {
+    if !unsafe { designatable(weapon) } || unsafe { gun_count(weapon) } < 2 {
         return false;
     }
     let object = weapon as *mut WeaponBase as usize;

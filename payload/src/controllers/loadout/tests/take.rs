@@ -89,6 +89,64 @@ fn a_pistol_stolen_with_the_left_hand_leaves_the_right_hand_s_rifle_alone() {
 }
 
 #[test]
+fn a_two_handed_take_in_the_right_hand_leaves_the_left_hip_s_pistol_docked() {
+    let mut t = table();
+    let hip = docked(&mut t, Socket::Hip(Hand::Left), 1, a_pistol());
+    let rifle = take(&mut t, Hand::Right, 2, weapon(a_rifle()));
+    assert_eq!(
+        place(&t, hip),
+        Some(Place::Socket(Socket::Hip(Hand::Left))),
+        "the other hand's socket weapon stays on its socket"
+    );
+    assert_eq!(t.held(Hand::Left), None, "the left hand takes nothing");
+    assert_eq!(place(&t, rifle), Some(Place::Hand(Hand::Right)));
+    assert_eq!(t.primary(), Some(Hand::Right));
+    let projection = project(&t);
+    assert_eq!(
+        projection.slot_of(rifle),
+        Some(WeaponSlot::E_SLOT_TWO_HANDED)
+    );
+    assert_eq!(
+        projection.selected,
+        Some(WeaponSlot::E_SLOT_TWO_HANDED),
+        "the two-handed slot is selected, not the pistol's"
+    );
+    assert_eq!(projection.slot_of(hip), Some(WeaponSlot::E_SLOT_DUAL_WIELD));
+    check_invariants(&t);
+}
+
+#[test]
+fn a_two_handed_take_in_the_left_hand_leaves_the_right_hip_s_pistol_docked() {
+    let mut t = table();
+    let hip = docked(&mut t, Socket::Hip(Hand::Right), 1, a_pistol());
+    let rifle = take(&mut t, Hand::Left, 2, weapon(a_rifle()));
+    assert_eq!(
+        place(&t, hip),
+        Some(Place::Socket(Socket::Hip(Hand::Right))),
+        "the other hand's socket weapon stays on its socket"
+    );
+    assert_eq!(t.held(Hand::Right), None, "the right hand takes nothing");
+    assert_eq!(place(&t, rifle), Some(Place::Hand(Hand::Left)));
+    assert_eq!(
+        t.primary(),
+        Some(Hand::Left),
+        "the right hand is empty, so the left hand's rifle is the primary"
+    );
+    let projection = project(&t);
+    assert_eq!(
+        projection.slot_of(rifle),
+        Some(WeaponSlot::E_SLOT_TWO_HANDED)
+    );
+    assert_eq!(
+        projection.selected,
+        Some(WeaponSlot::E_SLOT_TWO_HANDED),
+        "the two-handed slot is selected, not the pistol's"
+    );
+    assert_eq!(projection.slot_of(hip), Some(WeaponSlot::E_SLOT_DUAL_WIELD));
+    check_invariants(&t);
+}
+
+#[test]
 fn a_take_lands_in_the_grabbing_hand_whatever_the_other_holds() {
     let mut t = table();
     take(&mut t, Hand::Left, 1, weapon(a_rifle()));

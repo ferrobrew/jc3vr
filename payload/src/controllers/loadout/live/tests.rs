@@ -184,6 +184,56 @@ fn a_drawn_weapon_lands_in_the_hand_that_expected_it() {
 }
 
 #[test]
+fn a_take_keeps_the_weapon_the_game_still_wields_docked() {
+    let slots = [rifle(), pistol()];
+    let mut live = started(&slots);
+    // The pistol sits on the left hip, as a carried single pistol does.
+    draw(&mut live, Hand::Right, pistol());
+    live.fold(Event::Dock {
+        hand: Hand::Right,
+        socket: Socket::Hip(Hand::Left),
+    });
+    assert_eq!(
+        live.place_of(pistol().object),
+        Some(Place::Socket(Socket::Hip(Hand::Left)))
+    );
+    // The rifle is taken into the right hand while the game still wields the pistol the take
+    // displaced, and the tick's capture of the wielded weapon is a tick behind.
+    draw(&mut live, Hand::Right, rifle());
+    live.took = Some(rifle().object);
+    live.displaced = Some(pistol().object);
+    assert_eq!(live.hand_moves(&tick(&slots, Some(pistol()), None)), None);
+    assert_eq!(
+        live.place_of(rifle().object),
+        Some(Place::Hand(Hand::Right)),
+        "the taken rifle stays in its hand"
+    );
+    assert_eq!(
+        live.place_of(pistol().object),
+        Some(Place::Socket(Socket::Hip(Hand::Left))),
+        "the displaced pistol stays on its hip"
+    );
+    assert_eq!(
+        live.table.held(Hand::Left),
+        None,
+        "the left hand takes nothing"
+    );
+    // The game keeps wielding it while the reconcile cannot equip the rifle: the pistol stays
+    // docked on every such tick.
+    assert_eq!(
+        live.hand_moves(&tick(&slots, Some(pistol()), Some((Hand::Right, rifle())))),
+        None
+    );
+    assert_eq!(
+        live.place_of(pistol().object),
+        Some(Place::Socket(Socket::Hip(Hand::Left)))
+    );
+    // Once the game stops wielding it there, it is an ordinary socket weapon again.
+    live.hand_moves(&tick(&slots, Some(rifle()), None));
+    assert_eq!(live.displaced, None);
+}
+
+#[test]
 fn the_game_s_own_draw_lands_in_the_dominant_hand() {
     let slots = [rifle()];
     let mut live = started(&slots);

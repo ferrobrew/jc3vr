@@ -103,3 +103,21 @@ fn arrived_pair_identity_is_revalidated_after_native_pickup_phase() {
     assert!(revalidate_and_write(&inventory, pair));
     assert_eq!(unsafe { (*source).m_MagazineAmmo }, 7);
 }
+
+#[test]
+fn only_a_dual_wield_weapon_is_one_pistol() {
+    let mut pistol = weapon();
+    // SAFETY: the storage is zeroed with its class set, and each slot value is valid.
+    unsafe {
+        (&raw mut (*pistol.as_mut_ptr()).m_EquipSlot).write(WeaponSlot::E_SLOT_DUAL_WIELD);
+        assert!(designatable(&*pistol.as_ptr()));
+        for slot in [
+            WeaponSlot::E_SLOT_TWO_HANDED,
+            WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL,
+            WeaponSlot::E_SLOT_HEAVY,
+        ] {
+            (&raw mut (*pistol.as_mut_ptr()).m_EquipSlot).write(slot);
+            assert!(!designatable(&*pistol.as_ptr()), "{slot:?} is not a pistol");
+        }
+    }
+}

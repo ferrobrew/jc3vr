@@ -28,7 +28,10 @@
 //! that would complete it is never queued. Every source checks the take first ([`preflight`]).
 //!
 //! While pistols are single ([`crate::controllers::weapons::dual_wield::single`]), a pistol taken
-//! from the world is one pistol.
+//! from the world is one pistol; a two-handed weapon is never one. A two-handed weapon taken into
+//! the primary hand also displaces the weapon the game still wields from a socket
+//! ([`displaced_by_take`]): the take's slot is selected once that weapon can go back to its
+//! socket, and until then it stays docked.
 
 use std::{fmt, sync::LazyLock};
 
@@ -44,7 +47,7 @@ use crate::{
         aim::gun,
         frame::Hand,
         loadout::{
-            Delivery, TakeSource, live, slot_label,
+            Delivery, ObjectAddress, TakeSource, WeaponType, live, slot_label,
             take::{self, TakeOffer, TakeRefusal, TakeRoute, TakeRules},
         },
         weapons::{
@@ -249,8 +252,10 @@ pub(crate) unsafe fn take_by_table(
         unsafe { inventory_engine::weapon_type(weapon) }.ok_or(Refusal::UnknownSlot)?;
     let strong = unsafe { inventory_engine::strong_to(weapon) }.ok_or(Refusal::NotDropped)?;
     let from = unsafe { gun_pose(weapon) };
-    // While pistols are single, a pistol from the world is one pistol.
-    if unsafe { single::designate_if_active(weapon, "a pistol taken from the world") } {
+    // While pistols are single, a pistol from the world is one pistol. Only the dual-wield slot's
+    // weapons are pistols, so a two-handed weapon is never made one.
+    let pistol = unsafe { single::designatable(weapon) };
+    if pistol && unsafe { single::designate_if_active(weapon, "a pistol taken from the world") } {
         unsafe { single::taken_from_world(owner, weapon) };
     } else {
         unsafe { credit_stored(owner, weapon) };
@@ -272,6 +277,13 @@ pub(crate) unsafe fn take_by_table(
     }
     unsafe { inventory::reconcile::apply(owner) };
     act::arm(hand);
+    // The game wields the selected slot's weapon. A two-handed weapon taken into the primary hand
+    // is the weapon the player holds, so the game's selection follows it once the weapon the game
+    // still wields from a socket can go back there; the displaced weapon stays docked until it
+    // does, rather than coming off its socket into the free hand.
+    if let Some(displaced) = unsafe { displaced_by_take(owner, hand, address, weapon_type) } {
+        live::displaced(displaced);
+    }
     if let Some(from) = from {
         act::slide_in(address, hand, from, options.slide_s);
     }
@@ -352,6 +364,73 @@ unsafe fn take_by_game(
     Ok(slot)
 }
 
+/// Find the weapon a take of the two-handed weapon at `address` into `hand` displaced from the
+/// game's hands: a weapon the game still wields that the table has on a socket. The take makes the
+/// two-hander the primary hand's weapon, so when the animation allows a holster the displaced
+/// weapon is unequipped back onto its socket and the take's slot is selected; otherwise the game's
+/// selection is left to the reconcile, which unequips and equips when it can. Returns the displaced
+/// weapon, which the table keeps docked until the game stops wielding it there. A take of another
+/// slot, one into the hand that is not the primary, one whose slot does not hold the weapon, and
+/// one whose game-wielded weapon is in a hand displace nothing.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the game thread before the world update.
+unsafe fn displaced_by_take(
+    owner: &mut Character,
+    hand: Hand,
+    address: usize,
+    weapon_type: WeaponType,
+) -> Option<ObjectAddress> {
+    let slot = taken_slot(weapon_type)?;
+    let stale = unsafe { gun::held_weapon(owner) }
+        .map(|weapon| weapon as *const WeaponBase as usize)
+        .filter(|&weapon| weapon != address)
+        .filter(|&weapon| live::hand_of(weapon).is_none())?;
+    let primary = live::snapshot_now().is_some_and(|snapshot| snapshot.primary == Some(hand));
+    let in_slot = owner
+        .m_Inventory
+        .m_Weapons
+        .get(slot as usize)
+        .is_some_and(|weapon| weapon.px as usize == address);
+    if !primary || !in_slot {
+        return None;
+    }
+    tracing::info!(
+        target: "controllers",
+        hand = hand.label(),
+        slot = slot_label(slot),
+        "hold: the game still wields a weapon on its socket after the take; it stays docked"
+    );
+    // Selecting the take's slot while the displaced weapon still wields would leave that weapon
+    // wielded in no selected slot, which the reconcile never unequips: let go of it first.
+    if unsafe { owner.m_Inventory.GetAnimationAllowsHolstering() } {
+        let weapon = inventory_engine::slot_handle(&owner.m_Inventory, stale)
+            .or_else(|| unsafe { carry::weapon_handle(stale) });
+        if let Some(mut weapon) = weapon {
+            unsafe { weapon.as_mut().OnUnequip() };
+        }
+        unsafe { owner.SetSelectedWeaponSlot(slot) };
+        tracing::info!(
+            target: "controllers",
+            slot = slot_label(slot),
+            "hold: selected the taken two-handed weapon's slot"
+        );
+    }
+    ObjectAddress::from_address(stale)
+}
+
+/// The slot a take of `weapon_type` selects: the two-handed and special slots, which the
+/// projection gives a long gun. A pistol, a heavy weapon, and a consumable select none.
+fn taken_slot(weapon_type: WeaponType) -> Option<WeaponSlot> {
+    match weapon_type.slot() {
+        slot @ (WeaponSlot::E_SLOT_TWO_HANDED | WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL) => {
+            Some(slot)
+        }
+        _ => None,
+    }
+}
+
 /// The name hash of the embedded power core, whose pickup spawns and equips another weapon in its
 /// place.
 static EMBEDDED_POWER_CORE: LazyLock<u32> =
@@ -396,8 +475,50 @@ fn animation_eligibility(
 
 #[cfg(test)]
 mod tests {
+    use jc3gi::equipment::weapon::WeaponClass;
+
     use super::*;
     use crate::controllers::loadout::take::GameTake;
+
+    #[test]
+    fn a_take_selects_a_two_handed_weapon_s_slot_and_no_other() {
+        let weapon = |tag, slot, class| WeaponType::new(tag, slot, class as i32).unwrap();
+        assert_eq!(
+            taken_slot(weapon(
+                0x300,
+                WeaponSlot::E_SLOT_TWO_HANDED,
+                WeaponClass::E_WEAPON_CLASS_ASSAULT_RIFLE,
+            )),
+            Some(WeaponSlot::E_SLOT_TWO_HANDED)
+        );
+        assert_eq!(
+            taken_slot(weapon(
+                0x400,
+                WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL,
+                WeaponClass::E_WEAPON_CLASS_SNIPER,
+            )),
+            Some(WeaponSlot::E_SLOT_TWO_HANDED_SPECIAL)
+        );
+        for (tag, slot, class) in [
+            (
+                0x100,
+                WeaponSlot::E_SLOT_DUAL_WIELD,
+                WeaponClass::E_WEAPON_CLASS_PISTOL,
+            ),
+            (
+                0x200,
+                WeaponSlot::E_SLOT_DUAL_WIELD,
+                WeaponClass::E_WEAPON_CLASS_SMG,
+            ),
+            (
+                0x500,
+                WeaponSlot::E_SLOT_HEAVY,
+                WeaponClass::E_WEAPON_CLASS_RPG,
+            ),
+        ] {
+            assert_eq!(taken_slot(weapon(tag, slot, class)), None);
+        }
+    }
 
     #[test]
     fn full_preflight_refuses_before_any_source_effect_and_preserves_table_bypass() {

@@ -317,6 +317,7 @@ pub(crate) fn take(hand: Hand, held: Held, source: TakeSource, delivery: Deliver
         live.fold(event);
         if live.hand_holding(held.object) == Some(hand) {
             live.origins[hand.index()] = Some(Expect::Take(source, delivery));
+            live.took = Some(held.object);
         }
     }
     live.publish_places();
@@ -440,6 +441,8 @@ pub(crate) fn stop() {
     live.pending = None;
     live.origins = [None; 2];
     live.neutral = None;
+    live.took = None;
+    live.displaced = None;
     live.push("loadout: the table stopped, the inventory is off".to_owned());
     published::clear();
     let published = live.published();
@@ -457,6 +460,13 @@ pub(crate) fn neutral_forced(object: ObjectAddress) -> bool {
     }
     live.neutral = Some(object);
     true
+}
+
+/// A take displaced `object` from the game's hands, which the table has on a socket: while the
+/// game still wields it from there, it stays docked rather than coming off its socket into the
+/// free hand.
+pub(crate) fn displaced(object: ObjectAddress) {
+    LIVE.lock().displaced = Some(object);
 }
 
 /// The game is respawning the player ([`jc3gi::character::player::Player::ReInit`]): the spawn
@@ -484,6 +494,8 @@ pub(crate) fn reset_began(released: &[ObjectAddress]) {
     }
     live.reset.began = true;
     live.neutral = None;
+    live.took = None;
+    live.displaced = None;
     live.fold(Event::ResetBegan);
     for &object in released {
         if live.place_of(object).is_some() {
@@ -671,6 +683,14 @@ struct Live {
     /// The weapon the game's forced neutral state unequipped, which its hand keeps until the
     /// reconcile wields or arms it again: per-hand runtime state, not a place.
     neutral: Option<ObjectAddress>,
+    /// The weapon the last take put into a hand, since the last input tick: it is not taken for a
+    /// departure on that tick, when the game's capture of the wielded weapon is still the take's
+    /// predecessor.
+    took: Option<ObjectAddress>,
+    /// The weapon a take displaced from the game's hands, which the game may still wield from its
+    /// socket: it stays docked until the game stops wielding it or the table moves it off the
+    /// socket.
+    displaced: Option<ObjectAddress>,
     /// When the last input tick ran, for the expectation's age.
     last: Option<Instant>,
     reset: ResetWatch,
@@ -740,6 +760,8 @@ impl Live {
             origins: [None; 2],
             fast: false,
             neutral: None,
+            took: None,
+            displaced: None,
             last: None,
             reset: ResetWatch {
                 began: false,
@@ -797,9 +819,15 @@ impl Live {
     /// The game's moves of the hands' weapons the table has not seen yet: first each weapon in a
     /// hand of the table's that the game no longer wields and that is not armed there (the game
     /// holstered or dropped it on its own), then the wielded weapon landing in a hand when the table
-    /// has it in none. Returns the wielded weapon's arrival.
+    /// has it in none. A weapon a take displaced from the game's hands stays docked while the game
+    /// still wields it from its socket. Returns the wielded weapon's arrival.
     fn hand_moves(&mut self, tick: &Tick) -> Option<Arrival> {
+        let took = self.took.take();
         let wielded = tick.wielded.map(|h| h.object);
+        // The weapon a take displaced stays docked while the game still wields it from its socket.
+        self.displaced = self.displaced.filter(|&object| {
+            Some(object) == wielded && matches!(self.place_of(object), Some(Place::Socket(_)))
+        });
         // The forced neutral state's weapon is kept until it is wielded or armed again, or no hand
         // holds it.
         self.neutral = self.neutral.filter(|&object| {
@@ -817,6 +845,7 @@ impl Live {
                 continue;
             };
             if Some(object) == wielded
+                || Some(object) == took
                 || tick.armed.contains(&Some(object))
                 || Some(object) == self.neutral
             {
@@ -830,7 +859,17 @@ impl Live {
                 self.fold(event);
             }
         }
-        self.land(tick.wielded?)
+        let held = tick.wielded?;
+        // A weapon the game still wields from a socket after a take is the one the take displaced:
+        // it stays docked rather than coming off its socket into the free hand.
+        if self.displaced == Some(held.object) {
+            tracing::debug!(
+                target: "controllers",
+                "loadout: the weapon the game still wields stays on its socket; a take displaced it"
+            );
+            return None;
+        }
+        self.land(held)
     }
 
     /// The hands' props, grenades, and charges as the physical hands and the throws have them: a
