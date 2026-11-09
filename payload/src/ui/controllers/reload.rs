@@ -152,7 +152,9 @@ fn weapon_lines(ui: &mut Ui, w: &WeaponReadout) {
 pub(super) fn reload_settings(ui: &mut Ui, r: &mut ReloadConfig) {
     ui.checkbox(&mut r.insertion_guide, "Ammo insertion guide")
         .on_hover_text(
-            "Show the loading position and direction while holding the matching ammunition.",
+            "Show a translucent ammo-shaped outline moving into the empty loading position while \
+             holding the matching ammunition. Hide it when the well is occupied or the round is \
+             released. The outline uses measured model profiles, not a filled ghost model.",
         );
     ui.checkbox(&mut r.flick_eject, "Flick the gun to eject")
         .on_hover_text("A sharp flick of the hand holding a gun ejects its magazine.");
