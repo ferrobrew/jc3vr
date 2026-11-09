@@ -253,6 +253,15 @@ pub(crate) struct HandoverPolicy {
     pub offer: Handover,
 }
 
+pub(crate) fn handover_blocked(
+    docking: bool,
+    pending: bool,
+    closed: bool,
+    near_socket: bool,
+) -> bool {
+    docking || pending || (!closed && near_socket)
+}
+
 pub(crate) fn broad_handover_candidate(input: HandoverPolicy) -> Option<Candidate> {
     if !input.allowed || input.engaged_foregrip {
         return None;
@@ -332,6 +341,19 @@ mod tests {
             hold::{HANDLE_RADIUS_M, TAKE_RADIUS_M},
         },
     };
+
+    #[test]
+    fn holster_intent_blocks_incidental_but_not_deliberate_transfer() {
+        assert!(!handover_blocked(false, false, true, true));
+        assert!(!handover_blocked(false, false, false, false));
+        assert!(handover_blocked(false, false, false, true));
+        for closed in [false, true] {
+            for near in [false, true] {
+                assert!(handover_blocked(true, false, closed, near));
+                assert!(handover_blocked(false, true, closed, near));
+            }
+        }
+    }
 
     fn target(kind: TargetKind, a: Vec3, b: Vec3) -> WorldTarget {
         WorldTarget {

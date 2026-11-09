@@ -186,6 +186,12 @@ pub(crate) fn finish_tick(
         let outcome = match volume {
             GrabVolume::Handle => {
                 let gun = lone.map(|(w, _)| w.address);
+                if gun.is_some_and(|object| {
+                    live::in_hand(hand.other()) == Some(object)
+                        && holstering(hand.other(), grips[hand.other().index()].held())
+                }) {
+                    continue;
+                }
                 let moved =
                     crate::controllers::weapons::grenade_moves::transfer(hand.other(), hand)
                         .or_else(|| {
@@ -358,8 +364,24 @@ pub(crate) fn finish_tick(
         [false; 2]
     };
     if release_active {
-        for hand in Hand::BOTH.into_iter().filter(|hand| released[hand.index()]) {
-            if passes[hand.index()] && pass_by_action(hand) {
+        for hand in Hand::BOTH {
+            let pending = hold::act::pending_release(hand);
+            let near = pending
+                .and_then(|intent| intent.socket)
+                .is_some_and(|socket| {
+                    docked_at(hand, |volume| volume == GrabVolume::Socket(socket)).is_some()
+                        || attraction_for(hand, &config).is_some_and(|a| a.socket == socket)
+                });
+            let retry = hold::act::retry_release(
+                hand,
+                grips[hand.index()].held() || bindings_closed(hand),
+                near,
+                real_dt,
+            );
+            if !released[hand.index()] && !retry {
+                continue;
+            }
+            if pending.is_none() && passes[hand.index()] && pass_by_action(hand) {
                 continue;
             }
             let gun = lone.map(|(weapon, _)| weapon);
@@ -697,6 +719,9 @@ fn weapon_action_running(gun_hand: Hand) -> bool {
 /// empty hand, or dock the hand's weapon there. `None` for a grab that did nothing worth reporting:
 /// a free socket with nothing to put there, or no table to decide against.
 fn grab_socket(hand: Hand, socket: Socket, config: &ControllersConfig) -> Option<GrabOutcome> {
+    if hold::act::docking()[hand.index()] || hold::act::pending_release(hand).is_some() {
+        return None;
+    }
     if let Some(moved) = crate::controllers::weapons::grenade_moves::grab_socket(hand, socket) {
         let outcome = if moved {
             if grenade::safe::in_hand(hand).is_some() {
@@ -757,6 +782,7 @@ fn release(
     // SAFETY: the game stage runs on the game thread before the world update, and a slot or the
     // carry set keeps the table's weapon in the hand alive.
     let dockable = unsafe { hold::act::dockable(object) };
+    let pending = hold::act::pending_release(hand);
     let over = docked_at(
         hand,
         |v| matches!(v, GrabVolume::Socket(s) if dockable && grab::fits(&snapshot, hand, s)),
@@ -770,11 +796,17 @@ fn release(
     let braced_by_other = foregrip::status()
         .hold
         .is_some_and(|h| h.engaged && h.weapon == object && h.holder == hand);
+    let over = retry_socket(pending, over);
     let attracted = over
         .is_none()
         .then(|| attraction_for(hand, config))
         .flatten()
-        .filter(|_| dockable && !braced_by_other);
+        .filter(|a| {
+            dockable
+                && !braced_by_other
+                && pending.is_none_or(|intent| intent.socket == Some(a.socket))
+        });
+    hold::act::intend_release(hand, object, over.or(attracted.map(|a| a.socket)));
     // A taken socket on the back swaps: its weapon falls clear first, which frees the socket for
     // the dock below.
     let swapped = attracted.filter(|a| a.swap).is_some_and(|a| {
@@ -811,6 +843,7 @@ fn release(
     );
     match release {
         Release::Dock(socket) => {
+            hold::act::intend_release(hand, object, Some(socket));
             let docked = match attracted.filter(|a| a.socket == socket) {
                 Some(a) => {
                     let travel = attract::travel_s(a.distance, hold::SNAP_S, &ATTRACTION);
@@ -841,7 +874,8 @@ fn release(
         }
         Release::LetGo => {
             // A gun the other hand braces passes to that hand, which slides onto its grip.
-            let braced = config.weapons.regions.enabled
+            let braced = pending.is_none()
+                && config.weapons.regions.enabled
                 && weapon.is_some_and(|w| w.address == object)
                 && active.is_some_and(|a| leave_in_brace(object, hand, a, world_scale));
             if braced {
@@ -854,6 +888,35 @@ fn release(
         }
         Release::Keep => {}
     }
+}
+
+fn bindings_closed(hand: Hand) -> bool {
+    crate::controllers::bindings::grip_holds_now(hand) == Some(true)
+}
+
+fn holstering(hand: Hand, closed: bool) -> bool {
+    hold::world::handover_blocked(
+        hold::act::docking()[hand.index()],
+        hold::act::pending_release(hand).is_some(),
+        closed || bindings_closed(hand),
+        intended_socket(hand).is_some(),
+    )
+}
+
+fn intended_socket(hand: Hand) -> Option<Socket> {
+    let snapshot = live::snapshot_now()?;
+    docked_at(hand, |volume| matches!(volume, GrabVolume::Socket(socket) if grab::fits(&snapshot, hand, socket)))
+        .and_then(|volume| match volume {
+            GrabVolume::Socket(socket) => Some(socket),
+            _ => None,
+        })
+}
+
+fn retry_socket(
+    pending: Option<hold::dock::ReleaseIntent>,
+    over: Option<Socket>,
+) -> Option<Socket> {
+    over.filter(|socket| pending.is_none_or(|intent| intent.socket == Some(*socket)))
 }
 
 /// Which holding hands pass their gun on when they open, by [`Hand::index`]: the other hand holds
@@ -948,6 +1011,19 @@ pub(super) fn cues_grab(outcome: GrabOutcome) -> bool {
 mod tests {
     use super::*;
     use crate::controllers::weapons::capabilities::NativePair;
+
+    #[test]
+    fn a_pending_release_never_retargets_another_socket_or_redocks_after_timeout() {
+        let left = Socket::Hip(Hand::Left);
+        let right = Socket::Hip(Hand::Right);
+        let intent = hold::dock::ReleaseIntent::new(7, Some(left));
+        assert_eq!(retry_socket(None, Some(right)), Some(right));
+        assert_eq!(retry_socket(Some(intent), Some(left)), Some(left));
+        assert_eq!(retry_socket(Some(intent), Some(right)), None);
+        assert_eq!(retry_socket(Some(intent), None), None);
+        let dropping = hold::dock::ReleaseIntent::new(7, None);
+        assert_eq!(retry_socket(Some(dropping), Some(left)), None);
+    }
 
     #[test]
     fn a_holder_opening_while_the_other_hand_holds_the_action_passes_the_gun_at_once() {

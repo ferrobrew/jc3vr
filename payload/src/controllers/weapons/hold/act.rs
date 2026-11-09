@@ -43,10 +43,11 @@ use crate::{
         roomscale::teleport,
         weapons::{
             docks,
+            dual_wield::single,
             engine::{self, grip_points, slot_of},
             hold::{
                 self, armed,
-                dock::{ReleaseWatch, Snap, SnapFrom, SnapKind},
+                dock::{ReleaseIntent, ReleaseWatch, Snap, SnapFrom, SnapKind, draw_blocked},
                 equip::{self, DockRefusal, Thrown},
                 layout,
                 release_diagnostics::{
@@ -111,11 +112,15 @@ pub fn status() -> DockStatus {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn draw(hand: Hand, socket: Socket, snap_s: f32) -> Result<(), DockRefusal> {
+    if draw_blocked(docking()[hand.index()], false) {
+        return Err(DockRefusal::NotDone);
+    }
     let result = unsafe { draw_off(hand, socket) };
     let mut state = STATE.lock();
     match result {
         Ok(seat) => {
             state.status.draws += 1;
+            state.intents[hand.index()] = None;
             state.slide_out(seat, hand, snap_s);
             state.watches[hand.index()].pending = true;
             drop(state);
@@ -228,6 +233,7 @@ pub(crate) unsafe fn let_go(hand: Hand, max_speed_mps: f32) -> Result<Thrown, Do
     }
     match result {
         Ok(thrown) => {
+            state.intents[hand.index()] = None;
             state.status.drops += 1;
             state.status.last_throw_mps = thrown.set.then(|| thrown.linear.length());
             drop(state);
@@ -278,7 +284,40 @@ pub(crate) fn slide_in(weapon: usize, hand: Hand, from: Pose, snap_s: f32) {
 /// `hand` took the gun by a grab: with the grip holding guns, its grip holds this one once it is
 /// seen held.
 pub(crate) fn arm(hand: Hand) {
-    STATE.lock().watches[hand.index()].pending = true;
+    let mut state = STATE.lock();
+    state.intents[hand.index()] = None;
+    state.watches[hand.index()].pending = true;
+}
+
+pub(crate) fn pending_release(hand: Hand) -> Option<ReleaseIntent> {
+    STATE.lock().intents[hand.index()]
+}
+
+pub(crate) fn intend_release(hand: Hand, weapon: usize, socket: Option<Socket>) {
+    let mut state = STATE.lock();
+    if state.intents[hand.index()].is_none_or(|intent| intent.weapon != weapon) {
+        state.intents[hand.index()] = Some(ReleaseIntent::new(weapon, socket));
+    }
+}
+
+pub(crate) fn retry_release(hand: Hand, closed: bool, near: bool, dt: f32) -> bool {
+    let mut state = STATE.lock();
+    let Some(intent) = &mut state.intents[hand.index()] else {
+        return false;
+    };
+    if !intent.step(live::in_hand(hand), closed, near, dt) {
+        if closed {
+            state.snaps[hand.index()] = None;
+        }
+        state.intents[hand.index()] = None;
+        return false;
+    }
+    if intent.socket.is_none()
+        && state.snaps[hand.index()].is_some_and(|(snap, _)| snap.kind == SnapKind::Holster)
+    {
+        state.snaps[hand.index()] = None;
+    }
+    state.snaps[hand.index()].is_none()
 }
 
 /// Fold in one input tick of the grips, by [`Hand::index`]: returns, by hand, whether the hand's
@@ -336,13 +375,16 @@ pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> 
                         hand.label()
                     );
                     // SAFETY: forwarded from the caller. A refusal is logged by the let-go.
+                    if let Some(object) = live::in_hand(hand) {
+                        intend_release(hand, object, None);
+                    }
                     let _ = unsafe { let_go(hand, hold::MAX_THROW_MPS) };
                 }
                 Err((refusal, StowFallback::Keep)) => tracing::info!(
                     target: "controllers",
                     hand = hand.label(),
                     %refusal,
-                    "hold: the {} hand's grip opened while the release stood down, and its weapon cannot go back on the body now; the hand keeps it until the grip closes on it again",
+                    "hold: the {} hand's grip opened while the release stood down; its weapon waits briefly for the socket, then retries the drop",
                     hand.label()
                 ),
             }
@@ -354,7 +396,9 @@ pub(crate) unsafe fn release_tick(grips: [bool; 2], action_hands: [bool; 2]) -> 
 /// Cancel grip-release intent while its input route is inactive, without stopping snap motion.
 /// The next [`release_tick`] reads each hand's grip afresh.
 pub(crate) fn cancel_releases() {
-    STATE.lock().watches.iter_mut().for_each(Watch::stand_down);
+    let mut state = STATE.lock();
+    state.intents = [None; 2];
+    state.watches.iter_mut().for_each(Watch::stand_down);
 }
 
 /// Whether each controller's grip holds its hand's gun on the latest frame, by [`Hand::index`],
@@ -392,6 +436,7 @@ unsafe fn stow(hand: Hand) -> Result<Socket, DockRefusal> {
     let socket = stow_socket(remembered, |socket| grab::fits(&snapshot, hand, socket))
         .ok_or(DockRefusal::DoesNotFit)?;
     // SAFETY: forwarded from the caller. The refusals are the caller's to log.
+    intend_release(hand, object, Some(socket));
     let object = unsafe { start_dock(hand, socket) }?;
     unsafe { dock_started(hand, socket, object, hold::SNAP_S) }?;
     Ok(socket)
@@ -470,10 +515,18 @@ pub(crate) fn snap_view(weapon: usize, hand: Hand) -> Option<SnapView> {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn tick(dt: f32) {
+    STATE.lock().docked_this_tick.clear();
     sample_release_transport(dt);
+    let physical = physical_grips();
     for hand in Hand::BOTH {
         let finished = {
             let mut state = STATE.lock();
+            if state.intents[hand.index()].is_some_and(|intent| {
+                live::in_hand(hand) != Some(intent.weapon) || physical[hand.index()] == Some(true)
+            }) {
+                state.intents[hand.index()] = None;
+                state.snaps[hand.index()] = None;
+            }
             let Some((snap, finish)) = &mut state.snaps[hand.index()] else {
                 continue;
             };
@@ -500,6 +553,7 @@ pub(crate) unsafe fn tick(dt: f32) {
 pub(crate) fn clear() {
     let mut state = STATE.lock();
     state.snaps = [None; 2];
+    state.intents = [None; 2];
     state.transport = ReleaseTransport::new();
     state.rig = None;
     state.watches.iter_mut().for_each(Watch::stand_down);
@@ -651,6 +705,8 @@ struct State {
     /// Each weapon's gun pose on a socket's bone, from its last draw off it: weapon, socket, pose.
     offsets: Vec<(usize, Socket, Pose)>,
     watches: [Watch; 2],
+    intents: [Option<ReleaseIntent>; 2],
+    docked_this_tick: Vec<usize>,
     transport: ReleaseTransport,
     rig: Option<(Instant, RigMotion)>,
     status: DockStatus,
@@ -754,6 +810,8 @@ static STATE: Mutex<State> = Mutex::new(State {
     snaps: [None; 2],
     offsets: Vec::new(),
     watches: [Watch::new(); 2],
+    intents: [None; 2],
+    docked_this_tick: Vec::new(),
     transport: ReleaseTransport::new(),
     rig: None,
     status: DockStatus {
@@ -865,6 +923,9 @@ unsafe fn draw_off(hand: Hand, socket: Socket) -> Result<Seat, DockRefusal> {
         .map(|(_, weapon)| weapon)
         .ok_or(DockRefusal::NothingThere)?;
     let object = weapon as *const WeaponBase as usize;
+    if draw_blocked(false, STATE.lock().docked_this_tick.contains(&object)) {
+        return Err(DockRefusal::NotDone);
+    }
     let offset = unsafe { equip::pose_on_bone(owner, weapon, sockets::bone(socket)) };
     // SAFETY: a slot or the carry set keeps the weapon alive.
     let held = unsafe { inventory::held_of(object) }.ok_or(DockRefusal::Unsupported)?;
@@ -966,6 +1027,12 @@ unsafe fn finish_dock(hand: Hand, socket: Socket, weapon: usize) -> Result<(), D
     let Some(object) = ObjectAddress::from_address(weapon) else {
         return refused(DockRefusal::NothingHeld);
     };
+    if live::in_hand(hand) != Some(weapon) {
+        return refused(DockRefusal::NothingHeld);
+    }
+    if is_wielded(owner, weapon) && !unsafe { owner.m_Inventory.GetAnimationAllowsHolstering() } {
+        return refused(DockRefusal::AnimationForbids);
+    }
     if !live::dock(hand, object, socket) {
         return refused(DockRefusal::DoesNotFit);
     }
@@ -977,7 +1044,11 @@ unsafe fn finish_dock(hand: Hand, socket: Socket, weapon: usize) -> Result<(), D
         tracing::debug!(target: "controllers", %refusal, "hold: the docked weapon was not unequipped");
     }
     unsafe { reconcile::apply(owner) };
-    STATE.lock().status.docks += 1;
+    let mut state = STATE.lock();
+    state.status.docks += 1;
+    state.docked_this_tick.push(weapon);
+    state.intents[hand.index()] = None;
+    drop(state);
     tracing::info!(
         target: "controllers",
         hand = hand.label(),
@@ -1022,7 +1093,18 @@ unsafe fn drop_from(
         thrown.diagnostic.sample_stage = SampleStage::AfterDisarm;
         thrown
     } else {
-        return Err(DockRefusal::NotDone);
+        let weapon =
+            unsafe { (object as *mut WeaponBase).as_mut() }.ok_or(DockRefusal::NothingHeld)?;
+        if weapon.m_State != WeaponState::E_WS_HOLSTERED
+            || unsafe { inventory::held_of(object) }.is_none()
+        {
+            return Err(DockRefusal::NotDone);
+        }
+        if unsafe { single::is_pair(weapon) } {
+            return Err(DockRefusal::Unsupported);
+        }
+        let motion = unsafe { release_motion(hand, weapon, diagnostic) };
+        unsafe { equip::drop_carried(owner, weapon, max_speed_mps, motion) }
     };
     diagnostic.stages.slot_clear_returned = thrown.diagnostic.slot_clear_returned;
     diagnostic.drop = Some(thrown.diagnostic);

@@ -578,6 +578,26 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     // and the cue on entering a socket.
     let grips = grab::tick::hand_grips(&active);
     grab::resolve::reach_low(&mut targets, grips, hands::controller_grips(&active));
+    let docking = hold::act::docking();
+    let holstering = Hand::BOTH.map(|hand| {
+        let near = live::snapshot_now().is_some_and(|snapshot| {
+            crate::controllers::grab::resolve::dock_target(hand, &targets, grips[hand.index()], |volume| {
+                matches!(volume, GrabVolume::Socket(socket) if crate::controllers::loadout::grab::fits(&snapshot, hand, socket))
+            }).is_some()
+        });
+        live::in_hand(hand).is_some() && hold::world::handover_blocked(
+            docking[hand.index()],
+            hold::act::pending_release(hand).is_some(),
+            crate::controllers::bindings::grip_holds_now(hand) != Some(false),
+            near,
+        )
+    });
+    targets.retain(|target| {
+        target.volume != GrabVolume::Handle
+            || target
+                .hand
+                .is_none_or(|hand| !holstering[hand.other().index()])
+    });
     reload::prioritize_extraction(&mut targets, grips);
     let resolved = grab::resolve::resolve(&targets, grips);
     let volumes = resolved.map(|r| r.chosen.map(|c| c.volume));

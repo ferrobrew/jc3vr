@@ -18,7 +18,50 @@
 
 use body_rig::smooth::smoothstep;
 
-use crate::controllers::frame::{Hand, Pose};
+use crate::controllers::{
+    frame::{Hand, Pose},
+    loadout::Socket,
+};
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct ReleaseIntent {
+    pub weapon: usize,
+    pub socket: Option<Socket>,
+    remaining_s: f32,
+}
+
+impl ReleaseIntent {
+    pub(crate) const fn new(weapon: usize, socket: Option<Socket>) -> Self {
+        Self {
+            weapon,
+            socket,
+            remaining_s: 0.35,
+        }
+    }
+
+    pub(crate) fn step(
+        &mut self,
+        weapon: Option<usize>,
+        closed: bool,
+        near: bool,
+        dt: f32,
+    ) -> bool {
+        if weapon != Some(self.weapon) || closed {
+            return false;
+        }
+        if dt.is_finite() && dt > 0.0 {
+            self.remaining_s = (self.remaining_s - dt).max(0.0);
+        }
+        if !near || self.remaining_s <= 0.0 {
+            self.socket = None;
+        }
+        true
+    }
+}
+
+pub(crate) fn draw_blocked(docking: bool, docked_this_tick: bool) -> bool {
+    docking || docked_this_tick
+}
 
 /// Which way a snap moves the gun.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -241,6 +284,51 @@ mod tests {
         }
         assert!(s.done());
         assert!((s.toward_hand() - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_dock_cannot_be_interrupted_or_redrawn_on_its_completion_tick() {
+        assert!(!draw_blocked(false, false));
+        assert!(draw_blocked(true, false));
+        assert!(draw_blocked(false, true));
+        assert!(draw_blocked(true, true));
+    }
+
+    #[test]
+    fn pending_release_expires_to_drop_without_changing_weapons_or_sockets() {
+        let socket = Socket::Hip(Hand::Left);
+        let mut intent = ReleaseIntent::new(7, Some(socket));
+        assert!(intent.step(Some(7), false, true, 0.2));
+        assert_eq!(intent.socket, Some(socket));
+        assert!(intent.step(Some(7), false, true, 0.2));
+        assert_eq!(intent.socket, None);
+        for _ in 0..10 {
+            assert!(intent.step(Some(7), false, true, 0.1));
+            assert_eq!(intent.socket, None);
+        }
+        assert!(!intent.step(Some(8), false, true, 0.1));
+        assert!(!intent.step(None, false, true, 0.1));
+    }
+
+    #[test]
+    fn regripping_cancels_and_moving_away_ends_holster_retries() {
+        let mut intent = ReleaseIntent::new(7, Some(Socket::Chest));
+        assert!(!intent.step(Some(7), true, true, 0.01));
+        assert!(intent.step(Some(7), false, false, 0.01));
+        assert_eq!(intent.socket, None);
+        assert!(intent.step(Some(7), false, true, 0.01));
+        assert_eq!(intent.socket, None);
+    }
+
+    #[test]
+    fn release_timeout_ignores_invalid_time() {
+        let mut intent = ReleaseIntent::new(7, Some(Socket::Chest));
+        for dt in [f32::NAN, f32::INFINITY, -1.0, 0.0] {
+            assert!(intent.step(Some(7), false, true, dt));
+            assert_eq!(intent.socket, Some(Socket::Chest));
+        }
+        assert!(intent.step(Some(7), false, true, 0.35));
+        assert_eq!(intent.socket, None);
     }
 
     #[test]
