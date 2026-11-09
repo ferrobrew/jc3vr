@@ -38,6 +38,7 @@ mod tests;
 use std::{
     num::NonZeroUsize,
     sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant},
 };
 
 use glam::Vec3;
@@ -51,9 +52,10 @@ use re_utilities::hook_library::HookLibrary;
 
 pub use crate::controllers::bindings::grapple_button::LockButton;
 use crate::{
+    config::Config,
     controllers::{
         bindings::yank::HandLine,
-        frame::Hand,
+        frame::{self, Hand},
         haptics::{self, Event, Sustain},
         physical_hands::remote,
         weapons::engine::character_position,
@@ -61,11 +63,13 @@ use crate::{
     grapple::{
         hook,
         physical::{
-            config::LockConfig,
-            lock::model::{Held, SwingInput, TakeIn},
+            config::{LockConfig, PhysicalGrappleTuning, SwingTuning},
+            lock::model::{Held, Pump, PumpSample, SwingInput, TakeIn},
         },
         rope::{self, RopeFault},
     },
+    headpose::xr,
+    vr::recenter_count,
 };
 
 /// The lock's hooks, aggregated by [`crate::grapple::physical::hook_library`].
@@ -228,6 +232,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         tracing::debug!(target: "grapple", %error, "grapple lock: the reaction found no body");
     }
     let wants = arm(input.button);
+    let (pump_sample, pump_tuning) = pump_sample(input);
     let Some((character, hook)) = (unsafe { hook::local() }) else {
         end(None, LockEnd::ReelEnded, input.hand);
         return;
@@ -235,7 +240,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
     if !holds() {
         if wants && input.carries && input.config.enabled {
             SHARED.lock().armed = false;
-            unsafe { start(character, hook, input) };
+            unsafe { start(character, hook, input, pump_sample, pump_tuning) };
         }
         return;
     }
@@ -251,6 +256,9 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
                     active
                         .take_in
                         .step(input.real_dt, input.line, input.config.reel_in_mps);
+                active.pump.sample(pump_sample, input.real_dt, &pump_tuning);
+                active.pump_tuning = pump_tuning;
+                active.pump_at = Instant::now();
                 active.config = *input.config;
                 active.held.take_in(taken, input.real_dt, input.config);
                 let length_m = active.held.rope.length_m;
@@ -322,11 +330,23 @@ pub(crate) unsafe fn drive(
         0.0
     };
     let target_inverse_mass = active.target.map_or(0.0, |t| t.inverse_mass * reaction);
+    if active.pump_at.elapsed() > Duration::from_millis(100) {
+        active.pump.expire();
+    }
+    let pump_velocity = active.pump.take(
+        dt,
+        rider - hook_point,
+        active.held.rope.length_m,
+        &active.pump_tuning,
+    );
+    if let Some(stored) = SHARED.lock().active.as_mut() {
+        stored.pump = active.pump;
+    }
     let swung = model::swing(
         &mut active.held,
         SwingInput {
             rider,
-            rider_velocity: Vec3::from_array(velocity_out.data),
+            rider_velocity: Vec3::from_array(velocity_out.data) + pump_velocity,
             rider_mass_kg: active.rider_mass_kg,
             hook: hook_point,
             hook_velocity,
@@ -374,6 +394,37 @@ pub(crate) unsafe fn drive(
     true
 }
 
+fn pump_sample(input: &LockTickInput) -> (Option<PumpSample>, SwingTuning) {
+    let (scale, tuning) = Config::lock_query(|c| {
+        (
+            c.vr.world_scale,
+            PhysicalGrappleTuning::of(&c.controllers.grapple).swing,
+        )
+    });
+    let fresh = frame::with_latest(|frame| {
+        frame.focused
+            && frame.published_at.elapsed() <= Duration::from_millis(100)
+            && frame.hand(input.hand).active
+            && frame.hand(input.hand).grip.is_tracked()
+    })
+    .unwrap_or(false);
+    let sample = if fresh {
+        input
+            .line
+            .zip(xr::cockpit_pose())
+            .map(|(line, head)| PumpSample {
+                hand: line.grip,
+                head: head.position,
+                rotation: xr::body_rotation(),
+                world_scale: scale,
+                recenters: recenter_count(),
+            })
+    } else {
+        None
+    };
+    (sample, tuning)
+}
+
 /// Whether the button asks the lock to take hold this tick ([`model::armed`]).
 fn arm(button: Option<LockButton>) -> bool {
     let mut shared = SHARED.lock();
@@ -391,7 +442,13 @@ fn last_velocity() -> Option<Vec3> {
 /// # Safety
 ///
 /// The game thread, before the world update.
-unsafe fn start(character: &Character, hook: &GrapplingHook, input: &LockTickInput) {
+unsafe fn start(
+    character: &Character,
+    hook: &GrapplingHook,
+    input: &LockTickInput,
+    pump_sample: Option<PumpSample>,
+    pump_tuning: SwingTuning,
+) {
     let refuse = |why: &str| {
         tracing::info!(target: "grapple", why, "grapple lock: refused");
     };
@@ -423,6 +480,8 @@ unsafe fn start(character: &Character, hook: &GrapplingHook, input: &LockTickInp
     let Some(proxy_id) = NonZeroUsize::new(std::ptr::from_ref(proxy) as usize) else {
         return;
     };
+    let mut pump = Pump::default();
+    pump.sample(pump_sample, input.real_dt, &pump_tuning);
     let mut take_in = TakeIn::default();
     take_in.step(input.real_dt, input.line, input.config.reel_in_mps);
     let lock_target = LockTarget {
@@ -438,6 +497,9 @@ unsafe fn start(character: &Character, hook: &GrapplingHook, input: &LockTickInp
             target,
             config: *input.config,
             take_in,
+            pump,
+            pump_tuning,
+            pump_at: Instant::now(),
             airborne: false,
         });
         shared.fault = None;
@@ -575,6 +637,9 @@ struct Active {
     target: Option<TargetBody>,
     config: LockConfig,
     take_in: TakeIn,
+    pump: Pump,
+    pump_tuning: SwingTuning,
+    pump_at: Instant,
     /// Whether the character has left the ground since the lock took hold.
     airborne: bool,
 }

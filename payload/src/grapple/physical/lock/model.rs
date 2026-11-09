@@ -1,12 +1,16 @@
-use glam::Vec3;
+use body_rig::smooth::follow_factor;
+use glam::{Quat, Vec3};
 
 use crate::{
-    controllers::bindings::{
-        grapple_button::LockButton,
-        yank::{ArmedLine, HandLine},
+    controllers::{
+        bindings::{
+            grapple_button::LockButton,
+            yank::{ArmedLine, HandLine},
+        },
+        physical_hands::physics::drive::rig_jumped,
     },
     grapple::{
-        physical::config::LockConfig,
+        physical::config::{LockConfig, SwingTuning},
         rope::{GRAVITY_MPS2, Rope, RopeEnd, RopeFault, RopeStep, RopeTuning, held_floor},
     },
 };
@@ -129,6 +133,95 @@ pub(crate) fn swing(
         stretch_m: out.stretch_m,
         target_impulse: out.impulse_on_a(dt),
     })
+}
+
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct PumpSample {
+    pub hand: Vec3,
+    pub head: Vec3,
+    pub rotation: Quat,
+    pub world_scale: f32,
+    pub recenters: u32,
+}
+
+#[derive(Debug, Copy, Clone, Default)]
+pub(crate) struct Pump {
+    previous: Option<PumpSample>,
+    velocity: Vec3,
+    remaining_s: f32,
+}
+
+impl Pump {
+    pub(crate) fn sample(&mut self, sample: Option<PumpSample>, dt: f32, tuning: &SwingTuning) {
+        self.remaining_s = 0.0;
+        let Some(sample) = sample.filter(|s| {
+            s.hand.is_finite()
+                && s.head.is_finite()
+                && s.rotation.is_finite()
+                && s.rotation.is_normalized()
+                && s.world_scale.is_finite()
+                && s.world_scale > 0.0
+                && dt.is_finite()
+                && dt > 0.0
+                && dt <= 0.1
+                && tuning.pump
+        }) else {
+            *self = Self::default();
+            return;
+        };
+        let previous = self.previous.replace(sample);
+        let Some(previous) = previous else { return };
+        if rig_jumped(
+            Some((previous.rotation, previous.recenters)),
+            sample.rotation,
+            sample.recenters,
+        ) || (previous.world_scale - sample.world_scale).abs() > 1e-4
+        {
+            self.velocity = Vec3::ZERO;
+            return;
+        }
+        let displacement = (sample.hand - sample.head) - (previous.hand - previous.head);
+        let velocity = sample.rotation * (displacement * sample.world_scale / dt);
+        if displacement.length() > 0.4 || !velocity.is_finite() || velocity.length() > 8.0 {
+            self.velocity = Vec3::ZERO;
+            return;
+        }
+        self.velocity = self
+            .velocity
+            .lerp(velocity, follow_factor(dt, tuning.smoothing_s));
+        self.remaining_s = dt;
+    }
+
+    pub(crate) fn take(
+        &mut self,
+        dt: f32,
+        offset: Vec3,
+        length_m: f32,
+        tuning: &SwingTuning,
+    ) -> Vec3 {
+        if !dt.is_finite() || dt <= 0.0 || !offset.is_finite() || !length_m.is_finite() {
+            return Vec3::ZERO;
+        }
+        let seconds = dt.min(self.remaining_s);
+        self.remaining_s = (self.remaining_s - seconds).max(0.0);
+        let distance = offset.length();
+        let Some(radial) = offset.try_normalize() else {
+            return Vec3::ZERO;
+        };
+        let tangent = self.velocity - radial * self.velocity.dot(radial);
+        let speed = tangent.length();
+        let strength = ((speed - tuning.deadzone_mps)
+            / (tuning.full_mps - tuning.deadzone_mps).max(1e-3))
+        .clamp(0.0, 1.0);
+        let tautness = ((distance - length_m) / 0.05).clamp(0.0, 1.0);
+        let acceleration =
+            -tangent.normalize_or_zero() * strength * tautness * (0.35 * GRAVITY_MPS2);
+        acceleration * seconds
+    }
+
+    pub(crate) fn expire(&mut self) {
+        *self = Self::default();
+    }
 }
 
 /// The grapple hand taking line in: how far it comes back along the aim it had when the lock took

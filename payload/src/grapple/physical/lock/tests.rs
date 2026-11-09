@@ -1,15 +1,100 @@
-use glam::Vec3;
+use glam::{Quat, Vec3};
 
 use crate::{
     controllers::bindings::{grapple_button::LockButton, yank::HandLine},
     grapple::{
         physical::{
-            config::LockConfig,
-            lock::model::{Held, SwingInput, TakeIn, armed, swing},
+            config::{GRAPPLE, LockConfig},
+            lock::model::{Held, Pump, PumpSample, SwingInput, TakeIn, armed, swing},
         },
         rope::{GRAVITY_MPS2, RopeFault},
     },
 };
+
+fn pump_sample(hand: Vec3, head: Vec3) -> PumpSample {
+    PumpSample {
+        hand,
+        head,
+        rotation: Quat::IDENTITY,
+        world_scale: 1.0,
+        recenters: 0,
+    }
+}
+
+#[test]
+fn pump_ignores_shared_head_motion_and_its_first_sample() {
+    let tuning = GRAPPLE.swing;
+    let mut pump = Pump::default();
+    pump.sample(Some(pump_sample(Vec3::X, Vec3::ZERO)), DT, &tuning);
+    assert_eq!(pump.take(DT, Vec3::Y * 5.1, 5.0, &tuning), Vec3::ZERO);
+    pump.sample(Some(pump_sample(Vec3::X + Vec3::Z, Vec3::Z)), DT, &tuning);
+    assert_eq!(pump.take(DT, Vec3::Y * 5.1, 5.0, &tuning), Vec3::ZERO);
+}
+
+#[test]
+fn pump_is_tangential_bounded_and_has_one_input_ticks_budget() {
+    let tuning = GRAPPLE.swing;
+    let mut pump = Pump::default();
+    pump.sample(Some(pump_sample(Vec3::ZERO, Vec3::ZERO)), DT, &tuning);
+    pump.sample(Some(pump_sample(Vec3::X * 0.2, Vec3::ZERO)), DT, &tuning);
+    let mut whole = pump;
+    let offset = Vec3::Y * 5.1;
+    let first = pump.take(DT * 0.5, offset, 5.0, &tuning);
+    let second = pump.take(DT * 0.5, offset, 5.0, &tuning);
+    assert!(first.x < 0.0);
+    assert_eq!(first.y, 0.0);
+    assert!((first + second).abs_diff_eq(whole.take(DT, offset, 5.0, &tuning), 1e-6));
+    assert!((first + second).length() <= 0.35 * GRAVITY_MPS2 * DT + 1e-6);
+    assert_eq!(pump.take(DT, offset, 5.0, &tuning), Vec3::ZERO);
+}
+
+#[test]
+fn pump_does_not_assist_slack_rope_or_replay_its_slack_budget() {
+    let tuning = GRAPPLE.swing;
+    let mut pump = Pump::default();
+    pump.sample(Some(pump_sample(Vec3::ZERO, Vec3::ZERO)), DT, &tuning);
+    pump.sample(Some(pump_sample(Vec3::X * 0.1, Vec3::ZERO)), DT, &tuning);
+    assert_eq!(pump.take(DT, Vec3::Y * 4.0, 5.0, &tuning), Vec3::ZERO);
+    assert_eq!(pump.take(DT, Vec3::Y * 5.1, 5.0, &tuning), Vec3::ZERO);
+}
+
+#[test]
+fn lateral_pump_keeps_rope_length_and_adds_no_tangent_target_reaction() {
+    let tuning = GRAPPLE.swing;
+    let rider = Vec3::Y * -5.1;
+    let mut held = Held::new(Vec3::ZERO, Vec3::Y * -5.0, &CONFIG).unwrap();
+    let length = held.rope.length_m;
+    let mut pump = Pump::default();
+    pump.sample(Some(pump_sample(Vec3::ZERO, Vec3::ZERO)), DT, &tuning);
+    pump.sample(Some(pump_sample(Vec3::X * 0.1, Vec3::ZERO)), DT, &tuning);
+    let velocity = pump.take(DT, rider, length, &tuning);
+    let mut tick = input(rider, velocity, Vec3::ZERO, Vec3::ZERO);
+    tick.target_inverse_mass = 1.0 / MASS;
+    let out = swing(&mut held, tick, &CONFIG).unwrap();
+    assert!(out.velocity.x < 0.0);
+    assert_eq!(held.rope.length_m, length);
+    assert_eq!(out.target_impulse.x, 0.0);
+    assert_eq!(out.target_impulse.z, 0.0);
+}
+
+#[test]
+fn pump_reseeds_after_recenter_tracking_gap_or_implausible_jump() {
+    let tuning = GRAPPLE.swing;
+    for discontinuity in 0..5 {
+        let mut pump = Pump::default();
+        pump.sample(Some(pump_sample(Vec3::ZERO, Vec3::ZERO)), DT, &tuning);
+        let mut next = pump_sample(Vec3::X * 0.1, Vec3::ZERO);
+        match discontinuity {
+            0 => next.recenters += 1,
+            1 => next.rotation = Quat::from_rotation_y(0.5),
+            2 => next.hand = Vec3::X * 2.0,
+            3 => next.world_scale = 2.0,
+            _ => pump.sample(None, DT, &tuning),
+        }
+        pump.sample(Some(next), DT, &tuning);
+        assert_eq!(pump.take(DT, Vec3::Y * 5.1, 5.0, &tuning), Vec3::ZERO);
+    }
+}
 
 const DT: f32 = 1.0 / 30.0;
 const MASS: f32 = 100.0;
