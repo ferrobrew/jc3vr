@@ -2630,7 +2630,7 @@ impl std::convert::AsMut<hknpMotion> for hknpMotion {
 /// independent callers can disable the same pair without releasing another caller's exclusion.
 pub struct hknpPairCollisionFilter {}
 impl hknpPairCollisionFilter {
-    pub const disableCollisionsBetween_ADDRESS: usize = 0x141525AF0;
+    pub const disableCollisionsBetween_ADDRESS: usize = 0x141525AE0;
     /// Adds one exclusion reference for the unordered body pair, rebuilds the affected collision
     /// caches, and returns the new reference count. The disassembler mislabels this function
     /// `NHavokCollisionFilter::SetSystemGroup`.
