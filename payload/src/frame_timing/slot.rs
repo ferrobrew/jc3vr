@@ -112,6 +112,8 @@ pub(crate) enum Slot {
     /// The physical hands' pre-simulation callback, which drives the hand bodies before each physics
     /// step.
     HandBodies,
+    HumanHull,
+    HandImpacts,
     /// The render-rate presentation layer (`controllers::presentation`): the frame's snapshot, and
     /// the upper body's re-solve for the draws of the player's body.
     Presentation,
@@ -224,6 +226,8 @@ impl Slot {
         Slot::CharacterPose,
         Slot::BodyGate,
         Slot::HandBodies,
+        Slot::HumanHull,
+        Slot::HandImpacts,
         Slot::Presentation,
         Slot::Recorder,
         Slot::UiCapture,
@@ -247,7 +251,7 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 54;
+    pub(crate) const COUNT: usize = 56;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
     pub(crate) const fn index(self) -> usize {
@@ -291,6 +295,8 @@ impl Slot {
             Slot::CharacterPose => "character_pose",
             Slot::BodyGate => "body_gate",
             Slot::HandBodies => "hand_bodies",
+            Slot::HumanHull => "human_hull",
+            Slot::HandImpacts => "hand_impacts",
             Slot::Presentation => "presentation",
             Slot::Recorder => "recorder",
             Slot::UiCapture => "ui_capture",
@@ -325,6 +331,8 @@ impl Slot {
             | Slot::CharacterPose
             | Slot::BodyGate
             | Slot::HandBodies
+            | Slot::HumanHull
+            | Slot::HandImpacts
             | Slot::Presentation
             | Slot::Recorder
             | Slot::UiCapture
