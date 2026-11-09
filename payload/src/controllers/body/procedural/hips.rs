@@ -36,6 +36,7 @@ impl Track {
             | Case::GettingUp
             | Case::Seated
             | Case::StuntStanding
+            | Case::StuntHanging
             | Case::Vehicle
             | Case::GrappleAttach
             | Case::GrappleLock

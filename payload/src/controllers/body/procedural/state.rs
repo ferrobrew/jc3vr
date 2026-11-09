@@ -106,11 +106,12 @@ impl StateTracker {
         let on_ground = detection.mode == Mode::OnFoot(OnFootVariant::Ground);
         let stunt_position = unsafe { character.IsInStuntPosition() };
         let stunt_traversing = unsafe { character.IsStuntTraversing() };
+        let stunt_hanging = !stunt_traversing && unsafe { character.IsStuntHanging() };
         // A roof, a deck, or a wing: not the helicopter's hang, nor a step up or down.
         let stunt_standing = stunt_position
             && !stunt_traversing
             && unsafe { character.IsInStuntArea() }
-            && !unsafe { character.IsStuntHanging() };
+            && !stunt_hanging;
         if movement_task && on_ground && !airborne {
             self.grounded_at = Some(now);
         }
@@ -126,12 +127,16 @@ impl StateTracker {
             getting_up: has(StateBitFlag::SB_IS_GETTING_UP_FROM_RAGDOLL),
             vehicle: matches!(detection.mode, Mode::Vehicle(_))
                 || has(StateBitFlag::SB_INSIDE_VEHICLE)
-                || stunt_position,
+                || stunt_position
+                || stunt_hanging,
             // The hand tiers' classification, from the input tick: seated and riding, which an
             // entry, an exit, a seat switch, and a mounted gun are not. It lags by up to a frame,
             // as the mode detection does.
-            seated: tiers::status().state == Some(TierState::VehicleSeated) && !stunt_position,
+            seated: tiers::status().state == Some(TierState::VehicleSeated)
+                && !stunt_position
+                && !stunt_hanging,
             stunt_standing,
+            stunt_hanging,
             traversal: detection.traversal.is_some()
                 || stunt_traversing
                 || unsafe { character.IsGrappleHanging() }

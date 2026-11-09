@@ -1,7 +1,8 @@
 //! Who poses the torso: the hand-over table between the procedural body and the game's animation,
 //! and the spring that blends the torso from one to the other. Pure.
 //!
-//! The game's animation keeps the hips, the pelvis, and the legs in every case. The torso (the
+//! The game's animation keeps the lower body except in stable vehicle stunt stances, where a tracked
+//! waist carries the native leg animation without changing the attachment or root. The torso (the
 //! spine, the neck, the head, and the clavicles) is posed on the animation's hips where the table
 //! gives it to the player, the arms are the controllers' in every case, through the hand IK, and
 //! the head is the headset's, through the head override. [`classify`] reads the character's state
@@ -15,8 +16,9 @@
 //! | ragdoll | animation, at once |
 //! | getting up from a ragdoll | animation |
 //! | seated and riding in a vehicle | procedural on the seat's hips |
-//! | standing in a vehicle's stunt area (a roof, a deck) | procedural on the stunt idle's hips |
-//! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a helicopter's hang, a stunt traversal) | animation |
+//! | standing in a vehicle's stunt area (a roof, a deck, a wing) | procedural on the tracked waist |
+//! | hanging in a helicopter's stunt position | procedural on the tracked waist |
+//! | in or on a vehicle otherwise (entering, leaving, a mounted gun, a stunt traversal) | animation |
 //! | attached to a wall at the end of a grapple, a hang | procedural on the attach's hips |
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation, after a flight's hold |
 //! | the grapple's ledge climb | animation |
@@ -59,6 +61,8 @@ pub enum Case {
     Seated,
     /// Standing in a vehicle's stunt area: a car's roof, a boat's deck, a plane's wing.
     StuntStanding,
+    /// Hanging in a helicopter's stable stunt idle, not traversing onto or off it.
+    StuntHanging,
     Vehicle,
     /// Attached to a wall at the end of a grapple's reel: a hang the clip holds still.
     GrappleAttach,
@@ -91,6 +95,7 @@ impl Case {
             Self::GettingUp => "getting up",
             Self::Seated => "seated in a vehicle",
             Self::StuntStanding => "standing on a vehicle",
+            Self::StuntHanging => "hanging from a helicopter",
             Self::Vehicle => "vehicle",
             Self::GrappleAttach => "grapple wall attach",
             Self::Traversal => "grapple or stunt traversal",
@@ -118,10 +123,16 @@ impl Case {
             | Self::Parachute
             | Self::Seated
             | Self::StuntStanding
+            | Self::StuntHanging
             | Self::GrappleAttach
             | Self::Swimming => 1.0,
             _ => 0.0,
         }
+    }
+
+    /// Whether the visual waist and torso use the tracked frame without steering the native root.
+    pub const fn tracked_stunt(self) -> bool {
+        matches!(self, Self::StuntStanding | Self::StuntHanging)
     }
 
     /// Whether a clip, a script, or physics poses Rico's whole body while he is out of a vehicle,
@@ -190,6 +201,8 @@ pub struct CharacterState {
     pub seated: bool,
     /// Standing in a vehicle's stunt area, not traversing it: a narrower [`vehicle`](Self::vehicle).
     pub stunt_standing: bool,
+    /// Hanging in a helicopter's stable stunt idle, not traversing it.
+    pub stunt_hanging: bool,
     pub traversal: bool,
     /// Attached to a wall at the end of a grapple's reel.
     pub grapple_attach: bool,
@@ -228,10 +241,12 @@ pub fn classify(state: &CharacterState) -> Case {
         Case::Ragdoll
     } else if state.getting_up {
         Case::GettingUp
+    } else if state.vehicle && state.stunt_hanging && !state.traversal {
+        Case::StuntHanging
+    } else if state.vehicle && state.stunt_standing && !state.traversal {
+        Case::StuntStanding
     } else if state.vehicle && state.seated {
         Case::Seated
-    } else if state.vehicle && state.stunt_standing {
-        Case::StuntStanding
     } else if state.vehicle {
         Case::Vehicle
     } else if state.grapple_attach {
@@ -687,6 +702,96 @@ mod tests {
             }),
             Case::Ragdoll
         );
+    }
+
+    #[test]
+    fn only_stable_stunt_stances_own_the_tracked_waist() {
+        let roof = CharacterState {
+            vehicle: true,
+            stunt_standing: true,
+            ..on_foot()
+        };
+        let rail = CharacterState {
+            stunt_standing: false,
+            stunt_hanging: true,
+            ..roof
+        };
+        for (state, expected) in [(roof, Case::StuntStanding), (rail, Case::StuntHanging)] {
+            assert_eq!(classify(&state), expected);
+            assert_eq!(expected.target(), 1.0);
+            assert!(expected.tracked_stunt());
+            assert!(!relaxes_legs(expected));
+            assert!(!expected.player_carries_body());
+            assert_eq!(
+                classify(&CharacterState {
+                    seated: true,
+                    ..state
+                }),
+                expected
+            );
+            assert_eq!(
+                classify(&CharacterState {
+                    traversal: true,
+                    ..state
+                }),
+                Case::Vehicle
+            );
+            for (blocked, case) in [
+                (
+                    CharacterState {
+                        ragdoll: true,
+                        ..state
+                    },
+                    Case::Ragdoll,
+                ),
+                (
+                    CharacterState {
+                        dead: true,
+                        ..state
+                    },
+                    Case::Dead,
+                ),
+                (
+                    CharacterState {
+                        getting_up: true,
+                        ..state
+                    },
+                    Case::GettingUp,
+                ),
+                (
+                    CharacterState {
+                        sequence: true,
+                        ..state
+                    },
+                    Case::Sequence,
+                ),
+                (
+                    CharacterState {
+                        in_headset: false,
+                        ..state
+                    },
+                    Case::NotInHeadset,
+                ),
+                (
+                    CharacterState {
+                        in_gameplay: false,
+                        ..state
+                    },
+                    Case::NotInGameplay,
+                ),
+            ] {
+                let actual = classify(&blocked);
+                assert_eq!(actual, case);
+                assert!(!actual.tracked_stunt());
+            }
+        }
+        let transition = CharacterState {
+            vehicle: true,
+            ..on_foot()
+        };
+        assert_eq!(classify(&transition), Case::Vehicle);
+        assert_eq!(Case::Vehicle.target(), 0.0);
+        assert!(!Case::Vehicle.tracked_stunt());
     }
 
     #[test]
