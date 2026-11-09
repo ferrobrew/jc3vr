@@ -731,8 +731,6 @@ fn update_from_user_serial(
     let (reading, pulses, raised, previous) = unsafe {
         let (w, user) = (&mut *weapon, &mut *user);
         let mut state = STATE.lock();
-        // A placed charge taken back leaves the live list before the weapon is read, so that the
-        // charge primed in its place has the room it left.
         let take = placed::before_update(&mut state, w, user);
         let reading = read_weapon(w, user);
         state.status.weapon_seen = true;
@@ -747,7 +745,8 @@ fn update_from_user_serial(
         }
         if acting || state.stage != Stage::Idle {
             let hand = state.stage.hand();
-            let (next, action, outcome) = stage::before_update(state.stage, reading.view);
+            let (next, action, outcome) =
+                stage::before_update(state.stage, take.view(reading.view));
             if let Some(outcome) = outcome {
                 report(&mut state, hand, outcome);
                 pulses.extend(outcome_pulse(hand, outcome));
@@ -767,6 +766,11 @@ fn update_from_user_serial(
                 (None, grip) => grip,
             };
             let primed = act(w, user, action, grip, stick.is_some());
+            let primed = if action == WeaponAction::Prime {
+                placed::after_prime(&mut state, w, take, primed)
+            } else {
+                primed
+            };
             let charge = primed_charge(w).map(|charge| charge as usize);
             let (next, outcome) = stage::after_action(next, action, primed);
             state.stage = next;
@@ -778,7 +782,7 @@ fn update_from_user_serial(
                 if outcome == Outcome::Primed {
                     state.held_since = Some(Instant::now());
                     state.held_since_s = motion::latest_time();
-                    state.placed.from_surface = take == TakeStep::Took;
+                    state.placed.from_surface = matches!(take, TakeStep::Ready(..));
                 }
                 if let (Outcome::Thrown(_), Some(at)) = (outcome, stick) {
                     state.status.stuck += 1;
@@ -795,6 +799,9 @@ fn update_from_user_serial(
                 state.held_since_s = None;
             }
         }
+        let mut reading = reading;
+        reading.live = w.NumActiveExplosives();
+        state.status.charges = Some((reading.live, reading.max));
         // The detonate input is raised for the weapon's update only, and the game's own value is
         // put back after it.
         let raised = state.detonation.is_some() && acting;

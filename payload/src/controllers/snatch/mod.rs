@@ -34,9 +34,10 @@
 //!    target in the world. The grapple's own sounds and effects play throughout ([`juice`]).
 //!
 //! The snatch's runtime state (armed, freeing, hook out, pulling) lives here alone; where a weapon
-//! ends up is the loadout table's. The mod holds a strong reference to the target from the fire to
-//! the end, holds the grapple button back from the game while its line is out, and ends its own
-//! wire on every exit and stand-down.
+//! ends up is the loadout table's. Ordinary targets have a strong reference from the fire to the
+//! end. A pooled C4 charge uses a weak handle and allocation identity instead ([`charge`]). The
+//! snatch holds the grapple button back from the game while its line is out, and ends its own wire
+//! on every exit and stand-down.
 //!
 //! A loose object too heavy for a hand to carry, up to the swing's ceiling, is never pulled in: once
 //! the hook bites, the held line swings it ([`sling`]), a stiff, tension-only spring-damper from the
@@ -47,9 +48,11 @@
 //! Grip release writes no target velocity. [`hooks`] keeps ordinary grapple taps and holds working
 //! on aimed weapons.
 
+mod acquisition;
 mod arrival;
 mod brace;
 pub mod catch;
+mod charge;
 pub mod config;
 mod engine;
 mod hooks;
@@ -640,16 +643,6 @@ impl State {
                                 waited_s: 0.0,
                             }
                         }
-                        Ok(Fired::Charge) => {
-                            haptics::play(hand, Event::SnatchCatch);
-                            self.status.taken += 1;
-                            tracing::info!(target: "controllers", hand = hand.label(), "snatch: a placed C4 charge came to the {} hand", hand.label());
-                            self.moment.ended(
-                                "taken",
-                                format!("a placed C4 charge came to the {} hand", hand.label()),
-                            );
-                            Phase::Idle
-                        }
                         Err(refusal) => self.failed(hand, refusal),
                     }
                 }
@@ -879,6 +872,12 @@ impl State {
                                 Arrival::Grenade => {
                                     format!("a grenade came to the {} hand", catcher.label())
                                 }
+                                Arrival::Charge => {
+                                    format!(
+                                        "a placed C4 charge was caught by the {} hand",
+                                        catcher.label()
+                                    )
+                                }
                             },
                         );
                         if catcher != hand
@@ -905,6 +904,12 @@ impl State {
                                 line_hand = hand.label(),
                                 "snatch: the object came into the {} hand's hold",
                                 catcher.label()
+                            ),
+                            Arrival::Charge => tracing::info!(
+                                target: "controllers",
+                                hand = catcher.label(),
+                                line_hand = hand.label(),
+                                "snatch: the placed C4 charge was caught; the hand's take is pending"
                             ),
                             Arrival::Grenade => tracing::info!(
                                 target: "controllers",

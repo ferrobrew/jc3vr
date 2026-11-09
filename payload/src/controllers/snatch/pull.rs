@@ -3,11 +3,14 @@
 //! the hand on arrival, or swings it on the held line; and the toss a tap of the grapple gives a
 //! gun.
 
-use std::{cell::Cell, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::inventory::WeaponSlot, equipment::weapon::WeaponBase};
 
+pub(super) use crate::controllers::snatch::acquisition::{
+    Fired, Freeing, Grabbed, Pulled, collect, fire_at,
+};
 use crate::{
     controllers::{
         aim::{
@@ -19,10 +22,9 @@ use crate::{
         grab::latch::GripLatch,
         hands::ik,
         haptics::{self, Sustain},
-        loadout::TakeSource,
         physical_hands::{
             self,
-            doors::{DoorTarget, engine::vehicle_frame},
+            doors::engine::vehicle_frame,
             grasp::GripTarget as HoldPoint,
             hold::{self, HandHold, HoldTuning},
             remote,
@@ -37,17 +39,11 @@ use crate::{
             rules::{self, FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
             sling::{LineTuning, Sling, SlingStep},
             sling_hooks,
-            target::{Offer, OfferKind, weak_of},
+            target::weak_of,
         },
         weapons::{
-            c4, grenade,
-            hold::{
-                SNAP_S,
-                rack::copy,
-                refs::{Strong, Weak},
-                source::{self as hold_source, Freed, Ticket, WeaponSource, Yield},
-                steal::CharacterGun,
-            },
+            grenade,
+            hold::{SNAP_S, refs::Weak, source as hold_source},
             inventory::engine::weapon_of,
         },
     },
@@ -58,249 +54,15 @@ use crate::{
     hooks::camera,
 };
 
-/// What the snatch fired at, held alive from the fire to the end.
-pub(super) struct Grabbed {
-    /// The physics game object the hook goes to.
-    pub object: NonZeroUsize,
-    pub kind: Pulled,
-    hit: Cell<Option<BodyHit>>,
-    object_local: Option<Vec3>,
-    _alive: Strong,
-}
-
-/// How a grabbed thing comes.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(super) enum Pulled {
-    /// A weapon lying in the world, taken from `source`, into the hand through the table.
-    Weapon { source: TakeSource },
-    /// A loose object, body `body` of `mass_kg`: one a hand can carry into the hand's ordinary
-    /// hold, or one too heavy, swung on the held line.
-    Prop {
-        body: u32,
-        mass_kg: f32,
-        handling: PropHandling,
-    },
-    /// A ragdolling character's ragdoll, pulled by its body `body` of `owner`, which drags the
-    /// whole ragdoll of `mass_kg`: always swung on the held line.
-    Ragdoll {
-        owner: NonZeroUsize,
-        body: u32,
-        mass_kg: f32,
-    },
-    /// An inert grenade, body `body`, into the hand through the loadout.
-    Grenade { body: u32 },
-    /// A finite native hand grenade lying in the world, body `body`: the catch takes it into the
-    /// hand as the grenade it is, as a hand closing on it does.
-    WorldGrenade { body: u32 },
-    /// A vehicle's closed door, pulled open at its handle, `handle` in the vehicle's frame.
-    Door { door: DoorTarget, handle: Vec3 },
-}
-
-impl Pulled {
-    /// Whether the target is too heavy to come to the hand, so the line swings it from the bite.
-    pub(super) const fn tethered(&self) -> bool {
-        matches!(
-            self,
-            Pulled::Prop {
-                handling: PropHandling::Swing,
-                ..
-            } | Pulled::Ragdoll { .. }
-        )
-    }
-}
-
-/// What a fire at an armed target started.
-pub(super) enum Fired {
-    /// A source gave its weapon up, or is making it; the hook fires once it lies in the world.
-    Freeing(Freeing),
-    /// The hook flies.
-    HookOut(Grabbed, NonZeroUsize),
-    /// A placed C4 charge went to the hand at once, as a grip on it takes it.
-    Charge,
-}
-
-/// Fire at the armed target: free a gun from a character's hands or holster first, fire the hook at
-/// a weapon, an object, or a door, or take a placed C4 charge into the hand.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn fire_at(hand: Hand, offer: Offer) -> Result<Fired, Refusal> {
-    let hit = offer.hit;
-    let object_local = offer.object_local;
-    let source = match offer.kind {
-        OfferKind::Ground { weak, .. } => WeaponSource::Ground { weak },
-        OfferKind::Held(target) => {
-            WeaponSource::Character(CharacterGun::held(&target).ok_or(Refusal::Gone)?)
-        }
-        OfferKind::Holstered(target) => WeaponSource::Character(CharacterGun::holstered(&target)),
-        OfferKind::Rack { weapon, weak, gun } => WeaponSource::Rack { weapon, weak, gun },
-        OfferKind::Prop {
-            object,
-            body,
-            mass_kg,
-            handling,
-            weak,
-        } => {
-            let grabbed = Grabbed {
-                object,
-                kind: Pulled::Prop {
-                    body,
-                    mass_kg,
-                    handling,
-                },
-                hit: Cell::new(hit),
-                object_local,
-                _alive: weak.lock().ok_or(Refusal::Gone)?,
-            };
-            let wire = unsafe { fire_hook(&grabbed) }?;
-            return Ok(Fired::HookOut(grabbed, wire));
-        }
-        OfferKind::Ragdoll {
-            character,
-            owner,
-            body,
-            mass_kg,
-            weak,
-        } => {
-            let grabbed = Grabbed {
-                object: character,
-                kind: Pulled::Ragdoll {
-                    owner,
-                    body,
-                    mass_kg,
-                },
-                hit: Cell::new(hit),
-                object_local,
-                _alive: weak.lock().ok_or(Refusal::Gone)?,
-            };
-            let wire = unsafe { fire_hook(&grabbed) }?;
-            return Ok(Fired::HookOut(grabbed, wire));
-        }
-        OfferKind::WorldGrenade { weapon, body, weak } => {
-            let grabbed = Grabbed {
-                object: weapon,
-                kind: Pulled::WorldGrenade { body },
-                hit: Cell::new(hit),
-                object_local,
-                _alive: weak.lock().ok_or(Refusal::Gone)?,
-            };
-            unsafe { engine::dropped(weapon) }?;
-            let wire = unsafe { fire_hook(&grabbed) }?;
-            return Ok(Fired::HookOut(grabbed, wire));
-        }
-        OfferKind::Grenade { object, body, weak } => {
-            let grabbed = Grabbed {
-                object,
-                kind: Pulled::Grenade { body },
-                hit: Cell::new(hit),
-                object_local,
-                _alive: weak.lock().ok_or(Refusal::Gone)?,
-            };
-            let wire = unsafe { fire_hook(&grabbed) }?;
-            return Ok(Fired::HookOut(grabbed, wire));
-        }
-        OfferKind::PlacedCharge { charge } => {
-            // The C4 throw swaps the placed charge for a primed one in the hand at the weapon's
-            // next update, as a grip on the charge does.
-            return if c4::placed::take(hand, charge) {
-                Ok(Fired::Charge)
-            } else {
-                Err(Refusal::Gone)
-            };
-        }
-        OfferKind::Door { door, handle, weak } => {
-            let alive = weak.lock().ok_or(Refusal::Gone)?;
-            let local = unsafe { vehicle_frame(door.vehicle) }
-                .inverse()
-                .transform_point3(handle);
-            let grabbed = Grabbed {
-                object: door.vehicle,
-                kind: Pulled::Door {
-                    door,
-                    handle: local,
-                },
-                hit: Cell::new(hit),
-                object_local,
-                _alive: alive,
-            };
-            let wire = unsafe { fire_hook(&grabbed) }?;
-            return Ok(Fired::HookOut(grabbed, wire));
-        }
-    };
-    let ground = matches!(source, WeaponSource::Ground { .. });
-    let freed = match unsafe { hold_source::free(hand, &source) }.map_err(Refusal::Source)? {
-        Yield::Ready(freed) => freed,
-        Yield::Pending(ticket) => return Ok(Fired::Freeing(Freeing::Making(ticket, object_local))),
-    };
-    let grabbed = grabbed(freed, hit, object_local)?;
-    if ground {
-        // A weapon lying in the world has its bodies already: the hook flies at once.
-        let wire = unsafe { fire_hook(&grabbed) }?;
-        return Ok(Fired::HookOut(grabbed, wire));
-    }
-    tracing::info!(target: "controllers", hand = hand.label(), "snatch: the gun is free of its holder");
-    Ok(Fired::Freeing(Freeing::Freed(grabbed)))
-}
-
-/// A weapon its source is giving up for the snatch.
-pub(super) enum Freeing {
-    /// Given up: the hook fires once its bodies lie in the world.
-    Freed(Grabbed),
-    /// Still being made: a rack's copy, or a pair's pistol, collected once it is.
-    Making(Ticket, Option<Vec3>),
-}
-
-impl Freeing {
-    /// How long the source may take, seconds: a weapon given up lies in the world within a tick
-    /// or two, and one being made spawns a few frames later.
-    pub(super) fn timeout_s(&self) -> f32 {
-        match self {
-            Freeing::Freed(_) => SNATCH.free_timeout_s,
-            Freeing::Making(..) => copy::COPY_WAIT.as_secs_f32(),
-        }
-    }
-}
-
-/// Collect the weapon a source was making into `freeing`, when it has made it.
-///
-/// # Safety
-///
-/// The game thread, before the world update.
-pub(super) unsafe fn collect(hand: Hand, freeing: Freeing) -> Result<Freeing, Refusal> {
-    let Freeing::Making(ticket, local) = freeing else {
-        return Ok(freeing);
-    };
-    match unsafe { hold_source::poll(hand, &ticket) } {
-        None => Ok(Freeing::Making(ticket, local)),
-        Some(Ok(freed)) => grabbed(freed, None, local).map(Freeing::Freed),
-        Some(Err(refusal)) => Err(Refusal::Source(refusal)),
-    }
-}
-
-/// A weapon its source gave up, as the snatch holds it.
-fn grabbed(
-    freed: Freed,
-    hit: Option<BodyHit>,
-    object_local: Option<Vec3>,
-) -> Result<Grabbed, Refusal> {
-    Ok(Grabbed {
-        object: NonZeroUsize::new(freed.weapon as usize).ok_or(Refusal::Gone)?,
-        kind: Pulled::Weapon {
-            source: freed.source,
-        },
-        hit: Cell::new(hit),
-        object_local,
-        _alive: freed.alive,
-    })
-}
-
 /// Fire the hook at what `grabbed` holds.
 ///
 /// # Safety
 ///
 /// The game thread, before the world update.
 pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusal> {
+    if !grabbed.live() {
+        return Err(Refusal::Gone);
+    }
     if matches!(
         grabbed.kind,
         Pulled::Weapon { .. } | Pulled::WorldGrenade { .. }
@@ -344,6 +106,9 @@ pub(super) enum Attached {
 ///
 /// The game thread, before the world update and the physics step.
 pub(super) unsafe fn attached(grabbed: &Grabbed, swing_mps: f32) -> Result<Attached, Refusal> {
+    if !grabbed.live() {
+        return Err(Refusal::Gone);
+    }
     let Pulled::Door { door, handle } = grabbed.kind else {
         return Ok(Attached::Pull);
     };
@@ -360,6 +125,8 @@ pub(super) enum Arrival {
     Prop,
     /// The grenade came to the hand, which takes it at the next input tick.
     Grenade,
+    /// The physical catch queued the placed-charge swap at the next weapon update.
+    Charge,
 }
 
 /// The target's flight on the line, from the hook's bite to the catch.
@@ -471,6 +238,9 @@ pub(super) unsafe fn pull(
     hands: [Option<bool>; 2],
     input: &FinishInput,
 ) -> Result<Step, Refusal> {
+    if !grabbed.live() {
+        return Err(Refusal::Gone);
+    }
     let (reading, line_m) = unsafe { engine::read_wire(wire) };
     if reading == engine::WireReading::Gone && !flight.slack() {
         return Err(Refusal::LineLost);
@@ -686,6 +456,9 @@ pub(super) unsafe fn end_line(wire: NonZeroUsize) {
 ///
 /// The game thread, before the world update.
 unsafe fn target_body(grabbed: &Grabbed) -> Result<(u32, NonZeroUsize), Refusal> {
+    if !grabbed.live() {
+        return Err(Refusal::Gone);
+    }
     if let Some(hit) = grabbed.hit.get() {
         return Ok((hit.body, hit.owner));
     }
@@ -694,9 +467,10 @@ unsafe fn target_body(grabbed: &Grabbed) -> Result<(u32, NonZeroUsize), Refusal>
             unsafe { engine::dropped(grabbed.object) }?.1,
             grabbed.object,
         )),
-        Pulled::Prop { body, .. } | Pulled::Grenade { body } | Pulled::WorldGrenade { body } => {
-            Ok((body, grabbed.object))
-        }
+        Pulled::Prop { body, .. }
+        | Pulled::Grenade { body }
+        | Pulled::WorldGrenade { body }
+        | Pulled::Charge { body, .. } => Ok((body, grabbed.object)),
         Pulled::Ragdoll { owner, body, .. } => Ok((body, owner)),
         Pulled::Door { .. } => Err(Refusal::Gone),
     }
@@ -769,6 +543,9 @@ pub(super) unsafe fn sling(
     sling: SlingInput<'_>,
     input: &FinishInput,
 ) -> Result<Swinging, Refusal> {
+    if !grabbed.live() {
+        return Err(Refusal::Gone);
+    }
     let SlingInput {
         flight,
         rope,
@@ -910,6 +687,13 @@ unsafe fn arrive(
             // SAFETY: the snatch's strong reference keeps the weapon alive.
             grenade::snatched_from_world(hand, unsafe { weak_of(grabbed.object) });
             Ok(Arrival::Grenade)
+        }
+        Pulled::Charge { .. } => {
+            if grabbed.catch_charge(hand) {
+                Ok(Arrival::Charge)
+            } else {
+                Err(Refusal::Gone)
+            }
         }
         Pulled::Door { .. } => Err(Refusal::Gone),
     }

@@ -4,6 +4,7 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
+use jc3gi::physics::{PfxLayer, PhysicsSystem};
 
 use crate::{
     controllers::{
@@ -26,7 +27,7 @@ use crate::{
             rules::{self, Candidate, PropHandling},
         },
         weapons::{
-            c4::placed::{self as placed_charges, PlacedCharge},
+            c4::placed::{self as placed_charges, ChargeIdentity, PlacedCharge},
             grenade,
             hold::{
                 rack::{self, remote::RemoteRack},
@@ -165,14 +166,14 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &ControllersC
             };
             point
         }
-        OfferKind::PlacedCharge { charge } => {
+        OfferKind::PlacedCharge { identity } => {
             let Some(current) = placed_charges::charges()
                 .into_iter()
-                .find(|c| c.charge == *charge)
+                .find(|c| c.identity == *identity)
             else {
                 return false;
             };
-            if !unsafe { in_sight(ray, current.position, *charge) } {
+            if !unsafe { in_sight(ray, current.position, identity.charge) } {
                 return false;
             }
             current.position
@@ -319,8 +320,9 @@ pub(super) enum OfferKind {
         body: u32,
         weak: Weak,
     },
-    /// A C4 charge the player placed (its address), taken into the hand as a grip on it takes it.
-    PlacedCharge { charge: usize },
+    PlacedCharge {
+        identity: ChargeIdentity,
+    },
     /// A vehicle's closed door, pulled at its handle, world space.
     Door {
         door: DoorTarget,
@@ -351,7 +353,7 @@ impl OfferKind {
                 _ => None,
             },
             Self::Holstered(target) => Some(target.character),
-            Self::PlacedCharge { charge } => Some(*charge),
+            Self::PlacedCharge { identity } => Some(identity.charge),
             _ => self.object().map(NonZeroUsize::get),
         }
     }
@@ -600,11 +602,11 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
             }
         }
         Kind::Charge(i) => {
-            let charge = charges[i].charge;
-            if !unsafe { in_sight(ray, point, charge) } {
+            let identity = charges[i].identity;
+            if !unsafe { in_sight(ray, point, identity.charge) } {
                 return None;
             }
-            OfferKind::PlacedCharge { charge }
+            OfferKind::PlacedCharge { identity }
         }
         Kind::Loose(i) => {
             let (object, body, _) = loose[i];
@@ -655,10 +657,14 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     if !direct && !matches!(kind, OfferKind::PlacedCharge { .. }) {
         let surface_ray = Ray::new(ray.origin, point - ray.origin)?;
         let surface = unsafe {
-            raycast::cast(
+            raycast::cast_on(
                 &surface_ray,
                 ray.origin.distance(point) + SIGHT_TOLERANCE_M,
                 &CastOptions::ignoring_player(0).seeing_through(),
+                surface_layer(matches!(
+                    kind,
+                    OfferKind::Ground { .. } | OfferKind::WorldGrenade { .. }
+                )),
             )
         }
         .ok()?;
@@ -675,6 +681,14 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         }
     }
     let hit = body.and_then(|(body, owner)| unsafe { BodyHit::at(body, owner, point) });
+    if hit.is_none()
+        && matches!(
+            kind,
+            OfferKind::Ground { .. } | OfferKind::WorldGrenade { .. }
+        )
+    {
+        return None;
+    }
     let object_local = match kind {
         OfferKind::PlacedCharge { .. } | OfferKind::Door { .. } => None,
         _ if hit.is_some() => None,
@@ -687,6 +701,14 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         hit,
         object_local,
     })
+}
+
+fn surface_layer(weapon: bool) -> i32 {
+    if weapon {
+        PfxLayer::VEHICLE_RAYCAST as i32
+    } else {
+        PhysicsSystem::QUERY_LAYER
+    }
 }
 
 /// How far short of a gun on a character its line of sight may be blocked, metres: the line ends
@@ -904,4 +926,16 @@ pub(super) unsafe fn weak_of(object: NonZeroUsize) -> Weak {
 unsafe fn in_sight(ray: &Ray, point: Vec3, object: usize) -> bool {
     let options = unsafe { CastOptions::ignoring_player(object) }.seeing_through();
     unsafe { raycast::line_of_sight(ray.origin, point, SIGHT_TOLERANCE_M, &options) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_floor_surface_query_meets_weapon_bodies_without_changing_other_queries() {
+        assert_eq!(surface_layer(true), PfxLayer::VEHICLE_RAYCAST as i32);
+        assert_eq!(surface_layer(false), PhysicsSystem::QUERY_LAYER);
+        assert_ne!(surface_layer(true), surface_layer(false));
+    }
 }

@@ -7,25 +7,15 @@
 //! cockpit frame the volumes live in ([`begin_tick`]); while a throw holds a charge or waits for
 //! one, nothing is offered. A grip press there takes the charge nearest the hand.
 //!
-//! The take swaps the placed charge for a primed one, so the hand holds a charge exactly as a grab
-//! at the pouch leaves it: the throw asks for a charge, and before the weapon's next serial update
-//! primes it, the placed charge comes off the live list
-//! ([`PlantedExplosiveWeapon::RemoveFromActiveList`], which also unregisters its HUD hint and turns
-//! off its light) and is removed ([`Explosive::RemoveSelf`]). The order matters: a charge removed
-//! first is marked so that its destructor skips the live list, which would keep its entry, its
-//! hint, and its light. With the placed charge gone the weapon has room for the primed one, so a
-//! take works at the cap of placed charges. Pressed back onto the pouch, the charge is taken back as
-//! any held charge is ([`crate::controllers::weapons::pouch_return`]); let go of, it is thrown, and
-//! pressed onto a surface, it sticks there, once it has first been clear of every surface, so that
-//! the one it came off does not take it straight back.
-//!
 //! A take is refused, the placed charge left where it is, when the charge is no longer placed
 //! (it went off or was removed since the offer), while the game's own planting holds the weapon,
 //! and while the game does not allow planting; the grabbing hand buzzes and the refusal is logged
 //! at info level, as a refused grab at the pouch is.
 //!
-//! The grapple's snatch takes a placed charge into a hand through [`take`], choosing among
-//! [`charges`].
+//! The grapple's snatch physically pulls a charge's native body before requesting [`take`] on a
+//! successful catch. The original stays live and counted during flight. The queued take carries
+//! its allocation identity, not a strong pooled-object reference. The weapon update checks that
+//! identity against the current live-list entry before removing anything.
 //!
 //! [`PlantedExplosiveWeapon::m_ActiveExplosives`]: jc3gi::equipment::weapon::PlantedExplosiveWeapon::m_ActiveExplosives
 //! [`PlantedExplosiveWeapon::RemoveFromActiveList`]: jc3gi::equipment::weapon::PlantedExplosiveWeapon::RemoveFromActiveList
@@ -48,7 +38,7 @@ use crate::controllers::{
     weapons::{
         c4::{
             STATE, State, primed_charge,
-            stage::{self, InputEvent, Refusal, Stage},
+            stage::{self, InputEvent, Refusal, Stage, WeaponView},
         },
         docks, engine,
     },
@@ -61,6 +51,26 @@ pub struct PlacedCharge {
     pub charge: usize,
     /// Where the charge is, world space.
     pub position: Vec3,
+    /// The allocation observed with this position, never reconstructed from a stale address.
+    pub(crate) identity: ChargeIdentity,
+}
+
+/// A pooled charge allocation, shared by physical flight and the queued recovery.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct ChargeIdentity {
+    pub(crate) charge: usize,
+    pub(crate) pool: u32,
+    pub(crate) instance: u32,
+}
+
+impl ChargeIdentity {
+    pub(crate) fn matches(self, pool: u32, instance: u32) -> bool {
+        self.pool == pool && self.instance == instance
+    }
+
+    fn is_current(self, current: Option<Self>) -> bool {
+        current == Some(self)
+    }
 }
 
 /// The placed charges at the C4 weapon's last update, in the order they were placed.
@@ -68,13 +78,13 @@ pub fn charges() -> Vec<PlacedCharge> {
     STATE.lock().placed.charges.clone()
 }
 
-/// Take the placed charge `charge` (a [`PlacedCharge::charge`]) into `hand`: the weapon's next
+/// Take the placed allocation `identity` into `hand`: the weapon's next
 /// update swaps it for a primed charge in that hand, as a grip press on the charge does. Returns
-/// `false`, with nothing changed, while a throw holds a charge or waits for one, or when `charge`
-/// was not placed at the weapon's last update. A take accepted here can still be refused by the
-/// weapon's update, which then buzzes `hand`.
-pub(crate) fn take(hand: Hand, charge: usize) -> bool {
-    STATE.lock().take_placed(hand, charge)
+/// `false`, with nothing changed, while a throw holds a charge or waits for one, or when the
+/// allocation was not placed at the weapon's last update. A take accepted here can still be refused
+/// by the weapon's update, which then buzzes `hand`.
+pub(crate) fn take(hand: Hand, identity: ChargeIdentity) -> bool {
+    STATE.lock().take_identified(hand, identity)
 }
 
 /// What the begin tick hands the offer.
@@ -180,7 +190,7 @@ pub(super) struct PlacedState {
     /// The charge each hand's grab takes, from the last begin tick, by [`Hand::index`].
     pub(super) offers: [Option<usize>; 2],
     /// The placed charge the throw's hand asked for, taken at the weapon's next update.
-    pub(super) take: Option<(Hand, usize)>,
+    pub(super) take: Option<(Hand, ChargeIdentity)>,
     /// Whether the held charge came off a surface and has not yet been clear of every surface, so
     /// that pressing it on one does not stick it.
     pub(super) from_surface: bool,
@@ -199,12 +209,26 @@ impl State {
     /// Ask for the placed charge `charge` in `hand`, when the throw is idle and the charge was
     /// placed at the weapon's last update.
     pub(super) fn take_placed(&mut self, hand: Hand, charge: usize) -> bool {
-        if self.stage != Stage::Idle || !self.placed.charges.iter().any(|c| c.charge == charge) {
+        let Some(identity) = self
+            .placed
+            .charges
+            .iter()
+            .find(|c| c.charge == charge)
+            .map(|c| c.identity)
+        else {
+            return false;
+        };
+        self.take_identified(hand, identity)
+    }
+
+    fn take_identified(&mut self, hand: Hand, identity: ChargeIdentity) -> bool {
+        if self.stage != Stage::Idle || !self.placed.charges.iter().any(|c| c.identity == identity)
+        {
             return false;
         }
         self.stage = stage::on_input(self.stage, InputEvent::Grab(hand));
         self.status.stage = self.stage;
-        self.placed.take = Some((hand, charge));
+        self.placed.take = Some((hand, identity));
         true
     }
 
@@ -215,7 +239,7 @@ impl State {
 
     /// The take to carry out at this weapon update: the one asked for, while the throw still waits
     /// for that hand's charge. A take whose request the throw has since dropped is forgotten.
-    pub(super) fn due_take(&mut self) -> Option<(Hand, usize)> {
+    pub(super) fn due_take(&mut self) -> Option<(Hand, ChargeIdentity)> {
         let (hand, charge) = self.placed.take.take()?;
         matches!(self.stage, Stage::Wanted { hand: h, .. } if h == hand).then_some((hand, charge))
     }
@@ -239,15 +263,11 @@ impl State {
 pub(super) enum TakeStep {
     /// No take was due.
     None,
-    /// The placed charge is gone, and the update primes the hand's charge in its place.
-    Took,
+    Ready(Hand, ChargeIdentity),
     /// The take was refused, and the placed charge stays.
     Refused(Hand, Refusal),
 }
 
-/// Carry out a take due at this weapon update: refuse it, or take the placed charge off the live
-/// list and remove it, so that the update primes the hand's charge in its place.
-///
 /// # Safety
 ///
 /// The weapon and its user must be live, on the thread that updates the weapon.
@@ -256,26 +276,86 @@ pub(super) unsafe fn before_update(
     weapon: &mut PlantedExplosiveWeapon,
     user: &Character,
 ) -> TakeStep {
-    let Some((hand, charge)) = state.due_take() else {
+    let Some((hand, identity)) = state.due_take() else {
         return TakeStep::None;
     };
-    let on_list = unsafe { entries(weapon) }.any(|placed| placed as usize == charge);
+    let placed = unsafe { current(weapon, identity) };
+    let on_list = placed.is_some();
     let busy = weapon.m_IsInPlantingMode || unsafe { primed_charge(weapon) }.is_some();
     let may_plant = unsafe { user.m_Inventory.GetAnimationAllowsPlantingExplosives() };
     if let Some(refusal) = refusal(on_list, busy, may_plant) {
         state.refuse_take();
         return TakeStep::Refused(hand, refusal);
     }
-    let placed = charge as *mut PlantedExplosive;
-    // SAFETY: the charge is on the weapon's live list, which its destructor would take it off, so
-    // it is live.
-    unsafe {
-        weapon.RemoveFromActiveList(placed);
-        (*placed.cast::<Explosive>()).RemoveSelf();
+    TakeStep::Ready(hand, identity)
+}
+
+impl TakeStep {
+    pub(super) fn view(self, mut view: WeaponView) -> WeaponView {
+        if matches!(self, Self::Ready(..)) && view.refusal == Some(Refusal::NoRoom) {
+            view.refusal = None;
+        }
+        view
     }
-    state.took(charge);
-    tracing::info!(target: "controllers", hand = hand.label(), "c4: took a placed charge back into the hand");
-    TakeStep::Took
+
+    fn after_prime(self, primed: bool, commit: impl FnOnce(Hand, ChargeIdentity) -> bool) -> bool {
+        match self {
+            Self::Ready(hand, identity) => primed && commit(hand, identity),
+            _ => primed,
+        }
+    }
+}
+
+pub(super) unsafe fn after_prime(
+    state: &mut State,
+    weapon: &mut PlantedExplosiveWeapon,
+    take: TakeStep,
+    primed: bool,
+) -> bool {
+    let committed = take.after_prime(primed, |hand, identity| {
+        let Some(placed) = (unsafe { current(weapon, identity) }) else {
+            return false;
+        };
+        let Some(replacement) = (unsafe { primed_charge(weapon) }) else {
+            return false;
+        };
+        if replacement == placed {
+            return false;
+        }
+        unsafe {
+            weapon.RemoveFromActiveList(placed);
+            (*placed.cast::<Explosive>()).RemoveSelf();
+        }
+        state.took(identity.charge);
+        tracing::info!(target: "controllers", hand = hand.label(), "c4: took a placed charge back into the hand");
+        true
+    });
+    if matches!(take, TakeStep::Ready(..))
+        && primed
+        && !committed
+        && let Some(replacement) = unsafe { primed_charge(weapon) }
+        && !unsafe { entries(weapon) }.any(|placed| placed == replacement)
+    {
+        unsafe { weapon.DespawnPrimedExplosive() };
+    }
+    committed
+}
+
+unsafe fn current(
+    weapon: &PlantedExplosiveWeapon,
+    identity: ChargeIdentity,
+) -> Option<*mut PlantedExplosive> {
+    unsafe { entries(weapon) }.find(|placed| {
+        if *placed as usize != identity.charge {
+            return false;
+        }
+        let explosive = unsafe { &*placed.cast::<Explosive>() };
+        identity.is_current(Some(ChargeIdentity {
+            charge: *placed as usize,
+            pool: explosive.m_PoolIndex,
+            instance: explosive.m_InstanceUniqueId,
+        }))
+    })
 }
 
 /// The weapon's placed charges and where each is.
@@ -292,6 +372,11 @@ pub(super) unsafe fn read(weapon: &PlantedExplosiveWeapon) -> Vec<PlacedCharge> 
             position.is_finite().then_some(PlacedCharge {
                 charge: placed as usize,
                 position,
+                identity: ChargeIdentity {
+                    charge: placed as usize,
+                    pool: explosive.m_PoolIndex,
+                    instance: explosive.m_InstanceUniqueId,
+                },
             })
         })
         .collect()
@@ -328,9 +413,198 @@ unsafe fn entries(weapon: &PlantedExplosiveWeapon) -> impl Iterator<Item = *mut 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::weapons::c4::C4Status;
 
     const A: usize = 0x1000;
     const B: usize = 0x2000;
+
+    #[test]
+    fn the_live_entry_must_match_the_address_pool_and_unique_instance() {
+        let original = identity(A, 7, 19);
+        assert!(original.is_current(Some(original)));
+        for current in [
+            None,
+            Some(identity(B, 7, 19)),
+            Some(identity(A, 8, 19)),
+            Some(identity(A, 7, 20)),
+        ] {
+            assert!(!original.is_current(current));
+            assert_eq!(
+                refusal(original.is_current(current), false, true),
+                Some(Refusal::NotPlaced)
+            );
+        }
+    }
+
+    #[test]
+    fn the_queued_catch_retains_the_original_allocation_after_a_snapshot_changes() {
+        let mut state = fresh();
+        let original = identity(A, 7, 19);
+        state.placed.charges.push(placed(original));
+        assert!(state.take_identified(Hand::Left, original));
+        assert_eq!(state.status.taken, 0);
+        assert_eq!(state.placed.charges.len(), 1);
+        let replacement = identity(A, 7, 20);
+        state.placed.charges = vec![placed(replacement)];
+        assert_eq!(state.due_take(), Some((Hand::Left, original)));
+        assert!(!original.matches(replacement.pool, replacement.instance));
+        assert_eq!(
+            refusal(original.is_current(Some(replacement)), false, true),
+            Some(Refusal::NotPlaced)
+        );
+        state.refuse_take();
+        assert_eq!(state.stage, Stage::Idle);
+        assert_eq!(state.status.taken, 0);
+        assert_eq!(state.placed.charges, vec![placed(replacement)]);
+        assert_eq!(state.due_take(), None);
+    }
+
+    #[test]
+    fn a_recycled_allocation_cannot_be_queued_as_the_caught_charge() {
+        let mut state = fresh();
+        let original = identity(A, 7, 19);
+        state.placed.charges.push(placed(identity(A, 7, 20)));
+        assert!(!state.take_identified(Hand::Left, original));
+        assert_eq!(state.stage, Stage::Idle);
+        assert_eq!(state.placed.take, None);
+        assert_eq!(state.status.taken, 0);
+    }
+
+    #[test]
+    fn cancelling_a_queued_catch_does_not_remove_or_credit_a_charge() {
+        let mut state = fresh();
+        let original = identity(A, 7, 19);
+        state.placed.charges.push(placed(original));
+        assert!(state.take_identified(Hand::Left, original));
+        state.stage = stage::on_input(state.stage, InputEvent::StandDown);
+        assert_eq!(state.due_take(), None);
+        assert_eq!(state.placed.charges, vec![placed(original)]);
+        assert_eq!(state.status.taken, 0);
+    }
+
+    #[test]
+    fn a_matching_allocation_is_taken_once_and_leaves_other_charges_counted() {
+        let mut state = fresh();
+        let original = identity(A, 7, 19);
+        let other = identity(B, 8, 20);
+        state.placed.charges = vec![placed(original), placed(other)];
+        assert!(state.take_identified(Hand::Right, original));
+        assert!(!state.take_identified(Hand::Left, original));
+        assert_eq!(state.due_take(), Some((Hand::Right, original)));
+        assert_eq!(state.due_take(), None);
+        assert!(original.matches(7, 19));
+        assert_eq!(
+            refusal(original.is_current(Some(original)), false, true),
+            None
+        );
+        state.took(original.charge);
+        assert_eq!(state.placed.charges, vec![placed(other)]);
+        assert_eq!(state.status.taken, 1);
+    }
+
+    #[test]
+    fn failed_replacement_creation_preserves_the_live_charge_and_never_credits_recovery() {
+        let mut state = fresh();
+        let original = identity(A, 7, 19);
+        state.placed.charges.push(placed(original));
+        assert!(state.take_identified(Hand::Left, original));
+        let (hand, identity) = state.due_take().unwrap();
+        let take = TakeStep::Ready(hand, identity);
+        let view = WeaponView {
+            primed: false,
+            physics_ready: false,
+            planting: false,
+            refusal: Some(Refusal::NoRoom),
+        };
+        let (next, action, outcome) = stage::before_update(state.stage, take.view(view));
+        assert_eq!(action, stage::WeaponAction::Prime);
+        assert_eq!(outcome, None);
+        let primed = take.after_prime(false, |_, _| {
+            panic!("a failed prime must not remove the original")
+        });
+        let (next, outcome) = stage::after_action(next, action, primed);
+        state.stage = next;
+        assert_eq!(state.stage, Stage::Idle);
+        assert_eq!(outcome, Some(stage::Outcome::SpawnFailed));
+        assert_eq!(state.status.taken, 0);
+        assert_eq!(state.placed.charges, vec![placed(original)]);
+    }
+
+    #[test]
+    fn successful_recovery_at_the_cap_removes_only_the_original_after_creation() {
+        let mut state = fresh();
+        let original = identity(A, 7, 19);
+        let other = identity(B, 8, 20);
+        state.placed.charges = vec![placed(original), placed(other)];
+        assert!(state.take_identified(Hand::Right, original));
+        let (hand, identity) = state.due_take().unwrap();
+        let take = TakeStep::Ready(hand, identity);
+        let view = WeaponView {
+            primed: false,
+            physics_ready: false,
+            planting: false,
+            refusal: Some(Refusal::NoRoom),
+        };
+        let (next, action, _) = stage::before_update(state.stage, take.view(view));
+        let mut live = 2;
+        let primed = take.after_prime(true, |h, identity| {
+            assert_eq!(h, Hand::Right);
+            assert_eq!(state.placed.charges.len(), 2);
+            assert_eq!(state.status.taken, 0);
+            live -= 1;
+            state.took(identity.charge);
+            true
+        });
+        let (next, outcome) = stage::after_action(next, action, primed);
+        assert!(next.charge_in_hand());
+        assert_eq!(outcome, Some(stage::Outcome::Primed));
+        assert_eq!(live, 1);
+        assert_eq!(state.status.taken, 1);
+        assert_eq!(state.placed.charges, vec![placed(other)]);
+        assert_eq!(state.due_take(), None);
+        let denied = take.view(WeaponView {
+            refusal: Some(Refusal::NotAllowed),
+            ..view
+        });
+        assert_eq!(denied.refusal, Some(Refusal::NotAllowed));
+        assert_eq!(TakeStep::None.view(view), view);
+        assert!(!take.after_prime(true, |_, _| false));
+    }
+
+    fn identity(charge: usize, pool: u32, instance: u32) -> ChargeIdentity {
+        ChargeIdentity {
+            charge,
+            pool,
+            instance,
+        }
+    }
+
+    fn placed(identity: ChargeIdentity) -> PlacedCharge {
+        PlacedCharge {
+            charge: identity.charge,
+            position: Vec3::ZERO,
+            identity,
+        }
+    }
+
+    fn fresh() -> State {
+        State {
+            stage: Stage::Idle,
+            primed: None,
+            thrown: [false; 2],
+            status: C4Status::default(),
+            grips: [None; 2],
+            detonation: None,
+            was_detonating: false,
+            in_flight: None,
+            held_since: None,
+            held_since_s: None,
+            stick: None,
+            preview: None,
+            wheel: None,
+            placed: PlacedState::NEW,
+        }
+    }
 
     #[test]
     fn each_free_hand_gets_a_volume_at_each_charge() {
