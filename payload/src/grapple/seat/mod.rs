@@ -117,6 +117,7 @@ pub fn status() -> SeatStatus {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn tick(input: &SeatTickInput) {
+    // Clearing tethers also applies when the native hook handles fire, outside `stands_in`.
     if input.release_all
         && let Some((_, hook)) = unsafe { local() }
     {

@@ -60,6 +60,29 @@ fn refire_waits_for_the_native_cancel_acknowledgement() {
 }
 
 #[test]
+fn clear_all_cancels_a_seat_wire_even_when_the_native_hook_handles_fire() {
+    for seated in [false, true] {
+        let mut input = input(seated, true, Some(AT));
+        input.release_all = true;
+        input.held = true;
+        assert_eq!(step(Phase::Idle, &input, None), (Phase::Idle, Act::None));
+        let (phase, act) = step(flying(0.1), &input, Some(WireReading::Attached));
+        assert_eq!(act, Act::Cancel(wire()));
+        assert_eq!(
+            phase,
+            Phase::Cancelling {
+                wire: wire(),
+                target: None
+            }
+        );
+        assert_eq!(
+            step(phase, &input, Some(WireReading::Ready)),
+            (Phase::Idle, Act::None)
+        );
+    }
+}
+
+#[test]
 fn retract_all_discards_a_pending_refire() {
     let cancelling = Phase::Cancelling {
         wire: wire(),

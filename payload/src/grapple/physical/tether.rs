@@ -23,21 +23,27 @@ pub struct TetherTick {
     /// Whether the grapple has a line of its own: a line to an object pulls it on the retract
     /// input instead, and a line still being placed belongs to the tether that is not formed yet.
     pub active_wire: bool,
+    /// The grapple button is held, independently of the throttle and weapon triggers.
+    pub button_held: bool,
     pub detection: Detection,
 }
 
 /// Whether the pull may retract the tethers: the setting is on, tethers are attached, the grapple
 /// has no line of its own, nothing carries the character along a line, and the character is on
-/// the ground or falling. The wingsuit and the parachute are left out: the retract input boosts
+/// the ground, falling, or seated in a vehicle, with the grapple button held.
+/// The wingsuit and the parachute are left out: the retract input boosts
 /// them too, and their arm steering and handles already use the hands.
 pub fn armed(tick: &TetherTick, config: &TetherTuning) -> bool {
     config.enabled
+        && tick.button_held
         && tick.tethers > 0
         && !tick.active_wire
         && tick.detection.traversal.is_none()
         && matches!(
             tick.detection.mode,
-            Mode::OnFoot(OnFootVariant::Ground) | Mode::Airborne(AirborneVariant::Falling)
+            Mode::OnFoot(OnFootVariant::Ground)
+                | Mode::Airborne(AirborneVariant::Falling)
+                | Mode::Vehicle(_)
         )
 }
 
@@ -56,13 +62,22 @@ pub fn retract_value(depth_m: f32, config: &TetherTuning) -> f32 {
 
 #[cfg(test)]
 mod tests {
+    use glam::Vec3;
+
     use super::*;
-    use crate::{controllers::mode::Traversal, grapple::physical::config::GRAPPLE};
+    use crate::{
+        controllers::{
+            bindings::yank::HandLine,
+            mode::{Traversal, VehicleClass, VehicleSeat},
+        },
+        grapple::physical::{config::GRAPPLE, pull::LinePull},
+    };
 
     fn tick(tethers: u32) -> TetherTick {
         TetherTick {
             tethers,
             active_wire: false,
+            button_held: true,
             detection: Detection {
                 mode: Mode::OnFoot(OnFootVariant::Ground),
                 ..Default::default()
@@ -71,7 +86,7 @@ mod tests {
     }
 
     #[test]
-    fn the_retract_arms_only_with_free_tethers_on_foot_or_falling() {
+    fn the_retract_requires_free_tethers_and_an_allowed_mode() {
         let config = GRAPPLE.tether;
         assert!(armed(&tick(1), &config));
         assert!(!armed(&tick(0), &config));
@@ -103,6 +118,49 @@ mod tests {
             ..config
         };
         assert!(!armed(&tick(1), &off));
+    }
+
+    #[test]
+    fn vehicle_pulls_require_the_grapple_button_and_rebase_after_release() {
+        for class in [
+            VehicleClass::Car,
+            VehicleClass::Motorcycle,
+            VehicleClass::Sea,
+            VehicleClass::Helicopter,
+            VehicleClass::Plane,
+            VehicleClass::Mech,
+            VehicleClass::Unknown,
+        ] {
+            for driver in [false, true] {
+                let mut tick = tick(2);
+                tick.detection.mode = Mode::Vehicle(VehicleSeat { class, driver });
+                let mut pull = LinePull::new();
+                let mut sample = |held, z| {
+                    tick.button_held = held;
+                    let reading = pull.step(
+                        1.0 / 30.0,
+                        Some(HandLine {
+                            grip: Vec3::new(0.0, 0.0, z),
+                            aim: Vec3::NEG_Z,
+                        }),
+                        armed(&tick, &GRAPPLE.tether),
+                        &GRAPPLE.pull,
+                    );
+                    retract_value(reading.depth_m, &GRAPPLE.tether)
+                };
+                assert_eq!(sample(false, -0.6), 0.0);
+                assert_eq!(sample(false, -0.3), 0.0);
+                assert_eq!(sample(true, -0.6), 0.0);
+                assert!(sample(true, -0.3) > 0.0, "{class:?}, driver={driver}");
+                assert_eq!(sample(false, -0.3), 0.0);
+                assert_eq!(sample(true, -0.3), 0.0);
+                tick.active_wire = true;
+                assert!(!armed(&tick, &GRAPPLE.tether));
+                tick.active_wire = false;
+                tick.detection.traversal = Some(Traversal::ReelingIn);
+                assert!(!armed(&tick, &GRAPPLE.tether));
+            }
+        }
     }
 
     #[test]

@@ -200,15 +200,15 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     );
     let drive_reel = reeling && config.reel.enabled;
     let tethers = hook.map_or(0, |h| h.tethers);
-    let armed = input.button_held
-        && tether::armed(
-            &TetherTick {
-                tethers,
-                active_wire: hook.is_some_and(|h| h.read.active_wire),
-                detection: *input.detection,
-            },
-            &config.tether,
-        );
+    let armed = tether::armed(
+        &TetherTick {
+            tethers,
+            active_wire: hook.is_some_and(|h| h.read.active_wire),
+            button_held: input.button_held,
+            detection: *input.detection,
+        },
+        &config.tether,
+    );
     // Each pull is measured along the aim the hand has when the reel or the retract arms, and the
     // boost's yank along the aim it has when the reel starts.
     let pull = state
