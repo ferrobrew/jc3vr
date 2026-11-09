@@ -48,6 +48,7 @@ pub mod levers;
 pub mod sticks;
 #[cfg(test)]
 mod tests;
+pub(crate) mod visual;
 
 use glam::{Quat, Vec2, Vec3};
 

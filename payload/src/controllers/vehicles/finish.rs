@@ -6,6 +6,7 @@ use jc3gi::input::input_action_map::Action::{TURN_LEFT, TURN_RIGHT};
 
 use crate::controllers::{
     bindings::{controls::Controls, hold::Desired},
+    cockpit::CockpitTransform,
     frame::Hand,
     grab::GrabVolume,
     hands::{self, anchor::ANCHOR_BLEND_S, tiers},
@@ -97,6 +98,12 @@ pub(crate) fn finish_tick(
             dt,
         },
         &mut events,
+    );
+    physical::visual::submit(
+        &placement,
+        &state.controls,
+        offered,
+        &CockpitTransform::current(active.head.position, active.world_scale),
     );
     write_outputs(&outputs, desired);
     let holds_now = state.controls.holds.map(|h| h.map(|h| h.kind));

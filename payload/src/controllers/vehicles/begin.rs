@@ -48,6 +48,7 @@ use crate::{
 pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let Some(active) = hands::active_hands_raw() else {
         crate::controllers::vehicles::stand_down();
+        physical::visual::clear();
         return TickVolumes::default();
     };
     let config = active.config;
@@ -89,6 +90,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     STATE.lock().entry_owner = entry.map(VehicleEntry::into_owner);
     driving_view::publish(fit.view);
     let offered = offered(seat, &config, fit.fork);
+    if offered.is_empty() {
+        physical::visual::clear();
+    }
     let placement = Placement {
         wheel: fit.wheel,
         bars: fit.bars,
@@ -155,9 +159,22 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             .iter()
             .filter(|c| c.hand.is_none_or(|h| !holding[h.index()]))
             .map(|c| {
-                c.target(
-                    Mark::ring(MarkAt::Cockpit(c.centre), CONTROL_MARK_M).showing(Shown::Always),
-                )
+                let mark = Mark::ring(MarkAt::Cockpit(c.centre), CONTROL_MARK_M);
+                let mark = match c.volume {
+                    GrabVolume::VehicleControl(kind)
+                        if matches!(
+                            kind,
+                            physical::ControlKind::Cyclic
+                                | physical::ControlKind::FlightStick
+                                | physical::ControlKind::Collective
+                                | physical::ControlKind::Throttle
+                        ) =>
+                    {
+                        mark.labelled(kind.label()).showing(Shown::InReach)
+                    }
+                    _ => mark.showing(Shown::Always),
+                };
+                c.target(mark)
             }),
     );
     targets.extend(
