@@ -172,6 +172,38 @@ pub struct BlowPlan {
     pub damage: Option<i16>,
 }
 
+/// The live state that permits a motorcycle rider's unsupported knockdown reaction to use a
+/// supported full-ragdoll act. No native protection is cleared.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) struct RiderReaction {
+    pub motorcycle: bool,
+    pub protected: bool,
+    pub dead: bool,
+    pub ragdoll: bool,
+    pub blocked: bool,
+    /// The damage was suppressed by the shared cooldown, so this blow did not test the native
+    /// damage path and cannot stand in for a rejected damaging message.
+    pub damage_suppressed: bool,
+}
+
+impl RiderReaction {
+    /// Whether an admitted physical punch may request the rider's full-ragdoll transition.
+    /// A rejected damaging message cannot be replaced with a direct reaction.
+    pub(super) fn permits(self, plan: &BlowPlan, dealt: i16) -> bool {
+        self.motorcycle
+            && !self.protected
+            && !self.dead
+            && !self.ragdoll
+            && !self.blocked
+            && !self.damage_suppressed
+            && plan.strength.is_finite()
+            && plan.strength >= 1.0
+            && plan.reaction_impulse.is_finite()
+            && plan.reaction_impulse > 0.0
+            && (plan.damage.is_none() || dealt > 0)
+    }
+}
+
 /// The blow of a contact of `impulse_ns` on a character tuned as `victim`, from a player whose
 /// melee damage is `melee_damage`.
 pub fn blow(
@@ -330,6 +362,92 @@ mod tests {
             Blow::Strikes(plan) => plan,
             other => panic!("{impulse}: {other:?}"),
         }
+    }
+
+    const RIDER: RiderReaction = RiderReaction {
+        motorcycle: true,
+        protected: false,
+        dead: false,
+        ragdoll: false,
+        blocked: false,
+        damage_suppressed: false,
+    };
+
+    const RIDER_PUNCH: BlowPlan = BlowPlan {
+        strength: 1.0,
+        reaction_impulse: 50.0,
+        damage: Some(10),
+    };
+
+    #[test]
+    fn rider_knockdown_requires_every_live_safety_gate() {
+        let punch = RIDER_PUNCH;
+        assert!(RIDER.permits(&punch, 1));
+        for mask in 0_u32..64 {
+            let state = RiderReaction {
+                motorcycle: mask & 1 == 0,
+                protected: mask & 2 != 0,
+                dead: mask & 4 != 0,
+                ragdoll: mask & 8 != 0,
+                blocked: mask & 16 != 0,
+                damage_suppressed: mask & 32 != 0,
+            };
+            assert_eq!(state.permits(&punch, 1), mask == 0, "{state:?}");
+        }
+    }
+
+    #[test]
+    fn rider_fallback_requires_knockdown_and_valid_reaction_impulse() {
+        let punch = RIDER_PUNCH;
+        assert!(RIDER.permits(&punch, 1));
+        for strength in [f32::NEG_INFINITY, -1.0, 0.0, 0.999, f32::NAN, f32::INFINITY] {
+            assert!(!RIDER.permits(&BlowPlan { strength, ..punch }, 1));
+        }
+        for reaction_impulse in [f32::NEG_INFINITY, -1.0, 0.0, f32::NAN, f32::INFINITY] {
+            assert!(!RIDER.permits(
+                &BlowPlan {
+                    reaction_impulse,
+                    ..punch
+                },
+                1
+            ));
+        }
+        assert!(!RIDER.permits(
+            &BlowPlan {
+                strength: 0.5,
+                ..punch
+            },
+            1
+        ));
+    }
+
+    #[test]
+    fn rider_fallback_does_not_bypass_native_damage_rejection() {
+        let punch = RIDER_PUNCH;
+        assert!(!RIDER.permits(&punch, 0));
+        assert!(!RIDER.permits(&punch, -1));
+        assert!(RIDER.permits(&punch, 1));
+        // The existing damage cooldown removes damage while retaining a calibrated reaction.
+        assert!(RIDER.permits(
+            &BlowPlan {
+                damage: None,
+                ..punch
+            },
+            0
+        ));
+        // A damaging blow whose cooldown suppressed its damage cannot become the fallback that a
+        // rejected native message would have refused.
+        let suppressed = RiderReaction {
+            damage_suppressed: true,
+            ..RIDER
+        };
+        assert!(!suppressed.permits(
+            &BlowPlan {
+                damage: None,
+                ..punch
+            },
+            0
+        ));
     }
 
     #[test]

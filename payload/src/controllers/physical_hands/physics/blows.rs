@@ -27,37 +27,43 @@ use std::{mem::MaybeUninit, num::NonZeroUsize, time::Instant};
 use glam::Vec3;
 use jc3gi::{
     aim::target::FactionRelation,
-    animation::symbol_table::RagdollRBGroupId,
-    character::character::Character,
+    animation::symbol_table::{EventIdSymbolTable, RagdollRBGroupId},
+    character::character::{Character, DamageStateFlags},
     damage::{DamageFlags, DamageMsg},
     faction::GetRelation,
     physics::{PfxInstance, PhysicsGameObject},
+    state::StateBitFlag,
     types::{math::Vector3, shared_ptr::WeakPtrGameObject},
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    clock::{GameClock, TimeScale},
-    frame::Hand,
-    grab::{self, latch::GripLatch},
-    haptics::{self, Event},
-    physical_hands::{
-        PhysicalHandsConfig,
-        bodies::{instance_of, owner_of},
-        collider_view, engine,
-        physics::{
-            HAND_BODIES, HandHitsTuning, body,
-            contact::{self, Contact},
-            guns,
-            hit::{
-                ANY_HAND, Blow, BlowPlan, HitGate, Intent, VictimTuning, approach, blow,
-                blow_impulse, pulse_share, striking_with, swing,
+use crate::{
+    controllers::{
+        aim_state::StateBit,
+        clock::{GameClock, TimeScale},
+        frame::Hand,
+        grab::{self, latch::GripLatch},
+        haptics::{self, Event},
+        physical_hands::{
+            PhysicalHandsConfig,
+            bodies::{instance_of, owner_of},
+            characters::engine as character_engine,
+            collider_view, engine,
+            physics::{
+                HAND_BODIES, HandHitsTuning, body,
+                contact::{self, Contact},
+                guns,
+                hit::{
+                    ANY_HAND, Blow, BlowPlan, HitGate, Intent, RiderReaction, VictimTuning,
+                    approach, blow, blow_impulse, pulse_share, striking_with, swing,
+                },
             },
+            sounds::{self, Impact, ImpactKind},
+            world::World,
         },
-        sounds::{self, Impact, ImpactKind},
-        world::World,
+        weapons::{engine::character_position, hold::take},
     },
-    weapons::{engine::character_position, hold::take},
+    hooks::character::resolve_act_id,
 };
 
 /// A blow a hand dealt, for the readout.
@@ -114,6 +120,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
     let time_scale = unsafe { TimeScale::current() };
     let game_now_s = gate.game.at(now_s, time_scale);
     let pulse_interval_s = f64::from(HAND_BODIES.guns.contact_pulse_interval_s.max(0.0));
+    let mut rider_reacted = Vec::new();
     for contact in contacts {
         // The player's own body, the hands, and the other gun are in the player's group, which
         // the gun body never collides with; a contact with one is none.
@@ -156,7 +163,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         // SAFETY: forwarded from the caller.
         let victim = attacker
             .as_deref()
-            .and_then(|attacker| unsafe { victim(&contact, attacker) });
+            .and_then(|attacker| unsafe { contact_victim(&contact, attacker) });
         // SAFETY: forwarded from the caller: the game thread, outside the game's update.
         unsafe {
             sounds::play(
@@ -222,14 +229,14 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         let relation = unsafe { GetRelation(attacker.GetFaction(), victim.GetFaction()) };
         let hostile = relation == FactionRelation::E_RELATION_HOSTILE;
         // One damaging blow per character a while, from either hand.
-        if plan.damage.is_some()
+        let damage_suppressed = plan.damage.is_some()
             && !gate.damage.admit(
                 ANY_HAND,
                 victim as *mut Character as usize,
                 game_now_s,
                 hits.damage_cooldown_s,
-            )
-        {
+            );
+        if damage_suppressed {
             plan.damage = None;
         }
         let direction = blow_direction(swung, victim_at - contact.hand_position);
@@ -237,6 +244,20 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
         let stagger_threshold = victim.m_HitReaction_ImpulseStumbleThreshold;
         // SAFETY: forwarded from the caller; both characters are live.
         let dealt = unsafe { strike(attacker, victim, contact.hand_position, direction, &plan) };
+        // Native damage can change the contact body's ownership or destroy its instance.
+        let rider_reaction_queued =
+            unsafe { contact_victim(&contact, attacker) }.is_some_and(|victim| {
+                let victim = unsafe { &mut *victim };
+                let identity = victim as *mut Character as usize;
+                if rider_reacted.contains(&identity) {
+                    return false;
+                }
+                let queued = unsafe { react_rider(victim, &plan, dealt, damage_suppressed) };
+                if queued {
+                    rider_reacted.push(identity);
+                }
+                queued
+            });
         tracing::info!(
             hand = contact.hand.label(),
             with_gun = contact.gun,
@@ -251,6 +272,7 @@ pub(super) unsafe fn deliver(config: &PhysicalHandsConfig) -> Delivered {
             reaction_impulse = plan.reaction_impulse,
             damage = plan.damage,
             dealt,
+            rider_reaction_queued,
             stagger_threshold,
             knockdown_threshold = tuning.knockdown_threshold,
             type_scale = tuning.type_scale,
@@ -513,7 +535,7 @@ static GATE: Mutex<Gates> = Mutex::new(Gates {
 /// # Safety
 ///
 /// The game thread, outside the game's update.
-unsafe fn victim(contact: &Contact, attacker: &Character) -> Option<*mut Character> {
+unsafe fn contact_victim(contact: &Contact, attacker: &Character) -> Option<*mut Character> {
     let object = NonZeroUsize::new(contact.other_object)?;
     let world = unsafe { World::get() }?;
     let instance = unsafe { instance_of(world.world(), contact.other_body) }?;
@@ -607,6 +629,69 @@ unsafe fn strike(
             plan.reaction_impulse,
         )
     }
+}
+
+/// Queue a supported knockdown transition only for a physical punch on an exposed rider.
+///
+/// # Safety
+/// The game thread, outside the game's update; the victim remains live after native dispatch.
+unsafe fn react_rider(
+    victim: &mut Character,
+    plan: &BlowPlan,
+    dealt: i16,
+    damage_suppressed: bool,
+) -> bool {
+    let Some(control) = (unsafe { victim.m_ControlParameters.as_ref() }) else {
+        return false;
+    };
+    let words = [
+        control.m_UserVM.m_CurrentStateBitFlags0,
+        control.m_UserVM.m_CurrentStateBitFlags1,
+        control.m_UserVM.m_CurrentStateBitFlags2,
+    ];
+    let blocked = [
+        StateBitFlag::SB_SKIP_HITREACTION_RAGDOLL,
+        StateBitFlag::SB_DISABLE_GLOBAL_HITREACTIONS,
+        StateBitFlag::SB_DONT_APPLY_DAMAGE,
+        StateBitFlag::SB_DONT_APPLY_DAMAGE_IMPACT,
+    ]
+    .into_iter()
+    .any(|flag| {
+        let bit = StateBit::of(flag);
+        words[bit.word] & bit.mask != 0
+    });
+    let state = RiderReaction {
+        motorcycle: unsafe { victim.IsAttachedToVehicle() && victim.IsRidingMC() },
+        protected: unsafe { character_engine::protection(victim) }.is_some()
+            || victim.m_InvulnerableToMelee
+            || victim
+                .m_DamageFlags
+                .intersects(DamageStateFlags::GOD_MODE | DamageStateFlags::JESUS_MODE),
+        dead: unsafe { character_engine::dead(victim) },
+        ragdoll: unsafe { victim.IsRagdolling() },
+        blocked,
+        damage_suppressed,
+    };
+    if !state.permits(plan, dealt) {
+        return false;
+    }
+    let (Some(native), Some(fallback)) = (
+        resolve_act_id(EventIdSymbolTable::ACT_HITREACT_RAGDOLL),
+        resolve_act_id(EventIdSymbolTable::ACT_FULL_RAGDOLL),
+    ) else {
+        return false;
+    };
+    let native = native as u32;
+    let fallback = fallback as u32;
+    // Motorcycle states omit ACT_HITREACT_RAGDOLL. The supported full-ragdoll transition runs
+    // the seat task's native exit cleanup without clearing its protection bits.
+    if unsafe { victim.m_AnimatedModel.TryAct(&native) }
+        || !unsafe { victim.m_AnimatedModel.TryAct(&fallback) }
+    {
+        return false;
+    }
+    unsafe { victim.m_AnimatedModel.QueueAct(&fallback) };
+    true
 }
 
 /// Attribution and damage type for one native message.

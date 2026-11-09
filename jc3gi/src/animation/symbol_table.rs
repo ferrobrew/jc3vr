@@ -78,6 +78,9 @@ impl EventIdSymbolTable {
     /// The aiming flick that turns a quarter to the right; see
     /// [`ACT_FLICK_0_AIM`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0_AIM).
     pub const ACT_FLICK_90R_AIM: &::std::ffi::CStr = c"ACT_FLICK_90R_AIM";
+    /// The full-ragdoll act accepted by guarded global transitions, including the civilian and
+    /// soldier motorcycle states. Leaving a seat runs the native seat task's exit cleanup.
+    pub const ACT_FULL_RAGDOLL: &::std::ffi::CStr = c"ACT_FULL_RAGDOLL";
     /// The knock-back a player takes from an explosion's impulse:
     /// [`Character::HitReaction`](crate::character::character::Character::HitReaction) queues it when
     /// the state machine accepts it, and the full ragdoll otherwise. In `rico_base.afsmb` it leads
@@ -102,6 +105,9 @@ impl EventIdSymbolTable {
     /// The right melee stumble, for a character struck from behind; see
     /// [`ACT_HITREACT_MELEE_STUMBLE_LEFT_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_MELEE_STUMBLE_LEFT_0).
     pub const ACT_HITREACT_MELEE_STUMBLE_RIGHT_180: &::std::ffi::CStr = c"ACT_HITREACT_MELEE_STUMBLE_RIGHT_180";
+    /// The ragdoll reaction requested by heavy NPC melee hits. The civilian and soldier motorcycle
+    /// states do not provide this transition.
+    pub const ACT_HITREACT_RAGDOLL: &::std::ffi::CStr = c"ACT_HITREACT_RAGDOLL";
     /// The stumble a hit's impulse knocks a player into, past the character's stumble threshold
     /// and short of its ragdoll threshold. [`Character::HitReaction`](crate::character::character::Character::HitReaction)
     /// queues it, or [`ACT_HITREACT_STUMBLE_BULLET`](crate::animation::symbol_table::EventIdSymbolTable::ACT_HITREACT_STUMBLE_BULLET) for a bullet
