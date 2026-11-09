@@ -65,9 +65,9 @@ pub const HOLD: HoldPlacement = HoldPlacement {
 pub const CHARGE_TOP_M: f32 = 0.029;
 
 /// The detonator button on the inside of the off-hand's wrist, pressed by the dominant hand's
-/// index fingertip (see [`crate::controllers::weapons::c4::press`]). The button's frame is the
-/// off-hand's grip frame, given for the left hand (the off-hand of a right-handed player) and
-/// mirrored for the right.
+/// index fingertip from above with its palm facing the same way as the button (see
+/// [`crate::controllers::weapons::c4::press`]). The button's frame is the off-hand's grip frame,
+/// given for the left hand (the off-hand of a right-handed player) and mirrored for the right.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct DetonatorTuning {
     /// The centre of the button's face, metres. The grip's origin is the centre of the closed
@@ -95,7 +95,8 @@ pub struct DetonatorTuning {
     /// How far behind the face's plane a fingertip may be and still touch, metres: further behind,
     /// it has come through the wrist, which a real finger cannot.
     pub max_behind_m: f32,
-    /// Minimum alignment of the pressing palm with the direction into the button's face.
+    /// Minimum alignment of the pressing palm's outward normal with the button's face normal: a
+    /// palm facing the same way as the button presses, and one facing into it does not.
     pub min_palm_alignment: f32,
     /// How fast the fingertip must be closing on the button as it touches it, metres per second,
     /// for the touch to press at once.

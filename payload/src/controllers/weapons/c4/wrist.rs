@@ -33,8 +33,9 @@
 //! slow touch dwells, and flashing on a press. A ring around it marks the touch sphere. While the
 //! fingertip is within the approach radius, a dot marks the point that is tested and a second ring
 //! closes from the approach radius onto the touch sphere as it nears, and the pressing hand ticks
-//! once on the way in; a blocked touch (the finger came from behind the wrist, or was first seen on
-//! the button) turns the rims and the dot red until the finger leaves the touch sphere. A
+//! once on the way in; a blocked touch (the finger came from behind the wrist, was first seen on
+//! the button, or its palm faces into the button) turns the rims and the dot red until the finger
+//! leaves the touch sphere. A
 //! detonation the game starts, from the button or the stick click, flashes it bright
 //! ([`note_detonation`]).
 
@@ -622,6 +623,8 @@ mod tests {
     use super::*;
     use crate::controllers::weapons::c4::tuning::C4;
 
+    const DT: f32 = 1.0 / 90.0;
+
     fn fingertip_source(
         joints: Option<&[frame::HandJoint; frame::HAND_JOINT_COUNT]>,
     ) -> FingertipSource<'_> {
@@ -725,7 +728,7 @@ mod tests {
     }
 
     #[test]
-    fn palm_orientation_is_relative_to_the_button_for_either_presser() {
+    fn the_palm_normal_is_relative_to_the_button_for_either_presser() {
         let source = controller_frame(Instant::now());
         let rotation = glam::Quat::from_rotation_y(0.8);
         for presser in Hand::BOTH {
@@ -744,13 +747,35 @@ mod tests {
                 rendered: true,
             };
             let face = press::button_face(presser.other(), Pose::IDENTITY, &C4.detonator).unwrap();
-            let palm = sample.palm_normal(presser).unwrap();
-            assert!(palm.abs_diff_eq(-face.normal, 1e-5));
+            // Grips held alike put the pressing palm into the button: the palms face each other,
+            // which does not press.
+            let opposing = sample.palm_normal(presser).unwrap();
+            assert!(opposing.abs_diff_eq(-face.normal, 1e-5));
             let mut turned = sample;
             turned.grips[presser.index()].as_mut().unwrap().orientation =
                 rotation * glam::Quat::from_rotation_z(std::f32::consts::PI);
-            let palm = turned.palm_normal(presser).unwrap();
-            assert!(palm.abs_diff_eq(face.normal, 1e-5));
+            // Turned to face the same way as the button, the palm is the one that presses.
+            let aligned = turned.palm_normal(presser).unwrap();
+            assert!(aligned.abs_diff_eq(face.normal, 1e-5));
+            let t = C4.detonator;
+            let start = face.centre + (face.normal + Vec3::Y).normalize() * 0.12;
+            let mut d = PressDetector::new();
+            assert!(
+                !d.step(Some(start), Some(face), Some(opposing), DT, &t)
+                    .pressed
+            );
+            let out = d.step(Some(face.centre), Some(face), Some(opposing), DT, &t);
+            assert!(!out.pressed);
+            assert_eq!(out.phase, PressPhase::Blocked);
+            let mut d = PressDetector::new();
+            assert!(
+                !d.step(Some(start), Some(face), Some(aligned), DT, &t)
+                    .pressed
+            );
+            assert!(
+                d.step(Some(face.centre), Some(face), Some(aligned), DT, &t)
+                    .pressed
+            );
         }
     }
 
