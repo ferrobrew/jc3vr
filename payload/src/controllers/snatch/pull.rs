@@ -261,6 +261,14 @@ pub(super) unsafe fn pull(
     }
     let (reading, line_m) = unsafe { engine::read_wire(wire) };
     if reading == engine::WireReading::Gone && !flight.slack() {
+        tracing::info!(
+            target: "controllers",
+            reading = ?reading,
+            slack = flight.slack(),
+            body = flight.hit.body,
+            owner = flight.hit.owner,
+            "snatch: the line came away before the anchor check"
+        );
         return Err(Refusal::LineLost);
     }
     let mut hit = flight.hit;
@@ -396,7 +404,7 @@ pub(super) unsafe fn pull(
                 target: "controllers",
                 hand = catcher.label(),
                 body,
-                mass_kg = state.mass_kg.unwrap_or(0.0),
+                mass_kg = ?state.mass_kg,
                 catch_m = at.distance(catcher_palm),
                 zone_m,
                 "snatch: the hand caught the target"
@@ -432,7 +440,7 @@ pub(super) unsafe fn pull(
                 target: "controllers",
                 hand = receiver.label(),
                 body,
-                mass_kg = state.mass_kg.unwrap_or(0.0),
+                mass_kg = ?state.mass_kg,
                 miss_m = at.distance(palm),
                 zone_m,
                 "snatch: the hand missed the catch"
@@ -446,7 +454,7 @@ pub(super) unsafe fn pull(
     let tuning = HoldTuning {
         stiffness_per_s: 0.0,
         angular_stiffness_per_s: 0.0,
-        max_speed_mps: SNATCH.line_speed_mps.max(0.0),
+        max_speed_mps: SNATCH.line_speed_mps.max(0.0) * heavy.speed_scale(),
         max_angular_speed_rps: SNATCH.max_spin_rps.max(0.0),
         hand_force_n: mass * SNATCH.line_accel_mps2.max(0.0),
         hand_torque_nm: 0.0,
@@ -567,7 +575,17 @@ unsafe fn verified_hit(
             *bite_world = anchor.position;
             Ok(Some(anchor))
         }
-        engine::AnchorCheck::Lost => Err(Refusal::LineLost),
+        engine::AnchorCheck::Lost => {
+            tracing::info!(
+                target: "controllers",
+                selected_body = hit.body,
+                selected_owned,
+                proxy_body = anchor.map(|anchor| anchor.body),
+                proxy_owned = proxy.map(|(_, owned)| owned),
+                "snatch: the line lost its anchor"
+            );
+            Err(Refusal::LineLost)
+        }
     }
 }
 

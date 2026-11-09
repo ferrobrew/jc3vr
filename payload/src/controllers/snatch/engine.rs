@@ -168,13 +168,8 @@ pub(super) fn check_anchor(
     proxy: Option<(u32, bool)>,
 ) -> AnchorCheck {
     match proxy {
-        Some((body, owned)) if body == selected_body => {
-            if selected_owned || owned {
-                AnchorCheck::Selected
-            } else {
-                AnchorCheck::Lost
-            }
-        }
+        Some((body, _)) if body == selected_body && selected_owned => AnchorCheck::Selected,
+        Some((body, _)) if body == selected_body => AnchorCheck::Lost,
         Some((_, true)) => AnchorCheck::ObjectBody,
         Some((_, false)) => AnchorCheck::Lost,
         None if selected_owned => AnchorCheck::Selected,
@@ -527,10 +522,9 @@ mod tests {
             check_anchor(true, 7, Some((7, false))),
             AnchorCheck::Selected
         );
-        assert_eq!(
-            check_anchor(false, 7, Some((7, true))),
-            AnchorCheck::Selected
-        );
+        // The selected body and the proxy body are checked with the same ownership read, so a
+        // selected body that is not owned is lost even when the proxy still holds it.
+        assert_eq!(check_anchor(false, 7, Some((7, true))), AnchorCheck::Lost);
         assert_eq!(check_anchor(true, 7, None), AnchorCheck::Selected);
     }
 
