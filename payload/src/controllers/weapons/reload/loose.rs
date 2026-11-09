@@ -177,7 +177,9 @@ pub(super) struct Retention {
 impl Retention {
     pub(super) fn reserve(gun: usize, spare: usize) -> Option<Self> {
         let key = DropKey { gun, spare };
-        let token = STATE.lock().records.reserve(key)?;
+        let mut state = STATE.lock();
+        let held = state.held.map(|held| held.magazine.handle);
+        let token = state.records.reserve_unheld(key, held)?;
         Some(Self { token, key })
     }
 

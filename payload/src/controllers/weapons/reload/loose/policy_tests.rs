@@ -27,7 +27,7 @@ fn captured(index: usize, rounds: i32) -> Captured {
 }
 
 #[test]
-fn automatic_local_and_empty_npc_admission_is_bounded_and_full_runs_native_unchanged() {
+fn automatic_empty_records_reuse_capacity_without_changing_native_accounting() {
     for local in [false, true] {
         let records = RefCell::new(Records::new());
         let calls = Cell::new(0);
@@ -62,7 +62,7 @@ fn automatic_local_and_empty_npc_admission_is_bounded_and_full_runs_native_uncha
             );
             assert!(result.0);
             assert_eq!(native.get(), before);
-            assert_eq!(result.1.is_some(), index < CAPACITY);
+            assert!(result.1.is_some());
             if let Some(token) = token {
                 records.borrow_mut().release(token);
             }

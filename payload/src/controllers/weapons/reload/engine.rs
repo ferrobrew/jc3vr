@@ -47,6 +47,8 @@ use crate::{
             engine::{
                 FULL_WEIGHT, credit_reserve, gun_at, gun_count, gun_ptr, limited_ammo, reserve,
             },
+            fire,
+            hold::armed,
             inventory::{carry, engine as inventory_engine},
             reload::{
                 ammo::{self, Ammo, NativeAmmo},
@@ -65,6 +67,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&START_RELOADING_WIELDING_WEAPON_BINDER)
         .with_static_binder(&SNIPER_UPDATE_FROM_USER_POST_SIM_PARALLEL_BINDER)
         .with_static_binder(&DO_ACT_FIRE_START_BINDER)
+        .with_static_binder(&UPDATE_WEAPON_PARALLEL_BINDER)
 }
 
 /// What the reload reads of a weapon each tick.
@@ -448,6 +451,7 @@ pub unsafe fn load_rounds(address: usize, rounds: i32) {
         return;
     };
     let weapon = unsafe { source.as_mut() };
+    unsafe { armed::release_fire(weapon) };
     let partition = current_ammo(weapon);
     let chambers = partition.map_or(0, Ammo::chamber_rounds);
     let leftover = weapon.m_MagazineAmmo.max(0) - chambers;
@@ -499,6 +503,7 @@ pub unsafe fn load_full(address: usize) -> bool {
         return false;
     };
     let weapon = unsafe { source.as_mut() };
+    unsafe { armed::release_fire(weapon) };
     let partition = current_ammo(weapon);
     let chambers = partition.map_or(0, Ammo::chamber_rounds);
     ammo::magazine_only(address, true);
@@ -537,6 +542,7 @@ pub unsafe fn load_one(address: usize) -> bool {
     if !unsafe { read(weapon) }.has_space() {
         return false;
     }
+    unsafe { armed::release_fire(weapon) };
     let unlimited = unsafe { unlimited(weapon) };
     let reserve = unsafe { reserve(weapon) };
     if !unlimited && reserve <= 0 {
@@ -719,6 +725,26 @@ fn start_reloading_wielding_weapon(character: *mut Character) {
         .get()
         .unwrap()
         .call(character);
+}
+
+#[detour(address = WeaponBase::UpdateWeapon_Parallel_ADDRESS)]
+fn update_weapon_parallel(
+    weapon: *mut WeaponBase,
+    dt: f32,
+    gun_data: *mut WeaponData,
+    input: *const WeaponInputs,
+) -> bool {
+    let blocked = unsafe { weapon.as_ref() }
+        .filter(|weapon| weapon.m_IsUserLocalPlayer)
+        .and_then(|weapon| unsafe { fire::gun_hand(weapon, gun_data) })
+        .is_some_and(|hand| gate::holds_fire(weapon as usize, hand));
+    if blocked && let Some(weapon) = unsafe { weapon.as_mut() } {
+        unsafe { armed::release_fire(weapon) };
+    }
+    UPDATE_WEAPON_PARALLEL
+        .get()
+        .unwrap()
+        .call(weapon, dt, gun_data, input)
 }
 
 /// The bolt rifle's update, with its bolt-action setting cleared for the call while the bolt is

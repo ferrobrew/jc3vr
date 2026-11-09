@@ -49,7 +49,16 @@ impl Records {
     }
 
     /// Reject duplicates and saturation before any engine operation or ammunition transfer.
+    #[cfg(test)]
     pub(super) fn reserve(&mut self, key: DropKey) -> Option<Token> {
+        self.reserve_unheld(key, None)
+    }
+
+    pub(super) fn reserve_unheld(
+        &mut self,
+        key: DropKey,
+        held: Option<WorldHandle>,
+    ) -> Option<Token> {
         if key.gun == 0
             || key.spare == 0
             || self.slots.iter().flatten().any(|entry| match entry {
@@ -59,7 +68,12 @@ impl Records {
         {
             return None;
         }
-        let slot = self.slots.iter().position(Option::is_none)?;
+        let slot = self.slots.iter().position(Option::is_none).or_else(|| {
+            self.slots.iter().position(|entry| {
+                matches!(entry, Some(Entry::World { magazine, leased: false, .. })
+                    if magazine.rounds == 0 && Some(magazine.handle) != held)
+            })
+        })?;
         let generation = self.generation.checked_add(1)?;
         self.generation = generation;
         let token = Token { slot, generation };

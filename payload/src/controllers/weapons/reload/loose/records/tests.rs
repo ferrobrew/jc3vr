@@ -74,7 +74,11 @@ fn reservations_executing_results_and_held_items_share_the_cap() {
     );
     assert!(records.contains(held));
     assert!(records.contains(unread));
-    assert!(records.reserve(key(CAPACITY)).is_none());
+    assert!(
+        records
+            .reserve_unheld(key(CAPACITY), Some(held.handle))
+            .is_none()
+    );
     records.release(result);
     records.maintain(
         now + Duration::from_secs(60),
@@ -84,7 +88,11 @@ fn reservations_executing_results_and_held_items_share_the_cap() {
     );
     assert!(records.contains(held));
     assert!(!records.contains(unread));
-    assert!(records.reserve(key(CAPACITY)).is_some());
+    assert!(
+        records
+            .reserve_unheld(key(CAPACITY), Some(held.handle))
+            .is_some()
+    );
 }
 
 #[test]
@@ -217,4 +225,72 @@ fn generation_exhaustion_refuses_without_reusing_a_handle_or_mutating_existing_r
     records.release(last);
     assert!(records.remove(magazine));
     assert!(records.reserve(key(0)).is_none());
+}
+
+#[test]
+fn empty_world_records_cannot_exhaust_future_detach_admission() {
+    let mut records = Records::new();
+    let now = Instant::now();
+    let mut oldest = None;
+    for index in 0..CAPACITY * 4 {
+        let (token, magazine) = commit(&mut records, index, 0, now);
+        oldest.get_or_insert(magazine);
+        records.release(token);
+    }
+    assert_eq!(records.magazines().count(), CAPACITY);
+    assert!(!records.contains(oldest.unwrap()));
+    assert!(!records.remove(oldest.unwrap()));
+}
+
+#[test]
+fn capacity_reclamation_preserves_held_empty_leased_and_nonempty_records() {
+    let mut records = Records::new();
+    let now = Instant::now();
+    let (held_token, held) = commit(&mut records, 0, 0, now);
+    records.release(held_token);
+    let (leased_token, leased) = commit(&mut records, 1, 0, now);
+    for index in 2..CAPACITY {
+        let (token, _) = commit(&mut records, index, 17, now);
+        records.release(token);
+    }
+    assert!(
+        records
+            .reserve_unheld(key(CAPACITY), Some(held.handle))
+            .is_none()
+    );
+    assert!(records.contains(held));
+    assert!(records.contains(leased));
+    records.release(leased_token);
+    assert!(
+        records
+            .reserve_unheld(key(CAPACITY), Some(held.handle))
+            .is_some()
+    );
+    assert!(records.contains(held));
+    assert!(!records.contains(leased));
+    assert_eq!(
+        records.magazines().map(|m| m.rounds).sum::<i32>(),
+        (CAPACITY - 2) as i32 * 17
+    );
+}
+
+#[test]
+fn capacity_pressure_does_not_bypass_duplicate_spare_identity() {
+    let mut records = Records::new();
+    let now = Instant::now();
+    for index in 0..CAPACITY {
+        let (token, _) = commit(&mut records, index, 0, now);
+        records.release(token);
+    }
+    assert!(records.reserve(key(0)).is_none());
+    assert!(
+        records
+            .reserve(DropKey {
+                gun: CAPACITY + 1,
+                spare: key(0).spare
+            })
+            .is_none()
+    );
+    assert_eq!(records.magazines().count(), CAPACITY);
+    assert!(records.reserve(key(CAPACITY)).is_some());
 }

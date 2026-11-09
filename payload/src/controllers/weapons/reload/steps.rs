@@ -364,8 +364,7 @@ impl State {
                 .status
                 .insert_hands
                 .is_some_and(|(_, target)| target == hand)
-                && matches!(self.status.insertion.stage, InsertStage::Captured { .. })
-                && loose::held().is_some(),
+                && matches!(self.status.insertion.stage, InsertStage::Captured { .. }),
             chambering: chambering(&weapon.plan),
             chamber_empty: record.chambers[e] == Chamber::Empty,
             out_of_battery: reload.action.physical && !record.travels[e].in_battery(&reload.action),
@@ -914,6 +913,10 @@ impl State {
         self.stocked_pouch = None;
         self.pouch_refusal = None;
         self.free = None;
+        loose::let_go();
+        self.status.insertion.reset();
+        self.status.insert_hands = None;
+        self.ready_cue.cancel();
         self.cancel_extraction();
         self.cancel_ejects();
     }

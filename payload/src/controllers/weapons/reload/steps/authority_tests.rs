@@ -89,3 +89,37 @@ fn first_empty_observation_preserves_owned_chambers_and_seeds_lockback() {
         assert!(!state.records.get(key).travels[0].in_battery(&RELOAD.action));
     }
 }
+
+#[test]
+fn pouch_capture_holds_launcher_fire_without_a_retained_world_magazine() {
+    let mut tick = tick(false);
+    let weapon = tick.weapons[0].as_mut().unwrap();
+    weapon.plan.action = ActionKind::None;
+    weapon.plan.launcher = true;
+    weapon.reading.out = false;
+    let mut state = state();
+    state.insertion_source = InsertionSource::Pouch;
+    state.status.insert_hands = Some((Hand::Left, Hand::Right));
+    state.status.insertion.stage = InsertStage::Captured {
+        elapsed_s: 0.2,
+        depth_m: 0.02,
+    };
+    assert_eq!(
+        state.fire_hold(&tick, Hand::Right, &RELOAD),
+        Some(FireHold::RoundGoingIn)
+    );
+    state.status.insertion.reset();
+    state.status.insert_hands = None;
+    assert_eq!(state.fire_hold(&tick, Hand::Right, &RELOAD), None);
+}
+
+#[test]
+fn clearing_the_reload_tick_releases_a_stale_round_hand_claim() {
+    let mut state = make_state(InsertStage::Holding { elapsed_s: 1.0 });
+    state.tick = Some(tick(false));
+    state.clear_tick();
+    assert!(state.tick.is_none());
+    assert_eq!(state.status.insertion.stage, InsertStage::Idle);
+    assert!(state.status.insert_hands.is_none());
+    assert!(state.extraction_hand().is_none());
+}
