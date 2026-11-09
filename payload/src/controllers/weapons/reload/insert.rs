@@ -61,6 +61,22 @@ pub struct Well {
     pub axis: Vec3,
 }
 
+impl Well {
+    pub(super) fn rotation(self) -> Option<Quat> {
+        Some(Quat::from_rotation_arc(Vec3::Y, self.axis.try_normalize()?))
+    }
+
+    pub(super) fn local(self, point: Vec3) -> Option<Vec3> {
+        (self.mouth.is_finite() && point.is_finite())
+            .then_some(self.rotation()?.inverse() * (point - self.mouth))
+    }
+
+    pub(super) fn point(self, local: Vec3) -> Option<Vec3> {
+        (self.mouth.is_finite() && local.is_finite())
+            .then_some(self.mouth + self.rotation()? * local)
+    }
+}
+
 /// One tick's inputs.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct InsertInputs {
@@ -149,8 +165,10 @@ impl Float {
         let axis = axis.try_normalize()?;
         let radius = tuning.radius_m.max(config.capture_radius_m * 2.0);
         let distance = local.length();
-        let near = distance <= radius && local.y <= config.capture_radius_m;
-        let aligned = axis.y >= tuning.angle_deg.to_radians().cos();
+        let slack = config.capture_radius_m * 1.5;
+        let near = distance <= radius && local.y <= slack;
+        let angle = tuning.angle_deg.max(config.capture_angle_deg);
+        let aligned = axis.y >= angle.to_radians().cos();
         if !(near && aligned && local.is_finite()) {
             return None;
         }
@@ -376,7 +394,12 @@ impl Insertion {
         inputs: InsertInputs,
         elapsed_s: f32,
     ) -> Option<InsertEvent> {
-        if inputs.well.is_none() {
+        if inputs
+            .well
+            .and_then(|well| well.point(Vec3::ZERO))
+            .is_none()
+            || inputs.occupied
+        {
             self.stage = InsertStage::Idle;
             self.float = None;
             return Some(InsertEvent::Dropped);
@@ -406,10 +429,9 @@ impl Insertion {
         let InsertStage::Captured { depth_m, .. } = self.stage else {
             return None;
         };
-        let axis = well.axis.try_normalize()?;
-        Some(match self.float {
-            Some(float) => well.mouth + Quat::from_rotation_arc(Vec3::Y, axis) * float.top(),
-            None => well.mouth + axis * depth_m,
+        well.point(match self.float {
+            Some(float) => float.top(),
+            None => Vec3::Y * depth_m,
         })
     }
 
@@ -448,7 +470,7 @@ fn relative_top(held: Held, well: Well) -> Option<(Vec3, f32, Vec3)> {
     }
     let axis = well.axis.try_normalize()?;
     let pointing = held.axis.try_normalize()?;
-    let local = Quat::from_rotation_arc(axis, Vec3::Y) * (held.top - well.mouth);
+    let local = well.local(held.top)?;
     local
         .is_finite()
         .then_some((local, pointing.dot(axis), axis))
@@ -553,6 +575,43 @@ fn finite_or_zero(seconds: f32) -> f32 {
 mod tests {
     use super::*;
     use crate::controllers::weapons::reload::tuning::RELOAD;
+
+    #[test]
+    fn launcher_release_assistance_covers_every_held_capture_angle() {
+        let config = RELOAD.launcher_capture();
+        for degrees in [0.0_f32, 50.0, 70.0, 80.0, 84.9] {
+            for local in [Vec3::Y * -0.15, Vec3::X * 0.15, Vec3::ZERO] {
+                let axis = Quat::from_rotation_z(degrees.to_radians()) * Vec3::Y;
+                let float = Float::start(local, axis, &config, &FLOAT).unwrap();
+                assert!(float.top().is_finite());
+                assert!(float.axis().is_finite());
+            }
+        }
+    }
+
+    #[test]
+    fn a_float_cannot_seat_after_another_magazine_fills_the_well() {
+        let mut insertion = Insertion::new();
+        take(&mut insertion);
+        let released = InsertInputs {
+            grip_held: false,
+            ..inputs(false, WELL.mouth - Vec3::Y * 0.1, Vec3::ZERO)
+        };
+        assert_eq!(
+            insertion.step(released, &CONFIG),
+            Some(InsertEvent::Captured)
+        );
+        let occupied = InsertInputs {
+            occupied: true,
+            dt: 1.0,
+            ..released
+        };
+        assert_eq!(
+            insertion.step(occupied, &CONFIG),
+            Some(InsertEvent::Dropped)
+        );
+        assert_eq!(insertion.seated, 0);
+    }
 
     #[test]
     fn retained_magazines_keep_the_grip_beyond_pouch_and_world_lifetimes() {

@@ -30,7 +30,7 @@ use crate::controllers::{
             extraction::{DetachKind, MagazineId},
             fire_hold::{FireFacts, FireHold, fire_hold},
             frames::{self, GunFrame},
-            gate, infinite,
+            gate, guide, infinite,
             insert::{self, InsertEvent, InsertInputs, InsertStage, InsertionSource, Well},
             knock, loose,
             plan::{self, LoadKind, ReloadPlan, WeaponFacts},
@@ -322,6 +322,7 @@ impl State {
         self.work(tick, inputs, config);
         self.sync_owned(tick);
 
+        self.insertion_guide(tick, config.weapons.reload.insertion_guide, reload);
         self.last_grips = tick.hands.map(|h| h.map(|h| h.grip.position));
         self.status.weapons = Hand::BOTH.map(|hand| self.readout(tick, hand, reload));
         self.status.belt = self.belts.map(|b| b.stage);
@@ -900,6 +901,7 @@ impl State {
     }
 
     pub(super) fn clear_tick(&mut self) {
+        guide::clear();
         self.tick = None;
         self.pouches = [None; 2];
         self.belt_rings = [None; 2];

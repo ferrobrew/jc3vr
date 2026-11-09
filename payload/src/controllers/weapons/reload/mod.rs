@@ -51,6 +51,7 @@ mod extraction;
 pub mod fire_hold;
 pub mod frames;
 pub(super) mod gate;
+mod guide;
 mod infinite;
 pub mod insert;
 pub(crate) mod knock;
@@ -833,6 +834,7 @@ pub(crate) unsafe fn split_pair(pair: &WeaponBase, twin: &WeaponBase, tuned: i32
 
 /// Release native ammunition identities before the spawn system resets its objects.
 pub(crate) fn on_pre_reset() {
+    guide::clear();
     STATE.lock().records.on_pre_reset();
     ammo::on_pre_reset();
 }

@@ -12,6 +12,7 @@ pub struct ReloadConfig {
     /// magazine is ejected, taken from the belt pouch, seated in the well, and chambered by hand.
     /// Off, the game's timed reload plays from the reload button as it does on a gamepad.
     pub enabled: bool,
+    pub insertion_guide: bool,
     /// Eject a gun's magazine with a sharp flick of the hand holding it.
     pub flick_eject: bool,
     /// Work the slide, charging handle, bolt, or pump by hand: a gun that ran dry fires again only
@@ -35,6 +36,7 @@ impl ReloadConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
+            insertion_guide: true,
             flick_eject: false,
             manual_action: false,
             belt: BeltConfig::new(),

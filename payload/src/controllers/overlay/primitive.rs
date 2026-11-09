@@ -56,10 +56,12 @@ pub enum Source {
     /// The collider view's bodies, joints, and contacts. Last, so that it gives way first to the
     /// overlay's cap.
     ColliderView,
+    AircraftControls,
+    AmmoInsertionGuide,
 }
 
 impl Source {
-    pub const COUNT: usize = 19;
+    pub const COUNT: usize = 21;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -82,6 +84,8 @@ impl Source {
         Source::DockedGuns,
         Source::GrabView,
         Source::ColliderView,
+        Source::AircraftControls,
+        Source::AmmoInsertionGuide,
     ];
 
     pub const fn index(self) -> usize {
@@ -105,6 +109,8 @@ impl Source {
             Source::DockedGuns => 16,
             Source::GrabView => 17,
             Source::ColliderView => 18,
+            Source::AircraftControls => 19,
+            Source::AmmoInsertionGuide => 20,
         }
     }
 
@@ -129,6 +135,8 @@ impl Source {
             Source::DockedGuns => "docked guns",
             Source::GrabView => "grab view",
             Source::ColliderView => "collider view",
+            Source::AircraftControls => "aircraft controls",
+            Source::AmmoInsertionGuide => "ammo insertion guide",
         }
     }
 }

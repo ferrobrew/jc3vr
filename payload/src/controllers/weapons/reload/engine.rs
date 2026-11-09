@@ -800,7 +800,7 @@ unsafe fn user_mut<'a>(weapon: *const WeaponBase) -> Option<&'a mut Character> {
 
 /// The weapon's round part: the model part the game's reload hides and shows, by name, or a
 /// launcher's rocket ([`render::is_round_part`]).
-unsafe fn magazine_part<'a>(
+pub(super) unsafe fn magazine_part<'a>(
     weapon: *const WeaponBase,
 ) -> Option<&'a mut ModelAttachementWeaponComponent> {
     unsafe { model_parts(weapon) }.find(|p| render::is_round_part(p.m_NameHash))
