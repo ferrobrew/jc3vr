@@ -110,7 +110,9 @@ impl std::convert::AsMut<State> for State {
 /// A running animation state machine (`NAnimationSystem::CStateMachineInstance`): tracks the current
 /// [`State`](crate::animation::rule_system::State) for one [`AnimationRuleSystem`](crate::animation::rule_system::AnimationRuleSystem).
 pub struct StateMachineInstance {
-    _field_0: [u8; 24],
+    _field_0: [u8; 16],
+    /// The resource handle for the state machine definition that supplies the states and global transitions.
+    pub m_StateMachine: *mut crate::game::ResourceHandle,
     /// The state the machine is currently in.
     pub m_CurrentState: *mut crate::animation::rule_system::State,
     /// The game object the machine animates (`CStateMachineInstance::GetUserData`): for a
@@ -124,7 +126,19 @@ fn _StateMachineInstance_size_check() {
     }
     unreachable!()
 }
-impl StateMachineInstance {}
+impl StateMachineInstance {
+    pub const TryEvent_ADDRESS: usize = 0x1403DD5E0;
+    /// Tests whether an event has an eligible transition, evaluating the current state's transitions before the global transitions. Evaluates transition conditions, but does not enqueue the event, change the current state, or execute state tasks.
+    pub unsafe fn TryEvent(&self, event: *const u32) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                event: *const u32,
+            ) -> bool = ::std::mem::transmute(Self::TryEvent_ADDRESS);
+            f(self as *const Self as _, event)
+        }
+    }
+}
 impl std::convert::AsRef<StateMachineInstance> for StateMachineInstance {
     fn as_ref(&self) -> &StateMachineInstance {
         self

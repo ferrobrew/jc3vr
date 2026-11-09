@@ -693,6 +693,7 @@ pub unsafe fn get_Game_MaxGameUpdatesPerRender() -> &'static mut u32 {
     unsafe { &mut *(0x142D6EA50 as *mut u32) }
 }
 #[repr(C, align(8))]
+/// The project context carried by game-object update contexts. Its layout is unmapped.
 pub struct ProjectContext {}
 impl ProjectContext {}
 impl std::convert::AsRef<ProjectContext> for ProjectContext {
@@ -706,7 +707,18 @@ impl std::convert::AsMut<ProjectContext> for ProjectContext {
     }
 }
 #[repr(C, align(8))]
-pub struct ResourceCache {}
+/// The resource cache shared by resource handles and game-object initialization contexts.
+pub struct ResourceCache {
+    _field_0: [u8; 88],
+    /// The resource records indexed by [`ResourceHandle::m_Index`](crate::game::ResourceHandle::m_Index).
+    pub m_Resources: *mut crate::game::ResourceInfo,
+}
+fn _ResourceCache_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x60], ResourceCache>([0u8; 0x60]);
+    }
+    unreachable!()
+}
 impl ResourceCache {}
 impl std::convert::AsRef<ResourceCache> for ResourceCache {
     fn as_ref(&self) -> &ResourceCache {
@@ -715,6 +727,56 @@ impl std::convert::AsRef<ResourceCache> for ResourceCache {
 }
 impl std::convert::AsMut<ResourceCache> for ResourceCache {
     fn as_mut(&mut self) -> &mut ResourceCache {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A handle identifying a resource record in its owning cache.
+pub struct ResourceHandle {
+    /// The index into the owning cache's [`m_Resources`](crate::game::ResourceCache::m_Resources) array.
+    pub m_Index: u16,
+    _field_2: [u8; 6],
+    /// The cache that owns the indexed resource record.
+    pub m_ResourceCache: *mut crate::game::ResourceCache,
+}
+fn _ResourceHandle_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], ResourceHandle>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl ResourceHandle {}
+impl std::convert::AsRef<ResourceHandle> for ResourceHandle {
+    fn as_ref(&self) -> &ResourceHandle {
+        self
+    }
+}
+impl std::convert::AsMut<ResourceHandle> for ResourceHandle {
+    fn as_mut(&mut self) -> &mut ResourceHandle {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A resource cache record containing the loaded resource pointer and bookkeeping.
+pub struct ResourceInfo {
+    /// The loaded resource pointer.
+    pub m_Resource: *mut ::std::ffi::c_void,
+    _field_8: [u8; 32],
+}
+fn _ResourceInfo_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x28], ResourceInfo>([0u8; 0x28]);
+    }
+    unreachable!()
+}
+impl ResourceInfo {}
+impl std::convert::AsRef<ResourceInfo> for ResourceInfo {
+    fn as_ref(&self) -> &ResourceInfo {
+        self
+    }
+}
+impl std::convert::AsMut<ResourceInfo> for ResourceInfo {
+    fn as_mut(&mut self) -> &mut ResourceInfo {
         self
     }
 }
