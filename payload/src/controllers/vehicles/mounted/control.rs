@@ -47,11 +47,18 @@ impl Tear {
             self.pull_s = 0.0;
             return false;
         };
-        if !dt.is_finite() || dt <= 0.0 || !report.lag_m.is_finite() || !report.load.is_finite() {
+        self.step_pull(dt, report.lag_m, report.load)
+    }
+
+    /// Advance the pull by `dt` seconds from a hand's distance past its handle and the share of its
+    /// strength the pull uses. A native handle has no held-body report, so its lag is the hand's
+    /// distance from the handle.
+    pub(super) fn step_pull(&mut self, dt: f32, lag_m: f32, load: f32) -> bool {
+        if !dt.is_finite() || dt <= 0.0 || !lag_m.is_finite() || !load.is_finite() {
             self.pull_s = 0.0;
             return false;
         }
-        if report.lag_m >= TEAR_LAG_M && report.load >= TEAR_LOAD {
+        if lag_m >= TEAR_LAG_M && load >= TEAR_LOAD {
             self.pull_s += dt;
         } else {
             self.pull_s = 0.0;
@@ -127,6 +134,34 @@ mod tests {
             report(TEAR_LAG_M, f32::INFINITY),
         ] {
             assert!(!tear.step(0.1, Some(report)));
+        }
+    }
+
+    #[test]
+    fn a_native_handle_pulled_past_the_reach_tears_on_the_same_hold_time() {
+        let mut tear = Tear::default();
+        for _ in 0..3 {
+            assert!(!tear.step_pull(0.1, TEAR_LAG_M, 1.0));
+        }
+        assert!(tear.step_pull(0.1, TEAR_LAG_M, 1.0));
+        assert!(tear.step_pull(0.1, TEAR_LAG_M, 1.0));
+    }
+
+    #[test]
+    fn a_native_handle_eased_back_or_untracked_resets_the_tear() {
+        let mut tear = Tear::default();
+        for _ in 0..3 {
+            tear.step_pull(0.1, TEAR_LAG_M, 1.0);
+        }
+        assert!(!tear.step_pull(0.1, TEAR_LAG_M * 0.5, 1.0));
+        for _ in 0..3 {
+            assert!(!tear.step_pull(0.1, TEAR_LAG_M, 1.0));
+        }
+        for lag in [f32::NAN, f32::INFINITY] {
+            assert!(!tear.step_pull(0.1, lag, 1.0));
+        }
+        for load in [f32::NAN, f32::INFINITY] {
+            assert!(!tear.step_pull(0.1, TEAR_LAG_M, load));
         }
     }
 

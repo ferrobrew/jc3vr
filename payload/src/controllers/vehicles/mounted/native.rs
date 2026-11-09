@@ -71,9 +71,9 @@ impl Prompt {
         };
         let object = alive.object();
         let context = unsafe { &*(object as *const InteractionContext) };
-        if context.m_Flags.contains(InteractionContextFlags::ENABLED) {
+        let enabled = context.m_Flags.contains(InteractionContextFlags::ENABLED);
+        if suppress(enabled, &mut self.disabled) {
             unsafe { (*object).Enable(false) };
-            self.disabled = true;
         }
     }
 
@@ -85,16 +85,36 @@ impl Prompt {
         if !self.disabled {
             return;
         }
-        self.disabled = false;
         let Some(alive) = self.weak.lock() else {
             return;
         };
         let object = alive.object();
         let context = unsafe { &*(object as *const InteractionContext) };
-        if !context.m_Flags.contains(InteractionContextFlags::ENABLED) {
+        let enabled = context.m_Flags.contains(InteractionContextFlags::ENABLED);
+        if restore(enabled, &mut self.disabled) {
             unsafe { (*object).Enable(true) };
         }
     }
+}
+
+/// The prompt's hide decision: whether the game's context must be disabled. The prompt is hidden
+/// again whenever the game re-enables it while the hands still hold the gun.
+fn suppress(enabled: bool, hidden: &mut bool) -> bool {
+    if !enabled {
+        return false;
+    }
+    *hidden = true;
+    true
+}
+
+/// The prompt's restore decision: whether the game's context must be enabled again. The prompt is
+/// restored only when this module hid it and the game has not enabled it since.
+fn restore(enabled: bool, hidden: &mut bool) -> bool {
+    if !*hidden {
+        return false;
+    }
+    *hidden = false;
+    !enabled
 }
 
 /// The mount constraints of a mounted weapon, deduplicated by control block. A constraint whose
@@ -164,4 +184,39 @@ unsafe fn constraint(alive: &Strong) -> Option<*mut Constraint> {
         return None;
     }
     Some(object as *mut Constraint)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_prompt_is_hidden_while_held_and_restored_once() {
+        let mut hidden = false;
+        assert!(suppress(true, &mut hidden));
+        assert!(hidden);
+        // The game re-enabled the prompt while the hands still hold the gun: hide it again.
+        assert!(suppress(true, &mut hidden));
+        assert!(hidden);
+        assert!(!suppress(false, &mut hidden));
+        assert!(hidden);
+        assert!(restore(false, &mut hidden));
+        assert!(!hidden);
+        assert!(!restore(false, &mut hidden));
+    }
+
+    #[test]
+    fn a_prompt_the_game_left_enabled_is_not_restored() {
+        let mut hidden = true;
+        assert!(!restore(true, &mut hidden));
+        assert!(!hidden);
+    }
+
+    #[test]
+    fn a_prompt_this_module_never_hid_is_left_alone() {
+        let mut hidden = false;
+        assert!(!restore(false, &mut hidden));
+        assert!(!restore(true, &mut hidden));
+        assert!(!hidden);
+    }
 }

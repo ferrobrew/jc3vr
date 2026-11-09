@@ -18,12 +18,14 @@
 //! Everything is read on the input tick, and the aim point is published for the simulation that
 //! follows it.
 //!
-//! While the hands physically grip the gun's own body, the runtime gives the weapon a temporary
-//! shooter and drives its user update from the post-simulation phase, so the trigger fires it
-//! without entering the native mounted state. The mount's constraint motors are disabled for the
-//! duration, and the pickup interaction context is suppressed so the game does not offer the
-//! broken use prompt. A sustained pull past the gun's lag tears it off the mount through the
-//! weapon's own detach path.
+//! While the hands physically grip the gun's own body, its holder, or a handle on the holder's
+//! vehicle, the runtime gives the weapon a temporary shooter and drives its user update from the
+//! post-simulation phase, so the trigger fires it without entering the native mounted state. The
+//! mount's constraint motors are disabled for the duration, and the pickup interaction context is
+//! suppressed so the game does not offer the use prompt; a native start-using is refused while the
+//! runtime holds the gun. A native mounted state the player already entered is stopped and taken
+//! over, keeping the hands that held the native handles on the gun. A sustained pull past the gun's
+//! lag tears it off the mount through the weapon's own detach path.
 //!
 //! [`WeaponBase::GetGripPosition`]: jc3gi::equipment::weapon::WeaponBase::GetGripPosition
 
@@ -39,10 +41,14 @@ use jc3gi::{
 use crate::controllers::{aim::gun, frame::Hand};
 
 mod control;
+mod mount;
 mod native;
 mod runtime;
 
-pub(crate) use runtime::{input, observe, shooter, stand_down, tick, with_shooter};
+pub(super) use mount::{Held, Mount, matches as mount_matches};
+pub(crate) use runtime::{
+    input, observe, shooter, stand_down, suppress_start_using, tick, with_shooter,
+};
 
 /// The mounted gun the local player mans, as read on the input tick.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -130,7 +136,8 @@ impl MountedTarget {
 
 const MAX_AGE: Duration = Duration::from_millis(250);
 
-/// Read the mounted gun `owner` mans, if any.
+/// Read the mounted gun `owner` mans, if any: the heavy slot's weapon in its mounted state, with
+/// or without a native use giving it a user.
 ///
 /// # Safety
 ///
@@ -147,16 +154,16 @@ pub unsafe fn read(owner: &Character) -> Option<MountedGun> {
             .px
             .as_ref()?
     };
-    let owned = std::ptr::eq(weapon.m_User[0].cast::<Character>(), owner);
+    // The heavy slot is the local player's, so the weapon is theirs whether or not a native use
+    // has given it a user. Another character using it is not the local player's to drive.
+    let owned =
+        weapon.m_User[0].is_null() || std::ptr::eq(weapon.m_User[0].cast::<Character>(), owner);
     if !owned || weapon.m_State != WeaponState::E_WS_MOUNTED {
         return None;
     }
-    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
-    let world = Mat4::from(first.m_WorldMatrixT1);
-    let pivot = world.w_axis.truncate();
-    let barrel = (-world.z_axis.truncate()).try_normalize()?;
+    let (pivot, barrel) = unsafe { pivot_and_barrel(weapon) }?;
     let handles = Hand::BOTH.map(|hand| unsafe { handle(weapon, hand) });
-    pivot.is_finite().then_some(MountedGun {
+    Some(MountedGun {
         address: weapon as *const WeaponBase as usize,
         pivot,
         barrel,
@@ -164,9 +171,27 @@ pub unsafe fn read(owner: &Character) -> Option<MountedGun> {
     })
 }
 
+/// The first gun's origin and barrel direction in the world, a unit vector, while they are
+/// finite.
+///
+/// # Safety
+///
+/// The weapon is live on the game thread.
+pub(super) unsafe fn pivot_and_barrel(weapon: &WeaponBase) -> Option<(Vec3, Vec3)> {
+    let first = unsafe { gun::guns(weapon) }.next().flatten()?;
+    let world = Mat4::from(first.m_WorldMatrixT1);
+    let pivot = world.w_axis.truncate();
+    let barrel = (-world.z_axis.truncate()).try_normalize()?;
+    pivot.is_finite().then_some((pivot, barrel))
+}
+
 /// The gun's handle for `hand` in the world, where the weapon's grip table places one for the
 /// mounted state.
-unsafe fn handle(weapon: &WeaponBase, hand: Hand) -> Option<Vec3> {
+///
+/// # Safety
+///
+/// The weapon is live on the game thread.
+pub(super) unsafe fn handle(weapon: &WeaponBase, hand: Hand) -> Option<Vec3> {
     let grip_hand = match hand {
         Hand::Left => WeaponGripHand::E_WEAPON_GRIP_HAND_LEFT,
         Hand::Right => WeaponGripHand::E_WEAPON_GRIP_HAND_RIGHT,

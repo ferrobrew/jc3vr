@@ -1,9 +1,11 @@
-//! The weapon update hooks the physically gripped mounted weapons use.
+//! The weapon update hooks and the native start-using guard the physically gripped mounted weapons
+//! use.
 
 use std::ffi::c_void;
 
 use detours_macro::detour;
 use jc3gi::{
+    character::character::Character,
     equipment::weapon::{ProjectileFireDirectionMode, WeaponBase, WeaponInputs, WeaponState},
     game::GameObjectUpdateContext,
     types::math::Vector3,
@@ -20,6 +22,7 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&WEAPON_PRE_SIM_BINDER)
         .with_static_binder(&WEAPON_POST_SIM_BINDER)
+        .with_static_binder(&WEAPON_START_USING_DEFERRED_BINDER)
 }
 
 #[detour(address = WeaponBase::UpdatePreSim_ADDRESS)]
@@ -42,6 +45,19 @@ fn weapon_pre_sim(object: *mut c_void, context: *mut GameObjectUpdateContext) {
     if result.is_none() {
         WEAPON_PRE_SIM.get().unwrap().call(object, context);
     }
+}
+
+#[detour(address = WeaponBase::StartUsingDeferred_ADDRESS)]
+fn weapon_start_using_deferred(weapon: *mut WeaponBase, character: *mut Character) {
+    let suppressed = unsafe { weapon.as_ref() }.is_some_and(mounted::suppress_start_using);
+    if suppressed {
+        tracing::debug!(target: "controllers", "mounted gun: the native start-using was refused");
+        return;
+    }
+    WEAPON_START_USING_DEFERRED
+        .get()
+        .unwrap()
+        .call(weapon, character);
 }
 
 #[detour(address = WeaponBase::UpdatePostSim_ADDRESS)]

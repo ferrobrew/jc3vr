@@ -1,10 +1,11 @@
 //! The runtime behind grip-driven mounted weapons: observe mounted weapons, retain the ones the
-//! physical hands grip, give them a temporary shooter, and tear them off on a sustained pull.
+//! physical hands grip by their body, holder, or handle, give them a temporary shooter, and tear
+//! them off on a sustained pull.
 
-use std::{ffi::c_void, time::Instant};
+use std::{ffi::c_void, num::NonZeroUsize, time::Instant};
 
 use jc3gi::{
-    character::character::Character,
+    character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
 };
 use parking_lot::Mutex;
@@ -12,16 +13,25 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
+        cockpit::CockpitTransform,
         frame::Hand,
+        hands,
         loadout::{Delivery, TakeSource},
-        physical_hands, scheme,
-        vehicles::mounted::{
-            control::{Identity, Input, Tear},
-            native::{self, Motor, Prompt},
+        physical_hands::{self, doors::engine::vehicle_of as resolve_vehicle},
+        scheme,
+        vehicles::{
+            mounted::{
+                Held, Mount,
+                control::{Identity, Input, Tear},
+                handle, mount_matches,
+                native::{self, Motor, Prompt},
+                pivot_and_barrel,
+            },
+            summary as vehicles_summary,
         },
         weapons::{
             FinishInputs,
-            engine::{character_object, object_of},
+            engine::{character_object, object_of, weapon_at},
             hold::{armed, pickup, refs::Weak},
         },
     },
@@ -74,6 +84,23 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
         unsafe { release_all(previous) };
         return;
     };
+    // The native mounted state's handles are the only grip on a gun the player entered by the use
+    // prompt. Keep the hands that held them when the runtime stops that use, so the gun does not
+    // fall out of the hands on the same tick.
+    let native_holds = if unsafe { local.IsInMountedGunState() } {
+        vehicles_summary().mounted_holds
+    } else {
+        [false; 2]
+    };
+    let active = hands::active_hands_raw();
+    let xf = active
+        .as_ref()
+        .map(|active| CockpitTransform::current(active.head.position, active.world_scale));
+    let resolve = |object: usize| unsafe {
+        NonZeroUsize::new(object)
+            .and_then(|object| resolve_vehicle(object))
+            .map(NonZeroUsize::get)
+    };
     let seen: Vec<(usize, usize, Weak)> = SEEN
         .lock()
         .iter()
@@ -86,48 +113,118 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
         else {
             continue;
         };
-        let weapon_ptr = crate::controllers::weapons::engine::weapon_at(alive.object());
+        let weapon_ptr = weapon_at(alive.object());
         let weapon = unsafe { &mut *weapon_ptr };
-        if weapon.m_State != WeaponState::E_WS_MOUNTED
-            || !weapon.m_User[0].is_null()
-            || native::lifecycle_pending(weapon)
-        {
+        if weapon.m_State != WeaponState::E_WS_MOUNTED || native::lifecycle_pending(weapon) {
             continue;
         }
-        let matches = held.map(|held| held.filter(|held| held.object.get() == object));
+        let Some((pivot, _)) = (unsafe { pivot_and_barrel(weapon) }) else {
+            continue;
+        };
+        let holder_ref = if weapon.m_Holder.pn.is_null() {
+            None
+        } else {
+            unsafe { Weak::of(&weapon.m_Holder) }.lock()
+        };
+        let holder = holder_ref.as_ref().map(|alive| alive.object() as usize);
+        let mount = Mount {
+            object,
+            holder,
+            centre: pivot,
+        };
+        let physical = held.map(|held| {
+            held.filter(|held| {
+                mount_matches(
+                    mount,
+                    Held {
+                        object: held.object.get(),
+                        centre: held.report.map(|report| report.centre),
+                    },
+                    resolve,
+                )
+            })
+        });
+        let native = unsafe { native_mounted(local, weapon) };
+        let native_hands = if native { native_holds } else { [false; 2] };
+        let physical_body = physical.iter().flatten().next().copied();
+        let identity = match physical_body {
+            Some(body) => Identity {
+                weapon: weapon_ptr as usize,
+                control,
+                object: body.object.get(),
+                body: body.body,
+            },
+            None => Identity {
+                weapon: weapon_ptr as usize,
+                control,
+                object,
+                body: NATIVE_HANDLE_BODY,
+            },
+        };
+        let existing = previous.iter().position(|record| {
+            record.identity.weapon == weapon_ptr as usize && record.identity.control == control
+        });
+        let previous_takeover = existing.and_then(|index| previous[index].takeover);
+        let takeover_hands = Hand::BOTH.map(|hand| {
+            let i = hand.index();
+            (native_hands[i] || previous_takeover.is_some_and(|takeover| takeover.hands[i]))
+                && physical[i].is_none()
+        });
         let hands = Hand::BOTH.map(|hand| {
             let i = hand.index();
-            matches[i].is_some() && inputs.grips[i].held() && !inputs.unavailable[i]
+            (physical[i].is_some() || takeover_hands[i])
+                && inputs.grips[i].held()
+                && !inputs.unavailable[i]
         });
         if !hands.contains(&true) {
             continue;
         }
-        let Some(body) = matches.into_iter().flatten().next() else {
-            continue;
-        };
-        let identity = Identity {
-            weapon: weapon_ptr as usize,
-            control,
-            object: body.object.get(),
-            body: body.body,
-        };
-        let existing = previous
-            .iter()
-            .position(|record| record.identity == identity);
+        // A hand that lets go ends its native handle hold: taking the grip again needs a new
+        // handle or holder, as it would on the native handles.
+        let takeover_hands = Hand::BOTH.map(|hand| {
+            let i = hand.index();
+            takeover_hands[i] && hands[i]
+        });
+        let user = weapon.m_User[0];
+        if !user.is_null() {
+            if !std::ptr::eq(user.cast::<Character>(), local as *const Character) {
+                continue;
+            }
+            unsafe { weapon.StopUsing() };
+            if !weapon.m_User[0].is_null() || weapon.m_State != WeaponState::E_WS_MOUNTED {
+                continue;
+            }
+            tracing::info!(
+                target: "controllers",
+                "mounted gun: stopped the native use and took the gun"
+            );
+        }
+        let created = existing.is_none();
         let mut record = if let Some(index) = existing {
-            previous.remove(index)
+            let mut record = previous.remove(index);
+            if record.identity != identity {
+                record.tear = [Tear::default(); 2];
+            }
+            record
         } else {
             let shooter = unsafe { Weak::of(&local.m_WeakThis) };
             Controlled {
                 identity,
+                weapon_object: object,
                 weak,
                 shooter,
                 input: None,
                 motors: unsafe { native::motors(weapon) },
                 prompt: unsafe { native::prompt(weapon) },
                 tear: [Tear::default(); 2],
+                takeover: None,
             }
         };
+        record.identity = identity;
+        let takeover = takeover_hands.contains(&true);
+        record.takeover = takeover.then_some(Takeover {
+            hands: takeover_hands,
+        });
         record.input = Some(Input {
             identity,
             hands,
@@ -137,8 +234,18 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
         for motor in &record.motors {
             unsafe { motor.disable() };
         }
+        if record.prompt.is_none() {
+            record.prompt = unsafe { native::prompt(weapon) };
+        }
         if let Some(prompt) = &mut record.prompt {
             unsafe { prompt.suppress() };
+        }
+        if created {
+            tracing::info!(
+                target: "controllers",
+                hands = ?hands,
+                "mounted gun: the hands took the gun"
+            );
         }
         let tear = Hand::BOTH.into_iter().any(|hand| {
             let i = hand.index();
@@ -146,24 +253,43 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
                 record.tear[i] = Tear::default();
                 return false;
             }
-            record.tear[i].step(inputs.real_dt, matches[i].and_then(|held| held.report))
+            if let Some(report) = physical[i].and_then(|held| held.report) {
+                return record.tear[i].step(inputs.real_dt, Some(report));
+            }
+            if takeover_hands[i] {
+                let handle_point = unsafe { handle(weapon, hand) };
+                let hand_world = active.as_ref().zip(xf.as_ref()).and_then(|(active, xf)| {
+                    active.hands[i].map(|hand| xf.point_to_world(hand.grip.position))
+                });
+                let lag = hand_world
+                    .zip(handle_point)
+                    .map(|(hand, handle)| hand.distance(handle));
+                let Some(lag) = lag else {
+                    record.tear[i] = Tear::default();
+                    return false;
+                };
+                return record.tear[i].step_pull(inputs.real_dt, lag, 1.0);
+            }
+            record.tear[i] = Tear::default();
+            false
         });
         if tear && weapon.m_MountedCanBeDetached {
             let hand = Hand::BOTH
                 .into_iter()
                 .find(|hand| hands[hand.index()])
                 .unwrap();
-            match unsafe { pickup::preflight(&*local, weapon, hand, false) } {
+            match unsafe { pickup::preflight(&*local, &*weapon, hand, false) } {
                 Ok(admitted) => {
                     unsafe { record.restore() };
                     unsafe { armed::release_fire(weapon) };
                     unsafe { weapon.DetachMountedGun() };
+                    tracing::info!(target: "controllers", "mounted gun: the pull tore the gun off");
                     if weapon.m_State == WeaponState::E_WS_DROPPED {
                         let result = unsafe {
                             pickup::deliver(
-                                local,
+                                &mut *local,
                                 hand,
-                                weapon,
+                                &mut *weapon,
                                 admitted,
                                 pickup::TakeOptions {
                                     slide_s: 0.15,
@@ -177,6 +303,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
                         }
                     }
                     record.input = None;
+                    record.takeover = None;
                     next.push(record);
                     continue;
                 }
@@ -195,7 +322,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
         let alive = record
             .weak
             .lock()
-            .filter(|alive| alive.object() as usize == record.identity.object);
+            .filter(|alive| alive.object() as usize == record.weapon_object);
         if record.input.take().is_some() {
             unsafe { record.restore() };
             if alive.is_some() {
@@ -204,6 +331,11 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
                     unsafe { armed::release_fire(weapon) };
                 }
             }
+            tracing::info!(
+                target: "controllers",
+                alive = alive.is_some(),
+                "mounted gun: the runtime released the gun"
+            );
         }
         if alive.is_some() {
             let weapon = unsafe { &*(record.identity.weapon as *const WeaponBase) };
@@ -242,6 +374,17 @@ pub(crate) fn shooter(weapon: &WeaponBase) -> Option<(Weak, bool)> {
         .iter()
         .find(|record| record.identity.weapon == address && record.identity.control == control)
         .map(|record| (record.shooter.clone(), record.input.is_some()))
+}
+
+/// Whether the runtime holds `weapon`, so the game's native start-using must not run.
+pub(crate) fn suppress_start_using(weapon: &WeaponBase) -> bool {
+    let address = weapon as *const WeaponBase as usize;
+    let control = weapon.m_WeakThis.pn as usize;
+    CONTROLLED.lock().iter().any(|record| {
+        record.identity.weapon == address
+            && record.identity.control == control
+            && record.input.is_some()
+    })
 }
 
 /// Run `run` with the local player as `weapon`'s temporary user, then put the weapon's user fields
@@ -284,6 +427,24 @@ pub(crate) unsafe fn with_shooter<R>(
     Some(result)
 }
 
+/// Whether `weapon` is the gun `local` mans in the native mounted state.
+///
+/// # Safety
+/// The character and weapon are live on the game thread.
+unsafe fn native_mounted(local: &Character, weapon: &WeaponBase) -> bool {
+    if !unsafe { local.IsInMountedGunState() } {
+        return false;
+    }
+    unsafe {
+        local
+            .m_Inventory
+            .m_Weapons
+            .get(WeaponSlot::E_SLOT_HEAVY as usize)
+            .and_then(|slot| slot.px.as_ref())
+            .is_some_and(|held| std::ptr::eq(held, weapon))
+    }
+}
+
 /// Restore every record's mount and prompt, release its fire, and keep only the ones whose
 /// deferred recoil or awareness is still pending, so their next pre-simulation update still has a
 /// shooter.
@@ -292,10 +453,11 @@ unsafe fn release_all(records: Vec<Controlled>) {
     for mut record in records {
         unsafe { record.restore() };
         record.input = None;
+        record.takeover = None;
         let alive = record
             .weak
             .lock()
-            .filter(|alive| alive.object() as usize == record.identity.object);
+            .filter(|alive| alive.object() as usize == record.weapon_object);
         if alive.is_none() {
             continue;
         }
@@ -313,6 +475,9 @@ unsafe fn release_all(records: Vec<Controlled>) {
 /// The most mounted weapons the late weapon update retains between input ticks.
 const MAX_SEEN: usize = 256;
 
+/// The body of a hand that holds a handle the native mounted state placed, not a physical body.
+const NATIVE_HANDLE_BODY: u32 = u32::MAX;
+
 static SEEN: Mutex<Vec<Seen>> = Mutex::new(Vec::new());
 static CONTROLLED: Mutex<Vec<Controlled>> = Mutex::new(Vec::new());
 
@@ -324,12 +489,23 @@ struct Seen {
 
 struct Controlled {
     identity: Identity,
+    /// The weapon's own game object, which its weak reference names. A held body of its holder
+    /// must not be mistaken for a dead weapon.
+    weapon_object: usize,
     weak: Weak,
     shooter: Weak,
     input: Option<Input>,
     motors: Vec<Motor>,
     prompt: Option<Prompt>,
     tear: [Tear; 2],
+    /// The hands the native mounted state gave the gun when the runtime stopped that use.
+    takeover: Option<Takeover>,
+}
+
+/// The hands the native mounted state gave the gun when the runtime stopped that use.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct Takeover {
+    hands: [bool; 2],
 }
 
 impl Controlled {
