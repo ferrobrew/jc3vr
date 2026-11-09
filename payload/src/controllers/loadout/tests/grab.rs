@@ -3,7 +3,6 @@
 use pretty_assertions::assert_eq;
 
 use super::fixtures::{a_launcher, a_pistol, a_rifle, docked, table, take, weapon};
-
 use crate::controllers::{
     frame::Hand,
     loadout::{
@@ -157,5 +156,9 @@ fn a_release_over_a_taken_back_socket_swaps_and_a_taken_hip_does_not() {
     let mut t = table();
     take(&mut t, Hand::Right, 1, weapon(a_launcher()));
     docked(&mut t, Socket::Shoulder(Hand::Left), 2, a_rifle());
-    assert!(swaps(&t.snapshot(), Hand::Right, Socket::Shoulder(Hand::Left)));
+    assert!(swaps(
+        &t.snapshot(),
+        Hand::Right,
+        Socket::Shoulder(Hand::Left)
+    ));
 }

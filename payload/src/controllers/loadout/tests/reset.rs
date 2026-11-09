@@ -181,7 +181,10 @@ fn a_checkpoint_restore_returns_the_table_to_its_snapshot() {
         place(&t, rifle),
         Some(Place::Socket(Socket::Shoulder(Hand::Right)))
     );
-    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
+    assert_eq!(
+        place(&t, extra),
+        Some(Place::Socket(Socket::Shoulder(Hand::Left)))
+    );
     // The pistol's object was gone; the restored slot's new pistol is it again.
     assert_eq!(
         place(&t, pistol),
@@ -201,7 +204,10 @@ fn a_restored_weapon_whose_object_is_gone_waits_for_its_spawn() {
         binding(&t, extra),
         Some(Binding::Awaiting(Awaiting::Respawn))
     );
-    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
+    assert_eq!(
+        place(&t, extra),
+        Some(Place::Socket(Socket::Shoulder(Hand::Left)))
+    );
     t.spawned(extra, object(20)).unwrap();
     assert_eq!(binding(&t, extra), Some(Binding::Live(object(20))));
 }
@@ -223,7 +229,10 @@ fn a_weapon_the_mod_respawns_binds_the_restored_item_waiting_for_it() {
     assert_eq!(out.len(), 1);
     assert_eq!(out[0].item, extra, "the waiting item keeps its identity");
     assert_eq!(binding(&t, extra), Some(Binding::Live(object(21))));
-    assert_eq!(place(&t, extra), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
+    assert_eq!(
+        place(&t, extra),
+        Some(Place::Socket(Socket::Shoulder(Hand::Left)))
+    );
     assert_eq!(t.items().count(), before, "nothing is duplicated");
 }
 

@@ -6,7 +6,6 @@ use jc3gi::character::inventory::WeaponSlot;
 use pretty_assertions::assert_eq;
 
 use super::fixtures::{a_pistol, check_invariants, object, take, weapon};
-
 use crate::controllers::{
     frame::Hand,
     loadout::{
@@ -501,9 +500,7 @@ fn check_safe_items(table: &Loadout) {
         }));
         assert_eq!(table.snapshot().projection.slot_of(item.id), None);
         match safe.place {
-            Place::Hand(_)
-            | Place::Socket(Socket::Hip(_))
-            | Place::World(Departure::Dropped) => {}
+            Place::Hand(_) | Place::Socket(Socket::Hip(_)) | Place::World(Departure::Dropped) => {}
             _ => panic!("safe item outside a hand, a holster, or an inert drop"),
         }
     }

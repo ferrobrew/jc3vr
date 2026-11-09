@@ -212,7 +212,10 @@ fn an_occupied_socket_the_body_no_longer_has_keeps_its_weapon_until_drawn() {
     let mut t = table();
     let sniper = docked(&mut t, Socket::Shoulder(Hand::Left), 1, a_sniper());
     t.set_body(BodyLayout::new(Hand::Right, 1, 2));
-    assert_eq!(place(&t, sniper), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
+    assert_eq!(
+        place(&t, sniper),
+        Some(Place::Socket(Socket::Shoulder(Hand::Left)))
+    );
     t.draw(Socket::Shoulder(Hand::Left), Hand::Left).unwrap();
     take(&mut t, Hand::Right, 2, weapon(a_rifle()));
     assert_eq!(
@@ -388,12 +391,9 @@ fn a_give_goes_to_a_free_hand_then_a_fitting_socket(full: &[Hand]) -> Place {
 #[test]
 fn a_give_with_the_hands_and_the_back_full_comes_to_the_player_s_feet() {
     let mut t = table();
-    for (n, socket) in [
-        Socket::Shoulder(Hand::Right),
-        Socket::Shoulder(Hand::Left),
-    ]
-    .into_iter()
-    .enumerate()
+    for (n, socket) in [Socket::Shoulder(Hand::Right), Socket::Shoulder(Hand::Left)]
+        .into_iter()
+        .enumerate()
     {
         docked(&mut t, socket, n + 1, a_rifle());
     }
@@ -538,7 +538,10 @@ fn a_restored_weapon_docks_where_it_was_recorded_or_where_it_fits() {
         transitions[0].item
     };
     let sniper = restore(&mut t, 1, a_sniper(), Socket::Shoulder(Hand::Left));
-    assert_eq!(place(&t, sniper), Some(Place::Socket(Socket::Shoulder(Hand::Left))));
+    assert_eq!(
+        place(&t, sniper),
+        Some(Place::Socket(Socket::Shoulder(Hand::Left)))
+    );
     // Its socket is taken now, so the next goes where a weapon of its kind goes.
     let rifle = restore(&mut t, 2, a_rifle(), Socket::Shoulder(Hand::Left));
     assert_eq!(

@@ -116,11 +116,13 @@ pub(super) fn step_stick(
         .then(|| hold.orientation.zip(orientations[hand.index()]))
         .flatten()
         .map(|(grab, now)| {
-            let axis = placement
+            placement
                 .cockpit
                 .filter(|fit| fit.asset.stick_kind == kind)
-                .map_or(Vec3::Y, |fit| fit.direction(Vec3::Y));
-            twist_rudder_about_axis(flight, grab, now, axis)
+                .map_or_else(
+                    || twist_rudder(flight, grab, now),
+                    |fit| twist_rudder_about_axis(flight, grab, now, fit.direction(Vec3::Y)),
+                )
         });
     StickStep {
         value: Some(stick_value(&spec, state.stick)),
