@@ -38,6 +38,10 @@ use crate::controllers::{
     vehicles::{
         driving_view::{self, Correction, Entry, Target},
         entry::VehicleEntry,
+        physical::{
+            ControlKind,
+            native::{self, NativeStick},
+        },
         tuning::PhysicalControlsTuning,
         wheel::{self, BarsFrame, PartWheel, WheelFrame, WheelPartView, WheelSource},
         wheel_render::RenderWheel,
@@ -61,6 +65,7 @@ pub struct Fit {
     /// measured.
     pub view: Option<Target>,
     pub readout: Option<FitReadout>,
+    pub native_stick: Option<NativeStick>,
 }
 
 /// What the fit reads besides the vehicle.
@@ -150,6 +155,7 @@ pub(super) fn fit(
         steering_turn: None,
         view: None,
         readout: None,
+        native_stick: None,
     };
     if !inputs.seat.is_some_and(|s| s.driver) {
         *latch = None;
@@ -269,7 +275,46 @@ unsafe fn fit_vehicle(
         });
     }
 
+    let native_stick = parts
+        .stick
+        .as_ref()
+        .filter(|p| !p.broken_off && p.bounds.is_some())
+        .and_then(|p| {
+            let (kind, pivot, grip) = native::asset(&p.name)?;
+            let expected = match inputs.seat?.class {
+                VehicleClass::Helicopter => ControlKind::Cyclic,
+                VehicleClass::Plane => ControlKind::FlightStick,
+                _ => return None,
+            };
+            if kind != expected || !xf.is_usable() {
+                return None;
+            }
+            let cockpit_to_world = Mat4::from_scale_rotation_translation(
+                Vec3::splat(xf.scale()),
+                xf.body,
+                xf.point_to_world(Vec3::ZERO),
+            );
+            let part_to_cockpit = cockpit_to_world.inverse() * world * p.root;
+            if !part_to_cockpit.is_finite() || part_to_cockpit.determinant().abs() < 1e-6 {
+                return None;
+            }
+            Some(NativeStick {
+                kind,
+                target: RenderWheel {
+                    vehicle: vehicle as *const Vehicle as usize,
+                    part_index: p.index,
+                    properties: p.properties,
+                    hub: pivot,
+                    axis: Vec3::Y,
+                },
+                part_to_cockpit,
+                pivot,
+                grip,
+            })
+        });
+
     Fit {
+        native_stick,
         wheel,
         bars: fork_bars.unwrap_or(specs.bars),
         fork: parts.fork.is_some(),
@@ -337,6 +382,7 @@ struct PartRead {
 struct Parts {
     wheel: Option<PartRead>,
     fork: Option<PartRead>,
+    stick: Option<PartRead>,
 }
 
 /// The vehicle's steering wheel and steering fork parts, the first of each among its valid parts.
@@ -365,15 +411,14 @@ unsafe fn find_parts(pfx: &PfxBreakable) -> Parts {
             &mut parts.wheel
         } else if wheel::is_fork_part(name, behavior) {
             &mut parts.fork
+        } else if native::asset(name).is_some() {
+            &mut parts.stick
         } else {
             continue;
         };
         if slot.is_none() {
             *slot =
                 Some(unsafe { read_part(instance, index, properties as *const _ as usize, name) });
-        }
-        if parts.wheel.is_some() && parts.fork.is_some() {
-            break;
         }
     }
     parts

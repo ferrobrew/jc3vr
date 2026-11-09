@@ -96,6 +96,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let placement = Placement {
         wheel: fit.wheel,
         bars: fit.bars,
+        native_stick: fit.native_stick,
         ..Placement::new(physical_config, config.acting_hand())
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
@@ -111,6 +112,13 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
 
     let mut handle_events = Vec::new();
     let mut state = STATE.lock();
+    let previous_native = state.placement.and_then(|placement| placement.native_stick);
+    physical::refresh_native(
+        &mut state.controls,
+        previous_native,
+        placement.native_stick,
+        &mut events,
+    );
     if !handles_on {
         parachute::release_all(&mut state.handles, &mut handle_events);
     }

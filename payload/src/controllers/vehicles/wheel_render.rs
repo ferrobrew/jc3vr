@@ -52,9 +52,25 @@ pub struct RenderWheel {
 /// Turn `target`'s wheel to `angle` radians (clockwise as the driver sees it) from the next render
 /// update on, or stop turning any wheel with `None`.
 pub fn publish(target: Option<(RenderWheel, f32)>) {
+    publish_controls(target, None);
+}
+
+pub fn publish_controls(wheel: Option<(RenderWheel, f32)>, native: Option<(RenderWheel, Mat4)>) {
+    let target = native
+        .or_else(|| {
+            wheel
+                .filter(|(_, angle)| angle.is_finite())
+                .map(|(target, angle)| {
+                    (
+                        target,
+                        wheel::turn_about_hub(target.hub, target.axis, angle),
+                    )
+                })
+        })
+        .filter(|(_, motion)| motion.is_finite());
     let mut slot = SLOT.lock();
-    *slot = target.filter(|(_, angle)| angle.is_finite());
-    VEHICLE.store(slot.map_or(0, |(w, _)| w.vehicle), Ordering::Release);
+    *slot = target;
+    VEHICLE.store(slot.map_or(0, |(part, _)| part.vehicle), Ordering::Release);
 }
 
 /// How many render updates drew the wheel turned, for the debug UI.
@@ -66,7 +82,7 @@ pub fn turned() -> u64 {
 static VEHICLE: AtomicUsize = AtomicUsize::new(0);
 
 /// The published wheel and its angle. Only [`publish`] and the detour take it, each for a copy.
-static SLOT: Mutex<Option<(RenderWheel, f32)>> = Mutex::new(None);
+static SLOT: Mutex<Option<(RenderWheel, Mat4)>> = Mutex::new(None);
 
 static TURNED: AtomicU64 = AtomicU64::new(0);
 
@@ -82,7 +98,7 @@ fn update_render_model_matrices(this: *mut Vehicle, transform: *const Matrix4, d
     if address == 0 || VEHICLE.load(Ordering::Acquire) != address {
         return original();
     }
-    let Some((target, angle)) = *SLOT.lock() else {
+    let Some((target, motion)) = *SLOT.lock() else {
         return original();
     };
     if target.vehicle != address {
@@ -90,7 +106,7 @@ fn update_render_model_matrices(this: *mut Vehicle, transform: *const Matrix4, d
     }
     // SAFETY: the render update owns the vehicle for the call, and the part array lives as long as
     // the vehicle's physics body.
-    let restore = unsafe { turn(this, &target, angle) };
+    let restore = unsafe { turn(this, &target, motion) };
     original();
     if let Some((part, saved)) = restore {
         // SAFETY: as above; the part is the one just turned.
@@ -108,7 +124,7 @@ fn update_render_model_matrices(this: *mut Vehicle, transform: *const Matrix4, d
 unsafe fn turn(
     vehicle: *mut Vehicle,
     target: &RenderWheel,
-    angle: f32,
+    motion: Mat4,
 ) -> Option<(*mut PartInstance, Matrix4)> {
     let pfx = unsafe { (*vehicle).m_PfxVehicle.as_mut()? };
     let part = unsafe { pfx.GetPartByIndex(target.part_index) };
@@ -121,7 +137,7 @@ unsafe fn turn(
         return None;
     }
     let saved = instance.m_RootSpaceTransform;
-    let turned = Mat4::from(saved) * wheel::turn_about_hub(target.hub, target.axis, angle);
+    let turned = Mat4::from(saved) * motion;
     if !turned.is_finite() {
         return None;
     }

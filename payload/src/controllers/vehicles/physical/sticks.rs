@@ -113,7 +113,7 @@ pub(super) fn step_stick(
             ..StickStep::default()
         };
     };
-    let top = placement.mirror(spec.top_m);
+    let top = placement.stick_top(kind, &spec);
     state.stick = stick_deflection(&spec, top, point - hold.offset);
     let share = state.stick.length() / spec.max_deflection_m.max(1e-3);
     let flight = &placement.config.flight;

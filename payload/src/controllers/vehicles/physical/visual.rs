@@ -88,6 +88,12 @@ struct Geometry {
 }
 
 fn geometry(placement: &Placement, state: &ControlState, kind: ControlKind) -> Option<Geometry> {
+    if placement
+        .native_stick
+        .is_some_and(|native| native.kind == kind)
+    {
+        return None;
+    }
     let handle = placement.grab_point(state, kind, Hand::Right, Vec3::ZERO)?;
     let control = if let Some(spec) = placement.stick(kind) {
         Geometry {

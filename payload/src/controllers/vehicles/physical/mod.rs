@@ -45,6 +45,7 @@ pub mod cues;
 mod handlebars;
 mod held_wheel;
 pub mod levers;
+pub mod native;
 pub mod sticks;
 #[cfg(test)]
 mod tests;
@@ -289,6 +290,7 @@ pub struct Placement {
     pub dominant: Hand,
     pub wheel: WheelFrame,
     pub bars: BarsFrame,
+    pub native_stick: Option<native::NativeStick>,
 }
 
 impl Placement {
@@ -299,6 +301,7 @@ impl Placement {
             bars: BarsFrame::from_spec(&config.handlebars),
             config,
             dominant,
+            native_stick: None,
         }
     }
 
@@ -315,6 +318,24 @@ impl Placement {
             ControlKind::FlightStick => Some(self.config.flight_stick),
             _ => None,
         }
+    }
+
+    pub(super) fn stick_top(&self, kind: ControlKind, spec: &StickSpec) -> Vec3 {
+        self.native_stick
+            .filter(|native| native.kind == kind)
+            .map_or_else(|| self.mirror(spec.top_m), |native| native.top())
+    }
+
+    pub(super) fn stick_handle(&self, kind: ControlKind, deflection: Vec2) -> Option<Vec3> {
+        let spec = self.stick(kind)?;
+        Some(
+            self.native_stick
+                .filter(|native| native.kind == kind)
+                .map_or_else(
+                    || self.stick_top(kind, &spec) + deflection3(deflection),
+                    |native| native.handle(deflection),
+                ),
+        )
     }
 
     pub(super) fn lever(&self, kind: ControlKind) -> Option<(usize, LeverSpec)> {
@@ -352,8 +373,8 @@ impl Placement {
             }
             ControlKind::Handlebars => Some(bar_grab_point(&self.bars, state.bars, hand, point)),
             kind => {
-                if let Some(spec) = self.stick(kind) {
-                    return Some(self.mirror(spec.top_m) + deflection3(state.stick));
+                if let Some(handle) = self.stick_handle(kind, state.stick) {
+                    return Some(handle);
                 }
                 let (index, spec) = self.lever(kind)?;
                 Some(lever_handle(
@@ -548,6 +569,35 @@ pub fn step(
     out
 }
 
+pub(super) fn refresh_native(
+    state: &mut ControlState,
+    previous: Option<native::NativeStick>,
+    current: Option<native::NativeStick>,
+    events: &mut Vec<ControlEvent>,
+) {
+    let identity = |native: native::NativeStick| {
+        (
+            native.kind,
+            native.target.vehicle,
+            native.target.part_index,
+            native.target.properties,
+        )
+    };
+    if previous.map(identity) == current.map(identity) {
+        return;
+    }
+    for hand in Hand::BOTH {
+        if state.holds[hand.index()].is_some_and(|hold| {
+            previous.is_some_and(|native| native.kind == hold.kind)
+                || current.is_some_and(|native| native.kind == hold.kind)
+        }) {
+            release(state, hand, Release::Gone, events);
+        }
+    }
+    state.stick = Vec2::ZERO;
+    state.stick_cues = TravelCues::new();
+}
+
 /// Let go of every control, as when the seat or the scheme changes.
 pub fn release_all(state: &mut ControlState, events: &mut Vec<ControlEvent>) {
     for hand in Hand::BOTH {
@@ -586,9 +636,11 @@ pub fn anchor_point(
         }
         kind => {
             if let Some(spec) = placement.stick(kind) {
-                let top = placement.mirror(spec.top_m);
+                let top = placement.stick_top(kind, &spec);
                 let deflection = stick_deflection(&spec, top, point - hold.offset);
-                return Some(top + deflection3(deflection) + hold.offset);
+                return placement
+                    .stick_handle(kind, deflection)
+                    .map(|handle| handle + hold.offset);
             }
             let (_, spec) = placement.lever(kind)?;
             let rest = placement.mirror(spec.rest_m);

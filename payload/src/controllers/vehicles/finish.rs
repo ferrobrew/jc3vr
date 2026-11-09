@@ -112,7 +112,11 @@ pub(crate) fn finish_tick(
         let angle = rendered_angle(&state.controls, &placement.config, state.steering_turn);
         (target, angle)
     });
-    wheel_render::publish(rendered);
+    let native = placement
+        .native_stick
+        .filter(|native| offered.contains(&native.kind))
+        .map(|native| (native.target, native.motion(state.controls.stick)));
+    wheel_render::publish_controls(rendered, native);
     state.status.rendered_angle = rendered.map(|(_, angle)| angle);
     let handles_config = state.handles_config;
     let pulls = state.handles_on.then(|| {
