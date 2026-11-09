@@ -45,7 +45,6 @@ pub enum Action {
     ClearHeat,
     Spawn,
     ToggleRecording,
-    ToggleTrackingRecording,
     ToggleReplay,
     ToggleScenario,
     ToggleColliderView,
@@ -68,7 +67,6 @@ impl Action {
             Action::ClearHeat => "Clear heat",
             Action::Spawn => "Spawn the configured tags",
             Action::ToggleRecording => "Start or stop a session recording",
-            Action::ToggleTrackingRecording => "Start or stop a tracking recording",
             Action::ToggleReplay => "Replay the last tracking recording, or stop the replay",
             Action::ToggleScenario => "Run the last scenario again, or stop it",
             Action::ToggleColliderView => "Show or hide the physics colliders",
@@ -236,7 +234,6 @@ pub fn run(action: Action) {
         Action::ClearHeat => heat::clear(),
         Action::Spawn => spawn::request(),
         Action::ToggleRecording => crate::recorder::session_recording::toggle(),
-        Action::ToggleTrackingRecording => crate::recorder::tracking::toggle(),
         Action::ToggleReplay => crate::testing::toggle_replay(),
         Action::ToggleScenario => crate::testing::toggle_scenario(),
         Action::ToggleColliderView => crate::controllers::physical_hands::collider_view::toggle(),
@@ -244,7 +241,7 @@ pub fn run(action: Action) {
 }
 
 /// The stock layout [`Keymap::new`] borrows.
-const DEFAULT_BINDINGS: [Binding; 18] = [
+const DEFAULT_BINDINGS: [Binding; 17] = [
     Binding {
         action: Action::ToggleSlowMotion,
         chord: Chord::plain(VK_NUMPAD1.0),
@@ -300,10 +297,6 @@ const DEFAULT_BINDINGS: [Binding; 18] = [
     Binding {
         action: Action::ToggleRecording,
         chord: Chord::plain(VK_DIVIDE.0),
-    },
-    Binding {
-        action: Action::ToggleTrackingRecording,
-        chord: Chord::ctrl(VK_DIVIDE.0),
     },
     Binding {
         action: Action::ToggleReplay,
@@ -387,31 +380,31 @@ mod tests {
         let saved = |bindings: Vec<Binding>| Keymap {
             bindings: Cow::Owned(bindings),
         };
-        // A map saved before the tracking recorder's binding existed.
+        // A map saved before the session recording's binding existed.
         let old = saved(
             DEFAULT_BINDINGS
                 .iter()
                 .copied()
-                .filter(|b| b.action != Action::ToggleTrackingRecording)
+                .filter(|b| b.action != Action::ToggleRecording)
                 .collect(),
         );
         assert_eq!(
-            old.resolve(VK_DIVIDE.0, true, false, false),
-            Some(Action::ToggleTrackingRecording)
+            old.resolve(VK_DIVIDE.0, false, false, false),
+            Some(Action::ToggleRecording)
         );
         // The same chord rebound to something else keeps its new action.
         let rebound = saved(vec![Binding {
             action: Action::TakeMarker,
-            chord: Chord::ctrl(VK_DIVIDE.0),
+            chord: Chord::plain(VK_DIVIDE.0),
         }]);
         assert_eq!(
-            rebound.resolve(VK_DIVIDE.0, true, false, false),
+            rebound.resolve(VK_DIVIDE.0, false, false, false),
             Some(Action::TakeMarker)
         );
         assert!(
             rebound
                 .effective()
-                .all(|b| b.action != Action::ToggleTrackingRecording)
+                .all(|b| b.action != Action::ToggleRecording)
         );
     }
 

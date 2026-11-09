@@ -109,14 +109,10 @@ pub(crate) fn replay_status(ui: &mut egui::Ui) {
 
 fn recording_ui(ui: &mut egui::Ui) {
     let status = tracking::status();
-    ui.horizontal(|ui| {
-        if status.recording {
-            if ui.button("Stop recording").clicked() {
-                tracking::request_stop();
-            }
-        } else if ui.button("Start recording").clicked() {
-            tracking::request_start();
-        }
+    ui.label(if status.recording {
+        "Tracking recording: running with the session recording"
+    } else {
+        "Tracking recording: start a session recording with F1 to capture data"
     });
     let mut cfg = config::edit();
     ui.checkbox(
@@ -126,9 +122,9 @@ fn recording_ui(ui: &mut egui::Ui) {
     .on_hover_text("They triple a frame's size, and only the finger curls read them.");
     drop(cfg);
     ui.label(
-        "Records the head, both controllers, their inputs, the semantic actions, and the mod's \
-         controller, grip, and gun release events each VR frame, starting from where the player \
-         stands. Ctrl+Numpad/ toggles it.",
+        "A session recording (F1) records the head, both controllers, their inputs, the semantic \
+         actions, and the mod's controller, grip, and gun release events each VR frame, starting \
+         from where the player stands.",
     );
     ui.separator();
     lookback_ui(ui);

@@ -152,15 +152,6 @@ pub(crate) fn request_stop() {
     REQUEST.store(REQUEST_STOP, Ordering::Relaxed);
 }
 
-/// Ask for the recording to start when none runs, and to stop when one does. Any thread.
-pub(crate) fn toggle() {
-    if is_recording() {
-        request_stop();
-    } else {
-        request_start();
-    }
-}
-
 /// Whether a recording is running.
 pub(crate) fn is_recording() -> bool {
     RECORDING.load(Ordering::Relaxed)
