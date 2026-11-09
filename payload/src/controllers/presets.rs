@@ -42,7 +42,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.overlay.enabled = on;
     c.overlay.gun_readout = GunReadout::None;
     c.overlay.grapple_highlight = on;
-    c.overlay.grapple_beam = on;
+    c.overlay.grapple_beam = false;
     c.overlay.hide_game_reticle = on;
     c.weapons.foregrip.enabled = on;
     c.weapons.recoil.enabled = on;
@@ -98,6 +98,19 @@ mod tests {
 
     use super::*;
     use crate::{config::Config, controllers::config::SightOverride};
+
+    #[test]
+    fn controller_preset_keeps_highlights_without_the_preview_beam() {
+        let mut c = ControllersConfig::new();
+        assert!(!c.overlay.grapple_beam);
+        assert!(c.overlay.grapple_highlight);
+        c.overlay.grapple_beam = true;
+        apply_preset(&mut c, Preset::Controllers);
+        assert!(!c.overlay.grapple_beam);
+        assert!(c.overlay.grapple_highlight);
+        apply_preset(&mut c, Preset::GamepadBaseline);
+        assert!(!c.overlay.grapple_beam);
+    }
 
     #[test]
     fn presets_preserve_tuning_and_calibration() {

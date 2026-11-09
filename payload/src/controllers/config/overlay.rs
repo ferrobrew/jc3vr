@@ -61,7 +61,7 @@ impl OverlayConfig {
             enabled: true,
             gun_readout: GunReadout::None,
             grapple_highlight: true,
-            grapple_beam: true,
+            grapple_beam: false,
             hide_game_reticle: true,
             ghost_hands: false,
             markers: true,
