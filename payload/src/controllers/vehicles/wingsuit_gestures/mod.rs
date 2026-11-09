@@ -3,6 +3,11 @@
 //! The binding owner supplies input availability, transition cancellation, and transient hand
 //! claims. This module returns commands without writing game actions or claiming weapon fire.
 //!
+//! The recognizer runs while falling, under a canopy, in the suit, and on a grapple line that can
+//! yield to deployment. A fall's start is a fresh start; a fall out of the suit needs the neutral
+//! first, and a canopy the player opened needs another pose before the spread, so the arms that
+//! opened it do not reopen the suit.
+//!
 //! The arms are measured against the way the player's body faces, which a player in flight shows
 //! with the line between their hands rather than with their head: a flier looks around, down, and
 //! along the turn while the arms stay spread across the chest. The palms are measured as each
@@ -87,7 +92,7 @@ pub(crate) enum Blocked {
     Claimed(Hand, Claim),
     /// The observation carried no valid pose.
     NoPose,
-    /// The player is neither falling nor in the suit.
+    /// The player is not falling, under a canopy, or in the suit.
     Mode,
 }
 
@@ -98,6 +103,9 @@ pub(crate) enum Stage {
     /// states take the suit's opening as its falls do.
     Fall,
     Suit,
+    /// Under a canopy. The parachute's states take the suit's opening act directly, so a flight
+    /// pose deploys the suit from the canopy as it does from a fall.
+    Parachute,
     /// Anywhere the gestures do not run.
     Other,
 }
@@ -109,6 +117,7 @@ impl Stage {
             Mode::Airborne(AirborneVariant::Falling) => Self::Fall,
             Mode::OnFoot(OnFootVariant::Ground) if airborne => Self::Fall,
             Mode::Airborne(AirborneVariant::Wingsuit) => Self::Suit,
+            Mode::Airborne(AirborneVariant::Parachute) => Self::Parachute,
             _ => Self::Other,
         }
     }
@@ -123,7 +132,9 @@ impl fmt::Display for Blocked {
             Self::InvalidTuning => f.write_str("the tuning is invalid"),
             Self::Claimed(hand, claim) => write!(f, "the {} hand {claim}", hand.label()),
             Self::NoPose => f.write_str("there is no valid arm pose"),
-            Self::Mode => f.write_str("the player is neither falling nor in the suit"),
+            Self::Mode => {
+                f.write_str("the player is neither falling, under a canopy, nor in the suit")
+            }
         }
     }
 }
@@ -372,11 +383,16 @@ pub(crate) struct WingsuitGestures {
     config: Option<WingsuitGesturesConfig>,
     /// The stage last observed outside a menu, which tells a fall's start from its middle.
     stage: Option<Stage>,
-    /// The flight pose may deploy the suit in this fall: from the fall's start, unless the fall
-    /// came out of the suit, where the neutral sets it.
+    /// The flight pose may deploy the suit in this fall or canopy: from the fall's start, unless
+    /// the fall came out of the suit or the canopy was opened by the player, where another pose
+    /// sets it.
     ready: bool,
     /// Whether this active grapple has already supplied a fresh deployment intent.
     grapple_intent: bool,
+    /// A canopy request seen before the canopy stage was observed. The canopy's entry consumes it
+    /// so the arms that opened the canopy do not reopen the suit before they leave the flight
+    /// pose.
+    canopy_requested: bool,
     /// The sample time before which a deploy request may not follow the last one in this fall.
     retry_at_ns: Option<i64>,
     deploy_since_ns: Option<i64>,
@@ -408,6 +424,12 @@ impl WingsuitGestures {
         self.current
     }
 
+    /// Remember a canopy request seen while the flight packet was missing, so the canopy's entry
+    /// still starts unarmed.
+    pub(crate) fn note_canopy_request(&mut self) {
+        self.canopy_requested = true;
+    }
+
     /// What the recognizer waits for, or holds, as of its last evaluated sample.
     pub(crate) fn phase(&self) -> GesturePhase {
         match self.current {
@@ -426,10 +448,13 @@ impl WingsuitGestures {
         input: GestureInput,
         config: &WingsuitGesturesConfig,
     ) -> GestureAvailability {
+        if input.canopy_requested {
+            self.note_canopy_request();
+        }
         if self.last == Some((input.sample, input.stage()))
             && self.config == Some(*config)
             && !input.pose.is_some_and(FlightPose::valid)
-            && input.stage() == Stage::Fall
+            && matches!(input.stage(), Stage::Fall | Stage::Parachute)
             && input.blocked(config) == Some(Blocked::NoPose)
         {
             self.tracking_lost();
@@ -465,6 +490,9 @@ impl WingsuitGestures {
             false
         };
         let stage = input.stage();
+        if input.canopy_requested {
+            self.note_canopy_request();
+        }
         self.enter(stage, input.mode);
         let new_epoch = previous.is_none_or(|(last, _)| last.epoch != input.sample.epoch);
         if new_epoch {
@@ -481,8 +509,15 @@ impl WingsuitGestures {
             self.last = Some((input.sample, stage));
         }
         self.current = input.availability(config);
+        let line_released = self.grapple_intent && !input.deploy_grapple;
         if !input.deploy_grapple {
             self.grapple_intent = false;
+        }
+        if line_released {
+            // The line's release starts a fall afresh: the suit request follows the release
+            // without the hang's retry pause or intent window.
+            self.deploy_since_ns = None;
+            self.retry_at_ns = None;
         }
         if self
             .deploy_since_ns
@@ -494,7 +529,9 @@ impl WingsuitGestures {
             self.clear_pose();
         }
         if self.current == GestureAvailability::Unavailable {
-            if input.blocked(config) != Some(Blocked::NoPose) || stage != Stage::Fall {
+            if input.blocked(config) != Some(Blocked::NoPose)
+                || !matches!(stage, Stage::Fall | Stage::Parachute)
+            {
                 self.deploy_since_ns = None;
                 self.retry_at_ns = None;
             }
@@ -522,7 +559,7 @@ impl WingsuitGestures {
             self.reset();
             return GestureCommands::default();
         }
-        if stage == Stage::Fall
+        if matches!(stage, Stage::Fall | Stage::Parachute)
             && self.deploy_since_ns.is_some()
             && self
                 .retry_at_ns
@@ -581,10 +618,18 @@ impl WingsuitGestures {
                 .into_iter()
                 .all(|v| v <= config.flight_angle_deg)
             && pose.flat_palms(config.flight_roll_deg);
+        // A canopy's own pose (anything but the flight pose) arms it: the player who opened the
+        // canopy with the arms spread must move them before the spread opens the suit, while a
+        // player already holding the canopy's toggles only has to spread them.
+        let neutral_pose = if stage == Stage::Parachute {
+            !flight
+        } else {
+            withdrawn
+        };
         if !self.ready
             && self
                 .neutral
-                .update(withdrawn, input.sample.time_ns, config.neutral_dwell_s)
+                .update(neutral_pose, input.sample.time_ns, config.neutral_dwell_s)
         {
             self.ready = true;
         }
@@ -631,13 +676,36 @@ impl WingsuitGestures {
         GestureCommands::default()
     }
 
-    /// Track the stage outside menus, and start each fall afresh. A menu over a fall leaves the
-    /// fall's start where it was.
+    /// Track the stage outside menus, and start each fall or canopy afresh. A menu over a fall
+    /// leaves the fall's start where it was.
+    ///
+    /// A canopy the player requested starts unarmed, so opening it with the arms spread does not
+    /// immediately reopen the suit; any pose but the flight pose arms it. A canopy the game
+    /// entered on its own is a fresh start, as a fall is. The request is remembered until the
+    /// canopy stage is entered, since the mode detector reports the canopy a few ticks after the
+    /// request.
     fn enter(&mut self, stage: Stage, mode: Mode) {
         if mode == Mode::Ui || self.stage == Some(stage) {
             return;
         }
-        self.ready = stage == Stage::Fall && self.stage != Some(Stage::Suit);
+        self.ready = match stage {
+            Stage::Fall => {
+                // A request from the canopy or the suit cannot belong to this fall; one from a
+                // vehicle can, since a bail can pass through a fall before its canopy shows.
+                if matches!(self.stage, Some(Stage::Parachute | Stage::Suit)) {
+                    self.canopy_requested = false;
+                }
+                self.stage != Some(Stage::Suit)
+            }
+            Stage::Parachute => {
+                let requested = std::mem::take(&mut self.canopy_requested);
+                self.stage != Some(Stage::Suit) && !requested
+            }
+            Stage::Suit | Stage::Other => {
+                self.canopy_requested = false;
+                false
+            }
+        };
         self.retry_at_ns = None;
         self.deploy_since_ns = None;
         self.stage = Some(stage);
@@ -679,14 +747,19 @@ impl GestureInput {
             return Some(Blocked::NoPose);
         }
         match self.stage() {
-            Stage::Fall | Stage::Suit => None,
+            Stage::Fall | Stage::Suit | Stage::Parachute => None,
             Stage::Other => Some(Blocked::Mode),
         }
     }
 
-    /// Where the player is, as far as the gestures are concerned.
+    /// Where the player is, as far as the gestures are concerned. An eligible line is a fall's
+    /// fresh start: its release precedes the suit request, and the pose is measured as in a fall.
     pub(crate) fn stage(self) -> Stage {
-        Stage::of(self.mode, self.airborne || self.deploy_grapple)
+        if self.deploy_grapple {
+            Stage::Fall
+        } else {
+            Stage::of(self.mode, self.airborne)
+        }
     }
 
     fn availability(self, config: &WingsuitGesturesConfig) -> GestureAvailability {
@@ -694,7 +767,7 @@ impl GestureInput {
             return GestureAvailability::Unavailable;
         }
         match self.stage() {
-            Stage::Fall => GestureAvailability::Deploy,
+            Stage::Fall | Stage::Parachute => GestureAvailability::Deploy,
             Stage::Suit => GestureAvailability::CloseAndBrake,
             Stage::Other => GestureAvailability::Unavailable,
         }

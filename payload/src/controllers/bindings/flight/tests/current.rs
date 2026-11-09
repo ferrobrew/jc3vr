@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use glam::{Quat, Vec3};
 use jc3gi::input::input_action_map::Action::{
-    ACCELERATE, FIRE_RIGHT, RELEASE_GRAPPLE, VEHICLE_RELEASE_GRAPPLE,
+    ACCELERATE, FIRE_RIGHT, OPEN_WINGSUIT, RELEASE_GRAPPLE, VEHICLE_RELEASE_GRAPPLE,
 };
 use openxr as xr;
 
@@ -33,7 +33,7 @@ fn input(mode: Mode) -> GestureInput {
 }
 
 #[test]
-fn grapple_traversal_arbitration_excludes_hangs_ground_and_seats() {
+fn grapple_traversal_arbitration_yields_reels_and_hangs_but_not_seats() {
     for mode in [
         Mode::OnFoot(OnFootVariant::Ground),
         Mode::Airborne(AirborneVariant::Falling),
@@ -69,7 +69,13 @@ fn grapple_traversal_arbitration_excludes_hangs_ground_and_seats() {
                                 Mode::OnFoot(OnFootVariant::Ground)
                                     | Mode::Airborne(AirborneVariant::Falling)
                             ),
-                            Some(Traversal::PreHang | Traversal::ReeledIn) => false,
+                            Some(Traversal::PreHang | Traversal::ReeledIn) => matches!(
+                                mode,
+                                Mode::OnFoot(OnFootVariant::Ground)
+                                    | Mode::Airborne(
+                                        AirborneVariant::Falling | AirborneVariant::Parachute
+                                    )
+                            ),
                         };
                     assert_eq!(deploy_grapple(detection, airborne, grapple), expected);
                     assert_eq!(
@@ -170,6 +176,10 @@ fn evaluation_and_commit_retain_current_availability_without_emitting_actions() 
             GestureAvailability::Deploy,
         ),
         (SUIT, GestureAvailability::CloseAndBrake),
+        (
+            Mode::Airborne(AirborneVariant::Parachute),
+            GestureAvailability::Deploy,
+        ),
     ] {
         let mut state = FlightState::default();
         for sequence in 1..20 {
@@ -197,6 +207,78 @@ fn evaluation_and_commit_retain_current_availability_without_emitting_actions() 
             assert_eq!(state.current(), expected);
         }
     }
+}
+
+/// A flight pose under a canopy requests the suit's own opening act; the game's parachute states
+/// take that act directly, so no canopy action precedes it.
+#[test]
+fn a_canopy_flight_pose_commits_the_suit_opening() {
+    let mut state = FlightState::default();
+    let mut observation = input(Mode::Airborne(AirborneVariant::Parachute));
+    let mut commands = GestureCommands::default();
+    for sequence in 1..=5 {
+        observation.sample.sequence = sequence;
+        observation.sample.time_ns = sequence as i64 * 62_500_000;
+        commands = evaluate_input(&mut state, calibration(), Some(observation), &CONFIG);
+    }
+    assert_eq!(commands.transition, Some(SuitTransition::Deploy));
+    let mut desired = Vec::new();
+    assert!(!commit_input(
+        &mut state,
+        commands,
+        Some(observation),
+        &CONFIG,
+        &mut desired
+    ));
+    assert_eq!(
+        desired,
+        vec![Desired {
+            target: Target::player(OPEN_WINGSUIT),
+            want: Want::Click,
+        }]
+    );
+    assert!(!state.retract_active_wire);
+}
+
+/// A hang yields its line before the suit request: the grapple actions are dropped, the wire is
+/// retracted once, and the suit's opening follows.
+#[test]
+fn a_hang_releases_the_line_before_the_suit_request() {
+    let mut state = FlightState::default();
+    let mut observation = input(Mode::OnFoot(OnFootVariant::Ground));
+    observation.deploy_grapple = true;
+    let mut commands = GestureCommands::default();
+    for sequence in 1..=5 {
+        observation.sample.sequence = sequence;
+        observation.sample.time_ns = sequence as i64 * 62_500_000;
+        commands = evaluate_input(&mut state, calibration(), Some(observation), &CONFIG);
+    }
+    assert_eq!(commands.transition, Some(SuitTransition::Deploy));
+    let mut desired = [FIRE_GRAPPLE, RETRACT_GRAPPLE, PUSH_GRAPPLE]
+        .map(|action| Desired {
+            target: Target::player(action),
+            want: Want::Hold(1.0),
+        })
+        .to_vec();
+    assert!(!commit_input(
+        &mut state,
+        commands,
+        Some(observation),
+        &CONFIG,
+        &mut desired
+    ));
+    assert_eq!(
+        desired,
+        vec![Desired {
+            target: Target::player(OPEN_WINGSUIT),
+            want: Want::Click,
+        }]
+    );
+    assert!(state.retract_active_wire);
+    let mut retracted = false;
+    retract_committed_wire(&mut state, || retracted = true);
+    assert!(retracted);
+    assert!(!state.retract_active_wire);
 }
 
 #[test]
@@ -273,7 +355,7 @@ fn evaluation_denies_missing_disabled_invalid_and_unsupported_inputs() {
                     .palm_roll_deg[0] = 181.0
             }
             5 => observation.as_mut().unwrap().mode = Mode::Ui,
-            6 => observation.as_mut().unwrap().mode = Mode::Airborne(AirborneVariant::Parachute),
+            6 => observation.as_mut().unwrap().mode = Mode::OnFoot(OnFootVariant::Swimming),
             7 => observation.as_mut().unwrap().mode = Mode::OnFoot(OnFootVariant::Ground),
             8 => {
                 observation.as_mut().unwrap().mode = Mode::Vehicle(VehicleSeat {

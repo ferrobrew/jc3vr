@@ -159,12 +159,99 @@ fn pending_deployment_cancels_on_acknowledgement_and_competing_intents() {
 }
 
 #[test]
-fn arms_spread_under_a_canopy_deploy_the_suit_once_it_is_cut() {
+fn a_flight_pose_under_a_canopy_deploys_the_suit() {
     let mut h = History::new(CANOPY);
-    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
-    h.mode = FALLING;
     assert_eq!(deploys(&h.hold(FLIGHT, 5)), 0);
+    assert_eq!(h.state.phase(), GesturePhase::AwaitingFlight);
     assert_eq!(deploys(&h.hold(FLIGHT, 1)), 1);
+}
+
+#[test]
+fn a_canopy_opened_with_the_arms_spread_needs_another_pose_before_it_deploys() {
+    let mut h = History::new(FALLING);
+    h.canopy = true;
+    h.mode = CANOPY;
+    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
+    h.canopy = false;
+    assert_eq!(h.observe(Some(FLIGHT)), GestureCommands::default());
+    assert_eq!(h.state.phase(), GesturePhase::AwaitingNeutral);
+    h.hold(FOLDED, 5);
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+}
+
+#[test]
+fn a_canopy_requested_before_the_mode_changes_still_needs_another_pose() {
+    let mut h = History::new(FALLING);
+    h.canopy = true;
+    h.observe(Some(FLIGHT));
+    h.canopy = false;
+    h.hold(FLIGHT, 3);
+    h.mode = CANOPY;
+    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
+    assert_eq!(h.state.phase(), GesturePhase::AwaitingNeutral);
+    h.hold(FOLDED, 5);
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+}
+
+#[test]
+fn a_canopy_pose_arms_a_canopy_the_player_opened() {
+    let mut h = History::new(FALLING);
+    h.canopy = true;
+    h.mode = CANOPY;
+    h.hold(BRAKE, 5);
+    h.canopy = false;
+    // Wide arms with rolled palms are the canopy's own pose, not the flight pose, so they arm
+    // the stage without the arms being lowered or drawn in.
+    h.hold(BRAKE, 5);
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+}
+
+#[test]
+fn a_late_canopy_request_still_blocks_the_canopy_reopening_the_suit() {
+    let mut h = History::new(FALLING);
+    h.hold(FLIGHT, 3);
+    let late = GestureInput {
+        sample: h.sample,
+        mode: h.mode,
+        airborne: h.airborne,
+        deploy_grapple: h.deploy_grapple,
+        gameplay: h.gameplay,
+        canopy_requested: true,
+        pose: Some(FLIGHT),
+        claims: h.claims,
+    };
+    assert_eq!(
+        h.state.revalidate(late, &CONFIG),
+        GestureAvailability::Unavailable
+    );
+    h.mode = CANOPY;
+    assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
+    assert_eq!(h.state.phase(), GesturePhase::AwaitingNeutral);
+    h.hold(FOLDED, 5);
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+}
+
+#[test]
+fn a_flight_pose_from_a_grapple_hang_deploys_the_suit() {
+    let mut h = History::new(GROUND);
+    h.deploy_grapple = true;
+    assert_eq!(deploys(&h.hold(FLIGHT, 5)), 0);
+    assert_eq!(h.state.phase(), GesturePhase::AwaitingFlight);
+    assert_eq!(deploys(&h.hold(FLIGHT, 1)), 1);
+    // The line yields again after the retry pause while the pose stays held.
+    assert_eq!(deploys(&h.hold(FLIGHT, 10)), 1);
+}
+
+#[test]
+fn a_hang_released_into_a_fall_deploys_from_the_fall_afresh() {
+    let mut h = History::new(GROUND);
+    h.deploy_grapple = true;
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+    h.deploy_grapple = false;
+    h.mode = FALLING;
+    h.airborne = true;
+    // The release restarts the flight dwell instead of waiting out the hang's retry pause.
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
 }
 
 #[test]

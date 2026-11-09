@@ -1,8 +1,9 @@
 //! Wingsuit gesture integration after hand interactions and before final action resolution.
 //!
 //! Each change of the recognizer's phase, and each transition it requests, is logged at info level
-//! with the gate that blocks it and the arm measures it saw, while the player is falling or in the
-//! suit, so a session's log shows what the recognizer made of the player's arms.
+//! with the gate that blocks it and the arm measures it saw, while the player is falling, under a
+//! canopy, in the suit, or on a line that can yield, so a session's log shows what the recognizer
+//! made of the player's arms.
 
 use std::{fmt, time::Instant};
 
@@ -40,8 +41,8 @@ pub(super) struct FlightState {
     gestures: WingsuitGestures,
     calibration: Option<Calibration>,
     retract_active_wire: bool,
-    /// The phase and its cause last logged, or `None` while the player is neither falling nor in
-    /// the suit.
+    /// The phase and its cause last logged, or `None` while the player is not falling, under a
+    /// canopy, in the suit, or on a line that can yield.
     logged: Option<(GesturePhase, Option<Why>)>,
 }
 
@@ -208,7 +209,8 @@ enum Pass {
 }
 
 /// Log the recognizer's phase when it, or the gate behind it, changed since the last log. Outside
-/// a fall (a jump included) and the suit, only the first tick there is logged.
+/// a fall (a jump included), a canopy, the suit, and a yieldable line, only the first tick there is
+/// logged.
 fn note(
     state: &mut FlightState,
     tick: &Tick<'_>,
@@ -216,9 +218,10 @@ fn note(
     config: &WingsuitGesturesConfig,
     pass: Pass,
 ) {
-    let airborne = Stage::of(tick.detection.mode, tick.airborne) != Stage::Other;
+    let deployable = deploy_grapple(tick.detection, tick.airborne, tick.grapple);
+    let watched = Stage::of(tick.detection.mode, tick.airborne) != Stage::Other || deployable;
     let phase = state.gestures.phase();
-    let entry = airborne.then(|| {
+    let entry = watched.then(|| {
         let why = (phase == GesturePhase::Unavailable).then(|| match input {
             None => Why::NoSample,
             Some(input) => suspension(tick)
@@ -246,7 +249,7 @@ fn note(
     match entry {
         None => tracing::info!(
             target: "controllers",
-            "wingsuit gestures: idle, the player is neither falling nor in the suit"
+            "wingsuit gestures: idle, the player is neither falling, under a canopy, nor in the suit"
         ),
         Some((phase, Some(why))) => tracing::info!(
             target: "controllers",
@@ -383,7 +386,13 @@ fn commit_input(
         }
         return false;
     }
-    match flight_pose::desired_for(commands, input.stage(), canopy(desired)) {
+    let stage = match input.stage() {
+        // The parachute's states take the suit's opening act directly, so a canopy deploy is the
+        // same request as a fall's.
+        Stage::Parachute => Stage::Fall,
+        stage => stage,
+    };
+    match flight_pose::desired_for(commands, stage, canopy(desired)) {
         Ok(inputs) => {
             if commands.transition == Some(SuitTransition::Deploy) {
                 desired.retain(|input| {
@@ -412,8 +421,12 @@ fn retract_committed_wire(state: &mut FlightState, retract: impl FnOnce()) {
 }
 
 fn cancel_without_tracking(state: &mut FlightState, tick: &Tick<'_>, desired: &[Desired]) {
+    let stage = Stage::of(tick.detection.mode, tick.airborne);
+    if canopy(desired) {
+        state.gestures.note_canopy_request();
+    }
     if suspension(tick).is_some()
-        || (Stage::of(tick.detection.mode, tick.airborne) != Stage::Fall
+        || (!matches!(stage, Stage::Fall | Stage::Parachute)
             && !deploy_grapple(tick.detection, tick.airborne, tick.grapple))
         || canopy(desired)
         || claims(tick, Instant::now()) != [HandClaims::default(); 2]
@@ -471,7 +484,9 @@ fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
     })
 }
 
-/// An active line in free flight or reel-in can yield to deployment; an attached hang cannot.
+/// An active line in free flight, a reel-in, or a hang can yield to deployment. The active wire is
+/// retracted first; a hang's states have no suit opening of their own, so the request follows once
+/// the character has fallen clear and is retried while the pose is held.
 fn deploy_grapple(detection: Detection, airborne: bool, grapple: bool) -> bool {
     grapple
         && match detection.traversal {
@@ -479,7 +494,11 @@ fn deploy_grapple(detection: Detection, airborne: bool, grapple: bool) -> bool {
                 detection.mode,
                 Mode::OnFoot(OnFootVariant::Ground) | Mode::Airborne(AirborneVariant::Falling)
             ),
-            Some(Traversal::PreHang | Traversal::ReeledIn) => false,
+            Some(Traversal::PreHang | Traversal::ReeledIn) => matches!(
+                detection.mode,
+                Mode::OnFoot(OnFootVariant::Ground)
+                    | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute)
+            ),
             None => Stage::of(detection.mode, airborne) == Stage::Fall,
         }
 }

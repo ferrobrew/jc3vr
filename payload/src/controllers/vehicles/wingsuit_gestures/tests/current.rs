@@ -98,7 +98,7 @@ fn current_availability_uses_the_recognizers_whole_input_gate() {
             }
             12 => pose = None,
             13 => pose.as_mut().unwrap().lateral[0] = f32::NAN,
-            _ => h.mode = CANOPY,
+            _ => h.mode = GROUND,
         }
         assert_eq!(h.observe(pose), GestureCommands::default());
         assert_eq!(
