@@ -35,7 +35,7 @@ pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId) {
         FeatureId::Video => {
             session_ui(ui);
             ui.separator();
-            recording_ui(ui);
+            capture_host_ui(ui);
             markers_ui(ui);
         }
         _ => {}
@@ -458,6 +458,11 @@ fn session_ui(ui: &mut egui::Ui) {
         }
     });
     ui.label(session_line(&status));
+    let video = recorder::status();
+    ui.label(host_line(&video));
+    if let Some(error) = &status.video_error {
+        ui.colored_label(egui::Color32::LIGHT_RED, format!("Video: {error}"));
+    }
     if let Some(error) = &status.tracking_error {
         ui.colored_label(
             egui::Color32::LIGHT_RED,
@@ -466,7 +471,8 @@ fn session_ui(ui: &mut egui::Ui) {
     }
     ui.label(
         "Starts the video recorder and a tracking recording together, both into \
-         recordings/<stamp>/ in the session folder.",
+         recordings/<stamp>/ in the session folder. If the capture host is not running, the \
+         session records tracking only and says so here.",
     );
 }
 
@@ -484,21 +490,13 @@ fn session_line(status: &session_recording::SessionStatus) -> String {
     }
 }
 
-fn recording_ui(ui: &mut egui::Ui) {
-    let status = recorder::status();
-    ui.horizontal(|ui| {
-        if status.recording {
-            if ui.button("Stop recording").clicked() {
-                recorder::stop();
-            }
-        } else if ui.button("Start recording").clicked() {
-            recorder::start();
-        }
-    });
+fn capture_host_ui(ui: &mut egui::Ui) {
+    let session = session_recording::status();
+    let running = session.video || session.tracking;
     {
         let mut cfg = config::edit();
         let r = &mut cfg.recorder;
-        ui.add_enabled_ui(!status.recording, |ui| {
+        ui.add_enabled_ui(!running, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Capture host:");
                 ui.text_edit_singleline(&mut r.host)
@@ -511,7 +509,8 @@ fn recording_ui(ui: &mut egui::Ui) {
     ui.label(
         "Run scripts/capture_host.sh on the host. It records the mirror window as it is on \
          screen, so the mirror view (F10) decides what is recorded, and the window must stay \
-         visible and in place for the take.",
+         visible and in place for the take. Start the session recording above; without the host \
+         it records tracking only.",
     );
 }
 

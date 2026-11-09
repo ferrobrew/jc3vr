@@ -7,12 +7,14 @@
 //! run, and with no tracking recording running it also saves the lookback, so a moment is kept
 //! whether or not a session recording was started.
 
+use std::time::{Duration, Instant};
+
 use parking_lot::Mutex;
 
 use crate::{
     director::markers,
     recorder::{
-        self,
+        self, HostState,
         tracking::{self, lookback},
     },
 };
@@ -26,6 +28,8 @@ pub(crate) struct SessionStatus {
     pub(crate) stamp: Option<String>,
     /// Why the tracking recording did not start or stopped early, if it did.
     pub(crate) tracking_error: Option<String>,
+    /// Why the video half is not running, if it degraded to tracking only.
+    pub(crate) video_error: Option<String>,
 }
 
 /// Start both recorders under a fresh stamp, or stop both when either runs. Any thread.
@@ -33,10 +37,13 @@ pub(crate) fn toggle() {
     if recorder::is_recording() || tracking::is_recording() {
         recorder::stop();
         tracking::request_stop();
+        *STARTED_AT.lock() = None;
         tracing::info!("recorder: session recording: stopping");
     } else {
         let stamp = crate::session::stamp();
         *STAMP.lock() = Some(stamp.clone());
+        *STARTED_AT.lock() = Some(Instant::now());
+        *VIDEO_ERROR.lock() = None;
         recorder::start_stamped(&stamp);
         tracking::request_start_stamped(stamp.clone());
         tracing::info!("recorder: session recording: starting as {stamp}");
@@ -54,12 +61,79 @@ pub(crate) fn mark() {
 
 /// The pair's state, without collecting completed writers.
 pub(crate) fn status() -> SessionStatus {
+    poll();
     SessionStatus {
         video: recorder::is_recording(),
         tracking: tracking::is_recording(),
         stamp: STAMP.lock().clone(),
         tracking_error: tracking::peek_status().error,
+        video_error: VIDEO_ERROR.lock().clone(),
     }
 }
 
+/// Degrade a session whose capture host has not connected to tracking only, and keep the video
+/// error visible. Called from the render frame and from the UI.
+pub(crate) fn poll() {
+    let Some(started) = *STARTED_AT.lock() else {
+        return;
+    };
+    if !recorder::is_recording() {
+        return;
+    }
+    let status = recorder::status();
+    if status.host == Some(HostState::Closed) {
+        if let Some(error) = status.error {
+            *VIDEO_ERROR.lock() = Some(error);
+        }
+        *STARTED_AT.lock() = None;
+        return;
+    }
+    if !should_degrade(status.host.as_ref(), started.elapsed()) {
+        return;
+    }
+    drop(status);
+    let (host, port) =
+        crate::config::Config::lock_query(|c| (c.recorder.host().to_owned(), c.recorder.port));
+    recorder::stop();
+    *VIDEO_ERROR.lock() = Some(format!(
+        "capture host is not running at {host}:{port}; recording tracking only"
+    ));
+    *STARTED_AT.lock() = None;
+    tracing::warn!(
+        "recorder: capture host is not running at {host}:{port}; session recording is tracking only"
+    );
+}
+
+/// Whether a video take that has not connected yet should give up and leave the tracking half
+/// running.
+fn should_degrade(host: Option<&HostState>, elapsed: Duration) -> bool {
+    host == Some(&HostState::Waiting) && elapsed >= CAPTURE_HOST_GRACE
+}
+
+/// How long a session recording waits for the capture host before it records tracking only.
+const CAPTURE_HOST_GRACE: Duration = Duration::from_millis(1500);
+
 static STAMP: Mutex<Option<String>> = Mutex::new(None);
+static STARTED_AT: Mutex<Option<Instant>> = Mutex::new(None);
+static VIDEO_ERROR: Mutex<Option<String>> = Mutex::new(None);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_waiting_host_degrades_only_after_the_grace_period() {
+        assert!(should_degrade(
+            Some(&HostState::Waiting),
+            CAPTURE_HOST_GRACE
+        ));
+        assert!(!should_degrade(
+            Some(&HostState::Waiting),
+            CAPTURE_HOST_GRACE - Duration::from_millis(1)
+        ));
+        for host in [HostState::Starting, HostState::Finishing, HostState::Closed] {
+            assert!(!should_degrade(Some(&host), Duration::from_secs(10)));
+        }
+        assert!(!should_degrade(None, Duration::from_secs(10)));
+    }
+}

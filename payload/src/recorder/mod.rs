@@ -131,11 +131,6 @@ pub struct MirrorDraw {
     pub rect: [f32; 4],
 }
 
-/// Start a recording with the current config. Any thread. A no-op while one runs.
-pub fn start() {
-    start_stamped(&crate::session::stamp());
-}
-
 /// Start a recording whose folder is stamped `stamp`, so a session recording's tracking half lands
 /// in the same folder. Any thread. A no-op while one runs.
 pub fn start_stamped(stamp: &str) {
@@ -204,15 +199,6 @@ pub fn stop() {
     tracing::info!("recorder: stopped after {} frames", state.frame_index);
 }
 
-/// Toggle between recording and stopped.
-pub fn toggle() {
-    if is_recording() {
-        stop();
-    } else {
-        start();
-    }
-}
-
 /// Put a take marker into the running recording's sidecar, before the next rendered frame. Any
 /// thread. Hands the marker back when no recording is running (or its take is finishing), so the
 /// caller can record it elsewhere.
@@ -253,6 +239,7 @@ pub fn status() -> Status {
 /// Note a rendered frame, from `render_engine_post_draw` on the frame's last near dispatch, when
 /// every eye image of the frame is final. A no-op unless recording.
 pub fn frame_rendered() {
+    crate::recorder::session_recording::poll();
     if !is_recording() {
         return;
     }

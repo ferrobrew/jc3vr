@@ -67,7 +67,7 @@ impl Action {
             Action::ToggleHeatLock => "Toggle heat lock",
             Action::ClearHeat => "Clear heat",
             Action::Spawn => "Spawn the configured tags",
-            Action::ToggleRecording => "Start or stop recording",
+            Action::ToggleRecording => "Start or stop a session recording",
             Action::ToggleTrackingRecording => "Start or stop a tracking recording",
             Action::ToggleReplay => "Replay the last tracking recording, or stop the replay",
             Action::ToggleScenario => "Run the last scenario again, or stop it",
@@ -235,7 +235,7 @@ pub fn run(action: Action) {
         }
         Action::ClearHeat => heat::clear(),
         Action::Spawn => spawn::request(),
-        Action::ToggleRecording => crate::recorder::toggle(),
+        Action::ToggleRecording => crate::recorder::session_recording::toggle(),
         Action::ToggleTrackingRecording => crate::recorder::tracking::toggle(),
         Action::ToggleReplay => crate::testing::toggle_replay(),
         Action::ToggleScenario => crate::testing::toggle_scenario(),
