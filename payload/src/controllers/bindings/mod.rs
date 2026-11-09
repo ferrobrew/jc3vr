@@ -51,6 +51,7 @@ pub mod inject;
 pub mod intents;
 mod loss;
 pub(crate) mod policy_a;
+mod rail;
 mod recovery;
 mod report;
 pub(crate) mod stage;
@@ -110,7 +111,7 @@ use crate::{
         hands::{self, tiers},
         haptics::{self, Event},
         locomotion,
-        mode::{self, Detection, Mode, Traversal},
+        mode::{self, Detection, Mode, Traversal, VehicleClass},
         physical_hands, roomscale, scheme, snatch, vehicles, weapons,
     },
     grapple, headpose,
@@ -547,6 +548,14 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         HANDS_CLOSED[i].store(controls.hands[i].hold.down, Ordering::Relaxed);
     }
     controls.masked_hands = Hand::BOTH.map(|hand| !state.recovery.ready(hand));
+    controls.stunt_available = if matches!(detection.mode, Mode::Vehicle(seat) if seat.class != VehicleClass::Mech)
+        && detection.held.is_none()
+    {
+        // SAFETY: the binding game stage runs before the world update on the game thread.
+        unsafe { bail::seated_stunt_available() }
+    } else {
+        None
+    };
     controls.bail = match detection.mode {
         Mode::Vehicle(seat) => {
             // SAFETY: the game stage runs on the game thread before the world update.
@@ -628,6 +637,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             && snatch::available_in(&detection),
         neutral_policy.frame_neutral(&original) && source_neutral,
     );
+    grapple_held = state.bindings.physical_grapple_held(grapple_held);
     let line = line_attached() && !snatch_button_owned;
     let grapple_line = grapple_hand_line(grapple_hand);
     let yank = state.yank.step(
@@ -863,6 +873,25 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             grabs_for(step.grabs, Consumer::Climb),
         );
         physical_hands::stunt::finish_tick(finish.grips.map(|g| g.held()), &mut step.desired);
+        let rail_packet = crate::vr::input::flight_pose::for_frame(&original, Instant::now());
+        if state.rail.step(
+            rail::RailInput {
+                hanging: physical_hands::stunt::hanging()
+                    && !controls.masked_hands.contains(&true)
+                    && detection.held.is_none()
+                    && !controls.ragdolling,
+                epoch: rail_packet
+                    .as_ref()
+                    .map_or(0, |packet| packet.sample().epoch),
+                head: rail_packet.as_ref().map(|packet| {
+                    let head = packet.head_pose();
+                    (head.position, head.orientation)
+                }),
+            },
+            &mut step.desired,
+        ) {
+            tracing::info!(target: "controllers", "lateral movement releases the helicopter rail");
+        }
         // The ripcord's canopy request goes in before the gestures commit, so it wins over a suit
         // request on the same tick.
         vehicles::ripcord_finish(
@@ -880,6 +909,15 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             &flight_tick,
             &mut step.desired,
         );
+        if flight_commands.transition == Some(vehicles::wingsuit_gestures::SuitTransition::Deploy)
+            && step.desired.iter().any(|input| {
+                input.target.map == MapKind::Player
+                    && input.target.action == Action::OPEN_WINGSUIT
+                    && input.want == Want::Click
+            })
+        {
+            state.bindings.spend_grapple();
+        }
         vehicles::finish_tick(
             detection.mode,
             grabs_for(step.grabs, Consumer::Vehicles),
@@ -900,6 +938,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             real_dt,
         );
     } else {
+        state.rail = rail::RailRelease::new();
         weapons::hold::tick::publish_fire([false; 2]);
         weapons::wheel::pause();
         physical_hands::pickup::pause();
@@ -1108,6 +1147,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     trigger_ownership: TriggerOwnership::new(),
     tracker: HoldTracker::new(),
     flight: None,
+    rail: rail::RailRelease::new(),
     yank: LineYank::new(),
     bail: BailLatch::new(),
     report: TickReport {
@@ -1133,6 +1173,7 @@ struct State {
     trigger_ownership: TriggerOwnership,
     tracker: HoldTracker,
     flight: Option<flight::FlightState>,
+    rail: rail::RailRelease,
     yank: LineYank,
     /// The bail's choice for the vehicle exit's long press.
     bail: BailLatch,
@@ -1153,6 +1194,7 @@ impl State {
         if let Some(flight) = &mut self.flight {
             flight.reset();
         }
+        self.rail = rail::RailRelease::new();
         self.yank = LineYank::new();
         self.bail.reset();
         self.tracker.release_all(poll)

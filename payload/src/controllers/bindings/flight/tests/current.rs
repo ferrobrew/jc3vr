@@ -1,6 +1,9 @@
 use std::time::Duration;
 
 use glam::{Quat, Vec3};
+use jc3gi::input::input_action_map::Action::{
+    ACCELERATE, FIRE_RIGHT, RELEASE_GRAPPLE, VEHICLE_RELEASE_GRAPPLE,
+};
 use openxr as xr;
 
 use super::*;
@@ -21,10 +24,141 @@ fn input(mode: Mode) -> GestureInput {
         },
         mode,
         airborne: false,
+        deploy_grapple: false,
         gameplay: true,
         canopy_requested: false,
         pose: Some(FLIGHT),
         claims: [HandClaims::default(); 2],
+    }
+}
+
+#[test]
+fn grapple_traversal_arbitration_excludes_hangs_ground_and_seats() {
+    for mode in [
+        Mode::OnFoot(OnFootVariant::Ground),
+        Mode::Airborne(AirborneVariant::Falling),
+        SUIT,
+        Mode::Airborne(AirborneVariant::Parachute),
+        Mode::Vehicle(VehicleSeat {
+            class: VehicleClass::Car,
+            driver: true,
+        }),
+    ] {
+        for traversal in [
+            None,
+            Some(Traversal::PreReel),
+            Some(Traversal::ReelingIn),
+            Some(Traversal::PreHang),
+            Some(Traversal::ReeledIn),
+        ] {
+            for airborne in [false, true] {
+                for grapple in [false, true] {
+                    let detection = Detection {
+                        mode,
+                        traversal,
+                        ..Default::default()
+                    };
+                    let expected = grapple
+                        && match traversal {
+                            None => {
+                                mode == Mode::Airborne(AirborneVariant::Falling)
+                                    || (mode == Mode::OnFoot(OnFootVariant::Ground) && airborne)
+                            }
+                            Some(Traversal::PreReel | Traversal::ReelingIn) => matches!(
+                                mode,
+                                Mode::OnFoot(OnFootVariant::Ground)
+                                    | Mode::Airborne(AirborneVariant::Falling)
+                            ),
+                            Some(Traversal::PreHang | Traversal::ReeledIn) => false,
+                        };
+                    assert_eq!(deploy_grapple(detection, airborne, grapple), expected);
+                    assert_eq!(
+                        grapple_claim(detection, airborne, grapple),
+                        (grapple || traversal.is_some()) && !expected
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn grapple_deployment_retracts_only_the_active_wire_without_releasing_dual_tethers() {
+    for denial in 0..8 {
+        let mut state = FlightState::default();
+        let mut observation = input(Mode::OnFoot(OnFootVariant::Ground));
+        observation.deploy_grapple = true;
+        let mut commands = GestureCommands::default();
+        for sequence in 1..=5 {
+            observation.sample.sequence = sequence;
+            observation.sample.time_ns = sequence as i64 * 62_500_000;
+            commands = evaluate_input(&mut state, calibration(), Some(observation), &CONFIG);
+        }
+        assert_eq!(commands.transition, Some(SuitTransition::Deploy));
+        let mut desired: Vec<_> = [
+            FIRE_GRAPPLE,
+            RETRACT_GRAPPLE,
+            PUSH_GRAPPLE,
+            FIRE_RIGHT,
+            ACCELERATE,
+        ]
+        .map(|action| Desired {
+            target: Target::player(action),
+            want: Want::Hold(1.0),
+        })
+        .into();
+        if denial == 1 {
+            desired.push(Desired {
+                target: Target::player(OPEN_PARACHUTE),
+                want: Want::Click,
+            });
+        } else if denial > 1 {
+            let claim = &mut observation.claims[(denial - 2) / 3];
+            match (denial - 2) % 3 {
+                0 => claim.grip = true,
+                1 => claim.slot = true,
+                _ => claim.mechanical = true,
+            }
+        }
+        let before = desired.clone();
+        assert!(!commit_input(
+            &mut state,
+            commands,
+            Some(observation),
+            &CONFIG,
+            &mut desired
+        ));
+        if denial == 0 {
+            assert_eq!(&desired[..2], &before[3..]);
+            assert_eq!(desired[2].target.action, OPEN_WINGSUIT);
+            assert_eq!(desired[2].want, Want::Click);
+            let mut active_wire = true;
+            retract_committed_wire(&mut state, || active_wire = false);
+            assert!(!active_wire);
+            retract_committed_wire(&mut state, || panic!("the retract must be consumed once"));
+            assert!(!desired.iter().any(|input| matches!(
+                input.target.action,
+                RELEASE_GRAPPLE | VEHICLE_RELEASE_GRAPPLE
+            )));
+            observation.mode = SUIT;
+            observation.deploy_grapple = false;
+            assert!(!commit_input(
+                &mut state,
+                commands,
+                Some(observation),
+                &CONFIG,
+                &mut desired
+            ));
+            retract_committed_wire(&mut state, || {
+                panic!("suit acknowledgement cannot retract again")
+            });
+            assert_eq!(desired.len(), 3);
+        } else {
+            assert_eq!(desired, before, "denial {denial}");
+            retract_committed_wire(&mut state, || {
+                panic!("a rejected deployment cannot retract")
+            });
+        }
     }
 }
 

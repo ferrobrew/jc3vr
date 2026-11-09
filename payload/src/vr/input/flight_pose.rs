@@ -70,6 +70,11 @@ impl FlightPacket {
         self.head.sample
     }
 
+    /// The head from this tracked publication, before body or vehicle composition.
+    pub(crate) fn head_pose(&self) -> Pose {
+        self.head.pose.pose
+    }
+
     /// Derive palms and shoulder-relative distances from this packet, not a later snapshot.
     pub(crate) fn measure(
         &self,

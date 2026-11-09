@@ -1,6 +1,56 @@
 use super::*;
 
 #[test]
+fn grapple_after_leaving_the_suit_deploys_without_another_neutral_and_stops_retrying_in_suit() {
+    for mode in [FALLING, GROUND] {
+        let mut h = History::new(SUIT);
+        h.hold(FLIGHT, 6);
+        h.mode = mode;
+        h.airborne = mode == FALLING;
+        h.deploy_grapple = true;
+        let commands = h.hold(FLIGHT, 6);
+        assert_eq!(deploys(&commands), 1);
+        assert_eq!(h.state.phase(), GesturePhase::AwaitingFlight);
+        assert_eq!(deploys(&h.hold(FLIGHT, 10)), 1);
+        h.mode = SUIT;
+        h.deploy_grapple = false;
+        assert!(h.hold(FLIGHT, 30).iter().all(|c| c.transition.is_none()));
+    }
+}
+
+#[test]
+fn active_grapple_still_defers_to_canopy_grip_slot_and_mechanical_intent() {
+    for denial in 0..7 {
+        let mut h = History::new(FALLING);
+        h.deploy_grapple = true;
+        if denial == 0 {
+            h.canopy = true;
+        } else {
+            let claim = &mut h.claims[(denial - 1) / 3];
+            match (denial - 1) % 3 {
+                0 => claim.grip = true,
+                1 => claim.slot = true,
+                _ => claim.mechanical = true,
+            }
+        }
+        assert_eq!(deploys(&h.hold(FLIGHT, 20)), 0);
+        h.canopy = false;
+        h.claims = [HandClaims::default(); 2];
+        assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+    }
+}
+
+#[test]
+fn grapple_release_during_pending_deployment_preserves_retries_without_lowering_arms() {
+    let mut h = History::new(FALLING);
+    h.deploy_grapple = true;
+    assert_eq!(deploys(&h.hold(FLIGHT, 6)), 1);
+    h.deploy_grapple = false;
+    assert_eq!(deploys(&h.hold(FLIGHT, 10)), 1);
+    assert!(h.state.deploy_since_ns.is_some());
+}
+
+#[test]
 fn current_availability_persists_without_a_command_and_across_transition_pulses() {
     for (mode, availability) in [
         (FALLING, GestureAvailability::Deploy),
@@ -77,6 +127,7 @@ fn backward_samples_and_large_gaps_remove_current_availability() {
                 sample,
                 mode: SUIT,
                 airborne: false,
+                deploy_grapple: false,
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(FLIGHT),

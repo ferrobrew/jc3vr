@@ -121,6 +121,7 @@ fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
                     sample,
                     mode,
                     airborne: false,
+                    deploy_grapple: false,
                     gameplay: true,
                     canopy_requested: false,
                     pose: Some(pose),

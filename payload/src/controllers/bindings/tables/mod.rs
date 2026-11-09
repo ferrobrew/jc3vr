@@ -49,6 +49,7 @@ use jc3gi::input::input_action_map::Action;
 use crate::{
     controllers::{
         bindings::{
+            bail::ExitLatch,
             controls::{ButtonControl, Controls},
             grapple_button::{
                 GrappleActions, GrappleButton, GrappleContext, GrapplePermissions, GrappleTick,
@@ -58,7 +59,7 @@ use crate::{
             intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
             policy_a::runtime::Tick,
             tables::{
-                declare::{TableCtx, declare, exit_action},
+                declare::{PAD_Y_VEHICLE, TableCtx, declare, exit_action, stunt_action},
                 sink::{
                     Axis, EvalSink, Input, Latches, MAX_TIMED, MenuLatch, PadLatch, Press,
                     PressTimer, Sink, TimedLatch,
@@ -136,6 +137,7 @@ pub struct Bindings {
     /// [`Input::LongHeld`]), each hand's by [`Hand::index`].
     timers: Vec<(ActionId, [PressTimer; 2])>,
     bail_hold: BailHold,
+    exit: ExitLatch,
 }
 
 impl Bindings {
@@ -158,12 +160,23 @@ impl Bindings {
             system_routes: Vec::new(),
             timers: Vec::new(),
             bail_hold: BailHold::new(),
+            exit: ExitLatch::new(),
         }
     }
 
     /// What each hand's grip press is doing, by [`Hand::index`].
     pub fn grip_latches(&self) -> [GripLatch; 2] {
         self.grips
+    }
+
+    /// A committed suit deployment consumes the grapple episode until its button is neutral.
+    pub(crate) fn spend_grapple(&mut self) {
+        self.grapple.spend();
+    }
+
+    /// Whether the current grapple button episode can still drive a physical pull.
+    pub(crate) fn physical_grapple_held(&self, held: bool) -> bool {
+        self.grapple.physical_button_held(held)
     }
 
     /// Whether the long press of `seat`'s exit action, on either hand, had reached `long_press_s`
@@ -359,8 +372,34 @@ impl Bindings {
             menu::step(&mut self.menu[i], &intents, hand, config.menu_stick_push);
             menu::step_pad(&mut self.pads[i], &intents, hand);
         }
+        let (immediate_exit, exit_click) = if let Mode::Vehicle(seat) = mode {
+            let button = [exit_action(seat.class), stunt_action(seat.class)]
+                .into_iter()
+                .map(|id| intents.button(id))
+                .fold(ButtonControl::default(), merge_buttons);
+            // The mech's tap is MECH_JUMP, whose feasibility the vehicle stunt act does not test.
+            let available = controls
+                .stunt_available
+                .filter(|_| seat.class != VehicleClass::Mech);
+            self.exit.step(button, available)
+        } else {
+            self.exit = ExitLatch::new();
+            (false, false)
+        };
         let mut timed = self.step_timers(mode, &ctx, &intents, dt, config.long_press_s);
-        let bail_active = self.bail_hold.step(mode, ctx.bail, &timed, dt);
+        if immediate_exit {
+            for latch in &mut timed {
+                for (_, press) in latch.presses.iter_mut().flatten() {
+                    *press = Default::default();
+                }
+            }
+        }
+        let bail_active = if immediate_exit {
+            self.bail_hold = BailHold::new();
+            false
+        } else {
+            self.bail_hold.step(mode, ctx.bail, &timed, dt)
+        };
         if bail_active {
             ctx.bail = true;
             if let Mode::Vehicle(seat) = mode {
@@ -397,6 +436,16 @@ impl Bindings {
         };
         let mut out = EvalSink::new(&intents, latches, controls.move_rotation, map);
         declare(&mut out, mode, &ctx);
+        if exit_click {
+            out.desired
+                .extend(PAD_Y_VEHICLE.iter().map(|&action| Desired {
+                    target: Target {
+                        map: MapKind::Player,
+                        action,
+                    },
+                    want: Want::Click,
+                }));
+        }
         let mut grapple_held = false;
         let mut grapple_lock = None;
         let mut grapple_seat_fire = None;
@@ -405,7 +454,7 @@ impl Bindings {
                 .iter()
                 .map(|&a| intents.button(a))
                 .fold(ButtonControl::default(), merge_buttons);
-            grapple_held = button.down;
+            grapple_held = self.grapple.physical_button_held(button.down);
             if !self.grapple.pending() {
                 self.grapple_triggers = [false; 2];
                 self.grapple_routes.clear();

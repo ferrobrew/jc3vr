@@ -129,6 +129,8 @@ pub struct Controls {
     /// Whether a long press of the vehicle exit bails out by parachute rather than exiting: the
     /// choice latched for the press ([`crate::controllers::bindings::bail`]).
     pub bail: bool,
+    /// Whether the current seated body state can take the stunt act; unknown retains the hold exit.
+    pub stunt_available: Option<bool>,
 }
 
 impl Controls {
@@ -180,6 +182,7 @@ impl Controls {
             masked_inputs: [PhysicalSet::EMPTY; 2],
             armed: [false; 2],
             bail: false,
+            stunt_available: None,
             trackpad_paging: Hand::BOTH.into_iter().any(|which| {
                 provides(
                     frame.hand(which).profile,

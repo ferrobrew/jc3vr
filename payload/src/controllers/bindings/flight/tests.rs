@@ -74,6 +74,7 @@ impl History {
                 sample: self.sample,
                 mode: SUIT,
                 airborne: false,
+                deploy_grapple: false,
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(pose),
@@ -246,6 +247,7 @@ fn commit_history(
             sample: history.sample,
             mode: SUIT,
             airborne: false,
+            deploy_grapple: false,
             gameplay: true,
             canopy_requested: canopy(desired),
             pose: Some(BRAKE),
@@ -389,6 +391,7 @@ fn missing_packets_clear_pose_history_but_only_tracking_loss_preserves_deploymen
                 },
                 mode: falling,
                 airborne: true,
+                deploy_grapple: false,
                 gameplay: true,
                 canopy_requested: false,
                 pose: Some(FLIGHT),
@@ -513,6 +516,21 @@ fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
         let claims = claims(&tick, Instant::now());
         assert!(!claims[Hand::Left.index()].slot, "the left grip is open");
         assert_eq!(claims[Hand::Right.index()].slot, squeezed);
+    }
+}
+
+#[test]
+fn an_eligible_grapple_line_pose_yields_but_physical_grips_still_claim_the_hand() {
+    assert!(!claims_gesture(GripSource::GrappleLine, true));
+    assert!(claims_gesture(GripSource::GrappleLine, false));
+    for source in [
+        GripSource::Magazine,
+        GripSource::Foregrip,
+        GripSource::Climb,
+        GripSource::Door,
+        GripSource::ParachuteHandle,
+    ] {
+        assert!(claims_gesture(source, true), "{source:?}");
     }
 }
 

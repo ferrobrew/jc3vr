@@ -259,6 +259,10 @@ pub fn exit_action(class: VehicleClass) -> ActionId {
     VehicleActions::of(class).exit
 }
 
+pub(crate) fn stunt_action(class: VehicleClass) -> ActionId {
+    VehicleActions::of(class).stunt
+}
+
 /// The vehicle weapon action `action`, on a hand holding no gun.
 fn vehicle_weapon(action: ActionId) -> Press {
     Press::new(Input::Action(action)).gated(Gate::HandUnarmed)
@@ -273,6 +277,10 @@ fn vehicle_weapon(action: ActionId) -> Press {
 /// button's release, and only when it was held no longer than the task's time, so a Y held from
 /// then on until the press ends would exit only from a hold let go at once, and otherwise reach
 /// the game's own Y hold (the seat change) where there is a seat to change to, or nothing.
+///
+/// When the current seated body state cannot take a stunt act, a fresh press clicks the plain
+/// exit immediately. Unknown feasibility preserves the short-stunt/long-exit policy. The choice
+/// is latched for the accepted press, so a changing native condition never reinterprets a hold.
 ///
 /// Where the long press bails out by parachute ([`TableCtx::bail`]), it holds the gamepad's A's
 /// `OPEN_PARACHUTE` instead, from the moment the press becomes long until it ends, which the game

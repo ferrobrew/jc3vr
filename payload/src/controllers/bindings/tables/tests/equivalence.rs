@@ -287,7 +287,10 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
         }
         // A grip press in a grab volume, held as the hand leaves it, and a fresh press outside.
         if mode != Mode::Ui {
-            for volume in [GrabVolume::Foregrip, GrabVolume::Socket(Socket::Hip(Hand::Left))] {
+            for volume in [
+                GrabVolume::Foregrip,
+                GrabVolume::Socket(Socket::Hip(Hand::Left)),
+            ] {
                 let ticks = [
                     (PRESS, Some(volume)),
                     (HELD, None),

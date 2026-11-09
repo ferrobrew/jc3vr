@@ -154,6 +154,8 @@ pub struct GrappleButton {
     phase: Phase,
     /// An external snatch press stays consumed until an observed neutral sample.
     snatch_owned: bool,
+    /// A replaced traversal owns its button until a usable neutral sample, across mode changes.
+    traversal_spent: bool,
 }
 
 /// How long a press may be held and still be a tap, seconds.
@@ -172,21 +174,29 @@ impl GrappleButton {
         Self {
             phase: Phase::Idle,
             snatch_owned: false,
+            traversal_spent: false,
         }
     }
 
     /// Claim a fresh grip-first press before the ordinary grapple gestures see it.
     pub(crate) fn claim_snatch(&mut self, button: ButtonControl, eligible: bool) -> bool {
-        if eligible && button.pressed && self.phase == Phase::Idle && !self.snatch_owned {
+        if eligible
+            && button.pressed
+            && self.phase == Phase::Idle
+            && !self.snatch_owned
+            && !self.traversal_spent
+        {
             self.snatch_owned = true;
         }
         self.snatch_owned
     }
 
     /// Consume the owned release too; masked or missing samples cannot transfer ownership.
+    /// Traversal replacement shares this neutral observation with the snatch's button ownership.
     pub(crate) fn observe_snatch_neutral(&mut self, button: ButtonControl, usable: bool) {
         if usable && !button.held() && !button.released {
             self.snatch_owned = false;
+            self.traversal_spent = false;
         }
     }
 
@@ -197,7 +207,7 @@ impl GrappleButton {
 
     /// Read the current gesture permissions without advancing the button or its timers.
     pub fn current_permissions(&self, context: GrappleContext) -> GrapplePermissions {
-        if self.snatch_owned {
+        if self.snatch_owned || self.traversal_spent {
             return GrapplePermissions::default();
         }
         let tighten = match self.phase {
@@ -214,7 +224,7 @@ impl GrappleButton {
     }
 
     pub(crate) fn pending(&self) -> bool {
-        self.phase != Phase::Idle
+        self.phase != Phase::Idle || self.traversal_spent
     }
 
     /// Invalidate the accepted episode without producing a release or a delayed click.
@@ -222,9 +232,20 @@ impl GrappleButton {
         self.phase = Phase::Idle;
     }
 
+    /// Spend the current press after another traversal intent replaces the grapple.
+    pub(crate) fn spend(&mut self) {
+        self.phase = Phase::Spent;
+        self.traversal_spent = true;
+    }
+
+    /// Physical pulls share the ordinary button episode, not merely its raw held level.
+    pub(crate) fn physical_button_held(&self, held: bool) -> bool {
+        held && !self.snatch_owned && !self.traversal_spent
+    }
+
     /// Advance one tick.
     pub fn step(&mut self, tick: GrappleTick) -> GrappleOutput {
-        if self.snatch_owned {
+        if self.snatch_owned || self.traversal_spent {
             return GrappleOutput {
                 gestures: true,
                 ..Default::default()
@@ -626,6 +647,48 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn replacing_traversal_spends_the_grapple_until_release() {
+        let mut g = GrappleButton::new();
+        apply(&mut g, PRESS, TETHERS);
+        g.spend();
+        for button in [HELD, HELD, RELEASE] {
+            let out = apply(&mut g, button, TETHERS);
+            assert_eq!(out.fire, None);
+            assert_eq!(out.tighten, None);
+            assert!(!out.release);
+            assert_eq!(out.lock, None);
+            assert!(!g.physical_button_held(true));
+        }
+        g.observe_snatch_neutral(UP, true);
+        apply(&mut g, UP, TETHERS);
+        assert_eq!(g.phase, Phase::Idle);
+        assert!(g.physical_button_held(true));
+    }
+
+    #[test]
+    fn traversal_consumption_survives_reset_and_cancel_until_a_usable_neutral_sample() {
+        let mut g = GrappleButton::new();
+        g.spend();
+        for reset in [false, true] {
+            if reset {
+                g.reset_preserving_snatch();
+            } else {
+                g.cancel();
+            }
+            for button in [HELD, RELEASE, PRESS] {
+                g.observe_snatch_neutral(button, true);
+                assert!(!g.physical_button_held(true));
+                assert_eq!(apply(&mut g, button, TETHERS).fire, None);
+            }
+        }
+        g.observe_snatch_neutral(UP, false);
+        assert!(!g.physical_button_held(true));
+        g.observe_snatch_neutral(UP, true);
+        apply(&mut g, UP, TETHERS);
+        assert!(g.physical_button_held(true));
     }
 
     #[test]

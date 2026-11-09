@@ -1,15 +1,20 @@
-//! The choice between the plain exit and the parachute bail for a vehicle seat's long exit press
-//! ([`crate::controllers::bindings::tables::declare`]'s vehicle table).
+//! The seated exit's press policy: immediate plain exit when the live body machine cannot take a
+//! stunt act, and otherwise the short-stunt/long-exit policy, including the parachute bail.
 //!
-//! The choice is made once per press, on the tick the press becomes long, and kept until the press
-//! ends: the plain exit is a one-tick tap of the gamepad's Y at that moment and the bail a hold of
-//! `OPEN_PARACHUTE` from then on, so a choice that changed mid-press would drop the held action
-//! without the tap (neither exit nor bail), or hold the bail after the tap (both). Between presses
-//! the vehicle's speed is read through a hysteresis band that lies wholly above the game's bail
-//! speed, so a vehicle hovering near that speed neither flickers between the two nor bails where
-//! the game would refuse it.
+//! The stunt feasibility choice is latched at the press. The bail choice is made once when a
+//! fallback press becomes long, and kept until it ends: the plain exit clicks the gamepad's Y,
+//! and the bail holds `OPEN_PARACHUTE`. Between presses, the vehicle's speed uses a hysteresis
+//! band above the game's bail speed so a hovering speed does not flicker between the two.
 
-use crate::controllers::mode::{VehicleClass, VehicleSeat};
+use jc3gi::character::character::Character;
+
+use crate::{
+    controllers::{
+        bindings::controls::ButtonControl,
+        mode::{VehicleClass, VehicleSeat},
+    },
+    hooks::{animation::ready_body_machine, character::acts::resolve_act_id},
+};
 
 /// The vehicle speed, metres per second, from which the game's driver, rider, and spinning mounted
 /// gun states take a long `OPEN_PARACHUTE` hold as the parachute bail: the minimum of the animation
@@ -53,6 +58,48 @@ pub const fn bails_by_parachute(seat: VehicleSeat, mounted_gun: bool) -> bool {
         VehicleClass::Sea | VehicleClass::Helicopter | VehicleClass::Plane | VehicleClass::Mech => {
             false
         }
+    }
+}
+
+/// Whether the local seated character's live body state can take the vehicle stunt act.
+/// Missing animation, ownership, or resource evidence remains unknown rather than a negative.
+///
+/// # Safety
+///
+/// The game thread, before the world update, outside an animation update.
+pub(crate) unsafe fn seated_stunt_available() -> Option<bool> {
+    let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+    let machine = unsafe { ready_body_machine(character) }?;
+    if !unsafe { character.IsInVehicleAttachState() } {
+        return None;
+    }
+    let act = u32::try_from(resolve_act_id(c"ACT_STUNT_VEHICLE")?).ok()?;
+    Some(unsafe { machine.TryEvent(&act) })
+}
+
+/// The seat-exit policy chosen at the start of one accepted button episode.
+#[derive(Debug, Copy, Clone, Default)]
+pub(crate) struct ExitLatch {
+    immediate: Option<bool>,
+}
+
+impl ExitLatch {
+    pub(crate) const fn new() -> Self {
+        Self { immediate: None }
+    }
+
+    /// Returns whether the episode suppresses stunt/hold actions, and whether it clicks exit now.
+    pub(crate) fn step(&mut self, button: ButtonControl, available: Option<bool>) -> (bool, bool) {
+        if !button.held() {
+            let immediate = self.immediate.take().unwrap_or(false);
+            return (immediate, false);
+        }
+        let fresh = self.immediate.is_none() || (button.pressed && button.released);
+        if fresh {
+            self.immediate = Some(button.pressed && available == Some(false));
+        }
+        let immediate = self.immediate == Some(true);
+        (immediate, fresh && immediate)
     }
 }
 
@@ -119,6 +166,32 @@ mod tests {
             speed_mps: Some(speed),
             press_long,
         }
+    }
+
+    #[test]
+    fn exit_availability_changes_do_not_reinterpret_an_existing_press() {
+        let press = ButtonControl {
+            down: true,
+            pressed: true,
+            released: false,
+        };
+        let held = ButtonControl {
+            down: true,
+            ..Default::default()
+        };
+        for available in [None, Some(false), Some(true)] {
+            let mut latch = ExitLatch::new();
+            let immediate = available == Some(false);
+            assert_eq!(latch.step(press, available), (immediate, immediate));
+            assert_eq!(latch.step(held, Some(!immediate)), (immediate, false));
+            assert_eq!(
+                latch.step(ButtonControl::default(), None),
+                (immediate, false)
+            );
+            assert_eq!(latch.step(press, Some(false)), (true, true));
+        }
+        let mut unobserved_press = ExitLatch::new();
+        assert_eq!(unobserved_press.step(held, Some(false)), (false, false));
     }
 
     #[test]

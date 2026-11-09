@@ -420,6 +420,7 @@ mod tests {
             closed: Default::default(),
             trigger_ownership: Default::default(),
             flight: Default::default(),
+            rail: Default::default(),
             yank: LineYank::new(),
             bail: Default::default(),
             report: TickReport::default(),

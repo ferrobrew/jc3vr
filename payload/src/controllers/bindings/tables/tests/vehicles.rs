@@ -57,6 +57,108 @@ fn vehicle_stunt_routes_physical_right_a_in_land_helicopter_and_plane_modes() {
 }
 
 #[test]
+fn a_verified_unavailable_stunt_exits_once_on_press_and_never_bails_or_stunts() {
+    for class in [
+        VehicleClass::Car,
+        VehicleClass::Motorcycle,
+        VehicleClass::Sea,
+        VehicleClass::Helicopter,
+        VehicleClass::Plane,
+    ] {
+        let mode = Mode::Vehicle(VehicleSeat {
+            class,
+            driver: true,
+        });
+        let mut bindings = Bindings::new();
+        let mut c = controls(Hand::Right, |dom, _| dom.a = down());
+        c.stunt_available = Some(false);
+        c.bail = true;
+        let first = bindings.sim_step(mode, &c, DT, &CONFIG);
+        assert_eq!(player(&first, EXIT_VEHICLE), Some(Want::Click), "{class:?}");
+        for action in [STUNT_JUMP, JUMP, OPEN_PARACHUTE, MECH_JUMP] {
+            assert_eq!(player(&first, action), None);
+        }
+        c.hands[Hand::Right.index()].a = ButtonControl {
+            down: true,
+            ..Default::default()
+        };
+        c.stunt_available = Some(true);
+        for _ in 0..60 {
+            let held = bindings.sim_step(mode, &c, DT, &CONFIG);
+            for action in [EXIT_VEHICLE, STUNT_JUMP, OPEN_PARACHUTE, MECH_JUMP] {
+                assert_eq!(player(&held, action), None);
+            }
+        }
+        c.hands[Hand::Right.index()].a = up();
+        let released = bindings.sim_step(mode, &c, DT, &CONFIG);
+        assert_eq!(player(&released, STUNT_JUMP), None);
+        assert_eq!(player(&released, EXIT_VEHICLE), None);
+    }
+}
+
+#[test]
+fn unavailable_vehicle_stunt_does_not_replace_the_mechs_tap_jump_or_hold_exit() {
+    let mode = Mode::Vehicle(VehicleSeat {
+        class: VehicleClass::Mech,
+        driver: true,
+    });
+    let mut c = controls(Hand::Right, |dom, _| dom.a = down());
+    c.stunt_available = Some(false);
+    let mut bindings = Bindings::new();
+    let pressed = bindings.sim_step(mode, &c, DT, &CONFIG);
+    assert_eq!(player(&pressed, EXIT_VEHICLE), None);
+    c.hands[Hand::Right.index()].a = up();
+    let tapped = bindings.sim_step(mode, &c, DT, &CONFIG);
+    assert_eq!(player(&tapped, MECH_JUMP), Some(Want::Hold(1.0)));
+    assert_eq!(player(&tapped, EXIT_VEHICLE), None);
+
+    let mut bindings = Bindings::new();
+    c.hands[Hand::Right.index()].a = down();
+    assert_eq!(
+        player(&bindings.sim_step(mode, &c, DT, &CONFIG), EXIT_VEHICLE),
+        None
+    );
+    c.hands[Hand::Right.index()].a = ButtonControl {
+        down: true,
+        ..Default::default()
+    };
+    let mut exits = 0;
+    for _ in 0..60 {
+        let held = bindings.sim_step(mode, &c, DT, &CONFIG);
+        exits += usize::from(player(&held, EXIT_VEHICLE).is_some());
+        assert_eq!(player(&held, MECH_JUMP), None);
+        assert_eq!(player(&held, OPEN_PARACHUTE), None);
+    }
+    assert_eq!(exits, 1);
+    c.hands[Hand::Right.index()].a = up();
+    let released = bindings.sim_step(mode, &c, DT, &CONFIG);
+    assert_eq!(player(&released, MECH_JUMP), None);
+    assert_eq!(player(&released, EXIT_VEHICLE), None);
+}
+
+#[test]
+fn stunt_feasibility_is_latched_and_unknown_retains_the_original_tap_behavior() {
+    for available in [None, Some(true)] {
+        let mode = Mode::Vehicle(VehicleSeat {
+            class: VehicleClass::Helicopter,
+            driver: true,
+        });
+        let mut bindings = Bindings::new();
+        let mut c = controls(Hand::Right, |dom, _| dom.a = down());
+        c.stunt_available = available;
+        assert_eq!(
+            player(&bindings.sim_step(mode, &c, DT, &CONFIG), EXIT_VEHICLE),
+            None
+        );
+        c.stunt_available = Some(false);
+        c.hands[Hand::Right.index()].a = up();
+        let released = bindings.sim_step(mode, &c, DT, &CONFIG);
+        assert_eq!(player(&released, STUNT_JUMP), Some(Want::Hold(1.0)));
+        assert_eq!(player(&released, EXIT_VEHICLE), None);
+    }
+}
+
+#[test]
 fn the_car_reads_left_a_for_handbrake_and_right_a_for_stunt() {
     let mode = Mode::Vehicle(VehicleSeat {
         class: VehicleClass::Car,
@@ -511,6 +613,79 @@ fn the_car_uses_triggers_as_throttle() {
 }
 
 #[test]
+fn the_vehicle_grapple_stays_on_the_offhand_click_not_the_secondary_weapon_button() {
+    for dominant in Hand::BOTH {
+        for class in [
+            VehicleClass::Car,
+            VehicleClass::Motorcycle,
+            VehicleClass::Helicopter,
+            VehicleClass::Plane,
+        ] {
+            let mode = Mode::Vehicle(VehicleSeat {
+                class,
+                driver: true,
+            });
+            let mut click = controls(dominant, |_, off| off.stick_click = down());
+            click.grapple.seated = true;
+            let step = Bindings::default().sim_step(mode, &click, DT, &CONFIG);
+            assert_eq!(
+                step.grapple_seat_fire,
+                Some(SeatRequest::Press),
+                "{class:?}, {dominant:?}"
+            );
+            assert_eq!(player(&step, FIRE_GRAPPLE), None);
+            let mut face = controls(dominant, |_, off| off.b = down());
+            face.grapple.seated = true;
+            let step = Bindings::default().sim_step(mode, &face, DT, &CONFIG);
+            assert_eq!(step.grapple_seat_fire, None);
+            assert_eq!(
+                player(&step, FIRE_VEHICLE_WEAPON_SECONDARY),
+                Some(Want::Hold(1.0))
+            );
+        }
+    }
+}
+
+#[test]
+fn rejected_suit_deployment_keeps_the_physical_grapple_episode_spent_across_modes() {
+    let mut bindings = Bindings::default();
+    let held = ButtonControl {
+        down: true,
+        ..Default::default()
+    };
+    bindings.spend_grapple();
+    for mode in [
+        Mode::Airborne(AirborneVariant::Wingsuit),
+        ON_FOOT,
+        Mode::Vehicle(VehicleSeat {
+            class: VehicleClass::Motorcycle,
+            driver: true,
+        }),
+        ON_FOOT,
+    ] {
+        bindings.reset_preserving_snatch();
+        let mut c = controls(Hand::Right, |dom, off| {
+            dom.trigger = 0.7;
+            off.b = held;
+            off.stick_click = held;
+        });
+        c.grapple.tethers = true;
+        bindings.claim_snatch(held, false, true, false);
+        assert!(!bindings.physical_grapple_held(true));
+        let step = bindings.sim_step(mode, &c, DT, &CONFIG);
+        assert!(!step.grapple_held);
+        assert_eq!(step.grapple_seat_fire, None);
+        assert_eq!(player(&step, FIRE_GRAPPLE), None);
+        assert_eq!(player(&step, RETRACT_GRAPPLE), None);
+        if matches!(mode, Mode::Vehicle(_)) {
+            assert_eq!(player(&step, ACCELERATE), Some(Want::Analog(0.7)));
+        }
+    }
+    bindings.claim_snatch(ButtonControl::default(), false, true, true);
+    assert!(bindings.physical_grapple_held(true));
+}
+
+#[test]
 fn the_mech_punches_jumps_and_fires_at_the_gamepads_places() {
     let mech = |driver| {
         Mode::Vehicle(VehicleSeat {
@@ -568,9 +743,9 @@ fn the_mech_punches_jumps_and_fires_at_the_gamepads_places() {
 }
 
 #[test]
-fn a_double_tap_in_a_vehicle_releases_the_vehicles_tethers() {
+fn a_double_tap_on_a_motorcycle_releases_tethers_without_changing_the_throttle() {
     let car = Mode::Vehicle(VehicleSeat {
-        class: VehicleClass::Car,
+        class: VehicleClass::Motorcycle,
         driver: true,
     });
     let up = ButtonControl {
@@ -579,7 +754,10 @@ fn a_double_tap_in_a_vehicle_releases_the_vehicles_tethers() {
         released: true,
     };
     let tick = |b| {
-        let mut c = controls(Hand::Right, |_, off| off.stick_click = b);
+        let mut c = controls(Hand::Right, |dom, off| {
+            dom.trigger = 0.7;
+            off.stick_click = b;
+        });
         c.grapple.tethers = true;
         c
     };
@@ -597,6 +775,11 @@ fn a_double_tap_in_a_vehicle_releases_the_vehicles_tethers() {
         );
     }
     assert!(released.iter().all(|s| player(s, FIRE_GRAPPLE).is_none()));
+    assert!(
+        released
+            .iter()
+            .all(|s| player(s, ACCELERATE) == Some(Want::Analog(0.7)))
+    );
 }
 
 #[test]

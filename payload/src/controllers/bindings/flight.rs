@@ -6,7 +6,9 @@
 
 use std::{fmt, time::Instant};
 
-use jc3gi::input::input_action_map::Action::OPEN_PARACHUTE;
+use jc3gi::input::input_action_map::Action::{
+    FIRE_GRAPPLE, OPEN_PARACHUTE, PUSH_GRAPPLE, RETRACT_GRAPPLE,
+};
 use tracking_format::event::{Label, WingsuitGesture};
 
 use crate::{
@@ -17,7 +19,7 @@ use crate::{
         fingers::grip::{self, GripSource},
         frame::{Button, ControllerFrame, Hand},
         grab::GrabVolume,
-        mode::{Detection, Mode},
+        mode::{AirborneVariant, Detection, Mode, OnFootVariant, Traversal},
         vehicles::{
             config::WingsuitGesturesConfig,
             wingsuit_gestures::{
@@ -27,6 +29,7 @@ use crate::{
         },
         weapons,
     },
+    grapple::hook,
     recorder::tracking::events::{self, EventKind},
     vr::input::flight_pose::{self, FlightCalibration},
 };
@@ -36,6 +39,7 @@ use crate::{
 pub(super) struct FlightState {
     gestures: WingsuitGestures,
     calibration: Option<Calibration>,
+    retract_active_wire: bool,
     /// The phase and its cause last logged, or `None` while the player is neither falling nor in
     /// the suit.
     logged: Option<(GesturePhase, Option<Why>)>,
@@ -45,6 +49,7 @@ impl FlightState {
     /// Clear pose history without lowering the gesture sample watermark.
     pub(super) fn reset(&mut self) {
         self.gestures.reset();
+        self.retract_active_wire = false;
     }
 
     pub(super) fn current(&self) -> GestureAvailability {
@@ -131,6 +136,15 @@ pub(super) fn commit(
         cancel_without_tracking(state, tick, desired);
     }
     let reserve_pitch = commit_input(state, commands, input, config, desired);
+    retract_committed_wire(state, || {
+        // SAFETY: the binding game stage runs before the world update on the game thread.
+        if let Some(hook) = unsafe { hook::local_hook() }
+            && hook.m_ActiveWire.exists()
+        {
+            // RetractActiveWire leaves dual tethers intact and lets the reel task enter a fall.
+            unsafe { hook.RetractActiveWire() };
+        }
+    });
     note(state, tick, input, config, Pass::Commit);
     reserve_pitch
 }
@@ -314,6 +328,7 @@ fn observation(tick: &Tick<'_>, desired: &[Desired], now: Instant) -> Option<Ges
         sample: packet.sample(),
         mode: tick.detection.mode,
         airborne: tick.airborne,
+        deploy_grapple: deploy_grapple(tick.detection, tick.airborne, tick.grapple),
         gameplay: suspension(tick).is_none(),
         canopy_requested: canopy(desired),
         pose: packet.measure(
@@ -352,6 +367,7 @@ fn commit_input(
     config: &WingsuitGesturesConfig,
     desired: &mut Vec<Desired>,
 ) -> bool {
+    state.retract_active_wire = false;
     let Some(mut input) = input else {
         if config.enabled && config.valid() && !canopy(desired) {
             state.gestures.tracking_lost();
@@ -369,6 +385,16 @@ fn commit_input(
     }
     match flight_pose::desired_for(commands, input.stage(), canopy(desired)) {
         Ok(inputs) => {
+            if commands.transition == Some(SuitTransition::Deploy) {
+                desired.retain(|input| {
+                    input.target.map != MapKind::Player
+                        || !matches!(
+                            input.target.action,
+                            FIRE_GRAPPLE | RETRACT_GRAPPLE | PUSH_GRAPPLE
+                        )
+                });
+                state.retract_active_wire = input.deploy_grapple;
+            }
             desired.extend(inputs);
             commands.reserve_pitch
         }
@@ -379,9 +405,16 @@ fn commit_input(
     }
 }
 
+fn retract_committed_wire(state: &mut FlightState, retract: impl FnOnce()) {
+    if std::mem::take(&mut state.retract_active_wire) {
+        retract();
+    }
+}
+
 fn cancel_without_tracking(state: &mut FlightState, tick: &Tick<'_>, desired: &[Desired]) {
     if suspension(tick).is_some()
-        || Stage::of(tick.detection.mode, tick.airborne) != Stage::Fall
+        || (Stage::of(tick.detection.mode, tick.airborne) != Stage::Fall
+            && !deploy_grapple(tick.detection, tick.airborne, tick.grapple))
         || canopy(desired)
         || claims(tick, Instant::now()) != [HandClaims::default(); 2]
     {
@@ -417,8 +450,12 @@ fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
     let foregrip = weapons::foregrip::two_hand_grip();
     Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let grip = grip::current(hand, now, grip::max_age(tick.dt))
-            .is_some_and(|grip| !holds_item(grip.source));
+        let grip = grip::current(hand, now, grip::max_age(tick.dt)).is_some_and(|grip| {
+            claims_gesture(
+                grip.source,
+                deploy_grapple(tick.detection, tick.airborne, tick.grapple),
+            )
+        });
         HandClaims {
             grip: grip
                 || tick.grabs[i].is_some()
@@ -429,9 +466,31 @@ fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
                 || reload
                     .insert_hands
                     .is_some_and(|(a, b)| a == hand || b == hand),
-            grapple: tick.grapple || tick.detection.traversal.is_some(),
+            grapple: grapple_claim(tick.detection, tick.airborne, tick.grapple),
         }
     })
+}
+
+/// An active line in free flight or reel-in can yield to deployment; an attached hang cannot.
+fn deploy_grapple(detection: Detection, airborne: bool, grapple: bool) -> bool {
+    grapple
+        && match detection.traversal {
+            Some(Traversal::PreReel | Traversal::ReelingIn) => matches!(
+                detection.mode,
+                Mode::OnFoot(OnFootVariant::Ground) | Mode::Airborne(AirborneVariant::Falling)
+            ),
+            Some(Traversal::PreHang | Traversal::ReeledIn) => false,
+            None => Stage::of(detection.mode, airborne) == Stage::Fall,
+        }
+}
+
+fn grapple_claim(detection: Detection, airborne: bool, grapple: bool) -> bool {
+    (grapple || detection.traversal.is_some()) && !deploy_grapple(detection, airborne, grapple)
+}
+
+/// The line's finger pose does not claim a hand against an eligible spread-to-deploy gesture.
+fn claims_gesture(source: GripSource, deploy_grapple: bool) -> bool {
+    !holds_item(source) && !(source == GripSource::GrappleLine && deploy_grapple)
 }
 
 /// Whether a grip of `source` is a held item, which rides along in the hand rather than claiming

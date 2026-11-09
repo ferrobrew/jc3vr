@@ -354,6 +354,9 @@ pub(crate) struct GestureInput {
     /// Rico is off the ground on foot, from the jump's grace on: a jump, or a step off a ledge,
     /// before the game reports a fall.
     pub airborne: bool,
+    /// An active line can yield to deployment, including a reel-in holding the ground mode.
+    /// The binding owner excludes hangs and seats; other hand claims still take precedence.
+    pub deploy_grapple: bool,
     pub gameplay: bool,
     /// A contextual canopy request, including a held request, cancels pending suit gestures.
     pub canopy_requested: bool,
@@ -372,6 +375,8 @@ pub(crate) struct WingsuitGestures {
     /// The flight pose may deploy the suit in this fall: from the fall's start, unless the fall
     /// came out of the suit, where the neutral sets it.
     ready: bool,
+    /// Whether this active grapple has already supplied a fresh deployment intent.
+    grapple_intent: bool,
     /// The sample time before which a deploy request may not follow the last one in this fall.
     retry_at_ns: Option<i64>,
     deploy_since_ns: Option<i64>,
@@ -388,6 +393,7 @@ impl WingsuitGestures {
     /// Cancel gestures without lowering the sample watermark. Only a newer epoch restarts time.
     pub(crate) fn reset(&mut self) {
         self.current = GestureAvailability::Unavailable;
+        self.grapple_intent = false;
         self.deploy_since_ns = None;
         self.retry_at_ns = None;
         self.clear_pose();
@@ -475,6 +481,9 @@ impl WingsuitGestures {
             self.last = Some((input.sample, stage));
         }
         self.current = input.availability(config);
+        if !input.deploy_grapple {
+            self.grapple_intent = false;
+        }
         if self
             .deploy_since_ns
             .is_some_and(|since| elapsed_s(since, input.sample.time_ns) >= DEPLOY_INTENT_S)
@@ -499,6 +508,11 @@ impl WingsuitGestures {
                 transition: None,
             };
         }
+        if input.deploy_grapple && !self.grapple_intent && stage == Stage::Fall {
+            // Grappling is a new traversal intent, not a continuation of the suit's closure.
+            self.ready = true;
+        }
+        self.grapple_intent = input.deploy_grapple;
         let gap_s = previous
             .filter(|(last, _)| last.epoch == input.sample.epoch)
             .map_or(0.0, |(last, _)| {
@@ -672,7 +686,7 @@ impl GestureInput {
 
     /// Where the player is, as far as the gestures are concerned.
     pub(crate) fn stage(self) -> Stage {
-        Stage::of(self.mode, self.airborne)
+        Stage::of(self.mode, self.airborne || self.deploy_grapple)
     }
 
     fn availability(self, config: &WingsuitGesturesConfig) -> GestureAvailability {

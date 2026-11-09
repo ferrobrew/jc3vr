@@ -8,6 +8,7 @@ fn observation(sample: GestureSample, pose: Option<FlightPose>) -> GestureInput 
         sample,
         mode: SUIT,
         airborne: false,
+        deploy_grapple: false,
         gameplay: true,
         canopy_requested: false,
         pose,

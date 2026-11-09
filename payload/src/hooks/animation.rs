@@ -3,7 +3,7 @@
 
 use detours_macro::detour;
 use jc3gi::{
-    animation::rule_system::AnimationRuleSystem,
+    animation::rule_system::{AnimationRuleSystem, StateMachineInstance},
     character::character::{AnimationController, Character},
 };
 use re_utilities::hook_library::HookLibrary;
@@ -97,6 +97,36 @@ pub(crate) unsafe fn active_state_type_id(character: &Character) -> Option<u32> 
                 .m_Hash,
         )
     }
+}
+
+/// The current body machine when its owner, current state, and loaded definition agree.
+///
+/// # Safety
+///
+/// The character is live on the game thread, outside an animation update.
+pub(crate) unsafe fn ready_body_machine(character: &Character) -> Option<&StateMachineInstance> {
+    if character.m_ControlParameters.is_null() || character.m_AnimatedModel.m_InstanceData.is_null()
+    {
+        return None;
+    }
+    let machine = unsafe { body_rule_system(character)?.m_StateMachineInstance.as_ref() }?;
+    unsafe { machine.m_CurrentState.as_ref() }?;
+    let expected_user = std::ptr::from_ref(character)
+        .cast::<u8>()
+        .wrapping_add(Character::GAME_OBJECT_BASE_OFFSET as usize);
+    if !std::ptr::eq(machine.m_UserData.cast::<u8>(), expected_user) {
+        return None;
+    }
+    let handle = unsafe { machine.m_StateMachine.as_ref() }?;
+    let cache = unsafe { handle.m_ResourceCache.as_ref() }?;
+    if cache.m_Resources.is_null() {
+        return None;
+    }
+    let resource = unsafe { cache.m_Resources.add(usize::from(handle.m_Index)).as_ref() }?;
+    if resource.m_Resource.is_null() {
+        return None;
+    }
+    Some(machine)
 }
 
 /// The character's first (body) rule system, which also holds the height over the ground its

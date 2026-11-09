@@ -347,7 +347,15 @@ mod tests {
             .0;
         assert!(pending_branch.contains("clear_controller();"));
         assert!(pending_branch.contains("weapons::hold::tick::publish_fire([false; 2]);"));
-        assert!(source.contains("} else {\n        weapons::hold::tick::publish_fire([false; 2]);\n        weapons::wheel::pause();"));
+        let inactive_branch = source
+            .split_once("state.rail = rail::RailRelease::new();")
+            .unwrap()
+            .1
+            .split_once("fn ")
+            .unwrap()
+            .0;
+        assert!(inactive_branch.contains("weapons::hold::tick::publish_fire([false; 2]);"));
+        assert!(inactive_branch.contains("weapons::wheel::pause();"));
         let tick = include_str!("hold/tick.rs");
         assert!(tick.contains("if !wielded || pair {\n        return None;"));
         assert_eq!(tick.matches("permission::shooting_allowed(").count(), 2);
