@@ -1,40 +1,20 @@
-//! The clip's hips against Rico's facing, for squaring Rico's stance: the idle clip stands bladed,
-//! its hips turned a quarter of a right angle from the root, so the yaw follow steers the root by
-//! the hips' heading and the hips, rather than the root, face where the player's legs do
-//! (`docs/mod/body/procedural-body.md`).
+//! The clip's hip heading is followed for visual stance correction. It does not steer the
+//! character root, so animated stop turns cannot feed their yaw back into body following.
 //!
-//! The gate measures the heading of the line across the clip's upper legs in Rico's model space,
-//! before the IK solves, while Rico is on foot, and follows it slowly enough to take out a walk's
-//! swing of the hips from stride to stride. A case the gate passes through briefly on the ground (a
-//! hit reaction, a one-off move, a jump within its grace, or a tick without the movement task)
-//! holds the follower without measuring, so its published heading lapses only after [`FRESH`] and a
-//! return to on foot carries on from it rather than taking the next measurement whole.
-
-use std::time::{Duration, Instant};
+//! The gate measures the upper-leg line before IK while on foot. Brief hand-over cases retain
+//! the follower; losing grounded authority resets it.
 
 use body_rig::angle::{line_yaw, wrap};
 use glam::Quat;
-use parking_lot::Mutex;
 
 use crate::controllers::body::procedural::{authority::Case, rig::RigBone, solver::pose::RigPose};
-
-/// The clip's hips' heading against Rico's facing, radians, positive turned to his left, while the
-/// gate measured it recently on foot.
-pub fn hip_yaw() -> Option<f32> {
-    let now = Instant::now();
-    PUBLISHED
-        .lock()
-        .filter(|(_, at)| now.saturating_duration_since(*at) <= FRESH)
-        .map(|(yaw, _)| yaw)
-}
 
 /// What the hips' follower does in a hand-over case.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum Track {
     /// Measure the clip's hips and follow them: on foot.
     Observe,
-    /// Keep the followed heading without measuring, and let its publication lapse after
-    /// [`FRESH`]: a case passed through briefly on the ground.
+    /// Keep the followed heading without measuring during a brief hand-over on the ground.
     Hold,
     /// Stop following: switched off, or off the ground.
     Reset,
@@ -87,28 +67,26 @@ impl HipFollower {
     }
 
     /// Measure, hold, or stop following, as the hand-over case `case` calls for ([`Track`]).
-    pub(super) fn track(&mut self, case: Case, animated: &RigPose, dt: f32, now: Instant) {
+    pub(super) fn track(&mut self, case: Case, animated: &RigPose, dt: f32) {
         match Track::of(case) {
-            Track::Observe => self.observe(animated, dt, now),
+            Track::Observe => self.observe(animated, dt),
             Track::Hold => {}
             Track::Reset => self.reset(),
         }
     }
 
-    /// Fold in the hips of the animated pose `animated` over `dt` seconds, and publish the result.
-    fn observe(&mut self, animated: &RigPose, dt: f32, now: Instant) {
+    /// Fold the animated hip heading into the visual stance follower.
+    fn observe(&mut self, animated: &RigPose, dt: f32) {
         let measured = line_yaw(
             animated.position(RigBone::LeftUpLeg),
             animated.position(RigBone::RightUpLeg),
         );
-        let yaw = self.step(measured, dt);
-        *PUBLISHED.lock() = yaw.map(|yaw| (yaw, now));
+        self.step(measured, dt);
     }
 
     /// Stop following, off the ground or with the follow switched off.
     fn reset(&mut self) {
         self.yaw = None;
-        *PUBLISHED.lock() = None;
     }
 
     /// Follow `measured` over `dt` seconds: the first measurement is taken whole, and later ones
@@ -128,11 +106,6 @@ impl HipFollower {
 /// The hips' follower's time constant, seconds: long against a stride, so the walk's swing of the
 /// hips averages out, and short against standing still.
 const SMOOTHING_S: f32 = 0.8;
-
-/// How long a published heading counts, a few ticks.
-const FRESH: Duration = Duration::from_millis(500);
-
-static PUBLISHED: Mutex<Option<(f32, Instant)>> = Mutex::new(None);
 
 pub(super) fn square_pose(animated: &RigPose, target: f32, weight: f32) -> RigPose {
     let mut pose = *animated;

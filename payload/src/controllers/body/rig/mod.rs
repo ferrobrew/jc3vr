@@ -51,9 +51,8 @@ pub fn estimate() -> Option<TorsoEstimate> {
 /// deadband. With no fresh rig (off the ground, or before the first frame) the body does not
 /// follow.
 ///
-/// The idle clip stands bladed, its hips turned from the root, so with `follow.square_hips` the
-/// root is steered by the clip's followed hip heading the other way ([`hip_yaw`]), and the hips
-/// face the legs' heading instead of the root.
+/// Hip squaring changes the visual pose without feeding the animated hip heading back into root
+/// following.
 pub fn follow_settings() -> FollowSettings {
     let follow = Config::lock_query(|c| c.controllers.body.rig.follow);
     if !follow.enabled || headpose::source() != headpose::Source::Vr || !hooks::in_gameplay() {

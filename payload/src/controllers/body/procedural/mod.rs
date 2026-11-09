@@ -333,7 +333,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     } else {
         classify_locked(&read, locked)
     };
-    state.hips.track(case, &animated, dt, now);
+    state.hips.track(case, &animated, dt);
     let stance_authorized = (config.stance.enabled || (follow.enabled && follow.square_hips))
         && case == Case::OnFoot
         && locomotion.fresh(now);
