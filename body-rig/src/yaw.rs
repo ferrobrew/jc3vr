@@ -12,10 +12,6 @@
 //! a while. The hands pull the chest their way, held out toward one side, but never the legs: aiming
 //! or reaching to one side turns the torso, not the stance.
 //!
-//! Looking down at the body, the head's heading says little about where the body should face: the
-//! player is looking at a holster or a hand, not turning. Past the look-down pitch, only the large
-//! turn turns the legs, and the chest's follow fades out until, past the full look-down pitch, the
-//! chest holds where it is.
 
 use glam::{Vec2, Vec3};
 
@@ -64,8 +60,6 @@ pub struct YawTuning {
     /// How fast the settle turns the legs, degrees per second: slowly enough to read as shifting
     /// one's weight rather than as a turn.
     pub steady_slew_deg_s: f32,
-    /// The head pitched further down than this looks at the body, degrees: it starts only the large
-    /// turn, and the chest's follow starts to fade.
     pub look_down_deg: f32,
     /// The head pitched further down than this holds the chest where it is, degrees.
     pub look_down_full_deg: f32,
@@ -315,14 +309,14 @@ impl YawFollow {
         let steady = self.observe_steady(head, looking_down, dt, tuning);
         // A settle lasts only while the head stays steady over a standing body; any other turn
         // takes over from there.
-        if self.turning == Some(TurnCause::Steady) && (!steady || input.moving || looking_down) {
+        if looking_down || (self.turning == Some(TurnCause::Steady) && (!steady || input.moving)) {
             self.turning = None;
         }
         if self.turning.is_none() {
-            self.turning = if past(tuning.turn_deg) {
-                Some(TurnCause::Large)
-            } else if looking_down {
+            self.turning = if looking_down {
                 None
+            } else if past(tuning.turn_deg) {
+                Some(TurnCause::Large)
             } else if self.sustained >= tuning.sustain_s.max(0.0) && past(tuning.sustain_deg) {
                 Some(TurnCause::Sustained)
             } else if input.moving
@@ -607,15 +601,40 @@ mod tests {
     }
 
     #[test]
-    fn looking_down_starts_only_the_large_turn() {
-        let mut follow = YawFollow::new();
-        follow.update(&look(0.0), &TUNING);
-        let down = -(TUNING.look_down_deg + 10.0);
-        // Past the sustain angle, and steady, for long enough to start either.
-        assert_eq!(run(&mut follow, look_down(50.0, down), 3.0), 0.0);
-        assert!(!follow.turning());
-        let yaw = run(&mut follow, look_down(90.0, down), 1.0);
-        assert!((yaw.to_degrees() - 90.0).abs() <= TUNING.settle_deg + 0.1);
+    fn looking_down_does_not_turn_the_legs_standing_or_walking() {
+        for moving in [false, true] {
+            let mut follow = YawFollow::new();
+            follow.snap(0.0);
+            for heading in [50.0, 90.0, -170.0] {
+                let input = YawInput {
+                    moving,
+                    ..look_down(heading, -(TUNING.look_down_deg + 10.0))
+                };
+                assert_eq!(run(&mut follow, input, 3.0), 0.0);
+                assert!(!follow.turning());
+            }
+            let mut level = look(90.0);
+            level.moving = moving;
+            assert!(run(&mut follow, level, 1.0) > 1.0);
+        }
+    }
+
+    #[test]
+    fn a_down_glance_cancels_a_turn_already_in_progress() {
+        for moving in [false, true] {
+            let mut follow = YawFollow::new();
+            follow.snap(0.0);
+            let yaw = follow.update(&look(120.0), &TUNING);
+            assert!(follow.turning());
+            let input = YawInput {
+                moving,
+                ..look_down(-120.0, -80.0)
+            };
+            assert_eq!(run(&mut follow, input, 2.0), yaw);
+            assert!(!follow.turning());
+            follow.rotate(0.5);
+            assert!((run(&mut follow, input, 1.0) - yaw - 0.5).abs() < 1e-5);
+        }
     }
 
     #[test]

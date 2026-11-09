@@ -467,7 +467,9 @@ impl LateFrame {
     /// The tick targets in the same interpolated parent frame as the rendered skeleton.
     fn reference(&self, hand: Hand, dtf: f32) -> Option<Pose> {
         let current = self.ticks.current[hand.index()]?;
-        let previous = self.ticks.previous[hand.index()].unwrap_or(current);
+        let previous = self.ticks.previous[hand.index()]
+            .filter(|previous| previous.owner == current.owner)
+            .unwrap_or(current);
         let Some(transport) = self.transport else {
             return Some(hand_pose::interp(previous.wrist, current.wrist, dtf));
         };
@@ -520,7 +522,9 @@ impl LateFrame {
                 ..HandLateStatus::default()
             };
         };
-        let Some(current) = self.ticks.current[hand.index()] else {
+        let Some(current) = self.ticks.current[hand.index()]
+            .filter(|target| target.owner == ik::TargetOwner::Controller)
+        else {
             return HandLateStatus {
                 reason: LateReason::NoSimTarget,
                 ..HandLateStatus::default()
@@ -645,13 +649,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_wingsuit_target_is_not_corrected_toward_the_controller() {
+        let mut f = frame(pose(0.2, 0.3), pose(0.0, 0.0), pose(0.1, 0.1), 1.0);
+        f.ticks.current[Hand::Right.index()].as_mut().unwrap().owner = ik::TargetOwner::Wingsuit;
+        assert!(f.hand_delta(Hand::Right, 1.0).is_none());
+        assert_eq!(f.drawn(Hand::Right, 1.0).unwrap().wrist, pose(0.1, 0.1));
+        assert_eq!(f.reference(Hand::Right, 0.0), Some(pose(0.1, 0.1)));
+    }
+
     fn frame(now: Pose, previous_tick: Pose, current_tick: Pose, weight: f32) -> LateFrame {
         let still = PosePair {
             previous: now,
             current: now,
             transport: None,
         };
-        let target = |wrist| Some(ik::TickTarget { wrist, weight });
+        let target = |wrist| {
+            Some(ik::TickTarget {
+                wrist,
+                weight,
+                owner: ik::TargetOwner::Controller,
+            })
+        };
         LateFrame {
             hands: [
                 None,

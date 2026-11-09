@@ -30,13 +30,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     controllers::{
-        body::{
-            self, BodyDimensions,
-            rig::{
-                self as body_rig, shoulder_heading,
-                skeleton::{SkeletonSource, skeleton_in_cockpit},
-            },
-        },
+        body::{self, BodyDimensions, rig as body_rig},
         config::{ControllersConfig, HandsConfig},
         frame::{self, ControllerFrame, Hand, Pose},
         hands::reach::{ArmRemap, ReachLimit},
@@ -167,7 +161,7 @@ fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
     });
     let torso = body_rig::torso_heading(head, wrists);
     let remaps = arm_remaps(&config, head, torso, world_scale);
-    let limits = reach_limits(head, world_scale);
+    let limits = reach_limits(head, torso, world_scale);
     let hands = Hand::BOTH.map(|hand| {
         let i = hand.index();
         let cockpit = frame
@@ -257,8 +251,6 @@ fn shoulder_joints(
     })
 }
 
-/// Each hand's remap: about the character's measured shoulder when that is on and the arm is
-/// measured, else about the estimated shoulders when `body.remap_hands` is on, else none.
 fn arm_remaps(
     config: &ControllersConfig,
     head: Pose,
@@ -273,12 +265,9 @@ fn arm_remaps(
         return [None; 2];
     }
     let player = body::player();
-    let chest = shoulder_heading();
     Hand::BOTH.map(|hand| {
         measured[hand.index()]
-            .and_then(|arm| {
-                ArmRemap::measured(hand, head, torso, chest, &player, &arm, world_scale)
-            })
+            .and_then(|arm| ArmRemap::measured(hand, head, torso, &player, &arm, world_scale))
             .or_else(|| {
                 config.body.remap_hands.then(|| {
                     ArmRemap::estimated(
@@ -293,11 +282,7 @@ fn arm_remaps(
     })
 }
 
-/// Each wrist's reach limit, by [`Hand::index`]: the character's measured arm length about his
-/// shoulder joint as the last solve left it, carried into the cockpit frame of the head at `head`.
-/// Before a fresh solve has been read, the shoulder is the measured animated one, relative to the
-/// eyes. `None` for an arm not measured, or with the limit off.
-fn reach_limits(head: Pose, world_scale: f32) -> [Option<ReachLimit>; 2] {
+fn reach_limits(head: Pose, torso: Quat, world_scale: f32) -> [Option<ReachLimit>; 2] {
     if !reach::REACH.reach_limit {
         return [None; 2];
     }
@@ -305,14 +290,11 @@ fn reach_limits(head: Pose, world_scale: f32) -> [Option<ReachLimit>; 2] {
     if arms.iter().all(Option::is_none) {
         return [None; 2];
     }
-    let solved = skeleton_in_cockpit(head.position, world_scale)
-        .filter(|(_, source)| *source == SkeletonSource::Latest)
-        .map(|(skeleton, _)| skeleton.shoulders);
+    let player = body::player();
     Hand::BOTH.map(|hand| {
-        let i = hand.index();
-        let arm = arms[i]?;
-        let shoulder = solved.map_or(head.position + arm.eye_to_shoulder / world_scale, |s| s[i]);
-        ReachLimit::new(shoulder, &arm, world_scale)
+        let arm = arms[hand.index()]?;
+        let remap = ArmRemap::measured(hand, head, torso, &player, &arm, world_scale)?;
+        ReachLimit::new(remap.character_shoulder, &arm, world_scale)
     })
 }
 

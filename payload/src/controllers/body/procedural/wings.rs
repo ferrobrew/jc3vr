@@ -18,7 +18,6 @@ use std::{
 
 use body_rig::{
     angle::{head_heading, line_yaw, wrap},
-    rotation::level,
     yaw::{YawFollow, YawInput, YawTuning},
 };
 use glam::{Mat4, Quat, Vec3};
@@ -42,7 +41,6 @@ use crate::{
                     wings::{PlayerArms, RicoArms, WingTarget, flight_heading, wing_targets},
                 },
             },
-            rig::shoulder_heading,
         },
         frame::{self, Hand, Pose},
         hands::{ik::queue_model_wrists, pose::cockpit_hand},
@@ -64,6 +62,10 @@ pub(super) struct WingQueue {
 pub fn wing_arms() -> [bool; 2] {
     let bits = WING_HANDS.load(Ordering::Relaxed);
     Hand::BOTH.map(|hand| bits & (1 << hand.index()) != 0)
+}
+
+pub(super) fn clear() {
+    WING_HANDS.store(0, Ordering::Relaxed);
 }
 
 /// The player's arms for the wingsuit, when the controller scheme drives the hands in the headset
@@ -93,11 +95,9 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
                 cockpit_hand(hand, h.grip.pose, aim, &config.hands.grip, None).wrist
             })
         })
-    })?;
-    let torso = match shoulder_heading() {
-        Some(torso) => level(torso),
-        None => airborne_torso_heading(head.orientation, wrists.map(|w| w.map(|w| w.position))),
-    };
+    })
+    .unwrap_or([None; 2]);
+    let torso = airborne_torso_heading(head.orientation, wrists.map(|w| w.map(|w| w.position)));
     let player = body::player();
     Some(PlayerArms {
         torso,
@@ -132,6 +132,10 @@ impl State {
             dt,
         } = *request;
         let wanted = case == Case::Wingsuit && player.is_some();
+        if case != Case::Wingsuit {
+            self.last_wings = None;
+            self.status.wing_hands = [false; 2];
+        }
         let weight = self.wings.step(
             if wanted { 1.0 } else { 0.0 },
             dt,

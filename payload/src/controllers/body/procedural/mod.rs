@@ -58,7 +58,7 @@ use std::{
 };
 
 use body_rig::angle::line_yaw;
-use glam::Mat4;
+use glam::{Mat4, Quat};
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
     character::character::Character,
@@ -85,12 +85,12 @@ use crate::{
                 targets::{Fade, Slot, TargetFade},
                 wings::{WingRequest, read_player_arms},
             },
-            rig::torso_turn,
+            rig::{torso::relative_heading, torso_turn},
         },
         locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
     },
-    headpose::{body_relative_rotation, eye_arm},
+    headpose::{body_relative_rotation, eye_arm, xr},
 };
 
 /// What the procedural body did at its last gate.
@@ -188,7 +188,14 @@ pub(crate) fn gate_skipped() {
     let mut state = STATE.lock();
     state.blend.reset();
     state.stance.reset();
+    state.wing_queue = None;
+    state.last_wings = None;
+    state.status.wing_hands = [false; 2];
+    state.status.wing_queued = [false; 2];
+    wings::clear();
     state.status.weight = 0.0;
+    state.status.stance_weight = 0.0;
+    state.status.stance_targets = 0;
 }
 
 /// Run the pose authority for the local player, at the `MAIN` pass's solve gate. `dt` is the
@@ -232,8 +239,14 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let now = Instant::now();
     // Read before the gate's own state too: it takes the configuration and the controller frame.
     let mode = current_mode().mode;
-    let player_arms = (mode == Mode::Airborne(AirborneVariant::Wingsuit))
-        .then(read_player_arms)
+    let player_arms = matches!(
+        mode,
+        Mode::Airborne(AirborneVariant::Wingsuit | AirborneVariant::Parachute)
+    )
+    .then(read_player_arms)
+    .flatten();
+    let visual_heading = (mode == Mode::Airborne(AirborneVariant::Parachute))
+        .then(|| player_arms.as_ref().map(|arms| arms.torso))
         .flatten();
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
@@ -241,6 +254,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     } else {
         0.0
     };
+    state.wing_queue = None;
+    state.status.wing_hands = [false; 2];
+    state.status.wing_weight = 0.0;
     state.status.at = Some(now);
     state.status.mode = config.mode;
     state.arms = None;
@@ -271,11 +287,15 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         classify(&read)
     };
     state.hips.track(case, &animated, dt, now);
-    let standing = config.stance.enabled
-        && case == Case::OnFoot
-        && locomotion.fresh(now)
-        && locomotion.standing_still();
-    let stance_weight = state.stance.step(standing, dt, config.stance.blend_s);
+    let stance_authorized = config.stance.enabled && case == Case::OnFoot && locomotion.fresh(now);
+    let stance_weight = if stance_authorized {
+        state
+            .stance
+            .step(locomotion.standing_still(), dt, config.stance.blend_s)
+    } else {
+        state.stance.reset();
+        0.0
+    };
     state.status.stance_weight = stance_weight;
     state.status.stance_targets = match state.hips.yaw() {
         Some(heading) if stance_weight > 0.0 => {
@@ -313,6 +333,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         weight,
         scale,
         dt,
+        visual_heading,
     };
     let Some(pose) = (unsafe { pose_torso(&mut state, rig, &gate, &config) }) else {
         return false;
@@ -332,6 +353,7 @@ struct TorsoGate<'a> {
     /// The VR world scale.
     scale: f32,
     dt: f32,
+    visual_heading: Option<Quat>,
 }
 
 /// The pose to write: the torso solved on the clip's hips toward the player's head, the clavicles
@@ -347,7 +369,14 @@ unsafe fn pose_torso(
     gate: &TorsoGate<'_>,
     config: &ProceduralBodyConfig,
 ) -> Option<RigPose> {
-    let input = solve_input(gate.character, gate.animated, gate.scale)?;
+    let mut input = solve_input(gate.character, gate.animated, gate.scale)?;
+    if gate.case == Case::Parachute {
+        let (_, character_rotation, _) =
+            Mat4::from(gate.character.m_WorldMatrixT1).to_scale_rotation_translation();
+        input.torso_yaw = gate
+            .visual_heading
+            .and_then(|heading| relative_heading(heading, xr::body_rotation(), character_rotation));
+    }
     let mut solved = solve_anchored(&input, config);
     let turns = unsafe { state.turn_clavicles(gate.character, rig, &solved, gate.dt, config) };
     for side in Side::BOTH {

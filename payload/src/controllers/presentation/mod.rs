@@ -193,9 +193,11 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         return;
     };
     let head = headpose::query();
-    let drive = ik::tick_records()
-        .current
-        .map(|target| target.map_or(0.0, |t| t.weight));
+    let drive = ik::tick_records().current.map(|target| {
+        target
+            .filter(|t| t.owner == ik::TargetOwner::Controller)
+            .map_or(0.0, |t| t.weight)
+    });
     let pose = TickPose {
         body,
         drive,

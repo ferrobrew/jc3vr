@@ -352,17 +352,24 @@ fn arm_edits(
         upper + fore * stretch_limit(stretch),
     );
     let wrist = hand.transform_point3(arm.wrist);
-    let drawn_pole = carried_elbow - shoulder;
-    let ruled = rule.and_then(|rule| {
-        rule.pole(
-            shoulder,
-            wrist,
-            rotation_of(&hand) * arm.hand,
-            side,
-            drawn_pole,
-        )
-    });
-    let pole = ruled.map_or(drawn_pole, |(pole, _)| pole);
+    let reach = wrist - shoulder;
+    let drawn = drawn_pole(
+        carried_elbow - shoulder,
+        torso.transform_point3(arm.wrist) - shoulder,
+        reach,
+    );
+    let ruled = rule
+        .and_then(|rule| rule.pole(shoulder, wrist, rotation_of(&hand) * arm.hand, side, drawn));
+    let pole = ruled
+        .map(|(pole, _)| pole)
+        .or_else(|| {
+            let axis = reach.try_normalize()?;
+            let hint_wrist = shoulder + axis * ((upper + fore) * 0.5);
+            let hint = elbow_hint(shoulder, hint_wrist, upper + fore, side, 0.0)? - shoulder;
+            let fallback = (hint - axis * hint.dot(axis)).try_normalize()?;
+            Some(blend_drawn_pole(drawn, fallback, axis, 1.0))
+        })
+        .unwrap_or(carried_elbow - shoulder);
     let elbow = two_bone_elbow(shoulder, wrist, upper, fore, pole)
         .or_else(|| {
             let hint = elbow_hint(shoulder, wrist, upper + fore, side, 0.0)?;
@@ -402,7 +409,7 @@ impl ElbowRule<'_> {
         wrist: Vec3,
         hand: Quat,
         side: Side,
-        drawn_pole: Vec3,
+        drawn: Option<DrawnPole>,
     ) -> Option<(Vec3, ElbowSolve)> {
         let axis = (wrist - shoulder).try_normalize()?;
         let input = PoleInput {
@@ -423,27 +430,49 @@ impl ElbowRule<'_> {
             )
         });
         let weight = self.arm.weight.clamp(0.0, 1.0);
-        let drawn = Some(drawn_pole - axis * drawn_pole.dot(axis))
-            .filter(|across| across.length() >= POLE_EPSILON_M)
-            .and_then(Vec3::try_normalize);
-        let pole = drawn.map_or(smoothed, |drawn| {
-            let blend = drawn * (1.0 - weight) + smoothed * weight;
-            // Directions nearly opposite cancel halfway; the larger share decides.
-            if blend.length() > BLEND_EPSILON {
-                blend.normalize()
-            } else if weight >= 0.5 {
-                smoothed
-            } else {
-                drawn
-            }
-        });
+        let pole = blend_drawn_pole(drawn, smoothed, axis, 1.0 - weight);
         let solve = ElbowSolve {
             pole: smoothed,
             weight,
-            swivel_deg: drawn.map(|drawn| drawn.angle_between(smoothed).to_degrees()),
+            swivel_deg: drawn
+                .filter(|drawn| drawn.confidence > 0.0)
+                .map(|drawn| drawn.direction.angle_between(smoothed).to_degrees()),
         };
         Some((pole, solve))
     }
+}
+
+#[derive(Debug, Copy, Clone)]
+struct DrawnPole {
+    direction: Vec3,
+    confidence: f32,
+}
+
+fn drawn_pole(upper: Vec3, reach: Vec3, target_reach: Vec3) -> Option<DrawnPole> {
+    let axis = reach.try_normalize()?;
+    let target_axis = target_reach.try_normalize()?;
+    let across = upper - axis * upper.dot(axis);
+    let bend = across.length() / upper.length();
+    let confidence =
+        ((bend - MIN_DRAWN_BEND_SIN) / (FULL_DRAWN_BEND_SIN - MIN_DRAWN_BEND_SIN)).clamp(0.0, 1.0);
+    let confidence = confidence * confidence * (3.0 - 2.0 * confidence);
+    let direction = Quat::from_rotation_arc(axis, target_axis) * across.try_normalize()?;
+    let direction = (direction - target_axis * direction.dot(target_axis)).try_normalize()?;
+    Some(DrawnPole {
+        direction,
+        confidence,
+    })
+}
+
+fn blend_drawn_pole(drawn: Option<DrawnPole>, fallback: Vec3, axis: Vec3, weight: f32) -> Vec3 {
+    let Some(drawn) = drawn else {
+        return fallback;
+    };
+    let weight = drawn.confidence * weight;
+    let angle = axis
+        .dot(fallback.cross(drawn.direction))
+        .atan2(fallback.dot(drawn.direction));
+    Quat::from_axis_angle(axis, angle * weight) * fallback
 }
 
 /// How far the forearm may reach as a share of its length: its stretch's cap, or its own length.
@@ -494,9 +523,8 @@ const MIN_CHAIN_GAIN: f32 = 0.25;
 /// How far the pole must stand off the reach for its side to count, metres.
 const POLE_EPSILON_M: f32 = 1e-3;
 
-/// The least length of the blend between the drawn elbow's direction and the pole for its
-/// direction to count.
-const BLEND_EPSILON: f32 = 1e-3;
+const MIN_DRAWN_BEND_SIN: f32 = 0.05;
+const FULL_DRAWN_BEND_SIN: f32 = 0.2;
 
 #[cfg(test)]
 mod tests {
@@ -849,6 +877,72 @@ mod tests {
             "{smoothed:?} {expected:?}"
         );
         assert!(smoothed.angle_between(target) > 0.5);
+    }
+
+    #[test]
+    fn a_nearly_straight_source_arm_does_not_flip_when_the_hand_bends_it() {
+        for side in 0..2 {
+            for weight in [0.0, 0.2, 1.0] {
+                let mut previous: Option<Vec3> = None;
+                for step in -20..=20 {
+                    let mut b = body();
+                    let shoulder = b.arms[side].shoulder;
+                    let offset = step as f32 * 0.0001;
+                    b.arms[side].elbow = shoulder + Vec3::new(offset, 0.0, -0.3);
+                    b.arms[side].wrist = shoulder + Vec3::new(0.0, 0.0, -0.6);
+                    let a = b.arms[side];
+                    let mut motion = driven(weight);
+                    motion.elbow.as_mut().unwrap().arms[side].weight = weight;
+                    motion.hands[side] =
+                        Some(Mat4::from_translation(Vec3::new(offset * 2.0, 0.0, 0.15)));
+                    let solved = solve(&b, &motion);
+                    let [upper, fore, hand] = Group::arm(side).map(|g| solved.edits[g.index()]);
+                    let elbow = upper.transform_point3(a.elbow);
+                    let wrist = hand.transform_point3(a.wrist);
+                    assert!(elbow.is_finite());
+                    assert!(upper.transform_point3(shoulder).abs_diff_eq(shoulder, 1e-5));
+                    assert!(fore.transform_point3(a.elbow).abs_diff_eq(elbow, 1e-4));
+                    assert!(fore.transform_point3(a.wrist).abs_diff_eq(wrist, 1e-4));
+                    assert!((elbow.distance(shoulder) - a.elbow.distance(shoulder)).abs() < 1e-5);
+                    assert!((elbow.distance(wrist) - a.elbow.distance(a.wrist)).abs() < 1e-4);
+                    if let Some(previous) = previous {
+                        assert!(elbow.distance(previous) < 0.001, "{side} {weight} {step}");
+                    }
+                    previous = Some(elbow);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_drawn_pole_fades_in_smoothly_with_a_resolved_source_bend() {
+        let mut previous = Vec3::X;
+        for step in 0..=250 {
+            let bend = step as f32 * 0.001;
+            let upper = Vec3::new(0.0, bend, (1.0 - bend * bend).sqrt()) * 0.3;
+            let drawn = drawn_pole(upper, Vec3::Z * 0.6, Vec3::Z * 0.4);
+            let pole = blend_drawn_pole(drawn, Vec3::X, Vec3::Z, 1.0);
+            assert!((pole.length() - 1.0).abs() < 1e-5);
+            assert!(pole.z.abs() < 1e-5);
+            assert!(pole.distance(previous) < 0.02);
+            if bend <= MIN_DRAWN_BEND_SIN {
+                assert!(pole.abs_diff_eq(Vec3::X, 1e-5));
+            } else if bend >= FULL_DRAWN_BEND_SIN {
+                assert!(pole.abs_diff_eq(Vec3::Y, 1e-5));
+            }
+            previous = pole;
+        }
+    }
+
+    #[test]
+    fn the_drawn_bend_is_carried_to_the_target_axis_without_reprojecting_the_upper_arm() {
+        let upper = Vec3::new(0.1, 0.0, 0.28);
+        let target_axis = Vec3::new(0.8, 0.0, 0.6);
+        let drawn = drawn_pole(upper, Vec3::Z * 0.5, target_axis * 0.4).unwrap();
+        let expected = Quat::from_rotation_arc(Vec3::Z, target_axis) * Vec3::X;
+        assert_eq!(drawn.confidence, 1.0);
+        assert!(drawn.direction.abs_diff_eq(expected, 1e-5));
+        assert!(drawn.direction.dot(target_axis).abs() < 1e-5);
     }
 
     #[test]

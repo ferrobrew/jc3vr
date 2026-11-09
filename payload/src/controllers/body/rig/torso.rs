@@ -4,6 +4,7 @@
 //! Positions use +X right, +Y up, and -Z forward, in metres. A heading is a yaw about +Y,
 //! positive turning -Z toward -X, as in [`crate::headpose::sim::body_yaw_of`].
 
+use body_rig::angle::yaw_of;
 use glam::{Quat, Vec3};
 
 /// The estimated torso, in the cockpit frame.
@@ -39,6 +40,19 @@ impl TorsoEstimate {
     }
 }
 
+pub(crate) fn relative_heading(torso: Quat, view: Quat, character: Quat) -> Option<f32> {
+    if !torso.is_finite()
+        || !view.is_finite()
+        || !character.is_finite()
+        || torso.length_squared() < 1e-8
+        || view.length_squared() < 1e-8
+        || character.length_squared() < 1e-8
+    {
+        return None;
+    }
+    yaw_of(character.normalize().inverse() * view.normalize() * torso.normalize() * Vec3::NEG_Z)
+}
+
 /// The distance between the hip joints as a fraction of the distance between the shoulder joints.
 /// A generic anthropometric figure.
 pub const HIP_SPACING_FRACTION: f32 = 0.45;
@@ -58,6 +72,31 @@ mod tests {
 
     fn looking(yaw: f32, pitch: f32) -> Quat {
         Quat::from_euler(glam::EulerRot::YXZ, yaw, pitch, 0.0)
+    }
+
+    #[test]
+    fn a_visual_heading_is_independent_of_the_travel_frame() {
+        let torso = Quat::from_rotation_y(0.6);
+        let view = Quat::from_rotation_y(-0.2);
+        for travel in [-1.0, 0.0, 1.3] {
+            let character = Quat::from_rotation_y(travel);
+            let relative = relative_heading(torso, view, character).unwrap();
+            let world = character * Quat::from_rotation_y(relative) * Vec3::NEG_Z;
+            assert!(world.abs_diff_eq(view * torso * Vec3::NEG_Z, 1e-5));
+        }
+    }
+
+    #[test]
+    fn visual_heading_survives_a_shared_world_turn_and_rejects_degenerate_rotations() {
+        let torso = Quat::from_rotation_y(0.7);
+        let view = Quat::from_rotation_y(-0.4);
+        let character = Quat::from_euler(glam::EulerRot::YXZ, 0.2, 0.1, -0.15);
+        let turn = Quat::from_rotation_y(1.7);
+        let original = relative_heading(torso, view, character).unwrap();
+        let turned = relative_heading(torso, turn * view, turn * character).unwrap();
+        assert!(wrap(original - turned).abs() < 1e-5);
+        assert!(relative_heading(Quat::from_array([0.0; 4]), view, character).is_none());
+        assert!(relative_heading(torso, Quat::from_array([f32::NAN; 4]), character).is_none());
     }
 
     #[test]

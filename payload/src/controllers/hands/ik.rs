@@ -216,6 +216,13 @@ pub fn status() -> [HandIkStatus; 2] {
 pub struct TickTarget {
     pub wrist: Pose,
     pub weight: f32,
+    pub owner: TargetOwner,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum TargetOwner {
+    Controller,
+    Wingsuit,
 }
 
 /// The last two ticks' targets per hand: `previous` is the tick before `current`.
@@ -245,6 +252,18 @@ pub(crate) fn local_character() -> usize {
 /// As [`queue`].
 pub(crate) unsafe fn queue_or_defer(character: *mut Character, plan: HandPlan) {
     ownership::clear();
+    MODEL_TARGETS.set([None; 2]);
+    SECONDARY_PLAN.set(None);
+    if !unsafe { character.as_ref() }.is_some_and(|owner| owner.m_IsLocalCharacter) {
+        DEFERRED.replace(None);
+        return;
+    }
+    {
+        let mut ticks = TICKS.lock();
+        ticks.previous = ticks.current;
+        ticks.current = [None; 2];
+    }
+    *STATUS.lock() = [HandIkStatus::default(); 2];
     if !unsafe { character.as_ref() }.is_some_and(|owner| unsafe { plan.current_for(owner) }) {
         DEFERRED.replace(None);
         return;
@@ -336,13 +355,19 @@ pub(crate) unsafe fn queue_model_wrists(
         0.0
     };
     let mut queued = [false; 2];
-    if weight <= 0.0 {
+    if weight <= 0.0 || !character.m_IsLocalCharacter {
         return queued;
     }
+    let to_world = Mat4::from(character.m_WorldMatrixT1);
+    let mut records = MODEL_TARGETS.get();
     for hand in Hand::BOTH {
         let Some((position, rotation)) = targets[hand.index()] else {
             continue;
         };
+        let Some(record) = model_tick_target(to_world, position, rotation, weight) else {
+            continue;
+        };
+        let rotation = rotation.normalize();
         let (effector, wrist_safe) = match hand {
             Hand::Left => (Effector::LEFT_WRIST as i32, SafeBoneIndex::LEFT_HAND),
             Hand::Right => (Effector::RIGHT_WRIST as i32, SafeBoneIndex::RIGHT_HAND),
@@ -368,7 +393,7 @@ pub(crate) unsafe fn queue_model_wrists(
         let Some(controller) =
             (unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() })
         else {
-            return queued;
+            break;
         };
         let names = knuckle_names(hand);
         let (Some(index_bone), Some(middle_bone)) =
@@ -431,8 +456,106 @@ pub(crate) unsafe fn queue_model_wrists(
         // written, or a past writer's value leaks in.
         hik.m_TargetResist[slot] = (WRIST_RESIST * weight).clamp(0.0, 1.0);
         queued[hand.index()] = true;
+        records[hand.index()] = Some(record);
     }
+    MODEL_TARGETS.set(records);
+    let address = character as *mut Character as usize;
+    LOCAL_CHARACTER.store(address, Ordering::Relaxed);
+    let mut secondary = SECONDARY_PLAN
+        .get()
+        .filter(|plan| plan.character == address)
+        .unwrap_or(SecondaryPlan {
+            character: address,
+            driven: [false; 2],
+        });
+    {
+        let mut status = STATUS.lock();
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            if let Some(record) = records[i] {
+                status[i] = HandIkStatus {
+                    queued: true,
+                    weight: record.weight,
+                    at_gate: true,
+                    ..HandIkStatus::default()
+                };
+                secondary.driven[i] = true;
+            }
+        }
+    }
+    {
+        let mut ticks = TICKS.lock();
+        for (current, record) in ticks.current.iter_mut().zip(records) {
+            if record.is_some() {
+                *current = record;
+            }
+        }
+    }
+    SECONDARY_PLAN.set(Some(secondary));
     queued
+}
+
+#[cfg(test)]
+mod model_target_tests {
+    use super::*;
+
+    #[test]
+    fn a_wingsuit_target_records_the_world_wrist_and_its_owner() {
+        let root = Quat::from_euler(glam::EulerRot::YXZ, 0.7, -1.2, 0.1);
+        let world = Mat4::from_rotation_translation(root, Vec3::new(4.0, 30.0, -8.0));
+        let position = Vec3::new(-0.7, 1.4, 0.1);
+        let rotation = Quat::from_rotation_z(0.4);
+        let target = model_tick_target(world, position, rotation, 0.6).unwrap();
+        assert_eq!(target.owner, TargetOwner::Wingsuit);
+        assert_eq!(target.weight, 0.6);
+        assert!(
+            target
+                .wrist
+                .position
+                .abs_diff_eq(world.transform_point3(position), 1e-5)
+        );
+        assert!(target.wrist.orientation.angle_between(root * rotation) < 1e-3);
+    }
+
+    #[test]
+    fn invalid_model_targets_are_not_published() {
+        for weight in [0.0, -0.1, f32::NAN, f32::INFINITY] {
+            assert!(model_tick_target(Mat4::IDENTITY, Vec3::X, Quat::IDENTITY, weight).is_none());
+        }
+        assert!(model_tick_target(Mat4::ZERO, Vec3::X, Quat::IDENTITY, 1.0).is_none());
+        assert!(model_tick_target(Mat4::IDENTITY, Vec3::NAN, Quat::IDENTITY, 1.0).is_none());
+        assert!(
+            model_tick_target(Mat4::IDENTITY, Vec3::X, Quat::from_array([0.0; 4]), 1.0,).is_none()
+        );
+    }
+}
+
+fn model_tick_target(
+    world: Mat4,
+    position: Vec3,
+    rotation: Quat,
+    weight: f32,
+) -> Option<TickTarget> {
+    if !world.is_finite()
+        || !position.is_finite()
+        || !rotation.is_finite()
+        || rotation.length_squared() < 1e-8
+        || !weight.is_finite()
+        || weight <= 0.0
+        || world.determinant().abs() < 1e-8
+    {
+        return None;
+    }
+    let (_, root, _) = world.to_scale_rotation_translation();
+    let wrist = Pose {
+        position: world.transform_point3(position),
+        orientation: (root * rotation.normalize()).normalize(),
+    };
+    (wrist.position.is_finite() && wrist.orientation.is_finite()).then_some(TickTarget {
+        wrist,
+        weight: weight.min(1.0),
+        owner: TargetOwner::Wingsuit,
+    })
 }
 
 /// Queue the wrist targets for the hands `plan` drives, switch the `SECONDARY` pass off for them,
@@ -462,9 +585,12 @@ unsafe fn queue(character: *mut Character, plan: &HandPlan, arms: Option<&ArmCon
     };
     let shoulders_pinned = body_ik::shoulders_driven();
 
-    let mut status = [HandIkStatus::default(); 2];
-    let mut targets = [None; 2];
+    let mut status = *STATUS.lock();
+    let mut targets = MODEL_TARGETS.get();
     for hand in Hand::BOTH {
+        if targets[hand.index()].is_some() {
+            continue;
+        }
         status[hand.index()] = match (&plan.active, plan.drives(hand)) {
             (Some(active), true) => {
                 let request = HandRequest {
@@ -497,18 +623,15 @@ unsafe fn queue(character: *mut Character, plan: &HandPlan, arms: Option<&ArmCon
     // queued: the controllers own the arm either way, and the game's secondary targets would
     // otherwise move a hand the player is holding elsewhere. It acts at the `SECONDARY` pass's
     // entry, after the state tasks that write the keys inside this pass.
-    let driven = if plan.active.is_some() {
-        plan.driven()
-    } else {
-        [false; 2]
-    };
+    let driven = Hand::BOTH.map(|hand| {
+        MODEL_TARGETS.get()[hand.index()].is_some() || (plan.active.is_some() && plan.drives(hand))
+    });
     SECONDARY_PLAN.set(Some(SecondaryPlan {
         character: character as *mut Character as usize,
         driven,
     }));
 
     let mut ticks = TICKS.lock();
-    ticks.previous = ticks.current;
     ticks.current = targets;
     drop(ticks);
     *STATUS.lock() = status;
@@ -608,6 +731,7 @@ pub(crate) unsafe fn flush_deferred(character: *mut Character) {
 /// leaves nothing for a later one.
 pub(crate) fn end_finalize() {
     ownership::clear();
+    MODEL_TARGETS.set([None; 2]);
     SECONDARY_PLAN.set(None);
     DEFERRED.take();
 }
@@ -890,6 +1014,7 @@ unsafe fn queue_hand(
         TickTarget {
             wrist: world,
             weight,
+            owner: TargetOwner::Controller,
         },
     ))
 }
@@ -1005,6 +1130,7 @@ struct SecondaryPlan {
 }
 
 thread_local! {
+    static MODEL_TARGETS: Cell<[Option<TickTarget>; 2]> = const { Cell::new([None; 2]) };
     static SECONDARY_PLAN: Cell<Option<SecondaryPlan>> = const { Cell::new(None) };
     /// The plan [`queue_or_defer`] keeps for the solve gate of the same pass, which runs on the
     /// same thread.

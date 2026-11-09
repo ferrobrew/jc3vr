@@ -432,6 +432,50 @@ mod tests {
     }
 
     #[test]
+    fn parachute_yaw_and_bend_leave_the_harness_and_legs_animated() {
+        let (mut input, config) = setup();
+        let hips = input.animated.position(RigBone::Hips);
+        input
+            .animated
+            .rotate_about(RigBone::Hips, Quat::from_rotation_x(0.2), hips);
+        input.head = input.animated.position(RigBone::Head);
+        input.eye = input.head + Vec3::new(0.0, 0.08, -0.1);
+        let neutral = solve_anchored(&input, &config);
+        input.torso_yaw = Some(0.55);
+        let turned = solve_anchored(&input, &config);
+        input.head_rotation = Quat::from_euler(glam::EulerRot::YXZ, 0.55, -0.7, 0.0);
+        let solved = solve_anchored(&input, &config);
+        let chest_yaw = |pose: &RigPose| {
+            line_yaw(
+                pose.position(RigBone::LeftShoulder),
+                pose.position(RigBone::RightShoulder),
+            )
+            .unwrap()
+        };
+        assert!(chest_yaw(&solved) - chest_yaw(&neutral) > 0.4);
+        assert!(
+            solved
+                .get(RigBone::Sternum)
+                .rotation
+                .angle_between(turned.get(RigBone::Sternum).rotation)
+                > 0.05
+        );
+        for bone in RigBone::ALL {
+            if bone == RigBone::Hips || bone.descends_from(RigBone::Pelvis) {
+                assert_eq!(solved.get(bone), input.animated.get(bone));
+            }
+            if let Some(parent) = bone.parent() {
+                let before = input
+                    .animated
+                    .position(bone)
+                    .distance(input.animated.position(parent));
+                let after = solved.position(bone).distance(solved.position(parent));
+                assert!((before - after).abs() < 1e-5, "{bone:?}: {before} {after}");
+            }
+        }
+    }
+
+    #[test]
     fn the_share_eases_from_upright_to_lying() {
         assert_eq!(upright_share(Vec3::Y), 1.0);
         assert_eq!(upright_share(Vec3::NEG_Z), 0.0);
