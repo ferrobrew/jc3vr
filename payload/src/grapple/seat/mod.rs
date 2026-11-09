@@ -13,6 +13,7 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
+        bindings::grapple_button::{SeatRequest, TAP_S},
         frame::Hand,
         haptics::{self, Event},
     },
@@ -24,7 +25,7 @@ pub(crate) struct SeatTickInput {
     /// The seat grapple is switched on and stands in for the game's ([`stands_in`]).
     pub seated: bool,
     /// The grapple button fired this tick.
-    pub fire: bool,
+    pub fire: Option<SeatRequest>,
     pub held: bool,
     pub release_all: bool,
     /// The seated aim's point, while it holds something in the grapple's range.
@@ -157,20 +158,10 @@ pub(crate) unsafe fn tick(input: &SeatTickInput) {
     let (phase, act) = step(phase, input, reading);
     let (phase, record) = match act {
         Act::None => (phase, Record::None),
-        Act::Fire(at) => match unsafe { engine::fire(at) } {
+        Act::Fire(pending) => match unsafe { engine::fire(pending.target) } {
             Ok(wire) => {
-                tracing::info!(target: "grapple", ?at, "seat grapple: fired");
-                (
-                    Phase::Flying {
-                        wire,
-                        flown_s: 0.0,
-                        held_s: 0.0,
-                        first: at.point,
-                        released: !input.held,
-                        second: None,
-                    },
-                    Record::Fired,
-                )
+                tracing::info!(target: "grapple", request = ?pending.request, "seat grapple: fired");
+                (pending.phase(wire), Record::Fired)
             }
             Err(why) => (phase, Record::Refused(why)),
         },
@@ -256,7 +247,7 @@ pub(crate) enum Phase {
     },
     Cancelling {
         wire: NonZeroUsize,
-        target: Option<Target>,
+        target: Option<Pending>,
     },
 }
 
@@ -274,7 +265,7 @@ impl Phase {
 pub(crate) enum Act {
     None,
     /// Fire the hook at this point.
-    Fire(Target),
+    Fire(Pending),
     /// The press found nothing to fire at.
     Refuse(Refusal),
     /// The hook holds: tether the wire to the vehicle.
@@ -299,9 +290,9 @@ pub(crate) fn step(
     };
     let target = input.target.filter(|at| at.point.is_finite());
     match phase {
-        Phase::Idle if input.seated && input.fire && !input.release_all => (
+        Phase::Idle if input.seated && input.fire.is_some() && !input.release_all => (
             Phase::Idle,
-            target.map_or(Act::Refuse(Refusal::NoTarget), Act::Fire),
+            Pending::capture(input).map_or(Act::Refuse(Refusal::NoTarget), Act::Fire),
         ),
         Phase::Idle => (Phase::Idle, Act::None),
         Phase::Cancelling {
@@ -310,10 +301,10 @@ pub(crate) fn step(
         } => {
             let pending = if !input.seated || input.release_all {
                 None
-            } else if input.fire {
-                target
+            } else if input.fire.is_some() {
+                Pending::capture(input)
             } else {
-                pending
+                pending.and_then(|pending| pending.observe(input, dt))
             };
             if reading == Some(WireReading::Ready) {
                 (Phase::Idle, pending.map_or(Act::None, Act::Fire))
@@ -339,17 +330,17 @@ pub(crate) fn step(
             if !input.seated || input.release_all {
                 return cancel(None);
             }
-            if input.fire {
-                return cancel(target);
+            if input.fire.is_some() {
+                return cancel(Pending::capture(input));
             }
-            let held_s = held_s + if input.held { dt } else { 0.0 };
+            let held_s = held_s + if input.held && !released { dt } else { 0.0 };
             let second = if !released && !input.held {
                 target
             } else {
                 second
             };
             let released = released || !input.held;
-            let long_hold = held_s >= crate::controllers::bindings::grapple_button::TAP_S;
+            let long_hold = held_s >= TAP_S;
             if released && long_hold && second.is_none() {
                 return cancel(None);
             }
@@ -391,6 +382,56 @@ pub(crate) fn step(
                 }
             }
         }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct Pending {
+    pub target: Target,
+    pub request: SeatRequest,
+    pub held_s: f32,
+    pub released: bool,
+    pub second: Option<Target>,
+}
+
+impl Pending {
+    fn phase(self, wire: NonZeroUsize) -> Phase {
+        Phase::Flying {
+            wire,
+            flown_s: 0.0,
+            held_s: self.held_s,
+            first: self.target.point,
+            released: self.released,
+            second: self.second,
+        }
+    }
+
+    fn capture(input: &SeatTickInput) -> Option<Self> {
+        let request = input.fire?;
+        let pending = Self {
+            target: input.target.filter(|at| at.point.is_finite())?,
+            request,
+            held_s: if request == SeatRequest::Hold {
+                TAP_S
+            } else {
+                0.0
+            },
+            released: request == SeatRequest::Tap,
+            second: None,
+        };
+        pending.observe(input, 0.0)
+    }
+
+    fn observe(mut self, input: &SeatTickInput, dt: f32) -> Option<Self> {
+        if !self.released {
+            if input.held {
+                self.held_s += dt;
+            } else {
+                self.released = true;
+                self.second = input.target.filter(|at| at.point.is_finite());
+            }
+        }
+        (!(self.released && self.held_s >= TAP_S && self.second.is_none())).then_some(self)
     }
 }
 

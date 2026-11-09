@@ -52,7 +52,7 @@ use crate::{
             controls::{ButtonControl, Controls},
             grapple_button::{
                 GrappleActions, GrappleButton, GrappleContext, GrapplePermissions, GrappleTick,
-                LockButton,
+                LockButton, SeatRequest,
             },
             hold::{Desired, MapKind, Target, Want},
             intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
@@ -110,7 +110,7 @@ pub struct Step {
     /// What the grapple's button asks of the lock this tick ([`crate::grapple::physical::lock`]).
     pub grapple_lock: Option<LockButton>,
     /// The grapple's button fired the seat grapple this tick ([`crate::grapple::seat`]).
-    pub grapple_seat_fire: bool,
+    pub grapple_seat_fire: Option<SeatRequest>,
 }
 
 /// The tables and their cross-tick state.
@@ -399,7 +399,7 @@ impl Bindings {
         declare(&mut out, mode, &ctx);
         let mut grapple_held = false;
         let mut grapple_lock = None;
-        let mut grapple_seat_fire = false;
+        let mut grapple_seat_fire = None;
         if let Some((inputs, actions)) = grapple_press(mode) {
             let button = inputs
                 .iter()

@@ -103,7 +103,14 @@ pub struct GrappleOutput {
     /// What the button asks of the lock this tick.
     pub lock: Option<LockButton>,
     /// Fire the seat grapple: the button's fire in a vehicle seat, in place of [`fire`](Self::fire).
-    pub seat_fire: bool,
+    pub seat_fire: Option<SeatRequest>,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SeatRequest {
+    Press,
+    Tap,
+    Hold,
 }
 
 /// What the grapple button asks of the lock.
@@ -370,7 +377,7 @@ impl GrappleButton {
         let phase = match self.phase {
             Phase::Idle | Phase::TapWaiting { .. } if button.pressed && !context.gestures() => {
                 // A tap still waiting is taken up by the new press's fire.
-                out.seat_fire = true;
+                out.seat_fire = Some(SeatRequest::Press);
                 Phase::Firing
             }
             Phase::Passing => Phase::Spent,
@@ -394,8 +401,11 @@ impl GrappleButton {
             }
         };
         if let Some(want) = out.fire.take() {
-            out.seat_fire |= want == Want::Click
-                || (matches!(want, Want::Hold(_)) && self.phase != Phase::Firing);
+            out.seat_fire = match want {
+                Want::Click => Some(SeatRequest::Tap),
+                Want::Hold(_) if self.phase != Phase::Firing => Some(SeatRequest::Hold),
+                _ => out.seat_fire,
+            };
         }
         out.gestures = true;
         out.lock = None;
@@ -949,7 +959,7 @@ mod tests {
     };
 
     fn seat_fires(out: &[GrappleOutput]) -> usize {
-        out.iter().filter(|o| o.seat_fire).count()
+        out.iter().filter(|o| o.seat_fire.is_some()).count()
     }
 
     #[test]
@@ -957,7 +967,7 @@ mod tests {
         let mut g = GrappleButton::new();
         let out = run(&mut g, SEATED, &[PRESS, HELD, HELD, RELEASE, UP]);
         assert_eq!(seat_fires(&out), 1);
-        assert!(out[0].seat_fire, "the press fires at once");
+        assert!(out[0].seat_fire.is_some(), "the press fires at once");
         assert!(out.iter().all(|o| o.gestures && o.fire.is_none()));
         assert!(!g.holding());
     }
@@ -970,12 +980,12 @@ mod tests {
         };
         let mut g = GrappleButton::new();
         let first = g.step(tick(PRESS, attached));
-        assert!(!first.seat_fire);
+        assert!(first.seat_fire.is_none());
         let threshold = g.step(GrappleTick {
             dt: TAP_S,
             ..tick(HELD, attached)
         });
-        assert!(threshold.seat_fire);
+        assert_eq!(threshold.seat_fire, Some(SeatRequest::Hold));
         assert_eq!(threshold.fire, None);
         let rest = run(&mut g, attached, &[HELD, HELD, RELEASE, UP]);
         assert_eq!(seat_fires(&rest), 0);
@@ -1012,7 +1022,7 @@ mod tests {
         let mut g = GrappleButton::new();
         let out = hold(&mut g, tethered);
         assert!(out.tighten.is_some());
-        assert!(!out.seat_fire && out.fire.is_none());
+        assert!(out.seat_fire.is_none() && out.fire.is_none());
     }
 
     #[test]
