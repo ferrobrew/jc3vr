@@ -2,15 +2,75 @@
 #[repr(u32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// The kind of an AI awareness event (`EAwareness`), the first argument of
-/// [`BroadcastAwarenessEvent`](crate::ai::ai::BroadcastAwarenessEvent). Only the value the weapons broadcast is mapped.
+/// [`BroadcastAwarenessEvent`](crate::ai::ai::BroadcastAwarenessEvent). Only established event kinds are mapped.
 pub enum AwarenessEvent {
     EAwareness_WeaponFire = 4isize as _,
+    EAwareness_SawGrenade = 14isize as _,
 }
 fn _AwarenessEvent_size_check() {
     unsafe {
         ::std::mem::transmute::<[u8; 0x4], AwarenessEvent>([0u8; 0x4]);
     }
     unreachable!()
+}
+#[repr(C, align(4))]
+/// An awareness record (`SAwarenessEvent`) consumed by the AI senses. Grenade records carry
+/// their predicted landing position and ammunition-pool allocation identity in the event data.
+pub struct AwarenessRecord {
+    pub m_Kind: crate::ai::ai::AwarenessEvent,
+    pub m_Position: crate::types::math::Vector3,
+    pub m_Source: u32,
+    pub m_GrenadeLanding: crate::types::math::Vector3,
+    pub m_GrenadePoolIndex: u32,
+    pub m_GrenadeInstanceUniqueId: u32,
+    _field_28: [u8; 44],
+}
+fn _AwarenessRecord_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x54], AwarenessRecord>([0u8; 0x54]);
+    }
+    unreachable!()
+}
+impl AwarenessRecord {}
+impl std::convert::AsRef<AwarenessRecord> for AwarenessRecord {
+    fn as_ref(&self) -> &AwarenessRecord {
+        self
+    }
+}
+impl std::convert::AsMut<AwarenessRecord> for AwarenessRecord {
+    fn as_mut(&mut self) -> &mut AwarenessRecord {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// An AI entity's awareness sense (`CAISenseAwareness`).
+pub struct SenseAwareness {}
+impl SenseAwareness {
+    pub const GrenadeCheck_ADDRESS: usize = 0x140647360;
+    /// Tests a grenade awareness event against the predicted landing distance and current
+    /// position, then vision when needed. It does not check whether the grenade's fuse is running.
+    pub unsafe fn GrenadeCheck(
+        &self,
+        event: *const crate::ai::ai::AwarenessRecord,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                event: *const crate::ai::ai::AwarenessRecord,
+            ) -> bool = ::std::mem::transmute(Self::GrenadeCheck_ADDRESS);
+            f(self as *const Self as _, event)
+        }
+    }
+}
+impl std::convert::AsRef<SenseAwareness> for SenseAwareness {
+    fn as_ref(&self) -> &SenseAwareness {
+        self
+    }
+}
+impl std::convert::AsMut<SenseAwareness> for SenseAwareness {
+    fn as_mut(&mut self) -> &mut SenseAwareness {
+        self
+    }
 }
 pub const AIMechFireGravityGun_ADDRESS: usize = 0x1406231E0;
 /// A behavior-tree action callback (`AIMechFireGravityGun`), dispatched from

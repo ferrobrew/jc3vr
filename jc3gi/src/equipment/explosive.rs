@@ -4,7 +4,13 @@
 /// physics body, trail effect, detonation timers, and the deferred launch that
 /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) sets up for the physics body to apply later.
 pub struct Explosive {
-    _field_0: [u8; 1200],
+    _field_0: [u8; 36],
+    /// The ammunition-pool slot. Awareness events pair it with
+    /// [`m_InstanceUniqueId`](crate::equipment::explosive::Explosive::m_InstanceUniqueId) to reject recycled instances.
+    pub m_PoolIndex: u32,
+    /// The current allocation's identity within the ammunition pool.
+    pub m_InstanceUniqueId: u32,
+    _field_2c: [u8; 1156],
     /// The explosive's model instance, or null. [`UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender) pushes the
     /// interpolated world matrix to it. The first
     /// [`UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager) after the explosive spawns

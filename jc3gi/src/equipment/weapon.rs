@@ -2431,6 +2431,17 @@ impl WeaponBase {
             f(self as *mut Self as _, data, character)
         }
     }
+    pub const DetachMountedGun_ADDRESS: usize = 0x1409823E0;
+    /// Detaches the mounted weapon from its rigid holder: disables the holder's child interaction
+    /// contexts, stops using the weapon, and drops it. It does not equip the detached weapon.
+    pub unsafe fn DetachMountedGun(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DetachMountedGun_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const PickupStart_ADDRESS: usize = 0x1409912B0;
     /// Starts picking the weapon up for `activator` (a character's `CGameObject` subobject; any
     /// other object is ignored). A hand grenade is taken at once, whatever its

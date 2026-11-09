@@ -303,6 +303,20 @@ impl std::convert::AsMut<HavokCollisionListener> for HavokCollisionListener {
         self
     }
 }
+#[repr(C, align(8))]
+/// Native collision-hit reaction data (`SHitReactInfo`).
+pub struct HitReactInfo {}
+impl HitReactInfo {}
+impl std::convert::AsRef<HitReactInfo> for HitReactInfo {
+    fn as_ref(&self) -> &HitReactInfo {
+        self
+    }
+}
+impl std::convert::AsMut<HitReactInfo> for HitReactInfo {
+    fn as_mut(&mut self) -> &mut HitReactInfo {
+        self
+    }
+}
 #[repr(C, align(16))]
 /// A [`RaycastFilter`](crate::physics::RaycastFilter) whose ignore mask is set pass by pass (`CIgnoreMaterialFlagFilter`).
 pub struct IgnoreMaterialFlagFilter {
@@ -1379,6 +1393,17 @@ fn _PhysicsGameObject_size_check() {
 impl PhysicsGameObject {
     pub fn vftable(&self) -> *const crate::physics::PhysicsGameObjectVftable {
         self.vftable as *const crate::physics::PhysicsGameObjectVftable
+    }
+    pub const DoReactToHit_ADDRESS: usize = 0x1404F2040;
+    /// Converts collision-hit data into an impact damage message and dispatches it to the object.
+    pub unsafe fn DoReactToHit(&mut self, info: *const crate::physics::HitReactInfo) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                info: *const crate::physics::HitReactInfo,
+            ) = ::std::mem::transmute(Self::DoReactToHit_ADDRESS);
+            f(self as *mut Self as _, info)
+        }
     }
     /// The object's engine physics instance, or null. A rigid object
     /// ([`RigidObject`](crate::physics::RigidObject)) returns its one body's wrapper, a [`PfxRigidBody`](crate::physics::PfxRigidBody), whose

@@ -7,7 +7,7 @@ crate::__bitflags! {
     #[doc =
     " scales a hit's impulse by a per-type factor chosen by the lowest type bit set."]
     pub struct DamageFlags : u32 { const DMG_TYPE_UNKNOWN = 1usize as _; const
-    DMG_TYPE_MELEE = 64usize as _; }
+    DMG_TYPE_IMPACT = 16usize as _; const DMG_TYPE_MELEE = 64usize as _; }
 }
 fn _DamageFlags_size_check() {
     unsafe {
