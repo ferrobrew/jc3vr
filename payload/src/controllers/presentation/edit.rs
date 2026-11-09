@@ -58,6 +58,10 @@ impl BodyEdit {
         self
     }
 
+    pub(crate) fn hand_transform(&self, hand: usize) -> Mat4 {
+        self.edits[Group::arm(hand)[2].index()]
+    }
+
     fn edit_of(&self, bone: usize) -> Option<&Mat4> {
         let group = self.groups.of(bone)?;
         (self.moved & 1 << group.index() != 0).then(|| &self.edits[group.index()])

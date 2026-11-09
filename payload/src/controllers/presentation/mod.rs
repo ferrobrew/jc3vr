@@ -442,6 +442,25 @@ unsafe fn read_body(
     })
 }
 
+pub(crate) fn drawn_hand(instance: Mat4, dtf: f32, hand: Hand) -> Option<(Mat4, Pose)> {
+    let frame = (*FRAME.lock())?;
+    let edit = body_edit(instance, dtf)?;
+    let body = frame.ticks[0]
+        .body
+        .lerp(&frame.ticks[1].body, dtf.clamp(0.0, 1.0));
+    let arm = body.arms[hand.index()];
+    let model = edit.hand_transform(hand.index());
+    let world = instance * model;
+    let (_, orientation, _) = world.to_scale_rotation_translation();
+    Some((
+        instance * model * instance.inverse(),
+        Pose {
+            position: world.transform_point3(arm.wrist),
+            orientation: (orientation * arm.frame).normalize(),
+        },
+    ))
+}
+
 /// The upper body's edit for a draw, from the frame's snapshot; cached for the frame's other draws
 /// with the same instance matrix and fraction.
 fn body_edit(instance: Mat4, dtf: f32) -> Option<BodyEdit> {
@@ -505,7 +524,7 @@ fn solve_frame(frame: &Frame, instance: Mat4, dtf: f32) -> Option<BodyEdit> {
     let motion = Motion {
         head,
         torso: previous.torso + (current.torso - previous.torso) * t,
-        hands: Hand::BOTH.map(|hand| late::hand_correction(hand, t).map(model)),
+        hands: [None; 2],
         shoulders: Hand::BOTH.map(|hand| {
             late::shoulder_target(hand, t).map(|point| to_model.transform_point3(point))
         }),

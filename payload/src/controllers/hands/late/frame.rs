@@ -29,6 +29,7 @@ use crate::{
             reach::{self, REACH, ReachTuning},
         },
         physical_hands::{DrawTime, physics},
+        presentation,
     },
     headpose,
     hooks::camera::eye_points,
@@ -93,7 +94,8 @@ pub struct DrawnHand {
 /// one the IK did not drive this tick takes the controller's render-time pose. `None` for an inert
 /// or untracked hand.
 pub fn drawn_hands(dtf: f32) -> [Option<DrawnHand>; 2] {
-    FRAME.lock().map_or([None; 2], |frame| {
+    let frame = *FRAME.lock();
+    frame.map_or([None; 2], |frame| {
         Hand::BOTH.map(|hand| frame.drawn(hand, dtf))
     })
 }
@@ -439,6 +441,13 @@ impl LateFrame {
     /// The world-space correction of `hand` at `dtf` (see the module docs), scaled by the weight
     /// the tick's IK was asked at.
     pub(super) fn hand_delta(&self, hand: Hand, dtf: f32) -> Option<Pose> {
+        if let Some((delta, _)) = self.presentation_hand(hand, dtf) {
+            let (_, orientation, position) = delta.to_scale_rotation_translation();
+            return Some(Pose {
+                position,
+                orientation,
+            });
+        }
         let status = self.hand_status(hand, dtf);
         (status.reason == LateReason::Applied).then(|| {
             let now = self.hands[hand.index()].unwrap().wrist.at(dtf);
@@ -472,6 +481,15 @@ impl LateFrame {
         keep_on_forearm(d, elbow, wrist, palette::MAX_FOREARM_STRETCH)
     }
 
+    fn presentation_hand(&self, hand: Hand, dtf: f32) -> Option<(Mat4, Pose)> {
+        if !dtf.is_finite() {
+            return None;
+        }
+        let transport = self.transport?;
+        let instance = lerp_transform(transport[0], transport[1], dtf.clamp(0.0, 1.0));
+        presentation::drawn_hand(instance, dtf, hand)
+    }
+
     /// `hand`'s poses as drawn at `dtf` (see [`drawn_hands`]).
     fn drawn(&self, hand: Hand, dtf: f32) -> Option<DrawnHand> {
         let render = self.hands[hand.index()]?;
@@ -480,14 +498,19 @@ impl LateFrame {
             render.grip.at(dtf),
             render.aim.at(dtf),
         );
-        let drawn = self.reference(hand, dtf).map_or(wrist, |reference| {
-            let solved = Pose {
-                position: reference.position - self.miss(hand, dtf).unwrap_or(Vec3::ZERO),
-                ..reference
-            };
-            self.hand_delta(hand, dtf)
-                .map_or(solved, |d| hand_pose::mul(d, solved))
-        });
+        let drawn = self
+            .presentation_hand(hand, dtf)
+            .map(|(_, wrist)| wrist)
+            .unwrap_or_else(|| {
+                self.reference(hand, dtf).map_or(wrist, |reference| {
+                    let solved = Pose {
+                        position: reference.position - self.miss(hand, dtf).unwrap_or(Vec3::ZERO),
+                        ..reference
+                    };
+                    self.hand_delta(hand, dtf)
+                        .map_or(solved, |d| hand_pose::mul(d, solved))
+                })
+            });
         let to_drawn = hand_pose::mul(drawn, hand_pose::inverse(wrist));
         Some(DrawnHand {
             wrist: drawn,
