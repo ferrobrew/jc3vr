@@ -80,6 +80,16 @@ pub fn status() -> LiveStatus {
     STATUS.lock().clone()
 }
 
+pub(crate) fn publish_status() {
+    let live = LIVE.lock();
+    let status = LiveStatus {
+        snapshot: live.started.then(|| Arc::new(live.table.snapshot())),
+        ..live.published()
+    };
+    drop(live);
+    *STATUS.lock() = status;
+}
+
 /// What became of a weapon of the table's that is in no slot, the carry set, or a hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum Fate {

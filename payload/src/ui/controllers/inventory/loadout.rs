@@ -1,5 +1,6 @@
 //! The loadout as a live view to edit: one dropdown per hand and per body socket, whose selected
-//! value is what is there now, by the weapon's name, or nothing. Choosing another weapon gives it
+//! value shows the latest pending request, or the actual occupant when no request is pending.
+//! The adjacent status reports the actual occupant separately. Choosing another weapon gives it
 //! there, and choosing nothing clears the socket or lets go of the hand's weapon; a definition a
 //! give has shown cannot be spawned is greyed, with the reason on hover. The grenade stock and the
 //! placed C4 charges have their own rows. The requests go to the inventory's give ([`give`]), which
@@ -23,7 +24,7 @@ use crate::{
             inventory::{
                 InventoryReadout,
                 game_view::GameInventory,
-                restore::give::{self, GiveRequest, GiveTarget},
+                restore::give::{self, GiveRequest, GiveTarget, Requested},
             },
         },
     },
@@ -55,7 +56,7 @@ pub(super) fn loadout_section(ui: &mut Ui, inputs: &LoadoutInputs) {
     }
     let game = inputs.inventory.and_then(|readout| readout.game.as_ref());
     Grid::new("inventory_loadout").striped(true).show(ui, |ui| {
-        for header in ["Place", "Holds", "Note"] {
+        for header in ["Place", "Give / clear", "Actual / status"] {
             ui.strong(header);
         }
         ui.end_row();
@@ -70,10 +71,7 @@ pub(super) fn loadout_section(ui: &mut Ui, inputs: &LoadoutInputs) {
                 game,
                 give::weapons_for_hand(),
             );
-            ui.label(join(&[
-                pending_note(GiveTarget::Hand(hand)),
-                hand_note(inputs, hand),
-            ]));
+            ui.label(join(&[actual_note(item, game), hand_note(inputs, hand)]));
             ui.end_row();
         }
         for socket in Socket::ALL {
@@ -86,10 +84,7 @@ pub(super) fn loadout_section(ui: &mut Ui, inputs: &LoadoutInputs) {
                 game,
                 give::weapons_for(socket),
             );
-            ui.label(join(&[
-                pending_note(GiveTarget::Socket(socket)),
-                body_note(item, game),
-            ]));
+            ui.label(join(&[actual_note(item, game), body_note(item, game)]));
             ui.end_row();
         }
         grenade_row(ui);
@@ -141,18 +136,34 @@ fn choice(
 ) {
     let current = item.map(|item| current_name(item, game));
     let current_hash = item.and_then(|item| name_hash(item, game));
+    let requested = give::requested(target);
+    let selected_text = match requested.as_ref() {
+        Some(Requested::Weapon(name)) => {
+            let label = offered
+                .iter()
+                .find(|def| def.name == *name)
+                .map_or_else(|| (*name).to_owned(), |def| give::display_name(def));
+            format!("Requested: {label}")
+        }
+        Some(Requested::Nothing) => "Requested: nothing".to_owned(),
+        None => current.clone().unwrap_or_else(|| "nothing".to_owned()),
+    };
     let salt = match target {
         GiveTarget::Hand(hand) => ("inventory_hand", hand.index()),
         GiveTarget::Socket(socket) => ("inventory_socket", socket.index()),
     };
     ComboBox::from_id_salt(salt)
-        .selected_text(current.as_deref().unwrap_or("nothing"))
+        .selected_text(selected_text)
         .width(260.0)
         .show_ui(ui, |ui| {
             if ui
                 .add_enabled(
-                    item.is_some(),
-                    Button::selectable(item.is_none(), "nothing"),
+                    item.is_some() || matches!(requested, Some(Requested::Weapon(_))),
+                    Button::selectable(
+                        matches!(requested, Some(Requested::Nothing))
+                            || (requested.is_none() && item.is_none()),
+                        "nothing",
+                    ),
                 )
                 .clicked()
             {
@@ -163,7 +174,7 @@ fn choice(
             }
             for def in offered {
                 let label = give::display_name(def);
-                let selected = current_hash == Some(def.name_hash());
+                let selected = selected_weapon(requested.as_ref(), current_hash, def);
                 match give::refusal(&def.name) {
                     Some(why) => {
                         ui.add_enabled(false, Button::selectable(selected, label))
@@ -184,6 +195,58 @@ fn choice(
                 }
             }
         });
+}
+
+#[cfg(test)]
+mod choice_tests {
+    use super::*;
+
+    #[test]
+    fn a_request_selects_its_weapon_without_claiming_the_actual_occupant_changed() {
+        let defs = give::weapons_for_hand();
+        let actual = defs[0];
+        let requested = defs
+            .iter()
+            .find(|def| def.name_hash() != actual.name_hash())
+            .unwrap();
+        let selection = Requested::Weapon(requested.name.as_str());
+        assert!(selected_weapon(
+            Some(&selection),
+            Some(actual.name_hash()),
+            requested
+        ));
+        assert!(!selected_weapon(
+            Some(&selection),
+            Some(actual.name_hash()),
+            actual
+        ));
+        assert!(selected_weapon(None, Some(actual.name_hash()), actual));
+        assert!(!selected_weapon(
+            Some(&Requested::Nothing),
+            Some(actual.name_hash()),
+            actual
+        ));
+        assert!(!selected_weapon(None, None, actual));
+    }
+}
+
+fn actual_note(item: Option<&ItemView>, game: Option<&GameInventory>) -> String {
+    format!(
+        "Actual: {}",
+        item.map_or_else(|| "nothing".to_owned(), |item| current_name(item, game))
+    )
+}
+
+fn selected_weapon(
+    requested: Option<&Requested>,
+    current: Option<u32>,
+    def: &SpawnDefinition,
+) -> bool {
+    match requested {
+        Some(Requested::Weapon(name)) => *name == def.name,
+        Some(Requested::Nothing) => false,
+        None => current == Some(def.name_hash()),
+    }
 }
 
 /// The name of what `item` is: a weapon's display name as the game names it, else its
@@ -213,16 +276,6 @@ fn current_name(item: &ItemView, game: Option<&GameInventory>) -> String {
 fn name_hash(item: &ItemView, game: Option<&GameInventory>) -> Option<u32> {
     let object = item.binding.address()?;
     Some(game?.weapon(object)?.name_hash)
-}
-
-/// The gives on their way to `target`.
-fn pending_note(target: GiveTarget) -> String {
-    let pending = give::pending(target);
-    if pending.is_empty() {
-        String::new()
-    } else {
-        format!("giving {}", pending.join(", "))
-    }
 }
 
 /// Every grip source declaring `hand`, which names what the hand holds beyond the table (a loose

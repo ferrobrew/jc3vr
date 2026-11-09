@@ -445,6 +445,7 @@ pub(crate) unsafe fn maintenance_tick(settings: &InventoryConfig, dominant: Hand
     unsafe { restore::input_tick(owner, settings, ready) };
     unsafe { resume() };
     unsafe { reconcile::apply(owner) };
+    live::publish_status();
     STATE.lock().game = Some(unsafe { game_view::capture(owner) });
     unsafe { docked_view::submit(owner) };
     publish_status();
