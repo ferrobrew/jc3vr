@@ -6,7 +6,7 @@ mod tests;
 
 use std::num::NonZeroUsize;
 
-pub(crate) use engine::WireReading;
+pub(crate) use engine::{Target, WireReading};
 use glam::Vec3;
 use jc3gi::{character::character::Character, equipment::grappling_hook::GrapplingHook};
 use parking_lot::Mutex;
@@ -28,7 +28,7 @@ pub(crate) struct SeatTickInput {
     pub held: bool,
     pub release_all: bool,
     /// The seated aim's point, while it holds something in the grapple's range.
-    pub target: Option<Vec3>,
+    pub target: Option<Target>,
     /// The tick's length, game seconds.
     pub dt: f32,
     pub hand: Hand,
@@ -122,18 +122,35 @@ pub(crate) unsafe fn tick(input: &SeatTickInput) {
         unsafe { hook.ReleaseAllDualTethers() };
     }
     let phase = STATE.lock().phase;
-    let reading = phase.wire().map(|wire| unsafe { engine::read(wire) });
+    let mut reading = phase.wire().map(|wire| unsafe { engine::read(wire) });
+    if let Phase::Flying {
+        wire,
+        released: false,
+        ..
+    } = phase
+        && input.held
+        && input.seated
+        && !input.release_all
+        && matches!(reading, Some(WireReading::Attached | WireReading::Flying))
+        && !unsafe { engine::track_hand(wire) }
+    {
+        reading = Some(WireReading::Gone);
+    }
     let phase = match phase {
         Phase::Flying {
             wire,
             flown_s,
             held_s,
             first,
+            released,
+            second,
         } if reading == Some(WireReading::Attached) => Phase::Flying {
             wire,
             flown_s,
             held_s,
             first: unsafe { engine::attachment_point(wire) }.unwrap_or(first),
+            released,
+            second,
         },
         phase => phase,
     };
@@ -148,7 +165,9 @@ pub(crate) unsafe fn tick(input: &SeatTickInput) {
                         wire,
                         flown_s: 0.0,
                         held_s: 0.0,
-                        first: at,
+                        first: at.point,
+                        released: !input.held,
+                        second: None,
                     },
                     Record::Fired,
                 )
@@ -164,7 +183,7 @@ pub(crate) unsafe fn tick(input: &SeatTickInput) {
             } else {
                 unsafe { engine::cancel(wire) };
                 tracing::info!(target: "grapple", "seat grapple: the tether was refused");
-                (phase, Record::Missed)
+                (Phase::Cancelling { wire, target: None }, Record::Missed)
             }
         }
         Act::Missed => {
@@ -232,10 +251,12 @@ pub(crate) enum Phase {
         flown_s: f32,
         held_s: f32,
         first: Vec3,
+        released: bool,
+        second: Option<Target>,
     },
     Cancelling {
         wire: NonZeroUsize,
-        target: Option<Vec3>,
+        target: Option<Target>,
     },
 }
 
@@ -253,11 +274,11 @@ impl Phase {
 pub(crate) enum Act {
     None,
     /// Fire the hook at this point.
-    Fire(Vec3),
+    Fire(Target),
     /// The press found nothing to fire at.
     Refuse(Refusal),
     /// The hook holds: tether the wire to the vehicle.
-    Tether(NonZeroUsize, Option<Vec3>),
+    Tether(NonZeroUsize, Option<Target>),
     /// The wire ended before the hook held.
     Missed,
     /// Call the hook back: it flew too long, or the seat was left.
@@ -271,23 +292,39 @@ pub(crate) fn step(
     input: &SeatTickInput,
     reading: Option<WireReading>,
 ) -> (Phase, Act) {
+    let dt = if input.dt.is_finite() {
+        input.dt.max(0.0)
+    } else {
+        0.0
+    };
+    let target = input.target.filter(|at| at.point.is_finite());
     match phase {
-        Phase::Idle if input.seated && input.fire && !input.release_all => {
-            match input.target.filter(|at| at.is_finite()) {
-                Some(at) => (Phase::Idle, Act::Fire(at)),
-                None => (Phase::Idle, Act::Refuse(Refusal::NoTarget)),
-            }
-        }
+        Phase::Idle if input.seated && input.fire && !input.release_all => (
+            Phase::Idle,
+            target.map_or(Act::Refuse(Refusal::NoTarget), Act::Fire),
+        ),
         Phase::Idle => (Phase::Idle, Act::None),
-        Phase::Cancelling { wire, target } => {
-            let target = if input.seated && !input.release_all {
-                if input.fire { input.target } else { target }
-            } else {
+        Phase::Cancelling {
+            wire,
+            target: pending,
+        } => {
+            let pending = if !input.seated || input.release_all {
                 None
+            } else if input.fire {
+                target
+            } else {
+                pending
             };
-            match reading {
-                Some(WireReading::Ready) => (Phase::Idle, target.map_or(Act::None, Act::Fire)),
-                _ => (Phase::Cancelling { wire, target }, Act::None),
+            if reading == Some(WireReading::Ready) {
+                (Phase::Idle, pending.map_or(Act::None, Act::Fire))
+            } else {
+                (
+                    Phase::Cancelling {
+                        wire,
+                        target: pending,
+                    },
+                    Act::None,
+                )
             }
         }
         Phase::Flying {
@@ -295,55 +332,49 @@ pub(crate) fn step(
             flown_s,
             held_s,
             first,
+            released,
+            second,
         } => {
+            let cancel = |target| (Phase::Cancelling { wire, target }, Act::Cancel(wire));
             if !input.seated || input.release_all {
-                return (Phase::Cancelling { wire, target: None }, Act::Cancel(wire));
+                return cancel(None);
             }
             if input.fire {
-                return if reading == Some(WireReading::Attached) {
-                    (Phase::Idle, Act::Tether(wire, input.target))
-                } else {
-                    (
-                        Phase::Cancelling {
-                            wire,
-                            target: input.target,
-                        },
-                        Act::Cancel(wire),
-                    )
-                };
+                return cancel(target);
             }
-            let dt = if input.dt.is_finite() {
-                input.dt.max(0.0)
-            } else {
-                0.0
-            };
             let held_s = held_s + if input.held { dt } else { 0.0 };
+            let second = if !released && !input.held {
+                target
+            } else {
+                second
+            };
+            let released = released || !input.held;
+            let long_hold = held_s >= crate::controllers::bindings::grapple_button::TAP_S;
+            if released && long_hold && second.is_none() {
+                return cancel(None);
+            }
             match reading {
                 None | Some(WireReading::Ready) => (Phase::Idle, Act::Missed),
-                Some(WireReading::Gone) => {
-                    (Phase::Cancelling { wire, target: None }, Act::Cancel(wire))
-                }
-                Some(WireReading::Attached) if !input.held => {
-                    let second = input.target.filter(|at| {
-                        held_s >= crate::controllers::bindings::grapple_button::TAP_S
-                            && at.is_finite()
-                            && at.distance(first) > 1.0
-                    });
-                    (Phase::Idle, Act::Tether(wire, second))
-                }
+                Some(WireReading::Gone) => cancel(None),
+                Some(WireReading::Attached) if released => (
+                    Phase::Idle,
+                    Act::Tether(wire, if long_hold { second } else { None }),
+                ),
                 Some(WireReading::Attached) => (
                     Phase::Flying {
                         wire,
                         flown_s: 0.0,
                         held_s,
                         first,
+                        released,
+                        second,
                     },
                     Act::None,
                 ),
                 Some(WireReading::Flying) => {
                     let flown_s = flown_s + dt;
                     if flown_s >= FLIGHT_S {
-                        (Phase::Cancelling { wire, target: None }, Act::Cancel(wire))
+                        cancel(None)
                     } else {
                         (
                             Phase::Flying {
@@ -351,6 +382,8 @@ pub(crate) fn step(
                                 flown_s,
                                 held_s,
                                 first,
+                                released,
+                                second,
                             },
                             Act::None,
                         )

@@ -371,9 +371,11 @@ impl GrappleButton {
             Phase::Idle | Phase::TapWaiting { .. } if button.pressed && !context.gestures() => {
                 // A tap still waiting is taken up by the new press's fire.
                 out.seat_fire = true;
-                Phase::Spent
+                Phase::Firing
             }
             Phase::Passing => Phase::Spent,
+            Phase::Firing if button.held() && !(button.released && !button.down) => Phase::Firing,
+            Phase::Firing => Phase::Idle,
             _ => {
                 let unseated = GrappleContext {
                     seated: false,

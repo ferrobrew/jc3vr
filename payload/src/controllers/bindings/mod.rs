@@ -695,7 +695,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             target: aim::status()
                 .grapple
                 .filter(|g| g.seat && g.valid)
-                .map(|g| g.point),
+                .and_then(|g| grapple::seat::Target::capture(g.point)),
             dt,
             hand: grapple_hand,
         })

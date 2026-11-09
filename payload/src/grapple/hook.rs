@@ -57,9 +57,13 @@ pub(crate) unsafe fn claim_custom(owner: CustomOwner) -> bool {
     };
     let mut claim = CUSTOM.lock();
     if claim.is_some_and(|claim| {
-        claim
-            .wire
-            .is_some_and(|wire| hook.m_ActiveWire.px as usize != wire.get())
+        claim.wire.is_some_and(|wire| {
+            hook.m_ActiveWire.px as usize != wire.get()
+                && hook.m_State == GrapplingHookState::GHS_INACTIVE
+                && !hook.m_ActiveWire.exists()
+                && !hook.m_AttachmentWire.exists()
+                && !firing(hook)
+        })
     }) {
         *claim = None;
     }
@@ -80,6 +84,12 @@ pub(crate) fn own_custom(owner: CustomOwner, wire: NonZeroUsize) {
     if let Some(claim) = claim.as_mut().filter(|claim| claim.owner == owner) {
         claim.wire = Some(wire);
     }
+}
+
+pub(crate) fn owns_custom(owner: CustomOwner, wire: NonZeroUsize) -> bool {
+    CUSTOM
+        .lock()
+        .is_some_and(|claim| claim.owner == owner && claim.wire == Some(wire))
 }
 
 pub(crate) fn release_custom(owner: CustomOwner) {
@@ -175,6 +185,10 @@ pub(crate) fn hook_end_mut(wire: &mut GrapplingHookWire) -> &mut WireEnd {
 /// `wire`'s device end, on the gauntlet.
 pub(crate) fn device_end(wire: &GrapplingHookWire) -> &WireEnd {
     &wire.m_WireEnds[DEVICE_END]
+}
+
+pub(crate) fn device_end_mut(wire: &mut GrapplingHookWire) -> &mut WireEnd {
+    &mut wire.m_WireEnds[DEVICE_END]
 }
 
 /// `wire`'s hook end, while the wire is valid and that end is attached.

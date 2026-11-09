@@ -4,7 +4,7 @@ use glam::Vec3;
 
 use crate::{
     controllers::frame::Hand,
-    grapple::seat::{Act, FLIGHT_S, Phase, Refusal, SeatTickInput, WireReading, step},
+    grapple::seat::{Act, FLIGHT_S, Phase, Refusal, SeatTickInput, Target, WireReading, step},
 };
 
 #[test]
@@ -24,6 +24,8 @@ fn a_long_hold_released_at_a_second_point_starts_a_dual_tether() {
         flown_s: 0.0,
         held_s: 0.5,
         first: AT,
+        released: false,
+        second: None,
     };
     assert_eq!(
         step(
@@ -31,7 +33,7 @@ fn a_long_hold_released_at_a_second_point_starts_a_dual_tether() {
             &input(true, false, Some(second)),
             Some(WireReading::Attached)
         ),
-        (Phase::Idle, Act::Tether(wire(), Some(second)))
+        (Phase::Idle, Act::Tether(wire(), Some(target_at(second))))
     );
 }
 
@@ -39,7 +41,7 @@ fn a_long_hold_released_at_a_second_point_starts_a_dual_tether() {
 fn refire_waits_for_the_native_cancel_acknowledgement() {
     let cancelling = Phase::Cancelling {
         wire: wire(),
-        target: Some(AT),
+        target: Some(target_at(AT)),
     };
     let input = input(true, false, None);
     assert_eq!(
@@ -48,7 +50,7 @@ fn refire_waits_for_the_native_cancel_acknowledgement() {
     );
     assert_eq!(
         step(cancelling, &input, Some(WireReading::Ready)),
-        (Phase::Idle, Act::Fire(AT))
+        (Phase::Idle, Act::Fire(target_at(AT)))
     );
 }
 
@@ -56,7 +58,7 @@ fn refire_waits_for_the_native_cancel_acknowledgement() {
 fn retract_all_discards_a_pending_refire() {
     let cancelling = Phase::Cancelling {
         wire: wire(),
-        target: Some(AT),
+        target: Some(target_at(AT)),
     };
     let mut input = input(true, false, None);
     input.release_all = true;
@@ -75,7 +77,7 @@ fn input(seated: bool, fire: bool, target: Option<Vec3>) -> SeatTickInput {
         fire,
         held: false,
         release_all: false,
-        target,
+        target: target.map(target_at),
         dt: DT,
         hand: Hand::Left,
     }
@@ -91,6 +93,8 @@ fn flying(flown_s: f32) -> Phase {
         flown_s,
         held_s: 0.0,
         first: AT,
+        released: false,
+        second: None,
     }
 }
 
@@ -98,7 +102,7 @@ fn flying(flown_s: f32) -> Phase {
 fn a_press_in_the_seat_fires_at_the_seated_aims_point() {
     assert_eq!(
         step(Phase::Idle, &input(true, true, Some(AT)), None),
-        (Phase::Idle, Act::Fire(AT))
+        (Phase::Idle, Act::Fire(target_at(AT)))
     );
 }
 
@@ -146,7 +150,7 @@ fn a_press_while_the_hook_flies_cancels_before_refiring() {
         phase,
         Phase::Cancelling {
             wire: wire(),
-            target: Some(AT)
+            target: Some(target_at(AT))
         }
     );
 }
@@ -201,4 +205,85 @@ fn a_hook_that_flies_too_long_or_outlives_the_seat_is_called_back() {
             )
         );
     }
+}
+
+fn target_at(point: Vec3) -> Target {
+    Target {
+        point,
+        hit: None,
+        body: None,
+    }
+}
+
+#[test]
+fn a_long_hold_release_without_a_target_cancels() {
+    let phase = Phase::Flying {
+        wire: wire(),
+        flown_s: 0.0,
+        held_s: 0.8,
+        first: AT,
+        released: false,
+        second: None,
+    };
+    assert_eq!(
+        step(
+            phase,
+            &input(true, false, None),
+            Some(WireReading::Attached)
+        ),
+        (
+            Phase::Cancelling {
+                wire: wire(),
+                target: None
+            },
+            Act::Cancel(wire())
+        )
+    );
+}
+
+#[test]
+fn a_long_hold_release_at_the_first_point_is_still_a_valid_second_target() {
+    let phase = Phase::Flying {
+        wire: wire(),
+        flown_s: 0.0,
+        held_s: 0.8,
+        first: AT,
+        released: false,
+        second: None,
+    };
+    assert_eq!(
+        step(
+            phase,
+            &input(true, false, Some(AT)),
+            Some(WireReading::Attached)
+        ),
+        (Phase::Idle, Act::Tether(wire(), Some(target_at(AT))))
+    );
+}
+
+#[test]
+fn the_release_target_is_latched_while_a_hook_is_still_flying() {
+    let phase = Phase::Flying {
+        wire: wire(),
+        flown_s: 0.0,
+        held_s: 0.8,
+        first: AT,
+        released: false,
+        second: None,
+    };
+    let second = AT + Vec3::X * 5.0;
+    let (phase, act) = step(
+        phase,
+        &input(true, false, Some(second)),
+        Some(WireReading::Flying),
+    );
+    assert_eq!(act, Act::None);
+    assert_eq!(
+        step(
+            phase,
+            &input(true, false, None),
+            Some(WireReading::Attached)
+        ),
+        (Phase::Idle, Act::Tether(wire(), Some(target_at(second))))
+    );
 }
