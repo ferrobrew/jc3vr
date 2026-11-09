@@ -47,7 +47,6 @@ use crate::{
     config::paths,
     controllers::{
         hands::ik,
-        loadout::Socket,
         weapons::{
             dual_wield::single,
             engine::weapon_at,
@@ -223,6 +222,8 @@ pub(crate) fn on_frontend() {
     plan.held = None;
     plan.checkpoint = None;
     plan.checkpoint_next = None;
+    drop(plan);
+    give::clear_pending();
 }
 
 /// The game is storing the player's save data: write the sidecar with the carried weapons and the
@@ -303,7 +304,7 @@ pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &Invent
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfig, ready: bool) {
-    if !ready {
+    if !ready || crate::is_shutting_down() || !crate::hooks::in_gameplay() {
         return;
     }
     let enabled = settings.enabled && settings.carry;
@@ -374,6 +375,7 @@ pub(crate) fn clear() {
     std::mem::drop(plan);
     SPAWNED.lock().clear();
     TWINS.lock().clear();
+    give::clear_pending();
 }
 
 /// A set of carried weapons waiting for the respawn.
@@ -726,17 +728,21 @@ pub(super) unsafe extern "system" fn spawned(
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(super) enum SpawnToken {
     /// A carried weapon respawned after a reset, asked in the restore's `generation`.
-    Respawn { generation: u64 },
+    Respawn {
+        generation: u64,
+    },
     /// A single pistol's second pistol, asked in `generation`.
-    Twin { generation: u64 },
-    /// A give onto `socket`, asked in `generation`.
-    Give { generation: u64, socket: Socket },
+    Twin {
+        generation: u64,
+    },
+    Give {
+        request: u64,
+    },
 }
 
 impl SpawnToken {
     /// The bits of the user data that hold the generation.
     const GENERATION_MASK: u64 = (1 << Self::SOCKET_SHIFT) - 1;
-    /// The shift of a give's socket index, above the generation.
     const SOCKET_SHIFT: u32 = 56;
     /// The bit that marks a second pistol's request.
     const TWIN: u64 = 1 << 62;
@@ -752,11 +758,7 @@ impl SpawnToken {
         match self {
             SpawnToken::Respawn { generation } => generation & Self::GENERATION_MASK,
             SpawnToken::Twin { generation } => (generation & Self::GENERATION_MASK) | Self::TWIN,
-            SpawnToken::Give { generation, socket } => {
-                (generation & Self::GENERATION_MASK)
-                    | ((socket.index() as u64) << Self::SOCKET_SHIFT)
-                    | Self::GIVE
-            }
+            SpawnToken::Give { request } => (request & Self::GENERATION_MASK) | Self::GIVE,
         }
     }
 
@@ -766,9 +768,9 @@ impl SpawnToken {
         match (data & Self::TWIN != 0, data & Self::GIVE != 0) {
             (false, false) if socket == 0 => Some(SpawnToken::Respawn { generation }),
             (true, false) if socket == 0 => Some(SpawnToken::Twin { generation }),
-            (false, true) => Socket::ALL
-                .get(socket)
-                .map(|&socket| SpawnToken::Give { generation, socket }),
+            (false, true) if socket == 0 => Some(SpawnToken::Give {
+                request: generation,
+            }),
             _ => None,
         }
     }
@@ -793,10 +795,9 @@ mod token_tests {
             SpawnToken::Respawn { generation: 41 },
             SpawnToken::Twin { generation: 41 },
         ];
-        tokens.extend(Socket::ALL.map(|socket| SpawnToken::Give {
-            generation: 41,
-            socket,
-        }));
+        tokens.extend(
+            [1, 41, SpawnToken::GENERATION_MASK].map(|request| SpawnToken::Give { request }),
+        );
         for token in tokens {
             assert_eq!(SpawnToken::decode(token.encode()), Some(token));
         }
@@ -804,12 +805,7 @@ mod token_tests {
 
     #[test]
     fn a_token_of_no_request_is_refused() {
-        let give = SpawnToken::Give {
-            generation: 1,
-            socket: Socket::ALL[0],
-        }
-        .encode();
-        // A socket beyond the body's, a socket on a respawn, and both kinds at once.
+        let give = SpawnToken::Give { request: 1 }.encode();
         assert_eq!(SpawnToken::decode(give | (63 << 56)), None);
         assert_eq!(SpawnToken::decode(1 | (1 << 56)), None);
         assert_eq!(SpawnToken::decode(give | (1 << 62)), None);

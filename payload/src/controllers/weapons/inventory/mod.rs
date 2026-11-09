@@ -422,6 +422,34 @@ pub(crate) unsafe fn input_tick(
     arrival
 }
 
+pub(crate) unsafe fn maintenance_tick(settings: &InventoryConfig, dominant: Hand) {
+    if crate::is_shutting_down() || !crate::hooks::in_gameplay() {
+        return;
+    }
+    let Some(owner) = (unsafe { weapons_engine::local_player() }) else {
+        return;
+    };
+    if !(settings.enabled && settings.project_slots) {
+        unsafe { stop(owner, "the inventory is off", settings.carry) };
+        return;
+    }
+    let slots = unsafe { live_slots(owner) };
+    let spawning =
+        engine::tracked_slots().any(|slot| owner.m_Inventory.m_WeaponPendingSpawn[slot as usize]);
+    let ready = live::begin_tick(dominant, &slots, spawning);
+    if !ready {
+        return;
+    }
+    STATE.lock().status.active = true;
+    traversal::publish(true);
+    unsafe { restore::input_tick(owner, settings, ready) };
+    unsafe { resume() };
+    unsafe { reconcile::apply(owner) };
+    STATE.lock().game = Some(unsafe { game_view::capture(owner) });
+    unsafe { docked_view::submit(owner) };
+    publish_status();
+}
+
 /// Stop the table for the scheme leaving the controllers. Called on every input tick the bindings
 /// do not inject; it does nothing once stopped.
 ///
@@ -447,6 +475,7 @@ pub(crate) unsafe fn stand_down() {
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
+    restore::give::clear_pending();
     unsafe { use_item::stand_down() };
     unsafe { gives::stand_down(owner) };
     ammo::clear();

@@ -28,6 +28,7 @@
 
 use std::{
     ffi::CString,
+    sync::atomic::{AtomicU64, Ordering},
     time::{Duration, Instant},
 };
 
@@ -44,7 +45,7 @@ use crate::{
     controllers::{
         bindings,
         frame::Hand,
-        loadout::{Socket, live},
+        loadout::{ObjectAddress, Socket, live},
         summary::localise,
         weapons::{
             c4,
@@ -85,10 +86,7 @@ pub enum GiveRequest {
 
 /// Queue `request` for the next input tick. A request beyond the queue's bound is dropped.
 pub fn request(request: GiveRequest) {
-    let mut queue = QUEUE.lock();
-    if queue.len() < MAX_QUEUED {
-        queue.push(request);
-    }
+    QUEUE.lock().push(request);
 }
 
 /// The shipped weapon definitions `socket` can be given, in table order: the one-handed weapons
@@ -185,12 +183,11 @@ pub fn refusal(name: &str) -> Option<&'static str> {
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
 pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
+    let queued = QUEUE.lock().take(ready);
     if !ready {
         return;
     }
     unsafe { refresh_names() };
-    unsafe { draw_given() };
-    let queued = std::mem::take(&mut *QUEUE.lock());
     for request in queued {
         let outcome = match request {
             GiveRequest::Weapon { socket, name } => unsafe { give(owner, socket, None, &name) },
@@ -201,19 +198,28 @@ pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
                         .find(|def| def.name == name)
                         .and_then(giveable)
                         .unwrap_or(true);
-                    let socket = hand_socket(hand, small, |socket| table.docked(socket).is_some());
+                    let socket = hand_socket(hand, small, |socket| {
+                        table.docked(socket).is_some()
+                            || PENDING
+                                .lock()
+                                .iter()
+                                .any(|pending| pending.socket == socket)
+                    });
                     unsafe { give(owner, socket, Some(hand), &name) }
                 }
                 None => "give: there is no loadout table".to_owned(),
             },
             GiveRequest::Clear(socket) => unsafe { clear(socket) },
-            GiveRequest::LetGo(hand) => match unsafe { act::let_go(hand, 0.0) } {
-                Ok(_) => format!("give: the {} hand let go of its weapon", hand.label()),
-                Err(refusal) => format!(
-                    "give: the {} hand let go of nothing: {refusal}",
-                    hand.label()
-                ),
-            },
+            GiveRequest::LetGo(hand) => {
+                unsafe { cancel_target(None, Some(hand)) };
+                match unsafe { act::let_go(hand, 0.0) } {
+                    Ok(_) => format!("give: the {} hand let go of its weapon", hand.label()),
+                    Err(refusal) => format!(
+                        "give: the {} hand let go of nothing: {refusal}",
+                        hand.label()
+                    ),
+                }
+            }
             GiveRequest::Grenades(count) => match unsafe { stock::set(count) } {
                 Some(count) => format!("give: the grenade stock is {count}"),
                 None => "give: the player has no grenade weapon".to_owned(),
@@ -227,11 +233,13 @@ pub(super) unsafe fn input_tick(owner: &mut Character, ready: bool) {
         tracing::info!(target: "controllers", "{outcome}");
         *LAST.lock() = Some(outcome);
     }
+    unsafe { draw_given() };
     unsafe { adopt(owner) };
 }
 
 /// Forget the gives on their way. Called when the restore forgets its own.
-pub(super) fn clear_pending() {
+pub(crate) fn clear_pending() {
+    QUEUE.lock().requests.clear();
     PENDING.lock().clear();
     DRAWS.lock().clear();
     GIVEN.lock().clear();
@@ -249,6 +257,7 @@ const GIVE_WAIT_LOADING: Duration = Duration::from_secs(45);
 /// A give whose weapon is on its way.
 struct Pending {
     token: SpawnToken,
+    generation: u64,
     socket: Socket,
     /// The hand the weapon is given to, which draws it off the socket once it is there.
     hand: Option<Hand>,
@@ -278,10 +287,42 @@ impl Refusal {
     }
 }
 
-static QUEUE: Mutex<Vec<GiveRequest>> = Mutex::new(Vec::new());
+#[derive(Default)]
+struct RequestQueue {
+    requests: Vec<GiveRequest>,
+}
+
+impl RequestQueue {
+    fn push(&mut self, request: GiveRequest) {
+        if self.requests.len() < MAX_QUEUED {
+            self.requests.push(request);
+        }
+    }
+
+    fn take(&mut self, ready: bool) -> Vec<GiveRequest> {
+        if ready {
+            std::mem::take(&mut self.requests)
+        } else {
+            Vec::new()
+        }
+    }
+}
+
+static QUEUE: Mutex<RequestQueue> = Mutex::new(RequestQueue {
+    requests: Vec::new(),
+});
 /// The weapons given to a hand that came onto their socket on the last tick, for the hand to draw
 /// on the next: the hand, the socket, and the definition's name.
-static DRAWS: Mutex<Vec<(Hand, Socket, &'static str)>> = Mutex::new(Vec::new());
+static DRAWS: Mutex<Vec<Draw>> = Mutex::new(Vec::new());
+static REQUEST_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+struct Draw {
+    generation: u64,
+    hand: Hand,
+    socket: Socket,
+    object: ObjectAddress,
+    name: &'static str,
+}
 static PENDING: Mutex<Vec<Pending>> = Mutex::new(Vec::new());
 /// The weapons the spawn callback ([`spawned`]) handed over, with their request's token.
 pub(super) static GIVEN: Mutex<Vec<(SpawnToken, Strong)>> = Mutex::new(Vec::new());
@@ -328,6 +369,64 @@ fn giveable(def: &SpawnDefinition) -> Option<bool> {
     Some(one_handed)
 }
 
+fn take_pending(pending: &mut Vec<Pending>, token: SpawnToken, generation: u64) -> Option<Pending> {
+    let index = pending.iter().position(|request| request.token == token)?;
+    let request = pending.remove(index);
+    (request.generation == generation).then_some(request)
+}
+
+fn next_token(sequence: &AtomicU64) -> Option<SpawnToken> {
+    sequence
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+            (current < SpawnToken::GENERATION_MASK).then(|| current + 1)
+        })
+        .ok()
+        .map(|current| SpawnToken::Give {
+            request: current + 1,
+        })
+}
+
+fn conflicts(
+    socket: Socket,
+    hand: Option<Hand>,
+    target_socket: Option<Socket>,
+    target_hand: Option<Hand>,
+) -> bool {
+    target_socket == Some(socket) || target_hand.is_some_and(|target| hand == Some(target))
+}
+
+fn remove_target(
+    pending: &mut Vec<Pending>,
+    socket: Option<Socket>,
+    hand: Option<Hand>,
+) -> Vec<Pending> {
+    let mut removed = Vec::new();
+    let mut kept = Vec::new();
+    for request in std::mem::take(pending) {
+        if conflicts(request.socket, request.hand, socket, hand) {
+            removed.push(request);
+        } else {
+            kept.push(request);
+        }
+    }
+    *pending = kept;
+    removed
+}
+
+unsafe fn cancel_target(socket: Option<Socket>, hand: Option<Hand>) {
+    let removed = remove_target(&mut PENDING.lock(), socket, hand);
+    DRAWS
+        .lock()
+        .retain(|draw| !conflicts(draw.socket, Some(draw.hand), socket, hand));
+    if !removed.is_empty()
+        && let Some(system) = unsafe { SpawnSystem::get() }
+    {
+        for request in removed {
+            unsafe { system.CancelSpawn(spawned as *const u8, request.token.user_data()) };
+        }
+    }
+}
+
 /// Spawn a weapon of the definition `name` for `socket`, clearing the socket once the spawn is asked
 /// for, and for `hand` to draw once it is there.
 unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str) -> String {
@@ -357,7 +456,9 @@ unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str
         );
     }
     let generation = PLAN.lock().generation;
-    let token = SpawnToken::Give { generation, socket };
+    let Some(token) = next_token(&REQUEST_SEQUENCE) else {
+        return "give: the spawn request identities are exhausted".to_owned();
+    };
     let transform = owner.m_WorldMatrixT1;
     let transform: *const Matrix4 = &transform;
     let submitted = spawn_safety::submit(RequestKind::Give, || unsafe {
@@ -376,9 +477,11 @@ unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str
     // The socket is cleared only once the spawn is asked for, so a closed admission (a shutdown)
     // leaves the weapon there. The spawned weapon lands from a later tick ([`GIVEN`]), never inside
     // the request. A refusal here only means the socket was empty.
+    unsafe { cancel_target(Some(socket), hand) };
     let _ = unsafe { swap::eject(socket) };
     PENDING.lock().push(Pending {
         token,
+        generation,
         socket,
         hand,
         name,
@@ -407,7 +510,24 @@ unsafe fn give(owner: &Character, socket: Socket, hand: Option<Hand>, name: &str
 /// The game thread, before the world update.
 unsafe fn draw_given() {
     let draws = std::mem::take(&mut *DRAWS.lock());
-    for (hand, socket, name) in draws {
+    let generation = PLAN.lock().generation;
+    for Draw {
+        generation: asked_in,
+        hand,
+        socket,
+        object,
+        name,
+    } in draws
+    {
+        if asked_in != generation
+            || !live::snapshot_now().is_some_and(|table| {
+                table
+                    .docked(socket)
+                    .is_some_and(|item| item.binding.address() == Some(object))
+            })
+        {
+            continue;
+        }
         let empty = live::snapshot_now().is_some_and(|table| table.held(hand).is_none());
         let line = if bindings::grip_holds_now(hand) != Some(true) {
             format!(
@@ -490,6 +610,7 @@ unsafe fn definition_status(
 
 /// Let the weapon on `socket` fall clear of the player.
 unsafe fn clear(socket: Socket) -> String {
+    unsafe { cancel_target(Some(socket), None) };
     match unsafe { swap::eject(socket) } {
         Ok(()) => format!("give: cleared the {}", socket.label()),
         Err(refusal) => format!("give: the {} was not cleared: {refusal}", socket.label()),
@@ -500,13 +621,11 @@ unsafe fn clear(socket: Socket) -> String {
 /// never came.
 unsafe fn adopt(owner: &mut Character) {
     let given = std::mem::take(&mut *GIVEN.lock());
+    let generation = PLAN.lock().generation;
     for (token, strong) in given {
-        let pending = {
-            let mut pending = PENDING.lock();
-            let index = pending.iter().position(|p| p.token == token);
-            index.map(|i| pending.remove(i))
-        };
+        let pending = take_pending(&mut PENDING.lock(), token, generation);
         let Some(pending) = pending else {
+            unsafe { (*inventory_engine::weapon_of(&strong)).Despawn() };
             continue;
         };
         // SAFETY: the callback's strong reference keeps the weapon alive.
@@ -526,7 +645,13 @@ unsafe fn adopt(owner: &mut Character) {
                     _ => pending.socket,
                 };
                 if let Some(hand) = pending.hand {
-                    DRAWS.lock().push((hand, landed, pending.name));
+                    DRAWS.lock().push(Draw {
+                        generation: pending.generation,
+                        hand,
+                        socket: landed,
+                        object: restored.object,
+                        name: pending.name,
+                    });
                 }
                 format!("give: {} is on the {}", pending.name, landed.label())
             }
@@ -537,11 +662,7 @@ unsafe fn adopt(owner: &mut Character) {
     }
     let empty = std::mem::take(&mut *EMPTY.lock());
     for (token, objects) in empty {
-        let pending = {
-            let mut pending = PENDING.lock();
-            let index = pending.iter().position(|p| p.token == token);
-            index.map(|i| pending.remove(i))
-        };
+        let pending = take_pending(&mut PENDING.lock(), token, generation);
         let Some(pending) = pending else {
             continue;
         };
@@ -588,10 +709,7 @@ unsafe fn expire() {
         expired
     };
     for (p, status) in expired {
-        let shared = PENDING.lock().iter().any(|other| other.token == p.token);
-        if let Some(system) = system.as_deref_mut()
-            && !shared
-        {
+        if let Some(system) = system.as_deref_mut() {
             unsafe { system.CancelSpawn(spawned as *const u8, p.token.user_data()) };
         }
         if status == Some(SpawnResourceDefStatus::LOAD_ERROR) {
@@ -649,6 +767,99 @@ fn never_came_reason(status: Option<SpawnResourceDefStatus>) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pending_request(
+        request: u64,
+        generation: u64,
+        socket: Socket,
+        hand: Option<Hand>,
+    ) -> Pending {
+        Pending {
+            token: SpawnToken::Give { request },
+            generation,
+            socket,
+            hand,
+            name: "w999_test_weapon",
+            tag_index: 1,
+            at: Instant::now(),
+            noted_loading: false,
+        }
+    }
+
+    #[test]
+    fn requests_wait_for_readiness_then_dispatch_in_order_without_coalescing() {
+        let mut queue = RequestQueue::default();
+        queue.push(GiveRequest::Grenades(2));
+        queue.push(GiveRequest::Grenades(3));
+        queue.push(GiveRequest::Clear(Socket::Chest));
+        assert!(queue.take(false).is_empty());
+        assert_eq!(
+            queue.take(true),
+            vec![
+                GiveRequest::Grenades(2),
+                GiveRequest::Grenades(3),
+                GiveRequest::Clear(Socket::Chest),
+            ]
+        );
+        assert!(queue.take(true).is_empty());
+    }
+
+    #[test]
+    fn the_queue_preserves_admitted_edits_when_full() {
+        let mut queue = RequestQueue::default();
+        for count in 0..MAX_QUEUED + 1 {
+            queue.push(GiveRequest::Grenades(count as i32));
+        }
+        assert_eq!(queue.requests.len(), MAX_QUEUED);
+        assert_eq!(
+            queue.take(true),
+            (0..MAX_QUEUED)
+                .map(|count| GiveRequest::Grenades(count as i32))
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn spawn_identities_are_unique_and_never_wrap() {
+        let sequence = AtomicU64::new(0);
+        let first = next_token(&sequence).unwrap();
+        let second = next_token(&sequence).unwrap();
+        assert_ne!(first, second);
+        assert_eq!(SpawnToken::decode(first.encode()), Some(first));
+        assert_eq!(SpawnToken::decode(second.encode()), Some(second));
+        let sequence = AtomicU64::new(SpawnToken::GENERATION_MASK - 1);
+        assert!(next_token(&sequence).is_some());
+        assert!(next_token(&sequence).is_none());
+        assert!(next_token(&sequence).is_none());
+    }
+
+    #[test]
+    fn superseded_callbacks_cannot_consume_a_replacements_request() {
+        let mut pending = vec![pending_request(1, 3, Socket::Chest, None)];
+        let removed = remove_target(&mut pending, Some(Socket::Chest), None);
+        assert_eq!(removed.len(), 1);
+        pending.push(pending_request(2, 3, Socket::Chest, None));
+        assert!(take_pending(&mut pending, SpawnToken::Give { request: 1 }, 3).is_none());
+        assert!(take_pending(&mut pending, SpawnToken::Give { request: 2 }, 3).is_some());
+        assert!(take_pending(&mut pending, SpawnToken::Give { request: 2 }, 3).is_none());
+    }
+
+    #[test]
+    fn clear_cancels_by_socket_or_hand_and_old_world_results_are_rejected() {
+        let mut pending = vec![
+            pending_request(1, 4, Socket::Chest, Some(Hand::Left)),
+            pending_request(2, 4, Socket::BackOuter, Some(Hand::Right)),
+        ];
+        assert_eq!(remove_target(&mut pending, None, Some(Hand::Left)).len(), 1);
+        assert!(take_pending(&mut pending, SpawnToken::Give { request: 2 }, 5).is_none());
+        assert!(pending.is_empty());
+        pending.push(pending_request(3, 5, Socket::Chest, Some(Hand::Left)));
+        assert_eq!(
+            remove_target(&mut pending, Some(Socket::Chest), None).len(),
+            1
+        );
+        assert!(pending.is_empty());
+    }
 
     fn def(name: &str, category: &str, tags: &str) -> SpawnDefinition {
         SpawnDefinition {

@@ -364,6 +364,14 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         state.recovery.suspend();
         state.publish_recovery();
         weapons::stand_down();
+        if !matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
+            unsafe {
+                weapons::inventory::maintenance_tick(
+                    &config.weapons.inventory,
+                    config.acting_hand(),
+                )
+            };
+        }
         // Leaving the controllers puts the loadout table back into the game's slots; a pause of
         // the controllers (the debug panel, a lost frame) keeps it.
         if matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
