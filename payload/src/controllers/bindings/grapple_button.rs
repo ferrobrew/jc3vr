@@ -25,9 +25,9 @@
 //! ([`GrappleContext::reeling`]), from the reel's wind-up on, the button is the lock's
 //! ([`crate::grapple::physical::lock`]): a press locks the line's length at once, or, in the
 //! wind-up, as soon as the reel carries the character; a release within [`TAP_S`] unlocks it and
-//! passes the tap to the game, which keeps its fire from the reel; a release after a longer hold
-//! lets go of the line; and a yank of the grapple hand while it is held unlocks it and resumes the
-//! reel. The game sees no held fire input through any of it.
+//! resumes the reel, firing nothing, since a fire onto the attached line can release it; a release
+//! after a longer hold lets go of the line; and a yank of the grapple hand while it is held unlocks
+//! it and resumes the reel. The game sees no held fire input through any of it.
 //!
 //! In a vehicle seat ([`GrappleContext::seated`]), where the game takes no grapple fire, the
 //! button's fire is the seat grapple's ([`crate::grapple::seat`]): a press with nothing attached,
@@ -120,7 +120,8 @@ pub enum LockButton {
     Pressed,
     /// The button is held into the lock.
     Held,
-    /// The button came up within [`TAP_S`]: unlock, the tap going to the game.
+    /// The button came up within [`TAP_S`]: unlock, the reel resuming. Nothing is fired onto the
+    /// attached line.
     Tapped,
     /// The button came up after a longer hold: let go of the line.
     LetGo,
@@ -271,34 +272,27 @@ impl GrappleButton {
         }
         self.phase = match self.phase {
             Phase::Idle | Phase::TapWaiting { .. } if fresh && context.reeling => {
-                // A tap still waiting fires first; the reel's press is the lock's.
-                if matches!(self.phase, Phase::TapWaiting { .. }) {
-                    out.fire = Some(Want::Click);
-                }
+                // The press is the lock's at once, so the line holds from the press rather than
+                // after a tap window. A tap still waiting is dropped, never fired onto the
+                // attached line.
+                out.lock = Some(LockButton::Pressed);
                 Phase::Locking { held_s: 0.0 }
             }
             Phase::Locking { .. } if lock_yank => Phase::Spent,
             Phase::Locking { held_s } if held && !(button.released && !button.down) => {
-                let next_s = held_s + dt;
-                out.lock = if held_s >= TAP_S {
-                    Some(LockButton::Held)
-                } else if next_s >= TAP_S {
-                    Some(LockButton::Pressed)
-                } else {
-                    None
-                };
-                Phase::Locking { held_s: next_s }
+                out.lock = Some(LockButton::Held);
+                Phase::Locking {
+                    held_s: held_s + dt,
+                }
             }
             Phase::Locking { held_s } => {
-                if held_s < TAP_S {
-                    // The tap is the game's fire from the reel, and nothing once the reel is over.
-                    if context.reeling {
-                        out.fire = Some(Want::Click);
-                    }
-                    out.lock = Some(LockButton::Tapped);
+                // A quick release resumes the reel; a longer hold lets go of the line. Neither
+                // fires the game's hook again: a fire onto the attached line can release it.
+                out.lock = Some(if held_s < TAP_S {
+                    LockButton::Tapped
                 } else {
-                    out.lock = Some(LockButton::LetGo);
-                }
+                    LockButton::LetGo
+                });
                 Phase::Idle
             }
             Phase::Idle | Phase::TapWaiting { .. } if fresh && !context.gestures() => {
@@ -913,38 +907,78 @@ mod tests {
     }
 
     #[test]
-    fn a_press_during_the_reel_waits_for_a_hold_and_holds_the_fire_back() {
+    fn a_press_during_the_reel_locks_at_once_and_holds_the_fire_back() {
         let mut g = GrappleButton::new();
         let out = run(&mut g, REELING, &[PRESS, HELD, HELD]);
-        assert!(locks(&out).is_empty());
+        assert_eq!(
+            locks(&out),
+            vec![LockButton::Pressed, LockButton::Held, LockButton::Held]
+        );
         assert!(out.iter().all(|o| o.gestures && o.fire.is_none()));
     }
 
     #[test]
-    fn the_hold_threshold_emits_one_lock_press_then_held_ticks() {
+    fn the_press_locks_at_once_and_the_release_choice_follows_the_tap_window() {
         let mut g = GrappleButton::new();
-        assert_eq!(g.step(tick(PRESS, REELING)).lock, None);
-        let before = g.step(GrappleTick {
-            dt: TAP_S - 0.01,
-            ..tick(HELD, REELING)
-        });
-        assert_eq!(before.lock, None);
-        let threshold = g.step(GrappleTick {
-            dt: 0.01,
-            ..tick(HELD, REELING)
-        });
-        assert_eq!(threshold.lock, Some(LockButton::Pressed));
+        assert_eq!(g.step(tick(PRESS, REELING)).lock, Some(LockButton::Pressed));
         assert_eq!(g.step(tick(HELD, REELING)).lock, Some(LockButton::Held));
+        assert_eq!(
+            g.step(tick(RELEASE, REELING)).lock,
+            Some(LockButton::Tapped)
+        );
+
+        let mut g = GrappleButton::new();
+        assert_eq!(g.step(tick(PRESS, REELING)).lock, Some(LockButton::Pressed));
+        for _ in 0..(TAP_S / DT).ceil() as usize + 1 {
+            assert_eq!(g.step(tick(HELD, REELING)).lock, Some(LockButton::Held));
+        }
         assert_eq!(g.step(tick(RELEASE, REELING)).lock, Some(LockButton::LetGo));
     }
 
     #[test]
-    fn a_quick_release_never_locks_and_passes_the_tap_to_the_game() {
+    fn a_quick_release_locks_at_the_press_and_unlocks_without_firing() {
         let mut g = GrappleButton::new();
         let out = run(&mut g, REELING, &[PRESS, HELD, RELEASE, UP]);
-        assert_eq!(locks(&out), vec![LockButton::Tapped]);
-        assert_eq!(fires(&out), vec![Want::Click]);
+        assert_eq!(
+            locks(&out),
+            vec![LockButton::Pressed, LockButton::Held, LockButton::Tapped]
+        );
+        assert!(
+            fires(&out).is_empty(),
+            "a tap on the attached line never re-fires"
+        );
         assert!(!g.holding());
+    }
+
+    #[test]
+    fn a_chained_swing_locks_on_each_press_at_once() {
+        let mut g = GrappleButton::new();
+        let out = run(&mut g, REELING, &[PRESS, HELD, RELEASE, UP, PRESS]);
+        assert_eq!(
+            locks(&out),
+            vec![
+                LockButton::Pressed,
+                LockButton::Held,
+                LockButton::Tapped,
+                LockButton::Pressed
+            ]
+        );
+        assert!(
+            fires(&out).is_empty(),
+            "the attached line is never re-fired"
+        );
+    }
+
+    #[test]
+    fn a_tap_waiting_when_the_line_attaches_is_not_fired() {
+        let mut g = GrappleButton::new();
+        run(&mut g, TETHERS, &[PRESS, RELEASE]);
+        let out = run(&mut g, REELING, &[PRESS, HELD]);
+        assert_eq!(out[0].lock, Some(LockButton::Pressed));
+        assert!(
+            fires(&out).is_empty(),
+            "the waiting tap is dropped, not fired onto the line"
+        );
     }
 
     #[test]

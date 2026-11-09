@@ -112,13 +112,26 @@ pub(super) unsafe fn supported(character: &Character) -> bool {
 }
 
 /// Let go of the line: retract the active wire, which the reel task answers on its next update by
-/// cancelling the reel into the fall, the character keeping its velocity.
+/// cancelling the reel into the fall. The caller captures the character's wanted velocity before
+/// this and hands it back, since the cancel can clear it.
 ///
 /// # Safety
 ///
 /// The game thread, before the world update; `hook` must be live.
 pub(super) unsafe fn let_go(hook: &mut GrapplingHook) {
     unsafe { hook.RetractActiveWire() };
+}
+
+/// The character's wanted world velocity: the whole of its motion while the reel drives it.
+///
+/// # Safety
+///
+/// The game thread; `character` must be live.
+pub(super) unsafe fn wanted_velocity(character: &Character) -> Option<Vec3> {
+    let mut wanted = Vector3 { data: [0.0; 3] };
+    unsafe { character.GetWantedWorldVelocity(&mut wanted) };
+    let velocity = Vec3::from_array(wanted.data);
+    velocity.is_finite().then_some(velocity)
 }
 
 /// Give the character `velocity` as its wanted world velocity, as the reel task's motion does.

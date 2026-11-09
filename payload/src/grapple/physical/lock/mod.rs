@@ -17,13 +17,19 @@
 //! to it on the next input tick ([`lock_tick`]). A static target takes nothing, and a character is
 //! never locked onto.
 //!
+//! On take, the lock brakes the reel's rush into the swing: over the config's brake time it removes
+//! the character's speed toward the hook's point, measured against the hook's own motion, and lets
+//! the held length follow the character in, so the line does not fall slack and the speed across
+//! the line becomes the swing ([`model::swing`]).
+//!
 //! The grapple button's gestures ([`crate::controllers::bindings::grapple_button`]) say what the
 //! player asks ([`LockButton`]), and [`lock_tick`] acts on them after the bindings' tables step:
 //!
 //! - pulling the grapple hand back takes line in ([`model::TakeIn`]);
-//! - a quick release unlocks and resumes the reel, the tap going on to the game, which fires again
-//!   from the reel when its upgrade is bought;
-//! - a release after a longer hold lets go of the line, and the character flies on;
+//! - a quick release unlocks and resumes the reel, firing nothing: a fire onto the attached line
+//!   can release it;
+//! - a release after a longer hold lets go of the line, and the character flies on with the swing's
+//!   velocity, captured before the retract and handed back after it;
 //! - a yank resumes the reel.
 //!
 //! The lock also ends when the character lands (the line let go of), when the line overstretches
@@ -80,7 +86,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// Why a lock ended.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum LockEnd {
-    /// A quick release: the reel resumes and the tap goes on to the game.
+    /// A quick release: the reel resumes.
     Tapped,
     /// The button let go of the line.
     Released,
@@ -114,6 +120,13 @@ impl LockEnd {
             self,
             LockEnd::Released | LockEnd::Landed | LockEnd::Broke(_)
         )
+    }
+
+    /// Whether the ending hands the character its swing velocity back. A button release and a
+    /// line break do; a landing does not, since the game's own landing takes the character from
+    /// there.
+    const fn restores_velocity(self) -> bool {
+        matches!(self, LockEnd::Released | LockEnd::Broke(_))
     }
 }
 
@@ -237,6 +250,12 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         end(None, LockEnd::ReelEnded, input.hand);
         return;
     };
+    // The retract's cancel can clear the wanted velocity the release captured; hand it back once,
+    // on the first tick after the cancel has run.
+    let release_velocity = SHARED.lock().release_velocity.take();
+    if let Some(velocity) = release_velocity {
+        unsafe { engine::set_wanted_velocity(character, velocity) };
+    }
     if !holds() {
         if wants && input.carries && input.config.enabled {
             SHARED.lock().armed = false;
@@ -245,7 +264,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         return;
     }
     match unsafe { ending(character, hook, input, fault) } {
-        Some(why) => end(Some(hook), why, input.hand),
+        Some(why) => end(Some((character, hook)), why, input.hand),
         None => {
             let share = {
                 let mut shared = SHARED.lock();
@@ -262,7 +281,9 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
                 active.config = *input.config;
                 active.held.take_in(taken, input.real_dt, input.config);
                 let length_m = active.held.rope.length_m;
+                let braking = active.held.braking();
                 shared.status.length_m = length_m;
+                shared.status.braking = braking;
                 shared.status.share()
             };
             haptics::sustain(input.hand, Sustain::GrappleTension, share);
@@ -274,6 +295,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
 pub(crate) fn stand_down() {
     let mut shared = SHARED.lock();
     shared.armed = false;
+    shared.release_velocity = None;
     if shared.active.take().is_some() {
         shared.status.locked = false;
         shared.status.last_end = Some(LockEnd::ReelEnded);
@@ -383,7 +405,7 @@ pub(crate) unsafe fn drive(
         pending.at = hook_point;
     }
     let status = &mut shared.status;
-    status.braking = false;
+    status.braking = active.held.braking();
     status.length_m = active.held.rope.length_m;
     status.stretch_m = out.stretch_m;
     status.tension_n = out.tension_n;
@@ -505,10 +527,11 @@ unsafe fn start(
         shared.fault = None;
         shared.pending = None;
         shared.last_velocity = None;
+        shared.release_velocity = None;
         let locks = shared.status.locks + 1;
         shared.status = LockStatus {
             locked: true,
-            braking: false,
+            braking: held.braking(),
             length_m: held.rope.length_m,
             target: Some(lock_target),
             hook: hook_point,
@@ -574,16 +597,24 @@ unsafe fn ending(
     None
 }
 
-/// End the lock for `why`, letting go of the line through `hook` when it does.
-fn end(hook: Option<&mut GrapplingHook>, why: LockEnd, hand: Hand) {
-    let status = {
+/// End the lock for `why`, letting go of the line through `hook` when it does. A release or a
+/// break captures the character's wanted velocity before the retract and hands it back after it:
+/// the retract detaches the wire, and the reel task's cancel can clear the velocity the swing gave
+/// the character.
+fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: Hand) {
+    let (status, last_velocity) = {
         let mut shared = SHARED.lock();
+        if local.is_none() {
+            // The character the captured velocity belonged to is gone; never hand it to a later
+            // one, even when the lock already ended.
+            shared.release_velocity = None;
+        }
         if shared.active.take().is_none() {
             return;
         }
         shared.pending = None;
         shared.fault = None;
-        shared.last_velocity = None;
+        let last_velocity = shared.last_velocity.take();
         shared.status.locked = false;
         shared.status.braking = false;
         shared.status.tension_n = 0.0;
@@ -591,14 +622,27 @@ fn end(hook: Option<&mut GrapplingHook>, why: LockEnd, hand: Hand) {
         if matches!(why, LockEnd::Broke(_)) {
             shared.status.breaks += 1;
         }
-        shared.status
+        (shared.status, last_velocity)
     };
     LOCKED.store(false, Ordering::Release);
     if why.lets_go()
-        && let Some(hook) = hook
+        && let Some((character, hook)) = local
     {
+        let velocity = if why.restores_velocity() {
+            // SAFETY: the game thread before the world update, the local player's live character.
+            unsafe { engine::wanted_velocity(character) }.or(last_velocity)
+        } else {
+            None
+        };
         // SAFETY: the game thread before the world update, the local player's live hook.
         unsafe { engine::let_go(hook) };
+        if let Some(velocity) = velocity {
+            // SAFETY: as above; the character is the local player's.
+            unsafe { engine::set_wanted_velocity(character, velocity) };
+            // The reel's cancel runs on its next update; hand the velocity back once more after
+            // it, in case the cancel cleared it.
+            SHARED.lock().release_velocity = Some(velocity);
+        }
     }
     tracing::info!(
         target: "grapple",
@@ -667,6 +711,8 @@ struct Shared {
     pending: Option<Reaction>,
     fault: Option<BreakCause>,
     last_velocity: Option<Vec3>,
+    /// The exit velocity a release captured, to hand back after the reel's cancel has run.
+    release_velocity: Option<Vec3>,
     /// A press is held that has not yet taken the lock or been refused.
     armed: bool,
 }
@@ -693,6 +739,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     pending: None,
     fault: None,
     last_velocity: None,
+    release_velocity: None,
     armed: false,
 });
 

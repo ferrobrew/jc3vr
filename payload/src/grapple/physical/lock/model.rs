@@ -32,6 +32,9 @@ pub(crate) fn armed(armed: bool, button: Option<LockButton>) -> bool {
 pub(crate) struct Held {
     pub rope: Rope,
     take_in_mps: f32,
+    /// The brake's remaining time, seconds: on take, the line turns the character's rush toward
+    /// the hook into the swing.
+    brake_remaining_s: f32,
 }
 
 impl Held {
@@ -43,7 +46,17 @@ impl Held {
         Some(Self {
             rope: Rope::new(distance.max(held_floor(config.min_length_m)))?,
             take_in_mps: 0.0,
+            brake_remaining_s: if config.brake_s.is_finite() {
+                config.brake_s.max(0.0)
+            } else {
+                0.0
+            },
         })
+    }
+
+    /// Whether the brake still turns the character's rush toward the hook into the swing.
+    pub(crate) fn braking(&self) -> bool {
+        self.brake_remaining_s > 0.0
     }
 
     /// Take `taken_m` of line in, down to `config`'s least length.
@@ -55,6 +68,41 @@ impl Held {
         let before = self.rope.length_m;
         self.rope.shorten(taken_m, config.min_length_m);
         self.take_in_mps = ((before - self.rope.length_m) / dt).min(config.reel_in_mps.max(0.0));
+    }
+
+    /// Turn the rush toward the hook into the swing over the brake's remaining time: remove the
+    /// character's speed toward the hook's point, measured against the hook's own motion, and let
+    /// the held length follow the character in, so the reel's rush does not leave the line slack.
+    /// The removal is linear over the brake's time, so the inward speed reaches zero as the brake
+    /// ends; the speed across the line is untouched.
+    fn brake(
+        &mut self,
+        velocity: &mut Vec3,
+        rider: Vec3,
+        hook: Vec3,
+        hook_velocity: Vec3,
+        dt: f32,
+        config: &LockConfig,
+    ) {
+        if self.brake_remaining_s <= 0.0 || !dt.is_finite() || dt <= 0.0 {
+            return;
+        }
+        let offset = rider - hook;
+        let distance = offset.length();
+        let Some(direction) = offset.try_normalize() else {
+            self.brake_remaining_s = 0.0;
+            return;
+        };
+        let step_s = dt.min(self.brake_remaining_s);
+        let inward = (*velocity - hook_velocity).dot(direction);
+        if inward < 0.0 {
+            *velocity -= direction * inward * (step_s / self.brake_remaining_s).clamp(0.0, 1.0);
+        }
+        if distance < self.rope.length_m {
+            self.rope
+                .shorten(self.rope.length_m - distance, config.min_length_m);
+        }
+        self.brake_remaining_s = (self.brake_remaining_s - step_s).max(0.0);
     }
 }
 
@@ -104,7 +152,8 @@ pub(crate) fn swing(
     if !(rider_mass_kg.is_finite() && rider_mass_kg > 0.0 && dt.is_finite() && dt > 0.0) {
         return Err(RopeFault::Invalid);
     }
-    let velocity = rider_velocity - Vec3::Y * GRAVITY_MPS2 * dt;
+    let mut velocity = rider_velocity - Vec3::Y * GRAVITY_MPS2 * dt;
+    held.brake(&mut velocity, rider, hook, hook_velocity, dt, config);
     let take_in_velocity = (rider - hook).normalize_or_zero() * held.take_in_mps;
     let max_tension_n = config.max_accel_g.max(0.0) * GRAVITY_MPS2 * rider_mass_kg;
     let out = held.rope.step(RopeStep {

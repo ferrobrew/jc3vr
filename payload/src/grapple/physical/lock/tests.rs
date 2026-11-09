@@ -112,21 +112,30 @@ fn input(rider: Vec3, rider_velocity: Vec3, hook: Vec3, hook_velocity: Vec3) -> 
     }
 }
 
-/// Run the swing from a static hook at the origin for `ticks`, returning the rider's path.
-fn fly(held: &mut Held, mut rider: Vec3, mut velocity: Vec3, ticks: usize) -> Vec<(Vec3, Vec3)> {
+/// Run the swing from a static hook at the origin for `ticks` under `config`, returning the
+/// rider's path.
+fn fly_with(
+    held: &mut Held,
+    mut rider: Vec3,
+    mut velocity: Vec3,
+    ticks: usize,
+    config: &LockConfig,
+) -> Vec<(Vec3, Vec3)> {
     (0..ticks)
         .map(|_| {
-            velocity = swing(
-                held,
-                input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
-                &CONFIG,
-            )
-            .unwrap()
-            .velocity;
+            velocity = swing(held, input(rider, velocity, Vec3::ZERO, Vec3::ZERO), config)
+                .unwrap()
+                .velocity;
             rider += velocity * DT;
             (rider, velocity)
         })
         .collect()
+}
+
+/// Run the swing from a static hook at the origin for `ticks` under the default config, returning
+/// the rider's path.
+fn fly(held: &mut Held, rider: Vec3, velocity: Vec3, ticks: usize) -> Vec<(Vec3, Vec3)> {
+    fly_with(held, rider, velocity, ticks, &CONFIG)
 }
 
 #[test]
@@ -146,22 +155,118 @@ fn a_static_hook_swings_a_bounded_pendulum_that_keeps_its_energy_roughly() {
 }
 
 #[test]
-fn locking_keeps_the_inward_rush_and_tangential_momentum() {
+fn a_lock_without_a_brake_keeps_the_inward_rush_and_tangential_momentum() {
+    let config = LockConfig {
+        brake_s: 0.0,
+        ..CONFIG
+    };
     let start = Vec3::new(20.0, 0.0, 0.0);
     let rush = Vec3::new(-25.0, 0.0, 6.0);
-    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let mut held = Held::new(Vec3::ZERO, start, &config).unwrap();
     let out = swing(
         &mut held,
         input(start, rush, Vec3::ZERO, Vec3::ZERO),
-        &CONFIG,
+        &config,
     )
     .unwrap();
     assert!((out.velocity - (rush - Vec3::Y * GRAVITY_MPS2 * DT)).length() < 1e-5);
     assert_eq!(out.tension_n, 0.0);
     assert_eq!(held.rope.length_m, 20.0);
-    let path = fly(&mut held, start, rush, 10);
+    let path = fly_with(&mut held, start, rush, 10, &config);
     assert!((path.last().unwrap().1.x - rush.x).abs() < 1e-5);
     assert_eq!(held.rope.length_m, 20.0);
+}
+
+#[test]
+fn the_brake_turns_the_inward_rush_into_the_swing_and_follows_the_rider_in() {
+    let start = Vec3::new(20.0, 0.0, 0.0);
+    let rush = Vec3::new(-25.0, 0.0, 6.0);
+    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    assert!(held.braking());
+    let mut rider = start;
+    let mut velocity = rush;
+    for _ in 0..(CONFIG.brake_s / DT).ceil() as usize + 1 {
+        velocity = swing(
+            &mut held,
+            input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
+            &CONFIG,
+        )
+        .unwrap()
+        .velocity;
+        rider += velocity * DT;
+    }
+    assert!(!held.braking(), "the brake runs its length");
+    let direction = rider.normalize();
+    let inward = velocity.dot(direction);
+    assert!(inward > -0.1, "the rush toward the hook is gone: {inward}");
+    let tangential = velocity - direction * inward;
+    assert!(
+        tangential.length() >= 6.0 - 1e-3,
+        "the speed across the line is kept: {}",
+        tangential.length()
+    );
+    assert!(
+        held.rope.length_m < start.length(),
+        "the held length follows the rider in: {}",
+        held.rope.length_m
+    );
+    assert!(
+        (held.rope.length_m - rider.length()).abs() < 0.5,
+        "the line stays taut: {} at {}",
+        held.rope.length_m,
+        rider.length()
+    );
+    let path = fly(&mut held, rider, velocity, 90);
+    for (p, _) in &path {
+        assert!(
+            p.length() < held.rope.length_m + 1.0,
+            "the line holds the swing: {}",
+            p.length()
+        );
+    }
+}
+
+#[test]
+fn a_tangential_swing_velocity_survives_the_next_lock() {
+    // At the bottom of the arc the swing's velocity is across the line. A release hands that
+    // velocity on, and the next lock's brake has nothing to remove from it, so a chained swing
+    // does not stop at the join.
+    let rider = Vec3::NEG_Y * 5.0;
+    let exit = Vec3::X * 6.0;
+    let mut next = Held::new(Vec3::ZERO, rider, &CONFIG).unwrap();
+    assert!(next.braking());
+    let out = swing(
+        &mut next,
+        input(rider, exit, Vec3::ZERO, Vec3::ZERO),
+        &CONFIG,
+    )
+    .unwrap();
+    let direction = rider.normalize();
+    let tangential = out.velocity - direction * out.velocity.dot(direction);
+    assert!((tangential - exit).length() < 1e-3, "{out:?}");
+}
+
+#[test]
+fn a_mid_swing_release_hands_on_the_swings_whole_velocity() {
+    let start = Vec3::X * 5.0;
+    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let path = fly(&mut held, start, Vec3::ZERO, 30);
+    let (rider, exit) = *path.last().unwrap();
+    assert!(exit.length() > 1.0, "the swing carries speed: {exit}");
+    // The captured velocity is the character's whole motion, gravity included: the next tick of
+    // the same swing at the same position continues from it.
+    let mut again = Held::new(Vec3::ZERO, rider, &CONFIG).unwrap();
+    let out = swing(
+        &mut again,
+        input(rider, exit, Vec3::ZERO, Vec3::ZERO),
+        &CONFIG,
+    )
+    .unwrap();
+    assert!(out.velocity.is_finite());
+    assert!(
+        out.velocity.length() > exit.length() * 0.8,
+        "the momentum carries: {out:?}"
+    );
 }
 
 #[test]
