@@ -556,7 +556,7 @@ impl State {
         {
             if tick
                 .gun(gun_hand)
-                .is_some_and(|(weapon, _)| weapon.has_ammo() && self.can_take(weapon))
+                .is_some_and(|(weapon, _)| self.can_take_from_pouch(weapon))
             {
                 self.status.insert_hands = Some((hand, gun_hand));
                 self.insertion_source = InsertionSource::Pouch;
@@ -839,6 +839,12 @@ impl State {
             LoadKind::Magazine | LoadKind::Cylinder => true,
             LoadKind::Shell | LoadKind::Rocket => weapon.reading.out || weapon.reading.has_space(),
         }
+    }
+
+    pub(super) fn can_take_from_pouch(&self, weapon: &WeaponTick) -> bool {
+        weapon.has_ammo()
+            && self.can_take(weapon)
+            && (!weapon.reading.unlimited || weapon.reading.out || weapon.reading.has_space())
     }
 
     /// Whether `weapon`'s gun can be reloaded from the belt now: anything short of a full, seated

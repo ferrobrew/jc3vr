@@ -476,6 +476,76 @@ fn unavailable_seat_rolls_back_idle_and_transfers_rounds_only_once_after_recover
 }
 
 #[test]
+fn full_unlimited_magazines_suppress_pouch_takes_without_blocking_world_magazines() {
+    for load in [LoadKind::Magazine, LoadKind::Cylinder] {
+        let state = state(InsertStage::Idle);
+        let mut weapon = tick(false).weapons[0].unwrap();
+        weapon.plan.load = load;
+        weapon.reading.unlimited = true;
+        weapon.reading.out = false;
+        weapon.reading.magazine = weapon.reading.capacity + 1;
+        weapon.reading.chambers = 1;
+        weapon.reserve = 0;
+        assert!(!state.can_take_from_pouch(&weapon));
+        assert!(state.can_take(&weapon));
+
+        weapon.reading.out = true;
+        assert!(state.can_take_from_pouch(&weapon));
+        weapon.reading.out = false;
+        weapon.reading.magazine -= 1;
+        assert!(state.can_take_from_pouch(&weapon));
+
+        weapon.reading.unlimited = false;
+        weapon.reading.magazine += 1;
+        weapon.reserve = 1;
+        assert!(state.can_take_from_pouch(&weapon));
+        weapon.reserve = 0;
+        assert!(!state.can_take_from_pouch(&weapon));
+        assert!(state.can_take(&weapon));
+    }
+}
+
+#[test]
+fn loose_round_pouch_takes_still_require_space_or_an_ejected_round() {
+    let state = state(InsertStage::Idle);
+    for load in [LoadKind::Shell, LoadKind::Rocket] {
+        for unlimited in [false, true] {
+            let mut weapon = tick(false).weapons[0].unwrap();
+            weapon.plan.load = load;
+            weapon.reading.unlimited = unlimited;
+            weapon.reading.out = false;
+            weapon.reading.magazine = weapon.reading.capacity;
+            assert!(!state.can_take_from_pouch(&weapon));
+            weapon.reading.magazine -= 1;
+            assert!(state.can_take_from_pouch(&weapon));
+            weapon.reading.magazine += 1;
+            weapon.reading.out = true;
+            assert!(state.can_take_from_pouch(&weapon));
+        }
+    }
+}
+
+#[test]
+fn a_stale_pouch_grab_cannot_create_ammo_for_a_full_unlimited_magazine() {
+    let mut state = state(InsertStage::Idle);
+    state.status.insert_hands = None;
+    let mut tick = tick(false);
+    let weapon = tick.weapons[0].as_mut().unwrap();
+    weapon.reading.unlimited = true;
+    weapon.reading.out = false;
+    weapon.reading.magazine = weapon.reading.capacity;
+    let mut inputs = inputs(true);
+    inputs.grabs[Hand::Left.index()] = Some(GrabVolume::MagazinePouch);
+    let mut adapter = adapter();
+    adapter.held = false;
+    state.insert_with(&tick, &inputs, &ControllersConfig::default(), &mut adapter);
+    assert_eq!(state.status.insertion.stage, InsertStage::Idle);
+    assert!(state.status.insert_hands.is_none());
+    assert_eq!(state.status.counts.empty_pouch, 1);
+    assert!(adapter.transfers.is_empty());
+}
+
+#[test]
 fn a_seat_readies_a_launcher_at_once_and_a_dry_gun_only_after_its_action() {
     let launcher = ReloadPlan {
         load: LoadKind::Magazine,

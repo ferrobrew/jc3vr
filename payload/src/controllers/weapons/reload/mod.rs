@@ -295,7 +295,7 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
         free: free.is_some(),
         gun: loaded.is_some(),
         stocked,
-        takes: loaded.is_some_and(|weapon| state.can_take(weapon)),
+        takes: loaded.is_some_and(|weapon| state.can_take_from_pouch(weapon)),
         holding: state.status.insertion.holding(),
     });
     // The pouch going unplaced is a failure worth a note; its other refusals follow the hands.
