@@ -515,16 +515,17 @@ unsafe fn launch_live(
     };
     unsafe { set_upgrade_policy(&mut *grenade, actor.upgrades, true) };
     unsafe { weapon.m_PrimedGrenade.Assign(actor.handle()) };
-    LAUNCH.set(Some(PlannedLaunch {
+    let scope = LaunchScope::enter(PlannedLaunch {
         explosive: explosive as usize,
         transform: Some(launch.world.into()),
         release: launch.release,
-    }));
+        catchable: true,
+    });
     // The launch reads the slot it was just given, applies the planned transform and velocity, and
     // clears the slot as it releases the grenade.
     unsafe { (*base).Fire_Projectile(data) };
     let hooked = LAUNCH.get().is_none();
-    LAUNCH.set(None);
+    drop(scope);
     // The launch clears its slot whatever happened, so leave nothing behind if it did not go through.
     if unsafe { primed_explosive(weapon) } == Some(explosive) {
         let empty = null_weak();
@@ -653,8 +654,20 @@ unsafe fn weapon_data(weapon: &WeaponBase) -> Option<*mut WeaponData> {
     unsafe { gun_ptr(weapon, usize::from(weapon.m_NextWeaponToFire)) }.map(NonNull::as_ptr)
 }
 
-/// An ammunition exemption for one weapon on one thread: drawing an item neither reads nor changes
-/// an inventory's grenade stock.
+pub(super) struct LaunchScope(Option<PlannedLaunch>);
+
+impl LaunchScope {
+    pub(super) fn enter(launch: PlannedLaunch) -> Self {
+        Self(LAUNCH.replace(Some(launch)))
+    }
+}
+
+impl Drop for LaunchScope {
+    fn drop(&mut self) {
+        LAUNCH.set(self.0);
+    }
+}
+
 struct AmmoNeutral(Option<usize>);
 
 impl AmmoNeutral {

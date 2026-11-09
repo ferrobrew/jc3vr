@@ -8,6 +8,7 @@
 //! fuse; nothing else does, and a grenade thrown or dropped with its pin in stays inert. Native
 //! live grenades can still be caught and thrown on.
 
+mod beacon;
 pub mod catch;
 mod locker;
 mod native;
@@ -78,6 +79,7 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&UPDATE_FROM_USER_BINDER)
         .with_static_binder(&GRENADE_PROPEL_TOWARD_BINDER)
+        .with_hook_library(beacon::hook_library())
         .with_hook_library(native::hook_library())
         .with_hook_library(locker::hook_library())
         .with_hook_library(world::hook_library())
@@ -300,7 +302,9 @@ pub(crate) fn pin_in_hand(hand: Hand) -> bool {
 
 /// Both hands can hold independent safe grenades.
 pub(crate) fn holds(hand: Hand) -> bool {
-    safe::in_hand(hand).is_some() || catch::caught().is_some_and(|caught| caught.hand == hand)
+    safe::in_hand(hand).is_some()
+        || beacon::held().is_some_and(|(held, _)| held == hand)
+        || catch::caught().is_some_and(|caught| caught.hand == hand)
 }
 
 pub(super) struct BeginInputs<'a> {
@@ -397,7 +401,8 @@ pub(super) fn input_tick(
         return;
     }
     let tuning = &GrenadeTuning::of(&config.weapons.grenade);
-    let _ = inputs.dominant;
+    let grips = STATE.lock().grips;
+    beacon::input_tick(inputs, grips);
     for hand in Hand::BOTH {
         if inputs.locker_grabs[hand.index()] && !holds(hand) {
             let frames = STATE.lock().locker_frames;
@@ -545,6 +550,7 @@ pub(super) fn input_tick(
 
 /// Cancel only the unavailable hands' throws before masked grips can look like finger opening.
 pub(crate) fn input_unavailable(unavailable: [bool; 2]) {
+    beacon::input_unavailable(unavailable);
     safe::stand_down_hands(unavailable);
     if catch::caught().is_some_and(|caught| unavailable[caught.hand.index()]) {
         catch::let_go(false);
@@ -553,6 +559,7 @@ pub(crate) fn input_unavailable(unavailable: [bool; 2]) {
 
 /// A loss of input releases safe items inertly and leaves a caught grenade's fuse unchanged.
 pub(super) fn stand_down() {
+    beacon::stand_down();
     locker::clear();
     world::clear();
     safe::stand_down();
@@ -587,6 +594,7 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn render_frame() {
+    unsafe { beacon::render_frame() };
     unsafe { safe::render_frame() };
 }
 
@@ -720,6 +728,7 @@ struct PlannedLaunch {
     explosive: usize,
     transform: Option<Matrix4>,
     release: Release,
+    catchable: bool,
 }
 
 thread_local! {
@@ -812,7 +821,7 @@ fn update_from_user(
         return;
     }
     STATE.lock().status.weapon_seen = true;
-    // Native item operations run at the render boundary, after the simulation workers join.
+    unsafe { beacon::observe(weapon) };
 }
 
 #[detour(address = jc3gi::equipment::explosive::Grenade::PropelToward_ADDRESS)]
@@ -834,7 +843,9 @@ fn grenade_propel_toward(
         .get()
         .filter(|launch| launch.explosive == grenade as usize);
     // SAFETY: the grenade is live for its launch.
-    unsafe { catch::register(grenade.cast::<Explosive>(), launch.is_some()) };
+    if launch.is_none_or(|launch| launch.catchable) && !beacon::propelling(grenade as usize) {
+        unsafe { catch::register(grenade.cast::<Explosive>(), launch.is_some()) };
+    }
     let Some(launch) = launch else {
         return;
     };
