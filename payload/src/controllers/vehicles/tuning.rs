@@ -36,7 +36,8 @@ pub struct PhysicalControlsTuning {
     /// The plane's throttle, by the off-hand hip.
     pub throttle: LeverSpec,
     /// What the plane's flight stick and throttle add to a plain stick and lever: the stick's
-    /// twist for the rudder and the throttle's afterburner gate.
+    /// twist for the plane's rudder and the helicopter's yaw, and the throttle's afterburner
+    /// gate.
     pub flight: FlightControlsTuning,
     /// The horn and the nitrous worked by hand.
     pub buttons: CockpitButtonsTuning,

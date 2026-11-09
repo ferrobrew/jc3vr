@@ -140,8 +140,8 @@ pub struct PhysicalControlsConfig {
     /// key that saved the throttle twist alone.
     #[serde(alias = "twist_throttle")]
     pub bars_twist: bool,
-    /// Twist the held flight stick about its shaft to work the rudder: turning the top to the
-    /// right yaws right.
+    /// Twist the held flight stick or cyclic about its shaft to work the plane's rudder or the
+    /// helicopter's yaw: turning the top to the right yaws right.
     pub twist_rudder: bool,
 }
 

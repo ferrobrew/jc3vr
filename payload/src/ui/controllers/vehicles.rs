@@ -448,7 +448,10 @@ fn vehicle_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
         &mut p.bars_twist,
         "Twist the bars' grips back: the right for the throttle, the left for the brake",
     );
-    ui.checkbox(&mut p.twist_rudder, "Twist the flight stick for the rudder");
+    ui.checkbox(
+        &mut p.twist_rudder,
+        "Twist the flight stick or cyclic for the rudder and yaw",
+    );
     ui.checkbox(
         &mut v.mounted.aim_by_hands,
         "Mounted guns aim by the hands on the handles",

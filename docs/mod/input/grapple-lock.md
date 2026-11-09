@@ -11,11 +11,11 @@ The lock owns the grapple button while the hook reels in along a line whose far 
 | Press | Effect |
 |---|---|
 | Press | Locks the line at once, at the distance Rico is at, so the tap window does not cost several metres at reel speed; in the wind-up, as soon as the reel carries Rico |
-| Release within 0.25 s | Unlocks and resumes the reel, and passes the tap on to the game, which fires again from the reel when its upgrade is bought |
+| Release within 0.25 s | Unlocks and resumes the reel, firing nothing onto the attached line |
 | Release after a longer hold | Lets go of the line: Rico flies on |
 | A yank while held | Unlocks and resumes the reel, and the yank boosts it as during any reel |
 
-The yank is the reel's boost yank ([physical-grapple.md](physical-grapple.md#the-reel)), so it resumes the reel only while pull to reel is on; without it, the button's release is the way out. The lock hears the yank directly from the physical grapple, whatever the button's gesture is doing, and the button only spends its press so that the release afterwards does nothing. The game never sees a held fire input during the wind-up or the reel, so the hold cannot start a dual tether: a fire held past the game's hold time with the reel's line attached arms the dual tether, whose release fires the tether's second end and ends the reel. The game's re-fire reads the fire input's press edge, so the passed tap still fires; it fires at the release rather than the press, and aims where the grapple's aim points then. A quick tap whose reel ended under it (a landing or a break) passes nothing on, so it cannot fire a fresh line. A double tap still releases tethers and does nothing to the reel's line. With the far end on a character, or the lock switched off, the button reaches the game as before.
+The yank is the reel's boost yank ([physical-grapple.md](physical-grapple.md#the-reel)), so it resumes the reel only while pull to reel is on; without it, the button's release is the way out. The lock hears the yank directly from the physical grapple, whatever the button's gesture is doing, and the button only spends its press so that the release afterwards does nothing. The game never sees a held fire input during the wind-up or the reel, so the hold cannot start a dual tether: a fire held past the game's hold time with the reel's line attached arms the dual tether, whose release fires the tether's second end and ends the reel. A quick release fires nothing onto the attached line: a fire onto it can release it. A quick tap whose reel ended under it (a landing or a break) likewise fires nothing. A double tap still releases tethers and does nothing to the reel's line. With the far end on a character, or the lock switched off, the button reaches the game as before.
 
 ## The swing
 
@@ -56,8 +56,8 @@ The active wire never holds a native constraint ([grapple-pipeline.md](../../eng
 
 | Ending | What follows |
 |---|---|
-| The button released after a hold | The active wire is retracted; the reel task cancels itself into the fall on its next update, and Rico keeps his velocity, from which the parachute and the wingsuit open as usual |
-| A quick release | The reel resumes, and the tap goes to the game |
+| The button released after a hold | The active wire is retracted; the reel task cancels itself into the fall on its next update. The wanted velocity is captured before the retract and handed back after the cancel, so Rico keeps the swing's exit velocity, from which the parachute and the wingsuit open as usual |
+| A quick release | The reel resumes, firing nothing onto the attached line |
 | A yank | The reel resumes toward the hook and its own arrival (a perch, the helicopter's hang, a vehicle's stunt position) |
 | Landing: Rico's proxy stands on a surface after he has left the ground since the lock took hold | The line is let go of, so Rico lands on foot rather than being dragged |
 | The line breaks: Rico past the break stretch, the hook's target gone or no longer live, or a sample the swing needs not finite | The line is let go of, with the snap |
