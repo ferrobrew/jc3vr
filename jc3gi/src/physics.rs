@@ -1499,10 +1499,13 @@ pub struct PhysicsSystem {
     /// from its game-space ray before the Havok query, and the engine adds it back to the positions
     /// a query reports. [`hknpWorld::applyBodyImpulseAt`](crate::physics::hknpWorld::applyBodyImpulseAt) takes a Havok-space position.
     pub m_AccumulatedShift: crate::types::math::Vector3,
+    _field_1381d0: [u8; 64],
+    /// The reference-counted body-pair exclusion filter shared with the constraint filter.
+    pub m_PairCollisionFilter: *mut crate::physics::hknpPairCollisionFilter,
 }
 fn _PhysicsSystem_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x1381D0], PhysicsSystem>([0u8; 0x1381D0]);
+        ::std::mem::transmute::<[u8; 0x138218], PhysicsSystem>([0u8; 0x138218]);
     }
     unreachable!()
 }
@@ -2619,6 +2622,61 @@ impl std::convert::AsRef<hknpMotion> for hknpMotion {
 }
 impl std::convert::AsMut<hknpMotion> for hknpMotion {
     fn as_mut(&mut self) -> &mut hknpMotion {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The body's pair-exclusion filter. Each unordered body pair has a reference count, so
+/// independent callers can disable the same pair without releasing another caller's exclusion.
+pub struct hknpPairCollisionFilter {}
+impl hknpPairCollisionFilter {
+    pub const disableCollisionsBetween_ADDRESS: usize = 0x141525AF0;
+    /// Adds one exclusion reference for the unordered body pair, rebuilds the affected collision
+    /// caches, and returns the new reference count. The disassembler mislabels this function
+    /// `NHavokCollisionFilter::SetSystemGroup`.
+    pub unsafe fn disableCollisionsBetween(
+        &mut self,
+        world: *mut crate::physics::hknpWorld,
+        body_a: u32,
+        body_b: u32,
+    ) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                world: *mut crate::physics::hknpWorld,
+                body_a: u32,
+                body_b: u32,
+            ) -> i32 = ::std::mem::transmute(Self::disableCollisionsBetween_ADDRESS);
+            f(self as *mut Self as _, world, body_a, body_b)
+        }
+    }
+    pub const enableCollisionsBetween_ADDRESS: usize = 0x141525BB0;
+    /// Removes one exclusion reference and returns the remaining count. Removing the final
+    /// reference requests collision regeneration when both body slots are valid.
+    pub unsafe fn enableCollisionsBetween(
+        &mut self,
+        world: *mut crate::physics::hknpWorld,
+        body_a: u32,
+        body_b: u32,
+    ) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                world: *mut crate::physics::hknpWorld,
+                body_a: u32,
+                body_b: u32,
+            ) -> i32 = ::std::mem::transmute(Self::enableCollisionsBetween_ADDRESS);
+            f(self as *mut Self as _, world, body_a, body_b)
+        }
+    }
+}
+impl std::convert::AsRef<hknpPairCollisionFilter> for hknpPairCollisionFilter {
+    fn as_ref(&self) -> &hknpPairCollisionFilter {
+        self
+    }
+}
+impl std::convert::AsMut<hknpPairCollisionFilter> for hknpPairCollisionFilter {
+    fn as_mut(&mut self) -> &mut hknpPairCollisionFilter {
         self
     }
 }

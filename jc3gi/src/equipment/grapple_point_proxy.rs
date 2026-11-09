@@ -316,3 +316,35 @@ impl std::convert::AsMut<GrapplePointProxyVftable> for GrapplePointProxyVftable 
         self
     }
 }
+#[repr(C, align(8))]
+/// A grapple attachment to a vehicle or one of its physics parts (`CVehicleGrapplePointProxy`).
+pub struct VehicleGrapplePointProxy {}
+impl VehicleGrapplePointProxy {
+    pub const ReattachToNewPos_ADDRESS: usize = 0x140944290;
+    /// Moves the attachment to a new world-space position and normal, updating both its visual
+    /// local transform and its physics-local attachment while retaining the vehicle.
+    pub unsafe fn ReattachToNewPos(
+        &mut self,
+        position: *const crate::types::math::Vector3,
+        normal: *const crate::types::math::Vector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                position: *const crate::types::math::Vector3,
+                normal: *const crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::ReattachToNewPos_ADDRESS);
+            f(self as *mut Self as _, position, normal)
+        }
+    }
+}
+impl std::convert::AsRef<VehicleGrapplePointProxy> for VehicleGrapplePointProxy {
+    fn as_ref(&self) -> &VehicleGrapplePointProxy {
+        self
+    }
+}
+impl std::convert::AsMut<VehicleGrapplePointProxy> for VehicleGrapplePointProxy {
+    fn as_mut(&mut self) -> &mut VehicleGrapplePointProxy {
+        self
+    }
+}

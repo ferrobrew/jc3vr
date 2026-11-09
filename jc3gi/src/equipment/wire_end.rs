@@ -162,6 +162,17 @@ fn _WireEnd_size_check() {
     unreachable!()
 }
 impl WireEnd {
+    pub const Detach_ADDRESS: usize = 0x1408EF080;
+    /// Detaches the attachment proxy, removes the proxy's reference to this end, and releases
+    /// its attachment state before a new endpoint is installed.
+    pub unsafe fn Detach(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Detach_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const SetExtend_ADDRESS: usize = 0x14093D700;
     /// Puts the end into its extending state: detaches it, sets its position to `start_pos`, its
     /// speed to `speed`, and its ghost flag to `ghost_wire`, latches `target_info`, shows the open

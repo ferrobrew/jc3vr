@@ -1092,6 +1092,49 @@ impl GrapplingHookWire {
             f(self as *mut Self as _, ignore1, ignore2)
         }
     }
+    pub const PushGrapplingHookWire_ADDRESS: usize = 0x140909A60;
+    /// Appends a retained wire reference to a grapple wire list. Reallocation preserves the shared
+    /// references held by the existing list entries.
+    pub unsafe fn PushGrapplingHookWire(
+        wires: *mut crate::types::std_vector::Vector<
+            crate::types::shared_ptr::SharedPtr<
+                crate::equipment::grappling_hook::GrapplingHookWire,
+            >,
+        >,
+        wire: *const crate::types::shared_ptr::SharedPtr<
+            crate::equipment::grappling_hook::GrapplingHookWire,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                wires: *mut crate::types::std_vector::Vector<
+                    crate::types::shared_ptr::SharedPtr<
+                        crate::equipment::grappling_hook::GrapplingHookWire,
+                    >,
+                >,
+                wire: *const crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::grappling_hook::GrapplingHookWire,
+                >,
+            ) = ::std::mem::transmute(Self::PushGrapplingHookWire_ADDRESS);
+            f(wires, wire)
+        }
+    }
+    pub const ResetGrapplingHookWire_ADDRESS: usize = 0x1408EA870;
+    /// Releases and clears one shared wire reference.
+    pub unsafe fn ResetGrapplingHookWire(
+        wire: *mut crate::types::shared_ptr::SharedPtr<
+            crate::equipment::grappling_hook::GrapplingHookWire,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                wire: *mut crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::grappling_hook::GrapplingHookWire,
+                >,
+            ) = ::std::mem::transmute(Self::ResetGrapplingHookWire_ADDRESS);
+            f(wire)
+        }
+    }
 }
 impl std::convert::AsRef<GrapplingHookWire> for GrapplingHookWire {
     fn as_ref(&self) -> &GrapplingHookWire {
