@@ -1,6 +1,6 @@
-//! The tactical knock: a fresh magazine from the pouch, held in the free hand, struck against the
-//! magazine still in the gun knocks that one out of the well, as a tactical reload is done in the
-//! films. Pure, but for the publication of the zone for the grab view.
+//! Magazine knocks use swept tip geometry and the serial detach path.
+//! Pouch magazines strike with their held tip; inserted magazines strike with their exposed base.
+//! The publication of the zone supports the grab view.
 //!
 //! The pouch magazine in the hand has no body in the physics world (it is drawn from the gun's own
 //! magazine part, or not at all), so the strike is a test of the held magazine's tip against the
@@ -27,8 +27,10 @@ use crate::controllers::{
     frame::Hand,
     physical_hands::rigid::{RigidBody, Velocities},
     weapons::reload::{
+        extraction::MagazineId,
         loose::Loose,
         plan::{LoadKind, WellFrame},
+        serial::Identity,
         wells::WellEntry,
     },
 };
@@ -121,6 +123,22 @@ pub(super) struct Knocks {
     pub knocked_at: Option<Instant>,
     /// The gun whose magazine part stays drawn while its knocked prop appears.
     pub linger: Option<Linger>,
+    gun_approaches: [Option<GunApproach>; 2],
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct GunMagazine {
+    pub id: MagazineId,
+    pub expected: Identity,
+    pub zone: KnockZone,
+    pub world_scale: f32,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct GunApproach {
+    source: GunMagazine,
+    target: GunMagazine,
+    local: Vec3,
 }
 
 /// A knocked magazine's part kept drawn in the well of the weapon at `weapon` for `ticks_left` more
@@ -151,7 +169,42 @@ impl Knocks {
             impulse: None,
             knocked_at: None,
             linger: None,
+            gun_approaches: [None; 2],
         }
+    }
+
+    pub(super) fn gun_strikes(
+        &mut self,
+        magazines: [Option<GunMagazine>; 2],
+        dt: f32,
+        min_speed_mps: f32,
+    ) -> [Option<Strike>; 2] {
+        Hand::BOTH.map(|holder| {
+            let index = holder.index();
+            let previous = self.gun_approaches[index].take();
+            let target = magazines[index]?;
+            let source = magazines[holder.other().index()]?;
+            if source.zone.below <= 0.0
+                || (source.id.weapon == target.id.weapon && source.id.gun == target.id.gun)
+            {
+                return None;
+            }
+            let tip = source.zone.ends().1;
+            let previous = previous
+                .filter(|p| p.source.continues(source) && p.target.continues(target))
+                .map(|p| p.local);
+            let (strike, local) = strike(&target.zone, previous, tip, dt, min_speed_mps);
+            self.gun_approaches[index] = local.map(|local| GunApproach {
+                source,
+                target,
+                local,
+            });
+            strike
+        })
+    }
+
+    pub(super) fn lose_guns(&mut self) {
+        self.gun_approaches = [None; 2];
     }
 
     /// Forget the tip, so that the next zone starts without an approach.
@@ -160,8 +213,20 @@ impl Knocks {
     }
 
     pub(super) fn cancel(&mut self) {
-        self.previous = None;
+        self.lose_tip();
+        self.lose_guns();
         self.strikes = [None; 2];
+    }
+}
+
+impl GunMagazine {
+    fn continues(self, next: Self) -> bool {
+        self.id == next.id
+            && self.expected == next.expected
+            && self.world_scale == next.world_scale
+            && self.zone.below == next.zone.below
+            && self.zone.lip == next.zone.lip
+            && self.zone.radius == next.zone.radius
     }
 }
 
@@ -253,7 +318,7 @@ pub(super) fn strike(
     min_speed_mps: f32,
 ) -> (Option<Strike>, Option<Vec3>) {
     let local = zone.local(tip);
-    if !local.is_finite() {
+    if !local.is_finite() || !min_speed_mps.is_finite() {
         return (None, None);
     }
     let Some(previous) = previous.filter(|_| dt.is_finite() && dt > MIN_DT) else {
@@ -278,7 +343,7 @@ pub(super) fn strike(
         .or_else(|| (-velocity).try_normalize())
         .unwrap_or(Vec3::NEG_Y);
     let closing_mps = -velocity.dot(normal);
-    if closing_mps.is_nan() || closing_mps < min_speed_mps.max(0.0) {
+    if !closing_mps.is_finite() || closing_mps < min_speed_mps.max(0.0) {
         return (None, Some(local));
     }
     let to_cockpit = zone.rotation().inverse();

@@ -10,10 +10,10 @@ use crate::controllers::{
     haptics::{self, Event},
     weapons::reload::{
         FinishInputs, State, Tick, engine,
-        extraction::DetachKind,
+        extraction::{DetachKind, MagazineId},
         frames,
         insert::{self, InsertStage, InsertionSource},
-        knock::{self, KNOCK, KnockView},
+        knock::{self, GunMagazine, KNOCK, KnockView, Strike},
         loose::{self, Operation},
         tuning::Reload,
         wells,
@@ -30,9 +30,10 @@ impl State {
             && self.insertion_source == InsertionSource::Pouch;
         let Some((hand, gun_hand)) = self.status.insert_hands.filter(|_| holding) else {
             self.knocks.lose_tip();
-            knock::publish(None);
+            self.knock_guns(tick, inputs, config);
             return;
         };
+        self.knocks.lose_guns();
         let Some((weapon, gun)) = tick.gun(gun_hand) else {
             self.knocks.lose_tip();
             knock::publish(None);
@@ -82,26 +83,89 @@ impl State {
         let fast = previous
             .zip(local)
             .is_some_and(|(p, l)| inputs.dt > 0.0 && p.distance(l) / inputs.dt >= min_speed_mps);
-        if let Some(strike) = strike
-            && self.queue_eject(
-                weapon,
-                gun,
-                gun_hand,
-                DetachKind::Knock,
-                reload.loose.enabled,
-            )
-        {
-            self.knocks.strikes[gun_hand.index()] = Some(strike);
-            self.knocks.knocked_at = Some(Instant::now());
-            self.status.counts.knocks += 1;
-            self.event(format!(
-                "{hand:?} knocked the magazine out at {:.1} m/s",
-                strike.closing_mps
-            ));
-            tracing::info!(target: "controllers", hand = ?gun_hand, closing_mps = strike.closing_mps, "reload: knocked the magazine out");
-            haptics::play_hands(Hand::BOTH, Event::MagazineKnock);
+        if let Some(strike) = strike {
+            self.queue_knock(tick, gun_hand, strike, reload);
         }
         knock::publish(Some(view(fast, self.knocks.knocked_at)));
+    }
+
+    fn knock_guns(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
+        if self.status.insertion.holding()
+            || self.pending_detach.is_some()
+            || self.pending_ejects.iter().any(Option::is_some)
+            || self.knocks.impulse.is_some()
+            || self.knocks.linger.is_some()
+        {
+            self.knocks.lose_guns();
+            knock::publish(None);
+            return;
+        }
+        let magazines = Hand::BOTH.map(|holder| {
+            let (weapon, gun) = tick.gun(holder)?;
+            Some(GunMagazine {
+                id: MagazineId {
+                    weapon: weapon.address,
+                    gun: gun.index,
+                    holder,
+                },
+                expected: gun.magazine?,
+                zone: knock::zone_for(
+                    weapon.plan.load,
+                    weapon.plan.well,
+                    !weapon.occupied(),
+                    gun.well.map(|well| (well.mouth, well.axis)),
+                    knock::below_m(wells::lookup(weapon.reading.name_hash)),
+                    tick.world_scale,
+                )?,
+                world_scale: tick.world_scale,
+            })
+        });
+        let strikes = self.knocks.gun_strikes(
+            magazines,
+            inputs.dt,
+            config.weapons.reload.knock.min_speed_mps,
+        );
+        let candidate = Hand::BOTH
+            .into_iter()
+            .filter_map(|holder| Some((holder, strikes[holder.index()]?)))
+            .max_by(|(_, a), (_, b)| a.closing_mps.total_cmp(&b.closing_mps));
+        let Some((holder, strike)) = candidate else {
+            knock::publish(None);
+            return;
+        };
+        let reload = Reload::of(&config.weapons.reload);
+        if self.queue_knock(tick, holder, strike, &reload) {
+            self.knocks.lose_guns();
+            knock::publish(magazines[holder.index()].map(|magazine| KnockView {
+                holder,
+                zone: magazine.zone,
+                tip: magazines[holder.other().index()].map(|source| source.zone.ends().1),
+                fast: true,
+                knocked_at: self.knocks.knocked_at,
+            }));
+        } else {
+            knock::publish(None);
+        }
+    }
+
+    fn queue_knock(&mut self, tick: &Tick, holder: Hand, strike: Strike, reload: &Reload) -> bool {
+        let Some((weapon, gun)) = tick.gun(holder) else {
+            return false;
+        };
+        if !self.queue_eject(weapon, gun, holder, DetachKind::Knock, reload.loose.enabled) {
+            return false;
+        }
+        self.knocks.strikes[holder.index()] = Some(strike);
+        self.knocks.knocked_at = Some(Instant::now());
+        self.status.counts.knocks += 1;
+        self.event(format!(
+            "{:?} knocked the magazine out at {:.1} m/s",
+            holder.other(),
+            strike.closing_mps
+        ));
+        tracing::info!(target: "controllers", hand = ?holder, closing_mps = strike.closing_mps, "reload: knocked the magazine out");
+        haptics::play_hands(Hand::BOTH, Event::MagazineKnock);
+        true
     }
 
     /// Give the knocked magazine's body its impulse, once its body is readable, and hide the gun's

@@ -200,6 +200,127 @@ fn a_magazine_part_hangs_its_length_and_a_grip_magazine_none() {
     assert_eq!(below_m(None), 0.0);
 }
 
+fn gun_magazines(source_base: Vec3) -> [Option<GunMagazine>; 2] {
+    Hand::BOTH.map(|holder| {
+        let mouth = if holder == Hand::Left {
+            source_base + Vec3::Y * 0.12
+        } else {
+            Vec3::ZERO
+        };
+        Some(GunMagazine {
+            id: MagazineId {
+                weapon: holder.index() + 1,
+                gun: 0,
+                holder,
+            },
+            expected: Identity::test(),
+            zone: KnockZone::of(mouth, Vec3::Y, 0.12, 1.0).unwrap(),
+            world_scale: 1.0,
+        })
+    })
+}
+
+#[test]
+fn an_inserted_magazines_base_can_strike_the_other_magazine() {
+    let mut knocks = Knocks::new();
+    let before = gun_magazines(Vec3::new(0.08, -0.06, 0.0));
+    let after = gun_magazines(Vec3::new(0.03, -0.06, 0.0));
+    assert_eq!(knocks.gun_strikes(before, 0.02, 1.0), [None; 2]);
+    let strikes = knocks.gun_strikes(after, 0.02, 1.0);
+    let strike = strikes[Hand::Right.index()].unwrap();
+    assert!((strike.closing_mps - 2.5).abs() < 1.0e-4);
+    assert!(strikes[Hand::Left.index()].is_none());
+}
+
+#[test]
+fn gun_knocks_reject_resting_and_slow_contacts() {
+    for (from, to, dt) in [(0.08, 0.03, 0.2), (0.03, -0.03, 0.01)] {
+        let mut knocks = Knocks::new();
+        knocks.gun_strikes(gun_magazines(Vec3::new(from, -0.06, 0.0)), dt, 1.0);
+        let strikes = knocks.gun_strikes(gun_magazines(Vec3::new(to, -0.06, 0.0)), dt, 1.0);
+        assert!(strikes[Hand::Right.index()].is_none());
+    }
+}
+
+#[test]
+fn gun_knocks_ignore_shared_motion() {
+    let mut knocks = Knocks::new();
+    let before = gun_magazines(Vec3::new(0.08, -0.06, 0.0));
+    knocks.gun_strikes(before, 0.02, 1.0);
+    let after = before.map(|magazine| {
+        magazine.map(|mut magazine| {
+            magazine.zone.mouth += Vec3::new(0.2, 0.3, -0.1);
+            magazine
+        })
+    });
+    assert_eq!(knocks.gun_strikes(after, 0.02, 1.0), [None; 2]);
+}
+
+#[test]
+fn changed_gun_ownership_scale_or_magazine_shape_resets_the_approach() {
+    for change in 0..7 {
+        let mut knocks = Knocks::new();
+        knocks.gun_strikes(gun_magazines(Vec3::new(0.08, -0.06, 0.0)), 0.02, 1.0);
+        let mut after = gun_magazines(Vec3::new(0.03, -0.06, 0.0));
+        match change {
+            0 => after[Hand::Left.index()].as_mut().unwrap().id.weapon += 10,
+            1 => after[Hand::Right.index()].as_mut().unwrap().id.gun += 1,
+            2 => after[Hand::Left.index()].as_mut().unwrap().world_scale = 2.0,
+            3 => after[Hand::Right.index()].as_mut().unwrap().zone.below += 0.01,
+            4 => knocks.lose_guns(),
+            5 => knocks.cancel(),
+            6 => {
+                let mut missing = after;
+                missing[Hand::Left.index()] = None;
+                assert_eq!(knocks.gun_strikes(missing, 0.02, 1.0), [None; 2]);
+            }
+            _ => unreachable!(),
+        }
+        assert_eq!(knocks.gun_strikes(after, 0.02, 1.0), [None; 2]);
+    }
+}
+
+#[test]
+fn a_magazine_without_an_exposed_base_cannot_be_a_gun_knock_source() {
+    let mut knocks = Knocks::new();
+    for x in [0.08, 0.03] {
+        let mut magazines = gun_magazines(Vec3::new(x, -0.06, 0.0));
+        let source = magazines[Hand::Left.index()].as_mut().unwrap();
+        source.zone.mouth -= Vec3::Y * source.zone.below;
+        source.zone.below = 0.0;
+        assert!(knocks.gun_strikes(magazines, 0.02, 1.0)[Hand::Right.index()].is_none());
+    }
+}
+
+#[test]
+fn a_single_gun_cannot_knock_itself_when_both_hands_refer_to_it() {
+    let mut knocks = Knocks::new();
+    for x in [0.08, 0.03] {
+        let mut magazines = gun_magazines(Vec3::new(x, -0.06, 0.0));
+        let target = magazines[Hand::Right.index()].unwrap();
+        let source = magazines[Hand::Left.index()].as_mut().unwrap();
+        source.id.weapon = target.id.weapon;
+        source.id.gun = target.id.gun;
+        assert_eq!(knocks.gun_strikes(magazines, 0.02, 1.0), [None; 2]);
+    }
+}
+
+#[test]
+fn nonfinite_knock_thresholds_do_not_create_strikes() {
+    for threshold in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert_eq!(
+            hit(
+                &rifle(),
+                Vec3::new(0.08, -0.06, 0.0),
+                Vec3::new(0.03, -0.06, 0.0),
+                0.02,
+                threshold
+            ),
+            None
+        );
+    }
+}
+
 fn magazine_body() -> RigidBody {
     RigidBody {
         pose: BodyPose {
