@@ -51,7 +51,7 @@ use crate::{
     controllers::{cockpit::CockpitTransform, frame::Pose},
     grapple,
     headpose::{
-        HeadPose, anchor_pair, animation_rotation,
+        HeadPose, anchor_pair, camera_animation_rotation,
         config::{HeadPoseConfig, VrTurnMode},
         follow::{BodyFollow, FollowTick},
         sim,
@@ -414,7 +414,7 @@ pub fn body_rotation_followed() -> Quat {
     let root = anchor_pair().map_or_else(body_rotation_raw, |pair| {
         pair[1].root.to_scale_rotation_translation().1
     });
-    root * animation_rotation(true) * follow_turn(true)
+    root * camera_animation_rotation(true) * follow_turn(true)
 }
 
 /// The local player character's world rotation as the engine holds it, unfiltered. The body-yaw
@@ -434,7 +434,7 @@ pub fn body_rotation_prev() -> Quat {
         |pair| pair[0].root.to_scale_rotation_translation().1,
     );
     level_while_swimming(grapple::filter_body_rotation(
-        root * animation_rotation(false) * follow_turn(false),
+        root * camera_animation_rotation(false) * follow_turn(false),
     ))
 }
 

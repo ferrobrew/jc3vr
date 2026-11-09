@@ -12,7 +12,7 @@ use parking_lot::Mutex;
 use crate::headpose::{
     Source,
     anchors::{Context, Identity, Sample},
-    animation::{RotationFilter, eye_arm, head_frame, synthetic_rotation},
+    animation::{CameraFollow, RotationFilter, eye_arm, head_frame, synthetic_rotation},
 };
 
 /// All gameplay modes share this history. A mode switch does not reseed the view from a transient
@@ -51,6 +51,11 @@ pub(super) fn capture(
         let neck_to_eyes = sample.root.transform_point3(sample.eyes_model)
             - sample.root.transform_point3(sample.neck_model);
         sample.geometry.eye_arm = eye_arm(root, filtered, neck_to_eyes);
+        let follow = state
+            .camera_follow
+            .step(crate::controllers::mode::current().mode, dt);
+        let target = if follow { filtered } else { Quat::IDENTITY };
+        sample.geometry.camera_animation_rotation = state.view_filter.step(target, dt, !continuous);
     }
     state.identity = Some(identity);
     state.context = Some(context);
@@ -105,6 +110,8 @@ struct State {
     tick: Option<u64>,
     root: Option<Vec3>,
     filter: RotationFilter,
+    view_filter: RotationFilter,
+    camera_follow: CameraFollow,
 }
 
 const MAX_GAP: Duration = Duration::from_millis(250);
@@ -116,4 +123,6 @@ static STATE: Mutex<State> = Mutex::new(State {
     tick: None,
     root: None,
     filter: RotationFilter::new(),
+    view_filter: RotationFilter::slow(),
+    camera_follow: CameraFollow::new(),
 });

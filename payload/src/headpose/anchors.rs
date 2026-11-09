@@ -26,6 +26,9 @@ pub(crate) struct Geometry {
     pub eye_arm: Vec3,
     /// The filtered head frame relative to the root, with the bind orientation removed.
     pub animation_rotation: Quat,
+    /// The head frame the view follows, filtered for the camera and eased to identity outside the
+    /// camera-follow states.
+    pub camera_animation_rotation: Quat,
 }
 
 impl Geometry {
@@ -42,6 +45,7 @@ impl Geometry {
             neck_delta: anchors.neck - anchors.head,
             eye_arm: anchors.eye_arm,
             animation_rotation: Quat::IDENTITY,
+            camera_animation_rotation: Quat::IDENTITY,
         }
     }
 
@@ -56,6 +60,8 @@ impl Geometry {
             && self.eye_arm.length_squared() < 1.0
             && self.animation_rotation.is_finite()
             && (self.animation_rotation.length_squared() - 1.0).abs() < 0.01
+            && self.camera_animation_rotation.is_finite()
+            && (self.camera_animation_rotation.length_squared() - 1.0).abs() < 0.01
     }
 }
 
@@ -180,6 +186,7 @@ impl Sample {
                 neck_delta: neck - head,
                 eye_arm: rotation.inverse() * (root.transform_point3(eyes_model) - neck),
                 animation_rotation: Quat::IDENTITY,
+                camera_animation_rotation: Quat::IDENTITY,
             },
         }
     }
