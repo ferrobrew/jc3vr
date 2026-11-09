@@ -1,12 +1,16 @@
 use std::num::NonZeroUsize;
 
 use glam::Quat;
+use jc3gi::vehicle::vehicle::DoorSlot;
 
 use super::*;
 use crate::controllers::{
     frame::Pose,
     physical_hands::{
-        characters::CharacterTarget, doors::config::TEARING, grasp::GripTarget, pickup::PICKUP,
+        characters::CharacterTarget,
+        doors::{DoorTarget, config::TEARING},
+        grasp::GripTarget,
+        pickup::PICKUP,
         rigid::BodyPose,
     },
 };
@@ -203,6 +207,73 @@ fn a_joint_feature_toggle_releases_the_whole_group_without_a_carry_command() {
         assert!(fake.calls.is_empty());
         assert_eq!(outcome.throw, None);
     }
+}
+
+#[test]
+fn carrier_transport_never_moves_attached_or_latched_world_constraints() {
+    for kind in [HeldKind::Door, HeldKind::Articulated] {
+        assert!(!kind.carrier_transport(false, true));
+        assert!(!kind.carrier_transport(true, true));
+    }
+    for kind in [HeldKind::Prop, HeldKind::Ragdoll] {
+        assert!(kind.carrier_transport(false, true));
+        assert!(!kind.carrier_transport(true, true));
+        assert!(!kind.carrier_transport(false, false));
+    }
+}
+
+#[test]
+fn collision_publication_keeps_character_assembly_after_a_seize() {
+    let mut state = PickupState::new();
+    let held = held(false, HeldKind::Ragdoll);
+    state.held[0] = Some(held);
+    let subject = state.collision_subjects()[0].unwrap();
+    assert!(subject.assembly);
+    assert_eq!(subject.owner, held.object);
+    state.held[0] = None;
+    state.seizes[0] = Some(Seize {
+        target: CharacterTarget {
+            character: held.object,
+            body: held.body,
+            seated: None,
+            ragdoll: false,
+            hostile: false,
+            mass_kg: held.mass_kg,
+        },
+        grab: Vec3::ZERO,
+        bone: None,
+    });
+    assert_eq!(state.collision_subjects()[0], Some(subject));
+    state.regrips[0] = Some(Regrip::new(state.seizes[0].take().unwrap()));
+    assert_eq!(state.collision_subjects()[0], Some(subject));
+    state.regrips[0] = None;
+    assert_eq!(state.collision_subjects(), [None; 2]);
+}
+
+#[test]
+fn collision_publication_covers_a_latched_door_without_carrying_the_vehicle() {
+    let mut state = PickupState::new();
+    let owner = NonZeroUsize::new(100).unwrap();
+    state.latches[0] = Some(Latch {
+        door: DoorTarget {
+            vehicle: owner,
+            vehicle_body: Some(7),
+            part_index: 2,
+            slot: DoorSlot::FRONT_LEFT,
+            latched: true,
+            outward: Vec3::X,
+        },
+        vehicle_body: 7,
+        grab: Vec3::ZERO,
+        outward: Vec3::X,
+        palm: palm().pose,
+        opening_at: None,
+    });
+    let subject = state.collision_subjects()[0].unwrap();
+    assert_eq!(subject.body, 7);
+    assert_eq!(subject.owner, owner);
+    assert!(!subject.assembly);
+    assert_eq!(state.props(), [None; 2]);
 }
 
 #[test]

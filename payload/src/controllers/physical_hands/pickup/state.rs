@@ -10,6 +10,7 @@ use crate::controllers::{
     frame::{Hand, Pose},
     grab::PickupKind,
     physical_hands::{
+        carry_collision::Subject,
         characters::{Regrip, Seize},
         doors::{Latch, tearing::TearGrip},
         grasp::{Grip, Reach, Strain, TargetKind},
@@ -230,6 +231,32 @@ impl PickupState {
             .map(|h| h.filter(|h| h.kind == HeldKind::Prop).map(|h| h.object))
     }
 
+    pub(super) fn collision_subjects(&self) -> [Option<Subject>; 2] {
+        Hand::BOTH.map(|hand| {
+            let i = hand.index();
+            if let Some(held) = self.held[i] {
+                return Some(Subject {
+                    body: held.body,
+                    owner: held.object,
+                    assembly: held.kind == HeldKind::Ragdoll,
+                });
+            }
+            if let Some(latch) = self.latches[i] {
+                return Some(Subject {
+                    body: latch.vehicle_body,
+                    owner: latch.door.vehicle,
+                    assembly: false,
+                });
+            }
+            let seize = self.seizes[i].or(self.regrips[i].map(|regrip| regrip.seize))?;
+            Some(Subject {
+                body: seize.target.body,
+                owner: seize.target.character,
+                assembly: true,
+            })
+        })
+    }
+
     /// The objects the hands hold, as addresses, zero for none.
     pub(crate) fn held_objects(&self) -> [usize; 2] {
         self.held.map(|h| h.map_or(0, |h| h.object.get()))
@@ -322,6 +349,10 @@ impl HeldKind {
     /// Loose props use one carry solve for both hands, rather than fixed wrist joints.
     pub(crate) fn joined(self, requested: bool) -> bool {
         requested && self != Self::Prop
+    }
+
+    pub(crate) fn carrier_transport(self, joined: bool, liftable: bool) -> bool {
+        !joined && liftable && matches!(self, Self::Prop | Self::Ragdoll)
     }
 
     pub(crate) fn of(kind: &TargetKind) -> Self {

@@ -30,6 +30,7 @@ fn destroy_bodies(world: *mut hknpWorld, ids: *const u32, count: i32, activation
             crate::controllers::physical_hands::climb::lifetime::destroyed(world as usize, body);
         }
     }
+    unsafe { crate::controllers::physical_hands::carry_bodies_destroying(world, ids, count) };
     DESTROY_BODIES
         .get()
         .unwrap()

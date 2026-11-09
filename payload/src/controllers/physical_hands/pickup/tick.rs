@@ -10,7 +10,7 @@ use crate::controllers::{
     diagnostics::{Released, Thrown, note_release, note_throw},
     frame::{Hand, Pose},
     physical_hands::{
-        STALE_AFTER, bodies,
+        STALE_AFTER, bodies, carry_collision,
         characters::{self, CharactersConfig, Regrip, Seize},
         doors::{self, Latch},
         grasp::{self, Grip, PalmMotion, Reach, StrainSample, TargetKind},
@@ -653,8 +653,7 @@ unsafe fn tick_with(
         if held.kind == HeldKind::Ragdoll && held.mass_kg.is_finite() && held.mass_kg > 0.0 {
             moving.inverse_mass = moving.inverse_mass.min(1.0 / held.mass_kg);
         }
-        let transported =
-            !joined && matches!(held.kind, HeldKind::Prop | HeldKind::Ragdoll) && liftable;
+        let transported = held.kind.carrier_transport(joined, liftable);
         if transported && previous_holds.iter().flatten().any(|h| h.same(&held)) {
             if carrier_pose.is_some() {
                 moving.velocities = transport.carry(body.pose.centre, moving.velocities);
@@ -823,9 +822,7 @@ unsafe fn tick_with(
             &mut outcome,
         )
     };
-    crate::controllers::physical_hands::carry_collision::publish(
-        state.held.map(|h| h.map(|h| (h.body, h.object))),
-    );
+    carry_collision::publish(state.collision_subjects());
     crate::controllers::physical_hands::impacts::publish(state.held.map(|h| {
         h.filter(|h| h.kind != HeldKind::Ragdoll)
             .map(|h| (h.body, h.object))

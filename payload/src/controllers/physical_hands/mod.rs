@@ -90,7 +90,7 @@ pub use bodies::BodyError;
 pub(crate) use bodies::{BodyState, game_object_of};
 pub use config::PhysicalHandsConfig;
 use glam::{Quat, Vec3};
-use jc3gi::{character::character::Character, types::math::Vector3};
+use jc3gi::{character::character::Character, physics::hknpWorld, types::math::Vector3};
 use state::{STALE_AFTER, State};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
 pub(crate) use status::{PalmReadout, palm_readout, press_summary};
@@ -105,6 +105,10 @@ use crate::{
         frame::Hand, grab::PickupKind, hands::CockpitHand, physical_hands::state::STATE,
     },
 };
+
+pub(crate) unsafe fn carry_bodies_destroying(world: *mut hknpWorld, ids: *const u32, count: i32) {
+    unsafe { carry_collision::destroying(world, ids, count) };
+}
 
 /// The loose object each hand carries, by [`Hand::index`](crate::controllers::frame::Hand::index),
 /// for the loadout table: a prop, not a grip on something hinged, a door, or a character, which are
