@@ -292,7 +292,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     state.status.fit = fit.readout;
     state.status.wheel = seat.is_some_and(|s| s.driver).then_some(fit.wheel);
     state.mounted_target = mounted.target;
-    MOUNTED_WEAPON.store(mounted.target.map_or(0, |t| t.weapon), Ordering::Relaxed);
+    MOUNTED_WEAPON.store(mounted.weapon.unwrap_or(0), Ordering::Relaxed);
     state.mounted_handles = mounted.handles.or(state.mounted_handles);
     state.mounted_handle_points = mounted.handle_points;
     state.mounted_config = mounted_config;

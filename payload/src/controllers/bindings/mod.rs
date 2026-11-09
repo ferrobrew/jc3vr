@@ -836,7 +836,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             &mut step.desired,
             &interaction_context,
         );
-        unsafe { vehicles::mounted::tick(&finish) };
+        unsafe { vehicles::mounted::tick(&finish, &mut step.desired) };
         unsafe {
             physical_hands::lifetime::publish(
                 physical_hands::held_bodies().map(|held| held.map(|held| (held.object, held.body))),

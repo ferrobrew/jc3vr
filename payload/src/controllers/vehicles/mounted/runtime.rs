@@ -4,15 +4,18 @@
 
 use std::{ffi::c_void, num::NonZeroUsize, time::Instant};
 
+use glam::Vec3;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
+    input::input_action_map::Action,
 };
 use parking_lot::Mutex;
 
 use crate::{
     config::Config,
     controllers::{
+        bindings::hold::{Desired, MapKind, Target, Want},
         cockpit::CockpitTransform,
         frame::Hand,
         hands,
@@ -20,8 +23,9 @@ use crate::{
         physical_hands::{self, doors::engine::vehicle_of as resolve_vehicle},
         scheme,
         vehicles::{
+            is_mounted_weapon,
             mounted::{
-                Held, Mount,
+                Held, Mount, MountedGun,
                 control::{Identity, Input, Tear},
                 handle, mount_matches,
                 native::{self, Motor, Prompt},
@@ -32,7 +36,7 @@ use crate::{
         weapons::{
             FinishInputs,
             engine::{character_object, object_of, weapon_at},
-            hold::{armed, pickup, refs::Weak},
+            hold::{armed, button_pickup, pickup, refs::Weak},
         },
     },
 };
@@ -68,7 +72,7 @@ pub(crate) unsafe fn observe(weapon: &WeaponBase) {
 ///
 /// # Safety
 /// The game thread, after the physical hands and weapon handling settled this tick.
-pub(crate) unsafe fn tick(inputs: &FinishInputs) {
+pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     let enabled = scheme::is_controllers()
         && !crate::is_shutting_down()
         && Config::lock_query(|config| {
@@ -84,14 +88,11 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
         unsafe { release_all(previous) };
         return;
     };
-    // The native mounted state's handles are the only grip on a gun the player entered by the use
-    // prompt. Keep the hands that held them when the runtime stops that use, so the gun does not
-    // fall out of the hands on the same tick.
-    let native_holds = if unsafe { local.IsInMountedGunState() } {
-        vehicles_summary().mounted_holds
-    } else {
-        [false; 2]
-    };
+    // The virtual mounted handles are the grip the player takes on a gun without the use prompt.
+    // The native mounted state places the same handles, so its hands are kept when the runtime
+    // stops that use, and the gun does not fall out of the hands on the same tick.
+    let summary = vehicles_summary();
+    let handle_holds = summary.mounted_holds;
     let active = hands::active_hands_raw();
     let xf = active
         .as_ref()
@@ -145,7 +146,16 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
             })
         });
         let native = unsafe { native_mounted(local, weapon) };
-        let native_hands = if native { native_holds } else { [false; 2] };
+        // A native use places both hands on the gun's handles; the virtual handles hold only the
+        // hands that took them, and only for the gun the input tick selected.
+        let selected = is_mounted_weapon(weapon_ptr as usize);
+        let native_hands = if native {
+            [true; 2]
+        } else if selected {
+            handle_holds
+        } else {
+            [false; 2]
+        };
         let physical_body = physical.iter().flatten().next().copied();
         let identity = match physical_body {
             Some(body) => Identity {
@@ -170,11 +180,11 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
             (native_hands[i] || previous_takeover.is_some_and(|takeover| takeover.hands[i]))
                 && physical[i].is_none()
         });
+        // A physical hold or a handle hold is already a held grip; the native takeover keeps the
+        // hands the game placed, whether or not the player's grip button is down.
         let hands = Hand::BOTH.map(|hand| {
             let i = hand.index();
-            (physical[i].is_some() || takeover_hands[i])
-                && inputs.grips[i].held()
-                && !inputs.unavailable[i]
+            (physical[i].is_some() || takeover_hands[i]) && !inputs.unavailable[i]
         });
         if !hands.contains(&true) {
             continue;
@@ -261,14 +271,16 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
                 let hand_world = active.as_ref().zip(xf.as_ref()).and_then(|(active, xf)| {
                     active.hands[i].map(|hand| xf.point_to_world(hand.grip.position))
                 });
+                // A pull takes the hand farther from the gun's pivot than the handle rests; aiming
+                // swings the hand around the pivot at the handle's radius, which is not a pull.
                 let lag = hand_world
                     .zip(handle_point)
-                    .map(|(hand, handle)| hand.distance(handle));
-                let Some(lag) = lag else {
+                    .map(|(hand, handle)| hand.distance(pivot) - handle.distance(pivot));
+                let Some(lag) = lag.filter(|lag| lag.is_finite()) else {
                     record.tear[i] = Tear::default();
                     return false;
                 };
-                return record.tear[i].step_pull(inputs.real_dt, lag, 1.0);
+                return record.tear[i].step_pull(inputs.real_dt, lag.max(0.0), 1.0);
             }
             record.tear[i] = Tear::default();
             false
@@ -300,6 +312,20 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs) {
                         };
                         if let Err(error) = result {
                             tracing::warn!(%error, "mounted gun: portable pickup refused after detach");
+                            // A heavy gun cannot enter the table from the dropped state; let the
+                            // game's own use-item pickup take it instead, as a direct pickup does.
+                            button_pickup::grant();
+                            desired.push(Desired {
+                                target: Target {
+                                    map: MapKind::Player,
+                                    action: Action::USE_ITEM,
+                                },
+                                want: Want::Click,
+                            });
+                            tracing::info!(
+                                target: "controllers",
+                                "mounted gun: the detached gun is picked up through the use-item action"
+                            );
                         }
                     }
                     record.input = None;
@@ -376,15 +402,77 @@ pub(crate) fn shooter(weapon: &WeaponBase) -> Option<(Weak, bool)> {
         .map(|record| (record.shooter.clone(), record.input.is_some()))
 }
 
+/// The mounted gun whose handles or pivot are nearest `hands`, within `reach_m`, for a gun the
+/// player is not in the native mounted state of: its handles can be taken and the runtime can
+/// drive it. The nearest gun wins; a gun with no readable handles uses its pivot.
+///
+/// # Safety
+///
+/// The game thread, before the world update; the hands are world-space points.
+pub(crate) unsafe fn nearby(hands: [Option<Vec3>; 2], reach_m: f32) -> Option<MountedGun> {
+    let reach_m = reach_m.max(0.0);
+    if !reach_m.is_finite() {
+        return None;
+    }
+    let seen: Vec<(usize, Weak)> = SEEN
+        .lock()
+        .iter()
+        .map(|record| (record.object, record.weak.clone()))
+        .collect();
+    let mut best: Option<(f32, MountedGun)> = None;
+    for (object, weak) in seen {
+        let Some(alive) = weak
+            .lock()
+            .filter(|alive| alive.object() as usize == object)
+        else {
+            continue;
+        };
+        let weapon = unsafe { &*(weapon_at(alive.object())) };
+        if weapon.m_State != WeaponState::E_WS_MOUNTED || native::lifecycle_pending(weapon) {
+            continue;
+        }
+        let Some((pivot, barrel)) = (unsafe { pivot_and_barrel(weapon) }) else {
+            continue;
+        };
+        let handles = Hand::BOTH.map(|hand| unsafe { handle(weapon, hand) });
+        let points: Vec<Vec3> = handles
+            .iter()
+            .flatten()
+            .copied()
+            .chain(std::iter::once(pivot))
+            .collect();
+        let distance = hands
+            .iter()
+            .flatten()
+            .flat_map(|hand| points.iter().map(move |point| hand.distance(*point)))
+            .fold(f32::INFINITY, f32::min);
+        if distance <= reach_m && best.is_none_or(|(best, _)| distance < best) {
+            best = Some((
+                distance,
+                MountedGun {
+                    address: weapon as *const WeaponBase as usize,
+                    pivot,
+                    barrel,
+                    handles,
+                },
+            ));
+        }
+    }
+    best.map(|(_, gun)| gun)
+}
+
 /// Whether the runtime holds `weapon`, so the game's native start-using must not run.
 pub(crate) fn suppress_start_using(weapon: &WeaponBase) -> bool {
     let address = weapon as *const WeaponBase as usize;
     let control = weapon.m_WeakThis.pn as usize;
-    CONTROLLED.lock().iter().any(|record| {
-        record.identity.weapon == address
-            && record.identity.control == control
-            && record.input.is_some()
-    })
+    // The gun the input tick selected is the one the hands are on: the use prompt must not start
+    // the native state the runtime would only take over. A retained gun is refused as well.
+    is_mounted_weapon(address)
+        || CONTROLLED.lock().iter().any(|record| {
+            record.identity.weapon == address
+                && record.identity.control == control
+                && record.input.is_some()
+        })
 }
 
 /// Run `run` with the local player as `weapon`'s temporary user, then put the weapon's user fields

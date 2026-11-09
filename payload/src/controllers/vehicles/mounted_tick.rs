@@ -24,6 +24,8 @@ use crate::controllers::{
 /// What the mounted-gun half of the input tick produced.
 pub(super) struct MountedTick {
     pub(super) readout: Option<MountedReadout>,
+    /// The gun the input tick selected, whether or not the hands are aiming it.
+    pub(super) weapon: Option<usize>,
     pub(super) target: Option<MountedTarget>,
     pub(super) handles: Option<[Option<Vec3>; 2]>,
     /// The gun's handles in the cockpit frame, where it places them, for their grab volumes.
@@ -39,6 +41,7 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
     let config = &active.config;
     let none = MountedTick {
         readout: None,
+        weapon: None,
         target: None,
         handles: None,
         handle_points: [None; 2],
@@ -50,18 +53,21 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
         state.mounted_last = None;
         return none;
     }
+    let xf = CockpitTransform::current(active.head.position, active.world_scale);
+    let hands_world = Hand::BOTH
+        .map(|hand| active.hands[hand.index()].map(|hand| xf.point_to_world(hand.grip.position)));
     // SAFETY: the game stage runs on the game thread before the world update.
     let Some(gun) = (unsafe {
         Character::GetLocalPlayerCharacter()
             .as_ref()
             .and_then(|owner| mounted::read(owner))
-    }) else {
+    })
+    .or_else(|| unsafe { mounted::nearby(hands_world, NEARBY_REACH_M) }) else {
         let mut state = STATE.lock();
         state.mounted_reference = None;
         state.mounted_last = None;
         return none;
     };
-    let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let to_cockpit = |world: Vec3| xf.point_to_cockpit(world);
     let body = xf.body;
     let handles = gun.handles.map(|h| h.map(to_cockpit));
@@ -120,6 +126,7 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
             direction,
             target: target.map(|t| t.point),
         }),
+        weapon: Some(gun.address),
         target,
         handles: Some(handles),
         handle_points: handles,
@@ -154,3 +161,7 @@ pub(super) fn offered(
 /// The shortest lever from the handles to the gun's pivot, metres. A gun whose handles the game
 /// does not place, or places at the pivot, swings about a pivot this far ahead of them.
 const MIN_LEVER_M: f32 = 0.4;
+
+/// How near a hand must be to a mounted gun's handles or pivot to select it without the native
+/// mounted state, metres.
+const NEARBY_REACH_M: f32 = 2.0;
