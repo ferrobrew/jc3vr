@@ -63,6 +63,8 @@
 //! Factory allocations inside [`AmmoNeutral`] disable reclamation under the allocator's own
 //! critical section. No reference outlives a removal, and only owned inert actors are removed.
 
+mod ai;
+
 use std::{cell::Cell, collections::VecDeque, ptr::NonNull};
 
 use detours_macro::detour;
@@ -94,6 +96,7 @@ pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&CONSUME_AMMO_BINDER)
         .with_static_binder(&ALLOCATE_GRENADE_BINDER)
+        .with_hook_library(ai::hook_library())
 }
 
 /// One asked-for release of an item's actor.
@@ -111,6 +114,7 @@ pub(super) struct Launch {
 pub(super) struct Actor {
     weak: Weak,
     upgrades: bool,
+    allocation: ai::Allocation,
 }
 
 impl Actor {
@@ -120,26 +124,23 @@ impl Actor {
     ///
     /// `weak` must be a live weak reference.
     unsafe fn of(weak: &WeakPtrGameObject) -> Option<Self> {
-        let mut actor = Self {
-            weak: unsafe { Weak::of(weak) },
-            upgrades: false,
-        };
-        let grenade = actor.grenade()?;
-        actor.upgrades = unsafe { (*grenade).m_CanUseUpgrades };
-        Some(actor)
+        let weak = unsafe { Weak::of(weak) };
+        let explosive = explosive_of(&weak)?;
+        // SAFETY: the factory owns the actor on the game thread.
+        let allocation = ai::Allocation::of(unsafe { &*explosive });
+        let upgrades = unsafe { (*explosive.cast::<Grenade>()).m_CanUseUpgrades };
+        Some(Self {
+            weak,
+            upgrades,
+            allocation,
+        })
     }
 
     /// The address of the actor's explosive, while the pool still holds it.
     pub(super) fn explosive(&self) -> Option<*mut Explosive> {
-        // SAFETY: the weak reference keeps the object's control block alive, and `weak_target`
-        // reports the object only while a strong reference to it remains.
-        let object = unsafe { weak_target(self.weak.raw()) }?;
-        Some(
-            object
-                .cast::<u8>()
-                .wrapping_sub(Explosive::GAME_OBJECT_BASE_OFFSET as usize)
-                .cast::<Explosive>(),
-        )
+        let explosive = explosive_of(&self.weak)?;
+        // SAFETY: the caller runs on the game thread while the pool is serialized.
+        (ai::Allocation::of(unsafe { &*explosive }) == self.allocation).then_some(explosive)
     }
 
     /// Whether the actor has the physics body every release path requires.
@@ -196,6 +197,9 @@ pub(super) unsafe fn pull_pin(actor: &Actor) -> PinPull {
     // SAFETY: the weak handle proved a strong reference to the object still exists.
     let ticking = unsafe { (*grenade).m_ShouldTickDetonationTimer };
     let pull = pin_pull(actor.physics_ready(), ticking);
+    if pull != PinPull::NotReady {
+        ai::remove(actor);
+    }
     if pull == PinPull::Pulled {
         // SAFETY: as above; this is the only place an item's fuse is raised.
         unsafe { (*grenade).m_ShouldTickDetonationTimer = true };
@@ -285,6 +289,7 @@ pub(super) unsafe fn create(weapon: &mut ThrownGrenadeWeapon, world: Mat4) -> Op
         return None;
     }
     unsafe { place(&actor, world, world) };
+    ai::publish(&actor);
     Some(actor)
 }
 
@@ -318,6 +323,7 @@ pub(super) unsafe fn place(actor: &Actor, previous: Mat4, world: Mat4) {
 ///
 /// The caller holds the game thread, owns the item, and the actor is not armed.
 pub(super) unsafe fn remove(actor: &Actor) {
+    ai::remove(actor);
     let Some(explosive) = actor.explosive() else {
         return;
     };
@@ -376,6 +382,8 @@ pub(super) fn clear() {
 }
 
 pub(super) fn reconcile(items: &[SafeItemView]) {
+    // SAFETY: the safe-item registry calls this at the serialized game-thread boundary.
+    unsafe { ai::reconcile() };
     STATE
         .lock()
         .queue
@@ -648,6 +656,17 @@ fn consume_ammo(weapon: *mut WeaponBase, data: *mut WeaponData, count: i32) {
         return;
     }
     CONSUME_AMMO.get().unwrap().call(weapon, data, count);
+}
+
+fn explosive_of(weak: &Weak) -> Option<*mut Explosive> {
+    // SAFETY: the weak reference owns its control block; callers run on the game thread.
+    let object = unsafe { weak_target(weak.raw()) }?;
+    Some(
+        object
+            .cast::<u8>()
+            .wrapping_sub(Explosive::GAME_OBJECT_BASE_OFFSET as usize)
+            .cast::<Explosive>(),
+    )
 }
 
 unsafe fn weapon_data(weapon: &WeaponBase) -> Option<*mut WeaponData> {
