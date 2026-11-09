@@ -20,9 +20,11 @@ pub enum Group {
     Sternum,
     Neck,
     Head,
+    LeftShoulder,
     LeftArm,
     LeftForeArm,
     LeftHand,
+    RightShoulder,
     RightArm,
     RightForeArm,
     RightHand,
@@ -30,15 +32,17 @@ pub enum Group {
 
 impl Group {
     /// Every group, parents before children.
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 13] = [
         Self::Spine1,
         Self::Spine2,
         Self::Sternum,
         Self::Neck,
         Self::Head,
+        Self::LeftShoulder,
         Self::LeftArm,
         Self::LeftForeArm,
         Self::LeftHand,
+        Self::RightShoulder,
         Self::RightArm,
         Self::RightForeArm,
         Self::RightHand,
@@ -61,9 +65,11 @@ impl Group {
             Self::Sternum => "Sternum",
             Self::Neck => "Neck",
             Self::Head => "Head",
+            Self::LeftShoulder => "LeftShoulder",
             Self::LeftArm => "LeftArm",
             Self::LeftForeArm => "LeftForeArm",
             Self::LeftHand => "LeftHand",
+            Self::RightShoulder => "RightShoulder",
             Self::RightArm => "RightArm",
             Self::RightForeArm => "RightForeArm",
             Self::RightHand => "RightHand",
@@ -80,7 +86,9 @@ impl Group {
             Self::Sternum => Some(Self::Spine2),
             Self::Neck => Some(Self::Sternum),
             Self::Head => Some(Self::Neck),
-            Self::LeftArm | Self::RightArm => Some(Self::Sternum),
+            Self::LeftShoulder | Self::RightShoulder => Some(Self::Sternum),
+            Self::LeftArm => Some(Self::LeftShoulder),
+            Self::RightArm => Some(Self::RightShoulder),
             Self::LeftForeArm => Some(Self::LeftArm),
             Self::LeftHand => Some(Self::LeftForeArm),
             Self::RightForeArm => Some(Self::RightArm),
@@ -257,7 +265,7 @@ pub(crate) mod tests {
             ("LeftHandIKTarget", None),
             ("Spine1", Some(Group::Spine1)),
             ("BackAttach", Some(Group::Spine2)),
-            ("LeftShoulder", Some(Group::Sternum)),
+            ("LeftShoulder", Some(Group::LeftShoulder)),
             ("Neck", Some(Group::Neck)),
             ("fJaw", Some(Group::Head)),
             ("df_LeftArmRollA01", Some(Group::LeftArm)),
@@ -286,7 +294,7 @@ pub(crate) mod tests {
         assert_eq!(
             PresentationRig::build(&names, &parents),
             Err(RigError::NotUnder {
-                bone: "LeftArm",
+                bone: "LeftShoulder",
                 ancestor: "Sternum"
             })
         );

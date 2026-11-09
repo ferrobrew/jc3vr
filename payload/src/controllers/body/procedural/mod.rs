@@ -58,7 +58,7 @@ use std::{
 };
 
 use body_rig::angle::line_yaw;
-use glam::{Mat4, Quat};
+use glam::{Mat4, Quat, Vec3};
 use jc3gi::{
     animation::ik::{Effector, HumanIK},
     character::character::Character,
@@ -73,6 +73,7 @@ use crate::{
                 authority::{Case, WeightFollower, classify_locked, relaxes_legs},
                 config::{ProceduralBodyConfig, ProceduralMode},
                 gate_state::{STATE, State, relaxed_legs},
+                hips::square_pose,
                 rig::{Rig, RigBone},
                 solver::{
                     SolveInput,
@@ -85,8 +86,10 @@ use crate::{
                 targets::{Fade, Slot, TargetFade},
                 wings::{WingRequest, read_player_arms},
             },
-            rig::{torso::relative_heading, torso_turn},
+            rig::{grounded, torso::relative_heading, torso_turn},
         },
+        cockpit::CockpitTransform,
+        hands::{active_hands_raw, arm_remaps},
         locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
     },
@@ -245,7 +248,13 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, scale) = Config::lock_query(|c| (c.controllers.body.procedural, c.vr.world_scale));
+    let (config, follow, scale) = Config::lock_query(|c| {
+        (
+            c.controllers.body.procedural,
+            c.controllers.body.rig.follow,
+            c.vr.world_scale,
+        )
+    });
     let now = Instant::now();
     // Read before the gate's own state too: it takes the configuration and the controller frame.
     let mode = current_mode().mode;
@@ -259,6 +268,32 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         .then(|| player_arms.as_ref().map(|arms| arms.torso))
         .flatten();
     let locked = lock::holds();
+    let arm_shoulders = active_hands_raw().map_or([None; 2], |active| {
+        let cockpit = CockpitTransform::current(active.head.position, active.world_scale);
+        let to_model = Mat4::from(character.m_WorldMatrixT1).inverse();
+        arm_remaps(
+            &active.config,
+            active.head,
+            active.torso,
+            active.world_scale,
+        )
+        .map(|remap| {
+            remap
+                .map(|remap| {
+                    to_model.transform_point3(cockpit.point_to_world(remap.character_shoulder))
+                })
+                .filter(|point| point.is_finite())
+        })
+    });
+    let visual_hips = if follow.enabled && follow.square_hips {
+        let world = Mat4::from(character.m_WorldMatrixT1);
+        let (_, rotation, _) = world.to_scale_rotation_translation();
+        grounded::body_yaw().and_then(|yaw| {
+            relative_heading(Quat::from_rotation_y(yaw), xr::body_rotation(), rotation)
+        })
+    } else {
+        None
+    };
     let mut state = STATE.lock();
     let dt = if dt.is_finite() {
         dt.clamp(0.0, MAX_STEP_S)
@@ -299,7 +334,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         classify_locked(&read, locked)
     };
     state.hips.track(case, &animated, dt, now);
-    let stance_authorized = config.stance.enabled && case == Case::OnFoot && locomotion.fresh(now);
+    let stance_authorized = (config.stance.enabled || (follow.enabled && follow.square_hips))
+        && case == Case::OnFoot
+        && locomotion.fresh(now);
     let stance_weight = if stance_authorized {
         state
             .stance
@@ -309,8 +346,12 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         0.0
     };
     state.status.stance_weight = stance_weight;
-    state.status.stance_targets = match state.hips.yaw() {
-        Some(heading) if stance_weight > 0.0 => {
+    let animated = match visual_hips {
+        Some(heading) => square_pose(&animated, heading, stance_weight),
+        None => animated,
+    };
+    state.status.stance_targets = match visual_hips.or_else(|| state.hips.yaw()) {
+        Some(heading) if config.stance.enabled && stance_weight > 0.0 => {
             let feet = square_stance(&animated, heading, &config.stance);
             unsafe { place_feet(&mut character.m_HIK, rig, &animated, &feet, stance_weight) }
         }
@@ -322,6 +363,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     state.status.case = case;
     state.status.weight = weight;
     let world = Mat4::from(character.m_WorldMatrixT1);
+    if state.leg_weight <= 0.0 {
+        state.leg_swing.step(world.w_axis.truncate(), false, dt);
+    }
     let wings = WingRequest {
         case,
         player: player_arms.as_ref(),
@@ -363,6 +407,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     } else {
         state.leg_fade.forget();
     }
+    let leg_down = state
+        .leg_swing
+        .step(world.w_axis.truncate(), leg_weight > 0.0, dt);
     if weight <= 0.0 && leg_weight <= 0.0 {
         state.clavicles.reset();
         state.on_hips_logged = None;
@@ -378,6 +425,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         scale,
         dt,
         visual_heading,
+        arm_shoulders,
     };
     let mut pose = if weight > 0.0 {
         let Some(pose) = (unsafe { pose_torso(&mut state, rig, &gate, &config) }) else {
@@ -387,7 +435,13 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     } else {
         animated
     };
-    let legs = relaxed_legs(&animated, &rig.reference, leg_weight);
+    let (_, world_rotation, _) = world.to_scale_rotation_translation();
+    let legs = relaxed_legs(
+        &animated,
+        &rig.reference,
+        leg_weight,
+        world_rotation.inverse() * leg_down,
+    );
     for bone in RigBone::ALL {
         if bone != RigBone::Pelvis && bone.descends_from(RigBone::Pelvis) {
             pose.bones[bone.index()] = legs.bones[bone.index()];
@@ -410,6 +464,7 @@ struct TorsoGate<'a> {
     scale: f32,
     dt: f32,
     visual_heading: Option<Quat>,
+    arm_shoulders: [Option<Vec3>; 2],
 }
 
 /// The pose to write: the torso solved on the clip's hips toward the player's head, the clavicles
@@ -434,6 +489,17 @@ unsafe fn pose_torso(
             .and_then(|heading| relative_heading(heading, xr::body_rotation(), character_rotation));
     }
     let mut solved = solve_anchored(&input, config);
+    if matches!(
+        gate.case,
+        Case::OnFoot | Case::Jump | Case::Parachute | Case::Flight
+    ) {
+        for side in Side::BOTH {
+            if let Some(target) = gate.arm_shoulders[side.index()] {
+                let offset = target - clavicles::shoulder_joint(&solved, rig, side);
+                solved.translate(side.arm_bones().0, offset);
+            }
+        }
+    }
     let turns = unsafe { state.turn_clavicles(gate.character, rig, &solved, gate.dt, config) };
     for side in Side::BOTH {
         clavicles::apply(&mut solved, rig, side, turns[side.index()]);

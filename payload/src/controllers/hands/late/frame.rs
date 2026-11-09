@@ -292,6 +292,7 @@ pub(crate) fn begin_frame() {
     let solved = bones::solved();
     *FRAME.lock() = Some(LateFrame {
         hands,
+        shoulders: compose_render_shoulders(&active),
         sources,
         ticks: ik::tick_records(),
         transport: character_transport(),
@@ -368,6 +369,19 @@ pub(crate) fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
     })
 }
 
+pub(crate) fn shoulder_target(hand: Hand, dtf: f32) -> Option<Vec3> {
+    let frame = (*FRAME.lock())?;
+    let target = frame.ticks.current[hand.index()]?;
+    (target.owner == ik::TargetOwner::Controller)
+        .then(|| frame.shoulders[hand.index()].map(|pair| pair.at(dtf).position))
+        .flatten()
+}
+
+pub(crate) fn arm_target(hand: Hand, dtf: f32) -> Option<(Pose, f32)> {
+    let frame = (*FRAME.lock())?;
+    frame.arm_target(hand, dtf)
+}
+
 /// The world-space correction of `hand` at the interpolation fraction `dtf`, as a matrix, for a
 /// render seam that re-pushes a model riding that hand; `None` when the hand is not corrected.
 pub(crate) fn hand_correction(hand: Hand, dtf: f32) -> Option<Mat4> {
@@ -393,6 +407,7 @@ pub(super) fn current() -> Option<LateFrame> {
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct LateFrame {
     hands: [Option<RenderHand>; 2],
+    shoulders: [Option<PosePair>; 2],
     sources: Option<HandSources>,
     ticks: ik::TickRecords,
     transport: Option<[Mat4; 2]>,
@@ -404,6 +419,23 @@ pub(super) struct LateFrame {
 }
 
 impl LateFrame {
+    fn arm_target(&self, hand: Hand, dtf: f32) -> Option<(Pose, f32)> {
+        let current = self.ticks.current[hand.index()]?;
+        if !current.weight.is_finite() || current.weight <= 0.0 || !dtf.is_finite() {
+            return None;
+        }
+        let reference = self.reference(hand, dtf)?;
+        let target = match current.owner {
+            ik::TargetOwner::Wingsuit => reference,
+            ik::TargetOwner::Controller => self.hands[hand.index()]
+                .filter(|_| self.enabled)
+                .map(|render| render.wrist.at(dtf))
+                .filter(|now| crate::controllers::hands::late::math::plausible(*now, reference))
+                .unwrap_or(reference),
+        };
+        Some((target, current.weight.clamp(0.0, 1.0)))
+    }
+
     /// The world-space correction of `hand` at `dtf` (see the module docs), scaled by the weight
     /// the tick's IK was asked at.
     pub(super) fn hand_delta(&self, hand: Hand, dtf: f32) -> Option<Pose> {
@@ -582,6 +614,29 @@ fn matches_local_character(current: usize, recorded: usize) -> bool {
     current != 0 && current == recorded
 }
 
+fn compose_render_shoulders(active: &ActiveHands) -> [Option<PosePair>; 2] {
+    let heads = [headpose::query_prev(), headpose::query()];
+    let views = render_views(heads, eye_points(heads), active.head, active.world_scale);
+    hands::arm_remaps(
+        &active.config,
+        active.head,
+        active.torso,
+        active.world_scale,
+    )
+    .map(|remap| {
+        let shoulder = remap?.character_shoulder;
+        let pose = Pose {
+            position: shoulder,
+            orientation: glam::Quat::IDENTITY,
+        };
+        Some(PosePair {
+            previous: views[0].cockpit.pose_to_world(pose),
+            current: views[1].cockpit.pose_to_world(pose),
+            transport: Some([views[0].transport, views[1].transport]),
+        })
+    })
+}
+
 /// Each hand's render-time poses, composed on both sides of the head pose pair from the eye
 /// midpoint the camera renders from on that side, so that the hand rides the camera across its
 /// interpolation and lands where the player sees it.
@@ -658,6 +713,23 @@ mod tests {
         assert_eq!(f.reference(Hand::Right, 0.0), Some(pose(0.1, 0.1)));
     }
 
+    #[test]
+    fn explicit_wingsuit_target_preserves_its_owner_frame_and_weight() {
+        let mut f = frame(pose(0.3, 0.8), pose(0.0, 0.0), pose(0.1, 0.1), 0.6);
+        f.ticks.current[1].as_mut().unwrap().owner = ik::TargetOwner::Wingsuit;
+        assert_eq!(f.arm_target(Hand::Right, 1.0), Some((pose(0.1, 0.1), 0.6)));
+        assert_eq!(f.arm_target(Hand::Right, 0.0), Some((pose(0.1, 0.1), 0.6)));
+    }
+
+    #[test]
+    fn explicit_controller_target_does_not_inherit_a_forearm_cap_or_solve_miss() {
+        let f = with_miss(
+            frame(pose(0.2, 0.3), pose(0.0, 0.0), pose(0.1, 0.1), 1.0),
+            Vec3::new(0.0, 0.25, 0.0),
+        );
+        assert_eq!(f.arm_target(Hand::Right, 1.0), Some((pose(0.2, 0.3), 1.0)));
+    }
+
     fn frame(now: Pose, previous_tick: Pose, current_tick: Pose, weight: f32) -> LateFrame {
         let still = PosePair {
             previous: now,
@@ -680,6 +752,7 @@ mod tests {
                     aim: still,
                 }),
             ],
+            shoulders: [None; 2],
             sources: None,
             ticks: ik::TickRecords {
                 previous: [None, target(previous_tick)],

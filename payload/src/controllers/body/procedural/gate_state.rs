@@ -2,6 +2,7 @@
 //! followers, the wingsuit's arms, and the status, behind one lock, with the steps of the gate that
 //! read and update them.
 
+use glam::{Quat, Vec3};
 use jc3gi::character::character::{AnimationController, Character};
 use parking_lot::Mutex;
 
@@ -61,6 +62,7 @@ pub(super) struct State {
     pub(super) legs: WeightFollower,
     pub(super) leg_weight: f32,
     pub(super) leg_fade: TargetFade,
+    pub(super) leg_swing: LegSwing,
     pub(super) status: ProceduralStatus,
 }
 
@@ -72,6 +74,7 @@ impl State {
             self.legs = WeightFollower::new();
             self.leg_weight = 0.0;
             self.leg_fade.forget();
+            self.leg_swing = LegSwing::new();
             self.status.rig_error = lookup.error;
         }
         lookup.rig
@@ -131,9 +134,10 @@ pub(super) fn relaxed_legs(
     animated: &RigPose,
     reference: &[Transform; RigBone::COUNT],
     weight: f32,
+    down: Vec3,
 ) -> RigPose {
     let mut pose = *animated;
-    if !weight.is_finite() || weight <= 0.0 {
+    if !weight.is_finite() || weight <= 0.0 || !down.is_finite() {
         return pose;
     }
     let weight = weight.min(1.0);
@@ -166,7 +170,82 @@ pub(super) fn relaxed_legs(
             scale: current.scale / old_parent.scale,
         });
     }
+    let Some(down) = down.try_normalize() else {
+        return *animated;
+    };
+    for (thigh, knee) in [
+        (RigBone::LeftUpLeg, RigBone::LeftLeg),
+        (RigBone::RightUpLeg, RigBone::RightLeg),
+    ] {
+        let pivot = pose.position(thigh);
+        if let Some(direction) = (pose.position(knee) - pivot).try_normalize() {
+            let turn = Quat::IDENTITY.slerp(Quat::from_rotation_arc(direction, down), weight);
+            pose.rotate_about(thigh, turn, pivot);
+        }
+    }
     if pose.is_finite() { pose } else { *animated }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct LegSwing {
+    root: Option<Vec3>,
+    velocity: Option<Vec3>,
+    offset: Vec3,
+    speed: Vec3,
+}
+
+impl LegSwing {
+    const fn new() -> Self {
+        Self {
+            root: None,
+            velocity: None,
+            offset: Vec3::ZERO,
+            speed: Vec3::ZERO,
+        }
+    }
+
+    pub(super) fn step(&mut self, root: Vec3, active: bool, dt: f32) -> Vec3 {
+        if !active || !root.is_finite() || !dt.is_finite() || !(0.0..=0.1).contains(&dt) {
+            *self = Self::new();
+            return Vec3::NEG_Y;
+        }
+        if dt == 0.0 {
+            return self.direction();
+        }
+        let previous = self.root.replace(root);
+        let Some(previous) = previous else {
+            return self.direction();
+        };
+        let delta = root - previous;
+        if delta.length() > 8.0 || dt < 1e-4 {
+            *self = Self::new();
+            self.root = Some(root);
+            return Vec3::NEG_Y;
+        }
+        let velocity = delta / dt;
+        let acceleration = self.velocity.replace(velocity).map_or(Vec3::ZERO, |old| {
+            ((velocity - old) / dt).clamp_length_max(45.0)
+        });
+        let acceleration = Vec3::new(acceleration.x, 0.0, acceleration.z);
+        let steps = (dt / (1.0 / 120.0)).ceil() as u32;
+        let step = dt / steps as f32;
+        for _ in 0..steps {
+            self.speed +=
+                (-self.offset * (9.81 / 0.8) - self.speed * 2.2 - acceleration / 0.8) * step;
+            self.speed = self.speed.clamp_length_max(6.0);
+            self.offset += self.speed * step;
+            if self.offset.length() > 1.4 {
+                self.offset = self.offset.normalize() * 1.4;
+                let outward = self.speed.dot(self.offset.normalize()).max(0.0);
+                self.speed -= self.offset.normalize() * outward;
+            }
+        }
+        self.direction()
+    }
+
+    fn direction(&self) -> Vec3 {
+        (Vec3::NEG_Y + self.offset).normalize()
+    }
 }
 
 pub(super) static STATE: Mutex<State> = Mutex::new(State {
@@ -187,14 +266,80 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     legs: WeightFollower::new(),
     leg_weight: 0.0,
     leg_fade: TargetFade::new(),
+    leg_swing: LegSwing::new(),
     status: INITIAL_STATUS,
 });
 
 #[cfg(test)]
 mod tests {
-    use glam::{Quat, Vec3};
-
     use super::*;
+
+    #[test]
+    fn swing_lags_acceleration_then_overshoots_and_settles() {
+        let mut swing = LegSwing::new();
+        let dt = 1.0 / 60.0;
+        swing.step(Vec3::ZERO, true, dt);
+        swing.step(Vec3::ZERO, true, dt);
+        let root = Vec3::X * dt;
+        assert!(swing.step(root, true, dt).x < 0.0);
+        let mut crossed = false;
+        let mut direction = Vec3::NEG_Y;
+        for tick in 1..=600 {
+            direction = swing.step(root + Vec3::X * dt * tick as f32, true, dt);
+            crossed |= direction.x > 0.001;
+            assert!(direction.is_finite());
+            assert!(direction.y < -0.5);
+        }
+        assert!(crossed);
+        assert!(direction.distance(Vec3::NEG_Y) < 1e-4);
+    }
+
+    #[test]
+    fn inactive_invalid_and_teleported_motion_reset_the_swing() {
+        let mut moving = LegSwing::new();
+        moving.step(Vec3::ZERO, true, 0.02);
+        moving.step(Vec3::ZERO, true, 0.02);
+        moving.step(Vec3::X * 0.1, true, 0.02);
+        assert!(moving.direction().x < 0.0);
+        for (root, active, dt) in [
+            (Vec3::ZERO, false, 0.02),
+            (Vec3::NAN, true, 0.02),
+            (Vec3::ZERO, true, f32::NAN),
+            (Vec3::ZERO, true, -0.02),
+            (Vec3::ZERO, true, 0.2),
+        ] {
+            let mut swing = moving;
+            assert_eq!(swing.step(root, active, dt), Vec3::NEG_Y);
+            assert_eq!(swing, LegSwing::new());
+            assert_eq!(swing.step(Vec3::splat(500.0), true, 0.02), Vec3::NEG_Y);
+        }
+        let mut swing = moving;
+        assert_eq!(swing.step(Vec3::splat(500.0), true, 0.02), Vec3::NEG_Y);
+        assert_eq!(swing.step(Vec3::splat(500.0), true, 0.02), Vec3::NEG_Y);
+        let unchanged = moving;
+        moving.step(Vec3::splat(1.0), true, 0.0);
+        assert_eq!(moving, unchanged);
+    }
+
+    #[test]
+    fn swing_is_yaw_equivariant_and_consistent_across_tick_rates() {
+        let yaw = Quat::from_rotation_y(0.7);
+        let simulate = |hz: u32, rotation: Quat| {
+            let mut swing = LegSwing::new();
+            let dt = 1.0 / hz as f32;
+            let mut direction = Vec3::NEG_Y;
+            for tick in 0..=hz {
+                let time = tick as f32 * dt;
+                let root = Vec3::new(1.5 * time * time, 0.0, -time * time);
+                direction = swing.step(rotation * root, true, dt);
+            }
+            direction
+        };
+        let direction = simulate(60, Quat::IDENTITY);
+        assert!(direction.distance(Vec3::NEG_Y) > 0.1);
+        assert!(simulate(60, yaw).distance(yaw * direction) < 1e-5);
+        assert!(simulate(120, Quat::IDENTITY).distance(direction) < 0.02);
+    }
 
     #[test]
     fn relaxed_chains_keep_the_animated_pelvis_and_segment_lengths() {
@@ -232,9 +377,22 @@ mod tests {
             Quat::from_rotation_x(-0.7),
             animated.position(RigBone::RightLeg),
         );
-        assert_eq!(relaxed_legs(&animated, &rest.bones, 0.0), animated);
+        assert_eq!(
+            relaxed_legs(&animated, &rest.bones, 0.0, Vec3::NEG_Y),
+            animated
+        );
+        for invalid in [Vec3::ZERO, Vec3::NAN] {
+            assert_eq!(relaxed_legs(&animated, &rest.bones, 1.0, invalid), animated);
+        }
+        for weight in [f32::NAN, -1.0] {
+            assert_eq!(
+                relaxed_legs(&animated, &rest.bones, weight, Vec3::NEG_Y),
+                animated
+            );
+        }
+        let down = Vec3::new(-0.5, -1.0, 0.3).normalize();
         for weight in [0.2, 0.6, 1.0] {
-            let relaxed = relaxed_legs(&animated, &rest.bones, weight);
+            let relaxed = relaxed_legs(&animated, &rest.bones, weight, down);
             for bone in RigBone::ALL {
                 if bone != RigBone::Pelvis && bone.descends_from(RigBone::Pelvis) {
                     let parent = bone.parent().unwrap();
@@ -248,7 +406,26 @@ mod tests {
                 }
             }
         }
-        let relaxed = relaxed_legs(&animated, &rest.bones, 1.0);
+        let relaxed = relaxed_legs(&animated, &rest.bones, 1.0, down);
+        for (thigh, knee) in [
+            (RigBone::LeftUpLeg, RigBone::LeftLeg),
+            (RigBone::RightUpLeg, RigBone::RightLeg),
+        ] {
+            let direction = (relaxed.position(knee) - relaxed.position(thigh)).normalize();
+            assert!(direction.distance(down) < 1e-5);
+        }
+        let yaw = Quat::from_rotation_y(-0.8);
+        let mut turned = animated;
+        turned.rotate_about(RigBone::Hips, yaw, Vec3::ZERO);
+        let turned_relaxed = relaxed_legs(&turned, &rest.bones, 1.0, yaw * down);
+        for bone in RigBone::ALL {
+            assert!(
+                turned_relaxed
+                    .position(bone)
+                    .distance(yaw * relaxed.position(bone))
+                    < 1e-5
+            );
+        }
         assert!(
             relaxed
                 .position(RigBone::LeftFoot)

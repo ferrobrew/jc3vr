@@ -37,7 +37,7 @@ pub(crate) use crate::controllers::diagnostics::{
         Applied, BodyBefore, Cue, Write, note_force, note_frame_timing, note_haptic, note_injected,
         note_settings, report,
     },
-    pose::{sample_final, sample_pre_ik},
+    pose::{drawn_arm_joints, sample_drawn_arms, sample_final, sample_pre_ik},
     rig::{RigRun, note_rig},
 };
 use crate::{

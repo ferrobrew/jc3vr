@@ -63,6 +63,7 @@ use crate::{
         hands::{ik, late, pose as hand_pose, reach::REACH},
         mode::{self, Mode},
         presentation::{
+            edit::DrawnArms,
             rig::{Group, GroupMap, PresentationRig},
             solve::{ArmDrive, ArmJoints, ElbowDrive, Motion, UpperBody, head_motion, solve},
         },
@@ -193,13 +194,22 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
         return;
     };
     let head = headpose::query();
-    let drive = ik::tick_records().current.map(|target| {
-        target
-            .filter(|t| t.owner == ik::TargetOwner::Controller)
-            .map_or(0.0, |t| t.weight)
-    });
+    let drive = ik::tick_records()
+        .current
+        .map(|target| target.map_or(0.0, |t| t.weight));
+    let mut bind_points = [[Vec3::ZERO; 3]; 2];
+    let bones = [0, 1].map(|side| Group::arm(side).map(|group| rig.roots[group.index()]));
+    for side in 0..2 {
+        for joint in 0..3 {
+            let mut matrix = jc3gi::types::math::Matrix4::from(Mat4::IDENTITY);
+            unsafe { controller.GetBindPoseBoneMatrix(bones[side][joint] as u32, &mut matrix) };
+            bind_points[side][joint] = Mat4::from(matrix).w_axis.truncate();
+        }
+    }
     let pose = TickPose {
         body,
+        bones,
+        bind_points,
         drive,
         head: Pose {
             position: head.position,
@@ -295,6 +305,8 @@ pub(crate) fn draw_edit(instance: Mat4, dtf: f32) -> Option<DrawEdit> {
 #[derive(Debug, Copy, Clone, PartialEq)]
 struct TickPose {
     body: UpperBody,
+    bones: [[usize; 3]; 2],
+    bind_points: [[Vec3; 3]; 2],
     /// The head pose the tick posed the body from, world space.
     head: Pose,
     /// The procedural torso's weight at the tick.
@@ -392,11 +404,30 @@ unsafe fn read_body(
     let arm = |side: usize| {
         let [upper, fore, hand] = Group::arm(side);
         let hand = joint(hand)?;
+        let wrist = Vec3::from_array(hand.m_Translation.data);
+        let names = ik::knuckle_names(Hand::BOTH[side]);
+        let knuckles = names.map(|name| {
+            let bone = unsafe { ik::bone_index(controller, name) }?;
+            if bone as usize >= key.bones() {
+                return None;
+            }
+            let mut joint = Joint::default();
+            unsafe { controller.GetJoint(bone, &mut joint) };
+            Some(Vec3::from_array(joint.m_Translation.data))
+        });
+        let frame =
+            hand_pose::wrist_frame_from_bones(Hand::BOTH[side], wrist, knuckles[0]?, knuckles[1]?)?;
         Some(ArmJoints {
+            clavicle: read(if side == 0 {
+                Group::LeftShoulder
+            } else {
+                Group::RightShoulder
+            })?,
             shoulder: read(upper)?,
             elbow: read(fore)?,
             wrist: Vec3::from_array(hand.m_Translation.data),
             hand: Quat::from_array(hand.m_Orientation.data).normalize(),
+            frame,
         })
     };
     Some(UpperBody {
@@ -475,6 +506,18 @@ fn solve_frame(frame: &Frame, instance: Mat4, dtf: f32) -> Option<BodyEdit> {
         head,
         torso: previous.torso + (current.torso - previous.torso) * t,
         hands: Hand::BOTH.map(|hand| late::hand_correction(hand, t).map(model)),
+        shoulders: Hand::BOTH.map(|hand| {
+            late::shoulder_target(hand, t).map(|point| to_model.transform_point3(point))
+        }),
+        targets: Hand::BOTH.map(|hand| {
+            late::arm_target(hand, t).map(|(pose, weight)| {
+                (
+                    to_model.transform_point3(pose.position),
+                    (Quat::from_mat4(&to_model).normalize() * pose.orientation).normalize(),
+                    weight,
+                )
+            })
+        }),
         arms: true,
         stretch_forearm: frame.stretch_forearm,
         elbow: drive,
@@ -492,7 +535,16 @@ fn solve_frame(frame: &Frame, instance: Mat4, dtf: f32) -> Option<BodyEdit> {
     edits
         .iter()
         .all(|e| e.is_finite())
-        .then(|| BodyEdit::new(current.groups, edits))
+        .then(|| {
+            BodyEdit::new(current.groups, edits).map(|edit| {
+                edit.with_arm_sample(DrawnArms {
+                    sequence: frame.sequence,
+                    dtf: t,
+                    bones: current.bones,
+                    bind_points: current.bind_points,
+                })
+            })
+        })
         .flatten()
 }
 

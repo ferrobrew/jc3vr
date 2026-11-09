@@ -449,6 +449,9 @@ unsafe fn spoofed_matrices(
         // shares with them, as it should.
         if let Some(edit) = hands.filter(|_| hand_hits > 0) {
             edit.apply(&mut buf[..=max_index], layout);
+            if HIDE_ACTIVE.with(|flag| flag.get()) && crate::stereo::draw_index() == 0 {
+                edit.sample_drawn_arms(&buf[..=max_index], layout);
+            }
         }
         if collapse_whole_batch {
             // Including the root: face gear can anchor blend weights on bone 0 (leaving it kept

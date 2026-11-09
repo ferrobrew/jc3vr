@@ -31,6 +31,17 @@ impl RigPose {
         }
     }
 
+    pub fn translate(&mut self, bone: RigBone, offset: Vec3) {
+        if !offset.is_finite() {
+            return;
+        }
+        for child in RigBone::ALL {
+            if child.descends_from(bone) {
+                self.bones[child.index()].translation += offset;
+            }
+        }
+    }
+
     /// `self` mixed toward `other` by `weight`, bone by bone.
     pub fn blend(&self, other: &Self, weight: f32) -> Self {
         let w = weight.clamp(0.0, 1.0);
@@ -80,6 +91,22 @@ mod tests {
             b.translation = Vec3::new(0.0, i as f32 * 0.1, 0.0);
         }
         RigPose { bones }
+    }
+
+    #[test]
+    fn shoulder_translation_carries_the_clavicle_subtree_without_moving_the_torso() {
+        let mut p = pose();
+        let before = p;
+        let offset = Vec3::new(0.1, -0.5, 0.08);
+        p.translate(RigBone::LeftShoulder, offset);
+        for bone in RigBone::ALL {
+            if bone.descends_from(RigBone::LeftShoulder) {
+                assert!((p.position(bone) - before.position(bone)).abs_diff_eq(offset, 1e-5));
+                assert_eq!(p.get(bone).rotation, before.get(bone).rotation);
+            } else {
+                assert_eq!(p.get(bone), before.get(bone));
+            }
+        }
     }
 
     #[test]

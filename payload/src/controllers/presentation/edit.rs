@@ -1,10 +1,11 @@
 //! A draw's palette edit: the bones the player's body draw re-poses, and the model-space transform
 //! each one's palette entry is pre-multiplied by.
 
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use jc3gi::graphics_engine::render_block::Matrix3x4;
 
 use crate::controllers::{
+    diagnostics,
     hands::{
         late::{self, PaletteEdit},
         palette::{self, PaletteLayout},
@@ -34,6 +35,7 @@ pub struct BodyEdit {
     edits: Edits,
     /// Which groups' edits move anything, by bit [`Group::index`].
     moved: u16,
+    sample: Option<DrawnArms>,
 }
 
 impl BodyEdit {
@@ -47,7 +49,13 @@ impl BodyEdit {
             groups,
             edits,
             moved,
+            sample: None,
         })
+    }
+
+    pub(crate) fn with_arm_sample(mut self, sample: DrawnArms) -> Self {
+        self.sample = Some(sample);
+        self
     }
 
     fn edit_of(&self, bone: usize) -> Option<&Mat4> {
@@ -56,7 +64,29 @@ impl BodyEdit {
     }
 }
 
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct DrawnArms {
+    pub(crate) sequence: u64,
+    pub(crate) dtf: f32,
+    pub(crate) bones: [[usize; 3]; 2],
+    pub(crate) bind_points: [[Vec3; 3]; 2],
+}
+
 impl DrawEdit {
+    pub(crate) fn sample_drawn_arms(&self, entries: &[Matrix3x4], layout: PaletteLayout) {
+        let Self::Body(body) = self else {
+            return;
+        };
+        let Some(sample) = body.sample else {
+            return;
+        };
+        if let Some(joints) =
+            diagnostics::drawn_arm_joints(entries, layout, sample.bones, sample.bind_points)
+        {
+            diagnostics::sample_drawn_arms(sample.sequence, sample.dtf, joints);
+        }
+    }
+
     /// Whether the edit changes `bone`'s entry.
     pub fn touches(&self, bone: usize) -> bool {
         match self {
