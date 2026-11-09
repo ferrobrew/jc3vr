@@ -1,5 +1,5 @@
-//! Scoped native-wire exclusions for the owned wire, while the sling swings its target or the
-//! snatch's tether pulls it, and a tracked forearm transform for the sling.
+//! Scoped native-wire exclusions for the owned wire, from the snatch's fire through the sling or
+//! tether pull, and a tracked forearm transform for the sling.
 
 use std::{
     cell::Cell,
@@ -54,8 +54,8 @@ pub(super) fn clear() {
     *SNAPSHOT.lock() = None;
 }
 
-/// Exclude the native rope's constraint and tension from the owned wire `wire` while the snatch's
-/// tether pulls its target, or end the exclusion with `None`. Unlike [`publish`], the wire's
+/// Exclude the native rope's constraint and tension from the owned wire `wire` from the snatch's
+/// fire to the end of its line, or end the exclusion with `None`. Unlike [`publish`], the wire's
 /// visuals stay native.
 pub(super) fn exclude(wire: Option<usize>) {
     EXCLUDED.store(wire.unwrap_or(0), Ordering::Release);

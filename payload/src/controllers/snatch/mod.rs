@@ -25,7 +25,10 @@
 //!    when a hand's grip closes on it within the hand's catch zone, or a moment after it passed
 //!    ([`catch::CatchWatch`]), that hand has caught it, the wire is ended, and the weapon is taken
 //!    into that hand through the loadout table, as a pickup is, or the object handed to the hand's
-//!    ordinary hold. The grapple hand, whose grip holds the line, catches only as the receiver. While the line is out the other free hand's grip is held for the catch: it
+//!    ordinary hold. A heavy target's centre cannot come as near the palm, so its catch zone
+//!    widens and the line asks less speed of it ([`rules::HeavyCatch`]). The grapple hand, whose
+//!    grip holds the line, catches only as the receiver. While the line is out the other free
+//!    hand's grip is held for the catch: it
 //!    takes nothing else and drives no game action ([`reserved_hands`]). A body no hand is where it
 //!    arrives flies past or hits the player and drops. Once the hook holds a
 //!    door, the door comes open and swings outward, and the wire is ended. Opening the grip at any
@@ -709,8 +712,8 @@ impl State {
                             let mut rope = None;
                             let mut brace = Brace::default();
                             let tethered = target.kind.tethered();
-                            let result =
-                                unsafe { pull::bite(hand, &target, wire) }.and_then(|flight| {
+                            let result = unsafe { pull::bite(hand, &target, wire) }.and_then(
+                                |mut flight| {
                                     if config.sling && (input.modifier_held || tethered) {
                                         let swinging = unsafe {
                                             pull::sling(
@@ -718,7 +721,7 @@ impl State {
                                                 &target,
                                                 wire,
                                                 SlingInput {
-                                                    flight: &flight,
+                                                    flight: &mut flight,
                                                     rope: &mut rope,
                                                     brace: &mut brace,
                                                 },
@@ -730,7 +733,8 @@ impl State {
                                         log_swing_start(&swinging, tethered);
                                     }
                                     Ok(flight)
-                                });
+                                },
+                            );
                             match result {
                                 Ok(flight) => Phase::Pulling {
                                     hand,
@@ -800,7 +804,7 @@ impl State {
                                 &target,
                                 wire,
                                 SlingInput {
-                                    flight: &flight,
+                                    flight: &mut flight,
                                     rope: &mut rope,
                                     brace: &mut brace,
                                 },

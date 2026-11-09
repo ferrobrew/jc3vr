@@ -74,7 +74,9 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
         unsafe { remote::loosen(owner, body) }.map_err(Refusal::Body)?;
     }
     if let Some(hit) = grabbed.hit.get() {
-        return unsafe { engine::fire(grabbed.object, hit) };
+        let (wire, hit) = unsafe { engine::fire(grabbed.object, hit) }?;
+        grabbed.hit.set(Some(hit));
+        return Ok(wire);
     }
     let (body, owner) = match grabbed.kind {
         Pulled::Door { door, handle } => {
@@ -89,7 +91,9 @@ pub(super) unsafe fn fire_hook(grabbed: &Grabbed) -> Result<NonZeroUsize, Refusa
         .transform_point3(local);
     let hit = unsafe { BodyHit::at(body, owner, at) }.ok_or(Refusal::Gone)?;
     grabbed.hit.set(Some(hit));
-    unsafe { engine::fire(grabbed.object, hit) }
+    let (wire, hit) = unsafe { engine::fire(grabbed.object, hit) }?;
+    grabbed.hit.set(Some(hit));
+    Ok(wire)
 }
 
 /// What the hook taking hold of a grabbed thing does.
@@ -134,6 +138,9 @@ pub(super) struct Flight {
     /// Where the hook bit the target, in the target body's frame: the line pulls there, so a
     /// target hooked off its centre spins as it comes.
     hit: BodyHit,
+    /// Where the hook bit, world space, kept for the fallback to the object's own body when the
+    /// selected body no longer belongs to it.
+    bite_world: Vec3,
     /// The target's centre at the last tick, for the swept catch: the gun's grip for a gun the
     /// landing steers.
     last_centre: Option<Vec3>,
@@ -184,19 +191,29 @@ pub(super) unsafe fn bite(
     grabbed: &Grabbed,
     wire: NonZeroUsize,
 ) -> Result<Flight, Refusal> {
-    let (body, owner) = unsafe { target_body(grabbed) }?;
+    let mut hit = grabbed.hit.get().ok_or(Refusal::Gone)?;
+    let mut bite_world = unsafe { hit.point() }.ok_or(Refusal::Gone)?;
+    let anchor = unsafe { verified_hit(wire, &mut hit, &mut bite_world) }?;
+    grabbed.hit.set(Some(hit));
+    let (body, owner) = (hit.body, hit.owner);
     if matches!(grabbed.kind, Pulled::Prop { .. }) {
         unsafe { remote::loosen(owner, body) }.map_err(Refusal::Body)?;
     }
     let state = unsafe { physical_hands::body_state(body, owner) }.map_err(Refusal::Body)?;
-    let hit = grabbed.hit.get().ok_or(Refusal::Gone)?;
-    if hit.body != body || hit.owner != owner {
-        return Err(Refusal::Gone);
-    }
     unsafe { engine::exclude_rope(wire) };
     if let Some(palm) = ik::tick_records().current[hand.index()].map(|t| t.wrist.position) {
         unsafe { juice::impact(wire, grabbed.object, palm) };
     }
+    let (proxy, offset_m) = anchor.map_or((0, 0.0), |anchor| {
+        (anchor.proxy, anchor.position.distance(bite_world))
+    });
+    tracing::info!(
+        target: "controllers",
+        body,
+        proxy,
+        offset_m,
+        "snatch: the line holds the selected body"
+    );
     let landing = match grabbed.kind {
         Pulled::Weapon { .. } => unsafe { engine::dropped(grabbed.object) }
             .ok()
@@ -205,6 +222,7 @@ pub(super) unsafe fn bite(
     };
     Ok(Flight {
         hit,
+        bite_world,
         last_centre: None,
         landing,
         slack_s: None,
@@ -245,8 +263,21 @@ pub(super) unsafe fn pull(
     if reading == engine::WireReading::Gone && !flight.slack() {
         return Err(Refusal::LineLost);
     }
-    let BodyHit { body, owner, .. } = flight.hit;
+    let mut hit = flight.hit;
+    unsafe { verified_hit(wire, &mut hit, &mut flight.bite_world)? };
+    if hit != flight.hit {
+        flight.hit = hit;
+    }
+    let BodyHit { body, owner, .. } = hit;
     let state = unsafe { physical_hands::body_state(body, owner) }.map_err(Refusal::Body)?;
+    let heavy = rules::HeavyCatch {
+        mass_kg: state.mass_kg.unwrap_or(f32::INFINITY),
+        heavy_mass_kg: SNATCH.heavy_mass_kg,
+        zone_m: SNATCH.catch_zone_m,
+        heavy_zone_m: SNATCH.heavy_catch_zone_m,
+        speed_share: SNATCH.heavy_speed_share,
+    };
+    let zone_m = heavy.zone_m();
     let palms = ik::tick_records()
         .current
         .map(|t| t.map(|t| t.wrist.position));
@@ -314,7 +345,7 @@ pub(super) unsafe fn pull(
         at,
         catchers,
         &CatchTuning {
-            zone_m: SNATCH.catch_zone_m,
+            zone_m,
             grace_s: SNATCH.catch_grace_s,
         },
     );
@@ -361,6 +392,15 @@ pub(super) unsafe fn pull(
         Verdict::Caught(catcher) => {
             unsafe { end_line(wire) };
             let catcher_palm = palms[catcher.index()].unwrap_or(palm);
+            tracing::info!(
+                target: "controllers",
+                hand = catcher.label(),
+                body,
+                mass_kg = state.mass_kg.unwrap_or(0.0),
+                catch_m = at.distance(catcher_palm),
+                zone_m,
+                "snatch: the hand caught the target"
+            );
             let slide_s = match (&flight.landing, landed) {
                 (Some(landing), Some(l)) => l.targets[catcher.index()].map_or(SNAP_S, |target| {
                     let rotation = arrival::gun_rotation(landing, state.pose);
@@ -387,7 +427,18 @@ pub(super) unsafe fn pull(
             return unsafe { arrive(catcher, grabbed, body, centre, catcher_palm, slide_s) }
                 .map(|arrival| Step::Caught(catcher, arrival));
         }
-        Verdict::Missed => return Err(Refusal::CatchMissed),
+        Verdict::Missed => {
+            tracing::info!(
+                target: "controllers",
+                hand = receiver.label(),
+                body,
+                mass_kg = state.mass_kg.unwrap_or(0.0),
+                miss_m = at.distance(palm),
+                zone_m,
+                "snatch: the hand missed the catch"
+            );
+            return Err(Refusal::CatchMissed);
+        }
         Verdict::Stalled => return Err(Refusal::Stalled),
         Verdict::OutOfLine => return Err(Refusal::OutOfLine),
     }
@@ -407,8 +458,8 @@ pub(super) unsafe fn pull(
     let anchor = state.pose.point(flight.hit.local_point);
     let speed = rules::line_speed(
         distance,
-        SNATCH.line_speed_mps,
-        SNATCH.arrival_speed_mps,
+        SNATCH.line_speed_mps * heavy.speed_scale(),
+        SNATCH.arrival_speed_mps * heavy.speed_scale(),
         SNATCH.approach_m,
     );
     let shift = landed.map_or(Vec3::ZERO, |l| l.shift);
@@ -476,6 +527,50 @@ unsafe fn target_body(grabbed: &Grabbed) -> Result<(u32, NonZeroUsize), Refusal>
     }
 }
 
+/// The body hit and world bite point the line pulls, verified against the wire's live proxy and
+/// the object: the selected body while it still belongs to the object, or the object's own body
+/// when the proxy holds a different one of its bodies. Returns the anchor it read, for the bite's
+/// diagnostic.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+unsafe fn verified_hit(
+    wire: NonZeroUsize,
+    hit: &mut BodyHit,
+    bite_world: &mut Vec3,
+) -> Result<Option<engine::Anchor>, Refusal> {
+    let anchor = unsafe { engine::anchor(wire) };
+    let owner = hit.owner;
+    let selected_owned = unsafe { physical_hands::body_state(hit.body, owner) }.is_ok();
+    let proxy = anchor.map(|anchor| {
+        (
+            anchor.body,
+            unsafe { physical_hands::body_state(anchor.body, owner) }.is_ok(),
+        )
+    });
+    match engine::check_anchor(selected_owned, hit.body, proxy) {
+        engine::AnchorCheck::Selected => Ok(anchor),
+        engine::AnchorCheck::ObjectBody => {
+            let anchor = anchor.ok_or(Refusal::LineLost)?;
+            let rebound = unsafe { BodyHit::at(anchor.body, owner, anchor.position) }
+                .ok_or(Refusal::LineLost)?;
+            tracing::info!(
+                target: "controllers",
+                selected_body = hit.body,
+                proxy_body = anchor.body,
+                proxy = anchor.proxy,
+                offset_m = anchor.position.distance(*bite_world),
+                "snatch: the line follows the object's own body"
+            );
+            *hit = rebound;
+            *bite_world = anchor.position;
+            Ok(Some(anchor))
+        }
+        engine::AnchorCheck::Lost => Err(Refusal::LineLost),
+    }
+}
+
 /// The native device endpoint follows the tracked wrist frame, never the aim ray. Gives the line's
 /// origin on the grapple hand and the hand's wrist.
 ///
@@ -524,7 +619,7 @@ impl Swinging {
 }
 
 pub(super) struct SlingInput<'a> {
-    pub flight: &'a Flight,
+    pub flight: &'a mut Flight,
     pub rope: &'a mut Option<Sling>,
     pub brace: &'a mut Brace,
 }
@@ -554,7 +649,12 @@ pub(super) unsafe fn sling(
     if unsafe { engine::read_wire(wire) }.0 != engine::WireReading::Attached {
         return Err(Refusal::LineLost);
     }
-    let BodyHit { body, owner, .. } = flight.hit;
+    let mut hit = flight.hit;
+    unsafe { verified_hit(wire, &mut hit, &mut flight.bite_world)? };
+    if hit != flight.hit {
+        flight.hit = hit;
+    }
+    let BodyHit { body, owner, .. } = hit;
     let state = unsafe { physical_hands::body_state(body, owner) }.map_err(Refusal::Body)?;
     let (line_anchor, wrist) = unsafe { prepare_sling(hand, wire) }?;
     let other = hand.other();
@@ -587,9 +687,9 @@ pub(super) unsafe fn sling(
             }
             rope
         }
-        slot @ None => slot.insert(
-            Sling::new(state.pose.point(flight.hit.local_point), anchor).ok_or(Refusal::Gone)?,
-        ),
+        slot @ None => {
+            slot.insert(Sling::new(state.pose.point(hit.local_point), anchor).ok_or(Refusal::Gone)?)
+        }
     };
     // A ragdoll's body drags the whole ragdoll, so the line holds and pulls the whole ragdoll's
     // weight.
@@ -599,11 +699,11 @@ pub(super) unsafe fn sling(
     };
     let line = LineTuning::of(&input.config.weapons.snatch.swing, mass_kg, braced);
     let rigid = state.rigid();
-    let hook_point = state.pose.point(flight.hit.local_point);
+    let hook_point = state.pose.point(hit.local_point);
     let out = rope
         .step(SlingStep::on_body(
             &rigid,
-            flight.hit.local_point,
+            hit.local_point,
             mass_kg,
             anchor,
             input.dt,

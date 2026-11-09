@@ -358,6 +358,29 @@ mod tests {
     }
 
     #[test]
+    fn a_wide_zone_catches_a_target_the_light_zone_misses() {
+        // A heavy target's centre passes 0.55 m from the palm: outside the light hand's reach,
+        // inside the widened one.
+        let catch = |zone_m| {
+            let mut watch = CatchWatch::default();
+            watch
+                .step(
+                    DT,
+                    Vec3::new(-1.0, 0.0, 0.55),
+                    Vec3::new(1.0, 0.0, 0.55),
+                    [hand(Vec3::ZERO, true), None],
+                    &CatchTuning {
+                        zone_m,
+                        grace_s: TUNING.grace_s,
+                    },
+                )
+                .caught
+        };
+        assert_eq!(catch(TUNING.zone_m), None);
+        assert_eq!(catch(0.8), Some(Hand::Left));
+    }
+
+    #[test]
     fn of_two_gripping_hands_the_nearer_pass_catches() {
         let mut watch = CatchWatch::default();
         let tick = watch.step(

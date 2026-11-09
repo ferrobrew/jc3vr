@@ -154,6 +154,17 @@ pub struct SnatchTuning {
     /// How near a hand's palm the target's centre must pass for the hand to catch it, metres:
     /// the hand's own reach around the target, with no pull toward the hand.
     pub catch_zone_m: f32,
+    /// The mass at which a target's catch zone reaches [`heavy_catch_zone_m`](Self::heavy_catch_zone_m)
+    /// and the line's speed falls to [`heavy_speed_share`](Self::heavy_speed_share), kilograms. A
+    /// target at or below half of it keeps the light values. A heavy target's centre cannot come as near
+    /// the palm as a light one's, so the hand catches it from further out, and it needs less speed
+    /// to arrive without passing the hand.
+    pub heavy_mass_kg: f32,
+    /// The catch zone for a heavy target, metres.
+    pub heavy_catch_zone_m: f32,
+    /// The line's speed for a heavy target as a share of [`line_speed_mps`](Self::line_speed_mps),
+    /// `0..=1`.
+    pub heavy_speed_share: f32,
     /// How long after the target was last within a hand's catch zone the hand's grip may still
     /// close on it and catch it, seconds.
     pub catch_grace_s: f32,
@@ -198,6 +209,9 @@ pub const SNATCH: SnatchTuning = SnatchTuning {
     slack_min_m: 0.4,
     slack_max_m: 1.0,
     catch_zone_m: 0.4,
+    heavy_mass_kg: 60.0,
+    heavy_catch_zone_m: 0.8,
+    heavy_speed_share: 0.7,
     catch_grace_s: 0.15,
     max_slack_s: 0.5,
     max_spin_rps: 25.0,

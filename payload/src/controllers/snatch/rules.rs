@@ -192,6 +192,53 @@ pub fn verdict(sample: &FlightSample, stalled: bool, limits: &FlightLimits) -> V
     }
 }
 
+/// How a target's mass widens the catch and slows the line: a heavy target's centre cannot come as
+/// near the palm as a light one's, so the hand catches it from further out, and it needs less speed
+/// to arrive without passing the hand.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct HeavyCatch {
+    /// The target's mass, kilograms.
+    pub mass_kg: f32,
+    /// The mass at which the catch reaches its wide zone and the line its heavy speed share,
+    /// kilograms. A target at or below half of it keeps the light values.
+    pub heavy_mass_kg: f32,
+    /// The catch zone for a light target, metres.
+    pub zone_m: f32,
+    /// The catch zone for a heavy target, metres.
+    pub heavy_zone_m: f32,
+    /// The line's speed for a heavy target as a share of the light one, `0..=1`.
+    pub speed_share: f32,
+}
+
+impl HeavyCatch {
+    /// How heavy the target is, `0..=1`: zero at or below half [`heavy_mass_kg`](Self::heavy_mass_kg),
+    /// rising linearly to one at it. A mass that is not finite counts as heavy.
+    pub fn heaviness(&self) -> f32 {
+        let half = self.heavy_mass_kg.max(0.0) * 0.5;
+        let span = self.heavy_mass_kg.max(0.0) - half;
+        if !self.mass_kg.is_finite() {
+            return 1.0;
+        }
+        if span.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
+            return 0.0;
+        }
+        ((self.mass_kg - half) / span).clamp(0.0, 1.0)
+    }
+
+    /// The catch zone for the target, metres.
+    pub fn zone_m(&self) -> f32 {
+        let light = self.zone_m.max(0.0);
+        let heavy = self.heavy_zone_m.max(light);
+        light + (heavy - light) * self.heaviness()
+    }
+
+    /// The line's speed for the target as a share of the light one, `0..=1`.
+    pub fn speed_scale(&self) -> f32 {
+        let share = self.speed_share.clamp(0.0, 1.0);
+        1.0 + (share - 1.0) * self.heaviness()
+    }
+}
+
 /// The velocity the line asks of the point `at` on the target: `speed` metres per second toward
 /// `toward`.
 pub fn line_velocity(at: Vec3, toward: Vec3, speed: f32) -> Vec3 {
@@ -658,5 +705,111 @@ mod tests {
             None,
             "a low ceiling swings nothing"
         );
+    }
+
+    const HEAVY: HeavyCatch = HeavyCatch {
+        mass_kg: 0.0,
+        heavy_mass_kg: 60.0,
+        zone_m: 0.4,
+        heavy_zone_m: 0.8,
+        speed_share: 0.7,
+    };
+
+    fn heavy(mass_kg: f32) -> HeavyCatch {
+        HeavyCatch { mass_kg, ..HEAVY }
+    }
+
+    #[test]
+    fn a_heavy_target_widens_its_catch_and_slows_its_line() {
+        // Below half the heavy mass the light values hold; at the heavy mass the wide ones do.
+        for mass in [0.5, 4.0, 25.0, 30.0] {
+            let catch = heavy(mass);
+            assert_eq!(catch.heaviness(), 0.0, "{mass} kg");
+            assert_eq!(catch.zone_m(), 0.4, "{mass} kg");
+            assert_eq!(catch.speed_scale(), 1.0, "{mass} kg");
+        }
+        for mass in [60.0, 79.9, 99.9, 500.0] {
+            let catch = heavy(mass);
+            assert_eq!(catch.heaviness(), 1.0, "{mass} kg");
+            assert_eq!(catch.zone_m(), 0.8, "{mass} kg");
+            assert!((catch.speed_scale() - 0.7).abs() < 1e-6, "{mass} kg");
+        }
+        let middle = heavy(45.0);
+        assert!((middle.heaviness() - 0.5).abs() < 1e-6);
+        assert!((middle.zone_m() - 0.6).abs() < 1e-6);
+        assert!((middle.speed_scale() - 0.85).abs() < 1e-6);
+    }
+
+    #[test]
+    fn the_catch_zone_and_speed_keep_their_bounds() {
+        let wide = HeavyCatch {
+            heavy_zone_m: 0.2,
+            speed_share: 2.0,
+            ..HEAVY
+        };
+        assert_eq!(heavy(500.0).zone_m(), 0.8);
+        assert_eq!(wide.zone_m(), 0.4, "a narrow heavy zone never narrows it");
+        assert_eq!(wide.speed_scale(), 1.0, "a share above one is one");
+        let slow = HeavyCatch {
+            mass_kg: 500.0,
+            speed_share: -1.0,
+            ..HEAVY
+        };
+        assert_eq!(slow.speed_scale(), 0.0, "a negative share is zero");
+        assert_eq!(heavy(f32::NAN).heaviness(), 1.0, "an unknown mass is heavy");
+        assert_eq!(heavy(f32::INFINITY).heaviness(), 1.0);
+        assert_eq!(heavy(f32::NEG_INFINITY).heaviness(), 1.0);
+        let no_heavy = HeavyCatch {
+            heavy_mass_kg: 0.0,
+            ..HEAVY
+        };
+        assert_eq!(no_heavy.heaviness(), 0.0);
+    }
+
+    #[test]
+    fn the_heavy_line_speed_falls_with_the_mass_it_carries() {
+        let speed = |mass| {
+            let catch = heavy(mass);
+            line_speed(
+                5.0,
+                18.0 * catch.speed_scale(),
+                12.0 * catch.speed_scale(),
+                2.5,
+            )
+        };
+        assert_eq!(speed(4.0), 18.0, "a weapon keeps the light speed");
+        assert_eq!(speed(25.0), 18.0, "a light prop keeps the light speed");
+        assert!((speed(99.9) - 12.6).abs() < 1e-4, "a heavy prop is slower");
+        // The line still asks for its arrival speed at the hand, scaled alike.
+        let catch = heavy(99.9);
+        let near = line_speed(
+            0.0,
+            18.0 * catch.speed_scale(),
+            12.0 * catch.speed_scale(),
+            2.5,
+        );
+        assert!((near - 8.4).abs() < 1e-4);
+    }
+
+    #[test]
+    fn a_c4_charge_and_a_weapon_keep_the_light_catch_and_line() {
+        // A placed charge and a dropped gun are light bodies: the heavy widening leaves their
+        // catch zone and line speed as they were, so their snatch paths are unchanged.
+        for mass in [0.5, 4.0] {
+            let catch = heavy(mass);
+            assert_eq!(catch.heaviness(), 0.0, "{mass} kg");
+            assert_eq!(catch.zone_m(), 0.4, "{mass} kg");
+            assert_eq!(catch.speed_scale(), 1.0, "{mass} kg");
+            assert_eq!(
+                line_speed(
+                    5.0,
+                    18.0 * catch.speed_scale(),
+                    12.0 * catch.speed_scale(),
+                    2.5,
+                ),
+                18.0,
+                "{mass} kg"
+            );
+        }
     }
 }

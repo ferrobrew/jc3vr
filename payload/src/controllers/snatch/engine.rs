@@ -11,7 +11,7 @@ use jc3gi::{
         weapon::{WeaponBase, WeaponState},
         wire_end::{HookTargetInfo, WireEnd, WireEndState},
     },
-    physics::{CastRayInfo, CastRayInfoBase},
+    physics::{CastRayInfo, CastRayInfoBase, PfxCharacterInstance},
     types::{
         math::{Matrix4, Vector3},
         shared_ptr::SharedPtr,
@@ -21,7 +21,7 @@ use jc3gi::{
 use crate::{
     controllers::{
         aim::gun,
-        physical_hands::game_object_of,
+        physical_hands::{self, game_object_of},
         snatch::{Refusal, sling_hooks},
         weapons::{
             engine, grenade,
@@ -43,26 +43,31 @@ pub(super) fn busy(hook: &GrapplingHook) -> Option<Refusal> {
 }
 
 /// Fire the hook as a ghost wire at the physics game object `object` and its selected body hit,
-/// and return the wire it fired.
+/// and return the wire it fired and the body hit the attachment proxy verified.
 ///
 /// # Safety
 ///
 /// `object` must be a live physics game object held alive, on the game thread before the world
 /// update.
-pub(super) unsafe fn fire(object: NonZeroUsize, hit: BodyHit) -> Result<NonZeroUsize, Refusal> {
+pub(super) unsafe fn fire(
+    object: NonZeroUsize,
+    hit: BodyHit,
+) -> Result<(NonZeroUsize, BodyHit), Refusal> {
     let at = unsafe { hit.point() }.ok_or(Refusal::Gone)?;
-    unsafe { fire_target(object, at, Some(hit)) }
+    let (wire, attached) = unsafe { fire_target(object, at, Some(hit)) }?;
+    let attached = attached.ok_or(Refusal::FireRefused)?;
+    Ok((wire, attached))
 }
 
 pub(super) unsafe fn fire_object(object: NonZeroUsize, at: Vec3) -> Result<NonZeroUsize, Refusal> {
-    unsafe { fire_target(object, at, None) }
+    unsafe { fire_target(object, at, None) }.map(|(wire, _)| wire)
 }
 
 unsafe fn fire_target(
     object: NonZeroUsize,
     at: Vec3,
     hit: Option<BodyHit>,
-) -> Result<NonZeroUsize, Refusal> {
+) -> Result<(NonZeroUsize, Option<BodyHit>), Refusal> {
     let hook = unsafe { local_hook() }.ok_or(Refusal::NoPlayer)?;
     if let Some(refusal) = busy(hook) {
         return Err(refusal);
@@ -90,37 +95,115 @@ unsafe fn fire_target(
     }
     let wire = wire.unwrap();
     hook::own_custom(CustomOwner::Snatch, wire);
-    if let Some(hit) = hit
-        && !unsafe { attach_body(hook, wire, hit) }
-    {
-        unsafe { cancel(wire) };
-        return Err(Refusal::FireRefused);
+    let attached = match hit {
+        Some(hit) => match unsafe { attach_body(hook, wire, hit) } {
+            Some(hit) => Some(hit),
+            None => {
+                unsafe { cancel(wire) };
+                return Err(Refusal::FireRefused);
+            }
+        },
+        None => None,
+    };
+    if attached.is_some() {
+        // The mod owns the line's force from the fire: the native rope must not make a constraint
+        // or tension that can break the wire before the bite takes it off.
+        unsafe { exclude_rope(wire) };
     }
-    Ok(wire)
+    Ok((wire, attached))
 }
 
-unsafe fn attach_body(hook: &mut GrapplingHook, wire: NonZeroUsize, hit: BodyHit) -> bool {
-    let Some(at) = (unsafe { hit.point() }) else {
-        return false;
-    };
-    let Some(holder) = (unsafe { Strong::lock(&hook.m_Holder) }) else {
-        return false;
-    };
+/// How near the attach point the proxy's visual position may be, metres.
+const ATTACH_TOLERANCE_M: f32 = 0.02;
+
+/// How the engine's attachment proxy compares with the body hit the snatch selected.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ProxyMatch {
+    /// The proxy holds the selected body at the selected point.
+    Selected,
+    /// The proxy holds another body of the same object: the object's own body.
+    ObjectBody,
+    /// The proxy holds no body of the object, or the point is not the one asked for.
+    Rejected,
+}
+
+/// How the proxy `proxy_body` at `offset_m` from the selected point compares with the selected
+/// body, given whether the proxy's body still belongs to the object.
+fn verify_proxy(
+    selected_body: u32,
+    proxy_body: u32,
+    offset_m: f32,
+    tolerance_m: f32,
+    proxy_body_owned: bool,
+) -> ProxyMatch {
+    if !offset_m.is_finite() || offset_m > tolerance_m.max(0.0) {
+        return ProxyMatch::Rejected;
+    }
+    if proxy_body == selected_body {
+        ProxyMatch::Selected
+    } else if proxy_body_owned {
+        ProxyMatch::ObjectBody
+    } else {
+        ProxyMatch::Rejected
+    }
+}
+
+/// What the line's live proxy says about the body it holds: the selected body while the proxy
+/// holds it, the object's own body when the proxy holds another one of the object's, or lost.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum AnchorCheck {
+    /// The selected body still belongs to the object, and the proxy holds it.
+    Selected,
+    /// The proxy holds another body of the object: follow that body instead.
+    ObjectBody,
+    /// Neither the selected body nor the proxy's body belongs to the object.
+    Lost,
+}
+
+/// What the line should pull, from whether the selected body still belongs to the object and what
+/// the live proxy `proxy` holds (its body and whether that body still belongs to the object).
+pub(super) fn check_anchor(
+    selected_owned: bool,
+    selected_body: u32,
+    proxy: Option<(u32, bool)>,
+) -> AnchorCheck {
+    match proxy {
+        Some((body, owned)) if body == selected_body => {
+            if selected_owned || owned {
+                AnchorCheck::Selected
+            } else {
+                AnchorCheck::Lost
+            }
+        }
+        Some((_, true)) => AnchorCheck::ObjectBody,
+        Some((_, false)) => AnchorCheck::Lost,
+        None if selected_owned => AnchorCheck::Selected,
+        None => AnchorCheck::Lost,
+    }
+}
+
+unsafe fn attach_body(
+    hook: &mut GrapplingHook,
+    wire: NonZeroUsize,
+    hit: BodyHit,
+) -> Option<BodyHit> {
+    let at = unsafe { hit.point() }?;
+    let holder = unsafe { Strong::lock(&hook.m_Holder) }?;
     let character = unsafe { Character::GetLocalPlayerCharacter() };
     if character.is_null() {
-        return false;
+        return None;
     }
     let owner = SharedPtr::<Character> {
         px: character,
         pn: holder.control_block(),
     };
     if hook.m_ActiveWire.px as usize != wire.get() {
-        return false;
+        return None;
     }
     let active = unsafe { &mut *(wire.get() as *mut GrapplingHookWire) };
     let end = hook::hook_end_mut(active);
     if end.m_WireEndState != WireEndState::GWES_EXTENDING || !end.m_PointProxy.is_null() {
-        return false;
+        return None;
     }
     let mut cast = unsafe { MaybeUninit::<CastRayInfo>::zeroed().assume_init() };
     cast.base.__vftable = CastRayInfoBase::VFTABLE;
@@ -131,20 +214,89 @@ unsafe fn attach_body(hook: &mut GrapplingHook, wire: NonZeroUsize, hit: BodyHit
     cast.m_GameObject = hit.owner.get() as *mut _;
     unsafe { end.Attach(&vector(at), &mut cast, &owner, false) };
     if end.m_WireEndState != WireEndState::GWES_ATTACHED {
-        return false;
+        return None;
     }
-    let Some(proxy) = (unsafe { end.m_PointProxy.as_ref() }) else {
-        return false;
-    };
-    let mut body = 0;
+    let proxy = unsafe { end.m_PointProxy.as_ref() }?;
+    let mut body = PfxCharacterInstance::INVALID_BODY_ID;
     let mut position = vector(Vec3::ZERO);
     let mut normal = vector(Vec3::ZERO);
     unsafe {
         proxy.GetRigidBodyForConstraint(&mut body);
-        body == hit.body
-            && proxy.GetVisualPositionAndNormalWS(&mut position, &mut normal)
-            && Vec3::from_array(position.data).distance(at) <= 0.02
+        if !proxy.GetVisualPositionAndNormalWS(&mut position, &mut normal) {
+            return None;
+        }
     }
+    let position = Vec3::from_array(position.data);
+    let offset_m = position.distance(at);
+    let proxy_body_owned =
+        body != hit.body && unsafe { physical_hands::body_state(body, hit.owner) }.is_ok();
+    let matched = verify_proxy(
+        hit.body,
+        body,
+        offset_m,
+        ATTACH_TOLERANCE_M,
+        proxy_body_owned,
+    );
+    tracing::info!(
+        target: "controllers",
+        selected_body = hit.body,
+        proxy_body = body,
+        proxy = proxy as *const _ as usize,
+        offset_m,
+        matched = ?matched,
+        "snatch: the hook's attachment proxy"
+    );
+    match matched {
+        ProxyMatch::Selected => Some(hit),
+        ProxyMatch::ObjectBody => {
+            let rebound = unsafe { BodyHit::at(body, hit.owner, position) }?;
+            tracing::info!(
+                target: "controllers",
+                selected_body = hit.body,
+                proxy_body = body,
+                "snatch: the hook follows the object's own body"
+            );
+            Some(rebound)
+        }
+        ProxyMatch::Rejected => None,
+    }
+}
+
+/// What the hook end of `wire` holds, while `wire` is the hook's active wire and its end is
+/// attached.
+///
+/// # Safety
+///
+/// The game thread, before the world update; the anchor is not kept past the tick.
+pub(super) unsafe fn anchor(wire: NonZeroUsize) -> Option<Anchor> {
+    let end = unsafe { hook_end(wire) }?;
+    let proxy = unsafe { end.m_PointProxy.as_ref() }?;
+    let mut body = PfxCharacterInstance::INVALID_BODY_ID;
+    let mut position = vector(Vec3::ZERO);
+    let mut normal = vector(Vec3::ZERO);
+    unsafe {
+        proxy.GetRigidBodyForConstraint(&mut body);
+        if !proxy.GetVisualPositionAndNormalWS(&mut position, &mut normal) {
+            return None;
+        }
+    }
+    let position = Vec3::from_array(position.data);
+    (body != PfxCharacterInstance::INVALID_BODY_ID && position.is_finite()).then_some(Anchor {
+        proxy: end.m_PointProxy as usize,
+        body,
+        position,
+    })
+}
+
+/// What the hook end of an owned wire is attached to.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct Anchor {
+    /// The attachment proxy's address.
+    pub proxy: usize,
+    /// The body the proxy's constraint holds.
+    pub body: u32,
+    /// The proxy's visual position, world space.
+    pub position: Vec3,
 }
 
 /// What the custom wire `wire` is doing.
@@ -311,4 +463,100 @@ pub(super) unsafe fn object_frame(object: NonZeroUsize) -> Option<Mat4> {
 
 fn vector(v: Vec3) -> Vector3 {
     Vector3 { data: v.to_array() }
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    const TOLERANCE_M: f32 = 0.02;
+
+    #[test]
+    fn a_proxy_on_the_selected_body_verifies_it() {
+        assert_eq!(
+            verify_proxy(7, 7, 0.0, TOLERANCE_M, false),
+            ProxyMatch::Selected
+        );
+        assert_eq!(
+            verify_proxy(7, 7, TOLERANCE_M, TOLERANCE_M, false),
+            ProxyMatch::Selected
+        );
+    }
+
+    #[test]
+    fn a_proxy_on_another_body_of_the_object_is_the_object_s_own_body() {
+        assert_eq!(
+            verify_proxy(7, 9, 0.01, TOLERANCE_M, true),
+            ProxyMatch::ObjectBody
+        );
+    }
+
+    #[test]
+    fn a_proxy_on_another_objects_body_is_rejected() {
+        assert_eq!(
+            verify_proxy(7, 9, 0.01, TOLERANCE_M, false),
+            ProxyMatch::Rejected
+        );
+    }
+
+    #[test]
+    fn a_proxy_away_from_the_selected_point_is_rejected() {
+        assert_eq!(
+            verify_proxy(7, 7, 0.03, TOLERANCE_M, false),
+            ProxyMatch::Rejected
+        );
+        assert_eq!(
+            verify_proxy(7, 7, f32::NAN, TOLERANCE_M, false),
+            ProxyMatch::Rejected
+        );
+        assert_eq!(
+            verify_proxy(7, 7, f32::INFINITY, TOLERANCE_M, false),
+            ProxyMatch::Rejected
+        );
+    }
+
+    #[test]
+    fn the_line_keeps_the_selected_body_while_it_and_the_proxy_agree() {
+        assert_eq!(
+            check_anchor(true, 7, Some((7, true))),
+            AnchorCheck::Selected
+        );
+        assert_eq!(
+            check_anchor(true, 7, Some((7, false))),
+            AnchorCheck::Selected
+        );
+        assert_eq!(
+            check_anchor(false, 7, Some((7, true))),
+            AnchorCheck::Selected
+        );
+        assert_eq!(check_anchor(true, 7, None), AnchorCheck::Selected);
+    }
+
+    #[test]
+    fn the_line_follows_the_object_s_own_body_when_the_proxy_moved_to_it() {
+        assert_eq!(
+            check_anchor(true, 7, Some((9, true))),
+            AnchorCheck::ObjectBody
+        );
+        assert_eq!(
+            check_anchor(false, 7, Some((9, true))),
+            AnchorCheck::ObjectBody
+        );
+    }
+
+    #[test]
+    fn the_line_is_lost_when_neither_body_belongs_to_the_object() {
+        assert_eq!(check_anchor(false, 7, Some((9, false))), AnchorCheck::Lost);
+        assert_eq!(check_anchor(false, 7, Some((7, false))), AnchorCheck::Lost);
+        assert_eq!(check_anchor(false, 7, None), AnchorCheck::Lost);
+    }
+
+    #[test]
+    fn a_proxy_on_another_objects_body_is_lost() {
+        // The line is attached to a body of something else: pulling the selected body while the
+        // line holds the stranger would bind the two silently, so the snatch fails instead.
+        assert_eq!(check_anchor(true, 7, Some((9, false))), AnchorCheck::Lost);
+    }
 }
