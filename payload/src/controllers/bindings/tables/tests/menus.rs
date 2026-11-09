@@ -23,6 +23,29 @@ fn pointer_suppresses_only_its_hand_in_either_layout() {
 }
 
 #[test]
+fn an_unclaimed_pointer_trigger_pages_in_both_directions_with_the_grip_modifier() {
+    for hand in Hand::BOTH {
+        for gripped in [false, true] {
+            let mut c = Controls::default();
+            c.hands[hand.index()].trigger_press = down();
+            c.hands[hand.index()].trigger = 1.0;
+            if gripped {
+                c.hands[hand.index()].grip = down();
+            }
+            let expected = match (hand, gripped) {
+                (Hand::Left, false) | (Hand::Right, true) => GUI_PAGE_PREV,
+                _ => GUI_PAGE_NEXT,
+            };
+            let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+            assert_eq!(wants(&step, MapKind::Ui, expected), Some(Want::Hold(1.0)));
+            c.pointer_hand = Some(hand);
+            let claimed = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+            assert_eq!(wants(&claimed, MapKind::Ui, expected), None);
+        }
+    }
+}
+
+#[test]
 fn the_other_trigger_with_its_grip_turns_the_pointers_page() {
     for dominant in Hand::BOTH {
         let mut c = controls(dominant, |_, off| {

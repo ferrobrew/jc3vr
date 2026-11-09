@@ -50,7 +50,11 @@ pub fn update_controller(
     let mut state = CONTROLLER_STATE.lock();
     state.expire(now);
     let trigger = TriggerSample::from(select);
-    let trigger_down = trigger.down(state.trigger_down);
+    let trigger_down = trigger.down(if state.hand == Some(hand) {
+        state.trigger_down
+    } else {
+        false
+    });
     let ui_frame = frame.filter(|frame| {
         frame.focused && frame.action_set == ActionSetKind::Ui && frame.is_fresh_at(now)
     });
@@ -94,14 +98,11 @@ pub fn clear_controller() {
 }
 
 /// The hand whose menu trigger belongs to the pointer. The UI binding table uses that trigger for
-/// page navigation; the pointer owns it whenever it shows, and for the rest of a press that began
-/// on the panel. So a press aimed at a button just off the panel's edge clicks nothing rather than
-/// turning a page, and the pages stay on the other trigger and on the grip-held trigger.
+/// page navigation. A projected pointer reserves the trigger, including just outside the panel's
+/// edge, so a missed click does not turn a page. Ownership stays with the source that began a press
+/// until release, even when the ray moves onto or away from the panel.
 pub fn owns_menu_trigger() -> Option<Hand> {
-    let state = CONTROLLER_STATE.lock();
-    (state.showing || state.trigger_claimed)
-        .then_some(state.hand)
-        .flatten()
+    CONTROLLER_STATE.lock().owns_menu_trigger()
 }
 
 /// The trigger as one input tick sees it: the level, and the edges latched since the last tick.
@@ -148,10 +149,8 @@ pub(super) struct ControllerState {
     updated: Option<Instant>,
     /// The trigger as the pointer saw it on the previous tick.
     trigger_down: bool,
-    /// Whether the current trigger press began with the ray on the panel.
+    /// Whether the current trigger press began with a projected pointer, including outside its edge.
     trigger_claimed: bool,
-    /// Whether the pointer is usable this tick: a game menu is up and the native pointer is on.
-    showing: bool,
     hand: Option<Hand>,
 }
 
@@ -166,7 +165,6 @@ impl ControllerState {
             updated: None,
             trigger_down: false,
             trigger_claimed: false,
-            showing: false,
             hand: None,
         }
     }
@@ -184,12 +182,20 @@ impl ControllerState {
         self.captured
     }
 
+    fn owns_menu_trigger(&self) -> Option<Hand> {
+        let owns_trigger = if self.trigger_down {
+            self.trigger_claimed
+        } else {
+            self.output.is_some()
+        };
+        owns_trigger.then_some(self.hand).flatten()
+    }
+
     fn disarm(&mut self, now: Instant) {
         self.armed = false;
         self.captured = false;
         self.output = None;
         self.trigger_claimed = false;
-        self.showing = false;
         self.updated = Some(now);
     }
 
@@ -209,7 +215,6 @@ impl ControllerState {
             self.captured = false;
             self.output = None;
             self.trigger_claimed = false;
-            self.showing = false;
             self.updated = None;
         }
     }
@@ -222,6 +227,10 @@ impl ControllerState {
         now: Instant,
     ) -> Option<ControllerPointer> {
         self.expire(now);
+        if self.hand.is_some_and(|previous| previous != hand) {
+            *self = Self::after(trigger_down);
+            self.hand = Some(hand);
+        }
         let was_armed = self.armed;
         let press_began = trigger_down && !self.trigger_down;
         if trigger_down {
@@ -271,12 +280,11 @@ impl ControllerState {
         };
 
         if press_began {
-            self.trigger_claimed = output.is_some_and(|pointer| pointer.owns_ui);
+            self.trigger_claimed = output.is_some();
         } else if !trigger_down {
             self.trigger_claimed = false;
         }
         self.trigger_down = trigger_down;
-        self.showing = true;
         self.hand = Some(hand);
         self.output = output;
         self.updated = Some(now);
@@ -449,46 +457,105 @@ mod tests {
     }
 
     #[test]
-    fn the_menu_trigger_claim_latches_at_the_press() {
+    fn changing_the_pointing_hand_cancels_a_drag_and_requires_the_new_source_to_release() {
         let now = Instant::now();
-        let claimed = |state: &ControllerState| state.trigger_claimed;
-
-        let mut state = ControllerState::new();
-        state.step(OUTSIDE, false, Hand::Right, now);
-        state.step(OUTSIDE, true, Hand::Right, now);
-        assert!(!claimed(&state));
-        state.step(INSIDE, true, Hand::Right, now);
-        assert!(
-            !claimed(&state),
-            "a page press from off the panel is held to its release"
-        );
-
-        let mut state = ControllerState::new();
-        state.step(INSIDE, false, Hand::Right, now);
-        state.step(INSIDE, true, Hand::Right, now);
-        assert!(claimed(&state));
-        state.step(None, true, Hand::Right, now);
-        assert!(claimed(&state), "a panel press stays claimed off the panel");
-        state.step(None, false, Hand::Right, now);
-        assert!(!claimed(&state));
+        for first in [Hand::Left, Hand::Right] {
+            for captured in [false, true] {
+                let second = first.other();
+                let mut state = ControllerState::new();
+                state.step(INSIDE, false, first, now);
+                if captured {
+                    assert_eq!(state.step(INSIDE, true, first, now).unwrap().buttons, 1);
+                }
+                for hand in [second, second, first, second] {
+                    let pointer = state.step(INSIDE, true, hand, now).unwrap();
+                    assert_eq!(pointer.hand, hand);
+                    assert_eq!(pointer.buttons, 0);
+                    assert!(!state.captured());
+                    assert_eq!(state.owns_menu_trigger(), None);
+                }
+                state.step(INSIDE, false, second, now);
+                assert_eq!(state.step(INSIDE, true, second, now).unwrap().buttons, 1);
+                assert_eq!(state.owns_menu_trigger(), Some(second));
+            }
+        }
     }
 
     #[test]
-    fn the_pointer_owns_its_trigger_whenever_it_shows() {
+    fn a_page_press_stays_with_navigation_when_the_ray_enters_the_panel() {
         let now = Instant::now();
-        let owner = |state: &ControllerState| {
-            (state.showing || state.trigger_claimed)
-                .then_some(state.hand)
-                .flatten()
-        };
+        for hand in [Hand::Left, Hand::Right] {
+            let mut state = ControllerState::new();
+            state.step(None, false, hand, now);
+            assert_eq!(state.owns_menu_trigger(), None);
+            state.step(None, true, hand, now);
+            assert_eq!(state.owns_menu_trigger(), None);
+            for hit in [OUTSIDE, INSIDE, None, INSIDE] {
+                let output = state.step(hit, true, hand, now);
+                assert_eq!(state.owns_menu_trigger(), None);
+                assert_eq!(output.map_or(0, |pointer| pointer.buttons), 0);
+            }
+            state.step(INSIDE, false, hand, now);
+            assert_eq!(state.owns_menu_trigger(), Some(hand));
+            let output = state.step(INSIDE, true, hand, now).unwrap();
+            assert_eq!(state.owns_menu_trigger(), Some(hand));
+            assert_eq!(output.buttons, 1);
+        }
+    }
+
+    #[test]
+    fn a_pointer_press_stays_claimed_when_the_ray_leaves_the_panel() {
+        let now = Instant::now();
+        for hand in [Hand::Left, Hand::Right] {
+            for departure in [OUTSIDE, None] {
+                let mut state = ControllerState::new();
+                state.step(INSIDE, false, hand, now);
+                assert_eq!(state.owns_menu_trigger(), Some(hand));
+                assert_eq!(state.step(INSIDE, true, hand, now).unwrap().buttons, 1);
+                assert_eq!(state.owns_menu_trigger(), Some(hand));
+                state.step(departure, true, hand, now);
+                assert_eq!(state.owns_menu_trigger(), Some(hand));
+                state.step(None, true, hand, now);
+                assert_eq!(state.owns_menu_trigger(), Some(hand));
+                state.step(None, false, hand, now);
+                assert_eq!(state.owns_menu_trigger(), None);
+            }
+        }
+    }
+
+    #[test]
+    fn projected_edge_misses_reserve_the_trigger_without_clicking() {
+        let now = Instant::now();
         let mut state = ControllerState::new();
-        assert_eq!(owner(&state), None);
-        // A press just off the panel's edge is the pointer's, not a page.
-        state.step(OUTSIDE, false, Hand::Right, now);
-        state.step(OUTSIDE, true, Hand::Right, now);
-        assert_eq!(owner(&state), Some(Hand::Right));
-        // With the menu gone, the trigger is the table's again.
+        assert_eq!(state.owns_menu_trigger(), None);
+        let hover = state.step(OUTSIDE, false, Hand::Right, now).unwrap();
+        assert!(!hover.owns_ui);
+        assert_eq!(state.owns_menu_trigger(), Some(Hand::Right));
+        assert_eq!(buttons(&mut state, OUTSIDE, true, now), 0);
+        assert_eq!(state.owns_menu_trigger(), Some(Hand::Right));
+        assert_eq!(buttons(&mut state, INSIDE, true, now), 0);
+        assert_eq!(state.owns_menu_trigger(), Some(Hand::Right));
+        state.step(None, true, Hand::Right, now);
+        assert_eq!(state.owns_menu_trigger(), Some(Hand::Right));
+        state.step(None, false, Hand::Right, now);
+        assert_eq!(state.owns_menu_trigger(), None);
+    }
+
+    #[test]
+    fn absent_output_and_lost_state_return_the_trigger_to_navigation() {
+        let now = Instant::now();
+        let mut state = ControllerState::new();
+        state.step(INSIDE, false, Hand::Right, now);
+        assert_eq!(state.owns_menu_trigger(), Some(Hand::Right));
+        state.step(None, false, Hand::Right, now);
+        assert_eq!(state.owns_menu_trigger(), None);
+        state.step(INSIDE, false, Hand::Right, now);
+        state.step(INSIDE, true, Hand::Right, now);
         state.disarm(now);
-        assert_eq!(owner(&state), None);
+        assert_eq!(state.owns_menu_trigger(), None);
+        state.step(INSIDE, false, Hand::Right, now);
+        state.step(INSIDE, true, Hand::Right, now);
+        state.expire(now + MAX_FRAME_AGE + Duration::from_millis(1));
+        assert_eq!(state.owns_menu_trigger(), None);
     }
 }
