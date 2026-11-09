@@ -114,7 +114,7 @@ pub(crate) fn finish_tick(
     });
     let native = placement
         .native_stick
-        .filter(|native| offered.contains(&native.kind))
+        .filter(|native| placement.cockpit.is_none() && offered.contains(&native.kind))
         .map(|native| (native.target, native.motion(state.controls.stick)));
     wheel_render::publish_controls(rendered, native);
     state.status.rendered_angle = rendered.map(|(_, angle)| angle);

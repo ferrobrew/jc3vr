@@ -30,11 +30,6 @@ pub fn lever_value(spec: &LeverSpec, rest: Vec3, handle_now: Vec3) -> f32 {
     }
 }
 
-/// A lever's handle at position `value`.
-pub fn lever_handle(spec: &LeverSpec, rest: Vec3, value: f32) -> Vec3 {
-    rest + spec.axis.direction() * (spec.travel_m * 0.5 * value)
-}
-
 /// `value` with a detent around zero, rescaled so that it still reaches one.
 pub fn detent(value: f32, detent: f32) -> f32 {
     let detent = detent.clamp(0.0, 0.95);
@@ -88,7 +83,7 @@ pub(super) fn step_lever(
     let mut cue = None;
     match holding.into_iter().flatten().next() {
         Some((hold, point)) => {
-            let value = lever_value(&spec, placement.mirror(spec.rest_m), point - hold.offset);
+            let value = placement.lever_value(kind, &spec, point - hold.offset);
             state.levers[index] = value;
             cue = cues::lever_cue(&mut state.lever_cues[index], value, gate);
         }

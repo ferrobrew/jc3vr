@@ -54,10 +54,7 @@ pub(crate) mod visual;
 use glam::{Quat, Vec2, Vec3};
 
 pub use crate::controllers::vehicles::physical::{
-    cues::ControlCue,
-    handlebars::bar_ends,
-    levers::{lever_handle, lever_value},
-    sticks::stick_deflection,
+    cues::ControlCue, handlebars::bar_ends, levers::lever_value, sticks::stick_deflection,
 };
 use crate::controllers::{
     frame::Hand,
@@ -283,7 +280,8 @@ impl Outputs {
 }
 
 /// The controls placed for one seat: the wheel and the handlebars where the vehicle's are, and the
-/// sticks and levers from the specs with their sides mirrored for the handedness.
+/// aircraft controls measured from the cockpit mesh when available. Only fallback specs mirror
+/// their sides for handedness.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct Placement {
     pub config: PhysicalControlsTuning,
@@ -291,6 +289,8 @@ pub struct Placement {
     pub wheel: WheelFrame,
     pub bars: BarsFrame,
     pub native_stick: Option<native::NativeStick>,
+    /// The controls measured within a merged cockpit mesh, without moving that mesh.
+    pub cockpit: Option<native::CockpitFit>,
 }
 
 impl Placement {
@@ -302,6 +302,7 @@ impl Placement {
             config,
             dominant,
             native_stick: None,
+            cockpit: None,
         }
     }
 
@@ -323,7 +324,14 @@ impl Placement {
     pub(super) fn stick_top(&self, kind: ControlKind, spec: &StickSpec) -> Vec3 {
         self.native_stick
             .filter(|native| native.kind == kind)
-            .map_or_else(|| self.mirror(spec.top_m), |native| native.top())
+            .map_or_else(
+                || {
+                    self.cockpit
+                        .filter(|fit| fit.asset.stick_kind == kind)
+                        .map_or_else(|| self.mirror(spec.top_m), |fit| fit.stick_top())
+                },
+                |native| native.top(),
+            )
     }
 
     pub(super) fn stick_handle(&self, kind: ControlKind, deflection: Vec2) -> Option<Vec3> {
@@ -332,10 +340,30 @@ impl Placement {
             self.native_stick
                 .filter(|native| native.kind == kind)
                 .map_or_else(
-                    || self.stick_top(kind, &spec) + deflection3(deflection),
+                    || {
+                        self.cockpit
+                            .filter(|fit| fit.asset.stick_kind == kind)
+                            .map_or_else(
+                                || self.stick_top(kind, &spec) + deflection3(deflection),
+                                |fit| fit.stick_handle(deflection),
+                            )
+                    },
                     |native| native.handle(deflection),
                 ),
         )
+    }
+
+    pub(super) fn stick_deflection(
+        &self,
+        kind: ControlKind,
+        spec: &StickSpec,
+        point: Vec3,
+    ) -> Vec2 {
+        if let Some(fit) = self.cockpit.filter(|fit| fit.asset.stick_kind == kind) {
+            stick_deflection(spec, Vec3::ZERO, fit.stick_displacement(point))
+        } else {
+            stick_deflection(spec, self.stick_top(kind, spec), point)
+        }
     }
 
     pub(super) fn lever(&self, kind: ControlKind) -> Option<(usize, LeverSpec)> {
@@ -344,6 +372,57 @@ impl Placement {
             ControlKind::Throttle => Some((1, self.config.throttle)),
             _ => None,
         }
+    }
+
+    pub(super) fn lever_rest(&self, kind: ControlKind, spec: &LeverSpec) -> Vec3 {
+        if let Some(rest) = self.cockpit.and_then(|fit| fit.lever_rest(kind)) {
+            return rest;
+        }
+        if let Some((fit, stick)) = self
+            .cockpit
+            .filter(|fit| {
+                matches!(
+                    (fit.asset.stick_kind, kind),
+                    (ControlKind::Cyclic, ControlKind::Collective)
+                        | (ControlKind::FlightStick, ControlKind::Throttle)
+                )
+            })
+            .and_then(|fit| self.stick(fit.asset.stick_kind).map(|stick| (fit, stick)))
+        {
+            // A missing modeled lever uses the same pilot seat as the measured stick.
+            let offset = spec.rest_m - stick.top_m;
+            return fit.stick_top()
+                + fit.direction(Vec3::X) * offset.x
+                + fit.direction(Vec3::Y) * offset.y
+                + fit.direction(Vec3::Z) * offset.z;
+        }
+        self.mirror(spec.rest_m)
+    }
+
+    pub(super) fn lever_direction(&self, kind: ControlKind, spec: &LeverSpec) -> Vec3 {
+        self.cockpit
+            .filter(|fit| {
+                matches!(
+                    (fit.asset.stick_kind, kind),
+                    (ControlKind::Cyclic, ControlKind::Collective)
+                        | (ControlKind::FlightStick, ControlKind::Throttle)
+                )
+            })
+            .map_or_else(
+                || spec.axis.direction(),
+                |fit| fit.direction(spec.axis.direction()),
+            )
+    }
+
+    pub(super) fn lever_handle(&self, kind: ControlKind, spec: &LeverSpec, value: f32) -> Vec3 {
+        self.lever_rest(kind, spec)
+            + self.lever_direction(kind, spec) * (spec.travel_m * 0.5 * value)
+    }
+
+    pub(super) fn lever_value(&self, kind: ControlKind, spec: &LeverSpec, point: Vec3) -> f32 {
+        let rest = self.lever_rest(kind, spec);
+        let along = (point - rest).dot(self.lever_direction(kind, spec));
+        lever_value(spec, Vec3::ZERO, spec.axis.direction() * along)
     }
 
     /// Where `kind`'s afterburner gate starts along its positive half, for the throttle with the
@@ -377,11 +456,7 @@ impl Placement {
                     return Some(handle);
                 }
                 let (index, spec) = self.lever(kind)?;
-                Some(lever_handle(
-                    &spec,
-                    self.mirror(spec.rest_m),
-                    state.levers[index],
-                ))
+                Some(self.lever_handle(kind, &spec, state.levers[index]))
             }
         }
     }
@@ -598,6 +673,38 @@ pub(super) fn refresh_native(
     state.stick_cues = TravelCues::new();
 }
 
+pub(super) fn refresh_cockpit(
+    state: &mut ControlState,
+    previous: Option<native::CockpitFit>,
+    current: Option<native::CockpitFit>,
+    events: &mut Vec<ControlEvent>,
+) {
+    let identity = |fit: native::CockpitFit| {
+        (
+            fit.target.vehicle,
+            fit.target.part_index,
+            fit.target.properties,
+            fit.asset.seat,
+        )
+    };
+    if previous.map(identity) == current.map(identity) {
+        return;
+    }
+    for hand in Hand::BOTH {
+        if state.holds[hand.index()].is_some_and(|hold| {
+            previous.is_some_and(|fit| fit.contains(hold.kind))
+                || current.is_some_and(|fit| fit.contains(hold.kind))
+                || matches!(hold.kind, ControlKind::Collective | ControlKind::Throttle)
+        }) {
+            release(state, hand, Release::Gone, events);
+        }
+    }
+    state.stick = Vec2::ZERO;
+    state.levers = [0.0; 2];
+    state.stick_cues = TravelCues::new();
+    state.lever_cues = [TravelCues::new(); 2];
+}
+
 /// Let go of every control, as when the seat or the scheme changes.
 pub fn release_all(state: &mut ControlState, events: &mut Vec<ControlEvent>) {
     for hand in Hand::BOTH {
@@ -636,16 +743,14 @@ pub fn anchor_point(
         }
         kind => {
             if let Some(spec) = placement.stick(kind) {
-                let top = placement.stick_top(kind, &spec);
-                let deflection = stick_deflection(&spec, top, point - hold.offset);
+                let deflection = placement.stick_deflection(kind, &spec, point - hold.offset);
                 return placement
                     .stick_handle(kind, deflection)
                     .map(|handle| handle + hold.offset);
             }
             let (_, spec) = placement.lever(kind)?;
-            let rest = placement.mirror(spec.rest_m);
-            let value = lever_value(&spec, rest, point - hold.offset);
-            Some(lever_handle(&spec, rest, value) + hold.offset)
+            let value = placement.lever_value(kind, &spec, point - hold.offset);
+            Some(placement.lever_handle(kind, &spec, value) + hold.offset)
         }
     }
 }

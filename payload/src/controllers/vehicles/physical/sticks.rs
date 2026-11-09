@@ -62,11 +62,7 @@ pub fn spring_back(spec: &StickSpec, deflection: Vec2, dt: f32) -> Vec2 {
 /// and holds it at `now`: its twist about the shaft (the cockpit frame's vertical), turning the top
 /// to the right for a right rudder, past the deadzone and fully at the full twist.
 pub fn twist_rudder(config: &FlightControlsTuning, grab: Quat, now: Quat) -> f32 {
-    let twist = -twist_angle(now * grab.inverse(), Vec3::Y);
-    let deadzone = config.twist_deadzone_deg.to_radians().max(0.0);
-    let full = config.twist_full_deg.to_radians().max(deadzone + 1e-3);
-    let past = (twist.abs() - deadzone).max(0.0);
-    twist.signum() * (past / (full - deadzone)).min(1.0)
+    twist_rudder_about_axis(config, grab, now, Vec3::Y)
 }
 
 pub(super) fn deflection3(d: Vec2) -> Vec3 {
@@ -113,14 +109,19 @@ pub(super) fn step_stick(
             ..StickStep::default()
         };
     };
-    let top = placement.stick_top(kind, &spec);
-    state.stick = stick_deflection(&spec, top, point - hold.offset);
+    state.stick = placement.stick_deflection(kind, &spec, point - hold.offset);
     let share = state.stick.length() / spec.max_deflection_m.max(1e-3);
     let flight = &placement.config.flight;
     let rudder = (kind == ControlKind::FlightStick && flight.twist_rudder)
         .then(|| hold.orientation.zip(orientations[hand.index()]))
         .flatten()
-        .map(|(grab, now)| twist_rudder(flight, grab, now));
+        .map(|(grab, now)| {
+            let axis = placement
+                .cockpit
+                .filter(|fit| fit.asset.stick_kind == kind)
+                .map_or(Vec3::Y, |fit| fit.direction(Vec3::Y));
+            twist_rudder_about_axis(flight, grab, now, axis)
+        });
     StickStep {
         value: Some(stick_value(&spec, state.stick)),
         rudder,
@@ -128,13 +129,35 @@ pub(super) fn step_stick(
     }
 }
 
+fn twist_rudder_about_axis(
+    config: &FlightControlsTuning,
+    grab: Quat,
+    now: Quat,
+    axis: Vec3,
+) -> f32 {
+    let twist = -twist_angle(now * grab.inverse(), axis);
+    let deadzone = config.twist_deadzone_deg.to_radians().max(0.0);
+    let full = config.twist_full_deg.to_radians().max(deadzone + 1e-3);
+    let past = (twist.abs() - deadzone).max(0.0);
+    twist.signum() * (past / (full - deadzone)).min(1.0)
+}
+
 /// A returning stick closer to centre than this, metres, is at centre.
 const SETTLED_M: f32 = 0.002;
 
 #[cfg(test)]
 mod tests {
+    use glam::Mat4;
+
     use super::*;
-    use crate::controllers::vehicles::tuning::PHYSICAL;
+    use crate::controllers::vehicles::{
+        physical::{
+            Hold,
+            native::{CockpitAsset, CockpitFit, NativeStick},
+        },
+        tuning::PHYSICAL,
+        wheel_render::RenderWheel,
+    };
 
     fn spec() -> StickSpec {
         PHYSICAL.flight_stick
@@ -169,6 +192,125 @@ mod tests {
             ..spec
         };
         assert_eq!(spring_back(&snap, Vec2::X, 0.01), Vec2::ZERO);
+    }
+
+    #[test]
+    fn measured_stick_translation_and_rudder_follow_the_rotated_control_axes() {
+        for hand in Hand::BOTH {
+            for rotation in [
+                Quat::IDENTITY,
+                Quat::from_rotation_x(std::f32::consts::FRAC_PI_2),
+                Quat::from_rotation_y(0.8) * Quat::from_rotation_z(1.1),
+            ] {
+                let mut placement = Placement::new(PHYSICAL, hand);
+                placement.cockpit = Some(CockpitFit {
+                    target: target(),
+                    part_to_cockpit: Mat4::from_scale_rotation_translation(
+                        Vec3::new(0.7, 1.2, 0.9),
+                        rotation,
+                        Vec3::new(2.0, -1.0, 4.0),
+                    ),
+                    asset: CockpitAsset {
+                        seat: 0,
+                        stick_kind: ControlKind::FlightStick,
+                        stick_grip: Vec3::new(0.0, 1.5, -3.0),
+                        lever: None,
+                    },
+                });
+                let config = placement.config.flight;
+                let full = config.twist_full_deg.to_radians();
+                for (turn, expected) in [
+                    (Quat::IDENTITY, 0.0),
+                    (
+                        Quat::from_rotation_y(-config.twist_deadzone_deg.to_radians() * 0.5),
+                        0.0,
+                    ),
+                    (Quat::from_rotation_y(-full), 1.0),
+                    (Quat::from_rotation_y(full), -1.0),
+                    (Quat::from_rotation_x(0.6), 0.0),
+                    (Quat::from_rotation_z(-0.6), 0.0),
+                ] {
+                    let grab = Quat::from_rotation_x(0.4) * Quat::from_rotation_z(-0.3);
+                    let offset = Vec3::new(0.01, -0.02, 0.03);
+                    let deflection = Vec2::new(0.04, -0.03);
+                    let point = placement.cockpit.unwrap().stick_handle(deflection) + offset;
+                    let mut holding = [None; 2];
+                    holding[hand.index()] = Some((
+                        Hold {
+                            kind: ControlKind::FlightStick,
+                            offset,
+                            orientation: Some(rotation * grab),
+                        },
+                        point,
+                    ));
+                    let mut orientations = [None; 2];
+                    orientations[hand.index()] = Some(rotation * turn * grab);
+                    let mut state = ControlState::default();
+                    let out = step_stick(
+                        &mut state,
+                        &placement,
+                        ControlKind::FlightStick,
+                        holding,
+                        (orientations, false),
+                        1.0 / 90.0,
+                    );
+                    assert!((state.stick - deflection).length() < 1e-5);
+                    assert!(
+                        (out.value.unwrap() - stick_value(&spec(), deflection)).length() < 1e-5
+                    );
+                    assert!((out.rudder.unwrap() - expected).abs() < 1e-4);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn fallback_and_native_sticks_keep_the_cockpit_vertical_twist_axis() {
+        for native_stick in [
+            None,
+            Some(NativeStick {
+                kind: ControlKind::FlightStick,
+                target: target(),
+                part_to_cockpit: Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2),
+                pivot: Vec3::ZERO,
+                grip: Vec3::Y,
+            }),
+        ] {
+            let mut placement = Placement::new(PHYSICAL, Hand::Right);
+            placement.native_stick = native_stick;
+            let grab = Quat::from_rotation_x(0.4);
+            let now = Quat::from_rotation_y(-PHYSICAL.flight.twist_full_deg.to_radians()) * grab;
+            let holding = [
+                None,
+                Some((
+                    Hold {
+                        kind: ControlKind::FlightStick,
+                        offset: Vec3::ZERO,
+                        orientation: Some(grab),
+                    },
+                    placement.stick_top(ControlKind::FlightStick, &spec()),
+                )),
+            ];
+            let out = step_stick(
+                &mut ControlState::default(),
+                &placement,
+                ControlKind::FlightStick,
+                holding,
+                ([None, Some(now)], false),
+                1.0 / 90.0,
+            );
+            assert!((out.rudder.unwrap() - 1.0).abs() < 1e-4);
+        }
+    }
+
+    fn target() -> RenderWheel {
+        RenderWheel {
+            vehicle: 1,
+            part_index: 2,
+            properties: 3,
+            hub: Vec3::ZERO,
+            axis: Vec3::Y,
+        }
     }
 
     #[test]

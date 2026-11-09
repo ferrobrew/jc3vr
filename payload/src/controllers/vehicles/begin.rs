@@ -97,6 +97,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         wheel: fit.wheel,
         bars: fit.bars,
         native_stick: fit.native_stick,
+        cockpit: fit.cockpit,
         ..Placement::new(physical_config, config.acting_hand())
     };
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
@@ -117,6 +118,13 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         &mut state.controls,
         previous_native,
         placement.native_stick,
+        &mut events,
+    );
+    let previous_cockpit = state.placement.and_then(|placement| placement.cockpit);
+    physical::refresh_cockpit(
+        &mut state.controls,
+        previous_cockpit,
+        placement.cockpit,
         &mut events,
     );
     if !handles_on {

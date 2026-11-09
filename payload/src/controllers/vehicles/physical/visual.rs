@@ -91,6 +91,7 @@ fn geometry(placement: &Placement, state: &ControlState, kind: ControlKind) -> O
     if placement
         .native_stick
         .is_some_and(|native| native.kind == kind)
+        || placement.cockpit.is_some_and(|fit| fit.contains(kind))
     {
         return None;
     }
@@ -104,12 +105,12 @@ fn geometry(placement: &Placement, state: &ControlState, kind: ControlKind) -> O
         }
     } else {
         let (_, spec) = placement.lever(kind)?;
-        let rest = placement.mirror(spec.rest_m);
+        let rest = placement.lever_rest(kind, &spec);
         let support = match kind {
             ControlKind::Collective => Vec3::NEG_Z * 0.18,
             _ => Vec3::NEG_Y * 0.08,
         };
-        let half = spec.axis.direction() * spec.travel_m * 0.5;
+        let half = placement.lever_direction(kind, &spec) * spec.travel_m * 0.5;
         Geometry {
             handle,
             grip_half: match kind {
@@ -134,12 +135,17 @@ const GATE: Rgba = [1.0, 0.55, 0.15, 1.0];
 
 #[cfg(test)]
 mod tests {
-    use glam::Vec2;
+    use glam::{Mat4, Vec2};
 
     use super::*;
     use crate::controllers::vehicles::{
-        physical::{Hold, StepInputs, anchor_point, step},
+        physical::{
+            Hold, StepInputs, anchor_point,
+            native::{CockpitFit, cockpit_asset},
+            step,
+        },
         tuning::PHYSICAL,
+        wheel_render::RenderWheel,
     };
 
     #[test]
@@ -234,6 +240,38 @@ mod tests {
                 ControlKind::Throttle => assert_eq!(released, moved),
                 ControlKind::Collective => assert_eq!(released, start),
                 _ => assert!((released - start).length() < (moved - start).length()),
+            }
+        }
+    }
+
+    #[test]
+    fn measured_cockpits_do_not_draw_duplicate_virtual_sticks_or_throttles() {
+        for (name, pilot) in [
+            ("utility_body", Vec3::new(-0.35, 0.74, -0.92)),
+            ("fighterjet_body", Vec3::new(0.0, 1.6, -2.6)),
+            ("fighterbomber_body", Vec3::new(0.0, 2.199951, -2.762207)),
+        ] {
+            let asset = cockpit_asset(name, pilot).unwrap();
+            let mut placement = Placement::new(PHYSICAL, Hand::Right);
+            placement.cockpit = Some(CockpitFit {
+                target: RenderWheel {
+                    vehicle: 1,
+                    part_index: 0,
+                    properties: 1,
+                    hub: Vec3::ZERO,
+                    axis: Vec3::Y,
+                },
+                part_to_cockpit: Mat4::IDENTITY,
+                asset,
+            });
+            let state = ControlState::default();
+            assert!(geometry(&placement, &state, asset.stick_kind).is_none());
+            if let Some((kind, _)) = asset.lever {
+                assert!(geometry(&placement, &state, kind).is_none());
+            } else {
+                let collective = geometry(&placement, &state, ControlKind::Collective).unwrap();
+                assert!(collective.handle.is_finite());
+                assert!(collective.handle.x < asset.stick_grip.x);
             }
         }
     }

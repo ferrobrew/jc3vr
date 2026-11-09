@@ -40,7 +40,7 @@ use crate::controllers::{
         entry::VehicleEntry,
         physical::{
             ControlKind,
-            native::{self, NativeStick},
+            native::{self, CockpitFit, NativeStick},
         },
         tuning::PhysicalControlsTuning,
         wheel::{self, BarsFrame, PartWheel, WheelFrame, WheelPartView, WheelSource},
@@ -66,6 +66,8 @@ pub struct Fit {
     pub view: Option<Target>,
     pub readout: Option<FitReadout>,
     pub native_stick: Option<NativeStick>,
+    /// Measured handles that share the aircraft's body mesh, never a render-animation target.
+    pub cockpit: Option<CockpitFit>,
 }
 
 /// What the fit reads besides the vehicle.
@@ -156,6 +158,7 @@ pub(super) fn fit(
         view: None,
         readout: None,
         native_stick: None,
+        cockpit: None,
     };
     if !inputs.seat.is_some_and(|s| s.driver) {
         *latch = None;
@@ -275,10 +278,14 @@ unsafe fn fit_vehicle(
         });
     }
 
+    let cockpit = parts
+        .cockpit
+        .as_ref()
+        .and_then(|part| fit_cockpit(inputs, world, vehicle as *const Vehicle as usize, part));
     let native_stick = parts
         .stick
         .as_ref()
-        .filter(|p| !p.broken_off && p.bounds.is_some())
+        .filter(|p| cockpit.is_none() && !p.broken_off && p.bounds.is_some())
         .and_then(|p| {
             let (kind, pivot, grip) = native::asset(&p.name)?;
             let expected = match inputs.seat?.class {
@@ -315,6 +322,7 @@ unsafe fn fit_vehicle(
 
     Fit {
         native_stick,
+        cockpit,
         wheel,
         bars: fork_bars.unwrap_or(specs.bars),
         fork: parts.fork.is_some(),
@@ -332,6 +340,65 @@ unsafe fn fit_vehicle(
             seat,
         }),
     }
+}
+
+fn fit_cockpit(
+    inputs: &FitInputs,
+    world: Mat4,
+    vehicle: usize,
+    part: &PartRead,
+) -> Option<CockpitFit> {
+    let seat = inputs.seat.filter(|seat| seat.driver)?;
+    if part.broken_off || !inputs.xf.is_usable() {
+        return None;
+    }
+    let (min, max) = part.bounds?;
+    if !min.is_finite() || !max.is_finite() || !min.cmplt(max).all() {
+        return None;
+    }
+    let part_to_world = world * part.root;
+    if !part_to_world.is_finite() || part_to_world.determinant().abs() < 1e-6 {
+        return None;
+    }
+    // The uncorrected character eyes select the actual pilot seat, independent of roomscale.
+    let pilot = part_to_world.inverse().transform_point3(inputs.eyes?);
+    let asset = native::cockpit_asset(&part.name, pilot)?;
+    let expected = match seat.class {
+        VehicleClass::Helicopter => ControlKind::Cyclic,
+        VehicleClass::Plane => ControlKind::FlightStick,
+        _ => return None,
+    };
+    if asset.stick_kind != expected {
+        return None;
+    }
+    let inside = |point: Vec3| point.cmpge(min).all() && point.cmple(max).all();
+    if !inside(asset.stick_grip) || asset.lever.is_some_and(|(_, grip)| !inside(grip)) {
+        return None;
+    }
+    let xf = inputs.xf;
+    let cockpit_to_world = Mat4::from_scale_rotation_translation(
+        Vec3::splat(xf.scale()),
+        xf.body,
+        xf.point_to_world(Vec3::ZERO),
+    );
+    if !cockpit_to_world.is_finite() || cockpit_to_world.determinant().abs() < 1e-6 {
+        return None;
+    }
+    let part_to_cockpit = cockpit_to_world.inverse() * part_to_world;
+    if !part_to_cockpit.is_finite() || part_to_cockpit.determinant().abs() < 1e-6 {
+        return None;
+    }
+    Some(CockpitFit {
+        target: RenderWheel {
+            vehicle,
+            part_index: part.index,
+            properties: part.properties,
+            hub: asset.stick_grip,
+            axis: Vec3::Y,
+        },
+        part_to_cockpit,
+        asset,
+    })
 }
 
 /// What the driving position line logs, once per entry.
@@ -383,6 +450,7 @@ struct Parts {
     wheel: Option<PartRead>,
     fork: Option<PartRead>,
     stick: Option<PartRead>,
+    cockpit: Option<PartRead>,
 }
 
 /// The vehicle's steering wheel and steering fork parts, the first of each among its valid parts.
@@ -413,6 +481,8 @@ unsafe fn find_parts(pfx: &PfxBreakable) -> Parts {
             &mut parts.fork
         } else if native::asset(name).is_some() {
             &mut parts.stick
+        } else if native::cockpit_asset(name, Vec3::ZERO).is_some() {
+            &mut parts.cockpit
         } else {
             continue;
         };
@@ -465,4 +535,184 @@ unsafe fn adf_str(s: &AdfHashString) -> Option<&str> {
         return None;
     }
     unsafe { CStr::from_ptr(s.m_string.cast()) }.to_str().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use glam::Quat;
+
+    use super::*;
+    use crate::controllers::vehicles::tuning::PHYSICAL;
+
+    fn part(name: &str) -> PartRead {
+        let (min, max) = match name {
+            "utility_body" => (
+                Vec3::new(-0.800297, 0.6425335, -3.0365307),
+                Vec3::new(0.9101837, 2.977942, 2.4216115),
+            ),
+            "fighterjet_body" => (
+                Vec3::new(-1.0071707, 0.8793905, -6.815199),
+                Vec3::new(1.0071709, 2.65673, -0.3190375),
+            ),
+            "fighterbomber_body" => (
+                Vec3::new(-1.8940631, 1.0584159, -7.160036),
+                Vec3::new(1.8940631, 3.2672918, 0.31849),
+            ),
+            _ => unreachable!(),
+        };
+        PartRead {
+            index: 0,
+            properties: 7,
+            name: SmolStr::new(name),
+            bounds: Some((min, max)),
+            broken_off: false,
+            root: Mat4::IDENTITY,
+            rest_root: Mat4::IDENTITY,
+        }
+    }
+
+    fn inputs(xf: &CockpitTransform, class: VehicleClass, eyes: Vec3) -> FitInputs<'_> {
+        FitInputs {
+            physical: &PHYSICAL,
+            view_enabled: false,
+            seat: Some(VehicleSeat {
+                class,
+                driver: true,
+            }),
+            xf,
+            eyes: Some(eyes),
+        }
+    }
+
+    #[test]
+    fn live_cockpit_handles_follow_the_model_part_and_world_transforms() {
+        for (name, class, pilot) in [
+            (
+                "utility_body",
+                VehicleClass::Helicopter,
+                Vec3::new(-0.35, 1.5, -0.92),
+            ),
+            (
+                "fighterjet_body",
+                VehicleClass::Plane,
+                Vec3::new(0.0, 2.3, -2.6),
+            ),
+            (
+                "fighterbomber_body",
+                VehicleClass::Plane,
+                Vec3::new(0.0, 2.9, -2.762207),
+            ),
+        ] {
+            let mut part = part(name);
+            part.root = Mat4::from_rotation_translation(
+                Quat::from_rotation_y(-0.3),
+                Vec3::new(0.2, 0.1, -0.5),
+            );
+            let world = Mat4::from_rotation_translation(
+                Quat::from_rotation_y(0.7) * Quat::from_rotation_x(0.4),
+                Vec3::new(100.0, 250.0, -30.0),
+            );
+            let part_to_world = world * part.root;
+            let eyes = part_to_world.transform_point3(pilot);
+            let xf = CockpitTransform {
+                head_world: eyes + Vec3::new(0.1, 0.02, -0.03),
+                head_cockpit: Vec3::new(0.2, 1.6, 0.1),
+                body: Quat::from_rotation_y(1.0),
+                world_scale: 0.8,
+            };
+            let fit = fit_cockpit(&inputs(&xf, class, eyes), world, 11, &part).unwrap();
+            assert_eq!(fit.target.vehicle, 11);
+            assert_eq!(fit.target.properties, part.properties);
+            let drawn = part_to_world.transform_point3(fit.asset.stick_grip);
+            assert!(xf.point_to_world(fit.stick_top()).distance(drawn) < 1e-4);
+            if let Some((kind, grip)) = fit.asset.lever {
+                let drawn = part_to_world.transform_point3(grip);
+                assert!(
+                    xf.point_to_world(fit.lever_rest(kind).unwrap())
+                        .distance(drawn)
+                        < 1e-4
+                );
+            }
+            assert!(native::asset(name).is_none());
+        }
+    }
+
+    #[test]
+    fn utility_fit_selects_the_character_seat_not_the_tracked_head_side() {
+        let part = part("utility_body");
+        for pilot_x in [-0.35, 0.35] {
+            let xf =
+                CockpitTransform::from_origin(Vec3::new(-pilot_x, 2.0, -0.92), Quat::IDENTITY, 1.0);
+            let inputs = inputs(
+                &xf,
+                VehicleClass::Helicopter,
+                Vec3::new(pilot_x, 1.6, -0.92),
+            );
+            let fit = fit_cockpit(&inputs, Mat4::IDENTITY, 1, &part).unwrap();
+            assert_eq!(fit.asset.seat, u8::from(pilot_x > 0.0));
+        }
+    }
+
+    #[test]
+    fn cockpit_fit_rejects_unavailable_mismatched_and_degenerate_sources() {
+        let xf = CockpitTransform::from_origin(Vec3::ZERO, Quat::IDENTITY, 1.0);
+        let inputs = inputs(&xf, VehicleClass::Plane, Vec3::new(0.0, 2.3, -2.6));
+        let part = part("fighterjet_body");
+        assert!(fit_cockpit(&inputs, Mat4::IDENTITY, 1, &part).is_some());
+        for eyes in [None, Some(Vec3::splat(f32::NAN))] {
+            assert!(fit_cockpit(&FitInputs { eyes, ..inputs }, Mat4::IDENTITY, 1, &part).is_none());
+        }
+        for seat in [
+            None,
+            Some(VehicleSeat {
+                class: VehicleClass::Plane,
+                driver: false,
+            }),
+            Some(VehicleSeat {
+                class: VehicleClass::Helicopter,
+                driver: true,
+            }),
+            Some(VehicleSeat {
+                class: VehicleClass::Car,
+                driver: true,
+            }),
+        ] {
+            assert!(fit_cockpit(&FitInputs { seat, ..inputs }, Mat4::IDENTITY, 1, &part).is_none());
+        }
+        for world in [
+            Mat4::ZERO,
+            Mat4::from_scale(Vec3::new(1.0, 0.0, 1.0)),
+            Mat4::NAN,
+        ] {
+            assert!(fit_cockpit(&inputs, world, 1, &part).is_none());
+        }
+        for changed in [
+            PartRead {
+                broken_off: true,
+                ..part.clone()
+            },
+            PartRead {
+                bounds: None,
+                ..part.clone()
+            },
+            PartRead {
+                bounds: Some((Vec3::ZERO, Vec3::ZERO)),
+                ..part.clone()
+            },
+            PartRead {
+                bounds: Some((Vec3::splat(-0.1), Vec3::splat(0.1))),
+                ..part.clone()
+            },
+            PartRead {
+                root: Mat4::ZERO,
+                ..part.clone()
+            },
+            PartRead {
+                name: SmolStr::new("lightassault_joystick"),
+                ..part.clone()
+            },
+        ] {
+            assert!(fit_cockpit(&inputs, Mat4::IDENTITY, 1, &changed).is_none());
+        }
+    }
 }
