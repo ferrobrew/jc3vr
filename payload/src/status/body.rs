@@ -118,7 +118,7 @@ fn roof_torso() -> Line {
     roof_line(&procedural::published_status())
 }
 
-/// The torso standing in a vehicle's stunt area.
+/// The torso standing in a vehicle's stunt area, on the on-foot animation's hips.
 fn roof_line(status: &ProceduralStatus) -> Line {
     if status.case != Case::StuntStanding {
         return Line::waiting(prose("Not on a roof")).with_note(status.case.label());
@@ -232,18 +232,6 @@ mod tests {
     }
 
     #[test]
-    fn the_roof_torso_reads_its_weight_on_a_roof_only() {
-        assert_eq!(
-            roof_line(&status(Case::Vehicle, 0.0)).text(),
-            "WAITING, NOT ON A ROOF"
-        );
-        assert_eq!(
-            roof_line(&status(Case::StuntStanding, 1.0)).text(),
-            "OK, 100%, NECK 3 CM"
-        );
-    }
-
-    #[test]
     fn the_parachute_reads_the_torsos_weight() {
         assert_eq!(
             parachute_line(&status(Case::Parachute, 1.0)).text(),
@@ -256,6 +244,18 @@ mod tests {
         assert_eq!(
             parachute_line(&status(Case::Flight, 0.0)).text(),
             "WAITING, NOT UNDER THE CANOPY"
+        );
+    }
+
+    #[test]
+    fn the_roof_torso_reads_its_weight_on_a_roof_only() {
+        assert_eq!(
+            roof_line(&status(Case::Vehicle, 0.0)).text(),
+            "WAITING, NOT ON A ROOF"
+        );
+        assert_eq!(
+            roof_line(&status(Case::StuntStanding, 1.0)).text(),
+            "OK, 100%, NECK 3 CM"
         );
     }
 

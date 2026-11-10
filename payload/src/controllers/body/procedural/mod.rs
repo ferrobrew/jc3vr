@@ -8,10 +8,11 @@
 //! attachment refresh, the model-space sync, the hit shapes, the AI's view, and the effects, so all
 //! of them see the pose written there (`docs/engine/character/skeleton.md`).
 //!
-//! The native root and attachment remain authoritative. Stable roof and wing standing uses the
-//! reference body at the character's own height; other cases, including the helicopter hang, retain
-//! the animated hips. The torso (the spine, neck, head, and clavicles) follows the player wherever
-//! the hand-over table gives it to them ([`authority`]).
+//! The native root and attachment remain authoritative. A standing stunt position is the on-foot
+//! animation (the vehicle's interaction node carries the character), so its torso is procedural on
+//! the clip's hips; other cases, including the helicopter hang, retain the animated hips. The torso
+//! (the spine, neck, head, and clavicles) follows the player wherever the hand-over table gives it
+//! to them ([`authority`]).
 //!
 //! - [`skeleton`]: reading the skeleton, and logging it once per session.
 //! - [`rig`]: the bones the body drives, found by name.
@@ -24,7 +25,6 @@
 //!   moves the body.
 //! - [`signals`]: the grapple's ledge climb and the hit reactions, which the character does not
 //!   keep.
-//! - [`stunt`]: the reference body in stable roof and wing standing.
 //! - [`targets`]: the fade of the HumanIK targets on the owned bones.
 //! - [`wings`]: Rico's arms in the wingsuit, carried over from the player's.
 //! - [`hips`]: the clip's hips against Rico's facing, which the yaw follow squares.
@@ -49,7 +49,6 @@ pub mod skeleton;
 pub mod solver;
 pub mod stance;
 pub mod state;
-mod stunt;
 pub mod targets;
 pub mod twist;
 pub mod wings;
@@ -85,7 +84,6 @@ use crate::{
                     pose::RigPose,
                 },
                 stance::{place_feet, square_stance},
-                stunt::reference_frame,
                 targets::{Fade, Slot, TargetFade},
                 wings::{WingRequest, read_player_arms},
             },
@@ -271,12 +269,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         .then(|| player_arms.as_ref().map(|arms| arms.torso))
         .flatten();
     let locked = lock::holds();
-    let (arm_shoulders, tracked_heading) = active_hands_raw().map_or(([None; 2], None), |active| {
+    let arm_shoulders = active_hands_raw().map_or([None; 2], |active| {
         let cockpit = CockpitTransform::current(active.head.position, active.world_scale);
         let to_model = Mat4::from(character.m_WorldMatrixT1).inverse();
-        let heading =
-            to_model.to_scale_rotation_translation().1 * cockpit.rotation_to_world(active.torso);
-        let shoulders = arm_remaps(
+        arm_remaps(
             &active.config,
             active.head,
             active.torso,
@@ -288,8 +284,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
                     to_model.transform_point3(cockpit.point_to_world(remap.character_shoulder))
                 })
                 .filter(|point| point.is_finite())
-        });
-        (shoulders, heading.is_finite().then_some(heading))
+        })
     });
     let visual_hips = if follow.enabled && follow.square_hips {
         let world = Mat4::from(character.m_WorldMatrixT1);
@@ -431,7 +426,6 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         scale,
         dt,
         visual_heading,
-        tracked_heading,
         arm_shoulders,
     };
     let mut pose = if weight > 0.0 {
@@ -450,7 +444,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         world_rotation.inverse() * leg_down,
     );
     for bone in RigBone::ALL {
-        if !case.tracked_stunt() && bone != RigBone::Pelvis && bone.descends_from(RigBone::Pelvis) {
+        if bone != RigBone::Pelvis && bone.descends_from(RigBone::Pelvis) {
             pose.bones[bone.index()] = legs.bones[bone.index()];
         }
     }
@@ -471,13 +465,11 @@ struct TorsoGate<'a> {
     scale: f32,
     dt: f32,
     visual_heading: Option<Quat>,
-    tracked_heading: Option<Quat>,
     arm_shoulders: [Option<Vec3>; 2],
 }
 
-/// The pose to write: the torso follows the player's head on the clip's hips. In stable roof and
-/// wing standing, the reference body at the character's own height replaces the clip's waist and
-/// legs. `None` without tracking.
+/// The pose to write: the torso follows the player's head on the clip's hips, including in a
+/// standing stunt position, whose animation is the on-foot one. `None` without tracking.
 ///
 /// # Safety
 ///
@@ -489,27 +481,6 @@ unsafe fn pose_torso(
     config: &ProceduralBodyConfig,
 ) -> Option<RigPose> {
     let mut input = solve_input(gate.character, gate.animated, gate.scale)?;
-    let tracked_stunt = gate.case.tracked_stunt();
-    if tracked_stunt {
-        let heading = gate.tracked_heading?;
-        input.animated = reference_frame(
-            &RigPose {
-                bones: rig.reference,
-            },
-            heading,
-        );
-        // The reference keeps the character's height, but a player standing taller than it would
-        // leave the head beyond the torso's lean. Shift the whole reference toward the tracked
-        // head's height, bounded so the feet stay on what they stand on.
-        let rise = (input.head.y - input.animated.position(RigBone::Head).y).clamp(-0.20, 0.20);
-        input.animated.translate(RigBone::Hips, Vec3::Y * rise);
-        input.torso_yaw = line_yaw(
-            input.animated.position(RigBone::LeftShoulder),
-            input.animated.position(RigBone::RightShoulder),
-        );
-        input.head_rotation = body_relative_rotation();
-        input.eye = input.head + input.head_rotation * eye_arm();
-    }
     if gate.case == Case::Parachute {
         let (_, character_rotation, _) =
             Mat4::from(gate.character.m_WorldMatrixT1).to_scale_rotation_translation();
@@ -518,12 +489,10 @@ unsafe fn pose_torso(
             .and_then(|heading| relative_heading(heading, xr::body_rotation(), character_rotation));
     }
     let mut solved = solve_anchored(&input, config);
-    if tracked_stunt
-        || matches!(
-            gate.case,
-            Case::OnFoot | Case::Jump | Case::Parachute | Case::Flight
-        )
-    {
+    if matches!(
+        gate.case,
+        Case::OnFoot | Case::StuntStanding | Case::Jump | Case::Parachute | Case::Flight
+    ) {
         for side in Side::BOTH {
             if let Some(target) = gate.arm_shoulders[side.index()] {
                 let offset = target - clavicles::shoulder_joint(&solved, rig, side);
@@ -535,11 +504,7 @@ unsafe fn pose_torso(
     for side in Side::BOTH {
         clavicles::apply(&mut solved, rig, side, turns[side.index()]);
     }
-    let pose = if tracked_stunt {
-        gate.animated.blend(&solved, gate.weight)
-    } else {
-        gate.animated.blend_torso(&solved, gate.weight)
-    };
+    let pose = gate.animated.blend_torso(&solved, gate.weight);
     let neck_target = input.head
         + input.head_rotation
             * (input.animated.position(RigBone::Neck) - input.animated.position(RigBone::Head));
@@ -551,7 +516,6 @@ unsafe fn pose_torso(
             case = gate.case.label(),
             torso = gate.weight,
             neck_error_m,
-            tracked_stunt,
             "procedural body: the torso follows the tracked head",
         );
     }
@@ -589,12 +553,7 @@ fn finish_write(
         .unwrap_or(0.0),
     });
     if config.neutralize_targets {
-        neutralize_owned_targets(
-            &mut character.m_HIK,
-            weight,
-            state.status.case.tracked_stunt(),
-            &mut state.fade,
-        );
+        neutralize_owned_targets(&mut character.m_HIK, weight, &mut state.fade);
     } else {
         state.fade.forget();
     }
@@ -690,19 +649,10 @@ fn solve_input(character: &Character, animated: &RigPose, scale: f32) -> Option<
 /// queued this tick ([`TargetFade`]). The head's target keeps its reach, so it still closes the gap
 /// to the player's head, but loses its pull by the torso's weight, so it cannot drag the
 /// procedural spine after it.
-fn neutralize_owned_targets(
-    hik: &mut HumanIK,
-    weight: f32,
-    tracked_stunt: bool,
-    fade: &mut TargetFade,
-) {
+fn neutralize_owned_targets(hik: &mut HumanIK, weight: f32, fade: &mut TargetFade) {
     let torso = TORSO_EFFECTORS.map(|e| (e as usize, weight, Fade::All));
     let head = [(Effector::HEAD as usize, weight, Fade::Pull)];
-    let hips = [(
-        Effector::HIPS as usize,
-        if tracked_stunt { weight } else { 0.0 },
-        Fade::All,
-    )];
+    let hips = [(Effector::HIPS as usize, 0.0, Fade::All)];
     fade_targets(hik, torso.into_iter().chain(head).chain(hips), fade);
 }
 

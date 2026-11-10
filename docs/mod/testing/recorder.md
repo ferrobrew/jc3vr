@@ -214,9 +214,9 @@ Scenario signals read the snapshots the mod's systems publish for the status row
 | `procedural.rig_error`, `.on_foot` | flag | The procedural torso's rig failed; its case is on foot. |
 | `procedural.seated` | flag | The torso is posed on the seat's hips in a vehicle ([body/procedural-states.md](../body/procedural-states.md)). |
 | `procedural.wing_arms` | flag | Rico's arms follow the player's in the wingsuit, with both hands queued. |
+| `procedural.roof` | flag | The torso is posed on the on-foot clip's hips standing in a vehicle's stunt area. |
 | `procedural.parachute` | flag | The torso is posed on the harness's hips under the parachute. |
 | `procedural.swimming` | flag | The torso is posed on the swim's hips in the water. |
-| `procedural.roof` | flag | The torso is posed on the stunt idle's hips standing on a vehicle's roof. |
 | `procedural.neck_error_m` | measure | How far the solved neck is from the point under the player's head, while the procedural torso poses the torso. |
 | `weapons.wielded`, `.in_left_hand`, `.in_right_hand`, `.two_handed` | flag | The wielded weapon and the hand its first gun rides. |
 | `weapons.armed_in_left_hand`, `.armed_in_right_hand` | flag | A weapon the game does not wield is armed in that hand. |

@@ -22,5 +22,5 @@ signal = "stunt.roof_entries"
 signal = "stunt.standing"
 
 [[expect]]
-name = "the torso uses the roof idle hips"
+name = "the roof stance uses the on-foot clip's torso"
 signal = "procedural.roof"

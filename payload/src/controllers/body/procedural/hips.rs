@@ -23,7 +23,7 @@ pub(super) enum Track {
 impl Track {
     pub(super) const fn of(case: Case) -> Self {
         match case {
-            Case::OnFoot => Self::Observe,
+            Case::OnFoot | Case::StuntStanding => Self::Observe,
             Case::HitReaction | Case::Jump | Case::AuthoredMotion | Case::NoMovementTask => {
                 Self::Hold
             }
@@ -35,7 +35,6 @@ impl Track {
             | Case::Ragdoll
             | Case::GettingUp
             | Case::Seated
-            | Case::StuntStanding
             | Case::StuntHanging
             | Case::Vehicle
             | Case::GrappleAttach

@@ -71,8 +71,8 @@ The status rows say whether each of the mod's systems is live, for confirming a 
 | | `TWIST BONES` | in the full mode, how many twist bones the limbs' twist is shared over, on how many segments, and the largest twist on the last pass; `WAITING` while the body has no weight, `NONE FOUND` fails it |
 | | `WINGSUIT ARMS` | in the full mode, the wingsuit's arms' weight and the hands queued; `OK` with both at full weight, `NOT IN THE WINGSUIT` otherwise |
 | | `PARACHUTE BODY` | in the full mode, the torso's weight under the parachute and the neck's distance from the point under the player's head; `OK` at full weight, `NOT UNDER THE CANOPY` otherwise |
-| | `SWIM TORSO` | in the full mode, the torso's weight in the water and the neck's distance from the point under the player's head; `OK` at full weight, `NOT SWIMMING` otherwise |
 | | `ROOF TORSO` | in the full mode, the torso's weight standing in a vehicle's stunt area and the neck's distance from the point under the player's head; `OK` at full weight, `NOT ON A ROOF` otherwise |
+| | `SWIM TORSO` | in the full mode, the torso's weight in the water and the neck's distance from the point under the player's head; `OK` at full weight, `NOT SWIMMING` otherwise |
 | | `BODY MIRROR` | the body mirror, a diagnostic switched on in the debug UI: how many of its stick figure's bones it found; `NO BONES FOUND` fails it |
 | | `SEATED TORSO` | in the full mode, the seated torso's weight and the neck's distance from the point under the player's head; `OK` at full weight, `NOT SEATED` outside a seat |
 
