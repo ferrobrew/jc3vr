@@ -39,8 +39,8 @@ use crate::controllers::{
 
 /// The sockets' fixed reach.
 pub const SOCKETS: SocketTuning = SocketTuning {
-    hip_radius_m: 0.12,
-    shoulder_radius_m: 0.17,
+    hip_radius_m: 0.18,
+    shoulder_radius_m: 0.255,
 };
 
 /// The pouches' fixed placement. Each pouch's centre is a few centimetres out from the body's
@@ -206,10 +206,10 @@ pub fn reach_back_sockets(candidates: &mut [Candidate], body: &BodyFrame) {
     }
 }
 
-/// Keep the draws off the back for the dominant hand while neither hand holds a weapon (`empty`):
-/// the back's sockets and the long guns docked on them are offered to the dominant hand alone, so
-/// a long gun drawn by reaching with the off-hand does not move the layout that follows the gun
-/// hand. With a weapon in a hand, either hand may take one.
+/// Give the back's unmarked sockets, and the long guns docked on them, a hand while neither hand
+/// holds a weapon (`empty`): an offer with no hand of its own goes to the dominant hand, and an
+/// offer the socket already names stays with that hand. With a weapon in a hand, the offers are
+/// left as they are.
 pub fn reserve_long_guns(candidates: &mut Vec<Candidate>, dominant: Hand, empty: bool) {
     if !empty {
         return;
@@ -223,7 +223,7 @@ pub fn reserve_long_guns(candidates: &mut Vec<Candidate>, dominant: Hand, empty:
                 c.hand = Some(dominant);
                 true
             }
-            Some(hand) => hand == dominant,
+            Some(_) => true,
         }
     });
 }

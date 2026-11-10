@@ -397,7 +397,7 @@ fn only_a_free_hand_takes_from_the_chest_pouches_while_a_gun_is_drawn() {
 }
 
 #[test]
-fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
+fn with_both_hands_empty_either_hand_draws_a_long_gun() {
     let shoulders = |c: &[Candidate]| -> Vec<Option<Hand>> {
         c.iter()
             .filter(|c| matches!(c.volume, GrabVolume::Socket(Socket::Shoulder(_))))
@@ -421,7 +421,7 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
                 .filter(|c| !matches!(c.volume, GrabVolume::Socket(Socket::Shoulder(_))))
                 .all(|c| c.hand.is_none())
         );
-        // A long gun docked under the off-hand's touch is not offered to it.
+        // A long gun docked under the off-hand's touch stays offered to it.
         let mut touched = vec![Candidate {
             volume: GrabVolume::Socket(Socket::Shoulder(Hand::Left)),
             centre: Vec3::ZERO,
@@ -429,7 +429,8 @@ fn with_both_hands_empty_only_the_dominant_hand_draws_a_long_gun() {
             hand: Some(dominant.other()),
         }];
         reserve_long_guns(&mut touched, dominant, true);
-        assert!(touched.is_empty());
+        assert_eq!(touched.len(), 1);
+        assert_eq!(touched[0].hand, Some(dominant.other()));
         // With a gun in a hand, either hand takes one, as a second weapon.
         let mut armed = sockets();
         reserve_long_guns(&mut armed, dominant, false);

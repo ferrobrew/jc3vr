@@ -207,7 +207,7 @@ fn an_attraction_never_reaches_less_than_the_sockets_own_reach() {
         0.5,
     )];
     let attractors = attractors(&wide, Some(&body(0.0)), offset, &ATTRACTION);
-    assert_eq!(attractors[0].radius, 0.5);
+    assert_eq!(attractors[0].radius, ATTRACTION.shoulder_m.max(0.5));
 }
 
 #[test]
@@ -231,14 +231,14 @@ fn coming_into_an_attraction_ticks_once_until_the_hand_leaves_it() {
     let centre = Vec3::new(0.12, 1.3, 0.15);
     let up = Vec3::Y;
     // Out of every attraction, then into the back's: one tick.
-    assert!(!step(&mut watch, Some(centre + up * 0.6)));
+    assert!(!step(&mut watch, Some(centre + up * 0.8)));
     assert!(step(&mut watch, Some(centre + up * 0.44)));
     // Staying, and drifting just past the edge within the margin: no repeat.
     assert!(!step(&mut watch, Some(centre + up * 0.3)));
     assert!(!step(&mut watch, Some(centre + up * 0.47)));
     assert!(!step(&mut watch, Some(centre + up * 0.44)));
     // Out past the margin, then back in: it ticks again.
-    assert!(!step(&mut watch, Some(centre + up * 0.5)));
+    assert!(!step(&mut watch, Some(centre + up * 0.8)));
     assert!(step(&mut watch, Some(centre + up * 0.44)));
 }
 

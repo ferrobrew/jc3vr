@@ -37,8 +37,8 @@ use crate::controllers::{
 
 /// The attraction's fixed tuning.
 pub(crate) const ATTRACTION: AttractionTuning = AttractionTuning {
-    shoulder_m: 0.45,
-    hip_m: 0.25,
+    shoulder_m: 0.675,
+    hip_m: 0.375,
     back_front_m: 0.08,
     hip_front_m: 0.1,
     max_speed_mps: 2.5,

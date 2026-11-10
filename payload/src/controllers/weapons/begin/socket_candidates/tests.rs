@@ -177,17 +177,7 @@ fn published_offers_match_final_candidates_for_long_gun_restrictions() {
             volumes::reserve_long_guns(&mut expected_draws, dominant, restricted);
             assert_eq!(draws, expected_draws);
             assert_eq!(others, expected_others);
-            let expected_attachments = unfiltered
-                .attachments
-                .iter()
-                .filter(|attachment| {
-                    !(restricted
-                        && attachment.hand == Some(dominant.other())
-                        && attachment.usage == Some(SocketUse::Draw)
-                        && matches!(attachment.socket, Socket::Shoulder(_)))
-                })
-                .copied()
-                .collect::<Vec<_>>();
+            let expected_attachments = unfiltered.attachments.clone();
             assert_eq!(sample.attachments, expected_attachments);
             assert_eq!(sample.at, native.at);
             assert_provider_and_mirror(&sample, &draws, &others, &frames);
@@ -238,7 +228,7 @@ fn restricted_draws_preserve_base_observations_and_missing_pose_diagnostics() {
                     && offer.usage == Some(SocketUse::Draw)
                     && offer.pose == Err(Missing::Weapon)
             }));
-            assert!(!offers.iter().any(|offer| {
+            assert!(offers.iter().any(|offer| {
                 offer.hand == Some(dominant.other()) && offer.usage == Some(SocketUse::Draw)
             }));
             assert!(offers.iter().any(|offer| {
@@ -256,10 +246,7 @@ fn removing_the_only_hand_offer_keeps_the_base_socket_marker() {
     for dominant in Hand::BOTH {
         let mut native = offer_sample(&frames);
         native.attachments.retain(|attachment| {
-            attachment.socket == Socket::Shoulder(Hand::Right)
-                && (attachment.hand.is_none()
-                    || (attachment.hand == Some(dominant.other())
-                        && attachment.usage == Some(SocketUse::Draw)))
+            attachment.socket == Socket::Shoulder(Hand::Right) && attachment.hand.is_none()
         });
         let base = native.attachments[0];
         let mut published = None;
