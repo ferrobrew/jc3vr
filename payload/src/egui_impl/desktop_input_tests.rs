@@ -17,7 +17,7 @@ fn native(keys: &[usize]) -> Result<NativeSnapshot, DesktopInputUnavailable> {
 
 fn tracker() -> DesktopInputTracker {
     let mut tracker = DesktopInputTracker::new();
-    tracker.message(1, WM_SETFOCUS, 0);
+    tracker.message(WM_SETFOCUS, 0);
     assert_eq!(
         tracker.sample(native(&[])),
         DesktopInputObservation::Unavailable(DesktopInputUnavailable::BaselinePending)
@@ -57,10 +57,10 @@ fn physical_keys_modifiers_and_every_mouse_button_block_without_egui_events() {
 #[test]
 fn raw_release_and_consumed_shortcut_require_a_later_physical_release_sample() {
     let mut tracker = tracker();
-    tracker.message(1, WM_KEYDOWN, 0x77);
+    tracker.message(WM_KEYDOWN, 0x77);
     tracker.consume_shortcut(0x77);
     assert!(!evidence(&mut tracker, &[0x77]).controls_neutral());
-    assert!(tracker.message(1, WM_KEYUP, 0x77));
+    assert!(tracker.message(WM_KEYUP, 0x77));
     let released = evidence(&mut tracker, &[]);
     assert!(released.key_activity);
     assert_eq!(released.consumed_shortcuts, 1);
@@ -71,14 +71,14 @@ fn raw_release_and_consumed_shortcut_require_a_later_physical_release_sample() {
 #[test]
 fn consumed_shortcut_release_remains_consumed_after_native_neutral_precedes_its_message() {
     let mut tracker = tracker();
-    tracker.message(1, WM_KEYDOWN, 0x77);
+    tracker.message(WM_KEYDOWN, 0x77);
     tracker.consume_shortcut(0x77);
     assert!(!evidence(&mut tracker, &[0x77]).controls_neutral());
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
     assert!(evidence(&mut tracker, &[]).controls_neutral());
-    assert!(tracker.message(1, WM_KEYUP, 0x77));
-    assert!(!tracker.message(1, WM_KEYUP, 0x77));
+    assert!(tracker.message(WM_KEYUP, 0x77));
+    assert!(!tracker.message(WM_KEYUP, 0x77));
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
     assert!(evidence(&mut tracker, &[]).controls_neutral());
 }
@@ -88,36 +88,36 @@ fn consumed_control_multiply_missing_release_does_not_own_a_later_plain_episode(
     let mut tracker = tracker();
     let control = 0xa2;
     let multiply = 0x6a;
-    assert!(!tracker.message(1, WM_KEYDOWN, control));
-    assert!(!tracker.message_with_lparam(1, WM_KEYDOWN, multiply, 0));
+    assert!(!tracker.message(WM_KEYDOWN, control));
+    assert!(!tracker.message_with_lparam(WM_KEYDOWN, multiply, 0));
     tracker.consume_shortcut(multiply);
     assert!(!evidence(&mut tracker, &[control, multiply]).controls_neutral());
-    tracker.message(1, WM_ACTIVATEAPP, 0);
-    tracker.message(1, WM_KILLFOCUS, 0);
-    tracker.message(1, WM_ACTIVATEAPP, 1);
-    tracker.message(1, WM_SETFOCUS, 0);
+    tracker.message(WM_ACTIVATEAPP, 0);
+    tracker.message(WM_KILLFOCUS, 0);
+    tracker.message(WM_ACTIVATEAPP, 1);
+    tracker.message(WM_SETFOCUS, 0);
     assert_eq!(tracker.sample(native(&[])).controls_neutral(), None);
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
     assert!(evidence(&mut tracker, &[]).controls_neutral());
     assert!(tracker.release_to_consume.contains(multiply));
-    assert!(!tracker.message_with_lparam(1, WM_KEYDOWN, multiply, 0));
+    assert!(!tracker.message_with_lparam(WM_KEYDOWN, multiply, 0));
     assert!(!tracker.release_to_consume.contains(multiply));
-    assert!(!tracker.message_with_lparam(1, WM_KEYUP, multiply, 0xc000_0000));
+    assert!(!tracker.message_with_lparam(WM_KEYUP, multiply, 0xc000_0000));
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
     assert!(evidence(&mut tracker, &[]).controls_neutral());
-    assert!(!tracker.message_with_lparam(1, WM_KEYDOWN, multiply, 0));
+    assert!(!tracker.message_with_lparam(WM_KEYDOWN, multiply, 0));
     tracker.consume_shortcut(multiply);
-    assert!(tracker.message_with_lparam(1, WM_KEYUP, multiply, 0xc000_0000));
+    assert!(tracker.message_with_lparam(WM_KEYUP, multiply, 0xc000_0000));
 }
 
 #[test]
 fn repeat_without_a_new_first_press_does_not_supersede_a_consumed_release() {
     let mut tracker = tracker();
-    tracker.message(1, WM_KEYDOWN, 0x6a);
+    tracker.message(WM_KEYDOWN, 0x6a);
     tracker.consume_shortcut(0x6a);
     evidence(&mut tracker, &[]);
-    assert!(!tracker.message_with_lparam(1, WM_KEYDOWN, 0x6a, 0x4000_0000));
-    assert!(tracker.message_with_lparam(1, WM_KEYUP, 0x6a, 0xc000_0000));
+    assert!(!tracker.message_with_lparam(WM_KEYDOWN, 0x6a, 0x4000_0000));
+    assert!(tracker.message_with_lparam(WM_KEYUP, 0x6a, 0xc000_0000));
 }
 
 #[test]
@@ -132,17 +132,17 @@ fn wheel_text_clipboard_and_ime_are_not_an_empty_egui_queue_proof() {
         WM_DEADCHAR,
     ] {
         let mut tracker = tracker();
-        tracker.message(1, message, 0);
+        tracker.message(message, 0);
         let sample = evidence(&mut tracker, &[]);
         assert!(sample.scroll_activity || sample.text_activity);
         assert!(!sample.controls_neutral());
         assert!(evidence(&mut tracker, &[]).controls_neutral());
     }
     let mut tracker = tracker();
-    tracker.message(1, WM_IME_STARTCOMPOSITION, 0);
+    tracker.message(WM_IME_STARTCOMPOSITION, 0);
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
-    tracker.message(1, WM_IME_ENDCOMPOSITION, 0);
+    tracker.message(WM_IME_ENDCOMPOSITION, 0);
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
     assert!(evidence(&mut tracker, &[]).controls_neutral());
 }
@@ -151,8 +151,8 @@ fn wheel_text_clipboard_and_ime_are_not_an_empty_egui_queue_proof() {
 fn focus_loss_regain_between_samples_invalidates_baseline_and_retains_loss_generation() {
     let mut tracker = tracker();
     let generation = tracker.focus_loss_generation;
-    tracker.message(1, WM_ACTIVATEAPP, 0);
-    tracker.message(1, WM_ACTIVATEAPP, 1);
+    tracker.message(WM_ACTIVATEAPP, 0);
+    tracker.message(WM_ACTIVATEAPP, 1);
     assert_ne!(tracker.focus_loss_generation, generation);
     assert_eq!(
         tracker.sample(native(&[0x41])),
@@ -198,12 +198,12 @@ fn missing_keyboard_ime_or_thread_evidence_cannot_report_neutral() {
 #[test]
 fn composition_start_before_baseline_cannot_be_erased_by_an_empty_native_string() {
     let mut tracker = DesktopInputTracker::new();
-    tracker.message(1, WM_SETFOCUS, 0);
-    tracker.message(1, WM_IME_STARTCOMPOSITION, 0);
+    tracker.message(WM_SETFOCUS, 0);
+    tracker.message(WM_IME_STARTCOMPOSITION, 0);
     assert_eq!(tracker.sample(native(&[])).controls_neutral(), None);
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
-    tracker.message(1, WM_IME_ENDCOMPOSITION, 0);
+    tracker.message(WM_IME_ENDCOMPOSITION, 0);
     assert!(!evidence(&mut tracker, &[]).controls_neutral());
     assert!(evidence(&mut tracker, &[]).controls_neutral());
 }
@@ -234,9 +234,9 @@ fn raw_mouse_and_key_activity_blocks_even_when_the_native_sample_has_already_rel
         (WM_XBUTTONDOWN, WM_XBUTTONUP, 0x06, 2 << 16),
     ] {
         let mut tracker = tracker();
-        tracker.message(1, down, wparam);
+        tracker.message(down, wparam);
         assert!(!evidence(&mut tracker, &[key]).controls_neutral());
-        tracker.message(1, up, wparam);
+        tracker.message(up, wparam);
         assert!(!evidence(&mut tracker, &[]).controls_neutral());
         assert!(evidence(&mut tracker, &[]).controls_neutral());
     }
@@ -291,4 +291,19 @@ fn physical_hold_survives_egui_hide_reopen_and_device_acknowledgement() {
         &mut events,
     );
     assert!(update.snapshot.edit_capture.any());
+}
+
+#[test]
+fn a_destroyed_window_forgets_its_input_and_starts_a_new_baseline() {
+    let mut tracker = tracker();
+    tracker.message(WM_KEYDOWN, 0x41);
+    let revision = tracker.revision;
+    let generation = tracker.focus_loss_generation;
+    assert!(!tracker.message(WM_DESTROY, 0));
+    assert_eq!(tracker.revision, revision.wrapping_add(1));
+    assert_eq!(tracker.focus_loss_generation, generation.wrapping_add(1));
+    assert_eq!(
+        tracker.sample(native(&[])),
+        DesktopInputObservation::Unavailable(DesktopInputUnavailable::BaselinePending)
+    );
 }

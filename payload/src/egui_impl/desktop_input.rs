@@ -111,36 +111,23 @@ impl DesktopInputEvidence {
 /// Sample once before the capture policy, including while editing disables game-device polling.
 /// The native calls use the window thread's keyboard state and the asynchronous held-state bit.
 pub(crate) fn desktop_input_observation() -> DesktopInputObservation {
-    let (tracked, window, revision) = {
-        let state = DESKTOP_INPUT.lock();
-        // A window message records the handle, but a focused, idle window may never send one. The
-        // engine's graphics params always name it, so the first sample reads the real foreground.
-        (
-            state.window,
-            state.window.or_else(engine_window),
-            state.revision,
-        )
-    };
+    // The game owns the window, so its handle comes from the game's own graphics params rather
+    // than from whichever window message happened to arrive first.
+    let window = engine_window();
+    let revision = DESKTOP_INPUT.lock().revision;
     let native = native_snapshot(window);
     let mut state = DESKTOP_INPUT.lock();
-    // A message that recorded another window (or another revision) between the two locks wins;
-    // the fallback handle is not tracked state and must not read as a concurrent change.
-    if state.window != tracked || state.revision != revision {
+    if state.revision != revision {
         return DesktopInputObservation::Unavailable(DesktopInputUnavailable::ConcurrentActivity);
     }
     state.sample(native)
 }
 
 /// Observe before any shortcut, egui, or game filtering. Returns true for a consumed key release.
-pub(crate) fn observe_desktop_message(
-    hwnd: HWND,
-    msg: u32,
-    wparam: WPARAM,
-    lparam: LPARAM,
-) -> bool {
+pub(crate) fn observe_desktop_message(msg: u32, wparam: WPARAM, lparam: LPARAM) -> bool {
     DESKTOP_INPUT
         .lock()
-        .message_with_lparam(hwnd.0 as usize, msg, wparam.0, lparam.0)
+        .message_with_lparam(msg, wparam.0, lparam.0)
 }
 
 /// Retain the shortcut episode even when its key-down never reaches egui or the game.
@@ -426,7 +413,6 @@ struct Activity {
 }
 
 struct DesktopInputTracker {
-    window: Option<usize>,
     revision: u64,
     sequence: u64,
     focus_loss_generation: u64,
@@ -442,7 +428,6 @@ struct DesktopInputTracker {
 impl DesktopInputTracker {
     const fn new() -> Self {
         Self {
-            window: None,
             revision: 0,
             sequence: 0,
             focus_loss_generation: 0,
@@ -470,25 +455,11 @@ impl DesktopInputTracker {
     }
 
     #[cfg(test)]
-    fn message(&mut self, window: usize, msg: u32, wparam: usize) -> bool {
-        self.message_with_lparam(window, msg, wparam, 0)
+    fn message(&mut self, msg: u32, wparam: usize) -> bool {
+        self.message_with_lparam(msg, wparam, 0)
     }
 
-    fn message_with_lparam(
-        &mut self,
-        window: usize,
-        msg: u32,
-        wparam: usize,
-        lparam: isize,
-    ) -> bool {
-        if self.window != Some(window) {
-            *self = Self {
-                window: Some(window),
-                revision: self.revision.wrapping_add(1),
-                focus_loss_generation: self.focus_loss_generation.wrapping_add(1),
-                ..Self::new()
-            };
-        }
+    fn message_with_lparam(&mut self, msg: u32, wparam: usize, lparam: isize) -> bool {
         if msg == WM_KILLFOCUS || (msg == WM_ACTIVATEAPP && wparam == 0) {
             self.focus_loss_generation = self.focus_loss_generation.wrapping_add(1);
         }
@@ -542,8 +513,14 @@ impl DesktopInputTracker {
                 self.baseline = false;
             }
             WM_DESTROY | WM_NCDESTROY => {
-                self.window = None;
-                self.baseline = false;
+                // The window the messages come from is going away: drop every held state so a
+                // replacement window starts from a clean baseline.
+                *self = Self {
+                    revision: self.revision.wrapping_add(1),
+                    focus_loss_generation: self.focus_loss_generation.wrapping_add(1),
+                    ..Self::new()
+                };
+                return false;
             }
             _ => return consumed_release,
         }

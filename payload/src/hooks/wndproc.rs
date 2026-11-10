@@ -28,7 +28,7 @@ pub(super) fn hook_library() -> HookLibrary {
 #[detour(address = jc3gi::window::WndProc_ADDRESS)]
 fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     log_window_state(msg, wparam);
-    if observe_desktop_message(hwnd, msg, wparam, lparam) {
+    if observe_desktop_message(msg, wparam, lparam) {
         return LRESULT(0);
     }
     if matches!(msg, WM_ACTIVATEAPP | WM_KILLFOCUS | WM_SETFOCUS) {
