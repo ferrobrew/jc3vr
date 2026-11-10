@@ -16,9 +16,16 @@ use crate::controllers::{
     summary::current::{CurrentContext, CurrentRouting, CurrentSummary},
 };
 
+/// What the essentials need beyond the mode: state the mode alone does not say.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub(crate) struct Evidence {
+    /// Whether a C4 charge is placed in the world to detonate.
+    pub charges_placed: bool,
+}
+
 /// The essential subset of `rows` in `mode`: each row with a known source, keeping only its
 /// essential actions.
-pub(crate) fn rows(mode: Mode, rows: &[Row]) -> Vec<Row> {
+pub(crate) fn rows(mode: Mode, rows: &[Row], evidence: Evidence) -> Vec<Row> {
     rows.iter()
         .filter(|row| row.control != Control::Unbound)
         .filter_map(|row| {
@@ -27,12 +34,12 @@ pub(crate) fn rows(mode: Mode, rows: &[Row]) -> Vec<Row> {
                     let kept: Vec<Action> = actions
                         .iter()
                         .copied()
-                        .filter(|action| essential_action(mode, *action))
+                        .filter(|action| essential_action(mode, *action, evidence))
                         .collect();
                     (!kept.is_empty()).then_some(Effect::Actions(kept))?
                 }
                 Effect::Mod(action) => {
-                    essential_mod(mode, *action).then_some(Effect::Mod(*action))?
+                    essential_mod(mode, *action, evidence).then_some(Effect::Mod(*action))?
                 }
             };
             Some(Row {
@@ -84,16 +91,18 @@ pub(crate) fn merge(current: &mut CurrentSummary, essentials: CurrentSummary) {
 }
 
 /// Whether `action` is one of `mode`'s essentials.
-fn essential_action(mode: Mode, action: Action) -> bool {
+fn essential_action(mode: Mode, action: Action, evidence: Evidence) -> bool {
     // A tether release bound to a button of its own, besides the grapple's double tap.
     if mode != Mode::Ui && matches!(action, RELEASE_GRAPPLE | VEHICLE_RELEASE_GRAPPLE) {
         return true;
     }
     match mode {
-        Mode::OnFoot(_) => matches!(
-            action,
-            FIRE_GRAPPLE | RETRACT_GRAPPLE | JUMP | USE_ITEM | RELOAD | DETONATE_EXPLOSIVE
-        ),
+        Mode::OnFoot(_) => match action {
+            FIRE_GRAPPLE | RETRACT_GRAPPLE | JUMP | USE_ITEM | RELOAD => true,
+            // Nothing to detonate until a charge is out in the world.
+            DETONATE_EXPLOSIVE => evidence.charges_placed,
+            _ => false,
+        },
         Mode::Vehicle(_) => matches!(
             action,
             FIRE_GRAPPLE
@@ -125,12 +134,14 @@ fn essential_action(mode: Mode, action: Action) -> bool {
 
 /// Whether the mod's `action` is one of `mode`'s essentials. Releasing the tethers is everywhere
 /// the grapple is, since nothing else on the wrist says how.
-fn essential_mod(mode: Mode, action: ModAction) -> bool {
+fn essential_mod(mode: Mode, action: ModAction, evidence: Evidence) -> bool {
     match mode {
-        Mode::OnFoot(_) => matches!(
-            action,
-            ModAction::ReleaseTethers | ModAction::WristDetonator
-        ),
+        // The detonator has nothing to offer until a charge is out in the world.
+        Mode::OnFoot(_) => match action {
+            ModAction::ReleaseTethers => true,
+            ModAction::WristDetonator => evidence.charges_placed,
+            _ => false,
+        },
         Mode::Vehicle(_) => action == ModAction::ReleaseTethers,
         Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Wingsuit) => {
             matches!(action, ModAction::ReleaseTethers | ModAction::Ripcord)
@@ -220,6 +231,7 @@ mod tests {
                     Effect::Actions(vec![JUMP]),
                 ),
             ],
+            Evidence::default(),
         );
         assert_eq!(
             rows,
@@ -252,10 +264,56 @@ mod tests {
             Mode::Airborne(AirborneVariant::Parachute),
         ];
         for mode in modes {
-            assert!(essential_action(mode, FIRE_GRAPPLE), "{mode:?}");
-            assert!(essential_mod(mode, ModAction::ReleaseTethers), "{mode:?}");
+            assert!(
+                essential_action(mode, FIRE_GRAPPLE, Evidence::default()),
+                "{mode:?}"
+            );
+            assert!(
+                essential_mod(mode, ModAction::ReleaseTethers, Evidence::default()),
+                "{mode:?}"
+            );
         }
-        assert!(!essential_action(Mode::Ui, FIRE_GRAPPLE));
+        assert!(!essential_action(
+            Mode::Ui,
+            FIRE_GRAPPLE,
+            Evidence::default()
+        ));
+    }
+
+    #[test]
+    fn the_wrist_detonator_is_essential_only_with_a_charge_out() {
+        let detonator = row(
+            Control::Motion(Hand::Right),
+            Gesture::Press,
+            Effect::Mod(ModAction::WristDetonator),
+        );
+        let without = rows(
+            GROUND,
+            std::slice::from_ref(&detonator),
+            Evidence::default(),
+        );
+        assert!(without.is_empty());
+        let with = rows(
+            GROUND,
+            std::slice::from_ref(&detonator),
+            Evidence {
+                charges_placed: true,
+            },
+        );
+        assert_eq!(with, [detonator]);
+        // The stick click's detonate is the same offer and goes with it.
+        assert!(!essential_action(
+            GROUND,
+            DETONATE_EXPLOSIVE,
+            Evidence::default()
+        ));
+        assert!(essential_action(
+            GROUND,
+            DETONATE_EXPLOSIVE,
+            Evidence {
+                charges_placed: true,
+            }
+        ));
     }
 
     #[test]
@@ -272,9 +330,12 @@ mod tests {
             EXIT_VEHICLE,
             OPEN_PARACHUTE,
         ] {
-            assert!(essential_action(car, action), "{action:?}");
+            assert!(
+                essential_action(car, action, Evidence::default()),
+                "{action:?}"
+            );
         }
-        assert!(!essential_action(car, ACCELERATE));
+        assert!(!essential_action(car, ACCELERATE, Evidence::default()));
     }
 
     #[test]
@@ -332,7 +393,11 @@ mod tests {
             table: TableCtx::default(),
             features: Features::default(),
         };
-        let essential = rows(GROUND, &describe_current(&ctx, &table, None));
+        let essential = rows(
+            GROUND,
+            &describe_current(&ctx, &table, None),
+            Evidence::default(),
+        );
         let actions: Vec<Action> = essential
             .iter()
             .flat_map(|row| match &row.effect {

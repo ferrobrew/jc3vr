@@ -26,7 +26,7 @@ The usable rows alone left the wrist nearly empty in the moments a player looks 
 
 | Mode | Essentials |
 | --- | --- |
-| On foot and swimming | fire the grapple, retract the tethers, release the tethers (double tap), jump, use, reload, detonate (the stick click held, and the wrist detonator) |
+| On foot and swimming | fire the grapple, retract the tethers, release the tethers (double tap), jump, use, reload, detonate (the stick click held, and the wrist detonator, both only while a charge is placed) |
 | Vehicles, every class and seat | the vehicle's weapons and the personal weapon on the face buttons, fire the grapple (the stick click), release the tethers, stunt (tap) and exit (hold), which at speed in a seat with the bail reads as the bail out |
 | Falling | fire the grapple, release the tethers, open the parachute, open the wingsuit, the ripcord |
 | Wingsuit | fire the grapple, release the tethers, open the parachute, boost, the suit's two weapons, the ripcord |
@@ -64,7 +64,7 @@ The shared refresh runs after final ownership reconciliation. Implemented provid
 
 ## In the headset
 
-1. On foot with nothing attached, glance at the back of the off-hand wrist: below any usable rows, the essentials list the grapple, retracting and releasing the tethers, jump, use, reload, and the wrist detonator, a little dimmer than the usable rows, on the hands that do them.
+1. On foot with nothing attached, glance at the back of the off-hand wrist: below any usable rows, the essentials list the grapple, retracting and releasing the tethers, jump, use, reload, and, only while a charge is placed, the wrist detonator, a little dimmer than the usable rows, on the hands that do them.
 2. Attach two tethers: the release row moves up among the usable rows at full brightness and is not listed twice.
 3. Enter a car, a helicopter, and a boat: the essentials list the guns on the face buttons, the grapple on the stick click, the tether release, and stunt (tap) and exit (hold) on the right lower button. Check that the wrist fits on one page in each, and how often it pages in a busy moment.
 4. Open the wingsuit and the parachute: their essentials match the table above, with the ripcord and the handles in the mod's own words.

@@ -219,6 +219,10 @@ fn capture_current(
             Action::VEHICLE_RELEASE_GRAPPLE,
         ]);
     }
+    // The detonate hint is offered only while a charge is placed; an empty detonator is silent.
+    if weapons::c4::charges().is_some_and(|live| live > 0) {
+        actions.push(Action::DETONATE_EXPLOSIVE);
+    }
     let mut mechanics = tables::describe::flight_mechanics(input.flight);
     if let Some(belt) = input.belt_reload {
         mechanics.extend(

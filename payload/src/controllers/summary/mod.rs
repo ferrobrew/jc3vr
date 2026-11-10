@@ -72,7 +72,7 @@ use crate::{
             eligibility::{Eligibility, Omission},
             labels::{HOLD_KEY, ModText, Text},
         },
-        weapons::wheel::tuning::WHEEL,
+        weapons::{c4, wheel::tuning::WHEEL},
     },
     vr::input::sources,
 };
@@ -248,7 +248,13 @@ pub(crate) fn refresh(
         &description,
     );
     // The mode's fixed essentials go below the contextual rows, usable now or not.
-    let essential_rows = essentials::rows(mode, &describe_current(&ctx, &table, None));
+    let essential_rows = essentials::rows(
+        mode,
+        &describe_current(&ctx, &table, None),
+        essentials::Evidence {
+            charges_placed: c4::charges().is_some_and(|live| live > 0),
+        },
+    );
     let essential = project(
         &essential_rows,
         mode,

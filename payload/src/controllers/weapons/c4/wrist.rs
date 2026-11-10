@@ -155,6 +155,21 @@ pub(crate) fn input_tick(inputs: &TickInputs, config: &ControllersConfig) {
         .then(|| sample.fingertip(presser, tuning))
         .flatten();
     let charges = c4::charges().unwrap_or(0).max(0);
+    if charges == 0 {
+        // Nothing is placed to detonate: the button, its hint, and its approach feedback stay off
+        // the wrist until a charge is out in the world.
+        let mut state = STATE.lock();
+        state.status = WristStatus {
+            acting: true,
+            ..Default::default()
+        };
+        state.detector = PressDetector::new();
+        state.near = false;
+        state.flash = None;
+        drop(state);
+        store::clear(Source::WristDetonator);
+        return;
+    }
     let in_flight = c4::detonation_in_flight();
     let lit = charges > 0 && !in_flight;
 

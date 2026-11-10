@@ -199,6 +199,8 @@ fn mode_wide(action: Action) -> bool {
             | Action::ENTER_VEHICLE
             | Action::THROW_GRENADE
             | Action::PLANT_EXPLOSIVE
+            // Offered only while a C4 charge is out in the world.
+            | Action::DETONATE_EXPLOSIVE
     )
 }
 
