@@ -654,7 +654,17 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         OfferKind::Ragdoll { owner, body, .. } => Some((*body, *owner)),
         _ => None,
     };
-    if !direct && !matches!(kind, OfferKind::PlacedCharge { .. }) {
+    // A weapon or grenade lying in the world is reached at its own body: the surface cast aims at
+    // the body's point, but a cast on a weapon body reports no game object, so the surface gate
+    // would reject every ground weapon. The body hit supplies the anchor instead.
+    if !direct
+        && !matches!(
+            kind,
+            OfferKind::PlacedCharge { .. }
+                | OfferKind::Ground { .. }
+                | OfferKind::WorldGrenade { .. }
+        )
+    {
         let surface_ray = Ray::new(ray.origin, point - ray.origin)?;
         let surface = unsafe {
             raycast::cast_on(
