@@ -525,6 +525,19 @@ pub(crate) fn game_object_of(object: NonZeroUsize) -> *mut GameObject {
     (object.get() + PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize) as *mut GameObject
 }
 
+/// The physics game object a `CGameObject` subobject belongs to, when the object has one.
+///
+/// # Safety
+///
+/// `object` must be a live game object.
+pub(crate) unsafe fn physics_object_of(object: NonZeroUsize) -> Option<NonZeroUsize> {
+    let game_object = object.get() as *const GameObject;
+    if !unsafe { (*game_object).IsType(PhysicsGameObject::TYPE_ID()) } {
+        return None;
+    }
+    NonZeroUsize::new(object.get() - PhysicsGameObject::GAME_OBJECT_BASE_OFFSET as usize)
+}
+
 /// A body's owner, mass, and velocities before a force, for the recording.
 fn before(motion: &hknpMotion, owner: NonZeroUsize) -> BodyBefore {
     let frame = Quat::from_array(motion.m_orientation.data);

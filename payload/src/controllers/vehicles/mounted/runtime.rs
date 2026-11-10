@@ -20,7 +20,7 @@ use crate::{
         frame::Hand,
         hands,
         loadout::{Delivery, TakeSource},
-        physical_hands::{self, doors::engine::vehicle_of as resolve_vehicle},
+        physical_hands::{self, doors::engine::vehicle_of as resolve_vehicle, physics_object_of},
         scheme,
         vehicles::{
             is_mounted_weapon,
@@ -127,10 +127,12 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         } else {
             unsafe { Weak::of(&weapon.m_Holder) }.lock()
         };
-        let holder = holder_ref.as_ref().map(|alive| alive.object() as usize);
+        let holder = holder_ref.as_ref().and_then(|alive| unsafe {
+            physics_object_of(NonZeroUsize::new(alive.object() as usize)?)
+        });
         let mount = Mount {
-            object,
-            holder,
+            object: weapon_ptr as usize,
+            holder: holder.map(NonZeroUsize::get),
             centre: pivot,
         };
         let physical = held.map(|held| {
@@ -167,7 +169,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             None => Identity {
                 weapon: weapon_ptr as usize,
                 control,
-                object,
+                object: weapon_ptr as usize,
                 body: NATIVE_HANDLE_BODY,
             },
         };

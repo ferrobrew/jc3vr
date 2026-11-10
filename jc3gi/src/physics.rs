@@ -1442,6 +1442,19 @@ impl PhysicsGameObject {
     pub fn vftable(&self) -> *const crate::physics::PhysicsGameObjectVftable {
         self.vftable as *const crate::physics::PhysicsGameObjectVftable
     }
+    pub const TYPE_ID_ADDRESS: usize = 0x1404C9880;
+    /// `CPhysicsGameObject::TYPE_ID`: the run-time type id of `CPhysicsGameObject`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use. Characters,
+    /// vehicles, their parts, rigid objects, and weapons derive from it, so a test against it
+    /// tells whether a game object owns a physics instance.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
     pub const DoReactToHit_ADDRESS: usize = 0x1404F2040;
     /// Converts collision-hit data into an impact damage message and dispatches it to the object.
     pub unsafe fn DoReactToHit(&mut self, info: *const crate::physics::HitReactInfo) {

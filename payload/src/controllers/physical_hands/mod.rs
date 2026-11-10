@@ -87,7 +87,7 @@ mod status;
 use std::num::NonZeroUsize;
 
 pub use bodies::BodyError;
-pub(crate) use bodies::{BodyState, game_object_of};
+pub(crate) use bodies::{BodyState, game_object_of, physics_object_of};
 pub use config::PhysicalHandsConfig;
 use glam::{Quat, Vec3};
 use jc3gi::{character::character::Character, physics::hknpWorld, types::math::Vector3};

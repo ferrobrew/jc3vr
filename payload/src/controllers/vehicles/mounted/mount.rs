@@ -9,6 +9,9 @@ use glam::Vec3;
 
 /// A mounted weapon a hand can take: its own game object, the object holding it, and a point on
 /// the gun the hand's body must be near when it holds a part of the holder's vehicle.
+///
+/// Every address here is a physics game object, as a cast names one: the weapon's own body, its
+/// holder, and the held body are all compared in that space.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct Mount {
     pub object: usize,
@@ -16,7 +19,8 @@ pub(crate) struct Mount {
     pub centre: Vec3,
 }
 
-/// The body a hand holds, and its centre of mass when the hold reports one.
+/// The body a hand holds, and its centre of mass when the hold reports one. `object` is the held
+/// body's physics game object, in the same space as [`Mount`]'s addresses.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct Held {
     pub object: usize,
@@ -24,7 +28,7 @@ pub(crate) struct Held {
 }
 
 /// Whether `held` is `mount`'s gun, its holder, or a part of the holder's vehicle at the gun.
-/// `vehicle_of` resolves a game object to the vehicle it is or came from.
+/// `vehicle_of` resolves a physics game object to the vehicle it is or came from.
 pub(crate) fn matches(
     mount: Mount,
     held: Held,
