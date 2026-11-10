@@ -498,6 +498,11 @@ unsafe fn pose_torso(
             },
             heading,
         );
+        // The reference keeps the character's height, but a player standing taller than it would
+        // leave the head beyond the torso's lean. Shift the whole reference toward the tracked
+        // head's height, bounded so the feet stay on what they stand on.
+        let rise = (input.head.y - input.animated.position(RigBone::Head).y).clamp(-0.20, 0.20);
+        input.animated.translate(RigBone::Hips, Vec3::Y * rise);
         input.torso_yaw = line_yaw(
             input.animated.position(RigBone::LeftShoulder),
             input.animated.position(RigBone::RightShoulder),
