@@ -67,7 +67,7 @@ The debug window shows the file's state (`UP TO DATE`, `SAVING`, `FAILED, SEE LO
 
 ## What is not saved
 
-Fields that hold state for the session rather than a choice are `#[serde(skip)]`: they load as their defaults and a key for them in the file is skipped and reported. They are the director's time scale, pause, and clean view scope; the VR pose freeze (`vr.freeze_mode`), so a launch never starts with the view locked; and the render diagnostics armed for one capture (`stereo.skip_pass_range_enabled`, `stereo.auto_trace_brightness_step`, and `stereo.single_pass.dump_vs_name_census`).
+Fields that hold state for the session rather than a choice are `#[serde(skip)]`: they load as their defaults and a key for them in the file is skipped and reported. They are the director's time scale, pause, and clean view scope; the VR pose freeze (`vr.freeze_mode`), so a launch never starts with the view locked; the debug panel's visibility (`hud.egui_panel.enabled`), so a session that left the panel up does not open it at the next launch; and the render diagnostics armed for one capture (`stereo.skip_pass_range_enabled`, `stereo.auto_trace_brightness_step`, and `stereo.single_pass.dump_vs_name_census`).
 
 ## TOML and the configuration types
 

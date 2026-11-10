@@ -188,7 +188,9 @@ impl Default for AtlasPartConfig {
 pub struct EguiPanelConfig {
     /// Panel visibility. While a session runs, the debug UI renders into the floating surface.
     /// Input ownership is separate: Allow gameplay input keeps the panel visible and read-only.
-    /// Opening through the panel shortcut requests editing, and the preference defaults off.
+    /// Opening through the panel shortcut requests editing, and the preference defaults off. Not
+    /// saved, so a session that left the panel up does not open it at the next launch.
+    #[serde(skip)]
     pub enabled: bool,
     /// Aspect ratio (width / height) of the panel quad. Kept in step with
     /// [`resolution`](EguiPanelConfig::resolution) so the egui content is not stretched.
