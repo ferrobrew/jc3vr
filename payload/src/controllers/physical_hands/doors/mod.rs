@@ -74,7 +74,7 @@ pub(crate) const UNLATCH_PULL_M: f32 = 0.05;
 
 /// How far from a door's handle a palm takes the door, whatever the reach's rays hit, metres of the
 /// player's hand.
-pub(crate) const HANDLE_REACH_M: f32 = 0.15;
+pub(crate) const HANDLE_REACH_M: f32 = 0.30;
 
 /// What a hand reaches of a vehicle through the ray hit `hit` on `object`'s body `body`, from a
 /// palm centred at `palm`: an open door it touches within `reach`'s box reach, or a closed door
