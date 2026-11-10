@@ -2781,6 +2781,22 @@ pub unsafe fn get_Character_ForceNonCombat() -> &'static mut bool {
 pub unsafe fn get_Character_GoreEnabled() -> &'static mut bool {
     unsafe { &mut *(0x142F2F301 as *mut bool) }
 }
+/// `STUNT_COMBAT_MODIFIER`: the animation modifier whose idstring selects the armed stunt idle,
+/// movement, turn, and stop clip variants. [`Character::SetCharacterModifiers`](crate::character::character::Character::SetCharacterModifiers) sets it on every
+/// rule system of an attached character, or while the stunt mode is forced, once per frame; the
+/// animation set's ordered-modifier variants then replace the on-foot clips while it is active.
+/// The symbol table assigns the id at load, so the static holds a run-time value and
+/// [`AnimationRuleSystem::SetModifier`](crate::animation::rule_system::AnimationRuleSystem::SetModifier)
+/// takes its address rather than the value.
+pub unsafe fn get_Character_StuntCombatModifier() -> &'static mut u32 {
+    unsafe { &mut *(0x142F2F318 as *mut u32) }
+}
+/// `STUNT_NONCOMBAT_MODIFIER`: the unarmed counterpart of
+/// [`Character_StuntCombatModifier`](get_Character_StuntCombatModifier), selecting the non-combat stunt clip variants under the same
+/// conditions.
+pub unsafe fn get_Character_StuntNoncombatModifier() -> &'static mut u32 {
+    unsafe { &mut *(0x142F2F394 as *mut u32) }
+}
 crate::__bitflags! {
     #[doc =
     " A byte of `CCharacter` bitfields holding the visibility, invulnerability, and weapons-enabled"]

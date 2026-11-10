@@ -44,7 +44,7 @@ The well marker is gold while a round is in hand. It now turns red (`MarkStyle::
 
 ### The head was detached in the plane stunt position at 176 s
 
-Since `ac274945` the stunt body keeps the character's height, and the torso's bounded lean could not close the gap to a player standing taller than the reference. The reference now shifts toward the tracked head's height by up to 0.20 m before the solve, so the feet stay on what they stand on and the head comes into reach. The case still changes to the on-foot body when the player leaves the plane, which is why leaving the plane fully realigned the body.
+`ac274945` replaced the drawn body with the reference pose because the mod treated a standing stunt area as a stunt animation. The shipped graphs have no standing stunt state (the only stunt idle is the helicopter hang); the on-foot state was playing, with the animation set's `STUNT_*` modifiers selecting the stunt idle and movement clips. The view followed the animating head while the drawn body was the reference pose, and the two diverged. The reference-pose body is removed. A standing stunt keeps its own case so the vehicle-carried view stays on the clip's head, but its torso is the on-foot procedural one on the clip's hips and its legs are the clip's. The two stunt modifiers are dropped for the local player in a stunt area, so the on-foot state selects its normal clips. The helicopter hang keeps its animation. This also removes the height shift and the pose scaling tried in between.
 
 ### The door grab target was too small at 193 s
 
