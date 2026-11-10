@@ -496,7 +496,8 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                             &Candidate {
                                 volume: GrabVolume::Handle,
                                 centre,
-                                radius: gun_volume_radius(touch.hit.distance),
+                                radius:
+                                    gun_volume_radius(touch.hit.distance).min(hold::HANDOVER_MAX_M),
                                 hand: Some(touch.hand),
                             },
                             holder,
@@ -508,7 +509,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                         &Candidate {
                             volume: GrabVolume::Foregrip,
                             centre,
-                            radius: gun_volume_radius(touch.hit.distance),
+                            radius: gun_volume_radius(touch.hit.distance).min(hold::HANDOVER_MAX_M),
                             hand: Some(touch.hand),
                         },
                         holder,

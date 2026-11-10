@@ -121,6 +121,12 @@ pub const MAX_THROW_MPS: f32 = 15.0;
 /// metres. A touch on another gun region keeps that region's action.
 pub const HANDLE_RADIUS_M: f32 = 0.14;
 
+/// The farthest a free hand may be from a gun's grip or handguard to take it, in player-scale
+/// metres. The volume around the touched region otherwise reaches as far as the hand does, which
+/// would take a gun from any distance the palm ray meets it; beyond this reach the grab is
+/// refused, and within it the gun slides into the hand over [`SNAP_S`].
+pub const HANDOVER_MAX_M: f32 = 0.20;
+
 /// The reach from the nearest point of a gun's grip-to-grip segment on a rack or in a locker, in
 /// player-scale metres. Acquisition and completion use the same boundary.
 pub const TAKE_RADIUS_M: f32 = 0.3;

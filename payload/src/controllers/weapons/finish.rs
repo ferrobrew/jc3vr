@@ -192,6 +192,11 @@ pub(crate) fn finish_tick(
                 }) {
                     continue;
                 }
+                // The gun glides into the hand from where it was, rather than jumping there.
+                let from = gun
+                    .and_then(|object| unsafe { (object as *const WeaponBase).as_ref() })
+                    .and_then(|weapon| unsafe { engine::gun_pose(weapon) });
+                let mut gun_moved = false;
                 let moved =
                     crate::controllers::weapons::grenade_moves::transfer(hand.other(), hand)
                         .or_else(|| {
@@ -199,8 +204,14 @@ pub(crate) fn finish_tick(
                                 .filter(|&(holder, _)| holder == hand.other())
                                 .map(|_| c4::hand_over(hand))
                         })
-                        .unwrap_or_else(|| gun.is_some_and(|w| hold::hand_over(hand, w)));
+                        .unwrap_or_else(|| {
+                            gun_moved = gun.is_some_and(|w| hold::hand_over(hand, w));
+                            gun_moved
+                        });
                 if moved {
+                    if let (Some(object), true, Some(from)) = (gun, gun_moved, from) {
+                        hold::act::slide_in(object, hand, from, hold::SNAP_S);
+                    }
                     // The hand that took the gun let go of the foregrip to take it.
                     foregrip::clear();
                 }
