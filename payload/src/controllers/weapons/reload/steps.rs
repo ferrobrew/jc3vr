@@ -58,6 +58,9 @@ trait MagazineInsertion {
     fn release(&mut self);
     /// Play the magazine-in sound on gun `gun` of the weapon at `weapon`, where a round seated.
     fn seat_sound(&mut self, weapon: usize, gun: usize);
+    /// Play the refusal sound on gun `gun` of the weapon at `weapon`, whose well turned the round
+    /// away.
+    fn refuse_sound(&mut self, weapon: usize, gun: usize);
 }
 
 struct NativeMagazine;
@@ -101,6 +104,10 @@ impl MagazineInsertion for NativeMagazine {
         // SAFETY: the insertion's seat runs on the game thread before the world update, with the
         // weapon read this tick.
         unsafe { seat_sound(weapon, gun) };
+    }
+    fn refuse_sound(&mut self, weapon: usize, gun: usize) {
+        // SAFETY: as `seat_sound`.
+        unsafe { refuse_sound(weapon, gun) };
     }
 }
 
@@ -734,6 +741,12 @@ impl State {
                     unsafe { engine::show_magazine_part(weapon.address, weapon.part_shown()) };
                 }
             }
+            Some(InsertEvent::Refused) => {
+                haptics::play(hand, Event::PouchRefused);
+                if let Some((weapon, gun)) = target {
+                    adapter.refuse_sound(weapon.address, gun.index);
+                }
+            }
             Some(InsertEvent::Dropped) => {
                 adapter.release();
                 self.event("round dropped".to_owned());
@@ -977,6 +990,17 @@ pub(super) fn ready_after_seat(plan: &ReloadPlan, chamber: Chamber) -> bool {
 pub(super) unsafe fn seat_sound(weapon: usize, gun: usize) {
     let sound = unsafe { engine::play_seat_sound(weapon, gun) };
     tracing::debug!(target: "controllers", ?sound, "reload: played the seat's sound");
+}
+
+/// Play the dry-fire click where a well refused the round pushed at it, on gun `gun` of the weapon
+/// at `weapon`.
+///
+/// # Safety
+///
+/// As [`engine::play_refuse_sound`].
+pub(super) unsafe fn refuse_sound(weapon: usize, gun: usize) {
+    let sound = unsafe { engine::play_refuse_sound(weapon, gun) };
+    tracing::debug!(target: "controllers", ?sound, "reload: played the refusal's sound");
 }
 
 /// The point of `weapon`'s gun pushed onto the belt pouch, its well at `well`: the base of a

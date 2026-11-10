@@ -40,6 +40,8 @@ pub enum InsertEvent {
     Seated,
     /// The round was let go, timed out, or its gun went away.
     Dropped,
+    /// The round was pushed at a well that already holds a round, which refuses it.
+    Refused,
 }
 
 /// The held round in the cockpit frame.
@@ -114,6 +116,9 @@ pub struct Insertion {
     pub(super) previous_local_top: Option<Vec3>,
     /// The float of a round let go of near the well, while it travels in.
     pub(super) float: Option<Float>,
+    /// Whether this approach to the well has already reported that it refuses the round, so the
+    /// feedback plays once per push rather than every tick.
+    pub(super) refused: bool,
 }
 
 /// How a round let go of near the well floats into it.
@@ -233,6 +238,7 @@ impl Insertion {
             distance_m: None,
             previous_local_top: None,
             float: None,
+            refused: false,
         }
     }
 
@@ -262,6 +268,7 @@ impl Insertion {
             InsertStage::Idle => {
                 if inputs.taken {
                     self.stage = InsertStage::Holding { elapsed_s: 0.0 };
+                    self.refused = false;
                     Some(InsertEvent::Taken)
                 } else {
                     None
@@ -320,8 +327,16 @@ impl Insertion {
                 return Some(InsertEvent::Dropped);
             }
             self.stage = InsertStage::Holding { elapsed_s };
-            return captured.map(|_| InsertEvent::Released);
+            if let Some(event) = captured.map(|_| InsertEvent::Released) {
+                return Some(event);
+            }
+            if !self.refused && local.length() <= config.capture_radius_m {
+                self.refused = true;
+                return Some(InsertEvent::Refused);
+            }
+            return None;
         }
+        self.refused = false;
         let depth = local.y;
         let off_axis = Vec3::new(local.x, 0.0, local.z).length();
         let aligned = aligned_cos >= config.capture_angle_deg.to_radians().cos();
@@ -724,7 +739,12 @@ mod tests {
             grip_held,
             ..inputs(false, top, up)
         };
-        for depth in [-0.02, 0.01, 0.03, 0.06] {
+        // The first push at the occupied well is refused, once.
+        assert_eq!(
+            i.step(occupied(WELL.mouth - Vec3::Y * 0.02, true), &CONFIG),
+            Some(InsertEvent::Refused)
+        );
+        for depth in [0.01, 0.03, 0.06] {
             assert_eq!(
                 i.step(occupied(WELL.mouth + Vec3::Y * depth, true), &CONFIG),
                 None

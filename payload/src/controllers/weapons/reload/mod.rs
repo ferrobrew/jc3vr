@@ -744,9 +744,9 @@ unsafe fn loose_sightings(
     (seen, Some(frames))
 }
 
-/// The hand holding the gun, and the well's mouth and the capture radius its round catches at,
-/// while the other hand holds a round for it.
-pub(super) fn well(config: &Reload) -> Option<(Hand, Vec3, f32)> {
+/// The hand holding the gun, the well's mouth and the capture radius its round catches at, and
+/// whether the well already holds a round, while the other hand holds a round for it.
+pub(super) fn well(config: &Reload) -> Option<(Hand, Vec3, f32, bool)> {
     let state = STATE.lock();
     let (_, gun_hand) = state.status.insert_hands?;
     let tick = state.tick.as_ref()?;
@@ -756,6 +756,7 @@ pub(super) fn well(config: &Reload) -> Option<(Hand, Vec3, f32)> {
         gun_hand,
         well.mouth,
         config.for_plan(&weapon.plan).capture_radius_m,
+        weapon.occupied(),
     ))
 }
 

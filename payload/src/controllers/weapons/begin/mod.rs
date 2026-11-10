@@ -11,7 +11,7 @@ use crate::{
         body::rig::skeleton,
         config::ControllersConfig,
         frame::{Hand, Pose},
-        grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, Shown},
+        grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown},
         hands::{self, ActiveHands, CockpitHand, pose as hand_pose},
         haptics::{self, Event},
         loadout::{
@@ -436,9 +436,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         });
     // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { pouch_models::input_tick(&config.weapons.pouches.models, frames, &shown) };
-    if let Some((gun_hand, mouth, radius)) =
+    if let Some((gun_hand, mouth, radius, occupied)) =
         reload::well(&reload::tuning::Reload::of(&config.weapons.reload))
     {
+        // The well's ring turns red while its round has to leave before another seats: the hand
+        // holding a round sees that the gun will not take it before pushing it home.
         targets.push(GripTarget::sphere(
             GrabVolume::MagazineWell,
             Some(gun_hand.other()),
@@ -451,6 +453,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 },
                 mark_size(radius),
             )
+            .styled(if occupied {
+                MarkStyle::NoFitRing
+            } else {
+                MarkStyle::Ring
+            })
             .showing(Shown::Always),
         ));
     }

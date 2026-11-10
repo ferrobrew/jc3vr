@@ -214,6 +214,9 @@ pub enum MarkStyle {
     /// A small disc in the refusal colour: a place on the body that does not take what the hand
     /// holds, shown while the hand is near so that it knows before it opens.
     NoFit,
+    /// A ring in the refusal colour at the marker's full size: a place marked by a ring that will
+    /// not take what the hand holds, such as a magazine well that still has a round in it.
+    NoFitRing,
 }
 
 /// When a marker shows.

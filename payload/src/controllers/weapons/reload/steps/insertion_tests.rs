@@ -74,6 +74,7 @@ impl MagazineInsertion for FakeMagazine {
         self.releases += 1;
     }
     fn seat_sound(&mut self, _: usize, _: usize) {}
+    fn refuse_sound(&mut self, _: usize, _: usize) {}
 }
 
 pub(super) fn state(stage: InsertStage) -> State {

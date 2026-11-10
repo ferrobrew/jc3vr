@@ -703,6 +703,24 @@ const SEAT_SOUNDS: [u32; 3] = [
     WeaponData::OUT_OF_AMMO_FIRE_USAGE,
 ];
 
+/// Play the dry-fire click on gun `index` of the weapon at `address`, as the refusal of an action
+/// the gun will not take. Returns the usage played.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn play_refuse_sound(address: usize, index: usize) -> Option<u32> {
+    let source = unsafe { owned_handle(address) }?;
+    let mut gun = unsafe { gun_ptr(source.as_ref(), index) }?;
+    let effects = unsafe { &mut gun.as_mut().m_AttachedEffects };
+    let material = GameMaterialId::EGameMaterialId_Default;
+    let usage = unsafe { effects.FindAttachedEffectUsage(WeaponData::OUT_OF_AMMO_FIRE_USAGE) };
+    (!usage.is_null()
+        && !unsafe { effects.IsAttachedEffectLooping(usage, material) }
+        && unsafe { effects.ActivateAttachedEffect(usage, true, material) })
+    .then_some(WeaponData::OUT_OF_AMMO_FIRE_USAGE)
+}
+
 /// The address of gun `index` of the weapon at `address`, whose skeleton the action's bone rides.
 ///
 /// # Safety

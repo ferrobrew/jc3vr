@@ -95,7 +95,7 @@ pub fn primitives(
             continue;
         };
         let [r, g, b] = match target.mark.style {
-            MarkStyle::NoFit => NO_FIT_COLOUR,
+            MarkStyle::NoFit | MarkStyle::NoFitRing => NO_FIT_COLOUR,
             _ => colour(target.category()),
         };
         let facing = match target.mark.normal {
@@ -122,7 +122,7 @@ pub fn primitives(
             depth: XRAY,
         };
         match target.mark.style {
-            MarkStyle::Ring => {
+            MarkStyle::Ring | MarkStyle::NoFitRing => {
                 let thickness = if state.chosen || state.held {
                     CHOSEN_THICKNESS
                 } else {
