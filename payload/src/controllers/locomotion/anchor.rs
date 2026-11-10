@@ -81,18 +81,9 @@ pub(crate) unsafe fn stabilize(
     animated: Anchors,
     model: Neutral,
     dt: f32,
-) -> Anchors {
+) -> Stabilized {
     let (enabled, controllers_enabled) =
         Config::lock_query(|c| (c.controllers.locomotion.view.enabled, c.controllers.enabled));
-    // A root-stable handover delays entry, deployment, and landing anatomy independently of
-    // the mesh. The tracked view follows the complete pre-IK head translation without that blend.
-    if source() == Source::Vr {
-        let mut state = STATE.lock();
-        state.status = AnchorStatus::default();
-        state.stable = false;
-        state.capture.interrupt();
-        return animated;
-    }
     let now = Instant::now();
     let locomotion = locomotion_status();
     let grounded = locomotion.fresh(now);
@@ -177,7 +168,7 @@ pub(crate) unsafe fn stabilize(
     // Where a clip carries the head, the eyes are held out in front of its face.
     let posed = case.is_some_and(Case::game_poses_body);
     let clear = state.face_clear.step(posed, dt, BLEND_S);
-    let animated = face_clear(&animated, &model, FACE_CLEARANCE_M * clear);
+    let cleared = face_clear(&animated, &model, FACE_CLEARANCE_M * clear);
     state.status = AnchorStatus {
         weight,
         eligible,
@@ -196,14 +187,38 @@ pub(crate) unsafe fn stabilize(
             "locomotion: the view anchor hands over",
         );
     }
-    let Some(neutral) = state.neutral.filter(|_| weight > 0.0) else {
-        return animated;
+    let stable_target = state
+        .neutral
+        .filter(|_| weight > 0.0)
+        .map(|neutral| stable_anchors(&neutral, world_t0, world_t1, height));
+    if source() == Source::Vr {
+        // The headset's view takes only the camera's anchors: the body's pose and IK keep the
+        // animated head, so the head bone stays on the animation while the view does not bob.
+        return Stabilized {
+            anatomy: animated,
+            camera: stable_target
+                .as_ref()
+                .map(|stable| blend(&animated, stable, weight)),
+        };
+    }
+    let Some(stable) = stable_target else {
+        return Stabilized {
+            anatomy: cleared,
+            camera: None,
+        };
     };
-    blend(
-        &animated,
-        &stable_anchors(&neutral, world_t0, world_t1, height),
-        weight,
-    )
+    Stabilized {
+        anatomy: blend(&cleared, &stable, weight),
+        camera: None,
+    }
+}
+
+/// The anchors the pose publishes: the anatomy's, and the camera's while the headset's view hangs
+/// from the root instead of the animated head.
+pub(crate) struct Stabilized {
+    pub anatomy: Anchors,
+    /// The camera's anchors, `None` where the camera uses [`anatomy`](Self::anatomy).
+    pub camera: Option<Anchors>,
 }
 
 /// How far in front of the animated face the eyes are held while a clip poses the body, metres: a

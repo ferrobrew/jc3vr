@@ -294,6 +294,16 @@ impl HeadPoseState {
         self.publish_anchors_with_tracking(pair, sim_orientation, None);
     }
 
+    /// The head the camera hangs from: the neutral head while the root carries the body in the
+    /// headset, else the animated one.
+    fn camera_head(geometry: &anchors::Geometry) -> Vec3 {
+        if geometry.camera_stable {
+            geometry.camera_head
+        } else {
+            geometry.head
+        }
+    }
+
     fn publish_anchors_with_tracking(
         &mut self,
         pair: [anchors::Geometry; 2],
@@ -322,7 +332,7 @@ impl HeadPoseState {
             let (_, root, _) = current.root.to_scale_rotation_translation();
             let transport =
                 root * current.animation_rotation * (old_root * old.animation_rotation).inverse();
-            self.pose.position = current.head
+            self.pose.position = Self::camera_head(&current)
                 + transport * (self.pose.position - previous_anchor.unwrap_or(old.head));
             self.pose.orientation = transport * self.pose.orientation;
             if current.collapsed {
@@ -334,7 +344,7 @@ impl HeadPoseState {
                 tracking.cockpit.position,
                 tracking.cockpit.orientation,
                 root * current.animation_rotation * tracking.follow_turn,
-                current.head,
+                Self::camera_head(&current),
                 tracking.world_scale,
             );
             if current.collapsed {

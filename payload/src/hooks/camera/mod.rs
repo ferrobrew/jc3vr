@@ -444,9 +444,16 @@ fn camera_position(
 ) -> glam::Vec3 {
     let (_, root_rotation, _) = geometry.root.to_scale_rotation_translation();
     let character_rotation = root_rotation * geometry.animation_rotation;
+    // While the root carries the body in the headset, the camera hangs from the neutral head, so
+    // the walking animation's bob stays on the body and out of the view.
+    let (neck_delta, arm) = if geometry.camera_stable {
+        (geometry.camera_neck_delta, geometry.camera_eye_arm)
+    } else {
+        (geometry.neck_delta, geometry.eye_arm)
+    };
     let rig = EyeRig {
-        neck_delta: geometry.neck_delta,
-        arm: geometry.eye_arm,
+        neck_delta,
+        arm,
         view_turn,
     };
     eye_position(

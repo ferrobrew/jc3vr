@@ -29,6 +29,15 @@ pub(crate) struct Geometry {
     /// The head frame the view follows, filtered for the camera and eased to identity outside the
     /// camera-follow states.
     pub camera_animation_rotation: Quat,
+    /// Whether the camera hangs from the neutral head below rather than the animated one.
+    pub camera_stable: bool,
+    /// The head the camera hangs from while the root carries the body: the neutral head over the
+    /// smoothed root, so a walking animation's bob does not reach the view.
+    pub camera_head: Vec3,
+    /// The world-space head-to-neck vector paired with [`camera_head`](Self::camera_head).
+    pub camera_neck_delta: Vec3,
+    /// The body-frame neck-to-eye arm paired with [`camera_head`](Self::camera_head).
+    pub camera_eye_arm: Vec3,
 }
 
 impl Geometry {
@@ -46,6 +55,10 @@ impl Geometry {
             eye_arm: anchors.eye_arm,
             animation_rotation: Quat::IDENTITY,
             camera_animation_rotation: Quat::IDENTITY,
+            camera_stable: false,
+            camera_head: anchors.head,
+            camera_neck_delta: anchors.neck - anchors.head,
+            camera_eye_arm: anchors.eye_arm,
         }
     }
 
@@ -187,6 +200,10 @@ impl Sample {
                 eye_arm: rotation.inverse() * (root.transform_point3(eyes_model) - neck),
                 animation_rotation: Quat::IDENTITY,
                 camera_animation_rotation: Quat::IDENTITY,
+                camera_stable: false,
+                camera_head: head,
+                camera_neck_delta: neck - head,
+                camera_eye_arm: rotation.inverse() * (root.transform_point3(eyes_model) - neck),
             },
         }
     }

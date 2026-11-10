@@ -356,7 +356,13 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     dt,
                 );
                 sample.geometry =
-                    headpose::anchors::Geometry::from_anchors(stabilized, character_world);
+                    headpose::anchors::Geometry::from_anchors(stabilized.anatomy, character_world);
+                if let Some(camera) = stabilized.camera {
+                    sample.geometry.camera_stable = true;
+                    sample.geometry.camera_head = camera.head;
+                    sample.geometry.camera_neck_delta = camera.neck - camera.head;
+                    sample.geometry.camera_eye_arm = camera.eye_arm;
+                }
                 animation::capture(
                     bind_rotation,
                     identity,
