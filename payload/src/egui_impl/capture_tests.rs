@@ -151,9 +151,9 @@ fn adapter_rapid_hide_reopen_requires_acknowledgement_then_neutral() {
 }
 
 #[test]
-fn adapter_focus_loss_while_held_clears_keys_and_defers_device_enable() {
+fn adapter_focus_loss_while_held_clears_keys_but_keeps_the_pointer() {
     let mut harness = Harness::new();
-    let point = harness.press_button();
+    harness.press_button();
     harness.frame(vec![egui::Event::Key {
         key: egui::Key::A,
         physical_key: None,
@@ -171,27 +171,17 @@ fn adapter_focus_loss_while_held_clears_keys_and_defers_device_enable() {
     );
     assert_eq!(
         update.snapshot.blocker,
-        Some(crate::ui::capture::OwnershipBlocker::Unfocused)
+        Some(crate::ui::capture::OwnershipBlocker::Editing)
     );
+    assert!(update.snapshot.edit_capture.pointer);
+    assert!(!update.snapshot.edit_capture.keyboard);
     assert_eq!(device_write(update.effects.game_device, false), None);
     assert!(!harness.context.input(|input| input.key_down(egui::Key::A)));
     assert!(!harness.context.input(|input| input.pointer.any_down()));
-    assert!(
-        !harness
-            .update(None, observation(false, false))
-            .snapshot
-            .edit_capture
-            .any()
-    );
+    // The controllers still drive the panel while the window is in the background.
+    let point = harness.press_button();
     harness.frame(vec![button_event(point, false)]);
-    assert_eq!(harness.clicks, 0);
-    assert!(
-        harness
-            .update(None, observation(true, false))
-            .snapshot
-            .edit_capture
-            .any()
-    );
+    assert_eq!(harness.clicks, 1);
 }
 
 #[test]
@@ -416,7 +406,8 @@ fn adapter_focus_loss_between_ticks_cancels_held_state_before_recovered_neutral(
     assert!(update.effects.cancel_pointer_and_drag);
     assert!(update.effects.consume_until_neutral);
     assert!(!update.snapshot.observed_game_device_enabled);
-    assert!(!update.snapshot.edit_capture.any());
+    assert!(update.snapshot.edit_capture.pointer);
+    assert!(update.snapshot.edit_capture.keyboard);
     assert!(!update.snapshot.gameplay_effective);
     assert!(!harness.adapter.input_notification_pending);
     harness.frame(vec![button_event(point, false)]);
@@ -426,12 +417,14 @@ fn adapter_focus_loss_between_ticks_cancels_held_state_before_recovered_neutral(
         controls_neutral: false,
         ..recovered
     });
+    // The owner never changed, so the held input does not have to go neutral: the panel keeps its
+    // controller pointer through the window's focus loss.
     assert!(
-        !harness
+        harness
             .update(None, observation(held.controls_neutral, false))
             .snapshot
             .edit_capture
-            .any()
+            .pointer
     );
     let neutral = harness.adapter.input_owner_sample(DebugUiInput {
         focused: true,
@@ -496,7 +489,8 @@ fn raw_loss_regain_cancels_the_first_egui_frame_before_any_input_owner_update() 
     assert!(notification.effects.clear_pending_events);
     assert!(notification.effects.cancel_pointer_and_drag);
     assert!(notification.effects.consume_until_neutral);
-    assert!(!notification.snapshot.edit_capture.any());
+    assert!(notification.snapshot.edit_capture.pointer);
+    assert!(notification.snapshot.edit_capture.keyboard);
     assert!(!notification.snapshot.gameplay_effective);
 }
 
@@ -531,7 +525,6 @@ fn enabling_rechecks_focus_and_raw_loss_after_cancellation_before_any_write() {
             || focus_source.get(),
         );
         assert_eq!(write, None);
-        assert!(!update.snapshot.focused);
         assert!(!update.snapshot.edit_capture.any());
         assert!(!update.snapshot.gameplay_effective);
         assert!(update.snapshot.device_restore_pending);

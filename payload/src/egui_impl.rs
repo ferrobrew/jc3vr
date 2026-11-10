@@ -148,7 +148,7 @@ impl EguiCaptureAdapter {
         mut focus_now: impl FnMut() -> (bool, u64),
     ) -> Option<bool> {
         let (focused, generation) = focus_now();
-        if !focused || generation != self.focus_loss_observed {
+        if generation != self.focus_loss_observed {
             let previous = *update;
             let lost = InputObservation {
                 focused: false,
@@ -170,7 +170,7 @@ impl EguiCaptureAdapter {
             }
             return device_write(update.effects.game_device, false);
         }
-        device_write(update.effects.game_device, observation.focused)
+        device_write(update.effects.game_device, focused)
     }
 
     fn input_owner_sample(&self, input: DebugUiInput) -> DebugUiInput {
@@ -629,6 +629,16 @@ impl EguiState {
     pub fn wndproc(&mut self, _hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) {
         self.apply_pending_raw_loss();
         if !self.is_input_captured() {
+            return;
+        }
+        // The window messages carry only the desktop sources: the keyboard, the text, and (flat)
+        // the mouse. The virtual cursor comes from the controllers, so the panel stays usable in
+        // the headset while the desktop window is in the background.
+        if !self
+            .capture
+            .snapshot
+            .is_some_and(|snapshot| snapshot.focused)
+        {
             return;
         }
         // In VR-panel mode the pointer is re-sourced from the panel's virtual cursor (issue #24), so

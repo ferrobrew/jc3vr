@@ -8,6 +8,7 @@ use std::{
     },
 };
 
+use jc3gi::graphics_engine::graphics_engine::get_graphics_params;
 use parking_lot::Mutex;
 use windows::{
     Win32::{
@@ -110,13 +111,21 @@ impl DesktopInputEvidence {
 /// Sample once before the capture policy, including while editing disables game-device polling.
 /// The native calls use the window thread's keyboard state and the asynchronous held-state bit.
 pub(crate) fn desktop_input_observation() -> DesktopInputObservation {
-    let (window, revision) = {
+    let (tracked, window, revision) = {
         let state = DESKTOP_INPUT.lock();
-        (state.window, state.revision)
+        // A window message records the handle, but a focused, idle window may never send one. The
+        // engine's graphics params always name it, so the first sample reads the real foreground.
+        (
+            state.window,
+            state.window.or_else(engine_window),
+            state.revision,
+        )
     };
     let native = native_snapshot(window);
     let mut state = DESKTOP_INPUT.lock();
-    if state.window != window || state.revision != revision {
+    // A message that recorded another window (or another revision) between the two locks wins;
+    // the fallback handle is not tracked state and must not read as a concurrent change.
+    if state.window != tracked || state.revision != revision {
         return DesktopInputObservation::Unavailable(DesktopInputUnavailable::ConcurrentActivity);
     }
     state.sample(native)
@@ -148,6 +157,13 @@ pub(super) fn reset_desktop_input() {
 }
 
 static DESKTOP_INPUT: Mutex<DesktopInputTracker> = Mutex::new(DesktopInputTracker::new());
+
+/// The game window's handle, as the graphics engine holds it.
+fn engine_window() -> Option<usize> {
+    // SAFETY: the graphics params are read on their game/window thread and are not dereferenced.
+    let hwnd = unsafe { get_graphics_params().m_Hwnd };
+    (!hwnd.0.is_null()).then_some(hwnd.0 as usize)
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 struct Keys([u64; 4]);

@@ -286,7 +286,6 @@ fn capture_header(ui: &mut egui::Ui) {
         Some(OwnershipBlocker::Editing) => {
             "Editing input: effective. The game is not automatically paused."
         }
-        Some(OwnershipBlocker::Unfocused) => "Waiting for game focus.",
         Some(OwnershipBlocker::TrackingRecovery) => "Waiting for tracking/input recovery.",
         Some(OwnershipBlocker::AwaitingNeutral) => {
             "Waiting for all held inputs to return to neutral."

@@ -93,40 +93,38 @@ fn prior_disabled_device_not_enabled() {
 }
 
 #[test]
-fn focus_and_tracking_recovery_require_real_neutral() {
-    for (focused, tracking_ready, blocker) in [
-        (false, true, OwnershipBlocker::Unfocused),
-        (true, false, OwnershipBlocker::TrackingRecovery),
-    ] {
-        let mut policy = CapturePolicy::default();
-        policy.update(Some(PanelRequest::Open), ready(true, true));
-        policy.update(None, ready(true, false));
-        let lost = policy.update(
-            None,
-            InputObservation {
-                focused,
-                tracking_ready,
-                ..ready(false, false)
-            },
-        );
-        assert!(!lost.snapshot.edit_capture.any());
-        assert_eq!(lost.snapshot.blocker, Some(blocker));
-        assert_eq!(lost.effects.game_device, DeviceEffect::SetEnabled(true));
-        assert!(lost.effects.clear_pending_events);
-        let recovered = policy.update(None, ready(false, true));
-        assert!(!recovered.snapshot.edit_capture.any());
-        assert_eq!(
-            recovered.effects.game_device,
-            DeviceEffect::SetEnabled(false)
-        );
-        assert!(
-            policy
-                .update(None, ready(true, false))
-                .snapshot
-                .edit_capture
-                .any()
-        );
-    }
+fn tracking_recovery_requires_real_neutral() {
+    let mut policy = CapturePolicy::default();
+    policy.update(Some(PanelRequest::Open), ready(true, true));
+    policy.update(None, ready(true, false));
+    let lost = policy.update(
+        None,
+        InputObservation {
+            focused: true,
+            tracking_ready: false,
+            ..ready(false, false)
+        },
+    );
+    assert!(!lost.snapshot.edit_capture.any());
+    assert_eq!(
+        lost.snapshot.blocker,
+        Some(OwnershipBlocker::TrackingRecovery)
+    );
+    assert_eq!(lost.effects.game_device, DeviceEffect::SetEnabled(true));
+    assert!(lost.effects.clear_pending_events);
+    let recovered = policy.update(None, ready(false, true));
+    assert!(!recovered.snapshot.edit_capture.any());
+    assert_eq!(
+        recovered.effects.game_device,
+        DeviceEffect::SetEnabled(false)
+    );
+    assert!(
+        policy
+            .update(None, ready(true, false))
+            .snapshot
+            .edit_capture
+            .any()
+    );
 }
 
 #[test]
@@ -292,15 +290,15 @@ fn delayed_restoration_does_not_bank_neutral_before_device_acknowledgement() {
 
 #[test]
 fn recovery_requires_neutral_with_the_device_handoff_complete() {
-    for (focused, tracking_ready) in [(false, true), (true, false)] {
+    {
         let mut policy = CapturePolicy::default();
         policy.update(Some(PanelRequest::Open), ready(true, true));
         policy.update(None, ready(true, false));
         let lost = policy.update(
             None,
             InputObservation {
-                focused,
-                tracking_ready,
+                focused: true,
+                tracking_ready: false,
                 ..ready(true, false)
             },
         );
@@ -418,7 +416,7 @@ fn read_only_filters_pointer_keyboard_text_scroll_and_clipboard_events() {
 }
 
 #[test]
-fn gameplay_does_not_wait_for_desktop_focus_but_editing_does() {
+fn desktop_focus_gates_only_the_window_sources() {
     let unfocused = |neutral, enabled| InputObservation {
         focused: false,
         ..ready(neutral, enabled)
@@ -429,19 +427,22 @@ fn gameplay_does_not_wait_for_desktop_focus_but_editing_does() {
     assert!(gameplay.snapshot.gameplay_effective);
     assert_eq!(gameplay.snapshot.blocker, None);
 
-    let editing = policy.update(Some(PanelRequest::Open), unfocused(true, true));
-    assert_eq!(editing.snapshot.blocker, Some(OwnershipBlocker::Unfocused));
-    assert!(!editing.snapshot.edit_capture.any());
-    assert_eq!(editing.effects.game_device, DeviceEffect::Unchanged);
+    let opening = policy.update(Some(PanelRequest::Open), unfocused(true, true));
+    assert_eq!(opening.effects.game_device, DeviceEffect::SetEnabled(false));
+    // The window is in the background, so the controllers still drive the panel's pointer while
+    // the keyboard and text wait for the desktop sources.
+    let editing = policy.update(Some(PanelRequest::Open), unfocused(true, false));
+    assert_eq!(editing.snapshot.blocker, Some(OwnershipBlocker::Editing));
+    assert!(editing.snapshot.edit_capture.pointer);
+    assert!(editing.snapshot.edit_capture.grip_drag);
+    assert!(editing.snapshot.edit_capture.scroll);
+    assert!(!editing.snapshot.edit_capture.keyboard);
+    assert!(!editing.snapshot.edit_capture.text);
 
-    let mut policy = CapturePolicy::default();
-    policy.update(None, ready(true, true));
-    assert!(
-        policy
-            .update(None, ready(true, true))
-            .snapshot
-            .gameplay_effective
-    );
+    let focused = policy.update(Some(PanelRequest::Open), ready(true, false));
+    assert!(focused.snapshot.edit_capture.keyboard);
+    assert!(focused.snapshot.edit_capture.text);
+
     let tracking_lost = InputObservation {
         tracking_ready: false,
         ..unfocused(true, true)

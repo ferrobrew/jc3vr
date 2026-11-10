@@ -446,7 +446,6 @@ fn blocker_label(blocker: Option<OwnershipBlocker>) -> &'static str {
     match blocker {
         None => "none",
         Some(OwnershipBlocker::Editing) => "editing",
-        Some(OwnershipBlocker::Unfocused) => "unfocused",
         Some(OwnershipBlocker::TrackingRecovery) => "tracking recovery",
         Some(OwnershipBlocker::AwaitingNeutral) => "awaiting neutral input",
         Some(OwnershipBlocker::DeviceCapturePending) => "device capture pending",

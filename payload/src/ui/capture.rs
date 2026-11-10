@@ -32,7 +32,6 @@ pub(crate) struct InputObservation {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum OwnershipBlocker {
     Editing,
-    Unfocused,
     TrackingRecovery,
     AwaitingNeutral,
     DeviceCapturePending,
@@ -80,7 +79,27 @@ impl OwnershipSnapshot {
             input.events.clear();
             input.modifiers = egui::Modifiers::default();
             input.focused = false;
+            return;
         }
+        if !self.edit_capture.keyboard {
+            // The keyboard and text wait for the desktop window's focus; the panel's pointer is
+            // the controllers', which the headset's own focus carries.
+            input.events.retain(|event| {
+                matches!(
+                    event,
+                    egui::Event::PointerMoved(_)
+                        | egui::Event::MouseMoved(_)
+                        | egui::Event::PointerButton { .. }
+                        | egui::Event::PointerGone
+                        | egui::Event::Zoom(_)
+                        | egui::Event::Rotate(_)
+                        | egui::Event::Touch { .. }
+                        | egui::Event::MouseWheel { .. }
+                )
+            });
+            input.modifiers = egui::Modifiers::default();
+        }
+        input.focused = self.focused;
     }
 }
 
@@ -113,6 +132,7 @@ pub(crate) struct CapturePolicy {
     prior_game_device_enabled: Option<bool>,
     restore_pending: Option<bool>,
     gates_were_ready: bool,
+    keyboard_was_ready: bool,
 }
 
 impl CapturePolicy {
@@ -136,11 +156,11 @@ impl CapturePolicy {
         } else {
             InputOwner::Gameplay
         };
-        // Desktop focus gates only the editing owner, which captures the desktop keyboard and
-        // mouse. Gameplay in the headset follows the OpenXR session, whose focus the tracking gate
-        // and the controller frame carry, so a desktop window without focus does not stop it.
-        let focus_ready = input.focused || requested_owner == InputOwner::Gameplay;
-        let gates_ready = focus_ready && input.tracking_ready;
+        // The desktop window's focus gates only the sources it carries: the keyboard and text. The
+        // pointer, grip drag, and scroll are the panel's virtual cursor and the controller's, and
+        // the headset's OpenXR session carries its own focus, so losing the window's foreground
+        // does not take the in-world panel away.
+        let gates_ready = input.tracking_ready;
         let lost_gate = self.gates_were_ready && !gates_ready;
         self.gates_were_ready = gates_ready;
         let wants_device_capture = requested_owner == InputOwner::Editing && gates_ready;
@@ -198,13 +218,14 @@ impl CapturePolicy {
         let edit_capture = EditCapture {
             pointer: can_edit,
             grip_drag: can_edit,
-            keyboard: can_edit,
-            text: can_edit,
+            keyboard: can_edit && input.focused,
+            text: can_edit && input.focused,
             scroll: can_edit,
         };
-        let blocker = if !focus_ready {
-            Some(OwnershipBlocker::Unfocused)
-        } else if !input.tracking_ready {
+        // A held key must not stay down when the desktop window loses the keyboard.
+        let keyboard_lost = self.keyboard_was_ready && !edit_capture.keyboard;
+        self.keyboard_was_ready = edit_capture.keyboard;
+        let blocker = if !input.tracking_ready {
             Some(OwnershipBlocker::TrackingRecovery)
         } else if requested_owner == InputOwner::Editing && !device_ready {
             Some(OwnershipBlocker::DeviceCapturePending)
@@ -236,7 +257,7 @@ impl CapturePolicy {
             },
             effects: CaptureEffects {
                 game_device,
-                clear_pending_events: transitioned || lost_gate || lost_ownership,
+                clear_pending_events: transitioned || lost_gate || lost_ownership || keyboard_lost,
                 cancel_pointer_and_drag: transitioned || lost_gate || lost_ownership,
                 consume_until_neutral: awaiting_neutral,
             },
