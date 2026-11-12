@@ -46,13 +46,14 @@ impl LoadKind {
         }
     }
 
-    /// Whether the load can be ejected: a magazine or a cylinder's spent rounds.
+    /// Whether the load can be ejected: a magazine. A revolver has no magazine prop to drop, and a
+    /// speedloader loads its cylinder over the rounds in it.
     pub const fn ejects(self) -> bool {
-        matches!(self, LoadKind::Magazine | LoadKind::Cylinder)
+        matches!(self, LoadKind::Magazine)
     }
 
-    /// Whether the well of a gun of this kind, its magazine `out` or not, is occupied: a magazine or
-    /// a cylinder still in the gun, which has to leave before a fresh one can seat.
+    /// Whether the well of a gun of this kind, its magazine `out` or not, is occupied: a magazine
+    /// still in the gun, which has to leave before a fresh one can seat.
     pub const fn well_occupied(self, out: bool) -> bool {
         self.ejects() && !out
     }
@@ -1152,12 +1153,11 @@ mod tests {
     }
 
     #[test]
-    fn only_a_magazine_or_a_cylinder_still_in_occupies_the_well() {
-        for load in [LoadKind::Magazine, LoadKind::Cylinder] {
-            assert!(load.well_occupied(false), "{load:?}");
-            assert!(!load.well_occupied(true), "{load:?}");
-        }
-        for load in [LoadKind::Shell, LoadKind::Rocket] {
+    fn only_a_magazine_still_in_occupies_the_well() {
+        assert!(LoadKind::Magazine.well_occupied(false));
+        assert!(!LoadKind::Magazine.well_occupied(true));
+        // A speedloader loads a revolver's cylinder over the rounds in it.
+        for load in [LoadKind::Shell, LoadKind::Rocket, LoadKind::Cylinder] {
             assert!(!load.well_occupied(false), "{load:?}");
             assert!(!load.well_occupied(true), "{load:?}");
         }

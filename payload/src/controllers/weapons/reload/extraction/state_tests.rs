@@ -66,6 +66,7 @@ fn state() -> State {
         status: ReloadStatus::default(),
         tick: None,
         pouches: [None; 2],
+        speedloaders: [None; 2],
         belt_rings: [None; 2],
         stocked_pouch: None,
         pouch_refusal: None,

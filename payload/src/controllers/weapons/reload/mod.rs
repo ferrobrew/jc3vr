@@ -327,6 +327,28 @@ pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
             hand,
         ));
     }
+    // A revolver is pushed onto a speedloader standing on its belt pouch.
+    state.speedloaders = Hand::BOTH.map(|hand| {
+        let (weapon, _) = tick.gun(hand)?;
+        let round = weapon
+            .plan
+            .round
+            .filter(|_| weapon.plan.load == plan::LoadKind::Cylinder && weapon.has_ammo())?;
+        let side = if gun_hands == [true; 2] {
+            hand
+        } else {
+            pouch_side
+        };
+        Some(BeltSpeedloader {
+            pouch: Pose {
+                position: belt_pouches[hand.index()]?,
+                orientation: body?.pelvis,
+            },
+            side,
+            weapon: weapon.address,
+            round,
+        })
+    });
     state.tick = Some(tick);
     state.pouches = belt_pouches;
     state.stocked_pouch = pouch
@@ -464,6 +486,27 @@ pub(super) fn belt_marks() -> Vec<Candidate> {
 /// The magazine pouch on this tick, while it has a round to give.
 pub(super) fn stocked_pouch() -> Option<StockedPouch> {
     STATE.lock().stocked_pouch
+}
+
+/// A speedloader on the belt pouch a revolver is pushed onto: the pouch's centre and the
+/// orientation of the girdle it rides, in the cockpit frame, the side of the body it is on, the
+/// revolver's weapon (a `WeaponBase` address), and the stand-in round it is drawn with.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct BeltSpeedloader {
+    pub pouch: Pose,
+    pub side: Hand,
+    pub weapon: usize,
+    pub round: plan::RoundModel,
+}
+
+/// Each gun hand's speedloader on its belt pouch this tick, by [`Hand::index`]: a revolver
+/// reloaded by hand with rounds to load, whose pouch is placed.
+pub(crate) fn belt_speedloaders() -> [Option<BeltSpeedloader>; 2] {
+    let state = STATE.lock();
+    if state.tick.is_none() {
+        return [None; 2];
+    }
+    state.speedloaders
 }
 
 /// Why the magazine pouch is not a grab target this tick, for the grip press's log; `None` while
@@ -922,8 +965,10 @@ impl WeaponTick {
     }
 
     /// Whether the gun's well holds a round that has to leave before a fresh one seats: a magazine
-    /// or a cylinder still in, but for a one-round launcher's spent round (the UPU-210's empty
-    /// cartridge, the Hydra's empty pod), which the fresh one replaces as it seats.
+    /// still in, but for a one-round launcher's spent round (the UPU-210's empty cartridge, the
+    /// Hydra's empty pod), which the fresh one replaces as it seats. A revolver's cylinder never
+    /// does: a speedloader pushed onto it loads it whole, and the game's reload returns the rounds
+    /// it held to the reserve.
     fn occupied(&self) -> bool {
         self.plan.load.well_occupied(self.reading.out)
             && !(self.plan.spent_round_replaced && self.reading.magazine_rounds() <= 0)
@@ -977,6 +1022,8 @@ struct State {
     tick: Option<Tick>,
     /// The belt pouch each gun hand's gun is pushed onto, by [`Hand::index`], cockpit frame.
     pouches: [Option<Vec3>; 2],
+    /// The speedloader on each gun hand's belt pouch, by [`Hand::index`].
+    speedloaders: [Option<BeltSpeedloader>; 2],
     /// The belt pouches marked as ready for a push on the last tick, by gun hand.
     belt_rings: [Option<Vec3>; 2],
     /// The pouch on the tick it has a round to give.
@@ -1038,6 +1085,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     },
     tick: None,
     pouches: [None; 2],
+    speedloaders: [None; 2],
     belt_rings: [None; 2],
     stocked_pouch: None,
     pouch_refusal: None,

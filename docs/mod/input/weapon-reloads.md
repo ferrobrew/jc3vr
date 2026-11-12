@@ -20,7 +20,7 @@ The game reloads by magazine (the whole magazine at once) unless noted. The game
 |---|---|---|---|---|---|
 | `w011` Pozhar 98 | 16 | pistols clip; magazine prop | magazine in the grip, slide | eject, take a magazine from the pouch, push it up into the grip base; or push the gun's grip onto the pouch | dual-wielded, each pistol has its own half magazine and its own pouch |
 | `w012` Spectre Mark V | 14 | pistols clip; magazine prop | magazine in the grip, slide | as the Pozhar | as the Pozhar |
-| `w014` Little General | 12 | revolver clip, the gun's own act opens it; no prop | cylinder | eject (nothing drops), push a cylinder into the rear face of the cylinder | the golden gun; its class is pistol, the table makes it a cylinder; the hand draws six of the gun's ejected pistol casings in a ring as a stand-in |
+| `w014` Little General | 12 | revolver clip, the gun's own act opens it; no prop | cylinder | push the cylinder down onto the speedloader on the belt pouch, or push a speedloader from the pouch into the rear face of the cylinder; no eject | the golden gun; its class is pistol, the table makes it a cylinder; the belt and the hand draw six of the gun's ejected pistol casings in a ring as a stand-in speedloader |
 | `w021` Peacekeeper | 12 | as the Little General | cylinder | as the Little General | as the Little General |
 | `w031` Prizrak U4 | 40 | pistols clip; magazine prop | magazine modelled into the body ahead of the grip, charging handle | eject, push a magazine up into the base of the magazine ahead of the grip | the magazine cannot be hidden, so the old one stays drawn |
 | `w032` Wraith 2000 | 60 | revolver clip; magazine prop | magazine modelled into the body ahead of the grip, slanted, charging handle | as the Prizrak, along the slant | as the Prizrak |
@@ -71,7 +71,7 @@ The game has no model for the rounds of the revolvers, the U-Rys 96, and the U-R
 Tick each weapon: draw it, fire it dry, reload it as the table says, and fire again.
 
 1. Pozhar 98, Spectre Mark V: dual-wielded, each pistol on its own pouch, and once single.
-2. Little General, Peacekeeper: eject, push a cylinder into the rear of the cylinder; six casings show in a ring in the hand, mouths first, and go as they seat.
+2. Little General, Peacekeeper: a ring of six casings stands on the belt pouch; push the cylinder down onto it, or take it with the free hand and push it into the rear of the cylinder; no eject. The casings go as they seat, and the rounds the cylinder held go back to the reserve.
 3. Prizrak U4, Wraith 2000, CS9: the magazine in the hand lines up with the gun's own as it seats.
 4. U-39, Predator, U-SV 45, Archangel, Final Argument: knock the old magazine out with the fresh one.
 5. CSV, UP-61, Bavarium Splitter: the well behind the grip; the Splitter's well is found at all.

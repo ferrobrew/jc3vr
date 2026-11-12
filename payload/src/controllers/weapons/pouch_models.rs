@@ -3,7 +3,8 @@
 //! player sees on Rico's body what a hand reaching there takes. The magazine a hand takes from the
 //! pouch is drawn in that hand the same way ([`hand_tick`]), and so is a shell or a revolver's
 //! cylinder of rounds, which the game has no model of, with the casing the gun's ejection effect
-//! throws out as a stand-in.
+//! throws out as a stand-in. The belt pouch a revolver is pushed onto draws a speedloader of the
+//! same casings ([`speedloader`]).
 //!
 //! Each model is an instance the payload owns, made from a model the game already holds for the
 //! item's lifetime ([`ModelInstanceManager::CreateInstanceFromModel`]): the grenade weapon's
@@ -59,6 +60,7 @@ use crate::{
             pouch_models::{
                 attachments::{RenderSample, Sample, SampleId, placement},
                 owned::{OwnedModel, magazine_source, without_magazine_prop},
+                speedloader::Speedloaders,
             },
             reload::{
                 self,
@@ -71,6 +73,7 @@ use crate::{
 
 pub(crate) mod attachments;
 pub(crate) mod owned;
+mod speedloader;
 
 /// What a pouch holds, drawn on it.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -170,6 +173,8 @@ pub struct PouchModelsStatus {
     pub hand: bool,
     /// Whether the round in the hand is the stand-in round model, and how many are drawn.
     pub hand_rounds: usize,
+    /// How many rounds each gun hand's speedloader on its belt pouch shows, by [`Hand::index`].
+    pub speedloaders: [usize; 2],
     /// Instances created since the payload loaded.
     pub created: u64,
     /// Render frames that drew at least one model.
@@ -317,6 +322,16 @@ pub(crate) unsafe fn input_tick(
         attachments.attachments.push(attachment);
     }
     state.attachments = Some(attachments);
+    let character = Mat4::from(owner.m_WorldMatrixT1);
+    // SAFETY: the game thread before the world update; the reload names the local player's
+    // weapons it reloads this tick.
+    let created = unsafe {
+        state
+            .speedloaders
+            .input_tick(reload::belt_speedloaders(), &frames, character)
+    };
+    state.status.created += created;
+    state.status.speedloaders = state.speedloaders.shown();
 }
 
 /// Draw the round `request` asks for in the hand holding a round from its pouch, or with `None`,
@@ -467,6 +482,8 @@ pub(crate) unsafe fn render_frame(dtf: f32) {
         }
         drew = true;
     }
+    // SAFETY: the game thread, outside the world update.
+    drew |= unsafe { state.speedloaders.render_frame(character, dtf) };
     // The round in the hand rides the hand as it is drawn, where the reload draws its round, each
     // of a group at its own place round the group's axis.
     if let Some(weapon) = state.hand[0].weapon().filter(|_| state.hand[0].visible())
@@ -583,6 +600,8 @@ struct State {
     without_prop: BTreeSet<u32>,
     /// The stand-in round models, by name hash, already logged as not in the model cache.
     uncached_rounds: BTreeSet<u32>,
+    /// The speedloaders on the belt pouches revolvers are pushed onto.
+    speedloaders: Speedloaders,
     status: PouchModelsStatus,
     attachments: Option<Sample>,
     owner: Option<usize>,
@@ -600,7 +619,9 @@ impl State {
             unsafe { slot.release() };
         }
         unsafe { self.release_hand() };
+        unsafe { self.speedloaders.release() };
         self.status.shown = [false; 3];
+        self.status.speedloaders = [0; 2];
         self.attachments = None;
         self.owner = None;
         self.epoch = self.epoch.wrapping_add(1);
@@ -703,10 +724,12 @@ static STATE: Mutex<State> = Mutex::new(State {
     hand_sequence: 0,
     without_prop: BTreeSet::new(),
     uncached_rounds: BTreeSet::new(),
+    speedloaders: Speedloaders::EMPTY,
     status: PouchModelsStatus {
         shown: [false; 3],
         hand: false,
         hand_rounds: 0,
+        speedloaders: [0; 2],
         created: 0,
         drawn: 0,
     },

@@ -90,6 +90,7 @@ pub(super) fn state(stage: InsertStage) -> State {
         status,
         tick: None,
         pouches: [None; 2],
+        speedloaders: [None; 2],
         belt_rings: [None; 2],
         stocked_pouch: None,
         pouch_refusal: None,
@@ -488,7 +489,8 @@ fn full_unlimited_magazines_suppress_pouch_takes_without_blocking_world_magazine
         weapon.reading.chambers = 1;
         weapon.reserve = 0;
         assert!(!state.can_take_from_pouch(&weapon));
-        assert!(state.can_take(&weapon));
+        // A full cylinder takes no speedloader; a magazine waits for the old one to leave.
+        assert_eq!(state.can_take(&weapon), load == LoadKind::Magazine);
 
         weapon.reading.out = true;
         assert!(state.can_take_from_pouch(&weapon));
@@ -499,10 +501,11 @@ fn full_unlimited_magazines_suppress_pouch_takes_without_blocking_world_magazine
         weapon.reading.unlimited = false;
         weapon.reading.magazine += 1;
         weapon.reserve = 1;
-        assert!(state.can_take_from_pouch(&weapon));
+        assert_eq!(state.can_take_from_pouch(&weapon), load == LoadKind::Magazine);
         weapon.reserve = 0;
         assert!(!state.can_take_from_pouch(&weapon));
-        assert!(state.can_take(&weapon));
+        // A full cylinder takes no speedloader; a magazine waits for the old one to leave.
+        assert_eq!(state.can_take(&weapon), load == LoadKind::Magazine);
     }
 }
 

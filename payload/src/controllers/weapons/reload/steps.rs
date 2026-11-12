@@ -877,16 +877,14 @@ impl State {
         }
     }
 
-    /// Whether `weapon`'s gun in `gun_hand` can take a round from the hand now: a magazine or a
-    /// cylinder at any time, held until the one still in leaves ([`State::knock`]), and a shell, a
-    /// rocket, or a one-round launcher's round while it has space or its round is out.
+    /// Whether `weapon`'s gun in `gun_hand` can take a round from the hand now: a magazine at any
+    /// time, held until the one still in leaves ([`State::knock`]), and a shell, a rocket, a
+    /// revolver's cylinder of rounds, or a one-round launcher's round while it has space or its
+    /// round is out.
     pub(super) fn can_take(&self, weapon: &WeaponTick) -> bool {
         match weapon.plan.load {
-            LoadKind::Magazine if weapon.plan.spent_round_replaced => {
-                weapon.reading.out || weapon.reading.has_space()
-            }
-            LoadKind::Magazine | LoadKind::Cylinder => true,
-            LoadKind::Shell | LoadKind::Rocket => weapon.reading.out || weapon.reading.has_space(),
+            LoadKind::Magazine if !weapon.plan.spent_round_replaced => true,
+            _ => weapon.reading.out || weapon.reading.has_space(),
         }
     }
 
@@ -959,6 +957,7 @@ impl State {
         guide::clear();
         self.tick = None;
         self.pouches = [None; 2];
+        self.speedloaders = [None; 2];
         self.belt_rings = [None; 2];
         self.stocked_pouch = None;
         self.pouch_refusal = None;
@@ -1019,8 +1018,6 @@ pub(super) fn ready_after_seat(plan: &ReloadPlan, chamber: Chamber) -> bool {
     !chambering(plan) || chamber != Chamber::Empty
 }
 
-/// Play the magazine-in sound where a round seated in gun `gun` of the weapon at `weapon`.
-///
 /// Log a hand's gun's magazine going out or in, or its count or reserve changing outside a shot,
 /// between the last tick's readout and this one's: a change no reload step logged is the game's.
 fn log_magazine_change(hand: Hand, before: Option<WeaponReadout>, after: Option<WeaponReadout>) {
@@ -1048,6 +1045,8 @@ fn log_magazine_change(hand: Hand, before: Option<WeaponReadout>, after: Option<
     );
 }
 
+/// Play the magazine-in sound where a round seated in gun `gun` of the weapon at `weapon`.
+///
 /// # Safety
 ///
 /// As [`engine::play_seat_sound`].
