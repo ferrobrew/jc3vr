@@ -25,7 +25,9 @@
 //! suppressed so the game does not offer the use prompt; a native start-using is refused while the
 //! runtime holds the gun. A native mounted state the player already entered is stopped and taken
 //! over, keeping the hands that held the native handles on the gun. A sustained pull past the gun's
-//! lag tears it off the mount through the weapon's own detach path.
+//! lag tears it off the mount through the weapon's own detach path, releasing a vehicle's hold on
+//! its gun as the vehicle's explosion does ([`vehicle_hold`]); from a vehicle's gunner seat the
+//! pull first leaves the seat through the game's own exit.
 //!
 //! [`WeaponBase::GetGripPosition`]: jc3gi::equipment::weapon::WeaponBase::GetGripPosition
 
@@ -45,6 +47,7 @@ mod gunner_seat;
 mod mount;
 mod native;
 mod runtime;
+mod vehicle_hold;
 
 pub(super) use mount::{Held, Mount, matches as mount_matches};
 pub(crate) use runtime::{

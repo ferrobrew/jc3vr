@@ -1,10 +1,15 @@
 //! The runtime behind grip-driven mounted weapons: observe mounted weapons, retain the ones the
 //! physical hands grip by their body, holder, or handle, give them a temporary shooter, and tear
-//! them off on a sustained pull. A gun the player mans from a vehicle's gunner seat is left to the
-//! seat's native use, which keeps the player in the seat, and the player steps into an empty
-//! gunner seat by standing behind its gun ([`gunner_seat`]).
+//! them off on a sustained pull, a vehicle's gun included. A gun the player mans from a vehicle's
+//! gunner seat is left to the seat's native use, which keeps the player in the seat, until a pull
+//! on its handles leaves the seat and tears it off; the player steps into an empty gunner seat by
+//! standing behind its gun ([`gunner_seat`]).
 
-use std::{ffi::c_void, num::NonZeroUsize, time::Instant};
+use std::{
+    ffi::c_void,
+    num::NonZeroUsize,
+    time::{Duration, Instant},
+};
 
 use glam::Vec3;
 use jc3gi::{
@@ -32,6 +37,7 @@ use crate::{
                 gunner_seat, handle, mount_matches,
                 native::{self, Motor, Prompt},
                 pivot_and_barrel,
+                vehicle_hold::VehicleHold,
             },
             summary as vehicles_summary,
         },
@@ -118,6 +124,16 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     // In a vehicle's gunner seat the native use is what holds the player in the seat: stopping it
     // would leave the seat, so the seat's gun is aimed by the handles through the native state.
     let seated = unsafe { local.IsAttachedToVehicle() };
+    unsafe { finish_seat_tear(local, desired) };
+    let seat_inputs = SeatTearInputs {
+        handle_holds,
+        hands_world: Hand::BOTH.map(|hand| {
+            active.as_ref().zip(xf.as_ref()).and_then(|(active, xf)| {
+                active.hands[hand.index()].map(|hand| xf.point_to_world(hand.grip.position))
+            })
+        }),
+        dt: inputs.real_dt,
+    };
     for (object, control, weak) in seen {
         let Some(alive) = weak
             .lock()
@@ -160,6 +176,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         });
         let native = unsafe { native_mounted(local, weapon) };
         if native && seated {
+            unsafe { seat_tear(&seat_inputs, weapon, &weak, desired) };
             continue;
         }
         // A native use places both hands on the gun's handles; the virtual handles hold only the
@@ -301,58 +318,21 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             record.tear[i] = Tear::default();
             false
         });
-        if tear && weapon.m_MountedCanBeDetached {
+        // A vehicle's gun comes off as the vehicle's explosion lets it go; any other gun only where
+        // the game lets it be detached.
+        let hold = unsafe { VehicleHold::of(weapon) };
+        let detachable = weapon.m_MountedCanBeDetached || hold.is_some();
+        if tear && detachable && hold.is_none_or(|hold| unsafe { hold.ready() }) {
             let hand = Hand::BOTH
                 .into_iter()
                 .find(|hand| hands[hand.index()])
                 .unwrap();
-            match unsafe { pickup::preflight(&*local, &*weapon, hand, false) } {
-                Ok(admitted) => {
-                    unsafe { record.restore() };
-                    unsafe { armed::release_fire(weapon) };
-                    unsafe { weapon.DetachMountedGun() };
-                    tracing::info!(target: "controllers", "mounted gun: the pull tore the gun off");
-                    if weapon.m_State == WeaponState::E_WS_DROPPED {
-                        let result = unsafe {
-                            pickup::deliver(
-                                &mut *local,
-                                hand,
-                                &mut *weapon,
-                                admitted,
-                                pickup::TakeOptions {
-                                    slide_s: 0.15,
-                                    source: TakeSource::World,
-                                    delivery: Delivery::Local,
-                                },
-                            )
-                        };
-                        if let Err(error) = result {
-                            tracing::warn!(%error, "mounted gun: portable pickup refused after detach");
-                            // A heavy gun cannot enter the table from the dropped state; let the
-                            // game's own use-item pickup take it instead, as a direct pickup does.
-                            button_pickup::grant();
-                            desired.push(Desired {
-                                target: Target {
-                                    map: MapKind::Player,
-                                    action: Action::USE_ITEM,
-                                },
-                                want: Want::Click,
-                            });
-                            tracing::info!(
-                                target: "controllers",
-                                "mounted gun: the detached gun is picked up through the use-item action"
-                            );
-                        }
-                    }
-                    record.input = None;
-                    record.takeover = None;
-                    next.push(record);
-                    continue;
-                }
-                Err(error) => {
-                    tracing::debug!(%error, "mounted gun: tear-off pickup admission refused")
-                }
-            }
+            unsafe { record.restore() };
+            unsafe { tear_off(local, weapon, hand, hold, desired) };
+            record.input = None;
+            record.takeover = None;
+            next.push(record);
+            continue;
         }
         if !weapon.m_RequiresPostSimUpdates {
             weapon.m_RequiresPostSimUpdates = true;
@@ -389,6 +369,234 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     *CONTROLLED.lock() = next;
     SEEN.lock().retain(|record| record.weak.lock().is_some());
 }
+
+/// Tear `weapon` off its mount into `hand`: release its fire, detach it through the weapon's own
+/// path, release the vehicle's hold on it where a vehicle carries it, and take it into the hand,
+/// or, for a gun the table cannot take (a heavy gun from the dropped state), through the game's own
+/// use-item pickup, which carries it in the heavy slot.
+///
+/// # Safety
+/// The game thread, outside the world update; the character and the weapon are live, the weapon
+/// mounted and without a user.
+unsafe fn tear_off(
+    local: &mut Character,
+    weapon: &mut WeaponBase,
+    hand: Hand,
+    hold: Option<VehicleHold>,
+    desired: &mut Vec<Desired>,
+) {
+    let admitted = unsafe { pickup::preflight(&*local, &*weapon, hand, false) };
+    unsafe { armed::release_fire(weapon) };
+    unsafe { weapon.DetachMountedGun() };
+    if let Some(hold) = hold
+        && let Err(error) = unsafe { hold.release(weapon) }
+    {
+        tracing::warn!(
+            target: "controllers",
+            reason = error.label(),
+            "mounted gun: the vehicle's hold on the torn gun was not released"
+        );
+    }
+    tracing::info!(
+        target: "controllers",
+        from_vehicle = hold.is_some(),
+        "mounted gun: the pull tore the gun off"
+    );
+    if weapon.m_State != WeaponState::E_WS_DROPPED {
+        return;
+    }
+    let delivered = admitted
+        .map_err(|error| error.to_string())
+        .and_then(|admitted| {
+            unsafe {
+                pickup::deliver(
+                    local,
+                    hand,
+                    weapon,
+                    admitted,
+                    pickup::TakeOptions {
+                        slide_s: 0.15,
+                        source: TakeSource::World,
+                        delivery: Delivery::Local,
+                    },
+                )
+            }
+            .map_err(|error| error.to_string())
+        });
+    if let Err(error) = delivered {
+        tracing::info!(%error, "mounted gun: the table did not take the torn gun");
+        // A heavy gun cannot enter the table from the dropped state; the game's own use-item
+        // pickup takes it instead, as a direct pickup does.
+        button_pickup::grant();
+        desired.push(Desired {
+            target: Target {
+                map: MapKind::Player,
+                action: Action::USE_ITEM,
+            },
+            want: Want::Click,
+        });
+        tracing::info!(
+            target: "controllers",
+            "mounted gun: the detached gun is picked up through the use-item action"
+        );
+    }
+}
+
+/// A tear from a vehicle's gunner seat in progress: the pull that leaves the seat, and once the
+/// player has left it, the gun to tear off.
+struct SeatTear {
+    weapon: usize,
+    weak: Weak,
+    pulls: [Tear; 2],
+    /// When the exit was asked for, the hand that tore, and whether the exit was asked again.
+    exit: Option<(Instant, Hand, bool)>,
+}
+
+/// Step the tear of the gun the player mans from a vehicle's gunner seat: a sustained pull on its
+/// handles, the same as off the seat, asks for the game's own exit from the seat.
+///
+/// # Safety
+/// The game thread; `weapon` is the live gun `local` mans natively from a vehicle seat.
+unsafe fn seat_tear(
+    inputs: &SeatTearInputs,
+    weapon: &WeaponBase,
+    weak: &Weak,
+    desired: &mut Vec<Desired>,
+) {
+    if unsafe { VehicleHold::of(weapon) }.is_none() {
+        return;
+    }
+    let address = weapon as *const WeaponBase as usize;
+    let mut slot = SEAT_TEAR.lock();
+    if slot.as_ref().is_none_or(|tear| tear.weapon != address) {
+        *slot = Some(SeatTear {
+            weapon: address,
+            weak: weak.clone(),
+            pulls: [Tear::default(); 2],
+            exit: None,
+        });
+    }
+    let Some(tear) = slot.as_mut() else {
+        return;
+    };
+    if tear.exit.is_some() {
+        return;
+    }
+    let Some((pivot, _)) = (unsafe { pivot_and_barrel(weapon) }) else {
+        return;
+    };
+    let torn = Hand::BOTH.into_iter().find(|&hand| {
+        let i = hand.index();
+        let pull = inputs.handle_holds[i]
+            .then(|| unsafe { handle(weapon, hand) })
+            .flatten()
+            .zip(inputs.hands_world[i])
+            .map(|(handle, hand)| hand.distance(pivot) - handle.distance(pivot))
+            .filter(|lag| lag.is_finite());
+        match pull {
+            Some(lag) => tear.pulls[i].step_pull(inputs.dt, lag.max(0.0), 1.0),
+            None => {
+                tear.pulls[i] = Tear::default();
+                false
+            }
+        }
+    });
+    if let Some(hand) = torn {
+        tear.exit = Some((Instant::now(), hand, false));
+        desired.push(exit_click());
+        tracing::info!(
+            target: "controllers",
+            hand = hand.label(),
+            "mounted gun: the pull tore at the gun from its gunner seat; leaving the seat"
+        );
+    }
+}
+
+/// Finish a tear from the gunner seat once the player has left the seat: tear the gun off into the
+/// hand that pulled. The exit is asked again once if the player is still seated after
+/// [`SEAT_EXIT_RETRY`], and the tear is given up after [`SEAT_EXIT_TIMEOUT`].
+///
+/// # Safety
+/// The game thread, outside the world update; `local` is the live local player.
+unsafe fn finish_seat_tear(local: &mut Character, desired: &mut Vec<Desired>) {
+    let mut slot = SEAT_TEAR.lock();
+    let seated = unsafe { local.IsAttachedToVehicle() || local.IsInMountedGunState() };
+    let Some((asked, hand, retried)) = slot.as_ref().and_then(|tear| tear.exit) else {
+        // A pull that has not torn yet ends with the seat.
+        if !seated {
+            *slot = None;
+        }
+        return;
+    };
+    if seated {
+        if asked.elapsed() >= SEAT_EXIT_TIMEOUT {
+            *slot = None;
+            tracing::info!(
+                target: "controllers",
+                "mounted gun: the player did not leave the gunner seat; the tear is given up"
+            );
+        } else if !retried && asked.elapsed() >= SEAT_EXIT_RETRY {
+            if let Some(tear) = slot.as_mut() {
+                tear.exit = Some((asked, hand, true));
+            }
+            desired.push(exit_click());
+        }
+        return;
+    }
+    let Some(tear) = slot.take() else {
+        return;
+    };
+    drop(slot);
+    let Some(alive) = tear
+        .weak
+        .lock()
+        .filter(|alive| weapon_at(alive.object()) as usize == tear.weapon)
+    else {
+        return;
+    };
+    let weapon = unsafe { &mut *weapon_at(alive.object()) };
+    if weapon.m_State != WeaponState::E_WS_MOUNTED || !weapon.m_User[0].is_null() {
+        tracing::info!(
+            target: "controllers",
+            "mounted gun: the gun left the mount or has a user after the seat exit; no tear"
+        );
+        return;
+    }
+    let Some(hold) = (unsafe { VehicleHold::of(weapon) }) else {
+        return;
+    };
+    if !unsafe { hold.ready() } {
+        // Try again next tick, once the vehicle is out of its parallel update.
+        *SEAT_TEAR.lock() = Some(tear);
+        return;
+    }
+    unsafe { tear_off(local, weapon, hand, Some(hold), desired) };
+}
+
+/// What the seat's tear reads this tick.
+struct SeatTearInputs {
+    handle_holds: [bool; 2],
+    hands_world: [Option<Vec3>; 2],
+    dt: f32,
+}
+
+/// A click of the game's own vehicle exit.
+fn exit_click() -> Desired {
+    Desired {
+        target: Target {
+            map: MapKind::Player,
+            action: Action::EXIT_VEHICLE,
+        },
+        want: Want::Click,
+    }
+}
+
+static SEAT_TEAR: Mutex<Option<SeatTear>> = Mutex::new(None);
+
+/// How long after asking for the seat exit it is asked again if the player is still seated.
+const SEAT_EXIT_RETRY: Duration = Duration::from_millis(1500);
+/// How long a tear from the seat waits for the player to leave it.
+const SEAT_EXIT_TIMEOUT: Duration = Duration::from_secs(4);
 
 /// Release every retained gun, for a paused game, a mode change, or a shutdown.
 pub(crate) unsafe fn stand_down() {

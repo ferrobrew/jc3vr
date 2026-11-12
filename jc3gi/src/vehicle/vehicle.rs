@@ -7,7 +7,7 @@ pub struct AirPlane {
 }
 fn _AirPlane_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x53A8], AirPlane>([0u8; 0x53A8]);
+        ::std::mem::transmute::<[u8; 0x54F0], AirPlane>([0u8; 0x54F0]);
     }
     unreachable!()
 }
@@ -493,7 +493,25 @@ pub struct Vehicle {
     /// The world-space point the vehicle's weapons aim at, written by
     /// [`SetAimTargetPosition`](crate::vehicle::vehicle::Vehicle::SetAimTargetPosition).
     pub m_AimingTargetPosition: crate::types::math::Vector3,
-    _field_4c40: [u8; 140],
+    _field_4c40: [u8; 16],
+    /// The vehicle's built-in weapons, which aim from
+    /// [`m_AimingTargetPosition`](crate::vehicle::vehicle::Vehicle::m_AimingTargetPosition).
+    /// [`UpdatePostParts_WeaponsAttachment_Parallel`](crate::vehicle::vehicle::Vehicle::UpdatePostParts_WeaponsAttachment_Parallel)
+    /// places each on the vehicle every update.
+    pub m_BuiltInWeapons: crate::types::std_vector::Vector<
+        crate::types::shared_ptr::SharedPtr<crate::equipment::weapon::WeaponBase>,
+    >,
+    /// The mounted weapons the vehicle carries, such as a turret's machine gun, each a strong
+    /// reference whose weapon has the vehicle as its holder. A gunner seat's user mans one of them.
+    /// [`UpdatePostParts_WeaponsAttachment_Parallel`](crate::vehicle::vehicle::Vehicle::UpdatePostParts_WeaponsAttachment_Parallel)
+    /// places every non-null entry on its mount part each update. When the vehicle explodes, it
+    /// drops each through the weapon's drop virtual
+    /// ([`WeaponBase::OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)) and then clears the entry,
+    /// releasing its reference, so the weapon is no longer placed and falls free.
+    pub m_MountedWeapon: crate::types::std_vector::Vector<
+        crate::types::shared_ptr::SharedPtr<crate::equipment::weapon::WeaponBase>,
+    >,
+    _field_4c90: [u8; 60],
     /// The nitrous input, `0..=1`: a plane's input reader raises it to the thrust input while that
     /// is above [`AirPlane::NITROUS_THRUST_THRESHOLD`](crate::vehicle::vehicle::AirPlane::NITROUS_THRUST_THRESHOLD).
     pub m_NitrousInput: f32,
@@ -511,11 +529,16 @@ pub struct Vehicle {
     /// The hash of the vehicle's type name (`HashString` of names such as
     /// `v1706_boat_na_rocketboat`), compared by [`IsRocketBoat`](crate::vehicle::vehicle::Vehicle::IsRocketBoat).
     pub m_VehicleTypeNameHash: u32,
-    _field_53a4: [u8; 4],
+    _field_53a4: [u8; 324],
+    /// Positive while the vehicle runs a parallel update phase. Calls that change the vehicle's
+    /// state, such as the explosion, run at once only while it is zero or below, and are queued
+    /// for later otherwise.
+    pub m_InParallelUpdatePhaseCounter: i32,
+    _field_54ec: [u8; 4],
 }
 fn _Vehicle_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x53A8], Vehicle>([0u8; 0x53A8]);
+        ::std::mem::transmute::<[u8; 0x54F0], Vehicle>([0u8; 0x54F0]);
     }
     unreachable!()
 }
@@ -671,6 +694,24 @@ impl Vehicle {
                 p2: f32,
             ) = ::std::mem::transmute(Self::TeleportVehicle_ADDRESS);
             f(self as *mut Self as _, transform, p2)
+        }
+    }
+    pub const UpdatePostParts_WeaponsAttachment_Parallel_ADDRESS: usize = 0x140F92FD0;
+    /// Places each of the vehicle's weapons on it: calls each built-in weapon's
+    /// attachment-transform virtual, and each non-null entry of
+    /// [`m_MountedWeapon`](crate::vehicle::vehicle::Vehicle::m_MountedWeapon)'s, every update after the parts move.
+    pub unsafe fn UpdatePostParts_WeaponsAttachment_Parallel(
+        &mut self,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(
+                Self::UpdatePostParts_WeaponsAttachment_Parallel_ADDRESS,
+            );
+            f(self as *mut Self as _, context)
         }
     }
     pub const GetWeaponTurretCurrentYawAngle_ADDRESS: usize = 0x140F90FC0;
