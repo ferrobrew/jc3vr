@@ -749,11 +749,10 @@ unsafe fn tick_with(
                     object: held.object,
                     body: held.body,
                     palm: holder.grip.palm(body.pose),
-                    mass_kg: held.mass_kg / assembly.max(1) as f32,
+                    mass_kg: joined_mass_kg(&held, body.mass_kg, hands, assembly),
                     keep_out: keep_outs[k],
                     shared,
                     hand_force_n: game_tuning.hand_force_n,
-                    ragdoll: held.kind == HeldKind::Ragdoll,
                 });
                 let (load, twist) = joints.loads[k];
                 outcome.reports[k] = Some(HeldReport {
@@ -1076,6 +1075,27 @@ pub(super) fn held_mass(kind: &TargetKind, bone_kg: f32) -> f32 {
             target.mass_kg.max(bone_kg)
         }
         _ => bone_kg,
+    }
+}
+
+/// The mass one hand's joint carries of `held`, kilograms, with `hands` hands on its body and
+/// `assembly` on the whole assembly: the assembly's mass shared between its hands, except for a
+/// character's ragdoll, whose joint carries only the bone it holds (`bone_kg`, shared between the
+/// hands on that bone). The rest of the ragdoll hangs from the bone by its own constraints, which
+/// pass its weight and inertia to the joint over the physics step; a drive that asked for the
+/// whole body's momentum and weight through the bone alone would overshoot it many times over each
+/// step and fling it.
+pub(super) fn joined_mass_kg(
+    held: &Held,
+    bone_kg: Option<f32>,
+    hands: usize,
+    assembly: usize,
+) -> f32 {
+    if held.kind == HeldKind::Ragdoll {
+        let bone_kg = bone_kg.filter(|m| m.is_finite() && *m > 0.0).unwrap_or(0.0);
+        bone_kg / hands.max(1) as f32
+    } else {
+        held.mass_kg / assembly.max(1) as f32
     }
 }
 

@@ -393,6 +393,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn a_joined_drive_sized_for_the_body_it_moves_settles_and_one_sized_for_more_rings() {
+        // A hand of 3 kg rigidly joined to a 6 kg bone, 0.2 m short of its goal, without gravity.
+        let run = |assembly_kg: f32| {
+            let tuning = DriveTuning {
+                mass_kg: assembly_kg,
+                max_force_n: 1.0e6,
+                max_speed_mps: 100.0,
+                ..tuning()
+            };
+            let load = JoinedLoad {
+                hand_mass_kg: 3.0,
+                gravity: Vec3::ZERO,
+            };
+            let goal = Goal {
+                position: Vec3::X * 0.2,
+                orientation: Quat::IDENTITY,
+            };
+            let mut position = Vec3::ZERO;
+            let mut velocity = Vec3::ZERO;
+            for _ in 0..10 {
+                let body = BodyMotion {
+                    linear: velocity,
+                    ..at_rest(position)
+                };
+                let driven = drive_joined(&body, &goal, Vec3::ZERO, &tuning, &load, STEP);
+                // The joint shares the hand's momentum with the bone.
+                velocity = (driven.linear * 3.0 + velocity * 6.0) / 9.0;
+                position += velocity * STEP;
+            }
+            position.distance(goal.position)
+        };
+        assert!(run(9.0) < 1e-3);
+        // Sized for a whole ragdoll hanging from the bone, each step overshoots more than the last.
+        assert!(run(103.0) > 1.0);
+    }
+
     fn goal(position: Vec3) -> Goal {
         Goal {
             position,

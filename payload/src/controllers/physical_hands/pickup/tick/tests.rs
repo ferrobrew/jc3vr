@@ -385,6 +385,27 @@ fn a_ragdolls_body_is_held_as_the_whole_ragdolls_weight() {
     assert_eq!(held_mass(&TargetKind::Prop { mass_kg: 6.0 }, 6.0), 6.0);
 }
 
+#[test]
+fn a_ragdolls_joint_carries_the_bone_it_holds_and_the_body_hangs_from_it() {
+    let ragdoll = Held {
+        mass_kg: 100.0,
+        ..held(true, HeldKind::Ragdoll)
+    };
+    assert_eq!(joined_mass_kg(&ragdoll, Some(6.0), 1, 1), 6.0);
+    // Two hands on the same bone share it; a hand on another bone of the body does not.
+    assert_eq!(joined_mass_kg(&ragdoll, Some(6.0), 2, 2), 3.0);
+    assert_eq!(joined_mass_kg(&ragdoll, Some(6.0), 1, 2), 6.0);
+    // A bone whose mass cannot be read leaves the hand driving its own mass, never the body's.
+    assert_eq!(joined_mass_kg(&ragdoll, None, 1, 1), 0.0);
+    assert_eq!(joined_mass_kg(&ragdoll, Some(f32::NAN), 1, 1), 0.0);
+    // Any other object's mass is shared across its whole assembly.
+    let prop = Held {
+        mass_kg: 30.0,
+        ..held(true, HeldKind::Prop)
+    };
+    assert_eq!(joined_mass_kg(&prop, Some(30.0), 1, 2), 15.0);
+}
+
 /// The ticks a one-handed hold of `held` lasts, up to `limit`, with the hand `lag` from the grab
 /// point and the body moving at `velocity`.
 fn ticks_held(held: Held, lag: Vec3, velocity: Vec3, limit: usize) -> (usize, TickOutcome) {
@@ -460,10 +481,10 @@ fn ragdoll_contacts_share_the_retained_assembly_and_join_when_the_hand_has_a_bod
         assert!(state.held.iter().flatten().all(|held| held.joined));
         assert!(outcome.losses.iter().all(Option::is_none));
         assert!(fake.driven.is_none());
+        // Each joint carries the bone it holds (the fixture's 5 kg), shared by the hands on it.
         for joint in outcome.joints {
             let joint = joint.unwrap();
-            assert!(joint.ragdoll);
-            assert_eq!(joint.mass_kg, 37.5);
+            assert_eq!(joint.mass_kg, if same_body { 2.5 } else { 5.0 });
         }
         state.set_held(1, None);
         assert_eq!(assembly_mass_share(&state.held, &first, 1), 75.0);
@@ -509,8 +530,7 @@ fn a_joined_ragdoll_hold_persists_and_keeps_its_scoped_joint() {
         );
         for joint in outcome.joints {
             let joint = joint.expect("a joined ragdoll hold");
-            assert!(joint.ragdoll);
-            assert_eq!(joint.mass_kg, 50.0);
+            assert_eq!(joint.mass_kg, 2.5);
             assert_eq!(
                 joint.hand_force_n,
                 PICKUP.hand_force_n * RAGDOLL_CARRY_STRENGTH

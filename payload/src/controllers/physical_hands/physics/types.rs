@@ -95,7 +95,8 @@ pub struct HoldTarget {
     /// The desired palm frame on the object, in game space, captured when the joint is created.
     pub palm: Pose,
     /// The carried assembly's mass allocated to this hand, excluding the hand body, kilograms.
-    /// The retained holders divide this mass without counting an assembly twice.
+    /// The retained holders divide this mass without counting an assembly twice. For a ragdoll it
+    /// is the bone the hand holds, from which the rest of the body hangs.
     pub mass_kg: f32,
     /// How far the hand's goal is moved so that the object's centre stays out of the player's
     /// body, world space.
@@ -106,7 +107,4 @@ pub struct HoldTarget {
     /// ([`HoldTuning::carrying`](crate::controllers::physical_hands::hold::HoldTuning::carrying)),
     /// so a joined object is lifted as a carried one is.
     pub hand_force_n: f32,
-    /// Whether the object is a character's ragdoll: the hand pulls the whole body hanging from the
-    /// bone, so its scoped ragdoll pull stands above the hand's own strength.
-    pub ragdoll: bool,
 }
