@@ -85,6 +85,15 @@ impl State {
             .is_some_and(|(p, l)| inputs.dt > 0.0 && p.distance(l) / inputs.dt >= min_speed_mps);
         if let Some(strike) = strike {
             self.queue_knock(tick, gun_hand, strike, reload);
+        } else if let (Some(touch), _) = knock::strike(&zone, previous, tip, inputs.dt, 0.0) {
+            // A meeting too slow to knock, logged so a threshold that turns strikes away shows.
+            tracing::info!(
+                target: "controllers",
+                hand = ?hand,
+                closing_mps = touch.closing_mps,
+                min_speed_mps,
+                "reload: the held magazine met the inserted one too slowly to knock it out"
+            );
         }
         knock::publish(Some(view(fast, self.knocks.knocked_at)));
     }

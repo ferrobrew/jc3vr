@@ -85,12 +85,20 @@ pub(super) fn stops_reload(character: usize, local: usize) -> bool {
         return false;
     }
     let mut shared = SHARED.lock();
-    let Some(p) = shared.fresh() else {
-        return false;
-    };
-    let stop = p.weapons.iter().any(|&w| w != 0);
+    let stop = shared
+        .fresh()
+        .is_some_and(|p| p.weapons.iter().any(|&w| w != 0));
     if stop {
         shared.refused += 1;
+    } else if shared
+        .allowed_logged
+        .is_none_or(|at| at.elapsed() >= ALLOWED_LOG_INTERVAL)
+    {
+        // A start let through means the game's own reload runs for the local player's weapon; the
+        // log is the only trace of it, since its act is not the mod's.
+        shared.allowed_logged = Some(Instant::now());
+        drop(shared);
+        tracing::info!(target: "controllers", "reload: the game's own reload starts for the local player");
     }
     stop
 }
@@ -170,12 +178,16 @@ fn reloads(published: &Published, weapon: usize) -> bool {
 const STALE: Duration = Duration::from_millis(500);
 /// More shots than any weapon fires between two input ticks.
 const MAX_SHOTS: usize = 64;
+/// The shortest interval between two logs of a reload start the stop let through.
+const ALLOWED_LOG_INTERVAL: Duration = Duration::from_secs(1);
 
 struct Shared {
     published: Published,
     at: Option<Instant>,
     shots: Vec<Shot>,
     refused: u64,
+    /// When a reload start the stop let through was last logged.
+    allowed_logged: Option<Instant>,
 }
 
 impl Shared {
@@ -196,6 +208,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     at: None,
     shots: Vec::new(),
     refused: 0,
+    allowed_logged: None,
 });
 
 #[cfg(test)]

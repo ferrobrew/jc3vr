@@ -547,6 +547,18 @@ impl BeltEligibility {
         sequence: u64,
         hand: Hand,
         guns: [Option<GunOwner>; 2],
+    for hand in Hand::BOTH {
+        let (before, after) = (state.status.fire_held[hand.index()], held[hand.index()]);
+        if before != after {
+            tracing::info!(
+                target: "controllers",
+                hand = ?hand,
+                was = before.map_or("nothing", FireHold::label),
+                now = after.map_or("nothing", FireHold::label),
+                "reload: what holds the gun from firing changed"
+            );
+        }
+    }
         ready: [bool; 2],
     ) -> Option<Row> {
         (self.sequence == sequence

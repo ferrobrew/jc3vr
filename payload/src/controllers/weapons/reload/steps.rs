@@ -331,7 +331,15 @@ impl State {
 
         self.insertion_guide(tick, config.weapons.reload.insertion_guide, reload);
         self.last_grips = tick.hands.map(|h| h.map(|h| h.grip.position));
-        self.status.weapons = Hand::BOTH.map(|hand| self.readout(tick, hand, reload));
+        let readouts = Hand::BOTH.map(|hand| self.readout(tick, hand, reload));
+        for hand in Hand::BOTH {
+            log_magazine_change(
+                hand,
+                self.status.weapons[hand.index()],
+                readouts[hand.index()],
+            );
+        }
+        self.status.weapons = readouts;
         self.status.belt = self.belts.map(|b| b.stage);
         Hand::BOTH.map(|hand| self.fire_hold(tick, hand, reload))
     }
@@ -454,6 +462,8 @@ impl State {
             let rounds = Hand::BOTH.map(|hand| self.ejectable_rounds(tick, hand));
             if let Some(hand) = eject::tap_target(rounds, tick.dominant) {
                 targets[hand.index()] = true;
+            } else {
+                self.event("the reload button found no magazine to eject".to_owned());
             }
         }
         for hand in Hand::BOTH {
@@ -567,9 +577,18 @@ impl State {
                 self.status.insert_hands = Some((hand, gun_hand));
                 self.insertion_source = InsertionSource::Pouch;
                 taken = true;
+                if let Some((weapon, _)) = tick.gun(gun_hand) {
+                    self.event(format!(
+                        "{hand:?} took a {} from the pouch for the {gun_hand:?} gun ({} in the gun, {} in reserve)",
+                        weapon.plan.load.label(),
+                        weapon.reading.magazine,
+                        weapon.reserve
+                    ));
+                }
                 haptics::play(hand, Event::PouchTake);
             } else {
                 self.status.counts.empty_pouch += 1;
+                self.event(format!("{hand:?} found the pouch empty"));
                 haptics::play(hand, Event::PouchEmpty);
             }
         }
@@ -677,6 +696,7 @@ impl State {
         }
         match event {
             Some(InsertEvent::Captured) => {
+                self.event(format!("the {gun_hand:?} gun's well caught the round"));
                 haptics::play_hands(Hand::BOTH, Event::WellCatch);
             }
             Some(InsertEvent::Seated) => {
@@ -737,11 +757,19 @@ impl State {
                         self.seated(weapon, gun, gun_hand, Event::MagazineSeat, reload);
                     }
                 } else if !world_magazine && let Some((weapon, _)) = target {
+                    self.event(format!(
+                        "the {gun_hand:?} gun's round went home but loaded nothing ({} in the gun, out {})",
+                        weapon.reading.magazine, weapon.reading.out
+                    ));
                     // SAFETY: the weapon is this tick's verified target; failed seating transfers no round.
                     unsafe { engine::show_magazine_part(weapon.address, weapon.part_shown()) };
                 }
             }
             Some(InsertEvent::Refused) => {
+                self.event(format!(
+                    "the {gun_hand:?} gun's well refused the round: it still holds one ({} m from the mouth)",
+                    self.status.insertion.distance_m.map_or(f32::NAN, |d| (d * 1000.0).round() / 1000.0)
+                ));
                 haptics::play(hand, Event::PouchRefused);
                 if let Some((weapon, gun)) = target {
                     adapter.refuse_sound(weapon.address, gun.index);
@@ -798,10 +826,16 @@ impl State {
             // A magazine still in drops as the fresh one goes in, and the game's reload returns
             // its rounds.
             if weapon.occupied() {
-                self.queue_eject(weapon, gun, hand, DetachKind::Belt, reload.loose.enabled);
+                if !self.queue_eject(weapon, gun, hand, DetachKind::Belt, reload.loose.enabled) {
+                    self.event(format!(
+                        "the {hand:?} gun's belt push could not drop its magazine"
+                    ));
+                }
                 continue;
             }
-            if self.load(weapon, gun) {
+            if !self.load(weapon, gun) {
+                self.event(format!("the {hand:?} gun's belt push loaded nothing"));
+            } else {
                 self.status.counts.belt_reloads += 1;
                 self.event(format!("{hand:?} belt reload"));
                 let record = self.records.get(weapon.key);
@@ -912,7 +946,7 @@ impl State {
     }
 
     pub(super) fn event(&mut self, event: String) {
-        tracing::debug!(target: "controllers", event, "reload");
+        tracing::info!(target: "controllers", "reload: {event}");
         self.status.events.push(event);
         let excess = self.status.events.len().saturating_sub(MAX_EVENTS);
         self.status.events.drain(..excess);
@@ -984,6 +1018,33 @@ pub(super) fn ready_after_seat(plan: &ReloadPlan, chamber: Chamber) -> bool {
 
 /// Play the magazine-in sound where a round seated in gun `gun` of the weapon at `weapon`.
 ///
+/// Log a hand's gun's magazine going out or in, or its count or reserve changing outside a shot,
+/// between the last tick's readout and this one's: a change no reload step logged is the game's.
+fn log_magazine_change(hand: Hand, before: Option<WeaponReadout>, after: Option<WeaponReadout>) {
+    let (Some(before), Some(after)) = (before, after) else {
+        return;
+    };
+    if before.address != after.address
+        || (before.out == after.out
+            && before.reserve == after.reserve
+            && after.magazine <= before.magazine)
+    {
+        return;
+    }
+    tracing::info!(
+        target: "controllers",
+        hand = ?hand,
+        weapon = format_args!("{:#010x}", after.name_hash),
+        magazine = after.magazine,
+        was = before.magazine,
+        out = after.out,
+        was_out = before.out,
+        reserve = after.reserve,
+        was_reserve = before.reserve,
+        "reload: the gun's magazine changed"
+    );
+}
+
 /// # Safety
 ///
 /// As [`engine::play_seat_sound`].
