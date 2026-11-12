@@ -493,6 +493,16 @@ pub(crate) fn drawn_hand(instance: Mat4, dtf: f32, hand: Hand) -> Option<(Mat4, 
     ))
 }
 
+/// The world-space edit the layer draws `hand`'s forearm with, for the draw whose instance matrix is
+/// `instance` at `dtf`: what carries a thing riding the forearm as the tick posed it onto the
+/// forearm as drawn. `None` while the layer re-poses nothing.
+pub(crate) fn drawn_forearm(instance: Mat4, dtf: f32, hand: Hand) -> Option<Mat4> {
+    let edit = body_edit(instance, dtf)?;
+    let model = edit.forearm_transform(hand.index());
+    let world = instance * model * instance.inverse();
+    world.is_finite().then_some(world)
+}
+
 /// The upper body's edit for a draw, from the frame's snapshot; cached for the frame's other draws
 /// with the same instance matrix and fraction.
 fn body_edit(instance: Mat4, dtf: f32) -> Option<BodyEdit> {

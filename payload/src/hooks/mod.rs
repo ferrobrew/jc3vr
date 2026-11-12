@@ -96,7 +96,8 @@ pub(super) fn install() {
             .with_hook_library(crate::pause_menu::hook_library())
             .with_hook_library(crate::controllers::hook_library())
             .with_hook_library(crate::controllers::physical_hands::human_hull::hook_library())
-            .with_hook_library(crate::grapple::physical::hook_library());
+            .with_hook_library(crate::grapple::physical::hook_library())
+            .with_hook_library(crate::grapple::device::hook_library());
         #[cfg(feature = "profiler")]
         let library = library.with_hook_library(profiler::hook_library());
         Ok(library.enable(&mut patcher)?)

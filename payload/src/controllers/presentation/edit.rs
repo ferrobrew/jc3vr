@@ -119,6 +119,10 @@ impl BodyEdit {
         self.edits[Group::arm(hand)[2].index()]
     }
 
+    pub(crate) fn forearm_transform(&self, hand: usize) -> Mat4 {
+        self.edits[Group::arm(hand)[1].index()]
+    }
+
     fn edit_of(&self, bone: usize) -> Option<&Mat4> {
         let group = self.groups.of(bone)?;
         (self.registration.is_some() || self.moved & 1 << group.index() != 0)

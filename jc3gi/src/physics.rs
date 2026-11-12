@@ -2152,6 +2152,29 @@ impl RigidObject {
             f()
         }
     }
+    pub const UpdateRender_ADDRESS: usize = 0x140C26AC0;
+    /// The render-phase `CGameObject::UpdateRender` override. While the object is enabled and has
+    /// a model instance, it marks the instance's dynamic bit by whether the body is active (a
+    /// keyframed or dynamic object without a body counts by its type) and pushes the object's
+    /// transform to the instance ([`ModelInstance::UpdateMatrix`](crate::graphics_engine::model_instance::ModelInstance::UpdateMatrix)):
+    /// its render transform at the context's interpolation fraction, or its current world matrix
+    /// for the first few renders after it is placed. An object that rides a parent (the grappling
+    /// hook's mesh, under the hook's world transform) is drawn from the transforms its simulation
+    /// updates left. `game_object` is the object's `CGameObject` subobject, 8 bytes into the
+    /// object. The disassembler names it `CHavokDestructionObject::UpdateRender`, and gives
+    /// `CRigidObject::UpdateRender` to the destruction object's.
+    pub unsafe fn UpdateRender(
+        game_object: *mut ::std::ffi::c_void,
+        context: *const crate::game::GameObjectRenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *const crate::game::GameObjectRenderContext,
+            ) = ::std::mem::transmute(Self::UpdateRender_ADDRESS);
+            f(game_object, context)
+        }
+    }
 }
 impl RigidObject {
     /// The bit of [`m_Flags`](crate::physics::RigidObject::m_Flags) that has the object inherit its parent's transform,

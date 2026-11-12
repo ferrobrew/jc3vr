@@ -188,16 +188,36 @@ pub struct GameObject {
     /// and a grapple target info its target object
     /// ([`HookTargetInfo::SetupTargetFromGameObject`](crate::equipment::wire_end::HookTargetInfo::SetupTargetFromGameObject)).
     pub m_WeakThis: crate::types::shared_ptr::WeakPtrGameObject,
+    /// A weak reference to the object's parent in its entity hierarchy (`m_Parent`), empty for a
+    /// root. [`GetParentTransform`](crate::game::GameObject::GetParentTransform) locks it for the parent's world
+    /// transform: a child object such as the grappling hook's mesh takes its world transform from
+    /// its parent's.
+    pub m_Parent: crate::types::shared_ptr::WeakPtrGameObject,
 }
 fn _GameObject_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x70], GameObject>([0u8; 0x70]);
+        ::std::mem::transmute::<[u8; 0x80], GameObject>([0u8; 0x80]);
     }
     unreachable!()
 }
 impl GameObject {
     pub fn vftable(&self) -> *const crate::game::GameObjectVftable {
         self.vftable as *const crate::game::GameObjectVftable
+    }
+    pub const GetParentTransform_ADDRESS: usize = 0x1404E6760;
+    /// Locks [`m_Parent`](crate::game::GameObject::m_Parent) and copies the parent's world transform into `out`
+    /// through the parent's [`GetTransform`](crate::game::GameObject::GetTransform); returns false without a parent.
+    pub unsafe fn GetParentTransform(
+        &self,
+        out: *mut crate::types::math::Matrix4,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                out: *mut crate::types::math::Matrix4,
+            ) -> bool = ::std::mem::transmute(Self::GetParentTransform_ADDRESS);
+            f(self as *const Self as _, out)
+        }
     }
     pub const GetUniqueSpawnTagIndex_ADDRESS: usize = 0x1404CCF60;
     /// The object's spawn tag index (`CGameObject::GetUniqueSpawnTagIndex`): the index of the

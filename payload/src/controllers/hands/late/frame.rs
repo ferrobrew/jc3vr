@@ -96,6 +96,13 @@ pub fn drawn_hands(dtf: f32) -> [Option<DrawnHand>; 2] {
     })
 }
 
+/// The world-space edit that carries a thing riding `hand`'s forearm, as the tick posed it, onto the
+/// forearm as the presentation layer draws it at `dtf`, or `None` while the layer re-poses nothing.
+pub(crate) fn drawn_forearm_delta(hand: Hand, dtf: f32) -> Option<Mat4> {
+    let frame = (*FRAME.lock())?;
+    frame.forearm_delta(hand, dtf)
+}
+
 /// Count a palette upload edited by a draw outside this module (the presentation layer's), for the
 /// readout's tally.
 pub(crate) fn count_palette_edit() {
@@ -467,6 +474,17 @@ impl LateFrame {
         let elbow = to_world.transform_point3(previous.elbow.lerp(joints.elbow, dtf));
         let wrist = to_world.transform_point3(previous.wrist.lerp(joints.wrist, dtf));
         keep_on_forearm(d, elbow, wrist, palette::MAX_FOREARM_STRETCH)
+    }
+
+    /// `hand`'s forearm's world-space edit as the presentation layer draws it at `dtf`, through the
+    /// body's interpolated instance matrix as the hand's is.
+    fn forearm_delta(&self, hand: Hand, dtf: f32) -> Option<Mat4> {
+        if !dtf.is_finite() {
+            return None;
+        }
+        let transport = self.transport?;
+        let instance = lerp_transform(transport[0], transport[1], dtf.clamp(0.0, 1.0));
+        presentation::drawn_forearm(instance, dtf, hand)
     }
 
     fn presentation_hand(&self, hand: Hand, dtf: f32) -> Option<(Mat4, Pose)> {

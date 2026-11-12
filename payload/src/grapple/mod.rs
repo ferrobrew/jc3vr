@@ -53,6 +53,7 @@ use jc3gi::equipment::grappling_hook::GrapplingHookState;
 use parking_lot::Mutex;
 
 pub mod config;
+pub(crate) mod device;
 pub(crate) mod hook;
 pub mod physical;
 pub mod rope;
