@@ -71,7 +71,7 @@ impl Range {
     /// The range as inclusive `time_ns` limits on the recording's clock. A display-time bound
     /// resolves to the first frame at or after it (`from`) or the last frame at or before it (`to`);
     /// with no such frame the range is empty.
-    pub(crate) fn resolve(&self, frames: &[Frame]) -> Option<(u64, u64)> {
+    pub fn resolve(&self, frames: &[Frame]) -> Option<(u64, u64)> {
         let from = match self.from {
             None => 0,
             Some(Bound::Seconds(seconds)) => seconds_to_ns(seconds),

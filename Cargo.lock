@@ -6051,6 +6051,7 @@ dependencies = [
 name = "tracking-synth"
 version = "0.1.0"
 dependencies = [
+ "body-estimator",
  "body-rig",
  "glam",
  "pretty_assertions",

@@ -9,6 +9,8 @@
 //! tracking-synth export-rerun [--from <time>] [--to <time>] [--video <video>]
 //!     [--video-height <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] [--no-blueprint]
 //!     [--recording-id <id>] <recording> -o <out.rrd>
+//! tracking-synth estimate-body --weights <safetensors> [--from <time>] [--to <time>] [--lead <s>]
+//!     <recording> -o <out.csv>
 //! ```
 //!
 //! With no script named, every built-in script is written. The recordings go to `<dir>/<script>.jc3trk`,
@@ -26,7 +28,10 @@
 //! tuning a recording notes. A video sidecar (`frames.jsonl` and `stream.json`) beside the
 //! recording adds the video's time to each row. `export-rerun` writes a stretch of a
 //! recording as a Rerun recording (`rerun_export`), with the take's video cut to the stretch beside
-//! it; it needs the `rerun` feature, on by default.
+//! it; it needs the `rerun` feature, on by default. `estimate-body` runs EgoPoser
+//! (`body-estimator`) over a stretch from the recording's raw head and grip poses and writes a CSV
+//! of its estimate at 60 Hz (`estimate`), resampling from `--lead` seconds (10 by default) before
+//! the stretch; the weights are a safetensors file named by `--weights`.
 
 use std::{
     fmt,
@@ -39,6 +44,7 @@ use tracing_subscriber::EnvFilter;
 use tracking_synth::rerun_export::{self, DEFAULT_VIDEO_HEIGHT, ExportOptions, VideoSource};
 use tracking_synth::{
     dump::{self, Bound, DumpFormat, Range},
+    estimate,
     rig_eval::{
         self, EvalOptions, Evaluation, PelvisSource, ReplayOptions, RigEvalError, VideoClock,
     },
@@ -81,7 +87,9 @@ const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>
                      scan-view [--video <video>] [--out <report.md>] <recording> | \
                      export-rerun [--from <time>] [--to <time>] [--video <video>] [--video-height \
                      <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] [--no-blueprint] [--recording-id <id>] <recording> -o \
-                     <out.rrd>, where <time> is seconds or xr:<display time ns>";
+                     <out.rrd> | estimate-body --weights <safetensors> [--from <time>] [--to \
+                     <time>] [--lead <s>] <recording> -o <out.csv>, where <time> is seconds or \
+                     xr:<display time ns>";
 
 /// What the command line asks for.
 #[derive(Debug, Clone, PartialEq)]
@@ -112,6 +120,13 @@ enum Command {
         path: PathBuf,
         video: Option<PathBuf>,
         out: Option<PathBuf>,
+    },
+    EstimateBody {
+        path: PathBuf,
+        out: PathBuf,
+        weights: PathBuf,
+        range: Range,
+        lead_s: f64,
     },
     Write {
         out: PathBuf,
@@ -175,6 +190,12 @@ enum CliError {
         path: PathBuf,
         error: std::io::Error,
     },
+    /// `estimate-body` without a recording, an output, and the weights, or with more.
+    EstimatePaths,
+    /// The estimator's weights could not be loaded.
+    Weights(body_estimator::WeightsError),
+    /// A stretch that selects no frame.
+    EmptyRange,
 }
 
 impl fmt::Display for CliError {
@@ -231,6 +252,13 @@ impl fmt::Display for CliError {
             CliError::Write { path, error } => {
                 write!(f, "could not write {}: {error}", path.display())
             }
+            CliError::EstimatePaths => write!(
+                f,
+                "estimate-body: name exactly one recording, the output with `-o`, and the weights \
+                 with `--weights`"
+            ),
+            CliError::Weights(error) => write!(f, "estimate-body: {error}"),
+            CliError::EmptyRange => write!(f, "estimate-body: the stretch selects no frame"),
         }
     }
 }
@@ -246,6 +274,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
     if args.peek().map(String::as_str) == Some("rig-eval") {
         args.next();
         return parse_rig_eval(args);
+    }
+    if args.peek().map(String::as_str) == Some("estimate-body") {
+        args.next();
+        return parse_estimate_body(args);
     }
     if args.peek().map(String::as_str) == Some("scan-view") {
         args.next();
@@ -331,6 +363,45 @@ fn parse_scan_view(mut args: impl Iterator<Item = String>) -> Result<Command, Cl
     match <[PathBuf; 1]>::try_from(paths) {
         Ok([path]) => Ok(Command::ScanView { path, video, out }),
         Err(_) => Err(CliError::ScanPath),
+    }
+}
+
+fn parse_estimate_body(mut args: impl Iterator<Item = String>) -> Result<Command, CliError> {
+    let mut range = Range::default();
+    let mut weights = None;
+    let mut out = None;
+    let mut lead_s = tracking_synth::estimate::DEFAULT_LEAD_S;
+    let mut paths = Vec::new();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--from" => range.from = Some(parse_bound(args.next(), "--from")?),
+            "--to" => range.to = Some(parse_bound(args.next(), "--to")?),
+            "--weights" => {
+                weights = Some(PathBuf::from(
+                    args.next().ok_or(CliError::MissingValue("--weights"))?,
+                ));
+            }
+            "--lead" => lead_s = f64::from(parse_length(args.next(), "--lead")?),
+            "-o" | "--out" => {
+                out = Some(PathBuf::from(
+                    args.next().ok_or(CliError::MissingValue("-o"))?,
+                ));
+            }
+            option if option.starts_with('-') => {
+                return Err(CliError::UnknownOption(option.to_owned()));
+            }
+            path => paths.push(PathBuf::from(path)),
+        }
+    }
+    match (<[PathBuf; 1]>::try_from(paths), out, weights) {
+        (Ok([path]), Some(out), Some(weights)) => Ok(Command::EstimateBody {
+            path,
+            out,
+            weights,
+            range,
+            lead_s,
+        }),
+        _ => Err(CliError::EstimatePaths),
     }
 }
 
@@ -507,6 +578,13 @@ fn run(command: Command) -> Result<(), CliError> {
             }
         }
         Command::ScanView { path, video, out } => scan_view(&path, video, out),
+        Command::EstimateBody {
+            path,
+            out,
+            weights,
+            range,
+            lead_s,
+        } => estimate_body(&path, &out, &weights, &range, lead_s),
         Command::RigEval { path, out, options } => {
             let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
                 path: path.clone(),
@@ -725,6 +803,50 @@ fn export_rerun(request: ExportRequest) -> Result<(), CliError> {
 #[cfg(not(feature = "rerun"))]
 fn export_rerun(_request: ExportRequest) -> Result<(), CliError> {
     Err(CliError::NoRerun)
+}
+
+/// Run EgoPoser over a stretch of the recording at `path` and write its estimate to `out` as a CSV.
+fn estimate_body(
+    path: &Path,
+    out: &Path,
+    weights: &Path,
+    range: &Range,
+    lead_s: f64,
+) -> Result<(), CliError> {
+    let model = body_estimator::EgoPoser::load(weights).map_err(CliError::Weights)?;
+    let bytes = std::fs::read(path).map_err(|error| CliError::Read {
+        path: path.to_owned(),
+        error,
+    })?;
+    let recording = tracking_format::decode(&bytes).map_err(|error| CliError::Decode {
+        path: path.to_owned(),
+        error,
+    })?;
+    drop(bytes);
+    let (from, to) = range
+        .resolve(&recording.frames)
+        .ok_or(CliError::EmptyRange)?;
+    let last = recording.frames.last().map_or(0, |frame| frame.time_ns);
+    let stretch = (from as f64 / 1.0e9, to.min(last) as f64 / 1.0e9);
+    let (rows, summary) = estimate::estimate(&recording.frames, &model, stretch, lead_s);
+    let write = |error| CliError::Write {
+        path: out.to_owned(),
+        error,
+    };
+    let mut file = std::io::BufWriter::new(std::fs::File::create(out).map_err(write)?);
+    estimate::write_csv(&rows, &mut file).map_err(write)?;
+    let per_inference_ms = if summary.inferences > 0 {
+        summary.inference.as_secs_f64() * 1.0e3 / summary.inferences as f64
+    } else {
+        0.0
+    };
+    tracing::info!(
+        rows = rows.len(),
+        per_inference_ms = %format_args!("{per_inference_ms:.3}"),
+        "estimate-body: wrote {}",
+        out.display()
+    );
+    Ok(())
 }
 
 /// The video sidecar beside a take's recording, when there is one.

@@ -11,11 +11,13 @@
 //! - [`schema`] reads the payload's semantic action schema, which the semantic states index.
 //! - [`synth`] samples a script into a recording, frame by frame.
 //! - [`dump`] prints a recording's frames and events.
+//! - [`estimate`] runs a learned body estimator (EgoPoser) over a recording.
 //! - [`rig_eval`] runs the grounded body rig over a recording.
 //! - [`rerun_export`] writes a recording as a Rerun recording, with the `rerun` feature.
 //! - [`view_scan`] scans a take's video for flashes and checks the camera against Rico's head.
 
 pub mod dump;
+pub mod estimate;
 pub mod inputs;
 #[cfg(feature = "rerun")]
 pub mod rerun_export;
