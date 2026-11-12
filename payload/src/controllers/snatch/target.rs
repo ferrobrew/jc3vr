@@ -567,7 +567,9 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         Kind::Aimed => aimed.map(|(_, kind, _alive)| kind)?,
         Kind::Floor(i) => {
             let weapon = floor[i];
-            if !unsafe { in_sight(ray, point, weapon.object.get()) } {
+            if !unsafe { in_sight(ray, point, weapon.object.get()) }
+                || unsafe { engine::mounted_gun(weapon.object) }
+            {
                 return None;
             }
             // SAFETY: its body was read as its own on this thread this tick.
@@ -786,7 +788,9 @@ unsafe fn aimed_offer(
     // SAFETY: the caller's strong reference keeps the object, and its weak reference, alive.
     let weak = || unsafe { weak_of(aimed.object) };
     if aimed.weapon {
-        if !unsafe { grapple_weapons::is_dropped_weapon(aimed.object) } {
+        if !unsafe { grapple_weapons::is_dropped_weapon(aimed.object) }
+            || unsafe { engine::mounted_gun(aimed.object) }
+        {
             return None;
         }
         let (centre, orientation) =

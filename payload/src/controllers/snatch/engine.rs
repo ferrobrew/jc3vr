@@ -418,6 +418,19 @@ pub(super) unsafe fn hand_grenade(address: NonZeroUsize) -> Option<bool> {
     unsafe { engine::is_hand_grenade(weapon) }.then(|| grenade::finite_world_pickup(weapon))
 }
 
+/// Whether the weapon at `address` is a mounted gun ([`WeaponBase::m_MountedCanBeDetached`]),
+/// such as one blown or torn off its vehicle. The game carries a mounted gun in its user's heavy
+/// slot after the user tears it off the mount they are using ([`WeaponBase::DetachMountedGun`]);
+/// its pickup does not holster a heavy-slot weapon, and the hands' weapon table takes a weapon from
+/// the world only into a holster, so it cannot take one lying in the world.
+///
+/// # Safety
+///
+/// `address` must be a weapon held alive, on the game thread.
+pub(super) unsafe fn mounted_gun(address: NonZeroUsize) -> bool {
+    unsafe { (*(address.get() as *const WeaponBase)).m_MountedCanBeDetached }
+}
+
 /// Where the local player stands, world space.
 ///
 /// # Safety
