@@ -54,8 +54,7 @@ pub use bones::{ArmJoints, HandBones, MAX_BONE_INDEX};
 pub use frame::{HandLateStatus, LateStatus, PaletteEdit, drawn_hands, status};
 pub(crate) use frame::{
     arm_target, begin_frame, count_palette_edit, drawn_forearm_delta, hand_correction,
-    interpolate_in_character,
-    palette_edit, shoulder_target,
+    interpolate_in_character, palette_edit, shoulder_target,
 };
 pub(crate) use math::{correction, lerp_transform, plausible};
 use re_utilities::hook_library::HookLibrary;
