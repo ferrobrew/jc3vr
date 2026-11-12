@@ -210,9 +210,11 @@ fn render_frame(
     // input-tick advance alone left up to a tick of that rotation reaching the view before the
     // filter engaged (issue #36 telemetry). At frame cadence the held pre-reel frame is the one
     // the previous render composed with, so an instant engage is seamless.
+    // The pose hangs from the view head, the neutral head while the view is held off the walking
+    // animation, so the animation's bob stays on the body and out of the headset.
     let anchor_pair = headpose::anchor_pair();
     let anchor_raw = frozen.map_or_else(
-        || anchor_pair.map_or(Vec3::ZERO, |pair| pair[1].head),
+        || anchor_pair.map_or(Vec3::ZERO, |pair| pair[1].view_head()),
         |f| f.anchor,
     );
     let headpose_config = config::Config::lock_query(|c| c.headpose);
@@ -238,7 +240,7 @@ fn render_frame(
     // offset by the same amount so the pair keeps the true tick delta for the engine's `dtf` lerp.
     let anchor = grapple::filter_anchor(anchor_raw);
     let anchor_prev_raw = frozen.map_or_else(
-        || anchor_pair.map_or(anchor_raw, |pair| pair[0].head),
+        || anchor_pair.map_or(anchor_raw, |pair| pair[0].view_head()),
         |f| f.anchor,
     );
 

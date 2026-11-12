@@ -46,6 +46,18 @@ impl Geometry {
         if self.collapsed { current } else { previous }
     }
 
+    /// The head the view hangs from: the neutral [`camera_head`](Self::camera_head) while it is
+    /// [`camera_stable`](Self::camera_stable), else the animated [`head`](Self::head). The headset's
+    /// pose is composed from it, so it is also the point a consumer subtracts from that pose to
+    /// have the tracked offset.
+    pub(crate) fn view_head(self) -> Vec3 {
+        if self.camera_stable {
+            self.camera_head
+        } else {
+            self.head
+        }
+    }
+
     pub(crate) fn from_anchors(anchors: Anchors, root: Mat4) -> Self {
         Self {
             root,

@@ -213,15 +213,16 @@ pub(crate) fn withdraw_anchors() {
     state().lock().withdraw_anchors();
 }
 
-/// The animated head bone world position, or `None` until the character hook has published a valid
-/// one (no local character yet, or only garbage bone data so far).
+/// The head the published pose hangs from ([`anchors::Geometry::view_head`]): the neutral head over
+/// the root while the headset's view is held off the walking animation, else the animated head
+/// bone. `None` until the character hook has published a valid one (no local character yet, or
+/// only garbage bone data so far). The pose minus this is the tracked offset.
 pub fn anchor() -> Option<Vec3> {
     state().lock().anchor
 }
 
-/// The animated head bone world position as of the previous sim tick (see [`Anchors::head_prev`]),
-/// or `None` until the character hook has published a valid one. The VR source composes the
-/// previous-tick side of its pose pair from this.
+/// [`anchor`] as of the previous sim tick, or `None` until the character hook has published a valid
+/// one. The VR source composes the previous-tick side of its pose pair from this.
 pub fn anchor_prev() -> Option<Vec3> {
     state().lock().anchor_prev
 }
@@ -273,9 +274,9 @@ pub(crate) struct HeadPoseState {
     pose: HeadPose,
     /// The headpose as of the previous input tick, for engine interpolation.
     prev_pose: HeadPose,
-    /// The animated head bone world position, published by the character hook.
+    /// The head the pose hangs from (see [`anchor`]), published by the character hook.
     anchor: Option<Vec3>,
-    /// The previous sim tick's animated head bone world position (see [`Anchors::head_prev`]).
+    /// The previous sim tick's [`anchor`].
     anchor_prev: Option<Vec3>,
     anchor_pair: Option<[anchors::Geometry; 2]>,
     /// The world-space head-to-neck vector, published alongside the anchor (see [`neck_delta`]).
@@ -294,16 +295,6 @@ impl HeadPoseState {
         self.publish_anchors_with_tracking(pair, sim_orientation, None);
     }
 
-    /// The head the camera hangs from: the neutral head while the root carries the body in the
-    /// headset, else the animated one.
-    fn camera_head(geometry: &anchors::Geometry) -> Vec3 {
-        if geometry.camera_stable {
-            geometry.camera_head
-        } else {
-            geometry.head
-        }
-    }
-
     fn publish_anchors_with_tracking(
         &mut self,
         pair: [anchors::Geometry; 2],
@@ -312,8 +303,8 @@ impl HeadPoseState {
     ) {
         let [previous, current] = pair;
         let previous_anchor = self.anchor;
-        self.anchor = Some(current.head);
-        self.anchor_prev = Some(previous.head);
+        self.anchor = Some(current.view_head());
+        self.anchor_prev = Some(previous.view_head());
         self.neck_delta = current.neck_delta;
         self.eye_arm = current.eye_arm;
         if let Some(orientation) = sim_orientation {
@@ -332,8 +323,8 @@ impl HeadPoseState {
             let (_, root, _) = current.root.to_scale_rotation_translation();
             let transport =
                 root * current.animation_rotation * (old_root * old.animation_rotation).inverse();
-            self.pose.position = Self::camera_head(&current)
-                + transport * (self.pose.position - previous_anchor.unwrap_or(old.head));
+            self.pose.position = current.view_head()
+                + transport * (self.pose.position - previous_anchor.unwrap_or(old.view_head()));
             self.pose.orientation = transport * self.pose.orientation;
             if current.collapsed {
                 self.prev_pose = self.pose;
@@ -344,7 +335,7 @@ impl HeadPoseState {
                 tracking.cockpit.position,
                 tracking.cockpit.orientation,
                 root * current.animation_rotation * tracking.follow_turn,
-                Self::camera_head(&current),
+                current.view_head(),
                 tracking.world_scale,
             );
             if current.collapsed {
@@ -470,5 +461,45 @@ mod tests {
                     .abs_diff_eq(tracking.cockpit.orientation, 1.0e-5)
             );
         }
+    }
+    /// While the view is held off the walking animation, the pose hangs from the neutral head, and
+    /// a new tick's animated head bob does not move it: only the neutral head's own motion does.
+    #[test]
+    fn a_stable_view_hangs_the_pose_from_the_neutral_head() {
+        let mut history = History::new();
+        let identity = identity_fixture();
+        let root = Mat4::from_translation(Vec3::new(4.0, 1.0, -2.0));
+        let stable = |step: f32| {
+            let mut sample = rooted(step, root);
+            sample.geometry.camera_stable = true;
+            sample.geometry.camera_head = Vec3::new(4.0, 2.65, -2.0);
+            sample
+        };
+        let first = history
+            .capture(request(identity, 30, 1, root, root), || Some(stable(0.0)))
+            .unwrap();
+        let tracking = RetainedTracking {
+            cockpit: xr::CockpitPose {
+                position: Vec3::new(0.1, 0.05, -0.2),
+                orientation: Quat::IDENTITY,
+            },
+            follow_turn: Quat::IDENTITY,
+            world_scale: 1.0,
+        };
+        let mut state = HeadPoseState::default();
+        state.publish_anchors_with_tracking(first.geometry(), None, Some(tracking));
+        let neutral = Vec3::new(4.0, 2.65, -2.0);
+        assert_eq!(state.anchor, Some(neutral));
+        let tracked = state.pose.position - neutral;
+        assert!(tracked.abs_diff_eq(tracking.cockpit.position, 1.0e-5));
+
+        // The next tick's animated head bobs; the neutral head does not move.
+        let second = history
+            .capture(request(identity, 31, 2, root, root), || Some(stable(1.0)))
+            .unwrap();
+        assert_ne!(second.current.geometry.head, first.current.geometry.head);
+        state.publish_anchors_with_tracking(second.geometry(), None, Some(tracking));
+        assert_eq!(state.anchor, Some(neutral));
+        assert!(state.pose.position.abs_diff_eq(neutral + tracked, 1.0e-5));
     }
 }
