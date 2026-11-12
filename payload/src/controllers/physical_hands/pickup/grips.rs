@@ -86,7 +86,7 @@ pub(super) unsafe fn keep_latch(
                         Some(Held {
                             object,
                             body,
-                            grip: Grip::of(latch.handoff_palm(world), read.pose, grab),
+                            grip: Grip::of(latch.handle_palm(world), read.pose, grab),
                             mass_kg: read.mass_kg.unwrap_or(f32::INFINITY),
                             ragdoll: None,
                             // A new fixed joint would retain the pre-opening relative pose and
@@ -115,7 +115,7 @@ pub(super) unsafe fn keep_latch(
                     {
                         let world = unsafe { doors::engine::vehicle_frame(latch.door.vehicle) };
                         state.latches[i] = Some(latch);
-                        outcome.pins[i] = Some(latch.handoff_palm(world).position);
+                        outcome.pins[i] = Some(latch.handle_palm(world).position);
                     } else {
                         tracing::info!(
                             hand = hand.label(),

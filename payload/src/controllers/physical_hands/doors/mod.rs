@@ -277,6 +277,17 @@ impl Latch {
         }
     }
 
+    /// The palm closed on the handle, carried by the vehicle: the acquisition palm's orientation at
+    /// the grab point. While the latch holds, the hand is held here, so the hand that took the
+    /// handle from a few centimetres off closes on it; once the latch gives, the door is held with
+    /// its grab point in the palm, so the handle comes to the hand.
+    pub(crate) fn handle_palm(&self, world: Mat4) -> Pose {
+        Pose {
+            position: world.transform_point3(self.grab),
+            ..self.handoff_palm(world)
+        }
+    }
+
     /// What the latch does this tick with the palm at `palm`, world space, the latch giving to a
     /// pull of `unlatch_pull_m` outward.
     ///
@@ -305,7 +316,7 @@ impl Latch {
                     grab,
                     now.saturating_duration_since(opening_at).as_secs_f32(),
                 ) {
-                    LatchStep::Pin(_) => LatchStep::Pin(self.handoff_palm(world).position),
+                    LatchStep::Pin(_) => LatchStep::Pin(self.handle_palm(world).position),
                     step => step,
                 }
             }
@@ -372,7 +383,7 @@ fn latch_decision(
     if !latched || pull(acquired_palm, palm, outward) >= unlatch_pull_m.max(0.0) {
         LatchDecision::Give(grab)
     } else {
-        LatchDecision::Hold(acquired_palm)
+        LatchDecision::Hold(grab)
     }
 }
 
@@ -416,8 +427,22 @@ mod tests {
                 0.05,
                 true
             ),
-            LatchDecision::Hold(acquired.palm.position)
+            LatchDecision::Hold(acquired.grab)
         );
+        // The hand is held on the handle, not where it took the handle from, and the door it
+        // opens is held with the handle in the palm.
+        let handle = acquired.handle_palm(Mat4::IDENTITY);
+        assert_eq!(handle.position, acquired.grab);
+        let body = BodyPose {
+            centre: acquired.grab + Vec3::Z * 0.4,
+            orientation: Quat::IDENTITY,
+        };
+        let grip = Grip::of(handle, body, acquired.grab);
+        let palm = Pose {
+            position: Vec3::new(-1.2, 1.1, 0.2),
+            orientation: Quat::IDENTITY,
+        };
+        assert!(grip.target(palm).point.distance(palm.position) < 1e-5);
         assert!(matches!(
             latch_decision(
                 Mat4::IDENTITY,
@@ -461,7 +486,7 @@ mod tests {
         let world =
             Mat4::from_rotation_translation(Quat::from_rotation_y(0.7), Vec3::new(8.0, 2.0, -3.0));
         let grab = world.transform_point3(acquired.grab);
-        let palm = acquired.handoff_palm(world);
+        let palm = acquired.handle_palm(world);
         let body = BodyPose {
             centre: grab + Vec3::Z * 0.3,
             orientation: Quat::IDENTITY,
