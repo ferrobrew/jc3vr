@@ -11,7 +11,7 @@ use crate::controllers::vehicles::{
     config::PhysicalControlsConfig,
     physical::{
         handlebars::{bar_grab_point, bar_turn, steer_for_turn},
-        levers::detent,
+        levers::{ThrottleSection, detent},
         sticks,
     },
     steering,
@@ -581,16 +581,16 @@ fn the_detent_swallows_neutral_and_still_reaches_one() {
 #[test]
 fn only_the_seat_class_s_controls_are_offered() {
     assert_eq!(
-        ControlKind::for_seat(VehicleClass::Motorcycle, false),
+        ControlKind::for_seat(VehicleClass::Motorcycle, false, false),
         &[ControlKind::Handlebars]
     );
     assert_eq!(
-        ControlKind::for_seat(VehicleClass::Car, false),
+        ControlKind::for_seat(VehicleClass::Car, false, false),
         &[ControlKind::Wheel]
     );
     for class in [VehicleClass::Car, VehicleClass::Sea] {
         assert_eq!(
-            ControlKind::for_seat(class, true),
+            ControlKind::for_seat(class, true, false),
             &[ControlKind::Handlebars]
         );
     }

@@ -50,11 +50,12 @@ pub mod sticks;
 #[cfg(test)]
 mod tests;
 pub(crate) mod visual;
+pub mod yoke;
 
 use glam::{Quat, Vec2, Vec3};
 
 pub use crate::controllers::vehicles::physical::{
-    cues::ControlCue, handlebars::bar_ends, levers::lever_value, sticks::stick_deflection,
+    cues::ControlCue, handlebars::bar_ends, sticks::stick_deflection,
 };
 use crate::controllers::{
     frame::Hand,
@@ -67,8 +68,9 @@ use crate::controllers::{
             cues::TravelCues,
             handlebars::{BarsLatch, bar_grab_point, bars_now, step_bars},
             held_wheel::step_wheel,
-            levers::step_lever,
+            levers::{ThrottleState, step_lever, throttle_constrain, throttle_zero},
             sticks::{deflection3, step_stick},
+            yoke::{YokeFrame, YokeState, grab_yoke, nearest_horn, step_yoke},
         },
         steering::{CueArming, WheelCue, WheelGrip},
         tuning::{LeverSpec, PhysicalControlsTuning, StickSpec},
@@ -84,6 +86,8 @@ pub enum ControlKind {
     Cyclic,
     Collective,
     FlightStick,
+    /// A plane's control wheel, in place of the flight stick where the cockpit models one.
+    Yoke,
     Throttle,
 }
 
@@ -95,14 +99,16 @@ impl ControlKind {
             ControlKind::Cyclic => "cyclic",
             ControlKind::Collective => "collective",
             ControlKind::FlightStick => "flight stick",
+            ControlKind::Yoke => "yoke",
             ControlKind::Throttle => "throttle",
         }
     }
 
     /// The controls a vehicle of `class` offers its driver. Cars and boats share their classes with
     /// the ATV, the jetski, and the duck, which steer by handlebars: a vehicle with a steering fork
-    /// (`fork`) gets the handlebars in place of the wheel.
-    pub const fn for_seat(class: VehicleClass, fork: bool) -> &'static [ControlKind] {
+    /// (`fork`) gets the handlebars in place of the wheel. A plane whose cockpit has a control wheel
+    /// (`yoke`) gets the yoke in place of the flight stick.
+    pub const fn for_seat(class: VehicleClass, fork: bool, yoke: bool) -> &'static [ControlKind] {
         match class {
             VehicleClass::Car | VehicleClass::Sea | VehicleClass::Unknown if fork => {
                 &[ControlKind::Handlebars]
@@ -110,6 +116,7 @@ impl ControlKind {
             VehicleClass::Car | VehicleClass::Sea | VehicleClass::Unknown => &[ControlKind::Wheel],
             VehicleClass::Motorcycle => &[ControlKind::Handlebars],
             VehicleClass::Helicopter => &[ControlKind::Cyclic, ControlKind::Collective],
+            VehicleClass::Plane if yoke => &[ControlKind::Yoke, ControlKind::Throttle],
             VehicleClass::Plane => &[ControlKind::FlightStick, ControlKind::Throttle],
             // The mech walks; it has no controls to hold.
             VehicleClass::Mech => &[],
@@ -121,14 +128,17 @@ impl ControlKind {
         match self {
             ControlKind::Wheel => config.wheel.enabled,
             ControlKind::Handlebars => config.handlebars,
-            ControlKind::Cyclic | ControlKind::FlightStick => config.sticks,
+            ControlKind::Cyclic | ControlKind::FlightStick | ControlKind::Yoke => config.sticks,
             ControlKind::Collective | ControlKind::Throttle => config.levers,
         }
     }
 
     /// Whether both hands may hold the control at once.
     const fn two_handed(self) -> bool {
-        matches!(self, ControlKind::Wheel | ControlKind::Handlebars)
+        matches!(
+            self,
+            ControlKind::Wheel | ControlKind::Handlebars | ControlKind::Yoke
+        )
     }
 }
 
@@ -193,8 +203,13 @@ pub struct ControlState {
     bars_latch: Option<BarsLatch>,
     /// The stick's deflection in the horizontal plane (+X right, +Y back), metres.
     pub stick: Vec2,
-    /// The collective's and the throttle's positions, `-1..=1`.
+    /// The collective's and the throttle's positions from their zeros, in lever positions (the
+    /// whole travel spans two): the collective's zero is its middle, the throttle's its zero gate.
     pub levers: [f32; 2],
+    /// The throttle's zero gate and its cues.
+    pub throttle: ThrottleState,
+    /// The yoke's turn and pull, and the hands' holds on it.
+    pub yoke: YokeState,
     /// Which of the stick's cues may fire.
     stick_cues: TravelCues,
     /// Which of each lever's cues may fire, indexed as [`levers`](Self::levers).
@@ -215,6 +230,8 @@ impl ControlState {
             bars_latch: None,
             stick: Vec2::ZERO,
             levers: [0.0; 2],
+            throttle: ThrottleState::new(),
+            yoke: YokeState::new(),
             stick_cues: TravelCues::new(),
             lever_cues: [TravelCues::new(); 2],
             buttons: ButtonState::new(),
@@ -314,6 +331,13 @@ impl Placement {
         }
     }
 
+    /// The yoke, where the cockpit's model has one.
+    pub fn yoke(&self) -> Option<YokeFrame> {
+        self.cockpit
+            .filter(|fit| fit.asset.stick_kind == ControlKind::Yoke)
+            .and_then(|fit| fit.yoke())
+    }
+
     pub(super) fn stick(&self, kind: ControlKind) -> Option<StickSpec> {
         match kind {
             ControlKind::Cyclic => Some(self.config.cyclic),
@@ -397,25 +421,54 @@ impl Placement {
             )
     }
 
+    /// The handle of `kind` at `value` from its rest, its zero.
     pub(super) fn lever_handle(&self, kind: ControlKind, spec: &LeverSpec, value: f32) -> Vec3 {
         self.lever_rest(kind, spec)
             + self.lever_direction(kind, spec) * (spec.travel_m * 0.5 * value)
     }
 
+    /// Where `kind`'s handle pulled to `point` is, from its rest, within its travel.
     pub(super) fn lever_value(&self, kind: ControlKind, spec: &LeverSpec, point: Vec3) -> f32 {
         let rest = self.lever_rest(kind, spec);
         let along = (point - rest).dot(self.lever_direction(kind, spec));
-        lever_value(spec, Vec3::ZERO, spec.axis.direction() * along)
+        let (low, high) = self.lever_range(kind);
+        let half = (spec.travel_m * 0.5).max(1e-3);
+        let value = along / half;
+        if value.is_finite() {
+            value.clamp(low, high)
+        } else {
+            0.0
+        }
     }
 
-    /// Where `kind`'s afterburner gate starts along its positive half, for the throttle with the
-    /// gate on: past its detent, short of the stop.
+    /// The ends of `kind`'s travel from its rest, in lever positions (the whole travel spans two):
+    /// the collective's rest is its middle, and the throttle's is its zero gate, with the reverse
+    /// section's share of the travel behind it.
+    pub(super) fn lever_range(&self, kind: ControlKind) -> (f32, f32) {
+        match kind {
+            ControlKind::Throttle => {
+                let zero = throttle_zero(&self.config.flight);
+                (-1.0 - zero, 1.0 - zero)
+            }
+            _ => (-1.0, 1.0),
+        }
+    }
+
+    /// Where `kind`'s afterburner gate starts along its forward section, for the throttle with the
+    /// gate on: past the snap next to zero, short of the stop.
     pub(super) fn gate(&self, kind: ControlKind) -> Option<f32> {
         let flight = &self.config.flight;
         (kind == ControlKind::Throttle && flight.afterburner_gate).then(|| {
-            let detent = self.config.throttle.detent.clamp(0.0, 0.9);
-            flight.gate_at.clamp(detent + 0.05, 0.98)
+            let snap = flight.zero_snap.clamp(0.0, 0.9);
+            flight.gate_at.clamp(snap + 0.05, 0.98)
         })
+    }
+
+    /// Where the throttle's afterburner gate sits from its rest, in lever positions, where it has
+    /// one.
+    pub(super) fn afterburner_mark(&self) -> Option<f32> {
+        let (_, high) = self.lever_range(ControlKind::Throttle);
+        self.gate(ControlKind::Throttle).map(|gate| gate * high)
     }
 
     /// The point `hand`'s grip grabs `kind` at, given the hand's grip `point`: the nearest point on
@@ -434,6 +487,7 @@ impl Placement {
                 Some(self.wheel.rim_point(angle))
             }
             ControlKind::Handlebars => Some(bar_grab_point(&self.bars, state.bars, hand, point)),
+            ControlKind::Yoke => Some(nearest_horn(&self.yoke()?, &state.yoke, point)),
             kind => {
                 if let Some(handle) = self.stick_handle(kind, state.stick) {
                     return Some(handle);
@@ -572,6 +626,21 @@ pub fn step(
                     out.lean = Some(steer);
                 }
             }
+            ControlKind::Yoke => {
+                let Some(frame) = placement.yoke() else {
+                    continue;
+                };
+                let yoke = step_yoke(
+                    state,
+                    &frame,
+                    &placement.config.yoke,
+                    holding,
+                    inputs.stick_moves,
+                    dt,
+                );
+                out.flight_stick = yoke.value;
+                out.stick_cue = yoke.cue;
+            }
             ControlKind::Cyclic | ControlKind::FlightStick => {
                 let stick = step_stick(
                     state,
@@ -684,6 +753,8 @@ pub(super) fn refresh_cockpit(
     }
     state.stick = Vec2::ZERO;
     state.levers = [0.0; 2];
+    state.throttle = ThrottleState::new();
+    state.yoke = YokeState::new();
     state.stick_cues = TravelCues::new();
     state.lever_cues = [TravelCues::new(); 2];
 }
@@ -716,6 +787,11 @@ pub fn anchor_point(
                 .or_else(|| placement.wheel.hand_angle(point))?;
             Some(placement.wheel.rim_point(angle))
         }
+        ControlKind::Yoke => {
+            let frame = placement.yoke()?;
+            let grip = state.yoke.grips[hand.index()]?;
+            Some(grip.anchor(&frame, state.yoke.roll, state.yoke.pitch))
+        }
         ControlKind::Handlebars => {
             let bars = bars_now(
                 state,
@@ -732,7 +808,11 @@ pub fn anchor_point(
                     .map(|handle| handle + hold.offset);
             }
             let (_, spec) = placement.lever(kind)?;
-            let value = placement.lever_value(kind, &spec, point - hold.offset);
+            let mut value = placement.lever_value(kind, &spec, point - hold.offset);
+            if kind == ControlKind::Throttle {
+                value =
+                    throttle_constrain(&placement.config.flight, state.throttle.section, value).0;
+            }
             Some(placement.lever_handle(kind, &spec, value) + hold.offset)
         }
     }
@@ -752,11 +832,16 @@ fn grab(
         release(state, other, Release::TakenOver, events);
     }
     let offset = match kind {
-        ControlKind::Wheel | ControlKind::Handlebars => Vec3::ZERO,
+        ControlKind::Wheel | ControlKind::Handlebars | ControlKind::Yoke => Vec3::ZERO,
         kind => placement
             .grab_point(state, kind, hand, point)
             .map_or(Vec3::ZERO, |handle| point - handle),
     };
+    if kind == ControlKind::Yoke
+        && let Some(frame) = placement.yoke()
+    {
+        grab_yoke(state, &frame, hand, point);
+    }
     if kind == ControlKind::Wheel {
         state.wheel_grips[hand.index()] = Some(WheelGrip::new(
             &placement.wheel,
@@ -778,6 +863,7 @@ fn release(state: &mut ControlState, hand: Hand, why: Release, events: &mut Vec<
         return;
     };
     state.wheel_grips[hand.index()] = None;
+    state.yoke.grips[hand.index()] = None;
     events.push(ControlEvent::Released(hand, hold.kind, why));
 }
 

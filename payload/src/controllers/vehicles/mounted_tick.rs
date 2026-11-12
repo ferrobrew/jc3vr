@@ -135,17 +135,19 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
 }
 
 /// The physical controls `seat` offers with their toggles on: only the driver's seat has any. A
-/// vehicle with a steering fork (`fork`) offers handlebars.
+/// vehicle with a steering fork (`fork`) offers handlebars, and a plane whose cockpit has a control
+/// wheel (`yoke`) offers the yoke.
 pub(super) fn offered(
     seat: Option<VehicleSeat>,
     config: &ControllersConfig,
     fork: bool,
+    yoke: bool,
 ) -> &'static [ControlKind] {
     let physical = &config.vehicles.physical;
     let Some(seat) = seat.filter(|s| s.driver && physical.any()) else {
         return &[];
     };
-    let kinds = ControlKind::for_seat(seat.class, fork);
+    let kinds = ControlKind::for_seat(seat.class, fork, yoke);
     match kinds {
         [one] if one.enabled(physical) => kinds,
         [first, second] => match (first.enabled(physical), second.enabled(physical)) {

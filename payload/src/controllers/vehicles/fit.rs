@@ -364,12 +364,15 @@ fn fit_cockpit(
     // The uncorrected character eyes select the actual pilot seat, independent of roomscale.
     let pilot = part_to_world.inverse().transform_point3(inputs.eyes?);
     let asset = native::cockpit_asset(&part.name, pilot)?;
-    let expected = match seat.class {
-        VehicleClass::Helicopter => ControlKind::Cyclic,
-        VehicleClass::Plane => ControlKind::FlightStick,
-        _ => return None,
+    let fits = match seat.class {
+        VehicleClass::Helicopter => asset.stick_kind == ControlKind::Cyclic,
+        VehicleClass::Plane => matches!(
+            asset.stick_kind,
+            ControlKind::FlightStick | ControlKind::Yoke
+        ),
+        _ => false,
     };
-    if asset.stick_kind != expected {
+    if !fits {
         return None;
     }
     let inside = |point: Vec3| point.cmpge(min).all() && point.cmple(max).all();

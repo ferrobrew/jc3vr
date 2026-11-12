@@ -35,6 +35,8 @@ pub struct PhysicalControlsTuning {
     pub flight_stick: StickSpec,
     /// The plane's throttle, by the off-hand hip.
     pub throttle: LeverSpec,
+    /// The control wheel of a plane whose cockpit models one in place of a stick.
+    pub yoke: YokeSpec,
     /// What the plane's flight stick and throttle add to a plain stick and lever: the stick's
     /// twist for the plane's rudder and the helicopter's yaw, and the throttle's afterburner
     /// gate.
@@ -83,12 +85,22 @@ impl PhysicalControlsTuning {
                 detent: 0.1,
                 hold_on_release: true,
             },
+            yoke: YokeSpec {
+                max_roll_deg: 75.0,
+                travel_m: 0.08,
+                deadzone: 0.05,
+                return_s: 0.12,
+            },
             flight: FlightControlsTuning {
                 twist_rudder: true,
                 twist_deadzone_deg: 6.0,
                 twist_full_deg: 35.0,
                 afterburner_gate: true,
                 gate_at: 0.85,
+                reverse_share: 1.0 / 3.0,
+                zero_pull: 0.12,
+                zero_snap: 0.06,
+                thrust_step: 0.1,
             },
             buttons: CockpitButtonsTuning {
                 horn: true,
@@ -203,6 +215,21 @@ pub struct StickSpec {
     pub return_s: f32,
 }
 
+/// A plane's control wheel on its column (see [`crate::controllers::vehicles::physical::yoke`]):
+/// turned for the roll and pushed or pulled along the column for the pitch. Its place comes from
+/// the cockpit's model.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct YokeSpec {
+    /// The turn either way that rolls fully, degrees. The yoke stops there.
+    pub max_roll_deg: f32,
+    /// How far the yoke moves along its column either way for a full pitch, metres.
+    pub travel_m: f32,
+    /// The share of each axis's range around centre that outputs nothing, `0..1`.
+    pub deadzone: f32,
+    /// The released yoke's centring spring: the time constant it returns to centre with, seconds.
+    pub return_s: f32,
+}
+
 /// The horn, the nitrous, and the bars' twist grips worked by hand (see
 /// [`crate::controllers::vehicles::physical::buttons`]): the horn pressed on the wheel's hub, a
 /// nitrous button on the dash beside the wheel, the collective twisted for the nitrous, and the
@@ -257,6 +284,19 @@ pub struct FlightControlsTuning {
     pub afterburner_gate: bool,
     /// Where the gate starts, as a share of the throttle's forward travel, `0..1`.
     pub gate_at: f32,
+    /// The share of the throttle's whole travel, at its back, that is the reverse section behind
+    /// the zero gate, `0..0.9`. The rest, in front of the gate, is forward thrust from nothing to
+    /// full.
+    pub reverse_share: f32,
+    /// How far past zero the hand pulls (or pushes) the throttle to take it through the zero gate
+    /// into the other section, as a share of the whole travel. Short of it, the throttle stays at
+    /// zero.
+    pub zero_pull: f32,
+    /// The share of either section next to zero that gives nothing, and in which a released
+    /// throttle snaps to zero.
+    pub zero_snap: f32,
+    /// The share of the forward section between the ticks the held throttle gives its hand.
+    pub thrust_step: f32,
 }
 
 /// A lever that slides along one axis.

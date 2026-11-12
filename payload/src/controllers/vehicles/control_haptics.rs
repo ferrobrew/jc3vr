@@ -41,29 +41,38 @@ pub(super) fn pulse(outputs: &Outputs, holds: [Option<ControlKind>; 2], buttons:
     let cues = [
         (
             outputs.stick_cue,
-            [ControlKind::Cyclic, ControlKind::FlightStick],
+            &[
+                ControlKind::Cyclic,
+                ControlKind::FlightStick,
+                ControlKind::Yoke,
+            ][..],
         ),
         (
             outputs.lever_cue,
-            [ControlKind::Collective, ControlKind::Throttle],
+            &[ControlKind::Collective, ControlKind::Throttle][..],
         ),
     ];
     for (cue, kinds) in cues {
         let Some(cue) = cue else {
             continue;
         };
-        for hand in holding(&kinds) {
+        for hand in holding(kinds) {
             haptics::play(hand, control_cue(cue));
         }
     }
 }
 
-/// The cue a stick's or a lever's cue plays: a bump at a stop, a tick at neutral, and a firm bump
-/// at the afterburner gate, which the hand has to find without looking.
+/// The cue a stick's or a lever's cue plays: a bump at a stop, a tick at neutral and at a stick's
+/// centre, a firm bump at the afterburner gate, which the hand has to find without looking, light
+/// ticks along the throttle's forward section, a thud at its zero stop, and a buzz through its zero
+/// gate.
 const fn control_cue(cue: ControlCue) -> Event {
     match cue {
         ControlCue::Stop => Event::ControlStop,
-        ControlCue::Neutral => Event::ControlNeutral,
+        ControlCue::Neutral | ControlCue::Centre => Event::ControlNeutral,
         ControlCue::Gate => Event::ThrottleGate,
+        ControlCue::Step => Event::ThrottleStep,
+        ControlCue::ZeroStop => Event::ThrottleZero,
+        ControlCue::ReverseGate => Event::ThrottleReverse,
     }
 }

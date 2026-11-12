@@ -216,6 +216,7 @@ mod tests {
                             Vec3::new(2.0, -1.0, 4.0),
                         ),
                         CockpitAsset {
+                            yoke: None,
                             seat: 0,
                             stick_kind: kind,
                             stick_grip: Vec3::new(0.0, 1.5, -3.0),

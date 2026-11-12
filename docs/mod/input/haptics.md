@@ -96,9 +96,12 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::WheelCommit` | the weapon wheel's release commits a weapon | click | 0.75 | weapons | `weapons::wheel` |
 | `Event::SteeringStop` | the held wheel reaches its lock | bump | 0.6 | vehicles | `vehicles::control_haptics` |
 | `Event::SteeringCentre` | the held wheel passes centre | tick | 0.5 | vehicles | `vehicles::control_haptics` |
-| `Event::ControlStop` | a held stick or lever reaches a stop | bump | 0.6 | vehicles | `vehicles::control_haptics` |
-| `Event::ControlNeutral` | a held lever passes neutral | tick | 0.5 | vehicles | `vehicles::control_haptics` |
+| `Event::ControlStop` | a held stick, yoke, or lever reaches a stop | bump | 0.6 | vehicles | `vehicles::control_haptics` |
+| `Event::ControlNeutral` | a held lever passes neutral, or a held stick or yoke comes back to centre | tick | 0.5 | vehicles | `vehicles::control_haptics` |
 | `Event::ThrottleGate` | the held throttle reaches its afterburner gate | bump | 0.9 | vehicles | `vehicles::control_haptics` |
+| `Event::ThrottleStep` | the held throttle passes a tenth of its forward section | tick | 0.3 | vehicles | `vehicles::control_haptics` |
+| `Event::ThrottleZero` | the held throttle comes back to zero and stops at its reverse gate | thud | 1.0 | vehicles | `vehicles::control_haptics` |
+| `Event::ThrottleReverse` | the held throttle goes through its zero gate into reverse or back out | buzz | 0.8 | vehicles | `vehicles::control_haptics` |
 | `Event::ButtonPress` | a cockpit button presses, or a twist grip twists far enough to act | click | 0.75 | vehicles | `vehicles::control_haptics` |
 | `Event::ButtonRelease` | a cockpit button or a twist grip is let go | tick | 0.5 | vehicles | `vehicles::control_haptics` |
 | `Event::HandleGrab` | a hand takes a mounted gun's handle | click | 0.5 | vehicles | `vehicles` |

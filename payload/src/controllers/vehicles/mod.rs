@@ -193,18 +193,27 @@ mod tests {
         config.vehicles.physical.sticks = false;
         config.vehicles.physical.levers = false;
         let seat = |class, driver| Some(VehicleSeat { class, driver });
-        assert!(offered(seat(VehicleClass::Car, true), &config, false).is_empty());
+        assert!(offered(seat(VehicleClass::Car, true), &config, false, false).is_empty());
         config.vehicles.physical.levers = true;
         assert_eq!(
-            offered(seat(VehicleClass::Helicopter, true), &config, false),
+            offered(seat(VehicleClass::Helicopter, true), &config, false, false),
             &[ControlKind::Collective]
         );
-        assert!(offered(seat(VehicleClass::Helicopter, false), &config, false).is_empty());
-        assert!(offered(None, &config, false).is_empty());
+        assert!(offered(seat(VehicleClass::Helicopter, false), &config, false, false).is_empty());
+        assert!(offered(None, &config, false, false).is_empty());
         config.vehicles.physical.handlebars = true;
         assert_eq!(
-            offered(seat(VehicleClass::Sea, true), &config, true),
+            offered(seat(VehicleClass::Sea, true), &config, true, false),
             &[ControlKind::Handlebars]
+        );
+        config.vehicles.physical.sticks = true;
+        assert_eq!(
+            offered(seat(VehicleClass::Plane, true), &config, false, false),
+            &[ControlKind::FlightStick, ControlKind::Throttle]
+        );
+        assert_eq!(
+            offered(seat(VehicleClass::Plane, true), &config, false, true),
+            &[ControlKind::Yoke, ControlKind::Throttle]
         );
     }
 

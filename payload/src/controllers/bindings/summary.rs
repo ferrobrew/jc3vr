@@ -314,7 +314,9 @@ fn capture_current(
                 ControlKind::Wheel => ModAction::Wheel,
                 ControlKind::Handlebars => ModAction::Handlebars,
                 ControlKind::Cyclic | ControlKind::Collective => ModAction::HelicopterControls,
-                ControlKind::FlightStick | ControlKind::Throttle => ModAction::PlaneControls,
+                ControlKind::FlightStick | ControlKind::Yoke | ControlKind::Throttle => {
+                    ModAction::PlaneControls
+                }
             };
             mechanics.push(Row {
                 control: Control::Grip(hand),

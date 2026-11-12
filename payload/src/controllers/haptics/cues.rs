@@ -192,6 +192,12 @@ pub enum Event {
     ControlNeutral,
     /// The held throttle reaching its afterburner gate.
     ThrottleGate,
+    /// The held throttle passing a step of its forward section.
+    ThrottleStep,
+    /// The held throttle pulled back to zero, stopping at its reverse gate.
+    ThrottleZero,
+    /// The held throttle going through its zero gate into reverse or back out.
+    ThrottleReverse,
     /// A cockpit button pressed, or a twist grip twisted far enough to act.
     ButtonPress,
     /// A cockpit button or a twist grip let go.
@@ -244,7 +250,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 65] = [
+    pub const ALL: [Event; 68] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -288,6 +294,9 @@ impl Event {
         Event::ControlStop,
         Event::ControlNeutral,
         Event::ThrottleGate,
+        Event::ThrottleStep,
+        Event::ThrottleZero,
+        Event::ThrottleReverse,
         Event::ButtonPress,
         Event::ButtonRelease,
         Event::HandleGrab,
@@ -366,6 +375,12 @@ impl Event {
                 Cue::new(Primitive::Tick, 0.5, Category::Vehicles)
             }
             Event::ThrottleGate => Cue::new(Primitive::Bump, 0.9, Category::Vehicles),
+            // Light enough to count through a push without drowning the stops.
+            Event::ThrottleStep => Cue::new(Primitive::Tick, 0.3, Category::Vehicles),
+            // The hardest cue on the throttle, so zero is found without looking.
+            Event::ThrottleZero => Cue::new(Primitive::Thud, 1.0, Category::Vehicles),
+            // A buzz rather than a knock, so going into reverse is told from the zero stop.
+            Event::ThrottleReverse => Cue::new(Primitive::Buzz, 0.8, Category::Vehicles),
             Event::ButtonPress => Cue::new(Primitive::Click, 0.75, Category::Vehicles),
             Event::HandleGrab => Cue::new(Primitive::Click, 0.5, Category::Vehicles),
             Event::MountedKick => Cue::new(Primitive::Bump, 0.6, Category::Vehicles),
@@ -436,6 +451,9 @@ impl Event {
             Event::ControlStop => "control stop",
             Event::ControlNeutral => "control neutral",
             Event::ThrottleGate => "throttle gate",
+            Event::ThrottleStep => "throttle step",
+            Event::ThrottleZero => "throttle zero stop",
+            Event::ThrottleReverse => "throttle reverse gate",
             Event::ButtonPress => "button press",
             Event::ButtonRelease => "button release",
             Event::HandleGrab => "handle grab",

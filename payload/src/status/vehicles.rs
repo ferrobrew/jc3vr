@@ -155,7 +155,8 @@ fn flight_controls_line(on: bool, summary: &VehicleSummary) -> Line {
     }
     let held = |kind| summary.holds.contains(&Some(kind));
     let o = &summary.outputs;
-    let stick = prose(match (held(ControlKind::FlightStick), o.flight_stick) {
+    let stick_held = held(ControlKind::FlightStick) || held(ControlKind::Yoke);
+    let stick = prose(match (stick_held, o.flight_stick) {
         (true, _) => "Stick held",
         (false, Some(_)) => "Stick returning",
         (false, None) => "Stick free",

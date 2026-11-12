@@ -12,7 +12,7 @@ use crate::controllers::{
         primitive::{Anchor, DepthMode, Facing, Primitive, Rgba, Shape, Source, SpriteSize},
         store,
     },
-    vehicles::physical::{ControlKind, ControlState, Placement},
+    vehicles::physical::{ControlKind, ControlState, Placement, yoke::YokeFrame},
 };
 
 pub(crate) fn submit(
@@ -24,11 +24,17 @@ pub(crate) fn submit(
     let mut primitives = Vec::new();
     if xf.is_usable() {
         for &kind in kinds {
+            let held = state.holds.iter().flatten().any(|hold| hold.kind == kind);
+            let color = if held { HELD } else { HANDLE };
+            if kind == ControlKind::Yoke {
+                if let Some(frame) = placement.yoke() {
+                    yoke(&mut primitives, xf, &frame, state, color);
+                }
+                continue;
+            }
             let Some(control) = geometry(placement, state, kind) else {
                 continue;
             };
-            let held = state.holds.iter().flatten().any(|hold| hold.kind == kind);
-            let color = if held { HELD } else { HANDLE };
             let mut line = |from, to, width, color| {
                 primitives.push(Primitive::Line {
                     from: Anchor::Head(xf.point_from_head(from)),
@@ -55,9 +61,15 @@ pub(crate) fn submit(
                         HANDLE,
                     );
                 }
-                if let Some(gate) = placement.gate(kind) {
-                    let at = low.lerp(high, (gate + 1.0) * 0.5);
-                    line(at - Vec3::X * 0.025, at + Vec3::X * 0.025, 0.015, GATE);
+                if kind == ControlKind::Throttle {
+                    let (back, front) = placement.lever_range(kind);
+                    let share = |value: f32| (value - back) / (front - back);
+                    let at = low.lerp(high, share(0.0));
+                    line(at - Vec3::X * 0.035, at + Vec3::X * 0.035, 0.018, HANDLE);
+                    if let Some(gate) = placement.afterburner_mark() {
+                        let at = low.lerp(high, share(gate));
+                        line(at - Vec3::X * 0.025, at + Vec3::X * 0.025, 0.015, GATE);
+                    }
                 }
             }
             for at in [
@@ -76,6 +88,45 @@ pub(crate) fn submit(
         }
     }
     store::submit(Source::AircraftControls, &mut primitives, TTL);
+}
+
+/// The yoke's column, its wheel's bar, and its horns, turned and pulled as it is.
+fn yoke(
+    primitives: &mut Vec<Primitive>,
+    xf: &CockpitTransform,
+    frame: &YokeFrame,
+    state: &ControlState,
+    color: Rgba,
+) {
+    let (roll, pitch) = (state.yoke.roll, state.yoke.pitch);
+    let hub = frame.hub_at(pitch);
+    let up = frame.turn(roll) * frame.up();
+    let mut line = |from: Vec3, to: Vec3, width: f32, color| {
+        primitives.push(Primitive::Line {
+            from: Anchor::Head(xf.point_from_head(from)),
+            to: Anchor::Head(xf.point_from_head(to)),
+            width: width * xf.scale(),
+            color,
+            depth: DEPTH,
+        });
+    };
+    line(hub - frame.axis * YOKE_COLUMN_M, hub, 0.018, SHAFT);
+    let [left, right] = Hand::BOTH.map(|hand| frame.horn(hand, roll, pitch));
+    let foot = up * frame.grip_height;
+    line(left - foot, right - foot, 0.018, SHAFT);
+    for horn in [left, right] {
+        line(horn - foot, horn + up * 0.035, 0.032, color);
+    }
+    for horn in [left, right] {
+        primitives.push(Primitive::Sprite {
+            at: Anchor::Head(xf.point_from_head(horn)),
+            size: SpriteSize::World(0.036 * xf.scale()),
+            facing: Facing::Billboard,
+            shape: Shape::Disc,
+            color,
+            depth: DEPTH,
+        });
+    }
 }
 
 pub(crate) fn clear() {
@@ -107,6 +158,7 @@ fn geometry(placement: &Placement, state: &ControlState, kind: ControlKind) -> O
             _ => Vec3::NEG_Y * 0.08,
         };
         let half = placement.lever_direction(kind, &spec) * spec.travel_m * 0.5;
+        let (back, front) = placement.lever_range(kind);
         Geometry {
             handle,
             grip_half: match kind {
@@ -114,13 +166,15 @@ fn geometry(placement: &Placement, state: &ControlState, kind: ControlKind) -> O
                 _ => Vec3::X * 0.05,
             },
             base: handle + support,
-            rail: Some((rest - half + support, rest + half + support)),
+            rail: Some((rest + half * back + support, rest + half * front + support)),
         }
     };
     (control.handle.is_finite() && control.base.is_finite()).then_some(control)
 }
 
 const TTL: Duration = Duration::from_millis(150);
+/// How much of the yoke's column is drawn ahead of its hub, metres.
+const YOKE_COLUMN_M: f32 = 0.2;
 /// How far below a stick's top its shaft is drawn, metres.
 const STICK_SHAFT_M: f32 = 0.24;
 const DEPTH: DepthMode = DepthMode::XRay {
@@ -159,7 +213,8 @@ mod tests {
                 for value in [-1.0, 0.0, 1.0] {
                     let mut state = ControlState {
                         stick: Vec2::new(0.06 * value, 0.08 * value),
-                        levers: [value; 2],
+                        // Within the throttle's travel, a third of which is behind its rest.
+                        levers: [value, value * 0.6],
                         ..ControlState::default()
                     };
                     let control = geometry(&placement, &state, kind).unwrap();
@@ -390,7 +445,8 @@ mod tests {
             let (low, high) = rest.rail.unwrap();
             let (_, spec) = placement.lever(kind).unwrap();
             assert!(((high - low).length() - spec.travel_m).abs() < 1e-5);
-            for (value, stop) in [(-1.0, low), (1.0, high)] {
+            let (back, front) = placement.lever_range(kind);
+            for (value, stop) in [(back, low), (front, high)] {
                 let end = geometry(
                     &placement,
                     &ControlState {

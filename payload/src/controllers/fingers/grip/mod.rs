@@ -127,7 +127,7 @@ impl GripSource {
     /// The source of a hand on the physical vehicle control `kind`.
     pub const fn of_control(kind: ControlKind) -> GripSource {
         match kind {
-            ControlKind::Wheel => GripSource::Wheel,
+            ControlKind::Wheel | ControlKind::Yoke => GripSource::Wheel,
             ControlKind::Handlebars => GripSource::Handlebars,
             ControlKind::Cyclic | ControlKind::FlightStick => GripSource::Stick,
             ControlKind::Collective | ControlKind::Throttle => GripSource::Lever,

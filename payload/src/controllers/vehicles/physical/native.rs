@@ -1,7 +1,9 @@
 use glam::{Mat4, Quat, Vec2, Vec3};
 
 use crate::controllers::vehicles::{
-    physical::ControlKind, tuning::PhysicalControlsTuning, wheel_render::RenderWheel,
+    physical::{ControlKind, yoke::YokeFrame},
+    tuning::PhysicalControlsTuning,
+    wheel_render::RenderWheel,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -49,10 +51,28 @@ impl NativeStick {
 /// The measured grips in one seat of a merged aircraft cockpit mesh.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct CockpitAsset {
+    /// The control wheel, for a seat whose pitch and roll control is a yoke
+    /// ([`ControlKind::Yoke`]): `stick_grip` is then its hub.
+    pub yoke: Option<YokeAsset>,
     pub seat: u8,
     pub stick_kind: ControlKind,
     pub stick_grip: Vec3,
     pub lever: Option<(ControlKind, Vec3)>,
+}
+
+/// A control wheel measured in its part's own space.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct YokeAsset {
+    /// Where the column meets the wheel.
+    pub hub: Vec3,
+    /// Along the column, toward the pilot.
+    pub axis: Vec3,
+    /// Across the wheel, to the pilot's right.
+    pub right: Vec3,
+    /// From the hub to each horn's grip, across the wheel, metres.
+    pub half_span: f32,
+    /// From the hub up to the horns' grips, metres.
+    pub grip_height: f32,
 }
 
 /// The live part transform for a cockpit whose controls share its body mesh, and the lever the
@@ -83,7 +103,9 @@ impl CockpitFit {
         // seat. The part's bounds keep the placement inside the airframe.
         let missing = match (asset.lever, asset.stick_kind) {
             (None, ControlKind::Cyclic) => Some((ControlKind::Collective, physical.collective)),
-            (None, ControlKind::FlightStick) => Some((ControlKind::Throttle, physical.throttle)),
+            (None, ControlKind::FlightStick | ControlKind::Yoke) => {
+                Some((ControlKind::Throttle, physical.throttle))
+            }
             _ => None,
         };
         let fallback_lever = missing.map(|(kind, spec)| {
@@ -123,6 +145,19 @@ impl CockpitFit {
             .normalize_or_zero()
     }
 
+    /// The yoke in the cockpit frame, for a seat whose asset has one.
+    pub fn yoke(self) -> Option<YokeFrame> {
+        let yoke = self.asset.yoke?;
+        let scale = self.part_to_cockpit.transform_vector3(Vec3::X).length();
+        YokeFrame::new(
+            self.part_to_cockpit.transform_point3(yoke.hub),
+            self.direction(yoke.axis),
+            self.direction(yoke.right),
+            yoke.half_span * scale,
+            yoke.grip_height * scale,
+        )
+    }
+
     pub fn lever_rest(self, kind: ControlKind) -> Option<Vec3> {
         let (lever_kind, grip) = self.asset.lever.or(self.fallback_lever)?;
         (kind == lever_kind).then(|| self.part_to_cockpit.transform_point3(grip))
@@ -145,6 +180,7 @@ pub fn cockpit_asset(name: &str, pilot_in_part: Vec3) -> Option<CockpitAsset> {
         "utility_body" => {
             let right = pilot_in_part.x > 0.0;
             Some(CockpitAsset {
+                yoke: None,
                 seat: u8::from(right),
                 stick_kind: ControlKind::Cyclic,
                 // The grip shell's center comes from the connected components of the body mesh.
@@ -156,7 +192,31 @@ pub fn cockpit_asset(name: &str, pilot_in_part: Vec3) -> Option<CockpitAsset> {
                 lever: None,
             })
         }
+        "privatepropeller_body" => {
+            // The two seats' yokes are measured from the body mesh's connected components: the
+            // hub where the column enters the wheel, the column's run, and the horns' grips. The
+            // throttle is not modelled; it stands by the centre pedestal, inboard of the yoke.
+            let right = pilot_in_part.x > 0.0;
+            let hub = Vec3::new(if right { 0.3375 } else { -0.3555 }, 1.4625, -4.494);
+            Some(CockpitAsset {
+                yoke: Some(YokeAsset {
+                    hub,
+                    axis: Vec3::new(0.0, 0.257, 0.966),
+                    right: Vec3::X,
+                    half_span: 0.142,
+                    grip_height: 0.07,
+                }),
+                seat: u8::from(right),
+                stick_kind: ControlKind::Yoke,
+                stick_grip: hub,
+                lever: Some((
+                    ControlKind::Throttle,
+                    Vec3::new(if right { 0.04 } else { -0.06 }, 1.30, -4.55),
+                )),
+            })
+        }
         "fighterjet_body" => Some(CockpitAsset {
+            yoke: None,
             seat: 0,
             stick_kind: ControlKind::FlightStick,
             stick_grip: Vec3::new(0.0, 1.99, -2.927423),
@@ -166,6 +226,7 @@ pub fn cockpit_asset(name: &str, pilot_in_part: Vec3) -> Option<CockpitAsset> {
             )),
         }),
         "fighterbomber_body" => Some(CockpitAsset {
+            yoke: None,
             seat: 0,
             stick_kind: ControlKind::FlightStick,
             stick_grip: Vec3::new(0.005481, 2.607, -3.095483),
@@ -278,6 +339,7 @@ mod tests {
     #[test]
     fn merged_cockpit_axes_and_grips_follow_the_part_without_handedness_mirroring() {
         let asset = CockpitAsset {
+            yoke: None,
             seat: 0,
             stick_kind: ControlKind::FlightStick,
             stick_grip: Vec3::new(0.0, 1.5, -3.0),
@@ -342,6 +404,7 @@ mod tests {
             stick("lightassault_joystick", Mat4::IDENTITY).target,
             Mat4::IDENTITY,
             CockpitAsset {
+                yoke: None,
                 seat: 0,
                 stick_kind: ControlKind::Cyclic,
                 stick_grip: Vec3::ZERO,
@@ -376,6 +439,7 @@ mod tests {
         assert!(state.holds.iter().all(Option::is_some));
         let changed = CockpitFit {
             asset: CockpitAsset {
+                yoke: None,
                 seat: 1,
                 ..fit.asset
             },
@@ -456,6 +520,7 @@ mod tests {
             stick("lightassault_joystick", Mat4::IDENTITY).target,
             Mat4::IDENTITY,
             CockpitAsset {
+                yoke: None,
                 seat: 0,
                 stick_kind: ControlKind::FlightStick,
                 stick_grip: Vec3::ZERO,

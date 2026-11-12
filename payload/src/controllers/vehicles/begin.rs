@@ -89,7 +89,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     );
     STATE.lock().entry_owner = entry.map(VehicleEntry::into_owner);
     driving_view::publish(fit.view);
-    let offered = offered(seat, &config, fit.fork);
+    let yoke = fit
+        .cockpit
+        .is_some_and(|fit| fit.asset.stick_kind == physical::ControlKind::Yoke);
+    let offered = offered(seat, &config, fit.fork, yoke);
     if offered.is_empty() {
         physical::visual::clear();
     }
@@ -182,6 +185,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
                             kind,
                             physical::ControlKind::Cyclic
                                 | physical::ControlKind::FlightStick
+                                | physical::ControlKind::Yoke
                                 | physical::ControlKind::Collective
                                 | physical::ControlKind::Throttle
                         ) =>

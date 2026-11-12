@@ -129,73 +129,129 @@ fn twisting_the_held_stick_works_the_rudder_from_where_it_was_taken() {
     assert_eq!(out.rudder, None);
 }
 
+/// The throttle's grip for a hand at `share` of the forward section (negative: of the reverse
+/// section), with the hand pulled `extra` lever positions on past it.
+fn throttle_point(p: &Placement, share: f32, extra: f32) -> Vec3 {
+    let spec = p.config.throttle;
+    let (back, front) = p.lever_range(ControlKind::Throttle);
+    let value = if share >= 0.0 {
+        share * front
+    } else {
+        -share * back
+    } + extra;
+    p.mirror(spec.rest_m) + spec.axis.direction() * (spec.travel_m * 0.5 * value)
+}
+
 #[test]
 fn the_throttle_lights_the_afterburner_only_through_its_gate_and_cues_on_the_way() {
     let p = plane();
-    let spec = p.config.throttle;
-    let rest = p.mirror(spec.rest_m);
-    let forward = spec.axis.direction() * (spec.travel_m * 0.5);
     let mut state = ControlState::default();
     let grabs = [Some(ControlKind::Throttle), None];
-    step_with(&mut state, &p, &KINDS, [Some(rest), None], grabs);
-    let gate = p.config.flight.gate_at;
-
     let (out, _) = step_with(
         &mut state,
         &p,
         &KINDS,
-        [Some(rest + forward * (gate - 0.05)), None],
-        [None; 2],
+        [Some(throttle_point(&p, 0.0, 0.0)), None],
+        grabs,
     );
+    // Taken at zero, the throttle gives nothing.
+    assert_eq!(out.throttle, Some(0.0));
+    let gate = p.config.flight.gate_at;
+    let at = |state: &mut ControlState, share: f32, extra: f32| {
+        step_with(
+            state,
+            &p,
+            &KINDS,
+            [Some(throttle_point(&p, share, extra)), None],
+            [None; 2],
+        )
+        .0
+    };
+
+    let out = at(&mut state, 0.35, 0.0);
+    assert_eq!(out.lever_cue, Some(ControlCue::Step));
+    let out = at(&mut state, gate - 0.05, 0.0);
     let dry = out.throttle.unwrap();
     assert!(dry < AFTERBURNER && dry > 0.7, "{dry}");
     assert!(!out.afterburner);
 
-    let (out, _) = step_with(
-        &mut state,
-        &p,
-        &KINDS,
-        [Some(rest + forward * (gate + 0.05)), None],
-        [None; 2],
-    );
+    let out = at(&mut state, gate + 0.05, 0.0);
     assert_eq!(out.throttle, Some(1.0));
     assert!(out.afterburner);
     assert_eq!(out.lever_cue, Some(ControlCue::Gate));
 
-    let (out, _) = step_with(
-        &mut state,
-        &p,
-        &KINDS,
-        [Some(rest + forward * 1.2), None],
-        [None; 2],
-    );
+    let out = at(&mut state, 1.0, 0.2);
     assert_eq!(out.lever_cue, Some(ControlCue::Stop));
 
-    // Back past idle into the brake.
-    step_with(&mut state, &p, &KINDS, [Some(rest), None], [None; 2]);
-    let (out, _) = step_with(
-        &mut state,
-        &p,
-        &KINDS,
-        [Some(rest - forward * 0.5), None],
-        [None; 2],
-    );
-    assert_eq!(out.lever_cue, Some(ControlCue::Neutral));
-    assert!(out.throttle.is_some_and(|t| t < 0.0));
+    // Pulled back a little past zero, it stops hard at zero and gives nothing.
+    let pull = p.config.flight.zero_pull * 2.0;
+    let out = at(&mut state, 0.0, -pull * 0.5);
+    assert_eq!(out.lever_cue, Some(ControlCue::ZeroStop));
+    assert_eq!(out.throttle, Some(0.0));
+    assert_eq!(state.throttle.section, ThrottleSection::Forward);
+
+    // Pulled on through the gate, it buzzes and reverses in proportion.
+    let out = at(&mut state, -0.5, 0.0);
+    assert_eq!(out.lever_cue, Some(ControlCue::ReverseGate));
+    assert_eq!(state.throttle.section, ThrottleSection::Reverse);
+    let reverse = out.throttle.unwrap();
+    assert!((-0.5..-0.4).contains(&reverse), "{reverse}");
+    let out = at(&mut state, -1.0, -0.1);
+    assert_eq!(out.throttle, Some(-1.0));
+
+    // A little push forward holds it at zero; a deliberate one takes it back out.
+    at(&mut state, 0.0, pull * 0.5);
+    assert_eq!(state.throttle.section, ThrottleSection::Reverse);
+    let out = at(&mut state, 0.3, 0.0);
+    assert_eq!(out.lever_cue, Some(ControlCue::ReverseGate));
+    assert_eq!(state.throttle.section, ThrottleSection::Forward);
 
     let mut off = plane();
     off.config.flight.afterburner_gate = false;
     let mut state = ControlState::default();
-    step_with(&mut state, &off, &KINDS, [Some(rest), None], grabs);
+    step_with(
+        &mut state,
+        &off,
+        &KINDS,
+        [Some(throttle_point(&off, 0.0, 0.0)), None],
+        grabs,
+    );
     let (out, _) = step_with(
         &mut state,
         &off,
         &KINDS,
-        [Some(rest + forward * 0.95), None],
+        [Some(throttle_point(&off, 0.95, 0.0)), None],
         [None; 2],
     );
     assert!(out.throttle.is_some_and(|t| t > AFTERBURNER), "{out:?}");
     assert!(!out.afterburner);
+}
+
+#[test]
+fn a_throttle_let_go_next_to_zero_snaps_to_it() {
+    let p = plane();
+    let mut state = ControlState::default();
+    let grabs = [Some(ControlKind::Throttle), None];
+    step_with(
+        &mut state,
+        &p,
+        &KINDS,
+        [Some(throttle_point(&p, 0.0, 0.0)), None],
+        grabs,
+    );
+    let near = throttle_point(&p, p.config.flight.zero_snap * 0.5, 0.0);
+    step_with(&mut state, &p, &KINDS, [Some(near), None], [None; 2]);
+    assert!(state.levers[1] > 0.0);
+    let (out, _) = step_held(
+        &mut state,
+        &p,
+        &KINDS,
+        [Some(near), None],
+        [None; 2],
+        [false; 2],
+    );
+    assert_eq!(state.levers[1], 0.0);
+    assert_eq!(out.throttle, None);
 }
 
 #[test]
