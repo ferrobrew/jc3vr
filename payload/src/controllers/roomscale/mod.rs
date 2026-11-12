@@ -58,6 +58,7 @@ use crate::{
         },
         config::{Posture, RoomscaleConfig},
         frame as controllers_frame, locomotion,
+        mode::{Mode, current as current_mode},
         roomscale::{
             crouch::{CROUCH_EXIT_DROP_M, CrouchTracker},
             fade::{FADE_TIMING, FadeSource},
@@ -284,12 +285,18 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     let probe = collision::latest()
         .filter(|p| now.duration_since(p.at) < probe::STALE_AFTER)
         .map(|p| p.result);
+    // Seated in a vehicle the head leans against cockpit glass and cabin trim the probe reads as
+    // walls, and darkening there blinds a pilot mid-flight; the seat keeps the head where it
+    // belongs, so the fade stays clear.
+    let seated = matches!(current_mode().mode, Mode::Vehicle(_));
     let head_fade = match probe {
-        Some(result) if config.head_fade.enabled && in_gameplay => probe::fade_for_depth(
-            result.depth(),
-            probe::HEAD_FADE_START_DEPTH_M,
-            probe::HEAD_FADE_FULL_DEPTH_M,
-        ),
+        Some(result) if config.head_fade.enabled && in_gameplay && !seated => {
+            probe::fade_for_depth(
+                result.depth(),
+                probe::HEAD_FADE_START_DEPTH_M,
+                probe::HEAD_FADE_FULL_DEPTH_M,
+            )
+        }
         _ => 0.0,
     };
     fade::set_target(FadeSource::HeadInGeometry, head_fade);
