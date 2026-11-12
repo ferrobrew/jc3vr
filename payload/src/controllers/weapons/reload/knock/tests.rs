@@ -403,3 +403,14 @@ fn a_knock_is_capped_and_an_immovable_body_is_left_alone() {
     );
     assert_eq!(knocked(body, contact, Vec3::ZERO, &KNOCK), body.velocities);
 }
+
+#[test]
+fn a_push_into_the_mouth_sends_the_magazine_straight_out_of_the_well() {
+    let zone = rifle();
+    let s = push_strike(&zone, 1.5);
+    assert!((s.closing_mps - 1.5).abs() < 1e-6, "{s:?}");
+    assert!((s.velocity + Vec3::Y * 1.5).length() < 1e-6, "{s:?}");
+    // Struck at the mouth, the magazine's top end.
+    assert!((s.contact - Vec3::Y * 0.06).length() < 1e-6, "{s:?}");
+    assert_eq!(push_strike(&zone, f32::NAN).closing_mps, 0.0);
+}

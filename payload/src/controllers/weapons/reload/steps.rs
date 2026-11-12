@@ -765,7 +765,9 @@ impl State {
                     unsafe { engine::show_magazine_part(weapon.address, weapon.part_shown()) };
                 }
             }
-            Some(InsertEvent::Refused) => {
+            Some(InsertEvent::Pushed { speed_mps })
+                if self.push_knock(tick, gun_hand, speed_mps, reload) => {}
+            Some(InsertEvent::Refused | InsertEvent::Pushed { .. }) => {
                 self.event(format!(
                     "the {gun_hand:?} gun's well refused the round: it still holds one ({} m from the mouth)",
                     self.status.insertion.distance_m.map_or(f32::NAN, |d| (d * 1000.0).round() / 1000.0)

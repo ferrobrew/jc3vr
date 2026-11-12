@@ -355,6 +355,21 @@ pub(super) fn strike(
     (Some(strike), Some(local))
 }
 
+/// The strike of a push into `zone`'s well at `speed_mps` along it: struck at the mouth and sent
+/// straight out of the well, as a strike on the magazine's base sends it.
+pub(super) fn push_strike(zone: &KnockZone, speed_mps: f32) -> Strike {
+    let speed = if speed_mps.is_finite() {
+        speed_mps.max(0.0)
+    } else {
+        0.0
+    };
+    Strike {
+        contact: zone.axis * (zone.below * 0.5),
+        velocity: -zone.axis * speed,
+        closing_mps: speed,
+    }
+}
+
 /// The velocities of `body` after a strike at the world point `contact` by a tip moving at
 /// `strike` relative to it: the impulse along the strike that sends the struck point on at the
 /// tuning's share of the tip's speed, which changes its linear velocity by the impulse over the mass

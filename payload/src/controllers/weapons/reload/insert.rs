@@ -28,7 +28,7 @@ pub enum InsertStage {
 }
 
 /// What the insertion reports.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 pub enum InsertEvent {
     /// A round was taken from the pouch.
     Taken,
@@ -42,6 +42,10 @@ pub enum InsertEvent {
     Dropped,
     /// The round was pushed at a well that already holds a round, which refuses it.
     Refused,
+    /// The round was pushed into a well that already holds a round at the push-knock speed or
+    /// faster ([`Reload::push_knock_mps`]), which knocks the round in the well out: the push's speed
+    /// into the gun, relative to the gun, metres per second.
+    Pushed { speed_mps: f32 },
 }
 
 /// The held round in the cockpit frame.
@@ -332,7 +336,17 @@ impl Insertion {
             }
             if !self.refused && local.length() <= config.capture_radius_m {
                 self.refused = true;
-                return Some(InsertEvent::Refused);
+                // The push's speed into the gun, in the well's moving frame where the last tick's
+                // top is known, so the gun's own motion does not count.
+                let speed_mps = match self.previous_local_top {
+                    Some(previous) if inputs.dt > 1e-4 => (local.y - previous.y) / inputs.dt,
+                    _ => held.velocity.dot(axis),
+                };
+                return Some(if speed_mps >= config.push_knock_mps {
+                    InsertEvent::Pushed { speed_mps }
+                } else {
+                    InsertEvent::Refused
+                });
             }
             return None;
         }
@@ -761,6 +775,33 @@ mod tests {
             Some(InsertEvent::Dropped)
         );
         assert_eq!(i.seated, 0);
+    }
+
+    #[test]
+    fn a_fast_push_into_an_occupied_well_knocks_and_a_slow_one_is_refused() {
+        let occupied = |top: Vec3| InsertInputs {
+            occupied: true,
+            ..inputs(false, top, Vec3::ZERO)
+        };
+        // Below the threshold, as the 10 November loading pushes came (0.3 to 0.5 m/s), and above
+        // it, as its strikes did (1.9 to 3.2 m/s).
+        for (speed, knocks) in [(0.4, false), (0.9, false), (1.2, true), (2.5, true)] {
+            let mut i = Insertion::new();
+            take(&mut i);
+            let start = WELL.mouth - Vec3::Y * (CONFIG.capture_radius_m + 0.001);
+            assert_eq!(i.step(occupied(start), &CONFIG), None);
+            let top = start + Vec3::Y * speed * 0.02;
+            let event = i.step(occupied(top), &CONFIG);
+            match event {
+                Some(InsertEvent::Pushed { speed_mps }) if knocks => {
+                    assert!((speed_mps - speed).abs() < 1e-3, "{speed_mps} {speed}");
+                }
+                Some(InsertEvent::Refused) if !knocks => {}
+                other => panic!("{speed} m/s gave {other:?}"),
+            }
+            // Either is once per approach.
+            assert_eq!(i.step(occupied(top + Vec3::Y * 0.01), &CONFIG), None);
+        }
     }
 
     #[test]

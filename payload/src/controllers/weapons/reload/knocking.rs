@@ -98,6 +98,35 @@ impl State {
         knock::publish(Some(view(fast, self.knocks.knocked_at)));
     }
 
+    /// Knock the magazine of `gun_hand`'s gun out with a push of the held round into its well at
+    /// `speed_mps`: the old magazine leaves straight out of the well, struck at the mouth, as a
+    /// strike on its base sends it. Returns whether the drop was queued; a gun whose magazine
+    /// cannot be knocked out refuses the push instead.
+    pub(super) fn push_knock(
+        &mut self,
+        tick: &Tick,
+        gun_hand: Hand,
+        speed_mps: f32,
+        reload: &Reload,
+    ) -> bool {
+        let Some((weapon, gun)) = tick.gun(gun_hand) else {
+            return false;
+        };
+        let Some(zone) = knock::zone_for(
+            weapon.plan.load,
+            weapon.plan.well,
+            !weapon.occupied(),
+            gun.well.map(|well| (well.mouth, well.axis)),
+            knock::below_m(wells::lookup(weapon.reading.name_hash)),
+            tick.world_scale,
+        ) else {
+            return false;
+        };
+        let strike = knock::push_strike(&zone, speed_mps);
+        tracing::info!(target: "controllers", hand = ?gun_hand.other(), speed_mps, "reload: the held magazine was pushed into the occupied well fast enough to knock");
+        self.queue_knock(tick, gun_hand, strike, reload)
+    }
+
     fn knock_guns(&mut self, tick: &Tick, inputs: &FinishInputs, config: &ControllersConfig) {
         if self.status.insertion.holding()
             || self.pending_detach.is_some()

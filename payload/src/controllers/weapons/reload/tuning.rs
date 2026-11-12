@@ -4,7 +4,7 @@
 use glam::Vec3;
 
 use crate::controllers::weapons::reload::{
-    config::{ExtractionConfig, ReloadConfig},
+    config::{ExtractionConfig, KnockConfig, ReloadConfig},
     plan::ReloadPlan,
 };
 
@@ -48,6 +48,12 @@ pub struct Reload {
     pub capture_radius_m: f32,
     /// How far a held magazine may be turned from the well's axis and still catch, degrees.
     pub capture_angle_deg: f32,
+    /// The slowest push of a held magazine into a well that still holds one, along the well into
+    /// the gun and relative to it, that knocks the old one out
+    /// ([`KnockConfig::push_min_speed_mps`]); a slower push is refused.
+    ///
+    /// [`KnockConfig::push_min_speed_mps`]: crate::controllers::weapons::reload::config::KnockConfig::push_min_speed_mps
+    pub push_knock_mps: f32,
     /// How close the top of a held round must come to a launcher's well to catch it, metres. A
     /// launcher's well (a rocket tube's front, the UPU-210's cartridge bay) is large and sits far
     /// from the hand on the grip, so it catches from farther than a gun's.
@@ -89,6 +95,7 @@ impl Reload {
             held_palm_gap_m: 0.03,
             capture_radius_m: 0.08,
             capture_angle_deg: 50.0,
+            push_knock_mps: KnockConfig::new().push_min_speed_mps,
             launcher_capture_radius_m: 0.16,
             launcher_capture_angle_deg: 85.0,
             seat_depth_m: 0.025,
@@ -121,6 +128,7 @@ impl Reload {
                 ..RELOAD.loose
             },
             extraction: config.extraction,
+            push_knock_mps: config.knock.push_min_speed_mps,
             ..RELOAD
         }
     }

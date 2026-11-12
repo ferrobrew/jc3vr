@@ -116,11 +116,19 @@ pub struct KnockConfig {
     /// the gun to load moves at a few tenths of a metre per second, and a deliberate strike at one
     /// and a half to three, so a gentle touch does nothing.
     pub min_speed_mps: f32,
+    /// The slowest push of the held magazine's tip into the well's mouth while the old magazine is
+    /// still in, along the well into the gun and relative to it, that knocks the old one out, metres
+    /// per second at the player's scale; a slower push is refused. In the 10 November 2026 session
+    /// the pushes that came to load were 0.3 to 0.5 m/s at the mouth and the strikes 1.9 to 3.2.
+    pub push_min_speed_mps: f32,
 }
 
 impl KnockConfig {
     pub const fn new() -> Self {
-        Self { min_speed_mps: 1.0 }
+        Self {
+            min_speed_mps: 1.0,
+            push_min_speed_mps: 1.0,
+        }
     }
 }
 

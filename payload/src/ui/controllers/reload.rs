@@ -184,4 +184,13 @@ pub(super) fn reload_settings(ui: &mut Ui, r: &mut ReloadConfig) {
         "How fast the fresh magazine in the hand must strike the one still in the gun, relative \
          to the gun, to knock it out. Slower touches do nothing.",
     );
+    ui.add(
+        egui::Slider::new(&mut r.knock.push_min_speed_mps, 0.3..=4.0)
+            .text("Magazine push-knock speed (m/s)")
+            .fixed_decimals(1),
+    )
+    .on_hover_text(
+        "How fast the fresh magazine must be pushed into the well while the old one is still in, \
+         relative to the gun, to knock the old one out. A slower push is refused with a buzz.",
+    );
 }
