@@ -40,11 +40,13 @@ pub(super) unsafe fn narrow(
         scale[axis] = target_core_half / core_half;
     }
     let mut vertices = unsafe { vertices(source)? }.to_vec();
-    for vertex in &mut vertices {
-        for axis in [0, 2] {
-            vertex.data[axis] = center[axis] + (vertex.data[axis] - center[axis]) * scale[axis];
-        }
-        vertex.data[3] = 0.0;
+    let mut points: Vec<[f32; 3]> = vertices
+        .iter()
+        .map(|vertex| [vertex.data[0], vertex.data[1], vertex.data[2]])
+        .collect();
+    narrow_points(&mut points, center, scale);
+    for (vertex, point) in vertices.iter_mut().zip(&points) {
+        vertex.data = [point[0], point[1], point[2], 0.0];
     }
     let input = hkStridedVertices {
         m_vertices: vertices.as_ptr().cast(),
@@ -84,6 +86,40 @@ pub(super) unsafe fn narrow(
         return Err(GeometryError::ChangedHeightOrCenter);
     }
     Ok((replacement, original))
+}
+
+/// Narrow a hull's core vertices `points` about `center` by `scale` across the ground (x and z),
+/// keeping its height, and keep the slope of its bottom cap.
+///
+/// The game's human proxy (`CSharedPfxCharacterSettings::CreateQuadrupedShape`) is a heptagonal
+/// prism whose bottom is a cone: an apex at the feet and a ring as wide as the hull, as high above
+/// the apex as it is wide. The character's rigid body treats a contact whose normal leans more than
+/// its maximum slope from the vertical as a wall, and the cone's faces lie just under the slope the
+/// game gives it, so a kerb's or a step's edge pressed into them steps the character up. Scaled
+/// across the ground alone, the cone keeps its height at half the width and its faces stand far
+/// steeper than that slope: every step's edge meets a wall.
+/// So the vertices of the bottom cap (no higher above the lowest vertex than the hull's widest
+/// reach from its axis) are also scaled toward the lowest vertex by the same factor, which keeps
+/// the cone's angles; the narrower cone steps up edges as high as it now is, half the authored
+/// cone's height. The rest of the hull keeps its height, and the lowest and highest vertices stay.
+pub(super) fn narrow_points(points: &mut [[f32; 3]], center: [f32; 3], scale: [f32; 3]) {
+    let Some(bottom) = points.iter().map(|p| p[1]).min_by(f32::total_cmp) else {
+        return;
+    };
+    let reach = points
+        .iter()
+        .map(|p| (p[0] - center[0]).hypot(p[2] - center[2]))
+        .fold(0.0_f32, f32::max);
+    let cap_scale = (scale[0] + scale[2]) * 0.5;
+    for point in points.iter_mut() {
+        for axis in [0, 2] {
+            point[axis] = center[axis] + (point[axis] - center[axis]) * scale[axis];
+        }
+        let rise = point[1] - bottom;
+        if rise <= reach + GEOMETRY_TOLERANCE_M {
+            point[1] = bottom + rise * cap_scale;
+        }
+    }
 }
 
 pub(super) unsafe fn bounds(shape: NonNull<hknpShape>) -> Result<Bounds, GeometryError> {
@@ -138,3 +174,62 @@ pub(super) unsafe fn vertices<'a>(
 
 const MAXIMUM_VERTICES: u16 = 252;
 const GEOMETRY_TOLERANCE_M: f32 = 1.0e-4;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The game's player standing hull, as `CreateQuadrupedShape` builds it for that state.
+    fn player_hull() -> Vec<[f32; 3]> {
+        let (height, radius) = (1.7_f32, 0.45_f32);
+        let mut points = vec![[0.0, height, 0.0]];
+        for k in 0..7 {
+            let angle = k as f32 * std::f32::consts::TAU / 7.0;
+            let (sin, cos) = angle.sin_cos();
+            points.push([radius * cos, height - radius, -radius * sin]);
+            points.push([radius * cos, radius, -radius * sin]);
+        }
+        points.push([0.0, 0.0, 0.0]);
+        points
+    }
+
+    /// The steepest lean of a bottom face's normal from the vertical, degrees: a face of the cone
+    /// rises from the apex to the ring by the ring's height over its inradius.
+    fn bottom_face_lean_deg(points: &[[f32; 3]]) -> f32 {
+        let ring = points
+            .iter()
+            .filter(|p| p[1] > 0.0)
+            .min_by(|a, b| a[1].total_cmp(&b[1]))
+            .unwrap();
+        let reach = ring[0].hypot(ring[2]);
+        let inradius = reach * (std::f32::consts::PI / 7.0).cos();
+        (ring[1] / inradius).atan().to_degrees()
+    }
+
+    #[test]
+    fn a_narrowed_hull_keeps_its_bottom_cones_slope_its_height_and_its_feet() {
+        let authored = player_hull();
+        let mut narrowed = authored.clone();
+        narrow_points(&mut narrowed, [0.0; 3], [0.5, 1.0, 0.5]);
+        let authored_lean = bottom_face_lean_deg(&authored);
+        assert!(authored_lean < 50.0, "{authored_lean}");
+        assert!((bottom_face_lean_deg(&narrowed) - authored_lean).abs() < 1e-3);
+        // The feet, the top, and the head's ring stay where they were; the hull is half as wide.
+        assert_eq!(narrowed[0], [0.0, 1.7, 0.0]);
+        assert_eq!(*narrowed.last().unwrap(), [0.0, 0.0, 0.0]);
+        assert!((narrowed[1][1] - 1.25).abs() < 1e-6);
+        assert!((narrowed[1][0] - 0.225).abs() < 1e-6);
+        // The bottom ring comes down to half its height.
+        assert!((narrowed[2][1] - 0.225).abs() < 1e-6);
+    }
+
+    #[test]
+    fn scaled_across_the_ground_alone_the_bottom_cone_is_a_wall() {
+        let mut stretched = player_hull();
+        for p in &mut stretched {
+            p[0] *= 0.5;
+            p[2] *= 0.5;
+        }
+        assert!(bottom_face_lean_deg(&stretched) > 60.0);
+    }
+}
