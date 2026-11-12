@@ -674,8 +674,8 @@ mod tests {
     #[test]
     fn an_incoming_centre_grip_stops_within_acquisition_grace_at_low_tick_rates() {
         let tuning = tuning();
-        assert_eq!(tuning.hand_force_n, 5000.0);
-        assert_eq!(tuning.hand_torque_nm, 400.0);
+        assert_eq!(tuning.hand_force_n, 3333.0);
+        assert_eq!(tuning.hand_torque_nm, 267.0);
         for hz in [120.0, 60.0, 30.0, 24.0, 20.0, 15.0, 10.0] {
             let dt = 1.0 / hz;
             let mass = 10.0;

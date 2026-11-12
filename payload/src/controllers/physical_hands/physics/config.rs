@@ -164,8 +164,8 @@ impl HandBodyTuning {
 /// a dead body until the next pre-simulation step ends it.
 pub const HAND_BODIES: HandBodyTuning = HandBodyTuning {
     mass_kg: 3.0,
-    max_force_n: 5000.0,
-    max_torque_nm: 400.0,
+    max_force_n: 3333.0,
+    max_torque_nm: 267.0,
     linear_gain: 1.0,
     angular_gain: 0.8,
     contact_gain: 0.4,

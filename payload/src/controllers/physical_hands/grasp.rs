@@ -373,7 +373,7 @@ mod tests {
 
     #[test]
     fn ragdoll_and_motorcycle_scale_loads_fit_strength_without_making_cars_liftable() {
-        for mass_kg in [75.0, 200.0, 400.0] {
+        for mass_kg in [75.0, 200.0, 300.0] {
             assert!(can_lift(mass_kg, 1, &PICKUP));
         }
         assert!(!can_lift(1500.0, 2, &PICKUP));
