@@ -24,7 +24,7 @@ The lock stays inside the game's reel. The reel task keeps running, so the reel'
 Each reel tick, `lock::model::swing`:
 
 1. adds gravity to Rico's velocity, which the reel's velocity carries none of;
-2. while the brake runs, removes Rico's speed toward the hook's point over `lock.brake_s`, keeping the speed across the line, which becomes the swing, and lets the held length follow Rico in;
+2. while the take runs, turns Rico's speed toward the hook's point across the line over `lock.brake_s`, keeping his speed, and lets the held length follow Rico in;
 3. steps the shared rope between the hook's point and Rico.
 
 The rope (`grapple::rope::Rope`) is tension only: a spring-damper on the stretch past the held length, with the damping on the ends parting along the line, normalised by the ends' reduced mass so that the same stretch asks the same acceleration whatever the masses, and capped at a tension. The hook's end moves with the attach point's own velocity, as the attachment proxy reports it, so the relative motion is measured against the target: on a static wall it is a pendulum, and under a helicopter the line holds Rico at its distance from the point in the helicopter's frame.
@@ -37,10 +37,28 @@ The rope (`grapple::rope::Rope`) is tension only: a spring-damper on the stretch
 | `lock.break_stretch_m` | 3 | How far past the held length the line stretches before it breaks |
 | `lock.reel_in_mps` | 3 | The fastest the hand takes line in |
 | `lock.min_length_m` | 1.5 | The shortest the line is held at |
-| `lock.brake_s` | 0.25 | How long the brake takes to stop the rush toward the hook |
+| `lock.brake_s` | 0.25 | How long the take takes to turn the rush toward the hook into the swing |
 | `lock.reaction` | 1 | The share of the line's pull the target feels |
+| `lock.hang` | on | A reel onto a ceiling hangs Rico below the hook instead of attaching him upside down |
+| `lock.hang_length_m` | 3.5 | The hang's line, from the hook to Rico's root |
+
+### The take
+
+Taking hold keeps Rico's momentum and turns it into the swing (`lock::model::Held::take`). On the take's first tick it notes his speed relative to the hook's point; over `lock.brake_s` the part of his velocity toward the point falls linearly to zero, and the part across the line grows so that the whole speed stays what it was. The swing runs the way his velocity already crosses the line; a rush straight along it, which is what the game's reel gives, swings the way he was going over the ground, so a zip up toward a high hook carries on forward and down under it; and a rush along a level line, with no way across over the ground, drops into the swing. A rush straight up under the hook has no way across and stops, hanging. The reel's own velocity carries the velocity Rico brought into it, blending from it to the attach point's over the reel's first moments ([the reel's velocity](../../engine/gameplay/grapple-pipeline.md#the-reels-velocity)), so a lock taken as the reel starts carries a fall or a run into the swing as well; how much of it is left by the time the reel task carries Rico is unverified.
+
+The speed kept is capped by what the line holds at the bottom of the swing it starts: a pendulum pulls hardest there, with gravity and the speed gained in the drop added to the turn. The cap is the speed whose swing reaches the bottom with the line at its strength (`lock.max_accel_g`); from a level line that is the square root of gravity times the length, about 18 m/s on a 33 m line, and more from below the hook. Without the cap a fast entry would stretch the line to its break.
+
+The take replaced a brake that removed the speed toward the hook and kept only the speed across it: the reel's velocity is almost all along the line, so in the 10 November take every lock stopped Rico dead in the air.
 
 Rico's mass is his proxy body's, read from its motion when the lock takes hold; a lock whose mass cannot be read is refused, and the button's tap still goes to the game.
+
+## The hang below a ceiling
+
+A reel onto a ceiling ends, in the game, in the upside-down attach: the arrival ([`NStateTask_ReelIn::FinishReel`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::NStateTask_ReelIn##func-FinishReel)) chooses it from the attachment setup and starts it ([`GrapplingHook::StartReelUpsideDown`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-StartReelUpsideDown)), and Rico clings to the surface inverted, a pose the player's body cannot match. With `lock.hang` on (the default), a detour holds that start off for the local player, the reel keeps running, and the lock's next tick takes the line itself, with no press (`lock::Hold::Hang`): the line is held from Rico's distance and pays out at 3 m/s to `lock.hang_length_m` (3.5 m from the hook to Rico's root, about a metre and a half of line above the raised grapple hand), and he starts at rest against the hook, as the game's own ceiling attach clears his velocities, rather than his rush turning into a swing. He hangs below the hook, upright, on the reel's animation as in any lock; the grapple hand pumps the swing ([the swing](#the-swing)) and takes line in by pulling back, and the other hand is free.
+
+Every way out of a hang lets go of the line: a quick release, a longer one, and a yank, since resuming the reel would only arrive at the ceiling again. A landing lets go as for any lock. `LINE LOCK` reads `HANGING` while it holds, and `the line locks` logs `hang=true`. Perches on walls, the game's other hang (under a helicopter), and the stunt positions are left to the game.
+
+Pulling up onto a ledge from the hang is not done.
 
 ## Shortening the line
 
@@ -56,7 +74,7 @@ The active wire never holds a native constraint ([grapple-pipeline.md](../../eng
 
 | Ending | What follows |
 |---|---|
-| The button released after a hold | The active wire is retracted; the reel task cancels itself into the fall on its next update. The wanted velocity is captured before the retract and handed back after the cancel, so Rico keeps the swing's exit velocity, from which the parachute and the wingsuit open as usual |
+| The button released after a hold | The active wire is retracted; the reel task cancels itself into the fall on its next update. The swing's last velocity, the one the lock handed the reel, is given to Rico before the retract and again after the cancel, so he keeps the swing's exit velocity, from which the parachute and the wingsuit open as usual. The wanted velocity read back from the character reads near zero while the lock drives the reel, so it is only the fallback |
 | A quick release | The reel resumes, firing nothing onto the attached line |
 | A yank | The reel resumes toward the hook and its own arrival (a perch, the helicopter's hang, a vehicle's stunt position) |
 | Landing: Rico's proxy stands on a surface after he has left the ground since the lock took hold | The line is let go of, so Rico lands on foot rather than being dragged |
@@ -101,10 +119,10 @@ The lock follows the prescan's first design, inside the reel task, after the eng
 With the lock on (the default):
 
 1. Zip toward a high wall, tapping the grapple button, then press it again at once and hold it, before Rico starts moving: nothing locks in the wind-up, and the line locks as the reel carries Rico. Release: Rico flies on (`released`), and no dual tether fires.
-2. Zip toward a high wall and hold the grapple button mid-reel: Rico stops rushing in within a quarter of a second and swings below the hook; `the line locks` is logged with a plausible length, the lock pulse is felt, and `LINE LOCK` shows `BRAKING` briefly and then the held length.
+2. Zip toward a high wall and hold the grapple button mid-reel: within a quarter of a second Rico's rush turns into a swing on forward and down under the hook, without losing speed, rather than stopping in the air; `the line locks` is logged with a plausible length, the lock pulse is felt, and `LINE LOCK` shows `BRAKING` briefly and then the held length. Zip along a level line and lock: Rico drops into the swing at speed. On a short line, the swing never snaps from the entry alone. Tap the grapple at a far wall and press again as the hook lands, holding: the line locks as the reel starts.
 3. Let the swing settle: Rico hangs at the held length plus a small stretch, and the grapple hand's hum follows the tension through the swing.
 4. Still holding, pull the grapple hand back repeatedly, hand over hand: the line shortens, no faster than about 3 m/s, and stops at 1.5 m. Reach out: nothing pays out.
-5. Swing, and let go at the bottom of the arc going forward: Rico flies on with his speed into the fall, the release pulse is felt, `the lock ends` with `released`, and the parachute opens from the flight.
+5. Swing, and let go at the bottom of the arc going forward: Rico flies on with his speed into the fall, carrying on forward rather than dropping straight down, the release pulse is felt, `the lock ends` with `released`, and the parachute opens from the flight.
 6. Lock, then tap-release within a quarter of a second, with the re-reel upgrade bought: the reel resumes and fires again from the reel at the aim. Without the upgrade, the reel simply resumes.
 7. Lock, then yank the grapple hand: the reel resumes to the hook and its arrival (a perch or a hang), boosted if the upgrade is bought; `the lock ends` with `yanked`.
 8. Lock low over the ground and let Rico swing down onto it: the line is let go of on touching down, with `landed`, and Rico lands on foot.
@@ -113,6 +131,7 @@ With the lock on (the default):
 11. Grapple a character and hold the button during the reel: nothing locks, and the game's own reel and grab behave as before.
 12. Brush a wall mid-swing: the swing carries on rather than the reel dropping or reattaching.
 13. Switch the lock off: holding the button mid-reel does what it did before.
+14. Zip to a ceiling (under a bridge or an overhang) without touching the button: Rico does not flip into the inverted cling; he drops a couple of metres and hangs upright below the hook, `LINE LOCK` reading `HANGING`. Swing the grapple arm to pump the swing; use the right hand freely; pull the grapple hand back to climb the line. Tap the button: he drops and falls on, and the reel does not carry him back to the ceiling. Switch `Hang below ceilings` off: the ceiling cling returns.
 
 ## Unverified in the headset
 
@@ -120,7 +139,7 @@ With the lock on (the default):
 - That Rico keeps his velocity through the reel's cancel into the fall, and how the fall's own air control treats it.
 - That the proxy's support reading is live during the reel, for the landing.
 - That the impulse on a deactivated body wakes it, and how a helicopter's flight model and pilot answer a steady pull.
-- How the defaults feel: the stiffness, the damping, the strength, and the brake.
+- How the defaults feel: the stiffness, the damping, the strength, and the take; whether the entry cap on speed feels like a swing or still too much like a stop on short lines.
 - The vehicle proxy's body for a part: whether the impulse reaches the vehicle through the part.
 
 ## Not yet done

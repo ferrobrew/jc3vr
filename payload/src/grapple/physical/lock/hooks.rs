@@ -3,6 +3,11 @@
 //! ([`GrapplingHook::CheckReelCollisions`]). The lock's own endings (a release, a yank, a landing,
 //! a break) take their place.
 //!
+//! The arrival's upside-down ending ([`GrapplingHook::StartReelUpsideDown`], the ceiling attach)
+//! is held off for the local player while the hang is on: the reel keeps running, and the lock's
+//! next tick hangs the character below the hook instead (`lock::want_hang`).
+//!
+//! [`GrapplingHook::StartReelUpsideDown`]: jc3gi::equipment::grappling_hook::GrapplingHook::StartReelUpsideDown
 //! [`NStateTask_ReelIn::FinishReel`]: jc3gi::equipment::grappling_hook::NStateTask_ReelIn::FinishReel
 //! [`GrapplingHook::CheckReelCollisions`]: jc3gi::equipment::grappling_hook::GrapplingHook::CheckReelCollisions
 
@@ -14,12 +19,33 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::grapple::physical::lock::{engine, holds, last_velocity};
+use crate::{
+    config::Config,
+    grapple::physical::lock::{engine, holds, last_velocity, want_hang},
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&FINISH_REEL_BINDER)
         .with_static_binder(&CHECK_REEL_COLLISIONS_BINDER)
+        .with_static_binder(&START_REEL_UPSIDE_DOWN_BINDER)
+}
+
+#[detour(address = jc3gi::equipment::grappling_hook::GrapplingHook::StartReelUpsideDown_ADDRESS)]
+fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Character>) {
+    // SAFETY: the arrival's own arguments, on the character update that owns them.
+    let local = unsafe { holder.as_ref() }
+        .and_then(|h| unsafe { h.px.as_ref() })
+        .is_some_and(|c| c.m_IsLocalCharacter);
+    let hangs = Config::lock_query(|c| {
+        let lock = &c.controllers.grapple.lock;
+        lock.enabled && lock.hang
+    });
+    if local && hangs {
+        want_hang();
+        return;
+    }
+    START_REEL_UPSIDE_DOWN.get().unwrap().call(hook, holder);
 }
 
 #[detour(address = jc3gi::equipment::grappling_hook::NStateTask_ReelIn::FinishReel_ADDRESS)]

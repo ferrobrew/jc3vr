@@ -17,10 +17,10 @@
 //! to it on the next input tick ([`lock_tick`]). A static target takes nothing, and a character is
 //! never locked onto.
 //!
-//! On take, the lock brakes the reel's rush into the swing: over the config's brake time it removes
-//! the character's speed toward the hook's point, measured against the hook's own motion, and lets
-//! the held length follow the character in, so the line does not fall slack and the speed across
-//! the line becomes the swing ([`model::swing`]).
+//! On take, the lock turns the reel's rush into the swing: over the config's take time it turns the
+//! character's speed toward the hook's point, measured against the hook's own motion, across the
+//! line, keeping the speed as far as the line can hold the swing it starts, and lets the held
+//! length follow the character in, so the line does not fall slack ([`model::swing`]).
 //!
 //! The grapple button's gestures ([`crate::controllers::bindings::grapple_button`]) say what the
 //! player asks ([`LockButton`]), and [`lock_tick`] acts on them after the bindings' tables step:
@@ -34,6 +34,12 @@
 //!
 //! The lock also ends when the character lands (the line let go of), when the line overstretches
 //! or the hook's target is gone (the line breaks), and when the reel ends by itself.
+//!
+//! The hang: a reel whose arrival would put the character in the game's upside-down ceiling
+//! attach, which holds the body inverted against the surface, takes the lock instead
+//! ([`hooks`]), with no press: the line pays out to a short length and the character hangs below
+//! the hook, upright and swinging, the grapple hand pumping the swing and the other hand free. Any
+//! release of the button, and a yank, let go of a hang, so the reel never resumes into the ceiling.
 
 mod engine;
 mod hooks;
@@ -154,8 +160,10 @@ pub struct LockTarget {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct LockStatus {
     pub locked: bool,
-    /// Whether the brake still turns the reel's rush into the swing.
+    /// Whether the take still turns the reel's rush into the swing.
     pub braking: bool,
+    /// Whether the lock is a hang below a ceiling attach rather than a swing the button took.
+    pub hanging: bool,
     /// The held length, metres.
     pub length_m: f32,
     /// How far the character is past the held length, metres: negative while slack.
@@ -257,9 +265,21 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         unsafe { engine::set_wanted_velocity(character, velocity) };
     }
     if !holds() {
-        if wants && input.carries && input.config.enabled {
+        let hang = HANG_WANTED
+            .lock()
+            .take()
+            .filter(|at| at.elapsed() <= HANG_WANTED_FOR)
+            .is_some();
+        let kind = if hang && input.config.enabled && input.config.hang {
+            Some(Hold::Hang)
+        } else if wants && input.carries && input.config.enabled {
+            Some(Hold::Swing)
+        } else {
+            None
+        };
+        if let Some(kind) = kind {
             SHARED.lock().armed = false;
-            unsafe { start(character, hook, input, pump_sample, pump_tuning) };
+            unsafe { start(character, hook, input, kind, pump_sample, pump_tuning) };
         }
         return;
     }
@@ -459,6 +479,21 @@ fn last_velocity() -> Option<Vec3> {
     SHARED.lock().last_velocity
 }
 
+/// Ask the lock's next tick to hang the character below the hook: the reel's arrival would have
+/// put it in the game's upside-down ceiling attach.
+fn want_hang() {
+    *HANG_WANTED.lock() = Some(Instant::now());
+}
+
+/// How the lock took hold.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Hold {
+    /// The button took the line during the reel.
+    Swing,
+    /// The reel's arrival would have attached the character upside down to a ceiling.
+    Hang,
+}
+
 /// Take the lock on the reel under way, or refuse it.
 ///
 /// # Safety
@@ -468,6 +503,7 @@ unsafe fn start(
     character: &Character,
     hook: &GrapplingHook,
     input: &LockTickInput,
+    hold: Hold,
     pump_sample: Option<PumpSample>,
     pump_tuning: SwingTuning,
 ) {
@@ -488,7 +524,11 @@ unsafe fn start(
         return refuse("the character's mass could not be read");
     };
     let rider = character_position(character);
-    let Some(held) = Held::new(hook_point, rider, input.config) else {
+    let held = match hold {
+        Hold::Swing => Held::new(hook_point, rider, input.config),
+        Hold::Hang => Held::hang(hook_point, rider, input.config.hang_length_m, input.config),
+    };
+    let Some(held) = held else {
         return refuse("the line's length is not finite");
     };
     let target = unsafe { engine::far_body(proxy) }.and_then(|(body, owner, state)| {
@@ -523,6 +563,7 @@ unsafe fn start(
             pump_tuning,
             pump_at: Instant::now(),
             airborne: false,
+            hang: hold == Hold::Hang,
         });
         shared.fault = None;
         shared.pending = None;
@@ -532,6 +573,7 @@ unsafe fn start(
         shared.status = LockStatus {
             locked: true,
             braking: held.braking(),
+            hanging: hold == Hold::Hang,
             length_m: held.rope.length_m,
             target: Some(lock_target),
             hook: hook_point,
@@ -547,6 +589,7 @@ unsafe fn start(
         kind = lock_target.kind,
         target_mass_kg = ?lock_target.mass_kg,
         rider_mass_kg,
+        hang = hold == Hold::Hang,
         "grapple lock: the line locks"
     );
     haptics::play(input.hand, Event::LineLock);
@@ -563,16 +606,19 @@ unsafe fn ending(
     input: &LockTickInput,
     fault: Option<BreakCause>,
 ) -> Option<LockEnd> {
+    let active = SHARED.lock().active?;
+    // A hang's reel would only arrive at the ceiling again: every way out of it lets go.
     match input.button {
+        Some(LockButton::Tapped) if active.hang => return Some(LockEnd::Released),
         Some(LockButton::Tapped) => return Some(LockEnd::Tapped),
         Some(LockButton::LetGo) => return Some(LockEnd::Released),
+        _ if input.yank && active.hang => return Some(LockEnd::Released),
         _ if input.yank => return Some(LockEnd::Yanked),
         _ => {}
     }
-    if !input.config.enabled {
+    if !input.config.enabled || (active.hang && !input.config.hang) {
         return Some(LockEnd::ReelEnded);
     }
-    let active = SHARED.lock().active?;
     let Some(proxy) = (unsafe { engine::attached_far_end(hook) }) else {
         return Some(LockEnd::ReelEnded);
     };
@@ -598,9 +644,9 @@ unsafe fn ending(
 }
 
 /// End the lock for `why`, letting go of the line through `hook` when it does. A release or a
-/// break captures the character's wanted velocity before the retract and hands it back after it:
-/// the retract detaches the wire, and the reel task's cancel can clear the velocity the swing gave
-/// the character.
+/// break hands the character the swing's last velocity, before the retract and again after it: the
+/// retract detaches the wire, and the reel task's cancel can clear the velocity the swing gave the
+/// character.
 fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: Hand) {
     let (status, last_velocity) = {
         let mut shared = SHARED.lock();
@@ -617,6 +663,7 @@ fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: 
         let last_velocity = shared.last_velocity.take();
         shared.status.locked = false;
         shared.status.braking = false;
+        shared.status.hanging = false;
         shared.status.tension_n = 0.0;
         shared.status.last_end = Some(why);
         if matches!(why, LockEnd::Broke(_)) {
@@ -629,8 +676,11 @@ fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: 
         && let Some((character, hook)) = local
     {
         let velocity = if why.restores_velocity() {
+            // The swing's own last velocity is what the reel handed the character. The wanted
+            // velocity read back from the character reads near zero while the lock drives the
+            // reel, and a release that took it stopped the character dead in the air.
             // SAFETY: the game thread before the world update, the local player's live character.
-            unsafe { engine::wanted_velocity(character) }.or(last_velocity)
+            last_velocity.or_else(|| unsafe { engine::wanted_velocity(character) })
         } else {
             None
         };
@@ -686,6 +736,8 @@ struct Active {
     pump_at: Instant,
     /// Whether the character has left the ground since the lock took hold.
     airborne: bool,
+    /// Whether the lock is a hang below a ceiling attach.
+    hang: bool,
 }
 
 /// The dynamic body behind the hook's point.
@@ -724,6 +776,7 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
     status: LockStatus {
         locked: false,
         braking: false,
+        hanging: false,
         length_m: 0.0,
         stretch_m: 0.0,
         tension_n: 0.0,
@@ -745,3 +798,11 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
 
 /// Whether the lock holds the line, for the detours, which must not wait on [`SHARED`].
 static LOCKED: AtomicBool = AtomicBool::new(false);
+
+/// When the reel's arrival last asked for a hang ([`want_hang`]): a leaf lock the arrival's detour
+/// and the input tick take in turn.
+static HANG_WANTED: Mutex<Option<Instant>> = Mutex::new(None);
+
+/// How long an arrival's ask for a hang stands: the arrival asks again on every reel tick it
+/// arrives, so an ask older than a few ticks belongs to a reel that has ended.
+const HANG_WANTED_FOR: Duration = Duration::from_millis(250);

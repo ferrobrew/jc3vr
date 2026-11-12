@@ -54,11 +54,17 @@ pub struct LockConfig {
     pub reel_in_mps: f32,
     /// The shortest the line is held at, metres: the hand takes no line in past it.
     pub min_length_m: f32,
-    /// How long the lock brakes the reel's speed toward the hook when it takes hold, seconds; the
-    /// held length follows the character in over it.
+    /// How long the lock takes, when it takes hold, to turn the reel's speed toward the hook into
+    /// the swing across the line, seconds; the held length follows the character in over it.
     pub brake_s: f32,
     /// The share of the line's pull the target feels back, `0..=1`.
     pub reaction: f32,
+    /// Whether a reel that would end in the game's upside-down ceiling attach hangs the character
+    /// below the hook on a held line instead.
+    pub hang: bool,
+    /// The hang's line, from the hook to the character's root, metres: about a metre and a half of
+    /// line above the raised grapple hand.
+    pub hang_length_m: f32,
 }
 
 impl LockConfig {
@@ -73,6 +79,8 @@ impl LockConfig {
             min_length_m: 1.5,
             brake_s: 0.25,
             reaction: 1.0,
+            hang: true,
+            hang_length_m: 3.5,
         }
     }
 }

@@ -237,6 +237,11 @@ fn lock_line(enabled: bool, status: &LockStatus) -> Line {
             None => text!(prose(target.kind), ", "),
         });
     Line::ok(text!(
+        if status.hanging {
+            prose("hanging, ")
+        } else {
+            Text::default()
+        },
         if status.braking {
             prose("braking, ")
         } else {
@@ -409,6 +414,19 @@ mod tests {
         assert_eq!(
             lock_line(true, &held).text(),
             "OK, VEHICLE 1500 KG, HELD 8.2 M, STRETCH +0.12 M, 900 OF 3924 N, HOOK 12.0 M/S, 1 LOCKS, 0 BROKE"
+        );
+        let hanging = LockStatus {
+            hanging: true,
+            target: Some(lock::LockTarget {
+                kind: "static",
+                mass_kg: None,
+            }),
+            ..held
+        };
+        assert!(
+            lock_line(true, &hanging)
+                .text()
+                .starts_with("OK, HANGING, STATIC, HELD 8.2 M")
         );
         let ended = LockStatus {
             locked: false,

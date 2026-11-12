@@ -422,6 +422,29 @@ impl GrapplingHook {
             f(self as *mut Self as _, player, holder)
         }
     }
+    pub const StartReelUpsideDown_ADDRESS: usize = 0x1408C92B0;
+    /// Starts the reel's upside-down ending, the ceiling attach: clears the holder's velocities,
+    /// queues the grapple upside-down act, and resets the reel's blocked timer. The arrival
+    /// ([`NStateTask_ReelIn::FinishReel`](crate::equipment::grappling_hook::NStateTask_ReelIn::FinishReel)) calls it when the attachment setup it made for the far end
+    /// chose the upside-down attachment; the act's states then hold the character inverted against
+    /// the surface ([`GHS_REELED_UPSIDEDOWN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELED_UPSIDEDOWN)). The
+    /// disassembler mislabels it `boost::shared_ptr<CGrapplingHookWire>::operator->`.
+    pub unsafe fn StartReelUpsideDown(
+        &mut self,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+            ) = ::std::mem::transmute(Self::StartReelUpsideDown_ADDRESS);
+            f(self as *mut Self as _, holder)
+        }
+    }
     pub const OnPostCamUpdate_ADDRESS: usize = 0x14094ED60;
     /// The post-camera hook update. On the fire animation's release frame it creates the wire
     /// ([`CreateNewWire`](crate::equipment::grappling_hook::GrapplingHook::CreateNewWire)), pins the near end to the device, and starts the

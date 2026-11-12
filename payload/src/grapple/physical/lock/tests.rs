@@ -178,7 +178,7 @@ fn a_lock_without_a_brake_keeps_the_inward_rush_and_tangential_momentum() {
 }
 
 #[test]
-fn the_brake_turns_the_inward_rush_into_the_swing_and_follows_the_rider_in() {
+fn the_take_turns_the_inward_rush_into_the_swing_and_follows_the_rider_in() {
     let start = Vec3::new(20.0, 0.0, 0.0);
     let rush = Vec3::new(-25.0, 0.0, 6.0);
     let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
@@ -195,15 +195,22 @@ fn the_brake_turns_the_inward_rush_into_the_swing_and_follows_the_rider_in() {
         .velocity;
         rider += velocity * DT;
     }
-    assert!(!held.braking(), "the brake runs its length");
+    assert!(!held.braking(), "the take runs its length");
     let direction = rider.normalize();
     let inward = velocity.dot(direction);
     assert!(inward > -0.1, "the rush toward the hook is gone: {inward}");
     let tangential = velocity - direction * inward;
+    // A 20 m line level with its hook holds at most sqrt(g L) across it at the bottom of the
+    // swing: about 14 m/s of the 25.7 m/s rush is kept.
+    let most = (GRAVITY_MPS2 * start.length()).sqrt();
     assert!(
-        tangential.length() >= 6.0 - 1e-3,
-        "the speed across the line is kept: {}",
+        tangential.length() > most - 1.0 && tangential.length() < most + 1.0,
+        "the speed is kept across the line, up to what it holds: {}",
         tangential.length()
+    );
+    assert!(
+        tangential.z > 0.0,
+        "the swing keeps the rush's own crossing"
     );
     assert!(
         held.rope.length_m < start.length(),
@@ -224,6 +231,112 @@ fn the_brake_turns_the_inward_rush_into_the_swing_and_follows_the_rider_in() {
             p.length()
         );
     }
+}
+
+/// Run the take from a static hook at the origin to its end, returning the rider and velocity.
+fn take(held: &mut Held, mut rider: Vec3, mut velocity: Vec3) -> (Vec3, Vec3) {
+    while held.braking() {
+        velocity = swing(
+            held,
+            input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
+            &CONFIG,
+        )
+        .unwrap()
+        .velocity;
+        rider += velocity * DT;
+    }
+    (rider, velocity)
+}
+
+#[test]
+fn a_rush_straight_at_a_level_hook_drops_into_the_swing_rather_than_stopping() {
+    let start = Vec3::new(20.0, 0.0, 0.0);
+    let rush = Vec3::new(-25.0, 0.0, 0.0);
+    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let (rider, velocity) = take(&mut held, start, rush);
+    let direction = rider.normalize();
+    assert!(
+        velocity.dot(direction) > -0.1,
+        "the rush is gone: {velocity}"
+    );
+    let most = (GRAVITY_MPS2 * start.length()).sqrt();
+    assert!(
+        velocity.length() > most - 1.0,
+        "the speed carries into the swing: {velocity}"
+    );
+    assert!(
+        velocity.y < -most + 1.5,
+        "the swing runs downward: {velocity}"
+    );
+}
+
+#[test]
+fn a_rush_up_to_a_high_hook_swings_on_the_way_it_was_going() {
+    let elevation = 63.0_f32.to_radians();
+    let start = Vec3::new(-elevation.cos(), -elevation.sin(), 0.0) * 50.0;
+    let rush = -start.normalize() * 30.0;
+    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let (rider, velocity) = take(&mut held, start, rush);
+    let direction = rider.normalize();
+    assert!(
+        velocity.dot(direction) > -0.1,
+        "the rush is gone: {velocity}"
+    );
+    assert!(
+        velocity.length() > 28.0,
+        "the reel's speed carries into the swing: {velocity}"
+    );
+    assert!(
+        velocity.x > 0.0 && velocity.y < 0.0,
+        "the swing runs on and down under the hook: {velocity}"
+    );
+}
+
+#[test]
+fn a_rush_straight_up_under_its_hook_stops_and_hangs() {
+    let start = Vec3::NEG_Y * 30.0;
+    let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+    let (_, velocity) = take(&mut held, start, Vec3::Y * 25.0);
+    assert!(velocity.length() < 1.0, "no way across: {velocity}");
+}
+
+#[test]
+fn a_hang_starts_at_rest_under_the_ceiling_and_lowers_the_rider_to_its_length() {
+    // Arrived under a ceiling hook, rushing up into it and a little across.
+    let start = Vec3::new(0.2, -0.8, 0.0);
+    let rush = Vec3::new(6.0, 20.0, 0.0);
+    let mut held = Held::hang(Vec3::ZERO, start, 3.5, &CONFIG).unwrap();
+    assert!((held.rope.length_m - start.length().max(CONFIG.min_length_m)).abs() < 1e-3);
+    let path = fly(&mut held, start, rush, 150);
+    let (rider, velocity) = *path.last().unwrap();
+    assert!(
+        (held.rope.length_m - 3.5).abs() < 1e-3,
+        "{}",
+        held.rope.length_m
+    );
+    assert!(rider.y < -3.0, "the rider hangs below the hook: {rider}");
+    assert!(
+        path.iter().all(|(p, _)| p.y < 0.5),
+        "the rush never carries the rider over the hook"
+    );
+    assert!(
+        velocity.length() < 8.0,
+        "no fling from the rush: {velocity}"
+    );
+}
+
+#[test]
+fn taking_line_in_stops_a_hangs_pay_out() {
+    let start = Vec3::NEG_Y * 2.0;
+    let mut held = Held::hang(Vec3::ZERO, start, 3.5, &CONFIG).unwrap();
+    held.take_in(0.1, DT, &CONFIG);
+    let before = held.rope.length_m;
+    fly(&mut held, start, Vec3::ZERO, 30);
+    assert!(
+        held.rope.length_m <= before + 1e-5,
+        "{}",
+        held.rope.length_m
+    );
 }
 
 #[test]
