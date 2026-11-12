@@ -19,15 +19,13 @@ pub struct GrenadeTuning {
     /// gaze. No controller input binds the game's throw (grenades come from the pouch), so this
     /// matters only to a throw the game starts by other means.
     pub hand_aimed_fallback: bool,
-    /// How long before the fuse runs out the held grenade starts to warn, seconds.
-    pub warning_s: f32,
-    /// Draw a ring at the throwing hand while a grenade is held, turning from green to red as the
-    /// fuse runs down.
+    /// Draw a ring at the hand holding a live grenade, turning from green to red as the fuse runs
+    /// down.
     pub warning_overlay: bool,
-    /// Pulse the throwing hand as the fuse runs down, faster toward the end.
+    /// Tick the hand holding a live grenade from the pin on, faster as the fuse runs down.
     pub warning_haptics: bool,
-    /// The gap between warning pulses when the warning starts, and when the fuse is about to run
-    /// out, seconds.
+    /// The gap between warning ticks when the fuse is lit, and when it is about to run out,
+    /// seconds.
     pub warning_interval_s: [f32; 2],
     /// Catching live grenades.
     pub catch: CatchTuning,
@@ -38,7 +36,6 @@ impl GrenadeTuning {
         Self {
             hold: HOLD,
             hand_aimed_fallback: true,
-            warning_s: 2.0,
             warning_overlay: true,
             warning_haptics: true,
             warning_interval_s: [0.5, 0.08],

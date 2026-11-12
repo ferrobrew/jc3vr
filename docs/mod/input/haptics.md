@@ -81,7 +81,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::ReadyToFire` | a seat leaves the gun ready to fire with nothing to work, played twice shortly after the seat's thud, on the gun hand | bump | 0.8 | weapons | `weapons::reload::steps` |
 | `Event::GrenadePrime` | a grenade is drawn into the hand, its pin in | click | 0.4 | weapons | `weapons::grenade` |
 | `Event::GrenadePin` | a held grenade's pin is pulled with the trigger, starting its fuse | bump | 0.8 | weapons | `weapons::grenade` |
-| `Event::GrenadeWarning` | a cooking grenade's fuse warning, faster toward the end | click | 0.75 | weapons | `weapons::grenade` |
+| `Event::GrenadeWarning` | a live grenade's fuse warning in the hand, from the pin on, faster toward the end | click | 0.75 | weapons | `weapons::grenade` |
 | `Event::GrenadeCatch` | a live grenade is caught | bump | 0.75 | weapons | `weapons::grenade` |
 | `Event::PouchRefused` | the game refuses a grab at the grenade or C4 pouch, or a full grenade pouch refuses a grenade pressed onto it | buzz | 0.75 | weapons | `weapons::grenade`, `weapons::c4` |
 | `Event::PouchReturn` | a held grenade or C4 charge pressed back into its pouch goes in | click | 0.5 | weapons | `weapons::grenade`, `weapons::c4` |

@@ -26,7 +26,36 @@ pub struct Explosive {
     /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) and [`SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform)
     /// do nothing without it.
     pub m_PfxInstance: *mut crate::physics::PfxRigidBody,
-    _field_4c0: [u8; 64],
+    _field_4c0: [u8; 8],
+    /// The trail effect resource (the pointer of a shared pointer), or null when the explosive has
+    /// none. The owning weapon sets it up when it spawns the explosive, and
+    /// [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) plays it.
+    pub m_TrailEffect: *mut ::std::ffi::c_void,
+    _field_4d0: [u8; 8],
+    /// The trail sound event (the pointer of a shared pointer), or null when the explosive has
+    /// none. The owning weapon sets it up when it spawns the explosive, and
+    /// [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) plays it.
+    pub m_TrailSound: *mut ::std::ffi::c_void,
+    _field_4e0: [u8; 8],
+    /// The playing trail effect's instance data, or null while no trail effect plays.
+    /// [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) starts it, stopping a looping effect already
+    /// playing in it, and [`UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) moves it to
+    /// [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1) every tick the explosive has a physics body.
+    pub m_TrailEffectInstance: *mut ::std::ffi::c_void,
+    /// The playing trail sound's instance data, or null while no trail sound plays.
+    /// [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) starts it, stopping a sound already playing in
+    /// it, and [`UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) moves it with the explosive and drives its
+    /// fuse parameter
+    /// ([`m_TrailSoundDetonationParameterIndex`](crate::equipment::explosive::Explosive::m_TrailSoundDetonationParameterIndex)).
+    pub m_TrailSoundInstance: *mut ::std::ffi::c_void,
+    /// The index of the trail sound's `detonation_timer` parameter, or `0xFF` when the trail sound
+    /// has no such parameter. [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) looks it up when it starts
+    /// the sound. Every [`UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) after that, while the sound plays
+    /// and [`m_StartDetonationTimer`](crate::equipment::explosive::Explosive::m_StartDetonationTimer) is not zero, sets the parameter
+    /// to how far the fuse has burnt: zero when [`m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer)
+    /// is at its start and one when it reaches zero. This is the engine's audible fuse.
+    pub m_TrailSoundDetonationParameterIndex: u8,
+    _field_4f9: [u8; 7],
     /// The explosive's world matrix as of the previous simulation tick, which
     /// [`UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender) interpolates from toward
     /// [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1).
@@ -207,8 +236,18 @@ impl Explosive {
         }
     }
     pub const PlayTrailEffect_ADDRESS: usize = 0x1408D6E20;
-    /// Plays the explosive's trail effect at [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1), when it
-    /// has one.
+    /// Starts the explosive's trail: plays the trail effect ([`m_TrailEffect`](crate::equipment::explosive::Explosive::m_TrailEffect))
+    /// at [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1) into
+    /// [`m_TrailEffectInstance`](crate::equipment::explosive::Explosive::m_TrailEffectInstance), and the trail sound
+    /// ([`m_TrailSound`](crate::equipment::explosive::Explosive::m_TrailSound)) there into
+    /// [`m_TrailSoundInstance`](crate::equipment::explosive::Explosive::m_TrailSoundInstance), recording the sound's
+    /// `detonation_timer` parameter in
+    /// [`m_TrailSoundDetonationParameterIndex`](crate::equipment::explosive::Explosive::m_TrailSoundDetonationParameterIndex). Each
+    /// half is skipped when its resource is null. A call while a trail plays restarts it: the new
+    /// effect replaces the instance (a looping one is stopped softly) and the new sound stops the
+    /// old one. [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) calls it, so a thrown explosive's trail and
+    /// its audible fuse start at the throw. It plays effects, so it runs on the game thread outside
+    /// the effect system's simulation and render updates.
     pub unsafe fn PlayTrailEffect(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -222,10 +261,12 @@ impl Explosive {
     /// where the fuse runs: it counts [`m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) down by the
     /// context's tick delta while the virtual `ShouldTickDetonationTimer` returns true, and calls the
     /// virtual `Detonate` once the timer is at or below zero, without consulting that virtual again.
+    /// Between the two it sets the trail sound's fuse parameter from the timers
+    /// ([`m_TrailSoundDetonationParameterIndex`](crate::equipment::explosive::Explosive::m_TrailSoundDetonationParameterIndex)).
     /// The rest of the update places a body attached to a parent object at the parent's transform,
-    /// follows the body with the sound instance, re-enables collisions that were disabled against the
-    /// thrower once the explosive has been loose for a moment, and drops the explosive from the update
-    /// when it has no physics body. `game_object` is the explosive's `CGameObject` subobject
+    /// moves the trail effect and the trail sound to [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1),
+    /// re-enables collisions that were disabled against the thrower once the explosive has been
+    /// loose for a moment, and drops the explosive from the update when it has no physics body. `game_object` is the explosive's `CGameObject` subobject
     /// ([`GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)), not the start of the explosive.
     pub unsafe fn UpdatePostSim(
         game_object: *mut ::std::ffi::c_void,

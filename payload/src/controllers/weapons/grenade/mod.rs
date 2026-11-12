@@ -755,7 +755,7 @@ fn warning(
         state.next_pulse_s = 0.0;
         return None;
     };
-    let urgency = fuse_urgency(fuse.remaining_s, tuning.warning_s);
+    let urgency = fuse_urgency(fuse.remaining_s, fuse.total_s);
     let mut primitives = Vec::new();
     if tuning.warning_overlay && config.overlay.enabled {
         primitives.push(Primitive::Sprite {
@@ -778,7 +778,7 @@ fn warning(
         });
     }
     let mut pulse = None;
-    if tuning.warning_haptics && urgency > 0.0 {
+    if tuning.warning_haptics {
         state.next_pulse_s -= dt;
         if state.next_pulse_s <= 0.0 {
             let [slow, fast] = tuning.warning_interval_s;
@@ -799,11 +799,14 @@ fn most_urgent(fuses: impl Iterator<Item = (Hand, Fuse)>) -> Option<(Hand, Fuse)
         .min_by(|a, b| a.1.remaining_s.total_cmp(&b.1.remaining_s))
 }
 
-pub fn fuse_urgency(remaining_s: f32, warning_s: f32) -> f32 {
-    if warning_s.is_nan() || warning_s <= 0.0 || !remaining_s.is_finite() {
+/// How near a running fuse is to its end: the share of its `total_s` that has burnt, from zero when
+/// it was lit to one when it runs out, so that the warning rises from the pin on whatever the
+/// fuse's length.
+pub fn fuse_urgency(remaining_s: f32, total_s: f32) -> f32 {
+    if !remaining_s.is_finite() || !total_s.is_finite() || total_s <= 0.0 {
         return 0.0;
     }
-    (1.0 - remaining_s / warning_s).clamp(0.0, 1.0)
+    (1.0 - remaining_s / total_s).clamp(0.0, 1.0)
 }
 
 #[detour(address = jc3gi::equipment::weapon::ThrownGrenadeWeapon::UpdateFromUserPostSim_Parallel_ADDRESS)]
@@ -951,13 +954,19 @@ mod tests {
     };
 
     #[test]
-    fn the_fuse_warns_only_in_its_last_seconds() {
-        assert_eq!(fuse_urgency(4.0, 2.0), 0.0);
-        assert_eq!(fuse_urgency(2.0, 2.0), 0.0);
-        assert!((fuse_urgency(1.0, 2.0) - 0.5).abs() < 1e-6);
-        assert_eq!(fuse_urgency(-0.1, 2.0), 1.0);
+    fn the_fuse_warning_rises_from_the_pin() {
+        assert_eq!(fuse_urgency(8.0, 8.0), 0.0);
+        assert!((fuse_urgency(6.0, 8.0) - 0.25).abs() < 1e-6);
+        assert!((fuse_urgency(1.0, 8.0) - 0.875).abs() < 1e-6);
+        assert_eq!(fuse_urgency(-0.1, 8.0), 1.0);
+        assert_eq!(fuse_urgency(9.0, 8.0), 0.0);
+    }
+
+    #[test]
+    fn a_fuse_without_usable_timings_does_not_warn() {
+        assert_eq!(fuse_urgency(f32::NAN, 8.0), 0.0);
         assert_eq!(fuse_urgency(1.0, 0.0), 0.0);
-        assert_eq!(fuse_urgency(f32::NAN, 2.0), 0.0);
+        assert_eq!(fuse_urgency(1.0, f32::NAN), 0.0);
     }
 
     #[test]

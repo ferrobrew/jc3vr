@@ -185,11 +185,12 @@ pub(super) enum PinPull {
     NotReady,
 }
 
-/// Pull the pin of the item behind `actor`: its fuse starts counting down.
+/// Pull the pin of the item behind `actor`: its fuse starts counting down, and its trail is lit
+/// ([`start_trail`]).
 ///
 /// # Safety
 ///
-/// The caller holds the game thread.
+/// The caller runs on the game thread in the input tick's game stage.
 pub(super) unsafe fn pull_pin(actor: &Actor) -> PinPull {
     let Some(grenade) = actor.grenade() else {
         return PinPull::NotReady;
@@ -203,9 +204,36 @@ pub(super) unsafe fn pull_pin(actor: &Actor) -> PinPull {
     if pull == PinPull::Pulled {
         // SAFETY: as above; this is the only place an item's fuse is raised.
         unsafe { (*grenade).m_ShouldTickDetonationTimer = true };
+        // SAFETY: as above; the game stage, where the launch also starts a trail.
+        unsafe { start_trail(&mut *grenade.cast::<Explosive>()) };
     }
     pull
 }
+
+/// Start the game's own representation of a burning fuse on a grenade whose pin was just pulled:
+/// its trail effect and its trail sound, whose fuse parameter the grenade's own post-simulation
+/// update then drives from its timers ([`Explosive::m_TrailSoundDetonationParameterIndex`]). The
+/// game starts the same trail at its throw ([`Explosive::PlayTrailEffect`]), when a cooked grenade
+/// leaves Rico's hand; a grenade held in the hand with its pin out starts it at the pin instead,
+/// so it looks and sounds live while it is held. The throw restarts it, which the engine allows.
+///
+/// # Safety
+///
+/// `explosive` is live, and the caller runs on the game thread in the input tick's game stage,
+/// outside the effect system's simulation and render updates, as a release's launch does.
+unsafe fn start_trail(explosive: &mut Explosive) {
+    unsafe { explosive.PlayTrailEffect() };
+    tracing::info!(
+        target: "controllers",
+        effect = !explosive.m_TrailEffectInstance.is_null(),
+        sound = !explosive.m_TrailSoundInstance.is_null(),
+        sound_follows_fuse = explosive.m_TrailSoundDetonationParameterIndex != NO_SOUND_PARAMETER,
+        "grenade: the fuse's trail is lit",
+    );
+}
+
+/// [`Explosive::m_TrailSoundDetonationParameterIndex`] when the trail sound has no fuse parameter.
+const NO_SOUND_PARAMETER: u8 = u8::MAX;
 
 /// Whether the item behind `actor` has had its pin pulled.
 pub(super) fn pin_out(actor: &Actor) -> bool {
