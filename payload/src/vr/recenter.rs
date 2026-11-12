@@ -258,42 +258,96 @@ fn service_follow_bank() {
     );
 }
 
-/// Service a [`request_seat_yaw_rebase`]: turn the baseline's yaw by the latest follow bank's head
-/// offset. Called at the top of the frame, after the follow bank, so a bank in the same frame as
-/// the seat lock is used, and before the frame takes the runtime lock.
+/// Service a [`request_seat_yaw_rebase`] and advance the re-base it starts: the baseline's yaw turns
+/// by the latest follow bank's head offset, eased in over [`SEAT_YAW_BLEND_S`] rather than in one
+/// frame, since the turn reaches the displayed view. Each frame's share is a small re-base of its
+/// own, so every consumer of the cockpit frame turns with it. A recenter in the meantime ends the
+/// blend where it is. Called at the top of the frame, after the follow bank, so a bank in the same
+/// frame as the seat lock is used, and before the frame takes the runtime lock.
 fn service_seat_yaw() {
-    if !PENDING_SEAT_YAW.swap(false, Ordering::Relaxed) {
-        return;
+    if PENDING_SEAT_YAW.swap(false, Ordering::Relaxed) {
+        let bank = LAST_BANK.lock().take();
+        if let Some(yaw) = bank
+            .filter(|(_, at)| at.elapsed() <= SEAT_YAW_BANK_WINDOW)
+            .map(|(yaw, _)| yaw)
+            .filter(|yaw| yaw.is_finite() && yaw.abs() >= SEAT_YAW_MIN)
+        {
+            *SEAT_YAW_BLEND.lock() = Some(SeatYawBlend {
+                total: yaw,
+                applied: 0.0,
+                started: Instant::now(),
+                recenters: RECENTERS.load(Ordering::Relaxed),
+            });
+            tracing::info!(
+                target: "vr",
+                yaw_deg = yaw.to_degrees(),
+                "re-basing the cockpit's yaw at the seat lock by the head's offset from the body"
+            );
+        }
     }
-    let bank = LAST_BANK.lock().take();
-    let Some(yaw) = bank
-        .filter(|(_, at)| at.elapsed() <= SEAT_YAW_BANK_WINDOW)
-        .map(|(yaw, _)| yaw)
-        .filter(|yaw| yaw.is_finite() && yaw.abs() >= SEAT_YAW_MIN)
-    else {
+    let mut blend_slot = SEAT_YAW_BLEND.lock();
+    let Some(blend) = blend_slot.as_mut() else {
         return;
     };
+    if RECENTERS.load(Ordering::Relaxed) != blend.recenters {
+        *blend_slot = None;
+        return;
+    }
+    let progress = seat_yaw_progress(blend.started.elapsed().as_secs_f32());
+    let step = blend.total * progress - blend.applied;
+    blend.applied += step;
+    if progress >= 1.0 {
+        *blend_slot = None;
+    }
+    drop(blend_slot);
+    if step == 0.0 {
+        return;
+    }
     let _origin_mutation = origin_provenance::changing();
-    let rotation = glam::Quat::from_rotation_y(yaw);
+    let rotation = glam::Quat::from_rotation_y(step);
     {
         let mut state = lock_state();
         let Some(baseline) = state.baseline.as_mut() else {
+            *SEAT_YAW_BLEND.lock() = None;
             return;
         };
         baseline.yaw = (baseline.yaw * rotation).normalize();
         flight_pose::source_changed(EpochChange::Recenter);
     }
-    // The cockpit frame turns by the inverse: new frame from old.
+    // The cockpit frame turns by the inverse: new frame from old. Each share is too small to break
+    // the anchors' interpolation, so it does not count as a recenter of its own.
     let turn = rotation.conjugate();
     let (kind, cause) = (RecenterKind::YawAndHeight, RecenterCause::SeatTransition);
-    rebased(kind, cause, turn);
+    crate::controllers::roomscale::on_recenter(kind, turn, cause);
+    crate::headpose::xr::on_recenter();
     crate::recorder::tracking::note_recenter(RecenterEvent { kind, cause, turn });
-    tracing::info!(
-        target: "vr",
-        yaw_deg = yaw.to_degrees(),
-        "re-based the cockpit's yaw at the seat lock by the head's offset from the body"
-    );
 }
+
+/// The share of the seat lock's yaw re-base applied `elapsed_s` seconds in: eased in and out, so
+/// the view's turn starts and ends without a jolt, and complete at [`SEAT_YAW_BLEND_S`].
+fn seat_yaw_progress(elapsed_s: f32) -> f32 {
+    if !elapsed_s.is_finite() {
+        return 1.0;
+    }
+    body_rig::smooth::smoothstep((elapsed_s / SEAT_YAW_BLEND_S).clamp(0.0, 1.0))
+}
+
+/// How long the seat lock's yaw re-base takes to turn the view, seconds.
+const SEAT_YAW_BLEND_S: f32 = 1.0;
+
+/// A seat lock's yaw re-base in progress.
+#[derive(Copy, Clone)]
+struct SeatYawBlend {
+    /// The whole turn, radians.
+    total: f32,
+    /// The turn applied so far, radians.
+    applied: f32,
+    started: Instant,
+    /// [`RECENTERS`] when the blend started: a recenter since ends it.
+    recenters: u32,
+}
+
+static SEAT_YAW_BLEND: Mutex<Option<SeatYawBlend>> = Mutex::new(None);
 
 /// The latest follow bank's head offset from the body, radians, and when the bank ran.
 static LAST_BANK: Mutex<Option<(f32, Instant)>> = Mutex::new(None);
@@ -339,6 +393,7 @@ pub fn auto_recenter_tick() {
     if !is_running() || crate::testing::replay::is_driving() {
         PENDING_RECENTER.store(REQUEST_NONE, Ordering::Relaxed);
         PENDING_SEAT_YAW.store(false, Ordering::Relaxed);
+        *SEAT_YAW_BLEND.lock() = None;
         return;
     }
     service_requested_recenter();
@@ -586,5 +641,22 @@ mod tests {
             decode_request(posture | REQUEST_YAW_HEIGHT, RecenterKind::Full),
             Some((RecenterKind::Full, RecenterCause::Manual))
         );
+    }
+
+    /// The seat lock's re-base starts and ends at rest and never jumps: no frame's share at a
+    /// 90 Hz frame rate exceeds a small turn of the whole.
+    #[test]
+    fn the_seat_yaw_rebase_eases_in_and_out() {
+        assert_eq!(seat_yaw_progress(0.0), 0.0);
+        assert_eq!(seat_yaw_progress(SEAT_YAW_BLEND_S), 1.0);
+        assert_eq!(seat_yaw_progress(SEAT_YAW_BLEND_S * 3.0), 1.0);
+        assert_eq!(seat_yaw_progress(f32::NAN), 1.0);
+        let frame = 1.0 / 90.0;
+        let largest = (0..100)
+            .map(|i| {
+                seat_yaw_progress((i + 1) as f32 * frame) - seat_yaw_progress(i as f32 * frame)
+            })
+            .fold(0.0f32, f32::max);
+        assert!(largest < 0.02, "{largest}");
     }
 }
