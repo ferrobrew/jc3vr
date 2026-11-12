@@ -111,3 +111,57 @@ The reviewer asked for frames around t 1357.8 and 2288: [canopy-after-grapple-ga
 A flash detector over the whole video (a run of one or two frames unlike the frames on both sides, which are alike) found 133 flashes; crossed with the tracking data, 42 have the camera more than 0.12 m behind the head, 12 of 27 under the canopy. The lag is the grapple comfort filter's landing-snap absorber misfiring at speed for a few seconds after each reel or canopy pull: a replay of its detection matches the recorded camera at t 535, 700, 1357.6 to 1358.2, 1376.6 to 1377.0, and 2288 (correlation 0.7 to 0.9, and to the centimetre at 1357.6 to 1358.2). It is fixed by detecting the snap against the root ([grapple-comfort.md](../../mod/body/grapple-comfort.md#the-landing-snap-absorber)). The parachute's roll-entry clip accounts for little of the canopy clipping: the lag explains the deploys at t 535, 700, and 2288, though a few frames at 2288.5 clip with the camera on the head, which the roll clip may cause.
 
 At t 1593 and 1603 the body's yaw was within 6 and 2 degrees of its target, so the yaw follow was not lagging. The dark shape at the lower edges of the view there appears while the player leans 0.24 m forward over a crate aiming the pistol; it was not identified.
+
+## Feedback and changes
+
+The changes for [the feedback](philpax_feedback.md), on `controllers` from `e26389fd` to `693699db`. None has been seen in the headset; each doc named carries the headset checks. Times are the feedback's.
+
+### Camera and body
+
+- Head bob: the headset's pose is composed from the neutral head instead of the animated one (`e26389fd`). Replaying the take, jogging bob falls from about 20 mm RMS to 2.3 to 2.8 mm.
+- Animations moving the head (122 s, 580 s): through jumps, falls, landings, stumbles, ragdolls, and get-ups the view holds standing height over Rico's root and stays upright; the body's head IK aims at the view's head (`20b1ab41`, [locomotion.md](../../mod/body/locomotion.md)). Grapple hangs, ledge climbs, the wingsuit, the parachute, swimming, and death still follow the animated head.
+- Camera in the body (1357.8 s, the 1380 to 1400 s flashing, 2288 s): the grapple comfort filter's landing-snap absorber misfired after reels and canopy pulls at speed; it now detects the snap against the root (`900f6502`). See "Camera clipping after the feedback" above. At 1593 and 1603 s the body yaw was on target.
+- The parachute roll entry (534 s) is skipped: the canopy's opening out of a reel goes straight to the canopy idle ([canopy-opening.md](../../mod/body/canopy-opening.md), `255809aa`).
+- The head fade stays clear while seated in a vehicle (`51e55799`).
+- Swimming turns toward the way the strokes push (`0bc2ba4f`, [swim-strokes.md](../../mod/body/swim-strokes.md)).
+- Shadows parting from objects at distance (2331 s): not fixed. The suspect is the mod widening the shadow cascades to cover both eyes; it needs an in-game comparison.
+
+### Grapple and flight
+
+- Swing entry and exit (458, 1261, 1264 s): the lock turns the reel's speed across the line instead of braking it, capped by what the line can hold, and the release keeps the swing's own velocity (`8a17736c`).
+- The hold that did not engage (1273 s): a press still held when the reel starts becomes the lock's (`d170e5cc`).
+- The grapple device parting from the forearm (26.75 s and on): the device is drawn on the forearm as drawn (`1cfb8937`).
+- Inversion (1329 s): a ceiling attach and a reel onto a helicopter hang Rico upright 3.5 m below the hook on a held line, steered by the left arm (`8a17736c`, `acd613de`, [grapple-lock.md](../../mod/input/grapple-lock.md)). Helicopter stunt positions entered other ways are not covered.
+- Re-acceleration after boosted reels: the stick's coast is capped at Rico's real speed (`16edd68f`).
+- The barrel tether (1768 s): B pressed after the yank now claims the swing (`3c591241`).
+- Barrels exploding on impact (1778 s): investigated only. Barrels take damage from each contact's impulse; the throws hit at 6 to 13 m/s against 30 m/s or more for a reeled barrel. Unverified against the release IDB.
+- The canopy grapple pull's speed is the game's own slingshot (38 to 48 m/s peaks); not capped, pending another test.
+- A side grapple under the canopy (1391.65 s) turns the canopy toward the line through the game's own look-steer (`d42f4760`, [parachute-yaw.md](../../mod/body/parachute-yaw.md)).
+- The wingsuit (1468.5 s, 1492 to 1528 s): a flat palm on a surface and the line's finger pose no longer count as grips, a fall or a grapple line deploys from spread arms alone, and an outward spread no longer reads as a yank, which was the superspeed (`1e976772`, `ca25f70b`, `55a2e73e`).
+
+### Hands and the world
+
+- Ragdolls (76.7, 154 s) hang from the held bone (`76e0cc71`); the grapple drag spreads its pull over the body (`aa81217a`, 160 s).
+- Hand strength defaults to two thirds (`be626a72`).
+- The held grenade is drawn on the hand (`8bf0a034`, 94 s); a dropped grenade can be snatched (`3d158587`, 78 s, 1883 s).
+- The stuck collider (1240, 2123 s): the narrowed hull now halves its bottom cone's height with its width, keeping the slope; the narrow player steps up edges about 0.25 m high (`e802b65d`, [human-hull-restoration.md](../../mod/body/human-hull-restoration.md)).
+- The fence (1111 s): not found; a log line names the held bodies kept off the player's collision (`f5823e25`).
+- The door at 330 s: the hand closes on the handle and holds the door by it (`d027abbd`).
+- Mounted guns are no longer snatch targets, as the game carries them only torn from a manned mount (`3ab8a5be`, `031b5628`, 2092 s).
+
+### Guns, holsters, and C4
+
+- Failed draws and holsters (179, 251, 260 to 270, 306, 957 s): a dock is called off only by a regrip press (`26447cec`); the hips take a hand further in front and faster, and over-the-shoulder releases up to 5 m/s (`493c9b07`, `d3f2c452`); a press just past a holster still takes from it (`589a9acc`).
+- C4 grabs (563, 614 to 637 s): the pouch moves 10 cm toward the midline and the hip reach widens (`86712d07`).
+- Swaps (1577, 2265 s, 973 s): a full holster swaps, the old weapon dropping, and the hint and the release rank sockets alike and read old to new (`9d87d0f6`, `adfd3d0c`).
+- The launcher (204 s): a fresh pod replaces the spent one (`83eb7de4`); the reload's steps are logged (`4881e3c0`).
+- The detonator replaces the button: the trigger on a held charge swaps it for the detonator, held like a gun, drawn on the pouch once no charge is left (`023f33dc`, `abba13e7`).
+- Grenade priming: the fuse trail and sound start at the pin, with a quickening haptic tick (`6d3e7d29`); each grenade's end is logged, to tell in-hand from contact detonations (`e1771e94`).
+- Revolvers: a wrist roll swings the cylinder out, tipping the muzzle up dumps it, the belt's speedloader seats, and a flick closes it; the belt push stays as the one-handed fallback (`93f1f345`, `693699db`, [reload.md](../../mod/input/reload.md)).
+- A fast push into an occupied well knocks the magazine out (`68b50e3b`, 2145 s).
+
+### Vehicles
+
+- The Urga U-17 Akrobat (346 to 362 s): the yokes are measured from the mesh, with a new yoke control, so the placement no longer depends on the entry path (`e3287677`, [cockpit-controls.md](../../mod/input/cockpit-controls.md)).
+- The throttle (721 s): one third reverse behind a gate at zero, two thirds forward, a tick every 10 percent and a hard stop at zero; the stick and yoke tick at centre and bump at their limits (`e3287677`).
+- Gunners (1939, 1967, 1974 s): a yanked gunner falls out as a ragdoll, standing at an empty gun's handles enters the seat, and the handles outrank the turret part beside them (`52294e3f`, `bb2bf2c2`, `7dbe31a5`). Only the tripod minigun can be torn off its mount; vehicle guns are not detachable in the game ([vehicle-weapons.md](../../mod/input/vehicle-weapons.md), `19d04fea`).
