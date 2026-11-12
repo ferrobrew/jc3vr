@@ -18,7 +18,8 @@
 //! ([`WeaponData::m_BaseModelInstance`]), which the weapon's entity names as its trigger: the same
 //! model the game shows in Rico's hand while the detonate act plays. The input tick shows it at the
 //! hand and releases it when the hand lets go ([`place_model`]); the render frame moves it onto the
-//! hand as it is drawn ([`render_frame`]), as the explosives in the hands are.
+//! hand as it is drawn ([`render_frame`]), as the explosives in the hands are. The C4 pouch draws
+//! the same model once no charge is left to give ([`trigger_model`]).
 //!
 //! [`WeaponData::m_BaseModelInstance`]: jc3gi::equipment::weapon::WeaponData::m_BaseModelInstance
 
@@ -27,6 +28,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use glam::Vec3;
 use jc3gi::{
     character::character::Character,
+    equipment::weapon::WeaponBase,
     graphics_engine::model_instance::{Model, ModelInstance},
     types::shared_ptr::SharedPtr,
 };
@@ -39,11 +41,7 @@ use crate::controllers::{
         held::{self, HoldPlacement},
         late,
     },
-    weapons::{
-        c4::{first_weapon_data, slot_c4},
-        engine,
-        pouch_models::owned::OwnedModel,
-    },
+    weapons::{c4::slot_c4, engine, pouch_models::owned::OwnedModel},
 };
 
 /// The detonator, and the hand that holds it.
@@ -147,7 +145,7 @@ pub(crate) unsafe fn place_model(held: Option<(Hand, Pose)>) {
     let local = DETONATOR_HOLD.in_hand(hand);
     let matrix = held::held_matrix(grip, local);
     let source =
-        unsafe { engine::local_player() }.and_then(|owner| unsafe { trigger_model(owner) });
+        unsafe { engine::local_player() }.and_then(|owner| unsafe { owner_trigger_model(owner) });
     let shown = source.and_then(|source| unsafe { model.owned.show(source, matrix) });
     if shown.is_none() {
         unsafe { model.release() };
@@ -192,6 +190,21 @@ pub fn model_shown() -> bool {
     MODEL.lock().owned.visible()
 }
 
+/// The C4 weapon's base model, its trigger, while `weapon` (the planted explosive slot's) has a
+/// first gun whose base model is loaded. The detonator in the hand and on the C4 pouch are drawn
+/// with it.
+///
+/// # Safety
+///
+/// `weapon` must be a live weapon of the local player, on the game thread.
+pub(crate) unsafe fn trigger_model(weapon: &WeaponBase) -> Option<*const SharedPtr<Model>> {
+    let data = unsafe { engine::gun_ptr(weapon, 0) }?;
+    let instance: *mut ModelInstance = unsafe { data.as_ref() }.m_BaseModelInstance;
+    let instance = unsafe { instance.as_ref() }?;
+    let model: *const SharedPtr<Model> = &instance.m_spModel;
+    (!instance.m_spModel.px.is_null()).then_some(model)
+}
+
 struct HeldModel {
     owned: OwnedModel,
     hand: Option<Hand>,
@@ -223,18 +236,15 @@ fn ensure_cleanup() {
     }
 }
 
-/// The C4 weapon's base model, its trigger, while `owner` has a C4 weapon whose model is loaded.
+/// The trigger model of `owner`'s C4 weapon, when the slot holds one.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the game thread.
-unsafe fn trigger_model(owner: &mut Character) -> Option<*const SharedPtr<Model>> {
+unsafe fn owner_trigger_model(owner: &mut Character) -> Option<*const SharedPtr<Model>> {
     let weapon = unsafe { slot_c4(owner) }?;
-    let data = unsafe { first_weapon_data(weapon) }?;
-    let instance: *mut ModelInstance = unsafe { (*data).m_BaseModelInstance };
-    let instance = unsafe { instance.as_ref() }?;
-    let model: *const SharedPtr<Model> = &instance.m_spModel;
-    (!instance.m_spModel.px.is_null()).then_some(model)
+    let base = unsafe { &*std::ptr::from_mut(weapon).cast::<WeaponBase>() };
+    unsafe { trigger_model(base) }
 }
 
 #[cfg(test)]

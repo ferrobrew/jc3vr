@@ -1,5 +1,6 @@
 //! The game's models of what the body's pouches hold, drawn on the pouches: a grenade on the grenade
-//! pouch, a C4 charge on the C4 pouch, and the held gun's magazine on the magazine pouch, so the
+//! pouch, a C4 charge on the C4 pouch (or the detonator, once no charge is left to give), and the
+//! held gun's magazine on the magazine pouch, so the
 //! player sees on Rico's body what a hand reaching there takes. The magazine a hand takes from the
 //! pouch is drawn in that hand the same way ([`hand_tick`]), and so is a shell or a revolver's
 //! cylinder of rounds, which the game has no model of, with the casing the gun's ejection effect
@@ -9,7 +10,8 @@
 //! Each model is an instance the payload owns, made from a model the game already holds for the
 //! item's lifetime ([`ModelInstanceManager::CreateInstanceFromModel`]): the grenade weapon's
 //! projectile model ([`ThrownGrenadeWeapon::m_PhysicalProjectileModel`]), the C4 weapon's in-hand
-//! model ([`PlantedExplosiveWeapon::m_InactiveModelInstance`]), the gun's spare magazine prop's
+//! model ([`PlantedExplosiveWeapon::m_InactiveModelInstance`]), the C4 weapon's trigger model
+//! ([`trigger_model`]), the gun's spare magazine prop's
 //! model ([`WeaponData::m_MagazineObject`], [`RigidObject::m_Model`]), and the casing model, which
 //! the gun's effects keep in the game's model cache while the gun is loaded
 //! ([`ModelInstanceManager::CreateInstanceFromHash`]). The instance keeps its own
@@ -55,6 +57,7 @@ use crate::{
         frame::{Hand, Pose},
         hands::{grip, late::lerp_transform},
         weapons::{
+            c4::detonator::trigger_model,
             config::PouchModelsConfig,
             engine,
             pouch_models::{
@@ -81,16 +84,22 @@ pub enum Prop {
     Grenade,
     Charge,
     Magazine,
+    /// The C4 detonator, on the C4 pouch once no charge is left to give.
+    Detonator,
 }
 
 impl Prop {
-    pub const ALL: [Prop; 3] = [Prop::Grenade, Prop::Charge, Prop::Magazine];
+    pub const COUNT: usize = 4;
+
+    pub const ALL: [Prop; Prop::COUNT] =
+        [Prop::Grenade, Prop::Charge, Prop::Magazine, Prop::Detonator];
 
     pub const fn label(self) -> &'static str {
         match self {
             Prop::Grenade => "grenade",
             Prop::Charge => "C4 charge",
             Prop::Magazine => "magazine",
+            Prop::Detonator => "C4 detonator",
         }
     }
 
@@ -99,6 +108,7 @@ impl Prop {
             Prop::Grenade => 0,
             Prop::Charge => 1,
             Prop::Magazine => 2,
+            Prop::Detonator => 3,
         }
     }
 
@@ -106,14 +116,14 @@ impl Prop {
     pub const fn placement(self) -> ModelPlacement {
         match self {
             Prop::Charge => CHARGE_PLACEMENT,
-            Prop::Grenade | Prop::Magazine => MODEL_PLACEMENT,
+            Prop::Grenade | Prop::Magazine | Prop::Detonator => MODEL_PLACEMENT,
         }
     }
 
     fn bone(self) -> SafeBoneIndex {
         match self {
             Self::Magazine => SafeBoneIndex::HIPS,
-            Self::Grenade | Self::Charge => SafeBoneIndex::STERNUM,
+            Self::Grenade | Self::Charge | Self::Detonator => SafeBoneIndex::STERNUM,
         }
     }
 }
@@ -168,7 +178,7 @@ pub(crate) struct HandRequest {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct PouchModelsStatus {
     /// Whether each prop's model is drawn, by [`Prop::ALL`]'s order.
-    pub shown: [bool; 3],
+    pub shown: [bool; Prop::COUNT],
     /// Whether a magazine or a stand-in round is drawn in a hand.
     pub hand: bool,
     /// Whether the round in the hand is the stand-in round model, and how many are drawn.
@@ -586,7 +596,7 @@ impl Slot {
 }
 
 struct State {
-    slots: [Slot; 3],
+    slots: [Slot; Prop::COUNT],
     /// The round in the hand ([`hand_tick`]): the spare magazine in the first, or the stand-in
     /// rounds of a group, one per instance.
     hand: [OwnedModel; MAX_HELD_ROUNDS],
@@ -620,7 +630,7 @@ impl State {
         }
         unsafe { self.release_hand() };
         unsafe { self.speedloaders.release() };
-        self.status.shown = [false; 3];
+        self.status.shown = [false; Prop::COUNT];
         self.status.speedloaders = [0; 2];
         self.attachments = None;
         self.owner = None;
@@ -717,7 +727,7 @@ impl State {
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
-    slots: [Slot::EMPTY; 3],
+    slots: [Slot::EMPTY; Prop::COUNT],
     hand: [OwnedModel::EMPTY; MAX_HELD_ROUNDS],
     hand_offsets: [Vec3::ZERO; MAX_HELD_ROUNDS],
     hand_round: false,
@@ -726,7 +736,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     uncached_rounds: BTreeSet::new(),
     speedloaders: Speedloaders::EMPTY,
     status: PouchModelsStatus {
-        shown: [false; 3],
+        shown: [false; Prop::COUNT],
         hand: false,
         hand_rounds: 0,
         speedloaders: [0; 2],
@@ -753,7 +763,7 @@ fn ensure_cleanup() {
 }
 
 /// The model `prop` is drawn with for `owner`: the grenade weapon's projectile model, the C4
-/// weapon's in-hand model, or a magazine model of the gun at `weapon` ([`magazine_source`]). While
+/// weapon's in-hand model or its trigger model, or a magazine model of the gun at `weapon` ([`magazine_source`]). While
 /// the source is missing (a gun's spare magazine is respawned a while after each one it drops),
 /// the model `own` (the prop's instance) or, for a magazine, `hand` (the hand's) already holds for
 /// the same weapon; `None` without either.
@@ -775,7 +785,8 @@ unsafe fn source_model(
     unsafe { game_model(owner, prop) }.or_else(|| own.kept_for(weapon))
 }
 
-/// The grenade weapon's projectile model, or the C4 weapon's in-hand model, for `owner`.
+/// The grenade weapon's projectile model, or the C4 weapon's in-hand model or trigger model, for
+/// `owner`.
 ///
 /// # Safety
 ///
@@ -791,6 +802,10 @@ unsafe fn game_model(owner: &Character, prop: Prop) -> Option<*const SharedPtr<M
             let weapon = unsafe { slot_weapon(owner, WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE) }?;
             let c4 = unsafe { &*(weapon as *const WeaponBase).cast::<PlantedExplosiveWeapon>() };
             &c4.m_InactiveModelInstance
+        }
+        Prop::Detonator => {
+            let weapon = unsafe { slot_weapon(owner, WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE) }?;
+            return unsafe { trigger_model(weapon) };
         }
         Prop::Magazine => return None,
     };
@@ -832,6 +847,16 @@ mod tests {
             let face = on.transform_vector3(Vec3::Y);
             assert!(face.distance(Vec3::NEG_Z) < 1e-5, "{side:?}: {face}");
             assert_eq!(on.w_axis.truncate(), Vec3::ZERO);
+        }
+    }
+
+    #[test]
+    fn the_detonator_stands_upright_on_the_chest_on_either_side() {
+        for side in Hand::BOTH {
+            let on = on_pouch(&Prop::Detonator.placement(), side);
+            // The trigger model stands along its +Y, which stays up the spine.
+            let up = on.transform_vector3(Vec3::Y);
+            assert!(up.distance(Vec3::Y) < 1e-5, "{side:?}: {up}");
         }
     }
 

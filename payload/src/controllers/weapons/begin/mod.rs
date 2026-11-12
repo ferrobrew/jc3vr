@@ -840,6 +840,13 @@ fn shown_props(body: &BodyFrame, config: &ControllersConfig) -> Vec<ShownPouch> 
         && let Some(pouch) = volumes::c4_pouch(body, pouches, dominant, ChestGrabbers::Either)
     {
         out.push(on_chest(Prop::Charge, pouch, sides.c4));
+    } else if config.weapons.c4_throw
+        && !c4::in_stock()
+        && c4::detonator_hand().is_none()
+        && let Some(pouch) = volumes::c4_pouch(body, pouches, dominant, ChestGrabbers::Either)
+    {
+        // With no charge left to give, the pouch gives the detonator, so it shows that.
+        out.push(on_chest(Prop::Detonator, pouch, sides.c4));
     }
     if let Some(pouch) = reload::stocked_pouch() {
         out.push(ShownPouch {

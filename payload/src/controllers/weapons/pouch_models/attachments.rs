@@ -58,7 +58,7 @@ pub(crate) struct RenderSample {
     pub id: SampleId,
     pub input: Sample,
     pub character: Mat4,
-    pub models: [Option<RenderedModel>; 3],
+    pub models: [Option<RenderedModel>; Prop::COUNT],
 }
 
 /// A value copied immediately after applying this matrix to the owned instance.
@@ -78,7 +78,7 @@ impl RenderSample {
             id,
             input: input.clone(),
             character,
-            models: [None; 3],
+            models: [None; Prop::COUNT],
         })
     }
 

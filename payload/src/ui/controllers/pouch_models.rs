@@ -11,10 +11,10 @@ use crate::controllers::weapons::{
 pub(super) fn pouch_model_settings(ui: &mut Ui, m: &mut PouchModelsConfig) {
     ui.checkbox(&mut m.enabled, "Draw the pouches' models")
         .on_hover_text(
-            "The game's grenade, C4 charge, and the held gun's magazine, drawn on their pouches \
-             on Rico's body, and the magazine a hand takes from the pouch, drawn in the hand. \
-             A shell or a revolver's rounds, which the game has no model of, are drawn in the \
-             hand with the casing the gun ejects.",
+            "The game's grenade, C4 charge (or detonator, once no charge is left), and the held \
+             gun's magazine, drawn on their pouches on Rico's body, and the magazine a hand \
+             takes from the pouch, drawn in the hand. A shell or a revolver's rounds, which the \
+             game has no model of, are drawn in the hand with the casing the gun ejects.",
         );
     let status = pouch_models::status();
     let mut shown: Vec<String> = Prop::ALL
