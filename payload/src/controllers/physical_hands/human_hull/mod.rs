@@ -10,6 +10,7 @@ mod geometry;
 mod kept;
 mod native;
 mod query;
+pub(crate) mod step_up;
 
 use std::{
     ptr::NonNull,
@@ -23,7 +24,7 @@ use re_utilities::hook_library::HookLibrary;
 use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::{
-    controllers::physical_hands::human_hull::native::NativeState,
+    controllers::physical_hands::{human_hull::native::NativeState, physics::step_seconds},
     lifecycle::{
         DeferReason, ParticipantId, Preparation, PrepareOutcome, PreparedParticipant,
         ShutdownParticipant,
@@ -149,7 +150,21 @@ pub(crate) unsafe fn step(world: *mut hknpWorld) {
         return;
     }
     PHYSICS_THREAD.store(thread, Ordering::Release);
-    let mut state = STATE.lock();
+    let steps = {
+        let mut state = STATE.lock();
+        unsafe { pass(&mut state, world) };
+        state.player_steps.filter(|_| !state.committed)
+    };
+    // SAFETY: forwarded from the caller.
+    unsafe { step_up::step(steps, step_seconds()) };
+}
+
+/// One native pass of the hull: discover the settings and the bodies, and narrow or restore them.
+///
+/// # Safety
+///
+/// As [`step`]; `world` is not null.
+unsafe fn pass(state: &mut NativeState, world: *mut hknpWorld) {
     if state.committed {
         return;
     }

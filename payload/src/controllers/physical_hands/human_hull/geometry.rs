@@ -122,6 +122,53 @@ pub(super) fn narrow_points(points: &mut [[f32; 3]], center: [f32; 3], scale: [f
     }
 }
 
+/// What a hull's bottom steps up: the height of its bottom cone above its lowest point, and how far
+/// the hull reaches from its axis across the ground, metres, both including the convex radius
+/// `radius`. The cone's top is the lowest of the vertices at the hull's widest reach.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct StepProfile {
+    pub(crate) cone_height_m: f32,
+    pub(crate) half_width_m: f32,
+}
+
+/// The [`StepProfile`] of a hull of core vertices `points` with convex radius `radius`, its axis
+/// through the lowest vertex, the bottom cone's apex. `None` for no vertices.
+pub(super) fn step_profile(points: &[[f32; 3]], radius: f32) -> Option<StepProfile> {
+    let lowest = points.iter().min_by(|a, b| a[1].total_cmp(&b[1]))?;
+    let (bottom, cx, cz) = (lowest[1], lowest[0], lowest[2]);
+    let reach_of = |p: &[f32; 3]| (p[0] - cx).hypot(p[2] - cz);
+    let reach = points.iter().map(reach_of).fold(0.0_f32, f32::max);
+    let top = points
+        .iter()
+        .filter(|p| reach_of(p) >= reach - REACH_TOLERANCE_M)
+        .map(|p| p[1])
+        .min_by(f32::total_cmp)?;
+    let radius = if radius.is_finite() {
+        radius.max(0.0)
+    } else {
+        0.0
+    };
+    Some(StepProfile {
+        cone_height_m: top - bottom,
+        half_width_m: reach + radius,
+    })
+}
+
+/// The [`StepProfile`] of a live convex shape.
+///
+/// # Safety
+///
+/// `shape` must be a retained native convex shape.
+pub(super) unsafe fn shape_step_profile(shape: NonNull<hknpShape>) -> Option<StepProfile> {
+    let radius = unsafe { shape.as_ref() }.m_convexRadius;
+    let points: Vec<[f32; 3]> = unsafe { vertices(shape) }
+        .ok()?
+        .iter()
+        .map(|v| [v.data[0], v.data[1], v.data[2]])
+        .collect();
+    step_profile(&points, radius)
+}
+
 pub(super) unsafe fn bounds(shape: NonNull<hknpShape>) -> Result<Bounds, GeometryError> {
     let radius = unsafe { shape.as_ref() }.m_convexRadius;
     if !radius.is_finite() || radius < 0.0 {
@@ -174,6 +221,9 @@ pub(super) unsafe fn vertices<'a>(
 
 const MAXIMUM_VERTICES: u16 = 252;
 const GEOMETRY_TOLERANCE_M: f32 = 1.0e-4;
+/// How far short of the hull's widest reach a vertex may be and still count as at it: the
+/// heptagon's corners all sit at the same reach, to rounding.
+const REACH_TOLERANCE_M: f32 = 1.0e-3;
 
 #[cfg(test)]
 mod tests {
@@ -221,6 +271,12 @@ mod tests {
         assert!((narrowed[1][0] - 0.225).abs() < 1e-6);
         // The bottom ring comes down to half its height.
         assert!((narrowed[2][1] - 0.225).abs() < 1e-6);
+        let authored_steps = step_profile(&authored, 0.01).unwrap();
+        let narrowed_steps = step_profile(&narrowed, 0.01).unwrap();
+        assert!((authored_steps.cone_height_m - 0.45).abs() < 1e-5);
+        assert!((authored_steps.half_width_m - 0.46).abs() < 1e-5);
+        assert!((narrowed_steps.cone_height_m - 0.225).abs() < 1e-5);
+        assert!((narrowed_steps.half_width_m - 0.235).abs() < 1e-5);
     }
 
     #[test]

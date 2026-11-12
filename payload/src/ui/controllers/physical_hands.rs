@@ -6,8 +6,12 @@ use egui::Ui;
 use crate::controllers::{
     frame::Hand,
     physical_hands::{
-        PhysicalHandsConfig, PhysicalHandsStatus, doors, grasp::TargetKind, human_hull, impacts,
-        pickup::diagnostics, sounds::SoundsStatus,
+        PhysicalHandsConfig, PhysicalHandsStatus, doors,
+        grasp::TargetKind,
+        human_hull::{self, step_up},
+        impacts,
+        pickup::diagnostics,
+        sounds::SoundsStatus,
     },
 };
 
@@ -161,6 +165,29 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
         human_hull::set_enabled(hull_enabled);
     }
     ui.label("Restoration waits for full-size clearance. The current hull remains installed while restoration is deferred.");
+    let step_up = step_up::status();
+    let mut step_up_enabled = step_up.enabled;
+    if ui
+        .checkbox(
+            &mut step_up_enabled,
+            "Step the narrowed player up taller steps",
+        )
+        .on_hover_text(
+            "The half-width hull steps up edges only half as high as the game's own. While the \
+             player walks into a step the game's hull would climb, lift them onto it.",
+        )
+        .changed()
+    {
+        step_up::set_enabled(step_up_enabled);
+    }
+    ui.label(format!(
+        "Steps lifted onto: {}, last {}, lifting now: {}.",
+        step_up.steps,
+        step_up
+            .last_height_m
+            .map_or_else(|| "none".to_owned(), |h| format!("{h:.2} m")),
+        step_up.lifting
+    ));
     ui.checkbox(&mut p.enabled, "Physical palms");
     ui.add_enabled_ui(p.enabled, |ui| {
         ui.checkbox(&mut p.bodies.enabled, "Hand bodies")

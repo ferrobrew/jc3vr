@@ -20,12 +20,13 @@ use crate::controllers::physical_hands::{
     characters::engine::proxy_body,
     human_hull::{
         ClearanceUnavailableReason,
-        geometry::{self, GeometryError},
+        geometry::{self, GeometryError, shape_step_profile},
         kept::{self, KeptPair},
         native::{
             restore::{Allowance, Plan, RetryBackoff, Surroundings, check_body, plan},
             scan::{DiscoveryClock, Lookup, Migrated, scan},
         },
+        step_up::PlayerSteps,
     },
 };
 
@@ -45,6 +46,9 @@ pub(super) struct NativeState {
     mutation_fault: bool,
     /// Whether the local player's body last had a narrowed shape, reported on each change.
     player_narrowed: Option<bool>,
+    /// The local player's narrowed and authored step profiles while the player holds a narrowed
+    /// hull, as the last pass found them.
+    pub(super) player_steps: Option<PlayerSteps>,
     /// The shape pairs earlier payloads in this process left in place, read on first use.
     kept: Option<Vec<KeptPair>>,
     /// The adopted pairs by shape, dropped whenever the tables change and rebuilt on next use.
@@ -72,6 +76,7 @@ impl NativeState {
             generation: 0,
             mutation_fault: false,
             player_narrowed: None,
+            player_steps: None,
             kept: None,
             lookup: None,
             discovery: DiscoveryClock::new(),
@@ -392,14 +397,24 @@ impl NativeState {
     /// Log whether the local player's body has a narrowed shape whenever that changes, so that a
     /// session log shows the player's own hull taking effect.
     unsafe fn report_player(&mut self, world: &hknpWorld) {
+        self.player_steps = None;
         let Some(id) = (unsafe { player_body(world) }) else {
             return;
         };
         let current = unsafe { (*world.m_bodies.add(id as usize)).m_shape };
-        let narrowed = self
+        let original = self
             .lookup
             .as_ref()
-            .is_some_and(|lookup| lookup.original_of(current).is_some());
+            .and_then(|lookup| lookup.original_of(current));
+        let narrowed = original.is_some();
+        self.player_steps = original
+            .zip(NonNull::new(current))
+            .and_then(|(original, current)| {
+                Some(PlayerSteps {
+                    narrowed: unsafe { shape_step_profile(current) }?,
+                    authored: unsafe { shape_step_profile(original) }?,
+                })
+            });
         if self.player_narrowed.replace(narrowed) != Some(narrowed) {
             tracing::info!(
                 narrowed,
