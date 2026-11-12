@@ -551,8 +551,14 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     controls.stunt_available = if matches!(detection.mode, Mode::Vehicle(seat) if seat.class != VehicleClass::Mech)
         && detection.held.is_none()
     {
-        // SAFETY: the binding game stage runs before the world update on the game thread.
-        unsafe { bail::seated_stunt_available() }
+        if bail::stunt_hangs_inverted(detection.mode, config.grapple.lock.hang) {
+            // A helicopter seat's stunt act drops Rico into the hang under the airframe, which
+            // holds him inverted; the seat's exit takes the press instead.
+            Some(false)
+        } else {
+            // SAFETY: the binding game stage runs before the world update on the game thread.
+            unsafe { bail::seated_stunt_available() }
+        }
     } else {
         None
     };
