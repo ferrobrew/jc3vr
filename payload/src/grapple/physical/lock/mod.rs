@@ -238,6 +238,7 @@ pub(crate) struct LockTickInput<'a> {
 ///
 /// The game thread, before the world update.
 pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
+    HANG_GATE.lock().ticked = Some(Instant::now());
     let (pending, fault) = {
         let mut shared = SHARED.lock();
         (shared.pending.take(), shared.fault.take())
@@ -265,8 +266,9 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         unsafe { engine::set_wanted_velocity(character, velocity) };
     }
     if !holds() {
-        let hang = HANG_WANTED
+        let hang = HANG_GATE
             .lock()
+            .wanted
             .take()
             .filter(|at| at.elapsed() <= HANG_WANTED_FOR)
             .is_some();
@@ -482,7 +484,20 @@ fn last_velocity() -> Option<Vec3> {
 /// Ask the lock's next tick to hang the character below the hook: the reel's arrival would have
 /// put it in the game's upside-down ceiling attach.
 fn want_hang() {
-    *HANG_WANTED.lock() = Some(Instant::now());
+    HANG_GATE.lock().wanted = Some(Instant::now());
+}
+
+/// Whether a hang can take the place of the reel's arrival: the lock's tick runs (it does not while
+/// the bindings stand idle, such as under the gamepad scheme), and it has not just refused a hang.
+/// Otherwise the arrival held off would only arrive again on every reel tick, with nothing to end
+/// the reel.
+fn hang_takes_over() -> bool {
+    let gate = HANG_GATE.lock();
+    gate.ticked
+        .is_some_and(|at| at.elapsed() <= HANG_WANTED_FOR)
+        && gate
+            .refused
+            .is_none_or(|at| at.elapsed() > HANG_REFUSED_FOR)
 }
 
 /// How the lock took hold.
@@ -508,6 +523,9 @@ unsafe fn start(
     pump_tuning: SwingTuning,
 ) {
     let refuse = |why: &str| {
+        if hold == Hold::Hang {
+            HANG_GATE.lock().refused = Some(Instant::now());
+        }
         tracing::info!(target: "grapple", why, "grapple lock: refused");
     };
     let Some(proxy) = (unsafe { engine::reeling_far_end(hook) }) else {
@@ -799,10 +817,24 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
 /// Whether the lock holds the line, for the detours, which must not wait on [`SHARED`].
 static LOCKED: AtomicBool = AtomicBool::new(false);
 
-/// When the reel's arrival last asked for a hang ([`want_hang`]): a leaf lock the arrival's detour
-/// and the input tick take in turn.
-static HANG_WANTED: Mutex<Option<Instant>> = Mutex::new(None);
+/// When the reel's arrival last asked for a hang ([`want_hang`]), when the lock last ticked, and
+/// when it last refused a hang ([`hang_takes_over`]): a leaf lock the arrival's detours and the
+/// input tick take in turn.
+static HANG_GATE: Mutex<HangGate> = Mutex::new(HangGate {
+    wanted: None,
+    ticked: None,
+    refused: None,
+});
+
+struct HangGate {
+    wanted: Option<Instant>,
+    ticked: Option<Instant>,
+    refused: Option<Instant>,
+}
 
 /// How long an arrival's ask for a hang stands: the arrival asks again on every reel tick it
 /// arrives, so an ask older than a few ticks belongs to a reel that has ended.
 const HANG_WANTED_FOR: Duration = Duration::from_millis(250);
+
+/// How long after a refused hang the reel's arrival is left to the game, so that the reel ends.
+const HANG_REFUSED_FOR: Duration = Duration::from_secs(2);

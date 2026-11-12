@@ -5,8 +5,10 @@
 //!
 //! The arrival's upside-down ending ([`GrapplingHook::StartReelUpsideDown`], the ceiling attach)
 //! and the arrival onto a helicopter (the game's stunt hang under the airframe) are held off for
-//! the local player while the hang is on: the reel keeps running, and the lock's next tick hangs
-//! the character below the hook instead (`lock::want_hang`).
+//! the local player while the hang is on and the lock's tick runs: the reel keeps running, and the
+//! lock's next tick hangs the character below the hook instead (`lock::want_hang`). While the
+//! lock's tick does not run (the bindings idle, as under the gamepad scheme), or just after it
+//! refused a hang, the arrival is the game's (`lock::hang_takes_over`).
 //!
 //! [`GrapplingHook::StartReelUpsideDown`]: jc3gi::equipment::grappling_hook::GrapplingHook::StartReelUpsideDown
 //! [`NStateTask_ReelIn::FinishReel`]: jc3gi::equipment::grappling_hook::NStateTask_ReelIn::FinishReel
@@ -22,7 +24,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    grapple::physical::lock::{engine, holds, last_velocity, want_hang},
+    grapple::physical::lock::{engine, hang_takes_over, holds, last_velocity, want_hang},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -38,7 +40,7 @@ fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Cha
     let local = unsafe { holder.as_ref() }
         .and_then(|h| unsafe { h.px.as_ref() })
         .is_some_and(|c| c.m_IsLocalCharacter);
-    if local && hang_enabled() {
+    if local && hang_enabled() && hang_takes_over() {
         want_hang();
         return;
     }
@@ -76,7 +78,7 @@ fn finish_reel(
         let to_helicopter = unsafe { hook.as_ref() }
             .and_then(|h| unsafe { h.px.as_ref() })
             .is_some_and(|h| unsafe { engine::reeling_to_helicopter(h) });
-        if to_helicopter && hang_enabled() {
+        if to_helicopter && hang_enabled() && hang_takes_over() {
             want_hang();
             return;
         }

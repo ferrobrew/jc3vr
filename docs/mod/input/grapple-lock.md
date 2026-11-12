@@ -58,6 +58,8 @@ A reel onto a ceiling ends, in the game, in the upside-down attach: the arrival 
 
 A reel onto a helicopter is hung the same way. Its arrival ([`NStateTask_ReelIn::FinishReel`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::NStateTask_ReelIn##func-FinishReel)) would take Rico into the game's stunt hang under the airframe, whose states are the grapple's upside-down ones ([stunt-positions.md](../../engine/gameplay/stunt-positions.md#leaving)); the lock's arrival detour holds it off when the far end is attached to a [`Helicopter`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Helicopter), and the line holds him at the hang's length below the hook's point, measured against the helicopter's motion, so he rides under it as it flies.
 
+The hold-off applies only while the lock's input tick runs and has not just refused a hang (`lock::hang_takes_over`). The tick does not run while the controller bindings stand idle, as under the gamepad scheme, with no tracked controllers, or while the debug UI holds the input, and a refused hang (the line's far end lost or the character's mass unreadable) would be refused again on every tick; in either case nothing would end the reel, so the arrival is left to the game: the ceiling cling or the helicopter's hang, for two seconds after a refusal.
+
 Every way out of a hang lets go of the line: a quick release, a longer one, and a yank, since resuming the reel would only arrive at the ceiling again. A landing lets go as for any lock. `LINE LOCK` reads `HANGING` while it holds, and `the line locks` logs `hang=true`. Perches on walls, the ledge hang, and the stunt positions on cars, boats, and planes are left to the game.
 
 Pulling up onto a ledge from the hang is not done.
@@ -135,6 +137,7 @@ With the lock on (the default):
 13. Switch the lock off: holding the button mid-reel does what it did before.
 14. Zip to a ceiling (under a bridge or an overhang) without touching the button: Rico does not flip into the inverted cling; he drops a couple of metres and hangs upright below the hook, `LINE LOCK` reading `HANGING`. Swing the grapple arm to pump the swing; use the right hand freely; pull the grapple hand back to climb the line. Tap the button: he drops and falls on, and the reel does not carry him back to the ceiling. Switch `Hang below ceilings` off: the ceiling cling returns.
 15. Zip to a hovering helicopter: Rico does not enter the game's hang under the airframe; he hangs upright 3.5 m below the hook and rides with it, `LINE LOCK` reading `HANGING` with the helicopter's speed. Tap the button: he drops. With the hang off, the game's hang returns.
+16. Switch to the gamepad scheme and zip to a ceiling and to a helicopter: the game's own ceiling cling and stunt hang play, and the reel does not hang at the hook.
 
 ## Unverified in the headset
 
