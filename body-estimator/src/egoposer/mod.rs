@@ -4,8 +4,11 @@
 //! [`EgoPoser::load`] reads the weights (the `weights` module describes the file), and
 //! [`EgoPoser::infer`] runs one window ([`SparseWindow`]) through the network (the `network` module).
 //! [`EgoPoser::infer_traced`] also returns the intermediate tensors, which the golden tests and
-//! any other implementation of the network check themselves against.
+//! any other implementation of the network check themselves against. On Windows, the `gpu` module
+//! runs the same network through Direct3D 11 compute shaders.
 
+#[cfg(all(windows, feature = "d3d11"))]
+pub mod gpu;
 mod network;
 mod weights;
 

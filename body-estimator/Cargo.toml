@@ -14,3 +14,15 @@ glam = { workspace = true }
 matrixmultiply = "0.3.11"
 safetensors = "0.8.0"
 
+[features]
+default = ["d3d11"]
+# The Direct3D 11 executor (`egoposer::gpu`), Windows only: on other targets the feature is inert
+# and pulls in nothing.
+d3d11 = ["dep:windows", "dep:half"]
+
+[target.'cfg(windows)'.dependencies]
+half = { version = "2.7.1", optional = true }
+windows = { workspace = true, optional = true, features = [
+    "Win32_Graphics_Direct3D",
+    "Win32_Graphics_Dxgi_Common",
+] }

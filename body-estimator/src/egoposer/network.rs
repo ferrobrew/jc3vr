@@ -71,6 +71,19 @@ pub(crate) fn network_input(window: &SparseWindow) -> Vec<f32> {
     x
 }
 
+/// The embedding's input for each token, `TOKENS × INPUT` values: the slow stream's frame plus the
+/// fast stream's. The embedding is linear, so embedding this sum and adding the bias twice gives
+/// the summed embeddings of step 4, up to rounding.
+#[cfg(all(windows, feature = "d3d11"))]
+pub(crate) fn token_inputs(window: &SparseWindow) -> Vec<f32> {
+    let input = network_input(window);
+    let (frames, _) = input.as_chunks::<INPUT>();
+    let (slow, fast) = (frames.iter().step_by(2), &frames[TOKENS..]);
+    slow.zip(fast)
+        .flat_map(|(s, f)| s.iter().zip(f).map(|(a, b)| a + b))
+        .collect()
+}
+
 /// The whole pass, recording the intermediate tensors in `trace` when given one.
 pub(crate) fn forward(
     weights: &Weights,

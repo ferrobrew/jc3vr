@@ -556,8 +556,10 @@ name = "body-estimator"
 version = "0.1.0"
 dependencies = [
  "glam",
+ "half",
  "matrixmultiply",
  "safetensors",
+ "windows 0.62.2",
 ]
 
 [[package]]

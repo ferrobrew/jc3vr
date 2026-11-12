@@ -6,7 +6,8 @@
 //! - [`features`]: the 54-D sparse input EgoPoser's data pipeline builds from those joints over an
 //!   80-frame window, and the hands' field-of-view masks.
 //! - [`egoposer`]: the weights and the forward pass, including the normalisation the network does
-//!   on its input.
+//!   on its input; on Windows, with the `d3d11` feature (on by default), also the forward pass as
+//!   Direct3D 11 compute shaders (`egoposer::gpu`).
 //! - [`smpl`]: the SMPL kinematic tree, the 6D rotation format, and the yaws read off the output.
 //!
 //! The CPU pass is the reference implementation: clear rather than fast, and checked against the

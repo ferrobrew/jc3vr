@@ -9,8 +9,9 @@
 //! its HTTP / archive dependencies never reach a normal build of the `-sys` crate or the payload. It
 //! runs only on an FSR version bump or after a fresh checkout.
 //!
-//! In addition, the payload's own DX11 shaders (velocity decode, HUD quad) are compiled by the same
-//! toolchain and committed as `.dxbc` blobs alongside their `.hlsl` sources.
+//! In addition, the payload's own DX11 shaders (velocity decode, HUD quad) and `body-estimator`'s
+//! compute shaders are compiled by the same toolchain and committed as `.dxbc` blobs alongside their
+//! `.hlsl` sources.
 //!
 //! `FidelityFX_SC.exe` is a Windows executable: on a Windows host it runs directly; elsewhere it runs
 //! under Wine. The Wine half -- provisioning a prefix with a native `d3dcompiler_47.dll`, since Wine's
@@ -104,6 +105,26 @@ const PAYLOAD_SHADERS: &[(&str, &str)] = &[
     ("scope_lens_ps", "ps_5_0"),
 ];
 
+/// `body-estimator`'s compute shaders (`cs_5_0`): `(name, source, defines)`. Each
+/// `body-estimator/src/shaders/<source>.hlsl` (entry point `main`) compiles with `defines` to a
+/// committed `<name>.dxbc` beside it, so one source can give more than one variant.
+const ESTIMATOR_SHADERS: &[(&str, &str, &[&str])] = &[
+    ("egoposer_linear_f32", "egoposer_linear", &["WEIGHTS_F16=0"]),
+    ("egoposer_linear_f16", "egoposer_linear", &["WEIGHTS_F16=1"]),
+    ("egoposer_layer_norm", "egoposer_layer_norm", &[]),
+    ("egoposer_attention", "egoposer_attention", &[]),
+];
+
+/// One shader to compile to a committed blob: `<dir>/<source>.hlsl` with `defines`, written to
+/// `<dir>/<name>.dxbc`.
+struct BlobShader<'a> {
+    dir: &'a Path,
+    name: &'a str,
+    source: &'a str,
+    profile: &'a str,
+    defines: &'a [&'a str],
+}
+
 fn main() {
     if let Err(e) = run() {
         eprintln!("regen-shaders: {e}");
@@ -183,11 +204,34 @@ fn run() -> Result<(), String> {
     // payload `include_bytes!`s -- no runtime shader compiler (uncertain under Proton).
     let payload_shaders = workspace.join("payload/src/shaders");
     for (name, profile) in PAYLOAD_SHADERS {
-        compile_payload_shader(&runner, &sc_exe, &payload_shaders, name, profile)?;
+        let shader = BlobShader {
+            dir: &payload_shaders,
+            name,
+            source: name,
+            profile,
+            defines: &[],
+        };
+        compile_blob_shader(&runner, &sc_exe, &shader)?;
     }
     println!(
         "regen-shaders: payload shaders -> {}",
         payload_shaders.display()
+    );
+
+    let estimator_shaders = workspace.join("body-estimator/src/shaders");
+    for (name, source, defines) in ESTIMATOR_SHADERS {
+        let shader = BlobShader {
+            dir: &estimator_shaders,
+            name,
+            source,
+            profile: "cs_5_0",
+            defines,
+        };
+        compile_blob_shader(&runner, &sc_exe, &shader)?;
+    }
+    println!(
+        "regen-shaders: body-estimator shaders -> {}",
+        estimator_shaders.display()
     );
     Ok(())
 }
@@ -242,34 +286,42 @@ fn compile_pass(
     Ok(())
 }
 
-/// Compile one payload shader (`<dir>/<name>.hlsl`, entry point `main`) to a committed
-/// `<dir>/<name>.dxbc` blob. Uses the same compiler but emits the SC permutation header into a temp
-/// dir, then lifts the raw DXBC bytes out of it -- the payload wants a plain blob to `include_bytes!`,
-/// not FSR's permutation-table header.
-fn compile_payload_shader(
+/// Compile one shader (`<dir>/<source>.hlsl`, entry point `main`) to a committed `<dir>/<name>.dxbc`
+/// blob. Uses the same compiler but emits the SC permutation header into a temp dir, then lifts the
+/// raw DXBC bytes out of it -- the consumers want a plain blob to `include_bytes!`, not FSR's
+/// permutation-table header.
+fn compile_blob_shader(
     runner: &Runner,
     sc_exe: &Path,
-    dir: &Path,
-    name: &str,
-    profile: &str,
+    shader: &BlobShader<'_>,
 ) -> Result<(), String> {
+    let &BlobShader {
+        dir,
+        name,
+        source,
+        profile,
+        defines,
+    } = shader;
     let tmp = dir.join(".sc-tmp");
     std::fs::create_dir_all(&tmp)
         .map_err(|e| format!("could not create {}: {e}", tmp.display()))?;
 
-    let args: Vec<String> = vec![
+    let mut args: Vec<String> = vec![
         "-E".into(),
         "main".into(),
         "-T".into(),
         profile.into(),
         "-compiler=fxc".into(),
         "-DFFX_HLSL=1".into(),
+    ];
+    args.extend(defines.iter().map(|define| format!("-D{define}")));
+    args.extend([
         format!("-name={name}"),
         format!("-output={}", tmp.to_string_lossy()),
-        dir.join(format!("{name}.hlsl"))
+        dir.join(format!("{source}.hlsl"))
             .to_string_lossy()
             .into_owned(),
-    ];
+    ]);
     let status = runner
         .command(sc_exe, &args)
         .status()
