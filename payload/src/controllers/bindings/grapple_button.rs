@@ -27,7 +27,9 @@
 //! wind-up, as soon as the reel carries the character; a release within [`TAP_S`] unlocks it and
 //! resumes the reel, firing nothing, since a fire onto the attached line can release it; a release
 //! after a longer hold lets go of the line; and a yank of the grapple hand while it is held unlocks
-//! it and resumes the reel. The game sees no held fire input through any of it.
+//! it and resumes the reel. The game sees no held fire input through any of it. A press that
+//! reached the game just before the reel took the line (the hold of a tap and hold, landing as the
+//! hook attaches) becomes the lock's as soon as the reel does, while it is still held.
 //!
 //! In a vehicle seat ([`GrappleContext::seated`]), where the game takes no grapple fire, the
 //! button's fire is the seat grapple's ([`crate::grapple::seat`]): a press with nothing attached,
@@ -325,6 +327,13 @@ impl GrappleButton {
                 } else {
                     Phase::TapWaiting { waited_s }
                 }
+            }
+            Phase::Passing if held && context.reeling => {
+                // The press reached the game a tick before the reel took the line (the second
+                // press of a tap and hold, landing as the hook attaches): the lock takes it from
+                // here, and the game sees it come up, as it would for a tap.
+                out.lock = Some(LockButton::Pressed);
+                Phase::Locking { held_s: 0.0 }
             }
             Phase::Passing if held => {
                 out.gestures = false;
@@ -915,6 +924,35 @@ mod tests {
             vec![LockButton::Pressed, LockButton::Held, LockButton::Held]
         );
         assert!(out.iter().all(|o| o.gestures && o.fire.is_none()));
+    }
+
+    #[test]
+    fn a_press_that_reached_the_game_just_before_the_reel_is_the_locks_once_it_reels() {
+        // The 10 November take: the tap fired, and the press to swing landed a tick before the
+        // hook entered the reel, so it went to the game and the lock never heard it.
+        let mut g = GrappleButton::new();
+        assert!(!g.step(tick(PRESS, GrappleContext::default())).gestures);
+        let out = run(&mut g, REELING, &[HELD, HELD]);
+        assert_eq!(locks(&out), vec![LockButton::Pressed, LockButton::Held]);
+        assert!(
+            out.iter().all(|o| o.gestures && o.fire.is_none()),
+            "the game sees the press come up"
+        );
+        let out = run(&mut g, REELING, &[RELEASE, UP]);
+        assert_eq!(locks(&out), vec![LockButton::Tapped]);
+        assert!(fires(&out).is_empty());
+    }
+
+    #[test]
+    fn a_press_held_to_the_game_without_a_reel_stays_the_games() {
+        let mut g = GrappleButton::new();
+        let out = run(
+            &mut g,
+            GrappleContext::default(),
+            &[PRESS, HELD, HELD, RELEASE],
+        );
+        assert!(locks(&out).is_empty());
+        assert!(out.iter().all(|o| !o.gestures));
     }
 
     #[test]

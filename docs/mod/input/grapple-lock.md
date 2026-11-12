@@ -6,7 +6,7 @@ The implementation is `payload/src/grapple/physical/lock/`, with the rope shared
 
 ## The button
 
-The lock owns the grapple button while the hook reels in along a line whose far end is attached to anything but a character, on the controller scheme with the lock switched on. It owns it from the hook's reeling-in state on, which takes in the reel's wind-up (the mode detector's pre-reel traversal, and in the parachute a stretch before it) as well as the reel itself. The lock takes hold only once the reel task carries Rico (the reeling-in traversal); a press in the wind-up arms it, and it takes hold as the reel starts if the button is still held. The button's gestures, read before the game sees the button:
+The lock owns the grapple button while the hook reels in along a line whose far end is attached to anything but a character, on the controller scheme with the lock switched on. It owns it from the hook's reeling-in state on, which takes in the reel's wind-up (the mode detector's pre-reel traversal, and in the parachute a stretch before it) as well as the reel itself. The lock takes hold only once the reel task carries Rico (the reeling-in traversal); a press in the wind-up arms it, and it takes hold as the reel starts if the button is still held. A press that reached the game a tick before the hook entered the reel, which the hold of a quick tap and hold does when it lands as the hook attaches, is the lock's from the tick the reel starts, while it is still held: the game sees it come up, as for a tap. The button's gestures, read before the game sees the button:
 
 | Press | Effect |
 |---|---|
