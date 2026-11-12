@@ -165,3 +165,22 @@ The changes for [the feedback](philpax_feedback.md), on `controllers` from `e263
 - The Urga U-17 Akrobat (346 to 362 s): the yokes are measured from the mesh, with a new yoke control, so the placement no longer depends on the entry path (`e3287677`, [cockpit-controls.md](../../mod/input/cockpit-controls.md)).
 - The throttle (721 s): one third reverse behind a gate at zero, two thirds forward, a tick every 10 percent and a hard stop at zero; the stick and yoke tick at centre and bump at their limits (`e3287677`).
 - Gunners (1939, 1967, 1974 s): a yanked gunner falls out as a ragdoll, standing at an empty gun's handles enters the seat, and the handles outrank the turret part beside them (`52294e3f`, `bb2bf2c2`, `7dbe31a5`). Only the tripod minigun can be torn off its mount; vehicle guns are not detachable in the game ([vehicle-weapons.md](../../mod/input/vehicle-weapons.md), `19d04fea`).
+
+### Second pass
+
+- Shadows (2331 s): the cascade fit bakes the shadow transform against the camera position at fit time, and the material shaders apply it against the render camera's, so any gap between the two shifts every shadow, the same in both eyes. At 2331 s the gap followed the reel's speed, and the shadow met the car once the reel ended. The lookup is anchored to the fit's camera, and the cascades fit the eyes' combined view without the culling padding (`5ad7143e`, [lighting-shadow-vr-interactions.md](../../mod/stereo/lighting-shadow-vr-interactions.md), with switches for an A/B).
+- The 6 cm face clearance is restored in VR (`155a456c`). The dark shape at 1593 and 1603 s is probably the long gun on the right shoulder within the near plane while leaning; unconfirmed.
+- A helicopter seat's stunt press leaves the seat instead of entering the inverted hang (`fe34be31`, [stunt-positions.md](../../mod/input/stunt-positions.md)). The scripted attach stays the game's.
+- Barrels: a fuel barrel needs 1500 N·s on one contact point (about 8 m/s head-on on one point, 11 to 18 m/s shared over two to four); the throws delivered 470 to 870 N·s in all. A mod-side rule is undecided.
+- The narrow hull steps up the normal hull's heights through a mod-side step-up (`88172ac5`, [human-hull-restoration.md](../../mod/body/human-hull-restoration.md)).
+- Vehicle guns tear off their mounts, from outside or from the gunner seat, by releasing the vehicle's hold on the gun the way its explosion does (`212da6b2`, [vehicle-weapons.md](../../mod/input/vehicle-weapons.md)).
+- The launcher's short burst was most likely the game's own reload getting past the mod's block; the block now also recognises the local player by the game's flag (`9ae77eae`).
+
+### Third pass
+
+- The seat lock's yaw re-base eases in over one second instead of snapping the view (`b46cafdb`). It is still a view turn the player did not make; the alternative, offsetting the vehicle's frame, waits on how this feels.
+- The remaining clips (a vehicle exit at 1088.5, the crash at 581.0, the wingsuit dive at 1286.9) fall under the fall and ragdoll view hold (`20b1ab41`) and the restored face clearance (`155a456c`); reasoned from the data.
+- `tracking-synth scan-view` writes a flash and camera-in-body report beside each take, run by the capture relay after the Rerun export ([view-scan.md](../../mod/testing/view-scan.md)); this take's is [view-scan.md](view-scan.md).
+- The frame hitches are the Linux Steam client retrying a paired Steam Frame's Wi-Fi every 61 s through a USB adapter; all 28 hitches fall on an attempt or a failure ([periodic-sim-tick-hitches.md](../../issues/periodic-sim-tick-hitches.md)). Unplugging the adapter, keeping the Frame in range, or unpairing it should end them; a Steam call blocking over 50 ms is now logged.
+- A snatched placed C4 charge comes back to the hand (`81faf03e`); a two-handed stow no longer sends both guns to one socket (`e10c90ca`); the locker label is fixed (`2499b6fd`). The ring in the roadster's trunk was the removed wrist button.
+- A crash-safety review of the new hooks found one problem: on the gamepad scheme a reel to a ceiling or a helicopter would never end, since the lock that replaces the game's ending does not run there. The game's ending now plays whenever the lock is not running (`7eddfd5b`).
