@@ -100,8 +100,7 @@ pub(crate) unsafe fn ragdoll_target(
 }
 
 /// Push the body `body` of `owner` by `impulse` at `at`, world space, after checking it still
-/// belongs to `owner`: the line's pull on one body of a ragdoll, which the ragdoll's constraints
-/// share with the rest of it.
+/// belongs to `owner`: the line's pull on a loose object.
 ///
 /// # Safety
 ///
@@ -114,6 +113,104 @@ pub(crate) unsafe fn push(
     at: Vec3,
 ) -> Result<(), BodyError> {
     unsafe { bodies::shove(body, owner, impulse, at) }
+}
+
+/// Pull the ragdoll of `character` by `impulse` at `at` on its body `body` of `owner`, world space:
+/// the line's pull on a ragdoll, sized for the whole ragdoll's mass. [`RAGDOLL_LEAD_SHARE`] of it
+/// goes to the hooked body at the hook, so the body comes by the limb the hook holds, and the rest
+/// is spread over every body of the ragdoll by its mass ([`spread_pull`]). The whole pull given to
+/// the one limb would ask the ragdoll's constraints to pass a whole body's momentum along the
+/// chain of bones in one physics step, which they do not: the limb would be flung and the body
+/// would barely move. A character whose ragdoll cannot be read is pulled by the hooked body alone.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `character` must be held alive.
+#[track_caller]
+pub(crate) unsafe fn pull_ragdoll(
+    character: NonZeroUsize,
+    body: u32,
+    owner: NonZeroUsize,
+    impulse: Vec3,
+    at: Vec3,
+) -> Result<(), BodyError> {
+    let ragdoll = unsafe { engine::is_character(character) }
+        .then(|| unsafe { Ragdoll::of(&*(character.get() as *const Character)) })
+        .flatten();
+    let Some(ragdoll) = ragdoll.filter(|r| r.bone(body).is_some()) else {
+        return unsafe { push(body, owner, impulse, at) };
+    };
+    let pull = spread_pull(ragdoll.bones(), body, impulse, at, RAGDOLL_LEAD_SHARE);
+    // The hooked body's share first: its failure is the line's.
+    if let Some(lead) = pull.lead {
+        unsafe { push(lead.body, lead.owner, lead.impulse, lead.at) }?;
+    }
+    for share in pull.spread {
+        // A bone the game has freed since the read is passed over; the rest still pull.
+        let _ = unsafe { push(share.body, share.owner, share.impulse, share.at) };
+    }
+    Ok(())
+}
+
+/// The share of the line's pull on a ragdoll the hooked body takes at the hook, `0..=1`.
+pub(crate) const RAGDOLL_LEAD_SHARE: f32 = 0.3;
+
+/// One body's share of a pull spread over a ragdoll.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct BonePush {
+    pub owner: NonZeroUsize,
+    pub body: u32,
+    pub impulse: Vec3,
+    pub at: Vec3,
+}
+
+/// A pull spread over a ragdoll's bodies.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct SpreadPull {
+    /// The hooked body's share at the hook.
+    pub lead: Option<BonePush>,
+    /// Every body's share of the rest, at its centre.
+    pub spread: Vec<BonePush>,
+}
+
+/// Spread `impulse` over `bones`: `lead` of it at `at` on the bone of the body `hooked`, and the
+/// rest over every bone by its share of their mass, at its centre, so that it moves the bodies
+/// alike. The pushes add up to `impulse`; without the hooked bone among them, the whole impulse is
+/// spread by mass. Nothing for bones without mass or an impulse or point that is not finite.
+pub(crate) fn spread_pull(
+    bones: &[Bone],
+    hooked: u32,
+    impulse: Vec3,
+    at: Vec3,
+    lead: f32,
+) -> SpreadPull {
+    let total_kg: f32 = bones.iter().map(|b| b.mass_kg).sum();
+    if !(total_kg.is_finite() && total_kg > 0.0 && impulse.is_finite() && at.is_finite()) {
+        return SpreadPull::default();
+    }
+    let lead = bones
+        .iter()
+        .find(|b| b.body == hooked)
+        .filter(|_| lead.is_finite() && lead > 0.0)
+        .map(|b| BonePush {
+            owner: b.owner,
+            body: b.body,
+            impulse: impulse * lead.min(1.0),
+            at,
+        });
+    let spread = impulse - lead.map_or(Vec3::ZERO, |l| l.impulse);
+    SpreadPull {
+        lead,
+        spread: bones
+            .iter()
+            .map(|b| BonePush {
+                owner: b.owner,
+                body: b.body,
+                impulse: spread * (b.mass_kg / total_kg),
+                at: b.centre,
+            })
+            .collect(),
+    }
 }
 
 /// The heaviest loose object one hand lifts and carries, kilograms: within the pickup's heaviest,
@@ -272,4 +369,57 @@ pub(crate) fn hold_remote(hand: Hand, object: NonZeroUsize, body: u32, point: Ve
         normal: Vec3::ZERO,
         kind: TargetKind::Prop { mass_kg },
     }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bone(body: u32, centre: Vec3, mass_kg: f32) -> Bone {
+        Bone {
+            owner: NonZeroUsize::new(64).unwrap(),
+            body,
+            centre,
+            mass_kg,
+        }
+    }
+
+    #[test]
+    fn a_ragdolls_pull_leads_by_the_hooked_limb_and_moves_every_body_alike() {
+        let bones = [
+            bone(1, Vec3::ZERO, 40.0),
+            bone(2, Vec3::Y * 0.5, 20.0),
+            bone(3, Vec3::X * 0.6, 4.0),
+        ];
+        let impulse = Vec3::new(64.0, 0.0, 0.0);
+        let hook = Vec3::X * 0.7;
+        let pull = spread_pull(&bones, 3, impulse, hook, 0.25);
+        let lead = pull.lead.expect("the hooked bone leads");
+        assert_eq!(lead.body, 3);
+        assert_eq!(lead.at, hook);
+        assert!(lead.impulse.abs_diff_eq(impulse * 0.25, 1e-5));
+        // The rest gives every body the same change of velocity, at its centre.
+        for (push, b) in pull.spread.iter().zip(&bones) {
+            assert_eq!(push.at, b.centre);
+            assert!((push.impulse / b.mass_kg).abs_diff_eq(impulse * 0.75 / 64.0, 1e-5));
+        }
+        let total = pull.spread.iter().map(|p| p.impulse).sum::<Vec3>() + lead.impulse;
+        assert!(total.abs_diff_eq(impulse, 1e-4));
+    }
+
+    #[test]
+    fn a_pull_on_no_bone_of_the_ragdoll_is_spread_whole_and_a_broken_one_is_nothing() {
+        let bones = [bone(1, Vec3::ZERO, 30.0), bone(2, Vec3::Y, 10.0)];
+        let pull = spread_pull(&bones, 9, Vec3::Y * 40.0, Vec3::ZERO, 0.3);
+        assert!(pull.lead.is_none());
+        assert!(pull.spread[0].impulse.abs_diff_eq(Vec3::Y * 30.0, 1e-5));
+        assert_eq!(
+            spread_pull(&bones, 1, Vec3::NAN, Vec3::ZERO, 0.3),
+            SpreadPull::default()
+        );
+        assert_eq!(
+            spread_pull(&[], 1, Vec3::Y, Vec3::ZERO, 0.3),
+            SpreadPull::default()
+        );
+    }
 }

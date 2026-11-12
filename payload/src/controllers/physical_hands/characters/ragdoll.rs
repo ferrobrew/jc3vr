@@ -79,6 +79,11 @@ impl Ragdoll {
         (!bones.is_empty()).then_some(Self { bones })
     }
 
+    /// The ragdoll's dynamic bodies.
+    pub(crate) fn bones(&self) -> &[Bone] {
+        &self.bones
+    }
+
     /// The bone whose centre is nearest `point`.
     pub(crate) fn nearest(&self, point: Vec3) -> Option<Bone> {
         self.bones

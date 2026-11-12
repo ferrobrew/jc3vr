@@ -732,7 +732,13 @@ pub(super) unsafe fn sling(
             RopeFault::Stretched => Refusal::OutOfLine,
         })?;
     let impulse = out.impulse_on_b(input.dt);
-    unsafe { remote::push(body, owner, impulse, hook_point) }.map_err(Refusal::Body)?;
+    match grabbed.kind {
+        Pulled::Ragdoll { .. } => unsafe {
+            remote::pull_ragdoll(grabbed.object, body, owner, impulse, hook_point)
+        },
+        _ => unsafe { remote::push(body, owner, impulse, hook_point) },
+    }
+    .map_err(Refusal::Body)?;
     let swinging = Swinging {
         length_m: rope.length_m(),
         tension_n: out.tension_n,
