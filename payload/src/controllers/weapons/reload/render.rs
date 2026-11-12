@@ -56,6 +56,22 @@ pub(super) struct ActionPart {
     pub magazine_empty: bool,
 }
 
+/// A revolver's cylinder where the reload has it, for the crane and cylinder bones of its gun's
+/// skeleton.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct CylinderPart {
+    /// The address of the weapon the gun belongs to.
+    pub weapon: usize,
+    /// The gun's address, whose skeleton carries the crane and the cylinder.
+    pub gun_address: usize,
+    /// The crane's turn about the model's +Z, radians.
+    pub crane_rad: f32,
+    /// The crane's slide along the model's X, metres.
+    pub crane_shift_m: f32,
+    /// The cylinder's spin about its own axis, radians.
+    pub spin_rad: f32,
+}
+
 /// A round part carried in a hand.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(super) struct HeldPart {
@@ -94,6 +110,8 @@ pub(super) struct Published {
     /// Each hand's gun's action part, by [`Hand::index`].
     pub actions: [Option<ActionPart>; 2],
     pub held: Option<HeldPart>,
+    /// Each hand's revolver's cylinder, by [`Hand::index`].
+    pub cylinders: [Option<CylinderPart>; 2],
 }
 
 pub(super) fn publish(published: Published) {
@@ -122,6 +140,19 @@ pub(super) fn bone_part(weapon: usize, gun_address: usize) -> Option<ActionPart>
         .into_iter()
         .flatten()
         .find(|a| a.weapon == weapon && a.gun_address == gun_address)
+}
+
+/// The cylinder of the gun at `gun_address` of the weapon at `weapon`, for its skeleton, turned
+/// away before the lock as [`bone_part`] is.
+pub(super) fn cylinder_part(weapon: usize, gun_address: usize) -> Option<CylinderPart> {
+    if !published(weapon) {
+        return None;
+    }
+    (*RENDER.lock())?
+        .cylinders
+        .into_iter()
+        .flatten()
+        .find(|c| c.weapon == weapon && c.gun_address == gun_address)
 }
 
 /// The matrix to push for `part` of the weapon at `weapon` in place of `matrix` (the engine's

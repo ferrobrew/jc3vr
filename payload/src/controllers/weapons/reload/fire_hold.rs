@@ -14,6 +14,8 @@ pub enum FireHold {
     RoundGoingIn,
     /// The gun's action is out of battery.
     ActionOpen,
+    /// The revolver's cylinder is swung out.
+    CylinderOpen,
     /// The gun's magazine is out, with no round in the chamber to fire.
     MagazineOut,
     /// The gun's chamber and its magazine are empty.
@@ -30,6 +32,7 @@ impl FireHold {
             FireHold::MagazinePulled => "the other hand is pulling the magazine out",
             FireHold::RoundGoingIn => "a round is going into the gun",
             FireHold::ActionOpen => "the action is open",
+            FireHold::CylinderOpen => "the cylinder is swung out",
             FireHold::MagazineOut => "the magazine is out",
             FireHold::Empty => "the chamber and the magazine are empty",
             FireHold::ChamberEmpty => "the chamber is empty, with rounds in the magazine",
@@ -57,6 +60,8 @@ pub(super) struct FireFacts {
     pub magazine_out: bool,
     /// The game's magazine holds no rounds.
     pub magazine_empty: bool,
+    /// A revolver's cylinder is swung out, or not yet all the way shut.
+    pub cylinder_open: bool,
 }
 
 /// Why the reload keeps the gun `facts` describes from firing, or `None` when it may fire. A
@@ -75,6 +80,8 @@ pub(super) fn fire_hold(facts: &FireFacts) -> Option<FireHold> {
         Some(FireHold::RoundGoingIn)
     } else if facts.chambering && facts.out_of_battery {
         Some(FireHold::ActionOpen)
+    } else if facts.cylinder_open {
+        Some(FireHold::CylinderOpen)
     } else if facts.magazine_out && (!facts.chambering || facts.chamber_empty) {
         Some(FireHold::MagazineOut)
     } else if chamber_empty && facts.magazine_empty {
@@ -102,6 +109,7 @@ mod tests {
         out_of_battery: false,
         magazine_out: false,
         magazine_empty: false,
+        cylinder_open: false,
     };
 
     #[test]
@@ -131,6 +139,7 @@ mod tests {
     #[test_case(FireFacts { chamber_empty: true, magazine_out: true, magazine_empty: true, ..CHAMBERING }, FireHold::MagazineOut; "the magazine dropped from an empty chamber")]
     #[test_case(FireFacts { chambering: false, magazine_out: true, ..CHAMBERING }, FireHold::MagazineOut; "a gun without a chamber and its magazine out")]
     #[test_case(FireFacts { belt: true, chamber_empty: true, ..CHAMBERING }, FireHold::BeltPouch; "the belt reload before the gun's state")]
+    #[test_case(FireFacts { chambering: false, cylinder_open: true, ..CHAMBERING }, FireHold::CylinderOpen; "a revolver with its cylinder out")]
     #[test_case(FireFacts { ejecting: true, magazine_out: true, ..CHAMBERING }, FireHold::Ejecting; "an eject under way")]
     #[test_case(FireFacts { extracting: true, ..CHAMBERING }, FireHold::MagazinePulled; "the other hand pulling the magazine")]
     #[test_case(FireFacts { inserting: true, chamber_empty: true, ..CHAMBERING }, FireHold::RoundGoingIn; "a round going in")]

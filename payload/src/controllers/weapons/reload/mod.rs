@@ -40,8 +40,10 @@ mod action;
 mod ammo;
 pub mod belt;
 mod bones;
+mod casings;
 pub mod chamber;
 pub mod config;
+mod cylinders;
 mod deferred;
 pub mod eject;
 mod engine;
@@ -62,6 +64,7 @@ mod pouch;
 mod records;
 mod render;
 mod retained;
+mod revolver;
 pub(crate) mod serial;
 mod steps;
 pub mod travel;
@@ -759,6 +762,9 @@ pub(super) fn stand_down() {
     STATE.lock().stand_down();
     gate::publish(None);
     render::clear();
+    // SAFETY: the weapon handling stands down in the game stage, on the game thread before the
+    // world update.
+    unsafe { casings::release() };
 }
 
 /// The magazines in the world that fit the gun the free hand would load (the gun in the other
@@ -835,6 +841,15 @@ pub(crate) fn adjust_part(
     dtf: f32,
 ) -> Option<glam::Mat4> {
     render::adjust(part, weapon, matrix, dtf)
+}
+
+/// Place the casings a revolver's dumped cylinder drops for the frame being drawn.
+///
+/// # Safety
+///
+/// The game thread, outside the world update.
+pub(crate) unsafe fn render_frame() {
+    unsafe { casings::render_frame() };
 }
 
 /// The world matrix of the pouch magazine in the hand for the weapon at `weapon`, drawn with an
@@ -953,6 +968,8 @@ struct WeaponTick {
     /// The weapon's record.
     key: RecordKey,
     plan: ReloadPlan,
+    /// A revolver's cylinder that swings out on its crane, for a revolver whose skeleton has one.
+    cylinder: Option<cylinders::CylinderTick>,
     from_table: bool,
     reading: Reading,
     reserve: i32,
@@ -970,6 +987,9 @@ impl WeaponTick {
     /// does: a speedloader pushed onto it loads it whole, and the game's reload returns the rounds
     /// it held to the reserve.
     fn occupied(&self) -> bool {
+        if let Some(cylinder) = self.cylinder {
+            return !cylinder.takes_speedloader;
+        }
         self.plan.load.well_occupied(self.reading.out)
             && !(self.plan.spent_round_replaced && self.reading.magazine_rounds() <= 0)
     }
@@ -1024,6 +1044,9 @@ struct State {
     pouches: [Option<Vec3>; 2],
     /// The speedloader on each gun hand's belt pouch, by [`Hand::index`].
     speedloaders: [Option<BeltSpeedloader>; 2],
+    /// Each gun hand's revolver cylinder, by [`Hand::index`], for a revolver whose skeleton
+    /// carries its crane.
+    cylinders: [Option<revolver::Cylinder>; 2],
     /// The belt pouches marked as ready for a push on the last tick, by gun hand.
     belt_rings: [Option<Vec3>; 2],
     /// The pouch on the tick it has a round to give.
@@ -1086,6 +1109,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     tick: None,
     pouches: [None; 2],
     speedloaders: [None; 2],
+    cylinders: [None; 2],
     belt_rings: [None; 2],
     stocked_pouch: None,
     pouch_refusal: None,

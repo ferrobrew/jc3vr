@@ -51,6 +51,11 @@ unsafe fn drive(gun: *mut WeaponData) {
     let Some(gun_ref) = (unsafe { gun.as_ref() }) else {
         return;
     };
+    if let Some(cylinder) = render::cylinder_part(gun_ref.m_Owner as usize, gun as usize) {
+        // SAFETY: as this function's.
+        unsafe { drive_cylinder(gun_ref, cylinder) };
+        return;
+    }
     let Some(part) = render::bone_part(gun_ref.m_Owner as usize, gun as usize) else {
         return;
     };
@@ -85,9 +90,67 @@ unsafe fn drive(gun: *mut WeaponData) {
     unsafe { controller.SetJoint(bone, &mut joint) };
 }
 
+/// Turn a revolver's crane and spin its cylinder where `cylinder` has them, over the pose the gun's
+/// clips gave them: the crane about the model's Z at its own pivot, and the cylinder carried round
+/// with it and spun about its own axis, which lies along Z too.
+///
+/// # Safety
+///
+/// As [`drive`].
+unsafe fn drive_cylinder(gun: &WeaponData, cylinder: render::CylinderPart) {
+    if cylinder.crane_rad == 0.0 && cylinder.spin_rad == 0.0 {
+        return;
+    }
+    let Some(model) = (unsafe { gun.m_AnimatedModel.as_mut() }) else {
+        return;
+    };
+    let Some(controller) = (unsafe { model.m_AnimationController.as_mut() }) else {
+        return;
+    };
+    let (Some(crane), Some(spin)) = (unsafe {
+        (
+            bone_index(controller, WeaponData::CHAMBER_BONE_HASH),
+            bone_index(controller, WeaponData::CHAMBER_SPIN_BONE_HASH),
+        )
+    }) else {
+        return;
+    };
+    let mut crane_joint = Joint::default();
+    let mut spin_joint = Joint::default();
+    unsafe { controller.GetJoint(crane, &mut crane_joint) };
+    unsafe { controller.GetJoint(spin, &mut spin_joint) };
+    let (pivot, crane_turn) = joint_pose(&crane_joint);
+    let (centre, spin_turn) = joint_pose(&spin_joint);
+    let turn = Quat::from_rotation_z(cylinder.crane_rad);
+    let shift = Vec3::X * cylinder.crane_shift_m;
+    let crane_pose = (pivot + shift, turn * crane_turn);
+    let spin_pose = (
+        pivot + shift + turn * (centre - pivot),
+        turn * Quat::from_rotation_z(cylinder.spin_rad) * spin_turn,
+    );
+    for (bone, joint, (position, orientation)) in [
+        (crane, &mut crane_joint, crane_pose),
+        (spin, &mut spin_joint, spin_pose),
+    ] {
+        if !(position.is_finite() && orientation.is_finite()) {
+            return;
+        }
+        joint.m_Translation.data = position.to_array();
+        joint.m_Orientation.data = orientation.normalize().to_array();
+        unsafe { controller.SetJoint(bone, joint) };
+    }
+}
+
+/// A joint's model-space position and orientation.
+fn joint_pose(joint: &Joint) -> (Vec3, Quat) {
+    let [x, y, z] = joint.m_Translation.data;
+    let [qx, qy, qz, qw] = joint.m_Orientation.data;
+    (Vec3::new(x, y, z), Quat::from_xyzw(qx, qy, qz, qw))
+}
+
 /// The bone named by `hash` in the gun's skeleton, or `None` when the skeleton has no such bone
 /// (the lookup resolves to the root) or the index is implausible.
-unsafe fn bone_index(controller: &AnimationController, hash: u32) -> Option<u32> {
+pub(super) unsafe fn bone_index(controller: &AnimationController, hash: u32) -> Option<u32> {
     let index = unsafe { controller.GetBoneIndex(hash) };
     (index != 0 && index <= late::MAX_BONE_INDEX).then_some(index)
 }

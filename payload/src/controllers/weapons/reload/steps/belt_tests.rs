@@ -446,3 +446,42 @@ fn a_launchers_spent_round_is_replaced_but_a_guns_empty_magazine_is_not() {
     assert!(!weapon.occupied());
     assert!(!weapon.part_shown());
 }
+
+#[test]
+fn a_revolver_takes_its_speedloader_only_swung_out_and_empty_and_the_belt_only_shut() {
+    let (_, state, mut tick, _) = fixture();
+    let slot = tick.guns[tick.dominant.index()].unwrap().weapon;
+    let weapon = tick.weapons[slot].as_mut().unwrap();
+    weapon.plan.load = LoadKind::Cylinder;
+    weapon.plan.action = ActionKind::None;
+    weapon.reading.out = false;
+    weapon.reading.chambers = 0;
+    weapon.reading.magazine = 2;
+    let shut = cylinders::CylinderTick {
+        out: false,
+        shut: true,
+        takes_speedloader: false,
+    };
+    weapon.cylinder = Some(shut);
+    assert!(weapon.occupied());
+    assert!(state.can_belt(weapon));
+    weapon.cylinder = Some(cylinders::CylinderTick {
+        out: true,
+        shut: false,
+        takes_speedloader: false,
+    });
+    assert!(weapon.occupied(), "its casings are still in");
+    assert!(!state.can_belt(weapon));
+    weapon.reading.magazine = 0;
+    weapon.cylinder = Some(cylinders::CylinderTick {
+        out: true,
+        shut: false,
+        takes_speedloader: true,
+    });
+    assert!(!weapon.occupied());
+    assert!(state.can_take(weapon));
+    // Without a crane on its skeleton, a revolver loads over its rounds from the belt or the hand.
+    weapon.cylinder = None;
+    weapon.reading.magazine = 2;
+    assert!(!weapon.occupied());
+}

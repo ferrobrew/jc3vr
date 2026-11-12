@@ -25,6 +25,7 @@ use crate::controllers::{
             ammo::{self, NativeAmmo, Observation},
             belt::{self, BeltPush, PushInputs},
             chamber::{self, ActionKind, Chamber},
+            cylinders,
             eject::{self, FlickDetector},
             engine,
             extraction::{DetachKind, MagazineId},
@@ -144,8 +145,14 @@ impl State {
             unsafe { engine::borrow_spare(weapon.address, weapon_tick.reading.name_hash) };
             // Before the partition adopts the native total, so a gun first seen short, such as one
             // taken from a character, is adopted full with its chamber loaded.
-            // SAFETY: tick construction runs on the input thread with this weapon read this tick.
-            weapon_tick.reading = unsafe { infinite::top_up(weapon.address, weapon_tick.reading) };
+            // A revolver's swung-out cylinder stays as dumped until a speedloader fills it.
+            if !self.cylinder_out(weapon.address) {
+                // SAFETY: tick construction runs on the input thread with this weapon read this
+                // tick.
+                weapon_tick.reading =
+                    unsafe { infinite::top_up(weapon.address, weapon_tick.reading) };
+            }
+            let mut cylinder_tick = None;
             for hand in Hand::BOTH {
                 let i = hand.index();
                 // A hand holds one gun; the wielded weapon's comes first.
@@ -169,9 +176,18 @@ impl State {
                     .filter(|(address, _)| *address == weapon.address)
                     .map(|(_, pose)| pose);
                 let plan = &weapon_tick.plan;
+                // SAFETY: tick construction runs on the input thread with this weapon read this
+                // tick.
+                let cylinder = unsafe { self.cylinder_for(hand, plan, weapon.address, index) };
+                cylinder_tick = cylinder.as_ref().map(cylinders::reading).or(cylinder_tick);
                 let frame = in_wrist.map(|p| GunFrame::of(cockpit.wrist, p, active.world_scale));
-                let well = frames::well(plan.well, frame.as_ref(), cockpit.wrist, hand)
-                    .map(|(mouth, axis)| Well { mouth, axis });
+                let well = frames::well(
+                    cylinders::well(plan.well, cylinder.as_ref()),
+                    frame.as_ref(),
+                    cockpit.wrist,
+                    hand,
+                )
+                .map(|(mouth, axis)| Well { mouth, axis });
                 let handle = frame
                     .zip(plan.handle)
                     .map(|(f, h)| (f.point(h), f.rearward()));
@@ -192,6 +208,7 @@ impl State {
                     handle,
                 });
             }
+            weapon_tick.cylinder = cylinder_tick;
             if let Some(owner) = unsafe { strong_to(base) } {
                 let record = self.records.get(weapon_tick.key);
                 let topology = unsafe { engine::gun_topology(base) };
@@ -317,6 +334,7 @@ impl State {
         }
         self.fold_shots(tick, reload);
         self.sync(tick, reload);
+        self.cylinders(tick, dt);
 
         self.extraction_blocks_belt = [false; 2];
         self.finish_ejects(tick, config);
@@ -385,6 +403,7 @@ impl State {
             out_of_battery: reload.action.physical && !record.travels[e].in_battery(&reload.action),
             magazine_out: weapon.reading.out,
             magazine_empty: weapon.reading.magazine <= 0,
+            cylinder_open: weapon.cylinder.is_some_and(|c| !c.shut),
         })
     }
 
@@ -827,7 +846,7 @@ impl State {
             };
             // A magazine still in drops as the fresh one goes in, and the game's reload returns
             // its rounds.
-            if weapon.occupied() {
+            if weapon.occupied() && weapon.plan.load.ejects() {
                 if !self.queue_eject(weapon, gun, hand, DetachKind::Belt, reload.loose.enabled) {
                     self.event(format!(
                         "the {hand:?} gun's belt push could not drop its magazine"
@@ -900,7 +919,7 @@ impl State {
     /// magazine.
     fn can_belt(&self, weapon: &WeaponTick) -> bool {
         let reading = &weapon.reading;
-        reading.out || reading.has_space()
+        (reading.out || reading.has_space()) && weapon.cylinder.is_none_or(|c| c.shut)
     }
 
     /// A round seated in `gun` of `weapon`, in `gun_hand`: the seat's thud (`cue`) on the gun hand,
@@ -914,6 +933,7 @@ impl State {
         reload: &Reload,
     ) {
         haptics::play(gun_hand, cue);
+        self.cylinder_loaded(gun_hand);
         if ready_after_seat(
             &weapon.plan,
             self.records.get(weapon.key).chambers[gun.entry()],
@@ -985,6 +1005,7 @@ impl State {
         self.release_actions();
         set_pump_slide(None);
         self.status.fire_held = [None; 2];
+        self.cylinders = [None; 2];
         self.belts = [BeltPush::new(); 2];
         self.flicks.iter_mut().for_each(FlickDetector::reset);
         self.last_grips = [None; 2];
@@ -1110,6 +1131,7 @@ unsafe fn weapon_tick(
         ammo_owned: false,
         key: RecordKey::new(item_of(weapon.address), weapon.address),
         plan,
+        cylinder: None,
         from_table: entry.is_some(),
         reading,
         reserve: unsafe { reserve(base) },

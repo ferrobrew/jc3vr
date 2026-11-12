@@ -67,6 +67,7 @@ fn state() -> State {
         tick: None,
         pouches: [None; 2],
         speedloaders: [None; 2],
+        cylinders: [None; 2],
         belt_rings: [None; 2],
         stocked_pouch: None,
         pouch_refusal: None,
@@ -129,6 +130,7 @@ fn tick(pull: f32, rounds: i32) -> Tick {
                     launcher: false,
                     spent_round_replaced: false,
                 },
+                cylinder: None,
                 from_table: true,
                 reading: Reading {
                     class: 0,

@@ -5034,6 +5034,19 @@ impl WeaponData {
     }
 }
 impl WeaponData {
+    /// The name hash (`hashlittle` of `Chamber`) of the crane bone in a revolver's own skeleton, the
+    /// Peacekeeper's, which the Little General shares: a child of the `Reference` root at the
+    /// crane's pivot below the cylinder. The revolver's reload clips swing the cylinder out by
+    /// turning this bone a quarter turn about the model's Z axis, the barrel's line, one way for
+    /// the left-hand clip and the other for the right, with a few millimetres of slide along X, and
+    /// back. Resolved to an index through the gun's animation controller
+    /// ([`AnimationController::GetBoneIndex`](crate::character::character::AnimationController::GetBoneIndex)).
+    pub const CHAMBER_BONE_HASH: u32 = 1648265348;
+    /// The name hash (`hashlittle` of `ChamberSpin`) of the cylinder bone in a revolver's own
+    /// skeleton: a child of the crane bone ([`CHAMBER_BONE_HASH`](crate::equipment::weapon::WeaponData::CHAMBER_BONE_HASH)) at the
+    /// cylinder's centre, about which the cylinder turns on the barrel's line. The reload clips
+    /// leave it still.
+    pub const CHAMBER_SPIN_BONE_HASH: u32 = 1829080287;
     /// The `model_name_hash` (the hash of `no_magazine_model`) that makes
     /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject) drop the spare magazine from the
     /// gun's own transform without looking for a model part.

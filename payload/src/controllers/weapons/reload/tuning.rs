@@ -5,7 +5,7 @@ use glam::Vec3;
 
 use crate::controllers::weapons::reload::{
     config::{ExtractionConfig, KnockConfig, ReloadConfig},
-    plan::ReloadPlan,
+    plan::{LoadKind, ReloadPlan},
 };
 
 /// The true reload's tuning with its default switches.
@@ -147,6 +147,12 @@ impl Reload {
             held_palm_gap_m: plan
                 .round
                 .map_or(tuning.held_palm_gap_m, |round| round.half_width_m()),
+            // A speedloader seats as it meets the cylinder.
+            seat_depth_m: if plan.load == LoadKind::Cylinder {
+                0.0
+            } else {
+                tuning.seat_depth_m
+            },
             ..tuning
         }
     }

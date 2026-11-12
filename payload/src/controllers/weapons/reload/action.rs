@@ -466,10 +466,12 @@ impl State {
                 captured,
             })
         });
+        let cylinders = Hand::BOTH.map(|hand| self.cylinder_part(tick, hand));
         render::publish(render::Published {
             weapons: tick.weapons.map(|w| w.map_or(0, |w| w.address)),
             actions,
             held,
+            cylinders,
         });
     }
 }

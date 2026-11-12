@@ -53,6 +53,7 @@ use crate::{
             inventory::{carry, engine as inventory_engine},
             reload::{
                 ammo::{self, Ammo, NativeAmmo},
+                bones,
                 chamber::{ActionKind, Chamber},
                 frames, gate,
                 loose::{self, EjectRounds, Loose, Retention},
@@ -761,6 +762,62 @@ pub(super) unsafe fn play_refuse_sound(address: usize, index: usize) -> Option<u
 pub unsafe fn gun_address(address: usize, index: usize) -> Option<usize> {
     let source = unsafe { owned_handle(address) }?;
     unsafe { gun_ptr(source.as_ref(), index) }.map(|gun| gun.as_ptr() as usize)
+}
+
+/// Gun `index` of the weapon at `address`'s world matrix, as of the last simulation tick.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn gun_world(address: usize, index: usize) -> Option<Mat4> {
+    let source = unsafe { owned_handle(address) }?;
+    let gun = unsafe { gun_at(source.as_ref(), index) }?;
+    let matrix = Mat4::from(gun.m_WorldMatrixT1);
+    matrix.is_finite().then_some(matrix)
+}
+
+/// Whether gun `index` of the weapon at `address` has the bone named by `hash` in its own
+/// skeleton, through its animation controller.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn gun_has_bone(address: usize, index: usize, hash: u32) -> bool {
+    let Some(source) = (unsafe { owned_handle(address) }) else {
+        return false;
+    };
+    let Some(gun) = (unsafe { gun_at(source.as_ref(), index) }) else {
+        return false;
+    };
+    let Some(model) = (unsafe { gun.m_AnimatedModel.as_ref() }) else {
+        return false;
+    };
+    let Some(controller) = (unsafe { model.m_AnimationController.as_ref() }) else {
+        return false;
+    };
+    unsafe { bones::bone_index(controller, hash) }.is_some()
+}
+
+/// Empty a revolver's cylinder, its chambers dumped: the rounds still in it go back to the reserve
+/// unless the ammunition is unlimited. Returns how many rounds it held.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn dump_cylinder(address: usize) -> Option<i32> {
+    let mut source = unsafe { owned_handle(address) }?;
+    let weapon = unsafe { source.as_mut() };
+    let rounds = weapon.m_MagazineAmmo.max(0);
+    if !unsafe { unlimited(weapon) }
+        && let Some(user) = unsafe { user_mut(weapon) }
+    {
+        unsafe { credit_reserve(user, weapon, rounds) };
+    }
+    if weapon.m_MagazineAmmo != 0 {
+        unsafe { weapon.SetMagazineAmmo(0) };
+    }
+    current_ammo(weapon);
+    Some(rounds)
 }
 
 /// The local player's reload start, refused while the weapon is reloaded by hand (see [`gate`]).
