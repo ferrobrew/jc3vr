@@ -504,6 +504,18 @@ pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> 
         };
     };
     let held = state.step(&tick, inputs, config);
+    for hand in Hand::BOTH {
+        let (before, after) = (state.status.fire_held[hand.index()], held[hand.index()]);
+        if before != after {
+            tracing::info!(
+                target: "controllers",
+                hand = ?hand,
+                was = before.map_or("nothing", FireHold::label),
+                now = after.map_or("nothing", FireHold::label),
+                "reload: what holds the gun from firing changed"
+            );
+        }
+    }
     state.status.fire_held = held;
     state.status.active = true;
     let belt = state.belt_finish(&tick);
@@ -547,18 +559,6 @@ impl BeltEligibility {
         sequence: u64,
         hand: Hand,
         guns: [Option<GunOwner>; 2],
-    for hand in Hand::BOTH {
-        let (before, after) = (state.status.fire_held[hand.index()], held[hand.index()]);
-        if before != after {
-            tracing::info!(
-                target: "controllers",
-                hand = ?hand,
-                was = before.map_or("nothing", FireHold::label),
-                now = after.map_or("nothing", FireHold::label),
-                "reload: what holds the gun from firing changed"
-            );
-        }
-    }
         ready: [bool; 2],
     ) -> Option<Row> {
         (self.sequence == sequence
@@ -929,6 +929,12 @@ impl WeaponTick {
             && !(self.plan.spent_round_replaced && self.reading.magazine_rounds() <= 0)
     }
 
+    /// Whether a round seating now replaces a one-round launcher's spent round, whose count is
+    /// discarded rather than returned to the reserve.
+    fn replaces_spent(&self) -> bool {
+        self.plan.spent_round_replaced && !self.occupied()
+    }
+
     /// Whether the gun shows its round part on its own with no round in the hand: as its load
     /// does ([`LoadKind::part_shown`]), and for a one-round launcher only while it holds a round.
     ///
@@ -974,12 +980,6 @@ struct State {
     /// The belt pouches marked as ready for a push on the last tick, by gun hand.
     belt_rings: [Option<Vec3>; 2],
     /// The pouch on the tick it has a round to give.
-    /// Whether a round seating now replaces a one-round launcher's spent round, whose count is
-    /// discarded rather than returned to the reserve.
-    fn replaces_spent(&self) -> bool {
-        self.plan.spent_round_replaced && !self.occupied()
-    }
-
     stocked_pouch: Option<StockedPouch>,
     /// Why the pouch is not a grab target this tick.
     pouch_refusal: Option<pouch::PouchRefusal>,
