@@ -45,7 +45,8 @@ use crate::{
             dual_wield::single,
             empty,
             engine::{
-                FULL_WEIGHT, credit_reserve, gun_at, gun_count, gun_ptr, limited_ammo, reserve,
+                FULL_WEIGHT, credit_reserve, gun_at, gun_at_mut, gun_count, gun_ptr, limited_ammo,
+                reserve,
             },
             fire,
             hold::armed,
@@ -493,24 +494,33 @@ pub unsafe fn local_player_matrix() -> Option<Mat4> {
 }
 
 /// Load a whole magazine into the weapon at `address` through its own reload, show its magazine
-/// part again, and end a shell-by-shell reload's loop. Returns whether it loaded.
+/// part again, and end a shell-by-shell reload's loop. With `replace_spent`, the round the fresh
+/// one replaces (a one-round launcher's spent round) is discarded first: its count and any burst
+/// it left unfinished go with it, so the reload draws a whole fresh round from the reserve.
+/// Returns whether it loaded: the reload refilled the magazine, or the magazine was out and is in
+/// again with rounds in it (the rounds of a magazine that left the gun still counted in it, which
+/// the reload leaves where they are).
 ///
 /// # Safety
 ///
 /// The weapon must be owned and live on the input thread, outside the world update.
-pub unsafe fn load_full(address: usize) -> bool {
+pub unsafe fn load_full(address: usize, replace_spent: bool) -> bool {
     let Some(mut source) = (unsafe { owned_handle(address) }) else {
         return false;
     };
     let weapon = unsafe { source.as_mut() };
     unsafe { armed::release_fire(weapon) };
+    let was_out = weapon.m_WeaponIsWithoutMagazine;
+    if replace_spent {
+        unsafe { discard_spent_round(weapon) };
+    }
     let partition = current_ammo(weapon);
     let chambers = partition.map_or(0, Ammo::chamber_rounds);
     ammo::magazine_only(address, true);
     if let Some(partition) = partition {
         unsafe { weapon.SetMagazineAmmo(partition.reload_start()) };
     }
-    let loaded = unsafe { weapon.Reload() };
+    let refilled = unsafe { weapon.Reload() };
     // The game's reload fills a single pistol to the pair's size; it holds half.
     if let Some(user) = unsafe { user_mut(weapon) } {
         unsafe { single::clamp_magazine(user, weapon) };
@@ -524,7 +534,29 @@ pub unsafe fn load_full(address: usize) -> bool {
     weapon.m_KeepReloading = false;
     weapon.m_WeaponIsWithoutMagazine = false;
     unsafe { show_magazine(weapon) };
-    loaded
+    refilled || (was_out && weapon.m_MagazineAmmo > 0)
+}
+
+/// Discard the spent round of a one-round launcher before a fresh one replaces it: empty its
+/// magazine and end each gun's burst ([`WeaponData::m_BurstShotsLeft`]). A burst counts its round
+/// against the magazine only at its last shot ([`WeaponBase::ConsumeAmmoBase`]), so a burst cut
+/// short leaves the spent round's count in the magazine, where the reload would see a full
+/// magazine and refill nothing; a burst left running would fire the fresh round at once.
+///
+/// [`WeaponBase::ConsumeAmmoBase`]: jc3gi::equipment::weapon::WeaponBase::ConsumeAmmoBase
+///
+/// # Safety
+///
+/// As [`load_full`].
+unsafe fn discard_spent_round(weapon: &mut WeaponBase) {
+    for index in 0..unsafe { gun_count(weapon) } {
+        if let Some(gun) = unsafe { gun_at_mut(weapon, index) } {
+            gun.m_BurstShotsLeft = 0;
+        }
+    }
+    if weapon.m_MagazineAmmo != 0 {
+        unsafe { weapon.SetMagazineAmmo(0) };
+    }
 }
 
 /// Load one round into the weapon at `address`, taking it from the reserve unless the ammunition

@@ -974,6 +974,12 @@ struct State {
     /// The belt pouches marked as ready for a push on the last tick, by gun hand.
     belt_rings: [Option<Vec3>; 2],
     /// The pouch on the tick it has a round to give.
+    /// Whether a round seating now replaces a one-round launcher's spent round, whose count is
+    /// discarded rather than returned to the reserve.
+    fn replaces_spent(&self) -> bool {
+        self.plan.spent_round_replaced && !self.occupied()
+    }
+
     stocked_pouch: Option<StockedPouch>,
     /// Why the pouch is not a grab target this tick.
     pouch_refusal: Option<pouch::PouchRefusal>,

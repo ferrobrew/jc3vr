@@ -878,10 +878,13 @@ impl State {
     }
 
     /// Whether `weapon`'s gun in `gun_hand` can take a round from the hand now: a magazine or a
-    /// cylinder at any time, held until the one still in leaves ([`State::knock`]), and a shell or
-    /// a rocket while it has space or its round is out.
+    /// cylinder at any time, held until the one still in leaves ([`State::knock`]), and a shell, a
+    /// rocket, or a one-round launcher's round while it has space or its round is out.
     pub(super) fn can_take(&self, weapon: &WeaponTick) -> bool {
         match weapon.plan.load {
+            LoadKind::Magazine if weapon.plan.spent_round_replaced => {
+                weapon.reading.out || weapon.reading.has_space()
+            }
             LoadKind::Magazine | LoadKind::Cylinder => true,
             LoadKind::Shell | LoadKind::Rocket => weapon.reading.out || weapon.reading.has_space(),
         }
@@ -927,7 +930,7 @@ impl State {
         // this tick.
         let loaded = match weapon.plan.load {
             LoadKind::Shell => unsafe { engine::load_one(weapon.address) },
-            _ => unsafe { engine::load_full(weapon.address) },
+            _ => unsafe { engine::load_full(weapon.address, weapon.replaces_spent()) },
         };
         if loaded && weapon.plan.action == ActionKind::None {
             record.chambers[gun.entry()] = Chamber::Chambered;

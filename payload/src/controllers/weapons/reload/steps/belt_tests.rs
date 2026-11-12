@@ -398,6 +398,31 @@ fn a_launcher_with_its_round_out_takes_one_whatever_its_count() {
 }
 
 #[test]
+fn a_loaded_one_round_launcher_takes_no_fresh_round_and_a_spent_one_is_replaced() {
+    let (_, state, mut tick, _) = fixture();
+    let slot = tick.guns[tick.dominant.index()].unwrap().weapon;
+    let weapon = tick.weapons[slot].as_mut().unwrap();
+    weapon.plan.load = LoadKind::Magazine;
+    weapon.plan.launcher = true;
+    weapon.plan.spent_round_replaced = true;
+    weapon.reading.capacity = 1;
+    weapon.reading.chambers = 0;
+    weapon.reading.magazine = 1;
+    weapon.reading.out = false;
+    assert!(!state.can_take(weapon));
+    assert!(weapon.occupied());
+    assert!(!weapon.replaces_spent());
+    // The pod thrown off with its count still in the magazine, as a burst cut short leaves it.
+    weapon.reading.out = true;
+    assert!(state.can_take(weapon));
+    assert!(weapon.replaces_spent());
+    weapon.reading.out = false;
+    weapon.reading.magazine = 0;
+    assert!(state.can_take(weapon));
+    assert!(weapon.replaces_spent());
+}
+
+#[test]
 fn a_launchers_spent_round_is_replaced_but_a_guns_empty_magazine_is_not() {
     let (_, _, mut tick, _) = fixture();
     let slot = tick.guns[tick.dominant.index()].unwrap().weapon;
