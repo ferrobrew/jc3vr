@@ -362,6 +362,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     sample.geometry.camera_head = camera.head;
                     sample.geometry.camera_neck_delta = camera.neck - camera.head;
                     sample.geometry.camera_eye_arm = camera.eye_arm;
+                    sample.geometry.camera_weight = stabilized.weight;
                 }
                 animation::capture(
                     bind_rotation,

@@ -176,13 +176,25 @@ impl Case {
         matches!(self, Self::Flight | Self::Traversal | Self::NoMovementTask)
     }
 
-    /// Whether the player's own movement carries the body on foot: the stick on the ground, a jump
-    /// within its grace, or the hands climbing. In every other case a clip, a script, or physics
-    /// moves the head against the root (a get-up, a stumble, a hard landing, a context action, a
-    /// takeoff the mode detection has not classified yet), and the on-foot view follows the
-    /// animated head rather than a standing head held over the root.
-    pub const fn player_carries_body(self) -> bool {
-        matches!(self, Self::OnFoot | Self::Jump | Self::HandClimb)
+    /// Whether the headset's view hangs from the neutral head over the root in the case rather
+    /// than from the animated head: everything that happens to Rico on foot, through a fall and its
+    /// landing, a stumble, an authored one-off, and a ragdoll and its get-up. The player stands on
+    /// their own feet through all of it, so no clip moves their view. Vehicles and their stunt
+    /// positions, the grapple's traversals and hangs, the ledge climb, swimming, the wingsuit, the
+    /// parachute, death, and scripted sequences keep the animated head.
+    pub const fn view_holds_root(self) -> bool {
+        matches!(
+            self,
+            Self::OnFoot
+                | Self::Jump
+                | Self::HandClimb
+                | Self::Flight
+                | Self::HitReaction
+                | Self::AuthoredMotion
+                | Self::NoMovementTask
+                | Self::Ragdoll
+                | Self::GettingUp
+        )
     }
 }
 
@@ -715,7 +727,7 @@ mod tests {
         assert_eq!(classify(&roof), Case::StuntStanding);
         assert_eq!(Case::StuntStanding.target(), 1.0);
         // The vehicle's interaction node carries it, so the view does not hang from the root.
-        assert!(!Case::StuntStanding.player_carries_body());
+        assert!(!Case::StuntStanding.view_holds_root());
         assert!(!relaxes_legs(Case::StuntStanding));
         // A traversal through the area is still the vehicle's animation.
         assert_eq!(
@@ -741,7 +753,7 @@ mod tests {
         };
         assert_eq!(classify(&rail), Case::StuntHanging);
         assert_eq!(Case::StuntHanging.target(), 1.0);
-        assert!(!Case::StuntHanging.player_carries_body());
+        assert!(!Case::StuntHanging.view_holds_root());
         let transition = CharacterState {
             vehicle: true,
             ..on_foot()

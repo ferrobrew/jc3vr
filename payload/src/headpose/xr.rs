@@ -51,7 +51,7 @@ use crate::{
     controllers::{cockpit::CockpitTransform, frame::Pose},
     grapple,
     headpose::{
-        HeadPose, anchor_pair, camera_animation_rotation,
+        HeadPose, anchor_pair,
         config::{HeadPoseConfig, VrTurnMode},
         follow::{BodyFollow, FollowTick},
         sim,
@@ -411,10 +411,8 @@ pub fn body_rotation() -> Quat {
 /// composed once with the filtered, bind-relative head rotation and the turn under the view.
 /// The grapple filter advances against this same frame.
 pub fn body_rotation_followed() -> Quat {
-    let root = anchor_pair().map_or_else(body_rotation_raw, |pair| {
-        pair[1].root.to_scale_rotation_translation().1
-    });
-    root * camera_animation_rotation(true) * follow_turn(true)
+    let frame = anchor_pair().map_or_else(body_rotation_raw, |pair| pair[1].view_frame());
+    frame * follow_turn(true)
 }
 
 /// The local player character's world rotation as the engine holds it, unfiltered. The body-yaw
@@ -429,13 +427,11 @@ pub fn body_rotation_raw() -> Quat {
 /// engine's sub-frame interpolation smooths body rotation (vehicles, parachuting) rather than
 /// stepping it at the tick rate.
 pub fn body_rotation_prev() -> Quat {
-    let root = anchor_pair().map_or_else(
+    let frame = anchor_pair().map_or_else(
         || body_rotation_from(|character| glam::Mat4::from(character.m_WorldMatrixT0)),
-        |pair| pair[0].root.to_scale_rotation_translation().1,
+        |pair| pair[0].previous_endpoint(pair[0], pair[1]).view_frame(),
     );
-    level_while_swimming(grapple::filter_body_rotation(
-        root * camera_animation_rotation(false) * follow_turn(false),
-    ))
+    level_while_swimming(grapple::filter_body_rotation(frame * follow_turn(false)))
 }
 
 /// Drop the body's pitch and roll from the view frame while swimming, leaving its yaw, so the camera

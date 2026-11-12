@@ -200,14 +200,6 @@ pub(crate) fn animation_rotation(current: bool) -> Quat {
     })
 }
 
-/// The animated head frame the view follows, eased to identity outside the camera-follow states.
-pub(crate) fn camera_animation_rotation(current: bool) -> Quat {
-    let pair = anchor_pair();
-    pair.map_or(Quat::IDENTITY, |pair| {
-        pair[usize::from(current || pair[0].collapsed)].camera_animation_rotation
-    })
-}
-
 /// Withdraw simulation anchor authority while leaving the separately published display pose alone.
 pub(crate) fn withdraw_anchors() {
     state().lock().withdraw_anchors();

@@ -442,8 +442,7 @@ fn camera_position(
     geometry: crate::headpose::anchors::Geometry,
     pose_source: Source,
 ) -> glam::Vec3 {
-    let (_, root_rotation, _) = geometry.root.to_scale_rotation_translation();
-    let character_rotation = root_rotation * geometry.animation_rotation;
+    let character_rotation = geometry.arm_frame();
     // While the root carries the body in the headset, the camera hangs from the neutral head, so
     // the walking animation's bob stays on the body and out of the view.
     let (neck_delta, arm) = if geometry.camera_stable {

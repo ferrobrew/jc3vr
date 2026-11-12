@@ -2,6 +2,7 @@
 
 use std::time::{Duration, Instant};
 
+use body_rig::rotation::twist_about_y;
 use glam::{Mat4, Quat, Vec3};
 use parking_lot::Mutex;
 
@@ -38,6 +39,10 @@ pub(crate) struct Geometry {
     pub camera_neck_delta: Vec3,
     /// The body-frame neck-to-eye arm paired with [`camera_head`](Self::camera_head).
     pub camera_eye_arm: Vec3,
+    /// How far the camera has handed over to the root-held head, from zero to one: the view's
+    /// frame turns toward the root's upright heading by this much (see
+    /// [`view_frame`](Self::view_frame)).
+    pub camera_weight: f32,
 }
 
 impl Geometry {
@@ -58,6 +63,27 @@ impl Geometry {
         }
     }
 
+    /// The frame the view composes the tracked head onto: the root with the camera's animated
+    /// head frame, turned toward the root's upright heading by
+    /// [`camera_weight`](Self::camera_weight). While the view hangs from the root-held head,
+    /// neither a clip's head nor a root the physics tilts (a ragdoll's) turns the view.
+    pub(crate) fn view_frame(self) -> Quat {
+        let (_, root, _) = self.root.to_scale_rotation_translation();
+        toward_heading(
+            root * self.camera_animation_rotation,
+            root,
+            self.camera_weight,
+        )
+    }
+
+    /// The frame the camera's eye arm turns with: the root with the animated head frame, turned
+    /// toward the root's upright heading as [`view_frame`](Self::view_frame) is, so the arm stays
+    /// at rest under a root-held view.
+    pub(crate) fn arm_frame(self) -> Quat {
+        let (_, root, _) = self.root.to_scale_rotation_translation();
+        toward_heading(root * self.animation_rotation, root, self.camera_weight)
+    }
+
     pub(crate) fn from_anchors(anchors: Anchors, root: Mat4) -> Self {
         Self {
             root,
@@ -71,6 +97,7 @@ impl Geometry {
             camera_head: anchors.head,
             camera_neck_delta: anchors.neck - anchors.head,
             camera_eye_arm: anchors.eye_arm,
+            camera_weight: 0.0,
         }
     }
 
@@ -87,6 +114,15 @@ impl Geometry {
             && (self.animation_rotation.length_squared() - 1.0).abs() < 0.01
             && self.camera_animation_rotation.is_finite()
             && (self.camera_animation_rotation.length_squared() - 1.0).abs() < 0.01
+    }
+}
+
+/// `frame` turned toward the upright heading of `root` by `weight`, clamped to one.
+fn toward_heading(frame: Quat, root: Quat, weight: f32) -> Quat {
+    if weight > 0.0 {
+        frame.slerp(twist_about_y(root), weight.min(1.0))
+    } else {
+        frame
     }
 }
 
@@ -216,6 +252,7 @@ impl Sample {
                 camera_head: head,
                 camera_neck_delta: neck - head,
                 camera_eye_arm: rotation.inverse() * (root.transform_point3(eyes_model) - neck),
+                camera_weight: 0.0,
             },
         }
     }

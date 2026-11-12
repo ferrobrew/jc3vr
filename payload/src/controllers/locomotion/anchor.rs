@@ -199,17 +199,20 @@ pub(crate) unsafe fn stabilize(
             camera: stable_target
                 .as_ref()
                 .map(|stable| blend(&animated, stable, weight)),
+            weight,
         };
     }
     let Some(stable) = stable_target else {
         return Stabilized {
             anatomy: cleared,
             camera: None,
+            weight,
         };
     };
     Stabilized {
         anatomy: blend(&cleared, &stable, weight),
         camera: None,
+        weight,
     }
 }
 
@@ -219,6 +222,8 @@ pub(crate) struct Stabilized {
     pub anatomy: Anchors,
     /// The camera's anchors, `None` where the camera uses [`anatomy`](Self::anatomy).
     pub camera: Option<Anchors>,
+    /// The root-held anchor's weight against the animated head, from zero to one.
+    pub weight: f32,
 }
 
 /// How far in front of the animated face the eyes are held while a clip poses the body, metres: a

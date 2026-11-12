@@ -240,17 +240,17 @@ pub struct Eligibility {
 }
 
 impl Eligibility {
-    /// Whether the root-fixed anchor applies: on the ground or early in a fall, and, in the headset,
-    /// only while the player's own movement carries the body ([`Case::player_carries_body`]). The
-    /// neutral head stands on a root that the stick moves; when a clip moves the head against the
-    /// root instead (a get-up from a ragdoll, a stumble, a hard landing, a takeoff the mode
-    /// detection has not classified yet), a standing head held over the root leaves the view
-    /// floating above and behind the body, so the view follows the animated head through it.
+    /// Whether the root-fixed anchor applies. In the headset the hand-over table's case decides
+    /// ([`Case::view_holds_root`]): the player's own head is on foot through a fall, a landing, a
+    /// stumble, or a ragdoll and its get-up, so the view holds the root through all of them, even
+    /// where the clip carries Rico's body away from under it. Elsewhere the mode decides: on the
+    /// ground or early in a fall, out of a ragdoll.
     pub fn root_fixed(&self) -> bool {
         self.enabled
-            && !self.ragdoll
-            && (self.on_ground || self.falling_in_grace)
-            && self.case.is_none_or(Case::player_carries_body)
+            && match self.case {
+                Some(case) => case.view_holds_root(),
+                None => !self.ragdoll && (self.on_ground || self.falling_in_grace),
+            }
     }
 }
 
@@ -273,14 +273,15 @@ pub fn stable_anchors(
     world_t1: Mat4,
     height: HeightPair,
 ) -> Anchors {
-    let lift = |world: Mat4, smoothed: f32| Vec3::Y * (smoothed - world.w_axis.y);
-    let lift_t1 = lift(world_t1, height.current);
-    let lift_t0 = lift(world_t0, height.previous);
-    let above = |point: Vec3| Vec3::Y * point.y;
+    // Straight up in the world, not along the root's own up: a ragdoll's root tilts with the
+    // physics body, and the view stays upright over it.
+    let above = |world: Mat4, smoothed: f32, point: Vec3| {
+        Vec3::new(world.w_axis.x, smoothed, world.w_axis.z) + Vec3::Y * point.y
+    };
     Anchors {
-        head: world_t1.transform_point3(above(neutral.head)) + lift_t1,
-        head_prev: world_t0.transform_point3(above(neutral.head)) + lift_t0,
-        neck: world_t1.transform_point3(above(neutral.neck)) + lift_t1,
+        head: above(world_t1, height.current, neutral.head),
+        head_prev: above(world_t0, height.previous, neutral.head),
+        neck: above(world_t1, height.current, neutral.neck),
         eye_arm: neutral.eyes - neutral.neck,
     }
 }
@@ -377,29 +378,16 @@ mod tests {
             }
             .root_fixed()
         );
-        assert!(
-            !Eligibility {
-                ragdoll: true,
-                ..grounded(on_foot())
-            }
-            .root_fixed()
-        );
     }
 
     #[test]
-    fn getting_up_from_a_ragdoll_takes_the_view_while_the_movement_task_runs() {
-        // The mode reads on foot and the task runs through the get-up's clip, which lifts the head
-        // from the ground under a standing head that a root-fixed view would hold above the back.
-        let getting_up = CharacterState {
-            getting_up: true,
-            ..on_foot()
-        };
-        assert!(!grounded(getting_up).root_fixed());
-    }
-
-    #[test]
-    fn an_animation_the_player_did_not_cause_takes_the_view() {
+    fn whatever_happens_to_rico_on_foot_the_root_holds_the_view() {
         let cases = [
+            // A get-up's clip, which lifts the head from the ground.
+            CharacterState {
+                getting_up: true,
+                ..on_foot()
+            },
             // A stumble or a knock-back, for its hold.
             CharacterState {
                 hit_reaction: true,
@@ -410,6 +398,57 @@ mod tests {
                 authored_motion: true,
                 ..on_foot()
             },
+            // The task stopped with Rico still on the ground.
+            CharacterState {
+                movement_task: false,
+                ..on_foot()
+            },
+            // A jump, and a fall past its grace.
+            CharacterState {
+                jump: true,
+                movement_task: false,
+                ..on_foot()
+            },
+            CharacterState {
+                flight: true,
+                movement_task: false,
+                ..on_foot()
+            },
+        ];
+        for state in cases {
+            assert!(grounded(state).root_fixed(), "{:?}", classify(&state));
+            // Off the ground, out of the jump's grace: the case still decides.
+            assert!(
+                Eligibility {
+                    on_ground: false,
+                    ..grounded(state)
+                }
+                .root_fixed(),
+                "{:?}",
+                classify(&state)
+            );
+        }
+    }
+
+    #[test]
+    fn a_ragdoll_holds_the_view_over_the_root() {
+        let ragdoll = CharacterState {
+            ragdoll: true,
+            ..on_foot()
+        };
+        assert!(
+            Eligibility {
+                ragdoll: true,
+                on_ground: false,
+                ..grounded(ragdoll)
+            }
+            .root_fixed()
+        );
+    }
+
+    #[test]
+    fn a_clip_the_player_rides_keeps_the_animated_head() {
+        let cases = [
             // The grapple's ledge climb.
             CharacterState {
                 ledge_climb: true,
@@ -425,11 +464,6 @@ mod tests {
                 wingsuit: true,
                 ..on_foot()
             },
-            // A takeoff with neither: the task stopped with Rico still on the ground.
-            CharacterState {
-                movement_task: false,
-                ..on_foot()
-            },
         ];
         for state in cases {
             assert!(!grounded(state).root_fixed(), "{:?}", classify(&state));
@@ -437,38 +471,25 @@ mod tests {
     }
 
     #[test]
-    fn a_jump_keeps_the_root_through_its_grace() {
-        let jump = CharacterState {
-            jump: true,
-            movement_task: false,
-            ..on_foot()
-        };
-        assert!(grounded(jump).root_fixed());
-        let falling = Eligibility {
-            on_ground: false,
-            falling_in_grace: true,
-            ..grounded(jump)
-        };
-        assert!(falling.root_fixed());
-        assert!(
-            !Eligibility {
-                falling_in_grace: false,
-                ..falling
-            }
-            .root_fixed()
+    fn a_tilted_root_holds_the_view_upright_above_it() {
+        let neutral = neutral();
+        let world = Mat4::from_rotation_translation(
+            glam::Quat::from_rotation_x(1.4),
+            Vec3::new(3.0, 10.0, -2.0),
         );
-        // Past the grace the table reads a flight, which the animation carries.
-        let flight = CharacterState {
-            flight: true,
-            movement_task: false,
-            ..on_foot()
-        };
+        let anchors = stable_anchors(
+            &neutral,
+            world,
+            world,
+            HeightPair {
+                current: 10.0,
+                previous: 10.0,
+            },
+        );
         assert!(
-            !Eligibility {
-                falling_in_grace: true,
-                ..grounded(flight)
-            }
-            .root_fixed()
+            anchors
+                .head
+                .abs_diff_eq(Vec3::new(3.0, 10.0 + neutral.head.y, -2.0), 1.0e-5)
         );
     }
 
@@ -483,6 +504,13 @@ mod tests {
         assert!(
             !Eligibility {
                 on_ground: false,
+                ..mode_only
+            }
+            .root_fixed()
+        );
+        assert!(
+            !Eligibility {
+                ragdoll: true,
                 ..mode_only
             }
             .root_fixed()
