@@ -84,9 +84,11 @@ fn a_weapon_let_go_of_in_front_of_the_body_falls() {
     assert!(front.distance(Vec3::new(0.12, 1.3, 0.15)) <= ATTRACTION.shoulder_m);
     assert_eq!(attracted(front, 0.2), None);
     // Held out over the belly, within the hip's radius.
-    let belly = Vec3::new(0.12, 0.9, -0.18);
+    let belly = Vec3::new(0.15, 0.9, -0.27);
     assert!(belly.distance(Vec3::new(0.2, 0.85, 0.0)) <= ATTRACTION.hip_m);
     assert_eq!(attracted(belly, 0.2), None);
+    // Out at the side of the chest, beyond the hip's radius.
+    assert_eq!(attracted(Vec3::new(0.45, 1.15, -0.1), 0.2), None);
     // Out at arm's length, nowhere near a socket.
     assert_eq!(attracted(Vec3::new(0.3, 1.2, -0.6), 0.2), None);
 }
@@ -94,9 +96,27 @@ fn a_weapon_let_go_of_in_front_of_the_body_falls() {
 #[test]
 fn a_throw_is_never_attracted() {
     let over = Vec3::new(0.18, 1.62, 0.0);
-    assert_eq!(attracted(over, ATTRACTION.max_speed_mps + 0.5), None);
+    assert_eq!(attracted(over, ATTRACTION.back_max_speed_mps + 0.5), None);
+    let beside = Vec3::new(0.32, 0.95, 0.05);
+    assert_eq!(attracted(beside, ATTRACTION.hip_max_speed_mps + 0.5), None);
     assert_eq!(attracted(over, f32::NAN), None);
     assert_eq!(attracted(Vec3::NAN, 0.0), None);
+}
+
+#[test]
+fn a_weapon_swung_back_over_the_shoulder_docks() {
+    // The 10 November 17:07 session's holsters over the shoulder let go at 3.6 and 3.9 m/s, behind
+    // the line through the shoulder joints.
+    let behind = Vec3::new(0.2, 1.6, 0.12);
+    assert_eq!(attracted(behind, 3.9), Some(Socket::Shoulder(Hand::Right)));
+}
+
+#[test]
+fn a_pistol_turned_down_onto_the_front_of_the_thigh_docks() {
+    // In front of the hip joints by about the depth of the thigh, at the belt, moving as a hand
+    // brings a pistol down onto the hip.
+    let thigh = Vec3::new(0.28, 1.0, -0.19);
+    assert_eq!(attracted(thigh, 2.7), Some(Socket::Hip(Hand::Right)));
 }
 
 #[test]

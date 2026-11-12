@@ -38,10 +38,11 @@ use crate::controllers::{
 /// The attraction's fixed tuning.
 pub(crate) const ATTRACTION: AttractionTuning = AttractionTuning {
     shoulder_m: 0.675,
-    hip_m: 0.375,
+    hip_m: 0.3,
     back_front_m: 0.08,
-    hip_front_m: 0.1,
-    max_speed_mps: 2.5,
+    hip_front_m: 0.25,
+    back_max_speed_mps: 5.0,
+    hip_max_speed_mps: 3.5,
     speed_window_s: 0.1,
     travel_mps: 1.5,
     max_travel_s: 0.35,
@@ -57,19 +58,28 @@ pub(crate) struct AttractionTuning {
     /// a forearm's length from the point behind the shoulder blade a long gun's grip sits at. The
     /// sockets are out of sight, so the hand finds them by the body alone.
     pub shoulder_m: f32,
-    /// The attraction of the hips' sockets, metres: about twice their reach, so a hand let open
-    /// anywhere beside the thigh docks the pistol.
+    /// The attraction of the hips' sockets, metres: well beyond their reach, so a hand let open
+    /// anywhere beside the thigh docks the pistol, and short of the side of the chest, where a
+    /// weapon let go of is being dropped.
     pub hip_m: f32,
     /// How far in front of the line through the shoulder joints a hand may be for a back socket to
     /// attract it, metres: about as far forward as the ear.
     pub back_front_m: f32,
     /// How far in front of the line through the hip joints a hand may be for a hip socket to
-    /// attract it, metres: the front of the thigh, short of a hand held out over the belly.
+    /// attract it, metres: a pistol turned down onto the front of the thigh, short of a hand held
+    /// out over the belly. The player's own hips sit a few centimetres ahead of the character's
+    /// relative to the hands, so a hand on the player's thigh is further forward on the
+    /// character's.
     pub hip_front_m: f32,
-    /// The fastest the hand may move at the release for the attraction to take the weapon, metres
-    /// per second at the player's scale: a hand placing a weapon slows to well under it, and a
-    /// throw is faster.
-    pub max_speed_mps: f32,
+    /// The fastest the hand may move at the release for a back socket to take the weapon, metres
+    /// per second at the player's scale: a weapon swung back over the shoulder leaves the hand at
+    /// up to about 4 m/s, and the front limit, not the speed, keeps a throw (released in front of
+    /// the body) out of the back.
+    pub back_max_speed_mps: f32,
+    /// The fastest the hand may move at the release for a hip socket to take the weapon, metres
+    /// per second at the player's scale: a hand bringing a pistol down onto the hip moves at up to
+    /// about 3 m/s, and a throw is faster.
+    pub hip_max_speed_mps: f32,
     /// How far back from the release the hand's speed is read, seconds: the fastest sample of
     /// that span counts, as a throw slows before the fingers open.
     pub speed_window_s: f32,
@@ -229,13 +239,13 @@ pub(crate) fn attract(
     tuning: &AttractionTuning,
 ) -> Option<Attraction> {
     // A speed that is not a number is no evidence of a placing hand.
-    let placing = speed.is_finite() && speed <= tuning.max_speed_mps;
-    if !grip.is_finite() || !placing {
+    if !grip.is_finite() || !speed.is_finite() {
         return None;
     }
     attractors
         .iter()
         .filter(|a| a.hand == hand && a.radius > 0.0)
+        .filter(|a| speed <= max_speed_of(a.socket, tuning))
         .filter(|a| a.front.is_none_or(|front| front.allows(grip)))
         .filter_map(|a| {
             let distance = grip.distance(a.centre);
@@ -324,6 +334,14 @@ impl ZoneWatch {
             .map(|(_, socket)| socket);
         *slot = entered;
         entered.is_some()
+    }
+}
+
+/// The fastest a hand may move at the release for `socket` to attract its weapon.
+fn max_speed_of(socket: Socket, tuning: &AttractionTuning) -> f32 {
+    match socket {
+        Socket::Shoulder(_) => tuning.back_max_speed_mps,
+        Socket::Hip(_) => tuning.hip_max_speed_mps,
     }
 }
 
