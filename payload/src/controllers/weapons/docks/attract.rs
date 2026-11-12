@@ -40,6 +40,7 @@ pub(crate) const ATTRACTION: AttractionTuning = AttractionTuning {
     shoulder_m: 0.675,
     hip_m: 0.3,
     back_front_m: 0.08,
+    back_floor_m: 0.3,
     hip_front_m: 0.25,
     back_max_speed_mps: 5.0,
     hip_max_speed_mps: 3.5,
@@ -65,6 +66,10 @@ pub(crate) struct AttractionTuning {
     /// How far in front of the line through the shoulder joints a hand may be for a back socket to
     /// attract it, metres: about as far forward as the ear.
     pub back_front_m: f32,
+    /// How far below the line through the shoulder joints a hand may be for a back socket to
+    /// attract it, metres: a hand putting a gun away over the shoulder is up by the shoulder, and
+    /// one down by the thigh is not, however fast it moves.
+    pub back_floor_m: f32,
     /// How far in front of the line through the hip joints a hand may be for a hip socket to
     /// attract it, metres: a pistol turned down onto the front of the thigh, short of a hand held
     /// out over the belly. The player's own hips sit a few centimetres ahead of the character's
@@ -93,13 +98,17 @@ pub(crate) struct AttractionTuning {
 }
 
 /// Where a hand must not be for a socket to attract it: further than `max_m` along `forward` from
-/// `origin`, all in the cockpit frame.
+/// `origin`, or further than `floor_m` below it along `up`, all in the cockpit frame.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub(crate) struct FrontLimit {
     pub origin: Vec3,
     /// The body's forward, unit length.
     pub forward: Vec3,
     pub max_m: f32,
+    /// The body's up, unit length.
+    pub up: Vec3,
+    /// Infinite for a socket that attracts a hand however low it is.
+    pub floor_m: f32,
 }
 
 impl FrontLimit {
@@ -108,7 +117,9 @@ impl FrontLimit {
     }
 
     fn allows_within(&self, point: Vec3, margin: f32) -> bool {
-        (point - self.origin).dot(self.forward) <= self.max_m + margin
+        let offset = point - self.origin;
+        offset.dot(self.forward) <= self.max_m + margin
+            && offset.dot(self.up) >= -(self.floor_m + margin)
     }
 }
 
@@ -167,6 +178,8 @@ pub(crate) fn attractors(
                         origin: body.skeleton.chest(),
                         forward: body.chest * Vec3::NEG_Z,
                         max_m: tuning.back_front_m,
+                        up: body.chest * Vec3::Y,
+                        floor_m: tuning.back_floor_m,
                     })
                 }
                 Socket::Hip(_) => {
@@ -175,6 +188,8 @@ pub(crate) fn attractors(
                         origin: body.skeleton.hip_centre(),
                         forward: body.pelvis * Vec3::NEG_Z,
                         max_m: tuning.hip_front_m,
+                        up: body.pelvis * Vec3::Y,
+                        floor_m: f32::INFINITY,
                     })
                 }
             };
