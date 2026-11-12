@@ -8,8 +8,10 @@
 //! them. A character the game protects, mission-critical or in a scripted sequence, is not
 //! taken. A grip on an enclosed vehicle occupant requires an open door. A motorcycle occupant
 //! needs no door; a yank requests the character's hit reaction and retains the anatomical
-//! contact for the resulting ragdoll. Enclosed-seat yanks use the vehicle-entry action, which
-//! hijacks an occupied seat. The design is
+//! contact for the resulting ragdoll. A yank on a mounted gun's gunner takes them out of the seat
+//! as a ragdoll where they sit ([`gunner_out`]), and the hand takes hold of it as of a fallen
+//! character. Other enclosed-seat yanks use the vehicle-entry action, which hijacks an occupied
+//! seat. The design is
 //! in `docs/mod/input/character-grabs.md`, the engine side in
 //! `docs/engine/gameplay/melee-and-damage.md` and `docs/engine/gameplay/vehicle-doors.md`.
 //!
@@ -39,7 +41,7 @@ pub mod ragdoll;
 use std::num::NonZeroUsize;
 
 pub use config::CharactersConfig;
-pub use engine::Protection;
+pub use engine::{GunnerOut, Protection};
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::{Character, SafeBoneIndex},
@@ -451,6 +453,22 @@ impl Seize {
             None => SeizeStep::Pin(at),
         }
     }
+}
+
+/// Take the character `target` out of its gunner seat as a ragdoll, if it mans a mounted gun in a
+/// vehicle ([`engine::gunner_out`]).
+///
+/// # Safety
+///
+/// The game thread, outside the physics step and the game's update. The target's current owner is
+/// checked first.
+pub(crate) unsafe fn gunner_out(target: CharacterTarget) -> GunnerOut {
+    if unsafe { owner_of(target.body) } != Some(target.character) {
+        return GunnerOut::NotAGunner;
+    }
+    // SAFETY: the body's owner proves the character live.
+    let character = unsafe { &mut *(target.character.get() as *mut Character) };
+    unsafe { engine::gunner_out(character) }
 }
 
 /// Whether the hand still has access to the character's current vehicle seat.

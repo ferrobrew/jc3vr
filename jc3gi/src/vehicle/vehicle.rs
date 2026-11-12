@@ -336,12 +336,16 @@ impl NStateTask_InputVehicleEnterTask {
     }
     pub const HasAvailableGunnerDestination_ADDRESS: usize = 0x14081A200;
     /// Whether the user's current interaction node has a transition to a gunner seat node, or, off
-    /// a node, whether any available graph entry leads to one.
+    /// a node, whether any available graph entry leads to one. [`Update`](crate::vehicle::vehicle::NStateTask_InputVehicleEnterTask::Update) passes the
+    /// local player's own proxy
+    /// ([`Character::m_InteractionUserProxy`](crate::character::character::Character::m_InteractionUserProxy)).
     pub unsafe fn HasAvailableGunnerDestination(
-        user: *const ::std::ffi::c_void,
+        user: *const crate::interaction::InteractionUserProxy,
     ) -> bool {
         unsafe {
-            let f: unsafe extern "system" fn(user: *const ::std::ffi::c_void) -> bool = ::std::mem::transmute(
+            let f: unsafe extern "system" fn(
+                user: *const crate::interaction::InteractionUserProxy,
+            ) -> bool = ::std::mem::transmute(
                 Self::HasAvailableGunnerDestination_ADDRESS,
             );
             f(user)

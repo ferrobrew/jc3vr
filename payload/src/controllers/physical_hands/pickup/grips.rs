@@ -8,7 +8,7 @@ use crate::controllers::{
     frame::Hand,
     physical_hands::{
         bodies,
-        characters::{self, CharactersConfig, Regrip, Seize, SeizeStep},
+        characters::{self, CharactersConfig, GunnerOut, Regrip, Seize, SeizeStep},
         doors::{self, LatchStep},
         grasp::{self, Grip, PalmMotion, Reach, TargetKind},
         physics::{self, Shove, ShoveForce},
@@ -184,6 +184,35 @@ pub(super) unsafe fn keep_seize(
         SeizeStep::Pin(pin) => outcome.pins[i] = Some(pin),
         SeizeStep::Yank { at, direction } => {
             state.seizes[i] = None;
+            if seize.target.seated.is_some() {
+                // SAFETY: forwarded from the caller; the target's owner is checked first.
+                match unsafe { characters::gunner_out(seize.target) } {
+                    GunnerOut::NotAGunner => {}
+                    GunnerOut::Queued => {
+                        // The gunner falls where they sit, and the hand takes hold of the ragdoll
+                        // as of any fallen character.
+                        tracing::info!(
+                            hand = hand.label(),
+                            "physical hands: characters: a hand pulled a mounted gun's gunner out \
+                             of the seat"
+                        );
+                        outcome.yanks += 1;
+                        state.regrips[i] = Some(Regrip::new(seize));
+                        return;
+                    }
+                    refused @ (GunnerOut::Refused | GunnerOut::NoTransition) => {
+                        // A gunner is never hijacked: the vehicle-entry action would seat the
+                        // player in another seat and leave the gunner where they are.
+                        tracing::info!(
+                            hand = hand.label(),
+                            reason = refused.label(),
+                            "physical hands: characters: a mounted gun's gunner stays in the seat"
+                        );
+                        outcome.released[i] = true;
+                        return;
+                    }
+                }
+            }
             let exposed = seize.target.seated.is_some_and(|seat| seat.door.is_none())
                 && unsafe { characters::occupant_access(seize.target, palm, world_scale, config) }
                     .is_some_and(|seat| seat.door.is_none());

@@ -2380,7 +2380,11 @@ impl Character {
     /// and [`m_HitReaction_ImpulseStumbleThreshold`](crate::character::character::Character::m_HitReaction_ImpulseStumbleThreshold);
     /// a ragdoll takes the impulse, along `direction` and capped by
     /// [`m_HitReaction_DamageImpulseMax`](crate::character::character::Character::m_HitReaction_DamageImpulseMax). The character's
-    /// damage virtual runs it at the end of every damage message; it takes no health itself.
+    /// damage virtual runs it at the end of every damage message; it takes no health itself. A
+    /// character attached to a vehicle ([`IsAttachedToVehicle`](crate::character::character::Character::IsAttachedToVehicle)) is
+    /// never put into its ragdoll here, unless its state has
+    /// [`SB_IS_GRAPPLE_UPSIDEDOWN`](crate::state::StateBitFlag::SB_IS_GRAPPLE_UPSIDEDOWN): the ragdoll
+    /// branch returns before queueing anything.
     pub unsafe fn HitReaction(
         &mut self,
         hit_position: *const crate::types::math::Vector3,
