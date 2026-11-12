@@ -38,6 +38,8 @@ The grenade (`GRENADE.hold`) stands upright in the fist: its body runs up the fi
 
 The C4 charge (`C4.hold`) is a flat square brick. It lies with its top face on the palm, centred on it, so its sticking face looks out of the hand at whatever it is pressed onto ([physical-weapons.md, "C4 pressed onto a surface"](physical-weapons.md#c4-pressed-onto-a-surface)); the surface probes start at the brick's middle (`C4.centre_m`). The charge pose bends the fingers at the knuckles and middle joints over the brick's far edge onto its outer face, with the thumb along its side.
 
+A held grenade is drawn where the hand is drawn: once per rendered frame, before the engine's render update, both of its actor's transforms are set to its hold on the drawn hand's grip at the frame's interpolation fraction (`hands::late::drawn_hands`, `grenade::safe::render_frame`). The transforms the simulation ticks give it come from the tick's tracked grip, and the actor's own render update interpolates between the last two, so a grenade drawn from them alone trails the hand by one to two ticks of the hand's motion, as far as a walk carries the hand in that time, and catches up when the hand stops. A stowed grenade keeps the ticks' transforms.
+
 The magazine's hold is in [reload.md](reload.md#load).
 
 ## Grenades lying in the world
@@ -117,6 +119,8 @@ Catching an existing live grenade retains the native grenade and its running fus
 ## Runtime checks
 
 In the game, draw grenades from the pouch until the stock is empty and check that the HUD's count drops by one per draw and that the pouch and its model disappear at zero. Move one into a hip or chest holster, draw another into each free hand, and re-draw the stowed item. Verify that the grenades remain independent, that each is the engine's own object, and that re-drawing a stowed item does not change the stock. Press a pinned grenade back onto the pouch from each hand: the count rises by one, the item vanishes, and the pouch reappears if it was empty. Press one onto a full pouch: a buzz, and the grenade stays in the hand. Pull a pin and press: nothing happens. Turn on unlimited ammunition: the pouch stays offered at zero and draws do not change the count. Walk over a dropped grenade and up to a locker: the count does not change. Press a held C4 charge onto the C4 pouch: it vanishes, and the placed-charge count and the wrist detonator are unchanged. Open a hand slowly or stop controller input: the grenade must fall inertly, lie as a real body, and be re-grabbable, and neither dropping it nor losing tracking may arm it. Then release one with a deliberate throw and verify that only that item becomes a live grenade, that it leaves the hand inert for an instant before its fuse starts, and that the fuse counts down from the release. Repeat with both hands, with a native grenade caught in the other hand, and after a gameplay transition.
+
+Hold a grenade and walk, then run, swinging the hand: the grenade stays in the fist, with no gap opening between the hand and the grenade while moving and none closing when the hand stops.
 
 Draw until the ammunition pool refuses. The refusal must produce no item, no floating model, and no half-created item in the hand.
 

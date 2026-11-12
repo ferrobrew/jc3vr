@@ -593,9 +593,12 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn render_frame() {
+pub(crate) unsafe fn render_frame(dtf: f32) {
     unsafe { beacon::render_frame() };
-    unsafe { safe::render_frame() };
+    let tuning = GrenadeTuning::of(&Config::lock_query(|config| {
+        config.controllers.weapons.grenade
+    }));
+    unsafe { safe::render_frame(dtf, &tuning) };
 }
 
 pub(crate) fn fallback_target(

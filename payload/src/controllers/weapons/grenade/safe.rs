@@ -26,7 +26,7 @@ use parking_lot::Mutex;
 use crate::controllers::{
     body::rig::frames::Frames,
     frame::{Hand, Pose},
-    hands::held::held_matrix,
+    hands::{held::held_matrix, late},
     loadout::{
         Departure, ItemId, Place, Socket, live,
         safe_items::{ItemLeaseId, SafeItemView},
@@ -495,12 +495,16 @@ pub(crate) fn observe(grips: [Option<Pose>; 2], tuning: &GrenadeTuning) {
 }
 
 /// Give every item's actor the transform its place resolves to, and retire the items whose actor the
-/// pool has taken.
+/// pool has taken. A held item is drawn in the hand as the hand is drawn at the frame's
+/// interpolation fraction `dtf` ([`late::drawn_hands`]), with both of its transforms set to that
+/// pose: the transforms the simulation ticks give it come from the tick's tracked grip, and the
+/// actor's render update interpolates between the last two of them, so a held grenade drawn from
+/// them trails the hand by one to two ticks of its motion, as far as a walk carries it.
 ///
 /// # Safety
 ///
 /// The game thread, before the world update.
-pub(crate) unsafe fn render_frame() {
+pub(crate) unsafe fn render_frame(dtf: f32, tuning: &GrenadeTuning) {
     let owner = if crate::hooks::in_gameplay() {
         (unsafe { engine::local_player() }).map(|owner| owner as *const Character as usize)
     } else {
@@ -527,8 +531,15 @@ pub(crate) unsafe fn render_frame() {
     for actor in removed {
         unsafe { native::remove(&actor) };
     }
-    for (actor, [previous, world]) in placements {
-        unsafe { native::place(&actor, previous, world) };
+    let drawn = late::drawn_hands(dtf);
+    for (actor, [previous, world], hand) in placements {
+        match hand.and_then(|hand| Some((hand, drawn[hand.index()]?))) {
+            Some((hand, drawn)) => {
+                let held = matrix(drawn.grip, hand, tuning);
+                unsafe { native::place(&actor, held, held) };
+            }
+            None => unsafe { native::place(&actor, previous, world) },
+        }
     }
     for item in &items {
         if gone.contains(&item.binding.lease) || actor(*item).is_none() {
@@ -738,7 +749,8 @@ fn ensure_cleanup() {
 struct RegistryPlan<A> {
     gone: Vec<ItemLeaseId>,
     removed: Vec<A>,
-    placements: Vec<(A, [Mat4; 2])>,
+    /// Each driven actor with its two ticks' transforms, and the hand that holds it.
+    placements: Vec<(A, [Mat4; 2], Option<Hand>)>,
 }
 
 fn reconcile_registry<A: Clone>(
@@ -763,7 +775,12 @@ fn reconcile_registry<A: Clone>(
                 false
             }
             Membership::Drive => {
-                plan.placements.push((entry.actor.clone(), entry.world));
+                let hand = match item.map(|item| item.place) {
+                    Some(Place::Hand(hand)) => Some(hand),
+                    _ => None,
+                };
+                plan.placements
+                    .push((entry.actor.clone(), entry.world, hand));
                 true
             }
             Membership::Simulated => true,
@@ -931,7 +948,7 @@ mod tests {
         ];
         let items: Vec<_> = table.safe_items().collect();
         let plan = reconcile_registry(&mut entries, &items, |actor| *actor != 4);
-        assert_eq!(plan.placements, vec![(1, [cached; 2])]);
+        assert_eq!(plan.placements, vec![(1, [cached; 2], Some(Hand::Left))]);
         assert_eq!(plan.removed, vec![3]);
         assert_eq!(plan.gone, vec![expired]);
         assert_eq!(
