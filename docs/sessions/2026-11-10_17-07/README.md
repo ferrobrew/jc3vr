@@ -103,3 +103,11 @@ The panel with the window in the background; the loadout editor; weapon hints on
 - The presentation's "drawn arm joints" diagnostic carries the presentation's own sequence counter (`controllers/presentation/mod.rs` around 293), not the controller frame's; it lags by 12 to 26 frames, so pair it with the frames by time.
 - The "magazine pouch: not placed, the skeleton was not read" diagnostic marks a one-tick state change, not a press that took nothing.
 - The reel-end log's `boosts` field is the session total (`grapple/physical/mod.rs` around 261).
+
+## Camera clipping after the feedback
+
+The reviewer asked for frames around t 1357.8 and 2288: [canopy-after-grapple-gallery.jpg](canopy-after-grapple-gallery.jpg) (t 1357.40 to 1358.15) and [canopy-unfurling-gallery.jpg](canopy-unfurling-gallery.jpg) (t 2287.85 to 2288.60), each frame labelled with its Rerun time and how far the camera sat ahead of or behind Rico's animated head along the flight. The harness and backpack fill the view in the frames where the camera falls 0.2 to 0.9 m behind the head.
+
+A flash detector over the whole video (a run of one or two frames unlike the frames on both sides, which are alike) found 133 flashes; crossed with the tracking data, 42 have the camera more than 0.12 m behind the head, 12 of 27 under the canopy. The lag is the grapple comfort filter's landing-snap absorber misfiring at speed for a few seconds after each reel or canopy pull: a replay of its detection matches the recorded camera at t 535, 700, 1357.6 to 1358.2, 1376.6 to 1377.0, and 2288 (correlation 0.7 to 0.9, and to the centimetre at 1357.6 to 1358.2). It is fixed by detecting the snap against the root ([grapple-comfort.md](../../mod/body/grapple-comfort.md#the-landing-snap-absorber)). The parachute's roll-entry clip accounts for little of the canopy clipping: the lag explains the deploys at t 535, 700, and 2288, though a few frames at 2288.5 clip with the camera on the head, which the roll clip may cause.
+
+At t 1593 and 1603 the body's yaw was within 6 and 2 degrees of its target, so the yaw follow was not lagging. The dark shape at the lower edges of the view there appears while the player leans 0.24 m forward over a crate aiming the pistol; it was not identified.
