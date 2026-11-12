@@ -12,10 +12,13 @@ use jc3gi::{
     },
     physics::{PfxCharacterInstance, hknpCharacterSurfaceInfo},
     types::math::Vector3,
+    vehicle::vehicle::Helicopter,
 };
 
 use crate::{
-    controllers::physical_hands::{self, BodyState, characters::engine::proxy_body},
+    controllers::physical_hands::{
+        self, BodyState, characters::engine::proxy_body, game_object_of,
+    },
     grapple::hook,
 };
 
@@ -88,6 +91,24 @@ pub(super) unsafe fn far_body(proxy: &GrapplePointProxy) -> Option<(u32, NonZero
     }
     let (owner, state) = unsafe { physical_hands::line_body(body) }?;
     Some((body, owner, state))
+}
+
+/// Whether `hook` reels in along a line whose far end is attached to a helicopter, whose arrival
+/// hangs the character from the airframe in the game's stunt hang.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step; `hook` must be live.
+pub(super) unsafe fn reeling_to_helicopter(hook: &GrapplingHook) -> bool {
+    let Some(proxy) = (unsafe { reeling_far_end(hook) }) else {
+        return false;
+    };
+    if proxy.m_AttachmentObjectInfo != AttachmentObjectInfo::AOI_Vehicle {
+        return false;
+    }
+    unsafe { far_body(proxy) }.is_some_and(|(_, owner, _)| unsafe {
+        (*game_object_of(owner)).IsType(Helicopter::TYPE_ID())
+    })
 }
 
 /// The character's mass: its proxy body's.

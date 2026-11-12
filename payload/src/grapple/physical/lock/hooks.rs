@@ -4,8 +4,9 @@
 //! a break) take their place.
 //!
 //! The arrival's upside-down ending ([`GrapplingHook::StartReelUpsideDown`], the ceiling attach)
-//! is held off for the local player while the hang is on: the reel keeps running, and the lock's
-//! next tick hangs the character below the hook instead (`lock::want_hang`).
+//! and the arrival onto a helicopter (the game's stunt hang under the airframe) are held off for
+//! the local player while the hang is on: the reel keeps running, and the lock's next tick hangs
+//! the character below the hook instead (`lock::want_hang`).
 //!
 //! [`GrapplingHook::StartReelUpsideDown`]: jc3gi::equipment::grappling_hook::GrapplingHook::StartReelUpsideDown
 //! [`NStateTask_ReelIn::FinishReel`]: jc3gi::equipment::grappling_hook::NStateTask_ReelIn::FinishReel
@@ -37,15 +38,19 @@ fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Cha
     let local = unsafe { holder.as_ref() }
         .and_then(|h| unsafe { h.px.as_ref() })
         .is_some_and(|c| c.m_IsLocalCharacter);
-    let hangs = Config::lock_query(|c| {
-        let lock = &c.controllers.grapple.lock;
-        lock.enabled && lock.hang
-    });
-    if local && hangs {
+    if local && hang_enabled() {
         want_hang();
         return;
     }
     START_REEL_UPSIDE_DOWN.get().unwrap().call(hook, holder);
+}
+
+/// Whether the lock and its hang are on.
+fn hang_enabled() -> bool {
+    Config::lock_query(|c| {
+        let lock = &c.controllers.grapple.lock;
+        lock.enabled && lock.hang
+    })
 }
 
 #[detour(address = jc3gi::equipment::grappling_hook::NStateTask_ReelIn::FinishReel_ADDRESS)]
@@ -57,14 +62,24 @@ fn finish_reel(
 ) {
     // SAFETY: the reel task's own arguments, on the character update that owns them.
     let local = unsafe { character.as_mut() }.filter(|c| c.m_IsLocalCharacter);
-    if let Some(character) = local
-        && holds()
-    {
-        // The arrival skipped the reel's motion this tick; hand the lock's velocity on instead.
-        if let Some(velocity) = last_velocity() {
-            unsafe { engine::set_wanted_velocity(character, velocity) };
+    if let Some(character) = local {
+        if holds() {
+            // The arrival skipped the reel's motion this tick; hand the lock's velocity on
+            // instead.
+            if let Some(velocity) = last_velocity() {
+                unsafe { engine::set_wanted_velocity(character, velocity) };
+            }
+            return;
         }
-        return;
+        // A reel onto a helicopter arrives into the game's stunt hang under the airframe, which
+        // holds the body inverted: hang on the line instead, as below a ceiling.
+        let to_helicopter = unsafe { hook.as_ref() }
+            .and_then(|h| unsafe { h.px.as_ref() })
+            .is_some_and(|h| unsafe { engine::reeling_to_helicopter(h) });
+        if to_helicopter && hang_enabled() {
+            want_hang();
+            return;
+        }
     }
     FINISH_REEL
         .get()

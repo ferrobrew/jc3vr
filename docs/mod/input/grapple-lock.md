@@ -52,11 +52,13 @@ The take replaced a brake that removed the speed toward the hook and kept only t
 
 Rico's mass is his proxy body's, read from its motion when the lock takes hold; a lock whose mass cannot be read is refused, and the button's tap still goes to the game.
 
-## The hang below a ceiling
+## The hang below a ceiling or a helicopter
 
 A reel onto a ceiling ends, in the game, in the upside-down attach: the arrival ([`NStateTask_ReelIn::FinishReel`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::NStateTask_ReelIn##func-FinishReel)) chooses it from the attachment setup and starts it ([`GrapplingHook::StartReelUpsideDown`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::GrapplingHook##func-StartReelUpsideDown)), and Rico clings to the surface inverted, a pose the player's body cannot match. With `lock.hang` on (the default), a detour holds that start off for the local player, the reel keeps running, and the lock's next tick takes the line itself, with no press (`lock::Hold::Hang`): the line is held from Rico's distance and pays out at 3 m/s to `lock.hang_length_m` (3.5 m from the hook to Rico's root, about a metre and a half of line above the raised grapple hand), and he starts at rest against the hook, as the game's own ceiling attach clears his velocities, rather than his rush turning into a swing. He hangs below the hook, upright, on the reel's animation as in any lock; the grapple hand pumps the swing ([the swing](#the-swing)) and takes line in by pulling back, and the other hand is free.
 
-Every way out of a hang lets go of the line: a quick release, a longer one, and a yank, since resuming the reel would only arrive at the ceiling again. A landing lets go as for any lock. `LINE LOCK` reads `HANGING` while it holds, and `the line locks` logs `hang=true`. Perches on walls, the game's other hang (under a helicopter), and the stunt positions are left to the game.
+A reel onto a helicopter is hung the same way. Its arrival ([`NStateTask_ReelIn::FinishReel`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::grappling_hook::NStateTask_ReelIn##func-FinishReel)) would take Rico into the game's stunt hang under the airframe, whose states are the grapple's upside-down ones ([stunt-positions.md](../../engine/gameplay/stunt-positions.md#leaving)); the lock's arrival detour holds it off when the far end is attached to a [`Helicopter`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Helicopter), and the line holds him at the hang's length below the hook's point, measured against the helicopter's motion, so he rides under it as it flies.
+
+Every way out of a hang lets go of the line: a quick release, a longer one, and a yank, since resuming the reel would only arrive at the ceiling again. A landing lets go as for any lock. `LINE LOCK` reads `HANGING` while it holds, and `the line locks` logs `hang=true`. Perches on walls, the ledge hang, and the stunt positions on cars, boats, and planes are left to the game.
 
 Pulling up onto a ledge from the hang is not done.
 
@@ -132,6 +134,7 @@ With the lock on (the default):
 12. Brush a wall mid-swing: the swing carries on rather than the reel dropping or reattaching.
 13. Switch the lock off: holding the button mid-reel does what it did before.
 14. Zip to a ceiling (under a bridge or an overhang) without touching the button: Rico does not flip into the inverted cling; he drops a couple of metres and hangs upright below the hook, `LINE LOCK` reading `HANGING`. Swing the grapple arm to pump the swing; use the right hand freely; pull the grapple hand back to climb the line. Tap the button: he drops and falls on, and the reel does not carry him back to the ceiling. Switch `Hang below ceilings` off: the ceiling cling returns.
+15. Zip to a hovering helicopter: Rico does not enter the game's hang under the airframe; he hangs upright 3.5 m below the hook and rides with it, `LINE LOCK` reading `HANGING` with the helicopter's speed. Tap the button: he drops. With the hang off, the game's hang returns.
 
 ## Unverified in the headset
 
