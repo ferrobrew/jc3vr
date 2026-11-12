@@ -321,3 +321,55 @@ fn a_taken_back_socket_draws_in_a_swap_and_a_free_one_comes_first() {
     assert!(!attraction.swap);
     assert_eq!(attraction.socket, Socket::Shoulder(Hand::Right));
 }
+
+#[test]
+fn the_hand_feels_the_free_socket_a_release_would_take_before_a_swap() {
+    // A pistol held by the right hip, which is free, is also within the right shoulder's wide
+    // attraction while that shoulder is taken: the release docks on the hip, so the hand is in the
+    // hip's zone, not the shoulder's swap (the grab hint showed a swap onto the back here).
+    let body = body(0.0);
+    let (shoulder, _) = dock(
+        Socket::Shoulder(Hand::Right),
+        Hand::Right,
+        Vec3::new(0.12, 1.3, 0.15),
+        0.17,
+    );
+    let (hip, hip_use) = dock(
+        Socket::Hip(Hand::Right),
+        Hand::Right,
+        Vec3::new(0.2, 0.85, 0.0),
+        0.12,
+    );
+    let mut all = attractors(&[(hip, hip_use)], Some(&body), offset, &ATTRACTION);
+    all.extend(swap_attractors(
+        &[(shoulder, SocketUse::NoFit)],
+        |_, _| true,
+        Some(&body),
+        offset,
+        &ATTRACTION,
+    ));
+    let grip = Vec3::new(0.25, 1.05, 0.05);
+    let share = |centre: Vec3, radius: f32| grip.distance(centre) / radius;
+    assert!(
+        share(Vec3::new(0.12, 1.3, 0.15), ATTRACTION.shoulder_m)
+            < share(Vec3::new(0.2, 0.85, 0.0), ATTRACTION.hip_m)
+    );
+    let mut watch = ZoneWatch::new();
+    assert!(watch.step(Hand::Right, &all, Some(grip), &ATTRACTION));
+    assert_eq!(watch.inside(Hand::Right), Some(Socket::Hip(Hand::Right)));
+    // Starting in the shoulder's swap alone, then coming within the free hip's reach: the hand
+    // moves to the hip, and ticks for it.
+    let mut watch = ZoneWatch::new();
+    assert!(watch.step(
+        Hand::Right,
+        &all,
+        Some(Vec3::new(0.25, 1.5, 0.1)),
+        &ATTRACTION
+    ));
+    assert_eq!(
+        watch.inside(Hand::Right),
+        Some(Socket::Shoulder(Hand::Right))
+    );
+    assert!(watch.step(Hand::Right, &all, Some(grip), &ATTRACTION));
+    assert_eq!(watch.inside(Hand::Right), Some(Socket::Hip(Hand::Right)));
+}

@@ -97,15 +97,14 @@ pub fn fits(snapshot: &LoadoutSnapshot, hand: Hand, socket: Socket) -> bool {
 }
 
 /// Whether opening `hand`'s grip over `socket` swaps the weapon it holds for the one docked there:
-/// `socket` is a shoulder, taken, and of the held weapon's size
-/// class or larger. The docked weapon falls clear and the held one docks in its place, since a back
-/// socket is out of sight and a weapon that fell there instead would read as a failed dock.
+/// `socket` is taken and of the held weapon's size class or larger. The docked weapon falls clear
+/// and the held one docks in its place: a weapon put away on a full socket that fell instead would
+/// read as a failed dock, on the back out of sight and at a hip alike.
 pub fn swaps(snapshot: &LoadoutSnapshot, hand: Hand, socket: Socket) -> bool {
     let Some(weapon) = held_weapon(snapshot, hand) else {
         return false;
     };
-    matches!(socket, Socket::Shoulder(_))
-        && snapshot.body.has(socket)
+    snapshot.body.has(socket)
         && socket.fits(weapon.size())
         && snapshot.docked(socket).is_some()
 }

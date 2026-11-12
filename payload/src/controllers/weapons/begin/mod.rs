@@ -285,6 +285,15 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         // A held weapon's reach to the back's free sockets moves off their place; a draw stays on
         // the weapon the hand sees, and the attraction below keeps the place, as it travels the
         // weapon there.
+        let snapshot = live::snapshot_now();
+        // A taken socket the held weapon swaps onto is marked as a place to put it, not as one
+        // that refuses it.
+        let swapping = |c: &Candidate| match (c.volume, c.hand, snapshot.as_ref()) {
+            (GrabVolume::Socket(socket), Some(hand), Some(snapshot)) => {
+                swaps(snapshot, hand, socket)
+            }
+            _ => false,
+        };
         targets.extend(others.iter().map(|(c, usage)| {
             let mut reach = [*c];
             if *usage != SocketUse::Draw
@@ -293,6 +302,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                 volumes::reach_back_sockets(&mut reach, body);
             }
             match usage {
+                SocketUse::NoFit if swapping(c) => place.swap_onto(&reach[0]),
                 SocketUse::NoFit => place.no_fit(&reach[0]),
                 SocketUse::Draw | SocketUse::Dock => place.on_skeleton(&reach[0]),
             }
@@ -303,10 +313,10 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             |p| place.xf.point_to_world(p),
             &ATTRACTION,
         );
-        if let Some(snapshot) = live::snapshot_now() {
+        if let Some(snapshot) = &snapshot {
             state.attractors.extend(attract::swap_attractors(
                 &others,
-                |hand, socket| swaps(&snapshot, hand, socket),
+                |hand, socket| swaps(snapshot, hand, socket),
                 body.as_ref(),
                 |p| place.xf.point_to_world(p),
                 &ATTRACTION,

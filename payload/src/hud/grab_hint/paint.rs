@@ -53,21 +53,16 @@ pub(crate) fn take(icon: &Image, label: &str) -> Vec<u8> {
     canvas.haloed().into_texels()
 }
 
-/// Paint a swap: `incoming` (the weapon the hand docks), an arrow, and `outgoing` (the weapon that
-/// falls clear), dimmed, with `label` above the arrow, haloed. Premultiplied RGBA texels of
-/// [`SWAP_TEXELS`], row by row.
+/// Paint a swap as the socket's old weapon becoming the new one: `outgoing` (the weapon that falls
+/// clear), dimmed, an arrow, and `incoming` (the weapon the hand docks), with `label` above the
+/// arrow, haloed. Premultiplied RGBA texels of [`SWAP_TEXELS`], row by row.
 pub(crate) fn swap(incoming: &Image, outgoing: &Image, label: &str) -> Vec<u8> {
     let (width, height) = SWAP_TEXELS;
     let mut canvas = Canvas::clear(width, height);
     canvas.label(label, width / 2);
-    canvas.icon(incoming, PAD, LABEL_ROW + PAD, 1.0);
+    canvas.icon(outgoing, PAD, LABEL_ROW + PAD, OUTGOING_OPACITY);
     canvas.arrow(PAD + ICON_TEXELS.0, LABEL_ROW + PAD + ICON_TEXELS.1 / 2);
-    canvas.icon(
-        outgoing,
-        PAD + ICON_TEXELS.0 + ARROW_W,
-        LABEL_ROW + PAD,
-        OUTGOING_OPACITY,
-    );
+    canvas.icon(incoming, PAD + ICON_TEXELS.0 + ARROW_W, LABEL_ROW + PAD, 1.0);
     canvas.haloed().into_texels()
 }
 
@@ -399,14 +394,15 @@ mod tests {
     }
 
     #[test]
-    fn a_swap_draws_both_icons_and_an_arrow_and_dims_the_outgoing_one() {
+    fn a_swap_draws_the_old_weapon_dimmed_an_arrow_and_the_new_one() {
         let whole = icon(0..ICON_TEXELS.0);
         let texels = swap(&whole, &whole, "Left back");
         let (width, height) = SWAP_TEXELS;
         assert_eq!(texels.len(), (width * height * 4) as usize);
         let mid = LABEL_ROW + PAD + ICON_TEXELS.1 / 2;
-        let incoming = texel(&texels, width, PAD + ICON_TEXELS.0 / 2, mid);
-        let outgoing = texel(&texels, width, PAD + ICON_TEXELS.0 + ARROW_W + 100, mid);
+        // The old weapon on the left, the new one on the right.
+        let outgoing = texel(&texels, width, PAD + ICON_TEXELS.0 / 2, mid);
+        let incoming = texel(&texels, width, PAD + ICON_TEXELS.0 + ARROW_W + 100, mid);
         assert_eq!(incoming, [255, 255, 255, 255]);
         assert!(
             outgoing[0] < incoming[0] && outgoing[0] > 100,

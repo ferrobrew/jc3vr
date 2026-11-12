@@ -56,6 +56,13 @@ impl Place {
         self.body(c).ranked(Tier::Touch)
     }
 
+    /// A taken socket the hand's weapon swaps onto when let go of there: marked while the hand is
+    /// near as a socket that takes it, never taken by a grab, since the release decides the swap.
+    pub(super) fn swap_onto(&self, c: &Candidate) -> GripTarget {
+        c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)))
+            .ranked(Tier::Touch)
+    }
+
     /// A socket that does not take what the hand holds: marked while the hand is near, never taken.
     pub(super) fn no_fit(&self, c: &Candidate) -> GripTarget {
         c.target(

@@ -140,7 +140,7 @@ fn a_release_docks_over_a_socket_that_fits_and_lets_go_elsewhere() {
 }
 
 #[test]
-fn a_release_over_a_taken_back_socket_swaps_and_a_taken_hip_does_not() {
+fn a_release_over_a_taken_socket_that_fits_swaps() {
     let mut t = table();
     take(&mut t, Hand::Right, 1, weapon(a_rifle()));
     docked(&mut t, RIGHT_SHOULDER, 2, a_rifle());
@@ -152,6 +152,11 @@ fn a_release_over_a_taken_back_socket_swaps_and_a_taken_hip_does_not() {
     assert!(!swaps(&s, Hand::Right, LEFT_HIP));
     // An empty hand swaps nothing.
     assert!(!swaps(&s, Hand::Left, RIGHT_SHOULDER));
+    // A pistol let go of over a taken hip swaps for the pistol docked there.
+    let mut t = table();
+    take(&mut t, Hand::Right, 1, weapon(a_pistol()));
+    docked(&mut t, LEFT_HIP, 2, a_pistol());
+    assert!(swaps(&t.snapshot(), Hand::Right, LEFT_HIP));
     // Either shoulder accepts a launcher in place of a docked rifle.
     let mut t = table();
     take(&mut t, Hand::Right, 1, weapon(a_launcher()));

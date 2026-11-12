@@ -1,4 +1,4 @@
-//! A swap onto a taken socket on the back: a weapon let go of over a shoulder whose socket holds
+//! A swap onto a taken socket: a weapon let go of over a shoulder or a hip whose socket holds
 //! another weapon docks there, and the weapon that was docked falls clear of the player. The swap
 //! is the loadout table's decision ([`crate::controllers::loadout::grab::swaps`]); this carries out
 //! its first half, the docked weapon's fall ([`eject`]), after which the release docks the held

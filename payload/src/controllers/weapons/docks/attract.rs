@@ -17,9 +17,9 @@
 //! The weapon then travels from the hand into the socket over a time set by the distance
 //! ([`travel_s`]), along the dock's own slide.
 //!
-//! A taken socket on the back attracts too, for a swap ([`swap_attractors`]): the weapon docked
-//! there falls clear and the released one docks in its place, so a weapon put away over a full
-//! shoulder never just falls behind the player.
+//! A taken socket attracts too, for a swap ([`swap_attractors`]): the weapon docked there falls
+//! clear and the released one docks in its place, so a weapon put away over a full shoulder or on
+//! a full hip never just falls.
 //!
 //! A hand holding a weapon that comes into a socket's attraction feels one tick ([`ZoneWatch`]),
 //! which says that letting go there docks it: the back's sockets cannot be seen, so the hand finds
@@ -195,9 +195,9 @@ pub(crate) fn attractors(
         .collect()
 }
 
-/// The attractions of this tick's taken sockets on the back that a held weapon swaps onto, from the
-/// sockets' candidates (`others`): those that do not take what the hand holds (marked as no fit)
-/// and that `swaps` says the hand's weapon swaps onto, attracting as a free back socket does. A
+/// The attractions of this tick's taken sockets that a held weapon swaps onto, from the sockets'
+/// candidates (`others`): those that do not take what the hand holds (marked as no fit) and that
+/// `swaps` says the hand's weapon swaps onto, attracting as a free socket of their kind does. A
 /// release they draw in docks the weapon and lets the one docked there fall clear.
 pub(crate) fn swap_attractors(
     others: &[(Candidate, SocketUse)],
@@ -314,24 +314,33 @@ impl ZoneWatch {
                 .filter(|a| a.hand == hand && a.radius > 0.0)
         };
         let margin = tuning.exit_margin_m.max(0.0);
-        let stays = slot.is_some_and(|socket| {
-            mine().filter(|a| a.socket == socket).any(|a| {
-                grip.distance(a.centre) <= a.radius + margin
-                    && a.front
-                        .is_none_or(|front| front.allows_within(grip, margin))
-            })
-        });
-        if stays {
-            return false;
-        }
-        let entered = mine()
+        // As the release chooses ([`attract`]): a free socket before a taken one that swaps, and
+        // of those the one the grip is deepest inside.
+        let best = mine()
             .filter(|a| a.front.is_none_or(|front| front.allows(grip)))
             .filter_map(|a| {
                 let distance = grip.distance(a.centre);
-                (distance <= a.radius).then_some((distance / a.radius, a.socket))
+                (distance <= a.radius).then_some((a.swap, distance / a.radius, a.socket))
             })
-            .min_by(|a, b| a.0.total_cmp(&b.0))
-            .map(|(_, socket)| socket);
+            .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)));
+        let staying = slot.and_then(|socket| {
+            mine()
+                .filter(|a| a.socket == socket)
+                .find(|a| {
+                    grip.distance(a.centre) <= a.radius + margin
+                        && a.front
+                            .is_none_or(|front| front.allows_within(grip, margin))
+                })
+                .map(|a| a.swap)
+        });
+        // A hand stays where it is unless it was in a swap's attraction and a free socket's now
+        // takes it, as the release would.
+        if let Some(swap) = staying
+            && !(swap && best.is_some_and(|(best_swaps, _, _)| !best_swaps))
+        {
+            return false;
+        }
+        let entered = best.map(|(_, _, socket)| socket);
         *slot = entered;
         entered.is_some()
     }
