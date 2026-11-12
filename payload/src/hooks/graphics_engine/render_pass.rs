@@ -7,7 +7,10 @@
 //! per-frame `CKeep1000Frames` call (which toggles the parity and calls `SaveRenderFrameData` on
 //! every pass) runs on both eyes and produces the same list pointers on both.
 
-use std::ffi::c_void;
+use std::{
+    ffi::c_void,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::{
@@ -453,8 +456,13 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
     if update_every_frame && let Some(manager) = unsafe { this.cast::<ShadowManager>().as_mut() } {
         manager.m_CascadeUpdateLevels = [0; 6];
     }
-    // The widen reuses the union-FOV cull projection; `None` on flatscreen, so widening is VR-only.
-    let union = crate::vr::cull_projection_standard();
+    // The widen uses the eyes' exact union (or the padded cull projection with the switch off);
+    // `None` on flatscreen, so widening is VR-only.
+    let union = if Config::lock_query(|c| c.stereo.shadow_fit_unpadded) {
+        crate::vr::shadow_fit_projection_standard()
+    } else {
+        crate::vr::cull_projection_standard()
+    };
     // SAFETY: the camera-manager singleton and the active camera are live on the game thread for
     // the duration of this call; the projection and transform writes are scoped save/restore.
     unsafe {
@@ -464,6 +472,13 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
         let Some(camera) = camera.as_mut() else {
             return original.call(this, dt, dtf);
         };
+        // The fit bakes the cascade transform relative to this position (`m_TransformF`'s
+        // translation); the shadow lookup is re-anchored to it in `set_global_shader_constants`.
+        STEREO_STATE.lock().shadow_fit_position = Some(glam::Vec3::new(
+            camera.m_TransformF.data[12],
+            camera.m_TransformF.data[13],
+            camera.m_TransformF.data[14],
+        ));
         let saved_proj = [camera.m_ProjectionF.data[0], camera.m_ProjectionF.data[5]];
         if let Some(union) = union {
             camera.m_ProjectionF.data[0] = union.data[0];
@@ -644,12 +659,46 @@ unsafe fn reenable_passes(passes: &[*mut RenderPass]) {
 #[detour(address = jc3gi::graphics_engine::render_engine::RenderEngine::SetGlobalShaderConstants_ADDRESS)]
 fn set_global_shader_constants(this: *mut c_void, ctx: *mut c_void) {
     if let Some(ctx) = unsafe { ctx.cast::<RenderContext>().as_mut() } {
-        let delta = STEREO_STATE.lock().shadow_anchor_delta;
+        let delta = shadow_lookup_delta(&STEREO_STATE.lock());
         record_shadow_state(ctx, delta);
         apply_shadow_cascade_anchor_fix(ctx, delta);
     }
     SET_GLOBAL_SHADER_CONSTANTS.get().unwrap().call(this, ctx);
 }
+
+/// The world offset to re-anchor the sun-shadow lookup by: from the point the cascade transform is
+/// baked relative to, to the camera position the material shaders subtract. That is the eye's offset
+/// from the render camera's centre, plus, with `stereo.shadow_anchor_to_fit`, the centre's offset
+/// from the camera position the fit read. The second gap is published as
+/// [`shadow_fit_gap_m`] for the debug UI.
+fn shadow_lookup_delta(state: &crate::stereo::StereoState) -> glam::Vec3 {
+    let to_fit = match (state.center_transform, state.shadow_fit_position) {
+        (Some(center), Some(fit)) => {
+            let center = glam::Vec3::new(center.data[12], center.data[13], center.data[14]);
+            center - fit
+        }
+        _ => glam::Vec3::ZERO,
+    };
+    let to_fit = if to_fit.is_finite() {
+        to_fit
+    } else {
+        glam::Vec3::ZERO
+    };
+    SHADOW_FIT_GAP_BITS.store(to_fit.length().to_bits(), Ordering::Relaxed);
+    if Config::lock_query(|c| c.stereo.shadow_anchor_to_fit) {
+        state.shadow_anchor_delta + to_fit
+    } else {
+        state.shadow_anchor_delta
+    }
+}
+
+/// How far the render camera's centre sat from the camera position the sun-shadow cascade fit read,
+/// at the last staging of the shader constants, metres.
+pub(crate) fn shadow_fit_gap_m() -> f32 {
+    f32::from_bits(SHADOW_FIT_GAP_BITS.load(Ordering::Relaxed))
+}
+
+static SHADOW_FIT_GAP_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// Record the staged sun-shadow constants into the active render trace (no-op outside a trace) --
 /// the raw parity-slot values, read before the anchor correction mutates them. See

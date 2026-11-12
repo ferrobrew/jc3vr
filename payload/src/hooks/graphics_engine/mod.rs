@@ -26,6 +26,7 @@ mod scene;
 mod screen;
 
 pub(crate) use post::post_effects;
+pub(crate) use render_pass::shadow_fit_gap_m;
 pub(crate) use scene::render_block;
 pub use scene::terrain;
 pub(crate) use screen::{clustered_lighting, reconstruction, ss_decal, ssao};

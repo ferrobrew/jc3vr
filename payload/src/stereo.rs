@@ -46,6 +46,11 @@ pub struct StereoState {
     /// carries eye 0's half-IPD offset. Using the offset transform would shift the cached panel
     /// position toward eye 0, doubling the stereo disparity for eye 1.
     pub center_transform: Option<Matrix4>,
+    /// The active camera's world position (`m_TransformF` translation) as the sun-shadow cascade fit
+    /// read it this frame, captured by the `ShadowManager::UpdateRender` hook. The cascade transform
+    /// is baked relative to it, and the material shaders anchor the shadow lookup at the render
+    /// camera instead, so the cascade correction re-anchors the lookup to this point.
+    pub shadow_fit_position: Option<glam::Vec3>,
 }
 impl StereoState {
     const fn new() -> Self {
@@ -58,6 +63,7 @@ impl StereoState {
             shadow_anchor_delta: glam::Vec3::ZERO,
             vp_history: VpHistory::new(),
             center_transform: None,
+            shadow_fit_position: None,
         }
     }
 }

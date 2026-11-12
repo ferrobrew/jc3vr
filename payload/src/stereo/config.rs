@@ -485,6 +485,15 @@ pub struct StereoConfig {
     /// sun-shadow flicker (issue #31). Zeroing the per-cascade levels forces all cascades to update every
     /// frame -- smooth, at the cost of redrawing the coarse cascades each frame. VR only.
     pub shadow_update_every_frame: bool,
+    /// Fit the sun-shadow cascades to the exact union of the two eyes' fields of view rather than
+    /// the padded cull projection. The fit sizes each cascade from its camera's field of view, so
+    /// the padding coarsened every cascade's texels over geometry neither eye sees. VR only.
+    pub shadow_fit_unpadded: bool,
+    /// Anchor the sun-shadow lookup at the camera position the cascade fit used, not the render
+    /// camera's centre. The cascade transform is baked relative to the fit's camera, and the
+    /// material shaders subtract the render camera's position before applying it, so any gap
+    /// between the two shifts every shadow by that gap in the world.
+    pub shadow_anchor_to_fit: bool,
     /// Diagnostic (issue #31 isolation, Test A): render each eye through a *symmetric* (zero-shear)
     /// off-axis frustum instead of the true asymmetric HMD one. The replacement preserves each eye's
     /// horizontal and vertical FOV *extent* but re-centres it, so the off-centre shear terms
@@ -588,6 +597,8 @@ impl StereoConfig {
             widen_spawn_cull: true,
             spawn_budget_scale: 2.0,
             shadow_update_every_frame: false,
+            shadow_fit_unpadded: true,
+            shadow_anchor_to_fit: true,
             symmetrize_eye_frusta: false,
             mirror_eye0_to_both: false,
             terrain_detail_budget_scale: 4,

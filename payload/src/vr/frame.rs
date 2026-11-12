@@ -77,6 +77,11 @@ static FROZEN_EYE_PARAMS: Mutex<Option<[EyeRenderParams; 2]>> = Mutex::new(None)
 /// rendering.
 static CULL_PROJECTION: Mutex<Option<Matrix4>> = Mutex::new(None);
 
+/// The standard-depth, symmetric projection that bounds both eyes' off-axis frusta exactly, without
+/// the cull's [`CULL_FOV_PADDING`], for the sun-shadow cascade fit (see
+/// [`shadow_fit_projection_standard`]). `None` when no VR frame is rendering.
+static SHADOW_FIT_PROJECTION: Mutex<Option<Matrix4>> = Mutex::new(None);
+
 /// The located views of the frame in flight, as the recorder's sidecar wants them: the raw eye
 /// poses in LOCAL space, the eye fields of view, and the predicted display time. Published next to
 /// [`RENDER_PARAMS`] so the render thread can read them at the eye-capture point without the
@@ -121,6 +126,15 @@ pub fn cull_projection_standard() -> Option<Matrix4> {
     *CULL_PROJECTION.lock()
 }
 
+/// The symmetric projection covering both eyes' off-axis frusta with no padding beyond the eyes'
+/// lateral shift, in the engine's standard-depth `m_ProjectionF` layout, or `None` when no VR frame
+/// is rendering. The sun-shadow cascade fit sizes each cascade's sphere from its camera's field of
+/// view; fitting to the padded cull projection instead stretched every cascade over the padding,
+/// coarsening its texels for geometry neither eye sees.
+pub fn shadow_fit_projection_standard() -> Option<Matrix4> {
+    *SHADOW_FIT_PROJECTION.lock()
+}
+
 /// Clear the per-eye render parameters (and the cull projection), so the camera hook falls back to
 /// flatscreen stereo. Called when no VR frame renders this frame (session down, or `should_render`
 /// false).
@@ -129,6 +143,7 @@ pub fn clear_render_params() {
     *RENDER_PARAMS.lock() = None;
     *CAPTURE_VIEWS.lock() = None;
     *CULL_PROJECTION.lock() = None;
+    *SHADOW_FIT_PROJECTION.lock() = None;
 }
 
 /// Drive one rendered VR frame's pose and per-eye camera parameters from the located views: reduce
@@ -360,6 +375,15 @@ fn render_frame(
     };
     *CULL_PROJECTION.lock() =
         Some(OffAxisProjection::new(union_fov, near_clip, far_clip).standard_depth);
+    let exact = |t: f32| (t + margin.copysign(t)).atan().clamp(-max_half, max_half);
+    let exact_fov = Fov {
+        left: exact(eye0.fov.angle_left.tan().min(eye1.fov.angle_left.tan())),
+        right: exact(eye0.fov.angle_right.tan().max(eye1.fov.angle_right.tan())),
+        up: exact(eye0.fov.angle_up.tan().max(eye1.fov.angle_up.tan())),
+        down: exact(eye0.fov.angle_down.tan().min(eye1.fov.angle_down.tan())),
+    };
+    *SHADOW_FIT_PROJECTION.lock() =
+        Some(OffAxisProjection::new(exact_fov, near_clip, far_clip).standard_depth);
 
     // Flicker-isolation diagnostics (issue #31), read once for the frame. `symmetrize` swaps each eye's
     // asymmetric off-axis frustum for a zero-shear symmetric one of the same extent (Test A); `mirror`
