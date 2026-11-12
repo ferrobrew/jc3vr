@@ -529,9 +529,9 @@ fn a_body_slot_claims_the_hand_only_while_its_grip_is_squeezed() {
 }
 
 #[test]
-fn an_eligible_grapple_line_pose_yields_but_physical_grips_still_claim_the_hand() {
-    assert!(!claims_gesture(GripSource::GrappleLine, true));
-    assert!(claims_gesture(GripSource::GrappleLine, false));
+fn the_line_pose_and_a_flat_palm_yield_but_physical_grips_still_claim_the_hand() {
+    assert!(!claims_gesture(GripSource::GrappleLine));
+    assert!(!claims_gesture(GripSource::Surface));
     for source in [
         GripSource::Magazine,
         GripSource::Foregrip,
@@ -539,7 +539,7 @@ fn an_eligible_grapple_line_pose_yields_but_physical_grips_still_claim_the_hand(
         GripSource::Door,
         GripSource::ParachuteHandle,
     ] {
-        assert!(claims_gesture(source, true), "{source:?}");
+        assert!(claims_gesture(source), "{source:?}");
     }
 }
 

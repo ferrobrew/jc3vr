@@ -485,12 +485,8 @@ fn claims(tick: &Tick<'_>, now: Instant) -> [HandClaims; 2] {
     let foregrip = weapons::foregrip::two_hand_grip();
     Hand::BOTH.map(|hand| {
         let i = hand.index();
-        let grip = grip::current(hand, now, grip::max_age(tick.dt)).is_some_and(|grip| {
-            claims_gesture(
-                grip.source,
-                deploy_grapple(tick.detection, tick.airborne, tick.grapple),
-            )
-        });
+        let grip = grip::current(hand, now, grip::max_age(tick.dt))
+            .is_some_and(|grip| claims_gesture(grip.source));
         HandClaims {
             grip: grip
                 || tick.grabs[i].is_some()
@@ -529,9 +525,12 @@ fn grapple_claim(detection: Detection, airborne: bool, grapple: bool) -> bool {
     (grapple || detection.traversal.is_some()) && !deploy_grapple(detection, airborne, grapple)
 }
 
-/// The line's finger pose does not claim a hand against an eligible spread-to-deploy gesture.
-fn claims_gesture(source: GripSource, deploy_grapple: bool) -> bool {
-    !holds_item(source) && !(source == GripSource::GrappleLine && deploy_grapple)
+/// Whether a grip of `source` claims its hand away from the gestures. Neither the line's finger pose
+/// nor a flat palm does: the grapple claims the hand through [`grapple_claim`] for exactly as long as
+/// it should, while the line's pose outlasts the line by a few ticks, and a flat palm is a passive
+/// contact, which the fingers also report in free fall with the arms spread, not a grip.
+fn claims_gesture(source: GripSource) -> bool {
+    !holds_item(source) && !matches!(source, GripSource::GrappleLine | GripSource::Surface)
 }
 
 /// Whether a grip of `source` is a held item, which rides along in the hand rather than claiming
