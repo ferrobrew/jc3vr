@@ -495,6 +495,14 @@ fn air_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     );
     let c = &mut v.canopy;
     ui.checkbox(
+        &mut c.skip_reel_opening,
+        "Open the canopy out of a reel straight into its idle",
+    )
+    .on_hover_text(
+        "Skips the somersault Rico plays when the canopy opens during a grapple reel; the canopy \
+         itself still opens.",
+    );
+    ui.checkbox(
         &mut c.line_turn,
         "Turn the canopy toward a reeling grapple line",
     )

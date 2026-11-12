@@ -8,6 +8,7 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
+pub(crate) mod canopy;
 pub(crate) mod publication;
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -15,6 +16,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&UPDATE_ANIMATIONS_TIME_BINDER)
         .with_static_binder(&UPDATE_ANIMATIONS_BINDER)
         .with_static_binder(&KICK_UPDATE_JOB_BINDER)
+        .with_hook_library(canopy::hook_library())
 }
 
 /// Async dispatch cannot certify completed animation output.

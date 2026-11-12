@@ -8,6 +8,7 @@ use crate::{
     config::{self, Config},
     hooks::{
         self,
+        animation::canopy::REEL_OPENINGS_SKIPPED,
         input::{
             locomotion::{
                 AIM_RELATIVE_TASK_CALLS, FACE_CAMERA_CALLS, INSTANT_SPEED_FLOORS, MOVE_TASK_CALLS,
@@ -147,9 +148,10 @@ fn locomotion_readout(ui: &mut egui::Ui) {
 
 fn parachute_readout(ui: &mut egui::Ui) {
     ui.label(format!(
-        "Parachute: look-steer suppressions {}, line-turn ticks {}",
+        "Parachute: look-steer suppressions {}, line-turn ticks {}, reel openings skipped {}",
         PARACHUTE_LOOK_STEER_SUPPRESSIONS.load(Ordering::Relaxed),
         PARACHUTE_LINE_TURNS.load(Ordering::Relaxed),
+        REEL_OPENINGS_SKIPPED.load(Ordering::Relaxed),
     ));
 }
 
