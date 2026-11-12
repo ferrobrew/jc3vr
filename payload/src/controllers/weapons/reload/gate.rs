@@ -78,29 +78,78 @@ pub(super) fn refused() -> u64 {
     SHARED.lock().refused
 }
 
-/// Whether to refuse a reload start for `character` (the local player's when it equals `local`): the
-/// weapon is reloaded by hand. Counts a refusal.
-pub(super) fn stops_reload(character: usize, local: usize) -> bool {
-    if character == 0 || character != local {
-        return false;
-    }
+/// Whether to refuse a reload start for `character`, the local player's when it equals `local` (the
+/// address the input tick publishes) or `is_local` (the character's own local flag): the weapon is
+/// reloaded by hand. Counts a refusal.
+pub(super) fn stops_reload(character: usize, local: usize, is_local: bool) -> bool {
     let mut shared = SHARED.lock();
-    let stop = shared
-        .fresh()
-        .is_some_and(|p| p.weapons.iter().any(|&w| w != 0));
-    if stop {
-        shared.refused += 1;
-    } else if shared
-        .allowed_logged
-        .is_none_or(|at| at.elapsed() >= ALLOWED_LOG_INTERVAL)
-    {
-        // A start let through means the game's own reload runs for the local player's weapon; the
-        // log is the only trace of it, since its act is not the mod's.
-        shared.allowed_logged = Some(Instant::now());
-        drop(shared);
-        tracing::info!(target: "controllers", "reload: the game's own reload starts for the local player");
+    let decision = decide(character, local, is_local, shared.fresh());
+    match decision {
+        StartDecision::Refuse => {
+            shared.refused += 1;
+            true
+        }
+        StartDecision::NotLocal => false,
+        StartDecision::Pass(why) => {
+            if shared
+                .allowed_logged
+                .is_none_or(|at| at.elapsed() >= ALLOWED_LOG_INTERVAL)
+            {
+                // A start let through means the game's own reload runs for the local player's
+                // weapon; the log is the only trace of it, since its act is not the mod's.
+                shared.allowed_logged = Some(Instant::now());
+                drop(shared);
+                tracing::info!(target: "controllers", why = why.label(), "reload: the game's own reload starts for the local player");
+            }
+            false
+        }
     }
-    stop
+}
+
+/// What the stop does with a reload start.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum StartDecision {
+    Refuse,
+    /// Another character's start, which is the game's.
+    NotLocal,
+    /// The local player's start, let through.
+    Pass(PassReason),
+}
+
+/// Why the stop lets the local player's reload start through.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum PassReason {
+    /// The input tick has not published for longer than the stale timeout, or at all.
+    Stale,
+    /// The input tick reloads no weapon by hand.
+    NoWeapon,
+}
+
+impl PassReason {
+    const fn label(self) -> &'static str {
+        match self {
+            PassReason::Stale => "the input tick has not published lately",
+            PassReason::NoWeapon => "no weapon is reloaded by hand",
+        }
+    }
+}
+
+/// The stop's decision for `character`, local by the published address `local` or by its own
+/// flag `is_local`, with the input tick's fresh publication `fresh`.
+fn decide(
+    character: usize,
+    local: usize,
+    is_local: bool,
+    fresh: Option<Published>,
+) -> StartDecision {
+    if character == 0 || !(is_local || character == local) {
+        return StartDecision::NotLocal;
+    }
+    match fresh {
+        None => StartDecision::Pass(PassReason::Stale),
+        Some(p) if p.weapons.iter().all(|&w| w == 0) => StartDecision::Pass(PassReason::NoWeapon),
+        Some(_) => StartDecision::Refuse,
+    }
 }
 
 /// Whether the gun of `weapon` in `hand` may not fire now.
@@ -254,6 +303,25 @@ mod tests {
         assert!(!cycles_on_release(&p, SECOND));
         assert!(!cycles_on_release(&p, 0));
         assert!(!cycles_on_release(&Published::default(), WIELDED));
+    }
+
+    #[test]
+    fn the_local_player_s_start_is_refused_by_its_address_or_its_own_flag() {
+        let fresh = Some(two_weapons());
+        assert_eq!(decide(7, 7, false, fresh), StartDecision::Refuse);
+        // The published address can lag the character the start names; its own flag still marks
+        // it the player's.
+        assert_eq!(decide(7, 9, true, fresh), StartDecision::Refuse);
+        assert_eq!(decide(7, 9, false, fresh), StartDecision::NotLocal);
+        assert_eq!(decide(0, 0, true, fresh), StartDecision::NotLocal);
+        assert_eq!(
+            decide(7, 7, false, None),
+            StartDecision::Pass(PassReason::Stale)
+        );
+        assert_eq!(
+            decide(7, 7, false, Some(Published::default())),
+            StartDecision::Pass(PassReason::NoWeapon)
+        );
     }
 
     #[test]

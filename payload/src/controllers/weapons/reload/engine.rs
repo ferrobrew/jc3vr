@@ -825,7 +825,11 @@ pub(super) unsafe fn dump_cylinder(address: usize) -> Option<i32> {
 fn start_reloading_wielding_weapon(character: *mut Character) {
     let local = crate::controllers::hands::ik::local_character();
     // The per-hand tick's guns each ask for the wielded weapon's reload from their own check.
-    if empty::refuses_check_request(character) || gate::stops_reload(character as usize, local) {
+    // SAFETY: the game passes the live character whose reload it starts.
+    let is_local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
+    if empty::refuses_check_request(character)
+        || gate::stops_reload(character as usize, local, is_local)
+    {
         return;
     }
     START_RELOADING_WIELDING_WEAPON
