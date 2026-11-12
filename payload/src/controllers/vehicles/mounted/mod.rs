@@ -41,6 +41,7 @@ use jc3gi::{
 use crate::controllers::{aim::gun, frame::Hand};
 
 mod control;
+mod gunner_seat;
 mod mount;
 mod native;
 mod runtime;

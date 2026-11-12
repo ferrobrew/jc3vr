@@ -1,6 +1,8 @@
 //! The runtime behind grip-driven mounted weapons: observe mounted weapons, retain the ones the
 //! physical hands grip by their body, holder, or handle, give them a temporary shooter, and tear
-//! them off on a sustained pull.
+//! them off on a sustained pull. A gun the player mans from a vehicle's gunner seat is left to the
+//! seat's native use, which keeps the player in the seat, and the player steps into an empty
+//! gunner seat by standing behind its gun ([`gunner_seat`]).
 
 use std::{ffi::c_void, num::NonZeroUsize, time::Instant};
 
@@ -27,7 +29,7 @@ use crate::{
             mounted::{
                 Held, Mount, MountedGun,
                 control::{Identity, Input, Tear},
-                handle, mount_matches,
+                gunner_seat, handle, mount_matches,
                 native::{self, Motor, Prompt},
                 pivot_and_barrel,
             },
@@ -86,6 +88,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         (unsafe { Character::GetLocalPlayerCharacter().as_mut() }).filter(|_| enabled)
     else {
         unsafe { release_all(previous) };
+        gunner_seat::reset();
         return;
     };
     // The virtual mounted handles are the grip the player takes on a gun without the use prompt.
@@ -107,6 +110,14 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         .iter()
         .map(|record| (record.object, record.control, record.weak.clone()))
         .collect();
+    let guns: Vec<(usize, Weak)> = seen
+        .iter()
+        .map(|(object, _, weak)| (*object, weak.clone()))
+        .collect();
+    unsafe { gunner_seat::step(local, xf.as_ref().map(|xf| xf.head_world), &guns, desired) };
+    // In a vehicle's gunner seat the native use is what holds the player in the seat: stopping it
+    // would leave the seat, so the seat's gun is aimed by the handles through the native state.
+    let seated = unsafe { local.IsAttachedToVehicle() };
     for (object, control, weak) in seen {
         let Some(alive) = weak
             .lock()
@@ -148,6 +159,9 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             })
         });
         let native = unsafe { native_mounted(local, weapon) };
+        if native && seated {
+            continue;
+        }
         // A native use places both hands on the gun's handles; the virtual handles hold only the
         // hands that took them, and only for the gun the input tick selected.
         let selected = is_mounted_weapon(weapon_ptr as usize);
@@ -378,6 +392,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
 
 /// Release every retained gun, for a paused game, a mode change, or a shutdown.
 pub(crate) unsafe fn stand_down() {
+    gunner_seat::reset();
     let records = std::mem::take(&mut *CONTROLLED.lock());
     unsafe { release_all(records) };
 }
@@ -465,6 +480,13 @@ pub(crate) unsafe fn nearby(hands: [Option<Vec3>; 2], reach_m: f32) -> Option<Mo
 
 /// Whether the runtime holds `weapon`, so the game's native start-using must not run.
 pub(crate) fn suppress_start_using(weapon: &WeaponBase) -> bool {
+    // Entering a vehicle's gunner seat starts the native use, which the seat needs.
+    // SAFETY: the game thread, where the native start-using runs.
+    if unsafe { Character::GetLocalPlayerCharacter().as_ref() }
+        .is_some_and(|local| unsafe { local.IsAttachedToVehicle() })
+    {
+        return false;
+    }
     let address = weapon as *const WeaponBase as usize;
     let control = weapon.m_WeakThis.pn as usize;
     // The gun the input tick selected is the one the hands are on: the use prompt must not start
