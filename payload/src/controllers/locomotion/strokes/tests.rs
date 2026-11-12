@@ -214,3 +214,36 @@ fn dry_hands_do_not_stroke_but_underwater_hands_do_and_preserve_pitched_motion()
     assert_eq!(out.y, core.y);
     assert_eq!(propel(facing * 4.0, facing, 2.0), facing * 4.0);
 }
+
+/// Both hands pulling back and to the left push the swimmer forward and to the right, and the
+/// heading turns right toward the push: by about the push's angle over a stroke, plus the turn the
+/// hands' uneven offsets make, which a straight stroke from the same hands shows alone.
+#[test]
+fn a_stroke_toward_one_side_turns_the_heading_toward_it() {
+    let stroke = |lateral: f32| {
+        let mut model = StrokeModel::new();
+        let ticks = 24;
+        let mut turn = 0.0;
+        for tick in 0..=ticks + 30 {
+            let a = (tick as f32 / ticks as f32).min(1.0);
+            let motion = Vec3::new(lateral, 0.0, 0.5);
+            let hands = [-1.0, 1.0].map(|side| {
+                // The straight stroke runs along the diagonal one's midline, so both carry the
+                // same offsets.
+                let midline = Vec3::X * (-0.35 - lateral) * 0.5;
+                Some(StrokeHand {
+                    position: Vec3::new(side * 0.2, -0.4, -0.6) + midline + motion * a,
+                    palm: motion.normalize(),
+                })
+            });
+            turn += sample(&mut model, hands, Quat::IDENTITY, false).turn_right;
+        }
+        turn
+    };
+    let turn = stroke(-0.35) - stroke(0.0);
+    let angle = 0.35f32.atan2(0.5);
+    assert!(
+        turn > 0.5 * angle && turn < 1.5 * angle,
+        "{turn} against {angle}"
+    );
+}

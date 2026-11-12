@@ -77,6 +77,8 @@ pub struct StrokeModel {
     phase: [StrokePhase; 2],
     speed: f32,
     torque: f32,
+    /// The smoothed turn toward the way the hands push, radians per second to the right.
+    steer: f32,
 }
 
 impl Default for StrokeModel {
@@ -93,6 +95,7 @@ impl StrokeModel {
             phase: [StrokePhase::Recovery; 2],
             speed: 0.0,
             torque: 0.0,
+            steer: 0.0,
         }
     }
 
@@ -155,6 +158,7 @@ impl StrokeModel {
         let breaststroke = outward[0] && outward[1];
         let mut thrust = 0.0;
         let mut torque = 0.0;
+        let mut heading_push = Vec3::ZERO;
         for (i, hand) in input.hands.iter().enumerate() {
             step.in_water[i] = wet[i];
             let Some(hand) = hand.filter(|_| wet[i] && self.last[i].is_some()) else {
@@ -188,6 +192,13 @@ impl StrokeModel {
                     .sqrt()
                     .max(0.35)
             };
+            // The way the hand pushes the swimmer, level, for the heading: any stroke with its push
+            // ahead of the body's side, a sweep to the side included, which the drive above does
+            // not count unless it is a breaststroke's.
+            let level_push = Vec3::new(-velocity.x, 0.0, -velocity.z);
+            if level_push.dot(forward) >= 0.0 && level_push.length() > min_speed {
+                heading_push += level_push * alignment;
+            }
             let paddle = drive * alignment;
             if paddle <= 0.0 && self.phase[i] != StrokePhase::Power {
                 self.phase[i] = StrokePhase::Ready;
@@ -226,13 +237,29 @@ impl StrokeModel {
         };
         let smoothing = follow_factor(dt, config.turn_smoothing_s.max(0.01));
         self.torque += (torque - self.torque) * smoothing;
+        self.steer += (steer_rate(heading_push, forward, right) - self.steer) * smoothing;
         let max_turn = config.max_turn_deg_s.max(0.0).to_radians();
-        let rate = (-config.turn_gain * self.torque).clamp(-max_turn, max_turn);
+        let rate = (-config.turn_gain * self.torque + self.steer).clamp(-max_turn, max_turn);
         step.turn_right = if rate.is_finite() { rate * dt } else { 0.0 };
         step.speed = self.speed;
         step.torque = self.torque;
         step
     }
+}
+
+/// The turn toward the way the hands push this tick, radians per second to the right: the push's
+/// angle off `forward`, at a rate that turns the heading through that angle over
+/// [`STEER_TRAVEL_M`] of push. The game swims a swimmer only the way it faces, so a stroke toward
+/// one side turns the heading toward it as it pushes. The hands' pushes are summed first, so a
+/// breaststroke's mirrored sweeps cancel, and a crawl's alternate sweeps cancel in the smoothing.
+fn steer_rate(push: Vec3, forward: Vec3, right: Vec3) -> f32 {
+    let ahead = push.dot(forward);
+    let across = push.dot(right);
+    let length = push.length();
+    if !(length > 0.0 && ahead.is_finite() && across.is_finite()) {
+        return 0.0;
+    }
+    across.atan2(ahead) * length / STEER_TRAVEL_M
 }
 
 /// The velocity the swimmer moves at with the strokes' `speed` joined to `velocity`, the one the
@@ -265,6 +292,10 @@ const CATCH_REACH_M: f32 = 0.2;
 const FINISH_BEHIND_HEAD_M: f32 = 0.15;
 const CATCH_TRAVEL_M: f32 = 0.045;
 const BREASTSTROKE_SWEEP_SHARE: f32 = 0.85;
+
+/// How far a hand pushes, metres, to turn the heading all the way to the push's direction: about
+/// one stroke's pull.
+const STEER_TRAVEL_M: f32 = 0.5;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum StrokePhase {
