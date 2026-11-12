@@ -31,7 +31,10 @@
 //! [`AccountManager::IsConnectedToFirstPartyService`]: jc3gi::online::AccountManager
 //! [`OnlineSuiteManager::Update`]: jc3gi::online::OnlineSuiteManager::Update
 
-use std::cell::Cell;
+use std::{
+    cell::Cell,
+    time::{Duration, Instant},
+};
 
 use detours_macro::detour;
 use jc3gi::{
@@ -97,6 +100,10 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&FIRST_PARTY_CHECK_BINDER)
 }
 
+/// How long the Steam platform system's update may take before it is logged on its own. The call
+/// takes a fraction of a millisecond on an ordinary tick, and the stalls it carries are hundreds.
+const SLOW_STEAM_CALLBACKS: Duration = Duration::from_millis(50);
+
 thread_local! {
     /// Whether this thread is inside the online-suite manager's update and outside the online
     /// suite's own update: the stretch that holds the manager's queued login and its suite retry,
@@ -153,7 +160,18 @@ fn online_suite_update(this: *mut OnlineSuiteManager, dt: f32) {
 #[detour(address = jc3gi::online::OnlinePlatformSystemSteam::Update_ADDRESS)]
 fn steam_platform_update(this: *mut OnlinePlatformSystemSteam, dt: f32) {
     let _timing = frame_timing::scope(Slot::SimSteam);
+    let start = Instant::now();
     STEAM_PLATFORM_UPDATE.get().unwrap().call(this, dt);
+    let elapsed = start.elapsed();
+    // The breakdown's window maximum places a stall only to ten seconds; a line of its own carries
+    // the log's timestamp, so the stall can be matched to the second against the Steam client's own
+    // logs (`docs/issues/periodic-sim-tick-hitches.md`).
+    if elapsed >= SLOW_STEAM_CALLBACKS {
+        tracing::warn!(
+            elapsed_ms = elapsed.as_secs_f64() * 1000.0,
+            "online: the Steam callbacks blocked the game thread"
+        );
+    }
 }
 
 #[detour(address = jc3gi::online::OperationManager::Update_ADDRESS)]

@@ -4,6 +4,8 @@
 
 Every headset session since at least 2026-10-30 hitches on a fixed beat: a stall of about 300 ms twice a minute, and roughly every other minute one of about 600 ms. In the headset each one is a visible freeze of the world.
 
+The cause is outside the game and the mod: the native Steam client, retrying its Wi-Fi link to a paired Steam Frame every 61 s, stops answering Steam calls for a few hundred milliseconds at each attempt and each failure (see [Found: the Steam client's link to a Steam Frame](#found-the-steam-clients-link-to-a-steam-frame)).
+
 ## What the logs show
 
 The `recordings/*/frames.jsonl` sidecar of `sessions/2026-11-01_03-36-31_488` stamps every captured frame with the wall clock, so the stalls can be placed to the millisecond rather than to a ten-second breakdown window. Taking every gap between captured frames over 150 ms:
@@ -55,6 +57,24 @@ The same session supports it. In the windows without a stall, `sim_online`'s sel
 
 This is the prime suspect but not measured: no slot has yet timed the call on its own.
 
+## Found: the Steam client's link to a Steam Frame
+
+`sessions/2026-11-10_17-07-47_621` ran with the skip below. Its 28 stalls (22 of 0.27 to 0.33 s, 5 of 0.58 to 0.61 s, one of 0.19 s) all left `sim_online`, as the skip intended, and all landed in `sim_steam`: the Steam platform system's update, which is `SteamAPI_RunCallbacks`. The beat was unchanged, 61 s with two phases 25.9 and 35.1 s apart. The game's Steam call had not caused the stall; it had only been the first Steam call to meet it.
+
+The native Steam client's own logs place every one. `remote_connections.txt` in the Linux client's `logs/` folder shows the client, all day and every day since the file begins (3 November, 1416 times a day), trying to join the Wi-Fi network of a paired Steam Frame headset on a USB Wi-Fi adapter: "Triggering scan on <adapter> to try and find frame_..." and "Attempting connection to frame_...", once every 61 s. `client_networkmanager.previous.txt` shows the attempt through NetworkManager: the device goes from disconnected to connecting at the attempt, sits in configuration for about 25.5 s, fails, and drops back to disconnected. So each cycle has two moments of NetworkManager work, the attempt and the failure, 25.5 to 26 s apart and then 35 s to the next attempt.
+
+Joining the take's frame gaps (`frames.jsonl`, over 150 ms) with those logs (local time, an hour ahead of the session log's UTC) matches all 28 stalls to the second: 13 fall on an attempt (the device going from disconnected to connecting), 15 on a failure (connecting to failed to disconnected), and none anywhere else. Every one of the five stalls near 600 ms is on an attempt, which also starts a Wi-Fi scan; the failures cost about 300 ms. Not every cycle stalls the game (28 of about 80 events in the 40 minutes): only those where the client's busy stretch meets a Steam call from the game.
+
+The mechanism, as far as the logs go: the client handles the connection attempt and the failure on a thread that also answers its IPC, so for those few hundred milliseconds any call a game makes into it waits. Under Proton the game's `steam_api64.dll` reaches the native client through Proton's `lsteamclient` bridge and the client's IPC pipe, so the game thread's first Steam call in that stretch (once the logged-on check, now the callbacks' poll) blocks until the client answers. The earlier sessions' beat (30 October, 1 and 2 November) is the same 61 s with the same 26 and 35 s phases; their days are older than the client's rotated logs, so they are matched by pattern only.
+
+None of this is the game's or the mod's doing, and it happens with any Steam game while the Frame's network is out of reach. The remedy is on the Steam side, and is the player's to choose: unplug the USB Wi-Fi adapter while the Frame is not in use, keep the Frame on and in range, or unpair the Frame in the Steam client's settings. The settings were not changed for this investigation.
+
+### Mitigations in the mod, considered and rejected
+
+- Moving `SteamAPI_RunCallbacks` to another thread. The callbacks it dispatches run game code (the achievements, statistics, online suite, and matchmaking handlers) that expects the game thread and runs unsynchronized with it, and the Steam API's dispatch and its pipe are not safe to drive from two threads. It would also only move the stall to the next Steam call the game thread makes.
+- Deferring the callbacks while a frame is due, or skipping them for a while. The client's busy stretch cannot be seen before a call meets it: the call that finds out is the call that blocks. Predicting it from the 61 s beat would tie the mod to a schedule inside the Steam client that changes with its version and the player's hardware.
+- Timing each dispatched callback by its id. The Steam client's logs already name the cause to the second, which is what this was for. It would need detours on Proton's `steamclient64.dll` exports (the callback poll and its release, between which the callback runs), loaded after the game starts, with their own install and removal; it is worth adding only if stalls remain in `sim_steam` once the Frame's link is out of the picture.
+
 ## Instrumentation
 
 The breakdown splits the tick so a session names the region and the manager (see [frame-timing.md](../mod/performance/frame-timing.md)):
@@ -64,6 +84,9 @@ The breakdown splits the tick so a session names the region and the manager (see
 - `sim_logged_on`: the retry check's call to the Steam account, nested in `sim_online`. Its calls count the ticks that reach the check, whether or not the remedy below skips it.
 - `osuite_accounts`, `osuite_auth`, `osuite_ticket`, `osuite_servlet`, `osuite_friends`, `osuite_sem`, `osuite_consumables`, `osuite_info`, and `osuite_callbacks`: the parts of the online suite's update, nested in `sim_online`.
 - `input_job`: the input job's body, which the head spins on.
+- A log line of its own, `online: the Steam callbacks blocked the game thread`, for every Steam platform system update over 50 ms, with its duration. Its timestamp places the stall to the millisecond in the session log alone, to be matched against the Steam client's `remote_connections.txt` and `client_networkmanager.txt`.
+
+The next session should show no such line with the Frame's adapter unplugged. If the lines remain and no longer fall on the client's connection attempts and failures, something else in the client is busy, and timing the callbacks by id (above) is the next step.
 
 In the next session's stall windows the `osuite_*` slot whose maximum matches the stall names the part. `osuite_friends` is the friends walk; `osuite_ticket` or `osuite_servlet` is the authentication's request, and `osuite_auth` alone its mutex; `osuite_accounts` alone is the accounts mutex or the connection check; `osuite_callbacks` is a reply handler; and `sim_online` keeping the stall with every `osuite_*` slot small is the manager's own login or retry. With the remedy switched off, `sim_logged_on` carrying the stall confirms the Steam check.
 
