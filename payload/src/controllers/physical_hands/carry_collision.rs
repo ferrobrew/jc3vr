@@ -168,12 +168,35 @@ pub(super) unsafe fn step() {
             });
         }
     }
+    let paired = lease_bodies(&state.leases);
+    if paired != state.logged {
+        tracing::info!(
+            target: "controllers",
+            carried = ?paired.0,
+            player = ?paired.1,
+            leases = state.leases.len(),
+            "physical hands: carry collision: the held bodies kept off the player changed"
+        );
+        state.logged = paired;
+    }
+}
+
+/// The distinct carried and player bodies `leases` pair, each sorted.
+fn lease_bodies(leases: &[Lease]) -> (Vec<u32>, Vec<u32>) {
+    let mut carried: Vec<u32> = leases.iter().map(|lease| lease.a.body).collect();
+    let mut player: Vec<u32> = leases.iter().map(|lease| lease.b.body).collect();
+    for bodies in [&mut carried, &mut player] {
+        bodies.sort_unstable();
+        bodies.dedup();
+    }
+    (carried, player)
 }
 
 pub(super) unsafe fn clear() {
     let mut state = STATE.lock();
     state.wanted = [None; 2];
     state.published = None;
+    state.logged = (Vec::new(), Vec::new());
     let Some(physics) = (unsafe { PhysicsSystem::get() }) else {
         return;
     };
@@ -292,6 +315,8 @@ struct State {
     wanted: [Option<Subject>; 2],
     published: Option<Instant>,
     leases: Vec<Lease>,
+    /// The bodies the leases last paired, carried and the player's, for logging each change.
+    logged: (Vec<u32>, Vec<u32>),
 }
 
 unsafe fn component(world: &hknpWorld, subject: Subject) -> HashSet<u32> {
@@ -396,6 +421,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     wanted: [None; 2],
     published: None,
     leases: Vec::new(),
+    logged: (Vec::new(), Vec::new()),
 });
 
 #[cfg(test)]
