@@ -110,10 +110,11 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
         // filter holds is the one the view composes with.
         let body =
             read_body_rotation().unwrap_or(Quat::IDENTITY) * crate::headpose::xr::follow_turn(true);
-        let anchor = crate::headpose::anchor().unwrap_or(Vec3::ZERO);
+        let rooted = crate::headpose::anchor_pair()
+            .map(|pair| pair[1].view_head() - pair[1].root.w_axis.truncate());
         // `on_foot` is passed in rather than read back via `sim::mode()`: the SIM lock is held
         // here, and re-locking it inside `advance` deadlocks the input tick.
-        grapple::advance(body, anchor, s.mode == HeadMode::OnFoot, &config.grapple);
+        grapple::advance(body, rooted, s.mode == HeadMode::OnFoot, &config.grapple);
         grapple::telemetry::log_tick(body, dt);
     }
 

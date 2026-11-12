@@ -24,10 +24,10 @@
 //!   looking via the game's own rate-limited turn machinery, and the hold stays engaged until the
 //!   heading converges — the view never sweeps through the yaw.
 //! - **The landing-snap absorber** ([`filter_anchor`]): the attach/landing animation teleports the
-//!   head anchor up to a metre in one sim tick. Single-step velocity spikes beyond
-//!   [`ANCHOR_SNAP_THRESHOLD_MPS`] are absorbed into an offset that decays out of the view; sustained motion of any
-//!   speed passes through 1:1, and the filtered anchor is always `raw + offset`, so the engine's
-//!   tick interpolation is undisturbed.
+//!   head anchor up to a metre against the root in one sim tick. A tick's change in the anchor's
+//!   offset from the root beyond [`ANCHOR_SNAP_M`] is absorbed into an offset that decays out of
+//!   the view; the root's own motion, at any speed, passes through 1:1, and the filtered anchor is
+//!   always `raw + offset`, so the engine's tick interpolation is undisturbed.
 //!
 //! The filter advances on the engine's input tick and again on every rendered VR frame
 //! ([`advance`]): the body starts rotating the instant the grapple acts, and a tick-only (~33 Hz)
@@ -64,15 +64,16 @@ pub use config::{GrappleComfortConfig, GrappleComfortMode};
 use crate::{grapple::hook::HookRead, headpose};
 
 /// Advance the filter one step: read the hook's phase, run the engage/hold/handoff/release state
-/// machine, and update the anchor absorber. `body` and `anchor` are the raw body rotation and
-/// head-bone anchor as of this advance; `on_foot` gates the yaw handoff.
+/// machine, and update the anchor absorber. `body` is the raw body rotation as of this advance,
+/// and `rooted` the head anchor's offset from the character's root (`None` without anchors);
+/// `on_foot` gates the yaw handoff.
 ///
 /// Called from both cadences — the input tick ([`crate::headpose::sim::on_input_tick`], the poll
 /// stage, in the engine's input job in play) and the VR frame loop (render thread) — under one
 /// mutex, with the step `dt` measured internally. `on_foot` arrives as a parameter because the
 /// input-tick caller already holds the sim lock, and reading `sim::mode()` here would deadlock (SIM
 /// → FILTER is the only legal lock order).
-pub fn advance(body: Quat, anchor: Vec3, on_foot: bool, config: &GrappleComfortConfig) {
+pub fn advance(body: Quat, rooted: Option<Vec3>, on_foot: bool, config: &GrappleComfortConfig) {
     let mut s = FILTER.lock();
     let now = Instant::now();
     let dt = s
@@ -141,7 +142,7 @@ pub fn advance(body: Quat, anchor: Vec3, on_foot: bool, config: &GrappleComfortC
     }
     FACTOR_BITS.store(s.factor.to_bits(), Ordering::Relaxed);
 
-    advance_absorber(&mut s, anchor, reeling, now, dt);
+    advance_absorber(&mut s, rooted, reeling, dt);
 }
 
 /// Apply the body-frame hold to a body rotation. At blend `0` the rotation passes through
@@ -176,48 +177,36 @@ pub fn take_body_yaw_retarget() -> Option<f32> {
     (at.elapsed().as_secs_f32() <= RETARGET_FRESH_S).then_some(yaw)
 }
 
-/// The landing-snap absorber step (see the module docs). The detection runs on the anchor's own
-/// timeline: the anchor is tick-sampled (constant across the frames between sim ticks), so
-/// per-advance deltas read as a `0, 0, full-tick-step` staircase that a per-advance velocity model
-/// misreads as perpetual excess at ordinary fast-movement speeds. Steps are detected by the anchor
-/// actually changing, with the step `dt` measured between changes.
-fn advance_absorber(s: &mut GrappleFilter, anchor: Vec3, reeling: bool, now: Instant, dt: f32) {
-    let threshold = ANCHOR_SNAP_THRESHOLD_MPS;
-    if let Some(prev) = s.prev_anchor {
-        let delta = anchor - prev;
-        if delta.length_squared() > 0.0 {
-            let step_dt = s
-                .last_anchor_step
-                .map(|last| (now - last).as_secs_f32())
-                .unwrap_or(0.0)
-                .clamp(0.0, 0.1);
-            s.last_anchor_step = Some(now);
-            if delta.length() > ANCHOR_TELEPORT_M {
-                // A genuine teleport (fast travel, respawn): pass through and reset.
-                s.anchor_offset = Vec3::ZERO;
-                s.anchor_velocity = Vec3::ZERO;
-            } else if step_dt > 1e-4 {
-                let excess = delta - s.anchor_velocity * step_dt;
-                // Armed only from the attach/landing onward, never during the zip: the only
-                // positional snap the grapple produces is at the landing, so the zip — including
-                // its launch acceleration, which a fresh velocity estimate would misread as
-                // excess — passes through untouched.
-                let armed = s.factor > f32::EPSILON && !reeling;
-                if armed && excess.length() > threshold * step_dt {
-                    s.anchor_offset -= excess;
-                    // Hard-capped so a mis-estimate degrades into a bounded, decaying lag, never
-                    // a runaway detach from the body.
-                    s.anchor_offset = s.anchor_offset.clamp_length_max(ANCHOR_OFFSET_MAX_M);
-                }
-                // The velocity estimate tracks the raw motion unconditionally, so it locks onto
-                // the zip within a few steps and only genuine one-step spikes read as excess.
-                let alpha = follow_factor(step_dt, ANCHOR_VELOCITY_EMA_S);
-                s.anchor_velocity = s.anchor_velocity.lerp(delta / step_dt, alpha);
-            }
-        }
+/// The landing-snap absorber step (see the module docs). The detection runs on the anchor's offset
+/// from the root, which the root's own motion does not change: measured against the world, a fast
+/// flight's ticks of uneven length read as velocity changes, and the absorber pulled the view a
+/// few tenths of a metre behind the body after every reel. The offset changes only when a new
+/// tick's anchors are published, so per-advance steps are zero between ticks.
+fn advance_absorber(s: &mut GrappleFilter, rooted: Option<Vec3>, reeling: bool, dt: f32) {
+    // Armed only from the attach/landing onward, never during the zip: the only positional snap
+    // the grapple produces is at the landing.
+    let armed = s.factor > f32::EPSILON && !reeling;
+    if let (Some(previous), Some(rooted)) = (s.prev_rooted, rooted) {
+        s.anchor_offset = absorb_step(s.anchor_offset, rooted - previous, armed);
     }
-    s.prev_anchor = Some(anchor);
+    s.prev_rooted = rooted;
     s.anchor_offset *= (-dt / ANCHOR_SNAP_EASE_S).exp();
+}
+
+/// The absorbed offset after the anchor's offset from the root moved by `step` in one advance:
+/// while `armed`, a step beyond [`ANCHOR_SNAP_M`] is taken out of the view, and anything else
+/// passes. A step beyond [`ANCHOR_TELEPORT_M`] is no animation and resets the offset.
+fn absorb_step(offset: Vec3, step: Vec3, armed: bool) -> Vec3 {
+    let length = step.length();
+    if length > ANCHOR_TELEPORT_M {
+        Vec3::ZERO
+    } else if armed && length > ANCHOR_SNAP_M {
+        // Hard-capped so a mis-detection degrades into a bounded, decaying lag, never a runaway
+        // detach from the body.
+        (offset - step).clamp_length_max(ANCHOR_OFFSET_MAX_M)
+    } else {
+        offset
+    }
 }
 
 /// The blend-in time constant (seconds) when the filter engages. The filter holds the frame the
@@ -234,12 +223,12 @@ const RELEASE_S: f32 = 0.4;
 /// before falling back to the blend release (the body can be blocked from turning).
 const HANDOFF_TIMEOUT_S: f32 = 1.5;
 
-/// The single-step velocity change (m/s) of the body-driven head anchor beyond which the change is
-/// treated as a landing or attach snap and absorbed. The snap teleports the head up to a metre in
-/// one step (a velocity spike of 50-100+ m/s); real motion changes velocity a few m/s per step at
-/// most, so any sustained speed passes through 1:1 and only the discontinuity is absorbed, into an
-/// offset that decays over [`ANCHOR_SNAP_EASE_S`]. The HMD's own tracking is unaffected.
-const ANCHOR_SNAP_THRESHOLD_MPS: f32 = 25.0;
+/// The change in one tick (metres) of the head anchor's offset from the root beyond which the change
+/// is treated as a landing or attach snap and absorbed. The snap moves the head half a metre to
+/// a metre and a half against the root in one tick; a clip's own motion moves it a few
+/// centimetres a tick, and a canopy's opening up to about a quarter of a metre. The absorbed
+/// change decays over [`ANCHOR_SNAP_EASE_S`]. The HMD's own tracking is unaffected.
+const ANCHOR_SNAP_M: f32 = 0.4;
 
 /// How long (seconds) an absorbed landing snap takes to ease back out of the view.
 const ANCHOR_SNAP_EASE_S: f32 = 0.15;
@@ -254,12 +243,9 @@ const RETARGET_FRESH_S: f32 = 2.0;
 /// imperceptible there).
 const FACTOR_DISARM: f32 = 1e-3;
 
-/// Anchor steps beyond this (metres) are genuine teleports: passed through, never absorbed.
+/// Steps of the anchor's offset from the root beyond this (metres) are no animation: passed
+/// through, with the absorbed offset reset.
 const ANCHOR_TELEPORT_M: f32 = 5.0;
-
-/// The time constant (seconds) of the anchor velocity estimate the snap detection compares
-/// against. Short, so the estimate locks onto a reel's launch acceleration within a few steps.
-const ANCHOR_VELOCITY_EMA_S: f32 = 0.05;
 
 /// The absorbed offset never exceeds this (metres).
 const ANCHOR_OFFSET_MAX_M: f32 = 1.0;
@@ -292,13 +278,8 @@ struct GrappleFilter {
     /// captured into the hold on the engage edge (the current advance's body already carries the
     /// grapple's fire-snap).
     prev_body: Option<Quat>,
-    /// The anchor as of the previous advance, for the snap detection's step delta.
-    prev_anchor: Option<Vec3>,
-    /// When the anchor last changed: the anchor is tick-sampled, so the snap detection measures
-    /// its steps against this rather than the advance cadence.
-    last_anchor_step: Option<Instant>,
-    /// The smoothed anchor velocity (m/s) the snap detection compares each step against.
-    anchor_velocity: Vec3,
+    /// The anchor's offset from the root as of the previous advance, for the snap detection.
+    prev_rooted: Option<Vec3>,
     /// The absorbed landing-snap offset, decaying toward zero (see [`filter_anchor`]).
     anchor_offset: Vec3,
 }
@@ -313,9 +294,7 @@ static FILTER: Mutex<GrappleFilter> = Mutex::new(GrappleFilter {
     handoff_deadline: None,
     pending_retarget: None,
     prev_body: None,
-    prev_anchor: None,
-    last_anchor_step: None,
-    anchor_velocity: Vec3::ZERO,
+    prev_rooted: None,
     anchor_offset: Vec3::ZERO,
 });
 
@@ -414,5 +393,31 @@ mod tests {
             let filtered = filter_with(body, mode, Quat::IDENTITY, 0.0);
             assert!((filtered.dot(body).abs() - 1.0).abs() < 1e-6);
         }
+    }
+
+    /// A flight's ticks move the root, not the head against it, so however fast and unevenly the
+    /// body travels, nothing is absorbed.
+    #[test]
+    fn root_motion_is_never_absorbed() {
+        let mut offset = Vec3::ZERO;
+        for step in [0.03, -0.02, 0.05, 0.25, -0.1] {
+            offset = absorb_step(offset, Vec3::new(step, 0.0, 0.0), true);
+        }
+        assert_eq!(offset, Vec3::ZERO);
+    }
+
+    /// A landing's jump of the head against the root is taken out of the view while armed, capped,
+    /// and passed through while disarmed.
+    #[test]
+    fn a_landing_snap_is_absorbed_only_while_armed() {
+        let snap = Vec3::new(0.0, -0.9, 0.3);
+        assert_eq!(absorb_step(Vec3::ZERO, snap, true), -snap);
+        assert_eq!(absorb_step(Vec3::ZERO, snap, false), Vec3::ZERO);
+        let capped = absorb_step(Vec3::ZERO, Vec3::new(0.0, 3.0, 0.0), true);
+        assert!((capped.length() - ANCHOR_OFFSET_MAX_M).abs() < 1e-5);
+        assert_eq!(
+            absorb_step(capped, Vec3::new(10.0, 0.0, 0.0), true),
+            Vec3::ZERO
+        );
     }
 }

@@ -220,7 +220,10 @@ fn render_frame(
     let headpose_config = config::Config::lock_query(|c| c.headpose);
     grapple::advance(
         headpose::xr::body_rotation_followed(),
-        anchor_raw,
+        frozen
+            .is_none()
+            .then(|| anchor_pair.map(|pair| anchor_raw - pair[1].root.w_axis.truncate()))
+            .flatten(),
         headpose::sim::mode() == headpose::sim::HeadMode::OnFoot,
         &headpose_config.grapple,
     );
