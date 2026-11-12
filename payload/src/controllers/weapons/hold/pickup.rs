@@ -263,8 +263,10 @@ pub(crate) unsafe fn take_by_table(
     let socket = live::free_socket(weapon_type, None)
         .or_else(|| live::body_preference(weapon_type).first().copied())
         .ok_or(Refusal::NotTaken)?;
-    let object =
-        unsafe { carry::carry_loose(owner, strong, socket) }.map_err(|_| Refusal::NotTaken)?;
+    let object = unsafe { carry::carry_loose(owner, strong, socket) }.map_err(|error| {
+        tracing::info!(target: "controllers", %error, "weapons: the table could not carry a weapon taken from the world");
+        Refusal::NotTaken
+    })?;
     let other = live::held_kind(hand.other());
     let taken = unsafe { inventory::held_of(object) }
         .is_some_and(|held| live::take(hand, held, source, delivery));

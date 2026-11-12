@@ -432,8 +432,15 @@ pub(super) unsafe fn pull(
                 }),
                 _ => SNAP_S,
             };
-            return unsafe { arrive(catcher, grabbed, body, centre, catcher_palm, slide_s) }
-                .map(|arrival| Step::Caught(catcher, arrival));
+            let arrived = unsafe { arrive(catcher, grabbed, body, centre, catcher_palm, slide_s) };
+            if arrived.is_err() {
+                // A target the hand caught and could not take drops at the hand, as one let go of
+                // does, rather than flying on past the player at the pull's speed.
+                let _ = unsafe {
+                    physical_hands::set_body_velocities(body, owner, Vec3::ZERO, Vec3::ZERO)
+                };
+            }
+            return arrived.map(|arrival| Step::Caught(catcher, arrival));
         }
         Verdict::Missed => {
             tracing::info!(
