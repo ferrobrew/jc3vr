@@ -6,7 +6,7 @@
 
 use std::time::Instant;
 
-use glam::Mat4;
+use glam::{Mat4, Vec3};
 use jc3gi::character::character::{AimState, Character};
 use parking_lot::Mutex;
 
@@ -21,7 +21,7 @@ use crate::{
             status as locomotion_status,
             view::{
                 Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral,
-                NeutralCapture, blend, face_clear, stable_anchors,
+                NeutralCapture, blend, face_clear, face_offset, stable_anchors,
             },
         },
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
@@ -200,6 +200,7 @@ pub(crate) unsafe fn stabilize(
                 .as_ref()
                 .map(|stable| blend(&animated, stable, weight)),
             weight,
+            face_offset: face_offset(&model, FACE_CLEARANCE_M * clear),
         };
     }
     let Some(stable) = stable_target else {
@@ -207,12 +208,14 @@ pub(crate) unsafe fn stabilize(
             anatomy: cleared,
             camera: None,
             weight,
+            face_offset: Vec3::ZERO,
         };
     };
     Stabilized {
         anatomy: blend(&cleared, &stable, weight),
         camera: None,
         weight,
+        face_offset: Vec3::ZERO,
     }
 }
 
@@ -224,6 +227,12 @@ pub(crate) struct Stabilized {
     pub camera: Option<Anchors>,
     /// The root-held anchor's weight against the animated head, from zero to one.
     pub weight: f32,
+    /// In the headset, the eyes' clearance out in front of the animated face, model space, still to
+    /// be added to the eye arm once the arm is expressed in the filtered head frame (the headset's
+    /// eye arm is rebuilt in that frame after this returns, so the clearance cannot ride
+    /// [`anatomy`](Self::anatomy) as it does elsewhere). Zero outside the headset, where
+    /// [`anatomy`](Self::anatomy) already carries it.
+    pub face_offset: Vec3,
 }
 
 /// How far in front of the animated face the eyes are held while a clip poses the body, metres: a

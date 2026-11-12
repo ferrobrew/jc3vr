@@ -372,6 +372,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     game.m_FrameCounter,
                     dt,
                 );
+                // The headset's eye arm is in the filtered head frame (root times the animation
+                // rotation), so the face clearance, model space, turns into it.
+                sample.geometry.eye_arm +=
+                    sample.geometry.animation_rotation.inverse() * stabilized.face_offset;
                 Some(sample)
             },
         );

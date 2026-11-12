@@ -293,15 +293,19 @@ pub fn stable_anchors(
 /// at the eye bones, where the chest and the shoulders of a pose that folds or leans back sit just
 /// beyond the near plane. The anchors are returned unchanged when the face has no forward.
 pub fn face_clear(animated: &Anchors, model: &Neutral, clearance: f32) -> Anchors {
-    let forward = face_forward(model);
-    let offset = forward.map_or(Vec3::ZERO, |f| f * clearance);
-    if !offset.is_finite() {
-        return *animated;
-    }
     Anchors {
-        eye_arm: animated.eye_arm + offset,
+        eye_arm: animated.eye_arm + face_offset(model, clearance),
         ..*animated
     }
+}
+
+/// The eyes' offset `clearance` metres out in front of the face, model space, from the animated
+/// head, neck, and eyes `model` (see [`face_clear`]); zero when the face has no forward.
+pub fn face_offset(model: &Neutral, clearance: f32) -> Vec3 {
+    face_forward(model)
+        .map(|forward| forward * clearance)
+        .filter(|offset| offset.is_finite())
+        .unwrap_or(Vec3::ZERO)
 }
 
 /// The face's forward in model space: the neck-to-eyes direction with its part along the skull's
