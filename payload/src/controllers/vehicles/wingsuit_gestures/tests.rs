@@ -230,6 +230,24 @@ fn a_late_canopy_request_still_blocks_the_canopy_reopening_the_suit() {
 }
 
 #[test]
+fn spread_arms_deploy_from_a_fall_or_a_reel_however_the_palms_turn() {
+    // Arms spread with the palms turned forward into the wind, as a player flying a reel spreads
+    // them: neither a fall nor a reel reads the palms.
+    let forward = FlightPose {
+        palm_roll_deg: [70.0, 75.0],
+        ..FLIGHT
+    };
+    let mut fall = History::new(FALLING);
+    assert_eq!(deploys(&fall.hold(forward, 6)), 1);
+    let mut reel = History::new(GROUND);
+    reel.deploy_grapple = true;
+    assert_eq!(deploys(&reel.hold(forward, 6)), 1);
+    // Under a canopy the same pose is the canopy's own, and deploys nothing.
+    let mut canopy = History::new(CANOPY);
+    assert_eq!(deploys(&canopy.hold(forward, 20)), 0);
+}
+
+#[test]
 fn a_flight_pose_from_a_grapple_hang_deploys_the_suit() {
     let mut h = History::new(GROUND);
     h.deploy_grapple = true;

@@ -329,6 +329,11 @@ impl FlightPose {
 
     /// Whether the pose is the flight pose: both arms spread and both palms flat.
     fn flight(self, config: &WingsuitGesturesConfig) -> bool {
+        self.spread(config) && self.flat_palms(config.flight_roll_deg)
+    }
+
+    /// Whether both arms are spread out to the sides and near level, however the palms are turned.
+    fn spread(self, config: &WingsuitGesturesConfig) -> bool {
         self.lateral
             .into_iter()
             .all(|v| v >= config.flight_lateral_span)
@@ -336,7 +341,18 @@ impl FlightPose {
                 .angle_deg
                 .into_iter()
                 .all(|v| v <= config.flight_angle_deg)
-            && self.flat_palms(config.flight_roll_deg)
+    }
+
+    /// Whether the pose deploys the suit from `stage`. A fall takes the spread arms alone: a player
+    /// spreading their arms to fly turns the palms any way, often forward into the wind, and nothing
+    /// else in a fall reads the palms. A canopy takes the flight pose, since the canopy's own pose
+    /// (the arms out with the hands turned up on the toggles) is a spread with rolled palms.
+    fn deploys_from(self, stage: Stage, config: &WingsuitGesturesConfig) -> bool {
+        match stage {
+            Stage::Fall => self.spread(config),
+            Stage::Parachute => self.flight(config),
+            Stage::Suit | Stage::Other => false,
+        }
     }
 
     /// Whether both palms are turned to face the wind, within the brake's roll band, widened by the
@@ -571,8 +587,9 @@ impl WingsuitGestures {
             self.reset();
             return GestureCommands::default();
         }
-        if matches!(stage, Stage::Fall | Stage::Parachute)
-            && input.pose.is_some_and(|pose| pose.flight(config))
+        if input
+            .pose
+            .is_some_and(|pose| pose.deploys_from(stage, config))
             && self.deploy_since_ns.is_some()
             && self
                 .retry_at_ns
@@ -623,6 +640,12 @@ impl WingsuitGestures {
         }
         let withdrawn = pose.withdrawn(config);
         let flight = pose.flight(config);
+        // In the suit the flight pose arms it; out of it, the stage's deploying pose deploys it.
+        let flying = if in_suit {
+            flight
+        } else {
+            pose.deploys_from(stage, config)
+        };
         // A canopy's own pose (anything but the flight pose) arms it: the player who opened the
         // canopy with the arms spread must move them before the spread opens the suit, while a
         // player already holding the canopy's toggles only has to spread them.
@@ -645,7 +668,7 @@ impl WingsuitGestures {
         // spread already, and the suit's own entry is the fresh start.
         let retry = self.retry_at_ns.is_none_or(|at| input.sample.time_ns >= at);
         if self.flight.update(
-            (self.ready || in_suit) && flight,
+            (self.ready || in_suit) && flying,
             input.sample.time_ns,
             config.flight_dwell_s,
         ) {
