@@ -410,6 +410,15 @@ fn physical_grips() -> [Option<bool>; 2] {
     Hand::BOTH.map(bindings::grip_holds_now)
 }
 
+/// Whether each controller's grip is pressed on the latest frame, by [`Hand::index`]
+/// ([`bindings::grip_pressed_now`]); `None` for a grip not known. A release in progress (a dock's
+/// slide or an attracted weapon's travel) is called off only by a press: on a force-sensing grip
+/// the fingers stay round the handle for a few frames after the press lets go, and reading those
+/// as a hold would call off every release made with a slow-opening hand, dropping the weapon.
+pub(crate) fn pressed_grips() -> [Option<bool>; 2] {
+    Hand::BOTH.map(bindings::grip_pressed_now)
+}
+
 /// One tick's grips, by [`Hand::index`].
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 struct GripReading {
@@ -523,13 +532,13 @@ pub(crate) fn draw_ready(hand: Hand) -> bool {
 pub(crate) unsafe fn tick(dt: f32) {
     STATE.lock().docked_this_tick.clear();
     sample_release_transport(dt);
-    let physical = physical_grips();
-    STATE.lock().draw_rearm.observe(physical);
+    STATE.lock().draw_rearm.observe(physical_grips());
+    let pressed = pressed_grips();
     for hand in Hand::BOTH {
         let finished = {
             let mut state = STATE.lock();
             if state.intents[hand.index()].is_some_and(|intent| {
-                live::in_hand(hand) != Some(intent.weapon) || physical[hand.index()] == Some(true)
+                live::in_hand(hand) != Some(intent.weapon) || pressed[hand.index()] == Some(true)
             }) {
                 state.intents[hand.index()] = None;
                 state.snaps[hand.index()] = None;

@@ -385,9 +385,12 @@ pub(crate) fn finish_tick(
                     docked_at(hand, |volume| volume == GrabVolume::Socket(socket)).is_some()
                         || attraction_for(hand, &config).is_some_and(|a| a.socket == socket)
                 });
+            // Only a press calls the release off: fingers resting round a force-sensing grip
+            // after the press let go are not a hold ([`hold::act::pressed_grips`]).
             let retry = hold::act::retry_release(
                 hand,
-                grips[hand.index()].held() || bindings_closed(hand),
+                grips[hand.index()].held()
+                    || hold::act::pressed_grips()[hand.index()] == Some(true),
                 near,
                 real_dt,
             );

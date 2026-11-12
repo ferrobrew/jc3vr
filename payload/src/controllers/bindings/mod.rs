@@ -1069,6 +1069,19 @@ pub(crate) fn grip_holds_now(hand: Hand) -> Option<bool> {
     .flatten()
 }
 
+/// Whether `hand`'s grip is pressed on the latest controller frame: the derived press, with its
+/// hysteresis, which is what opens and closes a hold. Unlike [`grip_holds_now`], fingers resting
+/// round a force-sensing grip's handle after the press has let go do not count: the press is read
+/// with its history, so a hold that has just opened reads open. `None` while the frame is
+/// unfocused or the hand is not tracked.
+pub(crate) fn grip_pressed_now(hand: Hand) -> Option<bool> {
+    frame::with_latest(|f| {
+        let source = f.hand(hand);
+        (f.focused && source.active).then(|| source.buttons.contains(Button::SqueezePress))
+    })
+    .flatten()
+}
+
 /// The last input tick's report.
 pub fn last_report() -> TickReport {
     STATE.lock().report.clone()
