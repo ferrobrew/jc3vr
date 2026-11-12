@@ -46,6 +46,8 @@ fn a_version_8_recording_exports_with_the_cockpit_placed_by_its_view() {
         video: None,
         eval: EvalOptions::new(1.8, 1.68),
         source: PathBuf::from("synthetic.jc3trk"),
+        blueprint: true,
+        recording_id: None,
     };
     let summary = export(&recording, None, &options, &out).expect("the export writes");
     let written = std::fs::metadata(&out).map(|m| m.len());

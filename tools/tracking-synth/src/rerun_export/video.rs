@@ -193,10 +193,11 @@ fn log_cut(
         walls.push((unix_ms * 1.0e6) as i64);
     }
     let placed = timestamps.len();
-    context
-        .rec
-        .log_static("video", &asset)
-        .map_err(VideoError::Log)?;
+    // Logged at the stretch's start rather than statically, so stretches exported under one
+    // recording id each keep their own cut.
+    context.set_time(first);
+    context.rec.log("video", &asset).map_err(VideoError::Log)?;
+    context.rec.reset_time();
     context
         .rec
         .send_columns(

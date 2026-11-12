@@ -7,8 +7,8 @@
 //! tracking-synth rig-eval [--pelvis simulated|recorded|pre-ik] [--height <m>] [--eye-height <m>]
 //!     [--tuning <json>] <recording> <out.csv>
 //! tracking-synth export-rerun [--from <time>] [--to <time>] [--video <video>]
-//!     [--video-height <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] <recording>
-//!     -o <out.rrd>
+//!     [--video-height <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] [--no-blueprint]
+//!     [--recording-id <id>] <recording> -o <out.rrd>
 //! ```
 //!
 //! With no script named, every built-in script is written. The recordings go to `<dir>/<script>.jc3trk`,
@@ -80,7 +80,7 @@ const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>
                      [--tuning <json>] <recording> <out.csv> | \
                      scan-view [--video <video>] [--out <report.md>] <recording> | \
                      export-rerun [--from <time>] [--to <time>] [--video <video>] [--video-height \
-                     <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> -o \
+                     <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] [--no-blueprint] [--recording-id <id>] <recording> -o \
                      <out.rrd>, where <time> is seconds or xr:<display time ns>";
 
 /// What the command line asks for.
@@ -104,6 +104,8 @@ enum Command {
         range: Range,
         video: Option<PathBuf>,
         video_height: Option<u32>,
+        blueprint: bool,
+        recording_id: Option<String>,
         options: EvalOptions,
     },
     ScanView {
@@ -379,6 +381,8 @@ fn parse_export_rerun(mut args: impl Iterator<Item = String>) -> Result<Command,
     let mut range = Range::default();
     let mut video = None;
     let mut video_height = None;
+    let mut blueprint = true;
+    let mut recording_id = None;
     let mut out = None;
     let mut height = DEFAULT_HEIGHT_M;
     let mut eye_height = None;
@@ -401,6 +405,13 @@ fn parse_export_rerun(mut args: impl Iterator<Item = String>) -> Result<Command,
                     Ok(height) if height >= 2 => video_height = Some(height),
                     _ => return Err(CliError::BadVideoHeight(value)),
                 }
+            }
+            "--no-blueprint" => blueprint = false,
+            "--recording-id" => {
+                recording_id = Some(
+                    args.next()
+                        .ok_or(CliError::MissingValue("--recording-id"))?,
+                );
             }
             "-o" | "--out" => {
                 out = Some(PathBuf::from(
@@ -430,6 +441,8 @@ fn parse_export_rerun(mut args: impl Iterator<Item = String>) -> Result<Command,
             range,
             video,
             video_height,
+            blueprint,
+            recording_id,
             options,
         }),
         _ => Err(CliError::ExportPaths),
@@ -556,6 +569,8 @@ fn run(command: Command) -> Result<(), CliError> {
             range,
             video,
             video_height,
+            blueprint,
+            recording_id,
             options,
         } => export_rerun(ExportRequest {
             path,
@@ -563,6 +578,8 @@ fn run(command: Command) -> Result<(), CliError> {
             range,
             video,
             video_height,
+            blueprint,
+            recording_id,
             eval: options,
         }),
         Command::Write {
@@ -652,6 +669,8 @@ struct ExportRequest {
     range: Range,
     video: Option<PathBuf>,
     video_height: Option<u32>,
+    blueprint: bool,
+    recording_id: Option<String>,
     eval: EvalOptions,
 }
 
@@ -663,6 +682,8 @@ fn export_rerun(request: ExportRequest) -> Result<(), CliError> {
         range,
         video,
         video_height,
+        blueprint,
+        recording_id,
         eval,
     } = request;
     let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
@@ -683,6 +704,8 @@ fn export_rerun(request: ExportRequest) -> Result<(), CliError> {
         }),
         eval,
         source: path,
+        blueprint,
+        recording_id,
     };
     let summary = rerun_export::export(&recording, clock.as_ref(), &options, &out)
         .map_err(CliError::Export)?;

@@ -63,6 +63,13 @@ pub struct ExportOptions {
     pub eval: EvalOptions,
     /// The recording's path, named in the export's notes.
     pub source: PathBuf,
+    /// Whether to send the default layout. Without it the file carries no blueprint, so another
+    /// file's layout can be merged in for the same recording without competing with this one.
+    pub blueprint: bool,
+    /// The recording id to write under, instead of a fresh one. Exports of separate stretches
+    /// written under one id merge into one recording: what differs between stretches is logged at
+    /// the stretch's start rather than statically, so each stretch keeps its own.
+    pub recording_id: Option<String>,
 }
 
 /// The take's video and the height its cut is scaled to.
@@ -194,7 +201,11 @@ pub fn export(
         .filter(|row| (from..=to).contains(&seconds_to_ns(row.time_s)))
         .collect();
 
-    let rec = RecordingStreamBuilder::new(APPLICATION_ID)
+    let mut builder = RecordingStreamBuilder::new(APPLICATION_ID);
+    if let Some(id) = &options.recording_id {
+        builder = builder.recording_id(id.clone());
+    }
+    let rec = builder
         .recording_name(format!(
             "{} {:.1}-{:.1} s",
             recording.header.recorded_at,
@@ -202,12 +213,11 @@ pub fn export(
             frames[frames.len() - 1].time_ns as f64 / 1.0e9,
         ))
         .save(out)?;
-    blueprint::send(&rec, options.video.is_some())?;
+    if options.blueprint {
+        blueprint::send(&rec, options.video.is_some())?;
+    }
     rec.log_static("world", &ViewCoordinates::RIGHT_HAND_Y_UP())?;
-    rec.log_static(
-        "about",
-        &TextDocument::from_markdown(about(recording, options, origin, &fit, wall.is_some())),
-    )?;
+    let about_text = about(recording, options, origin, &fit, wall.is_some());
 
     let context = Context {
         rec: &rec,
@@ -219,6 +229,9 @@ pub fn export(
         origin,
         eye_height: options.eval.body.eye_height,
     };
+    context.set_time(frames[0].time_ns);
+    rec.log("about", &TextDocument::from_markdown(about_text))?;
+    rec.reset_time();
     scene::log_frames(&context, &rows)?;
     character::log(&context)?;
     view::log(&context)?;

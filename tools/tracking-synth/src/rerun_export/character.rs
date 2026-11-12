@@ -119,7 +119,7 @@ const VEHICLE_AIM: Color = Color(Rgba32::from_rgb(230, 210, 60));
 /// A root move the tick's wanted velocity does not explain beyond this is logged, metres.
 const JUMP_LOG_M: f32 = 0.25;
 
-/// The root's path through the stretch, as one static line.
+/// The root's path through the stretch, as one line logged at the stretch's start.
 fn log_trail(context: &Context<'_>) -> RecordingStreamResult<()> {
     let mut points: Vec<[f32; 3]> = Vec::new();
     for (_, state) in &context.states.all {
@@ -132,12 +132,15 @@ fn log_trail(context: &Context<'_>) -> RecordingStreamResult<()> {
     if points.len() < 2 {
         return Ok(());
     }
-    context.rec.log_static(
+    context.set_time(context.frames[0].time_ns);
+    context.rec.log(
         "world/rico_trail",
         &LineStrips3D::new([points])
             .with_colors([Color::from_unmultiplied_rgba(255, 140, 0, 120)])
             .with_radii([0.015]),
-    )
+    )?;
+    context.rec.reset_time();
+    Ok(())
 }
 
 fn log_rico(
