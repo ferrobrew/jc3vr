@@ -44,7 +44,7 @@ use jc3gi::{
 
 use crate::controllers::{
     frame::Hand,
-    loadout::{Place, TakeSource, live},
+    loadout::{TakeSource, live},
     weapons::{
         engine::{self, character_object, grip_points, slot_of, takeable_gun_slot, weapon_at},
         hold::{
@@ -175,10 +175,7 @@ pub(crate) fn offered_source(weapon: &WeaponBase) -> TakeSource {
     source_of(Offered {
         racked: weapon.m_State == WeaponState::E_WS_WEAPON_RACK,
         from_rule: !weapon.m_SpawnedFromRule.pn.is_null(),
-        let_go: matches!(
-            live::place_of(weapon as *const WeaponBase as usize),
-            Some(Place::World(_))
-        ),
+        let_go: live::lies_in_world(weapon as *const WeaponBase as usize),
     })
 }
 

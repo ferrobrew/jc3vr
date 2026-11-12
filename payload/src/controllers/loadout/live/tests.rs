@@ -305,3 +305,23 @@ fn a_weapon_the_game_wields_waits_while_its_hand_is_full() {
     assert_eq!(live.refusals, refusals, "nothing is refused");
     assert!(live.pending.is_some(), "the expectation is kept");
 }
+
+#[test]
+fn a_weapon_let_go_of_lies_in_the_world() {
+    // The published places hold only the body's, so a take's source reads the table for this.
+    let slots = [rifle()];
+    let mut live = started(&slots);
+    assert!(
+        !live.lies_in_world(rifle().object),
+        "a docked weapon is on the body"
+    );
+    draw(&mut live, Hand::Left, rifle());
+    assert!(
+        !live.lies_in_world(rifle().object),
+        "a held weapon is on the body"
+    );
+    let event =
+        hands::departure(&live.table, Hand::Left, rifle().object, Whereabouts::Away).unwrap();
+    live.fold(event);
+    assert!(live.lies_in_world(rifle().object));
+}

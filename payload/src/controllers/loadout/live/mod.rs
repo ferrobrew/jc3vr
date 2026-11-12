@@ -410,6 +410,15 @@ pub(crate) fn bound() -> Vec<(ObjectAddress, Place)> {
         .collect()
 }
 
+/// Whether the table has the object at `address` lying in the world, where the player let go of
+/// it. The published places ([`place_of`]) hold only the body's, so this reads the table itself.
+pub(crate) fn lies_in_world(address: usize) -> bool {
+    let Some(object) = ObjectAddress::from_address(address) else {
+        return false;
+    };
+    LIVE.lock().lies_in_world(object)
+}
+
 /// The pins left `objects`, lying in the world, to the game: they leave the table.
 pub(crate) fn forgotten(objects: &[ObjectAddress]) {
     let mut live = LIVE.lock();
@@ -985,6 +994,10 @@ impl Live {
             .items()
             .find(|item| item.binding == Binding::Live(object))
             .map(|item| item.place)
+    }
+
+    fn lies_in_world(&self, object: ObjectAddress) -> bool {
+        matches!(self.place_of(object), Some(Place::World(_)))
     }
 
     fn push(&mut self, line: String) {
