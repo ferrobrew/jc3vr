@@ -17,7 +17,7 @@ use crate::controllers::{
     bindings::controls::ButtonControl,
     frame::Hand,
     grab::{
-        GrabVolume, GripTarget, Reach, Resolved,
+        GrabVolume, GripTarget, Reach, Resolved, Tier,
         latch::GripLatch,
         markers::{self, MarkerFrame},
         resolve::{self, losers, nearest_miss},
@@ -62,14 +62,61 @@ pub(crate) fn resolve(
     active: Option<&ActiveHands>,
 ) -> Tick {
     let grips = active.map_or([None; 2], hand_grips);
-    let resolved = resolve::resolve(&targets, grips);
-    let slow = step_speeds(grips, Instant::now());
+    let mut resolved = resolve::resolve(&targets, grips);
+    let mut notes = notes;
+    let now = Instant::now();
+    let slow = step_speeds(grips, now);
+    recall_body_slots(&targets, grips, &mut resolved, &mut notes, now);
     Tick {
         targets,
         resolved,
         grips,
         slow,
         notes,
+    }
+}
+
+/// How long a hand that leaves a body slot's reach still takes from it ([`resolve::recall`]).
+pub const RECALL_S: f32 = 0.3;
+
+/// Note the body slots each hand is in reach of this tick, and let a hand in reach of nothing (or
+/// only a remote target) take the one it was in reach of within [`RECALL_S`], most recent first.
+fn recall_body_slots(
+    targets: &[GripTarget],
+    grips: [Option<Vec3>; 2],
+    resolved: &mut [Resolved; 2],
+    notes: &mut [Vec<String>; 2],
+    now: Instant,
+) {
+    let mut recent = RECENT.lock();
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        let seen = &mut recent[i];
+        seen.retain(|&(_, at)| now.saturating_duration_since(at).as_secs_f32() <= RECALL_S);
+        for reach in &resolved[i].reaches {
+            if reach.volume.on_body() && reach.tier != Tier::Touch {
+                seen.retain(|&(volume, _)| volume != reach.volume);
+                seen.push((reach.volume, now));
+            }
+        }
+        if !resolve::recalls(resolved[i].chosen) {
+            continue;
+        }
+        let latest_first = seen.iter().rev().map(|&(volume, _)| volume);
+        if let Some(recalled) = resolve::recall(hand, targets, grips[i], latest_first) {
+            let age = seen
+                .iter()
+                .find(|&&(volume, _)| volume == recalled.volume)
+                .map_or(0.0, |&(_, at)| {
+                    now.saturating_duration_since(at).as_secs_f32()
+                });
+            notes[i].push(format!(
+                "recalled the {} the hand left {:.0} ms ago",
+                recalled.volume.label(),
+                age * 1000.0
+            ));
+            resolved[i].chosen = Some(recalled);
+        }
     }
 }
 
@@ -129,6 +176,7 @@ pub(crate) fn finish(finish: &Finish) {
 /// Forget the hands' speeds and clear the markers: the bindings stand down.
 pub(crate) fn stand_down() {
     *SPEEDS.lock() = [None; 2];
+    *RECENT.lock() = [Vec::new(), Vec::new()];
     markers::clear();
     let mut published = STATUS.lock();
     published.0.live = false;
@@ -273,6 +321,10 @@ fn slow_between(last: Option<(Vec3, Instant)>, now: Option<(Vec3, Instant)>) -> 
 }
 
 static SPEEDS: Mutex<[Option<(Vec3, Instant)>; 2]> = Mutex::new([None; 2]);
+
+/// The body slots each hand was in reach of over the last [`RECALL_S`], oldest first, by
+/// [`Hand::index`].
+static RECENT: Mutex<[Vec<(GrabVolume, Instant)>; 2]> = Mutex::new([Vec::new(), Vec::new()]);
 
 /// The published readout and when it was published.
 static STATUS: Mutex<(GrabStatus, Option<Instant>)> = Mutex::new((

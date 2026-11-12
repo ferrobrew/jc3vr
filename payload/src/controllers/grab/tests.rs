@@ -619,3 +619,39 @@ fn the_nearest_item_within_reach_is_taken() {
         None
     );
 }
+
+#[test]
+fn a_press_just_past_a_body_slot_recalls_the_latest_one_still_offered() {
+    let pouch = GrabVolume::C4Pouch;
+    let t = [
+        sphere(HIP, 0.0, 0.2, None),
+        sphere(pouch, 1.0, 0.1, Some(Hand::Right)),
+        sphere(GrabVolume::Foregrip, 2.0, 0.1, None),
+    ];
+    // The hand left the hip, then the pouch: the pouch, the latest, is taken, at its distance now.
+    let recalled = resolve::recall(Hand::Right, &t, at(1.25), [pouch, HIP]).unwrap();
+    assert_eq!((recalled.volume, recalled.index), (pouch, 1));
+    assert!((recalled.distance - 0.25).abs() < 1e-5);
+    // A slot no longer offered to the hand is skipped for the next.
+    let recalled = resolve::recall(Hand::Left, &t, at(1.25), [pouch, HIP]).unwrap();
+    assert_eq!(recalled.volume, HIP);
+    // Only slots on the body are recalled, and not without a grip.
+    assert_eq!(
+        resolve::recall(Hand::Right, &t, at(2.2), [GrabVolume::Foregrip]),
+        None
+    );
+    assert_eq!(resolve::recall(Hand::Right, &t, None, [HIP]), None);
+    // A recall stands in for nothing in reach or a remote target only.
+    let remote = Reach {
+        index: 0,
+        volume: GrabVolume::Snatch(RemoteKind::Weapon),
+        distance: 3.0,
+        tier: Tier::Remote,
+    };
+    assert!(resolve::recalls(None));
+    assert!(resolve::recalls(Some(remote)));
+    assert!(!resolve::recalls(Some(Reach {
+        tier: Tier::Target,
+        ..remote
+    })));
+}

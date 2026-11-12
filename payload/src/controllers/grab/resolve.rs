@@ -99,6 +99,44 @@ pub fn choose(reaches: impl IntoIterator<Item = Reach>) -> Option<Reach> {
         .or(Some(nearest))
 }
 
+/// The body slot a hand that is in reach of nothing (or of only a remote target) takes: of
+/// `recent`, the slots on the body the hand was in reach of over the last moments, most recent
+/// first, the first that `targets` still offers the hand. A hand reaching for a holster or a
+/// pouch often starts to pull away as the press lands, and on a force-sensing grip the press
+/// lands a few frames after the fingers close, so a press just past the slot it was in still
+/// takes from it. Its distance is the grip's from the target now, past its reach.
+pub fn recall(
+    hand: Hand,
+    targets: &[GripTarget],
+    grip: Option<Vec3>,
+    recent: impl IntoIterator<Item = GrabVolume>,
+) -> Option<Reach> {
+    recent.into_iter().find_map(|volume| {
+        let (index, target) = targets.iter().enumerate().find(|(_, t)| {
+            t.volume == volume
+                && t.volume.on_body()
+                && t.for_hand(hand)
+                && matches!(t.tier, Tier::Target | Tier::Fallback)
+        })?;
+        let distance = match target.reach {
+            TargetReach::Measured { distance } => distance,
+            TargetReach::Sphere { centre, .. } => grip?.distance(centre),
+        };
+        distance.is_finite().then_some(Reach {
+            index,
+            volume,
+            distance,
+            tier: target.tier,
+        })
+    })
+}
+
+/// Whether a hand whose grip would take `chosen` takes a recalled body slot instead
+/// ([`recall`]): it takes nothing, or only a remote target, which ranks below anything in reach.
+pub fn recalls(chosen: Option<Reach>) -> bool {
+    chosen.is_none_or(|chosen| chosen.tier == Tier::Remote)
+}
+
 /// A character the physical hands' reach found.
 const CHARACTER: GrabVolume = GrabVolume::Pickup(PickupKind::Character);
 
