@@ -13,6 +13,7 @@
 //! - [`dump`] prints a recording's frames and events.
 //! - [`rig_eval`] runs the grounded body rig over a recording.
 //! - [`rerun_export`] writes a recording as a Rerun recording, with the `rerun` feature.
+//! - [`view_scan`] scans a take's video for flashes and checks the camera against Rico's head.
 
 pub mod dump;
 pub mod inputs;
@@ -25,6 +26,7 @@ pub mod script;
 pub mod scripts;
 pub mod synth;
 pub mod track;
+pub mod view_scan;
 
 use crate::{
     schema::Schema,

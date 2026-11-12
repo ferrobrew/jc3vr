@@ -10,12 +10,17 @@
 # `stream.json` are all present. The export's output goes to `rerun.log` in the take folder.
 # docs/mod/testing/rerun.md describes the export.
 #
+# After the export, when the take has its video, the script scans the video for flashes and checks
+# the camera against Rico's head (`tracking-synth scan-view`, docs/mod/testing/view-scan.md), writing
+# `view-scan.md` beside the export, unless JC3VR_CAPTURE_SCAN is 0.
+#
 # The capture relay (scripts/capture_host.sh) runs this when each take ends, unless
 # JC3VR_CAPTURE_RERUN is 0.
 #
 # Environment overrides:
 #   JC3VR_RERUN_SETTLE_S   how long the tracking file's size must hold (default 3).
 #   JC3VR_RERUN_WAIT_S     how long to wait for the file to appear and settle (default 120).
+#   JC3VR_CAPTURE_SCAN     0 to skip the view scan (default 1).
 
 set -euo pipefail
 
@@ -75,4 +80,14 @@ else
     rm -f "$take/take.rrd.tmp"
     echo "rerun: $(date -Is): the export failed with status $status"
     exit "$status"
+fi
+
+if [ "${JC3VR_CAPTURE_SCAN:-1}" != 0 ] && [ ${#video[@]} -gt 0 ]; then
+    echo "scan: $(date -Is): scanning the video for flashes"
+    if cargo run --quiet --release -p tracking-synth --target x86_64-unknown-linux-gnu -- \
+        scan-view --out "$take/view-scan.md" "$tracking"; then
+        echo "scan: $(date -Is): wrote $take/view-scan.md"
+    else
+        echo "scan: $(date -Is): the scan failed with status $?"
+    fi
 fi

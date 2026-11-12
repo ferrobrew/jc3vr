@@ -45,6 +45,7 @@ use tracking_synth::{
     script::Script,
     scripts,
     synth::{DEFAULT_RATE_HZ, Options, SynthError},
+    view_scan::{self, ScanError, ScanOptions},
 };
 
 fn main() -> ExitCode {
@@ -77,6 +78,7 @@ const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>
                      dump [--json] [--from <time>] [--to <time>] <recording> | rig-eval \
                      [--pelvis simulated|recorded|pre-ik] [--height <m>] [--eye-height <m>] \
                      [--tuning <json>] <recording> <out.csv> | \
+                     scan-view [--video <video>] [--out <report.md>] <recording> | \
                      export-rerun [--from <time>] [--to <time>] [--video <video>] [--video-height \
                      <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] <recording> -o \
                      <out.rrd>, where <time> is seconds or xr:<display time ns>";
@@ -104,6 +106,11 @@ enum Command {
         video_height: Option<u32>,
         options: EvalOptions,
     },
+    ScanView {
+        path: PathBuf,
+        video: Option<PathBuf>,
+        out: Option<PathBuf>,
+    },
     Write {
         out: PathBuf,
         options: Options,
@@ -121,6 +128,9 @@ enum CliError {
     MissingValue(&'static str),
     /// A frame rate that is not a number.
     BadRate(String),
+    /// `scan-view` without a recording, or with more than one.
+    ScanPath,
+    Scan(ScanError),
     /// A `dump` range bound that is neither seconds nor `xr:<ns>`.
     BadTime(String),
     /// A script that is not built in.
@@ -172,6 +182,8 @@ impl fmt::Display for CliError {
             CliError::UnknownOption(option) => write!(f, "there is no option `{option}`"),
             CliError::MissingValue(option) => write!(f, "`{option}` needs a value"),
             CliError::BadRate(value) => write!(f, "the frame rate `{value}` is not a number"),
+            CliError::ScanPath => write!(f, "scan-view: name exactly one recording"),
+            CliError::Scan(error) => write!(f, "{error}"),
             CliError::BadTime(value) => write!(
                 f,
                 "dump: the time `{value}` is neither seconds nor `xr:<display time ns>`"
@@ -233,6 +245,10 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
         args.next();
         return parse_rig_eval(args);
     }
+    if args.peek().map(String::as_str) == Some("scan-view") {
+        args.next();
+        return parse_scan_view(args);
+    }
     if args.peek().map(String::as_str) == Some("export-rerun") {
         args.next();
         return parse_export_rerun(args);
@@ -285,6 +301,34 @@ fn parse_dump(mut args: impl Iterator<Item = String>) -> Result<Command, CliErro
             range,
         }),
         Err(_) => Err(CliError::DumpPath),
+    }
+}
+
+fn parse_scan_view(mut args: impl Iterator<Item = String>) -> Result<Command, CliError> {
+    let mut video = None;
+    let mut out = None;
+    let mut paths = Vec::new();
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--video" => {
+                video = Some(PathBuf::from(
+                    args.next().ok_or(CliError::MissingValue("--video"))?,
+                ));
+            }
+            "--out" => {
+                out = Some(PathBuf::from(
+                    args.next().ok_or(CliError::MissingValue("--out"))?,
+                ));
+            }
+            option if option.starts_with('-') => {
+                return Err(CliError::UnknownOption(option.to_owned()));
+            }
+            path => paths.push(PathBuf::from(path)),
+        }
+    }
+    match <[PathBuf; 1]>::try_from(paths) {
+        Ok([path]) => Ok(Command::ScanView { path, video, out }),
+        Err(_) => Err(CliError::ScanPath),
     }
 }
 
@@ -449,6 +493,7 @@ fn run(command: Command) -> Result<(), CliError> {
                 result => result.map_err(CliError::Print),
             }
         }
+        Command::ScanView { path, video, out } => scan_view(&path, video, out),
         Command::RigEval { path, out, options } => {
             let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
                 path: path.clone(),
@@ -660,6 +705,60 @@ fn export_rerun(_request: ExportRequest) -> Result<(), CliError> {
 }
 
 /// The video sidecar beside a take's recording, when there is one.
+/// Scan the take's video beside `path` (or `video`) and write the report beside it (or to `out`).
+fn scan_view(path: &Path, video: Option<PathBuf>, out: Option<PathBuf>) -> Result<(), CliError> {
+    let take = path.parent().unwrap_or(Path::new("."));
+    let video = video.unwrap_or_else(|| take.join("video.mkv"));
+    let out = out.unwrap_or_else(|| take.join("view-scan.md"));
+    let bytes = std::fs::read(path).map_err(|error| CliError::Read {
+        path: path.to_owned(),
+        error,
+    })?;
+    let recording = tracking_format::decode(&bytes).map_err(|error| CliError::Decode {
+        path: path.to_owned(),
+        error,
+    })?;
+    let clock = video_clock(path);
+    if clock.is_none() {
+        tracing::warn!(
+            "scan-view: the take has no video sidecar; the video's clock is taken as the \
+             recording's"
+        );
+    }
+    tracing::info!("scan-view: scanning {}", video.display());
+    let scan = view_scan::scan(&recording, clock.as_ref(), &ScanOptions::new(video))
+        .map_err(CliError::Scan)?;
+    let file = std::fs::File::create(&out).map_err(|error| CliError::Write {
+        path: out.clone(),
+        error,
+    })?;
+    let mut writer = std::io::BufWriter::new(file);
+    view_scan::write_report(&scan, path, &mut writer)
+        .and_then(|()| std::io::Write::flush(&mut writer))
+        .map_err(|error| CliError::Write {
+            path: out.clone(),
+            error,
+        })?;
+    let behind = scan
+        .flashes
+        .iter()
+        .filter(|flash| {
+            flash
+                .camera
+                .as_ref()
+                .is_some_and(view_scan::CameraNear::behind)
+        })
+        .count();
+    tracing::info!(
+        frames = scan.frames,
+        flashes = scan.flashes.len(),
+        behind_head = behind,
+        "scan-view: wrote {}",
+        out.display()
+    );
+    Ok(())
+}
+
 fn video_clock(recording: &Path) -> Option<VideoClock> {
     let dir = recording.parent()?;
     let frames = std::fs::read_to_string(dir.join("frames.jsonl")).ok()?;

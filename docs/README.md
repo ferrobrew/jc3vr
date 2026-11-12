@@ -163,6 +163,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [recorder.md](mod/testing/recorder.md) — testing without the headset: the tracking recorder and its file format, the replay at the head, controller, and STAGE seams with or without a session, the scenario file and its signals, status rows, and log probes, the PASS and FAIL results, the ways to start the tools, the templates, the synthetic recordings written by `tracking-synth` from scripted head and controller paths, and the limits of a replay.
 - [rerun.md](mod/testing/rerun.md) — `tracking-synth export-rerun`: a recording and its take's video as a Rerun recording, what it shows, how the cockpit is placed in the world, and what the format leaves out.
+- [view-scan.md](mod/testing/view-scan.md) — `tracking-synth scan-view`: a take's video scanned for flashes, each checked against the camera's place behind or ahead of Rico's head, run after each take's Rerun export.
 
 ## issues/
 
