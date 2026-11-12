@@ -132,11 +132,15 @@ pub(crate) fn available_in(detection: &Detection) -> bool {
     }
 }
 
-/// Only an already-gripped remote target can claim a subsequent fresh B press. A heavy object swings
-/// without it, and the claimed press does nothing to it, rather than firing the game's grapple from
-/// under the armed snatch.
+/// Only an already-gripped remote target can claim a subsequent fresh B press: armed, or with the
+/// hook out to it or its line pulling it in, so that a press after the yank holds the line (the
+/// swing) as a press before it does. A heavy object swings without it, and the claimed press does
+/// nothing to it, rather than firing the game's grapple from under the snatch.
 pub(crate) fn can_claim_button() -> bool {
-    matches!(STATE.lock().phase, Phase::Armed { .. })
+    matches!(
+        STATE.lock().phase,
+        Phase::Armed { .. } | Phase::HookOut { .. } | Phase::Pulling { .. }
+    )
 }
 
 /// A copied phase-specific instruction for the current usable-controls provider.
