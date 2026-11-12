@@ -55,6 +55,24 @@ pub fn step(velocity: Vec2, target: Vec2, dt: f32, rates: Rates) -> Vec2 {
     }
 }
 
+/// The velocity to step from, given the body's own horizontal velocity `body`. A velocity faster
+/// than `target` coasts down from speed the stick did not give it (a landing, the end of a reel),
+/// and a coast never runs ahead of the body: whatever slowed the body (the ground, a slope, a wall)
+/// slows the coast with it, so the integrator cannot hold a speed the body lost and hand it back
+/// once nothing holds the body back. A velocity no faster than the target is the stick's own and
+/// is kept, as it is without a finite `body`.
+pub fn coast_limited(velocity: Vec2, target: Vec2, body: Option<Vec2>) -> Vec2 {
+    let Some(body) = body.filter(|b| b.is_finite()) else {
+        return velocity;
+    };
+    let target_speed = if target.is_finite() {
+        target.length()
+    } else {
+        0.0
+    };
+    velocity.clamp_length_max(body.length().max(target_speed))
+}
+
 /// The stick's direction in the world: `stick` is `(right, forward)` in the frame whose forward is
 /// the unit world `(x, z)` vector `forward`, and the result is the same vector in world `(x, z)`.
 /// The engine's world is right-handed with +Y up, so the right of `forward` is `(-forward.z,
@@ -94,6 +112,37 @@ mod tests {
         decelerate: 14.0,
     };
     const DT: f32 = 1.0 / 30.0;
+
+    #[test]
+    fn a_coast_follows_the_body_down() {
+        // The end of a fast reel: the integrator starts far faster than the stick asks, and the
+        // ground has held the body to a fraction of it.
+        let coast = Vec2::new(0.0, 85.0);
+        let target = Vec2::new(0.0, 6.0);
+        let limited = coast_limited(coast, target, Some(Vec2::new(0.0, 21.0)));
+        assert!((limited - Vec2::new(0.0, 21.0)).length() < 1e-4);
+        // A body stopped dead leaves the stick's speed, which the step then reaches.
+        let limited = coast_limited(coast, target, Some(Vec2::ZERO));
+        assert!((limited.length() - 6.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_sticks_own_velocity_is_kept() {
+        let velocity = Vec2::new(3.0, 4.0);
+        let target = Vec2::new(0.0, 6.0);
+        assert_eq!(coast_limited(velocity, target, Some(Vec2::ZERO)), velocity);
+        assert_eq!(coast_limited(velocity, target, None), velocity);
+        let coast = Vec2::new(0.0, 40.0);
+        assert_eq!(
+            coast_limited(coast, target, Some(Vec2::new(f32::NAN, 0.0))),
+            coast
+        );
+        // A body at least as fast as the coast keeps the coast whole.
+        assert_eq!(
+            coast_limited(coast, target, Some(Vec2::new(0.0, 50.0))),
+            coast
+        );
+    }
 
     #[test]
     fn a_tick_never_changes_the_velocity_by_more_than_the_rate() {

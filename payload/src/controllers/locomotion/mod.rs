@@ -129,12 +129,14 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     // A gap means the task stopped (a jump, a fall, a vehicle) and the body kept whatever velocity
     // the other states gave it, so the integrator starts from the body's real velocity: a landing
     // carries its speed instead of stopping dead.
+    let body = unsafe { proxy_velocity(character) };
     let start = match state.status.velocity {
         Some(velocity) if !resumed => velocity,
-        _ => unsafe { proxy_velocity(character) }.unwrap_or(task_velocity),
+        _ => body.unwrap_or(task_velocity),
     };
     let forward = unsafe { view_forward(character) };
     let target = accel::target(stick, forward, game_speed, &config);
+    let start = accel::coast_limited(start, target, body);
     let velocity = accel::step(start, target, dt, Rates::FIXED);
     let world = Vector3 {
         data: [velocity.x, task_y, velocity.y],
