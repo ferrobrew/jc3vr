@@ -39,7 +39,7 @@ use crate::controllers::{
 
 /// The sockets' fixed reach.
 pub const SOCKETS: SocketTuning = SocketTuning {
-    hip_radius_m: 0.18,
+    hip_radius_m: 0.22,
     shoulder_radius_m: 0.255,
 };
 
@@ -56,7 +56,9 @@ pub const POUCHES: PouchTuning = PouchTuning {
 /// where the socket places its weapon, so the socket has no placement of its own here.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct SocketTuning {
-    /// The sockets on both hips.
+    /// The sockets on both hips. A hand reaching for the pistol closes on the front of the hip
+    /// more often than on the pistol's grip behind it, and in the 10 November 17:07 session five
+    /// draws missed a reach of 0.18 m by 1 to 4 cm.
     pub hip_radius_m: f32,
     /// The sockets over the shoulders, the right one where the game docks the two-handed slot and
     /// the left one where it docks the special slot.
@@ -385,12 +387,15 @@ const CHEST_POUCH: VolumeSpec = VolumeSpec {
     radius_m: 0.09,
 };
 
-/// The C4 pouch's volume: placed as the grenade pouch is, and wider still. The charge is taken with
-/// the hand reaching across the body to the far side of the chest, which lands further off the
-/// pouch than a reach to the near side.
+/// The C4 pouch's volume: as the grenade pouch's, but wider and nearer the midline. The charge is
+/// taken with the hand reaching across the body to the far side of the chest, and that hand stops
+/// short of the far shoulder: in the 10 November 17:07 session every take and near miss closed 11 to
+/// 17 cm toward the midline from a pouch under the shoulder joint, so that all seven takes came
+/// from the reach margin and five presses missed it by up to 3 cm. Moved 10 cm in, the pouch
+/// takes eleven of those twelve presses inside its own radius and the last within its margin.
 const C4_POUCH: VolumeSpec = VolumeSpec {
+    offset_m: Vec3::new(-0.10, -0.02, 0.04),
     radius_m: 0.1,
-    ..CHEST_POUCH
 };
 
 /// The chest of a frame: its middle and its orientation, as [`BodyFrame::chest`].

@@ -136,7 +136,8 @@ fn the_pouches_sit_on_the_front_of_the_body_by_handedness() {
             grenade.x > 0.0 && c4.x < 0.0 && magazine.x.abs() < 1e-5,
             "{magazine}"
         );
-        assert!((grenade.x + c4.x).abs() < 1e-5 && (grenade.y - c4.y).abs() < 1e-5);
+        // The C4 pouch nearer the midline than the grenade pouch, for the hand reaching across.
+        assert!(-c4.x < grenade.x - 0.05 && (grenade.y - c4.y).abs() < 1e-5);
         // The chest pouches on the upper chest, below the shoulders and above the belt; the
         // magazine pouch at the waist, above the hip joints.
         assert!(grenade.y < shoulders.y - 0.1 && grenade.y > magazine.y + 0.2);
