@@ -10,6 +10,7 @@
 
 mod beacon;
 pub mod catch;
+mod fuse_log;
 mod locker;
 mod native;
 pub(crate) mod safe;
@@ -84,6 +85,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(locker::hook_library())
         .with_hook_library(world::hook_library())
         .with_hook_library(stock::hook_library())
+        .with_hook_library(fuse_log::hook_library())
 }
 
 /// Hook removal keeps the image mapped while a locker source callback remains active.
@@ -495,7 +497,7 @@ pub(super) fn input_tick(
         match unsafe { safe::pull_pin(hand) } {
             Some(PinPull::Pulled) => {
                 haptics::play(hand, Event::GrenadePin);
-                tracing::info!(target: "controllers", hand = hand.label(), "grenade: the pin is pulled, and the fuse runs");
+                fuse_log::lit(hand);
             }
             Some(PinPull::NotReady) => {
                 tracing::debug!(target: "controllers", hand = hand.label(), "grenade: the pin stays in until the grenade has its physics body");
@@ -515,6 +517,7 @@ pub(super) fn input_tick(
                 && desired.target.action == Action::THROW_GRENADE)
         });
     }
+    fuse_log::observe(grips);
     // SAFETY: the game stage runs on the game thread before the world update.
     let caught = unsafe { carry_caught(inputs, tuning) };
     let urgent = most_urgent(

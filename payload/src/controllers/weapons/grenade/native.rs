@@ -87,7 +87,9 @@ use crate::controllers::{
     loadout::{live, safe_items::SafeItemView},
     weapons::{
         engine::gun_ptr,
-        grenade::{LAUNCH, PlannedLaunch, Release, primed_explosive, report_native_throw, safe},
+        grenade::{
+            LAUNCH, PlannedLaunch, Release, fuse_log, primed_explosive, report_native_throw, safe,
+        },
         hold::refs::{Weak, null_weak},
     },
 };
@@ -479,6 +481,22 @@ unsafe fn release(
     // go, so it leaves the hand with its fuse still running.
     let launched = live && unsafe { launch_live(weapon, base, launch, actor) };
     let inert = !launched && unsafe { release_inert(launch, actor) };
+    if live
+        && (launched || inert)
+        && let Some(explosive) = actor.explosive()
+    {
+        // SAFETY: the weak handle proved a strong reference to the object still exists.
+        let explosive = unsafe { &*explosive };
+        let contact_trigger =
+            unsafe { (*std::ptr::from_ref(explosive).cast::<Grenade>()).m_CanUseUpgrades };
+        fuse_log::released(
+            launch.hand,
+            explosive,
+            launch.release,
+            launched,
+            contact_trigger,
+        );
+    }
     match settle(live, launched, inert) {
         Settle::Thrown => {
             if let Some(hand) = launch.hand {
@@ -550,6 +568,10 @@ unsafe fn launch_live(
         return false;
     };
     unsafe { set_upgrade_policy(&mut *grenade, actor.upgrades, true) };
+    fuse_log::contact_trigger(
+        unsafe { &*grenade },
+        "the weapon's launch puts back the grenade's own upgrade flag",
+    );
     unsafe { weapon.m_PrimedGrenade.Assign(actor.handle()) };
     let scope = LaunchScope::enter(PlannedLaunch {
         explosive: explosive as usize,
@@ -574,6 +596,10 @@ unsafe fn launch_live(
         && unsafe { explosive.as_ref() }.is_some_and(|explosive| explosive.m_DeferredPropelTowards);
     if !applied {
         unsafe { set_upgrade_policy(&mut *grenade, actor.upgrades, false) };
+        fuse_log::contact_trigger(
+            unsafe { &*grenade },
+            "the weapon's launch did not take the grenade",
+        );
         return false;
     }
     true

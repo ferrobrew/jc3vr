@@ -19,7 +19,7 @@ use std::{
 use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
-    equipment::weapon::ThrownGrenadeWeapon,
+    equipment::{explosive::Explosive, weapon::ThrownGrenadeWeapon},
 };
 use parking_lot::Mutex;
 
@@ -248,6 +248,11 @@ pub(crate) fn pin_in(hand: Hand) -> bool {
     in_hand(hand)
         .and_then(actor)
         .is_some_and(|actor| !native::pin_out(&actor))
+}
+
+/// The native explosive behind the item in `hand`, while the pool holds it.
+pub(super) fn explosive_in_hand(hand: Hand) -> Option<*mut Explosive> {
+    actor(in_hand(hand)?)?.explosive()
 }
 
 /// The running fuse of the item in `hand`, once its pin is out: the time left and the time it

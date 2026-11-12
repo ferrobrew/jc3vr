@@ -309,6 +309,9 @@ impl Explosive {
     /// as [`ThrownGrenadeWeapon::m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade))
     /// point there rather than at the start of the explosive.
     pub const GAME_OBJECT_BASE_OFFSET: u64 = 112;
+    /// The offset of the embedded `CPfxBodyListener` subobject, the `this` of the explosive's
+    /// collision handler ([`Grenade::OnCollision`](crate::equipment::explosive::Grenade::OnCollision)).
+    pub const PFX_BODY_LISTENER_OFFSET: u64 = 104;
 }
 impl std::convert::AsRef<Explosive> for Explosive {
     fn as_ref(&self) -> &Explosive {
@@ -359,6 +362,45 @@ impl Grenade {
                 Self::TYPE_ID_ADDRESS,
             );
             f()
+        }
+    }
+    pub const OnCollision_ADDRESS: usize = 0x1409374B0;
+    /// The grenade's collision handler (`CGrenade::OnCollision`, its override of the
+    /// `CPfxBodyListener` virtual). It reads the profile's contact upgrades, gated on
+    /// [`m_CanUseUpgrades`](crate::equipment::explosive::Grenade::m_CanUseUpgrades) and on a flag of the grenade's ammunition
+    /// entry, as every upgrade check of the grenade is: explode on contact, explode on hostile
+    /// contact, and explode on characters and vehicles only. For a contact with an object it
+    /// classifies the object by its physics instance's type and sets
+    /// [`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) to zero when the enabled upgrade accepts it; a contact with
+    /// the static world ([`Collision::m_GB`](crate::physics::Collision::m_GB) null) zeroes the timer only under explode on contact
+    /// alone. The zeroed timer makes the next [`Explosive::UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) detonate the grenade.
+    /// The handler also plays the impact effects and the first-bounce sound, counts bounces,
+    /// redirects the first bounce's velocity under the upgrades, and records the contact normal.
+    /// `listener` is the grenade's `CPfxBodyListener` subobject
+    /// ([`Explosive::PFX_BODY_LISTENER_OFFSET`](crate::equipment::explosive::Explosive::PFX_BODY_LISTENER_OFFSET)), not the start of the grenade.
+    pub unsafe fn OnCollision(
+        listener: *mut ::std::ffi::c_void,
+        collision: *const crate::physics::Collision,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                listener: *mut ::std::ffi::c_void,
+                collision: *const crate::physics::Collision,
+            ) = ::std::mem::transmute(Self::OnCollision_ADDRESS);
+            f(listener, collision)
+        }
+    }
+    pub const Detonate_ADDRESS: usize = 0x14091F560;
+    /// The grenade's override of the virtual `Detonate`: runs the explosive's detonation (the
+    /// blast and the explosive's removal), then tells a thrown grenade weapon that owns the grenade
+    /// that the grenade is gone. [`Explosive::UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) calls the virtual once
+    /// [`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) is at or below zero; `dt` is the tick's delta.
+    pub unsafe fn Detonate(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::Detonate_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
         }
     }
     pub const PropelToward_ADDRESS: usize = 0x14091F5C0;

@@ -175,6 +175,48 @@ impl std::convert::AsMut<CharacterInput> for CharacterInput {
     }
 }
 #[repr(C, align(8))]
+/// A contact report (`SCollision`), passed to a physics game object's collision handler (such as
+/// [`Grenade::OnCollision`](crate::equipment::explosive::Grenade::OnCollision)). The handler's owner is
+/// the report's first object, and [`m_GB`](crate::physics::Collision::m_GB) is the one it touched.
+pub struct Collision {
+    _field_0: [u8; 8],
+    /// The object the handler's owner touched, or null for the static world.
+    pub m_GB: *mut crate::physics::PhysicsGameObject,
+    _field_10: [u8; 4],
+    /// The touched surface's game material (`EGameMaterialId`; see [`GameMaterialId`](crate::physics::GameMaterialId)).
+    pub m_MatB: u32,
+    /// The contact point, world space.
+    pub m_Position: crate::types::math::Vector3,
+    /// The contact normal, world space.
+    pub m_Normal: crate::types::math::Vector3,
+    /// The contact's impulse. A grenade's handler compares it against its bounce count to decide
+    /// whether a contact plays an impact.
+    pub m_Impulse: f32,
+    _field_34: [u8; 12],
+    /// The two bodies' separation velocity at the contact, along the normal.
+    pub m_SeparationVelocity: f32,
+    _field_44: [u8; 16],
+    /// The touched body. An explosive's handler attaches to the touched object at this body.
+    pub m_bodyIdB: u32,
+}
+fn _Collision_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x58], Collision>([0u8; 0x58]);
+    }
+    unreachable!()
+}
+impl Collision {}
+impl std::convert::AsRef<Collision> for Collision {
+    fn as_ref(&self) -> &Collision {
+        self
+    }
+}
+impl std::convert::AsMut<Collision> for Collision {
+    fn as_mut(&mut self) -> &mut Collision {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// A physics constraint placed in the world (`CConstraint`): a game object that joins two objects'
 /// bodies with a Havok constraint, made from its data's kind (fixed, deformable fixed, ball and
 /// socket, stiff spring, hinge, limited hinge, ragdoll, wheel, or prismatic), optionally motored
