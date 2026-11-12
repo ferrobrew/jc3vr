@@ -376,7 +376,7 @@ pub(crate) fn finish_tick(
                 .and_then(|intent| intent.socket)
                 .is_some_and(|socket| {
                     docked_at(hand, |volume| volume == GrabVolume::Socket(socket)).is_some()
-                        || attraction_for(hand, &config).is_some_and(|a| a.socket == socket)
+                        || attraction_for(hand, &config, None).is_some_and(|a| a.socket == socket)
                 });
             // Only a press calls the release off: fingers resting round a force-sensing grip
             // after the press let go are not a hold ([`hold::act::pressed_grips`]).
@@ -797,9 +797,13 @@ fn release(
     // carry set keeps the table's weapon in the hand alive.
     let dockable = unsafe { hold::act::dockable(object) };
     let pending = hold::act::pending_release(hand);
+    // The socket the other hand's weapon is on its way to is spoken for: two guns let go of
+    // together over one free shoulder would both travel there, and the second would fall when
+    // the first docked.
+    let reserved = hold::act::pending_release(hand.other()).and_then(|intent| intent.socket);
     let over = docked_at(
         hand,
-        |v| matches!(v, GrabVolume::Socket(s) if dockable && grab::fits(&snapshot, hand, s)),
+        |v| matches!(v, GrabVolume::Socket(s) if dockable && Some(s) != reserved && grab::fits(&snapshot, hand, s)),
     )
     .and_then(|v| match v {
         GrabVolume::Socket(socket) => Some(socket),
@@ -813,7 +817,7 @@ fn release(
     let over = retry_socket(pending, over);
     let attracted = over
         .is_none()
-        .then(|| attraction_for(hand, config))
+        .then(|| attraction_for(hand, config, reserved))
         .flatten()
         .filter(|a| {
             dockable
@@ -980,7 +984,13 @@ fn pass_by_action(hand: Hand) -> bool {
 /// reach, with the attraction on (`weapons.hold.dock_attraction`): the hand's grip as it is drawn
 /// against the tick's attractors, and the hand's fastest motion just before the release, which
 /// must not be a throw. A hand without motion history counts as still.
-fn attraction_for(hand: Hand, config: &ControllersConfig) -> Option<attract::Attraction> {
+/// The socket `hand`'s release is attracted to, leaving out `reserved`, the socket the other
+/// hand's weapon is already on its way to.
+fn attraction_for(
+    hand: Hand,
+    config: &ControllersConfig,
+    reserved: Option<Socket>,
+) -> Option<attract::Attraction> {
     if !config.weapons.hold.dock_attraction {
         return None;
     }
@@ -992,7 +1002,13 @@ fn attraction_for(hand: Hand, config: &ControllersConfig) -> Option<attract::Att
         .map_or(0.0, |(_, velocity)| velocity.length());
     let state = STATE.lock();
     let grip = state.points[hand.index()]?;
-    attract::attract(&state.attractors, hand, grip, speed, &ATTRACTION)
+    let open: Vec<attract::Attractor> = state
+        .attractors
+        .iter()
+        .filter(|a| Some(a.socket) != reserved)
+        .copied()
+        .collect();
+    attract::attract(&open, hand, grip, speed, &ATTRACTION)
 }
 
 /// Whether the weapon at `object` can lie in the world: every weapon but the game's dual-wield pair,
