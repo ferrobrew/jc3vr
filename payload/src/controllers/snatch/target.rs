@@ -656,13 +656,16 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     };
     // A weapon or grenade lying in the world is reached at its own body: the surface cast aims at
     // the body's point, but a cast on a weapon body reports no game object, so the surface gate
-    // would reject every ground weapon. The body hit supplies the anchor instead.
+    // would reject every ground weapon. An inert grenade of the mod's own, such as one a dead
+    // character dropped, is as small and meets the cast no better. The body hit supplies the
+    // anchor instead.
     if !direct
         && !matches!(
             kind,
             OfferKind::PlacedCharge { .. }
                 | OfferKind::Ground { .. }
                 | OfferKind::WorldGrenade { .. }
+                | OfferKind::Grenade { .. }
         )
     {
         let surface_ray = Ray::new(ray.origin, point - ray.origin)?;
@@ -694,7 +697,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
     if hit.is_none()
         && matches!(
             kind,
-            OfferKind::Ground { .. } | OfferKind::WorldGrenade { .. }
+            OfferKind::Ground { .. } | OfferKind::WorldGrenade { .. } | OfferKind::Grenade { .. }
         )
     {
         return None;
