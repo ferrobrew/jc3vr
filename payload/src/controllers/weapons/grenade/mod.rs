@@ -588,7 +588,8 @@ pub(crate) fn observe_hands(grips: [Option<Pose>; 2]) {
     );
 }
 
-/// Draw the items' native actors; their own render updates show them.
+/// Draw the items' native actors at the frame's interpolation fraction `dtf`; their own render
+/// updates show them.
 ///
 /// # Safety
 ///
