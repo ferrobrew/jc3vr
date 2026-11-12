@@ -356,7 +356,7 @@ fn every_kind_of_target_goes_through_the_resolver_and_the_renderer() {
         assert_eq!(resolved[0].reaches.len(), 1, "{volume:?} is in reach");
         match target.tier {
             Tier::Touch => assert_eq!(resolved[0].chosen, None, "{volume:?}"),
-            Tier::Target | Tier::Fallback | Tier::Remote => assert_eq!(
+            Tier::Handle | Tier::Target | Tier::Fallback | Tier::Remote => assert_eq!(
                 resolved[0].chosen.map(|c| c.volume),
                 Some(volume),
                 "{volume:?} is taken"
@@ -654,4 +654,18 @@ fn a_press_just_past_a_body_slot_recalls_the_latest_one_still_offered() {
         tier: Tier::Target,
         ..remote
     })));
+}
+
+#[test]
+fn a_mounted_gun_s_handle_beats_the_gun_s_nearer_body() {
+    let handle = GrabVolume::MountedHandle(Hand::Left);
+    let t = [
+        sphere(GrabVolume::Pickup(PickupKind::Prop), 0.0, 0.2, None),
+        sphere(handle, 0.008, 0.12, Some(Hand::Left)),
+    ];
+    let resolved = &resolve(&t, [at(0.0), None])[0];
+    let chosen = resolved.chosen.unwrap();
+    assert_eq!(chosen.volume, handle);
+    let lost = losers(&resolved.reaches, chosen);
+    assert_eq!(lost[0].1, Lost::Handle);
 }

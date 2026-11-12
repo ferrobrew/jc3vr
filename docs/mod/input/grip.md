@@ -17,7 +17,7 @@ Everything a hand can take is one `GripTarget` (`grab/target.rs`):
 
 - what a squeeze takes, a `GrabVolume`, which also names the subsystem that acts on the grab (`GrabVolume::consumer`);
 - the one hand that may take it, or either;
-- its tier: a target, a fallback, a remote target, or a touch target (below);
+- its tier: a handle, a target, a fallback, a remote target, or a touch target (below);
 - its reach: a grab point in the cockpit frame with a radius around it, reached by one of the hand's two points, or a distance the providing subsystem measured itself;
 - the hand that holds it now, if one does;
 - its marker: where it is drawn, the surface it lies on, its size, its style, and when it shows.
@@ -41,7 +41,7 @@ Each subsystem only provides and consumes. The input tick (`bindings::input_tick
 `grab::resolve` finds, for each hand, every target it may take and is within reach of, and the one its grip would take:
 
 1. A touch target is never taken. It is worked by the hand without a squeeze (a cockpit button pressed by the palm, a gun's magazine well that a round goes into on contact), and is in the list only for its marker.
-2. Of the targets in reach, the nearest grab point wins. Equally near ones go to the first placed, and each provider places what a hand holds first, so a hand keeps what it holds.
+2. A mounted gun's handle in reach wins over every other target: it sits on the gun's own body and its holder, which the nearest grab point would take by a few millimetres, and a grip on the body is a loose hold on a hinge the hand cannot turn. A loser to it is logged as `a mounted gun's handle is in reach`. Otherwise, of the targets in reach, the nearest grab point wins. Equally near ones go to the first placed, and each provider places what a hand holds first, so a hand keeps what it holds.
 3. With no target in reach, the nearest fallback wins. The fallbacks are a surface to climb, the helicopter to hang from, and the reach margins around the pouches and the parachute's handles. A hand that reaches for anything resting on a surface touches that surface too, so a surface ranks below everything a hand reaches for on purpose; and a hand feeling for a pouch lands a little off it more often than not, so a press just outside a pouch still takes from it when nothing else is near.
 4. With nothing at all in reach, not even a fallback, a remote target wins: the thing out of reach under the grapple's aim that the empty grapple hand would snatch ([grapple-snatch.md](grapple-snatch.md)). Its reach is measured, so it is always in reach when offered, and it is offered only to the grapple hand, empty, on foot, with the hook free and the grapple button up. A fist never takes it: only a press aimed at it arms the snatch, so a closed hand swung past a gun under the aim does nothing.
 5. A hand with nothing in reach, or only a remote target, takes the slot on the body (a socket or a pouch) it was last in reach of within `grab::tick::RECALL_S` (0.3 s), if that slot is still offered to it (`grab::resolve::recall`); the press's log notes `recalled the ... the hand left ... ms ago`. A hand reaching for a holster or a pouch often starts to pull away as the press lands, and on a force-sensing grip the press lands a few frames after the fingers close: in the 10 November 17:07 session the right hand reached over the left shoulder for the launcher with its "Left back" hint showing, and pressed a frame after the hint went (t 178.98), and the C4 pouch presses that missed had been inside its reach a tenth of a second before.

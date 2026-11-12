@@ -95,6 +95,10 @@ impl GripTarget {
 /// How a target ranks against the others a hand is within reach of.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Tier {
+    /// Taken over every other target in reach: a mounted gun's handle, which sits on the gun's own
+    /// body and its holder, so the nearest-grab-point rule would hand the grip to the body (a
+    /// loose object on a hinge the hand cannot turn) by a few millimetres.
+    Handle,
     /// Taken by the nearest-grab-point rule.
     Target,
     /// Taken only when no target is in reach: a surface to climb, the helicopter to hang from, and
@@ -112,6 +116,7 @@ impl Tier {
     /// The tier a target of `volume` ranks in by default.
     pub const fn of(volume: GrabVolume) -> Self {
         match volume {
+            GrabVolume::MountedHandle(_) => Tier::Handle,
             GrabVolume::Climb | GrabVolume::StuntHold => Tier::Fallback,
             GrabVolume::Snatch(_) => Tier::Remote,
             GrabVolume::CockpitButton(_) | GrabVolume::MagazineWell | GrabVolume::ChargeSurface => {

@@ -2454,7 +2454,10 @@ impl WeaponBase {
     }
     pub const DetachMountedGun_ADDRESS: usize = 0x1409823E0;
     /// Detaches the mounted weapon from its rigid holder: disables the holder's child interaction
-    /// contexts, stops using the weapon, and drops it. It does not equip the detached weapon.
+    /// contexts, stops using the weapon ([`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing)), and drops it
+    /// ([`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)). It does not equip the detached weapon. A holder that is not a
+    /// rigid object, such as a vehicle, has no contexts disabled, and nothing is done to the user's
+    /// vehicle seat: a user in a gunner seat is left in it.
     pub unsafe fn DetachMountedGun(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
