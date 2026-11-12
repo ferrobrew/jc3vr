@@ -321,11 +321,13 @@ pub(crate) fn finish_tick(
         }
     });
     let armed_hands = Hand::BOTH.map(|h| armed::in_hand(h).is_some());
+    let detonator = c4::detonator_hand();
     let free = Hand::BOTH.map(|h| {
         !gun_hands[h.index()]
             && !armed_hands[h.index()]
             && live::held_kind(h).is_none()
             && !grenade::holds(h)
+            && detonator != Some(h)
             && reload::holding_hand() != Some(h)
     });
     c4::input_tick(
@@ -334,6 +336,7 @@ pub(crate) fn finish_tick(
             pouch_grab: Hand::BOTH
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::C4Pouch)),
+            triggers,
             placed_grab: Hand::BOTH
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::PlacedCharge)),
@@ -342,16 +345,6 @@ pub(crate) fn finish_tick(
             dominant: config.acting_hand(),
         },
         &C4Tuning::of(&config.weapons.c4),
-    );
-    c4::wrist::input_tick(
-        &c4::wrist::TickInputs {
-            acting: config.weapons.wrist_detonator && active.is_some(),
-            presser: config.acting_hand(),
-            presser_reaching: free[config.acting_hand().index()]
-                && grips[config.acting_hand().index()].held(),
-            dt: real_dt,
-        },
-        &config,
     );
     let reload_finish = reload::finish_tick(
         &reload::FinishInputs {
@@ -460,7 +453,9 @@ pub(crate) fn finish_tick(
         });
     }
     let explosive_blocked = Hand::BOTH.into_iter().any(|hand| {
-        (grenade::holds(hand) || c4::throwing_hand() == Some(hand))
+        (grenade::holds(hand)
+            || c4::throwing_hand() == Some(hand)
+            || c4::detonator_hand() == Some(hand))
             && explosive_holds_fire(Some(hand), gun_hands, armed_hands)
     });
     let fire_blocked = reload_blocks
@@ -492,9 +487,9 @@ fn docked_at(hand: Hand, fits: impl Fn(GrabVolume) -> bool) -> Option<GrabVolume
     dock_target(hand, &state.placed, state.points[hand.index()], fits)
 }
 
-/// Whether the fire input is held back for a grenade or a charge in the hand `explosive`: with no
-/// gun in the other hand (the wielded weapon's in `gun_hands`, or one armed there in
-/// `armed_hands`), the fire input would draw a gun into the hand that holds it.
+/// Whether the fire input is held back for a grenade, a charge, or the detonator in the hand
+/// `explosive`: with no gun in the other hand (the wielded weapon's in `gun_hands`, or one armed
+/// there in `armed_hands`), the fire input would draw a gun into the hand that holds it.
 fn explosive_holds_fire(
     explosive: Option<Hand>,
     gun_hands: [bool; 2],
@@ -514,7 +509,7 @@ const MAX_EVENTS: usize = 6;
 
 /// Declare what each hand holds of the weapons, for its finger pose: a gun by its grip in each hand
 /// that holds one (`gun_hands`, the wielded weapon's and the armed ones'), the foregrip, a grenade
-/// or a charge, and a round for the reload.
+/// or a charge, the detonator, which is held as a gun's grip is, and a round for the reload.
 fn declare_grips(gun_hands: [bool; 2]) {
     for hand in Hand::BOTH.into_iter().filter(|h| gun_hands[h.index()]) {
         grip::declare(hand, Grip::new(GripSource::Gun));
@@ -532,6 +527,9 @@ fn declare_grips(gun_hands: [bool; 2]) {
     }
     if let Some(hand) = c4::throwing_hand() {
         grip::declare(hand, Grip::new(GripSource::C4));
+    }
+    if let Some(hand) = c4::detonator_hand() {
+        grip::declare(hand, Grip::new(GripSource::Gun));
     }
     if let Some(hand) = reload::holding_hand() {
         grip::declare(hand, Grip::new(GripSource::Magazine));

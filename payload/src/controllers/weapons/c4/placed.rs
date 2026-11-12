@@ -413,7 +413,7 @@ unsafe fn entries(weapon: &PlantedExplosiveWeapon) -> impl Iterator<Item = *mut 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::weapons::c4::C4Status;
+    use crate::controllers::weapons::c4::{C4Status, detonator::Detonator};
 
     const A: usize = 0x1000;
     const B: usize = 0x2000;
@@ -603,6 +603,7 @@ mod tests {
             preview: None,
             wheel: None,
             placed: PlacedState::NEW,
+            detonator: Detonator::NONE,
         }
     }
 

@@ -89,9 +89,8 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::C4Throw` | a charge leaves the hand | click | 0.6 | weapons | `weapons::c4` |
 | `Event::C4Stick` | a charge pressed onto a surface sticks | bump | 0.6 | weapons | `weapons::c4` |
 | `Event::C4Detonate` | the placed charges detonate, on both hands | thud, long | 1.0 | weapons | `weapons::c4` |
-| `Event::DetonatorPress` | the wrist detonator is pressed with charges placed, on both hands | click | 1.0 | weapons | `weapons::c4::wrist` |
-| `Event::DetonatorEmpty` | the wrist detonator is pressed with nothing placed | buzz | 0.1 | weapons | `weapons::c4::wrist` |
-| `Event::DetonatorNear` | the pressing fingertip comes within the wrist detonator's approach radius, on the pressing hand | tick | 0.4 | weapons | `weapons::c4::wrist` |
+| `Event::DetonatorPress` | the detonator's trigger is pressed with charges placed, on both hands | click | 1.0 | weapons | `weapons::c4` |
+| `Event::DetonatorEmpty` | the detonator's trigger is pressed with nothing to detonate | buzz | 0.1 | weapons | `weapons::c4` |
 | `Event::WheelTick` | the weapon wheel opens or its choice changes | tick | 0.75 | weapons | `weapons::wheel` |
 | `Event::WheelCommit` | the weapon wheel's release commits a weapon | click | 0.75 | weapons | `weapons::wheel` |
 | `Event::SteeringStop` | the held wheel reaches its lock | bump | 0.6 | vehicles | `vehicles::control_haptics` |
@@ -132,7 +131,6 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Sustain::StuntHang` | a hand hangs from a stunt position, by the vehicle's speed | tension | 0.35 | traversal | `physical_hands::stunt` |
 | `Sustain::GrappleTension` | the grapple hand while the tethers are squeezed, by their tension, or while the snatch's line yanks its target, by the line's load, or while the held line swings its target, by its tension's share of the line's strength, on the bracing hand too while it braces | tension | 0.75 | traversal | `grapple::physical`, `snatch` |
 | `Sustain::GrappleReel` | the grapple hand while the reel carries the character, by its speed | hum | 0.35 | traversal | `grapple::physical` |
-| `Sustain::DetonatorApproach` | the pressing fingertip within the wrist detonator's approach radius, by the square of how far it has come toward the touch sphere | hum | 0.3 | weapons | `weapons::c4::wrist` |
 | `Sustain::GameRumble` | the game's per-frame motor strength: the low motor on the left hand, the high one on the right | hum | 1.0 | game | `haptics::rumble` |
 
 Each default is rounded onto the primitive its source belongs to. The pressure and tension sources are sustained levels that sum, not short pulses resent every tick, and the softest end of the kick and the palm contact is the bump's soft amplitude.

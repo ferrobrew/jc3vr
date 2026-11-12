@@ -52,6 +52,7 @@ pub(super) struct BeforeFinish {
     foregrip: Option<(usize, Hand, bool)>,
     grenade: [bool; 2],
     c4: Option<Hand>,
+    detonator: Option<Hand>,
     parachute: [Option<HandleHold>; 2],
 }
 
@@ -64,6 +65,7 @@ impl BeforeFinish {
             foregrip: foregrip_owner(),
             grenade: Hand::BOTH.map(weapons::grenade::holds),
             c4: weapons::c4::throwing_hand(),
+            detonator: weapons::c4::detonator_hand(),
             parachute,
         }
     }
@@ -176,6 +178,7 @@ pub(super) fn capture(input: Refresh<'_>) -> Eligibility {
             foregrip: foregrip_owner(),
             grenade: Hand::BOTH.map(weapons::grenade::holds),
             c4: weapons::c4::throwing_hand(),
+            detonator: weapons::c4::detonator_hand(),
             parachute,
         },
         fire,
@@ -205,6 +208,7 @@ fn capture_current(
         || input.before.foregrip != current.foregrip
         || input.before.grenade != current.grenade
         || input.before.c4 != current.c4
+        || input.before.detonator != current.detonator
         || input.before.parachute != current.parachute;
     let chosen = retained_choices(input.chosen, input.grabs, owners_changed);
     let fires_guns = tables::triggers_fire_hand_weapons(input.owners[0].mode);
@@ -236,6 +240,11 @@ fn capture_current(
     }
     mechanics.extend(pin_rows(
         Hand::BOTH.map(weapons::grenade::pin_in_hand),
+        input.ready,
+    ));
+    mechanics.extend(detonator_rows(
+        weapons::c4::returnable().map(|charge| charge.is_some()),
+        current.detonator,
         input.ready,
     ));
     if let Some(hand) = input.yank {
@@ -462,6 +471,32 @@ fn pin_rows(pin_in: [bool; 2], ready: [bool; 2]) -> impl Iterator<Item = Row> {
             control: Control::Trigger(hand),
             gesture: Gesture::Press,
             effect: Effect::Mod(ModAction::PullPin),
+        })
+}
+
+/// The trigger of each ready hand holding a C4 charge, which swaps it for the detonator, and of the
+/// ready hand holding the detonator, which detonates.
+fn detonator_rows(
+    charge: [bool; 2],
+    detonator: Option<Hand>,
+    ready: [bool; 2],
+) -> impl Iterator<Item = Row> {
+    Hand::BOTH
+        .into_iter()
+        .filter(move |hand| ready[hand.index()])
+        .filter_map(move |hand| {
+            let action = if detonator == Some(hand) {
+                ModAction::Detonate
+            } else if charge[hand.index()] {
+                ModAction::TakeDetonator
+            } else {
+                return None;
+            };
+            Some(Row {
+                control: Control::Trigger(hand),
+                gesture: Gesture::Press,
+                effect: Effect::Mod(action),
+            })
         })
 }
 
@@ -701,6 +736,31 @@ mod tests {
             }]
         );
         assert_eq!(pin_rows([true, false], [false, true]).count(), 0);
+    }
+
+    #[test]
+    fn a_charge_offers_the_detonator_and_the_detonator_its_detonation_on_its_own_trigger() {
+        assert_eq!(detonator_rows([false; 2], None, [true; 2]).count(), 0);
+        let row = |hand, action| Row {
+            control: Control::Trigger(hand),
+            gesture: Gesture::Press,
+            effect: Effect::Mod(action),
+        };
+        assert_eq!(
+            detonator_rows([true, false], None, [true; 2]).collect::<Vec<_>>(),
+            vec![row(Hand::Left, ModAction::TakeDetonator)]
+        );
+        assert_eq!(
+            detonator_rows([true, false], Some(Hand::Right), [true; 2]).collect::<Vec<_>>(),
+            vec![
+                row(Hand::Left, ModAction::TakeDetonator),
+                row(Hand::Right, ModAction::Detonate)
+            ]
+        );
+        assert_eq!(
+            detonator_rows([false; 2], Some(Hand::Right), [true, false]).count(),
+            0
+        );
     }
 
     #[test]

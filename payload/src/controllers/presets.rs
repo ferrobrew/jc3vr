@@ -51,8 +51,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.weapons.reload.enabled = on;
     c.weapons.grenade_throw = on;
     c.weapons.c4_throw = on;
-    c.weapons.wrist_detonator = on;
-    c.weapons.c4.detonator.overlay = on;
     c.weapons.scopes = on;
     c.weapons.auto_switch_when_empty = !on;
     c.body.remap_head = on;
@@ -213,7 +211,7 @@ mod tests {
                 owned += usize::from(is_owned);
             }
         }
-        assert!(owned > 100);
+        assert!(owned > 90);
     }
 
     fn collect_leaves(value: &serde_json::Value, path: String, leaves: &mut Vec<String>) {

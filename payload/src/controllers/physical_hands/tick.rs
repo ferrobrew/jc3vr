@@ -738,8 +738,8 @@ fn joint_inputs(config: &PhysicalHandsConfig) -> pickup::JointInputs {
     }
 }
 
-/// Which hands hold nothing a palm would get in the way of: no gun, not the foregrip, no grenade or
-/// charge, nothing of the loadout table's but a prop the pickup carries, and the controller drives
+/// Which hands hold nothing a palm would get in the way of: no gun, not the foregrip, no grenade,
+/// charge, or detonator, nothing of the loadout table's but a prop the pickup carries, and the controller drives
 /// the hand.
 pub(crate) fn free_hands() -> [bool; 2] {
     let wielded = weapons::status()
@@ -750,6 +750,7 @@ pub(crate) fn free_hands() -> [bool; 2] {
         .filter(|h| h.engaged)
         .map(|h| h.holder.other());
     let charge = c4::throwing_hand();
+    let detonator = c4::detonator_hand();
     let weights = tiers::weights();
     Hand::BOTH.map(|hand| {
         let held = live::held_kind(hand).is_some_and(|kind| kind != ItemKind::Prop);
@@ -758,6 +759,7 @@ pub(crate) fn free_hands() -> [bool; 2] {
             && foregrip != Some(hand)
             && !grenade::holds(hand)
             && charge != Some(hand)
+            && detonator != Some(hand)
             && weights[hand.index()] > 0.0
     })
 }

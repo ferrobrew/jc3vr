@@ -1,15 +1,12 @@
-//! C4 by hand: the throw from the chest pouch, the placed charges, the detonations, the wrist
-//! detonator's press, and their switches.
+//! C4 by hand: the throw from the chest pouch, the placed charges, the detonator, the detonations,
+//! and their switches.
 
 use egui::Ui;
 
 use crate::{
     controllers::{
         config::WeaponsConfig,
-        weapons::c4::{
-            self, C4Status,
-            wrist::{self, WristStatus},
-        },
+        weapons::c4::{self, C4Status, detonator},
     },
     ui::controllers::{vec3, yes_no},
 };
@@ -17,14 +14,14 @@ use crate::{
 /// Everything the C4 readout shows, read before the config is locked for editing.
 pub(super) struct ExplosivesReadout {
     c4: C4Status,
-    wrist: WristStatus,
+    detonator_model: bool,
 }
 
 impl ExplosivesReadout {
     pub(super) fn read() -> Self {
         Self {
             c4: c4::status(),
-            wrist: wrist::status(),
+            detonator_model: detonator::model_shown(),
         }
     }
 }
@@ -56,8 +53,19 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
         yes_no(c.planting_mode)
     ));
     ui.label(format!(
-        "  put back into the pouch {} · taken back from where they were placed {}",
-        c.returned, c.taken
+        "  put back into the pouch {} · swapped for the detonator {} · taken back from where they \
+         were placed {}",
+        c.returned, c.swapped, c.taken
+    ));
+    ui.label(format!(
+        "  detonator: {} · model drawn {} · presses {} (with nothing to detonate {})",
+        c.detonator.map_or("on the chest".to_owned(), |h| format!(
+            "in the {} hand",
+            h.label()
+        )),
+        yes_no(readout.detonator_model),
+        c.detonator_presses,
+        c.idle_presses
     ));
     if let Some(v) = c.last_release {
         ui.label(format!(
@@ -91,36 +99,15 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
             }
         ))
     ));
-    let w = &readout.wrist;
-    if !w.acting {
-        ui.label("Wrist detonator: inactive");
-        return;
-    }
-    ui.label(format!(
-        "Wrist detonator: {} · lit {} · fingertip from {} · presses {} (with nothing placed {})",
-        w.reading.phase.label(),
-        yes_no(w.lit),
-        w.fingertip.map_or("nowhere", |f| f.label()),
-        w.presses,
-        w.idle_presses
-    ));
-    if let (Some(distance), Some(height)) = (w.reading.distance_m, w.reading.height_m) {
-        ui.label(format!(
-            "  fingertip {distance:.3} m from the button, {height:+.3} m in front of its face"
-        ));
-    }
 }
 
-/// The switches of the C4 throw, the press onto surfaces, and the wrist detonator.
+/// The switches of the C4 throw and the press onto surfaces.
 pub(super) fn explosives_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.c4_throw, "Physical C4 throw").on_hover_text(
         "A grip press at the chest pouch primes a C4 charge; opening the grip throws it, and it \
-         sticks where it lands.",
+         sticks where it lands. The trigger of a hand holding a charge swaps it for the detonator, \
+         whose trigger detonates the placed charges.",
     );
     ui.checkbox(&mut w.c4.stick.enabled, "Press C4 onto surfaces")
         .on_hover_text("A held charge pressed onto a surface sticks there.");
-    ui.checkbox(&mut w.wrist_detonator, "Wrist detonator").on_hover_text(
-        "Push the dominant index fingertip into the button on the inside of the off-hand's wrist \
-         to detonate the placed charges.",
-    );
 }

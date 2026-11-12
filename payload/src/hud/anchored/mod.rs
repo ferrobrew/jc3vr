@@ -188,8 +188,7 @@ const CROSS_WIDTH_M: f32 = 0.18;
 const CROSS_PULL_M: f32 = 0.08;
 
 /// The wrist panel's centre in the grip frame, metres: +X out of the palm, +Z back along the
-/// forearm (mirrored on X between the hands, so +X is the palm side of either). It sits toward the
-/// elbow from the C4 detonator button on the same side of the wrist.
+/// forearm (mirrored on X between the hands, so +X is the palm side of either).
 const WRIST_OFFSET_M: Vec3 = Vec3::new(0.04, 0.0, 0.16);
 
 /// The wrist panel's width, metres.

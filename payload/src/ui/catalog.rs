@@ -83,7 +83,7 @@ features! {
         Aim => ("weapons.aim", "Aim, sights, and scopes"),
         Reload => ("weapons.reload", "Reload and gun action"),
         Inventory => ("weapons.inventory", "Inventory and body slots"),
-        Explosives => ("weapons.explosives", "Grenades, C4, and wrist detonator"),
+        Explosives => ("weapons.explosives", "Grenades, C4, and the detonator"),
         WeaponSelection => ("weapons.selection", "Weapon selection"),
     },
     Movement {

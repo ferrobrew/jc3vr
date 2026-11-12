@@ -171,12 +171,10 @@ pub enum Event {
     C4Stick,
     /// The placed charges detonating, on both hands.
     C4Detonate,
-    /// The wrist detonator pressed with charges placed, on both hands.
+    /// The detonator's trigger pressed with charges placed, on both hands.
     DetonatorPress,
-    /// The wrist detonator pressed with nothing placed.
+    /// The detonator's trigger pressed with nothing to detonate.
     DetonatorEmpty,
-    /// The pressing fingertip coming within reach of the wrist detonator.
-    DetonatorNear,
     /// The weapon wheel opening or its choice changing.
     WheelTick,
     /// The weapon wheel's release committing a weapon.
@@ -250,7 +248,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 68] = [
+    pub const ALL: [Event; 67] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -286,7 +284,6 @@ impl Event {
         Event::C4Detonate,
         Event::DetonatorPress,
         Event::DetonatorEmpty,
-        Event::DetonatorNear,
         Event::WheelTick,
         Event::WheelCommit,
         Event::SteeringStop,
@@ -365,7 +362,6 @@ impl Event {
             Event::C4Detonate => Cue::new(Primitive::Thud, 1.0, Category::Weapons).long(),
             Event::DetonatorPress => Cue::new(Primitive::Click, 1.0, Category::Weapons),
             Event::DetonatorEmpty => Cue::new(Primitive::Buzz, 0.1, Category::Weapons),
-            Event::DetonatorNear => Cue::new(Primitive::Tick, 0.4, Category::Weapons),
             Event::WheelTick => Cue::new(Primitive::Tick, 0.75, Category::Weapons),
             Event::WheelCommit => Cue::new(Primitive::Click, 0.75, Category::Weapons),
             Event::SteeringStop | Event::ControlStop => {
@@ -443,7 +439,6 @@ impl Event {
             Event::C4Detonate => "C4 detonate",
             Event::DetonatorPress => "detonator press",
             Event::DetonatorEmpty => "detonator empty",
-            Event::DetonatorNear => "detonator near",
             Event::WheelTick => "weapon wheel tick",
             Event::WheelCommit => "weapon wheel commit",
             Event::SteeringStop => "steering stop",
@@ -500,13 +495,11 @@ pub enum Sustain {
     GrappleReel,
     /// The game's own rumble: the rumble manager's per-frame motor strength, by side.
     GameRumble,
-    /// The pressing hand while its fingertip closes on the wrist detonator, by how close it is.
-    DetonatorApproach,
 }
 
 impl Sustain {
     #[cfg(test)]
-    pub const ALL: [Sustain; 9] = [
+    pub const ALL: [Sustain; 8] = [
         Sustain::PalmPressure,
         Sustain::HeldLoad,
         Sustain::BodyPressure,
@@ -515,7 +508,6 @@ impl Sustain {
         Sustain::GrappleTension,
         Sustain::GrappleReel,
         Sustain::GameRumble,
-        Sustain::DetonatorApproach,
     ];
 
     pub const fn cue(self) -> Cue {
@@ -528,7 +520,6 @@ impl Sustain {
             Sustain::GrappleTension => Cue::new(Primitive::Tension, 0.75, Category::Traversal),
             Sustain::GrappleReel => Cue::new(Primitive::Hum, 0.35, Category::Traversal),
             Sustain::GameRumble => Cue::new(Primitive::Hum, 1.0, Category::Game),
-            Sustain::DetonatorApproach => Cue::new(Primitive::Hum, 0.3, Category::Weapons),
         }
     }
 
@@ -549,7 +540,6 @@ impl Sustain {
             Sustain::GrappleTension => "grapple tension",
             Sustain::GrappleReel => "grapple reel",
             Sustain::GameRumble => "game rumble",
-            Sustain::DetonatorApproach => "detonator approach",
         }
     }
 }

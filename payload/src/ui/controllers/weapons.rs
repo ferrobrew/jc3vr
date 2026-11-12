@@ -1,6 +1,6 @@
 //! Weapon handling: the grab volume each hand is in, the wielded weapon, the grabs and what they
 //! did, the foregrip, the hand tiers, the recoil, the dual-wield split, the grapple line and yank,
-//! the grenade throw, the C4 throw and the wrist detonator, the true reload, the empty weapon, the
+//! the grenade throw, the C4 throw and its detonator, the true reload, the empty weapon, the
 //! one-handed weight, the gun-in-hand watch, the fire input with empty hands, per-hand aim assist,
 //! and the switches of the hold, the support, the reload, and the explosives.
 
@@ -613,7 +613,7 @@ pub(super) fn reload_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     reload_settings(ui, &mut w.reload);
 }
 
-/// The switches of the grenade throw and catch, the C4 throw and press, and the wrist detonator.
+/// The switches of the grenade throw and catch, and the C4 throw and press.
 pub(super) fn explosive_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
     ui.checkbox(&mut w.grenade_throw, "Physical grenade throw").on_hover_text(
         "A grip press at the grenade pouch primes a grenade; opening the grip throws it. The fuse \

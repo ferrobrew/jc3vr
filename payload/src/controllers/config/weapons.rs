@@ -54,13 +54,11 @@ pub struct WeaponsConfig {
     /// The physical throw's release, warning, and fallback settings.
     pub grenade: GrenadeConfig,
     /// Throw C4 physically: grab a charge from the chest pouch, release the grip to throw it with
-    /// the hand's velocity, and it sticks where it lands. The C4 pouch exists only while this is
-    /// on.
+    /// the hand's velocity, and it sticks where it lands; the trigger of a hand holding a charge
+    /// swaps it for the detonator, whose trigger detonates the placed charges. The C4 pouch exists
+    /// only while this is on.
     pub c4_throw: bool,
-    /// Detonate the placed charges by pushing the dominant index fingertip into the button on the
-    /// inside of the off-hand's wrist.
-    pub wrist_detonator: bool,
-    /// The C4 pouch, the throw's release, and the wrist detonator's placement and press tuning.
+    /// The C4 throw's switches.
     pub c4: C4Config,
     /// Draw a magnified image on a scoped weapon's lens while the scope is at an eye, in place of
     /// the game's precision-aim zoom, which is suppressed under the controller scheme whatever this
@@ -101,7 +99,6 @@ impl WeaponsConfig {
             grenade_throw: true,
             grenade: GrenadeConfig::new(),
             c4_throw: true,
-            wrist_detonator: true,
             c4: C4Config::new(),
             scopes: true,
             auto_switch_when_empty: false,

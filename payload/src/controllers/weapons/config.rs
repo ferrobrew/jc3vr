@@ -259,14 +259,11 @@ impl Default for GrenadeCatchConfig {
     }
 }
 
-/// The C4 throw, the press onto surfaces, and the wrist detonator (see
-/// [`crate::controllers::weapons::c4`]), whose fixed tuning is
-/// [`C4`](crate::controllers::weapons::c4::tuning::C4).
+/// The C4 throw and the press onto surfaces (see [`crate::controllers::weapons::c4`]), whose fixed
+/// tuning is [`C4`](crate::controllers::weapons::c4::tuning::C4).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct C4Config {
-    /// The detonator button on the off-hand's wrist.
-    pub detonator: WristDetonatorConfig,
     /// Pressing a held charge onto a surface sticks it there.
     pub stick: C4StickConfig,
 }
@@ -274,36 +271,12 @@ pub struct C4Config {
 impl C4Config {
     pub const fn new() -> Self {
         Self {
-            detonator: WristDetonatorConfig::new(),
             stick: C4StickConfig::new(),
         }
     }
 }
 
 impl Default for C4Config {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The detonator button on the inside of the off-hand's wrist, pressed by the other hand's index
-/// fingertip from above, its palm facing the same way as the button (see
-/// [`crate::controllers::weapons::c4::press`]).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct WristDetonatorConfig {
-    /// Draw the button on the wrist, facing out of it: dim with no charges placed, lit with a pip
-    /// beside it for each placed charge, and flashing on a press and on the detonation.
-    pub overlay: bool,
-}
-
-impl WristDetonatorConfig {
-    pub const fn new() -> Self {
-        Self { overlay: true }
-    }
-}
-
-impl Default for WristDetonatorConfig {
     fn default() -> Self {
         Self::new()
     }

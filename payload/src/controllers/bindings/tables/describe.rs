@@ -212,8 +212,10 @@ pub enum ModAction {
     Climb,
     /// Grip an unheld latched vehicle door to open it by hand.
     OpenVehicleDoor,
-    /// Push the dominant fingertip into the wrist button to detonate the placed charges.
-    WristDetonator,
+    /// Swap the held C4 charge for the detonator.
+    TakeDetonator,
+    /// Detonate the placed charges with the detonator in the hand.
+    Detonate,
     /// Take a parachute handle, and pull it down to steer, or both to brake.
     ParachuteHandles,
     /// Pull a held parachute handle down to steer or contribute to braking.
@@ -315,8 +317,6 @@ pub struct Features {
     pub grenade_throw: bool,
     /// The C4 throw from the chest pouch.
     pub c4_throw: bool,
-    /// The wrist detonator.
-    pub wrist_detonator: bool,
     /// The sight tuning capture chord is armed.
     pub sight_chord: bool,
     /// The weapon-select trackpad press opens the weapon wheel.
@@ -894,13 +894,6 @@ fn outside_rows(ctx: &DescribeCtx, bindings: Bindings) -> Vec<Row> {
         for (control, _) in controls(MenuAction::MapZoom.id()) {
             add(control, Gesture::Press, modded(ModAction::MapZoom));
         }
-    }
-    if features.wrist_detonator && ctx.mode != Mode::Ui {
-        add(
-            Control::Motion(dom),
-            Gesture::Press,
-            modded(ModAction::WristDetonator),
-        );
     }
     if features.parachute_handles && ctx.mode == Mode::Airborne(AirborneVariant::Parachute) {
         add(

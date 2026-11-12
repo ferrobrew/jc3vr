@@ -159,7 +159,6 @@ pub(crate) fn refresh(
             work_action: weapons.reload.enabled && weapons.reload.manual_action,
             grenade_throw: weapons.grenade_throw,
             c4_throw: weapons.c4_throw,
-            wrist_detonator: weapons.wrist_detonator,
             sight_chord: controls.sight_chord,
             wheel_trackpad: weapons.wheel.enabled && WHEEL.trackpad,
             wheel_stick: weapons.wheel.enabled && WHEEL.stick,

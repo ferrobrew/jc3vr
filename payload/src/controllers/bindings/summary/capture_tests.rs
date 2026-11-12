@@ -14,6 +14,7 @@ fn owner_state(guns: [Option<GunOwner>; 2]) -> BeforeFinish {
         foregrip: None,
         grenade: [false; 2],
         c4: None,
+        detonator: None,
         parachute: [None; 2],
     }
 }

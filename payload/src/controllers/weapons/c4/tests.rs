@@ -19,6 +19,7 @@ fn fresh() -> State {
         preview: None,
         wheel: None,
         placed: PlacedState::NEW,
+        detonator: Detonator::NONE,
     }
 }
 
@@ -26,14 +27,14 @@ fn fresh() -> State {
 fn a_started_detonation_is_credited_to_the_request_or_the_game() {
     let mut state = fresh();
     state.detonation = Some(PendingDetonation {
-        source: DetonationSource::WristButton,
+        source: DetonationSource::Detonator,
         remaining_s: DETONATION_TIMEOUT_S,
     });
     settle_detonation(&mut state, true, 3, 0.03);
     assert_eq!(
         state.status.last_detonation,
         Some(Detonation {
-            source: DetonationSource::WristButton,
+            source: DetonationSource::Detonator,
             started: true,
             charges: 3,
         })
@@ -51,7 +52,7 @@ fn a_started_detonation_is_credited_to_the_request_or_the_game() {
 fn an_unanswered_request_times_out() {
     let mut state = fresh();
     state.detonation = Some(PendingDetonation {
-        source: DetonationSource::WristButton,
+        source: DetonationSource::Detonator,
         remaining_s: DETONATION_TIMEOUT_S,
     });
     settle_detonation(&mut state, false, 1, 0.1);
@@ -63,7 +64,7 @@ fn an_unanswered_request_times_out() {
     assert_eq!(
         state.status.last_detonation,
         Some(Detonation {
-            source: DetonationSource::WristButton,
+            source: DetonationSource::Detonator,
             started: false,
             charges: 1,
         })

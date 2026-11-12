@@ -24,7 +24,7 @@ The clocks the controllers read are these. The bindings tick's step is the game'
 | The palms' lead (`physics/step.rs`) | Game seconds | The target's age, real, times a velocity per game second overshot by `1 / scale`. |
 | The body rig's step drive (`body/rig/root/`) | Real, converted | The step drive closes the gap to the player's neck: paced and capped per real second, then handed to the game per game second, so the body keeps up with the player's steps ([rig.md, "Steps"](../body/rig.md#steps)). |
 | A throw (`hold::act::release_at`, every gun, grenade, and charge) | Real, converted | See below. |
-| The reload: the taps, the flicks, the grip's motion, the round's insertion and its float into the well, the action's return, and the wrist detonator's dwell (`weapons/reload/`, `weapons/c4/wrist.rs`) | Real step | The player's hands and what they hold. A loose round carried as a body in the world keeps the game step. |
+| The reload: the taps, the flicks, the grip's motion, the round's insertion and its float into the well, and the action's return (`weapons/reload/`) | Real step | The player's hands and what they hold. A loose round carried as a body in the world keeps the game step. |
 | The wingsuit gestures, the grip's hand speed, the haptics, the seated follow, the head fade, the weight spring, the dock slides, the recoil springs, the grapple hang's pump | Real already | Display times or the wall clock. The recoil's spring settles in real time while shots come further apart; it is the player's arm settling. |
 | The snatch's wire timeouts | Game step | The wire flies in the world. |
 | The ripcord | No clock | A distance from where it was taken. |

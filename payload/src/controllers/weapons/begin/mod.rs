@@ -337,7 +337,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
         }
         if config.weapons.c4_throw
-            && c4::in_stock()
+            && c4::pouch_offered()
             && let Some(pouch) = volumes::c4_pouch(body, pouches, config.acting_hand(), grabbers)
         {
             targets.extend(place.pouch(&pouch, pouches.reach_margin_m));
@@ -374,13 +374,18 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     }
     if config.weapons.grenade_throw {
         let charge = c4::throwing_hand();
+        let detonator = c4::detonator_hand();
         // SAFETY: the game stage runs on the game thread before the world update.
         let grenades = unsafe {
             grenade::begin_tick(
                 &grenade::BeginInputs {
                     active: &active,
-                    free: Hand::BOTH
-                        .map(|h| free[h.index()] && !grenade::holds(h) && charge != Some(h)),
+                    free: Hand::BOTH.map(|h| {
+                        free[h.index()]
+                            && !grenade::holds(h)
+                            && charge != Some(h)
+                            && detonator != Some(h)
+                    }),
                     acting: gameplay,
                 },
                 &GrenadeTuning::of(&config.weapons.grenade),

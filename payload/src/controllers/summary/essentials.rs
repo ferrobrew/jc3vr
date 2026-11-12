@@ -39,7 +39,7 @@ pub(crate) fn rows(mode: Mode, rows: &[Row], evidence: Evidence) -> Vec<Row> {
                     (!kept.is_empty()).then_some(Effect::Actions(kept))?
                 }
                 Effect::Mod(action) => {
-                    essential_mod(mode, *action, evidence).then_some(Effect::Mod(*action))?
+                    essential_mod(mode, *action).then_some(Effect::Mod(*action))?
                 }
             };
             Some(Row {
@@ -134,15 +134,9 @@ fn essential_action(mode: Mode, action: Action, evidence: Evidence) -> bool {
 
 /// Whether the mod's `action` is one of `mode`'s essentials. Releasing the tethers is everywhere
 /// the grapple is, since nothing else on the wrist says how.
-fn essential_mod(mode: Mode, action: ModAction, evidence: Evidence) -> bool {
+fn essential_mod(mode: Mode, action: ModAction) -> bool {
     match mode {
-        // The detonator has nothing to offer until a charge is out in the world.
-        Mode::OnFoot(_) => match action {
-            ModAction::ReleaseTethers => true,
-            ModAction::WristDetonator => evidence.charges_placed,
-            _ => false,
-        },
-        Mode::Vehicle(_) => action == ModAction::ReleaseTethers,
+        Mode::OnFoot(_) | Mode::Vehicle(_) => action == ModAction::ReleaseTethers,
         Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Wingsuit) => {
             matches!(action, ModAction::ReleaseTethers | ModAction::Ripcord)
         }
@@ -268,10 +262,7 @@ mod tests {
                 essential_action(mode, FIRE_GRAPPLE, Evidence::default()),
                 "{mode:?}"
             );
-            assert!(
-                essential_mod(mode, ModAction::ReleaseTethers, Evidence::default()),
-                "{mode:?}"
-            );
+            assert!(essential_mod(mode, ModAction::ReleaseTethers), "{mode:?}");
         }
         assert!(!essential_action(
             Mode::Ui,
@@ -281,27 +272,7 @@ mod tests {
     }
 
     #[test]
-    fn the_wrist_detonator_is_essential_only_with_a_charge_out() {
-        let detonator = row(
-            Control::Motion(Hand::Right),
-            Gesture::Press,
-            Effect::Mod(ModAction::WristDetonator),
-        );
-        let without = rows(
-            GROUND,
-            std::slice::from_ref(&detonator),
-            Evidence::default(),
-        );
-        assert!(without.is_empty());
-        let with = rows(
-            GROUND,
-            std::slice::from_ref(&detonator),
-            Evidence {
-                charges_placed: true,
-            },
-        );
-        assert_eq!(with, [detonator]);
-        // The stick click's detonate is the same offer and goes with it.
+    fn the_stick_clicks_detonate_is_essential_only_with_a_charge_out() {
         assert!(!essential_action(
             GROUND,
             DETONATE_EXPLOSIVE,

@@ -35,8 +35,6 @@ pub enum Source {
     SightTuning,
     /// The laser of the hand pointing at the mod's debug panel.
     PanelPointer,
-    /// The detonator button on the off-hand's wrist.
-    WristDetonator,
     /// The physical hands' palm boxes and contacts.
     PhysicalHands,
     /// The body mirror's reflection of Rico's skeleton.
@@ -61,7 +59,7 @@ pub enum Source {
 }
 
 impl Source {
-    pub const COUNT: usize = 21;
+    pub const COUNT: usize = 20;
 
     /// Every source, in index order.
     pub const ALL: [Source; Source::COUNT] = [
@@ -76,7 +74,6 @@ impl Source {
         Source::SnatchLatch,
         Source::SightTuning,
         Source::PanelPointer,
-        Source::WristDetonator,
         Source::PhysicalHands,
         Source::BodyMirror,
         Source::BodyMirrorPouches,
@@ -101,16 +98,15 @@ impl Source {
             Source::SnatchLatch => 8,
             Source::SightTuning => 9,
             Source::PanelPointer => 10,
-            Source::WristDetonator => 11,
-            Source::PhysicalHands => 12,
-            Source::BodyMirror => 13,
-            Source::BodyMirrorPouches => 14,
-            Source::BodyRig => 15,
-            Source::DockedGuns => 16,
-            Source::GrabView => 17,
-            Source::ColliderView => 18,
-            Source::AircraftControls => 19,
-            Source::AmmoInsertionGuide => 20,
+            Source::PhysicalHands => 11,
+            Source::BodyMirror => 12,
+            Source::BodyMirrorPouches => 13,
+            Source::BodyRig => 14,
+            Source::DockedGuns => 15,
+            Source::GrabView => 16,
+            Source::ColliderView => 17,
+            Source::AircraftControls => 18,
+            Source::AmmoInsertionGuide => 19,
         }
     }
 
@@ -127,7 +123,6 @@ impl Source {
             Source::SnatchLatch => "snatch latch",
             Source::SightTuning => "sight tuning marker",
             Source::PanelPointer => "debug panel pointer",
-            Source::WristDetonator => "wrist detonator",
             Source::PhysicalHands => "physical hands",
             Source::BodyMirror => "body mirror",
             Source::BodyMirrorPouches => "body mirror pouch render placement",
@@ -245,12 +240,6 @@ pub fn scale_alpha([r, g, b, a]: Rgba, scale: f32) -> Rgba {
     [r, g, b, a * scale.clamp(0.0, 1.0)]
 }
 
-/// The colour `t` of the way from `a` to `b`, with `t` clamped to 0 to 1.
-pub fn mix(a: Rgba, b: Rgba, t: f32) -> Rgba {
-    let t = t.clamp(0.0, 1.0);
-    std::array::from_fn(|i| a[i] + (b[i] - a[i]) * t)
-}
-
 /// A primitive to draw.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub enum Primitive {
@@ -284,14 +273,5 @@ mod tests {
         assert_eq!(scale_alpha(colour, 0.5), [0.2, 0.4, 0.6, 0.25]);
         assert_eq!(scale_alpha(colour, 3.0), colour, "the scale clamps to one");
         assert_eq!(scale_alpha(colour, -1.0)[3], 0.0);
-    }
-
-    #[test]
-    fn mix_runs_from_one_colour_to_the_other() {
-        let (a, b) = ([0.0, 0.0, 0.0, 0.0], [1.0, 0.5, 0.25, 1.0]);
-        assert_eq!(mix(a, b, 0.0), a);
-        assert_eq!(mix(a, b, 1.0), b);
-        assert_eq!(mix(a, b, 0.5), [0.5, 0.25, 0.125, 0.5]);
-        assert_eq!(mix(a, b, 2.0), b);
     }
 }

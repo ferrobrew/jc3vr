@@ -20,6 +20,7 @@ fn state() -> State {
         preview: None,
         wheel: None,
         placed: PlacedState::NEW,
+        detonator: Detonator::NONE,
     }
 }
 

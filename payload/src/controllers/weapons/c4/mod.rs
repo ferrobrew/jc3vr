@@ -1,5 +1,5 @@
-//! C4 by hand: the charge thrown from the chest pouch, and the detonation from the wrist button,
-//! with the engine side on [`PlantedExplosiveWeapon`] and [`PlantedExplosive`].
+//! C4 by hand: the charge thrown from the chest pouch, and the detonation from the detonator held
+//! in the hand, with the engine side on [`PlantedExplosiveWeapon`] and [`PlantedExplosive`].
 //!
 //! A grip press at the C4 pouch primes a charge in whichever hand grabbed it, and opening the
 //! fingers ([`crate::controllers::weapons::opening`]) throws it with that hand's velocity; it
@@ -29,18 +29,24 @@
 //! ([`PlantedExplosiveWeapon::DespawnPrimedExplosive`]); priming consumes nothing, so nothing is
 //! refunded. A held charge pressed back onto the pouch
 //! ([`crate::controllers::weapons::pouch_return`]) is taken back the same way: a primed charge is
-//! not yet among the placed ones, so it holds no place against the limit, the detonator does not
+//! not yet among the placed ones, so it holds no place against the limit, the detonation does not
 //! count it, and once removed nothing can detonate it.
 //!
 //! A charge already placed is taken back by closing a free hand on it ([`placed`]): it is swapped
 //! for a primed charge in that hand, which is then held as one from the pouch is.
 //!
-//! Detonation goes through the game's own detonate input
-//! ([`WeaponInput::E_INPUT_DETONATE_EXPLOSIVES`]): a request ([`request_detonation`], from the
-//! wrist button in [`wrist`]) raises it for the weapon's serial update, which detonates every
-//! placed charge as the game's own detonation does, until the weapon starts the detonation or the
-//! request times out. The stick click's `DETONATE_EXPLOSIVE` reaches the same input through the
-//! game's own hold rule.
+//! The detonator is held in a hand like a gun and its trigger detonates ([`detonator`]). Pulling
+//! the trigger of the hand holding a charge swaps the charge for it, the charge going back into the
+//! pouch as one pressed back onto it does, and a grab at the pouch with no charge left to give
+//! hands over the detonator instead; opening the hand puts it back on the chest. Detonation goes
+//! through the game's own detonate input ([`WeaponInput::E_INPUT_DETONATE_EXPLOSIVES`]): a
+//! detonator press with charges placed raises it for the weapon's serial update, which detonates
+//! every placed charge as the game's own detonation does, until the weapon starts the detonation or
+//! the request times out. The charges of a detonation that has started stay placed until they go
+//! off (the detonate act schedules them partway through its animation and each then runs down its
+//! own timer), and a press then has nothing new to detonate, so it buzzes rather than queueing a
+//! second request that could catch a charge placed just after. The stick click's
+//! `DETONATE_EXPLOSIVE` reaches the same input through the game's own hold rule.
 //!
 //! A held charge pressed onto a surface sticks there instead of being thrown ([`stick`]): it is
 //! made live the same way, and placed just off the surface and pushed onto it, so that its own
@@ -54,19 +60,19 @@
 //! and one from the pouch are then the same charge.
 //!
 //! Every step is felt: a primed charge pulses its hand, a thrown one pulses the hand it leaves, a
-//! grab the game refuses buzzes the grabbing hand (and is logged at info level), and a detonation
-//! the weapon starts, from either source, pulses both hands and flashes the wrist button.
+//! grab the game refuses buzzes the grabbing hand (and is logged at info level), a detonator press
+//! clicks both hands (or buzzes its own with nothing to detonate), and a detonation the weapon
+//! starts, from either source, pulses both hands.
 //!
 //! [`Inventory::GetAnimationAllowsPlantingExplosives`]: jc3gi::character::inventory::Inventory::GetAnimationAllowsPlantingExplosives
 //! [`Character::HolsterWeapon`]: jc3gi::character::character::Character::HolsterWeapon
 
+pub mod detonator;
 pub mod placed;
-pub mod press;
 pub mod stage;
 pub mod stick;
 pub mod tuning;
 pub mod wheel;
-pub mod wrist;
 
 use std::{ptr::NonNull, time::Instant};
 
@@ -90,6 +96,7 @@ use crate::{
     config::Config,
     controllers::{
         aim::targets::weak_target,
+        bindings::controls::ButtonControl,
         frame::{Hand, Pose},
         hands::held::{self, Held, Slot},
         haptics::{self, Event},
@@ -97,6 +104,7 @@ use crate::{
         motion, physical_hands, scheme,
         weapons::{
             c4::{
+                detonator::{Detonator, DetonatorStep},
                 placed::{PlacedState, TakeStep},
                 stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
                 stick::{self as stick_by_hand, StickAt},
@@ -127,8 +135,8 @@ pub struct C4Event {
 /// What asked for a detonation.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum DetonationSource {
-    /// The wrist button.
-    WristButton,
+    /// The detonator's trigger.
+    Detonator,
     /// The game's own detonate input: the stick click's `DETONATE_EXPLOSIVE`, held.
     GameInput,
 }
@@ -136,7 +144,7 @@ pub enum DetonationSource {
 impl DetonationSource {
     pub const fn label(self) -> &'static str {
         match self {
-            DetonationSource::WristButton => "wrist button",
+            DetonationSource::Detonator => "detonator",
             DetonationSource::GameInput => "detonate button",
         }
     }
@@ -175,6 +183,14 @@ pub struct C4Status {
     pub stuck_on_objects: u64,
     /// Charges pressed back onto the pouch.
     pub returned: u64,
+    /// Charges swapped for the detonator by the trigger of the hand holding them.
+    pub swapped: u64,
+    /// The hand holding the detonator.
+    pub detonator: Option<Hand>,
+    /// Detonator presses, and of those the ones with nothing to detonate: no charges placed, or
+    /// the last detonation's still going off.
+    pub detonator_presses: u64,
+    pub idle_presses: u64,
     /// Placed charges taken back into a hand.
     pub taken: u64,
     /// The most recent throw steps, newest last.
@@ -193,26 +209,26 @@ pub fn status() -> C4Status {
 }
 
 /// Whether the C4 pouch has a charge to give: fewer charges are placed than may be, as the weapon's
-/// last update read it, or it has not been read yet. A pouch with nothing to give is not offered.
+/// last update read it, or it has not been read yet.
 pub(crate) fn in_stock() -> bool {
-    STATE
-        .lock()
-        .status
-        .charges
-        .is_none_or(|(live, max)| live < max)
+    STATE.lock().in_stock()
+}
+
+/// Whether the C4 pouch has anything to give: a charge while any remain, and the detonator once
+/// none do, unless a hand already holds it. A pouch with nothing to give is not offered.
+pub(crate) fn pouch_offered() -> bool {
+    let state = STATE.lock();
+    state.in_stock() || state.detonator.hand().is_none()
+}
+
+/// The hand holding the detonator.
+pub fn detonator_hand() -> Option<Hand> {
+    STATE.lock().detonator.hand()
 }
 
 /// The placed charges at the weapon's last update, or `None` before it ran.
 pub fn charges() -> Option<i32> {
     STATE.lock().status.charges.map(|(live, _)| live)
-}
-
-/// Whether a started detonation's charges are still on their way to going off. The detonate act
-/// schedules them partway through its animation and each then runs down its own timer, so the
-/// weapon counts them as placed for a while after the detonation started; another press in that
-/// time has nothing new to detonate.
-pub fn detonation_in_flight() -> bool {
-    STATE.lock().in_flight.is_some()
 }
 
 /// The placed charges and the most that may be placed at once, at the weapon's last update, or
@@ -358,22 +374,15 @@ pub(crate) fn press(hand: Hand, at: StickAt) {
     tracing::info!(target: "controllers", ?hand, on_object = at.on_object, "c4: pressed the charge onto a surface");
 }
 
-/// Ask the weapon to detonate every placed charge, as the game's own detonation does.
-pub(crate) fn request_detonation(source: DetonationSource) {
-    let mut state = STATE.lock();
-    state.detonation = Some(PendingDetonation {
-        source,
-        remaining_s: DETONATION_TIMEOUT_S,
-    });
-    state.status.detonation_pending = true;
-}
-
 /// What the input tick hands the throw.
 pub(super) struct TickInputs {
     /// Whether the throw may act this tick: its toggle is on and the mode has free hands.
     pub acting: bool,
     /// The hand that grabbed the C4 pouch this tick.
     pub pouch_grab: Option<Hand>,
+    /// Each hand's trigger over the tick, indexed by [`Hand::index`]: it swaps a held charge for
+    /// the detonator, and the detonator's detonates.
+    pub triggers: [ButtonControl; 2],
     /// The hand that grabbed a placed charge this tick.
     pub placed_grab: Option<Hand>,
     /// The hands whose fingers opened this tick, indexed by [`Hand::index`].
@@ -388,11 +397,43 @@ pub(super) struct TickInputs {
 pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
     if !inputs.acting {
         stand_down();
+        // SAFETY: the game stage runs on the game thread before the world update.
+        unsafe { detonator::release_model() };
         return;
     }
     let mut state = STATE.lock();
+    let mut pulses = Vec::new();
+    match state.detonator.step(inputs.opened, inputs.triggers) {
+        Some(DetonatorStep::Detonate(hand)) => pulses.push(state.press_detonator(hand)),
+        Some(DetonatorStep::Returned(hand)) => {
+            tracing::info!(target: "controllers", hand = hand.label(), "c4: the detonator went back on the chest");
+            pulses.push((hand, Event::PouchReturn));
+        }
+        None => {}
+    }
     if let Some(hand) = inputs.pouch_grab {
-        state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
+        if state.in_stock() {
+            state.stage = stage::on_input(state.stage, InputEvent::Grab(hand));
+        } else {
+            state.detonator.take(hand, inputs.triggers[hand.index()]);
+            tracing::info!(target: "controllers", hand = hand.label(), "c4: no charge left in the pouch, so the detonator came out");
+        }
+    }
+    // The trigger of the hand holding a charge swaps it for the detonator. A hand opening on the
+    // same tick throws the charge instead.
+    if let Stage::Held {
+        hand,
+        release: None,
+    } = state.stage
+        && inputs.triggers[hand.index()].pressed
+        && !inputs.opened[hand.index()]
+    {
+        state.stage = stage::on_input(state.stage, InputEvent::Return(hand));
+        state.detonator.take(hand, inputs.triggers[hand.index()]);
+        state.status.swapped += 1;
+        state.preview = None;
+        pulses.push((hand, Event::PouchReturn));
+        tracing::info!(target: "controllers", hand = hand.label(), "c4: the trigger swapped the charge for the detonator");
     }
     if let Some(hand) = inputs.placed_grab
         && !state.grab_placed(hand)
@@ -471,14 +512,27 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
         );
     }
     state.status.stage = state.stage;
+    state.status.detonator = state.detonator.hand();
+    let held = state
+        .detonator
+        .hand()
+        .and_then(|hand| state.grips[hand.index()].map(|grip| (hand, grip)));
     drop(state);
-    if let Some(hand) = returned {
-        haptics::play(hand, Event::PouchReturn);
+    // SAFETY: the game stage runs on the game thread before the world update.
+    unsafe { detonator::place_model(held) };
+    pulses.extend(returned.map(|hand| (hand, Event::PouchReturn)));
+    for (hand, event) in pulses {
+        if event == Event::DetonatorPress {
+            haptics::play_hands(Hand::BOTH, event);
+        } else {
+            haptics::play(hand, event);
+        }
     }
 }
 
-/// Stop the throw: a held charge is taken back at the weapon's next update, and a grab not yet
-/// served is forgotten. A detonation request stands: it was asked for before the stop.
+/// Stop the throw: a held charge is taken back at the weapon's next update, a grab not yet served
+/// is forgotten, and the detonator goes back on the chest. A detonation request stands: it was
+/// asked for before the stop.
 pub(crate) fn stand_down() {
     STATE.lock().stand_down();
 }
@@ -575,6 +629,7 @@ struct State {
     wheel: Option<WheelRequest>,
     /// The placed charges, and a take of one into a hand.
     placed: PlacedState,
+    detonator: Detonator,
 }
 
 #[derive(Clone, Copy)]
@@ -584,11 +639,42 @@ enum WheelRequest {
 }
 
 impl State {
+    fn in_stock(&self) -> bool {
+        self.status.charges.is_none_or(|(live, max)| live < max)
+    }
+
+    /// A press of the detonator's trigger in `hand`: with charges placed and none already going
+    /// off, ask the weapon to detonate them; otherwise nothing new can go off. Returns the pulse
+    /// to play.
+    fn press_detonator(&mut self, hand: Hand) -> (Hand, Event) {
+        let charges = self.status.charges.map_or(0, |(live, _)| live).max(0);
+        let in_flight = self.in_flight.is_some();
+        self.status.detonator_presses += 1;
+        if charges > 0 && !in_flight {
+            tracing::info!(target: "controllers", charges, hand = hand.label(), "c4: the detonator detonates");
+            self.detonation = Some(PendingDetonation {
+                source: DetonationSource::Detonator,
+                remaining_s: DETONATION_TIMEOUT_S,
+            });
+            self.status.detonation_pending = true;
+            return (hand, Event::DetonatorPress);
+        }
+        self.status.idle_presses += 1;
+        if in_flight {
+            tracing::info!(target: "controllers", charges, "c4: the detonator pressed while the last detonation's charges are going off");
+        } else {
+            tracing::info!(target: "controllers", "c4: the detonator pressed with no charges placed");
+        }
+        (hand, Event::DetonatorEmpty)
+    }
+
     fn stand_down(&mut self) {
         self.stage = stage::on_input(self.stage, InputEvent::StandDown);
         self.status.stage = self.stage;
         self.wheel = None;
         self.preview = None;
+        self.detonator.put_back();
+        self.status.detonator = None;
     }
 
     fn input_unavailable(&mut self, unavailable: [bool; 2]) {
@@ -604,6 +690,14 @@ impl State {
         if matches!(self.wheel, Some(WheelRequest::Pending { hand, .. }) if unavailable[hand.index()])
         {
             self.wheel = Some(WheelRequest::Cancelled);
+        }
+        if self
+            .detonator
+            .hand()
+            .is_some_and(|hand| unavailable[hand.index()])
+        {
+            self.detonator.put_back();
+            self.status.detonator = None;
         }
     }
 
@@ -655,6 +749,10 @@ static STATE: Mutex<State> = Mutex::new(State {
         stuck: 0,
         stuck_on_objects: 0,
         returned: 0,
+        swapped: 0,
+        detonator: None,
+        detonator_presses: 0,
+        idle_presses: 0,
         taken: 0,
         events: Vec::new(),
         detonation_pending: false,
@@ -672,6 +770,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     preview: None,
     wheel: None,
     placed: PlacedState::NEW,
+    detonator: Detonator::NONE,
 });
 
 /// The held charge's in-hand model in `hand`'s grip frame.
@@ -840,7 +939,6 @@ fn update_from_user_serial(
         haptics::play(hand, event);
     }
     if started {
-        wrist::note_detonation();
         haptics::play_hands(Hand::BOTH, Event::C4Detonate);
     }
 }

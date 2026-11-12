@@ -57,7 +57,8 @@ pub(crate) fn stand_down() {
     // world update.
     unsafe { pouch_models::stand_down() };
     c4::stand_down();
-    c4::wrist::stand_down();
+    // SAFETY: as above.
+    unsafe { c4::detonator::release_model() };
     pouch_return::stand_down();
     // SAFETY: the game stage runs on the game thread before the world update.
     unsafe { dual_wield::single::stand_down() };
@@ -113,7 +114,7 @@ pub(super) struct State {
     pub(super) last_holder: Option<Hand>,
     /// The volume each hand was in on the last tick, for the cue on entering one.
     pub(super) last_volumes: [Option<GrabVolume>; 2],
-    /// The tick's hand the pouches and the wrist detonator are laid out around
+    /// The tick's hand the pouches are laid out around
     /// ([`crate::controllers::weapons::volumes::gun_side`]).
     pub(super) gun_side: Hand,
     /// Where the free hand touches the lone long gun on this tick.
