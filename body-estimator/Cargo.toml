@@ -1,0 +1,16 @@
+[package]
+name = "body-estimator"
+version = "0.1.0"
+edition = "2024"
+description = "A learned full-body estimator's inference in plain Rust: EgoPoser's preprocessing and forward pass, from head and hand poses to SMPL body rotations."
+publish = false
+
+# Pure and portable, like `body-rig`: no game dependencies, so the offline tools run it on Linux
+# and the payload can later run it in the game. The weights are loaded from a path at run time and
+# never live in the repository.
+
+[dependencies]
+glam = { workspace = true }
+matrixmultiply = "0.3.11"
+safetensors = "0.8.0"
+
