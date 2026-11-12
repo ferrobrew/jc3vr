@@ -62,7 +62,12 @@ pub(crate) fn swap(incoming: &Image, outgoing: &Image, label: &str) -> Vec<u8> {
     canvas.label(label, width / 2);
     canvas.icon(outgoing, PAD, LABEL_ROW + PAD, OUTGOING_OPACITY);
     canvas.arrow(PAD + ICON_TEXELS.0, LABEL_ROW + PAD + ICON_TEXELS.1 / 2);
-    canvas.icon(incoming, PAD + ICON_TEXELS.0 + ARROW_W, LABEL_ROW + PAD, 1.0);
+    canvas.icon(
+        incoming,
+        PAD + ICON_TEXELS.0 + ARROW_W,
+        LABEL_ROW + PAD,
+        1.0,
+    );
     canvas.haloed().into_texels()
 }
 

@@ -104,9 +104,7 @@ pub fn swaps(snapshot: &LoadoutSnapshot, hand: Hand, socket: Socket) -> bool {
     let Some(weapon) = held_weapon(snapshot, hand) else {
         return false;
     };
-    snapshot.body.has(socket)
-        && socket.fits(weapon.size())
-        && snapshot.docked(socket).is_some()
+    snapshot.body.has(socket) && socket.fits(weapon.size()) && snapshot.docked(socket).is_some()
 }
 
 /// The sockets of the body that do not take the weapon `hand` holds: taken, or too small for it.
