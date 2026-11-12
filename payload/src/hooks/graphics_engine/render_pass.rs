@@ -659,7 +659,9 @@ unsafe fn reenable_passes(passes: &[*mut RenderPass]) {
 #[detour(address = jc3gi::graphics_engine::render_engine::RenderEngine::SetGlobalShaderConstants_ADDRESS)]
 fn set_global_shader_constants(this: *mut c_void, ctx: *mut c_void) {
     if let Some(ctx) = unsafe { ctx.cast::<RenderContext>().as_mut() } {
-        let delta = shadow_lookup_delta(&STEREO_STATE.lock());
+        // The config is read before the stereo state's lock, never under it.
+        let anchor_to_fit = Config::lock_query(|c| c.stereo.shadow_anchor_to_fit);
+        let delta = shadow_lookup_delta(&STEREO_STATE.lock(), anchor_to_fit);
         record_shadow_state(ctx, delta);
         apply_shadow_cascade_anchor_fix(ctx, delta);
     }
@@ -668,10 +670,10 @@ fn set_global_shader_constants(this: *mut c_void, ctx: *mut c_void) {
 
 /// The world offset to re-anchor the sun-shadow lookup by: from the point the cascade transform is
 /// baked relative to, to the camera position the material shaders subtract. That is the eye's offset
-/// from the render camera's centre, plus, with `stereo.shadow_anchor_to_fit`, the centre's offset
+/// from the render camera's centre, plus, with `anchor_to_fit` (`stereo.shadow_anchor_to_fit`), the centre's offset
 /// from the camera position the fit read. The second gap is published as
 /// [`shadow_fit_gap_m`] for the debug UI.
-fn shadow_lookup_delta(state: &crate::stereo::StereoState) -> glam::Vec3 {
+fn shadow_lookup_delta(state: &crate::stereo::StereoState, anchor_to_fit: bool) -> glam::Vec3 {
     let to_fit = match (state.center_transform, state.shadow_fit_position) {
         (Some(center), Some(fit)) => {
             let center = glam::Vec3::new(center.data[12], center.data[13], center.data[14]);
@@ -685,7 +687,7 @@ fn shadow_lookup_delta(state: &crate::stereo::StereoState) -> glam::Vec3 {
         glam::Vec3::ZERO
     };
     SHADOW_FIT_GAP_BITS.store(to_fit.length().to_bits(), Ordering::Relaxed);
-    if Config::lock_query(|c| c.stereo.shadow_anchor_to_fit) {
+    if anchor_to_fit {
         state.shadow_anchor_delta + to_fit
     } else {
         state.shadow_anchor_delta
