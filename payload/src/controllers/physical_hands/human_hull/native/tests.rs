@@ -347,3 +347,30 @@ fn human_policy_excludes_every_quadruped_state() {
         );
     }
 }
+
+#[test]
+fn a_narrowing_pass_spares_the_local_player_and_restores_its_replacement() {
+    let from = NonNull::dangling();
+    let mut target = std::mem::MaybeUninit::<hknpShape>::uninit();
+    let to = NonNull::new(target.as_mut_ptr()).unwrap();
+    let narrowing = vec![Change { id: 3, from, to }, Change { id: 8, from, to }];
+    let migrated = [
+        Migrated {
+            id: 5,
+            original: from,
+            replacement: to,
+        },
+        Migrated {
+            id: 8,
+            original: from,
+            replacement: to,
+        },
+    ];
+    let (changes, player) = spare_player(narrowing.clone(), &migrated, Some(8));
+    assert_eq!(changes, [Change { id: 3, from, to }]);
+    assert_eq!(player, [migrated[1]]);
+    // Without a player body, every body narrows and none is restored.
+    let (changes, player) = spare_player(narrowing.clone(), &migrated, None);
+    assert_eq!(changes, narrowing);
+    assert!(player.is_empty());
+}

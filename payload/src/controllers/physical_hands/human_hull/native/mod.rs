@@ -324,6 +324,7 @@ impl NativeState {
         let scan = scan(shapes, lookup);
         self.migrated_bodies = scan.migrated.len();
         let mut blocked = None;
+        let mut player_restored = 0;
         let changes = if restore {
             let plan = unsafe { self.plan_restore(world, bodies, &scan.migrated) };
             blocked = plan.blocked;
@@ -336,7 +337,19 @@ impl NativeState {
                 })
                 .collect()
         } else {
-            scan.narrowing
+            let (mut changes, player) = spare_player(scan.narrowing, &scan.migrated, unsafe {
+                player_body(world)
+            });
+            if !player.is_empty() {
+                let plan = unsafe { self.plan_restore(world, bodies, &player) };
+                player_restored = plan.approved.len();
+                changes.extend(plan.approved.iter().map(|body| Change {
+                    id: body.id,
+                    from: body.replacement,
+                    to: body.original,
+                }));
+            }
+            changes
         };
         if let Err(reason) = unsafe { apply(world, &changes) } {
             self.mutation_fault = reason == ClearanceUnavailableReason::RollbackRejected;
@@ -348,7 +361,7 @@ impl NativeState {
         self.migrated_bodies = if restore {
             self.migrated_bodies - changes.len()
         } else {
-            self.migrated_bodies + changes.len()
+            self.migrated_bodies + changes.len() - 2 * player_restored
         };
         unsafe { self.report_player(world) };
         if restore && self.migrated_bodies != 0 {
@@ -644,6 +657,33 @@ fn apply_with(
 /// # Safety
 ///
 /// The native physics phase, with `world` the live world.
+/// Split a narrowing pass for the local player's body `player`: the narrowing of every other body,
+/// and the player's body when it holds a replacement, to restore once its surroundings clear. The
+/// player keeps the authored hull. Narrowed, the hull keeps its height and its rounded bottom's
+/// radius at half the width, so its bottom is a narrow, steep curve that meets a kerb or a step's
+/// edge at a wall's slope, and the character stops where the game's controller steps up. A change
+/// of proxy state gives the player the table's replacement, which this restores.
+fn spare_player(
+    narrowing: Vec<Change>,
+    migrated: &[Migrated],
+    player: Option<u32>,
+) -> (Vec<Change>, Vec<Migrated>) {
+    let Some(player) = player else {
+        return (narrowing, Vec::new());
+    };
+    (
+        narrowing
+            .into_iter()
+            .filter(|change| change.id != player)
+            .collect(),
+        migrated
+            .iter()
+            .copied()
+            .filter(|body| body.id == player)
+            .collect(),
+    )
+}
+
 unsafe fn player_body(world: &hknpWorld) -> Option<u32> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let body = unsafe { proxy_body(character) }?;

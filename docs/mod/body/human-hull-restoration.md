@@ -10,6 +10,10 @@ A slot counts as a live body only when it has a static or dynamic flag and a val
 
 This discovery covers NPCs that exist before injection and NPCs whose bodies stream in later, the latter within a discovery interval. It does not depend on the local player using the same settings table. Construction hooks cover future settings tables. Destruction hooks remove dead table pointers while retained shape references remain available for any live body that still uses them.
 
+## The local player keeps the authored hull
+
+A narrowing pass narrows every human body but the local player's (`human_hull::native::spare_player`). The replacement keeps the original's height and its convex radius at half the width, so its rounded bottom becomes a narrow, steep curve, and a kerb or a step's edge meets it at a contact steeper than the character's walkable slope: the character stands against it as against a wall where the game's own controller steps up. In the 10 November session the player stalled at a low stone step and a kerb (t 1239 to 1256 and 2121 to 2124) with the hand push, the roomscale push, and the probe all clear, from 6 November on, when the narrowed hull first took effect in a session. The tables still hold the replacements for the NPCs, so a change of the player's proxy state gives the player the table's replacement; each pass restores it through the same clearance as a disable ([below](#clearance-and-restoration)), on the first pass that finds the player's surroundings clear.
+
 ## Clearance and restoration
 
 Disable and shutdown requests restore the narrowed bodies one at a time, each on the first native pre-simulation pass that finds its own surroundings clear (`human_hull/native/restore.rs`): a body against a wall keeps its replacement without holding back a body on open ground. The preflight checks each retained original shape at the body's actual transform. Bodies are decided in turn, so another narrowed body counts at its original once this pass has approved it and at the replacement it holds otherwise, and every pair of bodies is checked in the shapes it ends the pass with. A body not yet in the broad phase cannot restore, and a live body not in the broad phase blocks any body whose original would overlap its box. The controller does not resize the live body temporarily to obtain a query result.
@@ -42,7 +46,8 @@ Composite target support is restricted to the verified compressed mesh and compr
 
 The following game checks remain unperformed. Unit tests cover native-call adaptation, status rejection, unwritten outputs, contact policy, late distinct settings, and rejected-write rollback. They do not prove the live engine's allocation, callback ordering, or reinjection behavior.
 
-- Inject and walk around: the log shows `human hull: the local player's body shape changed` with `narrowed=true`, and the physical-hands readout shows the adapter active, a settings table, and narrowed bodies.
+- Inject and walk around near NPCs: the physical-hands readout shows the adapter active, a settings table, and narrowed bodies, and the player's own body stays authored: a `human hull: the local player's body shape changed` line with `narrowed=true` after a jump, a crouch, or a swim is followed within a second by one with `narrowed=false`.
+- Walk and run into kerbs and low steps that the game's own controller steps up, head-on and at an angle: the character steps up each of them without stopping, as with the hull switched off in the debug UI.
 - Inject with nearby NPCs already present. Confirm that distinct settings tables and live human bodies migrate before spawning another character.
 - Stream in additional NPCs after activation. Confirm that their live bodies migrate on the next native pre-simulation pass.
 - Disable on clear flat ground. Confirm restoration without a jump, teleport, or restart.
