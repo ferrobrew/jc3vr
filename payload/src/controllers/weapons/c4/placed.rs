@@ -8,9 +8,12 @@
 //! one, nothing is offered. A grip press there takes the charge nearest the hand.
 //!
 //! A take is refused, the placed charge left where it is, when the charge is no longer placed
-//! (it went off or was removed since the offer), while the game's own planting holds the weapon,
-//! and while the game does not allow planting; the grabbing hand buzzes and the refusal is logged
-//! at info level, as a refused grab at the pouch is.
+//! (it went off or was removed since the offer) and while the game's own planting holds the
+//! weapon; the grabbing hand buzzes and the refusal is logged at info level, as a refused grab at
+//! the pouch is. The game's planting permission does not refuse a take: a take plants nothing, and
+//! the permission is off while the grapple is busy, which it always is when the snatch catches a
+//! charge. A charge taken while planting is not allowed is held as any other; letting it go then
+//! puts it back in the pouch, as a release at the cap does.
 //!
 //! The grapple's snatch physically pulls a charge's native body before requesting [`take`] on a
 //! successful catch. The original stays live and counted during flight. The queued take carries
@@ -23,12 +26,9 @@
 //! [`GrabVolume::PlacedCharge`]: crate::controllers::grab::GrabVolume::PlacedCharge
 
 use glam::{Mat4, Vec3};
-use jc3gi::{
-    character::character::Character,
-    equipment::{
-        explosive::{Explosive, PlantedExplosive},
-        weapon::PlantedExplosiveWeapon,
-    },
+use jc3gi::equipment::{
+    explosive::{Explosive, PlantedExplosive},
+    weapon::PlantedExplosiveWeapon,
 };
 
 use crate::controllers::{
@@ -168,15 +168,12 @@ pub fn offers(
 }
 
 /// Why a take of a placed charge is refused, if it is: the charge is no longer on the live list
-/// (`on_list`), the game's own planting holds the weapon (`busy`), or the game does not allow
-/// planting (`may_plant`).
-pub fn refusal(on_list: bool, busy: bool, may_plant: bool) -> Option<Refusal> {
+/// (`on_list`), or the game's own planting holds the weapon (`busy`).
+pub fn refusal(on_list: bool, busy: bool) -> Option<Refusal> {
     if !on_list {
         Some(Refusal::NotPlaced)
     } else if busy {
         Some(Refusal::Busy)
-    } else if !may_plant {
-        Some(Refusal::NotAllowed)
     } else {
         None
     }
@@ -270,11 +267,10 @@ pub(super) enum TakeStep {
 
 /// # Safety
 ///
-/// The weapon and its user must be live, on the thread that updates the weapon.
+/// The weapon must be live, on the thread that updates it.
 pub(super) unsafe fn before_update(
     state: &mut State,
     weapon: &mut PlantedExplosiveWeapon,
-    user: &Character,
 ) -> TakeStep {
     let Some((hand, identity)) = state.due_take() else {
         return TakeStep::None;
@@ -282,8 +278,7 @@ pub(super) unsafe fn before_update(
     let placed = unsafe { current(weapon, identity) };
     let on_list = placed.is_some();
     let busy = weapon.m_IsInPlantingMode || unsafe { primed_charge(weapon) }.is_some();
-    let may_plant = unsafe { user.m_Inventory.GetAnimationAllowsPlantingExplosives() };
-    if let Some(refusal) = refusal(on_list, busy, may_plant) {
+    if let Some(refusal) = refusal(on_list, busy) {
         state.refuse_take();
         return TakeStep::Refused(hand, refusal);
     }
@@ -291,8 +286,12 @@ pub(super) unsafe fn before_update(
 }
 
 impl TakeStep {
+    /// The weapon as the take's prime sees it: a take swaps a placed charge for the primed one, so
+    /// neither the cap nor the planting permission refuses it.
     pub(super) fn view(self, mut view: WeaponView) -> WeaponView {
-        if matches!(self, Self::Ready(..)) && view.refusal == Some(Refusal::NoRoom) {
+        if matches!(self, Self::Ready(..))
+            && matches!(view.refusal, Some(Refusal::NoRoom | Refusal::NotAllowed))
+        {
             view.refusal = None;
         }
         view
@@ -430,7 +429,7 @@ mod tests {
         ] {
             assert!(!original.is_current(current));
             assert_eq!(
-                refusal(original.is_current(current), false, true),
+                refusal(original.is_current(current), false),
                 Some(Refusal::NotPlaced)
             );
         }
@@ -449,7 +448,7 @@ mod tests {
         assert_eq!(state.due_take(), Some((Hand::Left, original)));
         assert!(!original.matches(replacement.pool, replacement.instance));
         assert_eq!(
-            refusal(original.is_current(Some(replacement)), false, true),
+            refusal(original.is_current(Some(replacement)), false),
             Some(Refusal::NotPlaced)
         );
         state.refuse_take();
@@ -493,10 +492,7 @@ mod tests {
         assert_eq!(state.due_take(), Some((Hand::Right, original)));
         assert_eq!(state.due_take(), None);
         assert!(original.matches(7, 19));
-        assert_eq!(
-            refusal(original.is_current(Some(original)), false, true),
-            None
-        );
+        assert_eq!(refusal(original.is_current(Some(original)), false), None);
         state.took(original.charge);
         assert_eq!(state.placed.charges, vec![placed(other)]);
         assert_eq!(state.status.taken, 1);
@@ -562,11 +558,13 @@ mod tests {
         assert_eq!(state.status.taken, 1);
         assert_eq!(state.placed.charges, vec![placed(other)]);
         assert_eq!(state.due_take(), None);
+        // A snatch's catch comes while the grapple is busy, which turns the planting permission
+        // off; the take goes ahead regardless.
         let denied = take.view(WeaponView {
             refusal: Some(Refusal::NotAllowed),
             ..view
         });
-        assert_eq!(denied.refusal, Some(Refusal::NotAllowed));
+        assert_eq!(denied.refusal, None);
         assert_eq!(TakeStep::None.view(view), view);
         assert!(!take.after_prime(true, |_, _| false));
     }
@@ -639,11 +637,10 @@ mod tests {
     }
 
     #[test]
-    fn a_take_is_refused_for_a_charge_gone_a_busy_weapon_or_no_permission() {
-        assert_eq!(refusal(true, false, true), None);
-        assert_eq!(refusal(false, false, true), Some(Refusal::NotPlaced));
-        assert_eq!(refusal(false, true, false), Some(Refusal::NotPlaced));
-        assert_eq!(refusal(true, true, true), Some(Refusal::Busy));
-        assert_eq!(refusal(true, false, false), Some(Refusal::NotAllowed));
+    fn a_take_is_refused_only_for_a_charge_gone_or_a_busy_weapon() {
+        assert_eq!(refusal(true, false), None);
+        assert_eq!(refusal(false, false), Some(Refusal::NotPlaced));
+        assert_eq!(refusal(false, true), Some(Refusal::NotPlaced));
+        assert_eq!(refusal(true, true), Some(Refusal::Busy));
     }
 }

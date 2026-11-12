@@ -830,7 +830,7 @@ fn update_from_user_serial(
     let (reading, pulses, raised, previous) = unsafe {
         let (w, user) = (&mut *weapon, &mut *user);
         let mut state = STATE.lock();
-        let take = placed::before_update(&mut state, w, user);
+        let take = placed::before_update(&mut state, w);
         let reading = read_weapon(w, user);
         state.status.weapon_seen = true;
         state.status.charges = Some((reading.live, reading.max));
