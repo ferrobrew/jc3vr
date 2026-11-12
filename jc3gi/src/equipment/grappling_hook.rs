@@ -657,6 +657,25 @@ impl GrapplingHook {
             f(self as *mut Self as _)
         }
     }
+    pub const GetReelingInDirection_ADDRESS: usize = 0x140943940;
+    /// Writes the unit direction from the holder's position to the point the hook reels toward
+    /// into `direction`, and returns whether it could: false while the holder is gone, there is no
+    /// active wire, the active wire has no attached far end, or the direction is degenerate. The
+    /// parachute's slingshot ([`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics))
+    /// reads it each update while the hook is
+    /// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN).
+    pub unsafe fn GetReelingInDirection(
+        &self,
+        direction: *mut crate::types::math::Vector3,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                direction: *mut crate::types::math::Vector3,
+            ) -> bool = ::std::mem::transmute(Self::GetReelingInDirection_ADDRESS);
+            f(self as *const Self as _, direction)
+        }
+    }
     pub const TetherActiveWireToVehicleCOM_ADDRESS: usize = 0x140943420;
     /// Turns the active wire into a tether between its far end and `vehicle`. While the far end is
     /// attached and the near end is still on the holder's bone

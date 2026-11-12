@@ -67,6 +67,24 @@ impl AnimationRuleSystem {
             f(self as *mut Self as _, modifier, modifier_type)
         }
     }
+    pub const SetStateById_ADDRESS: usize = 0x14044AD50;
+    /// Looks the state named by `state_id` up in the running machine's definition and, when it
+    /// exists, moves the machine to it through
+    /// [`StateMachineInstance::SetStateInternal`](crate::animation::rule_system::StateMachineInstance::SetStateInternal) whatever the current state's transitions allow.
+    /// Returns whether the state was found. The character's own forced and layered state sets
+    /// reach the machines through it.
+    pub unsafe fn SetStateById(
+        &mut self,
+        state_id: *const crate::hash::HashString,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                state_id: *const crate::hash::HashString,
+            ) -> bool = ::std::mem::transmute(Self::SetStateById_ADDRESS);
+            f(self as *mut Self as _, state_id)
+        }
+    }
 }
 impl std::convert::AsRef<AnimationRuleSystem> for AnimationRuleSystem {
     fn as_ref(&self) -> &AnimationRuleSystem {
@@ -136,6 +154,25 @@ impl StateMachineInstance {
                 event: *const u32,
             ) -> bool = ::std::mem::transmute(Self::TryEvent_ADDRESS);
             f(self as *const Self as _, event)
+        }
+    }
+    pub const SetStateInternal_ADDRESS: usize = 0x1403C7F00;
+    /// Moves the machine to `new_state`: leaves the current state (its state tasks' exits run),
+    /// makes `new_state` current, enters it (its state tasks' entries run), and calls the
+    /// instance's transition callback with the old and new states, which for a character's rule
+    /// system starts the new state's animation. Every state change goes through it: an event's
+    /// transition, an external event's, and a state set by id
+    /// ([`AnimationRuleSystem::SetStateById`](crate::animation::rule_system::AnimationRuleSystem::SetStateById)).
+    pub unsafe fn SetStateInternal(
+        &mut self,
+        new_state: *mut crate::animation::rule_system::State,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                new_state: *mut crate::animation::rule_system::State,
+            ) = ::std::mem::transmute(Self::SetStateInternal_ADDRESS);
+            f(self as *mut Self as _, new_state)
         }
     }
 }

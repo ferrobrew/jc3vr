@@ -30,6 +30,8 @@ pub struct VehiclesConfig {
     /// The ripcord at the hip, grabbed and pulled to open the parachute from a fall or the
     /// wingsuit.
     pub ripcord: RipcordConfig,
+    /// The canopy's grapple turn and its opening out of a reel.
+    pub canopy: CanopyConfig,
     /// The driver's view moved per vehicle to a standard place behind the wheel.
     pub driving_view: DrivingViewConfig,
     /// Turn the body to the head's heading when the boost wingsuit takes off from the ground, so the
@@ -49,6 +51,7 @@ impl VehiclesConfig {
             wingsuit_gestures: WingsuitGesturesConfig::new(),
             parachute_handles: ParachuteHandlesConfig::new(),
             ripcord: RipcordConfig::new(),
+            canopy: CanopyConfig::new(),
             driving_view: DrivingViewConfig::new(),
             take_off_to_head: true,
         }
@@ -451,6 +454,38 @@ impl RipcordConfig {
 }
 
 impl Default for RipcordConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The canopy's settings (see [`crate::hooks::input::parachute`] and
+/// [`crate::hooks::animation::canopy`]).
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CanopyConfig {
+    /// Turn the canopy toward a grapple line it reels along, as the game turns it toward where the
+    /// camera looks.
+    pub line_turn: bool,
+    /// The line turn's strength, as a share of the turn the game gives a camera looking along the
+    /// line.
+    pub line_turn_scale: f32,
+    /// Open the canopy out of a grapple reel straight into its idle, without the opening's
+    /// somersault.
+    pub skip_reel_opening: bool,
+}
+
+impl CanopyConfig {
+    pub const fn new() -> Self {
+        Self {
+            line_turn: true,
+            line_turn_scale: 1.0,
+            skip_reel_opening: true,
+        }
+    }
+}
+
+impl Default for CanopyConfig {
     fn default() -> Self {
         Self::new()
     }

@@ -13,7 +13,7 @@ use crate::{
                 AIM_RELATIVE_TASK_CALLS, FACE_CAMERA_CALLS, INSTANT_SPEED_FLOORS, MOVE_TASK_CALLS,
                 SKIPPED_STARTS, SLIDE_CALLS,
             },
-            parachute::PARACHUTE_LOOK_STEER_SUPPRESSIONS,
+            parachute::{PARACHUTE_LINE_TURNS, PARACHUTE_LOOK_STEER_SUPPRESSIONS},
             swim::{
                 SWIM_DIRECTION_OVERRIDES, SWIM_EVAL_CALLS, SWIM_MOVE_REFUSALS,
                 SWIM_ROTATE_OVERRIDES, SWIM_TURN_SUPPRESSIONS, SWIM_UNTARGETED,
@@ -147,8 +147,9 @@ fn locomotion_readout(ui: &mut egui::Ui) {
 
 fn parachute_readout(ui: &mut egui::Ui) {
     ui.label(format!(
-        "Parachute: look-steer suppressions {}",
+        "Parachute: look-steer suppressions {}, line-turn ticks {}",
         PARACHUTE_LOOK_STEER_SUPPRESSIONS.load(Ordering::Relaxed),
+        PARACHUTE_LINE_TURNS.load(Ordering::Relaxed),
     ));
 }
 

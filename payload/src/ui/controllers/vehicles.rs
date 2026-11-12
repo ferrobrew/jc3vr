@@ -493,6 +493,20 @@ fn air_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
         "The boost suit's ground take-off turns the body to where you look during its wind-up, \
          under the view, so the suit launches where you look.",
     );
+    let c = &mut v.canopy;
+    ui.checkbox(
+        &mut c.line_turn,
+        "Turn the canopy toward a reeling grapple line",
+    )
+    .on_hover_text(
+        "Under the canopy, a line fired to one side turns the canopy toward it, as the game \
+             turns it toward where its camera looks.",
+    );
+    ui.add(
+        egui::Slider::new(&mut c.line_turn_scale, 0.0..=2.0)
+            .text("Canopy line turn strength")
+            .fixed_decimals(2),
+    );
     let r = &mut v.ripcord;
     ui.checkbox(
         &mut r.enabled,

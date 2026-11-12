@@ -545,6 +545,26 @@ pub const UpdateParachutePhysics_ADDRESS: usize = 0x1407E6DF0;
 /// conventional velocity then takes its lift and drag between the settings' `m_Lift` and
 /// `m_DragX`/`m_DragY`/`m_DragZ` entries by those amounts, the last entry with the stick fully
 /// back and the first with it fully forward.
+///
+/// While the character's grappling hook is
+/// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN) under the
+/// canopy, the update runs the slingshot. It reads the line's direction
+/// ([`GetReelingInDirection`](crate::equipment::grappling_hook::GrapplingHook::GetReelingInDirection))
+/// and weights the slingshot's accelerations and drag adjustment by how far the line points along
+/// the character's facing, clamped to zero for a line beside or behind it: the direct
+/// acceleration along the line (`m_SlingshotDirectAccel`), the forward acceleration along the
+/// facing (`m_SlingshotForwardAccel`), and the raised top speed (`m_SlingshotMaxSpeedAdjust`),
+/// each blended toward the retract boost's values (`m_RetractSlingshotSettings`) while the retract
+/// is held and the hook allows it. A line beside the character therefore adds almost no speed and
+/// does not turn the canopy: the yaw toward the line (the `m_RotateCharYawToSlingshot` spring) sits
+/// behind a static switch that the game never sets, and behind the look-steer yaw from
+/// [`GetParachuteSteeringValues`](crate::input::parachute::GetParachuteSteeringValues) or the stick's across axis passing a tenth. The canopy turns
+/// toward the line only through the look steer, by the camera looking along it. The update
+/// retracts the active wire and queues `ACT_GRAPPLE_CANCEL` once the reel is within
+/// `m_SlingshotBreakDistance`, the line falls further behind the facing than the break yaw (which
+/// widens from `m_SlingshotBreakYawStart` to `m_SlingshotBreakYawEnd` over
+/// `m_SlingshotBreakYawBlendTime` of reeling), or the character pitches past
+/// `m_SlingshotBreakPitch`.
 pub unsafe fn UpdateParachutePhysics(
     character: *mut crate::character::character::Character,
     dt: f32,
