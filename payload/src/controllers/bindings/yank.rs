@@ -11,6 +11,13 @@
 //! by [`ArmedLine`], which [`LineYank`] keeps for the zip and the reel's boost): a pull away from
 //! what the hand pointed at, whichever way it goes. The hand's distance from a point below the head would miss the pull of a
 //! seated player, whose hand starts close to the body and pulls back past its side.
+//!
+//! A pull that carries the hand out from the head across the ground is not a yank
+//! ([`OUTWARD_SHARE`]): spreading the arms for the wingsuit swings the grapple hand out to the side,
+//! which drops its reach along an aim pointed across the body as fast as a yank, but takes it away
+//! from the body, where a yank brings it in, down, or back past the side. The distance is taken
+//! across the ground alone, so a pull down from a raised hand, which takes it further from the head
+//! but not out from it, still yanks.
 
 use std::collections::VecDeque;
 
@@ -145,11 +152,27 @@ impl LineYank {
 
     /// Advance by `dt` seconds with the hand's grip and aim (`None` while untracked); `armed` is
     /// whether a yank may fire. The first tracked tick of an arming keeps its aim as the line.
-    /// Returns the yank detected this tick, if any.
+    /// Returns the yank detected this tick, if any. The head is not considered: the tests' measure
+    /// of the reach alone.
+    #[cfg(test)]
     pub fn step(
         &mut self,
         dt: f32,
         hand: Option<HandLine>,
+        armed: bool,
+        config: &YankConfig,
+    ) -> Option<Yank> {
+        self.step_from(dt, hand, None, armed, config)
+    }
+
+    /// [`step`](Self::step), with the head's position in the same frame as the hand, whose Y is up
+    /// (`None` when unknown): a pull that takes the hand out from the head across the ground does
+    /// not yank.
+    pub fn step_from(
+        &mut self,
+        dt: f32,
+        hand: Option<HandLine>,
+        head: Option<Vec3>,
         armed: bool,
         config: &YankConfig,
     ) -> Option<Yank> {
@@ -159,15 +182,26 @@ impl LineYank {
             self.line.disarm();
             None
         };
-        self.detector.step(dt, reach, armed, config)
+        let outward = hand
+            .zip(head)
+            .map(|(hand, head)| (hand.grip - head).with_y(0.0).length())
+            .filter(|d| d.is_finite());
+        self.detector
+            .step_outward(dt, reach, outward, armed, config)
     }
 }
+
+/// The most a yank's pull may carry the hand out from the head across the ground, as a share of the
+/// pull. A pull back along the line, down, or back and out past the side keeps the hand at about
+/// its distance from the head across the ground or brings it closer; an arm swung out to the side
+/// takes it well away.
+pub const OUTWARD_SHARE: f32 = 0.35;
 
 /// The yank detector's history.
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct YankDetector {
-    /// `(time, distance)` samples within the window, oldest first.
-    history: VecDeque<(f32, f32)>,
+    /// `(time, distance, distance from the head)` samples within the window, oldest first.
+    history: VecDeque<(f32, f32, Option<f32>)>,
     time: f32,
     cooldown: f32,
     /// The pull and its speed at the last yank, for the debug UI.
@@ -205,6 +239,20 @@ impl YankDetector {
         armed: bool,
         config: &YankConfig,
     ) -> Option<Yank> {
+        self.step_outward(dt, distance, None, armed, config)
+    }
+
+    /// [`step`](Self::step), with the hand's distance from the head across the ground (`None` when
+    /// unknown): a pull that takes the hand out from the head by more than [`OUTWARD_SHARE`] of the
+    /// pull does not yank.
+    pub fn step_outward(
+        &mut self,
+        dt: f32,
+        distance: Option<f32>,
+        outward: Option<f32>,
+        armed: bool,
+        config: &YankConfig,
+    ) -> Option<Yank> {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         self.time += dt;
         self.cooldown = (self.cooldown - dt).max(0.0);
@@ -212,11 +260,11 @@ impl YankDetector {
             self.history.clear();
             return None;
         };
-        self.history.push_back((self.time, distance));
+        self.history.push_back((self.time, distance, outward));
         while self
             .history
             .front()
-            .is_some_and(|&(t, _)| self.time - t > config.window_s)
+            .is_some_and(|&(t, _, _)| self.time - t > config.window_s)
         {
             self.history.pop_front();
         }
@@ -228,13 +276,17 @@ impl YankDetector {
         let yank = self
             .history
             .iter()
-            .filter_map(|&(t, from)| {
+            .filter_map(|&(t, from, from_head)| {
                 let pulled = from - distance;
                 let elapsed = self.time - t;
-                (elapsed > 0.0 && pulled >= config.min_distance_m).then(|| Yank {
-                    distance_m: pulled,
-                    speed_mps: pulled / elapsed,
-                })
+                let away = from_head
+                    .zip(outward)
+                    .map_or(0.0, |(from_head, head)| head - from_head);
+                (elapsed > 0.0 && pulled >= config.min_distance_m && away <= OUTWARD_SHARE * pulled)
+                    .then(|| Yank {
+                        distance_m: pulled,
+                        speed_mps: pulled / elapsed,
+                    })
             })
             .filter(|yank| yank.speed_mps >= config.min_speed_mps)
             .max_by(|a, b| a.distance_m.total_cmp(&b.distance_m))?;
@@ -276,6 +328,75 @@ mod tests {
 
     fn zip_hand(grip: Vec3, aim: Vec3) -> Option<HandLine> {
         Some(HandLine { grip, aim })
+    }
+
+    #[test]
+    fn an_arm_spread_out_to_the_side_does_not_yank() {
+        // The 10 November take, 1492.6 s: the grapple hand, aimed ahead and across the body, swung
+        // out to the side to open the wingsuit; its reach along the aim dropped 0.36 m in 0.2 s,
+        // and it went 0.3 m further out from the head across the ground.
+        let head = Vec3::new(0.0, 0.0, 0.0);
+        let aim = Vec3::new(0.62, -0.17, -0.77);
+        let from = Vec3::new(-0.05, -0.35, -0.35);
+        let spread = Vec3::new(-0.53, 0.14, 0.01);
+        let mut zip = LineYank::new();
+        let fired = (0..6)
+            .filter(|&k| {
+                let grip = from + spread * (k as f32 / 5.0);
+                zip.step_from(DT, zip_hand(grip, aim), Some(head), true, &GRAPPLE_YANK)
+                    .is_some()
+            })
+            .count();
+        assert_eq!(fired, 0);
+        // Without the head, the same motion reads as a yank.
+        let mut blind = LineYank::new();
+        let fired = (0..6)
+            .filter(|&k| {
+                let grip = from + spread * (k as f32 / 5.0);
+                blind
+                    .step(DT, zip_hand(grip, aim), true, &GRAPPLE_YANK)
+                    .is_some()
+            })
+            .count();
+        assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn a_pull_down_from_a_raised_hand_still_yanks() {
+        // A line up to a high point: the hand, raised in front of the face, yanks down to the
+        // chest, further from the head but no further out from it.
+        let head = Vec3::ZERO;
+        let aim = Vec3::new(0.0, 0.8, -0.6);
+        let from = Vec3::new(-0.1, 0.1, -0.45);
+        let to = Vec3::new(-0.15, -0.45, -0.3);
+        let mut zip = LineYank::new();
+        let fired = (0..6)
+            .filter(|&k| {
+                let grip = from.lerp(to, k as f32 / 5.0);
+                zip.step_from(DT, zip_hand(grip, aim), Some(head), true, &GRAPPLE_YANK)
+                    .is_some()
+            })
+            .count();
+        assert_eq!(fired, 1);
+    }
+
+    #[test]
+    fn a_seated_pull_past_the_side_still_yanks_with_the_head_known() {
+        let mut zip = LineYank::new();
+        let fired = SEATED_ZIP
+            .iter()
+            .filter(|&&grip| {
+                zip.step_from(
+                    SEATED_DT,
+                    zip_hand(grip, SEATED_AIM),
+                    Some(SEATED_HEAD),
+                    true,
+                    &GRAPPLE_YANK,
+                )
+                .is_some()
+            })
+            .count();
+        assert_eq!(fired, 1);
     }
 
     #[test]

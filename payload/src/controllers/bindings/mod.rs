@@ -640,9 +640,10 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     grapple_held = state.bindings.physical_grapple_held(grapple_held);
     let line = line_attached() && !snatch_button_owned;
     let grapple_line = grapple_hand_line(grapple_hand);
-    let yank = state.yank.step(
+    let yank = state.yank.step_from(
         real_dt,
         grapple_line,
+        headpose::xr::cockpit_pose().map(|pose| pose.position),
         yank_armed_in(line, &detection) && grapple_held,
         &config.bindings.yank.detector(),
     );

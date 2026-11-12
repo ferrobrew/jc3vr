@@ -214,9 +214,13 @@ pub(crate) unsafe fn input_tick(input: &TickInput) -> TickOutput {
     let pull = state
         .pull
         .step(input.real_dt, input.line, drive_reel || armed, &config.pull);
-    let boost = state
-        .boost
-        .step(input.real_dt, input.line, drive_reel, &GRAPPLE_YANK);
+    let boost = state.boost.step_from(
+        input.real_dt,
+        input.line,
+        headpose::xr::cockpit_pose().map(|pose| pose.position),
+        drive_reel,
+        &GRAPPLE_YANK,
+    );
     let locked = lock::holds();
     let lock_yank = locked && boost.is_some();
     if let Some(yank) = boost {
