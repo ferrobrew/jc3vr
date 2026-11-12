@@ -501,7 +501,10 @@ fn full_unlimited_magazines_suppress_pouch_takes_without_blocking_world_magazine
         weapon.reading.unlimited = false;
         weapon.reading.magazine += 1;
         weapon.reserve = 1;
-        assert_eq!(state.can_take_from_pouch(&weapon), load == LoadKind::Magazine);
+        assert_eq!(
+            state.can_take_from_pouch(&weapon),
+            load == LoadKind::Magazine
+        );
         weapon.reserve = 0;
         assert!(!state.can_take_from_pouch(&weapon));
         // A full cylinder takes no speedloader; a magazine waits for the old one to leave.

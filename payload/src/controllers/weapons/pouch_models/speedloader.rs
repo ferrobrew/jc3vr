@@ -8,14 +8,14 @@ use glam::{Mat4, Quat, Vec3};
 
 use crate::controllers::{
     body::rig::frames::Frames,
-    frame::Hand,
     weapons::{
         pouch_models::{MODEL_PLACEMENT, on_pouch, owned::OwnedModel, render_matrix},
         reload::{BeltSpeedloader, plan::MAX_HELD_ROUNDS},
     },
 };
 
-/// Each gun hand's speedloader on its belt pouch, by [`Hand::index`].
+/// Each gun hand's speedloader on its belt pouch, by
+/// [`Hand::index`](crate::controllers::frame::Hand::index).
 #[derive(Debug, Copy, Clone)]
 pub(super) struct Speedloaders {
     groups: [Group; 2],
@@ -68,7 +68,8 @@ impl Speedloaders {
         drew
     }
 
-    /// How many rounds each hand's speedloader shows, by [`Hand::index`].
+    /// How many rounds each hand's speedloader shows, by
+    /// [`Hand::index`](crate::controllers::frame::Hand::index).
     pub(super) fn shown(&self) -> [usize; 2] {
         self.groups.map(|g| if g.visible() { g.count } else { 0 })
     }
@@ -208,7 +209,11 @@ impl Group {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::{cockpit::CockpitTransform, frame::Pose, weapons::reload::plan};
+    use crate::controllers::{
+        cockpit::CockpitTransform,
+        frame::{Hand, Pose},
+        weapons::reload::plan,
+    };
 
     #[test]
     fn the_rounds_stand_mouth_up_on_the_pouch() {
