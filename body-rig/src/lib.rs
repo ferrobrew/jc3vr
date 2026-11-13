@@ -7,6 +7,8 @@
 //! - [`step`]: when a step commits, and the velocity that drives the pelvis back under the neck.
 //! - [`yaw`]: the chest following the head within a clamp, and Rico's facing (the legs) turning
 //!   only for a large or sustained turn of the head, or while he moves.
+//! - [`estimate`]: the learned body estimator's estimate turned into a target for the legs and a
+//!   pull on the chest.
 //! - [`height`]: the standing neck height, measured rather than assumed.
 //! - [`rig`]: all of them advanced together.
 //!
@@ -18,6 +20,7 @@
 
 pub mod angle;
 pub mod body;
+pub mod estimate;
 pub mod geometry;
 pub mod height;
 pub mod pelvis;
@@ -29,6 +32,7 @@ pub mod yaw;
 
 pub use crate::{
     body::PlayerBody,
+    estimate::{BodyEstimate, EstimateTuning},
     pelvis::{Bend, PelvisSolve, PelvisTuning},
     rig::{GroundedRig, RigFrame, RigOutput, RigTuning},
     step::{StepPhase, StepTuning, drive_velocity},

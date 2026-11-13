@@ -49,7 +49,7 @@ use crate::{
         clock::WallClock,
         registration::{Anchor, Correspondence, Fit, Placement},
     },
-    rig_eval::{self, EvalOptions, EvalRow, VideoClock},
+    rig_eval::{self, EstimateTrack, EvalOptions, EvalRow, VideoClock},
 };
 
 /// What [`export`] writes.
@@ -70,6 +70,8 @@ pub struct ExportOptions {
     /// written under one id merge into one recording: what differs between stretches is logged at
     /// the stretch's start rather than statically, so each stretch keeps its own.
     pub recording_id: Option<String>,
+    /// The learned body estimate the offline rig takes, when it takes one.
+    pub estimate: Option<EstimateTrack>,
 }
 
 /// The take's video and the height its cut is scaled to.
@@ -195,7 +197,7 @@ pub fn export(
     let fit = registration::place(&correspondences, &views, REGISTRATION_WINDOW);
     let origin = world_origin(recording, &states, &fit.placements);
     // The rig needs the recording's history before the stretch, so it runs over the whole of it.
-    let (rows, _) = rig_eval::evaluate(recording, &options.eval, None);
+    let (rows, _) = rig_eval::evaluate(recording, &options.eval, None, options.estimate.as_ref());
     let rows: Vec<EvalRow> = rows
         .into_iter()
         .filter(|row| (from..=to).contains(&seconds_to_ns(row.time_s)))

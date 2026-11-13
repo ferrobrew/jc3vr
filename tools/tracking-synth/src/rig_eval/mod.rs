@@ -26,6 +26,9 @@
 //! A recenter turns the room with the cockpit frame. A manual or seat recenter then snaps the
 //! pelvis under the neck, as the rig's recenter does; a follow bank only turns the frame.
 //!
+//! With an [`EstimateTrack`] the rig also takes the learned body estimate, computed from the
+//! recording's raw poses and handed over at the game's cadence (`estimate`).
+//!
 //! A recording from version 8 also notes the payload's rig frames, which each row is compared with
 //! (`compare`), and the calibration and tuning in use, which the evaluation runs where the command
 //! line leaves them out (`config`).
@@ -34,6 +37,7 @@ mod clock;
 mod compare;
 mod config;
 mod csv;
+mod estimate;
 mod frames;
 mod pre_ik;
 mod replay;
@@ -41,7 +45,7 @@ mod summary;
 
 use std::fmt;
 
-use body_rig::{PlayerBody, RigOutput, RigTuning};
+use body_rig::{BodyEstimate, PlayerBody, RigOutput, RigTuning};
 use glam::Vec2;
 use tracking_format::{Recording, event::EventKind};
 
@@ -50,6 +54,7 @@ pub use crate::rig_eval::{
     compare::{Comparison, RecordedOutput},
     config::{ConfigError, ConfigErrorKind, ConfigNote, RecordedConfig},
     csv::{write_compared_csv, write_csv},
+    estimate::{EstimateCadence, EstimateTrack},
 };
 use crate::rig_eval::{
     compare::RecordedTrack,
@@ -98,6 +103,8 @@ pub struct EvalRow {
     pub speed_mps: f32,
     /// Whether the off hand's stick moves the body.
     pub moving: bool,
+    /// The learned body estimate the rig took, in the cockpit frame, when it had one.
+    pub estimate: Option<BodyEstimate>,
 }
 
 /// A summary of the evaluation.
@@ -247,11 +254,12 @@ impl fmt::Display for RigEvalError {
 impl std::error::Error for RigEvalError {}
 
 /// Run the rig over `recording` with the simulated pelvis and `options`' calibration and tuning,
-/// whatever the recording notes.
+/// whatever the recording notes, with the learned body estimate from `estimate` where given.
 pub fn evaluate(
     recording: &Recording,
     options: &EvalOptions,
     clock: Option<&VideoClock>,
+    estimate: Option<&EstimateTrack>,
 ) -> (Vec<EvalRow>, EvalSummary) {
     let configs = ConfigResolver::fixed(options);
     let recorded = RecordedTrack::default();
@@ -263,17 +271,20 @@ pub fn evaluate(
             drive: PelvisDrive::Simulated,
             recorded: &recorded,
             clock,
+            estimate,
         },
     );
     (rows.into_iter().map(|row| row.row).collect(), summary)
 }
 
 /// Run the rig over `recording` from the source `options` asks for, comparing each row with the
-/// recorded rig frame where the recording has one.
+/// recorded rig frame where the recording has one, with the learned body estimate from `estimate`
+/// where given.
 pub fn evaluate_replay(
     recording: &Recording,
     options: &ReplayOptions,
     clock: Option<&VideoClock>,
+    estimate: Option<&EstimateTrack>,
 ) -> Result<Evaluation, RigEvalError> {
     let source = options
         .source
@@ -294,7 +305,7 @@ pub fn evaluate_replay(
                     version: recording.version,
                 });
             }
-            run_recorded(recording, &configs, clock)
+            run_recorded(recording, &configs, clock, estimate)
         }
         PelvisSource::Simulated | PelvisSource::PreIk => {
             let track = (source == PelvisSource::PreIk).then(|| pre_ik_track(recording));
@@ -319,6 +330,7 @@ pub fn evaluate_replay(
                     drive,
                     recorded: &recorded,
                     clock,
+                    estimate,
                 },
             )
         }

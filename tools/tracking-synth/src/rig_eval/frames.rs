@@ -13,6 +13,7 @@ use crate::rig_eval::{
     ComparedRow, EvalOptions, EvalRow, EvalSummary, VideoClock,
     compare::{ComparisonAccumulator, RecordedTrack},
     config::ConfigResolver,
+    estimate::EstimateTrack,
     pre_ik::PreIkTrack,
     summary::SummaryAccumulator,
 };
@@ -33,6 +34,8 @@ pub(crate) struct FrameRun<'a> {
     pub(crate) drive: PelvisDrive<'a>,
     pub(crate) recorded: &'a RecordedTrack,
     pub(crate) clock: Option<&'a VideoClock>,
+    /// The learned body estimate, when the rig takes one.
+    pub(crate) estimate: Option<&'a EstimateTrack>,
 }
 
 /// Run the rig over `recording`'s frames, one row per grounded frame.
@@ -50,7 +53,13 @@ pub(crate) fn run_frames(
     let mut velocity = Vec2::ZERO;
     let mut last_time: Option<u64> = None;
     let mut last_grounded: Option<u64> = None;
+    // The recenters' turns so far, which carry the estimate's room frame into the cockpit frame.
+    let mut turned = 0.0f32;
     for frame in &recording.frames {
+        for recenter in &frame.recenters {
+            turned =
+                angle::wrap(turned + angle::yaw_of(recenter.turn * Vec3::NEG_Z).unwrap_or(0.0));
+        }
         let dt = last_time.map_or(0.0, |last| {
             (frame.time_ns.saturating_sub(last)) as f32 / 1.0e9
         });
@@ -120,6 +129,9 @@ pub(crate) fn run_frames(
             .controllers
             .as_ref()
             .is_some_and(|c| c.hands[0].inputs.thumbstick.length() > MOVING_STICK);
+        let estimate = run
+            .estimate
+            .and_then(|track| track.at(frame.time_ns, turned, &tuning.yaw.estimate));
         let output = rig.update(
             &RigFrame {
                 eyes: head.eyes,
@@ -129,6 +141,7 @@ pub(crate) fn run_frames(
                 slip: Vec2::ZERO,
                 moving,
                 sample_height: true,
+                estimate,
                 dt,
             },
             &tuning,
@@ -162,6 +175,7 @@ pub(crate) fn run_frames(
                 pelvis: moved,
                 speed_mps: velocity.length(),
                 moving,
+                estimate,
             },
             recorded,
         });

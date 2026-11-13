@@ -5,10 +5,10 @@
 //! tracking-synth --list
 //! tracking-synth dump [--json] [--from <time>] [--to <time>] <recording>
 //! tracking-synth rig-eval [--pelvis simulated|recorded|pre-ik] [--height <m>] [--eye-height <m>]
-//!     [--tuning <json>] <recording> <out.csv>
+//!     [--tuning <json>] [--weights <safetensors>] <recording> <out.csv>
 //! tracking-synth export-rerun [--from <time>] [--to <time>] [--video <video>]
 //!     [--video-height <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] [--no-blueprint]
-//!     [--recording-id <id>] <recording> -o <out.rrd>
+//!     [--recording-id <id>] [--weights <safetensors>] <recording> -o <out.rrd>
 //! tracking-synth estimate-body --weights <safetensors> [--from <time>] [--to <time>] [--lead <s>]
 //!     <recording> -o <out.csv>
 //! ```
@@ -25,7 +25,9 @@
 //! pelvis under the game's pre-IK hips; a recording with rig frames defaults to its recorded inputs
 //! and compares every row with them. `--tuning` takes the rig's tuning as JSON, any field left out
 //! keeping its default, and it and `--height` and `--eye-height` override the calibration and
-//! tuning a recording notes. A video sidecar (`frames.jsonl` and `stream.json`) beside the
+//! tuning a recording notes. `--weights`, for `rig-eval` and `export-rerun`, runs EgoPoser over
+//! the whole recording first and hands the rig its estimate at the game's cadence, as the payload's
+//! rig takes it. A video sidecar (`frames.jsonl` and `stream.json`) beside the
 //! recording adds the video's time to each row. `export-rerun` writes a stretch of a
 //! recording as a Rerun recording (`rerun_export`), with the take's video cut to the stretch beside
 //! it; it needs the `rerun` feature, on by default. `estimate-body` runs EgoPoser
@@ -46,7 +48,8 @@ use tracking_synth::{
     dump::{self, Bound, DumpFormat, Range},
     estimate,
     rig_eval::{
-        self, EvalOptions, Evaluation, PelvisSource, ReplayOptions, RigEvalError, VideoClock,
+        self, EstimateCadence, EstimateTrack, EvalOptions, Evaluation, PelvisSource, ReplayOptions,
+        RigEvalError, VideoClock,
     },
     script::Script,
     scripts,
@@ -83,10 +86,10 @@ fn main() -> ExitCode {
 const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>...] | --list | \
                      dump [--json] [--from <time>] [--to <time>] <recording> | rig-eval \
                      [--pelvis simulated|recorded|pre-ik] [--height <m>] [--eye-height <m>] \
-                     [--tuning <json>] <recording> <out.csv> | \
+                     [--tuning <json>] [--weights <safetensors>] <recording> <out.csv> | \
                      scan-view [--video <video>] [--out <report.md>] <recording> | \
                      export-rerun [--from <time>] [--to <time>] [--video <video>] [--video-height \
-                     <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] [--no-blueprint] [--recording-id <id>] <recording> -o \
+                     <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] [--no-blueprint] [--recording-id <id>] [--weights <safetensors>] <recording> -o \
                      <out.rrd> | estimate-body --weights <safetensors> [--from <time>] [--to \
                      <time>] [--lead <s>] <recording> -o <out.csv>, where <time> is seconds or \
                      xr:<display time ns>";
@@ -105,6 +108,7 @@ enum Command {
         path: PathBuf,
         out: PathBuf,
         options: ReplayOptions,
+        weights: Option<PathBuf>,
     },
     ExportRerun {
         path: PathBuf,
@@ -115,6 +119,7 @@ enum Command {
         blueprint: bool,
         recording_id: Option<String>,
         options: EvalOptions,
+        weights: Option<PathBuf>,
     },
     ScanView {
         path: PathBuf,
@@ -257,7 +262,7 @@ impl fmt::Display for CliError {
                 "estimate-body: name exactly one recording, the output with `-o`, and the weights \
                  with `--weights`"
             ),
-            CliError::Weights(error) => write!(f, "estimate-body: {error}"),
+            CliError::Weights(error) => write!(f, "the body estimator: {error}"),
             CliError::EmptyRange => write!(f, "estimate-body: the stretch selects no frame"),
         }
     }
@@ -410,9 +415,15 @@ fn parse_rig_eval(mut args: impl Iterator<Item = String>) -> Result<Command, Cli
     let mut eye_height = None;
     let mut tuning = None;
     let mut source = None;
+    let mut weights = None;
     let mut paths = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
+            "--weights" => {
+                weights = Some(PathBuf::from(
+                    args.next().ok_or(CliError::MissingValue("--weights"))?,
+                ));
+            }
             "--pelvis" => {
                 let name = args.next().ok_or(CliError::MissingValue("--pelvis"))?;
                 source = Some(PelvisSource::from_name(&name).ok_or(CliError::BadPelvis(name))?);
@@ -443,7 +454,12 @@ fn parse_rig_eval(mut args: impl Iterator<Item = String>) -> Result<Command, Cli
         recorded_tuning,
     };
     match <[PathBuf; 2]>::try_from(paths) {
-        Ok([path, out]) => Ok(Command::RigEval { path, out, options }),
+        Ok([path, out]) => Ok(Command::RigEval {
+            path,
+            out,
+            options,
+            weights,
+        }),
         Err(_) => Err(CliError::RigEvalPaths),
     }
 }
@@ -458,11 +474,17 @@ fn parse_export_rerun(mut args: impl Iterator<Item = String>) -> Result<Command,
     let mut height = DEFAULT_HEIGHT_M;
     let mut eye_height = None;
     let mut tuning = None;
+    let mut weights = None;
     let mut paths = Vec::new();
     while let Some(arg) = args.next() {
         match arg.as_str() {
             "--from" => range.from = Some(parse_bound(args.next(), "--from")?),
             "--to" => range.to = Some(parse_bound(args.next(), "--to")?),
+            "--weights" => {
+                weights = Some(PathBuf::from(
+                    args.next().ok_or(CliError::MissingValue("--weights"))?,
+                ));
+            }
             "--video" => {
                 video = Some(PathBuf::from(
                     args.next().ok_or(CliError::MissingValue("--video"))?,
@@ -515,6 +537,7 @@ fn parse_export_rerun(mut args: impl Iterator<Item = String>) -> Result<Command,
             blueprint,
             recording_id,
             options,
+            weights,
         }),
         _ => Err(CliError::ExportPaths),
     }
@@ -585,7 +608,12 @@ fn run(command: Command) -> Result<(), CliError> {
             range,
             lead_s,
         } => estimate_body(&path, &out, &weights, &range, lead_s),
-        Command::RigEval { path, out, options } => {
+        Command::RigEval {
+            path,
+            out,
+            options,
+            weights,
+        } => {
             let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
                 path: path.clone(),
                 error,
@@ -595,8 +623,12 @@ fn run(command: Command) -> Result<(), CliError> {
                 error,
             })?;
             let clock = video_clock(&path);
-            let evaluation = rig_eval::evaluate_replay(&recording, &options, clock.as_ref())
-                .map_err(CliError::RigEval)?;
+            let estimate = weights
+                .map(|weights| estimate_track(&weights, &recording))
+                .transpose()?;
+            let evaluation =
+                rig_eval::evaluate_replay(&recording, &options, clock.as_ref(), estimate.as_ref())
+                    .map_err(CliError::RigEval)?;
             report_rig_config(&evaluation);
             let file = std::fs::File::create(&out).map_err(|error| CliError::Write {
                 path: out.clone(),
@@ -650,6 +682,7 @@ fn run(command: Command) -> Result<(), CliError> {
             blueprint,
             recording_id,
             options,
+            weights,
         } => export_rerun(ExportRequest {
             path,
             out,
@@ -659,6 +692,7 @@ fn run(command: Command) -> Result<(), CliError> {
             blueprint,
             recording_id,
             eval: options,
+            weights,
         }),
         Command::Write {
             out,
@@ -750,6 +784,7 @@ struct ExportRequest {
     blueprint: bool,
     recording_id: Option<String>,
     eval: EvalOptions,
+    weights: Option<PathBuf>,
 }
 
 #[cfg(feature = "rerun")]
@@ -763,6 +798,7 @@ fn export_rerun(request: ExportRequest) -> Result<(), CliError> {
         blueprint,
         recording_id,
         eval,
+        weights,
     } = request;
     let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
         path: path.clone(),
@@ -774,6 +810,9 @@ fn export_rerun(request: ExportRequest) -> Result<(), CliError> {
     })?;
     drop(bytes);
     let clock = video_clock(&path);
+    let estimate = weights
+        .map(|weights| estimate_track(&weights, &recording))
+        .transpose()?;
     let options = ExportOptions {
         range,
         video: video.map(|path| VideoSource {
@@ -784,6 +823,7 @@ fn export_rerun(request: ExportRequest) -> Result<(), CliError> {
         source: path,
         blueprint,
         recording_id,
+        estimate,
     };
     let summary = rerun_export::export(&recording, clock.as_ref(), &options, &out)
         .map_err(CliError::Export)?;
@@ -803,6 +843,21 @@ fn export_rerun(request: ExportRequest) -> Result<(), CliError> {
 #[cfg(not(feature = "rerun"))]
 fn export_rerun(_request: ExportRequest) -> Result<(), CliError> {
     Err(CliError::NoRerun)
+}
+
+/// Run EgoPoser with the weights at `weights` over the whole of `recording`, for the offline rig.
+fn estimate_track(
+    weights: &Path,
+    recording: &tracking_format::Recording,
+) -> Result<EstimateTrack, CliError> {
+    let model = body_estimator::EgoPoser::load(weights).map_err(CliError::Weights)?;
+    let (track, summary) = EstimateTrack::compute(&recording.frames, &model, EstimateCadence::GAME);
+    tracing::info!(
+        inferences = summary.inferences,
+        weights = %weights.display(),
+        "rig-eval: the body estimator ran over the recording"
+    );
+    Ok(track)
 }
 
 /// Run EgoPoser over a stretch of the recording at `path` and write its estimate to `out` as a CSV.

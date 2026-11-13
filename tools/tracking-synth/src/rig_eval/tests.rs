@@ -4,8 +4,9 @@
 
 use std::borrow::Cow;
 
+use body_estimator::{EgoPoserOutput, smpl::to_6d};
 use body_rig::{GroundedRig, RigFrame, RigOutput, RigTuning};
-use glam::{Quat, Vec2, Vec3};
+use glam::{DMat3, DVec3, Quat, Vec2, Vec3};
 use pretty_assertions::assert_eq;
 use tracking_format::{
     Recording,
@@ -15,6 +16,7 @@ use tracking_format::{
 
 use super::*;
 use crate::{
+    estimate::EstimateRow,
     rig_eval::{
         frames::{FrameRun, PelvisDrive, run_frames},
         pre_ik::{PreIkTrack, hips_in_cockpit},
@@ -69,6 +71,7 @@ fn rig_frames() -> Vec<RigFrame> {
                 slip: Vec2::ZERO,
                 moving: i > 200,
                 sample_height: true,
+                estimate: None,
                 dt: DT,
             }
         })
@@ -162,7 +165,7 @@ fn rig_events(frames: &[RigFrame], outputs: &[RigOutput], snap: usize) -> Vec<Ev
 fn a_recording_without_version_8_events_evaluates_as_before() {
     for name in ["stand_still", "stick_walk", "stick_strafe_and_turn"] {
         let recording = synthetic(name);
-        let (rows, summary) = evaluate(&recording, &options(), None);
+        let (rows, summary) = evaluate(&recording, &options(), None, None);
         assert!(!rows.is_empty(), "{name}");
         let evaluation = evaluate_replay(
             &recording,
@@ -170,6 +173,7 @@ fn a_recording_without_version_8_events_evaluates_as_before() {
                 source: None,
                 ..replay(PelvisSource::Simulated)
             },
+            None,
             None,
         )
         .expect("the simulated source always runs");
@@ -187,7 +191,7 @@ fn a_recording_without_version_8_events_evaluates_as_before() {
 fn the_version_8_sources_refuse_a_recording_without_their_events() {
     let recording = synthetic("stand_still");
     for source in [PelvisSource::Recorded, PelvisSource::PreIk] {
-        let error = evaluate_replay(&recording, &replay(source), None).unwrap_err();
+        let error = evaluate_replay(&recording, &replay(source), None, None).unwrap_err();
         assert!(error.to_string().starts_with("rig-eval: "), "{error}");
     }
 }
@@ -203,7 +207,8 @@ fn the_recorded_inputs_reproduce_the_rig_that_ran_them() {
         PelvisSource::default_for(&recording),
         PelvisSource::Recorded
     );
-    let evaluation = evaluate_replay(&recording, &replay(PelvisSource::Recorded), None).unwrap();
+    let evaluation =
+        evaluate_replay(&recording, &replay(PelvisSource::Recorded), None, None).unwrap();
     assert_eq!(evaluation.source, PelvisSource::Recorded);
     let replayed: Vec<RigOutput> = evaluation.rows.iter().map(|row| row.row.output).collect();
     assert_eq!(replayed, outputs);
@@ -229,6 +234,7 @@ fn a_changed_tuning_on_the_recorded_inputs_shows_in_the_comparison() {
             eval: candidate,
             ..replay(PelvisSource::Recorded)
         },
+        None,
         None,
     )
     .unwrap();
@@ -258,7 +264,8 @@ fn the_recorded_calibration_and_tuning_are_taken_up() {
     events.extend(rig_events(&frames, &outputs, usize::MAX));
     let recording = with_events(events);
 
-    let evaluation = evaluate_replay(&recording, &replay(PelvisSource::Recorded), None).unwrap();
+    let evaluation =
+        evaluate_replay(&recording, &replay(PelvisSource::Recorded), None, None).unwrap();
     let config = evaluation.config.expect("the note reads");
     assert_eq!(config.notes, 1);
     assert_eq!(config.first.body, body);
@@ -279,6 +286,7 @@ fn the_recorded_calibration_and_tuning_are_taken_up() {
             recorded_tuning: false,
             ..replay(PelvisSource::Recorded)
         },
+        None,
         None,
     )
     .unwrap();
@@ -349,6 +357,7 @@ fn the_pre_ik_source_runs_the_rig_on_the_game_hips() {
             drive: PelvisDrive::PreIk(&track),
             recorded: &recorded,
             clock: None,
+            estimate: None,
         },
     );
     assert!(!rows.is_empty());
@@ -362,5 +371,74 @@ fn the_pre_ik_source_runs_the_rig_on_the_game_hips() {
         (walking.speed_mps - 0.5).abs() < 0.1,
         "{}",
         walking.speed_mps
+    );
+}
+
+/// An estimate row whose pelvis and chest face `yaw` in the room frame, upright.
+fn facing(time_s: f64, yaw: f64) -> EstimateRow {
+    // Upright and facing the room's -Z is AMASS's +Y forward with +Z up; a yaw turns it about +Z.
+    let upright = DMat3::from_cols(DVec3::NEG_X, DVec3::Z, DVec3::Y);
+    let root = to_6d(DMat3::from_rotation_z(yaw) * upright).map(|v| v as f32);
+    // Every joint below the pelvis at rest leaves the chest facing the pelvis's way.
+    let mut pose_body = [0.0f32; 126];
+    for joint in pose_body.chunks_mut(6) {
+        joint.copy_from_slice(&[1.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+    }
+    EstimateRow {
+        time_s,
+        output: EgoPoserOutput {
+            root_orient: root,
+            pose_body,
+            betas: None,
+        },
+    }
+}
+
+#[test]
+fn an_estimate_turns_the_legs_and_without_one_nothing_changes() {
+    let recording = synthetic("stand_still");
+    let end_s = recording.frames.last().unwrap().time_ns as f64 / 1.0e9;
+    let rows: Vec<_> = (0..(end_s * 60.0) as usize)
+        .map(|i| facing(i as f64 / 60.0, 30f64.to_radians()))
+        .collect();
+    let track = EstimateTrack::from_rows(&rows, EstimateCadence::GAME);
+    assert!((rows[0].output.pelvis_yaw() - 30f64.to_radians()).abs() < 1e-6);
+    let (plain, _) = evaluate(&recording, &options(), None, None);
+    let (with, _) = evaluate(&recording, &options(), None, Some(&track));
+    assert_eq!(plain.len(), with.len());
+    assert!(plain.iter().all(|row| row.estimate.is_none()));
+    let last = with.last().unwrap();
+    let estimate = last.estimate.expect("a fresh estimate");
+    assert_eq!(estimate.confidence, 1.0);
+    // The head faces ahead; the estimate says the body faces 30 degrees off, and the legs go there.
+    let head = plain.last().unwrap().head_yaw.to_degrees();
+    assert!(head.abs() < 5.0, "{head}");
+    assert!(plain.last().unwrap().output.body_yaw.to_degrees().abs() < 10.0);
+    assert!(
+        (last.output.body_yaw.to_degrees() - 30.0).abs() < 2.0,
+        "{}",
+        last.output.body_yaw.to_degrees()
+    );
+    assert!(last.output.estimate_weight > 0.99);
+    // The CSV carries the estimate's columns only when the rig took one.
+    let compared = |rows: &[EvalRow]| -> String {
+        let rows: Vec<ComparedRow> = rows
+            .iter()
+            .map(|row| ComparedRow {
+                row: *row,
+                recorded: None,
+            })
+            .collect();
+        let mut out = Vec::new();
+        write_compared_csv(&rows, &mut out).unwrap();
+        String::from_utf8(out).unwrap()
+    };
+    assert!(!compared(&plain).contains("estimate_weight"));
+    assert!(
+        compared(&with)
+            .lines()
+            .next()
+            .unwrap()
+            .ends_with("estimate_smoothed_chest_deg")
     );
 }

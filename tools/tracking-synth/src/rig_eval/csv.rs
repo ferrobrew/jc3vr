@@ -17,14 +17,20 @@ pub fn write_csv(rows: &[EvalRow], out: &mut impl Write) -> io::Result<()> {
 }
 
 /// Write `rows` as CSV, each with the recorded rig frame's body yaw, phase, and neck offset beside
-/// it and the differences, empty where a row has no recorded frame.
+/// it and the differences, empty where a row has no recorded frame. When the rig took the learned
+/// body estimate, the estimate's columns follow, empty where a row had none.
 pub fn write_compared_csv(rows: &[ComparedRow], out: &mut impl Write) -> io::Result<()> {
-    writeln!(out, "{HEADER},{RECORDED_HEADER}")?;
+    let estimated = rows.iter().any(|compared| compared.row.estimate.is_some());
+    if estimated {
+        writeln!(out, "{HEADER},{RECORDED_HEADER},{ESTIMATE_HEADER}")?;
+    } else {
+        writeln!(out, "{HEADER},{RECORDED_HEADER}")?;
+    }
     for compared in rows {
         let row = &compared.row;
         write_row(row, out)?;
         match compared.recorded.as_ref() {
-            Some(recorded) => writeln!(
+            Some(recorded) => write!(
                 out,
                 ",{:.2},{},{:.4},{:.2},{},{:.4}",
                 recorded.body_yaw.to_degrees(),
@@ -38,16 +44,42 @@ pub fn write_compared_csv(rows: &[ComparedRow], out: &mut impl Write) -> io::Res
                     .map_or(String::new(), |agrees| u8::from(agrees).to_string()),
                 recorded.offset_difference(&row.output),
             )?,
-            None => writeln!(out, ",,,,,,")?,
+            None => write!(out, ",,,,,,")?,
         }
+        if estimated {
+            write_estimate(row, out)?;
+        }
+        writeln!(out)?;
     }
     Ok(())
+}
+
+/// Write the estimate's columns of one row, each led by its comma.
+fn write_estimate(row: &EvalRow, out: &mut impl Write) -> io::Result<()> {
+    let degrees =
+        |yaw: Option<f32>| yaw.map_or(String::new(), |y| format!("{:.2}", y.to_degrees()));
+    let o = &row.output;
+    write!(
+        out,
+        ",{},{},{},{:.3},{},{}",
+        degrees(row.estimate.map(|e| e.pelvis_yaw)),
+        degrees(row.estimate.map(|e| e.chest_yaw)),
+        row.estimate
+            .map_or(String::new(), |e| format!("{:.3}", e.confidence)),
+        o.estimate_weight,
+        degrees(o.estimate_pelvis_yaw),
+        degrees(o.estimate_chest_yaw),
+    )
 }
 
 const HEADER: &str = "time_s,video_s,phase,steps,demand_m,offset_m,lean_reach_m,bend_deg,pitch_deg,\
                       roll_deg,crouch_m,neck_y_m,standing_neck_m,head_yaw_deg,body_yaw_deg,\
                       yaw_target_deg,yaw_error_deg,chest_yaw_deg,turning,pelvis_x,pelvis_z,neck_x,\
                       neck_z,speed_mps,moving,hands_reaching,head_pitch_deg";
+
+const ESTIMATE_HEADER: &str = "estimate_pelvis_yaw_deg,estimate_chest_yaw_deg,estimate_confidence,\
+                               estimate_weight,estimate_smoothed_pelvis_deg,\
+                               estimate_smoothed_chest_deg";
 
 const RECORDED_HEADER: &str = "recorded_body_yaw_deg,recorded_phase,recorded_offset_m,\
                                body_yaw_diff_deg,phase_match,offset_diff_m";

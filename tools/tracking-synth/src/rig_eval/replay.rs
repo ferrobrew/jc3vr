@@ -16,6 +16,7 @@ use crate::rig_eval::{
     ComparedRow, EvalRow, EvalSummary, VideoClock,
     compare::{ComparisonAccumulator, RecordedOutput},
     config::ConfigResolver,
+    estimate::EstimateTrack,
     summary::SummaryAccumulator,
 };
 
@@ -24,6 +25,7 @@ pub(crate) fn run_recorded(
     recording: &Recording,
     configs: &ConfigResolver,
     clock: Option<&VideoClock>,
+    estimate: Option<&EstimateTrack>,
 ) -> (Vec<ComparedRow>, EvalSummary, ComparisonAccumulator) {
     let mut rig = GroundedRig::new(configs.at(0).0);
     let mut summary = SummaryAccumulator::default();
@@ -32,6 +34,8 @@ pub(crate) fn run_recorded(
     let mut frames = recording.frames.iter().peekable();
     let mut last_frame: Option<&Frame> = None;
     let mut last: Option<(u64, Vec2)> = None;
+    // The recenters' turns so far, which carry the estimate's room frame into the cockpit frame.
+    let mut turned = 0.0f32;
     for event in &recording.events {
         let EventKind::Rig(sample) = &event.kind else {
             continue;
@@ -40,7 +44,9 @@ pub(crate) fn run_recorded(
         while let Some(frame) = frames.next_if(|frame| frame.time_ns <= time_ns) {
             for recenter in &frame.recenters {
                 summary.recenter();
-                rig.rotate(angle::yaw_of(recenter.turn * Vec3::NEG_Z).unwrap_or(0.0));
+                let turn = angle::yaw_of(recenter.turn * Vec3::NEG_Z).unwrap_or(0.0);
+                rig.rotate(turn);
+                turned = angle::wrap(turned + turn);
             }
             last_frame = Some(frame);
         }
@@ -56,6 +62,7 @@ pub(crate) fn run_recorded(
         if sample.snapped_to.is_some() {
             rig.recenter(input.eyes, input.head);
         }
+        let estimate = estimate.and_then(|track| track.at(time_ns, turned, &tuning.yaw.estimate));
         let output = rig.update(
             &RigFrame {
                 eyes: input.eyes,
@@ -65,6 +72,7 @@ pub(crate) fn run_recorded(
                 slip: Vec2::ZERO,
                 moving: input.moving,
                 sample_height: input.sample_height,
+                estimate,
                 dt: input.dt_s,
             },
             &tuning,
@@ -99,6 +107,7 @@ pub(crate) fn run_recorded(
                 pelvis: input.pelvis,
                 speed_mps,
                 moving: input.moving,
+                estimate,
             },
             recorded: Some(recorded),
         });

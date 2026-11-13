@@ -48,6 +48,7 @@ fn a_version_8_recording_exports_with_the_cockpit_placed_by_its_view() {
         source: PathBuf::from("synthetic.jc3trk"),
         blueprint: true,
         recording_id: None,
+        estimate: None,
     };
     let summary = export(&recording, None, &options, &out).expect("the export writes");
     let written = std::fs::metadata(&out).map(|m| m.len());

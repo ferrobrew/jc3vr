@@ -6,6 +6,7 @@ use glam::{Quat, Vec2, Vec3};
 use crate::{
     angle::{forward, head_heading, head_pitch},
     body::{PlayerBody, neck_pivot},
+    estimate::BodyEstimate,
     height::StandingHeight,
     pelvis::{PelvisInput, PelvisSolve, PelvisTuning, solve},
     step::{StepCommit, StepInput, StepPhase, StepTuning},
@@ -64,6 +65,8 @@ pub struct RigFrame {
     pub moving: bool,
     /// Whether the frame may sample the standing height: on foot, in the standing posture.
     pub sample_height: bool,
+    /// The learned body estimator's latest estimate, in the room frame, when it runs.
+    pub estimate: Option<BodyEstimate>,
     /// Seconds since the last frame.
     pub dt: f32,
 }
@@ -86,6 +89,12 @@ pub struct RigOutput {
     pub turning: bool,
     /// What started the body turn under way.
     pub turn_cause: Option<TurnCause>,
+    /// The learned body estimate's say over the legs and the chest, `0..=1`.
+    pub estimate_weight: f32,
+    /// The smoothed estimate of the pelvis's heading the legs follow, while the estimate has a say.
+    pub estimate_pelvis_yaw: Option<f32>,
+    /// The smoothed estimate of the chest's heading, while the estimate has a say.
+    pub estimate_chest_yaw: Option<f32>,
     /// The standing neck height, metres over the floor.
     pub standing_neck_m: f32,
     /// Steps committed so far.
@@ -268,7 +277,7 @@ impl GroundedRig {
             solve.offset
         };
         let body_yaw = match head_yaw {
-            Some(head_yaw) => self.yaw.update(
+            Some(head_yaw) => self.yaw.update_with(
                 &YawInput {
                     head_yaw,
                     head_pitch: head_pitch(frame.head),
@@ -276,6 +285,8 @@ impl GroundedRig {
                     moving: frame.moving || phase.steps(),
                     dt: frame.dt,
                 },
+                frame.estimate.as_ref(),
+                frame.moving,
                 &tuning.yaw,
             ),
             None => body_yaw,
@@ -289,6 +300,9 @@ impl GroundedRig {
             yaw_target: self.yaw.target(),
             turning: self.yaw.turning(),
             turn_cause: self.yaw.turn_cause(),
+            estimate_weight: self.yaw.estimate().weight(),
+            estimate_pelvis_yaw: self.yaw.estimate().pelvis(),
+            estimate_chest_yaw: self.yaw.estimate().chest(),
             standing_neck_m: standing_neck,
             steps: self.step.steps(),
         }
@@ -315,6 +329,7 @@ mod tests {
             slip: Vec2::ZERO,
             moving: false,
             sample_height: true,
+            estimate: None,
             dt: DT,
         }
     }

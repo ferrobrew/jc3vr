@@ -11,10 +11,13 @@
 //!   height, and the frame's other points move with it.
 //!
 //! Then the frames are resampled to 60 Hz (positions linearly, orientations by slerp), the rate the
-//! network was trained at, and each window ends at one resampled frame.
+//! network was trained at, and each window ends at one resampled frame. The windows are independent,
+//! so they are spread over the machine's cores.
 
 use std::{
     io::{self, Write},
+    num::NonZeroUsize,
+    thread,
     time::{Duration, Instant},
 };
 
@@ -61,22 +64,50 @@ pub fn estimate(
         .iter()
         .map(|(_, frame)| SparseFrame::from_tracking(frame, &GripOffset::INDEX_BEST_GUESS))
         .collect();
-    let mut rows = Vec::new();
+    let ends: Vec<usize> = (WINDOW_POSES - 1..poses.len())
+        .filter(|&end| samples[end].0 >= from_s)
+        .collect();
+    let workers = thread::available_parallelism().map_or(1, NonZeroUsize::get);
+    let chunk = ends.len().div_ceil(workers).max(1);
+    let parts: Vec<(Vec<EstimateRow>, Duration)> = thread::scope(|scope| {
+        let handles: Vec<_> = ends
+            .chunks(chunk)
+            .map(|ends| {
+                let (poses, samples) = (&poses, &samples);
+                scope.spawn(move || {
+                    let mut spent = Duration::ZERO;
+                    let rows = ends
+                        .iter()
+                        .map(|&end| {
+                            let window: &[SparseFrame; WINDOW_POSES] = poses
+                                [end + 1 - WINDOW_POSES..=end]
+                                .try_into()
+                                .expect("the slice spans one window");
+                            let window = SparseWindow::from_poses(window);
+                            let started = Instant::now();
+                            let output = model.infer(&window);
+                            spent += started.elapsed();
+                            EstimateRow {
+                                time_s: samples[end].0,
+                                output,
+                            }
+                        })
+                        .collect();
+                    (rows, spent)
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("an estimate worker panicked"))
+            .collect()
+    });
+    let mut rows = Vec::with_capacity(ends.len());
     let mut summary = EstimateSummary::default();
-    for end in WINDOW_POSES - 1..poses.len() {
-        let time_s = samples[end].0;
-        if time_s < from_s {
-            continue;
-        }
-        let window: &[SparseFrame; WINDOW_POSES] = poses[end + 1 - WINDOW_POSES..=end]
-            .try_into()
-            .expect("the slice spans one window");
-        let window = SparseWindow::from_poses(window);
-        let started = Instant::now();
-        let output = model.infer(&window);
-        summary.inference += started.elapsed();
-        summary.inferences += 1;
-        rows.push(EstimateRow { time_s, output });
+    for (part, spent) in parts {
+        summary.inferences += part.len();
+        summary.inference += spent;
+        rows.extend(part);
     }
     (rows, summary)
 }

@@ -12,11 +12,15 @@
 //! a while. The hands pull the chest their way, held out toward one side, but never the legs: aiming
 //! or reaching to one side turns the torso, not the stance.
 //!
+//! Where the learned body estimator runs, its estimate of the pelvis and the chest takes over the
+//! legs and pulls the chest ([`crate::estimate`]), blended in by its say, so the legs follow the
+//! body in small, continuous adjustments rather than discrete turns.
 
 use glam::{Vec2, Vec3};
 
 use crate::{
     angle::{wrap, yaw_of_flat},
+    estimate::{BodyEstimate, EstimateFollow, EstimateTuning, TURNING_DEG_S, blend_legs},
     smooth::critically_damped,
 };
 
@@ -60,6 +64,8 @@ pub struct YawTuning {
     /// How fast the settle turns the legs, degrees per second: slowly enough to read as shifting
     /// one's weight rather than as a turn.
     pub steady_slew_deg_s: f32,
+    /// The head pitched further down than this starts no turn but the large one, and fades the
+    /// chest's follow, degrees.
     pub look_down_deg: f32,
     /// The head pitched further down than this holds the chest where it is, degrees.
     pub look_down_full_deg: f32,
@@ -69,6 +75,8 @@ pub struct YawTuning {
     /// How far out from the neck a hand must be held to count at all, metres; it counts fully a
     /// further [`HAND_FULL_M`] out.
     pub hand_min_m: f32,
+    /// How the learned body estimate drives the legs and pulls the chest, where it runs.
+    pub estimate: EstimateTuning,
 }
 
 impl YawTuning {
@@ -91,6 +99,7 @@ impl YawTuning {
             look_down_full_deg: 70.0,
             hand_bias: 0.5,
             hand_min_m: 0.2,
+            estimate: EstimateTuning::new(),
         }
     }
 }
@@ -165,6 +174,8 @@ pub enum TurnCause {
     Moving,
     /// The head stayed steady off the legs while the body stood.
     Steady,
+    /// The learned body estimate carries the legs.
+    Estimate,
 }
 
 impl TurnCause {
@@ -174,6 +185,7 @@ impl TurnCause {
             TurnCause::Sustained => "sustained",
             TurnCause::Moving => "moving",
             TurnCause::Steady => "steady",
+            TurnCause::Estimate => "estimate",
         }
     }
 }
@@ -201,6 +213,10 @@ pub struct YawFollow {
     /// Where the head's steady spell began, and how long it has lasted, seconds.
     steady_from: Option<f32>,
     steady: f32,
+    /// The learned body estimate's part.
+    estimate: EstimateFollow,
+    /// Whether the estimate turned the legs on the last frame.
+    estimate_turning: bool,
 }
 
 impl YawFollow {
@@ -216,6 +232,8 @@ impl YawFollow {
             target: 0.0,
             steady_from: None,
             steady: 0.0,
+            estimate: EstimateFollow::new(),
+            estimate_turning: false,
         }
     }
 
@@ -234,19 +252,32 @@ impl YawFollow {
         self.target
     }
 
-    /// Whether a turn of the legs is under way.
+    /// Whether a turn of the legs is under way: while the estimate has most of the say, whether it
+    /// turned them on the last frame.
     pub fn turning(&self) -> bool {
-        self.turning.is_some()
+        self.turn_cause().is_some()
     }
 
     /// What started the turn of the legs under way.
     pub fn turn_cause(&self) -> Option<TurnCause> {
-        self.turning
+        if self.estimate.weight() >= 0.5 {
+            self.estimate_turning.then_some(TurnCause::Estimate)
+        } else {
+            self.turning
+        }
     }
 
-    /// Face `yaw` at once, legs and chest, as a recenter does.
+    /// The learned body estimate's part: its say and its smoothed headings.
+    pub fn estimate(&self) -> &EstimateFollow {
+        &self.estimate
+    }
+
+    /// Face `yaw` at once, legs and chest, as a recenter does. The estimate keeps its say, since it
+    /// reads the body rather than the frame.
     pub fn snap(&mut self, yaw: f32) {
+        let estimate = self.estimate;
         *self = Self::new();
+        self.estimate = estimate;
         if yaw.is_finite() {
             self.yaw = Some(wrap(yaw));
             self.chest = Some(wrap(yaw));
@@ -264,10 +295,25 @@ impl YawFollow {
         self.chest = self.chest.map(|chest| wrap(chest + turn));
         self.target = wrap(self.target + turn);
         self.steady_from = self.steady_from.map(|from| wrap(from + turn));
+        self.estimate.rotate(turn);
     }
 
     /// Advance one frame and return the legs' heading.
     pub fn update(&mut self, input: &YawInput, tuning: &YawTuning) -> f32 {
+        self.update_with(input, None, false, tuning)
+    }
+
+    /// Advance one frame with the learned body estimate `estimate`, absent when the estimator does
+    /// not run, and return the legs' heading. `stick` is whether the stick walks the body, which
+    /// hands the legs back to the head's moving turn. With no estimate and none easing out, this is
+    /// exactly [`update`](Self::update).
+    pub fn update_with(
+        &mut self,
+        input: &YawInput,
+        estimate: Option<&BodyEstimate>,
+        stick: bool,
+        tuning: &YawTuning,
+    ) -> f32 {
         if !input.head_yaw.is_finite() {
             return self.yaw.unwrap_or(0.0);
         }
@@ -282,7 +328,38 @@ impl YawFollow {
             self.snap(head);
             return head;
         };
+        let by_head = self.head_legs(yaw, head, input, dt, tuning);
+        let legs = if self.estimate.active(estimate) {
+            let step = self.estimate.step(
+                estimate,
+                stick,
+                yaw,
+                look_down_follow(input.head_pitch, tuning),
+                dt,
+                &tuning.estimate,
+            );
+            self.estimate_turning =
+                wrap(step.legs - yaw).abs() > TURNING_DEG_S.to_radians() * dt && dt > 0.0;
+            blend_legs(yaw, by_head, step.legs, step.weight)
+        } else {
+            self.estimate_turning = false;
+            by_head
+        };
+        self.yaw = Some(legs);
+        self.update_chest(legs, head, input, dt, tuning);
+        legs
+    }
 
+    /// The head's rules for the legs at `yaw`, with the head at `head`: the turns they start and
+    /// the heading they leave the legs at this frame.
+    fn head_legs(
+        &mut self,
+        yaw: f32,
+        head: f32,
+        input: &YawInput,
+        dt: f32,
+        tuning: &YawTuning,
+    ) -> f32 {
         let error = wrap(head - yaw);
         let past = |deg: f32| error.abs() > deg.max(0.0).to_radians();
         let looking_down = input.head_pitch.is_finite()
@@ -333,10 +410,13 @@ impl YawFollow {
                 None
             };
         }
-        let yaw = if let Some(cause) = self.turning {
+        if let Some(cause) = self.turning {
             let slew = match cause {
                 TurnCause::Steady => tuning.steady_slew_deg_s,
-                TurnCause::Large | TurnCause::Sustained | TurnCause::Moving => tuning.slew_deg_s,
+                TurnCause::Large
+                | TurnCause::Sustained
+                | TurnCause::Moving
+                | TurnCause::Estimate => tuning.slew_deg_s,
             };
             let step = slew.max(0.0).to_radians() * dt;
             let yaw = wrap(yaw + error.clamp(-step, step));
@@ -348,10 +428,7 @@ impl YawFollow {
             yaw
         } else {
             yaw
-        };
-        self.yaw = Some(yaw);
-        self.update_chest(yaw, head, input, dt, tuning);
-        yaw
+        }
     }
 
     /// Fold the head's heading into its steady spell, and return whether the head has been steady
@@ -386,6 +463,7 @@ impl YawFollow {
             ),
             _ => head,
         };
+        let wanted = self.estimate.chest_target(wanted, &tuning.estimate);
         let clamp = tuning.chest_clamp_deg.clamp(0.0, 180.0).to_radians();
         let goal = wrap(yaw + wrap(wanted - yaw).clamp(-clamp, clamp));
         let chest = self.chest.unwrap_or(goal);
@@ -400,7 +478,7 @@ impl YawFollow {
 
 /// How much of the chest's follow survives the head's pitch `pitch`: all of it above the look-down
 /// pitch, none past the full look-down pitch, and a linear fade between.
-fn look_down_follow(pitch: f32, tuning: &YawTuning) -> f32 {
+pub(crate) fn look_down_follow(pitch: f32, tuning: &YawTuning) -> f32 {
     if !pitch.is_finite() {
         return 1.0;
     }
@@ -419,7 +497,7 @@ fn look_down_follow(pitch: f32, tuning: &YawTuning) -> f32 {
 /// The [`critically_damped`] spring from the heading `from`, turning at `rate`, toward `to` the
 /// short way round, over `dt` seconds with a smoothing time of `smooth_s`: the new heading and
 /// rate. It never overshoots.
-fn smooth_damp(from: f32, to: f32, rate: f32, smooth_s: f32, dt: f32) -> (f32, f32) {
+pub(crate) fn smooth_damp(from: f32, to: f32, rate: f32, smooth_s: f32, dt: f32) -> (f32, f32) {
     let change = wrap(from - to);
     let (mut offset, mut rate) = critically_damped(change, rate, 0.0, smooth_s, dt);
     // Arriving past the goal from either side lands on it.
