@@ -279,6 +279,23 @@ pub fn shoulder_positions(eye_position: Vec3, torso: Quat, body: &BodyDimensions
 /// the settings do not carry it because it varies little between adults.
 pub const EYES_FORWARD_OF_SHOULDERS: f32 = 0.09;
 
+/// The character's shoulder joints `[left, right]` for eyes at `eye_position` and a torso facing
+/// `torso`: [`CHARACTER_EYES_TO_RIGHT_SHOULDER`] turned by the torso's yaw, mirrored across the
+/// torso for the left. The character counterpart of [`shoulder_positions`], from his skeleton
+/// rather than from generic ratios.
+pub fn character_shoulder_positions(eye_position: Vec3, torso: Quat) -> [Vec3; 2] {
+    let right = CHARACTER_EYES_TO_RIGHT_SHOULDER;
+    let left = Vec3::new(-right.x, right.y, right.z);
+    [eye_position + torso * left, eye_position + torso * right]
+}
+
+/// The character's right shoulder joint (`RightArm`, the joint HumanIK reaches from) relative to
+/// his eye midpoint, in the body's axes (+X right, +Y up, +Z back), metres: measured on his
+/// skeleton's reference pose. His shoulders sit lower and further behind the eyes, and closer
+/// together, than generic adult ratios put them ([`BodyDimensions::CHARACTER_ESTIMATE`]); the
+/// on-foot clips carry them within a couple of centimetres of the reference pose.
+pub const CHARACTER_EYES_TO_RIGHT_SHOULDER: Vec3 = Vec3::new(0.188, -0.259, 0.118);
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -369,6 +386,33 @@ mod tests {
         let [left, right] = shoulder_positions(eyes, turned, &PLAYER);
         assert!(right.z > left.z);
         assert!((right.x - left.x).abs() < EPS);
+    }
+
+    #[test]
+    fn the_character_shoulders_mirror_across_the_torso_and_turn_with_it() {
+        let eyes = Vec3::new(1.0, 1.7, 2.0);
+        let [left, right] = character_shoulder_positions(eyes, Quat::IDENTITY);
+        assert!(right.abs_diff_eq(eyes + CHARACTER_EYES_TO_RIGHT_SHOULDER, EPS));
+        assert!((left.x - eyes.x + (right.x - eyes.x)).abs() < EPS);
+        assert!((left.y - right.y).abs() < EPS && (left.z - right.z).abs() < EPS);
+        assert!(
+            left.y < eyes.y && left.z > eyes.z,
+            "below and behind the eyes"
+        );
+        let width = (right - left).length();
+        assert!(
+            width < CHARACTER.shoulder_width,
+            "narrower than the estimate: {width}"
+        );
+        let torso = Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2);
+        let [left_t, right_t] = character_shoulder_positions(eyes, torso);
+        assert!((left_t.distance(right_t) - width).abs() < EPS);
+        assert!(
+            right_t.z > left_t.z,
+            "facing +X, the right shoulder is toward +Z"
+        );
+        // Behind the eyes along the facing, whatever the yaw.
+        assert!((right_t - eyes).dot(torso * Vec3::NEG_Z) < 0.0);
     }
 
     #[test]

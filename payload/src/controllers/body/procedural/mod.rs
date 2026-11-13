@@ -78,7 +78,7 @@ use crate::{
                 rig::{Rig, RigBone},
                 solver::{
                     SolveInput,
-                    anchored::{solve_anchored, upright_share},
+                    anchored::{clear_clavicle_offset, solve_anchored, upright_share},
                     arms::{Side, TorsoKeepOut},
                     clavicles::{self, ClavicleTurn},
                     pose::RigPose,
@@ -495,8 +495,17 @@ unsafe fn pose_torso(
     ) {
         for side in Side::BOTH {
             if let Some(target) = gate.arm_shoulders[side.index()] {
-                let offset = target - clavicles::shoulder_joint(&solved, rig, side);
-                solved.translate(side.arm_bones().0, offset);
+                // The chest clearance ran before this, so the clavicle's own move toward the
+                // camera is held to it as well.
+                let clavicle = side.arm_bones().0;
+                let joint = clavicles::shoulder_joint(&solved, rig, side);
+                let offset = clear_clavicle_offset(
+                    [solved.position(clavicle), joint],
+                    target - joint,
+                    &input,
+                    config,
+                );
+                solved.translate(clavicle, offset);
             }
         }
     }

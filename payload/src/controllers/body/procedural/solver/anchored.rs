@@ -178,6 +178,39 @@ fn keep_chest_clear(
     }
 }
 
+/// `offset`, a translation of a clavicle whose root and shoulder joint are at `points`, less as
+/// much of its forward part as would carry either point into the near field [`keep_chest_clear`]
+/// keeps the chest out of: within `chest_clear_below_m` below the eyes and less than
+/// `chest_clear_back_m` behind them along the view's level forward. Only the offset's own forward
+/// part is taken back, so a point the solve left in the near field is not pushed further back than
+/// it stood, and a translation back or to the side is untouched.
+pub fn clear_clavicle_offset(
+    points: [Vec3; 2],
+    offset: Vec3,
+    input: &SolveInput,
+    config: &ProceduralBodyConfig,
+) -> Vec3 {
+    let Some(heading) = head_heading(input.head_rotation.normalize()) else {
+        return offset;
+    };
+    let forward = direction(heading);
+    let ahead = offset.dot(forward);
+    if ahead <= 0.0 {
+        return offset;
+    }
+    let (below, back) = (
+        config.chest_clear_below_m.max(0.0),
+        config.chest_clear_back_m.max(0.0),
+    );
+    let over = points
+        .into_iter()
+        .map(|p| p + offset)
+        .filter(|p| p.y > input.eye.y - below)
+        .map(|p| (p - input.eye).dot(forward) + back)
+        .fold(0.0f32, f32::max);
+    offset - forward * over.min(ahead)
+}
+
 /// The points of the chest that must stay out of the near field: the upper spine, the sternum, and
 /// the shoulders.
 fn chest_points(pose: &RigPose) -> [Vec3; 4] {
@@ -275,6 +308,40 @@ mod tests {
         let base = input.animated.position(RigBone::Spine);
         (pose.position(RigBone::Neck) - base)
             .angle_between(input.animated.position(RigBone::Neck) - base)
+    }
+
+    #[test]
+    fn a_clavicle_translated_toward_the_camera_stops_at_the_clearance() {
+        let (input, config) = setup();
+        let back = config.chest_clear_back_m;
+        // A root and joint level with the eyes, a clearance and a half behind them.
+        let root = input.eye + Vec3::new(0.0, -0.05, back * 1.5);
+        let joint = root + Vec3::new(0.18, -0.02, 0.02);
+        let pulled =
+            clear_clavicle_offset([root, joint], Vec3::new(0.01, 0.0, -back), &input, &config);
+        assert!((pulled.x - 0.01).abs() < 1e-5, "the sideways part is kept");
+        let cleared = root + pulled;
+        assert!(
+            ((cleared - input.eye).dot(Vec3::NEG_Z) + back).abs() < 1e-4,
+            "{pulled}"
+        );
+        // Within the clearance, or back, or below the near field, the offset is untouched.
+        for offset in [Vec3::new(0.0, 0.0, -back * 0.4), Vec3::new(0.0, 0.0, 0.1)] {
+            assert_eq!(
+                clear_clavicle_offset([root, joint], offset, &input, &config),
+                offset
+            );
+        }
+        let low = root - Vec3::Y * (config.chest_clear_below_m + 0.1);
+        let ahead = Vec3::new(0.0, 0.0, -0.3);
+        assert_eq!(
+            clear_clavicle_offset([low, low], ahead, &input, &config),
+            ahead
+        );
+        // A root the solve already left inside is not pushed back past where it stood.
+        let inside = input.eye + Vec3::new(0.0, -0.05, back * 0.5);
+        let pulled = clear_clavicle_offset([inside, inside], Vec3::NEG_Z * 0.05, &input, &config);
+        assert!(pulled.length() < 1e-5, "{pulled}");
     }
 
     #[test]
