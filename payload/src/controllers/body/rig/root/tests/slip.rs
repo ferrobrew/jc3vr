@@ -1,3 +1,4 @@
+use body_rig::body::EYES_TO_NECK;
 use glam::{Quat, Vec2, Vec3};
 
 use crate::controllers::body::rig::root::eye_rig_slip;
@@ -31,4 +32,21 @@ fn bad_inputs_have_no_slip() {
         eye_rig_slip(ARM, Quat::from_rotation_y(1.0), 0.0),
         Vec2::ZERO
     );
+}
+
+/// Under the neck model the camera hangs the eyes `-EYES_TO_NECK` from the neutral head over the
+/// root, in the view's frame, and the rig's pelvis is the root's cockpit point plus the slip plus
+/// `EYES_TO_NECK` turned by the body's heading. With the neck model's arm, that pelvis is where the
+/// root stands, whatever the body's turn under the view.
+#[test]
+fn the_neck_model_slip_puts_the_rig_pelvis_on_the_root() {
+    let arm = -EYES_TO_NECK;
+    let shift = Vec2::new(0.4, -0.2);
+    for turned in [0.0, 0.5, -1.3, std::f32::consts::PI] {
+        let slip = eye_rig_slip(arm, Quat::from_rotation_y(-turned), 1.0);
+        let body_arm = Quat::from_rotation_y(turned) * EYES_TO_NECK;
+        let pelvis = shift + slip + Vec2::new(body_arm.x, body_arm.z);
+        let root = shift - Vec2::new(arm.x, arm.z);
+        assert!((pelvis - root).length() < 1e-5, "{turned}: {pelvis} {root}");
+    }
 }

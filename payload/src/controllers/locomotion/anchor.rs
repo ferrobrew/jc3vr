@@ -21,7 +21,7 @@ use crate::{
             status as locomotion_status,
             view::{
                 Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral,
-                NeutralCapture, blend, face_clear, face_offset, stable_anchors,
+                NeutralCapture, blend, face_clear, face_offset, neck_model_anchors, stable_anchors,
             },
         },
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
@@ -82,8 +82,14 @@ pub(crate) unsafe fn stabilize(
     model: Neutral,
     dt: f32,
 ) -> Stabilized {
-    let (enabled, controllers_enabled) =
-        Config::lock_query(|c| (c.controllers.locomotion.view.enabled, c.controllers.enabled));
+    let (enabled, controllers_enabled, head_on_pivot, world_scale) = Config::lock_query(|c| {
+        (
+            c.controllers.locomotion.view.enabled,
+            c.controllers.enabled,
+            c.controllers.locomotion.view.head_on_pivot,
+            c.vr.world_scale,
+        )
+    });
     let now = Instant::now();
     let locomotion = locomotion_status();
     let grounded = locomotion.fresh(now);
@@ -194,11 +200,18 @@ pub(crate) unsafe fn stabilize(
     if source() == Source::Vr {
         // The headset's view takes only the camera's anchors: the body's pose and IK keep the
         // animated head, so the head bone stays on the animation while the view does not bob.
+        // Under the neck model the eyes hang from the neutral head as the body's head target
+        // assumes, so the head bone lands on the camera's neck pivot.
         return Stabilized {
             anatomy: animated,
-            camera: stable_target
-                .as_ref()
-                .map(|stable| blend(&animated, stable, weight)),
+            camera: stable_target.as_ref().map(|stable| {
+                let stable = if head_on_pivot {
+                    neck_model_anchors(stable, world_scale)
+                } else {
+                    *stable
+                };
+                blend(&animated, &stable, weight)
+            }),
             weight,
             face_offset: face_offset(&model, FACE_CLEARANCE_M * clear),
         };

@@ -13,9 +13,13 @@
 //! - [`Handover`] eases the anchor between the animated head and the root over a short window, so
 //!   leaving the ground or entering a vehicle never jumps the view.
 //! - [`stable_anchors`] composes the anchors from the neutral pose and the root's two tick-spaced
-//!   transforms, and [`blend`] mixes them with the animated ones.
+//!   transforms, [`neck_model_anchors`] hangs the headset's eyes from them by the tracked neck
+//!   model, and [`blend`] mixes them with the animated ones.
 
-use body_rig::smooth::{critically_damped, smoothstep};
+use body_rig::{
+    body::EYES_TO_NECK,
+    smooth::{critically_damped, smoothstep},
+};
 use glam::{Mat4, Vec3};
 
 use crate::{controllers::body::procedural::authority::Case, headpose::Anchors};
@@ -283,6 +287,29 @@ pub fn stable_anchors(
         head_prev: above(world_t0, height.previous, neutral.head),
         neck: above(world_t1, height.current, neutral.neck),
         eye_arm: neutral.eyes - neutral.neck,
+    }
+}
+
+/// `stable` with the eyes hung from the head by the tracked neck model rather than by the neutral
+/// pose's own neck and eyes: the neck pivot is the head bone itself, and the eyes sit
+/// `-EYES_TO_NECK` from it, at the VR world scale `scale`, in the frame the camera turns the eye
+/// arm with. The rig and the body read the player's neck pivot as the eyes plus `EYES_TO_NECK`
+/// turned by the head, so with these anchors that pivot is the neutral head for a head held at the
+/// recenter's orientation, and wherever the head turns it stays where the head bone is aimed.
+///
+/// The neutral pose's eyes are the idle clip's, which hold the head pitched and turned a little,
+/// and its neck stands behind the head bone, so the measured arm puts the eyes a few centimetres
+/// lower and further forward of the head bone than a level head carries them.
+pub fn neck_model_anchors(stable: &Anchors, scale: f32) -> Anchors {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    Anchors {
+        neck: stable.head,
+        eye_arm: -EYES_TO_NECK * scale,
+        ..*stable
     }
 }
 
@@ -702,5 +729,34 @@ mod tests {
         };
         assert_eq!(blend(&a, &b, 0.0).head, a.head);
         assert_eq!(blend(&a, &b, 1.0).neck, b.neck);
+    }
+
+    /// Under the neck model the eyes hang from the head bone so that the neck pivot the rig and the
+    /// body read off the eyes (the eyes plus `EYES_TO_NECK` turned by the head) is the head bone,
+    /// at any world scale, for a head held at the view frame's orientation.
+    #[test]
+    fn the_neck_model_puts_the_neck_pivot_on_the_head() {
+        let world_t0 = Mat4::from_translation(Vec3::new(1.0, 2.0, 3.0));
+        let world_t1 = Mat4::from_translation(Vec3::new(1.1, 2.0, 3.0));
+        let height = HeightPair {
+            previous: 2.0,
+            current: 2.0,
+        };
+        let stable = stable_anchors(&neutral(), world_t0, world_t1, height);
+        for scale in [1.0, 1.6] {
+            let model = neck_model_anchors(&stable, scale);
+            assert_eq!(model.head, stable.head);
+            assert_eq!(model.head_prev, stable.head_prev);
+            for view in [Quat::IDENTITY, Quat::from_rotation_y(0.7)] {
+                let eyes = model.head + (model.neck - model.head) + view * model.eye_arm;
+                let pivot = eyes + view * EYES_TO_NECK * scale;
+                assert!(
+                    pivot.abs_diff_eq(model.head, 1e-5),
+                    "{pivot} {}",
+                    model.head
+                );
+            }
+        }
+        assert_eq!(neck_model_anchors(&stable, f32::NAN).eye_arm, -EYES_TO_NECK);
     }
 }

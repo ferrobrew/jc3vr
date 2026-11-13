@@ -110,6 +110,14 @@ pub(super) fn locomotion_settings(
             "Anchor the view to Rico's root and his neutral standing head on foot, so no animation \
              bob, lean, or lurch reaches it.",
         );
+    ui.add_enabled(
+        view.enabled,
+        egui::Checkbox::new(&mut view.head_on_pivot, "Rico's head on the neck pivot"),
+    )
+    .on_hover_text(
+        "Hang the headset's eyes from Rico's neutral head by the neck model, and aim his head at \
+         the camera's neck pivot, so his head bone sits where the player's neck is.",
+    );
     ui.checkbox(&mut acts.enabled, "No turning animations")
         .on_hover_text(
             "Drop the turn-in-place acts and swap the turning starts and stops for their straight \

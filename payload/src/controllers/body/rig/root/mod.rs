@@ -161,7 +161,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
     };
     // Read before the frame's lock: the follow's turn takes the headpose's.
     let slip = eye_rig_slip(
-        headpose::eye_arm(),
+        slip_arm(),
         headpose::xr::follow_turn(true),
         inputs.world_scale,
     );
@@ -264,6 +264,20 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         cur,
         source: movement.compose(basis, &state.shift),
     }
+}
+
+/// The arm [`eye_rig_slip`] turns: the camera's own head-to-eyes offset while the headset's eyes
+/// hang from the neutral head by the neck model (`controllers.locomotion.view.head_on_pivot`), the
+/// offset the rig's pelvis assumes the upright eyes stand ahead of the root by; else the measured
+/// neck-to-eyes arm.
+fn slip_arm() -> Vec3 {
+    let head_on_pivot = Config::lock_query(|c| c.controllers.locomotion.view.head_on_pivot);
+    headpose::anchor_pair()
+        .map(|[_, current]| current)
+        .filter(|current| head_on_pivot && current.camera_stable)
+        .map_or_else(headpose::eye_arm, |current| {
+            current.camera_neck_delta + current.camera_eye_arm
+        })
 }
 
 /// How far the camera's eye rig carries Rico from under the eyes, cockpit `(x, z)` in room metres,

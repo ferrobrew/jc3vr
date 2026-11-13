@@ -77,11 +77,18 @@ pub struct StableViewConfig {
     /// Anchor the view to Rico's root plus his neutral standing head on foot, instead of to the
     /// animated head, so no animation bob, lean, or lurch reaches the view.
     pub enabled: bool,
+    /// In the headset, hang the eyes from the neutral head by the tracked neck model (the neck
+    /// pivot is the head bone, the eyes `EYES_TO_NECK` ahead of it), and aim Rico's head at the
+    /// camera's own neck pivot, so his head bone sits where the player's neck is.
+    pub head_on_pivot: bool,
 }
 
 impl StableViewConfig {
     pub const fn new() -> Self {
-        Self { enabled: true }
+        Self {
+            enabled: true,
+            head_on_pivot: true,
+        }
     }
 }
 

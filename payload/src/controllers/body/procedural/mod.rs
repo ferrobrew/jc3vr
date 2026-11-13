@@ -95,7 +95,7 @@ use crate::{
         mode::{AirborneVariant, Mode, current as current_mode},
     },
     grapple::physical::lock,
-    headpose::{body_relative_rotation, eye_arm, xr},
+    headpose::{body_relative_rotation, xr},
 };
 
 /// What the procedural body did at its last gate.
@@ -641,9 +641,8 @@ const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
 fn solve_input(character: &Character, animated: &RigPose, scale: f32) -> Option<SolveInput> {
     let world = Mat4::from(character.m_WorldMatrixT1);
     let (_, rotation, _) = world.to_scale_rotation_translation();
-    let head = head::read(&world, scale);
+    let head::ModelHead { head, eye } = head::read(&world, scale);
     let head_rotation = body_relative_rotation();
-    let eye = head + head_rotation * eye_arm();
     (head.is_finite() && eye.is_finite()).then(|| SolveInput {
         animated: *animated,
         head,
