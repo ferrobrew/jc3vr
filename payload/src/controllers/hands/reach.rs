@@ -12,10 +12,10 @@
 //!   proportions put them. The character's shoulder never follows his animation: a run swings the
 //!   animated shoulders back and forth each stride, and a remap that followed them pumped a held
 //!   rifle in and out of the hands. With the character's arm measured ([`ArmTracker`]), the ratio
-//!   is his measured shoulder-to-wrist length over the player's
-//!   ([`BodyDimensions::shoulder_to_wrist`]), so a fully extended player arm asks for a fully
-//!   extended character arm about the joint HumanIK reaches from. Without a measurement, the remap
-//!   takes the arm-span ratio ([`ArmRemap::estimated`]).
+//!   is his measured shoulder-to-wrist length over the player's reach
+//!   ([`BodyDimensions::arm_reach`]), so a fully extended player arm, forward or hanging, asks for
+//!   a fully extended character arm about the joint HumanIK reaches from. Without a measurement,
+//!   the remap takes the arm-span ratio ([`ArmRemap::estimated`]).
 //! - [`pull_ramp`]: the wrist target's pull, ramping from zero as the target nears the arm's full
 //!   length, so reach propagates into the girdle only when the arm alone cannot get there.
 //! - [`ReachLimit`]: the wrist held within the character's measured arm length of his solved
@@ -112,8 +112,9 @@ impl ArmRemap {
     }
 
     /// The remap onto the character's measured arm `arm`: the shoulders as for
-    /// [`Self::estimated`], scaled by the measured arm's length over the player's, at the VR world
-    /// scale `world_scale`. `None` when either arm or the scale is not a usable length.
+    /// [`Self::estimated`], scaled by the measured arm's length over the player's reach
+    /// ([`BodyDimensions::arm_reach`]), at the VR world scale `world_scale`. `None` when either arm
+    /// or the scale is not a usable length.
     pub fn measured(
         hand: Hand,
         head: Pose,
@@ -122,7 +123,7 @@ impl ArmRemap {
         arm: &MeasuredArm,
         world_scale: f32,
     ) -> Option<Self> {
-        let player_arm = player.shoulder_to_wrist();
+        let player_arm = player.arm_reach();
         let character_arm = arm.length();
         let usable = |l: f32| l.is_finite() && l > MIN_ARM_M;
         if !usable(player_arm)
@@ -402,7 +403,7 @@ mod tests {
                 .abs_diff_eq(remap.character_shoulder + offset * remap.scale, EPS,)
         );
         assert_eq!(bent.scale, remap.scale);
-        let wrist = bent.player_shoulder + Vec3::NEG_Z * PLAYER.shoulder_to_wrist();
+        let wrist = bent.player_shoulder + Vec3::NEG_Z * PLAYER.arm_reach();
         let target = bent.apply(wrist);
         let limit = ReachLimit::new(bent.character_shoulder, &rico(), 1.2).unwrap();
         assert!(limit.apply(target).abs_diff_eq(target, EPS));
@@ -410,8 +411,14 @@ mod tests {
     }
 
     #[test]
-    fn the_player_arm_is_half_the_span_less_the_shoulders_and_hand() {
-        assert!((PLAYER.shoulder_to_wrist() - 0.53).abs() < EPS);
+    fn the_measured_remap_scales_by_the_player_s_reach_not_the_t_pose_arm() {
+        let remap =
+            ArmRemap::measured(Hand::Right, head(), Quat::IDENTITY, &PLAYER, &rico(), 1.0).unwrap();
+        assert!((remap.scale - rico().length() / PLAYER.arm_reach()).abs() < EPS);
+        // A wrist the T-pose's arm length out, a bent arm, stays within the character's reach.
+        let bent = remap.player_shoulder + Vec3::NEG_Z * PLAYER.shoulder_to_wrist();
+        let reach = remap.apply(bent).distance(remap.character_shoulder);
+        assert!(reach < rico().length() * 0.9, "{reach}");
     }
 
     #[test]
@@ -427,7 +434,7 @@ mod tests {
         )
         .unwrap();
         for direction in [Vec3::NEG_Z, Vec3::X, Vec3::new(0.3, -0.5, -0.8).normalize()] {
-            let wrist = remap.player_shoulder + direction * PLAYER.shoulder_to_wrist();
+            let wrist = remap.player_shoulder + direction * PLAYER.arm_reach();
             let remapped = remap.apply(wrist);
             let reach = remapped - remap.character_shoulder;
             assert!((reach.length() - rico().length()).abs() < EPS);
@@ -510,7 +517,7 @@ mod tests {
             2.0,
         )
         .unwrap();
-        let wrist = scaled.player_shoulder + Vec3::NEG_Z * PLAYER.shoulder_to_wrist();
+        let wrist = scaled.player_shoulder + Vec3::NEG_Z * PLAYER.arm_reach();
         // Composed into the world, cockpit offsets scale by the world scale; Rico's arm does not.
         let world_reach = (scaled.apply(wrist) - scaled.character_shoulder) * 2.0;
         assert!((world_reach.length() - rico().length()).abs() < EPS);

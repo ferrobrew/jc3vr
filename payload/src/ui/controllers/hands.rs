@@ -36,9 +36,9 @@ pub(super) fn hands_readout(
         tiers.state.map_or("none yet", TierState::label)
     ));
     let arms = rig::status();
-    let player_arm = body::player().shoulder_to_wrist();
+    let player_arm = body::player().arm_reach();
     ui.label(format!(
-        "Player arm (shoulder to wrist, from the body dimensions): {:.0} mm",
+        "Player reach (shoulder to wrist, forward or down, from the body dimensions): {:.0} mm",
         player_arm * 1000.0
     ));
     ui.columns(2, |columns| {

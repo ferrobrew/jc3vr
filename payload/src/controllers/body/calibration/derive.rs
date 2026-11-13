@@ -11,8 +11,12 @@ pub const SHOULDER_HEIGHT_RATIO: f32 = 0.818;
 pub const SHOULDER_WIDTH_RATIO: f32 = 0.223;
 /// Hand length (wrist to the tip of the middle finger) as a fraction of standing height.
 pub const HAND_RATIO: f32 = 0.108;
+/// The upper arm's length as a fraction of standing height.
+pub const UPPER_ARM_RATIO: f32 = 0.186;
+/// The forearm's length as a fraction of standing height.
+pub const FOREARM_RATIO: f32 = 0.146;
 /// The upper arm's share of the shoulder-to-wrist length; the forearm takes the rest.
-pub const UPPER_ARM_SHARE: f32 = 0.186 / (0.186 + 0.146);
+pub const UPPER_ARM_SHARE: f32 = UPPER_ARM_RATIO / (UPPER_ARM_RATIO + FOREARM_RATIO);
 /// How far along the hand, from the wrist, the fingertip lies beyond the grip pose, as a fraction
 /// of the hand's length. The grip pose is the centre of the closed hand, about three tenths of the
 /// hand's length from the wrist.

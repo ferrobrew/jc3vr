@@ -56,7 +56,10 @@ pub mod unarmed;
 use glam::{Quat, Vec3};
 use serde::{Deserialize, Serialize};
 
-use crate::config::{self, Config};
+use crate::{
+    config::{self, Config},
+    controllers::body::calibration::{ARM_SPAN_HEIGHT_RATIO, FOREARM_RATIO, UPPER_ARM_RATIO},
+};
 
 /// A body's dimensions, in metres. Heights are measured from the floor.
 #[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
@@ -112,12 +115,26 @@ impl BodyDimensions {
         seated_eye_height: None,
     };
 
-    /// The player's shoulder-to-wrist length: half of the arm span less the shoulder width, less the
-    /// hand ([`Self::shoulder_to_wrist_of`]). This is the arm length everything that scales the
-    /// player's arm reads. The upper arm and forearm are not summed for it, because hand-written
-    /// dimensions need not agree with their span; the calibration splits this length into them.
+    /// The player's shoulder-to-wrist length across a T-pose: half of the arm span less the shoulder
+    /// width, less the hand ([`Self::shoulder_to_wrist_of`]). It is how far a spread arm holds the
+    /// wrist from the estimated shoulder ([`shoulder_positions`]), the pose the span is measured in,
+    /// so the wingsuit's spread arms scale by it; the calibration splits it into the upper arm and
+    /// forearm. A reach forward or down goes further ([`Self::arm_reach`]). The upper arm and forearm
+    /// are not summed for either, because hand-written dimensions need not agree with their span.
     pub fn shoulder_to_wrist(&self) -> f32 {
         Self::shoulder_to_wrist_of(self.arm_span, self.shoulder_width, self.hand)
+    }
+
+    /// The player's reach: how far a straight arm held forward or hanging down puts the wrist from
+    /// the estimated shoulder ([`shoulder_positions`]), the directions the arms reach in on foot.
+    /// It is the segment tables' shoulder-to-wrist length ([`UPPER_ARM_RATIO`] and
+    /// [`FOREARM_RATIO`]) for the height the arm span stands for ([`ARM_SPAN_HEIGHT_RATIO`]), about a
+    /// sixth longer than [`Self::shoulder_to_wrist`]: the estimated shoulder does not move with the
+    /// shoulder girdle, which a reach forward draws forward, and it sits at the tables' shoulder
+    /// height, above the joint a hanging arm swings from, so an arm forward or down holds the wrist
+    /// further from it than the spread arm the span measures. The arm remap scales by it.
+    pub fn arm_reach(&self) -> f32 {
+        (UPPER_ARM_RATIO + FOREARM_RATIO) * self.arm_span / ARM_SPAN_HEIGHT_RATIO
     }
 
     /// The shoulder-to-wrist length of an arm span `arm_span` across shoulders `shoulder_width`
@@ -457,5 +474,29 @@ mod tests {
             eyes_above_head.validate(),
             Err(InvalidDimension::Misordered { .. })
         ));
+    }
+
+    #[test]
+    fn the_reach_is_the_tables_arm_for_the_span() {
+        // The tables' own segments, which the generic and character dimensions take, add up to
+        // the reach their span gives.
+        for body in [BodyDimensions::GENERIC_ADULT, CHARACTER] {
+            assert!(
+                (body.arm_reach() - (body.upper_arm + body.forearm)).abs() < 0.01,
+                "{body:?}"
+            );
+        }
+        // About a sixth longer than what a T-pose's span leaves once the shoulders and hands are
+        // out.
+        let ratio = PLAYER.arm_reach() / PLAYER.shoulder_to_wrist();
+        assert!((1.1..1.25).contains(&ratio), "{ratio}");
+        // The span alone sets it.
+        let wide = BodyDimensions {
+            arm_span: PLAYER.arm_span * 1.1,
+            shoulder_width: 0.5,
+            hand: 0.25,
+            ..PLAYER
+        };
+        assert!((wide.arm_reach() - PLAYER.arm_reach() * 1.1).abs() < EPS);
     }
 }
