@@ -85,7 +85,7 @@ thread_local! {
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::Fire_ProjectileBase_ADDRESS)]
 fn fire_projectile_base(weapon: *mut WeaponBase, gun_data: *mut WeaponData) {
     let original = || FIRE_PROJECTILE_BASE.get().unwrap().call(weapon, gun_data);
-    let config = Config::lock_query(|c| c.controllers);
+    let config = Config::lock_query(|c| c.controllers.clone());
     let acting = config.enabled && scheme::is_controllers();
     // The mounted gun the hands aim rides no hand; its kick goes to the handles.
     if acting && vehicles::is_mounted_weapon(weapon as usize) {

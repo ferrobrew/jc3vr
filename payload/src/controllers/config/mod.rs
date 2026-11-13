@@ -44,7 +44,7 @@ use crate::{
 };
 
 /// All motion-controller settings, added to [`crate::config::Config`] as `controllers`.
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ControllersConfig {
     /// Master switch. Off, the mod reads no controller input and publishes no controller frame, so

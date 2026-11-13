@@ -226,6 +226,11 @@ impl FrameContext {
 /// each.
 static HEAD_TRACKED: AtomicBool = AtomicBool::new(true);
 
+/// Whether the last located views had a valid position and orientation.
+pub(crate) fn head_tracked() -> bool {
+    HEAD_TRACKED.load(Ordering::Relaxed)
+}
+
 /// Whether [`frame_begin`] is currently in a `wait_frame`/`begin_frame` failure streak, so repeated
 /// failures log a transition and a recovery instead of one line per frame. See the rate-limiting
 /// comment in [`frame_begin`].
@@ -399,7 +404,7 @@ impl VrState {
         // The controllers are sampled at the same predicted display time and re-based against the
         // same baseline as the eye views, so a hand and the head it is drawn beside agree.
         if let Some(input) = self.input.as_mut() {
-            let controllers = Config::lock_query(|c| c.controllers);
+            let controllers = Config::lock_query(|c| c.controllers.clone());
             let _timing = frame_timing::scope(Slot::VrInput);
             let sampled = input.update(
                 &session.handle,

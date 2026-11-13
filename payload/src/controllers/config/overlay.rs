@@ -39,6 +39,10 @@ pub struct OverlayConfig {
     /// Draw the grounded rig's neck pivot, waist pivot, and the spine between them, and its lean
     /// rings on the floor around the pelvis, coloured by the step phase (`docs/mod/body/rig.md`).
     pub body_rig: bool,
+    /// Draw arrows on the floor under the eyes for the learned body estimate's pelvis and chest
+    /// headings, in every mode the estimator runs in, with the grounded rig's legs and chest beside
+    /// them while it runs (`docs/mod/body/body-estimator.md`).
+    pub body_estimate: bool,
     /// Mark each gun docked on a socket of the body where its placement puts it, with a line along
     /// its barrel, green while its model is shown and red while hidden
     /// ([`crate::controllers::weapons::inventory::docked_view`]).
@@ -69,6 +73,7 @@ impl OverlayConfig {
             body_mirror: false,
             body_mirror_distance_m: 1.2,
             body_rig: true,
+            body_estimate: true,
             docked_guns: true,
             depth_tolerance_m: 0.05,
             depth_tolerance_rel: 0.01,

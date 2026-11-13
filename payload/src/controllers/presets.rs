@@ -82,7 +82,7 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
 
 /// Whether applying the preset changes any of its owned switches.
 pub fn preset_modified(config: &ControllersConfig, preset: Preset) -> bool {
-    let mut expected = *config;
+    let mut expected = config.clone();
     apply_preset(&mut expected, preset);
     match (serde_json::to_value(config), serde_json::to_value(expected)) {
         (Ok(actual), Ok(expected)) => actual != expected,
@@ -167,13 +167,13 @@ mod tests {
         let baseline = Config::new().controllers;
         let mut leaves = Vec::new();
         collect_leaves(
-            &serde_json::to_value(baseline).unwrap(),
+            &serde_json::to_value(&baseline).unwrap(),
             String::new(),
             &mut leaves,
         );
         let mut owned = 0;
         for preset in Preset::ALL {
-            let mut expected = baseline;
+            let mut expected = baseline.clone();
             apply_preset(&mut expected, preset);
             let expected_value = serde_json::to_value(expected).unwrap();
             for path in &leaves {
@@ -184,7 +184,7 @@ mod tests {
                 } else if leaf.is_string() {
                     // Obtain another valid enum variant from a different preset.
                     let alternative = Preset::ALL.into_iter().find_map(|other| {
-                        let mut c = baseline;
+                        let mut c = baseline.clone();
                         apply_preset(&mut c, other);
                         let value = serde_json::to_value(c).unwrap();
                         let alternative = value.pointer(path).unwrap();
@@ -199,7 +199,7 @@ mod tests {
                 }
                 let changed: ControllersConfig =
                     serde_json::from_value(changed_value.clone()).unwrap();
-                let mut reapplied = changed;
+                let mut reapplied = changed.clone();
                 apply_preset(&mut reapplied, preset);
                 let reapplied = serde_json::to_value(reapplied).unwrap();
                 let is_owned = reapplied.pointer(path) != changed_value.pointer(path);

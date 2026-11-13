@@ -46,7 +46,7 @@ use crate::{
     config::Config,
     controllers::{
         body::{
-            self, BodyDimensions,
+            self, BodyDimensions, estimator,
             rig::{
                 collision::{
                     self,
@@ -220,7 +220,16 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         _ => player.eye_height + inputs.cockpit.y,
     };
     let lift = eye_height - inputs.cockpit.y;
-    let hands = room_hands(lift);
+    let grips = room_grips(lift);
+    let hands = grips.map(|grip| grip.map(|(position, _)| position));
+    let room_eyes = Vec3::new(inputs.cockpit.x, eye_height, inputs.cockpit.z);
+    estimator::observe(&estimator::Observation {
+        now,
+        eyes: room_eyes,
+        head: inputs.orientation,
+        grips,
+        posture,
+    });
     let root = rig_root::frame(&rig_root::FrameInputs {
         raw: Vec3::new(inputs.cockpit.x, vertical, inputs.cockpit.z),
         head: inputs.orientation,
@@ -228,7 +237,7 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         world_scale: inputs.world_scale,
         posture,
         seat: frame.seat.phase(),
-        eyes: Vec3::new(inputs.cockpit.x, eye_height, inputs.cockpit.z),
+        eyes: room_eyes,
         floor: -lift,
         hands,
         moving,
@@ -376,12 +385,17 @@ fn rig_crouch() -> Option<f32> {
 
 /// The tracked grips in the rig's room frame: the cockpit grips lifted by `lift`, the room height
 /// of the cockpit's origin.
-fn room_hands(lift: f32) -> [Option<Vec3>; 2] {
+fn room_grips(lift: f32) -> [Option<(Vec3, Quat)>; 2] {
     controllers_frame::with_latest(|frame| {
         frame.hands.each_ref().map(|hand| {
             (frame.focused && hand.active && hand.grip.is_tracked() && hand.grip.is_valid())
-                .then(|| hand.grip.pose.position + Vec3::Y * lift)
-                .filter(|p| p.is_finite())
+                .then(|| {
+                    (
+                        hand.grip.pose.position + Vec3::Y * lift,
+                        hand.grip.pose.orientation,
+                    )
+                })
+                .filter(|(p, q)| p.is_finite() && q.is_finite())
         })
     })
     .unwrap_or([None, None])
@@ -404,6 +418,7 @@ pub fn on_recenter(kind: RecenterKind, turn: Quat, cause: RecenterCause) {
     let stage = vr::stage::stage();
     let player = body::player();
     rig_root::on_recenter(kind, turn, cause);
+    estimator::on_recenter(turn);
     if cause != RecenterCause::Manual {
         return;
     }

@@ -9,6 +9,8 @@
 //!   on its input; on Windows, with the `d3d11` feature (on by default), also the forward pass as
 //!   Direct3D 11 compute shaders (`egoposer::gpu`).
 //! - [`smpl`]: the SMPL kinematic tree, the 6D rotation format, and the yaws read off the output.
+//! - [`window`]: a live window built frame by frame from tracking at any rate, in a room frame
+//!   that a recenter's turn does not move, for running the estimator in the game.
 //!
 //! The CPU pass is the reference implementation: clear rather than fast, and checked against the
 //! original PyTorch model's outputs by golden tests (`tests/fixtures/egoposer_golden.safetensors`);
@@ -19,6 +21,7 @@ pub mod egoposer;
 pub mod features;
 pub mod smpl;
 pub mod tracking;
+pub mod window;
 
 mod ops;
 
@@ -27,6 +30,7 @@ pub use crate::{
     features::{HandVisibility, SparseFrame, SparseWindow, WINDOW_FRAMES, WINDOW_POSES},
     smpl::JointPose,
     tracking::{GripOffset, TrackedFrame},
+    window::{LiveFrame, WindowBuilder},
 };
 
 #[cfg(test)]

@@ -207,7 +207,7 @@ static STATUS: Mutex<HapticsStatus> = Mutex::new(HapticsStatus {
 
 /// Whether the haptics act and `category` plays.
 fn acting(category: Category) -> bool {
-    let config = Config::lock_query(|c| c.controllers);
+    let config = Config::lock_query(|c| c.controllers.clone());
     acts(&config) && config.haptics.category(category)
 }
 

@@ -27,6 +27,8 @@ The payload keeps its files in the per-user configuration directory that the `di
 | `teleports.toml` | The director's teleport bookmarks | When a bookmark is saved or removed |
 | `inventory.toml` | The VR inventory's save sidecar: the weapons carried beyond the slots, tied to the game's save ([input/two-handed-inventory.md](input/two-handed-inventory.md#saves-resets-and-loads)) | Each time the game stores the player's save data |
 
+The learned body estimator's weights are not a setting and are not kept here: they are read from `controllers.body.estimator.weights_path`, or by default from `egoposer.safetensors` beside the payload DLL, where `scripts/egoposer_weights.sh` puts them ([body/body-estimator.md](body/body-estimator.md#the-weights)).
+
 The dock layout, the bookmarks, and the inventory sidecar stay in files of their own: none is a setting, and each is rewritten on its own schedule. The per-session output (logs, traces, screenshots, recordings) goes to the session folder ([sessions.md](sessions.md)), not here.
 
 The body dimensions are the `[body]` section of `settings.toml` and the director's key bindings are `director.keymap`.

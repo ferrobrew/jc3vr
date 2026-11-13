@@ -24,7 +24,7 @@
 use std::time::{Duration, Instant};
 
 use body_rig::{
-    GroundedRig, PlayerBody, RigFrame, RigOutput, RigTuning, StepPhase,
+    BodyEstimate, GroundedRig, PlayerBody, RigFrame, RigOutput, RigTuning, StepPhase,
     angle::{forward, head_heading, right, wrap},
     body::EYES_TO_NECK,
 };
@@ -64,6 +64,8 @@ pub struct GroundedInput {
     pub sample_height: bool,
     /// Whether Rico is grounded and the player owns his root.
     pub grounded: bool,
+    /// The learned body estimator's estimate, in the room frame, while it runs and is fresh.
+    pub estimate: Option<BodyEstimate>,
     pub dimensions: BodyDimensions,
     pub tuning: RigTuning,
     pub dt: f32,
@@ -127,6 +129,7 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
         slip: input.slip,
         moving: input.moving,
         sample_height: input.sample_height,
+        estimate: input.estimate,
         dt: input.dt,
     };
     let output = state.rig.update(&rig_frame, &input.tuning);

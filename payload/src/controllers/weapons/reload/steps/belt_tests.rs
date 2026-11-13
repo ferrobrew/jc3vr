@@ -110,7 +110,7 @@ fn actual_belt_gate_requires_ammo_space_delay_and_no_other_reload_claim() {
     assert!(offer(&state, &tick, &config, guns).is_some());
 
     for disabled in [false, true] {
-        let mut config = config;
+        let mut config = config.clone();
         if disabled {
             config.weapons.reload.enabled = false;
         } else {

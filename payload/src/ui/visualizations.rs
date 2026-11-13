@@ -170,6 +170,7 @@ pub(crate) fn controls(ui: &mut Ui, snapshot: &Snapshot) {
 enum ViewId {
     BodyMirror,
     BodyRig,
+    BodyEstimate,
     ControllerGizmos,
     GhostHands,
     GrappleHighlight,
@@ -190,7 +191,7 @@ impl ViewId {
     fn source(self) -> Source {
         match self {
             Self::BodyMirror => Source::BodyMirror,
-            Self::BodyRig => Source::BodyRig,
+            Self::BodyRig | Self::BodyEstimate => Source::BodyRig,
             Self::ControllerGizmos => Source::DebugGizmos,
             Self::GhostHands => Source::GhostHands,
             Self::GrappleHighlight => Source::GrappleHighlight,
@@ -214,6 +215,7 @@ impl ViewId {
         match self {
             Self::BodyMirror => overlay.body_mirror,
             Self::BodyRig => overlay.body_rig,
+            Self::BodyEstimate => overlay.body_estimate,
             Self::ControllerGizmos => overlay.debug_gizmos,
             Self::GhostHands => overlay.ghost_hands,
             Self::GrappleHighlight => overlay.grapple_highlight,
@@ -237,6 +239,7 @@ impl ViewId {
         match self {
             Self::BodyMirror => overlay.body_mirror = requested,
             Self::BodyRig => overlay.body_rig = requested,
+            Self::BodyEstimate => overlay.body_estimate = requested,
             Self::ControllerGizmos => overlay.debug_gizmos = requested,
             Self::GhostHands => overlay.ghost_hands = requested,
             Self::GrappleHighlight => overlay.grapple_highlight = requested,
@@ -272,6 +275,7 @@ impl ViewId {
         matches!(
             self,
             Self::BodyRig
+                | Self::BodyEstimate
                 | Self::ControllerGizmos
                 | Self::GhostHands
                 | Self::GrappleHighlight
@@ -312,6 +316,12 @@ const ENTRIES: &[Entry] = &[
     Entry {
         id: ViewId::BodyRig,
         label: "Body rig",
+        group: Group::DebugGeometry,
+        feature: FeatureId::BodyFit,
+    },
+    Entry {
+        id: ViewId::BodyEstimate,
+        label: "Body estimate",
         group: Group::DebugGeometry,
         feature: FeatureId::BodyFit,
     },

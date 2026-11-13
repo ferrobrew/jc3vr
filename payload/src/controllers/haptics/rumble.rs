@@ -147,7 +147,7 @@ const KICK_AMPLITUDE_PER_RAD: f32 = 6.0;
 const MAX_SHOT_S: f32 = 0.4;
 
 fn acting() -> Option<HapticsConfig> {
-    let config = Config::lock_query(|c| c.controllers);
+    let config = Config::lock_query(|c| c.controllers.clone());
     (config.enabled && config.haptics.enabled && scheme::is_controllers()).then_some(config.haptics)
 }
 

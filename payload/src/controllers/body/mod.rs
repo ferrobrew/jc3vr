@@ -46,6 +46,7 @@
 //! with [`save`].
 
 pub mod calibration;
+pub mod estimator;
 pub(crate) mod menu;
 pub mod mirror;
 pub mod procedural;

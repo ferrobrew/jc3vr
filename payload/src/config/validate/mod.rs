@@ -48,6 +48,7 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     locomotion(&c.locomotion.stick)?;
     c.body.procedural.validate()?;
     c.body.rig.validate()?;
+    c.body.estimator.validate()?;
     input::input(&c.input)?;
     input::bindings(&c.bindings)?;
     aim::hands(&c.hands)?;

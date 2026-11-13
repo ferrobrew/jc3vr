@@ -74,7 +74,7 @@ use crate::{
     controllers::{
         aim::raycast::CastOptions,
         body::{
-            BodyDimensions,
+            BodyDimensions, estimator,
             procedural::state::animation_moves_body,
             rig::{
                 collision::probe,
@@ -190,6 +190,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         moving: inputs.moving,
         sample_height: inputs.posture == EffectivePosture::Standing,
         grounded: owner.is_some_and(RootOwner::drives),
+        estimate: estimator::for_rig(estimator::latest().as_ref(), &config.yaw.estimate),
         dimensions: inputs.dimensions,
         tuning: config.tuning(),
         dt: inputs.dt,

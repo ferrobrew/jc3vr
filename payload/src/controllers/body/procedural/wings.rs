@@ -73,7 +73,7 @@ pub(super) fn clear() {
 /// controller frame slot, and the rig's torso estimate, one after the other, so the gate reads it
 /// before it takes its own state.
 pub(super) fn read_player_arms() -> Option<PlayerArms> {
-    let config = Config::lock_query(|c| c.controllers);
+    let config = Config::lock_query(|c| c.controllers.clone());
     if !config.enabled || !scheme::is_controllers() || headpose::source() != Source::Vr {
         return None;
     }

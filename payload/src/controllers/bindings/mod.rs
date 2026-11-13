@@ -177,7 +177,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     let real_dt = unsafe { TimeScale::current() }.real_dt(dt);
     let (config, neutral_policy, flight_dimensions) = Config::lock_query(|c| {
         (
-            c.controllers,
+            c.controllers.clone(),
             NeutralPolicy::new(
                 &c.controllers.input,
                 &c.controllers.bindings,

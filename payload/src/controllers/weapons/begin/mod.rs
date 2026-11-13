@@ -61,7 +61,7 @@ mod socket_candidates;
 /// The first half of the weapon handling's input tick: read the weapons in the hands and return
 /// the weapon handling's grip targets. Called while the bindings inject, before the tables.
 pub(crate) fn begin_tick(mode: Mode) -> TickStart {
-    let config = Config::lock_query(|c| c.controllers);
+    let config = Config::lock_query(|c| c.controllers.clone());
     docks::publish_targets(None);
     let Some(active) = hands::active_hands_raw() else {
         crate::controllers::weapons::stand_down();

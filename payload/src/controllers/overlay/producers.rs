@@ -28,7 +28,10 @@ use crate::{
             self, GRAPPLE_ORIGIN_M, GrappleAim, HandAim, HandSource, raycast::RayHit,
             sights::tuning,
         },
-        body::rig::{grounded, visual},
+        body::{
+            estimator,
+            rig::{grounded, visual},
+        },
         config::{GunReadout, OverlayConfig},
         frame::Hand,
         hands::tiers,
@@ -133,11 +136,17 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
     );
     submit_or_clear(
         Source::BodyRig,
-        config.body_rig,
+        config.body_rig || config.body_estimate,
         FRAME_TTL,
         |out| {
-            if let Some(d) = grounded::diagnostics() {
-                visual::primitives(&d, headpose::xr::body_rotation(), world_scale, out);
+            let view = headpose::xr::body_rotation();
+            if config.body_rig
+                && let Some(d) = grounded::diagnostics()
+            {
+                visual::primitives(&d, view, world_scale, out);
+            }
+            if config.body_estimate {
+                estimator::visual::diagnostics(view, world_scale, out);
             }
         },
         &mut prims,

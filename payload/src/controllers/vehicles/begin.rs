@@ -51,7 +51,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         physical::visual::clear();
         return TickVolumes::default();
     };
-    let config = active.config;
+    let config = active.config.clone();
     let seat = match mode {
         Mode::Vehicle(seat) => Some(seat),
         _ => None,

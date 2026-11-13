@@ -55,3 +55,10 @@ controllers.local.json
 
 # Session output written by the payload when launched through scripts/vr_launch.sh.
 /sessions/
+
+# EgoPoser's weights, converted and cached by scripts/egoposer_weights.sh. The checkpoint is
+# trained on AMASS under a non-commercial licence and must never be committed.
+.egoposer
+*.safetensors
+!/body-estimator/tests/fixtures/*.safetensors
+*.pth

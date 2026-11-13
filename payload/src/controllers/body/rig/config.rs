@@ -50,6 +50,7 @@ impl RigConfig {
         let p = &self.pelvis;
         let s = &self.step;
         let y = &self.yaw;
+        let e = &y.estimate;
         let checks = [
             ("steps.walk_stick", self.steps.walk_stick, 0.0, 1.0),
             ("pelvis.lean_radius_m", p.lean_radius_m, 0.0, 1.0),
@@ -89,6 +90,17 @@ impl RigConfig {
             ("yaw.look_down_full_deg", y.look_down_full_deg, 0.0, 90.0),
             ("yaw.hand_bias", y.hand_bias, 0.0, 1.0),
             ("yaw.hand_min_m", y.hand_min_m, 0.0, 1.5),
+            ("yaw.estimate.blend_s", e.blend_s, 0.0, 10.0),
+            ("yaw.estimate.smooth_s", e.smooth_s, 0.0, 5.0),
+            ("yaw.estimate.deadband_deg", e.deadband_deg, 0.0, 90.0),
+            ("yaw.estimate.slew_deg_s", e.slew_deg_s, 1.0, 2000.0),
+            ("yaw.estimate.centre_deg_s", e.centre_deg_s, 0.0, 360.0),
+            ("yaw.estimate.still_deg_s", e.still_deg_s, 0.0, 360.0),
+            ("yaw.estimate.still_s", e.still_s, 0.0, 30.0),
+            ("yaw.estimate.chest_weight", e.chest_weight, 0.0, 1.0),
+            ("yaw.estimate.stick_blend_s", e.stick_blend_s, 0.0, 10.0),
+            ("yaw.estimate.fresh_s", e.fresh_s, 0.0, 5.0),
+            ("yaw.estimate.stale_s", e.stale_s, 0.0, 10.0),
         ];
         for (name, value, min, max) in checks {
             if !value.is_finite() || !(min..=max).contains(&value) {
@@ -101,6 +113,12 @@ impl RigConfig {
             return Err(Invalid(format!(
                 "body.rig.yaw.look_down_full_deg ({}) is below look_down_deg ({})",
                 y.look_down_full_deg, y.look_down_deg
+            )));
+        }
+        if e.stale_s <= e.fresh_s {
+            return Err(Invalid(format!(
+                "body.rig.yaw.estimate.stale_s ({}) is not above fresh_s ({})",
+                e.stale_s, e.fresh_s
             )));
         }
         if s.settle_done_m > s.arrive_m {
@@ -210,6 +228,9 @@ mod tests {
                 .0
                 .contains("body.rig.yaw.hand_bias")
         );
+        bad = RigConfig::new();
+        bad.yaw.estimate.stale_s = bad.yaw.estimate.fresh_s;
+        assert!(bad.validate().unwrap_err().0.contains("stale_s"));
     }
 
     #[test]

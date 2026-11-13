@@ -516,7 +516,7 @@ fn actual_packet_evaluate_and_commit_apply_late_canopy_staleness_and_claims() {
 
     desired.clear();
     for invalid in [false, true] {
-        let mut changed = config;
+        let mut changed = config.clone();
         if invalid {
             changed.vehicles.wingsuit_gestures.flight_dwell_s = f32::NAN;
         } else {

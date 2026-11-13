@@ -5,6 +5,7 @@ mod aim_state;
 mod body_ik;
 mod climb;
 mod collider_view;
+mod estimator;
 mod explosives;
 mod fingers;
 mod frame;
@@ -146,7 +147,11 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Posture => {
             |ui, _| roomscale::roomscale_settings(ui, &mut config::edit().controllers.roomscale)
         }
-        FeatureId::BodyFit => |ui, _| rig::rig_settings(ui, &mut config::edit().controllers.body),
+        FeatureId::BodyFit => |ui, _| {
+            let mut cfg = config::edit();
+            rig::rig_settings(ui, &mut cfg.controllers.body);
+            estimator::estimator_settings(ui, &mut cfg.controllers);
+        },
         FeatureId::Wrist => {
             |ui, _| summary::summary_settings(ui, &mut config::edit().controllers.summary)
         }
@@ -286,7 +291,10 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::BodyFit => |ui, _| {
             procedural::procedural_readout(ui, &controller_body::procedural::status());
             ui.separator();
-            rig::rig_readout(ui, &controller_roomscale::status().root);
+            let root = controller_roomscale::status().root;
+            rig::rig_readout(ui, &root);
+            ui.separator();
+            estimator::estimator_readout(ui, &root);
             ui.separator();
             torso::torso_readout(
                 ui,

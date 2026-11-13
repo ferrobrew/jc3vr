@@ -93,7 +93,7 @@ pub(crate) fn finish_tick(
         dt,
         real_dt,
     } = *inputs;
-    let config = Config::lock_query(|c| c.controllers);
+    let config = Config::lock_query(|c| c.controllers.clone());
     let active = hands::active_hands_raw();
     let capabilities = Capabilities::of(mode::current().mode);
     let source_guns = gun_owners_now();

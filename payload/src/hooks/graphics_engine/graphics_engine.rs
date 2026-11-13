@@ -470,6 +470,14 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             if last_near_dispatch {
                 hud::mirror_overlay::render(&context.m_Context, device, back_buffer);
             }
+            // The learned body estimator's GPU pass, once per frame: it takes the window the game
+            // thread posted and collects finished estimates without waiting.
+            if last_near_dispatch {
+                crate::controllers::body::estimator::render_tick(
+                    &context.m_Context,
+                    &device.m_Device,
+                );
+            }
         }
 
         // Final back buffer for this eye. (The HDR scene / MainColor is captured earlier, at the

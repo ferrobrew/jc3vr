@@ -51,7 +51,7 @@ pub(super) fn capture_sample(
 /// the per-eye render parameters, so the desktop renders the recorded view. Game thread, in the
 /// render update after the frame began.
 pub fn drive_replay_frame(vr_frame_rendering: bool, cfg: &VrConfig) {
-    let controllers = crate::config::Config::lock_query(|c| c.controllers);
+    let controllers = crate::config::Config::lock_query(|c| c.controllers.clone());
     crate::vr::input::publish_replayed(&controllers);
     if vr_frame_rendering {
         return;

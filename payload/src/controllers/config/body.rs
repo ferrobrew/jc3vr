@@ -3,12 +3,13 @@
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::{
-    procedural::config::ProceduralBodyConfig, rig::RigConfig, unarmed::UnarmedBodyConfig,
+    estimator::EstimatorConfig, procedural::config::ProceduralBodyConfig, rig::RigConfig,
+    unarmed::UnarmedBodyConfig,
 };
 
 /// Body scale remapping between the player's body and the character's (see
 /// [`crate::controllers::body`]).
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct BodyRemapConfig {
     /// Place the eyes at the character's eye height and scale vertical head travel by the ratio of
@@ -23,6 +24,8 @@ pub struct BodyRemapConfig {
     /// The body rig: who moves the root, the chase after the player's head, the lean, the
     /// push-back, and the torso.
     pub rig: RigConfig,
+    /// The learned body estimator: whether it runs, its weights, and how often.
+    pub estimator: EstimatorConfig,
     /// The weapon-agnostic body: which of the game's weapon animations reach the body on foot.
     pub unarmed: UnarmedBodyConfig,
 }
@@ -34,6 +37,7 @@ impl BodyRemapConfig {
             remap_hands: true,
             procedural: ProceduralBodyConfig::new(),
             rig: RigConfig::new(),
+            estimator: EstimatorConfig::new(),
             unarmed: UnarmedBodyConfig::new(),
         }
     }

@@ -47,7 +47,7 @@ pub(crate) fn finish_tick(
     let Some(active) = hands::active_hands_raw() else {
         return;
     };
-    let config = active.config;
+    let config = active.config.clone();
     let grips = active.hands.map(|h| h.map(|h| h.grip.position));
     let orientations = active.hands.map(|h| h.map(|h| h.grip.orientation));
     let held = Hand::BOTH.map(|hand| controls.hand(hand).hold.held());

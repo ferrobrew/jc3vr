@@ -22,6 +22,7 @@ fn each_inventory_switch_edits_only_its_concrete_config_field() {
     let paths = [
         (ViewId::BodyMirror, "/controllers/overlay/body_mirror"),
         (ViewId::BodyRig, "/controllers/overlay/body_rig"),
+        (ViewId::BodyEstimate, "/controllers/overlay/body_estimate"),
         (
             ViewId::ControllerGizmos,
             "/controllers/overlay/debug_gizmos",
@@ -259,6 +260,7 @@ fn the_inventory_maps_every_switch_to_the_exact_ten_output_sources() {
     let expected = [
         (ViewId::BodyMirror, Source::BodyMirror),
         (ViewId::BodyRig, Source::BodyRig),
+        (ViewId::BodyEstimate, Source::BodyRig),
         (ViewId::ControllerGizmos, Source::DebugGizmos),
         (ViewId::GhostHands, Source::GhostHands),
         (ViewId::GrappleHighlight, Source::GrappleHighlight),
@@ -274,7 +276,7 @@ fn the_inventory_maps_every_switch_to_the_exact_ten_output_sources() {
         (ViewId::PalmBoxes, Source::PhysicalHands),
         (ViewId::DockedGuns, Source::DockedGuns),
     ];
-    assert_eq!(ENTRIES.len(), 16);
+    assert_eq!(ENTRIES.len(), 17);
     assert_eq!(expected.len(), ENTRIES.len());
     for (id, source) in expected {
         assert_eq!(ENTRIES.iter().filter(|entry| entry.id == id).count(), 1);

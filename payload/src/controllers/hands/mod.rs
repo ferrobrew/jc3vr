@@ -142,7 +142,7 @@ fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
 }
 
 fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
-    let (config, world_scale) = Config::lock_query(|c| (c.controllers, c.vr.world_scale));
+    let (config, world_scale) = Config::lock_query(|c| (c.controllers.clone(), c.vr.world_scale));
     if !config.enabled || !scheme::is_controllers() || headpose::source() != headpose::Source::Vr {
         return None;
     }
