@@ -119,6 +119,7 @@ use crate::{
         egui_panel,
         pointer::{clear_controller, owns_menu_trigger, update_controller, update_egui_controller},
     },
+    ui::capture::CaptureUpdate,
     vr::{
         self,
         input::semantic::{SemanticSet, frame as semantic_frame, history, vocabulary::MenuAction},
@@ -218,14 +219,11 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         // the editing owner is gated on desktop focus, under which the sample is observed.
         controls_neutral: controller_neutral && desktop.controls_neutral() != Some(false),
     };
-    let mut capture_cancelled =
-        mode::update_debug_ui_capture(capture_input).is_some_and(|update| {
-            update.effects.consume_until_neutral
-                || update.effects.clear_pending_events
-                || update.effects.cancel_pointer_and_drag
-        });
-    if capture_cancelled {
-        cancel_capture_routes(poll, sink);
+    let capture_update = mode::update_debug_ui_capture(capture_input);
+    let cancellation = capture_update.and_then(|update| capture_cancellation(&update, poll));
+    let mut capture_cancelled = cancellation.is_some();
+    if let Some(poll_after) = cancellation {
+        cancel_capture_routes(poll_after, sink);
     }
     if !config.enabled {
         clear_controller();
@@ -301,17 +299,14 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         system_command(command);
         if command == SystemCommand::TogglePanel {
             panel_toggled = true;
-            let effects = mode::update_debug_ui_capture(mode::DebugUiInput {
+            let cancellation = mode::update_debug_ui_capture(mode::DebugUiInput {
                 controls_neutral: false,
                 ..capture_input
-            });
-            if effects.is_some_and(|update| {
-                update.effects.consume_until_neutral
-                    || update.effects.clear_pending_events
-                    || update.effects.cancel_pointer_and_drag
-            }) {
+            })
+            .and_then(|update| capture_cancellation(&update, poll));
+            if let Some(poll_after) = cancellation {
                 capture_cancelled = true;
-                cancel_capture_routes(poll, sink);
+                cancel_capture_routes(poll_after, sink);
             }
             detection = mode::tick();
             if mode::debug_ui_capture().is_some_and(|snapshot| !snapshot.gameplay_effective) {
@@ -1130,6 +1125,22 @@ fn policy_context(mode: Mode) -> u64 {
         Mode::Ui => 32,
     };
     (detail << 8) | mode.action_set() as u64
+}
+
+/// Whether a capture update cancels the bindings' routes, and if so the device poll their
+/// stand-down must undo its writes for: the poll the next poll stage runs, not the one this tick
+/// saw. A panel that takes the game's device clears its enabled flag before that poll, so a
+/// stand-down for a running poll would leave the raised values (the move stick among them) for a
+/// poll that never comes, and Rico would keep walking under the panel.
+fn capture_cancellation(update: &CaptureUpdate, poll: DevicePoll) -> Option<DevicePoll> {
+    let cancels = update.effects.consume_until_neutral
+        || update.effects.clear_pending_events
+        || update.effects.cancel_pointer_and_drag;
+    cancels.then_some(if update.snapshot.intended_game_device_enabled {
+        poll
+    } else {
+        DevicePoll::Disabled
+    })
 }
 
 fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
