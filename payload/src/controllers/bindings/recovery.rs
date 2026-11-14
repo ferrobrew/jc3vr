@@ -65,6 +65,17 @@ impl NeutralPolicy {
         })
     }
 
+    /// What keeps each active hand from reading at rest, in [`Hand::index`] order.
+    pub(super) fn blockers(&self, frame: &ControllerFrame) -> [Option<Blocker>; 2] {
+        Hand::BOTH.map(|hand| {
+            frame
+                .hand(hand)
+                .active
+                .then(|| blocker(frame.hand(hand), self, hand.index()))
+                .flatten()
+        })
+    }
+
     pub fn new(
         input: &InputConfig,
         bindings: &BindingsConfig,

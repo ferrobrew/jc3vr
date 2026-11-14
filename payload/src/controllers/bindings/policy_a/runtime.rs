@@ -624,39 +624,101 @@ fn complete_inventory(group: &InputGroup) -> bool {
 /// Whether every route of `group` proves its input neutral, for a player whose dominant hand is
 /// `dominant` (see [`TickInput::dominant`]).
 pub(crate) fn group_neutral(group: &InputGroup, config: &BindingsConfig, dominant: Hand) -> bool {
-    group.action_schema == SCHEMA_VERSION
-        && group.focused
-        && group.is_bounded()
-        && complete_inventory(group)
-        && raw_evidence(group) == [Some(false); CONTROLS]
-        && group.samples.iter().all(|sample| {
-            let InputRoute::Semantic { set, action, hand } = sample.route else {
-                return true;
+    group_blocker(group, config, dominant).is_none()
+}
+
+/// Why `group` does not prove its input neutral, for the log of a wait that does not end.
+#[derive(Debug, Clone, PartialEq)]
+pub(crate) enum GroupBlocker {
+    /// The group was published under another action schema.
+    Schema,
+    /// The runtime reported the session unfocused.
+    Unfocused,
+    /// The group's history is not bounded.
+    Unbounded,
+    /// The group lacks a sample for some route of its action sets.
+    Incomplete,
+    /// A raw chord control is down, or its evidence cannot be verified against its bound source.
+    Raw {
+        control: Control,
+        down: Option<bool>,
+    },
+    /// A semantic action is down, past its deadzone, or active against its binding.
+    Semantic {
+        set: SemanticSet,
+        action: &'static str,
+        hand: Hand,
+        down: bool,
+        active: bool,
+        value: ValueBits,
+    },
+    /// A semantic route names no action of its set, or its attribution is unresolved.
+    Unattributed,
+}
+
+/// The first reason `group` does not prove its input neutral, or `None` when it does.
+pub(crate) fn group_blocker(
+    group: &InputGroup,
+    config: &BindingsConfig,
+    dominant: Hand,
+) -> Option<GroupBlocker> {
+    if group.action_schema != SCHEMA_VERSION {
+        return Some(GroupBlocker::Schema);
+    }
+    if !group.focused {
+        return Some(GroupBlocker::Unfocused);
+    }
+    if !group.is_bounded() {
+        return Some(GroupBlocker::Unbounded);
+    }
+    if !complete_inventory(group) {
+        return Some(GroupBlocker::Incomplete);
+    }
+    if let Some((control, down)) = Control::ALL
+        .into_iter()
+        .zip(raw_evidence(group))
+        .find(|(_, evidence)| *evidence != Some(false))
+    {
+        return Some(GroupBlocker::Raw { control, down });
+    }
+    group.samples.iter().find_map(|sample| {
+        let InputRoute::Semantic { set, action, hand } = sample.route else {
+            return None;
+        };
+        let (Some(&set), Some(&hand)) = (
+            SemanticSet::ALL.get(set as usize),
+            Hand::BOTH.get(hand as usize),
+        ) else {
+            return Some(GroupBlocker::Unattributed);
+        };
+        let Some(definition) = set.actions().get(action as usize) else {
+            return Some(GroupBlocker::Unattributed);
+        };
+        let id = ActionId {
+            set,
+            index: action as u8,
+        };
+        let attribution = Attribution::of(&sample.sources, id, hand, dominant);
+        if attribution.unresolved {
+            return Some(GroupBlocker::Unattributed);
+        }
+        // Successful-empty is an unbound route. Inactive bound actions cannot prove neutral.
+        let neutral = !sample.down
+            && neutral_value(sample.value, config)
+            && if attribution.mask() == 0 {
+                !sample.active
+            } else {
+                sample.active
             };
-            let (Some(&set), Some(&hand)) = (
-                SemanticSet::ALL.get(set as usize),
-                Hand::BOTH.get(hand as usize),
-            ) else {
-                return false;
-            };
-            if action as usize >= set.actions().len() {
-                return false;
-            }
-            let id = ActionId {
-                set,
-                index: action as u8,
-            };
-            let attribution = Attribution::of(&sample.sources, id, hand, dominant);
-            // Successful-empty is an unbound route. Inactive bound actions cannot prove neutral.
-            !attribution.unresolved
-                && !sample.down
-                && neutral_value(sample.value, config)
-                && if attribution.mask() == 0 {
-                    !sample.active
-                } else {
-                    sample.active
-                }
+        (!neutral).then_some(GroupBlocker::Semantic {
+            set,
+            action: definition.name,
+            hand,
+            down: sample.down,
+            active: sample.active,
+            value: sample.value,
         })
+    })
 }
 
 fn neutral_value(value: ValueBits, config: &BindingsConfig) -> bool {

@@ -42,6 +42,7 @@
 
 pub(crate) mod bail;
 mod buttons;
+mod capture_wait;
 pub mod controls;
 mod flight;
 pub mod grapple_button;
@@ -86,13 +87,14 @@ use crate::{
         bindings::{
             bail::{BailLatch, BailTick, bails_by_parachute},
             buttons::{grapple_button, grapple_button_held, reload_button},
+            capture_wait::CaptureWait,
             controls::{ButtonControl, ClosedHand, Controls, holds_unseen},
             grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
             intents::SemanticInput,
             policy_a::{
                 SystemCommand,
-                runtime::{Runtime, TickInput},
+                runtime::{GroupBlocker, Runtime, TickInput},
             },
             recovery::{MaskEvent, MaskLog, NeutralPolicy, Recovery},
             report::{publish_recovery_status, report_writes},
@@ -119,7 +121,7 @@ use crate::{
         egui_panel,
         pointer::{clear_controller, owns_menu_trigger, update_controller, update_egui_controller},
     },
-    ui::capture::CaptureUpdate,
+    ui::capture::{CaptureUpdate, OwnershipBlocker},
     vr::{
         self,
         input::semantic::{SemanticSet, frame as semantic_frame, history, vocabulary::MenuAction},
@@ -220,6 +222,18 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         controls_neutral: controller_neutral && desktop.controls_neutral() != Some(false),
     };
     let capture_update = mode::update_debug_ui_capture(capture_input);
+    log_capture_wait(capture_update.as_ref(), capture_input, || CaptureEvidence {
+        hands: raw_frame
+            .as_ref()
+            .map(|frame| neutral_policy.blockers(frame)),
+        group: raw_frame
+            .as_ref()
+            .and_then(|frame| history::original_group(frame.sequence))
+            .map(|group| {
+                policy_a::runtime::group_blocker(&group, &config.bindings, config.acting_hand())
+            }),
+        desktop_neutral: desktop.controls_neutral(),
+    });
     let cancellation = capture_update.and_then(|update| capture_cancellation(&update, poll));
     let mut capture_cancelled = cancellation.is_some();
     if let Some(poll_after) = cancellation {
@@ -1142,6 +1156,48 @@ fn capture_cancellation(update: &CaptureUpdate, poll: DevicePoll) -> Option<Devi
         DevicePoll::Disabled
     })
 }
+
+/// What the capture's neutral test read, for the log of a wait that does not end.
+struct CaptureEvidence {
+    /// Each hand's control that is not at rest, or `None` without a controller frame.
+    hands: Option<[Option<Blocker>; 2]>,
+    /// Why the policy's input group is not neutral, or `None` without a group for the frame.
+    group: Option<Option<GroupBlocker>>,
+    /// The desktop's keys and mouse, when the window's thread observed them.
+    desktop_neutral: Option<bool>,
+}
+
+/// Log a debug panel that is up while neither editing nor gameplay owns the controls, naming what
+/// the wait is on. `evidence` is read only when a log is due.
+fn log_capture_wait(
+    update: Option<&CaptureUpdate>,
+    input: mode::DebugUiInput,
+    evidence: impl FnOnce() -> CaptureEvidence,
+) {
+    let blocker = update
+        .map(|update| update.snapshot)
+        .filter(|snapshot| snapshot.visible)
+        .and_then(|snapshot| snapshot.blocker)
+        .filter(|blocker| *blocker != OwnershipBlocker::Editing);
+    let Some(waited) = CAPTURE_WAIT.lock().step(blocker.is_some(), Instant::now()) else {
+        return;
+    };
+    let evidence = evidence();
+    tracing::info!(
+        target: "controllers",
+        ?waited,
+        ?blocker,
+        focused = input.focused,
+        tracking_ready = input.tracking_ready,
+        controls_neutral = input.controls_neutral,
+        hands = ?evidence.hands,
+        group = ?evidence.group,
+        desktop_neutral = ?evidence.desktop_neutral,
+        "debug panel: neither editing nor gameplay owns the controls",
+    );
+}
+
+static CAPTURE_WAIT: Mutex<CaptureWait> = Mutex::new(CaptureWait::new());
 
 fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     let (replay, publications) = history::take_gameplay();
