@@ -13,7 +13,7 @@ use std::num::NonZeroUsize;
 use glam::Vec3;
 use jc3gi::{character::character::Character, physics::hknpRagdoll};
 
-use crate::controllers::physical_hands::{self, characters::engine};
+use crate::controllers::physical_hands::{self, characters::engine, rigid};
 
 /// One dynamic body of a character's ragdoll.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -129,16 +129,11 @@ impl Ragdoll {
     /// each other, the flail and the orbit about the held bone, dies down. Empty for a step or a
     /// rate that is not a positive number.
     pub(crate) fn internal_damping(&self, per_s: f32, dt: f32) -> Vec<(Bone, Vec3)> {
-        if !(per_s.is_finite() && per_s > 0.0 && dt.is_finite() && dt > 0.0) {
-            return Vec::new();
-        }
-        let total_kg = self.mass_kg();
-        let momentum: Vec3 = self.bones.iter().map(|b| b.linear * b.mass_kg).sum();
-        let whole = momentum / total_kg;
-        let share = 1.0 - (-per_s * dt).exp();
+        let bodies: Vec<(f32, Vec3)> = self.bones.iter().map(|b| (b.mass_kg, b.linear)).collect();
         self.bones
             .iter()
-            .map(|b| (*b, (whole - b.linear) * share * b.mass_kg))
+            .copied()
+            .zip(rigid::internal_damping(&bodies, per_s, dt))
             .collect()
     }
 }

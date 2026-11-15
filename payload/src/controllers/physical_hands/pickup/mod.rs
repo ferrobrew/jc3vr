@@ -33,6 +33,7 @@
 //! a hand could take, and [`tick`] the simulation tick that drives it; [`grips`] holds the grips a
 //! hand keeps on what it cannot simply carry.
 
+mod damping;
 pub(crate) mod diagnostics;
 mod grips;
 mod input;

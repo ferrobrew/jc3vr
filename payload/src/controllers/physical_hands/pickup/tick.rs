@@ -17,7 +17,7 @@ use crate::controllers::{
         hold::{self, HandHold, HoldTuning, PlayerKeepOut},
         physics::{self, HoldTarget, Shove, ShoveForce},
         pickup::{
-            HeldReport, PickupTuning,
+            HeldReport, PickupTuning, damping,
             diagnostics::{self, ConsumerResult, DriveRecord},
             grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
             state::{GripSubject, Held, HeldKind, PickupState, Request},
@@ -184,18 +184,8 @@ pub(crate) unsafe fn tick(
     let time_scale = inputs.time_scale;
     let dt = inputs.dt;
     let outcome = unsafe { tick_with(state, inputs, config, &mut NativeBodies) };
-    // Each held ragdoll once, however many hands hold it.
-    let mut damped: [Option<NonZeroUsize>; 2] = [None; 2];
-    for (i, held) in state.held.iter().enumerate() {
-        if let Some(held) = held
-            && let Some(character) = held.ragdoll
-            && !damped.contains(&Some(character))
-        {
-            damped[i] = Some(character);
-            // SAFETY: forwarded from the caller; the hold kept the body this tick.
-            unsafe { characters::damp_held_ragdoll(character, held.body, dt) };
-        }
-    }
+    // SAFETY: forwarded from the caller.
+    unsafe { damping::damp_held(state, dt) };
     log_losses(subjects, &outcome);
     note_releases(subjects, opened, time_scale, &outcome);
     outcome

@@ -128,6 +128,32 @@ impl RigidBody {
     }
 }
 
+/// The impulses, one per body of `bodies` (each a mass in kilograms and a linear velocity), that
+/// damp an assembly's motion within itself over a step of `dt` seconds: each body's velocity eases
+/// toward the assembly's mass-weighted velocity at a rate of `per_s`. The impulses add up to
+/// nothing, so the assembly as a whole keeps its momentum and whatever holds it is not fought; only
+/// the bodies' motion against each other dies down. Empty for a step or a rate that is not a
+/// positive number, or for bodies whose masses are not all positive and finite.
+pub fn internal_damping(bodies: &[(f32, Vec3)], per_s: f32, dt: f32) -> Vec<Vec3> {
+    let valid = bodies
+        .iter()
+        .all(|(mass, linear)| mass.is_finite() && *mass > 0.0 && linear.is_finite());
+    if !(valid && per_s.is_finite() && per_s > 0.0 && dt.is_finite() && dt > 0.0) {
+        return Vec::new();
+    }
+    let total_kg: f32 = bodies.iter().map(|(mass, _)| mass).sum();
+    if total_kg <= 0.0 {
+        return Vec::new();
+    }
+    let momentum: Vec3 = bodies.iter().map(|(mass, linear)| *linear * *mass).sum();
+    let whole = momentum / total_kg;
+    let share = 1.0 - (-per_s * dt).exp();
+    bodies
+        .iter()
+        .map(|(mass, linear)| (whole - *linear) * share * *mass)
+        .collect()
+}
+
 /// The smallest inverse mass or inertia that counts as moving.
 const MIN_INVERSE: f32 = 1e-9;
 /// The smallest mass matrix determinant that is inverted.
@@ -239,5 +265,36 @@ pub(crate) mod tests {
         let mut moved = body;
         moved.apply_impulse(Vec3::new(100.0, 0.0, 0.0), Vec3::Y);
         assert_eq!(moved.velocities, Velocities::default());
+    }
+
+    #[test]
+    fn internal_damping_keeps_the_momentum_and_eases_each_body_toward_the_whole() {
+        let bodies = [
+            (25.0, Vec3::new(3.0, 0.0, -1.0)),
+            (60.0, Vec3::new(-0.5, 0.2, 0.0)),
+            (5.0, Vec3::new(0.0, 4.0, 0.0)),
+        ];
+        let impulses = internal_damping(&bodies, 4.0, 1.0 / 60.0);
+        assert_eq!(impulses.len(), bodies.len());
+        let total: Vec3 = impulses.iter().sum();
+        assert!(total.length() < 1e-4, "no net push: {total}");
+        let momentum: Vec3 = bodies.iter().map(|(m, v)| *v * *m).sum();
+        let whole = momentum / bodies.iter().map(|(m, _)| m).sum::<f32>();
+        for ((mass, linear), impulse) in bodies.iter().zip(&impulses) {
+            let after = *linear + *impulse / *mass;
+            assert!(after.distance(whole) < linear.distance(whole));
+        }
+    }
+
+    #[test]
+    fn internal_damping_leaves_a_lone_body_and_bad_input_alone() {
+        let lone = internal_damping(&[(25.0, Vec3::new(2.0, 0.0, 0.0))], 4.0, 1.0 / 60.0);
+        assert_eq!(lone.len(), 1);
+        assert!(lone[0].length() < 1e-6);
+        assert!(internal_damping(&[], 4.0, 1.0 / 60.0).is_empty());
+        let pair = [(10.0, Vec3::X), (10.0, Vec3::ZERO)];
+        assert!(internal_damping(&pair, 0.0, 1.0 / 60.0).is_empty());
+        assert!(internal_damping(&pair, 4.0, f32::NAN).is_empty());
+        assert!(internal_damping(&[(0.0, Vec3::X), (10.0, Vec3::ZERO)], 4.0, 0.1).is_empty());
     }
 }
