@@ -102,8 +102,9 @@ impl Held {
         }
     }
 
-    /// Pay line out toward the hang's length over a tick of `dt` seconds.
-    fn pay_out(&mut self, dt: f32) {
+    /// Pay line out toward the hang's length over a tick of `dt` seconds, or take it in toward it
+    /// for a hang that took hold further out (under a helicopter, at the reel's distance).
+    fn pay_out(&mut self, dt: f32, min_length_m: f32) {
         let Some(target) = self.pay_out_to_m else {
             return;
         };
@@ -112,11 +113,46 @@ impl Held {
         }
         // A hand's drift back and forth along the aim adds up its pulls; the leak lets it go.
         self.taken_since_pay_out_m = (self.taken_since_pay_out_m - PAY_OUT_TAKE_IN_M * dt).max(0.0);
-        self.rope.length_m =
-            (self.rope.length_m + PAY_OUT_MPS * dt).min(target.max(self.rope.length_m));
+        if self.rope.length_m > target {
+            let taken = (self.rope.length_m - target).min(PAY_OUT_MPS * dt);
+            self.rope.shorten(taken, min_length_m);
+            if self.rope.length_m <= target + 1e-4 {
+                self.pay_out_to_m = None;
+            }
+            return;
+        }
+        self.rope.length_m = (self.rope.length_m + PAY_OUT_MPS * dt).min(target);
         if self.rope.length_m >= target {
             self.pay_out_to_m = None;
         }
+    }
+
+    /// Damp a hang's swing across the line toward the hook's own motion over a tick of `dt`
+    /// seconds, while the hook moves (an airframe): the rope damps only along itself, and the
+    /// airframe's turns keep pumping a pendulum across it. A hang from a still hook swings freely,
+    /// for the arm to pump.
+    fn damp_hang(
+        &self,
+        velocity: &mut Vec3,
+        rider: Vec3,
+        hook: Vec3,
+        hook_velocity: Vec3,
+        dt: f32,
+    ) {
+        if self.keeps_speed
+            || !dt.is_finite()
+            || dt <= 0.0
+            || hook_velocity.length().is_nan()
+            || hook_velocity.length() <= MOVING_HOOK_MPS
+        {
+            return;
+        }
+        let Some(direction) = (rider - hook).try_normalize() else {
+            return;
+        };
+        let relative = *velocity - hook_velocity;
+        let across = relative - direction * relative.dot(direction);
+        *velocity -= across * follow_factor(dt, HANG_SWING_DAMPING_S);
     }
 
     /// The take: while the character still closes on the hook's point (measured against the hook's
@@ -182,7 +218,14 @@ const COAST_BRAKE_MPS2: f32 = 3.0 * GRAVITY_MPS2;
 /// pull, past a hand's drift back along the aim.
 const PAY_OUT_TAKE_IN_M: f32 = 0.05;
 
-/// How fast a hang pays line out to its length, metres per second.
+/// How long a hang's swing across the line under a moving hook takes to die away, seconds: the
+/// time constant of its damping.
+const HANG_SWING_DAMPING_S: f32 = 1.0;
+
+/// The hook speed above which a hang counts as hung from a moving body, metres per second.
+const MOVING_HOOK_MPS: f32 = 0.5;
+
+/// How fast a hang pays line out to its length, or takes it in, metres per second.
 const PAY_OUT_MPS: f32 = 3.0;
 
 /// One reel tick of the swing, world space.
@@ -233,7 +276,8 @@ pub(crate) fn swing(
     }
     let mut velocity = rider_velocity - Vec3::Y * GRAVITY_MPS2 * dt;
     held.take(&mut velocity, rider, hook, hook_velocity, dt, config);
-    held.pay_out(dt);
+    held.damp_hang(&mut velocity, rider, hook, hook_velocity, dt);
+    held.pay_out(dt, config.min_length_m);
     let take_in_velocity = (rider - hook).normalize_or_zero() * held.take_in_mps;
     let max_tension_n = config.max_accel_g.max(0.0) * GRAVITY_MPS2 * rider_mass_kg;
     let out = held.rope.step(RopeStep {

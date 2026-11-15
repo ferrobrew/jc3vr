@@ -349,6 +349,41 @@ fn a_hang_starts_at_rest_under_the_ceiling_and_lowers_the_rider_to_its_length() 
 }
 
 #[test]
+fn a_hang_taken_far_out_is_reeled_in_to_its_length() {
+    let start = Vec3::new(3.0, -9.0, 0.0);
+    let mut held = Held::hang(Vec3::ZERO, start, 3.5, &CONFIG).unwrap();
+    fly(&mut held, start, Vec3::ZERO, 300);
+    assert!(
+        (held.rope.length_m - 3.5).abs() < 1e-3,
+        "{}",
+        held.rope.length_m
+    );
+}
+
+#[test]
+fn a_hang_under_a_moving_hook_stops_swinging_across_the_line() {
+    // Under a helicopter flying along +X, swinging across its path.
+    let hook_velocity = Vec3::X * 10.0;
+    let mut held = Held::hang(Vec3::ZERO, Vec3::NEG_Y * 3.5, 3.5, &CONFIG).unwrap();
+    let mut hook = Vec3::ZERO;
+    let mut rider = Vec3::NEG_Y * 3.5;
+    let mut velocity = hook_velocity + Vec3::Z * 4.0;
+    for _ in 0..240 {
+        velocity = swing(
+            &mut held,
+            input(rider, velocity, hook, hook_velocity),
+            &CONFIG,
+        )
+        .unwrap()
+        .velocity;
+        rider += velocity * DT;
+        hook += hook_velocity * DT;
+    }
+    let relative = velocity - hook_velocity;
+    assert!(relative.z.abs() < 0.5, "the swing dies away: {relative}");
+}
+
+#[test]
 fn taking_line_in_stops_a_hangs_pay_out() {
     let start = Vec3::NEG_Y * 2.0;
     let mut held = Held::hang(Vec3::ZERO, start, 3.5, &CONFIG).unwrap();
