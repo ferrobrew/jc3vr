@@ -69,6 +69,7 @@ pub mod parachute;
 pub mod parachute_rig;
 pub mod passenger;
 pub mod physical;
+pub mod rail;
 pub mod ripcord;
 mod ripcord_tick;
 mod speed;
@@ -110,6 +111,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(wheel_render::hook_library())
         .with_hook_library(parachute_rig::hook_library())
         .with_hook_library(turret::hook_library())
+        .with_hook_library(rail::hook_library())
 }
 
 #[cfg(test)]

@@ -38,6 +38,10 @@ pub struct VehiclesConfig {
     /// suit launches where the player looks
     /// ([`take_off`](crate::controllers::vehicles::take_off)).
     pub take_off_to_head: bool,
+    /// Hold Rico on a helicopter's skid by its door after a reel onto its door side, rather than
+    /// dropping him into the stunt hang, and let the jump step him off
+    /// ([`rail`](crate::controllers::vehicles::rail)).
+    pub helicopter_rail: bool,
 }
 
 impl VehiclesConfig {
@@ -54,6 +58,7 @@ impl VehiclesConfig {
             canopy: CanopyConfig::new(),
             driving_view: DrivingViewConfig::new(),
             take_off_to_head: true,
+            helicopter_rail: true,
         }
     }
 }

@@ -18,6 +18,7 @@ use crate::{
             fit::{self, FitReadout},
             look_steer, parachute_rig,
             physical::{ControlEvent, ControlKind},
+            rail,
             ripcord::MIN_PULL_M,
             turret,
             wheel::WheelFrame,
@@ -269,6 +270,10 @@ fn arms_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         "Vehicle gun ticks aimed by the hands: {}",
         readout.hand_aimed_turret_ticks
     ));
+    ui.label(format!(
+        "Drops into the hang refused: {}",
+        rail::drops_refused()
+    ));
     if ui
         .button("Log the hands for cockpit calibration")
         .on_hover_text(
@@ -509,6 +514,14 @@ fn air_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
     .on_hover_text(
         "The boost suit's ground take-off turns the body to where you look during its wind-up, \
          under the view, so the suit launches where you look.",
+    );
+    ui.checkbox(
+        &mut v.helicopter_rail,
+        "Stand on a helicopter's skid by its door",
+    )
+    .on_hover_text(
+        "After a reel onto a helicopter's door side, hold Rico on the skid rather than \
+             dropping him into the hang; Y enters, the jump steps off.",
     );
     let c = &mut v.canopy;
     ui.checkbox(
