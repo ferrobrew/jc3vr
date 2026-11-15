@@ -321,7 +321,28 @@ impl std::convert::AsMut<GrapplePointProxyVftable> for GrapplePointProxyVftable 
 /// While the character reels toward a vehicle it also holds the vehicle interaction-graph entry
 /// the reel will end in: the reel prefers any valid entry on the vehicle's door side and falls back
 /// to a hang entry, so a reel onto a helicopter ends at its door side when one validates.
-pub struct VehicleGrapplePointProxy {}
+pub struct VehicleGrapplePointProxy {
+    _field_0: [u8; 168],
+    /// Where the reel's chosen entry starts, in the vehicle's interaction graph's space.
+    pub m_ReelInEntryPositionGS: crate::types::math::Vector3,
+    /// Where the reel's chosen entry ends, in the graph's space. Its sideways part is what the
+    /// reel's revalidation of the entry compares the character's with: the entry stays chosen
+    /// while either is near the graph's middle or both lie on one side.
+    pub m_ReelInGoalPositionGS: crate::types::math::Vector3,
+    /// The index of the reel's chosen entry in the vehicle's interaction graph, or -1 for none.
+    /// While the reel runs, its update revalidates the chosen entry on every tick and, with none
+    /// chosen or the chosen one no longer valid, selects afresh from the character's position and
+    /// the reel's direction (`CVehicleGrapplePointProxy::ExtractReelInEntryInfo`): it prefers the
+    /// nearest valid entry on the door side and falls back to the nearest hang entry.
+    pub m_ReelInEntryIndex: i32,
+    _field_c4: [u8; 4],
+}
+fn _VehicleGrapplePointProxy_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC8], VehicleGrapplePointProxy>([0u8; 0xC8]);
+    }
+    unreachable!()
+}
 impl VehicleGrapplePointProxy {
     pub const GetVehicleType_ADDRESS: usize = 0x14093CB50;
     /// The kind of vehicle the attachment is on: [`VehicleGrappleType::None`](crate::equipment::grapple_point_proxy::VehicleGrappleType::None) when the proxy is
