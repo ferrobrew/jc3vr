@@ -44,7 +44,7 @@ use crate::{
         weapons::{
             FinishInputs,
             engine::{character_object, object_of, weapon_at},
-            hold::{armed, button_pickup, pickup, refs::Weak},
+            hold::{armed, pickup, refs::Weak},
         },
     },
 };
@@ -340,7 +340,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
                 .find(|hand| hands[hand.index()])
                 .unwrap();
             unsafe { record.restore() };
-            unsafe { tear_off(local, weapon, hand, hold, desired) };
+            unsafe { tear_off(local, weapon, hand, hold) };
             record.input = None;
             record.takeover = None;
             next.push(record);
@@ -422,9 +422,8 @@ unsafe fn hide_standalone_prompts(hidden: bool) {
 }
 
 /// Tear `weapon` off its mount into `hand`: release its fire, detach it through the weapon's own
-/// path, release the vehicle's hold on it where a vehicle carries it, and take it into the hand,
-/// or, for a gun the table cannot take (a heavy gun from the dropped state), through the game's own
-/// use-item pickup, which carries it in the heavy slot.
+/// path, release the vehicle's hold on it where a vehicle carries it, and take it into the hand.
+/// A gun the table cannot take (a heavy gun from the dropped state) stays where it is.
 ///
 /// # Safety
 /// The game thread, outside the world update; the character and the weapon are live, the weapon
@@ -434,7 +433,6 @@ unsafe fn tear_off(
     weapon: &mut WeaponBase,
     hand: Hand,
     hold: Option<VehicleHold>,
-    desired: &mut Vec<Desired>,
 ) {
     let admitted = unsafe { pickup::preflight(&*local, &*weapon, hand, false) };
     unsafe { armed::release_fire(weapon) };
@@ -475,20 +473,13 @@ unsafe fn tear_off(
             .map_err(|error| error.to_string())
         });
     if let Err(error) = delivered {
-        tracing::info!(%error, "mounted gun: the table did not take the torn gun");
-        // A heavy gun cannot enter the table from the dropped state; the game's own use-item
-        // pickup takes it instead, as a direct pickup does.
-        button_pickup::grant();
-        desired.push(Desired {
-            target: Target {
-                map: MapKind::Player,
-                action: Action::USE_ITEM,
-            },
-            want: Want::Click,
-        });
+        // The game's use-item action is not a fallback: it picks up the nearest pickup, not the
+        // torn gun, and its slot swap ejected the player's own weapons on the 14 November take.
+        // The gun stays where the tear left it.
         tracing::info!(
             target: "controllers",
-            "mounted gun: the detached gun is picked up through the use-item action"
+            %error,
+            "mounted gun: the table did not take the torn gun, which stays where it is"
         );
     }
 }
@@ -621,7 +612,7 @@ unsafe fn finish_seat_tear(local: &mut Character, desired: &mut Vec<Desired>) {
         *SEAT_TEAR.lock() = Some(tear);
         return;
     }
-    unsafe { tear_off(local, weapon, hand, Some(hold), desired) };
+    unsafe { tear_off(local, weapon, hand, Some(hold)) };
 }
 
 /// What the seat's tear reads this tick.
