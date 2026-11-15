@@ -135,7 +135,7 @@ The grapple and flight:
 Hands, guns, and inventory:
 
 - A primed grenade lacking the live grenade's effects (115): the game sets the trail effect and sound only at the throw. The fix is to call the same setup at the pin pull, which needs two pyxis bindings: deferred, planned.
-- The C4 trigger (478) and the second detonator (489.5): 93a34bc5 detonates from the held charge's trigger, keeps the charge in the hand, and refuses presses the game would not act on; 6b16178e detonates only with charges on the placed list, since whether the game's count includes the primed charge is unverified. The upside-down detonator was the game's own, from its detonate act; placing it in the hand needs some reverse-engineering, deferred.
+- The C4 trigger (478) and the second detonator (489.5): 93a34bc5 detonates from the held charge's trigger, keeps the charge in the hand, and refuses presses the game would not act on; f5b97fdc detonates only with charges on the placed list, since whether the game's count includes the primed charge is unverified. The upside-down detonator was the game's own, from its detonate act; placing it in the hand needs some reverse-engineering, deferred.
 - Hands snapping back and forth on the car (510 to 519): 73cd26e4 leads the carrier's motion by simulation steps.
 - The yanked gunner falling through the vehicle (532.5): 8fca10c9 keeps the vehicle's bodies out of the player's carry collision set.
 - Thrown C4 ignoring the moving frame (556.8, 560.57): 7b94ffec carries the throw with the vehicle's speed, read once a tick, and no longer caps it; 6f895458 bounds the carried part. Whether the measured velocity follows a vehicle while seated is unverified, and the next session checks a seated throw.
@@ -182,7 +182,7 @@ The new problems listed above:
 - 2, the vehicle entry swings: 8908e260 and 5b6cd60f (above).
 - 3, the wingsuit crash straightening the view: 0934ffbb (above, next-session check 3).
 - 4, the frame time: not investigated; the next session runs the A/B with the estimator off (next-session.md).
-- 5, the refused C4 planting and the detonations with nothing going off: 93a34bc5 keeps a refused charge in the hand, and 6b16178e detonates only with charges placed.
+- 5, the refused C4 planting and the detonations with nothing going off: 93a34bc5 keeps a refused charge in the hand, and f5b97fdc detonates only with charges placed.
 - 6, the belt pushes with a magazine in: f4f3006e and 14070339 (the clip release, above).
 - 7, the empty-handed character grabs and the allies that did not go limp: 404c405d retries the ragdoll act; the rest of the grabs that ended empty are not analysed further.
 - 8, the debug panel dropping the SMG: deferred, planned (the panel pausing the weapons rather than standing them down).
