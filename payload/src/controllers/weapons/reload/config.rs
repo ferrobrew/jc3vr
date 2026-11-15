@@ -114,7 +114,10 @@ pub struct KnockConfig {
     /// The slowest closing speed of the held magazine's tip against the inserted magazine, relative
     /// to the gun, that knocks it out, metres per second at the player's scale. A hand brought to
     /// the gun to load moves at a few tenths of a metre per second, and a deliberate strike at one
-    /// and a half to three, so a gentle touch does nothing.
+    /// and a half to three, so a gentle touch does nothing. The speed is one tick's travel into the
+    /// magazine, which reads 55 to 70 percent of the hand's peak as it slows into the contact: on
+    /// the 14 November 2026 take strikes whose hands peaked at 1.2 to 1.8 m/s read 0.8 to 1.0 and
+    /// were turned away at 1.0, while the seat attempts read 0.2 to 0.5.
     pub min_speed_mps: f32,
     /// The slowest push of the held magazine's tip into the well's mouth while the old magazine is
     /// still in, along the well into the gun and relative to it, that knocks the old one out, metres
@@ -126,8 +129,8 @@ pub struct KnockConfig {
 impl KnockConfig {
     pub const fn new() -> Self {
         Self {
-            min_speed_mps: 1.0,
-            push_min_speed_mps: 1.0,
+            min_speed_mps: 0.75,
+            push_min_speed_mps: 0.75,
         }
     }
 }

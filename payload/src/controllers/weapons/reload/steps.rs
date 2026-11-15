@@ -527,13 +527,20 @@ impl State {
         hand: Hand,
         config: &ControllersConfig,
     ) {
-        self.queue_eject(
+        if !self.queue_eject(
             weapon,
             gun,
             hand,
             DetachKind::Eject,
             config.weapons.reload.loose.enabled,
-        );
+        ) {
+            self.event(format!(
+                "the {hand:?} gun's magazine release could not drop it"
+            ));
+            haptics::play(hand, Event::PouchRefused);
+            // SAFETY: the game stage, on the game thread; the weapon was read this tick.
+            unsafe { refuse_sound(weapon.address, gun.index) };
+        }
     }
 
     /// The two-handed load: take from the pouch, carry to the well of the gun in the other hand,
@@ -848,9 +855,15 @@ impl State {
             // its rounds.
             if weapon.occupied() && weapon.plan.load.ejects() {
                 if !self.queue_eject(weapon, gun, hand, DetachKind::Belt, reload.loose.enabled) {
+                    // A refused drop must not leave the gun held as reloaded: on the 14 November
+                    // take it read as a dead trigger until the gun left the pouch.
+                    self.belts[i].refuse();
                     self.event(format!(
                         "the {hand:?} gun's belt push could not drop its magazine"
                     ));
+                    haptics::play(hand, Event::PouchRefused);
+                    // SAFETY: the game stage, on the game thread; the weapon was read this tick.
+                    unsafe { refuse_sound(weapon.address, gun.index) };
                 }
                 continue;
             }

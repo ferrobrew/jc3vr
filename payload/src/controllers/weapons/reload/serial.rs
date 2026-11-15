@@ -132,7 +132,6 @@ impl SerialStatus {
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Refusal {
     Admission,
-    Retention,
     Paused,
     Permission,
     Identity,
@@ -190,13 +189,19 @@ pub(super) fn submit_with_retention(request: DetachRequest, retain: bool) -> boo
         state.refuse(Refusal::Admission);
         return false;
     }
+    // A magazine whose prop cannot be retained (the gun has no spare prop yet, or the store is
+    // full) still drops, unretained: the player can always reload, and only the prop in the world
+    // is missing.
     let retention = if retain {
-        let Some(retention) = Retention::reserve(request.expected.gun, request.expected.spare)
-        else {
-            state.refuse(Refusal::Retention);
-            return false;
-        };
-        Some(retention)
+        let retention = Retention::reserve(request.expected.gun, request.expected.spare);
+        if retention.is_none() {
+            tracing::info!(
+                target: "controllers",
+                spare = request.expected.spare != 0,
+                "reload: the magazine's prop cannot be kept, so it drops unretained"
+            );
+        }
+        retention
     } else {
         None
     };
@@ -255,10 +260,9 @@ pub(crate) unsafe fn consume(character: *mut Character, context: *mut GameObject
         };
         let refusal = if paused {
             Some(Refusal::Paused)
-        } else if resolved
-            .as_ref()
-            .is_none_or(|(identity, _)| *identity != request.expected || !identity.has_spare())
-        {
+        } else if resolved.as_ref().is_none_or(|(identity, _)| {
+            *identity != request.expected || (retention.is_some() && !identity.has_spare())
+        }) {
             Some(Refusal::Identity)
         } else if !permitted(request, retention.is_some()) {
             Some(Refusal::Permission)
@@ -555,7 +559,7 @@ impl Queues {
     fn refuse(&mut self, refusal: Refusal) {
         self.status.refused += 1;
         self.status.last_refusal = Some(refusal);
-        tracing::debug!(target: "controllers", ?refusal, "reload: serial magazine request refused");
+        tracing::info!(target: "controllers", ?refusal, "reload: serial magazine request refused");
     }
 }
 

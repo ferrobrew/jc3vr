@@ -120,6 +120,15 @@ impl BeltPush {
         self.stage == PushStage::Reloaded
     }
 
+    /// The push reached the depth but its gun's magazine could not be dropped: nothing more
+    /// happens until the mouth leaves, and the gun keeps firing, rather than holding it as a
+    /// reloaded push does.
+    pub fn refuse(&mut self) {
+        if self.stage == PushStage::Reloaded {
+            self.stage = PushStage::Brushed;
+        }
+    }
+
     fn reach(&mut self, distance: f32, radius: f32, config: &BeltTuning) -> bool {
         if self.stage == PushStage::Pushing && radius - distance >= config.depth_m {
             self.stage = PushStage::Reloaded;
