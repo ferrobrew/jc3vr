@@ -37,7 +37,10 @@ use parking_lot::Mutex;
 
 use crate::{
     config::Config,
-    controllers::roomscale::{frame_shared, seat::SeatPhase},
+    controllers::{
+        body::procedural::{authority::Case, published_status},
+        roomscale::{frame_shared, seat::SeatPhase},
+    },
     grapple,
     headpose::{
         HeadPose,
@@ -138,6 +141,10 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
         let vehicle_transition = frame_shared()
             .filter(|shared| shared.fresh(Instant::now()))
             .is_some_and(|shared| matches!(shared.seat, SeatPhase::Entering | SeatPhase::Exiting));
+        let body_thrown = matches!(
+            published_status().case,
+            Case::Ragdoll | Case::GettingUp | Case::Dead
+        );
         advance_body_yaw(
             YawTick {
                 look_x,
@@ -145,6 +152,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
                 on_foot: s.mode == HeadMode::OnFoot,
                 swimming,
                 vehicle_transition,
+                body_thrown,
                 dt,
             },
             &config,

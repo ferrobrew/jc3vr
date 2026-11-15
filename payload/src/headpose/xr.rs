@@ -150,12 +150,24 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
         on_foot,
         swimming,
         vehicle_transition,
+        body_thrown,
         dt,
     } = tick;
     let mut s = BODY_YAW.lock();
     let body = sim::body_yaw_of(body_rotation_raw());
     // The strokes' turn is taken every tick, so a turn queued out of the water is dropped.
     let stroke_turn = std::mem::take(&mut *SWIM_TURN.lock());
+    if s.thrown != body_thrown {
+        s.thrown = body_thrown;
+        tracing::info!(
+            target: "headpose",
+            thrown = body_thrown,
+            body_deg = body.to_degrees(),
+            view_deg = wrap(body - s.follow.offset(body, true)).to_degrees(),
+            "headpose: the view's heading {} the thrown body",
+            if body_thrown { "holds through" } else { "is released from" }
+        );
+    }
     if !on_foot && !swimming {
         let heading = s.yaw.unwrap_or(body);
         s.follow.tick(FollowTick {
@@ -165,6 +177,7 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
             torso: None,
             deadband: 0.0,
             step: vehicle_transition,
+            hold: body_thrown,
             dt,
         });
         s.yaw = None;
@@ -234,6 +247,7 @@ pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowS
             follow.deadband_deg.max(0.0).to_radians()
         },
         step: false,
+        hold: false,
         dt,
     });
 
@@ -263,6 +277,9 @@ pub struct YawTick {
     /// Whether a vehicle's entry or exit animation turns the body, so the view steps toward it
     /// ([`BodyFollow`]).
     pub vehicle_transition: bool,
+    /// Whether a ragdoll, its get-up, or a death throws the body about, so the view holds its
+    /// heading rather than riding the body ([`BodyFollow`]).
+    pub body_thrown: bool,
     /// The tick's length, seconds.
     pub dt: f32,
 }
@@ -412,6 +429,7 @@ static BODY_YAW: Mutex<VrBodyYaw> = Mutex::new(VrBodyYaw {
     yaw: None,
     snap_armed: true,
     follow: BodyFollow::new(),
+    thrown: false,
 });
 
 struct VrBodyYaw {
@@ -421,6 +439,8 @@ struct VrBodyYaw {
     snap_armed: bool,
     /// The body's turn under the view.
     follow: BodyFollow,
+    /// Whether the last tick's body was thrown about, for the hold's log.
+    thrown: bool,
 }
 
 /// The local player character's world rotation, the body frame the cockpit pose composes onto.

@@ -27,6 +27,11 @@
 //!   body's forward; what is left is frozen and banked as below. Past the animation the vehicle
 //!   carries the body, so there the view rides the body's turn and steps only the difference the
 //!   animation left: a vehicle that drives off turning turns the view with it.
+//! - **Holding** (off foot, through a ragdoll, its get-up, or a death): the view's heading is held
+//!   as while stepping, but it never steps: the get-up's pose matching turns the root by up to
+//!   half a turn to wherever the ragdoll fell, and a view riding the body turned with it. Once the
+//!   body follows again it turns to the player's torso under the held view; off foot, what is left
+//!   is frozen and banked as below.
 //!
 //! A recenter clears the offset: it re-bases the cockpit to the head, which already turns the view.
 //! Once the body stops following, the frozen offset is folded into the cockpit baseline at the top
@@ -77,6 +82,9 @@ pub struct FollowTick {
     /// Whether a vehicle's entry or exit animation turns the body this tick, so the view steps
     /// toward the body instead of riding it. Ignored while following.
     pub step: bool,
+    /// Whether a ragdoll, its get-up, or a death throws the body about this tick, so the view holds
+    /// its heading and does not step. Ignored while following.
+    pub hold: bool,
     /// The tick's length, seconds, for the steps' interval.
     pub dt: f32,
 }
@@ -158,6 +166,14 @@ impl BodyFollow {
             Some((_, current)) => current,
             None => wrap(tick.body - self.frozen),
         };
+        if tick.hold {
+            self.stepping = Some(Stepping {
+                since: 0.0,
+                body: tick.body,
+            });
+            self.view = Some((held, held));
+            return true;
+        }
         // Past the animation, the vehicle turns the body: the view rides that turn.
         let current = match self.stepping {
             Some(stepping) if !tick.step => wrap(held + wrap(tick.body - stepping.body)),
@@ -255,6 +271,7 @@ mod tests {
             torso,
             deadband: deg(5.0),
             step: false,
+            hold: false,
             dt: 0.02,
         }
     }
@@ -267,8 +284,36 @@ mod tests {
             torso: None,
             deadband: 0.0,
             step,
+            hold: false,
             dt: 0.1,
         }
+    }
+
+    #[test]
+    fn a_get_ups_turn_of_the_root_does_not_turn_the_view_and_the_body_turns_back_to_the_torso() {
+        let mut follow = BodyFollow::new();
+        let thrown = |body| FollowTick {
+            hold: true,
+            ..stepping_tick(false, body)
+        };
+        // Riding the body at 60 degrees, then the pose matching turns the root half a turn.
+        follow.tick(thrown(deg(60.0)));
+        for body in [deg(60.0), deg(-105.0), deg(-100.0), deg(-100.0)] {
+            follow.tick(thrown(body));
+            assert!(
+                wrap(body - follow.offset(body, true) - deg(60.0)).abs() < 1e-4,
+                "the view holds its heading"
+            );
+        }
+        // Standing again, the body follows the torso, straight ahead of the view.
+        follow.tick(tick(true, deg(60.0), deg(-100.0), Some(0.0)));
+        assert!(follow.following());
+        assert!(
+            follow.target().abs() <= deg(5.0) + 1e-4,
+            "{}",
+            follow.target()
+        );
+        assert!((wrap(deg(-100.0) - follow.offset(deg(-100.0), true)) - deg(60.0)).abs() < 1e-4);
     }
 
     #[test]
