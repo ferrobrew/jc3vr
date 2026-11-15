@@ -148,6 +148,10 @@ pub(crate) unsafe fn step() {
         .min(MAX_LEAD_S);
     // The palms' target ages in real time while its velocity is the world's, per game second.
     let lead_s = age_s * time_scale.get() + step_s;
+    // The carrier moves with the steps alone: its part is led by the steps since the palms were
+    // published, and this step.
+    let steps_since = published_step.map_or(0, |at| step_number.saturating_sub(at));
+    let carrier_lead_s = ((steps_since as f32 + 1.0) * step_s).min(MAX_LEAD_S + step_s);
     // SAFETY: forwarded from the caller.
     let group = unsafe { player_system_group() };
     let b = &HAND_BODIES;
@@ -252,7 +256,7 @@ pub(crate) unsafe fn step() {
                     contact_events: true,
                     gravity: false,
                 };
-                let palm = target.led(lead_s);
+                let palm = target.led(lead_s, carrier_lead_s);
                 // A hand that holds an object through a joint is moved by the keep-out, and pulls
                 // and twists with a holding hand's strength, the same budget as a carried hold.
                 let holding = holds[i];

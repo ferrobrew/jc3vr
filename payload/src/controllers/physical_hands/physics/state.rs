@@ -197,12 +197,23 @@ impl Target {
         }
     }
 
-    /// The palm carried `lead_s` seconds ahead by its own motion: where a step predicts the palm
-    /// for the end of the step, which is where it drives a free hand's body. The palm's velocity
-    /// is a world velocity, so the lead includes the carrier's travel as well as the hand's.
-    pub(super) fn led(&self, lead_s: f32) -> Goal {
+    /// The palm carried ahead by its own motion: where a step predicts the palm for the end of the
+    /// step, which is where it drives a free hand's body. The palm's velocity is a world velocity,
+    /// so the lead includes the carrier's travel as well as the hand's.
+    ///
+    /// The carrier's part of the motion is led by `carrier_lead_s` and the hand's own by `lead_s`.
+    /// The carrier moves only with the simulation's steps, so its lead counts the steps since the
+    /// palm was published; led by the time since instead, a frame that ran no step put the palm a
+    /// frame's travel of a moving car ahead of where the car was, and the hand snapped back and
+    /// forth (510 to 519 s of the 14 November take).
+    pub(super) fn led(&self, lead_s: f32, carrier_lead_s: f32) -> Goal {
+        let carrier = if self.carrier.is_finite() {
+            self.carrier
+        } else {
+            Vec3::ZERO
+        };
         Goal {
-            position: self.position + self.linear * lead_s,
+            position: self.position + (self.linear - carrier) * lead_s + carrier * carrier_lead_s,
             orientation: Quat::from_scaled_axis(self.angular * lead_s) * self.orientation,
         }
     }
@@ -515,7 +526,7 @@ mod tests {
             carrier,
         };
         let lead_s = 0.06;
-        let led = target.led(lead_s);
+        let led = target.led(lead_s, lead_s);
         assert!(
             led.position
                 .abs_diff_eq(target.position + carrier * lead_s, 1e-3)
@@ -540,5 +551,24 @@ mod tests {
         assert!(measure(led).turn.angle_between(Quat::IDENTITY) < 1e-3);
         // Against the published palm, the same body reads as a hand a third of a metre ahead.
         assert!((measure(target.goal()).shift.length() - 0.33).abs() < 1e-3);
+    }
+
+    #[test]
+    fn the_carriers_part_of_the_lead_follows_the_steps_and_the_hands_the_time() {
+        let carrier = Vec3::new(0.0, 0.0, -20.0);
+        let own = Vec3::new(1.0, 0.0, 0.0);
+        let target = Target {
+            position: Vec3::ZERO,
+            orientation: Quat::IDENTITY,
+            linear: carrier + own,
+            angular: Vec3::ZERO,
+            carrier,
+        };
+        let led = target.led(0.05, 0.033);
+        assert!(
+            led.position.abs_diff_eq(own * 0.05 + carrier * 0.033, 1e-4),
+            "{}",
+            led.position
+        );
     }
 }
