@@ -27,9 +27,6 @@ pub(crate) struct Geometry {
     pub eye_arm: Vec3,
     /// The filtered head frame relative to the root, with the bind orientation removed.
     pub animation_rotation: Quat,
-    /// The head frame the view follows, filtered for the camera and eased to identity outside the
-    /// camera-follow states.
-    pub camera_animation_rotation: Quat,
     /// Whether the camera hangs from the neutral head below rather than the animated one.
     pub camera_stable: bool,
     /// The head the camera hangs from while the root carries the body: the neutral head over the
@@ -63,17 +60,14 @@ impl Geometry {
         }
     }
 
-    /// The frame the view composes the tracked head onto: the root with the camera's animated
-    /// head frame, turned toward the root's upright heading by
-    /// [`camera_weight`](Self::camera_weight). While the view hangs from the root-held head,
-    /// neither a clip's head nor a root the physics tilts (a ragdoll's) turns the view.
+    /// The frame the view composes the tracked head onto: the root, turned toward its upright
+    /// heading by [`camera_weight`](Self::camera_weight). A clip's head frame never turns the view,
+    /// so a deployment or an entry that pitches Rico's head leaves the player's head angle alone,
+    /// and while the view hangs from the root-held head a root the physics tilts (a ragdoll's) does
+    /// not turn it either.
     pub(crate) fn view_frame(self) -> Quat {
         let (_, root, _) = self.root.to_scale_rotation_translation();
-        toward_heading(
-            root * self.camera_animation_rotation,
-            root,
-            self.camera_weight,
-        )
+        toward_heading(root, root, self.camera_weight)
     }
 
     /// The frame the camera's eye arm turns with: the root with the animated head frame, turned
@@ -92,7 +86,6 @@ impl Geometry {
             neck_delta: anchors.neck - anchors.head,
             eye_arm: anchors.eye_arm,
             animation_rotation: Quat::IDENTITY,
-            camera_animation_rotation: Quat::IDENTITY,
             camera_stable: false,
             camera_head: anchors.head,
             camera_neck_delta: anchors.neck - anchors.head,
@@ -112,8 +105,6 @@ impl Geometry {
             && self.eye_arm.length_squared() < 1.0
             && self.animation_rotation.is_finite()
             && (self.animation_rotation.length_squared() - 1.0).abs() < 0.01
-            && self.camera_animation_rotation.is_finite()
-            && (self.camera_animation_rotation.length_squared() - 1.0).abs() < 0.01
     }
 }
 
@@ -247,7 +238,6 @@ impl Sample {
                 neck_delta: neck - head,
                 eye_arm: rotation.inverse() * (root.transform_point3(eyes_model) - neck),
                 animation_rotation: Quat::IDENTITY,
-                camera_animation_rotation: Quat::IDENTITY,
                 camera_stable: false,
                 camera_head: head,
                 camera_neck_delta: neck - head,
