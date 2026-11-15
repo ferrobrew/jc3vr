@@ -45,7 +45,10 @@ use std::{
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::{character::Character, inventory::Inventory},
+    character::{
+        character::Character,
+        inventory::{Inventory, WeaponSlot},
+    },
     equipment::weapon::{ModelAttachementWeaponComponent, WeaponBase, WeaponData, WeaponState},
     types::math::Matrix4,
 };
@@ -212,7 +215,8 @@ pub(crate) fn set_offsets(offset_of: impl Fn(Socket) -> Vec3) {
 }
 
 /// Take the weapon `strong` keeps alive, which no inventory holds, into the carry set on `socket`:
-/// the weapon's pickup ([`WeaponBase::OnPickup`]) makes the player its holder and holsters it, and
+/// the weapon's pickup ([`WeaponBase::OnPickup`]) makes the player its holder and holsters it (a
+/// heavy weapon, which the pickup leaves dropped, is holstered here), and
 /// the HUD's weapon list, which the pickup shows the weapon in, is rebuilt from the slots.
 ///
 /// # Safety
@@ -231,6 +235,20 @@ pub(crate) unsafe fn carry_loose(
     }
     let holder = character_object(owner);
     unsafe { weapon.OnPickup(holder) };
+    // The pickup holsters every slot's weapon but a heavy one, which the game only ever wields
+    // straight from the ground and so leaves in the world, dropped. Holstering it takes its bodies
+    // out of the world as the pickup does for the others, and the hands then hold it as any
+    // carried weapon.
+    if unsafe { slot_of(weapon) } == Some(WeaponSlot::E_SLOT_HEAVY)
+        && weapon.m_State != WeaponState::E_WS_HOLSTERED
+        && std::ptr::eq(weapon.m_Holder.px.cast_const().cast(), holder)
+    {
+        unsafe { weapon.SetState(WeaponState::E_WS_HOLSTERED, false) };
+        tracing::info!(
+            target: "controllers",
+            "inventory: holstered a heavy weapon the pickup left dropped"
+        );
+    }
     if weapon.m_State != WeaponState::E_WS_HOLSTERED
         || !std::ptr::eq(weapon.m_Holder.px.cast_const().cast(), holder)
     {

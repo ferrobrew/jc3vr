@@ -571,7 +571,7 @@ pub(super) unsafe fn choose(ray: &Ray, config: &ControllersConfig) -> Option<Off
         Kind::Floor(i) => {
             let weapon = floor[i];
             if !unsafe { in_sight(ray, point, weapon.object.get()) }
-                || unsafe { engine::mounted_gun(weapon.object) }
+                || unsafe { engine::on_mount(weapon.object) }
             {
                 return None;
             }
@@ -792,7 +792,7 @@ unsafe fn aimed_offer(
     let weak = || unsafe { weak_of(aimed.object) };
     if aimed.weapon {
         if !unsafe { grapple_weapons::is_dropped_weapon(aimed.object) }
-            || unsafe { engine::mounted_gun(aimed.object) }
+            || unsafe { engine::on_mount(aimed.object) }
         {
             return None;
         }
