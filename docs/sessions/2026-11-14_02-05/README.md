@@ -178,7 +178,7 @@ The interface and rendering:
 
 The new problems listed above:
 
-- 1, the estimate-driven legs on glances: the IK-first body replaces them (planned).
+- 1, the estimate-driven legs on glances: 7e9a9e77 widens the estimate's band to 20 degrees and raises the turn gate to 20 degrees a second for now; the IK-first body replaces them (planned).
 - 2, the vehicle entry swings: 8908e260 and 5b6cd60f (above).
 - 3, the wingsuit crash straightening the view: 0934ffbb (above, next-session check 3).
 - 4, the frame time: not investigated; the next session runs the A/B with the estimator off (next-session.md).

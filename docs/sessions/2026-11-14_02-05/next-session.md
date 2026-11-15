@@ -36,6 +36,11 @@ In the order of the feedback:
 28. Ride the scooter on the triggers, one hand and two: no weave from a still hand, the bars buzz at the lock and tick through centre, and fingers lifted off a moment keep the bars.
 29. Climb a cliff that leans back: the body rises along the face, and the head need not lean forward.
 30. Light-pull the trigger on the map and menus to pin the cursor, then pull fully to click.
+31. Stand still and glance left and right without turning the body: the legs stay put and do not shuffle.
+32. Walk up to a standalone mounted gun: no use prompt.
+33. Drive a car at speed past buildings with the shadow cascades refreshed every frame and not (`stereo.shadow_update_every_frame`): note whether the shadows stay under their objects (441.91).
+34. After a fast travel, note whether a dot cursor stays drawn in flight (774.24).
+35. Fly with a rifle and a pistol holstered: note whether either pops in and out of view (388.682).
 
 ## Plans for what was deferred
 
