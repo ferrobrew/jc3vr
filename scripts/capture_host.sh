@@ -1,12 +1,19 @@
 #!/usr/bin/env bash
-# The host side of the session recorder: listen for the payload's takes and record the game's mirror
-# window with gpu-screen-recorder, with the default output's audio, into each take's folder.
+# The host side of the session recorder on Linux: listen for the payload's takes and record each
+# into its folder, with the default output's audio. A take with the in-process capture on (the
+# default) streams the eye views, which the host's own ffmpeg encodes with NVENC, VAAPI, or a
+# software encoder; a take with it off has gpu-screen-recorder record the game's mirror window.
+#
+# Start this before injecting: the injector, which would otherwise encode the stream inside the
+# game's Wine environment with software encoders only, finds the port taken and leaves the takes
+# here.
 #
 # Usage: scripts/capture_host.sh [fallback output dir] [-- extra gpu-screen-recorder args]
 #
 # Start this, then start a recording in game (F1, or Tools > Video); the payload retries the
-# connection every half second until this listener is up, so either order works. Each take finds the
-# game's window under niri, records its region on screen to `video.mkv` in the take's folder
+# connection every half second until this listener is up, so either order works. A streamed take
+# goes to `video.mkv` in the take's folder. A mirror take finds the game's window under niri,
+# records its region on screen to `video.mkv` in the take's folder
 # (`<session>/recordings/<stamp>/`, beside `frames.jsonl`), and writes `stream.json` there with the
 # region and the first frame's wall-clock time. Stopping the recording in game finalizes the file
 # and the listener waits for the next take. Ctrl+C stops the listener, finalizing the take in
@@ -24,11 +31,15 @@
 #   JC3VR_CAPTURE_FPS     the recording frame rate (default 60).
 #   JC3VR_CAPTURE_CODEC   the video codec: hevc (default), av1, or h264. AV1 needs an encoder
 #                         that has it (gpu-screen-recorder --info lists the GPU's codecs).
+#   JC3VR_CAPTURE_STREAM_BITRATE a streamed take's video bitrate in kbps (default 0, scaled to the
+#                         stream: about 20 Mbps of HEVC for both eyes at 1920 wide and 30 fps).
+#   JC3VR_FFMPEG          the ffmpeg for streamed takes (default ffmpeg on PATH).
 #   JC3VR_CAPTURE_BITRATE the constant video bitrate in kbps (default 10000, about 1.1 GB per
 #                         fifteen minutes at 1080p60); 0 records at constant quality instead.
 #   JC3VR_CAPTURE_QUALITY gpu-screen-recorder's quality preset for constant quality (default high).
-#   JC3VR_CAPTURE_AUDIO   a gpu-screen-recorder audio input (default default_output); set to "none"
-#                         to record video only.
+#   JC3VR_CAPTURE_AUDIO   the audio: default_output (the default) for the default sink's monitor,
+#                         a gpu-screen-recorder input for a mirror take or a PulseAudio source for
+#                         a streamed one, or "none" to record video only.
 #   JC3VR_CAPTURE_WINDOW  a niri window id to record instead of looking the game's window up.
 #   JC3VR_CAPTURE_REGION  a WxH+X+Y region to record without asking niri, for other compositors.
 #   JC3VR_CAPTURE_RERUN   0 to skip the Rerun export when a take ends (default 1).
@@ -50,6 +61,8 @@ args=(
     --bitrate-kbps "${JC3VR_CAPTURE_BITRATE:-10000}"
     --quality "${JC3VR_CAPTURE_QUALITY:-high}"
     --audio "${JC3VR_CAPTURE_AUDIO:-default_output}"
+    --stream-bitrate-kbps "${JC3VR_CAPTURE_STREAM_BITRATE:-0}"
+    --ffmpeg "${JC3VR_FFMPEG:-ffmpeg}"
 )
 if [ "${JC3VR_CAPTURE_RERUN:-1}" != 0 ]; then
     args+=(--on-take-end "$DIR/scripts/rerun_take.sh")

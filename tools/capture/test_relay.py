@@ -1,11 +1,13 @@
-"""Tests for the capture relay's control protocol, window lookup, and region math.
+"""Tests for the capture relay's control protocol, window lookup, region math, and streamed takes.
 
     python3 -I -m unittest discover -s tools/capture
 """
 
 import json
 import os
+import socket
 import tempfile
+import threading
 import time
 import unittest
 
@@ -298,6 +300,112 @@ class Takes(unittest.TestCase):
             region=None,
         )
         relay.after_take(config, "/nonexistent/take")
+
+
+VIDEO = {
+    "format": "yuv4mpegpipe",
+    "width": 640,
+    "height": 360,
+    "frame_rate": 30,
+    "pixel_format": "yuv420p",
+    "color_space": "bt709",
+    "color_range": "limited",
+    "layout": "side_by_side",
+    "eyes": [],
+}
+
+# A stand-in for ffmpeg: a probe (`-f null`) succeeds, and an encode copies its standard input to
+# the output path, its last argument.
+FAKE_FFMPEG = """#!/usr/bin/env python3
+import shutil, sys
+if sys.argv[-3:-1] == ["-f", "null"] or "null" in sys.argv:
+    sys.exit(0)
+with open(sys.argv[-1], "wb") as out:
+    shutil.copyfileobj(sys.stdin.buffer, out)
+"""
+
+
+class StreamedTakes(unittest.TestCase):
+    def test_a_streamed_start_carries_its_stream(self):
+        message = relay.parse_message(start_line(version=2, take="t", video=VIDEO))
+        self.assertEqual(message.video, relay.VideoSpec(width=640, height=360, frame_rate=30))
+        self.assertEqual(message.video_json, VIDEO)
+
+    def test_a_streamed_start_without_a_usable_stream_is_refused(self):
+        odd = dict(VIDEO, width=641)
+        rgb = dict(VIDEO, pixel_format="rgb24")
+        for line in [start_line(version=2), start_line(version=2, video=odd), start_line(version=2, video=rgb)]:
+            with self.subTest(line=line):
+                with self.assertRaises(relay.ProtocolError):
+                    relay.parse_message(line)
+
+    def test_the_bitrate_scales_with_the_pixel_rate_and_the_codec(self):
+        video = relay.VideoSpec(width=3840, height=2134, frame_rate=30)
+        self.assertEqual(relay.stream_bitrate_kbps("h264", video, None), 29500)
+        self.assertEqual(relay.stream_bitrate_kbps("hevc", video, None), 19666)
+        self.assertEqual(relay.stream_bitrate_kbps("hevc", video, 12000), 12000)
+
+    def test_the_stream_command_reads_standard_input_and_the_monitor(self):
+        video = relay.VideoSpec(width=3840, height=2134, frame_rate=30)
+        monitor = relay.audio_source("default_output")
+        self.assertEqual(monitor, "@DEFAULT_MONITOR@")
+        self.assertIsNone(relay.audio_source("none"))
+        command = relay.build_stream_command("ffmpeg", "hevc_nvenc", video, 20000, monitor, "/t/video.mkv")
+        self.assertEqual(command[command.index("yuv4mpegpipe") + 2], "-")
+        self.assertEqual(command[command.index("pulse") + 2], "@DEFAULT_MONITOR@")
+        self.assertIn("1:a", command)
+        self.assertEqual(command[-3:], ["-f", "matroska", "/t/video.mkv"])
+        vaapi = relay.build_stream_command("ffmpeg", "h264_vaapi", video, 30000, None, "/t/v.mkv")
+        self.assertIn("-vaapi_device", vaapi)
+        self.assertNotIn("pulse", vaapi)
+        self.assertNotIn("-pix_fmt", vaapi)
+
+    def test_a_streamed_take_is_copied_into_ffmpeg_until_the_payload_ends_it(self):
+        with tempfile.TemporaryDirectory() as folder:
+            ffmpeg = os.path.join(folder, "ffmpeg")
+            with open(ffmpeg, "w") as f:
+                f.write(FAKE_FFMPEG)
+            os.chmod(ffmpeg, 0o755)
+            take = os.path.join(folder, "take")
+            config = relay.Config(
+                fallback_dir=folder,
+                fps=60,
+                encoding=relay.Encoding(codec="h264", bitrate_kbps=None, quality="high"),
+                audio="none",
+                extra=[],
+                window_id=None,
+                region=None,
+                ffmpeg=ffmpeg,
+            )
+            payload, host = socket.socketpair()
+            stream = b"YUV4MPEG2 W640 H360 F30:1 Ip A1:1 C420jpeg\n" + b"FRAME\n" + bytes(640 * 360 * 3 // 2)
+            thread = threading.Thread(target=relay.run_take, args=(relay.Connection(host), config))
+            thread.start()
+            with payload:
+                payload.sendall(start_line(version=2, take="t", folder=take, video=VIDEO) + b"\n")
+                answers = relay.LineReader()
+                lines = []
+                while not lines:
+                    lines = answers.feed(payload.recv(4096))
+                started = json.loads(lines[0])
+                self.assertEqual(started["type"], "started")
+                self.assertEqual(started["encoder"], "h264_nvenc")
+                payload.sendall(stream)
+                payload.shutdown(socket.SHUT_WR)
+                lines = answers.feed(b"")
+                while not lines:
+                    lines = answers.feed(payload.recv(4096))
+                self.assertEqual(json.loads(lines[0]), {"type": "stopped", "exit_code": 0})
+            thread.join(10)
+            host.close()
+            with open(os.path.join(take, "video.mkv"), "rb") as f:
+                self.assertEqual(f.read(), stream)
+            with open(os.path.join(take, "stream.json")) as f:
+                metadata = json.load(f)
+            self.assertEqual(metadata["version"], 2)
+            self.assertEqual(metadata["encoder"], "h264_nvenc")
+            self.assertEqual(metadata["exit_code"], 0)
+            self.assertIsNotNone(metadata["video_start_unix_ms"])
 
 
 if __name__ == "__main__":

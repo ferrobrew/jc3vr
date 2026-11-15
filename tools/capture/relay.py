@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""The capture host's relay: record the game's mirror window with gpu-screen-recorder for each take
-the payload starts, into the take's own folder, and go back to listening when the take ends.
+"""The capture host's relay: record each take the payload starts into the take's own folder, and go
+back to listening when the take ends. A take either streams the game's eye views, which the relay
+encodes with the host's ffmpeg, or asks the relay to record the game's mirror window with
+gpu-screen-recorder.
 
     relay.py [--host 127.0.0.1] [--port 47172] [--fallback-dir captures]
              [--fps 60] [--codec hevc] [--bitrate-kbps 10000] [--quality high]
              [--audio default_output] [--on-take-end PROGRAM]
-             [--window-id ID | --region WxH+X+Y] [-- EXTRA GSR ARGS...]
+             [--window-id ID | --region WxH+X+Y] [--ffmpeg ffmpeg]
+             [--stream-bitrate-kbps 0] [-- EXTRA GSR ARGS...]
 
 The payload connects over TCP and speaks the control protocol below. For each take the relay finds
 the game's window in niri (`niri msg --json windows`), computes the window's region on screen from
@@ -24,7 +27,32 @@ nearly 5 GB for the same fifteen minutes. `--codec` picks H.264, HEVC, or AV1 (A
 encoder that has it; `gpu-screen-recorder --info` lists the codecs the GPU offers), and
 `--bitrate-kbps 0` goes back to constant quality at the `--quality` preset.
 
-## Control protocol, version 1
+## Streamed takes, control protocol version 2
+
+With the payload's in-process capture on, as it is by default, the start line is version 2 and
+carries the stream's format:
+
+    {"protocol": "jc3vr-capture", "version": 2, "type": "start", "take": "<stamp>",
+     "folder": "/abs/host/path" | null, "payload_folder": "C:\\...", "window": {...},
+     "video": {"format": "yuv4mpegpipe", "width": 3840, "height": 2134, "frame_rate": 30,
+               "pixel_format": "yuv420p", ...}}
+
+The relay starts ffmpeg reading the stream from its standard input, with the default output's
+monitor as the audio (`--audio`, a PulseAudio source name, `default_output` for the default sink's
+monitor, or `none`), and encodes it with the first of NVENC, VAAPI, and the software encoder that
+encodes a probe frame, in the codec `--codec` names, at `--stream-bitrate-kbps` (0, the default,
+scales the bitrate to the stream's pixel rate). It answers
+
+    {"type": "started", "file": "...", "encoder": "<ffmpeg encoder>", "audio": "<source> | none"}
+
+and copies everything the payload sends after that into ffmpeg. The payload ends the take by
+closing its writing half of the connection; the relay closes ffmpeg's input, waits for it to
+finalize `video.mkv`, and answers `{"type": "stopped", "exit_code": <int | null>}`. The injector,
+which runs inside the game's Windows environment, serves the same version (see
+`injector/src/capture/`); a relay started before the injection holds the port, and the injector
+leaves the takes to it.
+
+## Mirror takes, control protocol version 1
 
 Each message is one line of UTF-8 JSON terminated by `\\n`, at most 64 KiB. The payload opens with
 
@@ -78,8 +106,26 @@ from dataclasses import dataclass
 DEFAULT_PORT = 47172
 PROTOCOL = "jc3vr-capture"
 PROTOCOL_VERSION = 1
+# The version of a take whose eye views the payload streams.
+STREAMED_PROTOCOL_VERSION = 2
 STREAM_FORMAT = "jc3vr-capture-stream"
 STREAM_VERSION = 1
+# A streamed take's metadata adds the encoder and the stream's format.
+STREAMED_STREAM_VERSION = 2
+FFMPEG = "ffmpeg"
+# How long the stream may go quiet before the take counts as lost. The payload repeats frames rather
+# than pausing, so a long silence means the game has stopped.
+STREAM_TIMEOUT_S = 60.0
+# The pump's read size: about a tenth of a side-by-side frame.
+PUMP_CHUNK = 1 << 20
+# The ffmpeg encoders tried for a streamed take, best first, by the relay's codec name.
+STREAM_ENCODERS = {
+    "h264": ("h264_nvenc", "h264_vaapi", "libx264"),
+    "hevc": ("hevc_nvenc", "hevc_vaapi", "libx265"),
+    "av1": ("av1_nvenc", "av1_vaapi", "libsvtav1"),
+}
+# The render node VAAPI encodes on.
+VAAPI_DEVICE = "/dev/dri/renderD128"
 LINE_LIMIT = 64 * 1024
 DEFAULT_TITLE = "Just Cause 3"
 DEFAULT_APP_IDS = ("steam_app_225540",)
@@ -124,10 +170,23 @@ class WindowHint:
 
 
 @dataclass(frozen=True)
+class VideoSpec:
+    """The stream a version 2 take sends."""
+
+    width: int
+    height: int
+    frame_rate: int
+
+
+@dataclass(frozen=True)
 class Start:
     take: str | None
     folder: str | None
     window: WindowHint
+    # A streamed take's stream, or None for a mirror take.
+    video: VideoSpec | None = None
+    # The start's `video` object as sent, for the take's metadata.
+    video_json: dict | None = None
 
 
 @dataclass(frozen=True)
@@ -182,10 +241,11 @@ def parse_message(line: bytes) -> Start | Stop | Unknown:
         return Unknown(kind)
     if message.get("protocol") != PROTOCOL:
         raise ProtocolError(f"the start names protocol {message.get('protocol')!r}, not {PROTOCOL!r}")
-    if message.get("version") != PROTOCOL_VERSION:
+    version = message.get("version")
+    if version not in (PROTOCOL_VERSION, STREAMED_PROTOCOL_VERSION):
         raise ProtocolError(
-            f"the start is for protocol version {message.get('version')!r}; this relay speaks "
-            f"version {PROTOCOL_VERSION}"
+            f"the start is for protocol version {version!r}; this relay speaks versions "
+            f"{PROTOCOL_VERSION} and {STREAMED_PROTOCOL_VERSION}"
         )
     folder = message.get("folder")
     if folder is not None:
@@ -194,7 +254,37 @@ def parse_message(line: bytes) -> Start | Stop | Unknown:
     take = message.get("take")
     if take is not None and (not isinstance(take, str) or not is_plain_name(take)):
         raise ProtocolError(f"the take is not a plain name: {take!r}")
-    return Start(take=take, folder=folder, window=parse_window_hint(message.get("window")))
+    window = parse_window_hint(message.get("window"))
+    if version == STREAMED_PROTOCOL_VERSION:
+        video = message.get("video")
+        return Start(
+            take=take, folder=folder, window=window, video=parse_video(video), video_json=video
+        )
+    return Start(take=take, folder=folder, window=window)
+
+
+def parse_video(value) -> VideoSpec:
+    """The stream a version 2 start describes."""
+    if not isinstance(value, dict):
+        raise ProtocolError("a version 2 start must carry a `video` object")
+    if value.get("format") != "yuv4mpegpipe" or value.get("pixel_format") != "yuv420p":
+        raise ProtocolError(
+            f"the stream is {value.get('format')!r} in {value.get('pixel_format')!r}, "
+            "not yuv4mpegpipe in yuv420p"
+        )
+
+    def number(key: str, top: int) -> int:
+        v = value.get(key)
+        if not isinstance(v, int) or isinstance(v, bool) or not 1 <= v <= top:
+            raise ProtocolError(f"`video.{key}` must be an integer from 1 to {top}")
+        return v
+
+    spec = VideoSpec(
+        width=number("width", 8192), height=number("height", 8192), frame_rate=number("frame_rate", 240)
+    )
+    if spec.width % 2 or spec.height % 2:
+        raise ProtocolError(f"4:2:0 needs even dimensions, not {spec.width}x{spec.height}")
+    return spec
 
 
 def parse_window_hint(value) -> WindowHint:
@@ -417,6 +507,9 @@ class Config:
     gsr: str = GSR
     # A program run detached with the take's folder once the take ends, or None.
     on_take_end: str | None = None
+    ffmpeg: str = FFMPEG
+    # A streamed take's constant video bitrate in kbps, or None to scale it to the pixel rate.
+    stream_bitrate_kbps: int | None = None
 
 
 def niri_json(*args: str):
@@ -547,6 +640,12 @@ def run_take(connection: Connection, config: Config) -> None:
     except OSError as error:
         refuse(connection, f"capture: could not create {folder}: {error}")
         return
+    if start.video is not None:
+        try:
+            run_stream_take(connection, config, start, folder)
+        finally:
+            after_take(config, folder)
+        return
     try:
         located = locate(config, start.window)
     except LocateError as error:
@@ -587,6 +686,207 @@ def run_take(connection: Connection, config: Config) -> None:
         after_take(config, folder)
         raise
     after_take(config, folder)
+
+
+def stream_bitrate_kbps(codec: str, video: VideoSpec, configured: int | None) -> int:
+    """A streamed take's bitrate: the configured one, or about 0.12 bits a pixel for H.264 and two
+    thirds of that for HEVC and AV1, which keeps fast motion clean."""
+    if configured:
+        return configured
+    bits_per_pixel = 0.12 if codec == "h264" else 0.08
+    return int(video.width * video.height * video.frame_rate * bits_per_pixel / 1000)
+
+
+def stream_encoder_args(encoder: str, video: VideoSpec, bitrate_kbps: int) -> list[str]:
+    """The output arguments for one encoder: rate control at the bitrate, a keyframe every two
+    seconds, and BT.709 limited-range colour tags."""
+    args = ["-c:v", encoder]
+    if encoder.endswith("_nvenc"):
+        args += ["-preset", "p5", "-tune", "hq", "-rc", "vbr"]
+    elif encoder.endswith("_vaapi"):
+        args += ["-vf", "format=nv12,hwupload"]
+    elif encoder in ("libx264", "libx265"):
+        args += ["-preset", "veryfast"]
+    elif encoder == "libsvtav1":
+        args += ["-preset", "10"]
+    args += [
+        "-b:v", f"{bitrate_kbps}k",
+        "-maxrate", f"{bitrate_kbps * 3 // 2}k",
+        "-bufsize", f"{bitrate_kbps * 2}k",
+        "-g", str(video.frame_rate * 2),
+    ]
+    if not encoder.endswith("_vaapi"):
+        args += ["-pix_fmt", "yuv420p"]
+    return args + [
+        "-color_range", "tv", "-colorspace", "bt709", "-color_primaries", "bt709",
+        "-color_trc", "bt709",
+    ]
+
+
+def encoder_device_args(encoder: str) -> list[str]:
+    """The global arguments an encoder needs before the inputs."""
+    return ["-vaapi_device", VAAPI_DEVICE] if encoder.endswith("_vaapi") else []
+
+
+def audio_source(audio: str) -> str | None:
+    """The PulseAudio source for the relay's `--audio`: the default sink's monitor for
+    gpu-screen-recorder's `default_output`, None for `none`, otherwise the source as named."""
+    if audio == "none":
+        return None
+    return "@DEFAULT_MONITOR@" if audio == "default_output" else audio
+
+
+def build_stream_command(
+    ffmpeg: str,
+    encoder: str,
+    video: VideoSpec,
+    bitrate_kbps: int,
+    audio: str | None,
+    path: str,
+) -> list[str]:
+    command = [ffmpeg, "-hide_banner", "-loglevel", "warning", "-nostats", "-y"]
+    command += encoder_device_args(encoder)
+    command += ["-thread_queue_size", "64", "-f", "yuv4mpegpipe", "-i", "-"]
+    if audio is not None:
+        command += ["-thread_queue_size", "1024", "-f", "pulse", "-i", audio]
+    command += ["-map", "0:v"]
+    if audio is not None:
+        command += ["-map", "1:a"]
+    command += stream_encoder_args(encoder, video, bitrate_kbps)
+    if audio is not None:
+        command += ["-c:a", "aac", "-b:a", "192k"]
+    return command + ["-f", "matroska", path]
+
+
+def choose_stream_encoder(config: Config, video: VideoSpec, bitrate_kbps: int) -> str:
+    """The first encoder for the configured codec that encodes a probe frame of the stream's size."""
+    candidates = STREAM_ENCODERS[config.encoding.codec]
+    failures = []
+    for encoder in candidates:
+        command = [config.ffmpeg, "-hide_banner", "-loglevel", "error", "-nostdin"]
+        command += encoder_device_args(encoder)
+        command += [
+            "-f", "lavfi", "-i", f"color=black:s={video.width}x{video.height}:r={video.frame_rate}",
+            "-frames:v", "3",
+        ]
+        command += stream_encoder_args(encoder, video, bitrate_kbps) + ["-f", "null", "-"]
+        try:
+            result = subprocess.run(command, capture_output=True, timeout=30, env=recorder_env())
+        except FileNotFoundError:
+            raise LocateError(f"{config.ffmpeg} is not on PATH") from None
+        except subprocess.TimeoutExpired:
+            failures.append(f"{encoder}: timed out")
+            continue
+        if result.returncode == 0:
+            return encoder
+        reason = (result.stderr.decode(errors="replace").strip().splitlines() or ["failed"])[-1]
+        failures.append(f"{encoder}: {reason}")
+    raise LocateError("no encoder works for the stream: " + "; ".join(failures))
+
+
+def run_stream_take(connection: Connection, config: Config, start: Start, folder: str) -> None:
+    """Encode a streamed take: ffmpeg reads the stream the payload sends after `started`."""
+    video = start.video
+    bitrate = stream_bitrate_kbps(config.encoding.codec, video, config.stream_bitrate_kbps)
+    try:
+        encoder = choose_stream_encoder(config, video, bitrate)
+    except LocateError as error:
+        refuse(connection, f"capture: {error}")
+        return
+    audio = audio_source(config.audio)
+    path, stream = take_paths(folder)
+    command = build_stream_command(config.ffmpeg, encoder, video, bitrate, audio, path)
+    log.info("capture: encoding the %dx%d stream with %s to %s", video.width, video.height, encoder, path)
+    metadata = {
+        "format": STREAM_FORMAT,
+        "version": STREAMED_STREAM_VERSION,
+        "host": "relay",
+        "take": start.take,
+        "video": os.path.basename(path),
+        "video_start_unix_ms": None,
+        "spawn_unix_ms": unix_ms(),
+        "stop_unix_ms": None,
+        "exit_code": None,
+        "encoder": encoder,
+        "audio": audio or "none",
+        "stream": start.video_json,
+        "command": command,
+    }
+    try:
+        encoder_process = subprocess.Popen(
+            command, stdin=subprocess.PIPE, start_new_session=True, env=recorder_env()
+        )
+    except OSError as error:
+        refuse(connection, f"capture: could not start {config.ffmpeg}: {error}")
+        return
+    write_metadata(stream, metadata)
+    connection.send(
+        {"type": "started", "file": path, "encoder": encoder, "audio": audio or "none"}
+    )
+    try:
+        pump_stream(connection, encoder_process, metadata)
+    except KeyboardInterrupt:
+        log.info("capture: interrupted; finalizing the take")
+        finish_stream(encoder_process, stream, metadata)
+        raise
+    code = finish_stream(encoder_process, stream, metadata)
+    connection.send({"type": "stopped", "exit_code": code})
+
+
+def pump_stream(connection: Connection, encoder: subprocess.Popen, metadata: dict) -> None:
+    """Copy the stream into ffmpeg until the payload ends it or either side fails."""
+    sock = connection.sock
+    sock.settimeout(STREAM_TIMEOUT_S)
+    # Bytes the control reader buffered past the start line belong to the stream.
+    pending = connection.reader.buffer
+    connection.reader.buffer = b""
+    header_seen = False
+    while True:
+        if pending:
+            data, pending = pending, b""
+        else:
+            try:
+                data = sock.recv(PUMP_CHUNK)
+            except TimeoutError:
+                log.warning("capture: the stream went quiet; finalizing")
+                return
+            except ConnectionError as error:
+                log.warning("capture: the connection was lost: %s; finalizing", error)
+                return
+        if not data:
+            log.info("capture: the stream ended; finalizing")
+            return
+        if metadata["video_start_unix_ms"] is None:
+            start = 0 if header_seen else data.find(b"\n") + 1
+            header_seen = header_seen or start > 0
+            if header_seen and start < len(data):
+                metadata["video_start_unix_ms"] = unix_ms()
+        try:
+            encoder.stdin.write(data)
+        except (BrokenPipeError, OSError) as error:
+            refuse(connection, f"capture: ffmpeg stopped taking the stream: {error}")
+            return
+
+
+def finish_stream(encoder: subprocess.Popen, stream: str, metadata: dict) -> int | None:
+    """Close ffmpeg's input, wait for it to finalize the file, and complete the metadata."""
+    metadata["stop_unix_ms"] = unix_ms()
+    try:
+        encoder.stdin.close()
+    except OSError:
+        pass
+    try:
+        encoder.wait(FINALIZE_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        log.error("capture: ffmpeg did not finalize in time; killing it")
+        encoder.kill()
+        encoder.wait()
+    code = encoder.returncode
+    if code != 0:
+        log.error("capture: ffmpeg exited with status %s", code)
+    metadata["exit_code"] = code
+    write_metadata(stream, metadata)
+    return code
 
 
 def after_take(config: Config, folder: str) -> None:
@@ -724,6 +1024,13 @@ def main() -> int:
     target = parser.add_mutually_exclusive_group()
     target.add_argument("--window-id", type=int, help="record this niri window")
     target.add_argument("--region", help="record this WxH+X+Y region without asking niri")
+    parser.add_argument("--ffmpeg", default=FFMPEG, help="the ffmpeg for streamed takes")
+    parser.add_argument(
+        "--stream-bitrate-kbps",
+        type=int,
+        default=0,
+        help="a streamed take's video bitrate; 0 scales it to the stream's pixel rate",
+    )
     parser.add_argument("extra", nargs=argparse.REMAINDER, help="after --: extra gsr arguments")
     args = parser.parse_args()
     extra = args.extra[1:] if args.extra[:1] == ["--"] else args.extra
@@ -746,13 +1053,16 @@ def main() -> int:
         window_id=args.window_id,
         region=region,
         on_take_end=args.on_take_end,
+        ffmpeg=args.ffmpeg,
+        stream_bitrate_kbps=args.stream_bitrate_kbps or None,
     )
 
     logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
     signal.signal(signal.SIGTERM, _interrupt)
     if shutil.which(GSR) is None:
-        log.error("capture: %s is not on PATH", GSR)
-        return 1
+        log.warning("capture: %s is not on PATH, so mirror takes will fail", GSR)
+    if shutil.which(config.ffmpeg) is None:
+        log.warning("capture: %s is not on PATH, so streamed takes will fail", config.ffmpeg)
     try:
         server = socket.create_server((args.host, args.port))
     except OSError as error:
