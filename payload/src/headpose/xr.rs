@@ -143,14 +143,15 @@ pub fn cockpit_pose() -> Option<CockpitPose> {
 /// `follow` lets the body turn under the view toward the player's torso ([`BodyFollow`]); its
 /// offset also seeds the accumulator, so that the view does not jump when the body was turned
 /// under it before.
-pub fn advance_body_yaw(
-    look_x: f32,
-    delta_based: bool,
-    on_foot: bool,
-    swimming: bool,
-    config: &HeadPoseConfig,
-    follow: &FollowSettings,
-) {
+pub fn advance_body_yaw(tick: YawTick, config: &HeadPoseConfig, follow: &FollowSettings) {
+    let YawTick {
+        look_x,
+        delta_based,
+        on_foot,
+        swimming,
+        vehicle_transition,
+        dt,
+    } = tick;
     let mut s = BODY_YAW.lock();
     let body = sim::body_yaw_of(body_rotation_raw());
     // The strokes' turn is taken every tick, so a turn queued out of the water is dropped.
@@ -163,6 +164,8 @@ pub fn advance_body_yaw(
             body,
             torso: None,
             deadband: 0.0,
+            step: vehicle_transition,
+            dt,
         });
         s.yaw = None;
         s.snap_armed = true;
@@ -181,7 +184,9 @@ pub fn advance_body_yaw(
     // it, so the same input turns faster. Snap keeps its step: a scaled snap is a different size.
     let rate_scale = if swimming { SWIM_TURN_SCALE } else { 1.0 };
     // Seeded at the view's heading: the body's, less however far it was turned under the view.
-    let mut yaw = s.yaw.unwrap_or_else(|| wrap(body - s.follow.frozen()));
+    let mut yaw = s
+        .yaw
+        .unwrap_or_else(|| wrap(body - s.follow.offset(body, true)));
 
     match turn.mode {
         VrTurnMode::Smooth => {
@@ -228,6 +233,8 @@ pub fn advance_body_yaw(
         } else {
             follow.deadband_deg.max(0.0).to_radians()
         },
+        step: false,
+        dt,
     });
 
     // Clamp how far the target may lead the body, re-anchoring it each tick: the body chases at a
@@ -242,6 +249,22 @@ pub fn advance_body_yaw(
     }
 
     s.yaw = Some(yaw);
+}
+
+/// One input tick's facts for [`advance_body_yaw`].
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct YawTick {
+    /// The tick's look input.
+    pub look_x: f32,
+    /// Whether `look_x` is a finished per-tick displacement (the mouse) rather than an axis.
+    pub delta_based: bool,
+    pub on_foot: bool,
+    pub swimming: bool,
+    /// Whether a vehicle's entry or exit animation turns the body, so the view steps toward it
+    /// ([`BodyFollow`]).
+    pub vehicle_transition: bool,
+    /// The tick's length, seconds.
+    pub dt: f32,
 }
 
 /// Degrees of body yaw per unit of *delta-based* (mouse) look input. The mouse LOOK effector is a

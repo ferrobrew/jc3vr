@@ -29,13 +29,16 @@
 //! the step to the next frame's update left the render lerping a stale pair at `dtf ≈ 0` on every
 //! tick frame — a per-tick jerk.)
 
-use std::sync::atomic::Ordering;
+use std::{sync::atomic::Ordering, time::Instant};
 
 use body_rig::angle::{direction, wrap};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
-use crate::{config::Config, grapple, headpose::HeadPose, hooks::input::locomotion};
+use crate::{
+    config::Config, controllers::roomscale::seat::SeatPhase, grapple, headpose::HeadPose,
+    hooks::input::locomotion,
+};
 
 /// The latch state (on-foot only).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -127,11 +130,18 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
         // Swimming keeps the accumulator seeded: the swim yaw override
         // (`crate::hooks::input::swim`) consumes the same body-yaw target, and clearing the
         // accumulator in water would hand the body back to the game's act-quantized turns.
+        let vehicle_transition = crate::controllers::roomscale::frame_shared()
+            .filter(|shared| shared.fresh(Instant::now()))
+            .is_some_and(|shared| matches!(shared.seat, SeatPhase::Entering | SeatPhase::Exiting));
         crate::headpose::xr::advance_body_yaw(
-            look_x,
-            look_x_delta,
-            s.mode == HeadMode::OnFoot,
-            swimming,
+            crate::headpose::xr::YawTick {
+                look_x,
+                delta_based: look_x_delta,
+                on_foot: s.mode == HeadMode::OnFoot,
+                swimming,
+                vehicle_transition,
+                dt,
+            },
             &config,
             &follow,
         );
