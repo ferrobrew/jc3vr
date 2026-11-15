@@ -244,10 +244,16 @@ impl Default for CueArming {
 
 /// The cue the held wheel gives on turning from `before` to `after`, radians clockwise, if any.
 pub fn cue(arming: &mut CueArming, before: f32, after: f32, spec: &WheelSpec) -> Option<WheelCue> {
-    if !before.is_finite() || !after.is_finite() {
+    cue_at_lock(arming, before, after, lock(spec))
+}
+
+/// The cue a held control turning from `before` to `after` radians gives against its `lock`, if
+/// any: the stop at the lock, and the tick through centre, each re-armed once the control has left
+/// it by a margin. The wheel's ([`cue`]) and the handlebars'.
+pub fn cue_at_lock(arming: &mut CueArming, before: f32, after: f32, lock: f32) -> Option<WheelCue> {
+    if !before.is_finite() || !after.is_finite() || !lock.is_finite() {
         return None;
     }
-    let lock = lock(spec);
     if after.abs() < lock - CUE_REARM_DEG.to_radians() {
         arming.stop = true;
     }

@@ -111,7 +111,7 @@ impl PhysicalControlsTuning {
                 press_depth_m: 0.02,
                 twist_nitrous: true,
                 twist_deg: 40.0,
-                bars_twist: true,
+                bars_twist: false,
                 throttle_twist_deg: 30.0,
             },
             grab_radius_m: 0.09,

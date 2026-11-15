@@ -192,7 +192,10 @@ fn twisting_the_bars_grips_forward_opens_the_throttle_or_brakes_and_burns_no_nit
     let either = Quat::from_rotation_z(-0.7) * grab;
     assert!(grip_twist(TwistGrip::Collective, grab, either, Vec3::X) > 0.6);
 
-    let p = placement(|c| c.handlebars = true);
+    let p = placement(|c| {
+        c.handlebars = true;
+        c.bars_twist = true;
+    });
     let kinds = [ControlKind::Handlebars];
     let ends = bar_ends(p.bars.centre, p.bars.half_width, 0.0);
     let mut state = ControlState::default();

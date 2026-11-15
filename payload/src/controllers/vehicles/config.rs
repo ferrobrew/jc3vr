@@ -139,7 +139,10 @@ pub struct PhysicalControlsConfig {
     pub nitrous_button: bool,
     /// Open the throttle by twisting the handlebars' right grip forward, rolling its top away from
     /// the rider, and brake by twisting the left grip forward the same way. The triggers still
-    /// accelerate and brake; on each, the larger of the grip and the trigger wins. Read from the
+    /// accelerate and brake; on each, the larger of the grip and the trigger wins. Off: on the
+    /// 14 November take the wrists rolled far past the full twist, the left rolled with the right
+    /// and braked against the throttle, and each regrab reset the reference, so the throttle and
+    /// the brake came and went at what felt like random; the triggers are the pedals. Read from the
     /// key that saved the throttle twist alone.
     #[serde(alias = "twist_throttle")]
     pub bars_twist: bool,
@@ -157,7 +160,7 @@ impl PhysicalControlsConfig {
             sticks: true,
             levers: true,
             nitrous_button: true,
-            bars_twist: true,
+            bars_twist: false,
             twist_rudder: true,
         }
     }

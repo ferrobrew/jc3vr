@@ -7,6 +7,11 @@
 //! measure since ([`BarsLatch`]). A grab, a second hand joining, or one letting go therefore never
 //! jumps the bars or biases them.
 //!
+//! One hand alone mirrors through the bars' middle as it was when the latch was taken, not as it is
+//! now: the middle rides the animated head in the cockpit frame and sways with the riding clip, and
+//! measured against it a still hand steered. The wheel measures against itself as taken for the
+//! same reason. The bars give the wheel's stop cue at the lock and its tick through the centre.
+//!
 //! The bars only turn. Their turn past a small deadzone, shaped by a response exponent, is the
 //! steering ([`steer_for_turn`]), and the lean is the same value: the gamepad's one stick writes the
 //! motorcycle's steering and its lean together, so the bars do as the stick does. A hand's height
@@ -20,6 +25,7 @@ use crate::controllers::{
     frame::Hand,
     vehicles::{
         physical::{ControlState, Holding, Placement},
+        steering::{WheelCue, cue_at_lock},
         tuning::HandlebarsSpec,
         wheel::BarsFrame,
     },
@@ -35,6 +41,8 @@ pub(super) struct BarsLatch {
     bars: f32,
     /// What the holding grips measured then.
     measured: f32,
+    /// The bars' middle then, which one hand's grip is mirrored through.
+    centre: Vec3,
 }
 
 impl BarsLatch {
@@ -46,35 +54,37 @@ impl BarsLatch {
 }
 
 /// Move the held bars with the holding grips, and return the steering they give, `None` with no
-/// hand on them.
+/// hand on them, with the cue the turn gives.
 pub(super) fn step_bars(
     state: &mut ControlState,
     placement: &Placement,
     holding: Holding,
-) -> Option<f32> {
+) -> (Option<f32>, Option<WheelCue>) {
     let spec = &placement.config.handlebars;
     let grips = holding.map(|h| h.map(|(_, point)| point));
     if grips.iter().all(Option::is_none) {
         state.bars = 0.0;
         state.bars_latch = None;
-        return None;
+        return (None, None);
     }
+    let before = state.bars;
+    let holders = grips.map(|g| g.is_some());
+    let latched = state.bars_latch.filter(|latch| latch.holders == holders);
+    let centre = latched.map_or(placement.bars.centre, |latch| latch.centre);
     // Grips the bars' turn cannot be measured from (a hand on the pivot) leave the bars where they
     // are.
-    if let Some(measured) = bar_turn(placement.bars.centre, grips) {
-        let holders = grips.map(|g| g.is_some());
-        let latch = match state.bars_latch {
-            Some(latch) if latch.holders == holders => latch,
-            _ => BarsLatch {
-                holders,
-                bars: state.bars,
-                measured,
-            },
-        };
+    if let Some(measured) = bar_turn(centre, grips) {
+        let latch = latched.unwrap_or(BarsLatch {
+            holders,
+            bars: state.bars,
+            measured,
+            centre,
+        });
         state.bars_latch = Some(latch);
         state.bars = latch.bars(measured, spec);
     }
-    Some(steer_for_turn(state.bars, spec))
+    let cue = cue_at_lock(&mut state.bars_cues, before, state.bars, lock(spec));
+    (Some(steer_for_turn(state.bars, spec)), cue)
 }
 
 /// The steering, `-1..=1` with positive right, the bars turned by `turn` radians give: nothing
@@ -107,7 +117,7 @@ pub(super) fn bars_now(
     state
         .bars_latch
         .filter(|latch| latch.holders == holders)
-        .zip(bar_turn(placement.bars.centre, grips))
+        .and_then(|latch| Some((latch, bar_turn(latch.centre, grips)?)))
         .map_or(state.bars, |(latch, measured)| {
             latch.bars(measured, &placement.config.handlebars)
         })

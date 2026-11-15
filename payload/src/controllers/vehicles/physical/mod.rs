@@ -201,6 +201,11 @@ pub struct ControlState {
     pub bars: f32,
     /// The bars and the grips' measure of them when the hands holding them last changed.
     bars_latch: Option<BarsLatch>,
+    /// Which of the bars' haptic cues may fire.
+    bars_cues: CueArming,
+    /// How long each hand's grip on the handlebars has been open, by [`Hand::index`], while the
+    /// grace keeps the bars in it ([`BARS_GRIP_GRACE_S`]).
+    bars_grace: [Option<f32>; 2],
     /// The stick's deflection in the horizontal plane (+X right, +Y back), metres.
     pub stick: Vec2,
     /// The collective's and the throttle's positions from their zeros, in lever positions (the
@@ -228,6 +233,8 @@ impl ControlState {
             wheel_cues: CueArming::new(),
             bars: 0.0,
             bars_latch: None,
+            bars_cues: CueArming::new(),
+            bars_grace: [None; 2],
             stick: Vec2::ZERO,
             levers: [0.0; 2],
             throttle: ThrottleState::new(),
@@ -552,6 +559,10 @@ pub struct StepInputs<'a> {
     pub dt: f32,
 }
 
+/// How long the handlebars stay in a hand whose grip has opened, seconds: long enough for fingers
+/// lifted off the handle a moment to close again.
+pub const BARS_GRIP_GRACE_S: f32 = 0.25;
+
 /// Advance the controls by one input tick: act on the grabs and the releases, move the held controls
 /// with their hands, and return the outputs.
 pub fn step(
@@ -575,11 +586,24 @@ pub fn step(
             continue;
         }
         let Some(kind) = inputs.grabs[i] else {
+            // The handlebars keep a hand whose grip opens for a moment: an Index grip's fingers
+            // come off the handle as a rider rolls the throttle shut, and every one of the eleven
+            // lost grips on the 14 November take was that, the bars dropping from under the hand.
+            let bars = held.is_some_and(|h| h.kind == ControlKind::Handlebars);
             if held.is_some() && !inputs.held[i] {
-                release(state, hand, Release::GripReleased, events);
+                let open_s = state.bars_grace[i].map_or(0.0, |s| s + dt);
+                if bars && open_s < BARS_GRIP_GRACE_S {
+                    state.bars_grace[i] = Some(open_s);
+                } else {
+                    state.bars_grace[i] = None;
+                    release(state, hand, Release::GripReleased, events);
+                }
+            } else {
+                state.bars_grace[i] = None;
             }
             continue;
         };
+        state.bars_grace[i] = None;
         // A grab while holding is a release and a fresh press between two ticks.
         if held.is_some() {
             release(state, hand, Release::GripReleased, events);
@@ -621,10 +645,12 @@ pub fn step(
                 out.wheel_cue = cue;
             }
             ControlKind::Handlebars => {
-                if let Some(steer) = step_bars(state, placement, holding) {
+                let (steer, cue) = step_bars(state, placement, holding);
+                if let Some(steer) = steer {
                     out.steer = Some(steer);
                     out.lean = Some(steer);
                 }
+                out.wheel_cue = cue;
             }
             ControlKind::Yoke => {
                 let Some(frame) = placement.yoke() else {
