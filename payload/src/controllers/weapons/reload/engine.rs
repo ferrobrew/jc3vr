@@ -269,8 +269,16 @@ unsafe fn detach_magazine(
         }
         // No owner borrow crosses either engine call: both can re-enter the owner through old pointers.
         // A gun without its spare prop yet has nothing to throw: the magazine leaves with no prop,
-        // and the spawn after it requests the next spare.
-        let throw = || spare == 0 || unsafe { throw_spare(gun, character, part, origin) };
+        // its part hidden as the throw would hide it, and the spawn after it requests the next
+        // spare.
+        let throw = || {
+            if spare == 0 {
+                unsafe { show_magazine_part(address, false) };
+                true
+            } else {
+                unsafe { throw_spare(gun, character, part, origin) }
+            }
+        };
         let (thrown, retained) = if let Some(retention) = retention {
             EjectRounds::with(retention, magazine_rounds, throw)
         } else {

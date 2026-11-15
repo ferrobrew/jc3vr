@@ -85,8 +85,17 @@ impl State {
             };
             self.pending_ejects[hand.index()] = None;
             if outcome == DetachOutcome::NoThrow {
+                // A refusal when the drop ran (the gun changed hands, the weapons paused) is told
+                // as a refusal at the push is: a buzz and the gun's click, and a belt push no
+                // longer holds the gun as reloaded, which would read as a dead trigger.
                 self.event(format!("{hand:?} magazine request refused"));
                 self.knocks.strikes[hand.index()] = None;
+                if request.kind == DetachKind::Belt {
+                    self.belts[hand.index()].refuse();
+                }
+                haptics::play(hand, Event::PouchRefused);
+                // SAFETY: game thread before the world update; the weapon was read this tick.
+                unsafe { steps::refuse_sound(weapon.address, gun.index) };
                 continue;
             }
             self.status.counts.ejects += 1;
