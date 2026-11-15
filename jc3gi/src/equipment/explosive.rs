@@ -116,6 +116,33 @@ fn _Explosive_size_check() {
     unreachable!()
 }
 impl Explosive {
+    pub const SetupEffects_ADDRESS: usize = 0x1408ED7B0;
+    /// Sets the explosive's trail resources by shared-pointer assignment: `trail_effect` into
+    /// [`m_TrailEffect`](crate::equipment::explosive::Explosive::m_TrailEffect) and `trail_sound` into
+    /// [`m_TrailSound`](crate::equipment::explosive::Explosive::m_TrailSound). It plays nothing; [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect)
+    /// does. The weapons that spawn an explosive call it with their own trail resources
+    /// ([`ThrownGrenadeWeapon::m_TrailEffectPlayer`](crate::equipment::weapon::ThrownGrenadeWeapon::m_TrailEffectPlayer)
+    /// and its siblings): the hand grenade's launch, the planted explosive's prime, and the balloon
+    /// and Namaste launches. The hand grenade's prime does not, so a primed grenade has no trail
+    /// resources until its launch.
+    pub unsafe fn SetupEffects(
+        &mut self,
+        trail_effect: *const crate::types::shared_ptr::SharedPtr<::std::ffi::c_void>,
+        trail_sound: *const crate::types::shared_ptr::SharedPtr<::std::ffi::c_void>,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                trail_effect: *const crate::types::shared_ptr::SharedPtr<
+                    ::std::ffi::c_void,
+                >,
+                trail_sound: *const crate::types::shared_ptr::SharedPtr<
+                    ::std::ffi::c_void,
+                >,
+            ) = ::std::mem::transmute(Self::SetupEffects_ADDRESS);
+            f(self as *mut Self as _, trail_effect, trail_sound)
+        }
+    }
     pub const RemoveSelf_ADDRESS: usize = 0x1408F2E50;
     /// Marks the explosive removed and erases it from the ammunition manager's active objects.
     /// This operation does not return ammunition to an inventory.

@@ -488,6 +488,40 @@ fn _TranslationMode_size_check() {
     }
     unreachable!()
 }
+pub const EffectInstanceStop_ADDRESS: usize = 0x14047BCB0;
+/// `CEffectInstance::Stop`: stops the effect instance whose handle is at `instance` (an 8-byte
+/// instance handle such as
+/// [`Explosive::m_TrailEffectInstance`](crate::equipment::explosive::Explosive::m_TrailEffectInstance)). An
+/// instance that has not started is released at once and the handle cleared; a playing one is put
+/// into its stopping state, softly or at once by `mode`. A null handle is left alone.
+pub unsafe fn EffectInstanceStop(
+    instance: *mut *mut ::std::ffi::c_void,
+    mode: crate::equipment::attached_effects::EffectStopMode,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            instance: *mut *mut ::std::ffi::c_void,
+            mode: crate::equipment::attached_effects::EffectStopMode,
+        ) = ::std::mem::transmute(EffectInstanceStop_ADDRESS);
+        f(instance, mode)
+    }
+}
+pub const SoundInstanceStop_ADDRESS: usize = 0x1402FFC70;
+/// `CSoundInstance::Stop`: stops the sound instance whose handle is at `instance` (such as
+/// [`Explosive::m_TrailSoundInstance`](crate::equipment::explosive::Explosive::m_TrailSoundInstance)), with
+/// the same pattern as [`EffectInstanceStop`](crate::equipment::attached_effects::EffectInstanceStop). A null handle is left alone.
+pub unsafe fn SoundInstanceStop(
+    instance: *mut *mut ::std::ffi::c_void,
+    mode: crate::equipment::attached_effects::SoundStopMode,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            instance: *mut *mut ::std::ffi::c_void,
+            mode: crate::equipment::attached_effects::SoundStopMode,
+        ) = ::std::mem::transmute(SoundInstanceStop_ADDRESS);
+        f(instance, mode)
+    }
+}
 pub const CreateCollisionMatrix_ADDRESS: usize = 0x14048B390;
 /// A transform for an effect at a collision (`CreateCollisionMatrix`): translated to `position`,
 /// its up axis along `normal`, rolled about it by a random angle from the effect system's own

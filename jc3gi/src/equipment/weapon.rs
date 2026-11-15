@@ -1644,7 +1644,21 @@ pub struct ThrownGrenadeWeapon {
     pub m_PhysicalProjectileModel: crate::types::shared_ptr::SharedPtr<
         crate::graphics_engine::model_instance::Model,
     >,
-    _field_638: [u8; 208],
+    /// The trail effect a projectile launched by a player user carries (an effect resource),
+    /// loaded from the weapon's properties. The launch hands it to
+    /// [`Explosive::SetupEffects`](crate::equipment::explosive::Explosive::SetupEffects) while
+    /// [`WeaponBase::m_IsUserPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserPlayer) is set, and [`m_TrailEffectAI`](crate::equipment::weapon::ThrownGrenadeWeapon::m_TrailEffectAI)
+    /// otherwise.
+    pub m_TrailEffectPlayer: crate::types::shared_ptr::SharedPtr<::std::ffi::c_void>,
+    /// The trail sound (a sound resource) for a player user, as
+    /// [`m_TrailEffectPlayer`](crate::equipment::weapon::ThrownGrenadeWeapon::m_TrailEffectPlayer); it carries the fuse's
+    /// `detonation_timer` parameter.
+    pub m_TrailSoundPlayer: crate::types::shared_ptr::SharedPtr<::std::ffi::c_void>,
+    /// The trail effect for a non-player user.
+    pub m_TrailEffectAI: crate::types::shared_ptr::SharedPtr<::std::ffi::c_void>,
+    /// The trail sound for a non-player user.
+    pub m_TrailSoundAI: crate::types::shared_ptr::SharedPtr<::std::ffi::c_void>,
+    _field_678: [u8; 144],
     /// The primed grenade: the live [`Grenade`](crate::equipment::explosive::Grenade) spawned by
     /// [`PrimeGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::PrimeGrenade) and not yet thrown, or null. `px` is the grenade's
     /// `CGameObject` subobject
@@ -2104,7 +2118,11 @@ pub struct WeaponBase {
     /// [`GetMountedVerticalAngularLimits`](crate::equipment::weapon::WeaponBase::GetMountedVerticalAngularLimits) reads the first
     /// one's angular limits.
     pub m_ConstraintVertical: [crate::types::shared_ptr::WeakPtrGameObject; 2],
-    _field_2f8: [u8; 56],
+    /// The constraint that attaches a mounted or turret weapon to its holder (a
+    /// `boost::weak_ptr<CConstraint>`). [`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop) from the mounted or turret state
+    /// removes it from the physics world, then clears it with the horizontal and vertical ones.
+    pub m_ConstraintAttach: crate::types::shared_ptr::WeakPtrGameObject,
+    _field_308: [u8; 40],
     /// Whether the mounted weapon may be torn off its mount.
     /// [`Inventory::UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions)
     /// reads it to decide whether the player may detach the mounted gun they are using.
@@ -2455,7 +2473,13 @@ impl WeaponBase {
     pub const DetachMountedGun_ADDRESS: usize = 0x1409823E0;
     /// Detaches the mounted weapon from its rigid holder: disables the holder's child interaction
     /// contexts, stops using the weapon ([`StopUsing`](crate::equipment::weapon::WeaponBase::StopUsing)), and drops it
-    /// ([`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)). It does not equip the detached weapon. A holder that is not a
+    /// ([`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)). It removes no constraint of its own: the drop from the mounted
+    /// state removes only the attach constraint ([`m_ConstraintAttach`](crate::equipment::weapon::WeaponBase::m_ConstraintAttach))
+    /// and clears the references to the horizontal and vertical hinges without disabling them, and
+    /// the dropped weapon goes back into the physics world, so the hinges keep it on its mount until
+    /// they are disabled. The game's own tear equips the weapon in the same animation message, which
+    /// takes it out of the physics world before the hinges act. It does not equip the detached
+    /// weapon. A holder that is not a
     /// rigid object, such as a vehicle, has no contexts disabled, and nothing is done to the user's
     /// vehicle seat: a user in a gunner seat is left in it.
     pub unsafe fn DetachMountedGun(&mut self) {
@@ -2786,6 +2810,28 @@ impl WeaponBase {
                 this: *mut Self,
             ) -> *mut crate::interaction::InteractionContext = ::std::mem::transmute(
                 Self::GetPickupContext_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const PickupEnable_ADDRESS: usize = 0x1409928A0;
+    /// Enables the weapon's pickup interaction context ([`GetPickupContext`](crate::equipment::weapon::WeaponBase::GetPickupContext))
+    /// and registers its HUD pickup hint. The drop ([`OnDrop`](crate::equipment::weapon::WeaponBase::OnDrop)) calls it for every
+    /// prior state but mounted and turret, so a weapon dropped off its mount offers no pickup.
+    pub unsafe fn PickupEnable(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::PickupEnable_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const ForceActivate_ADDRESS: usize = 0x14095FAA0;
+    /// Wakes every gun's body in the physics world.
+    pub unsafe fn ForceActivate(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::ForceActivate_ADDRESS,
             );
             f(self as *mut Self as _)
         }
@@ -3619,6 +3665,11 @@ impl WeaponBase {
     /// It clears the holder, enables the weapon's pickup interaction, and hides the models of
     /// every gun past the first, so a dropped weapon of several guns, such as a dual-wield
     /// weapon, shows its first gun alone, as it is one body ([`AddToWorld`](crate::equipment::weapon::WeaponBase::AddToWorld)).
+    /// From the mounted or turret state it removes the attach constraint
+    /// ([`m_ConstraintAttach`](crate::equipment::weapon::WeaponBase::m_ConstraintAttach)) from the physics world (a turret's
+    /// vertical hinges too), clears the constraint references, leaving a mounted weapon's
+    /// horizontal and vertical hinges in the world, and skips the pickup interaction
+    /// ([`PickupEnable`](crate::equipment::weapon::WeaponBase::PickupEnable)).
     pub unsafe fn OnDrop(&mut self) {
         unsafe {
             let f = (&raw const (*self.vftable()).OnDrop).read();
@@ -4073,6 +4124,11 @@ pub struct WeaponBaseVftable {
     /// It clears the holder, enables the weapon's pickup interaction, and hides the models of
     /// every gun past the first, so a dropped weapon of several guns, such as a dual-wield
     /// weapon, shows its first gun alone, as it is one body ([`AddToWorld`](crate::equipment::weapon::WeaponBase::AddToWorld)).
+    /// From the mounted or turret state it removes the attach constraint
+    /// ([`m_ConstraintAttach`](crate::equipment::weapon::WeaponBase::m_ConstraintAttach)) from the physics world (a turret's
+    /// vertical hinges too), clears the constraint references, leaving a mounted weapon's
+    /// horizontal and vertical hinges in the world, and skips the pickup interaction
+    /// ([`PickupEnable`](crate::equipment::weapon::WeaponBase::PickupEnable)).
     pub OnDrop: unsafe extern "system" fn(
         this: *mut crate::equipment::weapon::WeaponBase,
     ),
