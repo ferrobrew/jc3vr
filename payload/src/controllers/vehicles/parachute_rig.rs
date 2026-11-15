@@ -153,9 +153,28 @@ fn sync_bones(
         return;
     }
     let rests = captured.joints.map(CapturedJoints::complete);
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        if unplace[i]
+            && let (Some(bones), Some(joints)) = (bones[i], rests[i])
+        {
+            // SAFETY: the controller belongs to this sync and no borrow crosses the native call.
+            unsafe { bones.unplace(&mut *controller, joints) };
+            UNPLACED.fetch_add(1, Ordering::Relaxed);
+        }
+    }
     if let (Some(generation), Some(world)) = (request, world) {
-        let points = rests.map(|rest| {
-            let point = Vec3::from_array(rest?.link.m_Translation.data);
+        // The handle is published at its attach bone, the toggle's far end from its cord, which
+        // follows the handle and its rotation bone once they are placed (or put back on the link
+        // above); without it, at the link, the top of the toggle, as before. The link sat at the
+        // top of the riser, well above the grip bar.
+        let points = Hand::BOTH.map(|hand| {
+            let i = hand.index();
+            let attach = bones[i]
+                .and_then(|bones| bones.attach)
+                .and_then(|attach| unsafe { model_joint(&*controller, attach) });
+            let point =
+                attach.or_else(|| Some(Vec3::from_array(rests[i]?.link.m_Translation.data)))?;
             let point = world.transform_point3(point);
             point.is_finite().then_some(point)
         });
@@ -176,16 +195,18 @@ fn sync_bones(
             });
         }
     }
-    for hand in Hand::BOTH {
-        let i = hand.index();
-        if unplace[i]
-            && let (Some(bones), Some(joints)) = (bones[i], rests[i])
-        {
-            // SAFETY: the controller belongs to this sync and no borrow crosses the native call.
-            unsafe { bones.unplace(&mut *controller, joints) };
-            UNPLACED.fetch_add(1, Ordering::Relaxed);
-        }
-    }
+}
+
+/// The rig-space translation of bone `index`'s joint, as the rig reads it after its writes.
+///
+/// # Safety
+/// The controller is live on the thread running the sync.
+unsafe fn model_joint(controller: &AnimationController, index: u32) -> Option<Vec3> {
+    // SAFETY: a joint is plain data; the reader fills it.
+    let mut joint: Joint = unsafe { std::mem::zeroed() };
+    unsafe { controller.GetJoint(index, &mut joint) };
+    let point = Vec3::from_array(joint.m_Translation.data);
+    point.is_finite().then_some(point)
 }
 
 #[detour(address = jc3gi::character::character::AnimationController::GetJoint_ADDRESS)]
@@ -239,6 +260,8 @@ struct HandleBones {
     handle: u32,
     rotate: u32,
     link: u32,
+    /// The handle's attach bone, at the toggle's far end from its cord, when the rig has one.
+    attach: Option<u32>,
 }
 
 #[derive(Copy, Clone)]
@@ -258,6 +281,7 @@ impl HandleBones {
             handle: index(handle)?,
             rotate: index(rotate)?,
             link: index(link)?,
+            attach: index(ATTACH_NAMES[hand.index()]),
         })
     }
 
@@ -397,6 +421,7 @@ const BONE_NAMES: [[&str; 3]; 2] = [
     ["LeftHandle", "LeftHandleRotate", "LeftLink"],
     ["RightHandle", "RightHandleRotate", "RightLink"],
 ];
+const ATTACH_NAMES: [&str; 2] = ["LeftHandleAttach", "RightHandleAttach"];
 const HAND_ATTACH_NAMES: [&str; 2] = ["LeftHandAttach2", "RightHandAttach2"];
 const STALE_AFTER: Duration = Duration::from_millis(250);
 
@@ -424,6 +449,7 @@ mod tests {
             handle: 3,
             rotate: 4,
             link: 5,
+            attach: None,
         };
         let joint = Joint::default();
         let mut captured = CapturedJoints::default();
@@ -443,6 +469,7 @@ mod tests {
             handle: 3,
             rotate: 4,
             link: 5,
+            attach: None,
         };
         let joint = Joint::default();
         let mut captured = CapturedJoints::default();
