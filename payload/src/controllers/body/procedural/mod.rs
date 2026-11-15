@@ -507,6 +507,9 @@ static STANCE_IDLES: LazyLock<StateSet> = LazyLock::new(|| {
 /// player's head.
 const ON_FOOT_DELEAN: f32 = 0.8;
 
+/// How long the de-lean takes to ease in or out across a change of case, seconds.
+const DELEAN_BLEND_S: f32 = 0.25;
+
 /// The pose to write: the torso follows the player's head on the clip's hips, including in a
 /// standing stunt position, whose animation is the on-foot one. `None` without tracking.
 ///
@@ -529,9 +532,15 @@ unsafe fn pose_torso(
     }
     // On the ground the gait clips lean the whole torso 20 to 27 degrees forward; taken out before
     // the swing, the chest stays square over the pelvis rather than tipped back toward the eyes.
-    if matches!(gate.case, Case::OnFoot | Case::StuntStanding) {
-        input.delean = ON_FOOT_DELEAN;
-    }
+    // Eased in and out, so a jump's takeoff and landing do not move the torso in one tick.
+    let grounded = matches!(gate.case, Case::OnFoot | Case::StuntStanding);
+    input.delean = ON_FOOT_DELEAN
+        * state.delean.step(
+            if grounded { 1.0 } else { 0.0 },
+            gate.dt,
+            DELEAN_BLEND_S,
+            DELEAN_BLEND_S,
+        );
     let mut solved = solve_anchored(&input, config);
     if matches!(
         gate.case,

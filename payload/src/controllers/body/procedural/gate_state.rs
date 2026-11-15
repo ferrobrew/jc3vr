@@ -59,6 +59,8 @@ pub(super) struct State {
     pub(super) hips: HipFollower,
     /// The square stance's blend against the clip's feet.
     pub(super) stance: StanceBlend,
+    /// The share of the gait's forward lean taken out of the torso, eased across the cases.
+    pub(super) delean: WeightFollower,
     pub(super) legs: WeightFollower,
     pub(super) leg_weight: f32,
     pub(super) leg_fade: TargetFade,
@@ -263,6 +265,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     arms: None,
     hips: HipFollower::new(),
     stance: StanceBlend::new(),
+    delean: WeightFollower::new(),
     legs: WeightFollower::new(),
     leg_weight: 0.0,
     leg_fade: TargetFade::new(),
