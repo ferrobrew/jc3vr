@@ -4,6 +4,7 @@ use glam::{Quat, Vec2, Vec3};
 use proptest::prelude::*;
 
 use super::*;
+use crate::angle::yaw_of;
 
 const DT: f32 = 1.0 / 60.0;
 const TUNING: ContactTuning = ContactTuning::new();
@@ -73,7 +74,7 @@ fn stance() -> Stance {
 }
 
 /// The frame of a pelvis at `pelvis` facing `yaw`, the neck over it by `lean` toward the facing.
-fn frame(pelvis: Vec3, yaw: f32, velocity: Vec2) -> ContactFrame {
+fn frame(pelvis: Vec3, yaw: f32) -> ContactFrame {
     let turn = Quat::from_rotation_y(yaw);
     let hips = [-1.0, 1.0].map(|s| pelvis + turn * Vec3::new(s * HIP_HALF_M, -HIP_DROP_M, 0.0));
     let mut f = ContactFrame {
@@ -83,8 +84,7 @@ fn frame(pelvis: Vec3, yaw: f32, velocity: Vec2) -> ContactFrame {
         hips,
         leg_m: LEG_M,
         ankle_height_m: ANKLE_M,
-        pelvis_velocity: velocity,
-        external_shift: Vec2::ZERO,
+        root: Vec3::new(pelvis.x, 0.0, pelvis.z),
         stance: stance(),
         animated: [FootPose {
             ankle: Vec3::ZERO,
@@ -103,7 +103,7 @@ fn frame(pelvis: Vec3, yaw: f32, velocity: Vec2) -> ContactFrame {
 }
 
 fn standing_at(x: f32, z: f32, yaw: f32) -> ContactFrame {
-    frame(Vec3::new(x, STANDING_M, z), yaw, Vec2::ZERO)
+    frame(Vec3::new(x, STANDING_M, z), yaw)
 }
 
 /// Run frames from `at(t)`, checking that a planted foot never moves while it stays planted and
@@ -167,7 +167,6 @@ fn standing_still_plants_both_feet_and_never_steps() {
         frame(
             Vec3::new(0.0, STANDING_M, 0.0) + sway,
             0.15 * (t * 0.4).sin(),
-            Vec2::ZERO,
         )
     });
     assert_eq!(handover, None);
@@ -184,11 +183,7 @@ fn a_bend_over_planted_feet_moves_no_foot() {
     // down.
     let (events, ..) = run(&mut contacts, &mut world, 4.0, |t| {
         let bend = (t / 1.0).min(1.0);
-        let mut f = frame(
-            Vec3::new(0.0, STANDING_M - 0.04 * bend, 0.08 * bend),
-            0.0,
-            Vec2::ZERO,
-        );
+        let mut f = frame(Vec3::new(0.0, STANDING_M - 0.04 * bend, 0.08 * bend), 0.0);
         f.neck = f.pelvis + Vec3::new(0.0, 0.6 - 0.25 * bend, -0.45 * bend);
         f
     });
@@ -201,12 +196,7 @@ fn a_physical_step_aside_steps_one_foot_then_the_other() {
     let mut world = World::default();
     let (events, handover, out) = run(&mut contacts, &mut world, 3.0, |t| {
         let s = (t / 0.6).min(1.0);
-        let velocity = if t < 0.6 { 0.35 / 0.6 } else { 0.0 };
-        frame(
-            Vec3::new(0.35 * s, STANDING_M, 0.0),
-            0.0,
-            Vec2::new(velocity, 0.0),
-        )
+        frame(Vec3::new(0.35 * s, STANDING_M, 0.0), 0.0)
     });
     assert_eq!(handover, None);
     let steps = released(&events);
@@ -297,11 +287,7 @@ fn walking_away_hands_over_to_the_walk_and_drops_the_contacts() {
     });
     let speed = 1.4;
     let (_, handover, out) = run(&mut contacts, &mut world, 1.0, |t| {
-        frame(
-            Vec3::new(0.0, STANDING_M, -speed * t),
-            0.0,
-            Vec2::new(0.0, -speed),
-        )
+        frame(Vec3::new(0.0, STANDING_M, -speed * t), 0.0)
     });
     assert!(handover.is_some());
     // Dropped on the frame of the hand-over, and acquired again on the frames after.
@@ -322,11 +308,7 @@ fn a_landing_over_a_ledge_leaves_the_foot_unsupported() {
     world.ledge_x = Some(0.2);
     let (events, ..) = run(&mut contacts, &mut world, 1.0, |t| {
         let s = (t / 0.4).min(1.0);
-        frame(
-            Vec3::new(0.3 * s, STANDING_M, 0.0),
-            0.0,
-            Vec2::new(if t < 0.4 { 0.75 } else { 0.0 }, 0.0),
-        )
+        frame(Vec3::new(0.3 * s, STANDING_M, 0.0), 0.0)
     });
     assert!(
         events
@@ -353,7 +335,7 @@ fn a_late_probe_still_lands_the_step_on_its_ground() {
     assert_eq!(out.planted(), 2, "acquired once the probes answer");
     let (events, ..) = run(&mut contacts, &mut world, 2.0, |t| {
         let s = (t / 0.5).min(1.0);
-        frame(Vec3::new(0.3 * s, STANDING_M, 0.0), 0.0, Vec2::ZERO)
+        frame(Vec3::new(0.3 * s, STANDING_M, 0.0), 0.0)
     });
     assert!(
         events
@@ -378,7 +360,7 @@ fn a_moving_support_carries_its_planted_foot() {
         on_platform: true,
         ..World::default()
     };
-    let up = |x: f32| frame(Vec3::new(x, STANDING_M + 0.5, 0.0), 0.0, Vec2::ZERO);
+    let up = |x: f32| frame(Vec3::new(x, STANDING_M + 0.5, 0.0), 0.0);
     let first = contacts.update(&up(0.0), &mut world, &TUNING);
     // The animated feet stand on the floor's height; acquired, they are on the platform's.
     let left = first.feet[0].pose().unwrap();
@@ -406,10 +388,10 @@ fn the_root_carried_past_the_tolerance_steps_a_foot() {
         standing_at(0.0, 0.0, 0.0)
     });
     let (events, ..) = run(&mut contacts, &mut world, 1.0, |t| {
+        // Something carries the root away from under the standing player: 2 cm a frame for a
+        // quarter of a second.
         let mut f = standing_at(0.0, 0.0, 0.0);
-        if t < 0.25 {
-            f.external_shift = Vec2::new(0.0, 0.02);
-        }
+        f.root.z += 0.02 * (t / DT).round().min(15.0);
         f
     });
     assert!(
@@ -430,7 +412,7 @@ fn the_centre_of_mass_out_past_the_toes_steps_a_foot() {
     // A crouch carrying the pelvis forward over bent knees: the legs reach, but the body's weight
     // is ahead of the toes.
     let (events, ..) = run(&mut contacts, &mut world, 1.0, |_| {
-        let mut f = frame(Vec3::new(0.0, 0.75, -0.25), 0.0, Vec2::ZERO);
+        let mut f = frame(Vec3::new(0.0, 0.75, -0.25), 0.0);
         f.neck = f.pelvis + Vec3::new(0.0, 0.4, -0.45);
         f
     });
@@ -467,9 +449,11 @@ fn a_step_too_long_hands_over() {
     run(&mut contacts, &mut world, 0.5, |_| {
         standing_at(0.0, 0.0, 0.0)
     });
-    // A teleport-like jump of the pelvis that leaves the legs far behind, slowly enough not to be
-    // a walk's speed.
-    let out = contacts.update(&standing_at(0.0, -0.9, 0.0), &mut world, &TUNING);
+    // A long hitch of a frame over which the pelvis went far from the legs, slowly enough not to
+    // be a walk's speed.
+    let mut hitch = standing_at(0.0, -0.9, 0.0);
+    hitch.dt = 2.0;
+    let out = contacts.update(&hitch, &mut world, &TUNING);
     assert_eq!(out.handover, Some(Handover::StepTooLong));
     assert_eq!(out.planted(), 0);
 }
@@ -490,8 +474,155 @@ proptest! {
             yaw += dyaw;
             run(&mut contacts, &mut world, 1.5, |t| {
                 let s = (t / 0.8).min(1.0);
-                frame(from.lerp(at, s), from_yaw + (yaw - from_yaw) * s, Vec2::ZERO)
+                frame(from.lerp(at, s), from_yaw + (yaw - from_yaw) * s)
             });
         }
     }
+}
+
+/// Ride a deck whose frame is `deck(t)` for `seconds`, the body standing on it as `body(t)` puts it
+/// in the deck's frame, and collect the events; every planted foot is checked to stay put on the
+/// deck.
+fn ride(
+    contacts: &mut FootContacts,
+    world: &mut World,
+    seconds: f32,
+    deck: impl Fn(f32) -> SupportFrame,
+    body: impl Fn(f32) -> ContactFrame,
+) -> (Vec<ContactEvent>, Option<Handover>, ContactOutput) {
+    let mut events = Vec::new();
+    let mut handover = None;
+    let mut last: Option<ContactOutput> = None;
+    for i in 0..(seconds / DT).round() as usize {
+        let t = i as f32 * DT;
+        let on = deck(t);
+        world.platform = Some(on);
+        let local = body(t);
+        let carried = ContactFrame {
+            pelvis: on.point_to_model(local.pelvis),
+            pelvis_yaw: wrap(local.pelvis_yaw + yaw_of(on.rotation * Vec3::NEG_Z).unwrap()),
+            neck: on.point_to_model(local.neck),
+            hips: local.hips.map(|hip| on.point_to_model(hip)),
+            root: on.point_to_model(local.root),
+            animated: local.animated.map(|foot| on.to_model(foot)),
+            ..local
+        };
+        let out = contacts.update(&carried, world, &TUNING);
+        if let Some(previous) = &last {
+            let before = deck(t - DT);
+            for side in Side::BOTH {
+                if let (FootTarget::Planted(a), FootTarget::Planted(b)) =
+                    (previous.feet[side.index()], out.feet[side.index()])
+                {
+                    let a = before.to_local(a);
+                    let b = on.to_local(b);
+                    assert!(a.ankle.distance(b.ankle) < 1e-3, "a planted foot slid");
+                }
+            }
+        }
+        events.extend(out.events.iter().copied());
+        handover = handover.or(out.handover);
+        last = Some(out);
+    }
+    (events, handover, last.unwrap())
+}
+
+/// A deck `DECK_M` up, driving along -Z at `speed` and turning at `turn` radians a second about
+/// its own origin.
+fn driving(speed: f32, turn: f32) -> impl Fn(f32) -> SupportFrame {
+    move |t| SupportFrame {
+        translation: Vec3::new(0.0, DECK_M, -speed * t),
+        rotation: Quat::from_rotation_y(turn * t),
+    }
+}
+
+const DECK_M: f32 = 1.2;
+
+#[test]
+fn a_driving_deck_carries_the_standing_body_without_a_step() {
+    let mut contacts = FootContacts::new();
+    let mut world = World {
+        on_platform: true,
+        ..World::default()
+    };
+    // Thirty metres a second, turning a quarter turn every two seconds: the player stands still on
+    // the deck, swaying a little.
+    let (events, handover, out) = ride(&mut contacts, &mut world, 6.0, driving(30.0, 0.8), |t| {
+        frame(
+            Vec3::new(0.02 * (t * 1.3).sin(), STANDING_M, 0.01 * t.cos()),
+            0.0,
+        )
+    });
+    assert_eq!(handover, None);
+    assert!(released(&events).is_empty(), "{events:?}");
+    assert_eq!(out.planted(), 2);
+    assert_eq!(contacts.carrier(), Some(PLATFORM));
+    // The pelvis's velocity is its own on the deck, not the deck's thirty metres a second.
+    assert!(contacts.pelvis_velocity().length() < 0.2, "{contacts:?}");
+}
+
+#[test]
+fn a_physical_step_on_a_driving_deck_lands_on_the_deck() {
+    let mut contacts = FootContacts::new();
+    let mut world = World {
+        on_platform: true,
+        ..World::default()
+    };
+    let deck = driving(20.0, 0.3);
+    ride(&mut contacts, &mut world, 0.5, &deck, |_| {
+        standing_at(0.0, 0.0, 0.0)
+    });
+    // A step aside on the deck, in the deck's frame.
+    let (events, handover, out) = ride(
+        &mut contacts,
+        &mut world,
+        3.0,
+        |t| deck(t + 0.5),
+        |t| frame(Vec3::new(0.35 * (t / 0.6).min(1.0), STANDING_M, 0.0), 0.0),
+    );
+    assert_eq!(handover, None);
+    let steps = released(&events);
+    assert!((2..=3).contains(&steps.len()), "{steps:?}");
+    // The feet end square under the pelvis on the deck.
+    let on = deck(3.5 - DT);
+    let end = standing_at(0.35, 0.0, 0.0);
+    for side in Side::BOTH {
+        let pose = on.to_local(out.feet[side.index()].pose().unwrap());
+        let (spot, _) = stance_spot(&end, side);
+        assert!(
+            (pose.flat() - spot).length() < TUNING.tidy_m,
+            "{side:?}: {pose:?}"
+        );
+        assert!((pose.ankle.y - ANKLE_M).abs() < 1e-3, "{pose:?}");
+    }
+}
+
+#[test]
+fn the_root_carried_across_a_driving_deck_still_steps_a_foot() {
+    let mut contacts = FootContacts::new();
+    let mut world = World {
+        on_platform: true,
+        ..World::default()
+    };
+    let deck = driving(15.0, 0.0);
+    ride(&mut contacts, &mut world, 0.5, &deck, |_| {
+        standing_at(0.0, 0.0, 0.0)
+    });
+    let (events, ..) = ride(
+        &mut contacts,
+        &mut world,
+        1.0,
+        |t| deck(t + 0.5),
+        |t| {
+            let mut f = standing_at(0.0, 0.0, 0.0);
+            f.root.x += 0.02 * (t / DT).round().min(15.0);
+            f
+        },
+    );
+    assert!(
+        released(&events)
+            .iter()
+            .any(|(_, reason)| *reason == Release::RootMoved),
+        "{events:?}"
+    );
 }

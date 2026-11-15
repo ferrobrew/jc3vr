@@ -29,6 +29,7 @@ use crate::{
                 fk::{self, FkPose},
                 probe,
                 seed::{self, ModelBody, Proportions},
+                support,
             },
             procedural::{
                 authority::Case,
@@ -148,6 +149,12 @@ pub struct IkStatus {
     pub targets_queued: usize,
     /// How far the seeded hips stand from the clip's, metres.
     pub hips_moved_m: f32,
+    /// Whether the planted feet stand on a moving body rather than the world.
+    pub on_moving_support: bool,
+    /// How many times the feet have come to stand on a moving body.
+    pub moving_landings: u64,
+    /// How many moving supports are tracked.
+    pub moving_supports: usize,
 }
 
 /// What the IK body keeps between gates.
@@ -158,11 +165,6 @@ pub(crate) struct GateState {
     pub hold: Option<Hold>,
     /// The feet's last world targets, faded out with the feet's weight after the idle.
     pub last_feet: [Option<FootPose>; 2],
-    /// The FK pelvis's last world position, for its velocity.
-    pub last_pelvis: Option<Vec3>,
-    pub pelvis_velocity: Vec2,
-    /// The root's last world position, for its travel.
-    pub last_root: Option<Vec3>,
     pub targets: Option<Targets>,
     pub status: IkStatus,
     /// The state and reason last logged.
@@ -199,9 +201,6 @@ impl GateState {
             rate: StepRate::new(),
             hold: None,
             last_feet: [None; 2],
-            last_pelvis: None,
-            pelvis_velocity: Vec2::ZERO,
-            last_root: None,
             targets: None,
             status: IkStatus {
                 at: None,
@@ -221,6 +220,9 @@ impl GateState {
                 max_drop_m: 0.0,
                 targets_queued: 0,
                 hips_moved_m: 0.0,
+                on_moving_support: false,
+                moving_landings: 0,
+                moving_supports: 0,
             },
             logged: None,
             in_idle: false,
@@ -260,9 +262,6 @@ impl GateState {
     pub(crate) fn drop_contacts(&mut self) {
         self.contacts.reset();
         self.last_feet = [None; 2];
-        self.last_pelvis = None;
-        self.last_root = None;
-        self.pelvis_velocity = Vec2::ZERO;
     }
 
     /// Log a change of the state or the reason the IK stands down.
@@ -325,6 +324,8 @@ impl GateState {
             hips_moved_m = s.hips_moved_m,
             targets = s.targets_queued,
             estimate_weight,
+            moving_support = s.on_moving_support,
+            pelvis_speed_mps = self.contacts.pelvis_velocity().length(),
             "ik body: standing",
         );
     }
@@ -360,29 +361,7 @@ impl GateState {
         let to_world = |p: Vec3| input.world.transform_point3(p);
         let body = &geometry.body;
         let pelvis = to_world(body.pelvis);
-        let root = input.world.w_axis.truncate();
         let dt = input.dt;
-        if let Some(last) = self.last_pelvis
-            && dt > 0.0
-        {
-            let moved = (pelvis - last) / dt;
-            let blend = (dt / (VELOCITY_SMOOTHING_S + dt)).clamp(0.0, 1.0);
-            let flat = Vec2::new(moved.x, moved.z);
-            if flat.is_finite() {
-                self.pelvis_velocity += (flat - self.pelvis_velocity) * blend;
-            }
-        }
-        // The root's travel the FK pelvis did not make: the stick, a shove, a platform.
-        let external = match (self.last_root, self.last_pelvis) {
-            (Some(last_root), Some(last_pelvis)) => {
-                let root_moved = root - last_root;
-                let pelvis_moved = pelvis - last_pelvis;
-                Vec2::new(root_moved.x - pelvis_moved.x, root_moved.z - pelvis_moved.z)
-            }
-            _ => Vec2::ZERO,
-        };
-        self.last_pelvis = Some(pelvis);
-        self.last_root = Some(root);
         let hips = body.hips.map(to_world);
         let pelvis_yaw = line_yaw(hips[0], hips[1]).unwrap_or(geometry.world_yaw);
         let animated = [RigBone::LeftFoot, RigBone::RightFoot]
@@ -404,8 +383,7 @@ impl GateState {
             hips,
             leg_m: geometry.rico.leg,
             ankle_height_m: geometry.rico.ankle_height,
-            pelvis_velocity: self.pelvis_velocity,
-            external_shift: external,
+            root: input.world.w_axis.truncate(),
             stance: Stance {
                 width_m: input.stance.width_m,
                 toe_out_deg: input.stance.toe_out_deg,
@@ -413,9 +391,11 @@ impl GateState {
             animated: [animated[0], animated[1]],
             dt,
         };
-        let out = self
-            .contacts
-            .update(&frame, &mut GameWorld, &input.config.contact);
+        let out = self.contacts.update(
+            &frame,
+            &mut GameWorld { now: input.now },
+            &input.config.contact,
+        );
         let mut stepped = 0;
         for event in &out.events {
             self.note(event, fk, &mut stepped);
@@ -431,17 +411,36 @@ impl GateState {
                 Some(format!(
                     "{}; the pelvis at {:.2} m/s",
                     why.label(),
-                    self.pelvis_velocity.length()
+                    self.contacts.pelvis_velocity().length()
                 ))
             });
         }
         self.status.feet = out.feet.map(|f| FootLabel::of(&f));
         self.status.planted = out.planted();
+        self.note_carrier();
         let feet = out.feet.map(|f| f.pose());
         if out.handover.is_none() {
             self.last_feet = feet;
         }
         feet
+    }
+
+    /// Note the support carrying the feet, and log a change between the world and a moving body.
+    fn note_carrier(&mut self) {
+        let moving = self
+            .contacts
+            .carrier()
+            .is_some_and(|support| support != SupportId::WORLD);
+        self.status.moving_supports = support::tracked();
+        if moving != self.status.on_moving_support {
+            self.status.on_moving_support = moving;
+            if moving {
+                self.status.moving_landings += 1;
+            }
+            report("ik body", None, "the feet's support changes", || {
+                Some(if moving { "a moving body" } else { "the world" }.to_owned())
+            });
+        }
     }
 
     /// Log a contact event, and count a step in `stepped`.
@@ -797,16 +796,15 @@ const TOE_HEIGHT_M: f32 = 0.025;
 /// How often the standing body's state is logged while it lasts.
 const STANDING_LOG: Duration = Duration::from_secs(10);
 
-/// The smoothing time of the FK pelvis's velocity, seconds.
-const VELOCITY_SMOOTHING_S: f32 = 0.1;
-
-/// The world as the contact model asks of it: supports are held in the world's frame, and the
-/// ground is probed through the mailbox ([`probe`]).
-struct GameWorld;
+/// The world as the contact model asks of it at `now`: each support's frame from its last snapshot
+/// ([`support`]), and the ground probed through the mailbox ([`probe`]).
+struct GameWorld {
+    now: Instant,
+}
 
 impl Surroundings for GameWorld {
-    fn frame(&self, _support: SupportId) -> Option<SupportFrame> {
-        Some(SupportFrame::IDENTITY)
+    fn frame(&self, support: SupportId) -> Option<SupportFrame> {
+        support::frame(support, self.now)
     }
 
     fn probe(&mut self, side: Side, at: Vec2, near: f32) -> Probe {

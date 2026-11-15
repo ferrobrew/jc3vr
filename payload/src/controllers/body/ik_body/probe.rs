@@ -7,17 +7,23 @@
 //! The answer reaches the contact model a tick or two after the step is planned, well inside a
 //! swing, and a step whose answer has not come by its landing waits a little for it
 //! ([`body_rig::contact::ContactTuning::landing_wait_s`]).
+//!
+//! The probe names the body it lands on as the foot's support ([`support::identify`]), and the
+//! same update snapshots every moving support the gate still asks about ([`support::tick`]).
 
 use std::time::{Duration, Instant};
 
-use body_rig::contact::{Ground, Probe, Side, SupportId};
+use body_rig::contact::{Ground, Probe, Side};
 use glam::{Vec2, Vec3};
 use jc3gi::character::character::Character;
 use parking_lot::Mutex;
 
-use crate::controllers::aim::{
-    ray::Ray,
-    raycast::{self, CastOptions},
+use crate::controllers::{
+    aim::{
+        ray::Ray,
+        raycast::{self, CastOptions},
+    },
+    body::ik_body::support,
 };
 
 /// The probe for `side` at the world floor point `at`, near the height `near`: its answer, once a
@@ -55,16 +61,33 @@ pub(crate) fn ask(side: Side, at: Vec2, near: f32) -> Probe {
 /// `character` must be the live local character, in the simulation phase outside the physics
 /// step.
 pub(crate) unsafe fn tick(character: &Character) {
+    let now = Instant::now();
     let requests = {
         let probes = PROBES.lock();
         [probes[0].request, probes[1].request]
     };
-    if requests.iter().all(Option::is_none) {
-        return;
+    if requests.iter().any(Option::is_some) {
+        // SAFETY: forwarded from the caller.
+        unsafe { cast(character, requests, now) };
     }
+    // SAFETY: the simulation phase, outside the physics step.
+    unsafe { support::tick(now) };
+}
+
+/// Drop every request and answer, and every support: a teleport.
+pub(crate) fn forget() {
+    *PROBES.lock() = [Slot::EMPTY; 2];
+    support::forget();
+}
+
+/// Cast the probes `requests` asked for.
+///
+/// # Safety
+///
+/// As [`tick`].
+unsafe fn cast(character: &Character, requests: [Option<Request>; 2], now: Instant) {
     // SAFETY: the caller's contract: the live local character, on the thread updating it.
     let options = unsafe { CastOptions::ignoring_rider(character) };
-    let now = Instant::now();
     for (index, request) in requests.into_iter().enumerate() {
         let Some(request) = request else {
             continue;
@@ -76,9 +99,8 @@ pub(crate) unsafe fn tick(character: &Character) {
             match unsafe { raycast::cast(&ray, ABOVE_M + BELOW_M, &options) } {
                 Ok(hit) => hit.map(|hit| Ground {
                     height: hit.position.y,
-                    support: hit
-                        .object
-                        .map_or(SupportId::WORLD, |object| SupportId(object.get() as u64)),
+                    // SAFETY: the simulation phase, outside the physics step.
+                    support: unsafe { support::identify(hit.body, now) },
                 }),
                 Err(error) => {
                     tracing::debug!(target: "body", "ik body: ground probe: {error}");
@@ -98,11 +120,6 @@ pub(crate) unsafe fn tick(character: &Character) {
             slot.request = None;
         }
     }
-}
-
-/// Drop every request and answer: a teleport.
-pub(crate) fn forget() {
-    *PROBES.lock() = [Slot::EMPTY; 2];
 }
 
 /// How far above the height asked about a probe starts, metres: a step up.

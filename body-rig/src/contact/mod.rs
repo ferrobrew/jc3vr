@@ -15,27 +15,34 @@
 //! outruns a swinging foot, the movement is a walk rather than a step: the model drops its contacts
 //! and signals a hand-over ([`Handover`]) for the caller to give the legs to the game's walk.
 //!
+//! A planted foot and a swing are held in their support's frame ([`support`]), so a moving deck
+//! carries them, and the body standing on it is carried too: the pelvis's velocity and the root's
+//! travel that the rules read are taken relative to the support carrying the body, so a deck's
+//! speed is neither a walk nor the root carried away.
+//!
 //! The model works in any frame with +Y up in which the supports' frames are given: the payload uses
 //! the game world, in Rico's metres.
 
 mod rate;
 mod rules;
+mod support;
 mod swing;
 #[cfg(test)]
 mod tests;
 
-use glam::{Quat, Vec2, Vec3};
+use glam::{Vec2, Vec3};
 
 pub use crate::contact::{
     rate::StepRate,
     rules::{outside_support, support_points},
+    support::{SupportFrame, SupportId, SupportMotion},
     swing::Swing,
 };
 use crate::{
     angle::{right, wrap},
     contact::{
         rules::{Need, needs},
-        swing::{Landing, plan},
+        swing::{Landing, Plan, plan},
     },
 };
 
@@ -77,50 +84,6 @@ impl Side {
             Side::Left => "left",
             Side::Right => "right",
         }
-    }
-}
-
-/// What a foot stands on: an identity the caller can find the support's frame by.
-#[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash, Default)]
-pub struct SupportId(pub u64);
-
-impl SupportId {
-    /// The static world: the terrain and anything that never moves.
-    pub const WORLD: Self = Self(0);
-}
-
-/// A support's frame: its pose in the model's frame.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub struct SupportFrame {
-    pub translation: Vec3,
-    pub rotation: Quat,
-}
-
-impl SupportFrame {
-    pub const IDENTITY: Self = Self {
-        translation: Vec3::ZERO,
-        rotation: Quat::IDENTITY,
-    };
-
-    /// `pose`, held in this support's frame, in the model's frame.
-    pub fn to_model(&self, pose: FootPose) -> FootPose {
-        FootPose {
-            ankle: self.translation + self.rotation * pose.ankle,
-            yaw: wrap(pose.yaw + yaw_turn(self.rotation)),
-        }
-    }
-
-    /// `pose`, in the model's frame, held in this support's frame.
-    pub fn to_local(&self, pose: FootPose) -> FootPose {
-        FootPose {
-            ankle: self.rotation.inverse() * (pose.ankle - self.translation),
-            yaw: wrap(pose.yaw - yaw_turn(self.rotation)),
-        }
-    }
-
-    fn is_finite(&self) -> bool {
-        self.translation.is_finite() && self.rotation.is_finite()
     }
 }
 
@@ -345,10 +308,9 @@ pub struct ContactFrame {
     pub leg_m: f32,
     /// How far the ankle stands over the ground, metres.
     pub ankle_height_m: f32,
-    /// The pelvis's horizontal velocity, `(x, z)`, metres per second.
-    pub pelvis_velocity: Vec2,
-    /// How far something other than the player moved the root this frame, `(x, z)`.
-    pub external_shift: Vec2,
+    /// The character's root. Its travel that neither the pelvis made nor the feet's support
+    /// carried is something other than the player moving the body: the stick, a shove.
+    pub root: Vec3,
     pub stance: Stance,
     /// Where the animation has each foot now, left then right: an unsupported foot is planted
     /// where it stands.
@@ -431,6 +393,19 @@ pub struct FootContacts {
     /// The foot to step at once after the other landed, if it is off its stance spot.
     follow_up: Option<Side>,
     steps: u64,
+    /// The root and the pelvis last frame, for their travel.
+    last: Option<Travel>,
+    /// The support carrying the body last frame, and its frame then.
+    carrier: Option<(SupportId, SupportFrame)>,
+    /// The pelvis's horizontal velocity relative to its carrier, smoothed, `(x, z)`.
+    velocity: Vec2,
+}
+
+/// Where the root and the pelvis were.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Travel {
+    root: Vec3,
+    pelvis: Vec3,
 }
 
 impl FootContacts {
@@ -443,6 +418,9 @@ impl FootContacts {
             last_stepped: None,
             follow_up: None,
             steps: 0,
+            last: None,
+            carrier: None,
+            velocity: Vec2::ZERO,
         }
     }
 
@@ -464,6 +442,17 @@ impl FootContacts {
         &self.feet[side.index()]
     }
 
+    /// The pelvis's horizontal velocity relative to the support carrying the body, `(x, z)`,
+    /// metres per second: what the walk's speed and a step's lead read.
+    pub fn pelvis_velocity(&self) -> Vec2 {
+        self.velocity
+    }
+
+    /// The support carrying the body: the planted feet's, or a swinging foot's.
+    pub fn carrier(&self) -> Option<SupportId> {
+        self.carrier.map(|(support, _)| support)
+    }
+
     /// Advance one frame.
     pub fn update(
         &mut self,
@@ -477,9 +466,7 @@ impl FootContacts {
             0.0
         };
         let mut events = Vec::new();
-        if frame.external_shift.is_finite() {
-            self.drift += frame.external_shift;
-        }
+        self.travel(frame, world, dt);
         let mut poses = self.resolve(world, &mut events);
         self.advance_swings(frame, world, tuning, dt, &mut poses, &mut events);
         self.acquire(frame, world, &mut poses, &mut events);
@@ -491,6 +478,7 @@ impl FootContacts {
                 events,
             };
         }
+        self.carrier = self.carrying_support(world);
         let feet = Side::BOTH.map(
             |side| match (&self.feet[side.index()], poses[side.index()]) {
                 (FootState::Planted { .. }, Some(pose)) => FootTarget::Planted(pose),
@@ -506,6 +494,62 @@ impl FootContacts {
             handover: None,
             events,
         }
+    }
+
+    /// Take the root's and the pelvis's travel since the last frame, less what the carrier's
+    /// motion carried them: the pelvis's own velocity, and the root's drift the pelvis did not
+    /// make.
+    fn travel(&mut self, frame: &ContactFrame, world: &impl Surroundings, dt: f32) {
+        let now = Travel {
+            root: frame.root,
+            pelvis: frame.pelvis,
+        };
+        if !(now.root.is_finite() && now.pelvis.is_finite()) {
+            self.last = None;
+            return;
+        }
+        let Some(last) = self.last.replace(now) else {
+            return;
+        };
+        let carried = |point: Vec3| match self.carrier {
+            Some((support, before)) => world
+                .frame(support)
+                .filter(SupportFrame::is_finite)
+                .map_or(Vec3::ZERO, |frame| frame.carry(&before, point)),
+            None => Vec3::ZERO,
+        };
+        let root = now.root - last.root - carried(now.root);
+        let pelvis = now.pelvis - last.pelvis - carried(now.pelvis);
+        let flat = |v: Vec3| Vec2::new(v.x, v.z);
+        let drift = flat(root - pelvis);
+        if drift.is_finite() {
+            self.drift += drift;
+        }
+        if dt > 0.0 {
+            let blend = (dt / (VELOCITY_SMOOTHING_S + dt)).clamp(0.0, 1.0);
+            let velocity = flat(pelvis) / dt;
+            if velocity.is_finite() {
+                self.velocity += (velocity - self.velocity) * blend;
+            }
+        }
+    }
+
+    /// The support the body stands on: the first planted foot's, or a swinging foot's, with its
+    /// frame now.
+    fn carrying_support(&self, world: &impl Surroundings) -> Option<(SupportId, SupportFrame)> {
+        let planted = self.feet.iter().find_map(|foot| match foot {
+            FootState::Planted { support, .. } => Some(*support),
+            _ => None,
+        });
+        let swinging = || {
+            self.feet.iter().find_map(|foot| match foot {
+                FootState::Swinging(swing) => Some(swing.support),
+                _ => None,
+            })
+        };
+        let support = planted.or_else(swinging)?;
+        let frame = world.frame(support).filter(SupportFrame::is_finite)?;
+        Some((support, frame))
     }
 
     /// Each planted foot in the model's frame, through its support's frame; a foot whose support
@@ -548,43 +592,48 @@ impl FootContacts {
             let FootState::Swinging(mut swing) = self.feet[side.index()] else {
                 continue;
             };
+            let Some(support) = world.frame(swing.support).filter(SupportFrame::is_finite) else {
+                self.feet[side.index()] = FootState::Unsupported;
+                events.push(ContactEvent::Lost { side });
+                continue;
+            };
             if swing.landing == Landing::Pending {
-                swing.landing = match world.probe(side, swing.to.flat(), swing.to.ankle.y) {
-                    Probe::Hit(ground) => Landing::Known(ground),
-                    Probe::Miss => Landing::Missed,
-                    Probe::Pending => Landing::Pending,
-                };
+                let to = support.to_model(swing.to);
+                let probe = world.probe(side, to.flat(), to.ankle.y);
+                swing.answer(probe, &support, frame.ankle_height_m);
             }
             swing.advance(dt);
             if !swing.arrived() {
-                poses[side.index()] = Some(swing.pose(frame.ankle_height_m));
+                poses[side.index()] = Some(support.to_model(swing.pose()));
                 self.feet[side.index()] = FootState::Swinging(swing);
                 continue;
             }
             match swing.landing {
-                Landing::Known(ground) => match world.frame(ground.support) {
-                    Some(support) if support.is_finite() => {
-                        let pose = swing.landed(ground, frame.ankle_height_m);
-                        self.feet[side.index()] = FootState::Planted {
-                            local: support.to_local(pose),
-                            support: ground.support,
-                        };
-                        poses[side.index()] = Some(pose);
-                        self.drift = Vec2::ZERO;
-                        self.twist_held = 0.0;
-                        self.tidy_held = [0.0; 2];
-                        events.push(ContactEvent::Landed { side });
-                        if swing.reason != Release::Tidy && swing.reason != Release::FollowUp {
-                            self.follow_up = Some(side.other());
+                Landing::Known(ground) => {
+                    match world.frame(ground.support).filter(SupportFrame::is_finite) {
+                        Some(landing) => {
+                            let pose = support.to_model(swing.to);
+                            self.feet[side.index()] = FootState::Planted {
+                                local: landing.to_local(pose),
+                                support: ground.support,
+                            };
+                            poses[side.index()] = Some(pose);
+                            self.drift = Vec2::ZERO;
+                            self.twist_held = 0.0;
+                            self.tidy_held = [0.0; 2];
+                            events.push(ContactEvent::Landed { side });
+                            if swing.reason != Release::Tidy && swing.reason != Release::FollowUp {
+                                self.follow_up = Some(side.other());
+                            }
+                        }
+                        None => {
+                            self.feet[side.index()] = FootState::Unsupported;
+                            events.push(ContactEvent::Lost { side });
                         }
                     }
-                    _ => {
-                        self.feet[side.index()] = FootState::Unsupported;
-                        events.push(ContactEvent::Lost { side });
-                    }
-                },
+                }
                 Landing::Pending if swing.waited < tuning.landing_wait_s => {
-                    poses[side.index()] = Some(swing.pose(frame.ankle_height_m));
+                    poses[side.index()] = Some(support.to_model(swing.pose()));
                     self.feet[side.index()] = FootState::Swinging(swing);
                 }
                 Landing::Pending | Landing::Missed => {
@@ -666,7 +715,7 @@ impl FootContacts {
             return (need.reach_excess[other.index()] > tuning.outrun_m)
                 .then_some(Handover::Outrun);
         }
-        let speed = frame.pelvis_velocity.length();
+        let speed = self.velocity.length();
         if need.urgent[0] && need.urgent[1] && speed > tuning.walk_speed_mps {
             return Some(Handover::BothFeet);
         }
@@ -679,8 +728,24 @@ impl FootContacts {
             None => self.choose(&need, planted)?,
         };
         let from = planted[side.index()]?;
-        let swing = plan(frame, side, from, world, tuning, reason);
-        let length_m = (swing.to.flat() - from.flat()).length();
+        let FootState::Planted { support, .. } = self.feet[side.index()] else {
+            return None;
+        };
+        let support_frame = world.frame(support).filter(SupportFrame::is_finite)?;
+        let swing = plan(
+            &Plan {
+                frame,
+                side,
+                from,
+                support,
+                support_frame,
+                velocity: self.velocity,
+                reason,
+            },
+            world,
+            tuning,
+        );
+        let length_m = (support_frame.to_model(swing.to).flat() - from.flat()).length();
         if length_m > tuning.max_step_m {
             return Some(Handover::StepTooLong);
         }
@@ -721,6 +786,9 @@ impl Default for FootContacts {
     }
 }
 
+/// The smoothing time of the pelvis's velocity, seconds.
+const VELOCITY_SMOOTHING_S: f32 = 0.1;
+
 /// The spot `side`'s ankle stands on in the stance under the pelvis, `(x, z)`, and the foot's
 /// heading there.
 pub fn stance_spot(frame: &ContactFrame, side: Side) -> (Vec2, f32) {
@@ -748,9 +816,4 @@ fn off_stance(
     let off = (pose.flat() - spot).length();
     let turned = wrap(pose.yaw - yaw).abs();
     off > tuning.tidy_m * share || turned > tuning.tidy_deg.to_radians() * share
-}
-
-/// The turn about +Y a rotation makes of a heading.
-fn yaw_turn(rotation: Quat) -> f32 {
-    crate::angle::yaw_of(rotation * Vec3::NEG_Z).unwrap_or(0.0)
 }

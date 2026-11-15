@@ -12,6 +12,8 @@
 //! - [`effectors`]: the HumanIK targets that hold the seeded pelvis and place the feet, owned
 //!   against the game's locomotion IK task.
 //! - [`probe`]: the feet's ground probes, cast where the head probe casts.
+//! - [`support`]: the bodies the feet stand on, snapshotted where the probes cast and carried
+//!   forward to the gate, so a moving deck carries the planted feet.
 //! - [`seed`]: the geometry of the seeded pose (pure).
 //! - [`config`]: the switch and the tuning.
 //!
@@ -25,6 +27,7 @@ pub mod fk;
 pub mod gate;
 pub(crate) mod probe;
 pub(crate) mod seed;
+pub(crate) mod support;
 
 use std::time::{Duration, Instant};
 

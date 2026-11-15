@@ -95,4 +95,14 @@ pub(super) fn ik_body_readout(ui: &mut Ui) {
         ik.pelvis_drop_m,
         ik.max_drop_m,
     ));
+    ui.label(format!(
+        "Feet stand on {} · {} times on a moving body · {} moving supports tracked",
+        if ik.on_moving_support {
+            "a moving body"
+        } else {
+            "the world"
+        },
+        ik.moving_landings,
+        ik.moving_supports,
+    ));
 }
