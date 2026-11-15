@@ -722,7 +722,14 @@ pub(super) unsafe fn sling(
         Pulled::Ragdoll { mass_kg, .. } => mass_kg,
         _ => state.mass_kg.unwrap_or(1.0),
     };
-    let line = LineTuning::of(&input.config.weapons.snatch.swing, mass_kg, braced);
+    let mut line = LineTuning::of(&input.config.weapons.snatch.swing, mass_kg, braced);
+    if let Pulled::Ragdoll { .. } = grabbed.kind {
+        // A body is yanked in to arm's reach, where the free hand can take it, and then swung on
+        // the line held there; at the swing's own length and reel, a body bitten a few metres off
+        // barely came.
+        line.swing_length_m = line.swing_length_m.min(RAGDOLL_YANK_LENGTH_M);
+        line.reel_mps = line.reel_mps.max(RAGDOLL_YANK_MPS);
+    }
     let rigid = state.rigid();
     let hook_point = state.pose.point(hit.local_point);
     let out = rope
@@ -763,6 +770,12 @@ pub(super) unsafe fn sling(
     }
     Ok(swinging)
 }
+
+/// The length a ragdoll's line reels in to, metres: about an arm's reach from the grapple hand.
+const RAGDOLL_YANK_LENGTH_M: f32 = 1.2;
+
+/// How fast a ragdoll's line reels in, metres per second: a yank, not the swing's draw.
+const RAGDOLL_YANK_MPS: f32 = 9.0;
 
 /// Where a tossed gun lands, metres in front of the player toward where it came from.
 const TOSS_LAND_M: f32 = 1.2;
