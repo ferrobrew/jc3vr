@@ -19,6 +19,7 @@ use crate::{
             look_steer, parachute_rig,
             physical::{ControlEvent, ControlKind},
             ripcord::MIN_PULL_M,
+            turret,
             wheel::WheelFrame,
             wheel_render,
         },
@@ -33,6 +34,7 @@ pub(super) struct VehiclesReadout {
     driving_view: DrivingViewStatus,
     driver_substitutions: u64,
     look_steer_suppressions: u64,
+    hand_aimed_turret_ticks: u64,
     wheel_turns: u64,
     handles_unplaced: u64,
 }
@@ -44,6 +46,7 @@ impl VehiclesReadout {
             driving_view: driving_view::status(),
             driver_substitutions: driver_aim::substitutions(),
             look_steer_suppressions: look_steer::suppressions(),
+            hand_aimed_turret_ticks: turret::hand_aimed_ticks(),
             wheel_turns: wheel_render::turned(),
             handles_unplaced: parachute_rig::handles_unplaced(),
         }
@@ -261,6 +264,10 @@ fn arms_readout(ui: &mut Ui, readout: &VehiclesReadout) {
     ui.label(format!(
         "Wingsuit look-steer removals: {}",
         readout.look_steer_suppressions
+    ));
+    ui.label(format!(
+        "Vehicle gun ticks aimed by the hands: {}",
+        readout.hand_aimed_turret_ticks
     ));
 }
 

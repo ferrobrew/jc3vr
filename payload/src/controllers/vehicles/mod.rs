@@ -76,6 +76,7 @@ mod state;
 pub mod steering;
 pub(crate) mod take_off;
 pub mod tuning;
+pub mod turret;
 mod types;
 pub mod wheel;
 pub mod wheel_render;
@@ -108,6 +109,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(look_steer::hook_library())
         .with_hook_library(wheel_render::hook_library())
         .with_hook_library(parachute_rig::hook_library())
+        .with_hook_library(turret::hook_library())
 }
 
 #[cfg(test)]
