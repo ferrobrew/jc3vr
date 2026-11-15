@@ -12,11 +12,13 @@ pub struct ControlParameters {
     _field_bc: [u8; 28],
     /// The animation user VM state, holding the character state-bitflag words.
     pub m_UserVM: crate::character::control_parameters::UserVM,
-    _field_108: [u8; 56],
+    _field_108: [u8; 380],
+    /// The ragdolling timers the animation graph's get-up conditions read.
+    pub m_RagdollingControllerParameters: crate::character::control_parameters::RagdollingControllerParams,
 }
 fn _ControlParameters_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x140], ControlParameters>([0u8; 0x140]);
+        ::std::mem::transmute::<[u8; 0x290], ControlParameters>([0u8; 0x290]);
     }
     unreachable!()
 }
@@ -28,6 +30,43 @@ impl std::convert::AsRef<ControlParameters> for ControlParameters {
 }
 impl std::convert::AsMut<ControlParameters> for ControlParameters {
     fn as_mut(&mut self) -> &mut ControlParameters {
+        self
+    }
+}
+#[derive(Copy, Clone)]
+#[repr(C, align(4))]
+/// The ragdolling timers (`SRagdollingControllerParams`) in
+/// [`ControlParameters::m_RagdollingControllerParameters`](crate::character::control_parameters::ControlParameters::m_RagdollingControllerParameters). The ragdolling state task
+/// (`NRagdolling`) runs the total and the limb speed; the graph's `CRagdollingTimerCondition` and
+/// `CRagdollIsSettledCondition` read them for the get-up.
+pub struct RagdollingControllerParams {
+    /// The time spent ragdolling, seconds. Below zero while the ragdoll's displacement is its
+    /// owner's; `CRagdollingTimerCondition` holds nothing then, and otherwise compares it with its
+    /// threshold.
+    pub m_TotalRagdollingTime: f32,
+    /// How long the ragdoll has counted as settled, seconds. `CRagdollIsSettledCondition` adds each
+    /// update's time while
+    /// [`RagdollingControllerParams::m_AverageRagdollLimbSpeed`](crate::character::control_parameters::RagdollingControllerParams::m_AverageRagdollLimbSpeed) is under its speed threshold and
+    /// the character is near the ground and pose-matched, zeroes it otherwise, and holds once it
+    /// passes its time threshold.
+    pub m_SettledRagdollingTime: f32,
+    /// The ragdoll's average speed of its bodies relative to each other, metres per second.
+    pub m_AverageRagdollLimbSpeed: f32,
+}
+fn _RagdollingControllerParams_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC], RagdollingControllerParams>([0u8; 0xC]);
+    }
+    unreachable!()
+}
+impl RagdollingControllerParams {}
+impl std::convert::AsRef<RagdollingControllerParams> for RagdollingControllerParams {
+    fn as_ref(&self) -> &RagdollingControllerParams {
+        self
+    }
+}
+impl std::convert::AsMut<RagdollingControllerParams> for RagdollingControllerParams {
+    fn as_mut(&mut self) -> &mut RagdollingControllerParams {
         self
     }
 }
