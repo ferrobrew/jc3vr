@@ -290,6 +290,9 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         }
     }
     if !holds() {
+        if !input.carries {
+            hooks::forget_motion();
+        }
         let hang = HANG_GATE
             .lock()
             .wanted
@@ -339,6 +342,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
 
 /// Let go of the lock without touching the line: the bindings stand down.
 pub(crate) fn stand_down() {
+    hooks::forget_motion();
     let mut shared = SHARED.lock();
     shared.armed = false;
     shared.release_velocity = None;
@@ -694,6 +698,7 @@ unsafe fn ending(
 /// retract detaches the wire, and the reel task's cancel can clear the velocity the swing gave the
 /// character.
 fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: Hand) {
+    hooks::forget_motion();
     let (status, last_velocity) = {
         let mut shared = SHARED.lock();
         if local.is_none() {

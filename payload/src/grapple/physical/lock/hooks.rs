@@ -112,6 +112,14 @@ struct Motion {
 
 static LAST_MOTION: Mutex<Option<Motion>> = Mutex::new(None);
 
+/// Forget the reel task's last motion: its instance and properties belong to the reel that
+/// recorded them, and a later reel's arrival must never run the motion with them. Called whenever
+/// the reel or the lock may have ended: the lock's end, the bindings' stand-down, an input tick
+/// that finds no reel carrying the character, and the game's own arrival.
+pub(super) fn forget_motion() {
+    *LAST_MOTION.lock() = None;
+}
+
 /// The direction a held line turns the character toward: the level part of `target` (the reel's
 /// own direction along the line), or, for a line too near vertical to have one, the character's
 /// own level facing. `None` when neither has a direction.
@@ -193,6 +201,7 @@ fn finish_reel(
             }
             return;
         }
+        forget_motion();
         // A reel onto a helicopter arrives into the game's stunt hang under the airframe, which
         // holds the body inverted: hang on the line instead, as below a ceiling.
         let to_helicopter = unsafe { hook.as_ref() }
