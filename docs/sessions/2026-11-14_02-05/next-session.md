@@ -60,6 +60,7 @@ In the order of the feedback:
 52. Fly the second helicopter and the utility helicopter: press "Log the hands for cockpit calibration" with a hand where each control should be, and keep the log.
 53. Open the canopy out of the wingsuit (2806): the view rises with Rico's head.
 54. Stand still in each idle the game gives (with a rifle, with a pistol, crouched): the log names any standing state the stance's idle list misses.
+55. The IK body, in the order of [ik-body.md](../../mod/body/ik-body.md)'s checks: stand still with the body mirror on (the readout reads `idle`, both feet planted; Rico's pelvis under the player's, the feet still, the torso not pulled; if it fights, lower the hips' resist and turn reach first); bend and crouch (no steps, the knees forward, no floating or sunk feet); glance and turn (a glance does not step, a held turn takes two turn steps); step aside, forward, and back (one or two square steps, no slide, a few steps a standing minute); walk physically and on the stick (it hands over to the game's walk and comes back without a snap); step up and down a kerb and over a ledge; jump and fall (the takeoff and landing are the clip's, the pelvis under the head in the air); and the other modes and the gamepad unchanged.
 
 ## What was built for the deferred work
 
@@ -67,7 +68,7 @@ Everything the earlier plans deferred was built on 15 November, untested in the 
 
 ## Still open
 
-- The IK-first on-foot body: built separately; its own checks are listed with it once it lands.
+- The IK-first body: feet carried on a moving deck, feet on the face while hand climbing, and the firm ragdoll taking its pose as the muscle target; the offline replay of the contact model over a recording.
 - The helicopter's rail as a standing place: a reel onto the door side now plays the game's own door states (Y enters); standing on the skid, the rail's sticky pull, and hanging underneath by choice are not built.
 - The hands in a vehicle's gunner seat are not drawn at all; the character's visibility in the turret's camera is the leading hypothesis, with no binding to read it yet.
 - The mounted gun's hands drawn on its handles off the gunner seat (the anchored tier exists only in the scripted mounted state).
