@@ -15,7 +15,7 @@ use crate::{
             config::VehiclesConfig,
             driver_aim,
             driving_view::{self, DrivingViewStatus},
-            fit::FitReadout,
+            fit::{self, FitReadout},
             look_steer, parachute_rig,
             physical::{ControlEvent, ControlKind},
             ripcord::MIN_PULL_M,
@@ -269,6 +269,16 @@ fn arms_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         "Vehicle gun ticks aimed by the hands: {}",
         readout.hand_aimed_turret_ticks
     ));
+    if ui
+        .button("Log the hands for cockpit calibration")
+        .on_hover_text(
+            "Hold each hand where a control should be and press: the log gives both hands in the \
+             cockpit's and the stick's part space.",
+        )
+        .clicked()
+    {
+        fit::request_cockpit_calibration();
+    }
 }
 
 fn handles_readout(ui: &mut Ui, readout: &VehiclesReadout) {

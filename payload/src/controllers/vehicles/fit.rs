@@ -19,6 +19,7 @@
 
 use std::{
     ffi::CStr,
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -86,7 +87,19 @@ pub struct FitInputs<'a> {
     /// player's posture or the driving view's correction moves them. `None` until the anchor is
     /// published.
     pub eyes: Option<Vec3>,
+    /// The hands' grips, world space, for the cockpit calibration's log
+    /// ([`request_cockpit_calibration`]).
+    pub hands: [Option<Vec3>; 2],
 }
+
+/// Ask the next fit to log the hands' grips in the cockpit part's own space, where its controls are
+/// measured, so a control's place can be read off a hand held where it should be and added to the
+/// cockpit table. A debug UI action.
+pub fn request_cockpit_calibration() {
+    CALIBRATION_REQUESTED.store(true, Ordering::Relaxed);
+}
+
+static CALIBRATION_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// What the fit found, for the debug UI.
 #[derive(Debug, Clone, PartialEq)]
@@ -287,6 +300,14 @@ unsafe fn fit_vehicle(
         });
     }
 
+    if CALIBRATION_REQUESTED.swap(false, Ordering::Relaxed) {
+        log_calibration(
+            world,
+            [parts.cockpit.as_ref(), parts.stick.as_ref()],
+            inputs.hands,
+            vehicle.m_VehicleTypeNameHash,
+        );
+    }
     let cockpit = parts
         .cockpit
         .as_ref()
@@ -449,6 +470,32 @@ fn log_driving_position(p: &DrivingPosition) {
     );
 }
 
+/// Log the hands' grips `hands` (world space) in the own space of each of `parts` that is present,
+/// with the vehicle's type hash.
+fn log_calibration(
+    world: Mat4,
+    parts: [Option<&PartRead>; 2],
+    hands: [Option<Vec3>; 2],
+    vehicle_type_hash: u32,
+) {
+    for part in parts.into_iter().flatten() {
+        let part_to_world = world * part.root;
+        if part_to_world.determinant().abs() < 1e-6 {
+            continue;
+        }
+        let to_part = part_to_world.inverse();
+        let [left, right] = hands.map(|hand| hand.map(|hand| to_part.transform_point3(hand)));
+        tracing::info!(
+            target: "controllers",
+            vehicle_type_hash = format_args!("{vehicle_type_hash:08x}"),
+            part = part.name.as_str(),
+            left = ?left,
+            right = ?right,
+            "vehicles: cockpit calibration: the hands in the part's space"
+        );
+    }
+}
+
 /// A vehicle part as read for the fit.
 #[derive(Debug, Clone)]
 struct PartRead {
@@ -601,6 +648,7 @@ mod tests {
             }),
             xf,
             eyes: Some(eyes),
+            hands: [None; 2],
         }
     }
 

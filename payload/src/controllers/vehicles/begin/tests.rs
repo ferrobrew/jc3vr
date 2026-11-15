@@ -83,6 +83,7 @@ fn begin_adapter_missing_observation_clears_old_entry_and_reentry_is_fresh() {
             seat: driver(),
             xf: &xf,
             eyes: None,
+            hands: [None; 2],
         },
         None,
         &mut state.latch,

@@ -85,6 +85,9 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
             seat,
             xf: &xf,
             eyes: view_eyes,
+            hands: active
+                .hands
+                .map(|hand| hand.map(|hand| xf.point_to_world(hand.grip.position))),
         },
         entry.as_ref(),
         &mut latch,
