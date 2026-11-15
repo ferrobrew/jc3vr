@@ -70,10 +70,12 @@ pub fn set_source_mask(mask: SourceMask) {
     STORE.lock().set_source_mask(mask);
 }
 
-/// Copy the unsuppressed live primitives into `out` (cleared first), up to the renderer cap.
-pub fn snapshot(out: &mut Vec<Primitive>) -> Collection {
+/// Copy the unsuppressed live primitives into `out` (cleared first), up to the renderer cap. Out of
+/// gameplay (`in_gameplay` false: a loading screen, a menu) only the debug panel's pointer is drawn,
+/// whatever the producers last submitted: a grab circle or a world marker has nothing to mark there.
+pub fn snapshot(out: &mut Vec<Primitive>, in_gameplay: bool) -> Collection {
     let now = Instant::now();
-    let collection = STORE.lock().collect(now, out);
+    let collection = STORE.lock().collect(now, out, in_gameplay);
     if collection.truncated && !TRUNCATION_LOGGED.swap(true, Ordering::Relaxed) {
         tracing::warn!(
             limit = MAX_PRIMITIVES,
@@ -120,8 +122,9 @@ impl Store {
         self.source_mask = mask;
     }
 
-    /// Copy live, unsuppressed primitives in source order, applying suppression before the cap.
-    pub fn collect(&self, now: Instant, out: &mut Vec<Primitive>) -> Collection {
+    /// Copy live, unsuppressed primitives in source order, applying suppression before the cap,
+    /// and out of gameplay suppressing every source but the debug panel's pointer.
+    pub fn collect(&self, now: Instant, out: &mut Vec<Primitive>, in_gameplay: bool) -> Collection {
         out.clear();
         let mut collection = Collection::default();
         for source in Source::ALL {
@@ -131,7 +134,8 @@ impl Store {
                 continue;
             }
             collection.retained[index] = slot.primitives.len();
-            if self.source_mask.contains(source) {
+            if self.source_mask.contains(source) || (!in_gameplay && source != Source::PanelPointer)
+            {
                 collection.suppressed[index] = slot.primitives.len();
                 continue;
             }
@@ -225,7 +229,7 @@ mod tests {
         assert_eq!(second, vec![line(1.0), line(2.0)]);
 
         let mut out = Vec::new();
-        let collection = store.collect(now, &mut out);
+        let collection = store.collect(now, &mut out, true);
         assert_eq!(out, vec![line(3.0)]);
         assert_eq!(collection.retained[Source::GunReadout.index()], 1);
         assert_eq!(collection.visible[Source::GunReadout.index()], 1);
@@ -238,9 +242,9 @@ mod tests {
         let now = Instant::now();
         store.submit(Source::GrappleBeam, &mut vec![line(1.0)], TTL, now);
         let mut out = Vec::new();
-        store.collect(now + TTL, &mut out);
+        store.collect(now + TTL, &mut out, true);
         assert_eq!(out.len(), 1);
-        store.collect(now + TTL + Duration::from_millis(1), &mut out);
+        store.collect(now + TTL + Duration::from_millis(1), &mut out, true);
         assert!(out.is_empty());
     }
 
@@ -252,7 +256,7 @@ mod tests {
         store.submit(Source::DebugGizmos, &mut vec![line(2.0)], TTL, now);
         store.clear(Source::GrappleBeam);
         let mut out = Vec::new();
-        let collection = store.collect(now, &mut out);
+        let collection = store.collect(now, &mut out, true);
         assert_eq!(out, vec![line(2.0)]);
         assert_eq!(collection.retained[Source::GrappleBeam.index()], 0);
         assert_eq!(collection.visible[Source::DebugGizmos.index()], 1);
@@ -266,7 +270,7 @@ mod tests {
         store.submit(Source::GrabMarkers, &mut many, TTL, now);
         store.submit(Source::GhostHands, &mut vec![line(2.0); 5], TTL, now);
         let mut out = Vec::new();
-        let collection = store.collect(now, &mut out);
+        let collection = store.collect(now, &mut out, true);
         assert_eq!(out.len(), MAX_PRIMITIVES);
         assert_eq!(collection.retained[Source::GhostHands.index()], 5);
         assert_eq!(collection.visible[Source::GhostHands.index()], 1);
@@ -282,10 +286,10 @@ mod tests {
             store.submit(source, &mut vec![line(source.index() as f32)], TTL, now);
         }
         let mut out = Vec::new();
-        store.collect(now, &mut out);
+        store.collect(now, &mut out, true);
         let original = out.clone();
         store.set_source_mask(registered_mask());
-        let collection = store.collect(now, &mut out);
+        let collection = store.collect(now, &mut out, true);
         let mut expected = Vec::new();
         for source in Source::ALL {
             let hidden = REGISTERED_SOURCES.contains(&source);
@@ -299,7 +303,7 @@ mod tests {
         assert_eq!(out, expected);
         assert!(!collection.truncated);
         store.set_source_mask(SourceMask::NONE);
-        let restored = store.collect(now, &mut out);
+        let restored = store.collect(now, &mut out, true);
         assert_eq!(out, original);
         assert_eq!(restored.visible, [1; Source::COUNT]);
         assert_eq!(restored.suppressed, [0; Source::COUNT]);
@@ -318,7 +322,7 @@ mod tests {
         store.submit(Source::GunReadout, &mut vec![line(2.0); 3], TTL, now);
         store.set_source_mask(registered_mask());
         let mut out = Vec::new();
-        let collection = store.collect(now, &mut out);
+        let collection = store.collect(now, &mut out, true);
         assert_eq!(out, vec![line(2.0); 3]);
         assert_eq!(
             collection.retained[Source::GrappleHighlight.index()],
@@ -343,20 +347,20 @@ mod tests {
         assert_eq!(replacement, vec![line(1.0)]);
         let later = now + TTL + Duration::from_millis(1);
         let mut out = Vec::new();
-        let hidden = store.collect(later, &mut out);
+        let hidden = store.collect(later, &mut out, true);
         assert!(out.is_empty());
         assert_eq!(hidden.retained[Source::GrabView.index()], 1);
         assert_eq!(hidden.suppressed[Source::GrabView.index()], 1);
         store.set_source_mask(SourceMask::NONE);
-        store.collect(later, &mut out);
+        store.collect(later, &mut out, true);
         assert_eq!(out, vec![line(2.0)]);
         store.set_source_mask(registered_mask());
         store.clear(Source::GrabView);
-        let cleared = store.collect(later, &mut out);
+        let cleared = store.collect(later, &mut out, true);
         assert_eq!(cleared.retained[Source::GrabView.index()], 0);
         assert_eq!(cleared.suppressed[Source::GrabView.index()], 0);
         store.set_source_mask(SourceMask::NONE);
-        store.collect(later, &mut out);
+        store.collect(later, &mut out, true);
         assert!(out.is_empty());
     }
 
@@ -367,13 +371,13 @@ mod tests {
         store.submit(Source::BodyMirror, &mut vec![line(1.0)], TTL, now);
         store.set_source_mask(registered_mask());
         let mut out = Vec::new();
-        let at_expiry = store.collect(now + TTL, &mut out);
+        let at_expiry = store.collect(now + TTL, &mut out, true);
         assert_eq!(at_expiry.suppressed[Source::BodyMirror.index()], 1);
         assert!(out.is_empty());
         let later = now + TTL + Duration::from_millis(1);
-        assert_eq!(store.collect(later, &mut out), Collection::default());
+        assert_eq!(store.collect(later, &mut out, true), Collection::default());
         store.set_source_mask(SourceMask::NONE);
-        assert_eq!(store.collect(later, &mut out), Collection::default());
+        assert_eq!(store.collect(later, &mut out, true), Collection::default());
         assert!(out.is_empty());
     }
 
@@ -382,5 +386,28 @@ mod tests {
         for (i, source) in Source::ALL.into_iter().enumerate() {
             assert_eq!(source.index(), i);
         }
+    }
+
+    #[test]
+    fn out_of_gameplay_only_the_panel_pointer_is_drawn() {
+        let mut store = Store::new();
+        let now = Instant::now();
+        let mut grab = vec![line(1.0)];
+        let mut pointer = vec![line(2.0)];
+        store.submit(Source::GrabMarkers, &mut grab, TTL, now);
+        store.submit(Source::PanelPointer, &mut pointer, TTL, now);
+        let mut out = Vec::new();
+        let collection = store.collect(now, &mut out, false);
+        assert_eq!(out.len(), 1);
+        assert_eq!(collection.visible[Source::PanelPointer.index()], 1);
+        assert_eq!(collection.suppressed[Source::GrabMarkers.index()], 1);
+        assert_eq!(
+            store
+                .collect(now, &mut out, true)
+                .visible
+                .iter()
+                .sum::<usize>(),
+            2
+        );
     }
 }

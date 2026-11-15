@@ -133,7 +133,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
     };
 
     if let Some(frame) = frame {
-        let collection = store::snapshot(&mut state.primitives);
+        let collection = store::snapshot(&mut state.primitives, hooks::in_gameplay());
         match frame {
             Some(frame) => {
                 resolve::resolve(&state.primitives, &frame, &mut state.packed);

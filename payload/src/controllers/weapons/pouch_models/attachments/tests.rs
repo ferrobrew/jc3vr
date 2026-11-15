@@ -282,16 +282,16 @@ fn clearing_or_replacing_the_render_source_preserves_the_skeleton_source() {
     store.submit(Source::BodyMirror, &mut vec![skeleton], MAX_AGE, now);
     store.submit(Source::BodyMirrorPouches, &mut pouches, MAX_AGE, now);
     let mut out = Vec::new();
-    let collection = store.collect(now, &mut out);
+    let collection = store.collect(now, &mut out, true);
     assert_eq!(collection.retained[Source::BodyMirror.index()], 1);
     assert_eq!(collection.retained[Source::BodyMirrorPouches.index()], 1);
     store.clear(Source::BodyMirrorPouches);
-    let cleared = store.collect(now, &mut out);
+    let cleared = store.collect(now, &mut out, true);
     assert_eq!(cleared.retained[Source::BodyMirrorPouches.index()], 0);
     assert_eq!(out, vec![skeleton]);
     store.submit(Source::BodyMirrorPouches, &mut Vec::new(), MAX_AGE, now);
     assert_eq!(
-        store.collect(now, &mut out).retained[Source::BodyMirror.index()],
+        store.collect(now, &mut out, true).retained[Source::BodyMirror.index()],
         1
     );
     assert_eq!(out, vec![skeleton]);
