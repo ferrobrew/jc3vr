@@ -318,8 +318,37 @@ impl std::convert::AsMut<GrapplePointProxyVftable> for GrapplePointProxyVftable 
 }
 #[repr(C, align(8))]
 /// A grapple attachment to a vehicle or one of its physics parts (`CVehicleGrapplePointProxy`).
+/// While the character reels toward a vehicle it also holds the vehicle interaction-graph entry
+/// the reel will end in: the reel prefers any valid entry on the vehicle's door side and falls back
+/// to a hang entry, so a reel onto a helicopter ends at its door side when one validates.
 pub struct VehicleGrapplePointProxy {}
 impl VehicleGrapplePointProxy {
+    pub const GetVehicleType_ADDRESS: usize = 0x14093CB50;
+    /// The kind of vehicle the attachment is on: [`VehicleGrappleType::None`](crate::equipment::grapple_point_proxy::VehicleGrappleType::None) when the proxy is
+    /// not live or has no vehicle.
+    pub unsafe fn GetVehicleType(
+        &self,
+    ) -> crate::equipment::grapple_point_proxy::VehicleGrappleType {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> crate::equipment::grapple_point_proxy::VehicleGrappleType = ::std::mem::transmute(
+                Self::GetVehicleType_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const IsCurrentEntryHangNode_ADDRESS: usize = 0x14093B050;
+    /// Whether the reel's chosen vehicle entry has the `reel_in_hang` use tag: the reel ends in the
+    /// vehicle's stunt hang rather than at its door side.
+    pub unsafe fn IsCurrentEntryHangNode(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::IsCurrentEntryHangNode_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const ReattachToNewPos_ADDRESS: usize = 0x140944290;
     /// Moves the attachment to a new world-space position and normal, updating both its visual
     /// local transform and its physics-local attachment while retaining the vehicle.
@@ -347,4 +376,23 @@ impl std::convert::AsMut<VehicleGrapplePointProxy> for VehicleGrapplePointProxy 
     fn as_mut(&mut self) -> &mut VehicleGrapplePointProxy {
         self
     }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// What kind of vehicle a vehicle grapple attachment is on
+/// (`CVehicleGrapplePointProxy::EVehicleType`), from
+/// [`VehicleGrapplePointProxy::GetVehicleType`](crate::equipment::grapple_point_proxy::VehicleGrapplePointProxy::GetVehicleType).
+pub enum VehicleGrappleType {
+    Car = 0isize as _,
+    Helicopter = 1isize as _,
+    Boat = 2isize as _,
+    MotorBike = 3isize as _,
+    AirPlane = 4isize as _,
+    None = 5isize as _,
+}
+fn _VehicleGrappleType_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], VehicleGrappleType>([0u8; 0x4]);
+    }
+    unreachable!()
 }
