@@ -6,6 +6,10 @@
 //! afresh cuts at the exact frame, where a stream copy would start at the keyframe before it. The
 //! cut's frames are placed on the recording's clock through the sidecar: a video time is the
 //! video's start on the wall clock plus that time, and the wall clock maps to the recording's.
+//!
+//! A long stretch is cut into segments of [`SEGMENT_S`], each its own asset logged at its first
+//! frame's time, so that a frame reference finds its own segment as the latest asset. One asset for
+//! an hour-long take is a blob of over a gigabyte, and the viewer shows no video for it.
 
 use std::{
     fmt,
@@ -91,18 +95,43 @@ pub(crate) fn log(
         return Err(VideoError::OutsideVideo);
     }
     let cut = out.with_extension("cut.mp4");
-    tracing::info!(
-        from_s = %format_args!("{start_s:.2}"),
-        to_s = %format_args!("{end_s:.2}"),
-        "export-rerun: cutting the video with ffmpeg to {}",
-        cut.display()
-    );
-    let result = encode(source, start_s, end_s - start_s, &cut)
-        .and_then(|()| log_cut(context, &cut, start_s, clock.start_unix_ms(), wall));
-    // The cut is copied into the recording, so it goes either way.
-    let _ = std::fs::remove_file(&cut);
-    result
+    let mut placed = 0;
+    let mut segment_start_s = start_s;
+    while segment_start_s < end_s {
+        let segment_end_s = (segment_start_s + SEGMENT_S).min(end_s);
+        tracing::info!(
+            from_s = %format_args!("{segment_start_s:.2}"),
+            to_s = %format_args!("{segment_end_s:.2}"),
+            "export-rerun: cutting the video with ffmpeg to {}",
+            cut.display()
+        );
+        let result = encode(
+            source,
+            segment_start_s,
+            segment_end_s - segment_start_s,
+            &cut,
+        )
+        .and_then(|()| {
+            log_cut(
+                context,
+                &cut,
+                segment_start_s,
+                clock.start_unix_ms(),
+                wall,
+                segment_start_s == start_s,
+            )
+        });
+        // The cut is copied into the recording, so it goes either way.
+        let _ = std::fs::remove_file(&cut);
+        placed += result?;
+        segment_start_s = segment_end_s;
+    }
+    Ok(placed)
 }
+
+/// The longest stretch of video one asset holds: ten minutes of the 720p cut is a few hundred
+/// megabytes, well under the size at which the viewer stops showing an asset.
+const SEGMENT_S: f64 = 600.0;
 
 /// Encode `duration_s` of `source` from `start_s` to `out` as H.264 in MP4, without B-frames, with
 /// a keyframe every second so that scrubbing back decodes little, and without audio.
@@ -165,6 +194,7 @@ fn log_cut(
     start_s: f64,
     video_start_unix_ms: f64,
     wall: &WallClock,
+    first_segment: bool,
 ) -> Result<usize, VideoError> {
     let asset = AssetVideo::from_file_path(cut).map_err(|error| VideoError::Read {
         path: cut.to_owned(),
@@ -193,9 +223,17 @@ fn log_cut(
         walls.push((unix_ms * 1.0e6) as i64);
     }
     let placed = timestamps.len();
-    // Logged at the stretch's start rather than statically, so stretches exported under one
-    // recording id each keep their own cut.
-    context.set_time(first);
+    let Some(&asset_time) = times.first() else {
+        return Ok(0);
+    };
+    // Logged at the segment's first frame rather than statically, so each segment, and each
+    // stretch exported under one recording id, keeps its own cut. The stretch's first segment is
+    // logged at the stretch's start, so the video panel has its asset from the first frame on.
+    context.set_time(if first_segment {
+        first
+    } else {
+        asset_time as u64
+    });
     context.rec.log("video", &asset).map_err(VideoError::Log)?;
     context.rec.reset_time();
     context

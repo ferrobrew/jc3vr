@@ -20,7 +20,7 @@ Several stretches can be combined into one recording on one timeline. `--recordi
 
 A two-minute stretch of an hour's take, with its video, takes about 25 seconds and writes about 90 MB, most of it video; decoding the recording takes about 2.5 GB of memory whatever the stretch.
 
-Rerun reads video only from MP4, and a take is recorded to MKV, so the tool cuts the stretch with `ffmpeg` (which must be on `PATH`) and encodes it afresh as H.264 at constant quality, without B-frames and with a keyframe every second, so the cut starts at the exact frame and scrubs back cheaply. The cut is copied into the `.rrd` and deleted.
+Rerun reads video only from MP4, and a take is recorded to MKV, so the tool cuts the stretch with `ffmpeg` (which must be on `PATH`) and encodes it afresh as H.264 at constant quality, without B-frames and with a keyframe every second, so the cut starts at the exact frame and scrubs back cheaply. A stretch longer than ten minutes is cut into ten-minute segments, each logged as its own video asset at its first frame's time, so every frame reference resolves to its own segment: an hour's take as one asset is a blob of over a gigabyte, and the viewer showed no video for it. The cut is copied into the `.rrd` and deleted.
 
 ### The viewer
 
