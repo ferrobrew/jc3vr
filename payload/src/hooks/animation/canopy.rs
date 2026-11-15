@@ -13,9 +13,10 @@
 //! through the machine's event handling, which sets the state without calling
 //! [`StateMachineInstance::SetStateInternal`], so the local controller's animation update checks
 //! the body machine's current state before it evaluates the pose ([`skip_before_evaluation`]).
-//! That the event handling runs before the controller's update in the same tick is unverified: if
-//! it runs inside the update, after the check, the skip lands a tick late and one frame of the
-//! opening is drawn. The transitions that do call `SetStateInternal` (`AnimationRuleSystem::SetStateById` and
+//! The queued acts' event handling runs in the character's serial state-machine pass, before the
+//! pass that updates the animation controller in the same tick, so the check sees an opening entered
+//! that tick before any of its pose is evaluated. The controller's update runs as a parallel job,
+//! so the check may run on a worker thread. The transitions that do call `SetStateInternal` (`AnimationRuleSystem::SetStateById` and
 //! external actions) are caught as they happen.
 
 use std::sync::{

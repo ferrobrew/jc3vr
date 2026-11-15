@@ -76,7 +76,6 @@ Through a fall the body does not follow the torso, so the fast fall's clip leave
 - 1384, the scripted drop into freefall drawn as a ledge fall: the case the body reads for it.
 - 2806, the canopy out of the wingsuit: whether the opening out of the suit belongs on the reel-opening skip list.
 - The parachute handle's height (1153.93): the grip bar's offset on the riser, to move the handle to it.
-- The canopy skip's order: whether the body machine's event handling runs before the local controller's update in the same tick.
 - The character's measured velocity while seated, for seated throws.
 
 ### The firm ragdoll
