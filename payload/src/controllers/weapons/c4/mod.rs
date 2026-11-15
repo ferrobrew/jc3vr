@@ -183,8 +183,8 @@ pub struct C4Status {
     pub stuck_on_objects: u64,
     /// Charges pressed back onto the pouch.
     pub returned: u64,
-    /// Charges swapped for the detonator by the trigger of the hand holding them.
-    pub swapped: u64,
+    /// Trigger presses of the hand holding a charge, each detonating the placed charges.
+    pub held_presses: u64,
     /// The hand holding the detonator.
     pub detonator: Option<Hand>,
     /// Detonator presses, and of those the ones with nothing to detonate: no charges placed, or
@@ -429,8 +429,16 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
         && inputs.triggers[hand.index()].pressed
         && !inputs.opened[hand.index()]
     {
-        state.status.swapped += 1;
-        pulses.push(state.press_detonator(hand));
+        state.status.held_presses += 1;
+        // Only the charges on the weapon's placed list count: whether the game's own count of its
+        // live charges includes the one primed in the hand is unverified.
+        if state.placed.charges.is_empty() {
+            state.status.idle_presses += 1;
+            tracing::info!(target: "controllers", hand = hand.label(), "c4: the trigger pressed on a held charge with none placed");
+            pulses.push((hand, Event::DetonatorEmpty));
+        } else {
+            pulses.push(state.press_detonator(hand));
+        }
     }
     if let Some(hand) = inputs.placed_grab
         && !state.grab_placed(hand)
@@ -753,7 +761,7 @@ static STATE: Mutex<State> = Mutex::new(State {
         stuck: 0,
         stuck_on_objects: 0,
         returned: 0,
-        swapped: 0,
+        held_presses: 0,
         detonator: None,
         detonator_presses: 0,
         idle_presses: 0,

@@ -212,8 +212,9 @@ pub enum ModAction {
     Climb,
     /// Grip an unheld latched vehicle door to open it by hand.
     OpenVehicleDoor,
-    /// Swap the held C4 charge for the detonator.
-    TakeDetonator,
+    /// Detonate the placed charges with the trigger of the hand holding a C4 charge, which stays
+    /// in the hand.
+    DetonateWithCharge,
     /// Detonate the placed charges with the detonator in the hand.
     Detonate,
     /// Take a parachute handle, and pull it down to steer, or both to brake.

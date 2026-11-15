@@ -488,7 +488,7 @@ fn detonator_rows(
             let action = if detonator == Some(hand) {
                 ModAction::Detonate
             } else if charge[hand.index()] {
-                ModAction::TakeDetonator
+                ModAction::DetonateWithCharge
             } else {
                 return None;
             };
@@ -748,12 +748,12 @@ mod tests {
         };
         assert_eq!(
             detonator_rows([true, false], None, [true; 2]).collect::<Vec<_>>(),
-            vec![row(Hand::Left, ModAction::TakeDetonator)]
+            vec![row(Hand::Left, ModAction::DetonateWithCharge)]
         );
         assert_eq!(
             detonator_rows([true, false], Some(Hand::Right), [true; 2]).collect::<Vec<_>>(),
             vec![
-                row(Hand::Left, ModAction::TakeDetonator),
+                row(Hand::Left, ModAction::DetonateWithCharge),
                 row(Hand::Right, ModAction::Detonate)
             ]
         );

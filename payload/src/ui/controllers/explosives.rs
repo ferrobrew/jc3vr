@@ -53,9 +53,9 @@ pub(super) fn explosives_readout(ui: &mut Ui, readout: &ExplosivesReadout) {
         yes_no(c.planting_mode)
     ));
     ui.label(format!(
-        "  put back into the pouch {} · swapped for the detonator {} · taken back from where they \
+        "  put back into the pouch {} · detonated from a held charge {} · taken back from where they \
          were placed {}",
-        c.returned, c.swapped, c.taken
+        c.returned, c.held_presses, c.taken
     ));
     ui.label(format!(
         "  detonator: {} · model drawn {} · presses {} (with nothing to detonate {})",
