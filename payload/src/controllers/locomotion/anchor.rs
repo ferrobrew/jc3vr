@@ -208,7 +208,12 @@ pub(crate) unsafe fn stabilize(
         // A handover from a case that held the view on the animated head (a wingsuit, a vehicle)
         // with that head far from the root's starts on it, and the view returns to the root once
         // Rico's head is over it, rather than cutting through the body as the weight comes in.
-        if stable_target.is_some() && state.held.is_none() && may_escape {
+        // Likewise, a get-up or a death that ends with the head still away from the root (the case
+        // reads as on foot again) keeps the view on the head until it comes back over the root,
+        // rather than sliding the view back at once.
+        let left_follow =
+            state.held == Some(HeldSource::Head) && !case.is_some_and(Case::view_follows_head);
+        if stable_target.is_some() && may_escape && (state.held.is_none() || left_follow) {
             state.escape.seed(distance);
         }
         let escaped = state.escape.step(weight > 0.0 && may_escape, distance, dt);
