@@ -206,12 +206,18 @@ fn finish_reel(
         // A reel onto a helicopter's hang entry arrives into the game's stunt hang under the
         // airframe, which holds the body inverted: hang on the line instead, as below a ceiling.
         // A reel onto its door side is the game's hijack, and arrives as the game's.
-        let to_helicopter = unsafe { hook.as_ref() }
-            .and_then(|h| unsafe { h.px.as_ref() })
-            .is_some_and(|h| unsafe { engine::reeling_to_helicopter_hang(h) });
+        let live_hook = unsafe { hook.as_ref() }.and_then(|h| unsafe { h.px.as_ref() });
+        let to_helicopter =
+            live_hook.is_some_and(|h| unsafe { engine::reeling_to_helicopter_hang(h) });
         if to_helicopter && hang_enabled() && hang_takes_over() {
             want_hang();
             return;
+        }
+        // The skid's rail stands Rico on the airframe the door-side arrival lands him beside.
+        if let Some(body) =
+            live_hook.and_then(|h| unsafe { engine::reeling_to_helicopter_door_side(h) })
+        {
+            crate::controllers::vehicles::rail::note_airframe(body);
         }
     }
     FINISH_REEL

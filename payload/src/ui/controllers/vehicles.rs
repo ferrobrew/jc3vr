@@ -270,10 +270,28 @@ fn arms_readout(ui: &mut Ui, readout: &VehiclesReadout) {
         "Vehicle gun ticks aimed by the hands: {}",
         readout.hand_aimed_turret_ticks
     ));
+    let r = rail::status();
     ui.label(format!(
-        "Drops into the hang refused: {}",
-        rail::drops_refused()
+        "Helicopter skid: {}, {} entries, {} drops into the hang refused",
+        if r.active { "standing" } else { "off" },
+        r.entries,
+        r.drops_refused
     ));
+    if r.active {
+        ui.label(format!(
+            "Skid: {:.2} m off the line, walking {:.1} m/s, the update {} the proxy",
+            r.off_line_m,
+            r.walk_mps,
+            if r.update_carried {
+                "carried"
+            } else {
+                "did not carry"
+            }
+        ));
+    }
+    if let Some(reason) = r.last_release {
+        ui.label(format!("Skid last let go: {reason}"));
+    }
     if ui
         .button("Log the hands for cockpit calibration")
         .on_hover_text(
@@ -520,8 +538,19 @@ fn air_settings(ui: &mut Ui, v: &mut VehiclesConfig) {
         "Stand on a helicopter's skid by its door",
     )
     .on_hover_text(
-        "After a reel onto a helicopter's door side, hold Rico on the skid rather than \
-             dropping him into the hang; Y enters, the jump steps off.",
+        "After a reel onto a helicopter's door side, stand Rico on the skid, free to walk along \
+         it, rather than dropping him into the hang; Y enters, a brisk step off or the jump \
+         leaves it.",
+    );
+    ui.add(
+        egui::Slider::new(&mut v.rail.half_length_m, 0.3..=2.5).text("Skid reach either way (m)"),
+    );
+    ui.add(
+        egui::Slider::new(&mut v.rail.step_off_m, 0.15..=1.0).text("Skid step-off distance (m)"),
+    );
+    ui.add(
+        egui::Slider::new(&mut v.rail.pull_s, 0.05..=1.0)
+            .text("Skid pull time (s), longer is less sticky"),
     );
     let c = &mut v.canopy;
     ui.checkbox(

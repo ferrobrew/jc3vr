@@ -735,13 +735,15 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             config: &config.grapple.lock,
         })
     };
-    // The jump steps off a helicopter's skid the rail holds Rico on.
+    // The helicopter's skid: standing on it, and the jump off it.
     // SAFETY: the game stage runs on the game thread before the world update.
     unsafe {
-        vehicles::rail::step_off_on_jump(
+        vehicles::rail::input_tick(
             semantic_input
                 .get(OnFootAction::Jump.id())
                 .is_some_and(|input| input.hands.iter().any(|hand| hand.button.pressed)),
+            matches!(detection.mode, Mode::OnFoot(_))
+                && detection.traversal != Some(Traversal::ReelingIn),
         )
     };
     // The firm ragdoll for the line the lock holds and for the canopy.

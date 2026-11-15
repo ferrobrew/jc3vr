@@ -139,6 +139,8 @@ unsafe extern "system" fn pre_simulation(
             crate::controllers::physical_hands::human_hull::step(_world);
         }
         crate::controllers::physical_hands::physics::drawn_body::step();
+        // Before the hand step, so a gripping hand's carry is the one the proxy keeps.
+        crate::controllers::vehicles::rail::step_physics();
         crate::controllers::physical_hands::physics::step();
         {
             let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HandImpacts);

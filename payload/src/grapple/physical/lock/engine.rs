@@ -120,6 +120,28 @@ pub(super) unsafe fn reeling_to_helicopter_hang(hook: &GrapplingHook) -> bool {
         && unsafe { vehicle.IsCurrentEntryHangNode() }
 }
 
+/// The body of the helicopter `hook` reels in onto when the reel's chosen entry is the door side
+/// rather than the stunt hang.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step; `hook` must be live.
+pub(super) unsafe fn reeling_to_helicopter_door_side(hook: &GrapplingHook) -> Option<u32> {
+    let proxy = unsafe { reeling_far_end(hook) }?;
+    if proxy.m_AttachmentObjectInfo != AttachmentObjectInfo::AOI_Vehicle {
+        return None;
+    }
+    let (body, owner, _) = unsafe { far_body(proxy) }?;
+    if !unsafe { (*game_object_of(owner)).IsType(Helicopter::TYPE_ID()) } {
+        return None;
+    }
+    // SAFETY: a vehicle attachment's proxy is a vehicle grapple point proxy.
+    let vehicle = unsafe { &*std::ptr::from_ref(proxy).cast::<VehicleGrapplePointProxy>() };
+    (unsafe { vehicle.GetVehicleType() } == VehicleGrappleType::Helicopter
+        && !unsafe { vehicle.IsCurrentEntryHangNode() })
+    .then_some(body)
+}
+
 /// The character's mass: its proxy body's.
 ///
 /// # Safety

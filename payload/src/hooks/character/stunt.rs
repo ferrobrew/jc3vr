@@ -4,7 +4,7 @@ use detours_macro::detour;
 use jc3gi::{character::character::Character, physics::hknpWorld};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::physical_hands::climb::native;
+use crate::controllers::{physical_hands::climb::native, vehicles::rail};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -16,7 +16,7 @@ pub(super) fn hook_library() -> HookLibrary {
 fn auto_attach_below(character: *mut Character) -> bool {
     // The engine's ground-body support also advertises a vehicle below a physical grip. Only
     // this automatic entry is suppressed; ordinary grapple hang and explicit interactions remain native.
-    if unsafe { native::blocks(character) } {
+    if unsafe { native::blocks(character) } || rail::blocks_auto_attach(character) {
         return false;
     }
     AUTO_ATTACH_BELOW.get().unwrap().call(character)

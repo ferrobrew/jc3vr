@@ -38,10 +38,12 @@ pub struct VehiclesConfig {
     /// suit launches where the player looks
     /// ([`take_off`](crate::controllers::vehicles::take_off)).
     pub take_off_to_head: bool,
-    /// Hold Rico on a helicopter's skid by its door after a reel onto its door side, rather than
-    /// dropping him into the stunt hang, and let the jump step him off
+    /// Stand Rico on a helicopter's skid by its door after a reel onto its door side, free to walk
+    /// along it, rather than dropping him into the stunt hang
     /// ([`rail`](crate::controllers::vehicles::rail)).
     pub helicopter_rail: bool,
+    /// The skid's tuning ([`rail`](crate::controllers::vehicles::rail)).
+    pub rail: RailConfig,
 }
 
 impl VehiclesConfig {
@@ -59,11 +61,41 @@ impl VehiclesConfig {
             driving_view: DrivingViewConfig::new(),
             take_off_to_head: true,
             helicopter_rail: true,
+            rail: RailConfig::new(),
         }
     }
 }
 
 impl Default for VehiclesConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The helicopter skid's tuning, in [`VehiclesConfig::rail`].
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct RailConfig {
+    /// How far the skid's line reaches either way from where Rico lands on it, metres.
+    pub half_length_m: f32,
+    /// How far off the line, level, the feet go before Rico has stepped off, metres.
+    pub step_off_m: f32,
+    /// The sticky pull's time constant: the offset off the line closes at this rate, seconds.
+    /// Longer is less sticky.
+    pub pull_s: f32,
+}
+
+impl RailConfig {
+    pub const fn new() -> Self {
+        Self {
+            half_length_m: 1.0,
+            step_off_m: 0.35,
+            pull_s: 0.25,
+        }
+    }
+}
+
+impl Default for RailConfig {
     fn default() -> Self {
         Self::new()
     }
