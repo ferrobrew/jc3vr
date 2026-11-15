@@ -174,6 +174,7 @@ pub(crate) unsafe fn stabilize(
     let weight = state.handover.step(eligible && measured, dt, BLEND_S);
     // Where a clip carries the head, the eyes are held out in front of its face.
     let posed = case.is_some_and(Case::game_poses_body);
+    let head_may_lie = case.is_none_or(Case::head_may_lie);
     let clear = state.face_clear.step(posed, dt, BLEND_S);
     let cleared = face_clear(&animated, &model, FACE_CLEARANCE_M * clear);
     state.status = AnchorStatus {
@@ -257,6 +258,7 @@ pub(crate) unsafe fn stabilize(
                 blend(&animated, &stable, weight)
             }),
             weight,
+            head_may_lie,
             face_offset: face_offset(&model, FACE_CLEARANCE_M * clear),
         };
     }
@@ -265,6 +267,7 @@ pub(crate) unsafe fn stabilize(
             anatomy: cleared,
             camera: None,
             weight,
+            head_may_lie,
             face_offset: Vec3::ZERO,
         };
     };
@@ -272,6 +275,7 @@ pub(crate) unsafe fn stabilize(
         anatomy: blend(&cleared, &stable, weight),
         camera: None,
         weight,
+        head_may_lie,
         face_offset: Vec3::ZERO,
     }
 }
@@ -284,6 +288,9 @@ pub(crate) struct Stabilized {
     pub camera: Option<Anchors>,
     /// The root-held anchor's weight against the animated head, from zero to one.
     pub weight: f32,
+    /// Whether the case may carry Rico's head down to the ground ([`Case::head_may_lie`]), where
+    /// the view's floor applies. Always outside the headset's cases.
+    pub head_may_lie: bool,
     /// In the headset, the eyes' clearance out in front of the animated face, model space, still to
     /// be added to the eye arm once the arm is expressed in the filtered head frame (the headset's
     /// eye arm is rebuilt in that frame after this returns, so the clearance cannot ride

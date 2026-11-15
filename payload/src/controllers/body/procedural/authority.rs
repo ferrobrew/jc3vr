@@ -209,6 +209,24 @@ impl Case {
         matches!(self, Self::Ragdoll | Self::GettingUp | Self::Dead)
     }
 
+    /// Whether a clip or the physics may carry Rico's head down to the ground, so the view's floor
+    /// holds it above the ground: every case but those that hold the body where the root does not
+    /// stand on the ground under it (a seat, a hang from the hands or a line, a climb, a swim).
+    pub const fn head_may_lie(self) -> bool {
+        !matches!(
+            self,
+            Self::Seated
+                | Self::StuntHanging
+                | Self::Vehicle
+                | Self::GrappleAttach
+                | Self::Traversal
+                | Self::GrappleLock
+                | Self::LedgeClimb
+                | Self::Swimming
+                | Self::HandClimb
+        )
+    }
+
     /// Whether the held view escapes to the animated head when a clip carries the head well away
     /// from the root for longer than a dip: a landing (which reads as on foot once grounded), a
     /// fall, a stumble, an authored one-off, or the movement task stopping. A jump and a climb by
