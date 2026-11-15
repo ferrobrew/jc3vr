@@ -1,14 +1,15 @@
 //! Holding a held ragdoll's get-up off while a hand holds it, and telling what ended a hold.
 //!
-//! The animation graph stands a ragdolling character up once its ragdolling state's timers say so:
-//! the time spent ragdolling, against a threshold, and the time spent settled, its limbs slow
-//! against each other and near the ground (`docs/engine/character/ragdoll.md`, "Out of the
-//! ragdoll"). On the 14 November take the get-up fired about six seconds after a topple while two
-//! hands held the soldier, and ended the hold. Those timers live in the character's control
-//! parameters, which no binding reaches, so the hold instead queues the ragdoll act again on the
-//! held character every [`REQUEUE_S`] of the hold ([`engine::requeue_ragdoll`]), on the hypothesis
-//! that re-entering a ragdoll state resets them. Each hold that ends is classed by what the
-//! character does next ([`HoldEnd`]), so the log shows whether a get-up ended it.
+//! The animation graph stands a ragdolling character up once its ragdolling timers say so
+//! ([`RagdollingControllerParams`]): the time spent ragdolling, against a threshold, and the time
+//! spent settled, its limbs slow against each other and near the ground
+//! (`docs/engine/character/ragdoll.md`, "Out of the ragdoll"). On the 14 November take the get-up
+//! fired about six seconds after a topple while two hands held the soldier, and ended the hold.
+//! So each pickup tick of a hold writes the held character's timers back to where no get-up
+//! condition holds ([`hold_timers`]). Each hold that ends is classed by what the character does
+//! next ([`HoldEnd`]), so the log shows whether a get-up ended it anyway.
+//!
+//! [`RagdollingControllerParams`]: jc3gi::character::control_parameters::RagdollingControllerParams
 
 use std::num::NonZeroUsize;
 
@@ -16,36 +17,40 @@ use jc3gi::character::character::Character;
 
 use crate::controllers::physical_hands::{bodies::owner_of, characters::engine};
 
-/// How often, in seconds of the hold, the ragdoll act is queued again on a held character: well
-/// within the six seconds after which the get-up fired on the 14 November take.
-pub(crate) const REQUEUE_S: f32 = 1.5;
-
-/// When a hold of a ragdoll queues the ragdoll act again: every [`REQUEUE_S`] of game time held.
-#[derive(Debug, Copy, Clone, PartialEq, Default)]
-pub(crate) struct RequeueClock {
-    /// The game time the hold has lasted, seconds.
-    pub held_s: f32,
-    /// The game time since the act was last queued, or since the hold began, seconds.
-    pub since_s: f32,
-}
-
-impl RequeueClock {
-    /// Advance the clock by `dt` seconds of game time; returns whether the act is due now, which
-    /// restarts the wait. A step that is not a positive number advances nothing.
-    pub(crate) fn advance(&mut self, dt: f32, every_s: f32) -> bool {
-        if !(dt.is_finite() && dt > 0.0) {
-            return false;
-        }
-        self.held_s += dt;
-        self.since_s += dt;
-        if self.since_s >= every_s {
-            self.since_s = 0.0;
-            true
-        } else {
-            false
-        }
+/// Write back the ragdolling timers of `character`, held by its body `body`, so no get-up
+/// condition holds: the total below zero, as the ragdolling state task keeps it while the
+/// ragdoll's owner moves it (where the timer condition never holds, whichever way it compares),
+/// and the settled time at zero. Returns whether the timers were written; a protected or dead
+/// character, or one that no longer ragdolls, is left alone.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step and the game's update. The body's current owner is
+/// checked first.
+pub(crate) unsafe fn hold_timers(character: NonZeroUsize, body: u32) -> bool {
+    if unsafe { owner_of(body) } != Some(character) {
+        return false;
     }
+    // SAFETY: the body's owner proves the character live.
+    let character = unsafe { &mut *(character.get() as *mut Character) };
+    if unsafe { engine::protection(character) }.is_some()
+        || unsafe { engine::dead(character) }
+        || !unsafe { character.IsRagdolling() }
+    {
+        return false;
+    }
+    let Some(parameters) = (unsafe { character.m_ControlParameters.as_mut() }) else {
+        return false;
+    };
+    let timers = &mut parameters.m_RagdollingControllerParameters;
+    timers.m_TotalRagdollingTime = HELD_TOTAL_S;
+    timers.m_SettledRagdollingTime = 0.0;
+    true
 }
+
+/// The total ragdolling time a held character is kept at: below zero, which the timer condition
+/// reads as the ragdoll not being its own.
+const HELD_TOTAL_S: f32 = -1.0;
 
 /// What a held character does once a hand's hold of its ragdoll ended.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -95,22 +100,6 @@ impl HoldEnd {
     }
 }
 
-/// Queue the ragdoll act again on `character`, held by its body `body`
-/// ([`engine::requeue_ragdoll`]). Returns whether an act was queued.
-///
-/// # Safety
-///
-/// The game thread, outside the physics step and the game's update. The body's current owner is
-/// checked first.
-pub(crate) unsafe fn requeue(character: NonZeroUsize, body: u32) -> bool {
-    if unsafe { owner_of(body) } != Some(character) {
-        return false;
-    }
-    // SAFETY: the body's owner proves the character live.
-    let character = unsafe { &mut *(character.get() as *mut Character) };
-    unsafe { engine::requeue_ragdoll(character) }
-}
-
 /// What `character`, whose body `body` a hand held, does now that the hold ended.
 ///
 /// # Safety
@@ -133,19 +122,6 @@ pub(crate) unsafe fn hold_end(character: NonZeroUsize, body: u32) -> HoldEnd {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn the_act_is_requeued_every_interval_of_the_hold() {
-        let mut clock = RequeueClock::default();
-        let dt = 0.25;
-        let due: Vec<bool> = (0..12).map(|_| clock.advance(dt, 1.5)).collect();
-        assert_eq!(due.iter().filter(|d| **d).count(), 2);
-        assert!(due[5] && due[11]);
-        assert!((clock.held_s - 3.0).abs() < 1e-5);
-        assert!(!clock.advance(f32::NAN, 1.5));
-        assert!(!clock.advance(-1.0, 1.5));
-        assert!((clock.held_s - 3.0).abs() < 1e-5);
-    }
 
     #[test]
     fn a_hold_end_is_classed_by_what_the_character_does() {

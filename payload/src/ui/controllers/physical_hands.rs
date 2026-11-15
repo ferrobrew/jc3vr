@@ -233,8 +233,8 @@ pub(super) fn characters_doors_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig
                 "Keep a held character in their ragdoll",
             )
             .on_hover_text(
-                "Queue the ragdoll again every second and a half of a hold, so the game's get-up \
-                 does not stand a held character up out of the hand.",
+                "Write back a held character's ragdolling timers through the hold, so the game's \
+                 get-up does not stand them up out of the hand.",
             );
         });
         ui.checkbox(

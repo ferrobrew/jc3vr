@@ -15,8 +15,9 @@ pub struct CharactersConfig {
     pub topple: bool,
     /// Pull a character out of a vehicle seat through an open door: grip them, then yank.
     pub hijack: bool,
-    /// Keep a character a hand holds by its ragdoll in the ragdoll, by queuing the ragdoll act
-    /// again through the hold, so the game's get-up does not stand them up out of the hand.
+    /// Keep a character a hand holds by its ragdoll in the ragdoll, by writing back their
+    /// ragdolling timers through the hold, so the game's get-up does not stand them up out of the
+    /// hand.
     pub hold_off_get_up: bool,
 }
 
