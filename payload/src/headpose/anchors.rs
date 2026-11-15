@@ -40,6 +40,10 @@ pub(crate) struct Geometry {
     /// frame turns toward the root's upright heading by this much (see
     /// [`view_frame`](Self::view_frame)).
     pub camera_weight: f32,
+    /// The lowest the view's head may stand, world height: the ground under Rico plus a clearance,
+    /// so a clip or a ragdoll that lays his head on or into the ground never takes the camera
+    /// under it. `None` where the ground is not known.
+    pub floor: Option<f32>,
 }
 
 impl Geometry {
@@ -53,10 +57,14 @@ impl Geometry {
     /// pose is composed from it, so it is also the point a consumer subtracts from that pose to
     /// have the tracked offset.
     pub(crate) fn view_head(self) -> Vec3 {
-        if self.camera_stable {
+        let head = if self.camera_stable {
             self.camera_head
         } else {
             self.head
+        };
+        match self.floor {
+            Some(floor) if head.y < floor => Vec3::new(head.x, floor, head.z),
+            _ => head,
         }
     }
 
@@ -91,6 +99,7 @@ impl Geometry {
             camera_neck_delta: anchors.neck - anchors.head,
             camera_eye_arm: anchors.eye_arm,
             camera_weight: 0.0,
+            floor: None,
         }
     }
 
@@ -243,6 +252,7 @@ impl Sample {
                 camera_neck_delta: neck - head,
                 camera_eye_arm: rotation.inverse() * (root.transform_point3(eyes_model) - neck),
                 camera_weight: 0.0,
+                floor: None,
             },
         }
     }

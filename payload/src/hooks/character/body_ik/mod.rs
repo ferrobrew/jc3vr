@@ -33,7 +33,11 @@ use crate::{
         locomotion::{anchor::stabilize as stabilize_anchors, view::Neutral},
     },
     headpose,
-    hooks::{self, animation::active_state_type_id, character::body_ik::tuning::BODY_IK_TUNING},
+    hooks::{
+        self,
+        animation::{active_state_type_id, body_rule_system},
+        character::body_ik::tuning::BODY_IK_TUNING,
+    },
 };
 
 /// A snapshot of what the body-IK path did on its last frame, for the debug UI. The engine-side
@@ -364,6 +368,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     sample.geometry.camera_eye_arm = camera.eye_arm;
                     sample.geometry.camera_weight = stabilized.weight;
                 }
+                sample.geometry.floor = view_floor(character, character_world);
                 animation::capture(
                     bind_rotation,
                     identity,
@@ -922,3 +927,20 @@ static BODY_IK_LOG_AT: Mutex<Option<Instant>> = Mutex::new(None);
 static GATE_SKIP_LOGGED: AtomicBool = AtomicBool::new(false);
 static UNMAPPED_LOGGED: AtomicBool = AtomicBool::new(false);
 static SHOULDERS_DRIVEN: Mutex<[bool; 2]> = Mutex::new([false; 2]);
+
+/// The lowest the view's head may stand: the ground under Rico, from the height over the ground
+/// (water excluded) his body rule system last wrote, plus [`VIEW_FLOOR_CLEARANCE_M`]. `None` while
+/// the reading is missing or not a number.
+fn view_floor(character: &Character, world: glam::Mat4) -> Option<f32> {
+    // SAFETY: the live local character, read on the thread running its pose pass.
+    let rules = unsafe { body_rule_system(character) }?;
+    let over = rules.m_HeightOverGroundExcludingWater;
+    let ground = world.w_axis.y - over;
+    ground
+        .is_finite()
+        .then_some(ground + VIEW_FLOOR_CLEARANCE_M)
+}
+
+/// How far above the ground the view's head stays at the least, metres: the eyes hang a little
+/// below and in front of it, and the near plane needs a few centimetres past them.
+const VIEW_FLOOR_CLEARANCE_M: f32 = 0.25;
