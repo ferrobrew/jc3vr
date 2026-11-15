@@ -194,7 +194,8 @@ pub struct RigResult {
     pub step_demand: Vec2,
     pub crouch_m: f32,
     pub hands_reaching: bool,
-    /// The step phase, as the rig names it: `idle`, `stepping`, `settling`, or `drifting`.
+    /// The step phase, as the rig names it: `idle`, `stepping`, `settling`, `drifting`, or
+    /// `following` (the IK body's feet own the stepping, and the drive follows its pelvis).
     pub phase: Label,
     pub gap: Vec2,
     pub body_yaw: f32,

@@ -7,7 +7,7 @@
 //! it, and then calls [`crate::controllers::body::ik_body::effectors::queue`] to hold the seeded
 //! pelvis and place the feet through HumanIK's effectors for the solve that follows.
 
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use body_rig::{
     angle::{line_yaw, wrap, yaw_of},
@@ -208,6 +208,12 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
     state.status.pelvis_drop_m = drop * weights.feet;
     state.status.max_drop_m = state.status.max_drop_m.max(state.status.pelvis_drop_m);
     state.status.source = fk.source;
+    state.status.hips_moved_m = pose
+        .position(RigBone::Hips)
+        .distance(input.animated.position(RigBone::Hips));
+    if state.in_idle {
+        state.log_standing(input.now, fk.estimate_weight);
+    }
     let seeded_hips = [
         pose.position(RigBone::LeftUpLeg),
         pose.position(RigBone::RightUpLeg),
@@ -454,6 +460,8 @@ pub struct IkStatus {
     pub max_drop_m: f32,
     /// How many HumanIK targets the last gate queued.
     pub targets_queued: usize,
+    /// How far the seeded hips stand from the clip's, metres.
+    pub hips_moved_m: f32,
 }
 
 /// What the IK body keeps between gates.
@@ -485,6 +493,8 @@ pub(crate) struct Episode {
     pub began: Option<Instant>,
     pub steps: u64,
     pub handovers: u64,
+    /// When the spell's state was last logged.
+    pub logged_at: Option<Instant>,
 }
 
 impl GateState {
@@ -516,6 +526,7 @@ impl GateState {
                 pelvis_drop_m: 0.0,
                 max_drop_m: 0.0,
                 targets_queued: 0,
+                hips_moved_m: 0.0,
             },
             logged: None,
             in_idle: false,
@@ -523,6 +534,7 @@ impl GateState {
                 began: None,
                 steps: 0,
                 handovers: 0,
+                logged_at: None,
             },
             epoch: 0,
             snaps: 0,
@@ -590,8 +602,37 @@ impl GateState {
             began: Some(now),
             steps: 0,
             handovers: 0,
+            logged_at: Some(now),
         };
         self.status.max_drop_m = 0.0;
+    }
+
+    /// Log the standing body's state every [`STANDING_LOG`], for judging the controlled stand
+    /// from the session log.
+    fn log_standing(&mut self, now: Instant, estimate_weight: f32) {
+        if self
+            .episode
+            .logged_at
+            .is_some_and(|at| now.saturating_duration_since(at) < STANDING_LOG)
+        {
+            return;
+        }
+        self.episode.logged_at = Some(now);
+        let s = &self.status;
+        tracing::info!(
+            target: "body",
+            left = s.feet[0].label(),
+            right = s.feet[1].label(),
+            planted = s.planted,
+            steps = self.episode.steps,
+            steps_per_minute = s.steps_per_minute,
+            feet_weight = s.weights.feet,
+            pelvis_drop_m = s.pelvis_drop_m,
+            hips_moved_m = s.hips_moved_m,
+            targets = s.targets_queued,
+            estimate_weight,
+            "ik body: standing",
+        );
     }
 
     fn end_episode(&mut self, now: Instant) {
@@ -749,6 +790,9 @@ impl GateState {
         }
     }
 }
+
+/// How often the standing body's state is logged while it lasts.
+const STANDING_LOG: Duration = Duration::from_secs(10);
 
 /// The smoothing time of the FK pelvis's velocity, seconds.
 const VELOCITY_SMOOTHING_S: f32 = 0.1;

@@ -86,11 +86,12 @@ pub(super) fn ik_body_readout(ui: &mut Ui) {
         ik.missed,
     ));
     ui.label(format!(
-        "Last step: {} · pelvis lowered {:.3} m (at most {:.3} m this spell)",
+        "Last step: {} · hips moved {:.3} m · lowered {:.3} m (at most {:.3} m this spell)",
         ik.last_step.map_or_else(
             || "none".to_owned(),
             |(side, reason)| format!("{} foot, {}", side.label(), reason.label())
         ),
+        ik.hips_moved_m,
         ik.pelvis_drop_m,
         ik.max_drop_m,
     ));
