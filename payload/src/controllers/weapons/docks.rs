@@ -32,28 +32,31 @@ use jc3gi::{
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    body::{self, rig::frames::Frames},
-    cockpit::CockpitTransform,
-    frame::Hand,
-    hands::{self, ActiveHands, grip, ik},
-    loadout::{
-        LoadoutSnapshot, Place, Socket,
-        grab::{self, GrabRules, SocketMove},
-        live,
-    },
-    roomscale::{self, SeatPhase, posture::EffectivePosture},
-    weapons::{
-        docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
-        engine::{grip_points, gun_count, gun_ptr, slot_of},
-        grenade,
-        hold::{act, armed},
-        inventory::{
-            carry,
-            engine::ObjectKey,
-            sockets::{self, Offsets},
+use crate::{
+    controllers::{
+        body::{self, rig::frames::Frames},
+        cockpit::CockpitTransform,
+        frame::Hand,
+        hands::{self, ActiveHands, grip, ik},
+        loadout::{
+            LoadoutSnapshot, Place, Socket,
+            grab::{self, GrabRules, SocketMove},
+            live,
+        },
+        roomscale::{self, SeatPhase, posture::EffectivePosture},
+        weapons::{
+            docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
+            engine::{grip_points, gun_count, gun_ptr, slot_of},
+            grenade,
+            hold::{act, armed},
+            inventory::{
+                carry,
+                engine::ObjectKey,
+                sockets::{self, Offsets},
+            },
         },
     },
+    vr,
 };
 
 pub(crate) mod attachments;
@@ -400,13 +403,29 @@ fn seated_waist(owner: &Character) -> Option<[Option<Mat4>; Socket::COUNT]> {
     if !frame.fresh(Instant::now())
         || !(frame.posture == EffectivePosture::Seated || frame.seat == SeatPhase::Locked)
     {
+        *SEATED_NECK.lock() = None;
         return None;
     }
     let active = hands::active_hands_raw()?;
     let frames = cockpit_frames(&active, Mat4::from(owner.m_WorldMatrixT1))?;
     let player = body::player();
     let dimensions = PlayerBody::from_heights(player.height, player.eye_height);
-    let neck = neck_pivot(active.head.position, active.head.orientation);
+    // The waist hangs from the neck as it was when the player sat, not as it is: a player leaning
+    // to look at a thigh or reaching toward the knees does not move their hips, and on the
+    // 14 November take a lean of half a metre carried a docked SMG out through the cabin wall. A
+    // recenter, which re-bases the cockpit, takes the neck afresh.
+    let live_neck = neck_pivot(active.head.position, active.head.orientation);
+    let recenters = vr::recenter_count();
+    let neck = {
+        let mut latched = SEATED_NECK.lock();
+        match *latched {
+            Some((neck, count)) if count == recenters => neck,
+            _ => {
+                *latched = Some((live_neck, recenters));
+                live_neck
+            }
+        }
+    };
     let waist = neck - Vec3::Y * dimensions.spine_length(dimensions.standing_neck());
     let remaps = hands::arm_remaps(
         &active.config,
@@ -506,6 +525,10 @@ struct DockGrip {
 
 /// The weapons' grips on their sockets' bones, for the weapons the table has on the body.
 static GRIPS: Mutex<Vec<DockGrip>> = Mutex::new(Vec::new());
+
+/// The neck pivot the seated waist hangs from, in the cockpit frame, as it was when the player sat,
+/// with the recenter count it was taken at.
+static SEATED_NECK: Mutex<Option<(Vec3, u32)>> = Mutex::new(None);
 
 /// The object of the weapon `hand` holds in `snapshot`.
 fn held_object(snapshot: &LoadoutSnapshot, hand: Hand) -> Option<ObjectKey> {
