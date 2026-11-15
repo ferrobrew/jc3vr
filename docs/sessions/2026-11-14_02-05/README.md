@@ -93,40 +93,41 @@ The body:
 - The legs off the ground after a landing (899.7): 908cbdea squares the stance only in a standing idle; the fast fall's landing had dragged the feet across the slope.
 - Legs while hanging under the canopy (1166) and swinging (322 to 344): deferred to the firm ragdoll, planned.
 - Climbing (1313): 794c5626 lifts the body along a face that leans back, so the player no longer has to keep leaning forward. Feet on the face are deferred to the IK-first body.
-- Body yaw strongly aligned with movement (2044): not done. The misses were standing still or seated, so aligning the body to the movement would not have caught them, and it conflicts with the idle IK. The seated hips were the real cause at 2362 and 3894 (0231e4ec).
+- Body yaw strongly aligned with movement (2044): not done. The three misses were while sprinting at 5.4 m/s, with Rico facing only 5 to 20 degrees from the head; the sprint clip's pelvis swing and hip bob carried the belt's volumes, which ride the hip joints, by up to 10 cm a stride, and the one grab standing still took. Aligning the body to the movement conflicts with backpedalling, strafing, and the idle IK, so the plan is a belt frame low-passed over a stride and driven by the estimate's pelvis while walking (next-session.md). The seated hips were the cause at 2362 and 3894 (0231e4ec, 30bb9a94).
 
 The camera and comfort:
 
 - The head pitching down entering the wingsuit (295, 592.69, 757.5, 1176): 0934ffbb stops the view following the clip's head through flight and vehicle changes.
 - The speed loss from grapple to wingsuit (295): the reel's ending scales speed to about 0.43, not the wingsuit. The lerp needs the reel's exit path and the wingsuit's velocity reverse-engineered: deferred.
-- Camera-body-head detachment on get-ups and landings (297, 301, 490, 597.3, 755.4, 824.9, 870.2, 1382.8, 2993, 3824.8): d0402249 has the held view follow Rico's head through ragdolls, get-ups, and deaths, and escape to it when a landing carries the head away for longer than a dip, which keeps the roof-jump fix.
+- Camera-body-head detachment on get-ups and landings (297, 301, 490, 597.3, 755.4, 824.9, 870.2, 1382.8, 2993, 3824.8): d0402249 has the held view follow Rico's head through ragdolls, get-ups, and deaths, and escape to it when a landing carries the head away for longer than a dip, which keeps the roof-jump fix. f64c1e2b follows the head's offset from the root so a body moving fast is not left behind, and 7efd7a49 keeps the view on the head past a get-up until it is over the root. The body standing up yawed away from the view (490) is not addressed: the follow's target already has no deadband, so why the body stays turned after a get-up needs the recording's rig yaw; planned in next-session.md.
 - The parachute roll (262): d4b66fd6. The skip had never run, because the act transition that opens the canopy does not go through the hooked function.
-- The camera underground and inside the body on landings (445.8 to 446.6): 03644c9c keeps the view's head above the ground; d0402249 covers the crash recovery's lift through the torso.
+- The camera underground and inside the body on landings (445.8 to 446.6): 03644c9c keeps the view's head above the ground, and 76c5fbfa holds that floor off seats, hangs, climbs, and swims. The lift through the torso at 445.9 was the handover from the wingsuit's animated head to the root-held view blending through the body; f64c1e2b starts such a handover on the head and returns to the root once the head is over it, and counts a head lying low toward the escape. The body seen at 446.576 is Rico's pack in the crash recovery's crouch under a correctly placed view; that is the clip's crouch under a standing view, which the IK-first body addresses.
 - Camera-body clipping on a vehicle roof (565 to 572): c06e434b holds the eyes out from the face there.
+- The camera inside the body on a landing (1806): the reviewer's guess is right. Through the fast fall Rico faced about 100 degrees from the view, since the body follows the torso only on foot, and the landing turned the root 75 degrees in 0.2 s and put the head 0.9 m in front of the root-held view. Not done: the follow's target already has no deadband on landing, so the fix (keeping the body's heading on the view's through falls, or the airborne IK of the IK-first body) is planned in next-session.md.
 - The death animation (576): d0402249 follows the dying head upright, and 03644c9c keeps it above the ground.
-- The camera not following the canopy's yank out of the wingsuit (2806): the cause is not established; deferred.
-- The view on vehicle entry and exit, and the stepped turn (the note on vehicle entry, 1742.59, and new problem 2 above): 8908e260 steps the view toward the body every half second by up to 30 degrees. The seat tables it relies on named states that are in none of Rico's graphs; they are replaced.
+- The camera not following the canopy's yank out of the wingsuit (2806): the cause is not established; deferred, planned: whether the opening out of the suit belongs on the reel-opening skip list (next-session.md).
+- The view on vehicle entry and exit, and the stepped turn (the note on vehicle entry, 1742.59, and new problem 2 above): 8908e260 steps the view toward the body every half second by up to 30 degrees, and 5b6cd60f rides the vehicle's own turn once the clip ends and has the seat lock's yaw re-base wait for the steps. Entries the mode reads as on foot (the helicopter at 3788 read as a jump) take no steps; the next session checks them. The seat tables it relies on named states that are in none of Rico's graphs; they are replaced.
 - Loading screens following the face (582): a413c461.
 - Grab circles in a loading screen (740.35): 44110ad3 draws only the panel pointer out of gameplay.
 - The dot cursor through the flight (774.24): not established; likely the game's own map cursor left visible after the fast travel. Deferred.
 
 The grapple and flight:
 
-- Grappling a ragdoll (83): 267b4b24 yanks the body in to arm's reach and holds it there for the swing.
+- Grappling a ragdoll (83): 267b4b24 yanks the body in to arm's reach and holds it there for the swing, and 291d5d2f eases it in over the last of the line so it does not fly on through the view.
 - The hint laser while grappled: 92bd73eb hides the beam while a line is out and keeps the target ring.
-- Shooting while grappled (92): 0545c866 lets the free hand's gun fire on the mod's own lines.
-- Tangential jumps and vertical discontinuities at swing engagement (800, 807.9, 833.8, 885.89, 918.54, 927.5): deab9675 replaces the take with a ballistic coast; the line goes taut where the approach ends.
+- Shooting while grappled (92): 0545c866 lets the free hand's gun fire on the mod's own lines, on foot or in the air (0fe6198b).
+- Tangential jumps and vertical discontinuities at swing engagement (800, 807.9, 833.8, 885.89, 918.54, 927.5): deab9675 replaces the take with a ballistic coast; the line goes taut where the approach ends. As committed, a fast rush coasted onto a line too short to bear its swing and broke it; bc32891f stops the coast at the shortest length the line can swing on, braking along the line, so a level rush loses some speed rather than snapping the line.
 - The ground breaking the grapple (802): 59621522 keeps a held swing across the ground.
-- The release killing all velocity (906.45): 68d0e245 hands the velocity back after the reel's cancel scales it.
+- The release killing all velocity (906.45): 68d0e245 hands the velocity back after the reel's cancel scales it, and edef4acc stops that on touching down, a new reel, the wingsuit, or the parachute.
 - The upside-down hang that jump would not release (844.69 to 865): fb1d4b46 keeps the rider upright on a held line, and 59621522 lets jump release.
-- Trapped at the ceiling (950, 2539): fb1d4b46 runs the reel's motion at the arrival, which had frozen Rico; deab9675 lets the hang pay out to its length.
+- Trapped at the ceiling (950, 2539): fb1d4b46 runs the reel's motion at the arrival, which had frozen Rico, and 5d0305f7 forgets that motion's reel state once the reel or the lock ends; deab9675 lets the hang pay out to its length.
 - Regrappling the car by mashing (465 to 468): 7e961110 fires again on a tap aimed away from the locked line.
 - Grappling from the wingsuit (1223 to 1244): e23f7afb ends a spent grapple press in any mode.
 - The grapple cursor bouncing on a moving vehicle (2926): b3d9d852 places it between its last two ticks' points.
-- Grappling onto a helicopter (1794) and the rail (743 to 754, 2634): e4b15544 takes the hang in to its length and damps its swing. The rail and entering from it need reverse-engineering: deferred, planned. 743 to 754 was the fast travel's scripted sequence on the skid, not a grapple.
-- Freefalling but standing (1384): a scripted drop into freefall shown as a ledge fall. Deferred.
+- Grappling onto a helicopter (1794) and the rail (743 to 754, 2634): e4b15544 takes the hang in to its length and damps its swing. The rail and entering from it need reverse-engineering: deferred, planned. 743 to 754 was the fast travel's scripted sequence on the skid, not a grapple; standing on the rail and stepping off into a skydive applies there too, and the rail plan covers it.
+- Freefalling but standing (1384): a scripted drop into freefall shown as a ledge fall. Deferred, planned: the body's case for the scripted drop (next-session.md).
 - The body swinging left as the parachute opened (1459.4): not a collision; probably the parachute's velocity alignment turning toward a near-zero velocity. Deferred, needs reverse-engineering.
-- The parachute handle out of reach (1153.93, 1400): e0ab1a26 rings the reach that takes presses. The handle sits at the top of the riser; moving it to the grip bar needs the bar's offset reverse-engineered. At 1400 the left controller was mostly untracked.
+- The parachute handle out of reach (1153.93, 1400): e0ab1a26 rings the reach that takes presses, in place of the column the reviewer asked for, which is not drawn. The handle sits at the top of the riser; moving it to the grip bar needs the bar's offset reverse-engineered. At 1400 the left controller was mostly untracked.
 - Pitching the parachute with the handles (1153.93, 2806): e0ab1a26 dives with both handles pushed up or forward; both pulled down already braked.
 - The wingsuit arms bent in (370.2): 4447aae7 hangs the estimated shoulders from the neck pivot, so a glance no longer bends an arm.
 - Grapple pickups from the ground (3442, 3518): 37bc474b gives a placed charge longer before it counts as snagged. What 3442 was could not be found in the log.
@@ -134,24 +135,24 @@ The grapple and flight:
 Hands, guns, and inventory:
 
 - A primed grenade lacking the live grenade's effects (115): the game sets the trail effect and sound only at the throw. The fix is to call the same setup at the pin pull, which needs two pyxis bindings: deferred, planned.
-- The C4 trigger (478) and the second detonator (489.5): 93a34bc5 detonates from the held charge's trigger, keeps the charge in the hand, and refuses presses the game would not act on. The upside-down detonator was the game's own, from its detonate act; placing it in the hand needs some reverse-engineering, deferred.
+- The C4 trigger (478) and the second detonator (489.5): 93a34bc5 detonates from the held charge's trigger, keeps the charge in the hand, and refuses presses the game would not act on; 6b16178e detonates only with charges on the placed list, since whether the game's count includes the primed charge is unverified. The upside-down detonator was the game's own, from its detonate act; placing it in the hand needs some reverse-engineering, deferred.
 - Hands snapping back and forth on the car (510 to 519): 73cd26e4 leads the carrier's motion by simulation steps.
 - The yanked gunner falling through the vehicle (532.5): 8fca10c9 keeps the vehicle's bodies out of the player's carry collision set.
-- Thrown C4 ignoring the moving frame (556.8, 560.57): 7b94ffec carries the throw with the vehicle's speed, read once a tick, and no longer caps it.
+- Thrown C4 ignoring the moving frame (556.8, 560.57): 7b94ffec carries the throw with the vehicle's speed, read once a tick, and no longer caps it; 6f895458 bounds the carried part. Whether the measured velocity follows a vehicle while seated is unverified, and the next session checks a seated throw.
 - Holsters across respawn (646): becdd9cd puts the game's own holster on the hand's hip and replicates a lone pistol on respawn. The pistol was lost at 291, not at the respawn.
-- The clip release doing nothing (1121.42): f4f3006e makes magazine drops reliable and reports refusals.
+- The clip release doing nothing (1121.42): f4f3006e drops the magazine unretained when retention fails and reports refusals at the push, and 14070339 hides a spareless drop's magazine part and reports refusals raised when the drop runs. Which refusal fired on the take is a hypothesis, so this is not known to cover every case; the records-leak fix in the analysis is not done.
 - Knock-out reloads (1886 to 1891): f4f3006e lowers the threshold to 0.75 m/s.
 - Reloading in a vehicle: c602149b drops a dry gun's magazine with a double tap of its fire press. A loaded gun's double tap is two shots, so it ejects nothing; the belt push reloads it.
 - C4 and grenades while seated (4147): 774ee5b2.
 - Rejected grenades falling unnoticed (1629): fa2fdd67 gives a full pouch a long, full buzz.
 - Lockers refilling spare ammo: deferred; how the game refills at a locker is not established.
 - The dual-wield duplicate appearing on the first grab (1653): the twin is already spawned and hidden. Showing both stacked is deferred.
-- Where the grab circles are placed (2362.54): on foot, on Rico's drawn leg holster bones, pelvis, and chest. Seated, the hips hung below the live head; 0231e4ec latches the neck when the player sits.
+- Where the grab circles are placed (2362.54): on foot, on Rico's drawn leg holster bones, pelvis, and chest. Seated, the hips hung below the live head; 0231e4ec latches the neck when the player sits, and 30bb9a94 latches it only once the posture reads seated and afresh with every change of the cockpit frame.
 - Grenades back into the pouch (2560 to 2580): the hand was released at shoulder height, above the pouch; not changed.
-- The weapon flying off after a swing (2526) and the drops while upside down (844 to 865): 0c8dcdff keeps a slow fist past its window from taking anything on the body, which had drawn holstered guns into the hand holding the line.
-- Ragdoll and prop grips spasming (2659, 2674, 3270, the general note): 9f5d1e74 pulls held ragdolls and articulated objects softly and topples a character once.
-- Hitting people with props and swung weapons (3238, 3265): d46e0002.
-- Ragdoll grabbing not working (3257): the ally's hit reaction refused the topple; why is not established. Deferred.
+- The weapon flying off after a swing (2526) and the drops while upside down (844 to 865): 0c8dcdff keeps a slow fist past its window from taking anything on the body, which had drawn holstered guns into the hand holding the line; 1ff3fbe4 limits that to the grapple's hand while its line is out, so the free hand's slow fist still reaches the holsters.
+- Ragdoll and prop grips spasming (2659, 2674, 3270, the general note): 9f5d1e74 pulls held ragdolls and articulated objects softly and topples a character once, and fc5d5c64 damps a held ragdoll's bodies toward its whole velocity. The point joint for a second hand or an articulated object (it needs a pyxis binding), damping an articulated object, keeping a held ragdoll out of the camera, and holding off the get-up are not done; planned in next-session.md. The softer pull leaves more lag before a hold tears, which the next session checks.
+- Hitting people with props and swung weapons (3238, 3265): d46e0002. The calibrated strike now applies even when the native hit reaction acts too; a64524b3 logs both, so the next take shows any blow taken twice.
+- Ragdoll grabbing not working (3257): the ally's hit reaction refused the topple; why is not established. 404c405d retries the ragdoll act once for a character still standing 0.3 s into the wait.
 - The tripod gunner (3382 to 3389): d9547d62.
 - The gun stuttering in the hand (3715.6): probably the same drive and timing as 510; 73cd26e4 may cover it.
 - The SMG put away seated (3894): 0231e4ec.
@@ -161,16 +162,27 @@ Hands, guns, and inventory:
 Vehicles and mounted guns:
 
 - The scooter (191 to 252): 5409e58f turns the twist grips off for the triggers, and the bars take the wheel's centre latch, cues, and a grip grace.
-- Opening doors from anywhere (459, 2702): 84fe4916.
+- Opening doors from anywhere (459, 2702): 84fe4916, narrowed by f6777b14 to the outer face of a door other than a hood or trunk, away from the hinge, so that bracing on a car to climb or ride still holds the car.
 - The fighter's cockpit (1097.4): with 84fe4916 the canopy is taken where the hand touches it; pulling the pilot out plays the game's hijack, not a drag.
 - Too close to the gun in the gunner seat (535): deferred, planned (a gunner-seat view correction).
-- Aiming mounted guns by the handles (536 to 550, 1747 to 1754, 3395): 9c822cc2 keeps the mount's motors running for a handle grip, which is the regression on standalone guns. In a vehicle's gunner seat the game's aim does not turn the turret, and what does needs reverse-engineering: deferred.
-- The Y prompt still showing (3395): deferred.
-- A torn gun stuck on its mount, the weapons ejected, and the boat's gun (3401 to 3442, 4055): the mount constraints survive the tear, and the fallback pickup takes the nearest weapon. Deferred, needs reverse-engineering.
-- A mounted gun as a yank target (1735): 0ad0cf9b stops offering a part still on its vehicle.
+- Aiming mounted guns by the handles (536 to 550, 1747 to 1754, 3395): 9c822cc2 keeps the mount's motors running for a handle grip, which is the regression on standalone guns. In a vehicle's gunner seat the game's aim does not turn the turret, and what does needs reverse-engineering: deferred. The hands not drawn on the handles off the seat (the anchored tier exists only in the scripted mounted state) are deferred with it.
+- The Y prompt still showing (3395): 7c9d2f06 hides a standalone mounted gun's prompt under the controllers from the moment the gun is seen.
+- A torn gun stuck on its mount, the weapons ejected, and the boat's gun (3401 to 3442, 4055): a9035421 removes the use-item fallback, which took the nearest weapon and ejected the player's own. The mount constraints surviving the tear need reverse-engineering: deferred, planned. The snatch still refuses a torn mounted gun, since the hands' table cannot take a heavy gun from the world.
+- A mounted gun as a yank target (1735): 0ad0cf9b stops offering a part still on its vehicle, which removes the false target; the yank that tears the gun off as the hand's tear does is not implemented, and waits on the torn gun's constraints.
 - The helicopter controls (3791, 3879.97): the utility helicopter's collective and the second helicopter's controls fall back to fixed offsets. Measuring them and an in-game calibration are deferred.
 
 The interface and rendering:
 
 - Freezing the UI cursor on a light pull (730 to 734): f99b19a3.
 - Shadows away from their objects (441.91): the shadow cascades' refresh is the leading hypothesis; a render trace is needed. Deferred.
+
+The new problems listed above:
+
+- 1, the estimate-driven legs on glances: the IK-first body replaces them (planned).
+- 2, the vehicle entry swings: 8908e260 and 5b6cd60f (above).
+- 3, the wingsuit crash straightening the view: 0934ffbb (above, next-session check 3).
+- 4, the frame time: not investigated; the next session runs the A/B with the estimator off (next-session.md).
+- 5, the refused C4 planting and the detonations with nothing going off: 93a34bc5 keeps a refused charge in the hand, and 6b16178e detonates only with charges placed.
+- 6, the belt pushes with a magazine in: f4f3006e and 14070339 (the clip release, above).
+- 7, the empty-handed character grabs and the allies that did not go limp: 404c405d retries the ragdoll act; the rest of the grabs that ended empty are not analysed further.
+- 8, the debug panel dropping the SMG: deferred, planned (the panel pausing the weapons rather than standing them down).
