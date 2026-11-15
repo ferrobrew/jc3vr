@@ -644,6 +644,13 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     controls.ragdolling = mode::last_snapshot()
         .and_then(|snapshot| snapshot.character)
         .is_some_and(|character| character.has(StateBitFlag::SB_IN_RAGDOLL));
+    state.bindings.observe_grapple_neutral(
+        raw_grapple_button,
+        semantic.is_some()
+            && !controls.masked_hands.contains(&true)
+            && neutral_policy.frame_neutral(&original)
+            && source_neutral,
+    );
     let snatch_button_owned = state.bindings.claim_snatch(
         raw_grapple_button,
         snatch::can_claim_button() && config.weapons.snatch.sling,

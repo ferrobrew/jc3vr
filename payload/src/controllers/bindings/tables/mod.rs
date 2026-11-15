@@ -201,6 +201,11 @@ impl Bindings {
         }
     }
 
+    /// End a grapple press a traversal spent once the button reads up, in any mode.
+    pub(crate) fn observe_grapple_neutral(&mut self, button: ButtonControl, readable: bool) {
+        self.grapple.observe_spent_neutral(button, readable);
+    }
+
     /// Claim the snatch's B episode before ordinary grapple evaluation.
     pub(crate) fn claim_snatch(
         &mut self,

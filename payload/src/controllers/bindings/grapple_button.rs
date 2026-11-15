@@ -203,6 +203,16 @@ impl GrappleButton {
         }
     }
 
+    /// End a press a traversal spent once the button reads up, in whatever mode: the wingsuit's
+    /// gesture deploy spends the press in the air, where the snatch's neutral observation never
+    /// runs, and the grapple would otherwise stay dead until Rico is back on foot. `readable` says
+    /// the button's sample is trustworthy (present, unmasked, and every source neutral).
+    pub(crate) fn observe_spent_neutral(&mut self, button: ButtonControl, readable: bool) {
+        if readable && !button.held() && !button.released {
+            self.traversal_spent = false;
+        }
+    }
+
     /// Reset ordinary gestures without transferring a consumed press back to the game.
     pub(crate) fn reset_preserving_snatch(&mut self) {
         self.phase = Phase::Idle;
@@ -1230,5 +1240,20 @@ mod tests {
             &mut desired,
         );
         assert_eq!(desired, vec![fire, other]);
+    }
+
+    #[test]
+    fn a_spent_press_ends_when_the_button_is_up_even_without_the_snatch() {
+        let mut g = GrappleButton::new();
+        g.spend();
+        g.observe_snatch_neutral(UP, false);
+        assert!(
+            !g.physical_button_held(true),
+            "still spent without a readable sample"
+        );
+        g.observe_spent_neutral(HELD, true);
+        assert!(!g.physical_button_held(true), "still spent while held");
+        g.observe_spent_neutral(UP, true);
+        assert!(g.physical_button_held(true));
     }
 }
