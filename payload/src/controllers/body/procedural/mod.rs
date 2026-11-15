@@ -54,7 +54,10 @@ pub mod twist;
 pub mod wings;
 
 use std::{
-    sync::atomic::{AtomicU32, Ordering},
+    sync::{
+        LazyLock,
+        atomic::{AtomicU32, Ordering},
+    },
     time::{Duration, Instant},
 };
 
@@ -95,7 +98,9 @@ use crate::{
         mode::{AirborneVariant, Mode, current as current_mode},
     },
     grapple::physical::lock,
+    hash::StateSet,
     headpose::{body_relative_rotation, xr},
+    hooks::animation::active_state_type_id,
 };
 
 /// What the procedural body did at its last gate.
@@ -335,8 +340,16 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         classify_locked(&read, locked)
     };
     state.hips.track(case, &animated, dt);
+    // The square stance is for the standing idle only: a landing's or a get-up's clip that has
+    // stopped the root still turns the hips and places the feet itself, and squared under it the
+    // feet slid across a slope at their old height (6 of 18 fast-fall landings on the 14 November
+    // take, which read as on foot once grounded).
+    // SAFETY: the live local character, at the pose gate on the game thread.
+    let idle = unsafe { active_state_type_id(character) }
+        .is_some_and(|state| STANCE_IDLES.contains(state));
     let stance_authorized = (config.stance.enabled || (follow.enabled && follow.square_hips))
         && case == Case::OnFoot
+        && idle
         && locomotion.fresh(now);
     let stance_weight = if stance_authorized {
         state
@@ -467,6 +480,28 @@ struct TorsoGate<'a> {
     visual_heading: Option<Quat>,
     arm_shoulders: [Option<Vec3>; 2],
 }
+
+/// The standing idle states of Rico's base graph, the only states the square stance squares the
+/// feet in.
+static STANCE_IDLES: LazyLock<StateSet> = LazyLock::new(|| {
+    StateSet::new([
+        "S_IDLE",
+        "S_IDLE_AIM_FOCUS",
+        "S_IDLE_PRECISION",
+        "S_IDLE_TRANS_TO_AIM",
+        "S_IDLE_TRANS_TO_NO_AIM",
+        "S_IDLE_TRANS_TO_NO_AIM_SLOW",
+        "S_IDLE_GRENADE_FIRE_0",
+        "S_IDLE_GRENADE_FIRE_120L",
+        "S_IDLE_GRENADE_FIRE_120R",
+        "S_IDLE_GRPL_FIRE_0",
+        "S_IDLE_GRPL_FIRE_120L",
+        "S_IDLE_GRPL_FIRE_120R",
+        "S_IDLE_GRPL_TETHER_FIRE_0",
+        "S_IDLE_GRPL_TETHER_FIRE_120L",
+        "S_IDLE_GRPL_TETHER_FIRE_120R",
+    ])
+});
 
 /// The share of a gait clip's forward lean the torso takes out on the ground before following the
 /// player's head.
