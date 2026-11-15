@@ -9,24 +9,34 @@
 //! local player's inventory when a weapon the table has on the body, in a hand or on a socket, is
 //! of that type. The types are published once per input tick as a mask, which the detour reads
 //! without a lock, since the credit runs wherever the pickup interaction activates.
+//!
+//! How a weapon locker refills the reserve is not established: the game has no locker class, and
+//! every reserve change goes through [`Inventory::SetAmmoCount`]. The local player's reserve rises
+//! are logged at info level with the type and the counts, as are the pickup's automatic credits
+//! ([`WeaponBase::ShouldAutoPickup`]) with the weapon's stored rounds, so a session at a locker
+//! shows which path, if any, refills it.
 
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use detours_macro::detour;
 use jc3gi::{
-    character::inventory::Inventory,
+    character::{character::Character, inventory::Inventory},
     equipment::weapon::{AmmunitionType, WeaponBase},
+    game::GameObject,
 };
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::{
     hands::ik,
     loadout::{Place, live},
-    weapons::inventory::carry,
+    weapons::{engine::character_object, inventory::carry},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
-    HookLibrary::new().with_static_binder(&HAS_WEAPON_WITH_AMMO_TYPE_BINDER)
+    HookLibrary::new()
+        .with_static_binder(&HAS_WEAPON_WITH_AMMO_TYPE_BINDER)
+        .with_static_binder(&SET_AMMO_COUNT_BINDER)
+        .with_static_binder(&SHOULD_AUTO_PICKUP_BINDER)
 }
 
 /// Publish the ammunition types of the weapons the table has on the body. Called each input tick
@@ -87,6 +97,59 @@ fn has_weapon_with_ammo_type(inventory: *const Inventory, ammo_type: i32) -> boo
     let is_local = local != 0
         && unsafe { inventory.as_ref() }.is_some_and(|i| i.m_Character as usize == local);
     is_local && bit(ammo_type).is_some_and(|bit| MASK.load(Ordering::Relaxed) & bit != 0)
+}
+
+/// The ammunition type is taken as the raw value, as in [`has_weapon_with_ammo_type`].
+#[detour(address = jc3gi::character::inventory::Inventory::SetAmmoCount_ADDRESS)]
+fn set_ammo_count(inventory: *mut Inventory, ammo_type: i32, count: i32, save_game: bool) {
+    // SAFETY: the setter is given a live inventory.
+    let before = unsafe { inventory.as_ref() }
+        .filter(|i| {
+            let local = ik::local_character();
+            local != 0 && i.m_Character as usize == local
+        })
+        .and_then(|i| {
+            usize::try_from(ammo_type)
+                .ok()
+                .and_then(|index| i.m_Ammunition.get(index).copied())
+        });
+    SET_AMMO_COUNT
+        .get()
+        .unwrap()
+        .call(inventory, ammo_type, count, save_game);
+    if let Some(before) = before {
+        // SAFETY: as above.
+        let after = unsafe { inventory.as_ref() }.and_then(|i| {
+            usize::try_from(ammo_type)
+                .ok()
+                .and_then(|index| i.m_Ammunition.get(index).copied())
+        });
+        if let Some(after) = after.filter(|after| *after > before) {
+            tracing::info!(
+                target: "controllers",
+                ammo_type,
+                before,
+                after,
+                "ammo: the local player's reserve rose"
+            );
+        }
+    }
+}
+
+#[detour(address = jc3gi::equipment::weapon::WeaponBase::ShouldAutoPickup_ADDRESS)]
+fn should_auto_pickup(weapon: *mut WeaponBase, activator: *mut GameObject) -> bool {
+    // SAFETY: the interaction passes a live weapon.
+    let stored = unsafe { weapon.as_ref() }.map(|w| w.m_StoredNonMagazineAmmo);
+    let credits = SHOULD_AUTO_PICKUP.get().unwrap().call(weapon, activator);
+    let local = ik::local_character();
+    if local != 0 && activator == character_object(local as *const Character) && credits {
+        tracing::info!(
+            target: "controllers",
+            stored = stored.unwrap_or(0),
+            "ammo: a weapon's pickup credited its stored rounds to the local player"
+        );
+    }
+    credits
 }
 
 #[cfg(test)]

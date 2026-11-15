@@ -200,8 +200,9 @@ fn pickup_item(weapon: *mut WeaponBase, activator: *mut GameObject) {
     };
     if !own && table_takes(w) {
         if w.m_InfinitePickup {
-            // It gives a copy from its pickup start and goes into no slot.
-            w.m_StoredNonMagazineAmmo = 0;
+            // It gives a copy from its pickup start and goes into no slot. Its stored rounds stay:
+            // emptied here, a locker's displayed weapon had nothing left for the pickup's
+            // automatic credit to refill the reserve from.
             return;
         }
         if let Some(strong) = unsafe { strong_to(w) } {
