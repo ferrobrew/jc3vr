@@ -36,7 +36,7 @@ use crate::{
             },
             physics::{
                 blows::{self, DamageContext},
-                body,
+                body, drawn_body,
             },
             sounds::{self, Impact, ImpactKind},
             world::World,
@@ -311,6 +311,12 @@ unsafe fn observe_contacts(
             }
             None => None,
         };
+        // Rico's own torso capsules are the player's body, not something the held object struck:
+        // the hold is told it rests on them, and no feedback or push comes of the contact.
+        if lease.armed && drawn_body::is_proxy(other) {
+            drawn_body::note_contact(lease.identity.body);
+            continue;
+        }
         let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
         if !lease.armed
             || other_owner.is_some_and(|owner| owner.get() == player)

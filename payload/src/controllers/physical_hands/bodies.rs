@@ -22,6 +22,7 @@ use jc3gi::{
         weapon::{WeaponBase, WeaponState},
     },
     game::GameObject,
+    havok::hkAabb,
     physics::{
         PfxCharacterInstance, PfxInstance, PhysicsGameObject, RigidObject, RigidObjectType,
         hknpBody, hknpMotion, hknpWorld,
@@ -491,6 +492,22 @@ pub(super) unsafe fn instance_of(world: &hknpWorld, body: u32) -> Option<usize> 
             .add(body as usize)
     };
     (!instance.is_null()).then_some(instance as usize)
+}
+
+/// The box of the body `body` as the broad phase holds it, game space: its least and greatest
+/// corners. `None` for a freed body, without a world, or for a box that is not finite.
+///
+/// # Safety
+///
+/// Main thread, outside the physics step.
+pub(super) unsafe fn aabb(body: u32) -> Option<(Vec3, Vec3)> {
+    let world = unsafe { World::get() }?;
+    unsafe { slot(world.world(), body) }?;
+    let mut aabb = hkAabb::default();
+    unsafe { world.world().getBodyAabb(body, &mut aabb) };
+    let min = Vec3::from_array(aabb.m_min.data) + world.shift;
+    let max = Vec3::from_array(aabb.m_max.data) + world.shift;
+    (min.is_finite() && max.is_finite() && min.cmple(max).all()).then_some((min, max))
 }
 
 /// The mass of the dynamic body `body`, whatever owns it: `None` for a freed body, one that is

@@ -15,7 +15,7 @@ use crate::controllers::{
         doors::{self, Latch},
         grasp::{self, Grip, PalmMotion, Reach, StrainSample, TargetKind},
         hold::{self, HandHold, HoldTuning, PlayerKeepOut},
-        physics::{self, HoldTarget, Shove, ShoveForce},
+        physics::{self, HoldTarget, Shove, ShoveForce, drawn_body},
         pickup::{
             HeldReport, PickupTuning, damping,
             diagnostics::{self, ConsumerResult, DriveRecord},
@@ -698,6 +698,8 @@ unsafe fn tick_with(
         }
         // Every hold, carried or joined, is torn away by the same strain, against the same lift.
         // A tear leaves the hand judged after it with only its own strength.
+        // A body held back by the player's own torso is not caught on anything.
+        let own_body = engine.rests_against_player(held.body);
         let hands = assembly_hands(&state.held, &held, holds.iter().flatten().count());
         let mut liftable = lifts_count(
             &held,
@@ -724,6 +726,7 @@ unsafe fn tick_with(
                 velocity: moving.point_velocity(hold.anchor),
                 hand_velocity: hold.velocity,
                 liftable,
+                own_body,
             };
             if strain.torn(&sample, dt, time_scale, config) {
                 holds[k] = None;
@@ -903,6 +906,11 @@ trait BodyEngine {
     ) -> Result<bodies::BodyState, bodies::BodyError>;
     fn release_joints(&mut self, held: &Held);
     fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError>;
+    /// Whether the held body rests against the player's own drawn torso
+    /// ([`drawn_body::rests_against`]).
+    fn rests_against_player(&mut self, _body: u32) -> bool {
+        false
+    }
     /// Turn a placed object at rest loose ([`bodies::loosen`]); a dynamic body is left as it is.
     fn loosen(&mut self, _body: u32, _object: NonZeroUsize) -> Result<(), bodies::BodyError> {
         Ok(())
@@ -924,6 +932,9 @@ impl BodyEngine for NativeBodies {
     }
     fn drive(&mut self, held: &Held, velocity: Velocities) -> Result<(), bodies::BodyError> {
         unsafe { bodies::drive(held.body, held.object, velocity) }
+    }
+    fn rests_against_player(&mut self, body: u32) -> bool {
+        unsafe { drawn_body::rests_against(body) }
     }
     fn loosen(&mut self, body: u32, object: NonZeroUsize) -> Result<(), bodies::BodyError> {
         let changed = unsafe { bodies::loosen(object, body) }?;

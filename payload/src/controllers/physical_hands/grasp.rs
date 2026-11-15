@@ -135,7 +135,9 @@ impl Grip {
 /// could reach. Closing is judged against the hand's own motion, from both velocities, so a door
 /// held while riding a fast car follows the hand however fast the two move together. An object
 /// the hands cannot lift is measured across the ground only: its sag
-/// below the hand is its weight resting on what supports it, not a snag.
+/// below the hand is its weight resting on what supports it, not a snag. A grab point held back by
+/// the player's own body ([`StrainSample::own_body`]) is not caught either: the player can move it
+/// clear, and tearing the object from the hand for it would drop what is held against the chest.
 ///
 /// The watch runs in real time, as the hold does: the palm moves in real time, so in slow motion
 /// a grab point keeps up with it as at full speed and a snag is let go as soon.
@@ -160,6 +162,9 @@ pub struct StrainSample {
     pub hand_velocity: Vec3,
     /// Whether the hands holding the body can lift it.
     pub liftable: bool,
+    /// Whether the body rests against the player's own drawn torso, so that the lag is the
+    /// player's body in the way rather than a snag in the world.
+    pub own_body: bool,
 }
 
 impl Strain {
@@ -201,6 +206,7 @@ impl Strain {
         let approach = across(closing).dot(lag.normalize_or_zero()) * scale.get();
         self.acquisition_s = (self.acquisition_s - scale.real_dt(dt).max(0.0)).max(0.0);
         let caught = self.acquisition_s <= 0.0
+            && !sample.own_body
             && distance > config.break_distance_m.max(0.0)
             && approach < config.stuck_speed_mps.max(0.0);
         self.stuck_s = if caught {
@@ -389,6 +395,7 @@ mod tests {
             velocity: Vec3::ZERO,
             hand_velocity: Vec3::ZERO,
             liftable: true,
+            own_body: false,
         };
         let mut strain = Strain::acquired(11.0, 10.0, PICKUP.hand_force_n);
         assert!(strain.acquisition_s <= 0.12);
@@ -513,6 +520,7 @@ mod tests {
             velocity,
             hand_velocity: Vec3::ZERO,
             liftable,
+            own_body: false,
         }
     }
 
@@ -549,6 +557,32 @@ mod tests {
             true,
         );
         assert_eq!(ticks_held(&near, 1.0, 300), 300);
+    }
+
+    #[test]
+    fn a_grab_point_held_back_by_the_players_own_body_is_not_caught() {
+        let lag = Vec3::new(PICKUP.break_distance_m + 0.1, 0.0, 0.0);
+        let resting = StrainSample {
+            own_body: true,
+            ..sample(lag, Vec3::ZERO, true)
+        };
+        assert_eq!(ticks_held(&resting, 1.0, 300), 300);
+        // The time it spends against the body does not count toward a snag once it leaves.
+        let caught = sample(lag, Vec3::ZERO, true);
+        let mut strain = Strain::default();
+        for _ in 0..((PICKUP.stuck_s / TICK) as usize - 2) {
+            assert!(!strain.torn(&caught, TICK, 1.0, &PICKUP));
+        }
+        assert!(!strain.torn(&resting, TICK, 1.0, &PICKUP));
+        for _ in 0..((PICKUP.stuck_s / TICK) as usize - 2) {
+            assert!(!strain.torn(&caught, TICK, 1.0, &PICKUP));
+        }
+        // Past the tear distance it is still torn at once.
+        let far = StrainSample {
+            target: Vec3::X * (PICKUP.tear_distance_m + 0.05),
+            ..resting
+        };
+        assert_eq!(ticks_held(&far, 1.0, 10), 0);
     }
 
     #[test]
