@@ -67,12 +67,16 @@ pub(crate) unsafe fn observe(weapon: &WeaponBase) {
         return;
     }
     if seen.len() >= MAX_SEEN {
-        seen.remove(0);
+        // A gun forgotten keeps no hidden prompt.
+        if let Some(prompt) = &mut seen.remove(0).prompt {
+            unsafe { prompt.restore() };
+        }
     }
     seen.push(Seen {
         object,
         control,
         weak: unsafe { Weak::of(&weapon.m_WeakThis) },
+        prompt: None,
     });
 }
 
@@ -94,6 +98,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         (unsafe { Character::GetLocalPlayerCharacter().as_mut() }).filter(|_| enabled)
     else {
         unsafe { release_all(previous) };
+        unsafe { hide_standalone_prompts(false) };
         gunner_seat::reset();
         return;
     };
@@ -375,6 +380,45 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
     }
     *CONTROLLED.lock() = next;
     SEEN.lock().retain(|record| record.weak.lock().is_some());
+    unsafe { hide_standalone_prompts(true) };
+}
+
+/// Hide the use prompt of every standalone mounted gun seen, or put back the ones this hid: under
+/// the controllers the hands take a gun by its handles, and the prompt's native use is a state
+/// that is hard to leave. A vehicle's gun keeps its prompt, as the gunner seat needs the native
+/// use, and the gamepad scheme keeps every prompt.
+///
+/// # Safety
+/// The game thread, after the runtime's tick.
+unsafe fn hide_standalone_prompts(hidden: bool) {
+    let mut seen = SEEN.lock();
+    for record in seen.iter_mut() {
+        let Some(alive) = record
+            .weak
+            .lock()
+            .filter(|alive| alive.object() as usize == record.object)
+        else {
+            continue;
+        };
+        if !hidden {
+            if let Some(prompt) = &mut record.prompt {
+                unsafe { prompt.restore() };
+            }
+            continue;
+        }
+        let standalone = NonZeroUsize::new(record.object)
+            .is_none_or(|object| unsafe { resolve_vehicle(object) }.is_none());
+        if !standalone {
+            continue;
+        }
+        if record.prompt.is_none() {
+            let weapon = unsafe { &mut *weapon_at(alive.object()) };
+            record.prompt = unsafe { native::prompt(weapon) };
+        }
+        if let Some(prompt) = &mut record.prompt {
+            unsafe { prompt.suppress() };
+        }
+    }
 }
 
 /// Tear `weapon` off its mount into `hand`: release its fire, detach it through the weapon's own
@@ -812,6 +856,8 @@ struct Seen {
     object: usize,
     control: usize,
     weak: Weak,
+    /// The use prompt, once looked up: a standalone gun's is hidden under the controllers.
+    prompt: Option<Prompt>,
 }
 
 struct Controlled {

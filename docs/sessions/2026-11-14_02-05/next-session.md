@@ -31,7 +31,7 @@ In the order of the feedback:
 23. Yank a gunner out of a jeep's turret while riding it: the hands catch him on the deck. Yank a tripod's gunner off the gun.
 24. Die holding a pistol in the left hand with one pistol: it holsters on the left hip, and the respawn fills the right hip with its twin.
 25. Seated in a helicopter, lean far to look at a thigh and put an SMG away: it stays on the thigh.
-26. Grip the tripod minigun's handles: the gun turns with the hands.
+26. Grip the tripod minigun's handles: the gun turns with the hands. Walk up to it: no use prompt shows.
 27. Grab a closed car door near its hinge and in the middle, and a fighter's canopy glass: each opens with an outward pull.
 28. Ride the scooter on the triggers, one hand and two: no weave from a still hand, the bars buzz at the lock and tick through centre, and fingers lifted off a moment keep the bars.
 29. Climb a cliff that leans back: the body rises along the face, and the head need not lean forward.
@@ -78,7 +78,6 @@ A held prop should collide with Rico's drawn body but not the movement capsule. 
 ### Smaller items that do not
 
 - A gunner-seat view correction, as the driving view's for the wheel.
-- The Y prompt suppressed for every mounted gun under the controllers.
 - The helicopter controls: measure the utility helicopter's collective and the second helicopter's controls from their meshes, and a debug UI mode that places a control at the hand and saves it.
 - The dual-wield twin shown stacked on the rack once it is ready.
 - The debug panel pausing the weapons rather than standing them down, which dropped the SMG at 4380.
