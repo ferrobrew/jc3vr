@@ -4,7 +4,8 @@
 //!
 //! Producing the estimate is separate from consuming it. The producer runs whenever the controller
 //! scheme is in effect and the head is tracked, in every mode, and publishes one estimate through
-//! [`latest`]; the grounded rig is its one consumer for now ([`for_rig`]).
+//! [`latest`]; the grounded rig ([`for_rig`]) and the IK body's FK pelvis
+//! ([`crate::controllers::body::ik_body::fk`]) consume it.
 //!
 //! - [`producer`]: on the game thread, once per rendered frame from the pose composition, the
 //!   tracked head and grips go into a live 60 Hz window in a room frame no recenter turns, and at
