@@ -359,6 +359,19 @@ pub(super) unsafe fn keep_regrip(
         }
         return;
     }
+    // A topple the hit reaction ignored leaves the character standing: retry its ragdoll once.
+    if regrip.retry_due() {
+        // SAFETY: forwarded from the caller.
+        let queued = unsafe { characters::retry_ragdoll(regrip.seize.target) };
+        tracing::info!(
+            hand = hand.label(),
+            queued,
+            "physical hands: characters: the topple left the character standing; retried the ragdoll"
+        );
+        if let Some(regrip) = state.regrips[i].as_mut() {
+            regrip.retried = true;
+        }
+    }
     if regrip.expired() {
         state.regrips[i] = None;
         outcome.released[i] = true;

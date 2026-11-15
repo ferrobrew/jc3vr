@@ -128,6 +128,10 @@ pub(crate) const YANK_STRENGTH: f32 = 1.3;
 /// game time: the fall takes as long as the game's clock says, so slow motion gives it longer.
 pub(crate) const REGRIP_S: f32 = 1.0;
 
+/// How long a hand waits for the ragdoll after a topple before retrying the ragdoll act, game
+/// seconds: the hit reaction's ragdoll is under way well before this when it comes.
+const RAGDOLL_RETRY_AFTER_S: f32 = 0.3;
+
 /// The slowest hand that shoves a character it lets go of, metres per second.
 pub(crate) const SHOVE_MIN_SPEED_MPS: f32 = 1.5;
 
@@ -317,6 +321,8 @@ pub struct Regrip {
     pub seize: Seize,
     /// The game time left before the hand gives up, seconds.
     pub remaining_s: f32,
+    /// Whether the ragdoll act was retried for a character the topple left standing.
+    pub retried: bool,
 }
 
 impl Regrip {
@@ -325,7 +331,13 @@ impl Regrip {
         Self {
             seize,
             remaining_s: REGRIP_S,
+            retried: false,
         }
+    }
+
+    /// Whether the wait has run long enough, with no ragdoll, to retry the ragdoll act once.
+    pub fn retry_due(&self) -> bool {
+        !self.retried && REGRIP_S - self.remaining_s >= RAGDOLL_RETRY_AFTER_S
     }
 
     /// Count `dt` seconds of game time off the wait, and return whether it has run out.
@@ -469,6 +481,22 @@ pub(crate) unsafe fn gunner_out(target: CharacterTarget) -> GunnerOut {
     // SAFETY: the body's owner proves the character live.
     let character = unsafe { &mut *(target.character.get() as *mut Character) };
     unsafe { engine::gunner_out(character) }
+}
+
+/// Ragdoll the character `target` that a topple left standing ([`engine::retry_ragdoll`]).
+/// Returns whether an act was queued.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step and the game's update. The target's current owner is
+/// checked first.
+pub(crate) unsafe fn retry_ragdoll(target: CharacterTarget) -> bool {
+    if unsafe { owner_of(target.body) } != Some(target.character) {
+        return false;
+    }
+    // SAFETY: the body's owner proves the character live.
+    let character = unsafe { &mut *(target.character.get() as *mut Character) };
+    unsafe { engine::retry_ragdoll(character) }
 }
 
 /// Whether the hand still has access to the character's current vehicle seat.

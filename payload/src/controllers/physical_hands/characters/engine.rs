@@ -149,6 +149,41 @@ pub(crate) unsafe fn gunner_out(character: &mut Character) -> GunnerOut {
     GunnerOut::Queued
 }
 
+/// Ragdoll a character a topple left standing, as the hit reaction would have: the hit reaction's
+/// ragdoll act ([`EventIdSymbolTable::ACT_HITREACT_RAGDOLL`]) where the state takes it, else the
+/// full ragdoll ([`EventIdSymbolTable::ACT_FULL_RAGDOLL`]). The hit reaction returns without
+/// ragdolling in states the topple does not see (an ally holding her gun stayed standing through
+/// three topples on the 14 November take, and fell once disarmed). Returns whether an act was
+/// queued; a protected, dead, or already ragdolling character, or one whose state keeps its
+/// footing, is left alone.
+///
+/// # Safety
+///
+/// `character` must be a live character, on the game thread outside the game's update.
+pub(crate) unsafe fn retry_ragdoll(character: &mut Character) -> bool {
+    if unsafe { protection(character) }.is_some()
+        || unsafe { dead(character) }
+        || unsafe { character.IsRagdolling() }
+        || unsafe { keeps_footing(character) }
+    {
+        return false;
+    }
+    for name in [
+        EventIdSymbolTable::ACT_HITREACT_RAGDOLL,
+        EventIdSymbolTable::ACT_FULL_RAGDOLL,
+    ] {
+        let Some(act) = resolve_act_id(name) else {
+            continue;
+        };
+        let act = act as u32;
+        if unsafe { character.m_AnimatedModel.TryAct(&act) } {
+            unsafe { character.m_AnimatedModel.QueueAct(&act) };
+            return true;
+        }
+    }
+    false
+}
+
 /// Whether `character` is dead: no health left, or in the dead state
 /// ([`StateBitFlag::SB_IS_IN_DEAD_STATE`]).
 ///

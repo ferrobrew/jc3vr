@@ -42,6 +42,7 @@ fn open_grip_produces_and_consumes_release_for_every_owner_on_either_hand() {
                     state.regrips[i] = Some(Regrip {
                         seize: seize(),
                         remaining_s: 0.0,
+                        retried: false,
                     });
                 }
                 Owner::Door => state.doors[i] = Some(TearGrip::fixture(door(), 3)),
