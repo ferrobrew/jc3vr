@@ -4,9 +4,9 @@
 //! below a helicopter, the entry has no state to take it (the line's hang stands in for the game's
 //! hang below the airframe, the one state that accepts it), and the wingsuit opened and ended the
 //! reel instead (1800 s on the 14 November take). So while the lock hangs Rico below a helicopter,
-//! Y's wingsuit is dropped and its press asks the lock to let the reel arrive into the game's hang
-//! ([`lock::entering_helicopter`]), and for that window the entry is held, so the game's hang
-//! takes it and enters.
+//! Y's wingsuit is dropped and its press asks the lock to let the reel pick its entry afresh and
+//! arrive, which pulls Rico up to the door side ([`lock::entering_helicopter`]), and for that
+//! window the entry is held, so the arrival's state takes it and enters.
 
 use jc3gi::input::input_action_map::Action;
 

@@ -71,7 +71,7 @@ In the order of the feedback:
 63. Swing the far end of a plank into the chest and keep pulling: `a held object rests against Rico's torso capsules`, no push, no strike buzz or sound, and no tear. Wedge the plank behind a post: it still tears.
 64. At a tripod minigun, close each grip on a handle without pressing use: the log says `manned=false`, and the drawn hands slide onto the handles and turn with the wrists. Open one hand: it blends back to the controller.
 65. The IK body's new checks in [ik-body.md](../../mod/body/ik-body.md): the step rate against the replay's prediction of about four a standing minute; standing on a truck bed or a boat deck while it is driven (the readout says `a moving body`, no steps standing still, `pelvis_speed_mps` near zero); hand climbing a face (`takes the climbing legs`, soles flat on the face, knees toward it, one brace at a time); and swinging on the line and under the canopy with the muscle target live (the legs swing toward the IK air pose; if they jitter or fold, compare with `ragdoll_target` off).
-66. Hang on the line under a helicopter and press Y: no wingsuit, `grapple lock: the lock ends` with `entering the helicopter`, a brief upside-down hang, and Rico enters.
+66. Hang on the line under a helicopter and press Y: no wingsuit, `grapple lock: the lock ends` with `entering the helicopter`, and the reel pulls Rico up onto the skid by the door and he enters. Note `Y below a helicopter arrives at its entry` with `door_side`: `false` means the door side did not validate from below and he entered from the game's upside-down hang instead.
 
 ## What was built for the deferred work
 

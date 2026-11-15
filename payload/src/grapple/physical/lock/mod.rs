@@ -365,6 +365,14 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         Some(why) => {
             if why == LockEnd::Entering {
                 HANG_GATE.lock().entering = Some(Instant::now());
+                // The reel picks its entry afresh from below the airframe, which prefers the door
+                // side: it pulls Rico up onto the skid, and the held entry enters from there.
+                let reselected = unsafe { engine::reselect_vehicle_entry(hook) };
+                tracing::info!(
+                    target: "grapple",
+                    reselected,
+                    "grapple lock: Y below a helicopter: the reel picks its entry afresh"
+                );
             }
             end(Some((character, hook)), why, input.hand)
         }
@@ -944,9 +952,9 @@ struct HangGate {
     entering: Option<Instant>,
 }
 
-/// How long after Y under a helicopter the reel's arrival is left to the game's hang, and Y held
-/// for it to enter from there.
-const ENTERING_FOR: Duration = Duration::from_secs(2);
+/// How long after Y under a helicopter the reel's arrival is the game's, door side or hang, and Y
+/// held for its state to enter from: the pull up and the door-side arrival's clip.
+const ENTERING_FOR: Duration = Duration::from_secs(3);
 
 /// How long an arrival's ask for a hang stands: the arrival asks again on every reel tick it
 /// arrives, so an ask older than a few ticks belongs to a reel that has ended.

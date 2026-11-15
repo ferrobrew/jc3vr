@@ -142,6 +142,38 @@ pub(super) unsafe fn reeling_to_helicopter_door_side(hook: &GrapplingHook) -> Op
     .then_some(body)
 }
 
+/// Clear the vehicle entry the reel onto `hook`'s far end has chosen, so the reel's next update
+/// selects one afresh from where the character is now, preferring the door side. Returns whether
+/// there was a vehicle attachment to clear.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step; `hook` must be live.
+pub(super) unsafe fn reselect_vehicle_entry(hook: &GrapplingHook) -> bool {
+    if unsafe { reeling_far_end(hook) }
+        .is_none_or(|proxy| proxy.m_AttachmentObjectInfo != AttachmentObjectInfo::AOI_Vehicle)
+    {
+        return false;
+    }
+    let Some(wire) = (unsafe { hook.m_ActiveWire.px.as_ref() }) else {
+        return false;
+    };
+    let Some(end) = hook::attached_hook_end(wire) else {
+        return false;
+    };
+    // SAFETY: a vehicle attachment's proxy is a vehicle grapple point proxy, live with the wire;
+    // the reel reads its entry on the game thread, which this is.
+    let Some(vehicle) = (unsafe { end.m_PointProxy.cast::<VehicleGrapplePointProxy>().as_mut() })
+    else {
+        return false;
+    };
+    vehicle.m_ReelInEntryIndex = NO_ENTRY;
+    true
+}
+
+/// The vehicle grapple proxy's index for no chosen entry.
+const NO_ENTRY: i32 = -1;
+
 /// The character's mass: its proxy body's.
 ///
 /// # Safety

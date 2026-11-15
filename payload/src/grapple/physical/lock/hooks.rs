@@ -216,10 +216,17 @@ fn finish_reel(
             return;
         }
         // The skid's rail stands Rico on the airframe the door-side arrival lands him beside.
-        if let Some(body) =
-            live_hook.and_then(|h| unsafe { engine::reeling_to_helicopter_door_side(h) })
-        {
+        let door_side =
+            live_hook.and_then(|h| unsafe { engine::reeling_to_helicopter_door_side(h) });
+        if let Some(body) = door_side {
             crate::controllers::vehicles::rail::note_airframe(body);
+        }
+        if entering_helicopter() && (door_side.is_some() || to_helicopter) {
+            tracing::info!(
+                target: "grapple",
+                door_side = door_side.is_some(),
+                "grapple lock: Y below a helicopter arrives at its entry"
+            );
         }
     }
     FINISH_REEL
