@@ -159,8 +159,9 @@ impl Held {
     /// own motion), it coasts on its own momentum and the held length follows it in, so the line
     /// goes taut exactly when its approach ends, with no speed along the line left to stop and
     /// nothing across the line turned. From there the rope swings it. Only a coast that would
-    /// carry the character into the hook is braked, along the line alone, to stop at the line's
-    /// least length. A hang instead starts at rest against the hook.
+    /// carry the character in past the shortest length the line can swing it on (or past its
+    /// least length) is braked, along the line alone, to stop there. A hang instead starts at
+    /// rest against the hook.
     fn take(
         &mut self,
         velocity: &mut Vec3,
@@ -192,7 +193,23 @@ impl Held {
             self.coasting = false;
             return;
         }
-        let room = distance - held_floor(config.min_length_m);
+        // The line held at a length must turn the speed across it, with gravity along it at the
+        // swing's bottom. The speed across grows as the character closes in, keeping its momentum
+        // about the hook, so the shortest length the line bears the swing at is where that
+        // growth meets the line's strength. The coast stops short of it, as of the least length:
+        // a shorter line would only break.
+        let across = (relative - direction * along).length();
+        let bearable = (config.max_accel_g * COAST_STRENGTH_SHARE - 1.0) * GRAVITY_MPS2;
+        let shortest = if bearable > 0.0 {
+            ((across * distance).powi(2) / bearable).cbrt()
+        } else {
+            f32::INFINITY
+        };
+        if shortest >= distance {
+            self.coasting = false;
+            return;
+        }
+        let room = distance - shortest.max(held_floor(config.min_length_m));
         let stopping = if room > 0.0 {
             along * along / (2.0 * room)
         } else {
@@ -210,9 +227,13 @@ impl Held {
 }
 
 /// The deceleration toward the hook beyond which the coast is braked, metres per second squared:
-/// about what the line holds, so a coast that would otherwise reach the hook stops at the line's
-/// least length instead.
+/// about what the line holds, so a coast that would otherwise carry in too far stops at the
+/// shortest length the line bears instead.
 const COAST_BRAKE_MPS2: f32 = 3.0 * GRAVITY_MPS2;
+
+/// The share of the line's strength a coast leaves the swing to turn on the length it reaches:
+/// the rest is the margin for the pump and the hook's motion.
+const COAST_STRENGTH_SHARE: f32 = 0.8;
 
 /// How much line the hand must take in during a hang's pay-out to end it, metres: a deliberate
 /// pull, past a hand's drift back along the aim.

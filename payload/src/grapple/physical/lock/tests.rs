@@ -157,7 +157,7 @@ fn a_static_hook_swings_a_bounded_pendulum_that_keeps_its_energy_roughly() {
 #[test]
 fn the_take_leaves_the_velocity_alone_and_follows_the_rider_in() {
     let start = Vec3::new(20.0, 0.0, 0.0);
-    let rush = Vec3::new(-25.0, 0.0, 6.0);
+    let rush = Vec3::new(-12.0, 0.0, 6.0);
     let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
     assert!(held.coasting());
     let out = swing(
@@ -250,21 +250,27 @@ fn the_line_goes_taut_where_the_approach_ends_with_no_jump() {
 }
 
 #[test]
-fn a_rush_at_a_level_hook_falls_under_it_and_swings_on() {
+fn a_rush_at_a_level_hook_falls_under_it_on_a_line_that_bears_the_swing() {
     // Gravity carries the coast under the hook, where the approach ends with the speed across the
-    // line: the line catches there, on a short length, with nothing to stop.
+    // line. The coast stops no shorter than the line can swing that speed on.
     let start = Vec3::new(20.0, 0.0, 0.0);
     let rush = Vec3::new(-25.0, 0.0, 0.0);
     let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
     let (rider, velocity) = take(&mut held, start, rush);
     assert!(rider.y < 0.0, "under the hook: {rider}");
     assert!(
-        held.rope.length_m < 6.0 && held.rope.length_m >= CONFIG.min_length_m,
+        held.rope.length_m < start.length() && held.rope.length_m >= CONFIG.min_length_m,
         "the line took up the approach: {}",
         held.rope.length_m
     );
+    let swing_g = velocity.length_squared() / held.rope.length_m / GRAVITY_MPS2 + 1.0;
     assert!(
-        velocity.length() > 20.0,
+        swing_g < CONFIG.max_accel_g,
+        "the line bears the swing: {swing_g} g at {velocity} on {}",
+        held.rope.length_m
+    );
+    assert!(
+        velocity.length() > 5.0,
         "the speed carries into the swing: {velocity}"
     );
 }
@@ -614,4 +620,36 @@ fn a_press_in_the_wind_up_stays_armed_while_held_and_disarms_on_release() {
 fn a_held_button_never_rearms_after_the_lock_took_hold_or_refused() {
     // The tick clears the arming when it takes hold or refuses; a held button does not undo that.
     assert!(!armed(false, Some(LockButton::Held)));
+}
+
+#[test]
+fn no_rush_onto_the_lock_breaks_the_line_in_the_swing_after_it() {
+    // Level rushes, a rush up a diagonal line, and one straight up a steep one: each takes the
+    // coast in and swings on for ten seconds on a line that holds.
+    for (start, rush) in [
+        (Vec3::new(20.0, 0.0, 0.0), Vec3::new(-25.0, 0.0, 0.0)),
+        (Vec3::new(20.0, 0.0, 0.0), Vec3::new(-15.0, 0.0, 0.0)),
+        (Vec3::new(20.0, 0.0, 0.0), Vec3::new(-6.0, 0.0, 12.0)),
+        (Vec3::new(14.0, -14.0, 0.0), Vec3::new(-15.0, 15.0, 4.0)),
+        (Vec3::new(10.0, -25.0, 0.0), Vec3::new(-10.0, 25.0, 0.0)),
+        (Vec3::new(30.0, 5.0, 10.0), Vec3::new(-30.0, -2.0, -8.0)),
+    ] {
+        let mut held = Held::new(Vec3::ZERO, start, &CONFIG).unwrap();
+        let mut rider = start;
+        let mut velocity = rush;
+        for tick in 0..600 {
+            velocity = swing(
+                &mut held,
+                input(rider, velocity, Vec3::ZERO, Vec3::ZERO),
+                &CONFIG,
+            )
+            .unwrap_or_else(|fault| panic!("{start} at {rush}: {fault:?} on tick {tick}"))
+            .velocity;
+            rider += velocity * DT;
+        }
+        assert!(
+            rider.length() < held.rope.length_m + CONFIG.break_stretch_m,
+            "{start} at {rush}: the line holds"
+        );
+    }
 }
