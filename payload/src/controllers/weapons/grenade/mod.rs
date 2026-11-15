@@ -664,7 +664,8 @@ unsafe fn return_to_pouch(hand: Hand) {
     if let Err(error) = unsafe { stock::may_give_back() } {
         tracing::info!(target: "controllers", hand = hand.label(), %error, "grenade: the pouch refused the grenade");
         STATE.lock().status.returns_refused += 1;
-        haptics::play(hand, Event::PouchRefused);
+        // The brief refusal buzz went unnoticed on the 14 November take, and six grenades fell.
+        haptics::play(hand, Event::PouchFull);
         return;
     }
     if !safe::return_held(hand) {

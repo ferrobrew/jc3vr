@@ -158,9 +158,11 @@ pub enum Event {
     GrenadeWarning,
     /// A live grenade caught.
     GrenadeCatch,
-    /// A grab at a pouch that the game refused: no grenade or charge to give. Also a grenade
-    /// pressed onto a full grenade pouch.
+    /// A grab at a pouch that the game refused: no grenade or charge to give.
     PouchRefused,
+    /// A grenade pressed onto a full grenade pouch: a long, full buzz, apart from the brief
+    /// refusal, so the grenade staying in the hand (and falling once it opens) is noticed.
+    PouchFull,
     /// A held grenade or C4 charge pressed back into its pouch.
     PouchReturn,
     /// A C4 charge primed in the hand.
@@ -248,7 +250,7 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 67] = [
+    pub const ALL: [Event; 68] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
@@ -277,6 +279,7 @@ impl Event {
         Event::GrenadeWarning,
         Event::GrenadeCatch,
         Event::PouchRefused,
+        Event::PouchFull,
         Event::PouchReturn,
         Event::C4Prime,
         Event::C4Throw,
@@ -355,6 +358,7 @@ impl Event {
             Event::GrenadeWarning => Cue::new(Primitive::Click, 0.75, Category::Weapons),
             Event::GrenadeCatch => Cue::new(Primitive::Bump, 0.75, Category::Weapons),
             Event::PouchRefused => Cue::new(Primitive::Buzz, 0.75, Category::Weapons),
+            Event::PouchFull => Cue::new(Primitive::Buzz, 1.0, Category::Weapons).long(),
             Event::PouchReturn => Cue::new(Primitive::Click, 0.5, Category::Weapons),
             Event::C4Prime => Cue::new(Primitive::Click, 0.4, Category::Weapons),
             Event::C4Throw => Cue::new(Primitive::Click, 0.6, Category::Weapons),
@@ -432,6 +436,7 @@ impl Event {
             Event::GrenadeWarning => "grenade warning",
             Event::GrenadeCatch => "grenade catch",
             Event::PouchRefused => "pouch refused",
+            Event::PouchFull => "pouch full",
             Event::PouchReturn => "pouch return",
             Event::C4Prime => "C4 prime",
             Event::C4Throw => "C4 throw",
