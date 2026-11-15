@@ -15,7 +15,7 @@ use crate::{
     controllers::{
         physical_hands::{
             STALE_AFTER, bodies, characters::engine::proxy_body, doors::engine::is_vehicle_part,
-            world::World,
+            physics::drawn_body, world::World,
         },
         scheme,
     },
@@ -124,7 +124,9 @@ pub(super) unsafe fn step() {
         let player_body = player_owner.is_some() && owner == player_owner
             || player_group.is_some_and(|group| {
                 slot.m_collisionFilterInfo >> Filter::SYSTEM_GROUP_SHIFT == group
-            }) && !owner.is_some_and(|owner| unsafe { vehicle_owned(owner) });
+            }) && !owner.is_some_and(|owner| unsafe { vehicle_owned(owner) })
+                // The drawn torso's capsules are what a held object is to meet.
+                && !drawn_body::is_proxy(body);
         let held = subjects.iter().any(|(subject, group, component)| {
             component.contains(&body)
                 || subject.includes(

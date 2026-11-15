@@ -25,6 +25,9 @@ pub struct PhysicalHandsConfig {
     pub pickup: PickupConfig,
     /// The hand bodies, which replace the palm's probes for the hands they drive.
     pub bodies: HandBodiesConfig,
+    /// Collision capsules on Rico's drawn torso, which held objects meet
+    /// ([`crate::controllers::physical_hands::physics::drawn_body`]).
+    pub body_proxies: bool,
     /// Climbing by gripping the static world with a hand its body drives.
     pub climb: ClimbConfig,
     /// Opening vehicle doors by hand.
@@ -53,6 +56,7 @@ impl PhysicalHandsConfig {
             show_boxes: false,
             pickup: PickupConfig::new(),
             bodies: HandBodiesConfig::new(),
+            body_proxies: true,
             climb: ClimbConfig::new(),
             doors: DoorsConfig::new(),
             characters: CharactersConfig::new(),

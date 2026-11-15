@@ -138,6 +138,7 @@ unsafe extern "system" fn pre_simulation(
             let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HumanHull);
             crate::controllers::physical_hands::human_hull::step(_world);
         }
+        crate::controllers::physical_hands::physics::drawn_body::step();
         crate::controllers::physical_hands::physics::step();
         {
             let _timing = crate::frame_timing::scope(crate::frame_timing::Slot::HandImpacts);

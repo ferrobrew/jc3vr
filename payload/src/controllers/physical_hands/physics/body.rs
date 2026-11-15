@@ -31,8 +31,8 @@ use jc3gi::{
     havok::{hkReferencedObject, hknpBodyCinfo, hknpCapsuleShape, hknpMotionCinfo, hknpShape},
     memory::{MemoryFree, OperatorNew},
     physics::{
-        CustomGroupCollisionFilter, PfxCharacterInstance, PfxLayer, PfxRigidBody, hknpAdditionMode,
-        hknpBody, hknpWorld,
+        CustomGroupCollisionFilter, PfxCharacterInstance, PfxLayer, PfxMotionType, PfxRigidBody,
+        hknpAdditionMode, hknpBody, hknpWorld,
     },
     types::{math::Matrix4, vector_math::AlignedQuat},
 };
@@ -371,6 +371,19 @@ impl HandBody {
                 &havok_vector(angular),
             )
         };
+        Ok(())
+    }
+
+    /// Make the body keyframed: it moves only as its velocities are set, a collision never moves
+    /// it, and it moves what it meets.
+    ///
+    /// # Safety
+    ///
+    /// As [`HandBody::create`].
+    pub unsafe fn make_keyframed(&mut self) -> Result<(), BodyError> {
+        let access = unsafe { self.checked() }?;
+        // SAFETY: the wrapper is this body's, checked live above.
+        unsafe { (*access.wrapper.as_ptr()).SetMotionType(PfxMotionType::KEYFRAMED, true) };
         Ok(())
     }
 

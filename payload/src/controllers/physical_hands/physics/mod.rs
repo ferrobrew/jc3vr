@@ -51,6 +51,7 @@ pub(super) mod body;
 mod callback;
 pub mod config;
 mod contact;
+pub(crate) mod drawn_body;
 pub mod drive;
 pub mod guns;
 pub mod hit;

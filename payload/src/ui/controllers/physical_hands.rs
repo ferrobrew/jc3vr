@@ -195,6 +195,11 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
                 "Give each empty hand a body in the physics world, in place of the palm probes.",
             );
         ui.checkbox(&mut p.push, "Push off surfaces");
+        ui.checkbox(&mut p.body_proxies, "Held objects meet Rico's torso")
+            .on_hover_text(
+                "Keyframed capsules on the drawn chest and belly that held props and ragdolls \
+                 collide with.",
+            );
         ui.checkbox(&mut p.pickup.enabled, "Pick up objects with the grip");
         ui.add_enabled_ui(p.pickup.enabled, |ui| {
             ui.add(egui::Slider::new(&mut p.pickup.throw_scale, 0.0..=4.0).text("Throw (× hand)"));

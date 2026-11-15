@@ -19,7 +19,7 @@ use crate::{
         haptics::{self, Sustain},
         physical_hands::{
             physics::{
-                HAND_BODIES, blows, callback,
+                HAND_BODIES, blows, callback, drawn_body,
                 drive::rig_jumped,
                 guns,
                 lifecycle::HANDS,
@@ -312,6 +312,8 @@ unsafe fn shutdown() {
     // SAFETY: shutdown runs outside the world update before hooks are removed.
     unsafe { crate::controllers::physical_hands::impacts::clear() };
     unsafe { callback::unregister() };
+    // SAFETY: as above.
+    unsafe { drawn_body::clear() };
     let destroyed = unsafe { HANDS.lock().destroy_all("the payload is unloading") };
     let mut shared = SHARED.lock();
     shared.status.registered = false;
