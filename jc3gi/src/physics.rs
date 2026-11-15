@@ -85,7 +85,10 @@ pub struct CastRayInfoBase {
     pub m_HitDistance: f32,
     /// The object id (`SObjectID`) of the hit object, or null for world geometry.
     pub m_HitObjectId: u64,
-    _field_20: [u8; 16],
+    _field_20: [u8; 8],
+    /// The hit shape's key within the hit body's shape.
+    pub m_ShapeKey: u32,
+    _field_2c: [u8; 4],
     /// The Havok body id of the hit body.
     pub m_BodyId: u32,
     _field_34: [u8; 4],
@@ -337,6 +340,7 @@ impl std::convert::AsMut<CustomGroupCollisionFilter> for CustomGroupCollisionFil
 /// picks the impact effects and sounds played against it. Only the values the melee hit's impact
 /// lookup uses are bound.
 pub enum GameMaterialId {
+    EGameMaterialId_Glass = 16isize as _,
     EGameMaterialId_Flesh = 25isize as _,
     EGameMaterialId_Default = 31isize as _,
 }
@@ -3234,6 +3238,29 @@ impl std::convert::AsRef<hknpWorld> for hknpWorld {
 impl std::convert::AsMut<hknpWorld> for hknpWorld {
     fn as_mut(&mut self) -> &mut hknpWorld {
         self
+    }
+}
+pub const GetModelInstancesHit_ADDRESS: usize = 0x140BFAC40;
+/// `NRayCastUtility::GetModelInstancesHit`: appends to `out` the model instance a ray query's hit
+/// names, when `out` has room and the instance is not queued for deletion. The hit object is
+/// `hit_object` (a `CGameObject` subobject), or, when that is null, the object
+/// [`m_HitObjectId`](crate::physics::CastRayInfoBase::m_HitObjectId) names. A breakable tree patch gives the
+/// instance of the hit shape key; any physics game object is asked for the instance of the hit
+/// shape, [`m_ShapeKey`](crate::physics::CastRayInfoBase::m_ShapeKey), and [`m_BodyId`](crate::physics::CastRayInfoBase::m_BodyId)
+/// through its virtual function. `info` must be a complete cast info, since
+/// the call reads the hit shape through its virtual table.
+pub unsafe fn GetModelInstancesHit(
+    info: *mut crate::physics::CastRayInfoBase,
+    out: *mut crate::graphics_engine::model_instance::ModelInstanceArray,
+    hit_object: *mut crate::game::GameObject,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            info: *mut crate::physics::CastRayInfoBase,
+            out: *mut crate::graphics_engine::model_instance::ModelInstanceArray,
+            hit_object: *mut crate::game::GameObject,
+        ) = ::std::mem::transmute(GetModelInstancesHit_ADDRESS);
+        f(info, out, hit_object)
     }
 }
 pub const SweptSphereCast_ADDRESS: usize = 0x140738670;

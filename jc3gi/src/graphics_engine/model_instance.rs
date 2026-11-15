@@ -78,6 +78,27 @@ impl Model {
     ) -> *const crate::graphics_engine::model_instance::ModelVftable {
         self.vftable as *const crate::graphics_engine::model_instance::ModelVftable
     }
+    /// `CountLods`: how many LOD slots the model has; a single-mesh model has one, a LOD model
+    /// five (none while it has no LOD list).
+    pub unsafe fn CountLods(&self) -> u32 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).CountLods).read();
+            f(self as *const Self as _)
+        }
+    }
+    /// `GetRenderBlocks`: points `out` at the render blocks of LOD `lod` and returns how many
+    /// there are. A LOD model whose slot `lod` has no mesh answers with the next LOD that has
+    /// one, and with none past the last.
+    pub unsafe fn GetRenderBlocks(
+        &self,
+        lod: i32,
+        out: *mut *mut *mut crate::graphics_engine::render_pass::RenderBlock,
+    ) -> u64 {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetRenderBlocks).read();
+            f(self as *const Self as _, lod, out)
+        }
+    }
     /// `GetShowLod`: whether the model defines a mesh for LOD `lod`, that is, whether the
     /// LOD's entry in the model's LOD list names a mesh. The dynamic draw-list build
     /// ([`ModelInstanceManager::ShowUpdate`](crate::graphics_engine::model_instance::ModelInstanceManager::ShowUpdate)) adds nothing to the passes for an instance
@@ -124,6 +145,31 @@ fn _ModelCollection_size_check() {
     unreachable!()
 }
 impl ModelCollection {
+    pub const GetIntersectingDecalModels_ADDRESS: usize = 0x1404D9F30;
+    /// `CModelCollection::GetIntersectingDecalModels`: collects into `out`, up to `capacity`
+    /// entries, the static-world model instances whose bounds meet the box of half extents
+    /// `half_extents` (its first three components) placed by `transform`, and writes their number
+    /// to `out_count`. Static. A bullet that hits glass but finds no model instance through the hit
+    /// object ([`GetModelInstancesHit`](crate::physics::GetModelInstancesHit)) looks up the world's panes
+    /// this way, with a box of one centimetre at the bullet's position.
+    pub unsafe fn GetIntersectingDecalModels(
+        transform: *const crate::types::math::Matrix4,
+        half_extents: *const crate::types::math::Vector4,
+        out: *mut *mut crate::graphics_engine::model_instance::ModelInstance,
+        out_count: *mut u32,
+        capacity: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                transform: *const crate::types::math::Matrix4,
+                half_extents: *const crate::types::math::Vector4,
+                out: *mut *mut crate::graphics_engine::model_instance::ModelInstance,
+                out_count: *mut u32,
+                capacity: u32,
+            ) = ::std::mem::transmute(Self::GetIntersectingDecalModels_ADDRESS);
+            f(transform, half_extents, out, out_count, capacity)
+        }
+    }
     pub const Destruct_ADDRESS: usize = 0x140508A00;
     /// Releases the instances and resources owned by the collection, and clears its instance array.
     pub unsafe fn Destruct(&mut self) {
@@ -206,7 +252,16 @@ pub struct ModelInstance {
     pub m_spModel: crate::types::shared_ptr::SharedPtr<
         crate::graphics_engine::model_instance::Model,
     >,
-    _field_30: [u8; 64],
+    _field_30: [u8; 32],
+    /// The render info's tagged metadata word (`m_RBIInfo.m_MetaFlags`, the first word of the
+    /// instance's render info): the address of the instance's [`MetaData`](crate::graphics_engine::window_damage::MetaData)
+    /// block, or zero for none, in the bits outside [`META_TAG_MASK`](crate::graphics_engine::model_instance::ModelInstance::META_TAG_MASK). With
+    /// [`META_INDIRECT`](crate::graphics_engine::model_instance::ModelInstance::META_INDIRECT) set the address is of a shared record instead, which
+    /// holds the block's address at [`META_INDIRECT_OFFSET`](crate::graphics_engine::model_instance::ModelInstance::META_INDIRECT_OFFSET). The
+    /// window render block, the bullets' window damage, and the vehicle parts' window damage all
+    /// resolve the block this way.
+    pub m_MetaFlags: u64,
+    _field_58: [u8; 24],
     /// A dirty bit for the instance's render info, set (atomically) whenever
     /// [`m_FadeAlpha`](crate::graphics_engine::model_instance::ModelInstance::m_FadeAlpha) is written.
     pub m_RenderInfoDirty: u32,
@@ -457,6 +512,14 @@ impl ModelInstance {
         }
     }
 }
+impl ModelInstance {
+    /// The tag bit of [`m_MetaFlags`](crate::graphics_engine::model_instance::ModelInstance::m_MetaFlags) that marks an indirect metadata address.
+    pub const META_INDIRECT: u64 = 1;
+    /// Where an indirect record holds the metadata block's address.
+    pub const META_INDIRECT_OFFSET: u64 = 40;
+    /// The tag bits of [`m_MetaFlags`](crate::graphics_engine::model_instance::ModelInstance::m_MetaFlags).
+    pub const META_TAG_MASK: u64 = 3;
+}
 impl std::convert::AsRef<ModelInstance> for ModelInstance {
     fn as_ref(&self) -> &ModelInstance {
         self
@@ -464,6 +527,39 @@ impl std::convert::AsRef<ModelInstance> for ModelInstance {
 }
 impl std::convert::AsMut<ModelInstance> for ModelInstance {
     fn as_mut(&mut self) -> &mut ModelInstance {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A `TArray<CModelInstance *>`: begin, end, and capacity-end pointers, then flags. An engine caller
+/// often points it at a stack buffer and sets [`USER_ALLOCATED`](crate::graphics_engine::model_instance::ModelInstanceArray::USER_ALLOCATED), so that the
+/// array never frees it; the functions that fill one append only while the end is short of the
+/// capacity end.
+pub struct ModelInstanceArray {
+    pub m_Begin: *mut *mut crate::graphics_engine::model_instance::ModelInstance,
+    pub m_End: *mut *mut crate::graphics_engine::model_instance::ModelInstance,
+    pub m_Last: *mut *mut crate::graphics_engine::model_instance::ModelInstance,
+    pub m_Flags: u16,
+    _field_1a: [u8; 6],
+}
+fn _ModelInstanceArray_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x20], ModelInstanceArray>([0u8; 0x20]);
+    }
+    unreachable!()
+}
+impl ModelInstanceArray {}
+impl ModelInstanceArray {
+    /// The [`m_Flags`](crate::graphics_engine::model_instance::ModelInstanceArray::m_Flags) bit that marks storage the array does not own.
+    pub const USER_ALLOCATED: u16 = 1;
+}
+impl std::convert::AsRef<ModelInstanceArray> for ModelInstanceArray {
+    fn as_ref(&self) -> &ModelInstanceArray {
+        self
+    }
+}
+impl std::convert::AsMut<ModelInstanceArray> for ModelInstanceArray {
+    fn as_mut(&mut self) -> &mut ModelInstanceArray {
         self
     }
 }
@@ -1011,18 +1107,25 @@ pub struct ModelVftable {
     _vfunc_2: unsafe extern "system" fn(
         this: *mut crate::graphics_engine::model_instance::Model,
     ),
-    _vfunc_3: unsafe extern "system" fn(
-        this: *mut crate::graphics_engine::model_instance::Model,
-    ),
+    /// `CountLods`: how many LOD slots the model has; a single-mesh model has one, a LOD model
+    /// five (none while it has no LOD list).
+    pub CountLods: unsafe extern "system" fn(
+        this: *const crate::graphics_engine::model_instance::Model,
+    ) -> u32,
     _vfunc_4: unsafe extern "system" fn(
         this: *mut crate::graphics_engine::model_instance::Model,
     ),
     _vfunc_5: unsafe extern "system" fn(
         this: *mut crate::graphics_engine::model_instance::Model,
     ),
-    _vfunc_6: unsafe extern "system" fn(
-        this: *mut crate::graphics_engine::model_instance::Model,
-    ),
+    /// `GetRenderBlocks`: points `out` at the render blocks of LOD `lod` and returns how many
+    /// there are. A LOD model whose slot `lod` has no mesh answers with the next LOD that has
+    /// one, and with none past the last.
+    pub GetRenderBlocks: unsafe extern "system" fn(
+        this: *const crate::graphics_engine::model_instance::Model,
+        lod: i32,
+        out: *mut *mut *mut crate::graphics_engine::render_pass::RenderBlock,
+    ) -> u64,
     _vfunc_7: unsafe extern "system" fn(
         this: *mut crate::graphics_engine::model_instance::Model,
     ),

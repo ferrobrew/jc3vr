@@ -696,3 +696,18 @@ pub unsafe fn AmmunitionManagerUpdatePostSim(
         f(manager, update_contexts)
     }
 }
+pub const AmmunitionManagerHandleDeferredQueue_ADDRESS: usize = 0x14090BDC0;
+/// `CAmmunitionManager::HandleDeferredQueue`: runs, in order, the calls queued on the manager's
+/// deferred render-update list (`std::function<void ()>` entries that the bullets, which update on
+/// worker threads, queue for main-thread work such as their window damage,
+/// [`Bullet::OnBulletHitGlass`](crate::equipment::weapon::Bullet::OnBulletHitGlass)), then empties the
+/// list. `CAmmunitionManager::UpdateRender` calls it first, on the main thread in the game's render
+/// update, and the loading state's update calls it too.
+pub unsafe fn AmmunitionManagerHandleDeferredQueue(manager: *mut ::std::ffi::c_void) {
+    unsafe {
+        let f: unsafe extern "system" fn(manager: *mut ::std::ffi::c_void) = ::std::mem::transmute(
+            AmmunitionManagerHandleDeferredQueue_ADDRESS,
+        );
+        f(manager)
+    }
+}

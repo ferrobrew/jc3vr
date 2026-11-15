@@ -213,6 +213,48 @@ impl std::convert::AsMut<BeaconWeapon> for BeaconWeapon {
     }
 }
 #[repr(C, align(8))]
+/// A fired bullet (`CBullet`): a pooled ammunition object that sweeps a ray from its last position
+/// to its new one each update and handles what the ray hit. Its layout is unmapped.
+pub struct Bullet {}
+impl Bullet {
+    pub const OnBulletHitGlass_ADDRESS: usize = 0x14090E470;
+    /// `CBullet::OnBulletHitGlass`: the bullet's handling of a hit on a shape of the glass material
+    /// ([`EGameMaterialId_Glass`](crate::physics::GameMaterialId::EGameMaterialId_Glass)), which its hit
+    /// handler calls before handling the hit object. It collects the model instances the hit names
+    /// ([`GetModelInstancesHit`](crate::physics::GetModelInstancesHit)), or, finding none, the world's
+    /// panes around the bullet ([`ModelCollection::GetIntersectingDecalModels`](crate::graphics_engine::model_instance::ModelCollection::GetIntersectingDecalModels)).
+    /// For each one with window metadata it maps the bullet's position into the instance's own
+    /// space through the instance's matrix and queues, on the ammunition manager's deferred
+    /// render-update list ([`AmmunitionManagerHandleDeferredQueue`](crate::equipment::explosive::AmmunitionManagerHandleDeferredQueue)),
+    /// a call that adds a damage point there of one fifth
+    /// ([`MetaWindow::AddWindowDamagePoint`](crate::graphics_engine::window_damage::MetaWindow::AddWindowDamagePoint)).
+    /// It plays no effect or sound of its own.
+    pub unsafe fn OnBulletHitGlass(
+        &mut self,
+        info: *mut crate::physics::CastRayInfoBase,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                info: *mut crate::physics::CastRayInfoBase,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::OnBulletHitGlass_ADDRESS);
+            f(self as *mut Self as _, info, dt)
+        }
+    }
+}
+impl std::convert::AsRef<Bullet> for Bullet {
+    fn as_ref(&self) -> &Bullet {
+        self
+    }
+}
+impl std::convert::AsMut<Bullet> for Bullet {
+    fn as_mut(&mut self) -> &mut Bullet {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// `CBulletWeaponBase`: the base of the fast-projectile weapons. Its layout is unmapped.
 pub struct BulletWeaponBase {}
 impl BulletWeaponBase {

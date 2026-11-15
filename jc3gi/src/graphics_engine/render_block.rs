@@ -2862,6 +2862,51 @@ impl std::convert::AsMut<RenderBlockTypeWindow> for RenderBlockTypeWindow {
         self
     }
 }
+#[repr(C, align(8))]
+/// The window render block (`NGraphicsEngine::CRenderBlockWindow`): alpha-blended glass, the
+/// vehicles' windows and the world's panes, drawn with the window shader, and with its damage when
+/// the instance carries window metadata
+/// ([`MetaWindow`](crate::graphics_engine::window_damage::MetaWindow)).
+pub struct RenderBlockWindow {}
+impl RenderBlockWindow {
+    pub const Draw_ADDRESS: usize = 0x1401A2C70;
+    /// Draws the block for the current pass. Nothing is drawn while the instance's colour alpha
+    /// (the byte [`ModelInstance::m_FadeAlpha`](crate::graphics_engine::model_instance::ModelInstance::m_FadeAlpha)
+    /// holds) is zero, nor in the two outline-effect passes. Otherwise it sets the world and
+    /// world-view-projection constants and the damage weights and the alpha for the window shader,
+    /// binds the damage points of the instance's window metadata, when it has some, through the
+    /// list's constant buffer, and draws the glass: back faces then front faces, or front faces only
+    /// for a single-sided block.
+    pub unsafe fn Draw(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        info: *const crate::graphics_engine::render_block::RBIInfo,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                info: *const crate::graphics_engine::render_block::RBIInfo,
+            ) = ::std::mem::transmute(Self::Draw_ADDRESS);
+            f(self as *const Self as _, render_context, info)
+        }
+    }
+}
+impl RenderBlockWindow {
+    /// The address of the `CRenderBlockWindow` virtual table, by which a render block is told to be
+    /// a window.
+    pub const VFTABLE: u64 = 5405627096;
+}
+impl std::convert::AsRef<RenderBlockWindow> for RenderBlockWindow {
+    fn as_ref(&self) -> &RenderBlockWindow {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockWindow> for RenderBlockWindow {
+    fn as_mut(&mut self) -> &mut RenderBlockWindow {
+        self
+    }
+}
 #[derive(Copy, Clone)]
 #[repr(C, align(8))]
 /// A skinned draw batch within a character render block. The vertex data references palette slots;
