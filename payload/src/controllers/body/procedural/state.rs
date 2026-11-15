@@ -148,9 +148,14 @@ impl StateTracker {
             swimming: detection.mode == Mode::OnFoot(OnFootVariant::Swimming)
                 || motion == Character::MOTION_STATE_SWIMMING
                 || has(StateBitFlag::SB_IS_SWIMMING),
+            // The skydive is presented as the wingsuit is: a prone body the animation poses, with
+            // the view on its head. The game reaches it from a long, fast fall and straight from a
+            // scripted drop; on the 14 November take the drop at 1384 s read as a fall past the
+            // jump's grace, standing, with the view above Rico's head.
             wingsuit: detection.mode == Mode::Airborne(AirborneVariant::Wingsuit)
                 || has(StateBitFlag::SB_IS_WINGSUIT)
-                || has(StateBitFlag::SB_IN_TRANSITION_TO_WINGSUIT),
+                || has(StateBitFlag::SB_IN_TRANSITION_TO_WINGSUIT)
+                || has(StateBitFlag::SB_IS_FREE_FALLING),
             parachute: detection.mode == Mode::Airborne(AirborneVariant::Parachute),
             flight: airborne && !in_grace,
             // In the air wins over the movement task's stamp: the task can run on the tick a jump

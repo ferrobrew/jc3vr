@@ -25,7 +25,7 @@
 //! | grapple traversal, hanging, stunt traversal, grapple struggle | animation, after a flight's hold |
 //! | the grapple's ledge climb | animation |
 //! | swimming | procedural on the swim's hips |
-//! | the wingsuit (the arms follow the player's) | animation |
+//! | the wingsuit and the skydive (the arms follow the player's) | animation |
 //! | the parachute | procedural on the harness's hips |
 //! | a fall past the jump's grace | animation, after a flight's hold |
 //! | a hit reaction (a stumble or a knock-back), for a hold after its act | animation |
@@ -75,7 +75,8 @@ pub enum Case {
     GrappleLock,
     LedgeClimb,
     Swimming,
-    /// In the wingsuit, or going into it. The arms follow the player's apart from the torso.
+    /// In the wingsuit, or going into it, or in the game's skydive (free fall), which presents as
+    /// it. The arms follow the player's apart from the torso.
     Wingsuit,
     Parachute,
     /// Falling past the jump's grace.
@@ -266,7 +267,7 @@ pub struct CharacterState {
     /// Climbing over a ledge at the end of a grapple.
     pub ledge_climb: bool,
     pub swimming: bool,
-    /// In the wingsuit, or going into it.
+    /// In the wingsuit, or going into it, or skydiving.
     pub wingsuit: bool,
     /// Under the parachute.
     pub parachute: bool,
