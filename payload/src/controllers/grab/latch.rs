@@ -49,6 +49,9 @@ pub struct LatchTick {
     pub bound: bool,
     /// Whether the hand moves slowly enough for a fist to take what it comes to.
     pub slow: bool,
+    /// Whether the hand is the grapple's while its line is out or reeling: its fist holds the
+    /// line, and a slow fist past its window takes nothing on the body.
+    pub holds_line: bool,
     /// The tick's length, seconds.
     pub dt: f32,
 }
@@ -66,6 +69,7 @@ impl GripLatch {
             target,
             bound,
             slow,
+            holds_line,
             dt,
         } = tick;
         if !grip.held() {
@@ -91,8 +95,9 @@ impl GripLatch {
             let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
             let closed_s = closed_s + dt;
             let window = closed_s <= FIST_WINDOW_S;
-            let takes =
-                |v: GrabVolume| (window || (slow && !v.on_body())) && Tier::of(v) != Tier::Remote;
+            let takes = |v: GrabVolume| {
+                (window || (slow && !(holds_line && v.on_body()))) && Tier::of(v) != Tier::Remote
+            };
             // A remote target is armed only by a press aimed at it, never by a closed hand passing
             // across it.
             *self = match target.filter(|v| takes(*v)) {
@@ -126,7 +131,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_slow_fist_past_its_window_takes_nothing_on_the_body() {
+    fn a_line_holding_slow_fist_past_its_window_takes_nothing_on_the_body() {
         let press = ButtonControl {
             down: true,
             pressed: true,
@@ -143,6 +148,7 @@ mod tests {
             target,
             bound: false,
             slow: true,
+            holds_line: true,
             dt,
         };
         let mut latch = GripLatch::Open;
@@ -155,6 +161,18 @@ mod tests {
         assert_eq!(
             latch.step(tick(held, Some(GrabVolume::Climb), 0.02)),
             Some(GrabVolume::Climb)
+        );
+        // The other hand's slow fist still takes the pouch.
+        let free = |grip, target, dt| LatchTick {
+            holds_line: false,
+            ..tick(grip, target, dt)
+        };
+        let mut latch = GripLatch::Open;
+        latch.step(free(press, None, 0.02));
+        latch.step(free(held, None, 0.5));
+        assert_eq!(
+            latch.step(free(held, Some(GrabVolume::GrenadePouch), 0.02)),
+            Some(GrabVolume::GrenadePouch)
         );
     }
 }

@@ -359,6 +359,7 @@ impl Bindings {
                 target: volume.filter(|_| !reserved),
                 bound: !reserved && grip_bound(input, hand),
                 slow: controls.hand(hand).grab_slow,
+                holds_line: hand == off_hand && (controls.grapple.line || controls.grapple.reeling),
                 dt,
             })
         });

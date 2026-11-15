@@ -489,6 +489,7 @@ fn tick(grip: ButtonControl, target: Option<GrabVolume>) -> LatchTick {
         target,
         bound: false,
         slow: true,
+        holds_line: false,
         dt: DT,
     }
 }
@@ -554,6 +555,7 @@ fn a_fist_kept_closed_and_swung_fast_takes_nothing_it_strikes() {
     let character = GrabVolume::Pickup(PickupKind::Character);
     let swing = LatchTick {
         slow: false,
+        holds_line: false,
         ..tick(HELD, Some(character))
     };
     assert_eq!(latch.step(swing), None);
@@ -570,6 +572,7 @@ fn a_hand_that_closes_just_before_it_arrives_takes_what_it_arrives_at() {
     // Still moving fast, but within the window after closing.
     let arriving = LatchTick {
         slow: false,
+        holds_line: false,
         ..tick(HELD, Some(handle))
     };
     assert_eq!(latch.step(arriving), Some(handle));
