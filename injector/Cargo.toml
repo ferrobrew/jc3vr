@@ -5,4 +5,14 @@ edition = "2024"
 
 [dependencies]
 anyhow = { workspace = true }
+ffmpeg-sidecar = { version = "2.7.0", default-features = false }
+parking_lot = "0.12.5"
 re-utilities-injector = { workspace = true }
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+windows = { workspace = true }
+
+[dev-dependencies]
+pretty_assertions = "1.4.1"
+test-case = "3.3.1"

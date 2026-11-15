@@ -12,4 +12,10 @@ if (-not $?) {
     exit 1
 }
 
+# The injector stays running as the capture host for in-process recordings, encoding them with the
+# ffmpeg.exe beside it; scripts/fetch_ffmpeg.ps1 stages one.
+if (-not (Test-Path "./target/x86_64-pc-windows-msvc/debug/ffmpeg.exe")) {
+    Write-Warning "No ffmpeg.exe beside the injector, so recordings will have no video; run scripts/fetch_ffmpeg.ps1"
+}
+
 & "./target/x86_64-pc-windows-msvc/debug/jc3vr_injector.exe" @args

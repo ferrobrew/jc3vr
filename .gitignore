@@ -12,6 +12,10 @@
 # Pinned Khronos OpenXR loader, fetched + cached by scripts/fetch_openxr_loader.sh
 .openxr
 
+# Pinned LGPL ffmpeg build for the injector's capture host, fetched + cached by
+# scripts/fetch_ffmpeg.sh
+.ffmpeg
+
 # JPEXS FFDec, fetched + cached by scripts/fetch_ffdec.sh. Only this subdirectory: the rest of
 # vendor/ is committed code.
 /vendor/ffdec/

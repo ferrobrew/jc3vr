@@ -18,6 +18,14 @@
 # Bonus: launch-client forwards stdio, so unlike `proton run` you actually see
 # the injector's output. Re-run this script to re-inject during a session.
 #
+# After injecting, the injector stays running as the capture host for the
+# payload's in-process recordings, encoding them with the ffmpeg.exe that
+# scripts/fetch_ffmpeg.sh stages beside it, until the game exits; this script
+# returns then. Under Wine that ffmpeg has only software encoders, so for the
+# GPU's encoder start scripts/capture_host.sh before injecting: the injector
+# finds the port taken and leaves the recording to it. `--no-capture-host`
+# makes the injector exit after injecting, as it used to.
+#
 # On NixOS the launch-client runs under `steam-run` for the FHS env it needs.
 #
 # Overridable via env: STEAM_ROOT, PROTON_DIR, JC3_BUS_NAME. The bus name must

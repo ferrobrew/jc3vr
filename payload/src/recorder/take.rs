@@ -261,9 +261,11 @@ const POLL: Duration = Duration::from_millis(20);
 /// How often the thread retries the host while waiting for the listener.
 const CONNECT_RETRY: Duration = Duration::from_millis(500);
 const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
-/// How long the host has to confirm a take after the start line. The host waits for the recorder's
-/// first frame before confirming, which takes most of a second.
-const START_TIMEOUT: Duration = Duration::from_secs(15);
+/// How long the host has to confirm a take after the start line. The relay waits for the screen
+/// recorder's first frame before confirming, which takes most of a second, and a streamed take's
+/// host probes its encoders on the first stream of a size, which can take several seconds while a
+/// hardware encoder's driver loads.
+const START_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long the thread waits for the host to confirm the video is finalized after the stop line.
 const FINISH_TIMEOUT: Duration = Duration::from_secs(5);
 /// How long a streamed take's writer has to send what is queued and end the stream. It stops
