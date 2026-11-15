@@ -381,6 +381,7 @@ mod tests {
             body,
             centre,
             mass_kg,
+            linear: Vec3::ZERO,
         }
     }
 

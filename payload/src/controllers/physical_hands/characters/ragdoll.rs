@@ -24,6 +24,8 @@ pub(crate) struct Bone {
     /// The body's centre of mass, world space.
     pub centre: Vec3,
     pub mass_kg: f32,
+    /// The body's linear velocity, metres per second.
+    pub linear: Vec3,
 }
 
 /// A ragdolling character's dynamic bodies: the bone nearest a point, and the whole ragdoll's mass.
@@ -64,6 +66,7 @@ impl Ragdoll {
                     body,
                     centre: state.pose.centre,
                     mass_kg: state.mass_kg?,
+                    linear: state.velocities.linear,
                 })
             })
             .collect();
@@ -74,7 +77,12 @@ impl Ragdoll {
     pub(crate) fn from_bones(bones: Vec<Bone>) -> Option<Self> {
         let bones: Vec<Bone> = bones
             .into_iter()
-            .filter(|b| b.centre.is_finite() && b.mass_kg.is_finite() && b.mass_kg > 0.0)
+            .filter(|b| {
+                b.centre.is_finite()
+                    && b.linear.is_finite()
+                    && b.mass_kg.is_finite()
+                    && b.mass_kg > 0.0
+            })
             .collect();
         (!bones.is_empty()).then_some(Self { bones })
     }
@@ -113,6 +121,26 @@ impl Ragdoll {
     pub(crate) fn mass_kg(&self) -> f32 {
         self.bones.iter().map(|b| b.mass_kg).sum()
     }
+
+    /// The impulses at each bone's centre that damp the ragdoll's motion within itself over a
+    /// step of `dt` seconds: each bone's velocity eases toward the whole ragdoll's (its centre of
+    /// mass's) with a rate of `per_s`. The impulses add up to nothing, so the ragdoll as a whole
+    /// keeps its momentum and whatever holds it is not fought; only the bones' motion against
+    /// each other, the flail and the orbit about the held bone, dies down. Empty for a step or a
+    /// rate that is not a positive number.
+    pub(crate) fn internal_damping(&self, per_s: f32, dt: f32) -> Vec<(Bone, Vec3)> {
+        if !(per_s.is_finite() && per_s > 0.0 && dt.is_finite() && dt > 0.0) {
+            return Vec::new();
+        }
+        let total_kg = self.mass_kg();
+        let momentum: Vec3 = self.bones.iter().map(|b| b.linear * b.mass_kg).sum();
+        let whole = momentum / total_kg;
+        let share = 1.0 - (-per_s * dt).exp();
+        self.bones
+            .iter()
+            .map(|b| (*b, (whole - b.linear) * share * b.mass_kg))
+            .collect()
+    }
 }
 
 /// The most bodies read from one ragdoll: a human ragdoll has a few dozen at most, so this bounds
@@ -129,7 +157,28 @@ mod tests {
             body,
             centre,
             mass_kg,
+            linear: Vec3::ZERO,
         }
+    }
+
+    #[test]
+    fn internal_damping_keeps_the_momentum_and_slows_the_flail() {
+        let mut flailing = bone(1, Vec3::ZERO, 10.0);
+        flailing.linear = Vec3::new(6.0, 0.0, 0.0);
+        let mut torso = bone(2, Vec3::Y, 30.0);
+        torso.linear = Vec3::new(1.0, 0.0, 0.0);
+        let ragdoll = Ragdoll::from_bones(vec![flailing, torso]).unwrap();
+        let pushes = ragdoll.internal_damping(4.0, 1.0 / 60.0);
+        let total: Vec3 = pushes.iter().map(|(_, impulse)| *impulse).sum();
+        assert!(total.length() < 1e-4, "no net push: {total}");
+        let after = |b: &Bone| {
+            let impulse = pushes.iter().find(|(p, _)| p.body == b.body).unwrap().1;
+            b.linear + impulse / b.mass_kg
+        };
+        let whole = (6.0 * 10.0 + 30.0) / 40.0;
+        assert!((after(&flailing).x - whole).abs() < (6.0 - whole));
+        assert!((after(&torso).x - whole).abs() < (whole - 1.0));
+        assert!(ragdoll.internal_damping(0.0, 1.0 / 60.0).is_empty());
     }
 
     #[test]

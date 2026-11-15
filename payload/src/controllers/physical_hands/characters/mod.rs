@@ -56,6 +56,7 @@ use crate::controllers::{
         contact::SurfaceHit,
         doors::engine as door_engine,
         grasp::{Reach, TargetKind},
+        remote,
     },
 };
 
@@ -482,6 +483,32 @@ pub(crate) unsafe fn gunner_out(target: CharacterTarget) -> GunnerOut {
     let character = unsafe { &mut *(target.character.get() as *mut Character) };
     unsafe { engine::gunner_out(character) }
 }
+
+/// Damp the ragdoll of `character`, held by its body `body`, within itself over a step of `dt`
+/// seconds ([`Ragdoll::internal_damping`] at [`HELD_RAGDOLL_DAMPING_PER_S`]): a hand drives only
+/// the bone it holds, and the rest of the body, hung off that bone on soft constraints, kept its
+/// momentum and orbited and thrashed about the palm (on the 14 November take, at 2 to 4 Hz a few
+/// centimetres from the camera).
+///
+/// # Safety
+///
+/// The main thread, outside the physics step. The body's current owner is checked first.
+pub(crate) unsafe fn damp_held_ragdoll(character: NonZeroUsize, body: u32, dt: f32) {
+    if unsafe { owner_of(body) } != Some(character) {
+        return;
+    }
+    // SAFETY: the body's owner proves the character live.
+    let Some(ragdoll) = (unsafe { Ragdoll::of(&*(character.get() as *const Character)) }) else {
+        return;
+    };
+    for (bone, impulse) in ragdoll.internal_damping(HELD_RAGDOLL_DAMPING_PER_S, dt) {
+        // A bone the game has freed since the read is passed over.
+        let _ = unsafe { remote::push(bone.body, bone.owner, impulse, bone.centre) };
+    }
+}
+
+/// How fast a held ragdoll's motion within itself dies down, per second.
+const HELD_RAGDOLL_DAMPING_PER_S: f32 = 4.0;
 
 /// Ragdoll the character `target` that a topple left standing ([`engine::retry_ragdoll`]).
 /// Returns whether an act was queued.
