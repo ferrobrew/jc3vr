@@ -6,13 +6,17 @@ use jc3gi::{
     physics::{
         CustomGroupCollisionFilter as Filter, PhysicsSystem, hknpBody, hknpConstraint, hknpWorld,
     },
+    vehicle::vehicle::Vehicle,
 };
 use parking_lot::Mutex;
 
 use crate::{
     config::Config,
     controllers::{
-        physical_hands::{STALE_AFTER, bodies, characters::engine::proxy_body, world::World},
+        physical_hands::{
+            STALE_AFTER, bodies, characters::engine::proxy_body, doors::engine::is_vehicle_part,
+            world::World,
+        },
         scheme,
     },
     hooks,
@@ -113,10 +117,14 @@ pub(super) unsafe fn step() {
             continue;
         };
         let owner = unsafe { bodies::body_owner(world.world(), body) };
+        // The player proxy shares a vehicle's system group while standing in its stunt area, so
+        // the group alone also takes in the vehicle's chassis and parts: those are never the
+        // player's. Counted as the player's on the 14 November take, a jeep's deck let a yanked
+        // gunner's ragdoll fall straight through it.
         let player_body = player_owner.is_some() && owner == player_owner
             || player_group.is_some_and(|group| {
                 slot.m_collisionFilterInfo >> Filter::SYSTEM_GROUP_SHIFT == group
-            });
+            }) && !owner.is_some_and(|owner| unsafe { vehicle_owned(owner) });
         let held = subjects.iter().any(|(subject, group, component)| {
             component.contains(&body)
                 || subject.includes(
@@ -423,6 +431,15 @@ static STATE: Mutex<State> = Mutex::new(State {
     leases: Vec::new(),
     logged: (Vec::new(), Vec::new()),
 });
+
+/// Whether the physics game object `owner` is a vehicle or one of its parts.
+///
+/// # Safety
+///
+/// `owner` must be a live physics game object, on the thread stepping the carry collision.
+unsafe fn vehicle_owned(owner: NonZeroUsize) -> bool {
+    unsafe { bodies::is_type(owner, Vehicle::TYPE_ID()) || is_vehicle_part(owner) }
+}
 
 #[cfg(test)]
 mod tests {
