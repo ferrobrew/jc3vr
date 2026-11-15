@@ -467,7 +467,11 @@ pub struct Vehicle {
     /// The seat the local player occupies, or [`Seat::ENoSeatIdentifier`](crate::vehicle::vehicle::Seat::ENoSeatIdentifier). The game's input
     /// contexts test it against [`Seat::EDriverSeat`](crate::vehicle::vehicle::Seat::EDriverSeat) to decide whether driver controls apply.
     pub m_LocalPlayerSeat: crate::vehicle::vehicle::Seat,
-    _field_15e0: [u8; 136],
+    _field_15e0: [u8; 16],
+    /// The interaction context that holds the vehicle's graph of seats and entries
+    /// ([`InteractionContext::m_InteractionGraphs`](crate::interaction::InteractionContext::m_InteractionGraphs)), or null.
+    pub m_InteractionContext: *mut crate::interaction::InteractionContext,
+    _field_15f8: [u8; 112],
     /// The vehicle's doors, hood, trunk, hatches, and other opening parts, and their state.
     pub m_VehicleDoorController: crate::vehicle::vehicle::VehicleDoorController,
     _field_1690: [u8; 397],

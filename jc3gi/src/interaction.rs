@@ -1,4 +1,10 @@
 #![cfg_attr(any(), rustfmt::skip)]
+/// The use tag of a vehicle entry a grapple reel ends at beside the vehicle, at its door side
+/// ([`InteractionGraphEntry::m_UseTagHash`](crate::interaction::InteractionGraphEntry::m_UseTagHash)). The tag's source name is not known.
+pub const INTERACTION_USE_TAG_REEL_IN_DOOR_SIDE: u32 = 3418744081;
+/// The use tag of a vehicle entry a grapple reel ends at in the vehicle's stunt hang
+/// ([`InteractionGraphEntry::m_UseTagHash`](crate::interaction::InteractionGraphEntry::m_UseTagHash)): the hash of `reel_in_hang`.
+pub const INTERACTION_USE_TAG_REEL_IN_HANG: u32 = 1772512023;
 #[repr(C, align(8))]
 /// The game object that holds a set of interaction graphs (`CInteractionContext`). Only some
 /// members are mapped.
@@ -7,7 +13,12 @@ pub struct InteractionContext {
     /// The game object the context belongs to (`CGameObject::m_Parent`), such as the weapon whose
     /// pickup interaction the context carries.
     pub m_Parent: crate::types::shared_ptr::WeakPtrGameObject,
-    _field_80: [u8; 768],
+    _field_80: [u8; 136],
+    /// The context's interaction graphs; a vehicle's graph of seats and entries is the first.
+    pub m_InteractionGraphs: [crate::types::shared_ptr::SharedPtr<
+        crate::interaction::InteractionGraph,
+    >; 16],
+    _field_208: [u8; 376],
     /// The context's state bits, including the `m_Enabled` bit its
     /// [`GameObject::Enable`](crate::game::GameObject::Enable) override reads and writes.
     pub m_Flags: crate::interaction::InteractionContextFlags,
@@ -48,10 +59,16 @@ pub struct InteractionGraph {
     _field_0: [u8; 96],
     /// The context that owns the graph.
     pub m_Context: *mut crate::interaction::InteractionContext,
+    _field_68: [u8; 24],
+    /// How many entries the graph has.
+    pub m_NofEntries: u32,
+    _field_84: [u8; 44],
+    /// The graph's entries, [`InteractionGraph::m_NofEntries`](crate::interaction::InteractionGraph::m_NofEntries) of them.
+    pub m_Entries: *mut crate::interaction::InteractionGraphEntry,
 }
 fn _InteractionGraph_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x68], InteractionGraph>([0u8; 0x68]);
+        ::std::mem::transmute::<[u8; 0xB8], InteractionGraph>([0u8; 0xB8]);
     }
     unreachable!()
 }
@@ -90,6 +107,39 @@ impl InteractionGraph {
             f(self as *mut Self as _, index)
         }
     }
+    pub const GetEntryByIndex_ADDRESS: usize = 0x140A37E20;
+    /// The graph's entry at `index`, or null when the index is past the graph's last entry.
+    pub unsafe fn GetEntryByIndex(
+        &mut self,
+        index: i32,
+    ) -> *mut crate::interaction::InteractionGraphEntry {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                index: i32,
+            ) -> *mut crate::interaction::InteractionGraphEntry = ::std::mem::transmute(
+                Self::GetEntryByIndex_ADDRESS,
+            );
+            f(self as *mut Self as _, index)
+        }
+    }
+    pub const GetWorldTransform_ADDRESS: usize = 0x140A42220;
+    /// Writes the graph's world transform into `result` and returns it: the graph's local
+    /// transform composed with its context's world transform.
+    pub unsafe fn GetWorldTransform(
+        &self,
+        result: *mut crate::types::math::Matrix4,
+    ) -> *mut crate::types::math::Matrix4 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                result: *mut crate::types::math::Matrix4,
+            ) -> *mut crate::types::math::Matrix4 = ::std::mem::transmute(
+                Self::GetWorldTransform_ADDRESS,
+            );
+            f(self as *const Self as _, result)
+        }
+    }
 }
 impl std::convert::AsRef<InteractionGraph> for InteractionGraph {
     fn as_ref(&self) -> &InteractionGraph {
@@ -101,20 +151,34 @@ impl std::convert::AsMut<InteractionGraph> for InteractionGraph {
         self
     }
 }
-#[repr(C, align(8))]
+#[repr(C, align(16))]
 /// One way into an interaction graph (`CInteractionGraphEntry`). Only some members are mapped.
 pub struct InteractionGraphEntry {
     _field_0: [u8; 8],
     /// The index of the graph node the entry leads to, for
     /// [`InteractionGraph::GetNodeByIndex`](crate::interaction::InteractionGraph::GetNodeByIndex).
     pub m_EntryNodeIndex: u64,
-    _field_10: [u8; 80],
+    _field_10: [u8; 16],
+    /// The act the entry queues on the character to take it.
+    pub m_EventId: i32,
+    /// The animation state the entry's act leads to.
+    pub m_StateId: u32,
+    _field_28: [u8; 16],
+    /// The hash of the entry's use tag, which says what the entry is for: among others
+    /// [`INTERACTION_USE_TAG_REEL_IN_DOOR_SIDE`](crate::interaction::INTERACTION_USE_TAG_REEL_IN_DOOR_SIDE) and [`INTERACTION_USE_TAG_REEL_IN_HANG`](crate::interaction::INTERACTION_USE_TAG_REEL_IN_HANG), the
+    /// two a grapple reel onto a vehicle chooses between.
+    pub m_UseTagHash: u32,
+    _field_3c: [u8; 20],
+    /// Whether the entry is offered.
+    pub m_Enabled: bool,
+    _field_51: [u8; 15],
     /// The graph the entry belongs to.
     pub m_Graph: *mut crate::interaction::InteractionGraph,
+    _field_68: [u8; 8],
 }
 fn _InteractionGraphEntry_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x68], InteractionGraphEntry>([0u8; 0x68]);
+        ::std::mem::transmute::<[u8; 0x70], InteractionGraphEntry>([0u8; 0x70]);
     }
     unreachable!()
 }

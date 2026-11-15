@@ -370,6 +370,44 @@ impl VehicleGrapplePointProxy {
             f(self as *const Self as _)
         }
     }
+    pub const GetVehiclePtr_ADDRESS: usize = 0x1409256F0;
+    /// The vehicle the attachment is on, or null when it is gone.
+    pub unsafe fn GetVehiclePtr(&self) -> *mut crate::vehicle::vehicle::Vehicle {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> *mut crate::vehicle::vehicle::Vehicle = ::std::mem::transmute(
+                Self::GetVehiclePtr_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const UpdateVehicleReelInEntrySelection_ADDRESS: usize = 0x140944120;
+    /// The reel's update of its chosen entry for `character`, reeling toward
+    /// `extension_position` along `direction`. With an entry chosen
+    /// ([`VehicleGrapplePointProxy::m_ReelInEntryIndex`](crate::equipment::grapple_point_proxy::VehicleGrapplePointProxy::m_ReelInEntryIndex)), the entry is offered to the character's
+    /// interaction user, its act checked from the character's state, and its side revalidated; a
+    /// valid entry has its start and goal recalculated. With none chosen, or the chosen one no
+    /// longer valid, an entry is selected afresh. Returns whether an entry stands chosen. Returns
+    /// false without choosing for a vehicle that is upside down or refuses reel entries.
+    pub unsafe fn UpdateVehicleReelInEntrySelection(
+        &mut self,
+        character: *mut crate::character::character::Character,
+        extension_position: *const crate::types::math::Vector3,
+        direction: *const crate::types::math::Vector3,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                character: *mut crate::character::character::Character,
+                extension_position: *const crate::types::math::Vector3,
+                direction: *const crate::types::math::Vector3,
+            ) -> bool = ::std::mem::transmute(
+                Self::UpdateVehicleReelInEntrySelection_ADDRESS,
+            );
+            f(self as *mut Self as _, character, extension_position, direction)
+        }
+    }
     pub const ReattachToNewPos_ADDRESS: usize = 0x140944290;
     /// Moves the attachment to a new world-space position and normal, updating both its visual
     /// local transform and its physics-local attachment while retaining the vehicle.
