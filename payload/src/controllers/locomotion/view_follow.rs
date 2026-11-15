@@ -4,8 +4,10 @@
 //! so no clip's bob, crouch, or landing moves it. A ragdoll, its get-up, and a death carry Rico's
 //! body far from the root for seconds and end with it somewhere else, and a view held over the
 //! root then floats above and behind the body. In those the held view follows the animated head
-//! instead, through a critically damped follower with a speed cap, so a ragdoll's fall is an ease
-//! rather than a drop. The view's frame stays upright either way; only its position follows.
+//! instead, through a critically damped follower of the head's offset from the root with a speed
+//! cap, so the head's flail and fall about the body are an ease rather than a drop while the
+//! body's own motion (a ragdoll thrown off a car, a long fall) carries the view uncapped. The
+//! view's frame stays upright either way; only its position follows.
 //!
 //! A landing or an authored one-off that carries the head well away from the root for longer than
 //! a dip (a fast fall's landing that pitches Rico forward, a crash that turns into a roll) escapes
@@ -49,8 +51,8 @@ enum FollowState {
     Idle,
     /// Over the root, with what is left of the difference from the previous source and its rate.
     Root { offset: Vec3, rate: Vec3 },
-    /// Following the animated head: the followed head and its velocity.
-    Head { head: Vec3, velocity: Vec3 },
+    /// Following the animated head: the followed head's offset from the root and its rate.
+    Head { offset: Vec3, rate: Vec3 },
 }
 
 impl HeadFollower {
@@ -100,31 +102,25 @@ impl HeadFollower {
                 };
                 self.advance(source, root, animated, dt)
             }
-            (
-                HeldSource::Head,
-                FollowState::Head {
-                    head: from,
-                    velocity,
-                },
-            ) => {
-                let (head, velocity) = damp(from, velocity, animated, FOLLOW_SMOOTHING_S, dt);
-                let step = head - from;
+            (HeldSource::Head, FollowState::Head { offset: from, rate }) => {
+                let (offset, rate) = damp(from, rate, animated - root, FOLLOW_SMOOTHING_S, dt);
+                let step = offset - from;
                 let max_step = MAX_FOLLOW_SPEED_MPS * dt;
-                let (head, velocity) = if step.length() > max_step {
+                let (offset, rate) = if step.length() > max_step {
                     (
                         from + step.normalize() * max_step,
-                        velocity.clamp_length_max(MAX_FOLLOW_SPEED_MPS),
+                        rate.clamp_length_max(MAX_FOLLOW_SPEED_MPS),
                     )
                 } else {
-                    (head, velocity)
+                    (offset, rate)
                 };
-                self.state = FollowState::Head { head, velocity };
-                head
+                self.state = FollowState::Head { offset, rate };
+                root + offset
             }
             (HeldSource::Head, _) => {
                 self.state = FollowState::Head {
-                    head: shown.unwrap_or(animated),
-                    velocity: Vec3::ZERO,
+                    offset: shown.unwrap_or(animated) - root,
+                    rate: Vec3::ZERO,
                 };
                 self.advance(source, root, animated, dt)
             }
@@ -143,8 +139,8 @@ fn damp(value: Vec3, rate: Vec3, target: Vec3, smooth_s: f32, dt: f32) -> (Vec3,
 /// get-up's rise is followed and a ragdoll's flail is eased.
 const FOLLOW_SMOOTHING_S: f32 = 0.12;
 
-/// The fastest the followed head moves, metres per second: a ragdoll's first fall eases in rather
-/// than dropping the view.
+/// The fastest the followed head moves about the root, metres per second: a ragdoll's first fall
+/// eases in rather than dropping the view.
 const MAX_FOLLOW_SPEED_MPS: f32 = 4.0;
 
 /// The smoothing of the difference left on the way back to the root, seconds.
@@ -167,8 +163,8 @@ impl Escape {
     }
 
     /// Fold in one tick of `dt` seconds. `allowed` says the case may escape at all, and
-    /// `distance` is how far the animated head is from the neutral head over the root,
-    /// horizontally, metres. Returns whether the view follows the animated head.
+    /// `distance` is how far the animated head is from the neutral head over the root
+    /// ([`escape_distance`]). Returns whether the view follows the animated head.
     pub fn step(&mut self, allowed: bool, distance: f32, dt: f32) -> bool {
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         if !allowed || !distance.is_finite() {
@@ -189,11 +185,34 @@ impl Escape {
         }
         self.escaped
     }
+
+    /// Start escaped: the view takes over from a source that left the head `distance`
+    /// ([`escape_distance`]) from the root's, and follows the animated head until it is over the
+    /// root again rather than cutting through the body to the root.
+    pub fn seed(&mut self, distance: f32) {
+        if distance.is_finite() && distance > ESCAPE_M {
+            self.escaped = true;
+        }
+    }
+}
+
+/// How far the animated head is from the neutral head over the root for the escape, given the
+/// difference `away` between them, metres: the horizontal distance, or the head's drop scaled so a
+/// drop of [`ESCAPE_DROP_M`] counts as [`ESCAPE_M`], whichever is further. A landing's crouch drops
+/// the head well short of the drop's threshold; a body lying on the ground does not.
+pub fn escape_distance(away: Vec3) -> f32 {
+    let horizontal = Vec3::new(away.x, 0.0, away.z).length();
+    let drop = (-away.y).max(0.0) * ESCAPE_M / ESCAPE_DROP_M;
+    horizontal.max(drop)
 }
 
 /// How far the animated head must be from the root's, horizontally, to count toward the escape,
 /// metres: past a walk's lean and a crouch's forward reach.
 const ESCAPE_M: f32 = 0.45;
+
+/// How far the animated head must drop below the root's to count toward the escape as
+/// [`ESCAPE_M`] does horizontally, metres: below a landing's crouch, above a body lying down.
+const ESCAPE_DROP_M: f32 = 0.8;
 
 /// How long the head must stay that far for the view to follow it, seconds: longer than a landing's
 /// dip.
@@ -247,6 +266,47 @@ mod tests {
             assert!(next.distance(last) <= MAX_FOLLOW_SPEED_MPS * DT + 1e-5);
             last = next;
         }
+    }
+
+    #[test]
+    fn a_body_moving_fast_carries_the_followed_view_with_it() {
+        // A ragdoll thrown off a car at 20 m/s, its head a steady offset from the root.
+        let mut follow = HeadFollower::new();
+        let offset = Vec3::new(0.0, -1.2, 0.4);
+        let velocity = Vec3::new(20.0, -3.0, 0.0);
+        let mut root = Vec3::new(0.0, 1.7, 0.0);
+        follow.step(HeldSource::Root, root, root + offset, DT);
+        let mut last = Vec3::ZERO;
+        for _ in 0..120 {
+            root += velocity * DT;
+            last = follow
+                .step(HeldSource::Head, root, root + offset, DT)
+                .current;
+        }
+        assert!(
+            last.distance(root + offset) < 0.01,
+            "the view keeps up with the body: {last} against {}",
+            root + offset
+        );
+    }
+
+    #[test]
+    fn the_escape_counts_a_long_drop_and_not_a_crouch() {
+        assert!(escape_distance(Vec3::new(0.0, -0.5, 0.0)) < ESCAPE_M);
+        assert!(escape_distance(Vec3::new(0.0, -1.3, 0.0)) > ESCAPE_M);
+        assert!(escape_distance(Vec3::new(0.0, 0.5, 0.5)) > ESCAPE_M);
+        assert!(escape_distance(Vec3::new(0.3, 0.0, 0.0)) < ESCAPE_M);
+    }
+
+    #[test]
+    fn a_seeded_escape_follows_until_the_head_is_back() {
+        let mut escape = Escape::new();
+        escape.seed(0.2);
+        assert!(!escape.step(true, 0.3, DT), "a near head seeds nothing");
+        escape.seed(1.0);
+        assert!(escape.step(true, 1.0, DT));
+        assert!(escape.step(true, 0.3, DT));
+        assert!(!escape.step(true, 0.1, DT));
     }
 
     #[test]

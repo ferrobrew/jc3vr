@@ -23,7 +23,7 @@ use crate::{
                 Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral,
                 NeutralCapture, blend, face_clear, face_offset, neck_model_anchors, stable_anchors,
             },
-            view_follow::{Escape, HeadFollower, HeldSource},
+            view_follow::{Escape, HeadFollower, HeldSource, escape_distance},
         },
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
     },
@@ -201,15 +201,16 @@ pub(crate) unsafe fn stabilize(
     if source() == Source::Vr {
         // A ragdoll, a get-up, a death, and a landing that carries the head well away from the
         // root hang the held view from the followed animated head rather than over the root.
-        let distance = stable_target.map_or(0.0, |stable| {
-            let away = animated.head - stable.head;
-            Vec3::new(away.x, 0.0, away.z).length()
-        });
-        let escaped = state.escape.step(
-            weight > 0.0 && case.is_some_and(Case::view_may_escape),
-            distance,
-            dt,
-        );
+        let distance =
+            stable_target.map_or(0.0, |stable| escape_distance(animated.head - stable.head));
+        let may_escape = case.is_some_and(Case::view_may_escape);
+        // A handover from a case that held the view on the animated head (a wingsuit, a vehicle)
+        // with that head far from the root's starts on it, and the view returns to the root once
+        // Rico's head is over it, rather than cutting through the body as the weight comes in.
+        if stable_target.is_some() && state.held.is_none() && may_escape {
+            state.escape.seed(distance);
+        }
+        let escaped = state.escape.step(weight > 0.0 && may_escape, distance, dt);
         let held = if case.is_some_and(Case::view_follows_head) || escaped {
             HeldSource::Head
         } else {
