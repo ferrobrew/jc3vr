@@ -88,6 +88,7 @@ fn a_ragdoll_target_is_admitted_by_ownership_without_a_seat_or_attachment() {
         grab: false,
         topple: false,
         hijack: false,
+        hold_off_get_up: false,
     };
     let mut target = target(None);
     target.ragdoll = true;
@@ -162,6 +163,7 @@ fn disabled_current_capabilities_do_not_reuse_the_queued_offer() {
         grab: false,
         topple: false,
         hijack: false,
+        hold_off_get_up: false,
     };
     for (target, attachment) in [
         (target(None), Attachment::OnFoot),

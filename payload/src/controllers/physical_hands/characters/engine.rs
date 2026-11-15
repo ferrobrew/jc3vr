@@ -184,6 +184,50 @@ pub(crate) unsafe fn retry_ragdoll(character: &mut Character) -> bool {
     false
 }
 
+/// Queue the ragdoll act again on `character` while it ragdolls in a hand's hold: the full ragdoll
+/// ([`EventIdSymbolTable::ACT_FULL_RAGDOLL`]) where the state takes it, else the hit reaction's
+/// ([`EventIdSymbolTable::ACT_HITREACT_RAGDOLL`]). The graph's get-up waits on the ragdolling
+/// state's timers (the time ragdolling, and the time settled), which the ragdolling state task
+/// resets on entering a state that asks it to; whether a ragdoll state takes the act again and
+/// re-enters is not established. Returns whether an act was queued; a protected or dead character,
+/// or one that no longer ragdolls, is left alone.
+///
+/// # Safety
+///
+/// `character` must be a live character, on the game thread outside the game's update.
+pub(crate) unsafe fn requeue_ragdoll(character: &mut Character) -> bool {
+    if unsafe { protection(character) }.is_some()
+        || unsafe { dead(character) }
+        || !unsafe { character.IsRagdolling() }
+    {
+        return false;
+    }
+    for name in [
+        EventIdSymbolTable::ACT_FULL_RAGDOLL,
+        EventIdSymbolTable::ACT_HITREACT_RAGDOLL,
+    ] {
+        let Some(act) = resolve_act_id(name) else {
+            continue;
+        };
+        let act = act as u32;
+        if unsafe { character.m_AnimatedModel.TryAct(&act) } {
+            unsafe { character.m_AnimatedModel.QueueAct(&act) };
+            return true;
+        }
+    }
+    false
+}
+
+/// Whether `character` is getting up out of its ragdoll
+/// ([`StateBitFlag::SB_IS_GETTING_UP_FROM_RAGDOLL`]).
+///
+/// # Safety
+///
+/// `character` must be a live character.
+pub(crate) unsafe fn getting_up(character: &Character) -> bool {
+    unsafe { state_bit(character, StateBitFlag::SB_IS_GETTING_UP_FROM_RAGDOLL) }
+}
+
 /// Whether `character` is dead: no health left, or in the dead state
 /// ([`StateBitFlag::SB_IS_IN_DEAD_STATE`]).
 ///

@@ -20,6 +20,7 @@ use crate::controllers::{
             HeldReport, PickupTuning, damping,
             diagnostics::{self, ConsumerResult, DriveRecord},
             grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
+            held_ragdolls,
             state::{GripSubject, Held, HeldKind, PickupState, Request},
             tearing::{self, Frame as TearFrame, Observation},
             transport::Transport,
@@ -183,9 +184,12 @@ pub(crate) unsafe fn tick(
         .map(|request| matches!(request, Some(Request::Release)));
     let time_scale = inputs.time_scale;
     let dt = inputs.dt;
+    let characters_config = inputs.characters;
     let outcome = unsafe { tick_with(state, inputs, config, &mut NativeBodies) };
     // SAFETY: forwarded from the caller.
     unsafe { damping::damp_held(state, dt) };
+    // SAFETY: forwarded from the caller.
+    unsafe { held_ragdolls::follow(state, &outcome, &characters_config, dt) };
     log_losses(subjects, &outcome);
     note_releases(subjects, opened, time_scale, &outcome);
     outcome

@@ -17,6 +17,7 @@
 //!
 //! - [`config`]: the settings;
 //! - [`engine`]: a character's capsule body, the player's hostility to it, and whether it is dead;
+//! - [`get_up`]: holding a held ragdoll's get-up off, and what ended a hold;
 //! - [`ragdoll`]: a ragdolling character's bodies, the bone nearest a point, and the whole
 //!   ragdoll's mass.
 //!
@@ -36,6 +37,7 @@
 mod acquisition;
 pub mod config;
 pub mod engine;
+pub(crate) mod get_up;
 pub mod ragdoll;
 
 use std::num::NonZeroUsize;

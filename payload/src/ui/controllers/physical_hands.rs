@@ -227,7 +227,15 @@ pub(super) fn characters_doors_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig
             ui.checkbox(
                 &mut p.characters.topple,
                 "Throw a gripped character into their ragdoll",
+            );
+            ui.checkbox(
+                &mut p.characters.hold_off_get_up,
+                "Keep a held character in their ragdoll",
             )
+            .on_hover_text(
+                "Queue the ragdoll again every second and a half of a hold, so the game's get-up \
+                 does not stand a held character up out of the hand.",
+            );
         });
         ui.checkbox(
             &mut p.characters.hijack,

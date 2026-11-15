@@ -974,12 +974,3 @@ fn a_tear_judges_the_other_hand_with_the_strength_left() {
     assert_eq!(state.strain(Hand::Right, &heavy), grasp::Strain::default());
     assert!(!outcome.reports[1].unwrap().liftable);
 }
-
-#[test]
-fn a_held_ragdoll_keeps_the_game_ragdolling() {
-    use crate::controllers::physical_hands::pickup::holds_ragdoll;
-
-    assert!(holds_ragdoll(&[Some(held(false, HeldKind::Ragdoll)), None]));
-    assert!(!holds_ragdoll(&[Some(held(false, HeldKind::Prop)), None]));
-    assert!(!holds_ragdoll(&[None, None]));
-}
