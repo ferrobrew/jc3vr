@@ -2,11 +2,12 @@
 //! it.
 //!
 //! The take reads the payload's start line ([`crate::capture::protocol`]), creates the take's
-//! folder, chooses the encoder ([`crate::capture::encoder`]), and starts ffmpeg reading the
-//! `yuv4mpegpipe` stream from its standard input and writing `video.mkv` into the folder. It then
+//! folder, chooses the encoder ([`crate::capture::encoder`]), opens the audio
+//! ([`crate::capture::audio`]), and starts ffmpeg reading the `yuv4mpegpipe` stream from its
+//! standard input and the audio from the audio thread, writing `video.mkv` into the folder. It then
 //! answers `started` and copies everything the payload sends into ffmpeg until the payload ends the
-//! stream. Closing ffmpeg's input lets it drain its encoder and finalize the file, after which the
-//! take answers `stopped` with ffmpeg's exit code.
+//! stream, passing on changes in the audio's state. Closing ffmpeg's inputs lets it drain its
+//! encoder and finalize the file, after which the take answers `stopped` with ffmpeg's exit code.
 //!
 //! Matroska is written as it goes, so a take cut short by a crash is still playable up to the cut.
 //! `stream.json` beside the video records the encoder, the stream's format as the payload sent it,
@@ -28,12 +29,16 @@ use parking_lot::Mutex;
 use serde_json::{Value, json};
 
 use crate::capture::{
+    audio::AudioInput,
     encoder::{EncoderCache, encoder_args, ffmpeg_command},
-    protocol::{LINE_LIMIT, StreamStart, error_line, parse_start, started_line, stopped_line},
+    protocol::{
+        LINE_LIMIT, StreamStart, audio_line, error_line, parse_start, started_line, stopped_line,
+    },
 };
 
 /// Serve one connection from the payload to its end.
 pub(crate) fn run(stream: TcpStream, encoders: &EncoderCache) {
+    let mut audio_state = String::new();
     let mut control = match stream.try_clone() {
         Ok(control) => control,
         Err(error) => {
@@ -76,11 +81,30 @@ pub(crate) fn run(stream: TcpStream, encoders: &EncoderCache) {
         Err(error) => return refuse(&mut control, &format!("capture host: {error}")),
     };
     let (video, metadata_path) = take_paths(&start.folder);
-    let args = ffmpeg_args(&start, &encoder, &video);
+    let audio = match AudioInput::start() {
+        Ok(audio) => Some(audio),
+        Err(reason) => {
+            tracing::warn!("capture host: recording without audio: {reason}");
+            audio_state = format!("none: {reason}");
+            None
+        }
+    };
+    if let Some(audio) = &audio {
+        audio_state = audio.description().to_owned();
+    }
+    let args = ffmpeg_args(
+        &start,
+        &encoder,
+        &video,
+        audio.as_ref().map(AudioInput::ffmpeg_args),
+    );
     let spawn_unix_ms = unix_ms();
     let mut child = match ffmpeg_command().args(&args).spawn() {
         Ok(child) => child,
         Err(error) => {
+            if let Some(audio) = audio {
+                audio.stop();
+            }
             return refuse(
                 &mut control,
                 &format!(
@@ -92,6 +116,9 @@ pub(crate) fn run(stream: TcpStream, encoders: &EncoderCache) {
     };
     let Some(stdin) = child.take_stdin() else {
         let _ = child.kill();
+        if let Some(audio) = audio {
+            audio.stop();
+        }
         return refuse(&mut control, "capture host: ffmpeg has no standard input");
     };
     let log = FfmpegLog::spawn(&mut child);
@@ -106,22 +133,32 @@ pub(crate) fn run(stream: TcpStream, encoders: &EncoderCache) {
         "stop_unix_ms": null,
         "exit_code": null,
         "encoder": encoder,
-        "audio": AUDIO_NONE,
+        "audio": audio_state,
         "stream": start.video_json,
         "command": args,
     });
     write_metadata(&metadata_path, &metadata);
     let file = video.display().to_string();
     if control
-        .write_all(&started_line(&file, &encoder, AUDIO_NONE))
+        .write_all(&started_line(&file, &encoder, &audio_state))
         .is_err()
     {
         tracing::warn!("capture host: the payload left before the take started");
     }
-    tracing::info!("capture host: recording {file} with {encoder}");
+    tracing::info!("capture host: recording {file} with {encoder}; audio: {audio_state}");
 
     let _ = reader.get_ref().set_read_timeout(Some(STREAM_TIMEOUT));
-    let pumped = pump(&mut reader, stdin, &log);
+    let pumped = pump(&mut reader, stdin, &log, || {
+        if let Some(state) = audio.as_ref().and_then(AudioInput::changed_state) {
+            let _ = control.write_all(&audio_line(&state));
+            audio_state = state;
+        }
+    });
+    // The audio's end closes ffmpeg's second input, so it can finish.
+    if let Some(audio) = audio {
+        audio.stop();
+    }
+    metadata["audio"] = json!(audio_state);
     metadata["video_start_unix_ms"] = json!(pumped.first_frame_unix_ms);
     match &pumped.end {
         StreamEnd::Finished => tracing::info!(
@@ -160,8 +197,6 @@ pub(crate) fn run(stream: TcpStream, encoders: &EncoderCache) {
 const STREAM_FORMAT: &str = "jc3vr-capture-stream";
 /// The metadata format's version: 2 adds the streamed take's encoder and stream fields.
 const STREAM_FORMAT_VERSION: u32 = 2;
-/// The audio state reported when the take records none.
-const AUDIO_NONE: &str = "none";
 /// How long the payload has to send its start line after connecting.
 const START_TIMEOUT: Duration = Duration::from_secs(10);
 /// How long the stream may go quiet before the take counts as lost. The payload repeats frames
@@ -217,8 +252,14 @@ pub(crate) fn take_paths(folder: &Path) -> (PathBuf, PathBuf) {
 }
 
 /// ffmpeg's arguments for a take: the stream on standard input, encoded with `encoder` into a
-/// Matroska file at `video`.
-pub(crate) fn ffmpeg_args(start: &StreamStart, encoder: &str, video: &Path) -> Vec<String> {
+/// Matroska file at `video`, with the audio input `audio` when there is one, downmixed to stereo
+/// AAC.
+pub(crate) fn ffmpeg_args(
+    start: &StreamStart,
+    encoder: &str,
+    video: &Path,
+    audio: Option<&[String]>,
+) -> Vec<String> {
     let mut args: Vec<String> = [
         "-hide_banner",
         "-nostats",
@@ -229,13 +270,25 @@ pub(crate) fn ffmpeg_args(start: &StreamStart, encoder: &str, video: &Path) -> V
         "yuv4mpegpipe",
         "-i",
         "-",
-        "-map",
-        "0:v",
     ]
     .into_iter()
     .map(str::to_owned)
     .collect();
+    if let Some(audio) = audio {
+        args.extend(audio.iter().cloned());
+    }
+    args.extend(["-map".to_owned(), "0:v".to_owned()]);
+    if audio.is_some() {
+        args.extend(["-map".to_owned(), "1:a".to_owned()]);
+    }
     args.extend(encoder_args(encoder, start.video));
+    if audio.is_some() {
+        args.extend(
+            ["-c:a", "aac", "-b:a", "192k", "-ac", "2"]
+                .into_iter()
+                .map(str::to_owned),
+        );
+    }
     args.extend(["-f".to_owned(), "matroska".to_owned()]);
     args.push(video.display().to_string());
     args
@@ -257,8 +310,13 @@ struct Pumped {
     first_frame_unix_ms: Option<u64>,
 }
 
-/// Copy the stream into ffmpeg until it ends.
-fn pump(reader: &mut BufReader<TcpStream>, mut stdin: impl Write, log: &FfmpegLog) -> Pumped {
+/// Copy the stream into ffmpeg until it ends, calling `between` after each chunk.
+fn pump(
+    reader: &mut BufReader<TcpStream>,
+    mut stdin: impl Write,
+    log: &FfmpegLog,
+    mut between: impl FnMut(),
+) -> Pumped {
     let mut buffer = vec![0u8; PUMP_CHUNK];
     let mut bytes = 0u64;
     let mut header_seen = false;
@@ -287,6 +345,7 @@ fn pump(reader: &mut BufReader<TcpStream>, mut stdin: impl Write, log: &FfmpegLo
             break StreamEnd::EncoderFailed(error);
         }
         bytes += count as u64;
+        between();
         if log.failed() {
             break StreamEnd::EncoderFailed(std::io::Error::other("ffmpeg reported a fatal error"));
         }
@@ -423,7 +482,7 @@ mod tests {
 
     #[test]
     fn ffmpeg_reads_the_stream_from_standard_input_and_writes_matroska() {
-        let args = ffmpeg_args(&start(), "h264_nvenc", Path::new("C:\\s\\video.mkv"));
+        let args = ffmpeg_args(&start(), "h264_nvenc", Path::new("C:\\s\\video.mkv"), None);
         let input = args.iter().position(|a| a == "-i").unwrap();
         assert_eq!(args[input - 1], "yuv4mpegpipe");
         assert_eq!(args[input + 1], "-");
@@ -432,6 +491,27 @@ mod tests {
             ["-f", "matroska", "C:\\s\\video.mkv"]
         );
         assert!(args.windows(2).any(|pair| pair == ["-c:v", "h264_nvenc"]));
+        assert!(!args.iter().any(|a| a == "1:a"));
+    }
+
+    #[test]
+    fn the_audio_is_a_second_input_mapped_and_downmixed_to_stereo_aac() {
+        let audio = ["-f", "f32le", "-i", "tcp://127.0.0.1:5000"].map(str::to_owned);
+        let args = ffmpeg_args(
+            &start(),
+            "libopenh264",
+            Path::new("C:\\s\\video.mkv"),
+            Some(&audio),
+        );
+        let inputs: Vec<&str> = args
+            .windows(2)
+            .filter(|pair| pair[0] == "-i")
+            .map(|pair| pair[1].as_str())
+            .collect();
+        assert_eq!(inputs, ["-", "tcp://127.0.0.1:5000"]);
+        assert!(args.windows(2).any(|pair| pair == ["-map", "1:a"]));
+        assert!(args.windows(2).any(|pair| pair == ["-c:a", "aac"]));
+        assert!(args.windows(2).any(|pair| pair == ["-ac", "2"]));
     }
 
     #[test]

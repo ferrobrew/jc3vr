@@ -4,13 +4,15 @@
 //! The host listens on loopback (port 47172 by default, the payload's default) and serves one take
 //! at a time ([`take`]): the payload connects when a recording starts, sends the stream's format
 //! ([`protocol`]), and streams `yuv4mpegpipe` frames that an ffmpeg beside the injector encodes into
-//! `video.mkv` in the take's folder, with a hardware H.264 encoder where one works ([`encoder`]).
-//! The host exits when the game does.
+//! `video.mkv` in the take's folder, with a hardware H.264 encoder where one works ([`encoder`]),
+//! and with a loopback recording of the default output's audio where the device offers one
+//! ([`audio`]). The host exits when the game does.
 //!
 //! When the port is taken, another capture host already serves the takes (on Linux, the relay
 //! `scripts/capture_host.sh` started before the injection, which feeds the same stream to the host's
 //! own ffmpeg), and the injector leaves the recording to it.
 
+mod audio;
 mod encoder;
 mod protocol;
 mod take;
