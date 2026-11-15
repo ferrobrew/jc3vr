@@ -56,7 +56,7 @@ use crate::{
             },
         },
     },
-    vr,
+    vr::input::flight_pose,
 };
 
 pub(crate) mod attachments;
@@ -412,19 +412,25 @@ fn seated_waist(owner: &Character) -> Option<[Option<Mat4>; Socket::COUNT]> {
     let dimensions = PlayerBody::from_heights(player.height, player.eye_height);
     // The waist hangs from the neck as it was when the player sat, not as it is: a player leaning
     // to look at a thigh or reaching toward the knees does not move their hips, and on the
-    // 14 November take a lean of half a metre carried a docked SMG out through the cabin wall. A
-    // recenter, which re-bases the cockpit, takes the neck afresh.
+    // 14 November take a lean of half a metre carried a docked SMG out through the cabin wall.
+    // The neck is taken only once the player's posture reads seated, since the seat locks before a
+    // standing player sits down, and afresh at every change of the cockpit frame (a recenter, a
+    // bank, the seat lock's yaw re-base), which would otherwise turn a neck kept in it away from
+    // the player.
     let live_neck = neck_pivot(active.head.position, active.head.orientation);
-    let recenters = vr::recenter_count();
-    let neck = {
+    let neck = if frame.posture == EffectivePosture::Seated {
+        let epoch = flight_pose::epoch();
         let mut latched = SEATED_NECK.lock();
         match *latched {
-            Some((neck, count)) if count == recenters => neck,
+            Some((neck, at)) if at == epoch => neck,
             _ => {
-                *latched = Some((live_neck, recenters));
+                *latched = Some((live_neck, epoch));
                 live_neck
             }
         }
+    } else {
+        *SEATED_NECK.lock() = None;
+        live_neck
     };
     let waist = neck - Vec3::Y * dimensions.spine_length(dimensions.standing_neck());
     let remaps = hands::arm_remaps(
@@ -527,8 +533,8 @@ struct DockGrip {
 static GRIPS: Mutex<Vec<DockGrip>> = Mutex::new(Vec::new());
 
 /// The neck pivot the seated waist hangs from, in the cockpit frame, as it was when the player sat,
-/// with the recenter count it was taken at.
-static SEATED_NECK: Mutex<Option<(Vec3, u32)>> = Mutex::new(None);
+/// with the cockpit frame's source epoch it was taken at.
+static SEATED_NECK: Mutex<Option<(Vec3, Option<u64>)>> = Mutex::new(None);
 
 /// The object of the weapon `hand` holds in `snapshot`.
 fn held_object(snapshot: &LoadoutSnapshot, hand: Hand) -> Option<ObjectKey> {

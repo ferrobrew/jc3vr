@@ -131,6 +131,13 @@ pub(crate) fn source_changed(change: EpochChange) {
     SLOT.lock().source_changed(change);
 }
 
+/// The current source epoch: it advances at every change of the cockpit frame's source (a
+/// recenter, a follow bank, each share of a seat-lock yaw re-base, a replay starting or ending).
+/// `None` once it has overflowed.
+pub(crate) fn epoch() -> Option<u64> {
+    SLOT.lock().epoch
+}
+
 /// Invalid command contexts emit no partial action list. The caller retains canopy precedence.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub(crate) enum CommandRejection {
