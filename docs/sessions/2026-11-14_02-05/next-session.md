@@ -62,6 +62,15 @@ In the order of the feedback:
 54. Stand still in each idle the game gives (with a rifle, with a pistol, crouched): the log names any standing state the stance's idle list misses.
 55. The IK body, in the order of [ik-body.md](../../mod/body/ik-body.md)'s checks: stand still with the body mirror on (the readout reads `idle`, both feet planted; Rico's pelvis under the player's, the feet still, the torso not pulled; if it fights, lower the hips' resist and turn reach first); bend and crouch (no steps, the knees forward, no floating or sunk feet); glance and turn (a glance does not step, a held turn takes two turn steps); step aside, forward, and back (one or two square steps, no slide, a few steps a standing minute); walk physically and on the stick (it hands over to the game's walk and comes back without a snap); step up and down a kerb and over a ledge; jump and fall (the takeoff and landing are the clip's, the pelvis under the head in the air); and the other modes and the gamepad unchanged.
 56. Frame time (new problem 4): play a minute with the estimator on and a minute with it off (`controllers.body.estimator.enabled`), and compare the frame time and the `body_estimator` timing slot.
+57. In a jeep's gunner seat and at a scripted mounted gun, Rico's hands and body are drawn; the log says `mounted gun: faded the gunner back in` once per use.
+58. Fly the heavy troop helicopter and the utility helicopter: each control sits under the hand that reaches for it, and the utility helicopter's collective is to the left of and below the cyclic. If one is off, log the hands for calibration as in check 52.
+59. Reel onto a helicopter's door side and wait past the arrival: Rico stays on the skid (`rail: holding Rico on the helicopter's skid`), riding with it as it flies. Y enters; jump steps off (`rail: stepped off the helicopter's skid`) and falls with the helicopter's speed. With `vehicles.helicopter_rail` off, he drops into the hang as before.
+60. With a full grenade pouch, put a grenade to it: a click with the buzz.
+61. Grip a gas cylinder in a rack and hold still for five seconds: the log's `damping a held articulated object's assembly` shows more than one body, and the lag settles rather than ringing at `load 1.00`.
+62. Hold a toppled soldier up for ten seconds, then lay them down in the hand for ten more: `holding a held character's ragdolling timers off its get-up`, and no `the game's get-up ended a hand's hold of a ragdoll`. If the get-up still fires, note `held_s` and `timers_held`. Let go: they get up a few seconds later.
+63. Swing the far end of a plank into the chest and keep pulling: `a held object rests against Rico's torso capsules`, no push, no strike buzz or sound, and no tear. Wedge the plank behind a post: it still tears.
+64. At a tripod minigun, close each grip on a handle without pressing use: the log says `manned=false`, and the drawn hands slide onto the handles and turn with the wrists. Open one hand: it blends back to the controller.
+65. The IK body's new checks in [ik-body.md](../../mod/body/ik-body.md): the step rate against the replay's prediction of about four a standing minute; standing on a truck bed or a boat deck while it is driven (the readout says `a moving body`, no steps standing still, `pelvis_speed_mps` near zero); hand climbing a face (`takes the climbing legs`, soles flat on the face, knees toward it, one brace at a time); and swinging on the line and under the canopy with the muscle target live (the legs swing toward the IK air pose; if they jitter or fold, compare with `ragdoll_target` off).
 
 ## What was built for the deferred work
 
@@ -69,12 +78,6 @@ Everything the earlier plans deferred was built on 15 November, untested in the 
 
 ## Still open
 
-- The IK-first body: feet carried on a moving deck, feet on the face while hand climbing, and the firm ragdoll taking its pose as the muscle target; the offline replay of the contact model over a recording.
-- The helicopter's rail as a standing place: a reel onto the door side now plays the game's own door states (Y enters); standing on the skid, the rail's sticky pull, and hanging underneath by choice are not built.
-- The hands in a vehicle's gunner seat are not drawn at all; the character's visibility in the turret's camera is the leading hypothesis, with no binding to read it yet.
-- The mounted gun's hands drawn on its handles off the gunner seat (the anchored tier exists only in the scripted mounted state).
-- The utility helicopter's collective and the second helicopter's controls: measure them with the calibration log (check 52) and add them to the cockpit table.
-- Damping an articulated object against its assembly's velocity, and holding off the get-up while a hand holds a ragdoll.
-- Whether the torso capsules' hand lag pushes the player or tears a hold.
+- The rail's sticky pull, and hanging underneath by choice, are not built.
 - The bars' twist grips removed outright if the triggers suit the reviewer.
 - A loaded gun's magazine cannot be dropped seated (a double tap is two shots); the reviewer chose to keep it for dry guns only. The scooter's twist grips stay behind their switch until the triggers are tried.
