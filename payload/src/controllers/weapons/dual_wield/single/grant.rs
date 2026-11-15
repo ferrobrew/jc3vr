@@ -128,6 +128,9 @@ pub struct Grants {
     state: TwinState,
     rack_copy: Option<f32>,
     respawn: Option<(bool, f32)>,
+    /// Whether the respawn's one pistol is the only pistol the player carried: it is replicated
+    /// onto the empty hip ([`Grants::cover_lone_respawn`]).
+    lone: bool,
     mission: Option<bool>,
 }
 
@@ -144,6 +147,7 @@ impl Grants {
             state: TwinState::Idle,
             rack_copy: None,
             respawn: None,
+            lone: false,
             mission: None,
         }
     }
@@ -162,6 +166,13 @@ impl Grants {
     /// follows).
     pub fn cover_respawn(&mut self, single: Option<bool>) {
         self.respawn = single.map(|single| (single, RESPAWN_COVER_S));
+    }
+
+    /// The respawn's one pistol was the only pistol the player carried: a respawn hands it a twin
+    /// for the empty hip, as a split of the game's pair does, rather than leaving one holster empty.
+    /// Only a respawn does this, never a load or a mission's give-back.
+    pub fn cover_lone_respawn(&mut self) {
+        self.lone = self.respawn.is_some_and(|(single, _)| single);
     }
 
     /// A mission took the slots' weapons, the pistol slot holding one pistol or not.
@@ -251,6 +262,7 @@ impl Grants {
         // Every cover is for the next weapon to arrive, whatever it turns out to be.
         let rack_copy = self.rack_copy.take().is_some();
         let respawn = self.respawn.take().map(|(single, _)| single);
+        let lone = std::mem::take(&mut self.lone);
         let mission = self.mission.take();
         if tick.single || !tick.guns {
             self.state = TwinState::Done { object };
@@ -259,7 +271,8 @@ impl Grants {
         let one = if rack_copy {
             Some(OneWhy::RackCopy)
         } else if let Some(single) = respawn {
-            single.then_some(OneWhy::Respawn)
+            // A lone pistol's respawn asks for its twin like a fresh split, below.
+            (single && !lone).then_some(OneWhy::Respawn)
         } else if let Some(single) = mission {
             single.then_some(OneWhy::MissionReturn)
         } else {
@@ -549,5 +562,19 @@ mod tests {
                 why: PairWhy::NoSocket
             }
         );
+    }
+
+    #[test]
+    fn a_lone_pistols_respawn_asks_for_its_twin() {
+        let mut g = Grants::new();
+        g.cover_respawn(Some(true));
+        g.cover_lone_respawn();
+        let grant = g.observe(tick(Some(PAIR)));
+        assert_eq!(grant, Grant::Request { object: PAIR });
+
+        let mut g = Grants::new();
+        g.cover_respawn(Some(true));
+        let grant = g.observe(tick(Some(PAIR)));
+        assert!(matches!(grant, Grant::One { .. }), "{grant:?}");
     }
 }

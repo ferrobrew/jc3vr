@@ -58,7 +58,11 @@ pub(crate) fn departure(
             release: Release::Dropped,
         }),
         Whereabouts::Slot => {
-            let socket = free_socket(table, held.kind.weapon()?, None)?;
+            // The game's own holster (at a death, a cutscene, a vehicle entry) puts the weapon on
+            // the hand's own hip where it fits there: by the body's order alone, a pistol the left
+            // hand held went to the right hip at a death on the 14 November take, and the left
+            // holster read as lost after the respawn.
+            let socket = free_socket(table, held.kind.weapon()?, Some(Socket::Hip(hand)))?;
             Some(Event::Dock { hand, socket })
         }
     }

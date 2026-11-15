@@ -310,6 +310,12 @@ pub(crate) fn cover_respawn(slot_single: Option<bool>) {
     STATE.lock().grants.cover_respawn(slot_single);
 }
 
+/// The respawn's one pistol was the only pistol carried: it comes back with a twin on the empty
+/// hip.
+pub(crate) fn cover_lone_respawn() {
+    STATE.lock().grants.cover_lone_respawn();
+}
+
 /// A mission took the slots' weapons: whether the pistol slot held one pistol, for its give-back.
 pub(crate) fn cover_mission(slot_single: bool) {
     STATE.lock().grants.cover_mission(slot_single);

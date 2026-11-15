@@ -313,6 +313,14 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfi
         .take_due(ready, owner as *const Character as usize);
     if let Some(chosen) = plan.filter(|_| enabled) {
         single::cover_respawn(chosen.slot_pistol_single);
+        // A respawn with the slot's one pistol and no carried twin replicates it onto the empty
+        // hip; a load or a mission's give-back keeps what was saved.
+        if chosen.origin == Origin::Reset
+            && chosen.slot_pistol_single == Some(true)
+            && !chosen.records.iter().any(|record| record.single)
+        {
+            single::cover_lone_respawn();
+        }
         unsafe { request(owner, chosen.origin, chosen.records) };
     }
     unsafe { adoption::adopt(owner) };
