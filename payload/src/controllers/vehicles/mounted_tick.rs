@@ -68,6 +68,8 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
         state.mounted_last = None;
         return none;
     };
+    // SAFETY: as above.
+    unsafe { keep_gunner_visible() };
     let to_cockpit = |world: Vec3| xf.point_to_cockpit(world);
     let body = xf.body;
     let handles = gun.handles.map(|h| h.map(to_cockpit));
@@ -133,6 +135,31 @@ pub(super) fn mounted_tick(active: &ActiveHands, aiming: [bool; 2]) -> MountedTi
         barrel: Some(body.inverse() * gun.barrel),
     }
 }
+
+/// Fade the local player back in while they man a mounted gun under the controllers. The gun's
+/// start of use fades a local player user out and holds them transparent for as long as they man
+/// it, for the game's turret camera; in the headset the view is at the head, so a gunner's body,
+/// arms, and hands went undrawn (the gunner seat on the 14 November take, 536 to 550 s).
+///
+/// # Safety
+///
+/// The game stage, on the game thread before the world update.
+unsafe fn keep_gunner_visible() {
+    let Some(local) = (unsafe { Character::GetLocalPlayerCharacter().as_mut() }) else {
+        return;
+    };
+    if local.m_FadingIn || !unsafe { local.IsInMountedGunState() } {
+        return;
+    }
+    unsafe { local.FadeCharacterInOut(true, GUNNER_FADE_IN_S) };
+    tracing::info!(
+        target: "controllers",
+        "mounted gun: faded the gunner back in, whom the gun's use had faded out"
+    );
+}
+
+/// How long the gunner takes to fade back in, seconds: the game's own fade's length.
+const GUNNER_FADE_IN_S: f32 = 0.25;
 
 /// The physical controls `seat` offers with their toggles on: only the driver's seat has any. A
 /// vehicle with a steering fork (`fork`) offers handlebars, and a plane whose cockpit has a control
