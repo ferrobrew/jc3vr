@@ -18,7 +18,10 @@ use crate::{
         physical_hands::{
             self,
             collider_view::model::Aabb,
-            doors::DoorTarget,
+            doors::{
+                DoorTarget,
+                engine::{broken_off, is_vehicle_part},
+            },
             game_object_of,
             remote::{self, NearBody, NearKind, RagdollTarget},
         },
@@ -830,7 +833,17 @@ unsafe fn aimed_offer(
         });
     }
     let hands = &config.physical_hands;
-    if let Some((mass_kg, handling)) = unsafe { prop_handling(aimed.object, aimed.body, config) } {
+    // A part still on its vehicle (a turret, a door on its hinge) is the vehicle's to the hook,
+    // whose attachment then selects the vehicle's body and refuses the snatch: offered as an
+    // object, an armoured car's turret armed three yanks on the 14 November take that each fired
+    // nothing. A door is offered as a door below.
+    // SAFETY: the caller's strong reference keeps the object alive, before the world update.
+    let attached_part =
+        unsafe { is_vehicle_part(aimed.object) && !broken_off(aimed.object, aimed.body) };
+    if !attached_part
+        && let Some((mass_kg, handling)) =
+            unsafe { prop_handling(aimed.object, aimed.body, config) }
+    {
         return Some(OfferKind::Prop {
             object: aimed.object,
             body: aimed.body,
