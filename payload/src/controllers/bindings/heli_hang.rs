@@ -1,17 +1,19 @@
-//! Y under a helicopter: the way into it from the line's hang below the airframe.
+//! Y under a helicopter: the way up onto its skid from the line's hang below the airframe.
 //!
 //! On foot, Y asks for the use, the vehicle entry, and the wingsuit at once. Hanging on the line
-//! below a helicopter, the entry has no state to take it (the line's hang stands in for the game's
-//! hang below the airframe, the one state that accepts it), and the wingsuit opened and ended the
+//! below a helicopter, the entry has no state to take it, and the wingsuit opened and ended the
 //! reel instead (1800 s on the 14 November take). So while the lock hangs Rico below a helicopter,
-//! Y's wingsuit is dropped and its press asks the lock to let the reel pick its entry afresh and
-//! arrive, which pulls Rico up to the door side ([`lock::entering_helicopter`]), and for that
-//! window the entry is held, so the arrival's state takes it and enters.
+//! Y's wingsuit is dropped and its press asks the lock to point the reel at the door side and let
+//! it arrive ([`lock::entering_helicopter`]), which pulls Rico up onto the skid. The press that
+//! started the pull is kept from the game until it is released, so the door-side arrival leaves
+//! him standing on the skid; a fresh press enters from there.
+
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use jc3gi::input::input_action_map::Action;
 
 use crate::{
-    controllers::bindings::hold::{Desired, MapKind, Target, Want},
+    controllers::bindings::hold::{Desired, MapKind, Want},
     grapple::physical::lock,
 };
 
@@ -19,23 +21,26 @@ use crate::{
 pub(super) fn step(desired: &mut Vec<Desired>) -> bool {
     let hanging = lock::hangs_under_helicopter();
     let entering = lock::entering_helicopter();
-    if !hanging && !entering {
-        return false;
-    }
-    let pressed = desired
+    let entry_held = desired
         .iter()
         .any(|d| is_player(d, Action::ENTER_VEHICLE) && presses(d.want));
-    desired.retain(|d| !is_player(d, Action::OPEN_WINGSUIT));
-    if entering && !desired.iter().any(|d| is_player(d, Action::ENTER_VEHICLE)) {
-        desired.push(Desired {
-            target: Target {
-                map: MapKind::Player,
-                action: Action::ENTER_VEHICLE,
-            },
-            want: Want::Hold(1.0),
-        });
+    if !entry_held {
+        SWALLOW.store(false, Ordering::Relaxed);
     }
-    hanging && pressed
+    if !hanging && !entering && !SWALLOW.load(Ordering::Relaxed) {
+        return false;
+    }
+    if hanging || entering {
+        desired.retain(|d| !is_player(d, Action::OPEN_WINGSUIT));
+    }
+    let pressed = hanging && entry_held;
+    if pressed {
+        SWALLOW.store(true, Ordering::Relaxed);
+    }
+    if SWALLOW.load(Ordering::Relaxed) {
+        desired.retain(|d| !is_player(d, Action::ENTER_VEHICLE));
+    }
+    pressed
 }
 
 fn is_player(desired: &Desired, action: Action) -> bool {
@@ -48,3 +53,6 @@ fn presses(want: Want) -> bool {
         Want::Hold(value) | Want::Analog(value) => value.is_finite() && value >= 0.5,
     }
 }
+
+/// Set from the press that starts the pull until its release: the entry is kept from the game.
+static SWALLOW: AtomicBool = AtomicBool::new(false);

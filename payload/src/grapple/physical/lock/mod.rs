@@ -214,8 +214,7 @@ pub(crate) fn hangs_under_helicopter() -> bool {
             .is_some_and(|active| active.under_helicopter)
 }
 
-/// Whether Y under a helicopter has just let the reel resume into the game's hang: its arrival is
-/// the game's, and Y is held for the hang to enter from.
+/// Whether Y under a helicopter has just pointed the resumed reel at its door side.
 pub(crate) fn entering_helicopter() -> bool {
     HANG_GATE
         .lock()
@@ -365,13 +364,13 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         Some(why) => {
             if why == LockEnd::Entering {
                 HANG_GATE.lock().entering = Some(Instant::now());
-                // The reel picks its entry afresh from below the airframe, which prefers the door
-                // side: it pulls Rico up onto the skid, and the held entry enters from there.
-                let reselected = unsafe { engine::reselect_vehicle_entry(hook) };
+                // The reel is pointed at the nearest door side, so it pulls Rico up onto the skid
+                // rather than into the stunt hang.
+                let pull = unsafe { engine::pull_to_door_side(character, hook) };
                 tracing::info!(
                     target: "grapple",
-                    reselected,
-                    "grapple lock: Y below a helicopter: the reel picks its entry afresh"
+                    ?pull,
+                    "grapple lock: Y below a helicopter: the reel pulls up to the door"
                 );
             }
             end(Some((character, hook)), why, input.hand)
@@ -952,8 +951,8 @@ struct HangGate {
     entering: Option<Instant>,
 }
 
-/// How long after Y under a helicopter the reel's arrival is the game's, door side or hang, and Y
-/// held for its state to enter from: the pull up and the door-side arrival's clip.
+/// How long after Y under a helicopter its pull up to the door lasts, for the log of its arrival
+/// and the bindings' hold on the wingsuit: the pull and the door-side arrival's clip.
 const ENTERING_FOR: Duration = Duration::from_secs(3);
 
 /// How long an arrival's ask for a hang stands: the arrival asks again on every reel tick it

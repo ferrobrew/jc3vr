@@ -3,7 +3,7 @@
 
 use std::num::NonZeroUsize;
 
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
     equipment::{
@@ -12,14 +12,16 @@ use jc3gi::{
         },
         grappling_hook::{GrapplingHook, GrapplingHookState},
     },
+    interaction::INTERACTION_USE_TAG_REEL_IN_DOOR_SIDE,
     physics::{PfxCharacterInstance, hknpCharacterSurfaceInfo},
-    types::math::Vector3,
+    types::math::{Matrix4, Vector3},
     vehicle::vehicle::Helicopter,
 };
 
 use crate::{
-    controllers::physical_hands::{
-        self, BodyState, characters::engine::proxy_body, game_object_of,
+    controllers::{
+        physical_hands::{self, BodyState, characters::engine::proxy_body, game_object_of},
+        weapons::engine::character_position,
     },
     grapple::hook,
 };
@@ -142,33 +144,115 @@ pub(super) unsafe fn reeling_to_helicopter_door_side(hook: &GrapplingHook) -> Op
     .then_some(body)
 }
 
-/// Clear the vehicle entry the reel onto `hook`'s far end has chosen, so the reel's next update
-/// selects one afresh from where the character is now, preferring the door side. Returns whether
-/// there was a vehicle attachment to clear.
+/// How Y below a helicopter set the reel's entry.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) enum DoorPull {
+    /// A door-side entry is chosen: the nearest of those that validated, whose start lies
+    /// `distance_m` from the character.
+    DoorSide { candidates: u32, distance_m: f32 },
+    /// No door-side entry validated: the choice is cleared for the reel to select afresh.
+    Reselect,
+    /// The line's far end is not a vehicle the entries can be read from.
+    NoVehicle,
+}
+
+/// Point the reel onto `hook`'s far end, a helicopter, at the door-side entry nearest `character`,
+/// so the resumed reel pulls him up to the door rather than into the stunt hang. Each enabled
+/// door-side entry of the vehicle's graph is chosen in turn and put through the reel's own update
+/// of its choice ([`VehicleGrapplePointProxy::UpdateVehicleReelInEntrySelection`]), which checks
+/// its act from the character's state and recalculates its start; the nearest that stands is kept.
+/// Each is tried with the previous goal cleared, since the update's side check compares the new
+/// entry with the goal it finds stored. With none standing, the choice is cleared for the reel to
+/// select afresh.
 ///
 /// # Safety
 ///
-/// The game thread, outside the physics step; `hook` must be live.
-pub(super) unsafe fn reselect_vehicle_entry(hook: &GrapplingHook) -> bool {
-    if unsafe { reeling_far_end(hook) }
-        .is_none_or(|proxy| proxy.m_AttachmentObjectInfo != AttachmentObjectInfo::AOI_Vehicle)
-    {
-        return false;
-    }
+/// The game thread, outside the physics step and the world update; `character` and `hook` must be
+/// live, the hook reeling along its line.
+pub(super) unsafe fn pull_to_door_side(
+    character: &mut Character,
+    hook: &GrapplingHook,
+) -> DoorPull {
+    let Some(proxy) = (unsafe { reeling_far_end(hook) })
+        .filter(|proxy| proxy.m_AttachmentObjectInfo == AttachmentObjectInfo::AOI_Vehicle)
+    else {
+        return DoorPull::NoVehicle;
+    };
+    let Some((hook_point, _)) = (unsafe { point(proxy) }) else {
+        return DoorPull::NoVehicle;
+    };
     let Some(wire) = (unsafe { hook.m_ActiveWire.px.as_ref() }) else {
-        return false;
+        return DoorPull::NoVehicle;
     };
     let Some(end) = hook::attached_hook_end(wire) else {
-        return false;
+        return DoorPull::NoVehicle;
     };
-    // SAFETY: a vehicle attachment's proxy is a vehicle grapple point proxy, live with the wire;
-    // the reel reads its entry on the game thread, which this is.
-    let Some(vehicle) = (unsafe { end.m_PointProxy.cast::<VehicleGrapplePointProxy>().as_mut() })
+    // SAFETY: a vehicle attachment's proxy is a vehicle grapple point proxy, live with the wire.
+    let Some(vehicle_proxy) =
+        (unsafe { end.m_PointProxy.cast::<VehicleGrapplePointProxy>().as_mut() })
     else {
-        return false;
+        return DoorPull::NoVehicle;
     };
-    vehicle.m_ReelInEntryIndex = NO_ENTRY;
-    true
+    // SAFETY: the vehicle owns its interaction context and its graphs while it lives, as it does
+    // while the line holds it.
+    let graph = unsafe { vehicle_proxy.GetVehiclePtr().as_ref() }
+        .and_then(|vehicle| unsafe { vehicle.m_InteractionContext.as_ref() })
+        .and_then(|context| unsafe { context.m_InteractionGraphs[0].px.as_mut() });
+    let Some(graph) = graph else {
+        vehicle_proxy.m_ReelInEntryIndex = NO_ENTRY;
+        return DoorPull::Reselect;
+    };
+    let mut to_world = Matrix4::default();
+    unsafe { graph.GetWorldTransform(&mut to_world) };
+    let to_world = Mat4::from(to_world);
+    let at = character_position(character);
+    let extension = Vector3 {
+        data: hook_point.to_array(),
+    };
+    let direction = Vector3 {
+        data: (hook_point - at).normalize_or_zero().to_array(),
+    };
+    let character_ptr = std::ptr::from_mut(character);
+    let mut choose = |index: i32| -> Option<f32> {
+        vehicle_proxy.m_ReelInEntryIndex = index;
+        vehicle_proxy.m_ReelInGoalPositionGS = Vector3 { data: [0.0; 3] };
+        let stands = unsafe {
+            vehicle_proxy.UpdateVehicleReelInEntrySelection(character_ptr, &extension, &direction)
+        };
+        (stands && vehicle_proxy.m_ReelInEntryIndex == index).then(|| {
+            let start = Vec3::from_array(vehicle_proxy.m_ReelInEntryPositionGS.data);
+            to_world.transform_point3(start).distance(at)
+        })
+    };
+    let mut candidates = 0;
+    let mut best: Option<(i32, f32)> = None;
+    for index in 0..graph.m_NofEntries {
+        let Ok(index) = i32::try_from(index) else {
+            break;
+        };
+        let door_side = unsafe { graph.GetEntryByIndex(index).as_ref() }.is_some_and(|entry| {
+            entry.m_Enabled && entry.m_UseTagHash == INTERACTION_USE_TAG_REEL_IN_DOOR_SIDE
+        });
+        if !door_side {
+            continue;
+        }
+        candidates += 1;
+        if let Some(distance) = choose(index).filter(|d| d.is_finite())
+            && best.is_none_or(|(_, nearest)| distance < nearest)
+        {
+            best = Some((index, distance));
+        }
+    }
+    match best.and_then(|(index, _)| choose(index).map(|distance| (index, distance))) {
+        Some((_, distance_m)) => DoorPull::DoorSide {
+            candidates,
+            distance_m,
+        },
+        None => {
+            vehicle_proxy.m_ReelInEntryIndex = NO_ENTRY;
+            DoorPull::Reselect
+        }
+    }
 }
 
 /// The vehicle grapple proxy's index for no chosen entry.

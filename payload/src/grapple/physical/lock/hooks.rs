@@ -148,7 +148,7 @@ fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Cha
     let local = unsafe { holder.as_ref() }
         .and_then(|h| unsafe { h.px.as_ref() })
         .is_some_and(|c| c.m_IsLocalCharacter);
-    if local && hang_enabled() && hang_takes_over() && !entering_helicopter() {
+    if local && hang_enabled() && hang_takes_over() {
         want_hang();
         return;
     }
@@ -211,7 +211,15 @@ fn finish_reel(
         let live_hook = unsafe { hook.as_ref() }.and_then(|h| unsafe { h.px.as_ref() });
         let to_helicopter =
             live_hook.is_some_and(|h| unsafe { engine::reeling_to_helicopter_hang(h) });
-        if to_helicopter && hang_enabled() && hang_takes_over() && !entering_helicopter() {
+        // Y below the airframe points the reel at the door side; should it arrive at the hang
+        // anyway, the line takes Rico back rather than the inverted hang.
+        if to_helicopter && hang_enabled() && hang_takes_over() {
+            if entering_helicopter() {
+                tracing::info!(
+                    target: "grapple",
+                    "grapple lock: Y below a helicopter arrived at the hang; back on the line"
+                );
+            }
             want_hang();
             return;
         }
@@ -221,11 +229,10 @@ fn finish_reel(
         if let Some(body) = door_side {
             crate::controllers::vehicles::rail::note_airframe(body);
         }
-        if entering_helicopter() && (door_side.is_some() || to_helicopter) {
+        if entering_helicopter() && door_side.is_some() {
             tracing::info!(
                 target: "grapple",
-                door_side = door_side.is_some(),
-                "grapple lock: Y below a helicopter arrives at its entry"
+                "grapple lock: Y below a helicopter arrived at the door side"
             );
         }
     }
