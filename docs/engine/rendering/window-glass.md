@@ -42,6 +42,10 @@ A model instance is hidden through [`ModelInstanceManager::HideModelInstance`](h
 
 Hiding does not touch the glass's ray shapes: bullets and rays still meet the glass material where the pane was.
 
+## What a bullet does at glass
+
+[`Bullet::HandleHit`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::Bullet##func-HandleHit) moves the bullet to the hit and, for a hit on the glass material, cracks the pane first. It then handles the hit as a hit on the object the glass belongs to, a vehicle for a car's windows: the vehicle takes the bullet's damage and impulse. Whether the bullet goes on is a roll: it passes through when a uniform random number exceeds the hit material's [`GameMaterialDesc::m_BulletCollideFactor`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/physics::GameMaterialDesc##field-m_BulletCollideFactor), and otherwise it stops there. A bullet that passes ([`Bullet::m_HasPenetratedOneObject`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::Bullet##field-m_HasPenetratedOneObject)) starts its next ray at the hit and ignores the whole object it passed for the rest of its flight ([`Bullet::m_RayIgnoreList`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::weapon::Bullet##field-m_RayIgnoreList)), so it can go on to hit the vehicle's occupants, which are objects of their own. Passing reduces nothing of the bullet's damage. The collide factor is material data, one unless the data sets it; its value for glass is not in the code.
+
 ## Open questions
 
 - Whether the vehicles' window models carry only window render blocks. Unverified: it is checked at run time before a pane is hidden.

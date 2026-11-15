@@ -2,7 +2,7 @@
 
 use egui::Ui;
 
-use crate::controllers::glass::{GlassConfig, GlassStatus, strike::Outcome};
+use crate::controllers::glass::{GlassConfig, GlassStatus, bullets, strike::Outcome};
 
 pub(super) fn glass_settings(ui: &mut Ui, g: &mut GlassConfig) {
     ui.checkbox(&mut g.enabled, "Break glass by hand")
@@ -18,6 +18,18 @@ pub(super) fn glass_settings(ui: &mut Ui, g: &mut GlassConfig) {
                  broken-window state of its own; its glass only cracks over.",
             );
         ui.checkbox(&mut g.sound, "Impact sound and effect");
+        ui.add_enabled(
+            g.shatter,
+            egui::Checkbox::new(
+                &mut g.bullets_pass,
+                "Bullets pass through a pane brought down",
+            ),
+        )
+        .on_hover_text(
+            "Hiding a pane leaves its glass shapes, so a bullet would still crack it, hit the car, \
+             and maybe stop there. With this on it passes cleanly, as the game's own penetration \
+             passes an object.",
+        );
         ui.collapsing("Tuning", |ui| {
             let t = &mut g.tuning;
             ui.add(egui::Slider::new(&mut t.min_speed_mps, 0.5..=6.0).text("Slowest strike (m/s)"));
@@ -56,6 +68,14 @@ pub(super) fn glass_readout(ui: &mut Ui, status: &GlassStatus) {
         status.strikes,
         status.shatters,
         status.shared_models
+    ));
+    ui.label(format!(
+        "Glass: {} bullets passed through panes brought down; intact glass stops a bullet {}.",
+        bullets::passes(),
+        bullets::collide_factor().map_or("(not yet read)".to_owned(), |f| format!(
+            "{:.0}% of the time",
+            f * 100.0
+        ))
     ));
     if let Some(last) = status.last {
         let outcome = match last.outcome {

@@ -28,6 +28,7 @@
 //! which applies the bullets' window damage from their worker threads. It acts in every mode, on
 //! foot and in a vehicle, under the controller scheme.
 
+pub mod bullets;
 pub mod config;
 mod engine;
 pub mod strike;
@@ -38,6 +39,7 @@ pub use config::{GlassConfig, GlassTuning};
 use glam::Vec3;
 use jc3gi::physics::{GameMaterialId, PhysicsSystem};
 use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
@@ -121,6 +123,10 @@ pub struct GlassStatus {
     pub shared_models: u64,
     pub last: Option<LastStrike>,
     pub last_error: Option<RaycastError>,
+}
+
+pub(crate) fn hook_library() -> HookLibrary {
+    bullets::hook_library()
 }
 
 pub fn status() -> GlassStatus {

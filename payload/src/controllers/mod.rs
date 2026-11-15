@@ -110,4 +110,5 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(physical_hands::impacts::hook_library())
         .with_hook_library(physical_hands::lifetime::hook_library())
         .with_hook_library(vehicles::hook_library())
+        .with_hook_library(glass::hook_library())
 }

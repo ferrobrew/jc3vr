@@ -15,6 +15,9 @@ pub struct GlassConfig {
     pub shatter: bool,
     /// Play the game's melee impact against glass where a strike lands.
     pub sound: bool,
+    /// Let bullets pass cleanly through a pane brought down, rather than meeting the glass's shapes
+    /// that hiding it leaves ([`bullets`](crate::controllers::glass::bullets)).
+    pub bullets_pass: bool,
     pub tuning: GlassTuning,
 }
 
@@ -25,6 +28,7 @@ impl GlassConfig {
             weapons: true,
             shatter: true,
             sound: true,
+            bullets_pass: true,
             tuning: GlassTuning::new(),
         }
     }

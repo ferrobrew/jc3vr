@@ -28,7 +28,7 @@ use jc3gi::{
     types::math::{Matrix4, Vector3, Vector4},
 };
 
-use crate::controllers::glass::strike;
+use crate::controllers::glass::{bullets, strike};
 
 /// A window pane a strike met: a model instance and the window metadata it draws its damage from.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -188,6 +188,7 @@ pub(super) unsafe fn hide(pane: Pane) -> Result<(), HideRefusal> {
     let manager = unsafe { ModelInstanceManager::get() }.ok_or(HideRefusal::NoManager)?;
     // SAFETY: a live instance, hidden from the game thread as the engine's owners hide theirs.
     unsafe { manager.HideModelInstance(pane.instance.as_ptr()) };
+    bullets::note_hidden(pane.instance.as_ptr());
     Ok(())
 }
 
