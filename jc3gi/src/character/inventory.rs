@@ -263,7 +263,10 @@ impl Inventory {
     pub const GiveMaxAmmo_ADDRESS: usize = 0x1408D5ED0;
     /// Fills every reserve to its [`m_MaxAmmunition`](crate::character::inventory::Inventory::m_MaxAmmunition) entry, with the same
     /// HUD updates, events, autosave, and refill-from-empty reloads as
-    /// [`SetAmmoCount`](crate::character::inventory::Inventory::SetAmmoCount) for each kind.
+    /// [`SetAmmoCount`](crate::character::inventory::Inventory::SetAmmoCount) for each kind, writing the entries directly rather
+    /// than through it. The local player answers the `ply.ammo.givemax` event with it (with
+    /// `CInventory::Init` its other caller); the event is sent by name from the game's data, as a
+    /// weapon locker's refill.
     pub unsafe fn GiveMaxAmmo(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
