@@ -243,7 +243,7 @@ fn lock_line(enabled: bool, status: &LockStatus) -> Line {
             Text::default()
         },
         if status.braking {
-            prose("braking, ")
+            prose("coasting in, ")
         } else {
             Text::default()
         },

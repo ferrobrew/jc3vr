@@ -89,8 +89,6 @@ pub(super) fn grapple_settings(ui: &mut Ui, cfg: &mut config::Config) {
         ui.add(Slider::new(&mut l.break_stretch_m, 0.5..=10.0).text("Lock break stretch (m)"));
         ui.add(Slider::new(&mut l.reel_in_mps, 0.0..=8.0).text("Hand reel-in (m/s)"));
         ui.add(Slider::new(&mut l.min_length_m, 0.5..=5.0).text("Shortest line (m)"));
-        ui.add(Slider::new(&mut l.brake_s, 0.0..=1.0).text("Lock take into the swing (s)"))
-            .on_hover_text("How long the lock takes to turn the reel's rush toward the hook into the swing.");
         ui.add(Slider::new(&mut l.reaction, 0.0..=1.0).text("Target reaction"))
             .on_hover_text("The share of the line's pull the target feels back.");
         ui.checkbox(&mut l.hang, "Hang below ceilings")

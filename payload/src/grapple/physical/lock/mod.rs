@@ -160,7 +160,8 @@ pub struct LockTarget {
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct LockStatus {
     pub locked: bool,
-    /// Whether the take still turns the reel's rush into the swing.
+    /// Whether the take still runs: the character coasts in toward the hook with the line
+    /// following it.
     pub braking: bool,
     /// Whether the lock is a hang below a ceiling attach rather than a swing the button took.
     pub hanging: bool,
@@ -303,7 +304,7 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
                 active.config = *input.config;
                 active.held.take_in(taken, input.real_dt, input.config);
                 let length_m = active.held.rope.length_m;
-                let braking = active.held.braking();
+                let braking = active.held.coasting();
                 shared.status.length_m = length_m;
                 shared.status.braking = braking;
                 shared.status.share()
@@ -427,7 +428,7 @@ pub(crate) unsafe fn drive(
         pending.at = hook_point;
     }
     let status = &mut shared.status;
-    status.braking = active.held.braking();
+    status.braking = active.held.coasting();
     status.length_m = active.held.rope.length_m;
     status.stretch_m = out.stretch_m;
     status.tension_n = out.tension_n;
@@ -590,7 +591,7 @@ unsafe fn start(
         let locks = shared.status.locks + 1;
         shared.status = LockStatus {
             locked: true,
-            braking: held.braking(),
+            braking: held.coasting(),
             hanging: hold == Hold::Hang,
             length_m: held.rope.length_m,
             target: Some(lock_target),

@@ -32,19 +32,18 @@ pub(crate) fn armed(armed: bool, button: Option<LockButton>) -> bool {
 pub(crate) struct Held {
     pub rope: Rope,
     take_in_mps: f32,
-    /// The take's remaining time, seconds: on take, the line turns the character's rush toward the
-    /// hook into the swing.
-    take_remaining_s: f32,
-    /// The speed the take keeps, relative to the hook's point: the character's speed on the take's
-    /// first tick, capped so that the swing it starts stays within the line's strength. `None`
-    /// until that tick.
-    take_speed_mps: Option<f32>,
-    /// Whether the take keeps the character's speed, turning it across the line, or stops the
-    /// character against the hook's point at once (a hang).
+    /// Whether the take still runs: the character coasts in toward the hook on its own momentum
+    /// and the held length follows it, until it stops closing on the hook.
+    coasting: bool,
+    /// Whether the take keeps the character's motion, letting the line go taut where its approach
+    /// ends, or stops the character against the hook's point at once (a hang).
     keeps_speed: bool,
     /// The length the line pays out to, at [`PAY_OUT_MPS`], until the hand takes line in: a hang
     /// lowers the character from the hook to its length.
     pay_out_to_m: Option<f32>,
+    /// The line the hand has taken in since the pay-out last ran, metres: a pull past
+    /// [`PAY_OUT_TAKE_IN_M`] ends the pay-out, and a hand's drift does not.
+    taken_since_pay_out_m: f32,
 }
 
 impl Held {
@@ -56,19 +55,15 @@ impl Held {
         Some(Self {
             rope: Rope::new(distance.max(held_floor(config.min_length_m)))?,
             take_in_mps: 0.0,
-            take_remaining_s: if config.brake_s.is_finite() {
-                config.brake_s.max(0.0)
-            } else {
-                0.0
-            },
-            take_speed_mps: None,
+            coasting: true,
             keeps_speed: true,
             pay_out_to_m: None,
+            taken_since_pay_out_m: 0.0,
         })
     }
 
     /// A hang: the line held from the character's distance, paid out to `length_m`, and a take that
-    /// stops the character against the hook's point rather than turning its rush into a swing.
+    /// stops the character against the hook's point rather than letting it coast.
     pub(crate) fn hang(
         hook: Vec3,
         rider: Vec3,
@@ -83,9 +78,10 @@ impl Held {
         })
     }
 
-    /// Whether the take still turns the character's rush toward the hook into the swing.
-    pub(crate) fn braking(&self) -> bool {
-        self.take_remaining_s > 0.0
+    /// Whether the take still runs: the character still closes on the hook with the line
+    /// following it in.
+    pub(crate) fn coasting(&self) -> bool {
+        self.coasting
     }
 
     /// Take `taken_m` of line in, down to `config`'s least length.
@@ -96,9 +92,13 @@ impl Held {
         }
         let before = self.rope.length_m;
         self.rope.shorten(taken_m, config.min_length_m);
-        self.take_in_mps = ((before - self.rope.length_m) / dt).min(config.reel_in_mps.max(0.0));
-        if self.take_in_mps > 0.0 {
-            self.pay_out_to_m = None;
+        let taken = before - self.rope.length_m;
+        self.take_in_mps = (taken / dt).min(config.reel_in_mps.max(0.0));
+        if self.pay_out_to_m.is_some() && taken > 0.0 {
+            self.taken_since_pay_out_m += taken;
+            if self.taken_since_pay_out_m > PAY_OUT_TAKE_IN_M {
+                self.pay_out_to_m = None;
+            }
         }
     }
 
@@ -110,6 +110,8 @@ impl Held {
         if !dt.is_finite() || dt <= 0.0 {
             return;
         }
+        // A hand's drift back and forth along the aim adds up its pulls; the leak lets it go.
+        self.taken_since_pay_out_m = (self.taken_since_pay_out_m - PAY_OUT_TAKE_IN_M * dt).max(0.0);
         self.rope.length_m =
             (self.rope.length_m + PAY_OUT_MPS * dt).min(target.max(self.rope.length_m));
         if self.rope.length_m >= target {
@@ -117,13 +119,12 @@ impl Held {
         }
     }
 
-    /// Turn the rush toward the hook into the swing over the take's remaining time, keeping the
-    /// character's speed: the speed toward the hook's point, measured against the hook's own
-    /// motion, falls linearly to zero as the take ends, and the speed across the line rises so
-    /// that the whole speed stays what it was on the take's first tick ([`take_speed`]). The swing
-    /// runs the way the character was going across the line, or, for a rush straight along it,
-    /// the way it was going over the ground, and failing that downward. The held length follows
-    /// the character in, so the rush does not leave the line slack.
+    /// The take: while the character still closes on the hook's point (measured against the hook's
+    /// own motion), it coasts on its own momentum and the held length follows it in, so the line
+    /// goes taut exactly when its approach ends, with no speed along the line left to stop and
+    /// nothing across the line turned. From there the rope swings it. Only a coast that would
+    /// carry the character into the hook is braked, along the line alone, to stop at the line's
+    /// least length. A hang instead starts at rest against the hook.
     fn take(
         &mut self,
         velocity: &mut Vec3,
@@ -133,88 +134,56 @@ impl Held {
         dt: f32,
         config: &LockConfig,
     ) {
-        if self.take_remaining_s <= 0.0 || !dt.is_finite() || dt <= 0.0 {
+        if !self.coasting || !dt.is_finite() || dt <= 0.0 {
+            return;
+        }
+        if !self.keeps_speed {
+            // A hang starts at rest against the hook, as the game's own ceiling attach clears the
+            // character's velocities.
+            *velocity = hook_velocity;
+            self.coasting = false;
             return;
         }
         let offset = rider - hook;
         let distance = offset.length();
         let Some(direction) = offset.try_normalize() else {
-            self.take_remaining_s = 0.0;
+            self.coasting = false;
             return;
         };
         let relative = *velocity - hook_velocity;
-        if !self.keeps_speed {
-            // A hang starts at rest against the hook, as the game's own ceiling attach clears the
-            // character's velocities.
-            *velocity = hook_velocity;
-            self.take_remaining_s = 0.0;
+        let along = relative.dot(direction);
+        if along >= 0.0 {
+            self.coasting = false;
             return;
         }
-        let kept = *self
-            .take_speed_mps
-            .get_or_insert_with(|| take_speed(relative.length(), direction, distance, config));
-        let step_s = dt.min(self.take_remaining_s);
-        let along = relative.dot(direction);
-        if along < 0.0 {
-            let radial = along * (1.0 - (step_s / self.take_remaining_s).clamp(0.0, 1.0));
-            let across = relative - direction * along;
-            let swing = swing_direction(across, relative, direction);
-            let across_speed = match swing {
-                Some(_) => across
-                    .length()
-                    .max((kept * kept - radial * radial).max(0.0).sqrt()),
-                None => across.length(),
-            };
-            let across = swing.map_or(across, |swing| swing * across_speed);
-            *velocity = hook_velocity + across + direction * radial;
+        let room = distance - held_floor(config.min_length_m);
+        let stopping = if room > 0.0 {
+            along * along / (2.0 * room)
+        } else {
+            f32::INFINITY
+        };
+        if stopping > COAST_BRAKE_MPS2 {
+            let braked = (along + stopping.min(along.abs() / dt) * dt).min(0.0);
+            *velocity += direction * (braked - along);
         }
         if distance < self.rope.length_m {
             self.rope
                 .shorten(self.rope.length_m - distance, config.min_length_m);
         }
-        self.take_remaining_s = (self.take_remaining_s - step_s).max(0.0);
     }
 }
 
-/// The speed the take keeps for a character moving at `speed_mps` relative to the hook's point,
-/// `direction` from the hook's point toward it at `distance_m`: as much of the speed as the line,
-/// at its strength, can hold at the bottom of the swing it starts, after the drop to there. A
-/// pendulum's line pulls hardest at the bottom, with gravity and the speed gained falling to it
-/// added to the turn, so the entry's speed is bounded by what is left of the line's strength.
-fn take_speed(speed_mps: f32, direction: Vec3, distance_m: f32, config: &LockConfig) -> f32 {
-    let drop_share = 1.0 + direction.y.clamp(-1.0, 1.0);
-    let spare_g = config.max_accel_g.max(0.0) - 1.0 - 2.0 * drop_share;
-    let most = (spare_g.max(0.0) * GRAVITY_MPS2 * distance_m.max(0.0)).sqrt();
-    let speed = if speed_mps.is_finite() {
-        speed_mps
-    } else {
-        0.0
-    };
-    speed.min(most)
-}
+/// The deceleration toward the hook beyond which the coast is braked, metres per second squared:
+/// about what the line holds, so a coast that would otherwise reach the hook stops at the line's
+/// least length instead.
+const COAST_BRAKE_MPS2: f32 = 3.0 * GRAVITY_MPS2;
 
-/// The direction across the line the take swings the character in, `direction` pointing from the
-/// hook's point to it: the way its relative velocity already goes across the line, or for a
-/// velocity along the line, the way it goes over the ground, and failing that downward, each
-/// taken across the line. `None` for a line straight up or down with no way across.
-fn swing_direction(across: Vec3, relative: Vec3, direction: Vec3) -> Option<Vec3> {
-    let across_line = |v: Vec3| (v - direction * v.dot(direction)).try_normalize();
-    let ground = Vec3::new(relative.x, 0.0, relative.z);
-    if across.length() > ACROSS_MIN_MPS {
-        return across.try_normalize();
-    }
-    across_line(ground)
-        .filter(|_| ground.length() > ACROSS_MIN_MPS)
-        .or_else(|| across_line(Vec3::NEG_Y))
-        .filter(|d| d.is_finite())
-}
+/// How much line the hand must take in during a hang's pay-out to end it, metres: a deliberate
+/// pull, past a hand's drift back along the aim.
+const PAY_OUT_TAKE_IN_M: f32 = 0.05;
 
 /// How fast a hang pays line out to its length, metres per second.
 const PAY_OUT_MPS: f32 = 3.0;
-
-/// Below this speed across the line, metres per second, the take finds the swing's way from the
-/// ground track or gravity rather than from the velocity's own crossing.
-const ACROSS_MIN_MPS: f32 = 0.5;
 
 /// One reel tick of the swing, world space.
 #[derive(Debug, Copy, Clone, PartialEq)]
