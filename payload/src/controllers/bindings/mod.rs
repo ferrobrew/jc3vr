@@ -697,6 +697,11 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         seated: config.grapple.seat && unsafe { grapple::seat::stands_in_for_local() },
     };
     controls.lock_yank = physical_grapple.lock_yank;
+    let lock_status = grapple::physical::lock::status();
+    controls.grapple_retarget = lock_status.locked
+        && aim::status().grapple.is_some_and(|aim| {
+            aim.valid && aim.current && aim.point.distance(lock_status.hook) > RETARGET_M
+        });
     let mut step = state.bindings.step(
         detection.mode,
         &controls,
@@ -1209,6 +1214,10 @@ fn log_capture_wait(
         "debug panel: neither editing nor gameplay owns the controls",
     );
 }
+
+/// How far from the locked line's hook the grapple's aim must be for a tap to fire the hook again,
+/// metres: past the aim's own wander on the hooked surface.
+const RETARGET_M: f32 = 2.0;
 
 static CAPTURE_WAIT: Mutex<CaptureWait> = Mutex::new(CaptureWait::new());
 

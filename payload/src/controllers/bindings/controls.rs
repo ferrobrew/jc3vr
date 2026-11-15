@@ -106,6 +106,9 @@ pub struct Controls {
     pub yank: bool,
     /// Whether the physical grapple's yank fired this tick while the lock held the line.
     pub lock_yank: bool,
+    /// Whether the grapple's aim is on a valid target away from the locked line's hook, so a tap
+    /// that resumes the reel fires the hook again at it.
+    pub grapple_retarget: bool,
     /// What the grapple button's gestures need to know of the game.
     pub grapple: GrappleContext,
     /// Whether the sight tuning capture chord is armed: the tuning tool is on and its marker is
@@ -174,6 +177,7 @@ impl Controls {
             dual_wield: false,
             yank: false,
             lock_yank: false,
+            grapple_retarget: false,
             grapple: GrappleContext::default(),
             sight_chord: false,
             ragdolling: false,

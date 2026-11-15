@@ -88,6 +88,9 @@ pub struct GrappleTick {
     /// the yank itself (`lock::LockTickInput::yank`); the button spends the press, so that its
     /// release neither ends the lock again nor fires.
     pub lock_yank: bool,
+    /// The grapple's aim is on a valid target away from the locked line's hook: a tap that resumes
+    /// the reel fires the hook again at it, which the game takes from the reel as a retarget.
+    pub retarget: bool,
     pub dt: f32,
 }
 
@@ -269,6 +272,7 @@ impl GrappleButton {
             context,
             yank,
             lock_yank,
+            retarget,
             dt,
         } = tick;
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
@@ -298,13 +302,19 @@ impl GrappleButton {
                 }
             }
             Phase::Locking { held_s } => {
-                // A quick release resumes the reel; a longer hold lets go of the line. Neither
-                // fires the game's hook again: a fire onto the attached line can release it.
-                out.lock = Some(if held_s < TAP_S {
+                // A quick release resumes the reel; a longer hold lets go of the line. A quick
+                // release with the aim on a new target fires the hook again at it, which the game
+                // takes from the reel; with the aim on the attached line it fires nothing, since a
+                // fire onto the line can release it.
+                let tapped = held_s < TAP_S;
+                out.lock = Some(if tapped {
                     LockButton::Tapped
                 } else {
                     LockButton::LetGo
                 });
+                if tapped && retarget {
+                    out.fire = Some(Want::Click);
+                }
                 Phase::Idle
             }
             Phase::Idle | Phase::TapWaiting { .. } if fresh && !context.gestures() => {
@@ -428,6 +438,7 @@ impl GrappleButton {
                     context: unseated,
                     yank: false,
                     lock_yank: false,
+                    retarget: false,
                     dt,
                 });
                 *out = step;
@@ -595,6 +606,7 @@ mod tests {
             context,
             yank: false,
             lock_yank: false,
+            retarget: false,
             dt: DT,
         }
     }
@@ -984,6 +996,19 @@ mod tests {
     }
 
     #[test]
+    fn a_quick_release_aimed_at_a_new_target_fires_again_from_the_reel() {
+        let mut g = GrappleButton::new();
+        g.step(tick(PRESS, REELING));
+        g.step(tick(HELD, REELING));
+        let out = g.step(GrappleTick {
+            retarget: true,
+            ..tick(RELEASE, REELING)
+        });
+        assert_eq!(out.lock, Some(LockButton::Tapped));
+        assert_eq!(out.fire, Some(Want::Click));
+    }
+
+    #[test]
     fn a_quick_release_locks_at_the_press_and_unlocks_without_firing() {
         let mut g = GrappleButton::new();
         let out = run(&mut g, REELING, &[PRESS, HELD, RELEASE, UP]);
@@ -1047,6 +1072,7 @@ mod tests {
         run(&mut g, REELING, &[PRESS]);
         let out = g.step(GrappleTick {
             lock_yank: true,
+            retarget: false,
             ..tick(HELD, REELING)
         });
         assert_eq!(out.lock, None);

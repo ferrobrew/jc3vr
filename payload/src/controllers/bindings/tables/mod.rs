@@ -485,6 +485,7 @@ impl Bindings {
                     context: controls.grapple,
                     yank: controls.yank,
                     lock_yank: controls.lock_yank,
+                    retarget: controls.grapple_retarget,
                     dt,
                 },
                 actions,
@@ -937,6 +938,7 @@ mod grapple_permission_tests {
                 context,
                 yank: false,
                 lock_yank: false,
+                retarget: false,
                 dt: 0.0,
             });
         }
