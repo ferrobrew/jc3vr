@@ -86,6 +86,22 @@ pub(crate) unsafe fn queue(
             pull: 0.0,
         };
         if w.feet > 0.0
+            && let Some((brace, share)) = targets.braces[i]
+        {
+            // A braced foot mixes from the hanging leg's air pose toward its brace by the brace's
+            // share, so a foot taking or leaving the face moves rather than jumps.
+            let air = targets.air_ankles.map(|ankles| ankles[i]);
+            let ankle_at = air.map_or(brace.ankle, |a| a.lerp(brace.ankle, share));
+            let knee_at = targets.knees[i].lerp(brace.knee, share);
+            let weight = if air.is_some() {
+                w.feet.max(w.air_legs)
+            } else {
+                w.feet * share
+            };
+            queued += usize::from(unsafe { writer.place(ankle, ankle_at, weight, foot) });
+            queued += usize::from(unsafe { writer.place(toe, brace.toe, w.feet * share, foot) });
+            queued += usize::from(unsafe { writer.place(knee, knee_at, weight, hint) });
+        } else if w.feet > 0.0
             && let Some(target) = targets.feet[i]
         {
             let ground = target.ankle.y - targets.ankle_height_m;

@@ -9,6 +9,8 @@
 //! - [`gate`]: at the procedural body's solve gate, the state and why the IK stands down, the feet's
 //!   contacts in the world ([`body_rig::contact`]), and the IK pose seeded into Rico's posture
 //!   before the torso is solved on it.
+//! - [`climb`]: the feet braced on the face while the hands climb ([`body_rig::brace`]), from the
+//!   casts [`brace`] makes where the probes cast.
 //! - [`effectors`]: the HumanIK targets that hold the seeded pelvis and place the feet, owned
 //!   against the game's locomotion IK task.
 //! - [`probe`]: the feet's ground probes, cast where the head probe casts.
@@ -21,6 +23,8 @@
 //! while the IK turns the feet itself) and [`root_target`] (the grounded rig's drive follows the FK
 //! pelvis rather than committing steps after the neck).
 
+pub(crate) mod brace;
+pub(crate) mod climb;
 pub mod config;
 pub(crate) mod effectors;
 pub mod fk;
@@ -124,6 +128,7 @@ pub(crate) unsafe fn probe_tick(character: &jc3gi::character::character::Charact
 pub(crate) fn forget() {
     fk::forget();
     probe::forget();
+    brace::forget();
     STATE.lock().drop_contacts();
 }
 

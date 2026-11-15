@@ -25,6 +25,7 @@ use crate::{
         body::{
             firm_ragdoll,
             ik_body::{
+                climb::{ClimbFeet, ClimbLegs, ModelBrace},
                 config::IkBodyConfig,
                 fk::{self, FkPose},
                 probe,
@@ -149,6 +150,10 @@ pub struct IkStatus {
     pub targets_queued: usize,
     /// How far the seeded hips stand from the clip's, metres.
     pub hips_moved_m: f32,
+    /// Whether each foot holds a brace on the face while climbing.
+    pub braced: [bool; 2],
+    /// How many times a climbing foot has braced or moved to a new brace.
+    pub brace_moves: u64,
     /// Whether the planted feet stand on a moving body rather than the world.
     pub on_moving_support: bool,
     /// How many times the feet have come to stand on a moving body.
@@ -171,6 +176,7 @@ pub(crate) struct GateState {
     pub logged: Option<(IkState, Option<StandDown>)>,
     pub in_idle: bool,
     pub episode: Episode,
+    pub climb: ClimbFeet,
     pub epoch: u64,
     pub snaps: u64,
 }
@@ -220,12 +226,15 @@ impl GateState {
                 max_drop_m: 0.0,
                 targets_queued: 0,
                 hips_moved_m: 0.0,
+                braced: [false; 2],
+                brace_moves: 0,
                 on_moving_support: false,
                 moving_landings: 0,
                 moving_supports: 0,
             },
             logged: None,
             in_idle: false,
+            climb: ClimbFeet::new(),
             episode: Episode {
                 began: None,
                 steps: 0,
@@ -277,6 +286,7 @@ impl GateState {
         let what = match state {
             IkState::Idle => "takes the standing body",
             IkState::Airborne => "takes the airborne body",
+            IkState::Climb => "takes the climbing legs",
             IkState::Walk => "blends onto the walk",
             IkState::Clip | IkState::Unchanged => "stands down",
         };
@@ -525,8 +535,10 @@ pub(crate) struct Targets {
     pub feet: [Option<FootPose>; 2],
     /// The knees' hints.
     pub knees: [Vec3; 2],
-    /// The airborne legs' ankles, while in the air.
+    /// The airborne legs' ankles, while in the air, and the hanging legs' while climbing.
     pub air_ankles: Option<[Vec3; 2]>,
+    /// The braced feet's targets while climbing, with each brace's share against the hanging leg.
+    pub braces: [Option<ModelBrace>; 2],
     /// The toe's height over the ankle's ground, and its reach ahead of the ankle, metres.
     pub toe_height_m: f32,
     pub toe_ahead_m: f32,
@@ -557,6 +569,8 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
         state.end_episode(input.now);
     }
     let Some(fk) = fk.filter(|_| weights.max() > 0.0) else {
+        state.climb.stop(input.now);
+        state.status.braced = [false; 2];
         state.drop_contacts();
         state.targets = None;
         state.status.planted = 0;
@@ -567,13 +581,19 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
         };
     };
     let geometry = Geometry::of(input, &fk);
+    // The braces last through the blend out of the climb, so the feet fade off the face.
+    let climbing = target == IkState::Climb
+        || (state.climb.active() && weights.feet > 0.0 && target != IkState::Idle);
+    if !climbing {
+        state.climb.stop(input.now);
+    }
     let mut feet = state.last_feet;
     if target == IkState::Idle {
         if !state.in_idle {
             state.begin_episode(input.now);
         }
         feet = state.step_contacts(input, &geometry, &fk);
-    } else if weights.feet <= 0.0 {
+    } else if climbing || weights.feet <= 0.0 {
         state.drop_contacts();
         feet = [None; 2];
     }
@@ -626,12 +646,39 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
         let thigh = thigh_knees[i] - geometry.body.hips[i];
         seeded_hips[i] + thigh.normalize_or(Vec3::NEG_Y) * geometry.rico.thigh
     });
-    let air_ankles = air.map(|[ankles, _]| ankles);
+    // The air pose hangs from the seeded hips, which are the clip's where the IK does not move the
+    // pelvis.
+    let air_ankles =
+        air.map(|[ankles, _]| [0, 1].map(|i| seeded_hips[i] + (ankles[i] - geometry.body.hips[i])));
+    let braces = if climbing {
+        let legs = ClimbLegs {
+            world: &input.world,
+            world_yaw: geometry.world_yaw,
+            hips: seeded_hips,
+            ankles: [
+                pose.position(RigBone::LeftFoot),
+                pose.position(RigBone::RightFoot),
+            ],
+            leg_m: geometry.rico.leg,
+            thigh_m: geometry.rico.thigh,
+            foot_m: geometry.rico.foot,
+            ankle_height_m: geometry.rico.ankle_height,
+            toe_height_m: geometry.rico.toe_height,
+        };
+        state
+            .climb
+            .step(&legs, &input.config.brace, input.dt, input.now)
+    } else {
+        [None; 2]
+    };
+    state.status.braced = state.climb.braced();
+    state.status.brace_moves = state.climb.moves;
     state.targets = Some(Targets {
         weights,
         feet: model_feet,
         knees,
         air_ankles,
+        braces,
         toe_height_m: geometry.rico.toe_height,
         toe_ahead_m: geometry.rico.foot,
         ankle_height_m: geometry.rico.ankle_height,
@@ -660,6 +707,11 @@ fn classify(
     }
     if firm_ragdoll::owns_legs() {
         return unchanged(StandDown::FirmRagdoll);
+    }
+    // The braces need no estimate: without one the hanging legs hang straight from the fallback.
+    if input.case == Case::HandClimb && input.config.climb_feet {
+        *hold = None;
+        return (IkState::Climb, None);
     }
     if !fk.is_some_and(|fk| fk.source == PelvisSource::Estimate) {
         return unchanged(StandDown::NoEstimate);

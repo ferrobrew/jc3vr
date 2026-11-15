@@ -30,8 +30,11 @@ pub enum IkState {
     /// In the air from a jump or a fall: the IK pelvis under the head, the legs relaxed toward a
     /// light air pose.
     Airborne,
+    /// Hanging from the hands: the torso stays the procedural body's on the clip's hips, and each
+    /// foot braces on the face in front of it or hangs relaxed.
+    Climb,
     /// Everything the table leaves to the game: seats, the parachute, the wingsuit, swimming,
-    /// traversals, ragdolls, get-ups, climbs, and the firm ragdoll.
+    /// traversals, ragdolls, get-ups, the grapple's ledge climb, and the firm ragdoll.
     #[default]
     Unchanged,
 }
@@ -43,6 +46,7 @@ impl IkState {
             IkState::Walk => "walk",
             IkState::Clip => "clip",
             IkState::Airborne => "airborne",
+            IkState::Climb => "climb",
             IkState::Unchanged => "unchanged",
         }
     }
@@ -74,6 +78,11 @@ impl IkState {
                 feet: 0.0,
                 air_legs: 1.0,
             },
+            IkState::Climb => IkWeights {
+                feet: 1.0,
+                air_legs: 1.0,
+                ..IkWeights::ZERO
+            },
             IkState::Clip | IkState::Unchanged => IkWeights::ZERO,
         }
     }
@@ -86,7 +95,7 @@ pub struct IkWeights {
     pub pelvis_position: f32,
     pub pelvis_orientation: f32,
     pub spine: f32,
-    /// The planted feet's ankle and toe targets.
+    /// The planted feet's ankle and toe targets, and the braced feet's while climbing.
     pub feet: f32,
     /// The legs posed in the air.
     pub air_legs: f32,
@@ -269,6 +278,16 @@ mod tests {
         assert_eq!(walk.pelvis_position, 0.0);
         assert_eq!(IkState::Clip.weights(0.2), IkWeights::ZERO);
         assert_eq!(IkState::Unchanged.weights(0.2), IkWeights::ZERO);
+        let climb = IkState::Climb.weights(0.2);
+        assert_eq!(
+            (
+                climb.pelvis_position,
+                climb.spine,
+                climb.feet,
+                climb.air_legs
+            ),
+            (0.0, 0.0, 1.0, 1.0)
+        );
         let air = IkState::Airborne.weights(0.2);
         assert_eq!(air.air_legs, 1.0);
         assert_eq!(air.feet, 0.0);

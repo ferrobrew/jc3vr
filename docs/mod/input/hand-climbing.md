@@ -40,7 +40,7 @@ A gripped surface whose normal is at least `CLIMB.min_ledge_normal_y` upward is 
 
 ## The body
 
-With the procedural torso ([procedural-body.md](../body/procedural-body.md#the-hand-over-table)), climbing is a case of its own in the hand-over table: the torso stays procedural on the animation's hips, and the legs stay the game's animation. The arms reach the gripping hands' bodies, which stay where they took hold, so Rico's hands stay on the wall. A hit reaction, a vehicle, and the other cases above it in the table still win. The body rig does not step while a hand grips ([rig.md, "Who moves the root"](../body/rig.md#who-moves-the-root)). When the climb ends in the air, the game's own fall takes over as after a jump.
+With the procedural torso ([procedural-body.md](../body/procedural-body.md#the-hand-over-table)), climbing is a case of its own in the hand-over table: the torso stays procedural on the animation's hips. With the IK body's `climb_feet` on, the default, each foot braces on the face in front of it or hangs relaxed ([ik-body.md](../body/ik-body.md#feet-on-the-face)); with it off the legs stay the game's animation. The arms reach the gripping hands' bodies, which stay where they took hold, so Rico's hands stay on the wall. A hit reaction, a vehicle, and the other cases above it in the table still win. The body rig does not step while a hand grips ([rig.md, "Who moves the root"](../body/rig.md#who-moves-the-root)). When the climb ends in the air, the game's own fall takes over as after a jump.
 
 ## When the grips let go
 

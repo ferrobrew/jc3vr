@@ -105,4 +105,11 @@ pub(super) fn ik_body_readout(ui: &mut Ui) {
         ik.moving_landings,
         ik.moving_supports,
     ));
+    let brace = |braced: bool| if braced { "braced" } else { "hanging" };
+    ui.label(format!(
+        "Climbing feet: left {} · right {} · {} braces taken",
+        brace(ik.braced[0]),
+        brace(ik.braced[1]),
+        ik.brace_moves,
+    ));
 }

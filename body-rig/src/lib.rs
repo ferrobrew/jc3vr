@@ -14,6 +14,7 @@
 //!   neck and the estimate's rotations.
 //! - [`contact`]: the IK body's feet, planted, swinging, or unsupported, and the rules that step
 //!   them.
+//! - [`brace`]: the IK body's feet braced on the face while the hands climb.
 //! - [`ik_weight`]: the IK body's weight per state and channel, and its blend.
 //! - [`rig`]: all of them advanced together.
 //!
@@ -25,6 +26,7 @@
 
 pub mod angle;
 pub mod body;
+pub mod brace;
 pub mod contact;
 pub mod estimate;
 pub mod fk;

@@ -23,7 +23,7 @@ use crate::controllers::{
         ray::Ray,
         raycast::{self, CastOptions},
     },
-    body::ik_body::support,
+    body::ik_body::{brace, support},
 };
 
 /// The probe for `side` at the world floor point `at`, near the height `near`: its answer, once a
@@ -70,6 +70,8 @@ pub(crate) unsafe fn tick(character: &Character) {
         // SAFETY: forwarded from the caller.
         unsafe { cast(character, requests, now) };
     }
+    // SAFETY: forwarded from the caller.
+    unsafe { brace::tick(character, now) };
     // SAFETY: the simulation phase, outside the physics step.
     unsafe { support::tick(now) };
 }

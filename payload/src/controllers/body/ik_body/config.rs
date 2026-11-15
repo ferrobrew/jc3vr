@@ -1,6 +1,6 @@
 //! The IK body's settings, `controllers.body.ik` (`docs/mod/body/ik-body.md`).
 
-use body_rig::{contact::ContactTuning, fk::FkTuning};
+use body_rig::{brace::BraceTuning, contact::ContactTuning, fk::FkTuning};
 use serde::{Deserialize, Serialize};
 
 use crate::config::validate::Invalid;
@@ -14,6 +14,8 @@ pub struct IkBodyConfig {
     pub enabled: bool,
     /// Draw the airborne body from the estimate as well as the standing one.
     pub airborne: bool,
+    /// While the hands climb, brace each foot on the face in front of it, or let it hang relaxed.
+    pub climb_feet: bool,
     /// The IK pose's share of the pelvis's turn and the spine on the walk.
     pub walk_weight: f32,
     /// How long a hand-over between the IK pose and a clip takes, seconds.
@@ -43,6 +45,7 @@ pub struct IkBodyConfig {
     pub air_foot_reach: f32,
     pub fk: FkTuning,
     pub contact: ContactTuning,
+    pub brace: BraceTuning,
 }
 
 impl IkBodyConfig {
@@ -50,6 +53,7 @@ impl IkBodyConfig {
         Self {
             enabled: true,
             airborne: true,
+            climb_feet: true,
             walk_weight: 0.2,
             blend_s: 0.25,
             resume_s: 0.4,
@@ -64,12 +68,14 @@ impl IkBodyConfig {
             air_foot_reach: 0.6,
             fk: FkTuning::new(),
             contact: ContactTuning::new(),
+            brace: BraceTuning::new(),
         }
     }
 
     /// Check the settings. Paths are relative to `controllers.body.ik`.
     pub(crate) fn validate(&self) -> Result<(), Invalid> {
         let c = &self.contact;
+        let b = &self.brace;
         let checks = [
             ("walk_weight", self.walk_weight, 0.0, 1.0),
             ("blend_s", self.blend_s, 0.0, 5.0),
@@ -102,6 +108,13 @@ impl IkBodyConfig {
             ("contact.outrun_m", c.outrun_m, 0.0, 1.0),
             ("contact.foot_m", c.foot_m, 0.0, 0.5),
             ("contact.landing_wait_s", c.landing_wait_s, 0.0, 2.0),
+            ("brace.reach_share", b.reach_share, 0.5, 1.2),
+            ("brace.acquire_share", b.acquire_share, 0.3, 1.2),
+            ("brace.min_share", b.min_share, 0.0, 1.0),
+            ("brace.min_facing", b.min_facing, -1.0, 1.0),
+            ("brace.knee_m", b.knee_m, 0.0, 0.5),
+            ("brace.move_s", b.move_s, 0.0, 2.0),
+            ("brace.arc_m", b.arc_m, 0.0, 0.4),
         ];
         for (name, value, min, max) in checks {
             if !value.is_finite() || !(min..=max).contains(&value) {

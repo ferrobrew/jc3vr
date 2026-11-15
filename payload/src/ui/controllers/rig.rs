@@ -247,6 +247,11 @@ fn ik_body_settings(ui: &mut Ui, ik: &mut IkBodyConfig) {
         .on_hover_text(
             "Hang the pelvis under the head in a jump, the legs relaxed toward an air pose.",
         );
+    ui.checkbox(&mut ik.climb_feet, "IK feet on the face while climbing")
+        .on_hover_text(
+            "While the hands climb, brace each foot on the face in front of it, or let it hang \
+             relaxed where nothing is in reach.",
+        );
     ui.collapsing("IK body", |ui| {
         ui.add(egui::Slider::new(&mut ik.walk_weight, 0.0..=1.0).text("Walk share"))
             .on_hover_text("How much of the IK pose turns the clip's pelvis on the walk.");
@@ -284,5 +289,18 @@ fn ik_body_settings(ui: &mut Ui, ik: &mut IkBodyConfig) {
         ui.add(egui::Slider::new(&mut ik.knee_hint_reach, 0.0..=1.0).text("Knee hints"));
         ui.add(egui::Slider::new(&mut ik.air_relax, 0.0..=1.0).text("Air pose share"));
         ui.add(egui::Slider::new(&mut ik.fk.smooth_s, 0.0..=0.5).text("Pelvis smoothing (s)"));
+        let b = &mut ik.brace;
+        ui.add(egui::Slider::new(&mut b.reach_share, 0.6..=1.1).text("Brace lets go past (× leg)"))
+            .on_hover_text(
+                "A braced foot lets go once its hip is this far from it, in leg lengths.",
+            );
+        ui.add(
+            egui::Slider::new(&mut b.acquire_share, 0.4..=1.1).text("Brace taken within (× leg)"),
+        );
+        ui.add(egui::Slider::new(&mut b.knee_m, 0.0..=0.4).text("Brace knee toward the face (m)"));
+        ui.add(egui::Slider::new(&mut b.move_s, 0.0..=1.0).text("Brace move (s)"))
+            .on_hover_text(
+                "How long a foot takes to move to a new brace, or to fade in or out of one.",
+            );
     });
 }
