@@ -41,69 +41,39 @@ In the order of the feedback:
 33. Drive a car at speed past buildings with the shadow cascades refreshed every frame and not (`stereo.shadow_update_every_frame`): note whether the shadows stay under their objects (441.91).
 34. After a fast travel, note whether a dot cursor stays drawn in flight (774.24).
 35. Fly with a rifle and a pistol holstered: note whether either pops in and out of view (388.682).
+36. Record a take with the in-process capture (the default): the video has both eyes side by side, the left on the left, with the HUD, at the colours and levels the headset shows, and the audio in sync with a gunshot. Compare the frame time with and without a take, and note the dropped and repeated frame counts in the debug UI ([capture.md](../../mod/capture.md)).
+37. Get knocked down and stand up: the view keeps its heading through the get-up, and the body turns to face the player's torso after it.
+38. Sprint and reach for the magazine pouch: the belt holds still enough to take it.
+39. Open the debug panel holding an SMG in each hand: both stay in the hands; close it with a grip open: that gun goes back on the body.
+40. Tear a tripod minigun off its mount by the handles: it comes away in the hands as a heavy weapon (the log counts the constraints freed). Snatch a heavy weapon lying on the ground. Drop it and take it again.
+41. Pull a grenade's pin and hold it: it fizzes and trails (the log says `resourced=true`); put it back in the pouch: the sound stops.
+42. With a charge in hand, pull the trigger: the game's detonator shows upright in that hand, and goes.
+43. In a jeep's gunner seat, take the handles and swing them: the turret turns (the log says whether the gun turned from the stick, and the debug UI counts the hand-aimed ticks). The view sits back from the handles rather than over them.
+44. Open the canopy out of a reel: no swing to the side (1459). Reel into the air and open the wingsuit: it keeps the reel's speed and slows smoothly (the log says `air: carrying a reel's speed`).
+45. Grapple a helicopter from below its door: Rico arrives at the door side and Y enters; from below its belly: the line hang.
+46. Under the canopy, the handles sit at the toggles' grips, not at the risers' tops; reach both.
+47. Fall from very high, and take a scripted drop into a skydive: the body is prone with the view on its head, not standing.
+48. Swing on the grapple lock and hang under the canopy: the legs swing with the physics, the holsters stay reachable, and nothing in the log repeats `firm ragdoll: in` and `out`.
+49. Hold a soldier with both hands: no ring between the hands (the log names the point joints). Swing a long prop through your own chest: it stops against the torso; reach for every holster and pouch with a prop in the other hand: nothing blocks the reach.
+50. At a weapon locker with a gun below its reserve's cap: the log's `ammo:` lines say whether the reserve rose and how.
+51. Look at a rack's pistol pair: both pistols show side by side; take one and then the other.
+52. Fly the second helicopter and the utility helicopter: press "Log the hands for cockpit calibration" with a hand where each control should be, and keep the log.
+53. Open the canopy out of the wingsuit (2806): the view rises with Rico's head.
+54. Stand still in each idle the game gives (with a rifle, with a pistol, crouched): the log names any standing state the stance's idle list misses.
 
-## Plans for what was deferred
+## What was built for the deferred work
 
-### In-process capture of the eye views
+Everything the earlier plans deferred was built on 15 November, untested in the headset; the checks above cover it. The commits are listed in the [README](README.md#the-deferred-work-built-on-15-november).
 
-The reviewer wants the eye views captured from the game rather than the desktop mirror, at a size that still allows today's 1920×1080 single-eye crop, both eyes side by side if bandwidth allows, with the processing on the GPU and the whole thing working on Windows for testers. The numbers and the options are in [feedback/vehicles.md](feedback/vehicles.md), section 8.
+## Still open
 
-- Stage 1, the frames: restore the GPU pack and the staging ring the in-process recorder had before 3be0139e (`payload/src/recorder/convert.rs`, `convert/ring.rs`, `i420_pack_ps.hlsl`), and change the source from one eye to both, drawn side by side into one target scaled so each eye is 1920 wide (about 3840×2130 for the reviewer's headsets), with a setting for a smaller size. The pack and the readback stay as they were: a pixel-shader pass to planar 4:2:0, a three-deep staging ring, and a no-wait map.
-- Stage 2, the transport: restore the writer thread from `recorder/stream.rs`, which streamed the frames as y4m over loopback to a host encoder, and extend the control protocol (version 2) so the host is told the frame size and rate.
-- Stage 3, the encoder: the injector starts an ffmpeg it carries (`ffmpeg-sidecar`, with a fetch script for an LGPL build), choosing a hardware encoder where one is listed and x264 otherwise, and records `video.mkv` beside the take as today. On Linux the existing capture host can take the same stream to a native ffmpeg with NVENC instead. The gpu-screen-recorder relay goes once this works.
-- Stage 4, audio: WASAPI loopback of the default output from the injector on Windows; under Wine, loopback works from Wine 9.12, unverified with Proton.
-- Risks: 330 to 370 MB/s of readback at 30 fps through a loopback socket; the fallback is the full-width left eye with the right at half size.
-
-### The IK-first on-foot body
-
-The reviewer wants the solved IK, driven by the learned estimate, to own the body standing still, a share of it while walking, and the airborne phase, with authored poses only where the IK is ill-posed. The design, the per-state blend table, the feet's contact model, and what killed the procedural legs of 2 November are in [feedback/body.md](feedback/body.md), "The IK-first on-foot body: a design". It also replaces the lean, the drift, and the settle that slide the body at 132 to 140 s, plants the feet on a climbing face, and keeps the belt with the player's real pelvis while moving.
-
-### Held ragdolls and articulated objects
-
-A held ragdoll is damped within itself now, and both are pulled softly. Still to do from [feedback/hands.md](feedback/hands.md), "Fix proposals": a ball-and-socket joint for a second hand on a ragdoll and for any hand on an articulated object (bind `hkpBallAndSocketConstraintData` in pyxis, as `hkpFixedConstraintData` is), damping an articulated object against its assembly's velocity, keeping a held ragdoll out of the camera (with the body capsules below), and holding off the get-up while a hand holds the ragdoll. Check the hold's tear lag against the softer gains.
-
-### The belt while moving (2044)
-
-The sprint clip swings Rico's pelvis about 10 degrees each way every stride and bobs the hips 10 cm, and the belt's volumes ride the hip joints, so the pouch moves under a reaching hand ([feedback/body.md](feedback/body.md), 2044). Low-pass the belt frame over a stride (`controllers/weapons/volumes.rs`, `BodyFrame`), keep the estimate's pelvis in charge of its yaw while the stick walks, and consider a tighter moving deadzone. The IK-first body's belt replaces this once it lands.
-
-### The body's yaw out of falls and get-ups (1806, 490)
-
-Through a fall the body does not follow the torso, so the fast fall's clip leaves Rico facing up to 100 degrees from the view, and the landing swings the root through it; a get-up stands him up facing wherever he fell ([feedback/camera.md](feedback/camera.md), "Yaw on the get-up"). The follow's target has no deadband on landing, so the body should already turn to the torso; read the rig's body yaw and the follow's target across the 1806 landing and the 490 get-up in the recording to see what holds it. Keeping the body's heading on the view's through falls, or the IK-first body's airborne IK, would remove the swing at its source.
-
-### Smaller items found in the review
-
-- Frame time (new problem 4): an A/B with the estimator switched off.
-- 1384, the scripted drop into freefall drawn as a ledge fall: the case the body reads for it.
-- 2806, the canopy out of the wingsuit: whether the opening out of the suit belongs on the reel-opening skip list.
-- The parachute handle's height (1153.93): the grip bar's offset on the riser, to move the handle to it.
-- The character's measured velocity while seated, for seated throws.
-
-### The firm ragdoll
-
-One mode for grapple swings, hangs, and the canopy: the physics drives the body, muscle springs pull it toward the IK pose, the grapple arm keyframed to the line, firm enough to reach the holsters. The game ships `GRAPPLE_HANG` and `PARACHUTING` ragdoll presets with the upper body keyframed and the legs motor-driven. The design and its reverse-engineering blockers are in [feedback/grapple.md](feedback/grapple.md), "Firm ragdoll for swings, hangs, and the canopy".
-
-### The helicopter's rail
-
-Grappling a helicopter should stand Rico on its rail, with the full IK, doors that open, Y entering, and a step off falling with no jump. The proposal and the reverse-engineering it needs (how the reel's arrival chooses the door side, the helicopter's interaction-graph entries, whether an on-foot entry works from the skid) are in [feedback/grapple.md](feedback/grapple.md), "Helicopters".
-
-### Held props against the body
-
-A held prop should collide with Rico's drawn body but not the movement capsule. Rico has no physics bodies for his limbs while animated, so the mod needs keyframed capsules of its own on the drawn bones, on a layer only held props collide with ([feedback/hands.md](feedback/hands.md)). The same capsules would keep a held ragdoll out of the camera.
-
-### Smaller items that need reverse-engineering
-
-- The primed grenade's trail and sound: bind `Explosive::SetupEffects` and the grenade weapon's player trail effect and sound fields, and call the setup at the pin pull ([feedback/hands.md](feedback/hands.md), "A primed grenade in the hand has no trail or sound").
-- The detonator the game shows during its act: place it in the pressing hand from the C4 weapon's attachment update.
-- The gunner seat's turret: find what turns a manned vehicle gun, since the aim position does not.
-- A torn mounted gun: take down its mount constraints and pick it up by its own pickup.
-- The wingsuit's speed out of a reel: the reel's exit scale and the wingsuit's velocity, for a lerp.
-- The canopy's yaw on opening (1459): the parachute's velocity alignment below a speed.
-- Lockers: how the game refills the reserve there.
-
-### Smaller items that do not
-
-- A gunner-seat view correction, as the driving view's for the wheel.
-- The helicopter controls: measure the utility helicopter's collective and the second helicopter's controls from their meshes, and a debug UI mode that places a control at the hand and saves it.
-- The debug panel pausing the weapons rather than standing them down, which dropped the SMG at 4380.
-- The bars' twist grips removed outright if the triggers suit the reviewer.
+- The IK-first on-foot body: built separately; its own checks are listed with it once it lands.
+- The helicopter's rail as a standing place: a reel onto the door side now plays the game's own door states (Y enters); standing on the skid, the rail's sticky pull, and hanging underneath by choice are not built.
+- The hands in a vehicle's gunner seat are not drawn at all; the character's visibility in the turret's camera is the leading hypothesis, with no binding to read it yet.
 - The mounted gun's hands drawn on its handles off the gunner seat (the anchored tier exists only in the scripted mounted state).
+- The utility helicopter's collective and the second helicopter's controls: measure them with the calibration log (check 52) and add them to the cockpit table.
+- Damping an articulated object against its assembly's velocity, and holding off the get-up while a hand holds a ragdoll.
+- Whether the torso capsules' hand lag pushes the player or tears a hold.
+- Frame time (new problem 4): an A/B with the estimator switched off.
+- The bars' twist grips removed outright if the triggers suit the reviewer.
+- A full pouch's refusal has a buzz but no sound; a loaded gun's magazine cannot be dropped seated (a double tap is two shots).

@@ -186,3 +186,21 @@ The new problems listed above:
 - 6, the belt pushes with a magazine in: f4f3006e and 14070339 (the clip release, above).
 - 7, the empty-handed character grabs and the allies that did not go limp: 404c405d retries the ragdoll act; the rest of the grabs that ended empty are not analysed further.
 - 8, the debug panel dropping the SMG: deferred, planned (the panel pausing the weapons rather than standing them down).
+
+## The deferred work, built on 15 November
+
+After the review, the reviewer asked for every deferred item to be prepared before the next session, with hypotheses and instrumentation where the data runs out. Three reverse-engineering passes against the release IDB supplied the bindings (4391cc47, f7d9ae53, bfd1a947). None of this has been seen in the headset; [next-session.md](next-session.md) lists the checks.
+
+- Capture (the reviewer's first item): the eye views are captured in the game, both eyes side by side at each eye's aspect, packed to 4:2:0 on the GPU, streamed over loopback to an ffmpeg the injector carries (or the relay's), with WASAPI loopback audio; the gpu-screen-recorder relay stays as the fallback until this is seen working (60514510 to bf3532b9, [capture.md](../../mod/capture.md)).
+- Doors win over climbing wherever the hand reaches them, without a speed guard, as the reviewer asked (1ee0a6a0).
+- The view keeps its heading through a get-up's turn of the root (490), which turned it 170 degrees in one step (085c13d6). For 1806, the recording shows the body held 72 degrees off the view through the fall, the follow being off foot, and turned onto the head in 0.2 s at the landing; the drawn body's turn in the air belongs to the IK-first body's airborne IK.
+- The belt holds steady through a stride (2044, 1f30d3ae); the debug panel pauses the weapons (4380, d07ac886).
+- Heavy weapons: the table holsters a heavy weapon the pickup leaves dropped, so the hands take a minigun from the world and the snatch takes one (dea4e18f); a torn gun is freed from its mount's hinges, which the game's drop leaves enabled, and offers its pickup (ec47605c).
+- The primed grenade gets its trail resources at the pin (39e1bde8); the detonate act's detonator is held in the pressing hand (709cc26e).
+- A manned vehicle gun turns toward the hands rather than the look input (f682b974), and the gunner seat's view sits back from the handles (1b74bd18).
+- The canopy's turn toward the velocity is held off at its opening (1459, f9b57d67); a reel's speed is carried into the fall's and the wingsuit's speed cap (295, 51f02d5a); a helicopter reel's door-side arrival plays as the game's (8441523e); a free canopy handle sits at its attach bone (1153.93, 8a433477); the game's skydive is presented as the wingsuit is (1384, bc45775c); the canopy skip's ordering is confirmed (1f21ebc0).
+- The firm ragdoll hangs the legs from the physics on the grapple line and under the canopy (a857485a); two hands on one ragdoll hold it by points (590b92b0); Rico's drawn torso has capsules held objects meet (1438.8, 1d571ce7).
+- Lockers: the take no longer empties a locker weapon's stored rounds, the likeliest cause, and the reserve's rises and the auto-credits are logged (de1dae90).
+- A rack pair's two pistols are drawn apart (1653, 5f52671d).
+- Instrumentation: unlisted standing idles (a46cb528), the cockpit part and the pilot's eyes in the driving position line (8c9499a0), and a calibration log of the hands in a cockpit part's space (a18fa1ef).
+- The IK-first on-foot body is being built separately and is not in this list yet.
