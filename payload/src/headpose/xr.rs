@@ -367,6 +367,12 @@ pub fn pending_bank() -> Option<f32> {
     (!s.follow.following() && frozen.abs() > BANK_MIN_RAD).then_some(frozen)
 }
 
+/// Whether the view is stepping toward the body through a vehicle's entry or exit
+/// ([`BodyFollow`]): the steps own the view's yaw until they settle.
+pub fn stepping() -> bool {
+    BODY_YAW.lock().follow.is_stepping()
+}
+
 /// Take `yaw` of the frozen turn out of the composition, for the cockpit baseline that turned by
 /// it in the same frame. The turn accumulator keeps the body's target where it was.
 pub fn bank(yaw: f32) {

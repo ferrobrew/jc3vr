@@ -24,7 +24,9 @@
 //!   [`STEP_INTERVAL_S`] it steps toward the body's heading by up to [`STEP_RAD`], in one hard step
 //!   rather than a turn the eyes would track. It keeps stepping past the animation until the view
 //!   faces within [`STEP_SETTLED_RAD`] of the body, so the seat and everything off foot meet the
-//!   body's forward; what is left is frozen and banked as below.
+//!   body's forward; what is left is frozen and banked as below. Past the animation the vehicle
+//!   carries the body, so there the view rides the body's turn and steps only the difference the
+//!   animation left: a vehicle that drives off turning turns the view with it.
 //!
 //! A recenter clears the offset: it re-bases the cockpit to the head, which already turns the view.
 //! Once the body stops following, the frozen offset is folded into the cockpit baseline at the top
@@ -46,8 +48,17 @@ pub struct BodyFollow {
     target: f32,
     /// The offset while not following.
     frozen: f32,
-    /// The seconds since the last step, while stepping.
-    stepping: Option<f32>,
+    /// The steps' state, while stepping.
+    stepping: Option<Stepping>,
+}
+
+/// The steps' state.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Stepping {
+    /// The seconds since the last step.
+    since: f32,
+    /// The body's heading at the last tick, for the view to ride its turn once the animation ends.
+    body: f32,
 }
 
 /// One input tick's inputs to [`BodyFollow::tick`].
@@ -143,13 +154,21 @@ impl BodyFollow {
     /// Step the view toward the body while a vehicle's entry or exit animation turns it, or until
     /// the view has caught up with a body an animation turned. Returns whether it stepped.
     fn steps(&mut self, tick: FollowTick) -> bool {
-        let current = match self.view {
+        let held = match self.view {
             Some((_, current)) => current,
             None => wrap(tick.body - self.frozen),
+        };
+        // Past the animation, the vehicle turns the body: the view rides that turn.
+        let current = match self.stepping {
+            Some(stepping) if !tick.step => wrap(held + wrap(tick.body - stepping.body)),
+            _ => held,
         };
         let remaining = wrap(tick.body - current);
         let settled = remaining.abs() <= STEP_SETTLED_RAD;
         if !tick.step && (self.stepping.is_none() || settled) {
+            if self.stepping.is_some() {
+                self.view = Some((current, current));
+            }
             return false;
         }
         let dt = if tick.dt.is_finite() {
@@ -157,7 +176,7 @@ impl BodyFollow {
         } else {
             0.0
         };
-        let since = self.stepping.map_or(0.0, |since| since + dt);
+        let since = self.stepping.map_or(0.0, |stepping| stepping.since + dt);
         let (heading, since) = if since >= STEP_INTERVAL_S && !settled {
             (
                 wrap(current + remaining.signum() * remaining.abs().min(STEP_RAD)),
@@ -166,14 +185,16 @@ impl BodyFollow {
         } else {
             (current, since)
         };
-        self.stepping = Some(since);
-        self.view = Some((current, heading));
+        self.stepping = Some(Stepping {
+            since,
+            body: tick.body,
+        });
+        self.view = Some((held, heading));
         true
     }
 
     /// Whether the view is stepping toward the body through a vehicle's entry or exit.
-    #[cfg(test)]
-    fn stepping(&self) -> bool {
+    pub fn is_stepping(&self) -> bool {
         self.stepping.is_some()
     }
 
@@ -287,16 +308,46 @@ mod tests {
         for _ in 0..20 {
             follow.tick(stepping_tick(false, body));
         }
-        assert!(!follow.stepping());
+        assert!(!follow.is_stepping());
         assert!(!follow.following());
         assert!(follow.frozen().abs() <= STEP_SETTLED_RAD);
+    }
+
+    #[test]
+    fn past_the_animation_the_view_rides_a_turning_vehicle_and_settles() {
+        let mut follow = BodyFollow::new();
+        follow.tick(stepping_tick(true, 0.0));
+        // The animation leaves the body 50 degrees from the view, and the vehicle then drives off
+        // turning at 90 degrees a second, faster than the steps alone could catch.
+        let mut body = deg(50.0);
+        follow.tick(stepping_tick(true, body));
+        let mut gap = Vec::new();
+        for _ in 0..30 {
+            body = wrap(body + deg(9.0));
+            follow.tick(stepping_tick(false, body));
+            gap.push(follow.offset(body, true));
+            if !follow.is_stepping() {
+                break;
+            }
+        }
+        assert!(!follow.is_stepping(), "the steps settle: {gap:?}");
+        assert!(follow.frozen().abs() <= STEP_SETTLED_RAD);
+        // The view's offset from the body only ever closes, a step at a time: the vehicle's own
+        // turn never opens it.
+        assert!(
+            gap.windows(2)
+                .all(|w| w[1].abs() <= w[0].abs() + 1e-4
+                    && w[0].abs() - w[1].abs() <= deg(30.0) + 1e-4),
+            "{:?}",
+            gap.iter().map(|g| g.to_degrees()).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn a_settled_view_does_not_step() {
         let mut follow = BodyFollow::new();
         follow.tick(stepping_tick(false, deg(40.0)));
-        assert!(!follow.stepping());
+        assert!(!follow.is_stepping());
         assert!((follow.frozen() - 0.0).abs() < 1e-6);
     }
 

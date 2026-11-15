@@ -18,6 +18,7 @@ use crate::{
         body::rig::origin_provenance, frame as controller_frame,
         vehicles::wingsuit_gestures::GestureSample,
     },
+    headpose::xr::{bank, on_recenter, pending_bank, stepping},
     recorder::tracking::format::RecenterEvent,
     vr::{
         convert::{posef, quat, vec3},
@@ -90,7 +91,8 @@ pub fn request_seat_recenter(kind: RecenterKind) {
 /// the head's heading against the body when the body last stopped following it (the latest follow
 /// bank), so the offset the head had from the body then does not carry into the seat as a look off
 /// the vehicle's axis. Only the yaw changes; the position and the height stay. A bank older than
-/// [`SEAT_YAW_BANK_WINDOW`], or one a recenter has since spent, is not used.
+/// [`SEAT_YAW_BANK_WINDOW`], or one a recenter has since spent, is not used. While the view steps
+/// toward the body through the entry, the re-base waits for the steps to settle and bank.
 pub fn request_seat_yaw_rebase() {
     PENDING_SEAT_YAW.store(true, Ordering::Relaxed);
 }
@@ -175,7 +177,7 @@ fn rebased(kind: RecenterKind, cause: RecenterCause, turn: glam::Quat) {
     crate::controllers::roomscale::on_recenter(kind, turn, cause);
     // The head's forward becomes the body's: any turn of the body under the view is spent, and
     // the torso estimate turns with the frame.
-    crate::headpose::xr::on_recenter();
+    on_recenter();
     RECENTERS.fetch_add(1, Ordering::Relaxed);
 }
 
@@ -219,7 +221,7 @@ fn decode_request(bits: u8, posture_kind: RecenterKind) -> Option<(RecenterKind,
 /// the composition's turn is taken out in the same frame. Called at the top of the frame, after
 /// the recenters, before the frame takes the runtime lock.
 fn service_follow_bank() {
-    let Some(yaw) = crate::headpose::xr::pending_bank() else {
+    let Some(yaw) = pending_bank() else {
         return;
     };
     let _origin_mutation = origin_provenance::changing();
@@ -265,7 +267,10 @@ fn service_follow_bank() {
 /// blend where it is. Called at the top of the frame, after the follow bank, so a bank in the same
 /// frame as the seat lock is used, and before the frame takes the runtime lock.
 fn service_seat_yaw() {
-    if PENDING_SEAT_YAW.swap(false, Ordering::Relaxed) {
+    // The entry's steps own the view's yaw until they settle, and their settling banks what is
+    // left: the re-base waits for that bank rather than turning the view under the steps with an
+    // older one.
+    if !stepping() && PENDING_SEAT_YAW.swap(false, Ordering::Relaxed) {
         let bank = LAST_BANK.lock().take();
         if let Some(yaw) = bank
             .filter(|(_, at)| at.elapsed() <= SEAT_YAW_BANK_WINDOW)
@@ -319,7 +324,7 @@ fn service_seat_yaw() {
     let turn = rotation.conjugate();
     let (kind, cause) = (RecenterKind::YawAndHeight, RecenterCause::SeatTransition);
     crate::controllers::roomscale::on_recenter(kind, turn, cause);
-    crate::headpose::xr::on_recenter();
+    on_recenter();
     crate::recorder::tracking::note_recenter(RecenterEvent { kind, cause, turn });
 }
 
@@ -363,7 +368,7 @@ fn banked(yaw: f32, turn: glam::Quat) {
         turn,
         RecenterCause::FollowBank,
     );
-    crate::headpose::xr::bank(yaw);
+    bank(yaw);
 }
 
 /// The recenters done, for [`recenter_count`].
