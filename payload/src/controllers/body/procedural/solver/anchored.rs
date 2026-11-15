@@ -53,6 +53,23 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralBodyConfig) -> RigP
     let animated = input.animated;
     let mut pose = animated;
     let base = pose.position(RigBone::Spine);
+    let Some(clip_upright) = (pose.position(RigBone::Neck) - base).try_normalize() else {
+        return animated;
+    };
+    // The clip's lean is taken out about the spine's base first, by the input's share, so the
+    // player's motion bends the spine from a torso square over the pelvis: on 14 November the walk
+    // clips' 20 to 27 degree forward lean left the chest kinked back toward the eyes, filling the
+    // view looking down.
+    let delean = if input.delean.is_finite() {
+        input.delean.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    if delean > 0.0 && clip_upright.y > 0.0 {
+        let straighten =
+            Quat::IDENTITY.slerp(Quat::from_rotation_arc(clip_upright, Vec3::Y), delean);
+        pose.rotate_about(RigBone::Spine, straighten, base);
+    }
     let Some(upright) = (pose.position(RigBone::Neck) - base).try_normalize() else {
         return animated;
     };
@@ -264,6 +281,7 @@ mod tests {
             eye: animated.position(RigBone::Head) + Vec3::new(0.0, 0.08, -0.1),
             head_rotation: Quat::IDENTITY,
             torso_yaw: Some(0.0),
+            delean: 0.0,
         };
         (input, ProceduralBodyConfig::new())
     }
@@ -570,5 +588,29 @@ mod tests {
         let (mut input, config) = setup();
         input.head = Vec3::NAN;
         assert_eq!(solve_anchored(&input, &config), input.animated);
+    }
+
+    #[test]
+    fn a_gait_clips_forward_lean_is_taken_out_of_the_lower_spine_not_bent_back_above_it() {
+        let (mut input, config) = setup();
+        // The walk clip leans the torso forward from the spine's base.
+        let base = input.animated.position(RigBone::Spine);
+        input
+            .animated
+            .rotate_about(RigBone::Spine, Quat::from_rotation_x(-0.4), base);
+        input.head = input.animated.position(RigBone::Head);
+        let lower_lean = |pose: &RigPose| {
+            let segment = pose.position(RigBone::Spine1) - pose.position(RigBone::Spine);
+            segment.angle_between(Vec3::Y)
+        };
+        let kept = solve_anchored(&input, &config);
+        input.delean = 0.8;
+        let straightened = solve_anchored(&input, &config);
+        assert!(
+            lower_lean(&straightened) < lower_lean(&kept) - 0.1,
+            "{} against {}",
+            lower_lean(&straightened),
+            lower_lean(&kept)
+        );
     }
 }

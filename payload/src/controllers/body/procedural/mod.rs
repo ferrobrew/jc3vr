@@ -468,6 +468,10 @@ struct TorsoGate<'a> {
     arm_shoulders: [Option<Vec3>; 2],
 }
 
+/// The share of a gait clip's forward lean the torso takes out on the ground before following the
+/// player's head.
+const ON_FOOT_DELEAN: f32 = 0.8;
+
 /// The pose to write: the torso follows the player's head on the clip's hips, including in a
 /// standing stunt position, whose animation is the on-foot one. `None` without tracking.
 ///
@@ -487,6 +491,11 @@ unsafe fn pose_torso(
         input.torso_yaw = gate
             .visual_heading
             .and_then(|heading| relative_heading(heading, xr::body_rotation(), character_rotation));
+    }
+    // On the ground the gait clips lean the whole torso 20 to 27 degrees forward; taken out before
+    // the swing, the chest stays square over the pelvis rather than tipped back toward the eyes.
+    if matches!(gate.case, Case::OnFoot | Case::StuntStanding) {
+        input.delean = ON_FOOT_DELEAN;
     }
     let mut solved = solve_anchored(&input, config);
     if matches!(
@@ -649,6 +658,7 @@ fn solve_input(character: &Character, animated: &RigPose, scale: f32) -> Option<
         eye,
         head_rotation,
         torso_yaw: torso_turn(rotation),
+        delean: 0.0,
     })
 }
 

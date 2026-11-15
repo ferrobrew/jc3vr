@@ -40,4 +40,8 @@ pub struct SolveInput {
     pub head_rotation: Quat,
     /// The player's torso heading relative to Rico's facing, radians about +Y, when estimated.
     pub torso_yaw: Option<f32>,
+    /// The share of the clip's forward lean taken out of the spine before the player's motion is
+    /// added, `0..=1`: on foot, where the gait clips lean the whole torso forward and the swing
+    /// would otherwise bend the chest back over a tilted pelvis.
+    pub delean: f32,
 }
