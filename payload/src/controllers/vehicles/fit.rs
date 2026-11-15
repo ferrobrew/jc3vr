@@ -625,6 +625,8 @@ mod tests {
                 Vec3::new(-1.8940631, 1.0584159, -7.160036),
                 Vec3::new(1.8940631, 3.2672918, 0.31849),
             ),
+            // A box around the cabin, enough for the fit's checks.
+            "heavytroop_body" => (Vec3::new(-1.5, 0.5, -4.0), Vec3::new(1.5, 3.5, 3.0)),
             _ => unreachable!(),
         };
         PartRead {
@@ -722,35 +724,43 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_collective_is_placed_from_the_tuning_inside_the_part() {
-        let eyes = Vec3::new(-0.35, 1.5, -0.92);
-        let xf = CockpitTransform::from_origin(eyes, Quat::IDENTITY, 1.0);
-        let inputs = inputs(&xf, VehicleClass::Helicopter, eyes);
+    fn a_missing_collective_is_placed_from_the_seats_cyclic() {
         let part = part("utility_body");
-        let (min, max) = part.bounds.unwrap();
-        let fit = fit_cockpit(&inputs, Mat4::IDENTITY, 1, &part).unwrap();
-        let rest = fit.lever_rest(ControlKind::Collective).unwrap();
-        assert!((rest - PHYSICAL.collective.rest_m).length() < 1e-5);
-        let (kind, part_rest) = fit.fallback_lever.unwrap();
-        assert_eq!(kind, ControlKind::Collective);
-        assert!((part_rest - (eyes + PHYSICAL.collective.rest_m)).length() < 1e-5);
-        assert!(part_rest.cmpge(min).all() && part_rest.cmple(max).all());
+        for pilot_x in [-0.35, 0.35] {
+            let eyes = Vec3::new(pilot_x, 1.5, -0.92);
+            let xf = CockpitTransform::from_origin(eyes, Quat::IDENTITY, 1.0);
+            let inputs = inputs(&xf, VehicleClass::Helicopter, eyes);
+            let fit = fit_cockpit(&inputs, Mat4::IDENTITY, 1, &part).unwrap();
+            let (kind, part_rest) = fit.fallback_lever.unwrap();
+            assert_eq!(kind, ControlKind::Collective);
+            let cyclic = fit.asset.stick_grip;
+            assert!(
+                part_rest.x < cyclic.x && part_rest.y < cyclic.y,
+                "by the pilot's left thigh: {part_rest} against the cyclic at {cyclic}"
+            );
+            assert!(
+                (fit.lever_rest(ControlKind::Collective).unwrap() - (part_rest - eyes)).length()
+                    < 1e-5
+            );
+        }
     }
 
     #[test]
-    fn a_missing_collective_outside_the_part_is_clamped_into_its_bounds() {
-        let eyes = Vec3::new(-0.35, 1.5, -0.92);
-        let mut part = part("utility_body");
-        let (min, max) = (Vec3::new(-0.40, 1.40, -1.50), Vec3::new(0.0, 1.60, -1.20));
-        part.bounds = Some((min, max));
-        let xf = CockpitTransform::from_origin(eyes, Quat::IDENTITY, 1.0);
-        let inputs = inputs(&xf, VehicleClass::Helicopter, eyes);
-        let fit = fit_cockpit(&inputs, Mat4::IDENTITY, 1, &part).unwrap();
-        let (_, part_rest) = fit.fallback_lever.unwrap();
-        assert!((part_rest - (eyes + PHYSICAL.collective.rest_m).clamp(min, max)).length() < 1e-5);
-        assert!(part_rest.cmpge(min).all() && part_rest.cmple(max).all());
-        assert!(
-            (fit.lever_rest(ControlKind::Collective).unwrap() - (part_rest - eyes)).length() < 1e-5
+    fn the_heavy_troop_helicopters_console_collective_is_the_right_seats() {
+        let part = part("heavytroop_body");
+        let seat = |pilot_x: f32| {
+            let eyes = Vec3::new(pilot_x, 2.1, -2.0);
+            let xf = CockpitTransform::from_origin(eyes, Quat::IDENTITY, 1.0);
+            let inputs = inputs(&xf, VehicleClass::Helicopter, eyes);
+            fit_cockpit(&inputs, Mat4::IDENTITY, 1, &part).unwrap()
+        };
+        let right = seat(0.6);
+        assert!(right.asset.lever.is_some() && right.fallback_lever.is_none());
+        let left = seat(-0.6);
+        assert!(left.asset.lever.is_none());
+        assert_eq!(
+            left.fallback_lever.map(|(kind, _)| kind),
+            Some(ControlKind::Collective)
         );
     }
 

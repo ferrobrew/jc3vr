@@ -108,9 +108,15 @@ impl CockpitFit {
             }
             _ => None,
         };
-        let fallback_lever = missing.map(|(kind, spec)| {
-            let rest = part_to_cockpit.inverse().transform_point3(spec.rest_m);
-            (kind, rest.clamp(bounds.0, bounds.1))
+        // A helicopter's missing collective is placed from its measured cyclic, by the seat's
+        // left side and below the grip: from the eyes and clamped to the airframe's bounds, which
+        // take in the skids, it landed by the door in the utility helicopter.
+        let fallback_lever = missing.map(|(kind, spec)| match kind {
+            ControlKind::Collective => (kind, asset.stick_grip + COLLECTIVE_FROM_CYCLIC_M),
+            _ => {
+                let rest = part_to_cockpit.inverse().transform_point3(spec.rest_m);
+                (kind, rest.clamp(bounds.0, bounds.1))
+            }
         });
         Self {
             target,
@@ -170,6 +176,12 @@ impl CockpitFit {
     }
 }
 
+/// Where a helicopter's missing collective sits from its cyclic's grip, in the cockpit part's own
+/// space (+X to the pilot's right, +Y up, +Z back), metres: by the pilot's left thigh, a quarter of
+/// a metre left of the cyclic, a third of a metre below it, and a quarter of a metre further back.
+/// A placement, not a measurement.
+const COLLECTIVE_FROM_CYCLIC_M: Vec3 = Vec3::new(-0.25, -0.35, 0.25);
+
 /// Measure the merged cockpit in its part's coordinates. The pilot selects a physical seat;
 /// controller handedness does not change which seat's controls are offered.
 pub fn cockpit_asset(name: &str, pilot_in_part: Vec3) -> Option<CockpitAsset> {
@@ -190,6 +202,25 @@ pub fn cockpit_asset(name: &str, pilot_in_part: Vec3) -> Option<CockpitAsset> {
                     -1.390_84,
                 ),
                 lever: None,
+            })
+        }
+        "heavytroop_body" => {
+            // The heavy troop helicopter's controls are separate parts with identity offsets, so
+            // their meshes are in the body's space: each seat's cyclic is the grip shell's centre
+            // from the connected components of its joystick part, and the one collective is the
+            // lever's tube below its head, on the centre console at the right seat's left. The
+            // left seat has no collective within reach, so it takes the one placed from its
+            // cyclic.
+            let right = pilot_in_part.x > 0.0;
+            Some(CockpitAsset {
+                yoke: None,
+                seat: u8::from(right),
+                stick_kind: ControlKind::Cyclic,
+                stick_grip: Vec3::new(if right { 0.59715 } else { -0.5955 }, 1.93665, -2.4956),
+                lever: right.then_some((
+                    ControlKind::Collective,
+                    Vec3::new(0.1458, 1.69964, -2.67578),
+                )),
             })
         }
         "privatepropeller_body" => {
@@ -499,14 +530,14 @@ mod tests {
                     Vec3::ZERO,
                 )
                 .unwrap();
-            // The missing lever is placed from the tuning relative to the pilot, not from the
-            // measured cyclic, and it stays inside the part.
-            assert!((collective - PHYSICAL.collective.rest_m).length() < 1e-5);
+            // The missing lever is placed from the measured cyclic, by the pilot's left thigh, and
+            // it stays inside the part.
             let (_, part_rest) = fit.fallback_lever.unwrap();
+            assert!((part_rest - (driver.stick_grip + COLLECTIVE_FROM_CYCLIC_M)).length() < 1e-5);
             assert!(part_rest.cmpge(bounds.0).all() && part_rest.cmple(bounds.1).all());
             assert!(collective.x < fit.stick_top().x);
             assert!(part_rest.x > bounds.0.x + 0.1);
-            assert!(collective.y < fit.stick_top().y - 0.5);
+            assert!(collective.y < fit.stick_top().y - 0.3);
             assert!(fit.contains(ControlKind::Collective));
             assert!(!fit.contains(ControlKind::Throttle));
         }
