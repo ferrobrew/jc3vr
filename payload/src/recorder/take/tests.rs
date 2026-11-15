@@ -10,7 +10,12 @@ use pretty_assertions::assert_eq;
 use serde_json::{Value, json};
 
 use super::*;
-use crate::recorder::Region;
+use crate::recorder::{
+    Region,
+    layout::{Arrangement, MIN_EYE_WIDTH, StreamLayout},
+    protocol::{FRAME_TAG, VideoFormat, stream_header},
+    stream::VideoFrame,
+};
 
 #[test]
 fn sidecar_lines_carry_frames_markers_mirror_layouts_and_presents() {
@@ -138,14 +143,16 @@ fn a_take_starts_the_host_writes_the_sidecar_and_stops_the_host() {
         take.host(),
         HostState::Capturing(Capture {
             file: "/s/video.mkv".to_owned(),
-            region: Region {
+            region: Some(Region {
                 x: 4,
                 y: 31,
                 width: 1280,
                 height: 720,
-            },
+            }),
             output: Some("DP-1".to_owned()),
             video_start_unix_ms: Some(12.5),
+            encoder: None,
+            audio: None,
         })
     );
     assert!(take.send(Record::Frame(Box::new(frame(0)))).is_ok());
@@ -220,6 +227,101 @@ fn a_host_that_refuses_the_take_ends_the_video_with_its_message() {
 }
 
 #[test]
+fn a_streamed_take_connects_once_the_format_is_known_and_its_end_is_the_stop() {
+    let folder = TempFolder::new();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let target = listener.local_addr().unwrap().to_string();
+    let format = VideoFormat {
+        layout: StreamLayout::new(MIN_EYE_WIDTH, MIN_EYE_WIDTH, 0, Arrangement::SideBySide)
+            .expect("a layout"),
+        frame_rate: 30,
+    };
+    let frame_len = format.layout.frame_len();
+    let host = std::thread::spawn(move || {
+        let (stream, _) = listener.accept().unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        let start = read_json(&mut reader);
+        let mut stream = stream;
+        stream
+            .write_all(
+                b"{\"type\":\"started\",\"file\":\"C:\\\\s\\\\video.mkv\",\
+                  \"encoder\":\"libopenh264\",\"audio\":\"none\"}\n",
+            )
+            .unwrap();
+        // Everything after the start line is the stream, up to its end.
+        let mut header = String::new();
+        reader.read_line(&mut header).unwrap();
+        let mut frames = 0;
+        let mut tag = [0u8; FRAME_TAG.len()];
+        let mut bytes = vec![0u8; frame_len];
+        while reader.read_exact(&mut tag).is_ok() {
+            reader.read_exact(&mut bytes).unwrap();
+            frames += 1;
+        }
+        stream
+            .write_all(b"{\"type\":\"stopped\",\"exit_code\":0}\n")
+            .unwrap();
+        (start, header, frames)
+    });
+
+    let mut take = Take::spawn(TakeRequest {
+        stream: true,
+        ..request(&folder, target)
+    })
+    .unwrap();
+    // No format yet, so no connection.
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(take.host(), HostState::Waiting);
+    let video = Arc::clone(take.video().expect("a streamed take has a video channel"));
+    video.publish(format);
+    await_host(&take, |state| matches!(state, HostState::Capturing(_)));
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !video.streaming() {
+        assert!(Instant::now() < deadline, "the writer never streamed");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    for i in 0..3 {
+        assert!(
+            video
+                .send(VideoFrame {
+                    repeats: u32::from(i > 0),
+                    image: Some((vec![i as u8; frame_len], i)),
+                })
+                .is_ok()
+        );
+    }
+    take.finish();
+    let completion = await_completion(&mut take);
+    assert_eq!(completion.error, None);
+
+    let (start, header, frames) = host.join().unwrap();
+    assert_eq!(start["version"], 2);
+    assert_eq!(start["payload_folder"], folder.0.display().to_string());
+    assert_eq!(start["video"]["width"], format.layout.width);
+    assert_eq!(header, stream_header(&format));
+    assert_eq!(frames, 5);
+    let lines = fs::read_to_string(folder.0.join("video_frames.jsonl")).unwrap();
+    assert_eq!(lines.lines().count(), 5);
+}
+
+#[test]
+fn a_streamed_take_without_eye_views_says_why_it_has_no_video() {
+    let folder = TempFolder::new();
+    let target = {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.local_addr().unwrap().to_string()
+    };
+    let mut take = Take::spawn(TakeRequest {
+        stream: true,
+        ..request(&folder, target)
+    })
+    .unwrap();
+    take.finish();
+    let error = await_completion(&mut take).error.unwrap();
+    assert!(error.contains("no eye views were captured"), "{error}");
+}
+
+#[test]
 fn a_take_with_no_host_listening_says_it_has_no_video() {
     let folder = TempFolder::new();
     let target = {
@@ -248,6 +350,7 @@ fn request(folder: &TempFolder, target: String) -> TakeRequest {
             title: Some("Just Cause 3".to_owned()),
             client_size: Some([1280, 720]),
         },
+        stream: false,
     }
 }
 

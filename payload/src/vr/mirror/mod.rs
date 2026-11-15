@@ -323,7 +323,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         }
 
         present_index = PRESENTS.fetch_add(1, Ordering::Relaxed);
-        stamped = crate::recorder::is_recording()
+        stamped = crate::recorder::records_mirror()
             && Config::lock_query(|c| c.vr.mirror_frame_stamp)
             && mirror.stamp(
                 &context.m_Context,

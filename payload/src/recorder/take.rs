@@ -11,6 +11,11 @@
 //! The thread retries the connection only until the first one succeeds. A host that refuses the take
 //! or drops the connection ends the video for this take, and the error says why; the sidecar keeps
 //! being written until the take stops.
+//!
+//! A streamed take (protocol version 2) also owns a video writer ([`crate::recorder::stream`]). The
+//! thread connects only once the render thread has published the stream's format, which the start
+//! line carries, and hands the writer the connection once the host confirms. At the end it lets the
+//! writer finish the stream, whose end is the stop, before it waits for the host to finalize.
 
 use std::{
     fs::File,
@@ -34,7 +39,11 @@ use crate::{
     director::markers::Marker,
     recorder::{
         Capture, HostState, MirrorDraw, MirrorFrame,
-        protocol::{HostMessage, LineBuffer, WindowHint, parse_host_line, start_line, stop_line},
+        protocol::{
+            HostMessage, LineBuffer, WindowHint, parse_host_line, start_line, stop_line,
+            stream_start_line,
+        },
+        stream::{VideoChannel, Writer},
     },
     session::RecordingFile,
     vr::{CaptureEyeView, CaptureViews, MirrorView},
@@ -51,6 +60,9 @@ pub(crate) struct TakeRequest {
     /// The capture host's `host:port`.
     pub(crate) target: String,
     pub(crate) window: WindowHint,
+    /// Whether the payload streams the eye views itself (protocol version 2) rather than having the
+    /// host record the mirror window (version 1).
+    pub(crate) stream: bool,
 }
 
 /// One sidecar line.
@@ -90,6 +102,8 @@ pub(crate) struct Take {
     sender: Option<Sender<Record>>,
     handle: Option<JoinHandle<()>>,
     shared: Arc<Shared>,
+    /// The render thread's end of a streamed take's video.
+    video: Option<Arc<VideoChannel>>,
 }
 
 impl Take {
@@ -102,19 +116,33 @@ impl Take {
                 path.display()
             )
         })?;
-        let start = start_line(
-            &request.stamp,
-            request.host_folder.as_deref(),
-            &request.window,
-        );
+        let (opening, writer) = if request.stream {
+            let writer = Writer::spawn(&request.folder)?;
+            let opening = Opening::Stream {
+                take: request.stamp,
+                host_folder: request.host_folder,
+                payload_folder: request.folder.display().to_string(),
+                window: request.window,
+            };
+            (opening, Some(writer))
+        } else {
+            let start = start_line(
+                &request.stamp,
+                request.host_folder.as_deref(),
+                &request.window,
+            );
+            (Opening::Mirror(start), None)
+        };
+        let video = writer.as_ref().map(|writer| Arc::clone(writer.channel()));
         let target = request.target;
-        Self::spawn_thread(move |records, shared| {
+        let mut take = Self::spawn_thread(move |records, shared| {
             TakeThread {
                 sidecar: BufWriter::new(sidecar),
                 sidecar_failed: false,
                 link: HostLink {
                     target,
-                    start,
+                    opening,
+                    writer,
                     state: LinkState::Waiting {
                         next_attempt: Instant::now(),
                     },
@@ -122,7 +150,9 @@ impl Take {
                 shared,
             }
             .run(records);
-        })
+        })?;
+        take.video = video;
+        Ok(take)
     }
 
     fn spawn_thread(
@@ -143,6 +173,7 @@ impl Take {
             sender: Some(sender),
             handle: Some(handle),
             shared,
+            video: None,
         })
     }
 
@@ -172,9 +203,18 @@ impl Take {
         self.shared.error.lock().clone()
     }
 
-    /// Close the record channel, so the thread flushes the sidecar, stops the host, and exits.
+    /// A streamed take's video channel.
+    pub(crate) fn video(&self) -> Option<&Arc<VideoChannel>> {
+        self.video.as_ref()
+    }
+
+    /// Close the record channel and the video queue, so the thread flushes the sidecar, ends the
+    /// stream, stops the host, and exits.
     pub(crate) fn finish(&mut self) {
         self.sender = None;
+        if let Some(video) = &self.video {
+            video.close();
+        }
     }
 
     pub(super) fn is_finished(&self) -> bool {
@@ -226,6 +266,12 @@ const CONNECT_TIMEOUT: Duration = Duration::from_millis(250);
 const START_TIMEOUT: Duration = Duration::from_secs(15);
 /// How long the thread waits for the host to confirm the video is finalized after the stop line.
 const FINISH_TIMEOUT: Duration = Duration::from_secs(5);
+/// How long a streamed take's writer has to send what is queued and end the stream. It stops
+/// writing after five seconds of its own.
+const WRITER_FINISH_TIMEOUT: Duration = Duration::from_secs(8);
+/// How long the thread waits for the host to finalize a streamed take's file after the stream
+/// ends. The encoder drains its own queue of frames first.
+const STREAM_FINISH_TIMEOUT: Duration = Duration::from_secs(30);
 /// How long a write the socket's buffer could not take waits before retrying. The socket is
 /// non-blocking, since Winsock leaves a timed-out blocking send in an indeterminate state.
 const WOULD_BLOCK_RETRY: Duration = Duration::from_millis(1);
@@ -424,8 +470,23 @@ struct MirrorJson<'a> {
 /// The connection to the capture host.
 struct HostLink {
     target: String,
-    start: Vec<u8>,
+    opening: Opening,
+    /// A streamed take's video writer.
+    writer: Option<Writer>,
     state: LinkState,
+}
+
+/// What the take opens the connection with.
+enum Opening {
+    /// A mirror take's start line, ready to send.
+    Mirror(Vec<u8>),
+    /// A streamed take, whose start line waits for the stream's format.
+    Stream {
+        take: String,
+        host_folder: Option<String>,
+        payload_folder: String,
+        window: WindowHint,
+    },
 }
 
 enum LinkState {
@@ -448,77 +509,144 @@ impl HostLink {
             LinkState::Waiting { next_attempt } if Instant::now() < next_attempt => {
                 LinkState::Waiting { next_attempt }
             }
-            LinkState::Waiting { .. } => match self.connect() {
-                Ok(stream) => {
-                    tracing::info!("recorder: connected to the capture host at {}", self.target);
-                    shared.set_host(HostState::Starting);
-                    LinkState::Open {
-                        stream,
-                        lines: LineBuffer::default(),
-                        confirmed: false,
-                        deadline: Instant::now() + START_TIMEOUT,
-                    }
-                }
-                Err(error) => {
-                    tracing::debug!("recorder: waiting for the capture host: {error:#}");
-                    LinkState::Waiting {
-                        next_attempt: Instant::now() + CONNECT_RETRY,
-                    }
-                }
-            },
-            LinkState::Open {
-                mut stream,
-                mut lines,
-                mut confirmed,
-                deadline,
-            } => match read_messages(&mut stream, &mut lines) {
-                Ok((messages, closed)) => {
-                    let mut open = true;
-                    for message in messages {
-                        open &= handle_message(message, &mut confirmed, shared);
-                    }
-                    if open && closed {
-                        shared.fail(if confirmed {
-                            "capture host: the host closed the connection during the take"
-                                .to_owned()
-                        } else {
-                            "capture host: the host closed the connection before confirming the \
-                             take"
-                                .to_owned()
-                        });
-                        open = false;
-                    }
-                    if open && !confirmed && Instant::now() >= deadline {
-                        shared.fail(format!(
-                            "capture host: the host did not confirm the take within {} s",
-                            START_TIMEOUT.as_secs()
-                        ));
-                        open = false;
-                    }
-                    if open {
+            LinkState::Waiting { next_attempt } => match self.start_bytes() {
+                // A streamed take connects once the render thread has published the format.
+                None => LinkState::Waiting { next_attempt },
+                Some(start) => match self.connect(&start) {
+                    Ok(stream) => {
+                        tracing::info!(
+                            "recorder: connected to the capture host at {}",
+                            self.target
+                        );
+                        shared.set_host(HostState::Starting);
                         LinkState::Open {
                             stream,
-                            lines,
-                            confirmed,
-                            deadline,
+                            lines: LineBuffer::default(),
+                            confirmed: false,
+                            deadline: Instant::now() + START_TIMEOUT,
                         }
-                    } else {
-                        shared.set_host(HostState::Closed);
-                        LinkState::Closed
                     }
-                }
-                Err(error) => {
-                    shared.fail(format!("capture host: {error}"));
-                    shared.set_host(HostState::Closed);
-                    LinkState::Closed
-                }
+                    Err(error) => {
+                        tracing::debug!("recorder: waiting for the capture host: {error:#}");
+                        LinkState::Waiting {
+                            next_attempt: Instant::now() + CONNECT_RETRY,
+                        }
+                    }
+                },
             },
+            LinkState::Open {
+                stream,
+                lines,
+                confirmed,
+                deadline,
+            } => self.poll_open(
+                OpenLink {
+                    stream,
+                    lines,
+                    confirmed,
+                    deadline,
+                },
+                shared,
+            ),
             LinkState::Closed => LinkState::Closed,
         };
     }
 
+    fn poll_open(&mut self, mut link: OpenLink, shared: &Shared) -> LinkState {
+        let (messages, closed) = match read_messages(&mut link.stream, &mut link.lines) {
+            Ok(read) => read,
+            Err(error) => {
+                shared.fail(format!("capture host: {error}"));
+                return self.close(shared);
+            }
+        };
+        let mut open = true;
+        for message in messages {
+            let was_confirmed = link.confirmed;
+            open &= handle_message(message, &mut link.confirmed, shared);
+            if open && link.confirmed && !was_confirmed {
+                open &= self.hand_stream(&link.stream, shared);
+            }
+        }
+        if open && closed {
+            shared.fail(if link.confirmed {
+                "capture host: the host closed the connection during the take".to_owned()
+            } else {
+                "capture host: the host closed the connection before confirming the take".to_owned()
+            });
+            open = false;
+        }
+        if open && !link.confirmed && Instant::now() >= link.deadline {
+            shared.fail(format!(
+                "capture host: the host did not confirm the take within {} s",
+                START_TIMEOUT.as_secs()
+            ));
+            open = false;
+        }
+        if open {
+            LinkState::Open {
+                stream: link.stream,
+                lines: link.lines,
+                confirmed: link.confirmed,
+                deadline: link.deadline,
+            }
+        } else {
+            self.close(shared)
+        }
+    }
+
+    /// The start line, once it can be made.
+    fn start_bytes(&self) -> Option<Vec<u8>> {
+        match &self.opening {
+            Opening::Mirror(start) => Some(start.clone()),
+            Opening::Stream {
+                take,
+                host_folder,
+                payload_folder,
+                window,
+            } => {
+                let format = self.writer.as_ref()?.channel().format()?;
+                Some(stream_start_line(
+                    take,
+                    host_folder.as_deref(),
+                    payload_folder,
+                    window,
+                    format,
+                ))
+            }
+        }
+    }
+
+    /// Give a streamed take's writer its own handle on the confirmed connection. Returns whether
+    /// the connection stays open.
+    fn hand_stream(&self, stream: &TcpStream, shared: &Shared) -> bool {
+        let Some(writer) = &self.writer else {
+            return true;
+        };
+        match stream.try_clone() {
+            Ok(clone) => {
+                writer.connect(clone);
+                true
+            }
+            Err(error) => {
+                shared.fail(format!(
+                    "capture host: could not share the connection with the video writer: {error}"
+                ));
+                false
+            }
+        }
+    }
+
+    fn close(&self, shared: &Shared) -> LinkState {
+        if let Some(writer) = &self.writer {
+            writer.host_closed();
+        }
+        shared.set_host(HostState::Closed);
+        LinkState::Closed
+    }
+
     /// Connect to the host and send the start line.
-    fn connect(&self) -> anyhow::Result<TcpStream> {
+    fn connect(&self, start: &[u8]) -> anyhow::Result<TcpStream> {
         let addresses: Vec<_> = self
             .target
             .to_socket_addrs()
@@ -532,7 +660,7 @@ impl HostLink {
                     // A fresh socket's send buffer takes the whole start line, so this blocking
                     // write cannot stall.
                     stream
-                        .write_all(&self.start)
+                        .write_all(start)
                         .context("could not send the start line")?;
                     stream.set_nonblocking(true)?;
                     return Ok(stream);
@@ -548,14 +676,26 @@ impl HostLink {
         }
     }
 
-    /// End the take: send the stop line and wait a bounded time for the host's confirmation.
+    /// End the take: end the stream or send the stop line, and wait a bounded time for the host's
+    /// confirmation.
     fn finish(&mut self, shared: &Shared) {
+        let streamed = self.finish_writer(shared);
         match std::mem::replace(&mut self.state, LinkState::Closed) {
             LinkState::Waiting { .. } => {
-                shared.fail(format!(
-                    "capture host: no host listened at {}, so the take has no video",
-                    self.target
-                ));
+                let no_format = self
+                    .writer
+                    .as_ref()
+                    .is_some_and(|writer| writer.channel().format().is_none());
+                shared.fail(if no_format {
+                    "recorder: no eye views were captured, so the take has no video; the \
+                     in-process capture needs a running VR session"
+                        .to_owned()
+                } else {
+                    format!(
+                        "capture host: no host listened at {}, so the take has no video",
+                        self.target
+                    )
+                });
             }
             LinkState::Open {
                 mut stream,
@@ -564,13 +704,36 @@ impl HostLink {
                 ..
             } => {
                 shared.set_host(HostState::Finishing);
-                let deadline = Instant::now() + FINISH_TIMEOUT;
-                if let Err(error) = write_nonblocking(&mut stream, &stop_line(), deadline) {
-                    shared.fail(format!(
-                        "capture host: could not send the stop line: {error}"
-                    ));
+                if self.writer.is_some() {
+                    if confirmed && !streamed {
+                        shared.fail(
+                            "recorder: no frame reached the capture host before the take ended"
+                                .to_owned(),
+                        );
+                    }
+                    // The writer closed its half of the connection, which is the stop.
+                    await_stopped(
+                        &mut stream,
+                        &mut lines,
+                        &mut confirmed,
+                        STREAM_FINISH_TIMEOUT,
+                        shared,
+                    );
                 } else {
-                    await_stopped(&mut stream, &mut lines, &mut confirmed, deadline, shared);
+                    let deadline = Instant::now() + FINISH_TIMEOUT;
+                    if let Err(error) = write_nonblocking(&mut stream, &stop_line(), deadline) {
+                        shared.fail(format!(
+                            "capture host: could not send the stop line: {error}"
+                        ));
+                    } else {
+                        await_stopped(
+                            &mut stream,
+                            &mut lines,
+                            &mut confirmed,
+                            FINISH_TIMEOUT,
+                            shared,
+                        );
+                    }
                 }
                 let _ = stream.shutdown(std::net::Shutdown::Both);
             }
@@ -578,16 +741,43 @@ impl HostLink {
         }
         shared.set_host(HostState::Closed);
     }
+
+    /// Let a streamed take's writer send what is queued and end the stream. Returns whether any
+    /// frame reached the host.
+    fn finish_writer(&mut self, shared: &Shared) -> bool {
+        let Some(writer) = self.writer.as_mut() else {
+            return false;
+        };
+        if !writer.finish(WRITER_FINISH_TIMEOUT) {
+            shared.fail(format!(
+                "recorder: the video writer did not finish within {} s",
+                WRITER_FINISH_TIMEOUT.as_secs()
+            ));
+        }
+        if let Some(error) = writer.error() {
+            shared.fail(error);
+        }
+        writer.wrote_frames()
+    }
 }
 
-/// Read until the host confirms the stop, closes, or `deadline` passes.
+/// An open connection's state, moved through one poll.
+struct OpenLink {
+    stream: TcpStream,
+    lines: LineBuffer,
+    confirmed: bool,
+    deadline: Instant,
+}
+
+/// Read until the host confirms the stop, closes, or `budget` passes.
 fn await_stopped(
     stream: &mut TcpStream,
     lines: &mut LineBuffer,
     confirmed: &mut bool,
-    deadline: Instant,
+    budget: Duration,
     shared: &Shared,
 ) {
+    let deadline = Instant::now() + budget;
     while Instant::now() < deadline {
         let (messages, closed) = match read_messages(stream, lines) {
             Ok(read) => read,
@@ -602,11 +792,10 @@ fn await_stopped(
                     match exit_code {
                         Some(0) => tracing::info!("recorder: the capture host finalized the video"),
                         Some(code) => shared.fail(format!(
-                            "capture host: the screen recorder exited with status {code}"
+                            "capture host: the recorder exited with status {code}"
                         )),
                         None => shared.fail(
-                            "capture host: the screen recorder was killed before it finalized"
-                                .to_owned(),
+                            "capture host: the recorder was killed before it finalized".to_owned(),
                         ),
                     }
                     return;
@@ -626,7 +815,7 @@ fn await_stopped(
     }
     tracing::warn!(
         "recorder: the capture host did not confirm the video was finalized within {} s",
-        FINISH_TIMEOUT.as_secs()
+        budget.as_secs()
     );
 }
 
@@ -638,22 +827,40 @@ fn handle_message(message: HostMessage, confirmed: &mut bool, shared: &Shared) -
             video_start_unix_ms,
             region,
             output,
+            encoder,
+            audio,
         } => {
-            tracing::info!(
-                "recorder: the capture host records {}x{}+{}+{} on {} to {file}",
-                region.width,
-                region.height,
-                region.x,
-                region.y,
-                output.as_deref().unwrap_or("an unnamed output")
-            );
+            match region {
+                Some(region) => tracing::info!(
+                    "recorder: the capture host records {}x{}+{}+{} on {} to {file}",
+                    region.width,
+                    region.height,
+                    region.x,
+                    region.y,
+                    output.as_deref().unwrap_or("an unnamed output")
+                ),
+                None => tracing::info!(
+                    "recorder: the capture host records the stream to {file} with {}; audio: {}",
+                    encoder.as_deref().unwrap_or("an unnamed encoder"),
+                    audio.as_deref().unwrap_or("not reported")
+                ),
+            }
             *confirmed = true;
             shared.set_host(HostState::Capturing(Capture {
                 file,
                 region,
                 output,
                 video_start_unix_ms,
+                encoder,
+                audio,
             }));
+            true
+        }
+        HostMessage::Audio { state } => {
+            tracing::info!("recorder: the capture host's audio: {state}");
+            if let HostState::Capturing(capture) = &mut *shared.host.lock() {
+                capture.audio = Some(state);
+            }
             true
         }
         HostMessage::Error { message } => {

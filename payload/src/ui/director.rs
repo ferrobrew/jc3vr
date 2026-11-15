@@ -14,7 +14,7 @@ use crate::{
         teleport::{self, TeleportMode},
         time,
     },
-    recorder::{self, HostState, session_recording},
+    recorder::{self, Arrangement, HostState, VideoStatus, session_recording},
     ui::catalog::FeatureId,
 };
 
@@ -83,6 +83,9 @@ pub(crate) fn video_status(ui: &mut egui::Ui) {
     ui.label(session_line(&session_recording::status()));
     let status = recorder::status();
     ui.label(host_line(&status));
+    if let Some(video) = &status.video {
+        stream_readout(ui, video);
+    }
     if status.recording {
         ui.label(format!("Sidecar lines written: {}", status.lines));
     }
@@ -96,21 +99,34 @@ pub(crate) fn video_status(ui: &mut egui::Ui) {
 
 /// The recorder's one-line state, naming what the capture host records.
 pub(crate) fn host_line(status: &recorder::Status) -> String {
+    let streamed = status.video.is_some();
     match &status.host {
         None => "Video: stopped".to_owned(),
+        Some(HostState::Waiting)
+            if streamed && status.video.as_ref().is_some_and(|v| v.size.is_none()) =>
+        {
+            "Video: waiting for the first eye views".to_owned()
+        }
         Some(HostState::Waiting) => "Video: waiting for the capture host to listen".to_owned(),
+        Some(HostState::Starting) if streamed => {
+            "Video: the capture host is starting its encoder".to_owned()
+        }
         Some(HostState::Starting) => "Video: the capture host is finding the window".to_owned(),
-        Some(HostState::Capturing(capture)) => {
-            let region = capture.region;
-            format!(
+        Some(HostState::Capturing(capture)) => match capture.region {
+            Some(region) => format!(
                 "Video: recording the mirror window, {}x{} at {},{} on {}",
                 region.width,
                 region.height,
                 region.x,
                 region.y,
                 capture.output.as_deref().unwrap_or("the screen")
-            )
-        }
+            ),
+            None => format!(
+                "Video: streaming the eye views, encoded with {}; audio: {}",
+                capture.encoder.as_deref().unwrap_or("an unnamed encoder"),
+                capture.audio.as_deref().unwrap_or("not reported")
+            ),
+        },
         Some(HostState::Finishing) => "Video: the capture host is finalizing the file".to_owned(),
         Some(HostState::Closed) => "Video: not recording (see the error)".to_owned(),
     }
@@ -460,6 +476,9 @@ fn session_ui(ui: &mut egui::Ui) {
     ui.label(session_line(&status));
     let video = recorder::status();
     ui.label(host_line(&video));
+    if let Some(stream) = &video.video {
+        stream_readout(ui, stream);
+    }
     if let Some(error) = &status.video_error {
         ui.colored_label(egui::Color32::LIGHT_RED, format!("Video: {error}"));
     }
@@ -474,6 +493,29 @@ fn session_ui(ui: &mut egui::Ui) {
          recordings/<stamp>/ in the session folder. If the capture host is not running, the \
          session records tracking only and says so here.",
     );
+}
+
+/// A streamed take's counters.
+fn stream_readout(ui: &mut egui::Ui, video: &VideoStatus) {
+    ui.label(match video.size {
+        Some((width, height)) => format!(
+            "Stream: {width}x{height} at {} fps, {}",
+            video.frame_rate,
+            arrangement_label(video.arrangement)
+        ),
+        None => format!("Stream: size not fixed yet, {} fps", video.frame_rate),
+    });
+    ui.label(format!(
+        "Frames captured: {}; sent: {} ({} repeated); dropped: {}; given up: {}; queued: {}",
+        video.captured, video.written, video.repeated, video.dropped, video.given_up, video.queued
+    ));
+}
+
+fn arrangement_label(arrangement: Arrangement) -> &'static str {
+    match arrangement {
+        Arrangement::SideBySide => "both eyes side by side",
+        Arrangement::LeftWithHalfRight => "the left eye with the right at half size",
+    }
 }
 
 /// The session recording's one-line state.
@@ -493,10 +535,55 @@ fn session_line(status: &session_recording::SessionStatus) -> String {
 fn capture_host_ui(ui: &mut egui::Ui) {
     let session = session_recording::status();
     let running = session.video || session.tracking;
-    {
+    let in_process = {
         let mut cfg = config::edit();
         let r = &mut cfg.recorder;
         ui.add_enabled_ui(!running, |ui| {
+            ui.checkbox(&mut r.in_process, "Capture the eye views in process")
+                .on_hover_text(
+                    "Streams both eyes from inside the game to the capture host, which encodes \
+                     them. Off, the capture host records the desktop mirror window from the \
+                     screen instead, which only scripts/capture_host.sh does.",
+                );
+            ui.add_enabled_ui(r.in_process, |ui| {
+                ui.add(
+                    Slider::new(
+                        &mut r.eye_width,
+                        recorder::MIN_EYE_WIDTH..=recorder::MAX_EYE_WIDTH,
+                    )
+                    .step_by(2.0)
+                    .text("Width of each eye"),
+                )
+                .on_hover_text(
+                    "Each eye keeps its aspect at this width. 1920 holds a 1920x1080 crop of one \
+                     eye; smaller costs less bandwidth.",
+                );
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut r.arrangement, Arrangement::SideBySide, "Both eyes")
+                        .on_hover_text("Both eyes at the full width, side by side.");
+                    ui.selectable_value(
+                        &mut r.arrangement,
+                        Arrangement::LeftWithHalfRight,
+                        "Left eye, right at half size",
+                    )
+                    .on_hover_text(
+                        "The left eye at the full width and the right at half size beside it: \
+                         about 40 percent less to read back and send, for a host that cannot \
+                         keep up.",
+                    );
+                });
+                ui.add(
+                    Slider::new(
+                        &mut r.frame_rate,
+                        recorder::MIN_FRAME_RATE..=recorder::MAX_FRAME_RATE,
+                    )
+                    .text("Frame rate"),
+                )
+                .on_hover_text(
+                    "The stream's rate, kept by the wall clock: a slower game repeats frames, a \
+                     faster one skips them.",
+                );
+            });
             ui.horizontal(|ui| {
                 ui.label("Capture host:");
                 ui.text_edit_singleline(&mut r.host)
@@ -505,13 +592,19 @@ fn capture_host_ui(ui: &mut egui::Ui) {
                 ui.add(egui::DragValue::new(&mut r.port));
             });
         });
-    }
-    ui.label(
+        r.in_process
+    };
+    ui.label(if in_process {
+        "The injector stays running as the capture host and encodes the stream with the ffmpeg \
+         beside it (scripts/fetch_ffmpeg.sh), recording the default output's audio. On Linux, \
+         scripts/capture_host.sh can take the stream instead, with the host's own ffmpeg. Start \
+         the session recording above; without a host it records tracking only."
+    } else {
         "Run scripts/capture_host.sh on the host. It records the mirror window as it is on \
          screen, so the mirror view (F10) decides what is recorded, and the window must stay \
          visible and in place for the take. Start the session recording above; without the host \
-         it records tracking only.",
-    );
+         it records tracking only."
+    });
 }
 
 /// The debug tab's marker label field.

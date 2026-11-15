@@ -139,6 +139,8 @@ pub enum RecordingFile {
     Lookback,
     /// The video's per-frame sidecar, with the take markers made while it ran.
     Frames,
+    /// A streamed take's record of each video frame's source frame.
+    VideoFrames,
 }
 
 impl RecordingFile {
@@ -147,6 +149,7 @@ impl RecordingFile {
             Self::Tracking => "tracking.jc3trk",
             Self::Lookback => "lookback.jc3trk",
             Self::Frames => "frames.jsonl",
+            Self::VideoFrames => "video_frames.jsonl",
         }
     }
 }
@@ -353,10 +356,11 @@ mod tests {
         CaptureFile::ShaderDump,
     ];
     const ALL_FOLDERS: [CaptureFolder; 2] = [CaptureFolder::Trace, CaptureFolder::Recording];
-    const ALL_RECORDING_FILES: [RecordingFile; 3] = [
+    const ALL_RECORDING_FILES: [RecordingFile; 4] = [
         RecordingFile::Tracking,
         RecordingFile::Lookback,
         RecordingFile::Frames,
+        RecordingFile::VideoFrames,
     ];
 
     /// The format string is parsed at run time, so a directive the version of `jiff` in use does not

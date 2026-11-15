@@ -168,14 +168,16 @@ fn recorder_activity_follows_the_capture_host_and_the_last_error() {
 
     snapshot.video.host = Some(recorder::HostState::Capturing(recorder::Capture {
         file: "/s/video.mkv".to_owned(),
-        region: recorder::Region {
+        region: Some(recorder::Region {
             x: 4,
             y: 31,
             width: 1920,
             height: 1080,
-        },
+        }),
         output: Some("DP-1".to_owned()),
         video_start_unix_ms: Some(1.0),
+        encoder: None,
+        audio: None,
     }));
     let rows = snapshot.rows();
     let video = find(&rows, RowId::Video);
@@ -438,6 +440,7 @@ fn fixture() -> Snapshot {
             lines: 0,
             error: None,
             folder: None,
+            video: None,
         },
         tracking: TrackingStatus::default(),
         #[cfg(feature = "profiler")]

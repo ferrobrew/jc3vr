@@ -538,9 +538,23 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             }
 
             // The recorder's sidecar line for the frame, on its last near dispatch, when every eye
-            // image of the frame is final. A no-op unless recording.
+            // image of the frame is final, and a streamed take's eye-view capture, which needs both
+            // eyes' captures to hold the frame. Both are no-ops unless recording.
             if last_near_dispatch {
-                crate::recorder::frame_rendered();
+                let frame = crate::recorder::frame_rendered();
+                match (graphics_engine.m_Device.as_ref(), &eye_textures) {
+                    (Some(device), [Some(left), Some(right)])
+                        if eye_capture_fresh(0) && eye_capture_fresh(1) =>
+                    {
+                        crate::recorder::capture_frame(
+                            &device.m_Device,
+                            &context.m_Context,
+                            [left, right],
+                            frame,
+                        );
+                    }
+                    _ => crate::recorder::release_capture(),
+                }
             }
 
             // Service an F12 screenshot request with a source that carries both eyes. Under
@@ -582,11 +596,12 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 
 /// Whether anything besides the headset reads eye `eye`'s capture this frame, so its post-draw must
 /// copy the eye into it even when the eye went straight to the swapchain: the desktop mirror's eyes,
-/// a pending screenshot, and the Previews tab.
+/// a pending screenshot, the Previews tab, and a recording that streams the eye views.
 fn eye_capture_wanted(eye: usize) -> bool {
     Config::lock_query(|c| c.vr.mirror && c.vr.mirror_view.shows_eye(eye))
         || crate::screenshot::is_requested()
         || previews_visible()
+        || crate::recorder::wants_eye_captures()
 }
 
 /// Last-seen thread id for [`render_engine_post_draw`]. See [`log_hook_thread`].
