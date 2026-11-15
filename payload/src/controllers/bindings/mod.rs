@@ -104,7 +104,7 @@ use crate::{
             trigger_ownership::{Owner as TriggerOwner, RawTrigger, TriggerOwnership},
             yank::{HandLine, LineYank, Yank},
         },
-        body::rig::grounded::add_step_walk,
+        body::{firm_ragdoll, rig::grounded::add_step_walk},
         clock::TimeScale,
         cockpit::CockpitTransform,
         config::LocomotionDirection,
@@ -401,6 +401,8 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         }
         vehicles::stand_down();
         grapple::physical::stand_down();
+        // SAFETY: the game stage runs on the game thread before the world update.
+        unsafe { firm_ragdoll::input_tick(firm_ragdoll::Want::Off, false) };
         snatch::stand_down();
         grab::tick::stand_down();
         state.report = TickReport {
@@ -733,6 +735,16 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             config: &config.grapple.lock,
         })
     };
+    // The firm ragdoll for the line the lock holds and for the canopy.
+    let firm = if grapple::physical::lock::holds() {
+        firm_ragdoll::Want::Line
+    } else if detection.mode == Mode::Airborne(AirborneVariant::Parachute) {
+        firm_ragdoll::Want::Canopy
+    } else {
+        firm_ragdoll::Want::Off
+    };
+    // SAFETY: the game stage runs on the game thread before the world update.
+    unsafe { firm_ragdoll::input_tick(firm, config.body.procedural.firm_ragdoll) };
     // SAFETY: as above.
     unsafe {
         grapple::seat::tick(&grapple::seat::SeatTickInput {

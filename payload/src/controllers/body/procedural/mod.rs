@@ -73,6 +73,7 @@ use crate::{
     config::Config,
     controllers::{
         body::{
+            firm_ragdoll,
             procedural::{
                 authority::{Case, WeightFollower, classify_locked, relaxes_legs},
                 config::{ProceduralBodyConfig, ProceduralMode},
@@ -399,8 +400,13 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         && !read.authored_motion)
         || case == Case::SwitchedOff
     {
+        // The firm ragdoll's physics owns the legs on the line.
         state.legs.step(
-            if case == Case::GrappleLock { 1.0 } else { 0.0 },
+            if case == Case::GrappleLock && !firm_ragdoll::owns_legs() {
+                1.0
+            } else {
+                0.0
+            },
             dt,
             config.blend_s,
             config.blend_out_s,

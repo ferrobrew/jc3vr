@@ -56,6 +56,10 @@ pub struct ProceduralBodyConfig {
     pub hit_reaction_hold_s: f32,
     /// Rico's feet squared under him while he stands idle on foot.
     pub stance: StanceConfig,
+    /// The firm ragdoll: the hips and legs hung from the physics, the upper body keyframed to the
+    /// pose, while the grapple lock holds the line and under the canopy
+    /// ([`crate::controllers::body::firm_ragdoll`]).
+    pub firm_ragdoll: bool,
 }
 
 impl ProceduralBodyConfig {
@@ -81,6 +85,7 @@ impl ProceduralBodyConfig {
             clavicle_follow_s: 0.1,
             hit_reaction_hold_s: 1.2,
             stance: StanceConfig::new(),
+            firm_ragdoll: true,
         }
     }
 

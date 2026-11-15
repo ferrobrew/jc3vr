@@ -1,0 +1,297 @@
+//! The firm ragdoll: Rico's body hung from the physics for grapple swings, hangs, and the canopy.
+//!
+//! Swinging on the grapple lock, hanging from a hook, and riding the canopy, Rico's animated legs
+//! ignored the swing: they stayed in the clip's pose however the line threw the body, and under
+//! the canopy they hung stiff. The game's ragdoll has presets that keep the upper body keyframed to
+//! the animated pose and drive the hips and legs as dynamic bodies with constraint motors toward
+//! it: the grapple hang's ([`RagdollParamIdSymbolTable::GRAPPLE_HANG`]) and the canopy's, which the
+//! game already applies under the canopy. A preset with keyframed bones keeps the ragdoll under the
+//! owner's control, so the character does not ragdoll and its animation graph never sees one.
+//!
+//! The firm mode wants the grapple hang's preset while the lock holds the line, and keeps the
+//! canopy's own preset under the canopy. The character's preset id is written with its sync flag
+//! (as the game's canopy update writes it), so the next pre-physics pass makes the ragdoll, and the
+//! ragdoll's blend weight, which nothing in that sync raises, is written each tick just before the
+//! post-physics pass blends the simulated pose into the animated one
+//! ([`Character::PostPhysicsUpdateRagdoll`]). The weight ramps in over [`BLEND_IN_S`] and out over
+//! [`BLEND_OUT_S`], and the saved preset id comes back once it is out. The blend lands before the
+//! HumanIK solve, so the head, the hands, and the chest stay the mod's; the procedural legs stand
+//! down while the mode is in, so the physics owns them.
+//!
+//! [`RagdollParamIdSymbolTable::GRAPPLE_HANG`]: jc3gi::animation::symbol_table::RagdollParamIdSymbolTable::GRAPPLE_HANG
+//! [`Character::PostPhysicsUpdateRagdoll`]: jc3gi::character::character::Character::PostPhysicsUpdateRagdoll
+
+use std::{
+    sync::atomic::{AtomicBool, Ordering},
+    time::Instant,
+};
+
+use detours_macro::detour;
+use jc3gi::{animation::symbol_table::RagdollParamIdSymbolTable, character::character::Character};
+use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
+
+pub(crate) fn hook_library() -> HookLibrary {
+    HookLibrary::new().with_static_binder(&POST_PHYSICS_UPDATE_RAGDOLL_BINDER)
+}
+
+/// What the firm mode is asked for on an input tick.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Want {
+    /// Nothing: the animation owns the body.
+    Off,
+    /// The grapple lock holds the line: the grapple hang's preset.
+    Line,
+    /// Under the canopy: the canopy's own preset, held at full weight.
+    Canopy,
+}
+
+/// The firm mode's readout, for the debug UI.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct FirmStatus {
+    /// The blend weight written last.
+    pub weight: f32,
+    /// Whether the mode is in, ramping in or holding.
+    pub active: bool,
+    /// The preset id the mode is on, when it is in.
+    pub preset: Option<u32>,
+}
+
+/// The firm mode's readout.
+pub fn status() -> FirmStatus {
+    STATE.lock().status
+}
+
+/// Whether the physics owns the legs this tick: the procedural legs stand down.
+pub(crate) fn owns_legs() -> bool {
+    OWNS_LEGS.load(Ordering::Relaxed)
+}
+
+/// Step the firm mode for the local player on an input tick, asked for `want`, with the switch
+/// `enabled`.
+///
+/// # Safety
+///
+/// The game thread before the world update.
+pub(crate) unsafe fn input_tick(want: Want, enabled: bool) {
+    if let Some(character) = unsafe { Character::GetLocalPlayerCharacter().as_mut() } {
+        unsafe { tick(character, want, enabled) };
+    }
+}
+
+/// Step the firm mode for the local player `character`.
+///
+/// # Safety
+///
+/// `character` is the live local player, on the game thread before the world update.
+unsafe fn tick(character: &mut Character, want: Want, enabled: bool) {
+    let want = if enabled { want } else { Want::Off };
+    let now = Instant::now();
+    let mut state = STATE.lock();
+    let current = character.m_CurrentRagdollParamsID;
+    match (state.mode, want) {
+        (Mode::Off, Want::Off) => {}
+        (Mode::Off, Want::Line) => {
+            let Some(hang) = (unsafe { preset_id(RagdollParamIdSymbolTable::GRAPPLE_HANG) }) else {
+                return;
+            };
+            state.saved = Some(current);
+            if current != hang {
+                unsafe { request_preset(character, hang) };
+            }
+            state.mode = Mode::In {
+                preset: hang,
+                since: now,
+            };
+            tracing::info!(target: "controllers", "firm ragdoll: in for the grapple line");
+        }
+        (Mode::Off, Want::Canopy) => {
+            // The canopy's preset is the game's; the mode only holds its weight.
+            let Some(canopy) = (unsafe { preset_id(RagdollParamIdSymbolTable::PARACHUTING) })
+            else {
+                return;
+            };
+            if current == canopy {
+                state.saved = None;
+                state.mode = Mode::In {
+                    preset: canopy,
+                    since: now,
+                };
+                tracing::info!(target: "controllers", "firm ragdoll: in for the canopy");
+            }
+        }
+        (Mode::In { preset, .. }, Want::Off) => {
+            state.mode = Mode::Out {
+                preset,
+                since: now,
+                from: state.status.weight,
+            };
+            tracing::info!(target: "controllers", "firm ragdoll: out");
+        }
+        (Mode::In { preset, .. }, _) => {
+            // A graph state's own preset write (its exit clears the id, which destroys the
+            // ragdoll) is taken back while the mode still wants its preset.
+            if current != preset && state.saved.is_some() {
+                unsafe { request_preset(character, preset) };
+            }
+        }
+        (Mode::Out { since, .. }, Want::Off) => {
+            if now.saturating_duration_since(since).as_secs_f32() >= BLEND_OUT_S {
+                if let Some(saved) = state.saved.take()
+                    && character.m_CurrentRagdollParamsID != saved
+                {
+                    unsafe { request_preset(character, saved) };
+                }
+                state.mode = Mode::Off;
+            }
+        }
+        (Mode::Out { preset, .. }, _) => {
+            state.mode = Mode::In { preset, since: now };
+        }
+    }
+    let weight = state.mode.weight(now);
+    state.status = FirmStatus {
+        weight,
+        active: matches!(state.mode, Mode::In { .. }),
+        preset: state.mode.preset(),
+    };
+    OWNS_LEGS.store(weight > 0.0, Ordering::Relaxed);
+}
+
+#[detour(address = jc3gi::character::character::Character::PostPhysicsUpdateRagdoll_ADDRESS)]
+fn post_physics_update_ragdoll(character: *mut Character, dt: f32) {
+    // SAFETY: the post-physics pass passes its live character.
+    if let Some(character) = unsafe { character.as_mut() }.filter(|c| c.m_IsLocalCharacter) {
+        let (weight, preset) = {
+            let state = STATE.lock();
+            (state.mode.weight(Instant::now()), state.mode.preset())
+        };
+        if let Some(preset) = preset
+            && character.m_CurrentRagdollParamsID == preset
+            && let Some(instance) = unsafe { character.m_Ragdoll.px.as_mut() }
+        {
+            instance.m_BlendWeight = weight;
+        }
+    }
+    POST_PHYSICS_UPDATE_RAGDOLL
+        .get()
+        .unwrap()
+        .call(character, dt);
+}
+
+/// The runtime id of the ragdoll preset `name`.
+///
+/// # Safety
+///
+/// The game thread, once the character manager's ragdoll description has loaded.
+unsafe fn preset_id(name: &std::ffi::CStr) -> Option<u32> {
+    let table = unsafe { RagdollParamIdSymbolTable::get() }?;
+    let id = unsafe { table.string_to_id(name.as_ptr().cast()) };
+    u32::try_from(id).ok().filter(|id| *id != 0)
+}
+
+/// Ask for the ragdoll preset `id`, at once, as the game's canopy update asks for its presets: the
+/// next pre-physics pass makes, re-params, or (for zero) destroys the ragdoll.
+///
+/// # Safety
+///
+/// `character` is live, on the game thread outside the character's passes.
+unsafe fn request_preset(character: &mut Character, id: u32) {
+    character.m_CurrentRagdollParamsID = id;
+    character.m_RagdollParameterBlendTime = 0.0;
+    character.m_RagdollParameterReset = false;
+    character.m_SyncRagdollState = true;
+}
+
+/// The firm mode's phase.
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum Mode {
+    Off,
+    /// In on `preset`, ramping in since `since`.
+    In {
+        preset: u32,
+        since: Instant,
+    },
+    /// Ramping out of `preset` from the weight `from` since `since`.
+    Out {
+        preset: u32,
+        since: Instant,
+        from: f32,
+    },
+}
+
+impl Mode {
+    fn weight(self, now: Instant) -> f32 {
+        match self {
+            Mode::Off => 0.0,
+            Mode::In { since, .. } => {
+                (now.saturating_duration_since(since).as_secs_f32() / BLEND_IN_S).clamp(0.0, 1.0)
+            }
+            Mode::Out { since, from, .. } => {
+                let out = now.saturating_duration_since(since).as_secs_f32() / BLEND_OUT_S;
+                (from * (1.0 - out)).clamp(0.0, 1.0)
+            }
+        }
+    }
+
+    fn preset(self) -> Option<u32> {
+        match self {
+            Mode::Off => None,
+            Mode::In { preset, .. } | Mode::Out { preset, .. } => Some(preset),
+        }
+    }
+}
+
+struct State {
+    mode: Mode,
+    /// The preset id to restore once the mode is out, when the mode wrote one of its own.
+    saved: Option<u32>,
+    status: FirmStatus,
+}
+
+static STATE: Mutex<State> = Mutex::new(State {
+    mode: Mode::Off,
+    saved: None,
+    status: FirmStatus {
+        weight: 0.0,
+        active: false,
+        preset: None,
+    },
+});
+
+static OWNS_LEGS: AtomicBool = AtomicBool::new(false);
+
+/// How long the physics takes to come in, seconds.
+const BLEND_IN_S: f32 = 0.15;
+
+/// How long the physics takes to go out, seconds.
+const BLEND_OUT_S: f32 = 0.2;
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+
+    #[test]
+    fn the_weight_ramps_in_and_out_from_where_it_was() {
+        let start = Instant::now();
+        let at = |s: f32| start + Duration::from_secs_f32(s);
+        let entering = Mode::In {
+            preset: 7,
+            since: start,
+        };
+        assert_eq!(entering.weight(start), 0.0);
+        assert!((entering.weight(at(BLEND_IN_S * 0.5)) - 0.5).abs() < 1e-3);
+        assert_eq!(entering.weight(at(1.0)), 1.0);
+        let leaving = Mode::Out {
+            preset: 7,
+            since: start,
+            from: 0.6,
+        };
+        assert!((leaving.weight(start) - 0.6).abs() < 1e-6);
+        assert_eq!(leaving.weight(at(BLEND_OUT_S)), 0.0);
+        assert_eq!(Mode::Off.weight(start), 0.0);
+        assert_eq!(leaving.preset(), Some(7));
+    }
+}

@@ -10,6 +10,7 @@ use egui::Ui;
 use crate::{
     controllers::{
         body::{
+            firm_ragdoll,
             procedural::config::ProceduralMode,
             rig::{collision::probe::STALE_AFTER, grounded, root::RootStatus},
         },
@@ -119,6 +120,23 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
             ProceduralMode::Off
         };
     }
+    ui.checkbox(
+        &mut body.procedural.firm_ragdoll,
+        "Firm ragdoll on the line and the canopy",
+    )
+    .on_hover_text(
+        "Hang the hips and legs from the physics, the upper body held to the pose, while the \
+         grapple lock holds the line and under the canopy.",
+    );
+    let firm = firm_ragdoll::status();
+    ui.label(match firm.preset {
+        Some(preset) => format!(
+            "Firm ragdoll: {} on preset {preset}, weight {:.2}",
+            if firm.active { "in" } else { "going out" },
+            firm.weight
+        ),
+        None => "Firm ragdoll: out".to_owned(),
+    });
     let r = &mut body.rig;
     ui.checkbox(&mut r.steps.enabled, "Step after the head")
         .on_hover_text("Walk Rico under the player's neck once the head is out past a lean.");

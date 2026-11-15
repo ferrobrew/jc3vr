@@ -100,6 +100,7 @@ pub(crate) fn hook_library() -> HookLibrary {
         .with_hook_library(map::hook_library())
         .with_hook_library(roomscale::hook_library())
         .with_hook_library(body::rig::root::hook_library())
+        .with_hook_library(body::firm_ragdoll::hook_library())
         .with_hook_library(weapons::hook_library())
         .with_hook_library(snatch::hook_library())
         .with_hook_library(haptics::hook_library())
