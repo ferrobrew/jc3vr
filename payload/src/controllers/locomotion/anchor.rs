@@ -23,6 +23,7 @@ use crate::{
                 Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral,
                 NeutralCapture, blend, face_clear, face_offset, neck_model_anchors, stable_anchors,
             },
+            view_follow::{Escape, HeadFollower, HeldSource},
         },
         mode::{AirborneVariant, Mode, OnFootVariant, current as current_mode},
     },
@@ -198,6 +199,48 @@ pub(crate) unsafe fn stabilize(
         .filter(|_| weight > 0.0)
         .map(|neutral| stable_anchors(&neutral, world_t0, world_t1, height));
     if source() == Source::Vr {
+        // A ragdoll, a get-up, a death, and a landing that carries the head well away from the
+        // root hang the held view from the followed animated head rather than over the root.
+        let distance = stable_target.map_or(0.0, |stable| {
+            let away = animated.head - stable.head;
+            Vec3::new(away.x, 0.0, away.z).length()
+        });
+        let escaped = state.escape.step(
+            weight > 0.0 && case.is_some_and(Case::view_may_escape),
+            distance,
+            dt,
+        );
+        let held = if case.is_some_and(Case::view_follows_head) || escaped {
+            HeldSource::Head
+        } else {
+            HeldSource::Root
+        };
+        if state.held != Some(held) && stable_target.is_some() {
+            tracing::debug!(
+                target: "controllers",
+                ?held,
+                escaped,
+                distance,
+                "locomotion: the held view changes its head",
+            );
+        }
+        let stable_target = match stable_target {
+            Some(stable) => {
+                state.held = Some(held);
+                let pair = state.follower.step(held, stable.head, animated.head, dt);
+                Some(Anchors {
+                    head: pair.current,
+                    head_prev: pair.previous,
+                    neck: pair.current + (stable.neck - stable.head),
+                    eye_arm: stable.eye_arm,
+                })
+            }
+            None => {
+                state.held = None;
+                state.follower.reset();
+                None
+            }
+        };
         // The headset's view takes only the camera's anchors: the body's pose and IK keep the
         // animated head, so the head bone stays on the animation while the view does not bob.
         // Under the neck model the eyes hang from the neutral head as the body's head target
@@ -275,6 +318,12 @@ struct State {
     grounded_at: Option<Instant>,
     /// Whether the root-fixed anchor had any weight last tick, for the handover log.
     stable: bool,
+    /// The held view's head, over the root or following the animated head.
+    follower: HeadFollower,
+    /// Whether a landing or a one-off has carried the head away long enough to follow it.
+    escape: Escape,
+    /// The head the held view hung from last tick, while it was held.
+    held: Option<HeldSource>,
     status: AnchorStatus,
 }
 
@@ -287,6 +336,9 @@ static STATE: Mutex<State> = Mutex::new(State {
     tracker: StateTracker::new(),
     grounded_at: None,
     stable: false,
+    follower: HeadFollower::new(),
+    escape: Escape::new(),
+    held: None,
     status: AnchorStatus {
         weight: 0.0,
         eligible: false,

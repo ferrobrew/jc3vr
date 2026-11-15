@@ -176,12 +176,14 @@ impl Case {
         matches!(self, Self::Flight | Self::Traversal | Self::NoMovementTask)
     }
 
-    /// Whether the headset's view hangs from the neutral head over the root in the case rather
-    /// than from the animated head: everything that happens to Rico on foot, through a fall and its
-    /// landing, a stumble, an authored one-off, and a ragdoll and its get-up. The player stands on
-    /// their own feet through all of it, so no clip moves their view. Vehicles and their stunt
-    /// positions, the grapple's traversals and hangs, the ledge climb, swimming, the wingsuit, the
-    /// parachute, death, and scripted sequences keep the animated head.
+    /// Whether the headset's view is held in the case rather than hung from the animated head:
+    /// upright, with the eyes on the tracked neck model, from the neutral head over the root or,
+    /// where [`view_follows_head`](Self::view_follows_head), from the followed animated head.
+    /// That is everything that happens to Rico on foot, through a fall and its landing, a stumble,
+    /// an authored one-off, a ragdoll and its get-up, and a death. The player stands on their own
+    /// feet through all of it, so no clip turns their view. Vehicles and their stunt positions, the
+    /// grapple's traversals and hangs, the ledge climb, swimming, the wingsuit, the parachute, and
+    /// scripted sequences keep the animated head.
     pub const fn view_holds_root(self) -> bool {
         matches!(
             self,
@@ -194,6 +196,29 @@ impl Case {
                 | Self::NoMovementTask
                 | Self::Ragdoll
                 | Self::GettingUp
+                | Self::Dead
+        )
+    }
+
+    /// Whether the held view follows Rico's animated head rather than standing over the root: a
+    /// ragdoll, its get-up, and a death carry the body far from the root for seconds and leave it
+    /// somewhere else, so a view held over the root would float away from the body.
+    pub const fn view_follows_head(self) -> bool {
+        matches!(self, Self::Ragdoll | Self::GettingUp | Self::Dead)
+    }
+
+    /// Whether the held view escapes to the animated head when a clip carries the head well away
+    /// from the root for longer than a dip: a landing (which reads as on foot once grounded), a
+    /// fall, a stumble, an authored one-off, or the movement task stopping. A jump and a climb by
+    /// the hands stay over the root.
+    pub const fn view_may_escape(self) -> bool {
+        matches!(
+            self,
+            Self::OnFoot
+                | Self::Flight
+                | Self::HitReaction
+                | Self::AuthoredMotion
+                | Self::NoMovementTask
         )
     }
 }

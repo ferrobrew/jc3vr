@@ -13,6 +13,8 @@
 //! - [`acts`] keeps the turn-in-place and turning start and stop acts off the body.
 //! - [`anchor`] anchors the on-foot view to Rico's root and a neutral standing head instead of his
 //!   animated head ([`view`]).
+//! - [`view_follow`] has that held view follow Rico's animated head through a ragdoll, a get-up, a
+//!   death, and a landing that carries the head well away from the root.
 //!
 //! The legs still play the game's clips; only where the body goes, and where the view sits, no
 //! longer come from them.
@@ -26,6 +28,7 @@ pub mod config;
 pub mod speeds;
 pub mod strokes;
 pub mod view;
+pub mod view_follow;
 
 use std::time::{Duration, Instant};
 
