@@ -16,6 +16,8 @@ pub struct IkBodyConfig {
     pub airborne: bool,
     /// While the hands climb, brace each foot on the face in front of it, or let it hang relaxed.
     pub climb_feet: bool,
+    /// Give the firm ragdoll the drawn upper body and the IK body's legs as its muscle target.
+    pub ragdoll_target: bool,
     /// The IK pose's share of the pelvis's turn and the spine on the walk.
     pub walk_weight: f32,
     /// How long a hand-over between the IK pose and a clip takes, seconds.
@@ -54,6 +56,7 @@ impl IkBodyConfig {
             enabled: true,
             airborne: true,
             climb_feet: true,
+            ragdoll_target: true,
             walk_weight: 0.2,
             blend_s: 0.25,
             resume_s: 0.4,

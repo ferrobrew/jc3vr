@@ -138,6 +138,16 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
         ),
         None => "Firm ragdoll: out".to_owned(),
     });
+    ui.label(format!(
+        "Muscle target (dry run): {} composed, {} refused · legs from the {} · upper body moved \
+         {:.3} m · thighs turned {:.0}° and {:.0}°",
+        firm.targets,
+        firm.refused,
+        if firm.ik_legs { "IK body" } else { "clip" },
+        firm.report.upper_shift_m,
+        firm.report.thigh_turn_deg[0],
+        firm.report.thigh_turn_deg[1],
+    ));
     let r = &mut body.rig;
     ui.checkbox(&mut r.steps.enabled, "Step after the head")
         .on_hover_text("Walk Rico under the player's neck once the head is out past a lean.");
@@ -247,6 +257,15 @@ fn ik_body_settings(ui: &mut Ui, ik: &mut IkBodyConfig) {
         .on_hover_text(
             "Hang the pelvis under the head in a jump, the legs relaxed toward an air pose.",
         );
+    ui.checkbox(
+        &mut ik.ragdoll_target,
+        "IK pose as the firm ragdoll's target",
+    )
+    .on_hover_text(
+        "Compose the firm ragdoll's muscle target from the drawn upper body and the IK body's \
+             legs rather than the raw clip. Until the ragdoll's pre-physics step is bound, the \
+             target is composed as a dry run for the readout.",
+    );
     ui.checkbox(&mut ik.climb_feet, "IK feet on the face while climbing")
         .on_hover_text(
             "While the hands climb, brace each foot on the face in front of it, or let it hang \

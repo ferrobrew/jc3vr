@@ -18,18 +18,38 @@
 //! HumanIK solve, so the head, the hands, and the chest stay the mod's; the procedural legs stand
 //! down while the mode is in, so the physics owns them.
 //!
+//! The ragdoll's pre-physics step reads its muscle target from the raw animation, before the mod's
+//! solve. [`feed`] builds the producer to hand it instead ([`stand_in`]), whose current pose is the
+//! last tick's final pose above the hips and the IK body's legs below ([`target`]), from the bones
+//! and legs the IK body publishes at each gate while the mode is in ([`publish_source`]). The
+//! detour on the pre-physics step that would hand it over waits on that function's binding in the
+//! game's definitions; until then the post-physics detour composes the target each tick as a dry
+//! run, so the readout and the log show what it would feed.
+//!
 //! [`RagdollParamIdSymbolTable::GRAPPLE_HANG`]: jc3gi::animation::symbol_table::RagdollParamIdSymbolTable::GRAPPLE_HANG
 //! [`Character::PostPhysicsUpdateRagdoll`]: jc3gi::character::character::Character::PostPhysicsUpdateRagdoll
 
+mod stand_in;
+pub(crate) mod target;
+
 use std::{
     sync::atomic::{AtomicBool, Ordering},
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use detours_macro::detour;
-use jc3gi::{animation::symbol_table::RagdollParamIdSymbolTable, character::character::Character};
+use jc3gi::{
+    animation::{pose_producer::PoseProducer, symbol_table::RagdollParamIdSymbolTable},
+    character::character::Character,
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
+
+pub use crate::controllers::body::firm_ragdoll::stand_in::TargetReport;
+use crate::controllers::body::firm_ragdoll::{
+    stand_in::StandIn,
+    target::{IkLegs, TargetBones},
+};
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&POST_PHYSICS_UPDATE_RAGDOLL_BINDER)
@@ -55,6 +75,13 @@ pub struct FirmStatus {
     pub active: bool,
     /// The preset id the mode is on, when it is in.
     pub preset: Option<u32>,
+    /// How many ticks the muscle target was composed, and how many could not be.
+    pub targets: u64,
+    pub refused: u64,
+    /// Whether the last target took the IK body's legs rather than the clip's.
+    pub ik_legs: bool,
+    /// How far the last target stood from the clip.
+    pub report: TargetReport,
 }
 
 /// The firm mode's readout.
@@ -65,6 +92,66 @@ pub fn status() -> FirmStatus {
 /// Whether the physics owns the legs this tick: the procedural legs stand down.
 pub(crate) fn owns_legs() -> bool {
     OWNS_LEGS.load(Ordering::Relaxed)
+}
+
+/// Publish the bones the muscle target is composed on and the IK body's legs, from the solve gate
+/// while the physics owns the legs.
+pub(crate) fn publish_source(bones: TargetBones, legs: Option<IkLegs>, now: Instant) {
+    *SOURCE.lock() = Some(Source {
+        bones,
+        legs,
+        at: now,
+    });
+}
+
+/// The producer to hand the local player's ragdoll's pre-physics step in place of `producer`: the
+/// stand-in holding the muscle target while the firm mode is in and the IK body has published its
+/// source, and `producer` itself otherwise.
+///
+/// # Safety
+///
+/// `character` must be the live local player and `producer` its animation controller's producer,
+/// between the producer's buffer exchange and the end of the ragdoll's pre-physics step, on the
+/// thread running it. The returned producer is valid until the next call.
+pub(crate) unsafe fn feed(character: &Character, producer: *mut PoseProducer) -> *mut PoseProducer {
+    let in_mode = {
+        let state = STATE.lock();
+        state
+            .mode
+            .preset()
+            .is_some_and(|preset| character.m_CurrentRagdollParamsID == preset)
+    };
+    let source = SOURCE
+        .lock()
+        .filter(|source| Instant::now().saturating_duration_since(source.at) <= SOURCE_FRESH);
+    let (Some(source), true, Some(live)) = (source, in_mode, unsafe { producer.as_ref() }) else {
+        return producer;
+    };
+    let fed = unsafe { STAND_IN.lock().refresh(live, source.bones, source.legs) };
+    let mut state = STATE.lock();
+    match fed {
+        Some((stand_in, report)) => {
+            if state.status.targets == state.logged_targets {
+                tracing::info!(
+                    target: "controllers",
+                    ik_legs = source.legs.is_some(),
+                    upper_shift_m = report.upper_shift_m,
+                    left_thigh_turn_deg = report.thigh_turn_deg[0],
+                    right_thigh_turn_deg = report.thigh_turn_deg[1],
+                    "firm ragdoll: the muscle target is the drawn body",
+                );
+            }
+            state.status.targets += 1;
+            state.status.ik_legs = source.legs.is_some();
+            state.status.report = report;
+            stand_in
+        }
+        None => {
+            state.status.refused += 1;
+            tracing::debug!(target: "controllers", "firm ragdoll: the muscle target could not be composed");
+            producer
+        }
+    }
 }
 
 /// Step the firm mode for the local player on an input tick, asked for `want`, with the switch
@@ -90,7 +177,9 @@ unsafe fn tick(character: &mut Character, want: Want, enabled: bool) {
     let mut state = STATE.lock();
     let current = character.m_CurrentRagdollParamsID;
     match (state.mode, want) {
-        (Mode::Off, Want::Off) => {}
+        (Mode::Off, Want::Off) => {
+            state.logged_targets = state.status.targets;
+        }
         (Mode::Off, Want::Line) => {
             let Some(hang) = (unsafe { preset_id(RagdollParamIdSymbolTable::GRAPPLE_HANG) }) else {
                 return;
@@ -150,11 +239,9 @@ unsafe fn tick(character: &mut Character, want: Want, enabled: bool) {
         }
     }
     let weight = state.mode.weight(now);
-    state.status = FirmStatus {
-        weight,
-        active: matches!(state.mode, Mode::In { .. }),
-        preset: state.mode.preset(),
-    };
+    state.status.weight = weight;
+    state.status.active = matches!(state.mode, Mode::In { .. });
+    state.status.preset = state.mode.preset();
     OWNS_LEGS.store(weight > 0.0, Ordering::Relaxed);
 }
 
@@ -171,6 +258,15 @@ fn post_physics_update_ragdoll(character: *mut Character, dt: f32) {
             && let Some(instance) = unsafe { character.m_Ragdoll.px.as_mut() }
         {
             instance.m_BlendWeight = weight;
+        }
+        // The dry run: the producer's poses stand as the pre-physics step read them, the last
+        // final pose and this tick's animation, until the blend below writes the physics in.
+        if preset.is_some()
+            && let Some(controller) =
+                unsafe { character.m_AnimatedModel.m_AnimationController.as_ref() }
+        {
+            // SAFETY: the live local player's producer, before the post-physics blend.
+            unsafe { feed(character, controller.m_PoseProducer) };
         }
     }
     POST_PHYSICS_UPDATE_RAGDOLL
@@ -247,6 +343,8 @@ struct State {
     /// The preset id to restore once the mode is out, when the mode wrote one of its own.
     saved: Option<u32>,
     status: FirmStatus,
+    /// The target count when the mode last came in, so the first target of each spell is logged.
+    logged_targets: u64,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
@@ -256,8 +354,31 @@ static STATE: Mutex<State> = Mutex::new(State {
         weight: 0.0,
         active: false,
         preset: None,
+        targets: 0,
+        refused: 0,
+        ik_legs: false,
+        report: TargetReport {
+            upper_shift_m: 0.0,
+            thigh_turn_deg: [0.0; 2],
+        },
     },
+    logged_targets: 0,
 });
+
+/// What the IK body publishes for the muscle target.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Source {
+    bones: TargetBones,
+    legs: Option<IkLegs>,
+    at: Instant,
+}
+
+static SOURCE: Mutex<Option<Source>> = Mutex::new(None);
+
+/// A published source stands this long: a few ticks.
+const SOURCE_FRESH: Duration = Duration::from_millis(250);
+
+static STAND_IN: Mutex<StandIn> = Mutex::new(StandIn::new());
 
 static OWNS_LEGS: AtomicBool = AtomicBool::new(false);
 

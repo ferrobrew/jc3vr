@@ -23,7 +23,10 @@ use glam::{Mat4, Vec2, Vec3};
 use crate::{
     controllers::{
         body::{
-            firm_ragdoll,
+            firm_ragdoll::{
+                self,
+                target::{IkLegs, TargetBones},
+            },
             ik_body::{
                 climb::{ClimbFeet, ClimbLegs, ModelBrace},
                 config::IkBodyConfig,
@@ -554,6 +557,13 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
     state.check_resets(input.now);
     let (target, reason) = classify(input, fk.as_ref(), &mut state.hold);
     state.log_state(target, reason, input.case);
+    if reason == Some(StandDown::FirmRagdoll) && input.config.ragdoll_target {
+        firm_ragdoll::publish_source(
+            TargetBones::of(input.rig),
+            fk.as_ref().and_then(|fk| ragdoll_legs(input, fk)),
+            input.now,
+        );
+    }
     let weights = state.blend.step(
         target.weights(input.config.walk_weight),
         input.dt,
@@ -687,6 +697,27 @@ pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
         pose: Some(pose),
         feet_weight: weights.feet,
     }
+}
+
+/// The IK body's legs for the firm ragdoll's muscle target: the air pose the airborne body would
+/// give them, in model space, while the estimate is fresh.
+fn ragdoll_legs(input: &GateInput<'_>, fk: &FkPose) -> Option<IkLegs> {
+    if fk.source != PelvisSource::Estimate {
+        return None;
+    }
+    let geometry = Geometry::of(input, fk);
+    let frame = seed::ik_frame(&geometry.body)?;
+    let [ankles, knees] = seed::air_legs(
+        &geometry.body,
+        frame,
+        geometry.rico.leg,
+        input.config.air_relax,
+    );
+    Some(IkLegs {
+        hips: geometry.body.hips,
+        knees,
+        ankles,
+    })
 }
 
 /// The state the tick asks for, and why the IK stands down from the standing body if it does.
