@@ -124,7 +124,10 @@ use crate::{
     ui::capture::{CaptureUpdate, OwnershipBlocker},
     vr::{
         self,
-        input::semantic::{SemanticSet, frame as semantic_frame, history, vocabulary::MenuAction},
+        input::semantic::{
+            SemanticSet, frame as semantic_frame, history,
+            vocabulary::{MenuAction, OnFootAction},
+        },
     },
 };
 
@@ -707,6 +710,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             button: step.grapple_lock,
             carries: detection.traversal == Some(Traversal::ReelingIn),
             yank: physical_grapple.lock_yank,
+            jump: semantic_input
+                .get(OnFootAction::Jump.id())
+                .is_some_and(|input| input.hands.iter().any(|hand| hand.button.pressed)),
             line: grapple_line,
             real_dt,
             hand: grapple_hand,

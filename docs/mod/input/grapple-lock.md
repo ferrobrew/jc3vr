@@ -80,7 +80,8 @@ The active wire never holds a native constraint ([grapple-pipeline.md](../../eng
 | The button released after a hold | The active wire is retracted; the reel task cancels itself into the fall on its next update. The swing's last velocity, the one the lock handed the reel, is given to Rico before the retract and again after the cancel, so he keeps the swing's exit velocity, from which the parachute and the wingsuit open as usual. The wanted velocity read back from the character reads near zero while the lock drives the reel, so it is only the fallback |
 | A quick release | The reel resumes, firing nothing onto the attached line |
 | A yank | The reel resumes toward the hook and its own arrival (a perch, the helicopter's hang, a vehicle's stunt position) |
-| Landing: Rico's proxy stands on a surface after he has left the ground since the lock took hold | The line is let go of, so Rico lands on foot rather than being dragged |
+| The jump pressed | As a release: the line is let go of with the swing's velocity |
+| Landing from a hang: Rico's proxy stands on a surface after he has left the ground since the hang took hold | The line is let go of, so Rico lands on foot. A held swing does not end on landing: it holds for as long as the button does, and the line drags Rico along the ground when it is taut |
 | The line breaks: Rico past the break stretch, the hook's target gone or no longer live, or a sample the swing needs not finite | The line is let go of, with the snap |
 | The reel ends by itself, the lock is switched off, or the bindings stand down | The lock lets go of the reel, and the game's reel carries on if it can |
 
@@ -128,7 +129,7 @@ With the lock on (the default):
 5. Swing, and let go at the bottom of the arc going forward: Rico flies on with his speed into the fall, carrying on forward rather than dropping straight down, the release pulse is felt, `the lock ends` with `released`, and the parachute opens from the flight.
 6. Lock, then tap-release within a quarter of a second, with the re-reel upgrade bought: the reel resumes and fires again from the reel at the aim. Without the upgrade, the reel simply resumes.
 7. Lock, then yank the grapple hand: the reel resumes to the hook and its arrival (a perch or a hang), boosted if the upgrade is bought; `the lock ends` with `yanked`.
-8. Lock low over the ground and let Rico swing down onto it: the line is let go of on touching down, with `landed`, and Rico lands on foot.
+8. Lock low over the ground and let Rico swing down onto it: the line holds while the button does, dragging him along the ground when taut; let go of the button and he lands on foot. From a ceiling hang, drop onto a floor below: the hang ends with `landed`. Press jump while locked: the line is let go of with `released`.
 9. Lock onto a parked car from above: the car barely moves while Rico swings. Lock onto a light object hung or lying on a ledge: it is dragged toward Rico. Lock onto a flying helicopter: Rico keeps his offset under it as it flies, the helicopter sways, and `LINE LOCK` shows its speed.
 10. Swing hard into a long arc on a short line: if Rico is flung past the break stretch the line snaps with the snap pulse and `broke: overstretched`. Shoot down a helicopter while locked under it: the line breaks with `broke: target gone`.
 11. Grapple a character and hold the button during the reel: nothing locks, and the game's own reel and grab behave as before.

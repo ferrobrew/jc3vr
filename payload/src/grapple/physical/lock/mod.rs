@@ -224,6 +224,8 @@ pub(crate) struct LockTickInput<'a> {
     /// The physical grapple's yank fired this tick: the lock's one source of it, whatever the
     /// button's gesture is doing.
     pub yank: bool,
+    /// The jump was pressed this tick: a way off the line, as from any hang.
+    pub jump: bool,
     /// The grapple hand's grip and aim, in the cockpit frame, or `None` while untracked.
     pub line: Option<HandLine>,
     /// The tick's length, real seconds: the hand's take-in.
@@ -633,6 +635,7 @@ unsafe fn ending(
         Some(LockButton::LetGo) => return Some(LockEnd::Released),
         _ if input.yank && active.hang => return Some(LockEnd::Released),
         _ if input.yank => return Some(LockEnd::Yanked),
+        _ if input.jump => return Some(LockEnd::Released),
         _ => {}
     }
     if !input.config.enabled || (active.hang && !input.config.hang) {
@@ -652,8 +655,11 @@ unsafe fn ending(
     {
         return Some(LockEnd::Broke(BreakCause::TargetGone));
     }
+    // A held swing holds for as long as the button does, across the ground too: touching down
+    // drags Rico along on the line rather than letting go of it. A hang's floor below its ceiling
+    // ends it.
     let supported = unsafe { engine::supported(character) };
-    if supported && active.airborne {
+    if supported && active.airborne && active.hang {
         return Some(LockEnd::Landed);
     }
     if !supported && let Some(active) = SHARED.lock().active.as_mut() {
