@@ -73,10 +73,14 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
     if LAST_AIM_UPDATE.swap(status.updates, Ordering::Relaxed) != status.updates {
         let off = dominant.other();
         let off_hit = status.hands[off.index()].and_then(|h| h.hit);
-        let grapple_at = status
-            .grapple
-            .as_ref()
-            .map(|g| ticked_grapple_point(g.point));
+        let grapple_at = match status.grapple.as_ref() {
+            Some(g) => Some(ticked_grapple_point(g.point)),
+            None => {
+                // A new aim starts where it is rather than sweeping from the last one's point.
+                *GRAPPLE_TICKS.lock() = (None, None);
+                None
+            }
+        };
         submit_or_clear(
             Source::GrappleHighlight,
             config.grapple_highlight,
@@ -169,13 +173,13 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
 /// own colour for a target a tether pulls, and a wider, thin outer ring while the aim assist turned
 /// the ray onto it.
 /// The grapple's aim point as an anchor between its last two sim ticks' points
-/// ([`Anchor::Ticked`]): the point is measured once a tick, and from a moving vehicle a point
-/// drawn where the tick left it slid back by up to a tick's travel and jumped on each tick.
+/// ([`Anchor::Ticked`]), called once for each aim update: the point is measured once a tick, and
+/// from a moving vehicle a point drawn where the tick left it slid back by up to a tick's travel
+/// and jumped on each tick. A point that holds still from one tick to the next is drawn still.
 fn ticked_grapple_point(point: Vec3) -> Anchor {
     let mut ticks = GRAPPLE_TICKS.lock();
-    let (previous, current) = *ticks;
+    let (_, current) = *ticks;
     let (previous, current) = match current {
-        Some(current) if current == point => (previous.unwrap_or(point), point),
         Some(current) if current.distance(point) < TICKED_JUMP_M => (current, point),
         _ => (point, point),
     };
