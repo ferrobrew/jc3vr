@@ -103,6 +103,7 @@ const PAYLOAD_SHADERS: &[(&str, &str)] = &[
     ("overlay_ps", "ps_5_0"),
     ("scope_lens_vs", "vs_5_0"),
     ("scope_lens_ps", "ps_5_0"),
+    ("i420_pack_ps", "ps_5_0"),
 ];
 
 /// `body-estimator`'s compute shaders (`cs_5_0`): `(name, source, defines)`. Each

@@ -39,7 +39,10 @@ use crate::{
     vr::MirrorView,
 };
 
+mod convert;
+pub(crate) mod layout;
 mod owners;
+mod pacing;
 pub(crate) mod protocol;
 pub(crate) mod session_recording;
 mod take;
