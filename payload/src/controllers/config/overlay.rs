@@ -73,7 +73,7 @@ impl OverlayConfig {
             body_mirror: false,
             body_mirror_distance_m: 1.2,
             body_rig: true,
-            body_estimate: true,
+            body_estimate: false,
             docked_guns: true,
             depth_tolerance_m: 0.05,
             depth_tolerance_rel: 0.01,
