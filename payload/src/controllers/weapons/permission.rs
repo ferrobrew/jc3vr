@@ -12,10 +12,16 @@
 //! ground, swimming, vehicle, ragdoll, or death states, whose withholding still applies. A trigger
 //! the permission withholds stays reserved by the gun, so a press neither fires nor falls through to
 //! the game's own action for the trigger.
+//!
+//! A live wire that is the mod's own also waives it, on foot or in the air: the snatch's line, or
+//! the grapple lock's held swing. The game withholds every permission while the hook has a live
+//! wire, but those lines are the mod's, held by the other hand, and the gun the free hand holds is
+//! posed and fired by the mod; on the 14 November take the trigger did nothing while a ragdoll
+//! swung on the snatch's line. A plain reel keeps the game's own rule.
 
 use jc3gi::character::character::Character;
 
-use crate::grapple::hook;
+use crate::{controllers::snatch, grapple::hook};
 
 /// Whether a gun the character holds may fire: the game's shooting permission, or the airborne
 /// locomotion waiver ([`waived`]).
@@ -23,7 +29,7 @@ use crate::grapple::hook;
 /// # Safety
 ///
 /// `character` must be live for the call; the reads are the same ones the game's own predicates
-/// make, and take no locks.
+/// make, and the snatch's state lock, a leaf.
 pub(crate) unsafe fn shooting_allowed(character: &Character) -> bool {
     let allowed = unsafe { character.m_Inventory.GetAnimationAllowsShooting() };
     allowed || waived(unsafe { airborne_state(character) })
@@ -38,12 +44,14 @@ struct AirborneState {
     reeling: bool,
     /// The grappling hook has a live wire.
     active_wire: bool,
+    /// The live line is the mod's own: the snatch's, or the lock's held swing.
+    mod_line: bool,
 }
 
-/// Whether the shooting permission is waived: in airborne locomotion, with no grapple wind-up,
-/// reel-in, or live wire.
+/// Whether the shooting permission is waived: in airborne locomotion with no grapple wind-up,
+/// reel-in, or live wire, or on a line of the mod's own.
 fn waived(state: AirborneState) -> bool {
-    state.airborne && !state.reeling && !state.active_wire
+    state.mod_line || (state.airborne && !state.reeling && !state.active_wire)
 }
 
 unsafe fn airborne_state(character: &Character) -> AirborneState {
@@ -57,6 +65,7 @@ unsafe fn airborne_state(character: &Character) -> AirborneState {
                 || character.IsFastfalling(),
             reeling: character.IsPreReelingIn() || character.IsReelingIn(),
             active_wire: hook.is_some_and(|hook| hook.m_ActiveWire.exists()),
+            mod_line: crate::grapple::physical::lock::holds() || snatch::line_out(),
         }
     }
 }
@@ -80,6 +89,21 @@ mod tests {
         assert!(!waived(AirborneState {
             active_wire: true,
             ..airborne
+        }));
+    }
+
+    #[test]
+    fn a_line_of_the_mods_own_waives_it_anywhere() {
+        assert!(waived(AirborneState {
+            active_wire: true,
+            mod_line: true,
+            ..AirborneState::default()
+        }));
+        assert!(waived(AirborneState {
+            reeling: true,
+            active_wire: true,
+            mod_line: true,
+            ..AirborneState::default()
         }));
     }
 }

@@ -191,6 +191,13 @@ const fn heavy(offer: &Offer) -> bool {
     )
 }
 
+/// Whether the snatch's own line is out: the hook flying to its target, freeing it, or the line
+/// pulling or swinging it. A gun in the other hand may fire meanwhile
+/// ([`crate::controllers::weapons::permission`]).
+pub(crate) fn line_out() -> bool {
+    STATE.lock().phase.in_flight().is_some()
+}
+
 /// The hands whose grips the snatch holds for its catch, by [`Hand::index`]: while its line is out,
 /// the free, empty hand other than the grapple hand. A press of such a grip closes the hand on
 /// nothing, ready to catch, rather than taking what is in reach or driving the game action bound to
