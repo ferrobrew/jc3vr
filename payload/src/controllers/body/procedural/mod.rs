@@ -346,8 +346,26 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     // feet slid across a slope at their old height (6 of 18 fast-fall landings on the 14 November
     // take, which read as on foot once grounded).
     // SAFETY: the live local character, at the pose gate on the game thread.
-    let idle = unsafe { active_state_type_id(character) }
-        .is_some_and(|state| STANCE_IDLES.contains(state));
+    let active_state = unsafe { active_state_type_id(character) };
+    let idle = active_state.is_some_and(|state| STANCE_IDLES.contains(state));
+    // The idle list is closed: a standing state it misses loses the square stance silently, so the
+    // first time each one is seen with Rico standing still on foot it is logged.
+    if let Some(state) = active_state
+        && !idle
+        && case == Case::OnFoot
+        && locomotion.fresh(now)
+        && locomotion.standing_still()
+    {
+        let mut seen = UNLISTED_STANDING.lock();
+        if !seen.contains(&state) && seen.len() < MAX_UNLISTED_LOGGED {
+            seen.push(state);
+            tracing::info!(
+                target: "controllers",
+                state = format_args!("{state:#010x}"),
+                "procedural body: standing still on foot in a state the stance's idle list misses"
+            );
+        }
+    }
     let stance_authorized = (config.stance.enabled || (follow.enabled && follow.square_hips))
         && case == Case::OnFoot
         && idle
@@ -489,6 +507,12 @@ struct TorsoGate<'a> {
 
 /// The standing idle states of Rico's base graph, the only states the square stance squares the
 /// feet in.
+/// The standing states outside [`STANCE_IDLES`] already logged.
+static UNLISTED_STANDING: Mutex<Vec<u32>> = Mutex::new(Vec::new());
+
+/// The most unlisted standing states logged in a session.
+const MAX_UNLISTED_LOGGED: usize = 64;
+
 static STANCE_IDLES: LazyLock<StateSet> = LazyLock::new(|| {
     StateSet::new([
         "S_IDLE",
