@@ -730,8 +730,11 @@ pub(super) unsafe fn sling(
         // A body is yanked in to arm's reach, where the free hand can take it, and then swung on
         // the line held there; at the swing's own length and reel, a body bitten a few metres off
         // barely came.
+        // The reel slows as the line nears that length, so the body arrives at a walk rather than
+        // flying on through the view at the yank's speed.
         line.swing_length_m = line.swing_length_m.min(RAGDOLL_YANK_LENGTH_M);
-        line.reel_mps = line.reel_mps.max(RAGDOLL_YANK_MPS);
+        let left_m = (rope.length_m() - line.swing_length_m).max(0.0);
+        line.reel_mps = (left_m * RAGDOLL_YANK_EASE_PER_S).clamp(line.reel_mps, RAGDOLL_YANK_MPS);
     }
     let rigid = state.rigid();
     let hook_point = state.pose.point(hit.local_point);
@@ -782,6 +785,11 @@ const RAGDOLL_YANK_LENGTH_M: f32 = 1.2;
 
 /// How fast a ragdoll's line reels in, metres per second: a yank, not the swing's draw.
 const RAGDOLL_YANK_MPS: f32 = 9.0;
+
+/// How fast a ragdoll's reel slows toward its length, per second: the reel's speed is what is left
+/// of the line times this, between the swing's reel and [`RAGDOLL_YANK_MPS`], so a body bitten far
+/// off comes at the yank's speed and eases in over its last two metres.
+const RAGDOLL_YANK_EASE_PER_S: f32 = 3.0;
 
 /// Where a tossed gun lands, metres in front of the player toward where it came from.
 const TOSS_LAND_M: f32 = 1.2;
