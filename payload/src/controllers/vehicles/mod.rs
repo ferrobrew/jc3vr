@@ -100,7 +100,7 @@ pub(crate) use self::{
     finish::finish_tick,
     ripcord_tick::finish as ripcord_finish,
     speed::seat_vehicle_speed_mps,
-    state::{parachute_holds, stand_down},
+    state::{mounted_holds, parachute_holds, stand_down},
 };
 
 /// The vehicles' hooks, aggregated by [`crate::controllers::hook_library`].

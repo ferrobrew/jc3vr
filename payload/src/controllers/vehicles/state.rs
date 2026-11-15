@@ -1,7 +1,7 @@
 //! The vehicle handling's tick-to-tick state: the readout the debug UI and the status rows read,
 //! the held controls and handles, the mounted gun's hold, and the arm panel the headset reads.
 
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use glam::Vec3;
 use parking_lot::Mutex;
@@ -71,6 +71,21 @@ pub fn summary() -> VehicleSummary {
     }
 }
 
+/// Whether each hand holds a mounted gun's handle, indexed by [`Hand::index`]. Lock-free, for the
+/// physical hands to leave a hand on a handle out of their palms.
+pub fn mounted_holds() -> [bool; 2] {
+    MOUNTED_HOLDS
+        .each_ref()
+        .map(|hold| hold.load(Ordering::Relaxed))
+}
+
+/// Publish each hand's hold on a mounted gun's handle for [`mounted_holds`].
+pub(super) fn publish_mounted_holds(holds: [bool; 2]) {
+    for (slot, hold) in MOUNTED_HOLDS.iter().zip(holds) {
+        slot.store(hold, Ordering::Relaxed);
+    }
+}
+
 /// Whether `weapon` is the mounted gun the hands last aimed. Lock-free, for the per-weapon update
 /// of every character's weapons to rule a weapon out before taking any lock.
 pub fn is_mounted_weapon(weapon: usize) -> bool {
@@ -116,6 +131,7 @@ pub(crate) fn stand_down() {
     state.mounted_handle_points = [None; 2];
     mounted_recoil::set_holds([false; 2]);
     MOUNTED_WEAPON.store(0, Ordering::Relaxed);
+    publish_mounted_holds([false; 2]);
     state.mounted_handles = None;
     state.placement = None;
     state.latch = None;
@@ -184,15 +200,60 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
         let mounted = state
             .mounted_handles
             .and_then(|handles| handles[i])
-            .filter(|_| !grapple)
             .map(|point| {
-                let share = state.mounted_grip.shares(&state.mounted_config)[i];
-                (point + kick, tier_status.anchor_weights[i] * share)
+                let weight = mounted_hand_weight(MountedHandWeight {
+                    manned: tier_status.state == Some(tiers::TierState::MountedGun),
+                    grapple,
+                    anchor_weight: tier_status.anchor_weights[i],
+                    grip_handles: state.mounted_config.grip_handles,
+                    share: state.mounted_grip.shares(&state.mounted_config)[i],
+                });
+                (point + kick, weight)
             })
             .filter(|(_, weight)| *weight > 0.0);
         if let Some((point, weight)) = control.or(handle).or(mounted) {
             hands[i] = Some(move_grip(h, point, weight));
         }
+    }
+}
+
+/// What decides how far a hand is drawn onto its mounted gun's handle.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct MountedHandWeight {
+    /// Whether the character mans the gun in the native mounted state, whose tier anchors the
+    /// hands.
+    manned: bool,
+    /// Whether a grapple state owns the hands' anchor weights.
+    grapple: bool,
+    /// The hand's anchor weight from its tier.
+    anchor_weight: f32,
+    /// Whether the hands take the handles with the grip, rather than sitting on them whenever the
+    /// character mans the gun.
+    grip_handles: bool,
+    /// The hand's share of the pose on its handle ([`MountedGrip::shares`]).
+    share: f32,
+}
+
+/// How far a hand is drawn onto its mounted gun's handle, `0..=1`. Manning the gun, the anchored
+/// tier's weight scales the hand's share. Off the native mounted state, a hand that took a
+/// standalone gun's handle with its grip is drawn there by its grip's blend alone, since the tiers
+/// leave it free (on the 14 November take the hands floated at the controllers beside a tripod
+/// minigun they held); with the grip off, the hands sit on the handles only while manning. A
+/// grapple state's weights are the line's, never the handles'.
+fn mounted_hand_weight(inputs: MountedHandWeight) -> f32 {
+    let weight = if inputs.grapple {
+        0.0
+    } else if inputs.manned {
+        inputs.anchor_weight * inputs.share
+    } else if inputs.grip_handles {
+        inputs.share
+    } else {
+        0.0
+    };
+    if weight.is_finite() {
+        weight.clamp(0.0, 1.0)
+    } else {
+        0.0
     }
 }
 
@@ -332,6 +393,8 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State::new());
 /// [`is_mounted_weapon`].
 pub(super) static MOUNTED_WEAPON: AtomicUsize = AtomicUsize::new(0);
 
+static MOUNTED_HOLDS: [AtomicBool; 2] = [AtomicBool::new(false), AtomicBool::new(false)];
+
 pub(super) fn log_handle_events(events: &[HandleEvent]) {
     for event in events {
         match *event {
@@ -395,4 +458,60 @@ pub(super) fn push_events(status: &mut VehiclesStatus, events: Vec<ControlEvent>
     status.events.extend(events);
     let excess = status.events.len().saturating_sub(MAX_EVENTS);
     status.events.drain(..excess);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn weight(manned: bool, grip_handles: bool, share: f32) -> f32 {
+        mounted_hand_weight(MountedHandWeight {
+            manned,
+            grapple: false,
+            anchor_weight: if manned { 1.0 } else { 0.0 },
+            grip_handles,
+            share,
+        })
+    }
+
+    #[test]
+    fn a_hand_on_a_standalone_guns_handle_is_drawn_there_by_its_grip_alone() {
+        // Off the native mounted state the tiers leave the hands free, and the grip's blend draws
+        // a holding hand onto its handle, in and out.
+        assert_eq!(weight(false, true, 1.0), 1.0);
+        assert_eq!(weight(false, true, 0.4), 0.4);
+        assert_eq!(weight(false, true, 0.0), 0.0);
+        // Manning the gun, the anchored tier scales the share.
+        assert_eq!(weight(true, true, 0.5), 0.5);
+        let blending_in = mounted_hand_weight(MountedHandWeight {
+            manned: true,
+            grapple: false,
+            anchor_weight: 0.5,
+            grip_handles: true,
+            share: 1.0,
+        });
+        assert_eq!(blending_in, 0.5);
+    }
+
+    #[test]
+    fn without_the_grip_or_under_a_grapple_no_hand_goes_to_a_handle_off_the_mount() {
+        // With the grip off, the shares are whole whenever a gun is near: only manning it draws
+        // the hands there.
+        assert_eq!(weight(false, false, 1.0), 0.0);
+        assert_eq!(weight(true, false, 1.0), 1.0);
+        let grapple = MountedHandWeight {
+            manned: false,
+            grapple: true,
+            anchor_weight: 1.0,
+            grip_handles: true,
+            share: 1.0,
+        };
+        assert_eq!(mounted_hand_weight(grapple), 0.0);
+        let broken = MountedHandWeight {
+            grapple: false,
+            share: f32::NAN,
+            ..grapple
+        };
+        assert_eq!(mounted_hand_weight(broken), 0.0);
+    }
 }

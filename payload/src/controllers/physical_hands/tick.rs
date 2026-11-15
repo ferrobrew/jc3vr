@@ -62,7 +62,7 @@ use crate::{
             tuning::PALMS,
         },
         roomscale::teleport,
-        scheme,
+        scheme, vehicles,
         weapons::{self, c4, foregrip, grenade},
     },
     hooks,
@@ -739,8 +739,9 @@ fn joint_inputs(config: &PhysicalHandsConfig) -> pickup::JointInputs {
 }
 
 /// Which hands hold nothing a palm would get in the way of: no gun, not the foregrip, no grenade,
-/// charge, or detonator, nothing of the loadout table's but a prop the pickup carries, and the controller drives
-/// the hand.
+/// charge, or detonator, nothing of the loadout table's but a prop the pickup carries, no mounted
+/// gun's handle, and the controller drives the hand. A hand on a handle is drawn there, and a hand
+/// body left at its controller would fight the gun it holds.
 pub(crate) fn free_hands() -> [bool; 2] {
     let wielded = weapons::status()
         .wielded
@@ -752,6 +753,7 @@ pub(crate) fn free_hands() -> [bool; 2] {
     let charge = c4::throwing_hand();
     let detonator = c4::detonator_hand();
     let weights = tiers::weights();
+    let mounted = vehicles::mounted_holds();
     Hand::BOTH.map(|hand| {
         let held = live::held_kind(hand).is_some_and(|kind| kind != ItemKind::Prop);
         !wielded[hand.index()]
@@ -760,6 +762,7 @@ pub(crate) fn free_hands() -> [bool; 2] {
             && !grenade::holds(hand)
             && charge != Some(hand)
             && detonator != Some(hand)
+            && !mounted[hand.index()]
             && weights[hand.index()] > 0.0
     })
 }

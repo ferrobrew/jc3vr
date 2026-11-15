@@ -25,7 +25,7 @@ use crate::controllers::{
         mounted_grip::{self, MountedGripEvent},
         mounted_recoil, parachute, parachute_rig,
         physical::{self, ControlEvent, ControlKind, ControlState, buttons::ButtonEvent},
-        state::{STATE, log_handle_events, push_events},
+        state::{STATE, log_handle_events, publish_mounted_holds, push_events},
         steering,
         tuning::PhysicalControlsTuning,
         wheel_render, write_outputs,
@@ -80,9 +80,11 @@ pub(crate) fn finish_tick(
         Hand::BOTH.map(|h| state.mounted_grip.shares(&config.vehicles.mounted)[h.index()] > 0.0),
     );
     state.status.mounted_holds = state.mounted_grip.holds;
+    publish_mounted_holds(state.mounted_grip.holds);
     if !mounted_events.is_empty() {
         state.status.mounted_grip_events += mounted_events.len() as u64;
-        log_mounted_events(&mounted_events);
+        let manned = tiers::status().state == Some(tiers::TierState::MountedGun);
+        log_mounted_events(&mounted_events, manned);
     }
     let Some(placement) = state.placement else {
         return;
@@ -253,11 +255,19 @@ pub(crate) fn finish_tick(
 }
 
 /// Log the hands taking and letting go of the mounted gun's handles, and pulse a taking hand.
-fn log_mounted_events(events: &[MountedGripEvent]) {
+/// Log the hands' grabs and releases of the mounted gun's handles, with whether the character
+/// mans the gun (`manned`): off the native mounted state a holding hand is drawn on its handle by
+/// its grip alone.
+fn log_mounted_events(events: &[MountedGripEvent], manned: bool) {
     for event in events {
         match *event {
             MountedGripEvent::Grabbed(hand) => {
-                tracing::info!(target: "controllers", hand = hand.label(), "the hand took the mounted gun's handle");
+                tracing::info!(
+                    target: "controllers",
+                    hand = hand.label(),
+                    manned,
+                    "the hand took the mounted gun's handle"
+                );
                 haptics::play(hand, Event::HandleGrab);
             }
             MountedGripEvent::Released(hand, why) => {
