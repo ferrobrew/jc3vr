@@ -84,9 +84,6 @@ pub enum InputEvent {
 pub enum Refusal {
     /// As many charges are live as may be at once.
     NoRoom,
-    /// The character may not plant explosives now (the game's permission is off, or the ability is
-    /// not unlocked).
-    NotAllowed,
     /// The game's own planting holds the weapon: it is in its planting mode or holds a primed
     /// charge of its own.
     Busy,
@@ -98,7 +95,6 @@ impl Refusal {
     pub const fn label(self) -> &'static str {
         match self {
             Refusal::NoRoom => "as many charges are placed as may be",
-            Refusal::NotAllowed => "planting is not allowed now",
             Refusal::Busy => "the game's own planting is under way",
             Refusal::NotPlaced => "the placed charge is gone",
         }
@@ -114,8 +110,7 @@ pub struct WeaponView {
     pub physics_ready: bool,
     /// The weapon is in the game's own planting mode.
     pub planting: bool,
-    /// Why a charge cannot be placed now, if it cannot: [`Refusal::NoRoom`] or
-    /// [`Refusal::NotAllowed`].
+    /// Why a charge cannot be placed now, if it cannot: [`Refusal::NoRoom`].
     pub refusal: Option<Refusal>,
 }
 
@@ -236,9 +231,14 @@ pub fn before_update(stage: Stage, view: WeaponView) -> (Stage, WeaponAction, Op
                 return (Stage::Idle, WeaponAction::None, Some(Outcome::Gone));
             }
             match release {
+                // A refused throw keeps the charge in the hand, so the player sees it was not
+                // thrown, rather than despawning it from the open hand.
                 Some(_) if view.physics_ready && view.refusal.is_some() => (
-                    Stage::Idle,
-                    WeaponAction::Cancel,
+                    Stage::Held {
+                        hand,
+                        release: None,
+                    },
+                    WeaponAction::None,
                     view.refusal.map(Outcome::Refused),
                 ),
                 Some(release) if view.physics_ready => (
@@ -401,7 +401,7 @@ mod tests {
     }
 
     #[test]
-    fn a_grab_is_refused_without_room_permission_or_while_the_game_plants() {
+    fn a_grab_is_refused_without_room_or_while_the_game_plants() {
         for (v, refusal) in [
             (
                 WeaponView {
@@ -409,13 +409,6 @@ mod tests {
                     ..view(false, false)
                 },
                 Refusal::NoRoom,
-            ),
-            (
-                WeaponView {
-                    refusal: Some(Refusal::NotAllowed),
-                    ..view(false, false)
-                },
-                Refusal::NotAllowed,
             ),
             (
                 WeaponView {
@@ -435,7 +428,7 @@ mod tests {
     }
 
     #[test]
-    fn a_release_with_no_room_left_takes_the_charge_back() {
+    fn a_release_with_no_room_left_keeps_the_charge_in_the_hand() {
         let s = Stage::Held {
             hand: Hand::Right,
             release: Some(RELEASE),
@@ -447,9 +440,15 @@ mod tests {
                 ..view(true, true)
             },
         );
-        assert_eq!(action, WeaponAction::Cancel);
+        assert_eq!(action, WeaponAction::None);
         assert_eq!(out, vec![Outcome::Refused(Refusal::NoRoom)]);
-        assert_eq!(s, Stage::Idle);
+        assert_eq!(
+            s,
+            Stage::Held {
+                hand: Hand::Right,
+                release: None
+            }
+        );
     }
 
     #[test]

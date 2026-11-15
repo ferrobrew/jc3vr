@@ -419,8 +419,9 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
             tracing::info!(target: "controllers", hand = hand.label(), "c4: no charge left in the pouch, so the detonator came out");
         }
     }
-    // The trigger of the hand holding a charge swaps it for the detonator. A hand opening on the
-    // same tick throws the charge instead.
+    // The trigger of the hand holding a charge detonates the placed charges at once, the charge
+    // staying in the hand: the game's own detonate act shows the detonator in the hand while it
+    // plays and puts it away. A hand opening on the same tick throws the charge instead.
     if let Stage::Held {
         hand,
         release: None,
@@ -428,12 +429,8 @@ pub(super) fn input_tick(inputs: &TickInputs, tuning: &C4Tuning) {
         && inputs.triggers[hand.index()].pressed
         && !inputs.opened[hand.index()]
     {
-        state.stage = stage::on_input(state.stage, InputEvent::Return(hand));
-        state.detonator.take(hand, inputs.triggers[hand.index()]);
         state.status.swapped += 1;
-        state.preview = None;
-        pulses.push((hand, Event::PouchReturn));
-        tracing::info!(target: "controllers", hand = hand.label(), "c4: the trigger swapped the charge for the detonator");
+        pulses.push(state.press_detonator(hand));
     }
     if let Some(hand) = inputs.placed_grab
         && !state.grab_placed(hand)
@@ -650,6 +647,13 @@ impl State {
         let charges = self.status.charges.map_or(0, |(live, _)| live).max(0);
         let in_flight = self.in_flight.is_some();
         self.status.detonator_presses += 1;
+        // The game starts the detonate act only while its permission holds, which it withholds
+        // while dead, ragdolling, staggered, or on a live wire; a request then expires unseen.
+        if charges > 0 && !in_flight && !self.status.may_detonate {
+            self.status.idle_presses += 1;
+            tracing::info!(target: "controllers", charges, hand = hand.label(), "c4: the game does not allow detonating now");
+            return (hand, Event::PouchRefused);
+        }
         if charges > 0 && !in_flight {
             tracing::info!(target: "controllers", charges, hand = hand.label(), "c4: the detonator detonates");
             self.detonation = Some(PendingDetonation {
@@ -1082,13 +1086,11 @@ unsafe fn read_weapon(weapon: &mut PlantedExplosiveWeapon, user: &Character) -> 
     let max = unsafe { weapon.MaxActiveExplosives() };
     let may_plant = unsafe { user.m_Inventory.GetAnimationAllowsPlantingExplosives() };
     let may_detonate = unsafe { user.m_Inventory.GetAnimationAllowsTriggeringExplosives() };
-    let refusal = if !may_plant {
-        Some(Refusal::NotAllowed)
-    } else if live >= max {
-        Some(Refusal::NoRoom)
-    } else {
-        None
-    };
+    // The planting permission keeps the game's planting animation out of falls, landings,
+    // ragdolls, and the like; a charge the hand takes and throws plays none, so only the live
+    // charges' cap refuses it. Refused for the permission, three thrown charges vanished from the
+    // open hand on the 14 November take.
+    let refusal = (live >= max).then_some(Refusal::NoRoom);
     WeaponReading {
         view: WeaponView {
             primed: primed.is_some(),

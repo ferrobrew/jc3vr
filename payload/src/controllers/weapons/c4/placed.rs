@@ -287,11 +287,9 @@ pub(super) unsafe fn before_update(
 
 impl TakeStep {
     /// The weapon as the take's prime sees it: a take swaps a placed charge for the primed one, so
-    /// neither the cap nor the planting permission refuses it.
+    /// the cap does not refuse it.
     pub(super) fn view(self, mut view: WeaponView) -> WeaponView {
-        if matches!(self, Self::Ready(..))
-            && matches!(view.refusal, Some(Refusal::NoRoom | Refusal::NotAllowed))
-        {
+        if matches!(self, Self::Ready(..)) && matches!(view.refusal, Some(Refusal::NoRoom)) {
             view.refusal = None;
         }
         view
@@ -558,10 +556,9 @@ mod tests {
         assert_eq!(state.status.taken, 1);
         assert_eq!(state.placed.charges, vec![placed(other)]);
         assert_eq!(state.due_take(), None);
-        // A snatch's catch comes while the grapple is busy, which turns the planting permission
-        // off; the take goes ahead regardless.
+        // The cap does not refuse a take: it swaps a placed charge for the primed one.
         let denied = take.view(WeaponView {
-            refusal: Some(Refusal::NotAllowed),
+            refusal: Some(Refusal::NoRoom),
             ..view
         });
         assert_eq!(denied.refusal, None);

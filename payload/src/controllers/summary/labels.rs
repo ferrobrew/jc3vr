@@ -448,7 +448,7 @@ impl ModText {
             ModText::Climb => "Grip to climb",
             ModText::OpenVehicleDoor => "Open vehicle door",
             ModText::BailOut => "Bail Out",
-            ModText::TakeDetonator => "Swap the C4 for the Detonator",
+            ModText::TakeDetonator => "Detonate C4",
             ModText::Detonate => "Detonate C4",
             ModText::ParachuteHandles => "At a Handle: Hold, Pull Down to Steer, Both to Brake",
             ModText::PullParachuteHandle => "Pull down to steer; pull both handles to brake",
