@@ -276,6 +276,14 @@ unsafe fn fit_vehicle(
             source,
             seat: &seat,
             corrected: view.is_some() && inputs.view_enabled,
+            cockpit_part: parts.cockpit.as_ref().map(|part| part.name.as_str()),
+            eyes_in_cockpit_part: parts.cockpit.as_ref().and_then(|part| {
+                let part_to_world = world * part.root;
+                let eyes = inputs.eyes?;
+                (part_to_world.determinant().abs() > 1e-6)
+                    .then(|| part_to_world.inverse().transform_point3(eyes))
+                    .filter(|eyes| eyes.is_finite())
+            }),
         });
     }
 
@@ -415,6 +423,10 @@ struct DrivingPosition<'a> {
     seat: &'a SeatReadout,
     /// Whether the view is corrected in this seat: the setting is on and the class is corrected.
     corrected: bool,
+    /// The cockpit's body part, which names the airframe for the cockpit controls' table.
+    cockpit_part: Option<&'a str>,
+    /// The character's eyes in the cockpit part's own space, where its controls are measured.
+    eyes_in_cockpit_part: Option<Vec3>,
 }
 
 fn log_driving_position(p: &DrivingPosition) {
@@ -431,6 +443,8 @@ fn log_driving_position(p: &DrivingPosition) {
         applied = ?c.filter(|_| p.corrected).map(|c| c.applied),
         origin = c.map(|c| c.origin.label()),
         corrected = p.corrected,
+        cockpit_part = p.cockpit_part.unwrap_or("none"),
+        eyes_in_cockpit_part = ?p.eyes_in_cockpit_part,
         "driving position"
     );
 }
