@@ -276,8 +276,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         });
         // A hand holding the gun's own body swings it on its joints, which the mount's motors
         // would fight. A grip on the handles aims the gun through those motors, which the mounted
-        // aim drives toward the handles' aim point: disabled for it, as they were from the handle
-        // grip's start until 15 November, nothing turned the gun at all.
+        // aim drives toward the handles' aim point: disabled for it, nothing turns the gun at all.
         for motor in &record.motors {
             if physical_body.is_some() {
                 unsafe { motor.disable() };

@@ -71,7 +71,8 @@ pub fn set_source_mask(mask: SourceMask) {
 }
 
 /// Copy the unsuppressed live primitives into `out` (cleared first), up to the renderer cap. Out of
-/// gameplay (`in_gameplay` false: a loading screen, a menu) only the debug panel's pointer is drawn,
+/// gameplay (`in_gameplay` false: a loading screen, or any game state other than the running game)
+/// only the debug panel's pointer is drawn,
 /// whatever the producers last submitted: a grab circle or a world marker has nothing to mark there.
 pub fn snapshot(out: &mut Vec<Primitive>, in_gameplay: bool) -> Collection {
     let now = Instant::now();

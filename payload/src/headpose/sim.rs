@@ -36,7 +36,13 @@ use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config, controllers::roomscale::seat::SeatPhase, grapple, headpose::HeadPose,
+    config::Config,
+    controllers::roomscale::{frame_shared, seat::SeatPhase},
+    grapple,
+    headpose::{
+        HeadPose,
+        xr::{YawTick, advance_body_yaw, follow_turn},
+    },
     hooks::input::locomotion,
 };
 
@@ -111,8 +117,7 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     {
         // The view frame, with any turn of the body under the view taken out, so the frame the
         // filter holds is the one the view composes with.
-        let body =
-            read_body_rotation().unwrap_or(Quat::IDENTITY) * crate::headpose::xr::follow_turn(true);
+        let body = read_body_rotation().unwrap_or(Quat::IDENTITY) * follow_turn(true);
         let rooted = crate::headpose::anchor_pair()
             .map(|pair| pair[1].view_head() - pair[1].root.w_axis.truncate());
         // `on_foot` is passed in rather than read back via `sim::mode()`: the SIM lock is held
@@ -130,11 +135,11 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
         // Swimming keeps the accumulator seeded: the swim yaw override
         // (`crate::hooks::input::swim`) consumes the same body-yaw target, and clearing the
         // accumulator in water would hand the body back to the game's act-quantized turns.
-        let vehicle_transition = crate::controllers::roomscale::frame_shared()
+        let vehicle_transition = frame_shared()
             .filter(|shared| shared.fresh(Instant::now()))
             .is_some_and(|shared| matches!(shared.seat, SeatPhase::Entering | SeatPhase::Exiting));
-        crate::headpose::xr::advance_body_yaw(
-            crate::headpose::xr::YawTick {
+        advance_body_yaw(
+            YawTick {
                 look_x,
                 delta_based: look_x_delta,
                 on_foot: s.mode == HeadMode::OnFoot,

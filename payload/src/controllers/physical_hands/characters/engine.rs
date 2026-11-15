@@ -114,8 +114,8 @@ impl GunnerOut {
 }
 
 /// Take `character` out of a mounted gun it mans ([`Character::IsInMountedGunState`], a vehicle's
-/// gunner seat or a standalone tripod) as a ragdoll, where it is. A tripod's gunner was left out
-/// until 15 November, and the standing path's ragdoll never took him off the gun.
+/// gunner seat or a standalone tripod) as a ragdoll, where it is: the standing path's ragdoll never
+/// takes a tripod's gunner off the gun.
 ///
 /// A seated character's hit reaction never ragdolls it ([`Character::HitReaction`] returns before
 /// the ragdoll for a character attached to a vehicle), and the vehicle-entry action seats the
