@@ -5,10 +5,16 @@
 //! `S_JC_PARACHUTE_OPEN_FROM_REEL_IN_SHORT`, whose clips roll Rico over into the harness before the
 //! canopy's idle takes over. The player's own body does none of it, and the view, hung from Rico's
 //! head through the airborne transitions, rolls with him and passes through his body. The machine
-//! is moved on into `S_JC_PARACHUTE_IDLE` in the same transition
-//! ([`StateMachineInstance::SetStateInternal`]): the opening is entered first, so its state tasks
-//! run (among them the act that opens the canopy object itself), and left before any of its
-//! animation is evaluated.
+//! is moved on into `S_JC_PARACHUTE_IDLE` before any of the opening's animation is evaluated: the
+//! opening is entered first, so its state tasks run (among them the act that opens the canopy
+//! object itself), and left before its pose is.
+//!
+//! Two places catch the opening. The ordinary act transitions (`ACT_TRIGGER_PARACHUTE` here) run
+//! through the machine's event handling, which sets the state without calling
+//! [`StateMachineInstance::SetStateInternal`], so the local controller's animation update checks
+//! the body machine's current state before it evaluates the pose ([`skip_before_evaluation`]).
+//! The transitions that do call `SetStateInternal` (`AnimationRuleSystem::SetStateById` and
+//! external actions) are caught as they happen.
 
 use std::sync::{
     LazyLock,
@@ -32,6 +38,33 @@ pub(super) fn hook_library() -> HookLibrary {
 /// How often the canopy's opening out of a reel was skipped. Read by the Air feature's readout.
 pub(crate) static REEL_OPENINGS_SKIPPED: AtomicU64 = AtomicU64::new(0);
 
+/// Move the local player's body machine on from a reel opening it is in into the canopy's idle,
+/// before the local controller evaluates the pose.
+///
+/// # Safety
+///
+/// On the game thread, at the entry of the local player's animation controller update, outside
+/// the pose evaluation.
+pub(super) unsafe fn skip_before_evaluation() {
+    let Some(character) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+        return;
+    };
+    // SAFETY: the local character's body rule system, live on the game thread.
+    let Some(machine) = (unsafe { character.m_AnimatedModel.m_RuleSystems.as_slice() })
+        .first()
+        .and_then(|rule_system| unsafe { rule_system.px.as_ref() })
+        .map(|rule_system| rule_system.m_StateMachineInstance.px)
+    else {
+        return;
+    };
+    // SAFETY: the machine is live; its current state is the one the pose is about to evaluate.
+    let Some(current) = (unsafe { machine.as_ref() }).map(|machine| machine.m_CurrentState) else {
+        return;
+    };
+    // SAFETY: as above.
+    unsafe { skip_reel_opening(machine, current) };
+}
+
 #[detour(address = jc3gi::animation::rule_system::StateMachineInstance::SetStateInternal_ADDRESS)]
 fn set_state_internal(machine: *mut StateMachineInstance, new_state: *mut State) {
     SET_STATE_INTERNAL.get().unwrap().call(machine, new_state);
@@ -39,7 +72,7 @@ fn set_state_internal(machine: *mut StateMachineInstance, new_state: *mut State)
     unsafe { skip_reel_opening(machine, new_state) };
 }
 
-/// Move the local player's body machine on from a reel opening it just entered into the canopy's
+/// Move the local player's body machine on from a reel opening it has entered into the canopy's
 /// idle.
 ///
 /// # Safety

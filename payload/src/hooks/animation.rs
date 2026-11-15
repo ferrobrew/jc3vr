@@ -54,6 +54,10 @@ fn update_animations_time(controller: *mut AnimationController, dt: f32) {
 )]
 fn update_animations(controller: *mut AnimationController, dt: f32, num_of_bones: i32) {
     let local = unsafe { is_local_controller(controller) };
+    if local {
+        // SAFETY: the local controller's update entry, on the game thread, before evaluation.
+        unsafe { canopy::skip_before_evaluation() };
+    }
     let pose_evaluation = unsafe { controller.as_ref() }
         .filter(|_| local)
         .and_then(|controller| unsafe { publication::begin(controller, num_of_bones) });
