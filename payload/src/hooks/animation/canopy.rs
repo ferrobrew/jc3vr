@@ -13,7 +13,9 @@
 //! through the machine's event handling, which sets the state without calling
 //! [`StateMachineInstance::SetStateInternal`], so the local controller's animation update checks
 //! the body machine's current state before it evaluates the pose ([`skip_before_evaluation`]).
-//! The transitions that do call `SetStateInternal` (`AnimationRuleSystem::SetStateById` and
+//! That the event handling runs before the controller's update in the same tick is unverified: if
+//! it runs inside the update, after the check, the skip lands a tick late and one frame of the
+//! opening is drawn. The transitions that do call `SetStateInternal` (`AnimationRuleSystem::SetStateById` and
 //! external actions) are caught as they happen.
 
 use std::sync::{
@@ -29,7 +31,11 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{config::Config, hash::hashlittle, hooks::input::locomotion::head_decoupled};
+use crate::{
+    config::Config,
+    hash::hashlittle,
+    hooks::{animation::body_rule_system, input::locomotion::head_decoupled},
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&SET_STATE_INTERNAL_BINDER)
@@ -50,9 +56,7 @@ pub(super) unsafe fn skip_before_evaluation() {
         return;
     };
     // SAFETY: the local character's body rule system, live on the game thread.
-    let Some(machine) = (unsafe { character.m_AnimatedModel.m_RuleSystems.as_slice() })
-        .first()
-        .and_then(|rule_system| unsafe { rule_system.px.as_ref() })
+    let Some(machine) = (unsafe { body_rule_system(character) })
         .map(|rule_system| rule_system.m_StateMachineInstance.px)
     else {
         return;
