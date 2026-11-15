@@ -24,7 +24,33 @@ fn _RagdollInstance_size_check() {
     }
     unreachable!()
 }
-impl RagdollInstance {}
+impl RagdollInstance {
+    pub const PrePhysicsUpdate_ADDRESS: usize = 0x14040EF50;
+    /// The ragdoll's step before the physics: does nothing for a zero `dt`, a disabled instance,
+    /// or one not yet in the world. Otherwise it applies the preset's parameters, takes
+    /// `wanted_world_matrix` as the ragdoll's wanted transform, maps the current pose of `pose`
+    /// ([`PoseProducer::m_PoseT1`](crate::animation::pose_producer::PoseProducer::m_PoseT1)) onto the ragdoll's skeleton through the skeleton mapper, reading
+    /// it through the pose's synced model-space (or, for a local-space mapping, local-space)
+    /// transforms, and drives the keyframed bodies and the constraint motors toward the mapped
+    /// pose. It reads nothing else of `pose`. Called by the ragdoll's owner with its character's
+    /// pose producer from `CCharacter::PrePhysicsUpdateRagdoll`.
+    pub unsafe fn PrePhysicsUpdate(
+        &mut self,
+        wanted_world_matrix: *const crate::types::math::Matrix4,
+        pose: *mut crate::animation::pose_producer::PoseProducer,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                wanted_world_matrix: *const crate::types::math::Matrix4,
+                pose: *mut crate::animation::pose_producer::PoseProducer,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::PrePhysicsUpdate_ADDRESS);
+            f(self as *mut Self as _, wanted_world_matrix, pose, dt)
+        }
+    }
+}
 impl std::convert::AsRef<RagdollInstance> for RagdollInstance {
     fn as_ref(&self) -> &RagdollInstance {
         self

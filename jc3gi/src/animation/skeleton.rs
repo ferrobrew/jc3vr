@@ -1,4 +1,8 @@
 #![cfg_attr(any(), rustfmt::skip)]
+/// The [`HkaPose::m_BoneFlags`](crate::animation::skeleton::HkaPose::m_BoneFlags) flag of a bone whose local-space transform is stale.
+pub const HKA_POSE_F_BONE_LOCAL_DIRTY: u32 = 1;
+/// The [`HkaPose::m_BoneFlags`](crate::animation::skeleton::HkaPose::m_BoneFlags) flag of a bone whose model-space transform is stale.
+pub const HKA_POSE_F_BONE_MODEL_DIRTY: u32 = 2;
 /// The bits of an [`HkArray`](crate::animation::skeleton::HkArray)'s [`capacity_and_flags`](crate::animation::skeleton::HkArray::capacity_and_flags), read as
 /// unsigned, that hold the capacity.
 pub const HK_ARRAY_CAPACITY_MASK: u32 = 1073741823;
@@ -62,12 +66,21 @@ pub struct HkaPose {
     pub m_ModelPose: crate::animation::skeleton::HkArray<
         crate::animation::pose_producer::QsTransform,
     >,
-    /// Each bone's sync flags, among them the flag that marks its model-space transform as stale.
+    /// Each bone's sync flags: [`HKA_POSE_F_BONE_LOCAL_DIRTY`](crate::animation::skeleton::HKA_POSE_F_BONE_LOCAL_DIRTY) marks its local-space transform
+    /// stale, and [`HKA_POSE_F_BONE_MODEL_DIRTY`](crate::animation::skeleton::HKA_POSE_F_BONE_MODEL_DIRTY) its model-space transform.
     pub m_BoneFlags: crate::animation::skeleton::HkArray<u32>,
+    /// Whether every model-space transform is current. While it is clear, a synced model-space
+    /// read first recomputes each bone flagged stale from its parent's model-space transform and
+    /// its own local one, then sets it.
+    pub m_ModelInSync: bool,
+    /// Whether every local-space transform is current, as [`HkaPose::m_ModelInSync`](crate::animation::skeleton::HkaPose::m_ModelInSync) is for model
+    /// space.
+    pub m_LocalInSync: bool,
+    _field_3a: [u8; 6],
 }
 fn _HkaPose_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x38], HkaPose>([0u8; 0x38]);
+        ::std::mem::transmute::<[u8; 0x40], HkaPose>([0u8; 0x40]);
     }
     unreachable!()
 }
