@@ -22,6 +22,11 @@
 //! Only a wheel fitted from the vehicle's own part, or the part's override, is measured: the
 //! fallback wheel says nothing about the seat. Only cars are corrected, since some boats are driven
 //! standing at the helm and the seated standard does not fit them.
+//!
+//! A vehicle's gunner seat is corrected the same way from the manned gun's handles: the turret's
+//! animation puts the head right over them, so on the 14 November take the view looked down at the
+//! handles from a few centimetres and the player stepped back to reach them. Their midpoint is put
+//! at [`HANDLES_FROM_EYES_M`] ([`derive_handles`]).
 
 use std::time::{Duration, Instant};
 
@@ -37,6 +42,10 @@ use crate::controllers::vehicles::fit::SETTLE;
 /// ahead of them. It is a little nearer than a road car's, because a VR rim holds no weight and a
 /// long reach tires the arms.
 pub const HUB_FROM_EYES_M: Vec3 = Vec3::new(0.0, -0.30, -0.45);
+
+/// Where a manned gun's handles' midpoint sits from the eyes in the standard gunner position,
+/// cockpit frame, metres: ahead of the chest and below the eyes, as a two-handled gun is held.
+pub const HANDLES_FROM_EYES_M: Vec3 = Vec3::new(0.0, -0.30, -0.42);
 
 /// A seat whose derived correction is replaced, keyed by the wheel part's name (see
 /// [`SEAT_OVERRIDES`]).
@@ -105,7 +114,22 @@ impl CorrectionOrigin {
 /// Moving the view by `c` moves the hub by `-c` relative to it, so the correction that puts the
 /// hub at the standard place is the hub's offset from it.
 pub fn derive(hub_from_eyes: Vec3, seat_override: Option<&SeatOverride>) -> Correction {
-    let wanted = hub_from_eyes - HUB_FROM_EYES_M;
+    derive_from(hub_from_eyes, HUB_FROM_EYES_M, seat_override)
+}
+
+/// The correction for a gunner seat whose gun's handles' midpoint sits at `handles_from_eyes`
+/// from the character's eyes, as [`derive`] for a wheel's hub.
+pub fn derive_handles(handles_from_eyes: Vec3) -> Correction {
+    derive_from(handles_from_eyes, HANDLES_FROM_EYES_M, None)
+}
+
+/// The correction that puts a control measured at `from_eyes` at `standard`.
+fn derive_from(
+    hub_from_eyes: Vec3,
+    standard: Vec3,
+    seat_override: Option<&SeatOverride>,
+) -> Correction {
+    let wanted = hub_from_eyes - standard;
     let wanted = if wanted.is_finite() {
         wanted
     } else {

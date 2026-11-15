@@ -3,9 +3,10 @@
 //! the driver's controls, the cockpit's buttons, the parachute's handles, the ripcord, and the
 //! mounted gun's handles.
 
-use std::sync::atomic::Ordering;
+use std::{sync::atomic::Ordering, time::Instant};
 
 use glam::Vec3;
+use parking_lot::Mutex;
 
 use crate::{
     controllers::{
@@ -26,7 +27,7 @@ use crate::{
             fit::{FitInputs, VehicleLatch},
             handle_tick::handles_act,
             mounted_grip,
-            mounted_tick::{mounted_tick, offered},
+            mounted_tick::{MountedTick, mounted_tick, offered},
             parachute, parachute_rig,
             physical::{
                 self, ControlEvent, Placement,
@@ -76,19 +77,19 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     let retired_owner = state.entry_owner.take();
     drop(state);
     drop(retired_owner);
+    let view_eyes = headpose::anchor().map(|anchor| anchor + hooks::camera::head_to_eye_point());
     let fit = fit::fit(
         &FitInputs {
             physical: &physical_config,
             view_enabled: config.vehicles.driving_view.enabled,
             seat,
             xf: &xf,
-            eyes: headpose::anchor().map(|anchor| anchor + hooks::camera::head_to_eye_point()),
+            eyes: view_eyes,
         },
         entry.as_ref(),
         &mut latch,
     );
     STATE.lock().entry_owner = entry.map(VehicleEntry::into_owner);
-    driving_view::publish(fit.view);
     let yoke = fit
         .cockpit
         .is_some_and(|fit| fit.asset.stick_kind == physical::ControlKind::Yoke);
@@ -110,6 +111,14 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
         .mounted_grip
         .aiming(&mounted_config, grips.map(|g| g.is_some()));
     let mounted = mounted_tick(&active, aiming);
+    // A gunner seat's view is corrected from its gun's handles, as a driver's from the wheel.
+    let gunner_view = (seat.is_some_and(|s| !s.driver) && fit.view.is_none())
+        .then(|| gunner_view_target(&xf, view_eyes, &mounted))
+        .flatten();
+    if gunner_view.is_none() {
+        *GUNNER_VIEW.lock() = None;
+    }
+    driving_view::publish(fit.view.or(gunner_view));
     let handles_on = handles_act(mode, &config);
     let handles_config = config.vehicles.parachute_handles;
     let native_centres = parachute_rig::centres(handles_on, &xf);
@@ -344,6 +353,45 @@ fn prepare_entry(
     state.observe_entry(seat, identity, events);
     state.latch.take()
 }
+
+/// The gunner seat's view correction for the manned gun of `mounted`: its handles' midpoint from
+/// the character's eyes `eyes` (the anchor's, before any correction), averaged once the gunner has
+/// settled ([`driving_view::Entry`]) and kept for the seat.
+fn gunner_view_target(
+    xf: &CockpitTransform,
+    eyes: Option<Vec3>,
+    mounted: &MountedTick,
+) -> Option<driving_view::Target> {
+    let gun = mounted.weapon?;
+    let [Some(left), Some(right)] = mounted.handle_points else {
+        return None;
+    };
+    let midpoint = xf.point_to_world((left + right) * 0.5);
+    let from_eyes = eyes
+        .map(|eyes| xf.offset_to_cockpit(midpoint - eyes))
+        .filter(|offset| offset.is_finite());
+    let mut latch = GUNNER_VIEW.lock();
+    let (latched_gun, since, entry) =
+        latch.get_or_insert_with(|| (gun, Instant::now(), driving_view::Entry::new()));
+    if *latched_gun != gun {
+        *latch = Some((gun, Instant::now(), driving_view::Entry::new()));
+        return None;
+    }
+    if entry.observe(since.elapsed(), from_eyes) {
+        tracing::info!(
+            target: "controllers",
+            handles_from_eyes = ?entry.mean(),
+            "vehicles: the gunner seat's handles measured for the view"
+        );
+    }
+    entry.mean().map(|mean| driving_view::Target {
+        vehicle: gun,
+        correction: driving_view::derive_handles(mean),
+    })
+}
+
+/// The gunner seat's measurement: the gun, when the seat began, and the handles' entry.
+static GUNNER_VIEW: Mutex<Option<(usize, Instant, driving_view::Entry)>> = Mutex::new(None);
 
 #[cfg(test)]
 mod tests;
