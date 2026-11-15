@@ -182,8 +182,9 @@ impl ReleaseMotion {
     /// The motion a release requests: non-finite parts are zero, and the hand's own part of the
     /// linear motion, beyond what the player's movement carries, is held to `max_speed_mps` per
     /// real second (zero when the cap is not a finite number), so a tracking glitch is capped alike
-    /// at any time scale. The carried part is never capped: a throw from a vehicle keeps the
-    /// vehicle's speed however fast it goes.
+    /// at any time scale. The carried part is bounded only by [`MAX_CARRIED_MPS`]: a throw from a
+    /// vehicle keeps the vehicle's speed, and a stale or corrupt reading does not fling the
+    /// released object.
     pub(crate) fn capped(self, max_speed_mps: f32) -> WorldMotion {
         let cap = if max_speed_mps.is_finite() {
             max_speed_mps.max(0.0) / self.time_scale.get()
@@ -197,7 +198,7 @@ impl ReleaseMotion {
                 Vec3::ZERO
             }
         };
-        let carried = finite(self.inherited.linear);
+        let carried = finite(self.inherited.linear).clamp_length_max(MAX_CARRIED_MPS);
         let own = finite(self.world.linear) - carried;
         WorldMotion {
             linear: carried + own.clamp_length_max(cap),
@@ -634,6 +635,9 @@ pub enum Unavailable {
     ReadbackContractUnproven,
     LifetimeAndPhaseUnproven,
 }
+
+/// The fastest carried motion a release keeps, metres per second: past the game's fastest jets.
+const MAX_CARRIED_MPS: f32 = 150.0;
 
 #[cfg(test)]
 #[path = "release_diagnostics_tests.rs"]

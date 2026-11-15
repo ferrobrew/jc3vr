@@ -21,7 +21,7 @@ In the order of the feedback:
 13. Snatch a ragdoll: it comes to arm's reach and holds there. Fire the pistol with the other hand while the line is out.
 14. Under the canopy, push both handles up and forward: it dives. Pull both down: it slows. The reach ring shows around each handle while a hand is in it.
 15. In the wingsuit, look at one hand and then the other with both arms out: neither arm bends.
-16. With a charge in hand and charges placed, pull the trigger: they go off and the charge stays. Throw a charge while falling: it is thrown. Throw one forward off a moving car: it lands ahead.
+16. With a charge in hand and charges placed, pull the trigger: they go off and the charge stays. Throw a charge while falling: it is thrown. Throw one forward off a moving car: it lands ahead. Seated in a moving car, throw a grenade forward: it lands ahead too (the character's measured velocity is unverified while seated).
 17. Seated in a car and a boat: take a grenade and a charge from the pouches; empty a pistol and double tap its fire press to drop the magazine, then reload from the belt.
 18. Reload by the clip release and the belt with a split pistol and an SMG after a respawn: the magazine drops, or the log says why not and the hand buzzes.
 19. Knock a magazine out with a brisk strike that does not quite snap: it knocks at 0.75 m/s.
