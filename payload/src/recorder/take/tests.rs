@@ -300,7 +300,7 @@ fn a_streamed_take_connects_once_the_format_is_known_and_its_end_is_the_stop() {
     assert_eq!(start["video"]["width"], format.layout.width);
     assert_eq!(header, stream_header(&format));
     assert_eq!(frames, 5);
-    let lines = fs::read_to_string(folder.0.join("video_frames.jsonl")).unwrap();
+    let lines = fs::read_to_string(folder.0.join("frame_map.jsonl")).unwrap();
     assert_eq!(lines.lines().count(), 5);
 }
 

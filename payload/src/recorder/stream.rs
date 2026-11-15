@@ -9,7 +9,7 @@
 //! is self-describing and every frame is the same size, so a repeated frame cannot desynchronize
 //! the host's parser.
 //!
-//! Each stream frame gets a line in `video_frames.jsonl` beside the take's sidecar: `stream_frame`,
+//! Each stream frame gets a line in `frame_map.jsonl` beside the take's sidecar: `stream_frame`,
 //! the frame's number in the video, `frame`, the take frame ordinal of the image it shows (the
 //! sidecar's `frame`), and `repeat`, whether it repeats the previous stream frame's image.
 //!
@@ -155,10 +155,10 @@ pub(crate) struct Writer {
 }
 
 impl Writer {
-    /// Create `video_frames.jsonl` in `folder` and spawn the writer, which waits for the format and
+    /// Create `frame_map.jsonl` in `folder` and spawn the writer, which waits for the format and
     /// the connection.
     pub(crate) fn spawn(folder: &Path) -> anyhow::Result<Self> {
-        let path = folder.join(RecordingFile::VideoFrames.name());
+        let path = folder.join(RecordingFile::FrameMap.name());
         let sidecar = File::create(&path).with_context(|| {
             format!(
                 "recorder: could not create the video sidecar at {}",
@@ -328,7 +328,7 @@ impl<W: Write> WriterThread<W> {
         if !self.sidecar_failed
             && let Err(error) = self.sidecar.flush()
         {
-            self.fail(format!("could not write video_frames.jsonl: {error}"));
+            self.fail(format!("could not write frame_map.jsonl: {error}"));
         }
         tracing::info!(
             "recorder: the video writer finished after {} stream frames",
@@ -435,7 +435,7 @@ impl<W: Write> WriterThread<W> {
             .and_then(|()| self.sidecar.write_all(b"\n"));
         if let Err(error) = result {
             self.sidecar_failed = true;
-            tracing::error!("recorder: could not write video_frames.jsonl: {error}");
+            tracing::error!("recorder: could not write frame_map.jsonl: {error}");
         }
     }
 

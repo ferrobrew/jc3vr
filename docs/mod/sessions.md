@@ -38,7 +38,7 @@ A recording's folder holds:
 | `tracking.jc3trk` | a tracking recording ([testing/recorder.md](testing/recorder.md)) | `tracking-synth dump`, the replay |
 | `lookback.jc3trk` | a save of the tracking lookback, in a folder of its own | `tracking-synth dump`, the replay |
 | `frames.jsonl` | a video recording's per-frame sidecar, with its mirror layouts and take markers ([capture.md](capture.md)) | `tools/capture/reframe.py` |
-| `video_frames.jsonl` | a streamed take's record of each video frame's source frame ([capture.md](capture.md)) | |
+| `frame_map.jsonl` | a streamed take's record of each video frame's source frame ([capture.md](capture.md)) | |
 | `video.mkv`, `video.mkv.ts`, and `stream.json` | the capture host's screen recording of the mirror window, the recorder's first-frame time, and the host's metadata with the region and the video's start wall clock, written there by the host (not the game) when the session folder's Unix form is known | `tools/capture/reframe.py`, an editor |
 
 A standalone tracking recording is a folder with only `tracking.jc3trk`, a standalone video recording one without it, and an F1 session recording has both halves.
