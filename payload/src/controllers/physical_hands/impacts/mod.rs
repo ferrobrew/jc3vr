@@ -495,6 +495,15 @@ unsafe fn damage(
     // a roof panel swung at 7 to 11 m/s through a soldier moved nobody.
     if reactions && contact.character && unsafe { engine::is_character(target_identity.owner) } {
         let victim = unsafe { &mut *(target_identity.owner.get() as *mut Character) };
+        // A native reaction that also acted is told, so that a take shows any blow the character
+        // took twice.
+        if native[1] {
+            tracing::info!(
+                target: "controllers",
+                impulse,
+                "held impacts: the native hit reaction acted on the struck character as well"
+            );
+        }
         unsafe {
             blows::held_strike(
                 attacker,

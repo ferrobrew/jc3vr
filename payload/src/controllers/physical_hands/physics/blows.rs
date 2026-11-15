@@ -336,7 +336,7 @@ pub(crate) unsafe fn held_strike(
     }
     drop(gate);
     let dealt = unsafe { strike(attacker, victim, at, direction, &plan) };
-    tracing::debug!(
+    tracing::info!(
         impulse_ns,
         ?relation,
         dealt,
