@@ -48,6 +48,7 @@
 pub mod calibration;
 pub mod estimator;
 pub mod firm_ragdoll;
+pub mod ik_body;
 pub(crate) mod menu;
 pub mod mirror;
 pub mod procedural;

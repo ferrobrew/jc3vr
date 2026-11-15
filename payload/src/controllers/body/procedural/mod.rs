@@ -74,6 +74,7 @@ use crate::{
     controllers::{
         body::{
             firm_ragdoll,
+            ik_body::{self, GateInput},
             procedural::{
                 authority::{Case, WeightFollower, classify_locked, relaxes_legs},
                 config::{ProceduralBodyConfig, ProceduralMode},
@@ -196,6 +197,7 @@ pub fn torso_weight() -> f32 {
 /// IK must not stand down for it, and the blend starts over when the gate runs again.
 pub(crate) fn gate_skipped() {
     publish_torso_weight(0.0);
+    ik_body::not_written();
     let mut state = STATE.lock();
     state.blend.reset();
     state.stance.reset();
@@ -226,6 +228,7 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
     // SAFETY: forwarded from the caller.
     let wrote = unsafe { run_gate(character, dt) };
     if !wrote {
+        ik_body::not_written();
         publish_leg_weight(0.0);
         let mut state = STATE.lock();
         state.legs = WeightFollower::new();
@@ -255,11 +258,12 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, follow, scale) = Config::lock_query(|c| {
+    let (config, follow, scale, ik_config) = Config::lock_query(|c| {
         (
             c.controllers.body.procedural,
             c.controllers.body.rig.follow,
             c.vr.world_scale,
+            c.controllers.body.ik,
         )
     });
     let now = Instant::now();
@@ -383,6 +387,28 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         Some(heading) => square_pose(&animated, heading, stance_weight),
         None => animated,
     };
+    let weight = state.blend.step(case, dt, &config);
+    let target = state.blend.target();
+    let world = Mat4::from(character.m_WorldMatrixT1);
+    // The IK body seeds the FK pelvis into the posture before the torso is solved on it, and the
+    // square stance yields the feet to its planted contacts by their weight.
+    let ik = ik_body::prepare(&GateInput {
+        animated: &animated,
+        rig,
+        case,
+        idle_state: idle,
+        locomotion,
+        model_neck: head::read(&world, scale).head,
+        world,
+        stance: config.stance,
+        torso_on: config.mode == ProceduralMode::Full,
+        torso_target: target,
+        config: ik_config,
+        dt,
+        now,
+    });
+    let stance_weight = stance_weight * (1.0 - ik.feet_weight);
+    state.status.stance_weight = stance_weight;
     state.status.stance_targets = match visual_hips.or_else(|| state.hips.yaw()) {
         Some(heading) if config.stance.enabled && stance_weight > 0.0 => {
             let feet = square_stance(&animated, heading, &config.stance);
@@ -390,12 +416,10 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         }
         _ => 0,
     };
-    let weight = state.blend.step(case, dt, &config);
-    let target = state.blend.target();
+    let animated = ik.pose.unwrap_or(animated);
     state.log_case(case, target, weight);
     state.status.case = case;
     state.status.weight = weight;
-    let world = Mat4::from(character.m_WorldMatrixT1);
     if state.leg_weight <= 0.0 {
         state.leg_swing.step(world.w_axis.truncate(), false, dt);
     }
@@ -488,6 +512,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     unsafe { live.write(controller, &pose) };
     publish_leg_weight(leg_weight);
     finish_write(&mut state, character, &pose, weight, &config);
+    // SAFETY: the live local character's solver, at its pose gate before the solve, with the
+    // pose just written.
+    unsafe { ik_body::queue(&mut character.m_HIK, rig, &pose, &ik_config) };
     true
 }
 

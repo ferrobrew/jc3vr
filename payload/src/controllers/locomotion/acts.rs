@@ -6,7 +6,8 @@
 //!   starts, the quarter and half turns, and the heavy weapon's aim-focus rotations) are dropped
 //!   while the stick drives the body. The body still turns: the orientation executor yaws it toward
 //!   the body rig's heading. While Rico stands and the body rig follows the head, they pass, so a
-//!   body turn plays the game's own turn-in-place animation.
+//!   body turn plays the game's own turn-in-place animation, unless the IK body plants the feet
+//!   ([`crate::controllers::body::ik_body::owns_idle`]), which turns them with steps of its own.
 //! - The turning run and walk starts are replaced by the straight start, the turning stops by the
 //!   straight stop, and the turning flicks (running and aiming) by the straight flick, so the
 //!   state machine still passes through its start, stop, and flick states (it needs to know Rico
@@ -40,7 +41,7 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        body::rig::grounded,
+        body::{ik_body, rig::grounded},
         config::LocomotionConfig,
         locomotion::status as locomotion_status,
         mode::{Mode, OnFootVariant, current as current_mode},
@@ -144,11 +145,14 @@ pub(crate) unsafe fn filter(
     }
     // The body rig turns a standing Rico through the game's own turn-in-place: the view does not
     // ride the body while it follows the head, so the clip's turn of the root is only the body's.
+    // While the IK body plants the feet, it turns them with steps of its own, so the clip's turn
+    // stays dropped.
     if scope == ActScope::OnFoot
         && wanted == ActDecision::Drop
         && turn_animation
         && grounded::turning()
         && locomotion_status().standing_still()
+        && !ik_body::owns_idle()
     {
         return ActDecision::Pass;
     }

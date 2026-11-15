@@ -74,7 +74,7 @@ use crate::{
     controllers::{
         aim::raycast::CastOptions,
         body::{
-            BodyDimensions, estimator,
+            BodyDimensions, estimator, ik_body,
             procedural::state::animation_moves_body,
             rig::{
                 collision::probe,
@@ -174,12 +174,14 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         frame.shift.rebase_horizontal(inputs.raw);
         frame.status.teleport_rebases += 1;
         grounded::forget();
+        ik_body::forget();
     }
     let movement = SIM.lock().frame_movement(now, epoch);
     frame.shift.observe(&basis, movement.movement());
 
     let (owner, stopped) = owner_and_obstruction(now);
     let shift = frame.shift.current();
+    ik_body::frame(inputs.eyes, inputs.head, &inputs.dimensions, inputs.dt, now);
     let rig_input = GroundedInput {
         eyes: inputs.eyes,
         head: inputs.head,
@@ -191,6 +193,7 @@ pub fn frame(inputs: &FrameInputs) -> FrameOutput {
         sample_height: inputs.posture == EffectivePosture::Standing,
         grounded: owner.is_some_and(RootOwner::drives),
         estimate: estimator::for_rig(estimator::latest().as_ref(), &config.yaw.estimate),
+        ik_pelvis: ik_body::root_target(),
         dimensions: inputs.dimensions,
         tuning: config.tuning(),
         dt: inputs.dt,

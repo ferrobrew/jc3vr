@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::{
-    estimator::EstimatorConfig, procedural::config::ProceduralBodyConfig, rig::RigConfig,
-    unarmed::UnarmedBodyConfig,
+    estimator::EstimatorConfig, ik_body::IkBodyConfig, procedural::config::ProceduralBodyConfig,
+    rig::RigConfig, unarmed::UnarmedBodyConfig,
 };
 
 /// Body scale remapping between the player's body and the character's (see
@@ -26,6 +26,8 @@ pub struct BodyRemapConfig {
     pub rig: RigConfig,
     /// The learned body estimator: whether it runs, its weights, and how often.
     pub estimator: EstimatorConfig,
+    /// The IK-first on-foot body: the lower body posed from the estimate while Rico stands.
+    pub ik: IkBodyConfig,
     /// The weapon-agnostic body: which of the game's weapon animations reach the body on foot.
     pub unarmed: UnarmedBodyConfig,
 }
@@ -38,6 +40,7 @@ impl BodyRemapConfig {
             procedural: ProceduralBodyConfig::new(),
             rig: RigConfig::new(),
             estimator: EstimatorConfig::new(),
+            ik: IkBodyConfig::new(),
             unarmed: UnarmedBodyConfig::new(),
         }
     }

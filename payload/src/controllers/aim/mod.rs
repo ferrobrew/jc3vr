@@ -231,6 +231,8 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
         unsafe { crate::hud::world_markers::resolve_rays(owner) };
         // SAFETY: as above. The head probe runs in every state and scheme, for the comfort fade.
         unsafe { crate::controllers::body::rig::collision::tick(owner) };
+        // SAFETY: as above. The feet's ground probes the IK body asked for at the solve gate.
+        unsafe { crate::controllers::body::ik_body::probe_tick(owner) };
     }
     let tick = match owner.map(|_| begin()) {
         Some(Ok(tick)) => tick,

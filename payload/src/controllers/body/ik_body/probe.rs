@@ -1,0 +1,150 @@
+//! The feet's ground probes: asked for at the solve gate, cast from the player aim control's
+//! post-simulation update, and answered on a later gate.
+//!
+//! The solve gate runs inside the pose-finalization pass, where the mod does not cast, so a foot's
+//! probe is posted to a mailbox, one per foot, and cast where the head probe casts
+//! ([`crate::controllers::body::rig::collision`]): the simulation phase, outside the physics step.
+//! The answer reaches the contact model a tick or two after the step is planned, well inside a
+//! swing, and a step whose answer has not come by its landing waits a little for it
+//! ([`body_rig::contact::ContactTuning::landing_wait_s`]).
+
+use std::time::{Duration, Instant};
+
+use body_rig::contact::{Ground, Probe, Side, SupportId};
+use glam::{Vec2, Vec3};
+use jc3gi::character::character::Character;
+use parking_lot::Mutex;
+
+use crate::controllers::aim::{
+    ray::Ray,
+    raycast::{self, CastOptions},
+};
+
+/// The probe for `side` at the world floor point `at`, near the height `near`: its answer, once a
+/// cast of that point has been made recently, and otherwise asked for.
+pub(crate) fn ask(side: Side, at: Vec2, near: f32) -> Probe {
+    if !at.is_finite() || !near.is_finite() {
+        return Probe::Miss;
+    }
+    let now = Instant::now();
+    let mut probes = PROBES.lock();
+    let slot = &mut probes[side.index()];
+    if let Some(answer) = slot.answer
+        && answer.at.distance(at) <= SAME_POINT_M
+        && (answer.near - near).abs() <= SAME_HEIGHT_M
+        && now.saturating_duration_since(answer.when) <= ANSWER_FOR
+    {
+        return match answer.ground {
+            Some(ground) => Probe::Hit(ground),
+            None => Probe::Miss,
+        };
+    }
+    let same = slot
+        .request
+        .is_some_and(|r| r.at.distance(at) <= SAME_POINT_M);
+    if !same {
+        slot.request = Some(Request { at, near });
+    }
+    Probe::Pending
+}
+
+/// Cast every probe asked for, for the local player `character`.
+///
+/// # Safety
+///
+/// `character` must be the live local character, in the simulation phase outside the physics
+/// step.
+pub(crate) unsafe fn tick(character: &Character) {
+    let requests = {
+        let probes = PROBES.lock();
+        [probes[0].request, probes[1].request]
+    };
+    if requests.iter().all(Option::is_none) {
+        return;
+    }
+    // SAFETY: the caller's contract: the live local character, on the thread updating it.
+    let options = unsafe { CastOptions::ignoring_rider(character) };
+    let now = Instant::now();
+    for (index, request) in requests.into_iter().enumerate() {
+        let Some(request) = request else {
+            continue;
+        };
+        let from = Vec3::new(request.at.x, request.near + ABOVE_M, request.at.y);
+        let ground = Ray::new(from, Vec3::NEG_Y).and_then(|ray| {
+            // SAFETY: the simulation phase; the ignored objects are the live local character and
+            // the vehicle it rides, or zero.
+            match unsafe { raycast::cast(&ray, ABOVE_M + BELOW_M, &options) } {
+                Ok(hit) => hit.map(|hit| Ground {
+                    height: hit.position.y,
+                    support: hit
+                        .object
+                        .map_or(SupportId::WORLD, |object| SupportId(object.get() as u64)),
+                }),
+                Err(error) => {
+                    tracing::debug!(target: "body", "ik body: ground probe: {error}");
+                    None
+                }
+            }
+        });
+        let mut probes = PROBES.lock();
+        let slot = &mut probes[index];
+        slot.answer = Some(Answer {
+            at: request.at,
+            near: request.near,
+            ground,
+            when: now,
+        });
+        if slot.request == Some(request) {
+            slot.request = None;
+        }
+    }
+}
+
+/// Drop every request and answer: a teleport.
+pub(crate) fn forget() {
+    *PROBES.lock() = [Slot::EMPTY; 2];
+}
+
+/// How far above the height asked about a probe starts, metres: a step up.
+const ABOVE_M: f32 = 0.6;
+
+/// How far below it a probe reaches, metres: a step down; past it, the foot is unsupported.
+const BELOW_M: f32 = 0.9;
+
+/// A request this close to an answer's point is answered by it, metres.
+const SAME_POINT_M: f32 = 0.01;
+
+/// ...and this close to its height, metres.
+const SAME_HEIGHT_M: f32 = 0.3;
+
+/// An answer stands for its point this long.
+const ANSWER_FOR: Duration = Duration::from_millis(500);
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Request {
+    at: Vec2,
+    near: f32,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Answer {
+    at: Vec2,
+    near: f32,
+    ground: Option<Ground>,
+    when: Instant,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Slot {
+    request: Option<Request>,
+    answer: Option<Answer>,
+}
+
+impl Slot {
+    const EMPTY: Self = Self {
+        request: None,
+        answer: None,
+    };
+}
+
+static PROBES: Mutex<[Slot; 2]> = Mutex::new([Slot::EMPTY; 2]);

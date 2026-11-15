@@ -73,6 +73,7 @@ impl RigConfig {
             ("step.drift_after_s", s.drift_after_s, 0.0, 30.0),
             ("step.drift_steady_mps", s.drift_steady_mps, 0.0, 2.0),
             ("step.drift_speed_mps", s.drift_speed_mps, 0.0, 2.0),
+            ("step.follow_response_s", s.follow_response_s, 0.02, 5.0),
             ("yaw.chest_clamp_deg", y.chest_clamp_deg, 0.0, 120.0),
             ("yaw.chest_follow_s", y.chest_follow_s, 0.0, 5.0),
             ("yaw.turn_deg", y.turn_deg, 0.0, 180.0),

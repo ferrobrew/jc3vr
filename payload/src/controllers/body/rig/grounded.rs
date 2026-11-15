@@ -66,6 +66,9 @@ pub struct GroundedInput {
     pub grounded: bool,
     /// The learned body estimator's estimate, in the room frame, while it runs and is fresh.
     pub estimate: Option<BodyEstimate>,
+    /// The floor point under the FK pelvis, room `(x, z)`, while the IK body owns the feet
+    /// ([`crate::controllers::body::ik_body::root_target`]).
+    pub ik_pelvis: Option<Vec2>,
     pub dimensions: BodyDimensions,
     pub tuning: RigTuning,
     pub dt: f32,
@@ -130,7 +133,7 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
         moving: input.moving,
         sample_height: input.sample_height,
         estimate: input.estimate,
-        ik_pelvis: None,
+        ik_pelvis: input.ik_pelvis.filter(|_| snap_to.is_none()),
         dt: input.dt,
     };
     let output = state.rig.update(&rig_frame, &input.tuning);
