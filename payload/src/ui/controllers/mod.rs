@@ -291,6 +291,8 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::BodyFit => |ui, _| {
             procedural::procedural_readout(ui, &controller_body::procedural::status());
             ui.separator();
+            procedural::ik_body_readout(ui);
+            ui.separator();
             let root = controller_roomscale::status().root;
             rig::rig_readout(ui, &root);
             ui.separator();

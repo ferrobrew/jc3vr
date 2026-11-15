@@ -1,12 +1,15 @@
 //! The procedural torso: its status rows, its weight against the animation, the neck's error, the
-//! clavicles, and the wingsuit's arm targets.
+//! clavicles, and the wingsuit's arm targets; and the IK body's state, weights, and feet.
 
 use std::time::Instant;
 
 use egui::Ui;
 
 use crate::{
-    controllers::body::procedural::{ProceduralStatus, config::ProceduralMode, owns_body},
+    controllers::body::{
+        ik_body,
+        procedural::{ProceduralStatus, config::ProceduralMode, owns_body},
+    },
     status::{
         body::{PARACHUTE_BODY, ROOF_TORSO, SEATED_TORSO, SWIM_TORSO, WINGSUIT_ARMS},
         controllers::{HAND_OVER, PROCEDURAL_MODE, TWIST_BONES},
@@ -55,4 +58,40 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
             status.stance_weight, status.stance_targets,
         ));
     }
+}
+
+/// The IK body's readout: its state, why it stands down, its weights, and the feet.
+pub(super) fn ik_body_readout(ui: &mut Ui) {
+    let ik = ik_body::status();
+    let w = ik.weights;
+    ui.label(format!(
+        "IK body: {} · {} · pelvis from the {}",
+        ik.state.label(),
+        ik.stand_down
+            .map_or("owns its channels", ik_body::StandDown::label),
+        ik.source.label(),
+    ));
+    ui.label(format!(
+        "IK weight: pelvis {:.2} turn {:.2} spine {:.2} feet {:.2} air {:.2} · {} targets",
+        w.pelvis_position, w.pelvis_orientation, w.spine, w.feet, w.air_legs, ik.targets_queued,
+    ));
+    ui.label(format!(
+        "Feet: left {} · right {} · {} planted · {} steps ({:.1}/min) · {} hand-overs · {} missed probes",
+        ik.feet[0].label(),
+        ik.feet[1].label(),
+        ik.planted,
+        ik.steps,
+        ik.steps_per_minute,
+        ik.handovers,
+        ik.missed,
+    ));
+    ui.label(format!(
+        "Last step: {} · pelvis lowered {:.3} m (at most {:.3} m this spell)",
+        ik.last_step.map_or_else(
+            || "none".to_owned(),
+            |(side, reason)| format!("{} foot, {}", side.label(), reason.label())
+        ),
+        ik.pelvis_drop_m,
+        ik.max_drop_m,
+    ));
 }
