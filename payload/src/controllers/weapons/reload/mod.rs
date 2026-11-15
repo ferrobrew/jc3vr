@@ -514,6 +514,16 @@ pub(crate) fn belt_speedloaders() -> [Option<BeltSpeedloader>; 2] {
 
 /// Why the magazine pouch is not a grab target this tick, for the grip press's log; `None` while
 /// it is, or while the reload is not acting.
+/// Play the refusal's click, the dry-fire sound of the first gun of the weapon at `address`, for a
+/// refusal that is not a gun's own (a full pouch). Returns whether it played.
+///
+/// # Safety
+///
+/// The game thread before the world update; the weapon is the local player's.
+pub(crate) unsafe fn refusal_click(address: usize) -> bool {
+    unsafe { engine::play_refuse_sound(address, 0) }.is_some()
+}
+
 pub(crate) fn pouch_note() -> Option<&'static str> {
     let state = STATE.lock();
     state

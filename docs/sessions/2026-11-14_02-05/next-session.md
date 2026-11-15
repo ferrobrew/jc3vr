@@ -77,4 +77,4 @@ Everything the earlier plans deferred was built on 15 November, untested in the 
 - Whether the torso capsules' hand lag pushes the player or tears a hold.
 - Frame time (new problem 4): an A/B with the estimator switched off.
 - The bars' twist grips removed outright if the triggers suit the reviewer.
-- A full pouch's refusal has a buzz but no sound; a loaded gun's magazine cannot be dropped seated (a double tap is two shots).
+- A loaded gun's magazine cannot be dropped seated (a double tap is two shots); the reviewer chose to keep it for dry guns only. The scooter's twist grips stay behind their switch until the triggers are tried.

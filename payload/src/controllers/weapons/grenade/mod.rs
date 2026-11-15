@@ -51,7 +51,7 @@ use crate::{
             held::{self, Held, Slot},
         },
         haptics::{self, Event},
-        loadout::{ItemId, TakeSource, safe_items::SafeItemView},
+        loadout::{ItemId, Place, TakeSource, live, safe_items::SafeItemView},
         motion,
         overlay::{
             primitive::{
@@ -70,7 +70,7 @@ use crate::{
             },
             hold::{self, act, refs::Weak},
             inventory::engine::weapon_of,
-            pouch_return,
+            pouch_return, reload,
         },
     },
 };
@@ -666,6 +666,17 @@ unsafe fn return_to_pouch(hand: Hand) {
         STATE.lock().status.returns_refused += 1;
         // The brief refusal buzz went unnoticed on the 14 November take, and six grenades fell.
         haptics::play(hand, Event::PouchFull);
+        // A click as well, the dry fire of the gun the other hand holds, or else of a gun carried
+        // on the body, so the refusal is heard.
+        let carried = live::bound()
+            .into_iter()
+            .filter(|(_, place)| !matches!(place, Place::World(_)))
+            .map(|(object, _)| object.get());
+        let clicked = live::in_hand(hand.other())
+            .into_iter()
+            .chain(carried)
+            .any(|gun| unsafe { reload::refusal_click(gun) });
+        tracing::debug!(target: "controllers", clicked, "grenade: the full pouch's click");
         return;
     }
     if !safe::return_held(hand) {
