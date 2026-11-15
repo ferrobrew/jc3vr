@@ -106,6 +106,7 @@ features! {
         Semantic => ("input.semantic", "Self-check"),
     },
     Tools {
+        Checklist => ("tools.checklist", "Session checklist"),
         TrackingCapture => ("tools.tracking", "Tracking capture"),
         RenderCapture => ("tools.render", "Render capture"),
         Replay => ("tools.replay", "Replay"),

@@ -18,6 +18,7 @@ use crate::{
 pub mod camera;
 pub(crate) mod capture;
 pub(crate) mod catalog;
+mod checklist;
 pub mod controllers;
 pub(crate) mod diagnostics;
 pub mod director;

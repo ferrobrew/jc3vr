@@ -8,9 +8,9 @@ mod tests;
 use egui::Ui;
 
 use crate::ui::{
-    camera, catalog::FeatureId, controllers, diagnostics, director, environment, game, hud,
-    navigation::NavigationState, overview, performance, previews, render, render_capture, testing,
-    vr,
+    camera, catalog::FeatureId, checklist, controllers, diagnostics, director, environment, game,
+    hud, navigation::NavigationState, overview, performance, previews, render, render_capture,
+    testing, vr,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -28,6 +28,7 @@ pub(crate) enum FeatureRoute {
     Replay,
     Director,
     Environment,
+    Checklist,
 }
 
 /// A feature body that needs neither the renderer nor the navigation state. Controller, game,
@@ -53,6 +54,7 @@ pub(crate) fn route(id: FeatureId) -> FeatureRoute {
         FeatureId::Replay => FeatureRoute::Replay,
         FeatureId::Director | FeatureId::Video => FeatureRoute::Director,
         FeatureId::Environment => FeatureRoute::Environment,
+        FeatureId::Checklist => FeatureRoute::Checklist,
         FeatureId::Posture
         | FeatureId::BodyFit
         | FeatureId::AnimationIk
@@ -126,12 +128,13 @@ fn controls(
         FeatureRoute::Replay => testing::replay_feature(ui),
         FeatureRoute::Director => director::feature(ui, id),
         FeatureRoute::Environment => environment::render(ui),
+        FeatureRoute::Checklist => checklist::feature(ui),
     }
 }
 
 fn readouts(id: FeatureId) -> impl Iterator<Item = FeatureBody> {
     let routed: Option<FeatureBody> = match route(id) {
-        FeatureRoute::Status | FeatureRoute::RenderRe => None,
+        FeatureRoute::Status | FeatureRoute::RenderRe | FeatureRoute::Checklist => None,
         FeatureRoute::HeadView => Some(|ui, _| camera::head_view_status(ui)),
         FeatureRoute::Controller => controllers::status(id),
         FeatureRoute::Runtime => Some(|ui, _| vr::status(ui)),
