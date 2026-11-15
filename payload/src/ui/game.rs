@@ -10,6 +10,7 @@ use crate::{
         self,
         animation::canopy::REEL_OPENINGS_SKIPPED,
         input::{
+            air::carried_updates,
             locomotion::{
                 AIM_RELATIVE_TASK_CALLS, FACE_CAMERA_CALLS, INSTANT_SPEED_FLOORS, MOVE_TASK_CALLS,
                 SKIPPED_STARTS, SLIDE_CALLS,
@@ -162,6 +163,10 @@ fn wingsuit_readout(ui: &mut egui::Ui) {
         "Stall flip: the game's"
     });
     ui.label(format!("Barrel rolls dropped: {}", barrel_rolls_dropped()));
+    ui.label(format!(
+        "Air physics updates with a reel's speed carried: {}",
+        carried_updates()
+    ));
 }
 
 #[cfg(test)]

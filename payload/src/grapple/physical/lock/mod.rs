@@ -81,6 +81,7 @@ use crate::{
         rope::{self, RopeFault},
     },
     headpose::xr,
+    hooks::input::air,
     vr::recenter_count,
 };
 
@@ -298,6 +299,19 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
             }
         } else if !carried && expected.is_finite() {
             unsafe { engine::set_wanted_velocity(character, expected) };
+        }
+    }
+    // A reel that ends with the character in the air carries its speed into the fall's and the
+    // wingsuit's speed cap; the speed is the character's on the reel's last carrying tick.
+    {
+        let mut reel = REEL_SPEED.lock();
+        if input.carries {
+            let measured = Vec3::from(character.m_MeasuredWorldVelocity);
+            *reel = measured.is_finite().then(|| measured.length());
+        } else if let Some(speed) = reel.take()
+            && !unsafe { engine::supported(character) }
+        {
+            air::carry_speed(speed);
         }
     }
     if !holds() {
@@ -754,6 +768,7 @@ fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: 
             // The reel's cancel runs on its next update; hand the velocity back once more after
             // it, in case the cancel cleared it.
             SHARED.lock().release_velocity = Some((velocity, Instant::now()));
+            air::carry_speed(velocity.length());
         }
     }
     tracing::info!(
@@ -872,6 +887,9 @@ static SHARED: Mutex<Shared> = Mutex::new(Shared {
 });
 
 /// Whether the lock holds the line, for the detours, which must not wait on [`SHARED`].
+/// The character's speed on the reel's last carrying tick, until the reel ends.
+static REEL_SPEED: Mutex<Option<f32>> = Mutex::new(None);
+
 static LOCKED: AtomicBool = AtomicBool::new(false);
 
 /// When the reel's arrival last asked for a hang ([`want_hang`]), when the lock last ticked, and
