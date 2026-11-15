@@ -30,15 +30,18 @@
 use std::{
     f32::consts::{PI, TAU},
     sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, Instant},
 };
 
 use detours_macro::detour;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
     equipment::grappling_hook::GrapplingHookState,
     input::parachute::{CharacterAirMovementSettings, CharacterParachuteSettings},
     types::math::{Vector2, Vector3},
 };
+use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{config::Config, grapple::hook, hooks::input::locomotion::head_decoupled};
@@ -65,9 +68,22 @@ fn get_parachute_steering_values(
     wanted_char_yawpitchroll_out: *mut Vector3,
     look_steer_out: *mut Vector2,
 ) {
+    // SAFETY: the game passes live pointers for the duration of the call.
+    let held = should_suppress(character) && unsafe { yaw_alignment_held(&*character) };
+    let unaligned = if held {
+        // SAFETY: as above.
+        unsafe { para_settings.as_ref() }.map(|settings| {
+            let mut copy = *settings;
+            copy.m_AirControl.m_RotateCharYawToVelocity.m_Speed = 0.0;
+            copy
+        })
+    } else {
+        None
+    };
+    let settings_in = unaligned.as_ref().map_or(para_settings, std::ptr::from_ref);
     GET_PARACHUTE_STEERING_VALUES.get().unwrap().call(
         character,
-        para_settings,
+        settings_in,
         input,
         dt,
         steering_values_out,
@@ -93,6 +109,66 @@ fn get_parachute_steering_values(
         }
     }
 }
+
+/// Whether the canopy's turn of the yaw toward the velocity is held off this call: for the first
+/// [`ALIGN_HOLD_S`] of the canopy, while the horizontal speed is below [`ALIGN_MIN_MPS`], and while
+/// the velocity points more than [`ALIGN_REVERSED_RAD`] from the facing. The game's alignment runs
+/// at full strength from the canopy's first update out of a reel, unlike an opening out of a fall,
+/// and the reel's speed falls through zero and overshoots backward as the canopy opens, which reads
+/// as a heading error of half a turn: on the 14 November take the canopy turned Rico 39 degrees
+/// left in a quarter of a second at 1459.4. The game turns the yaw through a spring whose speed
+/// scales both its integration and the turn, so the call is made with that speed at zero.
+///
+/// # Safety
+///
+/// `character` is the live local player.
+unsafe fn yaw_alignment_held(character: &Character) -> bool {
+    let now = Instant::now();
+    let opened = {
+        let mut state = ALIGN_STATE.lock();
+        let gap = state
+            .last_call
+            .is_none_or(|last| now.saturating_duration_since(last) > Duration::from_millis(250));
+        if gap {
+            state.opened_at = Some(now);
+        }
+        state.last_call = Some(now);
+        state.opened_at.unwrap_or(now)
+    };
+    if now.saturating_duration_since(opened).as_secs_f32() < ALIGN_HOLD_S {
+        return true;
+    }
+    let velocity = Vec3::from(character.m_MeasuredWorldVelocity);
+    let horizontal = Vec3::new(velocity.x, 0.0, velocity.z);
+    if !horizontal.is_finite() || horizontal.length() < ALIGN_MIN_MPS {
+        return true;
+    }
+    let (_, rotation, _) = Mat4::from(character.m_WorldMatrixT1).to_scale_rotation_translation();
+    let facing = rotation * Vec3::NEG_Z;
+    let facing = Vec3::new(facing.x, 0.0, facing.z);
+    facing.angle_between(horizontal) > ALIGN_REVERSED_RAD
+}
+
+/// When the canopy steering was last called, and when the canopy opened.
+struct AlignState {
+    last_call: Option<Instant>,
+    opened_at: Option<Instant>,
+}
+
+static ALIGN_STATE: Mutex<AlignState> = Mutex::new(AlignState {
+    last_call: None,
+    opened_at: None,
+});
+
+/// How long after the canopy opens its yaw alignment stays off, seconds.
+const ALIGN_HOLD_S: f32 = 0.6;
+
+/// The horizontal speed below which the canopy's yaw alignment stays off, metres per second.
+const ALIGN_MIN_MPS: f32 = 3.0;
+
+/// How far from the facing the velocity may point before the canopy's yaw alignment stays off,
+/// radians: about 100 degrees.
+const ALIGN_REVERSED_RAD: f32 = 1.75;
 
 /// Whether to remove the parachute look-steer this call: the character is a head-decoupled (VR)
 /// local player.
