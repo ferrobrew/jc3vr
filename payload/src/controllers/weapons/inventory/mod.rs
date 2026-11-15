@@ -415,6 +415,7 @@ pub(crate) unsafe fn input_tick(
         .collect();
     // SAFETY: the slots were read live this tick.
     unsafe { ammo::publish(&slot_objects) };
+    ammo::watch(&owner.m_Inventory);
     STATE.lock().game = Some(unsafe { game_view::capture(owner) });
     // SAFETY: the live local player, on the game thread before the world update.
     unsafe { docked_view::submit(owner) };
