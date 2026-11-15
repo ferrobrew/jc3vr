@@ -356,13 +356,10 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
     {
         let mode = current_mode();
         let aspect = effective_aspect(aspect_for(mode));
-        // World-lock the panel while an in-game menu (pause / map) is open, or during a non-gameplay
-        // transition in VR (loading screens / fast-travel, issue #27), so it stays put and the player
-        // can look around it, reverting to head-follow on close/resume. During a loading transition the
-        // panel latches to the head-tracked render pose (`render_camera_pose`), so it appears centered on
-        // wherever the head was pointing as the load began and then holds that world spot while the head
-        // looks around it.
-        let freeze = crate::hooks::camera::vr_loading_view_active() || menu_world_lock();
+        // World-lock the panel while an in-game menu (pause / map) is open, so it stays put and the
+        // player can look around it, reverting to head-follow on close. A loading screen shows
+        // nothing else to look at, so there the panel keeps the HUD's lazy follow of the face.
+        let freeze = menu_world_lock();
         let (pos, rot) = hud.update_pose(freeze, head_pos, head_rotation);
         // Dynamic panel distance: ease the panel toward the near field while riding a vehicle
         // (see `depth`). The base (far) distance is the configured one; full-screen UI always
