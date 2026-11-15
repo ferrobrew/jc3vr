@@ -10,16 +10,29 @@
 //! lock's tick does not run (the bindings idle, as under the gamepad scheme), or just after it
 //! refused a hang, the arrival is the game's (`lock::hang_takes_over`).
 //!
+//! While the lock holds, the reel's motion ([`NStateTask_ReelIn::UpdateMotion`]) turns the
+//! character toward the line's level part rather than up the line, so a hook overhead hangs Rico
+//! upright instead of pitching him to face it. The arrival skips that motion: inside about a metre
+//! of the hook the reel's arrival test passes on every tick, and without the motion the lock's
+//! velocity never reached the proxy, which froze Rico under ceilings. The arrival detour therefore
+//! runs the motion itself with the lock's velocity, using the reel task's own instance from its
+//! last motion.
+//!
 //! [`GrapplingHook::StartReelUpsideDown`]: jc3gi::equipment::grappling_hook::GrapplingHook::StartReelUpsideDown
+//! [`NStateTask_ReelIn::UpdateMotion`]: jc3gi::equipment::grappling_hook::NStateTask_ReelIn::UpdateMotion
 //! [`NStateTask_ReelIn::FinishReel`]: jc3gi::equipment::grappling_hook::NStateTask_ReelIn::FinishReel
 //! [`GrapplingHook::CheckReelCollisions`]: jc3gi::equipment::grappling_hook::GrapplingHook::CheckReelCollisions
 
+use std::ffi::c_void;
+
 use detours_macro::detour;
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::character::Character,
     equipment::grappling_hook::{GrappleTuning, GrapplingHook},
     types::{math::Vector3, shared_ptr::SharedPtr},
 };
+use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -32,7 +45,91 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&FINISH_REEL_BINDER)
         .with_static_binder(&CHECK_REEL_COLLISIONS_BINDER)
         .with_static_binder(&START_REEL_UPSIDE_DOWN_BINDER)
+        .with_static_binder(&UPDATE_MOTION_BINDER)
 }
+
+#[detour(address = jc3gi::equipment::grappling_hook::NStateTask_ReelIn::UpdateMotion_ADDRESS)]
+fn update_motion(
+    character: *mut Character,
+    target_dir: *const Vector3,
+    wanted_velocity: *const Vector3,
+    instance: *mut c_void,
+    properties: *mut c_void,
+    layer: i32,
+    dt: f32,
+) {
+    // SAFETY: the reel task's own arguments, on the character update that owns them.
+    let local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
+    if !local {
+        UPDATE_MOTION.get().unwrap().call(
+            character,
+            target_dir,
+            wanted_velocity,
+            instance,
+            properties,
+            layer,
+            dt,
+        );
+        return;
+    }
+    *LAST_MOTION.lock() = Some(Motion {
+        character: character as usize,
+        instance: instance as usize,
+        properties: properties as usize,
+        layer,
+        dt,
+    });
+    let level = holds()
+        .then(|| {
+            // SAFETY: as above.
+            let target = unsafe { target_dir.as_ref() }.map(|d| Vec3::from_array(d.data));
+            unsafe { character.as_ref() }.and_then(|c| level_direction(c, target))
+        })
+        .flatten()
+        .map(|d| Vector3 { data: d.to_array() });
+    let target_dir = level.as_ref().map_or(target_dir, std::ptr::from_ref);
+    UPDATE_MOTION.get().unwrap().call(
+        character,
+        target_dir,
+        wanted_velocity,
+        instance,
+        properties,
+        layer,
+        dt,
+    );
+}
+
+/// The reel task's arguments to its last motion, for the arrival's own motion while the lock
+/// holds.
+#[derive(Debug, Copy, Clone)]
+struct Motion {
+    character: usize,
+    instance: usize,
+    properties: usize,
+    layer: i32,
+    dt: f32,
+}
+
+static LAST_MOTION: Mutex<Option<Motion>> = Mutex::new(None);
+
+/// The direction a held line turns the character toward: the level part of `target` (the reel's
+/// own direction along the line), or, for a line too near vertical to have one, the character's
+/// own level facing. `None` when neither has a direction.
+fn level_direction(character: &Character, target: Option<Vec3>) -> Option<Vec3> {
+    let level = |v: Vec3| Vec3::new(v.x, 0.0, v.z).try_normalize();
+    target
+        .filter(|t| t.is_finite() && Vec3::new(t.x, 0.0, t.z).length() > LEVEL_MIN)
+        .and_then(level)
+        .or_else(|| {
+            let (_, rotation, _) =
+                Mat4::from(character.m_WorldMatrixT1).to_scale_rotation_translation();
+            level(rotation * Vec3::NEG_Z)
+        })
+}
+
+/// The least level share of the reel's direction that faces the character along it rather than
+/// keeping its own facing.
+const LEVEL_MIN: f32 = 0.25;
 
 #[detour(address = jc3gi::equipment::grappling_hook::GrapplingHook::StartReelUpsideDown_ADDRESS)]
 fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Character>) {
@@ -66,10 +163,33 @@ fn finish_reel(
     let local = unsafe { character.as_mut() }.filter(|c| c.m_IsLocalCharacter);
     if let Some(character) = local {
         if holds() {
-            // The arrival skipped the reel's motion this tick; hand the lock's velocity on
-            // instead.
+            // The arrival skipped the reel's motion this tick; run it with the lock's velocity,
+            // so the proxy still moves, or failing the reel task's instance, hand the velocity on.
             if let Some(velocity) = last_velocity() {
-                unsafe { engine::set_wanted_velocity(character, velocity) };
+                let motion = LAST_MOTION
+                    .lock()
+                    .filter(|m| m.character == std::ptr::from_mut(character) as usize);
+                let direction = level_direction(character, None);
+                match (motion, direction) {
+                    (Some(motion), Some(direction)) => {
+                        let wanted = Vector3 {
+                            data: velocity.to_array(),
+                        };
+                        let direction = Vector3 {
+                            data: direction.to_array(),
+                        };
+                        UPDATE_MOTION.get().unwrap().call(
+                            character,
+                            &raw const direction,
+                            &raw const wanted,
+                            motion.instance as *mut c_void,
+                            motion.properties as *mut c_void,
+                            motion.layer,
+                            motion.dt,
+                        );
+                    }
+                    _ => unsafe { engine::set_wanted_velocity(character, velocity) },
+                }
             }
             return;
         }
