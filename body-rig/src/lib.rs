@@ -10,6 +10,11 @@
 //! - [`estimate`]: the learned body estimator's estimate turned into a target for the legs and a
 //!   pull on the chest.
 //! - [`height`]: the standing neck height, measured rather than assumed.
+//! - [`fk`]: the player's pelvis, hips, knees, and ankles by forward kinematics from the tracked
+//!   neck and the estimate's rotations.
+//! - [`contact`]: the IK body's feet, planted, swinging, or unsupported, and the rules that step
+//!   them.
+//! - [`ik_weight`]: the IK body's weight per state and channel, and its blend.
 //! - [`rig`]: all of them advanced together.
 //!
 //! [`angle`], [`rotation`], [`geometry`], and [`smooth`] hold the heading, rotation, geometry, and
@@ -20,9 +25,12 @@
 
 pub mod angle;
 pub mod body;
+pub mod contact;
 pub mod estimate;
+pub mod fk;
 pub mod geometry;
 pub mod height;
+pub mod ik_weight;
 pub mod pelvis;
 pub mod rig;
 pub mod rotation;

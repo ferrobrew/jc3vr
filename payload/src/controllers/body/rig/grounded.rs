@@ -130,6 +130,7 @@ pub fn frame(input: &GroundedInput) -> Option<GroundedFrame> {
         moving: input.moving,
         sample_height: input.sample_height,
         estimate: input.estimate,
+        ik_pelvis: None,
         dt: input.dt,
     };
     let output = state.rig.update(&rig_frame, &input.tuning);

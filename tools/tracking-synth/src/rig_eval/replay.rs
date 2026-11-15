@@ -73,6 +73,7 @@ pub(crate) fn run_recorded(
                 moving: input.moving,
                 sample_height: input.sample_height,
                 estimate,
+                ik_pelvis: None,
                 dt: input.dt_s,
             },
             &tuning,

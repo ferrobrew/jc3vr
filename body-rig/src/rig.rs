@@ -67,6 +67,9 @@ pub struct RigFrame {
     pub sample_height: bool,
     /// The learned body estimator's latest estimate, in the room frame, when it runs.
     pub estimate: Option<BodyEstimate>,
+    /// The floor point under the FK pelvis, `(x, z)`, while the IK body owns the feet: the drive
+    /// follows it rather than committing steps after the neck.
+    pub ik_pelvis: Option<Vec2>,
     /// Seconds since the last frame.
     pub dt: f32,
 }
@@ -76,8 +79,9 @@ pub struct RigFrame {
 pub struct RigOutput {
     pub solve: PelvisSolve,
     pub phase: StepPhase,
-    /// What the drive closes, `(x, z)`: the pelvis's gap to the floor point under the neck, or the
-    /// drift's part of it while drifting.
+    /// What the drive closes, `(x, z)`: the pelvis's gap to the floor point under the neck, the
+    /// drift's part of it while drifting, or the gap to the floor point under the FK pelvis while
+    /// following.
     pub gap: Vec2,
     /// The body's heading: the legs', which Rico faces.
     pub body_yaw: f32,
@@ -261,20 +265,27 @@ impl GroundedRig {
             &tuning.pelvis,
         );
         solve.drift = self.drift_with_slip(frame.slip, solve.offset, body_yaw);
-        let phase = self.step.update(
-            &StepInput {
-                demand_m: solve.demand_m(),
-                gap: solve.offset,
-                drift: solve.drift,
-                head_speed_mps: self.head_speed_mps,
-                dt: frame.dt,
-            },
-            &tuning.step,
-        );
-        let gap = if phase == StepPhase::Drifting {
-            solve.drift
-        } else {
-            solve.offset
+        let follow = frame.ik_pelvis.filter(|p| p.is_finite());
+        let phase = match follow {
+            Some(_) => {
+                self.step.follow();
+                StepPhase::Following
+            }
+            None => self.step.update(
+                &StepInput {
+                    demand_m: solve.demand_m(),
+                    gap: solve.offset,
+                    drift: solve.drift,
+                    head_speed_mps: self.head_speed_mps,
+                    dt: frame.dt,
+                },
+                &tuning.step,
+            ),
+        };
+        let gap = match (phase, follow) {
+            (StepPhase::Following, Some(target)) => target - frame.pelvis,
+            (StepPhase::Drifting, _) => solve.drift,
+            _ => solve.offset,
         };
         let body_yaw = match head_yaw {
             Some(head_yaw) => self.yaw.update_with(
@@ -330,6 +341,7 @@ mod tests {
             moving: false,
             sample_height: true,
             estimate: None,
+            ik_pelvis: None,
             dt: DT,
         }
     }
@@ -365,6 +377,32 @@ mod tests {
         );
         assert_eq!(out.phase, StepPhase::Idle);
         assert!(out.steps >= 1);
+    }
+
+    #[test]
+    fn following_the_fk_pelvis_moves_the_pelvis_with_it_and_commits_no_step() {
+        let mut rig = GroundedRig::new(body());
+        let tuning = RigTuning::new();
+        let standing = body().standing_neck();
+        let mut pelvis = Vec2::ZERO;
+        // The player bends far forward, which would commit a step after the neck, while the FK
+        // pelvis moves 20 cm back and to the side.
+        let target = Vec2::new(0.1, 0.2);
+        let mut out = RigOutput::default();
+        for i in 0..(2.0 / DT) as usize {
+            let t = i as f32 * DT;
+            let neck = Vec3::new(0.0, standing - 0.3, -0.6 * (t / 0.5).min(1.0));
+            let mut input = frame(neck, pelvis);
+            input.ik_pelvis = Some(target * (t / 0.5).min(1.0));
+            out = rig.update(&input, &tuning);
+            assert_eq!(out.phase, StepPhase::Following);
+            pelvis += crate::step::drive_velocity(out.phase, out.gap, DT, &tuning.step) * DT;
+        }
+        assert!((pelvis - target).length() < 0.01, "{pelvis:?}");
+        assert_eq!(out.steps, 0);
+        // Handed back, the commit takes over from the neck.
+        out = rig.update(&frame(Vec3::new(0.0, standing, -0.6), pelvis), &tuning);
+        assert_ne!(out.phase, StepPhase::Following);
     }
 
     #[test]

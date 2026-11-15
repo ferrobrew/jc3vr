@@ -142,6 +142,7 @@ pub(crate) fn run_frames(
                 moving,
                 sample_height: true,
                 estimate,
+                ik_pelvis: None,
                 dt,
             },
             &tuning,

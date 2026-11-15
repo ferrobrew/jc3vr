@@ -139,11 +139,12 @@ impl ComparisonAccumulator {
 /// a few rendered frames.
 const PAIR_NS: u64 = 50_000_000;
 
-const PHASES: [StepPhase; 4] = [
+const PHASES: [StepPhase; 5] = [
     StepPhase::Idle,
     StepPhase::Stepping,
     StepPhase::Settling,
     StepPhase::Drifting,
+    StepPhase::Following,
 ];
 
 fn phase_of(label: &str) -> Option<StepPhase> {

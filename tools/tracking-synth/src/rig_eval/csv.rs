@@ -128,5 +128,6 @@ fn phase_code(phase: StepPhase) -> u8 {
         StepPhase::Stepping => 1,
         StepPhase::Settling => 2,
         StepPhase::Drifting => 3,
+        StepPhase::Following => 4,
     }
 }

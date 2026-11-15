@@ -47,6 +47,9 @@ pub struct StepTuning {
     pub drift_steady_mps: f32,
     /// The speed the idle drift shuffles the pelvis at, metres per second.
     pub drift_speed_mps: f32,
+    /// While the IK body owns the feet, the drive closes the gap to the floor point under the FK
+    /// pelvis at the gap over this, seconds.
+    pub follow_response_s: f32,
 }
 
 impl StepTuning {
@@ -64,6 +67,7 @@ impl StepTuning {
             drift_after_s: 1.0,
             drift_steady_mps: 0.06,
             drift_speed_mps: 0.12,
+            follow_response_s: 0.12,
         }
     }
 }
@@ -87,6 +91,9 @@ pub enum StepPhase {
     Settling,
     /// A weight shift held while standing still, shuffled out slowly.
     Drifting,
+    /// The IK body owns the feet: the pelvis follows the floor point under the FK pelvis, and the
+    /// feet step for themselves.
+    Following,
 }
 
 impl StepPhase {
@@ -107,6 +114,7 @@ impl StepPhase {
             StepPhase::Stepping => "stepping",
             StepPhase::Settling => "settling",
             StepPhase::Drifting => "drifting",
+            StepPhase::Following => "following",
         }
     }
 }
@@ -157,6 +165,14 @@ impl StepCommit {
         self.steps
     }
 
+    /// Follow the FK pelvis: whatever was under way stops, and the IK body's feet step for
+    /// themselves until the next [`update`](Self::update) takes the commit back.
+    pub fn follow(&mut self) {
+        self.phase = StepPhase::Following;
+        self.elapsed = 0.0;
+        self.drift_held = 0.0;
+    }
+
     /// Stand: whatever was under way stops, and the next step needs the threshold again.
     pub fn stand(&mut self) {
         self.phase = StepPhase::Idle;
@@ -195,14 +211,14 @@ impl StepCommit {
         }
         self.elapsed += dt;
         let next = match self.phase {
-            StepPhase::Idle | StepPhase::Settling | StepPhase::Drifting
+            StepPhase::Idle | StepPhase::Settling | StepPhase::Drifting | StepPhase::Following
                 if demand > tuning.commit_m =>
             {
                 self.steps += 1;
                 StepPhase::Stepping
             }
             StepPhase::Idle if self.drift_held >= tuning.drift_after_s => StepPhase::Drifting,
-            StepPhase::Idle => StepPhase::Idle,
+            StepPhase::Idle | StepPhase::Following => StepPhase::Idle,
             StepPhase::Drifting
                 if drift <= tuning.settle_done_m || self.elapsed >= tuning.give_up_s =>
             {
@@ -246,6 +262,7 @@ pub fn drive_velocity(phase: StepPhase, gap: Vec2, dt: f32, tuning: &StepTuning)
         StepPhase::Stepping => distance / tuning.response_s.max(1.0e-3),
         StepPhase::Settling => tuning.settle_speed_mps,
         StepPhase::Drifting => tuning.drift_speed_mps,
+        StepPhase::Following => distance / tuning.follow_response_s.max(1.0e-3),
     };
     let cap = tuning.max_speed_mps.max(0.0);
     let speed = speed.clamp(0.0, cap);
@@ -394,6 +411,23 @@ mod tests {
     }
 
     #[test]
+    fn following_closes_the_gap_quickly_and_hands_back_to_the_commit() {
+        let near = drive_velocity(StepPhase::Following, Vec2::new(0.0, -0.06), DT, &TUNING);
+        assert!((near.length() - 0.06 / TUNING.follow_response_s).abs() < 1e-5);
+        let mut commit = StepCommit::new();
+        commit.follow();
+        assert_eq!(commit.phase(), StepPhase::Following);
+        assert!(commit.phase().drives() && !commit.phase().steps());
+        // Taken back with no demand, it stands; with demand, it steps at once.
+        assert_eq!(commit.update(&input(0.0, 0.1), &TUNING), StepPhase::Idle);
+        commit.follow();
+        assert_eq!(
+            commit.update(&input(0.3, 0.4), &TUNING),
+            StepPhase::Stepping
+        );
+    }
+
+    #[test]
     fn a_driven_pelvis_arrives_without_overshooting() {
         let mut commit = StepCommit::new();
         let mut pelvis = Vec2::ZERO;
@@ -434,6 +468,7 @@ mod tests {
                 StepPhase::Stepping,
                 StepPhase::Settling,
                 StepPhase::Drifting,
+                StepPhase::Following,
             ] {
                 let v = drive_velocity(phase, gap, dt, &TUNING);
                 prop_assert!(v.length() * dt <= gap.length() + 1e-4);

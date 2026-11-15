@@ -72,6 +72,7 @@ fn rig_frames() -> Vec<RigFrame> {
                 moving: i > 200,
                 sample_height: true,
                 estimate: None,
+                ik_pelvis: None,
                 dt: DT,
             }
         })
