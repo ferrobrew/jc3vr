@@ -422,8 +422,9 @@ unsafe fn hide_standalone_prompts(hidden: bool) {
 }
 
 /// Tear `weapon` off its mount into `hand`: release its fire, detach it through the weapon's own
-/// path, release the vehicle's hold on it where a vehicle carries it, and take it into the hand.
-/// A gun the table cannot take (a heavy gun from the dropped state) stays where it is.
+/// path, free it from its mount's hinges, release the vehicle's hold on it where a vehicle carries
+/// it, and take it into the hand. A gun the table refuses falls where the tear left it, with its
+/// pickup offered.
 ///
 /// # Safety
 /// The game thread, outside the world update; the character and the weapon are live, the weapon
@@ -436,6 +437,7 @@ unsafe fn tear_off(
 ) {
     let admitted = unsafe { pickup::preflight(&*local, &*weapon, hand, false) };
     unsafe { armed::release_fire(weapon) };
+    let constraints = unsafe { native::mount_constraints(weapon) };
     unsafe { weapon.DetachMountedGun() };
     if let Some(hold) = hold
         && let Err(error) = unsafe { hold.release(weapon) }
@@ -446,14 +448,20 @@ unsafe fn tear_off(
             "mounted gun: the vehicle's hold on the torn gun was not released"
         );
     }
+    // The drop leaves the mount's hinges enabled, which kept a torn gun on its tripod; with them
+    // disabled it falls. The drop also skips the pickup off a mount, which the dropped gun gets
+    // below.
+    let freed = unsafe { native::free_from_mount(&constraints) };
     tracing::info!(
         target: "controllers",
         from_vehicle = hold.is_some(),
+        freed,
         "mounted gun: the pull tore the gun off"
     );
     if weapon.m_State != WeaponState::E_WS_DROPPED {
         return;
     }
+    unsafe { weapon.PickupEnable() };
     let delivered = admitted
         .map_err(|error| error.to_string())
         .and_then(|admitted| {

@@ -150,6 +150,55 @@ pub(super) unsafe fn motors(weapon: &WeaponBase) -> Vec<Motor> {
     motors
 }
 
+/// The constraints that hold a mounted weapon on its mount: the attach constraint and the
+/// horizontal and vertical hinges, deduplicated by control block. Taken before the weapon is
+/// detached, since the drop clears the weapon's references to them.
+///
+/// # Safety
+/// The weapon is live on the game thread.
+pub(super) unsafe fn mount_constraints(weapon: &WeaponBase) -> Vec<Weak> {
+    let sources = [
+        &weapon.m_ConstraintAttach,
+        &weapon.m_ConstraintHorizontal,
+        &weapon.m_ConstraintVertical[0],
+        &weapon.m_ConstraintVertical[1],
+    ];
+    let mut seen = Vec::new();
+    sources
+        .into_iter()
+        .filter(|source| !source.pn.is_null())
+        .filter(|source| {
+            let key = (source.px as usize, source.pn as usize);
+            let fresh = !seen.contains(&key);
+            seen.push(key);
+            fresh
+        })
+        .map(|source| unsafe { Weak::of(source) })
+        .collect()
+}
+
+/// Disable the constraints `constraints` in the physics world, freeing a torn weapon from its
+/// mount: the drop removes only the attach constraint, and the hinges left enabled kept a gun torn
+/// off a tripod on it. Returns how many were disabled.
+///
+/// # Safety
+/// The game thread, outside the physics step.
+pub(super) unsafe fn free_from_mount(constraints: &[Weak]) -> usize {
+    let mut freed = 0;
+    for weak in constraints {
+        let Some(alive) = weak.lock() else {
+            continue;
+        };
+        if unsafe { constraint(&alive) }.is_none() {
+            continue;
+        }
+        // SAFETY: the strong reference keeps the constraint alive; its game object is at its start.
+        unsafe { (*alive.object()).Enable(false) };
+        freed += 1;
+    }
+    freed
+}
+
 /// The weapon's pickup prompt, if it has one.
 ///
 /// # Safety
