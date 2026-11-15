@@ -83,7 +83,7 @@ fn remapped_pointer_select_uses_a_in_debug_capture_without_raw_trigger_fallback(
     menu_tick(&mut runtime, 1, false, A);
     menu_tick(&mut runtime, 2, false, A);
     let tick = menu_tick(&mut runtime, 3, true, A);
-    assert!(tick.button(id, Hand::Right).pressed);
+    assert!(tick.intent(id, Hand::Right).button.pressed);
     let mut input = SemanticInput::rest(SemanticSet::Menu, Default::default(), Hand::Right);
     input.get_mut(id).unwrap().bound = crate::vr::input::semantic::bound::of_sources([A]);
     tick.filter_semantic(&mut input);
@@ -103,12 +103,14 @@ fn remapped_pointer_select_uses_a_in_debug_capture_without_raw_trigger_fallback(
     );
     assert!(
         !menu_tick(&mut runtime, 4, false, A)
-            .button(id, Hand::Right)
+            .intent(id, Hand::Right)
+            .button
             .down
     );
     assert!(
         !menu_tick(&mut runtime, 5, false, A)
-            .button(id, Hand::Right)
+            .intent(id, Hand::Right)
+            .button
             .held()
     );
     assert!(
@@ -118,7 +120,8 @@ fn remapped_pointer_select_uses_a_in_debug_capture_without_raw_trigger_fallback(
             true,
             "/user/hand/right/input/unknown/click"
         )
-        .button(id, Hand::Right)
+        .intent(id, Hand::Right)
+        .button
         .held()
     );
 }
@@ -161,7 +164,7 @@ fn commlink_remap_uses_accepted_press_and_existing_native_toggle_targets() {
             .filter(|desired| desired.target.action == Action::GUI_PDA)
             .collect();
         assert_eq!(toggles.len(), if accepted { 2 } else { 0 });
-        assert_eq!(tick.button(id, Hand::Right).pressed, accepted);
+        assert_eq!(tick.intent(id, Hand::Right).button.pressed, accepted);
     }
 }
 
@@ -359,7 +362,10 @@ fn summary_remap_is_a_boolean_hold_and_claimed_or_unresolved_sources_are_inert()
                 ),
                 true,
             );
-            assert_eq!(tick.button(id, Hand::Right).down, source == A && down);
+            assert_eq!(
+                tick.intent(id, Hand::Right).button.down,
+                source == A && down
+            );
         }
     }
     let mut runtime = Runtime::default();
@@ -385,5 +391,5 @@ fn summary_remap_is_a_boolean_hold_and_claimed_or_unresolved_sources_are_inert()
         ),
         true,
     );
-    assert!(!tick.button(id, Hand::Right).held());
+    assert!(!tick.intent(id, Hand::Right).button.held());
 }

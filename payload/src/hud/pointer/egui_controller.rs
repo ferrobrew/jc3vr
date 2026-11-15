@@ -44,7 +44,7 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        bindings::controls::ButtonControl,
+        bindings::intents::Intent,
         frame::{Button, ControllerFrame, Edges, Hand, Pose},
         overlay::{
             primitive::{Anchor, DepthMode, HandPose, Primitive, Rgba, Source},
@@ -87,7 +87,7 @@ impl ControllerUpdate {
 pub(crate) fn update_egui_controller(
     input: Option<(&ControllerFrame, &Edges)>,
     dominant: Hand,
-    select: [ButtonControl; 2],
+    select: [Intent; 2],
 ) {
     let now = Instant::now();
     let (enabled, slop) = Config::lock_query(|c| {
@@ -105,8 +105,9 @@ pub(crate) fn update_egui_controller(
         .map(|(frame, edges)| {
             Hand::BOTH.map(|hand| {
                 let mut sample = sample(frame, edges, hand);
-                let button = select[hand.index()];
-                sample.trigger = TriggerSample::from(button);
+                let select = select[hand.index()];
+                sample.trigger = TriggerSample::from(select.button);
+                sample.trigger_value = select.raw;
                 sample
             })
         });
@@ -216,6 +217,8 @@ impl ClickSlop {
 struct HandSample {
     hit: Option<PanelHit>,
     trigger: TriggerSample,
+    /// The trigger's value behind [`trigger`](Self::trigger), for the aim hold.
+    trigger_value: f32,
     secondary: TriggerSample,
     stick: Vec2,
     /// The hand's cockpit-frame aim pose, while its poses are usable.
@@ -294,6 +297,7 @@ fn read_hand(
     HandSample {
         hit,
         trigger: button(Button::TriggerPress),
+        trigger_value: side.inputs.trigger,
         secondary: button(Button::BClick),
         stick: if usable {
             side.inputs.thumbstick
@@ -411,9 +415,12 @@ impl EguiControllerState {
         self.triggers = downs;
 
         let sample = samples[hand.index()];
+        let (hit, down) = self
+            .press
+            .aim(sample.hit, downs[hand.index()], sample.trigger_value);
         let pointer = self
             .press
-            .step(sample.hit, downs[hand.index()], hand, now)
+            .step(hit, down, hand, now)
             .filter(|pointer| pointer.owns_ui);
         let primary = pointer.map_or(0, |pointer| pointer.buttons & 1);
         let secondary = self
@@ -551,6 +558,7 @@ mod tests {
         HandSample {
             hit,
             trigger: level(trigger),
+            trigger_value: if trigger { 1.0 } else { 0.0 },
             ..Default::default()
         }
     }

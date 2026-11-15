@@ -91,7 +91,7 @@ use crate::{
             controls::{ButtonControl, ClosedHand, Controls, holds_unseen},
             grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
-            intents::SemanticInput,
+            intents::{Intent, SemanticInput},
             policy_a::{
                 SystemCommand,
                 runtime::{GroupBlocker, Runtime, TickInput},
@@ -359,9 +359,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                 frame.hand(hand).active && frame.hand(hand).grip.is_tracked()
             }) && PANEL_RECOVERY.lock().ready(hand)
             {
-                routed.button(MenuAction::PointerSelect.id(), hand)
+                routed.intent(MenuAction::PointerSelect.id(), hand)
             } else {
-                ButtonControl::default()
+                Intent::default()
             }
         }),
     );
@@ -439,9 +439,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     update_controller(
         Some(&frame),
         if state.recovery.ready(config.acting_hand()) {
-            routed.button(MenuAction::PointerSelect.id(), config.acting_hand())
+            routed.intent(MenuAction::PointerSelect.id(), config.acting_hand())
         } else {
-            ButtonControl::default()
+            Intent::default()
         },
         detection.mode == Mode::Ui,
         config.acting_hand(),

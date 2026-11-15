@@ -13,12 +13,13 @@ use parking_lot::Mutex;
 use crate::{
     config::Config,
     controllers::{
-        bindings::controls::ButtonControl,
+        bindings::{controls::ButtonControl, intents::Intent},
         frame::{ActionSetKind, ControllerFrame, Hand, MAX_FRAME_AGE},
         scheme,
     },
     headpose,
     hud::pointer::{
+        aim_hold::AimHold,
         panel::{PanelHit, aim_at_panel, intersect_panel},
         route,
     },
@@ -41,7 +42,7 @@ pub struct ControllerPointer {
 /// game-menu click.
 pub fn update_controller(
     frame: Option<&ControllerFrame>,
-    select: ButtonControl,
+    select: Intent,
     ui_mode: bool,
     hand: Hand,
     recovery_ready: bool,
@@ -49,7 +50,7 @@ pub fn update_controller(
     let now = Instant::now();
     let mut state = CONTROLLER_STATE.lock();
     state.expire(now);
-    let trigger = TriggerSample::from(select);
+    let trigger = TriggerSample::from(select.button);
     let trigger_down = trigger.down(if state.hand == Some(hand) {
         state.trigger_down
     } else {
@@ -73,6 +74,7 @@ pub fn update_controller(
         .then(|| aim_at_panel(side.aim.pose))
         .flatten()
         .and_then(|(ray, corners)| intersect_panel(ray, &corners));
+    let (hit, trigger_down) = state.aim(hit, trigger_down, select.raw);
     state.suppress_desktop_press(route::desktop_capture(), trigger_down);
     state.step(hit, trigger_down, hand, now)
 }
@@ -152,6 +154,7 @@ pub(super) struct ControllerState {
     /// Whether the current trigger press began with a projected pointer, including outside its edge.
     trigger_claimed: bool,
     hand: Option<Hand>,
+    aim: AimHold,
 }
 
 static CONTROLLER_STATE: Mutex<ControllerState> = Mutex::new(ControllerState::new());
@@ -166,6 +169,7 @@ impl ControllerState {
             trigger_down: false,
             trigger_claimed: false,
             hand: None,
+            aim: AimHold::new(),
         }
     }
 
@@ -175,6 +179,18 @@ impl ControllerState {
         let mut state = Self::new();
         state.trigger_down = trigger_down;
         state
+    }
+
+    /// Apply the trigger's aim hold to this tick's hit and press, given the trigger's value. Runs
+    /// before [`step`](Self::step), which sees the pinned hit and a press that is down only at a
+    /// full pull.
+    pub(super) fn aim(
+        &mut self,
+        hit: Option<PanelHit>,
+        trigger_down: bool,
+        value: f32,
+    ) -> (Option<PanelHit>, bool) {
+        self.aim.step(hit, trigger_down, value)
     }
 
     /// Whether a press that began on the panel is held.

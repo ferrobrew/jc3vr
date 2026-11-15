@@ -6,6 +6,8 @@
 //!
 //! - [`panel`] holds the rendered panels and the ray intersection against them;
 //! - [`controller`] turns the dominant controller's aim ray and trigger into a pointer sample;
+//! - [`aim_hold`] pins the cursor on a light trigger pull and clicks only on a full one, for every
+//!   controller pointer;
 //! - [`route`] decides which source, if any, owns the game UI's mouse on each delivery.
 //!
 //! The egui debug panel has its own pointer, built the same way:
@@ -16,6 +18,7 @@
 //! - [`egui_route`] gives egui's pointer to the desktop mouse or the controller, whichever was used
 //!   last, and builds the egui events.
 
+mod aim_hold;
 mod controller;
 mod egui_controller;
 mod egui_grab;

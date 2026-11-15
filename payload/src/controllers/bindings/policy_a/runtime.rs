@@ -462,15 +462,16 @@ impl Runtime {
 }
 
 impl Tick {
-    /// Accepted state for an owner outside the gameplay table evaluator.
-    pub(crate) fn button(&self, id: ActionId, hand: Hand) -> ButtonControl {
+    /// Accepted intent for an owner outside the gameplay table evaluator: the press with the
+    /// float value behind it, or nothing while the policy does not permit the route.
+    pub(crate) fn intent(&self, id: ActionId, hand: Hand) -> Intent {
         if !self.permits(id, hand) {
-            return ButtonControl::default();
+            return Intent::default();
         }
         self.routes
             .iter()
             .find(|(action, side, _)| *action == id && *side == hand)
-            .map_or_default(|(_, _, intent)| intent.button)
+            .map_or_default(|(_, _, intent)| *intent)
     }
 
     /// Whether ordered delivery invalidated this route rather than accepting its release.
