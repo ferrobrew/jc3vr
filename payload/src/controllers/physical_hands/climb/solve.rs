@@ -47,6 +47,28 @@ pub fn body_target(follows: impl IntoIterator<Item = Follow>) -> Option<Vec3> {
     target.is_finite().then_some(target)
 }
 
+/// How far a hand's pull that lifts the body by `rise` metres also carries it toward the face it
+/// grips, whose normal (toward the hand) is `normal`: on a face that leans back, the face at the
+/// head's height is further away than at the feet, and a purely vertical lift leaves the body
+/// behind it, so the player had to lean the whole head forward to keep reaching it on the 14
+/// November take. The body rises along the face instead: `rise` times the face's slope (its
+/// normal's upward share over its level share, at most one, so a ledge's top adds nothing), toward
+/// the face. A vertical face, an overhang, a lowering, or a face the normal says nothing of adds
+/// nothing.
+pub fn slope_follow(rise: f32, normal: Vec3) -> Vec3 {
+    let level = Vec3::new(normal.x, 0.0, normal.z);
+    let level_len = level.length();
+    if !rise.is_finite() || rise <= 0.0 || !normal.is_finite() || level_len < MIN_FACE_LEVEL {
+        return Vec3::ZERO;
+    }
+    let slope = (normal.y / level_len).clamp(0.0, 1.0);
+    -level / level_len * rise * slope
+}
+
+/// The least level share of a gripped surface's normal for it to count as a face the body rises
+/// along, rather than a ledge's top.
+const MIN_FACE_LEVEL: f32 = 0.5;
+
 /// How the body is moved toward its target.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct ClimbTuning {
@@ -627,5 +649,21 @@ mod tests {
             }
         }
         assert!(arrived, "{feet:?}");
+    }
+
+    #[test]
+    fn a_pull_up_a_face_that_leans_back_carries_the_body_toward_it() {
+        // A face leaning back 30 degrees, facing +Z.
+        let normal = Vec3::new(0.0, 0.5, 0.866);
+        let along = slope_follow(1.0, normal);
+        assert!(along.z < -0.5 && along.z > -0.6, "{along}");
+        assert_eq!(slope_follow(1.0, Vec3::Z), Vec3::ZERO, "a vertical face");
+        assert_eq!(slope_follow(-1.0, normal), Vec3::ZERO, "a lowering");
+        assert_eq!(
+            slope_follow(1.0, Vec3::new(0.0, -0.5, 0.866)),
+            Vec3::ZERO,
+            "an overhang"
+        );
+        assert_eq!(slope_follow(1.0, Vec3::Y), Vec3::ZERO, "a ledge's top");
     }
 }

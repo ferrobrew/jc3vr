@@ -16,7 +16,7 @@ use crate::{
                 engine, native,
                 solve::{
                     ClimbTuning, Follow, MantleTuning, body_target, carry_velocity, climb_velocity,
-                    fling_carry, is_ledge, release_velocity, smooth_motion,
+                    fling_carry, is_ledge, release_velocity, slope_follow, smooth_motion,
                 },
                 state::{
                     Carry, Event, Grip, LOG_PERIOD, MAX_MANTLE_STEPS, MAX_STALE_STEPS, MantleStep,
@@ -334,8 +334,9 @@ pub(crate) unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2
         let grip = state.grips[i]?;
         let palm = state.palms[i]?;
         let moved = carried[i].map_or(Vec3::ZERO, |c| c.point - grip.hold.point);
+        let along = slope_follow((grip.palm - palm).y, grip.hold.normal);
         Some(Follow {
-            body: grip.body + moved,
+            body: grip.body + moved + along,
             grip: grip.palm,
             palm,
         })
