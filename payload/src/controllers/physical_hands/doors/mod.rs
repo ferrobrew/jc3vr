@@ -78,8 +78,8 @@ pub(crate) const HANDLE_REACH_M: f32 = 0.30;
 
 /// What a hand reaches of a vehicle through the ray hit `hit` on `object`'s body `body`, from a
 /// palm centred at `palm`: an open door it touches within `reach`'s box reach, or a closed door
-/// whose handle the palm is within `reach`'s handle reach of or whose outer face it reaches away
-/// from the hinge ([`acquisition::panel`]). `None` when the hit is on neither, so that the pickup
+/// the palm reaches within `reach`'s box reach, at the handle when the palm is within the handle
+/// reach of it ([`acquisition::panel`]). `None` when the hit is on neither, so that the pickup
 /// treats it as anything else.
 ///
 /// # Safety
@@ -139,8 +139,7 @@ pub(crate) unsafe fn observed_reach(
             }),
         });
     }
-    // The vehicle's own body: a closed door, taken at its handle or on its outer face away from
-    // the hinge, or an open one the ray reported as the vehicle, taken anywhere.
+    // The vehicle's own body: a door, closed or open, taken anywhere the hand reaches it.
     doors
         .iter()
         .filter_map(|d| {

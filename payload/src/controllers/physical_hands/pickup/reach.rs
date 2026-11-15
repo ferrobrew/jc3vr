@@ -587,7 +587,7 @@ unsafe fn judge(
     }
     // SAFETY: forwarded from the caller; the hit was found this tick.
     let what = unsafe { bodies::describe(object) };
-    // A vehicle's door, open or a closed one where a hand opens it, before anything else: the
+    // A vehicle's door, open or closed, wherever the hand reaches it, before anything else: the
     // player may stand on the vehicle whose door they open.
     // SAFETY: forwarded from the caller; the hit was found this tick.
     if let Some(door) = unsafe {

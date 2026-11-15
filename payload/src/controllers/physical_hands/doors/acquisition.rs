@@ -3,12 +3,11 @@
 use std::num::NonZeroUsize;
 
 use glam::Vec3;
-use jc3gi::vehicle::vehicle::DoorSlot;
 
 use crate::controllers::physical_hands::{
     doors::{
         engine::DoorRead,
-        geometry::{DoorKind, DoorReach, door_handle},
+        geometry::{DoorReach, door_handle},
         scan::kind_of,
         table,
     },
@@ -55,9 +54,6 @@ impl PanelReach {
 pub(crate) enum PanelRefusal {
     NoBox,
     OutOfReach,
-    /// A closed door reached away from its handle where a hand more likely holds on to the
-    /// vehicle: a hood or a trunk, the door's inner side, or its half by the hinge.
-    AwayFromHandle,
     NoOpenBody,
     LatchedWithOwnBody,
 }
@@ -75,29 +71,22 @@ pub(crate) fn panel(
     let mut reach = door_box
         .reach(palm, radii.box_m.max(radii.handle_m))
         .ok_or(PanelRefusal::OutOfReach)?;
-    let kind = kind_of(door.slot);
-    let handle = door_handle(&door_box, kind, door.part_hash.and_then(table::lookup));
-    let outward = handle.map_or_else(|| door_box.outward(vehicle_origin), |h| h.normal);
-    // A closed door is taken away from its handle as an open one is, where the hand puts its
-    // force, but only where a hand reaching for it more likely means to open it than to hold on
-    // to the vehicle: on the outer face of a door other than a hood or a trunk, in the half
-    // away from the hinge. A hand braced on a hood, on the door's inner side, or by its hinge
-    // holds the vehicle instead. Within the handle's reach the hand closes on the handle itself.
+    let handle = door_handle(
+        &door_box,
+        kind_of(door.slot),
+        door.part_hash.and_then(table::lookup),
+    );
+    // A closed door is taken wherever the palm reaches it, as an open one is: the force the hand
+    // puts on it acts at that point, so a pull near the hinge barely swings it. Within the handle's
+    // reach the hand closes on the handle itself.
     let at_handle = handle.map_or_else(
         || in_box(radii.box_m) && reach.handle >= handle_share.clamp(0.0, 1.0),
         |handle| palm.distance(handle.point) <= radii.handle_m.max(0.0),
     );
     let body = match door.body {
         None if door.latched => {
-            if !at_handle {
-                if !in_box(radii.box_m) {
-                    return Err(PanelRefusal::OutOfReach);
-                }
-                let outer_face = (palm - reach.point).dot(outward) >= -OUTER_FACE_SLACK_M;
-                let lid = kind == DoorKind::Front || door.slot == DoorSlot::TRUNK;
-                if lid || !outer_face || reach.handle < AWAY_FROM_HINGE {
-                    return Err(PanelRefusal::AwayFromHandle);
-                }
+            if !at_handle && !in_box(radii.box_m) {
+                return Err(PanelRefusal::OutOfReach);
             }
             PanelBody::LatchedHandle
         }
@@ -120,18 +109,10 @@ pub(crate) fn panel(
     }
     Ok(PanelAcquisition {
         reach,
-        outward,
+        outward: handle.map_or_else(|| door_box.outward(vehicle_origin), |h| h.normal),
         body,
     })
 }
-
-/// How far inside a closed door's outer face the palm may sit and still be on it, metres: the
-/// door's box runs through the panel's thickness.
-const OUTER_FACE_SLACK_M: f32 = 0.02;
-
-/// The least share of the run from the hinge to the far edge at which a closed door is taken away
-/// from its handle: nearer the hinge, a pull barely swings it.
-const AWAY_FROM_HINGE: f32 = 0.5;
 
 /// Apply the production panel rules and retain their exact result.
 pub(crate) fn observed_panel(
@@ -159,6 +140,7 @@ pub(crate) fn observed_panel(
 #[cfg(test)]
 mod tests {
     use glam::Mat4;
+    use jc3gi::vehicle::vehicle::DoorSlot;
 
     use super::*;
     use crate::controllers::physical_hands::doors::geometry::DoorBox;
@@ -186,7 +168,7 @@ mod tests {
     }
 
     #[test]
-    fn a_closed_door_is_taken_on_its_outer_face_away_from_the_hinge() {
+    fn a_closed_door_is_taken_anywhere_on_its_panel() {
         let closed = door(true);
         let corner = panel(
             &closed,
@@ -212,62 +194,6 @@ mod tests {
             ),
             Err(PanelRefusal::OutOfReach)
         );
-    }
-
-    /// Points across a door's outer face, its box running through `0.1` along x.
-    fn outer_face() -> impl Iterator<Item = Vec3> {
-        (0..8)
-            .flat_map(|i| (0..8).map(move |j| (i, j)))
-            .map(|(i, j)| Vec3::new(0.1, i as f32 / 7.0, j as f32 / 7.0))
-    }
-
-    #[test]
-    fn a_closed_door_away_from_its_handle_is_left_to_the_vehicle_hold_where_a_hand_holds_on() {
-        let closed = door(true);
-        let door_box = closed.door_box.unwrap();
-        let reach = PanelReach::uniform(0.1);
-        let handle = handle_point(&closed);
-        let away = |p: &Vec3| p.distance(handle) > 0.3;
-        let hinge = outer_face()
-            .filter(away)
-            .find(|&p| door_box.reach(p, 0.1).unwrap().handle < 0.2)
-            .unwrap();
-        assert_eq!(
-            panel(&closed, hinge, reach, 0.7, Vec3::ZERO),
-            Err(PanelRefusal::AwayFromHandle),
-            "by the hinge, at {hinge}"
-        );
-        let far = outer_face()
-            .filter(away)
-            .find(|&p| door_box.reach(p, 0.1).unwrap().handle > 0.8)
-            .unwrap();
-        assert_eq!(
-            panel(&closed, far, reach, 0.7, Vec3::ZERO).map(|a| a.body),
-            Ok(PanelBody::LatchedHandle),
-            "on the outer face away from the hinge, at {far}"
-        );
-        // The same point reached from the door's inner side, the vehicle's.
-        let inner = far - Vec3::X * 0.18;
-        assert_eq!(
-            panel(&closed, inner, reach, 0.7, Vec3::ZERO),
-            Err(PanelRefusal::AwayFromHandle),
-            "on the inner side, at {inner}"
-        );
-        let mut hood = door(true);
-        hood.slot = DoorSlot::HOOD;
-        let mut trunk = door(true);
-        trunk.slot = DoorSlot::TRUNK;
-        for lid in [hood, trunk] {
-            let handle = handle_point(&lid);
-            let away = outer_face().find(|p| p.distance(handle) > 0.3).unwrap();
-            assert_eq!(
-                panel(&lid, away, reach, 0.7, Vec3::ZERO),
-                Err(PanelRefusal::AwayFromHandle),
-                "{:?} at {away}",
-                lid.slot
-            );
-            assert!(panel(&lid, handle, reach, 0.7, Vec3::ZERO).is_ok());
-        }
     }
 
     #[test]
