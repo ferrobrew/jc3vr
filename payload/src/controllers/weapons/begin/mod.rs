@@ -70,6 +70,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         return TickStart::default();
     };
     let gameplay = gameplay(mode);
+    let pouches_act = pouches(mode);
     let capabilities = Capabilities::of(mode);
     let holding = config.weapons.hold;
     // SAFETY: the game stage runs on the game thread before the world update.
@@ -323,7 +324,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             ));
         }
     }
-    if gameplay && let Some(body) = &body {
+    if pouches_act && let Some(body) = &body {
         // A hand holding a gun, a prop, or an explosive takes nothing from the chest.
         let grabbers = ChestGrabbers::for_guns(Hand::BOTH.map(|h| {
             gun_hands[h.index()] || armed_hands[h.index()] || ticked.table_hands[h.index()]
@@ -345,7 +346,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     }
     // A held grenade or charge goes back by pressing it onto its pouch, whatever is in stock and
     // whichever hands may take from the pouches.
-    let return_body = body.as_ref().filter(|_| gameplay);
+    let return_body = body.as_ref().filter(|_| pouches_act);
     let as_pouch = |pouch: Candidate| pouch_return::Pouch {
         centre: pouch.centre,
         radius: pouch.radius,
@@ -386,7 +387,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
                             && charge != Some(h)
                             && detonator != Some(h)
                     }),
-                    acting: gameplay,
+                    acting: pouches_act,
                 },
                 &GrenadeTuning::of(&config.weapons.grenade),
             )
@@ -399,7 +400,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
             c4::placed::begin_tick(&c4::placed::BeginInputs {
                 active: &active,
                 free: Hand::BOTH.map(|h| free[h.index()] && !grenade::holds(h)),
-                acting: gameplay,
+                acting: pouches_act,
             })
         };
         targets.extend(placed.iter().map(|c| place.world(c)));
@@ -444,7 +445,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         .filter(|_| capabilities.reload)
         .map_or_else(Vec::new, |body| {
             let mut shown = shown_props(body, &config);
-            if !gameplay {
+            if !pouches_act {
                 shown.retain(|prop| matches!(prop.prop, Prop::Magazine));
             }
             shown
@@ -645,6 +646,7 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
     state.lone = lone.map(|w| (w, braced_geometry));
     state.beside = beside;
     state.gameplay = gameplay;
+    state.pouches = pouches_act;
     let entered = entered_body_volumes(state.last_volumes, volumes);
     state.last_volumes = volumes;
     // A hand whose gun the other hand braces keeps it on letting go, so its socket does not call.
@@ -886,7 +888,8 @@ fn socket_candidates(
     )
 }
 
-/// Whether the explosive pouches and world-weapon pickup act in `mode`. Held-gun interactions use
+/// Whether the world-weapon pickup acts in `mode`, and the explosive pouches with it ([`pouches`]
+/// adds the vehicle seats). Held-gun interactions use
 /// [`Capabilities`] independently, including in the wingsuit, vehicle seats, and swimming.
 pub(super) fn gameplay(mode: Mode) -> bool {
     matches!(
@@ -894,6 +897,13 @@ pub(super) fn gameplay(mode: Mode) -> bool {
         Mode::OnFoot(OnFootVariant::Ground)
             | Mode::Airborne(AirborneVariant::Falling | AirborneVariant::Parachute)
     )
+}
+
+/// Whether the explosive pouches (the grenades and the C4) act in `mode`: wherever the weapon
+/// handling's [`gameplay`] does, and in a vehicle seat, where the belt and the pouches stay in
+/// reach.
+pub(super) fn pouches(mode: Mode) -> bool {
+    gameplay(mode) || matches!(mode, Mode::Vehicle(_))
 }
 
 /// The hands as the gun is shown on them before its recoil: the two-handed pose of a held

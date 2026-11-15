@@ -98,6 +98,9 @@ pub(super) struct State {
     pub(super) beside: Option<HeldWeapon>,
     /// Whether the tick's mode is one the weapon handling acts in.
     pub(super) gameplay: bool,
+    /// Whether the tick's mode is one the explosive pouches act in
+    /// ([`crate::controllers::weapons::begin::pouches`]).
+    pub(super) pouches: bool,
     /// The last geometry measured on each hand's wrist, by [`Hand::index`], and the weapon it
     /// belongs to: a measurement needs the wrist at full weight, so a tick without one keeps the
     /// last.
@@ -180,6 +183,7 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     lone: None,
     beside: None,
     gameplay: false,
+    pouches: false,
     measured: [None; 2],
     placed: Vec::new(),
     points: [None; 2],

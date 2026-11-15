@@ -109,12 +109,13 @@ pub(crate) fn finish_tick(
         .lock()
         .opening
         .step_available(values, grips, unavailable);
-    let (weapon, lone, gameplay, touch, slide) = {
+    let (weapon, lone, gameplay, pouches, touch, slide) = {
         let state = STATE.lock();
         (
             state.weapon,
             state.lone,
             state.gameplay,
+            state.pouches,
             state.touch,
             state.slide,
         )
@@ -291,7 +292,7 @@ pub(crate) fn finish_tick(
     });
     grenade::input_tick(
         &grenade::TickInputs {
-            acting: config.weapons.grenade_throw && gameplay && active.is_some(),
+            acting: config.weapons.grenade_throw && pouches && active.is_some(),
             locker_grabs: Hand::BOTH
                 .map(|hand| grabs[hand.index()] == Some(GrabVolume::GrenadeLocker)),
             pouch_grab: Hand::BOTH
@@ -332,7 +333,7 @@ pub(crate) fn finish_tick(
     });
     c4::input_tick(
         &c4::TickInputs {
-            acting: config.weapons.c4_throw && gameplay && active.is_some(),
+            acting: config.weapons.c4_throw && pouches && active.is_some(),
             pouch_grab: Hand::BOTH
                 .into_iter()
                 .find(|h| grabs[h.index()] == Some(GrabVolume::C4Pouch)),
