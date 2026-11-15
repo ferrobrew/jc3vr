@@ -27,8 +27,11 @@
 //! The back's free sockets are reached for docking lower and further out than their weapons sit
 //! ([`reach_back_sockets`]).
 
+mod stride;
+
 use body_rig::smooth::smoothstep_between;
 use glam::{Mat3, Quat, Vec3};
+pub(crate) use stride::StrideFilter;
 
 use crate::controllers::{
     body::{self, rig::frames::SkeletonLandmarks},

@@ -2,13 +2,16 @@
 //! the weapon handling's grip targets ([`crate::controllers::grab`]): the sockets and pouches on
 //! the body, the held gun's parts, and the weapons and grenades in the world.
 
+use std::time::Instant;
+
 use glam::{Mat4, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
+use parking_lot::Mutex;
 
 use crate::{
     config::Config,
     controllers::{
-        body::rig::skeleton,
+        body::rig::{frames::SkeletonLandmarks, skeleton},
         config::ControllersConfig,
         frame::{Hand, Pose},
         grab::{self, Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown},
@@ -19,6 +22,7 @@ use crate::{
             grab::{GrabRules, swaps},
             live,
         },
+        locomotion,
         mode::{AirborneVariant, Mode, OnFootVariant},
         physical_hands::physics::guns,
         weapons::{
@@ -48,7 +52,7 @@ use crate::{
             reload, scope,
             state::{OffTouch, STATE},
             types::{TickStart, WieldedReadout},
-            volumes::{self, BodyFrame, ChestGrabbers, POUCHES, SOCKETS},
+            volumes::{self, BodyFrame, ChestGrabbers, POUCHES, SOCKETS, StrideFilter},
         },
     },
     hud::anchored::hand_ammo,
@@ -235,7 +239,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickStart {
         })
     }));
 
+    let moving = {
+        let locomotion = locomotion::status();
+        locomotion.fresh(Instant::now()) && !locomotion.standing_still()
+    };
     let placed = skeleton::skeleton_in_cockpit(active.head.position, active.world_scale)
+        .map(|(landmarks, source)| (stride_steady(landmarks, moving), source))
         .and_then(|(landmarks, source)| Some((BodyFrame::on(landmarks)?, source)));
     skeleton::record_volume_anchor(
         placed.map_or("nothing: no skeleton", |(_, source)| source.anchor()),
@@ -719,6 +728,21 @@ impl GunOnHand {
 
 /// Where `hand` (the hand without the gun) touches the gun, and the centre of its volume in the
 /// cockpit frame.
+/// The skeleton the belt rides this tick, its hip joints held steady through a stride while Rico
+/// moves ([`StrideFilter`]).
+fn stride_steady(landmarks: SkeletonLandmarks, moving: bool) -> SkeletonLandmarks {
+    let mut stride = STRIDE.lock();
+    let now = Instant::now();
+    let dt = stride
+        .1
+        .map_or(0.0, |at| now.saturating_duration_since(at).as_secs_f32());
+    stride.1 = Some(now);
+    stride.0.step(landmarks, moving, dt)
+}
+
+/// The belt's stride filter and when it last stepped.
+static STRIDE: Mutex<(StrideFilter, Option<Instant>)> = Mutex::new((StrideFilter::new(), None));
+
 fn off_touch(gun: &GunOnHand, hand: Hand, active: &ActiveHands) -> Option<(OffTouch, Vec3)> {
     let point = active.hands[hand.index()]?.grip.position;
     let scale = active.world_scale;
