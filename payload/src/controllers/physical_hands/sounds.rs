@@ -194,8 +194,8 @@ pub(super) unsafe fn play(impact: Impact, config: &ImpactSoundsConfig) {
         return;
     }
     // SAFETY: forwarded from the caller.
-    match unsafe { sound(&impact) } {
-        Outcome::Played => {
+    match unsafe { melee_impact(impact.at, impact.velocity, impact.material, false) } {
+        MeleeImpact::Played => {
             state.status.played += 1;
             state.status.last = Some((impact.material, impact.kind));
             tracing::info!(
@@ -206,7 +206,7 @@ pub(super) unsafe fn play(impact: Impact, config: &ImpactSoundsConfig) {
                 "impact sounds: a hand made the melee impact sound"
             );
         }
-        Outcome::Silent => {
+        MeleeImpact::Silent => {
             state.status.silent += 1;
             if !state.warned_silent {
                 state.warned_silent = true;
@@ -216,7 +216,7 @@ pub(super) unsafe fn play(impact: Impact, config: &ImpactSoundsConfig) {
                 );
             }
         }
-        Outcome::NoPlayer => {}
+        MeleeImpact::NoPlayer => {}
     }
 }
 
@@ -239,9 +239,13 @@ static STATE: Mutex<State> = Mutex::new(State {
     warned_silent: false,
 });
 
-enum Outcome {
+/// What [`melee_impact`] did.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum MeleeImpact {
     Played,
+    /// The player's melee impact has no sound for the material.
     Silent,
+    /// There is no local player character.
     NoPlayer,
 }
 
@@ -251,44 +255,61 @@ const SOUND_ONLY: EffectCull = EffectCull {
     m_PlaySound: true,
 };
 
-/// Play the player's melee impact sound for `impact`'s material at the impact.
+/// The cull that plays a pair's effect and its sound.
+const EFFECT_AND_SOUND: EffectCull = EffectCull {
+    m_PlayEffect: true,
+    m_PlaySound: true,
+};
+
+/// Play the player's melee impact for `material` at `at`, facing back along `velocity`: its sound,
+/// and with `effect` its effect too.
 ///
 /// # Safety
 ///
-/// As [`play`].
-unsafe fn sound(impact: &Impact) -> Outcome {
+/// The game thread, outside the physics step.
+pub(crate) unsafe fn melee_impact(
+    at: Vec3,
+    velocity: Vec3,
+    material: u32,
+    effect: bool,
+) -> MeleeImpact {
     // SAFETY: the game thread, where the local player character is live.
     let Some(player) = (unsafe { Character::GetLocalPlayerCharacter().as_mut() }) else {
-        return Outcome::NoPlayer;
+        return MeleeImpact::NoPlayer;
     };
     // SAFETY: the player's own container; the lookup only reads its loaded usages.
     let pair = unsafe {
         player.m_AttachedEffects.GetDynamicAttachedEffects(
             AttachedEffectContainer::MELEE_IMPACT_USAGE,
             GameMaterialId::EGameMaterialId_Default,
-            impact.material,
+            material,
             ptr::null_mut(),
         )
     };
     // SAFETY: the lookup returns a pair it owns, or its shared empty pair, never null.
     let Some(pair) = (unsafe { pair.as_ref() }).filter(|p| !p.m_Sound.px.is_null()) else {
-        return Outcome::Silent;
+        return MeleeImpact::Silent;
     };
-    let facing = (-impact.velocity).try_normalize().unwrap_or(Vec3::Y);
+    let facing = (-velocity).try_normalize().unwrap_or(Vec3::Y);
+    let cull = if effect {
+        &EFFECT_AND_SOUND
+    } else {
+        &SOUND_ONLY
+    };
     let mut transform = Matrix4::ZERO;
     // SAFETY: plain values on the stack; the pair stays loaded while the player lives, and the
     // sound holds its own reference once started.
     unsafe {
-        CreateCollisionMatrix(&mut transform, &vector(impact.at), &vector(facing));
+        CreateCollisionMatrix(&mut transform, &vector(at), &vector(facing));
         pair.PlayOneOffs(
             &transform,
             &vector(Vec3::ZERO),
-            &SOUND_ONLY,
+            cull,
             ptr::null(),
             ptr::null(),
         );
     }
-    Outcome::Played
+    MeleeImpact::Played
 }
 
 fn vector(v: Vec3) -> Vector3 {

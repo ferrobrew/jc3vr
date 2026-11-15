@@ -39,6 +39,8 @@
 //!   on the game's hook;
 //! - [`physical_hands`]: each empty hand's palm colliding with the world: pushing the body off
 //!   surfaces, holding the hand at them, and striking characters and objects;
+//! - [`glass`]: breaking window glass with a palm or a held gun, as bullets crack it, and bringing
+//!   a pane down with a hard enough strike;
 //! - [`vehicles`]: vehicles, mounted guns, the wingsuit, and the parachute: the opt-in physical
 //!   controls, hand-aimed mounted guns and driver weapons, arm steering, and the wingsuit's head
 //!   look-steer removed;
@@ -68,6 +70,7 @@ pub mod diagnostics;
 pub mod fingers;
 pub mod frame;
 pub mod gamepad_setting;
+pub mod glass;
 pub mod grab;
 pub mod hands;
 pub mod haptics;

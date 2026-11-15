@@ -96,6 +96,9 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         {
             let _timing = frame_timing::scope(Slot::PhysicalHands);
             crate::controllers::physical_hands::main_thread_tick();
+            // Breaking glass, on the thread and in the phase of the ammunition manager's deferred
+            // list, which applies the bullets' window damage; before the original runs it.
+            crate::controllers::glass::main_thread_tick();
         }
 
         // Open the single-pass frame: advance the diagnostics' frame ordinal, fold the previous

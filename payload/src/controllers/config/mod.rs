@@ -36,7 +36,7 @@ pub use self::{
 pub use crate::controllers::aim::sights::config::{SightOverride, SightTable, SightTuningConfig};
 use crate::{
     controllers::{
-        fingers::config::FingersConfig, frame::Hand, haptics::HapticsConfig,
+        fingers::config::FingersConfig, frame::Hand, glass::GlassConfig, haptics::HapticsConfig,
         physical_hands::PhysicalHandsConfig, summary::SummaryConfig,
         vehicles::config::VehiclesConfig,
     },
@@ -91,6 +91,8 @@ pub struct ControllersConfig {
     /// Controller vibration: the master switch and strength, the category switches, and the
     /// game's rumble.
     pub haptics: HapticsConfig,
+    /// Breaking window glass with a palm or a held gun.
+    pub glass: GlassConfig,
 }
 
 impl ControllersConfig {
@@ -124,6 +126,7 @@ impl ControllersConfig {
             summary: SummaryConfig::new(),
             grapple: PhysicalGrappleConfig::new(),
             haptics: HapticsConfig::new(),
+            glass: GlassConfig::new(),
         }
     }
 }

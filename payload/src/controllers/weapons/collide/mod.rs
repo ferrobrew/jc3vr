@@ -109,6 +109,11 @@ pub(crate) fn observe(weapons: [Option<CollideWeapon>; 2]) {
     }
 }
 
+/// The long gun the last [`observe`] noted in `hand`, if any.
+pub(crate) fn measured(hand: Hand) -> Option<CollideWeapon> {
+    STATE.lock().hands[hand.index()].weapon
+}
+
 /// Push each hand's gun out of the wall its probe last met. `head` is the head's cockpit pose and
 /// `world_scale` the VR world scale the cockpit composes with.
 pub fn apply(

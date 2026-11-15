@@ -9,6 +9,7 @@ mod estimator;
 mod explosives;
 mod fingers;
 mod frame;
+mod glass;
 mod grab_view;
 mod hand_bodies;
 mod hands;
@@ -48,7 +49,7 @@ use crate::{
         body::{self as controller_body, rig as controller_rig, unarmed as controller_unarmed},
         fingers as controller_fingers,
         frame::{self as controller_frame, InteractionProfile},
-        gamepad_setting,
+        gamepad_setting, glass as controller_glass,
         hands::{ik as hand_ik, late, tiers},
         haptics as controller_haptics, locomotion as controller_locomotion, map as controller_map,
         mode as controller_mode, overlay as controller_overlay,
@@ -85,10 +86,10 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             fingers::fingers_settings(ui, &mut cfg.controllers.fingers);
         },
         FeatureId::PhysicalHands => |ui, _| {
-            physical_hands::physical_hands_settings(
-                ui,
-                &mut config::edit().controllers.physical_hands,
-            );
+            let mut cfg = config::edit();
+            physical_hands::physical_hands_settings(ui, &mut cfg.controllers.physical_hands);
+            ui.separator();
+            glass::glass_settings(ui, &mut cfg.controllers.glass);
         },
         FeatureId::CharactersDoors => |ui, _| {
             physical_hands::characters_doors_settings(
@@ -240,6 +241,7 @@ pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
                 ],
             );
             physical_hands::physical_hands_readout(ui, &controller_physical_hands::status());
+            glass::glass_readout(ui, &controller_glass::status());
             ui.collapsing("Diagnostics", |ui| {
                 hand_bodies::hand_bodies_readout(ui, &controller_physical_hands::physics::status())
             });
