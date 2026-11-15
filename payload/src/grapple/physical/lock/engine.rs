@@ -7,7 +7,9 @@ use glam::Vec3;
 use jc3gi::{
     character::character::Character,
     equipment::{
-        grapple_point_proxy::{AttachmentObjectInfo, GrapplePointProxy},
+        grapple_point_proxy::{
+            AttachmentObjectInfo, GrapplePointProxy, VehicleGrapplePointProxy, VehicleGrappleType,
+        },
         grappling_hook::{GrapplingHook, GrapplingHookState},
     },
     physics::{PfxCharacterInstance, hknpCharacterSurfaceInfo},
@@ -93,22 +95,29 @@ pub(super) unsafe fn far_body(proxy: &GrapplePointProxy) -> Option<(u32, NonZero
     Some((body, owner, state))
 }
 
-/// Whether `hook` reels in along a line whose far end is attached to a helicopter, whose arrival
-/// hangs the character from the airframe in the game's stunt hang.
+/// Whether `hook` reels in along a line whose far end is attached to a helicopter, and the reel's
+/// chosen entry is the airframe's stunt hang. The reel prefers a valid entry on the helicopter's
+/// door side and falls back to the hang; a door-side arrival is the game's hijack and is left to
+/// it.
 ///
 /// # Safety
 ///
 /// The game thread, outside the physics step; `hook` must be live.
-pub(super) unsafe fn reeling_to_helicopter(hook: &GrapplingHook) -> bool {
+pub(super) unsafe fn reeling_to_helicopter_hang(hook: &GrapplingHook) -> bool {
     let Some(proxy) = (unsafe { reeling_far_end(hook) }) else {
         return false;
     };
     if proxy.m_AttachmentObjectInfo != AttachmentObjectInfo::AOI_Vehicle {
         return false;
     }
-    unsafe { far_body(proxy) }.is_some_and(|(_, owner, _)| unsafe {
+    let helicopter = unsafe { far_body(proxy) }.is_some_and(|(_, owner, _)| unsafe {
         (*game_object_of(owner)).IsType(Helicopter::TYPE_ID())
-    })
+    });
+    // SAFETY: a vehicle attachment's proxy is a vehicle grapple point proxy.
+    let vehicle = unsafe { &*std::ptr::from_ref(proxy).cast::<VehicleGrapplePointProxy>() };
+    helicopter
+        && unsafe { vehicle.GetVehicleType() } == VehicleGrappleType::Helicopter
+        && unsafe { vehicle.IsCurrentEntryHangNode() }
 }
 
 /// The character's mass: its proxy body's.

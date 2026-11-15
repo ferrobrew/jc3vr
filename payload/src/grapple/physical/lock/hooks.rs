@@ -4,7 +4,8 @@
 //! a break) take their place.
 //!
 //! The arrival's upside-down ending ([`GrapplingHook::StartReelUpsideDown`], the ceiling attach)
-//! and the arrival onto a helicopter (the game's stunt hang under the airframe) are held off for
+//! and the arrival onto a helicopter's hang entry (the game's stunt hang under the airframe; a
+//! door-side arrival is the game's hijack and runs as the game's) are held off for
 //! the local player while the hang is on and the lock's tick runs: the reel keeps running, and the
 //! lock's next tick hangs the character below the hook instead (`lock::want_hang`). While the
 //! lock's tick does not run (the bindings idle, as under the gamepad scheme), or just after it
@@ -202,11 +203,12 @@ fn finish_reel(
             return;
         }
         forget_motion();
-        // A reel onto a helicopter arrives into the game's stunt hang under the airframe, which
-        // holds the body inverted: hang on the line instead, as below a ceiling.
+        // A reel onto a helicopter's hang entry arrives into the game's stunt hang under the
+        // airframe, which holds the body inverted: hang on the line instead, as below a ceiling.
+        // A reel onto its door side is the game's hijack, and arrives as the game's.
         let to_helicopter = unsafe { hook.as_ref() }
             .and_then(|h| unsafe { h.px.as_ref() })
-            .is_some_and(|h| unsafe { engine::reeling_to_helicopter(h) });
+            .is_some_and(|h| unsafe { engine::reeling_to_helicopter_hang(h) });
         if to_helicopter && hang_enabled() && hang_takes_over() {
             want_hang();
             return;
