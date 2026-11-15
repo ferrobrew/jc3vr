@@ -12,7 +12,7 @@ The payload reads `JC3VR_SESSIONS_DIR` from the game process's environment at in
 
 `scripts/vr_launch.sh` sets the variable, unless it is already set, to `sessions/` in the workspace (the repository root, found from the script's own location; ignored by git), creates the folder, and names it in `JC3BOOT_FORWARD_ENV` so jc3boot passes it into the container. The pressure-vessel container shares `$HOME`, so the path is the same on both sides. The variable has to be in the game's environment: setting it for `scripts/proton_run.sh` or `scripts/run.ps1`, which inject into a running game, has no effect. On native Windows the root is the local data directory unless the game was started with the variable set.
 
-When the root is not a Unix path already, the payload asks wine for its Unix form with `wine_get_unix_file_name`; on native Windows there is none. The startup log names the session folder in both forms and where the root came from, with a warning when a set variable was refused, and the debug UI's Status page shows the same below the rows. The Unix form is the folder the capture host is told to write a recording's video into ([capture.md](capture.md)).
+When the root is not a Unix path already, the payload asks wine for its Unix form with `wine_get_unix_file_name`; on native Windows there is none. The startup log names the session folder in both forms and where the root came from, with a warning when a set variable was refused, and the debug UI's Status page shows the same below the rows. Both forms go to the capture host with each take: the relay writes the video into the Unix form, and the injector, which runs in the game's Windows environment, into the Windows form ([capture.md](capture.md)).
 
 ## Layout
 
@@ -38,6 +38,7 @@ A recording's folder holds:
 | `tracking.jc3trk` | a tracking recording ([testing/recorder.md](testing/recorder.md)) | `tracking-synth dump`, the replay |
 | `lookback.jc3trk` | a save of the tracking lookback, in a folder of its own | `tracking-synth dump`, the replay |
 | `frames.jsonl` | a video recording's per-frame sidecar, with its mirror layouts and take markers ([capture.md](capture.md)) | `tools/capture/reframe.py` |
+| `video_frames.jsonl` | a streamed take's record of each video frame's source frame ([capture.md](capture.md)) | |
 | `video.mkv`, `video.mkv.ts`, and `stream.json` | the capture host's screen recording of the mirror window, the recorder's first-frame time, and the host's metadata with the region and the video's start wall clock, written there by the host (not the game) when the session folder's Unix form is known | `tools/capture/reframe.py`, an editor |
 
 A standalone tracking recording is a folder with only `tracking.jc3trk`, a standalone video recording one without it, and an F1 session recording has both halves.
