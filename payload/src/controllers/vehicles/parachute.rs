@@ -17,22 +17,27 @@
 //! and lit while held, so the player can find them.
 //!
 //! A held handle is pulled by how far its hand has come down from where it took the handle, over a
-//! deadzone, reaching a full pull at the full-pull distance ([`pull`]). The two pulls steer
-//! ([`steer`]) in the move stick's convention (+X right, +Y forward):
+//! deadzone, reaching a full pull at the full-pull distance, and pushed by how far it has gone up
+//! or forward the same way ([`pull`], signed: a pull positive, a push negative). The two steer
+//! ([`steer`]) in the move stick's convention (+X right, +Y forward), as a skydiver's toggles and
+//! front risers do:
 //!
-//! - their difference banks toward the side pulled further, as one toggle pulled turns a canopy;
+//! - the difference of the pulls banks toward the side pulled further, as one toggle pulled turns
+//!   a canopy;
 //! - the share both are pulled, past the brake threshold, holds the stick back, which the game's
 //!   parachute reads as its slow-down (`docs/engine/gameplay/parachute-locomotion.md`, "The stick's
-//!   vertical axis").
+//!   vertical axis"), as both toggles pulled brake a canopy;
+//! - the share both are pushed up or forward pushes the stick forward, which the game's parachute
+//!   reads as its dive, as both front risers pulled down steepen a canopy's glide.
 //!
-//! A handle let go, or never taken, is not pulled, so releasing a handle leaves that side neutral.
-//! The hands do not dive: pushing the stick forward still does, since the handles' vector is added
-//! to the stick's ([`crate::controllers::vehicles::arm_steering::combine`]).
+//! A handle let go, or never taken, is neither pulled nor pushed, so releasing a handle leaves that
+//! side neutral. The handles' vector is added to the stick's
+//! ([`crate::controllers::vehicles::arm_steering::combine`]).
 //!
 //! Heights are measured in the cockpit frame, whose vertical is the player's own, and the place a
 //! handle was taken is kept in that frame, so a head moving while the hands hold still steers
-//! nothing. The holding hand is drawn on the handle ([`anchor_point`]): straight below where it was
-//! taken, no further down than a full pull and no higher than where it was taken.
+//! nothing. The holding hand is drawn on the handle ([`anchor_point`]): where it was taken, moved
+//! down, up, or forward with the hand by no more than a full pull.
 
 use glam::{Vec2, Vec3};
 
@@ -130,7 +135,7 @@ pub fn reach_candidates(
 }
 
 /// Advance the handles by one input tick: act on the grabs, and let go of the handles whose grips
-/// were released or whose hands were lost. Returns each hand's pull, `0..=1`.
+/// were released or whose hands were lost. Returns each hand's signed pull, `-1..=1` ([`pull`]).
 pub fn step(
     state: &mut HandleState,
     config: &ParachuteHandlesConfig,
@@ -169,43 +174,59 @@ pub fn release_all(state: &mut HandleState, events: &mut Vec<HandleEvent>) {
     }
 }
 
-/// How far a handle held by `hold` is pulled with its hand's grip at `grip`, `0..=1`: the drop
-/// below where it was taken, over the deadzone, as a share of the rest of a full pull.
+/// How far a handle held by `hold` is pulled with its hand's grip at `grip`, `-1..=1`: the drop
+/// below where it was taken, over the deadzone, as a share of the rest of a full pull, positive;
+/// or, with no drop, the rise above it or the travel forward of it (the cockpit's -Z), whichever is
+/// further, the same way, negative.
 pub fn pull(config: &ParachuteHandlesConfig, hold: HandleHold, grip: Vec3) -> f32 {
+    let span = (config.full_pull_m - DEADZONE_M).max(1e-3);
+    let share = |travel: f32| ((travel - DEADZONE_M) / span).min(1.0);
     let drop = hold.rest.y - grip.y;
-    if !drop.is_finite() || drop <= DEADZONE_M {
+    if !drop.is_finite() {
         return 0.0;
     }
-    let span = (config.full_pull_m - DEADZONE_M).max(1e-3);
-    ((drop - DEADZONE_M) / span).min(1.0)
+    if drop > DEADZONE_M {
+        return share(drop);
+    }
+    let push = (grip.y - hold.rest.y).max(hold.rest.z - grip.z);
+    if push.is_finite() && push > DEADZONE_M {
+        -share(push)
+    } else {
+        0.0
+    }
 }
 
 /// The stick vector the pulls steer with (+X right, +Y forward): the right pull less the left one
-/// banks, and the share both are pulled past the brake threshold holds the stick back.
+/// banks, the share both are pulled past the brake threshold holds the stick back, and the share
+/// both are pushed pushes it forward.
 pub fn steer(pulls: [f32; 2], config: &ParachuteHandlesConfig) -> Vec2 {
     let [left, right] = pulls.map(|p| {
         if p.is_finite() {
-            p.clamp(0.0, 1.0)
+            p.clamp(-1.0, 1.0)
         } else {
             0.0
         }
     });
-    let both = left.min(right);
+    let both = left.max(0.0).min(right.max(0.0));
     let threshold = config.brake_threshold.clamp(0.0, 0.95);
     let brake = if both <= threshold {
         0.0
     } else {
         ((both - threshold) / (1.0 - threshold)).min(1.0)
     };
-    Vec2::new(right - left, -brake)
+    let dive = (-left).max(0.0).min((-right).max(0.0));
+    Vec2::new(right.max(0.0) - left.max(0.0), dive - brake)
 }
 
-/// Where the hand holding `hold` sits on its handle for its grip at `grip`: straight below where it
-/// took the handle, between there and a full pull further down.
+/// Where the hand holding `hold` sits on its handle for its grip at `grip`: where it took the
+/// handle, moved down, up, or forward with the hand by no more than a full pull.
 pub fn anchor_point(config: &ParachuteHandlesConfig, hold: HandleHold, grip: Vec3) -> Vec3 {
-    let drop = (hold.rest.y - grip.y).clamp(0.0, config.full_pull_m.max(0.0));
-    let drop = if drop.is_finite() { drop } else { 0.0 };
-    hold.rest - Vec3::Y * drop
+    let full = config.full_pull_m.max(0.0);
+    let offset = grip - hold.rest;
+    if !offset.is_finite() {
+        return hold.rest;
+    }
+    hold.rest + Vec3::new(0.0, offset.y.clamp(-full, full), offset.z.clamp(-full, 0.0))
 }
 
 fn release(state: &mut HandleState, hand: Hand, why: Release, events: &mut Vec<HandleEvent>) {
@@ -399,7 +420,17 @@ mod tests {
     #[test]
     fn the_pull_is_measured_from_where_the_handle_was_taken() {
         let hold = HandleHold { rest: Vec3::ZERO };
-        assert_eq!(pull(&CONFIG, hold, Vec3::Y * 0.2), 0.0, "raising is slack");
+        assert_eq!(
+            pull(&CONFIG, hold, Vec3::Y * DEADZONE_M),
+            0.0,
+            "a small raise is slack"
+        );
+        assert!(pull(&CONFIG, hold, Vec3::Y * 0.2) < 0.0, "raising pushes");
+        assert!(
+            pull(&CONFIG, hold, Vec3::NEG_Z * 0.2) < 0.0,
+            "reaching forward pushes"
+        );
+        assert_eq!(pull(&CONFIG, hold, Vec3::Y), -1.0);
         assert_eq!(pull(&CONFIG, hold, -Vec3::Y * DEADZONE_M), 0.0);
         let half = DEADZONE_M + (CONFIG.full_pull_m - DEADZONE_M) * 0.5;
         assert!((pull(&CONFIG, hold, -Vec3::Y * half) - 0.5).abs() < 1e-5);
@@ -423,6 +454,19 @@ mod tests {
     }
 
     #[test]
+    fn both_handles_pushed_dive_and_one_alone_does_nothing() {
+        assert_eq!(steer([-1.0, -1.0], &CONFIG), Vec2::new(0.0, 1.0));
+        assert_eq!(steer([-0.5, -0.8], &CONFIG), Vec2::new(0.0, 0.5));
+        assert_eq!(steer([-1.0, 0.0], &CONFIG), Vec2::ZERO);
+        let turning_dive = steer([-0.6, 0.0], &CONFIG);
+        assert_eq!(
+            turning_dive,
+            Vec2::ZERO,
+            "a push on one side neither banks nor dives"
+        );
+    }
+
+    #[test]
     fn the_stick_adds_to_the_handles_and_still_dives() {
         let brake = steer([1.0, 1.0], &CONFIG);
         assert_eq!(combine(Vec2::new(0.0, 1.0), Some(brake)), Vec2::ZERO);
@@ -437,11 +481,14 @@ mod tests {
     }
 
     #[test]
-    fn the_held_hand_is_drawn_below_where_it_took_the_handle_within_a_full_pull() {
+    fn the_held_hand_is_drawn_where_it_took_the_handle_moved_within_a_full_pull() {
         let hold = HandleHold { rest: Vec3::ZERO };
         let a = anchor_point(&CONFIG, hold, Vec3::new(0.05, -0.1, 0.02));
         assert_eq!(a, Vec3::new(0.0, -0.1, 0.0));
-        assert_eq!(anchor_point(&CONFIG, hold, Vec3::Y), Vec3::ZERO);
+        let high = anchor_point(&CONFIG, hold, Vec3::Y);
+        assert!((high.y - CONFIG.full_pull_m).abs() < 1e-6);
+        let ahead = anchor_point(&CONFIG, hold, Vec3::NEG_Z * 0.1);
+        assert_eq!(ahead, Vec3::NEG_Z * 0.1);
         let low = anchor_point(&CONFIG, hold, -Vec3::Y);
         assert!((low.y + CONFIG.full_pull_m).abs() < 1e-6);
     }

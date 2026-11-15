@@ -279,8 +279,12 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
                     })
                 })
                 .map(|c| {
-                    c.target(Mark::ring(MarkAt::Cockpit(c.centre), c.radius).showing(Shown::Never))
-                        .ranked(Tier::Fallback)
+                    // The reach is where a press takes the handle, so it shows while a hand is
+                    // in it rather than only the handle's own smaller ring.
+                    c.target(
+                        Mark::ring(MarkAt::Cockpit(c.centre), c.radius).showing(Shown::InReach),
+                    )
+                    .ranked(Tier::Fallback)
                 }),
         );
     }
