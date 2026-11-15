@@ -334,6 +334,34 @@ impl std::convert::AsMut<CustomGroupCollisionFilter> for CustomGroupCollisionFil
         self
     }
 }
+#[repr(C, align(8))]
+/// One game material's description (`CMaterialSystem::SGameMaterialDesc`), loaded from the game's
+/// material data. Only some members are bound.
+pub struct GameMaterialDesc {
+    _field_0: [u8; 120],
+    /// The chance, from zero to one, that a bullet hitting a game object of this material stops
+    /// there rather than passing through it ([`Bullet::m_HasPenetratedOneObject`](crate::equipment::weapon::Bullet::m_HasPenetratedOneObject)):
+    /// the bullet passes when a uniform random roll exceeds it. One unless the data sets it.
+    pub m_BulletCollideFactor: f32,
+    _field_7c: [u8; 4],
+}
+fn _GameMaterialDesc_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x80], GameMaterialDesc>([0u8; 0x80]);
+    }
+    unreachable!()
+}
+impl GameMaterialDesc {}
+impl std::convert::AsRef<GameMaterialDesc> for GameMaterialDesc {
+    fn as_ref(&self) -> &GameMaterialDesc {
+        self
+    }
+}
+impl std::convert::AsMut<GameMaterialDesc> for GameMaterialDesc {
+    fn as_mut(&mut self) -> &mut GameMaterialDesc {
+        self
+    }
+}
 #[repr(u32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// A game material (`EGameMaterialId`): the surface kind a physics shape is tagged with, which
@@ -507,6 +535,38 @@ fn _MaterialPassFlags_size_check() {
         ::std::mem::transmute::<[u8; 0x4], MaterialPassFlags>([0u8; 0x4]);
     }
     unreachable!()
+}
+#[repr(C, align(8))]
+/// The game materials' table (`CMaterialSystem`), held by
+/// [`PhysicsSystem::m_MaterialManager`](crate::physics::PhysicsSystem::m_MaterialManager). Only some members are bound.
+pub struct MaterialSystem {}
+impl MaterialSystem {
+    pub const GetMaterialDesc_ADDRESS: usize = 0x1409AF350;
+    /// The description of the game material `id`.
+    pub unsafe fn GetMaterialDesc(
+        &self,
+        id: crate::physics::GameMaterialId,
+    ) -> *const crate::physics::GameMaterialDesc {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                id: crate::physics::GameMaterialId,
+            ) -> *const crate::physics::GameMaterialDesc = ::std::mem::transmute(
+                Self::GetMaterialDesc_ADDRESS,
+            );
+            f(self as *const Self as _, id)
+        }
+    }
+}
+impl std::convert::AsRef<MaterialSystem> for MaterialSystem {
+    fn as_ref(&self) -> &MaterialSystem {
+        self
+    }
+}
+impl std::convert::AsMut<MaterialSystem> for MaterialSystem {
+    fn as_mut(&mut self) -> &mut MaterialSystem {
+        self
+    }
 }
 #[repr(C, align(16))]
 /// `CPfxCharacterInstance`: the character's physics-side body instance (the Havok character proxy),
@@ -1631,8 +1691,11 @@ pub struct PhysicsSystem {
     /// from its game-space ray before the Havok query, and the engine adds it back to the positions
     /// a query reports. [`hknpWorld::applyBodyImpulseAt`](crate::physics::hknpWorld::applyBodyImpulseAt) takes a Havok-space position.
     pub m_AccumulatedShift: crate::types::math::Vector3,
-    _field_1381d0: [u8; 64],
+    _field_1381d0: [u8; 16],
     /// The reference-counted body-pair exclusion filter shared with the constraint filter.
+    /// The game materials' descriptions ([`MaterialSystem::GetMaterialDesc`](crate::physics::MaterialSystem::GetMaterialDesc)).
+    pub m_MaterialManager: *mut crate::physics::MaterialSystem,
+    _field_1381e8: [u8; 40],
     pub m_PairCollisionFilter: *mut crate::physics::hknpPairCollisionFilter,
 }
 fn _PhysicsSystem_size_check() {

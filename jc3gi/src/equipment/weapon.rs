@@ -214,9 +214,78 @@ impl std::convert::AsMut<BeaconWeapon> for BeaconWeapon {
 }
 #[repr(C, align(8))]
 /// A fired bullet (`CBullet`): a pooled ammunition object that sweeps a ray from its last position
-/// to its new one each update and handles what the ray hit. Its layout is unmapped.
-pub struct Bullet {}
+/// to its new one each update and handles what the ray hit ([`Bullet::HandleHit`](crate::equipment::weapon::Bullet::HandleHit)). Only some
+/// members are bound.
+pub struct Bullet {
+    _field_0: [u8; 192],
+    /// Where the bullet's pending ray starts, the start of the segment its hit fraction
+    /// ([`CastRayInfoBase::m_HitDistance`](crate::physics::CastRayInfoBase::m_HitDistance)) measures.
+    pub m_RaySource: crate::types::math::Vector3,
+    /// Where the bullet's pending ray ends.
+    pub m_RayTarget: crate::types::math::Vector3,
+    _field_d8: [u8; 216],
+    /// The objects the bullet's ray filter ignores, the hit physics game objects
+    /// (`CPhysicsGameObject`): the shooter's own while the bullet has penetrated nothing, and the
+    /// object it last passed through after it has
+    /// ([`Bullet::m_HasPenetratedOneObject`](crate::equipment::weapon::Bullet::m_HasPenetratedOneObject)). The second entry is null after a penetration.
+    pub m_RayIgnoreList: [*mut ::std::ffi::c_void; 2],
+    _field_1c0: [u8; 44],
+    /// The bullet's position: where its last ray ended, or where it hit.
+    pub m_Position: crate::types::math::Vector3,
+    /// The bullet's direction of travel, unit length.
+    pub m_Direction: crate::types::math::Vector3,
+    /// Where the bullet's next ray starts.
+    pub m_PreviousPosition: crate::types::math::Vector3,
+    _field_210: [u8; 20],
+    /// Whether the bullet still flies. A hit that neither penetrates nor ricochets clears it.
+    pub m_IsAlive: bool,
+    _field_225: [u8; 52],
+    /// Whether the bullet has passed through an object. A hit on a game object passes through it
+    /// when a random roll exceeds the hit material's
+    /// [`GameMaterialDesc::m_BulletCollideFactor`](crate::physics::GameMaterialDesc::m_BulletCollideFactor)
+    /// (or, with [`Bullet::m_OverridePenetrationBehaviour`](crate::equipment::weapon::Bullet::m_OverridePenetrationBehaviour), when the hit physics instance is of
+    /// certain kinds): the bullet's next ray starts at the hit, the object becomes the ray filter's
+    /// one ignored object ([`Bullet::m_RayIgnoreList`](crate::equipment::weapon::Bullet::m_RayIgnoreList)), and this flag keeps the filter from taking
+    /// back the shooter's ignore list. The damage the bullet deals is not reduced by it.
+    pub m_HasPenetratedOneObject: bool,
+    /// Whether the bullet passes through physics instances of certain kinds whatever their
+    /// material.
+    pub m_OverridePenetrationBehaviour: bool,
+    _field_25b: [u8; 1],
+    /// Whether the bullet has hit anything.
+    pub m_HasHit: bool,
+    _field_25d: [u8; 3],
+}
+fn _Bullet_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x260], Bullet>([0u8; 0x260]);
+    }
+    unreachable!()
+}
 impl Bullet {
+    pub const HandleHit_ADDRESS: usize = 0x140942C10;
+    /// `CBullet::HandleHit`: handles the hit `info` of the bullet's ray, when the hit fraction is
+    /// under one. It moves the bullet to the hit, calls
+    /// [`Bullet::OnBulletHitGlass`](crate::equipment::weapon::Bullet::OnBulletHitGlass) for a hit on the glass material, then handles the hit as a hit
+    /// on a game object or on static geometry, which decides whether the bullet passes through
+    /// ([`Bullet::m_HasPenetratedOneObject`](crate::equipment::weapon::Bullet::m_HasPenetratedOneObject)) or stops ([`Bullet::m_IsAlive`](crate::equipment::weapon::Bullet::m_IsAlive)), and marks the
+    /// bullet as having hit ([`Bullet::m_HasHit`](crate::equipment::weapon::Bullet::m_HasHit)). Whether or not it hit, it then checks the
+    /// bullet's segment against creatures and the water surface, and moves a fully controlled
+    /// trail to the bullet. Bullets update on worker threads, so it runs on one.
+    pub unsafe fn HandleHit(
+        &mut self,
+        info: *mut crate::physics::CastRayInfoBase,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                info: *mut crate::physics::CastRayInfoBase,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::HandleHit_ADDRESS);
+            f(self as *mut Self as _, info, dt)
+        }
+    }
     pub const OnBulletHitGlass_ADDRESS: usize = 0x14090E470;
     /// `CBullet::OnBulletHitGlass`: the bullet's handling of a hit on a shape of the glass material
     /// ([`EGameMaterialId_Glass`](crate::physics::GameMaterialId::EGameMaterialId_Glass)), which its hit

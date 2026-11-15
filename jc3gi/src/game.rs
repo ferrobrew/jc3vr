@@ -844,6 +844,25 @@ impl std::convert::AsMut<UpdateContexts> for UpdateContexts {
         self
     }
 }
+pub const FindOptionalInternal_ADDRESS: usize = 0x1404F5310;
+/// `CGameObject::FindOptionalInternal`: looks up the game object with the object id `id`
+/// (`SObjectID`, passed by value) and writes a strong reference to it into `result`, the
+/// `CGameObject` subobject, or a null reference when none exists; returns whether it found one.
+/// The reference keeps the object alive until it is released with
+/// [`ReleaseSharedPtrGameObject`](crate::types::shared_ptr::ReleaseSharedPtrGameObject). The bullets'
+/// hit handling calls it on their worker threads.
+pub unsafe fn FindOptionalInternal(
+    id: u64,
+    result: *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+) -> bool {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            id: u64,
+            result: *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+        ) -> bool = ::std::mem::transmute(FindOptionalInternal_ADDRESS);
+        f(id, result)
+    }
+}
 pub const StreamerUpdate_ADDRESS: usize = 0x14118A180;
 /// The resource streamer's update: polls the file system and the decompressors, creates the
 /// loaded resources, and starts the pending requests, within `budget_us` microseconds. The run
