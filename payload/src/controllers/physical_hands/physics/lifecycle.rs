@@ -17,7 +17,7 @@ use crate::controllers::{
         contact,
         drive::{DriveTuning, Goal, JoinedLoad, drive, drive_joined, rig_carry},
         guns::step::{GunSlot, drop_hand},
-        joint::Joint,
+        joint::{Joint, JointKind},
         render::RenderOffset,
     },
 };
@@ -300,14 +300,27 @@ impl Hands {
     /// wanted was lost: its joint ended or could not be made.
     pub(super) unsafe fn join(&mut self, hand: Hand, wanted: Option<HoldTarget>) -> bool {
         let i = hand.index();
+        // Two hands on one assembly that hangs on constraints of its own (a ragdoll, an
+        // articulated object) hold it by points: a fixed pose for each over-constrains its chain.
+        let kind = wanted.map(|w| {
+            if w.constrained && w.shared {
+                JointKind::Point
+            } else {
+                JointKind::Fixed
+            }
+        });
         if let Some(joint) = &self.joints[i] {
-            let same = wanted.is_some_and(|w| joint.target() == (Some(w.object), w.body));
+            let same = wanted.is_some_and(|w| joint.target() == (Some(w.object), w.body))
+                && kind == Some(joint.kind());
             // SAFETY: forwarded from the caller.
             if same && unsafe { joint.intact() } {
                 return false;
             }
+            let rejoin = wanted.is_some_and(|w| joint.target() == (Some(w.object), w.body));
             let reason = if same {
                 "the constraint or the object's body went away"
+            } else if rejoin {
+                "the joint changes kind as a hand joins or leaves"
             } else {
                 "the grip let go"
             };
@@ -324,10 +337,20 @@ impl Hands {
             return true;
         };
         // SAFETY: forwarded from the caller; the body is in the simulation.
-        match unsafe { Joint::create_at(body.body_id(), wanted.body, wanted.object, wanted.palm) } {
+        let kind = kind.unwrap_or(JointKind::Fixed);
+        match unsafe {
+            Joint::create_at(
+                body.body_id(),
+                wanted.body,
+                wanted.object,
+                wanted.palm,
+                kind,
+            )
+        } {
             Ok(joint) => {
                 tracing::info!(
                     hand = hand.label(),
+                    ?kind,
                     constraint = joint.id(),
                     hand_body = body.body_id(),
                     object_body = wanted.body,

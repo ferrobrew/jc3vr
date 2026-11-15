@@ -1,6 +1,8 @@
 //! A grip's joint: a fixed constraint between a hand body and the body of a loose object the hand
 //! holds, or of the gun it holds, made the way the magnet weapon makes its own
-//! (`docs/engine/physics/havok-bodies.md`, "Joining bodies with a fixed constraint").
+//! (`docs/engine/physics/havok-bodies.md`, "Joining bodies with a fixed constraint"), or a point
+//! (ball-and-socket) constraint at the palm, which holds only the contact point and leaves the
+//! rotation to the object's own constraints ([`JointKind`]).
 //!
 //! The constraint's data comes from the calling thread's Havok heap ([`hkMemoryRouter::m_heap`]),
 //! is constructed with one reference, the joint's, and is given the two bodies' frames: the
@@ -23,7 +25,7 @@ use glam::{Affine3A, Mat3A, Vec3, Vec3A};
 use jc3gi::{
     havok::{
         hkMemoryRouter, hkReferencedObject, hkTransformf, hknpConstraintCinfo,
-        hkpFixedConstraintData,
+        hkpBallAndSocketConstraintData, hkpFixedConstraintData,
     },
     physics::{hknpConstraint, hknpConstraintManager, hknpWorld},
     types::vector_math::AlignedVector3,
@@ -75,7 +77,18 @@ impl fmt::Display for JointError {
 
 impl std::error::Error for JointError {}
 
-/// A fixed constraint between a hand body and an object's body.
+/// Which constraint joins a hand to what it holds.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum JointKind {
+    /// The two bodies held in a fixed pose: the hand turns the object.
+    Fixed,
+    /// The contact point held on the palm, the rotation free: for an object that hangs on
+    /// constraints of its own, two hands on one ragdoll, where each hand's fixed pose fought the
+    /// other's and the ragdoll's joint limits and the body rang between them.
+    Point,
+}
+
+/// A constraint between a hand body and an object's body.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Joint {
     id: u32,
@@ -86,6 +99,7 @@ pub struct Joint {
     object: Option<NonZeroUsize>,
     /// The constraint's data, as an address, which the world's slot must still hold.
     data: usize,
+    kind: JointKind,
 }
 
 impl Joint {
@@ -102,9 +116,10 @@ impl Joint {
         object_body: u32,
         object: NonZeroUsize,
         palm: Pose,
+        kind: JointKind,
     ) -> Result<Self, JointError> {
         unsafe { bodies::read(object_body, object) }.map_err(JointError::Object)?;
-        unsafe { Self::join(hand, object_body, Some(object), Some(palm)) }
+        unsafe { Self::join(hand, object_body, Some(object), Some(palm), kind) }
     }
 
     /// Join the hand body `hand` to the body `body`, one of the mod's own, in their present
@@ -114,7 +129,7 @@ impl Joint {
     ///
     /// As [`Joint::create_at`]; `body` must be a live body in the simulation.
     pub unsafe fn create_between(hand: u32, body: u32) -> Result<Self, JointError> {
-        unsafe { Self::join(hand, body, None, None) }
+        unsafe { Self::join(hand, body, None, None, JointKind::Fixed) }
     }
 
     unsafe fn join(
@@ -122,6 +137,7 @@ impl Joint {
         object_body: u32,
         object: Option<NonZeroUsize>,
         palm: Option<Pose>,
+        kind: JointKind,
     ) -> Result<Self, JointError> {
         let mut world = unsafe { World::get() }.ok_or(JointError::NoPhysicsWorld)?;
         let slot = |body| unsafe { bodies::slot(world.world(), body) }.ok_or(JointError::NoBody);
@@ -135,15 +151,34 @@ impl Joint {
         let pivot_a = transform(pivot_a);
         let pivot_b = transform(pivot_b);
 
-        let data = unsafe { allocate() }?;
-        // SAFETY: fresh heap memory of the data's size, constructed before any other use.
-        let data = unsafe {
-            (*data).Construct();
-            (*data).setInBodySpace(&pivot_a, &pivot_b);
-            &mut *data
+        let data: *mut hkReferencedObject = match kind {
+            JointKind::Fixed => {
+                let data = unsafe { allocate(size_of::<hkpFixedConstraintData>()) }?
+                    .cast::<hkpFixedConstraintData>();
+                // SAFETY: fresh heap memory of the data's size, constructed before any other use.
+                unsafe {
+                    (*data).Construct();
+                    (*data).setInBodySpace(&pivot_a, &pivot_b);
+                }
+                data.cast()
+            }
+            JointKind::Point => {
+                let data = unsafe { allocate(size_of::<hkpBallAndSocketConstraintData>()) }?
+                    .cast::<hkpBallAndSocketConstraintData>();
+                // SAFETY: as above. The pivots are the contact frame's origin in each body; the
+                // stabilized solving method matches the fixed joint's.
+                unsafe {
+                    (*data).Construct();
+                    (*data).m_translationA = pivot_a.m_translation;
+                    (*data).m_translationB = pivot_b.m_translation;
+                    (*data).m_setupStabilizationEnabled = true;
+                    (*data).m_ballSocketSolvingMethod = 0;
+                }
+                data.cast()
+            }
         };
         let mut cinfo = unsafe { MaybeUninit::<hknpConstraintCinfo>::zeroed().assume_init() };
-        cinfo.m_constraintData = (data as *mut hkpFixedConstraintData).cast::<hkReferencedObject>();
+        cinfo.m_constraintData = data;
         cinfo.m_bodyA = hand;
         cinfo.m_bodyB = object_body;
         let mut id = hknpConstraintManager::INVALID_CONSTRAINT_ID;
@@ -153,7 +188,8 @@ impl Joint {
             hand_body: hand,
             object_body,
             object,
-            data: data as *mut hkpFixedConstraintData as usize,
+            data: data as usize,
+            kind,
         };
         let made = unsafe { joint.entry(world.world()) }.map(|entry| entry.m_flags);
         // The world's constraint holds its own reference; this one was the joint's.
@@ -166,6 +202,11 @@ impl Joint {
             }
             None => Err(JointError::NoConstraint),
         }
+    }
+
+    /// Which constraint the joint is.
+    pub fn kind(&self) -> JointKind {
+        self.kind
     }
 
     pub fn id(&self) -> u32 {
@@ -275,19 +316,18 @@ fn palm_frame(palm: Pose, shift: Vec3) -> Option<Affine3A> {
         .then(|| Affine3A::from_rotation_translation(palm.orientation.normalize(), position))
 }
 
-/// Fixed constraint data's memory, from the calling thread's Havok heap.
-unsafe fn allocate() -> Result<*mut hkpFixedConstraintData, JointError> {
+/// Memory of `size` bytes for constraint data, from the calling thread's Havok heap.
+unsafe fn allocate(size: usize) -> Result<*mut c_void, JointError> {
     // SAFETY: reads this thread's own slot of the engine's thread-local index.
     let router =
         unsafe { TlsGetValue(*hkMemoryRouter::get_s_memoryRouterSlot()) }.cast::<hkMemoryRouter>();
     let router = unsafe { router.as_mut() }.ok_or(JointError::NoHeap)?;
     let heap = unsafe { router.m_heap.as_mut() }.ok_or(JointError::NoHeap)?;
-    let memory: *mut c_void =
-        unsafe { heap.blockAlloc(size_of::<hkpFixedConstraintData>() as i32) };
+    let memory: *mut c_void = unsafe { heap.blockAlloc(size as i32) };
     if memory.is_null() {
         return Err(JointError::NoMemory);
     }
-    Ok(memory.cast())
+    Ok(memory)
 }
 
 #[cfg(test)]
