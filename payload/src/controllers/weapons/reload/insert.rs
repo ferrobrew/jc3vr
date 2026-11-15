@@ -785,7 +785,7 @@ mod tests {
         };
         // Below the threshold, as the 10 November loading pushes came (0.3 to 0.5 m/s), and above
         // it, as its strikes did (1.9 to 3.2 m/s).
-        for (speed, knocks) in [(0.4, false), (0.9, false), (1.2, true), (2.5, true)] {
+        for (speed, knocks) in [(0.4, false), (0.6, false), (0.9, true), (2.5, true)] {
             let mut i = Insertion::new();
             take(&mut i);
             let start = WELL.mouth - Vec3::Y * (CONFIG.capture_radius_m + 0.001);

@@ -125,6 +125,7 @@ fn step_with(
     move_hand(tick, worker, position);
     let (pressed, down) = grip;
     let mut inputs = FinishInputs {
+        fire_presses: [ButtonControl::default(); 2],
         grabs: [None; 2],
         grips: [ButtonControl::default(); 2],
         reload_button: ButtonControl::default(),

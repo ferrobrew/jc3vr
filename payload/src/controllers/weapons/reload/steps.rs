@@ -11,6 +11,7 @@ use crate::controllers::{
     hands::{ActiveHands, ik},
     haptics::{self, Event},
     loadout::live::item_of,
+    mode::{self, Mode},
     weapons::{
         self,
         engine::{HeldWeapon, reserve},
@@ -483,6 +484,20 @@ impl State {
                 targets[hand.index()] = true;
             } else {
                 self.event("the reload button found no magazine to eject".to_owned());
+            }
+        }
+        // In a vehicle seat the hands are on the controls and the reload button is not bound, so
+        // a double tap of the gun's fire press drops a dry gun's magazine. A loaded gun's double
+        // tap is two shots, which no detector can tell from a release in time.
+        let seated = matches!(mode::current().mode, Mode::Vehicle(_));
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            let double = self.fire_taps[i].step(inputs.fire_presses[i], inputs.dt, reload.tap_s);
+            if seated && double && self.ejectable_rounds(tick, hand) == Some(0) {
+                self.event(format!(
+                    "the {hand:?} gun's double tap drops its dry magazine"
+                ));
+                targets[i] = true;
             }
         }
         for hand in Hand::BOTH {

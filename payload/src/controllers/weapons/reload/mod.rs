@@ -98,7 +98,7 @@ use crate::controllers::{
         reload::{
             belt::{BeltPush, PushStage},
             chamber::{ActionWork, Chamber},
-            eject::{FlickDetector, TapDetector},
+            eject::{DoubleTapDetector, FlickDetector, TapDetector},
             engine::Reading,
             extraction::{DetachRequest, PendingDetach, Pull},
             fire_hold::FireHold,
@@ -529,6 +529,9 @@ pub(super) struct FinishInputs {
     pub grips: [ButtonControl; 2],
     /// The reload action's press over the tick.
     pub reload_button: ButtonControl,
+    /// Each hand's fire press for the gun it holds, over the tick, by [`Hand::index`]: in a
+    /// vehicle seat a double tap of it on a dry gun drops the magazine.
+    pub fire_presses: [ButtonControl; 2],
     /// The tick's length, real seconds: the player's taps, flicks, grips, and the rounds and the
     /// action in the player's hands.
     pub dt: f32,
@@ -1071,6 +1074,8 @@ struct State {
     insertion_source: InsertionSource,
     ready_cue: ReadyCue,
     tap: TapDetector,
+    /// Each gun hand's fire press double tap, the seated magazine release, by [`Hand::index`].
+    fire_taps: [DoubleTapDetector; 2],
     flicks: [FlickDetector; 2],
     belts: [BeltPush; 2],
     /// Each hand's grip on the last tick, for its velocity.
@@ -1127,6 +1132,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     insertion_source: InsertionSource::Pouch,
     ready_cue: ReadyCue::new(),
     tap: TapDetector::new(),
+    fire_taps: [DoubleTapDetector::new(); 2],
     flicks: [FlickDetector::new(); 2],
     belts: [BeltPush::new(); 2],
     last_grips: [None; 2],

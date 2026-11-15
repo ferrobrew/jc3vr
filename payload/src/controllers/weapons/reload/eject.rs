@@ -45,6 +45,47 @@ impl TapDetector {
     }
 }
 
+/// A double tap of a gun hand's fire press: two taps, each no longer than the tap, the second
+/// ending within [`DOUBLE_TAP_GAP_S`] of the first. The seated magazine release, where the hands
+/// are on the vehicle's controls and the reload button is not bound.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct DoubleTapDetector {
+    tap: TapDetector,
+    /// The seconds since the first tap ended, while a second may still follow.
+    since_first_s: Option<f32>,
+}
+
+impl DoubleTapDetector {
+    pub const fn new() -> Self {
+        Self {
+            tap: TapDetector::new(),
+            since_first_s: None,
+        }
+    }
+
+    /// Fold in one tick of the press; true when the second tap of a double tap ends this tick.
+    pub fn step(&mut self, button: ButtonControl, dt: f32, tap_s: f32) -> bool {
+        let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
+        if let Some(since) = &mut self.since_first_s {
+            *since += dt;
+            if *since > DOUBLE_TAP_GAP_S {
+                self.since_first_s = None;
+            }
+        }
+        if !self.tap.step(button, dt, tap_s) {
+            return false;
+        }
+        if self.since_first_s.take().is_some() {
+            return true;
+        }
+        self.since_first_s = Some(0.0);
+        false
+    }
+}
+
+/// The longest from the end of a double tap's first tap to the end of its second, seconds.
+pub const DOUBLE_TAP_GAP_S: f32 = 0.4;
+
 /// One gun hand's flick detector.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct FlickDetector {
@@ -214,5 +255,33 @@ mod tests {
         assert_eq!(tap_target([None, Some(30)], Hand::Right), Some(Hand::Right));
         assert_eq!(tap_target([Some(30), None], Hand::Right), Some(Hand::Left));
         assert_eq!(tap_target([None; 2], Hand::Right), None);
+    }
+
+    #[test]
+    fn two_quick_taps_are_a_double_tap_and_a_slow_pair_is_not() {
+        let press = ButtonControl {
+            down: true,
+            pressed: true,
+            released: false,
+        };
+        let release = ButtonControl {
+            down: false,
+            pressed: false,
+            released: true,
+        };
+        let up = ButtonControl::default();
+        let mut d = DoubleTapDetector::new();
+        assert!(!d.step(press, 0.03, 0.3));
+        assert!(!d.step(release, 0.03, 0.3));
+        assert!(!d.step(up, 0.1, 0.3));
+        assert!(!d.step(press, 0.03, 0.3));
+        assert!(d.step(release, 0.03, 0.3));
+
+        let mut d = DoubleTapDetector::new();
+        d.step(press, 0.03, 0.3);
+        d.step(release, 0.03, 0.3);
+        d.step(up, 0.5, 0.3);
+        d.step(press, 0.03, 0.3);
+        assert!(!d.step(release, 0.03, 0.3), "too far apart");
     }
 }

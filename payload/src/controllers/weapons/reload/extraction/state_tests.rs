@@ -13,7 +13,7 @@ use crate::controllers::{
         ReloadStatus,
         belt::{BeltPush, PushStage},
         chamber::Chamber,
-        eject::{FlickDetector, TapDetector},
+        eject::{DoubleTapDetector, FlickDetector, TapDetector},
         engine::{DetachOutcome, Reading},
         frames::GunFrame,
         insert::{InsertStage, ReadyCue, Well},
@@ -93,6 +93,7 @@ fn state() -> State {
         insertion_source: InsertionSource::Pouch,
         ready_cue: ReadyCue::new(),
         tap: TapDetector::new(),
+        fire_taps: [DoubleTapDetector::new(); 2],
         flicks: [FlickDetector::new(); 2],
         belts: [BeltPush::new(); 2],
         last_grips: [None; 2],
@@ -179,6 +180,7 @@ fn tick(pull: f32, rounds: i32) -> Tick {
 
 fn inputs(claim: bool, held: bool) -> FinishInputs {
     FinishInputs {
+        fire_presses: [ButtonControl::default(); 2],
         grabs: [claim.then_some(GrabVolume::InsertedMagazine), None],
         grips: [
             ButtonControl {

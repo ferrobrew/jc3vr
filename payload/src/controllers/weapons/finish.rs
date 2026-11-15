@@ -352,6 +352,7 @@ pub(crate) fn finish_tick(
             grabs,
             grips,
             reload_button,
+            fire_presses,
             dt: real_dt,
             game_dt: dt,
         },

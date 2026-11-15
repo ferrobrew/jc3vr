@@ -9,8 +9,13 @@ use crate::controllers::{
     cockpit::CockpitTransform,
     hands::pose::CockpitHand,
     weapons::reload::{
-        ReloadStatus, eject::TapDetector, extraction::Pull, knock::Knocks, plan::WellFrame,
-        records::Records, tuning::RELOAD,
+        ReloadStatus,
+        eject::{DoubleTapDetector, TapDetector},
+        extraction::Pull,
+        knock::Knocks,
+        plan::WellFrame,
+        records::Records,
+        tuning::RELOAD,
     },
 };
 
@@ -117,6 +122,7 @@ pub(super) fn state(stage: InsertStage) -> State {
         insertion_source: InsertionSource::RetainedMagazine,
         ready_cue: insert::ReadyCue::new(),
         tap: TapDetector::new(),
+        fire_taps: [DoubleTapDetector::new(); 2],
         flicks: [FlickDetector::new(); 2],
         belts: [BeltPush::new(); 2],
         last_grips: [None; 2],
@@ -210,6 +216,7 @@ pub(super) fn tick(seating: bool) -> Tick {
 
 fn inputs(held: bool) -> FinishInputs {
     FinishInputs {
+        fire_presses: [ButtonControl::default(); 2],
         grabs: [None; 2],
         grips: [
             ButtonControl {
