@@ -313,12 +313,15 @@ pub(super) unsafe fn pull(
     let Some(palm) = palms[receiver.index()] else {
         return Ok(Step::Flying);
     };
-    let stalled = flight.stall.step(
-        input.dt,
-        centre,
-        SNATCH.stall_window_s,
-        SNATCH.stall_distance_m,
-    );
+    // A placed charge comes off its surface slowly, as the body the drop restores settles into
+    // the simulation: it gets longer before it counts as snagged.
+    let stall_window_s = match grabbed.kind {
+        Pulled::Charge { .. } => SNATCH.stall_window_s * CHARGE_STALL_SCALE,
+        _ => SNATCH.stall_window_s,
+    };
+    let stalled = flight
+        .stall
+        .step(input.dt, centre, stall_window_s, SNATCH.stall_distance_m);
     if let Some(slack_s) = &mut flight.slack_s {
         *slack_s += input.dt;
     }
@@ -770,6 +773,9 @@ pub(super) unsafe fn sling(
     }
     Ok(swinging)
 }
+
+/// How many times the stall window a placed charge has before it counts as snagged.
+const CHARGE_STALL_SCALE: f32 = 3.0;
 
 /// The length a ragdoll's line reels in to, metres: about an arm's reach from the grapple hand.
 const RAGDOLL_YANK_LENGTH_M: f32 = 1.2;
