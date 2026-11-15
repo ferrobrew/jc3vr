@@ -105,6 +105,9 @@ pub enum LockEnd {
     Broke(BreakCause),
     /// The reel ended by itself, or the lock was switched off.
     ReelEnded,
+    /// Y under a helicopter: the reel resumes into the game's hang below the airframe, which
+    /// enters it.
+    Entering,
 }
 
 impl LockEnd {
@@ -118,6 +121,7 @@ impl LockEnd {
             LockEnd::Broke(BreakCause::TargetGone) => "broke: target gone",
             LockEnd::Broke(BreakCause::Invalid) => "broke: bad sample",
             LockEnd::ReelEnded => "reel ended",
+            LockEnd::Entering => "entering the helicopter",
         }
     }
 
@@ -201,6 +205,24 @@ pub(crate) fn holds() -> bool {
     LOCKED.load(Ordering::Acquire)
 }
 
+/// Whether the lock hangs the character below a helicopter, where Y enters it.
+pub(crate) fn hangs_under_helicopter() -> bool {
+    holds()
+        && SHARED
+            .lock()
+            .active
+            .is_some_and(|active| active.under_helicopter)
+}
+
+/// Whether Y under a helicopter has just let the reel resume into the game's hang: its arrival is
+/// the game's, and Y is held for the hang to enter from.
+pub(crate) fn entering_helicopter() -> bool {
+    HANG_GATE
+        .lock()
+        .entering
+        .is_some_and(|at| at.elapsed() <= ENTERING_FOR)
+}
+
 /// Whether the lock could take hold now: the switch is on, and the local player's hook reels in
 /// along an attached line to something other than a character.
 ///
@@ -227,6 +249,8 @@ pub(crate) struct LockTickInput<'a> {
     pub yank: bool,
     /// The jump was pressed this tick: a way off the line, as from any hang.
     pub jump: bool,
+    /// Y was pressed this tick: under a helicopter, the way into it.
+    pub enter: bool,
     /// The grapple hand's grip and aim, in the cockpit frame, or `None` while untracked.
     pub line: Option<HandLine>,
     /// The wingsuit or the parachute is out: a release's velocity is theirs to carry on.
@@ -338,7 +362,12 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         return;
     }
     match unsafe { ending(character, hook, input, fault) } {
-        Some(why) => end(Some((character, hook)), why, input.hand),
+        Some(why) => {
+            if why == LockEnd::Entering {
+                HANG_GATE.lock().entering = Some(Instant::now());
+            }
+            end(Some((character, hook)), why, input.hand)
+        }
         None => {
             let share = {
                 let mut shared = SHARED.lock();
@@ -635,6 +664,8 @@ unsafe fn start(
             pump_at: Instant::now(),
             airborne: false,
             hang: hold == Hold::Hang,
+            under_helicopter: hold == Hold::Hang
+                && unsafe { engine::reeling_to_helicopter_hang(hook) },
         });
         shared.fault = None;
         shared.pending = None;
@@ -686,6 +717,7 @@ unsafe fn ending(
         _ if input.yank && active.hang => return Some(LockEnd::Released),
         _ if input.yank => return Some(LockEnd::Yanked),
         _ if input.jump => return Some(LockEnd::Released),
+        _ if input.enter && active.under_helicopter => return Some(LockEnd::Entering),
         _ => {}
     }
     if !input.config.enabled || (active.hang && !input.config.hang) {
@@ -782,7 +814,7 @@ fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: 
     match why {
         LockEnd::Broke(_) => haptics::play(hand, Event::LineSnap),
         LockEnd::Released | LockEnd::Landed => haptics::play(hand, Event::LineRelease),
-        LockEnd::Tapped | LockEnd::Yanked | LockEnd::ReelEnded => {}
+        LockEnd::Tapped | LockEnd::Yanked | LockEnd::ReelEnded | LockEnd::Entering => {}
     }
 }
 
@@ -815,6 +847,8 @@ struct Active {
     airborne: bool,
     /// Whether the lock is a hang below a ceiling attach.
     hang: bool,
+    /// Whether the hang is below a helicopter, whose hang entry the reel would have arrived at.
+    under_helicopter: bool,
 }
 
 /// The dynamic body behind the hook's point.
@@ -899,13 +933,20 @@ static HANG_GATE: Mutex<HangGate> = Mutex::new(HangGate {
     wanted: None,
     ticked: None,
     refused: None,
+    entering: None,
 });
 
 struct HangGate {
     wanted: Option<Instant>,
     ticked: Option<Instant>,
     refused: Option<Instant>,
+    /// When Y under a helicopter let the reel resume into the game's hang.
+    entering: Option<Instant>,
 }
+
+/// How long after Y under a helicopter the reel's arrival is left to the game's hang, and Y held
+/// for it to enter from there.
+const ENTERING_FOR: Duration = Duration::from_secs(2);
 
 /// How long an arrival's ask for a hang stands: the arrival asks again on every reel tick it
 /// arrives, so an ask older than a few ticks belongs to a reel that has ended.

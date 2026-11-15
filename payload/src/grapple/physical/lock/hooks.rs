@@ -38,7 +38,9 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
-    grapple::physical::lock::{engine, hang_takes_over, holds, last_velocity, want_hang},
+    grapple::physical::lock::{
+        engine, entering_helicopter, hang_takes_over, holds, last_velocity, want_hang,
+    },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -146,7 +148,7 @@ fn start_reel_upside_down(hook: *mut GrapplingHook, holder: *const SharedPtr<Cha
     let local = unsafe { holder.as_ref() }
         .and_then(|h| unsafe { h.px.as_ref() })
         .is_some_and(|c| c.m_IsLocalCharacter);
-    if local && hang_enabled() && hang_takes_over() {
+    if local && hang_enabled() && hang_takes_over() && !entering_helicopter() {
         want_hang();
         return;
     }
@@ -209,7 +211,7 @@ fn finish_reel(
         let live_hook = unsafe { hook.as_ref() }.and_then(|h| unsafe { h.px.as_ref() });
         let to_helicopter =
             live_hook.is_some_and(|h| unsafe { engine::reeling_to_helicopter_hang(h) });
-        if to_helicopter && hang_enabled() && hang_takes_over() {
+        if to_helicopter && hang_enabled() && hang_takes_over() && !entering_helicopter() {
             want_hang();
             return;
         }

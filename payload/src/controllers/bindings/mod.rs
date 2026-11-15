@@ -47,6 +47,7 @@ pub mod controls;
 mod flight;
 pub mod grapple_button;
 mod gun_fire;
+mod heli_hang;
 pub mod hold;
 pub mod inject;
 pub mod intents;
@@ -716,6 +717,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         real_dt,
         &config.bindings,
     );
+    let enter_from_hang = heli_hang::step(&mut step.desired);
     // SAFETY: the game stage runs on the game thread before the world update.
     unsafe {
         grapple::physical::lock::lock_tick(&grapple::physical::lock::LockTickInput {
@@ -725,6 +727,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             jump: semantic_input
                 .get(OnFootAction::Jump.id())
                 .is_some_and(|input| input.hands.iter().any(|hand| hand.button.pressed)),
+            enter: enter_from_hang,
             line: grapple_line,
             deployed: matches!(
                 detection.mode,

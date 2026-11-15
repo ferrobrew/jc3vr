@@ -64,13 +64,14 @@ In the order of the feedback:
 56. Frame time (new problem 4): play a minute with the estimator on and a minute with it off (`controllers.body.estimator.enabled`), and compare the frame time and the `body_estimator` timing slot.
 57. In a jeep's gunner seat and at a scripted mounted gun, Rico's hands and body are drawn; the log says `mounted gun: faded the gunner back in` once per use.
 58. Fly the heavy troop helicopter and the utility helicopter: each control sits under the hand that reaches for it, and the utility helicopter's collective is to the left of and below the cyclic. If one is off, log the hands for calibration as in check 52.
-59. Reel onto a helicopter's door side and wait past the arrival: Rico stays on the skid (`rail: holding Rico on the helicopter's skid`), riding with it as it flies. Y enters; jump steps off (`rail: stepped off the helicopter's skid`) and falls with the helicopter's speed. With `vehicles.helicopter_rail` off, he drops into the hang as before.
+59. Reel onto a helicopter's door side and wait past the arrival: `rail: standing on the helicopter's skid`, and Rico stands on foot on the skid, riding with it as it flies. Walk along it physically and on the stick; step slowly outward (the pull holds you) and then briskly (you fall with the helicopter's speed into a skydive, `rail: let go of Rico` with `stepped off the skid`). Again: grip the skid with both hands and lower yourself to hang under it (`went off the skid's edge`, the climb carries you); jump off; press Y by the door and note whether the game enters (`the game took him into the helicopter`). Reach for the door handle. Note in the debug UI whether the update carried the proxy. With `vehicles.helicopter_rail` off, he drops into the hang as before.
 60. With a full grenade pouch, put a grenade to it: a click with the buzz.
 61. Grip a gas cylinder in a rack and hold still for five seconds: the log's `damping a held articulated object's assembly` shows more than one body, and the lag settles rather than ringing at `load 1.00`.
 62. Hold a toppled soldier up for ten seconds, then lay them down in the hand for ten more: `holding a held character's ragdolling timers off its get-up`, and no `the game's get-up ended a hand's hold of a ragdoll`. If the get-up still fires, note `held_s` and `timers_held`. Let go: they get up a few seconds later.
 63. Swing the far end of a plank into the chest and keep pulling: `a held object rests against Rico's torso capsules`, no push, no strike buzz or sound, and no tear. Wedge the plank behind a post: it still tears.
 64. At a tripod minigun, close each grip on a handle without pressing use: the log says `manned=false`, and the drawn hands slide onto the handles and turn with the wrists. Open one hand: it blends back to the controller.
 65. The IK body's new checks in [ik-body.md](../../mod/body/ik-body.md): the step rate against the replay's prediction of about four a standing minute; standing on a truck bed or a boat deck while it is driven (the readout says `a moving body`, no steps standing still, `pelvis_speed_mps` near zero); hand climbing a face (`takes the climbing legs`, soles flat on the face, knees toward it, one brace at a time); and swinging on the line and under the canopy with the muscle target live (the legs swing toward the IK air pose; if they jitter or fold, compare with `ragdoll_target` off).
+66. Hang on the line under a helicopter and press Y: no wingsuit, `grapple lock: the lock ends` with `entering the helicopter`, a brief upside-down hang, and Rico enters.
 
 ## What was built for the deferred work
 
@@ -78,6 +79,5 @@ Everything the earlier plans deferred was built on 15 November, untested in the 
 
 ## Still open
 
-- The rail's sticky pull, and hanging underneath by choice, are not built.
-- The bars' twist grips removed outright if the triggers suit the reviewer.
-- A loaded gun's magazine cannot be dropped seated (a double tap is two shots); the reviewer chose to keep it for dry guns only. The scooter's twist grips stay behind their switch until the triggers are tried.
+- The bars' twist grips: kept behind their switch until the reviewer has tried the triggers, then removed outright if the triggers suit.
+- The seated magazine drop stays for dry guns only, as the reviewer chose (a loaded gun's double tap is two shots).
