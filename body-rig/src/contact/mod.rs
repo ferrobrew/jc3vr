@@ -230,6 +230,11 @@ pub struct ContactTuning {
     /// little over one, since a player standing tall has the hips at the legs' full length over
     /// the ankles, and the caller lowers the drawn pelvis to keep a reaching leg on its foot.
     pub reach_share: f32,
+    /// How far the caller lowers the drawn pelvis to keep a reaching leg on its foot before the
+    /// reach rule counts the hip out of reach, metres: the hip is measured that much lower. A
+    /// player standing tall stands the hips a little over the legs' straight length, and the
+    /// estimate's pelvis bobs a centimetre or two with the head.
+    pub reach_drop_m: f32,
     /// How far the pelvis twists over the feet before the twist counts, degrees.
     pub twist_deg: f32,
     /// How long the twist must hold before a foot steps, seconds.
@@ -269,14 +274,15 @@ impl ContactTuning {
             step_s: 0.3,
             arc_m: 0.07,
             reach_share: 1.02,
-            twist_deg: 40.0,
-            twist_hold_s: 0.3,
-            com_margin_m: 0.05,
+            reach_drop_m: 0.1,
+            twist_deg: 65.0,
+            twist_hold_s: 0.8,
+            com_margin_m: 0.15,
             com_neck_share: 0.3,
             root_tolerance_m: 0.2,
-            tidy_m: 0.15,
+            tidy_m: 0.3,
             tidy_deg: 25.0,
-            tidy_s: 1.0,
+            tidy_s: 4.0,
             lead: 0.5,
             max_step_m: 0.6,
             walk_speed_mps: 0.8,

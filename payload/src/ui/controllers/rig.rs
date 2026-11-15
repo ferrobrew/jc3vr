@@ -282,6 +282,12 @@ fn ik_body_settings(ui: &mut Ui, ik: &mut IkBodyConfig) {
         ui.add(egui::Slider::new(&mut c.arc_m, 0.0..=0.2).text("Step lift (m)"));
         ui.add(egui::Slider::new(&mut c.reach_share, 0.8..=1.2).text("Out of reach past (× leg)"))
             .on_hover_text("A foot steps once its hip is this far from it, in leg lengths.");
+        ui.add(
+            egui::Slider::new(&mut c.reach_drop_m, 0.0..=0.3).text("Reach counts a drop of (m)"),
+        )
+        .on_hover_text(
+            "How far the pelvis may come down to keep a planted foot before the foot steps.",
+        );
         ui.add(egui::Slider::new(&mut c.twist_deg, 10.0..=90.0).text("Twist past (°)"));
         ui.add(egui::Slider::new(&mut c.twist_hold_s, 0.0..=1.5).text("Twist held for (s)"));
         ui.add(egui::Slider::new(&mut c.com_margin_m, 0.0..=0.3).text("Balance margin (m)"))

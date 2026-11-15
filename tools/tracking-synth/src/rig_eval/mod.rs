@@ -39,6 +39,7 @@ mod config;
 mod csv;
 mod estimate;
 mod frames;
+pub mod ik;
 mod pre_ik;
 mod replay;
 mod summary;

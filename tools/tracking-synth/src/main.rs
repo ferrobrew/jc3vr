@@ -5,7 +5,7 @@
 //! tracking-synth --list
 //! tracking-synth dump [--json] [--from <time>] [--to <time>] <recording>
 //! tracking-synth rig-eval [--pelvis simulated|recorded|pre-ik] [--height <m>] [--eye-height <m>]
-//!     [--tuning <json>] [--weights <safetensors>] <recording> <out.csv>
+//!     [--tuning <json>] [--weights <safetensors>] [--ik [--contact <json>]...] <recording> <out.csv>
 //! tracking-synth export-rerun [--from <time>] [--to <time>] [--video <video>]
 //!     [--video-height <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] [--no-blueprint]
 //!     [--recording-id <id>] [--weights <safetensors>] <recording> -o <out.rrd>
@@ -27,7 +27,9 @@
 //! keeping its default, and it and `--height` and `--eye-height` override the calibration and
 //! tuning a recording notes. `--weights`, for `rig-eval` and `export-rerun`, runs EgoPoser over
 //! the whole recording first and hands the rig its estimate at the game's cadence, as the payload's
-//! rig takes it. A video sidecar (`frames.jsonl` and `stream.json`) beside the
+//! rig takes it. `--ik` also replays the IK body's FK pelvis and foot contacts over that estimate
+//! (`rig_eval::ik`) and logs its summary, once for each `--contact` tuning given (the contact
+//! model's tuning as JSON, any field left out at its default) or once with the defaults. A video sidecar (`frames.jsonl` and `stream.json`) beside the
 //! recording adds the video's time to each row. `export-rerun` writes a stretch of a
 //! recording as a Rerun recording (`rerun_export`), with the take's video cut to the stretch beside
 //! it; it needs the `rerun` feature, on by default. `estimate-body` runs EgoPoser
@@ -41,21 +43,22 @@ use std::{
     process::ExitCode,
 };
 
+mod rig_eval_cmd;
+
 use tracing_subscriber::EnvFilter;
 #[cfg(feature = "rerun")]
 use tracking_synth::rerun_export::{self, DEFAULT_VIDEO_HEIGHT, ExportOptions, VideoSource};
 use tracking_synth::{
     dump::{self, Bound, DumpFormat, Range},
     estimate,
-    rig_eval::{
-        self, EstimateCadence, EstimateTrack, EvalOptions, Evaluation, PelvisSource, ReplayOptions,
-        RigEvalError, VideoClock,
-    },
+    rig_eval::{EstimateCadence, EstimateTrack, EvalOptions, RigEvalError, VideoClock},
     script::Script,
     scripts,
     synth::{DEFAULT_RATE_HZ, Options, SynthError},
     view_scan::{self, ScanError, ScanOptions},
 };
+
+use crate::rig_eval_cmd::RigEvalRequest;
 
 fn main() -> ExitCode {
     tracing_subscriber::fmt()
@@ -86,7 +89,8 @@ fn main() -> ExitCode {
 const USAGE: &str = "usage: tracking-synth [--out <dir>] [--rate <hz>] [<script>...] | --list | \
                      dump [--json] [--from <time>] [--to <time>] <recording> | rig-eval \
                      [--pelvis simulated|recorded|pre-ik] [--height <m>] [--eye-height <m>] \
-                     [--tuning <json>] [--weights <safetensors>] <recording> <out.csv> | \
+                     [--tuning <json>] [--weights <safetensors>] [--ik [--contact <json>]...] \
+                     <recording> <out.csv> | \
                      scan-view [--video <video>] [--out <report.md>] <recording> | \
                      export-rerun [--from <time>] [--to <time>] [--video <video>] [--video-height \
                      <px>] [--height <m>] [--eye-height <m>] [--tuning <json>] [--no-blueprint] [--recording-id <id>] [--weights <safetensors>] <recording> -o \
@@ -104,12 +108,7 @@ enum Command {
         format: DumpFormat,
         range: Range,
     },
-    RigEval {
-        path: PathBuf,
-        out: PathBuf,
-        options: ReplayOptions,
-        weights: Option<PathBuf>,
-    },
+    RigEval(RigEvalRequest),
     ExportRerun {
         path: PathBuf,
         out: PathBuf,
@@ -169,6 +168,8 @@ enum CliError {
     BadPelvis(String),
     /// A `rig-eval` source the recording cannot feed.
     RigEval(RigEvalError),
+    /// `rig-eval --ik` without the estimator's weights.
+    IkWithoutWeights,
     /// `export-rerun` without a recording and an output, or with more.
     ExportPaths,
     /// A `--video-height` that is not a whole number of pixels.
@@ -234,6 +235,10 @@ impl fmt::Display for CliError {
                  or pre-ik"
             ),
             CliError::RigEval(error) => write!(f, "{error}"),
+            CliError::IkWithoutWeights => write!(
+                f,
+                "rig-eval: `--ik` replays the learned estimate, so it needs `--weights`"
+            ),
             CliError::ExportPaths => write!(
                 f,
                 "export-rerun: name exactly one recording, and the output with `-o`"
@@ -278,7 +283,7 @@ fn parse(args: impl Iterator<Item = String>) -> Result<Command, CliError> {
     }
     if args.peek().map(String::as_str) == Some("rig-eval") {
         args.next();
-        return parse_rig_eval(args);
+        return rig_eval_cmd::parse(args);
     }
     if args.peek().map(String::as_str) == Some("estimate-body") {
         args.next();
@@ -407,60 +412,6 @@ fn parse_estimate_body(mut args: impl Iterator<Item = String>) -> Result<Command
             lead_s,
         }),
         _ => Err(CliError::EstimatePaths),
-    }
-}
-
-fn parse_rig_eval(mut args: impl Iterator<Item = String>) -> Result<Command, CliError> {
-    let mut height = None;
-    let mut eye_height = None;
-    let mut tuning = None;
-    let mut source = None;
-    let mut weights = None;
-    let mut paths = Vec::new();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--weights" => {
-                weights = Some(PathBuf::from(
-                    args.next().ok_or(CliError::MissingValue("--weights"))?,
-                ));
-            }
-            "--pelvis" => {
-                let name = args.next().ok_or(CliError::MissingValue("--pelvis"))?;
-                source = Some(PelvisSource::from_name(&name).ok_or(CliError::BadPelvis(name))?);
-            }
-            "--height" => height = Some(parse_length(args.next(), "--height")?),
-            "--eye-height" => eye_height = Some(parse_length(args.next(), "--eye-height")?),
-            "--tuning" => {
-                let json = args.next().ok_or(CliError::MissingValue("--tuning"))?;
-                tuning = Some(serde_json::from_str(&json).map_err(CliError::BadTuning)?);
-            }
-            option if option.starts_with('-') => {
-                return Err(CliError::UnknownOption(option.to_owned()));
-            }
-            path => paths.push(PathBuf::from(path)),
-        }
-    }
-    let recorded_body = height.is_none() && eye_height.is_none();
-    let recorded_tuning = tuning.is_none();
-    let height = height.unwrap_or(DEFAULT_HEIGHT_M);
-    let mut eval = EvalOptions::new(height, eye_height.unwrap_or(height * DEFAULT_EYE_SHARE));
-    if let Some(tuning) = tuning {
-        eval.tuning = tuning;
-    }
-    let options = ReplayOptions {
-        eval,
-        source,
-        recorded_body,
-        recorded_tuning,
-    };
-    match <[PathBuf; 2]>::try_from(paths) {
-        Ok([path, out]) => Ok(Command::RigEval {
-            path,
-            out,
-            options,
-            weights,
-        }),
-        Err(_) => Err(CliError::RigEvalPaths),
     }
 }
 
@@ -608,71 +559,7 @@ fn run(command: Command) -> Result<(), CliError> {
             range,
             lead_s,
         } => estimate_body(&path, &out, &weights, &range, lead_s),
-        Command::RigEval {
-            path,
-            out,
-            options,
-            weights,
-        } => {
-            let bytes = std::fs::read(&path).map_err(|error| CliError::Read {
-                path: path.clone(),
-                error,
-            })?;
-            let recording = tracking_format::decode(&bytes).map_err(|error| CliError::Decode {
-                path: path.clone(),
-                error,
-            })?;
-            let clock = video_clock(&path);
-            let estimate = weights
-                .map(|weights| estimate_track(&weights, &recording))
-                .transpose()?;
-            let evaluation =
-                rig_eval::evaluate_replay(&recording, &options, clock.as_ref(), estimate.as_ref())
-                    .map_err(CliError::RigEval)?;
-            report_rig_config(&evaluation);
-            let file = std::fs::File::create(&out).map_err(|error| CliError::Write {
-                path: out.clone(),
-                error,
-            })?;
-            let mut writer = std::io::BufWriter::new(file);
-            rig_eval::write_compared_csv(&evaluation.rows, &mut writer)
-                .and_then(|()| std::io::Write::flush(&mut writer))
-                .map_err(|error| CliError::Write {
-                    path: out.clone(),
-                    error,
-                })?;
-            let summary = evaluation.summary;
-            tracing::info!(
-                pelvis = evaluation.source.name(),
-                rows = evaluation.rows.len(),
-                video = clock.is_some(),
-                grounded_s = %format_args!("{:.1}", summary.grounded_s),
-                steps = summary.steps,
-                driving_s = %format_args!("{:.1}", summary.driving_s),
-                turns = summary.turns,
-                median_turn_deg = %format_args!("{:.1}", summary.median_turn_deg),
-                p90_turn_deg = %format_args!("{:.1}", summary.p90_turn_deg),
-                mean_yaw_error_deg = %format_args!("{:.1}", summary.mean_yaw_error_deg),
-                mean_chest_error_deg = %format_args!("{:.1}", summary.mean_chest_error_deg),
-                mean_offset_m = %format_args!("{:.3}", summary.mean_offset_m),
-                max_offset_m = %format_args!("{:.3}", summary.max_offset_m),
-                held_lean_s = %format_args!("{:.0}", summary.held_lean_s),
-                recenters = summary.recenters,
-                "rig-eval: wrote {}",
-                out.display()
-            );
-            if let Some(comparison) = evaluation.comparison {
-                tracing::info!(
-                    rows = comparison.rows,
-                    mean_body_yaw_diff_deg = %format_args!("{:.2}", comparison.mean_yaw_diff_deg),
-                    max_body_yaw_diff_deg = %format_args!("{:.2}", comparison.max_yaw_diff_deg),
-                    phase_agreement = %format_args!("{:.3}", comparison.phase_agreement),
-                    mean_offset_diff_m = %format_args!("{:.4}", comparison.mean_offset_diff_m),
-                    "rig-eval: against the recorded rig"
-                );
-            }
-            Ok(())
-        }
+        Command::RigEval(request) => rig_eval_cmd::run(request),
         Command::ExportRerun {
             path,
             out,
@@ -739,38 +626,6 @@ fn write(script: &Script, out: &Path, options: Options) -> Result<(), CliError> 
         path.display()
     );
     Ok(())
-}
-
-/// Say on stderr which calibration and tuning `rig-eval` ran, and which of the recording's notes
-/// it could not read.
-fn report_rig_config(evaluation: &Evaluation) {
-    for error in &evaluation.config_errors {
-        tracing::warn!("{error}");
-    }
-    if evaluation.unplaced_poses > 0 {
-        tracing::warn!(
-            poses = evaluation.unplaced_poses,
-            "rig-eval: some pre-IK poses have no view to place them, and are left out"
-        );
-    }
-    let Some(config) = evaluation.config else {
-        return;
-    };
-    let first = config.first;
-    let ran = match (config.body, config.tuning) {
-        (true, true) => "the recorded calibration and tuning",
-        (true, false) => "the recorded calibration and the command line's tuning",
-        (false, true) => "the command line's calibration and the recorded tuning",
-        (false, false) => "the command line's calibration and tuning",
-    };
-    tracing::info!(
-        notes = config.notes,
-        height_m = first.height_m,
-        eye_height_m = first.eye_height_m,
-        body_eye_height_m = first.body.eye_height,
-        body_hip_height_m = first.body.hip_height,
-        "rig-eval: the recording notes the rig's calibration and tuning; running {ran}"
-    );
 }
 
 /// What `export-rerun` was asked for.

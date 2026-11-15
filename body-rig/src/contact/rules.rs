@@ -1,6 +1,6 @@
 //! The release rules: which planted foot wants to step, and why. Pure.
 
-use glam::Vec2;
+use glam::{Vec2, Vec3};
 
 use crate::{
     angle::{forward, wrap},
@@ -51,7 +51,10 @@ pub(crate) fn needs(
         let Some(pose) = planted[side.index()] else {
             continue;
         };
-        let excess = frame.hips[side.index()].distance(pose.ankle) - limit;
+        // The caller lowers the drawn pelvis by up to the reach's drop to keep a reaching leg on
+        // its foot, so the hip counts as that much lower.
+        let hip = frame.hips[side.index()] - Vec3::Y * tuning.reach_drop_m.max(0.0);
+        let excess = hip.distance(pose.ankle) - limit;
         if excess.is_finite() && excess > 0.0 {
             need.reach_excess[side.index()] = excess;
             need.urgent[side.index()] = true;

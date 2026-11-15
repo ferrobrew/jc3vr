@@ -88,7 +88,7 @@ fn held(stretch_s: f64) -> f64 {
 }
 
 /// The value a share `p` of the sorted `values` lie below, or zero for none.
-fn percentile(values: &[f32], p: f32) -> f32 {
+pub(crate) fn percentile(values: &[f32], p: f32) -> f32 {
     if values.is_empty() {
         return 0.0;
     }

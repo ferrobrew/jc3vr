@@ -125,10 +125,7 @@ pub(crate) fn run_frames(
                 point
             }
         };
-        let moving = frame
-            .controllers
-            .as_ref()
-            .is_some_and(|c| c.hands[0].inputs.thumbstick.length() > MOVING_STICK);
+        let moving = stick_moving(frame);
         let estimate = run
             .estimate
             .and_then(|track| track.at(frame.time_ns, turned, &tuning.yaw.estimate));
@@ -190,14 +187,22 @@ const RESUME_AFTER_NS: u64 = 1_000_000_000;
 /// The off hand's stick past this deflection moves the body.
 const MOVING_STICK: f32 = 0.2;
 
-/// The eyes and the head's orientation in the room frame.
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct HeadPose {
-    eyes: Vec3,
-    orientation: Quat,
+/// Whether the off hand's stick moves the body on `frame`.
+pub(crate) fn stick_moving(frame: &Frame) -> bool {
+    frame
+        .controllers
+        .as_ref()
+        .is_some_and(|c| c.hands[0].inputs.thumbstick.length() > MOVING_STICK)
 }
 
-fn head_pose(frame: &Frame, eye_height: f32) -> Option<HeadPose> {
+/// The eyes and the head's orientation in the room frame.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct HeadPose {
+    pub(crate) eyes: Vec3,
+    pub(crate) orientation: Quat,
+}
+
+pub(crate) fn head_pose(frame: &Frame, eye_height: f32) -> Option<HeadPose> {
     let head = frame.head.as_ref()?;
     if !frame.session.head_tracked {
         return None;
@@ -230,7 +235,7 @@ fn hands(frame: &Frame) -> [Option<Vec3>; 2] {
 }
 
 /// The body's hand-over case at each time it changed, from the recording's body states.
-fn body_cases(recording: &Recording) -> Vec<(u64, bool)> {
+pub(crate) fn body_cases(recording: &Recording) -> Vec<(u64, bool)> {
     recording
         .events
         .iter()
@@ -241,7 +246,7 @@ fn body_cases(recording: &Recording) -> Vec<(u64, bool)> {
         .collect()
 }
 
-fn grounded(frame: &Frame, cases: &[(u64, bool)]) -> bool {
+pub(crate) fn grounded(frame: &Frame, cases: &[(u64, bool)]) -> bool {
     let on_foot_set = frame
         .controllers
         .as_ref()

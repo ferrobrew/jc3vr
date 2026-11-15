@@ -443,6 +443,40 @@ fn a_reset_drops_the_contacts_and_they_are_acquired_where_the_feet_stand() {
 }
 
 #[test]
+fn a_player_standing_tall_is_kept_in_reach_by_the_reach_drop() {
+    // The pelvis 3 cm over the legs' straight length: past the reach with no drop, within it once
+    // the rule counts a few centimetres of the caller's pelvis drop.
+    let tall = |_| standing_at(0.0, 0.0, 0.0);
+    let raised = |t: f32| {
+        let mut f = tall(t);
+        let lift = Vec3::Y * if t > 0.5 { 0.03 } else { 0.0 };
+        f.pelvis += lift;
+        f.hips = f.hips.map(|hip| hip + lift);
+        f
+    };
+    let reasons = |reach_drop_m: f32| {
+        let tuning = ContactTuning {
+            reach_drop_m,
+            ..TUNING
+        };
+        let mut contacts = FootContacts::new();
+        let mut world = World::default();
+        (0..120)
+            .flat_map(|i| {
+                released(
+                    &contacts
+                        .update(&raised(i as f32 * DT), &mut world, &tuning)
+                        .events,
+                )
+            })
+            .map(|(_, reason)| reason)
+            .collect::<Vec<_>>()
+    };
+    assert!(reasons(0.0).contains(&Release::Reach));
+    assert!(reasons(0.05).is_empty());
+}
+
+#[test]
 fn a_step_too_long_hands_over() {
     let mut contacts = FootContacts::new();
     let mut world = World::default();

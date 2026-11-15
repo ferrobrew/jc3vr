@@ -97,6 +97,7 @@ impl IkBodyConfig {
             ("contact.step_s", c.step_s, 0.05, 2.0),
             ("contact.arc_m", c.arc_m, 0.0, 0.4),
             ("contact.reach_share", c.reach_share, 0.5, 1.5),
+            ("contact.reach_drop_m", c.reach_drop_m, 0.0, 0.5),
             ("contact.twist_deg", c.twist_deg, 5.0, 120.0),
             ("contact.twist_hold_s", c.twist_hold_s, 0.0, 3.0),
             ("contact.com_margin_m", c.com_margin_m, 0.0, 0.5),
