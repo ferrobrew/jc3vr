@@ -489,11 +489,11 @@ unsafe fn damage(
     {
         return;
     }
-    if !native[1]
-        && reactions
-        && contact.character
-        && unsafe { engine::is_character(target_identity.owner) }
-    {
+    // A character always takes the calibrated strike. Its capsule turns every contact into a
+    // native hit reaction call, so deferring to that call skipped nearly every held prop's blow,
+    // while the native reaction does nothing visible for a hand-held prop: on the 14 November take
+    // a roof panel swung at 7 to 11 m/s through a soldier moved nobody.
+    if reactions && contact.character && unsafe { engine::is_character(target_identity.owner) } {
         let victim = unsafe { &mut *(target_identity.owner.get() as *mut Character) };
         unsafe {
             blows::held_strike(

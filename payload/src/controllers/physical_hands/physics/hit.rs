@@ -79,10 +79,16 @@ pub enum Intent {
 }
 
 impl Intent {
-    /// The intent of a hand whose grip is `latch`, with `gun_in_reach` whether the gun in the
-    /// struck character's hands is offered to it. A grip that took a weapon in the world takes,
-    /// whatever was offered after.
-    pub fn of(latch: GripLatch, gun_in_reach: bool) -> Self {
+    /// The intent of a hand whose grip is `latch`, holding a gun already when `holds_gun`, with
+    /// `gun_in_reach` whether the gun in the struck character's hands is offered to it. A hand
+    /// holding a gun takes nothing more, so it swings: its latch stays the grab that took the gun
+    /// for as long as it holds it, and read as a take, no gun swung into a character ever struck
+    /// (one gun blow in the whole 14 November take). A grip still closing on a weapon in the world
+    /// takes, whatever was offered after.
+    pub fn of(latch: GripLatch, holds_gun: bool, gun_in_reach: bool) -> Self {
+        if holds_gun {
+            return Intent::Swing;
+        }
         match (latch, gun_in_reach) {
             (GripLatch::Grab(GrabVolume::WorldWeapon), _) => Intent::Take,
             (_, false) | (GripLatch::Fist { .. }, true) => Intent::Swing,
@@ -648,18 +654,21 @@ mod tests {
         let weapon = GripLatch::Grab(GrabVolume::WorldWeapon);
         let other = GripLatch::Grab(GrabVolume::Pickup(PickupKind::Character));
         let fist = GripLatch::Fist { closed_s: 0.5 };
-        assert_eq!(Intent::of(GripLatch::Open, false), Intent::Swing);
-        assert_eq!(Intent::of(fist, false), Intent::Swing);
-        assert_eq!(Intent::of(other, false), Intent::Swing);
-        assert_eq!(Intent::of(GripLatch::Open, true), Intent::Reach);
+        assert_eq!(Intent::of(GripLatch::Open, false, false), Intent::Swing);
+        assert_eq!(Intent::of(fist, false, false), Intent::Swing);
+        assert_eq!(Intent::of(other, false, false), Intent::Swing);
+        assert_eq!(Intent::of(GripLatch::Open, false, true), Intent::Reach);
         // A fist closed on nothing and swung by the gun is a punch.
-        assert_eq!(Intent::of(fist, true), Intent::Swing);
+        assert_eq!(Intent::of(fist, false, true), Intent::Swing);
         // A closing grip by the gun takes it.
-        assert_eq!(Intent::of(other, true), Intent::Take);
-        assert_eq!(Intent::of(GripLatch::Default, true), Intent::Take);
-        // A grip that took the gun takes, whatever is offered after.
-        assert_eq!(Intent::of(weapon, false), Intent::Take);
-        assert_eq!(Intent::of(weapon, true), Intent::Take);
+        assert_eq!(Intent::of(other, false, true), Intent::Take);
+        assert_eq!(Intent::of(GripLatch::Default, false, true), Intent::Take);
+        // A grip still closing on a gun in the world takes, whatever is offered after.
+        assert_eq!(Intent::of(weapon, false, false), Intent::Take);
+        assert_eq!(Intent::of(weapon, false, true), Intent::Take);
+        // A hand holding a gun swings it, whatever its grip took and whatever is offered.
+        assert_eq!(Intent::of(weapon, true, true), Intent::Swing);
+        assert_eq!(Intent::of(other, true, true), Intent::Swing);
     }
 
     #[test]

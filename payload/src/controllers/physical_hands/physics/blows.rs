@@ -554,7 +554,8 @@ unsafe fn contact_victim(contact: &Contact, attacker: &Character) -> Option<*mut
 }
 
 /// What `hand` means by meeting the character at `character`: its grip as the last input tick
-/// latched it, and whether that tick offered it the gun in the character's hands.
+/// latched it, whether it holds a gun, and whether that tick offered it the gun in the character's
+/// hands.
 fn intent(hand: Hand, character: usize) -> Intent {
     let status = grab::tick::status();
     let latch = if status.live {
@@ -562,7 +563,11 @@ fn intent(hand: Hand, character: usize) -> Intent {
     } else {
         GripLatch::Open
     };
-    Intent::of(latch, take::steal_offer(hand) == Some(character))
+    Intent::of(
+        latch,
+        guns::mass(hand).is_some(),
+        take::steal_offer(hand) == Some(character),
+    )
 }
 
 /// The index of the melee type bit, the entry of a character's per-type impulse scales its hit
