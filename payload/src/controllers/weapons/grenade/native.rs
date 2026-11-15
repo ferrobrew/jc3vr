@@ -70,8 +70,9 @@ use std::{cell::Cell, collections::VecDeque, ptr::NonNull};
 use detours_macro::detour;
 use glam::{Mat4, Vec3};
 use jc3gi::{
-    character::character::Character,
+    character::{character::Character, inventory::WeaponSlot},
     equipment::{
+        attached_effects::{EffectInstanceStop, EffectStopMode, SoundInstanceStop, SoundStopMode},
         explosive::{Explosive, Grenade},
         weapon::{ThrownGrenadeWeapon, WeaponBase, WeaponData},
     },
@@ -86,7 +87,7 @@ use crate::controllers::{
     frame::Hand,
     loadout::{live, safe_items::SafeItemView},
     weapons::{
-        engine::gun_ptr,
+        engine::{gun_ptr, is_hand_grenade},
         grenade::{
             LAUNCH, PlannedLaunch, Release, fuse_log, primed_explosive, report_native_throw, safe,
         },
@@ -224,14 +225,68 @@ pub(super) unsafe fn pull_pin(actor: &Actor) -> PinPull {
 /// `explosive` is live, and the caller runs on the game thread in the input tick's game stage,
 /// outside the effect system's simulation and render updates, as a release's launch does.
 unsafe fn start_trail(explosive: &mut Explosive) {
+    // The launch gives the grenade its trail resources just before it plays the trail, and the
+    // prime never does, so without them the pin's trail played nothing.
+    let resourced = unsafe { give_trail_resources(explosive) };
     unsafe { explosive.PlayTrailEffect() };
     tracing::info!(
         target: "controllers",
         effect = !explosive.m_TrailEffectInstance.is_null(),
         sound = !explosive.m_TrailSoundInstance.is_null(),
         sound_follows_fuse = explosive.m_TrailSoundDetonationParameterIndex != NO_SOUND_PARAMETER,
+        resourced,
         "grenade: the fuse's trail is lit",
     );
+}
+
+/// Give `explosive` the local player's hand-grenade weapon's player trail effect and sound, as the
+/// launch does ([`Explosive::SetupEffects`]). Returns whether the weapon was found.
+///
+/// # Safety
+///
+/// As [`start_trail`].
+unsafe fn give_trail_resources(explosive: &mut Explosive) -> bool {
+    let Some(owner) = (unsafe { Character::GetLocalPlayerCharacter().as_ref() }) else {
+        return false;
+    };
+    let Some(weapon) = owner
+        .m_Inventory
+        .m_Weapons
+        .get(WeaponSlot::E_SLOT_HAND_GRENADE as usize)
+        .and_then(|weapon| unsafe { weapon.px.as_ref() })
+        .filter(|weapon| unsafe { is_hand_grenade(weapon) })
+    else {
+        return false;
+    };
+    let grenade_weapon = std::ptr::from_ref(weapon).cast::<ThrownGrenadeWeapon>();
+    // SAFETY: the slot's weapon is a hand-grenade weapon; the resources are passed by address, so
+    // the game's own assignment counts the references.
+    unsafe {
+        explosive.SetupEffects(
+            &raw const (*grenade_weapon).m_TrailEffectPlayer,
+            &raw const (*grenade_weapon).m_TrailSoundPlayer,
+        )
+    };
+    true
+}
+
+/// Stop the trail of `explosive` before it goes back into a pouch: nothing else stops it, and the
+/// fuse's sound would play on in the pouch.
+///
+/// # Safety
+///
+/// As [`start_trail`].
+unsafe fn stop_trail(explosive: &mut Explosive) {
+    unsafe {
+        EffectInstanceStop(
+            &raw mut explosive.m_TrailEffectInstance,
+            EffectStopMode::E_STOP_SOFTLY,
+        );
+        SoundInstanceStop(
+            &raw mut explosive.m_TrailSoundInstance,
+            SoundStopMode::EStopMode_Immediately,
+        );
+    }
 }
 
 /// [`Explosive::m_TrailSoundDetonationParameterIndex`] when the trail sound has no fuse parameter.
@@ -360,6 +415,8 @@ pub(super) unsafe fn remove(actor: &Actor) {
     // SAFETY: the weak handle proved a strong reference to the object still exists, and no reference
     // from this module outlives the call.
     let explosive = unsafe { &mut *explosive };
+    // SAFETY: the game stage, as the trail's start.
+    unsafe { stop_trail(explosive) };
     // SAFETY: this is the pool removal `CancelPrimedGrenade` runs, minus its ammunition refund.
     unsafe { explosive.RemoveSelf() };
 }
