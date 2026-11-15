@@ -35,6 +35,7 @@ use crate::{
         config::{GunReadout, OverlayConfig},
         frame::Hand,
         hands::tiers,
+        mode,
         overlay::{
             primitive::{
                 Anchor, DepthMode, Facing, HandPose, Primitive, Rgba, Shape, Source, SpriteSize,
@@ -82,9 +83,14 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
             },
             &mut prims,
         );
+        // A line already out is its own beam: the hint would draw a second one beside it. The
+        // highlight's ring stays, since a tap from the reel fires again at it.
+        let line_out = mode::last_snapshot()
+            .and_then(|snapshot| snapshot.character)
+            .is_some_and(|character| character.grapple_wire);
         submit_or_clear(
             Source::GrappleBeam,
-            config.grapple_beam,
+            config.grapple_beam && !line_out,
             SIM_TTL,
             |out| {
                 if let Some(g) = &status.grapple {

@@ -252,7 +252,7 @@ Producers run at different rates on different threads, so each source owns a ret
 The overlay's own producers run once per rendered frame on the render thread:
 
 - `grapple_highlight`: a ring on a valid, in-range hook point, in its own colour with a centre dot when the target can be tethered, and a thin outer ring when the grapple's aim assist turned the ray onto it;
-- `grapple_beam`: a beam from the wrist to the grapple's target point, while that point is current;
+- `grapple_beam`: a beam from the wrist to the grapple's target point, while that point is current and no line of the grapple's own is out (the line is its own beam; the highlight's ring stays, for a tap that fires again from the reel);
 - `gun_readout`: nothing by default (`None`), a dot at the hit point (`Dot`), or a line from the sight to the hit point (`Laser`);
 - `ghost_hands`: a translucent ghost at the controller of each yielded hand, drawn at `xray_alpha` where the scene is in front of it;
 - `debug_gizmos` (on by default): each hand's grip and aim axes;
