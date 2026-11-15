@@ -118,8 +118,24 @@ mod tests {
             keep_out: Vec3::ZERO,
             shared: false,
             hand_force_n: PICKUP.hand_force_n,
+            constrained: false,
         };
         let one = holding_tuning(&tuning, &hold);
+        assert_eq!(one.linear_gain, tuning.linear_gain);
+        let constrained = HoldTarget {
+            constrained: true,
+            ..hold
+        };
+        let soft = holding_tuning(&tuning, &constrained);
+        assert!(soft.linear_gain < tuning.linear_gain * 0.5);
+        let shared_soft = holding_tuning(
+            &tuning,
+            &HoldTarget {
+                shared: true,
+                ..constrained
+            },
+        );
+        assert!(shared_soft.linear_gain < soft.linear_gain);
         assert_eq!(one.mass_kg, tuning.mass_kg + hold.mass_kg);
         assert_eq!(one.max_force_n, PICKUP.hand_force_n);
         assert_eq!(one.max_torque_nm, PICKUP.hand_torque_nm);
@@ -128,6 +144,7 @@ mod tests {
             &HoldTarget {
                 mass_kg: 6.0,
                 hand_force_n: PICKUP.hand_force_n * RAGDOLL_CARRY_STRENGTH,
+                constrained: false,
                 ..hold
             },
         );
@@ -141,6 +158,7 @@ mod tests {
             &HoldTarget {
                 shared: true,
                 hand_force_n: PICKUP.hand_force_n * 1.5,
+                constrained: false,
                 ..hold
             },
         );
@@ -165,6 +183,7 @@ mod tests {
             &stronger,
             &HoldTarget {
                 hand_force_n: PICKUP.hand_force_n * 2.0,
+                constrained: false,
                 ..hold
             },
         );
@@ -178,6 +197,7 @@ mod tests {
         assert_eq!(holding_tuning(&weak, &hold).max_force_n, 10.0);
         let broken = HoldTarget {
             hand_force_n: f32::NAN,
+            constrained: false,
             ..hold
         };
         assert_eq!(holding_tuning(&tuning, &broken).max_force_n, 0.0);

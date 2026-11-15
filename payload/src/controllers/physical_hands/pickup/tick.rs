@@ -111,6 +111,9 @@ pub(crate) struct TickOutcome {
     pub yanks: u64,
     /// Fallen characters' ragdolls the hands took hold of this tick.
     pub regrips: u64,
+    /// The characters a hand's grip toppled this tick, so a second hand seizing the same one on
+    /// the same tick does not topple it again.
+    pub toppled: Vec<NonZeroUsize>,
 }
 
 /// Why a hand's hold of a body ended other than by the grip opening.
@@ -753,6 +756,7 @@ unsafe fn tick_with(
                     keep_out: keep_outs[k],
                     shared,
                     hand_force_n: game_tuning.hand_force_n,
+                    constrained: matches!(held.kind, HeldKind::Ragdoll | HeldKind::Articulated),
                 });
                 let (load, twist) = joints.loads[k];
                 outcome.reports[k] = Some(HeldReport {
@@ -1048,6 +1052,12 @@ pub(super) fn take_body(
 /// point `at` along `direction`, a unit vector, just past the knockdown; the hand then waits for
 /// the ragdoll as after a yank.
 fn topple(hand: Hand, seize: Seize, at: Vec3, direction: Vec3, outcome: &mut TickOutcome) {
+    // Both hands seizing one character on one tick topple it once: two knockdowns summed flung the
+    // body, and the two-handed hold started already ringing (2659 s of the 14 November take).
+    if outcome.toppled.contains(&seize.target.character) {
+        return;
+    }
+    outcome.toppled.push(seize.target.character);
     physics::queue_shove(Shove {
         hand,
         character: seize.target.character,

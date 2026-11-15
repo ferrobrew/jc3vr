@@ -107,4 +107,10 @@ pub struct HoldTarget {
     /// ([`HoldTuning::carrying`](crate::controllers::physical_hands::hold::HoldTuning::carrying)),
     /// so a joined object is lifted as a carried one is.
     pub hand_force_n: f32,
+    /// Whether the object hangs on constraints of its own, a ragdoll or an articulated object:
+    /// the drive pulls it softly rather than closing its lag in one step, since the rest of the
+    /// assembly stores momentum the drive does not see ([`state::holding_tuning`]).
+    ///
+    /// [`state::holding_tuning`]: crate::controllers::physical_hands::physics::state::holding_tuning
+    pub constrained: bool,
 }

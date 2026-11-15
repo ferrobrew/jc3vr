@@ -444,13 +444,28 @@ pub(super) fn holding_tuning(tuning: &DriveTuning, hold: &HoldTarget) -> DriveTu
     };
     let torque_nm =
         pickup.hand_torque_nm.max(0.0) * (pull / pickup.hand_force_n).max(0.0) * twist_share;
+    // A ragdoll or an articulated object hangs most of its mass on its own constraints, which the
+    // dead-beat drive does not see: closing the bone's lag in one step, the hand overshot and the
+    // body orbited the palm at 2 to 4 Hz, even held still (2659, 2672, and 3270 s of the 14
+    // November take). It is pulled softly instead, and with both hands on it, each pulls half as
+    // hard, since each drive assumes it alone moves the assembly.
+    let gain_share = match (hold.constrained, hold.shared) {
+        (false, _) => 1.0,
+        (true, false) => CONSTRAINED_GAIN_SHARE,
+        (true, true) => CONSTRAINED_GAIN_SHARE * 0.5,
+    };
     DriveTuning {
         mass_kg: (tuning.mass_kg + carried_mass).min(f32::MAX),
         max_force_n: tuning.max_force_n.min(pull),
         max_torque_nm: tuning.max_torque_nm.min(torque_nm),
+        linear_gain: tuning.linear_gain * gain_share,
+        angular_gain: tuning.angular_gain * gain_share,
         ..*tuning
     }
 }
+
+/// The share of the drive's gains a hand joined to a ragdoll or an articulated object pulls with.
+const CONSTRAINED_GAIN_SHARE: f32 = 0.4;
 
 /// The drive of a hand on a gun: the hand's full strength, unlike a hand lifting a loose object,
 /// against the hand's mass and what it carries together (`gun_kg`, the gun body's mass and a
