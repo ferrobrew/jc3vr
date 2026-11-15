@@ -18,6 +18,7 @@ use std::{
 
 use body_rig::{
     angle::{head_heading, line_yaw, wrap},
+    body::EYES_TO_NECK,
     yaw::{YawFollow, YawInput, YawTuning},
 };
 use glam::{Mat4, Quat, Vec3};
@@ -99,9 +100,14 @@ pub(super) fn read_player_arms() -> Option<PlayerArms> {
     .unwrap_or([None; 2]);
     let torso = airborne_torso_heading(head.orientation, wrists.map(|w| w.map(|w| w.position)));
     let player = body::player();
+    // The shoulders hang from the neck pivot, which a turn or a nod of the head leaves in place,
+    // with the eyes put back in front of it along the torso's heading. Hung from the eyes as they
+    // are, a glance at one arm swung the shoulders toward it and folded that arm's elbow.
+    let neck = head.position + head.orientation * EYES_TO_NECK;
+    let level_eyes = neck - torso * EYES_TO_NECK;
     Some(PlayerArms {
         torso,
-        shoulders: body::shoulder_positions(head.position, torso, &player),
+        shoulders: body::shoulder_positions(level_eyes, torso, &player),
         wrists,
         arm_length: player.shoulder_to_wrist(),
     })
