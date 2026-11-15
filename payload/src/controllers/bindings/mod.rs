@@ -376,7 +376,12 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         state.stand_down(poll, sink);
         state.recovery.suspend();
         state.publish_recovery();
-        weapons::stand_down();
+        // The debug panel pauses the weapons, as a game menu does: what the hands hold stays held.
+        if matches!(idle, Some(Idle::ModPanel | Idle::PollDisabled)) {
+            weapons::pause();
+        } else {
+            weapons::stand_down();
+        }
         if !matches!(idle, Some(Idle::Disabled | Idle::GamepadScheme)) {
             unsafe {
                 weapons::inventory::maintenance_tick(
@@ -1244,8 +1249,9 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     state.recovery.disarm();
     state.publish_recovery();
     drop(state);
-    weapons::stand_down();
-    weapons::reload::cancel_extraction_on_standdown();
+    // The panel opening pauses the weapons rather than standing them down: what the hands hold
+    // stays held.
+    weapons::pause();
     vehicles::stand_down();
     grapple::physical::stand_down();
     // A hook flying from the seat is kept through the panel, for the next tick to tether.

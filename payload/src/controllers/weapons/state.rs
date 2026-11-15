@@ -33,9 +33,11 @@ pub fn status() -> WeaponsStatus {
     STATE.lock().status.clone()
 }
 
-/// Pause for a game menu or the map, which skips the weapon handling's tick halves but keeps what
-/// the hands hold: physical magazine work is cancelled, and the grip release stands down, so that
-/// the first tick back ends a gun's hold with the grip as it is then.
+/// Pause for a game menu, the map, or the debug panel, which skips the weapon handling's tick
+/// halves but keeps what the hands hold: physical magazine work is cancelled, and the grip release
+/// stands down, so that the first tick back ends a gun's hold with the grip as it is then. The
+/// debug panel stood the weapons down instead, which took the left hand's SMG out of it the moment
+/// the panel opened on the 14 November take.
 pub(crate) fn pause() {
     reload::cancel_extraction_on_standdown();
     hold::act::cancel_releases();

@@ -237,10 +237,10 @@ fn a_stowed_gun_goes_back_where_it_was_drawn_from_when_free() {
 enum StandDown {
     /// The input route stands the release down ([`cancel_releases`]).
     Cancelled,
-    /// The weapon handling stands down: the debug panel, a focus loss, the controllers lost
+    /// The weapon handling stands down: a focus loss, the controllers lost
     /// ([`crate::controllers::weapons::stand_down`], which runs [`clear`]).
     Cleared,
-    /// A game menu pauses the weapon handling ([`pause`]).
+    /// A game menu, the map, or the debug panel pauses the weapon handling ([`pause`]).
     Paused,
 }
 
