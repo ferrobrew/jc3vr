@@ -41,6 +41,7 @@
 //! [`sticks`], and the levers' in [`levers`].
 
 pub mod buttons;
+pub mod calibration;
 pub mod cues;
 mod handlebars;
 mod held_wheel;

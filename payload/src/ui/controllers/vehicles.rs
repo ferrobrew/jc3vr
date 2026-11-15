@@ -15,9 +15,9 @@ use crate::{
             config::VehiclesConfig,
             driver_aim,
             driving_view::{self, DrivingViewStatus},
-            fit::{self, FitReadout},
+            fit::FitReadout,
             look_steer, parachute_rig,
-            physical::{ControlEvent, ControlKind},
+            physical::{ControlEvent, ControlKind, calibration},
             rail,
             ripcord::MIN_PULL_M,
             turret,
@@ -292,15 +292,56 @@ fn arms_readout(ui: &mut Ui, readout: &VehiclesReadout) {
     if let Some(reason) = r.last_release {
         ui.label(format!("Skid last let go: {reason}"));
     }
-    if ui
-        .button("Log the hands for cockpit calibration")
-        .on_hover_text(
-            "Hold each hand where a control should be and press: the log gives both hands in the \
-             cockpit's and the stick's part space.",
-        )
-        .clicked()
-    {
-        fit::request_cockpit_calibration();
+    let c = calibration::status();
+    ui.horizontal(|ui| {
+        if ui
+            .button("Set the cockpit controls from the hands")
+            .on_hover_text(
+                "Press, close the panel, and sit at an aircraft's controls: a three-second \
+                 countdown ticks on both hands. Hold the left hand where the collective or \
+                 throttle should be and the right where the stick (or the yoke's right horn) \
+                 should be. Both hands buzz when they are captured; the controls move there at \
+                 once and are saved for this cockpit and seat.",
+            )
+            .clicked()
+        {
+            calibration::request();
+        }
+        if ui
+            .add_enabled(
+                c.current_calibrated,
+                egui::Button::new("Clear this cockpit's calibration"),
+            )
+            .clicked()
+        {
+            calibration::clear_current();
+        }
+    });
+    if c.waiting {
+        ui.label(
+            "Cockpit calibration: close the panel and sit at the controls to start the countdown",
+        );
+    }
+    if let Some(countdown) = c.countdown_s {
+        ui.label(format!(
+            "Capturing the hands in {countdown:.1} s: left on the lever, right on the stick"
+        ));
+    }
+    ui.label(format!(
+        "Cockpit calibration: {} ({}), {} saved",
+        c.current.as_deref().unwrap_or("no cockpit"),
+        if c.current_calibrated {
+            "calibrated"
+        } else {
+            "the table's"
+        },
+        c.entries
+    ));
+    if let Some(last) = &c.last {
+        ui.label(format!("Cockpit calibration last: {last}"));
+    }
+    if let Some(path) = &c.path {
+        ui.label(format!("Cockpit calibration file: {}", path.display()));
     }
 }
 

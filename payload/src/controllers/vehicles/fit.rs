@@ -19,7 +19,6 @@
 
 use std::{
     ffi::CStr,
-    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 
@@ -40,7 +39,7 @@ use crate::controllers::{
         driving_view::{self, Correction, Entry, Target},
         entry::VehicleEntry,
         physical::{
-            ControlKind,
+            ControlKind, calibration,
             native::{self, CockpitFit, NativeStick},
         },
         tuning::PhysicalControlsTuning,
@@ -87,19 +86,10 @@ pub struct FitInputs<'a> {
     /// player's posture or the driving view's correction moves them. `None` until the anchor is
     /// published.
     pub eyes: Option<Vec3>,
-    /// The hands' grips, world space, for the cockpit calibration's log
-    /// ([`request_cockpit_calibration`]).
+    /// The hands' grips, world space, for the cockpit calibration
+    /// ([`calibration`](crate::controllers::vehicles::physical::calibration)).
     pub hands: [Option<Vec3>; 2],
 }
-
-/// Ask the next fit to log the hands' grips in the cockpit part's own space, where its controls are
-/// measured, so a control's place can be read off a hand held where it should be and added to the
-/// cockpit table. A debug UI action.
-pub fn request_cockpit_calibration() {
-    CALIBRATION_REQUESTED.store(true, Ordering::Relaxed);
-}
-
-static CALIBRATION_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// What the fit found, for the debug UI.
 #[derive(Debug, Clone, PartialEq)]
@@ -162,6 +152,7 @@ pub(super) fn fit(
     entry: Option<&VehicleEntry>,
     latch: &mut Option<VehicleLatch>,
 ) -> Fit {
+    calibration::expire();
     let config = inputs.physical;
     let specs = Fit {
         wheel: WheelFrame::from_spec(&config.wheel),
@@ -176,15 +167,21 @@ pub(super) fn fit(
     };
     if !inputs.seat.is_some_and(|s| s.driver) {
         *latch = None;
+        calibration::leave();
         return specs;
     }
     let Some(entry) = entry else {
         *latch = None;
+        calibration::leave();
         return specs;
     };
     latch.get_or_insert_with(VehicleLatch::new);
     // SAFETY: the game stage retains the observed vehicle outside the world update.
-    unsafe { fit_vehicle(inputs, entry.vehicle(), latch, specs) }
+    let fit = unsafe { fit_vehicle(inputs, entry.vehicle(), latch, specs) };
+    if fit.cockpit.is_none() {
+        calibration::leave();
+    }
+    fit
 }
 
 /// How long after entering a vehicle the fallback wheel is carried into its space and the driving
@@ -300,14 +297,6 @@ unsafe fn fit_vehicle(
         });
     }
 
-    if CALIBRATION_REQUESTED.swap(false, Ordering::Relaxed) {
-        log_calibration(
-            world,
-            [parts.cockpit.as_ref(), parts.stick.as_ref()],
-            inputs.hands,
-            vehicle.m_VehicleTypeNameHash,
-        );
-    }
     let cockpit = parts
         .cockpit
         .as_ref()
@@ -392,7 +381,7 @@ fn fit_cockpit(
     }
     // The uncorrected character eyes select the actual pilot seat, independent of roomscale.
     let pilot = part_to_world.inverse().transform_point3(inputs.eyes?);
-    let asset = native::cockpit_asset(&part.name, pilot)?;
+    let mut asset = native::cockpit_asset(&part.name, pilot)?;
     let fits = match seat.class {
         VehicleClass::Helicopter => asset.stick_kind == ControlKind::Cyclic,
         VehicleClass::Plane => matches!(
@@ -404,8 +393,16 @@ fn fit_cockpit(
     if !fits {
         return None;
     }
+    let to_part = part_to_world.inverse();
+    let hands_in_part = inputs
+        .hands
+        .map(|hand| hand.map(|hand| to_part.transform_point3(hand)));
+    // A calibrated cockpit's controls are where the player's hands put them, inside or not.
+    let calibrated = calibration::fit(&part.name, &mut asset, hands_in_part);
     let inside = |point: Vec3| point.cmpge(min).all() && point.cmple(max).all();
-    if !inside(asset.stick_grip) || asset.lever.is_some_and(|(_, grip)| !inside(grip)) {
+    if !calibrated
+        && (!inside(asset.stick_grip) || asset.lever.is_some_and(|(_, grip)| !inside(grip)))
+    {
         return None;
     }
     let xf = inputs.xf;
@@ -468,32 +465,6 @@ fn log_driving_position(p: &DrivingPosition) {
         eyes_in_cockpit_part = ?p.eyes_in_cockpit_part,
         "driving position"
     );
-}
-
-/// Log the hands' grips `hands` (world space) in the own space of each of `parts` that is present,
-/// with the vehicle's type hash.
-fn log_calibration(
-    world: Mat4,
-    parts: [Option<&PartRead>; 2],
-    hands: [Option<Vec3>; 2],
-    vehicle_type_hash: u32,
-) {
-    for part in parts.into_iter().flatten() {
-        let part_to_world = world * part.root;
-        if part_to_world.determinant().abs() < 1e-6 {
-            continue;
-        }
-        let to_part = part_to_world.inverse();
-        let [left, right] = hands.map(|hand| hand.map(|hand| to_part.transform_point3(hand)));
-        tracing::info!(
-            target: "controllers",
-            vehicle_type_hash = format_args!("{vehicle_type_hash:08x}"),
-            part = part.name.as_str(),
-            left = ?left,
-            right = ?right,
-            "vehicles: cockpit calibration: the hands in the part's space"
-        );
-    }
 }
 
 /// A vehicle part as read for the fit.
