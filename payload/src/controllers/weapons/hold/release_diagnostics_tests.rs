@@ -363,12 +363,14 @@ fn release_converts_point_motion_and_scale_once_and_rig_motion_once() {
         Some((Vec3::splat(900.0), Vec3::splat(900.0))),
     );
     let requested = drop.prepare_release(release, 2.0);
-    assert!((requested.linear.length() - 2.0).abs() < 1e-3);
+    // The hand's own part is held to the cap along its own direction; what the player's movement
+    // carries is kept whole.
+    let carried = release.inherited.linear;
+    let own = requested.linear - carried;
+    assert!((own.length() - 2.0).abs() < 1e-3, "{own}");
     assert!(
-        requested
-            .linear
-            .normalize()
-            .distance(release.world.linear.normalize())
+        own.normalize()
+            .distance((release.world.linear - carried).normalize())
             < 1e-3
     );
     assert_eq!(requested.angular, release.world.angular);
@@ -813,8 +815,13 @@ fn a_slowed_world_takes_the_hands_part_of_a_throw_at_the_hands_real_speed() {
     assert_eq!(game.world.angular, Vec3::Y * (1.0 + 8.0));
     assert_eq!(game.inherited, thrown.inherited);
     assert_eq!(thrown.in_game_time(TimeScale::REAL), thrown);
-    // The cap holds the throw to the same real speed at any time scale.
+    // The cap holds the hand's part of the throw to the same real speed at any time scale, and
+    // leaves the player's carried movement whole.
+    let carried = thrown.inherited.linear;
     let capped = game.capped(2.0);
-    assert!((capped.linear.length() - 8.0).abs() < 1e-4, "{capped:?}");
-    assert!((thrown.capped(2.0).linear.length() - 2.0).abs() < 1e-4);
+    assert!(
+        ((capped.linear - carried).length() - 8.0).abs() < 1e-4,
+        "{capped:?}"
+    );
+    assert!(((thrown.capped(2.0).linear - carried).length() - 2.0).abs() < 1e-4);
 }

@@ -179,9 +179,11 @@ impl ReleaseMotion {
         }
     }
 
-    /// The motion a release requests: non-finite parts are zero, and the linear part is held to
-    /// `max_speed_mps` per real second (zero when the cap is not a finite number), so a tracking
-    /// glitch is capped alike at any time scale.
+    /// The motion a release requests: non-finite parts are zero, and the hand's own part of the
+    /// linear motion, beyond what the player's movement carries, is held to `max_speed_mps` per
+    /// real second (zero when the cap is not a finite number), so a tracking glitch is capped alike
+    /// at any time scale. The carried part is never capped: a throw from a vehicle keeps the
+    /// vehicle's speed however fast it goes.
     pub(crate) fn capped(self, max_speed_mps: f32) -> WorldMotion {
         let cap = if max_speed_mps.is_finite() {
             max_speed_mps.max(0.0) / self.time_scale.get()
@@ -195,8 +197,10 @@ impl ReleaseMotion {
                 Vec3::ZERO
             }
         };
+        let carried = finite(self.inherited.linear);
+        let own = finite(self.world.linear) - carried;
         WorldMotion {
-            linear: finite(self.world.linear).clamp_length_max(cap),
+            linear: carried + own.clamp_length_max(cap),
             angular: finite(self.world.angular),
         }
     }

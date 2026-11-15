@@ -858,11 +858,21 @@ fn sample_release_transport(dt: f32) {
         .with_composed_head(head_world, head_cockpit.position)
     });
     let time_s = motion::latest_time();
+    // The rig's origin moves only on sim ticks, which a frame may run none or two of, so its
+    // difference over a frame read the platform's speed as zero or about double, and a charge
+    // thrown forward off a moving jeep on the 14 November take landed behind. The character's own
+    // measured velocity is the tick's, and the platform carries the rig with it.
+    // SAFETY: the local player, read on the game thread before the world update.
+    let measured = unsafe { Character::GetLocalPlayerCharacter().as_ref() }
+        .map(|character| Vec3::from(character.m_MeasuredWorldVelocity))
+        .filter(|velocity| velocity.is_finite());
     let mut state = STATE.lock();
-    state.rig = state
-        .transport
-        .update(frame, dt, time_s)
-        .map(|rig| (Instant::now(), rig));
+    state.rig = state.transport.update(frame, dt, time_s).map(|mut rig| {
+        if let Some(measured) = measured {
+            rig.motion.linear = measured;
+        }
+        (Instant::now(), rig)
+    });
 }
 
 /// Copy the estimate before disarm changes the gun's attach pose or cached native motion.
