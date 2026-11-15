@@ -504,7 +504,18 @@ pub struct Character {
     pub m_UnlimitedAmmo: bool,
     /// Packed aiming-state bit-flags; see [`AimState`](crate::character::character::AimState).
     pub m_AimFlags: crate::character::character::AimState,
-    _field_20f2: [u8; 66],
+    _field_20f2: [u8; 1],
+    /// Whether the character's opacity fade runs toward opaque. Set by
+    /// [`FadeCharacterInOut`](crate::character::character::Character::FadeCharacterInOut). While it is clear, the post-camera pass
+    /// writes the faded-out opacity every frame, so the character stays transparent until a fade
+    /// in. A weapon entering use in the mounted state clears it for a local player user, so a
+    /// gunner is held transparent for as long as they man the gun.
+    pub m_FadingIn: bool,
+    /// Seconds into the current opacity fade.
+    pub m_FadeCurrentTimer: f32,
+    /// The length of the current opacity fade, seconds.
+    pub m_FadeTargetTime: f32,
+    _field_20fc: [u8; 56],
     /// The proxy state requested for the character, a [`ProxyState`](crate::physics::ProxyState) value.
     /// [`SetProxyState`](crate::character::character::Character::SetProxyState) writes it, and
     /// [`UpdateProxyState`](crate::character::character::Character::UpdateProxyState) applies it to the physics proxy on the
@@ -1593,6 +1604,23 @@ impl Character {
                 Self::IsRagdolling_ADDRESS,
             );
             f(self as *const Self as _)
+        }
+    }
+    pub const FadeCharacterInOut_ADDRESS: usize = 0x14075FAC0;
+    /// Starts an opacity fade of the character's models, carried props, and weapons: toward opaque
+    /// when `visible`, else toward transparent, over `time` seconds. It only resets the fade's
+    /// timer; the post-camera pass applies it. A fade out holds the character transparent until the
+    /// next fade in; a fade in ends at opaque, and one with a zero `time` never runs. A weapon
+    /// entering use in the mounted state fades a local player user out, and its stop fades them
+    /// back in.
+    pub unsafe fn FadeCharacterInOut(&mut self, visible: bool, time: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                visible: bool,
+                time: f32,
+            ) = ::std::mem::transmute(Self::FadeCharacterInOut_ADDRESS);
+            f(self as *mut Self as _, visible, time)
         }
     }
     pub const PostPhysicsUpdateRagdoll_ADDRESS: usize = 0x14077FFC0;

@@ -56,6 +56,24 @@ fn _InteractionGraph_size_check() {
     unreachable!()
 }
 impl InteractionGraph {
+    pub const RemoveUser_ADDRESS: usize = 0x140A49660;
+    /// Removes `user` from the graph: the character stops being attached to the graph's object.
+    /// With the user's motion state turned back on, its graph state set inactive, and the physics
+    /// input's game-controlled velocity cleared, it is what the stunting movement task does when a
+    /// character walks off a vehicle's stunt area. The disassembler mislabels it
+    /// `ClearVelocities`.
+    pub unsafe fn RemoveUser(
+        &mut self,
+        user: *mut crate::interaction::InteractionUserProxy,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                user: *mut crate::interaction::InteractionUserProxy,
+            ) -> bool = ::std::mem::transmute(Self::RemoveUser_ADDRESS);
+            f(self as *mut Self as _, user)
+        }
+    }
     pub const GetNodeByIndex_ADDRESS: usize = 0x140A37D60;
     /// The graph's node at `index`, or null when the index is past the graph's last node.
     pub unsafe fn GetNodeByIndex(
@@ -226,7 +244,13 @@ pub struct InteractionUserProxy {
     _field_0: [u8; 8],
     /// The character the proxy belongs to.
     pub m_Character: *mut crate::character::character::Character,
-    _field_10: [u8; 392],
+    /// The interaction graph the character is a user of, or null.
+    pub m_Graph: *mut crate::interaction::InteractionGraph,
+    _field_18: [u8; 44],
+    /// Whether the character's own motion state runs, rather than the graph's: an attached
+    /// character's is off, and stepping off a vehicle's stunt area turns it back on.
+    pub m_MotionStateEnabled: bool,
+    _field_45: [u8; 339],
     /// The entries being validated on this update, which
     /// [`ProcessPotentialEntries`](crate::interaction::InteractionUserProxy::ProcessPotentialEntries) works through and empties. An
     /// entry whose graph's conditions pass becomes one of
@@ -240,10 +264,13 @@ pub struct InteractionUserProxy {
     /// ([`Inventory::UpdateWeaponHandling`](crate::character::inventory::Inventory::UpdateWeaponHandling))
     /// walk it for the weapon the first entry offers.
     pub m_ValidEntries: crate::interaction::InteractionGraphEntryArray,
-    _field_228: [u8; 20],
+    _field_228: [u8; 16],
     /// Set while [`ProcessPotentialEntries`](crate::interaction::InteractionUserProxy::ProcessPotentialEntries) runs, so that a
     /// condition evaluated meanwhile reads [`m_PotentialEntries`](crate::interaction::InteractionUserProxy::m_PotentialEntries) rather
     /// than [`m_ValidEntries`](crate::interaction::InteractionUserProxy::m_ValidEntries).
+    /// The user's state in its graph (`EInteractionGraphUserState`): zero is inactive.
+    /// [`SetGraphUserState`](crate::interaction::InteractionUserProxy::SetGraphUserState) writes it.
+    pub m_GraphUserState: i32,
     pub m_IsValidatingEntry: bool,
     _field_23d: [u8; 3],
 }
@@ -254,6 +281,16 @@ fn _InteractionUserProxy_size_check() {
     unreachable!()
 }
 impl InteractionUserProxy {
+    pub const SetGraphUserState_ADDRESS: usize = 0x140A38400;
+    /// Sets the user's state in its graph ([`m_GraphUserState`](crate::interaction::InteractionUserProxy::m_GraphUserState)).
+    pub unsafe fn SetGraphUserState(&mut self, state: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, state: i32) = ::std::mem::transmute(
+                Self::SetGraphUserState_ADDRESS,
+            );
+            f(self as *mut Self as _, state)
+        }
+    }
     pub const ProcessPotentialEntries_ADDRESS: usize = 0x140A671F0;
     /// Works through [`m_PotentialEntries`](crate::interaction::InteractionUserProxy::m_PotentialEntries) with
     /// [`m_IsValidatingEntry`](crate::interaction::InteractionUserProxy::m_IsValidatingEntry) set, and empties it: an entry whose

@@ -186,3 +186,70 @@ impl std::convert::AsMut<StateMachineInstance> for StateMachineInstance {
         self
     }
 }
+#[repr(C, align(8))]
+/// A state-machine transition (`NAnimationSystem::CTransition`). Only its destination is mapped.
+pub struct Transition {}
+impl Transition {
+    pub const GetDestination_ADDRESS: usize = 0x1403BC310;
+    /// The state the transition leads to.
+    pub unsafe fn GetDestination(&self) -> *const crate::animation::rule_system::State {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> *const crate::animation::rule_system::State = ::std::mem::transmute(
+                Self::GetDestination_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<Transition> for Transition {
+    fn as_ref(&self) -> &Transition {
+        self
+    }
+}
+impl std::convert::AsMut<Transition> for Transition {
+    fn as_mut(&mut self) -> &mut Transition {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The state-machine condition `CValidateStuntPositionCondition`: whether the character can take
+/// the stunt position of a vehicle graph node with a given identifier. A helicopter's door-side
+/// arrival drops into the helicopter's stunt hang through it once its clip ends; without that
+/// transition the door-side state has no way out at the clip's end, and the character stays
+/// attached on the skid by the door. Only its evaluation is mapped.
+pub struct ValidateStuntPositionCondition {}
+impl ValidateStuntPositionCondition {
+    pub const Evaluate_ADDRESS: usize = 0x1407D0D80;
+    /// Finds the node with the condition's identifier in the graph the character uses or, failing
+    /// that, through the available entry whose state is `transition`'s destination; needs the
+    /// character's grappling hook, and an attached active wire on the node's graph object; true
+    /// when the node's best point is not blocked.
+    pub unsafe fn Evaluate(
+        &self,
+        machine: *const crate::animation::rule_system::StateMachineInstance,
+        transition: *const crate::animation::rule_system::Transition,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                machine: *const crate::animation::rule_system::StateMachineInstance,
+                transition: *const crate::animation::rule_system::Transition,
+            ) -> bool = ::std::mem::transmute(Self::Evaluate_ADDRESS);
+            f(self as *const Self as _, machine, transition)
+        }
+    }
+}
+impl std::convert::AsRef<ValidateStuntPositionCondition>
+for ValidateStuntPositionCondition {
+    fn as_ref(&self) -> &ValidateStuntPositionCondition {
+        self
+    }
+}
+impl std::convert::AsMut<ValidateStuntPositionCondition>
+for ValidateStuntPositionCondition {
+    fn as_mut(&mut self) -> &mut ValidateStuntPositionCondition {
+        self
+    }
+}
