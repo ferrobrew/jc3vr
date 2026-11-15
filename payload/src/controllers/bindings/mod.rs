@@ -113,7 +113,7 @@ use crate::{
         hands::{self, tiers},
         haptics::{self, Event},
         locomotion,
-        mode::{self, Detection, Mode, Traversal, VehicleClass},
+        mode::{self, AirborneVariant, Detection, Mode, Traversal, VehicleClass},
         physical_hands, roomscale, scheme, snatch, vehicles, weapons,
     },
     grapple, headpose,
@@ -719,6 +719,10 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
                 .get(OnFootAction::Jump.id())
                 .is_some_and(|input| input.hands.iter().any(|hand| hand.button.pressed)),
             line: grapple_line,
+            deployed: matches!(
+                detection.mode,
+                Mode::Airborne(AirborneVariant::Wingsuit | AirborneVariant::Parachute)
+            ),
             real_dt,
             hand: grapple_hand,
             config: &config.grapple.lock,

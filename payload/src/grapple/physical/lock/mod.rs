@@ -228,6 +228,8 @@ pub(crate) struct LockTickInput<'a> {
     pub jump: bool,
     /// The grapple hand's grip and aim, in the cockpit frame, or `None` while untracked.
     pub line: Option<HandLine>,
+    /// The wingsuit or the parachute is out: a release's velocity is theirs to carry on.
+    pub deployed: bool,
     /// The tick's length, real seconds: the hand's take-in.
     pub real_dt: f32,
     pub hand: Hand,
@@ -266,18 +268,27 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
     // after the release, under the reel's cancel state. Hand the release's velocity back, carried
     // on under gravity, on every tick of a short window that finds the character slower than
     // that, which lands it after the cancel whichever tick the scale falls on, and stop once the
-    // character carries it.
+    // character carries it. Anything else that takes the character's motion over ends it too:
+    // touching down (a wall's or the ground's stop is not the cancel's), a new reel, the wingsuit,
+    // or the parachute.
     let release_velocity = SHARED.lock().release_velocity;
     if let Some((velocity, at)) = release_velocity {
         let elapsed = at.elapsed().as_secs_f32();
         let expected = velocity - Vec3::Y * rope::GRAVITY_MPS2 * elapsed;
         let measured = Vec3::from(character.m_MeasuredWorldVelocity);
-        let carried =
-            measured.is_finite() && measured.length() >= expected.length() * HANDBACK_CARRIED;
+        // Measured along the release's direction: a character turned aside by a wall carries less
+        // of it however fast it goes.
+        let carried = measured.is_finite()
+            && expected.try_normalize().is_none_or(|direction| {
+                measured.dot(direction) >= expected.length() * HANDBACK_CARRIED
+            });
         // Until the cancel has had its world update, a character still carrying the velocity
         // proves nothing.
         let settled = elapsed >= HANDBACK_SETTLE_S && carried;
-        if elapsed > HANDBACK_FOR_S || settled {
+        let taken_over = input.deployed
+            || unsafe { engine::supported(character) }
+            || unsafe { engine::reeling_far_end(hook) }.is_some();
+        if elapsed > HANDBACK_FOR_S || settled || taken_over {
             let mut shared = SHARED.lock();
             if shared
                 .release_velocity
