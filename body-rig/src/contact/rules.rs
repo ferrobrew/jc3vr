@@ -3,8 +3,8 @@
 use glam::Vec2;
 
 use crate::{
-    angle::wrap,
-    contact::{ContactFrame, ContactTuning, FootPose, Release, Side, foot_forward, off_stance},
+    angle::{forward, wrap},
+    contact::{ContactFrame, ContactTuning, FootPose, Release, Side, off_stance},
 };
 
 /// What the rules found this frame.
@@ -139,7 +139,7 @@ pub(crate) fn needs(
 pub fn support_points(feet: impl IntoIterator<Item = FootPose>, foot_m: f32) -> Vec<Vec2> {
     feet.into_iter()
         .flat_map(|foot| {
-            let ahead = foot_forward(foot.yaw);
+            let ahead = forward(foot.yaw);
             [
                 foot.flat() - ahead * HEEL_M,
                 foot.flat() + ahead * foot_m.max(0.0),

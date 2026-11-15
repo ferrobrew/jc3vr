@@ -94,320 +94,6 @@ impl StandDown {
     }
 }
 
-/// What the gate passes in.
-pub(crate) struct GateInput<'a> {
-    /// The clip's pose this tick, with the hips squared.
-    pub animated: &'a RigPose,
-    pub rig: &'a Rig,
-    pub case: Case,
-    /// Whether the active state is one of the standing idles.
-    pub idle_state: bool,
-    pub locomotion: LocomotionStatus,
-    /// The player's neck pivot in Rico's model space: where the head bone goes.
-    pub model_neck: Vec3,
-    /// The character's world transform.
-    pub world: Mat4,
-    pub stance: StanceConfig,
-    /// Whether the procedural torso is on.
-    pub torso_on: bool,
-    /// The weight the procedural torso is headed for: the seeded pose is written only while the
-    /// torso is procedural, so the IK hands back with it.
-    pub torso_target: f32,
-    pub config: IkBodyConfig,
-    pub dt: f32,
-    pub now: Instant,
-}
-
-/// What [`prepare`] hands back.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Prepared {
-    /// The posture to solve the torso on, while the IK has any weight.
-    pub pose: Option<RigPose>,
-    /// The planted feet's weight against the clip's: the square stance yields by it.
-    pub feet_weight: f32,
-}
-
-/// The targets [`prepare`] leaves for the effectors, in model space.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Targets {
-    pub weights: IkWeights,
-    /// Each foot's ankle target and heading, while it has one.
-    pub feet: [Option<FootPose>; 2],
-    /// The knees' hints.
-    pub knees: [Vec3; 2],
-    /// The airborne legs' ankles, while in the air.
-    pub air_ankles: Option<[Vec3; 2]>,
-    /// The toe's height over the ankle's ground, and its reach ahead of the ankle, metres.
-    pub toe_height_m: f32,
-    pub toe_ahead_m: f32,
-    /// The ankle's height over the ground, metres.
-    pub ankle_height_m: f32,
-}
-
-/// Classify the tick, step the contacts, and seed the IK pose into `input.animated`.
-pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
-    let fk = fk::latest();
-    let mut state = crate::controllers::body::ik_body::STATE.lock();
-    let state = &mut *state;
-    state.check_resets(input.now);
-    let (target, reason) = classify(input, fk.as_ref(), &mut state.hold);
-    state.log_state(target, reason, input.case);
-    let weights = state.blend.step(
-        target.weights(input.config.walk_weight),
-        input.dt,
-        input.config.blend_s,
-    );
-    state.status.state = target;
-    state.status.stand_down = reason;
-    state.status.weights = weights;
-    state.status.case = input.case;
-    state.status.at = Some(input.now);
-    let leaving = target != IkState::Idle;
-    if leaving && state.in_idle {
-        state.end_episode(input.now);
-    }
-    let Some(fk) = fk.filter(|_| weights.max() > 0.0) else {
-        state.drop_contacts();
-        state.targets = None;
-        state.status.planted = 0;
-        state.status.feet = [FootLabel::None; 2];
-        return Prepared {
-            pose: None,
-            feet_weight: 0.0,
-        };
-    };
-    let geometry = Geometry::of(input, &fk);
-    let mut feet = state.last_feet;
-    if target == IkState::Idle {
-        if !state.in_idle {
-            state.begin_episode(input.now);
-        }
-        feet = state.step_contacts(input, &geometry, &fk);
-    } else if weights.feet <= 0.0 {
-        state.drop_contacts();
-        feet = [None; 2];
-    }
-    let to_model = input.world.inverse();
-    let model_feet = feet.map(|foot| {
-        foot.map(|pose| FootPose {
-            ankle: to_model.transform_point3(pose.ankle),
-            yaw: wrap(pose.yaw - geometry.world_yaw),
-        })
-    });
-    let unseeded = seed::seed(input.animated, &geometry.body, &weights, 0.0);
-    let drop = seed::pelvis_drop(
-        [
-            unseeded.position(RigBone::LeftUpLeg),
-            unseeded.position(RigBone::RightUpLeg),
-        ],
-        model_feet.map(|foot| foot.map(|pose| pose.ankle)),
-        geometry.rico.leg,
-        input.config.max_pelvis_drop_m,
-    );
-    let pose = seed::seed(input.animated, &geometry.body, &weights, drop);
-    state.status.pelvis_drop_m = drop * weights.feet;
-    state.status.max_drop_m = state.status.max_drop_m.max(state.status.pelvis_drop_m);
-    state.status.source = fk.source;
-    state.status.hips_moved_m = pose
-        .position(RigBone::Hips)
-        .distance(input.animated.position(RigBone::Hips));
-    if state.in_idle {
-        state.log_standing(input.now, fk.estimate_weight);
-    }
-    let seeded_hips = [
-        pose.position(RigBone::LeftUpLeg),
-        pose.position(RigBone::RightUpLeg),
-    ];
-    let knees = [0, 1].map(|i| {
-        let thigh = geometry.body.knees[i] - geometry.body.hips[i];
-        seeded_hips[i] + thigh.normalize_or(Vec3::NEG_Y) * geometry.rico.thigh
-    });
-    let air_ankles = (weights.air_legs > 0.0)
-        .then(|| seed::ik_frame(&geometry.body))
-        .flatten()
-        .map(|frame| {
-            let [ankles, _] = seed::air_legs(
-                &geometry.body,
-                frame,
-                geometry.rico.leg,
-                input.config.air_relax,
-            );
-            ankles
-        });
-    state.targets = Some(Targets {
-        weights,
-        feet: model_feet,
-        knees,
-        air_ankles,
-        toe_height_m: geometry.rico.toe_height,
-        toe_ahead_m: geometry.rico.foot,
-        ankle_height_m: geometry.rico.ankle_height,
-    });
-    Prepared {
-        pose: Some(pose),
-        feet_weight: weights.feet,
-    }
-}
-
-/// The state the tick asks for, and why the IK stands down from the standing body if it does.
-fn classify(
-    input: &GateInput<'_>,
-    fk: Option<&FkPose>,
-    hold: &mut Option<Hold>,
-) -> (IkState, Option<StandDown>) {
-    let unchanged = |reason| (IkState::Unchanged, Some(reason));
-    if !input.config.enabled {
-        return unchanged(StandDown::SwitchedOff);
-    }
-    if !input.torso_on {
-        return unchanged(StandDown::TorsoOff);
-    }
-    if !scheme::is_controllers() {
-        return unchanged(StandDown::Gamepad);
-    }
-    if firm_ragdoll::owns_legs() {
-        return unchanged(StandDown::FirmRagdoll);
-    }
-    if !fk.is_some_and(|fk| fk.source == PelvisSource::Estimate) {
-        return unchanged(StandDown::NoEstimate);
-    }
-    match input.case {
-        Case::OnFoot => {
-            let still = input.locomotion.standing_still();
-            if let Some(held) = hold {
-                if still && !grounded_stepping() {
-                    held.still_s += input.dt;
-                } else {
-                    held.still_s = 0.0;
-                }
-                if held.still_s < input.config.resume_s {
-                    return (IkState::Walk, Some(StandDown::HandedOver(held.why)));
-                }
-                *hold = None;
-            }
-            if !input.locomotion.fresh(input.now) {
-                (IkState::Clip, Some(StandDown::NoMovementTask))
-            } else if !still {
-                (IkState::Walk, Some(StandDown::Walking))
-            } else if !input.idle_state {
-                (IkState::Clip, Some(StandDown::NotIdle))
-            } else {
-                (IkState::Idle, None)
-            }
-        }
-        Case::Jump | Case::Flight if input.config.airborne && input.torso_target > 0.0 => {
-            *hold = None;
-            (IkState::Airborne, None)
-        }
-        Case::Jump | Case::Flight if input.config.airborne => {
-            (IkState::Clip, Some(StandDown::Case(input.case)))
-        }
-        Case::Jump | Case::Flight => unchanged(StandDown::AirborneOff),
-        Case::AuthoredMotion | Case::HitReaction => {
-            (IkState::Clip, Some(StandDown::Case(input.case)))
-        }
-        case => {
-            *hold = None;
-            unchanged(StandDown::Case(case))
-        }
-    }
-}
-
-/// Whether the grounded rig's step drive walks Rico after the neck: a physical walk.
-fn grounded_stepping() -> bool {
-    grounded::status()
-        .latest
-        .is_some_and(|(frame, _)| frame.output.phase.steps())
-}
-
-/// A hand-over to the walk, held until Rico stands still again.
-#[derive(Debug, Copy, Clone, PartialEq)]
-pub(crate) struct Hold {
-    why: Handover,
-    /// How long Rico has stood still since, seconds.
-    still_s: f32,
-}
-
-/// The tick's geometry: the FK body in model space and the measurements of Rico's skeleton.
-struct Geometry {
-    body: ModelBody,
-    rico: RicoMeasures,
-    /// The character's heading in the world.
-    world_yaw: f32,
-}
-
-impl Geometry {
-    fn of(input: &GateInput<'_>, fk: &FkPose) -> Self {
-        let (_, rotation, _) = input.world.to_scale_rotation_translation();
-        let model_from_room = (rotation.inverse() * xr::body_rotation()).normalize();
-        let rico = RicoMeasures::of(input.rig);
-        let ratio = |rico: f32, player: f32| {
-            let r = rico / player;
-            if r.is_finite() && r > 0.0 { r } else { 1.0 }
-        };
-        let proportions = Proportions {
-            spine: ratio(rico.spine, fk.skeleton.spine_length()),
-            legs: ratio(rico.leg, fk.skeleton.leg_length()),
-        };
-        Self {
-            body: seed::to_model(&fk.body, input.model_neck, model_from_room, proportions),
-            rico,
-            world_yaw: yaw_of(rotation * Vec3::NEG_Z).unwrap_or(0.0),
-        }
-    }
-}
-
-/// Rico's skeleton's measurements, from its reference pose.
-#[derive(Debug, Copy, Clone, PartialEq)]
-struct RicoMeasures {
-    /// From the hips to the head bone, metres.
-    spine: f32,
-    /// From the hip joint to the ankle with the knee straight, metres.
-    leg: f32,
-    /// From the hip joint to the knee, metres.
-    thigh: f32,
-    /// From the ankle to the toe's joint across the ground, metres.
-    foot: f32,
-    /// The ankle's height over the ground, metres.
-    ankle_height: f32,
-    /// The toe joint's height over the ground, metres.
-    toe_height: f32,
-}
-
-impl RicoMeasures {
-    fn of(rig: &Rig) -> Self {
-        let at = |bone: RigBone| rig.reference[bone.index()].translation;
-        let thigh = at(RigBone::LeftUpLeg).distance(at(RigBone::LeftLeg));
-        let shin = at(RigBone::LeftLeg).distance(at(RigBone::LeftFoot));
-        let ankle = at(RigBone::LeftFoot);
-        let toe = at(RigBone::LeftToeBase);
-        let foot = Vec2::new(toe.x - ankle.x, toe.z - ankle.z).length();
-        let valid = |v: f32, fallback: f32, min: f32, max: f32| {
-            if v.is_finite() && (min..=max).contains(&v) {
-                v
-            } else {
-                fallback
-            }
-        };
-        Self {
-            spine: valid(
-                at(RigBone::Head).distance(at(RigBone::Hips)),
-                0.62,
-                0.3,
-                1.2,
-            ),
-            leg: valid(thigh + shin, 0.85, 0.4, 1.4),
-            thigh: valid(thigh, 0.42, 0.2, 0.7),
-            foot: valid(foot, 0.14, 0.05, 0.3),
-            ankle_height: valid(ankle.y - toe.y + TOE_HEIGHT_M, 0.09, 0.04, 0.16),
-            toe_height: TOE_HEIGHT_M,
-        }
-    }
-}
-
-/// The toe joint's height over the ground, metres: a generic anthropometric figure.
-const TOE_HEIGHT_M: f32 = 0.025;
-
 /// What the debug UI shows of a foot.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum FootLabel {
@@ -495,6 +181,14 @@ pub(crate) struct Episode {
     pub handovers: u64,
     /// When the spell's state was last logged.
     pub logged_at: Option<Instant>,
+}
+
+/// A hand-over to the walk, held until Rico stands still again.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct Hold {
+    why: Handover,
+    /// How long Rico has stood still since, seconds.
+    still_s: f32,
 }
 
 impl GateState {
@@ -790,6 +484,315 @@ impl GateState {
         }
     }
 }
+
+/// What the gate passes in.
+pub(crate) struct GateInput<'a> {
+    /// The clip's pose this tick, with the hips squared.
+    pub animated: &'a RigPose,
+    pub rig: &'a Rig,
+    pub case: Case,
+    /// Whether the active state is one of the standing idles.
+    pub idle_state: bool,
+    pub locomotion: LocomotionStatus,
+    /// The player's neck pivot in Rico's model space: where the head bone goes.
+    pub model_neck: Vec3,
+    /// The character's world transform.
+    pub world: Mat4,
+    pub stance: StanceConfig,
+    /// Whether the procedural torso is on.
+    pub torso_on: bool,
+    /// The weight the procedural torso is headed for: the seeded pose is written only while the
+    /// torso is procedural, so the IK hands back with it.
+    pub torso_target: f32,
+    pub config: IkBodyConfig,
+    pub dt: f32,
+    pub now: Instant,
+}
+
+/// What [`prepare`] hands back.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct Prepared {
+    /// The posture to solve the torso on, while the IK has any weight.
+    pub pose: Option<RigPose>,
+    /// The planted feet's weight against the clip's: the square stance yields by it.
+    pub feet_weight: f32,
+}
+
+/// The targets [`prepare`] leaves for the effectors, in model space.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct Targets {
+    pub weights: IkWeights,
+    /// Each foot's ankle target and heading, while it has one.
+    pub feet: [Option<FootPose>; 2],
+    /// The knees' hints.
+    pub knees: [Vec3; 2],
+    /// The airborne legs' ankles, while in the air.
+    pub air_ankles: Option<[Vec3; 2]>,
+    /// The toe's height over the ankle's ground, and its reach ahead of the ankle, metres.
+    pub toe_height_m: f32,
+    pub toe_ahead_m: f32,
+    /// The ankle's height over the ground, metres.
+    pub ankle_height_m: f32,
+}
+
+/// Classify the tick, step the contacts, and seed the IK pose into `input.animated`.
+pub(crate) fn prepare(input: &GateInput<'_>) -> Prepared {
+    let fk = fk::latest();
+    let mut state = crate::controllers::body::ik_body::STATE.lock();
+    let state = &mut *state;
+    state.check_resets(input.now);
+    let (target, reason) = classify(input, fk.as_ref(), &mut state.hold);
+    state.log_state(target, reason, input.case);
+    let weights = state.blend.step(
+        target.weights(input.config.walk_weight),
+        input.dt,
+        input.config.blend_s,
+    );
+    state.status.state = target;
+    state.status.stand_down = reason;
+    state.status.weights = weights;
+    state.status.case = input.case;
+    state.status.at = Some(input.now);
+    let leaving = target != IkState::Idle;
+    if leaving && state.in_idle {
+        state.end_episode(input.now);
+    }
+    let Some(fk) = fk.filter(|_| weights.max() > 0.0) else {
+        state.drop_contacts();
+        state.targets = None;
+        state.status.planted = 0;
+        state.status.feet = [FootLabel::None; 2];
+        return Prepared {
+            pose: None,
+            feet_weight: 0.0,
+        };
+    };
+    let geometry = Geometry::of(input, &fk);
+    let mut feet = state.last_feet;
+    if target == IkState::Idle {
+        if !state.in_idle {
+            state.begin_episode(input.now);
+        }
+        feet = state.step_contacts(input, &geometry, &fk);
+    } else if weights.feet <= 0.0 {
+        state.drop_contacts();
+        feet = [None; 2];
+    }
+    let to_model = input.world.inverse();
+    let model_feet = feet.map(|foot| {
+        foot.map(|pose| FootPose {
+            ankle: to_model.transform_point3(pose.ankle),
+            yaw: wrap(pose.yaw - geometry.world_yaw),
+        })
+    });
+    let unseeded = seed::seed(input.animated, &geometry.body, &weights, 0.0);
+    let drop = seed::pelvis_drop(
+        [
+            unseeded.position(RigBone::LeftUpLeg),
+            unseeded.position(RigBone::RightUpLeg),
+        ],
+        model_feet.map(|foot| foot.map(|pose| pose.ankle)),
+        geometry.rico.leg,
+        input.config.max_pelvis_drop_m,
+    );
+    let pose = seed::seed(input.animated, &geometry.body, &weights, drop);
+    state.status.pelvis_drop_m = drop * weights.feet;
+    state.status.max_drop_m = state.status.max_drop_m.max(state.status.pelvis_drop_m);
+    state.status.source = fk.source;
+    state.status.hips_moved_m = pose
+        .position(RigBone::Hips)
+        .distance(input.animated.position(RigBone::Hips));
+    if state.in_idle {
+        state.log_standing(input.now, fk.estimate_weight);
+    }
+    let seeded_hips = [
+        pose.position(RigBone::LeftUpLeg),
+        pose.position(RigBone::RightUpLeg),
+    ];
+    let air = (weights.air_legs > 0.0)
+        .then(|| seed::ik_frame(&geometry.body))
+        .flatten()
+        .map(|frame| {
+            seed::air_legs(
+                &geometry.body,
+                frame,
+                geometry.rico.leg,
+                input.config.air_relax,
+            )
+        });
+    // The knees hint along the estimate's thighs, or the air pose's in the air, from the seeded
+    // hips at Rico's thigh length.
+    let thigh_knees = air.map_or(geometry.body.knees, |[_, knees]| knees);
+    let knees = [0, 1].map(|i| {
+        let thigh = thigh_knees[i] - geometry.body.hips[i];
+        seeded_hips[i] + thigh.normalize_or(Vec3::NEG_Y) * geometry.rico.thigh
+    });
+    let air_ankles = air.map(|[ankles, _]| ankles);
+    state.targets = Some(Targets {
+        weights,
+        feet: model_feet,
+        knees,
+        air_ankles,
+        toe_height_m: geometry.rico.toe_height,
+        toe_ahead_m: geometry.rico.foot,
+        ankle_height_m: geometry.rico.ankle_height,
+    });
+    Prepared {
+        pose: Some(pose),
+        feet_weight: weights.feet,
+    }
+}
+
+/// The state the tick asks for, and why the IK stands down from the standing body if it does.
+fn classify(
+    input: &GateInput<'_>,
+    fk: Option<&FkPose>,
+    hold: &mut Option<Hold>,
+) -> (IkState, Option<StandDown>) {
+    let unchanged = |reason| (IkState::Unchanged, Some(reason));
+    if !input.config.enabled {
+        return unchanged(StandDown::SwitchedOff);
+    }
+    if !input.torso_on {
+        return unchanged(StandDown::TorsoOff);
+    }
+    if !scheme::is_controllers() {
+        return unchanged(StandDown::Gamepad);
+    }
+    if firm_ragdoll::owns_legs() {
+        return unchanged(StandDown::FirmRagdoll);
+    }
+    if !fk.is_some_and(|fk| fk.source == PelvisSource::Estimate) {
+        return unchanged(StandDown::NoEstimate);
+    }
+    match input.case {
+        Case::OnFoot => {
+            let still = input.locomotion.standing_still();
+            if let Some(held) = hold {
+                if still && !grounded_stepping() {
+                    held.still_s += input.dt;
+                } else {
+                    held.still_s = 0.0;
+                }
+                if held.still_s < input.config.resume_s {
+                    return (IkState::Walk, Some(StandDown::HandedOver(held.why)));
+                }
+                *hold = None;
+            }
+            if !input.locomotion.fresh(input.now) {
+                (IkState::Clip, Some(StandDown::NoMovementTask))
+            } else if !still {
+                (IkState::Walk, Some(StandDown::Walking))
+            } else if !input.idle_state {
+                (IkState::Clip, Some(StandDown::NotIdle))
+            } else {
+                (IkState::Idle, None)
+            }
+        }
+        Case::Jump | Case::Flight if input.config.airborne && input.torso_target > 0.0 => {
+            *hold = None;
+            (IkState::Airborne, None)
+        }
+        Case::Jump | Case::Flight if input.config.airborne => {
+            (IkState::Clip, Some(StandDown::Case(input.case)))
+        }
+        Case::Jump | Case::Flight => unchanged(StandDown::AirborneOff),
+        Case::AuthoredMotion | Case::HitReaction => {
+            (IkState::Clip, Some(StandDown::Case(input.case)))
+        }
+        case => {
+            *hold = None;
+            unchanged(StandDown::Case(case))
+        }
+    }
+}
+
+/// Whether the grounded rig's step drive walks Rico after the neck: a physical walk.
+fn grounded_stepping() -> bool {
+    grounded::status()
+        .latest
+        .is_some_and(|(frame, _)| frame.output.phase.steps())
+}
+
+/// The tick's geometry: the FK body in model space and the measurements of Rico's skeleton.
+struct Geometry {
+    body: ModelBody,
+    rico: RicoMeasures,
+    /// The character's heading in the world.
+    world_yaw: f32,
+}
+
+impl Geometry {
+    fn of(input: &GateInput<'_>, fk: &FkPose) -> Self {
+        let (_, rotation, _) = input.world.to_scale_rotation_translation();
+        let model_from_room = (rotation.inverse() * xr::body_rotation()).normalize();
+        let rico = RicoMeasures::of(input.rig);
+        let ratio = |rico: f32, player: f32| {
+            let r = rico / player;
+            if r.is_finite() && r > 0.0 { r } else { 1.0 }
+        };
+        let proportions = Proportions {
+            spine: ratio(rico.spine, fk.skeleton.spine_length()),
+            legs: ratio(rico.leg, fk.skeleton.leg_length()),
+        };
+        Self {
+            body: seed::to_model(&fk.body, input.model_neck, model_from_room, proportions),
+            rico,
+            world_yaw: yaw_of(rotation * Vec3::NEG_Z).unwrap_or(0.0),
+        }
+    }
+}
+
+/// Rico's skeleton's measurements, from its reference pose.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct RicoMeasures {
+    /// From the hips to the head bone, metres.
+    spine: f32,
+    /// From the hip joint to the ankle with the knee straight, metres.
+    leg: f32,
+    /// From the hip joint to the knee, metres.
+    thigh: f32,
+    /// From the ankle to the toe's joint across the ground, metres.
+    foot: f32,
+    /// The ankle's height over the ground, metres.
+    ankle_height: f32,
+    /// The toe joint's height over the ground, metres.
+    toe_height: f32,
+}
+
+impl RicoMeasures {
+    fn of(rig: &Rig) -> Self {
+        let at = |bone: RigBone| rig.reference[bone.index()].translation;
+        let thigh = at(RigBone::LeftUpLeg).distance(at(RigBone::LeftLeg));
+        let shin = at(RigBone::LeftLeg).distance(at(RigBone::LeftFoot));
+        let ankle = at(RigBone::LeftFoot);
+        let toe = at(RigBone::LeftToeBase);
+        let foot = Vec2::new(toe.x - ankle.x, toe.z - ankle.z).length();
+        let valid = |v: f32, fallback: f32, min: f32, max: f32| {
+            if v.is_finite() && (min..=max).contains(&v) {
+                v
+            } else {
+                fallback
+            }
+        };
+        Self {
+            spine: valid(
+                at(RigBone::Head).distance(at(RigBone::Hips)),
+                0.62,
+                0.3,
+                1.2,
+            ),
+            leg: valid(thigh + shin, 0.85, 0.4, 1.4),
+            thigh: valid(thigh, 0.42, 0.2, 0.7),
+            foot: valid(foot, 0.14, 0.05, 0.3),
+            ankle_height: valid(ankle.y - toe.y + TOE_HEIGHT_M, 0.09, 0.04, 0.16),
+            toe_height: TOE_HEIGHT_M,
+        }
+    }
+}
+
+/// The toe joint's height over the ground, metres: a generic anthropometric figure.
+const TOE_HEIGHT_M: f32 = 0.025;
 
 /// How often the standing body's state is logged while it lasts.
 const STANDING_LOG: Duration = Duration::from_secs(10);

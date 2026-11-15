@@ -32,7 +32,7 @@ pub use crate::contact::{
     swing::Swing,
 };
 use crate::{
-    angle::{forward, right, wrap},
+    angle::{right, wrap},
     contact::{
         rules::{Need, needs},
         swing::{Landing, plan},
@@ -263,7 +263,9 @@ pub struct ContactTuning {
     pub step_s: f32,
     /// How high the swing lifts the foot at its middle, metres.
     pub arc_m: f32,
-    /// The share of the leg's length past which the hip is out of the leg's reach.
+    /// The share of the leg's straight length past which the hip is out of the leg's reach: a
+    /// little over one, since a player standing tall has the hips at the legs' full length over
+    /// the ankles, and the caller lowers the drawn pelvis to keep a reaching leg on its foot.
     pub reach_share: f32,
     /// How far the pelvis twists over the feet before the twist counts, degrees.
     pub twist_deg: f32,
@@ -751,9 +753,4 @@ fn off_stance(
 /// The turn about +Y a rotation makes of a heading.
 fn yaw_turn(rotation: Quat) -> f32 {
     crate::angle::yaw_of(rotation * Vec3::NEG_Z).unwrap_or(0.0)
-}
-
-/// The horizontal forward of a foot's heading.
-fn foot_forward(yaw: f32) -> Vec2 {
-    forward(yaw)
 }
