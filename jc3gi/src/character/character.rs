@@ -516,20 +516,40 @@ pub struct Character {
     /// [`PLAYER_STANDING`](crate::physics::ProxyState::PLAYER_STANDING), set at player initialization through
     /// [`SetDefaultProxyState`](crate::character::character::Character::SetDefaultProxyState).
     pub m_DefaultProxyState: i32,
-    _field_213c: [u8; 748],
+    _field_213c: [u8; 740],
     /// How the character's motion is integrated this frame (`CCharacter::EMotionState`), read by
     /// the dispatch in `CCharacter::UpdateIntegratingPhysics`. Each movement actuator sets it as
     /// part of its per-frame update. Left as a raw integer because only a few of its ~25 values have
     /// been confirmed: `MOTION_STATE_SWIMMING`, `MOTION_STATE_RAGDOLL`, and
     /// `MOTION_STATE_TASK_DEFINED` on this type.
+    /// The ragdoll preset the character wants (a ragdoll-preset id from
+    /// [`RagdollParamIdSymbolTable`](crate::animation::symbol_table::RagdollParamIdSymbolTable); zero for
+    /// none). The animation graph's `SetRagdoll` state task sets it on entering a state and clears
+    /// it on leaving. The pre-physics pass's ragdoll sync, when
+    /// [`m_SyncRagdollState`](crate::character::character::Character::m_SyncRagdollState) is set, makes the ragdoll for a non-zero id,
+    /// re-params it, or destroys it for zero. A preset that keeps any bone keyframed leaves the
+    /// ragdoll under the owner's control, so the character does not ragdoll
+    /// ([`IsRagdolling`](crate::character::character::Character::IsRagdolling)) and the graph never sees it.
+    pub m_CurrentRagdollParamsID: u32,
+    _field_2424: [u8; 4],
     /// The character's ragdoll (`boost::shared_ptr<NAnimationSystem::CRagdollInstanceImpl>`), or
-    /// null for a character without one. While the animation drives the character the ragdoll's
+    /// null while [`m_CurrentRagdollParamsID`](crate::character::character::Character::m_CurrentRagdollParamsID) is zero, which for the
+    /// player is most of the time: the ragdoll and its bodies exist only while a preset is wanted.
+    /// While the animation drives the character the ragdoll's
     /// displacement is controlled by its owner; the character ragdolls
     /// ([`IsRagdolling`](crate::character::character::Character::IsRagdolling)) while the ragdoll's own simulation moves it.
     pub m_Ragdoll: crate::types::shared_ptr::SharedPtr<
         crate::animation::ragdoll::RagdollInstance,
     >,
-    _field_2438: [u8; 92],
+    /// Set when [`m_CurrentRagdollParamsID`](crate::character::character::Character::m_CurrentRagdollParamsID) changes; the next
+    /// pre-physics pass applies the preset and clears it.
+    pub m_SyncRagdollState: bool,
+    _field_2439: [u8; 3],
+    /// How long the ragdoll blends from its old preset's gains to the new one's, seconds.
+    pub m_RagdollParameterBlendTime: f32,
+    /// Whether the new preset's gains apply at once rather than blending.
+    pub m_RagdollParameterReset: bool,
+    _field_2441: [u8; 83],
     pub m_CurrentMotionState: u32,
     _field_2498: [u8; 402],
     pub m_IsLocalCharacter: bool,
@@ -1573,6 +1593,19 @@ impl Character {
                 Self::IsRagdolling_ADDRESS,
             );
             f(self as *const Self as _)
+        }
+    }
+    pub const PostPhysicsUpdateRagdoll_ADDRESS: usize = 0x14077FFC0;
+    /// The post-physics pass's ragdoll update: writes the ragdoll's simulated pose into the
+    /// animated pose by the ragdoll's [`m_BlendWeight`](crate::animation::ragdoll::RagdollInstance::m_BlendWeight),
+    /// before the finalize pass's HumanIK solve, so the solve's effectors still override the
+    /// chains they drive. Does nothing without a ragdoll.
+    pub unsafe fn PostPhysicsUpdateRagdoll(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::PostPhysicsUpdateRagdoll_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
         }
     }
     pub const SetProxyState_ADDRESS: usize = 0x14075EB20;

@@ -11,10 +11,16 @@ pub struct RagdollInstance {
     pub m_World: *mut crate::physics::hknpWorld,
     /// The Havok ragdoll: the ragdoll's bodies and constraints, and its skeleton.
     pub m_Ragdoll: *mut crate::physics::hknpRagdoll,
+    _field_18: [u8; 156],
+    /// How much of the simulated pose the post-physics update writes into the animated pose, 0 to
+    /// 1, over the animation's own pose from the hips out. A new instance starts at 0 and nothing in
+    /// the preset's sync raises it: the canopy's ragdoll update, the get-up, and the animation
+    /// graph's ragdoll blending tasks do.
+    pub m_BlendWeight: f32,
 }
 fn _RagdollInstance_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x18], RagdollInstance>([0u8; 0x18]);
+        ::std::mem::transmute::<[u8; 0xB8], RagdollInstance>([0u8; 0xB8]);
     }
     unreachable!()
 }

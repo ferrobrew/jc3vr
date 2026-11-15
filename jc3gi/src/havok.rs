@@ -1594,6 +1594,103 @@ impl std::convert::AsMut<hknpShapeVftable> for hknpShapeVftable {
     }
 }
 #[repr(C, align(16))]
+/// The data of a ball-and-socket constraint (`hkpBallAndSocketConstraintData`), which holds a point
+/// of one body on a point of the other and leaves the rotation free. The data-driven constraint
+/// system allocates one of this type's size from the calling thread's Havok heap, constructs it,
+/// places its pivot with [`setInWorldSpace`](crate::havok::hkpBallAndSocketConstraintData::setInWorldSpace), and creates a constraint from
+/// it. Only some members are bound.
+pub struct hkpBallAndSocketConstraintData {
+    pub base: crate::havok::hkReferencedObject,
+    _field_10: [u8; 32],
+    /// The pivot in the first body's space.
+    pub m_translationA: crate::types::vector_math::AlignedVector3,
+    /// The pivot in the second body's space.
+    pub m_translationB: crate::types::vector_math::AlignedVector3,
+    _field_50: [u8; 2],
+    /// Whether the stabilisation atom is enabled: on for the stabilized solving method.
+    pub m_setupStabilizationEnabled: bool,
+    _field_53: [u8; 15],
+    /// The ball-socket atom's solving method: 0 stabilized, 1 the older method, which the
+    /// constructor sets.
+    pub m_ballSocketSolvingMethod: u8,
+    _field_63: [u8; 13],
+}
+fn _hkpBallAndSocketConstraintData_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x70], hkpBallAndSocketConstraintData>([0u8; 0x70]);
+    }
+    unreachable!()
+}
+impl hkpBallAndSocketConstraintData {
+    pub fn vftable(&self) -> *const crate::havok::hkReferencedObjectVftable {
+        self.base.vftable() as *const crate::havok::hkReferencedObjectVftable
+    }
+    pub const Construct_ADDRESS: usize = 0x141356AF0;
+    /// Constructs the data with one reference, zero pivots, and the older solving method.
+    pub unsafe fn Construct(
+        &mut self,
+    ) -> *mut crate::havok::hkpBallAndSocketConstraintData {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+            ) -> *mut crate::havok::hkpBallAndSocketConstraintData = ::std::mem::transmute(
+                Self::Construct_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const setInWorldSpace_ADDRESS: usize = 0x141356B50;
+    /// Places the pivot from a Havok-space point and the two bodies' transforms.
+    pub unsafe fn setInWorldSpace(
+        &mut self,
+        body_a: *const crate::havok::hkTransformf,
+        body_b: *const crate::havok::hkTransformf,
+        pivot: *const crate::types::vector_math::AlignedVector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                body_a: *const crate::havok::hkTransformf,
+                body_b: *const crate::havok::hkTransformf,
+                pivot: *const crate::types::vector_math::AlignedVector3,
+            ) = ::std::mem::transmute(Self::setInWorldSpace_ADDRESS);
+            f(self as *mut Self as _, body_a, body_b, pivot)
+        }
+    }
+    /// Destroys the object and returns its memory to the Havok heap it came from. The engine
+    /// calls it when a release drops the last reference.
+    pub unsafe fn deleteThisReferencedObject(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).deleteThisReferencedObject).read();
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<crate::havok::hkReferencedObject>
+for hkpBallAndSocketConstraintData {
+    fn as_ref(&self) -> &crate::havok::hkReferencedObject {
+        &self.base
+    }
+}
+impl std::convert::AsMut<crate::havok::hkReferencedObject>
+for hkpBallAndSocketConstraintData {
+    fn as_mut(&mut self) -> &mut crate::havok::hkReferencedObject {
+        &mut self.base
+    }
+}
+impl std::convert::AsRef<hkpBallAndSocketConstraintData>
+for hkpBallAndSocketConstraintData {
+    fn as_ref(&self) -> &hkpBallAndSocketConstraintData {
+        self
+    }
+}
+impl std::convert::AsMut<hkpBallAndSocketConstraintData>
+for hkpBallAndSocketConstraintData {
+    fn as_mut(&mut self) -> &mut hkpBallAndSocketConstraintData {
+        self
+    }
+}
+#[repr(C, align(16))]
 /// The data of a fixed constraint (`hkpFixedConstraintData`), which holds two bodies in a fixed
 /// pose relative to each other. The magnet weapon
 /// (`CMagnetWeaponComponent::ConstrainBodiesToGravityField`) allocates one of this type's size from

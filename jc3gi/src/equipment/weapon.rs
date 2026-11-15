@@ -2127,7 +2127,18 @@ pub struct WeaponBase {
     /// [`Inventory::UpdateInventoryPermissions`](crate::character::inventory::Inventory::UpdateInventoryPermissions)
     /// reads it to decide whether the player may detach the mounted gun they are using.
     pub m_MountedCanBeDetached: bool,
-    _field_331: [u8; 91],
+    _field_331: [u8; 2],
+    /// Whether the mounted aim leaves the mount's motors alone: set while the motors blend out.
+    /// [`UpdateMountedInput`](crate::equipment::weapon::WeaponBase::UpdateMountedInput) reports the input as handled without
+    /// reading it while it is set.
+    pub m_BlendOutMotors: bool,
+    _field_334: [u8; 80],
+    /// Whether a player user turns a vehicle mount with the look input rather than by aiming at
+    /// [`m_AimTargetPosition`](crate::equipment::weapon::WeaponBase::m_AimTargetPosition) ([`UpdateMountedInput`](crate::equipment::weapon::WeaponBase::UpdateMountedInput)),
+    /// read from the weapon's properties. The vehicle camera follows the turret while a manned gun
+    /// sets it.
+    pub m_MountedInputIsControlledByWeapon: bool,
+    _field_385: [u8; 7],
     /// Whether the weapon overheats.
     pub m_CanBeOverheated: bool,
     /// Whether the weapon is overheated and cannot fire.
@@ -2812,6 +2823,34 @@ impl WeaponBase {
                 Self::GetPickupContext_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const UpdateMountedInput_ADDRESS: usize = 0x140984760;
+    /// The look-input half of a vehicle-mounted weapon's aim, called by the pre-simulation update
+    /// for each mounted gun with the yaw and pitch hinges' current targets. Returns true without
+    /// changing anything while [`m_BlendOutMotors`](crate::equipment::weapon::WeaponBase::m_BlendOutMotors) is set. Returns false,
+    /// and the caller then aims the mount at [`m_AimTargetPosition`](crate::equipment::weapon::WeaponBase::m_AimTargetPosition) seen
+    /// from the gun's mount point, unless
+    /// [`m_MountedInputIsControlledByWeapon`](crate::equipment::weapon::WeaponBase::m_MountedInputIsControlledByWeapon) and
+    /// [`m_IsUserPlayer`](crate::equipment::weapon::WeaponBase::m_IsUserPlayer) are both set. Otherwise it adds the look input's
+    /// rate, from the first gamepad or the mouse, whichever is larger per axis, times `dt` to
+    /// `horizontal_angle` and `vertical_angle`, and returns true. The caller aims nothing while the
+    /// aim target is within about a third of a metre of the mount point, and turns the hinges
+    /// toward the desired angles at the weapon's mounted turn speeds, within their limits.
+    pub unsafe fn UpdateMountedInput(
+        &mut self,
+        dt: f32,
+        horizontal_angle: *mut f32,
+        vertical_angle: *mut f32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                dt: f32,
+                horizontal_angle: *mut f32,
+                vertical_angle: *mut f32,
+            ) -> bool = ::std::mem::transmute(Self::UpdateMountedInput_ADDRESS);
+            f(self as *mut Self as _, dt, horizontal_angle, vertical_angle)
         }
     }
     pub const PickupEnable_ADDRESS: usize = 0x1409928A0;

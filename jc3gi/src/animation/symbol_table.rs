@@ -291,6 +291,50 @@ impl std::convert::AsMut<EventIdSymbolTable> for EventIdSymbolTable {
         self
     }
 }
+#[repr(C, align(8))]
+/// The ragdoll-preset id symbol table (`ava::CSymbolTable<NAnimationSystem::SRagdollParamIdTag>`):
+/// maps the preset names of the character manager's ragdoll description to the runtime ids a
+/// character's [`m_CurrentRagdollParamsID`](crate::character::character::Character::m_CurrentRagdollParamsID)
+/// holds.
+pub struct RagdollParamIdSymbolTable {}
+impl RagdollParamIdSymbolTable {
+    pub unsafe fn get() -> Option<&'static mut Self> {
+        unsafe {
+            let ptr: *mut Self = *(5418083088usize as *mut *mut Self);
+            ptr.as_mut()
+        }
+    }
+}
+impl RagdollParamIdSymbolTable {
+    pub const string_to_id_ADDRESS: usize = 0x140413190;
+    /// Resolves a preset name to its runtime id.
+    pub unsafe fn string_to_id(&mut self, name: *const u8) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, name: *const u8) -> i32 = ::std::mem::transmute(
+                Self::string_to_id_ADDRESS,
+            );
+            f(self as *mut Self as _, name)
+        }
+    }
+}
+impl RagdollParamIdSymbolTable {
+    /// The grapple hang's preset: the head, neck, spine, shoulders, and arms keyframed to the
+    /// animated pose, and the hips and legs dynamic bodies driven toward it by constraint motors.
+    pub const GRAPPLE_HANG: &::std::ffi::CStr = c"GRAPPLE_HANG";
+    /// The canopy's preset: as [`GRAPPLE_HANG`](crate::animation::symbol_table::RagdollParamIdSymbolTable::GRAPPLE_HANG) with the lower spine dynamic
+    /// too, and stronger motors.
+    pub const PARACHUTING: &::std::ffi::CStr = c"PARACHUTING";
+}
+impl std::convert::AsRef<RagdollParamIdSymbolTable> for RagdollParamIdSymbolTable {
+    fn as_ref(&self) -> &RagdollParamIdSymbolTable {
+        self
+    }
+}
+impl std::convert::AsMut<RagdollParamIdSymbolTable> for RagdollParamIdSymbolTable {
+    fn as_mut(&mut self) -> &mut RagdollParamIdSymbolTable {
+        self
+    }
+}
 #[derive(Copy, Clone)]
 #[repr(C, align(4))]
 /// A ragdoll rigid-body group id (`ava::idstring<NAnimationSystem::SRagdollRBGroupIdTag>`), which
