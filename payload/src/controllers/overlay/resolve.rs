@@ -90,6 +90,15 @@ pub fn anchor_position(anchor: Anchor, hands: &[Option<HandPoses>; 2]) -> Option
             Some(pose.position + pose.orientation * offset)
         }
         Anchor::Head(_) => None,
+        Anchor::Ticked { previous, current } => {
+            let fraction = crate::hooks::camera::last_dtf();
+            let fraction = if fraction.is_finite() {
+                fraction.clamp(0.0, 1.0)
+            } else {
+                1.0
+            };
+            Some(previous.lerp(current, fraction))
+        }
     }
 }
 

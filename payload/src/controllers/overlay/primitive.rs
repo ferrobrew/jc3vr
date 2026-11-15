@@ -165,6 +165,11 @@ pub enum Anchor {
     /// that rides with the player, such as one placed in the cockpit frame, which a world anchor
     /// placed at the tick rate trails while the player moves fast.
     Head(Vec3),
+    /// A world position measured on each sim tick, `previous` on the tick before `current`,
+    /// placed between them at render time by the engine's sub-frame fraction, as the camera is: a
+    /// point on a moving body (the vehicle the player rides) then moves with the interpolated view
+    /// rather than standing still between ticks and jumping on each.
+    Ticked { previous: Vec3, current: Vec3 },
 }
 
 impl Anchor {

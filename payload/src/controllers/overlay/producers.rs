@@ -20,6 +20,7 @@ use std::{
 };
 
 use glam::Vec3;
+use parking_lot::Mutex;
 
 use crate::{
     config::Config,
@@ -72,13 +73,17 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
     if LAST_AIM_UPDATE.swap(status.updates, Ordering::Relaxed) != status.updates {
         let off = dominant.other();
         let off_hit = status.hands[off.index()].and_then(|h| h.hit);
+        let grapple_at = status
+            .grapple
+            .as_ref()
+            .map(|g| ticked_grapple_point(g.point));
         submit_or_clear(
             Source::GrappleHighlight,
             config.grapple_highlight,
             SIM_TTL,
             |out| {
-                if let Some(g) = &status.grapple {
-                    grapple_highlight(g, off_hit, out);
+                if let (Some(g), Some(at)) = (&status.grapple, grapple_at) {
+                    grapple_highlight(g, at, off_hit, out);
                 }
             },
             &mut prims,
@@ -93,8 +98,8 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
             config.grapple_beam && !line_out,
             SIM_TTL,
             |out| {
-                if let Some(g) = &status.grapple {
-                    grapple_beam(g, off, grapple_origin, out);
+                if let (Some(g), Some(at)) = (&status.grapple, grapple_at) {
+                    grapple_beam(g, at, off, grapple_origin, out);
                 }
             },
             &mut prims,
@@ -163,7 +168,34 @@ pub fn tick(active: bool, hands: &[Option<HandPoses>; 2]) {
 /// range, lying on the surface when the off-hand's own ray hit it there, with a centre dot and its
 /// own colour for a target a tether pulls, and a wider, thin outer ring while the aim assist turned
 /// the ray onto it.
-pub fn grapple_highlight(g: &GrappleAim, off_hit: Option<RayHit>, out: &mut Vec<Primitive>) {
+/// The grapple's aim point as an anchor between its last two sim ticks' points
+/// ([`Anchor::Ticked`]): the point is measured once a tick, and from a moving vehicle a point
+/// drawn where the tick left it slid back by up to a tick's travel and jumped on each tick.
+fn ticked_grapple_point(point: Vec3) -> Anchor {
+    let mut ticks = GRAPPLE_TICKS.lock();
+    let (previous, current) = *ticks;
+    let (previous, current) = match current {
+        Some(current) if current == point => (previous.unwrap_or(point), point),
+        Some(current) if current.distance(point) < TICKED_JUMP_M => (current, point),
+        _ => (point, point),
+    };
+    *ticks = (Some(previous), Some(current));
+    Anchor::Ticked { previous, current }
+}
+
+/// The grapple's aim point on the tick before last and the last tick.
+static GRAPPLE_TICKS: Mutex<(Option<Vec3>, Option<Vec3>)> = Mutex::new((None, None));
+
+/// A move of the aim point beyond this between ticks is a new target, metres, drawn there at once
+/// rather than swept across.
+const TICKED_JUMP_M: f32 = 3.0;
+
+pub fn grapple_highlight(
+    g: &GrappleAim,
+    at: Anchor,
+    off_hit: Option<RayHit>,
+    out: &mut Vec<Primitive>,
+) {
     if !g.valid {
         return;
     }
@@ -179,7 +211,7 @@ pub fn grapple_highlight(g: &GrappleAim, off_hit: Option<RayHit>, out: &mut Vec<
         occluded_alpha: 0.35,
     };
     out.push(Primitive::Sprite {
-        at: Anchor::World(g.point),
+        at,
         size: SpriteSize::Angular(GRAPPLE_RING_RAD),
         facing,
         shape: Shape::Ring { thickness: 0.3 },
@@ -188,7 +220,7 @@ pub fn grapple_highlight(g: &GrappleAim, off_hit: Option<RayHit>, out: &mut Vec<
     });
     if g.assist.is_some() {
         out.push(Primitive::Sprite {
-            at: Anchor::World(g.point),
+            at,
             size: SpriteSize::Angular(GRAPPLE_RING_RAD * ASSIST_RING_SCALE),
             facing: Facing::Billboard,
             shape: Shape::Ring { thickness: 0.12 },
@@ -198,7 +230,7 @@ pub fn grapple_highlight(g: &GrappleAim, off_hit: Option<RayHit>, out: &mut Vec<
     }
     if g.tetherable {
         out.push(Primitive::Sprite {
-            at: Anchor::World(g.point),
+            at,
             size: SpriteSize::Angular(GRAPPLE_RING_RAD * 0.3),
             facing,
             shape: Shape::Disc,
@@ -210,7 +242,13 @@ pub fn grapple_highlight(g: &GrappleAim, off_hit: Option<RayHit>, out: &mut Vec<
 
 /// The gauntlet beam from the grapple's origin on the off-hand's wrist to the grapple's point: in
 /// the highlight's colour while the target is valid, and faint otherwise.
-pub fn grapple_beam(g: &GrappleAim, off: Hand, origin_offset: Vec3, out: &mut Vec<Primitive>) {
+pub fn grapple_beam(
+    g: &GrappleAim,
+    at: Anchor,
+    off: Hand,
+    origin_offset: Vec3,
+    out: &mut Vec<Primitive>,
+) {
     // A point that is not current is not refreshed, so a beam to it would freeze.
     if !g.current {
         return;
@@ -226,7 +264,7 @@ pub fn grapple_beam(g: &GrappleAim, off: Hand, origin_offset: Vec3, out: &mut Ve
             pose: HandPose::Wrist,
             offset: origin_offset,
         },
-        to: Anchor::World(g.point),
+        to: at,
         width: BEAM_WIDTH_M,
         color,
         depth: DepthMode::XRay {
@@ -450,6 +488,14 @@ fn submit_or_clear(
 
 #[cfg(test)]
 mod tests {
+    fn highlight(g: &GrappleAim, off_hit: Option<RayHit>, out: &mut Vec<Primitive>) {
+        grapple_highlight(g, Anchor::World(g.point), off_hit, out);
+    }
+
+    fn beam(g: &GrappleAim, off: Hand, origin_offset: Vec3, out: &mut Vec<Primitive>) {
+        grapple_beam(g, Anchor::World(g.point), off, origin_offset, out);
+    }
+
     use glam::Quat;
 
     use super::*;
@@ -475,14 +521,14 @@ mod tests {
     #[test]
     fn no_beam_is_drawn_to_a_point_that_is_not_current() {
         let mut out = Vec::new();
-        grapple_beam(&grapple(false, false), Hand::Left, Vec3::ZERO, &mut out);
+        beam(&grapple(false, false), Hand::Left, Vec3::ZERO, &mut out);
         assert_eq!(out.len(), 1, "an invalid aim still shows the faint beam");
         out.clear();
         let seated = GrappleAim {
             current: false,
             ..grapple(false, false)
         };
-        grapple_beam(&seated, Hand::Left, Vec3::ZERO, &mut out);
+        beam(&seated, Hand::Left, Vec3::ZERO, &mut out);
         assert!(out.is_empty());
     }
 
@@ -512,18 +558,18 @@ mod tests {
     #[test]
     fn the_highlight_shows_only_for_a_valid_target() {
         let mut out = Vec::new();
-        grapple_highlight(&grapple(false, false), None, &mut out);
+        highlight(&grapple(false, false), None, &mut out);
         assert!(out.is_empty());
-        grapple_highlight(&grapple(true, false), None, &mut out);
+        highlight(&grapple(true, false), None, &mut out);
         assert_eq!(out.len(), 1);
     }
 
     #[test]
     fn a_tetherable_target_has_its_own_style() {
         let mut plain = Vec::new();
-        grapple_highlight(&grapple(true, false), None, &mut plain);
+        highlight(&grapple(true, false), None, &mut plain);
         let mut tether = Vec::new();
-        grapple_highlight(&grapple(true, true), None, &mut tether);
+        highlight(&grapple(true, true), None, &mut tether);
         assert_eq!(tether.len(), 2);
         let color = |p: &Primitive| match p {
             Primitive::Sprite { color, .. } => *color,
@@ -535,7 +581,7 @@ mod tests {
     #[test]
     fn an_assisted_target_shows_the_lock_ring() {
         let mut plain = Vec::new();
-        grapple_highlight(&grapple(true, false), None, &mut plain);
+        highlight(&grapple(true, false), None, &mut plain);
         let assisted = GrappleAim {
             assist: Some(GrappleAssist {
                 target: Vec3::new(0.0, 0.0, -30.0),
@@ -544,11 +590,11 @@ mod tests {
             ..grapple(true, false)
         };
         let mut locked = Vec::new();
-        grapple_highlight(&assisted, None, &mut locked);
+        highlight(&assisted, None, &mut locked);
         assert_eq!(locked.len(), plain.len() + 1);
         // No lock ring without a valid target.
         let mut none = Vec::new();
-        grapple_highlight(
+        highlight(
             &GrappleAim {
                 valid: false,
                 ..assisted
@@ -563,7 +609,7 @@ mod tests {
     fn the_highlight_lies_on_the_surface_the_hand_hit_there() {
         let mut out = Vec::new();
         let g = grapple(true, false);
-        grapple_highlight(&g, Some(hit(g.point + Vec3::X * 0.1)), &mut out);
+        highlight(&g, Some(hit(g.point + Vec3::X * 0.1)), &mut out);
         assert!(matches!(
             out[0],
             Primitive::Sprite {
@@ -572,7 +618,7 @@ mod tests {
             }
         ));
         out.clear();
-        grapple_highlight(&g, Some(hit(Vec3::new(0.0, 0.0, -5.0))), &mut out);
+        highlight(&g, Some(hit(Vec3::new(0.0, 0.0, -5.0))), &mut out);
         assert!(matches!(
             out[0],
             Primitive::Sprite {
