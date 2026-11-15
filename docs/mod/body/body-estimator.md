@@ -59,6 +59,8 @@ The tests print the adapter they run on and every comparison's maximum error. On
 
 ## Costs
 
+In the game the pass's CPU side (posting the window, recording the dispatches, collecting finished estimates) is timed in its own frame-timing slot, `body_estimator` ([frame-timing.md](../performance/frame-timing.md)), apart from the draw task's other work. The 14 November take's median frame rose from 20.5 to 24.5 ms against the take before, with the estimator the obvious suspect; the slot and an A/B with `controllers.body.estimator.enabled` off in one session settle it.
+
 `body-estimator/examples/egoposer_bench.rs` times the CPU reference and, on Windows, the GPU executor. For the real GPU, run it through DXVK:
 
 ```sh

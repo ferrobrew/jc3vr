@@ -61,6 +61,7 @@ In the order of the feedback:
 53. Open the canopy out of the wingsuit (2806): the view rises with Rico's head.
 54. Stand still in each idle the game gives (with a rifle, with a pistol, crouched): the log names any standing state the stance's idle list misses.
 55. The IK body, in the order of [ik-body.md](../../mod/body/ik-body.md)'s checks: stand still with the body mirror on (the readout reads `idle`, both feet planted; Rico's pelvis under the player's, the feet still, the torso not pulled; if it fights, lower the hips' resist and turn reach first); bend and crouch (no steps, the knees forward, no floating or sunk feet); glance and turn (a glance does not step, a held turn takes two turn steps); step aside, forward, and back (one or two square steps, no slide, a few steps a standing minute); walk physically and on the stick (it hands over to the game's walk and comes back without a snap); step up and down a kerb and over a ledge; jump and fall (the takeoff and landing are the clip's, the pelvis under the head in the air); and the other modes and the gamepad unchanged.
+56. Frame time (new problem 4): play a minute with the estimator on and a minute with it off (`controllers.body.estimator.enabled`), and compare the frame time and the `body_estimator` timing slot.
 
 ## What was built for the deferred work
 
@@ -75,6 +76,5 @@ Everything the earlier plans deferred was built on 15 November, untested in the 
 - The utility helicopter's collective and the second helicopter's controls: measure them with the calibration log (check 52) and add them to the cockpit table.
 - Damping an articulated object against its assembly's velocity, and holding off the get-up while a hand holds a ragdoll.
 - Whether the torso capsules' hand lag pushes the player or tears a hold.
-- Frame time (new problem 4): an A/B with the estimator switched off.
 - The bars' twist grips removed outright if the triggers suit the reviewer.
 - A loaded gun's magazine cannot be dropped seated (a double tap is two shots); the reviewer chose to keep it for dry guns only. The scooter's twist grips stay behind their switch until the triggers are tried.

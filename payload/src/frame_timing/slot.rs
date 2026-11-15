@@ -150,6 +150,10 @@ pub(crate) enum Slot {
     /// The mod's work in `RenderEngine::PostDraw` on the draw task: the world-space overlays, the
     /// HUD quad, the egui panel, and the eye captures, excluding the world markers' placement.
     PostDraw,
+    /// The learned body estimator's pass on the game's device, once per frame: posting the window,
+    /// recording the dispatches, and collecting finished estimates. Timed apart from
+    /// [`Self::PostDraw`] for the frame time's A/B against the estimator switched off.
+    BodyEstimator,
     /// `xrEndFrame`.
     VrEndFrame,
     /// Blocking on the VR runtime lock, which the deferred tail holds until it submits the previous
@@ -242,6 +246,7 @@ impl Slot {
         Slot::Mirror,
         Slot::Tail,
         Slot::PostDraw,
+        Slot::BodyEstimator,
         Slot::VrEndFrame,
         Slot::VrLock,
         Slot::VrWaitFrame,
@@ -251,7 +256,7 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 56;
+    pub(crate) const COUNT: usize = 57;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
     pub(crate) const fn index(self) -> usize {
@@ -311,6 +316,7 @@ impl Slot {
             Slot::Mirror => "mirror",
             Slot::Tail => "tail",
             Slot::PostDraw => "post_draw",
+            Slot::BodyEstimator => "body_estimator",
             Slot::VrEndFrame => "vr_end_frame",
             Slot::VrLock => "vr_lock",
             Slot::VrWaitFrame => "vr_wait_frame",
@@ -342,7 +348,8 @@ impl Slot {
             | Slot::Submit
             | Slot::Mirror
             | Slot::Tail
-            | Slot::PostDraw => Kind::Mod,
+            | Slot::PostDraw
+            | Slot::BodyEstimator => Kind::Mod,
             Slot::VrBeginFrame | Slot::VrInput | Slot::VrEndFrame => Kind::Runtime,
             Slot::EngineUpdate
             | Slot::SimTick

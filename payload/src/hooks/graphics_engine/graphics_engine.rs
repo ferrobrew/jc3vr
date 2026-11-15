@@ -473,6 +473,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             // The learned body estimator's GPU pass, once per frame: it takes the window the game
             // thread posted and collects finished estimates without waiting.
             if last_near_dispatch {
+                let _timing = frame_timing::scope(Slot::BodyEstimator);
                 crate::controllers::body::estimator::render_tick(
                     &context.m_Context,
                     &device.m_Device,
