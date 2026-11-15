@@ -25,6 +25,7 @@ use crate::controllers::{
         },
     },
     weapons::{
+        c4,
         engine::{self, weapon_at},
         hold::{self, armed},
     },
@@ -59,7 +60,9 @@ pub(crate) fn gun_hand(
     index: usize,
     count: usize,
 ) -> Option<Hand> {
-    let owner = hold::owned_holder(weapon).or_else(|| armed::hand_of(weapon));
+    let owner = hold::owned_holder(weapon)
+        .or_else(|| armed::hand_of(weapon))
+        .or_else(|| c4::act_detonator_hand(weapon));
     attachment_hand(state, bone, owner, index, count)
 }
 

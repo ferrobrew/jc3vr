@@ -104,7 +104,7 @@ use crate::{
         motion, physical_hands, scheme,
         weapons::{
             c4::{
-                detonator::{Detonator, DetonatorStep},
+                detonator::{DETONATOR_HOLD, Detonator, DetonatorStep},
                 placed::{PlacedState, TakeStep},
                 stage::{InputEvent, Outcome, Refusal, Stage, WeaponAction, WeaponView},
                 stick::{self as stick_by_hand, StickAt},
@@ -635,6 +635,9 @@ struct State {
     /// The placed charges, and a take of one into a hand.
     placed: PlacedState,
     detonator: Detonator,
+    /// The hand whose press asked for the detonation the game's act may be playing, and whether the
+    /// act's detonator has been placed in it since the act began.
+    act: Option<(Hand, bool)>,
 }
 
 #[derive(Clone, Copy)]
@@ -664,6 +667,7 @@ impl State {
         }
         if charges > 0 && !in_flight {
             tracing::info!(target: "controllers", charges, hand = hand.label(), "c4: the detonator detonates");
+            self.act = Some((hand, false));
             self.detonation = Some(PendingDetonation {
                 source: DetonationSource::Detonator,
                 remaining_s: DETONATION_TIMEOUT_S,
@@ -783,6 +787,7 @@ static STATE: Mutex<State> = Mutex::new(State {
     wheel: None,
     placed: PlacedState::NEW,
     detonator: Detonator::NONE,
+    act: None,
 });
 
 /// The held charge's in-hand model in `hand`'s grip frame.
@@ -1023,9 +1028,11 @@ fn update_attachment_transforms(
         .unwrap()
         .call(weapon, p2, p3, transform_type);
     // SAFETY: the weapon is live for its own update.
-    if unsafe { local_user(weapon) }.is_none() {
+    let Some(user) = (unsafe { local_user(weapon) }) else {
         return;
-    }
+    };
+    // SAFETY: as above; the user is the live local player.
+    unsafe { place_act_detonator(&mut *weapon, &*user) };
     let (stage, grips) = {
         let state = STATE.lock();
         (state.stage, state.grips)
@@ -1055,6 +1062,65 @@ fn update_attachment_transforms(
     if let Some(charge) = charge {
         unsafe { place(charge, &matrix) };
     }
+}
+
+/// The hand the game's detonate act draws the C4 weapon's detonator in, while the act plays: the
+/// late weapon render corrects the model with that hand's render-time pose, as for a gun in it.
+pub(crate) fn act_detonator_hand(weapon: usize) -> Option<Hand> {
+    ACT_DETONATOR
+        .lock()
+        .filter(|(shown, _)| *shown == weapon)
+        .map(|(_, hand)| hand)
+}
+
+/// The weapon whose detonator the act shows, and the hand it is placed in.
+static ACT_DETONATOR: Mutex<Option<(usize, Hand)>> = Mutex::new(None);
+
+/// Place the detonator the game shows during its detonate act in the hand whose press asked for
+/// the detonation. The game shows the weapon's own model for as long as the act plays and puts it
+/// at the act's attach bone, taken raw, which on the hand the mod poses drew it upside down and
+/// out of the fist on the 14 November take. The model is held at the hand's grip as the owned
+/// detonator is ([`detonator::DETONATOR_HOLD`]), its previous transform set too on the act's first
+/// update so it does not sweep in from the bone.
+///
+/// # Safety
+///
+/// `weapon` is the local player's live C4 weapon and `user` its user, inside the weapon's
+/// attachment update.
+unsafe fn place_act_detonator(weapon: &mut PlantedExplosiveWeapon, user: &Character) {
+    let detonating = unsafe { user.IsDetonatingExplosives() };
+    let address = std::ptr::from_mut(weapon) as usize;
+    let mut state = STATE.lock();
+    let Some((hand, placed)) = state.act.filter(|_| detonating) else {
+        if !detonating && state.detonation.is_none() {
+            state.act = None;
+        }
+        *ACT_DETONATOR.lock() = None;
+        return;
+    };
+    let Some(grip) = state.grips[hand.index()] else {
+        *ACT_DETONATOR.lock() = None;
+        return;
+    };
+    let base = std::ptr::from_mut(weapon).cast::<WeaponBase>();
+    // SAFETY: the C4 weapon's first gun is its trigger model, live with the weapon.
+    let Some(gun) = (unsafe { engine::gun_ptr(&*base, 0) }) else {
+        return;
+    };
+    let matrix = Matrix4::from(held::held_matrix(grip, DETONATOR_HOLD.in_hand(hand)));
+    // SAFETY: as above, on the weapon's own update.
+    unsafe {
+        let gun = &mut *gun.as_ptr();
+        gun.m_WorldMatrixT1 = matrix;
+        if !placed {
+            gun.m_WorldMatrixT0 = matrix;
+        }
+    }
+    if !placed {
+        state.act = Some((hand, true));
+        tracing::info!(target: "controllers", hand = hand.label(), "c4: the detonate act's detonator is placed in the hand");
+    }
+    *ACT_DETONATOR.lock() = Some((address, hand));
 }
 
 /// The weapon's user, when the weapon is the local player's.

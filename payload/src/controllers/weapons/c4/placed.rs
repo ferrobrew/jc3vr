@@ -599,6 +599,7 @@ mod tests {
             wheel: None,
             placed: PlacedState::NEW,
             detonator: Detonator::NONE,
+            act: None,
         }
     }
 
