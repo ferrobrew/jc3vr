@@ -113,8 +113,9 @@ impl GunnerOut {
     }
 }
 
-/// Take `character` out of the gunner seat of a mounted gun it mans
-/// ([`Character::IsInMountedGunState`] while attached to a vehicle) as a ragdoll, where it sits.
+/// Take `character` out of a mounted gun it mans ([`Character::IsInMountedGunState`], a vehicle's
+/// gunner seat or a standalone tripod) as a ragdoll, where it is. A tripod's gunner was left out
+/// until 15 November, and the standing path's ragdoll never took him off the gun.
 ///
 /// A seated character's hit reaction never ragdolls it ([`Character::HitReaction`] returns before
 /// the ragdoll for a character attached to a vehicle), and the vehicle-entry action seats the
@@ -127,7 +128,7 @@ impl GunnerOut {
 ///
 /// `character` must be a live character, on the game thread outside the game's update.
 pub(crate) unsafe fn gunner_out(character: &mut Character) -> GunnerOut {
-    if !unsafe { character.IsAttachedToVehicle() && character.IsInMountedGunState() } {
+    if !unsafe { character.IsInMountedGunState() } {
         return GunnerOut::NotAGunner;
     }
     if unsafe { protection(character) }.is_some()
