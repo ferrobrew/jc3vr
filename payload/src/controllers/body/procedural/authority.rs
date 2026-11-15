@@ -135,15 +135,17 @@ impl Case {
         }
     }
 
-    /// Whether a clip, a script, or physics poses Rico's whole body while he is out of a vehicle,
+    /// Whether a clip, a script, or physics poses Rico's whole body while he is out of a seat,
     /// and can carry his head anywhere against the root: a traversal or a hang, a ledge climb, the
     /// wingsuit, the parachute, a fall, a ragdoll and the get-up after it, a hit reaction, an
-    /// authored motion such as a hard landing, or a takeoff the mode detection has not classified
-    /// yet. The camera keeps its eyes out in front of the animated face in these.
+    /// authored motion such as a hard landing, a takeoff the mode detection has not classified
+    /// yet, or standing on a vehicle's roof, whose stunt clips crouch and step down with the arms
+    /// across the face. The camera keeps its eyes out in front of the animated face in these.
     pub const fn game_poses_body(self) -> bool {
         matches!(
             self,
             Self::Dead
+                | Self::StuntStanding
                 | Self::Ragdoll
                 | Self::GettingUp
                 | Self::GrappleAttach
