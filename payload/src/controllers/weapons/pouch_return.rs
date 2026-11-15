@@ -22,12 +22,19 @@ pub struct PressTuning {
     pub depth_m: f32,
     /// Additional return reach beyond the pouch's surface, metres. Does not widen draws.
     pub return_margin_m: f32,
+    /// How far the press's reach rises above the pouch, metres: the hand is measured to a segment
+    /// rising this far from the pouch's centre rather than to the centre. Does not widen draws.
+    pub rise_m: f32,
 }
 
+/// A grenade's press. Its reach rises above the pouch: a hand bringing a grenade back stops high,
+/// and in the 14 November 02:05 session the grenades at 2560 to 2580 s were let go at shoulder
+/// height, above the pouch, and fell.
 pub const PRESS: PressTuning = PressTuning {
     leave_margin_m: 0.03,
     depth_m: 0.02,
     return_margin_m: 0.0,
+    rise_m: 0.08,
 };
 
 /// A held charge returns near the pouch's surface without a deep push into the chest. The larger
@@ -36,6 +43,7 @@ const C4_RETURN: PressTuning = PressTuning {
     leave_margin_m: 0.07,
     depth_m: 0.0,
     return_margin_m: 0.04,
+    rise_m: 0.0,
 };
 
 /// A pouch's volume in the cockpit frame.
@@ -127,7 +135,10 @@ impl<I: Copy + PartialEq> Press<I> {
             self.holding = None;
             return false;
         };
-        let distance = grip.distance(pouch.centre);
+        // Measured to the press's reach, a segment rising from the pouch's centre, for both the
+        // press and the leave, so a hand above the pouch is never out and in at once.
+        let above = (grip.y - pouch.centre.y).clamp(0.0, tuning.rise_m.max(0.0));
+        let distance = grip.distance(pouch.centre + Vec3::Y * above);
         if !distance.is_finite() || !pouch.radius.is_finite() {
             self.holding = None;
             return false;
@@ -186,6 +197,25 @@ mod tests {
 
     fn at(distance: f32) -> Option<Vec3> {
         Some(POUCH.centre + Vec3::Z * -distance)
+    }
+
+    #[test]
+    fn a_grenade_press_reaches_above_the_pouch_but_not_beside_it() {
+        let high = |rise: f32| Some(POUCH.centre + Vec3::Y * rise);
+        let mut press = Press::new();
+        assert!(!press.step(Some(1), high(0.4), Some(POUCH), &PRESS));
+        // A hand stopping a few centimetres above the pouch's top still presses.
+        assert!(press.step(Some(1), high(PRESS.rise_m + 0.04), Some(POUCH), &PRESS));
+        // Held there, it does not press again.
+        assert!(!press.step(Some(1), high(PRESS.rise_m + 0.04), Some(POUCH), &PRESS));
+        // Beside the pouch, the reach is the sphere's as before.
+        let mut beside = Press::new();
+        assert!(!beside.step(Some(1), at(0.4), Some(POUCH), &PRESS));
+        assert!(!beside.step(Some(1), at(0.07), Some(POUCH), &PRESS));
+        // Below it, too.
+        let mut below = Press::new();
+        assert!(!below.step(Some(1), high(-0.4), Some(POUCH), &PRESS));
+        assert!(!below.step(Some(1), high(-0.07), Some(POUCH), &PRESS));
     }
 
     #[test]
