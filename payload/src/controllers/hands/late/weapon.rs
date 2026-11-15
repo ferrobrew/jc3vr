@@ -27,7 +27,7 @@ use crate::controllers::{
     weapons::{
         c4,
         engine::{self, weapon_at},
-        hold::{self, armed},
+        hold::{self, armed, rack::paired::stack_offset},
     },
 };
 
@@ -130,6 +130,23 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
     // SAFETY: as above.
     unsafe { crate::controllers::weapons::hold::rack::remote::observe(weapon) };
     unsafe { crate::controllers::vehicles::mounted::observe(weapon) };
+    // A finite rack pair's second pistol is drawn apart from the first while neither is claimed.
+    if let Some(offset) = stack_offset(weapon as *const WeaponBase as usize)
+        && let Some(mut gun) = unsafe { engine::gun_ptr(weapon, 1) }
+    {
+        // SAFETY: the gun is its own object, live with the weapon.
+        let gun = unsafe { gun.as_mut() };
+        let mut rendered = lerp_transform(
+            Mat4::from(gun.m_WorldMatrixT0),
+            Mat4::from(gun.m_WorldMatrixT1),
+            context.m_Dtf,
+        );
+        rendered.w_axis += offset.extend(0.0);
+        if let Some(instance) = unsafe { gun.m_BaseModelInstance.as_mut() } {
+            unsafe { instance.UpdateMatrix(&Matrix4::from(rendered)) };
+        }
+        return;
+    }
     let local = ik::local_character();
     // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character. Checked before the
     // frame lock, since this runs for every weapon in the world.

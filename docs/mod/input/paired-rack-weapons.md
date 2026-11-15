@@ -22,6 +22,8 @@ The final grab transfers the original through the existing table pickup. [`Weapo
 
 A refusal before the native pickup leaves the remaining gun on the rack. If the native pickup event runs but the final carry fails afterward, the remaining original becomes a loose single weapon. The implementation does not restore a consumed placement rule or send its pickup event again.
 
+On the rack every gun of a weapon takes the weapon's placement rule's one transform, so a pair's two pistols are drawn on top of each other and the shelf shows one; the copy, staged hidden, appearing on the first grab looked like the second pistol being made on the spot (1653 s on the 14 November take). While the copy is ready and neither pistol is claimed, the second pistol and its separate parts are drawn 4.5 cm along the pistol's own up axis at render time (`rack::paired::stack_offset`), and its grab points move with it, so both pistols show. Once one is claimed the offset ends, and the remaining pistol is drawn as before.
+
 ## Unlimited sources
 
 Unlimited sources keep their existing member initialization path. Native pickup supplies the pair's magazine allocation, and the give detour splits that allocation between the staged members. Each explicit grab claims only its cached actor. A finite source never enters this path.

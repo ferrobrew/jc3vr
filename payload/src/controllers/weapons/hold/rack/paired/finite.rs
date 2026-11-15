@@ -1,7 +1,13 @@
 //! A finite native pair supplies one initialized copy and the original actor, never two copies.
+//!
+//! On the rack every gun of a weapon takes the weapon's placement rule's one transform, so a
+//! pair's two pistols are drawn on top of each other and the shelf shows one. While neither is
+//! claimed, the second is drawn a pistol's thickness along its own up axis ([`stack_offset`]), with
+//! its grab points moved with it, so both show.
 
 use std::time::Instant;
 
+use glam::{Mat4, Vec3};
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponState},
@@ -79,15 +85,38 @@ pub(super) unsafe fn targets(
         unsafe { show_remaining(source, taken) };
     }
     let ready = source.claims.first.is_some() || matches!(source.copy, Stage::Ready(_));
+    let offset = (ready && source.claims.first.is_none())
+        .then(|| unsafe { gun(weapon, 1) })
+        .flatten()
+        .map(|second| {
+            Mat4::from(second.m_WorldMatrixT1)
+                .y_axis
+                .truncate()
+                .normalize_or_zero()
+                * STACK_M
+        })
+        .filter(|offset| offset.is_finite() && *offset != Vec3::ZERO);
+    {
+        let mut stacked = STACKED.lock();
+        stacked.retain(|(stacked, _)| *stacked != address);
+        if let Some(offset) = offset {
+            stacked.push((address, offset));
+        }
+    }
     if ready {
         for index in 0..2 {
             if !source.claims.available(index) {
                 continue;
             }
-            let Some((points, pose)) = (unsafe { gun(weapon, index) }).and_then(member_points)
+            let Some((mut points, mut pose)) =
+                (unsafe { gun(weapon, index) }).and_then(member_points)
             else {
                 continue;
             };
+            if let Some(offset) = offset.filter(|_| index == 1) {
+                points = points.map(|point| point + offset);
+                pose.position += offset;
+            }
             out.push(WorldTarget {
                 kind: TargetKind::RackMember {
                     weapon: address,
@@ -311,6 +340,22 @@ pub(super) unsafe fn settle(member: Member, actor: Strong, kind: ClaimKind, acce
     }
 }
 
+/// The offset the second pistol of the finite rack source `weapon` is drawn at while neither is
+/// claimed, world space, or `None`. Read by the weapon's and its parts' render updates.
+pub(crate) fn stack_offset(weapon: usize) -> Option<Vec3> {
+    STACKED
+        .lock()
+        .iter()
+        .find(|(stacked, _)| *stacked == weapon)
+        .map(|(_, offset)| *offset)
+}
+
+/// The finite rack sources whose second pistol is drawn apart, with its offset.
+static STACKED: Mutex<Vec<(usize, Vec3)>> = Mutex::new(Vec::new());
+
+/// How far the second pistol is drawn from the first, metres: a pistol's thickness, a little more.
+const STACK_M: f32 = 0.045;
+
 pub(super) fn tick() {
     let mut state = STATE.lock();
     let mut retired = Vec::new();
@@ -335,6 +380,9 @@ pub(super) fn tick() {
         }
         at += 1;
     }
+    STACKED
+        .lock()
+        .retain(|(stacked, _)| state.iter().any(|source| source.address == *stacked));
     drop(state);
     for source in retired {
         unsafe { retire(source) };
@@ -342,6 +390,7 @@ pub(super) fn tick() {
 }
 
 pub(super) fn clear() {
+    STACKED.lock().clear();
     let sources = clear_sources(&mut STATE.lock(), Weak::lock);
     for source in sources {
         unsafe { retire(source) };

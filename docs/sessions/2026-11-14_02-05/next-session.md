@@ -104,7 +104,6 @@ A held prop should collide with Rico's drawn body but not the movement capsule. 
 
 - A gunner-seat view correction, as the driving view's for the wheel.
 - The helicopter controls: measure the utility helicopter's collective and the second helicopter's controls from their meshes, and a debug UI mode that places a control at the hand and saves it.
-- The dual-wield twin shown stacked on the rack once it is ready.
 - The debug panel pausing the weapons rather than standing them down, which dropped the SMG at 4380.
 - The bars' twist grips removed outright if the triggers suit the reviewer.
 - The mounted gun's hands drawn on its handles off the gunner seat (the anchored tier exists only in the scripted mounted state).

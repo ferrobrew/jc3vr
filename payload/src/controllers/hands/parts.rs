@@ -39,7 +39,7 @@ use crate::controllers::{
     frame::Hand,
     hands::{ik, late},
     weapons::{
-        hold::{self, armed},
+        hold::{self, armed, rack::paired::stack_offset},
         reload,
     },
 };
@@ -139,9 +139,24 @@ unsafe fn late_update_part(
     let Some(weapon) = (unsafe { part.m_Owner.as_ref() }) else {
         return;
     };
+    let address = weapon as *const WeaponBase as usize;
+    // A finite rack pair's second pistol is drawn apart from the first, its parts with it.
+    if part.m_WeaponDataIndex == 1
+        && let Some(offset) = stack_offset(address)
+    {
+        let mut rendered = late::lerp_transform(
+            Mat4::from(part.m_WorldMatrixSaved),
+            Mat4::from(part.m_WorldMatrix),
+            context.m_Dtf,
+        );
+        rendered.w_axis += offset.extend(0.0);
+        if let Some(instance) = unsafe { part.m_BaseModelInstance.as_mut() } {
+            unsafe { instance.UpdateMatrix(&Matrix4::from(rendered)) };
+        }
+        return;
+    }
     let local = ik::local_character();
     // `m_User` is a `weak_ptr<CCharacter>`; its first word is the character.
-    let address = weapon as *const WeaponBase as usize;
     let owned = hold::owned_holder(address)
         .or_else(|| armed::hand_of(address))
         .is_some();

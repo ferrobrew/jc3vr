@@ -7,6 +7,7 @@ mod finite;
 
 use std::time::{Duration, Instant};
 
+pub(crate) use finite::stack_offset;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::{WeaponBase, WeaponData, WeaponState},
