@@ -54,7 +54,6 @@ impl PanelReach {
 pub(crate) enum PanelRefusal {
     NoBox,
     OutOfReach,
-    HandleRequired,
     NoOpenBody,
     LatchedWithOwnBody,
 }
@@ -77,14 +76,17 @@ pub(crate) fn panel(
         kind_of(door.slot),
         door.part_hash.and_then(table::lookup),
     );
+    // A closed door is taken wherever the palm reaches it, as an open one is: the force the hand
+    // puts on it acts at that point, so a pull near the hinge barely swings it. Within the handle's
+    // reach the hand closes on the handle itself.
+    let at_handle = handle.map_or_else(
+        || in_box(radii.box_m) && reach.handle >= handle_share.clamp(0.0, 1.0),
+        |handle| palm.distance(handle.point) <= radii.handle_m.max(0.0),
+    );
     let body = match door.body {
         None if door.latched => {
-            let at_handle = handle.map_or_else(
-                || in_box(radii.box_m) && reach.handle >= handle_share.clamp(0.0, 1.0),
-                |handle| palm.distance(handle.point) <= radii.handle_m.max(0.0),
-            );
-            if !at_handle {
-                return Err(PanelRefusal::HandleRequired);
+            if !at_handle && !in_box(radii.box_m) {
+                return Err(PanelRefusal::OutOfReach);
             }
             PanelBody::LatchedHandle
         }
@@ -98,6 +100,7 @@ pub(crate) fn panel(
         Some(_) => return Err(PanelRefusal::LatchedWithOwnBody),
     };
     if door.latched
+        && at_handle
         && let Some(handle) = handle
     {
         reach.point = handle.point;
@@ -165,28 +168,31 @@ mod tests {
     }
 
     #[test]
-    fn a_far_panel_corner_is_not_a_closed_handle_candidate() {
+    fn a_closed_door_is_taken_anywhere_on_its_panel() {
         let closed = door(true);
+        let corner = panel(
+            &closed,
+            Vec3::new(0.1, 1.0, 1.0),
+            PanelReach::uniform(0.1),
+            0.7,
+            Vec3::ZERO,
+        )
+        .unwrap();
+        assert_eq!(corner.body, PanelBody::LatchedHandle);
+        assert!(
+            corner.reach.point.distance(Vec3::new(0.1, 1.0, 1.0)) < 1e-4,
+            "the hand takes the door where it reached it: {}",
+            corner.reach.point
+        );
         assert_eq!(
             panel(
                 &closed,
-                Vec3::new(0.1, 1.0, 1.0),
+                Vec3::new(1.0, 3.0, 3.0),
                 PanelReach::uniform(0.1),
                 0.7,
                 Vec3::ZERO
             ),
-            Err(PanelRefusal::HandleRequired)
-        );
-        let open = door(false);
-        assert!(
-            panel(
-                &open,
-                Vec3::new(0.1, 1.0, 1.0),
-                PanelReach::uniform(0.1),
-                0.7,
-                Vec3::ZERO
-            )
-            .is_ok()
+            Err(PanelRefusal::OutOfReach)
         );
     }
 
@@ -207,17 +213,17 @@ mod tests {
         };
         let refused = observed_panel(
             &door,
-            Vec3::ZERO,
+            Vec3::new(1.0, 3.0, 3.0),
             PanelReach::uniform(0.1),
             0.7,
             Vec3::ZERO,
             entry,
             &mut scan,
         );
-        assert_eq!(refused, Err(PanelRefusal::HandleRequired));
+        assert_eq!(refused, Err(PanelRefusal::OutOfReach));
         assert_eq!(
             scan.entries[0].unwrap().result,
-            ScanResult::PanelRefused(PanelRefusal::HandleRequired)
+            ScanResult::PanelRefused(PanelRefusal::OutOfReach)
         );
         let accepted = observed_panel(
             &door,
@@ -235,12 +241,8 @@ mod tests {
     }
 
     #[test]
-    fn a_closed_panel_requires_the_handle_area() {
+    fn a_closed_panel_at_its_handle_is_taken_by_the_handle() {
         let door = door(true);
-        assert_eq!(
-            panel(&door, Vec3::ZERO, PanelReach::uniform(0.1), 0.7, Vec3::ZERO),
-            Err(PanelRefusal::HandleRequired)
-        );
         let acquisition = panel(
             &door,
             handle_point(&door),
@@ -254,19 +256,9 @@ mod tests {
     }
 
     #[test]
-    fn a_closed_door_is_taken_within_the_handle_reach_not_the_box_reach() {
+    fn a_closed_door_near_its_handle_closes_on_the_handle() {
         let closed = door(true);
         let near_handle = handle_point(&closed) + Vec3::Y * 0.1;
-        assert_eq!(
-            panel(
-                &closed,
-                near_handle,
-                PanelReach::uniform(0.06),
-                0.4,
-                Vec3::ZERO
-            ),
-            Err(PanelRefusal::HandleRequired)
-        );
         let reach = PanelReach {
             box_m: 0.06,
             handle_m: 0.15,
