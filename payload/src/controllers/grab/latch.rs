@@ -8,7 +8,10 @@
 //! which the hand bodies deal as a blow instead, and a fist swung past the hip draws nothing. A
 //! press with nothing in reach on a grip a game action reads (a vehicle's weapon, the wingsuit's
 //! secondary weapon) drives that action for the whole press. A fist never takes a remote target:
-//! only a press aimed at it does. Whatever the press took, it holds until the hand opens
+//! only a press aimed at it does. Past its window a fist takes nothing on the body either: the hand
+//! is slow against the room while the body swings under it (a grapple swing, a landing), and a
+//! fist closed on the grapple line drew a holstered gun twice on the 14 November take, then threw
+//! it when the hand let go of the line. Whatever the press took, it holds until the hand opens
 //! ([`ClosedHand`](crate::controllers::bindings::controls::ClosedHand)), which on a force-sensing
 //! grip can be after the press itself ends. A fist or a game action ends with the press.
 
@@ -87,10 +90,12 @@ impl GripLatch {
         if let GripLatch::Fist { closed_s } = *self {
             let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
             let closed_s = closed_s + dt;
-            let takes = closed_s <= FIST_WINDOW_S || slow;
+            let window = closed_s <= FIST_WINDOW_S;
+            let takes =
+                |v: GrabVolume| (window || (slow && !v.on_body())) && Tier::of(v) != Tier::Remote;
             // A remote target is armed only by a press aimed at it, never by a closed hand passing
             // across it.
-            *self = match target.filter(|v| takes && Tier::of(*v) != Tier::Remote) {
+            *self = match target.filter(|v| takes(*v)) {
                 Some(volume) => GripLatch::Grab(volume),
                 None => GripLatch::Fist { closed_s },
             };
@@ -113,5 +118,43 @@ impl GripLatch {
             GripLatch::Grab(_) => "holding",
             GripLatch::Default => "game action",
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_slow_fist_past_its_window_takes_nothing_on_the_body() {
+        let press = ButtonControl {
+            down: true,
+            pressed: true,
+            released: false,
+        };
+        let held = ButtonControl {
+            down: true,
+            pressed: false,
+            released: false,
+        };
+        let tick = |grip, target, dt| LatchTick {
+            grip,
+            closed: true,
+            target,
+            bound: false,
+            slow: true,
+            dt,
+        };
+        let mut latch = GripLatch::Open;
+        assert_eq!(latch.step(tick(press, None, 0.02)), None);
+        assert_eq!(latch.step(tick(held, None, 0.5)), None);
+        assert_eq!(
+            latch.step(tick(held, Some(GrabVolume::GrenadePouch), 0.02)),
+            None
+        );
+        assert_eq!(
+            latch.step(tick(held, Some(GrabVolume::Climb), 0.02)),
+            Some(GrabVolume::Climb)
+        );
     }
 }
