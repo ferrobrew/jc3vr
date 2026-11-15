@@ -262,11 +262,32 @@ pub(crate) unsafe fn lock_tick(input: &LockTickInput) {
         end(None, LockEnd::ReelEnded, input.hand);
         return;
     };
-    // The retract's cancel can clear the wanted velocity the release captured; hand it back once,
-    // on the first tick after the cancel has run.
-    let release_velocity = SHARED.lock().release_velocity.take();
-    if let Some(velocity) = release_velocity {
-        unsafe { engine::set_wanted_velocity(character, velocity) };
+    // The retract's cancel scales the character's velocity down to about a tenth a world update
+    // after the release, under the reel's cancel state. Hand the release's velocity back, carried
+    // on under gravity, on every tick of a short window that finds the character slower than
+    // that, which lands it after the cancel whichever tick the scale falls on, and stop once the
+    // character carries it.
+    let release_velocity = SHARED.lock().release_velocity;
+    if let Some((velocity, at)) = release_velocity {
+        let elapsed = at.elapsed().as_secs_f32();
+        let expected = velocity - Vec3::Y * rope::GRAVITY_MPS2 * elapsed;
+        let measured = Vec3::from(character.m_MeasuredWorldVelocity);
+        let carried =
+            measured.is_finite() && measured.length() >= expected.length() * HANDBACK_CARRIED;
+        // Until the cancel has had its world update, a character still carrying the velocity
+        // proves nothing.
+        let settled = elapsed >= HANDBACK_SETTLE_S && carried;
+        if elapsed > HANDBACK_FOR_S || settled {
+            let mut shared = SHARED.lock();
+            if shared
+                .release_velocity
+                .is_some_and(|(_, started)| started == at)
+            {
+                shared.release_velocity = None;
+            }
+        } else if !carried && expected.is_finite() {
+            unsafe { engine::set_wanted_velocity(character, expected) };
+        }
     }
     if !holds() {
         let hang = HANG_GATE
@@ -716,7 +737,7 @@ fn end(local: Option<(&mut Character, &mut GrapplingHook)>, why: LockEnd, hand: 
             unsafe { engine::set_wanted_velocity(character, velocity) };
             // The reel's cancel runs on its next update; hand the velocity back once more after
             // it, in case the cancel cleared it.
-            SHARED.lock().release_velocity = Some(velocity);
+            SHARED.lock().release_velocity = Some((velocity, Instant::now()));
         }
     }
     tracing::info!(
@@ -788,11 +809,24 @@ struct Shared {
     pending: Option<Reaction>,
     fault: Option<BreakCause>,
     last_velocity: Option<Vec3>,
-    /// The exit velocity a release captured, to hand back after the reel's cancel has run.
-    release_velocity: Option<Vec3>,
+    /// The exit velocity a release captured and when, to hand back after the reel's cancel has
+    /// run.
+    release_velocity: Option<(Vec3, Instant)>,
     /// A press is held that has not yet taken the lock or been refused.
     armed: bool,
 }
+
+/// How long after a release its velocity is handed back while the character is slower than it,
+/// seconds: past the reel's cancel and the state change after it.
+const HANDBACK_FOR_S: f32 = 0.35;
+
+/// How long after a release a character carrying its velocity counts as having kept it, seconds:
+/// a few input ticks, past the world update in which the reel's cancel scales it.
+const HANDBACK_SETTLE_S: f32 = 0.15;
+
+/// The share of the release's velocity, carried on under gravity, at which the character counts
+/// as carrying it.
+const HANDBACK_CARRIED: f32 = 0.8;
 
 /// A leaf lock: nothing else is taken while it is held. The input tick and the reel task both run
 /// on the game thread, so it is never contended in play.
