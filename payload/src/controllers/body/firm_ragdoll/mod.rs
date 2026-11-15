@@ -21,11 +21,11 @@
 //! The ragdoll's pre-physics step reads its muscle target from the raw animation, before the mod's
 //! solve. [`feed`] builds the producer to hand it instead ([`stand_in`]), whose current pose is the
 //! last tick's final pose above the hips and the IK body's legs below ([`target`]), from the bones
-//! and legs the IK body publishes at each gate while the mode is in ([`publish_source`]). The
-//! detour on the pre-physics step that would hand it over waits on that function's binding in the
-//! game's definitions; until then the post-physics detour composes the target each tick as a dry
-//! run, so the readout and the log show what it would feed.
+//! and legs the IK body publishes at each gate while the mode is in ([`publish_source`]). A detour
+//! on the local player's ragdoll's pre-physics step ([`RagdollInstance::PrePhysicsUpdate`]) hands
+//! it over.
 //!
+//! [`RagdollInstance::PrePhysicsUpdate`]: jc3gi::animation::ragdoll::RagdollInstance::PrePhysicsUpdate
 //! [`RagdollParamIdSymbolTable::GRAPPLE_HANG`]: jc3gi::animation::symbol_table::RagdollParamIdSymbolTable::GRAPPLE_HANG
 //! [`Character::PostPhysicsUpdateRagdoll`]: jc3gi::character::character::Character::PostPhysicsUpdateRagdoll
 
@@ -39,8 +39,12 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::{
-    animation::{pose_producer::PoseProducer, symbol_table::RagdollParamIdSymbolTable},
+    animation::{
+        pose_producer::PoseProducer, ragdoll::RagdollInstance,
+        symbol_table::RagdollParamIdSymbolTable,
+    },
     character::character::Character,
+    types::math::Matrix4,
 };
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
@@ -52,7 +56,9 @@ use crate::controllers::body::firm_ragdoll::{
 };
 
 pub(crate) fn hook_library() -> HookLibrary {
-    HookLibrary::new().with_static_binder(&POST_PHYSICS_UPDATE_RAGDOLL_BINDER)
+    HookLibrary::new()
+        .with_static_binder(&PRE_PHYSICS_UPDATE_BINDER)
+        .with_static_binder(&POST_PHYSICS_UPDATE_RAGDOLL_BINDER)
 }
 
 /// What the firm mode is asked for on an input tick.
@@ -245,6 +251,27 @@ unsafe fn tick(character: &mut Character, want: Want, enabled: bool) {
     OWNS_LEGS.store(weight > 0.0, Ordering::Relaxed);
 }
 
+#[detour(address = jc3gi::animation::ragdoll::RagdollInstance::PrePhysicsUpdate_ADDRESS)]
+fn pre_physics_update(
+    instance: *mut RagdollInstance,
+    wanted_world_matrix: *const Matrix4,
+    pose: *mut PoseProducer,
+    dt: f32,
+) {
+    // SAFETY: the local player is read for identity only; the owner steps its own live instance
+    // with its character's producer, between the producer's exchange and the physics.
+    let pose = match unsafe { Character::GetLocalPlayerCharacter().as_ref() } {
+        Some(player) if !instance.is_null() && std::ptr::eq(player.m_Ragdoll.px, instance) => unsafe {
+            feed(player, pose)
+        },
+        _ => pose,
+    };
+    PRE_PHYSICS_UPDATE
+        .get()
+        .unwrap()
+        .call(instance, wanted_world_matrix, pose, dt);
+}
+
 #[detour(address = jc3gi::character::character::Character::PostPhysicsUpdateRagdoll_ADDRESS)]
 fn post_physics_update_ragdoll(character: *mut Character, dt: f32) {
     // SAFETY: the post-physics pass passes its live character.
@@ -258,15 +285,6 @@ fn post_physics_update_ragdoll(character: *mut Character, dt: f32) {
             && let Some(instance) = unsafe { character.m_Ragdoll.px.as_mut() }
         {
             instance.m_BlendWeight = weight;
-        }
-        // The dry run: the producer's poses stand as the pre-physics step read them, the last
-        // final pose and this tick's animation, until the blend below writes the physics in.
-        if preset.is_some()
-            && let Some(controller) =
-                unsafe { character.m_AnimatedModel.m_AnimationController.as_ref() }
-        {
-            // SAFETY: the live local player's producer, before the post-physics blend.
-            unsafe { feed(character, controller.m_PoseProducer) };
         }
     }
     POST_PHYSICS_UPDATE_RAGDOLL

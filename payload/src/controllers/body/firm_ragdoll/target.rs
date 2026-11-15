@@ -14,6 +14,7 @@
 //! turned into the IK leg's plane, or the clip's leg where the IK body gives none.
 
 use glam::{Quat, Vec3};
+use jc3gi::animation::skeleton::HKA_POSE_F_BONE_MODEL_DIRTY;
 
 use crate::controllers::body::procedural::{
     rig::{Rig, RigBone},
@@ -136,6 +137,33 @@ pub(crate) fn model_space(parents: &[i16], local: &[Transform]) -> Vec<Transform
         model.push(composed);
     }
     model
+}
+
+/// The model-space pose of a Havok pose whose model-space transforms `model` may be stale, as the
+/// pose's own model-space sync makes it: a bone whose flag in `flags` marks its model-space
+/// transform dirty ([`HKA_POSE_F_BONE_MODEL_DIRTY`]) is composed from its local transform in `local` and its
+/// parent's synced one; any other keeps its own. Built in a copy, so the pose is not written.
+pub(crate) fn synced_model_space(
+    parents: &[i16],
+    model: &[Transform],
+    local: &[Transform],
+    flags: &[u32],
+) -> Vec<Transform> {
+    let mut synced: Vec<Transform> = Vec::with_capacity(model.len());
+    for (bone, own) in model.iter().enumerate() {
+        let dirty = flags
+            .get(bone)
+            .is_some_and(|f| f & HKA_POSE_F_BONE_MODEL_DIRTY != 0);
+        let transform = match (dirty, local.get(bone)) {
+            (true, Some(local)) => match parent(parents, bone) {
+                Some(p) if p < bone => synced[p].compose(local),
+                _ => *local,
+            },
+            _ => *own,
+        };
+        synced.push(transform);
+    }
+    synced
 }
 
 /// The local transforms of the model-space pose `model` on the skeleton `parents`.
@@ -284,6 +312,8 @@ fn is_finite(t: &Transform) -> bool {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use jc3gi::animation::skeleton::HKA_POSE_F_BONE_LOCAL_DIRTY;
+
     use super::*;
 
     /// A small skeleton: a root, the hips, a spine with a chest on it, and a pelvis with two
@@ -302,6 +332,30 @@ pub(crate) mod tests {
             rotation,
             scale: Vec3::ONE,
         }
+    }
+
+    #[test]
+    fn a_stale_model_transform_is_composed_from_its_local_one() {
+        let local = standing(Quat::from_rotation_z(0.3));
+        let fresh = model_space(&PARENTS, &local);
+        let mut stale = fresh.clone();
+        // The left leg's knee and ankle hold an old pose; the knee is flagged, the ankle is
+        // flagged too, as a model-space write's propagation leaves them.
+        stale[6] = at(Vec3::splat(9.0), Quat::IDENTITY);
+        stale[7] = at(Vec3::splat(9.0), Quat::IDENTITY);
+        let mut flags = vec![0u32; PARENTS.len()];
+        flags[6] = HKA_POSE_F_BONE_MODEL_DIRTY;
+        flags[7] = HKA_POSE_F_BONE_MODEL_DIRTY | HKA_POSE_F_BONE_LOCAL_DIRTY;
+        let synced = synced_model_space(&PARENTS, &stale, &local, &flags);
+        for (bone, (got, want)) in synced.iter().zip(&fresh).enumerate() {
+            assert!(
+                got.translation.distance(want.translation) < 1e-5,
+                "bone {bone}: {got:?} != {want:?}"
+            );
+        }
+        // A clean bone keeps its own transform, whatever its local one says.
+        let clean = synced_model_space(&PARENTS, &stale, &local, &[0; 11]);
+        assert_eq!(clean[6].translation, Vec3::splat(9.0));
     }
 
     /// A standing pose, local transforms: the legs straight down, turned by `lean` at the hips.

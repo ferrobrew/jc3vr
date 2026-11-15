@@ -1,7 +1,7 @@
 //! The stand-in pose producer the firm ragdoll's pre-physics step reads its muscle target from.
 //!
 //! The ragdoll's pre-physics step
-//! (`CRagdollInstanceImpl::PrePhysicsUpdate`, `docs/engine/character/ragdoll.md`) reads only the
+//! ([`RagdollInstance::PrePhysicsUpdate`], `docs/engine/character/ragdoll.md`) reads only the
 //! producer's current pose ([`PoseProducer::m_PoseT1`]) and maps it onto the ragdoll's skeleton.
 //! Handing it a producer of the mod's own, whose current pose holds the muscle target
 //! ([`crate::controllers::body::firm_ragdoll::target`]), retargets the keyframed bodies and the
@@ -14,7 +14,11 @@
 //! holds this tick's animation in local space. The stand-in's pose is the game's current pose's
 //! header with its arrays pointed at storage the mod owns, flagged so that nothing frees it
 //! ([`HK_ARRAY_DONT_DEALLOCATE_FLAG`]), with the local and model-space transforms both written and
-//! no bone marked stale.
+//! no bone marked stale and both spaces marked in sync. The previous pose is read through its own
+//! sync's rule, without writing it: a bone whose model-space transform is marked stale is composed
+//! from its local one ([`synced_model_space`]).
+//!
+//! [`RagdollInstance::PrePhysicsUpdate`]: jc3gi::animation::ragdoll::RagdollInstance::PrePhysicsUpdate
 
 use glam::Vec3;
 use jc3gi::{
@@ -28,6 +32,7 @@ use jc3gi::{
 use crate::controllers::body::{
     firm_ragdoll::target::{
         IkLegs, TargetBones, TargetInput, local_space, model_space, muscle_target,
+        synced_model_space,
     },
     procedural::skeleton::Transform,
 };
@@ -87,8 +92,12 @@ impl StandIn {
         let parents = unsafe { slice(&skeleton.m_ParentIndices) }?;
         let count = parents.len();
         let drawn = unsafe { slice(&last.m_ModelPose) }?.get(..count)?;
+        let drawn_local = unsafe { slice(&last.m_LocalPose) }?.get(..count)?;
+        let drawn_flags = unsafe { slice(&last.m_BoneFlags) }?.get(..count)?;
         let animated = unsafe { slice(&current.m_LocalPose) }?.get(..count)?;
         let drawn: Vec<Transform> = drawn.iter().map(Transform::from_qs).collect();
+        let drawn_local: Vec<Transform> = drawn_local.iter().map(Transform::from_qs).collect();
+        let drawn = synced_model_space(parents, &drawn, &drawn_local, drawn_flags);
         let animated: Vec<Transform> = animated.iter().map(Transform::from_qs).collect();
         let last_final = local_space(parents, &drawn);
         let target = muscle_target(&TargetInput {
@@ -116,6 +125,8 @@ impl StandIn {
         buffer.pose.m_LocalPose = borrowed(&mut self.local);
         buffer.pose.m_ModelPose = borrowed(&mut self.model);
         buffer.pose.m_BoneFlags = borrowed(&mut self.flags);
+        buffer.pose.m_ModelInSync = true;
+        buffer.pose.m_LocalInSync = true;
         let pose: *mut HkaPose = &mut buffer.pose;
         let stand_in = self
             .producer
@@ -171,16 +182,11 @@ fn below_hips(parents: &[i16], bone: usize, bones: TargetBones) -> bool {
 // character's physics passes.
 unsafe impl Send for StandIn {}
 
-/// The stand-in's pose header, padded past the bound fields with zeros in case the mapping reads
-/// further into the header than the binding describes.
+/// The stand-in's pose header. The mapping reads no further into it than the in-sync flags.
 #[repr(C, align(16))]
 struct PoseBuffer {
     pose: HkaPose,
-    _tail: [u8; POSE_TAIL],
 }
-
-/// The zeroed bytes after the bound pose header.
-const POSE_TAIL: usize = 0x48;
 
 /// The elements of `array`, or `None` for a null or negative one.
 ///
