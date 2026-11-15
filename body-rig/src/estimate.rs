@@ -77,7 +77,7 @@ impl EstimateTuning {
         Self {
             blend_s: 0.5,
             smooth_s: 0.15,
-            deadband_deg: 9.0,
+            deadband_deg: 20.0,
             slew_deg_s: 180.0,
             centre_deg_s: 20.0,
             still_deg_s: 15.0,
@@ -113,7 +113,7 @@ impl Default for EstimateTuning {
 }
 
 /// The legs above this turn rate under the estimate count as turning, degrees per second.
-pub const TURNING_DEG_S: f32 = 10.0;
+pub const TURNING_DEG_S: f32 = 20.0;
 
 /// The estimate's state in the yaw.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
