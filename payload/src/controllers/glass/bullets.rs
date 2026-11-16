@@ -152,8 +152,8 @@ fn enabled() -> bool {
 ///
 /// # Safety
 ///
-/// The bullet's own hit, on the worker updating it.
-unsafe fn names_hidden_pane(info: &mut CastRayInfoBase) -> bool {
+/// A current physics hit, on the simulation thread outside the physics step or its query worker.
+pub(crate) unsafe fn names_hidden_pane(info: &mut CastRayInfoBase) -> bool {
     let mut found = [ptr::null_mut::<ModelInstance>(); MAX_PANES];
     let base = found.as_mut_ptr();
     // Every field is a pointer or an integer, so all-zero is a valid value to fill in.

@@ -25,6 +25,7 @@ pub mod config;
 pub mod engine;
 pub mod geometry;
 pub mod hinge;
+pub(crate) mod pressure;
 pub(crate) mod scan;
 pub mod table;
 pub(crate) mod tearing;
@@ -33,7 +34,7 @@ use std::{num::NonZeroUsize, time::Instant};
 
 pub use config::DoorsConfig;
 use glam::{Mat4, Vec3};
-use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3gi::{physics::GameMaterialId, vehicle::vehicle::DoorSlot};
 
 use crate::controllers::{
     frame::Pose,
@@ -111,7 +112,7 @@ pub(crate) unsafe fn observed_reach(
     config: &DoorsConfig,
     scan: &mut Scan,
 ) -> Option<Reach> {
-    if !config.enabled {
+    if !config.enabled || hit.position.distance(palm) > reach.box_m.max(reach.handle_m) {
         return None;
     }
     let vehicle = unsafe { engine::vehicle_of(object) }?;
@@ -122,6 +123,9 @@ pub(crate) unsafe fn observed_reach(
         let door = doors
             .iter()
             .find(|d| d.body.is_some_and(|(owner, _)| owner == object))?;
+        if !panel_hit(door, hit) {
+            return None;
+        }
         let (owner, door_body) = door.body?;
         return Some(Reach {
             object: owner,
@@ -142,8 +146,9 @@ pub(crate) unsafe fn observed_reach(
     // The vehicle's own body: a door, closed or open, taken anywhere the hand reaches it.
     doors
         .iter()
+        .filter(|d| panel_hit(d, hit))
         .filter_map(|d| {
-            let acquired = acquisition::observed_panel(
+            let mut acquired = acquisition::observed_panel(
                 d,
                 palm,
                 reach,
@@ -162,6 +167,10 @@ pub(crate) unsafe fn observed_reach(
                 scan,
             )
             .ok()?;
+            if table::is_canopy(d.part_hash) || (palm - hit.position).dot(acquired.outward) < 0.0 {
+                acquired.reach.point = hit.position;
+                acquired.reach.distance = palm.distance(hit.position);
+            }
             let target = DoorTarget {
                 vehicle,
                 vehicle_body: Some(body),
@@ -184,6 +193,14 @@ pub(crate) unsafe fn observed_reach(
             })
         })
         .min_by(|a, b| a.distance.total_cmp(&b.distance))
+}
+
+pub(crate) fn panel_hit(door: &engine::DoorRead, hit: &SurfaceHit) -> bool {
+    (hit.material != Some(GameMaterialId::EGameMaterialId_Glass as u32)
+        || table::is_canopy(door.part_hash))
+        && door
+            .door_box
+            .is_some_and(|bounds| bounds.reach(hit.position, 0.03).is_some())
 }
 
 /// A door slot's name, for the readouts and the log.
@@ -393,6 +410,40 @@ mod tests {
 
     use super::*;
     use crate::controllers::physical_hands::{grasp::Grip, rigid::BodyPose};
+
+    #[test]
+    fn panel_evidence_rejects_car_glass_and_hits_outside_the_door() {
+        let mut door = engine::DoorRead {
+            slot: DoorSlot::FRONT_LEFT,
+            part_index: 1,
+            latched: true,
+            door_box: geometry::DoorBox::new(Mat4::IDENTITY, Mat4::IDENTITY, Vec3::ZERO, Vec3::ONE),
+            body: None,
+            part_hash: None,
+        };
+        let mut hit = SurfaceHit {
+            position: Vec3::splat(0.5),
+            normal: Vec3::X,
+            surface: crate::controllers::physical_hands::contact::Surface::Solid {
+                object: NonZeroUsize::new(8),
+                body: 3,
+            },
+            material: None,
+        };
+        assert!(panel_hit(&door, &hit));
+        hit.material = Some(GameMaterialId::EGameMaterialId_Glass as u32);
+        assert!(!panel_hit(&door, &hit));
+        door.part_hash = table::parse(include_str!(
+            "../../../../../tools/door_handles/door_handles.json"
+        ))
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.part == "fighterjet_door_f")
+        .map(|entry| entry.part_hash);
+        assert!(panel_hit(&door, &hit));
+        hit.position = Vec3::splat(2.0);
+        assert!(!panel_hit(&door, &hit));
+    }
 
     fn latch() -> Latch {
         Latch {

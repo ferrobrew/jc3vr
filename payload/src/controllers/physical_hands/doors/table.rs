@@ -60,6 +60,18 @@ pub fn parse(json: &str) -> Result<Vec<TableEntry>, DoorHandleTableError> {
     serde_json::from_str(json).map_err(DoorHandleTableError)
 }
 
+pub(crate) fn is_canopy(part_hash: Option<u32>) -> bool {
+    part_hash.and_then(lookup).is_some_and(|entry| {
+        matches!(
+            (entry.vehicle.as_str(), entry.part.as_str()),
+            ("fighterjet", "fighterjet_door_f")
+                | ("fighterbomber", "fighterbomber_door_f")
+                | ("vintagefighter", "vintagefighter_hatch")
+                | ("smallfloatprop", "smallfloatprop_hatch")
+        )
+    })
+}
+
 /// The door handle table does not parse.
 #[derive(Debug)]
 pub struct DoorHandleTableError(serde_json::Error);
@@ -98,6 +110,29 @@ mod tests {
             assert!((entry.normal.length() - 1.0).abs() < 1e-2, "{}", entry.part);
             assert_eq!(lookup(entry.part_hash).map(|e| &e.part), Some(&entry.part));
         }
+    }
+
+    #[test]
+    fn only_the_known_canopy_parts_are_classified_as_canopies() {
+        let entries = parse(DOOR_HANDLES_JSON).unwrap();
+        let mut canopies = Vec::new();
+        for entry in entries {
+            if is_canopy(Some(entry.part_hash)) {
+                canopies.push(entry.part);
+            }
+        }
+        canopies.sort();
+        assert_eq!(
+            canopies,
+            [
+                "fighterbomber_door_f",
+                "fighterjet_door_f",
+                "smallfloatprop_hatch",
+                "vintagefighter_hatch",
+            ]
+        );
+        assert!(!is_canopy(None));
+        assert!(!is_canopy(Some(0)));
     }
 
     #[test]

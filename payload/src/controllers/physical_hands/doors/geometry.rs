@@ -177,6 +177,21 @@ impl DoorBox {
         })
     }
 
+    pub(crate) fn surface_point(&self, palm: Vec3) -> Option<Vec3> {
+        let local = self.to_world.inverse().transform_point3(palm);
+        if !local.is_finite() {
+            return None;
+        }
+        let mut nearest = local.clamp(self.min, self.max);
+        if nearest == local {
+            let (axis, edge) = (0..3)
+                .flat_map(|axis| [(axis, self.min[axis]), (axis, self.max[axis])])
+                .min_by(|&(a, x), &(b, y)| (local[a] - x).abs().total_cmp(&(local[b] - y).abs()))?;
+            nearest[axis] = edge;
+        }
+        Some(self.to_world.transform_point3(nearest))
+    }
+
     /// Where the door-space point `local` lies between the hinge pivot and the box's far corner,
     /// `0..=1`.
     fn handle_share(&self, local: Vec3) -> f32 {
@@ -322,6 +337,35 @@ mod tests {
         assert!((reach.distance - 0.05).abs() < 1e-5);
         assert!(reach.point.abs_diff_eq(Vec3::new(-0.95, 1.0, 0.0), 1e-5));
         assert!(door.reach(Vec3::new(-1.2, 1.0, 0.0), 0.1).is_none());
+    }
+
+    #[test]
+    fn a_probe_destination_is_on_the_box_even_when_the_palm_is_inside() {
+        let door = left_door();
+        let centre = door.centre();
+        let point = door.surface_point(centre).unwrap();
+        assert!(point.distance(centre) > 0.0);
+        assert!(point.distance(centre) <= 0.026);
+        assert_eq!(door.surface_point(Vec3::NAN), None);
+    }
+
+    #[test]
+    fn a_probe_destination_follows_the_part_transform() {
+        let door = left_door();
+        let palm = Vec3::new(-1.0, 1.0, 0.0);
+        let point = door.surface_point(palm).unwrap();
+        let transform =
+            Mat4::from_rotation_translation(Quat::from_rotation_y(0.7), Vec3::new(4.0, 2.0, 3.0));
+        let transformed = DoorBox {
+            to_world: transform * door.to_world,
+            ..door
+        };
+        assert!(
+            transformed
+                .surface_point(transform.transform_point3(palm))
+                .unwrap()
+                .abs_diff_eq(transform.transform_point3(point), 1e-5)
+        );
     }
 
     #[test]

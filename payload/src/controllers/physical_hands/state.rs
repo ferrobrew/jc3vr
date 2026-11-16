@@ -1,7 +1,10 @@
 //! The palms' state across ticks: each hand's probes, its pressed and held state, and its motion,
 //! with the stand-down that forgets it all when the palms stop acting.
 
-use std::time::{Duration, Instant};
+use std::{
+    num::NonZeroUsize,
+    time::{Duration, Instant},
+};
 
 use glam::{Vec2, Vec3};
 use parking_lot::Mutex;
@@ -13,6 +16,7 @@ use crate::controllers::{
     physical_hands::{
         climb,
         contact::PointProbe,
+        doors::pressure::Press,
         draw,
         grasp::{AngularTracker, VelocityTracker},
         palm::PROBE_POINTS,
@@ -30,6 +34,7 @@ pub(super) fn stand_down(idle: Idle) {
         state.status.off_thread += 1;
     }
     state.reset_probes();
+    state.seated_vehicle = None;
     state.pickup.drop_all();
     physics::publish_holds([None; 2]);
     physics::publish_pins([None; 2]);
@@ -62,6 +67,8 @@ pub(super) struct State {
     /// When the last tick ran.
     pub(super) at: Option<Instant>,
     pub(super) epoch: u64,
+    pub(super) seated_vehicle: Option<NonZeroUsize>,
+    pub(super) door_press: [Press; 2],
     pub(super) pickup: PickupState,
     /// What each hand's reach found on the last tick, for the grip press's log.
     pub(super) reach_notes: [Vec<String>; 2],
@@ -78,6 +85,7 @@ impl State {
             probes.iter_mut().for_each(PointProbe::reset);
         }
         self.pressed = [false; 2];
+        self.door_press = [Press::new(); 2];
         self.gives = [Give::new(); 2];
         self.motion = [(VelocityTracker::new(), AngularTracker::new()); 2];
     }
@@ -194,6 +202,8 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     gives: [Give::new(); 2],
     at: None,
     epoch: 0,
+    seated_vehicle: None,
+    door_press: [Press::new(); 2],
     pickup: PickupState::new(),
     reach_notes: [Vec::new(), Vec::new()],
 });

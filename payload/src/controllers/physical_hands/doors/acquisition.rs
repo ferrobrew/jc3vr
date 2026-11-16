@@ -102,6 +102,7 @@ pub(crate) fn panel(
     if door.latched
         && at_handle
         && let Some(handle) = handle
+        && (palm - handle.point).dot(handle.normal) >= 0.0
     {
         reach.point = handle.point;
         reach.distance = palm.distance(handle.point);
@@ -194,6 +195,16 @@ mod tests {
             ),
             Err(PanelRefusal::OutOfReach)
         );
+    }
+
+    #[test]
+    fn an_inner_panel_grip_does_not_snap_to_the_exterior_handle() {
+        let door = door(true);
+        let handle = door_handle(&door.door_box.unwrap(), kind_of(door.slot), None).unwrap();
+        let palm = handle.point - handle.normal * 0.08;
+        let acquired = panel(&door, palm, PanelReach::uniform(0.15), 0.4, Vec3::ZERO).unwrap();
+        assert_ne!(acquired.reach.point, handle.point);
+        assert_eq!(acquired.outward, handle.normal);
     }
 
     #[test]

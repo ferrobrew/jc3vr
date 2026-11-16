@@ -25,7 +25,11 @@ use jc3gi::vehicle::vehicle::{DoorInfo, DoorSlot};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::physical_hands::{bodies, doors::engine, rigid::Velocities};
+use crate::controllers::physical_hands::{
+    bodies,
+    doors::{engine, table},
+    rigid::Velocities,
+};
 
 /// The hinges of the doors the hands opened (see [`crate::controllers::physical_hands::doors::hinge`]).
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -77,6 +81,7 @@ pub(crate) fn opened(vehicle: NonZeroUsize, vehicle_body: u32, part_index: u32, 
         vehicle_body,
         part_index,
         slot,
+        lid: None,
         angle_rad: None,
         rested_s: 0.0,
         strut: false,
@@ -188,16 +193,17 @@ pub(crate) fn swing(tick: &HingeTick, config: &HingeConfig) -> Swing {
 }
 
 /// Whether a slot is a lid, hinged across the vehicle so that its weight swings it shut.
-pub(crate) const fn is_lid(slot: DoorSlot) -> bool {
-    matches!(
-        slot,
-        DoorSlot::HOOD
-            | DoorSlot::TRUNK
-            | DoorSlot::REAR_DOOR
-            | DoorSlot::TURRET_DOOR
-            | DoorSlot::CARGO_BAY_DOOR
-            | DoorSlot::MISSILE_HATCH
-    )
+pub(crate) fn is_lid(slot: DoorSlot, part_hash: Option<u32>) -> bool {
+    table::is_canopy(part_hash)
+        || matches!(
+            slot,
+            DoorSlot::HOOD
+                | DoorSlot::TRUNK
+                | DoorSlot::REAR_DOOR
+                | DoorSlot::TURRET_DOOR
+                | DoorSlot::CARGO_BAY_DOOR
+                | DoorSlot::MISSILE_HATCH
+        )
 }
 
 /// A door the hands opened.
@@ -207,6 +213,7 @@ struct Opened {
     vehicle_body: u32,
     part_index: u32,
     slot: DoorSlot,
+    lid: Option<bool>,
     /// The angle on the last tick, radians.
     angle_rad: Option<f32>,
     /// How long it has rested within the latch angle, seconds.
@@ -258,7 +265,12 @@ unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeConfig, g
     let body = hinge.body;
     let tick = HingeTick {
         held: body.is_some_and(|(_, body)| held.contains(&body)),
-        lid: is_lid(door.slot),
+        lid: *door.lid.get_or_insert_with(|| {
+            is_lid(
+                door.slot,
+                unsafe { engine::door(door.vehicle, door.part_index) }.and_then(|d| d.part_hash),
+            )
+        }),
         angle_rad: angle,
         range_rad: hinge.range_rad,
         rate_rad_s: rate,
@@ -429,10 +441,31 @@ mod tests {
     }
 
     #[test]
+    fn a_known_canopy_in_the_front_left_slot_gets_lid_support() {
+        let canopy = table::parse(include_str!(
+            "../../../../../tools/door_handles/door_handles.json"
+        ))
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.part == "fighterjet_door_f")
+        .unwrap();
+        let lid = HingeTick {
+            lid: is_lid(DoorSlot::FRONT_LEFT, Some(canopy.part_hash)),
+            ..tick()
+        };
+        assert_eq!(swing(&lid, &CONFIG), Swing::Strut);
+        let side = HingeTick {
+            lid: is_lid(DoorSlot::FRONT_LEFT, None),
+            ..tick()
+        };
+        assert!(matches!(swing(&side, &CONFIG), Swing::Damped(_)));
+    }
+
+    #[test]
     fn the_lids_are_the_slots_hinged_across_the_vehicle() {
-        assert!(is_lid(DoorSlot::HOOD));
-        assert!(is_lid(DoorSlot::TRUNK));
-        assert!(!is_lid(DoorSlot::FRONT_LEFT));
-        assert!(!is_lid(DoorSlot::REAR_RIGHT));
+        assert!(is_lid(DoorSlot::HOOD, None));
+        assert!(is_lid(DoorSlot::TRUNK, None));
+        assert!(!is_lid(DoorSlot::FRONT_LEFT, None));
+        assert!(!is_lid(DoorSlot::REAR_RIGHT, None));
     }
 }

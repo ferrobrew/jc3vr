@@ -16,7 +16,7 @@ use std::num::NonZeroUsize;
 
 use glam::Vec3;
 use jc3gi::{
-    physics::PhysicsGameObject,
+    physics::{GameMaterialId, PhysicsGameObject},
     vehicle::vehicle::{DoorSlot, Vehicle},
 };
 use parking_lot::Mutex;
@@ -28,9 +28,10 @@ use crate::controllers::{
         contact::{Surface, SurfaceHit},
         doors::{
             DoorTarget, DoorsConfig, HANDLE_REACH_M,
+            acquisition::PanelReach,
             engine::{self, DoorRead},
             geometry::{DoorKind, door_handle},
-            slot_label, table,
+            observed_reach, slot_label, table,
         },
         grab_view::model::{HandleOutcome, HandleSeen},
         grasp::{Reach, TargetKind},
@@ -143,6 +144,53 @@ pub(crate) unsafe fn handle_reach(
                 note(notes, format!("{what}: no model box to find its handle on"));
                 continue;
             };
+            if table::is_canopy(door.part_hash) {
+                let candidate = canopy_hits(&door, palm, reach_m, cast)
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|hit| {
+                        let Surface::Solid {
+                            object: Some(object),
+                            body,
+                        } = hit.surface
+                        else {
+                            return None;
+                        };
+                        let reached = unsafe {
+                            observed_reach(
+                                object,
+                                body,
+                                &hit,
+                                palm,
+                                PanelReach::uniform(reach_m),
+                                config,
+                                scan,
+                            )
+                        }?;
+                        matches!(
+                            reached.kind,
+                            TargetKind::Door(target)
+                                if target.vehicle == vehicle && target.part_index == door.part_index
+                        )
+                        .then_some(reached)
+                    })
+                    .min_by(|a, b| a.distance.total_cmp(&b.distance));
+                if let Some(reached) = candidate {
+                    entry.object = Some(reached.object);
+                    entry.body = Some(reached.body);
+                    entry.point = Some(reached.point);
+                    entry.distance = Some(reached.distance);
+                    seen(reached.point, HandleOutcome::InReach);
+                    note(notes, format!("{what}: the canopy surface is in reach"));
+                    if best.is_none_or(|b| reached.distance < b.distance) {
+                        best = Some(reached);
+                    }
+                } else {
+                    entry.result = ScanResult::NoBody;
+                }
+                scan.push(entry);
+                continue;
+            }
             let table_entry = door.part_hash.and_then(table::lookup);
             let Some(handle) = door_handle(&door_box, kind_of(door.slot), table_entry) else {
                 entry.result = ScanResult::NoHandle;
@@ -335,15 +383,51 @@ unsafe fn holdable(
     }
     let past = point + (point - palm).normalize_or_zero() * CAST_PAST_M;
     let across = (point + normal * CAST_PAST_M, point - normal * CAST_PAST_M);
-    let body = [(palm, past), across]
-        .into_iter()
-        .filter_map(|(from, to)| cast(from, to))
-        .find_map(|hit| vehicle_hit(vehicle, &hit))
-        .or_else(|| unsafe { engine::vehicle_body(vehicle) })?;
+    let mut body = None;
+    for (from, to) in [(palm, past), across] {
+        let Some(hit) = cast(from, to) else {
+            continue;
+        };
+        if hit.material == Some(GameMaterialId::EGameMaterialId_Glass as u32) {
+            return None;
+        }
+        if let Some(hit_body) = vehicle_hit(vehicle, &hit) {
+            body = Some(hit_body);
+            break;
+        }
+    }
+    let body = body.or_else(|| unsafe { engine::vehicle_body(vehicle) })?;
     Some((vehicle, body, Some(body)))
 }
 
+fn canopy_hits(
+    door: &DoorRead,
+    palm: Vec3,
+    reach_m: f32,
+    cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
+) -> [Option<SurfaceHit>; 2] {
+    let Some(door_box) = door.door_box.filter(|_| table::is_canopy(door.part_hash)) else {
+        return [None; 2];
+    };
+    if door_box.reach(palm, reach_m).is_none() {
+        return [None; 2];
+    }
+    let Some(nearest) = door_box.surface_point(palm) else {
+        return [None; 2];
+    };
+    [nearest, door_box.centre()].map(|point| {
+        let direction = (point - palm).normalize_or_zero();
+        if direction == Vec3::ZERO {
+            return None;
+        }
+        cast(palm, point + direction * CAST_PAST_M)
+    })
+}
+
 fn vehicle_hit(vehicle: NonZeroUsize, hit: &SurfaceHit) -> Option<u32> {
+    if hit.material == Some(GameMaterialId::EGameMaterialId_Glass as u32) {
+        return None;
+    }
     match hit.surface {
         Surface::Solid {
             object: Some(object),
@@ -358,7 +442,133 @@ const CAST_PAST_M: f32 = 0.1;
 
 #[cfg(test)]
 mod tests {
+    use glam::Mat4;
+
     use super::*;
+    use crate::controllers::physical_hands::doors::geometry::DoorBox;
+
+    fn canopy() -> DoorRead {
+        let entry = table::parse(include_str!(
+            "../../../../../tools/door_handles/door_handles.json"
+        ))
+        .unwrap()
+        .into_iter()
+        .find(|entry| entry.part == "fighterjet_door_f")
+        .unwrap();
+        DoorRead {
+            slot: DoorSlot::FRONT_LEFT,
+            part_index: 1,
+            latched: true,
+            door_box: Some(
+                DoorBox::new(
+                    Mat4::IDENTITY,
+                    Mat4::IDENTITY,
+                    Vec3::new(-1.0, 1.0, -2.0),
+                    Vec3::new(1.0, 2.0, 2.0),
+                )
+                .unwrap(),
+            ),
+            body: None,
+            part_hash: Some(entry.part_hash),
+        }
+    }
+
+    #[test]
+    fn a_nearby_canopy_with_a_distant_handle_is_probed_at_the_palm() {
+        let door = canopy();
+        let palm = Vec3::new(-1.05, 1.5, 1.5);
+        let handle = door_handle(
+            &door.door_box.unwrap(),
+            kind_of(door.slot),
+            door.part_hash.and_then(table::lookup),
+        )
+        .unwrap();
+        assert!(palm.distance(handle.point) > 1.0);
+        let hit = SurfaceHit {
+            surface: Surface::Solid {
+                object: NonZeroUsize::new(8),
+                body: 5,
+            },
+            position: Vec3::new(-1.0, 1.5, 1.5),
+            normal: Vec3::NEG_X,
+            material: Some(GameMaterialId::EGameMaterialId_Glass as u32),
+        };
+        let mut rays = Vec::new();
+        let hits = canopy_hits(&door, palm, 0.1, &mut |from, to| {
+            rays.push((from, to));
+            Some(hit)
+        });
+        assert_eq!(hits, [Some(hit); 2]);
+        assert_eq!(rays[0].0, palm);
+        assert!(rays[0].1.abs_diff_eq(Vec3::new(-0.9, 1.5, 1.5), 1e-5));
+    }
+
+    #[test]
+    fn a_canopy_box_with_no_ray_hit_offers_no_surface() {
+        let door = canopy();
+        assert_eq!(
+            canopy_hits(&door, Vec3::new(-1.05, 1.5, 1.5), 0.1, &mut |_, _| None),
+            [None; 2]
+        );
+    }
+
+    #[test]
+    fn distant_canopies_and_ordinary_doors_do_not_cast_panel_probes() {
+        let mut door = canopy();
+        let mut unexpected_cast = |_, _| panic!("no panel probes outside a nearby known canopy");
+        assert_eq!(
+            canopy_hits(&door, Vec3::new(-2.0, 1.5, 1.5), 0.1, &mut unexpected_cast),
+            [None; 2]
+        );
+        door.part_hash = None;
+        assert_eq!(
+            canopy_hits(&door, Vec3::new(-1.05, 1.5, 1.5), 0.1, &mut unexpected_cast),
+            [None; 2]
+        );
+    }
+
+    #[test]
+    fn ordinary_vehicle_glass_cannot_prove_a_handle_body() {
+        let vehicle = NonZeroUsize::new(8).unwrap();
+        let hit = SurfaceHit {
+            surface: Surface::Solid {
+                object: Some(vehicle),
+                body: 5,
+            },
+            position: Vec3::ZERO,
+            normal: Vec3::X,
+            material: Some(GameMaterialId::EGameMaterialId_Glass as u32),
+        };
+        assert_eq!(vehicle_hit(vehicle, &hit), None);
+    }
+
+    #[test]
+    fn an_ordinary_glass_hit_does_not_fall_back_to_the_native_vehicle_body() {
+        let vehicle = NonZeroUsize::new(8).unwrap();
+        let mut door = canopy();
+        door.part_hash = None;
+        let result = unsafe {
+            holdable(
+                vehicle,
+                &door,
+                Vec3::ZERO,
+                Vec3::X,
+                Vec3::X * 0.05,
+                &mut |_, _| {
+                    Some(SurfaceHit {
+                        surface: Surface::Solid {
+                            object: Some(vehicle),
+                            body: 5,
+                        },
+                        position: Vec3::ZERO,
+                        normal: Vec3::X,
+                        material: Some(GameMaterialId::EGameMaterialId_Glass as u32),
+                    })
+                },
+            )
+        };
+        assert_eq!(result, None);
+    }
 
     #[test]
     fn a_vehicle_part_cannot_prove_ownership_of_the_vehicle_body() {

@@ -20,10 +20,7 @@ use windows::Win32::System::Threading::GetCurrentThreadId;
 use crate::{
     config::Config,
     controllers::{
-        aim::{
-            ray::Ray,
-            raycast::{self, CastOptions},
-        },
+        aim::raycast::CastOptions,
         body,
         clock::TimeScale,
         cockpit::CockpitTransform,
@@ -37,6 +34,7 @@ use crate::{
         },
         frame::{Hand, Pose},
         hands::{self, tiers},
+        haptics::{self, Event},
         loadout::{ItemKind, live},
         mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
         physical_hands::{
@@ -44,6 +42,7 @@ use crate::{
             contact::{HandContact, PointContact, PointProbe, Surface, SurfaceHit},
             doors::{
                 self,
+                acquisition::PanelReach,
                 config::{TEARING, TearTuning},
                 hinge::HingeConfig,
             },
@@ -54,7 +53,7 @@ use crate::{
             palm::{PROBE_POINTS, PalmBox},
             physics,
             pickup::{self, PICKUP},
-            push,
+            push, query, seated,
             shove::SHOVE,
             state::{STATE, VELOCITY_SMOOTHING_S, stand_down},
             status::{HandStatus, Idle},
@@ -65,6 +64,7 @@ use crate::{
         scheme, vehicles,
         weapons::{self, c4, foregrip, grenade},
     },
+    grapple::seat::rides_in_seat,
     hooks,
     thread_role::{self, ThreadRole},
 };
@@ -113,6 +113,48 @@ unsafe fn run(owner: &Character, dt: f32) {
         active: config.enabled && scheme::is_controllers() && hooks::in_gameplay(),
         role: thread_role::current(),
     };
+    let seated_vehicle =
+        (gate.active && gate.role == ThreadRole::Game && unsafe { rides_in_seat(owner) })
+            .then(|| NonZeroUsize::new(unsafe { owner.GetVehiclePtr() } as usize))
+            .flatten();
+    {
+        let mut state = STATE.lock();
+        if state.seated_vehicle != seated_vehicle {
+            state.reset_probes();
+            state.pickup.drop_all();
+            state.pickup.input_at = None;
+            state.clamp = [Vec3::ZERO; 2];
+            state.at = None;
+            state.status.hands = [HandStatus::default(); 2];
+            state.seated_vehicle = seated_vehicle;
+        }
+    }
+    if gate.role == ThreadRole::Game {
+        let held: Vec<u32> = STATE
+            .lock()
+            .pickup
+            .held
+            .iter()
+            .flatten()
+            .map(|h| h.body)
+            .collect();
+        let hinges = HingeConfig {
+            enabled: gate.active
+                && config.pickup.enabled
+                && config.doors.enabled
+                && config.doors.hinge.enabled,
+            ..config.doors.hinge
+        };
+        unsafe { doors::hinge::tick(dt, &held, &hinges, PICKUP.gravity_mps2) };
+    }
+    if seated_vehicle.is_some() {
+        if config.pickup.enabled && config.doors.enabled {
+            unsafe { seated::run(owner, dt) };
+        } else {
+            stand_down(Idle::Disabled);
+        }
+        return;
+    }
     let idle = stand_down_reason(gate, || mode_acts(mode::current()));
     if idle == Some(Idle::OffThread) && STATE.lock().status.idle != Some(Idle::OffThread) {
         tracing::warn!(
@@ -199,20 +241,25 @@ unsafe fn run(owner: &Character, dt: f32) {
     // SAFETY: forwarded from the caller.
     let probe_options = CastOptions {
         // The impact sounds play against the surface's material.
-        material: config.sounds.enabled,
+        material: true,
         ..unsafe { CastOptions::ignoring_player(held) }
     };
     // SAFETY: forwarded from the caller.
-    let reach_options = unsafe { CastOptions::ignoring_player(0) };
+    let reach_options = CastOptions {
+        material: true,
+        ..unsafe { CastOptions::ignoring_player(0) }
+    };
     let mut casts = 0;
     let mut error = None;
-    let mut cast = |from: Vec3, to: Vec3, options: &CastOptions| -> Option<SurfaceHit> {
+    let mut cast = |from: Vec3, to: Vec3, solid: bool| -> Option<SurfaceHit> {
         casts += 1;
-        let ray = Ray::new(from, to - from)?;
-        // SAFETY: the simulation phase outside the physics step; the ignored objects are the live
-        // local character and the objects the hands hold, which this tick's pickup checks.
-        match unsafe { raycast::cast(&ray, (to - from).length(), options) } {
-            Ok(hit) => hit.map(|hit| unsafe { engine::surface(&hit) }),
+        let result = if solid {
+            unsafe { query::cast_solid(from, to, &probe_options) }
+        } else {
+            unsafe { query::cast(from, to, &reach_options) }
+        };
+        match result {
+            Ok(hit) => hit,
             Err(e) => {
                 error = Some(e.to_string());
                 None
@@ -266,6 +313,7 @@ unsafe fn run(owner: &Character, dt: f32) {
         let velocity = state.hand_velocity(hand);
         let speed = velocity.length();
         let Some(cockpit) = active.hands[i].filter(|_| free[i]) else {
+            state.door_press[i].reset();
             state.probes[i].iter_mut().for_each(PointProbe::reset);
             state.pressed[i] = false;
             state.gives[i].reset();
@@ -293,6 +341,7 @@ unsafe fn run(owner: &Character, dt: f32) {
         palms[i] = Some(motion);
         wrists[i] = Some(compose(cockpit.wrist));
         if state.pickup.holding(hand) {
+            state.door_press[i].reset();
             // A holding hand neither probes nor pushes: its palm is around the object.
             state.probes[i].iter_mut().for_each(PointProbe::reset);
             state.pressed[i] = false;
@@ -304,6 +353,54 @@ unsafe fn run(owner: &Character, dt: f32) {
                 ..HandStatus::default()
             };
             continue;
+        }
+        let pressure_hit = (pickup_on && config.doors.enabled)
+            .then(|| {
+                palm.probe_points()
+                    .into_iter()
+                    .filter_map(|point| cast(shoulders[i], point, false))
+                    .find(|hit| {
+                        hit.position.distance(palm.centre)
+                            <= doors::pressure::REACH_M * active.world_scale
+                    })
+            })
+            .flatten();
+        let pressure_reach = pressure_hit.and_then(|hit| {
+            let Surface::Solid {
+                object: Some(object),
+                body,
+            } = hit.surface
+            else {
+                return None;
+            };
+            unsafe {
+                doors::reach(
+                    object,
+                    body,
+                    &hit,
+                    palm.centre,
+                    PanelReach::uniform(doors::pressure::REACH_M * active.world_scale),
+                    &config.doors,
+                )
+            }
+        });
+        let pressure_result = unsafe {
+            state.door_press[i].step(
+                pressure_reach,
+                pressure_hit,
+                palm.centre,
+                dt,
+                active.world_scale,
+            )
+        };
+        match pressure_result {
+            Ok(Some(slot)) => {
+                state.status.pickup.unlatches += 1;
+                state.status.pickup.last_door = Some(slot);
+                haptics::play(hand, Event::Unlatch);
+            }
+            Err(error) => state.status.last_error = Some(error.to_string()),
+            Ok(None) => {}
         }
         if physics::drives(hand) {
             // A hand its body drives does not probe, push, or shove: the body meets the world
@@ -328,7 +425,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                         None,
                         standing_on,
                         &reach_tuning,
-                        &mut |from, to| cast(from, to, &reach_options),
+                        &mut |from, to| cast(from, to, false),
                         pickup::ReachObservations {
                             notes: &mut reach_notes[i],
                             rays: viewing.then(|| &mut rays[i]),
@@ -347,7 +444,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                     &with_hit_vehicles(&door_vehicles, &hit_vehicles),
                     active.world_scale,
                     &config.doors,
-                    &mut |from, to| cast(from, to, &reach_options),
+                    &mut |from, to| cast(from, to, false),
                     doors::scan::HandleObservations {
                         notes: &mut reach_notes[i],
                         handles: viewing.then(|| &mut handles[i]),
@@ -370,7 +467,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                         climb::reach(
                             &body_palm,
                             climb::config::CLIMB.reach_m * active.world_scale,
-                            &mut |from, to| cast(from, to, &probe_options),
+                            &mut |from, to| cast(from, to, true),
                         )
                     }
                 } else {
@@ -388,9 +485,8 @@ unsafe fn run(owner: &Character, dt: f32) {
         let points = palm.probe_points();
         let mut contacts = [PointContact::Clear; PROBE_POINTS];
         for (k, point) in points.into_iter().enumerate() {
-            contacts[k] = state.probes[i][k].step(point, shoulders[i], &mut |from, to| {
-                cast(from, to, &probe_options)
-            });
+            contacts[k] =
+                state.probes[i][k].step(point, shoulders[i], &mut |from, to| cast(from, to, true));
         }
         let contact = HandContact::fold(&contacts);
         let world_velocity = body_rotation * velocity;
@@ -442,7 +538,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                     contact.press.map(|(hit, _)| hit),
                     standing_on,
                     &reach_tuning,
-                    &mut |from, to| cast(from, to, &reach_options),
+                    &mut |from, to| cast(from, to, false),
                     pickup::ReachObservations {
                         notes: &mut reach_notes[i],
                         rays: viewing.then(|| &mut rays[i]),
@@ -461,7 +557,7 @@ unsafe fn run(owner: &Character, dt: f32) {
                 &with_hit_vehicles(&door_vehicles, &hit_vehicles),
                 active.world_scale,
                 &config.doors,
-                &mut |from, to| cast(from, to, &reach_options),
+                &mut |from, to| cast(from, to, false),
                 doors::scan::HandleObservations {
                     notes: &mut reach_notes[i],
                     handles: viewing.then(|| &mut handles[i]),
@@ -568,17 +664,8 @@ unsafe fn run(owner: &Character, dt: f32) {
             }
         }
     }
-    // The doors the hands opened are kept even while nothing is held; with the pickup or the doors
-    // off, they get the game's own latch back.
-    let held_bodies: Vec<u32> = state.pickup.held.iter().flatten().map(|h| h.body).collect();
-    let hinges = HingeConfig {
-        enabled: pickup_on && config.doors.enabled && config.doors.hinge.enabled,
-        ..config.doors.hinge
-    };
-    // SAFETY: the simulation phase outside the physics step.
-    unsafe { doors::hinge::tick(dt, &held_bodies, &hinges, PICKUP.gravity_mps2) };
     declare_grips(&state.pickup, &hand_status, wrists, &mut |from, to| {
-        cast(from, to, &reach_options)
+        cast(from, to, false)
     });
     pressure_haptics(&hand_status);
     let push = push::combine(hand_status.map(|h| h.push), &PALMS);
@@ -644,7 +731,7 @@ fn with_hit_vehicles(near: &[NonZeroUsize], hit: &[NonZeroUsize]) -> Vec<NonZero
 /// where the fingers would close onto it: each finger's sweep casts with `cast` against the body,
 /// from the rendered wrist (`wrists`, moved as the rendered hand is to the grab point). An empty
 /// palm pressed on a surface is declared flat on it.
-fn declare_grips(
+pub(super) fn declare_grips(
     pickup: &pickup::PickupState,
     hands: &[HandStatus; 2],
     wrists: [Option<Pose>; 2],

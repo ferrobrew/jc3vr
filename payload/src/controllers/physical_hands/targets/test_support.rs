@@ -9,7 +9,7 @@ use crate::controllers::{
     physical_hands::{
         config::PhysicalHandsConfig,
         contact::PointProbe,
-        doors::DoorTarget,
+        doors::{DoorTarget, pressure::Press},
         grasp::{AngularTracker, Reach, TargetKind, VelocityTracker},
         palm::PROBE_POINTS,
         pickup::{HeldReport, PickupState, Request},
@@ -42,6 +42,8 @@ impl DoorProvider {
                 gives: [Give::new(); 2],
                 at: Some(now),
                 epoch: 1,
+                seated_vehicle: None,
+                door_press: [Press::new(); 2],
                 pickup: PickupState::new(),
                 reach_notes: [Vec::new(), Vec::new()],
             },
