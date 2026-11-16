@@ -210,7 +210,7 @@ pub(crate) fn before_render_states() {
 /// Override the flushed rasterizer without changing the engine's staged state key.
 pub(crate) fn after_render_states() {
     if PER_EYE.get().is_some_and(|state| state.masked) {
-        with_immediate_context(scissor::apply);
+        with_immediate_context(scissor::reapply);
     }
 }
 
