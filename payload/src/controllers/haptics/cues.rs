@@ -110,6 +110,7 @@ pub enum Event {
     LetGo,
     /// A door's latch giving under the hand.
     Unlatch,
+    DoorPressureContact,
     // Weapons.
     /// A weapon's fire rumble, on the hand whose gun fired: the game sets the strength and length.
     Shot,
@@ -250,12 +251,13 @@ pub enum Event {
 
 impl Event {
     #[cfg(test)]
-    pub const ALL: [Event; 68] = [
+    pub const ALL: [Event; 69] = [
         Event::PalmTouch,
         Event::HandStrike,
         Event::Take,
         Event::LetGo,
         Event::Unlatch,
+        Event::DoorPressureContact,
         Event::Shot,
         Event::Kick,
         Event::DryFire,
@@ -329,6 +331,7 @@ impl Event {
             Event::Take => Cue::new(Primitive::Bump, 0.6, Category::Contact),
             Event::LetGo => Cue::new(Primitive::Click, 0.25, Category::Contact),
             Event::Unlatch => Cue::new(Primitive::Bump, 0.9, Category::Contact),
+            Event::DoorPressureContact => Cue::new(Primitive::Tick, 0.2, Category::Contact),
             Event::Shot => Cue::new(Primitive::Thud, 1.0, Category::Weapons),
             Event::Kick => Cue::new(Primitive::Bump, 1.0, Category::Weapons),
             Event::DryFire => Cue::new(Primitive::Click, 0.4, Category::Weapons),
@@ -413,6 +416,7 @@ impl Event {
             Event::Take => "take hold",
             Event::LetGo => "let go",
             Event::Unlatch => "unlatch",
+            Event::DoorPressureContact => "door pressure contact",
             Event::Shot => "shot",
             Event::Kick => "recoil kick",
             Event::DryFire => "dry fire",
@@ -554,6 +558,17 @@ mod tests {
     use std::collections::HashSet;
 
     use super::*;
+
+    #[test]
+    fn door_pressure_contact_is_a_subtle_one_shot_distinct_from_unlatch() {
+        let contact = Event::DoorPressureContact.cue();
+        let unlatch = Event::Unlatch.cue();
+        assert!(!contact.primitive.is_sustained());
+        assert_eq!(contact.primitive, Primitive::Tick);
+        assert_eq!(contact.length, Length::Normal);
+        assert!(contact.strength < unlatch.strength);
+        assert_ne!(contact.primitive, unlatch.primitive);
+    }
 
     #[test]
     fn every_event_plays_once_and_every_sustain_follows_a_level() {

@@ -34,7 +34,7 @@ use crate::{
         },
         frame::{Hand, Pose},
         hands::{self, tiers},
-        haptics::{self, Event},
+        haptics::{self, Event, Sustain},
         loadout::{ItemKind, live},
         mode::{self, AirborneVariant, Detection, Mode, OnFootVariant},
         physical_hands::{
@@ -354,17 +354,19 @@ unsafe fn run(owner: &Character, dt: f32) {
             };
             continue;
         }
-        let pressure_hit = (pickup_on && config.doors.enabled)
-            .then(|| {
-                palm.probe_points()
-                    .into_iter()
-                    .filter_map(|point| cast(shoulders[i], point, false))
-                    .find(|hit| {
-                        hit.position.distance(palm.centre)
-                            <= doors::pressure::REACH_M * active.world_scale
-                    })
-            })
-            .flatten();
+        let pressure_hit = if pickup_on && config.doors.enabled {
+            match unsafe { doors::pressure::probe(shoulders[i], &palm, &reach_options) } {
+                Ok(probe) => state.door_press[i].observe_probe(probe),
+                Err(why) => {
+                    state.door_press[i].reset();
+                    state.status.last_error = Some(why.to_string());
+                    None
+                }
+            }
+        } else {
+            state.door_press[i].reset();
+            None
+        };
         let pressure_reach = pressure_hit.and_then(|hit| {
             let Surface::Solid {
                 object: Some(object),
@@ -385,14 +387,18 @@ unsafe fn run(owner: &Character, dt: f32) {
             }
         });
         let pressure_result = unsafe {
-            state.door_press[i].step(
-                pressure_reach,
-                pressure_hit,
-                palm.centre,
+            state.door_press[i].step(doors::pressure::Input {
+                reach: pressure_reach,
+                hit: pressure_hit,
+                palm: palm.centre,
                 dt,
-                active.world_scale,
-            )
+                world_scale: active.world_scale,
+                options: &reach_options,
+            })
         };
+        if state.door_press[i].take_contact_cue() {
+            haptics::play(hand, Event::DoorPressureContact);
+        }
         match pressure_result {
             Ok(Some(slot)) => {
                 state.status.pickup.unlatches += 1;
@@ -667,7 +673,15 @@ unsafe fn run(owner: &Character, dt: f32) {
     declare_grips(&state.pickup, &hand_status, wrists, &mut |from, to| {
         cast(from, to, false)
     });
-    pressure_haptics(&hand_status);
+    let mut pressure_status = hand_status;
+    for hand in Hand::BOTH {
+        if state.door_press[hand.index()].engaged() {
+            haptics::cancel_sustain(hand, Sustain::BodyPressure);
+            haptics::cancel_sustain(hand, Sustain::PalmPressure);
+            pressure_status[hand.index()].shove = None;
+        }
+    }
+    pressure_haptics(&pressure_status);
     let push = push::combine(hand_status.map(|h| h.push), &PALMS);
     for touch in touches {
         // SAFETY: forwarded from the caller; the touches' objects were found by this tick's casts.

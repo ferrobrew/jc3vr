@@ -100,6 +100,10 @@ pub fn sustain(hand: Hand, source: Sustain, level: f32) {
     MIXER.lock().sustain(hand, sustained, Instant::now());
 }
 
+pub(crate) fn cancel_sustain(hand: Hand, source: Sustain) {
+    MIXER.lock().cancel_sustain(hand, source);
+}
+
 /// Play a weapon's fire rumble on `hand` as [`Event::Shot`], at the amplitude and for the length
 /// the game's rumble sets.
 pub(crate) fn play_shot(hand: Hand, amplitude: f32, duration_s: f32) {

@@ -161,7 +161,15 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
                     .distance_squared(a.position)
                     .total_cmp(&palm.centre.distance_squared(b.position))
             });
-        let pressure_panel = contact_hit.and_then(|hit| unsafe {
+        let pressure_hit = match unsafe { doors::pressure::probe(shoulders[i], &palm, &options) } {
+            Ok(probe) => state.door_press[i].observe_probe(probe),
+            Err(why) => {
+                state.door_press[i].reset();
+                state.status.pickup.last_error = Some(why.to_string());
+                None
+            }
+        };
+        let pressure_panel = pressure_hit.and_then(|hit| unsafe {
             panel_reach_with(
                 vehicle,
                 hit,
@@ -182,13 +190,14 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
             )
         });
         match unsafe {
-            state.door_press[i].step(
-                pressure_panel,
-                contact_hit,
-                palm.centre,
+            state.door_press[i].step(doors::pressure::Input {
+                reach: pressure_panel,
+                hit: pressure_hit,
+                palm: palm.centre,
                 dt,
-                active.world_scale,
-            )
+                world_scale: active.world_scale,
+                options: &options,
+            })
         } {
             Ok(Some(slot)) => {
                 state.status.pickup.unlatches += 1;
@@ -197,6 +206,9 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
             }
             Ok(None) => {}
             Err(why) => state.status.pickup.last_error = Some(why.to_string()),
+        }
+        if state.door_press[i].take_contact_cue() {
+            haptics::play(hand, Event::DoorPressureContact);
         }
         let mut reaches: Vec<Reach> = panel.into_iter().collect();
         let origin = palm.point(Vec3::Y);

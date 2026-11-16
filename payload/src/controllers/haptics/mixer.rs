@@ -126,8 +126,8 @@ impl Mixer {
 
     /// Set a sustained source's level on `hand`, holding from `now`. A level of zero ends it.
     pub fn sustain(&mut self, hand: Hand, sustained: Sustained, now: Instant) {
+        self.cancel_sustain(hand, sustained.source);
         let held = &mut self.hands[hand.index()].held;
-        held.retain(|h| h.source != sustained.source);
         if sustained.amplitude > MIN_AMPLITUDE && !sustained.hold.is_zero() {
             held.push(Held {
                 source: sustained.source,
@@ -155,6 +155,10 @@ impl Mixer {
             hand.held.clear();
             hand.playing = None;
         }
+    }
+
+    pub(crate) fn cancel_sustain(&mut self, hand: Hand, source: Sustain) {
+        self.hands[hand.index()].held.retain(|h| h.source != source);
     }
 
     pub fn stats(&self) -> MixStats {
@@ -405,6 +409,53 @@ mod tests {
         mixer.sustain(Hand::Left, sustained(Sustain::GameRumble, 0.5), t0);
         mixer.sustain(Hand::Left, sustained(Sustain::GameRumble, 0.0), t0);
         assert_eq!(mixer.mix(t0, &CONFIG)[0], None);
+    }
+
+    #[test]
+    fn cancelling_contact_sustains_removes_fresh_and_stale_entries_only_for_the_owned_hand() {
+        for owned in Hand::BOTH {
+            let mut mixer = Mixer::new();
+            let t0 = Instant::now();
+            for hand in Hand::BOTH {
+                mixer.sustain(hand, sustained(Sustain::PalmPressure, 0.2), t0);
+                mixer.sustain(hand, sustained(Sustain::BodyPressure, 0.2), t0 + ms(50));
+                mixer.sustain(hand, sustained(Sustain::HeldLoad, 0.1), t0);
+            }
+            mixer.cancel_sustain(owned, Sustain::BodyPressure);
+            mixer.cancel_sustain(owned, Sustain::PalmPressure);
+            let out = mixer.mix(t0 + ms(50), &CONFIG);
+            assert_eq!(out[owned.index()].unwrap().amplitude, 0.1);
+            let expected = soft_limit(0.5, CONFIG.sustain_knee, CONFIG.sustain_ceiling);
+            assert!((out[owned.other().index()].unwrap().amplitude - expected).abs() < 1e-6);
+            assert_eq!(mixer.mix(t0 + ms(151), &CONFIG), [None; 2]);
+        }
+    }
+
+    #[test]
+    fn cancelling_a_sustain_preserves_queued_and_playing_cues() {
+        let mut mixer = Mixer::new();
+        let mut expected = Mixer::new();
+        let t0 = Instant::now();
+        for mixer in [&mut mixer, &mut expected] {
+            mixer.transient(Hand::Left, transient(0.4, 40, 2));
+            mixer.mix(t0, &CONFIG);
+            mixer.transient(Hand::Right, transient(0.3, 20, 1));
+        }
+        mixer.sustain(Hand::Left, sustained(Sustain::BodyPressure, 0.2), t0);
+        mixer.sustain(Hand::Right, sustained(Sustain::PalmPressure, 0.2), t0);
+        mixer.cancel_sustain(Hand::Left, Sustain::BodyPressure);
+        mixer.cancel_sustain(Hand::Right, Sustain::PalmPressure);
+        assert_eq!(
+            mixer.mix(t0 + ms(10), &CONFIG),
+            expected.mix(t0 + ms(10), &CONFIG)
+        );
+        mixer.transient(Hand::Left, transient(0.2, 8, 0));
+        expected.transient(Hand::Left, transient(0.2, 8, 0));
+        assert_eq!(
+            mixer.mix(t0 + ms(20), &CONFIG),
+            expected.mix(t0 + ms(20), &CONFIG)
+        );
+        assert_eq!(mixer.stats(), expected.stats());
     }
 
     #[test]

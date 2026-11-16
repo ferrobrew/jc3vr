@@ -58,8 +58,9 @@ impl State {
             velocity,
         } = touch;
         let impact = impact_speed(velocity, hit.normal);
-        let share = (impact / PALMS.full_hit_speed_mps.max(1e-3)).clamp(0.0, 1.0);
-        haptics::play_scaled(hand, Event::PalmTouch, 0.25 + 0.75 * share);
+        if let Some(scale) = touch_haptic_scale(impact, self.door_press[hand.index()].engaged()) {
+            haptics::play_scaled(hand, Event::PalmTouch, scale);
+        }
         let material = match hit.surface {
             Surface::Character { .. } => sounds::strike_material(true),
             Surface::Solid { .. } => hit
@@ -205,9 +206,45 @@ pub fn impact_speed(velocity: Vec3, normal: Vec3) -> f32 {
 /// The least load that pulses a hand: a tenth of its strength.
 const MIN_PRESSURE_LOAD: f32 = 0.1;
 
+fn touch_haptic_scale(impact: f32, pressure_owned: bool) -> Option<f32> {
+    if pressure_owned {
+        return None;
+    }
+    let share = (impact / PALMS.full_hit_speed_mps.max(1e-3)).clamp(0.0, 1.0);
+    Some(0.25 + 0.75 * share)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pressure_ownership_suppresses_only_that_hands_touch_cue() {
+        for owned in Hand::BOTH {
+            for speed in [
+                0.0,
+                PALMS.full_hit_speed_mps * 0.5,
+                PALMS.full_hit_speed_mps * 2.0,
+            ] {
+                let cues = Hand::BOTH.map(|hand| touch_haptic_scale(speed, hand == owned));
+                assert_eq!(cues[owned.index()], None);
+                assert_eq!(
+                    cues[owned.other().index()],
+                    touch_haptic_scale(speed, false)
+                );
+                assert!(cues[owned.other().index()].is_some());
+            }
+        }
+        assert_eq!(touch_haptic_scale(0.0, false), Some(0.25));
+        assert_eq!(
+            touch_haptic_scale(PALMS.full_hit_speed_mps * 0.5, false),
+            Some(0.625)
+        );
+        assert_eq!(
+            touch_haptic_scale(PALMS.full_hit_speed_mps * 2.0, false),
+            Some(1.0)
+        );
+    }
 
     #[test]
     fn strength_ramps_between_the_speeds() {
