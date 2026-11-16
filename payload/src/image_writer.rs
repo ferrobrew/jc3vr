@@ -317,7 +317,7 @@ fn write_job(mut target: ImageTarget, image: Image) -> WriteOutcome {
             let raw = matches!(&stage.artifact, StageArtifact::Raw(_));
             let extension = match (&stage.artifact, record.stage) {
                 (StageArtifact::Png(_), _) => "png",
-                (StageArtifact::Raw(_), Stage::MainColor) => "r11g11b10",
+                (StageArtifact::Raw(_), stage) if stage.is_hdr() => "r11g11b10",
                 (StageArtifact::Raw(_), _) => "raw",
             };
             let stage_path = path.with_file_name(format!(
@@ -351,6 +351,8 @@ fn stage_name(stage: Stage) -> &'static str {
         Stage::GBuffer2 => "gbuffer2",
         Stage::GBuffer3 => "gbuffer3",
         Stage::MainColor => "maincolor",
+        Stage::PreAtmosphere => "pre_atmosphere",
+        Stage::PostAtmosphere => "post_atmosphere",
         Stage::PreAa => "pre_aa",
         Stage::PostAa => "post_aa",
     }
@@ -660,6 +662,57 @@ mod tests {
             sidecar["stages"],
             serde_json::to_value(outcome.stages).unwrap()
         );
+    }
+
+    #[test]
+    fn hdr_stage_names_and_extensions_cover_every_hdr_stage() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("writer-test.capture.png");
+        let mut metadata = test_metadata();
+        let mut capture = test_capture(&path);
+        let template = capture.stages[0].clone();
+        let stages = [
+            (Stage::MainColor, "maincolor"),
+            (Stage::PreAtmosphere, "pre_atmosphere"),
+            (Stage::PostAtmosphere, "post_atmosphere"),
+        ];
+        capture.stages = stages
+            .into_iter()
+            .map(|(stage, name)| {
+                assert_eq!(stage_name(stage), name);
+                assert!(stage.is_hdr());
+                let mut record = template.clone();
+                record.stage = stage;
+                record
+            })
+            .collect();
+        metadata.capture = Some(capture);
+        let images = stages
+            .into_iter()
+            .enumerate()
+            .map(|(record, _)| StageImage {
+                record,
+                artifact: StageArtifact::Raw(vec![0; 4]),
+            })
+            .collect();
+        let outcome = write_job(
+            ImageTarget::HarnessScreenshot {
+                path: path.clone(),
+                sidecar: Box::new(metadata),
+                stages: images,
+            },
+            test_image(),
+        );
+        assert_eq!(outcome.result, Ok(path));
+        for (record, (_, name)) in outcome.stages.iter().zip(stages) {
+            let raw_path = directory
+                .0
+                .join(format!("writer-test.{name}.eye0.r11g11b10"));
+            assert_eq!(record.raw.as_ref(), Some(&raw_path));
+            assert!(raw_path.is_file());
+            assert!(record.png.is_none());
+            assert!(record.error.is_none());
+        }
     }
 
     fn test_capture(path: &std::path::Path) -> crate::screenshot::harness::types::CapturedFrame {

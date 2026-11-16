@@ -56,8 +56,19 @@ pub(crate) enum Stage {
     #[serde(rename = "gbuffer3")]
     GBuffer3,
     MainColor,
+    PreAtmosphere,
+    PostAtmosphere,
     PreAa,
     PostAa,
+}
+
+impl Stage {
+    pub(crate) fn is_hdr(self) -> bool {
+        matches!(
+            self,
+            Self::MainColor | Self::PreAtmosphere | Self::PostAtmosphere
+        )
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -126,12 +137,15 @@ pub(crate) fn capture_geometry() {
 }
 
 pub(crate) fn capture_main_color() {
-    capture(Stage::MainColor, || {
-        // SAFETY: the post-chain hook runs on the render thread with live engine textures.
-        unsafe { GraphicsEngine::get() }
-            .map(|ge| ge.m_MainColorBuffer)
-            .context("MainColor unavailable")
-    });
+    capture_hdr(HdrStage::MainColor);
+}
+
+pub(crate) fn capture_before_atmosphere() {
+    capture_hdr(HdrStage::PreAtmosphere);
+}
+
+pub(crate) fn capture_after_atmosphere() {
+    capture_hdr(HdrStage::PostAtmosphere);
 }
 
 pub(crate) fn capture_slot(stage: Stage, mgr: *mut c_void, slot: u32) {
@@ -168,6 +182,32 @@ pub(crate) fn take(frame: i64) -> (Vec<StageRecord>, Vec<StageImage>) {
         std::mem::take(&mut state.records),
         std::mem::take(&mut state.images),
     )
+}
+
+#[derive(Debug, Clone, Copy)]
+enum HdrStage {
+    MainColor,
+    PreAtmosphere,
+    PostAtmosphere,
+}
+
+impl HdrStage {
+    fn stage(self) -> Stage {
+        match self {
+            Self::MainColor => Stage::MainColor,
+            Self::PreAtmosphere => Stage::PreAtmosphere,
+            Self::PostAtmosphere => Stage::PostAtmosphere,
+        }
+    }
+}
+
+fn capture_hdr(stage: HdrStage) {
+    capture(stage.stage(), || {
+        // SAFETY: the render hook runs on the render thread with live engine textures.
+        unsafe { GraphicsEngine::get() }
+            .map(|ge| ge.m_MainColorBuffer)
+            .context("MainColor unavailable")
+    });
 }
 
 #[derive(Default)]
@@ -410,8 +450,8 @@ fn stage_image(
     desc: &D3D11_TEXTURE2D_DESC,
 ) -> anyhow::Result<StageArtifact> {
     if !matches!(stage, Stage::PreAa | Stage::PostAa) {
-        if stage == Stage::MainColor && desc.Format != DXGI_FORMAT_R11G11B10_FLOAT {
-            bail!("unsupported MainColor raw format {:?}", desc.Format);
+        if stage.is_hdr() && desc.Format != DXGI_FORMAT_R11G11B10_FLOAT {
+            bail!("unsupported {stage:?} raw format {:?}", desc.Format);
         }
         let pixel_bytes = format_byte_width(desc.Format)
             .with_context(|| format!("unsupported stage raw format {:?}", desc.Format))?;
@@ -582,14 +622,39 @@ mod tests {
             ..Default::default()
         };
         let bytes: Vec<u8> = (0..24).collect();
-        let StageArtifact::Raw(packed) = stage_image(Stage::MainColor, &bytes, 12, &desc).unwrap()
-        else {
-            panic!("expected raw HDR");
+        let wrong_format = D3D11_TEXTURE2D_DESC {
+            Format: DXGI_FORMAT_R16G16B16A16_FLOAT,
+            ..desc
         };
-        assert_eq!(packed, [&bytes[..8], &bytes[12..20]].concat());
-        assert!(stage_image(Stage::MainColor, &bytes[..19], 12, &desc).is_err());
-        assert!(stage_image(Stage::MainColor, &bytes, 4, &desc).is_err());
+        for stage in [
+            Stage::MainColor,
+            Stage::PreAtmosphere,
+            Stage::PostAtmosphere,
+        ] {
+            let StageArtifact::Raw(packed) = stage_image(stage, &bytes, 12, &desc).unwrap() else {
+                panic!("expected raw HDR");
+            };
+            assert_eq!(packed, [&bytes[..8], &bytes[12..20]].concat());
+            assert!(stage_image(stage, &bytes[..19], 12, &desc).is_err());
+            assert!(stage_image(stage, &bytes, 4, &desc).is_err());
+            assert!(stage_image(stage, &bytes, 12, &wrong_format).is_err());
+        }
         assert!(stage_image(Stage::PreAa, &bytes, 12, &desc).is_err());
+    }
+
+    #[test]
+    fn atmosphere_stages_serialize_as_snake_case_and_are_hdr() {
+        for (stage, name) in [
+            (Stage::MainColor, "main_color"),
+            (Stage::PreAtmosphere, "pre_atmosphere"),
+            (Stage::PostAtmosphere, "post_atmosphere"),
+        ] {
+            assert_eq!(serde_json::to_value(stage).unwrap(), name);
+            assert!(stage.is_hdr());
+        }
+        for stage in [Stage::GeometryDepth, Stage::PreAa, Stage::PostAa] {
+            assert!(!stage.is_hdr());
+        }
     }
 
     #[test]
