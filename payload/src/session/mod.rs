@@ -27,7 +27,7 @@
 //! same layout is described for readers of the output in `docs/mod/sessions.md`.
 
 mod root;
-mod wine;
+pub(crate) mod wine;
 
 use std::{
     path::{Path, PathBuf},
