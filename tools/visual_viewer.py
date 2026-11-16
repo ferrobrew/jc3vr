@@ -155,6 +155,13 @@ def publish_run(output: Path, pointer: Path = DEFAULT_POINTER, *,
     return _publish_run(output, pointer, started_at=started_at)
 
 
+def read_capture_json(path: Path) -> dict[str, object]:
+    wire = json.loads(_read_bounded(path, MAX_CAPTURE_JSON_BYTES))
+    if not isinstance(wire, dict):
+        raise ViewerError("visual viewer: expected a JSON object")
+    return wire
+
+
 class ViewerState:
     def __init__(self, run: Path | None = None, pointer: Path = DEFAULT_POINTER):
         self.run = Path(run).expanduser().resolve() if run is not None else None
@@ -219,7 +226,7 @@ class ViewerState:
                 last_error = None
                 for _, candidate_id, path in _acknowledgements(folder):
                     try:
-                        wire = _read_json(path)
+                        wire = read_capture_json(path)
                         if wire.get("state") != "completed":
                             continue
                         ack = acknowledgement_from_wire(wire, Command.SCREENSHOT, candidate_id)
@@ -330,6 +337,7 @@ def main(argv=None):
 
 
 LOG = logging.getLogger("visual_viewer")
+MAX_CAPTURE_JSON_BYTES = 2 * 1024 * 1024
 MAX_PNG_BYTES = 128 * 1024 * 1024
 MAX_DECODED_BYTES = 256 * 1024 * 1024
 MAX_CACHE_BYTES = 256 * 1024 * 1024

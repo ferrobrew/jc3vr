@@ -15,6 +15,7 @@ from tools.test_visual_suite import capture_wire, native_capture_wire, png
 from tools.visual_protocol import Capture, Mode, RunOutcome
 from tools.visual_viewer import (
     DEFAULT_POINTER,
+    MAX_CAPTURE_JSON_BYTES,
     PAGE,
     SCRIPT,
     RunPointer,
@@ -26,6 +27,7 @@ from tools.visual_viewer import (
     create_server,
     main,
     publish_run,
+    read_capture_json,
 )
 from tools.visual_viewer_history import (
     MAX_JSON_BYTES,
@@ -123,6 +125,50 @@ class ViewerTests(unittest.TestCase):
         self.assertEqual(first.preview.capture.id, "first")
         self.capture(Mode.MULTIPASS, "next", ordinal=2)
         self.assertEqual(self.viewer.snapshot().preview.capture.id, "next")
+
+    def test_large_completed_capture_acknowledgements_are_accepted(self):
+        self.capture(Mode.RIGHT_ONLY, "old", ordinal=1)
+        for ordinal, (mode, size) in enumerate(((Mode.MULTIPASS, 284 * 1024),
+                                               (Mode.SINGLE_PASS, 347 * 1024),
+                                               (Mode.MULTIPASS, MAX_CAPTURE_JSON_BYTES)), start=2):
+            with self.subTest(mode=mode, size=size):
+                wire = self.capture(mode, "large", ordinal=ordinal)
+                wire["diagnostic"] = ""
+                wire["diagnostic"] = "x" * (size - len(json.dumps(wire).encode("utf-8")))
+                ack = self.folder / "large.json"
+                ack.write_text(json.dumps(wire))
+                self.assertGreater(ack.stat().st_size, MAX_JSON_BYTES)
+                self.assertEqual(ack.stat().st_size, size)
+                self.assertEqual(read_capture_json(ack), wire)
+                snapshot = self.viewer.snapshot()
+                self.assertIs(snapshot.state, SnapshotState.READY, snapshot.error)
+                self.assertEqual(snapshot.preview.capture.id, "large")
+                self.assertEqual(snapshot.preview.capture.mode, mode)
+                self.assertEqual(snapshot.preview.capture.frame_ordinal, ordinal)
+
+    def test_oversized_capture_acknowledgement_falls_back(self):
+        self.capture(Mode.RIGHT_ONLY, "old", ordinal=1)
+        previous = self.viewer.snapshot()
+        wire = self.capture(Mode.MULTIPASS, "oversized", ordinal=2)
+        wire["diagnostic"] = ""
+        wire["diagnostic"] = "x" * (MAX_CAPTURE_JSON_BYTES + 1 - len(json.dumps(wire).encode("utf-8")))
+        ack = self.folder / "oversized.json"
+        ack.write_text(json.dumps(wire))
+        self.assertEqual(ack.stat().st_size, MAX_CAPTURE_JSON_BYTES + 1)
+        with self.assertRaises(ViewerError):
+            read_capture_json(ack)
+        snapshot = self.viewer.snapshot()
+        self.assertIs(snapshot.state, SnapshotState.READY, snapshot.error)
+        self.assertEqual(snapshot.preview, previous.preview)
+        self.assertEqual(snapshot.preview.capture.id, "old")
+
+    def test_capture_json_requires_an_object(self):
+        ack = self.folder / "invalid.json"
+        for wire in ([], None, "completed", 1, True):
+            with self.subTest(wire=wire):
+                ack.write_text(json.dumps(wire))
+                with self.assertRaisesRegex(ViewerError, "expected a JSON object"):
+                    read_capture_json(ack)
 
     def test_frame_ordinal_wins_over_mtime_and_invalid_newest_falls_back(self):
         self.capture(Mode.LEFT_ONLY, "old", ordinal=1)
