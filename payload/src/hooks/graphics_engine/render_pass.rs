@@ -29,6 +29,7 @@ use crate::{
         stereo_diff::{op_total, record_pass, recording},
         trace::{TraceEvent, TraceState, tracing_active},
     },
+    hooks::graphics_engine::screen::reconstruction,
     stereo::{STEREO_STATE, draw_index, is_second_eye},
     vr::foveation::{FORCE_STENCIL_TEST, FoveationParams},
 };
@@ -423,7 +424,9 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
 fn setup_render_states(context: *mut HContext_t, a2: *mut c_void) {
     // SAFETY: `context` is the live render context the game passed to its own state flush.
     unsafe { crate::vr::foveation::apply_force_test(context) };
+    reconstruction::before_render_states();
     SETUP_RENDER_STATES.get().unwrap().call(context, a2);
+    reconstruction::after_render_states();
 }
 
 // ShadowManager::UpdateRender -- the sim-side sun-shadow update, which fits the scheduled cascades to

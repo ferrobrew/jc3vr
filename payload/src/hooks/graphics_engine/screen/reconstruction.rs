@@ -48,14 +48,11 @@ use std::{
 };
 
 use detours_macro::detour;
-use jc3gi::{
-    graphics_engine::{draw::SetScissorEnable, graphics_engine::HContext_t},
-    types::math::Matrix4,
-};
+use jc3gi::{graphics_engine::graphics_engine::HContext_t, types::math::Matrix4};
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{
     Foundation::RECT,
-    Graphics::Direct3D11::{D3D11_RASTERIZER_DESC, D3D11_VIEWPORT, ID3D11DeviceContext},
+    Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext},
 };
 
 use crate::{
@@ -64,6 +61,8 @@ use crate::{
     stereo::engine_context::EngineContext,
     vr::render_params,
 };
+
+mod scissor;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&PERSPECTIVE_FOV_INVERSE_BINDER)
@@ -94,7 +93,7 @@ pub(super) fn hook_library() -> HookLibrary {
 pub(super) fn enter_per_eye_half_with(
     arming: MaskArming,
     eye: usize,
-    ctx: *mut HContext_t,
+    _ctx: *mut HContext_t,
 ) -> PerEyeHalf {
     let saved = with_immediate_context(|d3d| {
         let mut count = 2u32;
@@ -104,12 +103,10 @@ pub(super) fn enter_per_eye_half_with(
         SavedScissor {
             rects,
             count: bound_scissor_count(&rects, count),
-            enable: current_scissor_enable(d3d),
         }
     });
     let state = PerEyeState {
         eye,
-        ctx,
         arming,
         masked: false,
         saved_scissor: saved,
@@ -201,6 +198,20 @@ pub(crate) fn dispatch_suppressed() -> bool {
         DispatchPhase::FirstRun => gate.run != 0,
         DispatchPhase::LastRun => gate.run + 1 != gate.runs,
     })
+}
+
+/// Remove the D3D override before the engine flushes its staged render states.
+pub(crate) fn before_render_states() {
+    if PER_EYE.get().is_some_and(|state| state.masked) {
+        with_immediate_context(scissor::restore);
+    }
+}
+
+/// Override the flushed rasterizer without changing the engine's staged state key.
+pub(crate) fn after_render_states() {
+    if PER_EYE.get().is_some_and(|state| state.masked) {
+        with_immediate_context(scissor::apply);
+    }
 }
 
 /// Re-derive an [`MaskArming::AtEntry`] mask from the render target that was just bound on this
@@ -364,17 +375,7 @@ impl Drop for PerEyeHalf {
         if let Some(state) = PER_EYE.replace(None)
             && state.masked
         {
-            // Restore the bit that was actually there, not an unconditional `false`: arming the mask
-            // always turns scissor on, but the pass it interrupted may have had it on already for its own
-            // reasons (a masked post pass, a clipped UI draw), and a bare disable would silently carry
-            // that change into the rest of the frame instead of undoing only what this guard did.
-            // `saved_scissor` is `None` only when the immediate context could not be reached at capture,
-            // in which case nothing is known to restore and `false` is what this unconditionally did
-            // before the bit was tracked.
-            let enable = state.saved_scissor.is_some_and(|saved| saved.enable);
-            // SAFETY: `ctx` is the graphics context the detoured `Draw` was running on, live for the
-            // duration of the guard.
-            unsafe { SetScissorEnable(state.ctx, enable) };
+            with_immediate_context(scissor::restore);
             if let Some(saved) = state.saved_scissor {
                 with_immediate_context(|d3d| {
                     if saved.count > 0 {
@@ -494,9 +495,6 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
 struct PerEyeState {
     /// The eye this run renders.
     eye: usize,
-    /// The graphics context the run's draws are issued on, whose rasterizer-state key carries the
-    /// scissor-enable bit.
-    ctx: *mut HContext_t,
     /// When this run raises its mask, and whether the mask follows the pass onto its own targets.
     arming: MaskArming,
     /// Whether the mask was actually applied; see [`PerEyeHalf::masked`].
@@ -514,8 +512,6 @@ struct SavedScissor {
     rects: [RECT; 2],
     /// How many leading slots of `rects` were actually bound; see [`bound_scissor_count`].
     count: u32,
-    /// Whether scissor testing was enabled.
-    enable: bool,
 }
 
 /// How many runs a per-eye split makes: one per eye half of the double-wide collapse target.
@@ -586,7 +582,7 @@ fn half_target_remap(eye: usize) -> glam::Mat4 {
 }
 
 /// Clip the rest of this per-eye run to `state.eye`'s half of the bound target, by setting both
-/// scissor rectangles to that half and raising the context's scissor-enable bit. Reports whether the
+/// scissor rectangles to that half and overriding the bound D3D rasterizer state. Reports whether the
 /// mask was applied; it is not when the immediate context is unreachable, nor -- under
 /// [`MaskArming::OnReconstruction`] -- when the bound viewport is not the double-wide scene target
 /// (a reduced-resolution or auxiliary pass, which must be left alone).
@@ -620,17 +616,13 @@ fn arm_eye_half_scissor(state: &PerEyeState) -> bool {
             return false;
         }
     }
-    if set_eye_half_scissor(full, state.eye).is_none() {
+    if with_immediate_context(scissor::apply) != Some(true) {
         return false;
     }
-    // `SetScissorEnable` is a pyxis-generated binding to the engine's own function, not a D3D11 API
-    // method: it writes the context's rasterizer-state key field (`ctx->m_RasterizerStateKey`)
-    // directly rather than issuing `RSSetScissorEnable`. The render thread owns the context at this
-    // point -- the detour runs inside a `Draw` that the engine dispatched on it -- so there is no
-    // race with an engine state flush. Routing it through `with_immediate_context` would add a
-    // critical-section acquire on every per-draw call for no safety benefit.
-    // SAFETY: `ctx` is the graphics context the bracketed pass draws on, live for the guard's scope.
-    unsafe { SetScissorEnable(state.ctx, true) };
+    if set_eye_half_scissor(full, state.eye).is_none() {
+        with_immediate_context(scissor::restore);
+        return false;
+    }
     PER_EYE.set(Some(PerEyeState {
         masked: true,
         ..*state
@@ -682,23 +674,6 @@ fn bound_scissor_count(rects: &[RECT; 2], reported: u32) -> u32 {
         .take(reported.min(2) as usize)
         .take_while(|r| r.right > r.left && r.bottom > r.top)
         .count() as u32
-}
-
-/// Whether scissor testing is enabled in the rasterizer state currently bound on the immediate context.
-///
-/// [`RSGetState`](ID3D11DeviceContext::RSGetState) reports no object at all (rather than a real one) only
-/// when nothing has ever been explicitly bound, which is exactly the D3D11 default rasterizer state --
-/// whose `ScissorEnable` is `FALSE` -- so that case folds into the same answer a bound state would give
-/// if it matched the default.
-fn current_scissor_enable(d3d: &ID3D11DeviceContext) -> bool {
-    // SAFETY: `d3d` is the live immediate context.
-    let Ok(state) = (unsafe { d3d.RSGetState() }) else {
-        return false;
-    };
-    let mut desc = D3D11_RASTERIZER_DESC::default();
-    // SAFETY: `desc` is a valid receiver for a rasterizer-state description.
-    unsafe { state.GetDesc(&mut desc) };
-    desc.ScissorEnable.as_bool()
 }
 
 /// The viewport bound on the immediate context, which is the space a scissor rectangle set now would
