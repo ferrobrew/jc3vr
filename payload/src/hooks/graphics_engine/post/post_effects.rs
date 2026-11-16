@@ -25,6 +25,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
+    screenshot::harness::stages::{self, Stage},
     stereo::{self, draw_index, far_phase, later_scene},
 };
 
@@ -117,6 +118,7 @@ fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mu
         return 0;
     }
     crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
+    stages::capture_main_color();
     RENDER_BLOCK_POST_EFFECTS_DRAW
         .get()
         .unwrap()
@@ -172,6 +174,8 @@ fn anti_aliasing_apply(
     mgr: *mut c_void,
     slot: *mut u32,
 ) -> u64 {
+    // SAFETY: the AA hook receives the current chain slot as a live in/out parameter.
+    stages::capture_slot(Stage::PreAa, mgr, unsafe { *slot });
     let force_smaa_1x = stereo::active();
     let fsr = Config::lock_query(|c| {
         c.fsr
@@ -202,6 +206,8 @@ fn anti_aliasing_apply(
         .get()
         .unwrap()
         .call(this, ctx, pec, mgr, slot);
+    // SAFETY: the AA result updates the same live slot parameter.
+    stages::capture_slot(Stage::PostAa, mgr, unsafe { *slot });
     if restore {
         unsafe { (*this).m_Mode = saved_mode };
     }

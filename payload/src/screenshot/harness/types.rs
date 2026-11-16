@@ -55,6 +55,7 @@ pub(crate) struct CapturedFrame {
     pub(crate) visual: VisualMetadata,
     pub(crate) comparison_inputs: ComparisonInputs,
     pub(crate) effective_config: Config,
+    pub(crate) stages: Vec<crate::screenshot::harness::stages::StageRecord>,
     pub(crate) single_pass: Option<FrameDiagnostics>,
 }
 

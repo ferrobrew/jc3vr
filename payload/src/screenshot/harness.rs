@@ -9,6 +9,7 @@ use std::{
 
 use anyhow::Context as _;
 use parking_lot::Mutex;
+pub(crate) mod stages;
 pub(crate) mod types;
 
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
@@ -209,6 +210,7 @@ pub(crate) fn capture(
         mode,
         visual,
         comparison_inputs,
+        stages: stages::take(frame.unwrap()),
         effective_config,
         single_pass: if mode == RenderMode::SinglePass {
             capture.diagnostics
