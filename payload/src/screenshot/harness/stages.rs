@@ -58,6 +58,7 @@ pub(crate) enum Stage {
     MainColor,
     PreAtmosphere,
     PostAtmosphere,
+    PostResolve,
     PreAa,
     PostAa,
 }
@@ -66,7 +67,7 @@ impl Stage {
     pub(crate) fn is_hdr(self) -> bool {
         matches!(
             self,
-            Self::MainColor | Self::PreAtmosphere | Self::PostAtmosphere
+            Self::MainColor | Self::PreAtmosphere | Self::PostAtmosphere | Self::PostResolve
         )
     }
 }
@@ -148,6 +149,10 @@ pub(crate) fn capture_after_atmosphere() {
     capture_hdr(HdrStage::PostAtmosphere);
 }
 
+pub(crate) fn capture_after_resolve() {
+    capture_hdr(HdrStage::PostResolve);
+}
+
 pub(crate) fn capture_slot(stage: Stage, mgr: *mut c_void, slot: u32) {
     capture(stage, || {
         if mgr.is_null() {
@@ -189,6 +194,7 @@ enum HdrStage {
     MainColor,
     PreAtmosphere,
     PostAtmosphere,
+    PostResolve,
 }
 
 impl HdrStage {
@@ -197,6 +203,7 @@ impl HdrStage {
             Self::MainColor => Stage::MainColor,
             Self::PreAtmosphere => Stage::PreAtmosphere,
             Self::PostAtmosphere => Stage::PostAtmosphere,
+            Self::PostResolve => Stage::PostResolve,
         }
     }
 }
@@ -630,6 +637,7 @@ mod tests {
             Stage::MainColor,
             Stage::PreAtmosphere,
             Stage::PostAtmosphere,
+            Stage::PostResolve,
         ] {
             let StageArtifact::Raw(packed) = stage_image(stage, &bytes, 12, &desc).unwrap() else {
                 panic!("expected raw HDR");
@@ -648,6 +656,7 @@ mod tests {
             (Stage::MainColor, "main_color"),
             (Stage::PreAtmosphere, "pre_atmosphere"),
             (Stage::PostAtmosphere, "post_atmosphere"),
+            (Stage::PostResolve, "post_resolve"),
         ] {
             assert_eq!(serde_json::to_value(stage).unwrap(), name);
             assert!(stage.is_hdr());

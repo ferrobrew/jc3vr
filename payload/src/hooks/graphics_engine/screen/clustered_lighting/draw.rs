@@ -8,6 +8,7 @@ use detours_macro::detour;
 use jc3gi::graphics_engine::{
     graphics_engine::{HTexture_t, RenderContext},
     render_block::RenderBlockDeferredLighting,
+    render_engine::RenderPassId,
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -112,6 +113,12 @@ fn draw_clustered(
                 decline_split_for_context(ctx as usize);
             }
         }
+    }
+
+    if unsafe { rc.as_ref() }
+        .is_some_and(|rc| rc.m_ActiveRenderPass == RenderPassId::RP_DEFERRED_LIGHTS as i32)
+    {
+        crate::screenshot::harness::stages::capture_after_resolve();
     }
 
     crate::debug::pipeline_probes::record_main_color_mean("post_resolve");
