@@ -84,6 +84,14 @@ The settings are `physical_hands.doors`, in the debug UI's Characters and doors 
 
 A hold of a door that ends other than by the grip opening logs `physical hands: pickup: a hold was lost` with the reason: the door latched shut or broke off (its body went away), the door or its vehicle is no longer the one gripped, the hand's joint to it ended, it was torn from the hand, or the hand stopped acting ([physical-hands.md](physical-hands.md#picking-things-up)). The log has, at info level, `physical hands: doors: a hand gripped a latched door` with the hand, slot, and part, `the latch gave, and the hand holds the door` with the door's body and whether it is joined, and `a grip on a latched door was lost` with the reason.
 
+## Canopy audio investigation
+
+Automatic outside-world sound deadening from canopy movement is not established. The inspected listener and sound-update paths contain no direct canopy-state or hinge-angle input. This does not exclude filtering in an authored FMOD event or another audio path.
+
+The shipped fighter and fighter-bomber entities bind their engine-running sound to engine load, player control, engine timeline, speed, tilt, nitrous, steering, and engine RPM inputs. No explicit canopy-position input was identified in those bindings. Some authored input and output hashes remain unresolved, and the FMOD banks have not been traced, so this is not proof that cabin attenuation is absent. The aircraft engine-audio tuning describes engine response, not a verified cabin filter.
+
+The generic attached-sound parameter dispatch and world-ambience mixing remain unverified as sources of cabin attenuation. No audio override is installed. Next-session check 72 compares manual opening, normal entry and exit, partial opening, and shattered glass while keeping the listener seated where possible.
+
 ## Unverified in the headset
 
 - Everything: that the table's handles are where the vehicles' handles are (a clip serves a class of vehicles, so on a car unlike the class's reference the hand opens the door some way from the modelled handle; the old mini's is the worst), that the box guess for a door missing from the table finds the right edge (the grip press's notes say which source was used); that the latch's pull reads right on side doors, hoods, and trunks; that the loosened door hangs on its hinge with no motor; that a shove latches it; that the kept-open flag stops the game's latch without starting its motor; that the strut's gravity compensation holds a lid without a creep; and that the side-door damping feels right.
