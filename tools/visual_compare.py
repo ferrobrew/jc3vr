@@ -10,17 +10,21 @@ paired PNGs contain the logical left and right eyes side by side, in that order.
 """
 
 import argparse
-import html
 import json
 import math
 import sys
-from dataclasses import asdict, dataclass, field, fields, is_dataclass
+from dataclasses import asdict, dataclass, field, fields
 from enum import StrEnum
 from itertools import combinations, product
 from pathlib import Path
 
 import numpy as np
 from PIL import Image
+
+if __package__:
+    from tools.visual_compare_report import to_wire, write_reports
+else:
+    from visual_compare_report import to_wire, write_reports
 
 
 class Mode(StrEnum):
@@ -50,6 +54,16 @@ class Thresholds:
     pixel: float = 3.0
     changed_fraction: float = 0.001
     mean: float = 0.25
+
+    def overridden(self, args, prefix=""):
+        return Thresholds(
+            *(
+                getattr(args, prefix + item.name)
+                if getattr(args, prefix + item.name) is not None
+                else getattr(self, item.name)
+                for item in fields(self)
+            )
+        )
 
     @classmethod
     def from_wire(cls, value, defaults=None):
@@ -136,10 +150,51 @@ class ComparisonInputs:
 
 
 @dataclass(frozen=True)
+class VisualReadiness:
+    generation: int
+    profile: str
+    ready: bool
+    paused: bool
+    frozen: bool
+    error: str | None
+    warmup_frames: int
+    completed_frames: int
+
+    @classmethod
+    def from_wire(cls, value):
+        value = object_value(value, "metadata.visual")
+        if value.get("profile") != "controlled_v1":
+            raise ValueError("metadata.visual.profile: expected controlled_v1")
+        for name in ("ready", "paused", "frozen"):
+            if value.get(name) is not True:
+                raise ValueError(f"metadata.visual.{name}: expected true")
+        if "error" not in value or value["error"] is not None:
+            raise ValueError("metadata.visual.error: expected null")
+        warmup = integer(value, "warmup_frames")
+        completed = integer(value, "completed_frames")
+        if warmup > 300:
+            raise ValueError("metadata.visual.warmup_frames: expected at most 300")
+        if completed < warmup:
+            raise ValueError("metadata.visual.completed_frames: below warmup_frames")
+        return cls(
+            integer(value, "generation"),
+            "controlled_v1",
+            True,
+            True,
+            True,
+            None,
+            warmup,
+            completed,
+        )
+
+
+@dataclass(frozen=True)
 class CaptureMetadata:
     capture_id: str
     mode: Mode
-    generation: int
+    visual: VisualReadiness
+    frame_ordinal: int
+    predicted_display_time_ns: int
     width: int
     height: int
     eye_width: int
@@ -153,6 +208,7 @@ class CaptureMetadata:
     def from_wire(cls, value, normalized=None):
         value = object_value(value, "metadata")
         visual = object_value(value.get("visual"), "metadata.visual")
+        readiness = VisualReadiness.from_wire(visual)
         mode = Mode(text(value, "mode"))
         if Mode(text(visual, "mode")) != mode:
             raise ValueError("metadata.visual.mode: differs from metadata.mode")
@@ -174,14 +230,16 @@ class CaptureMetadata:
                     "manifest comparison_inputs disagree with metadata: "
                     + "; ".join(mismatches)
                 )
-        if visual.get("profile") != inputs.profile:
+        if readiness.profile != inputs.profile:
             raise ValueError(
                 "metadata.visual.profile: differs from comparison_inputs.profile"
             )
         return cls(
             text(value, "id"),
             mode,
-            integer(visual, "generation"),
+            readiness,
+            integer(value, "frame_ordinal"),
+            integer(value, "predicted_display_time_ns", minimum=None),
             integer(value, "width"),
             integer(value, "height"),
             integer(value, "eye_width"),
@@ -294,9 +352,12 @@ class Manifest:
 class LoadedSample:
     label: str
     capture_id: str
+    visual: VisualReadiness
+    frame_ordinal: int
+    predicted_display_time_ns: int
     inputs: ComparisonInputs
-    left: np.ndarray | None
-    right: np.ndarray | None
+    left: np.ndarray | None = field(repr=False, metadata={"serialize": False})
+    right: np.ndarray | None = field(repr=False, metadata={"serialize": False})
 
     def image(self, eye):
         result = self.left if eye == 0 else self.right
@@ -370,9 +431,7 @@ class ModeReport:
     status: Outcome = Outcome.INCONCLUSIVE
     errors: list[str] = field(default_factory=list)
     repeatability: list[Comparison] = field(default_factory=list)
-    samples: list[LoadedSample] = field(
-        default_factory=list, repr=False, metadata={"serialize": False}
-    )
+    samples: list[LoadedSample] = field(default_factory=list, repr=False)
 
 
 @dataclass
@@ -408,11 +467,7 @@ def analyze_manifest(
     tile_size=64,
     top_tiles=5,
 ):
-    """Parse the manifest, analyze typed domain values, and write JSON/HTML reports.
-
-    Threshold overrides are complete Thresholds values, not partially populated
-    objects. JSON threshold values may be partial and inherit the default values.
-    """
+    """Analyze typed captures; overrides are complete Thresholds, unlike JSON defaults."""
     manifest_path, output = Path(manifest_path).resolve(), Path(output)
     output.mkdir(parents=True, exist_ok=True)
     report = Report(str(manifest_path), metadata_tolerance=metadata_tolerance)
@@ -477,10 +532,11 @@ def text(value, key):
     return result
 
 
-def integer(value, key):
+def integer(value, key, minimum=1):
     result = value.get(key)
-    if type(result) is not int or result < 1:
-        raise ValueError(f"{key}: expected a positive integer")
+    if type(result) is not int or (minimum is not None and result < minimum):
+        kind = "a positive integer" if minimum == 1 else "an integer"
+        raise ValueError(f"{key}: expected {kind}")
     return result
 
 
@@ -537,22 +593,28 @@ def analyze_case(case, root, output, case_index, report, tile_size, top_tiles):
         seen_metadata = set()
         for index, entry in enumerate(entries):
             try:
-                path = (root / entry.png).resolve()
-                if path in seen:
-                    raise ValueError("repeated PNG path is not an independent sample")
-                metadata_path = (root / entry.metadata).resolve()
-                if metadata_path in seen_metadata:
-                    raise ValueError(
-                        "repeated metadata path is not an independent sample"
-                    )
-                seen.add(path)
-                seen_metadata.add(metadata_path)
+                for path, seen_paths, kind in (
+                    ((root / entry.png).resolve(), seen, "PNG"),
+                    ((root / entry.metadata).resolve(), seen_metadata, "metadata"),
+                ):
+                    if path in seen_paths:
+                        raise ValueError(
+                            f"repeated {kind} path is not an independent sample"
+                        )
+                    seen_paths.add(path)
                 sample = load_sample(root, mode, index, entry)
                 if any(
                     sample.capture_id == prior.capture_id
                     for prior in mode_report.samples
                 ):
                     raise ValueError("repeated capture id is not an independent sample")
+                if any(
+                    sample.frame_ordinal == prior.frame_ordinal
+                    or sample.predicted_display_time_ns
+                    == prior.predicted_display_time_ns
+                    for prior in mode_report.samples
+                ):
+                    raise ValueError("repeated frame is not an independent sample")
                 mode_report.samples.append(sample)
             except (OSError, ValueError, TypeError) as error:
                 mode_report.errors.append(f"{mode}[{index}]: {error}")
@@ -626,7 +688,14 @@ def load_sample(root, mode, index, spec):
     else:
         left, right = pixels[:, :width].copy(), pixels[:, width:].copy()
     return LoadedSample(
-        f"{mode}[{index}]", metadata.capture_id, metadata.inputs, left, right
+        f"{mode}[{index}]",
+        metadata.capture_id,
+        metadata.visual,
+        metadata.frame_ordinal,
+        metadata.predicted_display_time_ns,
+        metadata.inputs,
+        left,
+        right,
     )
 
 
@@ -785,152 +854,22 @@ def write_artifacts(output, stem, a, b, thresholds, tile_size, top_tiles):
     return artifacts, tiles
 
 
-def to_wire(value):
-    if is_dataclass(value):
-        return {
-            item.name: to_wire(getattr(value, item.name))
-            for item in fields(value)
-            if item.metadata.get("serialize", True)
-        }
-    if isinstance(value, (tuple, list)):
-        return [to_wire(item) for item in value]
-    return value
-
-
-def image_html(parts, artifacts):
-    if artifacts is None:
-        return
-    for item in fields(Artifacts):
-        path = getattr(artifacts, item.name)
-        if path is not None:
-            escaped = html.escape(path, quote=True)
-            parts.append(
-                f"<a href='{escaped}'><img src='{escaped}' alt='{item.name}' title='{item.name}'></a>"
-            )
-
-
-def append_comparison_html(parts, comparison):
-    parts.append(
-        f"<h4>{html.escape(comparison.name)}: <span class='{comparison.status}'>"
-        f"{comparison.status}</span></h4>"
-    )
-    parts.extend(f"<pre>{html.escape(error)}</pre>" for error in comparison.errors)
-    if comparison.worst_metrics is None:
-        return
-    parts.append(
-        "<pre>Worst metrics: "
-        + html.escape(json.dumps(to_wire(comparison.worst_metrics)))
-        + "</pre>"
-    )
-    parts.append(
-        "<details><summary>All sample pairs</summary><pre>"
-        + html.escape(json.dumps(to_wire(comparison.pairs), indent=2))
-        + "</pre></details>"
-    )
-    parts.append(
-        "<p>Artifact pair: "
-        + html.escape(json.dumps(to_wire(comparison.artifact_pair)))
-        + "</p>"
-    )
-    image_html(parts, comparison.artifacts)
-    parts.append(
-        "<details><summary>Ranked tiles (mean error, then changed fraction)</summary>"
-    )
-    for tile in comparison.ranked_tiles:
-        parts.append(
-            f"<pre>Box: {tile.box}; metrics: {html.escape(json.dumps(to_wire(tile.metrics)))}</pre>"
-        )
-        image_html(parts, tile.crops)
-    parts.append("</details>")
-
-
-def write_reports(output, report):
-    (output / "report.json").write_text(
-        json.dumps(report.to_wire(), indent=2, allow_nan=False) + "\n", encoding="utf-8"
-    )
-    parts = [
-        "<!doctype html><html lang='en'><meta charset='utf-8'>",
-        (
-            "<title>Visual comparison</title><style>body{font:14px sans-serif;margin:2em}"
-            "img{max-width:30%;image-rendering:pixelated}pre{white-space:pre-wrap}"
-            ".pass{color:#075}.fail{color:#b00}.inconclusive{color:#850}</style>"
-        ),
-        f"<h1>Visual comparison: {report.status}</h1>",
-        (
-            "<p>RGB values are compared without registration or resizing. Same-mode repeatability "
-            "must pass before cross-mode comparison. Mean is absolute RGB channel error in [0,255]. "
-            "Changed fraction counts pixels whose maximum channel error exceeds the pixel threshold. "
-            "P99 is the 99th percentile of per-pixel maximum RGB error. Max is the maximum channel error. "
-            "Worst metrics are independent maxima across sample pairs; artifacts show one worst pair.</p>"
-        ),
-        (
-            f"<pre>Thresholds: {html.escape(str(report.thresholds))}\n"
-            f"Repeatability: {html.escape(str(report.repeatability_thresholds))}\n"
-            f"Metadata absolute tolerance: {report.metadata_tolerance}</pre>"
-        ),
-    ]
-    parts.extend(f"<pre>{html.escape(error)}</pre>" for error in report.errors)
-    for case in report.cases:
-        parts.append(f"<h2>{html.escape(case.name)}: {case.status}</h2>")
-        for mode in case.modes:
-            parts.append(f"<h3>{mode.mode} repeatability: {mode.status}</h3>")
-            parts.extend(f"<pre>{html.escape(error)}</pre>" for error in mode.errors)
-            for comparison in mode.repeatability:
-                append_comparison_html(parts, comparison)
-        parts.append("<h3>Cross-mode comparisons</h3>")
-        for comparison in case.comparisons:
-            append_comparison_html(parts, comparison)
-    parts.append("</html>")
-    (output / "report.html").write_text("\n".join(parts) + "\n", encoding="utf-8")
-
-
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--pixel", type=float)
-    parser.add_argument("--changed-fraction", type=float)
-    parser.add_argument("--mean", type=float)
-    parser.add_argument("--repeat-pixel", type=float)
-    parser.add_argument("--repeat-changed-fraction", type=float)
-    parser.add_argument("--repeat-mean", type=float)
+    for flag in ("pixel", "changed-fraction", "mean"):
+        parser.add_argument(f"--{flag}", type=float)
+        parser.add_argument(f"--repeat-{flag}", type=float)
     parser.add_argument("--metadata-tolerance", type=float, default=1e-5)
     parser.add_argument("--tile-size", type=int, default=64)
     parser.add_argument("--top-tiles", type=int, default=5)
     args = parser.parse_args(argv)
     try:
-        limits = repeats = None
-        if any(
-            value is not None
-            for value in (
-                args.pixel,
-                args.changed_fraction,
-                args.mean,
-                args.repeat_pixel,
-                args.repeat_changed_fraction,
-                args.repeat_mean,
-            )
-        ):
-            manifest = Manifest.from_wire(read_json(args.manifest))
-            limits = Thresholds(
-                args.pixel if args.pixel is not None else manifest.thresholds.pixel,
-                args.changed_fraction
-                if args.changed_fraction is not None
-                else manifest.thresholds.changed_fraction,
-                args.mean if args.mean is not None else manifest.thresholds.mean,
-            )
-            base = (
-                limits
-                if not manifest.explicit_repeatability
-                else manifest.repeatability
-            )
-            repeats = Thresholds(
-                args.repeat_pixel if args.repeat_pixel is not None else base.pixel,
-                args.repeat_changed_fraction
-                if args.repeat_changed_fraction is not None
-                else base.changed_fraction,
-                args.repeat_mean if args.repeat_mean is not None else base.mean,
-            )
+        manifest = Manifest.from_wire(read_json(args.manifest))
+        limits = manifest.thresholds.overridden(args)
+        base = manifest.repeatability if manifest.explicit_repeatability else limits
+        repeats = base.overridden(args, "repeat_")
         report = analyze_manifest(
             args.manifest,
             args.output,

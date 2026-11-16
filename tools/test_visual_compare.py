@@ -61,7 +61,7 @@ class VisualCompareTests(unittest.TestCase):
                     "projection_reverse_z": np.eye(4).flatten().tolist(),
                 },
             ],
-            "profile": "synthetic",
+            "profile": "controlled_v1",
             "world_scale": 1.0,
             "build_stamp": "synthetic-build",
             "eye_width": 12,
@@ -81,17 +81,26 @@ class VisualCompareTests(unittest.TestCase):
         )
         samples = []
         for index in range(3):
+            ordinal = 3 * len(self.manifest["cases"][0]["modes"]) + index + 1
             name = f"{mode}-{index}"
             png = f"{name}.png"
             metadata_path = f"{name}.json"
             Image.fromarray(image).save(self.root / png)
             metadata = {
                 "id": name,
+                "frame_ordinal": ordinal,
+                "predicted_display_time_ns": ordinal * 11_111_111,
                 "mode": mode,
                 "visual": {
-                    "generation": index + 1,
+                    "generation": len(self.manifest["cases"][0]["modes"]) + 1,
                     "mode": mode,
-                    "profile": "synthetic",
+                    "profile": "controlled_v1",
+                    "ready": True,
+                    "paused": True,
+                    "frozen": True,
+                    "error": None,
+                    "warmup_frames": 3,
+                    "completed_frames": 3,
                 },
                 "fresh_eyes": [eye in (None, 0), eye in (None, 1)],
                 "width": image.shape[1],
@@ -266,6 +275,153 @@ class VisualCompareTests(unittest.TestCase):
             "independent sample", self.mode_report(report, "left_only").errors[0]
         )
 
+    def test_visual_readiness_requires_controlled_completed_frozen_capture(self):
+        path = self.root / self.entries("left_only")[0]["metadata"]
+        original = path.read_text()
+        valid = json.loads(original)
+        invalid = {
+            "profile": ("native", "synthetic", "other-profile", None, "", 1),
+            "ready": (False, None, 0, 1, "true"),
+            "paused": (False, None, 0, 1, "true"),
+            "frozen": (False, None, 0, 1, "true"),
+            "error": ("capture failed", "", False, 0, []),
+            "generation": (0, -1, None, True, 1.0, "1"),
+            "warmup_frames": (0, -1, None, True, 1.0, "1", 4, 301),
+            "completed_frames": (0, -1, None, True, 1.0, "1", 2),
+        }
+        for field, values in invalid.items():
+            for value in values:
+                with self.subTest(field=field, value=value):
+                    data = copy.deepcopy(valid)
+                    data["visual"][field] = value
+                    if field == "profile":
+                        data["comparison_inputs"][field] = value
+                    path.write_text(json.dumps(data))
+                    report = self.analyze()
+                    self.assertEqual(report.status, "inconclusive")
+                    self.assertIn(
+                        field, self.mode_report(report, "left_only").errors[0]
+                    )
+            with self.subTest(field=field, missing=True):
+                data = copy.deepcopy(valid)
+                del data["visual"][field]
+                path.write_text(json.dumps(data))
+                report = self.analyze()
+                self.assertEqual(report.status, "inconclusive")
+                self.assertIn(field, self.mode_report(report, "left_only").errors[0])
+        path.write_text(original)
+
+    def test_inline_inputs_do_not_bypass_readiness(self):
+        self.entries("left_only")[0]["comparison_inputs"] = self.inputs
+        self.change_metadata(
+            "left_only",
+            0,
+            lambda metadata: (
+                metadata.pop("comparison_inputs"),
+                metadata["visual"].update(ready=False),
+            ),
+        )
+        report = self.analyze()
+        self.assertEqual(report.status, "inconclusive")
+        self.assertIn("ready", self.mode_report(report, "left_only").errors[0])
+
+    def test_frame_identity_is_typed_and_required(self):
+        path = self.root / self.entries("left_only")[0]["metadata"]
+        original = path.read_text()
+        for field in ("frame_ordinal", "predicted_display_time_ns"):
+            for value in (None, True, 1.5, "1"):
+                with self.subTest(field=field, value=value):
+                    data = json.loads(original)
+                    data[field] = value
+                    path.write_text(json.dumps(data))
+                    report = self.analyze()
+                    self.assertEqual(report.status, "inconclusive")
+                    self.assertIn(
+                        field, self.mode_report(report, "left_only").errors[0]
+                    )
+            data = json.loads(original)
+            del data[field]
+            path.write_text(json.dumps(data))
+            self.assertEqual(self.analyze().status, "inconclusive")
+        for ordinal in (0, -1):
+            data = json.loads(original)
+            data["frame_ordinal"] = ordinal
+            path.write_text(json.dumps(data))
+            self.assertEqual(self.analyze().status, "inconclusive")
+        path.write_text(original)
+
+    def test_renamed_frame_copies_are_not_repeatability_samples(self):
+        first = json.loads(
+            (self.root / self.entries("multipass")[0]["metadata"]).read_text()
+        )
+        path = self.root / self.entries("multipass")[1]["metadata"]
+        original = path.read_text()
+        for repeated in (
+            ("frame_ordinal",),
+            ("predicted_display_time_ns",),
+            ("frame_ordinal", "predicted_display_time_ns"),
+        ):
+            for generation in (first["visual"]["generation"], 99):
+                with self.subTest(repeated=repeated, generation=generation):
+                    data = json.loads(original)
+                    data.update({field: first[field] for field in repeated})
+                    data["visual"]["generation"] = generation
+                    path.write_text(json.dumps(data))
+                    report = self.analyze()
+                    self.assertEqual(report.status, "inconclusive")
+                    mode = self.mode_report(report, "multipass")
+                    self.assertIn("repeated frame", mode.errors[0])
+                    self.assertFalse(mode.repeatability)
+        path.write_text(original)
+
+    def test_multipass_a_b_a_allows_new_generation_and_distinct_frames(self):
+        self.change_metadata(
+            "multipass",
+            2,
+            lambda metadata: metadata["visual"].update(
+                generation=5, completed_frames=8
+            ),
+        )
+        report = self.analyze()
+        self.assertEqual(report.status, "pass")
+        samples = self.mode_report(report, "multipass").samples
+        self.assertEqual([sample.visual.generation for sample in samples], [3, 3, 5])
+        self.assertEqual([sample.frame_ordinal for sample in samples], [7, 8, 9])
+        self.assertEqual(
+            [sample.predicted_display_time_ns for sample in samples],
+            [ordinal * 11_111_111 for ordinal in (7, 8, 9)],
+        )
+        self.assertEqual(samples[2].visual.completed_frames, 8)
+        recorded = json.loads((self.output / "report.json").read_text())
+        mode = next(
+            mode
+            for mode in recorded["cases"][0]["modes"]
+            if mode["mode"] == "multipass"
+        )
+        self.assertEqual(mode["samples"][2]["frame_ordinal"], 9)
+        self.assertEqual(
+            mode["samples"][2]["predicted_display_time_ns"], 9 * 11_111_111
+        )
+        self.assertEqual(mode["samples"][2]["visual"]["generation"], 5)
+        self.assertNotIn("left", mode["samples"][2])
+        self.assertNotIn("right", mode["samples"][2])
+
+    def test_visual_warmup_accepts_one_through_300_with_no_completed_upper_bound(self):
+        for warmup, completed in ((1, 1), (300, 300), (300, 301)):
+            with self.subTest(warmup=warmup, completed=completed):
+                for mode in self.manifest["cases"][0]["modes"]:
+                    for index in range(3):
+                        self.change_metadata(
+                            mode,
+                            index,
+                            lambda metadata, warmup=warmup, completed=completed: (
+                                metadata["visual"].update(
+                                    warmup_frames=warmup, completed_frames=completed
+                                )
+                            ),
+                        )
+                self.assertEqual(self.analyze().status, "pass")
+
     def test_pose_projection_profile_build_and_resolution_mismatches(self):
         mutations = (
             (
@@ -415,13 +571,6 @@ class VisualCompareTests(unittest.TestCase):
             {"selected_eye": 1},
             {"rendered_eyes": [True, True]},
             {"mode": "multipass"},
-            {
-                "visual": {
-                    "generation": None,
-                    "mode": "left_only",
-                    "profile": "synthetic",
-                }
-            },
             {"rendered_eyes": [1, 0]},
             {"eye_width": True},
         )
