@@ -28,7 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::controllers::physical_hands::{
     bodies::{self, BodyState},
     doors::{engine, table},
-    rigid::Velocities,
+    rigid::{BodyPose, Velocities},
 };
 
 /// The hinges of the doors the hands opened (see [`crate::controllers::physical_hands::doors::hinge`]).
@@ -82,10 +82,23 @@ pub(crate) fn opened(vehicle: NonZeroUsize, vehicle_body: u32, part_index: u32, 
         part_index,
         slot,
         lid: None,
+        canopy: false,
+        support: CanopySupport::Free,
+        support_body: None,
         angle_rad: None,
         rested_s: 0.0,
         strut: false,
     });
+}
+
+pub(crate) fn yield_support(vehicle: NonZeroUsize, part_index: u32) {
+    if let Some(door) = DOORS
+        .lock()
+        .iter_mut()
+        .find(|door| door.vehicle == vehicle && door.part_index == part_index)
+    {
+        door.support.yield_for_input();
+    }
 }
 
 /// Keep the doors the hands opened, for a palm tick of `dt` game seconds in which the hands hold
@@ -214,6 +227,9 @@ struct Opened {
     part_index: u32,
     slot: DoorSlot,
     lid: Option<bool>,
+    canopy: bool,
+    support: CanopySupport,
+    support_body: Option<(NonZeroUsize, u32)>,
     /// The angle on the last tick, radians.
     angle_rad: Option<f32>,
     /// How long it has rested within the latch angle, seconds.
@@ -221,6 +237,137 @@ struct Opened {
     /// Whether the strut held it on the last tick.
     strut: bool,
 }
+
+#[derive(Debug, Copy, Clone, PartialEq)]
+enum CanopySupport {
+    Free,
+    Supported { pose: Option<BodyPose> },
+    Yielding { remaining_s: f32, quiet_s: f32 },
+}
+
+impl CanopySupport {
+    fn yield_for_input(&mut self) {
+        *self = Self::Yielding {
+            remaining_s: CANOPY_YIELD_S,
+            quiet_s: 0.0,
+        };
+    }
+
+    fn swing(&mut self, tick: &HingeTick, config: &HingeConfig) -> Swing {
+        if tick.held {
+            *self = Self::Free;
+            return Swing::Held;
+        }
+        if let Self::Yielding {
+            remaining_s,
+            quiet_s,
+        } = self
+        {
+            let dt = tick.dt.max(0.0);
+            *remaining_s = (*remaining_s - dt).max(0.0);
+            if tick
+                .rate_rad_s
+                .is_some_and(|rate| rate.abs() < RESTING_RAD_S)
+            {
+                *quiet_s += dt;
+            } else {
+                *quiet_s = 0.0;
+            }
+            if *remaining_s > 0.0 || *quiet_s < CANOPY_QUIET_S {
+                return match swing(tick, config) {
+                    latch @ Swing::Latch(_) => latch,
+                    _ => Swing::Free,
+                };
+            }
+            *self = Self::Free;
+        }
+        if matches!(self, Self::Supported { .. }) {
+            if tick
+                .rate_rad_s
+                .is_some_and(|rate| rate < -STRUT_RISING_RAD_S)
+            {
+                self.yield_for_input();
+                return Swing::Free;
+            }
+            return Swing::Strut;
+        }
+        let result = swing(tick, config);
+        if result == Swing::Strut {
+            if tick
+                .rate_rad_s
+                .is_some_and(|rate| rate < -STRUT_RISING_RAD_S)
+            {
+                self.yield_for_input();
+                return Swing::Free;
+            }
+            *self = Self::Supported { pose: None };
+        }
+        result
+    }
+
+    fn observe_body(
+        &mut self,
+        previous: &mut Option<(NonZeroUsize, u32)>,
+        current: Option<(NonZeroUsize, u32)>,
+    ) -> bool {
+        let changed = previous.is_some() && *previous != current;
+        if changed {
+            *self = Self::Free;
+        }
+        *previous = current;
+        changed
+    }
+
+    fn velocities(
+        &mut self,
+        door: Option<&BodyState>,
+        chassis: Option<&BodyState>,
+        dt: f32,
+        g: f32,
+    ) -> Option<Velocities> {
+        let (Some(door), Some(chassis)) = (door, chassis) else {
+            *self = Self::Free;
+            return None;
+        };
+        let mut velocities = hinge_velocities(door, chassis, Swing::Strut, dt, g)?;
+        let correction = self.correction(door, chassis, dt);
+        velocities.linear += correction.linear;
+        velocities.angular += correction.angular;
+        Some(velocities)
+    }
+
+    fn correction(&mut self, door: &BodyState, chassis: &BodyState, dt: f32) -> Velocities {
+        let Self::Supported { pose } = self else {
+            return Velocities::default();
+        };
+        let frame = chassis.pose.orientation;
+        let target = pose.get_or_insert_with(|| BodyPose {
+            centre: frame.inverse() * (door.pose.centre - chassis.pose.centre),
+            orientation: frame.inverse() * door.pose.orientation,
+        });
+        if dt <= 0.0 {
+            return Velocities::default();
+        }
+        let gain = CANOPY_RESTORE_PER_S.min(dt.recip());
+        let displacement = chassis.pose.centre + frame * target.centre - door.pose.centre;
+        let rotation = frame * target.orientation * door.pose.orientation.inverse();
+        let rotation = if rotation.w < 0.0 {
+            -rotation
+        } else {
+            rotation
+        };
+        Velocities {
+            linear: (displacement * gain).clamp_length_max(CANOPY_RESTORE_MPS),
+            angular: (rotation.to_scaled_axis() * gain).clamp_length_max(CANOPY_RESTORE_RAD_S),
+        }
+    }
+}
+
+const CANOPY_YIELD_S: f32 = 0.25;
+const CANOPY_QUIET_S: f32 = 0.15;
+const CANOPY_RESTORE_PER_S: f32 = 4.0;
+const CANOPY_RESTORE_MPS: f32 = 0.5;
+const CANOPY_RESTORE_RAD_S: f32 = 1.0;
 
 static DOORS: Mutex<Vec<Opened>> = Mutex::new(Vec::new());
 
@@ -253,6 +400,11 @@ unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeConfig, g
         return false;
     }
     unsafe { engine::set_native_latch(door.vehicle, door.part_index, false) };
+    let body = hinge.body;
+    if door.support.observe_body(&mut door.support_body, body) {
+        door.angle_rad = None;
+        door.rested_s = 0.0;
+    }
     let angle = unsafe { engine::open_angle(door.vehicle, door.part_index) };
     let rate = door
         .angle_rad
@@ -262,22 +414,26 @@ unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeConfig, g
     let resting = angle < DoorInfo::LATCH_ANGLE_DEG.to_radians()
         && rate.is_some_and(|rate| rate.abs() < RESTING_RAD_S);
     door.rested_s = if resting { door.rested_s + dt } else { 0.0 };
-    let body = hinge.body;
+    if door.lid.is_none() {
+        let part_hash =
+            unsafe { engine::door(door.vehicle, door.part_index) }.and_then(|d| d.part_hash);
+        door.canopy = table::is_canopy(part_hash);
+        door.lid = Some(is_lid(door.slot, part_hash));
+    }
     let tick = HingeTick {
         held: body.is_some_and(|(_, body)| held.contains(&body)),
-        lid: *door.lid.get_or_insert_with(|| {
-            is_lid(
-                door.slot,
-                unsafe { engine::door(door.vehicle, door.part_index) }.and_then(|d| d.part_hash),
-            )
-        }),
+        lid: door.lid.unwrap_or(false),
         angle_rad: angle,
         range_rad: hinge.range_rad,
         rate_rad_s: rate,
         rested_s: door.rested_s,
         dt,
     };
-    let swing = swing(&tick, config);
+    let swing = if door.canopy {
+        door.support.swing(&tick, config)
+    } else {
+        swing(&tick, config)
+    };
     let strut = swing == Swing::Strut;
     if strut != door.strut {
         tracing::debug!(
@@ -307,13 +463,18 @@ unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeConfig, g
             let Some((owner, body)) = body else {
                 return true;
             };
-            let Ok(chassis) = (unsafe { bodies::read(door.vehicle_body, door.vehicle) }) else {
-                return true;
+            let chassis = unsafe { bodies::read(door.vehicle_body, door.vehicle) }.ok();
+            let state = unsafe { bodies::read(body, owner) }.ok();
+            let velocities = if door.canopy && swing == Swing::Strut {
+                door.support
+                    .velocities(state.as_ref(), chassis.as_ref(), dt, g)
+            } else {
+                state
+                    .as_ref()
+                    .zip(chassis.as_ref())
+                    .and_then(|(state, chassis)| hinge_velocities(state, chassis, swing, dt, g))
             };
-            let Ok(state) = (unsafe { bodies::read(body, owner) }) else {
-                return true;
-            };
-            if let Some(velocities) = hinge_velocities(&state, &chassis, swing, dt, g) {
+            if let Some(velocities) = velocities {
                 let _ = unsafe { bodies::drive(body, owner, velocities) };
             }
             true
@@ -348,320 +509,4 @@ fn hinge_velocities(
 }
 
 #[cfg(test)]
-mod tests {
-    use glam::Quat;
-
-    use super::*;
-    use crate::controllers::physical_hands::rigid::BodyPose;
-
-    fn tick() -> HingeTick {
-        HingeTick {
-            held: false,
-            lid: false,
-            angle_rad: 1.0,
-            range_rad: 1.2,
-            rate_rad_s: Some(0.0),
-            rested_s: 0.0,
-            dt: 1.0 / 30.0,
-        }
-    }
-
-    const CONFIG: HingeConfig = HingeConfig::new();
-
-    #[test]
-    fn damping_preserves_vehicle_translation_and_rotation_at_the_door_com() {
-        for (linear, angular, at_door) in [
-            (Vec3::ZERO, Vec3::ZERO, Vec3::ZERO),
-            (
-                Vec3::new(12.0, -3.0, 5.0),
-                Vec3::ZERO,
-                Vec3::new(12.0, -3.0, 5.0),
-            ),
-            (
-                Vec3::ZERO,
-                Vec3::new(0.0, 2.0, 0.0),
-                Vec3::new(-2.0, 0.0, -6.0),
-            ),
-            (
-                Vec3::new(12.0, -3.0, 5.0),
-                Vec3::new(1.0, 2.0, 3.0),
-                Vec3::new(4.0, 7.0, 1.0),
-            ),
-        ] {
-            let chassis = state(Vec3::new(10.0, -4.0, 8.0), Velocities { linear, angular });
-            let carrier = Velocities {
-                linear: at_door,
-                angular,
-            };
-            let door = state(Vec3::new(13.0, -2.0, 7.0), carrier);
-            for factor in [0.0, 0.25, 1.0] {
-                let result =
-                    hinge_velocities(&door, &chassis, Swing::Damped(factor), 0.1, 9.81).unwrap();
-                assert_velocities(result, carrier);
-            }
-        }
-    }
-
-    #[test]
-    fn damping_scales_only_the_relative_swing() {
-        let relative = Velocities {
-            linear: Vec3::new(2.0, -4.0, 6.0),
-            angular: Vec3::new(-2.0, 4.0, 1.0),
-        };
-        for moving in [false, true] {
-            let chassis = state(
-                Vec3::new(10.0, -4.0, 8.0),
-                if moving {
-                    Velocities {
-                        linear: Vec3::new(12.0, -3.0, 5.0),
-                        angular: Vec3::new(1.0, 2.0, 3.0),
-                    }
-                } else {
-                    Velocities::default()
-                },
-            );
-            let carrier = Velocities {
-                linear: if moving {
-                    Vec3::new(4.0, 7.0, 1.0)
-                } else {
-                    Vec3::ZERO
-                },
-                angular: chassis.velocities.angular,
-            };
-            let door = state(
-                Vec3::new(13.0, -2.0, 7.0),
-                Velocities {
-                    linear: carrier.linear + relative.linear,
-                    angular: carrier.angular + relative.angular,
-                },
-            );
-            for factor in [0.0, 0.25, 1.0] {
-                let result =
-                    hinge_velocities(&door, &chassis, Swing::Damped(factor), 0.1, 9.81).unwrap();
-                assert_velocities(
-                    result,
-                    Velocities {
-                        linear: carrier.linear + relative.linear * factor,
-                        angular: carrier.angular + relative.angular * factor,
-                    },
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn strut_preserves_carrier_motion_and_cancels_world_gravity_when_tilted() {
-        for orientation in [
-            Quat::IDENTITY,
-            Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
-            Quat::from_rotation_x(std::f32::consts::PI),
-        ] {
-            let mut chassis = state(
-                Vec3::new(10.0, -4.0, 8.0),
-                Velocities {
-                    linear: Vec3::new(12.0, -3.0, 5.0),
-                    angular: Vec3::new(1.0, 2.0, 3.0),
-                },
-            );
-            chassis.pose.orientation = orientation;
-            let mut door = state(
-                Vec3::new(13.0, -2.0, 7.0),
-                Velocities {
-                    linear: Vec3::new(-10.0, 20.0, 4.0),
-                    angular: Vec3::new(4.0, -2.0, 8.0),
-                },
-            );
-            door.pose.orientation = orientation * Quat::from_rotation_x(0.8);
-            let result = hinge_velocities(&door, &chassis, Swing::Strut, 0.1, 9.81).unwrap();
-            assert_velocities(
-                result,
-                Velocities {
-                    linear: Vec3::new(4.0, 7.981, 1.0),
-                    angular: chassis.velocities.angular,
-                },
-            );
-            assert_velocities(
-                Velocities {
-                    linear: result.linear + Vec3::NEG_Y * 9.81 * 0.1,
-                    ..result
-                },
-                Velocities {
-                    linear: Vec3::new(4.0, 7.0, 1.0),
-                    angular: chassis.velocities.angular,
-                },
-            );
-        }
-    }
-
-    #[test]
-    fn a_stationary_strut_only_compensates_positive_gravity_and_time() {
-        let chassis = state(Vec3::ZERO, Velocities::default());
-        let door = state(
-            Vec3::new(3.0, 2.0, -1.0),
-            Velocities {
-                linear: Vec3::ONE,
-                angular: Vec3::ONE,
-            },
-        );
-        for (dt, g, lift) in [
-            (0.1, 10.0, 1.0),
-            (0.0, 10.0, 0.0),
-            (-0.1, 10.0, 0.0),
-            (0.1, -10.0, 0.0),
-        ] {
-            assert_velocities(
-                hinge_velocities(&door, &chassis, Swing::Strut, dt, g).unwrap(),
-                Velocities {
-                    linear: Vec3::Y * lift,
-                    angular: Vec3::ZERO,
-                },
-            );
-        }
-    }
-
-    #[test]
-    fn held_free_and_latching_doors_do_not_request_velocity_writes() {
-        let body = state(Vec3::ZERO, Velocities::default());
-        for swing in [
-            Swing::Held,
-            Swing::Free,
-            Swing::Latch(LatchCause::Shoved),
-            Swing::Latch(LatchCause::Settled),
-        ] {
-            assert_eq!(hinge_velocities(&body, &body, swing, 0.1, 9.81), None);
-        }
-    }
-
-    fn state(centre: Vec3, velocities: Velocities) -> BodyState {
-        BodyState {
-            pose: BodyPose {
-                centre,
-                orientation: Quat::IDENTITY,
-            },
-            velocities,
-            mass_kg: Some(10.0),
-            inverse_inertia: Vec3::ONE,
-        }
-    }
-
-    fn assert_velocities(actual: Velocities, expected: Velocities) {
-        assert!(
-            actual.linear.abs_diff_eq(expected.linear, 1e-5),
-            "{actual:?} != {expected:?}"
-        );
-        assert!(
-            actual.angular.abs_diff_eq(expected.angular, 1e-5),
-            "{actual:?} != {expected:?}"
-        );
-    }
-
-    #[test]
-    fn a_held_door_never_latches() {
-        let held = HingeTick {
-            held: true,
-            angle_rad: 0.0,
-            rate_rad_s: Some(-10.0),
-            rested_s: 10.0,
-            ..tick()
-        };
-        assert_eq!(swing(&held, &CONFIG), Swing::Held);
-    }
-
-    #[test]
-    fn a_rebound_does_not_latch_but_a_shove_does() {
-        // The controller's own latch would take a door closing at a tenth of this.
-        let rebound = HingeTick {
-            angle_rad: 0.01,
-            rate_rad_s: Some(-(CONFIG.latch_speed_deg_s * 0.5).to_radians()),
-            ..tick()
-        };
-        assert!(matches!(swing(&rebound, &CONFIG), Swing::Damped(_)));
-        let shove = HingeTick {
-            rate_rad_s: Some(-(CONFIG.latch_speed_deg_s * 2.0).to_radians()),
-            ..rebound
-        };
-        assert_eq!(swing(&shove, &CONFIG), Swing::Latch(LatchCause::Shoved));
-        // Fast but well open is just a swing.
-        let swinging = HingeTick {
-            angle_rad: 0.5,
-            ..shove
-        };
-        assert!(matches!(swing(&swinging, &CONFIG), Swing::Damped(_)));
-    }
-
-    #[test]
-    fn a_door_resting_shut_latches_after_a_while() {
-        let resting = HingeTick {
-            angle_rad: 0.01,
-            rested_s: CONFIG.settle_s * 0.5,
-            ..tick()
-        };
-        assert!(matches!(swing(&resting, &CONFIG), Swing::Damped(_)));
-        let settled = HingeTick {
-            rested_s: CONFIG.settle_s,
-            ..resting
-        };
-        assert_eq!(swing(&settled, &CONFIG), Swing::Latch(LatchCause::Settled));
-    }
-
-    #[test]
-    fn a_side_door_is_damped() {
-        let Swing::Damped(factor) = swing(&tick(), &CONFIG) else {
-            panic!("a free side door is damped");
-        };
-        assert!(factor > 0.9 && factor < 1.0, "{factor}");
-    }
-
-    #[test]
-    fn a_lid_stays_up_above_the_strut_and_falls_below_it() {
-        let lid = HingeTick {
-            lid: true,
-            ..tick()
-        };
-        assert_eq!(swing(&lid, &CONFIG), Swing::Strut);
-        let falling = HingeTick {
-            rate_rad_s: Some(-1.0),
-            ..lid
-        };
-        assert_eq!(swing(&falling, &CONFIG), Swing::Strut);
-        let thrown = HingeTick {
-            rate_rad_s: Some(2.0),
-            ..lid
-        };
-        assert!(matches!(swing(&thrown, &CONFIG), Swing::Damped(_)));
-        let low = HingeTick {
-            angle_rad: CONFIG.strut_fraction * lid.range_rad * 0.5,
-            ..lid
-        };
-        assert_eq!(swing(&low, &CONFIG), Swing::Free);
-    }
-
-    #[test]
-    fn a_known_canopy_in_the_front_left_slot_gets_lid_support() {
-        let canopy = table::parse(include_str!(
-            "../../../../../tools/door_handles/door_handles.json"
-        ))
-        .unwrap()
-        .into_iter()
-        .find(|entry| entry.part == "fighterjet_door_f")
-        .unwrap();
-        let lid = HingeTick {
-            lid: is_lid(DoorSlot::FRONT_LEFT, Some(canopy.part_hash)),
-            ..tick()
-        };
-        assert_eq!(swing(&lid, &CONFIG), Swing::Strut);
-        let side = HingeTick {
-            lid: is_lid(DoorSlot::FRONT_LEFT, None),
-            ..tick()
-        };
-        assert!(matches!(swing(&side, &CONFIG), Swing::Damped(_)));
-    }
-
-    #[test]
-    fn the_lids_are_the_slots_hinged_across_the_vehicle() {
-        assert!(is_lid(DoorSlot::HOOD, None));
-        assert!(is_lid(DoorSlot::TRUNK, None));
-        assert!(!is_lid(DoorSlot::FRONT_LEFT, None));
-        assert!(!is_lid(DoorSlot::REAR_RIGHT, None));
-    }
-}
+mod tests;
