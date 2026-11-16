@@ -1,6 +1,6 @@
 //! One-frame post-chain measurements for the screenshot harness.
 
-use std::ffi::c_void;
+use std::{ffi::c_void, path::PathBuf};
 
 use anyhow::{Context as _, bail};
 use jc3gi::graphics_engine::{
@@ -26,7 +26,7 @@ use windows::{
 };
 
 use crate::{
-    image_writer::ChannelOrder,
+    image_writer::{ChannelOrder, Image},
     screenshot::{create_staging, harness::wants_eyes},
     stereo::{draw_index, engine_context::EngineContext},
 };
@@ -49,6 +49,8 @@ pub(crate) struct StageRecord {
     pub scissors: Vec<Scissor>,
     pub scissor_enabled: Option<bool>,
     pub means: Option<SplitMean>,
+    pub png: Option<PathBuf>,
+    pub raw: Option<PathBuf>,
     pub error: Option<String>,
 }
 
@@ -107,24 +109,39 @@ pub(crate) fn capture_slot(stage: Stage, mgr: *mut c_void, slot: u32) {
     });
 }
 
-pub(crate) fn take(frame: i64) -> Vec<StageRecord> {
+pub(crate) struct StageImage {
+    pub record: usize,
+    pub artifact: StageArtifact,
+}
+
+pub(crate) enum StageArtifact {
+    Png(Image),
+    R11G11B10(Vec<u8>),
+}
+
+pub(crate) fn take(frame: i64) -> (Vec<StageRecord>, Vec<StageImage>) {
     let mut state = STATE.lock();
     if state.frame != Some(frame) {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     state.frame = None;
-    std::mem::take(&mut state.records)
+    (
+        std::mem::take(&mut state.records),
+        std::mem::take(&mut state.images),
+    )
 }
 
 #[derive(Default)]
 struct State {
     frame: Option<i64>,
     records: Vec<StageRecord>,
+    images: Vec<StageImage>,
 }
 
 static STATE: Mutex<State> = Mutex::new(State {
     frame: None,
     records: Vec::new(),
+    images: Vec::new(),
 });
 
 fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>) {
@@ -139,6 +156,7 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
     if state.frame != Some(frame) {
         state.frame = Some(frame);
         state.records.clear();
+        state.images.clear();
     }
     if state
         .records
@@ -156,6 +174,8 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
         scissors: Vec::new(),
         scissor_enabled: None,
         means: None,
+        png: None,
+        raw: None,
         error: None,
     };
     let result = (|| {
@@ -165,12 +185,18 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
             let texture = texture()?;
             // SAFETY: supplied by the live post-chain hook while the immediate context is locked.
             let texture = unsafe { texture.as_ref() }.context("stage texture unavailable")?;
-            record.means = Some(read_mean(ctx, texture, &mut record.source)?);
-            anyhow::Ok(())
+            read_stage(ctx, texture, &mut record)
         })
     })();
-    if let Err(error) = result {
-        record.error = Some(format!("screenshot stages: {error:#}"));
+    match result {
+        Ok(artifact) => {
+            let index = state.records.len();
+            state.images.push(StageImage {
+                record: index,
+                artifact,
+            });
+        }
+        Err(error) => record.error = Some(format!("screenshot stages: {error:#}")),
     }
     state.records.push(record);
 }
@@ -222,11 +248,11 @@ fn capture_raster_state(ctx: &ID3D11DeviceContext, record: &mut StageRecord) {
     }
 }
 
-fn read_mean(
+fn read_stage(
     ctx: &ID3D11DeviceContext,
     texture: &Texture,
-    source: &mut Option<Source>,
-) -> anyhow::Result<SplitMean> {
+    record: &mut StageRecord,
+) -> anyhow::Result<StageArtifact> {
     let texture: ID3D11Texture2D = texture
         .m_Texture
         .cast()
@@ -234,7 +260,7 @@ fn read_mean(
     let mut desc = D3D11_TEXTURE2D_DESC::default();
     // SAFETY: the texture and context are live under the engine context lock.
     unsafe { texture.GetDesc(&mut desc) };
-    *source = Some(Source {
+    record.source = Some(Source {
         width: desc.Width,
         height: desc.Height,
         format: format!("{:?}", desc.Format),
@@ -265,16 +291,53 @@ fn read_mean(
             mapped.pData.cast::<u8>(),
             mapped.RowPitch as usize * desc.Height as usize,
         );
-        let result = split_mean(
-            bytes,
-            mapped.RowPitch as usize,
-            desc.Width,
-            desc.Height,
-            desc.Format,
-        );
+        let result = {
+            match split_mean(
+                bytes,
+                mapped.RowPitch as usize,
+                desc.Width,
+                desc.Height,
+                desc.Format,
+            ) {
+                Ok(means) => record.means = Some(means),
+                Err(error) => record.error = Some(format!("screenshot stages: {error:#}")),
+            }
+            stage_image(record.stage, bytes, mapped.RowPitch as usize, &desc)
+        };
         ctx.Unmap(&staging, 0);
         result
     }
+}
+
+fn stage_image(
+    stage: Stage,
+    bytes: &[u8],
+    pitch: usize,
+    desc: &D3D11_TEXTURE2D_DESC,
+) -> anyhow::Result<StageArtifact> {
+    if stage == Stage::MainColor {
+        if desc.Format != DXGI_FORMAT_R11G11B10_FLOAT {
+            bail!("unsupported MainColor raw format {:?}", desc.Format);
+        }
+        let row_bytes = desc.Width as usize * 4;
+        if desc.Width == 0 || desc.Height == 0 || pitch < row_bytes {
+            bail!("invalid MainColor raw dimensions");
+        }
+        let mut packed = Vec::with_capacity(row_bytes * desc.Height as usize);
+        for y in 0..desc.Height as usize {
+            packed.extend_from_slice(
+                bytes
+                    .get(y * pitch..y * pitch + row_bytes)
+                    .context("short MainColor raw row")?,
+            );
+        }
+        return Ok(StageArtifact::R11G11B10(packed));
+    }
+    let order = stage_channel_order(desc.Format)
+        .with_context(|| format!("unsupported stage PNG format {:?}", desc.Format))?;
+    Image::from_rows(bytes, pitch, desc.Width, desc.Height, order)
+        .context("invalid stage PNG rows")
+        .map(StageArtifact::Png)
 }
 
 fn split_mean(
@@ -391,6 +454,46 @@ mod tests {
                     right: [0.0; 3],
                 }
             );
+        }
+    }
+
+    #[test]
+    fn raw_hdr_artifact_preserves_every_bit_without_row_padding() {
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: 2,
+            Height: 2,
+            Format: DXGI_FORMAT_R11G11B10_FLOAT,
+            ..Default::default()
+        };
+        let bytes: Vec<u8> = (0..24).collect();
+        let StageArtifact::R11G11B10(packed) =
+            stage_image(Stage::MainColor, &bytes, 12, &desc).unwrap()
+        else {
+            panic!("expected raw HDR");
+        };
+        assert_eq!(packed, [&bytes[..8], &bytes[12..20]].concat());
+        assert!(stage_image(Stage::MainColor, &bytes[..19], 12, &desc).is_err());
+        assert!(stage_image(Stage::MainColor, &bytes, 4, &desc).is_err());
+        assert!(stage_image(Stage::PreAa, &bytes, 12, &desc).is_err());
+    }
+
+    #[test]
+    fn aa_artifacts_accept_rgba_and_bgra_typeless_rows() {
+        for format in [DXGI_FORMAT_R8G8B8A8_TYPELESS, DXGI_FORMAT_B8G8R8A8_TYPELESS] {
+            let desc = D3D11_TEXTURE2D_DESC {
+                Width: 2,
+                Height: 2,
+                Format: format,
+                ..Default::default()
+            };
+            for stage in [Stage::PreAa, Stage::PostAa] {
+                let StageArtifact::Png(image) = stage_image(stage, &[0; 24], 12, &desc).unwrap()
+                else {
+                    panic!("expected PNG");
+                };
+                assert_eq!((image.width(), image.height()), (2, 2));
+                assert!(stage_image(stage, &[0; 19], 12, &desc).is_err());
+            }
         }
     }
 

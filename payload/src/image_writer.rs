@@ -39,7 +39,10 @@ use windows::Win32::Graphics::Dxgi::Common::{
 };
 
 use crate::{
-    screenshot::harness::types::CaptureMetadata,
+    screenshot::harness::{
+        stages::{Stage, StageArtifact, StageImage, StageRecord},
+        types::CaptureMetadata,
+    },
     session::{self, CaptureFile, CaptureFolder},
 };
 
@@ -124,7 +127,22 @@ pub enum ImageTarget {
     HarnessScreenshot {
         path: PathBuf,
         sidecar: Box<CaptureMetadata>,
+        stages: Vec<StageImage>,
     },
+}
+
+pub(crate) struct WriteOutcome {
+    pub result: Result<PathBuf, String>,
+    pub stages: Vec<StageRecord>,
+}
+
+impl From<Result<PathBuf, String>> for WriteOutcome {
+    fn from(result: Result<PathBuf, String>) -> Self {
+        Self {
+            result,
+            stages: Vec::new(),
+        }
+    }
 }
 
 /// Queue `image` for the writer thread, spawning it on first use. Blocks while the queue is full.
@@ -160,7 +178,7 @@ pub fn submit(target: ImageTarget, image: Image) {
 pub(crate) fn try_submit(
     target: ImageTarget,
     image: Image,
-) -> anyhow::Result<Receiver<Result<PathBuf, String>>> {
+) -> anyhow::Result<Receiver<WriteOutcome>> {
     let mut writer = WRITER.lock();
     anyhow::ensure!(
         !crate::is_shutting_down(),
@@ -228,7 +246,7 @@ impl Writer {
         &mut self,
         target: ImageTarget,
         image: Image,
-    ) -> anyhow::Result<Receiver<Result<PathBuf, String>>> {
+    ) -> anyhow::Result<Receiver<WriteOutcome>> {
         anyhow::ensure!(!self.closed, "image writer: admission is closed");
         let sender = self
             .sender()
@@ -267,26 +285,63 @@ impl Writer {
 struct Job {
     target: ImageTarget,
     image: Image,
-    completion: Option<Sender<Result<PathBuf, String>>>,
+    completion: Option<Sender<WriteOutcome>>,
 }
 
 /// The writer thread: one image at a time until every sender is gone.
 fn run(receiver: Receiver<Job>) {
     for job in receiver {
-        let result = write(job.target, job.image);
-        match &result {
+        let outcome = write_job(job.target, job.image);
+        match &outcome.result {
             Ok(path) => tracing::debug!("image writer: wrote {}", path.display()),
             Err(e) => tracing::error!("image writer: {e:#}"),
         }
         if let Some(completion) = job.completion {
-            let _ = completion.send(result.map_err(|error| format!("image writer: {error:#}")));
+            let _ = completion.send(outcome);
         }
     }
 }
 
-fn write(target: ImageTarget, mut image: Image) -> anyhow::Result<PathBuf> {
-    to_rgba8_opaque(&mut image.pixels, image.order);
+fn write_job(mut target: ImageTarget, image: Image) -> WriteOutcome {
+    let mut records = Vec::new();
+    if let ImageTarget::HarnessScreenshot {
+        path,
+        sidecar,
+        stages,
+    } = &mut target
+        && let Some(capture) = &mut sidecar.capture
+    {
+        for stage in std::mem::take(stages) {
+            let record = &mut capture.stages[stage.record];
+            let (name, extension) = match record.stage {
+                Stage::MainColor => ("maincolor", "r11g11b10"),
+                Stage::PreAa => ("pre_aa", "png"),
+                Stage::PostAa => ("post_aa", "png"),
+            };
+            let stage_path = path.with_file_name(format!(
+                "{}.{name}.eye{}.{extension}",
+                sidecar.id, record.eye
+            ));
+            let result = match stage.artifact {
+                StageArtifact::Png(image) => write_png(&stage_path, image),
+                StageArtifact::R11G11B10(bytes) => std::fs::write(&stage_path, bytes)
+                    .with_context(|| format!("writing {}", stage_path.display())),
+            };
+            match result {
+                Ok(()) if record.stage == Stage::MainColor => record.raw = Some(stage_path),
+                Ok(()) => record.png = Some(stage_path),
+                Err(error) => record.error = Some(format!("image writer: {error:#}")),
+            }
+        }
+        records = capture.stages.clone();
+    }
+    WriteOutcome {
+        result: write(target, image).map_err(|error| format!("image writer: {error:#}")),
+        stages: records,
+    }
+}
 
+fn write(target: ImageTarget, image: Image) -> anyhow::Result<PathBuf> {
     let (path, sidecar) = match &target {
         ImageTarget::HarnessScreenshot { path, .. } => (path.clone(), None),
         ImageTarget::Screenshot { stamp, sidecar } => (
@@ -304,8 +359,19 @@ fn write(target: ImageTarget, mut image: Image) -> anyhow::Result<PathBuf> {
         ),
     };
 
+    write_png(&path, image)?;
+    if let ImageTarget::HarnessScreenshot { sidecar, .. } = &target {
+        write_sidecar(&path, sidecar)?;
+    } else if let Some(sidecar) = sidecar {
+        write_sidecar(&path, sidecar)?;
+    }
+    Ok(path)
+}
+
+fn write_png(path: &std::path::Path, mut image: Image) -> anyhow::Result<()> {
+    to_rgba8_opaque(&mut image.pixels, image.order);
     let file =
-        std::fs::File::create(&path).with_context(|| format!("creating {}", path.display()))?;
+        std::fs::File::create(path).with_context(|| format!("creating {}", path.display()))?;
     let mut writer = std::io::BufWriter::new(file);
     PngEncoder::new(&mut writer)
         .write_image(
@@ -317,14 +383,7 @@ fn write(target: ImageTarget, mut image: Image) -> anyhow::Result<PathBuf> {
         .with_context(|| format!("encoding {}", path.display()))?;
     writer
         .flush()
-        .with_context(|| format!("flushing {}", path.display()))?;
-
-    if let ImageTarget::HarnessScreenshot { sidecar, .. } = &target {
-        write_sidecar(&path, sidecar)?;
-    } else if let Some(sidecar) = sidecar {
-        write_sidecar(&path, sidecar)?;
-    }
-    Ok(path)
+        .with_context(|| format!("flushing {}", path.display()))
 }
 
 fn write_sidecar(path: &std::path::Path, sidecar: &impl serde::Serialize) -> anyhow::Result<()> {
@@ -379,6 +438,7 @@ mod tests {
             ImageTarget::HarnessScreenshot {
                 path: path.clone(),
                 sidecar: Box::new(sidecar.clone()),
+                stages: Vec::new(),
             },
             test_image(),
         )
@@ -394,6 +454,139 @@ mod tests {
     }
 
     #[test]
+    fn stage_artifacts_finish_before_completion_and_sidecar_and_report_failures() {
+        for fail in [false, true] {
+            let directory = TestDirectory::new();
+            let path = directory.0.join("writer-test.capture.png");
+            let raw_path = directory.0.join("writer-test.maincolor.eye0.r11g11b10");
+            let pre_path = directory.0.join("writer-test.pre_aa.eye0.png");
+            let post_path = directory.0.join("writer-test.post_aa.eye1.png");
+            if fail {
+                std::fs::create_dir(&pre_path).unwrap();
+            }
+            let mut metadata = test_metadata();
+            metadata.capture = Some(test_capture(&path));
+            let raw = vec![0, 255, 128, 1];
+            let stages = vec![
+                StageImage {
+                    record: 0,
+                    artifact: StageArtifact::R11G11B10(raw.clone()),
+                },
+                StageImage {
+                    record: 1,
+                    artifact: StageArtifact::Png(test_image()),
+                },
+                StageImage {
+                    record: 2,
+                    artifact: StageArtifact::Png(
+                        Image::from_rows(&[10, 20, 30, 7], 4, 1, 1, ChannelOrder::Rgba).unwrap(),
+                    ),
+                },
+            ];
+            let (sender, jobs) = mpsc::sync_channel(1);
+            let mut writer = test_writer(Some(sender), false);
+            let completion = writer
+                .try_submit(
+                    ImageTarget::HarnessScreenshot {
+                        path: path.clone(),
+                        sidecar: Box::new(metadata),
+                        stages,
+                    },
+                    test_image(),
+                )
+                .unwrap();
+            assert!(matches!(
+                completion.try_recv(),
+                Err(mpsc::TryRecvError::Empty)
+            ));
+            drop(writer);
+            run(jobs);
+            let outcome = completion.recv().unwrap();
+            assert_eq!(outcome.result, Ok(path.clone()));
+            assert_eq!(std::fs::read(&raw_path).unwrap(), raw);
+            assert_eq!(outcome.stages[0].raw, Some(raw_path));
+            assert_eq!(outcome.stages[2].png, Some(post_path.clone()));
+            assert_eq!(
+                image::open(post_path).unwrap().to_rgba8().as_raw(),
+                &[10, 20, 30, 255]
+            );
+            if fail {
+                assert!(outcome.stages[1].png.is_none());
+                assert!(outcome.stages[1].error.as_ref().unwrap().contains("pre_aa"));
+            } else {
+                assert_eq!(outcome.stages[1].png, Some(pre_path.clone()));
+                assert_eq!(
+                    image::open(pre_path).unwrap().to_rgba8().as_raw(),
+                    &[30, 20, 10, 255]
+                );
+            }
+            let sidecar: serde_json::Value =
+                serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap())
+                    .unwrap();
+            assert_eq!(
+                sidecar["stages"],
+                serde_json::to_value(outcome.stages).unwrap()
+            );
+        }
+    }
+
+    fn test_capture(path: &std::path::Path) -> crate::screenshot::harness::types::CapturedFrame {
+        crate::screenshot::harness::types::CapturedFrame {
+            png: path.to_owned(),
+            metadata: path.with_extension("json"),
+            frame_ordinal: 1,
+            predicted_display_time_ns: 42,
+            source: crate::screenshot::harness::types::CaptureKind::EyeTextures,
+            width: 2,
+            height: 1,
+            eye_width: 1,
+            eye_height: 1,
+            format: "test".to_owned(),
+            fresh_eyes: [true; 2],
+            rendered_eyes: [true; 2],
+            selected_eye: None,
+            mode: crate::stereo::dispatch::RenderMode::Multipass,
+            visual: crate::testing::visual::metadata(),
+            comparison_inputs: crate::screenshot::harness::types::ComparisonInputs {
+                build_stamp: "test-build",
+                profile: crate::testing::visual::DiagnosticProfile::Native,
+                camera: None,
+                eyes: [None, None],
+                eye_width: 1,
+                eye_height: 1,
+                world_scale: 1.0,
+            },
+            effective_config: crate::config::Config::new(),
+            single_pass: None,
+            stages: [(Stage::MainColor, 0), (Stage::PreAa, 0), (Stage::PostAa, 1)]
+                .into_iter()
+                .map(|(stage, eye)| StageRecord {
+                    frame: 42,
+                    stage,
+                    eye,
+                    source: Some(crate::screenshot::harness::stages::Source {
+                        width: 1,
+                        height: 1,
+                        format: if stage == Stage::MainColor {
+                            "DXGI_FORMAT_R11G11B10_FLOAT"
+                        } else {
+                            "DXGI_FORMAT_R8G8B8A8_TYPELESS"
+                        }
+                        .to_owned(),
+                    }),
+                    viewports: Vec::new(),
+                    scissors: Vec::new(),
+                    scissor_enabled: None,
+                    means: None,
+                    png: None,
+                    raw: None,
+                    error: None,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
     fn completion_follows_both_file_writes() {
         let directory = TestDirectory::new();
         let path = directory.0.join("completion.png");
@@ -402,16 +595,22 @@ mod tests {
         let completion = writer
             .try_submit(test_target(path.clone()), test_image())
             .unwrap();
-        assert_eq!(completion.try_recv(), Err(mpsc::TryRecvError::Empty));
+        assert!(matches!(
+            completion.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
         drop(writer);
         run(jobs);
-        assert_eq!(completion.recv().unwrap(), Ok(path.clone()));
+        assert_eq!(completion.recv().unwrap().result, Ok(path.clone()));
         assert!(image::open(&path).is_ok());
         let metadata: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
         assert_eq!(metadata["id"], "writer-test");
         assert_eq!(metadata["state"], "captured");
-        assert_eq!(completion.try_recv(), Err(mpsc::TryRecvError::Disconnected));
+        assert!(matches!(
+            completion.try_recv(),
+            Err(mpsc::TryRecvError::Disconnected)
+        ));
     }
 
     #[test]
@@ -429,7 +628,7 @@ mod tests {
                 .unwrap();
             drop(writer);
             run(jobs);
-            let error = completion.recv().unwrap().unwrap_err();
+            let error = completion.recv().unwrap().result.unwrap_err();
             let failed_path = if path == &png_failure {
                 path.clone()
             } else {
@@ -460,7 +659,7 @@ mod tests {
             .unwrap();
         drop(writer);
         run(jobs);
-        assert_eq!(completion.recv().unwrap(), Ok(path));
+        assert_eq!(completion.recv().unwrap().result, Ok(path));
         assert!(abandoned_path.with_extension("json").is_file());
     }
 
@@ -495,7 +694,10 @@ mod tests {
                 .to_string()
                 .contains("disconnected")
         );
-        assert_eq!(admitted.try_recv(), Err(mpsc::TryRecvError::Disconnected));
+        assert!(matches!(
+            admitted.try_recv(),
+            Err(mpsc::TryRecvError::Disconnected)
+        ));
     }
 
     fn test_image() -> Image {
@@ -506,6 +708,7 @@ mod tests {
         ImageTarget::HarnessScreenshot {
             path,
             sidecar: Box::new(test_metadata()),
+            stages: Vec::new(),
         }
     }
 

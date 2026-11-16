@@ -16,7 +16,7 @@ use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
 use crate::{
     config::Config,
-    image_writer::{self, ImageTarget},
+    image_writer::{self, ImageTarget, WriteOutcome},
     screenshot::{
         CaptureSource,
         harness::types::{
@@ -193,6 +193,7 @@ pub(crate) fn capture(
     let comparison_inputs = comparison_inputs(eye_width, capture.image.height(), &visual);
     active.result.state = CaptureState::Captured;
     active.result.readiness = readiness();
+    let (stage_records, stage_images) = stages::take(frame.unwrap());
     active.result.capture = Some(CapturedFrame {
         png: png.clone(),
         metadata,
@@ -210,7 +211,7 @@ pub(crate) fn capture(
         mode,
         visual,
         comparison_inputs,
-        stages: stages::take(frame.unwrap()),
+        stages: stage_records,
         effective_config,
         single_pass: if mode == RenderMode::SinglePass {
             capture.diagnostics
@@ -224,11 +225,13 @@ pub(crate) fn capture(
         ImageTarget::HarnessScreenshot {
             path: png,
             sidecar: Box::new(sidecar),
+            stages: stage_images,
         },
         capture.image,
     ) {
         Ok(receiver) => active.phase = Phase::Writing(receiver),
         Err(error) => {
+            fail_unwritten_stages(&mut active.result, "image writer: admission failed");
             active.result.error = Some(format!("screenshot harness: writer admission: {error:#}"));
             publish_logged(&active.result_path(), &active.result);
             state.active = None;
@@ -256,14 +259,36 @@ fn advance(state: &mut State, now: Instant, latest_readiness: Option<Readiness>)
     if let Phase::Writing(receiver) = &active.phase {
         let outcome = match receiver.try_recv() {
             Ok(outcome) => Some(outcome),
-            Err(TryRecvError::Disconnected) => Some(Err("image writer disconnected".to_owned())),
+            Err(TryRecvError::Disconnected) => {
+                Some(Err("image writer disconnected".to_owned()).into())
+            }
             Err(TryRecvError::Empty) => None,
         };
         if let Some(outcome) = outcome {
             if !active.reported {
-                match outcome {
-                    Ok(_) => active.result.state = CaptureState::Completed,
-                    Err(error) => active.result.error = Some(error),
+                if let Some(capture) = &mut active.result.capture
+                    && !outcome.stages.is_empty()
+                {
+                    capture.stages = outcome.stages;
+                }
+                match outcome.result {
+                    Ok(_) => {
+                        let stage_error = active.result.capture.as_ref().is_some_and(|capture| {
+                            capture.stages.iter().any(|stage| stage.error.is_some())
+                        });
+                        if stage_error {
+                            active.result.error = Some(
+                                "screenshot harness: stage artifact capture or write failed"
+                                    .to_owned(),
+                            );
+                        } else {
+                            active.result.state = CaptureState::Completed;
+                        }
+                    }
+                    Err(error) => {
+                        fail_unwritten_stages(&mut active.result, &error);
+                        active.result.error = Some(error);
+                    }
                 }
                 publish_logged(&active.result_path(), &active.result);
             }
@@ -285,6 +310,12 @@ fn advance(state: &mut State, now: Instant, latest_readiness: Option<Readiness>)
             }
             .to_owned(),
         );
+        if !pending {
+            fail_unwritten_stages(
+                &mut active.result,
+                "image writer: stage write completion timed out",
+            );
+        }
         publish_logged(&active.result_path(), &active.result);
         active.reported = true;
         if pending {
@@ -325,7 +356,17 @@ impl Active {
 
 enum Phase {
     Pending,
-    Writing(Receiver<Result<PathBuf, String>>),
+    Writing(Receiver<WriteOutcome>),
+}
+
+fn fail_unwritten_stages(result: &mut CaptureMetadata, error: &str) {
+    if let Some(capture) = &mut result.capture {
+        for stage in &mut capture.stages {
+            if stage.png.is_none() && stage.raw.is_none() && stage.error.is_none() {
+                stage.error = Some(format!("screenshot stages: {error}"));
+            }
+        }
+    }
 }
 
 fn frame_identity() -> Option<i64> {
@@ -458,7 +499,9 @@ mod tests {
         let now = state.active.as_ref().unwrap().started;
         advance(&mut state, now, None);
         assert!(!folder.result().exists());
-        sender.send(Ok(folder.0.join("capture.png"))).unwrap();
+        sender
+            .send(Ok(folder.0.join("capture.png")).into())
+            .unwrap();
         advance(&mut state, now, None);
         let result: serde_json::Value =
             serde_json::from_slice(&std::fs::read(folder.result()).unwrap()).unwrap();
@@ -475,7 +518,7 @@ mod tests {
             let started = state.active.as_ref().unwrap().started;
             if writer_failure {
                 sender
-                    .send(Err("metadata write failed".to_owned()))
+                    .send(Err("metadata write failed".to_owned()).into())
                     .unwrap();
             }
             advance(&mut state, started + TIMEOUT, None);
@@ -485,7 +528,9 @@ mod tests {
             assert!(result["error"].is_string());
             if !writer_failure {
                 assert!(state.active.is_some());
-                sender.send(Ok(folder.0.join("capture.png"))).unwrap();
+                sender
+                    .send(Ok(folder.0.join("capture.png")).into())
+                    .unwrap();
                 advance(&mut state, started + TIMEOUT, None);
                 let unchanged: serde_json::Value =
                     serde_json::from_slice(&std::fs::read(folder.result()).unwrap()).unwrap();
