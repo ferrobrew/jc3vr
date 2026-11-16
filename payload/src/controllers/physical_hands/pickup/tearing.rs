@@ -3,12 +3,13 @@
 use std::num::NonZeroUsize;
 
 use body_rig::geometry::point_velocity;
-use glam::Vec3;
+use glam::{Mat4, Vec3};
 
 use crate::controllers::physical_hands::{
     bodies,
     doors::{
         config::TearTuning,
+        engine as door_engine,
         tearing::{self, Acquisition, Gesture, TearGrip, TearResult},
     },
     grasp::PalmMotion,
@@ -131,6 +132,18 @@ fn step_with(
             apply(state, &held, continuity, outcome);
             continue;
         }
+        let vehicle_frame = engine.vehicle_frame(&grip);
+        let local_from_world =
+            if vehicle_frame.is_finite() && vehicle_frame.determinant().abs() > 1e-6 {
+                vehicle_frame.inverse()
+            } else {
+                for (grip, holder) in state.doors.iter_mut().zip(holders) {
+                    if holder && let Some(grip) = grip.as_mut() {
+                        grip.reset();
+                    }
+                }
+                continue;
+            };
         let mut requested = false;
         for k in 0..2 {
             if !holders[k] {
@@ -168,6 +181,7 @@ fn step_with(
             let gesture = Gesture {
                 dt,
                 lag_m: lag.length() / scale,
+                lag_direction: local_from_world.transform_vector3(lag).normalize_or_zero(),
                 separating_speed_mps: speed,
                 opening_push_m,
                 load: report.load,
@@ -202,6 +216,7 @@ fn step_with(
 trait TearEngine {
     fn alive(&mut self, held: &Held) -> bool;
     fn continuity(&mut self, grip: &TearGrip, held: &Held) -> TearResult;
+    fn vehicle_frame(&mut self, grip: &TearGrip) -> Mat4;
     fn hinge(&mut self, grip: &mut TearGrip, anchor: Vec3) -> Option<(f32, f32, Vec3)>;
     fn tear(&mut self, grip: &TearGrip, held: &Held) -> TearResult;
 }
@@ -215,6 +230,10 @@ impl TearEngine for NativeTearing {
 
     fn continuity(&mut self, grip: &TearGrip, held: &Held) -> TearResult {
         unsafe { tearing::continuity(grip, held.object, held.body) }
+    }
+
+    fn vehicle_frame(&mut self, grip: &TearGrip) -> Mat4 {
+        unsafe { door_engine::vehicle_frame(grip.door.vehicle) }
     }
 
     fn hinge(&mut self, grip: &mut TearGrip, anchor: Vec3) -> Option<(f32, f32, Vec3)> {
@@ -285,7 +304,7 @@ pub(super) fn apply(
 mod tests {
     use std::num::NonZeroUsize;
 
-    use glam::Vec3;
+    use glam::{Mat4, Vec3};
 
     use super::*;
     use crate::controllers::{
@@ -336,6 +355,7 @@ mod tests {
     struct Engine {
         requests: usize,
         checks: usize,
+        vehicle_frame: Option<Mat4>,
     }
 
     impl TearEngine for Engine {
@@ -345,6 +365,9 @@ mod tests {
         fn continuity(&mut self, _: &TearGrip, _: &Held) -> TearResult {
             self.checks += 1;
             TearResult::Refused
+        }
+        fn vehicle_frame(&mut self, _: &TearGrip) -> Mat4 {
+            self.vehicle_frame.unwrap_or(Mat4::IDENTITY)
         }
         fn hinge(&mut self, _: &mut TearGrip, _: Vec3) -> Option<(f32, f32, Vec3)> {
             None
@@ -520,6 +543,94 @@ mod tests {
                 } else {
                     assert_eq!(engine.requests, 0, "commanded motion hides the actual yank");
                 }
+            }
+        }
+    }
+
+    #[test_case::test_case(None; "valid frame")]
+    #[test_case::test_case(Some(Mat4::ZERO); "singular frame resets intent")]
+    #[test_case::test_case(Some(Mat4::NAN); "nonfinite frame resets intent")]
+    fn rotating_and_translating_vehicle_keeps_the_local_tear_baseline(invalid_frame: Option<Mat4>) {
+        for scale in [0.7, 1.0, 2.0] {
+            let h = held();
+            let mut state = PickupState::new();
+            state.held[0] = Some(h);
+            state.doors[0] = Some(grip());
+            let mut engine = Engine::default();
+            for tick in 0..=30 {
+                let yank = tick == 30;
+                let orientation = glam::Quat::from_rotation_z(tick as f32 * 0.1);
+                let centre = Vec3::new(tick as f32 * 0.2, -2.0, 1.0);
+                let world = Mat4::from_rotation_translation(orientation, centre);
+                engine.vehicle_frame = if tick == 29 {
+                    invalid_frame.or(Some(world))
+                } else {
+                    Some(world)
+                };
+                let anchor = world.transform_point3(Vec3::Y * scale);
+                let lag = if yank { 0.22 } else { 0.01 };
+                let target = anchor + world.transform_vector3(Vec3::X * lag * scale);
+                let velocities = Velocities {
+                    linear: Vec3::X * 10.0,
+                    angular: Vec3::Z * 5.0,
+                };
+                let body = bodies::BodyState {
+                    pose: BodyPose {
+                        centre,
+                        orientation,
+                    },
+                    velocities,
+                    mass_kg: Some(10.0),
+                    inverse_inertia: Vec3::ONE,
+                };
+                let palm = PalmMotion {
+                    pose: Pose {
+                        position: target,
+                        orientation,
+                    },
+                    velocity: point_velocity(centre, velocities.linear, velocities.angular, target)
+                        + if yank {
+                            world.transform_vector3(Vec3::X * 3.0 * scale)
+                        } else {
+                            Vec3::ZERO
+                        },
+                    angular_velocity: velocities.angular,
+                };
+                let report = HeldReport {
+                    mass_kg: 10.0,
+                    liftable: true,
+                    shared: false,
+                    centre,
+                    anchor,
+                    target,
+                    lag_m: lag,
+                    load: 1.0,
+                    twist: 0.0,
+                    joined: true,
+                };
+                let mut out = TickOutcome {
+                    reports: [Some(report), None],
+                    ..TickOutcome::default()
+                };
+                step_with(
+                    &mut state,
+                    Frame {
+                        palms: [Some(palm), None],
+                        observed: [Some(Observation::of(&h, body)), None],
+                        dt: 0.02,
+                        world_scale: scale,
+                    },
+                    &TEARING,
+                    &mut out,
+                    &mut engine,
+                );
+                let tears = yank && invalid_frame.is_none();
+                assert_eq!(
+                    engine.requests,
+                    usize::from(tears),
+                    "tick={tick}, scale={scale}"
+                );
+                assert_eq!(out.tears, u64::from(tears));
             }
         }
     }

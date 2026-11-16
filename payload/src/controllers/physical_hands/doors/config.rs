@@ -48,6 +48,7 @@ pub struct TearTuning {
     pub settle_s: f32,
     /// The fastest the lag may change for the grip to count as steady, metres per second.
     pub settle_speed_mps: f32,
+    pub direction_cos: f32,
     /// The lag a yank opens above the settled lag, metres.
     pub yank_lag_m: f32,
     /// How fast the lag must grow, and the hand pull away from the door, for a yank, metres per
@@ -77,13 +78,14 @@ pub const TEARING: TearTuning = TearTuning {
     enabled: true,
     settle_s: 0.2,
     settle_speed_mps: 0.15,
+    direction_cos: 0.866_025_4,
     yank_lag_m: 0.16,
     yank_speed_mps: 0.6,
     wrench_lag_m: 0.28,
-    wrench_s: 0.08,
+    wrench_s: 0.18,
     free_swing_share: 0.85,
     push_lag_m: 0.14,
-    push_hold_s: 0.18,
+    push_hold_s: 0.35,
     push_load: 0.65,
     limit_margin_rad: 0.08,
 };

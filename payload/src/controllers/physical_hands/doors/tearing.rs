@@ -116,6 +116,7 @@ impl TearGesture {
 pub(crate) struct Gesture {
     pub dt: f32,
     pub lag_m: f32,
+    pub lag_direction: Vec3,
     pub separating_speed_mps: f32,
     pub opening_push_m: f32,
     pub load: f32,
@@ -354,7 +355,10 @@ impl OpeningMotion {
 struct Intent {
     /// How long the lag has held steady, seconds.
     steady_s: f32,
-    previous_lag: Option<f32>,
+    previous: Option<(f32, Vec3)>,
+    at_limit: Option<bool>,
+    direction: Option<Vec3>,
+    settled_push: f32,
     /// The lag the grip settled at, once it has: the gestures measure from it.
     settled_lag: Option<f32>,
     /// How long a hard pull has held its lag, seconds.
@@ -367,6 +371,7 @@ impl Intent {
         let Gesture {
             dt,
             lag_m,
+            lag_direction,
             separating_speed_mps,
             opening_push_m,
             load,
@@ -378,6 +383,8 @@ impl Intent {
             || dt <= 0.0
             || dt > 0.1
             || !lag_m.is_finite()
+            || lag_m < 0.0
+            || !lag_direction.is_finite()
             || !separating_speed_mps.is_finite()
             || !opening_push_m.is_finite()
             || !load.is_finite()
@@ -385,37 +392,67 @@ impl Intent {
             *self = Self::default();
             return None;
         }
-        let rate = self.previous_lag.replace(lag_m).map(|p| (lag_m - p) / dt);
-        if rate.is_some_and(|r| r.abs() <= c.settle_speed_mps.max(0.01)) {
+        if free_swing {
+            *self = Self::default();
+            return None;
+        }
+        let direction = lag_direction.normalize_or_zero();
+        let changed_direction = self.direction.is_some_and(|before| {
+            direction != Vec3::ZERO && before.dot(direction) < c.direction_cos.clamp(0.0, 1.0)
+        });
+        if self.at_limit.is_some_and(|before| before != at_limit) || changed_direction {
+            *self = Self::default();
+        }
+        self.at_limit = Some(at_limit);
+        if self.direction.is_none() && direction != Vec3::ZERO {
+            self.direction = Some(direction);
+        }
+        let previous = self.previous.replace((lag_m, direction));
+        let rate = previous.map(|(lag, _)| (lag_m - lag) / dt);
+        let settle_speed = c.settle_speed_mps.max(0.01);
+        let steady = rate.is_some_and(|r| r.abs() <= settle_speed)
+            && separating_speed_mps.abs() <= settle_speed
+            && previous.is_some_and(|(_, before)| {
+                (direction - before).length() * lag_m / dt <= settle_speed
+            });
+        if steady {
             self.steady_s += dt;
         } else {
             self.steady_s = 0.0;
         }
-        // A grip that holds steady settles, or settles again, at its lag; one that eases off
-        // settles lower at once, so a gesture is measured from the hand's resting lag.
-        if self.steady_s >= c.settle_s.max(0.05) {
-            self.settled_lag = Some(lag_m);
-        }
-        let settled = self.settled_lag.as_mut()?;
-        *settled = settled.min(lag_m);
-        let above = lag_m - *settled;
+        let above = self.settled_lag.map_or(0.0, |settled| lag_m - settled);
+        let opening_aligned =
+            lag_m > 0.0 && opening_push_m >= lag_m * c.free_swing_share.clamp(0.0, 1.0);
+        let pull = self.settled_lag.is_some() && !(at_limit && opening_aligned);
         let yank_speed = c.yank_speed_mps.max(0.3);
-        let yank = !free_swing
+        let yank = pull
             && above >= c.yank_lag_m.max(0.05)
             && separating_speed_mps >= yank_speed
             && rate.is_some_and(|r| r >= yank_speed);
-        if !free_swing && above >= c.wrench_lag_m.max(c.yank_lag_m) {
+        if pull && above >= c.wrench_lag_m.max(c.yank_lag_m) {
             self.wrench_s += dt;
         } else {
             self.wrench_s = 0.0;
         }
         if at_limit
+            && opening_aligned
+            && self.settled_lag.is_some()
             && load >= c.push_load.clamp(0.1, 1.0)
-            && opening_push_m >= c.push_lag_m.max(0.05)
+            && opening_push_m - self.settled_push >= c.push_lag_m.max(0.05)
         {
             self.push_s += dt;
         } else {
             self.push_s = 0.0;
+        }
+        if self.wrench_s == 0.0 && self.push_s == 0.0 {
+            if self.steady_s >= c.settle_s.max(0.05) {
+                self.settled_lag = Some(lag_m);
+                self.settled_push = opening_push_m;
+                self.direction = (direction != Vec3::ZERO).then_some(direction);
+            } else if let Some(settled) = self.settled_lag.as_mut() {
+                *settled = settled.min(lag_m);
+                self.settled_push = self.settled_push.min(opening_push_m);
+            }
         }
         let gesture = if yank {
             Some(TearGesture::Yank)
@@ -502,463 +539,4 @@ impl TearRefusal {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::controllers::physical_hands::doors::config::TEARING;
-
-    fn target(vehicle_body: Option<u32>) -> DoorTarget {
-        DoorTarget {
-            vehicle: NonZeroUsize::new(16).unwrap(),
-            vehicle_body,
-            part_index: 2,
-            slot: jc3gi::vehicle::vehicle::DoorSlot::FRONT_LEFT,
-            latched: false,
-            outward: Vec3::X,
-        }
-    }
-
-    struct QueuedPart {
-        owner: Option<NonZeroUsize>,
-        captured_alive: bool,
-        weak_vehicle: Option<NonZeroUsize>,
-        current_body: Option<u32>,
-        result: TearResult,
-        proof: bool,
-        reads: usize,
-    }
-
-    impl QueuedPart {
-        fn live() -> Self {
-            Self {
-                owner: NonZeroUsize::new(8),
-                captured_alive: true,
-                weak_vehicle: Some(target(None).vehicle),
-                current_body: Some(3),
-                result: TearResult::Refused,
-                proof: false,
-                reads: 0,
-            }
-        }
-    }
-
-    impl AcquisitionEngine for QueuedPart {
-        fn owner(&mut self, _: u32) -> Option<NonZeroUsize> {
-            self.owner
-        }
-        fn alive(&mut self, _: NonZeroUsize, _: u32) -> bool {
-            self.proof = self.captured_alive;
-            self.captured_alive
-        }
-        fn vehicle_of(&mut self, object: NonZeroUsize) -> Option<NonZeroUsize> {
-            assert_eq!(self.owner, Some(object));
-            self.proof = self.weak_vehicle == Some(target(None).vehicle);
-            self.weak_vehicle
-        }
-        fn vehicle_body(&mut self, _: NonZeroUsize) -> Option<u32> {
-            assert!(
-                self.proof,
-                "vehicle dereferenced before current liveness proof"
-            );
-            self.reads += 1;
-            self.current_body
-        }
-        fn continuity(&mut self, _: &TearGrip, _: NonZeroUsize, _: u32) -> TearResult {
-            assert!(self.proof);
-            self.result
-        }
-    }
-
-    #[test]
-    fn queued_surviving_part_never_dereferences_a_destroyed_or_different_vehicle() {
-        let object = NonZeroUsize::new(8).unwrap();
-        for capture in [Some(3), None] {
-            let mut engine = QueuedPart {
-                captured_alive: false,
-                weak_vehicle: None,
-                ..QueuedPart::live()
-            };
-            assert_eq!(
-                take_with(target(capture), object, 7, &mut engine),
-                Err(AcquireRefusal::VehicleUnproven)
-            );
-            assert_eq!(engine.reads, 0);
-        }
-        let mut engine = QueuedPart {
-            captured_alive: false,
-            weak_vehicle: NonZeroUsize::new(32),
-            ..QueuedPart::live()
-        };
-        assert_eq!(
-            take_with(target(Some(3)), object, 7, &mut engine),
-            Err(AcquireRefusal::VehicleUnproven)
-        );
-        assert_eq!(engine.reads, 0);
-        let mut engine = QueuedPart {
-            weak_vehicle: NonZeroUsize::new(32),
-            ..QueuedPart::live()
-        };
-        assert_eq!(
-            take_with(target(None), object, 7, &mut engine),
-            Err(AcquireRefusal::VehicleUnproven)
-        );
-        assert_eq!(engine.reads, 0);
-        let mut engine = QueuedPart {
-            owner: None,
-            ..QueuedPart::live()
-        };
-        assert_eq!(
-            take_with(target(None), object, 7, &mut engine),
-            Err(AcquireRefusal::BodyReowned)
-        );
-        assert_eq!(engine.reads, 0);
-    }
-
-    #[test]
-    fn an_unlatched_door_keeps_its_grip_when_the_captured_vehicle_body_changes() {
-        let object = NonZeroUsize::new(8).unwrap();
-        let door = target(Some(3));
-        // The captured body still names the vehicle, but the vehicle's own body is another.
-        let mut engine = QueuedPart {
-            current_body: Some(4),
-            ..QueuedPart::live()
-        };
-        assert_eq!(
-            take_with(door, object, 7, &mut engine),
-            Ok(Acquisition::Attached(TearGrip::new(door, 4)))
-        );
-        // The captured body no longer names the vehicle; the part's weak reference proves it.
-        let mut engine = QueuedPart {
-            captured_alive: false,
-            current_body: Some(4),
-            ..QueuedPart::live()
-        };
-        assert_eq!(
-            take_with(door, object, 7, &mut engine),
-            Ok(Acquisition::Attached(TearGrip::new(door, 4)))
-        );
-    }
-
-    #[test]
-    fn queued_acquisition_classifies_external_detachment_and_lost_continuity() {
-        let object = NonZeroUsize::new(8).unwrap();
-        for capture in [Some(3), None] {
-            let door = target(capture);
-            let mut engine = QueuedPart::live();
-            assert_eq!(
-                take_with(door, object, 7, &mut engine),
-                Ok(Acquisition::Attached(TearGrip::new(door, 3)))
-            );
-            let mut engine = QueuedPart {
-                result: TearResult::Detached,
-                ..QueuedPart::live()
-            };
-            assert_eq!(
-                take_with(door, object, 7, &mut engine),
-                Ok(Acquisition::Detached)
-            );
-            let mut engine = QueuedPart {
-                result: TearResult::Lost,
-                ..QueuedPart::live()
-            };
-            assert_eq!(
-                take_with(door, object, 7, &mut engine),
-                Err(AcquireRefusal::ContinuityLost)
-            );
-            let mut engine = QueuedPart {
-                current_body: None,
-                ..QueuedPart::live()
-            };
-            assert_eq!(
-                take_with(door, object, 7, &mut engine),
-                Err(AcquireRefusal::NoVehicleBody)
-            );
-        }
-    }
-
-    fn quiet() -> Gesture {
-        Gesture {
-            dt: 0.02,
-            lag_m: 0.01,
-            separating_speed_mps: 0.0,
-            opening_push_m: 0.0,
-            load: 0.0,
-            at_limit: false,
-            free_swing: false,
-        }
-    }
-
-    fn tears(intent: &mut Intent, gesture: Gesture, c: &TearTuning) -> bool {
-        intent.step(gesture, c).is_some()
-    }
-
-    fn armed() -> Intent {
-        let mut intent = Intent::default();
-        for _ in 0..15 {
-            assert!(!tears(&mut intent, quiet(), &TEARING));
-        }
-        intent
-    }
-
-    #[test]
-    fn native_body_loss_change_and_relatch_never_count_as_detachment() {
-        assert_eq!(body_continuity(true, false, true), TearResult::Refused);
-        assert_eq!(body_continuity(true, true, false), TearResult::Detached);
-        assert_eq!(body_continuity(false, true, false), TearResult::Lost);
-        assert_eq!(body_continuity(false, false, true), TearResult::Lost);
-        assert_eq!(body_continuity(true, false, false), TearResult::Lost);
-    }
-
-    #[test]
-    fn push_direction_requires_observed_swing_and_tracks_opening_not_closing() {
-        let mut motion = OpeningMotion::default();
-        assert_eq!(motion.observe(1.0, Vec3::ZERO), Vec3::ZERO);
-        assert_eq!(motion.observe(1.0, Vec3::ZERO), Vec3::ZERO);
-        assert_eq!(motion.observe(1.1, Vec3::X * 0.1), Vec3::X);
-        assert_eq!(motion.observe(1.0, Vec3::ZERO), Vec3::X);
-        assert_eq!(motion.observe(f32::NAN, Vec3::ZERO), Vec3::ZERO);
-    }
-
-    #[test]
-    fn opening_pull_and_unsettled_handoff_never_tear() {
-        let mut intent = Intent::default();
-        for lag in [0.06, 0.10, 0.18, 0.25] {
-            assert!(!tears(
-                &mut intent,
-                Gesture {
-                    lag_m: lag,
-                    separating_speed_mps: 4.0,
-                    ..quiet()
-                },
-                &TEARING
-            ));
-        }
-    }
-
-    #[test]
-    fn sharp_yank_requires_new_lag_and_does_not_repeat() {
-        let mut intent = armed();
-        let yank = Gesture {
-            lag_m: 0.22,
-            separating_speed_mps: 3.0,
-            ..quiet()
-        };
-        assert!(tears(&mut intent, yank, &TEARING));
-        assert!(!tears(&mut intent, yank, &TEARING));
-        assert!(!tears(
-            &mut armed(),
-            Gesture {
-                separating_speed_mps: 0.5,
-                ..yank
-            },
-            &TEARING
-        ));
-    }
-
-    #[test]
-    fn push_requires_limit_direction_and_duration() {
-        let push = Gesture {
-            lag_m: 0.16,
-            opening_push_m: 0.16,
-            load: 0.9,
-            at_limit: true,
-            ..quiet()
-        };
-        let c = TEARING;
-        let mut intent = armed();
-        for _ in 0..8 {
-            assert!(!tears(&mut intent, push, &c));
-        }
-        assert!(tears(&mut intent, Gesture { dt: 0.03, ..push }, &c));
-        for bad in [
-            Gesture { load: 0.2, ..push },
-            Gesture {
-                at_limit: false,
-                ..push
-            },
-            Gesture {
-                opening_push_m: -0.16,
-                ..push
-            },
-            Gesture {
-                opening_push_m: 0.05,
-                ..push
-            },
-        ] {
-            let mut intent = armed();
-            for _ in 0..30 {
-                assert!(!tears(&mut intent, bad, &c));
-            }
-        }
-    }
-
-    #[test]
-    fn disabled_or_stale_tracking_resets_intent() {
-        let mut intent = armed();
-        assert!(!tears(
-            &mut intent,
-            Gesture { dt: 0.5, ..quiet() },
-            &TEARING
-        ));
-        assert!(intent.settled_lag.is_none());
-        let mut c = TEARING;
-        c.enabled = false;
-        let mut intent = armed();
-        assert!(!tears(&mut intent, quiet(), &c));
-        assert!(intent.settled_lag.is_none());
-    }
-
-    /// The session's attempt: a door at rest, held through a joint, pulled at under a metre per
-    /// second. The pull grows the lag as fast as the hand moves, so it is a yank.
-    #[test]
-    fn a_firm_pull_on_a_door_that_does_not_give_tears_it() {
-        let mut intent = armed();
-        let mut lag = 0.01;
-        let mut torn = None;
-        for _ in 0..40 {
-            lag += 0.8 * 0.02;
-            let gesture = Gesture {
-                lag_m: lag,
-                separating_speed_mps: 0.8,
-                ..quiet()
-            };
-            if let Some(kind) = intent.step(gesture, &TEARING) {
-                torn = Some((kind, lag));
-                break;
-            }
-        }
-        let (kind, lag) = torn.expect("the pull tears the door");
-        assert_eq!(kind, TearGesture::Yank);
-        assert!(lag < 0.25, "{lag}");
-    }
-
-    /// A heavy door hanging well off the hand settles at that lag, and the gestures measure from it.
-    #[test]
-    fn a_grip_settled_far_off_the_hand_measures_from_its_settled_lag() {
-        let mut intent = Intent::default();
-        let hanging = Gesture {
-            lag_m: 0.12,
-            ..quiet()
-        };
-        for _ in 0..15 {
-            assert!(!tears(&mut intent, hanging, &TEARING));
-        }
-        assert_eq!(intent.settled_lag, Some(0.12));
-        // The old absolute threshold would read this as a yank already; above the settled lag it
-        // is not.
-        let small = Gesture {
-            lag_m: 0.2,
-            separating_speed_mps: 3.0,
-            ..quiet()
-        };
-        assert!(!tears(&mut intent, small, &TEARING));
-        let mut intent = Intent::default();
-        for _ in 0..15 {
-            tears(&mut intent, hanging, &TEARING);
-        }
-        assert!(tears(
-            &mut intent,
-            Gesture {
-                lag_m: 0.32,
-                ..small
-            },
-            &TEARING
-        ));
-    }
-
-    /// A slow pull the door will not follow tears once its lag has held far enough above the
-    /// settled lag, short of where the hand's body lets go of a joined door.
-    #[test]
-    fn a_slow_hard_pull_tears_and_a_slower_creep_settles_instead() {
-        let pull = |speed: f32| {
-            let mut intent = armed();
-            let mut lag = 0.01;
-            for tick in 0..200 {
-                lag += speed * 0.02;
-                let gesture = Gesture {
-                    lag_m: lag,
-                    separating_speed_mps: speed,
-                    ..quiet()
-                };
-                if let Some(kind) = intent.step(gesture, &TEARING) {
-                    return Some((kind, lag, tick));
-                }
-            }
-            None
-        };
-        let (kind, lag, _) = pull(0.3).expect("a slow hard pull tears");
-        assert_eq!(kind, TearGesture::HardPull);
-        assert!(lag < 0.4, "{lag}");
-        assert_eq!(
-            pull(0.1),
-            None,
-            "a creep under the settling speed resettles"
-        );
-    }
-
-    /// A pull the door would swing with does not tear it, unless the hinge holds it there.
-    #[test]
-    fn a_pull_along_a_free_swing_never_tears() {
-        let mut intent = armed();
-        let mut lag: f32 = 0.01;
-        for _ in 0..60 {
-            lag += 1.5 * 0.02;
-            let gesture = Gesture {
-                lag_m: lag.min(0.5),
-                separating_speed_mps: 1.5,
-                free_swing: true,
-                ..quiet()
-            };
-            assert!(!tears(&mut intent, gesture, &TEARING));
-        }
-    }
-
-    #[test]
-    fn healthy_authored_parts_are_allowed_but_protections_and_invalid_parts_are_not() {
-        let allowed = Permit {
-            vehicle_protected: false,
-            part_protected: false,
-            authored: true,
-            body_survives: true,
-            valid: true,
-            health: 100,
-            parallel: false,
-        };
-        assert!(allowed.allowed());
-        for refused in [
-            Permit {
-                vehicle_protected: true,
-                ..allowed
-            },
-            Permit {
-                part_protected: true,
-                ..allowed
-            },
-            Permit {
-                authored: false,
-                ..allowed
-            },
-            Permit {
-                body_survives: false,
-                ..allowed
-            },
-            Permit {
-                valid: false,
-                ..allowed
-            },
-            Permit {
-                health: -1,
-                ..allowed
-            },
-            Permit {
-                health: i32::MAX,
-                ..allowed
-            },
-            Permit {
-                parallel: true,
-                ..allowed
-            },
-        ] {
-            assert!(!refused.allowed());
-        }
-    }
-}
+mod tests;
