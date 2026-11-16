@@ -1,6 +1,6 @@
 //! The request file: a TOML file a script drops into the configuration directory to start or stop
 //! the test tools without the debug UI or a key. The game thread looks for it once a second, and
-//! reads, deletes, and acts on it.
+//! claims, reads, deletes, and acts on it.
 //!
 //! ```toml
 //! command = "scenario"  # record, stop_recording, replay, stop_replay, scenario, or stop_scenario
@@ -46,11 +46,12 @@ pub(crate) fn poll() {
     let Some(path) = crate::config::paths::file(FILE_NAME) else {
         return;
     };
-    if !path.exists() {
-        return;
-    }
-    match take(&path).and_then(|text| parse(&path, &text)) {
-        Ok(request) => act(request),
+    match take(&path) {
+        Ok(Some(text)) => match parse(&path, &text) {
+            Ok(request) => act(request),
+            Err(error) => tracing::warn!("{error}"),
+        },
+        Ok(None) => {}
         Err(error) => tracing::warn!("{error}"),
     }
 }
@@ -86,6 +87,7 @@ struct RequestError {
 #[derive(Debug)]
 enum RequestErrorKind {
     Read(TextError),
+    Claim(std::io::Error),
     Remove(std::io::Error),
     Parse(toml::de::Error),
     /// The command needs a path and has none.
@@ -103,6 +105,7 @@ impl std::fmt::Display for RequestError {
         write!(f, "testing: request file {}: ", self.path.display())?;
         match &self.kind {
             RequestErrorKind::Read(e) => write!(f, "could not read it: {e}"),
+            RequestErrorKind::Claim(e) => write!(f, "could not claim it: {e}"),
             RequestErrorKind::Remove(e) => {
                 write!(f, "could not remove it, so it is not acted on: {e}")
             }
@@ -154,17 +157,52 @@ struct RequestFile {
     warmup_frames: Option<u32>,
 }
 
-/// Read the file and remove it, so that it is acted on once. A file that cannot be removed is not
-/// acted on, or it would be acted on again every second.
-fn take(path: &Path) -> Result<String, RequestError> {
-    let error = |kind| RequestError {
-        path: path.to_owned(),
-        kind,
-    };
-    let text =
-        text::read(path, text::REQUEST_BYTES).map_err(|e| error(RequestErrorKind::Read(e)))?;
-    std::fs::remove_file(path).map_err(|e| error(RequestErrorKind::Remove(e)))?;
-    Ok(text)
+/// Claim before reading so cancellation and replacement cannot redirect the final unlink.
+/// The game thread is the sole consumer; an interrupted claim is discarded, never replayed.
+fn take(path: &Path) -> Result<Option<String>, RequestError> {
+    claim(path)?.map(ClaimedRequest::read).transpose()
+}
+
+struct ClaimedRequest {
+    path: PathBuf,
+}
+
+impl ClaimedRequest {
+    fn read(self) -> Result<String, RequestError> {
+        let error = |kind| RequestError {
+            path: self.path.clone(),
+            kind,
+        };
+        let text = text::read(&self.path, text::REQUEST_BYTES)
+            .map_err(|e| error(RequestErrorKind::Read(e)));
+        let removed =
+            std::fs::remove_file(&self.path).map_err(|e| error(RequestErrorKind::Remove(e)));
+        removed?;
+        text
+    }
+}
+
+fn claim(path: &Path) -> Result<Option<ClaimedRequest>, RequestError> {
+    let claimed = path.with_extension("toml.claimed");
+    // One fixed claim bounds stale files across restarts. Only the consumer touches this path.
+    match std::fs::remove_file(&claimed) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(RequestError {
+                path: claimed,
+                kind: RequestErrorKind::Remove(error),
+            });
+        }
+    }
+    match std::fs::rename(path, &claimed) {
+        Ok(()) => Ok(Some(ClaimedRequest { path: claimed })),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(RequestError {
+            path: path.to_owned(),
+            kind: RequestErrorKind::Claim(error),
+        }),
+    }
 }
 
 fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
@@ -252,9 +290,115 @@ fn act(request: Request) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    struct RequestDirectory(PathBuf);
+
+    impl RequestDirectory {
+        fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            let path = std::env::temp_dir().join(format!(
+                "jc3vr-request-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed),
+            ));
+            std::fs::create_dir(&path).unwrap();
+            Self(path)
+        }
+
+        fn request(&self) -> PathBuf {
+            self.0.join(FILE_NAME)
+        }
+    }
+
+    impl Drop for RequestDirectory {
+        fn drop(&mut self) {
+            std::fs::remove_dir_all(&self.0).unwrap();
+        }
+    }
+
+    #[test]
+    fn a_claimed_request_cannot_remove_the_replacement_restoration() {
+        let directory = RequestDirectory::new();
+        let path = directory.request();
+        std::fs::write(&path, "command = 'record'").unwrap();
+        let claimed = claim(&path).unwrap().unwrap();
+        assert!(!path.exists());
+        let restoration = "command = 'visual_end'\nid = 'suite_end'";
+        std::fs::write(&path, restoration).unwrap();
+        assert_eq!(claimed.read().unwrap(), "command = 'record'");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), restoration);
+        assert_eq!(take(&path).unwrap().as_deref(), Some(restoration));
+        assert!(take(&path).unwrap().is_none());
+    }
+
+    #[test]
+    fn cancellation_before_claim_preserves_the_restoration_request() {
+        let directory = RequestDirectory::new();
+        let path = directory.request();
+        std::fs::write(&path, "command = 'record'").unwrap();
+        std::fs::rename(&path, path.with_extension("cancelled")).unwrap();
+        assert!(take(&path).unwrap().is_none());
+        let restoration = "command = 'visual_end'\nid = 'suite_end'";
+        std::fs::write(&path, restoration).unwrap();
+        assert_eq!(take(&path).unwrap().as_deref(), Some(restoration));
+    }
+
+    #[test]
+    fn stale_claims_are_discarded_without_replaying_and_do_not_accumulate() {
+        let directory = RequestDirectory::new();
+        let path = directory.request();
+        let stale = path.with_extension("toml.claimed");
+        std::fs::write(&stale, "command = 'record'").unwrap();
+        assert!(take(&path).unwrap().is_none());
+        assert!(!stale.exists());
+        std::fs::write(&stale, "command = 'record'").unwrap();
+        std::fs::write(&path, "command = 'stop_recording'").unwrap();
+        assert_eq!(
+            take(&path).unwrap().as_deref(),
+            Some("command = 'stop_recording'")
+        );
+        assert_eq!(std::fs::read_dir(&directory.0).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn unreadable_claims_are_removed_without_touching_new_requests() {
+        let directory = RequestDirectory::new();
+        let path = directory.request();
+        for bytes in [vec![0xff], vec![b'x'; text::REQUEST_BYTES + 1]] {
+            std::fs::write(&path, bytes).unwrap();
+            let claimed = claim(&path).unwrap().unwrap();
+            std::fs::write(&path, "command = 'stop_recording'").unwrap();
+            assert!(matches!(
+                claimed.read().unwrap_err().kind,
+                RequestErrorKind::Read(_)
+            ));
+            assert_eq!(
+                take(&path).unwrap().as_deref(),
+                Some("command = 'stop_recording'")
+            );
+        }
+    }
+
+    #[test]
+    fn blocked_stale_claim_cleanup_leaves_the_pending_request_intact() {
+        let directory = RequestDirectory::new();
+        let path = directory.request();
+        std::fs::create_dir(path.with_extension("toml.claimed")).unwrap();
+        std::fs::write(&path, "command = 'stop_recording'").unwrap();
+        assert!(matches!(
+            take(&path).unwrap_err().kind,
+            RequestErrorKind::Remove(_)
+        ));
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            "command = 'stop_recording'"
+        );
+    }
 
     fn read(text: &str) -> Result<Request, RequestErrorKind> {
         parse(Path::new("C:/config/test_request.toml"), text).map_err(|e| e.kind)
