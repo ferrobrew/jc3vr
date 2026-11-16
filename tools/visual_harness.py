@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import argparse
 import contextlib
 import dataclasses
 import fcntl
@@ -27,6 +26,7 @@ if __package__:
         Capture,
         Command,
         ComparisonReport,
+        ConfigurationAck,
         FailedAck,
         Mode,
         NativeCapture,
@@ -40,14 +40,16 @@ if __package__:
         SuiteResult,
         acknowledgement_from_wire,
     )
-    from .visual_suite import SuiteError, run_suite
+    from .visual_suite import SuiteError, run_orientation_sweep, run_suite
     from .visual_viewer import DEFAULT_POINTER, publish_run
+    from .visual_harness_cli import parse_args
 else:
     from visual_protocol import (
         Acknowledgement,
         Capture,
         Command,
         ComparisonReport,
+        ConfigurationAck,
         FailedAck,
         Mode,
         NativeCapture,
@@ -61,8 +63,9 @@ else:
         SuiteResult,
         acknowledgement_from_wire,
     )
-    from visual_suite import SuiteError, run_suite
+    from visual_suite import SuiteError, run_orientation_sweep, run_suite
     from visual_viewer import DEFAULT_POINTER, publish_run
+    from visual_harness_cli import parse_args
 
 
 LOG = logging.getLogger("visual_harness")
@@ -90,6 +93,7 @@ class Options:
     release: bool = False
     launch_only: bool = False
     suite: bool = False
+    orientation_sweep: bool = False
     smoke: bool = False
     samples: int = 3
     warmup_frames: int = 30
@@ -130,15 +134,16 @@ class VisualHarness:
             raise HarnessError("visual harness: samples must be an integer of at least three")
         if type(self.options.warmup_frames) is not int or not 1 <= self.options.warmup_frames <= 300:
             raise HarnessError("visual harness: warmup_frames must be an integer from 1 through 300")
-        if sum((self.options.suite, self.options.smoke, self.options.launch_only)) > 1:
-            raise HarnessError("visual harness: --suite, --smoke, and --launch-only are mutually exclusive")
+        if sum((self.options.suite, self.options.orientation_sweep, self.options.smoke,
+                self.options.launch_only)) > 1:
+            raise HarnessError("visual harness: --suite, --orientation-sweep, --smoke, and --launch-only are mutually exclusive")
         self.reject_existing()
         if self.options.output is not None:
             output = self.options.output.expanduser().resolve()
             if output.exists() and (not output.is_dir() or any(output.iterdir())):
                 raise HarnessError(f"visual harness: output must be an empty directory: {output}")
         commands = ("cp", "gamescope", "steam-run", "setpriv", "dbus-daemon", "nix-shell")
-        for command in commands + (("uv",) if self.options.suite else ()):
+        for command in commands + (("uv",) if self.options.suite or self.options.orientation_sweep else ()):
             if not shutil.which(command):
                 raise HarnessError(f"visual harness: missing executable {command}")
         self.steam = Path(os.environ.get("STEAM_ROOT", "~/.steam/steam")).expanduser().resolve()
@@ -235,7 +240,14 @@ class VisualHarness:
             self.result.status = RunOutcome.STARTED
             self._write_report()
             if smoke is not None or not self.options.launch_only:
-                callback = smoke or (run_suite if self.options.suite else default_smoke)
+                if smoke is not None:
+                    callback = smoke
+                elif self.options.orientation_sweep:
+                    callback = run_orientation_sweep
+                elif self.options.suite:
+                    callback = run_suite
+                else:
+                    callback = default_smoke
                 result = callback(self)
                 self.result.complete(result)
                 return result
@@ -291,6 +303,11 @@ class VisualHarness:
             raise HarnessError(f"visual harness: {command} {request_id}: {error}") from error
         if isinstance(result, FailedAck):
             raise HarnessError(f"visual harness: {command} {request_id}: {result.error}")
+        if isinstance(result, ConfigurationAck) and request_value.pose is not None:
+            try:
+                result.validate_pose(request_value)
+            except ProtocolError as error:
+                raise HarnessError(f"visual harness: {command} {request_id}: {error}") from error
         return result
 
     def cancel_pending_request(self) -> bool:
@@ -925,27 +942,7 @@ def validate_png(path):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description="Run Just Cause 3 in a private headless VR session.")
-    parser.add_argument("--check", action="store_true")
-    parser.add_argument("--no-build", action="store_true")
-    parser.add_argument("--release", action="store_true")
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--launch-only", action="store_true", help="launch without claiming smoke success")
-    mode.add_argument("--smoke", action="store_true", help="run the default two-capture smoke check")
-    mode.add_argument("--suite", action="store_true", help="run the four-mode visual comparison suite")
-    parser.add_argument("--samples", type=int, default=3)
-    parser.add_argument("--warmup-frames", type=int, default=30)
-    parser.add_argument("--reverse-multipass", action="store_true")
-    parser.add_argument("--gpu", help="Vulkan PCI vendor:device, e.g. 10de:2b85")
-    parser.add_argument("--xdotool")
-    parser.add_argument("--output", type=Path)
-    parser.add_argument("--timeout", type=float)
-    for name, default in (("startup-timeout", 90), ("build-timeout", 900),
-                          ("copy-timeout", 180), ("menu-interval", 3), ("menu-timeout", 60)):
-        parser.add_argument(f"--{name}", type=float, default=default)
-    args = parser.parse_args(argv)
-    if args.timeout is None:
-        args.timeout = 600 if args.suite else 180
+    args = parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
     def interrupted(signum, _frame):
         raise KeyboardInterrupt(f"signal {signum}")

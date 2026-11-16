@@ -23,10 +23,12 @@ from PIL import Image
 
 if __package__:
     from tools.visual_compare_report import to_wire, write_reports
-    from tools.visual_protocol import DiagnosticProfile
+    from tools.visual_protocol import DiagnosticProfile, PoseEvidence, PoseRequest, ProtocolError
+    from tools.visual_provenance import PoseProvenance, RunAnchor
 else:
     from visual_compare_report import to_wire, write_reports
-    from visual_protocol import DiagnosticProfile
+    from visual_protocol import DiagnosticProfile, PoseEvidence, PoseRequest, ProtocolError
+    from visual_provenance import PoseProvenance, RunAnchor
 
 
 class Mode(StrEnum):
@@ -165,6 +167,7 @@ class VisualReadiness:
     error: str | None
     warmup_frames: int
     completed_frames: int
+    pose: PoseEvidence | None = None
 
     @classmethod
     def from_wire(cls, value):
@@ -186,6 +189,12 @@ class VisualReadiness:
             raise ValueError("metadata.visual.warmup_frames: expected at most 300")
         if completed < warmup:
             raise ValueError("metadata.visual.completed_frames: below warmup_frames")
+        pose = None
+        if value.get("pose") is not None:
+            try:
+                pose = PoseEvidence.from_wire(value.get("pose"))
+            except ProtocolError as error:
+                raise ValueError(f"metadata.visual.pose: {error}") from error
         return cls(
             integer(value, "generation"),
             profile,
@@ -195,6 +204,7 @@ class VisualReadiness:
             None,
             warmup,
             completed,
+            pose,
         )
 
 
@@ -244,6 +254,11 @@ class CaptureMetadata:
             raise ValueError(
                 "metadata.visual.profile: differs from comparison_inputs.profile"
             )
+        if readiness.pose is not None:
+            try:
+                readiness.pose.validate_applied(inputs.camera)
+            except ProtocolError as error:
+                raise ValueError(f"metadata.visual.pose: {error}") from error
         return cls(
             text(value, "id"),
             mode,
@@ -314,6 +329,7 @@ class ModeSamples:
 class Case:
     name: str
     modes: tuple[ModeSamples, ...]
+    expected_pose: PoseRequest | None = None
 
     @classmethod
     def from_wire(cls, value):
@@ -328,7 +344,13 @@ class Case:
                     Mode(mode), tuple(SampleSpec.from_wire(entry) for entry in entries)
                 )
             )
-        return cls(text(value, "name"), tuple(parsed))
+        expected_pose = None
+        if value.get("expected_pose") is not None:
+            try:
+                expected_pose = PoseRequest.from_wire(value.get("expected_pose"))
+            except ProtocolError as error:
+                raise ValueError(f"case.expected_pose: {error}") from error
+        return cls(text(value, "name"), tuple(parsed), expected_pose)
 
 
 @dataclass(frozen=True)
@@ -505,6 +527,7 @@ def analyze_manifest(
             Thresholds.from_wire(asdict(candidate))
         report.thresholds = limits
         report.repeatability_thresholds = repeat_limits
+        run_anchor = RunAnchor()
         for index, case in enumerate(manifest.cases):
             report.cases.append(
                 analyze_case(
@@ -515,6 +538,7 @@ def analyze_manifest(
                     report,
                     tile_size,
                     top_tiles,
+                    run_anchor=run_anchor,
                 )
             )
         report.status = aggregate_status(case.status for case in report.cases)
@@ -584,8 +608,9 @@ def aggregate_status(statuses):
     return Outcome.FAIL if Outcome.FAIL in statuses else Outcome.PASS
 
 
-def analyze_case(case, root, output, case_index, report, tile_size, top_tiles):
+def analyze_case(case, root, output, case_index, report, tile_size, top_tiles, run_anchor=None):
     result = CaseReport(case.name)
+    provenance = PoseProvenance(case.expected_pose)
     required = (Mode.LEFT_ONLY, Mode.RIGHT_ONLY, Mode.MULTIPASS, Mode.SINGLE_PASS)
     modes = required + (
         (Mode.REVERSE_MULTIPASS,)
@@ -613,6 +638,7 @@ def analyze_case(case, root, output, case_index, report, tile_size, top_tiles):
                         )
                     seen_paths.add(path)
                 sample = load_sample(root, mode, index, entry)
+                provenance.add(sample.visual.pose, sample.inputs.camera)
                 if any(
                     sample.capture_id == prior.capture_id
                     for prior in mode_report.samples
@@ -646,6 +672,14 @@ def analyze_case(case, root, output, case_index, report, tile_size, top_tiles):
             mode_report.status = Outcome.PASS
         else:
             mode_report.errors.append("same-mode repeatability is unstable or invalid")
+    try:
+        provenance.finish()
+        if run_anchor is not None and provenance.anchor is not None:
+            run_anchor.require(provenance.anchor)
+    except ValueError as error:
+        for mode_report in result.modes:
+            mode_report.errors.append(str(error))
+            mode_report.status = Outcome.INCONCLUSIVE
     paired = [m for m in result.modes if len(m.mode.eyes) == 2]
     isolated = [m for m in result.modes if len(m.mode.eyes) == 1]
     checks = [(a, b, a.mode.eyes[0]) for a in isolated for b in paired]

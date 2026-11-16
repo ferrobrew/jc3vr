@@ -6,16 +6,20 @@ use std::{
 };
 
 use anyhow::Context as _;
+use glam::{Quat, Vec3};
 use jc3gi::clock::Clock;
 use parking_lot::Mutex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) use crate::stereo::dispatch::RenderMode;
 use crate::{
     config::{CONFIG, Config},
     hooks::graphics_engine::shader,
     stereo::{config::SinglePassConfig, dispatch, single_pass},
-    vr::{FreezeMode, ResolutionProgress, pose_control},
+    vr::{
+        FreezeMode, ResolutionProgress,
+        pose_control::{self, PoseValues},
+    },
 };
 pub(crate) type Mode = RenderMode;
 
@@ -38,6 +42,7 @@ pub(crate) struct VisualMetadata {
     pub warmup_frames: u32,
     pub completed_frames: u32,
     pub engine_dimensions: Option<(u32, u32)>,
+    pub pose: Option<PoseEvidence>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -55,7 +60,8 @@ struct VisualResult<'a> {
     metadata: &'a VisualMetadata,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
 pub(crate) struct RequestId(String);
 
 impl RequestId {
@@ -73,19 +79,176 @@ impl RequestId {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PoseError {
+    InvalidCaseId(&'static str),
+    NonFiniteAngle(&'static str),
+    AngleOutOfRange(&'static str),
+}
+
+impl std::fmt::Display for PoseError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidCaseId(reason) => write!(f, "visual pose: invalid case id: {reason}"),
+            Self::NonFiniteAngle(angle) => {
+                write!(f, "visual pose: the {angle} angle is not finite")
+            }
+            Self::AngleOutOfRange(angle) => {
+                write!(f, "visual pose: the {angle} angle is outside [-180, 180]")
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub(crate) struct OrientationOffset {
+    pub yaw_deg: f32,
+    pub pitch_deg: f32,
+    pub roll_deg: f32,
+}
+
+impl OrientationOffset {
+    fn quaternion(self) -> Quat {
+        Quat::from_euler(
+            pose_control::EULER,
+            self.yaw_deg.to_radians(),
+            self.pitch_deg.to_radians(),
+            self.roll_deg.to_radians(),
+        )
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PoseTable {
+    case_id: String,
+    yaw_deg: f32,
+    pitch_deg: f32,
+    roll_deg: f32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(try_from = "PoseTable")]
+pub(crate) struct PoseRequest {
+    case_id: RequestId,
+    yaw_deg: f32,
+    pitch_deg: f32,
+    roll_deg: f32,
+}
+
+impl PoseRequest {
+    pub(crate) fn new(
+        case_id: RequestId,
+        yaw_deg: f32,
+        pitch_deg: f32,
+        roll_deg: f32,
+    ) -> Result<Self, PoseError> {
+        for (angle, value) in [("yaw", yaw_deg), ("pitch", pitch_deg), ("roll", roll_deg)] {
+            if !value.is_finite() {
+                return Err(PoseError::NonFiniteAngle(angle));
+            }
+            if !(-180.0..=180.0).contains(&value) {
+                return Err(PoseError::AngleOutOfRange(angle));
+            }
+        }
+        Ok(Self {
+            case_id,
+            yaw_deg,
+            pitch_deg,
+            roll_deg,
+        })
+    }
+
+    fn offset(&self) -> OrientationOffset {
+        OrientationOffset {
+            yaw_deg: self.yaw_deg,
+            pitch_deg: self.pitch_deg,
+            roll_deg: self.roll_deg,
+        }
+    }
+
+    fn target(&self, base: PoseValues) -> PoseValues {
+        PoseValues::from_pose(
+            base.position,
+            base.orientation() * self.offset().quaternion(),
+        )
+    }
+
+    fn evidence(&self, base: PoseValues, applied: PoseValues) -> PoseEvidence {
+        PoseEvidence {
+            case_id: self.case_id.clone(),
+            offset: self.offset(),
+            anchor: PoseTransform::from(base),
+            applied: PoseTransform::from(applied),
+        }
+    }
+
+    fn matches_evidence(&self, evidence: &PoseEvidence) -> bool {
+        if evidence.case_id != self.case_id || evidence.offset != self.offset() {
+            return false;
+        }
+        let anchor_position = Vec3::from_array(evidence.anchor.position);
+        let anchor_orientation = Quat::from_array(evidence.anchor.orientation);
+        let applied_position = Vec3::from_array(evidence.applied.position);
+        let applied_orientation = Quat::from_array(evidence.applied.orientation);
+        anchor_position.is_finite()
+            && anchor_orientation.is_finite()
+            && applied_position.is_finite()
+            && applied_orientation.is_finite()
+            && applied_position.distance(anchor_position) <= POSE_POSITION_TOLERANCE
+            && orientations_match(
+                applied_orientation,
+                anchor_orientation * self.offset().quaternion(),
+            )
+    }
+}
+
+impl TryFrom<PoseTable> for PoseRequest {
+    type Error = PoseError;
+
+    fn try_from(table: PoseTable) -> Result<Self, Self::Error> {
+        let case_id = RequestId::parse(&table.case_id).map_err(PoseError::InvalidCaseId)?;
+        Self::new(case_id, table.yaw_deg, table.pitch_deg, table.roll_deg)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
+pub(crate) struct PoseTransform {
+    pub position: [f32; 3],
+    pub orientation: [f32; 4],
+}
+
+impl From<PoseValues> for PoseTransform {
+    fn from(values: PoseValues) -> Self {
+        Self {
+            position: values.position.to_array(),
+            orientation: values.orientation().to_array(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub(crate) struct PoseEvidence {
+    pub case_id: RequestId,
+    pub offset: OrientationOffset,
+    pub anchor: PoseTransform,
+    pub applied: PoseTransform,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) enum Request {
     Configure {
         id: RequestId,
         mode: Mode,
         warmup_frames: u32,
+        pose: Option<PoseRequest>,
     },
     End {
         id: RequestId,
     },
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct FrameObservation {
     pub mode: Mode,
     pub engine_dimensions: (u32, u32),
@@ -94,6 +257,7 @@ pub(crate) struct FrameObservation {
     pub camera_frozen: bool,
     pub frame_identity: Option<i64>,
     pub generation: u64,
+    pub pose: Option<PoseEvidence>,
 }
 
 pub(crate) fn enqueue(request: Request) {
@@ -137,6 +301,7 @@ pub(crate) fn process_pending() {
         return;
     };
     let previous_error = state.error.is_some();
+    let previous_pose = state.requested_pose.is_some();
     let active = Active {
         id: request.id().clone(),
         started: Instant::now(),
@@ -151,11 +316,17 @@ pub(crate) fn process_pending() {
         Request::Configure {
             mode,
             warmup_frames,
+            pose,
             ..
         } => {
             if state.saved.is_none() {
                 state.saved = Some(CONFIG.lock().clone());
                 pose_control::clear();
+            }
+            let reset_pose = previous_pose && pose.is_none();
+            state.requested_pose = pose;
+            if reset_pose {
+                pose_control::reset();
             }
             let first = state.mode.is_none();
             let previous_sps = Config::lock_query(|config| config.stereo.single_pass.enabled);
@@ -185,6 +356,7 @@ pub(crate) fn process_pending() {
         }
         Request::End { .. } => {
             state.mode = None;
+            state.clear_pose();
             CLOCK_HELD.store(false, Ordering::Release);
             dispatch::set_mode(RenderMode::Native);
             if let Some(saved) = state.saved.as_ref() {
@@ -220,18 +392,36 @@ pub(crate) fn frame_complete() {
         return;
     }
     let resolution = crate::vr::resolution_status();
+    let frame_identity = (crate::hooks::in_gameplay() && crate::vr::is_running_published())
+        .then(crate::vr::capture_views)
+        .flatten()
+        .map(|views| views.predicted_display_time_ns);
+    let rendered = frame_identity.and_then(pose_control::rendered_full_camera);
+    let live = pose_control::current();
+    let requested = state.requested_pose.clone();
+    let pose = match pose_frame(requested.as_ref(), frame_identity, rendered, live) {
+        PoseFrame::NotRequested => None,
+        PoseFrame::Defer => {
+            state.defer_for_pose(frame_identity);
+            return;
+        }
+        PoseFrame::Apply(target) => {
+            pose_control::set_current(target);
+            state.defer_for_pose(frame_identity);
+            return;
+        }
+        PoseFrame::Observed(evidence) => Some(evidence),
+    };
     let observed = FrameObservation {
         mode: dispatch::mode(),
         engine_dimensions: resolution.engine.unwrap_or_default(),
         target_dimensions: resolution.target.unwrap_or_default(),
         single_pass: single_pass::active() && single_pass::double_wide_active(),
-        camera_frozen: pose_control::current().is_some()
+        camera_frozen: live.is_some()
             && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
-        frame_identity: (crate::hooks::in_gameplay() && crate::vr::is_running_published())
-            .then(crate::vr::capture_views)
-            .flatten()
-            .map(|views| views.predicted_display_time_ns),
+        frame_identity,
         generation: state.generation,
+        pose,
     };
     let paused = unsafe {
         Clock::get().is_some_and(|clock| clock.m_Stop && clock.GetSPF(false) <= Clock::PAUSED_SPF)
@@ -250,6 +440,7 @@ pub(crate) fn frame_complete() {
 pub(crate) fn tick() {
     let mut state = STATE.lock();
     if let Some(active) = state.expire(Instant::now()) {
+        pose_control::reset();
         publish(&active.id, ResultState::Failed, &state.metadata());
     }
 }
@@ -272,6 +463,7 @@ pub(crate) fn shutdown() {
         pose_control::clear();
     }
     state.mode = None;
+    state.clear_pose();
     dispatch::set_mode(RenderMode::Native);
     state.ready = false;
     state.fail("visual control: the payload is shutting down".to_owned());
@@ -298,6 +490,8 @@ struct State {
     paused: bool,
     frozen: bool,
     error: Option<String>,
+    requested_pose: Option<PoseRequest>,
+    pose: Option<PoseEvidence>,
 }
 
 struct Active {
@@ -350,6 +544,8 @@ impl State {
             paused: false,
             frozen: false,
             error: None,
+            requested_pose: None,
+            pose: None,
         }
     }
 
@@ -369,6 +565,7 @@ impl State {
             warmup_frames: self.warmup_frames,
             completed_frames: self.completed_frames,
             engine_dimensions: self.last_dimensions,
+            pose: self.pose.clone(),
         }
     }
 
@@ -383,6 +580,14 @@ impl State {
         self.paused = paused;
         self.frozen = observed.camera_frozen;
         self.last_dimensions = Some(observed.engine_dimensions);
+        let pose = if let Some(requested) = self.requested_pose.as_ref() {
+            observed
+                .pose
+                .clone()
+                .filter(|evidence| requested.matches_evidence(evidence))
+        } else {
+            None
+        };
         let matches = observed.frame_identity.is_some()
             && self.mode == Some(observed.mode)
             && observed.single_pass == (observed.mode == Mode::SinglePass)
@@ -390,16 +595,33 @@ impl State {
             && observed.engine_dimensions.1 > 0
             && observed.engine_dimensions == observed.target_dimensions
             && paused
-            && observed.camera_frozen;
+            && observed.camera_frozen
+            && (self.requested_pose.is_none() || pose.is_some());
         if !matches {
             self.completed_frames = 0;
             self.ready = false;
+            self.pose = None;
             return;
         }
         if self.error.is_none() {
             self.completed_frames = self.completed_frames.saturating_add(1);
             self.ready = self.completed_frames >= self.warmup_frames.max(1);
+            self.pose = pose;
+        } else {
+            self.pose = None;
         }
+    }
+
+    fn defer_for_pose(&mut self, frame_identity: Option<i64>) {
+        self.last_frame = frame_identity;
+        self.completed_frames = 0;
+        self.ready = false;
+        self.pose = None;
+    }
+
+    fn clear_pose(&mut self) {
+        self.requested_pose = None;
+        self.pose = None;
     }
 
     fn is_ready(&self) -> bool {
@@ -428,6 +650,7 @@ impl State {
         self.completed_frames = 0;
         self.last_dimensions = None;
         self.last_frame = None;
+        self.pose = None;
         superseded
     }
 
@@ -479,6 +702,8 @@ impl State {
     fn fail_operation(&mut self, error: String) -> Option<Active> {
         self.ready = false;
         self.error = Some(error);
+        self.requested_pose = None;
+        self.pose = None;
         let operation = std::mem::replace(&mut self.operation, Operation::Idle);
         let active = match operation {
             Operation::Configuring(active) => active,
@@ -493,6 +718,70 @@ impl State {
         };
         Some(active)
     }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum PoseFrame {
+    NotRequested,
+    Defer,
+    Apply(PoseValues),
+    Observed(PoseEvidence),
+}
+
+const POSE_POSITION_TOLERANCE: f32 = 1e-5;
+const POSE_ORIENTATION_TOLERANCE: f32 = 1e-5;
+
+fn pose_frame(
+    request: Option<&PoseRequest>,
+    frame_identity: Option<i64>,
+    rendered: Option<(PoseValues, PoseValues)>,
+    live: Option<PoseValues>,
+) -> PoseFrame {
+    let Some(request) = request else {
+        return PoseFrame::NotRequested;
+    };
+    if frame_identity.is_none() {
+        return PoseFrame::Defer;
+    }
+    let Some((base, applied)) = rendered else {
+        return PoseFrame::Defer;
+    };
+    let target = request.target(base);
+    if pose_matches(applied, target) {
+        return PoseFrame::Observed(request.evidence(base, applied));
+    }
+    if live.is_some_and(|current| pose_matches(current, target)) {
+        PoseFrame::Defer
+    } else {
+        PoseFrame::Apply(target)
+    }
+}
+
+fn pose_matches(actual: PoseValues, target: PoseValues) -> bool {
+    actual.position.is_finite()
+        && target.position.is_finite()
+        && actual.position.distance(target.position) <= POSE_POSITION_TOLERANCE
+        && orientations_match(actual.orientation(), target.orientation())
+}
+
+fn orientations_match(actual: Quat, target: Quat) -> bool {
+    if !actual.is_finite() || !target.is_finite() {
+        return false;
+    }
+    let actual = actual.normalize();
+    let target = target.normalize();
+    if !actual.is_finite() || !target.is_finite() {
+        return false;
+    }
+    let actual = if actual.dot(target) < 0.0 {
+        -actual
+    } else {
+        actual
+    };
+    (actual.x - target.x).abs() <= POSE_ORIENTATION_TOLERANCE
+        && (actual.y - target.y).abs() <= POSE_ORIENTATION_TOLERANCE
+        && (actual.z - target.z).abs() <= POSE_ORIENTATION_TOLERANCE
+        && (actual.w - target.w).abs() <= POSE_ORIENTATION_TOLERANCE
 }
 
 fn apply_profile(config: &mut Config, mode: Mode) {

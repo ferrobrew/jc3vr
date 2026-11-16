@@ -24,6 +24,13 @@ if __package__:
         main,
         metadata_mismatches,
     )
+    from tools.visual_protocol import (
+        Camera,
+        OrientationOffset,
+        PoseEvidence,
+        PoseRequest,
+        compose_pose,
+    )
 else:
     from visual_compare import (
         ComparisonInputs,
@@ -34,6 +41,28 @@ else:
         main,
         metadata_mismatches,
     )
+    from visual_protocol import (
+        Camera,
+        OrientationOffset,
+        PoseEvidence,
+        PoseRequest,
+        compose_pose,
+    )
+
+
+def pose_wire(evidence):
+    return {
+        "case_id": evidence.case_id,
+        "offset": evidence.offset.to_wire(),
+        "anchor": {"position": list(evidence.anchor.position),
+                   "orientation": list(evidence.anchor.orientation)},
+        "applied": {"position": list(evidence.applied.position),
+                    "orientation": list(evidence.applied.orientation)},
+    }
+
+
+def camera_wire(camera):
+    return {"position": list(camera.position), "orientation": list(camera.orientation)}
 
 
 class VisualCompareTests(unittest.TestCase):
@@ -164,6 +193,60 @@ class VisualCompareTests(unittest.TestCase):
                 self.assertEqual(tile.box[2] - tile.box[0], 4)
                 for path in (tile.crops.a, tile.crops.b, tile.crops.diff):
                     self.assertTrue((self.output / path).is_file())
+
+    def test_expected_pose_provenance_is_strict_and_legacy_remains_valid(self):
+        request = PoseRequest("case_a", OrientationOffset(0.0, 0.0, 0.0))
+        anchor = Camera((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+        evidence = PoseEvidence(request.case_id, request.offset, anchor,
+                                compose_pose(anchor, request.offset))
+        self.manifest["cases"][0]["expected_pose"] = request.to_wire()
+        for samples in self.manifest["cases"][0]["modes"].values():
+            for sample in samples:
+                path = self.root / sample["metadata"]
+                metadata = json.loads(path.read_text())
+                metadata["visual"]["pose"] = pose_wire(evidence)
+                metadata["comparison_inputs"]["camera"] = camera_wire(evidence.applied)
+                path.write_text(json.dumps(metadata))
+        self.assertEqual(self.analyze().status, "pass")
+        self.assertEqual(self.analyze().to_wire()["cases"][0]["status"], "pass")
+
+        path = self.root / self.entries("left_only")[0]["metadata"]
+        original = path.read_text()
+        for change, expected in (
+                (lambda data: data["visual"]["pose"].update(case_id="case_b"), "case_id"),
+                (lambda data: data["visual"].pop("pose"), "no pose evidence"),
+                (lambda data: (
+                    data["visual"]["pose"].update(anchor=camera_wire(Camera((5.0, 0.0, 0.0), anchor.orientation))),
+                    data["visual"]["pose"].update(applied=camera_wire(Camera((5.0, 0.0, 0.0), anchor.orientation))),
+                    data["comparison_inputs"].update(camera=camera_wire(Camera((5.0, 0.0, 0.0), anchor.orientation))),
+                ), "anchor changed")):
+            with self.subTest(expected=expected):
+                data = json.loads(original)
+                change(data)
+                path.write_text(json.dumps(data))
+                report = self.analyze()
+                self.assertEqual(report.status, "inconclusive")
+                self.assertIn(expected, json.dumps(report.to_wire()))
+        path.write_text(original)
+        self.assertEqual(self.analyze().status, "pass")
+        swapped = copy.deepcopy(self.manifest["cases"][0])
+        swapped["name"] = "swapped"
+        swapped["expected_pose"] = PoseRequest(
+            "case_b", OrientationOffset(30.0, 0.0, 0.0)).to_wire()
+        self.manifest["cases"].append(swapped)
+        report = self.analyze()
+        self.assertEqual(report.status, "inconclusive")
+        self.assertIn("case_id", json.dumps(report.to_wire()))
+        self.manifest["cases"].pop()
+        del self.manifest["cases"][0]["expected_pose"]
+        for samples in self.manifest["cases"][0]["modes"].values():
+            for sample in samples:
+                path = self.root / sample["metadata"]
+                metadata = json.loads(path.read_text())
+                metadata["visual"].pop("pose")
+                metadata["comparison_inputs"]["camera"] = camera_wire(anchor)
+                path.write_text(json.dumps(metadata))
+        self.assertEqual(self.analyze().status, "pass")
 
     def test_stable_local_difference_fails_and_ranks_affected_tile(self):
         self.change_images(

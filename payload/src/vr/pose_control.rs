@@ -128,6 +128,7 @@ pub fn frozen_frame(capture: impl FnOnce() -> ([EyeView; 2], Quat, Vec3)) -> Fro
 /// matrix→euler→matrix round trip to drift through. Re-composition is rigid (rotation + translation
 /// only), which is all a camera world transform carries.
 pub fn full_camera_transform(capture: impl FnOnce() -> glam::Mat4) -> glam::Mat4 {
+    let frame = crate::vr::capture_views().map(|views| views.predicted_display_time_ns);
     let mut state = STATE.lock();
     if !state.as_ref().is_some_and(|s| s.cockpit.is_none()) {
         let (_, orientation, position) = capture().to_scale_rotation_translation();
@@ -136,8 +137,9 @@ pub fn full_camera_transform(capture: impl FnOnce() -> glam::Mat4) -> glam::Mat4
             PoseValues::from_pose(position, orientation),
         ));
     }
-    let values = state.as_ref().expect("just captured").current;
-    glam::Mat4::from_rotation_translation(values.orientation(), values.position)
+    let held = state.as_mut().expect("just captured");
+    held.rendered = stamp(frame, held.base, held.current);
+    glam::Mat4::from_rotation_translation(held.current.orientation(), held.current.position)
 }
 
 /// The compositor submission poses for this frame: the live ones when `frozen` is false, else the
@@ -173,6 +175,15 @@ pub fn clear() {
 /// or no VR frame has rendered since it was turned on).
 pub fn current() -> Option<PoseValues> {
     STATE.lock().as_ref().map(|s| s.current)
+}
+
+pub(crate) fn rendered_full_camera(frame: i64) -> Option<(PoseValues, PoseValues)> {
+    STATE
+        .lock()
+        .as_ref()
+        .and_then(|state| state.rendered)
+        .filter(|stamp| stamp.frame == frame)
+        .map(|stamp| (stamp.base, stamp.current))
 }
 
 /// The pose captured at freeze time, the base [`reset`] returns to. `None` when nothing is frozen.
@@ -224,6 +235,21 @@ static STATE: Mutex<Option<FrozenState>> = Mutex::new(None);
 static SUBMISSION: Mutex<Option<[openxr::Posef; 2]>> = Mutex::new(None);
 
 #[derive(Copy, Clone)]
+struct RenderedFullCamera {
+    frame: i64,
+    base: PoseValues,
+    current: PoseValues,
+}
+
+fn stamp(frame: Option<i64>, base: PoseValues, current: PoseValues) -> Option<RenderedFullCamera> {
+    frame.map(|frame| RenderedFullCamera {
+        frame,
+        base,
+        current,
+    })
+}
+
+#[derive(Copy, Clone)]
 struct FrozenState {
     /// The per-eye and sim-driven state a cockpit-frame capture needs, and the discriminant for
     /// which pose is held: `Some` is the cockpit freeze, `None` the full-camera one (whose held pose
@@ -234,6 +260,7 @@ struct FrozenState {
     base: PoseValues,
     /// The pose in force, as edited.
     current: PoseValues,
+    rendered: Option<RenderedFullCamera>,
 }
 
 impl FrozenState {
@@ -242,6 +269,7 @@ impl FrozenState {
             cockpit,
             base,
             current: base,
+            rendered: None,
         }
     }
 }
@@ -525,5 +553,35 @@ mod tests {
         // So does the inter-eye canting.
         let inter_eye = orientations[0].inverse() * orientations[1];
         assert!((inter_eye.to_euler(EULER).0 + 2.0 * cant).abs() < 1e-4);
+    }
+
+    #[test]
+    fn rendered_full_camera_stamp_is_keyed_by_frame_and_cleared() {
+        let _guard = TEST_LOCK.lock();
+        clear();
+        let base = PoseValues {
+            position: Vec3::new(1.0, 2.0, 3.0),
+            yaw_deg: 10.0,
+            pitch_deg: 0.0,
+            roll_deg: 0.0,
+        };
+        let current = PoseValues {
+            yaw_deg: 20.0,
+            ..base
+        };
+        assert!(stamp(None, base, current).is_none());
+        full_camera_transform(|| transform(0.0, 0.0, 0.0, base.position));
+        {
+            let mut state = STATE.lock();
+            state.as_mut().unwrap().rendered = stamp(Some(7), base, current);
+        }
+        assert_eq!(rendered_full_camera(7), Some((base, current)));
+        assert_eq!(rendered_full_camera(8), None);
+        set_current(current);
+        assert_eq!(rendered_full_camera(7), Some((base, current)));
+        reset();
+        assert_eq!(rendered_full_camera(7), Some((base, current)));
+        clear();
+        assert_eq!(rendered_full_camera(7), None);
     }
 }

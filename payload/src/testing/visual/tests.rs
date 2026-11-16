@@ -1,3 +1,4 @@
+use glam::{Quat, Vec3};
 use pretty_assertions::assert_eq;
 
 use super::*;
@@ -11,6 +12,7 @@ fn observation(state: &State, ordinal: i64) -> FrameObservation {
         camera_frozen: true,
         frame_identity: Some(ordinal),
         generation: state.generation,
+        pose: None,
     }
 }
 
@@ -337,4 +339,369 @@ fn duplicate_ids_include_queued_configuring_restoring_and_failed_restores() {
         assert!(state.contains_id(&id));
         assert!(state.contains_id(&queued));
     }
+}
+
+fn pose_request(case_id: &str, yaw_deg: f32, pitch_deg: f32, roll_deg: f32) -> PoseRequest {
+    PoseRequest::new(
+        RequestId::parse(case_id).unwrap(),
+        yaw_deg,
+        pitch_deg,
+        roll_deg,
+    )
+    .unwrap()
+}
+
+fn base_pose() -> PoseValues {
+    PoseValues {
+        position: Vec3::new(12.5, 2.25, -37.75),
+        yaw_deg: 24.0,
+        pitch_deg: -11.0,
+        roll_deg: 6.0,
+    }
+}
+
+#[test]
+fn pose_requests_compose_offsets_about_the_base_orientation() {
+    let base = base_pose();
+    for (yaw, pitch, roll) in [
+        (30.0, 0.0, 0.0),
+        (0.0, -20.0, 0.0),
+        (0.0, 0.0, 15.0),
+        (12.0, -34.0, 56.0),
+        (0.0, 90.0, 0.0),
+        (0.0, -90.0, 0.0),
+        (45.0, 89.0, -30.0),
+    ] {
+        let request = pose_request("sweep", yaw, pitch, roll);
+        let target = request.target(base);
+        let expected = base.orientation()
+            * Quat::from_euler(
+                pose_control::EULER,
+                yaw.to_radians(),
+                pitch.to_radians(),
+                roll.to_radians(),
+            );
+        assert_eq!(target.position, base.position);
+        assert!(
+            orientations_match(target.orientation(), expected),
+            "yaw {yaw} pitch {pitch} roll {roll}"
+        );
+        assert!(pose_matches(target, target));
+    }
+}
+
+#[test]
+fn orientation_matching_tolerates_quaternion_sign_and_rejects_non_finite() {
+    let q = Quat::from_euler(pose_control::EULER, 0.4, -0.3, 0.2);
+    assert!(orientations_match(q, q));
+    assert!(orientations_match(q, -q));
+    assert!(!orientations_match(q, Quat::from_rotation_y(0.2)));
+    assert!(!orientations_match(
+        Quat::from_xyzw(f32::NAN, 0.0, 0.0, 1.0),
+        q
+    ));
+    assert!(!orientations_match(
+        q,
+        Quat::from_xyzw(f32::INFINITY, 0.0, 0.0, 1.0)
+    ));
+}
+
+#[test]
+fn pose_targets_keep_the_base_position_and_do_not_accumulate() {
+    let base = base_pose();
+    let request = pose_request("sweep", 30.0, -12.0, 4.0);
+    let first = request.target(base);
+    let second = request.target(base);
+    assert_eq!(first, second);
+    assert_eq!(first.position, base.position);
+
+    let nudged = PoseValues {
+        yaw_deg: first.yaw_deg + 2.0,
+        ..first
+    };
+    let PoseFrame::Apply(target) =
+        pose_frame(Some(&request), Some(1), Some((base, nudged)), Some(nudged))
+    else {
+        panic!("a mismatched pose must be reapplied");
+    };
+    assert_eq!(target.position, base.position);
+    assert!(orientations_match(
+        target.orientation(),
+        first.orientation()
+    ));
+
+    let PoseFrame::Observed(evidence) =
+        pose_frame(Some(&request), Some(1), Some((base, target)), Some(target))
+    else {
+        panic!("the applied pose must be observed");
+    };
+    assert_eq!(evidence.case_id, RequestId::parse("sweep").unwrap());
+    assert_eq!(
+        evidence.offset,
+        OrientationOffset {
+            yaw_deg: 30.0,
+            pitch_deg: -12.0,
+            roll_deg: 4.0,
+        }
+    );
+    assert_eq!(evidence.anchor, PoseTransform::from(base));
+    assert_eq!(evidence.applied, PoseTransform::from(target));
+}
+
+#[test]
+fn an_identity_offset_returns_the_anchor_pose() {
+    let base = base_pose();
+    let request = pose_request("identity", 0.0, 0.0, 0.0);
+    let target = request.target(base);
+    assert_eq!(target.position, base.position);
+    assert!(orientations_match(target.orientation(), base.orientation()));
+    let PoseFrame::Observed(evidence) =
+        pose_frame(Some(&request), Some(1), Some((base, target)), Some(target))
+    else {
+        panic!("an identity offset must be observed");
+    };
+    assert_eq!(evidence.anchor.position, base.position.to_array());
+    assert!(orientations_match(
+        Quat::from_array(evidence.anchor.orientation),
+        Quat::from_array(evidence.applied.orientation),
+    ));
+}
+
+#[test]
+fn a_pose_request_defers_until_the_requested_pose_has_rendered() {
+    let base = base_pose();
+    let request = pose_request("sweep", 30.0, 0.0, 0.0);
+    assert_eq!(
+        pose_frame(Some(&request), None, None, None),
+        PoseFrame::Defer
+    );
+    assert_eq!(
+        pose_frame(Some(&request), Some(1), None, Some(base)),
+        PoseFrame::Defer
+    );
+    assert_eq!(
+        pose_frame(None, Some(1), Some((base, base)), Some(base)),
+        PoseFrame::NotRequested
+    );
+    let PoseFrame::Apply(target) =
+        pose_frame(Some(&request), Some(1), Some((base, base)), Some(base))
+    else {
+        panic!("the first rendered frame still holds the base pose");
+    };
+    assert_ne!(target, base);
+    let PoseFrame::Observed(_) =
+        pose_frame(Some(&request), Some(2), Some((base, target)), Some(target))
+    else {
+        panic!("the following frame holds the requested pose");
+    };
+}
+
+#[test]
+fn a_frame_without_pose_evidence_cannot_warm_or_publish_evidence() {
+    let mut state = warming(Mode::Multipass, 0);
+    state.requested_pose = Some(pose_request("sweep", 30.0, 0.0, 0.0));
+    state.complete(observation(&state, 1), true);
+    assert_eq!(state.completed_frames, 0);
+    assert!(!state.ready);
+    assert!(state.metadata().pose.is_none());
+
+    let base = base_pose();
+    let request = state.requested_pose.as_ref().unwrap();
+    let target = request.target(base);
+    let evidence = request.evidence(base, target);
+    let mut observed = observation(&state, 2);
+    observed.pose = Some(evidence.clone());
+    state.complete(observed, true);
+    assert!(state.ready);
+    assert_eq!(state.metadata().pose, Some(evidence));
+}
+
+#[test]
+fn deferring_for_an_unapplied_pose_clears_warmup_and_consumes_the_frame() {
+    let mut state = warming(Mode::Multipass, 1);
+    state.requested_pose = Some(pose_request("sweep", 30.0, 0.0, 0.0));
+    let base = base_pose();
+    let request = state.requested_pose.as_ref().unwrap();
+    let target = request.target(base);
+    let mut observed = observation(&state, 1);
+    observed.pose = Some(request.evidence(base, target));
+    state.complete(observed, true);
+    assert!(state.ready);
+
+    state.defer_for_pose(Some(2));
+    assert_eq!(state.completed_frames, 0);
+    assert!(!state.ready);
+    assert!(state.metadata().pose.is_none());
+    assert_eq!(state.last_frame, Some(2));
+
+    state.complete(observation(&state, 2), true);
+    assert_eq!(state.completed_frames, 0);
+}
+
+#[test]
+fn clearing_the_pose_request_drops_its_evidence() {
+    let mut state = warming(Mode::Multipass, 1);
+    let base = base_pose();
+    let request = pose_request("sweep", 30.0, 0.0, 0.0);
+    let target = request.target(base);
+    state.requested_pose = Some(request.clone());
+    state.pose = Some(request.evidence(base, target));
+    assert!(state.metadata().pose.is_some());
+
+    state.clear_pose();
+    assert!(state.requested_pose.is_none());
+    assert!(state.pose.is_none());
+    assert!(state.metadata().pose.is_none());
+
+    state.requested_pose = Some(request);
+    state.pose = Some(PoseEvidence {
+        case_id: RequestId::parse("sweep").unwrap(),
+        offset: OrientationOffset {
+            yaw_deg: 0.0,
+            pitch_deg: 0.0,
+            roll_deg: 0.0,
+        },
+        anchor: PoseTransform::from(base),
+        applied: PoseTransform::from(base),
+    });
+    state.start(Operation::Configuring(active("next")));
+    assert!(state.pose.is_none());
+}
+
+#[test]
+fn completed_frames_reject_evidence_that_does_not_match_the_request() {
+    let base = base_pose();
+    let request = pose_request("sweep", 30.0, 0.0, 0.0);
+    let target = request.target(base);
+    let good = request.evidence(base, target);
+    let variants = [
+        PoseEvidence {
+            case_id: RequestId::parse("other").unwrap(),
+            ..good.clone()
+        },
+        PoseEvidence {
+            offset: OrientationOffset {
+                yaw_deg: 31.0,
+                pitch_deg: 0.0,
+                roll_deg: 0.0,
+            },
+            ..good.clone()
+        },
+        PoseEvidence {
+            applied: PoseTransform::from(base),
+            ..good.clone()
+        },
+        PoseEvidence {
+            anchor: PoseTransform {
+                position: [f32::NAN, 0.0, 0.0],
+                ..good.anchor
+            },
+            ..good.clone()
+        },
+    ];
+    for (index, evidence) in variants.into_iter().enumerate() {
+        let mut state = warming(Mode::Multipass, 0);
+        state.requested_pose = Some(request.clone());
+        let mut observed = observation(&state, 1);
+        observed.pose = Some(evidence);
+        state.complete(observed, true);
+        assert_eq!(state.completed_frames, 0, "variant {index}");
+        assert!(!state.ready, "variant {index}");
+        assert!(state.metadata().pose.is_none(), "variant {index}");
+    }
+
+    let mut state = warming(Mode::Multipass, 0);
+    state.requested_pose = Some(request);
+    let mut observed = observation(&state, 1);
+    observed.pose = Some(good);
+    state.complete(observed, true);
+    assert!(state.ready);
+}
+
+#[test]
+fn a_late_live_edit_cannot_acknowledge_the_rendered_pose() {
+    let base = base_pose();
+    let request = pose_request("sweep", 60.0, 0.0, 0.0);
+    let target = request.target(base);
+    let older = pose_request("sweep", 30.0, 0.0, 0.0).target(base);
+
+    let PoseFrame::Defer = pose_frame(Some(&request), Some(1), Some((base, older)), Some(target))
+    else {
+        panic!("a live edit must not acknowledge the frame rendered before it");
+    };
+    let PoseFrame::Observed(evidence) =
+        pose_frame(Some(&request), Some(2), Some((base, target)), Some(target))
+    else {
+        panic!("the frame that rendered the requested pose must be observed");
+    };
+    assert_eq!(evidence.applied, PoseTransform::from(target));
+
+    let edited = PoseValues {
+        yaw_deg: target.yaw_deg + 5.0,
+        ..target
+    };
+    let PoseFrame::Observed(evidence) =
+        pose_frame(Some(&request), Some(3), Some((base, target)), Some(edited))
+    else {
+        panic!("the rendered pose is the evidence, not the live edit");
+    };
+    assert_eq!(evidence.applied, PoseTransform::from(target));
+    assert_ne!(evidence.applied, PoseTransform::from(edited));
+}
+
+#[test]
+fn a_missing_render_stamp_fails_closed() {
+    let base = base_pose();
+    let request = pose_request("sweep", 30.0, 0.0, 0.0);
+    let target = request.target(base);
+    assert_eq!(
+        pose_frame(Some(&request), Some(1), None, Some(target)),
+        PoseFrame::Defer
+    );
+    assert_eq!(
+        pose_frame(Some(&request), None, Some((base, target)), Some(target)),
+        PoseFrame::Defer
+    );
+}
+
+#[test]
+fn a_timed_out_configure_stops_requesting_and_clearing_its_evidence() {
+    let mut state = warming(Mode::Multipass, 1);
+    let request = pose_request("sweep", 30.0, 0.0, 0.0);
+    let base = base_pose();
+    let target = request.target(base);
+    let active = active("sweep");
+    let deadline = active.started + TIMEOUT;
+    state.start(Operation::Configuring(active));
+    state.requested_pose = Some(request.clone());
+    state.pose = Some(request.evidence(base, target));
+
+    assert!(state.expire(deadline).is_none());
+    let failed = state
+        .expire(deadline + Duration::from_millis(1))
+        .expect("the request times out");
+    assert_eq!(failed.id, RequestId::parse("sweep").unwrap());
+    assert!(state.requested_pose.is_none());
+    assert!(state.pose.is_none());
+    assert!(state.metadata().pose.is_none());
+    assert!(!state.ready);
+    assert!(state.mode.is_some());
+    assert!(state.error.as_ref().unwrap().contains("timed out"));
+}
+
+#[test]
+fn pose_evidence_serializes_the_agreed_wire_shape() {
+    let request = pose_request("sweep", 30.0, -10.0, 5.0);
+    let base = base_pose();
+    let target = request.target(base);
+    let evidence = request.evidence(base, target);
+    let json = serde_json::to_value(&evidence).unwrap();
+    assert_eq!(json["case_id"], "sweep");
+    assert_eq!(json["offset"]["yaw_deg"].as_f64(), Some(30.0));
+    assert_eq!(json["offset"]["pitch_deg"].as_f64(), Some(-10.0));
+    assert_eq!(json["offset"]["roll_deg"].as_f64(), Some(5.0));
+    assert_eq!(json["anchor"]["position"].as_array().unwrap().len(), 3);
+    assert_eq!(json["anchor"]["orientation"].as_array().unwrap().len(), 4);
+    assert_eq!(json["applied"]["position"].as_array().unwrap().len(), 3);
+    assert_eq!(json["applied"]["orientation"].as_array().unwrap().len(), 4);
 }

@@ -95,6 +95,8 @@ enum RequestErrorKind {
     /// The scenario folder is unknown, so a relative path cannot be resolved.
     NoFolder,
     InvalidId(&'static str),
+    InvalidPose(visual::PoseError),
+    PoseOnCommand(Command),
     NoMode,
     InvalidMode,
     InvalidWarmup,
@@ -112,6 +114,10 @@ impl std::fmt::Display for RequestError {
             RequestErrorKind::Parse(e) => write!(f, "could not parse it: {e}"),
             RequestErrorKind::NoPath(command) => write!(f, "{command:?} needs a path"),
             RequestErrorKind::InvalidId(reason) => write!(f, "invalid request id: {reason}"),
+            RequestErrorKind::InvalidPose(error) => write!(f, "{error}"),
+            RequestErrorKind::PoseOnCommand(command) => {
+                write!(f, "only visual_configure accepts a pose, not {command:?}")
+            }
             RequestErrorKind::NoMode => write!(f, "visual_configure needs a mode"),
             RequestErrorKind::InvalidMode => {
                 write!(f, "visual_configure does not accept the native mode")
@@ -155,6 +161,7 @@ struct RequestFile {
     pacing: Pacing,
     mode: Option<visual::RenderMode>,
     warmup_frames: Option<u32>,
+    pose: Option<visual::PoseTable>,
 }
 
 /// Claim before reading so cancellation and replacement cannot redirect the final unlink.
@@ -231,6 +238,18 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             .map(|folder| folder.join(&given))
             .ok_or_else(|| error(RequestErrorKind::NoFolder))
     };
+    let pose = match file.pose {
+        Some(table) => {
+            if file.command != Command::VisualConfigure {
+                return Err(error(RequestErrorKind::PoseOnCommand(file.command)));
+            }
+            Some(
+                visual::PoseRequest::try_from(table)
+                    .map_err(|reason| error(RequestErrorKind::InvalidPose(reason)))?,
+            )
+        }
+        None => None,
+    };
     Ok(match file.command {
         Command::VisualConfigure | Command::VisualEnd => {
             let id = visual::RequestId::parse(file.id.as_deref().unwrap_or_default())
@@ -250,6 +269,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                     id,
                     mode,
                     warmup_frames,
+                    pose,
                 }
             })
         }
@@ -446,6 +466,7 @@ mod tests {
                 read(&request),
                 Ok(Request::Visual(visual::Request::Configure {
                     warmup_frames: 30,
+                    pose: None,
                     ..
                 }))
             ));
@@ -488,6 +509,90 @@ mod tests {
             ),
             Err(RequestErrorKind::Parse(_))
         ));
+    }
+
+    #[test]
+    fn visual_pose_tables_validate_shape_ids_and_angles() {
+        let header = "command = 'visual_configure'\nid = 'configure-pose'\nmode = 'multipass'\n";
+        for (yaw, pitch, roll) in [
+            (0.0, 0.0, 0.0),
+            (180.0, -180.0, 180.0),
+            (-180.0, 180.0, -180.0),
+            (30.0, -12.5, 4.25),
+        ] {
+            let text = format!(
+                "{header}[pose]\ncase_id = 'sweep-1'\nyaw_deg = {yaw}\npitch_deg = {pitch}\nroll_deg = {roll}"
+            );
+            assert!(matches!(
+                read(&text),
+                Ok(Request::Visual(visual::Request::Configure {
+                    pose: Some(_),
+                    ..
+                }))
+            ));
+        }
+        assert!(matches!(
+            read(header),
+            Ok(Request::Visual(visual::Request::Configure {
+                pose: None,
+                ..
+            }))
+        ));
+        for id in ["", "../escape", "a/b", "é", &"x".repeat(65)] {
+            let text = format!(
+                "{header}[pose]\ncase_id = '{id}'\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0"
+            );
+            assert!(matches!(
+                read(&text),
+                Err(RequestErrorKind::InvalidPose(
+                    visual::PoseError::InvalidCaseId(_)
+                ))
+            ));
+        }
+        for (angle, expected) in [
+            ("181.0", visual::PoseError::AngleOutOfRange("yaw")),
+            ("-181.0", visual::PoseError::AngleOutOfRange("yaw")),
+            ("nan", visual::PoseError::NonFiniteAngle("yaw")),
+            ("inf", visual::PoseError::NonFiniteAngle("yaw")),
+            ("-inf", visual::PoseError::NonFiniteAngle("yaw")),
+        ] {
+            let text = format!(
+                "{header}[pose]\ncase_id = 'sweep-1'\nyaw_deg = {angle}\npitch_deg = 0.0\nroll_deg = 0.0"
+            );
+            assert!(
+                matches!(read(&text), Err(RequestErrorKind::InvalidPose(error)) if error == expected)
+            );
+        }
+        for text in [
+            format!("{header}[pose]\ncase_id = 'sweep-1'\nyaw_deg = 0.0"),
+            format!("{header}[pose]\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0"),
+            format!(
+                "{header}[pose]\ncase_id = 'sweep-1'\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0\nunknown = 1"
+            ),
+        ] {
+            assert!(matches!(read(&text), Err(RequestErrorKind::Parse(_))));
+        }
+    }
+
+    #[test]
+    fn a_pose_table_is_only_accepted_by_visual_configure() {
+        for (command, extra, expected) in [
+            ("visual_end", "\nid = 'end-pose'", Command::VisualEnd),
+            ("record", "", Command::Record),
+            ("screenshot", "\nid = 'shot'", Command::Screenshot),
+            ("scenario", "\npath = 'climb.toml'", Command::Scenario),
+        ] {
+            let text = format!(
+                "command = '{command}'{extra}\n[pose]\ncase_id = 'sweep-1'\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0"
+            );
+            assert!(
+                matches!(
+                    read(&text),
+                    Err(RequestErrorKind::PoseOnCommand(command)) if command == expected
+                ),
+                "{command}"
+            );
+        }
     }
 
     #[test]

@@ -19,8 +19,10 @@ from tools.visual_harness import (
     main,
     validate_capture,
 )
+from tools.visual_harness_cli import parse_args
 from tools.visual_protocol import (
     AckOutcome,
+    Camera,
     Capture,
     Command,
     ComparisonReport,
@@ -29,15 +31,19 @@ from tools.visual_protocol import (
     FailedAck,
     Mode,
     NativeCapture,
+    OrientationOffset,
     Outcome,
+    PoseEvidence,
+    PoseRequest,
     ProtocolError,
     Request,
     RestorationAck,
     ScreenshotAck,
     SmokeResult,
     acknowledgement_from_wire,
+    compose_pose,
 )
-from tools.visual_suite import SuiteError, run_suite
+from tools.visual_suite import ORIENTATION_SWEEP_CASES, SuiteError, run_orientation_sweep, run_suite
 
 
 def capture_wire(mode=Mode.MULTIPASS, ordinal=1, generation=1):
@@ -85,6 +91,36 @@ def png(width, height):
             chunk(b"IDAT", zlib.compress((b"\0" + b"\xff" * width * 4) * height)) + chunk(b"IEND", b""))
 
 
+ANCHOR = Camera((1.5, -2.0, 0.25), (0.0, 0.7071067811865476, 0.0, 0.7071067811865476))
+
+
+def pose_evidence(request, anchor=ANCHOR, applied=None):
+    applied = applied or compose_pose(anchor, request.offset)
+    return PoseEvidence(request.case_id, request.offset, anchor, applied)
+
+
+def pose_wire(evidence):
+    return {
+        "case_id": evidence.case_id,
+        "offset": evidence.offset.to_wire(),
+        "anchor": {"position": list(evidence.anchor.position),
+                   "orientation": list(evidence.anchor.orientation)},
+        "applied": {"position": list(evidence.applied.position),
+                    "orientation": list(evidence.applied.orientation)},
+    }
+
+
+def capture_with_pose(mode, ordinal, generation, request, capture_id, anchor=ANCHOR):
+    wire = capture_wire(mode, ordinal, generation)
+    evidence = pose_evidence(request, anchor)
+    wire["visual"]["pose"] = pose_wire(evidence)
+    wire["comparison_inputs"]["camera"] = {
+        "position": list(evidence.applied.position),
+        "orientation": list(evidence.applied.orientation),
+    }
+    return replace(Capture.from_wire(wire), id=capture_id)
+
+
 class SuiteTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -116,6 +152,40 @@ class SuiteTests(unittest.TestCase):
                 raise failure
             capture = replace(Capture.from_wire(capture_wire(mode, len(frames) + 1, generation)), id=capture_id)
             frames.append(capture)
+            return capture
+        self.runner.smoke = Mock(return_value=SmokeResult(True))
+        self.runner.settle = Mock()
+        self.runner.request = Mock(side_effect=request)
+        self.runner.screenshot = Mock(side_effect=screenshot)
+        self.runner.compare = Mock(return_value=ComparisonReport(Outcome.PASS))
+        return commands
+
+    def fake_pose_run(self, restore_failure=None, anchors=None):
+        commands = []
+        poses = {}
+        anchors = anchors or {}
+        def request(value):
+            commands.append(value)
+            if value.command == Command.END:
+                if restore_failure is not None:
+                    raise restore_failure
+                return RestorationAck.from_wire({"id": value.id, "state": "restored", "metadata": {
+                    "generation": len(commands), "mode": None, "profile": "native", "ready": True,
+                    "paused": False, "frozen": False, "error": None, "warmup_frames": 0,
+                    "completed_frames": 0, "engine_dimensions": [2, 1]}})
+            generation = len(commands)
+            poses[generation] = value.pose
+            anchor = anchors.get(value.pose.case_id, ANCHOR)
+            evidence = pose_evidence(value.pose, anchor)
+            metadata = {**capture_wire()["visual"], "mode": value.mode.value, "generation": generation,
+                        "pose": pose_wire(evidence)}
+            return ConfigurationAck.from_wire({"id": value.id, "state": "ready", "metadata": metadata})
+        captures = []
+        def screenshot(capture_id, mode, generation):
+            ordinal = len(captures) + 1
+            capture = capture_with_pose(mode, ordinal, generation, poses[generation], capture_id,
+                                        anchors.get(poses[generation].case_id, ANCHOR))
+            captures.append(capture)
             return capture
         self.runner.smoke = Mock(return_value=SmokeResult(True))
         self.runner.settle = Mock()
@@ -507,6 +577,134 @@ class SuiteTests(unittest.TestCase):
                 (Command.END, "x" * 65, None, None)):
             with self.subTest(command=command, request_id=request_id), self.assertRaises(ProtocolError):
                 Request(command, request_id, mode, frames)
+
+    def test_pose_request_toml_and_validation(self):
+        request = Request(Command.CONFIGURE, "pose_request", Mode.MULTIPASS, 30,
+                          PoseRequest("case_a", OrientationOffset(-30.0, 20.0, 20.0)))
+        toml = tomllib.loads(request.to_toml())
+        self.assertEqual(toml["pose"], {"case_id": "case_a", "yaw_deg": -30.0,
+                                        "pitch_deg": 20.0, "roll_deg": 20.0})
+        self.assertEqual(request.to_wire()["pose"], {
+            "case_id": "case_a", "offset": {"yaw_deg": -30.0, "pitch_deg": 20.0, "roll_deg": 20.0}})
+        self.assertNotIn('"offset"', request.to_toml())
+        for offset in (float("nan"), float("inf"), -180.5, 180.5):
+            with self.subTest(offset=offset), self.assertRaises(ProtocolError):
+                OrientationOffset(offset, 0.0, 0.0)
+        for case_id in ("bad case", "é", "", "x" * 65):
+            with self.subTest(case_id=case_id), self.assertRaises(ProtocolError):
+                PoseRequest(case_id, OrientationOffset(0.0, 0.0, 0.0))
+        with self.assertRaises(ProtocolError):
+            Request(Command.END, "end", pose=request.pose)
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", pose=request.pose)
+
+    def test_pose_evidence_composition_missing_and_mismatch(self):
+        request = PoseRequest("case_a", OrientationOffset(-30.0, 20.0, 20.0))
+        evidence = pose_evidence(request)
+        wire = pose_wire(evidence)
+        parsed = PoseEvidence.from_wire(wire)
+        self.assertEqual(parsed.validate(request), ANCHOR)
+        ack = ConfigurationAck.from_wire({
+            "id": "configure", "state": "ready",
+            "metadata": {**capture_wire()["visual"], "mode": "multipass", "pose": wire}})
+        self.assertEqual(ack.validate_pose(request), ANCHOR)
+        with self.assertRaisesRegex(ProtocolError, "missing requested pose evidence"):
+            ConfigurationAck.from_wire({
+                "id": "configure", "state": "ready",
+                "metadata": {**capture_wire()["visual"], "mode": "multipass"}}).validate_pose(request)
+        with self.assertRaisesRegex(ProtocolError, "case_id"):
+            parsed.validate(PoseRequest("case_b", request.offset))
+        negated = Camera(evidence.applied.position, tuple(-item for item in evidence.applied.orientation))
+        PoseEvidence.from_wire({**wire, "applied": {
+            "position": list(negated.position), "orientation": list(negated.orientation)}})
+        for change, message in (
+                ({"orientation": [0.0, 0.0, 0.0, 0.0]}, "zero length"),
+                ({"orientation": [float("nan"), 0.0, 0.0, 1.0]}, "invalid"),
+                ({"orientation": [0.0, 0.0, 0.0, 1.0]}, "applied orientation")):
+            applied = {**wire["applied"], **change}
+            with self.subTest(message=message), self.assertRaisesRegex(ProtocolError, message):
+                PoseEvidence.from_wire({**wire, "applied": applied})
+        mismatched = Camera((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0))
+        with self.assertRaisesRegex(ProtocolError, "applied camera"):
+            PoseEvidence.from_wire(wire).validate_applied(mismatched)
+
+    def test_capture_pose_must_match_the_actual_camera(self):
+        request = PoseRequest("case_a", OrientationOffset(10.0, 0.0, 0.0))
+        capture = capture_with_pose(Mode.MULTIPASS, 1, 1, request, "sample")
+        capture.validate("sample", Mode.MULTIPASS, 1, (2, 1))
+        wire = capture_wire(Mode.MULTIPASS, 1, 1)
+        evidence = pose_evidence(request)
+        wire["visual"]["pose"] = pose_wire(evidence)
+        wire["comparison_inputs"]["camera"] = {"position": [9.0, 9.0, 9.0],
+                                               "orientation": [0.0, 0.0, 0.0, 1.0]}
+        with self.assertRaisesRegex(ProtocolError, "applied camera"):
+            Capture.from_wire(wire).validate("sample", Mode.MULTIPASS, 1, (2, 1))
+
+    def test_orientation_sweep_orders_cases_modes_ids_and_anchors(self):
+        commands = self.fake_pose_run()
+        result = run_orientation_sweep(self.runner)
+        self.assertTrue(result.suite_succeeded)
+        self.assertEqual(commands[-1].command, Command.END)
+        configure = commands[:-1]
+        expected_names = [name for name, _ in ORIENTATION_SWEEP_CASES]
+        expected_modes = [Mode.LEFT_ONLY, Mode.RIGHT_ONLY, Mode.MULTIPASS,
+                          Mode.SINGLE_PASS, Mode.MULTIPASS]
+        self.assertEqual(len(configure), len(expected_names) * len(expected_modes))
+        for index, (name, offset) in enumerate(ORIENTATION_SWEEP_CASES):
+            group = configure[index * len(expected_modes):(index + 1) * len(expected_modes)]
+            self.assertEqual([request.mode for request in group], expected_modes)
+            self.assertTrue(all(request.pose.case_id == name for request in group))
+            self.assertTrue(all(request.pose.offset == offset for request in group))
+        manifest = json.loads((self.root / "orientation_sweep.json").read_text())
+        self.assertEqual([case["name"] for case in manifest["cases"]], expected_names)
+        for case, (name, offset) in zip(manifest["cases"], ORIENTATION_SWEEP_CASES):
+            self.assertEqual(case["expected_pose"], {"case_id": name, "offset": offset.to_wire()})
+            self.assertEqual({mode: len(samples) for mode, samples in case["modes"].items()}, {
+                "left_only": 3, "right_only": 3, "multipass": 6, "single_pass": 3})
+        ids = [call.args[0] for call in self.runner.screenshot.call_args_list]
+        self.assertEqual(len(ids), len(expected_names) * len(expected_modes) * 3)
+        self.assertEqual(len(set(ids)), len(ids))
+        for capture_id in ids:
+            self.assertTrue(any(capture_id.startswith(f"{name}_") for name in expected_names))
+            self.assertTrue(capture_id.isascii())
+            self.assertRegex(capture_id, r"^[A-Za-z0-9_-]+$")
+            self.assertLessEqual(len(capture_id), 64)
+        self.assertEqual(len(result.suite_captures), len(ids))
+        self.runner.compare.assert_called_once_with(self.root / "orientation_sweep.json")
+
+    def test_orientation_sweep_reverse_mode_and_anchor_drift(self):
+        self.runner.options.reverse_multipass = True
+        commands = self.fake_pose_run()
+        run_orientation_sweep(self.runner)
+        expected_modes = [Mode.LEFT_ONLY, Mode.RIGHT_ONLY, Mode.MULTIPASS,
+                          Mode.SINGLE_PASS, Mode.REVERSE_MULTIPASS, Mode.MULTIPASS]
+        configure = commands[:-1]
+        self.assertEqual(len(configure), len(ORIENTATION_SWEEP_CASES) * len(expected_modes))
+        self.assertEqual([request.mode for request in configure[:len(expected_modes)]], expected_modes)
+        self.runner = VisualHarness(Options(orientation_sweep=True))
+        self.runner.output = self.root
+        self.runner.config_dir = self.root / "config"
+        self.runner.deadline = time.monotonic() + 20
+        self.fake_pose_run(anchors={"yaw_pos30": Camera((9.0, 9.0, 9.0), ANCHOR.orientation)})
+        with self.assertRaisesRegex(ProtocolError, "anchor changed"):
+            run_orientation_sweep(self.runner)
+        self.runner.compare.assert_not_called()
+
+    def test_orientation_sweep_restore_failure_prevents_comparison(self):
+        self.fake_pose_run(restore_failure=HarnessError("restore failed"))
+        with self.assertRaisesRegex(HarnessError, "restore failed"):
+            run_orientation_sweep(self.runner)
+        self.assertEqual(self.runner.result.restoration_error, "restore failed")
+        self.runner.compare.assert_not_called()
+
+    def test_cli_orientation_sweep_options(self):
+        options = Options(**vars(parse_args(["--orientation-sweep"])))
+        self.assertTrue(options.orientation_sweep)
+        self.assertGreaterEqual(options.timeout, 1200)
+        self.assertEqual(parse_args(["--orientation-sweep", "--timeout", "42"]).timeout, 42)
+        self.assertFalse(parse_args([]).orientation_sweep)
+        with self.assertRaises(SystemExit), patch("sys.stderr"):
+            parse_args(["--suite", "--orientation-sweep"])
 
     def test_comparison_drops_only_inherited_python_environment(self):
         folder = self.root / "comparison"
