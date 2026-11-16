@@ -273,11 +273,23 @@ pub(super) fn characters_doors_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig
 }
 
 pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
+    let pressure = doors::pressure::status();
     ui.columns(2, |columns| {
         for hand in Hand::BOTH {
             let ui = &mut columns[hand.index()];
             let s = &status.hands[hand.index()];
             ui.strong(hand.label());
+            let p = pressure[hand.index()];
+            ui.label(format!(
+                "Pressure: {} · {} · {:.0}/{:.0} mm",
+                p.reason.label(),
+                p.slot.map(doors::slot_label).unwrap_or("no door"),
+                p.displacement_m * 1000.0,
+                p.required_m * 1000.0,
+            ));
+            if let doors::pressure::Reason::NativeFailure(error) = p.reason {
+                ui.label(error.to_string());
+            }
             if !s.acting || s.held.is_some() {
                 continue;
             }

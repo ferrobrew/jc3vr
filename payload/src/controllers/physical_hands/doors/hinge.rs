@@ -26,7 +26,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::physical_hands::{
-    bodies,
+    bodies::{self, BodyState},
     doors::{engine, table},
     rigid::Velocities,
 };
@@ -303,47 +303,56 @@ unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeConfig, g
             unsafe { engine::latch(door.vehicle, door.part_index) };
             false
         }
-        Swing::Damped(factor) => {
-            if let Some((owner, body)) = body {
-                unsafe { scale_velocities(owner, body, factor) };
-            }
-            true
-        }
-        Swing::Strut => {
-            if let Some((owner, body)) = body {
-                // Still after the step: the step's gravity is taken back before it acts.
-                let still = Velocities {
-                    linear: Vec3::Y * g.max(0.0) * dt.max(0.0),
-                    angular: Vec3::ZERO,
-                };
-                // A body that cannot be driven this tick is left as it is.
-                let _ = unsafe { bodies::drive(body, owner, still) };
+        Swing::Damped(_) | Swing::Strut => {
+            let Some((owner, body)) = body else {
+                return true;
+            };
+            let Ok(chassis) = (unsafe { bodies::read(door.vehicle_body, door.vehicle) }) else {
+                return true;
+            };
+            let Ok(state) = (unsafe { bodies::read(body, owner) }) else {
+                return true;
+            };
+            if let Some(velocities) = hinge_velocities(&state, &chassis, swing, dt, g) {
+                let _ = unsafe { bodies::drive(body, owner, velocities) };
             }
             true
         }
     }
 }
 
-/// Scale the velocities of `owner`'s body `body` by `factor`.
-///
-/// # Safety
-///
-/// The game thread, outside the physics step.
-unsafe fn scale_velocities(owner: NonZeroUsize, body: u32, factor: f32) {
-    let Ok(state) = (unsafe { bodies::read(body, owner) }) else {
-        return;
+fn hinge_velocities(
+    door: &BodyState,
+    chassis: &BodyState,
+    swing: Swing,
+    dt: f32,
+    g: f32,
+) -> Option<Velocities> {
+    let (factor, gravity) = match swing {
+        Swing::Damped(factor) => (factor, Vec3::ZERO),
+        Swing::Strut => (0.0, Vec3::Y * g.max(0.0) * dt.max(0.0)),
+        Swing::Held | Swing::Free | Swing::Latch(_) => return None,
     };
-    let damped = Velocities {
-        linear: state.velocities.linear * factor,
-        angular: state.velocities.angular * factor,
+    let carrier = Velocities {
+        linear: chassis.velocities.linear
+            + chassis
+                .velocities
+                .angular
+                .cross(door.pose.centre - chassis.pose.centre),
+        angular: chassis.velocities.angular,
     };
-    // A body that cannot be driven this tick is left as it is.
-    let _ = unsafe { bodies::drive(body, owner, damped) };
+    Some(Velocities {
+        linear: carrier.linear + (door.velocities.linear - carrier.linear) * factor + gravity,
+        angular: carrier.angular + (door.velocities.angular - carrier.angular) * factor,
+    })
 }
 
 #[cfg(test)]
 mod tests {
+    use glam::Quat;
+
     use super::*;
+    use crate::controllers::physical_hands::rigid::BodyPose;
 
     fn tick() -> HingeTick {
         HingeTick {
@@ -358,6 +367,193 @@ mod tests {
     }
 
     const CONFIG: HingeConfig = HingeConfig::new();
+
+    #[test]
+    fn damping_preserves_vehicle_translation_and_rotation_at_the_door_com() {
+        for (linear, angular, at_door) in [
+            (Vec3::ZERO, Vec3::ZERO, Vec3::ZERO),
+            (
+                Vec3::new(12.0, -3.0, 5.0),
+                Vec3::ZERO,
+                Vec3::new(12.0, -3.0, 5.0),
+            ),
+            (
+                Vec3::ZERO,
+                Vec3::new(0.0, 2.0, 0.0),
+                Vec3::new(-2.0, 0.0, -6.0),
+            ),
+            (
+                Vec3::new(12.0, -3.0, 5.0),
+                Vec3::new(1.0, 2.0, 3.0),
+                Vec3::new(4.0, 7.0, 1.0),
+            ),
+        ] {
+            let chassis = state(Vec3::new(10.0, -4.0, 8.0), Velocities { linear, angular });
+            let carrier = Velocities {
+                linear: at_door,
+                angular,
+            };
+            let door = state(Vec3::new(13.0, -2.0, 7.0), carrier);
+            for factor in [0.0, 0.25, 1.0] {
+                let result =
+                    hinge_velocities(&door, &chassis, Swing::Damped(factor), 0.1, 9.81).unwrap();
+                assert_velocities(result, carrier);
+            }
+        }
+    }
+
+    #[test]
+    fn damping_scales_only_the_relative_swing() {
+        let relative = Velocities {
+            linear: Vec3::new(2.0, -4.0, 6.0),
+            angular: Vec3::new(-2.0, 4.0, 1.0),
+        };
+        for moving in [false, true] {
+            let chassis = state(
+                Vec3::new(10.0, -4.0, 8.0),
+                if moving {
+                    Velocities {
+                        linear: Vec3::new(12.0, -3.0, 5.0),
+                        angular: Vec3::new(1.0, 2.0, 3.0),
+                    }
+                } else {
+                    Velocities::default()
+                },
+            );
+            let carrier = Velocities {
+                linear: if moving {
+                    Vec3::new(4.0, 7.0, 1.0)
+                } else {
+                    Vec3::ZERO
+                },
+                angular: chassis.velocities.angular,
+            };
+            let door = state(
+                Vec3::new(13.0, -2.0, 7.0),
+                Velocities {
+                    linear: carrier.linear + relative.linear,
+                    angular: carrier.angular + relative.angular,
+                },
+            );
+            for factor in [0.0, 0.25, 1.0] {
+                let result =
+                    hinge_velocities(&door, &chassis, Swing::Damped(factor), 0.1, 9.81).unwrap();
+                assert_velocities(
+                    result,
+                    Velocities {
+                        linear: carrier.linear + relative.linear * factor,
+                        angular: carrier.angular + relative.angular * factor,
+                    },
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn strut_preserves_carrier_motion_and_cancels_world_gravity_when_tilted() {
+        for orientation in [
+            Quat::IDENTITY,
+            Quat::from_rotation_z(std::f32::consts::FRAC_PI_2),
+            Quat::from_rotation_x(std::f32::consts::PI),
+        ] {
+            let mut chassis = state(
+                Vec3::new(10.0, -4.0, 8.0),
+                Velocities {
+                    linear: Vec3::new(12.0, -3.0, 5.0),
+                    angular: Vec3::new(1.0, 2.0, 3.0),
+                },
+            );
+            chassis.pose.orientation = orientation;
+            let mut door = state(
+                Vec3::new(13.0, -2.0, 7.0),
+                Velocities {
+                    linear: Vec3::new(-10.0, 20.0, 4.0),
+                    angular: Vec3::new(4.0, -2.0, 8.0),
+                },
+            );
+            door.pose.orientation = orientation * Quat::from_rotation_x(0.8);
+            let result = hinge_velocities(&door, &chassis, Swing::Strut, 0.1, 9.81).unwrap();
+            assert_velocities(
+                result,
+                Velocities {
+                    linear: Vec3::new(4.0, 7.981, 1.0),
+                    angular: chassis.velocities.angular,
+                },
+            );
+            assert_velocities(
+                Velocities {
+                    linear: result.linear + Vec3::NEG_Y * 9.81 * 0.1,
+                    ..result
+                },
+                Velocities {
+                    linear: Vec3::new(4.0, 7.0, 1.0),
+                    angular: chassis.velocities.angular,
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn a_stationary_strut_only_compensates_positive_gravity_and_time() {
+        let chassis = state(Vec3::ZERO, Velocities::default());
+        let door = state(
+            Vec3::new(3.0, 2.0, -1.0),
+            Velocities {
+                linear: Vec3::ONE,
+                angular: Vec3::ONE,
+            },
+        );
+        for (dt, g, lift) in [
+            (0.1, 10.0, 1.0),
+            (0.0, 10.0, 0.0),
+            (-0.1, 10.0, 0.0),
+            (0.1, -10.0, 0.0),
+        ] {
+            assert_velocities(
+                hinge_velocities(&door, &chassis, Swing::Strut, dt, g).unwrap(),
+                Velocities {
+                    linear: Vec3::Y * lift,
+                    angular: Vec3::ZERO,
+                },
+            );
+        }
+    }
+
+    #[test]
+    fn held_free_and_latching_doors_do_not_request_velocity_writes() {
+        let body = state(Vec3::ZERO, Velocities::default());
+        for swing in [
+            Swing::Held,
+            Swing::Free,
+            Swing::Latch(LatchCause::Shoved),
+            Swing::Latch(LatchCause::Settled),
+        ] {
+            assert_eq!(hinge_velocities(&body, &body, swing, 0.1, 9.81), None);
+        }
+    }
+
+    fn state(centre: Vec3, velocities: Velocities) -> BodyState {
+        BodyState {
+            pose: BodyPose {
+                centre,
+                orientation: Quat::IDENTITY,
+            },
+            velocities,
+            mass_kg: Some(10.0),
+            inverse_inertia: Vec3::ONE,
+        }
+    }
+
+    fn assert_velocities(actual: Velocities, expected: Velocities) {
+        assert!(
+            actual.linear.abs_diff_eq(expected.linear, 1e-5),
+            "{actual:?} != {expected:?}"
+        );
+        assert!(
+            actual.angular.abs_diff_eq(expected.angular, 1e-5),
+            "{actual:?} != {expected:?}"
+        );
+    }
 
     #[test]
     fn a_held_door_never_latches() {

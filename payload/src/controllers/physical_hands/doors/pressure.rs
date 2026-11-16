@@ -1,8 +1,13 @@
 use std::num::NonZeroUsize;
 
 use glam::{Mat4, Vec3};
-use jc3gi::vehicle::vehicle::DoorSlot;
+use jc3gi::{physics::GameMaterialId, vehicle::vehicle::DoorSlot};
 
+mod diagnostics;
+
+pub(crate) use crate::controllers::physical_hands::doors::pressure::diagnostics::{
+    Readout, Reason,
+};
 use crate::controllers::physical_hands::{
     bodies,
     contact::{Surface, SurfaceHit},
@@ -10,14 +15,25 @@ use crate::controllers::physical_hands::{
         DoorTarget, UNLATCH_PULL_M,
         engine::{self, DoorError, DoorRead},
         panel_hit,
+        pressure::diagnostics::Diagnostics,
+        table,
     },
     grasp::{Reach, TargetKind},
+    state::STATE,
 };
 
 #[derive(Debug, Copy, Clone, Default)]
 pub(crate) struct Press {
     contact: Option<Contact>,
     open: Option<OpenPress>,
+    diagnostics: Diagnostics,
+}
+
+pub(crate) fn status() -> [Readout; 2] {
+    STATE
+        .lock()
+        .door_press
+        .map(|press| press.diagnostics.readout)
 }
 
 impl Press {
@@ -25,12 +41,53 @@ impl Press {
         Self {
             contact: None,
             open: None,
+            diagnostics: Diagnostics::new(),
         }
     }
 
     pub(crate) fn reset(&mut self) {
+        let lost = self.contact.is_some() || self.open.is_some();
         self.contact = None;
         self.open = None;
+        self.diagnostics.idle(if lost {
+            Reason::ContactLost
+        } else {
+            Reason::NoContact
+        });
+    }
+
+    fn reject(&mut self, reason: Reason) {
+        self.contact = None;
+        self.open = None;
+        self.diagnostics.reason(reason);
+    }
+
+    fn missing_contact(&mut self, reach: Option<Reach>, hit: Option<SurfaceHit>) {
+        let reason = if hit.is_some_and(glass_hit) {
+            Some(Reason::GlassRejected)
+        } else if hit.is_some() {
+            Some(Reason::NoPanel)
+        } else {
+            None
+        };
+        if let Some(reason) = reason {
+            self.reject(reason);
+            if !reach.is_some_and(|reach| matches!(reach.kind, TargetKind::Door(_))) {
+                self.diagnostics.idle(reason);
+            }
+        } else {
+            self.reset();
+        }
+    }
+
+    fn native_failure(&mut self, error: DoorError) -> DoorError {
+        self.diagnostics.failed(error, None);
+        error
+    }
+
+    fn body_failure(&mut self, error: bodies::BodyError, mapped: DoorError) -> DoorError {
+        self.diagnostics.failed(mapped, Some(error));
+        mapped
     }
 
     pub(crate) unsafe fn step(
@@ -42,8 +99,15 @@ impl Press {
         world_scale: f32,
     ) -> Result<Option<DoorSlot>, DoorError> {
         if !valid_timing(dt, world_scale) || !palm.is_finite() {
-            self.reset();
+            self.reject(Reason::InvalidSample);
             return Ok(None);
+        }
+        if let Some(Reach {
+            kind: TargetKind::Door(target),
+            ..
+        }) = reach
+        {
+            self.diagnostics.target(target);
         }
         if let (Some(reach), Some(hit)) = (reach, hit)
             && let TargetKind::Door(target) = reach.kind
@@ -61,36 +125,43 @@ impl Press {
                 })
             };
         }
-        self.open = None;
         let Some((reach, hit, target, vehicle_body)) = candidate(reach, hit) else {
-            self.reset();
+            self.missing_contact(reach, hit);
             return Ok(None);
         };
+        self.open = None;
         if !unsafe { engine::alive(target.vehicle, vehicle_body) } {
-            self.reset();
-            return Err(DoorError::VehicleGone);
+            self.reject(Reason::NativeFailure(DoorError::VehicleGone));
+            return Err(self.native_failure(DoorError::VehicleGone));
         }
         let Some(door) = (unsafe { engine::door(target.vehicle, target.part_index) }) else {
-            self.reset();
-            return Err(DoorError::NoDoor);
+            self.reject(Reason::NativeFailure(DoorError::NoDoor));
+            return Err(self.native_failure(DoorError::NoDoor));
         };
         let world = unsafe { engine::vehicle_frame(target.vehicle) };
+        if !panel_hit(&door, &hit) {
+            self.reject(panel_rejection(door, hit));
+            return Ok(None);
+        }
         let sample = Sample::new(reach, hit, door, world, palm);
         let Some(opening) = self.intent(sample, dt, world_scale) else {
             return Ok(None);
         };
-        let (owner, body) = unsafe { engine::unlatch(target.vehicle, target.part_index) }?;
-        let current =
-            unsafe { engine::door(target.vehicle, target.part_index) }.ok_or(DoorError::NoDoor)?;
+        let (owner, body) = unsafe { engine::unlatch(target.vehicle, target.part_index) }
+            .map_err(|error| self.native_failure(error))?;
+        let current = unsafe { engine::door(target.vehicle, target.part_index) }
+            .ok_or_else(|| self.native_failure(DoorError::NoDoor))?;
         if !door_body(current.body, owner, body, target.vehicle, vehicle_body) {
-            return Err(DoorError::NoLooseBody);
+            return Err(self.native_failure(DoorError::NoLooseBody));
         }
-        let state = unsafe { bodies::read(body, owner) }.map_err(|_| DoorError::NoLooseBody)?;
+        let state = unsafe { bodies::read(body, owner) }
+            .map_err(|error| self.body_failure(error, DoorError::NoLooseBody))?;
         let impulse = opening_impulse(opening.outward, state.mass_kg, opening.speed);
         if impulse != Vec3::ZERO {
             unsafe { bodies::shove(body, owner, impulse, opening.point) }
-                .map_err(|_| DoorError::NoLooseBody)?;
+                .map_err(|error| self.body_failure(error, DoorError::NoLooseBody))?;
         }
+        self.diagnostics.opened();
         Ok(Some(target.slot))
     }
 
@@ -111,16 +182,16 @@ impl Press {
             || unsafe { bodies::owner_of(reach.body) } != Some(reach.object)
             || unsafe { engine::vehicle_of(reach.object) } != Some(target.vehicle)
         {
-            self.open = None;
+            self.reject(Reason::NoPanel);
             return Ok(None);
         }
         let Some(vehicle_body) = (unsafe { engine::vehicle_body(target.vehicle) }) else {
             self.open = None;
-            return Err(DoorError::VehicleGone);
+            return Err(self.native_failure(DoorError::VehicleGone));
         };
         let Some(door) = (unsafe { engine::door(target.vehicle, target.part_index) }) else {
             self.open = None;
-            return Err(DoorError::NoDoor);
+            return Err(self.native_failure(DoorError::NoDoor));
         };
         if door.latched
             || door.slot != target.slot
@@ -133,13 +204,15 @@ impl Press {
                 vehicle_body,
             )
         {
-            self.open = None;
+            self.reject(panel_rejection(door, hit));
             return Ok(None);
         }
+        self.diagnostics.reason(Reason::OpenPanel);
+        self.diagnostics.movement(0.0, scale);
         let world = unsafe { engine::vehicle_frame(target.vehicle) };
         let local = world.inverse().transform_point3(palm);
         if !local.is_finite() || !hit.normal.is_finite() {
-            self.open = None;
+            self.reject(Reason::InvalidSample);
             return Ok(None);
         }
         let next = OpenPress {
@@ -155,19 +228,21 @@ impl Press {
             return Ok(None);
         };
         let displacement = world.transform_vector3(local - previous.palm);
+        self.diagnostics
+            .movement(-displacement.dot(hit.normal.normalize_or_zero()), scale);
         let speed = push_speed(displacement, hit.normal, dt, scale);
         if speed == 0.0 {
             return Ok(None);
         }
         let state = unsafe { bodies::read(reach.body, reach.object) }
-            .map_err(|_| DoorError::NoLooseBody)?;
+            .map_err(|error| self.body_failure(error, DoorError::NoLooseBody))?;
         let normal = hit.normal.normalize_or_zero();
         let depth = (hit.position - palm).dot(normal);
         if depth < -0.06 * scale {
             return Ok(None);
         }
         let chassis = unsafe { bodies::read(vehicle_body, target.vehicle) }
-            .map_err(|_| DoorError::VehicleGone)?;
+            .map_err(|error| self.body_failure(error, DoorError::VehicleGone))?;
         let door_velocity = state.velocities.linear
             + state
                 .velocities
@@ -186,23 +261,26 @@ impl Press {
         );
         if impulse != Vec3::ZERO {
             unsafe { bodies::shove(reach.body, reach.object, impulse, hit.position) }
-                .map_err(|_| DoorError::NoLooseBody)?;
+                .map_err(|error| self.body_failure(error, DoorError::NoLooseBody))?;
         }
         Ok(None)
     }
 
     fn intent(&mut self, sample: Option<Sample>, dt: f32, scale: f32) -> Option<Opening> {
         let Some(sample) = sample.filter(|_| valid_timing(dt, scale)) else {
-            self.reset();
+            self.reject(Reason::InvalidSample);
             return None;
         };
+        self.diagnostics.readout.slot = Some(sample.target.slot);
         let local = sample.world.inverse().transform_point3(sample.palm);
         let same = self
             .contact
             .as_ref()
             .is_some_and(|contact| contact.target == sample.target && contact.scale == scale);
         if !same {
-            self.reset();
+            self.contact = None;
+            self.open = None;
+            self.diagnostics.movement(0.0, scale);
             let outward = sample
                 .world
                 .inverse()
@@ -211,8 +289,10 @@ impl Press {
             if sample.hit.normal.normalize_or_zero().dot(sample.outward) >= -0.25
                 || outward == Vec3::ZERO
             {
+                self.diagnostics.reason(Reason::ExteriorFace);
                 return None;
             }
+            self.diagnostics.reason(Reason::InsufficientMovement);
             self.contact = Some(Contact {
                 target: sample.target,
                 palm: local,
@@ -228,6 +308,10 @@ impl Press {
         let displacement = (local - contact.palm).dot(contact.outward);
         let speed = (local - contact.previous).dot(contact.outward) / (dt * scale);
         contact.previous = local;
+        self.diagnostics.movement(displacement, scale);
+        if !contact.fired {
+            self.diagnostics.reason(Reason::InsufficientMovement);
+        }
         if contact.fired || displacement < UNLATCH_PULL_M * scale || speed <= 0.0 {
             return None;
         }
@@ -356,6 +440,18 @@ fn valid_timing(dt: f32, scale: f32) -> bool {
     dt.is_finite() && dt > 0.0 && dt <= MAX_DT_S && scale.is_finite() && scale > 0.0
 }
 
+fn glass_hit(hit: SurfaceHit) -> bool {
+    hit.material == Some(GameMaterialId::EGameMaterialId_Glass as u32)
+}
+
+fn panel_rejection(door: DoorRead, hit: SurfaceHit) -> Reason {
+    if glass_hit(hit) && !table::is_canopy(door.part_hash) {
+        Reason::GlassRejected
+    } else {
+        Reason::NoPanel
+    }
+}
+
 fn candidate(
     reach: Option<Reach>,
     hit: Option<SurfaceHit>,
@@ -455,6 +551,45 @@ mod tests {
 
     fn tick(press: &mut Press, palm: Vec3) -> Option<Opening> {
         press.intent(sample(palm), 0.01, 1.0)
+    }
+
+    #[test]
+    fn diagnostic_rejections_survive_without_a_reach() {
+        let mut press = Press::new();
+        let (_, mut hit, door) = fixture();
+        hit.material = Some(GameMaterialId::EGameMaterialId_Glass as u32);
+        press.missing_contact(None, Some(hit));
+        assert_eq!(press.diagnostics.readout.reason, Reason::GlassRejected);
+        assert_eq!(press.diagnostics.readout.slot, None);
+        assert_eq!(panel_rejection(door, hit), Reason::GlassRejected);
+        hit.material = None;
+        press.missing_contact(None, Some(hit));
+        assert_eq!(press.diagnostics.readout.reason, Reason::NoPanel);
+        assert_eq!(panel_rejection(door, hit), Reason::NoPanel);
+        press.missing_contact(None, None);
+        assert_eq!(press.diagnostics.readout.reason, Reason::NoContact);
+    }
+
+    #[test]
+    fn diagnostic_movement_and_contact_loss_follow_the_latched_contact() {
+        let mut press = Press::new();
+        tick(&mut press, Vec3::X);
+        assert_eq!(
+            press.diagnostics.readout.reason,
+            Reason::InsufficientMovement
+        );
+        assert_eq!(press.diagnostics.readout.slot, Some(DoorSlot::FRONT_LEFT));
+        tick(&mut press, Vec3::X * 1.02);
+        assert!((press.diagnostics.readout.displacement_m - 0.02).abs() < 1e-6);
+        press.missing_contact(None, None);
+        assert_eq!(press.diagnostics.readout.reason, Reason::ContactLost);
+        assert_eq!(press.diagnostics.readout.slot, Some(DoorSlot::FRONT_LEFT));
+        press.missing_contact(None, None);
+        assert_eq!(press.diagnostics.readout.reason, Reason::NoContact);
+        let mut exterior = sample(Vec3::X).unwrap();
+        exterior.hit.normal = Vec3::X;
+        press.intent(Some(exterior), 0.01, 1.0);
+        assert_eq!(press.diagnostics.readout.reason, Reason::ExteriorFace);
     }
 
     #[test]
