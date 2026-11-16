@@ -88,16 +88,13 @@ pub(crate) fn forget() {
 ///
 /// As [`tick`].
 unsafe fn cast(character: &Character, requests: [Option<Request>; 2], now: Instant) {
-    // SAFETY: the caller's contract: the live local character, on the thread updating it.
-    let options = unsafe { CastOptions::ignoring_rider(character) };
+    let options = cast_options(character);
     for (index, request) in requests.into_iter().enumerate() {
         let Some(request) = request else {
             continue;
         };
         let from = Vec3::new(request.at.x, request.near + ABOVE_M, request.at.y);
         let ground = Ray::new(from, Vec3::NEG_Y).and_then(|ray| {
-            // SAFETY: the simulation phase; the ignored objects are the live local character and
-            // the vehicle it rides, or zero.
             match unsafe { raycast::cast(&ray, ABOVE_M + BELOW_M, &options) } {
                 Ok(hit) => hit.map(|hit| Ground {
                     height: hit.position.y,
@@ -121,6 +118,13 @@ unsafe fn cast(character: &Character, requests: [Option<Request>; 2], now: Insta
         if slot.request == Some(request) {
             slot.request = None;
         }
+    }
+}
+
+fn cast_options(character: *const Character) -> CastOptions {
+    CastOptions {
+        ignore: [character as usize, 0],
+        ..CastOptions::default()
     }
 }
 
@@ -167,3 +171,18 @@ impl Slot {
 }
 
 static PROBES: Mutex<[Slot; 2]> = Mutex::new([Slot::EMPTY; 2]);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn foot_probes_ignore_only_the_supplied_character() {
+        let character = std::ptr::dangling::<Character>();
+        let options = cast_options(character);
+
+        assert_eq!(options.ignore, [character as usize, 0]);
+        assert!(!options.see_through);
+        assert!(!options.material);
+    }
+}
