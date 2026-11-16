@@ -275,12 +275,68 @@ class VisualCompareTests(unittest.TestCase):
             "independent sample", self.mode_report(report, "left_only").errors[0]
         )
 
+    def test_controlled_v2_samples_pass_and_preserve_profile_in_reports(self):
+        for mode in self.manifest["cases"][0]["modes"]:
+            for index in range(3):
+                self.change_metadata(
+                    mode, index,
+                    lambda metadata: (
+                        metadata["visual"].update(profile="controlled_v2"),
+                        metadata["comparison_inputs"].update(profile="controlled_v2"),
+                    ),
+                )
+        report = self.analyze()
+        self.assertEqual(report.status, "pass")
+        wire = json.loads((self.output / "report.json").read_text())
+        self.assertEqual(wire, report.to_wire())
+        for mode in wire["cases"][0]["modes"]:
+            for sample in mode["samples"]:
+                self.assertEqual(sample["visual"]["profile"], "controlled_v2")
+                self.assertEqual(sample["inputs"]["profile"], "controlled_v2")
+
+    def test_mixed_controlled_profiles_are_inconclusive(self):
+        for indices in ((0,), (0, 1, 2)):
+            with self.subTest(indices=indices):
+                for index in indices:
+                    self.change_metadata(
+                        "single_pass", index,
+                        lambda metadata: (
+                            metadata["visual"].update(profile="controlled_v2"),
+                            metadata["comparison_inputs"].update(profile="controlled_v2"),
+                        ),
+                    )
+                report = self.analyze()
+                self.assertEqual(report.status, "inconclusive")
+                mode = self.mode_report(report, "single_pass")
+                if len(indices) == 1:
+                    self.assertEqual(mode.status, "inconclusive")
+                    comparison = mode.repeatability[0]
+                else:
+                    self.assertEqual(mode.status, "pass")
+                    comparison = next(
+                        item for item in report.cases[0].comparisons
+                        if item.name == "multipass vs single_pass, eye 0"
+                    )
+                self.assertIn("comparison_inputs.profile", " ".join(comparison.errors))
+
+    def test_visual_and_input_profiles_must_match(self):
+        self.change_metadata(
+            "left_only", 0,
+            lambda metadata: metadata["visual"].update(profile="controlled_v2"),
+        )
+        report = self.analyze()
+        self.assertEqual(report.status, "inconclusive")
+        self.assertIn(
+            "differs from comparison_inputs.profile",
+            self.mode_report(report, "left_only").errors[0],
+        )
+
     def test_visual_readiness_requires_controlled_completed_frozen_capture(self):
         path = self.root / self.entries("left_only")[0]["metadata"]
         original = path.read_text()
         valid = json.loads(original)
         invalid = {
-            "profile": ("native", "synthetic", "other-profile", None, "", 1),
+            "profile": ("native", "synthetic", "other-profile", None, "", 1, [], {}),
             "ready": (False, None, 0, 1, "true"),
             "paused": (False, None, 0, 1, "true"),
             "frozen": (False, None, 0, 1, "true"),
@@ -302,6 +358,11 @@ class VisualCompareTests(unittest.TestCase):
                     self.assertIn(
                         field, self.mode_report(report, "left_only").errors[0]
                     )
+                    if field == "profile":
+                        self.assertIn(
+                            "metadata.visual.profile",
+                            self.mode_report(report, "left_only").errors[0],
+                        )
             with self.subTest(field=field, missing=True):
                 data = copy.deepcopy(valid)
                 del data["visual"][field]

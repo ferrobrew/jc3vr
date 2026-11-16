@@ -327,8 +327,11 @@ class VisualHarness:
 
     def compare(self, manifest):
         output = self.output / "comparison"
+        env = dict(self.env if self.env is not None else os.environ)
+        for name in ("PYTHONPATH", "PYTHONHOME"):
+            env.pop(name, None)
         outcome = self._command(["uv", "run", str(ROOT / "tools/visual_compare.py"), str(manifest),
-                                 "--output", str(output)], "visual-compare", 120, check=False)
+                                 "--output", str(output)], "visual-compare", 120, env=env, check=False)
         report = ComparisonReport.from_wire(read_object(output / "report.json"))
         if outcome.returncode != report.exit_code:
             raise HarnessError(f"visual harness: comparison {report.status} disagrees with process status {outcome.returncode}; see {output}")

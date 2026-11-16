@@ -23,7 +23,7 @@ pub(crate) type Mode = RenderMode;
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DiagnosticProfile {
     Native,
-    ControlledV1,
+    ControlledV2,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -358,7 +358,7 @@ impl State {
             generation: self.generation,
             mode: self.mode,
             profile: if self.mode.is_some() {
-                DiagnosticProfile::ControlledV1
+                DiagnosticProfile::ControlledV2
             } else {
                 DiagnosticProfile::Native
             },
@@ -507,7 +507,8 @@ fn apply_profile(config: &mut Config, mode: Mode) {
     config.exposure.forced_value = 0.11;
     config.post_fx.skip_motion_blur = true;
     config.post_fx.skip_motion_blur_recon = true;
-    config.post_fx.skip_dof = true;
+    config.post_fx.skip_dof = false;
+    config.post_fx.dof_no_reproject = true;
     config.post_fx.skip_fade = true;
     config.post_fx.skip_glare = true;
     config.post_fx.skip_player_damage = true;

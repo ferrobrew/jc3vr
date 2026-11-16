@@ -23,8 +23,10 @@ from PIL import Image
 
 if __package__:
     from tools.visual_compare_report import to_wire, write_reports
+    from tools.visual_protocol import DiagnosticProfile
 else:
     from visual_compare_report import to_wire, write_reports
+    from visual_protocol import DiagnosticProfile
 
 
 class Mode(StrEnum):
@@ -120,7 +122,7 @@ class EyeInputs:
 @dataclass(frozen=True)
 class ComparisonInputs:
     build_stamp: str
-    profile: str
+    profile: DiagnosticProfile
     camera: CameraInputs
     eyes: tuple[EyeInputs, EyeInputs]
     eye_width: int
@@ -138,9 +140,13 @@ class ComparisonInputs:
             raise ValueError(
                 "comparison_inputs.world_scale: expected a positive finite number"
             )
+        try:
+            profile = DiagnosticProfile(text(value, "profile"))
+        except ValueError as error:
+            raise ValueError("comparison_inputs.profile: unknown diagnostic profile") from error
         return cls(
             text(value, "build_stamp"),
-            text(value, "profile"),
+            profile,
             CameraInputs.from_wire(value.get("camera")),
             (EyeInputs.from_wire(eyes[0]), EyeInputs.from_wire(eyes[1])),
             integer(value, "eye_width"),
@@ -152,7 +158,7 @@ class ComparisonInputs:
 @dataclass(frozen=True)
 class VisualReadiness:
     generation: int
-    profile: str
+    profile: DiagnosticProfile
     ready: bool
     paused: bool
     frozen: bool
@@ -163,8 +169,12 @@ class VisualReadiness:
     @classmethod
     def from_wire(cls, value):
         value = object_value(value, "metadata.visual")
-        if value.get("profile") != "controlled_v1":
-            raise ValueError("metadata.visual.profile: expected controlled_v1")
+        try:
+            profile = DiagnosticProfile(text(value, "profile"))
+        except ValueError as error:
+            raise ValueError("metadata.visual.profile: expected controlled_v1 or controlled_v2") from error
+        if not profile.is_controlled:
+            raise ValueError("metadata.visual.profile: expected controlled_v1 or controlled_v2")
         for name in ("ready", "paused", "frozen"):
             if value.get(name) is not True:
                 raise ValueError(f"metadata.visual.{name}: expected true")
@@ -178,7 +188,7 @@ class VisualReadiness:
             raise ValueError("metadata.visual.completed_frames: below warmup_frames")
         return cls(
             integer(value, "generation"),
-            "controlled_v1",
+            profile,
             True,
             True,
             True,

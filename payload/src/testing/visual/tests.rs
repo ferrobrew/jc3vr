@@ -98,6 +98,8 @@ fn failed_reload_never_becomes_ready() {
 fn profile_keeps_per_eye_native_resolution_across_modes() {
     let mut config = Config::new();
     config.vr.resolution_scale = 0.75;
+    config.post_fx.skip_dof = true;
+    config.post_fx.dof_no_reproject = false;
     for mode in [
         Mode::LeftOnly,
         Mode::RightOnly,
@@ -116,7 +118,8 @@ fn profile_keeps_per_eye_native_resolution_across_modes() {
         assert!(config.exposure.force);
         assert_eq!(config.exposure.forced_value, 0.11);
         assert!(config.post_fx.skip_motion_blur && config.post_fx.skip_motion_blur_recon);
-        assert!(config.post_fx.skip_dof && config.stereo.skip_ssr && config.stereo.skip_gi);
+        assert!(!config.post_fx.skip_dof && config.post_fx.dof_no_reproject);
+        assert!(config.stereo.skip_ssr && config.stereo.skip_gi);
         assert!(config.stereo.disable_ssao && config.post_fx.skip_glare);
         assert!(config.post_fx.skip_fade && config.post_fx.skip_player_damage);
         assert!(config.post_fx.skip_sun_halo);
@@ -287,7 +290,7 @@ fn metadata_tracks_generation_and_profile_without_json_state() {
     let metadata = state.metadata();
     assert_eq!(metadata.mode, Some(Mode::ReverseMultipass));
     assert_eq!(metadata.generation, 7);
-    assert_eq!(metadata.profile, DiagnosticProfile::ControlledV1);
+    assert_eq!(metadata.profile, DiagnosticProfile::ControlledV2);
     assert_eq!(State::new().metadata().profile, DiagnosticProfile::Native);
 }
 

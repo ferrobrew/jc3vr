@@ -1,4 +1,5 @@
 import json
+import os
 import struct
 import subprocess
 import tempfile
@@ -24,6 +25,7 @@ from tools.visual_protocol import (
     Command,
     ComparisonReport,
     ConfigurationAck,
+    DiagnosticProfile,
     FailedAck,
     Mode,
     NativeCapture,
@@ -357,6 +359,23 @@ class SuiteTests(unittest.TestCase):
             run_suite(self.runner)
         self.assertEqual(self.runner.request.call_args.args[0].command, Command.END)
 
+    def test_controlled_profile_versions_are_accepted_and_mixing_is_rejected(self):
+        for profile in (DiagnosticProfile.CONTROLLED_V1, DiagnosticProfile.CONTROLLED_V2):
+            with self.subTest(profile=profile):
+                wire = capture_wire()
+                wire["visual"]["profile"] = profile.value
+                wire["comparison_inputs"]["profile"] = profile.value
+                ack = ConfigurationAck.from_wire({"id": "configure", "state": "ready", "metadata": wire["visual"]})
+                self.assertIs(ack.metadata.profile, profile)
+                capture = Capture.from_wire(wire)
+                self.assertIs(capture.comparison_inputs.profile, profile)
+                capture.validate("sample", Mode.MULTIPASS, 1, (2, 1))
+                other = (DiagnosticProfile.CONTROLLED_V2 if profile == DiagnosticProfile.CONTROLLED_V1
+                         else DiagnosticProfile.CONTROLLED_V1)
+                wire["comparison_inputs"]["profile"] = other.value
+                with self.assertRaisesRegex(ProtocolError, "profile"):
+                    Capture.from_wire(wire).validate("sample", Mode.MULTIPASS, 1, (2, 1))
+
     def test_capture_single_and_pair_validation(self):
         for mode in Mode:
             with self.subTest(mode=mode):
@@ -488,6 +507,23 @@ class SuiteTests(unittest.TestCase):
                 (Command.END, "x" * 65, None, None)):
             with self.subTest(command=command, request_id=request_id), self.assertRaises(ProtocolError):
                 Request(command, request_id, mode, frames)
+
+    def test_comparison_drops_only_inherited_python_environment(self):
+        folder = self.root / "comparison"
+        folder.mkdir()
+        (folder / "report.json").write_text('{"status":"pass"}')
+        inherited = {"PATH": "/bin", "PYTHONPATH": "/nix/python3.13/site-packages",
+                     "PYTHONHOME": "/nix/python3.13", "DISPLAY": ":42"}
+        for configured in (None, inherited.copy()):
+            with self.subTest(configured=configured is not None), \
+                    patch.dict("os.environ", inherited, clear=True), \
+                    patch.object(self.runner, "env", configured), \
+                    patch.object(self.runner, "_command", return_value=subprocess.CompletedProcess([], 0)) as command:
+                self.runner.compare(self.root / "suite.json")
+                self.assertEqual(command.call_args.kwargs["env"], {"PATH": "/bin", "DISPLAY": ":42"})
+                self.assertEqual(dict(os.environ), inherited)
+                if configured is not None:
+                    self.assertEqual(configured, inherited)
 
     def test_comparison_invocation_and_nonpass_report(self):
         folder = self.root / "comparison"

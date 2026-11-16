@@ -30,6 +30,11 @@ class Mode(StrEnum):
 class DiagnosticProfile(StrEnum):
     NATIVE = "native"
     CONTROLLED_V1 = "controlled_v1"
+    CONTROLLED_V2 = "controlled_v2"
+
+    @property
+    def is_controlled(self):
+        return self in (DiagnosticProfile.CONTROLLED_V1, DiagnosticProfile.CONTROLLED_V2)
 
 
 class Outcome(StrEnum):
@@ -106,7 +111,7 @@ class ConfigurationAck:
         metadata = VisualState.from_wire(object_value(value).get("metadata"))
         if ack_outcome(value) != AckOutcome.READY or not metadata.ready:
             raise ProtocolError("visual protocol: configuration is not ready")
-        if metadata.profile != DiagnosticProfile.CONTROLLED_V1 or not metadata.paused or not metadata.frozen:
+        if not metadata.profile.is_controlled or not metadata.paused or not metadata.frozen:
             raise ProtocolError("visual protocol: configuration is not controlled, paused, and frozen")
         if metadata.error is not None or metadata.generation < 1 or metadata.mode is None:
             raise ProtocolError("visual protocol: configuration has no diagnostic mode or generation")
@@ -192,7 +197,7 @@ class Eye:
 @dataclass(frozen=True)
 class ComparisonInputs:
     build_stamp: str
-    profile: str
+    profile: DiagnosticProfile
     camera: Camera
     eyes: tuple[Eye, Eye]
     eye_width: int
@@ -208,7 +213,11 @@ class ComparisonInputs:
         scale = value.get("world_scale")
         if type(scale) not in (int, float) or not math.isfinite(scale) or scale <= 0:
             raise ProtocolError("visual protocol: invalid world scale")
-        return cls(text(value, "build_stamp"), text(value, "profile"), Camera.from_wire(value.get("camera")),
+        try:
+            profile = DiagnosticProfile(text(value, "profile"))
+        except ValueError as error:
+            raise ProtocolError("visual protocol: unknown diagnostic profile") from error
+        return cls(text(value, "build_stamp"), profile, Camera.from_wire(value.get("camera")),
                    tuple(Eye.from_wire(eye) for eye in eyes), integer(value, "eye_width", minimum=1),
                    integer(value, "eye_height", minimum=1), scale)
 
@@ -266,7 +275,7 @@ class Capture(NativeCapture):
         if self.mode != mode or self.visual.mode != mode or self.visual.generation != generation:
             raise ProtocolError("visual protocol: screenshot diagnostic mode or generation mismatch")
         if (not self.visual.ready or not self.visual.paused or not self.visual.frozen or self.visual.error is not None or
-                self.visual.profile != DiagnosticProfile.CONTROLLED_V1 or self.comparison_inputs.profile != self.visual.profile):
+                not self.visual.profile.is_controlled or self.comparison_inputs.profile != self.visual.profile):
             raise ProtocolError("visual protocol: screenshot diagnostic profile is not ready")
         if self.selected_eye != mode.selected_eye or self.rendered_eyes != mode.rendered_eyes:
             raise ProtocolError("visual protocol: screenshot eye selection mismatch")
