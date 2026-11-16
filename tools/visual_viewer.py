@@ -2,70 +2,78 @@ import argparse
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 import stat
 import struct
-import tempfile
 import threading
 import zlib
 from collections import OrderedDict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, datetime
 from enum import StrEnum
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 if __package__:
     from .visual_protocol import (
         Capture,
         Command,
         NativeCapture,
+        Outcome,
         ProtocolError,
         RunOutcome,
         ScreenshotAck,
         acknowledgement_from_wire,
-        object_value,
+    )
+    from .visual_viewer_history import (
+        RunEntry,
+        RunId,
+        RunPointer,
+        ViewerError,
+        read_history,
+    )
+    from .visual_viewer_history import (
+        publish_run as _publish_run,
+    )
+    from .visual_viewer_history import (
+        read_bounded as _read_bounded,
+    )
+    from .visual_viewer_history import (
+        read_json as _read_json,
     )
 else:
     from visual_protocol import (
         Capture,
         Command,
         NativeCapture,
+        Outcome,
         ProtocolError,
         RunOutcome,
         ScreenshotAck,
         acknowledgement_from_wire,
-        object_value,
+    )
+    from visual_viewer_history import (
+        RunEntry,
+        RunId,
+        RunPointer,
+        ViewerError,
+        read_history,
+    )
+    from visual_viewer_history import (
+        publish_run as _publish_run,
+    )
+    from visual_viewer_history import (
+        read_bounded as _read_bounded,
+    )
+    from visual_viewer_history import (
+        read_json as _read_json,
     )
 
 
 DEFAULT_POINTER = Path(__file__).resolve().parents[1] / "target/visual-harness/latest.json"
-
-
-class ViewerError(RuntimeError):
-    pass
-
-
-@dataclass(frozen=True)
-class RunPointer:
-    output: str
-    version: int = 1
-
-    def __post_init__(self):
-        if type(self.version) is not int or self.version != 1:
-            raise ViewerError("visual viewer: unsupported run pointer version")
-        if not isinstance(self.output, str) or not self.output or "\0" in self.output or not Path(self.output).is_absolute():
-            raise ViewerError("visual viewer: the run pointer requires an absolute output path")
-
-    @classmethod
-    def from_wire(cls, value):
-        object_value(value)
-        if set(value) != {"version", "output"}:
-            raise ViewerError("visual viewer: invalid run pointer fields")
-        return cls(output=value["output"], version=value["version"])
-
-    def to_wire(self):
-        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -81,6 +89,43 @@ class RunSummary:
     status: RunOutcome | None = None
     smoke_succeeded: bool | None = None
     error: str | None = None
+    comparison: Outcome | None = None
+    comparison_failures: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GroupComparison:
+    name: str
+    status: Outcome
+    mean_absolute_error: float | None = None
+    changed_fraction: float | None = None
+
+
+@dataclass(frozen=True)
+class GroupOutcome:
+    mode: str
+    status: Outcome
+    reused_aggregate: bool
+    repeatability: tuple[GroupComparison, ...]
+    comparisons: tuple[GroupComparison, ...]
+
+
+@dataclass(frozen=True)
+class RunListing:
+    run_id: RunId
+    output: str
+    timestamp: str
+    report: RunSummary
+
+
+@dataclass(frozen=True)
+class HistorySnapshot:
+    runs: tuple[RunListing, ...]
+    latest_run_id: RunId | None
+    version: int = 1
+
+    def to_wire(self):
+        return asdict(self)
 
 
 class SnapshotState(StrEnum):
@@ -97,28 +142,17 @@ class ViewerSnapshot:
     error: str | None = None
     version: int = 1
     report: RunSummary | None = None
+    run_id: RunId | None = None
+    timestamp: str | None = None
+    groups: list[dict] = field(default_factory=list)
 
     def to_wire(self):
         return asdict(self)
 
 
-def publish_run(output: Path, pointer: Path = DEFAULT_POINTER) -> RunPointer:
-    value = RunPointer(str(Path(output).expanduser().resolve()))
-    destination = Path(pointer).expanduser().absolute()
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    temporary = None
-    try:
-        with tempfile.NamedTemporaryFile(mode="wb", prefix=f".{destination.name}.", dir=destination.parent,
-                                         delete=False) as stream:
-            temporary = Path(stream.name)
-            stream.write(json.dumps(value.to_wire(), allow_nan=False).encode("utf-8"))
-            stream.flush()
-            os.fsync(stream.fileno())
-        os.replace(temporary, destination)
-    finally:
-        if temporary is not None:
-            temporary.unlink(missing_ok=True)
-    return value
+def publish_run(output: Path, pointer: Path = DEFAULT_POINTER, *,
+                started_at: datetime | str | None = None) -> RunPointer:
+    return _publish_run(output, pointer, started_at=started_at)
 
 
 class ViewerState:
@@ -130,15 +164,46 @@ class ViewerState:
         self._last_key = None
         self._last_preview = None
         self._active_run = None
+        self._explicit_entry = None
+        if self.run is not None:
+            try:
+                stamp = self.run.stat().st_mtime
+            except FileNotFoundError:
+                stamp = datetime.now(UTC).timestamp()
+            self._explicit_entry = RunEntry(RunId.for_output(self.run), str(self.run),
+                                            datetime.fromtimestamp(stamp, UTC).isoformat())
 
-    def snapshot(self) -> ViewerSnapshot:
+    def runs(self) -> HistorySnapshot:
+        with self._lock:
+            entries, latest = self._registry()
+            return HistorySnapshot(tuple(RunListing(entry.run_id, entry.output, entry.timestamp,
+                                                     _run_summary(Path(entry.output))) for entry in entries), latest)
+
+    def snapshot(self, run_id: str | None = None, capture_id: str | None = None) -> ViewerSnapshot:
         with self._lock:
             run = None
             report = None
+            metadata = {}
             try:
-                run = self.run or Path(RunPointer.from_wire(_read_json(self.pointer)).output).resolve()
+                if capture_id is not None and (not ID_PATTERN.fullmatch(capture_id) or run_id is None):
+                    raise ViewerError("visual viewer: a capture selection requires a known run and capture ID")
+                if run_id is None:
+                    entries, latest_id = self._registry()
+                    if latest_id is None:
+                        return ViewerSnapshot(SnapshotState.WAITING)
+                    entry = next(item for item in entries if item.run_id == latest_id)
+                    run = Path(entry.output).resolve()
+                else:
+                    requested = RunId(run_id)
+                    entries, _ = self._registry()
+                    entry = next((item for item in entries if item.run_id == requested), None)
+                    if entry is None:
+                        raise ViewerError("visual viewer: unknown run ID")
+                    run = Path(entry.output)
+                    if run.resolve() != run:
+                        raise ViewerError("visual viewer: the run directory contains a symbolic link")
+                metadata = {"run_id": RunId.for_output(run), "timestamp": entry.timestamp if entry else None}
                 if run != self._active_run:
-                    self._images.clear()
                     self._last_key = None
                     self._last_preview = None
                     self._active_run = run
@@ -147,29 +212,45 @@ class ViewerState:
                 if folder.resolve() != folder:
                     raise ViewerError("visual viewer: the capture directory contains a symbolic link")
                 if not folder.exists():
-                    return ViewerSnapshot(SnapshotState.WAITING, str(run), report=report)
+                    if capture_id is not None:
+                        raise ViewerError("visual viewer: unknown capture ID")
+                    return ViewerSnapshot(SnapshotState.WAITING, str(run), report=report, **metadata)
                 candidates = []
                 last_error = None
-                for _, capture_id, path in _acknowledgements(folder):
+                for _, candidate_id, path in _acknowledgements(folder):
                     try:
                         wire = _read_json(path)
                         if wire.get("state") != "completed":
                             continue
-                        ack = acknowledgement_from_wire(wire, Command.SCREENSHOT, capture_id)
+                        ack = acknowledgement_from_wire(wire, Command.SCREENSHOT, candidate_id)
                         if isinstance(ack, ScreenshotAck):
-                            candidates.append((capture_id, path, wire, ack.capture))
+                            candidates.append((candidate_id, path, wire, ack.capture))
                     except (OSError, ValueError, ProtocolError, ViewerError, RecursionError) as error:
                         last_error = str(error)
                 candidates.sort(key=lambda item: (item[3].frame_ordinal, item[0]), reverse=True)
-                for capture_id, path, wire, capture in candidates:
+                groups = {}
+                for candidate_id, _, _, capture in reversed(candidates):
+                    group = ("multipass_return" if isinstance(capture, Capture) and
+                             capture.mode == "multipass" and re.fullmatch(r"suite_multipass_return_[0-9]+", candidate_id)
+                             else capture.mode if isinstance(capture, Capture) else "native")
+                    groups.setdefault(group, []).append({"id": candidate_id, "frame_ordinal": capture.frame_ordinal})
+                outcomes = _group_outcomes(run, groups)
+                metadata["groups"] = [{"id": group, "samples": samples,
+                                       "outcome": asdict(outcomes[group]) if group in outcomes else None}
+                                      for group, samples in groups.items()]
+                if capture_id is not None:
+                    candidates = [item for item in candidates if item[0] == capture_id]
+                    if not candidates:
+                        raise ViewerError("visual viewer: unknown capture ID")
+                for candidate_id, path, wire, capture in candidates:
                     try:
-                        png_path = folder / f"{capture_id}.capture.png"
+                        png_path = folder / f"{candidate_id}.capture.png"
                         key = (str(run), _file_key(path), _file_key(png_path))
                         if key == self._last_key:
-                            return ViewerSnapshot(SnapshotState.READY, str(run), self._last_preview, report=report)
+                            return ViewerSnapshot(SnapshotState.READY, str(run), self._last_preview, report=report, **metadata)
                         image = _read_bounded(png_path, MAX_PNG_BYTES)
                         dimensions = _png_dimensions(image)
-                        _validate_capture(capture, capture_id, dimensions)
+                        _validate_capture(capture, candidate_id, dimensions)
                         revision = hashlib.sha256(str(run).encode("utf-8") + b"\0" +
                                                   json.dumps(wire, sort_keys=True, allow_nan=False).encode("utf-8") +
                                                   b"\0" + image).hexdigest()
@@ -182,16 +263,38 @@ class ViewerState:
                         while len(self._images) > 3 or sum(map(len, self._images.values())) > MAX_CACHE_BYTES:
                             self._images.popitem(last=False)
                         self._last_key, self._last_preview = key, preview
-                        return ViewerSnapshot(SnapshotState.READY, str(run), preview, report=report)
+                        return ViewerSnapshot(SnapshotState.READY, str(run), preview, report=report, **metadata)
                     except (OSError, ValueError, ProtocolError, ViewerError, RecursionError) as error:
                         last_error = str(error)
                 if last_error:
-                    return ViewerSnapshot(SnapshotState.ERROR, str(run), error=last_error, report=report)
-                return ViewerSnapshot(SnapshotState.WAITING, str(run), report=report)
+                    return ViewerSnapshot(SnapshotState.ERROR, str(run), error=last_error, report=report, **metadata)
+                return ViewerSnapshot(SnapshotState.WAITING, str(run), report=report, **metadata)
             except FileNotFoundError:
-                return ViewerSnapshot(SnapshotState.WAITING, str(run) if run is not None else None)
+                return ViewerSnapshot(SnapshotState.WAITING, str(run) if run is not None else None, **metadata)
             except (OSError, ValueError, ProtocolError, ViewerError, RecursionError) as error:
-                return ViewerSnapshot(SnapshotState.ERROR, str(run) if run is not None else None, error=str(error), report=report)
+                return ViewerSnapshot(SnapshotState.ERROR, str(run) if run is not None else None,
+                                      error=str(error), report=report, **metadata)
+
+    def _registry(self) -> tuple[list[RunEntry], RunId | None]:
+        if self._explicit_entry is not None:
+            return [self._explicit_entry], self._explicit_entry.run_id
+        try:
+            latest = RunPointer.from_wire(_read_json(self.pointer))
+        except FileNotFoundError:
+            latest = None
+        entries = read_history(self.pointer)
+        if latest is None:
+            return entries, None
+        latest_id = RunId.for_output(latest.output)
+        if not any(entry.run_id == latest_id for entry in entries):
+            if entries:
+                raise ViewerError("visual viewer: the latest run is absent from the history index")
+            try:
+                stamp = self.pointer.stat().st_mtime
+            except FileNotFoundError:
+                stamp = datetime.now(UTC).timestamp()
+            entries = [RunEntry(latest_id, latest.output, datetime.fromtimestamp(stamp, UTC).isoformat())]
+        return entries, latest_id
 
     def image(self, revision: str) -> bytes | None:
         with self._lock:
@@ -227,7 +330,6 @@ def main(argv=None):
 
 
 LOG = logging.getLogger("visual_viewer")
-MAX_JSON_BYTES = 256 * 1024
 MAX_PNG_BYTES = 128 * 1024 * 1024
 MAX_DECODED_BYTES = 256 * 1024 * 1024
 MAX_CACHE_BYTES = 256 * 1024 * 1024
@@ -246,25 +348,94 @@ def _run_summary(run):
             raise ViewerError("visual viewer: invalid run smoke result")
         if error is not None and not isinstance(error, str):
             raise ViewerError("visual viewer: invalid run error")
-        return RunSummary(RunOutcome(status) if status is not None else None, smoke, error)
+        comparison = wire.get("comparison")
+        comparison_status = comparison.get("status") if isinstance(comparison, dict) else None
+        if comparison_status is not None and comparison_status not in ("pass", "fail", "inconclusive"):
+            raise ViewerError("visual viewer: invalid comparison status")
+        failures = []
+        if comparison_status in ("fail", "inconclusive"):
+            try:
+                details = _read_json(run / "comparison" / "report.json")
+                failures = _comparison_failures(details)
+            except (OSError, ValueError, ViewerError, RecursionError):
+                failures = ["Detailed comparison report unavailable"]
+        return RunSummary(RunOutcome(status) if status is not None else None, smoke, error,
+                          Outcome(comparison_status) if comparison_status is not None else None, tuple(failures))
     except (OSError, ValueError, ProtocolError, ViewerError, RecursionError) as error:
         return RunSummary(error=f"visual viewer: run report unavailable: {error}")
 
 
-def _read_bounded(path, limit):
-    fd = os.open(path, os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
-    with os.fdopen(fd, "rb") as stream:
-        info = os.fstat(stream.fileno())
-        if not stat.S_ISREG(info.st_mode) or info.st_size > limit:
-            raise ViewerError("visual viewer: the artifact is not a bounded regular file")
-        data = stream.read(limit + 1)
-    if len(data) > limit:
-        raise ViewerError("visual viewer: the artifact exceeds the size limit")
-    return data
+def _group_outcomes(run, groups):
+    try:
+        wire = _read_json(run / "comparison" / "report.json")
+        outcomes = {}
+        cases = wire.get("cases", [])
+        if not isinstance(cases, list):
+            return outcomes
+        for case in cases:
+            if not isinstance(case, dict) or not isinstance(case.get("modes"), list):
+                continue
+            for mode in case["modes"]:
+                if not isinstance(mode, dict) or mode.get("status") not in Outcome:
+                    continue
+                mode_id = mode.get("mode")
+                if not isinstance(mode_id, str):
+                    continue
+                repeatability = _group_checks(mode.get("repeatability", []))
+                comparisons = _group_checks(case.get("comparisons", []), mode_id)
+                for group in groups:
+                    reused = group == "multipass_return"
+                    if ("multipass" if reused else group) == mode_id:
+                        outcomes[group] = GroupOutcome(mode_id, Outcome(mode["status"]), reused,
+                                                       repeatability, comparisons)
+        return outcomes
+    except (OSError, ValueError, ViewerError, RecursionError):
+        return {}
 
 
-def _read_json(path):
-    return object_value(json.loads(_read_bounded(path, MAX_JSON_BYTES)))
+def _group_checks(checks, mode=None):
+    if not isinstance(checks, list):
+        return ()
+    result = []
+    for check in checks[:64]:
+        if not isinstance(check, dict) or check.get("status") not in Outcome:
+            continue
+        name = check.get("name")
+        if not isinstance(name, str):
+            continue
+        if mode is not None:
+            pair = re.fullmatch(r"([a-z_]+) vs ([a-z_]+), eye [01]", name)
+            if pair is None or mode not in pair.groups():
+                continue
+        metrics = check.get("worst_metrics")
+        mean = metrics.get("mean") if isinstance(metrics, dict) else None
+        changed = metrics.get("changed_fraction") if isinstance(metrics, dict) else None
+        mean = float(mean) if type(mean) in (int, float) and math.isfinite(mean) and 0 <= mean <= 255 else None
+        changed = (float(changed) if type(changed) in (int, float) and math.isfinite(changed)
+                   and 0 <= changed <= 1 else None)
+        result.append(GroupComparison(name[:160], Outcome(check["status"]), mean, changed))
+    return tuple(result)
+
+
+def _comparison_failures(wire):
+    failures = []
+    pending = [(wire, "comparison")]
+    while pending and len(failures) < 12:
+        item, context = pending.pop()
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name", item.get("mode", item.get("label", context))))[:160]
+        errors = item.get("errors", [])
+        if isinstance(errors, list):
+            failures.extend(f"{name}: {message}"[:400] for message in errors[:12 - len(failures)]
+                            if isinstance(message, str))
+        if item.get("status") in ("fail", "inconclusive") and not errors:
+            failures.append(f"{name}: {item['status']}")
+        for key in ("cases", "modes", "comparisons", "repeatability"):
+            children = item.get(key, [])
+            if isinstance(children, list):
+                pending.extend((child, name) for child in reversed(children))
+    return failures[:12]
 
 
 def _file_key(path):
@@ -379,9 +550,28 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, SCRIPT.encode(), "text/javascript; charset=utf-8")
         elif self.path == "/viewer.css":
             self._send(200, STYLE.encode(), "text/css; charset=utf-8")
-        elif self.path == "/api/status":
-            body = json.dumps(self.server.viewer.snapshot().to_wire(), allow_nan=False).encode("utf-8")
-            self._send(200, body, "application/json; charset=utf-8")
+        elif self.path == "/api/runs":
+            try:
+                body = json.dumps(self.server.viewer.runs().to_wire(), allow_nan=False).encode("utf-8")
+                self._send(200, body, "application/json; charset=utf-8")
+            except (OSError, ValueError, ViewerError, RecursionError) as error:
+                self._send(503, str(error).encode(), "text/plain; charset=utf-8")
+        elif urlsplit(self.path).path == "/api/status":
+            try:
+                query = parse_qs(urlsplit(self.path).query, keep_blank_values=True, strict_parsing=True,
+                                 max_num_fields=2)
+                if set(query) - {"run_id", "capture_id"} or any(len(values) != 1 for values in query.values()):
+                    raise ValueError("invalid selection fields")
+                selection = {key: values[0] for key, values in query.items()}
+                if any(not value for value in selection.values()):
+                    raise ValueError("empty selection")
+                snapshot = self.server.viewer.snapshot(**selection)
+            except ValueError:
+                self._send(404, b"Unknown selection", "text/plain; charset=utf-8")
+                return
+            body = json.dumps(snapshot.to_wire(), allow_nan=False).encode("utf-8")
+            self._send(404 if selection and snapshot.state == SnapshotState.ERROR else 200,
+                       body, "application/json; charset=utf-8")
         elif match := IMAGE_PATTERN.fullmatch(self.path):
             image = self.server.viewer.image(match[1])
             if image is None:
@@ -437,7 +627,15 @@ PAGE = """<!doctype html>
 <title>Capture preview</title><link rel="stylesheet" href="/viewer.css">
 <script src="/viewer.js" defer></script></head><body>
 <h1>Capture preview</h1><p>Completed captures, refreshed every second. This is not video.</p>
-<p id="status">Waiting for a capture.</p><section id="preview" hidden>
+<nav><label><input id="follow" type="checkbox" checked> Follow latest</label>
+<label>Benchmark run <select id="runs"></select></label>
+<button id="previous-group" type="button">Previous group</button>
+<label>Mode / group <select id="groups"></select></label>
+<button id="next-group" type="button">Next group</button>
+<button id="previous" type="button">Previous sample</button>
+<label>Sample <select id="samples"></select></label>
+<button id="next" type="button">Next sample</button></nav>
+<p id="status">Waiting for a capture.</p><p id="summary"></p><section id="preview" hidden>
 <div id="labels"></div><img id="capture" alt="Completed XR capture"><p id="details"></p>
 </section></body></html>"""
 
@@ -447,30 +645,185 @@ const preview = document.getElementById('preview');
 let image = document.getElementById('capture');
 const labels = document.getElementById('labels');
 const details = document.getElementById('details');
+const summary = document.getElementById('summary');
+const runs = document.getElementById('runs');
+const groups = document.getElementById('groups');
+const samples = document.getElementById('samples');
+const follow = document.getElementById('follow');
+const previousGroup = document.getElementById('previous-group');
+const nextGroup = document.getElementById('next-group');
+const previous = document.getElementById('previous');
+const nextButton = document.getElementById('next');
+const storageKey = 'visual-viewer-selection-v1';
+let selection = {follow: true, run_id: null, capture_id: null};
+try {
+  const saved = JSON.parse(localStorage.getItem(storageKey));
+  if (saved && saved.follow === false && /^[0-9a-f]{64}$/.test(saved.run_id) &&
+      (saved.capture_id === null || /^[A-Za-z0-9_-]{1,128}$/.test(saved.capture_id))) {
+    selection = {follow: false, run_id: saved.run_id, capture_id: saved.capture_id};
+  }
+} catch (_) {}
+follow.checked = selection.follow;
 let revision = null;
 let displayedRun = null;
+let displayedCapture = null;
+let current = null;
+let generation = 0;
+let timer = null;
+let busy = false;
+let refreshRequested = false;
+function options(element, values, selected) {
+  element.replaceChildren(...values.map(value => {
+    const option = document.createElement('option');
+    option.value = value.id;
+    option.textContent = value.label;
+    return option;
+  }));
+  element.value = selected || '';
+}
+function save() {
+  try { localStorage.setItem(storageKey, JSON.stringify(selection)); } catch (_) {}
+}
+function changed() {
+  generation++;
+  follow.checked = selection.follow;
+  save();
+  preview.hidden = true;
+  revision = null;
+  refreshRequested = true;
+  if (!busy) {
+    clearTimeout(timer);
+    poll();
+  }
+}
+function pin(captureId, runId = current?.run_id) {
+  if (!runId) return;
+  selection = {follow: false, run_id: runId, capture_id: captureId};
+  changed();
+}
+runs.onchange = () => pin(null, runs.value);
+groups.onchange = () => {
+  const group = current?.groups.find(group => group.id === groups.value);
+  if (group?.samples.length) pin(group.samples[0].id);
+};
+samples.onchange = () => pin(samples.value);
+function move(delta) {
+  const group = current?.groups.find(group => group.id === groups.value);
+  if (!group) return;
+  const index = group.samples.findIndex(sample => sample.id === samples.value) + delta;
+  if (index >= 0 && index < group.samples.length) pin(group.samples[index].id);
+}
+function moveGroup(delta) {
+  const allGroups = current?.groups || [];
+  const index = allGroups.findIndex(group => group.id === groups.value) + delta;
+  if (index >= 0 && index < allGroups.length && allGroups[index].samples.length) {
+    pin(allGroups[index].samples[0].id);
+  }
+}
+previousGroup.onclick = () => moveGroup(-1);
+nextGroup.onclick = () => moveGroup(1);
+previous.onclick = () => move(-1);
+nextButton.onclick = () => move(1);
+follow.onchange = () => {
+  if (follow.checked) {
+    selection = {follow: true, run_id: null, capture_id: null};
+    changed();
+  } else if (current?.run_id) {
+    pin(current.preview?.capture.id || null);
+  } else {
+    follow.checked = true;
+  }
+};
+function navigation(snapshot) {
+  const allGroups = snapshot.groups || [];
+  const captureId = snapshot.preview?.capture.id || selection.capture_id;
+  const group = allGroups.find(group => group.samples.some(sample => sample.id === captureId));
+  options(groups, allGroups.map(group => ({id: group.id,
+    label: group.id + (group.outcome ? ' | ' +
+      (group.outcome.reused_aggregate ? 'reused multipass aggregate: ' : 'mode aggregate: ') +
+      group.outcome.status : ' | not measured'),
+  })), group?.id);
+  options(samples, (group?.samples || []).map((sample, index) => ({
+    id: sample.id, label: (index + 1) + ': ' + sample.id + ' | frame ' + sample.frame_ordinal,
+  })), captureId);
+  const groupIndex = allGroups.findIndex(item => item.id === group?.id);
+  previousGroup.disabled = groupIndex <= 0;
+  nextGroup.disabled = groupIndex < 0 || groupIndex >= allGroups.length - 1;
+  const index = group?.samples.findIndex(sample => sample.id === captureId) ?? -1;
+  previous.disabled = index <= 0;
+  nextButton.disabled = index < 0 || index >= (group?.samples.length || 0) - 1;
+}
 async function poll() {
+  if (busy) return;
+  busy = true;
+  refreshRequested = false;
+  const requestGeneration = generation;
   try {
-    const response = await fetch('/api/status', {cache: 'no-store'});
-    if (!response.ok) throw new Error('Status request failed.');
+    const historyResponse = await fetch('/api/runs', {cache: 'no-store'});
+    if (!historyResponse.ok) throw new Error('Run history request failed.');
+    const history = await historyResponse.json();
+    if (requestGeneration !== generation) return;
+    const runId = selection.follow ? history.latest_run_id : selection.run_id;
+    options(runs, history.runs.map(run => ({id: run.run_id,
+      label: run.timestamp + ' | ' + run.output.split(/[\\/]/).pop() +
+        ' | ' + (run.report?.status || 'unknown') +
+        (run.report?.comparison ? ' | comparison ' + run.report.comparison : ''),
+    })), runId);
+    if (!selection.follow && !history.runs.some(run => run.run_id === runId)) {
+      throw new Error('The pinned run is unavailable. Select another run or follow latest.');
+    }
+    let url = '/api/status';
+    if (!selection.follow) {
+      url += '?run_id=' + encodeURIComponent(selection.run_id);
+      if (selection.capture_id) url += '&capture_id=' + encodeURIComponent(selection.capture_id);
+    }
+    const response = await fetch(url, {cache: 'no-store'});
     const snapshot = await response.json();
-    if (snapshot.run !== displayedRun) {
+    if (requestGeneration !== generation) return;
+    if (!response.ok) throw new Error(snapshot.error || 'Status request failed.');
+    current = snapshot;
+    if (!selection.follow && !selection.capture_id && snapshot.preview) {
+      selection.capture_id = snapshot.preview.capture.id;
+      save();
+    }
+    const captureId = snapshot.preview?.capture.id || null;
+    if (snapshot.run !== displayedRun || captureId !== displayedCapture) {
       preview.hidden = true;
       revision = null;
       displayedRun = snapshot.run;
+      displayedCapture = captureId;
+    }
+    navigation(snapshot);
+    const report = snapshot.report;
+    summary.textContent = (snapshot.timestamp || 'Timestamp unknown') + ' | ' +
+      (report?.status || 'Run status unknown') +
+      (report?.comparison ? ' | comparison: ' + report.comparison : '') +
+      (report?.error ? ' | ' + report.error : '') +
+      (report?.comparison_failures?.length ? ' | ' + report.comparison_failures.join(' | ') : '');
+    const group = snapshot.groups?.find(group => group.id === groups.value);
+    const outcome = group?.outcome;
+    if (outcome) {
+      summary.textContent += ' | ' + (outcome.reused_aggregate ? 'Reused multipass aggregate' : 'Mode aggregate') +
+        ': ' + outcome.status;
+      for (const check of [...outcome.repeatability, ...outcome.comparisons]) {
+        summary.textContent += ' | ' + check.name + ': ' + check.status +
+          (check.mean_absolute_error !== null ? ' MAE ' + check.mean_absolute_error.toFixed(3) : '') +
+          (check.changed_fraction !== null ? ' changed ' + (100 * check.changed_fraction).toFixed(3) + '%' : '');
+      }
     }
     if (snapshot.state !== 'ready') {
       preview.hidden = true;
       revision = null;
-      status.textContent = (snapshot.error || 'Waiting for a completed capture.') +
-        ' | ' + (snapshot.report?.status || 'Run status unknown');
+      status.textContent = snapshot.error || 'Waiting for a completed capture.';
       return;
     }
     const next = snapshot.preview;
     if (next.revision !== revision) {
+      preview.hidden = true;
       const loaded = new Image();
       loaded.src = next.image_url;
       await loaded.decode();
+      if (requestGeneration !== generation) return;
       const names = next.labels.map(text => {
         const label = document.createElement('span');
         label.textContent = text;
@@ -487,13 +840,16 @@ async function poll() {
       revision = next.revision;
     }
     preview.hidden = false;
-    status.textContent = snapshot.run + ' | ' + (snapshot.report?.status || 'Run status unknown');
+    status.textContent = (selection.follow ? 'Following latest: ' : 'Pinned: ') + snapshot.run;
   } catch (error) {
+    if (requestGeneration !== generation) return;
     preview.hidden = true;
     revision = null;
     status.textContent = 'Preview unavailable: ' + error.message;
   } finally {
-    setTimeout(poll, 1000);
+    busy = false;
+    if (refreshRequested) timer = setTimeout(poll, 0);
+    else timer = setTimeout(poll, 1000);
   }
 }
 poll();
@@ -501,9 +857,11 @@ poll();
 
 STYLE = """body { background: #14171c; color: #eee; font: 16px system-ui, sans-serif; margin: 2rem; }
 h1 { font-size: 1.5rem; } img { display: block; width: 100%; height: auto; }
+nav { display: flex; align-items: center; flex-wrap: wrap; gap: .8rem; }
+select { max-width: min(90vw, 42rem); } button, select { padding: .4rem; }
 #labels { display: grid; text-align: center; padding: .5rem; gap: 1rem; }
 .stereo { grid-template-columns: 1fr 1fr; } .mono { grid-template-columns: 1fr; }
-#status, #details { overflow-wrap: anywhere; } [hidden] { display: none !important; }
+#status, #summary, #details { overflow-wrap: anywhere; } [hidden] { display: none !important; }
 """
 
 
