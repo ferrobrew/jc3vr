@@ -60,6 +60,7 @@ The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), an
 | `Event::HandStrike` | a hand body's contact, or a blow on a character, scaled by the arm's momentum; a held gun's contact by the arm's alone, at most once every `HAND_BODIES.guns.contact_pulse_interval_s` per hand | bump | 0.4 | contact | `physical_hands::physics::blows` |
 | `Event::Take` | a hand takes hold of an object, a character, a door, or a weapon off the ground | bump | 0.6 | contact | `physical_hands`, `physical_hands::pickup` |
 | `Event::LetGo` | a hand lets go of what it held | click | 0.25 | contact | `physical_hands` |
+| `Event::DoorPressureContact` | an ungripped palm first establishes valid inner-panel opening pressure; retained probe gaps do not repeat it | tick | 0.2 | contact | `physical_hands::doors::pressure` |
 | `Event::Unlatch` | a door's latch gives under the hand | bump | 0.9 | contact | `physical_hands` |
 | `Event::Shot` | a weapon's fire rumble, on the firing hand; the game sets its strength (raised by the kick) and length | thud | game | weapons | `haptics::rumble` |
 | `Event::Kick` | a shot of a weapon with no fire rumble, scaled by its kick | bump | 1.0 | weapons | `haptics::rumble`, from `weapons::fire` |
