@@ -28,6 +28,9 @@
 //! which applies the bullets' window damage from their worker threads. It acts in every mode, on
 //! foot and in a vehicle, under the controller scheme.
 
+#[cfg(test)]
+mod tests;
+
 pub mod bullets;
 pub mod config;
 mod engine;
@@ -298,28 +301,60 @@ unsafe fn cast_for_glass(
     sweep: &strike::Sweep,
     ignore: usize,
 ) -> Result<Option<(Vec3, Vec<Pane>)>, RaycastError> {
-    let Some(ray) = Ray::new(sweep.origin, sweep.direction) else {
-        return Ok(None);
-    };
-    // SAFETY: forwarded from the caller.
     let options = CastOptions {
         material: true,
         ..unsafe { CastOptions::ignoring_player(ignore) }.seeing_through()
     };
-    // SAFETY: forwarded from the caller; the cast info is used only within the closure.
-    let hit = unsafe {
+    visible_hit(sweep, |ray, length| unsafe {
         raycast::cast_on_with(
-            &ray,
-            sweep.length,
+            ray,
+            length,
             &options,
             PhysicsSystem::QUERY_LAYER,
             |hit, info| {
-                (hit.material == Some(GameMaterialId::EGameMaterialId_Glass as u32))
-                    .then(|| (hit.position, engine::panes_hit(info, hit.position)))
+                let glass = hit.material == Some(GameMaterialId::EGameMaterialId_Glass as u32);
+                let hidden = glass && bullets::names_hidden_pane(&mut info.base);
+                let panes = (glass && !hidden).then(|| engine::panes_hit(info, hit.position));
+                (hit.position, hidden, panes)
             },
         )
-    }?;
-    Ok(hit.flatten())
+    })
+}
+
+fn visible_hit<T>(
+    sweep: &strike::Sweep,
+    mut cast: impl FnMut(&Ray, f32) -> Result<Option<(Vec3, bool, Option<T>)>, RaycastError>,
+) -> Result<Option<(Vec3, T)>, RaycastError> {
+    let Some(ray) = Ray::new(sweep.origin, sweep.direction) else {
+        return Ok(None);
+    };
+    if !sweep.length.is_finite() || sweep.length <= 0.0 {
+        return Err(RaycastError::InvalidDistance);
+    }
+    let mut travelled = 0.0;
+    for _ in 0..16 {
+        let remaining = sweep.length - travelled;
+        let current = Ray {
+            origin: ray.at(travelled),
+            ..ray
+        };
+        let Some((point, hidden, value)) = cast(&current, remaining)? else {
+            return Ok(None);
+        };
+        if !hidden {
+            return Ok(value.map(|value| (point, value)));
+        }
+        let along = (point - current.origin).dot(ray.direction);
+        if !point.is_finite() || !(0.0..remaining).contains(&along) {
+            return Err(RaycastError::InvalidDistance);
+        }
+        let next = travelled + along + 0.001;
+        if next >= sweep.length || next <= travelled || ray.at(next) == current.origin {
+            return Ok(None);
+        }
+        travelled = next;
+    }
+    Ok(None)
 }
 
 /// What a strike did to one pane.

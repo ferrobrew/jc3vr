@@ -26,7 +26,7 @@ The game has no broken-window state: the window shader only draws cracks over gl
 
 A pane comes down when one strike is at `tuning.shatter_speed_mps` or faster, or when a strike leaves its damage at `tuning.shatter_total`. A pane's damage is the total of its damage points, each counted up to one as the shader draws it, so shots count toward it too; plus what the strikes added past a point already at full strength, since the game's list stops adding to a full point and blows on one spot would otherwise never bring the pane down (`strike::accumulate`). The mod remembers that excess per pane for a while after its last strike.
 
-Hiding takes every render block of the instance's model with it, so a pane is hidden only when its model draws nothing but window blocks; otherwise it stays, cracked, and the log says why. A hidden pane is not struck again: the sweep still meets the glass's ray shapes, but the lookup leaves out instances that are not shown. `glass.shatter` off keeps every pane up.
+Hiding takes every render block of the instance's model with it, so a pane is hidden only when its model draws nothing but window blocks; otherwise it stays, cracked, and the log says why. A hidden pane is not struck again. The sweep continues beyond positively identified hidden panes along the same ray, within a fixed cast budget and with forward progress checks. It can reach an intact pane farther along, including one on the same vehicle, but a solid obstruction ends the sweep. `glass.shatter` off keeps every pane up.
 
 ## Bullets through a pane brought down
 
