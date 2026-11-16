@@ -5,7 +5,9 @@
 
 import json
 import os
+import shutil
 import socket
+import subprocess
 import tempfile
 import threading
 import time
@@ -354,11 +356,40 @@ class StreamedTakes(unittest.TestCase):
         self.assertEqual(command[command.index("yuv4mpegpipe") + 2], "-")
         self.assertEqual(command[command.index("pulse") + 2], "@DEFAULT_MONITOR@")
         self.assertIn("1:a", command)
+        self.assertIn("-shortest", command)
         self.assertEqual(command[-3:], ["-f", "matroska", "/t/video.mkv"])
         vaapi = relay.build_stream_command("ffmpeg", "h264_vaapi", video, 30000, None, "/t/v.mkv")
         self.assertIn("-vaapi_device", vaapi)
         self.assertNotIn("pulse", vaapi)
         self.assertNotIn("-pix_fmt", vaapi)
+        self.assertNotIn("-shortest", vaapi)
+
+    @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "ffmpeg and ffprobe are required")
+    def test_video_eof_finalizes_with_an_infinite_audio_source(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = os.path.join(folder, "video.mkv")
+            video = relay.VideoSpec(width=16, height=16, frame_rate=30)
+            command = relay.build_stream_command("ffmpeg", "libx264", video, 100, "monitor", path)
+            audio_input = command.index("pulse")
+            command[audio_input] = "lavfi"
+            command[audio_input + 2] = "anullsrc=r=48000:cl=stereo"
+            stream = b"YUV4MPEG2 W16 H16 F30:1 Ip A1:1 C420jpeg\n"
+            stream += (b"FRAME\n" + bytes(16 * 16 * 3 // 2)) * 30
+            result = subprocess.run(command, input=stream, capture_output=True, timeout=10)
+            self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
+            result = subprocess.run(
+                ["ffprobe", "-v", "error", "-show_streams", "-show_packets", "-show_format", "-of", "json", path],
+                capture_output=True, check=True, timeout=5,
+            )
+            metadata = json.loads(result.stdout)
+            self.assertEqual({stream["codec_type"] for stream in metadata["streams"]}, {"video", "audio"})
+            for stream in metadata["streams"]:
+                packets = [packet for packet in metadata["packets"] if packet["stream_index"] == stream["index"]]
+                end = max(float(packet["pts_time"]) + float(packet["duration_time"]) for packet in packets)
+                self.assertGreater(end, 0.9, stream["codec_type"])
+                self.assertLess(end, 1.2, stream["codec_type"])
+            self.assertGreater(float(metadata["format"]["duration"]), 0.9)
+            self.assertLess(float(metadata["format"]["duration"]), 1.2)
 
     def test_a_streamed_take_is_copied_into_ffmpeg_until_the_payload_ends_it(self):
         with tempfile.TemporaryDirectory() as folder:

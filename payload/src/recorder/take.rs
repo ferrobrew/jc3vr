@@ -707,13 +707,13 @@ impl HostLink {
             } => {
                 shared.set_host(HostState::Finishing);
                 if self.writer.is_some() {
-                    if confirmed && !streamed {
+                    if !streamed {
                         shared.fail(
                             "recorder: no frame reached the capture host before the take ended"
                                 .to_owned(),
                         );
                     }
-                    // The writer closed its half of the connection, which is the stop.
+                    let _ = stream.shutdown(std::net::Shutdown::Write);
                     await_stopped(
                         &mut stream,
                         &mut lines,
@@ -810,15 +810,18 @@ fn await_stopped(
             }
         }
         if closed {
-            tracing::warn!("recorder: the capture host closed the connection without confirming");
+            shared.fail(
+                "capture host: the connection closed without confirming video finalization"
+                    .to_owned(),
+            );
             return;
         }
         std::thread::sleep(POLL);
     }
-    tracing::warn!(
-        "recorder: the capture host did not confirm the video was finalized within {} s",
-        budget.as_secs()
-    );
+    shared.fail(format!(
+        "capture host: video finalization was not confirmed within {} s",
+        budget.as_secs_f64()
+    ));
 }
 
 /// Apply one message from the host. Returns whether the connection stays open.

@@ -305,6 +305,49 @@ fn a_streamed_take_connects_once_the_format_is_known_and_its_end_is_the_stop() {
 }
 
 #[test]
+fn a_streamed_take_stopped_before_started_sends_eof_and_waits_for_stopped() {
+    let folder = TempFolder::new();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let target = listener.local_addr().unwrap().to_string();
+    let host = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        stream
+            .set_read_timeout(Some(Duration::from_secs(3)))
+            .unwrap();
+        let mut reader = BufReader::new(stream.try_clone().unwrap());
+        assert_eq!(read_json(&mut reader)["version"], 2);
+        let mut video = Vec::new();
+        reader.read_to_end(&mut video).unwrap();
+        assert!(video.is_empty());
+        stream
+            .write_all(b"{\"type\":\"started\",\"file\":\"video.mkv\"}\n")
+            .unwrap();
+        stream
+            .write_all(b"{\"type\":\"stopped\",\"exit_code\":0}\n")
+            .unwrap();
+    });
+    let mut take = Take::spawn(TakeRequest {
+        stream: true,
+        ..request(&folder, target)
+    })
+    .unwrap();
+    take.video().unwrap().publish(VideoFormat {
+        layout: StreamLayout::new(MIN_EYE_WIDTH, MIN_EYE_WIDTH, 0, Arrangement::SideBySide)
+            .unwrap(),
+        frame_rate: 30,
+    });
+    await_host(&take, |state| *state == HostState::Starting);
+    take.finish();
+    let completion = await_completion(&mut take);
+    assert_eq!(
+        completion.error.as_deref(),
+        Some("recorder: no frame reached the capture host before the take ended")
+    );
+    assert_eq!(take.host(), HostState::Closed);
+    host.join().unwrap();
+}
+
+#[test]
 fn a_streamed_take_without_eye_views_says_why_it_has_no_video() {
     let folder = TempFolder::new();
     let target = {
@@ -319,6 +362,43 @@ fn a_streamed_take_without_eye_views_says_why_it_has_no_video() {
     take.finish();
     let error = await_completion(&mut take).error.unwrap();
     assert!(error.contains("no eye views were captured"), "{error}");
+}
+
+#[test_case::test_case(true; "disconnected")]
+#[test_case::test_case(false; "deadline expired")]
+fn finalization_without_a_stop_acknowledgement_is_an_error(disconnect: bool) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let mut stream = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+    let (peer, _) = listener.accept().unwrap();
+    stream.set_nonblocking(true).unwrap();
+    let mut peer = Some(peer);
+    if disconnect {
+        peer.take();
+    }
+    let shared = Shared {
+        host: Mutex::new(HostState::Finishing),
+        error: Mutex::new(None),
+        lines: AtomicU32::new(0),
+    };
+    let mut confirmed = true;
+    await_stopped(
+        &mut stream,
+        &mut LineBuffer::default(),
+        &mut confirmed,
+        Duration::from_millis(50),
+        &shared,
+    );
+    let error = shared.error.lock().clone().unwrap();
+    assert!(error.starts_with("capture host:"), "{error}");
+    assert!(
+        error.contains(if disconnect {
+            "closed without confirming"
+        } else {
+            "not confirmed within"
+        }),
+        "{error}"
+    );
+    drop(peer);
 }
 
 #[test]

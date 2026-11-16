@@ -754,7 +754,7 @@ def build_stream_command(
         command += ["-map", "1:a"]
     command += stream_encoder_args(encoder, video, bitrate_kbps)
     if audio is not None:
-        command += ["-c:a", "aac", "-b:a", "192k"]
+        command += ["-c:a", "aac", "-b:a", "192k", "-shortest"]
     return command + ["-f", "matroska", path]
 
 
