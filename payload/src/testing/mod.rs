@@ -18,6 +18,7 @@ pub(crate) mod scenario;
 pub(crate) mod signal_status;
 pub(crate) mod signals;
 mod text;
+pub(crate) mod visual;
 
 pub use config::TestingConfig;
 
@@ -26,6 +27,7 @@ pub use config::TestingConfig;
 /// pass (which services the replay's teleport).
 pub(crate) fn update() {
     crate::screenshot::harness::tick();
+    visual::tick();
     request::poll();
     replay::update();
     scenario::update();
@@ -68,6 +70,7 @@ pub(crate) fn toggle_scenario() {
 /// Stop the tools and wait for their threads, for eject. Returns whether none is left running.
 #[must_use = "a thread that did not finish means the payload must stay mapped"]
 pub(crate) fn shutdown() -> bool {
+    visual::shutdown();
     scenario::stop();
     log_tap::stop();
     replay::shutdown()

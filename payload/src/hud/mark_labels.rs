@@ -53,7 +53,7 @@ pub(crate) fn publish(labels: Vec<MarkLabel>) {
 /// mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
-    if eye == 0 {
+    if crate::stereo::dispatch::first_ui_eye(eye) {
         let cfg = Config::lock_query(|c| c.hud);
         let active = world_quads_active(&cfg) && scheme::is_controllers();
         let head = active.then(crate::hud::render_camera_pose).flatten();

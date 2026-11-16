@@ -38,7 +38,10 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
 };
 
-use crate::session::{self, CaptureFile, CaptureFolder};
+use crate::{
+    screenshot::harness::types::CaptureMetadata,
+    session::{self, CaptureFile, CaptureFolder},
+};
 
 /// The byte order of a read-back image's four channels.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -120,7 +123,7 @@ pub enum ImageTarget {
     },
     HarnessScreenshot {
         path: PathBuf,
-        sidecar: serde_json::Value,
+        sidecar: Box<CaptureMetadata>,
     },
 }
 
@@ -285,7 +288,7 @@ fn write(target: ImageTarget, mut image: Image) -> anyhow::Result<PathBuf> {
     to_rgba8_opaque(&mut image.pixels, image.order);
 
     let (path, sidecar) = match &target {
-        ImageTarget::HarnessScreenshot { path, sidecar } => (path.clone(), Some(sidecar)),
+        ImageTarget::HarnessScreenshot { path, .. } => (path.clone(), None),
         ImageTarget::Screenshot { stamp, sidecar } => (
             session::capture_file(CaptureFile::Screenshot, stamp, None)?,
             Some(sidecar),
@@ -316,18 +319,24 @@ fn write(target: ImageTarget, mut image: Image) -> anyhow::Result<PathBuf> {
         .flush()
         .with_context(|| format!("flushing {}", path.display()))?;
 
-    if let Some(sidecar) = sidecar {
-        let json_path = path.with_extension("json");
-        let file = std::fs::File::create(&json_path)
-            .with_context(|| format!("creating {}", json_path.display()))?;
-        let mut writer = std::io::BufWriter::new(file);
-        serde_json::to_writer_pretty(&mut writer, sidecar)
-            .with_context(|| format!("writing {}", json_path.display()))?;
-        writer
-            .flush()
-            .with_context(|| format!("flushing {}", json_path.display()))?;
+    if let ImageTarget::HarnessScreenshot { sidecar, .. } = &target {
+        write_sidecar(&path, sidecar)?;
+    } else if let Some(sidecar) = sidecar {
+        write_sidecar(&path, sidecar)?;
     }
     Ok(path)
+}
+
+fn write_sidecar(path: &std::path::Path, sidecar: &impl serde::Serialize) -> anyhow::Result<()> {
+    let json_path = path.with_extension("json");
+    let file = std::fs::File::create(&json_path)
+        .with_context(|| format!("creating {}", json_path.display()))?;
+    let mut writer = std::io::BufWriter::new(file);
+    serde_json::to_writer_pretty(&mut writer, sidecar)
+        .with_context(|| format!("writing {}", json_path.display()))?;
+    writer
+        .flush()
+        .with_context(|| format!("flushing {}", json_path.display()))
 }
 
 /// A trace frame's image name: the frame index as the stem, marked as one eye.
@@ -365,11 +374,11 @@ mod tests {
         let path = directory.0.join("capture.capture.png");
         let result_path = directory.0.join("capture.json");
         std::fs::write(&result_path, b"protocol result").unwrap();
-        let sidecar = serde_json::json!({ "frame": 17, "complete": true });
+        let sidecar = test_metadata();
         let result = write(
             ImageTarget::HarnessScreenshot {
                 path: path.clone(),
-                sidecar: sidecar.clone(),
+                sidecar: Box::new(sidecar.clone()),
             },
             test_image(),
         )
@@ -380,7 +389,7 @@ mod tests {
         assert_eq!(image.as_raw(), &[30, 20, 10, 255]);
         let metadata: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
-        assert_eq!(metadata, sidecar);
+        assert_eq!(metadata, serde_json::to_value(sidecar).unwrap());
         assert_eq!(std::fs::read(result_path).unwrap(), b"protocol result");
     }
 
@@ -400,7 +409,8 @@ mod tests {
         assert!(image::open(&path).is_ok());
         let metadata: serde_json::Value =
             serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
-        assert_eq!(metadata, serde_json::json!({ "test": true }));
+        assert_eq!(metadata["id"], "writer-test");
+        assert_eq!(metadata["state"], "captured");
         assert_eq!(completion.try_recv(), Err(mpsc::TryRecvError::Disconnected));
     }
 
@@ -495,7 +505,22 @@ mod tests {
     fn test_target(path: PathBuf) -> ImageTarget {
         ImageTarget::HarnessScreenshot {
             path,
-            sidecar: serde_json::json!({ "test": true }),
+            sidecar: Box::new(test_metadata()),
+        }
+    }
+
+    fn test_metadata() -> CaptureMetadata {
+        CaptureMetadata {
+            id: "writer-test".to_owned(),
+            state: crate::screenshot::harness::types::CaptureState::Captured,
+            readiness: crate::screenshot::harness::types::Readiness {
+                gameplay_ready: true,
+                xr_session_running: true,
+                xr_frame_rendering: true,
+                build_stamp: "test-build",
+            },
+            capture: None,
+            error: None,
         }
     }
 

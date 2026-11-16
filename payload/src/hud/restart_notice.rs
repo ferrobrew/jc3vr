@@ -30,7 +30,7 @@ use crate::{
 /// the render-thread post-draw hook with the engine context mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut notice = NOTICE.lock();
-    if eye == 0 {
+    if crate::stereo::dispatch::first_ui_eye(eye) {
         notice.prepare(context, device);
     }
     notice.draw(context, device, target);

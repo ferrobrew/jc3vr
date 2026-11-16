@@ -9,6 +9,7 @@ use jc3gi::types::math::Matrix4;
 use parking_lot::Mutex;
 
 pub mod config;
+pub mod dispatch;
 pub(crate) mod engine_context;
 pub mod single_pass;
 
@@ -16,7 +17,7 @@ pub mod single_pass;
 pub struct StereoState {
     /// Whether the current frame is being rendered in stereo (the Draw driver double-Draws).
     pub active: bool,
-    /// The eye currently being drawn: 0 = first, 1 = second. During a share frame's far
+    /// The physical eye currently being drawn: 0 = left, 1 = right. During a share frame's far
     /// dispatch this stays 0 (the far phase renders at eye 0's pose).
     pub draw_index: usize,
     /// Whether the current dispatch is a share frame's far-only dispatch (issue #32): the far
@@ -31,6 +32,8 @@ pub struct StereoState {
     /// a share frame. Once-per-frame work (the shared pre-passes) keys on `> 0`, independent of
     /// eye indexing.
     pub dispatch_ordinal: usize,
+    /// Whether the current dispatch is the frame's last near-scene dispatch.
+    pub last_near_dispatch: bool,
     /// The current eye's world-space camera offset from the center camera (`offset * right`, in
     /// metres), set by the `SetupRenderCamera` hook. The sun-shadow cascade correction adds
     /// `M * shadow_anchor_delta` to the cascade transform translation so the shadow lookup stays
@@ -60,6 +63,7 @@ impl StereoState {
             far_phase: false,
             share_frame: false,
             dispatch_ordinal: 0,
+            last_near_dispatch: true,
             shadow_anchor_delta: glam::Vec3::ZERO,
             vp_history: VpHistory::new(),
             center_transform: None,
@@ -139,15 +143,31 @@ pub fn active() -> bool {
     STEREO_STATE.lock().active
 }
 
-/// The eye currently being drawn (0 = first, 1 = second).
+/// The physical eye currently being drawn (0 = left, 1 = right).
 pub fn draw_index() -> usize {
     STEREO_STATE.lock().draw_index
 }
 
-/// True while the Draw driver is rendering the *second* eye of a stereo frame.
+/// True while the Draw driver is rendering the physical right eye of a stereo frame.
 pub fn is_second_eye() -> bool {
     let state = STEREO_STATE.lock();
     state.active && state.draw_index == 1
+}
+
+/// True for a near-scene dispatch that follows another near-scene dispatch this frame.
+pub fn later_scene() -> bool {
+    let state = STEREO_STATE.lock();
+    dispatch::later_scene_dispatch(
+        state.active,
+        state.far_phase,
+        state.share_frame,
+        state.dispatch_ordinal,
+    )
+}
+
+/// True on the frame's last near-scene dispatch, regardless of its physical eye.
+pub fn last_near_dispatch() -> bool {
+    STEREO_STATE.lock().last_near_dispatch
 }
 
 /// True while the Draw driver is rendering a share frame's far-only dispatch.

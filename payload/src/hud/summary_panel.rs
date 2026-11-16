@@ -58,7 +58,7 @@ use crate::{
 /// after the other panels, with the engine context mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut panel = PANEL.lock();
-    if eye == 0 {
+    if crate::stereo::dispatch::first_ui_eye(eye) {
         let (enabled, dominant, config) = Config::lock_query(|c| {
             (
                 c.controllers.enabled && c.controllers.summary.enabled,

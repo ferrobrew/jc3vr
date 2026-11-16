@@ -377,11 +377,46 @@ pub fn request_reload() {
 /// then `LoadShaderBundle` the *other* quality variant and back. Each call re-creates all shader
 /// holders through [`create_fragment_program`], so the PCF patch lands. Call once per frame on the game
 /// thread (no draw in flight).
-pub fn process_reload_request() {
+pub fn process_reload_request() -> Option<Result<(), ReloadError>> {
     if !RELOAD_REQUESTED.swap(false, Ordering::Relaxed) {
-        return;
+        return None;
     }
-    bounce_shader_bundle();
+    Some(reload_now())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReloadError {
+    NoGraphicsEngine,
+    InvalidBundleLength,
+    InvalidBundleEncoding,
+    UnknownBundle,
+    LoadVariantFailed,
+    RestoreBundleFailed,
+}
+
+impl std::fmt::Display for ReloadError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let reason = match self {
+            Self::NoGraphicsEngine => "the graphics engine is unavailable",
+            Self::InvalidBundleLength => "the shader bundle name has an invalid length",
+            Self::InvalidBundleEncoding => "the shader bundle name is not UTF-8",
+            Self::UnknownBundle => "the shader bundle has no known quality variant",
+            Self::LoadVariantFailed => "the engine did not load the alternate shader bundle",
+            Self::RestoreBundleFailed => "the engine did not restore the original shader bundle",
+        };
+        write!(f, "shader reload: {reason}")
+    }
+}
+
+impl std::error::Error for ReloadError {}
+
+pub(crate) fn reload_now() -> Result<(), ReloadError> {
+    RELOAD_REQUESTED.store(false, Ordering::Relaxed);
+    let result = bounce_shader_bundle();
+    if let Err(error) = &result {
+        tracing::warn!("{error}");
+    }
+    result
 }
 
 /// On eject: if the mod patched any shaders that the game still holds -- single-pass's substituted
@@ -405,30 +440,25 @@ pub fn restore_original_shaders_on_eject() {
     }
     crate::stereo::single_pass::warn_if_shaders_hold_patched_bytecode();
     tracing::info!("shader restore: re-creating the pristine shaders on eject");
-    bounce_shader_bundle();
+    let _ = reload_now();
 }
 
 /// Re-create every shader by bouncing the active bundle to its other quality variant and back, so all
 /// shader holders re-run through the create hooks. Game thread only, no draw in flight (drains first).
-fn bounce_shader_bundle() {
+fn bounce_shader_bundle() -> Result<(), ReloadError> {
     // SAFETY: runs on the game thread; the engine singleton is live and its `m_CurrentBundleName` is a
     // stable `std::string`. `LoadShaderBundle` is what the settings path calls; we drain the draw
     // first so no GPU work references the shaders being replaced.
     unsafe {
-        let Some(ge) = GraphicsEngine::get() else {
-            return;
-        };
+        let ge = GraphicsEngine::get().ok_or(ReloadError::NoGraphicsEngine)?;
         let size = ge.m_CurrentBundleName.size;
         if size == 0 || size > 64 {
-            tracing::warn!("shader reload: unexpected bundle-name length {size}; skipping");
-            return;
+            return Err(ReloadError::InvalidBundleLength);
         }
         let current = ge.m_CurrentBundleName.as_bytes().to_vec();
-        let Ok(current_name) = std::str::from_utf8(&current) else {
-            tracing::warn!("shader reload: bundle name is not UTF-8; skipping");
-            return;
-        };
-        let other = toggle_bundle(current_name);
+        let current_name =
+            std::str::from_utf8(&current).map_err(|_| ReloadError::InvalidBundleEncoding)?;
+        let other = toggle_bundle(current_name).ok_or(ReloadError::UnknownBundle)?;
 
         let mut away = other.as_bytes().to_vec();
         away.push(0);
@@ -436,14 +466,19 @@ fn bounce_shader_bundle() {
         back.push(0);
 
         ge.WaitForCPUDrawToFinish();
-        ge.LoadShaderBundle(away.as_ptr());
+        let away_loaded = ge.LoadShaderBundle(away.as_ptr());
         // A reload bounces the bundle (away, then back), re-creating every shader through the hooks
         // twice. Reset the single-pass census after the throwaway `away` pass so the reported numbers
         // reflect exactly one clean pass over the real (`back`) shader set; also clear the patched-VS
         // set so it repopulates with the `back` set's live shader pointers.
         crate::stereo::single_pass::reset_census();
         crate::stereo::single_pass::reset_patched_vs();
-        ge.LoadShaderBundle(back.as_ptr());
+        if !ge.LoadShaderBundle(back.as_ptr()) {
+            return Err(ReloadError::RestoreBundleFailed);
+        }
+        if !away_loaded {
+            return Err(ReloadError::LoadVariantFailed);
+        }
         tracing::info!(
             "shader reload: '{current_name}' (bounced via '{other}'); {} PCF sites patched total",
             patched_count(),
@@ -452,22 +487,18 @@ fn bounce_shader_bundle() {
         // shader through the census hook, so the name census is complete -- dump it.
         crate::stereo::single_pass::dump_vs_name_census();
     }
+    Ok(())
 }
 
 /// The opposite shadow-quality variant of a shader bundle, used to force a reload by switching away and
 /// back. Bundles come in `*LowShadows` / non-`*LowShadows` pairs (plus the Intel `ConstMath` variants);
 /// toggling the suffix keeps the math variant correct.
-fn toggle_bundle(name: &str) -> &'static str {
-    match name {
+fn toggle_bundle(name: &str) -> Option<&'static str> {
+    Some(match name {
         "Shaders" => "ShadersLowShadows",
         "ShadersLowShadows" => "Shaders",
         "ShadersConstMath" => "ShadersConstMathLowShadows",
         "ShadersConstMathLowShadows" => "ShadersConstMath",
-        _ => {
-            tracing::warn!(
-                "shader: toggle_bundle received unrecognized name {name:?}; falling back to ShadersLowShadows"
-            );
-            "ShadersLowShadows"
-        }
-    }
+        _ => return None,
+    })
 }

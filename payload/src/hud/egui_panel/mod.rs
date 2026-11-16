@@ -176,7 +176,7 @@ pub(crate) fn draw_quad(
     }
     let cfg = Config::lock_query(|c| c.hud.egui_panel);
     let mut panel = EGUI_PANEL.lock();
-    if eye == 0 {
+    if crate::stereo::dispatch::first_ui_eye(eye) {
         panel.prepare(context, device, &cfg);
     }
     panel.draw(context, device, target);

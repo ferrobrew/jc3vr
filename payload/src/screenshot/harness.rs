@@ -9,13 +9,22 @@ use std::{
 
 use anyhow::Context as _;
 use parking_lot::Mutex;
-use serde_json::{Value, json};
+pub(crate) mod types;
+
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext};
 
 use crate::{
     config::Config,
     image_writer::{self, ImageTarget},
-    screenshot::{CaptureSource, read_back},
+    screenshot::{
+        CaptureSource,
+        harness::types::{
+            CameraInput, CaptureKind, CaptureMetadata, CaptureState, CapturedFrame,
+            ComparisonInputs, EyeInput, Readiness,
+        },
+        read_back,
+    },
+    stereo::dispatch::{self, RenderMode},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -62,10 +71,21 @@ pub(crate) fn request(id: RequestId) {
     );
 }
 
-fn admit(state: &mut State, id: RequestId, folder: PathBuf, after: Option<i64>, mut result: Value) {
+fn admit(
+    state: &mut State,
+    id: RequestId,
+    folder: PathBuf,
+    after: Option<i64>,
+    readiness: Readiness,
+) {
     let result_path = folder.join(format!("{}.json", id.0));
-    result["id"] = json!(id.0);
-    result["state"] = json!("failed");
+    let mut result = CaptureMetadata {
+        id: id.0.clone(),
+        state: CaptureState::Failed,
+        readiness,
+        capture: None,
+        error: None,
+    };
     if state.active.as_ref().is_some_and(|active| active.id == id) {
         tracing::warn!(
             "screenshot harness: duplicate outstanding id {} is rejected",
@@ -74,12 +94,12 @@ fn admit(state: &mut State, id: RequestId, folder: PathBuf, after: Option<i64>, 
         return;
     }
     if state.active.is_some() {
-        result["error"] = json!("busy: another harness capture is outstanding");
+        result.error = Some("screenshot harness: another capture is outstanding".to_owned());
         publish_logged(&result_path, &result);
         return;
     }
     if let Err(error) = std::fs::create_dir_all(&folder) {
-        result["error"] = json!(format!(
+        result.error = Some(format!(
             "screenshot harness: creating capture directory: {error}"
         ));
         publish_logged(&result_path, &result);
@@ -122,7 +142,13 @@ pub(crate) fn capture(
     let frame = frame_identity();
     let running = crate::vr::is_running_published();
     let gameplay = crate::hooks::in_gameplay();
-    let effective_config = Config::lock_query(|config| serde_json::to_value(config).ok());
+    let effective_config = crate::config::get();
+    let mode = dispatch::mode();
+    let selected_eye = mode.selected_eye();
+    let visual = crate::testing::visual::metadata();
+    if mode != RenderMode::Native && !crate::testing::visual::ready() {
+        return;
+    }
     let mut state = STATE.lock();
     let fresh = state.eyes.map(|eye| frame.is_some() && eye == frame);
     let Some(active) = state.active.as_mut() else {
@@ -138,18 +164,20 @@ pub(crate) fn capture(
         frame,
         active.after,
         fresh,
+        selected_eye,
     ) {
         return;
     }
     PENDING.store(false, Ordering::Release);
     let source_name = match &source {
-        CaptureSource::Full(_) => "collapsed_back_buffer",
-        CaptureSource::Eyes(_) => "eye_textures",
+        CaptureSource::Full(_) if selected_eye.is_some() => CaptureKind::IsolatedEye,
+        CaptureSource::Full(_) => CaptureKind::CollapsedBackBuffer,
+        CaptureSource::Eyes(_) => CaptureKind::EyeTextures,
     };
     let capture = match read_back(device, context, source) {
         Ok(capture) => capture,
         Err(error) => {
-            active.result["error"] = json!(format!("screenshot harness: readback: {error:#}"));
+            active.result.error = Some(format!("screenshot harness: readback: {error:#}"));
             publish_logged(&active.result_path(), &active.result);
             state.active = None;
             return;
@@ -160,36 +188,46 @@ pub(crate) fn capture(
     let active = state.active.as_mut().unwrap();
     let png = active.folder.join(format!("{}.capture.png", active.id.0));
     let metadata = png.with_extension("json");
-    active.result = json!({
-        "id": active.id.0,
-        "state": "captured",
-        "png": png,
-        "metadata": metadata,
-        "frame_ordinal": ordinal,
-        "predicted_display_time_ns": frame,
-        "source": source_name,
-        "width": capture.image.width(),
-        "height": capture.image.height(),
-        "eye_width": capture.image.width() / 2,
-        "eye_height": capture.image.height(),
-        "format": capture.format,
-        "gameplay_ready": true,
-        "xr_session_running": true,
-        "fresh_eyes": fresh,
-        "effective_config": effective_config,
-        "build_stamp": crate::BUILD_STAMP,
-        "single_pass": capture.diagnostics,
+    let eye_width = capture.image.width() / if selected_eye.is_some() { 1 } else { 2 };
+    let comparison_inputs = comparison_inputs(eye_width, capture.image.height(), &visual);
+    active.result.state = CaptureState::Captured;
+    active.result.readiness = readiness();
+    active.result.capture = Some(CapturedFrame {
+        png: png.clone(),
+        metadata,
+        frame_ordinal: ordinal,
+        predicted_display_time_ns: frame.unwrap(),
+        source: source_name,
+        width: capture.image.width(),
+        height: capture.image.height(),
+        eye_width,
+        eye_height: capture.image.height(),
+        format: capture.format,
+        fresh_eyes: fresh,
+        rendered_eyes: required_eyes(selected_eye),
+        selected_eye,
+        mode,
+        visual,
+        comparison_inputs,
+        effective_config,
+        single_pass: if mode == RenderMode::SinglePass {
+            capture.diagnostics
+        } else {
+            None
+        },
     });
     let sidecar = active.result.clone();
-    active.result["state"] = json!("failed");
+    active.result.state = CaptureState::Failed;
     match image_writer::try_submit(
-        ImageTarget::HarnessScreenshot { path: png, sidecar },
+        ImageTarget::HarnessScreenshot {
+            path: png,
+            sidecar: Box::new(sidecar),
+        },
         capture.image,
     ) {
         Ok(receiver) => active.phase = Phase::Writing(receiver),
         Err(error) => {
-            active.result["error"] =
-                json!(format!("screenshot harness: writer admission: {error:#}"));
+            active.result.error = Some(format!("screenshot harness: writer admission: {error:#}"));
             publish_logged(&active.result_path(), &active.result);
             state.active = None;
         }
@@ -209,7 +247,7 @@ pub(crate) fn tick() {
     );
 }
 
-fn advance(state: &mut State, now: Instant, latest_readiness: Option<Value>) {
+fn advance(state: &mut State, now: Instant, latest_readiness: Option<Readiness>) {
     let Some(active) = state.active.as_mut() else {
         return;
     };
@@ -222,8 +260,8 @@ fn advance(state: &mut State, now: Instant, latest_readiness: Option<Value>) {
         if let Some(outcome) = outcome {
             if !active.reported {
                 match outcome {
-                    Ok(_) => active.result["state"] = json!("completed"),
-                    Err(error) => active.result["error"] = json!(error),
+                    Ok(_) => active.result.state = CaptureState::Completed,
+                    Err(error) => active.result.error = Some(error),
                 }
                 publish_logged(&active.result_path(), &active.result);
             }
@@ -233,17 +271,18 @@ fn advance(state: &mut State, now: Instant, latest_readiness: Option<Value>) {
     }
     if !active.reported && now.duration_since(active.started) >= TIMEOUT {
         let pending = matches!(active.phase, Phase::Pending);
-        if pending {
-            let mut latest = latest_readiness.unwrap_or_else(|| json!({}));
-            latest["id"] = json!(active.id.0);
-            active.result = latest;
+        if pending && let Some(latest) = latest_readiness {
+            active.result.readiness = latest;
         }
-        active.result["state"] = json!("failed");
-        active.result["error"] = json!(if pending {
-            "screenshot harness: timed out waiting for gameplay and a fresh rendered XR pair"
-        } else {
-            "screenshot harness: timed out waiting for PNG and metadata writes"
-        });
+        active.result.state = CaptureState::Failed;
+        active.result.error = Some(
+            if pending {
+                "screenshot harness: timed out waiting for gameplay and a fresh rendered XR pair"
+            } else {
+                "screenshot harness: timed out waiting for PNG and metadata writes"
+            }
+            .to_owned(),
+        );
         publish_logged(&active.result_path(), &active.result);
         active.reported = true;
         if pending {
@@ -272,7 +311,7 @@ struct Active {
     started: Instant,
     after: Option<i64>,
     phase: Phase,
-    result: Value,
+    result: CaptureMetadata,
     reported: bool,
 }
 
@@ -298,20 +337,69 @@ fn eligible(
     frame: Option<i64>,
     after: Option<i64>,
     fresh: [bool; 2],
+    selected_eye: Option<usize>,
 ) -> bool {
-    running && gameplay && stereo && frame.is_some() && frame != after && fresh == [true; 2]
+    running
+        && gameplay
+        && stereo
+        && frame.is_some()
+        && frame != after
+        && required_eyes_fresh(selected_eye, fresh)
 }
 
-fn readiness() -> Value {
-    json!({
-        "gameplay_ready": crate::hooks::in_gameplay(),
-        "xr_session_running": crate::vr::is_running_published(),
-        "xr_frame_rendering": frame_identity().is_some(),
-        "build_stamp": crate::BUILD_STAMP,
-    })
+fn required_eyes(selected: Option<usize>) -> [bool; 2] {
+    match selected {
+        Some(0) => [true, false],
+        Some(1) => [false, true],
+        _ => [true, true],
+    }
 }
 
-fn publish_logged(path: &Path, result: &Value) {
+fn required_eyes_fresh(selected: Option<usize>, fresh: [bool; 2]) -> bool {
+    required_eyes(selected)
+        .into_iter()
+        .zip(fresh)
+        .all(|(required, fresh)| !required || fresh)
+}
+
+fn comparison_inputs(
+    eye_width: u32,
+    eye_height: u32,
+    visual: &crate::testing::visual::VisualMetadata,
+) -> ComparisonInputs {
+    let camera = crate::vr::pose_control::current().map(|pose| CameraInput {
+        position: pose.position.to_array(),
+        orientation: pose.orientation().to_array(),
+    });
+    let eyes = [0, 1].map(|eye| {
+        crate::vr::render_params(eye).map(|params| EyeInput {
+            offset: params.local_offset.to_array(),
+            orientation_delta: params.orientation_delta.to_array(),
+            projection_standard: glam::Mat4::from(params.projection_standard).to_cols_array(),
+            projection_reverse_z: glam::Mat4::from(params.projection_reverse_z).to_cols_array(),
+        })
+    });
+    ComparisonInputs {
+        build_stamp: crate::BUILD_STAMP,
+        profile: visual.profile,
+        camera,
+        eyes,
+        eye_width,
+        eye_height,
+        world_scale: Config::lock_query(|config| config.vr.world_scale),
+    }
+}
+
+fn readiness() -> Readiness {
+    Readiness {
+        gameplay_ready: crate::hooks::in_gameplay(),
+        xr_session_running: crate::vr::is_running_published(),
+        xr_frame_rendering: frame_identity().is_some(),
+        build_stamp: crate::BUILD_STAMP,
+    }
+}
+
+fn publish_logged(path: &Path, result: &CaptureMetadata) {
     if let Err(error) = publish(path, result) {
         tracing::error!(
             "screenshot harness: publishing {}: {error:#}",
@@ -320,7 +408,7 @@ fn publish_logged(path: &Path, result: &Value) {
     }
 }
 
-fn publish(path: &Path, result: &Value) -> anyhow::Result<()> {
+fn publish(path: &Path, result: &CaptureMetadata) -> anyhow::Result<()> {
     let temporary = path.with_extension("json.tmp");
     let bytes =
         serde_json::to_vec_pretty(result).context("screenshot harness: serializing result")?;
@@ -341,20 +429,20 @@ mod tests {
             RequestId::parse("second-id").unwrap(),
             folder.0.clone(),
             None,
-            json!({}),
+            test_readiness(),
         );
-        let result: Value =
+        let result: serde_json::Value =
             serde_json::from_slice(&std::fs::read(folder.0.join("second-id.json")).unwrap())
                 .unwrap();
         assert_eq!(result["state"], "failed");
-        assert!(result["error"].as_str().unwrap().contains("busy"));
+        assert!(result["error"].as_str().unwrap().contains("outstanding"));
         assert_eq!(state.active.as_ref().unwrap().id.0, "test-id");
         admit(
             &mut state,
             RequestId::parse("test-id").unwrap(),
             folder.0.clone(),
             None,
-            json!({}),
+            test_readiness(),
         );
         assert!(!folder.result().exists());
         assert!(matches!(state.active.unwrap().phase, Phase::Pending));
@@ -370,7 +458,7 @@ mod tests {
         assert!(!folder.result().exists());
         sender.send(Ok(folder.0.join("capture.png"))).unwrap();
         advance(&mut state, now, None);
-        let result: Value =
+        let result: serde_json::Value =
             serde_json::from_slice(&std::fs::read(folder.result()).unwrap()).unwrap();
         assert_eq!(result["state"], "completed");
         assert!(state.active.is_none());
@@ -389,7 +477,7 @@ mod tests {
                     .unwrap();
             }
             advance(&mut state, started + TIMEOUT, None);
-            let result: Value =
+            let result: serde_json::Value =
                 serde_json::from_slice(&std::fs::read(folder.result()).unwrap()).unwrap();
             assert_eq!(result["state"], "failed");
             assert!(result["error"].is_string());
@@ -397,7 +485,7 @@ mod tests {
                 assert!(state.active.is_some());
                 sender.send(Ok(folder.0.join("capture.png"))).unwrap();
                 advance(&mut state, started + TIMEOUT, None);
-                let unchanged: Value =
+                let unchanged: serde_json::Value =
                     serde_json::from_slice(&std::fs::read(folder.result()).unwrap()).unwrap();
                 assert_eq!(result, unchanged);
             }
@@ -413,13 +501,25 @@ mod tests {
         advance(
             &mut state,
             started + TIMEOUT,
-            Some(json!({"gameplay_ready": false})),
+            Some(Readiness {
+                gameplay_ready: false,
+                ..test_readiness()
+            }),
         );
-        let result: Value =
+        let result: serde_json::Value =
             serde_json::from_slice(&std::fs::read(folder.result()).unwrap()).unwrap();
         assert_eq!(result["state"], "failed");
         assert_eq!(result["gameplay_ready"], false);
         assert!(state.active.is_none());
+    }
+
+    fn test_readiness() -> Readiness {
+        Readiness {
+            gameplay_ready: true,
+            xr_session_running: true,
+            xr_frame_rendering: true,
+            build_stamp: "test-build",
+        }
     }
 
     struct TestFolder(PathBuf);
@@ -448,7 +548,13 @@ mod tests {
                     started: Instant::now(),
                     after: None,
                     phase,
-                    result: json!({"id": "test-id", "state": "failed"}),
+                    result: CaptureMetadata {
+                        id: "test-id".to_owned(),
+                        state: CaptureState::Failed,
+                        readiness: test_readiness(),
+                        capture: None,
+                        error: None,
+                    },
                     reported: false,
                 }),
                 eyes: [None; 2],
@@ -464,15 +570,80 @@ mod tests {
     }
 
     #[test]
-    fn capture_requires_gameplay_a_live_frame_and_two_fresh_eyes() {
-        assert!(eligible(true, true, true, Some(2), Some(1), [true; 2]));
-        for fresh in [[false, false], [true, false], [false, true]] {
-            assert!(!eligible(true, true, true, Some(2), Some(1), fresh));
+    fn isolated_capture_requires_only_the_selected_physical_eye() {
+        for eye in 0..2 {
+            let fresh = required_eyes(Some(eye));
+            assert!(eligible(
+                true,
+                true,
+                true,
+                Some(2),
+                Some(1),
+                fresh,
+                Some(eye)
+            ));
+            assert!(!eligible(
+                true,
+                true,
+                true,
+                Some(2),
+                Some(1),
+                fresh,
+                Some(1 - eye)
+            ));
         }
-        assert!(!eligible(false, true, true, Some(2), Some(1), [true; 2]));
-        assert!(!eligible(true, false, true, Some(2), Some(1), [true; 2]));
-        assert!(!eligible(true, true, false, Some(2), Some(1), [true; 2]));
-        assert!(!eligible(true, true, true, None, Some(1), [true; 2]));
-        assert!(!eligible(true, true, true, Some(1), Some(1), [true; 2]));
+    }
+
+    #[test]
+    fn capture_requires_gameplay_a_live_frame_and_two_fresh_eyes() {
+        assert!(eligible(
+            true,
+            true,
+            true,
+            Some(2),
+            Some(1),
+            [true; 2],
+            None
+        ));
+        for fresh in [[false, false], [true, false], [false, true]] {
+            assert!(!eligible(true, true, true, Some(2), Some(1), fresh, None));
+        }
+        assert!(!eligible(
+            false,
+            true,
+            true,
+            Some(2),
+            Some(1),
+            [true; 2],
+            None
+        ));
+        assert!(!eligible(
+            true,
+            false,
+            true,
+            Some(2),
+            Some(1),
+            [true; 2],
+            None
+        ));
+        assert!(!eligible(
+            true,
+            true,
+            false,
+            Some(2),
+            Some(1),
+            [true; 2],
+            None
+        ));
+        assert!(!eligible(true, true, true, None, Some(1), [true; 2], None));
+        assert!(!eligible(
+            true,
+            true,
+            true,
+            Some(1),
+            Some(1),
+            [true; 2],
+            None
+        ));
     }
 }

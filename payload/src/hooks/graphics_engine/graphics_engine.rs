@@ -415,8 +415,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
         };
         let index = crate::stereo::draw_index();
         // The frame's last near dispatch: after it, every eye image of the frame is final.
-        let last_near_dispatch = !crate::stereo::far_phase()
-            && (collapse_active() || !crate::stereo::active() || index == 1);
+        let last_near_dispatch = crate::stereo::last_near_dispatch();
         // The world-space overlay's producers, once per frame, outside the context lock: they read
         // the controller subsystems' published state under those subsystems' own locks.
         overlay::tick(index);
@@ -564,7 +563,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             }
 
             if last_near_dispatch && let Some(device) = graphics_engine.m_Device.as_ref() {
-                if collapse_active() {
+                if collapse_active() || crate::stereo::dispatch::selected_eye().is_some() {
                     crate::screenshot::harness::capture(
                         &device.m_Device,
                         &context.m_Context,
@@ -582,24 +581,25 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             // Service an F12 screenshot request with a source that carries both eyes. Under
             // collapse the linear back buffer already holds the two eye-halves side by side; in
             // two-pass stereo it only holds the eye that just rendered, so the per-eye capture
-            // textures (copied just above) are stitched instead -- serviced on the second eye's
-            // dispatch, when both hold the current frame. A no-op unless one was requested.
+            // textures (copied just above) are stitched instead, after the last near dispatch,
+            // when both hold the current frame. An isolated mode uses its one physical eye's buffer.
             if let Some(device) = graphics_engine.m_Device.as_ref() {
                 let two_pass_stereo = crate::stereo::active() && !collapse_active();
-                let source = if !two_pass_stereo {
-                    Some(CaptureSource::Full(&src.m_Texture))
-                } else if index != 1 || crate::stereo::far_phase() {
-                    None
-                } else if let [Some(left), Some(right)] = &eye_textures {
-                    // Both captures must hold this frame; one the direct route skipped leaves the
-                    // request pending, and the next frame copies both for it.
-                    (eye_capture_fresh(0) && eye_capture_fresh(1))
-                        .then_some(CaptureSource::Eyes([left, right]))
-                } else {
-                    // A missing eye capture (the pair is being rebuilt across a resize) still
-                    // yields a screenshot -- of this eye's back buffer -- rather than none.
-                    Some(CaptureSource::Full(&src.m_Texture))
-                };
+                let source =
+                    if !two_pass_stereo || crate::stereo::dispatch::selected_eye().is_some() {
+                        Some(CaptureSource::Full(&src.m_Texture))
+                    } else if !last_near_dispatch {
+                        None
+                    } else if let [Some(left), Some(right)] = &eye_textures {
+                        // Both captures must hold this frame; one the direct route skipped leaves the
+                        // request pending, and the next frame copies both for it.
+                        (eye_capture_fresh(0) && eye_capture_fresh(1))
+                            .then_some(CaptureSource::Eyes([left, right]))
+                    } else {
+                        // A missing eye capture (the pair is being rebuilt across a resize) still
+                        // yields a screenshot -- of this eye's back buffer -- rather than none.
+                        Some(CaptureSource::Full(&src.m_Texture))
+                    };
                 if let Some(source) = source {
                     crate::screenshot::capture_if_requested(
                         &device.m_Device,

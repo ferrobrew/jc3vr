@@ -80,7 +80,7 @@ pub fn status() -> OverlayStatus {
 /// `RenderEngine::PostDraw`, before the engine's context lock is taken; it acts only on the
 /// frame's first eye.
 pub(crate) fn tick(eye: usize) {
-    if eye != 0 || crate::stereo::far_phase() {
+    if !crate::stereo::dispatch::first_ui_eye(eye) || crate::stereo::far_phase() {
         return;
     }
     let active = Config::lock_query(|c| c.controllers.enabled && c.controllers.overlay.enabled)
@@ -106,7 +106,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
         STATUS.lock().drawn = 0;
         return;
     }
-    let frame = if eye == 0 { Some(frame_inputs()) } else { None };
+    let frame = crate::stereo::dispatch::first_ui_eye(eye).then(frame_inputs);
     let camera = view::current(eye);
     // SAFETY: the engine singleton and its main depth texture are live while the engine renders.
     let depth = unsafe { GraphicsEngine::get().and_then(|g| g.m_MainDepthTexture.as_ref()) };

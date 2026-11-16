@@ -82,7 +82,8 @@ const SWEEP_PASS_RANGE: std::ops::RangeInclusive<i16> =
 // `current_add_buffer` between eyes in `game::game_update_render`).
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::SetupRenderFrameData_ADDRESS)]
 fn setup_render_frame_data(a1: *mut c_void, count: i32, a3: *mut c_void, items: *mut c_void) {
-    let gated = is_second_eye() && Config::lock_query(|c| c.stereo.gate_setup_render_frame_data);
+    let gated = crate::stereo::later_scene()
+        && Config::lock_query(|c| c.stereo.gate_setup_render_frame_data);
     TraceState::record_eye(TraceEvent::SetupRenderFrameData { gated });
     if gated {
         return;
@@ -97,7 +98,8 @@ fn setup_render_frame_data(a1: *mut c_void, count: i32, a3: *mut c_void, items: 
 // pool. Suppressing it on eye 1 starves the second render of constant buffers. Off by default.
 #[detour(address = jc3gi::graphics_engine::render_pass::ConstantBufferPool::HandBackBuffers_ADDRESS)]
 fn hand_back_buffers(this: *mut c_void) {
-    let gated = is_second_eye() && Config::lock_query(|c| c.stereo.gate_hand_back_buffers);
+    let gated =
+        crate::stereo::later_scene() && Config::lock_query(|c| c.stereo.gate_hand_back_buffers);
     TraceState::record_eye(TraceEvent::HandBackBuffers { gated });
     if gated {
         return;

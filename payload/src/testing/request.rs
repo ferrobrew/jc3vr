@@ -23,6 +23,7 @@ use crate::{
         replay::{self, Pacing, ReplayOptions, StartMode},
         scenario,
         text::{self, TextError},
+        visual,
     },
 };
 
@@ -72,6 +73,7 @@ enum Request {
     Scenario(PathBuf),
     StopScenario,
     Screenshot(crate::screenshot::harness::RequestId),
+    Visual(visual::Request),
 }
 
 /// Why a request file could not be used.
@@ -91,6 +93,9 @@ enum RequestErrorKind {
     /// The scenario folder is unknown, so a relative path cannot be resolved.
     NoFolder,
     InvalidId(&'static str),
+    NoMode,
+    InvalidMode,
+    InvalidWarmup,
 }
 
 impl std::fmt::Display for RequestError {
@@ -103,7 +108,14 @@ impl std::fmt::Display for RequestError {
             }
             RequestErrorKind::Parse(e) => write!(f, "could not parse it: {e}"),
             RequestErrorKind::NoPath(command) => write!(f, "{command:?} needs a path"),
-            RequestErrorKind::InvalidId(reason) => write!(f, "invalid screenshot id: {reason}"),
+            RequestErrorKind::InvalidId(reason) => write!(f, "invalid request id: {reason}"),
+            RequestErrorKind::NoMode => write!(f, "visual_configure needs a mode"),
+            RequestErrorKind::InvalidMode => {
+                write!(f, "visual_configure does not accept the native mode")
+            }
+            RequestErrorKind::InvalidWarmup => {
+                write!(f, "visual_configure warmup_frames exceeds 300")
+            }
             RequestErrorKind::NoFolder => {
                 write!(
                     f,
@@ -117,6 +129,8 @@ impl std::fmt::Display for RequestError {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Command {
+    VisualConfigure,
+    VisualEnd,
     Screenshot,
     Record,
     StopRecording,
@@ -136,6 +150,8 @@ struct RequestFile {
     start: StartMode,
     #[serde(default)]
     pacing: Pacing,
+    mode: Option<visual::RenderMode>,
+    warmup_frames: Option<u32>,
 }
 
 /// Read the file and remove it, so that it is acted on once. A file that cannot be removed is not
@@ -178,6 +194,27 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             .ok_or_else(|| error(RequestErrorKind::NoFolder))
     };
     Ok(match file.command {
+        Command::VisualConfigure | Command::VisualEnd => {
+            let id = visual::RequestId::parse(file.id.as_deref().unwrap_or_default())
+                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
+            Request::Visual(if file.command == Command::VisualEnd {
+                visual::Request::End { id }
+            } else {
+                let mode = file.mode.ok_or_else(|| error(RequestErrorKind::NoMode))?;
+                if mode == visual::RenderMode::Native {
+                    return Err(error(RequestErrorKind::InvalidMode));
+                }
+                let warmup_frames = file.warmup_frames.unwrap_or(30);
+                if warmup_frames > 300 {
+                    return Err(error(RequestErrorKind::InvalidWarmup));
+                }
+                visual::Request::Configure {
+                    id,
+                    mode,
+                    warmup_frames,
+                }
+            })
+        }
         Command::Screenshot => Request::Screenshot(
             crate::screenshot::harness::RequestId::parse(file.id.as_deref().unwrap_or_default())
                 .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
@@ -200,6 +237,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
 fn act(request: Request) {
     tracing::info!(?request, "testing: request file");
     match request {
+        Request::Visual(request) => visual::enqueue(request),
         Request::Screenshot(id) => crate::screenshot::harness::request(id),
         Request::Record => crate::recorder::tracking::request_start(),
         Request::StopRecording => crate::recorder::tracking::request_stop(),
@@ -246,6 +284,65 @@ mod tests {
         assert!(matches!(
             read("command = 'screenshot'"),
             Err(RequestErrorKind::InvalidId(_))
+        ));
+    }
+
+    #[test]
+    fn visual_requests_validate_ids_modes_and_warmup() {
+        for mode in [
+            "left_only",
+            "right_only",
+            "multipass",
+            "reverse_multipass",
+            "single_pass",
+        ] {
+            let request =
+                format!("command = 'visual_configure'\nid = 'configure-1'\nmode = '{mode}'");
+            assert!(matches!(
+                read(&request),
+                Ok(Request::Visual(visual::Request::Configure {
+                    warmup_frames: 30,
+                    ..
+                }))
+            ));
+        }
+        assert!(matches!(
+            read("command = 'visual_end'\nid = 'end-1'"),
+            Ok(Request::Visual(visual::Request::End { .. }))
+        ));
+        for command in ["visual_configure", "visual_end"] {
+            assert!(matches!(
+                read(&format!("command = '{command}'\nid = '../escape'")),
+                Err(RequestErrorKind::InvalidId(_))
+            ));
+        }
+        assert!(matches!(
+            read("command = 'visual_configure'\nid = 'missing-mode'"),
+            Err(RequestErrorKind::NoMode)
+        ));
+        assert!(matches!(
+            read("command = 'visual_configure'\nid = 'native'\nmode = 'native'"),
+            Err(RequestErrorKind::InvalidMode)
+        ));
+        for frames in [0, 30, 300] {
+            assert!(matches!(
+                read(&format!(
+                    "command = 'visual_configure'\nid = 'valid'\nmode = 'multipass'\nwarmup_frames = {frames}"
+                )),
+                Ok(Request::Visual(_))
+            ));
+        }
+        assert!(matches!(
+            read(
+                "command = 'visual_configure'\nid = 'invalid'\nmode = 'multipass'\nwarmup_frames = 301"
+            ),
+            Err(RequestErrorKind::InvalidWarmup)
+        ));
+        assert!(matches!(
+            read(
+                "command = 'visual_configure'\nid = 'invalid'\nmode = 'multipass'\nwarmup_frames = -1"
+            ),
+            Err(RequestErrorKind::Parse(_))
         ));
     }
 

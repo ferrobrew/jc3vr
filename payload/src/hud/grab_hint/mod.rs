@@ -123,7 +123,7 @@ pub(crate) fn draw(
     panel: Option<[Vec4; 4]>,
 ) {
     let mut state = STATE.lock();
-    if eye == 0 {
+    if crate::stereo::dispatch::first_ui_eye(eye) {
         let cfg = Config::lock_query(|c| c.hud);
         let active = cfg.grab_hint.enabled
             && world_quads_active(&cfg)

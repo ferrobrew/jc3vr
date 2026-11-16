@@ -64,6 +64,7 @@ use windows::{
 };
 
 use crate::{
+    stereo::dispatch,
     ui::render::EGUI_DEBUG_RENDER_STATE,
     vr::{
         EyeImage, FrameContext, VrConfig,
@@ -115,7 +116,9 @@ pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
 /// free already. A failed acquire leaves the route disarmed, and the submit retries the acquire and
 /// blits from the captures, as it does with the route off.
 pub fn arm_direct(frame: &mut FrameContext, cfg: &VrConfig) {
-    let (target, arm) = if !cfg.direct_eye_blit {
+    let (target, arm) = if dispatch::mode().selected_eye().is_some() {
+        (None, DirectArm::NotArmed)
+    } else if !cfg.direct_eye_blit {
         (None, DirectArm::ConfigOff)
     } else if GAVE_UP.load(Ordering::Relaxed) {
         (None, DirectArm::GaveUp)
@@ -486,9 +489,10 @@ fn end(frame: FrameContext) {
 fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
     // Clone (AddRef) the captured eye textures under a brief EGUI lock, dropped before the blit
     // state / context work, so the context work never nests under the capture lock.
+    let render_mode = dispatch::mode();
     let eye_textures: [Option<ID3D11Texture2D>; 2] = {
         let lock = EGUI_DEBUG_RENDER_STATE.lock();
-        [lock.texture(0).cloned(), lock.texture(1).cloned()]
+        std::array::from_fn(|slice| lock.texture(render_mode.source_eye(slice)).cloned())
     };
     // Every dispatch of the frame is drained by now, so no post-draw reads the target again; taking
     // it here, before the release below, is what keeps a later frame off a released image.

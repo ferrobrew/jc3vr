@@ -328,9 +328,9 @@ fn hud_target_size(
 }
 
 /// Draw the redirected HUD as a floating quad for `eye` over `target` (the eye's linear back buffer),
-/// when both the redirect and the quad are enabled. On eye 0, chooses the panel pose for the current
-/// mode (head-following or world-static) and computes the panel's world-space corners (cached for eye
-/// 1). Ordinary two-pass rendering crops and clears the HUD texture on every dispatch. Collapse
+/// when both the redirect and the quad are enabled. The first UI eye chooses the panel pose for the
+/// current mode (head-following or world-static) and computes the shared world-space corners.
+/// Ordinary two-pass rendering crops and clears the HUD texture on every dispatch. Collapse
 /// crops only on eye 0, reuses the prepared textures for both eyes, and clears after eye 1. Called
 /// from the render-thread post-draw hook, before the back buffer is captured/presented, with the
 /// engine context mutex held.
@@ -343,13 +343,13 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         return;
     }
 
-    // Compute world-space corners once per frame on eye 0 and cache them. Both eyes then
+    // Compute world-space corners once per frame on the first UI eye and cache them. Both eyes then
     // project the same world-space quad through their own per-eye VP, producing correct stereo
     // disparity. Computing corners per-eye instead would cancel the world transform against the
     // per-eye view (VP = Inverse(Transform) · Projection), collapsing the panel to view space
     // (head-locked, zero disparity, appears at infinity).
     let pointer_camera = pointer::rendered_camera();
-    if eye == 0
+    if crate::stereo::dispatch::first_ui_eye(eye)
         && let Some((head_pos, head_rotation)) = pointer_camera
             .map(|camera| (camera.head.position, camera.head.orientation))
             .or_else(render_camera_pose)
@@ -424,7 +424,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         let cursor_corners = cursor::frame()
             .and_then(|frame| quad::compute_cursor_corners(&params_at(panel_distance), frame));
         hud.set_cursor_corners(cursor_corners);
-    } else if eye == 0 {
+    } else if crate::stereo::dispatch::first_ui_eye(eye) {
         // No panel pose this frame: the previous corners are not what the player sees.
         pointer::publish_panel(None);
         world_markers::clear_frame();

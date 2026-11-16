@@ -37,7 +37,10 @@ use crate::{
         },
         input,
     },
-    stereo::STEREO_STATE,
+    stereo::{
+        STEREO_STATE,
+        dispatch::{DispatchPlan, RenderMode},
+    },
     thread_role::{self, ThreadRole},
 };
 
@@ -101,11 +104,24 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             crate::controllers::glass::main_thread_tick();
         }
 
+        // A queued visual transition changes render resources and dispatch ownership only after
+        // the previous tail and engine dispatch have stopped reading them.
+        if crate::testing::visual::has_pending() {
+            crate::vr::wait_for_frame_tail();
+            if let Some(ge) = GraphicsEngine::get() {
+                ge.WaitForCPUDrawToFinish();
+                drain_draw_thread_fragment(ge);
+            }
+            reset_dispatch_state();
+            crate::testing::visual::process_pending();
+        }
+
         // Open the single-pass frame: advance the diagnostics' frame ordinal, fold the previous
         // frame's instanced-exposure counters, and close any G-buffer range left open by it. The
         // range flag is raised around a re-entrant engine call, so an interrupted frame (a torn-down
         // session, a dispatch that never returned) could otherwise leave it up and have every shadow
         // and reflection draw of this frame instance-doubled and eye-split.
+        crate::stereo::single_pass::probe_if_needed();
         crate::stereo::single_pass::begin_frame();
         // Sample the single-pass config for this frame's game-thread consumers: the render-resolution
         // and camera decisions below, and the shader-creation hooks the reload a few lines down drives
@@ -272,7 +288,8 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         });
         // A running VR session always renders both eyes (the XR swapchain has a slice per eye), so
         // force the stereo double-Draw on regardless of the flatscreen stereo toggle.
-        let stereo = stereo || vr_running;
+        let render_mode = crate::stereo::dispatch::mode();
+        let stereo = stereo || vr_running || render_mode != RenderMode::Native;
         STEREO_STATE.lock().active = stereo;
 
         // Whether this frame's tail (final drain, blit, mirror, submit) runs on the tail worker
@@ -283,7 +300,11 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // before the XR submit in this mode, costing it a little HMD submit latency. Requires a VR
         // frame to hand over, and falls back to the inline tail while a render trace needs the
         // eyes drained on this thread before the frame ends.
-        let defer_tail = stereo && vr_frame.is_some() && !tracing_active();
+        let defer_tail = stereo
+            && vr_frame.is_some()
+            && !tracing_active()
+            && render_mode == RenderMode::Native
+            && !crate::testing::visual::requires_inline_tail();
 
         // Each eye's post-draw blits it straight into the swapchain when this frame's image is
         // acquired now (see `vr::blit`). Not under the collapse: its one dispatch leaves both eyes
@@ -292,7 +313,8 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             Some(frame)
                 if stereo
                     && frame.should_render()
-                    && !crate::stereo::single_pass::collapse_active() =>
+                    && !crate::stereo::single_pass::collapse_active()
+                    && render_mode.selected_eye().is_none() =>
             {
                 crate::vr::arm_direct(frame, &vr_cfg);
             }
@@ -355,27 +377,20 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             // dispatch at eye 0's pose: it renders the far draw-list runs and the gated far-regime
             // types into the G-buffer, which the render-pass-range hook captures for the two near
             // dispatches to composite.
-            let share_frame = crate::far_field::share_configured();
             let collapsed = crate::stereo::single_pass::collapse_active();
-            let present_eye = usize::from(!present_eye_0);
+            let plan =
+                DispatchPlan::new(render_mode, collapsed, crate::far_field::share_configured());
+            let share_frame = plan.share_frame();
+            let present_eye = render_mode
+                .selected_eye()
+                .unwrap_or(usize::from(!present_eye_0));
             TraceState::record(TraceEvent::FrameBegin {
                 stereo: true,
                 present_eye: Some(present_eye),
                 restore_counters: Some(true),
             });
 
-            // (eye index, far phase) per dispatch, in order.
-            let dispatches: &[(usize, bool)] = if collapsed {
-                // Single-pass collapse: one walk produces both eyes (cb13 + viewport routing +
-                // instance doubling), so there is no per-eye second dispatch and no far-field share
-                // prepend -- the between-eye snapshot/restore below is skipped for free (it is gated
-                // on `ordinal > 0`). The capture then splits the one back buffer into both eyes.
-                &[(0, false)]
-            } else if share_frame {
-                &[(0, true), (0, false), (1, false)]
-            } else {
-                &[(0, false), (1, false)]
-            };
+            let dispatches = plan.dispatches;
             for (ordinal, &(eye, far_phase)) in dispatches.iter().enumerate() {
                 if ordinal > 0 {
                     #[cfg(feature = "profiler")]
@@ -416,6 +431,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                     state.far_phase = far_phase;
                     state.share_frame = share_frame;
                     state.dispatch_ordinal = ordinal;
+                    state.last_near_dispatch = plan.last_near(ordinal);
                 }
                 // While a VR session runs there is no desktop present at all (the compositor
                 // presents), so block the flip for every dispatch; otherwise `present_eye_0` picks
@@ -561,6 +577,9 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             let _timing = frame_timing::scope(Slot::Mirror);
             crate::vr::present_mirror(vr_cfg.mirror_view);
         }
+        if !tail_deferred {
+            crate::testing::visual::frame_complete();
+        }
         mark(Phase::FrameEnd);
     }
 }
@@ -581,6 +600,7 @@ pub(crate) fn reset_dispatch_state() {
     state.far_phase = false;
     state.share_frame = false;
     state.dispatch_ordinal = 0;
+    state.last_near_dispatch = true;
 }
 
 struct EffectInfoState {

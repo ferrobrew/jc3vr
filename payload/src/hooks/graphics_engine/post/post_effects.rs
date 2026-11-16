@@ -25,7 +25,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
-    stereo::{self, draw_index, far_phase, is_second_eye},
+    stereo::{self, draw_index, far_phase, later_scene},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -124,8 +124,8 @@ fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mu
 }
 
 // PostEffectsManager::ApplyWorldFilters -- enqueues the world post block and steps the world-fade
-// accumulator (ApplyWorldFadeFilter) by `dt`. Zero `dt` on eye 1 so the fade advances once per real
-// frame, not twice.
+// accumulator (ApplyWorldFadeFilter) by `dt`. Zero `dt` on far-only and later scene dispatches so
+// the fade advances once per real frame.
 #[detour(address = jc3gi::graphics_engine::post_effects::PostEffectsManager::ApplyWorldFilters_ADDRESS)]
 #[allow(clippy::too_many_arguments)]
 fn apply_world_filters(
@@ -138,7 +138,7 @@ fn apply_world_filters(
     a7: *mut c_void,
     a8: *mut c_void,
 ) {
-    let gated = (is_second_eye() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
+    let gated = (later_scene() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
     TraceState::record_eye(TraceEvent::ApplyWorldFilters { gated });
     let dt = if gated { 0.0 } else { dt };
     APPLY_WORLD_FILTERS
@@ -148,11 +148,11 @@ fn apply_world_filters(
 }
 
 // PostEffectsManager::ApplyGlobalFilters -- enqueues the global post block and steps its dt-driven
-// accumulators (screen-fade alpha, sun-direction / heat-haze). Zero `dt` on eye 1 for the same
-// once-per-real-frame reason.
+// accumulators (screen-fade alpha, sun-direction / heat-haze). Zero `dt` on far-only and later scene
+// dispatches for the same once-per-real-frame reason.
 #[detour(address = jc3gi::graphics_engine::post_effects::PostEffectsManager::ApplyGlobalFilters_ADDRESS)]
 fn apply_global_filters(this: *mut c_void, dt: f32, ctx: *mut c_void) {
-    let gated = (is_second_eye() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
+    let gated = (later_scene() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
     TraceState::record_eye(TraceEvent::ApplyGlobalFilters { gated });
     let dt = if gated { 0.0 } else { dt };
     APPLY_GLOBAL_FILTERS.get().unwrap().call(this, dt, ctx);

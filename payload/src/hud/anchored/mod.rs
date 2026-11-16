@@ -100,7 +100,7 @@ pub(crate) unsafe fn sample_status(cfg: &HudConfig) {
 /// with the engine context mutex held.
 pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let mut state = STATE.lock();
-    if eye == 0 {
+    if crate::stereo::dispatch::first_ui_eye(eye) {
         let (cfg, dominant) = Config::lock_query(|c| (c.hud, c.controllers.acting_hand()));
         let active = cfg.atlas.enabled
             && world_quads_active(&cfg)
