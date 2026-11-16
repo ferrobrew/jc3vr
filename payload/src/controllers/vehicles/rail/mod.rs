@@ -95,6 +95,13 @@ pub fn status() -> RailStatus {
     status
 }
 
+pub(crate) fn stand_down() {
+    ENTER_REQUESTED.store(false, Ordering::Relaxed);
+    let mut state = STATE.lock();
+    state.airframe = None;
+    state.release("the input owner stood down");
+}
+
 /// Note the body of the airframe a reel arriving at a helicopter's door side was attached to.
 pub(crate) fn note_airframe(body: u32) {
     STATE.lock().airframe = Some((body, Instant::now()));
@@ -104,7 +111,7 @@ pub(crate) fn note_airframe(body: u32) {
 /// vehicle below is refused for him. Lock-free, for the detour on that entry.
 pub(crate) fn blocks_auto_attach(character: *const Character) -> bool {
     let held = HELD.load(Ordering::Relaxed);
-    held != 0 && held == character as usize
+    same_player(held, character as usize)
 }
 
 /// Step the rail on the input tick: stand Rico on the skid once the door-side arrival has ended,
@@ -172,10 +179,21 @@ pub(crate) unsafe fn input_tick(jump: bool, on_foot: bool) {
 /// The thread that steps the physics world, outside the step, after the characters' proxy
 /// updates (the pre-simulation callback).
 pub(crate) unsafe fn step_physics() {
+    if !enabled() {
+        stand_down();
+        return;
+    }
     let mut state = STATE.lock();
     let Some(mut active) = state.active else {
         return;
     };
+    if !same_player(
+        active.character,
+        unsafe { Character::GetLocalPlayerCharacter() } as usize,
+    ) {
+        state.release("the local player changed");
+        return;
+    }
     // A gripping hand carries the proxy itself.
     if climb::climbing() {
         return;
@@ -246,6 +264,7 @@ fn evaluate(
 /// Whether the rail acts: the controllers' scheme, and its switch on.
 fn enabled() -> bool {
     scheme::is_controllers()
+        && !crate::is_shutting_down()
         && Config::lock_query(|c| c.controllers.enabled && c.controllers.vehicles.helicopter_rail)
 }
 
@@ -314,14 +333,11 @@ unsafe fn enter(character: &mut Character, config: &RailConfig) {
 /// Let go of Rico, for `reason`: the rail no longer carries him, so he moves as the game moves
 /// him, with the velocity the last step gave him.
 fn release(reason: &'static str) {
-    let mut state = STATE.lock();
-    if state.active.take().is_none() {
-        return;
-    }
-    HELD.store(0, Ordering::Relaxed);
-    state.status.active = false;
-    state.status.last_release = Some(reason);
-    tracing::info!(target: "controllers", reason, "rail: let go of Rico");
+    STATE.lock().release(reason);
+}
+
+fn same_player(held: usize, local: usize) -> bool {
+    held != 0 && held == local
 }
 
 /// Take `character` out of the helicopter's interaction graph, as the game takes a character off a
@@ -404,6 +420,17 @@ struct State {
     status: RailStatus,
 }
 
+impl State {
+    fn release(&mut self, reason: &'static str) {
+        HELD.store(0, Ordering::Relaxed);
+        self.status.active = false;
+        if self.active.take().is_some() {
+            self.status.last_release = Some(reason);
+            tracing::info!(target: "controllers", reason, "rail: let go of Rico");
+        }
+    }
+}
+
 static STATE: Mutex<State> = Mutex::new(State {
     airframe: None,
     active: None,
@@ -460,3 +487,45 @@ const MAX_WALK_MPS: f32 = 3.0;
 
 /// How far below the skid's line the feet go before the rail lets them go, metres.
 const MAX_DROP_M: f32 = 0.5;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shutdown_clears_the_rail_and_auto_attach_block() {
+        let now = Instant::now();
+        {
+            let mut state = STATE.lock();
+            state.airframe = Some((1, now));
+            state.active = Some(Active {
+                character: 1,
+                body: 1,
+                line: RailLine::through(Vec3::ZERO, Vec3::ZERO, 1.0),
+                since: now,
+                surface: Vec3::ZERO,
+                carried: Vec3::ZERO,
+            });
+            state.status.active = true;
+            HELD.store(1, Ordering::Relaxed);
+            ENTER_REQUESTED.store(true, Ordering::Relaxed);
+        }
+        let character = std::ptr::without_provenance::<Character>(1);
+        assert!(blocks_auto_attach(character));
+        stand_down();
+        assert!(!blocks_auto_attach(character));
+        assert!(!ENTER_REQUESTED.load(Ordering::Relaxed));
+        let state = STATE.lock();
+        assert_eq!(state.active, None);
+        assert_eq!(state.airframe, None);
+        assert!(!state.status.active);
+    }
+
+    #[test]
+    fn physics_only_carries_the_same_live_player() {
+        assert!(same_player(1, 1));
+        assert!(!same_player(1, 2));
+        assert!(!same_player(1, 0));
+        assert!(!same_player(0, 0));
+    }
+}

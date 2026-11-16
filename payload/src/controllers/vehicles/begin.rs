@@ -34,7 +34,10 @@ use crate::{
                 buttons::{Button, ButtonPlacement, PushPhase},
             },
             ripcord_tick,
-            state::{MOUNTED_WEAPON, STATE, State, log_handle_events, push_events},
+            state::{
+                MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events,
+                mounted_hand_weight, push_events,
+            },
             tuning::PhysicalControlsTuning,
             types::TickVolumes,
             wing_guide,
@@ -317,7 +320,11 @@ pub(crate) fn begin_tick(mode: Mode) -> TickVolumes {
     state.mounted_handle_points = mounted.handle_points;
     state.mounted_config = mounted_config;
     state.mounted_barrel = mounted.barrel;
-    declare_mounted_grips(mounted.handles, state.mounted_grip.shares(&mounted_config));
+    declare_mounted_grips(
+        mounted.handles,
+        state.mounted_grip.shares(&mounted_config),
+        mounted_config.grip_handles,
+    );
     state.status.active = true;
     state.status.seat = seat;
     state.status.offered = offered;
@@ -429,18 +436,33 @@ const NITROUS_LABEL: &str = "Nitrous";
 
 /// Declare each hand the mounted gun's handles anchor, for its finger pose, at the anchor's share
 /// times the hand's hold on its handle, `shares`.
-fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>, shares: [f32; 2]) {
+fn declare_mounted_grips(handles: Option<[Option<Vec3>; 2]>, shares: [f32; 2], grip_handles: bool) {
     let tiers = tiers::status();
-    let Some(handles) = handles.filter(|_| tiers.state == Some(tiers::TierState::MountedGun))
-    else {
+    let Some(handles) = handles else {
         return;
     };
     for hand in Hand::BOTH {
-        let weight = tiers.anchor_weights[hand.index()] * shares[hand.index()];
-        if handles[hand.index()].is_some() && weight > 0.0 {
-            grip::declare(hand, Grip::new(GripSource::MountedGun).share(weight));
+        let i = hand.index();
+        let inputs = MountedHandWeight {
+            manned: tiers.state == Some(tiers::TierState::MountedGun),
+            grapple: matches!(
+                tiers.state,
+                Some(tiers::TierState::GrappleReel | tiers::TierState::GrappleHang)
+            ),
+            anchor_weight: tiers.anchor_weights[i],
+            grip_handles,
+            share: shares[i],
+        };
+        if let Some(grip) = mounted_finger_grip(handles[i], inputs) {
+            grip::declare(hand, grip);
         }
     }
+}
+
+fn mounted_finger_grip(handle: Option<Vec3>, inputs: MountedHandWeight) -> Option<Grip> {
+    handle?;
+    let weight = mounted_hand_weight(inputs);
+    (weight > 0.0).then(|| Grip::new(GripSource::MountedGun).share(weight))
 }
 
 /// The dimensions the hands are measured against: the character's while the hands are remapped

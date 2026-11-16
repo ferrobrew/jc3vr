@@ -120,7 +120,8 @@ pub(crate) fn fit(part: &str, asset: &mut CockpitAsset, hands_in_part: [Option<V
     let state = guard.loaded();
     state.current = Some(key.clone());
     if let Some(pending) = state.pending.as_mut() {
-        let armed = *pending.armed.get_or_insert_with(|| {
+        let now = Instant::now();
+        if pending.armed.is_none() {
             tracing::info!(
                 target: "controllers",
                 key,
@@ -128,8 +129,8 @@ pub(crate) fn fit(part: &str, asset: &mut CockpitAsset, hands_in_part: [Option<V
                 "vehicles: cockpit calibration: hold the left hand at the lever and the right at \
                  the stick"
             );
-            Instant::now()
-        });
+        }
+        let armed = pending.arm(now);
         let whole = armed.elapsed().as_secs() as u32;
         if whole > pending.ticks {
             pending.ticks = whole;
@@ -204,12 +205,7 @@ pub(crate) fn expire() {
 /// again.
 pub(crate) fn leave() {
     let mut guard = STATE.lock();
-    let state = guard.loaded();
-    state.current = None;
-    if let Some(pending) = state.pending.as_mut() {
-        pending.armed = None;
-        pending.ticks = 0;
-    }
+    guard.loaded().leave();
 }
 
 /// A capture asked for: when, and when its countdown began at the controls.
@@ -219,6 +215,12 @@ struct Pending {
     armed: Option<Instant>,
     /// The whole seconds of the countdown ticked so far.
     ticks: u32,
+}
+
+impl Pending {
+    fn arm(&mut self, now: Instant) -> Instant {
+        *self.armed.get_or_insert(now)
+    }
 }
 
 /// One cockpit seat's calibration, in the cockpit part's own space, metres.
@@ -317,6 +319,14 @@ struct State {
 }
 
 impl State {
+    fn leave(&mut self) {
+        self.current = None;
+        if let Some(pending) = self.pending.as_mut() {
+            pending.armed = None;
+            pending.ticks = 0;
+        }
+    }
+
     /// The state with the file loaded, on first use.
     fn loaded(&mut self) -> &mut Self {
         if !self.loaded {
@@ -378,6 +388,32 @@ const EXPIRE_AFTER: Duration = Duration::from_secs(60);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn interrupted_calibration_starts_a_fresh_countdown() {
+        let requested = Instant::now();
+        let mut state = State {
+            file: CalibrationFile::default(),
+            loaded: true,
+            pending: Some(Pending {
+                requested,
+                armed: Some(requested),
+                ticks: 2,
+            }),
+            current: Some(key("utility_body", 0)),
+            last: None,
+        };
+        state.leave();
+        assert_eq!(state.current, None);
+        let resumed = requested + COUNTDOWN + Duration::from_secs(1);
+        let pending = state.pending.as_mut().unwrap();
+        assert_eq!(pending.armed, None);
+        assert_eq!(pending.ticks, 0);
+        let armed = pending.arm(resumed);
+        assert_eq!(resumed.duration_since(armed), Duration::ZERO);
+        assert!(resumed.duration_since(armed) < COUNTDOWN);
+        assert_eq!(pending.requested, requested);
+    }
 
     fn cyclic() -> CockpitAsset {
         CockpitAsset {

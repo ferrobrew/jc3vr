@@ -113,6 +113,8 @@ pub fn mounted_aim_point() -> Option<Vec3> {
 /// Stop acting: let go of every control and forget the mounted gun. Called whenever the bindings
 /// do not inject.
 pub(crate) fn stand_down() {
+    crate::controllers::vehicles::rail::stand_down();
+    physical::calibration::leave();
     let mut state = STATE.lock();
     let mut events = Vec::new();
     let mut handle_events = Vec::new();
@@ -219,19 +221,19 @@ pub fn apply(hands: &mut [Option<CockpitHand>; 2]) {
 
 /// What decides how far a hand is drawn onto its mounted gun's handle.
 #[derive(Debug, Copy, Clone, PartialEq)]
-struct MountedHandWeight {
+pub(super) struct MountedHandWeight {
     /// Whether the character mans the gun in the native mounted state, whose tier anchors the
     /// hands.
-    manned: bool,
+    pub(super) manned: bool,
     /// Whether a grapple state owns the hands' anchor weights.
-    grapple: bool,
+    pub(super) grapple: bool,
     /// The hand's anchor weight from its tier.
-    anchor_weight: f32,
+    pub(super) anchor_weight: f32,
     /// Whether the hands take the handles with the grip, rather than sitting on them whenever the
     /// character mans the gun.
-    grip_handles: bool,
+    pub(super) grip_handles: bool,
     /// The hand's share of the pose on its handle ([`MountedGrip::shares`]).
-    share: f32,
+    pub(super) share: f32,
 }
 
 /// How far a hand is drawn onto its mounted gun's handle, `0..=1`. Manning the gun, the anchored
@@ -240,7 +242,7 @@ struct MountedHandWeight {
 /// leave it free (on the 14 November take the hands floated at the controllers beside a tripod
 /// minigun they held); with the grip off, the hands sit on the handles only while manning. A
 /// grapple state's weights are the line's, never the handles'.
-fn mounted_hand_weight(inputs: MountedHandWeight) -> f32 {
+pub(super) fn mounted_hand_weight(inputs: MountedHandWeight) -> f32 {
     let weight = if inputs.grapple {
         0.0
     } else if inputs.manned {

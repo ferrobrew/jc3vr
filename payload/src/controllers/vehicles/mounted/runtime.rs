@@ -187,13 +187,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         // A native use places both hands on the gun's handles; the virtual handles hold only the
         // hands that took them, and only for the gun the input tick selected.
         let selected = is_mounted_weapon(weapon_ptr as usize);
-        let native_hands = if native {
-            [true; 2]
-        } else if selected {
-            handle_holds
-        } else {
-            [false; 2]
-        };
+        let native_hands = if selected { handle_holds } else { [false; 2] };
         let physical_body = physical.iter().flatten().next().copied();
         let identity = match physical_body {
             Some(body) => Identity {
@@ -213,26 +207,21 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             record.identity.weapon == weapon_ptr as usize && record.identity.control == control
         });
         let previous_takeover = existing.and_then(|index| previous[index].takeover);
-        let takeover_hands = Hand::BOTH.map(|hand| {
-            let i = hand.index();
-            (native_hands[i] || previous_takeover.is_some_and(|takeover| takeover.hands[i]))
-                && physical[i].is_none()
-        });
-        // A physical hold or a handle hold is already a held grip; the native takeover keeps the
-        // hands the game placed, whether or not the player's grip button is down.
-        let hands = Hand::BOTH.map(|hand| {
-            let i = hand.index();
-            (physical[i].is_some() || takeover_hands[i]) && !inputs.unavailable[i]
-        });
-        if !hands.contains(&true) {
+        let grips = grip_state(
+            GripInputs {
+                native,
+                handles: native_hands,
+                physical: physical.map(|held| held.is_some()),
+                gripping: inputs.grips.map(|grip| grip.held()),
+                unavailable: inputs.unavailable,
+            },
+            previous_takeover,
+        );
+        let Some(input) = grips.input(identity, inputs.triggers.map(|trigger| trigger.held()), now)
+        else {
             continue;
-        }
-        // A hand that lets go ends its native handle hold: taking the grip again needs a new
-        // handle or holder, as it would on the native handles.
-        let takeover_hands = Hand::BOTH.map(|hand| {
-            let i = hand.index();
-            takeover_hands[i] && hands[i]
-        });
+        };
+        let hands = input.hands;
         let user = weapon.m_User[0];
         if !user.is_null() {
             if !std::ptr::eq(user.cast::<Character>(), local as *const Character) {
@@ -269,16 +258,8 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             }
         };
         record.identity = identity;
-        let takeover = takeover_hands.contains(&true);
-        record.takeover = takeover.then_some(Takeover {
-            hands: takeover_hands,
-        });
-        record.input = Some(Input {
-            identity,
-            hands,
-            fire: inputs.triggers.map(|trigger| trigger.held()),
-            at: now,
-        });
+        record.takeover = grips.takeover;
+        record.input = Some(input);
         // A hand holding the gun's own body swings it on its joints, which the mount's motors
         // would fight. A grip on the handles aims the gun through those motors, which the mounted
         // aim drives toward the handles' aim point: disabled for it, nothing turns the gun at all.
@@ -311,7 +292,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
             if let Some(report) = physical[i].and_then(|held| held.report) {
                 return record.tear[i].step(inputs.real_dt, Some(report));
             }
-            if takeover_hands[i] {
+            if grips.handles[i] {
                 let handle_point = unsafe { handle(weapon, hand) };
                 let hand_world = active.as_ref().zip(xf.as_ref()).and_then(|(active, xf)| {
                     active.hands[i].map(|hand| xf.point_to_world(hand.grip.position))
@@ -353,6 +334,7 @@ pub(crate) unsafe fn tick(inputs: &FinishInputs, desired: &mut Vec<Desired>) {
         next.push(record);
     }
     for mut record in previous {
+        record.takeover = None;
         let alive = record
             .weak
             .lock()
@@ -890,5 +872,123 @@ impl Controlled {
         }
         self.motors.clear();
         self.prompt = None;
+    }
+}
+
+struct GripInputs {
+    native: bool,
+    handles: [bool; 2],
+    physical: [bool; 2],
+    gripping: [bool; 2],
+    unavailable: [bool; 2],
+}
+
+struct GripState {
+    hands: [bool; 2],
+    handles: [bool; 2],
+    takeover: Option<Takeover>,
+}
+
+impl GripState {
+    fn input(&self, identity: Identity, fire: [bool; 2], at: Instant) -> Option<Input> {
+        self.hands.contains(&true).then_some(Input {
+            identity,
+            hands: self.hands,
+            fire,
+            at,
+        })
+    }
+}
+
+fn grip_state(inputs: GripInputs, previous: Option<Takeover>) -> GripState {
+    let takeover = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        (inputs.native || previous.is_some_and(|takeover| takeover.hands[i]))
+            && !inputs.physical[i]
+            && !inputs.unavailable[i]
+    });
+    let handles = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        (takeover[i] || (inputs.handles[i] && inputs.gripping[i]))
+            && !inputs.physical[i]
+            && !inputs.unavailable[i]
+    });
+    GripState {
+        hands: Hand::BOTH.map(|hand| {
+            let i = hand.index();
+            (inputs.physical[i] || handles[i]) && !inputs.unavailable[i]
+        }),
+        handles,
+        takeover: takeover
+            .contains(&true)
+            .then_some(Takeover { hands: takeover }),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn virtual_grip(handles: [bool; 2], gripping: [bool; 2]) -> GripInputs {
+        GripInputs {
+            native: false,
+            handles,
+            physical: [false; 2],
+            gripping,
+            unavailable: [false; 2],
+        }
+    }
+
+    #[test]
+    fn virtual_handles_release_without_firing_or_tearing() {
+        let held = grip_state(virtual_grip([true, false], [true, false]), None);
+        assert_eq!(held.hands, [true, false]);
+        assert_eq!(held.handles, [true, false]);
+        assert_eq!(held.takeover, None);
+        for (handles, gripping) in [([false; 2], [true; 2]), ([true; 2], [false; 2])] {
+            let released = grip_state(virtual_grip(handles, gripping), held.takeover);
+            assert_eq!(released.handles, [false; 2]);
+            assert_eq!(released.takeover, None);
+            assert!(
+                released
+                    .input(
+                        Identity {
+                            weapon: 1,
+                            control: 2,
+                            object: 3,
+                            body: 4
+                        },
+                        [true; 2],
+                        Instant::now(),
+                    )
+                    .is_none()
+            );
+        }
+    }
+
+    #[test]
+    fn native_takeover_survives_open_grips_but_not_unavailable_hands() {
+        let native = grip_state(
+            GripInputs {
+                native: true,
+                ..virtual_grip([false; 2], [false; 2])
+            },
+            None,
+        );
+        let retained = grip_state(virtual_grip([false; 2], [false; 2]), native.takeover);
+        assert_eq!(retained.hands, [true; 2]);
+        let released = grip_state(
+            GripInputs {
+                unavailable: [true; 2],
+                ..virtual_grip([false; 2], [false; 2])
+            },
+            retained.takeover,
+        );
+        assert_eq!(released.hands, [false; 2]);
+        assert_eq!(released.takeover, None);
+        assert_eq!(
+            grip_state(virtual_grip([false; 2], [false; 2]), released.takeover).hands,
+            [false; 2]
+        );
     }
 }

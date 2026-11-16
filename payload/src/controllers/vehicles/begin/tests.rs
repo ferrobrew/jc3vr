@@ -116,3 +116,58 @@ fn begin_adapter_keeps_same_entry_and_resets_a_seat_change() {
     assert_eq!(state.controls, ControlState::default());
     assert_eq!(state.anchor_weights, [0.0; 2]);
 }
+
+#[test]
+fn off_seat_mounted_handles_declare_the_mounted_finger_source() {
+    for share in [0.25, 1.0] {
+        let inputs = MountedHandWeight {
+            manned: false,
+            grapple: false,
+            anchor_weight: 0.0,
+            grip_handles: true,
+            share,
+        };
+        let grip = mounted_finger_grip(Some(Vec3::ZERO), inputs).unwrap();
+        assert_eq!(grip.source, GripSource::MountedGun);
+        assert_eq!(grip.share, share);
+        assert_eq!(grip.share, mounted_hand_weight(inputs));
+    }
+}
+
+#[test]
+fn mounted_finger_sources_follow_the_mounted_pose_eligibility() {
+    let held = MountedHandWeight {
+        manned: false,
+        grapple: false,
+        anchor_weight: 0.0,
+        grip_handles: true,
+        share: 1.0,
+    };
+    assert_eq!(mounted_finger_grip(None, held), None);
+    for inputs in [
+        MountedHandWeight {
+            grip_handles: false,
+            ..held
+        },
+        MountedHandWeight {
+            grapple: true,
+            ..held
+        },
+        MountedHandWeight { share: 0.0, ..held },
+        MountedHandWeight {
+            share: f32::NAN,
+            ..held
+        },
+    ] {
+        assert_eq!(mounted_finger_grip(Some(Vec3::ZERO), inputs), None);
+    }
+    let manned = MountedHandWeight {
+        manned: true,
+        anchor_weight: 0.5,
+        share: 0.5,
+        ..held
+    };
+    let grip = mounted_finger_grip(Some(Vec3::ZERO), manned).unwrap();
+    assert_eq!(grip.source, GripSource::MountedGun);
+    assert_eq!(grip.share, 0.25);
+}

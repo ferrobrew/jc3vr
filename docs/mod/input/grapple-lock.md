@@ -63,6 +63,8 @@ Every way out of a hang lets go of the line, a quick release, a longer one, and 
 
 Pulling up onto a ledge from the hang is not done.
 
+Standing down vehicle input clears the skid rail, its remembered airframe, pending entry, and automatic-attach block. The physics callback also checks that the feature remains enabled and that the active rail still belongs to the current local character before carrying the proxy. A debug-panel interruption therefore releases the rail instead of retaining hidden control.
+
 ## Shortening the line
 
 Pulling the grapple hand back along the aim it had when the lock took hold takes line in, as far as the hand comes back and no faster than `lock.reel_in_mps`, down to `lock.min_length_m` (`lock::model::TakeIn`). The least length is never below the floor every held line shares with the snatch (`grapple::rope::held_floor`), and taking line in never pays it out (`Rope::shorten`), so raising `lock.min_length_m` while the line is held leaves a shorter line as it is. Reaching out pays nothing out, so hand over hand keeps taking line in. An untracked hand takes nothing in: the lock holds on the button alone.
