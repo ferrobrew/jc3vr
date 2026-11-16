@@ -25,6 +25,7 @@ pub use config::TestingConfig;
 /// scenario. Game thread, once per frame from the top of the game's update, after the director's
 /// pass (which services the replay's teleport).
 pub(crate) fn update() {
+    crate::screenshot::harness::tick();
     request::poll();
     replay::update();
     scenario::update();

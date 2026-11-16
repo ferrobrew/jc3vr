@@ -500,6 +500,10 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                 let height = u32::from(src.m_Height);
                 for eye in 0..2u32 {
                     mark_eye_capture(eye as usize, eye_textures[eye as usize].is_some());
+                    crate::screenshot::harness::note_eye(
+                        eye as usize,
+                        !crate::stereo::far_phase() && eye_textures[eye as usize].is_some(),
+                    );
                     if let Some(dst) = eye_textures[eye as usize].as_ref() {
                         let region = D3D11_BOX {
                             left: eye * half_w,
@@ -536,6 +540,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                     _ => false,
                 };
                 mark_eye_capture(index, copied);
+                crate::screenshot::harness::note_eye(index, copied && !crate::stereo::far_phase());
             }
 
             // The recorder's sidecar line for the frame, on its last near dispatch, when every eye
@@ -555,6 +560,22 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                         );
                     }
                     _ => crate::recorder::release_capture(),
+                }
+            }
+
+            if last_near_dispatch && let Some(device) = graphics_engine.m_Device.as_ref() {
+                if collapse_active() {
+                    crate::screenshot::harness::capture(
+                        &device.m_Device,
+                        &context.m_Context,
+                        CaptureSource::Full(&src.m_Texture),
+                    );
+                } else if let [Some(left), Some(right)] = &eye_textures {
+                    crate::screenshot::harness::capture(
+                        &device.m_Device,
+                        &context.m_Context,
+                        CaptureSource::Eyes([left, right]),
+                    );
                 }
             }
 
@@ -601,6 +622,7 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 fn eye_capture_wanted(eye: usize) -> bool {
     Config::lock_query(|c| c.vr.mirror && c.vr.mirror_view.shows_eye(eye))
         || crate::screenshot::is_requested()
+        || crate::screenshot::harness::wants_eyes()
         || previews_visible()
         || crate::recorder::wants_eye_captures()
 }

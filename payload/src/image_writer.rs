@@ -23,8 +23,9 @@
 //! [`crate::vr::tail::shutdown`] and the profiler's capture writer do.
 
 use std::{
+    io::Write as _,
     path::PathBuf,
-    sync::mpsc::{self, Receiver, SyncSender},
+    sync::mpsc::{self, Receiver, Sender, SyncSender, TrySendError},
     thread::JoinHandle,
     time::Duration,
 };
@@ -117,6 +118,10 @@ pub enum ImageTarget {
         frame: u32,
         eye: usize,
     },
+    HarnessScreenshot {
+        path: PathBuf,
+        sidecar: serde_json::Value,
+    },
 }
 
 /// Queue `image` for the writer thread, spawning it on first use. Blocks while the queue is full.
@@ -137,9 +142,28 @@ pub fn submit(target: ImageTarget, image: Image) {
         }
     };
     // Sent outside the lock so a full queue blocks only this submitter, not `shutdown`.
-    if sender.send(Job { target, image }).is_err() {
+    if sender
+        .send(Job {
+            target,
+            image,
+            completion: None,
+        })
+        .is_err()
+    {
         tracing::error!("image writer: the writer thread has exited; the image is dropped");
     }
+}
+
+pub(crate) fn try_submit(
+    target: ImageTarget,
+    image: Image,
+) -> anyhow::Result<Receiver<Result<PathBuf, String>>> {
+    let mut writer = WRITER.lock();
+    anyhow::ensure!(
+        !crate::is_shutting_down(),
+        "image writer: admission is closed"
+    );
+    writer.try_submit(target, image)
 }
 
 /// Close admission, let the queued images drain, and wait for the writer thread, up to a bounded
@@ -197,6 +221,31 @@ struct Writer {
 }
 
 impl Writer {
+    fn try_submit(
+        &mut self,
+        target: ImageTarget,
+        image: Image,
+    ) -> anyhow::Result<Receiver<Result<PathBuf, String>>> {
+        anyhow::ensure!(!self.closed, "image writer: admission is closed");
+        let sender = self
+            .sender()
+            .context("image writer: could not spawn the writer thread")?;
+        let (completion, receiver) = mpsc::channel();
+        sender
+            .try_send(Job {
+                target,
+                image,
+                completion: Some(completion),
+            })
+            .map_err(|error| match error {
+                TrySendError::Full(_) => anyhow::anyhow!("image writer: the queue is full"),
+                TrySendError::Disconnected(_) => {
+                    anyhow::anyhow!("image writer: the writer thread has disconnected")
+                }
+            })?;
+        Ok(receiver)
+    }
+
     /// The live queue's sender, spawning the writer thread when there is none.
     fn sender(&mut self) -> std::io::Result<SyncSender<Job>> {
         if let Some(sender) = &self.sender {
@@ -215,22 +264,28 @@ impl Writer {
 struct Job {
     target: ImageTarget,
     image: Image,
+    completion: Option<Sender<Result<PathBuf, String>>>,
 }
 
 /// The writer thread: one image at a time until every sender is gone.
 fn run(receiver: Receiver<Job>) {
     for job in receiver {
-        match write(job) {
+        let result = write(job.target, job.image);
+        match &result {
             Ok(path) => tracing::debug!("image writer: wrote {}", path.display()),
             Err(e) => tracing::error!("image writer: {e:#}"),
+        }
+        if let Some(completion) = job.completion {
+            let _ = completion.send(result.map_err(|error| format!("image writer: {error:#}")));
         }
     }
 }
 
-fn write(Job { target, mut image }: Job) -> anyhow::Result<PathBuf> {
+fn write(target: ImageTarget, mut image: Image) -> anyhow::Result<PathBuf> {
     to_rgba8_opaque(&mut image.pixels, image.order);
 
     let (path, sidecar) = match &target {
+        ImageTarget::HarnessScreenshot { path, sidecar } => (path.clone(), Some(sidecar)),
         ImageTarget::Screenshot { stamp, sidecar } => (
             session::capture_file(CaptureFile::Screenshot, stamp, None)?,
             Some(sidecar),
@@ -248,7 +303,8 @@ fn write(Job { target, mut image }: Job) -> anyhow::Result<PathBuf> {
 
     let file =
         std::fs::File::create(&path).with_context(|| format!("creating {}", path.display()))?;
-    PngEncoder::new(std::io::BufWriter::new(file))
+    let mut writer = std::io::BufWriter::new(file);
+    PngEncoder::new(&mut writer)
         .write_image(
             &image.pixels,
             image.width,
@@ -256,13 +312,20 @@ fn write(Job { target, mut image }: Job) -> anyhow::Result<PathBuf> {
             ExtendedColorType::Rgba8,
         )
         .with_context(|| format!("encoding {}", path.display()))?;
+    writer
+        .flush()
+        .with_context(|| format!("flushing {}", path.display()))?;
 
     if let Some(sidecar) = sidecar {
         let json_path = path.with_extension("json");
-        let json = serde_json::to_string_pretty(sidecar)
-            .with_context(|| format!("serializing {}", json_path.display()))?;
-        std::fs::write(&json_path, json)
+        let file = std::fs::File::create(&json_path)
+            .with_context(|| format!("creating {}", json_path.display()))?;
+        let mut writer = std::io::BufWriter::new(file);
+        serde_json::to_writer_pretty(&mut writer, sidecar)
             .with_context(|| format!("writing {}", json_path.display()))?;
+        writer
+            .flush()
+            .with_context(|| format!("flushing {}", json_path.display()))?;
     }
     Ok(path)
 }
@@ -290,9 +353,185 @@ fn to_rgba8_opaque(pixels: &mut [u8], order: ChannelOrder) {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
     use pretty_assertions::assert_eq;
 
     use super::*;
+
+    #[test]
+    fn harness_writes_png_and_adjacent_sidecar() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("capture.capture.png");
+        let result_path = directory.0.join("capture.json");
+        std::fs::write(&result_path, b"protocol result").unwrap();
+        let sidecar = serde_json::json!({ "frame": 17, "complete": true });
+        let result = write(
+            ImageTarget::HarnessScreenshot {
+                path: path.clone(),
+                sidecar: sidecar.clone(),
+            },
+            test_image(),
+        )
+        .unwrap();
+        assert_eq!(result, path);
+        let image = image::open(&path).unwrap().to_rgba8();
+        assert_eq!(image.dimensions(), (1, 1));
+        assert_eq!(image.as_raw(), &[30, 20, 10, 255]);
+        let metadata: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
+        assert_eq!(metadata, sidecar);
+        assert_eq!(std::fs::read(result_path).unwrap(), b"protocol result");
+    }
+
+    #[test]
+    fn completion_follows_both_file_writes() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("completion.png");
+        let (sender, jobs) = mpsc::sync_channel(1);
+        let mut writer = test_writer(Some(sender), false);
+        let completion = writer
+            .try_submit(test_target(path.clone()), test_image())
+            .unwrap();
+        assert_eq!(completion.try_recv(), Err(mpsc::TryRecvError::Empty));
+        drop(writer);
+        run(jobs);
+        assert_eq!(completion.recv().unwrap(), Ok(path.clone()));
+        assert!(image::open(&path).is_ok());
+        let metadata: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
+        assert_eq!(metadata, serde_json::json!({ "test": true }));
+        assert_eq!(completion.try_recv(), Err(mpsc::TryRecvError::Disconnected));
+    }
+
+    #[test]
+    fn completion_reports_png_and_sidecar_failures() {
+        let directory = TestDirectory::new();
+        let png_failure = directory.0.join("png_failure.png");
+        let sidecar_failure = directory.0.join("sidecar_failure.png");
+        std::fs::create_dir(&png_failure).unwrap();
+        std::fs::create_dir(sidecar_failure.with_extension("json")).unwrap();
+        for path in [&png_failure, &sidecar_failure] {
+            let (sender, jobs) = mpsc::sync_channel(1);
+            let mut writer = test_writer(Some(sender), false);
+            let completion = writer
+                .try_submit(test_target(path.clone()), test_image())
+                .unwrap();
+            drop(writer);
+            run(jobs);
+            let error = completion.recv().unwrap().unwrap_err();
+            let failed_path = if path == &png_failure {
+                path.clone()
+            } else {
+                path.with_extension("json")
+            };
+            assert!(
+                error.contains(&failed_path.display().to_string()),
+                "{error}"
+            );
+        }
+        assert!(image::open(&sidecar_failure).is_ok());
+    }
+
+    #[test]
+    fn abandoned_completion_does_not_stop_the_writer() {
+        let directory = TestDirectory::new();
+        let (sender, jobs) = mpsc::sync_channel(2);
+        let mut writer = test_writer(Some(sender), false);
+        let abandoned_path = directory.0.join("abandoned.png");
+        drop(
+            writer
+                .try_submit(test_target(abandoned_path.clone()), test_image())
+                .unwrap(),
+        );
+        let path = directory.0.join("next.png");
+        let completion = writer
+            .try_submit(test_target(path.clone()), test_image())
+            .unwrap();
+        drop(writer);
+        run(jobs);
+        assert_eq!(completion.recv().unwrap(), Ok(path));
+        assert!(abandoned_path.with_extension("json").is_file());
+    }
+
+    #[test]
+    fn try_submit_reports_closed_full_and_disconnected_admission() {
+        let target = || test_target(PathBuf::from("unused.png"));
+        let mut closed = test_writer(None, true);
+        assert!(
+            closed
+                .try_submit(target(), test_image())
+                .unwrap_err()
+                .to_string()
+                .contains("closed")
+        );
+        assert!(closed.sender.is_none());
+
+        let (sender, jobs) = mpsc::sync_channel(1);
+        let mut writer = test_writer(Some(sender), false);
+        let admitted = writer.try_submit(target(), test_image()).unwrap();
+        assert!(
+            writer
+                .try_submit(target(), test_image())
+                .unwrap_err()
+                .to_string()
+                .contains("full")
+        );
+        drop(jobs);
+        assert!(
+            writer
+                .try_submit(target(), test_image())
+                .unwrap_err()
+                .to_string()
+                .contains("disconnected")
+        );
+        assert_eq!(admitted.try_recv(), Err(mpsc::TryRecvError::Disconnected));
+    }
+
+    fn test_image() -> Image {
+        Image::from_rows(&[10, 20, 30, 0], 4, 1, 1, ChannelOrder::Bgra).unwrap()
+    }
+
+    fn test_target(path: PathBuf) -> ImageTarget {
+        ImageTarget::HarnessScreenshot {
+            path,
+            sidecar: serde_json::json!({ "test": true }),
+        }
+    }
+
+    fn test_writer(sender: Option<SyncSender<Job>>, closed: bool) -> Writer {
+        Writer {
+            sender,
+            handle: None,
+            closed,
+        }
+    }
+
+    struct TestDirectory(PathBuf);
+
+    impl TestDirectory {
+        fn new() -> Self {
+            static NEXT: AtomicU64 = AtomicU64::new(0);
+            loop {
+                let path = std::env::temp_dir().join(format!(
+                    "jc3vr-image-writer-{}-{}",
+                    std::process::id(),
+                    NEXT.fetch_add(1, Ordering::Relaxed),
+                ));
+                match std::fs::create_dir(&path) {
+                    Ok(()) => return Self(path),
+                    Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                    Err(error) => panic!("creating {}: {error}", path.display()),
+                }
+            }
+        }
+    }
+
+    impl Drop for TestDirectory {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 
     #[test]
     fn from_rows_drops_the_pitch_padding() {

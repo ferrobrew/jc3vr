@@ -71,6 +71,7 @@ enum Request {
     StopReplay,
     Scenario(PathBuf),
     StopScenario,
+    Screenshot(crate::screenshot::harness::RequestId),
 }
 
 /// Why a request file could not be used.
@@ -89,6 +90,7 @@ enum RequestErrorKind {
     NoPath(Command),
     /// The scenario folder is unknown, so a relative path cannot be resolved.
     NoFolder,
+    InvalidId(&'static str),
 }
 
 impl std::fmt::Display for RequestError {
@@ -101,6 +103,7 @@ impl std::fmt::Display for RequestError {
             }
             RequestErrorKind::Parse(e) => write!(f, "could not parse it: {e}"),
             RequestErrorKind::NoPath(command) => write!(f, "{command:?} needs a path"),
+            RequestErrorKind::InvalidId(reason) => write!(f, "invalid screenshot id: {reason}"),
             RequestErrorKind::NoFolder => {
                 write!(
                     f,
@@ -114,6 +117,7 @@ impl std::fmt::Display for RequestError {
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 enum Command {
+    Screenshot,
     Record,
     StopRecording,
     Replay,
@@ -126,6 +130,7 @@ enum Command {
 #[serde(deny_unknown_fields)]
 struct RequestFile {
     command: Command,
+    id: Option<String>,
     path: Option<String>,
     #[serde(default)]
     start: StartMode,
@@ -173,6 +178,10 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             .ok_or_else(|| error(RequestErrorKind::NoFolder))
     };
     Ok(match file.command {
+        Command::Screenshot => Request::Screenshot(
+            crate::screenshot::harness::RequestId::parse(file.id.as_deref().unwrap_or_default())
+                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
+        ),
         Command::Record => Request::Record,
         Command::StopRecording => Request::StopRecording,
         Command::Replay => Request::Replay {
@@ -191,6 +200,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
 fn act(request: Request) {
     tracing::info!(?request, "testing: request file");
     match request {
+        Request::Screenshot(id) => crate::screenshot::harness::request(id),
         Request::Record => crate::recorder::tracking::request_start(),
         Request::StopRecording => crate::recorder::tracking::request_stop(),
         Request::Replay { path, options } => {
@@ -210,6 +220,33 @@ mod tests {
 
     fn read(text: &str) -> Result<Request, RequestErrorKind> {
         parse(Path::new("C:/config/test_request.toml"), text).map_err(|e| e.kind)
+    }
+
+    #[test]
+    fn screenshot_ids_are_required_and_path_safe() {
+        assert!(matches!(
+            read("command = 'screenshot'\nid = 'safe-ascii-id'"),
+            Ok(Request::Screenshot(_))
+        ));
+        for id in [
+            "",
+            "../escape",
+            "a/b",
+            "a\\b",
+            "é",
+            "has space",
+            &"x".repeat(65),
+        ] {
+            let request = format!("command = 'screenshot'\nid = '{id}'");
+            assert!(matches!(
+                read(&request),
+                Err(RequestErrorKind::InvalidId(_))
+            ));
+        }
+        assert!(matches!(
+            read("command = 'screenshot'"),
+            Err(RequestErrorKind::InvalidId(_))
+        ));
     }
 
     #[test]
