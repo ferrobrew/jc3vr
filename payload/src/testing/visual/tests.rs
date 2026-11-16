@@ -134,6 +134,153 @@ fn profile_keeps_per_eye_native_resolution_across_modes() {
     }
 }
 
+fn active(id: &str) -> Active {
+    Active {
+        id: RequestId::parse(id).unwrap(),
+        started: Instant::now(),
+    }
+}
+
+fn restored_resolution() -> ResolutionProgress {
+    ResolutionProgress {
+        engine: Some((1920, 1080)),
+        desired: Some((1920, 1080)),
+        pending: false,
+    }
+}
+
+#[test]
+fn restoration_starts_protected_before_configuration_changes() {
+    let mut state = State::new();
+    assert!(state.start(Operation::Restoring(active("end"))).is_none());
+    assert!(state.requires_inline_tail());
+    assert!(!state.metadata().ready);
+    assert!(state.contains_id(&RequestId::parse("end").unwrap()));
+}
+
+#[test]
+fn restoration_requires_serviced_resize_and_restored_clock() {
+    let mut state = State::new();
+    state.start(Operation::Restoring(active("end")));
+    let resolution = restored_resolution();
+    for observed in [
+        ResolutionProgress {
+            pending: true,
+            ..resolution
+        },
+        ResolutionProgress {
+            desired: Some((3840, 1080)),
+            ..resolution
+        },
+        ResolutionProgress {
+            engine: None,
+            ..resolution
+        },
+        ResolutionProgress {
+            engine: Some((0, 0)),
+            desired: Some((0, 0)),
+            pending: false,
+        },
+    ] {
+        assert!(
+            state
+                .complete_restore(observed, Some(false), false, false)
+                .is_none()
+        );
+        assert!(!state.metadata().ready);
+    }
+    assert!(
+        state
+            .complete_restore(resolution, Some(true), false, false)
+            .is_none()
+    );
+    let completed = state
+        .complete_restore(resolution, Some(false), false, false)
+        .unwrap();
+    assert_eq!(completed.id, RequestId::parse("end").unwrap());
+    assert!(state.metadata().ready);
+    assert!(!state.requires_inline_tail());
+    assert!(
+        state
+            .complete_restore(resolution, Some(false), false, false)
+            .is_none()
+    );
+}
+
+#[test]
+fn restore_reload_failure_retains_protection_and_cannot_acknowledge_success() {
+    let mut state = State::new();
+    state.start(Operation::Restoring(active("end")));
+    let failed = state
+        .fail_operation("shader reload: no graphics engine".to_owned())
+        .unwrap();
+    assert_eq!(failed.id, RequestId::parse("end").unwrap());
+    assert!(state.requires_inline_tail());
+    assert!(state.contains_id(&failed.id));
+    assert!(!state.metadata().ready);
+    assert!(
+        state
+            .complete_restore(restored_resolution(), Some(false), false, false)
+            .is_none()
+    );
+    assert!(
+        state
+            .fail_operation("visual control: another failure".to_owned())
+            .is_none()
+    );
+    assert!(state.requires_inline_tail());
+}
+
+#[test]
+fn restoring_requests_time_out_once_without_releasing_protection() {
+    let mut state = State::new();
+    let active = active("end");
+    let deadline = active.started + TIMEOUT;
+    state.start(Operation::Restoring(active));
+    assert!(state.expire(deadline).is_none());
+    assert!(state.expire(deadline + Duration::from_millis(1)).is_some());
+    assert!(state.error.as_ref().unwrap().contains("restoration"));
+    assert!(state.requires_inline_tail());
+    assert!(state.expire(deadline + TIMEOUT).is_none());
+    assert!(!state.metadata().ready);
+}
+
+#[test]
+fn configure_and_end_supersede_restoration_without_orphaning_its_id() {
+    for next in [
+        Operation::Configuring(active("configure")),
+        Operation::Restoring(active("retry")),
+    ] {
+        let mut state = State::new();
+        state.start(Operation::Restoring(active("end")));
+        let (superseded, metadata) = state.start(next).unwrap();
+        assert_eq!(superseded.id, RequestId::parse("end").unwrap());
+        assert!(!metadata.ready);
+        assert!(metadata.error.unwrap().contains("superseded"));
+        assert_ne!(state.operation.id(), Some(&superseded.id));
+        assert!(state.error.is_none());
+    }
+}
+
+#[test]
+fn retry_after_failed_restoration_does_not_report_failure_twice() {
+    let mut state = State::new();
+    state.start(Operation::Restoring(active("end")));
+    assert!(
+        state
+            .fail_operation("shader reload: failed".to_owned())
+            .is_some()
+    );
+    assert!(state.start(Operation::Restoring(active("retry"))).is_none());
+    assert!(state.error.is_none());
+    assert!(state.requires_inline_tail());
+    assert!(
+        state
+            .complete_restore(restored_resolution(), Some(false), false, false)
+            .is_some()
+    );
+}
+
 #[test]
 fn metadata_tracks_generation_and_profile_without_json_state() {
     let state = warming(Mode::ReverseMultipass, 30);
@@ -142,4 +289,49 @@ fn metadata_tracks_generation_and_profile_without_json_state() {
     assert_eq!(metadata.generation, 7);
     assert_eq!(metadata.profile, DiagnosticProfile::ControlledV1);
     assert_eq!(State::new().metadata().profile, DiagnosticProfile::Native);
+}
+
+#[test]
+fn restoration_retains_the_original_configuration_until_completion() {
+    let mut original = Config::new();
+    original.vr.native_resolution = false;
+    let mut state = State::new();
+    state.saved = Some(original);
+    state.start(Operation::Restoring(active("end-baseline")));
+    let resolution = restored_resolution();
+    assert!(
+        state
+            .complete_restore(resolution, None, false, false)
+            .is_none()
+    );
+    assert!(!state.metadata().ready);
+    assert!(!state.saved.as_ref().unwrap().vr.native_resolution);
+    state.start(Operation::Configuring(active("configure-baseline")));
+    assert!(!state.saved.as_ref().unwrap().vr.native_resolution);
+    state.start(Operation::Restoring(active("retry-baseline")));
+    assert!(
+        state
+            .complete_restore(resolution, Some(false), false, false)
+            .is_some()
+    );
+    assert!(state.saved.is_none());
+}
+
+#[test]
+fn duplicate_ids_include_queued_configuring_restoring_and_failed_restores() {
+    let mut state = State::new();
+    let queued = RequestId::parse("queued-id").unwrap();
+    state.pending.push_back(Request::End { id: queued.clone() });
+    assert!(state.contains_id(&queued));
+    assert!(!state.contains_id(&RequestId::parse("unused-id").unwrap()));
+    for operation in [
+        Operation::Configuring(active("configure-id")),
+        Operation::Restoring(active("restore-id")),
+        Operation::RestoreFailed(RequestId::parse("failed-id").unwrap()),
+    ] {
+        let id = operation.id().unwrap().clone();
+        state.operation = operation;
+        assert!(state.contains_id(&id));
+        assert!(state.contains_id(&queued));
+    }
 }

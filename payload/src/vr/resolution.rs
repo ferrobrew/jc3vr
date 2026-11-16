@@ -69,6 +69,12 @@ static ENGINE_SIZE: AtomicU64 = AtomicU64::new(0);
 /// The native target [`apply_native_resolution`] last computed, [`pack`]ed.
 static TARGET_SIZE: AtomicU64 = AtomicU64::new(0);
 
+static PROGRESS: Mutex<ResolutionProgress> = Mutex::new(ResolutionProgress {
+    engine: None,
+    desired: None,
+    pending: false,
+});
+
 /// A size as one word, `0` for none.
 fn pack(size: Option<(u32, u32)>) -> u64 {
     size.map_or(0, |(w, h)| (u64::from(w) << 32) | u64::from(h))
@@ -102,6 +108,12 @@ pub fn apply_native_resolution() {
         crate::vr::engine_render_resolution()
     } else {
         None
+    };
+
+    *PROGRESS.lock() = ResolutionProgress {
+        engine: None,
+        desired: None,
+        pending: false,
     };
 
     // SAFETY: the graphics-engine singleton and its device are live once the engine is initialized;
@@ -180,6 +192,7 @@ pub fn apply_native_resolution() {
             } else {
                 // Still waiting; keep the request in flight and do nothing else this frame.
                 st.pending = Some(pending);
+                publish_progress(&st, current, target);
                 return;
             }
         }
@@ -197,7 +210,7 @@ pub fn apply_native_resolution() {
     // engine follows WM window resizes itself, so a window moved during the session makes the capture
     // stale, and restoring it would leave the game rendering at the wrong size for its own window.
     // A `None` original with a `None` target means we never took over, so there is nothing to do.
-    let desired = target.or_else(|| restore_target(&st));
+    let desired = desired_size(&st, current, target, restore_target(&st));
     let Some(desired) = desired else {
         return;
     };
@@ -210,6 +223,7 @@ pub fn apply_native_resolution() {
     // mid-session would appear to do nothing until the next resolution change.
     let ownership_change = want_owned != back_buffer::owned();
     if (desired == current && !ownership_change) || st.pending.is_some() {
+        publish_progress(&st, current, target);
         return;
     }
 
@@ -224,6 +238,7 @@ pub fn apply_native_resolution() {
     }
 
     issue_resize(&mut st, ge, current, desired);
+    publish_progress(&st, current, target);
 }
 
 /// The engine's render size and the size the driver wants it at, as the last frame saw them, for a
@@ -243,6 +258,53 @@ pub(crate) fn status() -> ResolutionStatus {
         engine: unpack(ENGINE_SIZE.load(Ordering::Relaxed)),
         target: unpack(TARGET_SIZE.load(Ordering::Relaxed)),
     }
+}
+
+/// The last driver observation, including a restore target and any unserviced resize.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ResolutionProgress {
+    pub(crate) engine: Option<(u32, u32)>,
+    pub(crate) desired: Option<(u32, u32)>,
+    pub(crate) pending: bool,
+}
+
+impl ResolutionProgress {
+    pub(crate) fn settled(self) -> bool {
+        !self.pending
+            && self
+                .engine
+                .is_some_and(|(width, height)| width > 0 && height > 0)
+            && self.engine == self.desired
+    }
+}
+
+/// Read a coherent frame-safe snapshot without locking the VR runtime or driver state.
+pub(crate) fn progress() -> ResolutionProgress {
+    *PROGRESS.lock()
+}
+
+fn publish_progress(st: &ResolutionState, current: (u32, u32), target: Option<(u32, u32)>) {
+    let target = if st.shutting_down || !Config::lock_query(|config| config.vr.native_resolution) {
+        None
+    } else {
+        target
+    };
+    *PROGRESS.lock() = ResolutionProgress {
+        engine: Some(current),
+        desired: desired_size(st, current, target, restore_target(st)),
+        pending: st.pending.is_some(),
+    };
+}
+
+fn desired_size(
+    st: &ResolutionState,
+    current: (u32, u32),
+    target: Option<(u32, u32)>,
+    restore: Option<(u32, u32)>,
+) -> Option<(u32, u32)> {
+    target
+        .or(restore)
+        .or_else(|| st.original.is_none().then_some(current))
 }
 
 /// The lifecycle cleanup: mark shutdown and restore the pre-VR display size **synchronously**.
@@ -471,6 +533,61 @@ struct Pending {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn restore_uses_the_live_window_size_with_native_resolution_off() {
+        let mut state = ResolutionState::new();
+        state.original = Some((1920, 1080));
+        let current = (4096, 2048);
+        assert_eq!(
+            desired_size(&state, current, None, Some((2560, 1440))),
+            Some((2560, 1440))
+        );
+        assert!(
+            !ResolutionProgress {
+                engine: Some(current),
+                desired: desired_size(&state, current, None, state.original),
+                pending: false,
+            }
+            .settled()
+        );
+    }
+
+    #[test]
+    fn no_takeover_is_already_settled_at_the_current_engine_size() {
+        let state = ResolutionState::new();
+        let current = (1920, 1080);
+        assert!(
+            ResolutionProgress {
+                engine: Some(current),
+                desired: desired_size(&state, current, None, None),
+                pending: false,
+            }
+            .settled()
+        );
+    }
+
+    #[test]
+    fn pending_resize_blocks_settled_even_at_the_desired_size() {
+        assert!(
+            !ResolutionProgress {
+                engine: Some((1920, 1080)),
+                desired: Some((1920, 1080)),
+                pending: true,
+            }
+            .settled()
+        );
+    }
+
+    #[test]
+    fn saved_native_resolution_remains_the_restore_target_when_enabled() {
+        let mut state = ResolutionState::new();
+        state.original = Some((1920, 1080));
+        assert_eq!(
+            desired_size(&state, (8192, 2048), Some((4096, 2048)), state.original),
+            Some((4096, 2048))
+        );
+    }
 
     #[test]
     fn sizes_pack_into_one_word_and_back() {

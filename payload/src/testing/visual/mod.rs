@@ -15,7 +15,7 @@ use crate::{
     config::{CONFIG, Config},
     hooks::graphics_engine::shader,
     stereo::{config::SinglePassConfig, dispatch, single_pass},
-    vr::{FreezeMode, pose_control},
+    vr::{FreezeMode, ResolutionProgress, pose_control},
 };
 pub(crate) type Mode = RenderMode;
 
@@ -99,10 +99,7 @@ pub(crate) struct FrameObservation {
 pub(crate) fn enqueue(request: Request) {
     let mut state = STATE.lock();
     let id = request.id();
-    if state.pending.iter().any(|pending| pending.id() == id)
-        || state.active.as_ref().is_some_and(|active| &active.id == id)
-        || result_path(id).is_some_and(|path| path.exists())
-    {
+    if state.contains_id(id) || result_path(id).is_some_and(|path| path.exists()) {
         tracing::warn!(id = id.0, "visual control: duplicate request id");
         return;
     }
@@ -122,15 +119,12 @@ pub(crate) fn has_pending() -> bool {
 
 pub(crate) fn requires_inline_tail() -> bool {
     let state = STATE.lock();
-    state.mode.is_some() || state.restoring.is_some() || !state.pending.is_empty()
+    state.requires_inline_tail()
 }
 
 pub(crate) fn ready() -> bool {
     let state = STATE.lock();
-    (state.mode.is_none() || state.ready)
-        && state.restoring.is_none()
-        && state.error.is_none()
-        && state.pending.is_empty()
+    state.is_ready()
 }
 
 pub(crate) fn metadata() -> VisualMetadata {
@@ -142,24 +136,22 @@ pub(crate) fn process_pending() {
     let Some(request) = state.pending.pop_front() else {
         return;
     };
-    if let Some(active) = state.active.take() {
-        let mut result = state.metadata();
-        result.ready = false;
-        result.error = Some("visual control: superseded by another request".to_owned());
-        publish(&active.id, ResultState::Failed, &result);
-    }
     let previous_error = state.error.is_some();
-    state.generation += 1;
-    state.ready = false;
-    state.error = None;
-    state.completed_frames = 0;
-    state.last_dimensions = None;
-    state.last_frame = None;
+    let active = Active {
+        id: request.id().clone(),
+        started: Instant::now(),
+    };
+    if let Some((active, metadata)) = state.start(match &request {
+        Request::Configure { .. } => Operation::Configuring(active),
+        Request::End { .. } => Operation::Restoring(active),
+    }) {
+        publish(&active.id, ResultState::Failed, &metadata);
+    }
     match request {
         Request::Configure {
-            id,
             mode,
             warmup_frames,
+            ..
         } => {
             if state.saved.is_none() {
                 state.saved = Some(CONFIG.lock().clone());
@@ -177,10 +169,6 @@ pub(crate) fn process_pending() {
             state.mode = Some(mode);
             dispatch::set_mode(mode);
             state.warmup_frames = warmup_frames;
-            state.active = Some(Active {
-                id,
-                started: Instant::now(),
-            });
             single_pass::refresh_config_flags();
             if mode == Mode::SinglePass
                 && single_pass::probe_if_needed() != single_pass::Capability::Supported
@@ -195,28 +183,20 @@ pub(crate) fn process_pending() {
                 state.fail(error.to_string());
             }
         }
-        Request::End { id } => {
+        Request::End { .. } => {
+            state.mode = None;
             CLOCK_HELD.store(false, Ordering::Release);
+            dispatch::set_mode(RenderMode::Native);
             if let Some(saved) = state.saved.as_ref() {
                 *CONFIG.lock() = saved.clone();
-                state.mode = None;
-                dispatch::set_mode(RenderMode::Native);
                 single_pass::refresh_config_flags();
                 if let Err(error) = shader::reload_now() {
-                    state.error = Some(error.to_string());
-                    publish(&id, ResultState::Failed, &state.metadata());
+                    state.fail(error.to_string());
                     return;
                 }
-                state.saved = None;
                 pose_control::clear();
             }
-            state.mode = None;
-            dispatch::set_mode(RenderMode::Native);
             state.warmup_frames = 1;
-            state.restoring = Some(Active {
-                id,
-                started: Instant::now(),
-            });
         }
     }
 }
@@ -224,19 +204,16 @@ pub(crate) fn process_pending() {
 pub(crate) fn frame_complete() {
     let mut state = STATE.lock();
     if state.mode.is_none() {
-        if state.restoring.is_some() {
-            let resolution = crate::vr::resolution_status();
+        if matches!(state.operation, Operation::Restoring(_)) {
+            let resolution = crate::vr::resolution_progress();
             let config = CONFIG.lock();
-            let paused = unsafe { Clock::get().is_some_and(|clock| clock.m_Stop) };
-            let matches = resolution.engine.is_some()
-                && resolution.engine == resolution.target
-                && paused == config.director.paused;
-            if matches {
-                state.paused = paused;
-                state.frozen = config.vr.freeze_mode != FreezeMode::Off;
-                state.last_dimensions = resolution.engine;
-                state.ready = true;
-                let active = state.restoring.take().unwrap();
+            let paused = unsafe { Clock::get().map(|clock| clock.m_Stop) };
+            if let Some(active) = state.complete_restore(
+                resolution,
+                paused,
+                config.director.paused,
+                config.vr.freeze_mode != FreezeMode::Off,
+            ) {
                 publish(&active.id, ResultState::Restored, &state.metadata());
             }
         }
@@ -260,23 +237,20 @@ pub(crate) fn frame_complete() {
         Clock::get().is_some_and(|clock| clock.m_Stop && clock.GetSPF(false) <= Clock::PAUSED_SPF)
     };
     state.complete(observed, paused);
-    if state.ready
-        && let Some(active) = state.active.take()
-    {
+    if state.ready && matches!(state.operation, Operation::Configuring(_)) {
+        let Operation::Configuring(active) =
+            std::mem::replace(&mut state.operation, Operation::Idle)
+        else {
+            unreachable!();
+        };
         publish(&active.id, ResultState::Ready, &state.metadata());
     }
 }
 
 pub(crate) fn tick() {
     let mut state = STATE.lock();
-    if state
-        .active
-        .as_ref()
-        .is_some_and(|active| active.started.elapsed() > TIMEOUT)
-    {
-        state.fail(
-            "visual control: timed out waiting for matching completed world frames".to_owned(),
-        );
+    if let Some(active) = state.expire(Instant::now()) {
+        publish(&active.id, ResultState::Failed, &state.metadata());
     }
 }
 
@@ -287,7 +261,12 @@ pub(crate) fn clock_held() -> bool {
 pub(crate) fn shutdown() {
     CLOCK_HELD.store(false, Ordering::Release);
     let mut state = STATE.lock();
-    state.pending.clear();
+    while let Some(request) = state.pending.pop_front() {
+        let mut metadata = state.metadata();
+        metadata.ready = false;
+        metadata.error = Some("visual control: the payload is shutting down".to_owned());
+        publish(request.id(), ResultState::Failed, &metadata);
+    }
     if let Some(saved) = state.saved.take() {
         *CONFIG.lock() = saved;
         pose_control::clear();
@@ -295,9 +274,8 @@ pub(crate) fn shutdown() {
     state.mode = None;
     dispatch::set_mode(RenderMode::Native);
     state.ready = false;
-    if state.active.is_some() {
-        state.fail("visual control: the payload is shutting down".to_owned());
-    }
+    state.fail("visual control: the payload is shutting down".to_owned());
+    state.operation = Operation::Idle;
 }
 
 const MAX_PENDING: usize = 16;
@@ -309,8 +287,7 @@ static STATE: Mutex<State> = Mutex::new(State::new());
 struct State {
     pending: VecDeque<Request>,
     saved: Option<Config>,
-    active: Option<Active>,
-    restoring: Option<Active>,
+    operation: Operation,
     mode: Option<Mode>,
     generation: u64,
     ready: bool,
@@ -328,6 +305,27 @@ struct Active {
     started: Instant,
 }
 
+enum Operation {
+    Idle,
+    Configuring(Active),
+    Restoring(Active),
+    RestoreFailed(RequestId),
+}
+
+impl Operation {
+    fn id(&self) -> Option<&RequestId> {
+        match self {
+            Self::Idle => None,
+            Self::Configuring(active) | Self::Restoring(active) => Some(&active.id),
+            Self::RestoreFailed(id) => Some(id),
+        }
+    }
+
+    fn is_restoring(&self) -> bool {
+        matches!(self, Self::Restoring(_) | Self::RestoreFailed(_))
+    }
+}
+
 impl Request {
     fn id(&self) -> &RequestId {
         match self {
@@ -341,8 +339,7 @@ impl State {
         Self {
             pending: VecDeque::new(),
             saved: None,
-            active: None,
-            restoring: None,
+            operation: Operation::Idle,
             mode: None,
             generation: 0,
             ready: false,
@@ -365,10 +362,7 @@ impl State {
             } else {
                 DiagnosticProfile::Native
             },
-            ready: (self.mode.is_none() || self.ready)
-                && self.restoring.is_none()
-                && self.error.is_none()
-                && self.pending.is_empty(),
+            ready: self.is_ready(),
             paused: self.paused,
             frozen: self.frozen,
             error: self.error.clone(),
@@ -408,12 +402,96 @@ impl State {
         }
     }
 
-    fn fail(&mut self, error: String) {
+    fn is_ready(&self) -> bool {
+        (self.mode.is_none() || self.ready)
+            && !self.operation.is_restoring()
+            && self.error.is_none()
+            && self.pending.is_empty()
+    }
+
+    fn requires_inline_tail(&self) -> bool {
+        self.mode.is_some() || self.operation.is_restoring() || !self.pending.is_empty()
+    }
+
+    fn contains_id(&self, id: &RequestId) -> bool {
+        self.pending.iter().any(|pending| pending.id() == id) || self.operation.id() == Some(id)
+    }
+
+    fn start(&mut self, operation: Operation) -> Option<(Active, VisualMetadata)> {
+        let superseded = self
+            .fail_operation("visual control: superseded by another request".to_owned())
+            .map(|active| (active, self.metadata()));
+        self.operation = operation;
+        self.generation += 1;
         self.ready = false;
-        self.error = Some(error);
-        if let Some(active) = self.active.take() {
+        self.error = None;
+        self.completed_frames = 0;
+        self.last_dimensions = None;
+        self.last_frame = None;
+        superseded
+    }
+
+    fn complete_restore(
+        &mut self,
+        resolution: ResolutionProgress,
+        paused: Option<bool>,
+        expected_paused: bool,
+        frozen: bool,
+    ) -> Option<Active> {
+        if !matches!(self.operation, Operation::Restoring(_))
+            || self.error.is_some()
+            || !resolution.settled()
+            || paused != Some(expected_paused)
+        {
+            return None;
+        }
+        self.saved = None;
+        self.paused = expected_paused;
+        self.frozen = frozen;
+        self.last_dimensions = resolution.engine;
+        self.ready = true;
+        let Operation::Restoring(active) = std::mem::replace(&mut self.operation, Operation::Idle)
+        else {
+            unreachable!();
+        };
+        Some(active)
+    }
+
+    fn expire(&mut self, now: Instant) -> Option<Active> {
+        let error = match &self.operation {
+            Operation::Configuring(active) if now.duration_since(active.started) > TIMEOUT => {
+                "visual control: timed out waiting for matching completed world frames"
+            }
+            Operation::Restoring(active) if now.duration_since(active.started) > TIMEOUT => {
+                "visual control: timed out waiting for restoration"
+            }
+            _ => return None,
+        };
+        self.fail_operation(error.to_owned())
+    }
+
+    fn fail(&mut self, error: String) {
+        if let Some(active) = self.fail_operation(error) {
             publish(&active.id, ResultState::Failed, &self.metadata());
         }
+    }
+
+    fn fail_operation(&mut self, error: String) -> Option<Active> {
+        self.ready = false;
+        self.error = Some(error);
+        let operation = std::mem::replace(&mut self.operation, Operation::Idle);
+        let active = match operation {
+            Operation::Configuring(active) => active,
+            Operation::Restoring(active) => {
+                self.operation = Operation::RestoreFailed(active.id.clone());
+                active
+            }
+            operation => {
+                self.operation = operation;
+                return None;
+            }
+        };
+        Some(active)
     }
 }
 
