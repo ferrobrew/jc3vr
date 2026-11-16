@@ -1,4 +1,4 @@
-//! One-frame post-chain measurements for the screenshot harness.
+//! One-frame geometry and post-chain captures for the screenshot harness.
 
 use std::{ffi::c_void, path::PathBuf};
 
@@ -17,8 +17,20 @@ use windows::{
                 D3D11_TEXTURE2D_DESC, D3D11_VIEWPORT, ID3D11DeviceContext, ID3D11Texture2D,
             },
             Dxgi::Common::{
-                DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_TYPELESS, DXGI_FORMAT_R8G8B8A8_TYPELESS,
-                DXGI_FORMAT_R11G11B10_FLOAT,
+                DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_TYPELESS, DXGI_FORMAT_B8G8R8A8_UNORM,
+                DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_D16_UNORM,
+                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_D32_FLOAT,
+                DXGI_FORMAT_D32_FLOAT_S8X24_UINT, DXGI_FORMAT_R8G8B8A8_SINT,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_TYPELESS,
+                DXGI_FORMAT_R8G8B8A8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R10G10B10A2_TYPELESS,
+                DXGI_FORMAT_R10G10B10A2_UINT, DXGI_FORMAT_R10G10B10A2_UNORM,
+                DXGI_FORMAT_R11G11B10_FLOAT, DXGI_FORMAT_R16_TYPELESS,
+                DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_SINT,
+                DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16B16A16_TYPELESS,
+                DXGI_FORMAT_R16G16B16A16_UINT, DXGI_FORMAT_R16G16B16A16_UNORM,
+                DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R32_TYPELESS,
+                DXGI_FORMAT_R32G8X24_TYPELESS,
             },
         },
     },
@@ -34,6 +46,15 @@ use crate::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Stage {
+    GeometryDepth,
+    #[serde(rename = "gbuffer0")]
+    GBuffer0,
+    #[serde(rename = "gbuffer1")]
+    GBuffer1,
+    #[serde(rename = "gbuffer2")]
+    GBuffer2,
+    #[serde(rename = "gbuffer3")]
+    GBuffer3,
     MainColor,
     PreAa,
     PostAa,
@@ -59,6 +80,8 @@ pub(crate) struct Source {
     pub width: u32,
     pub height: u32,
     pub format: String,
+    pub format_id: i32,
+    pub bytes_per_pixel: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -84,6 +107,22 @@ pub(crate) struct Scissor {
 pub(crate) struct SplitMean {
     pub left: [f64; 3],
     pub right: [f64; 3],
+}
+
+pub(crate) fn capture_geometry() {
+    for (stage, index) in [
+        (Stage::GeometryDepth, None),
+        (Stage::GBuffer0, Some(0)),
+        (Stage::GBuffer1, Some(1)),
+        (Stage::GBuffer2, Some(2)),
+        (Stage::GBuffer3, Some(3)),
+    ] {
+        capture(stage, || {
+            // SAFETY: the geometry range hook runs on the render thread with live textures.
+            let ge = unsafe { GraphicsEngine::get() }.context("graphics engine unavailable")?;
+            Ok(index.map_or(ge.m_MainDepthTexture, |i| ge.m_GBufferTexture[i]))
+        });
+    }
 }
 
 pub(crate) fn capture_main_color() {
@@ -116,7 +155,7 @@ pub(crate) struct StageImage {
 
 pub(crate) enum StageArtifact {
     Png(Image),
-    R11G11B10(Vec<u8>),
+    Raw(Vec<u8>),
 }
 
 pub(crate) fn take(frame: i64) -> (Vec<StageRecord>, Vec<StageImage>) {
@@ -183,7 +222,7 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
         context.with_lock(|ctx| {
             capture_raster_state(ctx, &mut record);
             let texture = texture()?;
-            // SAFETY: supplied by the live post-chain hook while the immediate context is locked.
+            // SAFETY: supplied by a live render hook while the immediate context is locked.
             let texture = unsafe { texture.as_ref() }.context("stage texture unavailable")?;
             read_stage(ctx, texture, &mut record)
         })
@@ -264,7 +303,49 @@ fn read_stage(
         width: desc.Width,
         height: desc.Height,
         format: format!("{:?}", desc.Format),
+        format_id: desc.Format.0,
+        bytes_per_pixel: format_byte_width(desc.Format),
     });
+    validate_desc(&desc)?;
+    // SAFETY: the engine device is live on the render thread.
+    let ge = unsafe { GraphicsEngine::get() }.context("graphics engine unavailable")?;
+    let device = unsafe { ge.m_Device.as_ref() }.context("graphics device unavailable")?;
+    let staging_desc = D3D11_TEXTURE2D_DESC {
+        // Depth staging uses a copy-compatible typeless family, never a depth view format.
+        Format: staging_format(desc.Format),
+        ..desc
+    };
+    // SAFETY: the context is locked, and the copy and mapping use its live device.
+    unsafe {
+        let staging = create_staging(&device.m_Device, &staging_desc)?;
+        ctx.CopyResource(&staging, &texture);
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
+            .context("mapping stage texture")?;
+        let result = (|| {
+            let len = (mapped.RowPitch as usize)
+                .checked_mul(desc.Height as usize)
+                .filter(|len| *len <= isize::MAX as usize)
+                .context("stage mapping length overflow")?;
+            if mapped.pData.is_null() {
+                bail!("stage mapping has no data");
+            }
+            let bytes = std::slice::from_raw_parts(mapped.pData.cast::<u8>(), len);
+            match stage_means(bytes, mapped.RowPitch as usize, &desc) {
+                Ok(means) => record.means = means,
+                Err(error) => record.error = Some(format!("screenshot stages: {error:#}")),
+            }
+            stage_image(record.stage, bytes, mapped.RowPitch as usize, &desc)
+        })();
+        ctx.Unmap(&staging, 0);
+        result
+    }
+}
+
+fn validate_desc(desc: &D3D11_TEXTURE2D_DESC) -> anyhow::Result<()> {
+    if desc.Width == 0 || desc.Height == 0 {
+        bail!("invalid stage texture dimensions");
+    }
     if desc.SampleDesc.Count != 1 {
         bail!(
             "unsupported stage sample count {} (only single-sampled textures are supported)",
@@ -274,38 +355,51 @@ fn read_stage(
     if desc.ArraySize != 1 {
         bail!("unsupported stage array size {}", desc.ArraySize);
     }
-    if stage_channel_order(desc.Format).is_none() && desc.Format != DXGI_FORMAT_R11G11B10_FLOAT {
+    if format_byte_width(desc.Format).is_none() {
         bail!("unsupported stage format {:?}", desc.Format);
     }
-    // SAFETY: the engine device is live on the render thread.
-    let ge = unsafe { GraphicsEngine::get() }.context("graphics engine unavailable")?;
-    let device = unsafe { ge.m_Device.as_ref() }.context("graphics device unavailable")?;
-    // SAFETY: the context is locked, and the copy and mapping use its live device.
-    unsafe {
-        let staging = create_staging(&device.m_Device, &desc)?;
-        ctx.CopyResource(&staging, &texture);
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
-            .context("mapping stage texture")?;
-        let bytes = std::slice::from_raw_parts(
-            mapped.pData.cast::<u8>(),
-            mapped.RowPitch as usize * desc.Height as usize,
-        );
-        let result = {
-            match split_mean(
-                bytes,
-                mapped.RowPitch as usize,
-                desc.Width,
-                desc.Height,
-                desc.Format,
-            ) {
-                Ok(means) => record.means = Some(means),
-                Err(error) => record.error = Some(format!("screenshot stages: {error:#}")),
-            }
-            stage_image(record.stage, bytes, mapped.RowPitch as usize, &desc)
-        };
-        ctx.Unmap(&staging, 0);
-        result
+    Ok(())
+}
+
+fn staging_format(format: DXGI_FORMAT) -> DXGI_FORMAT {
+    match format {
+        DXGI_FORMAT_D32_FLOAT_S8X24_UINT => DXGI_FORMAT_R32G8X24_TYPELESS,
+        DXGI_FORMAT_D24_UNORM_S8_UINT => DXGI_FORMAT_R24G8_TYPELESS,
+        DXGI_FORMAT_D32_FLOAT => DXGI_FORMAT_R32_TYPELESS,
+        DXGI_FORMAT_D16_UNORM => DXGI_FORMAT_R16_TYPELESS,
+        _ => format,
+    }
+}
+
+fn format_byte_width(format: DXGI_FORMAT) -> Option<usize> {
+    match format {
+        DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_R16_TYPELESS => Some(2),
+        DXGI_FORMAT_R8G8B8A8_TYPELESS
+        | DXGI_FORMAT_R8G8B8A8_UNORM
+        | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
+        | DXGI_FORMAT_R8G8B8A8_UINT
+        | DXGI_FORMAT_R8G8B8A8_SNORM
+        | DXGI_FORMAT_R8G8B8A8_SINT
+        | DXGI_FORMAT_B8G8R8A8_TYPELESS
+        | DXGI_FORMAT_B8G8R8A8_UNORM
+        | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
+        | DXGI_FORMAT_R10G10B10A2_TYPELESS
+        | DXGI_FORMAT_R10G10B10A2_UNORM
+        | DXGI_FORMAT_R10G10B10A2_UINT
+        | DXGI_FORMAT_R11G11B10_FLOAT
+        | DXGI_FORMAT_D24_UNORM_S8_UINT
+        | DXGI_FORMAT_R24G8_TYPELESS
+        | DXGI_FORMAT_D32_FLOAT
+        | DXGI_FORMAT_R32_TYPELESS => Some(4),
+        DXGI_FORMAT_D32_FLOAT_S8X24_UINT
+        | DXGI_FORMAT_R32G8X24_TYPELESS
+        | DXGI_FORMAT_R16G16B16A16_TYPELESS
+        | DXGI_FORMAT_R16G16B16A16_FLOAT
+        | DXGI_FORMAT_R16G16B16A16_UNORM
+        | DXGI_FORMAT_R16G16B16A16_UINT
+        | DXGI_FORMAT_R16G16B16A16_SNORM
+        | DXGI_FORMAT_R16G16B16A16_SINT => Some(8),
+        _ => None,
     }
 }
 
@@ -315,29 +409,51 @@ fn stage_image(
     pitch: usize,
     desc: &D3D11_TEXTURE2D_DESC,
 ) -> anyhow::Result<StageArtifact> {
-    if stage == Stage::MainColor {
-        if desc.Format != DXGI_FORMAT_R11G11B10_FLOAT {
+    if !matches!(stage, Stage::PreAa | Stage::PostAa) {
+        if stage == Stage::MainColor && desc.Format != DXGI_FORMAT_R11G11B10_FLOAT {
             bail!("unsupported MainColor raw format {:?}", desc.Format);
         }
-        let row_bytes = desc.Width as usize * 4;
+        let pixel_bytes = format_byte_width(desc.Format)
+            .with_context(|| format!("unsupported stage raw format {:?}", desc.Format))?;
+        let row_bytes = (desc.Width as usize)
+            .checked_mul(pixel_bytes)
+            .context("stage raw row size overflow")?;
         if desc.Width == 0 || desc.Height == 0 || pitch < row_bytes {
-            bail!("invalid MainColor raw dimensions");
+            bail!("invalid stage raw dimensions");
+        }
+        let required = (desc.Height as usize - 1)
+            .checked_mul(pitch)
+            .and_then(|offset| offset.checked_add(row_bytes))
+            .context("stage raw mapping size overflow")?;
+        if bytes.len() < required {
+            bail!("short stage raw row");
         }
         let mut packed = Vec::with_capacity(row_bytes * desc.Height as usize);
         for y in 0..desc.Height as usize {
-            packed.extend_from_slice(
-                bytes
-                    .get(y * pitch..y * pitch + row_bytes)
-                    .context("short MainColor raw row")?,
-            );
+            packed.extend_from_slice(&bytes[y * pitch..y * pitch + row_bytes]);
         }
-        return Ok(StageArtifact::R11G11B10(packed));
+        return Ok(StageArtifact::Raw(packed));
     }
     let order = stage_channel_order(desc.Format)
         .with_context(|| format!("unsupported stage PNG format {:?}", desc.Format))?;
     Image::from_rows(bytes, pitch, desc.Width, desc.Height, order)
         .context("invalid stage PNG rows")
         .map(StageArtifact::Png)
+}
+
+fn stage_means(
+    bytes: &[u8],
+    pitch: usize,
+    desc: &D3D11_TEXTURE2D_DESC,
+) -> anyhow::Result<Option<SplitMean>> {
+    // Depth and packed material data have no RGB interpretation; a single column has no split.
+    if desc.Width < 2
+        || (stage_channel_order(desc.Format).is_none()
+            && desc.Format != DXGI_FORMAT_R11G11B10_FLOAT)
+    {
+        return Ok(None);
+    }
+    split_mean(bytes, pitch, desc.Width, desc.Height, desc.Format).map(Some)
 }
 
 fn split_mean(
@@ -466,8 +582,7 @@ mod tests {
             ..Default::default()
         };
         let bytes: Vec<u8> = (0..24).collect();
-        let StageArtifact::R11G11B10(packed) =
-            stage_image(Stage::MainColor, &bytes, 12, &desc).unwrap()
+        let StageArtifact::Raw(packed) = stage_image(Stage::MainColor, &bytes, 12, &desc).unwrap()
         else {
             panic!("expected raw HDR");
         };
@@ -475,6 +590,110 @@ mod tests {
         assert!(stage_image(Stage::MainColor, &bytes[..19], 12, &desc).is_err());
         assert!(stage_image(Stage::MainColor, &bytes, 4, &desc).is_err());
         assert!(stage_image(Stage::PreAa, &bytes, 12, &desc).is_err());
+    }
+
+    #[test]
+    fn geometry_raw_rows_preserve_depth_and_material_bits() {
+        for (stage, format, pixel_bytes) in [
+            (Stage::GeometryDepth, DXGI_FORMAT_R32G8X24_TYPELESS, 8),
+            (Stage::GeometryDepth, DXGI_FORMAT_D32_FLOAT_S8X24_UINT, 8),
+            (Stage::GBuffer0, DXGI_FORMAT_R8G8B8A8_TYPELESS, 4),
+            (Stage::GBuffer1, DXGI_FORMAT_R10G10B10A2_UNORM, 4),
+            (Stage::GBuffer2, DXGI_FORMAT_R16G16B16A16_FLOAT, 8),
+            (Stage::GBuffer3, DXGI_FORMAT_B8G8R8A8_UNORM, 4),
+        ] {
+            let desc = D3D11_TEXTURE2D_DESC {
+                Width: 2,
+                Height: 2,
+                Format: format,
+                ..Default::default()
+            };
+            let row_bytes = 2 * pixel_bytes;
+            let pitch = row_bytes + 4;
+            let bytes: Vec<u8> = (0..2 * pitch as u8).collect();
+            let end = pitch + row_bytes;
+            let StageArtifact::Raw(packed) =
+                stage_image(stage, &bytes[..end], pitch, &desc).unwrap()
+            else {
+                panic!("expected raw geometry");
+            };
+            assert_eq!(packed, [&bytes[..row_bytes], &bytes[pitch..end]].concat());
+            assert_eq!(packed[3], 3);
+            assert_eq!(packed[row_bytes + 3], (pitch + 3) as u8);
+            assert!(stage_image(stage, &bytes[..end - 1], pitch, &desc).is_err());
+            assert!(stage_image(stage, &bytes, row_bytes - 1, &desc).is_err());
+        }
+    }
+
+    #[test]
+    fn descriptors_reject_unknown_multisampled_and_array_textures() {
+        let mut desc = D3D11_TEXTURE2D_DESC {
+            Width: 2,
+            Height: 2,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_R32G8X24_TYPELESS,
+            ..Default::default()
+        };
+        desc.SampleDesc.Count = 1;
+        assert!(validate_desc(&desc).is_ok());
+        assert_eq!(format_byte_width(desc.Format), Some(8));
+        for count in [0, 2, 4] {
+            desc.SampleDesc.Count = count;
+            assert!(validate_desc(&desc).is_err());
+        }
+        desc.SampleDesc.Count = 1;
+        for size in [0, 2] {
+            desc.ArraySize = size;
+            assert!(validate_desc(&desc).is_err());
+        }
+        desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT(0);
+        assert!(validate_desc(&desc).is_err());
+        assert!(stage_image(Stage::GBuffer0, &[0; 16], 8, &desc).is_err());
+    }
+
+    #[test]
+    fn depth_staging_uses_only_copy_compatible_typeless_families() {
+        for (source, staging, size) in [
+            (
+                DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
+                DXGI_FORMAT_R32G8X24_TYPELESS,
+                8,
+            ),
+            (DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R24G8_TYPELESS, 4),
+            (DXGI_FORMAT_D32_FLOAT, DXGI_FORMAT_R32_TYPELESS, 4),
+            (DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_R16_TYPELESS, 2),
+        ] {
+            assert_eq!(staging_format(source), staging);
+            assert_eq!(staging_format(staging), staging);
+            assert_eq!(format_byte_width(source), Some(size));
+            assert_eq!(format_byte_width(staging), Some(size));
+        }
+    }
+
+    #[test]
+    fn raw_formats_without_rgb_means_are_not_errors() {
+        for format in [
+            DXGI_FORMAT_R32G8X24_TYPELESS,
+            DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
+            DXGI_FORMAT_R10G10B10A2_UNORM,
+            DXGI_FORMAT_R16G16B16A16_FLOAT,
+        ] {
+            let desc = D3D11_TEXTURE2D_DESC {
+                Width: 2,
+                Height: 1,
+                Format: format,
+                ..Default::default()
+            };
+            assert_eq!(stage_means(&[0; 16], 16, &desc).unwrap(), None);
+        }
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: 1,
+            Height: 1,
+            Format: DXGI_FORMAT_R8G8B8A8_TYPELESS,
+            ..Default::default()
+        };
+        assert_eq!(stage_means(&[0; 4], 4, &desc).unwrap(), None);
     }
 
     #[test]

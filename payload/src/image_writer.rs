@@ -313,10 +313,12 @@ fn write_job(mut target: ImageTarget, image: Image) -> WriteOutcome {
     {
         for stage in std::mem::take(stages) {
             let record = &mut capture.stages[stage.record];
-            let (name, extension) = match record.stage {
-                Stage::MainColor => ("maincolor", "r11g11b10"),
-                Stage::PreAa => ("pre_aa", "png"),
-                Stage::PostAa => ("post_aa", "png"),
+            let name = stage_name(record.stage);
+            let raw = matches!(&stage.artifact, StageArtifact::Raw(_));
+            let extension = match (&stage.artifact, record.stage) {
+                (StageArtifact::Png(_), _) => "png",
+                (StageArtifact::Raw(_), Stage::MainColor) => "r11g11b10",
+                (StageArtifact::Raw(_), _) => "raw",
             };
             let stage_path = path.with_file_name(format!(
                 "{}.{name}.eye{}.{extension}",
@@ -324,11 +326,11 @@ fn write_job(mut target: ImageTarget, image: Image) -> WriteOutcome {
             ));
             let result = match stage.artifact {
                 StageArtifact::Png(image) => write_png(&stage_path, image),
-                StageArtifact::R11G11B10(bytes) => std::fs::write(&stage_path, bytes)
+                StageArtifact::Raw(bytes) => std::fs::write(&stage_path, bytes)
                     .with_context(|| format!("writing {}", stage_path.display())),
             };
             match result {
-                Ok(()) if record.stage == Stage::MainColor => record.raw = Some(stage_path),
+                Ok(()) if raw => record.raw = Some(stage_path),
                 Ok(()) => record.png = Some(stage_path),
                 Err(error) => record.error = Some(format!("image writer: {error:#}")),
             }
@@ -338,6 +340,19 @@ fn write_job(mut target: ImageTarget, image: Image) -> WriteOutcome {
     WriteOutcome {
         result: write(target, image).map_err(|error| format!("image writer: {error:#}")),
         stages: records,
+    }
+}
+
+fn stage_name(stage: Stage) -> &'static str {
+    match stage {
+        Stage::GeometryDepth => "geometry_depth",
+        Stage::GBuffer0 => "gbuffer0",
+        Stage::GBuffer1 => "gbuffer1",
+        Stage::GBuffer2 => "gbuffer2",
+        Stage::GBuffer3 => "gbuffer3",
+        Stage::MainColor => "maincolor",
+        Stage::PreAa => "pre_aa",
+        Stage::PostAa => "post_aa",
     }
 }
 
@@ -470,7 +485,7 @@ mod tests {
             let stages = vec![
                 StageImage {
                     record: 0,
-                    artifact: StageArtifact::R11G11B10(raw.clone()),
+                    artifact: StageArtifact::Raw(raw.clone()),
                 },
                 StageImage {
                     record: 1,
@@ -530,6 +545,123 @@ mod tests {
         }
     }
 
+    #[test]
+    fn geometry_artifacts_keep_stable_names_alpha_and_acknowledged_metadata() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("writer-test.capture.png");
+        let mut metadata = test_metadata();
+        let mut capture = test_capture(&path);
+        let template = capture.stages[0].clone();
+        capture.stages = [
+            (Stage::GeometryDepth, "geometry_depth", 8),
+            (Stage::GBuffer0, "gbuffer0", 4),
+            (Stage::GBuffer1, "gbuffer1", 4),
+            (Stage::GBuffer2, "gbuffer2", 4),
+            (Stage::GBuffer3, "gbuffer3", 4),
+        ]
+        .into_iter()
+        .map(|(stage, name, pixel_bytes)| {
+            assert_eq!(serde_json::to_value(stage).unwrap(), name);
+            let mut record = template.clone();
+            record.stage = stage;
+            record.source.as_mut().unwrap().bytes_per_pixel = Some(pixel_bytes);
+            record
+        })
+        .collect();
+        let stages = capture
+            .stages
+            .iter()
+            .enumerate()
+            .map(|(record, stage)| StageImage {
+                record,
+                artifact: StageArtifact::Raw(
+                    (0..stage.source.as_ref().unwrap().bytes_per_pixel.unwrap() as u8).collect(),
+                ),
+            })
+            .collect();
+        metadata.capture = Some(capture);
+        let (sender, jobs) = mpsc::sync_channel(1);
+        let mut writer = test_writer(Some(sender), false);
+        let completion = writer
+            .try_submit(
+                ImageTarget::HarnessScreenshot {
+                    path: path.clone(),
+                    sidecar: Box::new(metadata),
+                    stages,
+                },
+                test_image(),
+            )
+            .unwrap();
+        assert!(matches!(
+            completion.try_recv(),
+            Err(mpsc::TryRecvError::Empty)
+        ));
+        drop(writer);
+        run(jobs);
+        let outcome = completion.recv().unwrap();
+        assert_eq!(outcome.result, Ok(path.clone()));
+        for record in &outcome.stages {
+            let name = stage_name(record.stage);
+            let raw_path = directory.0.join(format!("writer-test.{name}.eye0.raw"));
+            assert_eq!(record.raw.as_ref(), Some(&raw_path));
+            assert!(record.png.is_none());
+            assert!(record.error.is_none());
+            assert!(record.means.is_none());
+            let bytes = std::fs::read(raw_path).unwrap();
+            assert_eq!(bytes[3], 3);
+            assert_eq!(
+                bytes.len(),
+                record.source.as_ref().unwrap().bytes_per_pixel.unwrap()
+            );
+        }
+        let sidecar: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
+        assert_eq!(
+            sidecar["stages"],
+            serde_json::to_value(outcome.stages).unwrap()
+        );
+    }
+
+    #[test]
+    fn raw_stage_failure_is_acknowledged_in_the_sidecar() {
+        let directory = TestDirectory::new();
+        let path = directory.0.join("writer-test.capture.png");
+        let raw_path = directory.0.join("writer-test.geometry_depth.eye0.raw");
+        std::fs::create_dir(&raw_path).unwrap();
+        let mut metadata = test_metadata();
+        let mut capture = test_capture(&path);
+        capture.stages.truncate(1);
+        capture.stages[0].stage = Stage::GeometryDepth;
+        metadata.capture = Some(capture);
+        let outcome = write_job(
+            ImageTarget::HarnessScreenshot {
+                path: path.clone(),
+                sidecar: Box::new(metadata),
+                stages: vec![StageImage {
+                    record: 0,
+                    artifact: StageArtifact::Raw(vec![0; 8]),
+                }],
+            },
+            test_image(),
+        );
+        assert_eq!(outcome.result, Ok(path.clone()));
+        let record = &outcome.stages[0];
+        assert!(record.raw.is_none());
+        assert!(
+            record
+                .error
+                .as_ref()
+                .unwrap()
+                .contains("geometry_depth.eye0.raw")
+        );
+        let sidecar: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(path.with_extension("json")).unwrap()).unwrap();
+        assert_eq!(
+            sidecar["stages"],
+            serde_json::to_value(outcome.stages).unwrap()
+        );
+    }
+
     fn test_capture(path: &std::path::Path) -> crate::screenshot::harness::types::CapturedFrame {
         crate::screenshot::harness::types::CapturedFrame {
             png: path.to_owned(),
@@ -567,6 +699,8 @@ mod tests {
                     source: Some(crate::screenshot::harness::stages::Source {
                         width: 1,
                         height: 1,
+                        format_id: 0,
+                        bytes_per_pixel: Some(4),
                         format: if stage == Stage::MainColor {
                             "DXGI_FORMAT_R11G11B10_FLOAT"
                         } else {

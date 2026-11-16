@@ -234,6 +234,7 @@ fn draw_render_pass_range(
             run_scene_range(first, RP_FIRST_GEOMETRY, &draw);
             crate::far_field::share::composite(draw_index());
             run_scene_range(RP_FIRST_GEOMETRY, last, &draw);
+            capture_geometry_range(first, last);
         }
         return;
     }
@@ -256,9 +257,19 @@ fn draw_render_pass_range(
         range
     });
     run_scene_range(first, last, &draw);
+    capture_geometry_range(first, last);
     if range.is_some() {
         drop(range);
         crate::stereo::single_pass::log_draw_split(first as u32, last as u32);
+    }
+}
+
+fn capture_geometry_range(first: i32, last: i32) {
+    if first == RP_Z_OCCLUDERS
+        && last == RenderPassId::RP_LAST_GBUFFER as i32
+        && !STEREO_STATE.lock().far_phase
+    {
+        crate::screenshot::harness::stages::capture_geometry();
     }
 }
 
