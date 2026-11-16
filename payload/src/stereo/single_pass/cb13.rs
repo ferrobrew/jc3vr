@@ -9,6 +9,10 @@
 use super::*;
 use crate::vr::render_params;
 
+#[cfg(test)]
+#[path = "cb13_tests.rs"]
+mod tests;
+
 /// The stereo constant buffer's register slot (`b13`, free across the game's vertex shaders) and its
 /// size in float4 rows (five per eye: four view-projection rows then the camera position, two eyes).
 const STEREO_CB_REGISTER: u32 = 13;
@@ -123,11 +127,8 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
     let center_world = glam::Mat4::from(center_transform);
     let center_campos = engine.m_VPGlobalConstData[4];
 
-    // The reprojection `M_eye = VP_eye · VP_center⁻¹` needs the engine's *center* full view-projection
-    // (world -> clip, column-vector) -- the one the baked-WVP shaders folded into their `cb1`. It is
-    // `cb0[29..32]` (the translation-free OffsetVP, stored row-major so `glam::Mat4::from` -- which is
-    // `from_cols_array` -- yields its transpose, the column-vector form) composed with the
-    // camera-relative `−campos` translation. Inverted in f64: the reverse-Z VP is near-singular.
+    // Invert only the translation-free center VP; a full f32 world-space VP loses precision before
+    // its conversion to f64.
     let center_offset_vp = {
         let mut data = [0.0f32; 16];
         for r in 0..4 {
@@ -140,8 +141,7 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
         center_campos.data[1],
         center_campos.data[2],
     );
-    let vp_center = center_offset_vp * glam::Mat4::from_translation(-center_campos_v);
-    let vp_center_inv = vp_center.as_dmat4().inverse();
+    let center_offset_vp_inv = center_offset_vp.as_dmat4().inverse();
 
     let mut rows = [Vector4::default(); STEREO_CB_TOTAL_ROWS];
     let mut forwards = [glam::Vec3::ZERO; 2];
@@ -184,10 +184,12 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             ],
         };
 
-        // M_eye maps this eye's own centre-clip to eye-clip: build the eye's full VP the same way as
-        // the centre (offset VP composed with −campos) and post-compose the centre's inverse.
-        let vp_eye = offset_vp_glam * glam::Mat4::from_translation(-eye_campos);
-        let m_eye = (vp_eye.as_dmat4() * vp_center_inv).as_mat4();
+        let m_eye = relative_reprojection(
+            center_offset_vp_inv,
+            center_campos_v,
+            offset_vp_glam,
+            eye_campos,
+        );
         write_meye(&mut rows, eye, m_eye);
         m_eyes[eye] = m_eye;
     }
@@ -269,6 +271,18 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
     }
 
     Some(rows)
+}
+
+fn relative_reprojection(
+    center_offset_vp_inv: glam::DMat4,
+    center_position: glam::Vec3,
+    eye_offset_vp: glam::Mat4,
+    eye_position: glam::Vec3,
+) -> glam::Mat4 {
+    // Use the stored camera positions, not the unrounded eye offset, to match the per-eye rows.
+    let center_to_eye = center_position.as_dvec3() - eye_position.as_dvec3();
+    (eye_offset_vp.as_dmat4() * glam::DMat4::from_translation(center_to_eye) * center_offset_vp_inv)
+        .as_mat4()
 }
 
 static CB13_DIVERGE_LOG: AtomicUsize = AtomicUsize::new(0);
