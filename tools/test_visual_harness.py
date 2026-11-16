@@ -1,7 +1,6 @@
 import json
 import logging
 import os
-from pathlib import Path
 import struct
 import subprocess
 import sys
@@ -9,11 +8,19 @@ import tempfile
 import time
 import unittest
 import zlib
+from pathlib import Path
 from unittest.mock import patch
 
 from tools.visual_harness import (
-    HarnessError, Options, VisualHarness, child_main, default_smoke, validate_capture, validate_png,
+    HarnessError,
+    Options,
+    VisualHarness,
+    child_main,
+    default_smoke,
+    validate_capture,
+    validate_png,
 )
+from tools.visual_protocol import NativeCapture, ProtocolError, RunOutcome, SmokeResult
 
 
 class RunnerTests(unittest.TestCase):
@@ -71,9 +78,8 @@ class RunnerTests(unittest.TestCase):
 
     def test_run_deadline_prevents_new_commands(self):
         self.runner.deadline = time.monotonic() - 1
-        with patch.object(self.runner, "_spawn") as spawn:
-            with self.assertRaisesRegex(HarnessError, "run timeout"):
-                self.runner._command(["never"], "late", 2)
+        with patch.object(self.runner, "_spawn") as spawn, self.assertRaisesRegex(HarnessError, "run timeout"):
+            self.runner._command(["never"], "late", 2)
         spawn.assert_not_called()
 
     def test_early_exit_aborts_readiness_wait(self):
@@ -159,9 +165,15 @@ class RunnerTests(unittest.TestCase):
 
     def test_callback_result_is_not_replaced_by_launch_success(self):
         with patch.object(self.runner, "start", return_value=self.runner):
-            self.assertEqual(self.runner.run(lambda _: {"smoke_succeeded": False}),
-                             {"smoke_succeeded": False})
+            self.assertEqual(self.runner.run(lambda _: SmokeResult(False)), SmokeResult(False))
+        self.assertEqual(self.runner.result.status, RunOutcome.NOT_VERIFIED)
         self.assertTrue(self.runner._closed)
+
+    def test_untyped_callback_result_is_rejected(self):
+        with patch.object(self.runner, "start", return_value=self.runner), self.assertRaises(ProtocolError):
+            self.runner.run(lambda _: {"smoke_succeeded": True})
+        self.assertEqual(self.runner.result.status, RunOutcome.FAILED)
+        self.assertFalse(self.runner.result.smoke_succeeded)
 
     def test_png_crc_deflate_and_dimensions(self):
         def chunk(kind, payload):
@@ -182,16 +194,21 @@ class RunnerTests(unittest.TestCase):
             validate_png(path)
 
     def test_capture_metadata_must_match_acknowledgement(self):
-        (self.root / "smoke_1.capture.json").write_text('{"id": "wrong"}')
-        with self.assertRaisesRegex(HarnessError, "disagrees on id"):
-            validate_capture(self.root, "smoke_1", {"id": "smoke_1"})
+        capture = NativeCapture("smoke_1", 1, 100, "eye_textures", 2, 1, 1, 1, (True, True), True, True)
+        (self.root / "smoke_1.capture.json").write_text(json.dumps({
+            "id": "wrong", "frame_ordinal": 1, "predicted_display_time_ns": 100,
+            "source": "eye_textures", "width": 2, "height": 1, "eye_width": 1, "eye_height": 1,
+            "fresh_eyes": [True, True], "gameplay_ready": True, "xr_session_running": True,
+        }))
+        with self.assertRaisesRegex(ProtocolError, "metadata disagrees"):
+            validate_capture(self.root, "smoke_1", capture)
 
     def test_output_rejects_stale_artifacts_before_launch(self):
         self.runner.options.output = self.root
         (self.root / "stale.json").write_text("{}")
-        with patch.object(self.runner, "reject_existing"), patch.object(self.runner, "_spawn") as spawn:
-            with self.assertRaisesRegex(HarnessError, "empty directory"):
-                self.runner.check()
+        with (patch.object(self.runner, "reject_existing"), patch.object(self.runner, "_spawn") as spawn,
+              self.assertRaisesRegex(HarnessError, "empty directory")):
+            self.runner.check()
         spawn.assert_not_called()
 
     def test_launch_whitelist_excludes_host_path_secrets_and_display(self):
@@ -254,28 +271,30 @@ class RunnerTests(unittest.TestCase):
             (folder / f"{capture_id}.json").write_text(json.dumps({
                 "id": capture_id, "state": "completed", "gameplay_ready": True,
                 "frame_ordinal": len(seen), "predicted_display_time_ns": len(seen) * 100,
+                "source": "eye_textures", "width": 2, "height": 1, "eye_width": 1, "eye_height": 1,
+                "fresh_eyes": [True, True], "xr_session_running": True,
             }))
         with patch.object(self.runner, "inject", return_value=subprocess.CompletedProcess([], 0, "")), \
                 patch.object(self.runner, "pump_menu"), \
                 patch("tools.visual_harness.time.sleep", side_effect=publish), \
                 patch("tools.visual_harness.validate_capture", side_effect=lambda _, __, result: result):
             result = default_smoke(self.runner)
-        self.assertTrue(result["smoke_succeeded"])
+        self.assertTrue(result.smoke_succeeded)
         self.assertEqual(seen, ["smoke_1", "smoke_2"])
         self.assertTrue(self.runner.gameplay_ready)
 
     def test_smoke_never_retries_an_export_failure(self):
         self.runner.options.startup_timeout = 1
-        with patch.object(self.runner, "inject", return_value=subprocess.CompletedProcess([], 1, "could not run the payload")) as inject:
-            with self.assertRaisesRegex(HarnessError, "not safe to retry"):
-                default_smoke(self.runner)
+        with (patch.object(self.runner, "inject", return_value=subprocess.CompletedProcess([], 1, "could not run the payload")) as inject,
+              self.assertRaisesRegex(HarnessError, "not safe to retry")):
+            default_smoke(self.runner)
         inject.assert_called_once()
 
     def test_report_records_failure_after_cleanup(self):
-        self.runner._lock = tempfile.TemporaryFile()
-        with patch.object(self.runner, "start", return_value=self.runner):
-            with self.assertRaises(HarnessError):
-                self.runner.run(lambda _: (_ for _ in ()).throw(HarnessError("smoke failed")))
+        with (tempfile.TemporaryFile() as lock, patch.object(self.runner, "start", return_value=self.runner),
+              self.assertRaises(HarnessError)):
+            self.runner._lock = lock
+            self.runner.run(lambda _: (_ for _ in ()).throw(HarnessError("smoke failed")))
         report = json.loads((self.root / "result.json").read_text())
         self.assertFalse(report["smoke_succeeded"])
         self.assertEqual(report["status"], "failed")
@@ -295,7 +314,7 @@ class RunnerTests(unittest.TestCase):
         close_fd.assert_called_once_with(31)
         self.assertTrue(self.runner.prefix.is_dir())
         self.assertTrue(self.runner.runtime.is_dir())
-        self.runner.result.update(status="completed", smoke_succeeded=True)
+        self.runner.result.complete(SmokeResult(True))
         self.runner._write_report()
         report = json.loads((self.root / "result.json").read_text())
         self.assertFalse(report["smoke_succeeded"])
@@ -305,9 +324,8 @@ class RunnerTests(unittest.TestCase):
     def test_callback_failure_always_cleans_up(self):
         def fail(_):
             raise HarnessError("smoke: not ready")
-        with patch.object(self.runner, "start", return_value=self.runner):
-            with self.assertRaisesRegex(HarnessError, "not ready"):
-                self.runner.run(fail)
+        with patch.object(self.runner, "start", return_value=self.runner), self.assertRaisesRegex(HarnessError, "not ready"):
+            self.runner.run(fail)
         self.assertTrue(self.runner._closed)
 
 

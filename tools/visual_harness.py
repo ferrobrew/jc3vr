@@ -8,7 +8,6 @@ import json
 import logging
 import math
 import os
-from pathlib import Path
 import re
 import shutil
 import signal
@@ -20,6 +19,48 @@ import tempfile
 import time
 import uuid
 import zlib
+from pathlib import Path
+
+if __package__:
+    from .visual_protocol import (
+        Acknowledgement,
+        Capture,
+        Command,
+        ComparisonReport,
+        FailedAck,
+        Mode,
+        NativeCapture,
+        Outcome,
+        ProtocolError,
+        Request,
+        RunOutcome,
+        RunReport,
+        ScreenshotAck,
+        SmokeResult,
+        SuiteResult,
+        acknowledgement_from_wire,
+    )
+    from .visual_suite import SuiteError, run_suite
+else:
+    from visual_protocol import (
+        Acknowledgement,
+        Capture,
+        Command,
+        ComparisonReport,
+        FailedAck,
+        Mode,
+        NativeCapture,
+        Outcome,
+        ProtocolError,
+        Request,
+        RunOutcome,
+        RunReport,
+        ScreenshotAck,
+        SmokeResult,
+        SuiteResult,
+        acknowledgement_from_wire,
+    )
+    from visual_suite import SuiteError, run_suite
 
 
 LOG = logging.getLogger("visual_harness")
@@ -46,6 +87,11 @@ class Options:
     output: Path | None = None
     release: bool = False
     launch_only: bool = False
+    suite: bool = False
+    smoke: bool = False
+    samples: int = 3
+    warmup_frames: int = 30
+    reverse_multipass: bool = False
 
 
 class VisualHarness:
@@ -68,8 +114,9 @@ class VisualHarness:
         self.gameplay_ready = False
         self._closed = False
         self._lock = None
-        self.cleanup_errors = []
-        self.result = {"smoke_succeeded": False, "status": "not_started"}
+        self.result = RunReport()
+        self.cleanup_errors = self.result.cleanup_errors
+        self.pending_request: Request | None = None
 
     def check(self):
         for name in ("timeout", "startup_timeout", "build_timeout", "copy_timeout",
@@ -77,12 +124,19 @@ class VisualHarness:
             value = getattr(self.options, name)
             if not math.isfinite(value) or value <= 0:
                 raise HarnessError(f"visual harness: {name} must be finite and positive")
+        if type(self.options.samples) is not int or self.options.samples < 3:
+            raise HarnessError("visual harness: samples must be an integer of at least three")
+        if type(self.options.warmup_frames) is not int or not 1 <= self.options.warmup_frames <= 300:
+            raise HarnessError("visual harness: warmup_frames must be an integer from 1 through 300")
+        if sum((self.options.suite, self.options.smoke, self.options.launch_only)) > 1:
+            raise HarnessError("visual harness: --suite, --smoke, and --launch-only are mutually exclusive")
         self.reject_existing()
         if self.options.output is not None:
             output = self.options.output.expanduser().resolve()
             if output.exists() and (not output.is_dir() or any(output.iterdir())):
                 raise HarnessError(f"visual harness: output must be an empty directory: {output}")
-        for command in ("cp", "gamescope", "steam-run", "setpriv", "dbus-daemon", "nix-shell"):
+        commands = ("cp", "gamescope", "steam-run", "setpriv", "dbus-daemon", "nix-shell")
+        for command in commands + (("uv",) if self.options.suite else ()):
             if not shutil.which(command):
                 raise HarnessError(f"visual harness: missing executable {command}")
         self.steam = Path(os.environ.get("STEAM_ROOT", "~/.steam/steam")).expanduser().resolve()
@@ -171,36 +225,118 @@ class VisualHarness:
             self.close()
             raise
 
-    def run(self, smoke=None):
+    def run(self, smoke=None) -> SmokeResult | SuiteResult | None:
         try:
             self.start()
-            self.result["status"] = "started"
+            self.result.status = RunOutcome.STARTED
             if smoke is not None or not self.options.launch_only:
-                result = (smoke or default_smoke)(self)
-                if isinstance(result, dict):
-                    self.result.update(result)
-                self.result["status"] = "completed" if self.result["smoke_succeeded"] else "not_verified"
+                callback = smoke or (run_suite if self.options.suite else default_smoke)
+                result = callback(self)
+                self.result.complete(result)
                 return result
             while True:
                 self.assert_running()
                 self.pump_menu()
                 time.sleep(0.2)
         except BaseException as error:
-            self.result.update(status="failed", smoke_succeeded=False, error=str(error))
+            self.result.fail(error)
             raise
         finally:
             self.close()
             self._write_report()
 
+    def smoke(self) -> SmokeResult:
+        return default_smoke(self)
+
+    def screenshot(self, capture_id: str, mode: Mode | None = None, generation: int | None = None) -> NativeCapture | Capture:
+        result = self.request(Request(Command.SCREENSHOT, capture_id))
+        if not isinstance(result, ScreenshotAck):
+            raise ProtocolError("visual protocol: expected a screenshot acknowledgement")
+        capture = validate_capture(self.config_dir / "captures", capture_id, result.capture,
+                                   mode=mode, generation=generation)
+        self.mark_gameplay_ready()
+        return capture
+
+    def request(self, request_value: Request) -> Acknowledgement:
+        self.assert_running()
+        command, request_id = request_value.command, request_value.id
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", request_id):
+            raise HarnessError("visual harness: invalid request ID")
+        folder = "captures" if command == Command.SCREENSHOT else "visual"
+        acknowledgement = self.config_dir / folder / f"{request_id}.json"
+        request = self.config_dir / "test_request.toml"
+        if request.exists() or acknowledgement.exists():
+            raise HarnessError(f"visual harness: outstanding request or stale acknowledgement {request_id}")
+        temporary = request.with_suffix(".tmp")
+        temporary.write_text(request_value.to_toml())
+        temporary.replace(request)
+        self.pending_request = request_value
+        budget = 75 if command == Command.CONFIGURE else 35
+        end = min(self.deadline, time.monotonic() + budget)
+        while not acknowledgement.exists():
+            self.assert_running()
+            self.pump_menu()
+            if time.monotonic() >= end:
+                raise HarnessError(f"visual harness: timed out waiting for {command} acknowledgement {request_id}")
+            time.sleep(0.2)
+        self.assert_running()
+        try:
+            result = acknowledgement_from_wire(read_object(acknowledgement), command, request_id)
+        except ProtocolError as error:
+            raise HarnessError(f"visual harness: {command} {request_id}: {error}") from error
+        if isinstance(result, FailedAck):
+            raise HarnessError(f"visual harness: {command} {request_id}: {result.error}")
+        return result
+
+    def cancel_pending_request(self) -> bool:
+        owned = self.pending_request
+        if owned is None:
+            return False
+        request = self.config_dir / "test_request.toml"
+        expected = owned.to_toml().encode()
+        try:
+            if request.is_symlink() or request.read_bytes() != expected:
+                return False
+            cancelled = request.with_name(f"{request.name}.{uuid.uuid4().hex}.cancelled")
+            request.rename(cancelled)
+        except FileNotFoundError:
+            self.pending_request = None
+            return False
+        if cancelled.read_bytes() != expected:
+            try:
+                os.link(cancelled, request)
+            except FileExistsError:
+                pass
+            else:
+                cancelled.unlink()
+            raise HarnessError(f"visual harness: pending request changed during cancellation; preserved at {cancelled}")
+        self.pending_request = None
+        return True
+
+    def settle(self, seconds):
+        end = time.monotonic() + seconds
+        while time.monotonic() < end:
+            self.assert_running()
+            time.sleep(min(0.2, max(0, end - time.monotonic())))
+        self.assert_running()
+
+    def compare(self, manifest):
+        output = self.output / "comparison"
+        outcome = self._command(["uv", "run", str(ROOT / "tools/visual_compare.py"), str(manifest),
+                                 "--output", str(output)], "visual-compare", 120, check=False)
+        report = ComparisonReport.from_wire(read_object(output / "report.json"))
+        if outcome.returncode != report.exit_code:
+            raise HarnessError(f"visual harness: comparison {report.status} disagrees with process status {outcome.returncode}; see {output}")
+        if report.status != Outcome.PASS:
+            LOG.warning("visual harness: comparison %s; see %s", report.status, output)
+        return report
+
     def _write_report(self):
         if self.output is None:
             return
-        self.result["cleanup_errors"] = self.cleanup_errors
-        if self.cleanup_errors:
-            self.result.update(status="failed", smoke_succeeded=False)
         path = self.output / "result.json"
         temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(self.result, indent=2) + "\n")
+        temporary.write_text(json.dumps(self.result.to_wire(), indent=2) + "\n")
         temporary.replace(path)
 
     def assert_running(self):
@@ -242,7 +378,7 @@ class VisualHarness:
             windows.update(line for line in result.stdout.splitlines() if line.isdecimal())
         if not windows:
             return False
-        window = sorted(windows, key=int)[-1]
+        window = max(windows, key=int)
         self._command([self.xdotool, "windowactivate", "--sync", window,
                        "key", "--clearmodifiers", "Return"], "menu-return", 3, env=env)
         LOG.info("sent Return to the private game window %s", window)
@@ -520,7 +656,7 @@ class VisualHarness:
                 try:
                     client.connect(str(path))
                     return True
-                except (FileNotFoundError, ConnectionRefusedError, socket.timeout):
+                except (TimeoutError, FileNotFoundError, ConnectionRefusedError):
                     return False
         self._wait_for(ready, str(path), timeout)
 
@@ -583,7 +719,7 @@ class VisualHarness:
                 os.close(fd)
 
 
-def default_smoke(runner):
+def default_smoke(runner) -> SmokeResult:
     end = min(runner.deadline, time.monotonic() + runner.options.startup_timeout)
     while True:
         runner.assert_running()
@@ -611,8 +747,10 @@ def default_smoke(runner):
         if request.exists():
             raise HarnessError("visual harness: a previous screenshot request is still outstanding")
         temporary = request.with_suffix(".tmp")
-        temporary.write_text(f'command = "screenshot"\nid = "{capture_id}"\n')
+        request_value = Request(Command.SCREENSHOT, capture_id)
+        temporary.write_text(request_value.to_toml())
         temporary.replace(request)
+        runner.pending_request = request_value
         acknowledgement = runner.config_dir / "captures" / f"{capture_id}.json"
         end = min(runner.deadline, time.monotonic() + 35)
         while not acknowledgement.exists():
@@ -621,26 +759,25 @@ def default_smoke(runner):
             if time.monotonic() >= end:
                 raise HarnessError(f"visual harness: timed out waiting for screenshot acknowledgement {capture_id}")
             time.sleep(0.2)
-        result = read_object(acknowledgement)
-        if result.get("id") != capture_id:
-            raise HarnessError("visual harness: screenshot acknowledgement ID mismatch")
-        if result.get("gameplay_ready") is True:
-            runner.mark_gameplay_ready()
-        if result.get("state") == "failed":
-            error = str(result.get("error", "unknown capture failure"))
-            if result.get("gameplay_ready") is False and (
-                    "not_ready" in error or "not ready" in error or "waiting for gameplay" in error):
+        result = acknowledgement_from_wire(read_object(acknowledgement), Command.SCREENSHOT, capture_id)
+        if isinstance(result, FailedAck):
+            if result.gameplay_ready is True:
+                runner.mark_gameplay_ready()
+            if result.gameplay_ready is False and (
+                    "not_ready" in result.error or "not ready" in result.error or "waiting for gameplay" in result.error):
                 runner.pump_menu()
                 time.sleep(0.5)
                 continue
-            raise HarnessError(f"visual harness: screenshot {capture_id}: {error}")
-        if result.get("state") != "completed":
-            raise HarnessError(f"visual harness: screenshot {capture_id} has no completed acknowledgement")
-        captures.append(validate_capture(runner.config_dir / "captures", capture_id, result))
+            raise HarnessError(f"visual harness: screenshot {capture_id}: {result.error}")
+        if not isinstance(result, ScreenshotAck):
+            raise ProtocolError("visual protocol: expected a screenshot acknowledgement")
+        if result.capture.gameplay_ready:
+            runner.mark_gameplay_ready()
+        captures.append(validate_capture(runner.config_dir / "captures", capture_id, result.capture))
     first, second = captures
-    if second["frame_ordinal"] <= first["frame_ordinal"] or second["predicted_display_time_ns"] == first["predicted_display_time_ns"]:
+    if second.frame_ordinal <= first.frame_ordinal or second.predicted_display_time_ns == first.predicted_display_time_ns:
         raise HarnessError("visual harness: sequential captures do not identify distinct rendered frames")
-    return {"smoke_succeeded": True, "captures": captures}
+    return SmokeResult(True, tuple(captures))
 
 
 def read_object(path):
@@ -653,26 +790,29 @@ def read_object(path):
     return value
 
 
-def validate_capture(folder, capture_id, result):
+def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capture,
+                     mode: Mode | None = None, generation: int | None = None) -> NativeCapture | Capture:
     metadata = read_object(folder / f"{capture_id}.capture.json")
-    keys = ("id", "frame_ordinal", "predicted_display_time_ns", "source", "width", "height",
-            "eye_width", "eye_height", "fresh_eyes", "gameplay_ready", "xr_session_running")
-    for key in keys:
-        if key not in result or metadata.get(key) != result[key]:
-            raise HarnessError(f"visual harness: screenshot metadata disagrees on {key}")
-    if result["id"] != capture_id or result["fresh_eyes"] != [True, True] or result["gameplay_ready"] is not True or result["xr_session_running"] is not True:
+    if mode is not None:
+        if not isinstance(result, Capture):
+            raise ProtocolError("visual protocol: expected a diagnostic capture")
+        if Capture.from_wire(metadata) != result:
+            raise ProtocolError("visual protocol: screenshot metadata disagrees with its acknowledgement")
+        result.validate(capture_id, mode, generation, validate_png(folder / f"{capture_id}.capture.png"))
+        return result
+    capture = NativeCapture(*(getattr(result, item.name) for item in dataclasses.fields(NativeCapture)))
+    if NativeCapture.from_wire(metadata) != capture:
+        raise ProtocolError("visual protocol: native capture metadata disagrees with its acknowledgement")
+    if capture.id != capture_id or not capture.gameplay_ready or not capture.xr_session_running:
+        raise HarnessError("visual harness: screenshot is not a gameplay XR capture")
+    if capture.fresh_eyes != (True, True):
         raise HarnessError("visual harness: screenshot is not a fresh gameplay XR pair")
-    if result["source"] not in ("eye_textures", "collapsed_back_buffer"):
+    if capture.source not in ("eye_textures", "collapsed_back_buffer"):
         raise HarnessError("visual harness: screenshot has an unknown source")
-    for key in ("frame_ordinal", "width", "height", "eye_width", "eye_height"):
-        if type(result[key]) is not int or result[key] <= 0:
-            raise HarnessError(f"visual harness: invalid screenshot {key}")
-    if type(result["predicted_display_time_ns"]) is not int:
-        raise HarnessError("visual harness: invalid predicted display time")
     width, height = validate_png(folder / f"{capture_id}.capture.png")
-    if (width, height) != (result["width"], result["height"]) or width != result["eye_width"] * 2 or height != result["eye_height"]:
-        raise HarnessError("visual harness: PNG dimensions disagree with the stereo metadata")
-    return {key: result[key] for key in keys}
+    if (width, height) != (capture.width, capture.height) or width != capture.eye_width * 2 or height != capture.eye_height:
+        raise HarnessError("visual harness: PNG dimensions disagree with the eye metadata")
+    return capture
 
 
 def validate_png(path):
@@ -742,14 +882,23 @@ def main(argv=None):
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--release", action="store_true")
-    parser.add_argument("--launch-only", action="store_true", help="launch without claiming smoke success")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--launch-only", action="store_true", help="launch without claiming smoke success")
+    mode.add_argument("--smoke", action="store_true", help="run the default two-capture smoke check")
+    mode.add_argument("--suite", action="store_true", help="run the four-mode visual comparison suite")
+    parser.add_argument("--samples", type=int, default=3)
+    parser.add_argument("--warmup-frames", type=int, default=30)
+    parser.add_argument("--reverse-multipass", action="store_true")
     parser.add_argument("--gpu", help="Vulkan PCI vendor:device, e.g. 10de:2b85")
     parser.add_argument("--xdotool")
     parser.add_argument("--output", type=Path)
-    for name, default in (("timeout", 180), ("startup-timeout", 90), ("build-timeout", 900),
+    parser.add_argument("--timeout", type=float)
+    for name, default in (("startup-timeout", 90), ("build-timeout", 900),
                           ("copy-timeout", 180), ("menu-interval", 3), ("menu-timeout", 60)):
         parser.add_argument(f"--{name}", type=float, default=default)
     args = parser.parse_args(argv)
+    if args.timeout is None:
+        args.timeout = 600 if args.suite else 180
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stderr)
     def interrupted(signum, _frame):
         raise KeyboardInterrupt(f"signal {signum}")
@@ -761,13 +910,12 @@ def main(argv=None):
             runner.check()
         else:
             runner.run()
-            if not runner.result["smoke_succeeded"]:
-                return 1
+            return runner.result.exit_code
         return 0
     except KeyboardInterrupt:
         LOG.error("visual harness: interrupted")
         return 130
-    except (HarnessError, OSError, ValueError) as error:
+    except (HarnessError, SuiteError, ProtocolError, OSError, ValueError) as error:
         LOG.error("%s", error)
         return 1
     finally:
