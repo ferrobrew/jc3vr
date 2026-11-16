@@ -9,6 +9,7 @@ use std::{
 
 use anyhow::Context as _;
 use parking_lot::Mutex;
+pub(crate) mod constants;
 pub(crate) mod stages;
 pub(crate) mod types;
 
@@ -106,6 +107,7 @@ fn admit(
         publish_logged(&result_path, &result);
         return;
     }
+    constants::reset();
     state.active = Some(Active {
         id,
         folder,
@@ -212,6 +214,7 @@ pub(crate) fn capture(
         visual,
         comparison_inputs,
         stages: stage_records,
+        constants: constants::take(frame.unwrap()),
         effective_config,
         single_pass: if mode == RenderMode::SinglePass {
             capture.diagnostics

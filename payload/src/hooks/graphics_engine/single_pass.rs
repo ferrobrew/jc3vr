@@ -22,8 +22,6 @@
 //! on the collapsed centre view. The decline and the intercept only make sense together, so they share
 //! a flag.
 
-use std::ffi::c_void;
-
 use detours_macro::detour;
 use jc3gi::graphics_engine::{
     graphics_engine::RenderContext,
@@ -211,14 +209,14 @@ fn render_block_occluder_draw_z(
 #[detour(
     address = jc3gi::graphics_engine::render_engine::RenderEngine::SetAllGlobalShaderProgramConstants_ADDRESS
 )]
-fn set_all_global_shader_program_constants(this: *mut RenderEngine, ctx: *const c_void) {
+fn set_all_global_shader_program_constants(this: *mut RenderEngine, ctx: *const RenderContext) {
     SET_ALL_GLOBAL_SHADER_PROGRAM_CONSTANTS
         .get()
         .unwrap()
         .call(this, ctx);
-    if crate::stereo::single_pass::active()
-        && let Some(engine) = unsafe { this.as_ref() }
-    {
-        crate::stereo::single_pass::mirror_and_bind_cb13(engine);
+    let cb13_uploaded = crate::stereo::single_pass::active()
+        && unsafe { this.as_ref() }.is_some_and(crate::stereo::single_pass::mirror_and_bind_cb13);
+    if let (Some(engine), Some(ctx)) = unsafe { (this.as_ref(), ctx.as_ref()) } {
+        crate::screenshot::harness::constants::capture(engine, ctx, cb13_uploaded);
     }
 }

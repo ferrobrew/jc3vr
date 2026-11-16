@@ -93,6 +93,10 @@ pub use viewport::*;
 
 pub(crate) use crate::stereo::engine_context::EngineContext;
 
+pub(crate) fn live_cb13_rows() -> Option<[Vector4; dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize]> {
+    CB13.lock().live_rows()
+}
+
 pub fn probe(device: &ID3D11Device) -> Capability {
     let mut options = D3D11_FEATURE_DATA_D3D11_OPTIONS3::default();
     let ok = unsafe {

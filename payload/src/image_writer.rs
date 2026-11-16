@@ -690,6 +690,7 @@ mod tests {
             },
             effective_config: crate::config::Config::new(),
             single_pass: None,
+            constants: Default::default(),
             stages: [(Stage::MainColor, 0), (Stage::PreAa, 0), (Stage::PostAa, 1)]
                 .into_iter()
                 .map(|(stage, eye)| StageRecord {

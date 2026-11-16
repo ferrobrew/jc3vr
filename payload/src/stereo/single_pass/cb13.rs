@@ -47,7 +47,7 @@ const PER_EYE_SOURCE_ROWS: [usize; 5] = [29, 30, 31, 32, 4];
 ///
 /// Called from the `SetAllGlobalShaderProgramConstants` detour, after the engine has refreshed
 /// `m_VPGlobalConstData` and uploaded `cb0`, on the render thread.
-pub fn mirror_and_bind_cb13(engine: &RenderEngine) {
+pub fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
     // Ensure the viewport-duplication detours are installed (once, on the first active frame).
     ensure_viewport_detours();
 
@@ -65,13 +65,13 @@ pub fn mirror_and_bind_cb13(engine: &RenderEngine) {
     // are stable once the engine has initialised, and the ops run under the engine's context mutex.
     unsafe {
         let Some(ge) = GraphicsEngine::get() else {
-            return;
+            return false;
         };
         let Some(device) = ge.m_Device.as_ref() else {
-            return;
+            return false;
         };
         let Some(context) = device.m_Context.as_ref() else {
-            return;
+            return false;
         };
         EnterCriticalSection(context.m_Mutex);
         let result = CB13
@@ -80,7 +80,9 @@ pub fn mirror_and_bind_cb13(engine: &RenderEngine) {
         LeaveCriticalSection(context.m_Mutex);
         if let Err(e) = result {
             tracing::warn!("single-pass cb13: {e}");
+            return false;
         }
+        true
     }
 }
 
