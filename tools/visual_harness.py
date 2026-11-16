@@ -41,6 +41,7 @@ if __package__:
         acknowledgement_from_wire,
     )
     from .visual_suite import SuiteError, run_suite
+    from .visual_viewer import DEFAULT_POINTER, publish_run
 else:
     from visual_protocol import (
         Acknowledgement,
@@ -61,6 +62,7 @@ else:
         acknowledgement_from_wire,
     )
     from visual_suite import SuiteError, run_suite
+    from visual_viewer import DEFAULT_POINTER, publish_run
 
 
 LOG = logging.getLogger("visual_harness")
@@ -190,6 +192,8 @@ class VisualHarness:
                 self.output = None
                 raise HarnessError("visual harness: output became nonempty before launch")
             self.output.mkdir(parents=True, exist_ok=True)
+            self._write_report()
+            publish_run(self.output, DEFAULT_POINTER)
             runtime_base = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
             self.runtime = Path(tempfile.mkdtemp(prefix="jc3vr-", dir=runtime_base))
             os.chmod(self.runtime, 0o700)
@@ -229,6 +233,7 @@ class VisualHarness:
         try:
             self.start()
             self.result.status = RunOutcome.STARTED
+            self._write_report()
             if smoke is not None or not self.options.launch_only:
                 callback = smoke or (run_suite if self.options.suite else default_smoke)
                 result = callback(self)

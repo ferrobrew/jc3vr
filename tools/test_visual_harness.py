@@ -61,6 +61,26 @@ class RunnerTests(unittest.TestCase):
         self.assertIsNone(runner.env)
         self.assertIsNone(runner.work)
 
+    def test_preview_follows_a_run_even_when_startup_fails(self):
+        output = self.root / "preview-run"
+        pointer = self.root / "latest.json"
+        runner = VisualHarness(Options(no_build=True, output=output))
+        with patch("tools.visual_harness.ROOT", self.root), \
+                patch("tools.visual_harness.DEFAULT_POINTER", pointer), \
+                patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.root)}), \
+                patch.object(runner, "check"), \
+                patch.object(runner, "_acquire_lock"), \
+                patch.object(runner, "reject_existing"), \
+                patch.object(runner, "_seed_settings"), \
+                patch.object(runner, "_base_env", side_effect=HarnessError("startup probe")), \
+                self.assertRaisesRegex(HarnessError, "startup probe"):
+            runner.run()
+        self.assertEqual(json.loads(pointer.read_text())["output"], str(output))
+        report = json.loads((output / "result.json").read_text())
+        self.assertEqual(report["status"], "failed")
+        self.assertEqual(report["error"], "startup probe")
+        self.assertTrue(runner._closed)
+
     def test_nonzero_command_is_an_error(self):
         with self.assertRaisesRegex(HarnessError, "status 7"):
             self.runner._command([sys.executable, "-c", "raise SystemExit(7)"], "exit", 2)
