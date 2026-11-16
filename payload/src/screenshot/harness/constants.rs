@@ -1,7 +1,10 @@
 use dxbc_stereo::{OFFSET_VIEW_PROJECTION_CB0_ROWS, PER_EYE_CB0_ROWS, STEREO_REPROJ_CB_ROWS};
-use jc3gi::graphics_engine::{
-    graphics_engine::RenderContext,
-    render_engine::{RenderEngine, RenderPassId},
+use jc3gi::{
+    graphics_engine::{
+        graphics_engine::RenderContext,
+        render_engine::{RenderEngine, RenderPassId},
+    },
+    types::math::Vector4,
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -16,6 +19,7 @@ use crate::{
 #[derive(Clone, Default, Serialize)]
 pub(crate) struct CapturedConstants {
     pub records: Vec<ConstantRecord>,
+    pub lighting_records: Vec<LightingConstantRecord>,
     pub unscoped_uploads: u32,
 }
 
@@ -31,6 +35,19 @@ pub(crate) struct ConstantRecord {
     pub constants: ShaderConstants,
 }
 
+#[derive(Clone, Serialize)]
+pub(crate) struct LightingConstantRecord {
+    pub frame: i64,
+    pub generation: u64,
+    pub mode: RenderMode,
+    pub physical_eye: PhysicalEye,
+    pub pass: DeferredLightsPass,
+    pub render_context: ContextInputs,
+    pub time_inputs: RenderTimeInputs,
+    pub vertex_globals: Vec<F32s<4>>,
+    pub fragment_globals: Vec<F32s<4>>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum PhysicalEye {
@@ -41,6 +58,10 @@ pub(crate) enum PhysicalEye {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub(crate) struct GeometryPass(i32);
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub(crate) struct DeferredLightsPass(i32);
 
 #[derive(Clone, Serialize)]
 pub(crate) struct ContextInputs {
@@ -117,6 +138,22 @@ pub(crate) fn capture(engine: &RenderEngine, ctx: &RenderContext, cb13_uploaded:
     };
     let mut state = STATE.lock();
     state.observe(identity);
+    if let Some(pass) = DeferredLightsPass::new(ctx.m_ActiveRenderPass) {
+        if !state.contains_lighting(physical_eye) {
+            state.insert_lighting(LightingConstantRecord {
+                frame: identity.frame,
+                generation: identity.generation,
+                mode: identity.mode,
+                physical_eye,
+                pass,
+                render_context: ContextInputs::from_context(ctx),
+                time_inputs: RenderTimeInputs::new(engine, ctx),
+                vertex_globals: global_rows(&engine.m_VPGlobalConstData),
+                fragment_globals: global_rows(&engine.m_FPGlobalConstData),
+            });
+        }
+        return;
+    }
     let Some(pass) = state.geometry_pass(ctx.m_ActiveRenderPass) else {
         return;
     };
@@ -142,12 +179,7 @@ pub(crate) fn capture(engine: &RenderEngine, ctx: &RenderContext, cb13_uploaded:
         mode: identity.mode,
         physical_eye,
         pass,
-        render_context: ContextInputs {
-            view: F32s::new(ctx.m_View.data),
-            projection: F32s::new(ctx.m_ProjectionF.data),
-            offset_view_projection: F32s::new(ctx.m_OffsetViewProjection.data),
-            camera_position: F32s::new(ctx.m_CameraPosition.data),
-        },
+        render_context: ContextInputs::from_context(ctx),
         time_inputs: RenderTimeInputs::new(engine, ctx),
         constants,
     });
@@ -185,6 +217,23 @@ impl GeometryPass {
         (FIRST_PASS..LAST_PASS)
             .contains(&pass)
             .then_some(Self(pass))
+    }
+}
+
+impl DeferredLightsPass {
+    fn new(pass: i32) -> Option<Self> {
+        (pass == RenderPassId::RP_DEFERRED_LIGHTS as i32).then_some(Self(pass))
+    }
+}
+
+impl ContextInputs {
+    fn from_context(ctx: &RenderContext) -> Self {
+        Self {
+            view: F32s::new(ctx.m_View.data),
+            projection: F32s::new(ctx.m_ProjectionF.data),
+            offset_view_projection: F32s::new(ctx.m_OffsetViewProjection.data),
+            camera_position: F32s::new(ctx.m_CameraPosition.data),
+        }
     }
 }
 
@@ -261,6 +310,7 @@ impl<const N: usize> F32s<N> {
 const FIRST_PASS: i32 = RenderPassId::RP_Z_OCCLUDERS as i32;
 const LAST_PASS: i32 = RenderPassId::RP_LAST_GBUFFER as i32;
 const MAX_RECORDS: usize = 128;
+const MAX_LIGHTING_RECORDS: usize = 2;
 const _: () = assert!(STEREO_REPROJ_CB_ROWS == 18);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -281,6 +331,7 @@ impl State {
             identity: None,
             captured: CapturedConstants {
                 records: Vec::new(),
+                lighting_records: Vec::new(),
                 unscoped_uploads: 0,
             },
         }
@@ -315,6 +366,21 @@ impl State {
         }
     }
 
+    fn contains_lighting(&self, eye: PhysicalEye) -> bool {
+        self.captured
+            .lighting_records
+            .iter()
+            .any(|record| record.physical_eye == eye)
+    }
+
+    fn insert_lighting(&mut self, record: LightingConstantRecord) {
+        if self.captured.lighting_records.len() < MAX_LIGHTING_RECORDS
+            && !self.contains_lighting(record.physical_eye)
+        {
+            self.captured.lighting_records.push(record);
+        }
+    }
+
     fn take(&mut self, identity: Identity) -> CapturedConstants {
         let previous = std::mem::replace(self, Self::new());
         if previous.identity == Some(identity) {
@@ -338,6 +404,10 @@ fn cb13_snapshot(
         Some(rows) => (Some(Box::new(Cb13Rows::new(rows))), Cb13Status::Uploaded),
         None => (None, Cb13Status::LiveRowsUnavailable),
     }
+}
+
+fn global_rows(rows: &[Vector4]) -> Vec<F32s<4>> {
+    rows.iter().map(|row| F32s::new(row.data)).collect()
 }
 
 fn observation() -> Option<(Identity, PhysicalEye)> {
@@ -396,6 +466,36 @@ mod tests {
         }
     }
 
+    fn lighting_record(identity: Identity, eye: usize) -> LightingConstantRecord {
+        LightingConstantRecord {
+            frame: identity.frame,
+            generation: identity.generation,
+            mode: identity.mode,
+            physical_eye: PhysicalEye::from_index(eye).unwrap(),
+            pass: DeferredLightsPass::new(RenderPassId::RP_DEFERRED_LIGHTS as i32).unwrap(),
+            render_context: ContextInputs {
+                view: F32s::new([0.0; 16]),
+                projection: F32s::new([0.0; 16]),
+                offset_view_projection: F32s::new([0.0; 16]),
+                camera_position: F32s::new([0.0; 3]),
+            },
+            time_inputs: RenderTimeInputs {
+                engine: EngineTimeInputs::from_values(0.0, 0.0, 0.0, 0),
+                context: ContextTimeInputs::from_values(0.0, 0.0, 0.0),
+            },
+            vertex_globals: Vec::new(),
+            fragment_globals: Vec::new(),
+        }
+    }
+
+    fn global_test_rows<const N: usize>(seed: u32) -> [Vector4; N] {
+        std::array::from_fn(|row| Vector4 {
+            data: std::array::from_fn(|col| {
+                f32::from_bits(seed ^ ((row * 4 + col) as u32).wrapping_mul(0x9e37_79b9))
+            }),
+        })
+    }
+
     #[test]
     fn pass_scope_comes_only_from_the_context() {
         let mut state = State::new();
@@ -436,11 +536,14 @@ mod tests {
             let mut state = State::new();
             state.observe(original);
             state.insert(record(original, 0, FIRST_PASS));
+            state.insert_lighting(lighting_record(original, 0));
             state.geometry_pass(RenderPassId::RP_NONE as i32);
             state.observe(changed);
             assert!(state.captured.records.is_empty());
+            assert!(state.captured.lighting_records.is_empty());
             assert_eq!(state.captured.unscoped_uploads, 0);
             assert!(state.take(original).records.is_empty());
+            assert!(state.take(original).lighting_records.is_empty());
         }
     }
 
@@ -450,12 +553,85 @@ mod tests {
         let mut state = State::new();
         state.observe(id);
         state.insert(record(id, 0, FIRST_PASS));
-        assert_eq!(state.take(id).records.len(), 1);
+        state.insert_lighting(lighting_record(id, 0));
+        let captured = state.take(id);
+        assert_eq!(captured.records.len(), 1);
+        assert_eq!(captured.lighting_records.len(), 1);
         assert!(state.take(id).records.is_empty());
+        assert!(state.take(id).lighting_records.is_empty());
         state.observe(id);
         state.insert(record(id, 0, FIRST_PASS));
-        assert!(state.take(Identity { frame: 43, ..id }).records.is_empty());
-        assert!(state.take(id).records.is_empty());
+        state.insert_lighting(lighting_record(id, 0));
+        let captured = state.take(Identity { frame: 43, ..id });
+        assert!(captured.records.is_empty());
+        assert!(captured.lighting_records.is_empty());
+        let captured = state.take(id);
+        assert!(captured.records.is_empty());
+        assert!(captured.lighting_records.is_empty());
+    }
+
+    #[test]
+    fn only_the_deferred_lights_pass_is_accepted() {
+        let deferred = DeferredLightsPass::new(RenderPassId::RP_DEFERRED_LIGHTS as i32).unwrap();
+        assert_eq!(deferred.0, RenderPassId::RP_DEFERRED_LIGHTS as i32);
+        for pass in [
+            RenderPassId::RP_NONE,
+            RenderPassId::RP_SSAO,
+            RenderPassId::RP_SCREEN_SPACE_REFLECTIONS,
+            RenderPassId::RP_GLOBAL_ILLUMINATION,
+            RenderPassId::RP_SCREEN_SPACE_SUBSURFACE_SKIN,
+            RenderPassId::RP_DEBUG_GI,
+            RenderPassId::RP_LINES,
+        ] {
+            assert_eq!(DeferredLightsPass::new(pass as i32), None);
+        }
+        assert_eq!(DeferredLightsPass::new(FIRST_PASS), None);
+        assert_eq!(DeferredLightsPass::new(LAST_PASS), None);
+    }
+
+    #[test]
+    fn deferred_lighting_dedupes_per_physical_eye() {
+        let id = identity();
+        let mut state = State::new();
+        state.observe(id);
+        for eye in [1, 0, 1, 0, 0] {
+            state.insert_lighting(lighting_record(id, eye));
+        }
+        assert_eq!(state.captured.lighting_records.len(), 2);
+        assert_eq!(
+            state.captured.lighting_records[0].physical_eye,
+            PhysicalEye::Right
+        );
+        assert_eq!(
+            state.captured.lighting_records[1].physical_eye,
+            PhysicalEye::Left
+        );
+        assert!(state.captured.records.is_empty());
+        assert_eq!(state.captured.unscoped_uploads, 0);
+    }
+
+    #[test]
+    fn lighting_snapshots_preserve_every_global_row_and_bit() {
+        let vertex = global_test_rows::<49>(0x7fc0_0000);
+        let fragment = global_test_rows::<95>(0xff80_0000);
+        let captured_vertex = global_rows(&vertex);
+        let captured_fragment = global_rows(&fragment);
+        assert_eq!(captured_vertex.len(), 49);
+        assert_eq!(captured_fragment.len(), 95);
+        for (captured, source) in captured_vertex.iter().zip(&vertex) {
+            assert_eq!(captured.bits, source.data.map(f32::to_bits));
+            assert_eq!(
+                captured.values.map(f32::to_bits),
+                source.data.map(f32::to_bits)
+            );
+        }
+        for (captured, source) in captured_fragment.iter().zip(&fragment) {
+            assert_eq!(captured.bits, source.data.map(f32::to_bits));
+            assert_eq!(
+                captured.values.map(f32::to_bits),
+                source.data.map(f32::to_bits)
+            );
+        }
     }
 
     #[test]
