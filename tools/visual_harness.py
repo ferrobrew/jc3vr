@@ -369,19 +369,58 @@ class VisualHarness:
             return False
         self.last_menu = now
         env = self.display_env()
+        command_timeout = 0.5
+        hold_seconds = 0.3
+        end = min(now + 2, self.menu_deadline, self.deadline if self.deadline is not None else math.inf)
+
+        def command(arguments, name):
+            remaining = end - time.monotonic()
+            if self.gameplay_ready or remaining <= 0:
+                return None
+            return self._command([self.xdotool, *arguments], name, min(command_timeout, remaining), env=env, check=False)
+
         windows = set()
         for selector in ("--class", "--name"):
-            result = self._command([self.xdotool, "search", "--onlyvisible", selector, "[Jj]ust.?[Cc]ause"],
-                                   "menu-search", 3, env=env, check=False)
+            result = command(["search", "--onlyvisible", selector, "[Jj]ust.?[Cc]ause"], "menu-search")
+            if result is None:
+                return False
             if result.returncode not in (0, 1):
                 raise HarnessError(f"visual harness: xdotool search exited with {result.returncode}")
             windows.update(line for line in result.stdout.splitlines() if line.isdecimal())
         if not windows:
             return False
-        window = max(windows, key=int)
-        self._command([self.xdotool, "windowactivate", "--sync", window,
-                       "key", "--clearmodifiers", "Return"], "menu-return", 3, env=env)
-        LOG.info("sent Return to the private game window %s", window)
+        window = str(int(max(windows, key=int)))
+        result = command(["windowfocus", window], "menu-focus")
+        if result is None or result.returncode:
+            return False
+        result = command(["getwindowfocus", "-f"], "menu-verify-focus")
+        if result is None or result.returncode or result.stdout.strip() != window:
+            return False
+        if self.gameplay_ready or end - time.monotonic() < 2 * command_timeout + hold_seconds:
+            return False
+
+        def key(action):
+            try:
+                subprocess.run([self.xdotool, action, "Return"], env=env, timeout=command_timeout,
+                               stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, check=True)
+            except (OSError, subprocess.SubprocessError) as error:
+                raise HarnessError(f"visual harness: menu {action}: {error}") from error
+
+        try:
+            key("keydown")
+            # The XR frame loop can sample input less often than a short xdotool key press lasts.
+            time.sleep(hold_seconds)
+        finally:
+            pending = sys.exception()
+            try:
+                # Release even after interruption or deadline expiry; never inherit the host display.
+                key("keyup")
+            except HarnessError as error:
+                if pending is None:
+                    raise
+                pending.add_note(str(error))
+                LOG.error("%s", error)
+        LOG.info("sent held Return to the private game window %s", window)
         return True
 
     def run_in_container(self, command, timeout=20, check=True):

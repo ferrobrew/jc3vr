@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import os
@@ -116,6 +117,121 @@ class RunnerTests(unittest.TestCase):
             self.runner.menu_deadline = time.monotonic() - 1
             self.assertFalse(self.runner.pump_menu())
         command.assert_not_called()
+
+    @contextlib.contextmanager
+    def _menu(self, focus="42", focus_code=0):
+        self.runner.xdotool = "/private/xdotool"
+        self.runner.display_file = self.root / "display.json"
+        self.runner.display_file.write_text(json.dumps({"DISPLAY": ":123", "XAUTHORITY": "/private/auth"}))
+        self.runner.env["DISPLAY"] = ":0"
+        self.runner.env["XAUTHORITY"] = "/host/auth"
+        self.runner.deadline = 110
+        self.runner.menu_deadline = 110
+        events = []
+
+        def execute(arguments, name, timeout, **kwargs):
+            events.append(arguments[1:])
+            self.assertGreater(timeout, 0)
+            self.assertLessEqual(timeout, 0.5)
+            self.assertEqual(kwargs["env"]["DISPLAY"], ":123")
+            self.assertEqual(kwargs["env"]["XAUTHORITY"], "/private/auth")
+            output = "7\n42\n" if arguments[1] == "search" else focus if arguments[1] == "getwindowfocus" else ""
+            code = focus_code if arguments[1] == "windowfocus" else 0
+            return subprocess.CompletedProcess(arguments, code, output)
+
+        def key(arguments, **kwargs):
+            events.append(arguments[1:])
+            return subprocess.CompletedProcess(arguments, 0)
+
+        with patch("tools.visual_harness.time.monotonic", return_value=100), \
+                patch.dict(os.environ, {"DISPLAY": ":0", "XAUTHORITY": "/host/auth"}), \
+                patch.object(self.runner, "_command", side_effect=execute) as command, \
+                patch("tools.visual_harness.subprocess.run", side_effect=key) as keys, \
+                patch("tools.visual_harness.time.sleep", side_effect=lambda seconds: events.append(["hold", seconds])) as hold:
+            yield events, command, keys, hold
+
+    def test_menu_verifies_focus_and_holds_return_on_private_display(self):
+        with self._menu() as (events, _, keys, hold):
+            self.assertTrue(self.runner.pump_menu())
+            self.assertEqual(events, [
+                ["search", "--onlyvisible", "--class", "[Jj]ust.?[Cc]ause"],
+                ["search", "--onlyvisible", "--name", "[Jj]ust.?[Cc]ause"],
+                ["windowfocus", "42"], ["getwindowfocus", "-f"],
+                ["keydown", "Return"], ["hold", 0.3], ["keyup", "Return"],
+            ])
+            self.assertGreaterEqual(hold.call_args.args[0], 0.25)
+            for call in keys.call_args_list:
+                self.assertEqual(call.kwargs["env"]["DISPLAY"], ":123")
+                self.assertEqual(call.kwargs["env"]["XAUTHORITY"], "/private/auth")
+                self.assertEqual(call.kwargs["timeout"], 0.5)
+                self.assertTrue(call.kwargs["check"])
+            self.assertFalse(self.runner.pump_menu())
+            self.assertEqual(keys.call_count, 2)
+
+    def test_menu_focus_mismatch_sends_no_keys(self):
+        for focus in ("7", "420", "", "42\n7"):
+            with self.subTest(focus=focus), self._menu(focus=focus) as (_, _, keys, hold):
+                self.runner.last_menu = 0
+                self.assertFalse(self.runner.pump_menu())
+                keys.assert_not_called()
+                hold.assert_not_called()
+
+    def test_menu_focus_failure_sends_no_keys(self):
+        with self._menu(focus_code=1) as (events, _, keys, hold):
+            self.assertFalse(self.runner.pump_menu())
+            self.assertEqual(events[-1], ["windowfocus", "42"])
+            keys.assert_not_called()
+            hold.assert_not_called()
+
+    def test_menu_always_releases_after_keydown_failure(self):
+        for error in (OSError("unavailable"), subprocess.TimeoutExpired("xdotool", 0.5),
+                      subprocess.CalledProcessError(1, "xdotool"), KeyboardInterrupt()):
+            with self.subTest(error=type(error).__name__), self._menu() as (_, _, keys, hold):
+                self.runner.last_menu = 0
+                keys.side_effect = [error, subprocess.CompletedProcess([], 0)]
+                with self.assertRaises(KeyboardInterrupt if isinstance(error, KeyboardInterrupt) else HarnessError):
+                    self.runner.pump_menu()
+                self.assertEqual([call.args[0][1:] for call in keys.call_args_list],
+                                 [["keydown", "Return"], ["keyup", "Return"]])
+                hold.assert_not_called()
+
+    def test_menu_releases_on_hold_failure_and_after_deadline(self):
+        for error in (RuntimeError("hold failed"), KeyboardInterrupt()):
+            with self.subTest(error=type(error).__name__), self._menu() as (_, _, keys, hold):
+                self.runner.last_menu = 0
+
+                def interrupt(seconds, error=error):
+                    self.runner.deadline = 99
+                    self.runner.menu_deadline = 99
+                    self.runner.mark_gameplay_ready()
+                    raise error
+
+                hold.side_effect = interrupt
+                with self.assertRaises(type(error)):
+                    self.runner.pump_menu()
+                self.assertEqual([call.args[0][1:] for call in keys.call_args_list],
+                                 [["keydown", "Return"], ["keyup", "Return"]])
+                self.assertEqual(keys.call_args.kwargs["env"]["DISPLAY"], ":123")
+                self.runner.gameplay_ready = False
+
+    def test_menu_release_failure_is_reported(self):
+        with self._menu() as (_, _, keys, hold):
+            keys.side_effect = [subprocess.CompletedProcess([], 0), OSError("release failed")]
+            with self.assertRaisesRegex(HarnessError, "menu keyup.*release failed"):
+                self.runner.pump_menu()
+            hold.assert_called_once_with(0.3)
+            self.assertEqual(keys.call_args.args[0][1:], ["keyup", "Return"])
+
+    def test_menu_release_failure_preserves_original_interruption(self):
+        with self._menu() as (_, _, keys, hold):
+            error = KeyboardInterrupt()
+            hold.side_effect = error
+            keys.side_effect = [subprocess.CompletedProcess([], 0), OSError("release failed")]
+            with self.assertLogs("visual_harness", level="ERROR"), self.assertRaises(KeyboardInterrupt) as raised:
+                self.runner.pump_menu()
+            self.assertIs(raised.exception, error)
+            self.assertIn("menu keyup", error.__notes__[0])
+            self.assertEqual(keys.call_args.args[0][1:], ["keyup", "Return"])
 
     def test_display_is_reported_by_child_not_host(self):
         self.runner.display_file = self.root / "display.json"
