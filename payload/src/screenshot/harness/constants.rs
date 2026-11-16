@@ -27,6 +27,7 @@ pub(crate) struct ConstantRecord {
     pub physical_eye: PhysicalEye,
     pub pass: GeometryPass,
     pub render_context: ContextInputs,
+    pub time_inputs: RenderTimeInputs,
     pub constants: ShaderConstants,
 }
 
@@ -47,6 +48,27 @@ pub(crate) struct ContextInputs {
     pub projection: F32s<16>,
     pub offset_view_projection: F32s<16>,
     pub camera_position: F32s<3>,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct RenderTimeInputs {
+    pub engine: EngineTimeInputs,
+    pub context: ContextTimeInputs,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct EngineTimeInputs {
+    pub time_of_day: F32s<1>,
+    pub dt: F32s<1>,
+    pub wind_animation: F32s<1>,
+    pub acc_frame_time: u32,
+}
+
+#[derive(Clone, Serialize)]
+pub(crate) struct ContextTimeInputs {
+    pub time_of_day: F32s<1>,
+    pub dt: F32s<1>,
+    pub wind_animation: F32s<1>,
 }
 
 #[derive(Clone, Serialize)]
@@ -126,6 +148,7 @@ pub(crate) fn capture(engine: &RenderEngine, ctx: &RenderContext, cb13_uploaded:
             offset_view_projection: F32s::new(ctx.m_OffsetViewProjection.data),
             camera_position: F32s::new(ctx.m_CameraPosition.data),
         },
+        time_inputs: RenderTimeInputs::new(engine, ctx),
         constants,
     });
 }
@@ -162,6 +185,41 @@ impl GeometryPass {
         (FIRST_PASS..LAST_PASS)
             .contains(&pass)
             .then_some(Self(pass))
+    }
+}
+
+impl RenderTimeInputs {
+    fn new(engine: &RenderEngine, ctx: &RenderContext) -> Self {
+        Self {
+            engine: EngineTimeInputs::from_values(
+                engine.m_TimeOfDay,
+                engine.m_Dt,
+                engine.m_WindAnimation,
+                engine.m_AccFrameTime,
+            ),
+            context: ContextTimeInputs::from_values(ctx.m_TimeOfDay, ctx.m_Dt, ctx.m_WindAnimation),
+        }
+    }
+}
+
+impl EngineTimeInputs {
+    fn from_values(time_of_day: f32, dt: f32, wind_animation: f32, acc_frame_time: u32) -> Self {
+        Self {
+            time_of_day: F32s::new([time_of_day]),
+            dt: F32s::new([dt]),
+            wind_animation: F32s::new([wind_animation]),
+            acc_frame_time,
+        }
+    }
+}
+
+impl ContextTimeInputs {
+    fn from_values(time_of_day: f32, dt: f32, wind_animation: f32) -> Self {
+        Self {
+            time_of_day: F32s::new([time_of_day]),
+            dt: F32s::new([dt]),
+            wind_animation: F32s::new([wind_animation]),
+        }
     }
 }
 
@@ -325,6 +383,10 @@ mod tests {
                 offset_view_projection: F32s::new([0.0; 16]),
                 camera_position: F32s::new([0.0; 3]),
             },
+            time_inputs: RenderTimeInputs {
+                engine: EngineTimeInputs::from_values(0.0, 0.0, 0.0, 0),
+                context: ContextTimeInputs::from_values(0.0, 0.0, 0.0),
+            },
             constants: ShaderConstants::MultipassCb0 {
                 cb0: Cb0Rows {
                     offset_view_projection: std::array::from_fn(|_| F32s::new([0.0; 4])),
@@ -467,6 +529,41 @@ mod tests {
         );
         assert!(parsed["values"][2].is_null());
         assert!(parsed["values"][3].is_null());
+    }
+
+    #[test]
+    fn time_inputs_preserve_exact_bits() {
+        let bits = [0, 0x8000_0000, 0x7fc0_1234, 0x7f80_0000];
+        let engine = EngineTimeInputs::from_values(
+            f32::from_bits(bits[0]),
+            f32::from_bits(bits[1]),
+            f32::from_bits(bits[2]),
+            0xdead_beef,
+        );
+        let context = ContextTimeInputs::from_values(
+            f32::from_bits(bits[3]),
+            f32::from_bits(bits[2]),
+            f32::from_bits(bits[1]),
+        );
+        assert_eq!(engine.time_of_day.bits, [bits[0]]);
+        assert_eq!(engine.dt.bits, [bits[1]]);
+        assert_eq!(engine.wind_animation.bits, [bits[2]]);
+        assert_eq!(engine.acc_frame_time, 0xdead_beef);
+        assert_eq!(context.time_of_day.bits, [bits[3]]);
+        assert_eq!(context.dt.bits, [bits[2]]);
+        assert_eq!(context.wind_animation.bits, [bits[1]]);
+    }
+
+    #[test]
+    fn engine_and_context_time_inputs_stay_distinct() {
+        let engine = EngineTimeInputs::from_values(1.5, 0.25, 0.75, 60);
+        let context = ContextTimeInputs::from_values(2.5, 0.5, 0.125);
+        assert_eq!(engine.time_of_day.values, [1.5]);
+        assert_eq!(engine.dt.values, [0.25]);
+        assert_eq!(engine.wind_animation.values, [0.75]);
+        assert_eq!(context.time_of_day.values, [2.5]);
+        assert_eq!(context.dt.values, [0.5]);
+        assert_eq!(context.wind_animation.values, [0.125]);
     }
 
     #[test]
