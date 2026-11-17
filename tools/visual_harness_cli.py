@@ -17,8 +17,12 @@ def parse_args(argv=None):
                       help="run the frozen-anchor orientation sweep")
     mode.add_argument("--motion-sweep", action="store_true",
                       help="run the rendered-frame motion sweep")
+    mode.add_argument("--single-pass-probe", action="store_true",
+                      help="run a focused single-pass stereo probe at one orientation")
     parser.add_argument("--samples", type=int, default=3)
     parser.add_argument("--warmup-frames", type=int, default=30)
+    parser.add_argument("--probe-yaw", type=float, default=0.0)
+    parser.add_argument("--probe-pitch", type=float, default=0.0)
     parser.add_argument("--reverse-multipass", action="store_true")
     parser.add_argument("--gpu", help="Vulkan PCI vendor:device, e.g. 10de:2b85")
     parser.add_argument("--xdotool")
@@ -30,5 +34,5 @@ def parse_args(argv=None):
     args = parser.parse_args(argv)
     if args.timeout is None:
         args.timeout = (3600 if args.orientation_sweep else 2400 if args.motion_sweep
-                        else 600 if args.suite else 180)
+                        else 600 if args.suite or args.single_pass_probe else 180)
     return args

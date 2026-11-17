@@ -493,11 +493,29 @@ class SuiteResult(SmokeResult):
         return value
 
 
+@dataclass(frozen=True)
+class ProbeResult(SmokeResult):
+    probe_manifest: str = ""
+    probe_captures: tuple[Capture, ...] = ()
+    configurations: tuple[ConfigurationAck, ...] = ()
+    diagnostic: Outcome = Outcome.INCONCLUSIVE
+
+    @property
+    def exit_code(self) -> int:
+        return {Outcome.PASS: 0, Outcome.FAIL: 1, Outcome.INCONCLUSIVE: 2}[self.diagnostic]
+
+    def to_wire(self):
+        value = asdict(self)
+        for configuration in value["configurations"]:
+            configuration.pop("outcome")
+        return value
+
+
 @dataclass
 class RunReport:
     status: RunOutcome = RunOutcome.NOT_STARTED
     smoke_succeeded: bool = False
-    result: SmokeResult | SuiteResult | None = None
+    result: SmokeResult | SuiteResult | ProbeResult | None = None
     error: str | None = None
     restoration_error: str | None = None
     cleanup_errors: list[str] = field(default_factory=list)
@@ -510,11 +528,13 @@ class RunReport:
             if not self.result.suite_succeeded or self.result.comparison is None:
                 return 1
             return self.result.comparison.exit_code
+        if isinstance(self.result, ProbeResult):
+            return self.result.exit_code
         return 0
 
-    def complete(self, result: SmokeResult | SuiteResult | None):
+    def complete(self, result: SmokeResult | SuiteResult | ProbeResult | None):
         if result is not None and not isinstance(result, SmokeResult):
-            raise ProtocolError("visual protocol: a run callback must return a typed smoke or suite result")
+            raise ProtocolError("visual protocol: a run callback must return a typed smoke, suite, or probe result")
         self.result = result
         self.smoke_succeeded = result is not None and result.smoke_succeeded
         self.status = RunOutcome.COMPLETED if self.smoke_succeeded else RunOutcome.NOT_VERIFIED

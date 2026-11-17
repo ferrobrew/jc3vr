@@ -24,6 +24,7 @@ if __package__:
     from .visual_harness_cli import parse_args
     from .visual_motion import run_motion_sweep
     from .visual_processes import ProcessError, processes, steam_client
+    from .visual_probe import check_probe_options, run_single_pass_probe
     from .visual_protocol import (
         Acknowledgement,
         Capture,
@@ -70,12 +71,15 @@ else:
         SuiteResult,
         acknowledgement_from_wire,
     )
+    from visual_probe import check_probe_options, run_single_pass_probe
     from visual_suite import SuiteError, run_orientation_sweep, run_suite
     from visual_viewer import DEFAULT_POINTER, publish_run
 
 LOG = logging.getLogger("visual_harness")
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = Path("/run/current-system/sw/share/openxr/1/openxr_monado.json")
+CALLBACKS = (("orientation_sweep", run_orientation_sweep), ("motion_sweep", run_motion_sweep),
+             ("suite", run_suite), ("single_pass_probe", run_single_pass_probe))
 
 
 class HarnessError(RuntimeError):
@@ -104,6 +108,9 @@ class Options:
     samples: int = 3
     warmup_frames: int = 30
     reverse_multipass: bool = False
+    single_pass_probe: bool = False
+    probe_yaw: float = 0.0
+    probe_pitch: float = 0.0
 
 
 class VisualHarness:
@@ -131,8 +138,7 @@ class VisualHarness:
         self.pending_request: Request | None = None
 
     def check(self):
-        for name in ("timeout", "startup_timeout", "build_timeout", "copy_timeout",
-                     "menu_interval", "menu_timeout"):
+        for name in ("timeout", "startup_timeout", "build_timeout", "copy_timeout", "menu_interval", "menu_timeout"):
             value = getattr(self.options, name)
             if not math.isfinite(value) or value <= 0:
                 raise HarnessError(f"visual harness: {name} must be finite and positive")
@@ -140,8 +146,9 @@ class VisualHarness:
             raise HarnessError("visual harness: samples must be an integer of at least three")
         if type(self.options.warmup_frames) is not int or not 1 <= self.options.warmup_frames <= 300:
             raise HarnessError("visual harness: warmup_frames must be an integer from 1 through 300")
-        if sum((self.options.suite, self.options.orientation_sweep, self.options.motion_sweep, self.options.smoke, self.options.launch_only)) > 1:
-            raise HarnessError("visual harness: --suite, --orientation-sweep, --smoke, and --launch-only are mutually exclusive")
+        check_probe_options(self.options)
+        if sum((self.options.suite, self.options.orientation_sweep, self.options.motion_sweep, self.options.smoke, self.options.launch_only, self.options.single_pass_probe)) > 1:
+            raise HarnessError("visual harness: --suite, --orientation-sweep, --motion-sweep, --single-pass-probe, --smoke, and --launch-only are mutually exclusive")
         self.reject_existing()
         self.require_steam_client()
         if self.options.output is not None:
@@ -246,16 +253,8 @@ class VisualHarness:
             self.result.status = RunOutcome.STARTED
             self._write_report()
             if smoke is not None or not self.options.launch_only:
-                if smoke is not None:
-                    callback = smoke
-                elif self.options.orientation_sweep:
-                    callback = run_orientation_sweep
-                elif self.options.motion_sweep:
-                    callback = run_motion_sweep
-                elif self.options.suite:
-                    callback = run_suite
-                else:
-                    callback = default_smoke
+                callback = smoke or next(
+                    (callback for name, callback in CALLBACKS if getattr(self.options, name)), default_smoke)
                 result = callback(self)
                 self.result.complete(result)
                 return result
