@@ -23,6 +23,7 @@ from pathlib import Path
 if __package__:
     from .visual_harness_cli import parse_args
     from .visual_motion import run_motion_sweep
+    from .visual_processes import ProcessError, processes, steam_client
     from .visual_protocol import (
         Acknowledgement,
         Capture,
@@ -48,6 +49,7 @@ if __package__:
 else:
     from visual_harness_cli import parse_args
     from visual_motion import run_motion_sweep
+    from visual_processes import ProcessError, processes, steam_client
     from visual_protocol import (
         Acknowledgement,
         Capture,
@@ -141,6 +143,7 @@ class VisualHarness:
         if sum((self.options.suite, self.options.orientation_sweep, self.options.motion_sweep, self.options.smoke, self.options.launch_only)) > 1:
             raise HarnessError("visual harness: --suite, --orientation-sweep, --smoke, and --launch-only are mutually exclusive")
         self.reject_existing()
+        self.require_steam_client()
         if self.options.output is not None:
             output = self.options.output.expanduser().resolve()
             if output.exists() and (not output.is_dir() or any(output.iterdir())):
@@ -498,24 +501,20 @@ class VisualHarness:
 
     @staticmethod
     def reject_existing():
-        found = []
-        for pid in Path("/proc").iterdir():
-            if not pid.name.isdecimal():
-                continue
-            try:
-                comm = (pid / "comm").read_text().strip().lower()
-                argv = (pid / "cmdline").read_bytes().split(b"\0")
-            except (FileNotFoundError, ProcessLookupError):
-                continue
-            except PermissionError:
-                if pid.stat().st_uid == os.getuid():
-                    raise HarnessError(f"visual harness: cannot inspect process {pid.name}")
-                continue
-            names = {Path(os.fsdecode(arg).replace("\\", "/")).name.lower() for arg in argv if arg}
-            if comm.startswith(("justcause3", "monado-service", "wivrn-server")) or names.intersection({"justcause3.exe", "monado-service", "wivrn-server"}):
-                found.append(f"{pid.name} ({comm})")
-        if found:
-            raise HarnessError(f"visual harness: refusing to coexist with a game or Monado service: {', '.join(found)}")
+        try:
+            if found := [f"{process.pid} ({process.comm})" for process in processes() if process.conflicts]:
+                raise HarnessError(f"visual harness: refusing to coexist with a game or Monado service: {', '.join(found)}")
+        except ProcessError as error:
+            raise HarnessError(str(error)) from error
+
+    @staticmethod
+    def require_steam_client():
+        try:
+            client = steam_client()
+        except ProcessError as error:
+            raise HarnessError(str(error)) from error
+        if client is None:
+            raise HarnessError("visual harness: Steam client is not running; start Steam and sign in before launching the visual harness")
 
     def _library(self):
         if os.environ.get("JC3_LIBRARY"):

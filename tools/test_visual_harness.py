@@ -45,6 +45,7 @@ class RunnerTests(unittest.TestCase):
         manifest.write_text(json.dumps({"runtime": {"library_path": str(library)}}))
         with patch("tools.visual_harness.MANIFEST", manifest), \
                 patch.object(runner, "reject_existing"), \
+                patch.object(runner, "require_steam_client"), \
                 patch.object(runner, "_library", return_value=self.root), \
                 patch.object(runner, "_xrizer", return_value=self.root), \
                 patch.object(runner, "_gpu", return_value="10de:2b85"), \
@@ -60,6 +61,17 @@ class RunnerTests(unittest.TestCase):
         self.assertIsNone(runner.runtime)
         self.assertIsNone(runner.env)
         self.assertIsNone(runner.work)
+
+    def test_check_rejects_missing_steam_client(self):
+        runner = VisualHarness(Options(no_build=True))
+        with patch.object(runner, "reject_existing"), \
+                patch("tools.visual_harness.steam_client", return_value=None), \
+                self.assertRaisesRegex(HarnessError, "Steam client is not running; start Steam and sign in"):
+            runner.check()
+
+    def test_require_steam_client_accepts_a_running_client(self):
+        with patch("tools.visual_harness.steam_client", return_value=object()):
+            self.runner.require_steam_client()
 
     def test_preview_follows_a_run_even_when_startup_fails(self):
         output = self.root / "preview-run"
@@ -342,7 +354,8 @@ class RunnerTests(unittest.TestCase):
     def test_output_rejects_stale_artifacts_before_launch(self):
         self.runner.options.output = self.root
         (self.root / "stale.json").write_text("{}")
-        with (patch.object(self.runner, "reject_existing"), patch.object(self.runner, "_spawn") as spawn,
+        with (patch.object(self.runner, "reject_existing"), patch.object(self.runner, "require_steam_client"),
+              patch.object(self.runner, "_spawn") as spawn,
               self.assertRaisesRegex(HarnessError, "empty directory")):
             self.runner.check()
         spawn.assert_not_called()
