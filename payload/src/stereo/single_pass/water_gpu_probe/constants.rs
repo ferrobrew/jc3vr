@@ -1,11 +1,13 @@
 use std::fmt::Write as _;
 
 use anyhow::{Context, Result};
+use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
 use windows::{
     Win32::Graphics::Direct3D11::{
-        D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
-        D3D11_USAGE_STAGING, ID3D11Buffer, ID3D11DeviceContext, ID3D11Resource,
-        ID3D11ShaderResourceView,
+        D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_DEPTH_STENCIL_VIEW_DESC, D3D11_MAP_READ,
+        D3D11_MAPPED_SUBRESOURCE, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, ID3D11Buffer,
+        ID3D11DepthStencilView, ID3D11DeviceContext, ID3D11Resource, ID3D11ShaderResourceView,
+        ID3D11Texture2D,
     },
     core::Interface,
 };
@@ -98,6 +100,7 @@ impl SrvSlot {
 }
 
 pub(super) unsafe fn capture(ctx: &ID3D11DeviceContext, context: ProbeContext) {
+    log_depth_target(ctx, context);
     for (stage, slot) in [
         (ShaderStage::Vertex, Slot::MVP),
         (ShaderStage::Domain, Slot::MVP),
@@ -253,6 +256,116 @@ fn log_srvs(ctx: &ID3D11DeviceContext, context: ProbeContext) {
         context.frame.display_time(),
         context.frame.visual_generation,
     );
+}
+
+/// Logs the identity of the depth-stencil target the draw is bound against, next to the graphics
+/// engine's own depth textures, so a capture can tell whether the depth bracket generated against
+/// the same resource the draw reads.
+fn log_depth_target(ctx: &ID3D11DeviceContext, context: ProbeContext) {
+    let mut dsv: Option<ID3D11DepthStencilView> = None;
+    // SAFETY: the getter only reads this live immediate context's bound state.
+    unsafe { ctx.OMGetRenderTargets(None, Some(&mut dsv)) };
+    let Some(dsv) = dsv else {
+        tracing::info!(
+            target: "water_probe",
+            "water probe: depth target pass={} eye={} invocation={} predicted_display_time_ns={} \
+             generation={} dsv=none",
+            context.pass,
+            context.eye,
+            context.invocation,
+            context.frame.display_time(),
+            context.frame.visual_generation,
+        );
+        return;
+    };
+    let dsv_pointer = dsv.as_raw() as usize;
+    let mut view = D3D11_DEPTH_STENCIL_VIEW_DESC::default();
+    // SAFETY: `dsv` is live; `GetDesc` only writes the out parameter.
+    unsafe { dsv.GetDesc(&mut view) };
+    let resource = unsafe { dsv.GetResource() }.ok();
+    let resource_pointer = resource.as_ref().map_or(0, |r| r.as_raw() as usize);
+    let texture = resource
+        .as_ref()
+        .and_then(|r| r.cast::<ID3D11Texture2D>().ok());
+    let mut desc = D3D11_TEXTURE2D_DESC::default();
+    if let Some(texture) = &texture {
+        // SAFETY: `texture` is live; `GetDesc` only writes the out parameter.
+        unsafe { texture.GetDesc(&mut desc) };
+    }
+    let (main_depth, render_depth) = typed_depth_targets();
+    tracing::info!(
+        target: "water_probe",
+        "water probe: depth target pass={} eye={} invocation={} predicted_display_time_ns={} \
+         generation={} dsv={:#x} dsv_format={:?} dsv_dimension={:?} dsv_flags={:#x} \
+         resource={:#x} texture2d={} width={} height={} format={:?} mips={} array_size={} \
+         sample_count={} sample_quality={} main_depth_texture={:#x} main_depth_resource={:#x} \
+         main_depth_dsv={:#x} main_depth_format={:?} render_depth_texture={:#x} \
+         render_depth_resource={:#x} matches_main_depth={} matches_render_depth={}",
+        context.pass,
+        context.eye,
+        context.invocation,
+        context.frame.display_time(),
+        context.frame.visual_generation,
+        dsv_pointer,
+        view.Format,
+        view.ViewDimension,
+        view.Flags,
+        resource_pointer,
+        texture.is_some(),
+        desc.Width,
+        desc.Height,
+        desc.Format,
+        desc.MipLevels,
+        desc.ArraySize,
+        desc.SampleDesc.Count,
+        desc.SampleDesc.Quality,
+        main_depth.texture,
+        main_depth.resource,
+        main_depth.dsv,
+        main_depth.format,
+        render_depth.texture,
+        render_depth.resource,
+        resource_pointer != 0 && resource_pointer == main_depth.resource,
+        resource_pointer != 0 && resource_pointer == render_depth.resource,
+    );
+}
+
+/// The graphics engine's depth textures, reduced to the raw identity of the COM objects they hold.
+#[derive(Clone, Copy, Default)]
+struct TypedDepthTarget {
+    texture: usize,
+    resource: usize,
+    dsv: usize,
+    format: u32,
+}
+
+fn typed_depth_targets() -> (TypedDepthTarget, TypedDepthTarget) {
+    let Some(ge) = (unsafe { GraphicsEngine::get() }) else {
+        return (TypedDepthTarget::default(), TypedDepthTarget::default());
+    };
+    // SAFETY: the engine's texture pointers are only read here, and the raw interface pointers are
+    // borrowed for the duration of this call.
+    unsafe {
+        (
+            typed_depth_target(ge.m_MainDepthTexture),
+            typed_depth_target(ge.m_RenderContext.m_DepthBufferTexture),
+        )
+    }
+}
+
+/// # Safety
+///
+/// `texture` must be null or a live engine texture.
+unsafe fn typed_depth_target(texture: *mut Texture) -> TypedDepthTarget {
+    let Some(texture) = (unsafe { texture.as_ref() }) else {
+        return TypedDepthTarget::default();
+    };
+    TypedDepthTarget {
+        texture: texture as *const Texture as usize,
+        resource: texture.m_Texture.as_raw() as usize,
+        dsv: texture.m_DSV.as_raw() as usize,
+        format: texture.m_Format,
+    }
 }
 
 #[cfg(test)]
