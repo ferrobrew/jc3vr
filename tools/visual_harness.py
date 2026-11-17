@@ -21,6 +21,8 @@ import zlib
 from pathlib import Path
 
 if __package__:
+    from .visual_harness_cli import parse_args
+    from .visual_motion import run_motion_sweep
     from .visual_protocol import (
         Acknowledgement,
         Capture,
@@ -31,6 +33,7 @@ if __package__:
         Mode,
         NativeCapture,
         Outcome,
+        PhaseCapture,
         ProtocolError,
         Request,
         RunOutcome,
@@ -42,8 +45,9 @@ if __package__:
     )
     from .visual_suite import SuiteError, run_orientation_sweep, run_suite
     from .visual_viewer import DEFAULT_POINTER, publish_run
-    from .visual_harness_cli import parse_args
 else:
+    from visual_harness_cli import parse_args
+    from visual_motion import run_motion_sweep
     from visual_protocol import (
         Acknowledgement,
         Capture,
@@ -54,6 +58,7 @@ else:
         Mode,
         NativeCapture,
         Outcome,
+        PhaseCapture,
         ProtocolError,
         Request,
         RunOutcome,
@@ -65,8 +70,6 @@ else:
     )
     from visual_suite import SuiteError, run_orientation_sweep, run_suite
     from visual_viewer import DEFAULT_POINTER, publish_run
-    from visual_harness_cli import parse_args
-
 
 LOG = logging.getLogger("visual_harness")
 ROOT = Path(__file__).resolve().parents[1]
@@ -94,6 +97,7 @@ class Options:
     launch_only: bool = False
     suite: bool = False
     orientation_sweep: bool = False
+    motion_sweep: bool = False
     smoke: bool = False
     samples: int = 3
     warmup_frames: int = 30
@@ -134,8 +138,7 @@ class VisualHarness:
             raise HarnessError("visual harness: samples must be an integer of at least three")
         if type(self.options.warmup_frames) is not int or not 1 <= self.options.warmup_frames <= 300:
             raise HarnessError("visual harness: warmup_frames must be an integer from 1 through 300")
-        if sum((self.options.suite, self.options.orientation_sweep, self.options.smoke,
-                self.options.launch_only)) > 1:
+        if sum((self.options.suite, self.options.orientation_sweep, self.options.motion_sweep, self.options.smoke, self.options.launch_only)) > 1:
             raise HarnessError("visual harness: --suite, --orientation-sweep, --smoke, and --launch-only are mutually exclusive")
         self.reject_existing()
         if self.options.output is not None:
@@ -143,7 +146,7 @@ class VisualHarness:
             if output.exists() and (not output.is_dir() or any(output.iterdir())):
                 raise HarnessError(f"visual harness: output must be an empty directory: {output}")
         commands = ("cp", "gamescope", "steam-run", "setpriv", "dbus-daemon", "nix-shell")
-        for command in commands + (("uv",) if self.options.suite or self.options.orientation_sweep else ()):
+        for command in commands + (("uv",) if self.options.suite or self.options.orientation_sweep or self.options.motion_sweep else ()):
             if not shutil.which(command):
                 raise HarnessError(f"visual harness: missing executable {command}")
         self.steam = Path(os.environ.get("STEAM_ROOT", "~/.steam/steam")).expanduser().resolve()
@@ -244,6 +247,8 @@ class VisualHarness:
                     callback = smoke
                 elif self.options.orientation_sweep:
                     callback = run_orientation_sweep
+                elif self.options.motion_sweep:
+                    callback = run_motion_sweep
                 elif self.options.suite:
                     callback = run_suite
                 else:
@@ -265,12 +270,12 @@ class VisualHarness:
     def smoke(self) -> SmokeResult:
         return default_smoke(self)
 
-    def screenshot(self, capture_id: str, mode: Mode | None = None, generation: int | None = None) -> NativeCapture | Capture:
-        result = self.request(Request(Command.SCREENSHOT, capture_id))
+    def screenshot(self, capture_id: str, mode: Mode | None = None, generation: int | None = None, motion_capture: PhaseCapture | None = None) -> NativeCapture | Capture:
+        result = self.request(Request(Command.SCREENSHOT, capture_id, motion_capture=motion_capture))
         if not isinstance(result, ScreenshotAck):
             raise ProtocolError("visual protocol: expected a screenshot acknowledgement")
         capture = validate_capture(self.config_dir / "captures", capture_id, result.capture,
-                                   mode=mode, generation=generation)
+                                   mode=mode, generation=generation, motion_capture=motion_capture)
         self.mark_gameplay_ready()
         return capture
 
@@ -288,7 +293,7 @@ class VisualHarness:
         temporary.write_text(request_value.to_toml())
         temporary.replace(request)
         self.pending_request = request_value
-        budget = 75 if command == Command.CONFIGURE else 35
+        budget = 75 if command == Command.CONFIGURE else 60 if command == Command.SCREENSHOT else 35
         end = min(self.deadline, time.monotonic() + budget)
         while not acknowledgement.exists():
             self.assert_running()
@@ -303,9 +308,12 @@ class VisualHarness:
             raise HarnessError(f"visual harness: {command} {request_id}: {error}") from error
         if isinstance(result, FailedAck):
             raise HarnessError(f"visual harness: {command} {request_id}: {result.error}")
-        if isinstance(result, ConfigurationAck) and request_value.pose is not None:
+        if isinstance(result, ConfigurationAck):
             try:
-                result.validate_pose(request_value)
+                if request_value.pose is not None:
+                    result.validate_pose(request_value)
+                if request_value.motion is not None:
+                    result.validate_motion(request_value)
             except ProtocolError as error:
                 raise HarnessError(f"visual harness: {command} {request_id}: {error}") from error
         return result
@@ -403,7 +411,6 @@ class VisualHarness:
             if self.gameplay_ready or remaining <= 0:
                 return None
             return self._command([self.xdotool, *arguments], name, min(command_timeout, remaining), env=env, check=False)
-
         windows = set()
         for selector in ("--class", "--name"):
             result = command(["search", "--onlyvisible", selector, "[Jj]ust.?[Cc]ause"], "menu-search")
@@ -854,15 +861,18 @@ def read_object(path):
     return value
 
 
-def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capture,
-                     mode: Mode | None = None, generation: int | None = None) -> NativeCapture | Capture:
+def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capture, mode: Mode | None = None,
+                     generation: int | None = None, motion_capture: PhaseCapture | None = None) -> NativeCapture | Capture:
     metadata = read_object(folder / f"{capture_id}.capture.json")
+    if motion_capture is not None and mode is None:
+        raise ProtocolError("visual protocol: motion capture requires a diagnostic mode")
     if mode is not None:
         if not isinstance(result, Capture):
             raise ProtocolError("visual protocol: expected a diagnostic capture")
         if Capture.from_wire(metadata) != result:
             raise ProtocolError("visual protocol: screenshot metadata disagrees with its acknowledgement")
-        result.validate(capture_id, mode, generation, validate_png(folder / f"{capture_id}.capture.png"))
+        result.validate(capture_id, mode, generation, validate_png(folder / f"{capture_id}.capture.png"),
+                        motion_capture=motion_capture)
         return result
     capture = NativeCapture(*(getattr(result, item.name) for item in dataclasses.fields(NativeCapture)))
     if NativeCapture.from_wire(metadata) != capture:

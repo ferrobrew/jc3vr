@@ -23,12 +23,26 @@ from PIL import Image
 
 if __package__:
     from tools.visual_compare_report import to_wire, write_reports
-    from tools.visual_protocol import DiagnosticProfile, PoseEvidence, PoseRequest, ProtocolError
-    from tools.visual_provenance import PoseProvenance, RunAnchor
+    from tools.visual_protocol import (
+        DiagnosticProfile,
+        ExpectedMotion,
+        MotionEvidence,
+        PoseEvidence,
+        PoseRequest,
+        ProtocolError,
+    )
+    from tools.visual_provenance import MotionProvenance, PoseProvenance, RunAnchor
 else:
     from visual_compare_report import to_wire, write_reports
-    from visual_protocol import DiagnosticProfile, PoseEvidence, PoseRequest, ProtocolError
-    from visual_provenance import PoseProvenance, RunAnchor
+    from visual_protocol import (
+        DiagnosticProfile,
+        ExpectedMotion,
+        MotionEvidence,
+        PoseEvidence,
+        PoseRequest,
+        ProtocolError,
+    )
+    from visual_provenance import MotionProvenance, PoseProvenance, RunAnchor
 
 
 class Mode(StrEnum):
@@ -168,6 +182,7 @@ class VisualReadiness:
     warmup_frames: int
     completed_frames: int
     pose: PoseEvidence | None = None
+    motion: MotionEvidence | None = None
 
     @classmethod
     def from_wire(cls, value):
@@ -195,6 +210,12 @@ class VisualReadiness:
                 pose = PoseEvidence.from_wire(value.get("pose"))
             except ProtocolError as error:
                 raise ValueError(f"metadata.visual.pose: {error}") from error
+        motion = None
+        if value.get("motion") is not None:
+            try:
+                motion = MotionEvidence.from_wire(value.get("motion"))
+            except ProtocolError as error:
+                raise ValueError(f"metadata.visual.motion: {error}") from error
         return cls(
             integer(value, "generation"),
             profile,
@@ -205,6 +226,7 @@ class VisualReadiness:
             warmup,
             completed,
             pose,
+            motion,
         )
 
 
@@ -259,12 +281,22 @@ class CaptureMetadata:
                 readiness.pose.validate_applied(inputs.camera)
             except ProtocolError as error:
                 raise ValueError(f"metadata.visual.pose: {error}") from error
+        predicted = integer(value, "predicted_display_time_ns", minimum=None)
+        if readiness.motion is not None:
+            if readiness.pose is None:
+                raise ValueError("metadata.visual.motion: missing pose evidence")
+            try:
+                readiness.motion.validate_capture(readiness.motion.request, readiness.motion.phase,
+                                                  readiness.pose.anchor, readiness.pose,
+                                                  inputs.camera, predicted)
+            except ProtocolError as error:
+                raise ValueError(f"metadata.visual.motion: {error}") from error
         return cls(
             text(value, "id"),
             mode,
             readiness,
             integer(value, "frame_ordinal"),
-            integer(value, "predicted_display_time_ns", minimum=None),
+            predicted,
             integer(value, "width"),
             integer(value, "height"),
             integer(value, "eye_width"),
@@ -330,6 +362,7 @@ class Case:
     name: str
     modes: tuple[ModeSamples, ...]
     expected_pose: PoseRequest | None = None
+    expected_motion: ExpectedMotion | None = None
 
     @classmethod
     def from_wire(cls, value):
@@ -350,7 +383,15 @@ class Case:
                 expected_pose = PoseRequest.from_wire(value.get("expected_pose"))
             except ProtocolError as error:
                 raise ValueError(f"case.expected_pose: {error}") from error
-        return cls(text(value, "name"), tuple(parsed), expected_pose)
+        expected_motion = None
+        if value.get("expected_motion") is not None:
+            try:
+                expected_motion = ExpectedMotion.from_wire(value.get("expected_motion"))
+            except ProtocolError as error:
+                raise ValueError(f"case.expected_motion: {error}") from error
+        if expected_pose is not None and expected_motion is not None:
+            raise ValueError("case: expected_pose and expected_motion are mutually exclusive")
+        return cls(text(value, "name"), tuple(parsed), expected_pose, expected_motion)
 
 
 @dataclass(frozen=True)
@@ -611,6 +652,7 @@ def aggregate_status(statuses):
 def analyze_case(case, root, output, case_index, report, tile_size, top_tiles, run_anchor=None):
     result = CaseReport(case.name)
     provenance = PoseProvenance(case.expected_pose)
+    motion_provenance = MotionProvenance(case.expected_motion)
     required = (Mode.LEFT_ONLY, Mode.RIGHT_ONLY, Mode.MULTIPASS, Mode.SINGLE_PASS)
     modes = required + (
         (Mode.REVERSE_MULTIPASS,)
@@ -639,6 +681,8 @@ def analyze_case(case, root, output, case_index, report, tile_size, top_tiles, r
                     seen_paths.add(path)
                 sample = load_sample(root, mode, index, entry)
                 provenance.add(sample.visual.pose, sample.inputs.camera)
+                motion_provenance.add(sample.visual.motion, sample.visual.pose, sample.inputs.camera,
+                                      sample.predicted_display_time_ns, mode)
                 if any(
                     sample.capture_id == prior.capture_id
                     for prior in mode_report.samples
@@ -674,8 +718,11 @@ def analyze_case(case, root, output, case_index, report, tile_size, top_tiles, r
             mode_report.errors.append("same-mode repeatability is unstable or invalid")
     try:
         provenance.finish()
-        if run_anchor is not None and provenance.anchor is not None:
-            run_anchor.require(provenance.anchor)
+        motion_provenance.finish()
+        if run_anchor is not None:
+            for candidate in (provenance.anchor, motion_provenance.anchor):
+                if candidate is not None:
+                    run_anchor.require(candidate)
     except ValueError as error:
         for mode_report in result.modes:
             mode_report.errors.append(str(error))

@@ -1,7 +1,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::Ordering,
         mpsc::{Receiver, TryRecvError},
     },
     time::{Duration, Instant},
@@ -27,6 +27,7 @@ use crate::{
         read_back,
     },
     stereo::dispatch::{self, RenderMode},
+    testing::visual::{HISTORY_FRAMES, VisualMetadata},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -48,6 +49,31 @@ impl RequestId {
 }
 
 pub(crate) fn request(id: RequestId) {
+    request_with_phase(id, None);
+}
+
+pub(crate) fn request_motion(id: RequestId, phase: u32) {
+    let Some(period) = crate::testing::visual::motion_period() else {
+        reject(
+            &id,
+            "screenshot harness: motion capture requires an active visual motion",
+        );
+        return;
+    };
+    if phase >= period {
+        reject(
+            &id,
+            &format!(
+                "screenshot harness: motion capture phase {phase} is outside the active motion \
+                 period {period}"
+            ),
+        );
+        return;
+    }
+    request_with_phase(id, Some(phase));
+}
+
+fn request_with_phase(id: RequestId, target_phase: Option<u32>) {
     let Some(folder) = crate::config::paths::dir().map(|dir| dir.join("captures")) else {
         tracing::error!("screenshot harness: no configuration directory");
         return;
@@ -63,14 +89,54 @@ pub(crate) fn request(id: RequestId) {
     let result = readiness();
     let after = frame_identity();
     let mut state = STATE.lock();
-    admit(&mut state, id, folder, after, result);
-    PENDING.store(
-        state
-            .active
-            .as_ref()
-            .is_some_and(|a| matches!(a.phase, Phase::Pending)),
-        Ordering::Release,
-    );
+    admit(&mut state, id, folder, after, result, target_phase);
+    sync_pending(&state);
+}
+
+fn reject(id: &RequestId, error: &str) {
+    let Some(folder) = crate::config::paths::dir().map(|dir| dir.join("captures")) else {
+        tracing::error!("screenshot harness: no configuration directory");
+        return;
+    };
+    let result_path = folder.join(format!("{}.json", id.0));
+    if result_path.exists() {
+        tracing::warn!(
+            "screenshot harness: id {} already has a result; use a unique id",
+            id.0
+        );
+        return;
+    }
+    if STATE
+        .lock()
+        .active
+        .as_ref()
+        .is_some_and(|active| &active.id == id)
+    {
+        tracing::warn!(
+            "screenshot harness: id {} is already outstanding; not overwriting it",
+            id.0
+        );
+        return;
+    }
+    let result = CaptureMetadata {
+        id: id.0.clone(),
+        state: CaptureState::Failed,
+        readiness: readiness(),
+        capture: None,
+        error: Some(error.to_owned()),
+    };
+    publish_logged(&result_path, &result);
+}
+
+fn sync_pending(state: &State) {
+    let pending = match state.active.as_ref() {
+        Some(active) if matches!(active.phase, Phase::Pending) => match active.target_phase {
+            Some(phase) => phase,
+            None => ANY_PHASE,
+        },
+        _ => NO_PENDING,
+    };
+    PENDING_STATE.store(pending, Ordering::Release);
 }
 
 fn admit(
@@ -79,6 +145,7 @@ fn admit(
     folder: PathBuf,
     after: Option<i64>,
     readiness: Readiness,
+    target_phase: Option<u32>,
 ) {
     let result_path = folder.join(format!("{}.json", id.0));
     let mut result = CaptureMetadata {
@@ -116,11 +183,16 @@ fn admit(
         phase: Phase::Pending,
         result,
         reported: false,
+        target_phase,
     });
 }
 
 pub(crate) fn wants_eyes() -> bool {
-    PENDING.load(Ordering::Acquire)
+    match PENDING_STATE.load(Ordering::Acquire) {
+        NO_PENDING => false,
+        ANY_PHASE => true,
+        phase => crate::testing::visual::capture_phase_due(phase),
+    }
 }
 
 pub(crate) fn note_eye(eye: usize, copied: bool) {
@@ -148,17 +220,45 @@ pub(crate) fn capture(
     let effective_config = crate::config::get();
     let mode = dispatch::mode();
     let selected_eye = mode.selected_eye();
-    let visual = crate::testing::visual::metadata();
-    if mode != RenderMode::Native && !crate::testing::visual::ready() {
-        return;
-    }
+    let target_phase = match PENDING_STATE.load(Ordering::Acquire) {
+        NO_PENDING | ANY_PHASE => None,
+        phase => Some(phase),
+    };
+    let visual = match target_phase {
+        Some(_) => {
+            let Some(frame) = frame else {
+                return;
+            };
+            crate::testing::visual::capture_metadata(frame)
+        }
+        None => {
+            let visual = crate::testing::visual::metadata();
+            if mode != RenderMode::Native && !visual.ready {
+                return;
+            }
+            visual
+        }
+    };
     let mut state = STATE.lock();
     let fresh = state.eyes.map(|eye| frame.is_some() && eye == frame);
     let Some(active) = state.active.as_mut() else {
         return;
     };
-    if !matches!(active.phase, Phase::Pending) {
+    if !matches!(active.phase, Phase::Pending) || active.target_phase != target_phase {
         return;
+    }
+    if let Some(target) = active.target_phase {
+        let Some(frame) = frame else {
+            return;
+        };
+        if let Err(error) = motion_capture_gate(&visual, target, frame) {
+            active.result.state = CaptureState::Failed;
+            active.result.error = Some(error);
+            publish_logged(&active.result_path(), &active.result);
+            state.active = None;
+            sync_pending(&state);
+            return;
+        }
     }
     if !eligible(
         running,
@@ -171,7 +271,7 @@ pub(crate) fn capture(
     ) {
         return;
     }
-    PENDING.store(false, Ordering::Release);
+    PENDING_STATE.store(NO_PENDING, Ordering::Release);
     let source_name = match &source {
         CaptureSource::Full(_) if selected_eye.is_some() => CaptureKind::IsolatedEye,
         CaptureSource::Full(_) => CaptureKind::CollapsedBackBuffer,
@@ -192,7 +292,12 @@ pub(crate) fn capture(
     let png = active.folder.join(format!("{}.capture.png", active.id.0));
     let metadata = png.with_extension("json");
     let eye_width = capture.image.width() / if selected_eye.is_some() { 1 } else { 2 };
-    let comparison_inputs = comparison_inputs(eye_width, capture.image.height(), &visual);
+    let comparison_inputs = comparison_inputs(
+        eye_width,
+        capture.image.height(),
+        &visual,
+        active.target_phase.is_some(),
+    );
     active.result.state = CaptureState::Captured;
     active.result.readiness = readiness();
     let (stage_records, stage_images) = stages::take(frame.unwrap());
@@ -246,13 +351,7 @@ pub(crate) fn tick() {
     let latest_readiness = wants_eyes().then(readiness);
     let mut state = STATE.lock();
     advance(&mut state, Instant::now(), latest_readiness);
-    PENDING.store(
-        state
-            .active
-            .as_ref()
-            .is_some_and(|a| matches!(a.phase, Phase::Pending)),
-        Ordering::Release,
-    );
+    sync_pending(&state);
 }
 
 fn advance(state: &mut State, now: Instant, latest_readiness: Option<Readiness>) {
@@ -328,7 +427,9 @@ fn advance(state: &mut State, now: Instant, latest_readiness: Option<Readiness>)
 }
 
 const TIMEOUT: Duration = Duration::from_secs(30);
-static PENDING: AtomicBool = AtomicBool::new(false);
+const NO_PENDING: u32 = u32::MAX;
+const ANY_PHASE: u32 = u32::MAX - 1;
+static PENDING_STATE: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(NO_PENDING);
 static STATE: Mutex<State> = Mutex::new(State {
     active: None,
     eyes: [None; 2],
@@ -349,6 +450,7 @@ struct Active {
     phase: Phase,
     result: CaptureMetadata,
     reported: bool,
+    target_phase: Option<u32>,
 }
 
 impl Active {
@@ -408,15 +510,58 @@ fn required_eyes_fresh(selected: Option<usize>, fresh: [bool; 2]) -> bool {
         .all(|(required, fresh)| !required || fresh)
 }
 
+fn motion_capture_gate(visual: &VisualMetadata, target: u32, frame: i64) -> Result<(), String> {
+    if let Some(error) = &visual.error {
+        return Err(error.clone());
+    }
+    if !visual.ready {
+        return Err("screenshot harness: visual control is not ready".to_owned());
+    }
+    let Some(motion) = &visual.motion else {
+        return Err(
+            "screenshot harness: motion capture requires an active visual motion".to_owned(),
+        );
+    };
+    if motion.phase != target {
+        return Err(format!(
+            "screenshot harness: motion capture requested phase {target}, but the frame rendered \
+             phase {}",
+            motion.phase
+        ));
+    }
+    if motion.rendered_frame != frame {
+        return Err(format!(
+            "screenshot harness: motion capture frame {frame} does not match the scheduler's \
+             rendered frame {}",
+            motion.rendered_frame
+        ));
+    }
+    if motion.cycle < 1 || motion.history.len() < HISTORY_FRAMES {
+        return Err(format!(
+            "screenshot harness: motion capture phase {target} lacks a completed cycle and \
+             {HISTORY_FRAMES} prior motion frames"
+        ));
+    }
+    Ok(())
+}
+
 fn comparison_inputs(
     eye_width: u32,
     eye_height: u32,
-    visual: &crate::testing::visual::VisualMetadata,
+    visual: &VisualMetadata,
+    motion: bool,
 ) -> ComparisonInputs {
-    let camera = crate::vr::pose_control::current().map(|pose| CameraInput {
-        position: pose.position.to_array(),
-        orientation: pose.orientation().to_array(),
-    });
+    let camera = if motion {
+        visual.pose.as_ref().map(|pose| CameraInput {
+            position: pose.applied.position,
+            orientation: pose.applied.orientation,
+        })
+    } else {
+        crate::vr::pose_control::current().map(|pose| CameraInput {
+            position: pose.position.to_array(),
+            orientation: pose.orientation().to_array(),
+        })
+    };
     let eyes = [0, 1].map(|eye| {
         crate::vr::render_params(eye).map(|params| EyeInput {
             offset: params.local_offset.to_array(),
@@ -476,6 +621,7 @@ mod tests {
             folder.0.clone(),
             None,
             test_readiness(),
+            None,
         );
         let result: serde_json::Value =
             serde_json::from_slice(&std::fs::read(folder.0.join("second-id.json")).unwrap())
@@ -489,6 +635,7 @@ mod tests {
             folder.0.clone(),
             None,
             test_readiness(),
+            None,
         );
         assert!(!folder.result().exists());
         assert!(matches!(state.active.unwrap().phase, Phase::Pending));
@@ -606,6 +753,7 @@ mod tests {
                         error: None,
                     },
                     reported: false,
+                    target_phase: None,
                 }),
                 eyes: [None; 2],
                 ordinal: 0,
@@ -695,5 +843,66 @@ mod tests {
             [true; 2],
             None
         ));
+    }
+    #[test]
+    fn motion_capture_gate_requires_the_phase_full_cycle_and_eight_prior_frames() {
+        assert!(motion_capture_gate(&motion_visual(7, 1, 8, 42), 7, 42).is_ok());
+        assert!(motion_capture_gate(&motion_visual(7, 0, 8, 42), 7, 42).is_err());
+        assert!(motion_capture_gate(&motion_visual(7, 1, 7, 42), 7, 42).is_err());
+        assert!(motion_capture_gate(&motion_visual(6, 1, 8, 42), 7, 42).is_err());
+        assert!(motion_capture_gate(&motion_visual(7, 1, 8, 41), 7, 42).is_err());
+        let mut errored = motion_visual(7, 1, 8, 42);
+        errored.error = Some("visual motion: missing stamp".to_owned());
+        assert!(motion_capture_gate(&errored, 7, 42).is_err());
+        let mut not_ready = motion_visual(7, 1, 8, 42);
+        not_ready.ready = false;
+        assert!(motion_capture_gate(&not_ready, 7, 42).is_err());
+        let mut no_motion = motion_visual(7, 1, 8, 42);
+        no_motion.motion = None;
+        assert!(motion_capture_gate(&no_motion, 7, 42).is_err());
+    }
+
+    fn motion_visual(phase: u32, cycle: u64, history: usize, frame: i64) -> VisualMetadata {
+        use crate::testing::visual::{
+            DiagnosticProfile, MotionMetadata, MotionRequest, PoseTransform,
+            RequestId as VisualRequestId, motion::MotionHistoryEntry,
+        };
+        let request = MotionRequest::new(
+            VisualRequestId::parse("motion-sweep").unwrap(),
+            32,
+            10.0,
+            5.0,
+            2.5,
+        )
+        .unwrap();
+        VisualMetadata {
+            generation: 1,
+            mode: Some(RenderMode::Multipass),
+            profile: DiagnosticProfile::ControlledV2,
+            ready: true,
+            paused: true,
+            frozen: true,
+            error: None,
+            warmup_frames: 1,
+            completed_frames: 1,
+            engine_dimensions: Some((4096, 2048)),
+            pose: None,
+            motion: Some(MotionMetadata {
+                request,
+                phase,
+                cycle,
+                rendered_frame: frame,
+                history: (0..history)
+                    .map(|index| MotionHistoryEntry {
+                        phase: index as u32,
+                        rendered_frame: frame - (history - index) as i64,
+                        applied: PoseTransform {
+                            position: [0.0; 3],
+                            orientation: [0.0, 0.0, 0.0, 1.0],
+                        },
+                    })
+                    .collect(),
+            }),
+        }
     }
 }

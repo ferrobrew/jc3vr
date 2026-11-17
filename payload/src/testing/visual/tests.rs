@@ -2,6 +2,7 @@ use glam::{Quat, Vec3};
 use pretty_assertions::assert_eq;
 
 use super::*;
+use crate::testing::visual::pose::orientations_match;
 
 fn observation(state: &State, ordinal: i64) -> FrameObservation {
     FrameObservation {
@@ -704,4 +705,192 @@ fn pose_evidence_serializes_the_agreed_wire_shape() {
     assert_eq!(json["anchor"]["orientation"].as_array().unwrap().len(), 4);
     assert_eq!(json["applied"]["position"].as_array().unwrap().len(), 3);
     assert_eq!(json["applied"]["orientation"].as_array().unwrap().len(), 4);
+}
+
+fn motion_request(period_frames: u32) -> MotionRequest {
+    MotionRequest::new(
+        RequestId::parse("motion-sweep").unwrap(),
+        period_frames,
+        10.0,
+        5.0,
+        2.5,
+    )
+    .unwrap()
+}
+
+fn motion_state(mode: Mode, warmup_frames: u32, period_frames: u32) -> State {
+    let mut state = warming(mode, warmup_frames);
+    let request = motion_request(period_frames);
+    state.requested_motion = Some(request.clone());
+    state.motion = Some(MotionState::new(request));
+    state
+}
+
+fn complete_motion_frame(state: &mut State, frame: i64, base: PoseValues, applied: PoseValues) {
+    let request = state.requested_motion.clone().unwrap();
+    let observed = observation(state, frame);
+    state.complete_motion(&request, observed, Some((base, applied)), true);
+}
+
+#[test]
+fn motion_preroll_holds_the_anchor_before_phase_zero_starts() {
+    let base = base_pose();
+    let mut state = motion_state(Mode::Multipass, 2, 32);
+    for frame in 1..=2 {
+        complete_motion_frame(&mut state, frame, base, base);
+        let motion = state.motion.as_ref().unwrap();
+        assert_eq!(motion.phase(), 0);
+        assert!(motion.history().is_empty());
+        assert!(!motion.running() || state.ready);
+    }
+    assert!(state.ready);
+    let metadata = state.metadata();
+    let motion = metadata.motion.as_ref().unwrap();
+    assert_eq!(motion.phase, 0);
+    assert_eq!(motion.cycle, 0);
+    assert!(motion.history.is_empty());
+    assert_eq!(metadata.pose.as_ref().unwrap().offset.yaw_deg, 0.0);
+}
+
+#[test]
+fn motion_phases_advance_once_per_distinct_completed_frame_and_wrap() {
+    let base = base_pose();
+    let request = motion_request(32);
+    let mut state = motion_state(Mode::Multipass, 1, 32);
+    complete_motion_frame(&mut state, 1, base, base);
+    for phase in 0..32 {
+        let target = request.target(base, phase);
+        complete_motion_frame(&mut state, phase as i64 + 2, base, target);
+        let motion = state.motion.as_ref().unwrap();
+        assert_eq!(motion.phase(), (phase + 1) % 32);
+        assert_eq!(
+            motion.history().len(),
+            (phase as usize + 1).min(HISTORY_FRAMES)
+        );
+        assert_eq!(motion.history().back().unwrap().phase, phase);
+        assert_eq!(
+            motion.history().back().unwrap().applied,
+            PoseTransform::from(target)
+        );
+    }
+    let motion = state.motion.as_ref().unwrap();
+    assert_eq!(motion.phase(), 0);
+    assert_eq!(motion.cycle(), 1);
+}
+
+#[test]
+fn a_duplicate_completed_frame_never_advances_motion_phase() {
+    let base = base_pose();
+    let request = motion_request(32);
+    let mut state = motion_state(Mode::Multipass, 1, 32);
+    complete_motion_frame(&mut state, 1, base, base);
+    complete_motion_frame(&mut state, 2, base, request.target(base, 0));
+    assert_eq!(state.motion.as_ref().unwrap().phase(), 1);
+    complete_motion_frame(&mut state, 2, base, request.target(base, 1));
+    assert_eq!(state.motion.as_ref().unwrap().phase(), 1);
+    assert_eq!(state.motion.as_ref().unwrap().history().len(), 1);
+}
+
+#[test]
+fn motion_preroll_tolerates_missing_stamps_but_running_motion_fails_closed() {
+    let base = base_pose();
+    let mut state = motion_state(Mode::Multipass, 1, 32);
+    let request = state.requested_motion.clone().unwrap();
+    let mut missing_stamp = observation(&state, 1);
+    missing_stamp.frame_identity = None;
+    state.complete_motion(&request, missing_stamp, None, true);
+    assert!(state.error.is_none());
+    assert_eq!(state.completed_frames, 0);
+    assert!(!state.ready);
+
+    let mut missing_render = observation(&state, 2);
+    missing_render.frame_identity = Some(2);
+    state.complete_motion(&request, missing_render, None, true);
+    assert!(state.error.is_none());
+    assert_eq!(state.completed_frames, 0);
+
+    complete_motion_frame(&mut state, 3, base, base);
+    assert!(state.ready);
+    assert!(state.motion.as_ref().unwrap().running());
+
+    let mut running_missing_stamp = observation(&state, 4);
+    running_missing_stamp.frame_identity = None;
+    state.complete_motion(&request, running_missing_stamp, None, true);
+    assert!(state.error.as_ref().unwrap().contains("rendered stamp"));
+    assert!(!state.ready);
+    assert!(state.requested_motion.is_none());
+    assert!(state.motion.is_none());
+}
+
+#[test]
+fn a_mismatched_rendered_pose_fails_motion_closed() {
+    let base = base_pose();
+    let mut state = motion_state(Mode::Multipass, 1, 32);
+    complete_motion_frame(&mut state, 1, base, base);
+    let wrong = PoseValues {
+        yaw_deg: base.yaw_deg + 1.0,
+        ..base
+    };
+    complete_motion_frame(&mut state, 2, base, wrong);
+    assert!(
+        state
+            .error
+            .as_ref()
+            .unwrap()
+            .contains("did not render phase")
+    );
+    assert!(!state.ready);
+    assert!(state.requested_motion.is_none());
+    assert!(state.motion.is_none());
+    assert!(state.pose.is_none());
+}
+
+#[test]
+fn restarting_motion_keeps_the_anchor_and_trajectory_but_clears_history() {
+    let base = base_pose();
+    let request = motion_request(32);
+    let mut state = motion_state(Mode::Multipass, 1, 32);
+    complete_motion_frame(&mut state, 1, base, base);
+    for frame in 2..=5 {
+        let phase = state.motion.as_ref().unwrap().phase();
+        let target = request.target(base, phase);
+        complete_motion_frame(&mut state, frame, base, target);
+    }
+    assert!(state.motion.as_ref().unwrap().cycle() == 0);
+    assert!(!state.motion.as_ref().unwrap().history().is_empty());
+    let first_phase = request.target(base, 0);
+
+    state.start(Operation::Configuring(active("motion-restart")));
+    state.requested_motion = Some(request.clone());
+    state.motion = Some(MotionState::new(request.clone()));
+    state.warmup_frames = 1;
+    complete_motion_frame(&mut state, 10, base, base);
+    let motion = state.motion.as_ref().unwrap();
+    assert_eq!(motion.phase(), 0);
+    assert_eq!(motion.cycle(), 0);
+    assert!(motion.history().is_empty());
+    assert_eq!(motion.anchor(), Some(base));
+    assert_eq!(request.target(base, 0), first_phase);
+    assert!(state.ready);
+}
+
+#[test]
+fn motion_metadata_for_a_capture_uses_the_frame_before_advance() {
+    let base = base_pose();
+    let request = motion_request(32);
+    let mut state = motion_state(Mode::Multipass, 1, 32);
+    complete_motion_frame(&mut state, 1, base, base);
+    for frame in 2..=34 {
+        let phase = state.motion.as_ref().unwrap().phase();
+        let target = request.target(base, phase);
+        complete_motion_frame(&mut state, frame, base, target);
+    }
+    let motion = state.motion.as_ref().unwrap();
+    assert_eq!(motion.phase(), 1);
+    let metadata = motion.metadata(35);
+    assert_eq!(metadata.phase, 1);
+    assert_eq!(metadata.cycle, 1);
+    assert_eq!(metadata.rendered_frame, 35);
+    assert_eq!(metadata.history.len(), HISTORY_FRAMES);
+    assert_eq!(metadata.history.last().unwrap().rendered_frame, 34);
 }

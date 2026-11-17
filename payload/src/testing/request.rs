@@ -73,7 +73,10 @@ enum Request {
     StopReplay,
     Scenario(PathBuf),
     StopScenario,
-    Screenshot(crate::screenshot::harness::RequestId),
+    Screenshot {
+        id: crate::screenshot::harness::RequestId,
+        motion: Option<u32>,
+    },
     Visual(visual::Request),
 }
 
@@ -96,7 +99,11 @@ enum RequestErrorKind {
     NoFolder,
     InvalidId(&'static str),
     InvalidPose(visual::PoseError),
+    InvalidMotion(visual::MotionError),
     PoseOnCommand(Command),
+    MotionOnCommand(Command),
+    MotionCaptureOnCommand(Command),
+    MotionWithPose,
     NoMode,
     InvalidMode,
     InvalidWarmup,
@@ -115,8 +122,27 @@ impl std::fmt::Display for RequestError {
             RequestErrorKind::NoPath(command) => write!(f, "{command:?} needs a path"),
             RequestErrorKind::InvalidId(reason) => write!(f, "invalid request id: {reason}"),
             RequestErrorKind::InvalidPose(error) => write!(f, "{error}"),
+            RequestErrorKind::InvalidMotion(error) => write!(f, "{error}"),
             RequestErrorKind::PoseOnCommand(command) => {
                 write!(f, "only visual_configure accepts a pose, not {command:?}")
+            }
+            RequestErrorKind::MotionOnCommand(command) => {
+                write!(
+                    f,
+                    "only visual_configure accepts a motion table, not {command:?}"
+                )
+            }
+            RequestErrorKind::MotionCaptureOnCommand(command) => {
+                write!(
+                    f,
+                    "only screenshot accepts a motion_capture table, not {command:?}"
+                )
+            }
+            RequestErrorKind::MotionWithPose => {
+                write!(
+                    f,
+                    "visual_configure accepts either a pose or a motion table, not both"
+                )
             }
             RequestErrorKind::NoMode => write!(f, "visual_configure needs a mode"),
             RequestErrorKind::InvalidMode => {
@@ -162,6 +188,14 @@ struct RequestFile {
     mode: Option<visual::RenderMode>,
     warmup_frames: Option<u32>,
     pose: Option<visual::PoseTable>,
+    motion: Option<visual::MotionTable>,
+    motion_capture: Option<MotionCaptureTable>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MotionCaptureTable {
+    phase: u32,
 }
 
 /// Claim before reading so cancellation and replacement cannot redirect the final unlink.
@@ -250,6 +284,32 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
         }
         None => None,
     };
+    let motion = match file.motion {
+        Some(table) => {
+            if file.command != Command::VisualConfigure {
+                return Err(error(RequestErrorKind::MotionOnCommand(file.command)));
+            }
+            Some(
+                visual::MotionRequest::try_from(table)
+                    .map_err(|reason| error(RequestErrorKind::InvalidMotion(reason)))?,
+            )
+        }
+        None => None,
+    };
+    if pose.is_some() && motion.is_some() {
+        return Err(error(RequestErrorKind::MotionWithPose));
+    }
+    let motion_capture = match file.motion_capture {
+        Some(table) => {
+            if file.command != Command::Screenshot {
+                return Err(error(RequestErrorKind::MotionCaptureOnCommand(
+                    file.command,
+                )));
+            }
+            Some(table.phase)
+        }
+        None => None,
+    };
     Ok(match file.command {
         Command::VisualConfigure | Command::VisualEnd => {
             let id = visual::RequestId::parse(file.id.as_deref().unwrap_or_default())
@@ -270,13 +330,17 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                     mode,
                     warmup_frames,
                     pose,
+                    motion,
                 }
             })
         }
-        Command::Screenshot => Request::Screenshot(
-            crate::screenshot::harness::RequestId::parse(file.id.as_deref().unwrap_or_default())
-                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
-        ),
+        Command::Screenshot => Request::Screenshot {
+            id: crate::screenshot::harness::RequestId::parse(
+                file.id.as_deref().unwrap_or_default(),
+            )
+            .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
+            motion: motion_capture,
+        },
         Command::Record => Request::Record,
         Command::StopRecording => Request::StopRecording,
         Command::Replay => Request::Replay {
@@ -296,7 +360,10 @@ fn act(request: Request) {
     tracing::info!(?request, "testing: request file");
     match request {
         Request::Visual(request) => visual::enqueue(request),
-        Request::Screenshot(id) => crate::screenshot::harness::request(id),
+        Request::Screenshot { id, motion } => match motion {
+            Some(phase) => crate::screenshot::harness::request_motion(id, phase),
+            None => crate::screenshot::harness::request(id),
+        },
         Request::Record => crate::recorder::tracking::request_start(),
         Request::StopRecording => crate::recorder::tracking::request_stop(),
         Request::Replay { path, options } => {
@@ -428,7 +495,7 @@ mod tests {
     fn screenshot_ids_are_required_and_path_safe() {
         assert!(matches!(
             read("command = 'screenshot'\nid = 'safe-ascii-id'"),
-            Ok(Request::Screenshot(_))
+            Ok(Request::Screenshot { motion: None, .. })
         ));
         for id in [
             "",
@@ -651,6 +718,157 @@ mod tests {
         ));
         assert!(matches!(
             read("command = \"launch\""),
+            Err(RequestErrorKind::Parse(_))
+        ));
+    }
+    #[test]
+    fn motion_tables_validate_period_amplitude_and_shape() {
+        let header = "command = 'visual_configure'\nid = 'configure-motion'\nmode = 'multipass'\n";
+        for period in [32, 300, 600] {
+            let text = format!(
+                "{header}[motion]\ncase_id = 'motion-sweep'\nperiod_frames = {period}\nyaw_deg = 10.0\npitch_deg = 5.0\nroll_deg = 2.5"
+            );
+            assert!(matches!(
+                read(&text),
+                Ok(Request::Visual(visual::Request::Configure {
+                    motion: Some(_),
+                    pose: None,
+                    ..
+                }))
+            ));
+        }
+        for period in [0, 1, 2, 31, 601, -1] {
+            let text = format!(
+                "{header}[motion]\ncase_id = 'motion-sweep'\nperiod_frames = {period}\nyaw_deg = 10.0\npitch_deg = 5.0\nroll_deg = 2.5"
+            );
+            assert!(
+                matches!(
+                    read(&text),
+                    Err(RequestErrorKind::InvalidMotion(
+                        visual::MotionError::PeriodOutOfRange(_)
+                    )) | Err(RequestErrorKind::Parse(_))
+                ),
+                "period {period}"
+            );
+        }
+        for (angle, value) in [
+            ("yaw", "45.1"),
+            ("pitch", "-0.1"),
+            ("roll", "90.0"),
+            ("yaw", "nan"),
+            ("pitch", "inf"),
+        ] {
+            let text = format!(
+                "{header}[motion]\ncase_id = 'motion-sweep'\nperiod_frames = 32\nyaw_deg = {}\npitch_deg = {}\nroll_deg = {}",
+                if angle == "yaw" { value } else { "0.0" },
+                if angle == "pitch" { value } else { "0.0" },
+                if angle == "roll" { value } else { "0.0" },
+            );
+            assert!(
+                matches!(
+                    read(&text),
+                    Err(RequestErrorKind::InvalidMotion(
+                        visual::MotionError::AmplitudeOutOfRange(_)
+                            | visual::MotionError::NonFiniteAmplitude(_)
+                    ))
+                ),
+                "{angle} {value}"
+            );
+        }
+        for id in ["", "../escape", "a/b", "é", &"x".repeat(65)] {
+            let text = format!(
+                "{header}[motion]\ncase_id = '{id}'\nperiod_frames = 32\nyaw_deg = 1.0\npitch_deg = 0.0\nroll_deg = 0.0"
+            );
+            assert!(matches!(
+                read(&text),
+                Err(RequestErrorKind::InvalidMotion(
+                    visual::MotionError::InvalidCaseId(_)
+                ))
+            ));
+        }
+        for text in [
+            format!(
+                "{header}[motion]\ncase_id = 'motion-sweep'\nperiod_frames = 32\nyaw_deg = 1.0"
+            ),
+            format!(
+                "{header}[motion]\ncase_id = 'motion-sweep'\nperiod_frames = 32\nyaw_deg = 1.0\npitch_deg = 0.0\nroll_deg = 0.0\nunknown = 1"
+            ),
+        ] {
+            assert!(matches!(read(&text), Err(RequestErrorKind::Parse(_))));
+        }
+    }
+
+    #[test]
+    fn a_motion_table_and_a_pose_table_are_mutually_exclusive() {
+        let text = "command = 'visual_configure'\nid = 'both'\nmode = 'multipass'\n\
+                    [pose]\ncase_id = 'sweep-1'\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0\n\
+                    [motion]\ncase_id = 'motion-sweep'\nperiod_frames = 32\nyaw_deg = 1.0\npitch_deg = 0.0\nroll_deg = 0.0";
+        assert!(matches!(read(text), Err(RequestErrorKind::MotionWithPose)));
+    }
+
+    #[test]
+    fn motion_tables_are_only_accepted_by_visual_configure() {
+        for (command, extra, expected) in [
+            ("visual_end", "\nid = 'end-motion'", Command::VisualEnd),
+            ("record", "", Command::Record),
+            ("screenshot", "\nid = 'shot'", Command::Screenshot),
+            ("scenario", "\npath = 'climb.toml'", Command::Scenario),
+        ] {
+            let text = format!(
+                "command = '{command}'{extra}\n[motion]\ncase_id = 'motion-sweep'\nperiod_frames = 32\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0"
+            );
+            assert!(
+                matches!(
+                    read(&text),
+                    Err(RequestErrorKind::MotionOnCommand(command)) if command == expected
+                ),
+                "{command}"
+            );
+        }
+    }
+
+    #[test]
+    fn motion_capture_is_only_accepted_by_screenshot_and_carries_its_phase() {
+        assert!(matches!(
+            read("command = 'screenshot'\nid = 'shot'\n[motion_capture]\nphase = 7"),
+            Ok(Request::Screenshot {
+                motion: Some(7),
+                ..
+            })
+        ));
+        assert!(matches!(
+            read("command = 'screenshot'\nid = 'shot'"),
+            Ok(Request::Screenshot { motion: None, .. })
+        ));
+        for command in [
+            "visual_configure",
+            "visual_end",
+            "record",
+            "stop_recording",
+            "stop_replay",
+            "stop_scenario",
+        ] {
+            let extra = match command {
+                "visual_configure" => "\nid = 'configure'\nmode = 'multipass'",
+                "visual_end" => "\nid = 'end'",
+                _ => "",
+            };
+            let text = format!("command = '{command}'{extra}\n[motion_capture]\nphase = 0");
+            assert!(
+                matches!(
+                    read(&text),
+                    Err(RequestErrorKind::MotionCaptureOnCommand(_))
+                ),
+                "{command}"
+            );
+        }
+        for phase in ["-1", "4294967296", "'x'"] {
+            let text =
+                format!("command = 'screenshot'\nid = 'shot'\n[motion_capture]\nphase = {phase}");
+            assert!(matches!(read(&text), Err(RequestErrorKind::Parse(_))));
+        }
+        assert!(matches!(
+            read("command = 'screenshot'\nid = 'shot'\n[motion_capture]\nphase = 0\nunknown = 1"),
             Err(RequestErrorKind::Parse(_))
         ));
     }
