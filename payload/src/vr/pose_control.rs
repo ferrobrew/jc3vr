@@ -177,6 +177,13 @@ pub fn current() -> Option<PoseValues> {
     STATE.lock().as_ref().map(|s| s.current)
 }
 
+pub(crate) fn current_full_camera() -> Option<PoseValues> {
+    STATE
+        .lock()
+        .as_ref()
+        .and_then(FrozenState::current_full_camera)
+}
+
 pub(crate) fn rendered_full_camera(frame: i64) -> Option<(PoseValues, PoseValues)> {
     STATE
         .lock()
@@ -264,6 +271,10 @@ struct FrozenState {
 }
 
 impl FrozenState {
+    fn current_full_camera(&self) -> Option<PoseValues> {
+        self.cockpit.is_none().then_some(self.current)
+    }
+
     fn new(cockpit: Option<CockpitCapture>, base: PoseValues) -> Self {
         Self {
             cockpit,
@@ -553,6 +564,23 @@ mod tests {
         // So does the inter-eye canting.
         let inter_eye = orientations[0].inverse() * orientations[1];
         assert!((inter_eye.to_euler(EULER).0 + 2.0 * cant).abs() < 1e-4);
+    }
+
+    #[test]
+    fn full_camera_current_excludes_a_cockpit_capture() {
+        let base = PoseValues {
+            position: Vec3::new(1.0, 2.0, 3.0),
+            yaw_deg: 10.0,
+            pitch_deg: 0.0,
+            roll_deg: 0.0,
+        };
+        let mut full = FrozenState::new(None, base);
+        full.current.yaw_deg = 20.0;
+        assert_eq!(full.current_full_camera(), Some(full.current));
+
+        let cockpit = CockpitCapture::capture((test_eyes(0.0), Quat::IDENTITY, Vec3::ZERO));
+        let cockpit_state = FrozenState::new(Some(cockpit), base);
+        assert_eq!(cockpit_state.current_full_camera(), None);
     }
 
     #[test]

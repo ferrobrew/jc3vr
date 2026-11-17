@@ -25,6 +25,7 @@ use crate::{
     controllers::{cockpit::CockpitTransform, frame::Pose},
     debug::trace::{TraceEvent, TraceState},
     stereo::STEREO_STATE,
+    vr::{FreezeMode, pose_control},
 };
 
 pub(crate) mod authored;
@@ -311,8 +312,9 @@ fn freeze_render_camera(camera: &mut Camera) {
 /// tick-rate headpose across rendered frames.
 #[detour(address = jc3gi::camera::camera::Camera::UpdateRender_ADDRESS)]
 fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
+    let is_active_camera =
+        unsafe { CameraManager::get() }.is_some_and(|cm| cm.m_ActiveCamera == camera);
     unsafe {
-        let is_active_camera = CameraManager::get().is_some_and(|cm| cm.m_ActiveCamera == camera);
         if is_active_camera && let Some(camera) = camera.as_mut() {
             set_scene_near_clip(&mut camera.m_Near, &mut camera.m_StateBitfield);
             *MAIN_CAMERA_PLANES.lock() = Some((camera.m_Near, camera.m_Far));
@@ -415,7 +417,32 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
         }
     }
 
+    if is_active_camera
+        && holds_probe_pose(
+            in_gameplay(),
+            crate::testing::visual::is_active(),
+            Config::lock_query(|c| c.vr.freeze_mode),
+        )
+        && let Some(pose) = pose_control::current_full_camera()
+        && let Some(camera) = unsafe { camera.as_mut() }
+    {
+        let world = probe_world(pose);
+        camera.m_TransformT0 = world;
+        camera.m_TransformT1 = world;
+    }
+
     CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
+}
+
+fn holds_probe_pose(in_gameplay: bool, visual_active: bool, freeze_mode: FreezeMode) -> bool {
+    in_gameplay && visual_active && freeze_mode == FreezeMode::FullCamera
+}
+
+fn probe_world(pose: pose_control::PoseValues) -> Matrix4 {
+    Matrix4::from(glam::Mat4::from_rotation_translation(
+        pose.orientation(),
+        pose.position,
+    ))
 }
 
 fn set_scene_near_clip(near: &mut f32, state: &mut CameraState) {
@@ -1112,5 +1139,35 @@ mod tests {
             (down.distance(neck) - level.distance(neck)).abs() < 1e-6,
             "the eye stays on the arm's sphere about the neck"
         );
+    }
+
+    #[test]
+    fn probe_pose_is_held_only_in_gameplay_during_a_visual_full_camera_freeze() {
+        assert!(holds_probe_pose(true, true, FreezeMode::FullCamera));
+        assert!(!holds_probe_pose(false, true, FreezeMode::FullCamera));
+        assert!(!holds_probe_pose(true, false, FreezeMode::FullCamera));
+        assert!(!holds_probe_pose(true, true, FreezeMode::Off));
+        assert!(!holds_probe_pose(true, true, FreezeMode::CockpitPose));
+    }
+
+    #[test]
+    fn probe_world_is_the_frozen_pose_rotation_and_translation() {
+        let pose = pose_control::PoseValues {
+            position: glam::Vec3::new(1.0, 2.0, 3.0),
+            yaw_deg: 70.0,
+            pitch_deg: -12.0,
+            roll_deg: 7.5,
+        };
+        let world = glam::Mat4::from(probe_world(pose));
+        let (scale, rotation, translation) = world.to_scale_rotation_translation();
+        assert!((scale - glam::Vec3::ONE).length() < 1e-6);
+        assert!((translation - pose.position).length() < 1e-6);
+        let expected = glam::Quat::from_euler(
+            pose_control::EULER,
+            pose.yaw_deg.to_radians(),
+            pose.pitch_deg.to_radians(),
+            pose.roll_deg.to_radians(),
+        );
+        assert!(rotation.dot(expected).abs() > 1.0 - 1e-6);
     }
 }

@@ -1007,3 +1007,18 @@ fn motion_metadata_for_a_capture_uses_the_frame_before_advance() {
     assert_eq!(metadata.history.len(), HISTORY_FRAMES);
     assert_eq!(metadata.history.last().unwrap().rendered_frame, 34);
 }
+
+#[test]
+fn a_request_is_active_during_warmup_before_it_is_ready() {
+    let state = warming(Mode::Multipass, 3);
+    assert!(state.is_active());
+    assert!(!state.is_ready());
+}
+
+#[test]
+fn an_ended_request_is_inactive_after_the_mode_is_cleared() {
+    let mut state = warming(Mode::Multipass, 3);
+    assert!(state.is_active());
+    state.mode = None;
+    assert!(!state.is_active());
+}

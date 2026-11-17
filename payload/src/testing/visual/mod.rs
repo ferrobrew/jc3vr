@@ -149,6 +149,10 @@ pub(crate) fn ready() -> bool {
     state.is_ready()
 }
 
+pub(crate) fn is_active() -> bool {
+    STATE.lock().is_active()
+}
+
 pub(crate) fn metadata() -> VisualMetadata {
     STATE.lock().metadata()
 }
@@ -698,6 +702,10 @@ impl State {
             && !self.operation.is_restoring()
             && self.error.is_none()
             && self.pending.is_empty()
+    }
+
+    fn is_active(&self) -> bool {
+        self.mode.is_some()
     }
 
     fn requires_inline_tail(&self) -> bool {
