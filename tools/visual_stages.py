@@ -54,8 +54,28 @@ class Stage(StrEnum):
     GBUFFER2 = "gbuffer2"
     GBUFFER3 = "gbuffer3"
     MAIN_COLOR = "main_color"
+    WATER_DEPTH_BEFORE = "water_depth_before"
+    WATER_DEPTH_AFTER_LEFT = "water_depth_after_left"
+    WATER_DEPTH_AFTER_RIGHT = "water_depth_after_right"
     PRE_AA = "pre_aa"
     POST_AA = "post_aa"
+
+    @property
+    def depth(self) -> bool:
+        return self in (
+            Stage.GEOMETRY_DEPTH,
+            Stage.WATER_DEPTH_BEFORE,
+            Stage.WATER_DEPTH_AFTER_LEFT,
+            Stage.WATER_DEPTH_AFTER_RIGHT,
+        )
+
+    @property
+    def optional(self) -> bool:
+        return self in (
+            Stage.WATER_DEPTH_BEFORE,
+            Stage.WATER_DEPTH_AFTER_LEFT,
+            Stage.WATER_DEPTH_AFTER_RIGHT,
+        )
 
 
 class EvidenceStatus(StrEnum):
@@ -377,7 +397,7 @@ def load_stage(
     record = StageRecord.from_wire(matches[0])
     if record.frame != sample.predicted_display_time_ns:
         raise ValueError("stage.frame: differs from capture predicted_display_time_ns")
-    if (stage == Stage.GEOMETRY_DEPTH) != record.source.format.depth:
+    if stage.depth != record.source.format.depth:
         raise ValueError(
             "stage.source.format: depth and color stage formats are incompatible"
         )
@@ -570,6 +590,29 @@ def validated_samples(
     return loaded, errors
 
 
+def has_stage_record(
+    root: Path,
+    mode: Mode,
+    samples: list[tuple[SampleSpec, LoadedSample]],
+    stage: Stage,
+    eye: int,
+) -> bool:
+    record_eye = 0 if mode == Mode.SINGLE_PASS else eye
+    for spec, _ in samples:
+        records = read_json(root / spec.metadata).get("stages")
+        if not isinstance(records, list):
+            return False
+        if not any(
+            isinstance(record, dict)
+            and record.get("stage") == stage
+            and type(record.get("eye")) is int
+            and record["eye"] == record_eye
+            for record in records
+        ):
+            return False
+    return True
+
+
 def analyze_case(case: Case, root: Path, repeatability: Thresholds) -> CaseReport:
     result = CaseReport(case.name)
     modes = (Mode.MULTIPASS, Mode.SINGLE_PASS)
@@ -596,9 +639,18 @@ def analyze_case(case: Case, root: Path, repeatability: Thresholds) -> CaseRepor
                     )
     for stage in Stage:
         for eye in (0, 1):
+            available = {
+                mode: not stage.optional
+                or has_stage_record(root, mode, captures[mode][0], stage, eye)
+                for mode in modes
+            }
+            if not any(available.values()):
+                continue
             loaded = {}
             repeats = {}
             for mode in modes:
+                if not available[mode]:
+                    continue
                 key = (stage, eye, mode)
                 samples, errors = [], list(captures[mode][1])
                 if not errors:
@@ -631,7 +683,11 @@ def analyze_case(case: Case, root: Path, repeatability: Thresholds) -> CaseRepor
                 )
                 repeats[key] = repeat
                 result.repeatability.append(repeat)
-            within = [repeats[(stage, eye, mode)] for mode in modes]
+            within = [
+                repeats[(stage, eye, mode)] for mode in modes if available[mode]
+            ]
+            if len(within) != len(modes):
+                continue
             if any(item.status != EvidenceStatus.MEASURED for item in within):
                 cross = Comparison(
                     "multipass vs single_pass",

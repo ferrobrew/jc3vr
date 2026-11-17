@@ -136,7 +136,7 @@ class StageTests(unittest.TestCase):
         path.write_text(json.dumps(value))
 
     def pixels(self, stage, eye):
-        if stage == stages.Stage.GEOMETRY_DEPTH:
+        if stage.depth:
             words = np.zeros((2, 3, 2), dtype="<u4")
             words[..., 0] = np.float32(0.25 + 0.25 * eye).view(np.uint32)
             return words.view(np.uint8).reshape(2, 3, 8).copy(), "DXGI_FORMAT(19)"
@@ -157,37 +157,49 @@ class StageTests(unittest.TestCase):
         format_name = "DXGI_FORMAT(27)"
         return np.full((2, 3, 4), 20 + 50 * eye, dtype=np.uint8), format_name
 
-    def make_stages(self, mode, index):
+    def stage_records(self, mode, index, stage, metadata):
         records = []
+        for record_eye in (0,) if mode == "single_pass" else (0, 1):
+            pixels, format_name = self.pixels(stage, record_eye)
+            if mode == "single_pass":
+                pixels = np.concatenate((pixels, self.pixels(stage, 1)[0]), axis=1)
+            is_png = stage in (stages.Stage.PRE_AA, stages.Stage.POST_AA)
+            filename = f"{mode}-{index}.{stage}.eye{record_eye}.{'png' if is_png else 'raw'}"
+            if is_png:
+                pixels[..., 3] = 255
+                Image.fromarray(pixels).save(self.root / filename)
+            else:
+                (self.root / filename).write_bytes(pixels.tobytes())
+            records.append(
+                {
+                    "stage": stage,
+                    "eye": record_eye,
+                    "frame": metadata["predicted_display_time_ns"],
+                    "source": {
+                        "width": pixels.shape[1],
+                        "height": pixels.shape[0],
+                        "format": format_name,
+                    },
+                    "raw": None if is_png else "C:\\captures\\" + filename,
+                    "png": "C:\\captures\\" + filename if is_png else None,
+                    "error": None,
+                }
+            )
+        return records
+
+    def make_stages(self, mode, index):
         metadata = json.loads(self.metadata(mode, index).read_text())
+        records = []
         for stage in stages.Stage:
-            for record_eye in (0,) if mode == "single_pass" else (0, 1):
-                pixels, format_name = self.pixels(stage, record_eye)
-                if mode == "single_pass":
-                    pixels = np.concatenate((pixels, self.pixels(stage, 1)[0]), axis=1)
-                is_png = stage in (stages.Stage.PRE_AA, stages.Stage.POST_AA)
-                filename = f"{mode}-{index}.{stage}.eye{record_eye}.{'png' if is_png else 'raw'}"
-                if is_png:
-                    pixels[..., 3] = 255
-                    Image.fromarray(pixels).save(self.root / filename)
-                else:
-                    (self.root / filename).write_bytes(pixels.tobytes())
-                records.append(
-                    {
-                        "stage": stage,
-                        "eye": record_eye,
-                        "frame": metadata["predicted_display_time_ns"],
-                        "source": {
-                            "width": pixels.shape[1],
-                            "height": pixels.shape[0],
-                            "format": format_name,
-                        },
-                        "raw": None if is_png else "C:\\captures\\" + filename,
-                        "png": "C:\\captures\\" + filename if is_png else None,
-                        "error": None,
-                    }
-                )
+            if stage.optional:
+                continue
+            records.extend(self.stage_records(mode, index, stage, metadata))
         self.update(mode, index, lambda value: value.update(stages=records))
+
+    def append_stage(self, mode, index, stage):
+        metadata = json.loads(self.metadata(mode, index).read_text())
+        records = self.stage_records(mode, index, stage, metadata)
+        self.update(mode, index, lambda value: value["stages"].extend(records))
 
     def change_record(self, mode, index, change, stage=stages.Stage.GBUFFER0, eye=0):
         def update(value):
@@ -242,6 +254,67 @@ class StageTests(unittest.TestCase):
         self.assertTrue((self.output / "stages.html").is_file())
         wire = json.loads((self.output / "stages.json").read_text())
         self.assertEqual(wire["status"], "measured")
+
+    def test_water_depth_is_an_optional_diagnostic(self):
+        report = self.analyze()
+        self.assertEqual(report.status, stages.EvidenceStatus.MEASURED)
+        self.assertFalse(
+            any(
+                check.stage.optional
+                for check in report.cases[0].repeatability
+                + report.cases[0].comparisons
+            )
+        )
+        self.assertEqual(len(report.cases[0].repeatability), 32)
+        self.assertEqual(len(report.cases[0].comparisons), 16)
+
+        for mode in ("multipass", "single_pass"):
+            for index in range(3):
+                self.append_stage(mode, index, stages.Stage.WATER_DEPTH_BEFORE)
+        report = self.analyze()
+        self.assertEqual(report.status, stages.EvidenceStatus.MEASURED)
+        self.assertEqual(
+            len(
+                [
+                    check
+                    for check in report.cases[0].repeatability
+                    if check.stage == stages.Stage.WATER_DEPTH_BEFORE
+                ]
+            ),
+            4,
+        )
+        depth_cross = [
+            check
+            for check in report.cases[0].comparisons
+            if check.stage == stages.Stage.WATER_DEPTH_BEFORE
+        ]
+        self.assertEqual(len(depth_cross), 2)
+        for check in depth_cross:
+            self.assertEqual(check.status, stages.EvidenceStatus.MEASURED)
+            self.assertEqual(len(check.pairs), 9)
+
+    def test_water_depth_present_in_one_mode_only_skips_cross_mode(self):
+        for index in range(3):
+            self.append_stage(
+                "multipass", index, stages.Stage.WATER_DEPTH_AFTER_LEFT
+            )
+        report = self.analyze()
+        self.assertEqual(report.status, stages.EvidenceStatus.MEASURED)
+        depth_repeats = [
+            check
+            for check in report.cases[0].repeatability
+            if check.stage == stages.Stage.WATER_DEPTH_AFTER_LEFT
+        ]
+        self.assertEqual(len(depth_repeats), 2)
+        self.assertTrue(
+            all(check.modes == (stages.Mode.MULTIPASS,) for check in depth_repeats)
+        )
+        self.assertFalse(
+            any(
+                check.stage == stages.Stage.WATER_DEPTH_AFTER_LEFT
+                for check in report.cases[0].comparisons
+            )
+        )
 
     def test_cross_difference_has_exact_native_channels_and_no_failure_threshold(self):
         for index in range(3):

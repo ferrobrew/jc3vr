@@ -357,6 +357,9 @@ fn stage_name(stage: Stage) -> &'static str {
         Stage::WaterBefore => "water_before",
         Stage::WaterAfterLeft => "water_after_left",
         Stage::WaterAfterRight => "water_after_right",
+        Stage::WaterDepthBefore => "water_depth_before",
+        Stage::WaterDepthAfterLeft => "water_depth_after_left",
+        Stage::WaterDepthAfterRight => "water_depth_after_right",
         Stage::PreAa => "pre_aa",
         Stage::PostAa => "post_aa",
     }
@@ -560,6 +563,9 @@ mod tests {
         let template = capture.stages[0].clone();
         capture.stages = [
             (Stage::GeometryDepth, "geometry_depth", 8),
+            (Stage::WaterDepthBefore, "water_depth_before", 8),
+            (Stage::WaterDepthAfterLeft, "water_depth_after_left", 8),
+            (Stage::WaterDepthAfterRight, "water_depth_after_right", 8),
             (Stage::GBuffer0, "gbuffer0", 4),
             (Stage::GBuffer1, "gbuffer1", 4),
             (Stage::GBuffer2, "gbuffer2", 4),

@@ -62,6 +62,9 @@ pub(crate) enum Stage {
     WaterBefore,
     WaterAfterLeft,
     WaterAfterRight,
+    WaterDepthBefore,
+    WaterDepthAfterLeft,
+    WaterDepthAfterRight,
     PreAa,
     PostAa,
 }
@@ -163,15 +166,17 @@ pub(crate) fn capture_after_resolve() {
 }
 
 pub(crate) fn capture_water_before() {
-    capture_hdr(HdrStage::WaterBefore);
+    let (color, depth) = water_before_stages();
+    capture_hdr(color);
+    capture_water_depth(depth);
 }
 
 pub(crate) fn capture_water_after(eye: usize) {
-    match eye {
-        0 => capture_hdr(HdrStage::WaterAfterLeft),
-        1 => capture_hdr(HdrStage::WaterAfterRight),
-        _ => {}
-    }
+    let Some((color, depth)) = water_after_stages(eye) else {
+        return;
+    };
+    capture_hdr(color);
+    capture_water_depth(depth);
 }
 
 pub(crate) fn capture_slot(stage: Stage, mgr: *mut c_void, slot: u32) {
@@ -210,7 +215,7 @@ pub(crate) fn take(frame: i64) -> (Vec<StageRecord>, Vec<StageImage>) {
     )
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HdrStage {
     MainColor,
     PreAtmosphere,
@@ -241,6 +246,26 @@ fn capture_hdr(stage: HdrStage) {
         unsafe { GraphicsEngine::get() }
             .map(|ge| ge.m_MainColorBuffer)
             .context("MainColor unavailable")
+    });
+}
+
+fn water_before_stages() -> (HdrStage, Stage) {
+    (HdrStage::WaterBefore, Stage::WaterDepthBefore)
+}
+
+fn water_after_stages(eye: usize) -> Option<(HdrStage, Stage)> {
+    match eye {
+        0 => Some((HdrStage::WaterAfterLeft, Stage::WaterDepthAfterLeft)),
+        1 => Some((HdrStage::WaterAfterRight, Stage::WaterDepthAfterRight)),
+        _ => None,
+    }
+}
+
+fn capture_water_depth(stage: Stage) {
+    capture(stage, || {
+        // SAFETY: the water hook runs on the render thread with live engine textures.
+        let ge = unsafe { GraphicsEngine::get() }.context("graphics engine unavailable")?;
+        Ok(ge.m_MainDepthTexture)
     });
 }
 
@@ -700,10 +725,46 @@ mod tests {
     }
 
     #[test]
-    fn geometry_raw_rows_preserve_depth_and_material_bits() {
+    fn water_depth_stages_are_named_raw_and_map_to_their_water_brackets() {
+        for (stage, name) in [
+            (Stage::WaterDepthBefore, "water_depth_before"),
+            (Stage::WaterDepthAfterLeft, "water_depth_after_left"),
+            (Stage::WaterDepthAfterRight, "water_depth_after_right"),
+        ] {
+            assert_eq!(serde_json::to_value(stage).unwrap(), name);
+            assert!(!stage.is_hdr());
+        }
+        assert_eq!(
+            water_before_stages(),
+            (HdrStage::WaterBefore, Stage::WaterDepthBefore)
+        );
+        assert_eq!(
+            water_after_stages(0),
+            Some((HdrStage::WaterAfterLeft, Stage::WaterDepthAfterLeft))
+        );
+        assert_eq!(
+            water_after_stages(1),
+            Some((HdrStage::WaterAfterRight, Stage::WaterDepthAfterRight))
+        );
+        assert_eq!(water_after_stages(2), None);
+    }
+
+    #[test]
+    fn raw_rows_preserve_depth_material_and_water_depth_bits() {
         for (stage, format, pixel_bytes) in [
             (Stage::GeometryDepth, DXGI_FORMAT_R32G8X24_TYPELESS, 8),
             (Stage::GeometryDepth, DXGI_FORMAT_D32_FLOAT_S8X24_UINT, 8),
+            (Stage::WaterDepthBefore, DXGI_FORMAT_R32G8X24_TYPELESS, 8),
+            (
+                Stage::WaterDepthAfterLeft,
+                DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
+                8,
+            ),
+            (
+                Stage::WaterDepthAfterRight,
+                DXGI_FORMAT_R32G8X24_TYPELESS,
+                8,
+            ),
             (Stage::GBuffer0, DXGI_FORMAT_R8G8B8A8_TYPELESS, 4),
             (Stage::GBuffer1, DXGI_FORMAT_R10G10B10A2_UNORM, 4),
             (Stage::GBuffer2, DXGI_FORMAT_R16G16B16A16_FLOAT, 8),
