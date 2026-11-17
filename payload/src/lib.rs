@@ -66,6 +66,16 @@ pub extern "system" fn run(_: *mut c_void) {
     initialize_startup();
 }
 
+/// Asks the game thread to eject the payload, for an injector that cannot signal it any other way.
+///
+/// The request only records the intent: teardown happens on the game thread, and the module stays
+/// mapped until that thread reaches the end of its shutdown.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "system" fn eject(_: *mut c_void) {
+    lifecycle::request_shutdown();
+}
+
 /// Called when the DLL is loaded
 fn initialize_startup() {
     // Resolve this run's output directory first, so the log, crash dumps, and every other artifact
