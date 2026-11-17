@@ -32,6 +32,8 @@ use windows::{
 
 use crate::stereo::single_pass::EngineContext;
 
+mod constants;
+
 #[derive(Clone, Copy)]
 #[repr(usize)]
 pub(crate) enum RawDrawKind {
@@ -80,6 +82,20 @@ pub(crate) unsafe fn raw_entry(kind: RawDrawKind, context: *mut c_void) {
         else {
             return;
         };
+        if !capture.constants_logged {
+            let mut ds = None;
+            let mut dsv = None;
+            // SAFETY: `ctx` is the live immediate context; both getters only read bound state.
+            unsafe {
+                ctx.DSGetShader(&mut ds, None, None);
+                ctx.OMGetRenderTargets(None, Some(&mut dsv));
+            }
+            if ds.is_some() && dsv.is_some() {
+                capture.constants_logged = true;
+                // SAFETY: `ctx` is the live immediate context.
+                unsafe { constants::capture(ctx, capture.context) };
+            }
+        }
         log_raw(ctx, capture, kind, count, slot);
     });
 }
@@ -244,6 +260,7 @@ struct RawCapture {
     context: ProbeContext,
     counts: [usize; RawDrawKind::COUNT],
     logged: usize,
+    constants_logged: bool,
 }
 
 struct ActiveGuard {
@@ -261,6 +278,7 @@ impl ActiveGuard {
                 context,
                 counts: [0; RawDrawKind::COUNT],
                 logged: 0,
+                constants_logged: false,
             });
             Some(Self {
                 _not_send: PhantomData,
@@ -493,8 +511,8 @@ fn log_state(ctx: &ID3D11DeviceContext, context: ProbeContext) {
 
 fn viewport_text(v: &D3D11_VIEWPORT) -> String {
     format!(
-        "({:.1},{:.1}) {:.1}x{:.1}",
-        v.TopLeftX, v.TopLeftY, v.Width, v.Height
+        "({:.1},{:.1}) {:.1}x{:.1} depth={:.4}..{:.4}",
+        v.TopLeftX, v.TopLeftY, v.Width, v.Height, v.MinDepth, v.MaxDepth
     )
 }
 
@@ -582,7 +600,7 @@ fn log_raw(
         target: "water_probe",
         "water probe: raw draw pass={} eye={} invocation={} predicted_display_time_ns={} \
          generation={} kind={} n={count} log={}/{} topology={} rtv={:#x} dsv={:#x} \
-         raster[cull={} fill={} depth_clip={} scissor={}] viewports={viewport_count} vp0={} vp1={} \
+         raster[cull={} fill={} depth_clip={} scissor={} bias={} slope_bias={}] viewports={viewport_count} vp0={} vp1={} \
          scissors={scissor_count} sc0={} sc1={} depth[enable={} write={} func={} stencil={} \
          ref={stencil_ref} read_mask={:#x} write_mask={:#x} front[func={} pass={} fail={} zfail={}] \
          back[func={} pass={} fail={} zfail={}]] blend[enable={} src={} dst={} op={} mask={:#x}] \
@@ -602,6 +620,8 @@ fn log_raw(
         raster.FillMode.0,
         raster.DepthClipEnable.as_bool() as u8,
         raster.ScissorEnable.as_bool() as u8,
+        raster.DepthBias,
+        raster.SlopeScaledDepthBias,
         viewport_text(&viewports[0]),
         viewport_text(&viewports[1]),
         scissor_text(&scissors[0]),
