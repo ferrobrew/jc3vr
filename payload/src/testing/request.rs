@@ -100,8 +100,10 @@ enum RequestErrorKind {
     InvalidId(&'static str),
     InvalidPose(visual::PoseError),
     InvalidMotion(visual::MotionError),
+    InvalidEnvironment(visual::EnvironmentError),
     PoseOnCommand(Command),
     MotionOnCommand(Command),
+    EnvironmentOnCommand(Command),
     MotionCaptureOnCommand(Command),
     MotionWithPose,
     NoMode,
@@ -123,6 +125,7 @@ impl std::fmt::Display for RequestError {
             RequestErrorKind::InvalidId(reason) => write!(f, "invalid request id: {reason}"),
             RequestErrorKind::InvalidPose(error) => write!(f, "{error}"),
             RequestErrorKind::InvalidMotion(error) => write!(f, "{error}"),
+            RequestErrorKind::InvalidEnvironment(error) => write!(f, "{error}"),
             RequestErrorKind::PoseOnCommand(command) => {
                 write!(f, "only visual_configure accepts a pose, not {command:?}")
             }
@@ -130,6 +133,12 @@ impl std::fmt::Display for RequestError {
                 write!(
                     f,
                     "only visual_configure accepts a motion table, not {command:?}"
+                )
+            }
+            RequestErrorKind::EnvironmentOnCommand(command) => {
+                write!(
+                    f,
+                    "only visual_configure accepts an environment table, not {command:?}"
                 )
             }
             RequestErrorKind::MotionCaptureOnCommand(command) => {
@@ -189,6 +198,7 @@ struct RequestFile {
     warmup_frames: Option<u32>,
     pose: Option<visual::PoseTable>,
     motion: Option<visual::MotionTable>,
+    environment: Option<visual::EnvironmentTable>,
     motion_capture: Option<MotionCaptureTable>,
 }
 
@@ -299,6 +309,18 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
     if pose.is_some() && motion.is_some() {
         return Err(error(RequestErrorKind::MotionWithPose));
     }
+    let environment = match file.environment {
+        Some(table) => {
+            if file.command != Command::VisualConfigure {
+                return Err(error(RequestErrorKind::EnvironmentOnCommand(file.command)));
+            }
+            Some(
+                visual::EnvironmentRequest::try_from(table)
+                    .map_err(|e| error(RequestErrorKind::InvalidEnvironment(e)))?,
+            )
+        }
+        None => None,
+    };
     let motion_capture = match file.motion_capture {
         Some(table) => {
             if file.command != Command::Screenshot {
@@ -331,6 +353,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                     warmup_frames,
                     pose,
                     motion,
+                    environment,
                 }
             })
         }
@@ -576,6 +599,64 @@ mod tests {
             ),
             Err(RequestErrorKind::Parse(_))
         ));
+    }
+
+    #[test]
+    fn visual_environment_tables_validate_hours_weather_and_commands() {
+        let header = "command = 'visual_configure'\nid = 'configure-env'\nmode = 'multipass'\n";
+        for hour in ["0.0", "13.5", "23.999"] {
+            let text = format!("{header}[environment]\nhour = {hour}\nweather = 'sunny'");
+            assert!(matches!(
+                read(&text),
+                Ok(Request::Visual(visual::Request::Configure {
+                    environment: Some(_),
+                    ..
+                }))
+            ));
+        }
+        for hour in ["nan", "inf", "-inf"] {
+            let text = format!("{header}[environment]\nhour = {hour}\nweather = 'sunny'");
+            assert!(matches!(
+                read(&text),
+                Err(RequestErrorKind::InvalidEnvironment(
+                    visual::EnvironmentError::NonFiniteHour
+                ))
+            ));
+        }
+        for hour in ["-0.001", "24.0", "25.0"] {
+            let text = format!("{header}[environment]\nhour = {hour}\nweather = 'sunny'");
+            assert!(matches!(
+                read(&text),
+                Err(RequestErrorKind::InvalidEnvironment(
+                    visual::EnvironmentError::HourOutOfRange
+                ))
+            ));
+        }
+        for text in [
+            format!("{header}[environment]\nweather = 'sunny'"),
+            format!("{header}[environment]\nhour = 13.5"),
+            format!("{header}[environment]\nhour = 13.5\nweather = 'rain'"),
+            format!("{header}[environment]\nhour = 13.5\nweather = 'sunny'\nday_cycle_speed = 0.0"),
+        ] {
+            assert!(matches!(read(&text), Err(RequestErrorKind::Parse(_))));
+        }
+        for (command, extra, expected) in [
+            ("visual_end", "\nid = 'end-env'", Command::VisualEnd),
+            ("record", "", Command::Record),
+            ("screenshot", "\nid = 'shot'", Command::Screenshot),
+            ("scenario", "\npath = 'climb.toml'", Command::Scenario),
+        ] {
+            let text = format!(
+                "command = '{command}'{extra}\n[environment]\nhour = 13.5\nweather = 'sunny'"
+            );
+            assert!(
+                matches!(
+                    read(&text),
+                    Err(RequestErrorKind::EnvironmentOnCommand(command)) if command == expected
+                ),
+                "{command}"
+            );
+        }
     }
 
     #[test]

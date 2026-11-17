@@ -262,6 +262,25 @@ def compose_pose(anchor, offset, translation=None):
     return Camera(position, quaternion_normalize(orientation))
 
 
+def offset_for_target(anchor, target, tolerance=POSE_TOLERANCE):
+    """Return the pose offset that moves the anchor camera onto the target camera."""
+    if not isinstance(anchor, Camera) or not isinstance(target, Camera):
+        raise ProtocolError("visual protocol: target offset requires two cameras")
+    finite_vector(anchor.position, 3, "anchor.position")
+    finite_vector(target.position, 3, "target.position")
+    quaternion_normalize(anchor.orientation)
+    quaternion_normalize(target.orientation)
+    inverse = quaternion_conjugate(anchor.orientation)
+    local = rotate_vector(inverse, tuple(t - a for t, a in zip(target.position, anchor.position)))
+    yaw, pitch, roll = euler_yxz_degrees(quaternion_multiply(inverse, target.orientation))
+    offset = OrientationOffset(yaw, pitch, roll)
+    translation = TranslationOffset(local[0], local[1], -local[2])
+    applied = compose_pose(anchor, offset, translation)
+    if not cameras_match(applied, target, tolerance):
+        raise ProtocolError("visual protocol: the target camera is not reachable from the anchor camera")
+    return offset, translation
+
+
 def rotate_vector(quaternion, value):
     quaternion = quaternion_normalize(quaternion)
     x, y, z, w = quaternion
@@ -277,6 +296,31 @@ def euler_yxz_quaternion(offset):
     pitch_quaternion = (math.sin(pitch), 0.0, 0.0, math.cos(pitch))
     roll_quaternion = (0.0, 0.0, math.sin(roll), math.cos(roll))
     return quaternion_normalize(quaternion_multiply(quaternion_multiply(yaw_quaternion, pitch_quaternion), roll_quaternion))
+
+
+def euler_yxz_degrees(quaternion):
+    """Return the yaw, pitch, and roll of a rotation composed as yaw * pitch * roll."""
+    x, y, z, w = quaternion_normalize(quaternion)
+    m02 = 2.0 * (x * z + y * w)
+    m12 = 2.0 * (y * z - x * w)
+    m22 = 1.0 - 2.0 * (x * x + y * y)
+    m10 = 2.0 * (x * y + z * w)
+    m11 = 1.0 - 2.0 * (x * x + z * z)
+    m20 = 2.0 * (x * z - y * w)
+    m00 = 1.0 - 2.0 * (y * y + z * z)
+    pitch = math.asin(max(-1.0, min(1.0, -m12)))
+    if abs(m12) < 1.0 - 1e-9:
+        yaw = math.atan2(m02, m22)
+        roll = math.atan2(m10, m11)
+    else:
+        yaw = math.atan2(-m20, m00)
+        roll = 0.0
+    return tuple(math.degrees(value) for value in (yaw, pitch, roll))
+
+
+def quaternion_conjugate(quaternion):
+    x, y, z, w = quaternion_normalize(quaternion)
+    return (-x, -y, -z, w)
 
 
 def quaternion_multiply(a, b):

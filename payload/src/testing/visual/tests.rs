@@ -2,7 +2,7 @@ use glam::{Quat, Vec3};
 use pretty_assertions::assert_eq;
 
 use super::*;
-use crate::testing::visual::pose::orientations_match;
+use crate::testing::visual::{environment::WeatherControl, pose::orientations_match};
 
 fn observation(state: &State, ordinal: i64) -> FrameObservation {
     FrameObservation {
@@ -284,6 +284,86 @@ fn retry_after_failed_restoration_does_not_report_failure_twice() {
         state
             .complete_restore(restored_resolution(), Some(false), false, false)
             .is_some()
+    );
+}
+
+#[test]
+fn repeated_environment_configures_keep_the_first_saved_world_time() {
+    let saved = WorldTimeSnapshot::new(8.25, 1.5, 0.0);
+    let mut state = State::new();
+    state.record_environment(
+        saved,
+        EnvironmentMetadata::new(13.5, 0.0, 0.25, WeatherControl::Sunny),
+    );
+    state.record_environment(
+        WorldTimeSnapshot::new(18.0, 2.0, 1.0),
+        EnvironmentMetadata::new(18.0, 0.0, 0.2, WeatherControl::Sunny),
+    );
+    assert_eq!(state.environment.as_ref().unwrap().saved(), saved);
+    assert_eq!(state.environment_restore_target(), Some(saved));
+    assert_eq!(
+        state.metadata().environment,
+        Some(EnvironmentMetadata::new(
+            18.0,
+            0.0,
+            0.2,
+            WeatherControl::Sunny
+        ))
+    );
+}
+
+#[test]
+fn pending_environment_is_kept_until_a_verified_restore() {
+    let saved = WorldTimeSnapshot::new(8.25, 1.5, 0.0);
+    let mut state = State::new();
+    state.environment = Some(EnvironmentControl::pending(saved));
+    assert_eq!(state.environment_restore_target(), Some(saved));
+    state.environment_restored(EnvironmentMetadata::new(
+        8.25,
+        1.5,
+        0.4,
+        WeatherControl::Ambient,
+    ));
+    assert_eq!(state.environment_restore_target(), None);
+    assert_eq!(
+        state.environment.as_ref().unwrap().observed(),
+        Some(EnvironmentMetadata::new(
+            8.25,
+            1.5,
+            0.4,
+            WeatherControl::Ambient
+        ))
+    );
+}
+
+#[test]
+fn environment_metadata_serializes_observed_values_and_control() {
+    let saved = WorldTimeSnapshot::new(8.25, 1.5, 0.0);
+    let mut state = State::new();
+    state.record_environment(
+        saved,
+        EnvironmentMetadata::new(13.5, 0.0, 0.25, WeatherControl::Sunny),
+    );
+    let ready = serde_json::to_value(state.metadata()).unwrap();
+    assert_eq!(
+        ready["environment"],
+        serde_json::json!({
+            "hour": 13.5,
+            "day_cycle_speed": 0.0,
+            "weather_severity": 0.25,
+            "weather_control": "sunny",
+        })
+    );
+    state.environment_restored(EnvironmentMetadata::new(
+        8.25,
+        1.5,
+        0.5,
+        WeatherControl::Ambient,
+    ));
+    let restored = serde_json::to_value(state.metadata()).unwrap();
+    assert_eq!(
+        restored["environment"]["weather_control"],
+        serde_json::json!("ambient")
     );
 }
 

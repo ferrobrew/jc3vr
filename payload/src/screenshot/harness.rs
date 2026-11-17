@@ -887,6 +887,7 @@ mod tests {
             completed_frames: 1,
             engine_dimensions: Some((4096, 2048)),
             pose: None,
+            environment: None,
             motion: Some(MotionMetadata {
                 request,
                 phase,

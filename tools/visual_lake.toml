@@ -1,0 +1,18 @@
+name = "lake-glint"
+warmup_frames = 30
+samples = 3
+
+[pose]
+position = [7586.867, 1514.6827, -4081.8762]
+orientation = [-0.016829107, 0.97209185, 0.23272279, 0.024376998]
+
+[environment]
+hour = 13.226033
+weather = "sunny"
+
+[gate]
+roi = [0.59, 0.58, 0.75, 0.72]
+luminance = 4.0
+min_fraction = 0.01
+hour_tolerance = 0.05
+max_weather_severity = 0.5

@@ -10,9 +10,14 @@ use jc3gi::clock::Clock;
 use parking_lot::Mutex;
 use serde::Serialize;
 
+pub(crate) mod environment;
 pub(crate) mod motion;
 pub(crate) mod pose;
 
+pub(crate) use environment::{
+    EnvironmentControl, EnvironmentError, EnvironmentMetadata, EnvironmentRequest,
+    EnvironmentTable, WorldTimeSnapshot,
+};
 pub(crate) use motion::{
     AdvanceOutcome, HISTORY_FRAMES, MotionError, MotionMetadata, MotionRequest, MotionState,
     MotionTable, anchor_matches,
@@ -56,6 +61,8 @@ pub(crate) struct VisualMetadata {
     pub pose: Option<PoseEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub motion: Option<MotionMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub environment: Option<EnvironmentMetadata>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -100,6 +107,7 @@ pub(crate) enum Request {
         warmup_frames: u32,
         pose: Option<PoseRequest>,
         motion: Option<MotionRequest>,
+        environment: Option<EnvironmentRequest>,
     },
     End {
         id: RequestId,
@@ -235,8 +243,15 @@ pub(crate) fn process_pending() {
             warmup_frames,
             pose,
             motion,
+            environment,
             ..
         } => {
+            if let Some(environment) = environment
+                && let Err(error) = state.begin_environment(environment)
+            {
+                state.fail(error.to_string());
+                return;
+            }
             if state.saved.is_none() {
                 state.saved = Some(CONFIG.lock().clone());
                 pose_control::clear();
@@ -282,6 +297,10 @@ pub(crate) fn process_pending() {
             }
         }
         Request::End { .. } => {
+            if let Err(error) = state.restore_environment_for_end() {
+                state.fail_without_environment_retry(error.to_string());
+                return;
+            }
             state.mode = None;
             state.clear_pose();
             CLOCK_HELD.store(false, Ordering::Release);
@@ -302,6 +321,7 @@ pub(crate) fn process_pending() {
 
 pub(crate) fn frame_complete() {
     let mut state = STATE.lock();
+    state.refresh_environment_observation();
     if state.mode.is_none() {
         if matches!(state.operation, Operation::Restoring(_)) {
             let resolution = crate::vr::resolution_progress();
@@ -313,7 +333,9 @@ pub(crate) fn frame_complete() {
                 config.director.paused,
                 config.vr.freeze_mode != FreezeMode::Off,
             ) {
-                publish(&active.id, ResultState::Restored, &state.metadata());
+                let metadata = state.metadata();
+                state.environment = None;
+                publish(&active.id, ResultState::Restored, &metadata);
             }
         }
         return;
@@ -382,6 +404,9 @@ pub(crate) fn frame_complete() {
 pub(crate) fn tick() {
     let mut state = STATE.lock();
     if let Some(active) = state.expire(Instant::now()) {
+        if let Some(error) = state.cleanup_environment() {
+            tracing::warn!("{error}");
+        }
         pose_control::reset();
         publish(&active.id, ResultState::Failed, &state.metadata());
     }
@@ -400,6 +425,9 @@ pub(crate) fn shutdown() {
         metadata.error = Some("visual control: the payload is shutting down".to_owned());
         publish(request.id(), ResultState::Failed, &metadata);
     }
+    if let Some(error) = state.cleanup_environment() {
+        tracing::warn!("{error}");
+    }
     if let Some(saved) = state.saved.take() {
         *CONFIG.lock() = saved;
         pose_control::clear();
@@ -408,7 +436,7 @@ pub(crate) fn shutdown() {
     state.clear_pose();
     dispatch::set_mode(RenderMode::Native);
     state.ready = false;
-    state.fail("visual control: the payload is shutting down".to_owned());
+    state.fail_without_environment_retry("visual control: the payload is shutting down".to_owned());
     state.operation = Operation::Idle;
 }
 
@@ -436,6 +464,7 @@ struct State {
     pose: Option<PoseEvidence>,
     requested_motion: Option<MotionRequest>,
     motion: Option<MotionState>,
+    environment: Option<EnvironmentControl>,
 }
 
 struct Active {
@@ -492,6 +521,7 @@ impl State {
             pose: None,
             requested_motion: None,
             motion: None,
+            environment: None,
         }
     }
 
@@ -516,7 +546,87 @@ impl State {
                 .motion
                 .as_ref()
                 .map(|motion| motion.metadata(self.last_frame.unwrap_or(0))),
+            environment: self
+                .environment
+                .as_ref()
+                .and_then(EnvironmentControl::observed),
         }
+    }
+
+    fn begin_environment(&mut self, request: EnvironmentRequest) -> Result<(), EnvironmentError> {
+        environment::available()?;
+        let saved = match self.environment.as_ref() {
+            Some(control) => control.saved(),
+            None => WorldTimeSnapshot::capture()?,
+        };
+        match environment::apply(&request) {
+            Ok(observed) => {
+                self.record_environment(saved, observed);
+                Ok(())
+            }
+            Err(error) => {
+                if self.environment.is_none() {
+                    self.environment = Some(EnvironmentControl::pending(saved));
+                }
+                Err(error)
+            }
+        }
+    }
+
+    fn record_environment(&mut self, saved: WorldTimeSnapshot, observed: EnvironmentMetadata) {
+        match self.environment.as_mut() {
+            Some(control) => control.update(observed),
+            None => self.environment = Some(EnvironmentControl::new(saved, observed)),
+        }
+    }
+
+    fn refresh_environment_observation(&mut self) {
+        let Some(control) = self.environment.as_mut() else {
+            return;
+        };
+        let Some(weather_control) = control.observed().map(|observed| observed.weather_control)
+        else {
+            return;
+        };
+        if let Some(observed) = environment::observe(weather_control) {
+            control.update(observed);
+        }
+    }
+
+    fn environment_restore_target(&self) -> Option<WorldTimeSnapshot> {
+        self.environment
+            .as_ref()
+            .filter(|control| control.needs_restore())
+            .map(EnvironmentControl::saved)
+    }
+
+    fn environment_restored(&mut self, observed: EnvironmentMetadata) {
+        if let Some(control) = self.environment.as_mut() {
+            control.restored(observed);
+        }
+    }
+
+    fn cleanup_environment(&mut self) -> Option<EnvironmentError> {
+        let Some(saved) = self.environment_restore_target() else {
+            self.environment = None;
+            return None;
+        };
+        match environment::restore(saved) {
+            Ok(_) => {
+                self.environment = None;
+                None
+            }
+            Err(error) => Some(error),
+        }
+    }
+
+    fn restore_environment_for_end(&mut self) -> Result<(), EnvironmentError> {
+        let Some(saved) = self.environment_restore_target() else {
+            return Ok(());
+        };
+        let observed = environment::restore(saved)?;
+        self.environment_restored(observed);
+        Ok(())
     }
 
     fn complete(&mut self, observed: FrameObservation, paused: bool) {
@@ -773,6 +883,14 @@ impl State {
     }
 
     fn fail(&mut self, error: String) {
+        let error = match self.cleanup_environment() {
+            Some(restore) => format!("{error}; {restore}"),
+            None => error,
+        };
+        self.fail_without_environment_retry(error);
+    }
+
+    fn fail_without_environment_retry(&mut self, error: String) {
         if let Some(active) = self.fail_operation(error) {
             publish(&active.id, ResultState::Failed, &self.metadata());
         }

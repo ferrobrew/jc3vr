@@ -3,6 +3,7 @@
 import json
 import math
 from dataclasses import asdict, dataclass, field
+from enum import StrEnum
 from typing import TypeAlias
 
 if __package__:
@@ -34,14 +35,17 @@ if __package__:
         compose_pose,
         composed_position_tolerances,
         composed_positions_match,
+        euler_yxz_degrees,
         euler_yxz_quaternion,
         finite_number,
         finite_vector,
         float32_ulp,
         integer,
         object_value,
+        offset_for_target,
         offsets_match,
         parse_mode,
+        quaternion_conjugate,
         quaternion_multiply,
         quaternion_normalize,
         quaternions_match,
@@ -79,14 +83,17 @@ else:
         compose_pose,
         composed_position_tolerances,
         composed_positions_match,
+        euler_yxz_degrees,
         euler_yxz_quaternion,
         finite_number,
         finite_vector,
         float32_ulp,
         integer,
         object_value,
+        offset_for_target,
         offsets_match,
         parse_mode,
+        quaternion_conjugate,
         quaternion_multiply,
         quaternion_normalize,
         quaternions_match,
@@ -103,6 +110,8 @@ __all__ = [
     "Camera",
     "Command",
     "DiagnosticProfile",
+    "EnvironmentObservation",
+    "EnvironmentRequest",
     "ExpectedMotion",
     "Mode",
     "MotionEvidence",
@@ -116,20 +125,25 @@ __all__ = [
     "ProtocolError",
     "RunOutcome",
     "TranslationOffset",
+    "WeatherControl",
+    "WeatherEvent",
     "boolean",
     "boolean_pair",
     "cameras_match",
     "compose_pose",
     "composed_position_tolerances",
     "composed_positions_match",
+    "euler_yxz_degrees",
     "euler_yxz_quaternion",
     "finite_number",
     "finite_vector",
     "float32_ulp",
     "integer",
     "object_value",
+    "offset_for_target",
     "offsets_match",
     "parse_mode",
+    "quaternion_conjugate",
     "quaternion_multiply",
     "quaternion_normalize",
     "quaternions_match",
@@ -138,6 +152,71 @@ __all__ = [
     "vector",
     "vectors_match",
 ]
+
+
+class WeatherEvent(StrEnum):
+    SUNNY = "sunny"
+
+
+class WeatherControl(StrEnum):
+    SUNNY = "sunny"
+    AMBIENT = "ambient"
+
+
+@dataclass(frozen=True)
+class EnvironmentRequest:
+    hour: float
+    weather: WeatherEvent
+
+    def __post_init__(self):
+        if type(self.hour) not in (int, float) or not math.isfinite(self.hour) or not 0 <= self.hour < 24:
+            raise ProtocolError("visual protocol: environment hour must be finite and within [0, 24)")
+        object.__setattr__(self, "hour", float(self.hour))
+        if not isinstance(self.weather, WeatherEvent):
+            raise ProtocolError("visual protocol: environment weather must be a known event")
+
+    @classmethod
+    def from_wire(cls, value):
+        object_value(value)
+        try:
+            weather = WeatherEvent(text(value, "weather"))
+        except ValueError as error:
+            raise ProtocolError("visual protocol: unknown weather event") from error
+        return cls(finite_number(value, "hour"), weather)
+
+    def to_wire(self):
+        return {"hour": self.hour, "weather": self.weather.value}
+
+    def to_toml(self) -> str:
+        return ("[environment]\n"
+                f"hour = {json.dumps(self.hour)}\n"
+                f"weather = {json.dumps(self.weather.value)}\n")
+
+
+@dataclass(frozen=True)
+class EnvironmentObservation:
+    hour: float
+    day_cycle_speed: float
+    weather_severity: float
+    weather_control: WeatherControl | None = None
+
+    @classmethod
+    def from_wire(cls, value):
+        object_value(value)
+        control = value.get("weather_control")
+        if control is not None:
+            try:
+                control = WeatherControl(text(value, "weather_control"))
+            except ValueError as error:
+                raise ProtocolError("visual protocol: unknown weather control") from error
+        result = cls(finite_number(value, "hour"), finite_number(value, "day_cycle_speed"),
+                     finite_number(value, "weather_severity"), control)
+        if not 0 <= result.hour <= 24 or result.day_cycle_speed < 0 or result.weather_severity < 0:
+            raise ProtocolError("visual protocol: environment observation is out of range")
+        return result
+
+    def to_wire(self):
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -149,6 +228,7 @@ class Request:
     pose: PoseRequest | None = None
     motion: MotionRequest | None = None
     motion_capture: PhaseCapture | None = None
+    environment: EnvironmentRequest | None = None
 
     def __post_init__(self):
         if not isinstance(self.command, Command) or not valid_request_id(self.id):
@@ -164,6 +244,9 @@ class Request:
             raise ProtocolError("visual protocol: only configuration requests accept motion")
         if self.pose is not None and self.motion is not None:
             raise ProtocolError("visual protocol: pose and motion are mutually exclusive")
+        if self.environment is not None and (self.command != Command.CONFIGURE or
+                                             not isinstance(self.environment, EnvironmentRequest)):
+            raise ProtocolError("visual protocol: only configuration requests accept an environment")
         if self.motion_capture is not None and (self.command != Command.SCREENSHOT or
                                                 not isinstance(self.motion_capture, PhaseCapture)):
             raise ProtocolError("visual protocol: only screenshot requests accept a motion capture phase")
@@ -174,13 +257,15 @@ class Request:
     def to_toml(self) -> str:
         result = "".join(f"{key} = {json.dumps(value)}\n"
                          for key, value in self.to_wire().items()
-                         if key not in ("pose", "motion", "motion_capture"))
+                         if key not in ("pose", "motion", "motion_capture", "environment"))
         if self.pose is not None:
             result += "\n" + self.pose.to_toml()
         if self.motion is not None:
             result += "\n" + self.motion.to_toml()
         if self.motion_capture is not None:
             result += "\n" + self.motion_capture.to_toml()
+        if self.environment is not None:
+            result += "\n" + self.environment.to_toml()
         return result
 
 
@@ -268,6 +353,7 @@ class VisualState:
     engine_dimensions: tuple[int, int] | None
     pose: "PoseEvidence | None" = None
     motion: "MotionEvidence | None" = None
+    environment: EnvironmentObservation | None = None
 
     @classmethod
     def from_wire(cls, value):
@@ -289,7 +375,8 @@ class VisualState:
                    integer(value, "warmup_frames", minimum=0), integer(value, "completed_frames", minimum=0),
                    tuple(dimensions) if dimensions is not None else None,
                    None if value.get("pose") is None else PoseEvidence.from_wire(value.get("pose")),
-                   None if value.get("motion") is None else MotionEvidence.from_wire(value.get("motion")))
+                   None if value.get("motion") is None else MotionEvidence.from_wire(value.get("motion")),
+                   None if value.get("environment") is None else EnvironmentObservation.from_wire(value.get("environment")))
 
 
 
