@@ -166,9 +166,18 @@ pub(super) fn per_eye_reissue_eye() -> Option<usize> {
     }
 }
 
+pub(super) fn per_eye_reissue_full_viewport() -> Option<D3D11_VIEWPORT> {
+    *REISSUE_FULL_VIEWPORT.lock()
+}
+
+static REISSUE_FULL_VIEWPORT: Mutex<Option<D3D11_VIEWPORT>> = Mutex::new(None);
+
 /// Raises [`PER_EYE_REISSUE`] for one eye for as long as it lives, carrying the previous marker so a
 /// nested re-issue restores rather than clears it.
-pub(super) struct PerEyeReissue(usize);
+pub(super) struct PerEyeReissue {
+    previous_marker: usize,
+    previous_full: Option<D3D11_VIEWPORT>,
+}
 
 impl PerEyeReissue {
     /// Saves and restores the previous marker rather than clearing it, the same shape
@@ -177,15 +186,20 @@ impl PerEyeReissue {
     /// either, and clearing would un-guard the remainder of the outer loop the moment it stopped
     /// holding: this module's own draw detours would start splitting geometry the outer re-issue had
     /// already split, which is the doubled-geometry artifact the marker exists to prevent.
-    pub(super) fn enter(eye: usize) -> Self {
-        let previous = PER_EYE_REISSUE.swap(eye + 1, Ordering::Release);
-        Self(previous)
+    pub(super) fn enter(eye: usize, full: D3D11_VIEWPORT) -> Self {
+        let previous_full = REISSUE_FULL_VIEWPORT.lock().replace(full);
+        let previous_marker = PER_EYE_REISSUE.swap(eye + 1, Ordering::Release);
+        Self {
+            previous_marker,
+            previous_full,
+        }
     }
 }
 
 impl Drop for PerEyeReissue {
     fn drop(&mut self) {
-        PER_EYE_REISSUE.store(self.0, Ordering::Release);
+        *REISSUE_FULL_VIEWPORT.lock() = self.previous_full;
+        PER_EYE_REISSUE.store(self.previous_marker, Ordering::Release);
     }
 }
 
@@ -480,7 +494,7 @@ pub(super) fn per_eye_halves(
     render: &mut impl FnMut(usize),
 ) {
     for eye in 0..2 {
-        let _reissue = PerEyeReissue::enter(eye);
+        let _reissue = PerEyeReissue::enter(eye, full);
         bind_both_viewport_slots(d3d, eye_half_viewport(full, eye));
         render(eye);
     }

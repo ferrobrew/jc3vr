@@ -90,6 +90,19 @@ pub(super) fn eye_half_viewport(full: D3D11_VIEWPORT, eye: usize) -> D3D11_VIEWP
     }
 }
 
+pub(super) fn reissue_viewport(
+    requested: D3D11_VIEWPORT,
+    full: D3D11_VIEWPORT,
+    eye: usize,
+) -> D3D11_VIEWPORT {
+    let half = eye_half_viewport(full, eye);
+    if requested == half {
+        requested
+    } else {
+        eye_half_viewport(requested, eye)
+    }
+}
+
 /// If single-pass is active, duplicate the immediate context's current viewport (and scissor) into
 /// slot 1. Called right after the engine binds a render setup ([`SetRenderSetup`]), which is where
 /// the viewport is (re)set -- including per-cascade in the shadow passes, so slot 1 tracks whatever
@@ -277,7 +290,8 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
             // Inside a per-eye re-issue the eye half must survive whatever the block binds. Honour the
             // requested region but keep it pinned to this eye's half, and leave `COLLAPSE_FULL_VIEWPORT`
             // alone so the re-issue cannot redefine what "full" means for the draws that follow it.
-            let half = eye_half_viewport(vp, eye);
+            let half =
+                per_eye_reissue_full_viewport().map_or(vp, |full| reissue_viewport(vp, full, eye));
             set_viewport_slots_uniform(true);
             unsafe { detour.call(context, 2, [half, half].as_ptr()) };
             return;
@@ -385,4 +399,139 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
     // instances land in one half -- the doubled/"same geometry twice" artifact. Re-binding per draw
     // is cheap (a few hundred geometry draws per frame, far below the draw budget we are cutting).
     unsafe { detour.call(context, 2, viewports.as_ptr()) };
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn full_viewport() -> D3D11_VIEWPORT {
+        D3D11_VIEWPORT {
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: 3840.0,
+            Height: 1080.0,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
+        }
+    }
+
+    #[test]
+    fn saved_eye_half_replays_exactly_for_both_eyes() {
+        let full = full_viewport();
+        for eye in 0..2 {
+            let pinned = eye_half_viewport(full, eye);
+            assert_eq!(reissue_viewport(pinned, full, eye), pinned, "eye {eye}");
+            let mut replayed = pinned;
+            for round in 0..4 {
+                replayed = reissue_viewport(replayed, full, eye);
+                assert_eq!(replayed, pinned, "eye {eye}, round {round}");
+            }
+        }
+    }
+
+    #[test]
+    fn full_viewport_maps_to_the_eye_half() {
+        let full = full_viewport();
+        for eye in 0..2 {
+            assert_eq!(
+                reissue_viewport(full, full, eye),
+                eye_half_viewport(full, eye),
+                "eye {eye}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_request_that_is_not_the_eye_half_still_maps() {
+        let full = full_viewport();
+        let sub_region = D3D11_VIEWPORT {
+            TopLeftX: 128.0,
+            TopLeftY: 64.0,
+            Width: full.Width / 2.0,
+            Height: 540.0,
+            MinDepth: 0.1,
+            MaxDepth: 0.9,
+        };
+        for eye in 0..2 {
+            let mapped = reissue_viewport(sub_region, full, eye);
+            assert_ne!(mapped, sub_region, "eye {eye}");
+            assert_eq!(mapped, eye_half_viewport(sub_region, eye), "eye {eye}");
+            assert_eq!(mapped.Width, sub_region.Width / 2.0, "eye {eye}");
+            assert_eq!(
+                mapped.TopLeftX,
+                sub_region.TopLeftX + eye as f32 * sub_region.Width / 2.0,
+                "eye {eye}"
+            );
+            assert_eq!(mapped.TopLeftY, sub_region.TopLeftY, "eye {eye}");
+            assert_eq!(mapped.Height, sub_region.Height, "eye {eye}");
+            assert_eq!(
+                (mapped.MinDepth, mapped.MaxDepth),
+                (sub_region.MinDepth, sub_region.MaxDepth),
+                "eye {eye}"
+            );
+        }
+
+        let shifted_half = D3D11_VIEWPORT {
+            TopLeftY: 24.0,
+            ..eye_half_viewport(full, 0)
+        };
+        let mapped = reissue_viewport(shifted_half, full, 0);
+        assert_ne!(mapped, shifted_half);
+        assert_eq!(mapped, eye_half_viewport(shifted_half, 0));
+        assert_eq!(mapped.Width, shifted_half.Width / 2.0);
+    }
+
+    #[test]
+    fn the_eye_half_keeps_offsets_height_and_depth_range() {
+        let full = D3D11_VIEWPORT {
+            TopLeftX: 64.0,
+            TopLeftY: 32.0,
+            Width: 2560.0,
+            Height: 1440.0,
+            MinDepth: 0.25,
+            MaxDepth: 0.75,
+        };
+        for eye in 0..2 {
+            let half = reissue_viewport(full, full, eye);
+            assert_eq!(half.TopLeftX, 64.0 + eye as f32 * 1280.0, "eye {eye}");
+            assert_eq!(half.TopLeftY, 32.0, "eye {eye}");
+            assert_eq!(half.Width, 1280.0, "eye {eye}");
+            assert_eq!(half.Height, 1440.0, "eye {eye}");
+            assert_eq!((half.MinDepth, half.MaxDepth), (0.25, 0.75), "eye {eye}");
+            assert_eq!(reissue_viewport(half, full, eye), half, "eye {eye}");
+        }
+    }
+
+    #[test]
+    fn nested_reissue_scopes_restore_the_outer_one() {
+        let _serial = TEST_LOCK.lock();
+        let outer = full_viewport();
+        let inner = D3D11_VIEWPORT {
+            Width: outer.Width / 2.0,
+            ..outer
+        };
+        assert_eq!(per_eye_reissue_eye(), None);
+        assert_eq!(per_eye_reissue_full_viewport(), None);
+        {
+            let _outer_scope = PerEyeReissue::enter(1, outer);
+            assert_eq!(per_eye_reissue_eye(), Some(1));
+            assert_eq!(per_eye_reissue_full_viewport(), Some(outer));
+            {
+                let _inner_scope = PerEyeReissue::enter(0, inner);
+                assert_eq!(per_eye_reissue_eye(), Some(0));
+                assert_eq!(per_eye_reissue_full_viewport(), Some(inner));
+                assert_eq!(
+                    reissue_viewport(eye_half_viewport(inner, 0), inner, 0),
+                    eye_half_viewport(inner, 0)
+                );
+            }
+            assert_eq!(per_eye_reissue_eye(), Some(1));
+            assert_eq!(per_eye_reissue_full_viewport(), Some(outer));
+        }
+        assert_eq!(per_eye_reissue_eye(), None);
+        assert_eq!(per_eye_reissue_full_viewport(), None);
+    }
 }

@@ -373,7 +373,7 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
     for eye in 0..2 {
         // The same marker the baked-cb re-issues raise: it keeps this module's own detours -- and any
         // block-level re-issue reached from here -- from compounding the split this loop sets up.
-        let _reissue = PerEyeReissue::enter(eye);
+        let _reissue = PerEyeReissue::enter(eye, full);
         if !write_cb13_rows(d3d, &pin_rows_to_eye(&rows, eye)) {
             break;
         }
