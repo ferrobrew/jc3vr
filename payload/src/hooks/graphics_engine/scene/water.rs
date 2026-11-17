@@ -49,9 +49,12 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::stereo::single_pass::{
-    BlockIntercept, block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs,
-    screen_uv_cb_per_eye,
+use crate::{
+    screenshot::harness::stages::{capture_water_after, capture_water_before},
+    stereo::single_pass::{
+        BlockIntercept, block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs,
+        screen_uv_cb_per_eye,
+    },
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -264,6 +267,7 @@ unsafe fn nv_water_per_eye(
     if NV_WATER_AUXILIARY_PASSES.contains(&pass) {
         return false;
     }
+    let water_surface = pass == RenderPassId::RP_WATER as i32;
     let Some(eyes) = eye_cameras(center_view) else {
         return false;
     };
@@ -276,6 +280,10 @@ unsafe fn nv_water_per_eye(
         saved_projection,
     };
 
+    if water_surface {
+        capture_water_before();
+    }
+
     draw_per_eye_half_ignoring_bound_vs(|eye| {
         // SAFETY: `rc` is live, and `this` is the live block whose `Setup` reads it. The two trailing
         // arguments are the draw-list sort ids, which this block's `Setup` override does not read.
@@ -286,6 +294,9 @@ unsafe fn nv_water_per_eye(
             (*this).Setup(rc, 0, 0);
         }
         draw();
+        if water_surface {
+            capture_water_after(eye);
+        }
     })
 }
 

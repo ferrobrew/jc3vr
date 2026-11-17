@@ -59,6 +59,9 @@ pub(crate) enum Stage {
     PreAtmosphere,
     PostAtmosphere,
     PostResolve,
+    WaterBefore,
+    WaterAfterLeft,
+    WaterAfterRight,
     PreAa,
     PostAa,
 }
@@ -67,7 +70,13 @@ impl Stage {
     pub(crate) fn is_hdr(self) -> bool {
         matches!(
             self,
-            Self::MainColor | Self::PreAtmosphere | Self::PostAtmosphere | Self::PostResolve
+            Self::MainColor
+                | Self::PreAtmosphere
+                | Self::PostAtmosphere
+                | Self::PostResolve
+                | Self::WaterBefore
+                | Self::WaterAfterLeft
+                | Self::WaterAfterRight
         )
     }
 }
@@ -153,6 +162,18 @@ pub(crate) fn capture_after_resolve() {
     capture_hdr(HdrStage::PostResolve);
 }
 
+pub(crate) fn capture_water_before() {
+    capture_hdr(HdrStage::WaterBefore);
+}
+
+pub(crate) fn capture_water_after(eye: usize) {
+    match eye {
+        0 => capture_hdr(HdrStage::WaterAfterLeft),
+        1 => capture_hdr(HdrStage::WaterAfterRight),
+        _ => {}
+    }
+}
+
 pub(crate) fn capture_slot(stage: Stage, mgr: *mut c_void, slot: u32) {
     capture(stage, || {
         if mgr.is_null() {
@@ -195,6 +216,9 @@ enum HdrStage {
     PreAtmosphere,
     PostAtmosphere,
     PostResolve,
+    WaterBefore,
+    WaterAfterLeft,
+    WaterAfterRight,
 }
 
 impl HdrStage {
@@ -204,6 +228,9 @@ impl HdrStage {
             Self::PreAtmosphere => Stage::PreAtmosphere,
             Self::PostAtmosphere => Stage::PostAtmosphere,
             Self::PostResolve => Stage::PostResolve,
+            Self::WaterBefore => Stage::WaterBefore,
+            Self::WaterAfterLeft => Stage::WaterAfterLeft,
+            Self::WaterAfterRight => Stage::WaterAfterRight,
         }
     }
 }
@@ -638,6 +665,9 @@ mod tests {
             Stage::PreAtmosphere,
             Stage::PostAtmosphere,
             Stage::PostResolve,
+            Stage::WaterBefore,
+            Stage::WaterAfterLeft,
+            Stage::WaterAfterRight,
         ] {
             let StageArtifact::Raw(packed) = stage_image(stage, &bytes, 12, &desc).unwrap() else {
                 panic!("expected raw HDR");
@@ -651,12 +681,15 @@ mod tests {
     }
 
     #[test]
-    fn atmosphere_stages_serialize_as_snake_case_and_are_hdr() {
+    fn hdr_stages_serialize_as_snake_case_and_are_hdr() {
         for (stage, name) in [
             (Stage::MainColor, "main_color"),
             (Stage::PreAtmosphere, "pre_atmosphere"),
             (Stage::PostAtmosphere, "post_atmosphere"),
             (Stage::PostResolve, "post_resolve"),
+            (Stage::WaterBefore, "water_before"),
+            (Stage::WaterAfterLeft, "water_after_left"),
+            (Stage::WaterAfterRight, "water_after_right"),
         ] {
             assert_eq!(serde_json::to_value(stage).unwrap(), name);
             assert!(stage.is_hdr());

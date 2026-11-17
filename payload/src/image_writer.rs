@@ -354,6 +354,9 @@ fn stage_name(stage: Stage) -> &'static str {
         Stage::PreAtmosphere => "pre_atmosphere",
         Stage::PostAtmosphere => "post_atmosphere",
         Stage::PostResolve => "post_resolve",
+        Stage::WaterBefore => "water_before",
+        Stage::WaterAfterLeft => "water_after_left",
+        Stage::WaterAfterRight => "water_after_right",
         Stage::PreAa => "pre_aa",
         Stage::PostAa => "post_aa",
     }
@@ -677,6 +680,9 @@ mod tests {
             (Stage::PreAtmosphere, "pre_atmosphere"),
             (Stage::PostAtmosphere, "post_atmosphere"),
             (Stage::PostResolve, "post_resolve"),
+            (Stage::WaterBefore, "water_before"),
+            (Stage::WaterAfterLeft, "water_after_left"),
+            (Stage::WaterAfterRight, "water_after_right"),
         ];
         capture.stages = stages
             .into_iter()
