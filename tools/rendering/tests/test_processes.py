@@ -4,7 +4,7 @@ import types
 import unittest
 from pathlib import Path
 
-from tools.rendering.capture.processes import (
+from tools.rendering.session.processes import (
     Process,
     ProcessError,
     processes,

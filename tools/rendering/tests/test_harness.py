@@ -11,15 +11,11 @@ import zlib
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.rendering.capture.harness import (
-    HarnessError,
-    Options,
-    VisualHarness,
-    child_main,
-    default_smoke,
-    validate_capture,
-    validate_png,
-)
+from tools.rendering.capture.harness import default_smoke
+from tools.rendering.capture.validation import validate_capture, validate_png
+from tools.rendering.session.errors import SessionError
+from tools.rendering.session.launch import RenderingSession, child_main
+from tools.rendering.session.options import Options
 from tools.rendering.protocol import (
     NativeCapture,
     ProtocolError,
@@ -32,7 +28,7 @@ class RunnerTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary.name)
-        self.runner = VisualHarness(Options(no_build=True))
+        self.runner = RenderingSession(Options(no_build=True))
         self.runner.output = self.root
         self.runner.env = os.environ.copy()
         self.runner.env["JC3VR_HARNESS_TOKEN"] = self.runner.token
@@ -43,22 +39,22 @@ class RunnerTests(unittest.TestCase):
         self.temporary.cleanup()
 
     def test_check_has_no_startup_side_effects(self):
-        runner = VisualHarness(Options(check=True, no_build=True, gpu="10de:2b85"))
+        runner = RenderingSession(Options(check=True, no_build=True, gpu="10de:2b85"))
         manifest = self.root / "openxr.json"
         library = self.root / "lib/libopenxr_monado.so"
         manifest.write_text(json.dumps({"runtime": {"library_path": str(library)}}))
-        with patch("tools.rendering.capture.harness.MANIFEST", manifest), \
+        with patch("tools.rendering.session.launch.MANIFEST", manifest), \
                 patch.object(runner, "reject_existing"), \
                 patch.object(runner, "require_steam_client"), \
                 patch.object(runner, "_library", return_value=self.root), \
                 patch.object(runner, "_xrizer", return_value=self.root), \
                 patch.object(runner, "_gpu", return_value="10de:2b85"), \
                 patch.object(runner, "_check_artifacts"), \
-                patch("tools.rendering.capture.harness.shutil.which", return_value="/fake/tool"), \
-                patch("tools.rendering.capture.harness.os.access", return_value=True), \
+                patch("tools.rendering.session.launch.shutil.which", return_value="/fake/tool"), \
+                patch("tools.rendering.session.launch.os.access", return_value=True), \
                 patch.object(Path, "exists", return_value=True), \
-                patch("tools.rendering.capture.harness.tempfile.mkdtemp") as create, \
-                patch("tools.rendering.capture.harness.subprocess.Popen") as launch:
+                patch("tools.rendering.session.launch.tempfile.mkdtemp") as create, \
+                patch("tools.rendering.session.launch.subprocess.Popen") as launch:
             runner.check()
         create.assert_not_called()
         launch.assert_not_called()
@@ -67,29 +63,29 @@ class RunnerTests(unittest.TestCase):
         self.assertIsNone(runner.work)
 
     def test_check_rejects_missing_steam_client(self):
-        runner = VisualHarness(Options(no_build=True))
+        runner = RenderingSession(Options(no_build=True))
         with patch.object(runner, "reject_existing"), \
-                patch("tools.rendering.capture.harness.steam_client", return_value=None), \
-                self.assertRaisesRegex(HarnessError, "Steam client is not running; start Steam and sign in"):
+                patch("tools.rendering.session.launch.steam_client", return_value=None), \
+                self.assertRaisesRegex(SessionError, "Steam client is not running; start Steam and sign in"):
             runner.check()
 
     def test_require_steam_client_accepts_a_running_client(self):
-        with patch("tools.rendering.capture.harness.steam_client", return_value=object()):
+        with patch("tools.rendering.session.launch.steam_client", return_value=object()):
             self.runner.require_steam_client()
 
     def test_preview_follows_a_run_even_when_startup_fails(self):
         output = self.root / "preview-run"
         pointer = self.root / "latest.json"
-        runner = VisualHarness(Options(no_build=True, output=output))
-        with patch("tools.rendering.capture.harness.ROOT", self.root), \
-                patch("tools.rendering.capture.harness.DEFAULT_POINTER", pointer), \
+        runner = RenderingSession(Options(no_build=True, output=output))
+        with patch("tools.rendering.session.launch.ROOT", self.root), \
+                patch("tools.rendering.session.launch.DEFAULT_POINTER", pointer), \
                 patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.root)}), \
                 patch.object(runner, "check"), \
                 patch.object(runner, "_acquire_lock"), \
                 patch.object(runner, "reject_existing"), \
                 patch.object(runner, "_seed_settings"), \
-                patch.object(runner, "_base_env", side_effect=HarnessError("startup probe")), \
-                self.assertRaisesRegex(HarnessError, "startup probe"):
+                patch.object(runner, "_base_env", side_effect=SessionError("startup probe")), \
+                self.assertRaisesRegex(SessionError, "startup probe"):
             runner.run()
         self.assertEqual(json.loads(pointer.read_text())["output"], str(output))
         report = json.loads((output / "result.json").read_text())
@@ -98,7 +94,7 @@ class RunnerTests(unittest.TestCase):
         self.assertTrue(runner._closed)
 
     def test_nonzero_command_is_an_error(self):
-        with self.assertRaisesRegex(HarnessError, "status 7"):
+        with self.assertRaisesRegex(SessionError, "status 7"):
             self.runner._command([sys.executable, "-c", "raise SystemExit(7)"], "exit", 2)
 
     def test_commands_do_not_return_previous_log_contents(self):
@@ -108,14 +104,14 @@ class RunnerTests(unittest.TestCase):
 
     def test_command_timeout_reaps_the_process(self):
         start = time.monotonic()
-        with self.assertRaisesRegex(HarnessError, "exceeded"):
+        with self.assertRaisesRegex(SessionError, "exceeded"):
             self.runner._command([sys.executable, "-c", "import time;time.sleep(10)"], "slow", 0.1)
         self.assertLess(time.monotonic() - start, 3)
         self.assertIsNotNone(self.runner.processes[-1].poll())
 
     def test_run_deadline_prevents_new_commands(self):
         self.runner.deadline = time.monotonic() - 1
-        with patch.object(self.runner, "_spawn") as spawn, self.assertRaisesRegex(HarnessError, "run timeout"):
+        with patch.object(self.runner, "_spawn") as spawn, self.assertRaisesRegex(SessionError, "run timeout"):
             self.runner._command(["never"], "late", 2)
         spawn.assert_not_called()
 
@@ -123,12 +119,12 @@ class RunnerTests(unittest.TestCase):
         self.runner.monado = subprocess.Popen([sys.executable, "-c", "pass"])
         self.runner.processes.append(self.runner.monado)
         self.runner.monado.wait(timeout=2)
-        with self.assertRaisesRegex(HarnessError, "Monado exited"):
+        with self.assertRaisesRegex(SessionError, "Monado exited"):
             self.runner._wait_for(lambda: False, "socket", 2)
 
     def test_readiness_wait_is_bounded(self):
         start = time.monotonic()
-        with self.assertRaisesRegex(HarnessError, "timed out waiting"):
+        with self.assertRaisesRegex(SessionError, "timed out waiting"):
             self.runner._wait_for(lambda: False, "socket", 0.1)
         self.assertLess(time.monotonic() - start, 1)
 
@@ -179,11 +175,11 @@ class RunnerTests(unittest.TestCase):
             events.append(arguments[1:])
             return subprocess.CompletedProcess(arguments, 0)
 
-        with patch("tools.rendering.capture.harness.time.monotonic", return_value=100), \
+        with patch("tools.rendering.session.launch.time.monotonic", return_value=100), \
                 patch.dict(os.environ, {"DISPLAY": ":0", "XAUTHORITY": "/host/auth"}), \
                 patch.object(self.runner, "_command", side_effect=execute) as command, \
-                patch("tools.rendering.capture.harness.subprocess.run", side_effect=key) as keys, \
-                patch("tools.rendering.capture.harness.time.sleep", side_effect=lambda seconds: events.append(["hold", seconds])) as hold:
+                patch("tools.rendering.session.launch.subprocess.run", side_effect=key) as keys, \
+                patch("tools.rendering.session.launch.time.sleep", side_effect=lambda seconds: events.append(["hold", seconds])) as hold:
             yield events, command, keys, hold
 
     def test_menu_verifies_focus_and_holds_return_on_private_display(self):
@@ -225,7 +221,7 @@ class RunnerTests(unittest.TestCase):
             with self.subTest(error=type(error).__name__), self._menu() as (_, _, keys, hold):
                 self.runner.last_menu = 0
                 keys.side_effect = [error, subprocess.CompletedProcess([], 0)]
-                with self.assertRaises(KeyboardInterrupt if isinstance(error, KeyboardInterrupt) else HarnessError):
+                with self.assertRaises(KeyboardInterrupt if isinstance(error, KeyboardInterrupt) else SessionError):
                     self.runner.pump_menu()
                 self.assertEqual([call.args[0][1:] for call in keys.call_args_list],
                                  [["keydown", "Return"], ["keyup", "Return"]])
@@ -253,7 +249,7 @@ class RunnerTests(unittest.TestCase):
     def test_menu_release_failure_is_reported(self):
         with self._menu() as (_, _, keys, hold):
             keys.side_effect = [subprocess.CompletedProcess([], 0), OSError("release failed")]
-            with self.assertRaisesRegex(HarnessError, "menu keyup.*release failed"):
+            with self.assertRaisesRegex(SessionError, "menu keyup.*release failed"):
                 self.runner.pump_menu()
             hold.assert_called_once_with(0.3)
             self.assertEqual(keys.call_args.args[0][1:], ["keyup", "Return"])
@@ -263,7 +259,7 @@ class RunnerTests(unittest.TestCase):
             error = KeyboardInterrupt()
             hold.side_effect = error
             keys.side_effect = [subprocess.CompletedProcess([], 0), OSError("release failed")]
-            with self.assertLogs("tools.rendering.capture.harness", level="ERROR"), self.assertRaises(KeyboardInterrupt) as raised:
+            with self.assertLogs("tools.rendering.session.launch", level="ERROR"), self.assertRaises(KeyboardInterrupt) as raised:
                 self.runner.pump_menu()
             self.assertIs(raised.exception, error)
             self.assertIn("menu keyup", error.__notes__[0])
@@ -274,7 +270,7 @@ class RunnerTests(unittest.TestCase):
         env = {"DISPLAY": ":123", "XAUTHORITY": "/private/auth",
                "XR_RUNTIME_JSON": "/host/native-runtime.json"}
         with patch.dict(os.environ, env, clear=True), \
-                patch("tools.rendering.capture.harness.os.execvp") as execute:
+                patch("tools.rendering.session.launch.os.execvp") as execute:
             child_main([str(self.runner.display_file), "private-command"])
             self.assertNotIn("XR_RUNTIME_JSON", os.environ)
         self.assertEqual(self.runner.display_env()["DISPLAY"], ":123")
@@ -339,10 +335,10 @@ class RunnerTests(unittest.TestCase):
         damaged = bytearray(good)
         damaged[-1] ^= 1
         path.write_bytes(damaged)
-        with self.assertRaisesRegex(HarnessError, "CRC"):
+        with self.assertRaisesRegex(SessionError, "CRC"):
             validate_png(path)
         path.write_bytes(b"\x89PNG\r\n\x1a\n" + header + chunk(b"IDAT", zlib.compress(b"short")) + chunk(b"IEND", b""))
-        with self.assertRaisesRegex(HarnessError, "decoded length"):
+        with self.assertRaisesRegex(SessionError, "decoded length"):
             validate_png(path)
 
     def test_capture_metadata_must_match_acknowledgement(self):
@@ -360,7 +356,7 @@ class RunnerTests(unittest.TestCase):
         (self.root / "stale.json").write_text("{}")
         with (patch.object(self.runner, "reject_existing"), patch.object(self.runner, "require_steam_client"),
               patch.object(self.runner, "_spawn") as spawn,
-              self.assertRaisesRegex(HarnessError, "empty directory")):
+              self.assertRaisesRegex(SessionError, "empty directory")):
             self.runner.check()
         spawn.assert_not_called()
 
@@ -392,7 +388,7 @@ class RunnerTests(unittest.TestCase):
         self.runner.appid = "123456"
         manifest = self.root / "native-runtime.json"
         manifest.write_text("{}")
-        with patch("tools.rendering.capture.harness.MANIFEST", manifest), \
+        with patch("tools.rendering.session.launch.MANIFEST", manifest), \
                 patch.dict(os.environ, {"XR_RUNTIME_JSON": "/host/runtime.json"}):
             self.runner._base_env()
         self.assertNotIn("XR_RUNTIME_JSON", self.runner.env)
@@ -429,7 +425,7 @@ class RunnerTests(unittest.TestCase):
             }))
         with patch.object(self.runner, "inject", return_value=subprocess.CompletedProcess([], 0, "")), \
                 patch.object(self.runner, "pump_menu"), \
-                patch("tools.rendering.capture.harness.time.sleep", side_effect=publish), \
+                patch("tools.rendering.session.channel.time.sleep", side_effect=publish), \
                 patch("tools.rendering.capture.harness.validate_capture", side_effect=lambda _, __, result: result):
             result = default_smoke(self.runner)
         self.assertTrue(result.smoke_succeeded)
@@ -439,15 +435,15 @@ class RunnerTests(unittest.TestCase):
     def test_smoke_never_retries_an_export_failure(self):
         self.runner.options.startup_timeout = 1
         with (patch.object(self.runner, "inject", return_value=subprocess.CompletedProcess([], 1, "could not run the payload")) as inject,
-              self.assertRaisesRegex(HarnessError, "not safe to retry")):
+              self.assertRaisesRegex(SessionError, "not safe to retry")):
             default_smoke(self.runner)
         inject.assert_called_once()
 
     def test_report_records_failure_after_cleanup(self):
         with (tempfile.TemporaryFile() as lock, patch.object(self.runner, "start", return_value=self.runner),
-              self.assertRaises(HarnessError)):
+              self.assertRaises(SessionError)):
             self.runner._lock = lock
-            self.runner.run(lambda _: (_ for _ in ()).throw(HarnessError("smoke failed")))
+            self.runner.run(lambda _: (_ for _ in ()).throw(SessionError("smoke failed")))
         report = json.loads((self.root / "result.json").read_text())
         self.assertFalse(report["smoke_succeeded"])
         self.assertEqual(report["status"], "failed")
@@ -460,9 +456,9 @@ class RunnerTests(unittest.TestCase):
         self.runner.runtime = self.root / "runtime"
         self.runner.runtime.mkdir()
         with patch.object(self.runner, "_owned_pids", return_value=[31]), \
-                patch("tools.rendering.capture.harness.os.close") as close_fd, \
-                patch("tools.rendering.capture.harness.signal.pidfd_send_signal"), \
-                patch("tools.rendering.capture.harness.time.monotonic", side_effect=[0, 5, 6, 10]):
+                patch("tools.rendering.session.launch.os.close") as close_fd, \
+                patch("tools.rendering.session.launch.signal.pidfd_send_signal", create=True), \
+                patch("tools.rendering.session.launch.time.monotonic", side_effect=[0, 5, 6, 10]):
             self.runner.close()
         close_fd.assert_called_once_with(31)
         self.assertTrue(self.runner.prefix.is_dir())
@@ -476,7 +472,7 @@ class RunnerTests(unittest.TestCase):
 
     def test_callback_failure_always_cleans_up(self):
         def fail(_):
-            raise HarnessError("smoke: not ready")
-        with patch.object(self.runner, "start", return_value=self.runner), self.assertRaisesRegex(HarnessError, "not ready"):
+            raise SessionError("smoke: not ready")
+        with patch.object(self.runner, "start", return_value=self.runner), self.assertRaisesRegex(SessionError, "not ready"):
             self.runner.run(fail)
         self.assertTrue(self.runner._closed)

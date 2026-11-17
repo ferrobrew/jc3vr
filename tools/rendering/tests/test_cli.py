@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-COMMANDS = ("run", "launch", "compare", "stages", "constants", "viewer")
+COMMANDS = ("run", "launch", "session", "compare", "stages", "constants", "viewer")
 
 
 class CliTests(unittest.TestCase):
@@ -41,6 +41,11 @@ class CliTests(unittest.TestCase):
                 result = self.invoke(command, "--help")
                 self.assertEqual(result.returncode, 0, result.stderr)
                 self.assertIn("usage:", result.stdout)
+
+    def test_session_rejects_execution_modes(self):
+        result = self.invoke("session", "--suite")
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("mutually exclusive", result.stderr)
 
     def test_unknown_command_reports_the_usage(self):
         result = self.invoke("frobnicate")

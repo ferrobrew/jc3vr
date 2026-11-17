@@ -5,8 +5,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tools.rendering.capture.harness import HarnessError, Options, VisualHarness, main
-from tools.rendering.capture.harness_cli import parse_args
+from tools.rendering.capture.harness import main
+from tools.rendering.session.errors import SessionError
+from tools.rendering.session.launch import RenderingSession
+from tools.rendering.session.options import Options, parse_args
 from tools.rendering.capture.probe import PROBE_CASE, run_single_pass_probe
 from tools.rendering.capture.suite import SuiteError
 from tools.rendering.protocol import (
@@ -33,7 +35,7 @@ class ProbeTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.runner = VisualHarness(Options(single_pass_probe=True, probe_yaw=-60.0, probe_pitch=-10.0))
+        self.runner = RenderingSession(Options(single_pass_probe=True, probe_yaw=-60.0, probe_pitch=-10.0))
         self.runner.output = self.root
         self.runner.config_dir = self.root / "config"
         self.runner.config_dir.mkdir()
@@ -104,18 +106,18 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(len(manifest["cases"][0]["modes"]["single_pass"]), 3)
 
     def test_restoration_failure_is_recorded_and_preserves_the_capture_error(self):
-        self.fake_run(capture_failure=HarnessError("capture failed"),
-                      restore_failure=HarnessError("restore failed"))
+        self.fake_run(capture_failure=SessionError("capture failed"),
+                      restore_failure=SessionError("restore failed"))
         with self.assertLogs("tools.rendering.capture.harness", level="ERROR"), \
-                self.assertRaisesRegex(HarnessError, "capture failed") as raised:
+                self.assertRaisesRegex(SessionError, "capture failed") as raised:
             run_single_pass_probe(self.runner)
         self.assertIn("restoration failed", raised.exception.__notes__[0])
         self.assertEqual(self.runner.result.restoration_error, "restore failed")
         self.assertEqual(self.runner.request.call_args_list[-1].args[0].id, "probe_end")
 
     def test_restoration_failure_alone_fails_the_probe(self):
-        self.fake_run(restore_failure=HarnessError("restore failed"))
-        with self.assertRaisesRegex(HarnessError, "restore failed"):
+        self.fake_run(restore_failure=SessionError("restore failed"))
+        with self.assertRaisesRegex(SessionError, "restore failed"):
             run_single_pass_probe(self.runner)
         self.assertEqual(self.runner.result.restoration_error, "restore failed")
 
@@ -131,21 +133,21 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual((defaults.probe_right, defaults.probe_up, defaults.probe_forward),
                          (0.0, 0.0, 0.0))
         for yaw, pitch in ((181.0, 0.0), (0.0, -180.5), (float("nan"), 0.0), (0.0, float("inf"))):
-            runner = VisualHarness(Options(single_pass_probe=True, probe_yaw=yaw, probe_pitch=pitch))
+            runner = RenderingSession(Options(single_pass_probe=True, probe_yaw=yaw, probe_pitch=pitch))
             with self.subTest(yaw=yaw, pitch=pitch), patch.object(runner, "reject_existing") as reject, \
                     self.assertRaises(SuiteError):
                 runner.check()
             reject.assert_not_called()
         for translation in ((5000.5, 0.0, 0.0), (0.0, float("nan"), 0.0), (0.0, 0.0, -5000.5)):
-            runner = VisualHarness(Options(single_pass_probe=True, probe_right=translation[0],
+            runner = RenderingSession(Options(single_pass_probe=True, probe_right=translation[0],
                                            probe_up=translation[1], probe_forward=translation[2]))
             with self.subTest(translation=translation), patch.object(runner, "reject_existing") as reject, \
                     self.assertRaises(SuiteError):
                 runner.check()
             reject.assert_not_called()
         with patch.object(self.runner, "reject_existing") as reject, \
-                self.assertRaisesRegex(HarnessError, "mutually exclusive"):
-            VisualHarness(Options(suite=True, single_pass_probe=True)).check()
+                self.assertRaisesRegex(SessionError, "mutually exclusive"):
+            RenderingSession(Options(suite=True, single_pass_probe=True)).check()
         reject.assert_not_called()
 
     def test_probe_result_never_fabricates_a_pass(self):
@@ -158,9 +160,9 @@ class ProbeTests(unittest.TestCase):
         wire = report.to_wire()
         self.assertEqual(wire["diagnostic"], "inconclusive")
         self.assertNotIn("visual_passed", wire)
-        with patch.object(VisualHarness, "run", autospec=True) as run, \
-                patch.object(VisualHarness, "close"), patch("tools.rendering.capture.harness.signal.signal"):
-            def success(runner):
+        with patch.object(RenderingSession, "run", autospec=True) as run, \
+                patch.object(RenderingSession, "close"), patch("tools.rendering.capture.harness.signal.signal"):
+            def success(runner, callback):
                 runner.result.complete(result)
 
             run.side_effect = success

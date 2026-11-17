@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from tools.rendering.capture.harness_cli import parse_args
+from tools.rendering.session.options import parse_args
 from tools.rendering.capture.motion import MOTION_PHASES, MOTION_SWEEP, run_motion_sweep
 from tools.rendering.protocol import (
     Camera,

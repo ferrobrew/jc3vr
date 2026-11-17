@@ -8,6 +8,7 @@ USAGE = """usage: python -m tools.rendering <command> [options]
 commands:
   run        run a configured rendering comparison
   launch     run the visual capture harness
+  session    launch and serve a private session until interrupted
   compare    compare frozen-camera captures
   stages     write native stage diagnostics for a suite manifest
   constants  write native constants diagnostics for a suite manifest
@@ -17,6 +18,7 @@ commands:
 COMMANDS = {
     "run": "tools.rendering.experiment",
     "launch": "tools.rendering.capture.harness",
+    "session": "tools.rendering.session.cli",
     "compare": "tools.rendering.comparison.images",
     "stages": "tools.rendering.comparison.stages",
     "constants": "tools.rendering.comparison.constants",
@@ -37,7 +39,7 @@ def main(argv=None):
         return 2
     module = importlib.import_module(target)
     if command == "launch" and rest and rest[0] == "_child":
-        module.child_main(rest[1:])
+        importlib.import_module("tools.rendering.session.launch").child_main(rest[1:])
         return 0
     return module.main(rest)
 

@@ -1,6 +1,6 @@
-"""Run a configured rendering-equivalence experiment against a live harness session.
+"""Run a configured rendering-equivalence experiment against a live rendering session.
 
-The experiment attaches to a running visual harness, poses the camera at a configured world
+The experiment attaches to a running private rendering session, poses the camera at a configured world
 transform, captures an ordered list of render configurations, and hands the resulting manifest to
 the strict image comparator. An optional bright-region feature check records whether the target
 configurations lose evidence that the reference configurations keep; it is reported separately and
@@ -9,7 +9,6 @@ can only make the overall outcome inconclusive, never pass.
 
 import argparse
 import dataclasses
-import fcntl
 import json
 import logging
 import math
@@ -24,13 +23,8 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.rendering.capture.harness import (
-    HarnessError,
-    VisualHarness,
-    validate_capture,
-)
-from tools.rendering.capture.processes import processes
 from tools.rendering.capture.suite import write_manifest
+from tools.rendering.capture.validation import validate_capture
 from tools.rendering.comparison.images import Mode as CompareMode
 from tools.rendering.comparison.images import (
     Outcome,
@@ -39,6 +33,8 @@ from tools.rendering.comparison.images import (
     load_sample,
 )
 from tools.rendering.comparison.stages import Stage, load_stage
+from tools.rendering.session.attach import AttachedSession
+from tools.rendering.session.errors import SessionError
 from tools.rendering.protocol import (
     POSE_TOLERANCE,
     Camera,
@@ -78,7 +74,7 @@ class ExperimentError(RuntimeError):
     pass
 
 
-EXPECTED_ERRORS = (ExperimentError, ProtocolError, HarnessError, OSError, ValueError,
+EXPECTED_ERRORS = (ExperimentError, ProtocolError, SessionError, OSError, ValueError,
                    TypeError)
 
 
@@ -290,59 +286,6 @@ class ExperimentConfig:
 
 
 @dataclass(frozen=True)
-class RunnerState:
-    token: str
-    config_dir: Path
-
-    @classmethod
-    def load(cls, path) -> "RunnerState":
-        try:
-            value = json.loads(Path(path).read_text())
-        except (OSError, ValueError) as error:
-            raise ExperimentError(f"experiment: could not read runner state {path}: {error}") from error
-        if not isinstance(value, dict):
-            raise ExperimentError("experiment: runner state is not a JSON object")
-        token = _string(value.get("token"), "runner.token")
-        config_dir = Path(_string(value.get("config_dir"), "runner.config_dir"))
-        if not valid_request_id(token) or not config_dir.is_absolute() or not config_dir.is_dir():
-            raise ExperimentError(
-                "experiment: runner state has an invalid token or config directory"
-            )
-        return cls(token, config_dir)
-
-
-@dataclass
-class AttachedRunner:
-    config_dir: Path
-    deadline: float
-    token: str
-    pid: int
-    pending_request: Request | None = None
-
-    def assert_running(self):
-        if time.monotonic() >= self.deadline:
-            raise ExperimentError("experiment: the attached run deadline expired")
-        try:
-            fields = set(Path(f"/proc/{self.pid}/environ").read_bytes().split(b"\0"))
-            os.kill(self.pid, 0)
-        except (FileNotFoundError, ProcessLookupError, PermissionError) as error:
-            raise ExperimentError(f"experiment: the attached game process {self.pid} is gone") from error
-        if f"JC3VR_HARNESS_TOKEN={self.token}".encode() not in fields:
-            raise ExperimentError(
-                "experiment: the attached game process no longer owns this runner"
-            )
-
-    def pump_menu(self):
-        pass
-
-    def request(self, value):
-        return VisualHarness.request(self, value)
-
-    def cancel_pending_request(self):
-        return VisualHarness.cancel_pending_request(self)
-
-
-@dataclass(frozen=True)
 class CaptureSummary:
     mode: CompareMode
     capture_id: str
@@ -403,50 +346,6 @@ class ExperimentReport:
 
     def to_wire(self):
         return dataclasses.asdict(self)
-
-
-def owning_process(state: RunnerState, proc: Path = Path("/proc")) -> int:
-    expected = {f"JC3VR_HARNESS_TOKEN={state.token}".encode(),
-                f"JC3VR_CONFIG_DIR={state.config_dir}".encode()}
-    matches = []
-    for process in processes(proc):
-        if not process.comm.startswith("justcause3"):
-            continue
-        if not process.argv or Path(process.argv[0].replace("\\", "/")).name.lower() != "justcause3.exe":
-            continue
-        try:
-            fields = set((proc / str(process.pid) / "environ").read_bytes().split(b"\0"))
-        except (FileNotFoundError, ProcessLookupError, PermissionError):
-            continue
-        if expected <= fields:
-            matches.append(process.pid)
-    if len(matches) != 1:
-        raise ExperimentError(
-            f"experiment: expected exactly one game process owning {state.config_dir}, "
-            f"found {len(matches)}"
-        )
-    return matches[0]
-
-
-class ExclusiveLock:
-    def __init__(self, handle):
-        self.handle = handle
-
-    @classmethod
-    def acquire(cls, config_dir: Path) -> "ExclusiveLock":
-        handle = (config_dir / "experiment.lock").open("a+")
-        try:
-            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as error:
-            handle.close()
-            raise ExperimentError(
-                f"experiment: another attached tool holds {config_dir}"
-            ) from error
-        return cls(handle)
-
-    def release(self):
-        fcntl.flock(self.handle, fcntl.LOCK_UN)
-        self.handle.close()
 
 
 def sample_id(prefix: str, mode: CompareMode, index: int) -> str:
@@ -880,7 +779,7 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(
         description="Run a configured rendering-equivalence experiment.")
     parser.add_argument("--runner", type=Path, required=True,
-                        help="runner.json from the running visual harness session")
+                        help="runner.json from the running private rendering session")
     parser.add_argument("--config", type=Path, required=True,
                         help="scene configuration for the experiment")
     parser.add_argument("--output", type=Path, required=True)
@@ -893,17 +792,10 @@ def main(argv=None) -> int:
         return 1
     try:
         config = ExperimentConfig.load(args.config)
-        state = RunnerState.load(args.runner)
-        pid = owning_process(state)
-        lock = ExclusiveLock.acquire(state.config_dir)
-        try:
-            runner = AttachedRunner(state.config_dir, time.monotonic() + args.timeout,
-                                    state.token, pid)
-            LOG.info("attached to game pid %d via %s", pid, args.runner)
+        with AttachedSession.attach(args.runner, args.timeout) as runner:
+            LOG.info("attached to game pid %d via %s", runner.pid, args.runner)
             report = run_experiment(runner, config, args.output)
-        finally:
-            lock.release()
-    except (ExperimentError, ProtocolError, HarnessError, OSError, ValueError) as error:
+    except (ExperimentError, ProtocolError, SessionError, OSError, ValueError) as error:
         LOG.error("%s", error)
         return 1
     LOG.info("experiment: %s (%s)", report.outcome.value, args.output)

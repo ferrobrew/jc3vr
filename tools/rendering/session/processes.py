@@ -1,4 +1,4 @@
-"""Process inspection shared by the visual harness."""
+"""Process inspection shared by launched and attached rendering sessions."""
 
 import dataclasses
 import os
@@ -46,7 +46,7 @@ def processes(proc=Path("/proc"), uid=None):
         except PermissionError as error:
             if entry_uid != os.getuid():
                 continue
-            raise ProcessError(f"visual harness: cannot inspect process {entry.name}") from error
+            raise ProcessError(f"session: cannot inspect process {entry.name}") from error
         result.append(Process(int(entry.name), comm, argv, entry_uid))
     return tuple(result)
 

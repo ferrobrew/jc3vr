@@ -11,15 +11,11 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tools.rendering.capture.harness import (
-    HarnessError,
-    Options,
-    VisualHarness,
-    default_smoke,
-    main,
-    validate_capture,
-)
-from tools.rendering.capture.harness_cli import parse_args
+from tools.rendering.capture.harness import default_smoke, main
+from tools.rendering.capture.validation import validate_capture
+from tools.rendering.session.errors import SessionError
+from tools.rendering.session.launch import RenderingSession
+from tools.rendering.session.options import Options, parse_args
 from tools.rendering.capture.suite import (
     ORIENTATION_SWEEP_CASES,
     SuiteError,
@@ -137,7 +133,7 @@ class SuiteTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
-        self.runner = VisualHarness(Options(suite=True))
+        self.runner = RenderingSession(Options(suite=True))
         self.runner.output = self.root
         self.runner.config_dir = self.root / "config"
         self.runner.config_dir.mkdir()
@@ -245,14 +241,14 @@ class SuiteTests(unittest.TestCase):
     def test_nonpass_suite_retains_captures_and_controls_the_cli_exit(self):
         for outcome, exit_code in ((Outcome.FAIL, 1), (Outcome.INCONCLUSIVE, 2)):
             with self.subTest(outcome=outcome):
-                self.runner = VisualHarness(Options(suite=True))
+                self.runner = RenderingSession(Options(suite=True))
                 self.runner.output = self.root
                 self.runner.config_dir = self.root / "config"
                 self.runner.deadline = time.monotonic() + 20
                 self.fake_run()
                 self.runner.compare.return_value = ComparisonReport(outcome)
                 with patch.object(self.runner, "start", return_value=self.runner), \
-                        patch("tools.rendering.capture.harness.VisualHarness", return_value=self.runner), \
+                        patch("tools.rendering.capture.harness.RenderingSession", return_value=self.runner), \
                         patch("tools.rendering.capture.harness.signal.signal"):
                     self.assertEqual(main(["--suite"]), exit_code)
                 result = self.runner.result.result
@@ -307,7 +303,7 @@ class SuiteTests(unittest.TestCase):
             published.append(capture_id)
         with patch.object(self.runner, "inject", return_value=subprocess.CompletedProcess([], 0, "")), \
                 patch.object(self.runner, "pump_menu"), \
-                patch("tools.rendering.capture.harness.time.sleep", side_effect=publish):
+                patch("tools.rendering.session.channel.time.sleep", side_effect=publish):
             result = default_smoke(self.runner)
         self.assertTrue(result.smoke_succeeded)
         self.assertEqual(len(result.captures), 2)
@@ -361,13 +357,13 @@ class SuiteTests(unittest.TestCase):
         def request(value):
             if value.command == Command.CONFIGURE:
                 with patch.object(self.runner, "assert_running"), patch.object(self.runner, "pump_menu"), \
-                        patch("tools.rendering.capture.harness.time.monotonic", side_effect=[0, 76]):
+                        patch("tools.rendering.session.channel.time.monotonic", side_effect=[0, 76]):
                     return real_request(value)
             self.assertFalse(pending.exists())
             self.assertGreaterEqual(self.runner.deadline, time.monotonic() + 34)
             return original(value)
         self.runner.request.side_effect = request
-        with self.assertRaisesRegex(HarnessError, "timed out waiting"):
+        with self.assertRaisesRegex(SessionError, "timed out waiting"):
             run_suite(self.runner)
         self.assertEqual(self.runner.deadline, deadline)
         cancelled = list(self.runner.config_dir.glob("test_request.toml.*.cancelled"))
@@ -399,14 +395,14 @@ class SuiteTests(unittest.TestCase):
         def replace_during_rename(source, destination):
             source.write_text(other)
             return rename(source, destination)
-        with patch.object(Path, "rename", replace_during_rename), self.assertRaisesRegex(HarnessError, "changed during cancellation"):
+        with patch.object(Path, "rename", replace_during_rename), self.assertRaisesRegex(SessionError, "changed during cancellation"):
             self.runner.cancel_pending_request()
         self.assertEqual(pending.read_text(), other)
 
     def test_capture_failure_restores_before_propagating(self):
-        commands = self.fake_run(HarnessError("capture failed"))
+        commands = self.fake_run(SessionError("capture failed"))
         deadline = self.runner.deadline
-        with self.assertRaisesRegex(HarnessError, "capture failed"):
+        with self.assertRaisesRegex(SessionError, "capture failed"):
             run_suite(self.runner)
         self.assertEqual(commands[-1].command, Command.END)
         self.assertEqual(self.runner.deadline, deadline)
@@ -424,10 +420,10 @@ class SuiteTests(unittest.TestCase):
         original = self.runner.request.side_effect
         def request(value):
             if value.command == Command.END:
-                raise HarnessError("restore failed")
+                raise SessionError("restore failed")
             return original(value)
         self.runner.request.side_effect = request
-        with self.assertRaisesRegex(HarnessError, "restore failed"):
+        with self.assertRaisesRegex(SessionError, "restore failed"):
             run_suite(self.runner)
         self.assertEqual(self.runner.result.restoration_error, "restore failed")
         self.runner.compare.assert_not_called()
@@ -472,7 +468,7 @@ class SuiteTests(unittest.TestCase):
     def test_single_eye_cannot_satisfy_native_smoke(self):
         wire = capture_wire(Mode.LEFT_ONLY)
         (self.root / "sample.capture.json").write_text(json.dumps(wire))
-        with self.assertRaisesRegex(HarnessError, "fresh gameplay XR pair"):
+        with self.assertRaisesRegex(SessionError, "fresh gameplay XR pair"):
             validate_capture(self.root, "sample", Capture.from_wire(wire))
 
     def test_malformed_capture_inputs_and_eye_state_rejected(self):
@@ -505,7 +501,7 @@ class SuiteTests(unittest.TestCase):
                 metadata["mode"] = value["mode"]
             (folder / f"{value['id']}.json").write_text(json.dumps({
                 "id": value["id"], "state": state, "metadata": metadata}))
-        with patch.object(self.runner, "pump_menu"), patch("tools.rendering.capture.harness.time.sleep", side_effect=publish):
+        with patch.object(self.runner, "pump_menu"), patch("tools.rendering.session.channel.time.sleep", side_effect=publish):
             self.runner.request(Request(Command.CONFIGURE, "configure", Mode.LEFT_ONLY, 30))
             self.runner.request(Request(Command.END, "end"))
         self.assertEqual(seen[0], {"command": "visual_configure", "id": "configure",
@@ -515,18 +511,18 @@ class SuiteTests(unittest.TestCase):
         folder = self.runner.config_dir / "visual"
         folder.mkdir()
         (folder / "stale.json").write_text("{}")
-        with self.assertRaisesRegex(HarnessError, "stale"):
+        with self.assertRaisesRegex(SessionError, "stale"):
             self.runner.request(Request(Command.END, "stale"))
         (self.runner.config_dir / "test_request.toml").write_text("outstanding")
-        with self.assertRaisesRegex(HarnessError, "outstanding"):
+        with self.assertRaisesRegex(SessionError, "outstanding"):
             self.runner.request(Request(Command.END, "new"))
 
     def test_cli_smoke_default_and_suite_deadline(self):
         for arguments, suite, timeout in (([], False, 180), (["--smoke"], False, 180),
                                            (["--suite"], True, 600), (["--suite", "--timeout", "42"], True, 42)):
-            with self.subTest(arguments=arguments), patch.object(VisualHarness, "run", autospec=True) as run, \
-                    patch.object(VisualHarness, "close"), patch("tools.rendering.capture.harness.signal.signal"):
-                def success(runner, suite=suite, timeout=timeout):
+            with self.subTest(arguments=arguments), patch.object(RenderingSession, "run", autospec=True) as run, \
+                    patch.object(RenderingSession, "close"), patch("tools.rendering.capture.harness.signal.signal"):
+                def success(runner, callback, suite=suite, timeout=timeout):
                     self.assertEqual(runner.options.suite, suite)
                     self.assertEqual(runner.options.timeout, timeout)
                     runner.result.complete(SmokeResult(True))
@@ -537,16 +533,16 @@ class SuiteTests(unittest.TestCase):
         for name, value in (("samples", 2), ("samples", True), ("warmup_frames", 0), ("warmup_frames", 301)):
             setattr(self.runner.options, name, value)
             with self.subTest(name=name), patch.object(self.runner, "reject_existing") as reject:
-                with self.assertRaises(HarnessError):
+                with self.assertRaises(SessionError):
                     self.runner.check()
                 reject.assert_not_called()
             self.runner.options = Options(suite=True)
 
     def test_request_timeout_and_wrong_id_are_bounded(self):
         with patch.object(self.runner, "pump_menu"), \
-                patch("tools.rendering.capture.harness.time.monotonic", side_effect=[0, 36]), \
+                patch("tools.rendering.session.channel.time.monotonic", side_effect=[0, 36]), \
                 patch.object(self.runner, "assert_running"), \
-                self.assertRaisesRegex(HarnessError, "timed out waiting"):
+                self.assertRaisesRegex(SessionError, "timed out waiting"):
             self.runner.request(Request(Command.END, "timeout"))
         (self.runner.config_dir / "test_request.toml").unlink()
         def publish(_):
@@ -556,8 +552,8 @@ class SuiteTests(unittest.TestCase):
                 folder = self.runner.config_dir / "visual"
                 folder.mkdir(exist_ok=True)
                 (folder / "wrong.json").write_text('{"id":"other","state":"restored"}')
-        with patch.object(self.runner, "pump_menu"), patch("tools.rendering.capture.harness.time.sleep", side_effect=publish), \
-                self.assertRaisesRegex(HarnessError, "ID mismatch"):
+        with patch.object(self.runner, "pump_menu"), patch("tools.rendering.session.channel.time.sleep", side_effect=publish), \
+                self.assertRaisesRegex(SessionError, "ID mismatch"):
             self.runner.request(Request(Command.END, "wrong"))
 
     def test_wrong_single_eye_dimensions_and_stale_eye_fail(self):
@@ -569,14 +565,14 @@ class SuiteTests(unittest.TestCase):
                 capture.validate("sample", Mode.LEFT_ONLY, 1, (wire["width"], 1))
 
     def test_secondary_restoration_failure_preserves_capture_error(self):
-        self.fake_run(HarnessError("capture failed"))
+        self.fake_run(SessionError("capture failed"))
         original = self.runner.request.side_effect
         def request(value):
             if value.command == Command.END:
-                raise HarnessError("restore failed")
+                raise SessionError("restore failed")
             return original(value)
         self.runner.request.side_effect = request
-        with self.assertLogs("tools.rendering.capture.harness", level="ERROR"), self.assertRaisesRegex(HarnessError, "capture failed") as raised:
+        with self.assertLogs("tools.rendering.capture.harness", level="ERROR"), self.assertRaisesRegex(SessionError, "capture failed") as raised:
             run_suite(self.runner)
         self.assertIn("restoration failed", raised.exception.__notes__[0])
 
@@ -762,7 +758,7 @@ class SuiteTests(unittest.TestCase):
         configure = commands[:-1]
         self.assertEqual(len(configure), len(ORIENTATION_SWEEP_CASES) * len(expected_modes))
         self.assertEqual([request.mode for request in configure[:len(expected_modes)]], expected_modes)
-        self.runner = VisualHarness(Options(orientation_sweep=True))
+        self.runner = RenderingSession(Options(orientation_sweep=True))
         self.runner.output = self.root
         self.runner.config_dir = self.root / "config"
         self.runner.deadline = time.monotonic() + 20
@@ -772,8 +768,8 @@ class SuiteTests(unittest.TestCase):
         self.runner.compare.assert_not_called()
 
     def test_orientation_sweep_restore_failure_prevents_comparison(self):
-        self.fake_pose_run(restore_failure=HarnessError("restore failed"))
-        with self.assertRaisesRegex(HarnessError, "restore failed"):
+        self.fake_pose_run(restore_failure=SessionError("restore failed"))
+        with self.assertRaisesRegex(SessionError, "restore failed"):
             run_orientation_sweep(self.runner)
         self.assertEqual(self.runner.result.restoration_error, "restore failed")
         self.runner.compare.assert_not_called()
@@ -817,11 +813,11 @@ class SuiteTests(unittest.TestCase):
             report.write_text(json.dumps({"status": outcome.value}))
             with self.subTest(outcome=outcome), \
                     patch.object(self.runner, "_command", return_value=subprocess.CompletedProcess([], exit_code)), \
-                    self.assertLogs("tools.rendering.capture.harness", level="WARNING"):
+                    self.assertLogs("tools.rendering.session.launch", level="WARNING"):
                 self.assertEqual(self.runner.compare(self.root / "suite.json"), ComparisonReport(outcome))
         for outcome, exit_code in ((Outcome.PASS, 1), (Outcome.FAIL, 0), (Outcome.INCONCLUSIVE, 137)):
             report.write_text(json.dumps({"status": outcome.value}))
             with self.subTest(outcome=outcome, exit_code=exit_code), \
                     patch.object(self.runner, "_command", return_value=subprocess.CompletedProcess([], exit_code)), \
-                    self.assertRaisesRegex(HarnessError, "disagrees with process status"):
+                    self.assertRaisesRegex(SessionError, "disagrees with process status"):
                 self.runner.compare(self.root / "suite.json")

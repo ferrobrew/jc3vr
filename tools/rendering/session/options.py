@@ -1,4 +1,4 @@
-"""Command-line parsing for the visual harness."""
+"""Command-line options for the private rendering session."""
 
 import argparse
 from dataclasses import dataclass
@@ -20,6 +20,7 @@ class Options:
     output: Path | None = None
     release: bool = False
     launch_only: bool = False
+    keep_alive: bool = False
     suite: bool = False
     orientation_sweep: bool = False
     motion_sweep: bool = False
@@ -35,13 +36,17 @@ class Options:
     probe_forward: float = 0.0
 
 
-def parse_args(argv=None):
-    parser = argparse.ArgumentParser(description="Run Just Cause 3 in a private headless VR session.")
+def parse_args(argv=None, keep_alive=False, description=None):
+    parser = argparse.ArgumentParser(
+        description=description or "Run Just Cause 3 in a private headless VR session.")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--no-build", action="store_true")
     parser.add_argument("--release", action="store_true")
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--launch-only", action="store_true", help="launch without claiming smoke success")
+    mode.add_argument("--launch-only", action="store_true",
+                      help="launch without claiming smoke success, bounded by --timeout")
+    mode.add_argument("--keep-alive", action="store_true", default=keep_alive,
+                      help="launch and inject, then serve until interrupted without an overall deadline")
     mode.add_argument("--smoke", action="store_true", help="run the default two-capture smoke check")
     mode.add_argument("--suite", action="store_true", help="run the four-mode visual comparison suite")
     mode.add_argument("--orientation-sweep", action="store_true",
@@ -69,6 +74,9 @@ def parse_args(argv=None):
                           ("copy-timeout", 180), ("menu-interval", 3), ("menu-timeout", 60)):
         parser.add_argument(f"--{name}", type=float, default=default)
     args = parser.parse_args(argv)
+    if args.keep_alive and any((args.suite, args.orientation_sweep, args.motion_sweep,
+                                args.smoke, args.single_pass_probe)):
+        parser.error("--keep-alive is mutually exclusive with an execution mode")
     if args.timeout is None:
         args.timeout = (3600 if args.orientation_sweep else 2400 if args.motion_sweep
                         else 600 if args.suite or args.single_pass_probe else 180)

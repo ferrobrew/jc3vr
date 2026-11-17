@@ -18,12 +18,12 @@ from tools.rendering.experiment import (
     Feature,
     FeatureStatus,
     Mode,
-    RunnerState,
     offset_for_target,
-    owning_process,
     run_experiment,
     sample_id,
 )
+from tools.rendering.session.attach import SessionState, owning_process
+from tools.rendering.session.errors import SessionError
 from tools.rendering.protocol import (
     Camera,
     Capture,
@@ -570,7 +570,7 @@ class OwnershipTests(unittest.TestCase):
             proc = Path(temporary)
             config_dir = proc / "config"
             config_dir.mkdir()
-            state = RunnerState("abc123", config_dir)
+            state = SessionState("abc123", config_dir)
             for pid, comm, argv in ((10, "justcause3.exe", ["Z:\\JustCause3.exe"]),
                                      (11, "wineserver", ["wineserver"]),
                                      (12, "monado-service", ["monado-service"]),
@@ -589,11 +589,11 @@ class AttachTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             path = Path(temporary) / "runner.json"
             path.write_text(json.dumps({"token": "abc123", "config_dir": temporary}))
-            state = RunnerState.load(path)
+            state = SessionState.load(path)
             self.assertEqual(state.token, "abc123")
             path.write_text(json.dumps({"token": "abc123", "config_dir": "/does/not/exist"}))
-            with self.assertRaises(ExperimentError):
-                RunnerState.load(path)
+            with self.assertRaises(SessionError):
+                SessionState.load(path)
 
 
 class CompositionTests(unittest.TestCase):
