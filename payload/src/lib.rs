@@ -180,6 +180,12 @@ fn shutdown_startup() {
     if !controllers::weapons::inventory::sidecar::shutdown() {
         module::pin();
     }
+    if !hud::game_icons::shutdown() {
+        module::pin();
+    }
+    if !controllers::body::estimator::shutdown() {
+        module::pin();
+    }
 
     // The cleanups cleared render-thread-driven config flags (e.g. the HUD redirect). Give the still-
     // live hooks a few frames to tick those changes through -- the per-frame restore runs on the

@@ -36,6 +36,7 @@ use body_rig::{BodyEstimate, EstimateTuning, angle::wrap};
 use glam::{DMat3, DQuat, DVec3, Quat};
 use parking_lot::Mutex;
 
+pub(crate) use crate::controllers::body::estimator::executor::shutdown;
 pub use crate::controllers::body::estimator::{
     config::EstimatorConfig,
     executor::{render_tick, status as executor_status},

@@ -13,6 +13,7 @@ use std::{
     fmt, io,
     path::PathBuf,
     sync::mpsc::{self, Receiver, TryRecvError},
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
@@ -167,6 +168,12 @@ pub fn render_tick(context: &ID3D11DeviceContext, device: &ID3D11Device) {
     }
 }
 
+#[must_use = "a loader that did not finish means the payload must stay mapped"]
+pub(crate) fn shutdown() -> bool {
+    withdraw();
+    stop(&EXECUTOR, SHUTDOWN_BUDGET)
+}
+
 /// The executor's state, for the debug UI.
 pub fn status() -> ExecutorStatus {
     let enabled = Config::lock_query(|c| c.controllers.body.estimator.enabled);
@@ -198,6 +205,9 @@ const PRECISION: WeightPrecision = WeightPrecision::F16;
 /// overwritten ones until a later readback prunes them.
 const IN_FLIGHT_KEPT: usize = 8;
 
+const SHUTDOWN_BUDGET: Duration = Duration::from_secs(10);
+const SHUTDOWN_POLL: Duration = Duration::from_millis(10);
+
 enum Stage {
     /// Not started: off, or waiting for the first window.
     Off,
@@ -228,12 +238,24 @@ struct Executor {
     record: Option<Duration>,
     /// Whether the current failure has been logged, so a retry that fails the same way is quiet.
     logged_error: bool,
+    handles: Vec<JoinHandle<()>>,
+    closed: bool,
+    stopped: LoaderShutdown,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum LoaderShutdown {
+    NotAsked,
+    Joining,
+    Done,
+    Failed,
 }
 
 impl Executor {
     /// Start or load as the stage needs. `wanted` is whether a window arrived this frame:
     /// nothing loads before the first.
     fn advance(&mut self, device: &ID3D11Device, wanted: bool) {
+        self.reap();
         match &self.stage {
             Stage::Off if wanted => self.start(),
             Stage::Loading(receiver) => match receiver.try_recv() {
@@ -262,6 +284,9 @@ impl Executor {
     /// Look for the weights and start loading them. Weights that are not there are a broken
     /// installation, so they panic rather than leave the estimator quietly off.
     fn start(&mut self) {
+        if self.closed {
+            return;
+        }
         let Some(path) = self.path.clone() else {
             panic!("{}", EstimatorError::NoWeightsPath);
         };
@@ -276,8 +301,22 @@ impl Executor {
                 let _ = sender.send(EgoPoser::load(&path));
             });
         match spawned {
-            Ok(_) => self.stage = Stage::Loading(receiver),
+            Ok(handle) => {
+                self.handles.push(handle);
+                self.stage = Stage::Loading(receiver);
+            }
             Err(error) => self.fail(EstimatorError::LoaderThread(error)),
+        }
+    }
+
+    fn reap(&mut self) {
+        let mut index = 0;
+        while index < self.handles.len() {
+            if self.handles[index].is_finished() {
+                let _ = self.handles.swap_remove(index).join();
+            } else {
+                index += 1;
+            }
         }
     }
 
@@ -317,6 +356,78 @@ impl Executor {
     }
 }
 
+fn wait(handle: JoinHandle<()>, budget: Duration) -> bool {
+    let started = Instant::now();
+    loop {
+        if handle.is_finished() {
+            return handle.join().is_ok();
+        }
+        if started.elapsed() >= budget {
+            return false;
+        }
+        std::thread::sleep(SHUTDOWN_POLL);
+    }
+}
+
+fn stop(executor: &Mutex<Executor>, budget: Duration) -> bool {
+    {
+        let mut executor = executor.lock();
+        executor.closed = true;
+        executor.stage = Stage::Off;
+        executor.in_flight.clear();
+    }
+    let started = Instant::now();
+    loop {
+        let handles = {
+            let mut executor = executor.lock();
+            match executor.stopped {
+                LoaderShutdown::Done => return true,
+                LoaderShutdown::Failed => return false,
+                LoaderShutdown::Joining => None,
+                LoaderShutdown::NotAsked => {
+                    executor.stopped = LoaderShutdown::Joining;
+                    Some(std::mem::take(&mut executor.handles))
+                }
+            }
+        };
+        if let Some(handles) = handles {
+            let mut joined = true;
+            for handle in handles {
+                joined &= wait(handle, budget.saturating_sub(started.elapsed()));
+            }
+            let mut executor = executor.lock();
+            if executor.stopped == LoaderShutdown::Joining {
+                executor.stopped = if joined {
+                    LoaderShutdown::Done
+                } else {
+                    LoaderShutdown::Failed
+                };
+            }
+            let stopped = executor.stopped;
+            drop(executor);
+            if stopped == LoaderShutdown::Failed {
+                tracing::error!(
+                    "body estimator: the weights' loader is not confirmed stopped; leaving the \
+                     payload mapped rather than unmapping under a live thread"
+                );
+            }
+            return stopped == LoaderShutdown::Done;
+        }
+        if started.elapsed() >= budget {
+            let mut executor = executor.lock();
+            if executor.stopped == LoaderShutdown::Joining {
+                executor.stopped = LoaderShutdown::Failed;
+                tracing::error!(
+                    "body estimator: another shutdown is still waiting on the weights' loader; \
+                     leaving the payload mapped"
+                );
+            }
+            return false;
+        }
+        std::thread::sleep(SHUTDOWN_POLL);
+    }
+}
+
 /// Every estimate the GPU has finished, oldest first, without waiting.
 fn collect(
     gpu: &mut GpuEgoPoser,
@@ -338,4 +449,173 @@ static EXECUTOR: Mutex<Executor> = Mutex::new(Executor {
     dropped: 0,
     record: None,
     logged_error: false,
+    handles: Vec::new(),
+    closed: false,
+    stopped: LoaderShutdown::NotAsked,
 });
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+
+    use super::*;
+
+    fn executor_with(handles: Vec<JoinHandle<()>>) -> Mutex<Executor> {
+        Mutex::new(Executor {
+            stage: Stage::Off,
+            path: None,
+            in_flight: VecDeque::new(),
+            submitted: 0,
+            read: 0,
+            dropped: 0,
+            record: None,
+            logged_error: false,
+            handles,
+            closed: false,
+            stopped: LoaderShutdown::NotAsked,
+        })
+    }
+
+    fn flag() -> (Arc<AtomicBool>, Arc<AtomicBool>) {
+        let flag = Arc::new(AtomicBool::new(false));
+        (flag.clone(), flag)
+    }
+
+    fn finishing_after(delay: Duration, done: Arc<AtomicBool>) -> JoinHandle<()> {
+        std::thread::spawn(move || {
+            std::thread::sleep(delay);
+            done.store(true, Ordering::SeqCst);
+        })
+    }
+
+    fn blocked_until(running: Arc<AtomicBool>) -> JoinHandle<()> {
+        std::thread::spawn(move || {
+            while running.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+        })
+    }
+
+    #[test]
+    fn stopping_waits_for_a_loader_that_finishes_late() {
+        let (done, finished) = flag();
+        let executor = executor_with(vec![finishing_after(Duration::from_millis(50), done)]);
+        assert!(stop(&executor, Duration::from_secs(5)));
+        assert!(finished.load(Ordering::SeqCst));
+        assert_eq!(executor.lock().stopped, LoaderShutdown::Done);
+    }
+
+    #[test]
+    fn stopping_without_a_loader_is_true_and_repeats() {
+        let executor = executor_with(Vec::new());
+        assert!(stop(&executor, Duration::from_millis(50)));
+        assert!(stop(&executor, Duration::from_millis(50)));
+        let executor = executor.lock();
+        assert!(executor.closed);
+        assert_eq!(executor.stopped, LoaderShutdown::Done);
+    }
+
+    #[test]
+    fn every_outstanding_loader_is_joined() {
+        let (first, first_done) = flag();
+        let (second, second_done) = flag();
+        let executor = executor_with(vec![
+            finishing_after(Duration::from_millis(30), first),
+            finishing_after(Duration::from_millis(60), second),
+        ]);
+        assert!(stop(&executor, Duration::from_secs(5)));
+        assert!(first_done.load(Ordering::SeqCst));
+        assert!(second_done.load(Ordering::SeqCst));
+        assert!(executor.lock().handles.is_empty());
+    }
+
+    #[test]
+    fn a_restart_keeps_the_previous_loader_until_joined() {
+        let (first, first_done) = flag();
+        let (second, second_done) = flag();
+        let mut executor = executor_with(Vec::new()).into_inner();
+        executor
+            .handles
+            .push(finishing_after(Duration::from_millis(200), first));
+        executor.reap();
+        assert_eq!(executor.handles.len(), 1);
+        executor
+            .handles
+            .push(finishing_after(Duration::from_millis(200), second));
+        assert_eq!(executor.handles.len(), 2);
+        assert!(!first_done.load(Ordering::SeqCst));
+        let executor = Mutex::new(executor);
+        assert!(stop(&executor, Duration::from_secs(5)));
+        assert!(first_done.load(Ordering::SeqCst));
+        assert!(second_done.load(Ordering::SeqCst));
+    }
+
+    #[test]
+    fn a_timeout_fails_closed_and_stays_failed() {
+        let running = Arc::new(AtomicBool::new(true));
+        let executor = executor_with(vec![blocked_until(running.clone())]);
+        assert!(!stop(&executor, Duration::ZERO));
+        assert_eq!(executor.lock().stopped, LoaderShutdown::Failed);
+        let started = Instant::now();
+        assert!(!stop(&executor, Duration::from_secs(30)));
+        assert!(started.elapsed() < Duration::from_secs(1));
+        running.store(false, Ordering::SeqCst);
+    }
+
+    #[test]
+    fn a_panicked_loader_fails_closed() {
+        let executor = executor_with(vec![std::thread::spawn(|| panic!("loader failed"))]);
+        assert!(!stop(&executor, Duration::from_secs(5)));
+        assert_eq!(executor.lock().stopped, LoaderShutdown::Failed);
+        assert!(!stop(&executor, Duration::from_secs(5)));
+    }
+
+    #[test]
+    fn concurrent_shutdowns_join_once_and_agree() {
+        let (done, finished) = flag();
+        let executor = Arc::new(executor_with(vec![finishing_after(
+            Duration::from_millis(50),
+            done,
+        )]));
+        let callers: Vec<_> = (0..2)
+            .map(|_| {
+                let executor = executor.clone();
+                std::thread::spawn(move || stop(&executor, Duration::from_secs(5)))
+            })
+            .collect();
+        for caller in callers {
+            assert!(caller.join().unwrap());
+        }
+        assert!(finished.load(Ordering::SeqCst));
+        assert_eq!(executor.lock().stopped, LoaderShutdown::Done);
+    }
+
+    #[test]
+    fn a_concurrent_timeout_keeps_a_joined_loader_failed() {
+        let (done, _) = flag();
+        let executor = Arc::new(executor_with(vec![finishing_after(
+            Duration::from_millis(100),
+            done,
+        )]));
+        let joiner = {
+            let executor = executor.clone();
+            std::thread::spawn(move || stop(&executor, Duration::from_secs(5)))
+        };
+        std::thread::sleep(Duration::from_millis(20));
+        assert!(!stop(&executor, Duration::ZERO));
+        assert!(!joiner.join().unwrap());
+        assert_eq!(executor.lock().stopped, LoaderShutdown::Failed);
+    }
+
+    #[test]
+    fn a_closed_executor_starts_no_load_and_keeps_its_stage_off() {
+        let mut executor = executor_with(Vec::new()).into_inner();
+        executor.closed = true;
+        executor.start();
+        assert!(matches!(executor.stage, Stage::Off));
+        assert!(executor.handles.is_empty());
+    }
+}
