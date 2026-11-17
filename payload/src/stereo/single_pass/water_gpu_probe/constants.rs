@@ -466,7 +466,7 @@ fn log_ps_srvs(ctx: &ID3D11DeviceContext, context: ProbeContext) {
     );
 }
 
-const PS_SAMPLER_SLOTS: [u32; 8] = [0, 1, 7, 8, 9, 10, 13, 15];
+const PS_SAMPLER_SLOTS: [u32; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
 
 fn log_ps_samplers(ctx: &ID3D11DeviceContext, context: ProbeContext) {
     let mut text = String::new();

@@ -52,7 +52,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     screenshot::harness::stages::{capture_water_after, capture_water_before},
     stereo::single_pass::{
-        BlockIntercept, WaterGpuProbe, block_intercept_enabled,
+        BlockIntercept, WaterGpuProbe, begin_water_surface, block_intercept_enabled,
         draw_per_eye_half_ignoring_bound_vs, screen_uv_cb_per_eye,
     },
 };
@@ -283,8 +283,12 @@ unsafe fn nv_water_per_eye(
     if water_surface {
         capture_water_before();
     }
+    let replay = water_surface.then(begin_water_surface);
 
     draw_per_eye_half_ignoring_bound_vs(|eye| {
+        if let Some(replay) = &replay {
+            replay.begin_eye(eye);
+        }
         // SAFETY: `rc` is live, and `this` is the live block whose `Setup` reads it. The two trailing
         // arguments are the draw-list sort ids, which this block's `Setup` override does not read.
         unsafe {
