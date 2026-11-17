@@ -468,7 +468,7 @@ shows this is the whole legacy family's idiom, not one permutation's: `waterbox`
 `waterboxsurface`, `watershader_lod0`, and `watershader_lod1` all read `cb0[0..3]` plus `cb0[4]`, and
 `waterboxclear`, `watergodraysshader`, and `waves` read `cb0[0..3]` alone. (`nvwaterbox` and
 `nvwaterbox_tess` read `cb0[4]` alone, with clip from the block's baked matrix — the shape
-`baked_cb_block_owns_vs` exists for, though `nvwater*` is not on its list.)
+`baked_cb_block_owns_vs` exists for, and `nvwater*` is on its list.)
 
 The `cb0[4]` reference alone is enough for the remap to claim these shaders, and it is the
 "camera-only" misclassification in its most damaging form: the eye offset gets added to the shader's

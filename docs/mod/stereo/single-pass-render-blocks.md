@@ -249,12 +249,7 @@ The stereo consequence — both eyes seeing the identical centre image, so the v
 infinite depth in a headset — is real, and the same fix addresses it. It is simply not what the mirror
 shows.
 
-**The fix, in `stereo::single_pass::baked_cb_block_owns_vs`.** While a family's intercept flag is on,
-its vertex shaders are declined by the `cb0` remap at creation, so the block intercept owns them end to
-end. It is name-prefixed (`vegetationbark`, `vegetationfoliage`) but bytecode-confirmed: a permutation
-that really does read `cb0[29..32]` is left to the remap. The decline and the intercept share a flag
-because either alone is wrong — declining without the intercept forwards an unpatched instanced draw
-once at whatever viewport is bound, which is the 2× horizontal stretch.
+**The fix, in `stereo::single_pass::baked_cb_block_owns_vs`.** While a family's intercept flag is on, its vertex shaders are declined by the `cb0` remap at creation, so the block intercept owns them end to end. It is name-prefixed (`vegetationbark`, `vegetationfoliage`, `nvwater`) but bytecode-confirmed: a permutation that really does read `cb0[29..32]` is left to the remap. The decline and the intercept share a flag because either alone is wrong — declining without the intercept forwards an unpatched instanced draw once at whatever viewport is bound, which is the 2× horizontal stretch.
 
 Reprojecting `cb2[4..7]` by `M_eye` is exactly the right correction, and not only approximately: the
 shader computes `clip = OffsetVP_c · (world − campos_c) = VP_centre · world`, and
@@ -321,19 +316,11 @@ clip from:
   shader, and the reprojection refuses them with `NoPositionOutput`. The particles read only
   `cb0[4].w` / `cb0[5].w`.
 
-`nvwaterbox` (`sh_0163`) and `nvwaterbox_tess` (`sh_0290`) sit apart, and they are the clearest
-remaining instance of the bug this whole section is about. Both add the camera position to a
-model-space position before the baked `cb1[0..3]` multiply, so `cb0[4]` really is on their position
-path. `single_pass.nvwater_per_eye` is precisely a baked-cb block intercept — it restages that matrix
-from the eye's own camera — but `nvwater*` is **not** on `BAKED_CB_VS_NAME_PREFIXES`, so the remap
-claims these two before the handler that owns them is ever consulted, exactly as it did `generaljc3`.
-The remapped `cb0[4]` is then added on top of a transform that already accounts for the eye offset,
-displacing the water box by that offset again. Half an IPD on a water surface, so not urgent, but the
-fix has the same shape as the vegetation one: add the prefix so the remap declines while the intercept
-is on. The flag already has its `BlockIntercept::NvWater` variant, so the prefix is a one-line
-addition to the list; it is not made yet because it needs live validation that the decline and the
-intercept's `draw_per_eye_half_ignoring_bound_vs` re-issue compose — the two must land together, since
-declining without the intercept forwards the draw once at whatever viewport is bound.
+`nvwaterbox` (`sh_0163`) and `nvwaterbox_tess` (`sh_0290`) add the camera position to a model-space position before the baked `cb1[0..3]` multiply, so `cb0[4]` is on their position path.
+
+`single_pass.nvwater_per_eye` is a baked-cb block intercept that restages that matrix from the eye's own camera, and `nvwater*` is on `BAKED_CB_VS_NAME_PREFIXES`, so while the flag is on the remap declines these two and the intercept owns them end to end. Remapping them instead rewrites the selector to the stereo constant buffer, and `cb13` is unbound during the second invocation of the re-issue, so the patched box and tessellation shaders read an unbound constant buffer and reconstruct the wrong camera origin, which puts the water surface at the wrong depth.
+
+The prefix is gated on `BlockIntercept::NvWater` because the decline and the intercept's `draw_per_eye_half_ignoring_bound_vs` re-issue must land together: declining without the intercept forwards the draw once at whatever viewport is bound.
 
 **The bound-shader gate.** `baked_cb_intercept_ready`'s `BOUND_VS_PATCHED` check
 reads the shader bound by the *previous* draw, because these blocks bind their own inside the `Draw`

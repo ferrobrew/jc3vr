@@ -213,6 +213,7 @@ pub fn block_intercept_enabled(block: BlockIntercept) -> bool {
 const BAKED_CB_VS_NAME_PREFIXES: &[(&str, BlockIntercept)] = &[
     ("vegetationbark", BlockIntercept::Bark),
     ("vegetationfoliage", BlockIntercept::Foliage),
+    ("nvwater", BlockIntercept::NvWater),
 ];
 
 /// Whether a baked-view-projection block intercept owns this vertex shader, so the `cb0` remap must
@@ -240,13 +241,26 @@ const BAKED_CB_VS_NAME_PREFIXES: &[(&str, BlockIntercept)] = &[
 /// honours it too -- that path has no name to decline by, and left to itself it would remap the very
 /// shaders this declined.
 pub fn baked_cb_block_owns_vs(name: Option<&str>, code: &[u8]) -> bool {
+    let reads = dxbc_stereo::reads_global_view_projection(code);
+    baked_cb_vs_owned(
+        name,
+        reads.is_ok_and(|reads| !reads),
+        block_intercept_enabled,
+    )
+}
+
+fn baked_cb_vs_owned(
+    name: Option<&str>,
+    no_global_view_projection: bool,
+    enabled: impl Fn(BlockIntercept) -> bool,
+) -> bool {
     let Some(name) = name else {
         return false;
     };
     BAKED_CB_VS_NAME_PREFIXES
         .iter()
-        .any(|(prefix, block)| name.starts_with(prefix) && block_intercept_enabled(*block))
-        && dxbc_stereo::reads_global_view_projection(code).is_ok_and(|reads| !reads)
+        .any(|(prefix, block)| name.starts_with(prefix) && enabled(*block))
+        && no_global_view_projection
 }
 
 /// A render block with a per-eye re-issue intercept: the baked-view-projection blocks, and the two
@@ -813,3 +827,67 @@ static ERRORED: AtomicUsize = AtomicUsize::new(0);
 /// the terrain path is catching anything.
 static TERRAIN_HS_FORWARDED: AtomicUsize = AtomicUsize::new(0);
 static TERRAIN_DS_REPROJECTED: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const CAPTURE_VS: &[u8] = include_bytes!("../../shaders/capture_vs.dxbc");
+
+    fn only_nv_water(block: BlockIntercept) -> bool {
+        matches!(block, BlockIntercept::NvWater)
+    }
+
+    #[test]
+    fn waveworks_permutations_are_owned_when_the_intercept_is_on() {
+        for name in ["nvwaterbox", "nvwaterbox_tess"] {
+            assert!(baked_cb_vs_owned(Some(name), true, only_nv_water), "{name}");
+            assert!(!baked_cb_vs_owned(Some(name), true, |_| false), "{name}");
+        }
+    }
+
+    #[test]
+    fn global_view_projection_reads_are_left_to_the_remap() {
+        for name in ["nvwaterbox", "nvwaterbox_tess"] {
+            assert!(
+                !baked_cb_vs_owned(Some(name), false, only_nv_water),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_water_permutations_and_unnamed_shaders_are_not_owned() {
+        for name in [
+            "waterbox",
+            "waterboxsurface",
+            "waterhighend",
+            "watershader_lod0",
+        ] {
+            assert!(!baked_cb_vs_owned(Some(name), true, |_| true), "{name}");
+        }
+        assert!(!baked_cb_vs_owned(None, true, |_| true));
+    }
+
+    #[test]
+    fn baked_cb_block_owns_vs_agrees_with_the_intercept_flag_on_real_bytecode() {
+        for name in ["nvwaterbox", "nvwaterbox_tess"] {
+            assert_eq!(
+                baked_cb_block_owns_vs(Some(name), CAPTURE_VS),
+                block_intercept_enabled(BlockIntercept::NvWater),
+                "{name}"
+            );
+        }
+        assert!(!baked_cb_block_owns_vs(Some("waterbox"), CAPTURE_VS));
+        assert!(!baked_cb_block_owns_vs(None, CAPTURE_VS));
+    }
+
+    #[test]
+    fn malformed_bytecode_is_never_owned() {
+        assert!(!baked_cb_block_owns_vs(
+            Some("nvwaterbox"),
+            b"not a dxbc container"
+        ));
+        assert!(!baked_cb_block_owns_vs(Some("nvwaterbox_tess"), &[]));
+    }
+}
