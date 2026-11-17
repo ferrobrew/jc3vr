@@ -180,8 +180,7 @@ impl PoseRequest {
         let anchor_orientation = Quat::from_array(evidence.anchor.orientation);
         let applied_position = Vec3::from_array(evidence.applied.position);
         let applied_orientation = Quat::from_array(evidence.applied.orientation);
-        let expected_position =
-            anchor_position + anchor_orientation.normalize() * self.translation.vector();
+        let expected_position = anchor_position + anchor_orientation * self.translation.vector();
         anchor_position.is_finite()
             && anchor_orientation.is_finite()
             && evidence.translation.is_finite()

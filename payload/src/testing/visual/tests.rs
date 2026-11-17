@@ -460,6 +460,32 @@ fn pose_translation_moves_the_target_in_anchor_space() {
 }
 
 #[test]
+fn translated_pose_evidence_matches_the_request_at_world_coordinates() {
+    // The euler round trip leaves the anchor quaternion a fraction off unit length, which a 900 m
+    // translation magnifies past the position tolerance if the expected position renormalizes it.
+    let base = PoseValues {
+        position: Vec3::new(-4123.75, 87.5, 6011.25),
+        yaw_deg: 2.0,
+        pitch_deg: 36.0,
+        roll_deg: 128.0,
+    };
+    let request = pose_request("translate", 0.0, 0.0, 0.0)
+        .with_translation(TranslationOffset::new(0.0, -100.0, 900.0).unwrap());
+    let target = request.target(base);
+    let evidence = request.evidence(base, target);
+    assert!(request.matches_evidence(&evidence));
+
+    let shifted = PoseEvidence {
+        applied: PoseTransform {
+            position: target.position.to_array().map(|value| value + 5e-4),
+            ..evidence.applied
+        },
+        ..evidence
+    };
+    assert!(!request.matches_evidence(&shifted));
+}
+
+#[test]
 fn pose_translation_rejects_non_finite_and_out_of_range_values() {
     for (right, up, forward) in [
         (f32::NAN, 0.0, 0.0),
