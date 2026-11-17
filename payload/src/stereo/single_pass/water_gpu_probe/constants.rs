@@ -5,9 +5,9 @@ use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
 use windows::{
     Win32::Graphics::Direct3D11::{
         D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_DEPTH_STENCIL_VIEW_DESC, D3D11_MAP_READ,
-        D3D11_MAPPED_SUBRESOURCE, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, ID3D11Buffer,
-        ID3D11DepthStencilView, ID3D11DeviceContext, ID3D11DeviceContext1, ID3D11Resource,
-        ID3D11ShaderResourceView, ID3D11Texture2D,
+        D3D11_MAPPED_SUBRESOURCE, D3D11_SAMPLER_DESC, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+        ID3D11Buffer, ID3D11DepthStencilView, ID3D11DeviceContext, ID3D11DeviceContext1,
+        ID3D11Resource, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D,
     },
     core::Interface,
 };
@@ -17,11 +17,12 @@ use crate::stereo::single_pass::water_gpu_probe::{ProbeContext, pointer};
 /// The longest prefix of a bound constant-buffer range a readback decodes, in floats.
 const READBACK_FLOATS: usize = 64;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 enum ShaderStage {
     Vertex,
     Hull,
     Domain,
+    Pixel,
 }
 
 impl ShaderStage {
@@ -30,6 +31,7 @@ impl ShaderStage {
             Self::Vertex => "vs",
             Self::Hull => "hs",
             Self::Domain => "ds",
+            Self::Pixel => "ps",
         }
     }
 
@@ -65,6 +67,13 @@ impl ShaderStage {
                         Some(&mut num_constants),
                     ),
                     Self::Domain => ctx1.DSGetConstantBuffers1(
+                        slot.index(),
+                        1,
+                        Some(buffers.as_mut_ptr()),
+                        Some(&mut first_constant),
+                        Some(&mut num_constants),
+                    ),
+                    Self::Pixel => ctx1.PSGetConstantBuffers1(
                         slot.index(),
                         1,
                         Some(buffers.as_mut_ptr()),
@@ -109,6 +118,7 @@ impl ShaderStage {
                 Self::Vertex => ctx.VSGetConstantBuffers(slot.index(), Some(&mut buffers)),
                 Self::Hull => ctx.HSGetConstantBuffers(slot.index(), Some(&mut buffers)),
                 Self::Domain => ctx.DSGetConstantBuffers(slot.index(), Some(&mut buffers)),
+                Self::Pixel => ctx.PSGetConstantBuffers(slot.index(), Some(&mut buffers)),
             }
         }
         buffers[0].take()
@@ -126,7 +136,7 @@ struct BufferBinding {
 }
 
 /// A constant-buffer slot bound by the water draw's shaders.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 struct Slot(u32);
 
 impl Slot {
@@ -182,17 +192,7 @@ impl SrvSlot {
 
 pub(super) unsafe fn capture(ctx: &ID3D11DeviceContext, context: ProbeContext) {
     log_depth_target(ctx, context);
-    for (stage, slot) in [
-        (ShaderStage::Vertex, Slot::GLOBALS),
-        (ShaderStage::Vertex, Slot::MVP),
-        (ShaderStage::Vertex, Slot::BOX),
-        (ShaderStage::Vertex, Slot::PATCH),
-        (ShaderStage::Vertex, Slot::DISPLACEMENT),
-        (ShaderStage::Vertex, Slot::STEREO),
-        (ShaderStage::Hull, Slot::PATCH),
-        (ShaderStage::Domain, Slot::MVP),
-        (ShaderStage::Domain, Slot::DISPLACEMENT),
-    ] {
+    for (stage, slot) in CAPTURED_BINDINGS {
         // SAFETY: `ctx` is the live immediate context.
         let binding = unsafe { stage.binding(ctx, slot) };
         match read(ctx, binding.as_ref()) {
@@ -212,7 +212,24 @@ pub(super) unsafe fn capture(ctx: &ID3D11DeviceContext, context: ProbeContext) {
         }
     }
     log_srvs(ctx, context);
+    log_ps_srvs(ctx, context);
+    log_ps_samplers(ctx, context);
 }
+
+const CAPTURED_BINDINGS: [(ShaderStage, Slot); 12] = [
+    (ShaderStage::Vertex, Slot::GLOBALS),
+    (ShaderStage::Vertex, Slot::MVP),
+    (ShaderStage::Vertex, Slot::BOX),
+    (ShaderStage::Vertex, Slot::PATCH),
+    (ShaderStage::Vertex, Slot::DISPLACEMENT),
+    (ShaderStage::Vertex, Slot::STEREO),
+    (ShaderStage::Hull, Slot::PATCH),
+    (ShaderStage::Domain, Slot::MVP),
+    (ShaderStage::Domain, Slot::DISPLACEMENT),
+    (ShaderStage::Pixel, Slot::GLOBALS),
+    (ShaderStage::Pixel, Slot::MVP),
+    (ShaderStage::Pixel, Slot::BOX),
+];
 
 struct Readback {
     pointer: usize,
@@ -428,6 +445,58 @@ fn log_srvs(ctx: &ID3D11DeviceContext, context: ProbeContext) {
     );
 }
 
+const PS_SRV_SLOTS: [u32; 17] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 44, 45];
+
+fn log_ps_srvs(ctx: &ID3D11DeviceContext, context: ProbeContext) {
+    let mut text = String::new();
+    for slot in PS_SRV_SLOTS {
+        let mut view: Option<ID3D11ShaderResourceView> = None;
+        unsafe { ctx.PSGetShaderResources(slot, Some(std::slice::from_mut(&mut view))) };
+        let _ = write!(text, " t{slot}={:#x}", pointer(&view));
+    }
+    tracing::info!(
+        target: "water_probe",
+        "water probe: ps inputs pass={} eye={} invocation={} predicted_display_time_ns={} \
+         generation={} srv{text}",
+        context.pass,
+        context.eye,
+        context.invocation,
+        context.frame.display_time(),
+        context.frame.visual_generation,
+    );
+}
+
+const PS_SAMPLER_SLOTS: [u32; 8] = [0, 1, 7, 8, 9, 10, 13, 15];
+
+fn log_ps_samplers(ctx: &ID3D11DeviceContext, context: ProbeContext) {
+    let mut text = String::new();
+    for slot in PS_SAMPLER_SLOTS {
+        let mut sampler: Option<ID3D11SamplerState> = None;
+        unsafe { ctx.PSGetSamplers(slot, Some(std::slice::from_mut(&mut sampler))) };
+        let _ = write!(text, " s{slot}={:#x}", pointer(&sampler));
+        let Some(sampler) = sampler else {
+            continue;
+        };
+        let mut desc = D3D11_SAMPLER_DESC::default();
+        unsafe { sampler.GetDesc(&mut desc) };
+        let _ = write!(
+            text,
+            " filter={:?} address={:?}/{:?}/{:?}",
+            desc.Filter, desc.AddressU, desc.AddressV, desc.AddressW
+        );
+    }
+    tracing::info!(
+        target: "water_probe",
+        "water probe: ps samplers pass={} eye={} invocation={} predicted_display_time_ns={} \
+         generation={} samplers{text}",
+        context.pass,
+        context.eye,
+        context.invocation,
+        context.frame.display_time(),
+        context.frame.visual_generation,
+    );
+}
+
 /// Logs the identity of the depth-stencil target the draw is bound against, next to the graphics
 /// engine's own depth textures, so a capture can tell whether the depth bracket generated against
 /// the same resource the draw reads.
@@ -547,6 +616,18 @@ mod tests {
             .iter()
             .flat_map(|value| value.to_le_bytes())
             .collect()
+    }
+
+    #[test]
+    fn capture_reads_the_pixel_globals_and_mvp() {
+        assert!(
+            CAPTURED_BINDINGS.contains(&(ShaderStage::Pixel, Slot::GLOBALS)),
+            "the pixel globals carry the sun, camera, and screen size rows"
+        );
+        assert!(
+            CAPTURED_BINDINGS.contains(&(ShaderStage::Pixel, Slot::MVP)),
+            "the pixel type constants carry the specular colour and power rows"
+        );
     }
 
     #[test]
