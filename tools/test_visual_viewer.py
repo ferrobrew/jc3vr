@@ -421,6 +421,134 @@ global.Image = class {
                                 text=True, capture_output=True, timeout=10, check=False)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    @unittest.skipUnless(shutil.which("node"), "Node is unavailable")
+    def test_browser_group_switch_pairs_by_capture_name(self):
+        fixture = r"""
+const assert = require('node:assert/strict');
+const elements = Object.fromEntries(['status', 'preview', 'capture', 'labels', 'details', 'summary', 'runs', 'groups',
+  'samples', 'follow', 'previous', 'next', 'previous-group', 'next-group'].map(
+  name => [name, {hidden: name === 'preview', replaceWith() {}, replaceChildren() {}, value: '', disabled: false,
+    checked: false, textContent: ''}]));
+global.document = {
+  getElementById: name => elements[name],
+  createElement: () => ({}),
+};
+let scheduled;
+global.setTimeout = callback => { scheduled = callback; };
+global.clearTimeout = () => {};
+global.localStorage = {getItem: () => null, setItem() {}};
+const groupsWire = [
+  {id: 'native', samples: [
+    {id: 'smoke_1', frame_ordinal: 1, pair: 'smoke_1'},
+  ]},
+  {id: 'multipass', samples: [
+    {id: 'terrain83_translated_multi_2', frame_ordinal: 2, pair: 'terrain83_translated_2'},
+    {id: 'terrain78_baseline_multi_1', frame_ordinal: 3, pair: 'terrain78_baseline_1'},
+    {id: 'terrain83_translated_multi_1', frame_ordinal: 4, pair: 'terrain83_translated_1'},
+  ]},
+  {id: 'left_only', samples: [
+    {id: 'terrain83_wheel_left_left_1', frame_ordinal: 5, pair: 'terrain83_wheel_left_1'},
+  ]},
+  {id: 'single_pass', samples: [
+    {id: 'water_probe_1', frame_ordinal: 6, pair: 'water_probe_1'},
+    {id: 'terrain78_baseline_single_1', frame_ordinal: 7, pair: 'terrain78_baseline_1'},
+    {id: 'terrain83_wheel_left_single_1', frame_ordinal: 8, pair: 'terrain83_wheel_left_1'},
+    {id: 'terrain83_translated_single_1', frame_ordinal: 9, pair: 'terrain83_translated_1'},
+    {id: 'terrain83_translated_single_2', frame_ordinal: 10, pair: 'terrain83_translated_2'},
+  ]},
+];
+const samplesWire = groupsWire.flatMap(group => group.samples);
+const runId = 'a'.repeat(64);
+global.fetch = async url => {
+  if (url === '/api/runs') {
+    return {ok: true, json: async () => ({runs: [{run_id: runId, output: '/run-a', timestamp: 'now', report: {}}],
+                                          latest_run_id: runId})};
+  }
+  const selected = /[?&]capture_id=([^&]+)/.exec(url);
+  const sample = samplesWire.find(item => item.id === (selected ? decodeURIComponent(selected[1])
+                                                               : samplesWire[samplesWire.length - 1].id));
+  return {ok: true, json: async () => ({
+    state: 'ready', run: '/run-a', run_id: runId, report: {}, groups: groupsWire,
+    preview: {revision: sample.id, image_url: '/capture/' + sample.id + '.png', labels: ['L', 'R'], capture: sample},
+  })};
+};
+global.Image = class {
+  replaceWith() {}
+  decode() { return Promise.resolve(); }
+};
+"""
+        checks = r"""
+(async () => {
+  const settle = async () => {
+    for (let turn = 0; turn < 20; turn++) {
+      await new Promise(resolve => setImmediate(resolve));
+      if (!busy && !refreshRequested) return;
+    }
+    throw new Error('the viewer did not settle: ' + elements.status.textContent);
+  };
+  const shown = (group, sample) => {
+    assert.equal(elements.groups.value, group);
+    assert.equal(elements.samples.value, sample);
+  };
+  const chooseGroup = async id => {
+    elements.groups.value = id;
+    elements.groups.onchange();
+    await settle();
+  };
+  const chooseSample = async id => {
+    elements.samples.value = id;
+    elements.samples.onchange();
+    await settle();
+  };
+  await settle();
+  assert.equal(elements.follow.checked, true);
+  shown('single_pass', 'terrain83_translated_single_2');
+  await chooseGroup('multipass');
+  shown('multipass', 'terrain83_translated_multi_2');
+  elements.next.onclick();
+  await settle();
+  shown('multipass', 'terrain78_baseline_multi_1');
+  await chooseGroup('single_pass');
+  shown('single_pass', 'terrain78_baseline_single_1');
+  await chooseGroup('multipass');
+  shown('multipass', 'terrain78_baseline_multi_1');
+  elements['next-group'].onclick();
+  await settle();
+  shown('multipass', 'terrain78_baseline_multi_1');
+  assert.match(elements.status.textContent,
+    /No corresponding sample: terrain78_baseline_multi_1 \(terrain78_baseline_1\) is not in left_only\./);
+  await chooseGroup('single_pass');
+  shown('single_pass', 'terrain78_baseline_single_1');
+  await chooseSample('terrain83_wheel_left_single_1');
+  await chooseGroup('left_only');
+  shown('left_only', 'terrain83_wheel_left_left_1');
+  elements['next-group'].onclick();
+  await settle();
+  shown('single_pass', 'terrain83_wheel_left_single_1');
+  await chooseSample('terrain83_translated_single_2');
+  await chooseGroup('multipass');
+  shown('multipass', 'terrain83_translated_multi_2');
+  await chooseGroup('single_pass');
+  shown('single_pass', 'terrain83_translated_single_2');
+  await chooseSample('water_probe_1');
+  await chooseGroup('multipass');
+  shown('single_pass', 'water_probe_1');
+  assert.match(elements.status.textContent, /water_probe_1 \(water_probe_1\) is not in multipass/);
+  await chooseGroup('native');
+  shown('single_pass', 'water_probe_1');
+  assert.match(elements.status.textContent, /water_probe_1 \(water_probe_1\) is not in native/);
+  elements.follow.checked = true;
+  elements.follow.onchange();
+  await settle();
+  shown('single_pass', 'terrain83_translated_single_2');
+  assert.doesNotMatch(elements.status.textContent, /No corresponding sample/);
+})().catch(error => { console.error(error); process.exitCode = 1; });
+"""
+        result = subprocess.run([shutil.which("node"), "-"], input=fixture + SCRIPT + checks,
+                                text=True, capture_output=True, timeout=10, check=False)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+
     def test_history_order_timestamps_deduplication_and_atomic_failure(self):
         publish_run(self.run, self.pointer, started_at="2026-01-02T03:04:05+00:00")
         older = self.root / "older"
@@ -489,6 +617,40 @@ global.Image = class {
         (self.folder / "suite_multipass_1.capture.png").write_bytes(b"broken")
         self.assertEqual(self.viewer.snapshot(run_id, "suite_multipass_1").state, "error")
         self.assertEqual(self.viewer.snapshot().preview.capture.id, "new")
+
+    def test_group_samples_pair_by_capture_name_not_position(self):
+        self.capture(Mode.SINGLE_PASS, "terrain83_translated_single_1", ordinal=1)
+        self.capture(Mode.MULTIPASS, "terrain83_translated_multi_1", ordinal=2)
+        self.capture(Mode.SINGLE_PASS, "terrain83_translated_single_2", ordinal=3)
+        self.capture(Mode.MULTIPASS, "terrain83_translated_multi_2", ordinal=4)
+        self.capture(Mode.SINGLE_PASS, "terrain83_wheel_left_single_1", ordinal=5)
+        self.capture(Mode.MULTIPASS, "terrain83_wheel_left_multi_1", ordinal=6)
+        self.capture(Mode.MULTIPASS, "suite_multipass_return_1", ordinal=7)
+        self.capture(Mode.SINGLE_PASS, "suite_single_pass_1", ordinal=8)
+        self.capture(Mode.SINGLE_PASS, "water_probe_1", ordinal=9)
+        self.capture(None, "smoke_1", ordinal=10)
+        self.capture(Mode.LEFT_ONLY, "terrain83_wheel_left_left_1", ordinal=11)
+        run_id = RunId.for_output(self.run)
+        groups = {group["id"]: {sample["id"]: sample["pair"] for sample in group["samples"]}
+                  for group in self.viewer.snapshot(run_id, "smoke_1").groups}
+        pairs = {
+            "terrain83_translated_single_1": ("single_pass", "terrain83_translated_1"),
+            "terrain83_translated_multi_1": ("multipass", "terrain83_translated_1"),
+            "terrain83_translated_single_2": ("single_pass", "terrain83_translated_2"),
+            "terrain83_translated_multi_2": ("multipass", "terrain83_translated_2"),
+            "terrain83_wheel_left_single_1": ("single_pass", "terrain83_wheel_left_1"),
+            "terrain83_wheel_left_multi_1": ("multipass", "terrain83_wheel_left_1"),
+            "suite_multipass_return_1": ("multipass_return", "suite_1"),
+            "suite_single_pass_1": ("single_pass", "suite_1"),
+            "terrain83_wheel_left_left_1": ("left_only", "terrain83_wheel_left_1"),
+            "water_probe_1": ("single_pass", "water_probe_1"),
+            "smoke_1": ("native", "smoke_1"),
+        }
+        for capture_id, (group, pair) in pairs.items():
+            with self.subTest(capture=capture_id):
+                self.assertEqual(groups[group][capture_id], pair)
+        self.assertNotIn("water_probe_1", groups["multipass"])
+        self.assertNotIn("smoke_1", groups["single_pass"])
 
     def test_known_id_api_rejects_paths_unknown_ids_and_extra_fields(self):
         self.capture(Mode.LEFT_ONLY, "first")
@@ -654,6 +816,15 @@ global.Image = class {
   await wait(() => capture('suite_multipass_1'));
   get('next').click();
   await wait(() => capture('suite_multipass_2'));
+  get('previous').click();
+  await wait(() => capture('suite_multipass_1'));
+  get('next').click();
+  await wait(() => capture('suite_multipass_2'));
+  get('next-group').click();
+  await new Promise(resolve => setTimeout(resolve, 1200));
+  check(capture('suite_multipass_2'), 'A group switch without a corresponding sample moves the selection');
+  check(get('groups').value === 'multipass', 'The group select is not restored');
+  check(get('status').textContent.includes('No corresponding sample'), 'The missing pair is not reported');
   get('previous').click();
   await wait(() => capture('suite_multipass_1'));
   await fetch('/browser-test-rollover');

@@ -240,7 +240,8 @@ class ViewerState:
                     group = ("multipass_return" if isinstance(capture, Capture) and
                              capture.mode == "multipass" and re.fullmatch(r"suite_multipass_return_[0-9]+", candidate_id)
                              else capture.mode if isinstance(capture, Capture) else "native")
-                    groups.setdefault(group, []).append({"id": candidate_id, "frame_ordinal": capture.frame_ordinal})
+                    groups.setdefault(group, []).append({"id": candidate_id, "frame_ordinal": capture.frame_ordinal,
+                                                         "pair": _pair_key(candidate_id, group)})
                 outcomes = _group_outcomes(run, groups)
                 metadata["groups"] = [{"id": group, "samples": samples,
                                        "outcome": asdict(outcomes[group]) if group in outcomes else None}
@@ -344,6 +345,14 @@ MAX_CACHE_BYTES = 256 * 1024 * 1024
 MAX_DIRECTORY_ENTRIES = 4096
 ID_PATTERN = re.compile(r"[A-Za-z0-9_-]{1,128}\Z")
 IMAGE_PATTERN = re.compile(r"/capture/([0-9a-f]{64})\.png\Z")
+PAIR_SEGMENTS = {
+    "single_pass": ("single_pass", "single"),
+    "multipass": ("multipass", "multi"),
+    "multipass_return": ("multipass_return",),
+    "reverse_multipass": ("reverse_multipass", "reverse_multi"),
+    "left_only": ("left_only", "left"),
+    "right_only": ("right_only", "right"),
+}
 
 
 def _run_summary(run):
@@ -444,6 +453,16 @@ def _comparison_failures(wire):
             if isinstance(children, list):
                 pending.extend((child, name) for child in reversed(children))
     return failures[:12]
+
+
+def _pair_key(capture_id, group):
+    segments = PAIR_SEGMENTS.get(group, ())
+    if segments:
+        pattern = rf"_(?:{'|'.join(map(re.escape, segments))})_([0-9]+)\Z"
+        stripped = re.sub(pattern, r"_\1", capture_id, count=1)
+        if stripped != capture_id:
+            return stripped
+    return capture_id
 
 
 def _file_key(path):
@@ -673,6 +692,7 @@ try {
 } catch (_) {}
 follow.checked = selection.follow;
 let revision = null;
+let notice = null;
 let displayedRun = null;
 let displayedCapture = null;
 let current = null;
@@ -694,6 +714,7 @@ function save() {
 }
 function changed() {
   generation++;
+  notice = null;
   follow.checked = selection.follow;
   save();
   preview.hidden = true;
@@ -709,11 +730,28 @@ function pin(captureId, runId = current?.run_id) {
   selection = {follow: false, run_id: runId, capture_id: captureId};
   changed();
 }
+function selectedSample() {
+  const captureId = selection.capture_id || current?.preview?.capture.id;
+  const allGroups = current?.groups || [];
+  return allGroups.flatMap(group => group.samples).find(sample => sample.id === captureId);
+}
+function pinPair(group) {
+  if (!group) return;
+  const sample = selectedSample();
+  const pair = sample?.pair;
+  const target = pair ? group.samples.find(item => item.pair === pair) : null;
+  if (target) {
+    pin(target.id);
+    return;
+  }
+  notice = 'No corresponding sample: ' + (sample ? sample.id : 'none') + (pair ? ' (' + pair + ')' : '') +
+    ' is not in ' + group.id + '.';
+  const allGroups = current?.groups || [];
+  groups.value = allGroups.find(item => item.samples.some(entry => entry.id === sample?.id))?.id || '';
+  status.textContent = notice;
+}
 runs.onchange = () => pin(null, runs.value);
-groups.onchange = () => {
-  const group = current?.groups.find(group => group.id === groups.value);
-  if (group?.samples.length) pin(group.samples[0].id);
-};
+groups.onchange = () => pinPair(current?.groups.find(group => group.id === groups.value));
 samples.onchange = () => pin(samples.value);
 function move(delta) {
   const group = current?.groups.find(group => group.id === groups.value);
@@ -724,9 +762,7 @@ function move(delta) {
 function moveGroup(delta) {
   const allGroups = current?.groups || [];
   const index = allGroups.findIndex(group => group.id === groups.value) + delta;
-  if (index >= 0 && index < allGroups.length && allGroups[index].samples.length) {
-    pin(allGroups[index].samples[0].id);
-  }
+  if (index >= 0 && index < allGroups.length) pinPair(allGroups[index]);
 }
 previousGroup.onclick = () => moveGroup(-1);
 nextGroup.onclick = () => moveGroup(1);
@@ -848,7 +884,8 @@ async function poll() {
       revision = next.revision;
     }
     preview.hidden = false;
-    status.textContent = (selection.follow ? 'Following latest: ' : 'Pinned: ') + snapshot.run;
+    status.textContent = (selection.follow ? 'Following latest: ' : 'Pinned: ') + snapshot.run +
+      (notice ? ' | ' + notice : '');
   } catch (error) {
     if (requestGeneration !== generation) return;
     preview.hidden = true;
