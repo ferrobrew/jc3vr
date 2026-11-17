@@ -10,21 +10,18 @@ use std::{
     marker::PhantomData,
     rc::Rc,
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
-    time::Duration,
 };
 
 use windows::{
     Win32::{
-        Foundation::{RECT, S_FALSE, S_OK},
+        Foundation::RECT,
         Graphics::Direct3D11::{
             D3D11_BLEND_DESC, D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_ZERO,
             D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_LESS,
             D3D11_CULL_BACK, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_STENCILOP_DESC,
-            D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID, D3D11_QUERY,
-            D3D11_QUERY_DATA_PIPELINE_STATISTICS, D3D11_QUERY_DESC, D3D11_QUERY_OCCLUSION,
-            D3D11_QUERY_PIPELINE_STATISTICS, D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC,
-            D3D11_STENCIL_OP_KEEP, D3D11_VIEWPORT, ID3D11DepthStencilView, ID3D11Device,
-            ID3D11DeviceContext, ID3D11Query, ID3D11RenderTargetView,
+            D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID, D3D11_RASTERIZER_DESC,
+            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP, D3D11_VIEWPORT,
+            ID3D11DepthStencilView, ID3D11DeviceContext, ID3D11RenderTargetView,
         },
     },
     core::{Error as WindowsError, HRESULT, Interface},
@@ -33,8 +30,10 @@ use windows::{
 use crate::stereo::single_pass::EngineContext;
 
 mod constants;
+mod ia;
+mod work;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]
 pub(crate) enum RawDrawKind {
     Indexed,
@@ -72,6 +71,7 @@ pub(crate) unsafe fn raw_entry(kind: RawDrawKind, context: *mut c_void) {
         let count = *count;
         let index = capture.logged;
         capture.logged += 1;
+        capture.close_open();
         let Some(slot) = raw_log_slot(index) else {
             return;
         };
@@ -82,20 +82,23 @@ pub(crate) unsafe fn raw_entry(kind: RawDrawKind, context: *mut c_void) {
         else {
             return;
         };
-        if !capture.constants_logged {
-            let mut ds = None;
-            let mut dsv = None;
-            // SAFETY: `ctx` is the live immediate context; both getters only read bound state.
-            unsafe {
-                ctx.DSGetShader(&mut ds, None, None);
-                ctx.OMGetRenderTargets(None, Some(&mut dsv));
-            }
-            if ds.is_some() && dsv.is_some() {
-                capture.constants_logged = true;
-                // SAFETY: `ctx` is the live immediate context.
-                unsafe { constants::capture(ctx, capture.context) };
-            }
+        // SAFETY: `ctx` is the live immediate context; the getters only read bound state.
+        let bound = unsafe { work::bound_state(ctx) };
+        if capture.constants_logged < RAW_CONSTANTS_CAP && bound.dsv_bound {
+            capture.constants_logged += 1;
+            // SAFETY: `ctx` is the live immediate context.
+            unsafe { ia::capture(ctx, capture.context) };
+            // SAFETY: `ctx` is the live immediate context.
+            unsafe { constants::capture(ctx, capture.context) };
         }
+        capture.begin_segment(
+            ctx,
+            work::SegmentMeta {
+                index,
+                kind,
+                scene: bound.scene,
+            },
+        );
         log_raw(ctx, capture, kind, count, slot);
     });
 }
@@ -103,7 +106,6 @@ pub(crate) unsafe fn raw_entry(kind: RawDrawKind, context: *mut c_void) {
 pub(crate) struct WaterGpuProbe {
     d3d: EngineContext,
     context: ProbeContext,
-    queries: Option<QueryPair>,
     _guard: Option<ActiveGuard>,
 }
 
@@ -149,23 +151,17 @@ impl WaterGpuProbe {
 
     pub(crate) fn finish(mut self) {
         let capture = self._guard.take().and_then(ActiveGuard::disarm);
-        let Some(queries) = self.queries.take() else {
+        let Some(mut capture) = capture else {
             return;
         };
-        self.d3d.with_lock(|ctx| {
-            // SAFETY: both queries were created on this context's device and begun in `start`.
-            unsafe {
-                ctx.End(&queries.pipeline);
-                ctx.End(&queries.occlusion);
-            }
-        });
-        match resolve(self.d3d, &queries.pipeline, &queries.occlusion) {
-            Ok(work) => work.log(self.context),
-            Err(e) => tracing::warn!(target: "water_probe", "{e}"),
+        capture.close_open();
+        let works = work::resolve(self.d3d, &capture.segments);
+        for segment_work in &works {
+            segment_work.log(self.context);
         }
-        if let Some(capture) = &capture {
-            log_raw_counts(capture);
-        }
+        work::log_scene_aggregates(self.context, &works);
+        work::log_aggregate(self.context, &works, capture.logged);
+        log_raw_counts(&capture);
     }
 
     fn start(
@@ -176,57 +172,21 @@ impl WaterGpuProbe {
         let guard = ActiveGuard::arm(context).ok_or(ProbeError::AlreadyActive)?;
         // SAFETY: `ctx` is the live immediate context; `GetDevice` only reads its device.
         let device = unsafe { ctx.GetDevice() }.map_err(ProbeError::Device)?;
-        let pipeline = create_query(
-            &device,
-            D3D11_QUERY_PIPELINE_STATISTICS,
-            "pipeline statistics",
-        )?;
-        let occlusion = create_query(&device, D3D11_QUERY_OCCLUSION, "occlusion")?;
+        let queries = work::create_pairs(&device, RAW_LOG_CAP)?;
+        guard.install(queries);
         log_state(ctx, context);
-        // SAFETY: both queries are live and were created on this context's device; `finish` pairs
-        // each `Begin` with its `End`.
-        unsafe {
-            ctx.Begin(&pipeline);
-            ctx.Begin(&occlusion);
-        }
         Ok(Self {
             d3d,
             context,
-            queries: Some(QueryPair {
-                pipeline,
-                occlusion,
-            }),
             _guard: Some(guard),
         })
     }
 }
 
-impl Drop for WaterGpuProbe {
-    fn drop(&mut self) {
-        let Some(queries) = self.queries.take() else {
-            return;
-        };
-        self.d3d.with_lock(|ctx| {
-            // SAFETY: both queries were created on this context's device and begun in `start`.
-            unsafe {
-                ctx.End(&queries.pipeline);
-                ctx.End(&queries.occlusion);
-            }
-        });
-    }
-}
-
-struct QueryPair {
-    pipeline: ID3D11Query,
-    occlusion: ID3D11Query,
-}
-
 const MAX_INVOCATIONS: usize = 64;
 
-const POLLS: u32 = 20;
-const POLL_INTERVAL: Duration = Duration::from_micros(250);
-
 const RAW_LOG_CAP: usize = 32;
+const RAW_CONSTANTS_CAP: usize = 16;
 
 static INVOCATIONS: AtomicUsize = AtomicUsize::new(0);
 static BUDGET_EXHAUSTED: AtomicBool = AtomicBool::new(false);
@@ -260,7 +220,34 @@ struct RawCapture {
     context: ProbeContext,
     counts: [usize; RawDrawKind::COUNT],
     logged: usize,
-    constants_logged: bool,
+    constants_logged: usize,
+    spare: Vec<work::QueryPair>,
+    segments: Vec<work::Segment>,
+    open: Option<work::Segment>,
+}
+
+impl RawCapture {
+    fn begin_segment(&mut self, ctx: &ID3D11DeviceContext, meta: work::SegmentMeta) {
+        self.close_open();
+        let Some(pair) = self.spare.pop() else {
+            return;
+        };
+        self.open = Some(work::Segment::begin(ctx, meta, pair));
+    }
+
+    fn close_open(&mut self) {
+        let Some(open) = self.open.take() else {
+            return;
+        };
+        open.end();
+        self.segments.push(open);
+    }
+}
+
+impl Drop for RawCapture {
+    fn drop(&mut self) {
+        self.close_open();
+    }
 }
 
 struct ActiveGuard {
@@ -278,12 +265,23 @@ impl ActiveGuard {
                 context,
                 counts: [0; RawDrawKind::COUNT],
                 logged: 0,
-                constants_logged: false,
+                constants_logged: 0,
+                spare: Vec::new(),
+                segments: Vec::new(),
+                open: None,
             });
             Some(Self {
                 _not_send: PhantomData,
             })
         })
+    }
+
+    fn install(&self, queries: Vec<work::QueryPair>) {
+        RAW_CAPTURE.with(|state| {
+            if let Some(capture) = state.borrow_mut().as_mut() {
+                capture.spare = queries;
+            }
+        });
     }
 
     fn disarm(self) -> Option<RawCapture> {
@@ -333,149 +331,8 @@ impl std::fmt::Display for ProbeError {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum QueryStatus {
-    Ready,
-    Pending,
-}
-
-struct GpuWork {
-    pipeline: Option<D3D11_QUERY_DATA_PIPELINE_STATISTICS>,
-    occlusion_samples: Option<u64>,
-    polls: u32,
-}
-
-impl GpuWork {
-    fn log(&self, context: ProbeContext) {
-        let count = |value: Option<u64>| match value {
-            Some(value) => value.to_string(),
-            None => "pending".to_owned(),
-        };
-        let pipeline = self.pipeline;
-        tracing::info!(
-            target: "water_probe",
-            "water probe: gpu work pass={} eye={} invocation={} predicted_display_time_ns={} \
-             generation={} polls={} pipeline_stats={} occlusion={} ia_vertices={} \
-             ia_primitives={} vs_invocations={} hs_invocations={} ds_invocations={} \
-             gs_invocations={} clipper_invocations={} clipper_primitives={} ps_invocations={} \
-             cs_invocations={} occlusion_samples={}",
-            context.pass,
-            context.eye,
-            context.invocation,
-            context.frame.display_time(),
-            context.frame.visual_generation,
-            self.polls,
-            readiness(self.pipeline.is_some()),
-            readiness(self.occlusion_samples.is_some()),
-            count(pipeline.map(|p| p.IAVertices)),
-            count(pipeline.map(|p| p.IAPrimitives)),
-            count(pipeline.map(|p| p.VSInvocations)),
-            count(pipeline.map(|p| p.HSInvocations)),
-            count(pipeline.map(|p| p.DSInvocations)),
-            count(pipeline.map(|p| p.GSInvocations)),
-            count(pipeline.map(|p| p.CInvocations)),
-            count(pipeline.map(|p| p.CPrimitives)),
-            count(pipeline.map(|p| p.PSInvocations)),
-            count(pipeline.map(|p| p.CSInvocations)),
-            count(self.occlusion_samples),
-        );
-    }
-}
-
-fn readiness(resolved: bool) -> &'static str {
-    if resolved { "ready" } else { "pending" }
-}
-
-fn create_query(
-    device: &ID3D11Device,
-    kind: D3D11_QUERY,
-    name: &'static str,
-) -> Result<ID3D11Query, ProbeError> {
-    let desc = D3D11_QUERY_DESC {
-        Query: kind,
-        MiscFlags: 0,
-    };
-    let mut query = None;
-    // SAFETY: `desc` is a live descriptor for the requested query type.
-    unsafe { device.CreateQuery(&desc, Some(&mut query)) }
-        .map_err(|error| ProbeError::CreateQuery { query: name, error })?;
-    query.ok_or(ProbeError::QueryMissing { query: name })
-}
-
-fn resolve(
-    d3d: EngineContext,
-    pipeline: &ID3D11Query,
-    occlusion: &ID3D11Query,
-) -> Result<GpuWork, ProbeError> {
-    let mut statistics = D3D11_QUERY_DATA_PIPELINE_STATISTICS::default();
-    let mut samples = 0u64;
-    let mut have_statistics = false;
-    let mut have_samples = false;
-    let mut polls = 0;
-    loop {
-        let (statistics_ready, samples_ready) = d3d.with_lock(|ctx| {
-            let statistics_ready = if have_statistics {
-                false
-            } else {
-                get_data(ctx, pipeline, &mut statistics)? == QueryStatus::Ready
-            };
-            let samples_ready = if have_samples {
-                false
-            } else {
-                get_data(ctx, occlusion, &mut samples)? == QueryStatus::Ready
-            };
-            Ok::<_, ProbeError>((statistics_ready, samples_ready))
-        })?;
-        have_statistics |= statistics_ready;
-        have_samples |= samples_ready;
-        let Some(wait) = poll_wait(polls, have_statistics && have_samples) else {
-            break;
-        };
-        std::thread::sleep(wait);
-        polls += 1;
-    }
-    Ok(GpuWork {
-        pipeline: have_statistics.then_some(statistics),
-        occlusion_samples: have_samples.then_some(samples),
-        polls,
-    })
-}
-
-fn get_data<T>(
-    ctx: &ID3D11DeviceContext,
-    query: &ID3D11Query,
-    data: &mut T,
-) -> Result<QueryStatus, ProbeError> {
-    let vtable = ctx.vtable();
-    // SAFETY: `query` is live and `data` is a buffer of the size the query type writes.
-    let hr = unsafe {
-        (vtable.GetData)(
-            ctx.as_raw(),
-            query.as_raw(),
-            std::ptr::from_mut(data).cast(),
-            std::mem::size_of::<T>() as u32,
-            0,
-        )
-    };
-    classify(hr)
-}
-
-fn classify(hr: HRESULT) -> Result<QueryStatus, ProbeError> {
-    if hr == S_OK {
-        Ok(QueryStatus::Ready)
-    } else if hr == S_FALSE {
-        Ok(QueryStatus::Pending)
-    } else {
-        Err(ProbeError::GetData(hr))
-    }
-}
-
 fn admit(invocation: usize) -> Option<usize> {
     (invocation < MAX_INVOCATIONS).then_some(invocation)
-}
-
-fn poll_wait(polls: u32, resolved: bool) -> Option<Duration> {
-    (!resolved && polls < POLLS).then_some(POLL_INTERVAL)
 }
 
 fn raw_log_slot(logged: usize) -> Option<usize> {
@@ -717,16 +574,7 @@ fn pointer<T: Interface>(value: &Option<T>) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use windows::Win32::Foundation::E_FAIL;
-
     use super::*;
-
-    #[test]
-    fn query_status_separates_ready_pending_and_error() {
-        assert_eq!(classify(S_OK).ok(), Some(QueryStatus::Ready));
-        assert_eq!(classify(S_FALSE).ok(), Some(QueryStatus::Pending));
-        assert!(matches!(classify(E_FAIL), Err(ProbeError::GetData(hr)) if hr == E_FAIL));
-    }
 
     #[test]
     fn admission_spends_the_lifetime_budget_once() {
@@ -734,15 +582,6 @@ mod tests {
         assert_eq!(admit(MAX_INVOCATIONS - 1), Some(MAX_INVOCATIONS - 1));
         assert_eq!(admit(MAX_INVOCATIONS), None);
         assert_eq!(admit(MAX_INVOCATIONS + 1), None);
-    }
-
-    #[test]
-    fn polling_stops_at_the_cap_and_reports_pending() {
-        assert_eq!(poll_wait(0, false), Some(POLL_INTERVAL));
-        assert_eq!(poll_wait(POLLS - 1, false), Some(POLL_INTERVAL));
-        assert_eq!(poll_wait(POLLS, false), None);
-        assert_eq!(poll_wait(0, true), None);
-        assert_eq!(poll_wait(POLLS, true), None);
     }
 
     #[test]
