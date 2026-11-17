@@ -1,7 +1,38 @@
 """Command-line parsing for the visual harness."""
 
 import argparse
+from dataclasses import dataclass
 from pathlib import Path
+
+
+@dataclass
+class Options:
+    no_build: bool = False
+    check: bool = False
+    gpu: str | None = None
+    xdotool: str | None = None
+    timeout: float = 180.0
+    startup_timeout: float = 90.0
+    build_timeout: float = 900.0
+    copy_timeout: float = 180.0
+    menu_interval: float = 3.0
+    menu_timeout: float = 60.0
+    output: Path | None = None
+    release: bool = False
+    launch_only: bool = False
+    suite: bool = False
+    orientation_sweep: bool = False
+    motion_sweep: bool = False
+    smoke: bool = False
+    samples: int = 3
+    warmup_frames: int = 30
+    reverse_multipass: bool = False
+    single_pass_probe: bool = False
+    probe_yaw: float = 0.0
+    probe_pitch: float = 0.0
+    probe_right: float = 0.0
+    probe_up: float = 0.0
+    probe_forward: float = 0.0
 
 
 def parse_args(argv=None):
@@ -23,6 +54,12 @@ def parse_args(argv=None):
     parser.add_argument("--warmup-frames", type=int, default=30)
     parser.add_argument("--probe-yaw", type=float, default=0.0)
     parser.add_argument("--probe-pitch", type=float, default=0.0)
+    parser.add_argument("--probe-right", type=float, default=0.0,
+                        help="probe translation right, in game world units")
+    parser.add_argument("--probe-up", type=float, default=0.0,
+                        help="probe translation up, in game world units")
+    parser.add_argument("--probe-forward", type=float, default=0.0,
+                        help="probe translation forward, in game world units")
     parser.add_argument("--reverse-multipass", action="store_true")
     parser.add_argument("--gpu", help="Vulkan PCI vendor:device, e.g. 10de:2b85")
     parser.add_argument("--xdotool")

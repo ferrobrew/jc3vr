@@ -21,7 +21,7 @@ import zlib
 from pathlib import Path
 
 if __package__:
-    from .visual_harness_cli import parse_args
+    from .visual_harness_cli import Options, parse_args
     from .visual_motion import run_motion_sweep
     from .visual_processes import ProcessError, processes, steam_client
     from .visual_probe import check_probe_options, run_single_pass_probe
@@ -48,7 +48,7 @@ if __package__:
     from .visual_suite import SuiteError, run_orientation_sweep, run_suite
     from .visual_viewer import DEFAULT_POINTER, publish_run
 else:
-    from visual_harness_cli import parse_args
+    from visual_harness_cli import Options, parse_args
     from visual_motion import run_motion_sweep
     from visual_processes import ProcessError, processes, steam_client
     from visual_protocol import (
@@ -84,33 +84,6 @@ CALLBACKS = (("orientation_sweep", run_orientation_sweep), ("motion_sweep", run_
 
 class HarnessError(RuntimeError):
     pass
-
-
-@dataclasses.dataclass
-class Options:
-    no_build: bool = False
-    check: bool = False
-    gpu: str | None = None
-    xdotool: str | None = None
-    timeout: float = 180.0
-    startup_timeout: float = 90.0
-    build_timeout: float = 900.0
-    copy_timeout: float = 180.0
-    menu_interval: float = 3.0
-    menu_timeout: float = 60.0
-    output: Path | None = None
-    release: bool = False
-    launch_only: bool = False
-    suite: bool = False
-    orientation_sweep: bool = False
-    motion_sweep: bool = False
-    smoke: bool = False
-    samples: int = 3
-    warmup_frames: int = 30
-    reverse_multipass: bool = False
-    single_pass_probe: bool = False
-    probe_yaw: float = 0.0
-    probe_pitch: float = 0.0
 
 
 class VisualHarness:

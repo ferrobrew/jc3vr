@@ -19,7 +19,7 @@ pub(crate) use motion::{
 };
 pub(crate) use pose::{
     OrientationOffset, PoseError, PoseEvidence, PoseFrame, PoseRequest, PoseTable, PoseTransform,
-    pose_frame, pose_matches,
+    TranslationOffset, pose_frame, pose_matches,
 };
 
 pub(crate) use crate::stereo::dispatch::RenderMode;

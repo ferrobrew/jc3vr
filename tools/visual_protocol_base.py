@@ -2,7 +2,7 @@
 
 import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 
 
@@ -65,6 +65,18 @@ class Command(StrEnum):
 
 POSE_TOLERANCE = 1e-4
 
+# The applied camera's position is stored through float32, so it differs from
+# the double-precision composition by a few ULP at the magnitude of the
+# coordinates involved. The composition check widens its position tolerance by
+# that much per component; every other pose comparison stays at POSE_TOLERANCE.
+POSE_COMPOSITION_ULPS = 4
+
+# float32 carries 24 significand bits, the smallest normal is 2**-126, and the
+# subnormal range is spaced at 2**-149.
+FLOAT32_SIGNIFICAND_BITS = 24
+FLOAT32_MIN_NORMAL = 2.0 ** -126
+FLOAT32_SUBNORMAL_SPACING = 2.0 ** -149
+
 
 @dataclass(frozen=True)
 class OrientationOffset:
@@ -89,29 +101,64 @@ class OrientationOffset:
 
 
 @dataclass(frozen=True)
+class TranslationOffset:
+    right: float = 0.0
+    up: float = 0.0
+    forward: float = 0.0
+
+    def __post_init__(self):
+        for name in ("right", "up", "forward"):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not math.isfinite(value) or not -5000 <= value <= 5000:
+                raise ProtocolError(f"visual protocol: {name} translation must be finite and within [-5000, 5000]")
+            object.__setattr__(self, name, float(value))
+
+    @classmethod
+    def from_wire(cls, value):
+        if value is None:
+            return cls()
+        return cls(finite_number(value, "right"), finite_number(value, "up"),
+                   finite_number(value, "forward"))
+
+    def to_wire(self):
+        return asdict(self)
+
+    def vector(self):
+        return (self.right, self.up, -self.forward)
+
+
+@dataclass(frozen=True)
 class PoseRequest:
     case_id: str
     offset: OrientationOffset
+    translation: TranslationOffset = field(default_factory=TranslationOffset)
 
     def __post_init__(self):
         if not valid_request_id(self.case_id):
             raise ProtocolError("visual protocol: pose case_id must be an ASCII request ID")
         if not isinstance(self.offset, OrientationOffset):
             raise ProtocolError("visual protocol: pose request requires an orientation offset")
+        if not isinstance(self.translation, TranslationOffset):
+            raise ProtocolError("visual protocol: pose request requires a translation offset")
 
     @classmethod
     def from_wire(cls, value):
-        return cls(text(value, "case_id"), OrientationOffset.from_wire(object_value(value).get("offset")))
+        return cls(text(value, "case_id"), OrientationOffset.from_wire(object_value(value).get("offset")),
+                   TranslationOffset.from_wire(object_value(value).get("translation")))
 
     def to_wire(self):
-        return {"case_id": self.case_id, "offset": self.offset.to_wire()}
+        return {"case_id": self.case_id, "offset": self.offset.to_wire(),
+                "translation": self.translation.to_wire()}
 
     def to_toml(self) -> str:
         return ("[pose]\n"
                 f"case_id = {json.dumps(self.case_id)}\n"
                 f"yaw_deg = {json.dumps(self.offset.yaw_deg)}\n"
                 f"pitch_deg = {json.dumps(self.offset.pitch_deg)}\n"
-                f"roll_deg = {json.dumps(self.offset.roll_deg)}\n")
+                f"roll_deg = {json.dumps(self.offset.roll_deg)}\n"
+                f"right = {json.dumps(self.translation.right)}\n"
+                f"up = {json.dumps(self.translation.up)}\n"
+                f"forward = {json.dumps(self.translation.forward)}\n")
 
 
 @dataclass(frozen=True)
@@ -132,12 +179,14 @@ class PoseEvidence:
     offset: OrientationOffset
     anchor: Camera
     applied: Camera
+    translation: TranslationOffset = field(default_factory=TranslationOffset)
 
     @classmethod
     def from_wire(cls, value):
         object_value(value)
         result = cls(text(value, "case_id"), OrientationOffset.from_wire(object_value(value).get("offset")),
-                     Camera.from_wire(value.get("anchor")), Camera.from_wire(value.get("applied")))
+                     Camera.from_wire(value.get("anchor")), Camera.from_wire(value.get("applied")),
+                     TranslationOffset.from_wire(object_value(value).get("translation")))
         if not valid_request_id(result.case_id):
             raise ProtocolError("visual protocol: pose evidence case_id must be an ASCII request ID")
         result.validate_composition()
@@ -146,13 +195,19 @@ class PoseEvidence:
     def validate_composition(self, tolerance=POSE_TOLERANCE):
         if not isinstance(self.offset, OrientationOffset):
             raise ProtocolError("visual protocol: pose evidence offset is invalid")
+        if not isinstance(self.translation, TranslationOffset):
+            raise ProtocolError("visual protocol: pose evidence translation is invalid")
         for name, camera in (("anchor", self.anchor), ("applied", self.applied)):
             if not isinstance(camera, Camera):
                 raise ProtocolError(f"visual protocol: pose evidence {name} is not a camera")
             finite_vector(camera.position, 3, f"{name}.position")
             quaternion_normalize(camera.orientation)
-        if not vectors_match(self.anchor.position, self.applied.position, tolerance):
-            raise ProtocolError("visual protocol: pose evidence applied position differs from its anchor")
+        expected_position = tuple(
+            position + offset for position, offset in
+            zip(self.anchor.position, rotate_vector(self.anchor.orientation, self.translation.vector())))
+        if not composed_positions_match(expected_position, self.applied.position,
+                                        self.anchor.position, tolerance):
+            raise ProtocolError("visual protocol: pose evidence applied position is not anchor + anchor rotation * translation")
         expected = quaternion_multiply(quaternion_normalize(self.anchor.orientation), euler_yxz_quaternion(self.offset))
         if not quaternions_match(expected, self.applied.orientation, tolerance):
             raise ProtocolError("visual protocol: pose evidence applied orientation is not anchor * YXZ offset")
@@ -168,6 +223,8 @@ class PoseEvidence:
             raise ProtocolError("visual protocol: pose evidence case_id differs from its request")
         if not offsets_match(self.offset, request.offset, tolerance):
             raise ProtocolError("visual protocol: pose evidence offset differs from its request")
+        if not translations_match(self.translation, request.translation, tolerance):
+            raise ProtocolError("visual protocol: pose evidence translation differs from its request")
         if anchor is not None and not cameras_match(anchor, self.anchor, tolerance):
             raise ProtocolError("visual protocol: pose evidence anchor changed during the run")
         self.validate_composition(tolerance)
@@ -187,16 +244,30 @@ class PoseEvidence:
         return {
             "case_id": self.case_id,
             "offset": self.offset.to_wire(),
+            "translation": self.translation.to_wire(),
             "anchor": {"position": list(self.anchor.position), "orientation": list(self.anchor.orientation)},
             "applied": {"position": list(self.applied.position), "orientation": list(self.applied.orientation)},
         }
 
 
-def compose_pose(anchor, offset):
+def compose_pose(anchor, offset, translation=None):
     if not isinstance(anchor, Camera) or not isinstance(offset, OrientationOffset):
         raise ProtocolError("visual protocol: pose composition requires a camera and an offset")
+    translation = TranslationOffset() if translation is None else translation
+    if not isinstance(translation, TranslationOffset):
+        raise ProtocolError("visual protocol: pose composition requires a translation offset")
+    position = tuple(position + offset for position, offset in
+                     zip(anchor.position, rotate_vector(anchor.orientation, translation.vector())))
     orientation = quaternion_multiply(quaternion_normalize(anchor.orientation), euler_yxz_quaternion(offset))
-    return Camera(anchor.position, quaternion_normalize(orientation))
+    return Camera(position, quaternion_normalize(orientation))
+
+
+def rotate_vector(quaternion, value):
+    quaternion = quaternion_normalize(quaternion)
+    x, y, z, w = quaternion
+    rotated = quaternion_multiply(quaternion_multiply(quaternion, (value[0], value[1], value[2], 0.0)),
+                                  (-x, -y, -z, w))
+    return rotated[:3]
 
 
 def euler_yxz_quaternion(offset):
@@ -242,6 +313,42 @@ def cameras_match(a, b, tolerance=POSE_TOLERANCE):
 def offsets_match(a, b, tolerance=POSE_TOLERANCE):
     return all(abs(left - right) <= tolerance for left, right in
                zip((a.yaw_deg, a.pitch_deg, a.roll_deg), (b.yaw_deg, b.pitch_deg, b.roll_deg)))
+
+
+def translations_match(a, b, tolerance=POSE_TOLERANCE):
+    if not isinstance(a, TranslationOffset) or not isinstance(b, TranslationOffset):
+        return False
+    return all(abs(left - right) <= tolerance for left, right in
+               zip((a.right, a.up, a.forward), (b.right, b.up, b.forward)))
+
+
+def composed_positions_match(expected, applied, anchor, tolerance=POSE_TOLERANCE):
+    return all(abs(expected_item - applied_item) <= limit for expected_item, applied_item, limit in
+               zip(expected, applied, composed_position_tolerances(expected, applied, anchor, tolerance)))
+
+
+def composed_position_tolerances(expected, applied, anchor, tolerance=POSE_TOLERANCE):
+    """Per-component tolerances for a composed position compared with an applied one.
+
+    The applied position round-trips through float32, so each component is
+    allowed POSE_COMPOSITION_ULPS of float32 quantization at the largest
+    magnitude feeding it, on top of the base tolerance.
+    """
+    if not len(expected) == len(applied) == len(anchor):
+        raise ProtocolError("visual protocol: pose composition requires equal-length positions")
+    return tuple(
+        tolerance + POSE_COMPOSITION_ULPS * float32_ulp(max(abs(expected_item), abs(applied_item), abs(anchor_item)))
+        for expected_item, applied_item, anchor_item in zip(expected, applied, anchor))
+
+
+def float32_ulp(value):
+    """Return the spacing of float32 values at the magnitude of value."""
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise ProtocolError("visual protocol: float32 ULP requires a finite number")
+    magnitude = abs(value)
+    if magnitude < FLOAT32_MIN_NORMAL:
+        return FLOAT32_SUBNORMAL_SPACING
+    return math.ldexp(1.0, math.frexp(magnitude)[1] - FLOAT32_SIGNIFICAND_BITS)
 
 
 def vectors_match(a, b, tolerance):

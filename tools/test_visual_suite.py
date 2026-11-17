@@ -33,6 +33,8 @@ from tools.visual_protocol import (
     NativeCapture,
     OrientationOffset,
     Outcome,
+    POSE_COMPOSITION_ULPS,
+    POSE_TOLERANCE,
     PoseEvidence,
     PoseRequest,
     ProtocolError,
@@ -40,8 +42,12 @@ from tools.visual_protocol import (
     RestorationAck,
     ScreenshotAck,
     SmokeResult,
+    TranslationOffset,
     acknowledgement_from_wire,
     compose_pose,
+    composed_position_tolerances,
+    euler_yxz_quaternion,
+    float32_ulp,
 )
 from tools.visual_suite import ORIENTATION_SWEEP_CASES, SuiteError, run_orientation_sweep, run_suite
 
@@ -95,8 +101,8 @@ ANCHOR = Camera((1.5, -2.0, 0.25), (0.0, 0.7071067811865476, 0.0, 0.707106781186
 
 
 def pose_evidence(request, anchor=ANCHOR, applied=None):
-    applied = applied or compose_pose(anchor, request.offset)
-    return PoseEvidence(request.case_id, request.offset, anchor, applied)
+    applied = applied or compose_pose(anchor, request.offset, request.translation)
+    return PoseEvidence(request.case_id, request.offset, anchor, applied, request.translation)
 
 
 def pose_wire(evidence):
@@ -583,9 +589,11 @@ class SuiteTests(unittest.TestCase):
                           PoseRequest("case_a", OrientationOffset(-30.0, 20.0, 20.0)))
         toml = tomllib.loads(request.to_toml())
         self.assertEqual(toml["pose"], {"case_id": "case_a", "yaw_deg": -30.0,
-                                        "pitch_deg": 20.0, "roll_deg": 20.0})
+                                        "pitch_deg": 20.0, "roll_deg": 20.0,
+                                        "right": 0.0, "up": 0.0, "forward": 0.0})
         self.assertEqual(request.to_wire()["pose"], {
-            "case_id": "case_a", "offset": {"yaw_deg": -30.0, "pitch_deg": 20.0, "roll_deg": 20.0}})
+            "case_id": "case_a", "offset": {"yaw_deg": -30.0, "pitch_deg": 20.0, "roll_deg": 20.0},
+            "translation": {"right": 0.0, "up": 0.0, "forward": 0.0}})
         self.assertNotIn('"offset"', request.to_toml())
         for offset in (float("nan"), float("inf"), -180.5, 180.5):
             with self.subTest(offset=offset), self.assertRaises(ProtocolError):
@@ -597,6 +605,72 @@ class SuiteTests(unittest.TestCase):
             Request(Command.END, "end", pose=request.pose)
         with self.assertRaises(ProtocolError):
             Request(Command.SCREENSHOT, "shot", pose=request.pose)
+
+    def test_pose_translation_composition_and_historical_default(self):
+        request = PoseRequest("case_a", OrientationOffset(0.0, 90.0, 0.0),
+                              TranslationOffset(2.0, 3.0, 4.0))
+        anchor = Camera((10.0, 20.0, 30.0), (0.0, 0.7071067811865476, 0.0, 0.7071067811865476))
+        evidence = pose_evidence(request, anchor=anchor)
+        self.assertEqual(evidence.translation, request.translation)
+        self.assertTrue(all(abs(left - right) <= 1e-9 for left, right in
+                            zip(evidence.applied.position, (6.0, 23.0, 28.0))))
+        self.assertEqual(PoseEvidence.from_wire(evidence.to_wire()).validate(request), anchor)
+        historical = evidence.to_wire()
+        del historical["translation"]
+        legacy = compose_pose(anchor, request.offset)
+        historical["applied"] = {"position": list(legacy.position),
+                                 "orientation": list(legacy.orientation)}
+        parsed = PoseEvidence.from_wire(historical)
+        self.assertEqual(parsed.translation, TranslationOffset())
+        with self.assertRaisesRegex(ProtocolError, "applied position"):
+            PoseEvidence.from_wire({**evidence.to_wire(), "applied": historical["applied"]})
+        with self.assertRaisesRegex(ProtocolError, "translation differs"):
+            parsed.validate(request)
+        for translation in ((float("nan"), 0.0, 0.0), (0.0, float("inf"), 0.0),
+                            (-5000.5, 0.0, 0.0), (0.0, 0.0, 5000.5)):
+            with self.subTest(translation=translation), self.assertRaises(ProtocolError):
+                TranslationOffset(*translation)
+        toml = tomllib.loads(request.to_toml())
+        self.assertEqual((toml["pose"]["right"], toml["pose"]["up"], toml["pose"]["forward"]),
+                         (2.0, 3.0, 4.0))
+
+    def test_composed_position_tolerance_covers_float32_quantization(self):
+        anchor = Camera((8250.0, 1500.0, -4200.0), euler_yxz_quaternion(OrientationOffset(70.0, 0.0, 0.0)))
+        request = PoseRequest("case_f32", OrientationOffset(70.0, -25.0, 0.0),
+                              TranslationOffset(0.0, 50.0, 700.0))
+        composed = compose_pose(anchor, request.offset, request.translation)
+        quantized = tuple(struct.unpack("<f", struct.pack("<f", value))[0] for value in composed.position)
+        self.assertGreater(max(abs(left - right) for left, right in zip(composed.position, quantized)),
+                           POSE_TOLERANCE)
+        evidence = PoseEvidence(request.case_id, request.offset, anchor,
+                                Camera(quantized, composed.orientation), request.translation)
+        self.assertEqual(PoseEvidence.from_wire(evidence.to_wire()).validate(request), anchor)
+        self.assertEqual(float32_ulp(0.0), 2.0 ** -149)
+        self.assertEqual(float32_ulp(1.0), 2.0 ** -23)
+        self.assertEqual(float32_ulp(8250.0), 2.0 ** -10)
+        self.assertEqual(float32_ulp(4096.0), 2.0 ** -11)
+        self.assertEqual(composed_position_tolerances((1.0,), (1.0,), (0.0,))[0],
+                         POSE_TOLERANCE + POSE_COMPOSITION_ULPS * 2.0 ** -23)
+
+    def test_composed_position_tolerance_rejects_a_genuine_offset(self):
+        anchor = Camera((8250.0, 1500.0, -4200.0), euler_yxz_quaternion(OrientationOffset(70.0, 0.0, 0.0)))
+        request = PoseRequest("case_f32", OrientationOffset(70.0, -25.0, 0.0),
+                              TranslationOffset(0.0, 50.0, 700.0))
+        composed = compose_pose(anchor, request.offset, request.translation)
+        quantized = tuple(struct.unpack("<f", struct.pack("<f", value))[0] for value in composed.position)
+        tolerances = composed_position_tolerances(composed.position, quantized, anchor.position)
+        drifted = (quantized[0] + tolerances[0] + 1e-3, quantized[1], quantized[2])
+        evidence = PoseEvidence(request.case_id, request.offset, anchor,
+                                Camera(quantized, composed.orientation), request.translation)
+        with self.assertRaisesRegex(ProtocolError, "applied position"):
+            PoseEvidence.from_wire({**evidence.to_wire(),
+                                    "applied": {"position": list(drifted),
+                                                "orientation": list(evidence.applied.orientation)}})
+        moved = Camera((anchor.position[0] + 1e-3,) + anchor.position[1:], anchor.orientation)
+        with self.assertRaisesRegex(ProtocolError, "anchor changed"):
+            evidence.validate(request, moved)
+        with self.assertRaisesRegex(ProtocolError, "applied camera"):
+            evidence.validate_applied(moved)
 
     def test_pose_evidence_composition_missing_and_mismatch(self):
         request = PoseRequest("case_a", OrientationOffset(-30.0, 20.0, 20.0))
@@ -658,7 +732,9 @@ class SuiteTests(unittest.TestCase):
         manifest = json.loads((self.root / "orientation_sweep.json").read_text())
         self.assertEqual([case["name"] for case in manifest["cases"]], expected_names)
         for case, (name, offset) in zip(manifest["cases"], ORIENTATION_SWEEP_CASES):
-            self.assertEqual(case["expected_pose"], {"case_id": name, "offset": offset.to_wire()})
+            self.assertEqual(case["expected_pose"], {
+                "case_id": name, "offset": offset.to_wire(),
+                "translation": {"right": 0.0, "up": 0.0, "forward": 0.0}})
             self.assertEqual({mode: len(samples) for mode, samples in case["modes"].items()}, {
                 "left_only": 3, "right_only": 3, "multipass": 6, "single_pass": 3})
         ids = [call.args[0] for call in self.runner.screenshot.call_args_list]

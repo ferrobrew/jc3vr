@@ -18,6 +18,7 @@ if __package__:
         Request,
         RestorationAck,
         Sample,
+        TranslationOffset,
     )
     from .visual_suite import SuiteError, write_manifest
 else:
@@ -35,6 +36,7 @@ else:
         Request,
         RestorationAck,
         Sample,
+        TranslationOffset,
     )
     from visual_suite import SuiteError, write_manifest
 
@@ -48,7 +50,10 @@ PROBE_MANIFEST = "single_pass_probe.json"
 
 
 def probe_pose(options) -> PoseRequest:
-    return PoseRequest(PROBE_CASE, OrientationOffset(options.probe_yaw, options.probe_pitch, 0.0))
+    translation = TranslationOffset(options.probe_right, options.probe_up, options.probe_forward)
+    return PoseRequest(PROBE_CASE,
+                       OrientationOffset(options.probe_yaw, options.probe_pitch, 0.0),
+                       translation)
 
 
 def check_probe_options(options):

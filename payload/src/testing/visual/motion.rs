@@ -3,7 +3,9 @@ use std::collections::VecDeque;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    testing::visual::{OrientationOffset, PoseEvidence, PoseTransform, RequestId, pose_matches},
+    testing::visual::{
+        OrientationOffset, PoseEvidence, PoseTransform, RequestId, TranslationOffset, pose_matches,
+    },
     vr::pose_control::PoseValues,
 };
 
@@ -117,6 +119,7 @@ impl MotionRequest {
         PoseEvidence {
             case_id: self.case_id.clone(),
             offset: self.offset(phase),
+            translation: TranslationOffset::ZERO,
             anchor: PoseTransform::from(anchor),
             applied: PoseTransform::from(applied),
         }

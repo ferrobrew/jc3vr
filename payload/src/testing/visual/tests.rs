@@ -408,6 +408,89 @@ fn orientation_matching_tolerates_quaternion_sign_and_rejects_non_finite() {
 }
 
 #[test]
+fn pose_translation_moves_the_target_in_anchor_space() {
+    let base = PoseValues {
+        position: Vec3::new(10.0, 20.0, 30.0),
+        yaw_deg: 90.0,
+        pitch_deg: 0.0,
+        roll_deg: 0.0,
+    };
+    let request = pose_request("translate", 0.0, 0.0, 0.0)
+        .with_translation(TranslationOffset::new(2.0, 3.0, 4.0).unwrap());
+    let target = request.target(base);
+    let expected = base.position + base.orientation() * Vec3::new(2.0, 3.0, -4.0);
+    assert!(target.position.distance(expected) <= 1e-5);
+    assert!((target.position - Vec3::new(6.0, 23.0, 28.0)).length() <= 1e-4);
+    assert!(orientations_match(target.orientation(), base.orientation()));
+
+    let PoseFrame::Observed(evidence) =
+        pose_frame(Some(&request), Some(1), Some((base, target)), Some(target))
+    else {
+        panic!("a translated pose must be observed");
+    };
+    assert_eq!(
+        evidence.translation,
+        TranslationOffset::new(2.0, 3.0, 4.0).unwrap()
+    );
+    assert_eq!(evidence.anchor, PoseTransform::from(base));
+    assert_eq!(evidence.applied, PoseTransform::from(target));
+    assert!(request.matches_evidence(&evidence));
+
+    let wrong_position = PoseEvidence {
+        applied: PoseTransform::from(base),
+        ..evidence.clone()
+    };
+    assert!(!request.matches_evidence(&wrong_position));
+    let wrong_translation = PoseEvidence {
+        translation: TranslationOffset::ZERO,
+        ..evidence
+    };
+    assert!(!request.matches_evidence(&wrong_translation));
+
+    let PoseFrame::Apply(reapplied) =
+        pose_frame(Some(&request), Some(2), Some((base, base)), Some(base))
+    else {
+        panic!("a translated pose that did not render must be reapplied");
+    };
+    assert_eq!(reapplied, target);
+    assert!(matches!(
+        pose_frame(Some(&request), Some(3), Some((base, base)), Some(target)),
+        PoseFrame::Defer
+    ));
+}
+
+#[test]
+fn pose_translation_rejects_non_finite_and_out_of_range_values() {
+    for (right, up, forward) in [
+        (f32::NAN, 0.0, 0.0),
+        (0.0, f32::INFINITY, 0.0),
+        (5000.5, 0.0, 0.0),
+        (0.0, 0.0, -5000.5),
+    ] {
+        assert!(TranslationOffset::new(right, up, forward).is_err());
+    }
+    let table: PoseTable = toml::from_str(
+        "case_id = 'translate'\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0\nright = 5000.5\n",
+    )
+    .unwrap();
+    assert!(PoseRequest::try_from(table).is_err());
+}
+
+#[test]
+fn historical_pose_tables_default_translation_to_zero() {
+    let table: PoseTable =
+        toml::from_str("case_id = 'legacy'\nyaw_deg = 30.0\npitch_deg = 0.0\nroll_deg = 0.0\n")
+            .unwrap();
+    let request = PoseRequest::try_from(table).unwrap();
+    let base = base_pose();
+    let target = request.target(base);
+    assert_eq!(target.position, base.position);
+    let evidence = request.evidence(base, target);
+    assert_eq!(evidence.translation, TranslationOffset::ZERO);
+    assert!(request.matches_evidence(&evidence));
+}
+
+#[test]
 fn pose_targets_keep_the_base_position_and_do_not_accumulate() {
     let base = base_pose();
     let request = pose_request("sweep", 30.0, -12.0, 4.0);
@@ -562,6 +645,7 @@ fn clearing_the_pose_request_drops_its_evidence() {
             pitch_deg: 0.0,
             roll_deg: 0.0,
         },
+        translation: TranslationOffset::ZERO,
         anchor: PoseTransform::from(base),
         applied: PoseTransform::from(base),
     });
@@ -701,6 +785,9 @@ fn pose_evidence_serializes_the_agreed_wire_shape() {
     assert_eq!(json["offset"]["yaw_deg"].as_f64(), Some(30.0));
     assert_eq!(json["offset"]["pitch_deg"].as_f64(), Some(-10.0));
     assert_eq!(json["offset"]["roll_deg"].as_f64(), Some(5.0));
+    assert_eq!(json["translation"]["right"].as_f64(), Some(0.0));
+    assert_eq!(json["translation"]["up"].as_f64(), Some(0.0));
+    assert_eq!(json["translation"]["forward"].as_f64(), Some(0.0));
     assert_eq!(json["anchor"]["position"].as_array().unwrap().len(), 3);
     assert_eq!(json["anchor"]["orientation"].as_array().unwrap().len(), 4);
     assert_eq!(json["applied"]["position"].as_array().unwrap().len(), 3);

@@ -81,6 +81,9 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(configure.pose.offset.yaw_deg, -60.0)
         self.assertEqual(configure.pose.offset.pitch_deg, -10.0)
         self.assertEqual(configure.pose.offset.roll_deg, 0.0)
+        self.assertEqual(configure.pose.translation.right, 0.0)
+        self.assertEqual(configure.pose.translation.up, 0.0)
+        self.assertEqual(configure.pose.translation.forward, 0.0)
         self.runner.smoke.assert_called_once_with()
         self.runner.settle.assert_called_once_with(3)
         self.assertEqual(self.runner.screenshot.call_count, 3)
@@ -112,15 +115,26 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(self.runner.result.restoration_error, "restore failed")
 
     def test_cli_probe_options_and_orientation_bounds(self):
-        args = parse_args(["--single-pass-probe", "--probe-yaw", "-60", "--probe-pitch", "-10"])
+        args = parse_args(["--single-pass-probe", "--probe-yaw", "-60", "--probe-pitch", "-10",
+                           "--probe-right", "2", "--probe-up", "3", "--probe-forward", "4"])
         self.assertTrue(args.single_pass_probe)
         self.assertEqual((args.probe_yaw, args.probe_pitch), (-60.0, -10.0))
+        self.assertEqual((args.probe_right, args.probe_up, args.probe_forward), (2.0, 3.0, 4.0))
         self.assertEqual(parse_args(["--single-pass-probe"]).timeout, 600)
         defaults = parse_args([])
         self.assertEqual((defaults.probe_yaw, defaults.probe_pitch), (0.0, 0.0))
+        self.assertEqual((defaults.probe_right, defaults.probe_up, defaults.probe_forward),
+                         (0.0, 0.0, 0.0))
         for yaw, pitch in ((181.0, 0.0), (0.0, -180.5), (float("nan"), 0.0), (0.0, float("inf"))):
             runner = VisualHarness(Options(single_pass_probe=True, probe_yaw=yaw, probe_pitch=pitch))
             with self.subTest(yaw=yaw, pitch=pitch), patch.object(runner, "reject_existing") as reject, \
+                    self.assertRaises(SuiteError):
+                runner.check()
+            reject.assert_not_called()
+        for translation in ((5000.5, 0.0, 0.0), (0.0, float("nan"), 0.0), (0.0, 0.0, -5000.5)):
+            runner = VisualHarness(Options(single_pass_probe=True, probe_right=translation[0],
+                                           probe_up=translation[1], probe_forward=translation[2]))
+            with self.subTest(translation=translation), patch.object(runner, "reject_existing") as reject, \
                     self.assertRaises(SuiteError):
                 runner.check()
             reject.assert_not_called()
