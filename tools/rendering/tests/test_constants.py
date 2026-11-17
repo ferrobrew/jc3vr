@@ -1,7 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["numpy", "pillow"]
-# ///
 
 import copy
 import json
@@ -12,14 +8,9 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-if __package__:
-    from tools import test_visual_compare as compare_tests
-    from tools import visual_constants as constants
-    from tools.visual_compare import Mode, load_sample
-else:
-    import test_visual_compare as compare_tests
-    import visual_constants as constants
-    from visual_compare import Mode, load_sample
+from tools.rendering.comparison import constants
+from tools.rendering.comparison.images import Mode, load_sample
+from tools.rendering.tests import test_compare as compare_tests
 
 
 def f32s(values):
@@ -504,7 +495,3 @@ class ConstantsTests(unittest.TestCase):
                 constants, "write_reports", side_effect=OSError("unwritable")
             ):
                 self.assertEqual(constants.main(args), 2)
-
-
-if __name__ == "__main__":
-    unittest.main()

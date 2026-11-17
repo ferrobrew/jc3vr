@@ -7,12 +7,8 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-if __package__:
-    from tools import test_visual_compare as compare_tests
-    from tools import visual_stages as stages
-else:
-    import test_visual_compare as compare_tests
-    import visual_stages as stages
+from tools.rendering.comparison import stages
+from tools.rendering.tests import test_compare as compare_tests
 
 
 class FormatTests(unittest.TestCase):
@@ -803,7 +799,3 @@ class StageTests(unittest.TestCase):
             "visual stages:",
             json.loads((self.output / "stages.json").read_text())["errors"][0],
         )
-
-
-if __name__ == "__main__":
-    unittest.main()

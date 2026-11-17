@@ -6,42 +6,23 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-if __package__:
-    from tools.visual_harness_cli import parse_args
-    from tools.visual_motion import MOTION_PHASES, MOTION_SWEEP, run_motion_sweep
-    from tools.visual_protocol import (
-        Camera,
-        Capture,
-        Command,
-        ComparisonReport,
-        ConfigurationAck,
-        Mode,
-        Outcome,
-        PoseEvidence,
-        RestorationAck,
-        RunReport,
-        SmokeResult,
-        compose_pose,
-        quaternion_normalize,
-    )
-else:
-    from visual_harness_cli import parse_args
-    from visual_motion import MOTION_PHASES, MOTION_SWEEP, run_motion_sweep
-    from visual_protocol import (
-        Camera,
-        Capture,
-        Command,
-        ComparisonReport,
-        ConfigurationAck,
-        Mode,
-        Outcome,
-        PoseEvidence,
-        RestorationAck,
-        RunReport,
-        SmokeResult,
-        compose_pose,
-        quaternion_normalize,
-    )
+from tools.rendering.capture.harness_cli import parse_args
+from tools.rendering.capture.motion import MOTION_PHASES, MOTION_SWEEP, run_motion_sweep
+from tools.rendering.protocol import (
+    Camera,
+    Capture,
+    Command,
+    ComparisonReport,
+    ConfigurationAck,
+    Mode,
+    Outcome,
+    PoseEvidence,
+    RestorationAck,
+    RunReport,
+    SmokeResult,
+    compose_pose,
+    quaternion_normalize,
+)
 
 ANCHOR = Camera((1.5, -2.0, 0.25), quaternion_normalize((0.1, 0.2, 0.3, 0.9)))
 
@@ -228,7 +209,3 @@ class MotionSweepTests(unittest.TestCase):
         self.assertGreaterEqual(options.timeout, 1200)
         with self.assertRaises(SystemExit), patch("sys.stderr"):
             parse_args(["--suite", "--motion-sweep"])
-
-
-if __name__ == "__main__":
-    unittest.main()

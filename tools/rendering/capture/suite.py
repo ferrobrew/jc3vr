@@ -5,39 +5,22 @@ import logging
 import time
 from pathlib import Path
 
-if __package__:
-    from .visual_protocol import (
-        Capture,
-        Case,
-        Command,
-        ConfigurationAck,
-        Manifest,
-        Mode,
-        OrientationOffset,
-        PoseRequest,
-        Request,
-        RestorationAck,
-        Sample,
-        SuiteResult,
-    )
-else:
-    from visual_protocol import (
-        Capture,
-        Case,
-        Command,
-        ConfigurationAck,
-        Manifest,
-        Mode,
-        OrientationOffset,
-        PoseRequest,
-        Request,
-        RestorationAck,
-        Sample,
-        SuiteResult,
-    )
+from tools.rendering.protocol import (
+    Capture,
+    Case,
+    Command,
+    ConfigurationAck,
+    Manifest,
+    Mode,
+    OrientationOffset,
+    PoseRequest,
+    Request,
+    RestorationAck,
+    Sample,
+    SuiteResult,
+)
 
-
-LOG = logging.getLogger("visual_harness")
+LOG = logging.getLogger("tools.rendering.capture.harness")
 
 SWEEP_MODES = (
     ("left", Mode.LEFT_ONLY),
@@ -45,6 +28,7 @@ SWEEP_MODES = (
     ("multipass", Mode.MULTIPASS),
     ("single_pass", Mode.SINGLE_PASS),
 )
+
 SWEEP_RETURN = ("multipass_return", Mode.MULTIPASS)
 ORIENTATION_SWEEP_CASES = (
     ("baseline", OrientationOffset(0.0, 0.0, 0.0)),

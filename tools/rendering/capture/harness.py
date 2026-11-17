@@ -20,63 +20,35 @@ import uuid
 import zlib
 from pathlib import Path
 
-if __package__:
-    from .visual_harness_cli import Options, parse_args
-    from .visual_motion import run_motion_sweep
-    from .visual_processes import ProcessError, processes, steam_client
-    from .visual_probe import check_probe_options, run_single_pass_probe
-    from .visual_protocol import (
-        Acknowledgement,
-        Capture,
-        Command,
-        ComparisonReport,
-        ConfigurationAck,
-        FailedAck,
-        Mode,
-        NativeCapture,
-        Outcome,
-        PhaseCapture,
-        ProtocolError,
-        Request,
-        RunOutcome,
-        RunReport,
-        ScreenshotAck,
-        SmokeResult,
-        SuiteResult,
-        acknowledgement_from_wire,
-    )
-    from .visual_suite import SuiteError, run_orientation_sweep, run_suite
-    from .visual_viewer import DEFAULT_POINTER, publish_run
-else:
-    from visual_harness_cli import Options, parse_args
-    from visual_motion import run_motion_sweep
-    from visual_processes import ProcessError, processes, steam_client
-    from visual_protocol import (
-        Acknowledgement,
-        Capture,
-        Command,
-        ComparisonReport,
-        ConfigurationAck,
-        FailedAck,
-        Mode,
-        NativeCapture,
-        Outcome,
-        PhaseCapture,
-        ProtocolError,
-        Request,
-        RunOutcome,
-        RunReport,
-        ScreenshotAck,
-        SmokeResult,
-        SuiteResult,
-        acknowledgement_from_wire,
-    )
-    from visual_probe import check_probe_options, run_single_pass_probe
-    from visual_suite import SuiteError, run_orientation_sweep, run_suite
-    from visual_viewer import DEFAULT_POINTER, publish_run
+from tools.rendering.capture.harness_cli import Options, parse_args
+from tools.rendering.capture.motion import run_motion_sweep
+from tools.rendering.capture.probe import check_probe_options, run_single_pass_probe
+from tools.rendering.capture.processes import ProcessError, processes, steam_client
+from tools.rendering.capture.suite import SuiteError, run_orientation_sweep, run_suite
+from tools.rendering.protocol import (
+    Acknowledgement,
+    Capture,
+    Command,
+    ComparisonReport,
+    ConfigurationAck,
+    FailedAck,
+    Mode,
+    NativeCapture,
+    Outcome,
+    PhaseCapture,
+    ProtocolError,
+    Request,
+    RunOutcome,
+    RunReport,
+    ScreenshotAck,
+    SmokeResult,
+    SuiteResult,
+    acknowledgement_from_wire,
+)
+from tools.rendering.viewer.server import DEFAULT_POINTER, publish_run
 
-LOG = logging.getLogger("visual_harness")
-ROOT = Path(__file__).resolve().parents[1]
+LOG = logging.getLogger("tools.rendering.capture.harness")
+ROOT = Path(__file__).resolve().parents[3]
 MANIFEST = Path("/run/current-system/sw/share/openxr/1/openxr_monado.json")
 CALLBACKS = (("orientation_sweep", run_orientation_sweep), ("motion_sweep", run_motion_sweep),
              ("suite", run_suite), ("single_pass_probe", run_single_pass_probe))
@@ -330,7 +302,8 @@ class VisualHarness:
         env = dict(self.env if self.env is not None else os.environ)
         for name in ("PYTHONPATH", "PYTHONHOME"):
             env.pop(name, None)
-        outcome = self._command(["uv", "run", str(ROOT / "tools/visual_compare.py"), str(manifest),
+        outcome = self._command(["uv", "run", "--no-project", "--with", "numpy", "--with", "pillow",
+                                 "python", "-m", "tools.rendering", "compare", str(manifest),
                                  "--output", str(output)], "visual-compare", 120, env=env, check=False)
         report = ComparisonReport.from_wire(read_object(output / "report.json"))
         if outcome.returncode != report.exit_code:
@@ -641,7 +614,7 @@ class VisualHarness:
                  "waitforexitandrun", str(self.boot_injector), "--spawn", str(self.game)]
         return ["gamescope", "--backend", "headless", "--prefer-vk-device", self.gpu,
                 "-W", "1280", "-H", "720", "-w", "1280", "-h", "720", "-r", "30", "--",
-                sys.executable, str(Path(__file__).resolve()), "_child", str(self.display_file), *chain]
+                sys.executable, "-m", "tools.rendering", "launch", "_child", str(self.display_file), *chain]
 
     def _write_state(self):
         state = {"bus_name": self.bus_name, "gpu": self.gpu, "runtime_dir": str(self.runtime),
@@ -962,10 +935,3 @@ def child_main(args):
     temporary.write_text(json.dumps(display) + "\n")
     temporary.replace(path)
     os.execvp(command[0], command)
-
-
-if __name__ == "__main__":
-    if len(sys.argv) > 1 and sys.argv[1] == "_child":
-        child_main(sys.argv[2:])
-    else:
-        sys.exit(main())

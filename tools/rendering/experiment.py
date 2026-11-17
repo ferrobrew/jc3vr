@@ -1,0 +1,914 @@
+"""Run a configured rendering-equivalence experiment against a live harness session.
+
+The experiment attaches to a running visual harness, poses the camera at a configured world
+transform, captures an ordered list of render configurations, and hands the resulting manifest to
+the strict image comparator. An optional bright-region feature check records whether the target
+configurations lose evidence that the reference configurations keep; it is reported separately and
+can only make the overall outcome inconclusive, never pass.
+"""
+
+import argparse
+import dataclasses
+import fcntl
+import json
+import logging
+import math
+import os
+import sys
+import time
+import tomllib
+import uuid
+from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
+
+import numpy as np
+
+from tools.rendering.capture.harness import (
+    HarnessError,
+    VisualHarness,
+    validate_capture,
+)
+from tools.rendering.capture.processes import processes
+from tools.rendering.capture.suite import write_manifest
+from tools.rendering.comparison.images import Mode as CompareMode
+from tools.rendering.comparison.images import (
+    Outcome,
+    SampleSpec,
+    analyze_manifest,
+    load_sample,
+)
+from tools.rendering.comparison.stages import Stage, load_stage
+from tools.rendering.protocol import (
+    POSE_TOLERANCE,
+    Camera,
+    Capture,
+    Case,
+    Command,
+    ConfigurationAck,
+    EnvironmentObservation,
+    EnvironmentRequest,
+    Manifest,
+    Mode,
+    OrientationOffset,
+    PoseRequest,
+    ProtocolError,
+    Request,
+    RestorationAck,
+    Sample,
+    ScreenshotAck,
+    TranslationOffset,
+    WeatherControl,
+    WeatherEvent,
+    composed_positions_match,
+    offset_for_target,
+    quaternions_match,
+    valid_request_id,
+)
+
+LOG = logging.getLogger("tools.rendering.experiment")
+
+RESTORATION_BUDGET = 35.0
+ENVIRONMENT_HOUR_TOLERANCE = 0.05
+ENVIRONMENT_MAX_WEATHER_SEVERITY = 0.5
+MAX_NAME_LENGTH = 32
+
+
+class ExperimentError(RuntimeError):
+    pass
+
+
+EXPECTED_ERRORS = (ExperimentError, ProtocolError, HarnessError, OSError, ValueError,
+                   TypeError)
+
+
+class FeatureStatus(StrEnum):
+    MATCH = "match"
+    DIFFERENCE = "difference"
+    INCONCLUSIVE = "inconclusive"
+
+
+class FeatureRole(StrEnum):
+    REFERENCE = "reference"
+    TARGET = "target"
+
+
+class FeatureEyeStatus(StrEnum):
+    LOST = "lost"
+    RETAINED = "retained"
+    UNSTABLE = "unstable"
+    UNOBSERVED = "unobserved"
+
+
+@dataclass(frozen=True)
+class WorldPose:
+    position: tuple[float, float, float]
+    orientation: tuple[float, float, float, float]
+
+    def __post_init__(self):
+        _vector(self.position, 3, "scene.position")
+        _vector(self.orientation, 4, "scene.orientation")
+
+    def camera(self) -> Camera:
+        return Camera(self.position, self.orientation)
+
+
+@dataclass(frozen=True)
+class Environment:
+    hour: float
+    weather: WeatherEvent
+
+    def __post_init__(self):
+        EnvironmentRequest(self.hour, self.weather)
+
+    def request(self) -> EnvironmentRequest:
+        return EnvironmentRequest(self.hour, self.weather)
+
+    @classmethod
+    def from_toml(cls, value):
+        value = _table(value, "scene.environment")
+        _keys(value, {"hour", "weather"}, set(), "scene.environment")
+        try:
+            weather = WeatherEvent(_string(value.get("weather"), "scene.environment.weather"))
+        except ValueError as error:
+            raise ExperimentError(
+                "experiment: scene.environment.weather is not a supported weather event"
+            ) from error
+        return cls(_number(value.get("hour"), "scene.environment.hour"), weather)
+
+
+@dataclass(frozen=True)
+class Scene:
+    pose: WorldPose
+    environment: Environment | None
+
+    @classmethod
+    def from_toml(cls, value):
+        value = _table(value, "scene")
+        _keys(value, {"position", "orientation"}, {"environment"}, "scene")
+        pose = WorldPose(_vector(value.get("position"), 3, "scene.position"),
+                         _vector(value.get("orientation"), 4, "scene.orientation"))
+        environment = (Environment.from_toml(value["environment"])
+                       if "environment" in value else None)
+        return cls(pose, environment)
+
+
+@dataclass(frozen=True)
+class Feature:
+    stage: Stage
+    roi: tuple[float, float, float, float]
+    luminance: float
+    min_fraction: float
+    reference_modes: tuple[CompareMode, ...]
+    target_modes: tuple[CompareMode, ...]
+
+    def __post_init__(self):
+        if self.stage != Stage.MAIN_COLOR:
+            raise ExperimentError(
+                f"experiment: feature.stage {self.stage.value!r} is not supported"
+            )
+        x0, y0, x1, y1 = self.roi
+        if not (0 <= x0 < x1 <= 1 and 0 <= y0 < y1 <= 1):
+            raise ExperimentError(
+                "experiment: feature.roi must be an increasing normalized rectangle"
+            )
+        if not math.isfinite(self.luminance) or self.luminance <= 0:
+            raise ExperimentError(
+                "experiment: feature.luminance must be finite and positive"
+            )
+        if not math.isfinite(self.min_fraction) or not 0 < self.min_fraction <= 1:
+            raise ExperimentError(
+                "experiment: feature.min_fraction must be within (0, 1]"
+            )
+        if not self.reference_modes or not self.target_modes:
+            raise ExperimentError(
+                "experiment: feature.reference_modes and feature.target_modes must be nonempty"
+            )
+        if set(self.reference_modes) & set(self.target_modes):
+            raise ExperimentError(
+                "experiment: feature reference and target modes must be disjoint"
+            )
+
+    def region(self, height, width):
+        x0, y0, x1, y1 = self.roi
+        columns = (max(0, int(x0 * width)), min(width, math.ceil(x1 * width)))
+        rows = (max(0, int(y0 * height)), min(height, math.ceil(y1 * height)))
+        if columns[1] <= columns[0] or rows[1] <= rows[0]:
+            raise ExperimentError("experiment: feature.roi selects no pixels")
+        return rows, columns
+
+    def bright_fraction(self, values) -> float:
+        if values.ndim != 3 or values.shape[2] < 3 or not values.size:
+            raise ExperimentError("experiment: bright-region evidence is not an RGB image")
+        luminance = (values[..., 0] * 0.2126 + values[..., 1] * 0.7152 +
+                     values[..., 2] * 0.0722)
+        (y0, y1), (x0, x1) = self.region(*luminance.shape[:2])
+        return float(np.mean(luminance[y0:y1, x0:x1] >= self.luminance))
+
+    @classmethod
+    def from_toml(cls, value):
+        value = _table(value, "feature")
+        _keys(value, {"stage", "roi", "luminance", "min_fraction", "reference_modes",
+                      "target_modes"}, set(), "feature")
+        try:
+            stage = Stage(_string(value.get("stage"), "feature.stage"))
+        except ValueError as error:
+            raise ExperimentError("experiment: feature.stage is not a supported stage") from error
+        return cls(stage,
+                   tuple(_vector(value.get("roi"), 4, "feature.roi")),
+                   _number(value.get("luminance"), "feature.luminance"),
+                   _number(value.get("min_fraction"), "feature.min_fraction"),
+                   _mode_list(value.get("reference_modes"), "feature.reference_modes"),
+                   _mode_list(value.get("target_modes"), "feature.target_modes"))
+
+
+@dataclass(frozen=True)
+class ExperimentConfig:
+    name: str
+    warmup_frames: int
+    samples: int
+    scene: Scene
+    configurations: tuple[CompareMode, ...]
+    feature: Feature | None
+
+    def __post_init__(self):
+        if not valid_request_id(self.name) or len(self.name) > MAX_NAME_LENGTH:
+            raise ExperimentError(
+                "experiment: config.name must be an ASCII request ID of at most "
+                f"{MAX_NAME_LENGTH} characters"
+            )
+        if type(self.warmup_frames) is not int or not 1 <= self.warmup_frames <= 300:
+            raise ExperimentError(
+                "experiment: config.warmup_frames must be an integer from 1 through 300"
+            )
+        if type(self.samples) is not int or self.samples < 3:
+            raise ExperimentError("experiment: config.samples must be an integer of at least three")
+        if not self.configurations:
+            raise ExperimentError("experiment: config.configurations must not be empty")
+        if self.feature is None:
+            return
+        references = set(self.feature.reference_modes)
+        targets = set(self.feature.target_modes)
+        missing = (references | targets) - set(self.configurations)
+        if missing:
+            names = ", ".join(sorted(mode.value for mode in missing))
+            raise ExperimentError(
+                f"experiment: feature modes {names} are not configured"
+            )
+        last_reference = max(
+            index for index, mode in enumerate(self.configurations) if mode in references
+        )
+        first_target = min(
+            index for index, mode in enumerate(self.configurations) if mode in targets
+        )
+        if last_reference > first_target:
+            raise ExperimentError(
+                "experiment: feature reference modes must be ordered before target modes"
+            )
+        reference_eyes = {eye for mode in references for eye in mode.eyes}
+        target_eyes = {eye for mode in targets for eye in mode.eyes}
+        if not target_eyes <= reference_eyes:
+            raise ExperimentError(
+                "experiment: feature reference modes must cover every target-mode eye"
+            )
+
+    @classmethod
+    def load(cls, path) -> "ExperimentConfig":
+        try:
+            with Path(path).open("rb") as handle:
+                value = tomllib.load(handle)
+        except (OSError, tomllib.TOMLDecodeError) as error:
+            raise ExperimentError(f"experiment: could not read config {path}: {error}") from error
+        _keys(value, {"name", "warmup_frames", "samples", "scene", "configurations"},
+              {"feature"}, str(path))
+        return cls(_string(value.get("name"), "config.name"),
+                   _integer(value.get("warmup_frames"), "config.warmup_frames"),
+                   _integer(value.get("samples"), "config.samples"),
+                   Scene.from_toml(value.get("scene")),
+                   _configuration_list(value.get("configurations")),
+                   (Feature.from_toml(value["feature"]) if "feature" in value else None))
+
+
+@dataclass(frozen=True)
+class RunnerState:
+    token: str
+    config_dir: Path
+
+    @classmethod
+    def load(cls, path) -> "RunnerState":
+        try:
+            value = json.loads(Path(path).read_text())
+        except (OSError, ValueError) as error:
+            raise ExperimentError(f"experiment: could not read runner state {path}: {error}") from error
+        if not isinstance(value, dict):
+            raise ExperimentError("experiment: runner state is not a JSON object")
+        token = _string(value.get("token"), "runner.token")
+        config_dir = Path(_string(value.get("config_dir"), "runner.config_dir"))
+        if not valid_request_id(token) or not config_dir.is_absolute() or not config_dir.is_dir():
+            raise ExperimentError(
+                "experiment: runner state has an invalid token or config directory"
+            )
+        return cls(token, config_dir)
+
+
+@dataclass
+class AttachedRunner:
+    config_dir: Path
+    deadline: float
+    token: str
+    pid: int
+    pending_request: Request | None = None
+
+    def assert_running(self):
+        if time.monotonic() >= self.deadline:
+            raise ExperimentError("experiment: the attached run deadline expired")
+        try:
+            fields = set(Path(f"/proc/{self.pid}/environ").read_bytes().split(b"\0"))
+            os.kill(self.pid, 0)
+        except (FileNotFoundError, ProcessLookupError, PermissionError) as error:
+            raise ExperimentError(f"experiment: the attached game process {self.pid} is gone") from error
+        if f"JC3VR_HARNESS_TOKEN={self.token}".encode() not in fields:
+            raise ExperimentError(
+                "experiment: the attached game process no longer owns this runner"
+            )
+
+    def pump_menu(self):
+        pass
+
+    def request(self, value):
+        return VisualHarness.request(self, value)
+
+    def cancel_pending_request(self):
+        return VisualHarness.cancel_pending_request(self)
+
+
+@dataclass(frozen=True)
+class CaptureSummary:
+    mode: CompareMode
+    capture_id: str
+    frame_ordinal: int
+
+
+@dataclass(frozen=True)
+class FeatureObservation:
+    mode: CompareMode
+    capture_id: str
+    role: FeatureRole
+    eyes: tuple[int, ...]
+    bright_fraction: tuple[float, ...]
+    bright: tuple[bool, ...]
+    reasons: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class FeatureEyeEvidence:
+    eye: int
+    status: FeatureEyeStatus
+    reference_bright: tuple[bool, ...]
+    target_bright: tuple[bool, ...]
+
+
+@dataclass(frozen=True)
+class FeatureReport:
+    status: FeatureStatus
+    stage: str
+    roi: tuple[float, float, float, float]
+    luminance: float
+    min_fraction: float
+    reference_modes: tuple[CompareMode, ...]
+    target_modes: tuple[CompareMode, ...]
+    observations: tuple[FeatureObservation, ...]
+    eyes: tuple[FeatureEyeEvidence, ...]
+    findings: tuple[str, ...]
+    errors: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ExperimentReport:
+    name: str
+    outcome: Outcome
+    comparison_outcome: Outcome | None
+    manifest: str
+    comparison_report: str | None
+    captures: tuple[CaptureSummary, ...]
+    feature: FeatureReport | None
+    findings: tuple[str, ...]
+    errors: tuple[str, ...]
+    restoration_error: str | None
+    environment_restoration: str
+
+    @property
+    def exit_code(self) -> int:
+        return {Outcome.PASS: 0, Outcome.FAIL: 1, Outcome.INCONCLUSIVE: 2}[self.outcome]
+
+    def to_wire(self):
+        return dataclasses.asdict(self)
+
+
+def owning_process(state: RunnerState, proc: Path = Path("/proc")) -> int:
+    expected = {f"JC3VR_HARNESS_TOKEN={state.token}".encode(),
+                f"JC3VR_CONFIG_DIR={state.config_dir}".encode()}
+    matches = []
+    for process in processes(proc):
+        if not process.comm.startswith("justcause3"):
+            continue
+        if not process.argv or Path(process.argv[0].replace("\\", "/")).name.lower() != "justcause3.exe":
+            continue
+        try:
+            fields = set((proc / str(process.pid) / "environ").read_bytes().split(b"\0"))
+        except (FileNotFoundError, ProcessLookupError, PermissionError):
+            continue
+        if expected <= fields:
+            matches.append(process.pid)
+    if len(matches) != 1:
+        raise ExperimentError(
+            f"experiment: expected exactly one game process owning {state.config_dir}, "
+            f"found {len(matches)}"
+        )
+    return matches[0]
+
+
+class ExclusiveLock:
+    def __init__(self, handle):
+        self.handle = handle
+
+    @classmethod
+    def acquire(cls, config_dir: Path) -> "ExclusiveLock":
+        handle = (config_dir / "experiment.lock").open("a+")
+        try:
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as error:
+            handle.close()
+            raise ExperimentError(
+                f"experiment: another attached tool holds {config_dir}"
+            ) from error
+        return cls(handle)
+
+    def release(self):
+        fcntl.flock(self.handle, fcntl.LOCK_UN)
+        self.handle.close()
+
+
+def sample_id(prefix: str, mode: CompareMode, index: int) -> str:
+    return f"{prefix}_{mode.value}_{index}"
+
+
+def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
+                   analyze=None) -> ExperimentReport:
+    output = Path(output)
+    output.mkdir(parents=True, exist_ok=True)
+    capture = capture or _capture
+    analyze = analyze or _analyze
+    prefix = f"{config.name.replace('-', '_')}_{uuid.uuid4().hex[:8]}"
+    case = Case(config.name, {})
+    manifest = Manifest([case])
+    manifest_path = output / "manifest.json"
+    captures: list[Capture] = []
+    configurations: list[ConfigurationAck] = []
+    anchor = None
+    restoration_error = None
+    environment_restoration = ("unobserved" if config.scene.environment is not None
+                               else "not_requested")
+    failure = None
+    early_errors: list[str] = []
+    try:
+        anchor_mode = Mode(config.configurations[0].value)
+        anchor_pose = PoseRequest(f"{prefix}_anchor", OrientationOffset(0.0, 0.0, 0.0),
+                                  TranslationOffset())
+        _, anchor = _configure(runner, config, f"{prefix}_anchor", anchor_pose, anchor_mode,
+                               anchor, configurations)
+        offset, translation = offset_for_target(anchor, config.scene.pose.camera())
+        target_pose = PoseRequest(f"{prefix}_target", offset, translation)
+        case.expected_pose = target_pose
+        counters: dict[CompareMode, int] = {}
+        for entry_index, configured_mode in enumerate(config.configurations, start=1):
+            mode = Mode(configured_mode.value)
+            _, anchor = _configure(
+                runner, config, f"{prefix}_{mode.value}_configure_{entry_index}", target_pose,
+                mode, anchor, configurations)
+            entries = case.modes.setdefault(mode, [])
+            for _ in range(config.samples):
+                counters[configured_mode] = counters.get(configured_mode, 0) + 1
+                identifier = sample_id(prefix, configured_mode, counters[configured_mode])
+                result = capture(runner, config, target_pose, anchor, mode,
+                                 configurations[-1].generation, identifier)
+                if not isinstance(result, Capture):
+                    raise ExperimentError("experiment: capture is not a diagnostic capture")
+                if captures and (result.frame_ordinal <= captures[-1].frame_ordinal or
+                                 result.predicted_display_time_ns <=
+                                 captures[-1].predicted_display_time_ns):
+                    raise ExperimentError(
+                        "experiment: captures do not identify increasing rendered frames"
+                    )
+                captures.append(result)
+                folder = runner.config_dir / "captures"
+                entries.append(Sample(
+                    os.path.relpath(folder / f"{identifier}.capture.png", output),
+                    os.path.relpath(folder / f"{identifier}.capture.json", output)))
+                write_manifest(manifest_path, manifest)
+                LOG.info("wrote %s after %s", manifest_path, identifier)
+            references = (set(config.feature.reference_modes)
+                          if config.feature is not None else set())
+            if (config.feature is not None and configured_mode in references and
+                    not any(mode in references
+                            for mode in config.configurations[entry_index:])):
+                early_errors = list(_reference_eligibility(
+                    config, runner.config_dir / "captures", captures))
+                if early_errors:
+                    LOG.warning("experiment: reference eligibility failed; "
+                                "skipping target configurations")
+                    break
+    except EXPECTED_ERRORS as error:
+        failure = error
+    finally:
+        deadline = runner.deadline
+        try:
+            runner.deadline = max(deadline, time.monotonic() + RESTORATION_BUDGET)
+            runner.cancel_pending_request()
+            restoration = runner.request(Request(Command.END, f"{prefix}_end"))
+            if not isinstance(restoration, RestorationAck):
+                raise ExperimentError(
+                    "experiment: expected a restoration acknowledgement"
+                )
+            if restoration.id != f"{prefix}_end":
+                raise ExperimentError("experiment: restoration acknowledgement ID mismatch")
+            if configurations and restoration.metadata.generation <= configurations[-1].generation:
+                raise ExperimentError("experiment: restoration generation does not increase")
+            observed = restoration.metadata.environment
+            if config.scene.environment is not None:
+                if observed is None or observed.weather_control is None:
+                    raise ExperimentError("experiment: environment restoration is unobserved")
+                environment_restoration = observed.weather_control.value
+                if observed.weather_control != WeatherControl.AMBIENT:
+                    raise ExperimentError(
+                        "experiment: weather control was not released to ambient"
+                    )
+        except EXPECTED_ERRORS as error:
+            restoration_error = str(error)
+            LOG.error("experiment: restoration failed: %s", error)
+        finally:
+            runner.deadline = deadline
+    if failure is not None:
+        errors = [str(failure)]
+        if restoration_error is not None:
+            errors.append(f"restoration: {restoration_error}")
+        report = _failure_report(config, manifest_path, captures, tuple(errors),
+                                 restoration_error, environment_restoration)
+        try:
+            write_report(output / "report.json", report)
+        except OSError as error:
+            LOG.error("experiment: could not write the failure report: %s", error)
+        return report
+    feature = (_feature_report(config, runner.config_dir / "captures", captures)
+               if config.feature is not None else None)
+    comparison_report = None
+    comparison_outcome = None
+    errors: list[str] = []
+    if restoration_error is not None:
+        errors.append(f"restoration: {restoration_error}")
+    errors.extend(early_errors)
+    if captures:
+        comparison_output = output / "comparison"
+        try:
+            report = analyze(manifest_path, comparison_output)
+            comparison_outcome = Outcome(report.status)
+            comparison_report = str(comparison_output / "report.json")
+        except EXPECTED_ERRORS as error:
+            errors.append(f"comparison analysis: {error}")
+    else:
+        errors.append("comparison analysis: no captures were written")
+    if feature is not None:
+        errors.extend(feature.errors)
+    overall = comparison_outcome or Outcome.INCONCLUSIVE
+    if errors or (feature is not None and feature.status == FeatureStatus.INCONCLUSIVE):
+        overall = Outcome.INCONCLUSIVE
+    report = ExperimentReport(
+        config.name, overall, comparison_outcome, str(manifest_path), comparison_report,
+        tuple(CaptureSummary(CompareMode(capture.mode.value), capture.id,
+                             capture.frame_ordinal) for capture in captures),
+        feature, () if feature is None else feature.findings,
+        tuple(dict.fromkeys(errors)), restoration_error, environment_restoration)
+    write_report(output / "report.json", report)
+    return report
+
+
+def _failure_report(config, manifest_path, captures, errors, restoration_error,
+                    environment_restoration):
+    return ExperimentReport(
+        config.name, Outcome.INCONCLUSIVE, None, str(manifest_path), None,
+        tuple(CaptureSummary(CompareMode(capture.mode.value), capture.id,
+                             capture.frame_ordinal) for capture in captures),
+        None, (), errors, restoration_error, environment_restoration)
+
+
+def _feature_report(config: ExperimentConfig, root: Path, captures) -> FeatureReport | None:
+    feature = config.feature
+    if feature is None:
+        return None
+    references = set(feature.reference_modes)
+    targets = set(feature.target_modes)
+    observations: list[FeatureObservation] = []
+    errors: list[str] = []
+    findings: list[str] = []
+    counters: dict[CompareMode, int] = {}
+    for capture in captures:
+        mode = CompareMode(capture.mode.value)
+        if mode not in references and mode not in targets:
+            continue
+        counters[mode] = counters.get(mode, 0) + 1
+        observations.append(_feature_observation(config, root, capture, counters[mode]))
+    present = {observation.mode for observation in observations}
+    for mode in feature.reference_modes:
+        if mode not in present:
+            errors.append(f"{mode.value}: no reference capture was recorded")
+    for mode in feature.target_modes:
+        if mode not in present:
+            errors.append(f"{mode.value}: no target capture was recorded")
+    for observation in observations:
+        errors.extend(f"{observation.capture_id}: {reason}" for reason in observation.reasons)
+    reference_eyes = {eye for mode in feature.reference_modes for eye in mode.eyes}
+    target_eyes = tuple(sorted({eye for mode in feature.target_modes for eye in mode.eyes}))
+    eye_evidence: list[FeatureEyeEvidence] = []
+    unstable = False
+    lost = False
+    for eye in target_eyes:
+        reference_bright = tuple(
+            observation.bright[observation.eyes.index(eye)]
+            for observation in observations
+            if observation.role == FeatureRole.REFERENCE and eye in observation.eyes
+        )
+        target_bright = tuple(
+            observation.bright[observation.eyes.index(eye)]
+            for observation in observations
+            if observation.role == FeatureRole.TARGET and eye in observation.eyes
+        )
+        if eye not in reference_eyes:
+            errors.append(f"eye {eye}: no reference mode covers this eye")
+            status = FeatureEyeStatus.UNOBSERVED
+        elif not reference_bright or not target_bright:
+            errors.append(f"eye {eye}: reference or target captures are missing")
+            status = FeatureEyeStatus.UNOBSERVED
+        elif not all(reference_bright):
+            errors.append(f"eye {eye}: reference lacks the bright region")
+            status = FeatureEyeStatus.UNOBSERVED
+        elif all(target_bright):
+            status = FeatureEyeStatus.RETAINED
+        elif not any(target_bright):
+            status = FeatureEyeStatus.LOST
+            lost = True
+        else:
+            status = FeatureEyeStatus.UNSTABLE
+            unstable = True
+        eye_evidence.append(FeatureEyeEvidence(eye, status, reference_bright, target_bright))
+    if errors or unstable:
+        status = FeatureStatus.INCONCLUSIVE
+        if unstable:
+            findings.append("target brightness is unstable across samples")
+    elif lost:
+        status = FeatureStatus.DIFFERENCE
+        findings.append("target modes differ from the reference bright region")
+    else:
+        status = FeatureStatus.MATCH
+        findings.append("target modes match the reference bright region")
+    return FeatureReport(
+        status, feature.stage.value, feature.roi, feature.luminance, feature.min_fraction,
+        feature.reference_modes, feature.target_modes,
+        tuple(observations), tuple(eye_evidence), tuple(findings), tuple(errors))
+
+
+def _reference_eligibility(config: ExperimentConfig, root: Path, captures):
+    feature = config.feature
+    if feature is None:
+        return ()
+    references = set(feature.reference_modes)
+    observations: list[FeatureObservation] = []
+    counters: dict[CompareMode, int] = {}
+    for capture in captures:
+        mode = CompareMode(capture.mode.value)
+        if mode not in references:
+            continue
+        counters[mode] = counters.get(mode, 0) + 1
+        observations.append(_feature_observation(config, root, capture, counters[mode]))
+    errors: list[str] = []
+    present = {observation.mode for observation in observations}
+    for mode in feature.reference_modes:
+        if mode not in present:
+            errors.append(f"{mode.value}: no reference capture was recorded")
+    for observation in observations:
+        errors.extend(f"{observation.capture_id}: {reason}"
+                      for reason in observation.reasons)
+    for eye in sorted({eye for mode in feature.reference_modes for eye in mode.eyes}):
+        values = [observation.bright[observation.eyes.index(eye)]
+                  for observation in observations if eye in observation.eyes]
+        if not values:
+            errors.append(f"eye {eye}: no reference capture was recorded")
+        elif not all(values):
+            errors.append(f"eye {eye}: reference lacks the bright region")
+    return tuple(dict.fromkeys(errors))
+
+
+def _feature_observation(config: ExperimentConfig, root: Path, capture: Capture,
+                         index: int) -> FeatureObservation:
+    feature = config.feature
+    mode = CompareMode(capture.mode.value)
+    role = (FeatureRole.REFERENCE if mode in feature.reference_modes
+            else FeatureRole.TARGET)
+    reasons: list[str] = []
+    if not _matches_world_pose(config, capture.comparison_inputs.camera):
+        reasons.append("camera differs from the configured world pose")
+    observation = capture.visual.environment
+    if config.scene.environment is not None:
+        if observation is None:
+            reasons.append("environment observation is unavailable")
+        else:
+            _check_observation(config, capture.id, observation, reasons)
+    try:
+        fractions = _bright_fractions(feature, root, capture, index)
+    except (ExperimentError, OSError, ValueError, TypeError, ProtocolError) as error:
+        reasons.append(str(error))
+        fractions = ()
+    bright = tuple(value >= feature.min_fraction for value in fractions)
+    return FeatureObservation(mode, capture.id, role, tuple(mode.eyes), fractions, bright,
+                              tuple(reasons))
+
+
+def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor, configurations):
+    environment = config.scene.environment.request() if config.scene.environment else None
+    request = Request(Command.CONFIGURE, request_id, mode, config.warmup_frames, pose,
+                      environment=environment)
+    acknowledgement = runner.request(request)
+    if not isinstance(acknowledgement, ConfigurationAck):
+        raise ExperimentError("experiment: expected a configuration acknowledgement")
+    if (acknowledgement.id != request.id or acknowledgement.mode != mode or
+            acknowledgement.warmup_frames != config.warmup_frames):
+        raise ExperimentError(
+            "experiment: configuration acknowledgement disagrees with its request"
+        )
+    if configurations and acknowledgement.generation <= configurations[-1].generation:
+        raise ExperimentError("experiment: configuration generation does not increase")
+    anchor = acknowledgement.validate_pose(request, anchor)
+    configurations.append(acknowledgement)
+    LOG.info("configured %s in %s", request_id, mode.value)
+    return acknowledgement, anchor
+
+
+def _capture(runner, config, pose, anchor, mode, generation, identifier):
+    acknowledgement = runner.request(Request(Command.SCREENSHOT, identifier))
+    if not isinstance(acknowledgement, ScreenshotAck):
+        raise ExperimentError("experiment: expected a screenshot acknowledgement")
+    capture = validate_capture(runner.config_dir / "captures", identifier,
+                               acknowledgement.capture, mode=mode, generation=generation)
+    if not isinstance(capture, Capture):
+        raise ExperimentError("experiment: expected a diagnostic capture")
+    if capture.visual.pose is None:
+        raise ExperimentError(f"experiment: capture {identifier} has no pose evidence")
+    capture.visual.pose.validate(pose, anchor)
+    return capture
+
+
+def _analyze(manifest_path: Path, comparison_output: Path):
+    return analyze_manifest(manifest_path, comparison_output)
+
+
+def _matches_world_pose(config: ExperimentConfig, camera: Camera) -> bool:
+    target = config.scene.pose.camera()
+    return (composed_positions_match(target.position, camera.position, target.position,
+                                     POSE_TOLERANCE) and
+            quaternions_match(target.orientation, camera.orientation, POSE_TOLERANCE))
+
+
+def _check_observation(config: ExperimentConfig, identifier, observation: EnvironmentObservation,
+                       errors: list[str]):
+    environment = config.scene.environment
+    if environment is None:
+        return
+    if abs(observation.hour - environment.hour) > ENVIRONMENT_HOUR_TOLERANCE:
+        errors.append(f"observed hour {observation.hour:.4f} differs from "
+                      f"{environment.hour:.4f}")
+    if observation.weather_severity > ENVIRONMENT_MAX_WEATHER_SEVERITY:
+        errors.append(f"observed weather severity {observation.weather_severity:.3f} "
+                      f"is not clear")
+    if observation.weather_control is None:
+        errors.append("weather control is unobserved")
+    elif observation.weather_control != WeatherControl.SUNNY:
+        errors.append(f"weather control is {observation.weather_control.value}, not sunny")
+
+
+def _bright_fractions(feature: Feature, root: Path, capture: Capture, index: int):
+    compare_mode = CompareMode(capture.mode.value)
+    spec = SampleSpec(Path(f"{capture.id}.capture.png"), Path(f"{capture.id}.capture.json"))
+    sample = load_sample(root, compare_mode, index, spec)
+    fractions = []
+    for eye in compare_mode.eyes:
+        values = load_stage(root, compare_mode, spec, sample, feature.stage, eye).values
+        fractions.append(feature.bright_fraction(values))
+    return tuple(fractions)
+
+
+def write_report(path: Path, report: ExperimentReport):
+    temporary = Path(path).with_suffix(".tmp")
+    temporary.write_text(json.dumps(report.to_wire(), indent=2) + "\n")
+    temporary.replace(path)
+    LOG.info("wrote %s", path)
+
+
+def _configuration_list(value):
+    if not isinstance(value, list) or not value:
+        raise ExperimentError("experiment: config.configurations must be a nonempty array")
+    modes = []
+    for index, entry in enumerate(value):
+        entry = _table(entry, f"configurations[{index}]")
+        _keys(entry, {"mode"}, set(), f"configurations[{index}]")
+        modes.append(_mode(entry.get("mode"), f"configurations[{index}].mode"))
+    return tuple(modes)
+
+
+def _mode(value, context) -> CompareMode:
+    try:
+        return CompareMode(_string(value, context))
+    except ValueError as error:
+        raise ExperimentError(f"experiment: {context} is not a supported mode") from error
+
+
+def _mode_list(value, context):
+    if not isinstance(value, list) or not value:
+        raise ExperimentError(f"experiment: {context} must be a nonempty array")
+    modes = tuple(_mode(item, f"{context}[{index}]") for index, item in enumerate(value))
+    if len(set(modes)) != len(modes):
+        raise ExperimentError(f"experiment: {context} must not repeat a mode")
+    return modes
+
+
+def _table(value, context):
+    if not isinstance(value, dict):
+        raise ExperimentError(f"experiment: {context} must be a table")
+    return value
+
+
+def _keys(value, required, optional, context):
+    missing, extra = required - set(value), set(value) - required - optional
+    if missing or extra:
+        raise ExperimentError(f"experiment: {context} has missing {sorted(missing)} "
+                              f"and unknown {sorted(extra)} keys")
+
+
+def _string(value, context):
+    if not isinstance(value, str) or not value:
+        raise ExperimentError(f"experiment: {context} must be a nonempty string")
+    return value
+
+
+def _number(value, context):
+    if type(value) not in (int, float) or not math.isfinite(value):
+        raise ExperimentError(f"experiment: {context} must be a finite number")
+    return float(value)
+
+
+def _integer(value, context):
+    if type(value) is not int:
+        raise ExperimentError(f"experiment: {context} must be an integer")
+    return value
+
+
+def _vector(value, length, context):
+    if not isinstance(value, (list, tuple)) or len(value) != length:
+        raise ExperimentError(f"experiment: {context} must have {length} components")
+    return tuple(_number(item, f"{context}[{index}]") for index, item in enumerate(value))
+
+
+def main(argv=None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Run a configured rendering-equivalence experiment.")
+    parser.add_argument("--runner", type=Path, required=True,
+                        help="runner.json from the running visual harness session")
+    parser.add_argument("--config", type=Path, required=True,
+                        help="scene configuration for the experiment")
+    parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--timeout", type=float, default=600.0)
+    args = parser.parse_args(argv)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
+                        stream=sys.stderr)
+    if not math.isfinite(args.timeout) or args.timeout <= 0:
+        LOG.error("experiment: timeout must be finite and positive")
+        return 1
+    try:
+        config = ExperimentConfig.load(args.config)
+        state = RunnerState.load(args.runner)
+        pid = owning_process(state)
+        lock = ExclusiveLock.acquire(state.config_dir)
+        try:
+            runner = AttachedRunner(state.config_dir, time.monotonic() + args.timeout,
+                                    state.token, pid)
+            LOG.info("attached to game pid %d via %s", pid, args.runner)
+            report = run_experiment(runner, config, args.output)
+        finally:
+            lock.release()
+    except (ExperimentError, ProtocolError, HarnessError, OSError, ValueError) as error:
+        LOG.error("%s", error)
+        return 1
+    LOG.info("experiment: %s (%s)", report.outcome.value, args.output)
+    return report.exit_code
+
+
+if __name__ == "__main__":
+    sys.exit(main())

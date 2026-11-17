@@ -1,46 +1,25 @@
 import tomllib
 import unittest
 
-if __package__:
-    from tools.visual_motion_protocol import (
-        ExpectedMotion,
-        MotionEvidence,
-        MotionRequest,
-        PhaseCapture,
-    )
-    from tools.visual_protocol import (
-        Camera,
-        Command,
-        ConfigurationAck,
-        Mode,
-        OrientationOffset,
-        PoseEvidence,
-        PoseRequest,
-        ProtocolError,
-        Request,
-        compose_pose,
-        quaternion_normalize,
-    )
-else:
-    from visual_motion_protocol import (
-        ExpectedMotion,
-        MotionEvidence,
-        MotionRequest,
-        PhaseCapture,
-    )
-    from visual_protocol import (
-        Camera,
-        Command,
-        ConfigurationAck,
-        Mode,
-        OrientationOffset,
-        PoseEvidence,
-        PoseRequest,
-        ProtocolError,
-        Request,
-        compose_pose,
-        quaternion_normalize,
-    )
+from tools.rendering.protocol import (
+    Camera,
+    Command,
+    ConfigurationAck,
+    Mode,
+    OrientationOffset,
+    PoseEvidence,
+    PoseRequest,
+    ProtocolError,
+    Request,
+    compose_pose,
+    quaternion_normalize,
+)
+from tools.rendering.protocol.motion import (
+    ExpectedMotion,
+    MotionEvidence,
+    MotionRequest,
+    PhaseCapture,
+)
 
 ANCHOR = Camera((1.5, -2.0, 0.25), quaternion_normalize((0.1, 0.2, 0.3, 0.9)))
 REQUEST = MotionRequest("motion", 120, 20.0, 10.0, 10.0)
@@ -270,7 +249,3 @@ class MotionProtocolTests(unittest.TestCase):
         with self.assertRaisesRegex(ProtocolError, "no completed cycle"):
             MotionEvidence.from_wire({**valid, "cycle": 0}).validate_capture(
                 REQUEST, 15, ANCHOR, capture_pose(), capture_pose().applied, 1000)
-
-
-if __name__ == "__main__":
-    unittest.main()

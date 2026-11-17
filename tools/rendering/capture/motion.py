@@ -3,41 +3,23 @@
 import logging
 import time
 
-if __package__:
-    from .visual_motion_protocol import MotionRequest, PhaseCapture
-    from .visual_protocol import (
-        Capture,
-        Case,
-        Command,
-        ConfigurationAck,
-        ExpectedMotion,
-        Manifest,
-        Mode,
-        Request,
-        RestorationAck,
-        Sample,
-        SuiteResult,
-    )
-    from .visual_suite import SuiteError, write_manifest
-else:
-    from visual_motion_protocol import MotionRequest, PhaseCapture
-    from visual_protocol import (
-        Capture,
-        Case,
-        Command,
-        ConfigurationAck,
-        ExpectedMotion,
-        Manifest,
-        Mode,
-        Request,
-        RestorationAck,
-        Sample,
-        SuiteResult,
-    )
-    from visual_suite import SuiteError, write_manifest
+from tools.rendering.capture.suite import SuiteError, write_manifest
+from tools.rendering.protocol import (
+    Capture,
+    Case,
+    Command,
+    ConfigurationAck,
+    ExpectedMotion,
+    Manifest,
+    Mode,
+    Request,
+    RestorationAck,
+    Sample,
+    SuiteResult,
+)
+from tools.rendering.protocol.motion import MotionRequest, PhaseCapture
 
-
-LOG = logging.getLogger("visual_harness")
+LOG = logging.getLogger("tools.rendering.capture.harness")
 MOTION_SWEEP = MotionRequest("motion", 120, 20.0, 10.0, 10.0)
 MOTION_PHASES = (0, 15, 30, 45, 60, 75, 90, 105)
 MOTION_MODES = (
@@ -46,6 +28,7 @@ MOTION_MODES = (
     ("multipass", Mode.MULTIPASS),
     ("single_pass", Mode.SINGLE_PASS),
 )
+
 MOTION_RETURN = ("multipass_return", Mode.MULTIPASS)
 
 

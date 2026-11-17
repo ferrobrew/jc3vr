@@ -5,11 +5,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tools.test_visual_suite import capture_wire, capture_with_pose, pose_evidence, pose_wire
-from tools.visual_harness import HarnessError, Options, VisualHarness, main
-from tools.visual_harness_cli import parse_args
-from tools.visual_probe import PROBE_CASE, run_single_pass_probe
-from tools.visual_protocol import (
+from tools.rendering.capture.harness import HarnessError, Options, VisualHarness, main
+from tools.rendering.capture.harness_cli import parse_args
+from tools.rendering.capture.probe import PROBE_CASE, run_single_pass_probe
+from tools.rendering.capture.suite import SuiteError
+from tools.rendering.protocol import (
     Command,
     ConfigurationAck,
     Mode,
@@ -20,7 +20,12 @@ from tools.visual_protocol import (
     RunReport,
     SmokeResult,
 )
-from tools.visual_suite import SuiteError
+from tools.rendering.tests.test_suite import (
+    capture_wire,
+    capture_with_pose,
+    pose_evidence,
+    pose_wire,
+)
 
 
 class ProbeTests(unittest.TestCase):
@@ -101,7 +106,7 @@ class ProbeTests(unittest.TestCase):
     def test_restoration_failure_is_recorded_and_preserves_the_capture_error(self):
         self.fake_run(capture_failure=HarnessError("capture failed"),
                       restore_failure=HarnessError("restore failed"))
-        with self.assertLogs("visual_harness", level="ERROR"), \
+        with self.assertLogs("tools.rendering.capture.harness", level="ERROR"), \
                 self.assertRaisesRegex(HarnessError, "capture failed") as raised:
             run_single_pass_probe(self.runner)
         self.assertIn("restoration failed", raised.exception.__notes__[0])
@@ -154,7 +159,7 @@ class ProbeTests(unittest.TestCase):
         self.assertEqual(wire["diagnostic"], "inconclusive")
         self.assertNotIn("visual_passed", wire)
         with patch.object(VisualHarness, "run", autospec=True) as run, \
-                patch.object(VisualHarness, "close"), patch("tools.visual_harness.signal.signal"):
+                patch.object(VisualHarness, "close"), patch("tools.rendering.capture.harness.signal.signal"):
             def success(runner):
                 runner.result.complete(result)
 
@@ -162,7 +167,3 @@ class ProbeTests(unittest.TestCase):
             self.assertEqual(main(["--single-pass-probe"]), 2)
         with self.assertRaises(ProtocolError):
             report.complete(object())
-
-
-if __name__ == "__main__":
-    unittest.main()

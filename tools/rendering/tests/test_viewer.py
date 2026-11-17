@@ -11,9 +11,15 @@ from contextlib import contextmanager
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.test_visual_suite import capture_wire, native_capture_wire, png
-from tools.visual_protocol import Capture, Mode, RunOutcome
-from tools.visual_viewer import (
+from tools.rendering.protocol import Capture, Mode, RunOutcome
+from tools.rendering.tests.test_suite import capture_wire, native_capture_wire, png
+from tools.rendering.viewer.history import (
+    MAX_JSON_BYTES,
+    RunId,
+    history_path,
+    read_history,
+)
+from tools.rendering.viewer.server import (
     DEFAULT_POINTER,
     MAX_CAPTURE_JSON_BYTES,
     PAGE,
@@ -28,12 +34,6 @@ from tools.visual_viewer import (
     main,
     publish_run,
     read_capture_json,
-)
-from tools.visual_viewer_history import (
-    MAX_JSON_BYTES,
-    RunId,
-    history_path,
-    read_history,
 )
 
 
@@ -86,7 +86,7 @@ class ViewerTests(unittest.TestCase):
         self.assertEqual(pointer, RunPointer(str(self.run.resolve())))
         self.assertEqual(RunPointer.from_wire(json.loads(self.pointer.read_bytes())), pointer)
         old = self.pointer.read_bytes()
-        with (patch("tools.visual_viewer_history.os.replace", side_effect=OSError("replacement refused")),
+        with (patch("tools.rendering.viewer.history.os.replace", side_effect=OSError("replacement refused")),
               self.assertRaises(OSError)):
             publish_run(self.root / "run-b", self.pointer)
         self.assertEqual(self.pointer.read_bytes(), old)
@@ -251,7 +251,7 @@ class ViewerTests(unittest.TestCase):
     def test_cache_is_bounded_and_stable_capture_skips_png_reread(self):
         self.capture(Mode.LEFT_ONLY)
         first = self.viewer.snapshot()
-        with patch("tools.visual_viewer._png_dimensions", side_effect=AssertionError("unexpected decode")):
+        with patch("tools.rendering.viewer.server._png_dimensions", side_effect=AssertionError("unexpected decode")):
             self.assertEqual(self.viewer.snapshot(), first)
         for ordinal in range(2, 6):
             self.capture(Mode.MULTIPASS, f"capture_{ordinal}", ordinal=ordinal)
@@ -559,7 +559,7 @@ global.Image = class {
         publish_run(self.run, self.pointer)
         self.assertEqual(read_history(self.pointer), history)
         old_index, old_pointer = history_path(self.pointer).read_bytes(), self.pointer.read_bytes()
-        with patch("tools.visual_viewer_history.os.replace", side_effect=OSError("refused")), self.assertRaises(OSError):
+        with patch("tools.rendering.viewer.history.os.replace", side_effect=OSError("refused")), self.assertRaises(OSError):
             publish_run(self.root / "never-visible", self.pointer)
         self.assertEqual(history_path(self.pointer).read_bytes(), old_index)
         self.assertEqual(self.pointer.read_bytes(), old_pointer)
@@ -570,7 +570,7 @@ global.Image = class {
                 raise OSError("pointer refused")
             replace(source, target)
 
-        with patch("tools.visual_viewer_history.os.replace", side_effect=fail_pointer), self.assertRaises(OSError):
+        with patch("tools.rendering.viewer.history.os.replace", side_effect=fail_pointer), self.assertRaises(OSError):
             publish_run(self.root / "registered", self.pointer)
         self.assertEqual(self.pointer.read_bytes(), old_pointer)
         self.assertIn(str(self.root / "registered"), [entry.output for entry in read_history(self.pointer)])
@@ -671,7 +671,7 @@ global.Image = class {
                     self.assertEqual(self.request(server, "/api/status?" + query)[0], 404)
             self.assertEqual(self.request(server, "/api/runs", headers={"Origin": "null"})[0], 403)
             self.assertEqual(self.request(server, "/api/runs?output=/etc")[0], 404)
-        with patch("tools.visual_viewer._read_json", side_effect=AssertionError("read outside registry")):
+        with patch("tools.rendering.viewer.server._read_json", side_effect=AssertionError("read outside registry")):
             self.assertEqual(self.viewer.snapshot("/etc/passwd").state, "error")
         (self.folder / "first.json").unlink()
         self.assertIn("unknown capture ID", self.viewer.snapshot(run_id, "first").error)
@@ -722,7 +722,7 @@ global.Image = class {
                 publish_run(other, self.pointer)
             return value
 
-        with patch("tools.visual_viewer._read_json", side_effect=read_and_publish):
+        with patch("tools.rendering.viewer.server._read_json", side_effect=read_and_publish):
             history = self.viewer.runs()
         self.assertEqual(history.latest_run_id, original_read)
         self.assertIn(history.latest_run_id, [entry.run_id for entry in history.runs])
@@ -871,7 +871,3 @@ global.Image = class {
         for port in ("0", "65536", "-1"):
             with self.subTest(port=port), patch("sys.stderr"), self.assertRaises(SystemExit):
                 main(["--port", port])
-
-
-if __name__ == "__main__":
-    unittest.main()

@@ -1,6 +1,5 @@
 import contextlib
 import json
-import logging
 import os
 import struct
 import subprocess
@@ -12,7 +11,7 @@ import zlib
 from pathlib import Path
 from unittest.mock import patch
 
-from tools.visual_harness import (
+from tools.rendering.capture.harness import (
     HarnessError,
     Options,
     VisualHarness,
@@ -21,7 +20,12 @@ from tools.visual_harness import (
     validate_capture,
     validate_png,
 )
-from tools.visual_protocol import NativeCapture, ProtocolError, RunOutcome, SmokeResult
+from tools.rendering.protocol import (
+    NativeCapture,
+    ProtocolError,
+    RunOutcome,
+    SmokeResult,
+)
 
 
 class RunnerTests(unittest.TestCase):
@@ -43,18 +47,18 @@ class RunnerTests(unittest.TestCase):
         manifest = self.root / "openxr.json"
         library = self.root / "lib/libopenxr_monado.so"
         manifest.write_text(json.dumps({"runtime": {"library_path": str(library)}}))
-        with patch("tools.visual_harness.MANIFEST", manifest), \
+        with patch("tools.rendering.capture.harness.MANIFEST", manifest), \
                 patch.object(runner, "reject_existing"), \
                 patch.object(runner, "require_steam_client"), \
                 patch.object(runner, "_library", return_value=self.root), \
                 patch.object(runner, "_xrizer", return_value=self.root), \
                 patch.object(runner, "_gpu", return_value="10de:2b85"), \
                 patch.object(runner, "_check_artifacts"), \
-                patch("tools.visual_harness.shutil.which", return_value="/fake/tool"), \
-                patch("tools.visual_harness.os.access", return_value=True), \
+                patch("tools.rendering.capture.harness.shutil.which", return_value="/fake/tool"), \
+                patch("tools.rendering.capture.harness.os.access", return_value=True), \
                 patch.object(Path, "exists", return_value=True), \
-                patch("tools.visual_harness.tempfile.mkdtemp") as create, \
-                patch("tools.visual_harness.subprocess.Popen") as launch:
+                patch("tools.rendering.capture.harness.tempfile.mkdtemp") as create, \
+                patch("tools.rendering.capture.harness.subprocess.Popen") as launch:
             runner.check()
         create.assert_not_called()
         launch.assert_not_called()
@@ -65,20 +69,20 @@ class RunnerTests(unittest.TestCase):
     def test_check_rejects_missing_steam_client(self):
         runner = VisualHarness(Options(no_build=True))
         with patch.object(runner, "reject_existing"), \
-                patch("tools.visual_harness.steam_client", return_value=None), \
+                patch("tools.rendering.capture.harness.steam_client", return_value=None), \
                 self.assertRaisesRegex(HarnessError, "Steam client is not running; start Steam and sign in"):
             runner.check()
 
     def test_require_steam_client_accepts_a_running_client(self):
-        with patch("tools.visual_harness.steam_client", return_value=object()):
+        with patch("tools.rendering.capture.harness.steam_client", return_value=object()):
             self.runner.require_steam_client()
 
     def test_preview_follows_a_run_even_when_startup_fails(self):
         output = self.root / "preview-run"
         pointer = self.root / "latest.json"
         runner = VisualHarness(Options(no_build=True, output=output))
-        with patch("tools.visual_harness.ROOT", self.root), \
-                patch("tools.visual_harness.DEFAULT_POINTER", pointer), \
+        with patch("tools.rendering.capture.harness.ROOT", self.root), \
+                patch("tools.rendering.capture.harness.DEFAULT_POINTER", pointer), \
                 patch.dict(os.environ, {"XDG_RUNTIME_DIR": str(self.root)}), \
                 patch.object(runner, "check"), \
                 patch.object(runner, "_acquire_lock"), \
@@ -175,11 +179,11 @@ class RunnerTests(unittest.TestCase):
             events.append(arguments[1:])
             return subprocess.CompletedProcess(arguments, 0)
 
-        with patch("tools.visual_harness.time.monotonic", return_value=100), \
+        with patch("tools.rendering.capture.harness.time.monotonic", return_value=100), \
                 patch.dict(os.environ, {"DISPLAY": ":0", "XAUTHORITY": "/host/auth"}), \
                 patch.object(self.runner, "_command", side_effect=execute) as command, \
-                patch("tools.visual_harness.subprocess.run", side_effect=key) as keys, \
-                patch("tools.visual_harness.time.sleep", side_effect=lambda seconds: events.append(["hold", seconds])) as hold:
+                patch("tools.rendering.capture.harness.subprocess.run", side_effect=key) as keys, \
+                patch("tools.rendering.capture.harness.time.sleep", side_effect=lambda seconds: events.append(["hold", seconds])) as hold:
             yield events, command, keys, hold
 
     def test_menu_verifies_focus_and_holds_return_on_private_display(self):
@@ -259,7 +263,7 @@ class RunnerTests(unittest.TestCase):
             error = KeyboardInterrupt()
             hold.side_effect = error
             keys.side_effect = [subprocess.CompletedProcess([], 0), OSError("release failed")]
-            with self.assertLogs("visual_harness", level="ERROR"), self.assertRaises(KeyboardInterrupt) as raised:
+            with self.assertLogs("tools.rendering.capture.harness", level="ERROR"), self.assertRaises(KeyboardInterrupt) as raised:
                 self.runner.pump_menu()
             self.assertIs(raised.exception, error)
             self.assertIn("menu keyup", error.__notes__[0])
@@ -270,7 +274,7 @@ class RunnerTests(unittest.TestCase):
         env = {"DISPLAY": ":123", "XAUTHORITY": "/private/auth",
                "XR_RUNTIME_JSON": "/host/native-runtime.json"}
         with patch.dict(os.environ, env, clear=True), \
-                patch("tools.visual_harness.os.execvp") as execute:
+                patch("tools.rendering.capture.harness.os.execvp") as execute:
             child_main([str(self.runner.display_file), "private-command"])
             self.assertNotIn("XR_RUNTIME_JSON", os.environ)
         self.assertEqual(self.runner.display_env()["DISPLAY"], ":123")
@@ -388,7 +392,7 @@ class RunnerTests(unittest.TestCase):
         self.runner.appid = "123456"
         manifest = self.root / "native-runtime.json"
         manifest.write_text("{}")
-        with patch("tools.visual_harness.MANIFEST", manifest), \
+        with patch("tools.rendering.capture.harness.MANIFEST", manifest), \
                 patch.dict(os.environ, {"XR_RUNTIME_JSON": "/host/runtime.json"}):
             self.runner._base_env()
         self.assertNotIn("XR_RUNTIME_JSON", self.runner.env)
@@ -425,8 +429,8 @@ class RunnerTests(unittest.TestCase):
             }))
         with patch.object(self.runner, "inject", return_value=subprocess.CompletedProcess([], 0, "")), \
                 patch.object(self.runner, "pump_menu"), \
-                patch("tools.visual_harness.time.sleep", side_effect=publish), \
-                patch("tools.visual_harness.validate_capture", side_effect=lambda _, __, result: result):
+                patch("tools.rendering.capture.harness.time.sleep", side_effect=publish), \
+                patch("tools.rendering.capture.harness.validate_capture", side_effect=lambda _, __, result: result):
             result = default_smoke(self.runner)
         self.assertTrue(result.smoke_succeeded)
         self.assertEqual(seen, ["smoke_1", "smoke_2"])
@@ -456,9 +460,9 @@ class RunnerTests(unittest.TestCase):
         self.runner.runtime = self.root / "runtime"
         self.runner.runtime.mkdir()
         with patch.object(self.runner, "_owned_pids", return_value=[31]), \
-                patch("tools.visual_harness.os.close") as close_fd, \
-                patch("tools.visual_harness.signal.pidfd_send_signal"), \
-                patch("tools.visual_harness.time.monotonic", side_effect=[0, 5, 6, 10]):
+                patch("tools.rendering.capture.harness.os.close") as close_fd, \
+                patch("tools.rendering.capture.harness.signal.pidfd_send_signal"), \
+                patch("tools.rendering.capture.harness.time.monotonic", side_effect=[0, 5, 6, 10]):
             self.runner.close()
         close_fd.assert_called_once_with(31)
         self.assertTrue(self.runner.prefix.is_dir())
@@ -476,8 +480,3 @@ class RunnerTests(unittest.TestCase):
         with patch.object(self.runner, "start", return_value=self.runner), self.assertRaisesRegex(HarnessError, "not ready"):
             self.runner.run(fail)
         self.assertTrue(self.runner._closed)
-
-
-if __name__ == "__main__":
-    logging.disable(logging.CRITICAL)
-    unittest.main()

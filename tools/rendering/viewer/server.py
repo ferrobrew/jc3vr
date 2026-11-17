@@ -17,63 +17,34 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
-if __package__:
-    from .visual_protocol import (
-        Capture,
-        Command,
-        NativeCapture,
-        Outcome,
-        ProtocolError,
-        RunOutcome,
-        ScreenshotAck,
-        acknowledgement_from_wire,
-    )
-    from .visual_viewer_history import (
-        RunEntry,
-        RunId,
-        RunPointer,
-        ViewerError,
-        read_history,
-    )
-    from .visual_viewer_history import (
-        publish_run as _publish_run,
-    )
-    from .visual_viewer_history import (
-        read_bounded as _read_bounded,
-    )
-    from .visual_viewer_history import (
-        read_json as _read_json,
-    )
-else:
-    from visual_protocol import (
-        Capture,
-        Command,
-        NativeCapture,
-        Outcome,
-        ProtocolError,
-        RunOutcome,
-        ScreenshotAck,
-        acknowledgement_from_wire,
-    )
-    from visual_viewer_history import (
-        RunEntry,
-        RunId,
-        RunPointer,
-        ViewerError,
-        read_history,
-    )
-    from visual_viewer_history import (
-        publish_run as _publish_run,
-    )
-    from visual_viewer_history import (
-        read_bounded as _read_bounded,
-    )
-    from visual_viewer_history import (
-        read_json as _read_json,
-    )
+from tools.rendering.protocol import (
+    Capture,
+    Command,
+    NativeCapture,
+    Outcome,
+    ProtocolError,
+    RunOutcome,
+    ScreenshotAck,
+    acknowledgement_from_wire,
+)
+from tools.rendering.viewer.history import (
+    RunEntry,
+    RunId,
+    RunPointer,
+    ViewerError,
+    read_history,
+)
+from tools.rendering.viewer.history import (
+    publish_run as _publish_run,
+)
+from tools.rendering.viewer.history import (
+    read_bounded as _read_bounded,
+)
+from tools.rendering.viewer.history import (
+    read_json as _read_json,
+)
 
-
-DEFAULT_POINTER = Path(__file__).resolve().parents[1] / "target/visual-harness/latest.json"
+DEFAULT_POINTER = Path(__file__).resolve().parents[3] / "target/visual-harness/latest.json"
 
 
 @dataclass(frozen=True)
@@ -337,7 +308,7 @@ def main(argv=None):
     return 0
 
 
-LOG = logging.getLogger("visual_viewer")
+LOG = logging.getLogger("tools.rendering.viewer.server")
 MAX_CAPTURE_JSON_BYTES = 2 * 1024 * 1024
 MAX_PNG_BYTES = 128 * 1024 * 1024
 MAX_DECODED_BYTES = 256 * 1024 * 1024
@@ -908,7 +879,3 @@ select { max-width: min(90vw, 42rem); } button, select { padding: .4rem; }
 .stereo { grid-template-columns: 1fr 1fr; } .mono { grid-template-columns: 1fr; }
 #status, #summary, #details { overflow-wrap: anywhere; } [hidden] { display: none !important; }
 """
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

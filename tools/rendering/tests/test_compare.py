@@ -1,12 +1,7 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["numpy", "pillow"]
-# ///
-"""Synthetic comparison tests: uv run tools/test_visual_compare.py."""
+"""Comparison tests over synthetic captures."""
 
 import copy
 import json
-import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -14,40 +9,22 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-if __package__:
-    from tools.visual_compare import (
-        ComparisonInputs,
-        Mode,
-        Thresholds,
-        analyze_manifest,
-        image_metrics,
-        main,
-        metadata_mismatches,
-    )
-    from tools.visual_protocol import (
-        Camera,
-        OrientationOffset,
-        PoseEvidence,
-        PoseRequest,
-        compose_pose,
-    )
-else:
-    from visual_compare import (
-        ComparisonInputs,
-        Mode,
-        Thresholds,
-        analyze_manifest,
-        image_metrics,
-        main,
-        metadata_mismatches,
-    )
-    from visual_protocol import (
-        Camera,
-        OrientationOffset,
-        PoseEvidence,
-        PoseRequest,
-        compose_pose,
-    )
+from tools.rendering.comparison.images import (
+    ComparisonInputs,
+    Mode,
+    Thresholds,
+    analyze_manifest,
+    image_metrics,
+    main,
+    metadata_mismatches,
+)
+from tools.rendering.protocol import (
+    Camera,
+    OrientationOffset,
+    PoseEvidence,
+    PoseRequest,
+    compose_pose,
+)
 
 
 def pose_wire(evidence):
@@ -832,7 +809,3 @@ class VisualCompareTests(unittest.TestCase):
             json.loads((self.output / "report.json").read_text())["status"],
             "inconclusive",
         )
-
-
-if __name__ == "__main__":
-    unittest.main(argv=sys.argv)

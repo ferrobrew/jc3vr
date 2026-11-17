@@ -2,32 +2,18 @@
 
 from dataclasses import dataclass, field
 
-if __package__:
-    from .visual_motion_protocol import ExpectedMotion, MotionEvidence
-    from .visual_protocol import (
-        Camera,
-        Mode,
-        OrientationOffset,
-        PoseEvidence,
-        PoseRequest,
-        ProtocolError,
-        cameras_match,
-        offsets_match,
-        valid_request_id,
-    )
-else:
-    from visual_motion_protocol import ExpectedMotion, MotionEvidence
-    from visual_protocol import (
-        Camera,
-        Mode,
-        OrientationOffset,
-        PoseEvidence,
-        PoseRequest,
-        ProtocolError,
-        cameras_match,
-        offsets_match,
-        valid_request_id,
-    )
+from tools.rendering.protocol import (
+    Camera,
+    Mode,
+    OrientationOffset,
+    PoseEvidence,
+    PoseRequest,
+    ProtocolError,
+    cameras_match,
+    offsets_match,
+    valid_request_id,
+)
+from tools.rendering.protocol.motion import ExpectedMotion, MotionEvidence
 
 
 @dataclass

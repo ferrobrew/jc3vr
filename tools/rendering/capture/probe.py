@@ -3,45 +3,25 @@
 import logging
 import time
 
-if __package__:
-    from .visual_protocol import (
-        Capture,
-        Case,
-        Command,
-        ConfigurationAck,
-        Manifest,
-        Mode,
-        OrientationOffset,
-        PoseRequest,
-        ProbeResult,
-        ProtocolError,
-        Request,
-        RestorationAck,
-        Sample,
-        TranslationOffset,
-    )
-    from .visual_suite import SuiteError, write_manifest
-else:
-    from visual_protocol import (
-        Capture,
-        Case,
-        Command,
-        ConfigurationAck,
-        Manifest,
-        Mode,
-        OrientationOffset,
-        PoseRequest,
-        ProbeResult,
-        ProtocolError,
-        Request,
-        RestorationAck,
-        Sample,
-        TranslationOffset,
-    )
-    from visual_suite import SuiteError, write_manifest
+from tools.rendering.capture.suite import SuiteError, write_manifest
+from tools.rendering.protocol import (
+    Capture,
+    Case,
+    Command,
+    ConfigurationAck,
+    Manifest,
+    Mode,
+    OrientationOffset,
+    PoseRequest,
+    ProbeResult,
+    ProtocolError,
+    Request,
+    RestorationAck,
+    Sample,
+    TranslationOffset,
+)
 
-
-LOG = logging.getLogger("visual_harness")
+LOG = logging.getLogger("tools.rendering.capture.harness")
 
 PROBE_CASE = "water_probe"
 PROBE_MODE = Mode.SINGLE_PASS

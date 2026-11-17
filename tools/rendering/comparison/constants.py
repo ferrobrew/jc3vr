@@ -1,7 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["numpy", "pillow"]
-# ///
 """Native shader-constant diagnostics for a visual suite manifest."""
 
 import argparse
@@ -15,38 +11,21 @@ from enum import IntEnum, StrEnum
 from itertools import combinations, product
 from pathlib import Path
 
-if __package__:
-    from tools.visual_compare import (
-        CaptureMetadata,
-        Case,
-        LoadedSample,
-        Manifest,
-        Mode,
-        SampleSpec,
-        Thresholds,
-        image_metrics,
-        integer,
-        metadata_mismatches,
-        object_value,
-        read_json,
-    )
-    from tools.visual_stages import validated_samples
-else:
-    from visual_compare import (
-        CaptureMetadata,
-        Case,
-        LoadedSample,
-        Manifest,
-        Mode,
-        SampleSpec,
-        Thresholds,
-        image_metrics,
-        integer,
-        metadata_mismatches,
-        object_value,
-        read_json,
-    )
-    from visual_stages import validated_samples
+from tools.rendering.comparison.images import (
+    CaptureMetadata,
+    Case,
+    LoadedSample,
+    Manifest,
+    Mode,
+    SampleSpec,
+    Thresholds,
+    image_metrics,
+    integer,
+    metadata_mismatches,
+    object_value,
+    read_json,
+)
+from tools.rendering.comparison.stages import validated_samples
 
 
 class EvidenceStatus(StrEnum):
@@ -817,7 +796,3 @@ def write_reports(output: Path, report: Report) -> None:
         parts.extend(comparison_html(item) for item in case.comparisons)
     parts.append("</body></html>")
     (output / "constants.html").write_text("\n".join(parts) + "\n", encoding="utf-8")
-
-
-if __name__ == "__main__":
-    sys.exit(main())

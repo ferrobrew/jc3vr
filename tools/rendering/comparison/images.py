@@ -1,10 +1,6 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["numpy", "pillow"]
-# ///
 """Compare frozen-camera repeated captures without image registration or resizing.
 
-Usage: uv run tools/visual_compare.py manifest.json --output comparison
+Usage: python -m tools.rendering compare manifest.json --output comparison
 Paths in the manifest are relative to the manifest. Isolated PNGs contain one eye;
 paired PNGs contain the logical left and right eyes side by side, in that order.
 """
@@ -21,28 +17,20 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-if __package__:
-    from tools.visual_compare_report import to_wire, write_reports
-    from tools.visual_protocol import (
-        DiagnosticProfile,
-        ExpectedMotion,
-        MotionEvidence,
-        PoseEvidence,
-        PoseRequest,
-        ProtocolError,
-    )
-    from tools.visual_provenance import MotionProvenance, PoseProvenance, RunAnchor
-else:
-    from visual_compare_report import to_wire, write_reports
-    from visual_protocol import (
-        DiagnosticProfile,
-        ExpectedMotion,
-        MotionEvidence,
-        PoseEvidence,
-        PoseRequest,
-        ProtocolError,
-    )
-    from visual_provenance import MotionProvenance, PoseProvenance, RunAnchor
+from tools.rendering.comparison.provenance import (
+    MotionProvenance,
+    PoseProvenance,
+    RunAnchor,
+)
+from tools.rendering.comparison.report import to_wire, write_reports
+from tools.rendering.protocol import (
+    DiagnosticProfile,
+    ExpectedMotion,
+    MotionEvidence,
+    PoseEvidence,
+    PoseRequest,
+    ProtocolError,
+)
 
 
 class Mode(StrEnum):
@@ -988,7 +976,3 @@ def main(argv=None):
     if report.status == Outcome.PASS:
         return 0
     return 1 if report.status == Outcome.FAIL else 2
-
-
-if __name__ == "__main__":
-    sys.exit(main())

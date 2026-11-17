@@ -1,7 +1,3 @@
-# /// script
-# requires-python = ">=3.11"
-# dependencies = ["numpy", "pillow"]
-# ///
 """Motion provenance and sweep tests."""
 
 import copy
@@ -13,25 +9,14 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-if __package__:
-    from tools.visual_compare import analyze_manifest
-    from tools.visual_motion_protocol import ExpectedMotion, MotionRequest
-    from tools.visual_protocol import (
-        Camera,
-        PoseEvidence,
-        compose_pose,
-        quaternion_normalize,
-    )
-else:
-    from visual_compare import analyze_manifest
-    from visual_motion_protocol import ExpectedMotion, MotionRequest
-    from visual_protocol import (
-        Camera,
-        PoseEvidence,
-        compose_pose,
-        quaternion_normalize,
-    )
-
+from tools.rendering.comparison.images import analyze_manifest
+from tools.rendering.protocol import (
+    Camera,
+    PoseEvidence,
+    compose_pose,
+    quaternion_normalize,
+)
+from tools.rendering.protocol.motion import ExpectedMotion, MotionRequest
 
 REQUEST = MotionRequest("motion", 120, 20.0, 10.0, 10.0)
 PHASE = 15
@@ -224,7 +209,3 @@ class MotionCompareTests(unittest.TestCase):
                     data["comparison_inputs"].update(camera=camera_wire(ANCHOR)),
                 ))
         self.assertEqual(self.analyze().status, "pass")
-
-
-if __name__ == "__main__":
-    unittest.main()

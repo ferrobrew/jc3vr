@@ -4,7 +4,12 @@ import types
 import unittest
 from pathlib import Path
 
-from tools.visual_processes import Process, ProcessError, processes, steam_client
+from tools.rendering.capture.processes import (
+    Process,
+    ProcessError,
+    processes,
+    steam_client,
+)
 
 
 class ProcessTests(unittest.TestCase):
@@ -163,7 +168,3 @@ class ProcessTests(unittest.TestCase):
                 return [Unreadable()]
 
         self.assertEqual(processes(Root()), ())
-
-
-if __name__ == "__main__":
-    unittest.main()

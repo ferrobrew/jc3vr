@@ -11,7 +11,7 @@ from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-from tools.visual_harness import (
+from tools.rendering.capture.harness import (
     HarnessError,
     Options,
     VisualHarness,
@@ -19,8 +19,16 @@ from tools.visual_harness import (
     main,
     validate_capture,
 )
-from tools.visual_harness_cli import parse_args
-from tools.visual_protocol import (
+from tools.rendering.capture.harness_cli import parse_args
+from tools.rendering.capture.suite import (
+    ORIENTATION_SWEEP_CASES,
+    SuiteError,
+    run_orientation_sweep,
+    run_suite,
+)
+from tools.rendering.protocol import (
+    POSE_COMPOSITION_ULPS,
+    POSE_TOLERANCE,
     AckOutcome,
     Camera,
     Capture,
@@ -33,8 +41,6 @@ from tools.visual_protocol import (
     NativeCapture,
     OrientationOffset,
     Outcome,
-    POSE_COMPOSITION_ULPS,
-    POSE_TOLERANCE,
     PoseEvidence,
     PoseRequest,
     ProtocolError,
@@ -49,7 +55,6 @@ from tools.visual_protocol import (
     euler_yxz_quaternion,
     float32_ulp,
 )
-from tools.visual_suite import ORIENTATION_SWEEP_CASES, SuiteError, run_orientation_sweep, run_suite
 
 
 def capture_wire(mode=Mode.MULTIPASS, ordinal=1, generation=1):
@@ -247,8 +252,8 @@ class SuiteTests(unittest.TestCase):
                 self.fake_run()
                 self.runner.compare.return_value = ComparisonReport(outcome)
                 with patch.object(self.runner, "start", return_value=self.runner), \
-                        patch("tools.visual_harness.VisualHarness", return_value=self.runner), \
-                        patch("tools.visual_harness.signal.signal"):
+                        patch("tools.rendering.capture.harness.VisualHarness", return_value=self.runner), \
+                        patch("tools.rendering.capture.harness.signal.signal"):
                     self.assertEqual(main(["--suite"]), exit_code)
                 result = self.runner.result.result
                 self.assertTrue(result.suite_succeeded)
@@ -302,7 +307,7 @@ class SuiteTests(unittest.TestCase):
             published.append(capture_id)
         with patch.object(self.runner, "inject", return_value=subprocess.CompletedProcess([], 0, "")), \
                 patch.object(self.runner, "pump_menu"), \
-                patch("tools.visual_harness.time.sleep", side_effect=publish):
+                patch("tools.rendering.capture.harness.time.sleep", side_effect=publish):
             result = default_smoke(self.runner)
         self.assertTrue(result.smoke_succeeded)
         self.assertEqual(len(result.captures), 2)
@@ -356,7 +361,7 @@ class SuiteTests(unittest.TestCase):
         def request(value):
             if value.command == Command.CONFIGURE:
                 with patch.object(self.runner, "assert_running"), patch.object(self.runner, "pump_menu"), \
-                        patch("tools.visual_harness.time.monotonic", side_effect=[0, 76]):
+                        patch("tools.rendering.capture.harness.time.monotonic", side_effect=[0, 76]):
                     return real_request(value)
             self.assertFalse(pending.exists())
             self.assertGreaterEqual(self.runner.deadline, time.monotonic() + 34)
@@ -410,7 +415,7 @@ class SuiteTests(unittest.TestCase):
     def test_configuration_failure_restores(self):
         self.fake_run()
         self.runner.request.side_effect = [ProtocolError("configuration failed"), ProtocolError("restore failed")]
-        with self.assertLogs("visual_harness", level="ERROR"), self.assertRaises(ProtocolError):
+        with self.assertLogs("tools.rendering.capture.harness", level="ERROR"), self.assertRaises(ProtocolError):
             run_suite(self.runner)
         self.assertEqual(self.runner.request.call_args.args[0].command, Command.END)
 
@@ -500,7 +505,7 @@ class SuiteTests(unittest.TestCase):
                 metadata["mode"] = value["mode"]
             (folder / f"{value['id']}.json").write_text(json.dumps({
                 "id": value["id"], "state": state, "metadata": metadata}))
-        with patch.object(self.runner, "pump_menu"), patch("tools.visual_harness.time.sleep", side_effect=publish):
+        with patch.object(self.runner, "pump_menu"), patch("tools.rendering.capture.harness.time.sleep", side_effect=publish):
             self.runner.request(Request(Command.CONFIGURE, "configure", Mode.LEFT_ONLY, 30))
             self.runner.request(Request(Command.END, "end"))
         self.assertEqual(seen[0], {"command": "visual_configure", "id": "configure",
@@ -520,7 +525,7 @@ class SuiteTests(unittest.TestCase):
         for arguments, suite, timeout in (([], False, 180), (["--smoke"], False, 180),
                                            (["--suite"], True, 600), (["--suite", "--timeout", "42"], True, 42)):
             with self.subTest(arguments=arguments), patch.object(VisualHarness, "run", autospec=True) as run, \
-                    patch.object(VisualHarness, "close"), patch("tools.visual_harness.signal.signal"):
+                    patch.object(VisualHarness, "close"), patch("tools.rendering.capture.harness.signal.signal"):
                 def success(runner, suite=suite, timeout=timeout):
                     self.assertEqual(runner.options.suite, suite)
                     self.assertEqual(runner.options.timeout, timeout)
@@ -539,7 +544,7 @@ class SuiteTests(unittest.TestCase):
 
     def test_request_timeout_and_wrong_id_are_bounded(self):
         with patch.object(self.runner, "pump_menu"), \
-                patch("tools.visual_harness.time.monotonic", side_effect=[0, 36]), \
+                patch("tools.rendering.capture.harness.time.monotonic", side_effect=[0, 36]), \
                 patch.object(self.runner, "assert_running"), \
                 self.assertRaisesRegex(HarnessError, "timed out waiting"):
             self.runner.request(Request(Command.END, "timeout"))
@@ -551,7 +556,7 @@ class SuiteTests(unittest.TestCase):
                 folder = self.runner.config_dir / "visual"
                 folder.mkdir(exist_ok=True)
                 (folder / "wrong.json").write_text('{"id":"other","state":"restored"}')
-        with patch.object(self.runner, "pump_menu"), patch("tools.visual_harness.time.sleep", side_effect=publish), \
+        with patch.object(self.runner, "pump_menu"), patch("tools.rendering.capture.harness.time.sleep", side_effect=publish), \
                 self.assertRaisesRegex(HarnessError, "ID mismatch"):
             self.runner.request(Request(Command.END, "wrong"))
 
@@ -571,7 +576,7 @@ class SuiteTests(unittest.TestCase):
                 raise HarnessError("restore failed")
             return original(value)
         self.runner.request.side_effect = request
-        with self.assertLogs("visual_harness", level="ERROR"), self.assertRaisesRegex(HarnessError, "capture failed") as raised:
+        with self.assertLogs("tools.rendering.capture.harness", level="ERROR"), self.assertRaisesRegex(HarnessError, "capture failed") as raised:
             run_suite(self.runner)
         self.assertIn("restoration failed", raised.exception.__notes__[0])
 
@@ -812,7 +817,7 @@ class SuiteTests(unittest.TestCase):
             report.write_text(json.dumps({"status": outcome.value}))
             with self.subTest(outcome=outcome), \
                     patch.object(self.runner, "_command", return_value=subprocess.CompletedProcess([], exit_code)), \
-                    self.assertLogs("visual_harness", level="WARNING"):
+                    self.assertLogs("tools.rendering.capture.harness", level="WARNING"):
                 self.assertEqual(self.runner.compare(self.root / "suite.json"), ComparisonReport(outcome))
         for outcome, exit_code in ((Outcome.PASS, 1), (Outcome.FAIL, 0), (Outcome.INCONCLUSIVE, 137)):
             report.write_text(json.dumps({"status": outcome.value}))
@@ -820,7 +825,3 @@ class SuiteTests(unittest.TestCase):
                     patch.object(self.runner, "_command", return_value=subprocess.CompletedProcess([], exit_code)), \
                     self.assertRaisesRegex(HarnessError, "disagrees with process status"):
                 self.runner.compare(self.root / "suite.json")
-
-
-if __name__ == "__main__":
-    unittest.main()

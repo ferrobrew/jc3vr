@@ -11,40 +11,22 @@ from pathlib import Path, PureWindowsPath
 import numpy as np
 from PIL import Image
 
-if __package__:
-    from tools.visual_compare import (
-        CaptureMetadata,
-        Case,
-        LoadedSample,
-        Manifest,
-        Mode,
-        SampleSpec,
-        Thresholds,
-        image_metrics,
-        integer,
-        load_sample,
-        metadata_mismatches,
-        object_value,
-        read_json,
-        text,
-    )
-else:
-    from visual_compare import (
-        CaptureMetadata,
-        Case,
-        LoadedSample,
-        Manifest,
-        Mode,
-        SampleSpec,
-        Thresholds,
-        image_metrics,
-        integer,
-        load_sample,
-        metadata_mismatches,
-        object_value,
-        read_json,
-        text,
-    )
+from tools.rendering.comparison.images import (
+    CaptureMetadata,
+    Case,
+    LoadedSample,
+    Manifest,
+    Mode,
+    SampleSpec,
+    Thresholds,
+    image_metrics,
+    integer,
+    load_sample,
+    metadata_mismatches,
+    object_value,
+    read_json,
+    text,
+)
 
 
 class Stage(StrEnum):
@@ -836,7 +818,3 @@ def main(argv: list[str] | None = None) -> int:
         file=sys.stderr,
     )
     return 0 if report.status == EvidenceStatus.MEASURED else 2
-
-
-if __name__ == "__main__":
-    sys.exit(main())

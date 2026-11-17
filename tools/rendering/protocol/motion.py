@@ -4,38 +4,21 @@ import json
 import math
 from dataclasses import asdict, dataclass
 
-if __package__:
-    from .visual_protocol_base import (
-        POSE_TOLERANCE,
-        Camera,
-        OrientationOffset,
-        PoseEvidence,
-        PoseRequest,
-        ProtocolError,
-        cameras_match,
-        compose_pose,
-        finite_number,
-        integer,
-        object_value,
-        text,
-        valid_request_id,
-    )
-else:
-    from visual_protocol_base import (
-        POSE_TOLERANCE,
-        Camera,
-        OrientationOffset,
-        PoseEvidence,
-        PoseRequest,
-        ProtocolError,
-        cameras_match,
-        compose_pose,
-        finite_number,
-        integer,
-        object_value,
-        text,
-        valid_request_id,
-    )
+from tools.rendering.protocol.base import (
+    POSE_TOLERANCE,
+    Camera,
+    OrientationOffset,
+    PoseEvidence,
+    PoseRequest,
+    ProtocolError,
+    cameras_match,
+    compose_pose,
+    finite_number,
+    integer,
+    object_value,
+    text,
+    valid_request_id,
+)
 
 
 @dataclass(frozen=True)
