@@ -84,7 +84,6 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(native::hook_library())
         .with_hook_library(locker::hook_library())
         .with_hook_library(world::hook_library())
-        .with_hook_library(stock::hook_library())
         .with_hook_library(fuse_log::hook_library())
 }
 

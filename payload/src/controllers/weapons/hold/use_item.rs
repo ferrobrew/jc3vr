@@ -40,6 +40,7 @@ use crate::{
         weapons::{
             dual_wield::single,
             engine::{character_object, slot_of},
+            grenade::stock,
             hold::{
                 self, SNAP_S,
                 pickup::{self, TakeOptions},
@@ -225,10 +226,16 @@ fn pickup_start(weapon: *mut WeaponBase, activator: *mut GameObject) {
         return;
     };
     single::pickup_started(w);
+    let start = || {
+        if unsafe { stock::should_block_pickup(w, activator) } {
+            return;
+        }
+        PICKUP_START.get().unwrap().call(weapon, activator);
+    };
     if w.m_InfinitePickup {
         // The start gives a copy, which the table then places.
-        gives::within_copy_start(|| PICKUP_START.get().unwrap().call(weapon, activator));
+        gives::within_copy_start(start);
     } else {
-        PICKUP_START.get().unwrap().call(weapon, activator);
+        start();
     }
 }

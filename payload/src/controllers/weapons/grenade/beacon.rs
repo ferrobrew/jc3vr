@@ -36,9 +36,7 @@ use crate::{
 };
 
 pub(super) fn hook_library() -> HookLibrary {
-    HookLibrary::new()
-        .with_static_binder(&FIRE_BEACON_BINDER)
-        .with_static_binder(&PLACE_BEACON_BINDER)
+    HookLibrary::new().with_static_binder(&FIRE_BEACON_BINDER)
 }
 
 pub(super) fn held() -> Option<(Hand, usize)> {
@@ -441,12 +439,11 @@ fn original(weapon: *mut BeaconWeapon, data: *mut WeaponData) {
     drop(scope);
 }
 
-#[detour(address = jc3gi::equipment::weapon::ThrownGrenadeWeapon::UpdateAttachmentTransforms_ADDRESS)]
-fn place_beacon(weapon: *mut ThrownGrenadeWeapon, snow: f32, water: f32, update_type: u32) {
-    PLACE_BEACON
-        .get()
-        .unwrap()
-        .call(weapon, snow, water, update_type);
+/// # Safety
+///
+/// The caller runs the grenade weapon's native placement pass and keeps `weapon` live for this
+/// call.
+pub(super) unsafe fn after_placement(weapon: *mut ThrownGrenadeWeapon) {
     let placement = {
         let state = STATE.lock();
         state

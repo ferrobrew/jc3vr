@@ -10,7 +10,7 @@
 //!
 //! Restocking is physical only: while the controller scheme runs the grenade pouch, the game's own
 //! grenade pickup ([`WeaponBase::PickupStart`]), which the proximity pickup and the use input both
-//! reach, credits nothing to the local player ([`pickup_start`]). A grenade the hands take from the
+//! reach, credits nothing to the local player ([`should_block_pickup`]). A grenade the hands take from the
 //! world goes through the mod's own take, which consumes the native grenade without crediting it
 //! ([`consume_through_pickup`]).
 //!
@@ -18,23 +18,17 @@
 
 use std::{cell::Cell, fmt};
 
-use detours_macro::detour;
 use jc3gi::{
     character::{character::Character, inventory::WeaponSlot},
     equipment::weapon::WeaponBase,
     game::GameObject,
 };
 use parking_lot::Mutex;
-use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
     controllers::{scheme, weapons::engine},
 };
-
-pub(super) fn hook_library() -> HookLibrary {
-    HookLibrary::new().with_static_binder(&PICKUP_START_BINDER)
-}
 
 /// The local player's grenades as the game counts them.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -315,12 +309,12 @@ unsafe fn grenade_weapon_mut(owner: &mut Character) -> Option<&mut WeaponBase> {
 
 /// Whether the game's own pickup of `weapon` for `activator` is held back: a hand grenade, for the
 /// local player, while the controller scheme runs the grenade pouch and the mod's own consume is
-/// not the caller.
+/// not the caller. The pickup's detour consults it before it calls the game's own start.
 ///
 /// # Safety
 ///
 /// `weapon` must be live, on the game thread.
-unsafe fn held_back(weapon: &WeaponBase, activator: *mut GameObject) -> bool {
+pub(crate) unsafe fn should_block_pickup(weapon: &WeaponBase, activator: *mut GameObject) -> bool {
     if PERMIT.get() {
         return false;
     }
@@ -332,15 +326,6 @@ unsafe fn held_back(weapon: &WeaponBase, activator: *mut GameObject) -> bool {
         return false;
     }
     Config::lock_query(|c| c.controllers.weapons.grenade_throw) && scheme::is_controllers()
-}
-
-#[detour(address = jc3gi::equipment::weapon::WeaponBase::PickupStart_ADDRESS)]
-fn pickup_start(weapon: *mut WeaponBase, activator: *mut GameObject) {
-    // SAFETY: the engine's own live weapon, for the duration of its pickup.
-    if unsafe { weapon.as_ref() }.is_some_and(|w| unsafe { held_back(w, activator) }) {
-        return;
-    }
-    PICKUP_START.get().unwrap().call(weapon, activator);
 }
 
 #[cfg(test)]

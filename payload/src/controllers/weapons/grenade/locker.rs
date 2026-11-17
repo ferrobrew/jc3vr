@@ -32,7 +32,7 @@ use crate::controllers::{
     grab::{Candidate, GrabVolume, resolve::nearest_within},
     weapons::{
         engine::{self, gun_count, gun_ptr},
-        grenade::{self, safe, stock, tuning::GrenadeTuning},
+        grenade::{self, beacon, safe, stock, tuning::GrenadeTuning},
         hold::{
             rack::entries,
             refs::{Strong, Weak},
@@ -378,6 +378,7 @@ fn grenade_placement(weapon: *mut ThrownGrenadeWeapon, snow: f32, water: f32, tr
         .get()
         .unwrap()
         .call(weapon, snow, water, transform_type);
+    unsafe { beacon::after_placement(weapon) };
     if let Some(weapon) = unsafe { weapon.cast::<WeaponBase>().as_ref() } {
         unsafe { observe(weapon) };
     }
