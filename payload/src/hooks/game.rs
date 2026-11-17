@@ -1,5 +1,5 @@
 use std::{
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicBool, AtomicU32, Ordering},
     time::{Duration, Instant},
 };
 
@@ -64,6 +64,9 @@ pub(super) fn hook_library() -> HookLibrary {
 
 #[detour(address = jc3gi::game::Game::Update_ADDRESS)]
 fn game_update(game: *const Game) -> bool {
+    if !GAME_UPDATE_LOGGED.swap(true, Ordering::Relaxed) {
+        tracing::info!("startup: first game update");
+    }
     thread_role::mark_thread(ThreadRole::Game);
     // Start of a real frame: re-arm the once-per-frame CClock::Update gate.
     crate::hooks::clock::UPDATED_THIS_FRAME.store(false, Ordering::Relaxed);
@@ -586,6 +589,8 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 
 /// Last-seen thread id for [`game_update_render`]. See
 /// [`graphics_engine::graphics_engine::log_hook_thread`].
+static GAME_UPDATE_LOGGED: AtomicBool = AtomicBool::new(false);
+
 static GAME_UPDATE_RENDER_THREAD: AtomicU32 = AtomicU32::new(0);
 
 /// Snapshot of the reflection-proxy depth-history lifecycle (the 5 slot counters + the picked

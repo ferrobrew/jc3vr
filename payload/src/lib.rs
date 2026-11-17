@@ -122,7 +122,9 @@ fn initialize_startup() {
     // Before the hooks: VR initialization, on the game thread's first frame, reads the configuration
     // (the dominant hand and the input layout among it), so it must already hold the saved settings.
     config::init();
+    tracing::info!("startup: config init complete");
     hooks::install();
+    tracing::info!("startup: hook installation returned");
 }
 
 /// Called to undo `initialize_startup` and eject

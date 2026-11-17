@@ -76,8 +76,11 @@ pub(super) fn install() {
         tracing::error!(%error, "human hull installation refused without shutdown preparation");
         return;
     }
+    tracing::info!("startup: lifecycle participants registered; hook installation begin");
     let mut patcher = re_utilities::Patcher::new();
+    tracing::info!("startup: before ThreadSuspender");
     let hook_library = ThreadSuspender::for_block(|| {
+        tracing::info!("startup: inside ThreadSuspender, before hook library construction");
         let library = HookLibrary::new()
             .with_hook_library(game::hook_library())
             .with_hook_library(sim::hook_library())
@@ -100,7 +103,10 @@ pub(super) fn install() {
             .with_hook_library(crate::grapple::device::hook_library());
         #[cfg(feature = "profiler")]
         let library = library.with_hook_library(profiler::hook_library());
-        Ok(library.enable(&mut patcher)?)
+        tracing::info!("startup: before enable");
+        let library = library.enable(&mut patcher);
+        tracing::info!("startup: after enable");
+        Ok(library?)
     });
     let hook_library = match hook_library {
         Ok(hook_library) => hook_library,
