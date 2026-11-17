@@ -30,10 +30,14 @@ from tools.rendering.protocol import (
     Command,
     ConfigurationAck,
     EnvironmentRequest,
+    OrientationOffset,
     RestorationAck,
     WeatherControl,
     WeatherEvent,
+    cameras_match,
     compose_pose,
+    euler_yxz_quaternion,
+    quaternion_multiply,
     quaternion_normalize,
 )
 
@@ -41,6 +45,32 @@ ANCHOR = Camera((10.0, 12.0, 13.0), (0.0, 0.0, 0.0, 1.0))
 TARGET = Camera((1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0))
 HOUR = 9.5
 LAKE_CONFIG = Path(__file__).resolve().parents[1] / "scenes/lake_glint.toml"
+SCENE_DIRECTORY = Path(__file__).resolve().parents[1] / "scenes"
+CANONICAL_MODES = (CompareMode.LEFT_ONLY, CompareMode.RIGHT_ONLY, CompareMode.MULTIPASS,
+                   CompareMode.SINGLE_PASS)
+BASELINE_CAMERA = Camera((8257.701, 1486.9717, -4286.1167),
+                         (0.00050330814, 0.80293703, 0.020165263, 0.59572256))
+NEAR_VEGETATION_CAMERA = Camera((8257.683, 1486.9708, -4286.15),
+                                (-0.04870652, 0.9686239, 0.20377125, 0.13368909))
+LAKE_CAMERA = Camera((7586.867, 1514.6827, -4081.8762),
+                     (-0.016829107, 0.97209185, 0.23272279, 0.024376998))
+
+
+def world_yaw(camera, yaw_deg):
+    return Camera(camera.position, quaternion_normalize(quaternion_multiply(
+        euler_yxz_quaternion(OrientationOffset(yaw_deg, 0.0, 0.0)), camera.orientation)))
+
+
+SCENES = {
+    "lake_glint.toml": ("lake-glint", LAKE_CAMERA),
+    "near_vegetation.toml": ("near-vegetation", NEAR_VEGETATION_CAMERA),
+    "cliff_view.toml": ("cliff-view",
+                        compose_pose(BASELINE_CAMERA, OrientationOffset(12.0, -16.0, 0.0))),
+    "far_terrain.toml": ("far-terrain", BASELINE_CAMERA),
+    "sky_clouds.toml": ("sky-clouds",
+                        compose_pose(BASELINE_CAMERA, OrientationOffset(0.0, 32.0, 0.0))),
+    "shore.toml": ("shore", world_yaw(LAKE_CAMERA, 45.0)),
+}
 
 
 def pose_evidence(case_id, anchor, offset, translation):
@@ -250,14 +280,30 @@ class ConfigTests(ExperimentTestCase):
         config = ExperimentConfig.load(LAKE_CONFIG)
         self.assertEqual(config.name, "lake-glint")
         self.assertEqual(config.samples, 3)
-        self.assertEqual(config.configurations, (CompareMode.MULTIPASS,
-                                                 CompareMode.SINGLE_PASS))
+        self.assertEqual(config.configurations, CANONICAL_MODES)
         self.assertEqual(config.scene.pose.position, (7586.867, 1514.6827, -4081.8762))
         self.assertEqual(config.scene.environment.hour, 13.226033)
         self.assertEqual(config.scene.environment.weather, WeatherEvent.SUNNY)
         self.assertEqual(config.feature.stage, Stage.MAIN_COLOR)
         self.assertEqual(config.feature.reference_modes, (CompareMode.MULTIPASS,))
         self.assertEqual(config.feature.target_modes, (CompareMode.SINGLE_PASS,))
+
+    def test_scene_configs_load_canonical_modes_and_verified_poses(self):
+        self.assertEqual(sorted(path.name for path in SCENE_DIRECTORY.glob("*.toml")),
+                         sorted(SCENES))
+        poses = []
+        for filename, (name, camera) in SCENES.items():
+            with self.subTest(scene=filename):
+                config = ExperimentConfig.load(SCENE_DIRECTORY / filename)
+                self.assertEqual(config.name, name)
+                self.assertEqual(config.warmup_frames, 30)
+                self.assertEqual(config.samples, 3)
+                self.assertEqual(config.configurations, CANONICAL_MODES)
+                self.assertEqual(config.scene.environment.hour, 13.226033)
+                self.assertEqual(config.scene.environment.weather, WeatherEvent.SUNNY)
+                self.assertTrue(cameras_match(camera, config.scene.pose.camera()))
+                poses.append(config.scene.pose)
+        self.assertEqual(len(set(poses)), len(SCENES))
 
     def test_synthetic_config_accepts_arbitrary_order_and_repeats(self):
         config = write_config(self.root, ["left_only", "multipass", "right_only",
