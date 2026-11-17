@@ -52,8 +52,8 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     screenshot::harness::stages::{capture_water_after, capture_water_before},
     stereo::single_pass::{
-        BlockIntercept, block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs,
-        screen_uv_cb_per_eye,
+        BlockIntercept, WaterGpuProbe, block_intercept_enabled,
+        draw_per_eye_half_ignoring_bound_vs, screen_uv_cb_per_eye,
     },
 };
 
@@ -293,7 +293,15 @@ unsafe fn nv_water_per_eye(
             SUPPRESS_SIMULATION_STEP.store(eye != 0, Ordering::Relaxed);
             (*this).Setup(rc, 0, 0);
         }
+        let probe = if water_surface {
+            WaterGpuProbe::begin(pass, eye)
+        } else {
+            None
+        };
         draw();
+        if let Some(probe) = probe {
+            probe.finish();
+        }
         if water_surface {
             capture_water_after(eye);
         }

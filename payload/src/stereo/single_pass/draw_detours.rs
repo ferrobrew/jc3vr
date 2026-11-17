@@ -7,6 +7,7 @@
 //! lives in a buffer the CPU never sees -- each of which has to be submitted once per eye instead.
 
 use super::*;
+use crate::stereo::single_pass::water_gpu_probe::{RawDrawKind, raw_entry};
 
 /// `ID3D11DeviceContext` vtable slots for the two indexed-draw entry points (verified against
 /// `windows`'s `ID3D11DeviceContext_Vtbl`: field 6 → slot 12, field 14 → slot 20).
@@ -48,6 +49,8 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
     start_index: u32,
     base_vertex: i32,
 ) {
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(RawDrawKind::Indexed, context) };
     let detour = DRAW_INDEXED.get().expect("set before enable");
     if dual_eye_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
         let patched = BOUND_VS_PATCHED.load(Ordering::Relaxed);
@@ -92,6 +95,8 @@ pub(super) unsafe extern "system" fn draw_detour(
     vertex_count: u32,
     start_vertex: u32,
 ) {
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(RawDrawKind::NonIndexed, context) };
     let detour = DRAW.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
     let submit = || unsafe { detour.call(context, vertex_count, start_vertex) };
@@ -202,6 +207,8 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_indirect_detour(
     buffer_for_args: *mut c_void,
     aligned_byte_offset: u32,
 ) {
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(RawDrawKind::IndexedInstancedIndirect, context) };
     let detour = DRAW_INDEXED_INSTANCED_INDIRECT
         .get()
         .expect("set before enable");
@@ -217,6 +224,8 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
     buffer_for_args: *mut c_void,
     aligned_byte_offset: u32,
 ) {
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(RawDrawKind::InstancedIndirect, context) };
     let detour = DRAW_INSTANCED_INDIRECT.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
     let submit = || unsafe { detour.call(context, buffer_for_args, aligned_byte_offset) };
@@ -297,6 +306,8 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
     base_vertex: i32,
     start_instance: u32,
 ) {
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    unsafe { raw_entry(RawDrawKind::IndexedInstanced, context) };
     let detour = DRAW_INDEXED_INSTANCED.get().expect("set before enable");
     let submit = || {
         // SAFETY: forwards the caller's arguments unchanged to the trampoline.

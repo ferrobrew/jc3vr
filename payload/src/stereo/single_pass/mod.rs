@@ -78,6 +78,7 @@ mod per_eye_reissue;
 mod shader_detours;
 mod shader_policy;
 mod viewport;
+mod water_gpu_probe;
 
 pub use cb13::*;
 pub use config_snapshot::*;
@@ -90,6 +91,7 @@ pub use per_eye_reissue::*;
 pub use shader_detours::*;
 pub use shader_policy::*;
 pub use viewport::*;
+pub(crate) use water_gpu_probe::WaterGpuProbe;
 
 pub(crate) use crate::stereo::engine_context::EngineContext;
 
