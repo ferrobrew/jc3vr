@@ -118,7 +118,17 @@ class StageTests(unittest.TestCase):
         self.output = self.root / "stages"
         self.path = self.fixture.path
         self.manifest = self.fixture.manifest
-        for mode in ("multipass", "single_pass"):
+        self.groups = self.manifest["cases"][0]["modes"]
+        self.references = {
+            mode: self.groups.pop(mode) for mode in ("left_only", "right_only")
+        }
+        for mode in self.groups:
+            for index in range(3):
+                self.make_stages(mode, index)
+
+    def add_references(self):
+        self.groups.update(self.references)
+        for mode in self.references:
             for index in range(3):
                 self.make_stages(mode, index)
 
@@ -136,7 +146,12 @@ class StageTests(unittest.TestCase):
             words = np.zeros((2, 3, 2), dtype="<u4")
             words[..., 0] = np.float32(0.25 + 0.25 * eye).view(np.uint32)
             return words.view(np.uint8).reshape(2, 3, 8).copy(), "DXGI_FORMAT(19)"
-        if stage == stages.Stage.MAIN_COLOR:
+        if stage in (
+            stages.Stage.MAIN_COLOR,
+            stages.Stage.WATER_BEFORE,
+            stages.Stage.WATER_AFTER_LEFT,
+            stages.Stage.WATER_AFTER_RIGHT,
+        ):
             word = (
                 ((15 + eye) << 6)
                 | (((15 + eye) << 6) << 11)
@@ -155,12 +170,14 @@ class StageTests(unittest.TestCase):
 
     def stage_records(self, mode, index, stage, metadata):
         records = []
-        for record_eye in (0,) if mode == "single_pass" else (0, 1):
+        for record_eye in (0,) if mode == "single_pass" else stages.Mode(mode).eyes:
             pixels, format_name = self.pixels(stage, record_eye)
             if mode == "single_pass":
                 pixels = np.concatenate((pixels, self.pixels(stage, 1)[0]), axis=1)
             is_png = stage in (stages.Stage.PRE_AA, stages.Stage.POST_AA)
-            filename = f"{mode}-{index}.{stage}.eye{record_eye}.{'png' if is_png else 'raw'}"
+            filename = (
+                f"{mode}-{index}.{stage}.eye{record_eye}.{'png' if is_png else 'raw'}"
+            )
             if is_png:
                 pixels[..., 3] = 255
                 Image.fromarray(pixels).save(self.root / filename)
@@ -251,14 +268,132 @@ class StageTests(unittest.TestCase):
         wire = json.loads((self.output / "stages.json").read_text())
         self.assertEqual(wire["status"], "measured")
 
+    def test_same_physical_eye_reference_pairs_and_independent_noise(self):
+        self.add_references()
+        path = self.raw_path("right_only", 2, eye=1)
+        data = bytearray(path.read_bytes())
+        data[0] += 9
+        path.write_bytes(data)
+        report = self.analyze()
+        self.assertEqual(report.status, stages.EvidenceStatus.MEASURED)
+        for eye, reference in enumerate(("left_only", "right_only")):
+            checks = {
+                c.modes: c
+                for c in report.cases[0].comparisons
+                if c.eye == eye and c.stage == stages.Stage.GBUFFER0
+            }
+            self.assertEqual(
+                set(checks),
+                {
+                    (reference, "multipass"),
+                    (reference, "single_pass"),
+                    ("multipass", "single_pass"),
+                },
+            )
+            for modes, check in checks.items():
+                self.assertEqual(len(check.pairs), 9)
+                self.assertEqual(
+                    check.within_mode_maximum, 9 if modes[0] == "right_only" else 0
+                )
+                for pair in check.pairs:
+                    self.assertEqual((pair.a.eye, pair.a.record_eye), (eye, eye))
+                    self.assertEqual(
+                        pair.b.record_eye, 0 if modes[1] == "single_pass" else eye
+                    )
+                    self.assertEqual(
+                        pair.metrics.maximum,
+                        9 if pair.a.sample == "right_only[2]" else 0,
+                    )
+
+    def test_partial_optional_reference_evidence_is_inconclusive(self):
+        self.add_references()
+        stage = stages.Stage.WATER_BEFORE
+        for index in range(3):
+            self.append_stage("single_pass", index, stage)
+        self.append_stage("right_only", 2, stage)
+        report = self.analyze()
+        self.assertEqual(report.status, stages.EvidenceStatus.INCONCLUSIVE)
+        (check,) = [c for c in report.cases[0].comparisons if c.stage == stage]
+        self.assertEqual((check.modes, check.eye), (("right_only", "single_pass"), 1))
+        self.assertFalse(check.pairs)
+
+    def test_missing_requested_pose_blocks_stage_evidence(self):
+        self.manifest["cases"][0]["expected_pose"] = {
+            "case_id": "posed",
+            "offset": {"yaw_deg": 0, "pitch_deg": 0, "roll_deg": 0},
+        }
+        report = self.analyze()
+        self.assertEqual(report.status, stages.EvidenceStatus.INCONCLUSIVE)
+        self.assertTrue(
+            any(
+                "no pose evidence" in e
+                for c in report.cases[0].repeatability
+                for e in c.errors
+            )
+        )
+
+    def test_water_regions_use_paired_depth_and_preserve_disagreement(self):
+        self.add_references()
+        for mode in self.groups:
+            for index in range(3):
+                for stage in (
+                    stages.Stage.WATER_BEFORE,
+                    stages.Stage.WATER_AFTER_LEFT,
+                    stages.Stage.WATER_AFTER_RIGHT,
+                    stages.Stage.WATER_DEPTH_BEFORE,
+                    stages.Stage.WATER_DEPTH_AFTER_LEFT,
+                    stages.Stage.WATER_DEPTH_AFTER_RIGHT,
+                ):
+                    self.append_stage(mode, index, stage)
+                    if stage.depth:
+                        for eye in (
+                            (0,) if mode == "single_pass" else stages.Mode(mode).eyes
+                        ):
+                            path = self.raw_path(mode, index, stage, eye)
+                            water = int(stage != stages.Stage.WATER_DEPTH_BEFORE)
+                            words = np.fromfile(path, dtype="<f4").reshape(2, -1, 2)
+                            words[..., 0] = 0
+                            words[:, ::3, 0] = water * 0.25
+                            if mode == "single_pass":
+                                words[:, 4, 0] = water * 0.25
+                            words.tofile(path)
+        self.path.write_text(json.dumps(self.manifest))
+        report = stages.analyze_manifest(self.path, self.output, water_regions=True)
+        self.assertEqual(report.status, stages.EvidenceStatus.MEASURED)
+        for stage in (stages.Stage.MAIN_COLOR, stages.Stage.PRE_AA):
+            (cross,) = [
+                c
+                for c in report.cases[0].comparisons
+                if c.stage == stage and c.modes == ("right_only", "single_pass")
+            ]
+            region = cross.pairs[0].water_regions
+            self.assertEqual(region.common_water, stages.RegionError(2, 0))
+            self.assertEqual(region.common_sky, stages.RegionError(2, 0))
+            self.assertEqual(
+                (region.water_disagreement_pixels, region.sky_disagreement_pixels),
+                (2, 2),
+            )
+            self.assertIn("water_depth_after_right", region.mask_a[1])
+            self.assertIn("water_depth_after_right", region.mask_b[1])
+        self.raw_path("right_only", 2, stages.Stage.WATER_DEPTH_AFTER_RIGHT, 1).unlink()
+        report = stages.analyze_manifest(self.path, self.output, water_regions=True)
+        self.assertEqual(report.status, stages.EvidenceStatus.INCONCLUSIVE)
+        self.assertFalse(
+            next(
+                c
+                for c in report.cases[0].comparisons
+                if c.stage == stages.Stage.MAIN_COLOR
+                and c.modes == ("right_only", "single_pass")
+            ).pairs
+        )
+
     def test_water_depth_is_an_optional_diagnostic(self):
         report = self.analyze()
         self.assertEqual(report.status, stages.EvidenceStatus.MEASURED)
         self.assertFalse(
             any(
                 check.stage.optional
-                for check in report.cases[0].repeatability
-                + report.cases[0].comparisons
+                for check in report.cases[0].repeatability + report.cases[0].comparisons
             )
         )
         self.assertEqual(len(report.cases[0].repeatability), 32)
@@ -291,9 +426,7 @@ class StageTests(unittest.TestCase):
 
     def test_water_depth_present_in_one_mode_only_skips_cross_mode(self):
         for index in range(3):
-            self.append_stage(
-                "multipass", index, stages.Stage.WATER_DEPTH_AFTER_LEFT
-            )
+            self.append_stage("multipass", index, stages.Stage.WATER_DEPTH_AFTER_LEFT)
         report = self.analyze()
         self.assertEqual(report.status, stages.EvidenceStatus.MEASURED)
         depth_repeats = [

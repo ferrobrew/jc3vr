@@ -27,6 +27,11 @@ from tools.rendering.comparison.images import (
     read_json,
     text,
 )
+from tools.rendering.comparison.provenance import (
+    MotionProvenance,
+    PoseProvenance,
+    RunAnchor,
+)
 
 
 class Stage(StrEnum):
@@ -35,6 +40,13 @@ class Stage(StrEnum):
     GBUFFER1 = "gbuffer1"
     GBUFFER2 = "gbuffer2"
     GBUFFER3 = "gbuffer3"
+    POST_RESOLVE = "post_resolve"
+    POST_SUN = "post_sun"
+    PRE_ATMOSPHERE = "pre_atmosphere"
+    POST_ATMOSPHERE = "post_atmosphere"
+    WATER_BEFORE = "water_before"
+    WATER_AFTER_LEFT = "water_after_left"
+    WATER_AFTER_RIGHT = "water_after_right"
     MAIN_COLOR = "main_color"
     WATER_DEPTH_BEFORE = "water_depth_before"
     WATER_DEPTH_AFTER_LEFT = "water_depth_after_left"
@@ -54,6 +66,13 @@ class Stage(StrEnum):
     @property
     def optional(self) -> bool:
         return self in (
+            Stage.POST_RESOLVE,
+            Stage.POST_SUN,
+            Stage.PRE_ATMOSPHERE,
+            Stage.POST_ATMOSPHERE,
+            Stage.WATER_BEFORE,
+            Stage.WATER_AFTER_LEFT,
+            Stage.WATER_AFTER_RIGHT,
             Stage.WATER_DEPTH_BEFORE,
             Stage.WATER_DEPTH_AFTER_LEFT,
             Stage.WATER_DEPTH_AFTER_RIGHT,
@@ -207,10 +226,35 @@ class NativeMetrics:
 
 
 @dataclass(frozen=True)
+class WaterMask:
+    before: StageIdentity
+    after: StageIdentity
+    water: np.ndarray = field(repr=False)
+    sky: np.ndarray = field(repr=False)
+
+
+@dataclass(frozen=True)
+class RegionError:
+    pixels: int
+    rgb_mae: float | None
+
+
+@dataclass(frozen=True)
+class WaterRegions:
+    mask_a: tuple[str, str]
+    mask_b: tuple[str, str]
+    common_water: RegionError
+    common_sky: RegionError
+    water_disagreement_pixels: int
+    sky_disagreement_pixels: int
+
+
+@dataclass(frozen=True)
 class PairMetrics:
     a: StageIdentity
     b: StageIdentity
     metrics: NativeMetrics
+    water_regions: WaterRegions | None = None
 
 
 @dataclass
@@ -345,6 +389,8 @@ def load_stage(
     metadata = read_json(metadata_path)
     capture = CaptureMetadata.from_wire(metadata, spec.inputs)
     capture.validate(mode)
+    if eye not in mode.eyes:
+        raise ValueError(f"{mode}: physical eye {eye} was not rendered")
     if (
         capture.capture_id != sample.capture_id
         or capture.frame_ordinal != sample.frame_ordinal
@@ -508,19 +554,66 @@ def native_metrics(a: StageSample, b: StageSample) -> NativeMetrics:
     )
 
 
+def load_water_mask(
+    root: Path, mode: Mode, spec: SampleSpec, sample: LoadedSample, eye: int
+) -> WaterMask:
+    before = load_stage(root, mode, spec, sample, Stage.WATER_DEPTH_BEFORE, eye)
+    after_stage = (Stage.WATER_DEPTH_AFTER_LEFT, Stage.WATER_DEPTH_AFTER_RIGHT)[eye]
+    after = load_stage(root, mode, spec, sample, after_stage, eye)
+    if (
+        before.identity.source != after.identity.source
+        or before.identity.raw == after.identity.raw
+    ):
+        raise ValueError(
+            "water mask: expected distinct depth records with matching descriptors"
+        )
+    a, b = before.values[..., 0], after.values[..., 0]
+    if np.any(b < a):
+        raise ValueError("water mask: depth decreased during the reverse-Z water pass")
+    return WaterMask(before.identity, after.identity, b > a, (a == 0) & (b == 0))
+
+
+def region_errors(
+    a: StageSample, b: StageSample, ma: WaterMask, mb: WaterMask
+) -> WaterRegions:
+    if a.channels != ("r", "g", "b") or any(
+        m.water.shape != a.values.shape[:2] for m in (ma, mb)
+    ):
+        raise ValueError("water regions: expected RGB on the depth pixel grid")
+    delta = np.abs(a.values - b.values)
+
+    def measure(mask: np.ndarray) -> RegionError:
+        count = int(mask.sum())
+        return RegionError(count, float(delta[mask].mean()) if count else None)
+
+    return WaterRegions(
+        (ma.before.raw, ma.after.raw),
+        (mb.before.raw, mb.after.raw),
+        measure(ma.water & mb.water),
+        measure(ma.sky & mb.sky),
+        int(np.count_nonzero(ma.water != mb.water)),
+        int(np.count_nonzero(ma.sky != mb.sky)),
+    )
+
+
 def compare(
     name: str,
     stage: Stage,
     eye: int,
     modes: tuple[Mode, ...],
     pairs: list[tuple[StageSample, StageSample]],
+    masks: dict[str, WaterMask] | None = None,
 ) -> Comparison:
     result = Comparison(name, stage, eye, modes)
     for a, b in pairs:
         try:
-            result.pairs.append(
-                PairMetrics(a.identity, b.identity, native_metrics(a, b))
+            metrics = native_metrics(a, b)
+            regions = (
+                region_errors(a, b, masks[a.identity.sample], masks[b.identity.sample])
+                if masks is not None
+                else None
             )
+            result.pairs.append(PairMetrics(a.identity, b.identity, metrics, regions))
         except ValueError as error:
             result.errors.append(f"{a.identity.sample} vs {b.identity.sample}: {error}")
     if result.pairs and not result.errors:
@@ -583,25 +676,57 @@ def has_stage_record(
     for spec, _ in samples:
         records = read_json(root / spec.metadata).get("stages")
         if not isinstance(records, list):
-            return False
-        if not any(
+            continue
+        if any(
             isinstance(record, dict)
             and record.get("stage") == stage
             and type(record.get("eye")) is int
             and record["eye"] == record_eye
             for record in records
         ):
-            return False
-    return True
+            return True
+    return False
 
 
-def analyze_case(case: Case, root: Path, repeatability: Thresholds) -> CaseReport:
+def analyze_case(
+    case: Case,
+    root: Path,
+    repeatability: Thresholds,
+    anchor: RunAnchor,
+    water_regions: bool,
+) -> CaseReport:
     result = CaseReport(case.name)
-    modes = (Mode.MULTIPASS, Mode.SINGLE_PASS)
     entries = {group.mode: group.samples for group in case.modes}
+    modes = tuple(
+        mode
+        for mode in Mode
+        if mode in entries or mode in (Mode.MULTIPASS, Mode.SINGLE_PASS)
+    )
     captures = {
         mode: validated_samples(root, mode, entries.get(mode, ())) for mode in modes
     }
+    pose, motion = (
+        PoseProvenance(case.expected_pose),
+        MotionProvenance(case.expected_motion),
+    )
+    try:
+        for mode, (samples, _) in captures.items():
+            for _, sample in samples:
+                pose.add(sample.visual.pose, sample.inputs.camera)
+                motion.add(
+                    sample.visual.motion,
+                    sample.visual.pose,
+                    sample.inputs.camera,
+                    sample.predicted_display_time_ns,
+                    mode,
+                )
+        for provenance in (pose, motion):
+            provenance.finish()
+            if provenance.anchor is not None:
+                anchor.require(provenance.anchor)
+    except ValueError as error:
+        for _, errors in captures.values():
+            errors.append(str(error))
     for mode in modes:
         samples, errors = captures[mode]
         if errors:
@@ -612,29 +737,57 @@ def analyze_case(case: Case, root: Path, repeatability: Thresholds) -> CaseRepor
                 errors.append(
                     "final-image repeatability inputs: " + "; ".join(mismatches)
                 )
-            for eye in (0, 1):
+            for eye in mode.eyes:
                 if not image_metrics(a.image(eye), b.image(eye), repeatability).passes(
                     repeatability
                 ):
                     errors.append(
                         f"final-image repeatability is unstable: {a.label} vs {b.label}, eye {eye}"
                     )
-    for stage in Stage:
-        for eye in (0, 1):
+    for eye in (0, 1):
+        masks: dict[str, WaterMask] = {}
+        mask_errors: dict[Mode, list[str]] = {}
+        if water_regions:
+            for mode, (samples, errors) in captures.items():
+                if errors or eye not in mode.eyes:
+                    continue
+                seen = set()
+                for spec, sample in samples:
+                    try:
+                        mask = load_water_mask(root, mode, spec, sample, eye)
+                        paths = {mask.before.raw, mask.after.raw}
+                        if seen & paths:
+                            raise ValueError("water mask: reused depth artifact")
+                        seen.update(paths)
+                        masks[sample.label] = mask
+                    except (OSError, ValueError, TypeError) as error:
+                        mask_errors.setdefault(mode, []).append(
+                            f"{sample.label}: {error}"
+                        )
+        for stage in Stage:
+            regional = water_regions and stage in (
+                Stage.WATER_BEFORE,
+                (Stage.WATER_AFTER_LEFT, Stage.WATER_AFTER_RIGHT)[eye],
+                Stage.MAIN_COLOR,
+                Stage.PRE_AA,
+            )
             available = {
-                mode: not stage.optional
+                mode: regional
+                or not stage.optional
                 or has_stage_record(root, mode, captures[mode][0], stage, eye)
                 for mode in modes
+                if eye in mode.eyes
             }
             if not any(available.values()):
                 continue
             loaded = {}
             repeats = {}
-            for mode in modes:
-                if not available[mode]:
+            for mode, present in available.items():
+                if not present:
                     continue
-                key = (stage, eye, mode)
                 samples, errors = [], list(captures[mode][1])
+                if regional:
+                    errors.extend(mask_errors.get(mode, ()))
                 if not errors:
                     seen = set()
                     for spec, sample in captures[mode][0]:
@@ -649,7 +802,7 @@ def analyze_case(case: Case, root: Path, repeatability: Thresholds) -> CaseRepor
                             samples.append(evidence)
                         except (OSError, ValueError, TypeError) as error:
                             errors.append(f"{sample.label}: {error}")
-                loaded[key] = samples
+                loaded[mode] = samples
                 repeat = (
                     Comparison(
                         f"{mode} repeatability", stage, eye, (mode,), errors=errors
@@ -661,55 +814,64 @@ def analyze_case(case: Case, root: Path, repeatability: Thresholds) -> CaseRepor
                         eye,
                         (mode,),
                         list(combinations(samples, 2)),
+                        masks if regional else None,
                     )
                 )
-                repeats[key] = repeat
+                repeats[mode] = repeat
                 result.repeatability.append(repeat)
-            within = [
-                repeats[(stage, eye, mode)] for mode in modes if available[mode]
-            ]
-            if len(within) != len(modes):
-                continue
-            if any(item.status != EvidenceStatus.MEASURED for item in within):
-                cross = Comparison(
-                    "multipass vs single_pass",
-                    stage,
-                    eye,
-                    modes,
-                    errors=[
-                        "valid same-mode repeatability evidence is required for both modes first"
-                    ],
-                )
-            else:
-                cross = compare(
-                    "multipass vs single_pass",
-                    stage,
-                    eye,
-                    modes,
-                    list(product(*(loaded[(stage, eye, mode)] for mode in modes))),
-                )
-                noise = [pair.metrics for item in within for pair in item.pairs]
-                cross.within_mode_mae = max(metric.mae for metric in noise)
-                cross.within_mode_maximum = max(metric.maximum for metric in noise)
-                cross.within_mode_exact_changed_fraction = max(
-                    metric.exact_changed_fraction for metric in noise
-                )
-                if cross.pairs:
-                    cross.cross_mae_minus_within_mode = (
-                        max(pair.metrics.mae for pair in cross.pairs)
-                        - cross.within_mode_mae
+            for a, b in combinations(repeats, 2):
+                within = repeats[a], repeats[b]
+                name = f"{a} vs {b}"
+                if any(item.status != EvidenceStatus.MEASURED for item in within):
+                    cross = Comparison(
+                        name,
+                        stage,
+                        eye,
+                        (a, b),
+                        errors=[
+                            "valid same-mode repeatability evidence is required for both modes first"
+                        ],
                     )
-            result.comparisons.append(cross)
+                else:
+                    cross = compare(
+                        name,
+                        stage,
+                        eye,
+                        (a, b),
+                        list(product(loaded[a], loaded[b])),
+                        masks if regional else None,
+                    )
+                    noise = [pair.metrics for item in within for pair in item.pairs]
+                    cross.within_mode_mae = max(metric.mae for metric in noise)
+                    cross.within_mode_maximum = max(metric.maximum for metric in noise)
+                    cross.within_mode_exact_changed_fraction = max(
+                        metric.exact_changed_fraction for metric in noise
+                    )
+                    if cross.pairs:
+                        cross.cross_mae_minus_within_mode = (
+                            max(pair.metrics.mae for pair in cross.pairs)
+                            - cross.within_mode_mae
+                        )
+                result.comparisons.append(cross)
     return result
 
 
-def analyze_manifest(manifest_path: Path, output: Path) -> Report:
+def analyze_manifest(
+    manifest_path: Path, output: Path, *, water_regions: bool = False
+) -> Report:
     manifest_path, output = Path(manifest_path), Path(output)
     report = Report(str(manifest_path))
     try:
         manifest = Manifest.from_wire(read_json(manifest_path))
+        anchor = RunAnchor()
         report.cases = [
-            analyze_case(case, manifest_path.parent, manifest.repeatability)
+            analyze_case(
+                case,
+                manifest_path.parent,
+                manifest.repeatability,
+                anchor,
+                water_regions,
+            )
             for case in manifest.cases
         ]
         checks = [
@@ -747,6 +909,15 @@ def comparison_html(comparison: Comparison) -> str:
                     f"{metric.maximum:.9g}",
                     channels,
                     depth,
+                    "; ".join(
+                        f"{name}: {region.pixels} pixels, RGB MAE {region.rgb_mae}"
+                        for name, region in (
+                            ("water", pair.water_regions.common_water),
+                            ("sky", pair.water_regions.common_sky),
+                        )
+                    )
+                    if pair.water_regions
+                    else "",
                 )
             )
             + "</tr>"
@@ -765,7 +936,7 @@ def comparison_html(comparison: Comparison) -> str:
         + noise
         + f"<ul>{errors}</ul><table><tr><th>Pair</th><th>Exact bit-changed pixels</th>"
         "<th>Fraction</th><th>Value-changed pixels</th><th>MAE</th><th>Maximum</th>"
-        "<th>Native channels</th><th>Depth coverage</th></tr>"
+        "<th>Native channels</th><th>Depth coverage</th><th>Common water / sky</th></tr>"
         + "".join(rows)
         + "</table>"
     )
@@ -807,9 +978,16 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("manifest", type=Path)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--water-regions",
+        action="store_true",
+        help="Measure color on common water depth writes and common zero-depth sky before and after water, at main_color, and at pre_aa.",
+    )
     args = parser.parse_args(argv)
     try:
-        report = analyze_manifest(args.manifest, args.output)
+        report = analyze_manifest(
+            args.manifest, args.output, water_regions=args.water_regions
+        )
     except OSError as error:
         print(f"visual stages: report output: {error}", file=sys.stderr)
         return 2
