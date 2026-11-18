@@ -128,6 +128,7 @@ pub enum DxbcError {
     /// nothing for the decal depth-UV bias to separate; the caller should leave it untouched.
     NoDepthUvFetch,
     NoLakeReflection,
+    NoLakeRefraction,
 }
 
 impl fmt::Display for DxbcError {
@@ -162,6 +163,9 @@ impl fmt::Display for DxbcError {
             }
             DxbcError::NoEyeLane => "dxbc: no free TEXCOORD3.z lane to carry the eye index",
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
+            DxbcError::NoLakeRefraction => {
+                "dxbc: missing unique lake refraction displacement scale"
+            }
             DxbcError::NoDepthUvFetch => "dxbc: no projective screen-space depth fetch to bias",
         };
         f.write_str(msg)

@@ -82,7 +82,7 @@ const VERIFIED_WATER_PS: &str = "fd508419c18c5fe0c08816017a2a20ed5394aab5fd9d3fe
 
 pub(crate) enum ReflectionGuard {
     Texture { _guard: TextureGuard },
-    Planar { _guard: PlanarGuard },
+    Planar { _guard: LakeShaderGuard },
 }
 
 pub(crate) struct TextureGuard {
@@ -176,13 +176,16 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
             return None;
         }
     }
-    if treatment == WaterReflection::CenterPlanar {
+    if matches!(
+        treatment,
+        WaterReflection::CenterPlanar | WaterReflection::PackedRefraction
+    ) {
         if !crate::stereo::single_pass::collapse_active()
             || crate::stereo::single_pass::per_eye_reissue_eye() != Some(eye)
         {
             return None;
         }
-        return match PlanarGuard::bind(ctx, eye, shader, &id) {
+        return match LakeShaderGuard::bind(ctx, eye, shader, &id, treatment) {
             Ok(guard) => Some(ReflectionGuard::Planar { _guard: guard }),
             Err(err) => {
                 record_water_treatment(eye, &id, Some(&format!("lake shader: {err:#}")));
@@ -193,7 +196,7 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
     let (slot, format) = match treatment {
         WaterReflection::ZeroWeight => (12, DXGI_FORMAT_R32_FLOAT),
         WaterReflection::ZeroPlanar => (2, DXGI_FORMAT_R11G11B10_FLOAT),
-        WaterReflection::CenterPlanar => unreachable!(),
+        WaterReflection::CenterPlanar | WaterReflection::PackedRefraction => unreachable!(),
     };
     let mut original: Option<ID3D11ShaderResourceView> = None;
     unsafe { ctx.PSGetShaderResources(slot, Some(std::slice::from_mut(&mut original))) };
@@ -273,23 +276,28 @@ enum TreatmentIdentity {
     Unknown,
 }
 
-pub(crate) struct PlanarGuard {
+pub(crate) struct LakeShaderGuard {
     ctx: ID3D11DeviceContext,
     original: ID3D11PixelShader,
     eye: usize,
     id: String,
 }
 
-impl PlanarGuard {
+impl LakeShaderGuard {
     fn bind(
         ctx: &ID3D11DeviceContext,
         eye: usize,
         original: ID3D11PixelShader,
         id: &str,
+        treatment: WaterReflection,
     ) -> anyhow::Result<Self> {
         let blob = shader_identity::lake_bytecode()
             .ok_or_else(|| anyhow::anyhow!("missing lake bytecode"))?;
-        let patched = dxbc_stereo::offset_lake_reflection(&blob, eye == 1)?;
+        let patched = match treatment {
+            WaterReflection::CenterPlanar => dxbc_stereo::offset_lake_reflection(&blob, eye == 1)?,
+            WaterReflection::PackedRefraction => dxbc_stereo::scale_lake_refraction(&blob)?,
+            _ => anyhow::bail!("lake shader: expected a shader treatment"),
+        };
         let _identity = unsafe { shader_identity::begin(blob.as_ptr(), blob.len() as u64) }
             .ok_or_else(|| anyhow::anyhow!("lake shader: census unavailable"))?;
         let mut shader = None;
@@ -305,7 +313,7 @@ impl PlanarGuard {
             unsafe { ctx.PSSetShader(&original, None) };
             anyhow::bail!("offset shader not bound");
         }
-        tracing::info!(target:"water_probe", "lake planar treatment id={id} eye={eye} original={:#x} actual={:#x}",original.as_raw() as usize,shader.as_raw() as usize);
+        tracing::info!(target:"water_probe", "lake shader treatment={treatment:?} id={id} eye={eye} original={:#x} actual={:#x}",original.as_raw() as usize,shader.as_raw() as usize);
         Ok(Self {
             ctx: ctx.clone(),
             original,
@@ -315,7 +323,7 @@ impl PlanarGuard {
     }
 }
 
-impl Drop for PlanarGuard {
+impl Drop for LakeShaderGuard {
     fn drop(&mut self) {
         unsafe { self.ctx.PSSetShader(&self.original, None) };
         let mut bound = None;

@@ -22,6 +22,36 @@ use dxbc_stereo::{
 mod common;
 use common::shader_dir;
 
+#[test]
+fn lake_refraction_only_halves_the_horizontal_displacement() {
+    let Some(dir) = shader_dir() else { return };
+    let original = std::fs::read(dir.join("sh_0710_002c71f0.dxbc")).unwrap();
+    let changed = dxbc_stereo::scale_lake_refraction(&original).unwrap();
+    assert_eq!(original.len(), changed.len());
+    let chunk = Dxbc::parse(&original).unwrap().shader_chunk().unwrap();
+    let edits: Vec<_> = chunk
+        .body(&original)
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .zip(chunk.body(&changed).as_chunks::<4>().0)
+        .filter(|(a, b)| a != b)
+        .collect();
+    assert_eq!(
+        edits,
+        [(&(-5.0_f32).to_le_bytes(), &(-2.5_f32).to_le_bytes())]
+    );
+    assert_eq!(
+        dxbc_stereo::scale_lake_refraction(&changed),
+        Err(DxbcError::NoLakeRefraction)
+    );
+    let mut expected = original.clone();
+    expected[chunk.body_offset..chunk.body_offset + chunk.body_len]
+        .copy_from_slice(chunk.body(&changed));
+    dxbc_stereo::refresh_checksum(&mut expected);
+    assert_eq!(expected, changed);
+}
+
 /// `SFI0` bit 13 -- `VPAndRTArrayIndexFromAnyShaderFeedingRasterizer`, which every patched shader
 /// must declare so its `SV_ViewportArrayIndex` output is valid.
 const SFI0_VIEWPORT_BIT: u64 = 1 << 13;

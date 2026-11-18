@@ -22,7 +22,7 @@ pub use rewrite::{
     MEYE_ROW_BASE, SSDECAL_EYE_BIAS_REGISTER, STEREO_CB_REGISTER, STEREO_CB_ROWS,
     STEREO_REPROJ_CB_ROWS, bias_ssdecal_depth_uv, forward_eye_hull_shader,
     inject_eye_forward_vertex_shader, offset_lake_reflection, patch_vertex_shader,
-    reproject_domain_shader, reproject_vertex_shader,
+    reproject_domain_shader, reproject_vertex_shader, scale_lake_refraction,
 };
 pub use tokens::{Operand, OperandKind, ShaderStage, TokenStream};
 

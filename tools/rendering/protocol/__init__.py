@@ -183,6 +183,7 @@ class WaterReflection(StrEnum):
     ZERO_WEIGHT = "zero_weight"
     ZERO_PLANAR = "zero_planar"
     CENTER_PLANAR = "center_planar"
+    PACKED_REFRACTION = "packed_refraction"
 
 
 class SunDepthClip(StrEnum):
@@ -268,7 +269,7 @@ class Request:
             raise ProtocolError("visual protocol: water_tess_draw requires water_inputs and an index below 32")
         if self.water_surface_inputs is not None and (self.water_surface_inputs is not True or self.water_tess_draw is None or self.water_reflection is not None or self.motion_capture is not None):
             raise ProtocolError("visual protocol: surface inputs require an untreated selected water draw")
-        if self.water_reflection == WaterReflection.ZERO_PLANAR and self.water_tess_draw is None:
+        if self.water_reflection in (WaterReflection.ZERO_PLANAR, WaterReflection.PACKED_REFRACTION) and self.water_tess_draw is None:
             raise ProtocolError("visual protocol: zero_planar requires a selected lake draw")
         if self.water_reflection is not None and (self.command != Command.SCREENSHOT or
                                                   not isinstance(self.water_reflection, WaterReflection) or

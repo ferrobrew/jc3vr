@@ -56,6 +56,7 @@ pub(crate) enum WaterReflection {
     ZeroWeight,
     ZeroPlanar,
     CenterPlanar,
+    PackedRefraction,
 }
 
 impl WaterReflection {
@@ -72,7 +73,9 @@ impl WaterReflection {
                             | RenderMode::SinglePass
                     )
             }
-            Self::CenterPlanar => mode == RenderMode::SinglePass && selection.is_some(),
+            Self::PackedRefraction | Self::CenterPlanar => {
+                mode == RenderMode::SinglePass && selection.is_some()
+            }
         }
     }
 }

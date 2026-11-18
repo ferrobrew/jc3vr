@@ -111,7 +111,7 @@ def validate_late_sky_stages(folder: Path, capture_id: str, metadata: dict, mode
 
 
 def validate_water_treatment(folder: Path, capture_id: str, metadata: dict, mode: Mode) -> None:
-    planar = metadata.get("water_reflection") == "center_planar"
+    planar = metadata.get("water_reflection") in ("center_planar", "packed_refraction")
     zero_planar = metadata.get("water_reflection") == "zero_planar"
     allowed = (Mode.LEFT_ONLY, Mode.RIGHT_ONLY, Mode.MULTIPASS, Mode.SINGLE_PASS) if zero_planar else (Mode.SINGLE_PASS if planar else Mode.MULTIPASS,)
     if mode not in allowed or not isinstance(metadata.get("stages"), list):
@@ -138,6 +138,8 @@ def validate_water_treatment(folder: Path, capture_id: str, metadata: dict, mode
             identity = (captures[0].get("water_input") or {}).get("shader_identity") if len(captures) == 1 else None
             if not valid_mapped_identity(identity) or identity["identity"]["pristine_sha256"] != "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531" or identity["identity"]["actual_sha256"] == identity["identity"]["pristine_sha256"]:
                 raise ProtocolError("visual protocol: planar shader substitution not observed")
+            if metadata.get("water_reflection") == "packed_refraction" and identity["identity"]["actual_sha256"] != "2de4e3c8c3174fd998bc3d26498fc5698fcacc1aa67a5f92c40b87a28748f908":
+                raise ProtocolError("visual protocol: unexpected packed refraction shader")
             continue
         target = "water_input_static_reflection" if zero_planar else "water_input_reflection_alpha"
         inputs = [r for r in records if isinstance(r, dict) and r.get("stage") == target and r.get("eye") == eye]
