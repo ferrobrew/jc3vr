@@ -62,6 +62,40 @@ pub(crate) struct CapturedFrame {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) water_reflection: Option<crate::screenshot::harness::WaterReflection>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) aa_weights: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) aa_draws: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_owner_four: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_producer: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_gradients: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_waves: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_normals: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_displacement: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) aa_color_edge: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) patch63_hull: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) owner_four_domain: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_color_mirror: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_depth_edge: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_ds_mvp: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) lake_inner_edge: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) second_patch_ordinal: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) patch_draw_ordinal: Option<u8>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) sun_depth_clip: Option<crate::screenshot::harness::SunDepthClip>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) resolve_inputs: Option<crate::screenshot::harness::resolve_probe::Capture>,

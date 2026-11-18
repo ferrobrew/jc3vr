@@ -31,7 +31,7 @@ use dxbc_stereo::refresh_checksum;
 use jc3gi::graphics_engine::{
     draw::{
         CreateDomainProgramParams, CreateFragmentProgramParams, CreateHullProgramParams,
-        CreateVertexProgramParams,
+        CreateVertexProgramParams, HDomainProgram_t, HFragmentProgram_t, HHullProgram_t,
     },
     graphics_engine::GraphicsEngine,
 };
@@ -40,7 +40,9 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     hooks::graphics_engine::ss_decal,
-    stereo::single_pass::{VsTransform, is_terrain_shadow_pass, set_patch_pending, terrain_active},
+    stereo::single_pass::{
+        VsTransform, is_terrain_shadow_pass, lake_refraction, set_patch_pending, terrain_active,
+    },
 };
 
 /// The 16-byte `dp2` immediate `l(12.9898, 78.233, 0, 0)` -- the screen-pixel PCF rotation seed. The
@@ -194,8 +196,8 @@ fn create_vertex_program(
 fn create_fragment_program(
     device: *mut c_void,
     params: *mut CreateFragmentProgramParams,
-) -> *mut c_void {
-    let _identity = if crate::is_shutting_down() {
+) -> *mut HFragmentProgram_t {
+    let identity = if crate::is_shutting_down() {
         None
     } else {
         unsafe { params.as_ref() }.and_then(|p| unsafe {
@@ -255,6 +257,19 @@ fn create_fragment_program(
     }
 
     let result = CREATE_FRAGMENT_PROGRAM.get().unwrap().call(device, params);
+    drop(identity);
+    if saved.is_none()
+        && !crate::is_shutting_down()
+        && let Some(p) = unsafe { params.as_ref() }
+        && p.m_Size == lake_refraction::BYTECODE_SIZE as u64
+        && !p.m_Code.is_null()
+        && let Some(shader) = unsafe { result.as_ref() }.and_then(|p| p.m_Program.as_ref())
+        && let Err(error) = lake_refraction::register(shader, unsafe {
+            std::slice::from_raw_parts(p.m_Code, lake_refraction::BYTECODE_SIZE)
+        })
+    {
+        tracing::warn!("lake refraction: {error:#}");
+    }
 
     if let Some((original_code, original_size, _copy)) = saved
         && let Some(p) = unsafe { params.as_mut() }
@@ -272,7 +287,10 @@ fn create_fragment_program(
 /// the hull is created without a paired-VS identity to name-gate on. The patched blob replaces the
 /// bytecode for the (copying) `CreateHullShader` call, then the caller's pointer is restored.
 #[detour(address = jc3gi::graphics_engine::draw::CreateHullProgram_ADDRESS)]
-fn create_hull_program(device: *mut c_void, params: *mut CreateHullProgramParams) -> *mut c_void {
+fn create_hull_program(
+    device: *mut c_void,
+    params: *mut CreateHullProgramParams,
+) -> *mut HHullProgram_t {
     let mut saved: Option<(*const u8, u64, Vec<u8>)> = None;
     if terrain_active()
         && let Some(p) = unsafe { params.as_mut() }
@@ -297,6 +315,17 @@ fn create_hull_program(device: *mut c_void, params: *mut CreateHullProgramParams
 
     let result = CREATE_HULL_PROGRAM.get().unwrap().call(device, params);
 
+    if crate::stereo::single_pass::shader_identity::requested()
+        && let Some(program) =
+            unsafe { result.as_ref() }.and_then(|holder| holder.m_Program.as_ref())
+        && let Some(params) = unsafe { params.as_ref() }
+        && !params.m_Code.is_null()
+        && (4..=16 * 1024 * 1024).contains(&params.m_Size)
+    {
+        crate::screenshot::harness::patch_draw::tag(program, unsafe {
+            std::slice::from_raw_parts(params.m_Code, params.m_Size as usize)
+        });
+    }
     if let Some((original_code, original_size, _copy)) = saved
         && let Some(p) = unsafe { params.as_mut() }
     {
@@ -315,7 +344,7 @@ fn create_hull_program(device: *mut c_void, params: *mut CreateHullProgramParams
 fn create_domain_program(
     device: *mut c_void,
     params: *mut CreateDomainProgramParams,
-) -> *mut c_void {
+) -> *mut HDomainProgram_t {
     let mut saved: Option<(*const u8, u64, Vec<u8>)> = None;
     if terrain_active()
         && let Some(p) = unsafe { params.as_mut() }
@@ -340,6 +369,17 @@ fn create_domain_program(
 
     let result = CREATE_DOMAIN_PROGRAM.get().unwrap().call(device, params);
 
+    if crate::stereo::single_pass::shader_identity::requested()
+        && let Some(program) =
+            unsafe { result.as_ref() }.and_then(|holder| holder.m_Program.as_ref())
+        && let Some(params) = unsafe { params.as_ref() }
+        && !params.m_Code.is_null()
+        && (4..=16 * 1024 * 1024).contains(&params.m_Size)
+    {
+        crate::screenshot::harness::patch_draw::tag(program, unsafe {
+            std::slice::from_raw_parts(params.m_Code, params.m_Size as usize)
+        });
+    }
     if let Some((original_code, original_size, _copy)) = saved
         && let Some(p) = unsafe { params.as_mut() }
     {

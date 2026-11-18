@@ -74,6 +74,7 @@ mod detour_lifecycle;
 mod draw_detours;
 mod frame_diagnostics;
 mod instanced_exposure;
+pub(crate) mod lake_refraction;
 mod per_eye_reissue;
 mod shader_detours;
 pub(crate) mod shader_identity;
@@ -332,7 +333,7 @@ pub fn set_ui_viewport_raw(context: *mut c_void, viewport: &D3D11_VIEWPORT) {
 /// camera's `m_ViewProjectionF` for that eye -- for projecting the mod's world-space overlay quads
 /// per eye in the collapse, where the render camera stays centered. `None` if the centre transform or
 /// per-eye params are unavailable.
-fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
+pub(crate) fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
     let center_transform = crate::stereo::STEREO_STATE.lock().center_transform?;
     let params = crate::vr::render_params(eye)?;
     let eye_world = params.resolve(glam::Mat4::from(center_transform));
@@ -420,7 +421,7 @@ pub fn restore_current_pass(pass: u8) {
     CURRENT_PASS.store(pass, Ordering::Relaxed);
 }
 
-fn current_pass_id() -> u8 {
+pub(crate) fn current_pass_id() -> u8 {
     CURRENT_PASS.load(Ordering::Relaxed)
 }
 
@@ -832,6 +833,11 @@ static CVS_REACQ_ERR: AtomicUsize = AtomicUsize::new(0);
 /// runs long after the range. Every consumer that must not see a stale value gates on
 /// [`in_gbuffer_range`] instead.
 static COLLAPSE_FULL_VIEWPORT: Mutex<Option<D3D11_VIEWPORT>> = Mutex::new(None);
+
+pub(crate) fn patch_camera_sources(eye: usize) -> Option<(D3D11_VIEWPORT, usize)> {
+    let full = (*COLLAPSE_FULL_VIEWPORT.lock())?;
+    Some((eye_half_viewport(full, eye), CB13.lock().buffer_ptr()?))
+}
 
 /// The viewport the **engine** last bound during a collapsed camera scene, whatever its size, recorded
 /// by [`rs_set_viewports_detour`].

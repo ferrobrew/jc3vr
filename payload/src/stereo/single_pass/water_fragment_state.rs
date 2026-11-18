@@ -39,25 +39,21 @@ impl Drop for WaterReplayGuard {
     }
 }
 
-pub(crate) unsafe fn on_raw_draw(context: *mut c_void) {
+pub(crate) unsafe fn packed_water_context(context: &*mut c_void) -> Option<&ID3D11DeviceContext> {
     let phase = STATE.with_borrow(|state| state.phase);
     if phase == Phase::Idle {
-        return;
+        return None;
     }
-    let Some(ctx) = (unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) })
-    else {
-        return;
-    };
+    let ctx = unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(context) }?;
     let mut dsv = None;
     unsafe { ctx.OMGetRenderTargets(None, Some(&mut dsv)) };
-    if dsv.is_none() {
-        return;
-    }
+    dsv.as_ref()?;
     match phase {
         Phase::Capture => unsafe { capture_draw(ctx) },
         Phase::Restore => unsafe { restore_draw(ctx) },
         Phase::Idle => {}
     }
+    crate::stereo::single_pass::double_wide_active().then_some(ctx)
 }
 
 thread_local! {

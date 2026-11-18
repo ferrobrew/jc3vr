@@ -25,6 +25,8 @@ const BOUND_PS: &str = "6a82533e6458166ea3d04789c266ec127baf59931882955c99c4603e
 
 #[derive(Clone, Serialize)]
 pub(super) struct CascadeTrial {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    eye_camera: Option<[u32; 3]>,
     original: u32,
     applied: u32,
     bound_sha256: String,
@@ -36,6 +38,11 @@ pub(crate) struct CascadeGuard {
     original: ID3D11Buffer,
     eye: usize,
     frame: i64,
+}
+
+pub(super) enum Change {
+    Cascade(CascadeScale),
+    Camera([u32; 3], bool),
 }
 
 impl Drop for CascadeGuard {
@@ -50,7 +57,7 @@ impl Drop for CascadeGuard {
         if s.frame == Some(self.frame)
             && let Some(t) = s.observations[self.eye]
                 .as_mut()
-                .and_then(|o| o.cascade.as_mut())
+                .and_then(|o| o.cascade.as_mut().or(o.camera.as_mut()))
         {
             t.restored = restored;
         }
@@ -70,7 +77,7 @@ fn binding(ctx: &ID3D11DeviceContext1) -> (Option<ID3D11Buffer>, u32, u32) {
 pub(super) fn bind(
     ctx: &ID3D11DeviceContext,
     obs: &Observation,
-    selection: CascadeScale,
+    selection: Change,
     eye: usize,
     frame: i64,
 ) -> anyhow::Result<(CascadeGuard, CascadeTrial)> {
@@ -98,9 +105,39 @@ pub(super) fn bind(
     };
     ensure!(bytes.len() == BYTE_WIDTH as usize, "cb0 length");
     let mut patched = bytes.clone();
-    let word = &mut patched[SCALE_X..SCALE_X + 4];
-    let previous = u32::from_le_bytes(word.try_into()?);
-    word.copy_from_slice(&selection.bits().to_le_bytes());
+    let (start, applied, eye_camera) = match selection {
+        Change::Cascade(s) => (SCALE_X, s.bits(), None),
+        Change::Camera(xyz, treated) => {
+            let start = 4 * 16;
+            ensure!(
+                xyz.iter().all(|b| f32::from_bits(*b).is_finite()),
+                "resolve camera: nonfinite eye"
+            );
+            ensure!(
+                xyz.into_iter()
+                    .flat_map(u32::to_le_bytes)
+                    .ne(bytes[start..start + 12].iter().copied()),
+                "resolve camera: original already physical"
+            );
+            if treated {
+                for (dest, word) in patched[start..start + 12]
+                    .as_chunks_mut::<4>()
+                    .0
+                    .iter_mut()
+                    .zip(xyz)
+                {
+                    dest.copy_from_slice(&word.to_le_bytes());
+                }
+            }
+            (
+                start,
+                u32::from_le_bytes(patched[start..start + 4].try_into()?),
+                Some(xyz),
+            )
+        }
+    };
+    let previous = u32::from_le_bytes(bytes[start..start + 4].try_into()?);
+    patched[start..start + 4].copy_from_slice(&applied.to_le_bytes());
     let desc = D3D11_BUFFER_DESC {
         ByteWidth: BYTE_WIDTH,
         Usage: D3D11_USAGE_IMMUTABLE,
@@ -148,7 +185,8 @@ pub(super) fn bind(
         },
         CascadeTrial {
             original: previous,
-            applied: selection.bits(),
+            applied,
+            eye_camera,
             bound_sha256: digest,
             restored: false,
         },

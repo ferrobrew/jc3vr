@@ -2,8 +2,23 @@
 
 use std::{ffi::c_void, path::PathBuf};
 
+mod lake_samples;
+pub(crate) mod proxy;
+pub(crate) mod ssr;
+pub(crate) mod velocity;
+pub(crate) use lake_samples::LakeSampleTargets;
+mod lake_projection;
+pub(crate) use lake_projection::{
+    capture_producer_context, eye_width_snapshot, observe_producer_draw,
+};
+pub(crate) mod aa;
+pub(crate) mod dof;
 mod late_sky;
-pub(crate) use late_sky::{capture_before_fog_apply, capture_late_sky, complete_late_sky};
+pub(crate) mod patch_owners;
+pub(crate) use late_sky::{
+    capture_before_fog_apply, capture_fog_generation, capture_fog_inputs, capture_late_sky,
+    complete_late_sky,
+};
 mod sun_inputs;
 mod water_inputs;
 use anyhow::{Context as _, bail};
@@ -59,6 +74,45 @@ use crate::{
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Stage {
     GeometryDepth,
+    PatchDepthOwners,
+    DomainCameraSubmission,
+    SecondCameraSubmission,
+    BeforePatchDrawDepth,
+    BeforePatchDrawAlbedo,
+    AfterPatchDrawDepth,
+    AfterPatchDrawAlbedo,
+    BeforeTessPatchDepth,
+    BeforeTessPatchAlbedo,
+    AfterTessPatchDepth,
+    AfterTessPatchAlbedo,
+    BeforeZPassDepth,
+    AfterZPassDepth,
+    AfterZVelocityDepth,
+    VelocityTrace,
+    BarkColorTrace,
+    AfterBaseNearDepth,
+    AfterTessFarDepth,
+    AfterBaseFarDepth,
+    AfterTessColorDepth,
+    AfterBaseColorDepth,
+    AfterApplyNearDetailedDepth,
+    AfterApplyNearDepth,
+    BeforeDynamicModelsDepth,
+    AfterDynamicModelsDepth,
+    AfterStaticModelsDepth,
+    AfterOpaqueVegetationDepth,
+    AfterForestDepth,
+    AfterFinsDepth,
+    AfterGroupDepth,
+    AfterGroup2Depth,
+    IntervalTrace,
+    TerrainSources,
+    BaseSources,
+
+    BeforeNearPatchDepth,
+    AfterNearPatchDepth,
+    BeforeNearPatchAlbedo,
+    AfterNearPatchAlbedo,
     #[serde(rename = "gbuffer0")]
     GBuffer0,
     #[serde(rename = "gbuffer1")]
@@ -71,6 +125,10 @@ pub(crate) enum Stage {
     AfterApplyClouds,
     BeforeFogVolumeApply,
     AfterFogVolumeApply,
+    FogInput,
+    FogGenDepth,
+    FogGenerated,
+    FogLocalUv,
     PreAtmosphere,
     PostAtmosphere,
     PostResolve,
@@ -90,12 +148,83 @@ pub(crate) enum Stage {
     WaterInputStaticReflection,
     WaterInputRefraction,
     WaterInputRefractionDepth,
+    LakeSampleUv,
+    LakeSampleDepth,
+    LakeSampleColor,
+    LakeSamplePlanar,
+    LakeResponseColor,
+    LakeResponseUv,
+    LakeResponseTint,
+    LakeResponseOutput,
+    ResolveHalfSamples,
+    ResolveShadowTerms,
+    ResolveShadowTap,
+    ResolveFullSamples,
+    ProxyNativeObserved,
+    ProxyEyeApplied,
+    SsrGridNative,
+    SsrGridPhysical,
+    SsrVetoPacked,
+    SsrVetoNative,
+    SsrMarchNative,
+    SsrMarchPacked,
+    SsrPrepDepth,
+    SsrPrepNormal,
+    SsrPrepPlane,
+    SsrPrepScene,
+    SsrHistoryUv,
+    SsrHistorySample,
+    SsrHistorySource,
+    SsrHistoryNative,
+    SsrHistoryPhysical,
+    SsrRayInput,
+    SsrRayNormal,
+    SsrRaySegment,
+    SsrRayWorld,
+    SsrRayMarch,
+    SsrRayMask,
+    SsrRayColor,
+    SsrRayAlpha,
+    SsrBlurColor,
+    SsrBlurAlpha,
+    ResolveWorld,
+    ResolveView,
+    LakeResponseAir,
+    LakeGradientSample,
+    LakeGradientUv,
+    LakeGradientCoarseX,
+    LakeGradientCoarseY,
+    LakeGradientFineX,
+    LakeGradientFineY,
+    #[serde(rename = "lake_wave_samples_7_8")]
+    LakeWaveSamples78,
+    #[serde(rename = "lake_wave_samples_9_10")]
+    LakeWaveSamples910,
+    #[serde(rename = "lake_wave_uv_7_8")]
+    LakeWaveUv78,
+    #[serde(rename = "lake_wave_uv_9_10")]
+    LakeWaveUv910,
+    LakeWaveWeights,
+    LakeWaveCombined,
+    LakeNormalMesh,
+    LakeNormalMixed,
+    LakeDisplacementDepth,
+    LakeDisplacementSurface,
+    LakeLightingBase,
+    LakeLightingMixed,
+    LakeLightingLit,
+    LakeLightingOutput,
     WaterInputWave0,
     WaterInputWave1,
     WaterInputWave2,
     WaterInputWave3,
     WaterInputAmbientOcclusion,
 
+    DofEdgeLocal,
+    AaWeights,
+    DofScene,
+    DofComposite,
+    DofReturned,
     PreAa,
     PostAa,
 }
@@ -105,6 +234,7 @@ impl Stage {
         matches!(
             self,
             Self::MainColor
+                | Self::DofScene
                 | Self::AfterApplyClouds
                 | Self::BeforeFogVolumeApply
                 | Self::AfterFogVolumeApply
@@ -136,7 +266,11 @@ pub(crate) struct StageRecord {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub water_input: Option<WaterInputMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub aa: Option<aa::Observation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sun_input: Option<SunInputMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub velocity: Option<velocity::Evidence>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -155,6 +289,12 @@ pub(crate) struct WaterInputMetadata {
     pub slot: WaterInputSlot,
     pub shader_slot: u32,
     pub treatment_draws: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub projection: Option<lake_projection::LakeProjection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sampler: Option<[i32; 5]>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wave_footprint: Option<water_inputs::WaveFootprint>,
     pub pixel_shader: usize,
     pub shader_identity: crate::stereo::single_pass::shader_identity::IdentityResult,
     pub draw_index: usize,
@@ -200,6 +340,48 @@ pub(crate) struct Scissor {
 pub(crate) struct SplitMean {
     pub left: [f64; 3],
     pub right: [f64; 3],
+}
+
+pub(crate) fn capture_prefix_depth(stage: Stage) {
+    capture(stage, || {
+        let ge =
+            unsafe { GraphicsEngine::get() }.context("early depth: graphics engine unavailable")?;
+        Ok(ge.m_MainDepthTexture)
+    });
+}
+
+pub(crate) fn capture_near_patch(after: bool, tess: bool) {
+    let (depth, albedo) = if tess && after {
+        (Stage::AfterTessPatchDepth, Stage::AfterTessPatchAlbedo)
+    } else if tess {
+        (Stage::BeforeTessPatchDepth, Stage::BeforeTessPatchAlbedo)
+    } else if after {
+        (Stage::AfterNearPatchDepth, Stage::AfterNearPatchAlbedo)
+    } else {
+        (Stage::BeforeNearPatchDepth, Stage::BeforeNearPatchAlbedo)
+    };
+    capture_patch_planes(depth, albedo);
+}
+
+pub(crate) fn capture_patch_submission(after: bool) {
+    if after {
+        capture_patch_planes(Stage::AfterPatchDrawDepth, Stage::AfterPatchDrawAlbedo);
+    } else {
+        capture_patch_planes(Stage::BeforePatchDrawDepth, Stage::BeforePatchDrawAlbedo);
+    }
+}
+
+fn capture_patch_planes(depth: Stage, albedo: Stage) {
+    for stage in [depth, albedo] {
+        capture(stage, || {
+            let ge = unsafe { GraphicsEngine::get() }.context("graphics engine unavailable")?;
+            Ok(if stage == depth {
+                ge.m_MainDepthTexture
+            } else {
+                ge.m_GBufferTexture[0]
+            })
+        });
+    }
 }
 
 pub(crate) fn capture_geometry() {
@@ -408,6 +590,23 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
     state.records.push(record);
 }
 
+pub(crate) fn record_camera_submission(eye: usize, secondary: bool) {
+    if let Some(frame) = crate::vr::capture_views().map(|v| v.predicted_display_time_ns) {
+        let mut state = STATE.lock();
+        if state.frame == Some(frame) {
+            state.records.push(empty_stage_record(
+                frame,
+                eye,
+                if secondary {
+                    Stage::SecondCameraSubmission
+                } else {
+                    Stage::DomainCameraSubmission
+                },
+            ));
+        }
+    }
+}
+
 fn empty_stage_record(frame: i64, eye: usize, stage: Stage) -> StageRecord {
     StageRecord {
         frame,
@@ -422,6 +621,8 @@ fn empty_stage_record(frame: i64, eye: usize, stage: Stage) -> StageRecord {
         raw: None,
         error: None,
         water_input: None,
+        velocity: None,
+        aa: None,
         sun_input: None,
     }
 }
@@ -482,6 +683,14 @@ fn read_stage(
         .m_Texture
         .cast()
         .context("stage texture is not 2D")?;
+    read_texture(ctx, &texture, record)
+}
+
+fn read_texture(
+    ctx: &ID3D11DeviceContext,
+    texture: &ID3D11Texture2D,
+    record: &mut StageRecord,
+) -> anyhow::Result<StageArtifact> {
     let mut desc = D3D11_TEXTURE2D_DESC::default();
     // SAFETY: the texture and context are live under the engine context lock.
     unsafe { texture.GetDesc(&mut desc) };
@@ -504,7 +713,7 @@ fn read_stage(
     // SAFETY: the context is locked, and the copy and mapping use its live device.
     unsafe {
         let staging = create_staging(&device.m_Device, &staging_desc)?;
-        ctx.CopyResource(&staging, &texture);
+        ctx.CopyResource(&staging, texture);
         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
         ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
             .context("mapping stage texture")?;
@@ -559,6 +768,7 @@ pub(super) fn staging_format(format: DXGI_FORMAT) -> DXGI_FORMAT {
 
 pub(super) fn format_byte_width(format: DXGI_FORMAT) -> Option<usize> {
     match format {
+        windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R32G32B32A32_FLOAT => Some(16),
         DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_R16_TYPELESS => Some(2),
         DXGI_FORMAT_R8G8B8A8_TYPELESS
         | DXGI_FORMAT_R8G8B8A8_UNORM
@@ -596,7 +806,10 @@ pub(super) fn stage_image(
     pitch: usize,
     desc: &D3D11_TEXTURE2D_DESC,
 ) -> anyhow::Result<StageArtifact> {
-    if !matches!(stage, Stage::PreAa | Stage::PostAa) {
+    if !matches!(
+        stage,
+        Stage::DofComposite | Stage::DofReturned | Stage::PreAa | Stage::PostAa
+    ) {
         if stage.is_hdr() && desc.Format != DXGI_FORMAT_R11G11B10_FLOAT {
             bail!("unsupported {stage:?} raw format {:?}", desc.Format);
         }

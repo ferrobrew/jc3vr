@@ -41,11 +41,31 @@ fn warmup_counts_only_distinct_completed_frames() {
 }
 
 #[test]
+fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
+    let mut config = Config::new();
+    for mode in [
+        Mode::LeftOnly,
+        Mode::RightOnly,
+        Mode::Multipass,
+        Mode::SinglePass,
+    ] {
+        apply_profile_with_overrides(
+            &mut config,
+            mode,
+            Some(VisualOverrides::ScreenSpaceReflections(
+                ReflectionOverride::Enabled,
+            )),
+        );
+        assert!(!config.stereo.skip_ssr && !config.stereo.disable_sun_shadows);
+        apply_profile_with_overrides(&mut config, mode, None);
+        assert!(config.stereo.skip_ssr);
+    }
+}
+
+#[test]
 fn shadow_override_resets_on_new_profile() {
     let mut config = Config::new();
-    let treatment = Some(VisualOverrides {
-        sun_shadows: SunShadowsOverride::Disabled,
-    });
+    let treatment = Some(VisualOverrides::SunShadows(SunShadowsOverride::Disabled));
     apply_profile_with_overrides(&mut config, Mode::Multipass, treatment);
     assert!(config.stereo.disable_sun_shadows);
     apply_profile_with_overrides(&mut config, Mode::Multipass, None);
@@ -83,9 +103,7 @@ fn shadow_override_loss_fails_running_motion_closed() {
 #[test]
 fn shadow_override_readiness_gates_frames_and_restoration() {
     let mut state = warming(Mode::Multipass, 1);
-    state.visual_overrides = Some(VisualOverrides {
-        sun_shadows: SunShadowsOverride::Disabled,
-    });
+    state.visual_overrides = Some(VisualOverrides::SunShadows(SunShadowsOverride::Disabled));
     state.shadow_sync_required = true;
     let mut observed = observation(&state, 1);
     observed.shadow_override_ready = false;

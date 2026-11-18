@@ -200,6 +200,13 @@ pub(crate) fn dispatch_suppressed() -> bool {
     })
 }
 
+pub(crate) fn masked_eye() -> Option<usize> {
+    PER_EYE
+        .get()
+        .filter(|state| state.masked)
+        .map(|state| state.eye)
+}
+
 /// Remove the D3D override before the engine flushes its staged render states.
 pub(crate) fn before_render_states() {
     if PER_EYE.get().is_some_and(|state| state.masked) {

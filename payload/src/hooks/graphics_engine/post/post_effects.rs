@@ -202,12 +202,14 @@ fn anti_aliasing_apply(
         restore = true;
     }
 
+    let aa_probe = stages::aa::Scope::begin(unsafe { (*this).m_Mode });
     let r = ANTI_ALIASING_APPLY
         .get()
         .unwrap()
         .call(this, ctx, pec, mgr, slot);
     // SAFETY: the AA result updates the same live slot parameter.
     stages::capture_slot(Stage::PostAa, mgr, unsafe { *slot });
+    drop(aa_probe);
     if restore {
         unsafe { (*this).m_Mode = saved_mode };
     }
@@ -281,6 +283,7 @@ fn dof_apply(
     if skip_dof {
         return input;
     }
+    let probe = stages::dof::begin(pec, input);
     let slot = if dof_no_reproject {
         // Bit 0 of the render context's flags is the engine's underwater bit
         // (`m_CameraUnderwater`), which selects the DoF composite's underwater shader family --
@@ -300,6 +303,9 @@ fn dof_apply(
     } else {
         DOF_APPLY.get().unwrap().call(this, ctx, pec, mgr, input)
     };
+    if let Some(probe) = probe {
+        probe.finish(mgr, slot);
+    }
     capture_post_result(crate::ui::render::POST_STAGE_DOF, mgr, slot);
     slot
 }

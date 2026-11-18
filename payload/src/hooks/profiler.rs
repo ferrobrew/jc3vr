@@ -98,8 +98,10 @@ fn change_render_block_type(
             type_scope::replace(scope);
         }
     }
+    crate::screenshot::harness::stages::velocity::type_switch(None);
     CHANGE_RENDER_BLOCK_TYPE
         .get()
         .unwrap()
         .call(this, ctx, prev, next, inout_count);
+    crate::screenshot::harness::stages::velocity::type_switch(Some(next));
 }

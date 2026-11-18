@@ -1,4 +1,5 @@
 mod cascade;
+mod samples;
 use std::{cell::Cell, ffi::c_void};
 
 use anyhow::Context as _;
@@ -81,6 +82,8 @@ enum EyeResult {
 struct Observation {
     #[serde(skip_serializing_if = "Option::is_none")]
     cascade: Option<CascadeTrial>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    camera: Option<CascadeTrial>,
     frame_counters: FrameCounters,
     pixel_shader: ShaderIdentity,
     constant_buffers: Vec<ConstantBuffer>,
@@ -245,7 +248,7 @@ pub(crate) unsafe fn on_draw(
     context: *mut c_void,
     vertex_count: u32,
     start_vertex: u32,
-) -> Option<CascadeGuard> {
+) -> Option<(Option<CascadeGuard>, Option<samples::Guard>)> {
     if vertex_count != 3
         || start_vertex != 0
         || !DEPTH.with(|depth| depth.get() == 1)
@@ -257,12 +260,46 @@ pub(crate) unsafe fn on_draw(
     }
     let metadata = visual::metadata();
     let frame = vr::capture_views()?.predicted_display_time_ns;
-    let eye = draw_index();
+    let eye = if dispatch::mode() == dispatch::RenderMode::SinglePass {
+        crate::hooks::graphics_engine::reconstruction::masked_eye()?
+    } else {
+        draw_index()
+    };
     if !metadata.ready || eye >= 2 || dispatch::mode() == dispatch::RenderMode::Native {
         return None;
     }
     let ctx = unsafe { ID3D11DeviceContext::from_raw_borrowed(&context) }?;
-    let selection = crate::screenshot::harness::cascade_scale(frame);
+    let camera = crate::screenshot::harness::resolve_eye_camera(frame);
+    let selection = if let Some(treated) = camera {
+        let id = diagnostic_capture_id()?;
+        let source =
+            crate::screenshot::harness::patch_draw::resolve_camera_source(frame, eye, &id)?;
+        let (w, h) = crate::stereo::render_size()?;
+        let mut rects = [windows::Win32::Foundation::RECT::default(); 2];
+        let mut n = 2;
+        let mut desc = windows::Win32::Graphics::Direct3D11::D3D11_RASTERIZER_DESC::default();
+        unsafe {
+            ctx.RSGetScissorRects(&mut n, Some(rects.as_mut_ptr()));
+            ctx.RSGetState().ok()?.GetDesc(&mut desc);
+        }
+        if n != 2
+            || !desc.ScissorEnable.as_bool()
+            || !rects.iter().all(|r| {
+                (r.left, r.top, r.right, r.bottom)
+                    == (
+                        (w as i32 / 2) * (eye as i32),
+                        0,
+                        (w as i32 / 2) * (eye as i32 + 1),
+                        h as i32,
+                    )
+            })
+        {
+            return None;
+        }
+        Some(cascade::Change::Camera(source, treated))
+    } else {
+        crate::screenshot::harness::cascade_scale(frame).map(cascade::Change::Cascade)
+    };
     let mut state = STATE.lock();
     if state.frame != Some(frame) || state.generation != metadata.generation {
         *state = State::new();
@@ -276,7 +313,11 @@ pub(crate) unsafe fn on_draw(
             selection.and_then(
                 |selection| match cascade::bind(ctx, &obs, selection, eye, frame) {
                     Ok((g, trial)) => {
-                        obs.cascade = Some(trial);
+                        if camera.is_some() {
+                            obs.camera = Some(trial);
+                        } else {
+                            obs.cascade = Some(trial);
+                        }
                         Some(g)
                     }
                     Err(error) => {
@@ -285,8 +326,17 @@ pub(crate) unsafe fn on_draw(
                     }
                 },
             );
+        let samples = crate::screenshot::harness::resolve_samples_requested(frame)
+            .then(|| samples::Guard::bind(ctx, &obs, frame, eye))
+            .and_then(|r| match r {
+                Ok(guard) => Some(guard),
+                Err(e) => {
+                    tracing::warn!("resolve samples declined: {e:#}");
+                    None
+                }
+            });
         state.observations[eye] = Some(obs);
-        return guard;
+        return Some((guard, samples));
     }
     None
 }
@@ -354,7 +404,7 @@ fn read_content(
     }
 }
 
-fn copy_content(
+pub(super) fn copy_content(
     ctx: &ID3D11DeviceContext,
     buffer: &ID3D11Buffer,
     byte_width: u32,
@@ -506,6 +556,7 @@ fn observe(ctx: &ID3D11DeviceContext) -> Observation {
         .collect();
     Observation {
         cascade: None,
+        camera: None,
         frame_counters,
         pixel_shader,
         constant_buffers,
@@ -541,6 +592,7 @@ mod tests {
         ));
         let observation = Observation {
             cascade: None,
+            camera: None,
             frame_counters: FrameCounters {
                 counter: 0,
                 frame_index: 0,
@@ -568,6 +620,7 @@ mod tests {
             observations: [
                 Some(Observation {
                     cascade: None,
+                    camera: None,
                     frame_counters: FrameCounters {
                         counter: 15,
                         frame_index: 14,
@@ -637,6 +690,7 @@ mod tests {
     fn published_failure_status_does_not_expose_stale_or_ambiguous_observation() {
         let observation = Observation {
             cascade: None,
+            camera: None,
             frame_counters: FrameCounters {
                 counter: 1,
                 frame_index: 0,
@@ -708,6 +762,7 @@ mod tests {
     fn artifact_observation(bytes: Vec<u8>) -> Observation {
         Observation {
             cascade: None,
+            camera: None,
             frame_counters: FrameCounters {
                 counter: 7,
                 frame_index: 6,

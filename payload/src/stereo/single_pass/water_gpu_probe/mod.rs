@@ -69,6 +69,7 @@ impl RawDrawKind {
 pub(crate) unsafe fn raw_entry(kind: RawDrawKind, context: *mut c_void) {
     // SAFETY: per this function's contract, `context` is the live immediate context the draw entry
     // was called on.
+    unsafe { crate::screenshot::harness::stages::observe_producer_draw(context) };
     unsafe { reflection::on_raw_draw(kind, context) };
     unsafe { inputs::on_raw_draw(context) };
     RAW_CAPTURE.with(|state| {

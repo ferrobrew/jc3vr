@@ -174,6 +174,8 @@ fn empty_record(frame: i64, eye: usize, stage: Stage, id: &str) -> StageRecord {
         raw: None,
         error: None,
         water_input: None,
+        velocity: None,
+        aa: None,
         sun_input: Some(SunInputMetadata {
             capture_id: id.to_owned(),
             view: 0,

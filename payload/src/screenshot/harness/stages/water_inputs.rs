@@ -1,12 +1,13 @@
 use anyhow::{Context as _, bail, ensure};
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use windows::{
     Win32::Graphics::{
         Direct3D::D3D_SRV_DIMENSION_TEXTURE2D,
         Direct3D11::{
-            D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SHADER_RESOURCE_VIEW_DESC,
-            D3D11_TEXTURE2D_DESC, ID3D11DeviceContext, ID3D11PixelShader, ID3D11ShaderResourceView,
-            ID3D11Texture2D,
+            D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_SAMPLER_DESC,
+            D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_TEXTURE2D_DESC, ID3D11DeviceContext,
+            ID3D11PixelShader, ID3D11ShaderResourceView, ID3D11Texture2D,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R11G11B10_FLOAT,
@@ -92,6 +93,87 @@ fn requested_slots(surface: bool) -> impl Iterator<Item = WaterInputSlot> {
         .chain(surface.then_some(SURFACE).into_iter().flatten())
 }
 
+#[derive(Clone, Debug, Serialize)]
+pub(crate) struct WaveFootprint {
+    mip_sha256: Vec<String>,
+    max_anisotropy: u32,
+    lod_bits: [u32; 4],
+}
+
+fn wave_footprint(
+    ctx: &ID3D11DeviceContext,
+    view: &ID3D11ShaderResourceView,
+    sampler: &D3D11_SAMPLER_DESC,
+) -> anyhow::Result<WaveFootprint> {
+    let mut vd = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
+    let mut td = D3D11_TEXTURE2D_DESC::default();
+    let resource = unsafe { view.GetResource()? };
+    let texture: ID3D11Texture2D = resource.cast()?;
+    unsafe {
+        view.GetDesc(&mut vd);
+        texture.GetDesc(&mut td);
+    }
+    ensure!(
+        vd.ViewDimension == D3D_SRV_DIMENSION_TEXTURE2D
+            && vd.Format == DXGI_FORMAT_R16G16B16A16_FLOAT
+            && td.Format == vd.Format
+            && td.ArraySize == 1
+            && td.SampleDesc.Count == 1
+            && (td.Width, td.Height, td.MipLevels) == (128, 128, 8)
+            && unsafe {
+                vd.Anonymous.Texture2D.MostDetailedMip == 0 && vd.Anonymous.Texture2D.MipLevels == 8
+            },
+        "lake footprint: unexpected wave texture or view"
+    );
+    let device = unsafe { ctx.GetDevice()? };
+    let mut mip_sha256 = Vec::with_capacity(8);
+    for level in 0..8 {
+        let dim = 128 >> level;
+        let staging = unsafe {
+            create_staging(
+                &device,
+                &D3D11_TEXTURE2D_DESC {
+                    Width: dim,
+                    Height: dim,
+                    MipLevels: 1,
+                    ..td
+                },
+            )
+        }?;
+        let mut m = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            ctx.CopySubresourceRegion(&staging, 0, 0, 0, 0, &texture, level, None);
+            ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut m))?;
+        }
+        let hash = (|| -> anyhow::Result<String> {
+            ensure!(
+                !m.pData.is_null() && m.RowPitch >= dim * 8,
+                "lake footprint: invalid mip mapping"
+            );
+            let mut digest = Sha256::new();
+            for y in 0..dim as usize {
+                digest.update(unsafe {
+                    std::slice::from_raw_parts(
+                        m.pData.cast::<u8>().add(y * m.RowPitch as usize),
+                        dim as usize * 8,
+                    )
+                });
+            }
+            Ok(format!("{:x}", digest.finalize()))
+        })();
+        unsafe { ctx.Unmap(&staging, 0) };
+        mip_sha256.push(hash?);
+    }
+    Ok(WaveFootprint {
+        mip_sha256,
+        max_anisotropy: sampler.MaxAnisotropy,
+        lod_bits: [sampler.MipLODBias, sampler.MinLOD, sampler.MaxLOD, unsafe {
+            ctx.GetResourceMinLOD(&resource)
+        }]
+        .map(f32::to_bits),
+    })
+}
+
 pub(crate) fn capture_water_inputs(
     ctx: &ID3D11DeviceContext,
     eye: usize,
@@ -103,6 +185,11 @@ pub(crate) fn capture_water_inputs(
         return;
     };
     let surface = crate::screenshot::harness::water_surface_inputs_requested();
+    let samplers = surface
+        && tess_index == Some(7)
+        && crate::screenshot::harness::lake_samplers_requested(frame);
+    let waves = samplers && crate::screenshot::harness::lake_waves_requested(frame);
+    let gradients = waves && crate::screenshot::harness::lake_gradients_requested(frame);
     let mut state = STATE.lock();
     if state.frame != Some(frame) {
         state.frame = Some(frame);
@@ -137,12 +224,17 @@ pub(crate) fn capture_water_inputs(
             png: None,
             raw: None,
             error: None,
+            velocity: None,
+            aa: None,
             sun_input: None,
             water_input: Some(WaterInputMetadata {
                 capture_id: capture_id.to_owned(),
                 slot,
                 shader_slot: slot.index(),
                 treatment_draws: 0,
+                projection: None,
+                sampler: None,
+                wave_footprint: None,
                 pixel_shader: shader,
                 shader_identity: identity.clone(),
                 draw_index,
@@ -163,6 +255,65 @@ pub(crate) fn capture_water_inputs(
             .as_ref()
             .context("shader resource view is unbound")
             .and_then(|view| read_water_input(ctx, view, &mut record));
+        let result = result.and_then(|artifact| {
+            let index = match slot {
+                WaterInputSlot::Refraction if samplers => Some(2),
+                WaterInputSlot::RefractionDepth if samplers => Some(0),
+                WaterInputSlot::Wave0
+                | WaterInputSlot::Wave1
+                | WaterInputSlot::Wave2
+                | WaterInputSlot::Wave3
+                    if waves =>
+                {
+                    Some(slot.index())
+                }
+                _ => None,
+            };
+            if let Some(index) = index {
+                let mut sampler = [None];
+                unsafe { ctx.PSGetSamplers(index, Some(&mut sampler)) };
+                let mut desc = D3D11_SAMPLER_DESC::default();
+                unsafe {
+                    sampler[0]
+                        .as_ref()
+                        .context("lake input: missing sampler")?
+                        .GetDesc(&mut desc)
+                };
+                if gradients && matches!(index, 8 | 9) {
+                    record
+                        .water_input
+                        .as_mut()
+                        .context("missing wave input")?
+                        .wave_footprint = Some(wave_footprint(
+                        ctx,
+                        view.as_ref().context("missing wave view")?,
+                        &desc,
+                    )?);
+                }
+                record
+                    .water_input
+                    .as_mut()
+                    .context("missing lake input")?
+                    .sampler = Some([
+                    index as i32,
+                    desc.Filter.0,
+                    desc.AddressU.0,
+                    desc.AddressV.0,
+                    desc.AddressW.0,
+                ]);
+            }
+            if surface && matches!(slot, WaterInputSlot::StaticReflection) {
+                let projection = crate::screenshot::harness::stages::lake_projection::capture(
+                    ctx, capture_id, frame, eye,
+                )?;
+                record
+                    .water_input
+                    .as_mut()
+                    .context("missing lake input")?
+                    .projection = Some(projection);
+            }
+            Ok(artifact)
+        });
         match result {
             Ok(artifact) => {
                 let index = state.records.len();
@@ -246,12 +397,17 @@ fn empty_treatment(frame: i64, eye: usize, id: &str) -> StageRecord {
         png: None,
         raw: None,
         error: None,
+        velocity: None,
+        aa: None,
         sun_input: None,
         water_input: Some(WaterInputMetadata {
             capture_id: id.to_owned(),
             slot: crate::screenshot::harness::stages::WaterInputSlot::ReflectionAlpha,
             shader_slot: 12,
             treatment_draws: 0,
+            projection: None,
+            sampler: None,
+            wave_footprint: None,
             pixel_shader: 0,
             shader_identity: crate::stereo::single_pass::shader_identity::IdentityResult::Unmapped,
             draw_index: 0,
@@ -303,12 +459,17 @@ pub(crate) fn complete_water_inputs(
                 error: Some(
                     "water input capture: no matching draw on the captured frame".to_owned(),
                 ),
+                velocity: None,
+                aa: None,
                 sun_input: None,
                 water_input: Some(WaterInputMetadata {
                     capture_id: id.to_owned(),
                     slot,
                     shader_slot: slot.index(),
                     treatment_draws: 0,
+                    projection: None,
+                    sampler: None,
+                    wave_footprint: None,
                     pixel_shader: 0,
                     shader_identity:
                         crate::stereo::single_pass::shader_identity::IdentityResult::Unmapped,

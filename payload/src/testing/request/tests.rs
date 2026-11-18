@@ -181,9 +181,9 @@ fn visual_overrides_are_typed_and_configure_only() {
             "{base}[visual_overrides]\nsun_shadows = 'disabled'\n"
         )),
         Ok(Request::Visual(visual::Request::Configure {
-            visual_overrides: Some(visual::VisualOverrides {
-                sun_shadows: visual::SunShadowsOverride::Disabled
-            }),
+            visual_overrides: Some(visual::VisualOverrides::SunShadows(
+                visual::SunShadowsOverride::Disabled
+            )),
             ..
         }))
     ));

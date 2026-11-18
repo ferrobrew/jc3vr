@@ -25,7 +25,10 @@
 use detours_macro::detour;
 use jc3gi::graphics_engine::{
     graphics_engine::RenderContext,
-    render_block::{RBIInfo, RenderBlockBark, RenderBlockFoliage, RenderBlockOccluder},
+    render_block::{
+        RBIInfo, RenderBlockBark, RenderBlockFoliage, RenderBlockOccluder,
+        RenderBlockWaterReflectionPlane,
+    },
     render_engine::RenderEngine,
 };
 use re_utilities::hook_library::HookLibrary;
@@ -79,11 +82,23 @@ unsafe fn intercept_render_block(
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&SET_ALL_GLOBAL_SHADER_PROGRAM_CONSTANTS_BINDER)
+        .with_static_binder(&PROXY_DRAW_BINDER)
         .with_static_binder(&RENDER_BLOCK_BARK_DRAW_BINDER)
         .with_static_binder(&RENDER_BLOCK_BARK_DRAW_Z_BINDER)
         .with_static_binder(&RENDER_BLOCK_FOLIAGE_DRAW_BINDER)
         .with_static_binder(&RENDER_BLOCK_FOLIAGE_DRAW_Z_BINDER)
         .with_static_binder(&RENDER_BLOCK_OCCLUDER_DRAW_Z_BINDER)
+}
+
+#[detour(address=jc3gi::graphics_engine::render_block::RenderBlockWaterReflectionPlane::Draw_ADDRESS)]
+fn proxy_draw(
+    this: *const RenderBlockWaterReflectionPlane,
+    rc: *mut RenderContext,
+    info: *const RBIInfo,
+) {
+    crate::screenshot::harness::stages::proxy::scope(this, rc, || {
+        PROXY_DRAW.get().unwrap().call(this, rc, info)
+    });
 }
 
 /// The tree-trunk/branch block bakes its world-view-projection into vertex `cb1` registers 0..3.

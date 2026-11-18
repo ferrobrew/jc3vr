@@ -4,9 +4,9 @@ use windows::{
     Win32::Graphics::{
         Direct3D::D3D_SRV_DIMENSION_TEXTURE2D,
         Direct3D11::{
-            D3D11_BIND_SHADER_RESOURCE, D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SUBRESOURCE_DATA,
-            D3D11_TEXTURE2D_DESC, D3D11_USAGE_IMMUTABLE, ID3D11DeviceContext, ID3D11PixelShader,
-            ID3D11ShaderResourceView, ID3D11Texture2D,
+            D3D11_BIND_SHADER_RESOURCE, D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC,
+            D3D11_SUBRESOURCE_DATA, D3D11_TEXTURE2D_DESC, D3D11_USAGE_IMMUTABLE, D3D11_VIEWPORT,
+            ID3D11DeviceContext, ID3D11PixelShader, ID3D11ShaderResourceView, ID3D11Texture2D,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_R11G11B10_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_SAMPLE_DESC,
@@ -17,8 +17,11 @@ use windows::{
 
 use crate::{
     screenshot::harness::{
-        WaterReflection, diagnostic_capture_id,
-        stages::{capture_water_inputs, record_water_treatment},
+        WaterReflection, diagnostic_capture_id, frame_identity, lake_displacement_requested,
+        lake_ds_mvp, lake_gradients_requested, lake_inner_edge, lake_normals_requested,
+        lake_waves_requested,
+        patch_draw::LakeMvpGuard,
+        stages::{LakeSampleTargets, capture_water_inputs, record_water_treatment},
         water_inputs_requested, water_reflection_requested, water_tess_draw,
     },
     stereo::single_pass::{
@@ -81,8 +84,9 @@ impl Drop for WaterInputCapture {
 const VERIFIED_WATER_PS: &str = "fd508419c18c5fe0c08816017a2a20ed5394aab5fd9d3fe94cce7d67ac0f3dce";
 
 pub(crate) enum ReflectionGuard {
+    Pristine,
     Texture { _guard: TextureGuard },
-    Planar { _guard: LakeShaderGuard },
+    Planar { _guard: Box<LakeShaderGuard> },
 }
 
 pub(crate) struct TextureGuard {
@@ -176,17 +180,43 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
             return None;
         }
     }
+    if treatment == WaterReflection::PristineLake {
+        record_water_treatment(eye, &id, None);
+        return Some(ReflectionGuard::Pristine);
+    }
     if matches!(
         treatment,
-        WaterReflection::CenterPlanar | WaterReflection::PackedRefraction
+        WaterReflection::PlanarUv
+            | WaterReflection::LakeSamples
+            | WaterReflection::LakeLighting
+            | WaterReflection::LakeSky
+            | WaterReflection::LakeSkyBuffer
+            | WaterReflection::LakeResponse
+            | WaterReflection::EyeWidthPlanar
+            | WaterReflection::MirroredPlanar
+            | WaterReflection::ProjectedPlanar
+            | WaterReflection::CenterPlanar
+            | WaterReflection::PackedRefraction
     ) {
-        if !crate::stereo::single_pass::collapse_active()
-            || crate::stereo::single_pass::per_eye_reissue_eye() != Some(eye)
+        let packed = crate::stereo::single_pass::collapse_active();
+        if (!packed
+            && !matches!(
+                treatment,
+                WaterReflection::PlanarUv
+                    | WaterReflection::LakeSamples
+                    | WaterReflection::LakeLighting
+                    | WaterReflection::LakeSky
+                    | WaterReflection::LakeSkyBuffer
+                    | WaterReflection::LakeResponse
+            ))
+            || (packed && crate::stereo::single_pass::per_eye_reissue_eye() != Some(eye))
         {
             return None;
         }
         return match LakeShaderGuard::bind(ctx, eye, shader, &id, treatment) {
-            Ok(guard) => Some(ReflectionGuard::Planar { _guard: guard }),
+            Ok(guard) => Some(ReflectionGuard::Planar {
+                _guard: Box::new(guard),
+            }),
             Err(err) => {
                 record_water_treatment(eye, &id, Some(&format!("lake shader: {err:#}")));
                 None
@@ -196,7 +226,25 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
     let (slot, format) = match treatment {
         WaterReflection::ZeroWeight => (12, DXGI_FORMAT_R32_FLOAT),
         WaterReflection::ZeroPlanar => (2, DXGI_FORMAT_R11G11B10_FLOAT),
-        WaterReflection::CenterPlanar | WaterReflection::PackedRefraction => unreachable!(),
+        WaterReflection::PristineLake
+        | WaterReflection::PlanarUv
+        | WaterReflection::LakeSamples
+        | WaterReflection::LakeLighting
+        | WaterReflection::LakeSky
+        | WaterReflection::LakeSkyBuffer
+        | WaterReflection::LakeResponse
+        | WaterReflection::LakeNearPatch
+        | WaterReflection::LakeTessPatch
+        | WaterReflection::LakePatchDraw
+        | WaterReflection::LakeCameraControl
+        | WaterReflection::LakePatchOwners
+        | WaterReflection::LakeDomainCamera
+        | WaterReflection::LakeHullCamera
+        | WaterReflection::EyeWidthPlanar
+        | WaterReflection::MirroredPlanar
+        | WaterReflection::ProjectedPlanar
+        | WaterReflection::CenterPlanar
+        | WaterReflection::PackedRefraction => unreachable!(),
     };
     let mut original: Option<ID3D11ShaderResourceView> = None;
     unsafe { ctx.PSGetShaderResources(slot, Some(std::slice::from_mut(&mut original))) };
@@ -277,10 +325,66 @@ enum TreatmentIdentity {
 }
 
 pub(crate) struct LakeShaderGuard {
+    mvp: Option<LakeMvpGuard>,
+    sky: Option<SkyViews>,
+    targets: Option<LakeSampleTargets>,
     ctx: ID3D11DeviceContext,
     original: ID3D11PixelShader,
     eye: usize,
     id: String,
+}
+
+fn verify_inner_edge(ctx: &ID3D11DeviceContext, depth: bool) -> anyhow::Result<()> {
+    let mut v = [D3D11_VIEWPORT::default(); 2];
+    let mut count = 2;
+    let mut sampler = [None];
+    let mut view = [None];
+    unsafe {
+        ctx.RSGetViewports(&mut count, Some(v.as_mut_ptr()));
+        ctx.PSGetShaderResources(if depth { 0 } else { 3 }, Some(&mut view));
+        ctx.PSGetSamplers(if depth { 0 } else { 2 }, Some(&mut sampler));
+    }
+    let mut sd = D3D11_SAMPLER_DESC::default();
+    let mut vd = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
+    let mut td = D3D11_TEXTURE2D_DESC::default();
+    let s = sampler[0]
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("lake edge: missing sampler"))?;
+    let view = view[0]
+        .as_ref()
+        .ok_or_else(|| anyhow::anyhow!("lake edge: missing refraction texture"))?;
+    unsafe {
+        s.GetDesc(&mut sd);
+        view.GetDesc(&mut vd);
+        view.GetResource()?
+            .cast::<ID3D11Texture2D>()?
+            .GetDesc(&mut td);
+    }
+    anyhow::ensure!(
+        count == 2
+            && v[0] == v[1]
+            && v[0].TopLeftX == 0.
+            && v[0].TopLeftY == 0.
+            && v[0].Width == 320.
+            && v[0].Height == 360.
+            && sd.Filter.0 == if depth { 0 } else { 20 }
+            && [sd.AddressU.0, sd.AddressV.0, sd.AddressW.0] == [if depth { 3 } else { 2 }; 3]
+            && vd.ViewDimension == D3D_SRV_DIMENSION_TEXTURE2D
+            && vd.Format
+                == if depth {
+                    DXGI_FORMAT_R32_FLOAT
+                } else {
+                    DXGI_FORMAT_R11G11B10_FLOAT
+                }
+            && td.Width == 640
+            && td.Height == 360
+            && td.SampleDesc.Count == 1
+            && unsafe {
+                vd.Anonymous.Texture2D.MostDetailedMip == 0 && vd.Anonymous.Texture2D.MipLevels == 1
+            },
+        "lake edge: unexpected viewport, color view or sampler"
+    );
+    Ok(())
 }
 
 impl LakeShaderGuard {
@@ -293,10 +397,103 @@ impl LakeShaderGuard {
     ) -> anyhow::Result<Self> {
         let blob = shader_identity::lake_bytecode()
             .ok_or_else(|| anyhow::anyhow!("missing lake bytecode"))?;
+        let displacement = treatment == WaterReflection::LakeResponse
+            && frame_identity().is_some_and(lake_displacement_requested);
         let patched = match treatment {
+            WaterReflection::LakeSamples
+            | WaterReflection::LakeLighting
+            | WaterReflection::LakeSky
+            | WaterReflection::LakeSkyBuffer
+            | WaterReflection::LakeResponse => {
+                let source = if crate::stereo::single_pass::collapse_active() {
+                    dxbc_stereo::isolate_lake_reflection(
+                        &dxbc_stereo::scale_lake_refraction(&blob)?,
+                        eye == 1,
+                    )?
+                } else {
+                    blob.clone()
+                };
+                if matches!(
+                    treatment,
+                    WaterReflection::LakeLighting
+                        | WaterReflection::LakeSky
+                        | WaterReflection::LakeSkyBuffer
+                        | WaterReflection::LakeResponse
+                ) {
+                    if treatment == WaterReflection::LakeResponse {
+                        if eye == 0 && frame_identity().and_then(lake_inner_edge) == Some(true) {
+                            verify_inner_edge(ctx, false)?;
+                            dxbc_stereo::trace_lake_inner_edge(&source)?
+                        } else {
+                            dxbc_stereo::trace_lake_response(&source)?
+                        }
+                    } else {
+                        dxbc_stereo::trace_lake_lighting(&source)?
+                    }
+                } else {
+                    dxbc_stereo::trace_lake_samples(&source)?
+                }
+            }
+            WaterReflection::PlanarUv => {
+                let source = if crate::stereo::single_pass::collapse_active() {
+                    dxbc_stereo::reproject_lake_reflection(
+                        &dxbc_stereo::scale_lake_refraction(&blob)?,
+                        eye == 1,
+                    )?
+                } else {
+                    blob.clone()
+                };
+                dxbc_stereo::capture_lake_planar_uv(&source)?
+            }
+            WaterReflection::EyeWidthPlanar => dxbc_stereo::isolate_lake_reflection(
+                &dxbc_stereo::scale_lake_refraction(&blob)?,
+                eye == 1,
+            )?,
+            WaterReflection::MirroredPlanar => dxbc_stereo::mirror_lake_reflection(
+                &dxbc_stereo::scale_lake_refraction(&blob)?,
+                eye == 1,
+            )?,
+            WaterReflection::ProjectedPlanar => dxbc_stereo::reproject_lake_reflection(
+                &dxbc_stereo::scale_lake_refraction(&blob)?,
+                eye == 1,
+            )?,
             WaterReflection::CenterPlanar => dxbc_stereo::offset_lake_reflection(&blob, eye == 1)?,
             WaterReflection::PackedRefraction => dxbc_stereo::scale_lake_refraction(&blob)?,
             _ => anyhow::bail!("lake shader: expected a shader treatment"),
+        };
+        let normals = displacement && frame_identity().is_some_and(lake_normals_requested);
+        let waves = displacement && frame_identity().is_some_and(lake_waves_requested);
+        let gradients = waves && frame_identity().is_some_and(lake_gradients_requested);
+        let patched = if gradients {
+            dxbc_stereo::trace_lake_gradients(&patched)?
+        } else if waves {
+            dxbc_stereo::trace_lake_waves(&patched)?
+        } else if normals {
+            dxbc_stereo::trace_lake_normals(&patched)?
+        } else if displacement {
+            dxbc_stereo::trace_lake_displacement(&patched)?
+        } else {
+            patched
+        };
+        let patched = if eye == 0
+            && let Some(treated) =
+                frame_identity().and_then(crate::screenshot::harness::lake_depth_edge)
+        {
+            verify_inner_edge(ctx, true)?;
+            if treated {
+                let depth = dxbc_stereo::bound_lake_candidate_depth(&patched)?;
+                if frame_identity().and_then(crate::screenshot::harness::lake_color_mirror)
+                    == Some(true)
+                {
+                    dxbc_stereo::mirror_lake_color_overflow(&depth)?
+                } else {
+                    depth
+                }
+            } else {
+                patched
+            }
+        } else {
+            patched
         };
         let _identity = unsafe { shader_identity::begin(blob.as_ptr(), blob.len() as u64) }
             .ok_or_else(|| anyhow::anyhow!("lake shader: census unavailable"))?;
@@ -306,6 +503,60 @@ impl LakeShaderGuard {
                 .CreatePixelShader(&patched, None, Some(&mut shader))?;
         }
         let shader = shader.ok_or_else(|| anyhow::anyhow!("missing offset shader"))?;
+        let targets = matches!(
+            treatment,
+            WaterReflection::LakeSamples
+                | WaterReflection::LakeLighting
+                | WaterReflection::LakeSky
+                | WaterReflection::LakeSkyBuffer
+                | WaterReflection::LakeResponse
+        )
+        .then(|| {
+            LakeSampleTargets::bind(
+                ctx,
+                treatment == WaterReflection::LakeResponse,
+                matches!(
+                    treatment,
+                    WaterReflection::LakeLighting
+                        | WaterReflection::LakeSky
+                        | WaterReflection::LakeSkyBuffer
+                        | WaterReflection::LakeResponse
+                ),
+                displacement,
+                normals,
+                waves,
+                gradients,
+            )
+        })
+        .transpose()?;
+        let mvp = frame_identity()
+            .and_then(lake_ds_mvp)
+            .map(|treated| {
+                anyhow::ensure!(
+                    displacement
+                        && eye < 2
+                        && water_tess_draw() == Some(7)
+                        && crate::stereo::single_pass::collapse_active()
+                        && crate::stereo::single_pass::per_eye_reissue_eye() == Some(eye)
+                        && crate::stereo::single_pass::current_pass_id()
+                            == jc3gi::graphics_engine::render_engine::RenderPassId::RP_WATER as u8,
+                    "lake MVP: submission outside selected draw"
+                );
+                LakeMvpGuard::bind(ctx, eye, treated)
+            })
+            .transpose()?;
+        let mut sky = None;
+        if matches!(
+            treatment,
+            WaterReflection::LakeLighting
+                | WaterReflection::LakeSky
+                | WaterReflection::LakeSkyBuffer
+                | WaterReflection::LakeResponse
+        ) && (treatment != WaterReflection::LakeResponse
+            || crate::stereo::single_pass::collapse_active())
+        {
+            sky = SkyViews::prepare(ctx, eye, id, treatment)?;
+        }
         unsafe { ctx.PSSetShader(&shader, None) };
         let mut bound = None;
         unsafe { ctx.PSGetShader(&mut bound, None, None) };
@@ -318,6 +569,9 @@ impl LakeShaderGuard {
             ctx: ctx.clone(),
             original,
             eye,
+            targets,
+            mvp,
+            sky,
             id: id.to_owned(),
         })
     }
@@ -328,12 +582,207 @@ impl Drop for LakeShaderGuard {
         unsafe { self.ctx.PSSetShader(&self.original, None) };
         let mut bound = None;
         unsafe { self.ctx.PSGetShader(&mut bound, None, None) };
+        if let Some(mvp) = self.mvp.take()
+            && !mvp.restore()
+        {
+            record_water_treatment(
+                self.eye,
+                &self.id,
+                Some("lake MVP: original binding not restored"),
+            );
+        }
+        if let Some(mut sky) = self.sky.take()
+            && !sky.restore()
+        {
+            record_water_treatment(
+                self.eye,
+                &self.id,
+                Some("sky lighting: bindings not restored"),
+            );
+            return;
+        }
+        if let Some(mut targets) = self.targets.take()
+            && let Err(error) = targets.finish(self.eye, &self.id)
+        {
+            record_water_treatment(
+                self.eye,
+                &self.id,
+                Some(&format!("lake samples: {error:#}")),
+            );
+            return;
+        }
         record_water_treatment(
             self.eye,
             &self.id,
             (bound.as_ref() != Some(&self.original))
                 .then_some("lake shader: original shader not restored"),
         );
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct LightBuffer {
+    buffer: Option<windows::Win32::Graphics::Direct3D11::ID3D11Buffer>,
+    first: u32,
+    count: u32,
+}
+impl LightBuffer {
+    fn current(ctx: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext1) -> Self {
+        let mut b = [None];
+        let (mut first, mut count) = (0, 0);
+        unsafe {
+            ctx.PSGetConstantBuffers1(
+                3,
+                1,
+                Some(b.as_mut_ptr()),
+                Some(&mut first),
+                Some(&mut count),
+            )
+        };
+        Self {
+            buffer: b[0].take(),
+            first,
+            count,
+        }
+    }
+    fn bind(&self, ctx: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext1) {
+        if self.buffer.is_some() {
+            unsafe {
+                ctx.PSSetConstantBuffers1(
+                    3,
+                    1,
+                    Some(&self.buffer),
+                    Some(&self.first),
+                    Some(&self.count),
+                )
+            }
+        } else {
+            unsafe { ctx.PSSetConstantBuffers(3, Some(&[None])) }
+        }
+    }
+}
+type SkyTriplet = [Option<ID3D11ShaderResourceView>; 3];
+thread_local! { static SKY_SOURCE: RefCell<Option<(String, i64, SkyTriplet, LightBuffer)>> = const { RefCell::new(None) }; }
+struct SkyViews {
+    ctx: ID3D11DeviceContext,
+    original: SkyTriplet,
+    light: Option<(
+        windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext1,
+        LightBuffer,
+    )>,
+    armed: bool,
+}
+impl SkyViews {
+    fn current(ctx: &ID3D11DeviceContext) -> SkyTriplet {
+        let mut views = [const { None }; 3];
+        unsafe { ctx.PSGetShaderResources(22, Some(&mut views)) };
+        views
+    }
+    fn prepare(
+        ctx: &ID3D11DeviceContext,
+        eye: usize,
+        id: &str,
+        treatment: WaterReflection,
+    ) -> anyhow::Result<Option<Self>> {
+        let ctx1 = ctx.cast::<windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext1>()?;
+        let light = LightBuffer::current(&ctx1);
+        let views = Self::current(ctx);
+        let ptrs = views
+            .each_ref()
+            .map(|v| v.as_ref().map_or(0, |v| v.as_raw() as usize));
+        let frame = crate::screenshot::harness::frame_identity()
+            .ok_or_else(|| anyhow::anyhow!("sky lighting: missing frame"))?;
+        tracing::info!(target:"water_probe", "lake sky id={id} frame={frame} eye={eye} treatment={treatment:?} views={ptrs:?} cb3={light:?}");
+        if !matches!(
+            treatment,
+            WaterReflection::LakeSky
+                | WaterReflection::LakeSkyBuffer
+                | WaterReflection::LakeResponse
+        ) {
+            return Ok(None);
+        }
+        if eye == 0 {
+            SKY_SOURCE.with_borrow_mut(|s| *s = None);
+            for view in &views {
+                let v = view
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("sky lighting: missing source view"))?;
+                let mut desc = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
+                unsafe { v.GetDesc(&mut desc) };
+                anyhow::ensure!(
+                    desc.ViewDimension
+                        == windows::Win32::Graphics::Direct3D::D3D_SRV_DIMENSION_TEXTURE1D,
+                    "sky lighting: unexpected view dimension"
+                );
+            }
+            SKY_SOURCE.with_borrow_mut(|s| *s = Some((id.to_owned(), frame, views, light)));
+            return Ok(None);
+        }
+        let (saved_id, saved_frame, source, source_light) = SKY_SOURCE
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("sky lighting: no matching first draw"))?;
+        anyhow::ensure!(
+            id == saved_id && frame == saved_frame && views.iter().all(Option::is_none),
+            "sky lighting: right inputs not all missing or unmatched frame"
+        );
+        let restore_light = matches!(
+            treatment,
+            WaterReflection::LakeSkyBuffer | WaterReflection::LakeResponse
+        );
+        if restore_light {
+            let buffer = source_light
+                .buffer
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("sky lighting: source CB3 unbound"))?;
+            let mut d = windows::Win32::Graphics::Direct3D11::D3D11_BUFFER_DESC::default();
+            unsafe { buffer.GetDesc(&mut d) };
+            anyhow::ensure!(
+                light.buffer.is_none()
+                    && source_light.count >= 2332
+                    && u64::from(d.ByteWidth) >= 16 * (u64::from(source_light.first) + 2332),
+                "sky lighting: CB3 not missing or source range does not contain saturation"
+            );
+        }
+        let guard = Self {
+            ctx: ctx.clone(),
+            original: views,
+            light: restore_light.then(|| (ctx1.clone(), light)),
+            armed: true,
+        };
+        if restore_light {
+            source_light.bind(&ctx1);
+            anyhow::ensure!(
+                LightBuffer::current(&ctx1) == source_light,
+                "sky lighting: CB3 range not bound"
+            );
+        }
+        unsafe { ctx.PSSetShaderResources(22, Some(&source)) };
+        anyhow::ensure!(
+            Self::current(ctx) == source,
+            "sky lighting: triplet not bound"
+        );
+        Ok(Some(guard))
+    }
+    fn restore(&mut self) -> bool {
+        if self.armed {
+            if let Some((ctx, light)) = &self.light {
+                light.bind(ctx);
+            }
+            unsafe { self.ctx.PSSetShaderResources(22, Some(&self.original)) };
+            self.armed = false;
+        }
+        Self::current(&self.ctx) == self.original
+            && self
+                .light
+                .as_ref()
+                .is_none_or(|(ctx, light)| LightBuffer::current(ctx) == *light)
+    }
+}
+impl Drop for SkyViews {
+    fn drop(&mut self) {
+        if self.armed {
+            self.restore();
+        }
     }
 }
 

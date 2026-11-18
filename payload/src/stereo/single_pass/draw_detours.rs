@@ -7,9 +7,12 @@
 //! lives in a buffer the CPU never sees -- each of which has to be submitted once per eye instead.
 
 use super::*;
-use crate::stereo::single_pass::{
-    water_fragment_state::on_raw_draw,
-    water_gpu_probe::{RawDrawKind, raw_entry, reflection_treatment},
+use crate::{
+    screenshot::harness::stages::velocity,
+    stereo::single_pass::{
+        water_fragment_state::packed_water_context,
+        water_gpu_probe::{RawDrawKind, raw_entry, reflection_treatment},
+    },
 };
 
 /// `ID3D11DeviceContext` vtable slots for the two indexed-draw entry points (verified against
@@ -53,8 +56,11 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
     base_vertex: i32,
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { on_raw_draw(context) };
+    let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };
+    let _lake = water
+        .filter(|_| _reflection.is_none())
+        .and_then(lake_refraction::bind);
     unsafe { raw_entry(RawDrawKind::Indexed, context) };
     let detour = DRAW_INDEXED.get().expect("set before enable");
     if dual_eye_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
@@ -67,7 +73,20 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
             if let Some(instanced) = DRAW_INDEXED_INSTANCED.get() {
                 // Through the trampoline, not the detoured entry: the promotion is the mod's own
                 // draw, so it must not be counted as exposure by [`draw_indexed_instanced_detour`].
-                unsafe { instanced.call(context, index_count, 2, start_index, base_vertex, 0) };
+                velocity::submit(
+                    context,
+                    "indexed_promoted",
+                    [
+                        index_count.into(),
+                        2,
+                        start_index.into(),
+                        base_vertex.into(),
+                        0,
+                    ],
+                    || unsafe {
+                        instanced.call(context, index_count, 2, start_index, base_vertex, 0)
+                    },
+                );
                 return;
             }
         } else {
@@ -80,14 +99,36 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                 // there is no parallax on it -- but it is present, in both eyes, at the right size.
                 for eye in 0..2 {
                     ensure_collapse_viewport(context, CollapseViewport::Eye(eye));
-                    unsafe { detour.call(context, index_count, start_index, base_vertex) };
+                    velocity::submit(
+                        context,
+                        "indexed",
+                        [
+                            index_count.into(),
+                            start_index.into(),
+                            base_vertex.into(),
+                            0,
+                            0,
+                        ],
+                        || unsafe { detour.call(context, index_count, start_index, base_vertex) },
+                    );
                 }
                 ensure_collapse_viewport(context, CollapseViewport::Full);
                 return;
             }
         }
     }
-    unsafe { detour.call(context, index_count, start_index, base_vertex) };
+    velocity::submit(
+        context,
+        "indexed",
+        [
+            index_count.into(),
+            start_index.into(),
+            base_vertex.into(),
+            0,
+            0,
+        ],
+        || unsafe { detour.call(context, index_count, start_index, base_vertex) },
+    );
 }
 
 /// Handle a non-indexed `DrawIndexed` sibling -- `Draw` (vtable slot 13). The fullscreen passes
@@ -101,15 +142,22 @@ pub(super) unsafe extern "system" fn draw_detour(
     start_vertex: u32,
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { on_raw_draw(context) };
+    let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };
+    let _lake = water
+        .filter(|_| _reflection.is_none())
+        .and_then(lake_refraction::bind);
     unsafe { raw_entry(RawDrawKind::NonIndexed, context) };
-    let _cascade = unsafe {
-        crate::screenshot::harness::resolve_probe::on_draw(context, vertex_count, start_vertex)
-    };
     let detour = DRAW.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
-    let submit = || unsafe { detour.call(context, vertex_count, start_vertex) };
+    let submit = || {
+        velocity::submit(
+            context,
+            "draw",
+            [vertex_count.into(), start_vertex.into(), 0, 0, 0],
+            || unsafe { detour.call(context, vertex_count, start_vertex) },
+        )
+    };
 
     if collapse_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
         let pass = current_pass_id();
@@ -124,6 +172,10 @@ pub(super) unsafe extern "system" fn draw_detour(
         }
         ensure_collapse_viewport(context, CollapseViewport::Full);
     }
+    unsafe { crate::screenshot::harness::stages::aa::observe(context, vertex_count, start_vertex) };
+    if unsafe { crate::screenshot::harness::stages::aa::with_color_edge(context, &submit) } {
+        return;
+    }
     if current_pass_id() == RenderPassId::RP_SUN as u8 {
         let _sun_raster = unsafe { super::sun::depth_clip_treatment(context) };
         let _sun_depth = unsafe { super::sun::preserve_far_depth(context) };
@@ -134,7 +186,41 @@ pub(super) unsafe extern "system" fn draw_detour(
         unsafe { super::sun::after_raw_draw(context) };
         return;
     }
+    if current_pass_id() == RenderPassId::RP_REFLECTIVE_WATER_PLANES as u8
+        && vertex_count == 6
+        && start_vertex == 0
+        && unsafe { crate::screenshot::harness::stages::proxy::on_draw(context, &submit) }
+    {
+        return;
+    }
+    if current_pass_id() == RenderPassId::RP_POSTEFFECTS as u8
+        && (vertex_count, start_vertex) == (3, 0)
+        && unsafe { crate::screenshot::harness::stages::dof::on_draw(context, &submit) }
+    {
+        return;
+    }
+    if current_pass_id() == RenderPassId::RP_FOG_VOLUME_GENERATE as u8
+        && (vertex_count, start_vertex) == (3, 0)
+        && unsafe { crate::screenshot::harness::stages::capture_fog_generation(context, &submit) }
+    {
+        return;
+    }
+    if current_pass_id() == RenderPassId::RP_FOG_VOLUME_APPLY as u8
+        && (vertex_count, start_vertex) == (3, 0)
+    {
+        unsafe { crate::screenshot::harness::stages::capture_fog_inputs(context) };
+    }
+    let _cascade = unsafe {
+        crate::screenshot::harness::resolve_probe::on_draw(context, vertex_count, start_vertex)
+    };
+    let ssr = unsafe {
+        crate::screenshot::harness::stages::ssr::before_draw(context, vertex_count, start_vertex)
+    };
     submit();
+    drop(ssr);
+    unsafe {
+        crate::screenshot::harness::stages::ssr::after_draw(context, vertex_count, start_vertex)
+    };
 }
 
 /// Render passes whose non-indexed draws are **geometry**, not a viewport-covering triangle.
@@ -228,16 +314,26 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_indirect_detour(
     aligned_byte_offset: u32,
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { on_raw_draw(context) };
+    let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };
+    let _lake = water
+        .filter(|_| _reflection.is_none())
+        .and_then(lake_refraction::bind);
     unsafe { raw_entry(RawDrawKind::IndexedInstancedIndirect, context) };
     let detour = DRAW_INDEXED_INSTANCED_INDIRECT
         .get()
         .expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
-    let submit = || unsafe { detour.call(context, buffer_for_args, aligned_byte_offset) };
+    let submit = |_| {
+        velocity::submit(
+            context,
+            "indexed_instanced_indirect",
+            [aligned_byte_offset.into(), 0, 0, 0, 0],
+            || unsafe { detour.call(context, buffer_for_args, aligned_byte_offset) },
+        )
+    };
     if !indirect_per_eye(context, &submit) {
-        submit();
+        submit(None);
     }
 }
 
@@ -247,14 +343,43 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
     aligned_byte_offset: u32,
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { on_raw_draw(context) };
+    let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };
+    let _lake = water
+        .filter(|_| _reflection.is_none())
+        .and_then(lake_refraction::bind);
     unsafe { raw_entry(RawDrawKind::InstancedIndirect, context) };
     let detour = DRAW_INSTANCED_INDIRECT.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
-    let submit = || unsafe { detour.call(context, buffer_for_args, aligned_byte_offset) };
+    let trace = crate::screenshot::harness::patch_draw::select();
+    let submit = |expected| unsafe {
+        let guard = trace.and_then(|secondary| {
+            crate::screenshot::harness::patch_draw::observe(
+                context,
+                aligned_byte_offset,
+                expected,
+                secondary,
+            )
+        });
+        velocity::submit_indirect(context, buffer_for_args, aligned_byte_offset, || {
+            detour.call(context, buffer_for_args, aligned_byte_offset)
+        });
+        drop(guard);
+    };
+    let bracket =
+        trace == Some(false) && crate::screenshot::harness::patch_draw::camera_experiment();
+    let owners = crate::screenshot::harness::stages::patch_owners::before(aligned_byte_offset);
+    if bracket {
+        crate::screenshot::harness::stages::capture_patch_submission(false);
+    }
     if !indirect_per_eye(context, &submit) {
-        submit();
+        submit(None);
+    }
+    if owners {
+        crate::screenshot::harness::stages::patch_owners::after(aligned_byte_offset);
+    }
+    if bracket {
+        crate::screenshot::harness::stages::capture_patch_submission(true);
     }
 }
 
@@ -281,7 +406,7 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
 ///
 /// The re-issue does not raise [`PER_EYE_REISSUE`] itself -- it drives no engine code, only the
 /// trampolines, so nothing it calls can re-enter this module's detours.
-pub(super) fn indirect_per_eye(context: *mut c_void, submit: &dyn Fn()) -> bool {
+pub(super) fn indirect_per_eye(context: *mut c_void, submit: &dyn Fn(Option<usize>)) -> bool {
     if !collapse_active() || !in_gbuffer_range() || per_eye_reissue_eye().is_some() {
         return false;
     }
@@ -297,7 +422,7 @@ pub(super) fn indirect_per_eye(context: *mut c_void, submit: &dyn Fn()) -> bool 
     }
     for eye in 0..2 {
         ensure_collapse_viewport(context, CollapseViewport::Eye(eye));
-        submit();
+        submit(Some(eye));
     }
     // Unconditional, as on every other path that pins a viewport: a leaked eye-half would clip the
     // rest of the frame -- including the fullscreen passes -- to half the target.
@@ -331,22 +456,38 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
     start_instance: u32,
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
-    unsafe { on_raw_draw(context) };
+    let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };
+    let _lake = water
+        .filter(|_| _reflection.is_none())
+        .and_then(lake_refraction::bind);
     unsafe { raw_entry(RawDrawKind::IndexedInstanced, context) };
     let detour = DRAW_INDEXED_INSTANCED.get().expect("set before enable");
     let submit = || {
-        // SAFETY: forwards the caller's arguments unchanged to the trampoline.
-        unsafe {
-            detour.call(
-                context,
-                index_count_per_instance,
-                instance_count,
-                start_index,
-                base_vertex,
-                start_instance,
-            );
-        }
+        velocity::submit(
+            context,
+            "indexed_instanced",
+            [
+                index_count_per_instance.into(),
+                instance_count.into(),
+                start_index.into(),
+                base_vertex.into(),
+                start_instance.into(),
+            ],
+            || {
+                // SAFETY: forwards the caller's arguments unchanged to the trampoline.
+                unsafe {
+                    detour.call(
+                        context,
+                        index_count_per_instance,
+                        instance_count,
+                        start_index,
+                        base_vertex,
+                        start_instance,
+                    );
+                }
+            },
+        )
     };
     if active() && per_eye_reissue_eye().is_none() {
         INSTANCED_TOTAL.fetch_add(1, Ordering::Relaxed);

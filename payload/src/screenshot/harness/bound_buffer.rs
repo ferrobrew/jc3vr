@@ -153,7 +153,10 @@ pub(crate) fn read_bound_constant_buffer(
     slot: u32,
     max_rows: u32,
 ) -> Result<Readback> {
-    if max_rows == 0 || max_rows > MAX_READBACK_ROWS {
+    if max_rows == 0
+        || (max_rows > MAX_READBACK_ROWS
+            && !(stage == ShaderStage::Vertex && slot == 3 && max_rows == 640))
+    {
         anyhow::bail!(
             "constant buffer readback: requested row limit is outside 1..={MAX_READBACK_ROWS}"
         );

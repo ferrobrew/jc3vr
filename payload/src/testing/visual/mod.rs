@@ -56,9 +56,16 @@ pub(crate) enum SunShadowsOverride {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct VisualOverrides {
-    pub sun_shadows: SunShadowsOverride,
+#[serde(deny_unknown_fields, rename_all = "snake_case")]
+pub(crate) enum VisualOverrides {
+    SunShadows(SunShadowsOverride),
+    ScreenSpaceReflections(ReflectionOverride),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReflectionOverride {
+    Enabled,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -323,7 +330,8 @@ pub(crate) fn process_pending() {
                 apply_profile_with_overrides(&mut config, mode, visual_overrides);
             }
             state.shadow_sync_required |=
-                visual_overrides.is_some() || crate::hooks::game::sun_shadow_override_active();
+                matches!(visual_overrides, Some(VisualOverrides::SunShadows(_)))
+                    || crate::hooks::game::sun_shadow_override_active();
             state.visual_overrides = visual_overrides;
             CLOCK_HELD.store(true, Ordering::Release);
             unsafe {
@@ -425,7 +433,10 @@ pub(crate) fn frame_complete() {
                 && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
             shadow_override_ready: !state.shadow_sync_required
-                || shadow_override_ready(state.visual_overrides.is_some()),
+                || shadow_override_ready(matches!(
+                    state.visual_overrides,
+                    Some(VisualOverrides::SunShadows(_))
+                )),
             frame_identity,
             generation: state.generation,
             pose: None,
@@ -455,7 +466,10 @@ pub(crate) fn frame_complete() {
                 && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
             shadow_override_ready: !state.shadow_sync_required
-                || shadow_override_ready(state.visual_overrides.is_some()),
+                || shadow_override_ready(matches!(
+                    state.visual_overrides,
+                    Some(VisualOverrides::SunShadows(_))
+                )),
             frame_identity,
             generation: state.generation,
             pose,
@@ -1091,13 +1105,14 @@ fn apply_profile_with_overrides(
     overrides: Option<VisualOverrides>,
 ) {
     apply_profile(config, mode);
-    if matches!(
-        overrides,
-        Some(VisualOverrides {
-            sun_shadows: SunShadowsOverride::Disabled
-        })
-    ) {
-        config.stereo.disable_sun_shadows = true;
+    match overrides {
+        Some(VisualOverrides::SunShadows(SunShadowsOverride::Disabled)) => {
+            config.stereo.disable_sun_shadows = true
+        }
+        Some(VisualOverrides::ScreenSpaceReflections(ReflectionOverride::Enabled)) => {
+            config.stereo.skip_ssr = false
+        }
+        None => {}
     }
 }
 

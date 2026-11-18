@@ -131,7 +131,11 @@ fn ssr_draw(
     info: *const RBIInfo,
 ) {
     let enabled = Config::lock_query(|c| c.stereo.single_pass.ssr_per_eye);
-    let call = || SSR_DRAW.get().unwrap().call(this, rc, info);
+    let call = || {
+        crate::screenshot::harness::stages::ssr::scope(|| {
+            SSR_DRAW.get().unwrap().call(this, rc, info)
+        })
+    };
     split_or_issue_with(
         reconstruction::DispatchPhase::LastRun,
         enabled,

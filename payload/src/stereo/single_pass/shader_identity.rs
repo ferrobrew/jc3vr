@@ -33,6 +33,14 @@ static REGISTRY: LazyLock<Mutex<Registry>> = LazyLock::new(|| {
         generation: 0,
         shaders: HashMap::new(),
         lake: None,
+        resolve: None,
+        aa: None,
+        dof: None,
+        fog: None,
+        impostor: None,
+        color_bark: None,
+        bark: None,
+        ssr: None,
         overflow: 0,
         invalid: 0,
         install_error: false,
@@ -72,6 +80,14 @@ struct Registry {
     generation: u64,
     shaders: HashMap<usize, Identity>,
     lake: Option<Vec<u8>>,
+    resolve: Option<Vec<u8>>,
+    aa: Option<Vec<u8>>,
+    dof: Option<Vec<u8>>,
+    fog: Option<Vec<u8>>,
+    impostor: Option<Vec<u8>>,
+    color_bark: Option<Vec<u8>>,
+    bark: Option<Vec<u8>>,
+    ssr: Option<Vec<u8>>,
     overflow: usize,
     invalid: usize,
     install_error: bool,
@@ -83,6 +99,14 @@ impl Registry {
         self.overflow = 0;
         self.invalid = 0;
         self.lake = None;
+        self.resolve = None;
+        self.aa = None;
+        self.dof = None;
+        self.fog = None;
+        self.impostor = None;
+        self.color_bark = None;
+        self.bark = None;
+        self.ssr = None;
         self.install_error = false;
         std::mem::take(&mut self.shaders)
     }
@@ -137,6 +161,10 @@ struct Pending {
     generation: u64,
     pristine: [u8; 32],
     hits: usize,
+}
+
+pub(crate) fn requested() -> bool {
+    ARMED.load(Ordering::Acquire)
 }
 
 pub(crate) fn status() -> CensusStatus {
@@ -335,10 +363,105 @@ pub(super) unsafe extern "system" fn create_pixel_shader_detour(
             state.lake =
                 Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
         }
+        if identity.actual_sha256 == AA_PS && identity.pristine_sha256 == AA_PS && length == 2296 {
+            state.aa =
+                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        }
+        if identity.actual_sha256 == DOF_PS && identity.pristine_sha256 == DOF_PS && length == 2944
+        {
+            state.dof =
+                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        }
+        if identity.actual_sha256 == FOG_PS && identity.pristine_sha256 == FOG_PS && length == 10364
+        {
+            state.fog =
+                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        }
+        if identity.actual_sha256 == IMPOSTOR_PS
+            && identity.pristine_sha256 == IMPOSTOR_PS
+            && length == 5628
+        {
+            state.impostor =
+                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        }
+        if identity.actual_sha256 == BARK_COLOR_PS
+            && identity.pristine_sha256 == BARK_COLOR_PS
+            && length == 6020
+        {
+            state.color_bark =
+                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        }
+        if identity.actual_sha256 == BARK_PS
+            && identity.pristine_sha256 == BARK_PS
+            && length == 1204
+        {
+            state.bark =
+                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        }
+        if identity.actual_sha256 == SSR_RAY
+            && identity.pristine_sha256 == SSR_RAY
+            && length == 8036
+        {
+            state.ssr =
+                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        }
+        if identity.pristine_sha256 == RESOLVE_PRISTINE
+            && identity.actual_sha256 == RESOLVE_ACTUAL
+            && length == 35028
+        {
+            state.resolve =
+                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        }
         unsafe { com_add_ref(shader) };
         state.shaders.insert(key, identity);
     });
     result
+}
+
+pub(crate) const AA_PS: &str = "a4078e6bf737300492eaf5c154ac6b232a537d022396d8c0892635063f17d765";
+pub(crate) fn aa_bytecode() -> Option<Vec<u8>> {
+    REGISTRY.lock().aa.clone()
+}
+
+pub(crate) const DOF_PS: &str = "72acf8f41c94e5b9733f6c25643a3c91c21b51abd607c98b6cecaf034577a64f";
+pub(crate) fn dof_bytecode() -> Option<Vec<u8>> {
+    REGISTRY.lock().dof.clone()
+}
+
+pub(crate) const FOG_PS: &str = "a10dbcd176ceeaa9b289a3c6ae0ea5935e75d0685e22fabc9aaa0b7042a6db4e";
+pub(crate) fn fog_bytecode() -> Option<Vec<u8>> {
+    REGISTRY.lock().fog.clone()
+}
+
+pub(crate) const IMPOSTOR_PS: &str =
+    "2c157723bbe071f6ad1c67e2279281dfcb997bc5ae10eceb5704dafbf6597b2d";
+pub(crate) fn impostor_bytecode() -> Option<Vec<u8>> {
+    REGISTRY.lock().impostor.clone()
+}
+
+pub(crate) const BARK_COLOR_PS: &str =
+    "409571499dedebe97d1dba4e7ad782e5f2a91494d0e157c849e6ef66324e3b0d";
+pub(crate) const BARK_PS: &str = "7109e8678eee33b96df29f0bf195a7be083a0aafb93f41abdf91739a8bb67ad3";
+pub(crate) fn bark_bytecode(color: bool) -> Option<Vec<u8>> {
+    let r = REGISTRY.lock();
+    if color {
+        r.color_bark.clone()
+    } else {
+        r.bark.clone()
+    }
+}
+
+pub(crate) const SSR_RAY: &str = "94981ae62a33b4bb214f62501f088a365774700d655534783f1d1aed076127e4";
+pub(crate) fn ssr_bytecode() -> Option<Vec<u8>> {
+    REGISTRY.lock().ssr.clone()
+}
+
+pub(crate) const RESOLVE_PRISTINE: &str =
+    "06f43db0887b0038147e273a3879a9b7f48c3b630955a94d695898fd7d0e52fc";
+pub(crate) const RESOLVE_ACTUAL: &str =
+    "6a82533e6458166ea3d04789c266ec127baf59931882955c99c4603e47f11c9b";
+pub(crate) fn resolve_bytecode() -> Option<Vec<u8>> {
+    REGISTRY.lock().resolve.clone()
 }
 
 pub(crate) const LAKE_PS: &str = "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531";
@@ -372,6 +495,14 @@ mod tests {
             generation: 7,
             shaders: HashMap::new(),
             lake: None,
+            resolve: None,
+            aa: None,
+            dof: None,
+            fog: None,
+            impostor: None,
+            color_bark: None,
+            bark: None,
+            ssr: None,
             overflow: 1,
             invalid: 2,
             install_error: true,
@@ -401,6 +532,14 @@ mod tests {
             generation: 4,
             shaders: HashMap::new(),
             lake: None,
+            resolve: None,
+            aa: None,
+            dof: None,
+            fog: None,
+            impostor: None,
+            color_bark: None,
+            bark: None,
+            ssr: None,
             overflow: 0,
             invalid: 0,
             install_error: false,
@@ -421,6 +560,14 @@ mod tests {
             generation: 7,
             shaders: HashMap::new(),
             lake: None,
+            resolve: None,
+            aa: None,
+            dof: None,
+            fog: None,
+            impostor: None,
+            color_bark: None,
+            bark: None,
+            ssr: None,
             overflow: 0,
             invalid: 0,
             install_error: false,
