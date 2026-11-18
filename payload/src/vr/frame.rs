@@ -82,6 +82,10 @@ static CULL_PROJECTION: Mutex<Option<Matrix4>> = Mutex::new(None);
 /// [`shadow_fit_projection_standard`]). `None` when no VR frame is rendering.
 static SHADOW_FIT_PROJECTION: Mutex<Option<Matrix4>> = Mutex::new(None);
 
+/// The field of view the sun-shadow cascade fit is currently held at (see [`hold_fit_fov`]). Kept
+/// across frames that render no VR frame, so a skipped frame does not release the hold.
+static SHADOW_FIT_FOV: Mutex<Option<Fov>> = Mutex::new(None);
+
 /// The located views of the frame in flight, as the recorder's sidecar wants them: the raw eye
 /// poses in LOCAL space, the eye fields of view, and the predicted display time. Published next to
 /// [`RENDER_PARAMS`] so the render thread can read them at the eye-capture point without the
@@ -382,8 +386,14 @@ fn render_frame(
         up: exact(eye0.fov.angle_up.tan().max(eye1.fov.angle_up.tan())),
         down: exact(eye0.fov.angle_down.tan().min(eye1.fov.angle_down.tan())),
     };
+    let fit_fov = {
+        let mut held = SHADOW_FIT_FOV.lock();
+        let fit = hold_fit_fov(*held, exact_fov);
+        *held = Some(fit);
+        fit
+    };
     *SHADOW_FIT_PROJECTION.lock() =
-        Some(OffAxisProjection::new(exact_fov, near_clip, far_clip).standard_depth);
+        Some(OffAxisProjection::new(fit_fov, near_clip, far_clip).standard_depth);
 
     // Flicker-isolation diagnostics (issue #31), read once for the frame. `symmetrize` swaps each eye's
     // asymmetric off-axis frustum for a zero-shear symmetric one of the same extent (Test A); `mirror`
@@ -490,9 +500,65 @@ fn symmetric_projection(fov: openxr::Fovf, near: f32, far: f32) -> OffAxisProjec
     )
 }
 
+/// The relative change in any side's tangent that releases [`hold_fit_fov`]'s hold. Far above the
+/// float noise of a tracked eye separation, and far below the step of an IPD adjustment.
+const FIT_FOV_HOLD_TOLERANCE: f32 = 1e-3;
+
+/// The field of view to fit the sun-shadow cascades to this frame: `held` while `fresh` stays
+/// within [`FIT_FOV_HOLD_TOLERANCE`] of it on every side, and `fresh` otherwise.
+///
+/// The engine rounds each cascade's bounding-sphere radius up to a whole unit, and the fit's
+/// lateral margin is the tracked eye separation divided by the near plane, so the float noise of
+/// the located eye poses is amplified into the fitted frustum. A cascade whose radius sits on a
+/// whole-unit boundary would otherwise flip its size, and with it its texel scale, on that noise.
+fn hold_fit_fov(held: Option<Fov>, fresh: Fov) -> Fov {
+    let within = |held: f32, fresh: f32| {
+        (fresh.tan() - held.tan()).abs() <= FIT_FOV_HOLD_TOLERANCE * held.tan().abs()
+    };
+    match held {
+        Some(held)
+            if within(held.left, fresh.left)
+                && within(held.right, fresh.right)
+                && within(held.up, fresh.up)
+                && within(held.down, fresh.down) =>
+        {
+            held
+        }
+        _ => fresh,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn fov(scale: f32) -> Fov {
+        Fov {
+            left: (-2.5 * scale).atan(),
+            right: (2.5 * scale).atan(),
+            up: (2.4 * scale).atan(),
+            down: (-2.4 * scale).atan(),
+        }
+    }
+
+    #[test]
+    fn fit_fov_hold_ignores_tracking_noise() {
+        let held = fov(1.0);
+        assert_eq!(hold_fit_fov(Some(held), fov(1.0 + 1e-5)), held);
+        assert_eq!(hold_fit_fov(Some(held), fov(1.0 - 1e-5)), held);
+    }
+
+    #[test]
+    fn fit_fov_hold_releases_on_a_real_change() {
+        let held = fov(1.0);
+        assert_eq!(hold_fit_fov(Some(held), fov(1.01)), fov(1.01));
+        assert_eq!(hold_fit_fov(None, held), held);
+        let one_side = Fov {
+            up: 2.5f32.atan(),
+            ..held
+        };
+        assert_eq!(hold_fit_fov(Some(held), one_side), one_side);
+    }
 
     #[test]
     fn final_center_transports_authored_rotation_and_interpolation_without_doubling_hmd_roll() {
