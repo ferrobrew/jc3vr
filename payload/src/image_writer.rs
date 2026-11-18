@@ -376,6 +376,7 @@ fn stage_name(stage: Stage) -> &'static str {
         Stage::WaterDepthAfterRight => "water_depth_after_right",
         Stage::WaterReflectionTreatment => "water_reflection_treatment",
         Stage::WaterInputReflection => "water_input_t1",
+        Stage::WaterInputStaticReflection => "water_input_t2",
         Stage::WaterInputReflectionAlpha => "water_input_t12",
         Stage::WaterInputRefraction => "water_input_t3",
         Stage::PreAa => "pre_aa",

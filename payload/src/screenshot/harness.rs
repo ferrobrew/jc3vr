@@ -65,6 +65,7 @@ pub(crate) enum SunDepthClip {
 pub(crate) struct CaptureRequest {
     pub water_reflection: Option<WaterReflection>,
     pub water_inputs: bool,
+    pub water_tess_draw: Option<u8>,
     pub sun_inputs: bool,
     pub resolve_inputs: bool,
     pub sun_depth_clip: Option<SunDepthClip>,
@@ -138,6 +139,7 @@ fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: Capture
     if was_idle && let Some(active) = state.active.as_mut() {
         active.water_reflection = options.water_reflection;
         active.water_inputs = options.water_inputs;
+        active.water_tess_draw = options.water_tess_draw;
         active.sun_inputs = options.sun_inputs;
         active.resolve_inputs = options.resolve_inputs;
         active.sun_depth_clip = options.sun_depth_clip;
@@ -239,6 +241,7 @@ fn admit(
         target_phase,
         water_reflection: None,
         water_inputs: false,
+        water_tess_draw: None,
         sun_inputs: false,
         resolve_inputs: false,
         sun_depth_clip: None,
@@ -282,6 +285,10 @@ pub(crate) fn water_reflection_zero_weight_requested() -> bool {
         active.water_reflection == Some(WaterReflection::ZeroWeight)
             && matches!(active.phase, Phase::Pending)
     })
+}
+
+pub(crate) fn water_tess_draw() -> Option<u8> {
+    STATE.lock().active.as_ref()?.water_tess_draw
 }
 
 pub(crate) fn water_inputs_requested() -> bool {
@@ -616,6 +623,7 @@ struct Active {
     target_phase: Option<u32>,
     water_reflection: Option<WaterReflection>,
     water_inputs: bool,
+    water_tess_draw: Option<u8>,
     sun_inputs: bool,
     resolve_inputs: bool,
     sun_depth_clip: Option<SunDepthClip>,
@@ -925,6 +933,7 @@ mod tests {
                     target_phase: None,
                     water_reflection: None,
                     water_inputs: false,
+                    water_tess_draw: None,
                     sun_inputs: false,
                     resolve_inputs: false,
                     sun_depth_clip: None,

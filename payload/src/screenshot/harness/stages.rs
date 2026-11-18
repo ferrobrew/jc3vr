@@ -81,6 +81,7 @@ pub(crate) enum Stage {
     WaterReflectionTreatment,
     WaterInputReflection,
     WaterInputReflectionAlpha,
+    WaterInputStaticReflection,
     WaterInputRefraction,
     PreAa,
     PostAa,
@@ -142,6 +143,7 @@ pub(crate) struct WaterInputMetadata {
     pub shader_identity: crate::stereo::single_pass::shader_identity::IdentityResult,
     pub draw_index: usize,
     pub tessellated: bool,
+    pub tess_index: Option<usize>,
     pub view_format: Option<i32>,
     pub view_dimension: Option<i32>,
     pub most_detailed_mip: Option<u32>,
@@ -155,12 +157,14 @@ pub(crate) struct WaterInputMetadata {
 pub(crate) enum WaterInputSlot {
     Reflection,
     ReflectionAlpha,
+    StaticReflection,
     Refraction,
 }
 
 impl WaterInputSlot {
     pub(super) fn stage(self) -> Stage {
         match self {
+            Self::StaticReflection => Stage::WaterInputStaticReflection,
             Self::Reflection => Stage::WaterInputReflection,
             Self::ReflectionAlpha => Stage::WaterInputReflectionAlpha,
             Self::Refraction => Stage::WaterInputRefraction,
@@ -170,15 +174,17 @@ impl WaterInputSlot {
     pub(super) fn index(self) -> u32 {
         match self {
             Self::Reflection => 1,
+            Self::StaticReflection => 2,
             Self::ReflectionAlpha => 12,
             Self::Refraction => 3,
         }
     }
 }
 
-pub(super) const WATER_INPUT_SLOTS: [WaterInputSlot; 3] = [
+pub(super) const WATER_INPUT_SLOTS: [WaterInputSlot; 4] = [
     WaterInputSlot::Reflection,
     WaterInputSlot::ReflectionAlpha,
+    WaterInputSlot::StaticReflection,
     WaterInputSlot::Refraction,
 ];
 

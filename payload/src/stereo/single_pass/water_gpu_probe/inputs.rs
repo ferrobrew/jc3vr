@@ -17,7 +17,7 @@ use crate::{
     screenshot::harness::{
         diagnostic_capture_id,
         stages::{capture_water_inputs, record_water_treatment},
-        water_inputs_requested, water_reflection_zero_weight_requested,
+        water_inputs_requested, water_reflection_zero_weight_requested, water_tess_draw,
     },
     stereo::single_pass::{
         shader_identity::{self, IdentityResult},
@@ -32,6 +32,8 @@ thread_local! {
 struct DrawState {
     eye: usize,
     draws: usize,
+    tess_draws: usize,
+    selected: Option<u8>,
     zero: Option<ID3D11ShaderResourceView>,
 }
 
@@ -50,6 +52,8 @@ pub(crate) fn begin_water_input_capture(eye: usize) -> WaterInputCapture {
                 *active = Some(DrawState {
                     eye,
                     draws: 0,
+                    tess_draws: 0,
+                    selected: water_tess_draw(),
                     zero: None,
                 });
                 true
@@ -109,7 +113,11 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
     if !water_reflection_zero_weight_requested() {
         return None;
     }
-    let eye = ACTIVE.with(|active| active.borrow().as_ref().map(|state| state.eye))?;
+    let (eye, selected, tess_draws) = ACTIVE.with_borrow(|active| {
+        active
+            .as_ref()
+            .map(|state| (state.eye, state.selected, state.tess_draws))
+    })?;
     let id = diagnostic_capture_id()?;
     let Some(ctx) = (unsafe { ID3D11DeviceContext::from_raw_borrowed(&context) }) else {
         record_water_treatment(
@@ -120,7 +128,11 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
         return None;
     };
     let bound = unsafe { work::bound_state(ctx) };
-    if !bound.dsv_bound {
+    if !bound.dsv_bound
+        || selected.is_some_and(|index| {
+            bound.scene != work::SceneKind::Tess || usize::from(index) != tess_draws
+        })
+    {
         return None;
     }
     let mut shader: Option<ID3D11PixelShader> = None;
@@ -133,7 +145,12 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
         );
         return None;
     };
-    match treatment_identity(shader_identity::lookup(&shader)) {
+    let target = if selected.is_some() {
+        LAKE_PS
+    } else {
+        VERIFIED_WATER_PS
+    };
+    match treatment_identity(shader_identity::lookup(&shader), target) {
         TreatmentIdentity::Target => {}
         TreatmentIdentity::Unrelated => return None,
         TreatmentIdentity::Changed => {
@@ -226,12 +243,14 @@ enum TreatmentIdentity {
     Unknown,
 }
 
-fn treatment_identity(identity: IdentityResult) -> TreatmentIdentity {
+const LAKE_PS: &str = "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531";
+
+fn treatment_identity(identity: IdentityResult, target: &str) -> TreatmentIdentity {
     match identity {
-        IdentityResult::Mapped { identity } if identity.pristine_sha256 != VERIFIED_WATER_PS => {
+        IdentityResult::Mapped { identity } if identity.pristine_sha256 != target => {
             TreatmentIdentity::Unrelated
         }
-        IdentityResult::Mapped { identity } if identity.actual_sha256 == VERIFIED_WATER_PS => {
+        IdentityResult::Mapped { identity } if identity.actual_sha256 == target => {
             TreatmentIdentity::Target
         }
         IdentityResult::Mapped { .. } => TreatmentIdentity::Changed,
@@ -293,7 +312,21 @@ pub(super) unsafe fn on_raw_draw(context: *mut c_void) {
     let Some(id) = diagnostic_capture_id() else {
         return;
     };
-    capture_water_inputs(ctx, eye, &id, index, bound.scene == work::SceneKind::Tess);
+    let tess_index = ACTIVE.with_borrow_mut(|active| {
+        let state = active.as_mut()?;
+        let tess_index = (bound.scene == work::SceneKind::Tess).then(|| {
+            let n = state.tess_draws;
+            state.tess_draws += 1;
+            n
+        });
+        (!state
+            .selected
+            .is_some_and(|n| Some(usize::from(n)) != tess_index))
+        .then_some(tess_index)
+    });
+    if let Some(tess_index) = tess_index {
+        capture_water_inputs(ctx, eye, &id, index, tess_index);
+    }
 }
 
 #[cfg(test)]
@@ -313,19 +346,22 @@ mod tests {
     #[test]
     fn treatment_targets_only_the_verified_unmodified_shader() {
         assert_eq!(
-            treatment_identity(mapped(VERIFIED_WATER_PS, VERIFIED_WATER_PS)),
+            treatment_identity(
+                mapped(VERIFIED_WATER_PS, VERIFIED_WATER_PS),
+                VERIFIED_WATER_PS
+            ),
             TreatmentIdentity::Target
         );
         assert_eq!(
-            treatment_identity(mapped("unrelated", "unrelated")),
+            treatment_identity(mapped("unrelated", "unrelated"), VERIFIED_WATER_PS),
             TreatmentIdentity::Unrelated
         );
         assert_eq!(
-            treatment_identity(mapped("unrelated", VERIFIED_WATER_PS)),
+            treatment_identity(mapped("unrelated", VERIFIED_WATER_PS), VERIFIED_WATER_PS),
             TreatmentIdentity::Unrelated
         );
         assert_eq!(
-            treatment_identity(mapped(VERIFIED_WATER_PS, "modified")),
+            treatment_identity(mapped(VERIFIED_WATER_PS, "modified"), VERIFIED_WATER_PS),
             TreatmentIdentity::Changed
         );
         for identity in [
@@ -334,7 +370,10 @@ mod tests {
             IdentityResult::Incomplete,
             IdentityResult::InstallFailed,
         ] {
-            assert_eq!(treatment_identity(identity), TreatmentIdentity::Unknown);
+            assert_eq!(
+                treatment_identity(identity, VERIFIED_WATER_PS),
+                TreatmentIdentity::Unknown
+            );
         }
     }
 }

@@ -28,7 +28,7 @@ pub(crate) fn capture_water_inputs(
     eye: usize,
     capture_id: &str,
     draw_index: usize,
-    tessellated: bool,
+    tess_index: Option<usize>,
 ) {
     let Some(frame) = crate::vr::capture_views().map(|v| v.predicted_display_time_ns) else {
         return;
@@ -76,7 +76,8 @@ pub(crate) fn capture_water_inputs(
                 pixel_shader: shader,
                 shader_identity: identity.clone(),
                 draw_index,
-                tessellated,
+                tessellated: tess_index.is_some(),
+                tess_index,
                 view_format: None,
                 view_dimension: None,
                 most_detailed_mip: None,
@@ -185,6 +186,7 @@ fn empty_treatment(frame: i64, eye: usize, id: &str) -> StageRecord {
             shader_identity: crate::stereo::single_pass::shader_identity::IdentityResult::Unmapped,
             draw_index: 0,
             tessellated: false,
+            tess_index: None,
             view_format: None,
             view_dimension: None,
             most_detailed_mip: None,
@@ -241,6 +243,7 @@ pub(crate) fn complete_water_inputs(
                         crate::stereo::single_pass::shader_identity::IdentityResult::Unmapped,
                     draw_index: 0,
                     tessellated: false,
+                    tess_index: None,
                     view_format: None,
                     view_dimension: None,
                     most_detailed_mip: None,
@@ -373,16 +376,16 @@ mod tests {
     fn missing_requested_eyes_are_explicit_and_deduplicated() {
         let mut records = Vec::new();
         complete_water_inputs(&mut records, 42, "capture", [true, false]);
-        assert_eq!(records.len(), 3);
+        assert_eq!(records.len(), WATER_INPUT_SLOTS.len());
         assert!(
             records
                 .iter()
                 .all(|record| record.eye == 0 && record.error.is_some())
         );
         complete_water_inputs(&mut records, 42, "capture", [true, false]);
-        assert_eq!(records.len(), 3);
+        assert_eq!(records.len(), WATER_INPUT_SLOTS.len());
         complete_water_inputs(&mut records, 42, "capture", [true, true]);
-        assert_eq!(records.len(), 6);
+        assert_eq!(records.len(), 2 * WATER_INPUT_SLOTS.len());
         assert!(
             records
                 .iter()

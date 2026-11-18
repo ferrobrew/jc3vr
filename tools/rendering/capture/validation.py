@@ -31,7 +31,7 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
                      generation: int | None = None, motion_capture: PhaseCapture | None = None,
                      water_inputs: bool = False, sun_inputs: bool = False,
                      shader_identity: bool = False, resolve_inputs: bool = False,
-                     sun_depth_clip=None, water_reflection=None) -> NativeCapture | Capture:
+                     sun_depth_clip=None, water_reflection=None, water_tess_draw: int | None = None) -> NativeCapture | Capture:
     metadata = read_object(folder / f"{capture_id}.capture.json")
     if motion_capture is not None and mode is None:
         raise ProtocolError("visual protocol: motion capture requires a diagnostic mode")
@@ -59,7 +59,7 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
         if resolve_inputs:
             validate_resolve_inputs(folder, capture_id, metadata, mode, shader_identity)
         if water_inputs:
-            validate_water_inputs(folder, capture_id, metadata, mode, shader_identity)
+            validate_water_inputs(folder, capture_id, metadata, mode, shader_identity, water_tess_draw)
         if sun_inputs:
             validate_sun_inputs(folder, capture_id, metadata, mode)
         return result
@@ -195,10 +195,12 @@ def valid_mapped_identity(identity) -> bool:
 
 
 def validate_water_inputs(folder: Path, capture_id: str, metadata: dict, mode: Mode,
-                          shader_identity: bool = False) -> None:
+                          shader_identity: bool = False, water_tess_draw: int | None = None) -> None:
     slots = {"water_input_reflection": ("reflection", 1),
              "water_input_reflection_alpha": ("reflection_alpha", 12),
              "water_input_refraction": ("refraction", 3)}
+    if water_tess_draw is not None:
+        slots["water_input_static_reflection"] = ("static_reflection", 2)
     records = metadata.get("stages")
     if not isinstance(records, list):
         raise ProtocolError("visual protocol: requested water inputs have no stage records")
@@ -229,6 +231,8 @@ def validate_water_inputs(folder: Path, capture_id: str, metadata: dict, mode: M
                 info["view_dimension"] != 4 or info["most_detailed_mip"] < 0 or info["mip_levels"] <= 0 or
                 record.get("error") is not None or not isinstance(source, dict)):
             raise ProtocolError("visual protocol: invalid requested water input metadata")
+        if water_tess_draw is not None and (not info["tessellated"] or type(info.get("tess_index")) is not int or info["tess_index"] != water_tess_draw or record.get("frame") != metadata.get("predicted_display_time_ns")):
+            raise ProtocolError("visual protocol: water draw selection mismatch")
         identity = info.get("shader_identity")
         if shader_identity and not valid_mapped_identity(identity):
             raise ProtocolError("visual protocol: water pixel shader identity is unmapped or incomplete")
