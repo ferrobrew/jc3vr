@@ -12,7 +12,10 @@
 
 mod common;
 mod lake;
-pub use lake::{offset_lake_reflection, scale_lake_refraction};
+pub use lake::{
+    capture_lake_planar_uv, isolate_lake_reflection, mirror_lake_reflection,
+    offset_lake_reflection, reproject_lake_reflection, scale_lake_refraction,
+};
 mod remap;
 mod reproject;
 mod ssdecal;

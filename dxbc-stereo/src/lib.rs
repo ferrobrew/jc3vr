@@ -20,9 +20,10 @@ pub use checksum::refresh_checksum;
 pub use container::{Chunk, Dxbc, DxbcError};
 pub use rewrite::{
     MEYE_ROW_BASE, SSDECAL_EYE_BIAS_REGISTER, STEREO_CB_REGISTER, STEREO_CB_ROWS,
-    STEREO_REPROJ_CB_ROWS, bias_ssdecal_depth_uv, forward_eye_hull_shader,
-    inject_eye_forward_vertex_shader, offset_lake_reflection, patch_vertex_shader,
-    reproject_domain_shader, reproject_vertex_shader, scale_lake_refraction,
+    STEREO_REPROJ_CB_ROWS, bias_ssdecal_depth_uv, capture_lake_planar_uv, forward_eye_hull_shader,
+    inject_eye_forward_vertex_shader, isolate_lake_reflection, mirror_lake_reflection,
+    offset_lake_reflection, patch_vertex_shader, reproject_domain_shader,
+    reproject_lake_reflection, reproject_vertex_shader, scale_lake_refraction,
 };
 pub use tokens::{Operand, OperandKind, ShaderStage, TokenStream};
 
