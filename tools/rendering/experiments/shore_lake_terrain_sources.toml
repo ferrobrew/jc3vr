@@ -1,0 +1,51 @@
+name = "shore-lake-terrain-sources"
+warmup_frames = 30
+samples = 3
+interval_seconds = 4.0
+matched_treatment = "extra_bark_abba"
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+
+[diagnostics]
+ssr_bracket = true
+ssr_operands = true
+ssr_prepare = true
+ssr_history = true
+early_depth = true
+velocity_trace = true
+bark_color_trace = true
+post_geometry = true
+interval_trace = true
+impostor_inputs = true
+left_interval = true
+terrain_sources = true
+residual_bark = true
+resolve_inputs = true
+resolve_samples = true
+patch_draw_ordinal = 28
+second_patch_ordinal = 30
+water_inputs = true
+water_surface_inputs = true
+water_tess_draw = 7
+shader_identity = true
+
+[scene]
+position = [7586.867, 1514.6827, -4081.8762]
+orientation = [0.073511092, 0.907424474, 0.221448052, -0.34948205]
+
+[scene.environment]
+hour = 13.226033
+weather = "sunny"
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
