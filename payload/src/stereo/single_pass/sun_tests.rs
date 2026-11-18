@@ -57,6 +57,8 @@ fn upload_scope_restores_nested_observation() {
                 Some(UploadObservation {
                     context: 2,
                     bits: None,
+                    consumed: None,
+                    corrected: false,
                 })
             );
         }
@@ -65,10 +67,46 @@ fn upload_scope_restores_nested_observation() {
             Some(UploadObservation {
                 context: 1,
                 bits: Some(7),
+                consumed: None,
+                corrected: false,
             })
         );
     }
     assert!(UPLOAD_OBSERVATION.with(|v| v.borrow().is_none()));
+}
+
+#[test]
+fn far_depth_requires_finite_nonzero_open_shader() {
+    assert!(preserve_far_depth_ready(Some(1.0f32.to_bits()), true));
+    for value in [0.0f32, -0.0, f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+        assert!(!preserve_far_depth_ready(Some(value.to_bits()), true));
+    }
+    assert!(!preserve_far_depth_ready(None, true));
+    assert!(!preserve_far_depth_ready(Some(1.0f32.to_bits()), false));
+}
+
+#[test]
+fn far_depth_only_changes_both_z_rows() {
+    let mut original = [Vector4::default(); STEREO_CB_TOTAL_ROWS];
+    for (index, row) in original.iter_mut().enumerate() {
+        row.data = [index as f32, 2.0, 3.0, 4.0];
+    }
+    for eye in 0..2 {
+        let pinned = pin_rows_to_eye(&original, eye);
+        let mut corrected = pinned;
+        preserve_reprojection_depth(&mut corrected);
+        for index in 0..STEREO_CB_TOTAL_ROWS {
+            if index == 12 || index == 16 {
+                assert_eq!(corrected[index].data, [0.0, 0.0, 1.0, 0.0]);
+            } else {
+                assert_eq!(corrected[index].data, pinned[index].data);
+            }
+        }
+        corrected = pinned;
+        for index in 0..STEREO_CB_TOTAL_ROWS {
+            assert_eq!(corrected[index].data, pinned[index].data);
+        }
+    }
 }
 
 #[test]

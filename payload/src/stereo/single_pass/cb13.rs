@@ -22,7 +22,7 @@ const STEREO_CB_ROWS: usize = 10;
 const MEYE_ROW_BASE: usize = 10;
 /// The full `cb13` size: the remap block plus a four-rows-per-eye `M_eye` block for the reprojection
 /// rewrite (`dxbc_stereo::STEREO_REPROJ_CB_ROWS`). Both idioms bind the same `b13` buffer.
-const STEREO_CB_TOTAL_ROWS: usize = 18;
+pub(super) const STEREO_CB_TOTAL_ROWS: usize = 18;
 
 // Keep the payload's cb13 layout in lockstep with the rewriter that reads it.
 const _: () = {
@@ -403,6 +403,12 @@ pub(super) fn pin_rows_to_eye(
             .copy_from_slice(&rows[MEYE_ROW_BASE + eye * 4..MEYE_ROW_BASE + eye * 4 + 4]);
     }
     pinned
+}
+
+pub(super) fn preserve_reprojection_depth(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS]) {
+    for eye in 0..2 {
+        rows[MEYE_ROW_BASE + eye * 4 + 2].data = [0.0, 0.0, 1.0, 0.0];
+    }
 }
 
 /// The four view-projection rows and four `M_eye` rows a per-eye pin places in the first `cb13` slot

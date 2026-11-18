@@ -126,6 +126,7 @@ pub(super) unsafe extern "system" fn draw_detour(
     }
     if current_pass_id() == RenderPassId::RP_SUN as u8 {
         let _sun_raster = unsafe { super::sun::depth_clip_treatment(context) };
+        let _sun_depth = unsafe { super::sun::preserve_far_depth(context) };
         // SAFETY: `context` is the live immediate context this entry was called on.
         unsafe { super::sun::on_raw_draw(context, vertex_count, start_vertex) };
         submit();

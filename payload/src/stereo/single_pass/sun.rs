@@ -18,7 +18,10 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use jc3gi::graphics_engine::{graphics_engine::RenderContext, render_engine::RenderPassId};
+use jc3gi::{
+    graphics_engine::{graphics_engine::RenderContext, render_engine::RenderPassId},
+    types::math::Vector4,
+};
 use parking_lot::Mutex;
 use windows::{
     Win32::{
@@ -43,8 +46,11 @@ use crate::{
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
     },
     stereo::single_pass::{
-        BOUND_VS_PATCHED, CB13, COLLAPSE_FULL_VIEWPORT, EngineContext,
-        cb13::{pin_rows_to_eye, pinned_eye_rows, write_cb13_rows},
+        BOUND_VS_PATCHED, CB13, COLLAPSE_FULL_VIEWPORT, EngineContext, PATCHED_VS_NAMES,
+        cb13::{
+            STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, pinned_eye_rows, preserve_reprojection_depth,
+            write_cb13_rows,
+        },
         collapse_active, current_pass_id, eye_split_state, in_gbuffer_range,
         per_eye_reissue::PerEyeReissue,
         per_eye_reissue_eye,
@@ -182,6 +188,76 @@ pub fn reissue_sun_pass(ctx: *const RenderContext, draw: &dyn Fn() -> bool) -> O
     Some(result)
 }
 
+pub(super) struct SunDepthGuard {
+    d3d: EngineContext,
+    original: [Vector4; STEREO_CB_TOTAL_ROWS],
+}
+
+impl Drop for SunDepthGuard {
+    fn drop(&mut self) {
+        if !write_cb13_rows(self.d3d, &self.original) {
+            tracing::warn!(target: "single_pass", "sun: restoring pinned cb13 after far-depth draw failed");
+        }
+    }
+}
+
+fn preserve_far_depth_ready(bits: Option<u32>, shader_is_open: bool) -> bool {
+    bits.map(f32::from_bits)
+        .is_some_and(|value| value.is_finite() && value != 0.0)
+        && shader_is_open
+}
+
+pub(super) unsafe fn preserve_far_depth(context: *mut c_void) -> Option<SunDepthGuard> {
+    let eye = per_eye_reissue_eye()?;
+    let bits = UPLOAD_OBSERVATION.with(|slot| {
+        slot.borrow_mut().as_mut().and_then(|value| {
+            value.consumed = value.bits.take();
+            value.corrected = false;
+            value.consumed
+        })
+    });
+    let ctx = unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) }?;
+    let mut vs: Option<ID3D11VertexShader> = None;
+    let mut bound: [Option<ID3D11Buffer>; 1] = [None];
+    unsafe {
+        ctx.VSGetShader(&mut vs, None, None);
+        ctx.VSGetConstantBuffers(13, Some(&mut bound));
+    }
+    let owned = CB13.lock().buffer_ptr()?;
+    if bound[0]
+        .as_ref()
+        .is_none_or(|buffer| buffer.as_raw() as usize != owned)
+    {
+        return None;
+    }
+    let shader_is_open = vs.as_ref().is_some_and(|shader| {
+        PATCHED_VS_NAMES
+            .lock()
+            .get(&(shader.as_raw() as usize))
+            .is_some_and(|name| name == "open")
+    });
+    if !preserve_far_depth_ready(bits, shader_is_open) {
+        return None;
+    }
+    let d3d = EngineContext::get()?;
+    if !d3d.with_lock(|engine_ctx| engine_ctx.as_raw() == context) {
+        return None;
+    }
+    let rows = CB13.lock().live_rows()?;
+    let original = pin_rows_to_eye(&rows, eye);
+    let mut corrected = original;
+    preserve_reprojection_depth(&mut corrected);
+    if !write_cb13_rows(d3d, &corrected) {
+        return None;
+    }
+    UPLOAD_OBSERVATION.with(|slot| {
+        if let Some(observation) = slot.borrow_mut().as_mut() {
+            observation.corrected = true;
+        }
+    });
+    Some(SunDepthGuard { d3d, original })
+}
+
 pub(super) struct SunRasterGuard {
     context: ID3D11DeviceContext,
     previous: Option<ID3D11RasterizerState>,
@@ -279,6 +355,8 @@ pub(super) unsafe fn depth_clip_treatment(context: *mut c_void) -> Option<SunRas
 struct UploadObservation {
     context: usize,
     bits: Option<u32>,
+    consumed: Option<u32>,
+    corrected: bool,
 }
 
 struct UploadScope(Option<UploadObservation>);
@@ -289,6 +367,8 @@ impl UploadScope {
             slot.replace(Some(UploadObservation {
                 context,
                 bits: None,
+                consumed: None,
+                corrected: false,
             }))
         }))
     }
@@ -509,7 +589,7 @@ fn log_draw_inputs(ctx: &ID3D11DeviceContext, capture: &Capture) {
     let cpu_bits = UPLOAD_OBSERVATION.with(|slot| {
         slot.borrow()
             .as_ref()
-            .and_then(|observation| observation.bits)
+            .and_then(|observation| observation.consumed)
     });
     let gpu_bits = b1.as_ref().ok().and_then(|buffer| {
         if !buffer.range_known || buffer.range_error.is_some() {
@@ -662,7 +742,18 @@ fn log_bound_cb13(ctx: &ID3D11DeviceContext, capture: &Capture, index: usize) {
             let actual = readback.values.as_deref();
             let owned = CB13.lock().buffer_ptr();
             let pointer_matches = owned.is_some_and(|pointer| pointer == readback.pointer);
-            let comparable = !capture.expected.is_empty()
+            let mut expected = capture.expected.clone();
+            let corrected = UPLOAD_OBSERVATION.with(|slot| {
+                slot.borrow()
+                    .as_ref()
+                    .is_some_and(|observation| observation.corrected)
+            });
+            if corrected && expected.len() == STEREO_CB_TOTAL_ROWS * 4 {
+                for row in [12usize, 16] {
+                    expected[row * 4..row * 4 + 4].copy_from_slice(&[0, 0, 1.0f32.to_bits(), 0]);
+                }
+            }
+            let comparable = !expected.is_empty()
                 && readback.range_known
                 && pointer_matches
                 && readback.range_error.is_none()
@@ -672,7 +763,7 @@ fn log_bound_cb13(ctx: &ID3D11DeviceContext, capture: &Capture, index: usize) {
                     .unwrap()
                     .iter()
                     .map(|value| value.to_bits())
-                    .eq(capture.expected.iter().copied())
+                    .eq(expected.iter().copied())
             });
             let words = actual.map(|values| {
                 values
