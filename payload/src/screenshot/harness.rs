@@ -54,6 +54,7 @@ impl RequestId {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum WaterReflection {
     ZeroWeight,
+    ZeroPlanar,
     CenterPlanar,
 }
 
@@ -61,6 +62,16 @@ impl WaterReflection {
     fn supported(self, mode: RenderMode, selection: Option<u8>) -> bool {
         match self {
             Self::ZeroWeight => mode == RenderMode::Multipass,
+            Self::ZeroPlanar => {
+                selection.is_some()
+                    && matches!(
+                        mode,
+                        RenderMode::LeftOnly
+                            | RenderMode::RightOnly
+                            | RenderMode::Multipass
+                            | RenderMode::SinglePass
+                    )
+            }
             Self::CenterPlanar => mode == RenderMode::SinglePass && selection.is_some(),
         }
     }

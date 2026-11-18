@@ -58,6 +58,7 @@ class MatchedRunner(FakeRunner):
                 identity = {"requested": True, "status": "complete", "registered": 1,
                             "overflow": 0, "invalid": 0}
                 ack = dataclasses.replace(ack, metadata=dataclasses.replace(ack.metadata, shader_identity=identity))
+            self.mode = request.mode
             self.target_pose = request.pose
             return ack
         if request.command != Command.SCREENSHOT:
@@ -70,7 +71,7 @@ class MatchedRunner(FakeRunner):
             raise ExperimentError("experiment: synthetic screenshot failure")
         evidence = pose_evidence(self.target_pose.case_id, self.anchor, self.target_pose.offset,
                                  self.target_pose.translation)
-        wire = capture_wire(request.id, Mode.MULTIPASS, index, evidence, None)
+        wire = capture_wire(request.id, self.mode, index, evidence, None)
         wire["visual"]["generation"] = self.generation
         wire["visual"]["shader_identity"] = {"requested": True, "status": "complete", "registered": 1,
                                                   "overflow": 0, "invalid": 0}
@@ -93,14 +94,14 @@ class MatchedExperimentTests(ExperimentTestCase):
         base = write_config(self.root, ["multipass"], environment=(HOUR, "sunny"))
         return dataclasses.replace(checked, scene=base.scene, interval_seconds=0.0)
 
-    def run_matched(self, runner):
+    def run_matched(self, runner, config=None):
         (runner.config_dir / "captures").mkdir(parents=True, exist_ok=True)
         now = [0.0]
         def sleep(seconds):
             now[0] += seconds
         with patch("tools.rendering.experiment.validate_capture", side_effect=lambda folder, identifier, capture, **_: capture), \
              patch("tools.rendering.experiment.matched_cross_metrics", return_value=()):
-            return run_experiment(runner, self.config(), self.root / "out",
+            return run_experiment(runner, config or self.config(), self.root / "out",
                                   monotonic=lambda: now[0], sleep=sleep,
                                   analyze=lambda *_: SimpleNamespace(status=Outcome.INCONCLUSIVE))
 
@@ -118,6 +119,20 @@ class MatchedExperimentTests(ExperimentTestCase):
         self.assertEqual([len(c["modes"]["multipass"]) for c in cases], [6, 6])
         ids = [{Path(s["metadata"]).name for s in c["modes"]["multipass"]} for c in cases]
         self.assertFalse(ids[0] & ids[1])
+
+    def test_planar_input_abba_applies_to_every_physical_reference(self):
+        path = Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_zero_planar.toml"
+        config = dataclasses.replace(ExperimentConfig.load(path), scene=self.config().scene)
+        runner = MatchedRunner(self.root / "config")
+        report = self.run_matched(runner, config)
+        self.assertEqual(report.errors, ())
+        for mode in config.configurations:
+            self.assertEqual([r.condition for r in report.captures if r.mode == mode],
+                             ["control", "zero_planar", "zero_planar", "control"] * 3)
+        with self.assertRaises(ExperimentError):
+            dataclasses.replace(config, configurations=config.configurations[1:])
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", water_inputs=True, water_reflection=WaterReflection.ZERO_PLANAR)
 
     def test_identity_changes_fail_closed_and_preserve_evidence(self):
         for changed in ("pose", "config", "generation"):

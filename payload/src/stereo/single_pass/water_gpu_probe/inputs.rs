@@ -8,7 +8,9 @@ use windows::{
             D3D11_TEXTURE2D_DESC, D3D11_USAGE_IMMUTABLE, ID3D11DeviceContext, ID3D11PixelShader,
             ID3D11ShaderResourceView, ID3D11Texture2D,
         },
-        Dxgi::Common::{DXGI_FORMAT_R32_FLOAT, DXGI_SAMPLE_DESC},
+        Dxgi::Common::{
+            DXGI_FORMAT, DXGI_FORMAT_R11G11B10_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_SAMPLE_DESC,
+        },
     },
     core::Interface,
 };
@@ -79,11 +81,12 @@ impl Drop for WaterInputCapture {
 const VERIFIED_WATER_PS: &str = "fd508419c18c5fe0c08816017a2a20ed5394aab5fd9d3fe94cce7d67ac0f3dce";
 
 pub(crate) enum ReflectionGuard {
-    Weight { _guard: WeightGuard },
+    Texture { _guard: TextureGuard },
     Planar { _guard: PlanarGuard },
 }
 
-pub(crate) struct WeightGuard {
+pub(crate) struct TextureGuard {
+    slot: u32,
     ctx: ID3D11DeviceContext,
     original: Option<ID3D11ShaderResourceView>,
     _replacement: ID3D11ShaderResourceView,
@@ -91,16 +94,16 @@ pub(crate) struct WeightGuard {
     id: String,
 }
 
-impl Drop for WeightGuard {
+impl Drop for TextureGuard {
     fn drop(&mut self) {
         unsafe {
             self.ctx
-                .PSSetShaderResources(12, Some(std::slice::from_ref(&self.original)))
+                .PSSetShaderResources(self.slot, Some(std::slice::from_ref(&self.original)))
         };
         let mut bound = None;
         unsafe {
             self.ctx
-                .PSGetShaderResources(12, Some(std::slice::from_mut(&mut bound)))
+                .PSGetShaderResources(self.slot, Some(std::slice::from_mut(&mut bound)))
         };
         if bound.as_ref().map(Interface::as_raw) != self.original.as_ref().map(Interface::as_raw) {
             record_water_treatment(
@@ -187,18 +190,23 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
             }
         };
     }
+    let (slot, format) = match treatment {
+        WaterReflection::ZeroWeight => (12, DXGI_FORMAT_R32_FLOAT),
+        WaterReflection::ZeroPlanar => (2, DXGI_FORMAT_R11G11B10_FLOAT),
+        WaterReflection::CenterPlanar => unreachable!(),
+    };
     let mut original: Option<ID3D11ShaderResourceView> = None;
-    unsafe { ctx.PSGetShaderResources(12, Some(std::slice::from_mut(&mut original))) };
+    unsafe { ctx.PSGetShaderResources(slot, Some(std::slice::from_mut(&mut original))) };
     let valid = original.as_ref().is_some_and(|view| {
         let mut desc = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
         unsafe { view.GetDesc(&mut desc) };
-        desc.Format == DXGI_FORMAT_R32_FLOAT && desc.ViewDimension == D3D_SRV_DIMENSION_TEXTURE2D
+        desc.Format == format && desc.ViewDimension == D3D_SRV_DIMENSION_TEXTURE2D
     });
     if !valid {
         record_water_treatment(
             eye,
             &id,
-            Some("water reflection treatment: unsupported or unbound alpha view"),
+            Some("water reflection treatment: unsupported or unbound target view"),
         );
         return None;
     }
@@ -208,7 +216,7 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
             .as_mut()
             .ok_or_else(|| anyhow::anyhow!("water draw scope disappeared"))?;
         if state.zero.is_none() {
-            state.zero = Some(create_zero(ctx)?);
+            state.zero = Some(create_zero(ctx, format)?);
         }
         state
             .zero
@@ -226,13 +234,15 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
             return None;
         }
     };
-    unsafe { ctx.PSSetShaderResources(12, Some(std::slice::from_ref(&Some(replacement.clone())))) };
+    unsafe {
+        ctx.PSSetShaderResources(slot, Some(std::slice::from_ref(&Some(replacement.clone()))))
+    };
     let mut bound = None;
-    unsafe { ctx.PSGetShaderResources(12, Some(std::slice::from_mut(&mut bound))) };
+    unsafe { ctx.PSGetShaderResources(slot, Some(std::slice::from_mut(&mut bound))) };
     if bound.as_ref().map(Interface::as_raw) != Some(replacement.as_raw()) {
-        unsafe { ctx.PSSetShaderResources(12, Some(std::slice::from_ref(&original))) };
+        unsafe { ctx.PSSetShaderResources(slot, Some(std::slice::from_ref(&original))) };
         let mut restored = None;
-        unsafe { ctx.PSGetShaderResources(12, Some(std::slice::from_mut(&mut restored))) };
+        unsafe { ctx.PSGetShaderResources(slot, Some(std::slice::from_mut(&mut restored))) };
         let error = if restored.as_ref().map(Interface::as_raw)
             != original.as_ref().map(Interface::as_raw)
         {
@@ -243,8 +253,9 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
         record_water_treatment(eye, &id, Some(error));
         return None;
     }
-    Some(ReflectionGuard::Weight {
-        _guard: WeightGuard {
+    Some(ReflectionGuard::Texture {
+        _guard: TextureGuard {
+            slot,
             ctx: ctx.clone(),
             original,
             _replacement: replacement,
@@ -334,7 +345,10 @@ fn treatment_identity(identity: IdentityResult, target: &str) -> TreatmentIdenti
     }
 }
 
-fn create_zero(ctx: &ID3D11DeviceContext) -> anyhow::Result<ID3D11ShaderResourceView> {
+fn create_zero(
+    ctx: &ID3D11DeviceContext,
+    format: DXGI_FORMAT,
+) -> anyhow::Result<ID3D11ShaderResourceView> {
     let device = unsafe { ctx.GetDevice()? };
     let zero = 0.0f32;
     let desc = D3D11_TEXTURE2D_DESC {
@@ -342,7 +356,7 @@ fn create_zero(ctx: &ID3D11DeviceContext) -> anyhow::Result<ID3D11ShaderResource
         Height: 1,
         MipLevels: 1,
         ArraySize: 1,
-        Format: DXGI_FORMAT_R32_FLOAT,
+        Format: format,
         SampleDesc: DXGI_SAMPLE_DESC {
             Count: 1,
             Quality: 0,

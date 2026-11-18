@@ -112,10 +112,15 @@ def validate_late_sky_stages(folder: Path, capture_id: str, metadata: dict, mode
 
 def validate_water_treatment(folder: Path, capture_id: str, metadata: dict, mode: Mode) -> None:
     planar = metadata.get("water_reflection") == "center_planar"
-    if mode != (Mode.SINGLE_PASS if planar else Mode.MULTIPASS) or not isinstance(metadata.get("stages"), list):
+    zero_planar = metadata.get("water_reflection") == "zero_planar"
+    allowed = (Mode.LEFT_ONLY, Mode.RIGHT_ONLY, Mode.MULTIPASS, Mode.SINGLE_PASS) if zero_planar else (Mode.SINGLE_PASS if planar else Mode.MULTIPASS,)
+    if mode not in allowed or not isinstance(metadata.get("stages"), list):
         raise ProtocolError("visual protocol: water reflection treatment requires multipass stages")
     records = metadata["stages"]
-    for eye in (0, 1):
+    eyes = [eye for eye, required in enumerate(mode.rendered_eyes) if required]
+    if len([r for r in records if isinstance(r, dict) and r.get("stage") == "water_reflection_treatment"]) != len(eyes):
+        raise ProtocolError("visual protocol: unexpected water treatment count")
+    for eye in eyes:
         treatment = [r for r in records if isinstance(r, dict) and
                      r.get("stage") == "water_reflection_treatment" and r.get("eye") == eye]
         if len(treatment) != 1:
@@ -134,12 +139,18 @@ def validate_water_treatment(folder: Path, capture_id: str, metadata: dict, mode
             if not valid_mapped_identity(identity) or identity["identity"]["pristine_sha256"] != "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531" or identity["identity"]["actual_sha256"] == identity["identity"]["pristine_sha256"]:
                 raise ProtocolError("visual protocol: planar shader substitution not observed")
             continue
-        inputs = [r for r in records if isinstance(r, dict) and
-                  r.get("stage") == "water_input_reflection_alpha" and r.get("eye") == eye]
+        target = "water_input_static_reflection" if zero_planar else "water_input_reflection_alpha"
+        inputs = [r for r in records if isinstance(r, dict) and r.get("stage") == target and r.get("eye") == eye]
         if len(inputs) != 1 or not isinstance(inputs[0].get("source"), dict):
             raise ProtocolError("visual protocol: missing treated reflection weight input")
         source = inputs[0]["source"]
-        if (source.get("width"), source.get("height"), source.get("bytes_per_pixel"), source.get("format_id")) != (1, 1, 4, 41):
+        if zero_planar:
+            binding = inputs[0].get("water_input") or {}
+            identity = binding.get("shader_identity")
+            if (info["treatment_draws"] != 1 or binding.get("shader_slot") != 2 or not valid_mapped_identity(identity) or
+                    any(identity["identity"][k] != "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531" for k in ("actual_sha256", "pristine_sha256"))):
+                raise ProtocolError("visual protocol: planar input substitution not observed on one lake draw")
+        if (source.get("width"), source.get("height"), source.get("bytes_per_pixel"), source.get("format_id")) != (1, 1, 4, 26 if zero_planar else 41):
             raise ProtocolError("visual protocol: treated reflection weight has unexpected dimensions or format")
         try:
             raw = inputs[0].get("raw")

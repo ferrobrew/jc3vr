@@ -25,17 +25,19 @@ def matched_capture_identity(capture: Capture, metadata: dict, generation: int):
 
 
 def matched_cross_metrics(root: Path, cases: dict[str, Case]) -> tuple[dict, ...]:
-    samples = {}
     baseline, treated = cases
-    mode = Mode.SINGLE_PASS if treated == "center_planar" else Mode.MULTIPASS
-    for condition, case in cases.items():
-        samples[condition] = [load_sample(root, CompareMode(mode.value), index,
-                                         SampleSpec(sample.png, sample.metadata))
-                              for index, sample in enumerate(case.modes.get(mode, []))]
+    modes = (tuple(cases[baseline].modes) if treated == "zero_planar" else
+             (Mode.SINGLE_PASS,) if treated == "center_planar" else (Mode.MULTIPASS,))
     results = []
-    for left, right in product(samples[baseline], samples[treated]):
-        for eye in (0, 1):
-            metrics = image_metrics(left.image(eye), right.image(eye), Thresholds())
-            results.append({baseline: left.capture_id, treated: right.capture_id,
-                            "eye": eye, "metrics": dataclasses.asdict(metrics)})
+    for mode in modes:
+        samples = {condition: [load_sample(root, CompareMode(mode.value), index,
+                                           SampleSpec(sample.png, sample.metadata))
+                               for index, sample in enumerate(case.modes[mode])]
+                   for condition, case in cases.items()}
+        for left, right in product(samples[baseline], samples[treated]):
+            for eye, required in enumerate(mode.rendered_eyes):
+                if required:
+                    metrics = image_metrics(left.image(eye), right.image(eye), Thresholds())
+                    results.append({baseline: left.capture_id, treated: right.capture_id,
+                                    "mode": mode.value, "eye": eye, "metrics": dataclasses.asdict(metrics)})
     return tuple(results)

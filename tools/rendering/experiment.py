@@ -283,12 +283,14 @@ class Diagnostics:
 class MatchedTreatment(StrEnum):
     WATER_REFLECTION_ABBA = "water_reflection_abba"
     PLANAR_ABBA = "planar_abba"
+    ZERO_PLANAR_ABBA = "zero_planar_abba"
     CASCADE_ABBA = "cascade_abba"
 
     @property
     def conditions(self) -> tuple[str, str]:
         return {
             self.CASCADE_ABBA: (CascadeScale.SHORE_LOW.value, CascadeScale.SHORE_HIGH.value),
+            self.ZERO_PLANAR_ABBA: ("control", WaterReflection.ZERO_PLANAR.value),
             self.PLANAR_ABBA: ("control", WaterReflection.CENTER_PLANAR.value),
             self.WATER_REFLECTION_ABBA: ("control", WaterReflection.ZERO_WEIGHT.value),
         }[self]
@@ -338,6 +340,9 @@ class ExperimentConfig:
                 if self.configurations not in ((CompareMode.SINGLE_PASS,), (CompareMode.LEFT_ONLY,
                         CompareMode.RIGHT_ONLY, CompareMode.MULTIPASS, CompareMode.SINGLE_PASS)):
                     raise ExperimentError("experiment: planar ABBA requires SPS, optionally after both isolated eyes and MP")
+            elif self.matched_treatment == MatchedTreatment.ZERO_PLANAR_ABBA:
+                if self.configurations != (CompareMode.LEFT_ONLY, CompareMode.RIGHT_ONLY, CompareMode.MULTIPASS, CompareMode.SINGLE_PASS) or self.diagnostics.water_tess_draw is None:
+                    raise ExperimentError("experiment: zero planar ABBA requires both references, MP, SPS, and a selected lake draw")
             elif self.configurations != (CompareMode.MULTIPASS,):
                 raise ExperimentError("experiment: matched MP treatments require one multipass configuration")
             if self.matched_treatment == MatchedTreatment.CASCADE_ABBA:
@@ -350,6 +355,8 @@ class ExperimentConfig:
         if ((self.diagnostics.water_reflection == WaterReflection.CENTER_PLANAR and self.configurations != (CompareMode.SINGLE_PASS,)) or
                 ((self.diagnostics.water_reflection == WaterReflection.CENTER_PLANAR or self.matched_treatment == MatchedTreatment.PLANAR_ABBA) and self.diagnostics.water_tess_draw is None)):
             raise ExperimentError("experiment: planar treatment requires a selected single-pass draw")
+        if self.diagnostics.water_reflection == WaterReflection.ZERO_PLANAR and (self.diagnostics.water_tess_draw is None or CompareMode.REVERSE_MULTIPASS in self.configurations):
+            raise ExperimentError("experiment: zero_planar requires a selected lake draw and a supported mode")
         if self.diagnostics.water_reflection == WaterReflection.ZERO_WEIGHT and any(mode != CompareMode.MULTIPASS for mode in self.configurations):
             raise ExperimentError("experiment: water reflection treatment requires multipass configurations")
         if self.visual_overrides is not None and not isinstance(self.visual_overrides, VisualOverrides):
@@ -503,7 +510,6 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
     early_errors: list[str] = []
     last_capture_completed = None
     conditions: dict[str, str] = {}
-    matched_identity = None
     try:
         anchor_mode = Mode(config.configurations[0].value)
         anchor_pose = PoseRequest(f"{prefix}_anchor", OrientationOffset(0.0, 0.0, 0.0),
@@ -524,6 +530,7 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
             sequence = ((names[0],) * config.samples if shared else
                         (names[0], names[1], names[1], names[0]) * config.samples
                         if config.matched_treatment else ("default",) * config.samples)
+            matched_identity = None
             for condition in sequence:
                 entries = cases[condition].modes.setdefault(mode, [])
                 counters[configured_mode] = counters.get(configured_mode, 0) + 1
