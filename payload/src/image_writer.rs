@@ -134,6 +134,7 @@ pub enum ImageTarget {
 pub(crate) struct WriteOutcome {
     pub result: Result<PathBuf, String>,
     pub stages: Vec<StageRecord>,
+    pub resolve_inputs: Option<crate::screenshot::harness::resolve_probe::Capture>,
 }
 
 impl From<Result<PathBuf, String>> for WriteOutcome {
@@ -141,6 +142,7 @@ impl From<Result<PathBuf, String>> for WriteOutcome {
         Self {
             result,
             stages: Vec::new(),
+            resolve_inputs: None,
         }
     }
 }
@@ -304,42 +306,50 @@ fn run(receiver: Receiver<Job>) {
 
 fn write_job(mut target: ImageTarget, image: Image) -> WriteOutcome {
     let mut records = Vec::new();
+    let mut resolve_inputs = None;
     if let ImageTarget::HarnessScreenshot {
         path,
         sidecar,
         stages,
     } = &mut target
-        && let Some(capture) = &mut sidecar.capture
     {
-        for stage in std::mem::take(stages) {
-            let record = &mut capture.stages[stage.record];
-            let name = stage_name(record.stage);
-            let raw = matches!(&stage.artifact, StageArtifact::Raw(_));
-            let extension = match (&stage.artifact, record.stage) {
-                (StageArtifact::Png(_), _) => "png",
-                (StageArtifact::Raw(_), stage) if stage.is_hdr() => "r11g11b10",
-                (StageArtifact::Raw(_), _) => "raw",
-            };
-            let stage_path = path.with_file_name(format!(
-                "{}.{name}.eye{}.{extension}",
-                sidecar.id, record.eye
-            ));
-            let result = match stage.artifact {
-                StageArtifact::Png(image) => write_png(&stage_path, image),
-                StageArtifact::Raw(bytes) => std::fs::write(&stage_path, bytes)
-                    .with_context(|| format!("writing {}", stage_path.display())),
-            };
-            match result {
-                Ok(()) if raw => record.raw = Some(stage_path),
-                Ok(()) => record.png = Some(stage_path),
-                Err(error) => record.error = Some(format!("image writer: {error:#}")),
+        let id = sidecar.id.clone();
+        if let Some(capture) = &mut sidecar.capture {
+            for stage in std::mem::take(stages) {
+                let record = &mut capture.stages[stage.record];
+                let name = stage_name(record.stage);
+                let raw = matches!(&stage.artifact, StageArtifact::Raw(_));
+                let extension = match (&stage.artifact, record.stage) {
+                    (StageArtifact::Png(_), _) => "png",
+                    (StageArtifact::Raw(_), stage) if stage.is_hdr() => "r11g11b10",
+                    (StageArtifact::Raw(_), _) => "raw",
+                };
+                let stage_path =
+                    path.with_file_name(format!("{}.{name}.eye{}.{extension}", id, record.eye));
+                let result = match stage.artifact {
+                    StageArtifact::Png(image) => write_png(&stage_path, image),
+                    StageArtifact::Raw(bytes) => std::fs::write(&stage_path, bytes)
+                        .with_context(|| format!("writing {}", stage_path.display())),
+                };
+                match result {
+                    Ok(()) if raw => record.raw = Some(stage_path),
+                    Ok(()) => record.png = Some(stage_path),
+                    Err(error) => record.error = Some(format!("image writer: {error:#}")),
+                }
             }
+            if let Some(resolve) = capture.resolve_inputs.as_mut() {
+                if let Some(folder) = path.parent() {
+                    resolve.write_artifacts(folder, &id);
+                }
+                resolve_inputs = Some(resolve.clone());
+            }
+            records = capture.stages.clone();
         }
-        records = capture.stages.clone();
     }
     WriteOutcome {
         result: write(target, image).map_err(|error| format!("image writer: {error:#}")),
         stages: records,
+        resolve_inputs,
     }
 }
 
@@ -354,12 +364,20 @@ fn stage_name(stage: Stage) -> &'static str {
         Stage::PreAtmosphere => "pre_atmosphere",
         Stage::PostAtmosphere => "post_atmosphere",
         Stage::PostResolve => "post_resolve",
+        Stage::SunDepthClipTreatment => "sun_depth_clip_treatment",
+        Stage::PreSunColor => "pre_sun_color",
+        Stage::PreSunDepth => "pre_sun_depth",
+        Stage::PostSun => "post_sun",
         Stage::WaterBefore => "water_before",
         Stage::WaterAfterLeft => "water_after_left",
         Stage::WaterAfterRight => "water_after_right",
         Stage::WaterDepthBefore => "water_depth_before",
         Stage::WaterDepthAfterLeft => "water_depth_after_left",
         Stage::WaterDepthAfterRight => "water_depth_after_right",
+        Stage::WaterReflectionTreatment => "water_reflection_treatment",
+        Stage::WaterInputReflection => "water_input_t1",
+        Stage::WaterInputReflectionAlpha => "water_input_t12",
+        Stage::WaterInputRefraction => "water_input_t3",
         Stage::PreAa => "pre_aa",
         Stage::PostAa => "post_aa",
     }
@@ -686,6 +704,7 @@ mod tests {
             (Stage::PreAtmosphere, "pre_atmosphere"),
             (Stage::PostAtmosphere, "post_atmosphere"),
             (Stage::PostResolve, "post_resolve"),
+            (Stage::PostSun, "post_sun"),
             (Stage::WaterBefore, "water_before"),
             (Stage::WaterAfterLeft, "water_after_left"),
             (Stage::WaterAfterRight, "water_after_right"),
@@ -756,6 +775,9 @@ mod tests {
                 world_scale: 1.0,
             },
             effective_config: crate::config::Config::new(),
+            water_reflection: None,
+            sun_depth_clip: None,
+            resolve_inputs: None,
             single_pass: None,
             constants: Default::default(),
             stages: [(Stage::MainColor, 0), (Stage::PreAa, 0), (Stage::PostAa, 1)]
@@ -783,6 +805,8 @@ mod tests {
                     png: None,
                     raw: None,
                     error: None,
+                    water_input: None,
+                    sun_input: None,
                 })
                 .collect(),
         }

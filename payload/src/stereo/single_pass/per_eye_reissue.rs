@@ -545,6 +545,15 @@ pub(super) unsafe extern "system" fn set_vertex_program_constants_detour(
     let detour = SET_VERTEX_PROGRAM_CONSTANTS
         .get()
         .expect("set before enable");
+    unsafe {
+        crate::stereo::single_pass::sun::observe_vertex_upload(
+            ctx,
+            cb_index,
+            start_offset,
+            data,
+            count,
+        )
+    };
     // The clustered light-assignment view matrix, when the per-eye froxel split is assigning this
     // eye's lights from this eye's position. Checked first because it is scoped to a single call
     // inside `DrawClustered` and cannot overlap a baked-cb re-issue, which only arms in the G-buffer

@@ -1,0 +1,18 @@
+name = "cliff-shadow-control"
+warmup_frames = 30
+samples = 3
+interval_seconds = 4.0
+
+[scene]
+position = [8257.701, 1486.9717, -4286.1167]
+orientation = [-0.072365253, 0.849632625, 0.13971309, 0.503356657]
+
+[scene.environment]
+hour = 13.226033
+weather = "sunny"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "multipass"

@@ -1,0 +1,26 @@
+name = "sky-sun-inputs-second"
+warmup_frames = 30
+samples = 3
+
+[diagnostics]
+sun_inputs = true
+
+[scene]
+position = [8257.701, 1486.9717, -4286.1167]
+orientation = [0.166698276, 0.783076959, -0.200278390, 0.564704106]
+
+[scene.environment]
+hour = 13.226033
+weather = "sunny"
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"

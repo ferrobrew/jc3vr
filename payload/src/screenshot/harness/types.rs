@@ -57,6 +57,12 @@ pub(crate) struct CapturedFrame {
     pub(crate) effective_config: Config,
     pub(crate) stages: Vec<crate::screenshot::harness::stages::StageRecord>,
     pub(crate) constants: crate::screenshot::harness::constants::CapturedConstants,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) water_reflection: Option<crate::screenshot::harness::WaterReflection>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) sun_depth_clip: Option<crate::screenshot::harness::SunDepthClip>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) resolve_inputs: Option<crate::screenshot::harness::resolve_probe::Capture>,
     pub(crate) single_pass: Option<FrameDiagnostics>,
 }
 

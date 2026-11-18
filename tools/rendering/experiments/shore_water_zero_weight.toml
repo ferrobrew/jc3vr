@@ -1,0 +1,23 @@
+name = "shore-water-zero-weight"
+warmup_frames = 30
+samples = 3
+interval_seconds = 4.0
+
+[diagnostics]
+water_inputs = true
+shader_identity = true
+water_reflection = "zero_weight"
+
+[scene]
+position = [7586.867, 1514.6827, -4081.8762]
+orientation = [0.073511092, 0.907424474, 0.221448052, -0.34948205]
+
+[scene.environment]
+hour = 13.226033
+weather = "sunny"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "multipass"

@@ -9,7 +9,7 @@
 use super::*;
 use crate::stereo::single_pass::{
     water_fragment_state::on_raw_draw,
-    water_gpu_probe::{RawDrawKind, raw_entry},
+    water_gpu_probe::{RawDrawKind, raw_entry, reflection_treatment},
 };
 
 /// `ID3D11DeviceContext` vtable slots for the two indexed-draw entry points (verified against
@@ -54,6 +54,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
     unsafe { on_raw_draw(context) };
+    let _reflection = unsafe { reflection_treatment(context) };
     unsafe { raw_entry(RawDrawKind::Indexed, context) };
     let detour = DRAW_INDEXED.get().expect("set before enable");
     if dual_eye_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
@@ -101,7 +102,11 @@ pub(super) unsafe extern "system" fn draw_detour(
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
     unsafe { on_raw_draw(context) };
+    let _reflection = unsafe { reflection_treatment(context) };
     unsafe { raw_entry(RawDrawKind::NonIndexed, context) };
+    unsafe {
+        crate::screenshot::harness::resolve_probe::on_draw(context, vertex_count, start_vertex)
+    };
     let detour = DRAW.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
     let submit = || unsafe { detour.call(context, vertex_count, start_vertex) };
@@ -118,6 +123,15 @@ pub(super) unsafe extern "system" fn draw_detour(
             return;
         }
         ensure_collapse_viewport(context, CollapseViewport::Full);
+    }
+    if current_pass_id() == RenderPassId::RP_SUN as u8 {
+        let _sun_raster = unsafe { super::sun::depth_clip_treatment(context) };
+        // SAFETY: `context` is the live immediate context this entry was called on.
+        unsafe { super::sun::on_raw_draw(context, vertex_count, start_vertex) };
+        submit();
+        // SAFETY: the query, if any, was begun on this live immediate context.
+        unsafe { super::sun::after_raw_draw(context) };
+        return;
     }
     submit();
 }
@@ -214,6 +228,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_indirect_detour(
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
     unsafe { on_raw_draw(context) };
+    let _reflection = unsafe { reflection_treatment(context) };
     unsafe { raw_entry(RawDrawKind::IndexedInstancedIndirect, context) };
     let detour = DRAW_INDEXED_INSTANCED_INDIRECT
         .get()
@@ -232,6 +247,7 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
     unsafe { on_raw_draw(context) };
+    let _reflection = unsafe { reflection_treatment(context) };
     unsafe { raw_entry(RawDrawKind::InstancedIndirect, context) };
     let detour = DRAW_INSTANCED_INDIRECT.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
@@ -315,6 +331,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
 ) {
     // SAFETY: `context` is the live immediate context this entry was called on.
     unsafe { on_raw_draw(context) };
+    let _reflection = unsafe { reflection_treatment(context) };
     unsafe { raw_entry(RawDrawKind::IndexedInstanced, context) };
     let detour = DRAW_INDEXED_INSTANCED.get().expect("set before enable");
     let submit = || {

@@ -713,6 +713,10 @@ fn restore_gi_cascade_index(saved: u32) {
 static SAVED_SHADOWS_ENABLED: std::sync::atomic::AtomicU8 =
     std::sync::atomic::AtomicU8::new(u8::MAX);
 
+pub(crate) fn sun_shadow_override_active() -> bool {
+    SAVED_SHADOWS_ENABLED.load(Ordering::Relaxed) != u8::MAX
+}
+
 /// Force the sun-shadow system off (or restore it) through the engine's own settings path:
 /// `ShadowManager::m_Enabled`, which the sim-side `UpdateRender` syncs the engine to via
 /// `SetEnabled` -- the same route the graphics menu takes, so resources are torn down and recreated

@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import tempfile
 import time
@@ -9,6 +10,12 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
+from tools.rendering.capture.validation import (
+    validate_resolve_inputs,
+    validate_sun_inputs,
+    validate_water_inputs,
+    validate_water_treatment,
+)
 from tools.rendering.comparison.images import Mode as CompareMode
 from tools.rendering.comparison.images import Outcome, analyze_manifest
 from tools.rendering.comparison.stages import Stage
@@ -18,12 +25,11 @@ from tools.rendering.experiment import (
     Feature,
     FeatureStatus,
     Mode,
+    _resolve_content_errors,
     offset_for_target,
     run_experiment,
     sample_id,
 )
-from tools.rendering.session.attach import SessionState, owning_process
-from tools.rendering.session.errors import SessionError
 from tools.rendering.protocol import (
     Camera,
     Capture,
@@ -31,7 +37,10 @@ from tools.rendering.protocol import (
     ConfigurationAck,
     EnvironmentRequest,
     OrientationOffset,
+    ProtocolError,
     RestorationAck,
+    SunShadows,
+    VisualOverrides,
     WeatherControl,
     WeatherEvent,
     cameras_match,
@@ -40,6 +49,8 @@ from tools.rendering.protocol import (
     quaternion_multiply,
     quaternion_normalize,
 )
+from tools.rendering.session.attach import SessionState, owning_process
+from tools.rendering.session.errors import SessionError
 
 ANCHOR = Camera((10.0, 12.0, 13.0), (0.0, 0.0, 0.0, 1.0))
 TARGET = Camera((1.0, 2.0, 3.0), (0.0, 0.0, 0.0, 1.0))
@@ -176,6 +187,10 @@ class FakeRunner:
         self.environment_requested = False
         self.end_environment = end_environment
         self.fail_end = fail_end
+        self.assert_running_calls = 0
+
+    def assert_running(self):
+        self.assert_running_calls += 1
 
     def request(self, value):
         self.commands.append(value.command)
@@ -207,11 +222,16 @@ class FakeRunner:
 
 
 def write_config(root, configurations, *, feature=None, environment=None,
-                 name="synthetic-glint", samples=3, warmup_frames=12):
+                 name="synthetic-glint", samples=3, warmup_frames=12,
+                 interval_seconds=None):
     lines = [
         f'name = "{name}"',
         f"warmup_frames = {warmup_frames}",
         f"samples = {samples}",
+    ]
+    if interval_seconds is not None:
+        lines.append(f"interval_seconds = {interval_seconds}")
+    lines += [
         "",
         "[scene]",
         "position = [1.0, 2.0, 3.0]",
@@ -267,12 +287,14 @@ class ExperimentTestCase(unittest.TestCase):
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
 
-    def run_config(self, config, *, capture=None, analyze=None, runner=None):
+    def run_config(self, config, *, capture=None, analyze=None, runner=None,
+                   monotonic=None, sleep=None):
         runner = runner or FakeRunner(self.root / "config")
         (runner.config_dir / "captures").mkdir(parents=True, exist_ok=True)
         analyze = analyze or (lambda *_: SimpleNamespace(status=Outcome.PASS))
         return run_experiment(runner, config, self.root / "out",
-                              capture=capture or capture_factory(), analyze=analyze)
+                              capture=capture or capture_factory(), analyze=analyze,
+                              monotonic=monotonic, sleep=sleep)
 
 
 class ConfigTests(ExperimentTestCase):
@@ -287,6 +309,112 @@ class ConfigTests(ExperimentTestCase):
         self.assertEqual(config.feature.stage, Stage.MAIN_COLOR)
         self.assertEqual(config.feature.reference_modes, (CompareMode.MULTIPASS,))
         self.assertEqual(config.feature.target_modes, (CompareMode.SINGLE_PASS,))
+        self.assertEqual(config.interval_seconds, 0.0)
+
+    def test_checked_in_interval_experiment_configs_load(self):
+        root = Path(__file__).resolve().parents[1] / "experiments"
+        interval = ExperimentConfig.load(root / "cliff_multipass_interval4.toml")
+        control = ExperimentConfig.load(root / "cliff_multipass_control.toml")
+        cold = ExperimentConfig.load(root / "cliff_multipass_cold_slice.toml")
+        self.assertEqual(interval.interval_seconds, 4.0)
+        self.assertEqual(control.interval_seconds, 0.0)
+        self.assertEqual(cold.interval_seconds, 4.0)
+        self.assertNotEqual(cold.scene.environment.hour, interval.scene.environment.hour)
+        for config in (interval, control, cold):
+            self.assertEqual(config.samples, 3)
+            self.assertEqual(config.configurations,
+                             (CompareMode.MULTIPASS, CompareMode.MULTIPASS))
+        self.assertEqual(interval.scene.environment.hour, 13.226033)
+        self.assertEqual(cold.scene.environment.hour, 9.0)
+
+    def test_checked_in_water_input_experiment(self):
+        root = Path(__file__).resolve().parents[1] / "experiments"
+        config = ExperimentConfig.load(root / "shore_water_inputs.toml")
+        self.assertTrue(config.diagnostics.water_inputs)
+        self.assertEqual(config.configurations, CANONICAL_MODES)
+        self.assertEqual(config.scene.pose, ExperimentConfig.load(SCENE_DIRECTORY / "shore.toml").scene.pose)
+        self.assertEqual(config.samples, 3)
+        self.assertEqual(config.scene.environment.hour, 13.226033)
+
+    def test_checked_in_sun_input_experiment(self):
+        root = Path(__file__).resolve().parents[1] / "experiments"
+        config = ExperimentConfig.load(root / "sky_sun_inputs.toml")
+        self.assertTrue(config.diagnostics.sun_inputs)
+        self.assertFalse(config.diagnostics.water_inputs)
+        self.assertEqual(config.configurations, CANONICAL_MODES)
+        self.assertEqual(config.samples, 3)
+        self.assertEqual(config.scene.environment.hour, 13.226033)
+
+    def test_identity_and_depth_clip_experiments_are_explicit(self):
+        root = Path(__file__).resolve().parents[1] / "experiments"
+        water = ExperimentConfig.load(root / "shore_water_identity.toml")
+        sun = ExperimentConfig.load(root / "sky_sun_depth_clip.toml")
+        self.assertTrue(water.diagnostics.water_inputs)
+        self.assertTrue(water.diagnostics.shader_identity)
+        self.assertTrue(sun.diagnostics.sun_inputs)
+        self.assertEqual(sun.diagnostics.sun_depth_clip.value, "disabled_right")
+        self.assertEqual(sun.configurations, CANONICAL_MODES)
+
+    def test_water_treatment_experiments_are_matched(self):
+        root = Path(__file__).resolve().parents[1] / "experiments"
+        control = ExperimentConfig.load(root / "shore_water_control.toml")
+        treated = ExperimentConfig.load(root / "shore_water_zero_weight.toml")
+        self.assertIsNone(control.diagnostics.water_reflection)
+        self.assertEqual(treated.diagnostics.water_reflection.value, "zero_weight")
+        self.assertEqual(control.scene, treated.scene)
+        self.assertEqual(control.configurations, treated.configurations)
+        self.assertEqual((control.samples, control.interval_seconds), (treated.samples, treated.interval_seconds))
+
+    def test_shadow_experiments_are_a_matched_pair(self):
+        root = Path(__file__).resolve().parents[1] / "experiments"
+        control = ExperimentConfig.load(root / "cliff_shadow_control.toml")
+        disabled = ExperimentConfig.load(root / "cliff_shadow_disabled.toml")
+        self.assertIsNone(control.visual_overrides)
+        self.assertEqual(disabled.visual_overrides, VisualOverrides(SunShadows.DISABLED))
+        self.assertEqual(control.scene, disabled.scene)
+        self.assertEqual(control.configurations, (CompareMode.MULTIPASS, CompareMode.MULTIPASS))
+        self.assertEqual(control.configurations, disabled.configurations)
+        self.assertEqual((control.samples, control.interval_seconds), (3, 4.0))
+        self.assertEqual((disabled.samples, disabled.interval_seconds), (3, 4.0))
+
+    def test_diagnostics_default_and_type_validation(self):
+        config = write_config(self.root, ["multipass"])
+        self.assertFalse(config.diagnostics.water_inputs)
+        self.assertFalse(config.diagnostics.sun_inputs)
+        path = self.root / "config.toml"
+        original = path.read_text()
+        for value in ("1", '"true"', "[]"):
+            path.write_text(original + f"\n[diagnostics]\nwater_inputs = {value}\n")
+            with self.subTest(value=value), self.assertRaises(ExperimentError):
+                ExperimentConfig.load(path)
+        path.write_text(original + "\n[diagnostics]\nunknown = true\n")
+        with self.assertRaises(ExperimentError):
+            ExperimentConfig.load(path)
+        for diagnostic in ('water_reflection = "zero_weight"',
+                           'water_reflection = "zero_weight"\nwater_inputs = true',
+                           'water_reflection = "other"\nwater_inputs = true\nshader_identity = true'):
+            path.write_text(original + f"\n[diagnostics]\n{diagnostic}\n")
+            with self.subTest(diagnostic=diagnostic), self.assertRaises(ExperimentError):
+                ExperimentConfig.load(path)
+
+    def test_interval_seconds_loads_and_must_be_finite_nonnegative(self):
+        config = write_config(self.root, ["multipass"], interval_seconds=2.5)
+        self.assertEqual(config.interval_seconds, 2.5)
+        for value in ("-1", "inf", "true", '"2.5"'):
+            path = self.root / "config.toml"
+            path.write_text(
+                'name = "synthetic-glint"\n'
+                "warmup_frames = 12\n"
+                "samples = 3\n"
+                f"interval_seconds = {value}\n"
+                "\n[scene]\n"
+                "position = [1.0, 2.0, 3.0]\n"
+                "orientation = [0.0, 0.0, 0.0, 1.0]\n"
+                "\n[[configurations]]\n"
+                'mode = "multipass"\n'
+            )
+            with self.assertRaises(ExperimentError):
+                ExperimentConfig.load(path)
 
     def test_scene_configs_load_canonical_modes_and_verified_poses(self):
         self.assertEqual(sorted(path.name for path in SCENE_DIRECTORY.glob("*.toml")),
@@ -344,6 +472,124 @@ class ConfigTests(ExperimentTestCase):
             write_config(self.root, ["multipass", "single_pass"], feature=feature)
 
 
+class WaterInputValidationTests(ExperimentTestCase):
+    def test_resolve_content_errors_preserve_failed_status(self):
+        metadata = {"resolve_inputs": {"eyes": [
+            {"status": "observed", "observation": {"constant_buffers": [
+                {"slot": 0, "content": {"status": "unbound"}},
+                {"slot": 3, "content": {"status": "captured"}},
+            ]}}, {"status": "not_required"}]}}
+        self.assertEqual(_resolve_content_errors("shot", metadata),
+                         ["resolve inputs: shot: eye 0 cb0: unbound"])
+        metadata["resolve_inputs"]["eyes"][0]["observation"]["constant_buffers"][0]["content"] = {"status": "captured"}
+        self.assertEqual(_resolve_content_errors("shot", metadata), [])
+
+    def test_water_treatment_checks_draws_and_zero_artifacts(self):
+        records = []
+        for eye in (0, 1):
+            raw = f"shot.weight{eye}.raw"
+            (self.root / raw).write_bytes(bytes(4))
+            records.extend([
+                {"stage": "water_reflection_treatment", "eye": eye, "frame": 42, "error": None,
+                 "water_input": {"capture_id": "shot", "treatment_draws": 1}},
+                {"stage": "water_input_reflection_alpha", "eye": eye, "raw": raw,
+                 "source": {"width": 1, "height": 1, "bytes_per_pixel": 4, "format_id": 41}},
+            ])
+        metadata = {"predicted_display_time_ns": 42, "stages": records}
+        validate_water_treatment(self.root, "shot", metadata, Mode.MULTIPASS)
+        records[0]["water_input"]["treatment_draws"] = 0
+        with self.assertRaises(ProtocolError):
+            validate_water_treatment(self.root, "shot", metadata, Mode.MULTIPASS)
+        records[0]["water_input"]["treatment_draws"] = 1
+        (self.root / "shot.weight0.raw").write_bytes(b"1234")
+        with self.assertRaises(ProtocolError):
+            validate_water_treatment(self.root, "shot", metadata, Mode.MULTIPASS)
+
+    def test_resolve_validation_checks_bindings_and_ranges(self):
+        shader = {"status": "mapped", "identity": {"pristine_sha256": "a" * 64, "actual_sha256": "b" * 64}}
+        observation = {"frame_counters": {"counter": 1, "frame_index": 2, "ring_index": 3},
+                       "pixel_shader": {"pointer": 1, "identity": shader},
+                       "constant_buffers": [{"slot": i, "pointer": 0, "byte_width": 0,
+                                             "first_constant": 0, "num_constants": 0} for i in range(4)],
+                       "resources": [{"slot": i, "view": 0, "resource": 0, "format": 0,
+                                      "dimension": 0, "texture": None} for i in (*range(15), *range(16, 32), 44, 45)]}
+        for slot in (0, 3):
+            observation["constant_buffers"][slot]["content"] = {"status": "unbound"}
+        metadata = {"predicted_display_time_ns": 42, "visual": {"generation": 7},
+                    "resolve_inputs": {"frame": 42, "generation": 7,
+                                       "eyes": [{"status": "observed", "observation": observation},
+                                                {"status": "not_required"}]}}
+        validate_resolve_inputs(self.root, "shot", metadata, Mode.LEFT_ONLY, True)
+        buffer = observation["constant_buffers"][0]
+        buffer.update(pointer=1, byte_width=32, first_constant=0, num_constants=2,
+                      content={"status": "captured", "raw": "shot.resolve_cb0.eye0.raw"})
+        raw = self.root / "shot.resolve_cb0.eye0.raw"
+        raw.write_bytes(bytes(32))
+        validate_resolve_inputs(self.root, "shot", metadata, Mode.LEFT_ONLY, True)
+        raw.write_bytes(bytes(16))
+        with self.assertRaises(ProtocolError):
+            validate_resolve_inputs(self.root, "shot", metadata, Mode.LEFT_ONLY, True)
+        buffer.update(pointer=0, byte_width=0, first_constant=0, num_constants=0,
+                      content={"status": "unbound"})
+        for status in ("unknown_range", "empty_range", "oversize", "invalid_range", "read_error"):
+            buffer["content"] = {"status": status, "error": "read failed"} if status == "read_error" else {"status": status}
+            validate_resolve_inputs(self.root, "shot", metadata, Mode.LEFT_ONLY, True)
+        buffer["content"] = {"status": "read_error"}
+        with self.assertRaises(ProtocolError):
+            validate_resolve_inputs(self.root, "shot", metadata, Mode.LEFT_ONLY, True)
+        buffer["content"] = {"status": "unbound"}
+        observation["constant_buffers"][0]["num_constants"] = -1
+        with self.assertRaises(ProtocolError):
+            validate_resolve_inputs(self.root, "shot", metadata, Mode.LEFT_ONLY, True)
+        observation["constant_buffers"][0]["num_constants"] = 0
+        observation["resources"][0]["slot"] = 44
+        with self.assertRaises(ProtocolError):
+            validate_resolve_inputs(self.root, "shot", metadata, Mode.LEFT_ONLY, True)
+
+    def test_requested_sun_inputs_require_both_stages_and_matching_identity(self):
+        records = []
+        for stage in ("pre_sun_color", "pre_sun_depth"):
+            name = f"shot.{stage}.raw"
+            (self.root / name).write_bytes(bytes(16))
+            records.append({"stage": stage, "eye": 0, "error": None, "raw": name,
+                            "source": {"width": 2, "height": 2, "bytes_per_pixel": 4,
+                                       "format_id": 26 if stage == "pre_sun_color" else 39},
+                            "sun_input": {"capture_id": "shot", "view": 1, "resource": 2,
+                                          "view_format": 26 if stage == "pre_sun_color" else 40,
+                                          "view_dimension": 3, "mip": 0}})
+        validate_sun_inputs(self.root, "shot", {"stages": records}, Mode.LEFT_ONLY)
+        with self.assertRaises(ProtocolError):
+            validate_sun_inputs(self.root, "shot", {"stages": records[:1]}, Mode.LEFT_ONLY)
+        records[1]["sun_input"]["capture_id"] = "wrong"
+        with self.assertRaises(ProtocolError):
+            validate_sun_inputs(self.root, "shot", {"stages": records}, Mode.LEFT_ONLY)
+
+    def test_all_requested_stages_are_validated(self):
+        records = []
+        for eye in (0, 1):
+            for stage, slot, index in (("water_input_reflection", "reflection", 1),
+                                       ("water_input_reflection_alpha", "reflection_alpha", 12),
+                                       ("water_input_refraction", "refraction", 3)):
+                name = f"shot.{stage}.eye{eye}.raw"
+                (self.root / name).write_bytes(bytes(16))
+                records.append({"stage": stage, "eye": eye, "error": None, "raw": name,
+                                "source": {"width": 2, "height": 2, "bytes_per_pixel": 4, "format_id": 26},
+                                "water_input": {"capture_id": "shot", "slot": slot,
+                                                "shader_slot": index, "pixel_shader": 10,
+                                                "draw_index": 3, "tessellated": True,
+                                                "view_format": 26, "view_dimension": 4,
+                                                "most_detailed_mip": 0, "mip_levels": 1,
+                                                "resource": 20, "resource_format": 26}})
+        validate_water_inputs(self.root, "shot", {"stages": records}, Mode.MULTIPASS)
+        with self.assertRaises(ProtocolError):
+            validate_water_inputs(self.root, "shot", {"stages": records[:-1]}, Mode.MULTIPASS)
+        with self.assertRaises(ProtocolError):
+            validate_water_inputs(self.root, "shot", {"stages": records + records[:1]}, Mode.MULTIPASS)
+        records[0]["water_input"]["capture_id"] = "wrong"
+        with self.assertRaises(ProtocolError):
+            validate_water_inputs(self.root, "shot", {"stages": records}, Mode.MULTIPASS)
+
+
 class SampleIdTests(ExperimentTestCase):
     def test_repeated_modes_use_a_global_per_mode_counter(self):
         config = write_config(self.root, ["multipass", "single_pass", "multipass"],
@@ -368,6 +614,65 @@ class SampleIdTests(ExperimentTestCase):
         self.assertTrue(single[0].endswith("_single_pass_1"))
         self.assertTrue(single[-1].endswith("_single_pass_3"))
 
+    def test_interval_seconds_spaces_completed_captures_across_configurations(self):
+        config = write_config(self.root, ["multipass", "multipass"], samples=3,
+                              interval_seconds=4.0)
+        base = capture_factory()
+        now = [0.0]
+        sleeps = []
+        captures = []
+
+        def monotonic():
+            return now[0]
+
+        def sleep(seconds):
+            sleeps.append(seconds)
+            now[0] += seconds
+
+        def capture(*args, **kwargs):
+            now[0] += 0.25
+            captures.append(args)
+            return base(*args, **kwargs)
+
+        self.run_config(config, capture=capture, monotonic=monotonic, sleep=sleep)
+        self.assertEqual(len(captures), 6)
+        self.assertAlmostEqual(sum(sleeps), 5 * 4.0)
+        self.assertTrue(all(0 < gap <= 0.2 for gap in sleeps))
+
+    def test_interval_seconds_stops_at_the_deadline_without_another_capture(self):
+        config = write_config(self.root, ["multipass"], samples=3, interval_seconds=4.0)
+        base = capture_factory()
+        captures = []
+        now = [0.0]
+        sleeps = []
+
+        def monotonic():
+            return now[0]
+
+        def sleep(seconds):
+            sleeps.append(seconds)
+            now[0] += seconds
+
+        def capture(*args, **kwargs):
+            now[0] += 0.25
+            captures.append(args)
+            return base(*args, **kwargs)
+
+        runner = FakeRunner(self.root / "config")
+        runner.deadline = 2.0
+        report = self.run_config(config, capture=capture, runner=runner,
+                                 monotonic=monotonic, sleep=sleep)
+        self.assertEqual(len(captures), 1)
+        self.assertLessEqual(now[0], 2.0)
+        self.assertIn("deadline", " ".join(report.errors))
+        self.assertGreater(runner.assert_running_calls, 1)
+
+    def test_zero_interval_seconds_never_sleeps(self):
+        config = write_config(self.root, ["multipass"], samples=3)
+        sleeps = []
+        self.run_config(config, sleep=sleeps.append)
+        self.assertEqual(sleeps, [])
+
     def test_pair_stem_is_shared_between_modes(self):
         prefix = "synthetic_ab12cd34"
         single = sample_id(prefix, CompareMode.SINGLE_PASS, 1)
@@ -377,6 +682,55 @@ class SampleIdTests(ExperimentTestCase):
 
 
 class RunTests(ExperimentTestCase):
+    def test_resolve_read_error_retains_captures_and_comparison_outcome(self):
+        config = write_config(self.root, ["multipass"])
+        config = dataclasses.replace(config, diagnostics=dataclasses.replace(
+            config.diagnostics, resolve_inputs=True))
+        base = capture_factory()
+
+        def capture(runner, config, pose, anchor, mode, generation, identifier):
+            result = base(runner, config, pose, anchor, mode, generation, identifier)
+            folder = runner.config_dir / "captures"
+            eyes = []
+            for eye in range(2):
+                buffers = []
+                for slot in range(4):
+                    buffer = {"slot": slot, "pointer": 1, "byte_width": 16,
+                              "first_constant": 0, "num_constants": 1}
+                    if slot in (0, 3):
+                        if eye == 0 and slot == 3:
+                            buffer["content"] = {"status": "read_error", "error": "map failed"}
+                        else:
+                            raw = f"{identifier}.resolve_cb{slot}.eye{eye}.raw"
+                            (folder / raw).write_bytes(bytes(16))
+                            buffer["content"] = {"status": "captured", "raw": raw}
+                    buffers.append(buffer)
+                eyes.append({"status": "observed", "observation": {
+                    "frame_counters": {"counter": 1, "frame_index": 0, "ring_index": 0},
+                    "pixel_shader": {"pointer": 1, "identity": {"status": "unarmed"}},
+                    "constant_buffers": buffers,
+                    "resources": [{"slot": slot, "view": 0, "resource": 0,
+                                   "format": 0, "dimension": 0, "texture": None}
+                                  for slot in (*range(15), *range(16, 32), 44, 45)],
+                }})
+            metadata = {"predicted_display_time_ns": result.predicted_display_time_ns,
+                        "visual": {"generation": generation},
+                        "resolve_inputs": {"frame": result.predicted_display_time_ns,
+                                           "generation": generation, "eyes": eyes}}
+            validate_resolve_inputs(folder, identifier, metadata, mode, False)
+            (folder / f"{identifier}.capture.json").write_text(json.dumps(metadata))
+            return result
+
+        report = self.run_config(config, capture=capture)
+        self.assertEqual(report.comparison_outcome, Outcome.PASS)
+        self.assertEqual(report.outcome, Outcome.INCONCLUSIVE)
+        self.assertEqual(len(report.captures), 3)
+        manifest = json.loads((self.root / "out" / "manifest.json").read_text())
+        self.assertEqual(len(manifest["cases"][0]["modes"]["multipass"]), 3)
+        self.assertEqual(len(report.errors), 3)
+        self.assertTrue(all("eye 0 cb3: read_error" in error for error in report.errors))
+        self.assertIsNone(report.restoration_error)
+
     def test_anchor_uses_the_first_configured_mode(self):
         config = write_config(self.root, ["left_only", "multipass", "right_only",
                                           "single_pass"])
@@ -574,6 +928,7 @@ class RunTests(ExperimentTestCase):
         wire = json.loads(json.dumps(report.to_wire()))
         self.assertEqual(wire["feature"]["status"], "match")
         self.assertEqual(wire["outcome"], "pass")
+        self.assertEqual(wire["interval_seconds"], 0.0)
 
 
 class FeatureTests(unittest.TestCase):

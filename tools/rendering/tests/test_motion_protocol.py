@@ -11,6 +11,10 @@ from tools.rendering.protocol import (
     PoseRequest,
     ProtocolError,
     Request,
+    SunDepthClip,
+    SunShadows,
+    VisualOverrides,
+    WaterReflection,
     compose_pose,
     quaternion_normalize,
 )
@@ -68,6 +72,15 @@ def capture_pose(phase=15, anchor=ANCHOR, request=REQUEST):
 
 
 class MotionProtocolTests(unittest.TestCase):
+    def test_water_reflection_request_requires_inputs(self):
+        request = Request(Command.SCREENSHOT, "shot", water_inputs=True,
+                          water_reflection=WaterReflection.ZERO_WEIGHT)
+        self.assertEqual(tomllib.loads(request.to_toml())["water_reflection"], "zero_weight")
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", water_reflection=WaterReflection.ZERO_WEIGHT)
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", water_inputs=True, water_reflection="zero_weight")
+
     def test_motion_request_wire_toml_and_trajectory(self):
         self.assertEqual(REQUEST.to_wire(), {
             "case_id": "motion", "period_frames": 120,
@@ -120,6 +133,51 @@ class MotionProtocolTests(unittest.TestCase):
         self.assertEqual(Request(Command.CONFIGURE, "legacy", Mode.LEFT_ONLY, 30).to_wire(),
                          {"command": "visual_configure", "id": "legacy",
                           "mode": "left_only", "warmup_frames": 30})
+
+    def test_water_input_request_is_typed_and_screenshot_only(self):
+        request = Request(Command.SCREENSHOT, "shot", water_inputs=True, sun_inputs=True)
+        parsed = tomllib.loads(request.to_toml())
+        self.assertIs(parsed["water_inputs"], True)
+        self.assertIs(parsed["sun_inputs"], True)
+        self.assertNotIn("water_inputs", Request(Command.SCREENSHOT, "shot").to_wire())
+        for value in (1, "true", [], {}):
+            with self.subTest(value=value), self.assertRaises(ProtocolError):
+                Request(Command.SCREENSHOT, "shot", water_inputs=value)
+        with self.assertRaises(ProtocolError):
+            Request(Command.END, "end", water_inputs=True)
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", sun_inputs=1)
+        with self.assertRaises(ProtocolError):
+            Request(Command.END, "end", sun_inputs=True)
+
+    def test_shadow_override_is_configure_only_and_closed(self):
+        override = VisualOverrides(SunShadows.DISABLED)
+        request = Request(Command.CONFIGURE, "cfg", Mode.MULTIPASS, 30, visual_overrides=override)
+        self.assertEqual(tomllib.loads(request.to_toml())["visual_overrides"], {"sun_shadows": "disabled"})
+        self.assertEqual(VisualOverrides.from_wire({"sun_shadows": "disabled"}), override)
+        for value in ({}, {"sun_shadows": "enabled"}, {"sun_shadows": "disabled", "other": True}):
+            with self.subTest(value=value), self.assertRaises(ProtocolError):
+                VisualOverrides.from_wire(value)
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", visual_overrides=override)
+
+        self.assertTrue(tomllib.loads(Request(Command.CONFIGURE, "identity", Mode.MULTIPASS, 30,
+                                               shader_identity=True).to_toml())["shader_identity"])
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", shader_identity=True)
+        with self.assertRaises(ProtocolError):
+            Request(Command.CONFIGURE, "identity", Mode.MULTIPASS, 30, shader_identity=1)
+
+    def test_capture_diagnostics_are_typed_and_scoped(self):
+        request = Request(Command.SCREENSHOT, "shot", sun_inputs=True, resolve_inputs=True,
+                          sun_depth_clip=SunDepthClip.DISABLED_RIGHT)
+        wire = tomllib.loads(request.to_toml())
+        self.assertEqual(wire["sun_depth_clip"], "disabled_right")
+        self.assertTrue(wire["resolve_inputs"])
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", sun_depth_clip=SunDepthClip.DISABLED_RIGHT)
+        with self.assertRaises(ProtocolError):
+            Request(Command.END, "end", resolve_inputs=True)
 
     def test_request_variants_reject_motion_misuse(self):
         pose = PoseRequest("pose", OrientationOffset(0.0, 0.0, 0.0))

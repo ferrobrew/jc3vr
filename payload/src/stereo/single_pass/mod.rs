@@ -76,24 +76,29 @@ mod frame_diagnostics;
 mod instanced_exposure;
 mod per_eye_reissue;
 mod shader_detours;
+pub(crate) mod shader_identity;
 mod shader_policy;
+mod sun;
 mod viewport;
 mod water_fragment_state;
 mod water_gpu_probe;
 
 pub use cb13::*;
 pub use config_snapshot::*;
-pub(crate) use detour_lifecycle::ensure_viewport_detours;
-use detour_lifecycle::{DETOUR_INSTALL, DetourSlot};
+use detour_lifecycle::{DETOUR_INSTALL, DetourSlot, PIXEL_SHADER_EVER_ENABLED};
+pub(crate) use detour_lifecycle::{
+    ensure_pixel_shader_detour, ensure_viewport_detours, vertex_identity_detour_ready,
+};
 use draw_detours::*;
 pub use frame_diagnostics::*;
 pub use instanced_exposure::*;
 pub use per_eye_reissue::*;
 pub use shader_detours::*;
 pub use shader_policy::*;
+pub use sun::*;
 pub use viewport::*;
 pub(crate) use water_fragment_state::begin_water_surface;
-pub(crate) use water_gpu_probe::WaterGpuProbe;
+pub(crate) use water_gpu_probe::{WaterGpuProbe, begin_water_input_capture, reflection_producer};
 
 pub(crate) use crate::stereo::engine_context::EngineContext;
 
@@ -570,10 +575,18 @@ pub fn log_draw_split(first: u32, last: u32) {
 /// payload code, so leaving them enabled while the DLL unmaps dangles those jumps and the next D3D
 /// call crashes. Runs under a thread suspender and the install lock, like install -- with the same
 /// caveat that suspension narrows rather than closes the in-prologue window.
-pub fn uninstall_com_detours() {
+pub fn uninstall_com_detours() -> bool {
     let _install = DETOUR_INSTALL.lock();
-    if RS_SET_VIEWPORTS.get().is_none() {
-        return; // never installed (single-pass never activated this session)
+    if !allow_com_reclamation(PIXEL_SHADER_EVER_ENABLED.load(Ordering::Acquire), true, 0) {
+        tracing::error!(
+            subsystem = "shader_identity",
+            restart_required = true,
+            "COM detour removal: shader identity detour was enabled; the payload must remain mapped and the game must be restarted"
+        );
+        return false;
+    }
+    if RS_SET_VIEWPORTS.get().is_none() && shader_identity::CREATE_PIXEL_SHADER.get().is_none() {
+        return true;
     }
 
     // Ordering here has to satisfy two constraints that pull against each other.
@@ -593,10 +606,10 @@ pub fn uninstall_com_detours() {
     // not happen while other threads are suspended below. `disable_detour!` writes through a
     // checked accessor, so a slot count that falls behind the number of call sites drops the
     // overflowing name from the log instead of indexing out of bounds in this `nounwind` context.
-    let mut failed: [Option<&'static str>; 10] = [None; 10];
+    let mut failed: [Option<&'static str>; 11] = [None; 11];
     let mut failures = 0usize;
 
-    let _ = ThreadSuspender::for_block(|| {
+    let suspension = ThreadSuspender::for_block(|| {
         // A detour left enabled here is a relay still pointing into the about-to-be-freed payload
         // image, so a swallowed failure would be an undiagnosable crash -- record it. Recorded
         // rather than logged because formatting a `tracing` event allocates, which is the very
@@ -631,15 +644,25 @@ pub fn uninstall_com_detours() {
         );
         disable_detour!(DRAW_INSTANCED_INDIRECT, "DrawInstancedIndirect");
         disable_detour!(VS_SET_SHADER, "VSSetShader");
+        disable_detour!(shader_identity::CREATE_PIXEL_SHADER, "CreatePixelShader");
         disable_detour!(CREATE_VERTEX_SHADER, "CreateVertexShader");
         disable_detour!(SET_VERTEX_PROGRAM_CONSTANTS, "SetVertexProgramConstants");
         Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
     });
 
+    if let Err(error) = &suspension {
+        tracing::error!(%error, restart_required = true,
+            "COM detour removal: thread suspension failed; the payload must remain mapped and the game must be restarted");
+    }
     for name in failed.iter().flatten() {
         tracing::error!(
-            "single-pass: {name} did not disable (still dangling into the freed payload image)"
+            detour = name,
+            restart_required = true,
+            "COM detour removal: detour did not disable; the payload must remain mapped and the game must be restarted"
         );
+    }
+    if !allow_com_reclamation(false, suspension.is_ok(), failures) {
+        return false;
     }
 
     // Threads are running again and the functions are unpatched, so these drops are unreachable by
@@ -652,6 +675,8 @@ pub fn uninstall_com_detours() {
     drop(DRAW_INDEXED_INSTANCED_INDIRECT.take());
     drop(DRAW_INSTANCED_INDIRECT.take());
     drop(VS_SET_SHADER.take());
+    drop(shader_identity::CREATE_PIXEL_SHADER.take());
+    shader_identity::disarm();
     drop(CREATE_VERTEX_SHADER.take());
     drop(SET_VERTEX_PROGRAM_CONSTANTS.take());
     release_cb13();
@@ -667,6 +692,15 @@ pub fn uninstall_com_detours() {
     VS_TRANSFORM_CACHE.lock().clear();
     reset_instanced_exposure();
     tracing::info!("single-pass: COM detours uninstalled");
+    true
+}
+
+fn allow_com_reclamation(
+    identity_ever_enabled: bool,
+    suspension_ok: bool,
+    failures: usize,
+) -> bool {
+    !identity_ever_enabled && suspension_ok && failures == 0
 }
 
 static IN_GBUFFER_RANGE: AtomicBool = AtomicBool::new(false);
@@ -833,6 +867,15 @@ static TERRAIN_DS_REPROJECTED: AtomicUsize = AtomicUsize::new(0);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn com_reclamation_fails_closed() {
+        assert!(allow_com_reclamation(false, true, 0));
+        assert!(!allow_com_reclamation(true, true, 0));
+        assert!(!allow_com_reclamation(false, false, 0));
+        assert!(!allow_com_reclamation(false, true, 1));
+        assert!(!allow_com_reclamation(true, false, 1));
+    }
 
     const CAPTURE_VS: &[u8] = include_bytes!("../../shaders/capture_vs.dxbc");
 

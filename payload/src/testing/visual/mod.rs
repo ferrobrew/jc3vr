@@ -6,9 +6,12 @@ use std::{
 };
 
 use anyhow::Context as _;
-use jc3gi::{clock::Clock, graphics_engine::graphics_engine::GraphicsEngine};
+use jc3gi::{
+    clock::Clock,
+    graphics_engine::{graphics_engine::GraphicsEngine, shadow_manager::get_shadow_system_enabled},
+};
 use parking_lot::Mutex;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 pub(crate) mod environment;
 pub(crate) mod motion;
@@ -46,11 +49,26 @@ pub(crate) enum DiagnosticProfile {
     ControlledV2,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SunShadowsOverride {
+    Disabled,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct VisualOverrides {
+    pub sun_shadows: SunShadowsOverride,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct VisualMetadata {
     pub generation: u64,
     pub mode: Option<RenderMode>,
     pub profile: DiagnosticProfile,
+    pub shader_identity: crate::stereo::single_pass::shader_identity::CensusStatus,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visual_overrides: Option<VisualOverrides>,
     pub ready: bool,
     pub paused: bool,
     pub frozen: bool,
@@ -108,6 +126,8 @@ pub(crate) enum Request {
         pose: Option<PoseRequest>,
         motion: Option<MotionRequest>,
         environment: Option<EnvironmentRequest>,
+        shader_identity: bool,
+        visual_overrides: Option<VisualOverrides>,
     },
     End {
         id: RequestId,
@@ -122,6 +142,7 @@ pub(crate) struct FrameObservation {
     pub single_pass: bool,
     pub camera_frozen: bool,
     pub horizon_map_ready: bool,
+    pub shadow_override_ready: bool,
     pub frame_identity: Option<i64>,
     pub generation: u64,
     pub pose: Option<PoseEvidence>,
@@ -245,6 +266,8 @@ pub(crate) fn process_pending() {
             pose,
             motion,
             environment,
+            shader_identity,
+            visual_overrides,
             ..
         } => {
             if let Some(environment) = environment
@@ -271,9 +294,37 @@ pub(crate) fn process_pending() {
             if reset_pose {
                 pose_control::reset();
             }
+            let newly_armed = if shader_identity {
+                let newly = single_pass::shader_identity::arm();
+                single_pass::ensure_viewport_detours();
+                if !single_pass::vertex_identity_detour_ready() {
+                    single_pass::shader_identity::mark_install_failed();
+                    state.fail(
+                        "shader identity: vertex shader detour installation failed".to_owned(),
+                    );
+                    return;
+                }
+                if !single_pass::ensure_pixel_shader_detour() {
+                    single_pass::shader_identity::mark_install_failed();
+                    state.fail(
+                        "shader identity: pixel shader detour installation failed".to_owned(),
+                    );
+                    return;
+                }
+                newly
+            } else {
+                single_pass::shader_identity::disarm();
+                false
+            };
             let first = state.mode.is_none();
             let previous_sps = Config::lock_query(|config| config.stereo.single_pass.enabled);
-            apply_profile(&mut CONFIG.lock(), mode);
+            {
+                let mut config = CONFIG.lock();
+                apply_profile_with_overrides(&mut config, mode, visual_overrides);
+            }
+            state.shadow_sync_required |=
+                visual_overrides.is_some() || crate::hooks::game::sun_shadow_override_active();
+            state.visual_overrides = visual_overrides;
             CLOCK_HELD.store(true, Ordering::Release);
             unsafe {
                 if let Some(clock) = Clock::get() {
@@ -291,18 +342,28 @@ pub(crate) fn process_pending() {
                     "visual control: the device does not support single-pass viewport routing"
                         .to_owned(),
                 );
-            } else if (first || previous_error || previous_sps != (mode == Mode::SinglePass))
+                return;
+            } else if (first
+                || previous_error
+                || newly_armed
+                || previous_sps != (mode == Mode::SinglePass))
                 && let Err(error) = shader::reload_now()
             {
                 state.fail(error.to_string());
+                return;
+            }
+            if shader_identity && single_pass::shader_identity::status().status != "complete" {
+                state.fail("shader identity: shader census is incomplete after reload".to_owned());
             }
         }
         Request::End { .. } => {
+            single_pass::shader_identity::disarm();
             if let Err(error) = state.restore_environment_for_end() {
                 state.fail_without_environment_retry(error.to_string());
                 return;
             }
             state.mode = None;
+            state.visual_overrides = None;
             state.clear_pose();
             CLOCK_HELD.store(false, Ordering::Release);
             dispatch::set_mode(RenderMode::Native);
@@ -328,11 +389,14 @@ pub(crate) fn frame_complete() {
             let resolution = crate::vr::resolution_progress();
             let config = CONFIG.lock();
             let paused = unsafe { Clock::get().map(|clock| clock.m_Stop) };
+            let shadow_ready = !state.shadow_sync_required
+                || shadow_override_ready(config.stereo.disable_sun_shadows);
             if let Some(active) = state.complete_restore(
                 resolution,
                 paused,
                 config.director.paused,
                 config.vr.freeze_mode != FreezeMode::Off,
+                shadow_ready,
             ) {
                 let metadata = state.metadata();
                 state.environment = None;
@@ -360,6 +424,8 @@ pub(crate) fn frame_complete() {
             camera_frozen: live.is_some()
                 && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
+            shadow_override_ready: !state.shadow_sync_required
+                || shadow_override_ready(state.visual_overrides.is_some()),
             frame_identity,
             generation: state.generation,
             pose: None,
@@ -388,6 +454,8 @@ pub(crate) fn frame_complete() {
             camera_frozen: live.is_some()
                 && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
+            shadow_override_ready: !state.shadow_sync_required
+                || shadow_override_ready(state.visual_overrides.is_some()),
             frame_identity,
             generation: state.generation,
             pose,
@@ -420,6 +488,7 @@ pub(crate) fn clock_held() -> bool {
 }
 
 pub(crate) fn shutdown() {
+    single_pass::shader_identity::disarm();
     CLOCK_HELD.store(false, Ordering::Release);
     let mut state = STATE.lock();
     while let Some(request) = state.pending.pop_front() {
@@ -454,6 +523,8 @@ struct State {
     saved: Option<Config>,
     operation: Operation,
     mode: Option<Mode>,
+    visual_overrides: Option<VisualOverrides>,
+    shadow_sync_required: bool,
     generation: u64,
     ready: bool,
     warmup_frames: u32,
@@ -511,6 +582,8 @@ impl State {
             saved: None,
             operation: Operation::Idle,
             mode: None,
+            visual_overrides: None,
+            shadow_sync_required: false,
             generation: 0,
             ready: false,
             warmup_frames: 0,
@@ -537,6 +610,8 @@ impl State {
             } else {
                 DiagnosticProfile::Native
             },
+            shader_identity: single_pass::shader_identity::status(),
+            visual_overrides: self.visual_overrides,
             ready: self.is_ready(),
             paused: self.paused,
             frozen: self.frozen,
@@ -660,6 +735,7 @@ impl State {
             && paused
             && observed.camera_frozen
             && observed.horizon_map_ready
+            && observed.shadow_override_ready
             && (self.requested_pose.is_none() || pose.is_some());
         if !matches {
             self.completed_frames = 0;
@@ -720,7 +796,8 @@ impl State {
             && observed.engine_dimensions == observed.target_dimensions
             && paused
             && observed.camera_frozen
-            && observed.horizon_map_ready;
+            && observed.horizon_map_ready
+            && observed.shadow_override_ready;
         if !running {
             if !matches {
                 self.last_frame = Some(frame_identity);
@@ -854,15 +931,18 @@ impl State {
         paused: Option<bool>,
         expected_paused: bool,
         frozen: bool,
+        shadow_ready: bool,
     ) -> Option<Active> {
         if !matches!(self.operation, Operation::Restoring(_))
             || self.error.is_some()
             || !resolution.settled()
             || paused != Some(expected_paused)
+            || !shadow_ready
         {
             return None;
         }
         self.saved = None;
+        self.shadow_sync_required = false;
         self.paused = expected_paused;
         self.frozen = frozen;
         self.last_dimensions = resolution.engine;
@@ -925,6 +1005,32 @@ impl State {
     }
 }
 
+fn shadow_state_matches(disable: bool, setting: Option<bool>, live: bool, active: bool) -> bool {
+    let Some(setting) = setting else {
+        return false;
+    };
+    if disable {
+        active && !setting && !live
+    } else {
+        !active && setting == live
+    }
+}
+
+fn shadow_override_ready(disable: bool) -> bool {
+    let setting = unsafe {
+        GraphicsEngine::get()
+            .and_then(|engine| engine.m_ShadowManager.as_ref())
+            .map(|shadow| shadow.m_Enabled)
+    };
+    let live = unsafe { *get_shadow_system_enabled() };
+    shadow_state_matches(
+        disable,
+        setting,
+        live,
+        crate::hooks::game::sun_shadow_override_active(),
+    )
+}
+
 /// Whether both horizon-map slices are loaded for both frame parities.
 ///
 /// The engine keeps two asynchronously loaded slices per parity and stages them as the two
@@ -977,6 +1083,22 @@ fn horizon_map_ready() -> bool {
             ],
         ],
     )
+}
+
+fn apply_profile_with_overrides(
+    config: &mut Config,
+    mode: Mode,
+    overrides: Option<VisualOverrides>,
+) {
+    apply_profile(config, mode);
+    if matches!(
+        overrides,
+        Some(VisualOverrides {
+            sun_shadows: SunShadowsOverride::Disabled
+        })
+    ) {
+        config.stereo.disable_sun_shadows = true;
+    }
 }
 
 fn apply_profile(config: &mut Config, mode: Mode) {

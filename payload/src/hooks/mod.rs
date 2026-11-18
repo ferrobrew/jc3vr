@@ -135,7 +135,9 @@ pub(super) fn uninstall() -> bool {
     // The single-pass COM-vtable detours inline-patch the DXVK functions to jump into payload code
     // and are managed outside the HookLibrary, so tear them down explicitly before the DLL unloads --
     // otherwise the dangling jumps crash the game on the next D3D call.
-    crate::stereo::single_pass::uninstall_com_detours();
+    if !crate::stereo::single_pass::uninstall_com_detours() {
+        return false;
+    }
     let Some(state) = HOOK_STATE.get() else {
         tracing::error!("hook removal: installation state is unavailable");
         return false;

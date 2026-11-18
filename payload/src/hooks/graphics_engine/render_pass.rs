@@ -30,7 +30,10 @@ use crate::{
         trace::{TraceEvent, TraceState, tracing_active},
     },
     hooks::graphics_engine::screen::reconstruction,
-    stereo::{STEREO_STATE, draw_index, is_second_eye},
+    stereo::{
+        STEREO_STATE, draw_index, is_second_eye,
+        single_pass::{is_sun_pass, reissue_sun_pass},
+    },
     vr::foveation::{FORCE_STENCIL_TEST, FoveationParams},
 };
 
@@ -130,14 +133,25 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     // Publish the pass for the duration of the walk: the draw detours see only a D3D context, and
     // which pass a draw belongs to is what tells a geometry draw apart from a fullscreen one.
     // SAFETY: `this` is the live render pass; `m_Index` is its render-pass id.
-    let previous_pass = crate::stereo::single_pass::set_current_pass(unsafe { (*this).m_Index });
-    let result = DO_DRAW.get().unwrap().call(this, ctx, color_mask);
+    let pass_id = unsafe { (*this).m_Index };
+    let previous_pass = crate::stereo::single_pass::set_current_pass(pass_id);
+    // Capture-gated producer diagnostic for the passes that feed the water's reflection inputs;
+    // inert for every other pass and for an unarmed capture.
+    let _reflection_producer = crate::stereo::single_pass::reflection_producer(pass_id.into());
+    let sun_pass = is_sun_pass(pass_id);
+    let result = if sun_pass {
+        reissue_sun_pass(ctx, &|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
+            .unwrap_or_else(|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
+    } else {
+        DO_DRAW.get().unwrap().call(this, ctx, color_mask)
+    };
     crate::stereo::single_pass::restore_current_pass(previous_pass);
+    if sun_pass {
+        crate::screenshot::harness::stages::capture_after_sun();
+    }
     drop(window);
     if diff {
         let ops = op_total().wrapping_sub(ops_before);
-        // SAFETY: `this` is the live render pass; `m_Index` is its render-pass id.
-        let pass_id = unsafe { (*this).m_Index };
         record_pass(pass_id, draw_index(), ops);
     }
     // Close the final render-block-type run's scope before the pass scope closes.

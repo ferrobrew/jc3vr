@@ -24,7 +24,7 @@ from pathlib import Path
 import numpy as np
 
 from tools.rendering.capture.suite import write_manifest
-from tools.rendering.capture.validation import validate_capture
+from tools.rendering.capture.validation import read_object, validate_capture
 from tools.rendering.comparison.images import Mode as CompareMode
 from tools.rendering.comparison.images import (
     Outcome,
@@ -33,8 +33,10 @@ from tools.rendering.comparison.images import (
     load_sample,
 )
 from tools.rendering.comparison.stages import Stage, load_stage
-from tools.rendering.session.attach import AttachedSession
-from tools.rendering.session.errors import SessionError
+from tools.rendering.experiment_matched import (
+    matched_capture_identity,
+    matched_cross_metrics,
+)
 from tools.rendering.protocol import (
     POSE_TOLERANCE,
     Camera,
@@ -53,7 +55,10 @@ from tools.rendering.protocol import (
     RestorationAck,
     Sample,
     ScreenshotAck,
+    SunDepthClip,
     TranslationOffset,
+    VisualOverrides,
+    WaterReflection,
     WeatherControl,
     WeatherEvent,
     composed_positions_match,
@@ -61,10 +66,13 @@ from tools.rendering.protocol import (
     quaternions_match,
     valid_request_id,
 )
+from tools.rendering.session.attach import AttachedSession
+from tools.rendering.session.errors import SessionError
 
 LOG = logging.getLogger("tools.rendering.experiment")
 
 RESTORATION_BUDGET = 35.0
+SPACING_POLL_SECONDS = 0.2
 ENVIRONMENT_HOUR_TOLERANCE = 0.05
 ENVIRONMENT_MAX_WEATHER_SEVERITY = 0.5
 MAX_NAME_LENGTH = 32
@@ -219,6 +227,49 @@ class Feature:
 
 
 @dataclass(frozen=True)
+class Diagnostics:
+    water_inputs: bool = False
+    sun_inputs: bool = False
+    shader_identity: bool = False
+    resolve_inputs: bool = False
+    sun_depth_clip: SunDepthClip | None = None
+    water_reflection: WaterReflection | None = None
+
+    def __post_init__(self):
+        if type(self.water_inputs) is not bool:
+            raise ExperimentError("experiment: diagnostics.water_inputs must be a boolean")
+        if type(self.sun_inputs) is not bool:
+            raise ExperimentError("experiment: diagnostics.sun_inputs must be a boolean")
+        if type(self.shader_identity) is not bool:
+            raise ExperimentError("experiment: diagnostics.shader_identity must be a boolean")
+        if type(self.resolve_inputs) is not bool:
+            raise ExperimentError("experiment: diagnostics.resolve_inputs must be a boolean")
+        if self.sun_depth_clip is not None and (not isinstance(self.sun_depth_clip, SunDepthClip) or not self.sun_inputs):
+            raise ExperimentError("experiment: diagnostics.sun_depth_clip requires sun_inputs")
+        if self.water_reflection is not None and (not isinstance(self.water_reflection, WaterReflection) or
+                                                   not self.water_inputs or not self.shader_identity):
+            raise ExperimentError("experiment: diagnostics.water_reflection requires water_inputs and shader_identity")
+        if self.sun_depth_clip is not None and self.shader_identity:
+            raise ExperimentError("experiment: sun depth clip treatment and shader census must use separate captures")
+
+    @classmethod
+    def from_toml(cls, value):
+        value = _table(value, "diagnostics")
+        _keys(value, set(), {"water_inputs", "sun_inputs", "shader_identity", "resolve_inputs", "sun_depth_clip", "water_reflection"}, "diagnostics")
+        try:
+            depth_clip = SunDepthClip(value["sun_depth_clip"]) if "sun_depth_clip" in value else None
+            water_reflection = WaterReflection(value["water_reflection"]) if "water_reflection" in value else None
+        except (ValueError, TypeError) as error:
+            raise ExperimentError("experiment: invalid diagnostic treatment") from error
+        return cls(value.get("water_inputs", False), value.get("sun_inputs", False),
+                   value.get("shader_identity", False), value.get("resolve_inputs", False), depth_clip, water_reflection)
+
+
+class MatchedTreatment(StrEnum):
+    WATER_REFLECTION_ABBA = "water_reflection_abba"
+
+
+@dataclass(frozen=True)
 class ExperimentConfig:
     name: str
     warmup_frames: int
@@ -226,6 +277,10 @@ class ExperimentConfig:
     scene: Scene
     configurations: tuple[CompareMode, ...]
     feature: Feature | None
+    interval_seconds: float = 0.0
+    diagnostics: Diagnostics = dataclasses.field(default_factory=Diagnostics)
+    visual_overrides: VisualOverrides | None = None
+    matched_treatment: MatchedTreatment | None = None
 
     def __post_init__(self):
         if not valid_request_id(self.name) or len(self.name) > MAX_NAME_LENGTH:
@@ -241,6 +296,24 @@ class ExperimentConfig:
             raise ExperimentError("experiment: config.samples must be an integer of at least three")
         if not self.configurations:
             raise ExperimentError("experiment: config.configurations must not be empty")
+        if (type(self.interval_seconds) not in (int, float)
+                or not math.isfinite(self.interval_seconds) or self.interval_seconds < 0):
+            raise ExperimentError(
+                "experiment: config.interval_seconds must be a finite nonnegative number"
+            )
+        object.__setattr__(self, "interval_seconds", float(self.interval_seconds))
+        if not isinstance(self.diagnostics, Diagnostics):
+            raise ExperimentError("experiment: config.diagnostics must be a diagnostics table")
+        if self.matched_treatment is not None and (
+                self.matched_treatment != MatchedTreatment.WATER_REFLECTION_ABBA or
+                self.configurations != (CompareMode.MULTIPASS,) or self.feature is not None or
+                not self.diagnostics.water_inputs or not self.diagnostics.shader_identity or
+                self.diagnostics.water_reflection is not None or self.diagnostics.sun_depth_clip is not None):
+            raise ExperimentError("experiment: matched water treatment requires one multipass configuration, water inputs, and shader identity, without a feature or other treatment")
+        if self.diagnostics.water_reflection is not None and any(mode != CompareMode.MULTIPASS for mode in self.configurations):
+            raise ExperimentError("experiment: water reflection treatment requires multipass configurations")
+        if self.visual_overrides is not None and not isinstance(self.visual_overrides, VisualOverrides):
+            raise ExperimentError("experiment: invalid visual overrides")
         if self.feature is None:
             return
         references = set(self.feature.reference_modes)
@@ -276,13 +349,21 @@ class ExperimentConfig:
         except (OSError, tomllib.TOMLDecodeError) as error:
             raise ExperimentError(f"experiment: could not read config {path}: {error}") from error
         _keys(value, {"name", "warmup_frames", "samples", "scene", "configurations"},
-              {"feature"}, str(path))
+              {"feature", "interval_seconds", "diagnostics", "visual_overrides", "matched_treatment"}, str(path))
+        try:
+            matched = MatchedTreatment(value["matched_treatment"]) if "matched_treatment" in value else None
+        except (ValueError, TypeError) as error:
+            raise ExperimentError("experiment: invalid matched_treatment") from error
         return cls(_string(value.get("name"), "config.name"),
                    _integer(value.get("warmup_frames"), "config.warmup_frames"),
                    _integer(value.get("samples"), "config.samples"),
                    Scene.from_toml(value.get("scene")),
                    _configuration_list(value.get("configurations")),
-                   (Feature.from_toml(value["feature"]) if "feature" in value else None))
+                   (Feature.from_toml(value["feature"]) if "feature" in value else None),
+                   _number(value.get("interval_seconds", 0.0), "config.interval_seconds"),
+                   Diagnostics.from_toml(value.get("diagnostics", {})),
+                   VisualOverrides.from_wire(value["visual_overrides"]) if "visual_overrides" in value else None,
+                   matched)
 
 
 @dataclass(frozen=True)
@@ -290,6 +371,7 @@ class CaptureSummary:
     mode: CompareMode
     capture_id: str
     frame_ordinal: int
+    condition: str | None = None
 
 
 @dataclass(frozen=True)
@@ -339,6 +421,11 @@ class ExperimentReport:
     errors: tuple[str, ...]
     restoration_error: str | None
     environment_restoration: str
+    interval_seconds: float = 0.0
+    diagnostics: Diagnostics = dataclasses.field(default_factory=Diagnostics)
+    visual_overrides: VisualOverrides | None = None
+    matched_treatment: MatchedTreatment | None = None
+    matched_cross_condition: tuple[dict, ...] = ()
 
     @property
     def exit_code(self) -> int:
@@ -353,14 +440,18 @@ def sample_id(prefix: str, mode: CompareMode, index: int) -> str:
 
 
 def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
-                   analyze=None) -> ExperimentReport:
+                   analyze=None, monotonic=None, sleep=None) -> ExperimentReport:
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     capture = capture or _capture
     analyze = analyze or _analyze
+    monotonic = monotonic or time.monotonic
+    sleep = sleep or time.sleep
     prefix = f"{config.name.replace('-', '_')}_{uuid.uuid4().hex[:8]}"
-    case = Case(config.name, {})
-    manifest = Manifest([case])
+    cases = ({"control": Case(f"{config.name}-control", {}),
+              "zero_weight": Case(f"{config.name}-zero-weight", {})}
+             if config.matched_treatment else {"default": Case(config.name, {})})
+    manifest = Manifest(list(cases.values()))
     manifest_path = output / "manifest.json"
     captures: list[Capture] = []
     configurations: list[ConfigurationAck] = []
@@ -370,6 +461,9 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
                                else "not_requested")
     failure = None
     early_errors: list[str] = []
+    last_capture_completed = None
+    conditions: dict[str, str] = {}
+    matched_identity = None
     try:
         anchor_mode = Mode(config.configurations[0].value)
         anchor_pose = PoseRequest(f"{prefix}_anchor", OrientationOffset(0.0, 0.0, 0.0),
@@ -378,33 +472,67 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
                                anchor, configurations)
         offset, translation = offset_for_target(anchor, config.scene.pose.camera())
         target_pose = PoseRequest(f"{prefix}_target", offset, translation)
-        case.expected_pose = target_pose
+        for item in cases.values():
+            item.expected_pose = target_pose
         counters: dict[CompareMode, int] = {}
         for entry_index, configured_mode in enumerate(config.configurations, start=1):
             mode = Mode(configured_mode.value)
             _, anchor = _configure(
                 runner, config, f"{prefix}_{mode.value}_configure_{entry_index}", target_pose,
                 mode, anchor, configurations)
-            entries = case.modes.setdefault(mode, [])
-            for _ in range(config.samples):
+            sequence = (("control", "zero_weight", "zero_weight", "control") * config.samples
+                        if config.matched_treatment else ("default",) * config.samples)
+            for condition in sequence:
+                entries = cases[condition].modes.setdefault(mode, [])
                 counters[configured_mode] = counters.get(configured_mode, 0) + 1
                 identifier = sample_id(prefix, configured_mode, counters[configured_mode])
-                result = capture(runner, config, target_pose, anchor, mode,
-                                 configurations[-1].generation, identifier)
+                _wait_for_capture_interval(runner, config.interval_seconds,
+                                           last_capture_completed, monotonic, sleep)
+                runner.assert_running()
+                if runner.deadline is not None and monotonic() >= runner.deadline:
+                    raise ExperimentError(
+                        "experiment: no capture can start after the run deadline"
+                    )
+                capture_config = config
+                if config.matched_treatment:
+                    treatment = WaterReflection.ZERO_WEIGHT if condition == "zero_weight" else None
+                    capture_config = dataclasses.replace(
+                        config, diagnostics=dataclasses.replace(config.diagnostics, water_reflection=treatment),
+                        matched_treatment=None)
+                try:
+                    result = capture(runner, capture_config, target_pose, anchor, mode,
+                                     configurations[-1].generation, identifier)
+                except EXPECTED_ERRORS:
+                    folder = runner.config_dir / "captures"
+                    metadata_path = folder / f"{identifier}.capture.json"
+                    if config.matched_treatment and metadata_path.exists():
+                        entries.append(Sample(os.path.relpath(folder / f"{identifier}.capture.png", output),
+                                              os.path.relpath(metadata_path, output)))
+                        write_manifest(manifest_path, manifest)
+                    raise
                 if not isinstance(result, Capture):
                     raise ExperimentError("experiment: capture is not a diagnostic capture")
-                if captures and (result.frame_ordinal <= captures[-1].frame_ordinal or
-                                 result.predicted_display_time_ns <=
-                                 captures[-1].predicted_display_time_ns):
-                    raise ExperimentError(
-                        "experiment: captures do not identify increasing rendered frames"
-                    )
+                previous = captures[-1] if captures else None
                 captures.append(result)
+                conditions[result.id] = condition
+                last_capture_completed = monotonic()
                 folder = runner.config_dir / "captures"
                 entries.append(Sample(
                     os.path.relpath(folder / f"{identifier}.capture.png", output),
                     os.path.relpath(folder / f"{identifier}.capture.json", output)))
                 write_manifest(manifest_path, manifest)
+                if previous is not None and (result.frame_ordinal <= previous.frame_ordinal or
+                                             result.predicted_display_time_ns <= previous.predicted_display_time_ns):
+                    raise ExperimentError(
+                        "experiment: captures do not identify increasing rendered frames"
+                    )
+                if config.matched_treatment:
+                    metadata = read_object(folder / f"{identifier}.capture.json")
+                    identity = matched_capture_identity(result, metadata, configurations[-1].generation)
+                    if matched_identity is None:
+                        matched_identity = identity
+                    elif identity != matched_identity:
+                        raise ExperimentError(f"experiment: matched capture {identifier} changed pose or configuration")
                 LOG.info("wrote %s after %s", manifest_path, identifier)
             references = (set(config.feature.reference_modes)
                           if config.feature is not None else set())
@@ -452,7 +580,7 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
         if restoration_error is not None:
             errors.append(f"restoration: {restoration_error}")
         report = _failure_report(config, manifest_path, captures, tuple(errors),
-                                 restoration_error, environment_restoration)
+                                 restoration_error, environment_restoration, conditions)
         try:
             write_report(output / "report.json", report)
         except OSError as error:
@@ -466,6 +594,13 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
     if restoration_error is not None:
         errors.append(f"restoration: {restoration_error}")
     errors.extend(early_errors)
+    if config.diagnostics.resolve_inputs:
+        for captured in captures:
+            try:
+                metadata = read_object(runner.config_dir / "captures" / f"{captured.id}.capture.json")
+                errors.extend(_resolve_content_errors(captured.id, metadata))
+            except (*EXPECTED_ERRORS, KeyError, IndexError) as error:
+                errors.append(f"resolve inputs: {captured.id}: {error}")
     if captures:
         comparison_output = output / "comparison"
         try:
@@ -476,6 +611,12 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
             errors.append(f"comparison analysis: {error}")
     else:
         errors.append("comparison analysis: no captures were written")
+    matched_cross = ()
+    if config.matched_treatment and captures:
+        try:
+            matched_cross = matched_cross_metrics(output, cases)
+        except EXPECTED_ERRORS as error:
+            errors.append(f"matched treatment comparison: {error}")
     if feature is not None:
         errors.extend(feature.errors)
     overall = comparison_outcome or Outcome.INCONCLUSIVE
@@ -484,20 +625,55 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
     report = ExperimentReport(
         config.name, overall, comparison_outcome, str(manifest_path), comparison_report,
         tuple(CaptureSummary(CompareMode(capture.mode.value), capture.id,
-                             capture.frame_ordinal) for capture in captures),
+                             capture.frame_ordinal, conditions.get(capture.id) if config.matched_treatment else None) for capture in captures),
         feature, () if feature is None else feature.findings,
-        tuple(dict.fromkeys(errors)), restoration_error, environment_restoration)
+        tuple(dict.fromkeys(errors)), restoration_error, environment_restoration,
+        config.interval_seconds, config.diagnostics, config.visual_overrides, config.matched_treatment,
+        matched_cross)
     write_report(output / "report.json", report)
     return report
 
 
+def _resolve_content_errors(capture_id: str, metadata: dict) -> list[str]:
+    errors = []
+    for eye, result in enumerate(metadata["resolve_inputs"]["eyes"]):
+        if result["status"] != "observed":
+            continue
+        for buffer in result["observation"]["constant_buffers"]:
+            if buffer["slot"] not in (0, 3):
+                continue
+            content = buffer["content"]
+            if content["status"] != "captured":
+                errors.append(f"resolve inputs: {capture_id}: eye {eye} cb{buffer['slot']}: {content['status']}")
+    return errors
+
+
+def _wait_for_capture_interval(runner, interval_seconds, last_completed, monotonic, sleep):
+    if last_completed is None or interval_seconds <= 0:
+        return
+    target = last_completed + interval_seconds
+    while True:
+        runner.assert_running()
+        now = monotonic()
+        deadline = runner.deadline
+        if deadline is not None and now >= deadline:
+            raise ExperimentError("experiment: capture interval reached the run deadline")
+        if now >= target:
+            return
+        wait = min(SPACING_POLL_SECONDS, target - now)
+        if deadline is not None:
+            wait = min(wait, max(0.0, deadline - now))
+        sleep(max(0.0, wait))
+
+
 def _failure_report(config, manifest_path, captures, errors, restoration_error,
-                    environment_restoration):
+                    environment_restoration, conditions):
     return ExperimentReport(
         config.name, Outcome.INCONCLUSIVE, None, str(manifest_path), None,
         tuple(CaptureSummary(CompareMode(capture.mode.value), capture.id,
-                             capture.frame_ordinal) for capture in captures),
-        None, (), errors, restoration_error, environment_restoration)
+                             capture.frame_ordinal, conditions.get(capture.id) if config.matched_treatment else None) for capture in captures),
+        None, (), errors, restoration_error, environment_restoration,
+        config.interval_seconds, config.diagnostics, config.visual_overrides, config.matched_treatment)
 
 
 def _feature_report(config: ExperimentConfig, root: Path, captures) -> FeatureReport | None:
@@ -634,7 +810,8 @@ def _feature_observation(config: ExperimentConfig, root: Path, capture: Capture,
 def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor, configurations):
     environment = config.scene.environment.request() if config.scene.environment else None
     request = Request(Command.CONFIGURE, request_id, mode, config.warmup_frames, pose,
-                      environment=environment)
+                      environment=environment, visual_overrides=config.visual_overrides,
+                      shader_identity=True if config.diagnostics.shader_identity else None)
     acknowledgement = runner.request(request)
     if not isinstance(acknowledgement, ConfigurationAck):
         raise ExperimentError("experiment: expected a configuration acknowledgement")
@@ -643,6 +820,11 @@ def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor,
         raise ExperimentError(
             "experiment: configuration acknowledgement disagrees with its request"
         )
+    if config.diagnostics.shader_identity and (acknowledgement.metadata.shader_identity is None or
+            acknowledgement.metadata.shader_identity.get("status") != "complete"):
+        raise ExperimentError("experiment: shader identity census is not complete")
+    if acknowledgement.metadata.visual_overrides != config.visual_overrides:
+        raise ExperimentError("experiment: configuration visual overrides disagree with the request")
     if configurations and acknowledgement.generation <= configurations[-1].generation:
         raise ExperimentError("experiment: configuration generation does not increase")
     anchor = acknowledgement.validate_pose(request, anchor)
@@ -652,13 +834,29 @@ def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor,
 
 
 def _capture(runner, config, pose, anchor, mode, generation, identifier):
-    acknowledgement = runner.request(Request(Command.SCREENSHOT, identifier))
+    acknowledgement = runner.request(Request(Command.SCREENSHOT, identifier,
+                                             water_inputs=True if config.diagnostics.water_inputs else None,
+                                             sun_inputs=True if config.diagnostics.sun_inputs else None,
+                                             resolve_inputs=True if config.diagnostics.resolve_inputs else None,
+                                             sun_depth_clip=config.diagnostics.sun_depth_clip,
+                                             water_reflection=config.diagnostics.water_reflection))
     if not isinstance(acknowledgement, ScreenshotAck):
         raise ExperimentError("experiment: expected a screenshot acknowledgement")
     capture = validate_capture(runner.config_dir / "captures", identifier,
-                               acknowledgement.capture, mode=mode, generation=generation)
+                               acknowledgement.capture, mode=mode, generation=generation,
+                               water_inputs=config.diagnostics.water_inputs,
+                               sun_inputs=config.diagnostics.sun_inputs,
+                               shader_identity=config.diagnostics.shader_identity,
+                               resolve_inputs=config.diagnostics.resolve_inputs,
+                               sun_depth_clip=config.diagnostics.sun_depth_clip,
+                               water_reflection=config.diagnostics.water_reflection)
     if not isinstance(capture, Capture):
         raise ExperimentError("experiment: expected a diagnostic capture")
+    if config.diagnostics.shader_identity and (capture.visual.shader_identity is None or
+            capture.visual.shader_identity.get("status") != "complete"):
+        raise ExperimentError("experiment: capture shader identity census is not complete")
+    if capture.visual.visual_overrides != config.visual_overrides:
+        raise ExperimentError("experiment: capture visual overrides disagree with the request")
     if capture.visual.pose is None:
         raise ExperimentError(f"experiment: capture {identifier} has no pose evidence")
     capture.visual.pose.validate(pose, anchor)

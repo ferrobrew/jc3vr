@@ -307,6 +307,14 @@ impl Cb13Buffer {
         self.rows
     }
 
+    /// The mod-owned buffer's COM identity, for comparing against the buffer actually bound at
+    /// `b13`. `None` before the buffer exists.
+    pub(super) fn buffer_ptr(&self) -> Option<usize> {
+        self.buffer
+            .as_ref()
+            .map(|buffer| <ID3D11Buffer as windows::core::Interface>::as_raw(buffer) as usize)
+    }
+
     /// Overwrite the live buffer's contents without re-binding it.
     ///
     /// The already-instanced per-eye re-issue pins and restores `cb13` around every handled draw, so
@@ -395,6 +403,19 @@ pub(super) fn pin_rows_to_eye(
             .copy_from_slice(&rows[MEYE_ROW_BASE + eye * 4..MEYE_ROW_BASE + eye * 4 + 4]);
     }
     pinned
+}
+
+/// The four view-projection rows and four `M_eye` rows a per-eye pin places in the first `cb13` slot
+/// for `eye`, for the draw-state diagnostic.
+pub(super) fn pinned_eye_rows(
+    rows: &[Vector4; STEREO_CB_TOTAL_ROWS],
+    eye: usize,
+) -> ([[f32; 4]; 4], [[f32; 4]; 4]) {
+    let pinned = pin_rows_to_eye(rows, eye);
+    (
+        std::array::from_fn(|row| pinned[row].data),
+        std::array::from_fn(|row| pinned[MEYE_ROW_BASE + row].data),
+    )
 }
 
 /// Write `rows` into the live `cb13` buffer, reporting whether it landed. Takes the engine context

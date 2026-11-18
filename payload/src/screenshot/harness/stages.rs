@@ -2,12 +2,21 @@
 
 use std::{ffi::c_void, path::PathBuf};
 
+mod sun_inputs;
+mod water_inputs;
 use anyhow::{Context as _, bail};
 use jc3gi::graphics_engine::{
     graphics_engine::GraphicsEngine, post_effects::PostEffectsManager, texture::Texture,
 };
 use parking_lot::Mutex;
 use serde::Serialize;
+pub(crate) use sun_inputs::{
+    capture_before_sun, complete_sun_inputs, complete_sun_treatment, fail_sun_treatment,
+    record_sun_treatment,
+};
+pub(crate) use water_inputs::{
+    capture_water_inputs, complete_water_inputs, complete_water_treatment, record_water_treatment,
+};
 use windows::{
     Win32::{
         Foundation::RECT,
@@ -29,7 +38,7 @@ use windows::{
                 DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16B16A16_SINT,
                 DXGI_FORMAT_R16G16B16A16_SNORM, DXGI_FORMAT_R16G16B16A16_TYPELESS,
                 DXGI_FORMAT_R16G16B16A16_UINT, DXGI_FORMAT_R16G16B16A16_UNORM,
-                DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R32_TYPELESS,
+                DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R32_TYPELESS,
                 DXGI_FORMAT_R32G8X24_TYPELESS,
             },
         },
@@ -59,12 +68,20 @@ pub(crate) enum Stage {
     PreAtmosphere,
     PostAtmosphere,
     PostResolve,
+    PreSunColor,
+    PreSunDepth,
+    SunDepthClipTreatment,
+    PostSun,
     WaterBefore,
     WaterAfterLeft,
     WaterAfterRight,
     WaterDepthBefore,
     WaterDepthAfterLeft,
     WaterDepthAfterRight,
+    WaterReflectionTreatment,
+    WaterInputReflection,
+    WaterInputReflectionAlpha,
+    WaterInputRefraction,
     PreAa,
     PostAa,
 }
@@ -77,6 +94,8 @@ impl Stage {
                 | Self::PreAtmosphere
                 | Self::PostAtmosphere
                 | Self::PostResolve
+                | Self::PreSunColor
+                | Self::PostSun
                 | Self::WaterBefore
                 | Self::WaterAfterLeft
                 | Self::WaterAfterRight
@@ -97,7 +116,71 @@ pub(crate) struct StageRecord {
     pub png: Option<PathBuf>,
     pub raw: Option<PathBuf>,
     pub error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub water_input: Option<WaterInputMetadata>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sun_input: Option<SunInputMetadata>,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct SunInputMetadata {
+    pub capture_id: String,
+    pub view: usize,
+    pub resource: usize,
+    pub view_format: Option<i32>,
+    pub view_dimension: Option<i32>,
+    pub mip: Option<u32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct WaterInputMetadata {
+    pub capture_id: String,
+    pub slot: WaterInputSlot,
+    pub shader_slot: u32,
+    pub treatment_draws: u32,
+    pub pixel_shader: usize,
+    pub shader_identity: crate::stereo::single_pass::shader_identity::IdentityResult,
+    pub draw_index: usize,
+    pub tessellated: bool,
+    pub view_format: Option<i32>,
+    pub view_dimension: Option<i32>,
+    pub most_detailed_mip: Option<u32>,
+    pub mip_levels: Option<u32>,
+    pub resource: Option<usize>,
+    pub resource_format: Option<i32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum WaterInputSlot {
+    Reflection,
+    ReflectionAlpha,
+    Refraction,
+}
+
+impl WaterInputSlot {
+    pub(super) fn stage(self) -> Stage {
+        match self {
+            Self::Reflection => Stage::WaterInputReflection,
+            Self::ReflectionAlpha => Stage::WaterInputReflectionAlpha,
+            Self::Refraction => Stage::WaterInputRefraction,
+        }
+    }
+
+    pub(super) fn index(self) -> u32 {
+        match self {
+            Self::Reflection => 1,
+            Self::ReflectionAlpha => 12,
+            Self::Refraction => 3,
+        }
+    }
+}
+
+pub(super) const WATER_INPUT_SLOTS: [WaterInputSlot; 3] = [
+    WaterInputSlot::Reflection,
+    WaterInputSlot::ReflectionAlpha,
+    WaterInputSlot::Refraction,
+];
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Source {
@@ -165,6 +248,10 @@ pub(crate) fn capture_after_resolve() {
     capture_hdr(HdrStage::PostResolve);
 }
 
+pub(crate) fn capture_after_sun() {
+    capture_hdr(HdrStage::PostSun);
+}
+
 pub(crate) fn capture_water_before() {
     let (color, depth) = water_before_stages();
     capture_hdr(color);
@@ -221,18 +308,20 @@ enum HdrStage {
     PreAtmosphere,
     PostAtmosphere,
     PostResolve,
+    PostSun,
     WaterBefore,
     WaterAfterLeft,
     WaterAfterRight,
 }
 
 impl HdrStage {
-    fn stage(self) -> Stage {
+    pub(super) fn stage(self) -> Stage {
         match self {
             Self::MainColor => Stage::MainColor,
             Self::PreAtmosphere => Stage::PreAtmosphere,
             Self::PostAtmosphere => Stage::PostAtmosphere,
             Self::PostResolve => Stage::PostResolve,
+            Self::PostSun => Stage::PostSun,
             Self::WaterBefore => Stage::WaterBefore,
             Self::WaterAfterLeft => Stage::WaterAfterLeft,
             Self::WaterAfterRight => Stage::WaterAfterRight,
@@ -270,13 +359,13 @@ fn capture_water_depth(stage: Stage) {
 }
 
 #[derive(Default)]
-struct State {
-    frame: Option<i64>,
-    records: Vec<StageRecord>,
-    images: Vec<StageImage>,
+pub(super) struct State {
+    pub(super) frame: Option<i64>,
+    pub(super) records: Vec<StageRecord>,
+    pub(super) images: Vec<StageImage>,
 }
 
-static STATE: Mutex<State> = Mutex::new(State {
+pub(super) static STATE: Mutex<State> = Mutex::new(State {
     frame: None,
     records: Vec::new(),
     images: Vec::new(),
@@ -315,6 +404,8 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
         png: None,
         raw: None,
         error: None,
+        water_input: None,
+        sun_input: None,
     };
     let result = (|| {
         let context = EngineContext::get().context("graphics context unavailable")?;
@@ -339,7 +430,7 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
     state.records.push(record);
 }
 
-fn capture_raster_state(ctx: &ID3D11DeviceContext, record: &mut StageRecord) {
+pub(super) fn capture_raster_state(ctx: &ID3D11DeviceContext, record: &mut StageRecord) {
     // SAFETY: the immediate context is locked; each count matches its writable array.
     unsafe {
         let mut count = 0;
@@ -441,7 +532,7 @@ fn read_stage(
     }
 }
 
-fn validate_desc(desc: &D3D11_TEXTURE2D_DESC) -> anyhow::Result<()> {
+pub(super) fn validate_desc(desc: &D3D11_TEXTURE2D_DESC) -> anyhow::Result<()> {
     if desc.Width == 0 || desc.Height == 0 {
         bail!("invalid stage texture dimensions");
     }
@@ -460,7 +551,7 @@ fn validate_desc(desc: &D3D11_TEXTURE2D_DESC) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn staging_format(format: DXGI_FORMAT) -> DXGI_FORMAT {
+pub(super) fn staging_format(format: DXGI_FORMAT) -> DXGI_FORMAT {
     match format {
         DXGI_FORMAT_D32_FLOAT_S8X24_UINT => DXGI_FORMAT_R32G8X24_TYPELESS,
         DXGI_FORMAT_D24_UNORM_S8_UINT => DXGI_FORMAT_R24G8_TYPELESS,
@@ -470,7 +561,7 @@ fn staging_format(format: DXGI_FORMAT) -> DXGI_FORMAT {
     }
 }
 
-fn format_byte_width(format: DXGI_FORMAT) -> Option<usize> {
+pub(super) fn format_byte_width(format: DXGI_FORMAT) -> Option<usize> {
     match format {
         DXGI_FORMAT_D16_UNORM | DXGI_FORMAT_R16_TYPELESS => Some(2),
         DXGI_FORMAT_R8G8B8A8_TYPELESS
@@ -489,6 +580,7 @@ fn format_byte_width(format: DXGI_FORMAT) -> Option<usize> {
         | DXGI_FORMAT_D24_UNORM_S8_UINT
         | DXGI_FORMAT_R24G8_TYPELESS
         | DXGI_FORMAT_D32_FLOAT
+        | DXGI_FORMAT_R32_FLOAT
         | DXGI_FORMAT_R32_TYPELESS => Some(4),
         DXGI_FORMAT_D32_FLOAT_S8X24_UINT
         | DXGI_FORMAT_R32G8X24_TYPELESS
@@ -502,7 +594,7 @@ fn format_byte_width(format: DXGI_FORMAT) -> Option<usize> {
     }
 }
 
-fn stage_image(
+pub(super) fn stage_image(
     stage: Stage,
     bytes: &[u8],
     pitch: usize,
@@ -690,6 +782,7 @@ mod tests {
             Stage::PreAtmosphere,
             Stage::PostAtmosphere,
             Stage::PostResolve,
+            Stage::PostSun,
             Stage::WaterBefore,
             Stage::WaterAfterLeft,
             Stage::WaterAfterRight,
@@ -712,6 +805,7 @@ mod tests {
             (Stage::PreAtmosphere, "pre_atmosphere"),
             (Stage::PostAtmosphere, "post_atmosphere"),
             (Stage::PostResolve, "post_resolve"),
+            (Stage::PostSun, "post_sun"),
             (Stage::WaterBefore, "water_before"),
             (Stage::WaterAfterLeft, "water_after_left"),
             (Stage::WaterAfterRight, "water_after_right"),

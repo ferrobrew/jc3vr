@@ -9,7 +9,9 @@ use std::{
 
 use anyhow::Context as _;
 use parking_lot::Mutex;
+pub(crate) mod bound_buffer;
 pub(crate) mod constants;
+pub(crate) mod resolve_probe;
 pub(crate) mod stages;
 pub(crate) mod types;
 
@@ -48,11 +50,53 @@ impl RequestId {
     }
 }
 
-pub(crate) fn request(id: RequestId) {
-    request_with_phase(id, None);
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum WaterReflection {
+    ZeroWeight,
 }
 
-pub(crate) fn request_motion(id: RequestId, phase: u32) {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum SunDepthClip {
+    DisabledRight,
+}
+
+pub(crate) struct CaptureRequest {
+    pub water_reflection: Option<WaterReflection>,
+    pub water_inputs: bool,
+    pub sun_inputs: bool,
+    pub resolve_inputs: bool,
+    pub sun_depth_clip: Option<SunDepthClip>,
+}
+
+pub(crate) fn request(id: RequestId, options: CaptureRequest) {
+    if options.water_reflection.is_some() {
+        if crate::stereo::dispatch::mode() != RenderMode::Multipass {
+            reject(&id, "water reflection treatment: multipass is required");
+            return;
+        }
+        let water_inputs = options.water_inputs;
+        let identity = crate::stereo::single_pass::shader_identity::status();
+        if !water_inputs || !identity.requested || identity.status != "complete" {
+            reject(
+                &id,
+                "water reflection treatment: water inputs and a complete shader identity census are required",
+            );
+            return;
+        }
+    }
+    request_with_phase(id, None, options);
+}
+
+pub(crate) fn request_motion(id: RequestId, phase: u32, options: CaptureRequest) {
+    if options.water_reflection.is_some() {
+        reject(
+            &id,
+            "water reflection treatment: motion capture is not supported",
+        );
+        return;
+    }
     let Some(period) = crate::testing::visual::motion_period() else {
         reject(
             &id,
@@ -70,10 +114,10 @@ pub(crate) fn request_motion(id: RequestId, phase: u32) {
         );
         return;
     }
-    request_with_phase(id, Some(phase));
+    request_with_phase(id, Some(phase), options);
 }
 
-fn request_with_phase(id: RequestId, target_phase: Option<u32>) {
+fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: CaptureRequest) {
     let Some(folder) = crate::config::paths::dir().map(|dir| dir.join("captures")) else {
         tracing::error!("screenshot harness: no configuration directory");
         return;
@@ -89,7 +133,15 @@ fn request_with_phase(id: RequestId, target_phase: Option<u32>) {
     let result = readiness();
     let after = frame_identity();
     let mut state = STATE.lock();
+    let was_idle = state.active.is_none();
     admit(&mut state, id, folder, after, result, target_phase);
+    if was_idle && let Some(active) = state.active.as_mut() {
+        active.water_reflection = options.water_reflection;
+        active.water_inputs = options.water_inputs;
+        active.sun_inputs = options.sun_inputs;
+        active.resolve_inputs = options.resolve_inputs;
+        active.sun_depth_clip = options.sun_depth_clip;
+    }
     sync_pending(&state);
 }
 
@@ -175,6 +227,7 @@ fn admit(
         return;
     }
     constants::reset();
+    resolve_probe::reset();
     state.active = Some(Active {
         id,
         folder,
@@ -184,6 +237,12 @@ fn admit(
         result,
         reported: false,
         target_phase,
+        water_reflection: None,
+        water_inputs: false,
+        sun_inputs: false,
+        resolve_inputs: false,
+        sun_depth_clip: None,
+        diagnostic_frame: None,
     });
 }
 
@@ -193,6 +252,70 @@ pub(crate) fn wants_eyes() -> bool {
         ANY_PHASE => true,
         phase => crate::testing::visual::capture_phase_due(phase),
     }
+}
+
+pub(crate) fn diagnostic_capture_id() -> Option<String> {
+    if !wants_eyes()
+        || !crate::testing::visual::ready()
+        || !crate::hooks::in_gameplay()
+        || !crate::vr::is_running_published()
+        || !crate::stereo::active()
+    {
+        return None;
+    }
+    let mut state = STATE.lock();
+    let active = state.active.as_mut()?;
+    let frame = frame_identity()?;
+    if !matches!(active.phase, Phase::Pending) || active.after.is_some_and(|after| frame <= after) {
+        return None;
+    }
+    let chosen = active.diagnostic_frame.get_or_insert(frame);
+    (*chosen == frame).then(|| active.id.0.clone())
+}
+
+pub(crate) fn water_reflection_zero_weight_requested() -> bool {
+    if crate::stereo::dispatch::mode() != RenderMode::Multipass || diagnostic_capture_id().is_none()
+    {
+        return false;
+    }
+    STATE.lock().active.as_ref().is_some_and(|active| {
+        active.water_reflection == Some(WaterReflection::ZeroWeight)
+            && matches!(active.phase, Phase::Pending)
+    })
+}
+
+pub(crate) fn water_inputs_requested() -> bool {
+    STATE
+        .lock()
+        .active
+        .as_ref()
+        .is_some_and(|active| active.water_inputs && matches!(active.phase, Phase::Pending))
+}
+
+pub(crate) fn sun_inputs_requested() -> bool {
+    STATE
+        .lock()
+        .active
+        .as_ref()
+        .is_some_and(|active| active.sun_inputs && matches!(active.phase, Phase::Pending))
+}
+
+pub(crate) fn sun_depth_clip_disabled_right() -> bool {
+    if diagnostic_capture_id().is_none() {
+        return false;
+    }
+    STATE.lock().active.as_ref().is_some_and(|active| {
+        active.sun_depth_clip == Some(SunDepthClip::DisabledRight)
+            && matches!(active.phase, Phase::Pending)
+    })
+}
+
+pub(crate) fn resolve_inputs_requested() -> bool {
+    STATE
+        .lock()
+        .active
+        .as_ref()
+        .is_some_and(|active| active.resolve_inputs && matches!(active.phase, Phase::Pending))
 }
 
 pub(crate) fn note_eye(eye: usize, copied: bool) {
@@ -300,7 +423,41 @@ pub(crate) fn capture(
     );
     active.result.state = CaptureState::Captured;
     active.result.readiness = readiness();
-    let (stage_records, stage_images) = stages::take(frame.unwrap());
+    let (mut stage_records, stage_images) = stages::take(frame.unwrap());
+    if active.water_inputs {
+        stages::complete_water_inputs(
+            &mut stage_records,
+            frame.unwrap(),
+            &active.id.0,
+            required_eyes(selected_eye),
+        );
+    }
+    if active.water_reflection.is_some() && mode == RenderMode::Multipass {
+        stages::complete_water_treatment(
+            &mut stage_records,
+            frame.unwrap(),
+            &active.id.0,
+            required_eyes(selected_eye),
+        );
+    }
+    if active.sun_inputs {
+        stages::complete_sun_inputs(
+            &mut stage_records,
+            frame.unwrap(),
+            &active.id.0,
+            required_eyes(selected_eye),
+        );
+    }
+    if active.sun_depth_clip.is_some() && mode == RenderMode::SinglePass {
+        stages::complete_sun_treatment(&mut stage_records, frame.unwrap(), &active.id.0);
+    }
+    let resolve_inputs = active.resolve_inputs.then(|| {
+        resolve_probe::take(
+            frame.unwrap(),
+            visual.generation,
+            required_eyes(selected_eye),
+        )
+    });
     active.result.capture = Some(CapturedFrame {
         png: png.clone(),
         metadata,
@@ -320,6 +477,9 @@ pub(crate) fn capture(
         comparison_inputs,
         stages: stage_records,
         constants: constants::take(frame.unwrap()),
+        resolve_inputs,
+        water_reflection: active.water_reflection,
+        sun_depth_clip: active.sun_depth_clip,
         effective_config,
         single_pass: if mode == RenderMode::SinglePass {
             capture.diagnostics
@@ -375,6 +535,9 @@ fn advance(state: &mut State, now: Instant, latest_readiness: Option<Readiness>)
                 }
                 match outcome.result {
                     Ok(_) => {
+                        if let Some(capture) = &mut active.result.capture {
+                            capture.resolve_inputs = outcome.resolve_inputs.clone();
+                        }
                         let stage_error = active.result.capture.as_ref().is_some_and(|capture| {
                             capture.stages.iter().any(|stage| stage.error.is_some())
                         });
@@ -451,6 +614,12 @@ struct Active {
     result: CaptureMetadata,
     reported: bool,
     target_phase: Option<u32>,
+    water_reflection: Option<WaterReflection>,
+    water_inputs: bool,
+    sun_inputs: bool,
+    resolve_inputs: bool,
+    sun_depth_clip: Option<SunDepthClip>,
+    diagnostic_frame: Option<i64>,
 }
 
 impl Active {
@@ -754,6 +923,12 @@ mod tests {
                     },
                     reported: false,
                     target_phase: None,
+                    water_reflection: None,
+                    water_inputs: false,
+                    sun_inputs: false,
+                    resolve_inputs: false,
+                    sun_depth_clip: None,
+                    diagnostic_frame: None,
                 }),
                 eyes: [None; 2],
                 ordinal: 0,
@@ -879,6 +1054,8 @@ mod tests {
             generation: 1,
             mode: Some(RenderMode::Multipass),
             profile: DiagnosticProfile::ControlledV2,
+            visual_overrides: None,
+            shader_identity: crate::stereo::single_pass::shader_identity::status(),
             ready: true,
             paused: true,
             frozen: true,

@@ -195,6 +195,13 @@ fn create_fragment_program(
     device: *mut c_void,
     params: *mut CreateFragmentProgramParams,
 ) -> *mut c_void {
+    let _identity = if crate::is_shutting_down() {
+        None
+    } else {
+        unsafe { params.as_ref() }.and_then(|p| unsafe {
+            crate::stereo::single_pass::shader_identity::begin(p.m_Code, p.m_Size)
+        })
+    };
     // When enabled and a target site is present, point the params at a patched copy of the bytecode
     // for the duration of the (bytecode-copying) CreatePixelShader call, then restore the caller's
     // pointer. `saved` keeps the patched copy alive across the call.
@@ -471,6 +478,7 @@ fn bounce_shader_bundle() -> Result<(), ReloadError> {
         // twice. Reset the single-pass census after the throwaway `away` pass so the reported numbers
         // reflect exactly one clean pass over the real (`back`) shader set; also clear the patched-VS
         // set so it repopulates with the `back` set's live shader pointers.
+        crate::stereo::single_pass::shader_identity::reset();
         crate::stereo::single_pass::reset_census();
         crate::stereo::single_pass::reset_patched_vs();
         if !ge.LoadShaderBundle(back.as_ptr()) {

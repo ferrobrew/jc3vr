@@ -20,8 +20,9 @@ use windows::{
             D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_LESS,
             D3D11_CULL_BACK, D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_STENCILOP_DESC,
             D3D11_DEPTH_WRITE_MASK_ALL, D3D11_FILL_SOLID, D3D11_RASTERIZER_DESC,
-            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP, D3D11_VIEWPORT,
-            ID3D11DepthStencilView, ID3D11DeviceContext, ID3D11RenderTargetView,
+            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_STENCIL_OP_KEEP, D3D11_TEXTURE2D_DESC,
+            D3D11_VIEWPORT, ID3D11DepthStencilView, ID3D11DeviceContext, ID3D11RenderTargetView,
+            ID3D11Texture2D,
         },
     },
     core::{Error as WindowsError, HRESULT, Interface},
@@ -31,7 +32,12 @@ use crate::stereo::single_pass::EngineContext;
 
 mod constants;
 mod ia;
+mod inputs;
+mod reflection;
 mod work;
+
+pub(crate) use inputs::{begin_water_input_capture, reflection_treatment};
+pub(crate) use reflection::reflection_producer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(usize)]
@@ -61,6 +67,10 @@ impl RawDrawKind {
 ///
 /// `context` must be the live immediate context the detoured entry was called on.
 pub(crate) unsafe fn raw_entry(kind: RawDrawKind, context: *mut c_void) {
+    // SAFETY: per this function's contract, `context` is the live immediate context the draw entry
+    // was called on.
+    unsafe { reflection::on_raw_draw(kind, context) };
+    unsafe { inputs::on_raw_draw(context) };
     RAW_CAPTURE.with(|state| {
         let mut state = state.borrow_mut();
         let Some(capture) = state.as_mut() else {
@@ -350,23 +360,38 @@ fn log_state(ctx: &ID3D11DeviceContext, context: ProbeContext) {
     let mut count = 2u32;
     // SAFETY: `count` is the length of `viewports`, as `RSGetViewports` requires.
     unsafe { ctx.RSGetViewports(&mut count, Some(viewports.as_mut_ptr())) };
+    // The target's own allocation, beside the viewport that writes into it: a half-width viewport
+    // over a double-wide target is one eye's subrect, while a full-width viewport over the same
+    // target is a whole-frame write.
+    let target = rtv
+        .as_ref()
+        .and_then(|view| unsafe { view.GetResource() }.ok())
+        .and_then(|resource| resource.cast::<ID3D11Texture2D>().ok());
+    let mut target_desc = D3D11_TEXTURE2D_DESC::default();
+    if let Some(target) = &target {
+        // SAFETY: `target` is live; `GetDesc` only writes the out parameter.
+        unsafe { target.GetDesc(&mut target_desc) };
+    }
     tracing::info!(
         target: "water_probe",
         "water probe: pre-draw pass={} eye={} invocation={} predicted_display_time_ns={} \
-         generation={} rtv={:#x} dsv={:#x} viewports={count} vp0={} vp1={}",
+         generation={} rtv={:#x} rtv_tex={}x{}/{:?} dsv={:#x} viewports={count} vp0={} vp1={}",
         context.pass,
         context.eye,
         context.invocation,
         context.frame.display_time(),
         context.frame.visual_generation,
         pointer(&rtv),
+        target_desc.Width,
+        target_desc.Height,
+        target_desc.Format,
         pointer(&dsv),
         viewport_text(&viewports[0]),
         viewport_text(&viewports[1]),
     );
 }
 
-fn viewport_text(v: &D3D11_VIEWPORT) -> String {
+pub(super) fn viewport_text(v: &D3D11_VIEWPORT) -> String {
     format!(
         "({:.1},{:.1}) {:.1}x{:.1} depth={:.4}..{:.4}",
         v.TopLeftX, v.TopLeftY, v.Width, v.Height, v.MinDepth, v.MaxDepth

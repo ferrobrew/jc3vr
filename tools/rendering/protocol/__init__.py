@@ -170,6 +170,39 @@ class EnvironmentObservation:
         return asdict(self)
 
 
+class WaterReflection(StrEnum):
+    ZERO_WEIGHT = "zero_weight"
+
+
+class SunDepthClip(StrEnum):
+    DISABLED_RIGHT = "disabled_right"
+
+
+class SunShadows(StrEnum):
+    DISABLED = "disabled"
+
+
+@dataclass(frozen=True)
+class VisualOverrides:
+    sun_shadows: SunShadows
+
+    def __post_init__(self):
+        if not isinstance(self.sun_shadows, SunShadows):
+            raise ProtocolError("visual protocol: invalid sun_shadows override")
+
+    def to_toml(self):
+        return f'[visual_overrides]\nsun_shadows = {json.dumps(self.sun_shadows.value)}\n'
+
+    @classmethod
+    def from_wire(cls, value):
+        if not isinstance(value, dict) or set(value) != {"sun_shadows"}:
+            raise ProtocolError("visual protocol: invalid visual_overrides table")
+        try:
+            return cls(SunShadows(value["sun_shadows"]))
+        except (ValueError, TypeError) as error:
+            raise ProtocolError("visual protocol: invalid sun_shadows override") from error
+
+
 @dataclass(frozen=True)
 class Request:
     command: Command
@@ -180,6 +213,13 @@ class Request:
     motion: MotionRequest | None = None
     motion_capture: PhaseCapture | None = None
     environment: EnvironmentRequest | None = None
+    water_inputs: bool | None = None
+    water_reflection: WaterReflection | None = None
+    resolve_inputs: bool | None = None
+    sun_depth_clip: SunDepthClip | None = None
+    sun_inputs: bool | None = None
+    visual_overrides: VisualOverrides | None = None
+    shader_identity: bool | None = None
 
     def __post_init__(self):
         if not isinstance(self.command, Command) or not valid_request_id(self.id):
@@ -198,6 +238,29 @@ class Request:
         if self.environment is not None and (self.command != Command.CONFIGURE or
                                              not isinstance(self.environment, EnvironmentRequest)):
             raise ProtocolError("visual protocol: only configuration requests accept an environment")
+        if self.shader_identity is not None and (self.command != Command.CONFIGURE or
+                                                 type(self.shader_identity) is not bool):
+            raise ProtocolError("visual protocol: only configuration accepts a boolean shader_identity")
+        if self.visual_overrides is not None and (self.command != Command.CONFIGURE or
+                                                   not isinstance(self.visual_overrides, VisualOverrides)):
+            raise ProtocolError("visual protocol: only configuration accepts visual overrides")
+        if self.water_inputs is not None and (self.command != Command.SCREENSHOT or
+                                              type(self.water_inputs) is not bool):
+            raise ProtocolError("visual protocol: only screenshot requests accept a boolean water_inputs")
+        if self.water_reflection is not None and (self.command != Command.SCREENSHOT or
+                                                  not isinstance(self.water_reflection, WaterReflection) or
+                                                  self.water_inputs is not True or self.motion_capture is not None):
+            raise ProtocolError("visual protocol: water_reflection requires screenshot water_inputs without motion")
+        if self.sun_depth_clip is not None and (self.command != Command.SCREENSHOT or
+                                                not isinstance(self.sun_depth_clip, SunDepthClip) or
+                                                self.sun_inputs is not True):
+            raise ProtocolError("visual protocol: sun_depth_clip requires screenshot sun_inputs")
+        if self.resolve_inputs is not None and (self.command != Command.SCREENSHOT or
+                                                type(self.resolve_inputs) is not bool):
+            raise ProtocolError("visual protocol: only screenshot requests accept a boolean resolve_inputs")
+        if self.sun_inputs is not None and (self.command != Command.SCREENSHOT or
+                                            type(self.sun_inputs) is not bool):
+            raise ProtocolError("visual protocol: only screenshot requests accept a boolean sun_inputs")
         if self.motion_capture is not None and (self.command != Command.SCREENSHOT or
                                                 not isinstance(self.motion_capture, PhaseCapture)):
             raise ProtocolError("visual protocol: only screenshot requests accept a motion capture phase")
@@ -208,7 +271,7 @@ class Request:
     def to_toml(self) -> str:
         result = "".join(f"{key} = {json.dumps(value)}\n"
                          for key, value in self.to_wire().items()
-                         if key not in ("pose", "motion", "motion_capture", "environment"))
+                         if key not in ("pose", "motion", "motion_capture", "environment", "visual_overrides"))
         if self.pose is not None:
             result += "\n" + self.pose.to_toml()
         if self.motion is not None:
@@ -217,6 +280,8 @@ class Request:
             result += "\n" + self.motion_capture.to_toml()
         if self.environment is not None:
             result += "\n" + self.environment.to_toml()
+        if self.visual_overrides is not None:
+            result += "\n" + self.visual_overrides.to_toml()
         return result
 
 
@@ -290,6 +355,22 @@ class RestorationAck:
         return cls(text(value, "id"), metadata)
 
 
+def parse_shader_identity(value):
+    if value is None:
+        return None
+    if (not isinstance(value, dict) or set(value) != {"requested", "status", "registered", "overflow", "invalid"} or
+            type(value.get("requested")) is not bool or
+            not isinstance(value.get("status"), str) or
+            value["status"] not in ("unarmed", "install_failed", "incomplete", "empty", "complete") or
+            any(type(value.get(key)) is not int or value[key] < 0 for key in ("registered", "overflow", "invalid"))):
+        raise ProtocolError("visual protocol: invalid shader identity census metadata")
+    if value["status"] == "complete" and (not value["requested"] or value["registered"] == 0 or value["overflow"] or value["invalid"]):
+        raise ProtocolError("visual protocol: inconsistent shader identity census metadata")
+    if value["status"] == "unarmed" and value["requested"]:
+        raise ProtocolError("visual protocol: inconsistent shader identity census metadata")
+    return value
+
+
 @dataclass(frozen=True)
 class VisualState:
     generation: int
@@ -305,6 +386,8 @@ class VisualState:
     pose: "PoseEvidence | None" = None
     motion: "MotionEvidence | None" = None
     environment: EnvironmentObservation | None = None
+    visual_overrides: VisualOverrides | None = None
+    shader_identity: dict | None = None
 
     @classmethod
     def from_wire(cls, value):
@@ -327,7 +410,9 @@ class VisualState:
                    tuple(dimensions) if dimensions is not None else None,
                    None if value.get("pose") is None else PoseEvidence.from_wire(value.get("pose")),
                    None if value.get("motion") is None else MotionEvidence.from_wire(value.get("motion")),
-                   None if value.get("environment") is None else EnvironmentObservation.from_wire(value.get("environment")))
+                   None if value.get("environment") is None else EnvironmentObservation.from_wire(value.get("environment")),
+                   None if value.get("visual_overrides") is None else VisualOverrides.from_wire(value["visual_overrides"]),
+                   parse_shader_identity(value.get("shader_identity")))
 
 
 

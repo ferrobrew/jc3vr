@@ -12,6 +12,7 @@ fn observation(state: &State, ordinal: i64) -> FrameObservation {
         single_pass: state.mode == Some(Mode::SinglePass),
         camera_frozen: true,
         horizon_map_ready: true,
+        shadow_override_ready: true,
         frame_identity: Some(ordinal),
         generation: state.generation,
         pose: None,
@@ -37,6 +38,77 @@ fn warmup_counts_only_distinct_completed_frames() {
     assert!(!state.ready);
     state.complete(observation(&state, 3), true);
     assert!(state.ready);
+}
+
+#[test]
+fn shadow_override_resets_on_new_profile() {
+    let mut config = Config::new();
+    let treatment = Some(VisualOverrides {
+        sun_shadows: SunShadowsOverride::Disabled,
+    });
+    apply_profile_with_overrides(&mut config, Mode::Multipass, treatment);
+    assert!(config.stereo.disable_sun_shadows);
+    apply_profile_with_overrides(&mut config, Mode::Multipass, None);
+    assert!(!config.stereo.disable_sun_shadows);
+}
+
+#[test]
+fn shadow_override_readiness_waits_for_settings_and_live_state() {
+    assert!(!shadow_state_matches(true, None, false, true));
+    assert!(!shadow_state_matches(true, Some(false), false, false));
+    assert!(!shadow_state_matches(true, Some(true), false, true));
+    assert!(!shadow_state_matches(true, Some(false), true, true));
+    assert!(shadow_state_matches(true, Some(false), false, true));
+    assert!(!shadow_state_matches(false, None, false, false));
+    assert!(!shadow_state_matches(false, Some(false), false, true));
+    assert!(!shadow_state_matches(false, Some(true), false, false));
+    assert!(shadow_state_matches(false, Some(false), false, false));
+    assert!(shadow_state_matches(false, Some(true), true, false));
+}
+
+#[test]
+fn shadow_override_loss_fails_running_motion_closed() {
+    let base = base_pose();
+    let mut state = motion_state(Mode::Multipass, 1, 32);
+    complete_motion_frame(&mut state, 1, base, base);
+    let request = state.requested_motion.clone().unwrap();
+    let mut observed = observation(&state, 2);
+    observed.shadow_override_ready = false;
+    state.complete_motion(&request, observed, Some((base, base)), true);
+    assert!(!state.ready);
+    assert!(state.error.is_some());
+    assert!(state.motion.is_none());
+}
+
+#[test]
+fn shadow_override_readiness_gates_frames_and_restoration() {
+    let mut state = warming(Mode::Multipass, 1);
+    state.visual_overrides = Some(VisualOverrides {
+        sun_shadows: SunShadowsOverride::Disabled,
+    });
+    state.shadow_sync_required = true;
+    let mut observed = observation(&state, 1);
+    observed.shadow_override_ready = false;
+    state.complete(observed, true);
+    assert!(!state.ready);
+    state.complete(observation(&state, 2), true);
+    assert!(state.ready);
+    assert_eq!(
+        serde_json::to_value(state.metadata()).unwrap()["visual_overrides"]["sun_shadows"],
+        "disabled"
+    );
+    state.start(Operation::Restoring(active("restore-shadow")));
+    assert!(
+        state
+            .complete_restore(restored_resolution(), Some(false), false, false, false)
+            .is_none()
+    );
+    assert!(
+        state
+            .complete_restore(restored_resolution(), Some(false), false, false, true)
+            .is_some()
+    );
+    assert!(!state.shadow_sync_required);
 }
 
 #[test]
@@ -264,25 +336,25 @@ fn restoration_requires_serviced_resize_and_restored_clock() {
     ] {
         assert!(
             state
-                .complete_restore(observed, Some(false), false, false)
+                .complete_restore(observed, Some(false), false, false, true)
                 .is_none()
         );
         assert!(!state.metadata().ready);
     }
     assert!(
         state
-            .complete_restore(resolution, Some(true), false, false)
+            .complete_restore(resolution, Some(true), false, false, true)
             .is_none()
     );
     let completed = state
-        .complete_restore(resolution, Some(false), false, false)
+        .complete_restore(resolution, Some(false), false, false, true)
         .unwrap();
     assert_eq!(completed.id, RequestId::parse("end").unwrap());
     assert!(state.metadata().ready);
     assert!(!state.requires_inline_tail());
     assert!(
         state
-            .complete_restore(resolution, Some(false), false, false)
+            .complete_restore(resolution, Some(false), false, false, true)
             .is_none()
     );
 }
@@ -300,7 +372,7 @@ fn restore_reload_failure_retains_protection_and_cannot_acknowledge_success() {
     assert!(!state.metadata().ready);
     assert!(
         state
-            .complete_restore(restored_resolution(), Some(false), false, false)
+            .complete_restore(restored_resolution(), Some(false), false, false, true)
             .is_none()
     );
     assert!(
@@ -356,7 +428,7 @@ fn retry_after_failed_restoration_does_not_report_failure_twice() {
     assert!(state.requires_inline_tail());
     assert!(
         state
-            .complete_restore(restored_resolution(), Some(false), false, false)
+            .complete_restore(restored_resolution(), Some(false), false, false, true)
             .is_some()
     );
 }
@@ -461,7 +533,7 @@ fn restoration_retains_the_original_configuration_until_completion() {
     let resolution = restored_resolution();
     assert!(
         state
-            .complete_restore(resolution, None, false, false)
+            .complete_restore(resolution, None, false, false, true)
             .is_none()
     );
     assert!(!state.metadata().ready);
@@ -471,7 +543,7 @@ fn restoration_retains_the_original_configuration_until_completion() {
     state.start(Operation::Restoring(active("retry-baseline")));
     assert!(
         state
-            .complete_restore(resolution, Some(false), false, false)
+            .complete_restore(resolution, Some(false), false, false, true)
             .is_some()
     );
     assert!(state.saved.is_none());

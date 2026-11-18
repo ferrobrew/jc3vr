@@ -211,8 +211,12 @@ fn run_draw_clustered(
     // The scope puts every pinned or suppressed piece of state back on *every* path out of the call,
     // so a leaked eye-half viewport or clear suppression cannot corrupt the rest of the frame.
     let scope = ClusteredScope(armed);
+    let resolve_scope = crate::screenshot::harness::resolve_probe::begin(
+        rc_ref.is_some_and(|rc| rc.m_ActiveRenderPass == RenderPassId::RP_DEFERRED_LIGHTS as i32),
+    );
 
     DRAW_CLUSTERED.get().unwrap().call(this, rc, a3, a4);
+    drop(resolve_scope);
 
     let engaged = SPLIT
         .get()

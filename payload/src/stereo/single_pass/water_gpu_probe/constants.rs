@@ -1,156 +1,24 @@
 use std::fmt::Write as _;
 
-use anyhow::{Context, Result};
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
 use windows::{
-    Win32::Graphics::Direct3D11::{
-        D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_DEPTH_STENCIL_VIEW_DESC, D3D11_MAP_READ,
-        D3D11_MAPPED_SUBRESOURCE, D3D11_SAMPLER_DESC, D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
-        ID3D11Buffer, ID3D11DepthStencilView, ID3D11DeviceContext, ID3D11DeviceContext1,
-        ID3D11Resource, ID3D11SamplerState, ID3D11ShaderResourceView, ID3D11Texture2D,
+    Win32::Graphics::{
+        Direct3D::D3D_SRV_DIMENSION_TEXTURE2D,
+        Direct3D11::{
+            D3D11_DEPTH_STENCIL_VIEW_DESC, D3D11_SAMPLER_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC,
+            D3D11_TEXTURE2D_DESC, ID3D11DepthStencilView, ID3D11DeviceContext, ID3D11SamplerState,
+            ID3D11ShaderResourceView, ID3D11Texture2D,
+        },
     },
     core::Interface,
 };
 
-use crate::stereo::single_pass::water_gpu_probe::{ProbeContext, pointer};
-
-/// The longest prefix of a bound constant-buffer range a readback decodes, in floats.
-const READBACK_FLOATS: usize = 64;
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum ShaderStage {
-    Vertex,
-    Hull,
-    Domain,
-    Pixel,
-}
-
-impl ShaderStage {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Vertex => "vs",
-            Self::Hull => "hs",
-            Self::Domain => "ds",
-            Self::Pixel => "ps",
-        }
-    }
-
-    /// Reads the constant-buffer binding at `slot`, including the range the draw binds.
-    ///
-    /// The bound range is only observable through the D3D11.1 context. When the context is older,
-    /// the binding falls back to the whole buffer with `range_known` cleared, so a readback is
-    /// never presented as the range the draw actually uses.
-    ///
-    /// # Safety
-    ///
-    /// `ctx` must be the live immediate context.
-    unsafe fn binding(self, ctx: &ID3D11DeviceContext, slot: Slot) -> Option<BufferBinding> {
-        if let Ok(ctx1) = ctx.cast::<ID3D11DeviceContext1>() {
-            let mut buffers = [None];
-            let mut first_constant = 0u32;
-            let mut num_constants = 0u32;
-            // SAFETY: per this function's contract, the getters only read bound state.
-            unsafe {
-                match self {
-                    Self::Vertex => ctx1.VSGetConstantBuffers1(
-                        slot.index(),
-                        1,
-                        Some(buffers.as_mut_ptr()),
-                        Some(&mut first_constant),
-                        Some(&mut num_constants),
-                    ),
-                    Self::Hull => ctx1.HSGetConstantBuffers1(
-                        slot.index(),
-                        1,
-                        Some(buffers.as_mut_ptr()),
-                        Some(&mut first_constant),
-                        Some(&mut num_constants),
-                    ),
-                    Self::Domain => ctx1.DSGetConstantBuffers1(
-                        slot.index(),
-                        1,
-                        Some(buffers.as_mut_ptr()),
-                        Some(&mut first_constant),
-                        Some(&mut num_constants),
-                    ),
-                    Self::Pixel => ctx1.PSGetConstantBuffers1(
-                        slot.index(),
-                        1,
-                        Some(buffers.as_mut_ptr()),
-                        Some(&mut first_constant),
-                        Some(&mut num_constants),
-                    ),
-                }
-            }
-            let buffer = buffers[0].take()?;
-            return Some(BufferBinding {
-                buffer,
-                first_constant,
-                num_constants,
-                range_known: true,
-            });
-        }
-        // SAFETY: `ctx` is the live immediate context.
-        let buffer = unsafe { self.constant_buffer(ctx, slot) }?;
-        let mut desc = D3D11_BUFFER_DESC::default();
-        // SAFETY: `buffer` is live; `GetDesc` only writes the out parameter.
-        unsafe { buffer.GetDesc(&mut desc) };
-        let num_constants = desc.ByteWidth / 16;
-        if num_constants == 0 {
-            return None;
-        }
-        Some(BufferBinding {
-            buffer,
-            first_constant: 0,
-            num_constants,
-            range_known: false,
-        })
-    }
-
-    /// # Safety
-    ///
-    /// `ctx` must be the live immediate context.
-    unsafe fn constant_buffer(self, ctx: &ID3D11DeviceContext, slot: Slot) -> Option<ID3D11Buffer> {
-        let mut buffers = [None];
-        // SAFETY: per this function's contract, the getter only reads bound state.
-        unsafe {
-            match self {
-                Self::Vertex => ctx.VSGetConstantBuffers(slot.index(), Some(&mut buffers)),
-                Self::Hull => ctx.HSGetConstantBuffers(slot.index(), Some(&mut buffers)),
-                Self::Domain => ctx.DSGetConstantBuffers(slot.index(), Some(&mut buffers)),
-                Self::Pixel => ctx.PSGetConstantBuffers(slot.index(), Some(&mut buffers)),
-            }
-        }
-        buffers[0].take()
-    }
-}
-
-/// A constant-buffer binding and the range of it the draw uses.
-struct BufferBinding {
-    buffer: ID3D11Buffer,
-    first_constant: u32,
-    num_constants: u32,
-    /// Whether the range came from the D3D11.1 getter. When false, the context does not expose
-    /// ranges and the values describe the whole buffer only.
-    range_known: bool,
-}
-
-/// A constant-buffer slot bound by the water draw's shaders.
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Slot(u32);
-
-impl Slot {
-    const GLOBALS: Self = Self(0);
-    const MVP: Self = Self(1);
-    const BOX: Self = Self(2);
-    const PATCH: Self = Self(3);
-    const DISPLACEMENT: Self = Self(4);
-    const STEREO: Self = Self(13);
-
-    fn index(self) -> u32 {
-        self.0
-    }
-}
+use crate::{
+    screenshot::harness::bound_buffer::{
+        Readback, ShaderStage, Slot, WATER_READBACK_ROWS, read_bound_constant_buffer,
+    },
+    stereo::single_pass::water_gpu_probe::{ProbeContext, pointer},
+};
 
 /// A domain-shader resource slot the displaced world-position path reads.
 #[derive(Clone, Copy)]
@@ -192,11 +60,16 @@ impl SrvSlot {
 
 pub(super) unsafe fn capture(ctx: &ID3D11DeviceContext, context: ProbeContext) {
     log_depth_target(ctx, context);
+    let mut screen_row = None;
     for (stage, slot) in CAPTURED_BINDINGS {
         // SAFETY: `ctx` is the live immediate context.
-        let binding = unsafe { stage.binding(ctx, slot) };
-        match read(ctx, binding.as_ref()) {
-            Ok(readback) => log(context, stage, slot, &readback),
+        match read_bound_constant_buffer(ctx, stage, slot.index(), WATER_READBACK_ROWS) {
+            Ok(readback) => {
+                if stage == ShaderStage::Pixel && slot == Slot::GLOBALS {
+                    screen_row = readback_row(&readback, PIXEL_GLOBALS_SCREEN_ROW);
+                }
+                log(context, stage, slot, &readback)
+            }
             Err(error) => tracing::warn!(
                 target: "water_probe",
                 "water probe: constant readback pass={} eye={} invocation={} \
@@ -212,7 +85,7 @@ pub(super) unsafe fn capture(ctx: &ID3D11DeviceContext, context: ProbeContext) {
         }
     }
     log_srvs(ctx, context);
-    log_ps_srvs(ctx, context);
+    log_ps_srvs(ctx, context, screen_row);
     log_ps_samplers(ctx, context);
 }
 
@@ -230,141 +103,6 @@ const CAPTURED_BINDINGS: [(ShaderStage, Slot); 12] = [
     (ShaderStage::Pixel, Slot::MVP),
     (ShaderStage::Pixel, Slot::BOX),
 ];
-
-struct Readback {
-    pointer: usize,
-    byte_width: u32,
-    first_constant: u32,
-    num_constants: u32,
-    range_known: bool,
-    values: Option<Vec<f32>>,
-    range_error: Option<RangeError>,
-}
-
-fn read(ctx: &ID3D11DeviceContext, binding: Option<&BufferBinding>) -> Result<Readback> {
-    let Some(binding) = binding else {
-        return Ok(Readback {
-            pointer: 0,
-            byte_width: 0,
-            first_constant: 0,
-            num_constants: 0,
-            range_known: false,
-            values: None,
-            range_error: None,
-        });
-    };
-    let pointer = binding.buffer.as_raw() as usize;
-    let mut desc = D3D11_BUFFER_DESC::default();
-    // SAFETY: `binding.buffer` is live; `GetDesc` only writes the out parameter.
-    unsafe { binding.buffer.GetDesc(&mut desc) };
-    let base = Readback {
-        pointer,
-        byte_width: desc.ByteWidth,
-        first_constant: binding.first_constant,
-        num_constants: binding.num_constants,
-        range_known: binding.range_known,
-        values: None,
-        range_error: None,
-    };
-    if desc.ByteWidth == 0 {
-        return Ok(base);
-    }
-    // SAFETY: `ctx` is the live immediate context; `GetDevice` only reads its device.
-    let device = unsafe { ctx.GetDevice() }.context("getting the device")?;
-    let staging_desc = D3D11_BUFFER_DESC {
-        ByteWidth: desc.ByteWidth,
-        Usage: D3D11_USAGE_STAGING,
-        BindFlags: 0,
-        CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-        MiscFlags: 0,
-        StructureByteStride: 0,
-    };
-    let mut staging = None;
-    // SAFETY: the descriptor is valid and `staging` is an out parameter.
-    unsafe { device.CreateBuffer(&staging_desc, None, Some(&mut staging)) }
-        .context("creating the staging buffer")?;
-    let staging = staging.context("staging buffer not created")?;
-    let source: ID3D11Resource = binding
-        .buffer
-        .cast()
-        .context("constant buffer is not a resource")?;
-    let destination: ID3D11Resource = staging.cast().context("staging buffer is not a resource")?;
-    // SAFETY: both resources are live and the copy covers the whole source.
-    unsafe { ctx.CopyResource(&destination, &source) };
-    let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-    // SAFETY: `staging` is a readback staging buffer.
-    unsafe { ctx.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped)) }
-        .context("mapping the staging buffer")?;
-    // The whole buffer is mapped, so the decode can start at the bound range's first constant
-    // rather than at the buffer's beginning.
-    // SAFETY: the mapping exposes `ByteWidth` bytes, and it stays live until `Unmap` below.
-    let whole =
-        unsafe { std::slice::from_raw_parts(mapped.pData.cast::<u8>(), desc.ByteWidth as usize) };
-    let decoded = decode_range(whole, binding.first_constant, binding.num_constants);
-    // SAFETY: the mapping was created above, and `Unmap` is infallible.
-    unsafe { ctx.Unmap(&staging, 0) };
-    Ok(match decoded {
-        Ok(values) if !values.is_empty() => Readback {
-            values: Some(values),
-            ..base
-        },
-        Ok(_) => base,
-        Err(range_error) => Readback {
-            range_error: Some(range_error),
-            ..base
-        },
-    })
-}
-
-/// Why a bound constant-buffer range could not be decoded from a readback.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum RangeError {
-    /// The readback is shorter than the bound range.
-    Truncated { needed: usize, available: usize },
-    /// The bound range starts past the end of the readback.
-    OutOfRange { offset: usize, available: usize },
-    /// The range's byte arithmetic overflowed.
-    Overflow,
-}
-
-/// Decodes the floats of a bound constant-buffer range from a whole-buffer readback.
-///
-/// The range starts at `first_constant` (a 16-byte constant) and is capped at [`READBACK_FLOATS`].
-/// Bytes before the range are not decoded.
-fn decode_range(
-    bytes: &[u8],
-    first_constant: u32,
-    num_constants: u32,
-) -> Result<Vec<f32>, RangeError> {
-    let offset = (first_constant as usize)
-        .checked_mul(16)
-        .ok_or(RangeError::Overflow)?;
-    if offset > bytes.len() {
-        return Err(RangeError::OutOfRange {
-            offset,
-            available: bytes.len(),
-        });
-    }
-    // The count is in 16-byte constants, so the range spans four floats per constant; the decode
-    // is capped at the prefix a readback reports.
-    let floats = (num_constants as usize)
-        .checked_mul(4)
-        .ok_or(RangeError::Overflow)?
-        .min(READBACK_FLOATS);
-    let needed = offset
-        .checked_add(floats.checked_mul(4).ok_or(RangeError::Overflow)?)
-        .ok_or(RangeError::Overflow)?;
-    let range = bytes.get(offset..needed).ok_or(RangeError::Truncated {
-        needed,
-        available: bytes.len(),
-    })?;
-    Ok(range
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .map(|chunk| f32::from_le_bytes(*chunk))
-        .collect())
-}
 
 fn log(context: ProbeContext, stage: ShaderStage, slot: Slot, readback: &Readback) {
     let text = match &readback.values {
@@ -447,23 +185,95 @@ fn log_srvs(ctx: &ID3D11DeviceContext, context: ProbeContext) {
 
 const PS_SRV_SLOTS: [u32; 17] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 44, 45];
 
-fn log_ps_srvs(ctx: &ID3D11DeviceContext, context: ProbeContext) {
+/// The PS slots the visible water shader samples through screen-space UVs.
+const SCREEN_SPACE_PS_SRV_SLOTS: [u32; 7] = [0, 1, 2, 3, 4, 11, 12];
+
+/// The `GlobalConstants` row holding the reciprocals of the display width and height, which the water
+/// shaders scale `SV_Position` by to build those lookups.
+const PIXEL_GLOBALS_SCREEN_ROW: u32 = 8;
+
+fn log_ps_srvs(ctx: &ID3D11DeviceContext, context: ProbeContext, screen_row: Option<[f32; 4]>) {
     let mut text = String::new();
     for slot in PS_SRV_SLOTS {
         let mut view: Option<ID3D11ShaderResourceView> = None;
+        // SAFETY: the getter only reads this live immediate context's bound state.
         unsafe { ctx.PSGetShaderResources(slot, Some(std::slice::from_mut(&mut view))) };
         let _ = write!(text, " t{slot}={:#x}", pointer(&view));
+        if SCREEN_SPACE_PS_SRV_SLOTS.contains(&slot) {
+            let _ = write!(text, "({})", srv_dimensions(view.as_ref()));
+        }
     }
+    let screen_row = match screen_row {
+        Some(row) => format!(
+            "[{:.9e} {:.9e} {:.9e} {:.9e}]",
+            row[0], row[1], row[2], row[3]
+        ),
+        None => "none".to_owned(),
+    };
     tracing::info!(
         target: "water_probe",
         "water probe: ps inputs pass={} eye={} invocation={} predicted_display_time_ns={} \
-         generation={} srv{text}",
+         generation={} cb0row8={screen_row} srv{text}",
         context.pass,
         context.eye,
         context.invocation,
         context.frame.display_time(),
         context.frame.visual_generation,
     );
+}
+
+/// The bound view and the texture under it: the resource identity, the base texture's dimensions, the
+/// view's own format and dimension, and the mip window a `Texture2D` view selects, so a screen-space
+/// lookup can be checked against the size and mip the shader's UV scale assumes.
+fn srv_dimensions(view: Option<&ID3D11ShaderResourceView>) -> String {
+    let Some(view) = view else {
+        return "none".to_owned();
+    };
+    let mut view_desc = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
+    // SAFETY: `view` is live; `GetDesc` only writes the out parameter.
+    unsafe { view.GetDesc(&mut view_desc) };
+    // SAFETY: the resource getter only reads this live view.
+    let Ok(resource) = (unsafe { view.GetResource() }) else {
+        return "unknown".to_owned();
+    };
+    let resource_pointer = resource.as_raw() as usize;
+    let mips = if view_desc.ViewDimension == D3D_SRV_DIMENSION_TEXTURE2D {
+        // SAFETY: the union holds the `Texture2D` variant for this dimension.
+        let texture2d = unsafe { view_desc.Anonymous.Texture2D };
+        format!(" mip={}+{}", texture2d.MostDetailedMip, texture2d.MipLevels)
+    } else {
+        String::new()
+    };
+    let Ok(texture) = resource.cast::<ID3D11Texture2D>() else {
+        return format!(
+            "res={resource_pointer:#x} view={:?}/{:?}{mips} not-2d",
+            view_desc.Format, view_desc.ViewDimension
+        );
+    };
+    let mut desc = D3D11_TEXTURE2D_DESC::default();
+    // SAFETY: `texture` is live; `GetDesc` only writes the out parameter.
+    unsafe { texture.GetDesc(&mut desc) };
+    format!(
+        "res={resource_pointer:#x} tex={}x{}/{:?} view={:?}/{:?}{mips}",
+        desc.Width, desc.Height, desc.Format, view_desc.Format, view_desc.ViewDimension
+    )
+}
+
+/// One float4 row of a readback by the constant index the shader addresses. The decoded window
+/// starts at the range the draw bound, and D3D11.1 rebases that window to register 0, so the shader's
+/// index is the window offset rather than an index into the whole buffer.
+fn readback_row(readback: &Readback, row: u32) -> Option<[f32; 4]> {
+    if row >= readback.num_constants {
+        return None;
+    }
+    let values = readback.values.as_ref()?;
+    let offset = row as usize * 4;
+    Some([
+        *values.get(offset)?,
+        *values.get(offset + 1)?,
+        *values.get(offset + 2)?,
+        *values.get(offset + 3)?,
+    ])
 }
 
 const PS_SAMPLER_SLOTS: [u32; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
@@ -610,6 +420,7 @@ unsafe fn typed_depth_target(texture: *mut Texture) -> TypedDepthTarget {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::screenshot::harness::bound_buffer::{RangeError, decode_range};
 
     fn bytes_of(values: &[f32]) -> Vec<u8> {
         values
@@ -631,6 +442,50 @@ mod tests {
     }
 
     #[test]
+    fn screen_space_slots_are_all_in_the_identity_log() {
+        for slot in SCREEN_SPACE_PS_SRV_SLOTS {
+            assert!(
+                PS_SRV_SLOTS.contains(&slot),
+                "t{slot} needs an identity line beside its dimensions"
+            );
+        }
+    }
+
+    #[test]
+    fn screen_row_is_the_shader_index_inside_the_bound_window() {
+        let readback = Readback {
+            pointer: 1,
+            byte_width: 1024,
+            first_constant: 4,
+            num_constants: 16,
+            range_known: true,
+            values: Some((0..64).map(|value| value as f32).collect()),
+            range_error: None,
+        };
+        assert_eq!(
+            readback_row(&readback, PIXEL_GLOBALS_SCREEN_ROW),
+            Some([32.0, 33.0, 34.0, 35.0]),
+            "D3D11.1 rebases the bound window to register 0, so the shader's index addresses the \
+             decoded window"
+        );
+        assert_eq!(
+            readback_row(&readback, 0),
+            Some([0.0, 1.0, 2.0, 3.0]),
+            "constant 0 of the window is the first decoded float4"
+        );
+        assert_eq!(
+            readback_row(&readback, 16),
+            None,
+            "a constant past the bound range is absent even though the decoded floats reach it"
+        );
+        assert_eq!(
+            readback_row(&readback, 40),
+            None,
+            "a constant past the decoded prefix is absent"
+        );
+    }
+
+    #[test]
     fn decode_range_starts_at_the_bound_first_constant() {
         let values = [
             0.0f32, 0.0, 0.0, 0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 12.0,
@@ -648,7 +503,7 @@ mod tests {
         let decoded = decode_range(&bytes_of(&values), 0, 96).expect("decoded");
         assert_eq!(
             decoded,
-            (0..READBACK_FLOATS as i32)
+            (0..(WATER_READBACK_ROWS * 4) as i32)
                 .map(|v| v as f32)
                 .collect::<Vec<_>>()
         );

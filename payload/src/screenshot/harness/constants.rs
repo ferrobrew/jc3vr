@@ -1,7 +1,7 @@
 use dxbc_stereo::{OFFSET_VIEW_PROJECTION_CB0_ROWS, PER_EYE_CB0_ROWS, STEREO_REPROJ_CB_ROWS};
 use jc3gi::{
     graphics_engine::{
-        graphics_engine::RenderContext,
+        graphics_engine::{RenderContext, get_render_frame_counters},
         render_engine::{RenderEngine, RenderPassId},
     },
     types::math::Vector4,
@@ -77,12 +77,41 @@ pub(crate) struct RenderTimeInputs {
     pub context: ContextTimeInputs,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub(crate) struct RenderFrameCountersInputs {
+    pub counter: u32,
+    pub frame_index: u32,
+    pub ring_index: u32,
+}
+
+impl RenderFrameCountersInputs {
+    const fn new(counter: u32, frame_index: u32, ring_index: u32) -> Self {
+        Self {
+            counter,
+            frame_index,
+            ring_index,
+        }
+    }
+
+    /// The engine's live per-draw counters, read at the same capture point as the constants so the
+    /// provenance describes the pass's frame.
+    fn read() -> Self {
+        let counters = unsafe { get_render_frame_counters() };
+        Self::new(
+            counters.m_Counter,
+            counters.m_FrameIndex,
+            counters.m_RingIndex,
+        )
+    }
+}
+
 #[derive(Clone, Serialize)]
 pub(crate) struct EngineTimeInputs {
     pub time_of_day: F32s<1>,
     pub dt: F32s<1>,
     pub wind_animation: F32s<1>,
     pub acc_frame_time: u32,
+    pub render_frame_counters: RenderFrameCountersInputs,
 }
 
 #[derive(Clone, Serialize)]
@@ -136,6 +165,7 @@ pub(crate) fn capture(engine: &RenderEngine, ctx: &RenderContext, cb13_uploaded:
     let Some((identity, physical_eye)) = observation() else {
         return;
     };
+    let frame_counters = RenderFrameCountersInputs::read();
     let mut state = STATE.lock();
     state.observe(identity);
     if let Some(pass) = DeferredLightsPass::new(ctx.m_ActiveRenderPass) {
@@ -147,7 +177,7 @@ pub(crate) fn capture(engine: &RenderEngine, ctx: &RenderContext, cb13_uploaded:
                 physical_eye,
                 pass,
                 render_context: ContextInputs::from_context(ctx),
-                time_inputs: RenderTimeInputs::new(engine, ctx),
+                time_inputs: RenderTimeInputs::new(engine, ctx, frame_counters),
                 vertex_globals: global_rows(&engine.m_VPGlobalConstData),
                 fragment_globals: global_rows(&engine.m_FPGlobalConstData),
             });
@@ -180,7 +210,7 @@ pub(crate) fn capture(engine: &RenderEngine, ctx: &RenderContext, cb13_uploaded:
         physical_eye,
         pass,
         render_context: ContextInputs::from_context(ctx),
-        time_inputs: RenderTimeInputs::new(engine, ctx),
+        time_inputs: RenderTimeInputs::new(engine, ctx, frame_counters),
         constants,
     });
 }
@@ -238,13 +268,18 @@ impl ContextInputs {
 }
 
 impl RenderTimeInputs {
-    fn new(engine: &RenderEngine, ctx: &RenderContext) -> Self {
+    fn new(
+        engine: &RenderEngine,
+        ctx: &RenderContext,
+        render_frame_counters: RenderFrameCountersInputs,
+    ) -> Self {
         Self {
             engine: EngineTimeInputs::from_values(
                 engine.m_TimeOfDay,
                 engine.m_Dt,
                 engine.m_WindAnimation,
                 engine.m_AccFrameTime,
+                render_frame_counters,
             ),
             context: ContextTimeInputs::from_values(ctx.m_TimeOfDay, ctx.m_Dt, ctx.m_WindAnimation),
         }
@@ -252,12 +287,19 @@ impl RenderTimeInputs {
 }
 
 impl EngineTimeInputs {
-    fn from_values(time_of_day: f32, dt: f32, wind_animation: f32, acc_frame_time: u32) -> Self {
+    fn from_values(
+        time_of_day: f32,
+        dt: f32,
+        wind_animation: f32,
+        acc_frame_time: u32,
+        render_frame_counters: RenderFrameCountersInputs,
+    ) -> Self {
         Self {
             time_of_day: F32s::new([time_of_day]),
             dt: F32s::new([dt]),
             wind_animation: F32s::new([wind_animation]),
             acc_frame_time,
+            render_frame_counters,
         }
     }
 }
@@ -454,7 +496,13 @@ mod tests {
                 camera_position: F32s::new([0.0; 3]),
             },
             time_inputs: RenderTimeInputs {
-                engine: EngineTimeInputs::from_values(0.0, 0.0, 0.0, 0),
+                engine: EngineTimeInputs::from_values(
+                    0.0,
+                    0.0,
+                    0.0,
+                    0,
+                    RenderFrameCountersInputs::new(0, 0, 0),
+                ),
                 context: ContextTimeInputs::from_values(0.0, 0.0, 0.0),
             },
             constants: ShaderConstants::MultipassCb0 {
@@ -480,7 +528,13 @@ mod tests {
                 camera_position: F32s::new([0.0; 3]),
             },
             time_inputs: RenderTimeInputs {
-                engine: EngineTimeInputs::from_values(0.0, 0.0, 0.0, 0),
+                engine: EngineTimeInputs::from_values(
+                    0.0,
+                    0.0,
+                    0.0,
+                    0,
+                    RenderFrameCountersInputs::new(0, 0, 0),
+                ),
                 context: ContextTimeInputs::from_values(0.0, 0.0, 0.0),
             },
             vertex_globals: Vec::new(),
@@ -710,11 +764,13 @@ mod tests {
     #[test]
     fn time_inputs_preserve_exact_bits() {
         let bits = [0, 0x8000_0000, 0x7fc0_1234, 0x7f80_0000];
+        let counters = RenderFrameCountersInputs::new(0xdead_beef, 0x1234_5678, 2);
         let engine = EngineTimeInputs::from_values(
             f32::from_bits(bits[0]),
             f32::from_bits(bits[1]),
             f32::from_bits(bits[2]),
             0xdead_beef,
+            counters,
         );
         let context = ContextTimeInputs::from_values(
             f32::from_bits(bits[3]),
@@ -725,6 +781,10 @@ mod tests {
         assert_eq!(engine.dt.bits, [bits[1]]);
         assert_eq!(engine.wind_animation.bits, [bits[2]]);
         assert_eq!(engine.acc_frame_time, 0xdead_beef);
+        assert_eq!(engine.render_frame_counters, counters);
+        assert_eq!(engine.render_frame_counters.counter, 0xdead_beef);
+        assert_eq!(engine.render_frame_counters.frame_index, 0x1234_5678);
+        assert_eq!(engine.render_frame_counters.ring_index, 2);
         assert_eq!(context.time_of_day.bits, [bits[3]]);
         assert_eq!(context.dt.bits, [bits[2]]);
         assert_eq!(context.wind_animation.bits, [bits[1]]);
@@ -732,11 +792,21 @@ mod tests {
 
     #[test]
     fn engine_and_context_time_inputs_stay_distinct() {
-        let engine = EngineTimeInputs::from_values(1.5, 0.25, 0.75, 60);
+        let engine = EngineTimeInputs::from_values(
+            1.5,
+            0.25,
+            0.75,
+            60,
+            RenderFrameCountersInputs::new(7, 8, 9),
+        );
         let context = ContextTimeInputs::from_values(2.5, 0.5, 0.125);
         assert_eq!(engine.time_of_day.values, [1.5]);
         assert_eq!(engine.dt.values, [0.25]);
         assert_eq!(engine.wind_animation.values, [0.75]);
+        assert_eq!(
+            engine.render_frame_counters,
+            RenderFrameCountersInputs::new(7, 8, 9)
+        );
         assert_eq!(context.time_of_day.values, [2.5]);
         assert_eq!(context.dt.values, [0.5]);
         assert_eq!(context.wind_animation.values, [0.125]);

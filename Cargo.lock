@@ -2333,6 +2333,7 @@ dependencies = [
  "serde_ignored",
  "serde_json",
  "serde_path_to_error",
+ "sha2 0.10.9",
  "smol_str",
  "test-case",
  "toml 1.1.6+spec-1.1.0",

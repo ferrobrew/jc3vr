@@ -51,9 +51,12 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     screenshot::harness::stages::{capture_water_after, capture_water_before},
-    stereo::single_pass::{
-        BlockIntercept, WaterGpuProbe, begin_water_surface, block_intercept_enabled,
-        draw_per_eye_half_ignoring_bound_vs, screen_uv_cb_per_eye,
+    stereo::{
+        draw_index,
+        single_pass::{
+            BlockIntercept, WaterGpuProbe, begin_water_input_capture, begin_water_surface,
+            block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs, screen_uv_cb_per_eye,
+        },
     },
 };
 
@@ -124,7 +127,28 @@ fn nv_water_high_end_draw(
     // closure re-invokes the original `Draw` trampoline.
     let handled = unsafe { nv_water_per_eye(this, rc, || detour.call(this, rc, info)) };
     if !handled {
+        // The per-eye re-issue brackets the water surface with the `water_*` stages and the GPU probe;
+        // bracket the plain path's single draw the same way so the two paths stay comparable.
+        // SAFETY: `rc` is the live render context the engine passed into `Draw`.
+        let pass = unsafe { (*rc).m_ActiveRenderPass };
+        let water_surface = pass == RenderPassId::RP_WATER as i32;
+        if water_surface {
+            capture_water_before();
+        }
+        let probe = if water_surface {
+            WaterGpuProbe::begin(pass, draw_index())
+        } else {
+            None
+        };
+        let input_capture = water_surface.then(|| begin_water_input_capture(draw_index()));
         detour.call(this, rc, info);
+        drop(input_capture);
+        if let Some(probe) = probe {
+            probe.finish();
+        }
+        if water_surface {
+            capture_water_after(draw_index());
+        }
     }
 }
 
@@ -302,7 +326,9 @@ unsafe fn nv_water_per_eye(
         } else {
             None
         };
+        let input_capture = water_surface.then(|| begin_water_input_capture(eye));
         draw();
+        drop(input_capture);
         if let Some(probe) = probe {
             probe.finish();
         }

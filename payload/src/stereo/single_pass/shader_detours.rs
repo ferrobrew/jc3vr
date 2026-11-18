@@ -6,6 +6,10 @@
 //! question is answered here and read there, which is why the patched-shader set and the bound-shader
 //! flag live with the detours that maintain them rather than with the draws that consult them.
 
+use std::sync::LazyLock;
+
+use sha2::{Digest, Sha256};
+
 use super::*;
 
 /// `ID3D11Device::CreateVertexShader` (device vtable slot 12) and `ID3D11DeviceContext::VSSetShader`
@@ -118,7 +122,16 @@ pub(super) unsafe extern "system" fn create_vertex_shader_detour(
             (pending, bytecode, length)
         }
     };
+    let generation = vertex_identity_generation();
     let hr = unsafe { detour.call(device, blob, len, linkage, out) };
+    if let Some(generation) = generation
+        && hr >= 0
+        && !out.is_null()
+        && let shader = unsafe { *out }
+        && !shader.is_null()
+    {
+        unsafe { vertex_identity_record(generation, shader, blob, len, pending_name.as_deref()) };
+    }
     if record
         && hr == 0
         && !out.is_null()
@@ -134,6 +147,196 @@ pub(super) unsafe extern "system" fn create_vertex_shader_detour(
         }
     }
     hr
+}
+
+const MAX_VERTEX_IDENTITIES: usize = 4096;
+const MAX_VERTEX_BYTECODE: usize = 16 * 1024 * 1024;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct VertexIdentity {
+    pub(crate) name: Option<String>,
+    pub(crate) actual_sha256: [u8; 32],
+}
+
+struct VertexIdentityState {
+    armed: bool,
+    generation: u64,
+    entries: BTreeMap<usize, VertexIdentity>,
+    incomplete: bool,
+}
+
+impl VertexIdentityState {
+    fn reset(&mut self, armed: bool) -> BTreeMap<usize, VertexIdentity> {
+        self.armed = armed;
+        self.generation = self.generation.wrapping_add(1);
+        self.incomplete = false;
+        std::mem::take(&mut self.entries)
+    }
+
+    fn admit(&mut self, generation: u64, pointer: usize, identity: &VertexIdentity) -> bool {
+        if !vertex_identity_accepts(self.armed, self.generation, generation) {
+            return false;
+        }
+        if let Some(previous) = self.entries.get(&pointer) {
+            if previous.actual_sha256 != identity.actual_sha256 {
+                self.incomplete = true;
+            }
+            return false;
+        }
+        if self.entries.len() >= MAX_VERTEX_IDENTITIES {
+            self.incomplete = true;
+            return false;
+        }
+        true
+    }
+}
+
+static VERTEX_IDENTITY_ARMED: AtomicBool = AtomicBool::new(false);
+static VERTEX_IDENTITIES: LazyLock<Mutex<VertexIdentityState>> = LazyLock::new(|| {
+    Mutex::new(VertexIdentityState {
+        armed: false,
+        generation: 0,
+        entries: BTreeMap::new(),
+        incomplete: false,
+    })
+});
+
+pub(crate) fn vertex_identity_arm() {
+    vertex_identity_clear(true);
+    VERTEX_IDENTITY_ARMED.store(true, Ordering::Release);
+}
+
+pub(crate) fn vertex_identity_reset() {
+    let old = {
+        let mut state = VERTEX_IDENTITIES.lock();
+        let armed = state.armed;
+        state.reset(armed)
+    };
+    for pointer in old.into_keys() {
+        unsafe { com_release(pointer as *mut c_void) };
+    }
+}
+
+pub(crate) fn vertex_identity_disarm() {
+    VERTEX_IDENTITY_ARMED.store(false, Ordering::Release);
+    vertex_identity_clear(false);
+}
+
+fn vertex_identity_clear(armed: bool) {
+    let old = {
+        let mut state = VERTEX_IDENTITIES.lock();
+        state.reset(armed)
+    };
+    for pointer in old.into_keys() {
+        unsafe { com_release(pointer as *mut c_void) };
+    }
+}
+
+fn vertex_identity_generation() -> Option<u64> {
+    if !VERTEX_IDENTITY_ARMED.load(Ordering::Acquire) {
+        return None;
+    }
+    let state = VERTEX_IDENTITIES.lock();
+    state.armed.then_some(state.generation)
+}
+
+unsafe fn vertex_identity_record(
+    generation: u64,
+    shader: *mut c_void,
+    blob: *const c_void,
+    len: usize,
+    name: Option<&str>,
+) {
+    if blob.is_null() || len == 0 || len > MAX_VERTEX_BYTECODE || len > isize::MAX as usize {
+        let mut state = VERTEX_IDENTITIES.lock();
+        if state.armed && state.generation == generation {
+            state.incomplete = true;
+        }
+        return;
+    }
+    let digest =
+        Sha256::digest(unsafe { std::slice::from_raw_parts(blob.cast::<u8>(), len) }).into();
+    let mut state = VERTEX_IDENTITIES.lock();
+    if !vertex_identity_accepts(state.armed, state.generation, generation) {
+        return;
+    }
+    let identity = VertexIdentity {
+        name: name.map(str::to_owned),
+        actual_sha256: digest,
+    };
+    if !state.admit(generation, shader as usize, &identity) {
+        return;
+    }
+    unsafe { com_add_ref(shader) };
+    state.entries.insert(shader as usize, identity);
+}
+
+fn vertex_identity_accepts(armed: bool, current: u64, observed: u64) -> bool {
+    armed && current == observed
+}
+
+#[cfg(test)]
+mod vertex_identity_tests {
+    use std::collections::BTreeMap;
+
+    use super::{
+        MAX_VERTEX_IDENTITIES, VertexIdentity, VertexIdentityState, vertex_identity_accepts,
+    };
+
+    #[test]
+    fn registry_bounds_conflicts_and_reset() {
+        let mut state = VertexIdentityState {
+            armed: true,
+            generation: 1,
+            entries: BTreeMap::new(),
+            incomplete: false,
+        };
+        let identity = VertexIdentity {
+            name: None,
+            actual_sha256: [1; 32],
+        };
+        assert!(state.admit(1, 1, &identity));
+        state.entries.insert(1, identity.clone());
+        assert!(!state.admit(1, 1, &identity));
+        assert!(!state.incomplete);
+        let conflict = VertexIdentity {
+            name: None,
+            actual_sha256: [2; 32],
+        };
+        assert!(!state.admit(1, 1, &conflict));
+        assert!(state.incomplete);
+        assert_eq!(state.reset(true).len(), 1);
+        assert!(!state.incomplete);
+        assert!(!state.admit(1, 2, &identity));
+        for pointer in 0..MAX_VERTEX_IDENTITIES {
+            state.entries.insert(pointer, identity.clone());
+        }
+        assert!(!state.admit(2, MAX_VERTEX_IDENTITIES, &identity));
+        assert!(state.incomplete);
+        assert_eq!(state.reset(false).len(), MAX_VERTEX_IDENTITIES);
+        assert!(!state.armed);
+        assert!(!state.incomplete);
+    }
+
+    #[test]
+    fn old_creations_cannot_enter_a_new_generation() {
+        assert!(vertex_identity_accepts(true, 7, 7));
+        assert!(!vertex_identity_accepts(true, 8, 7));
+        assert!(!vertex_identity_accepts(false, 7, 7));
+    }
+}
+
+pub(crate) fn vertex_identity_lookup(
+    shader: usize,
+) -> Result<Option<VertexIdentity>, &'static str> {
+    let state = VERTEX_IDENTITIES.lock();
+    if !state.armed {
+        return Err("unarmed");
+    }
+    if state.incomplete {
+        return Err("incomplete");
+    }
+    Ok(state.entries.get(&shader).cloned())
 }
 
 /// Cache whether the vertex shader now bound is a patched one, so [`draw_indexed_detour`] can gate

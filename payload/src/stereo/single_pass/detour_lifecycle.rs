@@ -7,7 +7,7 @@
 
 use std::{
     ffi::c_void,
-    sync::atomic::{AtomicPtr, Ordering},
+    sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
 
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
@@ -16,7 +16,15 @@ use retour::{Function, GenericDetour};
 use windows::{Win32::Foundation::RECT, core::Interface};
 
 use crate::stereo::single_pass::{
-    active, draw_detours::*, per_eye_reissue::*, shader_detours::*, viewport::*,
+    active,
+    draw_detours::*,
+    per_eye_reissue::*,
+    shader_detours::*,
+    shader_identity::{
+        CREATE_PIXEL_SHADER, CREATE_PIXEL_SHADER_SLOT, CreatePixelShaderFn,
+        create_pixel_shader_detour,
+    },
+    viewport::*,
 };
 
 /// A slot for a detour that is installed once and removed on eject.
@@ -237,7 +245,57 @@ pub(crate) fn ensure_viewport_detours() {
     }
 }
 
-/// Serializes [`ensure_viewport_detours`] against itself and against [`uninstall_com_detours`]. Both
-/// suspend every other thread while they patch, so two of them running concurrently would suspend each
-/// other and hang the process.
+pub(crate) fn vertex_identity_detour_ready() -> bool {
+    CREATE_VERTEX_SHADER
+        .get()
+        .is_some_and(|detour| detour.is_enabled())
+}
+
+pub(crate) fn ensure_pixel_shader_detour() -> bool {
+    let _install = DETOUR_INSTALL.lock();
+    if let Some(detour) = CREATE_PIXEL_SHADER.get() {
+        return detour.is_enabled();
+    }
+    if crate::is_shutting_down() {
+        return false;
+    }
+    let Some(device) =
+        (unsafe { GraphicsEngine::get() }).and_then(|ge| unsafe { ge.m_Device.as_ref() })
+    else {
+        return false;
+    };
+    let target: CreatePixelShaderFn = unsafe {
+        let vtable = *(device.m_Device.as_raw() as *const *const usize);
+        std::mem::transmute(*vtable.add(CREATE_PIXEL_SHADER_SLOT))
+    };
+    let Ok(detour) = (unsafe { GenericDetour::new(target, create_pixel_shader_detour) }) else {
+        return false;
+    };
+    CREATE_PIXEL_SHADER.set(detour);
+    let enabled = re_utilities::ThreadSuspender::for_block(|| {
+        let detour = CREATE_PIXEL_SHADER.get().expect("just set");
+        let result = unsafe { detour.enable() };
+        if result.is_ok() || detour.is_enabled() {
+            PIXEL_SHADER_EVER_ENABLED.store(true, Ordering::Release);
+        }
+        result?;
+        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+    })
+    .is_ok()
+        && CREATE_PIXEL_SHADER
+            .get()
+            .is_some_and(|detour| detour.is_enabled());
+    if !enabled
+        && CREATE_PIXEL_SHADER
+            .get()
+            .is_some_and(|detour| !detour.is_enabled())
+    {
+        drop(CREATE_PIXEL_SHADER.take());
+    }
+    enabled
+}
+
+pub(super) static PIXEL_SHADER_EVER_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Serializes COM detour installation and removal across threads.
 pub(super) static DETOUR_INSTALL: Mutex<()> = Mutex::new(());
