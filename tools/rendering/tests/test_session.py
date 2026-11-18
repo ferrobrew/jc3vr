@@ -21,7 +21,7 @@ from tools.rendering.session.attach import (
 from tools.rendering.session.errors import SessionError
 from tools.rendering.session.launch import RenderingSession
 from tools.rendering.session.options import Options, parse_args
-from tools.rendering.session import cli as session_cli
+from tools.rendering.session import cli as session_cli, matched_run
 
 
 def restoration_wire(identifier):
@@ -254,3 +254,26 @@ class StatePointerTests(SessionTestCase):
                 patch.object(runner, "_terminate_owned"):
             runner.close()
         self.assertTrue(pointer.exists())
+
+
+class MatchedControllerTests(unittest.TestCase):
+    def test_pid_reuse_refuses_signal(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            prior = base / 'diagnostics-1'
+            prior.mkdir()
+            (prior / 'controller.pid').write_text(str(os.getpid()))
+            with patch.object(matched_run, 'BASE', base), patch.object(signal, 'pidfd_send_signal') as send:
+                with self.assertRaisesRegex(RuntimeError, 'does not match'):
+                    matched_run.stop_prior(1, '10de:2b85', base)
+                send.assert_not_called()
+            self.assertFalse((base / 'prior-controller.json').exists())
+
+    def test_existing_session_refuses_restart(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            (base / 'persistent-2').mkdir()
+            with patch.object(matched_run, 'BASE', base), patch.object(matched_run, 'stop_prior') as stop:
+                with self.assertRaisesRegex(RuntimeError, 'unused session'):
+                    matched_run.run(2, base / 'unused.toml', '10de:2b85', 1)
+                stop.assert_not_called()
