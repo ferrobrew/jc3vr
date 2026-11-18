@@ -180,6 +180,23 @@ class CascadeScale(StrEnum):
 
 
 class WaterReflection(StrEnum):
+    LAKE_SAMPLES = "lake_samples"
+    LAKE_LIGHTING = "lake_lighting"
+    LAKE_SKY = "lake_sky"
+    LAKE_SKY_BUFFER = "lake_sky_buffer"
+    LAKE_RESPONSE = "lake_response"
+    LAKE_NEAR_PATCH = "lake_near_patch"
+    LAKE_TESS_PATCH = "lake_tess_patch"
+    LAKE_PATCH_DRAW = "lake_patch_draw"
+    LAKE_PATCH_OWNERS = "lake_patch_owners"
+    LAKE_CAMERA_CONTROL = "lake_camera_control"
+    LAKE_HULL_CAMERA = "lake_hull_camera"
+    LAKE_DOMAIN_CAMERA = "lake_domain_camera"
+    PLANAR_UV = "planar_uv"
+    EYE_WIDTH_PLANAR = "eye_width_planar"
+    MIRRORED_PLANAR = "mirrored_planar"
+    PROJECTED_PLANAR = "projected_planar"
+    PRISTINE_LAKE = "pristine_lake"
     ZERO_WEIGHT = "zero_weight"
     ZERO_PLANAR = "zero_planar"
     CENTER_PLANAR = "center_planar"
@@ -196,17 +213,22 @@ class SunShadows(StrEnum):
 
 @dataclass(frozen=True)
 class VisualOverrides:
-    sun_shadows: SunShadows
+    sun_shadows: SunShadows | None = None
+    screen_space_reflections: str | None = None
 
     def __post_init__(self):
-        if not isinstance(self.sun_shadows, SunShadows):
-            raise ProtocolError("visual protocol: invalid sun_shadows override")
+        if not ((isinstance(self.sun_shadows, SunShadows) and self.screen_space_reflections is None) or
+                (self.sun_shadows is None and self.screen_space_reflections == "enabled")):
+            raise ProtocolError("visual protocol: invalid visual override")
 
     def to_toml(self):
-        return f'[visual_overrides]\nsun_shadows = {json.dumps(self.sun_shadows.value)}\n'
+        key, value = next((k,v) for k,v in asdict(self).items() if v is not None)
+        return f'[visual_overrides]\n{key} = {json.dumps(value)}\n'
 
     @classmethod
     def from_wire(cls, value):
+        if isinstance(value, dict) and value == {"screen_space_reflections": "enabled"}:
+            return cls(screen_space_reflections="enabled")
         if not isinstance(value, dict) or set(value) != {"sun_shadows"}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
         try:
@@ -225,12 +247,76 @@ class Request:
     motion: MotionRequest | None = None
     motion_capture: PhaseCapture | None = None
     environment: EnvironmentRequest | None = None
+    aa_color_edge: bool | None = None
+    patch63_hull: bool | None = None
+    owner_four_domain: bool | None = None
+    lake_color_mirror: bool | None = None
+    lake_depth_edge: bool | None = None
+    lake_ds_mvp: bool | None = None
+    card_atlas: bool | None = None
+    group_fade: bool | None = None
+    group_cards: bool | None = None
+    group_residual: bool | None = None
+    aa_weights: bool | None = None
+    aa_draws: bool | None = None
+    lake_owner_four: bool | None = None
+    lake_producer: bool | None = None
+    lake_gradients: bool | None = None
+    lake_waves: bool | None = None
+    lake_normals: bool | None = None
+    lake_displacement: bool | None = None
+    lake_samplers: bool | None = None
+    tess_writer: bool | None = None
+    tess_owners: bool | None = None
+    base_projection: bool | None = None
+    base_sources: bool | None = None
+    terrain_interval: bool | None = None
+    group_inputs: bool | None = None
+    group_sources: bool | None = None
+    resolve_shadow: bool | None = None
+    dof_inputs: bool | None = None
+    fog_generation: bool | None = None
+    fog_inputs: bool | None = None
     late_sky_stages: bool | None = None
     water_surface_inputs: bool | None = None
+    second_patch_ordinal: int | None = None
+    patch_draw_ordinal: int | None = None
     water_tess_draw: int | None = None
     water_inputs: bool | None = None
     water_reflection: WaterReflection | None = None
     cascade_scale: CascadeScale | None = None
+    history_center: bool | None = None
+    grid_eye: bool | None = None
+    veto_eye: bool | None = None
+    march_eye: bool | None = None
+    proxy_eye: bool | None = None
+    resolve_eye_camera: bool | None = None
+    ssr_prepare: bool | None = None
+    ssr_history: bool | None = None
+    lake_inner_edge: bool | None = None
+    writer_domain_camera: bool | None = None
+    base_eye_vp: bool | None = None
+    group_atlas_scale: bool | None = None
+    dof_edge_local: bool | None = None
+    fog_local_uv: bool | None = None
+    terrain_camera: bool | None = None
+    extra_bark_dither: bool | None = None
+    left_atlas_scale: bool | None = None
+    impostor_scale: bool | None = None
+    color_dither: bool | None = None
+    bark_dither: bool | None = None
+    terrain_sources: bool | None = None
+    residual_bark: bool | None = None
+    left_interval: bool | None = None
+    impostor_inputs: bool | None = None
+    interval_trace: bool | None = None
+    post_geometry: bool | None = None
+    bark_color_trace: bool | None = None
+    velocity_trace: bool | None = None
+    early_depth: bool | None = None
+    ssr_operands: bool | None = None
+    ssr_bracket: bool | None = None
+    resolve_samples: bool | None = None
     resolve_inputs: bool | None = None
     sun_depth_clip: SunDepthClip | None = None
     sun_inputs: bool | None = None
@@ -260,17 +346,85 @@ class Request:
         if self.visual_overrides is not None and (self.command != Command.CONFIGURE or
                                                    not isinstance(self.visual_overrides, VisualOverrides)):
             raise ProtocolError("visual protocol: only configuration accepts visual overrides")
+        if self.aa_color_edge is not None and (type(self.aa_color_edge) is not bool or not self.aa_weights or self.patch63_hull is not True):
+            raise ProtocolError("AA color edge requires weights and physical hull")
+        if self.patch63_hull is not None and (type(self.patch63_hull) is not bool or self.owner_four_domain is not True or self.writer_domain_camera is not True):
+            raise ProtocolError("patch 63 hull requires both domain treatments")
+        if self.owner_four_domain is not None and (type(self.owner_four_domain) is not bool or not self.lake_owner_four or self.lake_color_mirror is not True):
+            raise ProtocolError("owner four domain requires selected terrain and physical lake color")
+        if self.lake_color_mirror is not None and (type(self.lake_color_mirror) is not bool or self.lake_depth_edge is not True):
+            raise ProtocolError("lake color mirror requires bounded candidate depth")
+        if self.aa_weights and (self.aa_weights is not True or not self.aa_draws):
+            raise ProtocolError("AA weights require AA draws")
+        if self.aa_draws and (self.aa_draws is not True or not self.dof_inputs):
+            raise ProtocolError("AA draws require the post-process input capture")
+        if self.lake_owner_four and (self.lake_owner_four is not True or not self.lake_producer or not self.tess_writer):
+            raise ProtocolError("lake owner four requires selected terrain and water producers")
+        if self.lake_depth_edge is not None and (type(self.lake_depth_edge) is not bool or self.lake_ds_mvp is not True or self.lake_waves or self.lake_normals):
+            raise ProtocolError("lake depth edge requires physical MVP and displacement layout")
+        if self.lake_ds_mvp is not None and (type(self.lake_ds_mvp) is not bool or not self.lake_producer or self.card_atlas is not True or self.water_reflection != WaterReflection.LAKE_HULL_CAMERA):
+            raise ProtocolError("lake DS MVP requires lake producer, physical cards, and hull camera")
+        if self.card_atlas is not None and (type(self.card_atlas) is not bool or self.group_fade is not True):
+            raise ProtocolError("card atlas requires physical group fade")
+        if self.group_fade is not None and (type(self.group_fade) is not bool or self.group_cards is not True or self.lake_inner_edge is not True):
+            raise ProtocolError("group fade requires card inputs and the physical lake edge")
+        if self.group_cards is not None and (self.group_cards is not True or self.group_residual is not True):
+            raise ProtocolError("group cards require the residual trace")
+        if self.group_residual is not None and (self.group_residual is not True or self.group_inputs is not True):
+            raise ProtocolError("residual group trace requires group inputs")
+        if self.lake_producer is not None and (self.lake_producer is not True or self.lake_displacement is not True):
+            raise ProtocolError("lake producer requires selected displacement")
+        if self.lake_gradients is not None and (self.lake_gradients is not True or self.lake_waves is not True):
+            raise ProtocolError("lake gradients require the selected wave trace")
+        if self.lake_waves is not None and (self.lake_waves is not True or self.lake_displacement is not True or self.lake_normals is not None):
+            raise ProtocolError("lake waves require a dedicated selected response layout")
+        if self.lake_normals is not None and (self.lake_normals is not True or self.lake_displacement is not True):
+            raise ProtocolError("lake normals require the selected displacement trace")
+        if self.lake_displacement is not None and (self.lake_displacement is not True or self.lake_samplers is not True or self.tess_writer is not True or self.water_reflection not in (WaterReflection.LAKE_CAMERA_CONTROL, WaterReflection.LAKE_HULL_CAMERA)):
+            raise ProtocolError("lake displacement requires the selected response trace and sampler evidence")
+        if self.lake_samplers is not None and (self.lake_samplers is not True or self.water_surface_inputs is not True or self.water_tess_draw != 7):
+            raise ProtocolError("lake samplers require surface inputs at lake draw 7")
+        if self.tess_writer is not None and (self.tess_writer is not True or self.tess_owners is not True or self.terrain_sources is not True or self.terrain_camera is not None):
+            raise ProtocolError("terrain writer requires terrain sources and owners without a camera treatment")
+        if self.tess_owners is not None and (self.tess_owners is not True or self.terrain_interval is not True):
+            raise ProtocolError("terrain owners require the bracketed terrain pass")
+        if self.base_projection is not None and (self.base_projection is not True or self.base_sources is not True):
+            raise ProtocolError("basemesh projection requires basemesh sources")
+        if self.base_sources is not None and (self.base_sources is not True or self.terrain_interval is not True):
+            raise ProtocolError("basemesh sources require the terrain interval")
+        if self.terrain_interval is not None and (self.terrain_interval is not True or self.post_geometry is not True):
+            raise ProtocolError("terrain interval requires the post-geometry boundaries")
+        if self.group_inputs is not None and (self.group_inputs is not True or self.group_sources is not True):
+            raise ProtocolError("group impostor inputs require group sources")
+        if self.group_sources is not None and (self.group_sources is not True or self.left_interval is not True):
+            raise ProtocolError("group sources require the interval trace")
+        if self.resolve_shadow is not None and (self.resolve_shadow is not True or self.resolve_samples is not True):
+            raise ProtocolError("resolve shadow operands require the sampled resolve")
+        if self.dof_inputs is not None and (self.dof_inputs is not True or self.fog_generation is not True):
+            raise ProtocolError("DoF inputs require the bracketed fog producer")
+        if self.fog_generation is not None and (self.fog_generation is not True or self.fog_inputs is not True):
+            raise ProtocolError("fog generation requires the composite input")
+        if self.fog_inputs is not None and (self.fog_inputs is not True or self.late_sky_stages is not True):
+            raise ProtocolError("fog inputs require the pass brackets")
         if self.late_sky_stages is not None and (self.command != Command.SCREENSHOT or self.motion_capture is not None or self.late_sky_stages is not True):
             raise ProtocolError("visual protocol: late_sky_stages requires a screenshot without motion")
         if self.water_inputs is not None and (self.command != Command.SCREENSHOT or
                                               type(self.water_inputs) is not bool):
             raise ProtocolError("visual protocol: only screenshot requests accept a boolean water_inputs")
+        if self.second_patch_ordinal is not None and (type(self.second_patch_ordinal) is not int or type(self.patch_draw_ordinal) is not int or not self.patch_draw_ordinal < self.second_patch_ordinal <= 255):
+            raise ProtocolError("terrain diagnostic: secondary ordinal must follow a selected first ordinal")
+        if self.patch_draw_ordinal is not None and (type(self.patch_draw_ordinal) is not int or not 1 <= self.patch_draw_ordinal <= 255 or self.water_reflection not in (WaterReflection.LAKE_CAMERA_CONTROL, WaterReflection.LAKE_DOMAIN_CAMERA, WaterReflection.LAKE_HULL_CAMERA)):
+            raise ProtocolError("visual protocol: invalid patch camera draw selection")
         if self.water_tess_draw is not None and (self.water_inputs is not True or type(self.water_tess_draw) is not int or not 0 <= self.water_tess_draw < 32):
             raise ProtocolError("visual protocol: water_tess_draw requires water_inputs and an index below 32")
-        if self.water_surface_inputs is not None and (self.water_surface_inputs is not True or self.water_tess_draw is None or self.water_reflection is not None or self.motion_capture is not None):
-            raise ProtocolError("visual protocol: surface inputs require an untreated selected water draw")
-        if self.water_reflection in (WaterReflection.ZERO_PLANAR, WaterReflection.PACKED_REFRACTION) and self.water_tess_draw is None:
-            raise ProtocolError("visual protocol: zero_planar requires a selected lake draw")
+        if self.water_surface_inputs is not None and (self.water_surface_inputs is not True or self.water_tess_draw is None or self.water_reflection not in (None, WaterReflection.EYE_WIDTH_PLANAR, WaterReflection.LAKE_SAMPLES, WaterReflection.LAKE_LIGHTING, WaterReflection.LAKE_SKY, WaterReflection.LAKE_SKY_BUFFER, WaterReflection.LAKE_RESPONSE, WaterReflection.LAKE_NEAR_PATCH, WaterReflection.LAKE_TESS_PATCH, WaterReflection.LAKE_PATCH_DRAW, WaterReflection.LAKE_PATCH_OWNERS, WaterReflection.LAKE_CAMERA_CONTROL, WaterReflection.LAKE_DOMAIN_CAMERA, WaterReflection.LAKE_HULL_CAMERA) or self.motion_capture is not None):
+            raise ProtocolError("visual protocol: surface inputs require a compatible selected water draw")
+        if self.water_reflection in (WaterReflection.EYE_WIDTH_PLANAR, WaterReflection.LAKE_SAMPLES, WaterReflection.LAKE_LIGHTING, WaterReflection.LAKE_SKY, WaterReflection.LAKE_SKY_BUFFER, WaterReflection.LAKE_RESPONSE, WaterReflection.LAKE_NEAR_PATCH, WaterReflection.LAKE_TESS_PATCH, WaterReflection.LAKE_PATCH_DRAW, WaterReflection.LAKE_PATCH_OWNERS, WaterReflection.LAKE_CAMERA_CONTROL, WaterReflection.LAKE_DOMAIN_CAMERA, WaterReflection.LAKE_HULL_CAMERA) and (self.water_tess_draw != 7 or not self.water_surface_inputs):
+            raise ProtocolError("visual protocol: eye-width projection requires lake draw 7 with surface inputs")
+        if self.water_reflection == WaterReflection.PLANAR_UV and self.water_tess_draw != 7:
+            raise ProtocolError("visual protocol: planar_uv requires lake draw 7")
+        if self.water_reflection in (WaterReflection.MIRRORED_PLANAR, WaterReflection.PROJECTED_PLANAR, WaterReflection.PRISTINE_LAKE, WaterReflection.CENTER_PLANAR, WaterReflection.ZERO_PLANAR, WaterReflection.PACKED_REFRACTION) and self.water_tess_draw is None:
+            raise ProtocolError("visual protocol: lake treatment requires a selected draw")
         if self.water_reflection is not None and (self.command != Command.SCREENSHOT or
                                                   not isinstance(self.water_reflection, WaterReflection) or
                                                   self.water_inputs is not True or self.motion_capture is not None):
@@ -282,6 +436,70 @@ class Request:
         if self.cascade_scale is not None and (not isinstance(self.cascade_scale, CascadeScale) or
                 self.command != Command.SCREENSHOT or self.resolve_inputs is not True or self.motion_capture is not None):
             raise ProtocolError("visual protocol: cascade_scale requires a resolve screenshot without motion")
+        if self.lake_inner_edge is not None and (type(self.lake_inner_edge) is not bool or self.lake_samplers is not True or self.writer_domain_camera is not True):
+            raise ProtocolError("inner edge requires lake sampler state and physical domain camera")
+        if self.writer_domain_camera is not None and (type(self.writer_domain_camera) is not bool or self.tess_writer is not True or self.base_eye_vp is not True):
+            raise ProtocolError("domain camera requires the terrain writer and physical basemesh VP")
+        if self.base_eye_vp is not None and (type(self.base_eye_vp) is not bool or self.base_projection is not True or self.group_atlas_scale is not True):
+            raise ProtocolError("basemesh VP requires verified projection and fixed group atlas")
+        if self.group_atlas_scale is not None and (type(self.group_atlas_scale) is not bool or self.group_inputs is not True or self.dof_edge_local is not True or self.left_atlas_scale is not True):
+            raise ProtocolError("group atlas trial requires draw operands and fixed local DoF and 3300 treatments")
+        if self.dof_edge_local is not None and (type(self.dof_edge_local) is not bool or self.dof_inputs is not True):
+            raise ProtocolError("DoF edge treatment requires composite inputs")
+        if self.fog_local_uv is not None and (type(self.fog_local_uv) is not bool or self.fog_generation is not True):
+            raise ProtocolError("fog reconstruction UV requires generator evidence")
+        if self.terrain_camera is not None and (type(self.terrain_camera) is not bool or self.terrain_sources is not True or self.extra_bark_dither is not True):
+            raise ProtocolError("terrain camera requires the terrain trace and coupled bark treatment")
+        if self.extra_bark_dither is not None and (type(self.extra_bark_dither) is not bool or self.residual_bark is not True or self.left_atlas_scale is not True):
+            raise ProtocolError("extra bark dither requires residual coordinates and both atlas treatments")
+        if self.left_atlas_scale is not None and (type(self.left_atlas_scale) is not bool or self.left_interval is not True or self.impostor_scale is not True):
+            raise ProtocolError("left atlas scale requires the left trace and right treatment")
+        if self.impostor_scale is not None and (type(self.impostor_scale) is not bool or self.impostor_inputs is not True or self.color_dither is not True):
+            raise ProtocolError("impostor scale requires the coupled control and card inputs")
+        if self.color_dither is not None and (type(self.color_dither) is not bool or self.bark_color_trace is not True or self.bark_dither is not True):
+            raise ProtocolError("color dither requires treated depth and a color trace")
+        if self.bark_dither is not None and (type(self.bark_dither) is not bool or self.velocity_trace is not True):
+            raise ProtocolError("bark dither requires velocity trace")
+        if self.terrain_sources is not None and (self.terrain_sources is not True or self.early_depth is not True):
+            raise ProtocolError("terrain sources require the early depth bracket")
+        if self.residual_bark is not None and (self.residual_bark is not True or self.left_interval is not True):
+            raise ProtocolError("residual bark requires left interval and coupled trace")
+        if self.left_interval is not None and (self.left_interval is not True or self.impostor_inputs is not True):
+            raise ProtocolError("left interval requires impostor inputs")
+        if self.impostor_inputs is not None and (self.impostor_inputs is not True or self.interval_trace is not True):
+            raise ProtocolError("impostor inputs require the interval trace")
+        if self.interval_trace is not None and (self.interval_trace is not True or self.post_geometry is not True):
+            raise ProtocolError("interval trace requires post-geometry boundaries")
+        if self.post_geometry is not None and (self.post_geometry is not True or self.bark_color_trace is not True):
+            raise ProtocolError("post-geometry bracket requires a bark color trace")
+        if self.bark_color_trace is not None and (self.bark_color_trace is not True or self.velocity_trace is not True):
+            raise ProtocolError("bark color trace requires velocity trace")
+        if self.velocity_trace is not None and (self.velocity_trace is not True or self.early_depth is not True):
+            raise ProtocolError("velocity trace requires early depth")
+        if self.early_depth is not None and (self.early_depth is not True or self.ssr_history is not True or self.patch_draw_ordinal is None):
+            raise ProtocolError("early depth requires history captures and a selected terrain draw")
+        if self.ssr_history is not None and (self.ssr_history is not True or self.ssr_prepare is not True):
+            raise ProtocolError("SSR history requires preparation captures")
+        if self.ssr_prepare is not None and (self.ssr_prepare is not True or self.ssr_operands is not True):
+            raise ProtocolError("SSR preparation requires ray operands")
+        if self.ssr_operands is not None and (self.ssr_operands is not True or self.ssr_bracket is not True):
+            raise ProtocolError("SSR operands require a bracket capture")
+        if self.ssr_bracket is not None and (self.ssr_bracket is not True or self.resolve_samples is not True):
+            raise ProtocolError("SSR bracket requires resolve samples")
+        if self.history_center is not None and (type(self.history_center) is not bool or self.veto_eye is not True or self.ssr_history is not True):
+            raise ProtocolError("history center requires packed veto and traced history")
+        if self.grid_eye is not None and (type(self.grid_eye) is not bool or self.veto_eye is not True):
+            raise ProtocolError("SSR grid trial requires packed veto")
+        if self.veto_eye is not None and (type(self.veto_eye) is not bool or self.march_eye is not True):
+            raise ProtocolError("SSR veto trial requires packed march")
+        if self.march_eye is not None and (type(self.march_eye) is not bool or self.proxy_eye is not True):
+            raise ProtocolError("march trial requires the physical proxy")
+        if self.proxy_eye is not None and (type(self.proxy_eye) is not bool or self.ssr_prepare is not True or self.resolve_eye_camera is not True):
+            raise ProtocolError("proxy eye requires the physical camera and preparation capture")
+        if self.resolve_eye_camera is not None and (type(self.resolve_eye_camera) is not bool or self.resolve_samples is not True or self.water_reflection != WaterReflection.LAKE_HULL_CAMERA):
+            raise ProtocolError("resolve camera requires lake hull camera and resolve samples")
+        if self.resolve_samples is not None and (type(self.resolve_samples) is not bool or self.resolve_inputs is not True or self.cascade_scale is not None or self.motion_capture is not None):
+            raise ProtocolError("visual protocol: resolve_samples requires an untimed resolve screenshot without a cascade override")
         if self.resolve_inputs is not None and (self.command != Command.SCREENSHOT or
                                                 type(self.resolve_inputs) is not bool):
             raise ProtocolError("visual protocol: only screenshot requests accept a boolean resolve_inputs")

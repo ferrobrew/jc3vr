@@ -60,6 +60,9 @@ class Stage(StrEnum):
     WATER_DEPTH_BEFORE = "water_depth_before"
     WATER_DEPTH_AFTER_LEFT = "water_depth_after_left"
     WATER_DEPTH_AFTER_RIGHT = "water_depth_after_right"
+    DOF_SCENE = "dof_scene"
+    DOF_COMPOSITE = "dof_composite"
+    DOF_RETURNED = "dof_returned"
     PRE_AA = "pre_aa"
     POST_AA = "post_aa"
 
@@ -75,6 +78,7 @@ class Stage(StrEnum):
     @property
     def optional(self) -> bool:
         return self in (
+            Stage.DOF_SCENE, Stage.DOF_COMPOSITE, Stage.DOF_RETURNED,
             Stage.AFTER_APPLY_CLOUDS,
             Stage.BEFORE_FOG_VOLUME_APPLY,
             Stage.AFTER_FOG_VOLUME_APPLY,
@@ -434,7 +438,7 @@ def load_stage(
             )
         bits, values, channels = decode_raw(path.read_bytes(), record.source)
     else:
-        if stage not in (Stage.PRE_AA, Stage.POST_AA) or record.source.format not in (
+        if stage not in (Stage.DOF_COMPOSITE, Stage.DOF_RETURNED, Stage.PRE_AA, Stage.POST_AA) or record.source.format not in (
             DxgiFormat.R8G8B8A8_TYPELESS,
             DxgiFormat.R8G8B8A8_UNORM,
             DxgiFormat.R8G8B8A8_UNORM_SRGB,
@@ -741,6 +745,7 @@ def analyze_case(
             )
             required = regional or not stage.optional
             regional |= water_regions and stage in (
+                Stage.DOF_SCENE, Stage.DOF_COMPOSITE, Stage.DOF_RETURNED,
                 Stage.AFTER_APPLY_CLOUDS,
                 Stage.BEFORE_FOG_VOLUME_APPLY,
                 Stage.AFTER_FOG_VOLUME_APPLY,

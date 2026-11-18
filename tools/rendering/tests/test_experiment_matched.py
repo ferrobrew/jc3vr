@@ -7,7 +7,7 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-from tools.rendering.capture.validation import validate_capture, validate_late_sky_stages
+from tools.rendering.capture.validation import LAKE_SHADER, PACKED_LAKE_SHADER, require_lake_shader, validate_capture, validate_late_sky_stages
 from tools.rendering.comparison.images import Outcome
 from tools.rendering.comparison.stages import Stage
 from tools.rendering.experiment import (
@@ -53,7 +53,8 @@ class MatchedRunner(FakeRunner):
         if request.command == Command.CONFIGURE:
             ack = super().request(request)
             ack = dataclasses.replace(ack, metadata=dataclasses.replace(
-                ack.metadata, warmup_frames=request.warmup_frames))
+                ack.metadata, warmup_frames=request.warmup_frames, visual_overrides=request.visual_overrides))
+            self.visual_overrides = request.visual_overrides
             if request.shader_identity:
                 identity = {"requested": True, "status": "complete", "registered": 1,
                             "overflow": 0, "invalid": 0}
@@ -73,6 +74,8 @@ class MatchedRunner(FakeRunner):
                                  self.target_pose.translation)
         wire = capture_wire(request.id, self.mode, index, evidence, None)
         wire["visual"]["generation"] = self.generation
+        if self.visual_overrides is not None:
+            wire["visual"]["visual_overrides"] = {k: v for k, v in dataclasses.asdict(self.visual_overrides).items() if v is not None}
         wire["visual"]["shader_identity"] = {"requested": True, "status": "complete", "registered": 1,
                                                   "overflow": 0, "invalid": 0}
         if self.changed == "frame" and index == 2:
@@ -83,6 +86,8 @@ class MatchedRunner(FakeRunner):
         if self.changed == "generation" and index == 2:
             wire["visual"]["generation"] += 1
         metadata = {"effective_config": {"test": 2 if self.changed == "config" and index == 2 else 1}}
+        if self.visual_overrides and self.visual_overrides.screen_space_reflections == "enabled":
+            metadata["effective_config"]["stereo"] = {"skip_ssr": False}
         (self.config_dir / "captures" / f"{request.id}.capture.json").write_text(json.dumps(metadata))
         return ScreenshotAck(request.id, Capture.from_wire(wire))
 
@@ -198,6 +203,19 @@ class MatchedExperimentTests(ExperimentTestCase):
         self.assertEqual(metrics[0]["metrics"]["changed_fraction"], 1)
         self.assertNotIn("status", metrics[0])
 
+    def test_shared_references_do_not_enter_cross_condition_metrics(self):
+        shared = [Sample('shared.png', 'shared.json')]
+        cases = {key: Case(key, {Mode.MULTIPASS: shared.copy(),
+                                 Mode.SINGLE_PASS: [Sample(f'{key}.png', f'{key}.json')]})
+                 for key in ('base_center', 'base_eye')}
+        def load(root, mode, index, spec):
+            self.assertEqual(mode.value, 'single_pass')
+            return SimpleNamespace(capture_id=spec.png, image=lambda eye: np.zeros((1, 1, 3), np.uint8))
+        with patch('tools.rendering.experiment_matched.load_sample', side_effect=load):
+            rows = matched_cross_metrics(self.root, cases)
+        self.assertEqual([(row['base_center'], row['base_eye'], row['eye']) for row in rows],
+                         [('base_center.png', 'base_eye.png', 0), ('base_center.png', 'base_eye.png', 1)])
+
     def test_cascade_requests_require_resolve_and_fixed_mp_configuration(self):
         path = Path(__file__).resolve().parents[1] / "experiments" / "shore_cascade.toml"
         config = ExperimentConfig.load(path)
@@ -238,6 +256,154 @@ class MatchedExperimentTests(ExperimentTestCase):
         with self.assertRaises(ProtocolError):
             Request(Command.SCREENSHOT, "shot", water_inputs=True, water_surface_inputs=True,
                     water_tess_draw=7, water_reflection=WaterReflection.ZERO_WEIGHT)
+
+    def test_eye_width_pairs_only_the_packed_draw_with_the_producer(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_eye_width.toml")
+        runner = MatchedRunner(self.root / "config")
+        report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.water_reflection for r in runner.screenshots], [None] * 9 +
+                         [None, WaterReflection.EYE_WIDTH_PLANAR, WaterReflection.EYE_WIDTH_PLANAR, None] * 3)
+        self.assertTrue(all(r.water_surface_inputs and r.water_tess_draw == 7 for r in runner.screenshots))
+        with self.assertRaises(ExperimentError):
+            dataclasses.replace(config, diagnostics=dataclasses.replace(config.diagnostics, water_tess_draw=6))
+
+    def test_sky_lighting_uses_traced_references_and_one_binding_change(self):
+        for name, a, b in (("shore_lake_sky", WaterReflection.LAKE_LIGHTING, WaterReflection.LAKE_SKY),
+                           ("shore_lake_sky_buffer", WaterReflection.LAKE_SKY, WaterReflection.LAKE_SKY_BUFFER)):
+            with self.subTest(name=name):
+                config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / f"{name}.toml")
+                runner = MatchedRunner(self.root / name)
+                report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+                self.assertEqual(report.errors, ())
+                self.assertEqual([r.water_reflection for r in runner.screenshots], [WaterReflection.LAKE_LIGHTING] * 9 + [a, b, b, a] * 3)
+                self.assertTrue(all(r.water_surface_inputs and r.water_tess_draw == 7 for r in runner.screenshots))
+
+    def test_group_fade_holds_the_lake_and_atlas_treatments_fixed(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_group_fade.toml")
+        runner = MatchedRunner(self.root / "config")
+        with patch("tools.rendering.experiment._resolve_content_errors", return_value=[]):
+            report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.group_fade for r in runner.screenshots], [None] * 9 + [False, True, True, False] * 3)
+        for r in runner.screenshots[9:]:
+            self.assertTrue(r.group_cards and r.lake_inner_edge and r.group_atlas_scale and r.writer_domain_camera)
+        with self.assertRaises(ProtocolError):
+            dataclasses.replace(runner.screenshots[-1], group_cards=None)
+
+    def test_card_atlas_holds_the_lake_and_fade_treatments_fixed(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_card_atlas.toml")
+        runner = MatchedRunner(self.root / "config")
+        with patch("tools.rendering.experiment._resolve_content_errors", return_value=[]):
+            report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.card_atlas for r in runner.screenshots], [None] * 9 + [False, True, True, False] * 3)
+        for r in runner.screenshots[9:]:
+            self.assertTrue(r.group_fade and r.group_cards and r.lake_inner_edge and r.group_atlas_scale and r.writer_domain_camera)
+        with self.assertRaises(ProtocolError):
+            dataclasses.replace(runner.screenshots[-1], group_cards=None)
+
+    def test_lake_ds_mvp_holds_physical_cards_fixed(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_ds_mvp.toml")
+        runner = MatchedRunner(self.root / "config")
+        with patch("tools.rendering.experiment._resolve_content_errors", return_value=[]):
+            report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.lake_ds_mvp for r in runner.screenshots], [None] * 9 + [False, True, True, False] * 3)
+        for r in runner.screenshots[9:]:
+            self.assertTrue(r.card_atlas and r.lake_producer and r.group_fade and r.group_cards and r.lake_inner_edge and r.group_atlas_scale and r.writer_domain_camera)
+        with self.assertRaises(ProtocolError):
+            dataclasses.replace(runner.screenshots[-1], group_cards=None)
+
+    def test_candidate_depth_holds_physical_mvp_fixed(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_candidate_edge.toml")
+        runner = MatchedRunner(self.root / "config")
+        with patch("tools.rendering.experiment._resolve_content_errors", return_value=[]):
+            report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.lake_depth_edge for r in runner.screenshots], [None] * 9 + [False, True, True, False] * 3)
+        for r in runner.screenshots[9:]:
+            self.assertTrue(r.lake_ds_mvp and r.card_atlas and r.lake_producer and r.group_fade and r.group_cards and r.lake_inner_edge and r.group_atlas_scale and r.writer_domain_camera)
+        with self.assertRaises(ProtocolError):
+            dataclasses.replace(runner.screenshots[-1], group_cards=None)
+
+    def test_color_mirror_holds_depth_fixed(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_color_mirror.toml")
+        runner = MatchedRunner(self.root / "config")
+        with patch("tools.rendering.experiment._resolve_content_errors", return_value=[]):
+            report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.lake_color_mirror for r in runner.screenshots], [None] * 9 + [False, True, True, False] * 3)
+        for r in runner.screenshots[9:]:
+            self.assertTrue(r.lake_depth_edge and r.lake_ds_mvp and r.card_atlas and r.lake_producer and r.group_fade and r.group_cards and r.lake_inner_edge and r.group_atlas_scale and r.writer_domain_camera)
+        with self.assertRaises(ProtocolError):
+            dataclasses.replace(runner.screenshots[-1], group_cards=None)
+
+    def test_owner_four_domain_holds_water_fixed(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_owner_domain.toml")
+        runner = MatchedRunner(self.root / "config")
+        with patch("tools.rendering.experiment._resolve_content_errors", return_value=[]):
+            report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.owner_four_domain for r in runner.screenshots], [None] * 9 + [False, True, True, False] * 3)
+        for r in runner.screenshots[9:]:
+            self.assertTrue(r.lake_color_mirror and r.lake_owner_four and r.lake_depth_edge and r.lake_ds_mvp and r.card_atlas and r.lake_producer and r.group_fade and r.group_cards and r.lake_inner_edge and r.group_atlas_scale and r.writer_domain_camera)
+        with self.assertRaises(ProtocolError):
+            dataclasses.replace(runner.screenshots[-1], group_cards=None)
+
+    def test_patch63_hull_holds_domains_fixed(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_patch63_hull.toml")
+        runner = MatchedRunner(self.root / "config")
+        with patch("tools.rendering.experiment._resolve_content_errors", return_value=[]):
+            report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.patch63_hull for r in runner.screenshots], [None] * 9 + [False, True, True, False] * 3)
+        for r in runner.screenshots[9:]:
+            self.assertTrue(r.owner_four_domain and r.lake_color_mirror and r.lake_owner_four and r.lake_depth_edge and r.lake_ds_mvp and r.card_atlas and r.lake_producer and r.group_fade and r.group_cards and r.lake_inner_edge and r.group_atlas_scale and r.writer_domain_camera)
+        with self.assertRaises(ProtocolError):
+            dataclasses.replace(runner.screenshots[-1], owner_four_domain=False)
+
+    def test_aa_color_edge_holds_geometry_fixed(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_aa_color_edge.toml")
+        runner = MatchedRunner(self.root / "config")
+        with patch("tools.rendering.experiment._resolve_content_errors", return_value=[]):
+            report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.aa_color_edge for r in runner.screenshots], [None] * 9 + [False, True, True, False] * 3)
+        for r in runner.screenshots[9:]:
+            self.assertTrue(r.aa_weights and r.patch63_hull and r.owner_four_domain and r.lake_color_mirror and r.lake_owner_four and r.lake_depth_edge and r.lake_ds_mvp and r.card_atlas and r.lake_producer and r.group_fade and r.group_cards and r.lake_inner_edge and r.group_atlas_scale and r.writer_domain_camera)
+        with self.assertRaises(ProtocolError):
+            dataclasses.replace(runner.screenshots[-1], aa_weights=False)
+
+    def test_march_coordinates_hold_physical_proxy_constant(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_march_eye.toml")
+        runner = MatchedRunner(self.root / "config")
+        with patch("tools.rendering.experiment._resolve_content_errors", return_value=[]):
+            report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.proxy_eye for r in runner.screenshots], [None] * 9 + [True] * 12)
+        self.assertEqual([r.march_eye for r in runner.screenshots], [None] * 9 + [False, True, True, False] * 3)
+
+    def test_domain_camera_reuses_each_physical_reference_once(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_domain_camera.toml")
+        runner = MatchedRunner(self.root / "config")
+        report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        a, b = WaterReflection.LAKE_CAMERA_CONTROL, WaterReflection.LAKE_DOMAIN_CAMERA
+        self.assertEqual([r.water_reflection for r in runner.screenshots], [a] * 9 + [a, b, b, a] * 3)
+
+    def test_production_abba_observes_default_shader_and_requests_pristine_control(self):
+        config = ExperimentConfig.load(Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_production_refraction.toml")
+        runner = MatchedRunner(self.root / "config")
+        report = self.run_matched(runner, dataclasses.replace(config, scene=self.config().scene))
+        self.assertEqual(report.errors, ())
+        self.assertEqual([r.water_reflection for r in runner.screenshots], [None] * 9 +
+                         [WaterReflection.PRISTINE_LAKE, None, None, WaterReflection.PRISTINE_LAKE] * 3)
+        for actual, expected in ((LAKE_SHADER, PACKED_LAKE_SHADER), (PACKED_LAKE_SHADER, LAKE_SHADER)):
+            identity = {"status": "mapped", "identity": {"actual_sha256": actual, "pristine_sha256": LAKE_SHADER}}
+            require_lake_shader(identity, actual)
+            with self.assertRaises(ProtocolError):
+                require_lake_shader(identity, expected)
 
     def test_planar_reference_includes_each_physical_eye(self):
         path = Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_planar.toml"

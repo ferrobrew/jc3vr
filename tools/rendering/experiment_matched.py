@@ -26,8 +26,8 @@ def matched_capture_identity(capture: Capture, metadata: dict, generation: int):
 
 def matched_cross_metrics(root: Path, cases: dict[str, Case]) -> tuple[dict, ...]:
     baseline, treated = cases
-    modes = (tuple(cases[baseline].modes) if treated == "zero_planar" else
-             (Mode.SINGLE_PASS,) if treated in ("center_planar", "packed_refraction") else (Mode.MULTIPASS,))
+    modes = [mode for mode, samples in cases[baseline].modes.items()
+             if mode in cases[treated].modes and samples != cases[treated].modes[mode]]
     results = []
     for mode in modes:
         samples = {condition: [load_sample(root, CompareMode(mode.value), index,
