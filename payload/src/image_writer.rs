@@ -379,6 +379,13 @@ fn stage_name(stage: Stage) -> &'static str {
         Stage::WaterInputStaticReflection => "water_input_t2",
         Stage::WaterInputReflectionAlpha => "water_input_t12",
         Stage::WaterInputRefraction => "water_input_t3",
+        Stage::WaterInputRefractionDepth => "water_input_t0",
+        Stage::WaterInputWave0 => "water_input_t7",
+        Stage::WaterInputWave1 => "water_input_t8",
+        Stage::WaterInputWave2 => "water_input_t9",
+        Stage::WaterInputWave3 => "water_input_t10",
+        Stage::WaterInputAmbientOcclusion => "water_input_t11",
+
         Stage::PreAa => "pre_aa",
         Stage::PostAa => "post_aa",
     }

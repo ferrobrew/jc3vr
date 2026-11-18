@@ -223,6 +223,7 @@ class Request:
     motion: MotionRequest | None = None
     motion_capture: PhaseCapture | None = None
     environment: EnvironmentRequest | None = None
+    water_surface_inputs: bool | None = None
     water_tess_draw: int | None = None
     water_inputs: bool | None = None
     water_reflection: WaterReflection | None = None
@@ -261,6 +262,8 @@ class Request:
             raise ProtocolError("visual protocol: only screenshot requests accept a boolean water_inputs")
         if self.water_tess_draw is not None and (self.water_inputs is not True or type(self.water_tess_draw) is not int or not 0 <= self.water_tess_draw < 32):
             raise ProtocolError("visual protocol: water_tess_draw requires water_inputs and an index below 32")
+        if self.water_surface_inputs is not None and (self.water_surface_inputs is not True or self.water_tess_draw is None or self.water_reflection is not None or self.motion_capture is not None):
+            raise ProtocolError("visual protocol: surface inputs require an untreated selected water draw")
         if self.water_reflection is not None and (self.command != Command.SCREENSHOT or
                                                   not isinstance(self.water_reflection, WaterReflection) or
                                                   self.water_inputs is not True or self.motion_capture is not None):

@@ -92,6 +92,7 @@ pub(crate) struct CaptureRequest {
     pub water_reflection: Option<WaterReflection>,
     pub water_inputs: bool,
     pub water_tess_draw: Option<u8>,
+    pub water_surface_inputs: bool,
     pub sun_inputs: bool,
     pub resolve_inputs: bool,
     pub cascade_scale: Option<CascadeScale>,
@@ -181,6 +182,7 @@ fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: Capture
         active.water_reflection = options.water_reflection;
         active.water_inputs = options.water_inputs;
         active.water_tess_draw = options.water_tess_draw;
+        active.water_surface_inputs = options.water_surface_inputs;
         active.sun_inputs = options.sun_inputs;
         active.resolve_inputs = options.resolve_inputs;
         active.cascade_scale = options.cascade_scale;
@@ -284,6 +286,7 @@ fn admit(
         water_reflection: None,
         water_inputs: false,
         water_tess_draw: None,
+        water_surface_inputs: false,
         sun_inputs: false,
         resolve_inputs: false,
         cascade_scale: None,
@@ -327,6 +330,14 @@ pub(crate) fn water_reflection_requested() -> Option<WaterReflection> {
         t.supported(dispatch::mode(), active.water_tess_draw)
             && matches!(active.phase, Phase::Pending)
     })
+}
+
+pub(crate) fn water_surface_inputs_requested() -> bool {
+    STATE
+        .lock()
+        .active
+        .as_ref()
+        .is_some_and(|a| a.water_surface_inputs && matches!(a.phase, Phase::Pending))
 }
 
 pub(crate) fn water_tess_draw() -> Option<u8> {
@@ -486,6 +497,7 @@ pub(crate) fn capture(
     let (mut stage_records, stage_images) = stages::take(frame.unwrap());
     if active.water_inputs {
         stages::complete_water_inputs(
+            active.water_surface_inputs,
             &mut stage_records,
             frame.unwrap(),
             &active.id.0,
@@ -678,6 +690,7 @@ struct Active {
     water_reflection: Option<WaterReflection>,
     water_inputs: bool,
     water_tess_draw: Option<u8>,
+    water_surface_inputs: bool,
     sun_inputs: bool,
     resolve_inputs: bool,
     cascade_scale: Option<CascadeScale>,
@@ -989,6 +1002,7 @@ mod tests {
                     water_reflection: None,
                     water_inputs: false,
                     water_tess_draw: None,
+                    water_surface_inputs: false,
                     sun_inputs: false,
                     resolve_inputs: false,
                     cascade_scale: None,

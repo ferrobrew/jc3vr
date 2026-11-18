@@ -15,7 +15,8 @@ pub(crate) use sun_inputs::{
     record_sun_treatment,
 };
 pub(crate) use water_inputs::{
-    capture_water_inputs, complete_water_inputs, complete_water_treatment, record_water_treatment,
+    WaterInputSlot, capture_water_inputs, complete_water_inputs, complete_water_treatment,
+    record_water_treatment,
 };
 use windows::{
     Win32::{
@@ -83,6 +84,13 @@ pub(crate) enum Stage {
     WaterInputReflectionAlpha,
     WaterInputStaticReflection,
     WaterInputRefraction,
+    WaterInputRefractionDepth,
+    WaterInputWave0,
+    WaterInputWave1,
+    WaterInputWave2,
+    WaterInputWave3,
+    WaterInputAmbientOcclusion,
+
     PreAa,
     PostAa,
 }
@@ -151,42 +159,6 @@ pub(crate) struct WaterInputMetadata {
     pub resource: Option<usize>,
     pub resource_format: Option<i32>,
 }
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum WaterInputSlot {
-    Reflection,
-    ReflectionAlpha,
-    StaticReflection,
-    Refraction,
-}
-
-impl WaterInputSlot {
-    pub(super) fn stage(self) -> Stage {
-        match self {
-            Self::StaticReflection => Stage::WaterInputStaticReflection,
-            Self::Reflection => Stage::WaterInputReflection,
-            Self::ReflectionAlpha => Stage::WaterInputReflectionAlpha,
-            Self::Refraction => Stage::WaterInputRefraction,
-        }
-    }
-
-    pub(super) fn index(self) -> u32 {
-        match self {
-            Self::Reflection => 1,
-            Self::StaticReflection => 2,
-            Self::ReflectionAlpha => 12,
-            Self::Refraction => 3,
-        }
-    }
-}
-
-pub(super) const WATER_INPUT_SLOTS: [WaterInputSlot; 4] = [
-    WaterInputSlot::Reflection,
-    WaterInputSlot::ReflectionAlpha,
-    WaterInputSlot::StaticReflection,
-    WaterInputSlot::Refraction,
-];
 
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct Source {

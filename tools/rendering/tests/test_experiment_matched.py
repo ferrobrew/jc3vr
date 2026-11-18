@@ -194,6 +194,18 @@ class MatchedExperimentTests(ExperimentTestCase):
         with self.assertRaises(ExperimentError):
             dataclasses.replace(config, diagnostics=dataclasses.replace(config.diagnostics, resolve_inputs=False))
 
+    def test_surface_request_requires_an_untreated_selected_draw(self):
+        path = Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_surface.toml"
+        config = ExperimentConfig.load(path)
+        self.assertTrue(config.diagnostics.water_surface_inputs)
+        with self.assertRaises(ExperimentError):
+            dataclasses.replace(config.diagnostics, water_tess_draw=None)
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", water_inputs=True, water_surface_inputs=True)
+        with self.assertRaises(ProtocolError):
+            Request(Command.SCREENSHOT, "shot", water_inputs=True, water_surface_inputs=True,
+                    water_tess_draw=7, water_reflection=WaterReflection.ZERO_WEIGHT)
+
     def test_planar_reference_includes_each_physical_eye(self):
         path = Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_planar.toml"
         config = ExperimentConfig.load(path)

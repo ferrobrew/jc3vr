@@ -79,6 +79,7 @@ enum Request {
         water_reflection: Option<crate::screenshot::harness::WaterReflection>,
         water_inputs: bool,
         water_tess_draw: Option<u8>,
+        water_surface_inputs: bool,
         sun_inputs: bool,
         resolve_inputs: bool,
         cascade_scale: Option<crate::screenshot::harness::CascadeScale>,
@@ -118,6 +119,7 @@ enum RequestErrorKind {
     WaterReflectionNeedsInputs,
     WaterInputsOnCommand(Command),
     InvalidWaterDraw,
+    InvalidSurfaceInputs,
     InvalidCascadeScale,
     SunInputsOnCommand(Command),
     ResolveInputsOnCommand(Command),
@@ -192,6 +194,10 @@ impl std::fmt::Display for RequestError {
                 f,
                 "cascade_scale requires a resolve screenshot without motion"
             ),
+            RequestErrorKind::InvalidSurfaceInputs => write!(
+                f,
+                "surface inputs require an untreated selected water draw without motion"
+            ),
             RequestErrorKind::InvalidWaterDraw => write!(
                 f,
                 "water_tess_draw requires water_inputs and an index below 32"
@@ -264,6 +270,8 @@ struct RequestFile {
     #[serde(default)]
     water_inputs: bool,
     water_tess_draw: Option<u8>,
+    #[serde(default)]
+    water_surface_inputs: bool,
     #[serde(default)]
     sun_inputs: bool,
     #[serde(default)]
@@ -420,6 +428,13 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
     if file.water_reflection.is_some() && !file.water_inputs {
         return Err(error(RequestErrorKind::WaterReflectionNeedsInputs));
     }
+    if file.water_surface_inputs
+        && (file.water_tess_draw.is_none()
+            || file.water_reflection.is_some()
+            || motion_capture.is_some())
+    {
+        return Err(error(RequestErrorKind::InvalidSurfaceInputs));
+    }
     if file
         .water_tess_draw
         .is_some_and(|n| !file.water_inputs || n >= 32)
@@ -484,6 +499,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             water_reflection: file.water_reflection,
             water_inputs: file.water_inputs,
             water_tess_draw: file.water_tess_draw,
+            water_surface_inputs: file.water_surface_inputs,
             sun_inputs: file.sun_inputs,
             resolve_inputs: file.resolve_inputs,
             cascade_scale: file.cascade_scale,
@@ -514,6 +530,7 @@ fn act(request: Request) {
             water_reflection,
             water_inputs,
             water_tess_draw,
+            water_surface_inputs,
             sun_inputs,
             resolve_inputs,
             cascade_scale,
@@ -523,6 +540,7 @@ fn act(request: Request) {
                 water_reflection,
                 water_inputs,
                 water_tess_draw,
+                water_surface_inputs,
                 sun_inputs,
                 resolve_inputs,
                 cascade_scale,

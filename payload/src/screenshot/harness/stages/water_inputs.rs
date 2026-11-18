@@ -1,4 +1,5 @@
-use anyhow::{Context as _, bail};
+use anyhow::{Context as _, bail, ensure};
+use serde::Serialize;
 use windows::{
     Win32::Graphics::{
         Direct3D::D3D_SRV_DIMENSION_TEXTURE2D,
@@ -8,8 +9,8 @@ use windows::{
             ID3D11Texture2D,
         },
         Dxgi::Common::{
-            DXGI_FORMAT, DXGI_FORMAT_R11G11B10_FLOAT, DXGI_FORMAT_R32_FLOAT,
-            DXGI_FORMAT_R32_TYPELESS,
+            DXGI_FORMAT, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R11G11B10_FLOAT,
+            DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R32_TYPELESS,
         },
     },
     core::Interface,
@@ -18,10 +19,78 @@ use windows::{
 use crate::screenshot::{
     create_staging,
     harness::stages::{
-        STATE, Source, Stage, StageArtifact, StageImage, StageRecord, WATER_INPUT_SLOTS,
-        WaterInputMetadata, capture_raster_state, format_byte_width, stage_image, validate_desc,
+        STATE, Source, Stage, StageArtifact, StageImage, StageRecord, WaterInputMetadata,
+        capture_raster_state, format_byte_width, stage_image, validate_desc,
     },
 };
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum WaterInputSlot {
+    Reflection,
+    ReflectionAlpha,
+    StaticReflection,
+    Refraction,
+    RefractionDepth,
+    Wave0,
+    Wave1,
+    Wave2,
+    Wave3,
+    AmbientOcclusion,
+}
+
+impl WaterInputSlot {
+    fn stage(self) -> Stage {
+        match self {
+            Self::StaticReflection => Stage::WaterInputStaticReflection,
+            Self::Reflection => Stage::WaterInputReflection,
+            Self::ReflectionAlpha => Stage::WaterInputReflectionAlpha,
+            Self::Refraction => Stage::WaterInputRefraction,
+            Self::RefractionDepth => Stage::WaterInputRefractionDepth,
+            Self::Wave0 => Stage::WaterInputWave0,
+            Self::Wave1 => Stage::WaterInputWave1,
+            Self::Wave2 => Stage::WaterInputWave2,
+            Self::Wave3 => Stage::WaterInputWave3,
+            Self::AmbientOcclusion => Stage::WaterInputAmbientOcclusion,
+        }
+    }
+
+    fn index(self) -> u32 {
+        match self {
+            Self::Reflection => 1,
+            Self::StaticReflection => 2,
+            Self::ReflectionAlpha => 12,
+            Self::Refraction => 3,
+            Self::RefractionDepth => 0,
+            Self::Wave0 => 7,
+            Self::Wave1 => 8,
+            Self::Wave2 => 9,
+            Self::Wave3 => 10,
+            Self::AmbientOcclusion => 11,
+        }
+    }
+}
+
+const WATER_INPUT_SLOTS: [WaterInputSlot; 4] = [
+    WaterInputSlot::Reflection,
+    WaterInputSlot::ReflectionAlpha,
+    WaterInputSlot::StaticReflection,
+    WaterInputSlot::Refraction,
+];
+
+fn requested_slots(surface: bool) -> impl Iterator<Item = WaterInputSlot> {
+    const SURFACE: [WaterInputSlot; 6] = [
+        WaterInputSlot::RefractionDepth,
+        WaterInputSlot::Wave0,
+        WaterInputSlot::Wave1,
+        WaterInputSlot::Wave2,
+        WaterInputSlot::Wave3,
+        WaterInputSlot::AmbientOcclusion,
+    ];
+    WATER_INPUT_SLOTS
+        .into_iter()
+        .chain(surface.then_some(SURFACE).into_iter().flatten())
+}
 
 pub(crate) fn capture_water_inputs(
     ctx: &ID3D11DeviceContext,
@@ -33,6 +102,7 @@ pub(crate) fn capture_water_inputs(
     let Some(frame) = crate::vr::capture_views().map(|v| v.predicted_display_time_ns) else {
         return;
     };
+    let surface = crate::screenshot::harness::water_surface_inputs_requested();
     let mut state = STATE.lock();
     if state.frame != Some(frame) {
         state.frame = Some(frame);
@@ -46,7 +116,7 @@ pub(crate) fn capture_water_inputs(
         crate::stereo::single_pass::shader_identity::lookup,
     );
     let shader = shader.as_ref().map_or(0, |value| value.as_raw() as usize);
-    for slot in WATER_INPUT_SLOTS {
+    for slot in requested_slots(surface) {
         let stage = slot.stage();
         if state
             .records
@@ -198,6 +268,7 @@ fn empty_treatment(frame: i64, eye: usize, id: &str) -> StageRecord {
 }
 
 pub(crate) fn complete_water_inputs(
+    surface: bool,
     records: &mut Vec<StageRecord>,
     frame: i64,
     id: &str,
@@ -207,7 +278,7 @@ pub(crate) fn complete_water_inputs(
         if !required {
             continue;
         }
-        for slot in WATER_INPUT_SLOTS {
+        for slot in requested_slots(surface) {
             if records.iter().any(|record| {
                 record.stage == slot.stage()
                     && record.eye == eye
@@ -302,6 +373,11 @@ fn read_water_input(
     raw_desc.Height = desc.Height;
     raw_desc.MipLevels = desc.MipLevels;
     validate_desc(&desc)?;
+    ensure!(
+        u64::from(desc.Width) * u64::from(desc.Height)
+            <= 16 * 1024 * 1024 / format_byte_width(view_format).unwrap() as u64,
+        "selected mip exceeds the 16 MiB water input capture limit"
+    );
     record.source = Some(Source {
         width: desc.Width,
         height: desc.Height,
@@ -333,7 +409,14 @@ fn read_water_input(
 }
 
 fn desc_format_for_view(resource: DXGI_FORMAT, view: DXGI_FORMAT) -> anyhow::Result<DXGI_FORMAT> {
-    if (resource == view && matches!(view, DXGI_FORMAT_R32_FLOAT | DXGI_FORMAT_R11G11B10_FLOAT)
+    if (resource == view
+        && matches!(
+            view,
+            DXGI_FORMAT_R32_FLOAT
+                | DXGI_FORMAT_R11G11B10_FLOAT
+                | DXGI_FORMAT_R16G16B16A16_FLOAT
+                | DXGI_FORMAT_R8G8B8A8_UNORM
+        )
         || (resource == DXGI_FORMAT_R32_TYPELESS && view == DXGI_FORMAT_R32_FLOAT))
         && format_byte_width(view).is_some()
     {
@@ -375,16 +458,16 @@ mod tests {
     #[test]
     fn missing_requested_eyes_are_explicit_and_deduplicated() {
         let mut records = Vec::new();
-        complete_water_inputs(&mut records, 42, "capture", [true, false]);
+        complete_water_inputs(false, &mut records, 42, "capture", [true, false]);
         assert_eq!(records.len(), WATER_INPUT_SLOTS.len());
         assert!(
             records
                 .iter()
                 .all(|record| record.eye == 0 && record.error.is_some())
         );
-        complete_water_inputs(&mut records, 42, "capture", [true, false]);
+        complete_water_inputs(false, &mut records, 42, "capture", [true, false]);
         assert_eq!(records.len(), WATER_INPUT_SLOTS.len());
-        complete_water_inputs(&mut records, 42, "capture", [true, true]);
+        complete_water_inputs(false, &mut records, 42, "capture", [true, true]);
         assert_eq!(records.len(), 2 * WATER_INPUT_SLOTS.len());
         assert!(
             records

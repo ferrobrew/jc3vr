@@ -33,7 +33,7 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
                      generation: int | None = None, motion_capture: PhaseCapture | None = None,
                      water_inputs: bool = False, sun_inputs: bool = False,
                      shader_identity: bool = False, resolve_inputs: bool = False,
-                     sun_depth_clip=None, water_reflection=None, cascade_scale: CascadeScale | None = None, water_tess_draw: int | None = None) -> NativeCapture | Capture:
+                     sun_depth_clip=None, water_reflection=None, cascade_scale: CascadeScale | None = None, water_surface_inputs: bool = False, water_tess_draw: int | None = None) -> NativeCapture | Capture:
     metadata = read_object(folder / f"{capture_id}.capture.json")
     if motion_capture is not None and mode is None:
         raise ProtocolError("visual protocol: motion capture requires a diagnostic mode")
@@ -63,7 +63,7 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
         if resolve_inputs:
             validate_resolve_inputs(folder, capture_id, metadata, mode, shader_identity, cascade_scale)
         if water_inputs:
-            validate_water_inputs(folder, capture_id, metadata, mode, shader_identity, water_tess_draw)
+            validate_water_inputs(folder, capture_id, metadata, mode, shader_identity, water_tess_draw, water_surface_inputs)
         if sun_inputs:
             validate_sun_inputs(folder, capture_id, metadata, mode)
         return result
@@ -229,12 +229,16 @@ def valid_mapped_identity(identity) -> bool:
 
 
 def validate_water_inputs(folder: Path, capture_id: str, metadata: dict, mode: Mode,
-                          shader_identity: bool = False, water_tess_draw: int | None = None) -> None:
+                          shader_identity: bool = False, water_tess_draw: int | None = None, water_surface_inputs: bool = False) -> None:
     slots = {"water_input_reflection": ("reflection", 1),
              "water_input_reflection_alpha": ("reflection_alpha", 12),
              "water_input_refraction": ("refraction", 3)}
     if water_tess_draw is not None:
         slots["water_input_static_reflection"] = ("static_reflection", 2)
+    surface = {f"water_input_{name}": (name, index) for name, index in (
+        ("refraction_depth", 0), ("wave0", 7), ("wave1", 8), ("wave2", 9), ("wave3", 10), ("ambient_occlusion", 11))}
+    if water_surface_inputs:
+        slots.update(surface)
     records = metadata.get("stages")
     if not isinstance(records, list):
         raise ProtocolError("visual protocol: requested water inputs have no stage records")
@@ -270,7 +274,12 @@ def validate_water_inputs(folder: Path, capture_id: str, metadata: dict, mode: M
         identity = info.get("shader_identity")
         if shader_identity and not valid_mapped_identity(identity):
             raise ProtocolError("visual protocol: water pixel shader identity is unmapped or incomplete")
-        if type(source.get("format_id")) is not int or source["format_id"] != info["view_format"] or (info["resource_format"], info["view_format"]) not in ((26, 26), (41, 41), (39, 41)):
+        formats = ((26, 26), (41, 41), (39, 41), (10, 10), (28, 28)) if stage in surface else ((26, 26), (41, 41), (39, 41))
+        if stage in surface and (not valid_mapped_identity(identity) or any(
+                identity["identity"][k] != "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531"
+                for k in ("pristine_sha256", "actual_sha256"))):
+            raise ProtocolError("visual protocol: surface inputs require the unmodified lake shader")
+        if type(source.get("format_id")) is not int or source["format_id"] != info["view_format"] or (info["resource_format"], info["view_format"]) not in formats:
             raise ProtocolError("visual protocol: water input source format disagrees with its view")
         width, height, pixel_bytes = (source.get(key) for key in ("width", "height", "bytes_per_pixel"))
         if any(type(value) is not int or value <= 0 for value in (width, height, pixel_bytes)):
