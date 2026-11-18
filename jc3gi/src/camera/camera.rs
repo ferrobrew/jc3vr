@@ -51,6 +51,26 @@ fn _Camera_size_check() {
     unreachable!()
 }
 impl Camera {
+    pub const SetWidthHeight_ADDRESS: usize = 0x14009BDF0;
+    /// Stores the dimensions and marks the projection dirty.
+    pub unsafe fn SetWidthHeight(&mut self, width: i32, height: i32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, width: i32, height: i32) = ::std::mem::transmute(
+                Self::SetWidthHeight_ADDRESS,
+            );
+            f(self as *mut Self as _, width, height)
+        }
+    }
+    pub const SetAspectRatio_ADDRESS: usize = 0x14009BD80;
+    /// Stores the aspect ratio and marks the projection dirty.
+    pub unsafe fn SetAspectRatio(&mut self, aspect: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, aspect: f32) = ::std::mem::transmute(
+                Self::SetAspectRatio_ADDRESS,
+            );
+            f(self as *mut Self as _, aspect)
+        }
+    }
     pub const UpdateRender_ADDRESS: usize = 0x1400C3020;
     /// The per-frame camera update: snapshots the previous view-projection, lerps the transform from
     /// `m_TransformT0` to `m_TransformT1` by `dtf`, and recalculates the projection and frustum.

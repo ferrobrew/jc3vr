@@ -1,4 +1,11 @@
 #![cfg_attr(any(), rustfmt::skip)]
+pub type PixelShaderPtr = Option<
+    windows::Win32::Graphics::Direct3D11::ID3D11PixelShader,
+>;
+pub type HullShaderPtr = Option<windows::Win32::Graphics::Direct3D11::ID3D11HullShader>;
+pub type DomainShaderPtr = Option<
+    windows::Win32::Graphics::Direct3D11::ID3D11DomainShader,
+>;
 crate::__bitflags! {
     #[doc =
     " The `flags` argument of [`Clear`](crate::graphics_engine::draw::Clear) (`Graphics::EClearFlags`): which targets of the bound render"]
@@ -113,6 +120,71 @@ impl std::convert::AsRef<CreateVertexProgramParams> for CreateVertexProgramParam
 }
 impl std::convert::AsMut<CreateVertexProgramParams> for CreateVertexProgramParams {
     fn as_mut(&mut self) -> &mut CreateVertexProgramParams {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct HDomainProgram_t {
+    pub m_Program: crate::graphics_engine::draw::DomainShaderPtr,
+}
+fn _HDomainProgram_t_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], HDomainProgram_t>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl HDomainProgram_t {}
+impl std::convert::AsRef<HDomainProgram_t> for HDomainProgram_t {
+    fn as_ref(&self) -> &HDomainProgram_t {
+        self
+    }
+}
+impl std::convert::AsMut<HDomainProgram_t> for HDomainProgram_t {
+    fn as_mut(&mut self) -> &mut HDomainProgram_t {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The fragment program returned by [`CreateFragmentProgram`](crate::graphics_engine::draw::CreateFragmentProgram).
+pub struct HFragmentProgram_t {
+    /// The pixel shader written by `ID3D11Device::CreatePixelShader`, or null without a program.
+    pub m_Program: crate::graphics_engine::draw::PixelShaderPtr,
+}
+fn _HFragmentProgram_t_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], HFragmentProgram_t>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl HFragmentProgram_t {}
+impl std::convert::AsRef<HFragmentProgram_t> for HFragmentProgram_t {
+    fn as_ref(&self) -> &HFragmentProgram_t {
+        self
+    }
+}
+impl std::convert::AsMut<HFragmentProgram_t> for HFragmentProgram_t {
+    fn as_mut(&mut self) -> &mut HFragmentProgram_t {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct HHullProgram_t {
+    pub m_Program: crate::graphics_engine::draw::HullShaderPtr,
+}
+fn _HHullProgram_t_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], HHullProgram_t>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl HHullProgram_t {}
+impl std::convert::AsRef<HHullProgram_t> for HHullProgram_t {
+    fn as_ref(&self) -> &HHullProgram_t {
+        self
+    }
+}
+impl std::convert::AsMut<HHullProgram_t> for HHullProgram_t {
+    fn as_mut(&mut self) -> &mut HHullProgram_t {
         self
     }
 }
@@ -608,12 +680,12 @@ pub const CreateFragmentProgram_ADDRESS: usize = 0x141953470;
 pub unsafe fn CreateFragmentProgram(
     device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
     params: *mut crate::graphics_engine::draw::CreateFragmentProgramParams,
-) -> *mut ::std::ffi::c_void {
+) -> *mut crate::graphics_engine::draw::HFragmentProgram_t {
     unsafe {
         let f: unsafe extern "system" fn(
             device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
             params: *mut crate::graphics_engine::draw::CreateFragmentProgramParams,
-        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(
+        ) -> *mut crate::graphics_engine::draw::HFragmentProgram_t = ::std::mem::transmute(
             CreateFragmentProgram_ADDRESS,
         );
         f(device, params)
@@ -642,36 +714,38 @@ pub unsafe fn CreateVertexProgram(
 pub const CreateHullProgram_ADDRESS: usize = 0x141953690;
 /// The leaf hull-program creator: it wraps `ID3D11Device::CreateHullShader` (vtable slot 16) over
 /// `params.m_Code`/`params.m_Size`. `CreateHullShader` copies the bytecode, so `params.m_Code` need not
-/// remain valid past the call; unlike [`CreateVertexProgram`](crate::graphics_engine::draw::CreateVertexProgram), the returned holder is a bare shader
+/// remain valid past the call; unlike [`CreateVertexProgram`](crate::graphics_engine::draw::CreateVertexProgram), the returned holder contains only the shader
 /// pointer with no retained bytecode copy. Static (no `this`); the first argument is the graphics
 /// device.
 pub unsafe fn CreateHullProgram(
     device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
     params: *const crate::graphics_engine::draw::CreateHullProgramParams,
-) -> *mut ::std::ffi::c_void {
+) -> *mut crate::graphics_engine::draw::HHullProgram_t {
     unsafe {
         let f: unsafe extern "system" fn(
             device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
             params: *const crate::graphics_engine::draw::CreateHullProgramParams,
-        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(CreateHullProgram_ADDRESS);
+        ) -> *mut crate::graphics_engine::draw::HHullProgram_t = ::std::mem::transmute(
+            CreateHullProgram_ADDRESS,
+        );
         f(device, params)
     }
 }
 pub const CreateDomainProgram_ADDRESS: usize = 0x1419537A0;
 /// The leaf domain-program creator: it wraps `ID3D11Device::CreateDomainShader` (vtable slot 17) over
 /// `params.m_Code`/`params.m_Size`. `CreateDomainShader` copies the bytecode, so `params.m_Code` need
-/// not remain valid past the call; like [`CreateHullProgram`](crate::graphics_engine::draw::CreateHullProgram), the returned holder is a bare shader
+/// not remain valid past the call; like [`CreateHullProgram`](crate::graphics_engine::draw::CreateHullProgram), the returned holder contains only the shader
 /// pointer with no retained bytecode copy. Static (no `this`); the first argument is the graphics
 /// device.
 pub unsafe fn CreateDomainProgram(
     device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
     params: *const crate::graphics_engine::draw::CreateDomainProgramParams,
-) -> *mut ::std::ffi::c_void {
+) -> *mut crate::graphics_engine::draw::HDomainProgram_t {
     unsafe {
         let f: unsafe extern "system" fn(
             device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
             params: *const crate::graphics_engine::draw::CreateDomainProgramParams,
-        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(
+        ) -> *mut crate::graphics_engine::draw::HDomainProgram_t = ::std::mem::transmute(
             CreateDomainProgram_ADDRESS,
         );
         f(device, params)

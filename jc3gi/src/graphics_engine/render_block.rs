@@ -2863,6 +2863,52 @@ impl std::convert::AsMut<RenderBlockTypeWindow> for RenderBlockTypeWindow {
     }
 }
 #[repr(C, align(8))]
+/// The water-plane proxy that supplies depth to the screen-space reflection pass.
+pub struct RenderBlockWaterReflectionPlane {
+    _field_0: [u8; 24],
+    /// The world transform of the proxy quad.
+    pub m_WorldTransform: crate::types::math::Matrix4,
+}
+fn _RenderBlockWaterReflectionPlane_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x58],
+            RenderBlockWaterReflectionPlane,
+        >([0u8; 0x58]);
+    }
+    unreachable!()
+}
+impl RenderBlockWaterReflectionPlane {
+    pub const Draw_ADDRESS: usize = 0x140184540;
+    /// Uploads the offset world-view-projection matrix to the WaterMask vertex program and draws the quad against the downsampled scene depth.
+    pub unsafe fn Draw(
+        &self,
+        rc: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        info: *const crate::graphics_engine::render_block::RBIInfo,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                rc: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                info: *const crate::graphics_engine::render_block::RBIInfo,
+            ) = ::std::mem::transmute(Self::Draw_ADDRESS);
+            f(self as *const Self as _, rc, info)
+        }
+    }
+}
+impl std::convert::AsRef<RenderBlockWaterReflectionPlane>
+for RenderBlockWaterReflectionPlane {
+    fn as_ref(&self) -> &RenderBlockWaterReflectionPlane {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockWaterReflectionPlane>
+for RenderBlockWaterReflectionPlane {
+    fn as_mut(&mut self) -> &mut RenderBlockWaterReflectionPlane {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The window render block (`NGraphicsEngine::CRenderBlockWindow`): alpha-blended glass, the
 /// vehicles' windows and the world's panes, drawn with the window shader, and with its damage when
 /// the instance carries window metadata
