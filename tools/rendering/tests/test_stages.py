@@ -8,6 +8,7 @@ import numpy as np
 from PIL import Image
 
 from tools.rendering.comparison import stages
+from tools.rendering.comparison.water_regions import RegionError
 from tools.rendering.tests import test_compare as compare_tests
 
 
@@ -367,15 +368,28 @@ class StageTests(unittest.TestCase):
                 if c.stage == stage and c.modes == ("right_only", "single_pass")
             ]
             region = cross.pairs[0].water_regions
-            self.assertEqual(region.common_water, stages.RegionError(2, 0))
-            self.assertEqual(region.common_sky, stages.RegionError(2, 0))
+            self.assertEqual(region.common_water, RegionError(2, 0))
+            self.assertEqual(region.common_sky, RegionError(2, 0))
             self.assertEqual(
                 (region.water_disagreement_pixels, region.sky_disagreement_pixels),
                 (2, 2),
             )
             self.assertIn("water_depth_after_right", region.mask_a[1])
             self.assertIn("water_depth_after_right", region.mask_b[1])
-        self.raw_path("right_only", 2, stages.Stage.WATER_DEPTH_AFTER_RIGHT, 1).unlink()
+        path = self.raw_path("right_only", 2, stages.Stage.WATER_DEPTH_AFTER_RIGHT, 1)
+        path.unlink()
+        path.symlink_to(
+            self.raw_path("multipass", 1, stages.Stage.WATER_DEPTH_AFTER_RIGHT, 1)
+        )
+        aliased = stages.analyze_manifest(self.path, self.output, water_regions=True)
+        self.assertTrue(
+            all(
+                not c.pairs
+                for c in aliased.cases[0].comparisons
+                if c.eye == 1 and c.stage == stages.Stage.MAIN_COLOR
+            )
+        )
+        path.unlink()
         report = stages.analyze_manifest(self.path, self.output, water_regions=True)
         self.assertEqual(report.status, stages.EvidenceStatus.INCONCLUSIVE)
         self.assertFalse(

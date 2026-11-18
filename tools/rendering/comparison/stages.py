@@ -32,6 +32,12 @@ from tools.rendering.comparison.provenance import (
     PoseProvenance,
     RunAnchor,
 )
+from tools.rendering.comparison.water_regions import (
+    WaterMask,
+    WaterRegions,
+    region_errors,
+    artifact_key,
+)
 
 
 class Stage(StrEnum):
@@ -223,30 +229,6 @@ class NativeMetrics:
     maximum: float
     channels: tuple[ChannelMetrics, ...]
     depth: DepthCoverage | None
-
-
-@dataclass(frozen=True)
-class WaterMask:
-    before: StageIdentity
-    after: StageIdentity
-    water: np.ndarray = field(repr=False)
-    sky: np.ndarray = field(repr=False)
-
-
-@dataclass(frozen=True)
-class RegionError:
-    pixels: int
-    rgb_mae: float | None
-
-
-@dataclass(frozen=True)
-class WaterRegions:
-    mask_a: tuple[str, str]
-    mask_b: tuple[str, str]
-    common_water: RegionError
-    common_sky: RegionError
-    water_disagreement_pixels: int
-    sky_disagreement_pixels: int
 
 
 @dataclass(frozen=True)
@@ -560,10 +542,9 @@ def load_water_mask(
     before = load_stage(root, mode, spec, sample, Stage.WATER_DEPTH_BEFORE, eye)
     after_stage = (Stage.WATER_DEPTH_AFTER_LEFT, Stage.WATER_DEPTH_AFTER_RIGHT)[eye]
     after = load_stage(root, mode, spec, sample, after_stage, eye)
-    if (
-        before.identity.source != after.identity.source
-        or before.identity.raw == after.identity.raw
-    ):
+    if before.identity.source != after.identity.source or artifact_key(
+        before.identity.raw
+    ) == artifact_key(after.identity.raw):
         raise ValueError(
             "water mask: expected distinct depth records with matching descriptors"
         )
@@ -571,29 +552,6 @@ def load_water_mask(
     if np.any(b < a):
         raise ValueError("water mask: depth decreased during the reverse-Z water pass")
     return WaterMask(before.identity, after.identity, b > a, (a == 0) & (b == 0))
-
-
-def region_errors(
-    a: StageSample, b: StageSample, ma: WaterMask, mb: WaterMask
-) -> WaterRegions:
-    if a.channels != ("r", "g", "b") or any(
-        m.water.shape != a.values.shape[:2] for m in (ma, mb)
-    ):
-        raise ValueError("water regions: expected RGB on the depth pixel grid")
-    delta = np.abs(a.values - b.values)
-
-    def measure(mask: np.ndarray) -> RegionError:
-        count = int(mask.sum())
-        return RegionError(count, float(delta[mask].mean()) if count else None)
-
-    return WaterRegions(
-        (ma.before.raw, ma.after.raw),
-        (mb.before.raw, mb.after.raw),
-        measure(ma.water & mb.water),
-        measure(ma.sky & mb.sky),
-        int(np.count_nonzero(ma.water != mb.water)),
-        int(np.count_nonzero(ma.sky != mb.sky)),
-    )
 
 
 def compare(
@@ -748,17 +706,21 @@ def analyze_case(
         masks: dict[str, WaterMask] = {}
         mask_errors: dict[Mode, list[str]] = {}
         if water_regions:
+            owners: dict[tuple[int, int], Mode] = {}
             for mode, (samples, errors) in captures.items():
                 if errors or eye not in mode.eyes:
                     continue
-                seen = set()
                 for spec, sample in samples:
                     try:
                         mask = load_water_mask(root, mode, spec, sample, eye)
-                        paths = {mask.before.raw, mask.after.raw}
-                        if seen & paths:
-                            raise ValueError("water mask: reused depth artifact")
-                        seen.update(paths)
+                        for record in (mask.before, mask.after):
+                            key = artifact_key(record.raw)
+                            if key in owners:
+                                error = f"{sample.label}: water mask: reused depth artifact {record.raw}"
+                                for affected in {mode, owners[key]}:
+                                    mask_errors.setdefault(affected, []).append(error)
+                            else:
+                                owners[key] = mode
                         masks[sample.label] = mask
                     except (OSError, ValueError, TypeError) as error:
                         mask_errors.setdefault(mode, []).append(
