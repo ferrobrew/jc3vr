@@ -7,7 +7,7 @@ import struct
 import zlib
 from pathlib import Path
 
-from tools.rendering.comparison.stages import artifact_path
+from tools.rendering.comparison.stages import DxgiFormat, Source, Stage, artifact_path
 from tools.rendering.protocol import (
     Capture,
     CascadeScale,
@@ -33,7 +33,7 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
                      generation: int | None = None, motion_capture: PhaseCapture | None = None,
                      water_inputs: bool = False, sun_inputs: bool = False,
                      shader_identity: bool = False, resolve_inputs: bool = False,
-                     sun_depth_clip=None, water_reflection=None, cascade_scale: CascadeScale | None = None, water_surface_inputs: bool = False, water_tess_draw: int | None = None) -> NativeCapture | Capture:
+                     sun_depth_clip=None, water_reflection=None, cascade_scale: CascadeScale | None = None, water_surface_inputs: bool = False, water_tess_draw: int | None = None, late_sky_stages: bool = False) -> NativeCapture | Capture:
     metadata = read_object(folder / f"{capture_id}.capture.json")
     if motion_capture is not None and mode is None:
         raise ProtocolError("visual protocol: motion capture requires a diagnostic mode")
@@ -60,6 +60,8 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
             validate_water_treatment(folder, capture_id, metadata, mode)
         if metadata.get("cascade_scale") != cascade_scale:
             raise ProtocolError("visual protocol: screenshot cascade_scale request mismatch")
+        if late_sky_stages:
+            validate_late_sky_stages(folder, capture_id, metadata, mode)
         if resolve_inputs:
             validate_resolve_inputs(folder, capture_id, metadata, mode, shader_identity, cascade_scale)
         if water_inputs:
@@ -80,6 +82,32 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
     if (width, height) != (capture.width, capture.height) or width != capture.eye_width * 2 or height != capture.eye_height:
         raise SessionError("capture: PNG dimensions disagree with the eye metadata")
     return capture
+
+
+def validate_late_sky_stages(folder: Path, capture_id: str, metadata: dict, mode: Mode) -> None:
+    eyes = (0,) if mode == Mode.SINGLE_PASS else tuple(i for i, active in enumerate(mode.rendered_eyes) if active)
+    stages = (Stage.AFTER_APPLY_CLOUDS, Stage.BEFORE_FOG_VOLUME_APPLY, Stage.AFTER_FOG_VOLUME_APPLY)
+    expected = {(stage, eye) for stage in stages for eye in eyes}
+    width = metadata['eye_width'] * (2 if mode == Mode.SINGLE_PASS else 1)
+    source = Source(width, metadata['eye_height'], DxgiFormat.R11G11B10_FLOAT)
+    seen = set()
+    try:
+        for r in metadata['stages']:
+            if r['stage'] not in stages:
+                continue
+            key = (r['stage'], r['eye'])
+            if (type(r['eye']) is not int or key not in expected or key in seen or r['error'] is not None
+                    or r['frame'] != metadata['predicted_display_time_ns'] or Source.from_wire(r['source']) != source):
+                raise ValueError('unexpected, invalid, or duplicate frame/eye record')
+            raw = artifact_path(folder / f'{capture_id}.capture.json', r['raw'])
+            if (raw.name != f'{capture_id}.{key[0]}.eye{key[1]}.r11g11b10' or
+                    raw.stat().st_size != width * source.height * source.format.pixel_bytes):
+                raise ValueError('missing or incompatible raw HDR artifact')
+            seen.add(key)
+        if seen != expected:
+            raise ValueError(f'missing frame/eye records: {sorted(expected - seen)}')
+    except (KeyError, TypeError, ValueError, OSError) as error:
+        raise ProtocolError(f'visual protocol: late sky stages: {error}') from error
 
 
 def validate_water_treatment(folder: Path, capture_id: str, metadata: dict, mode: Mode) -> None:

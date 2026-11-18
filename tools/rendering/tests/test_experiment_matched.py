@@ -7,8 +7,9 @@ from unittest.mock import patch
 import numpy as np
 from PIL import Image
 
-from tools.rendering.capture.validation import validate_capture
+from tools.rendering.capture.validation import validate_capture, validate_late_sky_stages
 from tools.rendering.comparison.images import Outcome
+from tools.rendering.comparison.stages import Stage
 from tools.rendering.experiment import (
     ExperimentConfig,
     ExperimentError,
@@ -193,6 +194,23 @@ class MatchedExperimentTests(ExperimentTestCase):
             self.assertIn(f'cascade_scale = "{level.value}"', request.to_toml())
         with self.assertRaises(ExperimentError):
             dataclasses.replace(config, diagnostics=dataclasses.replace(config.diagnostics, resolve_inputs=False))
+
+    def test_late_sky_stages_require_matching_frame_eye_and_packed_width(self):
+        for mode, eyes, width in ((Mode.RIGHT_ONLY, (1,), 2), (Mode.MULTIPASS, (0, 1), 2),
+                                  (Mode.SINGLE_PASS, (0,), 4)):
+            records = []
+            for stage in (Stage.AFTER_APPLY_CLOUDS, Stage.BEFORE_FOG_VOLUME_APPLY, Stage.AFTER_FOG_VOLUME_APPLY):
+                for eye in eyes:
+                    name = f'shot.{stage}.eye{eye}.r11g11b10'
+                    (self.root / name).write_bytes(bytes(width * 8))
+                    records.append({'stage': stage, 'eye': eye, 'frame': 93, 'error': None, 'raw': name,
+                                    'source': {'width': width, 'height': 2, 'format': 'DXGI_FORMAT(26)'}})
+            metadata = {'stages': records, 'eye_width': 2, 'eye_height': 2, 'predicted_display_time_ns': 93}
+            validate_late_sky_stages(self.root, 'shot', metadata, mode)
+            for invalid in (records[:-1], records + records[:1], [dict(records[0], frame=92), *records[1:]],
+                            [dict(records[0], raw=records[-1]['raw']), *records[1:]]):
+                with self.assertRaises(ProtocolError):
+                    validate_late_sky_stages(self.root, 'shot', dict(metadata, stages=invalid), mode)
 
     def test_surface_request_requires_an_untreated_selected_draw(self):
         path = Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_surface.toml"

@@ -571,6 +571,27 @@ fn motion_tables_are_only_accepted_by_visual_configure() {
 }
 
 #[test]
+fn late_sky_stages_require_a_screenshot_without_motion() {
+    assert!(matches!(
+        read("command = 'screenshot'\nid = 'shot'\nlate_sky_stages = true"),
+        Ok(Request::Screenshot {
+            late_sky_stages: true,
+            ..
+        })
+    ));
+    assert!(matches!(
+        read("command = 'record'\nlate_sky_stages = true"),
+        Err(RequestErrorKind::InvalidLateSkyStages)
+    ));
+    assert!(matches!(
+        read(
+            "command = 'screenshot'\nid = 'shot'\nlate_sky_stages = true\n[motion_capture]\nphase = 1"
+        ),
+        Err(RequestErrorKind::InvalidLateSkyStages)
+    ));
+}
+
+#[test]
 fn water_inputs_are_explicit_and_screenshot_only() {
     assert!(matches!(
         read("command = 'screenshot'\nid = 'shot'\nwater_inputs = true"),

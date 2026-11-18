@@ -2,6 +2,8 @@
 
 use std::{ffi::c_void, path::PathBuf};
 
+mod late_sky;
+pub(crate) use late_sky::{capture_before_fog_apply, capture_late_sky, complete_late_sky};
 mod sun_inputs;
 mod water_inputs;
 use anyhow::{Context as _, bail};
@@ -66,6 +68,9 @@ pub(crate) enum Stage {
     #[serde(rename = "gbuffer3")]
     GBuffer3,
     MainColor,
+    AfterApplyClouds,
+    BeforeFogVolumeApply,
+    AfterFogVolumeApply,
     PreAtmosphere,
     PostAtmosphere,
     PostResolve,
@@ -100,6 +105,9 @@ impl Stage {
         matches!(
             self,
             Self::MainColor
+                | Self::AfterApplyClouds
+                | Self::BeforeFogVolumeApply
+                | Self::AfterFogVolumeApply
                 | Self::PreAtmosphere
                 | Self::PostAtmosphere
                 | Self::PostResolve
@@ -283,6 +291,9 @@ pub(crate) fn take(frame: i64) -> (Vec<StageRecord>, Vec<StageImage>) {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum HdrStage {
     MainColor,
+    AfterApplyClouds,
+    BeforeFogVolumeApply,
+    AfterFogVolumeApply,
     PreAtmosphere,
     PostAtmosphere,
     PostResolve,
@@ -296,6 +307,9 @@ impl HdrStage {
     pub(super) fn stage(self) -> Stage {
         match self {
             Self::MainColor => Stage::MainColor,
+            Self::AfterApplyClouds => Stage::AfterApplyClouds,
+            Self::BeforeFogVolumeApply => Stage::BeforeFogVolumeApply,
+            Self::AfterFogVolumeApply => Stage::AfterFogVolumeApply,
             Self::PreAtmosphere => Stage::PreAtmosphere,
             Self::PostAtmosphere => Stage::PostAtmosphere,
             Self::PostResolve => Stage::PostResolve,
@@ -370,21 +384,7 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
     {
         return;
     }
-    let mut record = StageRecord {
-        frame,
-        stage,
-        eye,
-        source: None,
-        viewports: Vec::new(),
-        scissors: Vec::new(),
-        scissor_enabled: None,
-        means: None,
-        png: None,
-        raw: None,
-        error: None,
-        water_input: None,
-        sun_input: None,
-    };
+    let mut record = empty_stage_record(frame, eye, stage);
     let result = (|| {
         let context = EngineContext::get().context("graphics context unavailable")?;
         context.with_lock(|ctx| {
@@ -406,6 +406,24 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
         Err(error) => record.error = Some(format!("screenshot stages: {error:#}")),
     }
     state.records.push(record);
+}
+
+fn empty_stage_record(frame: i64, eye: usize, stage: Stage) -> StageRecord {
+    StageRecord {
+        frame,
+        stage,
+        eye,
+        source: None,
+        viewports: Vec::new(),
+        scissors: Vec::new(),
+        scissor_enabled: None,
+        means: None,
+        png: None,
+        raw: None,
+        error: None,
+        water_input: None,
+        sun_input: None,
+    }
 }
 
 pub(super) fn capture_raster_state(ctx: &ID3D11DeviceContext, record: &mut StageRecord) {
@@ -757,6 +775,9 @@ mod tests {
         };
         for stage in [
             Stage::MainColor,
+            Stage::AfterApplyClouds,
+            Stage::BeforeFogVolumeApply,
+            Stage::AfterFogVolumeApply,
             Stage::PreAtmosphere,
             Stage::PostAtmosphere,
             Stage::PostResolve,

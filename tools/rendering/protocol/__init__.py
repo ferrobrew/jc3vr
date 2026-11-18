@@ -223,6 +223,7 @@ class Request:
     motion: MotionRequest | None = None
     motion_capture: PhaseCapture | None = None
     environment: EnvironmentRequest | None = None
+    late_sky_stages: bool | None = None
     water_surface_inputs: bool | None = None
     water_tess_draw: int | None = None
     water_inputs: bool | None = None
@@ -257,6 +258,8 @@ class Request:
         if self.visual_overrides is not None and (self.command != Command.CONFIGURE or
                                                    not isinstance(self.visual_overrides, VisualOverrides)):
             raise ProtocolError("visual protocol: only configuration accepts visual overrides")
+        if self.late_sky_stages is not None and (self.command != Command.SCREENSHOT or self.motion_capture is not None or self.late_sky_stages is not True):
+            raise ProtocolError("visual protocol: late_sky_stages requires a screenshot without motion")
         if self.water_inputs is not None and (self.command != Command.SCREENSHOT or
                                               type(self.water_inputs) is not bool):
             raise ProtocolError("visual protocol: only screenshot requests accept a boolean water_inputs")

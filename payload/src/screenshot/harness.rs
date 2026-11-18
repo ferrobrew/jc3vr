@@ -93,6 +93,7 @@ pub(crate) struct CaptureRequest {
     pub water_inputs: bool,
     pub water_tess_draw: Option<u8>,
     pub water_surface_inputs: bool,
+    pub late_sky_stages: bool,
     pub sun_inputs: bool,
     pub resolve_inputs: bool,
     pub cascade_scale: Option<CascadeScale>,
@@ -183,6 +184,7 @@ fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: Capture
         active.water_inputs = options.water_inputs;
         active.water_tess_draw = options.water_tess_draw;
         active.water_surface_inputs = options.water_surface_inputs;
+        active.late_sky_stages = options.late_sky_stages;
         active.sun_inputs = options.sun_inputs;
         active.resolve_inputs = options.resolve_inputs;
         active.cascade_scale = options.cascade_scale;
@@ -287,6 +289,7 @@ fn admit(
         water_inputs: false,
         water_tess_draw: None,
         water_surface_inputs: false,
+        late_sky_stages: false,
         sun_inputs: false,
         resolve_inputs: false,
         cascade_scale: None,
@@ -330,6 +333,19 @@ pub(crate) fn water_reflection_requested() -> Option<WaterReflection> {
         t.supported(dispatch::mode(), active.water_tess_draw)
             && matches!(active.phase, Phase::Pending)
     })
+}
+
+pub(crate) fn late_sky_stages_requested() -> bool {
+    if !wants_eyes()
+        || !STATE
+            .lock()
+            .active
+            .as_ref()
+            .is_some_and(|a| a.late_sky_stages)
+    {
+        return false;
+    }
+    diagnostic_capture_id().is_some()
 }
 
 pub(crate) fn water_surface_inputs_requested() -> bool {
@@ -495,6 +511,14 @@ pub(crate) fn capture(
     active.result.state = CaptureState::Captured;
     active.result.readiness = readiness();
     let (mut stage_records, stage_images) = stages::take(frame.unwrap());
+    if active.late_sky_stages {
+        let eyes = if mode == RenderMode::SinglePass {
+            [true, false]
+        } else {
+            required_eyes(selected_eye)
+        };
+        stages::complete_late_sky(&mut stage_records, frame.unwrap(), eyes);
+    }
     if active.water_inputs {
         stages::complete_water_inputs(
             active.water_surface_inputs,
@@ -691,6 +715,7 @@ struct Active {
     water_inputs: bool,
     water_tess_draw: Option<u8>,
     water_surface_inputs: bool,
+    late_sky_stages: bool,
     sun_inputs: bool,
     resolve_inputs: bool,
     cascade_scale: Option<CascadeScale>,
@@ -1003,6 +1028,7 @@ mod tests {
                     water_inputs: false,
                     water_tess_draw: None,
                     water_surface_inputs: false,
+                    late_sky_stages: false,
                     sun_inputs: false,
                     resolve_inputs: false,
                     cascade_scale: None,

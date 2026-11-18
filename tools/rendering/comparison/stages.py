@@ -46,6 +46,9 @@ class Stage(StrEnum):
     GBUFFER1 = "gbuffer1"
     GBUFFER2 = "gbuffer2"
     GBUFFER3 = "gbuffer3"
+    AFTER_APPLY_CLOUDS = "after_apply_clouds"
+    BEFORE_FOG_VOLUME_APPLY = "before_fog_volume_apply"
+    AFTER_FOG_VOLUME_APPLY = "after_fog_volume_apply"
     POST_RESOLVE = "post_resolve"
     POST_SUN = "post_sun"
     PRE_ATMOSPHERE = "pre_atmosphere"
@@ -72,6 +75,9 @@ class Stage(StrEnum):
     @property
     def optional(self) -> bool:
         return self in (
+            Stage.AFTER_APPLY_CLOUDS,
+            Stage.BEFORE_FOG_VOLUME_APPLY,
+            Stage.AFTER_FOG_VOLUME_APPLY,
             Stage.POST_RESOLVE,
             Stage.POST_SUN,
             Stage.PRE_ATMOSPHERE,
@@ -733,9 +739,14 @@ def analyze_case(
                 Stage.MAIN_COLOR,
                 Stage.PRE_AA,
             )
+            required = regional or not stage.optional
+            regional |= water_regions and stage in (
+                Stage.AFTER_APPLY_CLOUDS,
+                Stage.BEFORE_FOG_VOLUME_APPLY,
+                Stage.AFTER_FOG_VOLUME_APPLY,
+            )
             available = {
-                mode: regional
-                or not stage.optional
+                mode: required
                 or has_stage_record(root, mode, captures[mode][0], stage, eye)
                 for mode in modes
                 if eye in mode.eyes

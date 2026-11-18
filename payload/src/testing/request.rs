@@ -80,6 +80,7 @@ enum Request {
         water_inputs: bool,
         water_tess_draw: Option<u8>,
         water_surface_inputs: bool,
+        late_sky_stages: bool,
         sun_inputs: bool,
         resolve_inputs: bool,
         cascade_scale: Option<crate::screenshot::harness::CascadeScale>,
@@ -120,6 +121,7 @@ enum RequestErrorKind {
     WaterInputsOnCommand(Command),
     InvalidWaterDraw,
     InvalidSurfaceInputs,
+    InvalidLateSkyStages,
     InvalidCascadeScale,
     SunInputsOnCommand(Command),
     ResolveInputsOnCommand(Command),
@@ -194,6 +196,9 @@ impl std::fmt::Display for RequestError {
                 f,
                 "cascade_scale requires a resolve screenshot without motion"
             ),
+            RequestErrorKind::InvalidLateSkyStages => {
+                write!(f, "late_sky_stages requires a screenshot without motion")
+            }
             RequestErrorKind::InvalidSurfaceInputs => write!(
                 f,
                 "surface inputs require an untreated selected water draw without motion"
@@ -272,6 +277,8 @@ struct RequestFile {
     water_tess_draw: Option<u8>,
     #[serde(default)]
     water_surface_inputs: bool,
+    #[serde(default)]
+    late_sky_stages: bool,
     #[serde(default)]
     sun_inputs: bool,
     #[serde(default)]
@@ -428,6 +435,9 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
     if file.water_reflection.is_some() && !file.water_inputs {
         return Err(error(RequestErrorKind::WaterReflectionNeedsInputs));
     }
+    if file.late_sky_stages && (file.command != Command::Screenshot || motion_capture.is_some()) {
+        return Err(error(RequestErrorKind::InvalidLateSkyStages));
+    }
     if file.water_surface_inputs
         && (file.water_tess_draw.is_none()
             || file.water_reflection.is_some()
@@ -500,6 +510,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             water_inputs: file.water_inputs,
             water_tess_draw: file.water_tess_draw,
             water_surface_inputs: file.water_surface_inputs,
+            late_sky_stages: file.late_sky_stages,
             sun_inputs: file.sun_inputs,
             resolve_inputs: file.resolve_inputs,
             cascade_scale: file.cascade_scale,
@@ -531,6 +542,7 @@ fn act(request: Request) {
             water_inputs,
             water_tess_draw,
             water_surface_inputs,
+            late_sky_stages,
             sun_inputs,
             resolve_inputs,
             cascade_scale,
@@ -541,6 +553,7 @@ fn act(request: Request) {
                 water_inputs,
                 water_tess_draw,
                 water_surface_inputs,
+                late_sky_stages,
                 sun_inputs,
                 resolve_inputs,
                 cascade_scale,

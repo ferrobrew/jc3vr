@@ -238,8 +238,11 @@ class Diagnostics:
     water_tess_draw: int | None = None
     cascade_scale: CascadeScale | None = None
     water_surface_inputs: bool = False
+    late_sky_stages: bool = False
 
     def __post_init__(self):
+        if type(self.late_sky_stages) is not bool:
+            raise ExperimentError("experiment: diagnostics.late_sky_stages must be a boolean")
         if type(self.water_surface_inputs) is not bool or (self.water_surface_inputs and (self.water_tess_draw is None or not self.shader_identity or self.water_reflection is not None)):
             raise ExperimentError("experiment: surface inputs require identity and an untreated selected water draw")
         if type(self.water_inputs) is not bool:
@@ -266,14 +269,15 @@ class Diagnostics:
     @classmethod
     def from_toml(cls, value):
         value = _table(value, "diagnostics")
-        _keys(value, set(), {"water_inputs", "water_surface_inputs", "water_tess_draw", "sun_inputs", "shader_identity", "resolve_inputs", "sun_depth_clip", "water_reflection"}, "diagnostics")
+        _keys(value, set(), {"late_sky_stages", "water_inputs", "water_surface_inputs", "water_tess_draw", "sun_inputs", "shader_identity", "resolve_inputs", "sun_depth_clip", "water_reflection"}, "diagnostics")
         try:
             depth_clip = SunDepthClip(value["sun_depth_clip"]) if "sun_depth_clip" in value else None
             water_reflection = WaterReflection(value["water_reflection"]) if "water_reflection" in value else None
         except (ValueError, TypeError) as error:
             raise ExperimentError("experiment: invalid diagnostic treatment") from error
         return cls(value.get("water_inputs", False), value.get("sun_inputs", False),
-                   value.get("shader_identity", False), value.get("resolve_inputs", False), depth_clip, water_reflection, value.get("water_tess_draw"), water_surface_inputs=value.get("water_surface_inputs", False))
+                   value.get("shader_identity", False), value.get("resolve_inputs", False), depth_clip, water_reflection, value.get("water_tess_draw"), water_surface_inputs=value.get("water_surface_inputs", False),
+                   late_sky_stages=value.get("late_sky_stages", False))
 
 
 class MatchedTreatment(StrEnum):
@@ -882,6 +886,7 @@ def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor,
 
 def _capture(runner, config, pose, anchor, mode, generation, identifier):
     acknowledgement = runner.request(Request(Command.SCREENSHOT, identifier,
+                                             late_sky_stages=True if config.diagnostics.late_sky_stages else None,
                                              water_inputs=True if config.diagnostics.water_inputs else None,
                                              water_tess_draw=config.diagnostics.water_tess_draw,
                                              water_surface_inputs=True if config.diagnostics.water_surface_inputs else None,
@@ -894,6 +899,7 @@ def _capture(runner, config, pose, anchor, mode, generation, identifier):
         raise ExperimentError("experiment: expected a screenshot acknowledgement")
     capture = validate_capture(runner.config_dir / "captures", identifier,
                                acknowledgement.capture, mode=mode, generation=generation,
+                               late_sky_stages=config.diagnostics.late_sky_stages,
                                water_inputs=config.diagnostics.water_inputs,
                                water_tess_draw=config.diagnostics.water_tess_draw,
                                water_surface_inputs=config.diagnostics.water_surface_inputs,

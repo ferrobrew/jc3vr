@@ -58,14 +58,16 @@ pub(super) fn hook_library() -> HookLibrary {
 // the readback stalls.
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::Draw_ADDRESS)]
 fn render_pass_draw(this: *mut RenderPass) {
+    let pass_id = unsafe { this.as_ref() }.map(|pass| pass.m_Index);
+    if let Some(id) = pass_id {
+        crate::screenshot::harness::stages::capture_before_fog_apply(id);
+    }
     RENDER_PASS_DRAW.get().unwrap().call(this);
+    let Some(id) = pass_id else { return };
+    crate::screenshot::harness::stages::capture_late_sky(id);
     if !tracing_active() || draw_index() != 0 {
         return;
     }
-    let Some(pass) = (unsafe { this.as_ref() }) else {
-        return;
-    };
-    let id = pass.m_Index;
     if !SWEEP_PASS_RANGE.contains(&id) {
         return;
     }
