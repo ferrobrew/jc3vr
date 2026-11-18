@@ -170,8 +170,18 @@ class EnvironmentObservation:
         return asdict(self)
 
 
+class CascadeScale(StrEnum):
+    SHORE_LOW = "shore_low"
+    SHORE_HIGH = "shore_high"
+
+    @property
+    def bits(self) -> int:
+        return {self.SHORE_LOW: 0x3C07E14C, self.SHORE_HIGH: 0x3C07EC65}[self]
+
+
 class WaterReflection(StrEnum):
     ZERO_WEIGHT = "zero_weight"
+    CENTER_PLANAR = "center_planar"
 
 
 class SunDepthClip(StrEnum):
@@ -216,6 +226,7 @@ class Request:
     water_tess_draw: int | None = None
     water_inputs: bool | None = None
     water_reflection: WaterReflection | None = None
+    cascade_scale: CascadeScale | None = None
     resolve_inputs: bool | None = None
     sun_depth_clip: SunDepthClip | None = None
     sun_inputs: bool | None = None
@@ -258,6 +269,9 @@ class Request:
                                                 not isinstance(self.sun_depth_clip, SunDepthClip) or
                                                 self.sun_inputs is not True):
             raise ProtocolError("visual protocol: sun_depth_clip requires screenshot sun_inputs")
+        if self.cascade_scale is not None and (not isinstance(self.cascade_scale, CascadeScale) or
+                self.command != Command.SCREENSHOT or self.resolve_inputs is not True or self.motion_capture is not None):
+            raise ProtocolError("visual protocol: cascade_scale requires a resolve screenshot without motion")
         if self.resolve_inputs is not None and (self.command != Command.SCREENSHOT or
                                                 type(self.resolve_inputs) is not bool):
             raise ProtocolError("visual protocol: only screenshot requests accept a boolean resolve_inputs")

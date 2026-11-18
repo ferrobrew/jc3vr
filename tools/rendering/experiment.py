@@ -41,6 +41,7 @@ from tools.rendering.protocol import (
     POSE_TOLERANCE,
     Camera,
     Capture,
+    CascadeScale,
     Case,
     Command,
     ConfigurationAck,
@@ -235,6 +236,7 @@ class Diagnostics:
     sun_depth_clip: SunDepthClip | None = None
     water_reflection: WaterReflection | None = None
     water_tess_draw: int | None = None
+    cascade_scale: CascadeScale | None = None
 
     def __post_init__(self):
         if type(self.water_inputs) is not bool:
@@ -252,6 +254,9 @@ class Diagnostics:
         if self.water_reflection is not None and (not isinstance(self.water_reflection, WaterReflection) or
                                                    not self.water_inputs or not self.shader_identity):
             raise ExperimentError("experiment: diagnostics.water_reflection requires water_inputs and shader_identity")
+        if self.cascade_scale is not None and (not isinstance(self.cascade_scale, CascadeScale) or
+                not self.resolve_inputs or not self.shader_identity):
+            raise ExperimentError("experiment: cascade_scale requires resolve inputs and shader identity")
         if self.sun_depth_clip is not None and self.shader_identity:
             raise ExperimentError("experiment: sun depth clip treatment and shader census must use separate captures")
 
@@ -270,6 +275,16 @@ class Diagnostics:
 
 class MatchedTreatment(StrEnum):
     WATER_REFLECTION_ABBA = "water_reflection_abba"
+    PLANAR_ABBA = "planar_abba"
+    CASCADE_ABBA = "cascade_abba"
+
+    @property
+    def conditions(self) -> tuple[str, str]:
+        return {
+            self.CASCADE_ABBA: (CascadeScale.SHORE_LOW.value, CascadeScale.SHORE_HIGH.value),
+            self.PLANAR_ABBA: ("control", WaterReflection.CENTER_PLANAR.value),
+            self.WATER_REFLECTION_ABBA: ("control", WaterReflection.ZERO_WEIGHT.value),
+        }[self]
 
 
 @dataclass(frozen=True)
@@ -307,13 +322,28 @@ class ExperimentConfig:
         object.__setattr__(self, "interval_seconds", float(self.interval_seconds))
         if not isinstance(self.diagnostics, Diagnostics):
             raise ExperimentError("experiment: config.diagnostics must be a diagnostics table")
-        if self.matched_treatment is not None and (
-                self.matched_treatment != MatchedTreatment.WATER_REFLECTION_ABBA or
-                self.configurations != (CompareMode.MULTIPASS,) or self.feature is not None or
-                not self.diagnostics.water_inputs or not self.diagnostics.shader_identity or
-                self.diagnostics.water_reflection is not None or self.diagnostics.sun_depth_clip is not None):
-            raise ExperimentError("experiment: matched water treatment requires one multipass configuration, water inputs, and shader identity, without a feature or other treatment")
-        if self.diagnostics.water_reflection is not None and any(mode != CompareMode.MULTIPASS for mode in self.configurations):
+        if self.matched_treatment is not None:
+            if (not isinstance(self.matched_treatment, MatchedTreatment) or self.feature is not None or
+                    not self.diagnostics.shader_identity or self.diagnostics.water_reflection is not None or
+                    self.diagnostics.cascade_scale is not None or self.diagnostics.sun_depth_clip is not None):
+                raise ExperimentError("experiment: matched conditions require shader identity and no other treatment")
+            if self.matched_treatment == MatchedTreatment.PLANAR_ABBA:
+                if self.configurations not in ((CompareMode.SINGLE_PASS,), (CompareMode.LEFT_ONLY,
+                        CompareMode.RIGHT_ONLY, CompareMode.MULTIPASS, CompareMode.SINGLE_PASS)):
+                    raise ExperimentError("experiment: planar ABBA requires SPS, optionally after both isolated eyes and MP")
+            elif self.configurations != (CompareMode.MULTIPASS,):
+                raise ExperimentError("experiment: matched MP treatments require one multipass configuration")
+            if self.matched_treatment == MatchedTreatment.CASCADE_ABBA:
+                if not self.diagnostics.resolve_inputs:
+                    raise ExperimentError("experiment: cascade ABBA requires resolve inputs")
+            elif not self.diagnostics.water_inputs:
+                raise ExperimentError("experiment: matched water treatments require water inputs")
+        if self.diagnostics.cascade_scale is not None and self.configurations != (CompareMode.MULTIPASS,):
+            raise ExperimentError("experiment: cascade_scale requires one multipass configuration")
+        if ((self.diagnostics.water_reflection == WaterReflection.CENTER_PLANAR and self.configurations != (CompareMode.SINGLE_PASS,)) or
+                ((self.diagnostics.water_reflection == WaterReflection.CENTER_PLANAR or self.matched_treatment == MatchedTreatment.PLANAR_ABBA) and self.diagnostics.water_tess_draw is None)):
+            raise ExperimentError("experiment: planar treatment requires a selected single-pass draw")
+        if self.diagnostics.water_reflection == WaterReflection.ZERO_WEIGHT and any(mode != CompareMode.MULTIPASS for mode in self.configurations):
             raise ExperimentError("experiment: water reflection treatment requires multipass configurations")
         if self.visual_overrides is not None and not isinstance(self.visual_overrides, VisualOverrides):
             raise ExperimentError("experiment: invalid visual overrides")
@@ -451,9 +481,9 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
     monotonic = monotonic or time.monotonic
     sleep = sleep or time.sleep
     prefix = f"{config.name.replace('-', '_')}_{uuid.uuid4().hex[:8]}"
-    cases = ({"control": Case(f"{config.name}-control", {}),
-              "zero_weight": Case(f"{config.name}-zero-weight", {})}
-             if config.matched_treatment else {"default": Case(config.name, {})})
+    matched = config.matched_treatment
+    names = matched.conditions if matched else ("default",)
+    cases = {name: Case(f"{config.name}-{name.replace('_', '-')}" if matched else config.name, {}) for name in names}
     manifest = Manifest(list(cases.values()))
     manifest_path = output / "manifest.json"
     captures: list[Capture] = []
@@ -483,7 +513,9 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
             _, anchor = _configure(
                 runner, config, f"{prefix}_{mode.value}_configure_{entry_index}", target_pose,
                 mode, anchor, configurations)
-            sequence = (("control", "zero_weight", "zero_weight", "control") * config.samples
+            shared = config.matched_treatment == MatchedTreatment.PLANAR_ABBA and mode != Mode.SINGLE_PASS
+            sequence = ((names[0],) * config.samples if shared else
+                        (names[0], names[1], names[1], names[0]) * config.samples
                         if config.matched_treatment else ("default",) * config.samples)
             for condition in sequence:
                 entries = cases[condition].modes.setdefault(mode, [])
@@ -497,11 +529,17 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
                         "experiment: no capture can start after the run deadline"
                     )
                 capture_config = config
-                if config.matched_treatment:
-                    treatment = WaterReflection.ZERO_WEIGHT if condition == "zero_weight" else None
+                if shared:
+                    capture_config = dataclasses.replace(config, matched_treatment=None)
+                elif config.matched_treatment:
+                    if matched == MatchedTreatment.CASCADE_ABBA:
+                        diagnostics = dataclasses.replace(config.diagnostics, cascade_scale=CascadeScale(condition))
+                    else:
+                        treatment = None if condition == "control" else WaterReflection(condition)
+                        diagnostics = dataclasses.replace(config.diagnostics, water_reflection=treatment)
                     capture_config = dataclasses.replace(
-                        config, diagnostics=dataclasses.replace(config.diagnostics, water_reflection=treatment),
-                        matched_treatment=None)
+                        config, diagnostics=diagnostics,
+                        matched_treatment=None, configurations=(configured_mode,))
                 try:
                     result = capture(runner, capture_config, target_pose, anchor, mode,
                                      configurations[-1].generation, identifier)
@@ -529,7 +567,10 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
                     raise ExperimentError(
                         "experiment: captures do not identify increasing rendered frames"
                     )
-                if config.matched_treatment:
+                if shared:
+                    cases[names[1]].modes.setdefault(mode, []).append(entries[-1])
+                    write_manifest(manifest_path, manifest)
+                elif config.matched_treatment:
                     metadata = read_object(folder / f"{identifier}.capture.json")
                     identity = matched_capture_identity(result, metadata, configurations[-1].generation)
                     if matched_identity is None:
@@ -843,6 +884,7 @@ def _capture(runner, config, pose, anchor, mode, generation, identifier):
                                              sun_inputs=True if config.diagnostics.sun_inputs else None,
                                              resolve_inputs=True if config.diagnostics.resolve_inputs else None,
                                              sun_depth_clip=config.diagnostics.sun_depth_clip,
+                                             cascade_scale=config.diagnostics.cascade_scale,
                                              water_reflection=config.diagnostics.water_reflection))
     if not isinstance(acknowledgement, ScreenshotAck):
         raise ExperimentError("experiment: expected a screenshot acknowledgement")
@@ -854,6 +896,7 @@ def _capture(runner, config, pose, anchor, mode, generation, identifier):
                                shader_identity=config.diagnostics.shader_identity,
                                resolve_inputs=config.diagnostics.resolve_inputs,
                                sun_depth_clip=config.diagnostics.sun_depth_clip,
+                               cascade_scale=config.diagnostics.cascade_scale,
                                water_reflection=config.diagnostics.water_reflection)
     if not isinstance(capture, Capture):
         raise ExperimentError("experiment: expected a diagnostic capture")

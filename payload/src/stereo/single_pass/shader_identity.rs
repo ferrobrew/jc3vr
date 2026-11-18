@@ -32,6 +32,7 @@ static REGISTRY: LazyLock<Mutex<Registry>> = LazyLock::new(|| {
     Mutex::new(Registry {
         generation: 0,
         shaders: HashMap::new(),
+        lake: None,
         overflow: 0,
         invalid: 0,
         install_error: false,
@@ -70,6 +71,7 @@ pub(crate) struct CensusStatus {
 struct Registry {
     generation: u64,
     shaders: HashMap<usize, Identity>,
+    lake: Option<Vec<u8>>,
     overflow: usize,
     invalid: usize,
     install_error: bool,
@@ -80,6 +82,7 @@ impl Registry {
         self.generation = self.generation.wrapping_add(1);
         self.overflow = 0;
         self.invalid = 0;
+        self.lake = None;
         self.install_error = false;
         std::mem::take(&mut self.shaders)
     }
@@ -325,10 +328,23 @@ pub(super) unsafe extern "system" fn create_pixel_shader_detour(
         {
             return;
         }
+        if identity.actual_sha256 == LAKE_PS
+            && identity.pristine_sha256 == LAKE_PS
+            && length == 21568
+        {
+            state.lake =
+                Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
+        }
         unsafe { com_add_ref(shader) };
         state.shaders.insert(key, identity);
     });
     result
+}
+
+pub(crate) const LAKE_PS: &str = "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531";
+
+pub(crate) fn lake_bytecode() -> Option<Vec<u8>> {
+    REGISTRY.lock().lake.clone()
 }
 
 fn mark_invalid(generation: u64) {
@@ -355,6 +371,7 @@ mod tests {
         let mut state = Registry {
             generation: 7,
             shaders: HashMap::new(),
+            lake: None,
             overflow: 1,
             invalid: 2,
             install_error: true,
@@ -383,6 +400,7 @@ mod tests {
         let mut state = Registry {
             generation: 4,
             shaders: HashMap::new(),
+            lake: None,
             overflow: 0,
             invalid: 0,
             install_error: false,
@@ -402,6 +420,7 @@ mod tests {
         let mut state = Registry {
             generation: 7,
             shaders: HashMap::new(),
+            lake: None,
             overflow: 0,
             invalid: 0,
             install_error: false,

@@ -1,6 +1,8 @@
+mod cascade;
 use std::{cell::Cell, ffi::c_void};
 
 use anyhow::Context as _;
+use cascade::{CascadeGuard, CascadeTrial};
 use parking_lot::Mutex;
 use serde::Serialize;
 use windows::{
@@ -77,6 +79,8 @@ enum EyeResult {
 
 #[derive(Clone, Serialize)]
 struct Observation {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    cascade: Option<CascadeTrial>,
     frame_counters: FrameCounters,
     pixel_shader: ShaderIdentity,
     constant_buffers: Vec<ConstantBuffer>,
@@ -237,7 +241,11 @@ pub(crate) fn take(frame: i64, generation: u64, required: [bool; 2]) -> Capture 
     }
 }
 
-pub(crate) unsafe fn on_draw(context: *mut c_void, vertex_count: u32, start_vertex: u32) {
+pub(crate) unsafe fn on_draw(
+    context: *mut c_void,
+    vertex_count: u32,
+    start_vertex: u32,
+) -> Option<CascadeGuard> {
     if vertex_count != 3
         || start_vertex != 0
         || !DEPTH.with(|depth| depth.get() == 1)
@@ -245,19 +253,16 @@ pub(crate) unsafe fn on_draw(context: *mut c_void, vertex_count: u32, start_vert
         || !resolve_inputs_requested()
         || diagnostic_capture_id().is_none()
     {
-        return;
+        return None;
     }
     let metadata = visual::metadata();
-    let Some(frame) = vr::capture_views().map(|views| views.predicted_display_time_ns) else {
-        return;
-    };
+    let frame = vr::capture_views()?.predicted_display_time_ns;
     let eye = draw_index();
     if !metadata.ready || eye >= 2 || dispatch::mode() == dispatch::RenderMode::Native {
-        return;
+        return None;
     }
-    let Some(ctx) = (unsafe { ID3D11DeviceContext::from_raw_borrowed(&context) }) else {
-        return;
-    };
+    let ctx = unsafe { ID3D11DeviceContext::from_raw_borrowed(&context) }?;
+    let selection = crate::screenshot::harness::cascade_scale(frame);
     let mut state = STATE.lock();
     if state.frame != Some(frame) || state.generation != metadata.generation {
         *state = State::new();
@@ -266,8 +271,24 @@ pub(crate) unsafe fn on_draw(context: *mut c_void, vertex_count: u32, start_vert
     }
     state.candidates[eye] = state.candidates[eye].saturating_add(1);
     if state.candidates[eye] == 1 {
-        state.observations[eye] = Some(observe(ctx));
+        let mut obs = observe(ctx);
+        let guard =
+            selection.and_then(
+                |selection| match cascade::bind(ctx, &obs, selection, eye, frame) {
+                    Ok((g, trial)) => {
+                        obs.cascade = Some(trial);
+                        Some(g)
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error,"cascade treatment declined");
+                        None
+                    }
+                },
+            );
+        state.observations[eye] = Some(obs);
+        return guard;
     }
+    None
 }
 
 fn checked_range(
@@ -484,6 +505,7 @@ fn observe(ctx: &ID3D11DeviceContext) -> Observation {
         })
         .collect();
     Observation {
+        cascade: None,
         frame_counters,
         pixel_shader,
         constant_buffers,
@@ -518,6 +540,7 @@ mod tests {
             EyeResult::Ambiguous { candidates: 2 }
         ));
         let observation = Observation {
+            cascade: None,
             frame_counters: FrameCounters {
                 counter: 0,
                 frame_index: 0,
@@ -544,6 +567,7 @@ mod tests {
             candidates: [1, 0],
             observations: [
                 Some(Observation {
+                    cascade: None,
                     frame_counters: FrameCounters {
                         counter: 15,
                         frame_index: 14,
@@ -612,6 +636,7 @@ mod tests {
     #[test]
     fn published_failure_status_does_not_expose_stale_or_ambiguous_observation() {
         let observation = Observation {
+            cascade: None,
             frame_counters: FrameCounters {
                 counter: 1,
                 frame_index: 0,
@@ -682,6 +707,7 @@ mod tests {
 
     fn artifact_observation(bytes: Vec<u8>) -> Observation {
         Observation {
+            cascade: None,
             frame_counters: FrameCounters {
                 counter: 7,
                 frame_index: 6,

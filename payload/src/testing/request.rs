@@ -81,6 +81,7 @@ enum Request {
         water_tess_draw: Option<u8>,
         sun_inputs: bool,
         resolve_inputs: bool,
+        cascade_scale: Option<crate::screenshot::harness::CascadeScale>,
         sun_depth_clip: Option<crate::screenshot::harness::SunDepthClip>,
     },
     Visual(visual::Request),
@@ -117,6 +118,7 @@ enum RequestErrorKind {
     WaterReflectionNeedsInputs,
     WaterInputsOnCommand(Command),
     InvalidWaterDraw,
+    InvalidCascadeScale,
     SunInputsOnCommand(Command),
     ResolveInputsOnCommand(Command),
     SunDepthClipOnCommand(Command),
@@ -186,6 +188,10 @@ impl std::fmt::Display for RequestError {
             RequestErrorKind::WaterReflectionNeedsInputs => {
                 write!(f, "water_reflection requires water_inputs")
             }
+            RequestErrorKind::InvalidCascadeScale => write!(
+                f,
+                "cascade_scale requires a resolve screenshot without motion"
+            ),
             RequestErrorKind::InvalidWaterDraw => write!(
                 f,
                 "water_tess_draw requires water_inputs and an index below 32"
@@ -262,6 +268,7 @@ struct RequestFile {
     sun_inputs: bool,
     #[serde(default)]
     resolve_inputs: bool,
+    cascade_scale: Option<crate::screenshot::harness::CascadeScale>,
     sun_depth_clip: Option<crate::screenshot::harness::SunDepthClip>,
 }
 
@@ -425,6 +432,11 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
     if file.sun_inputs && file.command != Command::Screenshot {
         return Err(error(RequestErrorKind::SunInputsOnCommand(file.command)));
     }
+    if file.cascade_scale.is_some()
+        && (!file.resolve_inputs || file.command != Command::Screenshot || motion_capture.is_some())
+    {
+        return Err(error(RequestErrorKind::InvalidCascadeScale));
+    }
     if file.resolve_inputs && file.command != Command::Screenshot {
         return Err(error(RequestErrorKind::ResolveInputsOnCommand(
             file.command,
@@ -474,6 +486,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             water_tess_draw: file.water_tess_draw,
             sun_inputs: file.sun_inputs,
             resolve_inputs: file.resolve_inputs,
+            cascade_scale: file.cascade_scale,
             sun_depth_clip: file.sun_depth_clip,
         },
         Command::Record => Request::Record,
@@ -503,6 +516,7 @@ fn act(request: Request) {
             water_tess_draw,
             sun_inputs,
             resolve_inputs,
+            cascade_scale,
             sun_depth_clip,
         } => {
             let options = crate::screenshot::harness::CaptureRequest {
@@ -511,6 +525,7 @@ fn act(request: Request) {
                 water_tess_draw,
                 sun_inputs,
                 resolve_inputs,
+                cascade_scale,
                 sun_depth_clip,
             };
             match motion {

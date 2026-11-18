@@ -104,7 +104,7 @@ pub(super) unsafe extern "system" fn draw_detour(
     unsafe { on_raw_draw(context) };
     let _reflection = unsafe { reflection_treatment(context) };
     unsafe { raw_entry(RawDrawKind::NonIndexed, context) };
-    unsafe {
+    let _cascade = unsafe {
         crate::screenshot::harness::resolve_probe::on_draw(context, vertex_count, start_vertex)
     };
     let detour = DRAW.get().expect("set before enable");

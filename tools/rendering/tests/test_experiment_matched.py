@@ -18,11 +18,13 @@ from tools.rendering.experiment import (
 from tools.rendering.experiment_matched import matched_cross_metrics
 from tools.rendering.protocol import (
     Capture,
+    CascadeScale,
     Case,
     Command,
     Mode,
     OrientationOffset,
     ProtocolError,
+    Request,
     Sample,
     ScreenshotAck,
     TranslationOffset,
@@ -179,6 +181,26 @@ class MatchedExperimentTests(ExperimentTestCase):
         self.assertEqual(metrics[0]["metrics"]["mean"], 10)
         self.assertEqual(metrics[0]["metrics"]["changed_fraction"], 1)
         self.assertNotIn("status", metrics[0])
+
+    def test_cascade_requests_require_resolve_and_fixed_mp_configuration(self):
+        path = Path(__file__).resolve().parents[1] / "experiments" / "shore_cascade.toml"
+        config = ExperimentConfig.load(path)
+        self.assertEqual(config.matched_treatment.conditions, ("shore_low", "shore_high"))
+        for level in CascadeScale:
+            with self.assertRaises(ProtocolError):
+                Request(Command.SCREENSHOT, "shot", cascade_scale=level)
+            request = Request(Command.SCREENSHOT, "shot", resolve_inputs=True, cascade_scale=level)
+            self.assertIn(f'cascade_scale = "{level.value}"', request.to_toml())
+        with self.assertRaises(ExperimentError):
+            dataclasses.replace(config, diagnostics=dataclasses.replace(config.diagnostics, resolve_inputs=False))
+
+    def test_planar_reference_includes_each_physical_eye(self):
+        path = Path(__file__).resolve().parents[1] / "experiments" / "shore_lake_planar.toml"
+        config = ExperimentConfig.load(path)
+        self.assertEqual(tuple(mode.value for mode in config.configurations),
+                         ("left_only", "right_only", "multipass", "single_pass"))
+        with self.assertRaises(ExperimentError):
+            dataclasses.replace(config, configurations=config.configurations[2:])
 
     def test_configuration_rejects_incompatible_matched_requests(self):
         config = self.config()

@@ -777,6 +777,7 @@ mod tests {
             },
             effective_config: crate::config::Config::new(),
             water_reflection: None,
+            cascade_scale: None,
             sun_depth_clip: None,
             resolve_inputs: None,
             single_pass: None,

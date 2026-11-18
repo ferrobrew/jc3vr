@@ -1,6 +1,7 @@
 """Validation of capture artifacts written by the game."""
 
 import dataclasses
+import hashlib
 import json
 import struct
 import zlib
@@ -9,6 +10,7 @@ from pathlib import Path
 from tools.rendering.comparison.stages import artifact_path
 from tools.rendering.protocol import (
     Capture,
+    CascadeScale,
     Mode,
     NativeCapture,
     PhaseCapture,
@@ -31,7 +33,7 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
                      generation: int | None = None, motion_capture: PhaseCapture | None = None,
                      water_inputs: bool = False, sun_inputs: bool = False,
                      shader_identity: bool = False, resolve_inputs: bool = False,
-                     sun_depth_clip=None, water_reflection=None, water_tess_draw: int | None = None) -> NativeCapture | Capture:
+                     sun_depth_clip=None, water_reflection=None, cascade_scale: CascadeScale | None = None, water_tess_draw: int | None = None) -> NativeCapture | Capture:
     metadata = read_object(folder / f"{capture_id}.capture.json")
     if motion_capture is not None and mode is None:
         raise ProtocolError("visual protocol: motion capture requires a diagnostic mode")
@@ -56,8 +58,10 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
             raise ProtocolError("visual protocol: screenshot water reflection request mismatch")
         if water_reflection is not None:
             validate_water_treatment(folder, capture_id, metadata, mode)
+        if metadata.get("cascade_scale") != cascade_scale:
+            raise ProtocolError("visual protocol: screenshot cascade_scale request mismatch")
         if resolve_inputs:
-            validate_resolve_inputs(folder, capture_id, metadata, mode, shader_identity)
+            validate_resolve_inputs(folder, capture_id, metadata, mode, shader_identity, cascade_scale)
         if water_inputs:
             validate_water_inputs(folder, capture_id, metadata, mode, shader_identity, water_tess_draw)
         if sun_inputs:
@@ -79,7 +83,8 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
 
 
 def validate_water_treatment(folder: Path, capture_id: str, metadata: dict, mode: Mode) -> None:
-    if mode != Mode.MULTIPASS or not isinstance(metadata.get("stages"), list):
+    planar = metadata.get("water_reflection") == "center_planar"
+    if mode != (Mode.SINGLE_PASS if planar else Mode.MULTIPASS) or not isinstance(metadata.get("stages"), list):
         raise ProtocolError("visual protocol: water reflection treatment requires multipass stages")
     records = metadata["stages"]
     for eye in (0, 1):
@@ -93,6 +98,14 @@ def validate_water_treatment(folder: Path, capture_id: str, metadata: dict, mode
                 not isinstance(info, dict) or info.get("capture_id") != capture_id or
                 type(info.get("treatment_draws")) is not int or info["treatment_draws"] <= 0):
             raise ProtocolError("visual protocol: water reflection treatment was not applied")
+        if planar:
+            if info["treatment_draws"] != 1:
+                raise ProtocolError("visual protocol: expected one planar treatment per eye")
+            captures = [r for r in records if r.get("stage") == "water_input_static_reflection" and r.get("eye") == eye]
+            identity = (captures[0].get("water_input") or {}).get("shader_identity") if len(captures) == 1 else None
+            if not valid_mapped_identity(identity) or identity["identity"]["pristine_sha256"] != "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531" or identity["identity"]["actual_sha256"] == identity["identity"]["pristine_sha256"]:
+                raise ProtocolError("visual protocol: planar shader substitution not observed")
+            continue
         inputs = [r for r in records if isinstance(r, dict) and
                   r.get("stage") == "water_input_reflection_alpha" and r.get("eye") == eye]
         if len(inputs) != 1 or not isinstance(inputs[0].get("source"), dict):
@@ -108,7 +121,8 @@ def validate_water_treatment(folder: Path, capture_id: str, metadata: dict, mode
             raise ProtocolError(f"visual protocol: invalid treated reflection artifact: {error}") from error
 
 
-def validate_resolve_inputs(folder: Path, capture_id: str, metadata: dict, mode: Mode, shader_identity: bool) -> None:
+def validate_resolve_inputs(folder: Path, capture_id: str, metadata: dict, mode: Mode, shader_identity: bool,
+                            cascade_scale: CascadeScale | None = None) -> None:
     capture = metadata.get("resolve_inputs")
     if (not isinstance(capture, dict) or type(capture.get("frame")) is not int or
             capture["frame"] != metadata.get("predicted_display_time_ns") or
@@ -183,6 +197,26 @@ def validate_resolve_inputs(folder: Path, capture_id: str, metadata: dict, mode:
         identity = observation["pixel_shader"].get("identity")
         if shader_identity and not valid_mapped_identity(identity):
             raise ProtocolError("visual protocol: resolve pixel shader identity is unmapped")
+
+        trial = observation.get("cascade")
+        if cascade_scale is None:
+            if trial is not None:
+                raise ProtocolError("visual protocol: unexpected cascade treatment")
+            continue
+        cb = buffers[0]
+        if (mode != Mode.MULTIPASS or not valid_mapped_identity(identity) or
+                identity["identity"]["pristine_sha256"] != "06f43db0887b0038147e273a3879a9b7f48c3b630955a94d695898fd7d0e52fc" or
+                identity["identity"]["actual_sha256"] != "6a82533e6458166ea3d04789c266ec127baf59931882955c99c4603e47f11c9b" or
+                (cb["first_constant"], cb["num_constants"], cb["byte_width"]) != (0, 95, 1520) or
+                cb["content"]["status"] != "captured" or not isinstance(trial, dict) or
+                trial.get("applied") != cascade_scale.bits or trial.get("restored") is not True):
+            raise ProtocolError(f"visual protocol: invalid cascade treatment for eye {eye_index}")
+        raw = bytearray(artifact_path(folder / f"{capture_id}.capture.json", cb["content"]["raw"]).read_bytes())
+        if trial.get("original") != struct.unpack_from("<I", raw, 54 * 16)[0]:
+            raise ProtocolError("visual protocol: original cascade bits mismatch")
+        struct.pack_into("<I", raw, 54 * 16, cascade_scale.bits)
+        if hashlib.sha256(raw).hexdigest() != trial.get("bound_sha256"):
+            raise ProtocolError("visual protocol: bound cascade content mismatch")
 
 
 def valid_mapped_identity(identity) -> bool:

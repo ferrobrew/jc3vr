@@ -54,6 +54,16 @@ impl RequestId {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum WaterReflection {
     ZeroWeight,
+    CenterPlanar,
+}
+
+impl WaterReflection {
+    fn supported(self, mode: RenderMode, selection: Option<u8>) -> bool {
+        match self {
+            Self::ZeroWeight => mode == RenderMode::Multipass,
+            Self::CenterPlanar => mode == RenderMode::SinglePass && selection.is_some(),
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
@@ -62,19 +72,50 @@ pub(crate) enum SunDepthClip {
     DisabledRight,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CascadeScale {
+    ShoreLow,
+    ShoreHigh,
+}
+
+impl CascadeScale {
+    pub(crate) fn bits(self) -> u32 {
+        match self {
+            Self::ShoreLow => 0x3c07e14c,
+            Self::ShoreHigh => 0x3c07ec65,
+        }
+    }
+}
+
 pub(crate) struct CaptureRequest {
     pub water_reflection: Option<WaterReflection>,
     pub water_inputs: bool,
     pub water_tess_draw: Option<u8>,
     pub sun_inputs: bool,
     pub resolve_inputs: bool,
+    pub cascade_scale: Option<CascadeScale>,
     pub sun_depth_clip: Option<SunDepthClip>,
 }
 
 pub(crate) fn request(id: RequestId, options: CaptureRequest) {
-    if options.water_reflection.is_some() {
-        if crate::stereo::dispatch::mode() != RenderMode::Multipass {
-            reject(&id, "water reflection treatment: multipass is required");
+    if options.cascade_scale.is_some()
+        && (dispatch::mode() != RenderMode::Multipass
+            || !options.resolve_inputs
+            || crate::stereo::single_pass::shader_identity::status().status != "complete")
+    {
+        reject(
+            &id,
+            "cascade treatment: multipass, resolve inputs and complete census required",
+        );
+        return;
+    }
+    if let Some(treatment) = options.water_reflection {
+        if !treatment.supported(dispatch::mode(), options.water_tess_draw) {
+            reject(
+                &id,
+                "water reflection treatment: incompatible mode or draw selection",
+            );
             return;
         }
         let water_inputs = options.water_inputs;
@@ -142,6 +183,7 @@ fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: Capture
         active.water_tess_draw = options.water_tess_draw;
         active.sun_inputs = options.sun_inputs;
         active.resolve_inputs = options.resolve_inputs;
+        active.cascade_scale = options.cascade_scale;
         active.sun_depth_clip = options.sun_depth_clip;
     }
     sync_pending(&state);
@@ -244,6 +286,7 @@ fn admit(
         water_tess_draw: None,
         sun_inputs: false,
         resolve_inputs: false,
+        cascade_scale: None,
         sun_depth_clip: None,
         diagnostic_frame: None,
     });
@@ -276,13 +319,12 @@ pub(crate) fn diagnostic_capture_id() -> Option<String> {
     (*chosen == frame).then(|| active.id.0.clone())
 }
 
-pub(crate) fn water_reflection_zero_weight_requested() -> bool {
-    if crate::stereo::dispatch::mode() != RenderMode::Multipass || diagnostic_capture_id().is_none()
-    {
-        return false;
-    }
-    STATE.lock().active.as_ref().is_some_and(|active| {
-        active.water_reflection == Some(WaterReflection::ZeroWeight)
+pub(crate) fn water_reflection_requested() -> Option<WaterReflection> {
+    diagnostic_capture_id()?;
+    let state = STATE.lock();
+    let active = state.active.as_ref()?;
+    active.water_reflection.filter(|t| {
+        t.supported(dispatch::mode(), active.water_tess_draw)
             && matches!(active.phase, Phase::Pending)
     })
 }
@@ -314,6 +356,17 @@ pub(crate) fn sun_depth_clip_disabled_right() -> bool {
     STATE.lock().active.as_ref().is_some_and(|active| {
         active.sun_depth_clip == Some(SunDepthClip::DisabledRight)
             && matches!(active.phase, Phase::Pending)
+    })
+}
+
+pub(crate) fn cascade_scale(frame: i64) -> Option<CascadeScale> {
+    if dispatch::mode() != RenderMode::Multipass {
+        return None;
+    }
+    let state = STATE.lock();
+    let active = state.active.as_ref()?;
+    active.cascade_scale.filter(|_| {
+        active.diagnostic_frame == Some(frame) && matches!(active.phase, Phase::Pending)
     })
 }
 
@@ -439,7 +492,7 @@ pub(crate) fn capture(
             required_eyes(selected_eye),
         );
     }
-    if active.water_reflection.is_some() && mode == RenderMode::Multipass {
+    if active.water_reflection.is_some() {
         stages::complete_water_treatment(
             &mut stage_records,
             frame.unwrap(),
@@ -486,6 +539,7 @@ pub(crate) fn capture(
         constants: constants::take(frame.unwrap()),
         resolve_inputs,
         water_reflection: active.water_reflection,
+        cascade_scale: active.cascade_scale,
         sun_depth_clip: active.sun_depth_clip,
         effective_config,
         single_pass: if mode == RenderMode::SinglePass {
@@ -626,6 +680,7 @@ struct Active {
     water_tess_draw: Option<u8>,
     sun_inputs: bool,
     resolve_inputs: bool,
+    cascade_scale: Option<CascadeScale>,
     sun_depth_clip: Option<SunDepthClip>,
     diagnostic_frame: Option<i64>,
 }
@@ -936,6 +991,7 @@ mod tests {
                     water_tess_draw: None,
                     sun_inputs: false,
                     resolve_inputs: false,
+                    cascade_scale: None,
                     sun_depth_clip: None,
                     diagnostic_frame: None,
                 }),

@@ -58,6 +58,8 @@ pub(crate) struct CapturedFrame {
     pub(crate) stages: Vec<crate::screenshot::harness::stages::StageRecord>,
     pub(crate) constants: crate::screenshot::harness::constants::CapturedConstants,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) cascade_scale: Option<crate::screenshot::harness::CascadeScale>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) water_reflection: Option<crate::screenshot::harness::WaterReflection>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) sun_depth_clip: Option<crate::screenshot::harness::SunDepthClip>,

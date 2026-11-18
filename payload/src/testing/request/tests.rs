@@ -603,6 +603,16 @@ fn diagnostic_fields_are_typed_and_command_scoped() {
         }))
     ));
     assert!(read("command = 'screenshot'\nid = 'shot'\nshader_identity = true").is_err());
+    assert!(read("command = 'screenshot'\nid = 'shot'\ncascade_scale = 'shore_low'").is_err());
+    assert!(matches!(
+        read(
+            "command = 'screenshot'\nid = 'shot'\nresolve_inputs = true\ncascade_scale = 'shore_high'"
+        ),
+        Ok(Request::Screenshot {
+            cascade_scale: Some(crate::screenshot::harness::CascadeScale::ShoreHigh),
+            ..
+        })
+    ));
     assert!(read("command = 'visual_end'\nid = 'end'\nresolve_inputs = true").is_err());
     assert!(matches!(
         read(

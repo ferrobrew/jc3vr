@@ -11,6 +11,8 @@
 //! address differently-sized spaces.
 
 mod common;
+mod lake;
+pub use lake::offset_lake_reflection;
 mod remap;
 mod reproject;
 mod ssdecal;

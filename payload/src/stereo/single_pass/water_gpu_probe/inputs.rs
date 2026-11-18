@@ -15,12 +15,12 @@ use windows::{
 
 use crate::{
     screenshot::harness::{
-        diagnostic_capture_id,
+        WaterReflection, diagnostic_capture_id,
         stages::{capture_water_inputs, record_water_treatment},
-        water_inputs_requested, water_reflection_zero_weight_requested, water_tess_draw,
+        water_inputs_requested, water_reflection_requested, water_tess_draw,
     },
     stereo::single_pass::{
-        shader_identity::{self, IdentityResult},
+        shader_identity::{self, IdentityResult, LAKE_PS},
         water_gpu_probe::work,
     },
 };
@@ -78,7 +78,12 @@ impl Drop for WaterInputCapture {
 
 const VERIFIED_WATER_PS: &str = "fd508419c18c5fe0c08816017a2a20ed5394aab5fd9d3fe94cce7d67ac0f3dce";
 
-pub(crate) struct ReflectionGuard {
+pub(crate) enum ReflectionGuard {
+    Weight { _guard: WeightGuard },
+    Planar { _guard: PlanarGuard },
+}
+
+pub(crate) struct WeightGuard {
     ctx: ID3D11DeviceContext,
     original: Option<ID3D11ShaderResourceView>,
     _replacement: ID3D11ShaderResourceView,
@@ -86,7 +91,7 @@ pub(crate) struct ReflectionGuard {
     id: String,
 }
 
-impl Drop for ReflectionGuard {
+impl Drop for WeightGuard {
     fn drop(&mut self) {
         unsafe {
             self.ctx
@@ -110,14 +115,12 @@ impl Drop for ReflectionGuard {
 }
 
 pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<ReflectionGuard> {
-    if !water_reflection_zero_weight_requested() {
-        return None;
-    }
     let (eye, selected, tess_draws) = ACTIVE.with_borrow(|active| {
         active
             .as_ref()
             .map(|state| (state.eye, state.selected, state.tess_draws))
     })?;
+    let treatment = water_reflection_requested()?;
     let id = diagnostic_capture_id()?;
     let Some(ctx) = (unsafe { ID3D11DeviceContext::from_raw_borrowed(&context) }) else {
         record_water_treatment(
@@ -169,6 +172,20 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
             );
             return None;
         }
+    }
+    if treatment == WaterReflection::CenterPlanar {
+        if !crate::stereo::single_pass::collapse_active()
+            || crate::stereo::single_pass::per_eye_reissue_eye() != Some(eye)
+        {
+            return None;
+        }
+        return match PlanarGuard::bind(ctx, eye, shader, &id) {
+            Ok(guard) => Some(ReflectionGuard::Planar { _guard: guard }),
+            Err(err) => {
+                record_water_treatment(eye, &id, Some(&format!("lake shader: {err:#}")));
+                None
+            }
+        };
     }
     let mut original: Option<ID3D11ShaderResourceView> = None;
     unsafe { ctx.PSGetShaderResources(12, Some(std::slice::from_mut(&mut original))) };
@@ -226,12 +243,14 @@ pub(crate) unsafe fn reflection_treatment(context: *mut c_void) -> Option<Reflec
         record_water_treatment(eye, &id, Some(error));
         return None;
     }
-    Some(ReflectionGuard {
-        ctx: ctx.clone(),
-        original,
-        _replacement: replacement,
-        eye,
-        id,
+    Some(ReflectionGuard::Weight {
+        _guard: WeightGuard {
+            ctx: ctx.clone(),
+            original,
+            _replacement: replacement,
+            eye,
+            id,
+        },
     })
 }
 
@@ -243,7 +262,61 @@ enum TreatmentIdentity {
     Unknown,
 }
 
-const LAKE_PS: &str = "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531";
+pub(crate) struct PlanarGuard {
+    ctx: ID3D11DeviceContext,
+    original: ID3D11PixelShader,
+    eye: usize,
+    id: String,
+}
+
+impl PlanarGuard {
+    fn bind(
+        ctx: &ID3D11DeviceContext,
+        eye: usize,
+        original: ID3D11PixelShader,
+        id: &str,
+    ) -> anyhow::Result<Self> {
+        let blob = shader_identity::lake_bytecode()
+            .ok_or_else(|| anyhow::anyhow!("missing lake bytecode"))?;
+        let patched = dxbc_stereo::offset_lake_reflection(&blob, eye == 1)?;
+        let _identity = unsafe { shader_identity::begin(blob.as_ptr(), blob.len() as u64) }
+            .ok_or_else(|| anyhow::anyhow!("lake shader: census unavailable"))?;
+        let mut shader = None;
+        unsafe {
+            ctx.GetDevice()?
+                .CreatePixelShader(&patched, None, Some(&mut shader))?;
+        }
+        let shader = shader.ok_or_else(|| anyhow::anyhow!("missing offset shader"))?;
+        unsafe { ctx.PSSetShader(&shader, None) };
+        let mut bound = None;
+        unsafe { ctx.PSGetShader(&mut bound, None, None) };
+        if bound.as_ref() != Some(&shader) {
+            unsafe { ctx.PSSetShader(&original, None) };
+            anyhow::bail!("offset shader not bound");
+        }
+        tracing::info!(target:"water_probe", "lake planar treatment id={id} eye={eye} original={:#x} actual={:#x}",original.as_raw() as usize,shader.as_raw() as usize);
+        Ok(Self {
+            ctx: ctx.clone(),
+            original,
+            eye,
+            id: id.to_owned(),
+        })
+    }
+}
+
+impl Drop for PlanarGuard {
+    fn drop(&mut self) {
+        unsafe { self.ctx.PSSetShader(&self.original, None) };
+        let mut bound = None;
+        unsafe { self.ctx.PSGetShader(&mut bound, None, None) };
+        record_water_treatment(
+            self.eye,
+            &self.id,
+            (bound.as_ref() != Some(&self.original))
+                .then_some("lake shader: original shader not restored"),
+        );
+    }
+}
 
 fn treatment_identity(identity: IdentityResult, target: &str) -> TreatmentIdentity {
     match identity {
