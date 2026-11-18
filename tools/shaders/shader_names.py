@@ -19,6 +19,7 @@ and ``<offset>`` line up with the ``sh_<index>_<offset>.dxbc`` files that ``extr
 ``--json`` emits the same records as a JSON list; ``--scan`` forces the fallback.
 """
 
+import hashlib
 import json
 import os
 import re
@@ -53,6 +54,10 @@ def name_shaders(data: bytes) -> tuple[list[dict], str]:
     shaders.sort(key=lambda s: s["offset"])
     for i, s in enumerate(shaders):
         s["index"] = i
+        blob = data[s["offset"] : s["offset"] + s["size"]]
+        if len(blob) != s["size"]:
+            raise BundleFormatError(f"shader {i} extends past the bundle")
+        s["pristine_sha256"] = hashlib.sha256(blob).hexdigest()
     return shaders, mode
 
 
@@ -185,6 +190,10 @@ def main() -> None:
         shaders.sort(key=lambda s: s["offset"])
         for i, s in enumerate(shaders):
             s["index"] = i
+            blob = data[s["offset"] : s["offset"] + s["size"]]
+            if len(blob) != s["size"]:
+                raise BundleFormatError(f"shader {i} extends past the bundle")
+            s["pristine_sha256"] = hashlib.sha256(blob).hexdigest()
     else:
         shaders, mode = name_shaders(data)
 
