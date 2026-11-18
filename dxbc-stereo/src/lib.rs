@@ -20,10 +20,15 @@ pub use checksum::refresh_checksum;
 pub use container::{Chunk, Dxbc, DxbcError};
 pub use rewrite::{
     MEYE_ROW_BASE, SSDECAL_EYE_BIAS_REGISTER, STEREO_CB_REGISTER, STEREO_CB_ROWS,
-    STEREO_REPROJ_CB_ROWS, bias_ssdecal_depth_uv, capture_lake_planar_uv, forward_eye_hull_shader,
-    inject_eye_forward_vertex_shader, isolate_lake_reflection, mirror_lake_reflection,
-    offset_lake_reflection, patch_vertex_shader, reproject_domain_shader,
-    reproject_lake_reflection, reproject_vertex_shader, scale_lake_refraction,
+    STEREO_REPROJ_CB_ROWS, bias_ssdecal_depth_uv, bound_lake_candidate_depth,
+    capture_lake_planar_uv, forward_eye_hull_shader, impostor_atlas_scale,
+    inject_eye_forward_vertex_shader, isolate_lake_reflection, local_aa_neighbor,
+    local_bark_dither, local_dof_edge, local_fog_reconstruction, mirror_lake_color_overflow,
+    mirror_lake_reflection, offset_lake_reflection, patch_vertex_shader, physical_impostor_fade,
+    reproject_domain_shader, reproject_lake_reflection, reproject_vertex_shader,
+    scale_lake_refraction, trace_deferred_samples, trace_lake_displacement, trace_lake_gradients,
+    trace_lake_inner_edge, trace_lake_lighting, trace_lake_normals, trace_lake_response,
+    trace_lake_samples, trace_lake_waves, trace_ssr_ray,
 };
 pub use tokens::{Operand, OperandKind, ShaderStage, TokenStream};
 

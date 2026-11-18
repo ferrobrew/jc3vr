@@ -13,8 +13,16 @@
 mod common;
 mod lake;
 pub use lake::{
-    capture_lake_planar_uv, isolate_lake_reflection, mirror_lake_reflection,
-    offset_lake_reflection, reproject_lake_reflection, scale_lake_refraction,
+    bound_lake_candidate_depth, capture_lake_planar_uv, isolate_lake_reflection,
+    mirror_lake_color_overflow, mirror_lake_reflection, offset_lake_reflection,
+    reproject_lake_reflection, scale_lake_refraction, trace_lake_displacement,
+    trace_lake_gradients, trace_lake_inner_edge, trace_lake_lighting, trace_lake_normals,
+    trace_lake_response, trace_lake_samples, trace_lake_waves,
+};
+mod resolve;
+pub use resolve::{
+    impostor_atlas_scale, local_aa_neighbor, local_bark_dither, local_dof_edge,
+    local_fog_reconstruction, physical_impostor_fade, trace_deferred_samples, trace_ssr_ray,
 };
 mod remap;
 mod reproject;

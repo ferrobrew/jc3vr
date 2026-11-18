@@ -127,6 +127,7 @@ pub enum DxbcError {
     /// The pixel shader carries no screen-space depth fetch built from a projective UV, so there is
     /// nothing for the decal depth-UV bias to separate; the caller should leave it untouched.
     NoDepthUvFetch,
+    NoResolveInputs,
     NoLakeReflection,
     NoLakeRefraction,
 }
@@ -162,6 +163,7 @@ impl fmt::Display for DxbcError {
                 "dxbc: reprojection does not support a conditional early return (retc)"
             }
             DxbcError::NoEyeLane => "dxbc: no free TEXCOORD3.z lane to carry the eye index",
+            DxbcError::NoResolveInputs => "dxbc: unsupported deferred input sequence",
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
             DxbcError::NoLakeRefraction => {
                 "dxbc: missing unique lake refraction displacement scale"
