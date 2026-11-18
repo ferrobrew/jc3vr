@@ -56,6 +56,7 @@ use crate::{
         single_pass::{
             BlockIntercept, WaterGpuProbe, begin_water_input_capture, begin_water_surface,
             block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs, screen_uv_cb_per_eye,
+            with_wave_simulation_viewports,
         },
     },
 };
@@ -170,13 +171,15 @@ extern "system" fn wave_works_simulation_step(
     if SUPPRESS_SIMULATION_STEP.load(Ordering::Relaxed) {
         return;
     }
-    WAVE_WORKS_SIMULATION_STEP.get().unwrap().call(
-        render_time,
-        gfx_context,
-        kick_id,
-        simulation,
-        savestate,
-    );
+    with_wave_simulation_viewports(|| {
+        WAVE_WORKS_SIMULATION_STEP.get().unwrap().call(
+            render_time,
+            gfx_context,
+            kick_id,
+            simulation,
+            savestate,
+        )
+    });
 }
 
 /// The vertex constant buffer the water block types stage their screen-UV matrix into.

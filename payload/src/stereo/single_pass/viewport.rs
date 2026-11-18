@@ -10,9 +10,26 @@
 //! or a patched shader surviving into a shadow or reflection pass sends its odd instances into a half
 //! that pass never bound.
 
+use std::cell::Cell;
+
 use windows::Win32::Foundation::RECT;
 
 use super::*;
+
+thread_local! {
+    static WAVE_SIMULATION: Cell<bool> = const { Cell::new(false) };
+}
+
+pub(crate) fn with_wave_simulation_viewports<R>(submit: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            WAVE_SIMULATION.set(self.0);
+        }
+    }
+    let _restore = Restore(WAVE_SIMULATION.replace(true));
+    submit()
+}
 
 /// Bind `viewport` to both viewport slots of the immediate context. Binding two slots (rather than
 /// one) passes the collapse viewport detour through untouched -- it only special-cases a single-slot
@@ -96,7 +113,7 @@ pub(super) fn reissue_viewport(
     eye: usize,
 ) -> D3D11_VIEWPORT {
     let half = eye_half_viewport(full, eye);
-    if requested == half {
+    if WAVE_SIMULATION.get() || requested == half {
         requested
     } else {
         eye_half_viewport(requested, eye)
@@ -287,13 +304,10 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
     if active() && count == 1 && !viewports.is_null() {
         let vp = unsafe { *viewports };
         if let Some(eye) = per_eye_reissue_eye() {
-            // Inside a per-eye re-issue the eye half must survive whatever the block binds. Honour the
-            // requested region but keep it pinned to this eye's half, and leave `COLLAPSE_FULL_VIEWPORT`
-            // alone so the re-issue cannot redefine what "full" means for the draws that follow it.
-            let half =
+            let routed =
                 per_eye_reissue_full_viewport().map_or(vp, |full| reissue_viewport(vp, full, eye));
             set_viewport_slots_uniform(true);
-            unsafe { detour.call(context, 2, [half, half].as_ptr()) };
+            unsafe { detour.call(context, 2, [routed, routed].as_ptr()) };
             return;
         }
         if collapse_active() {
@@ -415,6 +429,29 @@ mod tests {
             Height: 1080.0,
             MinDepth: 0.0,
             MaxDepth: 1.0,
+        }
+    }
+
+    #[test]
+    fn shared_simulation_keeps_its_viewport_only_during_the_step() {
+        let scene = full_viewport();
+        let target = D3D11_VIEWPORT {
+            Width: 128.,
+            Height: 128.,
+            MaxDepth: 0.,
+            ..Default::default()
+        };
+        for eye in 0..2 {
+            with_wave_simulation_viewports(|| {
+                with_wave_simulation_viewports(|| {
+                    assert_eq!(reissue_viewport(target, scene, eye), target)
+                });
+                assert_eq!(reissue_viewport(target, scene, eye), target);
+            });
+            assert_eq!(
+                reissue_viewport(scene, scene, eye),
+                eye_half_viewport(scene, eye)
+            );
         }
     }
 
