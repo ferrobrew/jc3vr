@@ -6,7 +6,7 @@ use std::{
 };
 
 use anyhow::Context as _;
-use jc3gi::clock::Clock;
+use jc3gi::{clock::Clock, graphics_engine::graphics_engine::GraphicsEngine};
 use parking_lot::Mutex;
 use serde::Serialize;
 
@@ -121,6 +121,7 @@ pub(crate) struct FrameObservation {
     pub target_dimensions: (u32, u32),
     pub single_pass: bool,
     pub camera_frozen: bool,
+    pub horizon_map_ready: bool,
     pub frame_identity: Option<i64>,
     pub generation: u64,
     pub pose: Option<PoseEvidence>,
@@ -358,6 +359,7 @@ pub(crate) fn frame_complete() {
             single_pass: single_pass::active() && single_pass::double_wide_active(),
             camera_frozen: live.is_some()
                 && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
+            horizon_map_ready: horizon_map_ready(),
             frame_identity,
             generation: state.generation,
             pose: None,
@@ -385,6 +387,7 @@ pub(crate) fn frame_complete() {
             single_pass: single_pass::active() && single_pass::double_wide_active(),
             camera_frozen: live.is_some()
                 && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
+            horizon_map_ready: horizon_map_ready(),
             frame_identity,
             generation: state.generation,
             pose,
@@ -656,6 +659,7 @@ impl State {
             && observed.engine_dimensions == observed.target_dimensions
             && paused
             && observed.camera_frozen
+            && observed.horizon_map_ready
             && (self.requested_pose.is_none() || pose.is_some());
         if !matches {
             self.completed_frames = 0;
@@ -715,7 +719,8 @@ impl State {
             && observed.engine_dimensions.1 > 0
             && observed.engine_dimensions == observed.target_dimensions
             && paused
-            && observed.camera_frozen;
+            && observed.camera_frozen
+            && observed.horizon_map_ready;
         if !running {
             if !matches {
                 self.last_frame = Some(frame_identity);
@@ -918,6 +923,60 @@ impl State {
         };
         Some(active)
     }
+}
+
+/// Whether both horizon-map slices are loaded for both frame parities.
+///
+/// The engine keeps two asynchronously loaded slices per parity and stages them as the two
+/// `m_HorizonMaps` entries. While one slice is still loading it substitutes the other for both
+/// entries (or the fallback texture when neither is loaded), so a capture taken then shades the sky
+/// differently from one taken after the load completes. Two distinct, non-fallback maps are the
+/// settled state; the blend time is deliberately not consulted because it is legitimately zero at
+/// an exact slice boundary.
+fn horizon_maps_ready<T: Copy + PartialEq>(
+    enabled: bool,
+    fallback: Option<T>,
+    maps: [[Option<T>; 2]; 2],
+) -> bool {
+    if !enabled {
+        return true;
+    }
+    let Some(fallback) = fallback else {
+        return false;
+    };
+    (0..2).all(|parity| {
+        let (Some(map0), Some(map1)) = (maps[0][parity], maps[1][parity]) else {
+            return false;
+        };
+        map0 != fallback && map1 != fallback && map0 != map1
+    })
+}
+
+/// The live [`horizon_maps_ready`] state, read from the engine's shadow manager.
+fn horizon_map_ready() -> bool {
+    let Some(engine) = (unsafe { GraphicsEngine::get() }) else {
+        return false;
+    };
+    let Some(shadow) = (unsafe { engine.m_ShadowManager.as_ref() }) else {
+        return false;
+    };
+    let present = |pointer: *mut jc3gi::graphics_engine::texture::Texture| {
+        (!pointer.is_null()).then_some(pointer)
+    };
+    horizon_maps_ready(
+        shadow.m_EnableHorizonMapping,
+        present(shadow.m_HorizonMapFallback),
+        [
+            [
+                present(shadow.m_HorizonMaps[0][0]),
+                present(shadow.m_HorizonMaps[0][1]),
+            ],
+            [
+                present(shadow.m_HorizonMaps[1][0]),
+                present(shadow.m_HorizonMaps[1][1]),
+            ],
+        ],
+    )
 }
 
 fn apply_profile(config: &mut Config, mode: Mode) {

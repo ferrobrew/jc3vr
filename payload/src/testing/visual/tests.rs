@@ -11,6 +11,7 @@ fn observation(state: &State, ordinal: i64) -> FrameObservation {
         target_dimensions: (4096, 2048),
         single_pass: state.mode == Some(Mode::SinglePass),
         camera_frozen: true,
+        horizon_map_ready: true,
         frame_identity: Some(ordinal),
         generation: state.generation,
         pose: None,
@@ -36,6 +37,79 @@ fn warmup_counts_only_distinct_completed_frames() {
     assert!(!state.ready);
     state.complete(observation(&state, 3), true);
     assert!(state.ready);
+}
+
+#[test]
+fn horizon_map_readiness_gates_completed_frames() {
+    let mut state = warming(Mode::Multipass, 1);
+    let mut observed = observation(&state, 1);
+    observed.horizon_map_ready = false;
+    state.complete(observed, true);
+    assert_eq!(state.completed_frames, 0);
+    assert!(!state.ready);
+    state.complete(observation(&state, 2), true);
+    assert_eq!(state.completed_frames, 1);
+    assert!(state.ready);
+}
+
+#[test]
+fn horizon_maps_ready_requires_two_distinct_non_fallback_slices() {
+    let loaded = [[Some(1), Some(3)], [Some(2), Some(4)]];
+    assert!(horizon_maps_ready(true, Some(0), loaded));
+    assert!(horizon_maps_ready(
+        false,
+        None,
+        [[None::<u32>, None], [None, None]]
+    ));
+    assert!(!horizon_maps_ready(
+        true,
+        Some(0),
+        [[None, Some(3)], [Some(2), Some(4)]]
+    ));
+    assert!(!horizon_maps_ready(
+        true,
+        Some(0),
+        [[Some(0), Some(3)], [Some(2), Some(4)]]
+    ));
+    assert!(!horizon_maps_ready(true, None, loaded));
+    assert!(!horizon_maps_ready(
+        true,
+        Some(0),
+        [[Some(1), Some(3)], [Some(1), Some(4)]]
+    ));
+    assert!(!horizon_maps_ready(
+        true,
+        Some(0),
+        [[Some(1), None], [Some(2), Some(4)]]
+    ));
+}
+
+#[test]
+fn horizon_map_loss_invalidates_completed_frames() {
+    let mut state = warming(Mode::Multipass, 1);
+    state.complete(observation(&state, 1), true);
+    assert!(state.ready);
+    let mut observed = observation(&state, 2);
+    observed.horizon_map_ready = false;
+    state.complete(observed, true);
+    assert_eq!(state.completed_frames, 0);
+    assert!(!state.ready);
+}
+
+#[test]
+fn horizon_map_loss_fails_running_motion_closed() {
+    let base = base_pose();
+    let mut state = motion_state(Mode::Multipass, 1, 32);
+    complete_motion_frame(&mut state, 1, base, base);
+    assert!(state.motion.as_ref().is_some_and(MotionState::running));
+    let request = state.requested_motion.clone().unwrap();
+    let mut observed = observation(&state, 2);
+    observed.horizon_map_ready = false;
+    state.complete_motion(&request, observed, Some((base, base)), true);
+    assert!(!state.ready);
+    assert!(state.error.is_some());
+    assert!(state.motion.is_none());
+    assert!(state.requested_motion.is_none());
 }
 
 #[test]
