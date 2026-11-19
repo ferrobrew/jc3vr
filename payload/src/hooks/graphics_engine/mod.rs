@@ -30,6 +30,7 @@ pub(crate) use render_pass::shadow_fit_gap_m;
 pub(crate) use scene::render_block;
 pub use scene::terrain;
 pub(crate) use screen::{clustered_lighting, reconstruction, ss_decal, ssao};
+pub(crate) use single_pass::upload_global_constants;
 
 /// Bundle every CGraphicsEngine-area detour into one hook library, mirroring how the game groups
 /// these classes.

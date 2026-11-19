@@ -257,6 +257,15 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      screen. Needs the off-axis reconstruction override on.",
                 );
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.fullscreen_camera_per_eye,
+                    "Fullscreen passes use each eye's camera position",
+                )
+                .on_hover_text(
+                    "Stages each eye's own camera position, and the matching sun-shadow lookup \
+                     correction, for every per-eye run of a split fullscreen pass. Off, both halves \
+                     measure view vectors, fog distances, and shadow lookups from the centred camera.",
+                );
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.nvwater_per_eye,
                     "WaveWorks water per eye (parallax)",
                 )

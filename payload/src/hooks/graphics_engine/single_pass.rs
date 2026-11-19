@@ -22,6 +22,8 @@
 //! on the collapsed centre view. The decline and the intercept only make sense together, so they share
 //! a flag.
 
+use std::sync::atomic::{AtomicPtr, Ordering};
+
 use detours_macro::detour;
 use jc3gi::graphics_engine::{
     graphics_engine::RenderContext,
@@ -221,10 +223,31 @@ fn render_block_occluder_draw_z(
     unsafe { intercept_render_block(&OCCLUDER, rc, || detour.call(this, rc, info)) };
 }
 
+/// Upload the render engine's global constant staging blocks again, into the context the engine
+/// last uploaded them to on this dispatch, without the per-pass work the detour hangs off the
+/// engine's own upload. For a caller that has changed staged rows mid-pass. `false` when the engine
+/// has not uploaded yet.
+pub(crate) fn upload_global_constants(engine: &mut RenderEngine) -> bool {
+    let ctx = GLOBALS_CONTEXT.load(Ordering::Relaxed);
+    let Some(upload) = SET_ALL_GLOBAL_SHADER_PROGRAM_CONSTANTS.get() else {
+        return false;
+    };
+    if ctx.is_null() {
+        return false;
+    }
+    upload.call(engine, ctx);
+    true
+}
+
+/// The render context of the engine's most recent global constant upload. The engine's render
+/// contexts live for the process, and only the render thread uploads to them.
+static GLOBALS_CONTEXT: AtomicPtr<RenderContext> = AtomicPtr::new(std::ptr::null_mut());
+
 #[detour(
     address = jc3gi::graphics_engine::render_engine::RenderEngine::SetAllGlobalShaderProgramConstants_ADDRESS
 )]
 fn set_all_global_shader_program_constants(this: *mut RenderEngine, ctx: *const RenderContext) {
+    GLOBALS_CONTEXT.store(ctx.cast_mut(), Ordering::Relaxed);
     SET_ALL_GLOBAL_SHADER_PROGRAM_CONSTANTS
         .get()
         .unwrap()

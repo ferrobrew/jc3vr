@@ -164,6 +164,14 @@ pub struct SinglePassConfig {
     /// collapse. On by default: sliding shadows are a worse defect
     /// than the extra light-assignment pass is a cost, and the flag remains for an A/B in the headset.
     pub reconstruct_per_eye: bool,
+    /// Stage each eye's own camera position into the fragment `GlobalConstants` for the length of
+    /// every masked per-eye run of a split fullscreen pass, with the matching correction to the
+    /// sun-shadow cascade transform.
+    ///
+    /// The split hands each run that eye's reconstruction basis, but the engine stages the camera
+    /// position once per pass from the centred render camera, so without this both halves measure
+    /// their view vectors, fog distances, and shadow lookups from the centre. On by default.
+    pub fullscreen_camera_per_eye: bool,
     /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
     /// fullscreen consumer of the reconstruction basis.
     ///
@@ -543,6 +551,7 @@ impl SinglePassConfig {
             instanced_per_eye: true,
             indirect_per_eye: true,
             reconstruct_per_eye: true,
+            fullscreen_camera_per_eye: true,
             atmospheric_per_eye: true,
             water_uv_per_eye: true,
             nvwater_per_eye: true,

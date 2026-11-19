@@ -605,6 +605,7 @@ is marked with its actual default.
 | Flag | Default | Effect |
 |---|---|---|
 | `single_pass.reconstruct_per_eye` | On | Deferred clustered-lighting resolve (mechanism 2). |
+| `single_pass.fullscreen_camera_per_eye` | On | Every masked per-eye run of a split fullscreen pass: the fragment `GlobalConstants` camera position is moved to that eye for the run, with the matching sun-shadow cascade translation, and put back after. |
 | `single_pass.atmospheric_per_eye` | On | Atmospheric scattering / aerial perspective (mechanism 2). |
 | `single_pass.ssao_per_eye` | On | SSAO. Hazard: a temporal history advanced per invocation, snapshotted and restored across the split — but the AO generation and blur ahead of the mask still re-run unmasked. |
 | `single_pass.ssr_per_eye` | On | Screen-space reflections. The `m_UseComputeBlur` epilogue's two dispatches are issued on the second run only, once, over both halves. |

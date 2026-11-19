@@ -72,6 +72,7 @@ mod cb13;
 mod config_snapshot;
 mod detour_lifecycle;
 mod draw_detours;
+pub(crate) mod eye_globals;
 mod frame_diagnostics;
 mod instanced_exposure;
 pub(crate) mod lake_refraction;

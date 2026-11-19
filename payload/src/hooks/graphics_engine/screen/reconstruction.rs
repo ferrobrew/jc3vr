@@ -58,7 +58,7 @@ use windows::Win32::{
 use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
-    stereo::engine_context::EngineContext,
+    stereo::{engine_context::EngineContext, single_pass::eye_globals},
     vr::render_params,
 };
 
@@ -382,6 +382,7 @@ impl Drop for PerEyeHalf {
         if let Some(state) = PER_EYE.replace(None)
             && state.masked
         {
+            eye_globals::restore();
             with_immediate_context(scissor::restore);
             if let Some(saved) = state.saved_scissor {
                 with_immediate_context(|d3d| {
@@ -634,6 +635,7 @@ fn arm_eye_half_scissor(state: &PerEyeState) -> bool {
         masked: true,
         ..*state
     }));
+    eye_globals::stage(state.eye);
     if !ENGAGED.swap(true, Ordering::Relaxed) {
         let width = full.Width;
         tracing::info!(
