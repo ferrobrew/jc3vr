@@ -427,13 +427,6 @@ pub(super) fn collapse_full_viewport() -> Option<D3D11_VIEWPORT> {
     collapse_base_viewport()
 }
 
-/// The render-target x coordinate where the right eye's half begins in the target the collapse is
-/// splitting, from the same viewport [`ensure_collapse_viewport`] splits. `None` until the scene's
-/// first viewport bind records one.
-pub(super) fn collapse_eye_boundary() -> Option<f32> {
-    collapse_base_viewport().map(|full| eye_half_viewport(full, 1).TopLeftX)
-}
-
 /// The width of one eye's half of the target the collapse is splitting, from the same viewport
 /// [`ensure_collapse_viewport`] splits. `None` until the scene's first viewport bind records one.
 pub(super) fn collapse_eye_width() -> Option<f32> {

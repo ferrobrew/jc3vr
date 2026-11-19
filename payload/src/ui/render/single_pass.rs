@@ -436,6 +436,27 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
+                        &mut cfg.stereo.single_pass.velocity_per_eye,
+                        "Motion vectors per eye",
+                    )
+                    .on_hover_text(
+                        "The velocity pass writes each pixel's motion since the last frame, which \
+                         the motion blur and FSR read. Per eye, each eye's half measures it in that \
+                         eye's own screen space, as an eye rendered on its own does. Off, every \
+                         eye's motion carries a sideways ramp of half a pixel per pixel from its \
+                         centre. Reloads shaders to apply the rewrite; turning it off takes effect \
+                         at once.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                let (velocities, declined) = crate::stereo::single_pass::eye_camera::velocity_counts();
+                ui.weak(format!(
+                    "Velocity pixel shaders per eye: {velocities} (declined {declined})"
+                ));
+                if ui
+                    .checkbox(
                         &mut cfg.stereo.single_pass.clip_origin_per_eye,
                         "Road clip origin per eye",
                     )

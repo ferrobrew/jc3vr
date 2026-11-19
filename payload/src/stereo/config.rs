@@ -275,6 +275,20 @@ pub struct SinglePassConfig {
     /// position relative to the eye boundary `stereo::single_pass::eye_camera` publishes. A shader
     /// rewrite, so changing it needs a shader reload. On by default.
     pub screen_door_per_eye: bool,
+    /// Write the velocity pass's motion vectors in each eye's own screen space.
+    ///
+    /// The velocity pixel shaders subtract the previous frame's screen position from the current
+    /// one. Under the double-wide collapse the current position is in the eye's half only where the
+    /// vertex shader takes the remap's per-eye rows (the reprojected and drawn-once families leave
+    /// it the centred camera's), and the previous one comes through the centred camera's previous
+    /// view-projection over the double-wide target. Every eye's motion then carries a horizontal
+    /// ramp of half a pixel per pixel from its centre, plus the parallax between the eye and the
+    /// centred camera, which the motion blur and FSR read. `dxbc_stereo::localize_velocity` rebuilds
+    /// the current position from the pixel's position in its eye's half and takes the previous one
+    /// through the eye's `M_eye` corrected for the render camera's double-wide previous projection,
+    /// from rows `stereo::single_pass::eye_camera` publishes in the eye-split passes. A shader rewrite, so turning it on needs a shader reload; turning it off
+    /// zeroes the rows at once. On by default.
+    pub velocity_per_eye: bool,
     /// Read the render camera's position per eye in the remapped shaders that subtract it, rather
     /// than the pass camera's, before the translation-free view-projection.
     ///
@@ -754,6 +768,7 @@ impl SinglePassConfig {
             pixel_camera_per_eye: true,
             local_lights_per_eye: true,
             screen_door_per_eye: true,
+            velocity_per_eye: true,
             clip_origin_per_eye: true,
             atmospheric_per_eye: true,
             fog_volume_per_eye: true,

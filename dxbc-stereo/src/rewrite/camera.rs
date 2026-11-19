@@ -65,8 +65,22 @@ pub const EYE_CAMERA_LIGHT_OFFSET_ROW: u32 = EYE_CAMERA_SOURCE_ROWS.len() as u32
 pub const EYE_CAMERA_ROWS_PER_EYE: u32 = EYE_CAMERA_LIGHT_OFFSET_ROW + 1;
 /// The row whose `.x` holds the eye boundary: the first pixel coordinate of the right eye's half.
 pub const EYE_CAMERA_BOUNDARY_ROW: u32 = 2 * EYE_CAMERA_ROWS_PER_EYE;
+/// The row the velocity rewrite reads the pixel-to-clip mapping from, after the boundary: in `.x`
+/// and `.y` the clip-space `x` and `y` per pixel, in `.z` the clip-space `y` at the target's top
+/// edge, and in `.w` a nonzero value where the rewritten shader is to take the corrected positions
+/// (see `rewrite::velocity`).
+pub const VELOCITY_PIXEL_ROW: u32 = EYE_CAMERA_BOUNDARY_ROW + 1;
+/// The row whose `.x` and `.y` hold the clip-space `x` of each eye's left edge.
+pub const VELOCITY_ORIGIN_ROW: u32 = VELOCITY_PIXEL_ROW + 1;
+/// The first of the velocity rewrite's per-eye matrices, [`VELOCITY_REPROJECTION_ROWS_PER_EYE`] rows
+/// each: the rows of the map from the render camera's previous clip space to the eye's, which the
+/// previous clip position is taken through.
+pub const VELOCITY_REPROJECTION_ROW: u32 = VELOCITY_ORIGIN_ROW + 1;
+/// The rows each eye's velocity matrix occupies.
+pub const VELOCITY_REPROJECTION_ROWS_PER_EYE: u32 = 4;
 /// The size of [`EYE_CAMERA_CB_REGISTER`] in float4 rows.
-pub const EYE_CAMERA_CB_ROWS: u32 = EYE_CAMERA_BOUNDARY_ROW + 1;
+pub const EYE_CAMERA_CB_ROWS: u32 =
+    VELOCITY_REPROJECTION_ROW + 2 * VELOCITY_REPROJECTION_ROWS_PER_EYE;
 
 /// Whether the eye-camera rewrite also measures the local lights from the pixel's eye.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -76,6 +76,7 @@ single_pass_switches! {
     PixelCameraPerEye => pixel_camera_per_eye, true;
     LocalLightsPerEye => local_lights_per_eye, true;
     ScreenDoorPerEye => screen_door_per_eye, true;
+    VelocityPerEye => velocity_per_eye, true;
     ClipOriginPerEye => clip_origin_per_eye, true;
     AtmosphericPerEye => atmospheric_per_eye, false;
     FogVolumePerEye => fog_volume_per_eye, false;

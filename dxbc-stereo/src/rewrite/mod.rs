@@ -21,7 +21,8 @@
 //! from that eye in the same shaders. `volume` maps each pixel of the ambient-occlusion volumes through
 //! its own eye's camera. `screen_door` lays the screen-door pattern the alpha-tested and
 //! fading materials discard by out from each eye's own origin, reading the eye-camera rewrite's
-//! boundary.
+//! boundary. `velocity` measures the motion vectors the velocity pass writes in the screen space of
+//! the eye whose half the pixel lies in, from the same buffer.
 
 mod ambient;
 pub use ambient::{
@@ -32,7 +33,8 @@ mod camera;
 pub use camera::{
     EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS,
     EYE_CAMERA_LIGHT_OFFSET_ROW, EYE_CAMERA_ROWS_PER_EYE, EYE_CAMERA_SOURCE_ROWS, LocalLights,
-    localize_eye_camera,
+    VELOCITY_ORIGIN_ROW, VELOCITY_PIXEL_ROW, VELOCITY_REPROJECTION_ROW,
+    VELOCITY_REPROJECTION_ROWS_PER_EYE, localize_eye_camera,
 };
 mod common;
 mod lake;
@@ -68,6 +70,8 @@ mod seam;
 pub use seam::{localize_composite_bloom, localize_post_filter, localize_reflection_blur};
 mod ssdecal;
 mod terrain;
+mod velocity;
+pub use velocity::localize_velocity;
 mod volume;
 pub use common::{
     CLIP_ORIGIN_CB0_ROW, CLIP_ORIGIN_ROW_BASE, MEYE_ROW_BASE, STEREO_CB_REGISTER, STEREO_CB_ROWS,

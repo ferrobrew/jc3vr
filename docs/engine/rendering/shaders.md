@@ -224,3 +224,31 @@ discard_nz  r#.x
 It is the only other `dp2` of `SV_Position` with an immediate vector in `Shaders_F`, and the vector encodes as `5b 96 ef 3e 46 22 34 bf`. 101 pixel shaders build it from `SV_Position`: the `general*` families (the `general_lod*` crossfades, the `generalmkiii*` alpha tests and their shadow and reflective-shadow permutations), the `vegetationbark*` and `vegetationfoliage*` sets, `prop`, `propdecal`, `buildingjc3`, `landmark`, the `carpaintmm*_stipple` and `carpaintmmshadow` stipples, `tex0shadowstipple` and `rendervelocitybufferstipple`, the volumetric fog's `fogvolumeapply*` (which dithers its march by it rather than discarding), and the four `ssao*` permutations (the generation pass rotates its sampling spiral by it). The 18 `treeimpostor*` permutations build the same hash from their own projected position divided by twice the inverse screen size, rather than from `SV_Position`.
 
 Neither multiplier is a whole number of cycles per pixel, so the threshold field does not repeat under any horizontal or vertical shift of the pixel grid: the same surface drawn at a different offset in its target keeps a different set of pixels.
+
+## The velocity pass's motion vectors
+
+The velocity buffer (`m_VelocityBufferTexture`) is written only by the draws of `RP_Z_AND_VELOCITY_PASS`, through the render setup that binds it as the colour target. Twelve pixel shaders in `Shaders_F` write it, and all of them encode the same way from two clip positions their vertex shader hands down: the `rendervelocitybuffer` family (`rendervelocitybuffer`, `…clamp`, `…notex`, `…notexclamp`, `…opacity`, `…stipple`), `renderfadingvelocitybuffer`, `tex0velocity`, `vegetationbarkvelocity`, `vegetationfoliagevelocity`, and `generalmkiiiprezvelocity` with its `alphatest` permutation:
+
+```
+mov r0.xy, v2.xyxx                    ; the previous clip position
+mov r0.zw, v1.xxxy                    ; the current clip position
+mov r1.x, v2.w
+mov r1.z, v1.w
+div r0.xyzw, r0.xyzw, r1.xxzz         ; both, in NDC
+mad r0.xyzw, r0.xyzw, l(0.5, -0.5, 0.5, -0.5), l(0.5, 0.5, 0.5, 0.5)
+add r0.xy, -r0.xyxx, r0.zwzz          ; current UV less previous UV
+mul r0.xy, r0.xyxx, l(8, 8, 0, 0)
+max/min r0.xy, ±1                     ; clamped to an eighth of the screen per frame
+mad o0.xy, r0.xyxx, l(0.5, 0.5, 0, 0), l(0.5, 0.5, 0, 0)
+mul o0.z, v1.w, l(0.01)               ; the current clip w, scaled
+```
+
+The motion is in screen UV, so it carries no target size. The two `clamp` permutations clamp the UV motion to a constant first; the others differ only in the discard ahead of the encoding.
+
+In every velocity vertex shader (the `generalmkiiiprezvelocity*`, `renderprezvelocity*`, `generalprezvelocity`, `carpaintmmprezvelocity*`, `charactervelocity*`, `characterskinvelocity*`, and `vegetation*velocity*` sets) the current clip position is a copy of the `SV_Position` output's `x`, `y`, and `w` (only `z` takes a depth bias), so its NDC at a pixel is the pixel's own. The previous position comes one of three ways:
+
+- `generalmkiiiprezvelocity` and its non-instanced permutations: the object's previous world matrix (`ModelWorldMatrixPrev` in `cb12`) times the previous view-projection the vertex `GlobalConstants` carry in `cb0[33..36]`.
+- The hardware-instanced `generalmkiiiprezvelocityhwinstanced*` permutations: the previous camera-relative view-projection in `cb0[44..47]`, with the previous camera position in `cb0[48]`.
+- Every other set: a previous world-view-projection the block bakes on the CPU into its own constant buffer (`PrevWorldViewProj` in the bark and foliage `PerInstanceConstants`, `PreviousWorldViewProjection` in the `renderprezvelocity` and `generalprezvelocity` `$Globals`), from the render context's previous camera-relative view-projection and previous camera position.
+
+All three trace back to the render camera's previous view and projection: [`RenderEngine::SetGlobalShaderProgramCameraConstants`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##func-SetGlobalShaderProgramCameraConstants) stages the render context's previous view-projection and previous camera-relative view-projection into [`m_VPGlobalConstData`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderEngine##field-m_VPGlobalConstData), and the render context copies them from the camera's [`m_PreviousViewProjectionF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/camera::Camera##field-m_PreviousViewProjectionF) and previous view and projection. Only what is enqueued on the pass draws in it. In the draw census of the town and the meadow (see [`single-pass-stereo.md`](../../mod/stereo/single-pass-stereo.md#naming-the-draws-in-a-pass-range)) that was the vegetation's bark and foliage and a few hardware-instanced `GeneralMkIII` draws; the static models drew no velocity. No terrain render block draws in the pass (none of the blocks that select a velocity program by it is a terrain block), and pixels no velocity draw covers keep the cleared value.

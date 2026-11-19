@@ -177,6 +177,13 @@ pub enum DxbcError {
     /// The pixel shader declares the eye-camera constant-buffer slot smaller than the screen-door
     /// rewrite reads it, so the slot is not the eye-camera buffer.
     ScreenDoorSlotTaken,
+    /// The pixel shader writes no motion vector in the engine's encoding (the current and previous
+    /// clip positions divided, mapped to UV, and subtracted), so there is nothing for the velocity
+    /// rewrite to localize; the caller should leave it untouched.
+    NoVelocity,
+    /// The pixel shader declares the eye-camera constant-buffer slot smaller than the velocity
+    /// rewrite reads it, so the slot is not the eye-camera buffer.
+    VelocitySlotTaken,
 }
 
 impl fmt::Display for DxbcError {
@@ -240,6 +247,11 @@ impl fmt::Display for DxbcError {
             DxbcError::ScreenDoorSlotTaken => {
                 "dxbc: the pixel shader declares the eye-camera constant buffer slot too small for \
                  the eye boundary"
+            }
+            DxbcError::NoVelocity => "dxbc: the pixel shader writes no motion vector",
+            DxbcError::VelocitySlotTaken => {
+                "dxbc: the pixel shader declares the eye-camera constant buffer slot too small for \
+                 the velocity rows"
             }
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
             DxbcError::NoLakeRefraction => {

@@ -285,6 +285,10 @@ fn create_fragment_program(
     // lays it out per eye.
     let localize_projected_screen_door = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.tree_impostor_screen_door_per_eye);
+    // The velocity pass's motion vectors are written in each eye's screen space, from rows of the
+    // same buffer. Applied after the screen-door rewrites, whose buffer declaration it reads.
+    let localize_velocity = crate::stereo::single_pass::collapse_active()
+        && Config::lock_query(|c| c.stereo.single_pass.velocity_per_eye);
     let mut rewritten_screen_pass = None;
     if !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
@@ -377,6 +381,7 @@ fn create_fragment_program(
     // reads, and the only pattern the water hashes from its pixel position is the shadow rotation
     // `patch_shadow_pcf_hash` zeroes.
     let substituted_before_camera = saved.is_some();
+    let mut rewrote_velocity = false;
     if !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_mut() }
         && !p.m_Code.is_null()
@@ -395,7 +400,11 @@ fn create_fragment_program(
                 .unwrap_or(current),
             localize_projected_screen_door,
         );
-        if let Some(blob) = projected_screen_door.or(screen_door).or(camera) {
+        let earlier = projected_screen_door.or(screen_door).or(camera);
+        let velocity =
+            eye_camera::rewrite_velocity(earlier.as_deref().unwrap_or(current), localize_velocity);
+        rewrote_velocity = velocity.is_some();
+        if let Some(blob) = velocity.or(earlier) {
             let len = blob.len() as u64;
             let (original_code, original_size) = saved
                 .take()
@@ -407,6 +416,16 @@ fn create_fragment_program(
     }
 
     let result = CREATE_FRAGMENT_PROGRAM.get().unwrap().call(device, params);
+    if rewrote_velocity
+        && unsafe { result.as_ref() }
+            .and_then(|program| program.m_Program.as_ref())
+            .is_none()
+    {
+        tracing::warn!(
+            target: "single_pass",
+            "velocity: the engine could not create a velocity pixel shader from its rewrite",
+        );
+    }
     drop(identity);
     let engine_code = saved
         .as_ref()

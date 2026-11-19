@@ -32,31 +32,49 @@
 //! (`single_pass.screen_door_per_eye`). The boundary is therefore published in every eye-split pass,
 //! with both slots holding the staged rows when the camera rows are not moved per eye.
 //!
+//! [`dxbc_stereo::localize_velocity`] reads the same boundary, and two rows after it, to write the
+//! velocity pass's motion vectors in each eye's screen space (`single_pass.velocity_per_eye`): in an
+//! eye-split pass the rows map a pixel position to the clip space of the eye whose half it lies in,
+//! and carry each eye's map from the render camera's previous clip space to its own (the `M_eye` the
+//! `cb13` reprojection reads, corrected for the camera's previous projection), which the previous
+//! position is taken through; everywhere else they are zero, which leaves the engine's vectors as
+//! they are.
+//!
 //! The split fullscreen passes and the water's per-eye draws need nothing extra: each of their pixels
 //! lies in the half of the eye whose rows `eye_globals` stages for it, and that eye's slot holds the
 //! same values. Nothing is re-issued; the buffer is a constant-buffer write per pass and per target
 //! change.
 
-use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 
 use dxbc_stereo::{
     EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS,
     EYE_CAMERA_LIGHT_OFFSET_ROW, EYE_CAMERA_ROWS_PER_EYE, EYE_CAMERA_SOURCE_ROWS, LocalLights,
-    localize_eye_camera, localize_projected_screen_door, localize_screen_door,
+    VELOCITY_ORIGIN_ROW, VELOCITY_PIXEL_ROW, VELOCITY_REPROJECTION_ROW,
+    VELOCITY_REPROJECTION_ROWS_PER_EYE, localize_eye_camera, localize_projected_screen_door,
+    localize_screen_door, localize_velocity,
 };
-use jc3gi::{graphics_engine::render_engine::RenderEngine, types::math::Vector4};
+use jc3gi::{
+    graphics_engine::{graphics_engine::GraphicsEngine, render_engine::RenderEngine},
+    types::math::Vector4,
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_WRITE_DISCARD,
-    D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, ID3D11Buffer, ID3D11DeviceContext,
+    D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11Buffer,
+    ID3D11DeviceContext,
 };
 
 use crate::{
     config::Config,
     stereo::{
         engine_context::EngineContext,
-        single_pass::{collapse_active, collapse_eye_boundary, eye_globals, in_gbuffer_range},
+        single_pass::{
+            CURRENT_M_EYE, collapse_active, collapse_full_viewport, eye_globals, in_gbuffer_range,
+            viewport::eye_half_viewport,
+        },
     },
+    vr::render_params,
 };
 
 /// A pixel shader's bytecode rewritten to read each eye's camera rows, and with
@@ -137,6 +155,42 @@ pub(crate) fn rewrite_projected_screen_door(code: &[u8], enabled: bool) -> Optio
     }
 }
 
+/// A pixel shader's bytecode rewritten to write its motion vector in the screen space of the eye whose
+/// half the pixel lies in, or `None` when `enabled` is off or the shader writes no motion vector.
+/// Called for every fragment program the engine creates, after the camera and screen-door rewrites,
+/// whose output it takes when there is one.
+pub(crate) fn rewrite_velocity(code: &[u8], enabled: bool) -> Option<Vec<u8>> {
+    if !enabled {
+        return None;
+    }
+    match localize_velocity(code) {
+        Ok(rewritten) => {
+            let count = VELOCITIES.fetch_add(1, Ordering::Relaxed) + 1;
+            if count == 1 {
+                tracing::info!(target: "single_pass", "velocity: velocity pixel shaders rewritten");
+            }
+            Some(rewritten)
+        }
+        Err(dxbc_stereo::DxbcError::NoVelocity) => None,
+        Err(error) => {
+            VELOCITIES_DECLINED.fetch_add(1, Ordering::Relaxed);
+            tracing::warn!(
+                target: "single_pass",
+                "velocity: a pixel shader writing motion vectors was left unrewritten: {error}",
+            );
+            None
+        }
+    }
+}
+
+/// How many velocity pixel shaders have been rewritten since injection, and how many were declined.
+pub(crate) fn velocity_counts() -> (usize, usize) {
+    (
+        VELOCITIES.load(Ordering::Relaxed),
+        VELOCITIES_DECLINED.load(Ordering::Relaxed),
+    )
+}
+
 /// How many pixel shaders have been rewritten since injection, and how many that read the camera
 /// position were declined.
 pub(crate) fn counts() -> (usize, usize) {
@@ -163,15 +217,17 @@ pub(crate) fn sync(engine: &RenderEngine) {
     if REWRITTEN.load(Ordering::Relaxed) == 0
         && SCREEN_DOORS.load(Ordering::Relaxed) == 0
         && PROJECTED_SCREEN_DOORS.load(Ordering::Relaxed) == 0
+        && VELOCITIES.load(Ordering::Relaxed) == 0
     {
         return;
     }
     let staged = &engine.m_FPGlobalConstData;
     let mirrored = block(EYE_CAMERA_SOURCE_ROWS.map(|row| staged[row as usize]), ZERO);
-    let (pixel_camera, local_lights) = Config::lock_query(|c| {
+    let (pixel_camera, local_lights, velocity) = Config::lock_query(|c| {
         (
             c.stereo.single_pass.pixel_camera_per_eye,
             c.stereo.single_pass.local_lights_per_eye,
+            c.stereo.single_pass.velocity_per_eye,
         )
     });
     let eye_block = |eye: usize| -> Option<[Vector4; EYE_ROWS]> {
@@ -195,10 +251,67 @@ pub(crate) fn sync(engine: &RenderEngine) {
         state.mirrored = mirrored;
         state.split = split;
         state.per_eye = per_eye;
-        let rows = state.rows(collapse_eye_boundary());
+        state.velocity = velocity
+            .then(|| *CURRENT_M_EYE.lock())
+            .flatten()
+            .and_then(previous_reprojection);
+        if split
+            && velocity
+            && state.velocity.is_none()
+            && !VELOCITY_UNPUBLISHED.swap(true, Ordering::Relaxed)
+        {
+            tracing::warn!(
+                target: "single_pass",
+                "velocity: an eye-split pass staged its constants without the eyes' reprojection \
+                 matrices, so its motion vectors keep the engine's double-wide encoding",
+            );
+        }
+        let rows = state.rows(collapse_full_viewport());
         upload(ctx, state, &rows, true);
     });
 }
+
+/// Each eye's map from the render camera's previous clip space to the clip space an eye-sized render
+/// of that eye reprojects through, from the eyes' `M_eye`.
+///
+/// An eye rendered on its own reprojects through its own previous camera position and orientation
+/// and the render camera's previous projection, which the engine builds for an eye-sized target.
+/// Under the collapse that projection is the double-wide one, whose horizontal row is the
+/// eye-sized one's halved, and the previous view is the centred camera's. `M_eye = P_eye E⁻¹ P⁻¹`
+/// takes the camera's current clip space to the eye's, with `E` the eye's pose in the camera's frame
+/// and `P` the camera's current projection, so `E⁻¹ = P_eye⁻¹ M_eye P`, and the map is
+/// `S P_prev E⁻¹ P_prev⁻¹`, with `S` doubling the horizontal clip coordinate. The eyes are rigid with
+/// respect to the camera, so the previous frame's eye cameras relate to the previous render camera
+/// as this frame's do to the current one. `None` while the render camera or an eye's parameters are
+/// unavailable, or a projection is singular.
+fn previous_reprojection(m_eye: [glam::Mat4; 2]) -> Option<[glam::Mat4; 2]> {
+    // SAFETY: called on the render thread from the global-constant upload, where the engine's render
+    // camera is live and not being written.
+    let camera = unsafe { &GraphicsEngine::get()?.m_RenderCamera };
+    let current = glam::Mat4::from(camera.m_ProjectionF).as_dmat4();
+    let previous = glam::Mat4::from(camera.m_PreviousProjF).as_dmat4();
+    let invertible = |m: &glam::DMat4| m.determinant().abs() > f64::EPSILON;
+    if !invertible(&previous) {
+        return None;
+    }
+    let eye_sized =
+        glam::DMat4::from_scale(glam::DVec3::new(PREVIOUS_X_SCALE, 1.0, 1.0)) * previous;
+    let previous_inverse = previous.inverse();
+    let mut maps = [glam::Mat4::IDENTITY; 2];
+    for (eye, map) in maps.iter_mut().enumerate() {
+        let eye_projection = glam::Mat4::from(render_params(eye)?.projection_reverse_z).as_dmat4();
+        if !invertible(&eye_projection) {
+            return None;
+        }
+        let pose_inverse = eye_projection.inverse() * m_eye[eye].as_dmat4() * current;
+        *map = (eye_sized * pose_inverse * previous_inverse).as_mat4();
+    }
+    Some(maps)
+}
+
+/// What an eye-sized render's previous projection scales the double-wide one's horizontal clip
+/// coordinate by.
+const PREVIOUS_X_SCALE: f64 = 2.0;
 
 /// Follow the bound target: called when the collapse records a new engine viewport, so the boundary
 /// stays on the seam of the target the next draws render into.
@@ -209,15 +322,15 @@ pub(super) fn viewport_changed() {
     if !SPLIT.load(Ordering::Relaxed) {
         return;
     }
-    let boundary = collapse_eye_boundary();
-    if boundary.map(f32::to_bits) == Some(UPLOADED_BOUNDARY.load(Ordering::Relaxed)) {
+    let full = collapse_full_viewport();
+    if full.map(layout_key) == Some(UPLOADED_LAYOUT.load(Ordering::Relaxed)) {
         return;
     }
     with_state(|ctx, state| {
         if !state.split || state.buffer.is_none() {
             return;
         }
-        let rows = state.rows(boundary);
+        let rows = state.rows(full);
         upload(ctx, state, &rows, false);
     });
 }
@@ -264,6 +377,17 @@ const EYE_ROWS: usize = EYE_CAMERA_ROWS_PER_EYE as usize;
 /// The row holding the boundary.
 const BOUNDARY: usize = EYE_CAMERA_BOUNDARY_ROW as usize;
 
+/// The rows the velocity rewrite reads.
+const PIXEL: usize = VELOCITY_PIXEL_ROW as usize;
+const ORIGIN: usize = VELOCITY_ORIGIN_ROW as usize;
+const REPROJECTION: usize = VELOCITY_REPROJECTION_ROW as usize;
+const REPROJECTION_ROWS: usize = VELOCITY_REPROJECTION_ROWS_PER_EYE as usize;
+/// The rows [`velocity_rows`] lays out from [`PIXEL`] on.
+const VELOCITY_ROWS: usize = REPROJECTION + 2 * REPROJECTION_ROWS - PIXEL;
+
+const _: () =
+    assert!(ORIGIN == PIXEL + 1 && REPROJECTION == ORIGIN + 1 && PIXEL + VELOCITY_ROWS == ROWS);
+
 /// The place of the light offset in each eye's block.
 const LIGHT_OFFSET: usize = EYE_CAMERA_LIGHT_OFFSET_ROW as usize;
 
@@ -290,17 +414,21 @@ static DECLINED: AtomicUsize = AtomicUsize::new(0);
 static SCREEN_DOORS: AtomicUsize = AtomicUsize::new(0);
 static SCREEN_DOORS_DECLINED: AtomicUsize = AtomicUsize::new(0);
 static PROJECTED_SCREEN_DOORS: AtomicUsize = AtomicUsize::new(0);
+static VELOCITIES: AtomicUsize = AtomicUsize::new(0);
+static VELOCITIES_DECLINED: AtomicUsize = AtomicUsize::new(0);
+static VELOCITY_UNPUBLISHED: AtomicBool = AtomicBool::new(false);
 static UPLOAD_WARNED: AtomicBool = AtomicBool::new(false);
-/// Whether the live buffer was written for an eye-split pass, and the boundary it holds, so the
-/// per-bind and per-range paths can return without locking.
+/// Whether the live buffer was written for an eye-split pass, and the [`layout_key`] of the viewport
+/// it was laid out for, so the per-bind and per-range paths can return without locking.
 static SPLIT: AtomicBool = AtomicBool::new(false);
-static UPLOADED_BOUNDARY: AtomicU32 = AtomicU32::new(0);
+static UPLOADED_LAYOUT: AtomicU64 = AtomicU64::new(0);
 
 static STATE: Mutex<State> = Mutex::new(State {
     buffer: None,
     mirrored: [Vector4 { data: [0.0; 4] }; EYE_ROWS],
     split: false,
     per_eye: None,
+    velocity: None,
     uploaded: [Vector4 { data: [0.0; 4] }; ROWS],
 });
 
@@ -312,31 +440,96 @@ struct State {
     split: bool,
     /// Each eye's rows, while the current pass is an eye-split one and the camera rows move per eye.
     per_eye: Option<[[Vector4; EYE_ROWS]; 2]>,
+    /// Each eye's map from the render camera's previous clip space to its own, while an eye-split
+    /// pass publishes the velocity rows (`single_pass.velocity_per_eye`).
+    velocity: Option<[glam::Mat4; 2]>,
     /// What the live buffer holds.
     uploaded: [Vector4; ROWS],
 }
 
 impl State {
-    /// The buffer contents for the current pass, with the eye boundary at `boundary` while the pass
-    /// is eye-split. Without an eye-split pass or a boundary, both slots hold the staged rows and no
-    /// pixel reaches the boundary; in an eye-split pass without per-eye rows, both slots hold the
-    /// staged rows and the boundary is published for the screen-door rewrite.
-    fn rows(&self, boundary: Option<f32>) -> [Vector4; ROWS] {
-        match (self.split, boundary) {
-            (true, Some(boundary)) => compose(self.per_eye.unwrap_or([self.mirrored; 2]), boundary),
-            _ => compose([self.mirrored; 2], NO_BOUNDARY),
+    /// The buffer contents for the current pass, split at the seam of the full viewport `full` while
+    /// the pass is eye-split. Without an eye-split pass or a viewport, both slots hold the staged
+    /// rows, no pixel reaches the boundary, and the velocity rows are zero; in an eye-split pass
+    /// without per-eye rows, both slots hold the staged rows and the boundary is published for the
+    /// screen-door rewrite.
+    fn rows(&self, full: Option<D3D11_VIEWPORT>) -> [Vector4; ROWS] {
+        match (self.split, full) {
+            (true, Some(full)) => compose(
+                self.per_eye.unwrap_or([self.mirrored; 2]),
+                eye_half_viewport(full, 1).TopLeftX,
+                self.velocity
+                    .and_then(|reprojection| velocity_rows(full, reprojection)),
+            ),
+            _ => compose([self.mirrored; 2], NO_BOUNDARY, None),
         }
     }
 }
 
-/// Lay out both eyes' blocks and the boundary in the order the rewritten shaders read them.
-fn compose(eyes: [[Vector4; EYE_ROWS]; 2], boundary: f32) -> [Vector4; ROWS] {
+/// Lay out both eyes' blocks, the boundary, and the velocity rows in the order the rewritten shaders
+/// read them.
+fn compose(
+    eyes: [[Vector4; EYE_ROWS]; 2],
+    boundary: f32,
+    velocity: Option<[Vector4; VELOCITY_ROWS]>,
+) -> [Vector4; ROWS] {
     let mut rows = [Vector4 { data: [0.0; 4] }; ROWS];
     for (eye, block) in eyes.iter().enumerate() {
         rows[eye * EYE_ROWS..(eye + 1) * EYE_ROWS].copy_from_slice(block);
     }
     rows[BOUNDARY].data[0] = boundary;
+    if let Some(velocity) = velocity {
+        rows[PIXEL..].copy_from_slice(&velocity);
+    }
     rows
+}
+
+/// The velocity rewrite's rows for the eye halves of `full` and each eye's map from the render
+/// camera's previous clip space to its own, or `None` for a degenerate viewport or a map that is not finite.
+///
+/// The pixel row maps a pixel position to clip space in its eye's half, `x` from the eye's left edge
+/// over the eye's width and `y` from the target's top edge over its height, and its `.w` tells the
+/// shader to take the corrected positions. The origin row holds each eye's left edge in clip space.
+/// The matrices follow, one row of each per row: each eye's map from the render camera's previous
+/// clip space to its own ([`previous_reprojection`]).
+fn velocity_rows(
+    full: D3D11_VIEWPORT,
+    reprojection: [glam::Mat4; 2],
+) -> Option<[Vector4; VELOCITY_ROWS]> {
+    let eyes = [eye_half_viewport(full, 0), eye_half_viewport(full, 1)];
+    let (width, height) = (eyes[0].Width, full.Height);
+    if !(width > 0.0 && height > 0.0) || !reprojection.iter().all(|m| m.is_finite()) {
+        return None;
+    }
+    let left = |eye: usize| -1.0 - 2.0 * eyes[eye].TopLeftX / width;
+    let mut rows = [ZERO; VELOCITY_ROWS];
+    rows[0] = Vector4 {
+        data: [
+            2.0 / width,
+            -2.0 / height,
+            1.0 + 2.0 * full.TopLeftY / height,
+            1.0,
+        ],
+    };
+    rows[1] = Vector4 {
+        data: [left(0), left(1), 0.0, 0.0],
+    };
+    for (eye, matrix) in reprojection.iter().enumerate() {
+        for row in 0..REPROJECTION_ROWS {
+            rows[REPROJECTION - PIXEL + eye * REPROJECTION_ROWS + row] = Vector4 {
+                data: matrix.row(row).to_array(),
+            };
+        }
+    }
+    Some(rows)
+}
+
+/// The viewport fields the boundary and the velocity rows are built from, packed into one word so a
+/// viewport bind can tell without a lock whether they moved.
+fn layout_key(full: D3D11_VIEWPORT) -> u64 {
+    let boundary = eye_half_viewport(full, 1).TopLeftX.to_bits();
+    let vertical = full.Height.to_bits() ^ full.TopLeftY.to_bits().rotate_left(16);
+    u64::from(boundary) | (u64::from(vertical) << 32)
 }
 
 /// Run `f` on the immediate context under the engine's context mutex, then the buffer state, the lock
@@ -358,7 +551,10 @@ fn upload(ctx: &ID3D11DeviceContext, state: &mut State, rows: &[Vector4; ROWS], 
         Ok(()) => {
             state.uploaded = *rows;
             SPLIT.store(state.split, Ordering::Relaxed);
-            UPLOADED_BOUNDARY.store(rows[BOUNDARY].data[0].to_bits(), Ordering::Relaxed);
+            UPLOADED_LAYOUT.store(
+                collapse_full_viewport().map_or(0, layout_key),
+                Ordering::Relaxed,
+            );
         }
         Err(error) => {
             if !UPLOAD_WARNED.swap(true, Ordering::Relaxed) {
@@ -435,7 +631,20 @@ mod tests {
                     [row(11.0), row(11.0), row(41.0), row(1.0)],
                 ]
             }),
+            velocity: None,
             uploaded: [Vector4 { data: [0.0; 4] }; ROWS],
+        }
+    }
+
+    /// A full viewport `width` pixels wide over a target 360 high.
+    fn viewport(width: f32) -> D3D11_VIEWPORT {
+        D3D11_VIEWPORT {
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: width,
+            Height: 360.0,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
         }
     }
 
@@ -450,8 +659,8 @@ mod tests {
     #[test]
     fn a_pass_that_is_not_eye_split_reads_the_staged_rows() {
         let state = state(false);
-        for boundary in [None, Some(320.0)] {
-            let rows = state.rows(boundary);
+        for full in [None, Some(viewport(640.0))] {
+            let rows = state.rows(full);
             for x in [0.5, 319.5, 320.5, 639.5, 1e9] {
                 for (source, expected) in state.mirrored.iter().enumerate() {
                     assert_eq!(read(&rows, x, source).data, expected.data);
@@ -466,7 +675,7 @@ mod tests {
         let state = state(true);
         let eyes = state.per_eye.expect("per-eye rows");
         for width in [640.0f32, 320.0, 1234.0] {
-            let rows = state.rows(Some(width / 2.0));
+            let rows = state.rows(Some(viewport(width)));
             for (x, eye) in [(0.5, 0), (width / 2.0 - 0.5, 0), (width / 2.0 + 0.5, 1)] {
                 for (source, expected) in eyes[eye].iter().enumerate() {
                     assert_eq!(read(&rows, x, source).data, expected.data);
@@ -481,7 +690,7 @@ mod tests {
     fn an_eye_split_pass_without_per_eye_rows_publishes_the_boundary() {
         let mut state = state(false);
         state.split = true;
-        let rows = state.rows(Some(320.0));
+        let rows = state.rows(Some(viewport(640.0)));
         assert_eq!(rows[BOUNDARY].data[0], 320.0);
         for x in [0.5, 319.5, 320.5, 639.5] {
             for (source, expected) in state.mirrored.iter().enumerate() {
@@ -499,12 +708,12 @@ mod tests {
             let boundary = rows[BOUNDARY].data[0];
             x - if x >= boundary { boundary } else { 0.0 }
         };
-        let split = state(true).rows(Some(320.0));
+        let split = state(true).rows(Some(viewport(640.0)));
         for x in [0.5, 100.5, 319.5] {
             assert_eq!(local(&split, x), x);
             assert_eq!(local(&split, x + 320.0), x);
         }
-        let unsplit = state(false).rows(Some(320.0));
+        let unsplit = state(false).rows(Some(viewport(640.0)));
         for x in [0.5, 319.5, 320.5, 639.5] {
             assert_eq!(local(&unsplit, x), x);
         }
@@ -519,5 +728,97 @@ mod tests {
         for (source, expected) in state.mirrored.iter().enumerate() {
             assert_eq!(read(&rows, 639.5, source).data, expected.data);
         }
+    }
+
+    /// The velocity rewrite's correction, as the rewritten shader computes it from the buffer: the
+    /// previous and current NDC it subtracts, given the pixel position, the previous clip position
+    /// interpolated for it, and the NDC the vertex shader handed down.
+    fn corrected(
+        rows: &[Vector4; ROWS],
+        position: [f32; 2],
+        previous: glam::Vec4,
+        current: [f32; 2],
+    ) -> ([f32; 2], [f32; 2]) {
+        let (pixel, origin) = (rows[PIXEL].data, rows[ORIGIN].data);
+        let eye = usize::from(position[0] >= rows[BOUNDARY].data[0]);
+        let own = [
+            position[0] * pixel[0] + origin[eye],
+            position[1] * pixel[1] + pixel[2],
+        ];
+        let row =
+            |r: usize| glam::Vec4::from(rows[REPROJECTION + eye * REPROJECTION_ROWS + r].data);
+        let w = row(3).dot(previous);
+        let taken = [row(0).dot(previous) / w, row(1).dot(previous) / w];
+        if pixel[3] != 0.0 {
+            (taken, own)
+        } else {
+            ([previous.x / previous.w, previous.y / previous.w], current)
+        }
+    }
+
+    /// Each eye's map from the centred camera's clip space: a horizontal shift by the eye's offset.
+    fn reprojection() -> [glam::Mat4; 2] {
+        [-0.03f32, 0.03].map(|shift| {
+            glam::Mat4::from_cols(
+                glam::Vec4::X,
+                glam::Vec4::Y,
+                glam::Vec4::Z,
+                glam::Vec4::new(shift, 0.0, 0.0, 1.0),
+            )
+        })
+    }
+
+    fn velocity_state(per_eye: bool) -> State {
+        State {
+            velocity: Some(reprojection()),
+            ..state(per_eye)
+        }
+    }
+
+    /// In an eye-split pass each half's current position is the pixel's NDC in an eye-sized target,
+    /// whatever the vertex shader handed down, and the previous position is taken through the eye's
+    /// map.
+    #[test]
+    fn velocity_is_measured_in_each_eyes_screen_space() {
+        let rows = velocity_state(true).rows(Some(viewport(640.0)));
+        let previous = glam::Vec4::new(0.5, -1.0, 0.1, 2.0);
+        for (x, y) in [(0.5, 0.5), (100.5, 200.5), (319.5, 359.5)] {
+            let eye_sized = [x / 320.0 * 2.0 - 1.0, 1.0 - y / 360.0 * 2.0];
+            for (eye, shift) in [(0, -0.03), (1, 0.03)] {
+                let position = [x + 320.0 * eye as f32, y];
+                let (taken, current) = corrected(&rows, position, previous, [0.9, 0.9]);
+                assert!((current[0] - eye_sized[0]).abs() < 1e-5, "{x} {eye}");
+                assert!((current[1] - eye_sized[1]).abs() < 1e-5, "{y} {eye}");
+                assert!((taken[0] - (0.25 + shift)).abs() < 1e-6, "{eye}");
+                assert!((taken[1] + 0.5).abs() < 1e-6, "{eye}");
+            }
+        }
+    }
+
+    /// Outside an eye-split pass, with the switch off, without a map, and with the buffer unbound (all
+    /// zeros), the rewritten shader subtracts exactly the positions the vertex shader handed down.
+    #[test]
+    fn velocity_rows_outside_an_eye_split_pass_change_nothing() {
+        let unbound = [ZERO; ROWS];
+        let previous = glam::Vec4::new(0.5, -1.0, 0.1, 2.0);
+        for rows in [
+            velocity_state(false).rows(Some(viewport(640.0))),
+            velocity_state(true).rows(None),
+            state(true).rows(Some(viewport(640.0))),
+            unbound,
+        ] {
+            assert_eq!(rows[PIXEL].data[3], 0.0);
+            for position in [[0.5, 0.5], [400.5, 100.5]] {
+                let (taken, current) = corrected(&rows, position, previous, [0.9, 0.7]);
+                assert_eq!(taken, [0.25, -0.5]);
+                assert_eq!(current, [0.9, 0.7]);
+            }
+        }
+    }
+
+    /// A viewport with no area publishes no velocity rows.
+    #[test]
+    fn a_degenerate_viewport_has_no_velocity_rows() {
+        assert!(velocity_rows(viewport(0.0), reprojection()).is_none());
     }
 }

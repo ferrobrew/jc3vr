@@ -464,11 +464,11 @@ pub(crate) const RESOLVE_ACTUAL: &str =
 /// the engine creates while `single_pass.pixel_camera_per_eye` applies without
 /// `single_pass.local_lights_per_eye`.
 pub(crate) const RESOLVE_EYE_CAMERA: &str =
-    "dd520448bf4131542a442235438dacb555b6a70936eeb67abd0d50d4dabb084d";
+    "3d6a81d184a090a7f50b48e79c59c78a82a16d0445b54ae7547694fcee8fc834";
 /// The same with the local lights measured from each eye as well, which the engine creates while both
 /// switches apply.
 pub(crate) const RESOLVE_EYE_LIGHTS: &str =
-    "06a49d669221fa5c64953f9cce09f7d6a3f540d4f148d23cfbf0f177c52a8b67";
+    "7b28420a68fdf35d8907b7c61289e16fa44ab39ae95afd78b0be08ee51dd4d4b";
 
 /// Whether `actual` and `length` describe one of the deferred resolve's executables: the engine's own
 /// with the shadow rotation patched, that with each eye's camera rows, or that with each eye's camera

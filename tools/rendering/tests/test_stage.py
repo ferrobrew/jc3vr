@@ -202,3 +202,13 @@ class AmbientOcclusionOverrideTests(unittest.TestCase):
                          {"ssao": "disabled", "ao_volumes": "disabled"})
         with self.assertRaises(ProtocolError):
             VisualOverrides.from_wire({"ao_volumes": "skipped"})
+
+
+class MotionBlurOverrideTests(unittest.TestCase):
+    def test_motion_blur_round_trips_and_rejects_other_values(self):
+        overrides = VisualOverrides.from_wire({"motion_blur": "enabled"})
+        self.assertEqual(overrides.to_wire(), {"motion_blur": "enabled"})
+        self.assertEqual(tomllib.loads(overrides.to_toml())["visual_overrides"],
+                         {"motion_blur": "enabled"})
+        with self.assertRaises(ProtocolError):
+            VisualOverrides.from_wire({"motion_blur": "disabled"})

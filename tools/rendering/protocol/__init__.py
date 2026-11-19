@@ -232,7 +232,7 @@ SINGLE_PASS_SWITCHES = (
     "tree_impostor_pixel_size_per_eye", "tree_impostor_screen_door_per_eye", "static_lights_per_eye", "moon_per_eye", "water_plane_per_eye", "bark", "foliage",
     "vegetation_once", "occluder",
     "instanced_per_eye", "hw_instanced_once", "indirect_per_eye", "reconstruct_per_eye", "fullscreen_camera_per_eye",
-    "pixel_camera_per_eye", "local_lights_per_eye", "screen_door_per_eye", "clip_origin_per_eye",
+    "pixel_camera_per_eye", "local_lights_per_eye", "screen_door_per_eye", "velocity_per_eye", "clip_origin_per_eye",
     "atmospheric_per_eye",
     "fog_volume_per_eye", "water_uv_per_eye",
     "nvwater_per_eye", "water_reflection_per_eye", "water_reflection_eye_size",
@@ -267,6 +267,8 @@ class VisualOverrides:
     # Ambient-occlusion sources left out in every mode, to attribute a difference to one.
     ssao: str | None = None
     ao_volumes: str | None = None
+    # The motion blur and its reconstruction run in every mode, so the final image reads the velocity buffer.
+    motion_blur: str | None = None
 
     def __post_init__(self):
         if self.sun_shadows is not None and not isinstance(self.sun_shadows, SunShadows):
@@ -276,9 +278,12 @@ class VisualOverrides:
         for name in ("ssao", "ao_volumes"):
             if getattr(self, name) not in (None, "disabled"):
                 raise ProtocolError(f"visual protocol: invalid {name} override")
+        if self.motion_blur not in (None, "enabled"):
+            raise ProtocolError("visual protocol: invalid motion_blur override")
         object.__setattr__(self, "single_pass", single_pass_switches(dict(self.single_pass)))
         if (self.sun_shadows is None and self.screen_space_reflections is None and
-                self.ssao is None and self.ao_volumes is None and not self.single_pass):
+                self.ssao is None and self.ao_volumes is None and self.motion_blur is None and
+                not self.single_pass):
             raise ProtocolError("visual protocol: visual overrides must name at least one override")
 
     @property
@@ -292,7 +297,7 @@ class VisualOverrides:
             value["sun_shadows"] = self.sun_shadows.value
         if self.screen_space_reflections is not None:
             value["screen_space_reflections"] = self.screen_space_reflections
-        for name in ("ssao", "ao_volumes"):
+        for name in ("ssao", "ao_volumes", "motion_blur"):
             if getattr(self, name) is not None:
                 value[name] = getattr(self, name)
         if self.single_pass:
@@ -305,7 +310,7 @@ class VisualOverrides:
             result += f"sun_shadows = {json.dumps(self.sun_shadows.value)}\n"
         if self.screen_space_reflections is not None:
             result += f"screen_space_reflections = {json.dumps(self.screen_space_reflections)}\n"
-        for name in ("ssao", "ao_volumes"):
+        for name in ("ssao", "ao_volumes", "motion_blur"):
             if getattr(self, name) is not None:
                 result += f"{name} = {json.dumps(getattr(self, name))}\n"
         if self.single_pass:
@@ -316,7 +321,8 @@ class VisualOverrides:
     @classmethod
     def from_wire(cls, value):
         if not isinstance(value, dict) or not value or set(value) - {
-                "sun_shadows", "screen_space_reflections", "single_pass", "ssao", "ao_volumes"}:
+                "sun_shadows", "screen_space_reflections", "single_pass", "ssao", "ao_volumes",
+                "motion_blur"}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
         try:
             sun_shadows = SunShadows(value["sun_shadows"]) if "sun_shadows" in value else None
@@ -326,7 +332,7 @@ class VisualOverrides:
             raise ProtocolError("visual protocol: the single_pass override table is empty")
         return cls(sun_shadows, value.get("screen_space_reflections"),
                    single_pass_switches(value.get("single_pass", {})),
-                   value.get("ssao"), value.get("ao_volumes"))
+                   value.get("ssao"), value.get("ao_volumes"), value.get("motion_blur"))
 
 
 @dataclass(frozen=True)

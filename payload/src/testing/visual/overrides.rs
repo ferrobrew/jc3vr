@@ -27,6 +27,14 @@ pub(crate) enum ReflectionOverride {
     Enabled,
 }
 
+/// Run the motion blur and its reconstruction, which the profile skips, so the final image reads the
+/// velocity buffer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum MotionBlurOverride {
+    Enabled,
+}
+
 /// Leave out an ambient-occlusion source in every mode, to attribute a difference to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -47,6 +55,9 @@ pub(crate) struct VisualOverrides {
     /// The ambient-occlusion volumes' pass.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ao_volumes: Option<AmbientOcclusionOverride>,
+    /// The motion blur and its reconstruction.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub motion_blur: Option<MotionBlurOverride>,
     #[serde(skip_serializing_if = "SinglePassOverrides::is_empty")]
     pub single_pass: SinglePassOverrides,
 }
@@ -59,6 +70,7 @@ pub(crate) struct VisualOverridesTable {
     screen_space_reflections: Option<ReflectionOverride>,
     ssao: Option<AmbientOcclusionOverride>,
     ao_volumes: Option<AmbientOcclusionOverride>,
+    motion_blur: Option<MotionBlurOverride>,
     single_pass: Option<BTreeMap<String, bool>>,
 }
 
@@ -131,12 +143,14 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             screen_space_reflections: table.screen_space_reflections,
             ssao: table.ssao,
             ao_volumes: table.ao_volumes,
+            motion_blur: table.motion_blur,
             single_pass,
         };
         if overrides.sun_shadows.is_none()
             && overrides.screen_space_reflections.is_none()
             && overrides.ssao.is_none()
             && overrides.ao_volumes.is_none()
+            && overrides.motion_blur.is_none()
             && overrides.single_pass.is_empty()
         {
             return Err(OverrideError::Empty);
@@ -167,6 +181,10 @@ impl VisualOverrides {
         }
         if let Some(AmbientOcclusionOverride::Disabled) = self.ao_volumes {
             config.stereo.skip_ao_volumes = true;
+        }
+        if let Some(MotionBlurOverride::Enabled) = self.motion_blur {
+            config.post_fx.skip_motion_blur = false;
+            config.post_fx.skip_motion_blur_recon = false;
         }
         self.single_pass.apply(&mut config.stereo.single_pass);
     }
@@ -296,6 +314,21 @@ mod tests {
         assert!(!config.stereo.disable_sun_shadows);
         assert!(!config.stereo.disable_ssao);
         assert!(!config.stereo.skip_ao_volumes);
+    }
+
+    #[test]
+    fn motion_blur_can_be_run_in_any_mode() {
+        let overrides = parse("motion_blur = 'enabled'\n").unwrap();
+        assert_eq!(overrides.validate_for(RenderMode::LeftOnly), Ok(()));
+        let mut config = Config::new();
+        config.post_fx.skip_motion_blur = true;
+        config.post_fx.skip_motion_blur_recon = true;
+        overrides.apply(&mut config);
+        assert!(!config.post_fx.skip_motion_blur && !config.post_fx.skip_motion_blur_recon);
+        assert_eq!(
+            serde_json::to_value(overrides).unwrap(),
+            serde_json::json!({"motion_blur": "enabled"})
+        );
     }
 
     #[test]
