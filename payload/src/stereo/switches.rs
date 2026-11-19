@@ -69,6 +69,7 @@ single_pass_switches! {
     ReconstructPerEye => reconstruct_per_eye, false;
     FullscreenCameraPerEye => fullscreen_camera_per_eye, false;
     PixelCameraPerEye => pixel_camera_per_eye, true;
+    LocalLightsPerEye => local_lights_per_eye, true;
     AtmosphericPerEye => atmospheric_per_eye, false;
     FogVolumePerEye => fog_volume_per_eye, false;
     WaterUvPerEye => water_uv_per_eye, false;

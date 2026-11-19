@@ -66,6 +66,16 @@ pub(super) fn eye_rows(staged: &[Vector4], eye: usize) -> Option<[Vector4; EYE_R
     Some(EYE_ROWS.map(|row| rows[row]))
 }
 
+/// `eye`'s world offset from the centred render camera in `.xyz`, with `.w` zero: what the eye-camera
+/// rewrite subtracts from the clustered-lighting frame constants' light positions, which the engine
+/// builds relative to that camera. `None` when no stereo frame is rendering.
+pub(super) fn eye_light_offset(eye: usize) -> Option<Vector4> {
+    let offset = eye_world_offset(eye)?;
+    Some(Vector4 {
+        data: [offset.x, offset.y, offset.z, 0.0],
+    })
+}
+
 /// How many rows [`eye_rows`] gives each eye.
 pub(super) const EYE_ROW_COUNT: usize = EYE_ROWS.len();
 
@@ -104,7 +114,7 @@ const _: () = {
         assert!(EYE_ROWS[i] == dxbc_stereo::EYE_CAMERA_SOURCE_ROWS[i] as usize);
         i += 1;
     }
-    assert!(EYE_ROWS.len() == dxbc_stereo::EYE_CAMERA_ROWS_PER_EYE as usize);
+    assert!(EYE_ROWS.len() == dxbc_stereo::EYE_CAMERA_LIGHT_OFFSET_ROW as usize);
 };
 
 /// The rows [`stage`] overwrote, as the engine staged them.

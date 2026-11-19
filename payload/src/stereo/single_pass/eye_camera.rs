@@ -21,6 +21,12 @@
 //!   collapse), both slots hold the staged rows unchanged and the boundary is past every pixel, so a
 //!   rewritten shader reads exactly what it reads from `cb0`.
 //!
+//! Each eye's slot also carries the eye's world offset from the centred camera, which the rewrite
+//! subtracts from the light positions of the shaders that light from the clustered-lighting frame
+//! constants (`single_pass.local_lights_per_eye`): the engine builds those relative to the centred
+//! render camera, so once a pixel's position is measured from its eye the lights have to be too.
+//! Outside an eye-split pass the offset is zero, so the lights read what the engine built.
+//!
 //! The split fullscreen passes and the water's per-eye draws need nothing extra: each of their pixels
 //! lies in the half of the eye whose rows `eye_globals` stages for it, and that eye's slot holds the
 //! same values. Nothing is re-issued; the buffer is a constant-buffer write per pass and per target
@@ -29,8 +35,9 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use dxbc_stereo::{
-    EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS, EYE_CAMERA_ROWS_PER_EYE,
-    EYE_CAMERA_SOURCE_ROWS, localize_eye_camera,
+    EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS,
+    EYE_CAMERA_LIGHT_OFFSET_ROW, EYE_CAMERA_ROWS_PER_EYE, EYE_CAMERA_SOURCE_ROWS, LocalLights,
+    localize_eye_camera,
 };
 use jc3gi::{graphics_engine::render_engine::RenderEngine, types::math::Vector4};
 use parking_lot::Mutex;
@@ -47,13 +54,18 @@ use crate::{
     },
 };
 
-/// A pixel shader's bytecode rewritten to read each eye's camera rows, or `None` when `enabled` is
-/// off or the shader reads none of them. Called for every fragment program the engine creates.
-pub(crate) fn rewrite_fragment_program(code: &[u8], enabled: bool) -> Option<Vec<u8>> {
+/// A pixel shader's bytecode rewritten to read each eye's camera rows, and with
+/// [`LocalLights::PerEye`] to measure its local lights from the eye, or `None` when `enabled` is off
+/// or the shader reads none of the camera rows. Called for every fragment program the engine creates.
+pub(crate) fn rewrite_fragment_program(
+    code: &[u8],
+    enabled: bool,
+    local_lights: LocalLights,
+) -> Option<Vec<u8>> {
     if !enabled {
         return None;
     }
-    match localize_eye_camera(code) {
+    match localize_eye_camera(code, local_lights) {
         Ok(rewritten) => {
             REWRITTEN.fetch_add(1, Ordering::Relaxed);
             Some(rewritten)
@@ -86,22 +98,29 @@ pub(crate) fn sync(engine: &RenderEngine) {
         return;
     }
     let staged = &engine.m_FPGlobalConstData;
-    let mirrored = EYE_CAMERA_SOURCE_ROWS.map(|row| staged[row as usize]);
-    let per_eye = (collapse_active()
-        && in_gbuffer_range()
-        && Config::lock_query(|c| c.stereo.single_pass.pixel_camera_per_eye))
-    .then(|| {
-        Some([
-            eye_globals::eye_rows(staged, 0)?,
-            eye_globals::eye_rows(staged, 1)?,
-        ])
-    })
-    .flatten()
-    .filter(|eyes| {
-        eyes.iter()
-            .flatten()
-            .all(|row| row.data.iter().all(|v| v.is_finite()))
+    let mirrored = block(EYE_CAMERA_SOURCE_ROWS.map(|row| staged[row as usize]), ZERO);
+    let (pixel_camera, local_lights) = Config::lock_query(|c| {
+        (
+            c.stereo.single_pass.pixel_camera_per_eye,
+            c.stereo.single_pass.local_lights_per_eye,
+        )
     });
+    let eye_block = |eye: usize| -> Option<[Vector4; EYE_ROWS]> {
+        let offset = if local_lights {
+            eye_globals::eye_light_offset(eye)?
+        } else {
+            ZERO
+        };
+        Some(block(eye_globals::eye_rows(staged, eye)?, offset))
+    };
+    let per_eye = (collapse_active() && in_gbuffer_range() && pixel_camera)
+        .then(|| Some([eye_block(0)?, eye_block(1)?]))
+        .flatten()
+        .filter(|eyes| {
+            eyes.iter()
+                .flatten()
+                .all(|row| row.data.iter().all(|v| v.is_finite()))
+        });
     with_state(|ctx, state| {
         state.mirrored = mirrored;
         state.per_eye = per_eye;
@@ -170,7 +189,23 @@ const EYE_ROWS: usize = EYE_CAMERA_ROWS_PER_EYE as usize;
 /// The row holding the boundary.
 const BOUNDARY: usize = EYE_CAMERA_BOUNDARY_ROW as usize;
 
-const _: () = assert!(EYE_ROWS == eye_globals::EYE_ROW_COUNT);
+/// The place of the light offset in each eye's block.
+const LIGHT_OFFSET: usize = EYE_CAMERA_LIGHT_OFFSET_ROW as usize;
+
+const _: () = assert!(LIGHT_OFFSET == eye_globals::EYE_ROW_COUNT && EYE_ROWS == LIGHT_OFFSET + 1);
+
+const ZERO: Vector4 = Vector4 { data: [0.0; 4] };
+
+/// One eye's block: the copies of the camera rows, then the light offset.
+fn block(
+    rows: [Vector4; eye_globals::EYE_ROW_COUNT],
+    light_offset: Vector4,
+) -> [Vector4; EYE_ROWS] {
+    let mut block = [ZERO; EYE_ROWS];
+    block[..LIGHT_OFFSET].copy_from_slice(&rows);
+    block[LIGHT_OFFSET] = light_offset;
+    block
+}
 
 /// A boundary no pixel reaches: every pixel reads the left eye's slot.
 const NO_BOUNDARY: f32 = f32::MAX;
@@ -192,7 +227,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 struct State {
     buffer: Option<ID3D11Buffer>,
-    /// The rows the engine staged at its last upload.
+    /// The rows the engine staged at its last upload, with a zero light offset.
     mirrored: [Vector4; EYE_ROWS],
     /// Each eye's rows, while the current pass is an eye-split one.
     per_eye: Option<[[Vector4; EYE_ROWS]; 2]>,
@@ -311,11 +346,11 @@ mod tests {
     fn state(per_eye: bool) -> State {
         State {
             buffer: None,
-            mirrored: [row(10.0), row(10.0), row(40.0)],
+            mirrored: [row(10.0), row(10.0), row(40.0), ZERO],
             per_eye: per_eye.then(|| {
                 [
-                    [row(9.0), row(9.0), row(39.0)],
-                    [row(11.0), row(11.0), row(41.0)],
+                    [row(9.0), row(9.0), row(39.0), row(-1.0)],
+                    [row(11.0), row(11.0), row(41.0), row(1.0)],
                 ]
             }),
             uploaded: [Vector4 { data: [0.0; 4] }; ROWS],

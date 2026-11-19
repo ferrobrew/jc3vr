@@ -3,8 +3,9 @@
 
 use dxbc_stereo::{
     Dxbc, DxbcError, EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS,
-    EYE_CAMERA_ROWS_PER_EYE, EYE_CAMERA_SOURCE_ROWS, OperandKind, ShaderStage, TokenStream,
-    localize_eye_camera, localize_post_filter, refresh_checksum, trace_deferred_samples,
+    EYE_CAMERA_ROWS_PER_EYE, EYE_CAMERA_SOURCE_ROWS, LocalLights, OperandKind, ShaderStage,
+    TokenStream, localize_eye_camera, localize_post_filter, refresh_checksum,
+    trace_deferred_samples,
 };
 
 mod common;
@@ -26,7 +27,7 @@ fn corpus_rewrite_covers_every_camera_reader() {
     for path in shader_paths(&dir) {
         let blob = std::fs::read(&path).expect("read a shader");
         let reads = camera_reads(&blob);
-        match localize_eye_camera(&blob) {
+        match localize_eye_camera(&blob, LocalLights::Unchanged) {
             Ok(out) => {
                 assert!(
                     reads > 0,
@@ -86,7 +87,7 @@ fn character_material_reads_its_view_vector_per_eye() {
         return;
     };
     let blob = std::fs::read(dir.join(CHARACTER)).expect("read the shader");
-    let out = localize_eye_camera(&blob).expect("rewritten");
+    let out = localize_eye_camera(&blob, LocalLights::Unchanged).expect("rewritten");
     let shader = Shader::parse(&out);
     let eye = shader.temps - 1;
     let [select, mask] = &shader.prologue[..] else {
@@ -156,10 +157,15 @@ fn resolve_probe_traces_the_eye_camera_resolve() {
         .expect("the shadow rotation seed");
     code[at..at + 8].fill(0);
     refresh_checksum(&mut code);
-    let out = localize_eye_camera(&code).expect("rewritten");
-    assert_eq!(out.len(), 35_120, "the length the resolve probe accepts");
-    for shadow in [false, true] {
-        trace_deferred_samples(&out, shadow).expect("every traced site survives");
+    for (local_lights, length) in [
+        (LocalLights::Unchanged, 35_120),
+        (LocalLights::PerEye, 35_392),
+    ] {
+        let out = localize_eye_camera(&code, local_lights).expect("rewritten");
+        assert_eq!(out.len(), length, "the length the resolve probe accepts");
+        for shadow in [false, true] {
+            trace_deferred_samples(&out, shadow).expect("every traced site survives");
+        }
     }
 }
 

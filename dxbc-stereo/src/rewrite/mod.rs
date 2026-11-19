@@ -17,7 +17,8 @@
 //! bloom lookups inside each eye's half, along with the screen-space reflection blur's taps.
 //! `reflection` traces the screen-space reflections over each eye's half of a double-wide target.
 //! `camera` gives every pixel shader that reads the camera position the position of the eye whose
-//! half of a double-wide target the pixel lies in.
+//! half of a double-wide target the pixel lies in, and `lights` measures the clustered local lights
+//! from that eye in the same shaders.
 
 mod ambient;
 pub use ambient::{
@@ -26,11 +27,13 @@ pub use ambient::{
 };
 mod camera;
 pub use camera::{
-    EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS, EYE_CAMERA_ROWS_PER_EYE,
-    EYE_CAMERA_SOURCE_ROWS, localize_eye_camera,
+    EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS,
+    EYE_CAMERA_LIGHT_OFFSET_ROW, EYE_CAMERA_ROWS_PER_EYE, EYE_CAMERA_SOURCE_ROWS, LocalLights,
+    localize_eye_camera,
 };
 mod common;
 mod lake;
+mod lights;
 pub use lake::{
     bound_lake_candidate_depth, capture_lake_planar_uv, isolate_lake_reflection,
     mirror_lake_color_overflow, mirror_lake_reflection, offset_lake_reflection,

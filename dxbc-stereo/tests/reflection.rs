@@ -2,9 +2,9 @@
 //! extracted shader bundle.
 
 use dxbc_stereo::{
-    Dxbc, DxbcError, SCREEN_SPACE_REFLECTION_CB_REGISTER, SCREEN_SPACE_REFLECTION_ROWS_PER_EYE,
-    ShaderStage, TokenStream, localize_eye_camera, localize_reflection_blur,
-    localize_screen_space_reflection,
+    Dxbc, DxbcError, LocalLights, SCREEN_SPACE_REFLECTION_CB_REGISTER,
+    SCREEN_SPACE_REFLECTION_ROWS_PER_EYE, ShaderStage, TokenStream, localize_eye_camera,
+    localize_reflection_blur, localize_screen_space_reflection,
 };
 
 mod common;
@@ -160,7 +160,8 @@ fn eye_camera_composes_with_the_ray_march() {
     for name in ["sh_0644_00261350.dxbc", "sh_0645_002632d0.dxbc"] {
         let blob = std::fs::read(dir.join(name)).expect("read the shader");
         let rewritten = localize_screen_space_reflection(&blob).expect("rewritten");
-        let both = localize_eye_camera(&rewritten).expect("the camera rewrite composes");
+        let both = localize_eye_camera(&rewritten, LocalLights::PerEye)
+            .expect("the camera rewrite composes");
         instructions(&both);
     }
 }

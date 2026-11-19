@@ -209,6 +209,17 @@ pub struct SinglePassConfig {
     /// shader reload; turning this off makes the rewritten shaders read the centred rows at once. On
     /// by default.
     pub pixel_camera_per_eye: bool,
+    /// Measure the local point and spot lights from each eye's camera position, in the pixel shaders
+    /// that [`pixel_camera_per_eye`](Self::pixel_camera_per_eye) rewrites.
+    ///
+    /// The engine stores every local light's position, and every projected spot light's projection,
+    /// relative to the centred render camera. Once a pixel's position is measured from its eye, each
+    /// light vector is off by the eye's offset from that camera, which moves the lights near the
+    /// camera (a held device's glow) visibly between the eyes. The rewrite subtracts the eye's offset
+    /// from each light position the deferred resolve and the forward-lit families read
+    /// (`stereo::single_pass::eye_camera`). It is part of the same shader rewrite, so turning it on
+    /// needs a shader reload; turning it off zeroes the offset at once. On by default.
+    pub local_lights_per_eye: bool,
     /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
     /// fullscreen consumer of the reconstruction basis.
     ///
@@ -640,6 +651,7 @@ impl SinglePassConfig {
             reconstruct_per_eye: true,
             fullscreen_camera_per_eye: true,
             pixel_camera_per_eye: true,
+            local_lights_per_eye: true,
             atmospheric_per_eye: true,
             fog_volume_per_eye: true,
             water_uv_per_eye: true,

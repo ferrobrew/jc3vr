@@ -27,7 +27,7 @@ use std::{
 };
 
 use detours_macro::detour;
-use dxbc_stereo::refresh_checksum;
+use dxbc_stereo::{LocalLights, refresh_checksum};
 use jc3gi::graphics_engine::{
     draw::{
         CreateDomainProgramParams, CreateFragmentProgramParams, CreateHullProgramParams,
@@ -256,6 +256,11 @@ fn create_fragment_program(
     // over whatever the other rewrites produced, since it composes with all of them.
     let localize_camera = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.pixel_camera_per_eye);
+    let local_lights = if Config::lock_query(|c| c.stereo.single_pass.local_lights_per_eye) {
+        LocalLights::PerEye
+    } else {
+        LocalLights::Unchanged
+    };
     let mut rewritten_screen_pass = None;
     if !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
@@ -350,7 +355,9 @@ fn create_fragment_program(
         && let Ok(size) = usize::try_from(p.m_Size)
     {
         let current = unsafe { std::slice::from_raw_parts(p.m_Code, size) };
-        if let Some(blob) = eye_camera::rewrite_fragment_program(current, localize_camera) {
+        if let Some(blob) =
+            eye_camera::rewrite_fragment_program(current, localize_camera, local_lights)
+        {
             let len = blob.len() as u64;
             let (original_code, original_size) = saved
                 .take()

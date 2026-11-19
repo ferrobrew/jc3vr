@@ -460,16 +460,23 @@ pub(crate) const RESOLVE_PRISTINE: &str =
 pub(crate) const RESOLVE_ACTUAL: &str =
     "6a82533e6458166ea3d04789c266ec127baf59931882955c99c4603e47f11c9b";
 /// The deferred resolve's executable with each eye's camera rows selected per pixel
-/// (`dxbc_stereo::localize_eye_camera` over [`RESOLVE_ACTUAL`]), which the engine creates while
-/// `single_pass.pixel_camera_per_eye` applies.
+/// (`dxbc_stereo::localize_eye_camera` over [`RESOLVE_ACTUAL`] with the local lights unchanged), which
+/// the engine creates while `single_pass.pixel_camera_per_eye` applies without
+/// `single_pass.local_lights_per_eye`.
 pub(crate) const RESOLVE_EYE_CAMERA: &str =
-    "668197a2cedd3e642568451f94e4fa224186e4df922f8be09ff59f7bcd440d22";
+    "dd520448bf4131542a442235438dacb555b6a70936eeb67abd0d50d4dabb084d";
+/// The same with the local lights measured from each eye as well, which the engine creates while both
+/// switches apply.
+pub(crate) const RESOLVE_EYE_LIGHTS: &str =
+    "06a49d669221fa5c64953f9cce09f7d6a3f540d4f148d23cfbf0f177c52a8b67";
 
 /// Whether `actual` and `length` describe one of the deferred resolve's executables: the engine's own
-/// with the shadow rotation patched, or that with each eye's camera rows.
+/// with the shadow rotation patched, that with each eye's camera rows, or that with each eye's camera
+/// rows and local lights.
 pub(crate) fn is_resolve_executable(actual: &str, length: usize) -> bool {
     (actual == RESOLVE_ACTUAL && length == 35028)
         || (actual == RESOLVE_EYE_CAMERA && length == 35120)
+        || (actual == RESOLVE_EYE_LIGHTS && length == 35392)
 }
 
 pub(crate) fn resolve_bytecode() -> Option<Vec<u8>> {

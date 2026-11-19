@@ -217,7 +217,7 @@ SINGLE_PASS_SWITCHES = (
     "reproject", "reproject_camera_only", "terrain", "terrain_patch_per_eye", "tree_impostors",
     "tree_impostor_pixel_size_per_eye", "static_lights_per_eye", "bark", "foliage", "occluder",
     "instanced_per_eye", "indirect_per_eye", "reconstruct_per_eye", "fullscreen_camera_per_eye",
-    "pixel_camera_per_eye", "atmospheric_per_eye", "fog_volume_per_eye", "water_uv_per_eye",
+    "pixel_camera_per_eye", "local_lights_per_eye", "atmospheric_per_eye", "fog_volume_per_eye", "water_uv_per_eye",
     "nvwater_per_eye", "water_reflection_per_eye", "water_camera_per_eye",
     "ssdecal_geometry_per_eye", "slot13_per_eye", "collapse_viewport_follows_target",
     "ssao_per_eye", "ssr_per_eye", "subsurface_per_eye", "dof_per_eye", "ssdecal_per_eye",

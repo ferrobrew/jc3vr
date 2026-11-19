@@ -115,6 +115,66 @@ impl LightManager {
             f(self as *const Self as _, ctx)
         }
     }
+    pub const SetupLightingData_ADDRESS: usize = 0x1400C60D0;
+    /// Fills the clustered-lighting frame constant buffer (`LightingFrameConsts`, the buffer
+    /// [`RenderContext::m_LightBuffer`](crate::graphics_engine::graphics_engine::RenderContext::m_LightBuffer)
+    /// carries) for `ctx` from the frame's point and spot light records. Each point light takes
+    /// three rows of `PointLights` and each spot light four rows of `SpotLights`; the first row's
+    /// `.xyz` is the light's world position minus `ctx`'s
+    /// [`m_RenderCameraPosition`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderCameraPosition),
+    /// so every light position in the buffer is relative to the render camera. Each spot light that
+    /// casts a projected texture also gets a `Projections` matrix: the offset world-view-projection
+    /// of the light's frustum built with a world transform translated to the same render camera
+    /// position, so it maps a camera-relative position rather than a world position. The pixel
+    /// shaders that read the buffer subtract a camera-relative pixel position from the light
+    /// positions and apply the projections to that same position.
+    pub unsafe fn SetupLightingData(
+        &mut self,
+        ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+        point_lights: *const ::std::ffi::c_void,
+        point_light_count: u32,
+        spot_lights: *const ::std::ffi::c_void,
+        spot_light_count: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+                point_lights: *const ::std::ffi::c_void,
+                point_light_count: u32,
+                spot_lights: *const ::std::ffi::c_void,
+                spot_light_count: u32,
+            ) = ::std::mem::transmute(Self::SetupLightingData_ADDRESS);
+            f(
+                self as *mut Self as _,
+                ctx,
+                point_lights,
+                point_light_count,
+                spot_lights,
+                spot_light_count,
+            )
+        }
+    }
+    pub const ApplyDynamicLights_ADDRESS: usize = 0x1400D0270;
+    /// Rebuilds the lighting frame constant buffer for `ctx` through
+    /// [`SetupLightingData`](crate::graphics_engine::light_manager::LightManager::SetupLightingData), from the light records of the current
+    /// render-context frame's slot in the light manager's three-deep ring, then refreshes the light
+    /// lists. Called by
+    /// [`RenderEngine::SetGlobalShaderConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderConstants)
+    /// before it copies the buffer into the context, so the buffer is rebuilt from the render camera
+    /// position each time the global constants are staged.
+    pub unsafe fn ApplyDynamicLights(
+        &mut self,
+        ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ctx: *const crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::ApplyDynamicLights_ADDRESS);
+            f(self as *mut Self as _, ctx)
+        }
+    }
     pub const AddFarLightsToPass_ADDRESS: usize = 0x1400B9C10;
     /// Adds the far lights to `render_pass`, culled against the active camera.
     pub unsafe fn AddFarLightsToPass(

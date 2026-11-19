@@ -24,17 +24,26 @@
 //! with both eyes' rows equal to the staged ones, makes the rewritten shader read exactly what the
 //! original reads.
 //!
+//! With [`LocalLights::PerEye`], the shaders that light from the clustered-lighting frame constants
+//! also measure each light from the pixel's eye: the light data is relative to the camera it was built
+//! from, so once the camera row moves to the eye every light read is corrected by the eye's offset
+//! from that camera, which each eye's block carries in [`EYE_CAMERA_LIGHT_OFFSET_ROW`] (see
+//! `rewrite::lights`).
+//!
 //! A shader is declined when it reads none of the camera rows, already declares the buffer's slot,
 //! has no `SV_Position` input to select its eye by, or indexes `cb0` dynamically from a base that could
 //! reach one of the camera rows.
 
 use crate::{
     container::{Dxbc, DxbcError},
-    rewrite::common::{
-        CB_ACCESS_DYNAMIC_INDEXED, OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_TEMPS,
-        OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR, OPERAND_INPUT_MASK_X, OPERAND_INPUT_SELECT_X,
-        OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X, SB_NAME_POSITION, declared_register,
-        reassemble,
+    rewrite::{
+        common::{
+            CB_ACCESS_DYNAMIC_INDEXED, OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_TEMPS,
+            OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR, OPERAND_INPUT_MASK_X, OPERAND_INPUT_SELECT_X,
+            OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X, SB_NAME_POSITION, declared_register,
+            reassemble,
+        },
+        lights::{self, Correction},
     },
     tokens::{
         IDX_IMM32_PLUS_RELATIVE, Instruction, OperandKind, ShaderStage, TokenStream, parse_operand,
@@ -48,17 +57,32 @@ pub const EYE_CAMERA_CB_REGISTER: u32 = 11;
 /// eye's block lays them out: the two camera world position rows, then the sun-shadow cascade
 /// transform's translation row, which is baked relative to the camera position.
 pub const EYE_CAMERA_SOURCE_ROWS: [u32; 3] = [4, 5, 48];
+/// The row of each eye's block, after the copies of [`EYE_CAMERA_SOURCE_ROWS`], holding in `.xyz` the
+/// eye's world offset from the camera position the clustered-lighting frame constants are relative
+/// to, with `.w` zero.
+pub const EYE_CAMERA_LIGHT_OFFSET_ROW: u32 = EYE_CAMERA_SOURCE_ROWS.len() as u32;
 /// The rows each eye occupies in [`EYE_CAMERA_CB_REGISTER`].
-pub const EYE_CAMERA_ROWS_PER_EYE: u32 = EYE_CAMERA_SOURCE_ROWS.len() as u32;
+pub const EYE_CAMERA_ROWS_PER_EYE: u32 = EYE_CAMERA_LIGHT_OFFSET_ROW + 1;
 /// The row whose `.x` holds the eye boundary: the first pixel coordinate of the right eye's half.
 pub const EYE_CAMERA_BOUNDARY_ROW: u32 = 2 * EYE_CAMERA_ROWS_PER_EYE;
 /// The size of [`EYE_CAMERA_CB_REGISTER`] in float4 rows.
 pub const EYE_CAMERA_CB_ROWS: u32 = EYE_CAMERA_BOUNDARY_ROW + 1;
 
+/// Whether the eye-camera rewrite also measures the local lights from the pixel's eye.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LocalLights {
+    /// The light reads are left as they are.
+    Unchanged,
+    /// Every light read measured against a position relative to the pixel's eye is corrected by the
+    /// eye's offset.
+    PerEye,
+}
+
 /// Rewrite a pixel shader so every read of the camera rows takes the eye of the target half the pixel
-/// lies in (see the module docs). Returns [`DxbcError::NoCameraPosition`] for a shader that reads
-/// none of them, and another error for one this rewrite cannot take.
-pub fn localize_eye_camera(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
+/// lies in, and with [`LocalLights::PerEye`] every light read with them (see the module docs).
+/// Returns [`DxbcError::NoCameraPosition`] for a shader that reads none of the camera rows, and
+/// another error for one this rewrite cannot take.
+pub fn localize_eye_camera(blob: &[u8], local_lights: LocalLights) -> Result<Vec<u8>, DxbcError> {
     let dxbc = Dxbc::parse(blob)?;
     let shex = dxbc
         .chunk(b"SHEX")
@@ -67,7 +91,14 @@ pub fn localize_eye_camera(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
     if stream.stage() != ShaderStage::Pixel {
         return Err(DxbcError::NoCameraPosition);
     }
-    let plan = plan(&stream)?;
+    let mut plan = plan(&stream)?;
+    if local_lights == LocalLights::PerEye
+        && let Some(layout) = dxbc
+            .chunk(b"RDEF")
+            .and_then(|rdef| lights::layout(rdef.body(blob)))
+    {
+        plan.lights = lights::plan(&stream, layout)?;
+    }
     let isgn = dxbc
         .chunk(b"ISGN")
         .ok_or(DxbcError::MissingInputSignature)?
@@ -94,6 +125,20 @@ struct Plan {
     position_declaration: Option<(usize, u32)>,
     /// The token index of the first executable instruction.
     first_instruction: usize,
+    /// The light reads to correct, in program order.
+    lights: Vec<Correction>,
+}
+
+impl Plan {
+    /// The temp the light corrections compute into.
+    fn scratch(&self) -> u32 {
+        self.eye + 1
+    }
+
+    /// How many temps the rewritten shader declares.
+    fn temps(&self) -> u32 {
+        self.eye + 1 + u32::from(!self.lights.is_empty())
+    }
 }
 
 /// Scan the declarations and the camera-row reads, and check the preconditions.
@@ -145,6 +190,7 @@ fn plan(stream: &TokenStream) -> Result<Plan, DxbcError> {
         has_temps: temps.is_some(),
         position_declaration,
         first_instruction: first_instruction.unwrap_or(tokens.len()),
+        lights: Vec::new(),
     })
 }
 
@@ -223,7 +269,7 @@ fn rewrite(stream: &TokenStream, plan: &Plan, position: u32) -> Result<Vec<u8>, 
         }
         if insn.is_declaration() {
             match insn.opcode {
-                OPCODE_DCL_TEMPS => out.extend([tokens[insn.start], plan.eye + 1]),
+                OPCODE_DCL_TEMPS => out.extend([tokens[insn.start], plan.temps()]),
                 _ if plan.position_declaration.map(|(at, _)| at) == Some(insn.start) => {
                     out.push(tokens[insn.start]);
                     out.push(tokens[insn.start + 1] | MASK_X);
@@ -233,7 +279,17 @@ fn rewrite(stream: &TokenStream, plan: &Plan, position: u32) -> Result<Vec<u8>, 
             }
             continue;
         }
-        rewrite_instruction(tokens, &insn, plan.eye, &mut out)?;
+        let operands = insn.operands_start() - insn.start;
+        match plan.lights.iter().find(|light| light.at == insn.start) {
+            Some(light) => {
+                let patched =
+                    lights::emit(tokens, &insn, light, plan.eye, plan.scratch(), &mut out)?;
+                rewrite_instruction(&patched, operands, plan.eye, &mut out)?;
+            }
+            None => {
+                rewrite_instruction(&tokens[insn.start..insn.end], operands, plan.eye, &mut out)?
+            }
+        }
     }
     if !injected {
         emit_injection(&mut out, plan, position);
@@ -261,7 +317,7 @@ fn emit_injection(out: &mut Vec<u32>, plan: &Plan, position: u32) {
         ]);
     }
     if !plan.has_temps {
-        out.extend([(2 << 24) | OPCODE_DCL_TEMPS, eye + 1]);
+        out.extend([(2 << 24) | OPCODE_DCL_TEMPS, plan.temps()]);
     }
     out.extend([
         (8 << 24) | OPCODE_GE,
@@ -284,19 +340,20 @@ fn emit_injection(out: &mut Vec<u32>, plan: &Plan, position: u32) {
     ]);
 }
 
-/// Re-serialize one instruction, turning every camera-row operand `cb0[row]` into the eye's copy
-/// `cbN[rEye.x + k]`, where `k` is the row's place in [`EYE_CAMERA_SOURCE_ROWS`]. The swizzle,
-/// modifiers, and extended operand token carry over unchanged.
+/// Re-serialize one instruction, given as its own `tokens` with its first operand at `operands`,
+/// turning every camera-row operand `cb0[row]` into the eye's copy `cbN[rEye.x + k]`, where `k` is the
+/// row's place in [`EYE_CAMERA_SOURCE_ROWS`]. The swizzle, modifiers, and extended operand token carry
+/// over unchanged.
 fn rewrite_instruction(
     tokens: &[u32],
-    insn: &Instruction<'_>,
+    operands: usize,
     eye: u32,
     out: &mut Vec<u32>,
 ) -> Result<(), DxbcError> {
     let opcode_at = out.len();
-    out.extend_from_slice(&tokens[insn.start..insn.operands_start()]);
-    let mut pos = insn.operands_start();
-    while pos < insn.end {
+    out.extend_from_slice(&tokens[..operands]);
+    let mut pos = operands;
+    while pos < tokens.len() {
         let (operand, next) = parse_operand(tokens, pos)?;
         let slot = match operand.kind {
             OperandKind::ConstantBuffer {

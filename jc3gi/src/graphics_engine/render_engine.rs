@@ -649,7 +649,11 @@ impl RenderEngine {
     pub const SetGlobalShaderConstants_ADDRESS: usize = 0x140185740;
     /// Uploads the global per-view constant buffer for the frame: lighting, fog, wetness, and the
     /// render camera's full (translation-bearing) view-projection and world position. This drives
-    /// screen-space and non-geometry work, not opaque-geometry vertex placement.
+    /// screen-space and non-geometry work, not opaque-geometry vertex placement. It first rebuilds the
+    /// lighting frame constant buffer relative to the render camera position
+    /// ([`LightManager::ApplyDynamicLights`](crate::graphics_engine::light_manager::LightManager::ApplyDynamicLights))
+    /// and copies the light manager's per-frame resources into `ctx`
+    /// ([`LightManager::UpdateRenderContext`](crate::graphics_engine::light_manager::LightManager::UpdateRenderContext)).
     pub unsafe fn SetGlobalShaderConstants(
         &mut self,
         ctx: *mut crate::graphics_engine::graphics_engine::RenderContext,

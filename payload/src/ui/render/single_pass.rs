@@ -327,6 +327,22 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.local_lights_per_eye,
+                        "Local lights measured from each eye",
+                    )
+                    .on_hover_text(
+                        "In the same rewritten pixel shaders, measures every local point and spot \
+                         light from the eye whose half the pixel lies in. The engine stores the \
+                         lights relative to the centred camera, so off, the lights near the camera \
+                         (a held device's glow) sit where the point between the eyes sees them. \
+                         Reloads shaders to apply the rewrite; turning it off takes effect at once.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
                 let (rewritten, declined) = crate::stereo::single_pass::eye_camera::counts();
                 ui.weak(format!(
                     "Pixel shaders reading each eye's camera: {rewritten} (declined {declined})"
