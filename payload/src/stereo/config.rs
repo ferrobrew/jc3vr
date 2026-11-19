@@ -188,6 +188,18 @@ pub struct SinglePassConfig {
     /// position once per pass from the centred render camera, so without this both halves measure
     /// their view vectors, fog distances, and shadow lookups from the centre. On by default.
     pub fullscreen_camera_per_eye: bool,
+    /// Shade every pixel from the camera position of the eye whose half of the double-wide target it
+    /// lies in.
+    ///
+    /// The engine stages the camera position once per pass from the centred render camera, and an
+    /// instance-doubled draw covers both eyes in one submission, so without this every material that
+    /// measures a view vector or a camera distance in its pixel shader (cloth sheen, Fresnel,
+    /// specular, environment reflection, the sun-shadow lookup of the forward-lit families) is shaded
+    /// from between the eyes. Every pixel shader that reads the camera position is rewritten to pick
+    /// its eye's rows from a mod-owned buffer (`stereo::single_pass::eye_camera`). The rewrite needs a
+    /// shader reload; turning this off makes the rewritten shaders read the centred rows at once. On
+    /// by default.
+    pub pixel_camera_per_eye: bool,
     /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
     /// fullscreen consumer of the reconstruction basis.
     ///
@@ -615,6 +627,7 @@ impl SinglePassConfig {
             indirect_per_eye: true,
             reconstruct_per_eye: true,
             fullscreen_camera_per_eye: true,
+            pixel_camera_per_eye: true,
             atmospheric_per_eye: true,
             fog_volume_per_eye: true,
             water_uv_per_eye: true,

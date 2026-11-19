@@ -14,12 +14,18 @@
 //! one eye of a double-wide target, and `planar` does the same for the WaveWorks water's planar
 //! reflection lookup. `ambient` runs the ambient-occlusion generation pass over each eye's half of a
 //! double-wide target, and `seam` keeps the post chain's screen-mapped filters and the composite's
-//! bloom lookups inside each eye's half.
+//! bloom lookups inside each eye's half. `camera` gives every pixel shader that reads the camera
+//! position the position of the eye whose half of a double-wide target the pixel lies in.
 
 mod ambient;
 pub use ambient::{
     AMBIENT_OCCLUSION_CB_REGISTER, AMBIENT_OCCLUSION_ROWS_PER_EYE, localize_ambient_occlusion,
     localize_ambient_occlusion_filter,
+};
+mod camera;
+pub use camera::{
+    EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS, EYE_CAMERA_ROWS_PER_EYE,
+    EYE_CAMERA_SOURCE_ROWS, localize_eye_camera,
 };
 mod common;
 mod lake;

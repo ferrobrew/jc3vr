@@ -76,6 +76,7 @@ mod cb13;
 mod config_snapshot;
 mod detour_lifecycle;
 mod draw_detours;
+pub(crate) mod eye_camera;
 pub(crate) mod eye_globals;
 mod frame_diagnostics;
 mod impostor_pixel_size;
@@ -387,6 +388,8 @@ impl Drop for GBufferRange {
         if collapse_active() {
             unify_viewport_slots();
         }
+        // The pixel shaders' per-eye camera rows belong to the range too.
+        eye_camera::range_ended();
     }
 }
 
@@ -394,6 +397,7 @@ impl Drop for GBufferRange {
 /// interrupted dispatch cannot bleed into the next one. See [`begin_frame`] for the caller.
 fn clear_gbuffer_range() {
     IN_GBUFFER_RANGE.store(false, Ordering::Relaxed);
+    eye_camera::range_ended();
     // The per-eye matrices belong to the range that just ended. Dropping them means a re-issue that
     // somehow runs outside a range -- or in a later frame where `compute_dual_eye_rows` declined to
     // publish -- reprojects with nothing rather than with a stale head pose.
@@ -692,6 +696,7 @@ pub fn uninstall_com_detours() -> bool {
     drop(SET_VERTEX_PROGRAM_CONSTANTS.take());
     release_cb13();
     ambient_occlusion::release();
+    eye_camera::release();
     for shader in std::mem::take(&mut *PATCHED_VS.lock()) {
         // SAFETY: every entry was `com_add_ref`'d exactly once when it was recorded.
         unsafe { com_release(shader as *mut c_void) };

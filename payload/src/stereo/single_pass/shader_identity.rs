@@ -406,8 +406,7 @@ pub(super) unsafe extern "system" fn create_pixel_shader_detour(
                 Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
         }
         if identity.pristine_sha256 == RESOLVE_PRISTINE
-            && identity.actual_sha256 == RESOLVE_ACTUAL
-            && length == 35028
+            && is_resolve_executable(&identity.actual_sha256, length)
         {
             state.resolve =
                 Some(unsafe { std::slice::from_raw_parts(code.cast::<u8>(), length) }.to_vec());
@@ -460,6 +459,19 @@ pub(crate) const RESOLVE_PRISTINE: &str =
     "06f43db0887b0038147e273a3879a9b7f48c3b630955a94d695898fd7d0e52fc";
 pub(crate) const RESOLVE_ACTUAL: &str =
     "6a82533e6458166ea3d04789c266ec127baf59931882955c99c4603e47f11c9b";
+/// The deferred resolve's executable with each eye's camera rows selected per pixel
+/// (`dxbc_stereo::localize_eye_camera` over [`RESOLVE_ACTUAL`]), which the engine creates while
+/// `single_pass.pixel_camera_per_eye` applies.
+pub(crate) const RESOLVE_EYE_CAMERA: &str =
+    "668197a2cedd3e642568451f94e4fa224186e4df922f8be09ff59f7bcd440d22";
+
+/// Whether `actual` and `length` describe one of the deferred resolve's executables: the engine's own
+/// with the shadow rotation patched, or that with each eye's camera rows.
+pub(crate) fn is_resolve_executable(actual: &str, length: usize) -> bool {
+    (actual == RESOLVE_ACTUAL && length == 35028)
+        || (actual == RESOLVE_EYE_CAMERA && length == 35120)
+}
+
 pub(crate) fn resolve_bytecode() -> Option<Vec<u8>> {
     REGISTRY.lock().resolve.clone()
 }

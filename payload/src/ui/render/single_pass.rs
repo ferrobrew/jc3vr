@@ -293,6 +293,27 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      correction, for every per-eye run of a split fullscreen pass. Off, both halves \
                      measure view vectors, fog distances, and shadow lookups from the centred camera.",
                 );
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.pixel_camera_per_eye,
+                        "Geometry shades from each eye's camera position",
+                    )
+                    .on_hover_text(
+                        "Every pixel shader that measures a view vector or a camera distance reads \
+                         the camera position of the eye whose half its pixel lies in. Off, every \
+                         instance-doubled draw shades both eyes from the point between them: cloth \
+                         sheen, specular, Fresnel, and reflections differ from an eye rendered on its \
+                         own. Reloads shaders to apply the rewrite; turning it off takes effect at \
+                         once.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                let (rewritten, declined) = crate::stereo::single_pass::eye_camera::counts();
+                ui.weak(format!(
+                    "Pixel shaders reading each eye's camera: {rewritten} (declined {declined})"
+                ));
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.nvwater_per_eye,
                     "WaveWorks water per eye (parallax)",

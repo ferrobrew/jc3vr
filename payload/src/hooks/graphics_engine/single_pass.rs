@@ -267,6 +267,9 @@ fn set_all_global_shader_program_constants(this: *mut RenderEngine, ctx: *const 
         .call(this, ctx);
     let cb13_uploaded = crate::stereo::single_pass::active()
         && unsafe { this.as_ref() }.is_some_and(crate::stereo::single_pass::mirror_and_bind_cb13);
+    if let Some(engine) = unsafe { this.as_ref() } {
+        crate::stereo::single_pass::eye_camera::sync(engine);
+    }
     if let (Some(engine), Some(ctx)) = unsafe { (this.as_ref(), ctx.as_ref()) } {
         crate::screenshot::harness::constants::capture(engine, ctx, cb13_uploaded);
     }

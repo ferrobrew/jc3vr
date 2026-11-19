@@ -327,6 +327,7 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
             // Unconditional, unlike the scene record above: this one has to follow the engine onto the
             // reduced-resolution off-screen targets, which is the whole point of it.
             *CURRENT_ENGINE_VIEWPORT.lock() = Some(vp);
+            eye_camera::viewport_changed();
             VIEWPORT_DUP.fetch_add(1, Ordering::Relaxed);
             set_viewport_slots_uniform(true);
             unsafe { detour.call(context, 2, [vp, vp].as_ptr()) };
@@ -382,12 +383,7 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
     // everywhere except the reduced-resolution off-screen passes -- see [`CURRENT_ENGINE_VIEWPORT`].
     // From the dispatch snapshot, not live: this function both pins an eye half and puts the full
     // viewport back, and the two calls have to agree on which "full" they mean.
-    let base = if config_flags().has(Flag::ViewportFollowsTarget) {
-        (*CURRENT_ENGINE_VIEWPORT.lock()).or(*COLLAPSE_FULL_VIEWPORT.lock())
-    } else {
-        *COLLAPSE_FULL_VIEWPORT.lock()
-    };
-    let Some(full) = base else {
+    let Some(full) = collapse_base_viewport() else {
         return;
     };
     let Some(detour) = RS_SET_VIEWPORTS.get() else {
@@ -413,6 +409,23 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
     // instances land in one half -- the doubled/"same geometry twice" artifact. Re-binding per draw
     // is cheap (a few hundred geometry draws per frame, far below the draw budget we are cutting).
     unsafe { detour.call(context, 2, viewports.as_ptr()) };
+}
+
+/// The full viewport of the target the collapse splits into eye halves: the live engine bind while
+/// the split follows the target, otherwise the scene's.
+fn collapse_base_viewport() -> Option<D3D11_VIEWPORT> {
+    if config_flags().has(Flag::ViewportFollowsTarget) {
+        (*CURRENT_ENGINE_VIEWPORT.lock()).or(*COLLAPSE_FULL_VIEWPORT.lock())
+    } else {
+        *COLLAPSE_FULL_VIEWPORT.lock()
+    }
+}
+
+/// The render-target x coordinate where the right eye's half begins in the target the collapse is
+/// splitting, from the same viewport [`ensure_collapse_viewport`] splits. `None` until the scene's
+/// first viewport bind records one.
+pub(super) fn collapse_eye_boundary() -> Option<f32> {
+    collapse_base_viewport().map(|full| eye_half_viewport(full, 1).TopLeftX)
 }
 
 #[cfg(test)]

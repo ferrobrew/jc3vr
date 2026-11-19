@@ -147,6 +147,15 @@ pub enum DxbcError {
     /// The pixel shader binds neither of the composite's bloom textures, or reads them in a shape the
     /// composite-bloom rewrite does not recognise; the caller should leave it untouched.
     NoCompositeBloom,
+    /// The pixel shader reads none of the camera rows of the fragment `GlobalConstants`, so there is
+    /// nothing for the eye-camera rewrite to localize; the caller should leave it untouched.
+    NoCameraPosition,
+    /// The pixel shader has no `SV_Position` input to select its eye by.
+    NoPixelPosition,
+    /// The pixel shader already declares the constant-buffer slot the eye-camera rewrite needs.
+    EyeCameraSlotTaken,
+    /// The pixel shader indexes `cb0` dynamically from a base that could reach a camera row.
+    DynamicCameraAccess,
 }
 
 impl fmt::Display for DxbcError {
@@ -188,6 +197,14 @@ impl fmt::Display for DxbcError {
             }
             DxbcError::NoPostFilter => "dxbc: no recognised post-chain filter",
             DxbcError::NoCompositeBloom => "dxbc: no recognised composite bloom lookup",
+            DxbcError::NoCameraPosition => "dxbc: the pixel shader reads no camera position row",
+            DxbcError::NoPixelPosition => "dxbc: the pixel shader has no SV_Position input",
+            DxbcError::EyeCameraSlotTaken => {
+                "dxbc: the pixel shader already declares the eye-camera constant buffer slot"
+            }
+            DxbcError::DynamicCameraAccess => {
+                "dxbc: a dynamically indexed cb0 read could reach a camera row"
+            }
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
             DxbcError::NoLakeRefraction => {
                 "dxbc: missing unique lake refraction displacement scale"

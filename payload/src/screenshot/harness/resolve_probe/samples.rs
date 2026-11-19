@@ -22,7 +22,7 @@ impl Guard {
         eye: usize,
     ) -> anyhow::Result<Self> {
         ensure!(
-            matches!(&obs.pixel_shader.identity, Some(IdentityResult::Mapped{identity}) if identity.pristine_sha256 == shader_identity::RESOLVE_PRISTINE && identity.actual_sha256 == shader_identity::RESOLVE_ACTUAL),
+            matches!(&obs.pixel_shader.identity, Some(IdentityResult::Mapped{identity}) if identity.pristine_sha256 == shader_identity::RESOLVE_PRISTINE && [shader_identity::RESOLVE_ACTUAL, shader_identity::RESOLVE_EYE_CAMERA].contains(&identity.actual_sha256.as_str())),
             "resolve samples: unexpected shader"
         );
         let bytes =

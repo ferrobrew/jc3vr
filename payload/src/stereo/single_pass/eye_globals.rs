@@ -15,6 +15,10 @@
 //! moving that position moves the lookup with it. The transform's translation row takes the same
 //! correction `apply_shadow_cascade_anchor_fix` gives a separately rendered eye, which leaves the
 //! lookup on the map the cascade was rendered to.
+//!
+//! The same three rows, moved to each eye, are what the pixel shaders read per pixel from the
+//! eye-camera buffer ([`eye_camera`](crate::stereo::single_pass::eye_camera)), so a run staged here
+//! and a rewritten shader drawing into that eye's half read the same values.
 
 use std::cell::Cell;
 
@@ -52,6 +56,19 @@ pub(crate) fn stage(eye: usize) {
     }
 }
 
+/// `eye`'s copies of the rows [`stage`] moves, derived from the `staged` fragment block: the two
+/// camera position rows and the cascade translation row, in the order of
+/// [`dxbc_stereo::EYE_CAMERA_SOURCE_ROWS`]. `None` when no stereo frame is rendering.
+pub(super) fn eye_rows(staged: &[Vector4], eye: usize) -> Option<[Vector4; EYE_ROW_COUNT]> {
+    let delta = eye_world_offset(eye)?;
+    let mut rows = staged.to_vec();
+    offset_camera_rows(&mut rows, delta);
+    Some(EYE_ROWS.map(|row| rows[row]))
+}
+
+/// How many rows [`eye_rows`] gives each eye.
+pub(super) const EYE_ROW_COUNT: usize = EYE_ROWS.len();
+
 /// Put back the rows [`stage`] moved and upload them. A no-op when nothing is staged.
 pub(crate) fn restore() {
     let Some(saved) = SAVED.take() else {
@@ -72,6 +89,23 @@ const CAMERA_POSITION_ROWS: [usize; 2] = [4, 5];
 /// linear part, followed by its translation row.
 const CASCADE_LINEAR_ROW: usize = 45;
 const CASCADE_TRANSLATION_ROW: usize = CASCADE_LINEAR_ROW + 3;
+
+/// Every row [`stage`] moves, in the order the pixel-shader eye-camera buffer lays them out.
+const EYE_ROWS: [usize; 3] = [
+    CAMERA_POSITION_ROWS[0],
+    CAMERA_POSITION_ROWS[1],
+    CASCADE_TRANSLATION_ROW,
+];
+
+// The pixel-shader rewrite reads each eye's copies of exactly these rows, in this order.
+const _: () = {
+    let mut i = 0;
+    while i < EYE_ROWS.len() {
+        assert!(EYE_ROWS[i] == dxbc_stereo::EYE_CAMERA_SOURCE_ROWS[i] as usize);
+        i += 1;
+    }
+    assert!(EYE_ROWS.len() == dxbc_stereo::EYE_CAMERA_ROWS_PER_EYE as usize);
+};
 
 /// The rows [`stage`] overwrote, as the engine staged them.
 #[derive(Clone, Copy)]

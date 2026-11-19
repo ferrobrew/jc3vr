@@ -41,8 +41,8 @@ use crate::{
     config::Config,
     hooks::graphics_engine::ss_decal,
     stereo::single_pass::{
-        VsTransform, ambient_occlusion, is_terrain_shadow_pass, post_filters, set_patch_pending,
-        terrain_active, water_pixel_variants,
+        VsTransform, ambient_occlusion, eye_camera, is_terrain_shadow_pass, post_filters,
+        set_patch_pending, terrain_active, water_pixel_variants,
     },
 };
 
@@ -239,6 +239,10 @@ fn create_fragment_program(
         && Config::lock_query(|c| c.stereo.single_pass.glare_per_eye);
     let localize_ambient_occlusion = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye);
+    // Every pixel shader that reads the camera position picks its eye's copy per pixel. Applied last,
+    // over whatever the other rewrites produced, since it composes with all of them.
+    let localize_camera = crate::stereo::single_pass::collapse_active()
+        && Config::lock_query(|c| c.stereo.single_pass.pixel_camera_per_eye);
     let mut rewritten_ambient_occlusion = None;
     if !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
@@ -321,16 +325,41 @@ fn create_fragment_program(
         }
     }
 
-    let result = CREATE_FRAGMENT_PROGRAM.get().unwrap().call(device, params);
-    drop(identity);
-    if saved.is_none()
-        && !crate::is_shutting_down()
-        && let Some(p) = unsafe { params.as_ref() }
+    // The water's per-eye variants are built from the engine's own bytecode for every shader the
+    // other rewrites left alone. The camera rewrite does not count: the water's per-eye draws stage
+    // each eye's camera rows into `cb0` themselves, which the engine's bytecode reads.
+    let substituted_before_camera = saved.is_some();
+    if !crate::is_shutting_down()
+        && let Some(p) = unsafe { params.as_mut() }
         && !p.m_Code.is_null()
         && let Ok(size) = usize::try_from(p.m_Size)
+    {
+        let current = unsafe { std::slice::from_raw_parts(p.m_Code, size) };
+        if let Some(blob) = eye_camera::rewrite_fragment_program(current, localize_camera) {
+            let len = blob.len() as u64;
+            let (original_code, original_size) = saved
+                .take()
+                .map_or((p.m_Code, p.m_Size), |(code, size, _)| (code, size));
+            saved = Some((original_code, original_size, blob));
+            p.m_Code = saved.as_ref().expect("just set").2.as_ptr();
+            p.m_Size = len;
+        }
+    }
+
+    let result = CREATE_FRAGMENT_PROGRAM.get().unwrap().call(device, params);
+    drop(identity);
+    let engine_code = saved
+        .as_ref()
+        .map(|&(code, size, _)| (code, size))
+        .or_else(|| unsafe { params.as_ref() }.map(|p| (p.m_Code, p.m_Size)));
+    if !substituted_before_camera
+        && !crate::is_shutting_down()
+        && let Some((code, size)) = engine_code
+        && !code.is_null()
+        && let Ok(size) = usize::try_from(size)
         && let Some(shader) = unsafe { result.as_ref() }.and_then(|p| p.m_Program.as_ref())
         && let Err(error) = water_pixel_variants::register(shader, unsafe {
-            std::slice::from_raw_parts(p.m_Code, size)
+            std::slice::from_raw_parts(code, size)
         })
     {
         tracing::warn!("{error:#}");
