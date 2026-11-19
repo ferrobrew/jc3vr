@@ -36,7 +36,6 @@ use jc3gi::{
     types::math::{Matrix4, Vector4},
 };
 use parking_lot::Mutex;
-use re_utilities::ThreadSuspender;
 use windows::{
     Win32::{
         Graphics::Direct3D11::{
@@ -50,7 +49,7 @@ use windows::{
     core::{IUnknown, Interface},
 };
 
-use crate::config::Config;
+use crate::{config::Config, hooks::suspend};
 
 /// The result of the DXVK viewport-routing capability probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -646,7 +645,7 @@ pub fn uninstall_com_detours() -> bool {
     let mut failed: [Option<&'static str>; 11] = [None; 11];
     let mut failures = 0usize;
 
-    let suspension = ThreadSuspender::for_block(|| {
+    let suspension = suspend::for_block(|| {
         // A detour left enabled here is a relay still pointing into the about-to-be-freed payload
         // image, so a swallowed failure would be an undiagnosable crash -- record it. Recorded
         // rather than logged because formatting a `tracing` event allocates, which is the very

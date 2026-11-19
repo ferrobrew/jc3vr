@@ -5,7 +5,7 @@ use std::sync::{
 
 use jc3gi::game::GameState;
 use parking_lot::{Mutex, MutexGuard};
-use re_utilities::{ThreadSuspender, hook_library::HookLibrary};
+use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     controllers::weapons::{inventory::spawn_safety, reload},
@@ -29,6 +29,7 @@ pub mod online;
 #[cfg(feature = "profiler")]
 pub mod profiler;
 pub mod sim;
+pub(crate) mod suspend;
 pub mod ui;
 pub mod window_focus;
 pub mod wndproc;
@@ -78,9 +79,9 @@ pub(super) fn install() {
     }
     tracing::info!("startup: lifecycle participants registered; hook installation begin");
     let mut patcher = re_utilities::Patcher::new();
-    tracing::info!("startup: before ThreadSuspender");
-    let hook_library = ThreadSuspender::for_block(|| {
-        tracing::info!("startup: inside ThreadSuspender, before hook library construction");
+    tracing::info!("startup: before thread suspension");
+    let hook_library = suspend::for_block(|| {
+        tracing::info!("startup: inside thread suspension, before hook library construction");
         let library = HookLibrary::new()
             .with_hook_library(game::hook_library())
             .with_hook_library(sim::hook_library())
@@ -142,7 +143,7 @@ pub(super) fn uninstall() -> bool {
         tracing::error!("hook removal: installation state is unavailable");
         return false;
     };
-    if let Err(error) = ThreadSuspender::for_block(|| {
+    if let Err(error) = suspend::for_block(|| {
         Ok(state
             .hook_library
             .set_enabled(&mut state.patcher.lock(), false)?)

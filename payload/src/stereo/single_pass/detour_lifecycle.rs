@@ -123,7 +123,7 @@ pub(crate) fn ensure_viewport_detours() {
     // The whole body is serialized, not just the published-yet check: the callers are on different
     // threads (the render thread's cb13 mirror and the shader-creation thread's `CreateVertexProgram`),
     // and the publish happens only after seven `GenericDetour::new` calls. Two threads could otherwise
-    // both pass an unpublished check and both reach `ThreadSuspender::for_block`, each suspending the
+    // both pass an unpublished check and both reach `crate::hooks::suspend::for_block`, each suspending the
     // other -- a silent, permanent hang. `uninstall_com_detours` takes the same lock so an eject cannot
     // interleave with an install.
     let _install = DETOUR_INSTALL.lock();
@@ -212,7 +212,7 @@ pub(crate) fn ensure_viewport_detours() {
         VS_SET_SHADER.set(vs_set_shader_detour_handle);
         CREATE_VERTEX_SHADER.set(create_vertex_shader_detour_handle);
         SET_VERTEX_PROGRAM_CONSTANTS.set(set_vs_consts_detour_handle);
-        let _ = re_utilities::ThreadSuspender::for_block(|| {
+        let _ = crate::hooks::suspend::for_block(|| {
             RS_SET_VIEWPORTS.get().expect("just set").enable().ok();
             RS_SET_SCISSOR_RECTS.get().expect("just set").enable().ok();
             DRAW_INDEXED.get().expect("just set").enable().ok();
@@ -272,7 +272,7 @@ pub(crate) fn ensure_pixel_shader_detour() -> bool {
         return false;
     };
     CREATE_PIXEL_SHADER.set(detour);
-    let enabled = re_utilities::ThreadSuspender::for_block(|| {
+    let enabled = crate::hooks::suspend::for_block(|| {
         let detour = CREATE_PIXEL_SHADER.get().expect("just set");
         let result = unsafe { detour.enable() };
         if result.is_ok() || detour.is_enabled() {
