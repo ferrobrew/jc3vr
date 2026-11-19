@@ -164,6 +164,13 @@ pub enum DxbcError {
     EyeCameraSlotTaken,
     /// The pixel shader indexes `cb0` dynamically from a base that could reach a camera row.
     DynamicCameraAccess,
+    /// The pixel shader builds no screen-door pattern from its pixel position (no `dp2` of the
+    /// `SV_Position` input's `.xy` with an immediate vector), so there is nothing for the screen-door
+    /// rewrite to localize; the caller should leave it untouched.
+    NoScreenDoor,
+    /// The pixel shader declares the eye-camera constant-buffer slot smaller than the screen-door
+    /// rewrite reads it, so the slot is not the eye-camera buffer.
+    ScreenDoorSlotTaken,
 }
 
 impl fmt::Display for DxbcError {
@@ -216,6 +223,13 @@ impl fmt::Display for DxbcError {
             }
             DxbcError::DynamicCameraAccess => {
                 "dxbc: a dynamically indexed cb0 read could reach a camera row"
+            }
+            DxbcError::NoScreenDoor => {
+                "dxbc: the pixel shader builds no screen-door pattern from its pixel position"
+            }
+            DxbcError::ScreenDoorSlotTaken => {
+                "dxbc: the pixel shader declares the eye-camera constant buffer slot too small for \
+                 the eye boundary"
             }
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
             DxbcError::NoLakeRefraction => {

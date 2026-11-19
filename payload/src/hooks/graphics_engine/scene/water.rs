@@ -24,6 +24,10 @@
 //! buffer, so the collapse's per-eye machinery never reaches it and both eyes see the collapsed centre
 //! view of the water surface. See [`nv_water_per_eye`].
 //!
+//! The WaveWorks planar reflection is rendered from the water patch manager's reflection camera,
+//! which the engine sizes to the active camera every frame: under the double-wide collapse, twice an
+//! eye's width. [`update_reflection_camera`] puts it back to one eye.
+//!
 //! Not covered: the water-box *surface* geometry ([`WaterBoxRenderBlock::DrawSurface`], and the
 //! [`DrawWaterBoxSurface`](jc3gi::graphics_engine::render_block::DrawWaterBoxSurface) loop
 //! [`NvWaterHighEndRenderBlock::Draw`] runs over every registered box). Neither mechanism above
@@ -38,6 +42,7 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::{
+    camera::camera_manager::CameraManager,
     graphics_engine::{
         graphics_engine::RenderContext,
         render_block::{
@@ -46,6 +51,7 @@ use jc3gi::{
         render_engine::RenderPassId,
     },
     types::math::Matrix4,
+    water_patch_manager::WaterPatchManager,
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -56,8 +62,8 @@ use crate::{
         draw_index,
         single_pass::{
             BlockIntercept, WaterGpuProbe, begin_water_input_capture, begin_water_surface,
-            block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs, eye_globals,
-            screen_uv_cb_per_eye, with_wave_simulation_viewports,
+            block_intercept_enabled, double_wide_active, draw_per_eye_half_ignoring_bound_vs,
+            eye_globals, screen_uv_cb_per_eye, with_wave_simulation_viewports,
         },
     },
 };
@@ -68,6 +74,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&WATER_BOX_DRAW_BINDER)
         .with_static_binder(&NV_WATER_HIGH_END_DRAW_BINDER)
         .with_static_binder(&WAVE_WORKS_SIMULATION_STEP_BINDER)
+        .with_static_binder(&UPDATE_REFLECTION_CAMERA_BINDER)
 }
 
 /// The high-end water family (`waterhighend`, `waterbelow`, `watershader_lod0/1/2`) reads the
@@ -181,6 +188,80 @@ extern "system" fn wave_works_simulation_step(
             savestate,
         )
     });
+}
+
+/// The water reflection camera's projection parameters, sized to one eye under the double-wide
+/// collapse (`single_pass.water_reflection_eye_size`).
+///
+/// [`WaterPatchManager::UpdateReflectionCamera`] copies the active camera's dimensions, field of view,
+/// and clip distances, and the camera manager's aspect ratio, to the reflection camera, and its caller
+/// rebuilds the projection from them right after. Under the double-wide collapse the dimensions and
+/// the aspect ratio are the double-wide target's, so the reflection passes render twice an eye's
+/// horizontal field into the reflection texture, while each eye's water run looks the texture up as
+/// one eye's frame (`single_pass.water_reflection_per_eye`). In its place this sets the same
+/// parameters with the width and the aspect ratio halved, which is the camera an eye rendered on its
+/// own reflects from.
+///
+/// It writes the final values directly rather than correcting the engine's after the call. The
+/// reflection camera is live, and with the frame tail deferred the draw thread can be rendering the
+/// previous frame's reflection passes from it while this runs; a correction after the call leaves a
+/// window in which the camera holds the double-wide parameters with its projection marked dirty, and
+/// with one the reflection kept the double-wide field for several seconds at a time. Turning the
+/// switch off takes effect on the next frame, since the engine's own call then sets every parameter
+/// again.
+#[detour(address = jc3gi::water_patch_manager::WaterPatchManager::UpdateReflectionCamera_ADDRESS)]
+fn update_reflection_camera(this: *mut WaterPatchManager) {
+    let eye_size = double_wide_active()
+        && Config::lock_query(|c| c.stereo.single_pass.water_reflection_eye_size);
+    // SAFETY: `this` is the live manager the engine passed in, whose caller has checked the
+    // reflection camera pointer, and the camera manager is the live singleton.
+    if !eye_size || !unsafe { set_eye_sized_reflection_camera(this) } {
+        UPDATE_REFLECTION_CAMERA.get().unwrap().call(this);
+    }
+}
+
+/// Give the reflection camera the active camera's parameters at one eye's width, or return `false`
+/// without touching it when the manager, either camera, or the parameters are unusable.
+///
+/// # Safety
+///
+/// `this` must be the live water patch manager, called from its update.
+unsafe fn set_eye_sized_reflection_camera(this: *mut WaterPatchManager) -> bool {
+    // SAFETY: per this function's contract.
+    let Some(camera) =
+        (unsafe { this.as_ref() }).and_then(|m| unsafe { m.m_ReflectionCamera.as_mut() })
+    else {
+        return false;
+    };
+    // SAFETY: the camera manager is a process-lifetime singleton; its active camera is live.
+    let Some(manager) = (unsafe { CameraManager::get() }) else {
+        return false;
+    };
+    let Some(active) = (unsafe { manager.m_ActiveCamera.as_ref() }) else {
+        return false;
+    };
+    let (width, height, aspect) = (
+        active.m_Width / 2,
+        active.m_Height,
+        manager.m_AspectRatio * 0.5,
+    );
+    if width <= 0 || height <= 0 || !aspect.is_finite() || aspect <= 0.0 {
+        return false;
+    }
+    // SAFETY: the setters only store their arguments and mark the projection dirty, which the
+    // caller's `UpdateRender` rebuilds from. The field of view and the clip distances are the fields
+    // the engine's own setters store, and the aspect-ratio setter marks the projection dirty after
+    // them.
+    unsafe {
+        if (camera.m_Width, camera.m_Height) != (width, height) {
+            camera.SetWidthHeight(width, height);
+        }
+        camera.m_FOVT1 = active.m_FOV;
+        camera.m_Near = active.m_Near;
+        camera.m_Far = active.m_Far;
+        camera.SetAspectRatio(aspect);
+    }
+    true
 }
 
 /// The vertex constant buffer the water block types stage their screen-UV matrix into.

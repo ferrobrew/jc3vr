@@ -261,6 +261,10 @@ fn create_fragment_program(
     } else {
         LocalLights::Unchanged
     };
+    // Every screen-door pattern hashed from the pixel position is laid out from its eye's origin.
+    // Applied after the camera rewrite, whose buffer carries the eye boundary it reads.
+    let localize_screen_door = crate::stereo::single_pass::collapse_active()
+        && Config::lock_query(|c| c.stereo.single_pass.screen_door_per_eye);
     let mut rewritten_screen_pass = None;
     if !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
@@ -346,8 +350,10 @@ fn create_fragment_program(
     }
 
     // The water's per-eye variants are built from the engine's own bytecode for every shader the
-    // other rewrites left alone. The camera rewrite does not count: the water's per-eye draws stage
-    // each eye's camera rows into `cb0` themselves, which the engine's bytecode reads.
+    // other rewrites left alone. The camera and screen-door rewrites do not count: the water's
+    // per-eye draws stage each eye's camera rows into `cb0` themselves, which the engine's bytecode
+    // reads, and the only pattern the water hashes from its pixel position is the shadow rotation
+    // `patch_shadow_pcf_hash` zeroes.
     let substituted_before_camera = saved.is_some();
     if !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_mut() }
@@ -355,9 +361,12 @@ fn create_fragment_program(
         && let Ok(size) = usize::try_from(p.m_Size)
     {
         let current = unsafe { std::slice::from_raw_parts(p.m_Code, size) };
-        if let Some(blob) =
-            eye_camera::rewrite_fragment_program(current, localize_camera, local_lights)
-        {
+        let camera = eye_camera::rewrite_fragment_program(current, localize_camera, local_lights);
+        let screen_door = eye_camera::rewrite_screen_door(
+            camera.as_deref().unwrap_or(current),
+            localize_screen_door,
+        );
+        if let Some(blob) = screen_door.or(camera) {
             let len = blob.len() as u64;
             let (original_code, original_size) = saved
                 .take()

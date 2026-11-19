@@ -220,6 +220,17 @@ pub struct SinglePassConfig {
     /// (`stereo::single_pass::eye_camera`). It is part of the same shader rewrite, so turning it on
     /// needs a shader reload; turning it off zeroes the offset at once. On by default.
     pub local_lights_per_eye: bool,
+    /// Lay the screen-door pattern out from each eye's own origin.
+    ///
+    /// The alpha-tested and fading materials (the vegetation, the `general` and `prop` families,
+    /// buildings, the vehicle paint's stipple) discard against a threshold hashed from the pixel
+    /// position, and the volumetric fog dithers its march by the same hash. The hash does not
+    /// repeat horizontally, so in the right half of the double-wide target, whose pixel positions
+    /// are offset by the left eye's width, a different set of pixels survives each fade than in an
+    /// eye rendered on its own. `dxbc_stereo::localize_screen_door` rewrites the hash to read the
+    /// position relative to the eye boundary `stereo::single_pass::eye_camera` publishes. A shader
+    /// rewrite, so changing it needs a shader reload. On by default.
+    pub screen_door_per_eye: bool,
     /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
     /// fullscreen consumer of the reconstruction basis.
     ///
@@ -285,6 +296,17 @@ pub struct SinglePassConfig {
     /// (`dxbc_stereo::localize_planar_reflection`), built when the shader is created, so the switch
     /// applies without a shader reload. On by default.
     pub water_reflection_per_eye: bool,
+    /// Size the water's planar reflection camera to one eye under the double-wide collapse.
+    ///
+    /// `WaterPatchManager::UpdateReflectionCamera` copies the active camera's dimensions and the
+    /// camera manager's aspect ratio to the reflection camera every frame. Under the double-wide
+    /// collapse both are the double-wide target's, so the reflection passes render twice an eye's
+    /// horizontal field into the same reflection texture, and the eye-local lookup
+    /// [`water_reflection_per_eye`](Self::water_reflection_per_eye) gives each eye then reads a
+    /// reflection squeezed to half its width. The fix halves the width and the aspect ratio after the
+    /// engine sets them, which is the camera an eye rendered on its own reflects from. Applies at
+    /// once. On by default.
+    pub water_reflection_eye_size: bool,
     /// Move the fragment `GlobalConstants` camera position to each eye for that eye's re-issue of the
     /// WaveWorks water, on top of [`nvwater_per_eye`](Self::nvwater_per_eye).
     ///
@@ -652,11 +674,13 @@ impl SinglePassConfig {
             fullscreen_camera_per_eye: true,
             pixel_camera_per_eye: true,
             local_lights_per_eye: true,
+            screen_door_per_eye: true,
             atmospheric_per_eye: true,
             fog_volume_per_eye: true,
             water_uv_per_eye: true,
             nvwater_per_eye: true,
             water_reflection_per_eye: true,
+            water_reflection_eye_size: true,
             water_camera_per_eye: true,
             ssdecal_geometry_per_eye: true,
             slot13_per_eye: true,

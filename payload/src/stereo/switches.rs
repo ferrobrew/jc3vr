@@ -70,11 +70,13 @@ single_pass_switches! {
     FullscreenCameraPerEye => fullscreen_camera_per_eye, false;
     PixelCameraPerEye => pixel_camera_per_eye, true;
     LocalLightsPerEye => local_lights_per_eye, true;
+    ScreenDoorPerEye => screen_door_per_eye, true;
     AtmosphericPerEye => atmospheric_per_eye, false;
     FogVolumePerEye => fog_volume_per_eye, false;
     WaterUvPerEye => water_uv_per_eye, false;
     NvwaterPerEye => nvwater_per_eye, false;
     WaterReflectionPerEye => water_reflection_per_eye, false;
+    WaterReflectionEyeSize => water_reflection_eye_size, false;
     WaterCameraPerEye => water_camera_per_eye, false;
     SsdecalGeometryPerEye => ssdecal_geometry_per_eye, false;
     Slot13PerEye => slot13_per_eye, false;

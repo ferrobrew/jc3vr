@@ -27,6 +27,11 @@
 //! render camera, so once a pixel's position is measured from its eye the lights have to be too.
 //! Outside an eye-split pass the offset is zero, so the lights read what the engine built.
 //!
+//! [`dxbc_stereo::localize_screen_door`] reads the same boundary to lay the screen-door pattern the
+//! alpha-tested and fading materials discard by out from each eye's origin
+//! (`single_pass.screen_door_per_eye`). The boundary is therefore published in every eye-split pass,
+//! with both slots holding the staged rows when the camera rows are not moved per eye.
+//!
 //! The split fullscreen passes and the water's per-eye draws need nothing extra: each of their pixels
 //! lies in the half of the eye whose rows `eye_globals` stages for it, and that eye's slot holds the
 //! same values. Nothing is re-issued; the buffer is a constant-buffer write per pass and per target
@@ -37,7 +42,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use dxbc_stereo::{
     EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS,
     EYE_CAMERA_LIGHT_OFFSET_ROW, EYE_CAMERA_ROWS_PER_EYE, EYE_CAMERA_SOURCE_ROWS, LocalLights,
-    localize_eye_camera,
+    localize_eye_camera, localize_screen_door,
 };
 use jc3gi::{graphics_engine::render_engine::RenderEngine, types::math::Vector4};
 use parking_lot::Mutex;
@@ -82,6 +87,31 @@ pub(crate) fn rewrite_fragment_program(
     }
 }
 
+/// A pixel shader's bytecode rewritten to lay its screen-door pattern out from each eye's origin, or
+/// `None` when `enabled` is off or the shader builds no such pattern. Called for every fragment
+/// program the engine creates, after [`rewrite_fragment_program`], whose output it takes when there
+/// is one.
+pub(crate) fn rewrite_screen_door(code: &[u8], enabled: bool) -> Option<Vec<u8>> {
+    if !enabled {
+        return None;
+    }
+    match localize_screen_door(code) {
+        Ok(rewritten) => {
+            SCREEN_DOORS.fetch_add(1, Ordering::Relaxed);
+            Some(rewritten)
+        }
+        Err(dxbc_stereo::DxbcError::NoScreenDoor) => None,
+        Err(error) => {
+            SCREEN_DOORS_DECLINED.fetch_add(1, Ordering::Relaxed);
+            tracing::warn!(
+                target: "single_pass",
+                "screen door: a pixel shader hashing its pixel position was left unrewritten: {error}",
+            );
+            None
+        }
+    }
+}
+
 /// How many pixel shaders have been rewritten since injection, and how many that read the camera
 /// position were declined.
 pub(crate) fn counts() -> (usize, usize) {
@@ -91,10 +121,19 @@ pub(crate) fn counts() -> (usize, usize) {
     )
 }
 
+/// How many pixel shaders have had their screen-door pattern laid out per eye since injection, and
+/// how many that build one were declined.
+pub(crate) fn screen_door_counts() -> (usize, usize) {
+    (
+        SCREEN_DOORS.load(Ordering::Relaxed),
+        SCREEN_DOORS_DECLINED.load(Ordering::Relaxed),
+    )
+}
+
 /// Rewrite the buffer from the rows the engine just staged and bind it. Called from the
 /// `SetAllGlobalShaderProgramConstants` detour after the engine's own upload, on the render thread.
 pub(crate) fn sync(engine: &RenderEngine) {
-    if REWRITTEN.load(Ordering::Relaxed) == 0 {
+    if REWRITTEN.load(Ordering::Relaxed) == 0 && SCREEN_DOORS.load(Ordering::Relaxed) == 0 {
         return;
     }
     let staged = &engine.m_FPGlobalConstData;
@@ -113,7 +152,8 @@ pub(crate) fn sync(engine: &RenderEngine) {
         };
         Some(block(eye_globals::eye_rows(staged, eye)?, offset))
     };
-    let per_eye = (collapse_active() && in_gbuffer_range() && pixel_camera)
+    let split = collapse_active() && in_gbuffer_range();
+    let per_eye = (split && pixel_camera)
         .then(|| Some([eye_block(0)?, eye_block(1)?]))
         .flatten()
         .filter(|eyes| {
@@ -123,6 +163,7 @@ pub(crate) fn sync(engine: &RenderEngine) {
         });
     with_state(|ctx, state| {
         state.mirrored = mirrored;
+        state.split = split;
         state.per_eye = per_eye;
         let rows = state.rows(collapse_eye_boundary());
         upload(ctx, state, &rows, true);
@@ -143,7 +184,7 @@ pub(super) fn viewport_changed() {
         return;
     }
     with_state(|ctx, state| {
-        if state.per_eye.is_none() || state.buffer.is_none() {
+        if !state.split || state.buffer.is_none() {
             return;
         }
         let rows = state.rows(boundary);
@@ -158,7 +199,8 @@ pub(super) fn range_ended() {
         return;
     }
     with_state(|ctx, state| {
-        if state.per_eye.take().is_none() || state.buffer.is_none() {
+        state.per_eye = None;
+        if !std::mem::take(&mut state.split) || state.buffer.is_none() {
             return;
         }
         let rows = state.rows(None);
@@ -176,10 +218,13 @@ pub(super) fn release() {
     }
     let mut state = STATE.lock();
     state.buffer = None;
+    state.split = false;
     state.per_eye = None;
     SPLIT.store(false, Ordering::Relaxed);
     REWRITTEN.store(0, Ordering::Relaxed);
     DECLINED.store(0, Ordering::Relaxed);
+    SCREEN_DOORS.store(0, Ordering::Relaxed);
+    SCREEN_DOORS_DECLINED.store(0, Ordering::Relaxed);
 }
 
 /// The buffer's size in rows.
@@ -212,15 +257,18 @@ const NO_BOUNDARY: f32 = f32::MAX;
 
 static REWRITTEN: AtomicUsize = AtomicUsize::new(0);
 static DECLINED: AtomicUsize = AtomicUsize::new(0);
+static SCREEN_DOORS: AtomicUsize = AtomicUsize::new(0);
+static SCREEN_DOORS_DECLINED: AtomicUsize = AtomicUsize::new(0);
 static UPLOAD_WARNED: AtomicBool = AtomicBool::new(false);
-/// Whether the live buffer holds distinct per-eye rows, and the boundary it holds, so the per-bind
-/// and per-range paths can return without locking.
+/// Whether the live buffer was written for an eye-split pass, and the boundary it holds, so the
+/// per-bind and per-range paths can return without locking.
 static SPLIT: AtomicBool = AtomicBool::new(false);
 static UPLOADED_BOUNDARY: AtomicU32 = AtomicU32::new(0);
 
 static STATE: Mutex<State> = Mutex::new(State {
     buffer: None,
     mirrored: [Vector4 { data: [0.0; 4] }; EYE_ROWS],
+    split: false,
     per_eye: None,
     uploaded: [Vector4 { data: [0.0; 4] }; ROWS],
 });
@@ -229,7 +277,9 @@ struct State {
     buffer: Option<ID3D11Buffer>,
     /// The rows the engine staged at its last upload, with a zero light offset.
     mirrored: [Vector4; EYE_ROWS],
-    /// Each eye's rows, while the current pass is an eye-split one.
+    /// Whether the current pass is an eye-split one, which publishes the eye boundary.
+    split: bool,
+    /// Each eye's rows, while the current pass is an eye-split one and the camera rows move per eye.
     per_eye: Option<[[Vector4; EYE_ROWS]; 2]>,
     /// What the live buffer holds.
     uploaded: [Vector4; ROWS],
@@ -237,14 +287,14 @@ struct State {
 
 impl State {
     /// The buffer contents for the current pass, with the eye boundary at `boundary` while the pass
-    /// is eye-split. Without a per-eye pass or a boundary, both slots hold the staged rows and no
-    /// pixel reaches the boundary.
+    /// is eye-split. Without an eye-split pass or a boundary, both slots hold the staged rows and no
+    /// pixel reaches the boundary; in an eye-split pass without per-eye rows, both slots hold the
+    /// staged rows and the boundary is published for the screen-door rewrite.
     fn rows(&self, boundary: Option<f32>) -> [Vector4; ROWS] {
-        let (eyes, boundary) = match (self.per_eye, boundary) {
-            (Some(eyes), Some(boundary)) => (eyes, boundary),
-            _ => ([self.mirrored; 2], NO_BOUNDARY),
-        };
-        compose(eyes, boundary)
+        match (self.split, boundary) {
+            (true, Some(boundary)) => compose(self.per_eye.unwrap_or([self.mirrored; 2]), boundary),
+            _ => compose([self.mirrored; 2], NO_BOUNDARY),
+        }
     }
 }
 
@@ -276,7 +326,7 @@ fn upload(ctx: &ID3D11DeviceContext, state: &mut State, rows: &[Vector4; ROWS], 
     match unsafe { write(&mut state.buffer, ctx, rows, bind) } {
         Ok(()) => {
             state.uploaded = *rows;
-            SPLIT.store(state.per_eye.is_some(), Ordering::Relaxed);
+            SPLIT.store(state.split, Ordering::Relaxed);
             UPLOADED_BOUNDARY.store(rows[BOUNDARY].data[0].to_bits(), Ordering::Relaxed);
         }
         Err(error) => {
@@ -347,6 +397,7 @@ mod tests {
         State {
             buffer: None,
             mirrored: [row(10.0), row(10.0), row(40.0), ZERO],
+            split: per_eye,
             per_eye: per_eye.then(|| {
                 [
                     [row(9.0), row(9.0), row(39.0), row(-1.0)],
@@ -390,6 +441,41 @@ mod tests {
                     assert_eq!(read(&rows, x, source).data, expected.data);
                 }
             }
+        }
+    }
+
+    /// An eye-split pass whose camera rows stay on the centre still publishes the boundary, for the
+    /// screen-door rewrite, and every pixel on either side of it reads the staged rows.
+    #[test]
+    fn an_eye_split_pass_without_per_eye_rows_publishes_the_boundary() {
+        let mut state = state(false);
+        state.split = true;
+        let rows = state.rows(Some(320.0));
+        assert_eq!(rows[BOUNDARY].data[0], 320.0);
+        for x in [0.5, 319.5, 320.5, 639.5] {
+            for (source, expected) in state.mirrored.iter().enumerate() {
+                assert_eq!(read(&rows, x, source).data, expected.data);
+            }
+        }
+    }
+
+    /// The eye-local position the screen-door rewrite builds from the published boundary: the same
+    /// pixel of each eye's half gets the same position, and outside an eye-split pass every
+    /// position is the pixel's own.
+    #[test]
+    fn the_published_boundary_makes_each_half_eye_local() {
+        let local = |rows: &[Vector4; ROWS], x: f32| {
+            let boundary = rows[BOUNDARY].data[0];
+            x - if x >= boundary { boundary } else { 0.0 }
+        };
+        let split = state(true).rows(Some(320.0));
+        for x in [0.5, 100.5, 319.5] {
+            assert_eq!(local(&split, x), x);
+            assert_eq!(local(&split, x + 320.0), x);
+        }
+        let unsplit = state(false).rows(Some(320.0));
+        for x in [0.5, 319.5, 320.5, 639.5] {
+            assert_eq!(local(&unsplit, x), x);
         }
     }
 

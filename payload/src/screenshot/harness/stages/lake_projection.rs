@@ -130,6 +130,8 @@ pub(crate) unsafe fn eye_width_snapshot(pass: *mut RenderPass) -> Option<Snapsho
     if !wants_eyes()
         || draw_index() != 0
         || !crate::stereo::single_pass::double_wide_active()
+        // The production switch already sizes the reflection camera to one eye.
+        || crate::config::Config::lock_query(|c| c.stereo.single_pass.water_reflection_eye_size)
         || !water_surface_inputs_requested()
         || !matches!(
             water_reflection_requested(),

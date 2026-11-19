@@ -208,3 +208,19 @@ per-pixel tap noise, not the shadow's position or mean coverage, and the noise p
 screen rather than to the surface. The constant `12.9898` occurs **only** in this instruction (159 sites
 per bundle), so it is an exact fingerprint. The `dp2` immediate encodes as the 16 bytes
 `39 d6 4f 41 4c 77 9c 42 00 00 00 00 00 00 00 00`.
+
+## The screen-door hash
+
+The alpha-tested and fading materials discard by comparing a coverage value against a threshold hashed from the screen pixel:
+
+```
+dp2         r#.x, v0.xyxx, l(0.467944, -0.703648, 0, 0)   ; v0 = SV_Position (screen pixel)
+frc         r#.x, r#.x                                      ; the threshold, in [0, 1)
+add         r#.x, -r#.x, v6.w                               ; the coverage: a distance fade, a LOD crossfade
+lt          r#.x, r#.x, l(0)
+discard_nz  r#.x
+```
+
+It is the only other `dp2` of `SV_Position` with an immediate vector in `Shaders_F`, and the vector encodes as `5b 96 ef 3e 46 22 34 bf`. 101 pixel shaders build it from `SV_Position`: the `general*` families (the `general_lod*` crossfades, the `generalmkiii*` alpha tests and their shadow and reflective-shadow permutations), the `vegetationbark*` and `vegetationfoliage*` sets, `prop`, `propdecal`, `buildingjc3`, `landmark`, the `carpaintmm*_stipple` and `carpaintmmshadow` stipples, `tex0shadowstipple` and `rendervelocitybufferstipple`, the volumetric fog's `fogvolumeapply*` (which dithers its march by it rather than discarding), and the four `ssao*` permutations (the generation pass rotates its sampling spiral by it). The 18 `treeimpostor*` permutations build the same hash from their own projected position divided by twice the inverse screen size, rather than from `SV_Position`.
+
+Neither multiplier is a whole number of cycles per pixel, so the threshold field does not repeat under any horizontal or vertical shift of the pixel grid: the same surface drawn at a different offset in its target keeps a different set of pixels.

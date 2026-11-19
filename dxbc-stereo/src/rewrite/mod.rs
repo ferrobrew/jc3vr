@@ -18,7 +18,9 @@
 //! `reflection` traces the screen-space reflections over each eye's half of a double-wide target.
 //! `camera` gives every pixel shader that reads the camera position the position of the eye whose
 //! half of a double-wide target the pixel lies in, and `lights` measures the clustered local lights
-//! from that eye in the same shaders.
+//! from that eye in the same shaders. `screen_door` lays the screen-door pattern the alpha-tested and
+//! fading materials discard by out from each eye's own origin, reading the eye-camera rewrite's
+//! boundary.
 
 mod ambient;
 pub use ambient::{
@@ -59,6 +61,8 @@ pub use reflection::{
 };
 mod remap;
 mod reproject;
+mod screen_door;
+pub use screen_door::localize_screen_door;
 mod seam;
 pub use seam::{localize_composite_bloom, localize_post_filter, localize_reflection_blur};
 mod ssdecal;

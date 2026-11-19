@@ -347,6 +347,28 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 ui.weak(format!(
                     "Pixel shaders reading each eye's camera: {rewritten} (declined {declined})"
                 ));
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.screen_door_per_eye,
+                        "Screen-door fades laid out per eye",
+                    )
+                    .on_hover_text(
+                        "The alpha-tested and fading materials (vegetation, props, buildings, the \
+                         vehicle paint's stipple) and the volumetric fog dither by a pattern hashed \
+                         from the pixel position. Laid out from each eye's own origin, every eye \
+                         keeps the same pixels as an eye rendered on its own. Off, the right eye's \
+                         pattern is shifted by the left eye's width, and a different set of pixels \
+                         survives each fade. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                let (rewritten, declined) =
+                    crate::stereo::single_pass::eye_camera::screen_door_counts();
+                ui.weak(format!(
+                    "Pixel shaders with a per-eye screen door: {rewritten} (declined {declined})"
+                ));
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.nvwater_per_eye,
                     "WaveWorks water per eye (parallax)",
@@ -366,6 +388,16 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      coordinate. Off, each eye samples half of the one eye-sized reflection \
                      stretched across its view, shifting the water's colour differently in each \
                      eye. Applies immediately: the per-eye shaders are built with the originals.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.water_reflection_eye_size,
+                    "...and render its reflection at one eye's size",
+                )
+                .on_hover_text(
+                    "Sizes the water's planar reflection camera to one eye. Off, the engine sizes it \
+                     to the double-wide target, so the reflection covers twice an eye's horizontal \
+                     field and each eye sees it squeezed to half its width, which shows as a \
+                     sparkle over far water. Applies immediately.",
                 );
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.water_camera_per_eye,
