@@ -143,6 +143,29 @@ fn reprojected_vs_checksum_is_valid_and_second_pass_rejected() {
     ));
 }
 
+/// The static light sprites' vertex shaders (`lightsource` and `lightsource_fakelight`) project a world
+/// position through the full view-projection in `cb0` rows 0 to 3 and expand the sprite in clip space,
+/// with no per-eye `cb0` row, so they are reprojection candidates; both must take it soundly.
+#[test]
+fn static_light_sprite_vs_reprojects() {
+    let Some(dir) = shader_dir() else {
+        eprintln!("skipping: extracted shaders not present");
+        return;
+    };
+    for file in ["sh_0094_0003e7a0.dxbc", "sh_0095_0003f2a0.dxbc"] {
+        let blob = std::fs::read(dir.join(file)).expect("read the light sprite vertex shader");
+        assert!(
+            matches!(
+                patch_vertex_shader(&blob),
+                Err(DxbcError::NoPerEyeReferences)
+            ),
+            "{file} should carry no per-eye cb0 reference"
+        );
+        let out = reproject_vertex_shader(&blob).expect("reproject the light sprite vertex shader");
+        validate_reprojected(&out).unwrap_or_else(|e| panic!("{file}: {e}"));
+    }
+}
+
 /// Sweeps the corpus: every no-`cb0` vertex shader that reprojects must produce a structurally sound
 /// blob (re-parses, declares the interface, has the four-`dp4` epilogue). Reports the tally.
 #[test]

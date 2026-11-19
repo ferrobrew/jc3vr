@@ -213,6 +213,23 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      twice its size and the derivative-scaled atlas offset moves the cards' cut-out \
                      silhouettes.",
                 );
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.static_lights_per_eye,
+                        "Static light sprites per eye (distant town lights)",
+                    )
+                    .on_hover_text(
+                        "Reprojects the lightsource* vertex shaders by M_eye, promotes their \
+                         non-indexed draw to one two-instance draw routed to the eye halves, and \
+                         stages the sprites' inverse screen width at one eye's width. Off, the \
+                         sprites are drawn once across the whole double-wide target, at twice their \
+                         distance from its centre and depth-tested at the wrong pixel. Reloads \
+                         shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
                 ui.label("Render-block re-issue:");
                 if ui
                     .checkbox(

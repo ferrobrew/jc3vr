@@ -181,6 +181,27 @@ pub(super) unsafe extern "system" fn draw_detour(
         {
             return;
         }
+        // A patched shader resolves its eye from the instance parity and routes itself to that eye's
+        // half, so one two-instance draw covers both eyes, as the indexed path promotes its draws.
+        if BOUND_VS_PATCHED.load(Ordering::Relaxed)
+            && STATIC_LIGHT_PASSES.contains(&pass)
+            && config_flags().has(Flag::StaticLights)
+            // SAFETY: `context` is the live immediate context this entry was called on.
+            && let Some(ctx) =
+                unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) }
+        {
+            ensure_collapse_viewport(context, CollapseViewport::Split);
+            PATCHED_DRAWS.fetch_add(1, Ordering::Relaxed);
+            velocity::submit(
+                context,
+                "draw_promoted",
+                [vertex_count.into(), 2, start_vertex.into(), 0, 0],
+                // SAFETY: `DrawInstanced` is not detoured, so the promotion is not seen again as a
+                // game draw; the arguments are the caller's, with the instance count doubled.
+                || unsafe { ctx.DrawInstanced(vertex_count, 2, start_vertex, 0) },
+            );
+            return;
+        }
         ensure_collapse_viewport(context, CollapseViewport::Full);
     }
     unsafe { crate::screenshot::harness::stages::aa::observe(context, vertex_count, start_vertex) };
@@ -297,6 +318,21 @@ pub(super) const GEOMETRY_SLOT13_PASSES: &[u8] = &[
     RenderPassId::RP_GHOST_EFFECT as u8,
     RenderPassId::RP_OUTLINE_MASK as u8,
     RenderPassId::RP_FINAL_TRANSPARENT as u8,
+];
+
+/// Render passes whose non-indexed draws with a patched vertex shader are the static light sprites,
+/// promoted to one two-instance draw under `single_pass.static_lights_per_eye`.
+///
+/// [`RenderBlockTypeLights::Setup`](jc3gi::graphics_engine::render_block::RenderBlockTypeLights::Setup)
+/// selects its fake-light programs by [`RenderPassId::RP_DEFERRED_LIGHTS`], and the draw census
+/// records the block drawing in [`RenderPassId::RP_LENSFLARE`]; its third pass, the planar
+/// reflection's distant lights, lies outside the routed range. It is an allowlist rather than every
+/// patched non-indexed draw because the census also records patched shaders on non-indexed draws
+/// that are not scene geometry routed to the eye halves (the light-propagation-volume initialisation
+/// inside the screen-space reflection block), and splitting those would change what they write.
+const STATIC_LIGHT_PASSES: &[u8] = &[
+    RenderPassId::RP_DEFERRED_LIGHTS as u8,
+    RenderPassId::RP_LENSFLARE as u8,
 ];
 
 pub(super) fn is_geometry_slot13_pass(pass: u8) -> bool {

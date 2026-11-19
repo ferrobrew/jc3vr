@@ -12,7 +12,7 @@
 //! stays pristine, which is also why it must not be rewritten -- see `shader_policy`.
 
 use super::*;
-use crate::hooks::graphics_engine::clustered_lighting;
+use crate::{hooks::graphics_engine::clustered_lighting, stereo::single_pass::static_lights};
 
 /// One eye's re-issue of a terrain-detail draw: the reprojected `cb1` (four float4 rows) to stage on
 /// vertex slot 1, and the eye-half viewport to render into.
@@ -159,7 +159,7 @@ pub(super) struct ReprojectUpload {
 pub(super) static PER_EYE_REISSUE: AtomicUsize = AtomicUsize::new(0);
 
 /// The eye whose per-eye re-issue is currently in flight, or `None` outside one.
-pub(super) fn per_eye_reissue_eye() -> Option<usize> {
+pub(crate) fn per_eye_reissue_eye() -> Option<usize> {
     match PER_EYE_REISSUE.load(Ordering::Acquire) {
         0 => None,
         marker => Some(marker - 1),
@@ -567,6 +567,15 @@ pub(super) unsafe extern "system" fn set_vertex_program_constants_detour(
     ) {
         // SAFETY: `rows` holds the 4 float4 rows the call stages and outlives it; `detour.call` is the
         // trampoline.
+        unsafe { detour.call(ctx, cb_index, start_offset, rows.as_ptr(), count) };
+        return;
+    }
+    // SAFETY: the engine stages `count` float4 rows from `data`.
+    if let Some(rows) =
+        unsafe { static_lights::substitute_upload(cb_index, start_offset, data, count) }
+    {
+        // SAFETY: `rows` holds the `count` float4 rows the call stages and outlives it; `detour.call`
+        // is the trampoline.
         unsafe { detour.call(ctx, cb_index, start_offset, rows.as_ptr(), count) };
         return;
     }

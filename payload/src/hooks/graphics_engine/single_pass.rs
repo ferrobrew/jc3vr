@@ -28,14 +28,14 @@ use detours_macro::detour;
 use jc3gi::graphics_engine::{
     graphics_engine::RenderContext,
     render_block::{
-        RBIInfo, RenderBlockBark, RenderBlockFoliage, RenderBlockOccluder,
+        RBIInfo, RenderBlockBark, RenderBlockFoliage, RenderBlockOccluder, RenderBlockTypeLights,
         RenderBlockWaterReflectionPlane, TreeImpostorRBType,
     },
     render_engine::RenderEngine,
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::stereo::single_pass::{BlockIntercept, BoundVsGate, EyeDisplayWidth};
+use crate::stereo::single_pass::{BlockIntercept, BoundVsGate, EyeDisplayWidth, EyeLightWidth};
 
 /// Where a render block's baked view-projection lives, and how its intercept is gated: the four values
 /// that vary between the render-block detours below, pinned in one place so a block's buffer layout is
@@ -91,6 +91,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&RENDER_BLOCK_FOLIAGE_DRAW_Z_BINDER)
         .with_static_binder(&RENDER_BLOCK_OCCLUDER_DRAW_Z_BINDER)
         .with_static_binder(&TREE_IMPOSTOR_TYPE_SETUP_BINDER)
+        .with_static_binder(&LIGHTS_TYPE_SETUP_BINDER)
 }
 
 /// The tree impostors' per-pass setup stages their `PixelSize` from the render context's display
@@ -103,6 +104,16 @@ fn tree_impostor_type_setup(this: *mut TreeImpostorRBType, rc: *mut RenderContex
     // detour returns.
     let _width = unsafe { EyeDisplayWidth::stage(rc) };
     TREE_IMPOSTOR_TYPE_SETUP.get().unwrap().call(this, rc);
+}
+
+/// The static light sprites' per-pass setup stages their inverse screen width from the back buffer's
+/// width; under the double-wide collapse its upload is held at one eye's width for the call
+/// ([`EyeLightWidth`]), so the sprites routed to each eye half keep an eye-sized render's width. The
+/// sprites themselves stay one instance-doubled draw.
+#[detour(address = jc3gi::graphics_engine::render_block::RenderBlockTypeLights::Setup_ADDRESS)]
+fn lights_type_setup(this: *const RenderBlockTypeLights, rc: *mut RenderContext) {
+    let _width = EyeLightWidth::stage();
+    LIGHTS_TYPE_SETUP.get().unwrap().call(this, rc);
 }
 
 #[detour(address=jc3gi::graphics_engine::render_block::RenderBlockWaterReflectionPlane::Draw_ADDRESS)]

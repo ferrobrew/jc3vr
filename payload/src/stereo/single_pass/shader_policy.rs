@@ -61,9 +61,19 @@ const REPROJECT_NAME_PREFIXES: &[&str] = &[
 /// the coordinated indirect handling (see `docs/mod/stereo/single-pass-render-blocks.md`).
 const VEGETATION_REPROJECT_NAME_PREFIXES: &[&str] = &["treeimpostor"];
 
-/// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: either the
-/// `single_pass_reproject` flag is on and the name is on [`REPROJECT_NAME_PREFIXES`], or the
-/// `single_pass_tree_impostors` flag is on and the name is on [`VEGETATION_REPROJECT_NAME_PREFIXES`].
+/// Vertex-shader name prefixes of the static light sprites (`RenderBlockTypeLights`), gated by the
+/// separate [`static_lights_per_eye`](crate::stereo::config::SinglePassConfig::static_lights_per_eye)
+/// flag. Unlike the other screen-space effects, `lightsource` and `lightsource_fakelight` project a
+/// world position through the scene view-projection and only then expand the sprite in clip space, by
+/// a size scaled by the clip `w`; post-multiplying that clip position by `M_eye` moves the whole
+/// sprite into the eye, offset included, because `M_eye` is linear. Their draw is non-indexed, which
+/// the draw path promotes to two instances for a patched shader (`draw_detour`).
+const STATIC_LIGHT_REPROJECT_NAME_PREFIXES: &[&str] = &["lightsource"];
+
+/// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: the
+/// `single_pass_reproject` flag is on and the name is on [`REPROJECT_NAME_PREFIXES`], the
+/// `single_pass_tree_impostors` flag is on and the name is on [`VEGETATION_REPROJECT_NAME_PREFIXES`],
+/// or the static-light flag is on and the name is on [`STATIC_LIGHT_REPROJECT_NAME_PREFIXES`].
 /// Called from the `CreateVertexProgram` hook when `patch_vertex_shader` reports no per-eye `cb0`
 /// operands.
 pub fn should_reproject(name: Option<&str>) -> bool {
@@ -74,6 +84,10 @@ pub fn should_reproject(name: Option<&str>) -> bool {
     (flags.has(Flag::Reproject) && REPROJECT_NAME_PREFIXES.iter().any(|p| name.starts_with(p)))
         || (flags.has(Flag::TreeImpostors)
             && VEGETATION_REPROJECT_NAME_PREFIXES
+                .iter()
+                .any(|p| name.starts_with(p)))
+        || (flags.has(Flag::StaticLights)
+            && STATIC_LIGHT_REPROJECT_NAME_PREFIXES
                 .iter()
                 .any(|p| name.starts_with(p)))
 }

@@ -2208,6 +2208,52 @@ impl std::convert::AsMut<RenderBlockTypeLayered> for RenderBlockTypeLayered {
     }
 }
 #[repr(C, align(8))]
+/// The static light-sprite render block *type* (`NGraphicsEngine::CRenderBlockLights::CRenderBlockTypeLights`,
+/// registered name `"StaticLights"`): the point-light sprites `CLightManager` builds for the world's
+/// static lights, drawn as additive camera-facing quads. Each block draws its lights with one
+/// non-indexed `Draw` over a vertex stream of six vertices per light. The vertex programs
+/// (`Lightsource` and `Lightsource_FakeLight`) project each light's world position through the
+/// translation-bearing view-projection in the global vertex constants and expand the quad around it
+/// in clip space by a pixel size scaled by the clip `w`, so a sprite keeps a screen-space size set by
+/// its distance. The block draws in the sky-tail lens-flare pass, in the planar reflection's
+/// distant-light pass, and, through the fake-light permutation, in
+/// [`RP_DEFERRED_LIGHTS`](crate::graphics_engine::render_engine::RenderPassId::RP_DEFERRED_LIGHTS).
+pub struct RenderBlockTypeLights {}
+impl RenderBlockTypeLights {
+    pub const Setup_ADDRESS: usize = 0x14017CE90;
+    /// Binds the state every light-sprite draw in the pass shares and stages the vertex program's
+    /// constants in vertex `cb1`. In [`RP_DEFERRED_LIGHTS`](crate::graphics_engine::render_engine::RenderPassId::RP_DEFERRED_LIGHTS)
+    /// it selects the fake-light program pair, binds the depth texture its pixel program fades
+    /// against, and applies the distant-light size and intensity scales; elsewhere both scales are
+    /// one. The sprite size scale is derived from the render context's projection and the height of
+    /// [`RenderContext::m_BackBufferTexture`](crate::graphics_engine::graphics_engine::RenderContext::m_BackBufferTexture),
+    /// and the inverse screen width and height that convert the pixel size to clip units are one over
+    /// that texture's width and height. The constants also carry the intensity, the distance fade, the
+    /// size-distance curve, and an animation time from the render context's accumulated frame time.
+    pub unsafe fn Setup(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::Setup_ADDRESS);
+            f(self as *const Self as _, render_context)
+        }
+    }
+}
+impl std::convert::AsRef<RenderBlockTypeLights> for RenderBlockTypeLights {
+    fn as_ref(&self) -> &RenderBlockTypeLights {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockTypeLights> for RenderBlockTypeLights {
+    fn as_mut(&mut self) -> &mut RenderBlockTypeLights {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The `RenderBlockMaterialTune` render block *type* (`NGraphicsEngine::CRenderBlockMaterialTune::CRenderBlockTypeMaterialTune`).
 pub struct RenderBlockTypeMaterialTune {}
 impl RenderBlockTypeMaterialTune {

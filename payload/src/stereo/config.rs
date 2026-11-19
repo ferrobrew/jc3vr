@@ -118,6 +118,15 @@ pub struct SinglePassConfig {
     /// derivative-scaled atlas offset moved the cards' alpha-tested silhouettes. The display width is
     /// halved for the length of that call. Applies without a shader reload. On by default.
     pub tree_impostor_pixel_size_per_eye: bool,
+    /// Draw the static light sprites (`RenderBlockTypeLights`, the distant town and street lights)
+    /// once for both eyes under the double-wide collapse. Their non-indexed `Draw` was drawn once
+    /// across the whole double-wide target from the centred camera, so each light landed at twice
+    /// its distance from the target's centre and was depth-tested against another pixel's depth, and
+    /// lights the terrain hides came out in front of it. The `lightsource*` vertex shaders take the
+    /// `M_eye` reprojection, their draw is promoted to two instances routed to the eye halves, and
+    /// the type's `Setup` stages the sprites' inverse screen width at one eye's width. The
+    /// reprojection needs a shader reload; the rest applies at once. On by default.
+    pub static_lights_per_eye: bool,
     /// Single-pass the tree-trunk/branch render block (`CRenderBlockBark`, "VegetationBark"). Its vertex
     /// shader reads a CPU-baked world-view-projection from `cb1` (not `cb0`) and draws via one of three
     /// kinds (plain, CPU-instanced, or GPU-indirect), so it can't ride the reprojection rewrite; instead
@@ -620,6 +629,7 @@ impl SinglePassConfig {
             terrain_patch_per_eye: true,
             tree_impostors: false,
             tree_impostor_pixel_size_per_eye: true,
+            static_lights_per_eye: true,
             bark: true,
             foliage: true,
             occluder: false,

@@ -428,6 +428,12 @@ pub(super) fn collapse_eye_boundary() -> Option<f32> {
     collapse_base_viewport().map(|full| eye_half_viewport(full, 1).TopLeftX)
 }
 
+/// The width of one eye's half of the target the collapse is splitting, from the same viewport
+/// [`ensure_collapse_viewport`] splits. `None` until the scene's first viewport bind records one.
+pub(super) fn collapse_eye_width() -> Option<f32> {
+    collapse_base_viewport().map(|full| eye_half_viewport(full, 0).Width)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

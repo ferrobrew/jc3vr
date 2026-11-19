@@ -267,6 +267,7 @@ is split by concern:
 | `pinned_eye` | the marker on pinned-eye shaders, and the `cb13` pin their per-eye re-issues take |
 | `eye_camera` | the pixel shaders' per-eye camera buffer, kept in step with the engine's fragment constants and the bound target |
 | `impostor_pixel_size` | the tree impostors' pixel size at one eye's width |
+| `static_lights` | the static light sprites' inverse screen width at one eye's width |
 | `config_snapshot` | the per-frame and per-dispatch flag snapshots |
 | `instanced_exposure`, `frame_diagnostics` | measurement only; nothing here changes a draw |
 
@@ -282,6 +283,7 @@ is split by concern:
 | Rebuild scene RTs at a new size | `GraphicsEngine::CreateRenderSetups`, driven by `ApplyResize` |
 | Per-eye render-block re-issue | `RenderBlockBark::Draw`/`DrawZ`, `RenderBlockFoliage::Draw`, `RenderBlockOccluder::DrawZ`, `RenderBlockTerrainDetail::Draw` |
 | Stage the impostors' pixel size at one eye's width | `TreeImpostorRBType::Setup` |
+| Stage the light sprites' inverse screen width at one eye's width | `RenderBlockTypeLights::Setup` |
 | Baked-constant reprojection | `Graphics::SetVertexProgramConstants` |
 
 Addresses live in the pyxis defs, not here.
@@ -585,6 +587,22 @@ All 432 camera readers are rewritten and none is declined: 183 already declare `
 
 In run 250 (a new session, so the player's pose and the animated scene differ from run 249's), the midday cliff view's G-buffer albedo differed from the isolated eye by more than three codes at 218 and 67 pixels, against 5,895 and 4,933, and the lit colour at 13,680 and 8,501 pixels, against 23,557 and 23,322; the final image differed at 6.0% and 4.6% of pixels, against 7.0% and 9.3%. At dusk the albedo differences fell from 8,773 and 6,271 pixels to 19 and 45. The deferred resolve, which now reads the camera through the buffer in its masked runs, reconstructs world positions within a millimetre of the isolated eye's. What still differs on the near surfaces is the screen-space reflection buffer the resolve reads (see "Known gaps"), and at dusk also the local-light data in the resolve's `LightingFrameConsts`, which differed from the isolated eye's in run 249 as well. The far-terrain, sky, and shore-lake views stay within their run-to-run range; the shore lake's water stage varies between sessions by more than any change attributable here (from 13,400 to 19,400 differing pixels per eye across runs 247 to 249).
 
+## The static light sprites
+
+At dusk and night the distant town and street lights along the horizon came out far too many, too bright, and in the wrong places under the collapse: at the night far-terrain view, eye 0's main colour gained 460 pixels with a summed brightness of 73 between the water and the cloud composite, against 88 pixels and 6 in an isolated render of that eye, and eye 1 gained 30 pixels in rows where the isolated eye had none. The draw census (see "Naming the draws in a pass range") showed what draws there: [`RenderBlockTypeLights`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeLights), the static light sprites, in [`RP_LENSFLARE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_LENSFLARE), with the `lightsource` program pair and one non-indexed `Draw` per block, each submitted once. Nothing else in the passes from the water to the cloud composite draws besides the two cloud blocks.
+
+The sprite vertex shader projects each light's world position through the full view-projection in the global vertex constants (not one of the remap's per-eye rows) and expands the quad around it in clip space by a pixel size times the clip `w`. Under the collapse three things were wrong with that:
+
+- A non-indexed draw outside the geometry passes is treated as a fullscreen pass and drawn with the whole double-wide viewport, so the centred camera's view was stretched over both eyes: each light landed at twice its distance from the target's centre, and eye 1 showed the right half of the centre view.
+- The sprites are occluded by the hardware depth test alone (the `lightsource` pixel shader samples no depth), so each stretched sprite was tested against the depth of a pixel that is not the one it represents. Lights the terrain hides came out in front of it, which is where most of the extra brightness came from.
+- The inverse screen width that turns the pixel size into clip units is one over the back buffer's width, which is both eyes' width.
+
+`single_pass.static_lights_per_eye` (**on**) draws them once for both eyes. The `lightsource` and `lightsource_fakelight` vertex shaders take the reprojection (their clip position is a scene view-projection times a world position, and `M_eye` is linear, so the clip-space offset moves with the sprite), and `draw_detour` promotes a non-indexed draw with a patched vertex shader in the two passes the light type draws in within the routed range ([`RP_DEFERRED_LIGHTS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_DEFERRED_LIGHTS), where `Setup` selects the fake-light programs, and `RP_LENSFLARE`) to one two-instance `DrawInstanced` with the viewport split, as the indexed path promotes its draws. The promotion is a pass allowlist, not every patched non-indexed draw: the first version promoted all of them outside the geometry passes, which also caught the light-propagation-volume initialisation (`lpvinit`) inside the screen-space reflection block and the moon's `open` model, and the split moved the midday sky capture's lit colour (`post_resolve`) away from the isolated eyes at about 5,800 and 6,000 pixels, against 655 and 1,054 with the allowlist. The sprites then rasterise in each eye's half from that eye's projection and are depth-tested against that eye's depth. A detour on [`RenderBlockTypeLights::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeLights##func-Setup) rewrites the sprite constants' inverse screen width to one over the width of the eye half the collapse splits the bound target into (`stereo::single_pass::static_lights`), so a sprite is as wide as in an eye-sized render. The pixel shader's camera reads are already per eye (see "Each eye's camera position in the pixel shaders"). The sprites' distance fade and size curve read the centred camera row, as the scene's other LOD decisions do.
+
+The draw count is unchanged: the same 38 calls at the dusk cliff view, each now one submission carrying both eyes, where a per-eye re-issue would have been 76. Outside the routed range (the planar reflection's distant-light pass, which reuses the program) `M_eye` is the identity and the draw is not promoted, so the reflection is unchanged.
+
+In run 253 (a new session, so the pose and the scene's animation differ from run 250's), the same-run comparison at the dusk cliff view had the eyes add 831 and 829 pixels between the water and the cloud composite where the isolated eyes added 830 and 829, all but one in the same places, with a summed absolute difference of 0.1 and 0.7 against totals of 36; the final image differed from the isolated eyes at 30 and 191 pixels (0.03% and 0.17%), against 4,051 and 3,325 (3.5% and 2.9%) in run 250. At the night far-terrain view the eyes added exactly the isolated eyes' 54 pixels each, the final image differed at 40 and 12 pixels, against 576 and 156 (0.50% and 0.14%) in run 250, and the comparison passes in all four modes. The midday sky, midday cliff, and shore-lake captures show no stage clearly worse than in run 250; the midday sky's water step adds about 660 differing pixels per eye against about 250, all in the patch of lake at the foot of the frame where run 250's came from, which this pose shows more of.
+
 ## The clustered froxel grid, per eye
 
 Not a sliding defect, but the same shape and a defect in every collapsed frame: the grid is built with
@@ -653,6 +671,7 @@ is marked with its actual default.
 | `single_pass.tree_impostors` | Off | Reprojects the far-distance tree impostors. |
 | `single_pass.pixel_camera_per_eye` | On | Every pixel shader that reads the camera position picks the rows of the eye whose half its pixel lies in (see "Each eye's camera position in the pixel shaders"). Turning it off applies at once; turning it on needs a shader reload. |
 | `single_pass.tree_impostor_pixel_size_per_eye` | On | Stages the impostors' `PixelSize` at one eye's width under the double-wide collapse (see [single-pass-render-blocks.md](single-pass-render-blocks.md#treeimpostor)). Applies without a shader reload. |
+| `single_pass.static_lights_per_eye` | On | The static light sprites (the distant town and street lights) drawn once for both eyes: the `lightsource*` vertex shaders take the reprojection, their non-indexed draw is promoted to two instances, and their inverse screen width is staged at one eye's width (see "The static light sprites"). The reprojection needs a shader reload; the promotion and the width apply at once. |
 
 ### Per-eye re-issue of a render block
 
@@ -765,6 +784,9 @@ either: they are correctness surface, not duplicated work.
 - **`cb0`'s projection is double-wide.** Unpatched geometry that reads `cb0` rather than `cb13`
   renders horizontally squashed under double-wide.
 - **The sun halo is one sprite per screen.** [`SunHaloEffect::PreApply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::SunHaloEffect##func-PreApply) projects the sun through the render context's single projection onto the scene texture's pixel size and draws one halo there, so under the collapse it lands once, somewhere across the double-wide target, rather than once per eye. It runs only while the sun is low, so the midday sky capture does not exercise it. A per-eye halo needs two projections and two composites, which is a draw-count decision, and has not been made.
+- **The other screen-space light sprites are unexamined.** The particle flares (`particleeffectflare*`), the light glows (`lightglow`), and the halos place their sprites from the centred camera's screen position on the CPU, and the flares and glows test occlusion by sampling depth at one full-target UV staged per draw. Their unpatched indexed draws are re-issued into each eye's half, where that UV samples the wrong pixel. None of them drew in the dusk cliff view's draw census, so this is read from the bytecode and the symbol dump and is unverified in game.
+- **Two more patched shaders draw non-indexed across the whole target.** The draw census records `lpvinit`, the light-propagation-volume initialisation the screen-space reflection block draws, and the moon's `open` model in `RP_MOON` on `Draw` with a patched vertex shader outside the geometry passes, so each is drawn once with the full viewport and eye 0's transform. Neither is promoted (see "The static light sprites"); what each should get is unexamined.
+- **Patched non-indexed geometry is still re-issued per eye.** The geometry passes on `Draw` (skidmarks, decals, roads) go through `instanced_per_eye`, two submissions per call, where the static light sprites' promotion to one two-instance draw would serve a patched shader with one.
 - **Screen-space passes leak across the eye seam.** FSR and the unsplit screen-space passes run once
   over the double-wide target and sample neighbourhoods; they need a UV clamp at the seam.
 - **The 14 already-instanced shaders** need their `SV_InstanceID` consumers rewritten to
@@ -846,6 +868,12 @@ with a patched shader bound. **Slot 0 is never touched**, so the repair can only
 reappear; it cannot move what already rendered. The log reports how many repairs a window needed as
 `slot-1 repairs`.
 
+## Naming the draws in a pass range
+
+A capture can carry a census of the draw calls its frame made (`payload/src/screenshot/harness/draw_census.rs`), requested by `draw_census = true` under an experiment's `[diagnostics]` alongside `shader_identity = true`, which it needs to name the shaders; `tools/rendering/experiments/cliff_view_dusk_draw_census.toml` is the dusk cliff view with it on. For every draw call made inside a render pass on the capture's frame it records the pass, the render-block type running, the bound vertex shader (by name) and pixel shader (by the hash of its pristine bytecode), the device-context entry point, and the treatment the draw path gave the call: `instance_doubled`, `per_eye` (submitted once per eye), `once`, `suppressed`, or `repeated`, plus the eye when the call was made inside a render block's per-eye re-issue. Calls that agree on all of that are folded into one entry with call and submission counts, which keeps a frame to about two hundred entries. It only observes, and since it hangs off the collapse's draw detours, only a single-pass capture records calls.
+
+`python -m tools.rendering census <capture.json> --bundle <Shaders_F.shader_bundle> --passes FIRST:LAST --totals` prints the entries for a pass range with the pixel shaders named from the bundle, and the call and submission totals per treatment, which is also the starting point for counting where the collapse still spends two submissions on one call.
+
 ## The non-`cb0` shader census
 
 From a census of the shipped set (`m_Name` against the rewrite outcome; the payload re-dumps it on the next
@@ -860,7 +888,8 @@ may miss families from biomes or weather not visited; it is a floor, not a compl
 `buildingrsm`; `window`; `materialtune`; `open`; `flag`, `flagdepthonly`; `snow`; `skidmarks`,
 `skidmarks_normal`; roads `junctionroad*`, `splineroad*`, `dirtroad`. Plus `treeimpostor*` under
 `single_pass.tree_impostors`, whose `PixelSize` is restaged per eye by
-`single_pass.tree_impostor_pixel_size_per_eye`.
+`single_pass.tree_impostor_pixel_size_per_eye`, and `lightsource`, `lightsource_fakelight` under
+`single_pass.static_lights_per_eye` (see "The static light sprites").
 
 **Candidate scene models not on the allowlist** (unclear family, held back pending a look): `box`,
 `notex`, `lrpc`.
@@ -894,7 +923,7 @@ re-issue where a block flag covers them, double-drawn otherwise.
 - UI: `gui`, `quickui`, `2dtex1`, `2dtex2`, `3dtext`, `line3d`, `video`.
 - Particles, effects, lights: `particleeffect*`, `beam`, `contrails`, `trail`, `billboard`,
   `meshparticle`, `distortionparticle`, `fxmeshfire`, `bulletsmoke`, `bullet`, `halo`, `halomask`,
-  `lensflare`, `sunbeam`, `lightglow`, `lightsource`, `lightsource_fakelight`, `lightningshader`,
+  `lensflare`, `sunbeam`, `lightglow`, `lightningshader`,
   `bavariumshield`, `spotlightcone`, `pointlightreflection`, `alphamask`, `aobox`.
 - Water: `nvwater*`, `water*` (`waterboxclear`, `waterbumpcomposite`, `waterdisplacementoverride`,
   `waterfoamsub`, `watergodraysshader`, `watermask`, `waterpaintfoam`, `watersurface`, `waterwake`),
