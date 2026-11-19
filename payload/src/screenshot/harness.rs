@@ -2203,6 +2203,7 @@ mod tests {
             engine_dimensions: Some((4096, 2048)),
             pose: None,
             environment: None,
+            exposure: None,
             motion: Some(MotionMetadata {
                 request,
                 phase,

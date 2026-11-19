@@ -572,6 +572,26 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     "Glare filter variants built: {}",
                     crate::stereo::single_pass::post_filters::registered_count()
                 ));
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.foveation_per_eye,
+                    "Foveation per eye",
+                )
+                .on_hover_text(
+                    "Centres the foveation's full-rate region and its peripheral drop on each eye, \
+                     sized for one eye. Off, one fovea sits on the seam, sized for the double-wide \
+                     frame, so each eye drops pixels at its own centre of view.",
+                );
+                ui.checkbox(&mut cfg.stereo.single_pass.fsr_per_eye, "FSR per eye")
+                    .on_hover_text(
+                        "Resolves FSR once per eye over that eye's half, each with its own history, \
+                         as an eye rendered on its own is. Off, one FSR pass covers both eyes: its \
+                         history moves twice as far sideways as the eye did and reaches across the \
+                         seam.",
+                    );
+                ui.weak(format!(
+                    "FSR dispatches per eye this frame: {}",
+                    crate::fsr::split_dispatch_count()
+                ));
                 if ui
                     .checkbox(&mut cfg.stereo.single_pass.ssao_per_eye, "SSAO per eye")
                     .on_hover_text(

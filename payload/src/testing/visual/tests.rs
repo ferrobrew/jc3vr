@@ -98,6 +98,12 @@ fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
                 ssao: None,
                 ao_volumes: None,
                 motion_blur: None,
+                fsr: None,
+                foveation: None,
+                auto_exposure: None,
+                screen_fade: None,
+                player_damage: None,
+                fsr_mv_correction: None,
                 single_pass: Default::default(),
             }),
         );
@@ -114,6 +120,12 @@ fn shadows_disabled() -> VisualOverrides {
         ssao: None,
         ao_volumes: None,
         motion_blur: None,
+        fsr: None,
+        foveation: None,
+        auto_exposure: None,
+        screen_fade: None,
+        player_damage: None,
+        fsr_mv_correction: None,
         single_pass: Default::default(),
     }
 }

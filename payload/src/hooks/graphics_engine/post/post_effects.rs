@@ -70,14 +70,23 @@ fn fsr_dispatch(mgr: *mut c_void, slot: u32, sharpness: Option<f32>) -> bool {
         ) else {
             return false;
         };
+        let layout = if crate::stereo::single_pass::double_wide_active()
+            && Config::lock_query(|c| c.stereo.single_pass.fsr_per_eye)
+        {
+            crate::fsr::EyeLayout::SideBySide
+        } else {
+            crate::fsr::EyeLayout::Single(draw_index())
+        };
         let mut state = crate::fsr::FSR_STATE.lock();
-        crate::fsr::dispatch_eye(
+        crate::fsr::dispatch(
             &mut state,
             device,
-            draw_index(),
-            color,
-            depth,
-            velocity,
+            &crate::fsr::ChainTextures {
+                slot_color: color,
+                depth,
+                velocity,
+            },
+            layout,
             sharpness,
         )
     };

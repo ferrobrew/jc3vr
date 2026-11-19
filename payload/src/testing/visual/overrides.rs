@@ -12,7 +12,10 @@ use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap as _};
 
 use crate::{
     config::Config,
+    fsr::FsrConfig,
+    hooks::graphics_engine::config::ExposureConfig,
     stereo::{config::SinglePassConfig, dispatch::RenderMode, switches::SinglePassSwitch},
+    vr::FoveationConfig,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -27,12 +30,18 @@ pub(crate) enum ReflectionOverride {
     Enabled,
 }
 
-/// Run the motion blur and its reconstruction, which the profile skips, so the final image reads the
-/// velocity buffer.
+/// Put back, in every mode, a setting the profile turns off or pins, at the value the mod ships with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
-pub(crate) enum MotionBlurOverride {
+pub(crate) enum ShippedOverride {
     Enabled,
+}
+
+/// Leave FSR's stereo motion-vector correction out in every mode, to attribute a difference to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum CorrectionOverride {
+    Disabled,
 }
 
 /// Leave out an ambient-occlusion source in every mode, to attribute a difference to it.
@@ -55,9 +64,27 @@ pub(crate) struct VisualOverrides {
     /// The ambient-occlusion volumes' pass.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ao_volumes: Option<AmbientOcclusionOverride>,
-    /// The motion blur and its reconstruction.
+    /// The motion blur and its reconstruction, so the final image reads the velocity buffer.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub motion_blur: Option<MotionBlurOverride>,
+    pub motion_blur: Option<ShippedOverride>,
+    /// FSR in place of the engine's anti-aliasing, at the shipped sharpening.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fsr: Option<ShippedOverride>,
+    /// The static foveation's peripheral drop and fill-in, at the shipped radii.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub foveation: Option<ShippedOverride>,
+    /// The engine's own exposure metering, histogram included, in place of the pinned exposure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_exposure: Option<ShippedOverride>,
+    /// The screen fade's pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub screen_fade: Option<ShippedOverride>,
+    /// The player-damage overlay's pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub player_damage: Option<ShippedOverride>,
+    /// FSR's stereo motion-vector correction.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fsr_mv_correction: Option<CorrectionOverride>,
     #[serde(skip_serializing_if = "SinglePassOverrides::is_empty")]
     pub single_pass: SinglePassOverrides,
 }
@@ -70,7 +97,13 @@ pub(crate) struct VisualOverridesTable {
     screen_space_reflections: Option<ReflectionOverride>,
     ssao: Option<AmbientOcclusionOverride>,
     ao_volumes: Option<AmbientOcclusionOverride>,
-    motion_blur: Option<MotionBlurOverride>,
+    motion_blur: Option<ShippedOverride>,
+    fsr: Option<ShippedOverride>,
+    foveation: Option<ShippedOverride>,
+    auto_exposure: Option<ShippedOverride>,
+    screen_fade: Option<ShippedOverride>,
+    player_damage: Option<ShippedOverride>,
+    fsr_mv_correction: Option<CorrectionOverride>,
     single_pass: Option<BTreeMap<String, bool>>,
 }
 
@@ -144,13 +177,20 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             ssao: table.ssao,
             ao_volumes: table.ao_volumes,
             motion_blur: table.motion_blur,
+            fsr: table.fsr,
+            foveation: table.foveation,
+            auto_exposure: table.auto_exposure,
+            screen_fade: table.screen_fade,
+            player_damage: table.player_damage,
+            fsr_mv_correction: table.fsr_mv_correction,
             single_pass,
         };
         if overrides.sun_shadows.is_none()
             && overrides.screen_space_reflections.is_none()
             && overrides.ssao.is_none()
             && overrides.ao_volumes.is_none()
-            && overrides.motion_blur.is_none()
+            && overrides.shipped().all(|(_, value)| value.is_none())
+            && overrides.fsr_mv_correction.is_none()
             && overrides.single_pass.is_empty()
         {
             return Err(OverrideError::Empty);
@@ -182,11 +222,43 @@ impl VisualOverrides {
         if let Some(AmbientOcclusionOverride::Disabled) = self.ao_volumes {
             config.stereo.skip_ao_volumes = true;
         }
-        if let Some(MotionBlurOverride::Enabled) = self.motion_blur {
+        if let Some(ShippedOverride::Enabled) = self.motion_blur {
             config.post_fx.skip_motion_blur = false;
             config.post_fx.skip_motion_blur_recon = false;
         }
+        if let Some(ShippedOverride::Enabled) = self.fsr {
+            config.fsr = FsrConfig::new();
+        }
+        if let Some(ShippedOverride::Enabled) = self.foveation {
+            config.foveation = FoveationConfig::new();
+        }
+        if let Some(ShippedOverride::Enabled) = self.auto_exposure {
+            config.exposure = ExposureConfig::new();
+            config.post_fx.skip_histogram = false;
+        }
+        if let Some(ShippedOverride::Enabled) = self.screen_fade {
+            config.post_fx.skip_fade = false;
+        }
+        if let Some(ShippedOverride::Enabled) = self.player_damage {
+            config.post_fx.skip_player_damage = false;
+        }
+        if let Some(CorrectionOverride::Disabled) = self.fsr_mv_correction {
+            config.fsr.stereo_mv_correction = false;
+        }
         self.single_pass.apply(&mut config.stereo.single_pass);
+    }
+
+    /// The shipped-behaviour overrides by wire name.
+    pub(crate) fn shipped(&self) -> impl Iterator<Item = (&'static str, Option<ShippedOverride>)> {
+        [
+            ("motion_blur", self.motion_blur),
+            ("fsr", self.fsr),
+            ("foveation", self.foveation),
+            ("auto_exposure", self.auto_exposure),
+            ("screen_fade", self.screen_fade),
+            ("player_damage", self.player_damage),
+        ]
+        .into_iter()
     }
 }
 
@@ -314,6 +386,70 @@ mod tests {
         assert!(!config.stereo.disable_sun_shadows);
         assert!(!config.stereo.disable_ssao);
         assert!(!config.stereo.skip_ao_volumes);
+    }
+
+    #[test]
+    fn shipped_behaviours_are_restored_in_any_mode() {
+        let overrides = parse(
+            "fsr = 'enabled'\nfoveation = 'enabled'\nauto_exposure = 'enabled'\n\
+             screen_fade = 'enabled'\nplayer_damage = 'enabled'\n",
+        )
+        .unwrap();
+        for mode in [
+            RenderMode::LeftOnly,
+            RenderMode::RightOnly,
+            RenderMode::Multipass,
+            RenderMode::SinglePass,
+        ] {
+            assert_eq!(overrides.validate_for(mode), Ok(()));
+        }
+        let mut config = Config::new();
+        config.fsr.enabled = false;
+        config.fsr.sharpness = 0.9;
+        config.foveation.enabled = false;
+        config.foveation.debug_show_mask = true;
+        config.exposure.force = true;
+        config.post_fx.skip_histogram = true;
+        config.post_fx.skip_fade = true;
+        config.post_fx.skip_player_damage = true;
+        config.post_fx.skip_motion_blur = true;
+        overrides.apply(&mut config);
+        assert!(config.fsr.enabled && config.fsr.sharpen);
+        assert_eq!(config.fsr.sharpness, FsrConfig::new().sharpness);
+        assert!(config.foveation.enabled && !config.foveation.debug_show_mask);
+        assert!(!config.exposure.force && config.exposure.gate && config.exposure.gate_update);
+        assert!(!config.post_fx.skip_histogram);
+        assert!(!config.post_fx.skip_fade && !config.post_fx.skip_player_damage);
+        assert!(
+            config.post_fx.skip_motion_blur,
+            "an override left out keeps the profile's value"
+        );
+        assert_eq!(
+            serde_json::to_value(overrides).unwrap(),
+            serde_json::json!({
+                "fsr": "enabled",
+                "foveation": "enabled",
+                "auto_exposure": "enabled",
+                "screen_fade": "enabled",
+                "player_damage": "enabled",
+            })
+        );
+        assert!(toml::from_str::<VisualOverridesTable>("fsr = 'disabled'\n").is_err());
+        assert!(toml::from_str::<VisualOverridesTable>("foveation = true\n").is_err());
+    }
+
+    #[test]
+    fn the_fsr_correction_can_be_left_out_in_any_mode() {
+        let overrides = parse("fsr_mv_correction = 'disabled'\n").unwrap();
+        assert_eq!(overrides.validate_for(RenderMode::LeftOnly), Ok(()));
+        let mut config = Config::new();
+        overrides.apply(&mut config);
+        assert!(!config.fsr.stereo_mv_correction);
+        assert_eq!(
+            serde_json::to_value(overrides).unwrap(),
+            serde_json::json!({"fsr_mv_correction": "disabled"})
+        );
+        assert!(toml::from_str::<VisualOverridesTable>("fsr_mv_correction = 'enabled'\n").is_err());
     }
 
     #[test]

@@ -14,6 +14,11 @@ pub struct FsrConfig {
     /// switch rather than an `Option`, so turning sharpening off keeps the strength, and the
     /// settings file (which cannot write a missing value) can save either state.
     pub sharpness: f32,
+    /// Add each eye's parallax from the centre camera to the decoded motion vectors, for a velocity
+    /// buffer encoded against the centre camera's previous view-projection (see
+    /// `docs/mod/rendering/fsr.md`). Every pixel the velocity pass does not draw holds zero motion,
+    /// which the correction turns into that parallax.
+    pub stereo_mv_correction: bool,
 }
 impl FsrConfig {
     pub const fn new() -> Self {
@@ -21,6 +26,7 @@ impl FsrConfig {
             enabled: true,
             sharpen: true,
             sharpness: 0.2,
+            stereo_mv_correction: true,
         }
     }
 }

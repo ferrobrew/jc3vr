@@ -1,6 +1,8 @@
 """Scene staging, pinned weather, and moving-camera experiments."""
 
 import dataclasses
+import pathlib
+import re
 import tomllib
 import unittest
 
@@ -15,6 +17,7 @@ from tools.rendering.protocol import (
     MotionRequest,
     OrientationOffset,
     Placement,
+    SHIPPED_OVERRIDES,
     ProtocolError,
     StageAck,
     StageRequest,
@@ -212,3 +215,23 @@ class MotionBlurOverrideTests(unittest.TestCase):
                          {"motion_blur": "enabled"})
         with self.assertRaises(ProtocolError):
             VisualOverrides.from_wire({"motion_blur": "disabled"})
+
+
+class ShippedOverrideTests(unittest.TestCase):
+    def test_every_shipped_behaviour_round_trips_and_rejects_other_values(self):
+        wire = {"fsr": "enabled", "foveation": "enabled", "auto_exposure": "enabled",
+                "screen_fade": "enabled", "player_damage": "enabled"}
+        overrides = VisualOverrides.from_wire(wire)
+        self.assertEqual(overrides.to_wire(), wire)
+        self.assertEqual(tomllib.loads(overrides.to_toml())["visual_overrides"], wire)
+        for name in wire:
+            with self.assertRaises(ProtocolError):
+                VisualOverrides.from_wire({name: "disabled"})
+        with self.assertRaises(ProtocolError):
+            VisualOverrides.from_wire({"resolution": "enabled"})
+
+    def test_the_shipped_list_matches_the_payload(self):
+        source = (pathlib.Path(__file__).resolve().parents[3] /
+                  "payload/src/testing/visual/overrides.rs").read_text()
+        body = source.split("fn shipped(&self)", 1)[1].split("]", 1)[0]
+        self.assertEqual(tuple(re.findall(r'\("(\w+)", self\.', body)), SHIPPED_OVERRIDES)

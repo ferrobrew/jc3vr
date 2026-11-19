@@ -74,13 +74,13 @@ const STENCIL_INDEX_MASK: u64 = 0x0000_00FF_7FFF_FFC0;
 /// stencil for its own purpose and is left alone.
 const STENCIL_ENABLE_BIT: u64 = 1 << 6;
 
-/// Per-eye parameters for the mask-write and fill-in passes, in surface-independent units; the passes
+/// Parameters for the mask-write and fill-in passes, in surface-independent units; the passes
 /// convert them to pixels against the live main-buffer size.
 #[derive(Clone, Copy)]
 pub struct FoveationParams {
-    /// Foveal centre as a UV in `[0, 1]` (the eye's principal point); `(0.5, 0.5)` is the buffer centre.
-    pub center_uv: glam::Vec2,
-    /// Foveal radius as a fraction of the buffer half-diagonal: inside it nothing is dropped.
+    /// How the eyes are laid out on the target the passes run over.
+    pub layout: EyeLayout,
+    /// Foveal radius as a fraction of an eye's half-diagonal: inside it nothing is dropped.
     pub inner_fraction: f32,
     /// Radius (fraction of the half-diagonal) at which the drop reaches [`max_drop`](Self::max_drop).
     pub outer_fraction: f32,
@@ -90,6 +90,44 @@ pub struct FoveationParams {
     pub mask_bit: u32,
     /// Diagnostic: the fill-in pass paints the dropped set magenta instead of reconstructing it.
     pub debug_show_mask: bool,
+}
+
+/// Where the eyes lie on the target a foveation pass runs over, each with its foveal centre as a UV in
+/// `[0, 1]` of the eye's own region (the eye's principal point; `(0.5, 0.5)` is the region's centre).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EyeLayout {
+    /// The target holds one eye.
+    Single { center_uv: glam::Vec2 },
+    /// The target holds both eyes side by side, eye 0 in the left half (the single-pass collapse's
+    /// double-wide target): each half is masked and filled as an eye-sized target would be.
+    SideBySide { center_uv: [glam::Vec2; 2] },
+}
+
+/// The pass constants for `params` on a `width` x `height` target, matching the shaders'
+/// `FoveationParams`: both eyes' centres in eye-local pixels, the inner and outer radii in pixels
+/// (fractions of an eye's half-diagonal), the maximum drop, the debug flag, and the first column of eye
+/// 1's half (past the target when it holds one eye), padded to a whole number of registers.
+pub fn pass_constants(params: &FoveationParams, width: u32, height: u32) -> [f32; 12] {
+    let (eye_width, centers, split) = match params.layout {
+        EyeLayout::Single { center_uv } => (width, [center_uv; 2], width as f32 + 1.0),
+        EyeLayout::SideBySide { center_uv } => (width / 2, center_uv, (width / 2) as f32),
+    };
+    let (eye_width, height) = (eye_width as f32, height as f32);
+    let half_diag = 0.5 * (eye_width.powi(2) + height.powi(2)).sqrt();
+    [
+        centers[0].x * eye_width,
+        centers[0].y * height,
+        centers[1].x * eye_width,
+        centers[1].y * height,
+        params.inner_fraction * half_diag,
+        params.outer_fraction * half_diag,
+        params.max_drop,
+        if params.debug_show_mask { 1.0 } else { 0.0 },
+        split,
+        0.0,
+        0.0,
+        0.0,
+    ]
 }
 
 /// Compute the packed stencil-*test* bits for `mask_bit`: `StencilEnable`, `StencilFunc = EQUAL` against a
@@ -400,19 +438,7 @@ impl Foveation {
         width: u32,
         height: u32,
     ) {
-        let half_diag = 0.5 * ((width as f32).powi(2) + (height as f32).powi(2)).sqrt();
-        // Matches `FoveationParams` in the shaders: float2 centre (px), float inner (px), float outer
-        // (px), float max_drop, float debug_mode, float2 pad -- 32 bytes.
-        let data: [f32; 8] = [
-            params.center_uv.x * width as f32,
-            params.center_uv.y * height as f32,
-            params.inner_fraction * half_diag,
-            params.outer_fraction * half_diag,
-            params.max_drop,
-            if params.debug_show_mask { 1.0 } else { 0.0 },
-            0.0,
-            0.0,
-        ];
+        let data = pass_constants(&params, width, height);
         unsafe {
             context.UpdateSubresource(&self.params_cb, 0, None, data.as_ptr().cast(), 0, 0);
         }
@@ -561,7 +587,7 @@ unsafe fn create_params_cb(d3d: &ID3D11Device) -> anyhow::Result<ID3D11Buffer> {
     unsafe {
         d3d.CreateBuffer(
             &D3D11_BUFFER_DESC {
-                ByteWidth: std::mem::size_of::<[f32; 8]>() as u32,
+                ByteWidth: std::mem::size_of::<[f32; 12]>() as u32,
                 Usage: D3D11_USAGE_DEFAULT,
                 BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
                 CPUAccessFlags: 0,
@@ -677,4 +703,58 @@ pub(crate) fn resource_as_texture(
     let resource =
         unsafe { windows::Win32::Graphics::Direct3D11::ID3D11Resource::from_raw_borrowed(&raw) }?;
     resource.cast::<ID3D11Texture2D>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    fn params(layout: EyeLayout) -> FoveationParams {
+        FoveationParams {
+            layout,
+            inner_fraction: 0.5,
+            outer_fraction: 1.0,
+            max_drop: 0.8,
+            mask_bit: 0x80,
+            debug_show_mask: false,
+        }
+    }
+
+    #[test]
+    fn one_eye_uses_the_whole_target_and_never_splits() {
+        let constants = pass_constants(
+            &params(EyeLayout::Single {
+                center_uv: glam::Vec2::new(0.25, 0.5),
+            }),
+            300,
+            400,
+        );
+        // Half-diagonal of 300 x 400 is 250.
+        assert_eq!(
+            constants,
+            [
+                75.0, 200.0, 75.0, 200.0, 125.0, 250.0, 0.8, 0.0, 301.0, 0.0, 0.0, 0.0
+            ]
+        );
+    }
+
+    #[test]
+    fn side_by_side_eyes_get_eye_sized_radii_and_eye_local_centres() {
+        let constants = pass_constants(
+            &params(EyeLayout::SideBySide {
+                center_uv: [glam::Vec2::new(0.6, 0.5), glam::Vec2::new(0.4, 0.25)],
+            }),
+            600,
+            400,
+        );
+        // Each eye is 300 x 400, whose half-diagonal is 250, and eye 1 starts at column 300.
+        assert_eq!(
+            constants,
+            [
+                180.0, 200.0, 120.0, 100.0, 125.0, 250.0, 0.8, 0.0, 300.0, 0.0, 0.0, 0.0
+            ]
+        );
+    }
 }

@@ -14,6 +14,16 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         "FSR anti-aliasing (replaces the engine SMAA)",
     );
     ui.checkbox(
+        &mut cfg.fsr.stereo_mv_correction,
+        "FSR stereo motion-vector correction",
+    )
+    .on_hover_text(
+        "Adds the parallax between each eye and the centre camera to FSR's motion vectors, for a \
+         velocity buffer written against the centre camera's previous frame. Only the velocity \
+         pass's own draws write that buffer; every other pixel holds zero motion, which this turns \
+         into the parallax. Off for an A/B.",
+    );
+    ui.checkbox(
         &mut cfg.stereo.shadow_anchor_to_fit,
         "Anchor shadows to the cascade fit's camera",
     )

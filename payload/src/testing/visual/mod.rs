@@ -35,7 +35,7 @@ pub(crate) use pose::{
 pub(crate) use crate::stereo::dispatch::RenderMode;
 use crate::{
     config::{CONFIG, Config},
-    hooks::graphics_engine::shader,
+    hooks::graphics_engine::{shader, tone_mapping},
     stereo::{config::SinglePassConfig, dispatch, single_pass, switches::ShaderBuild},
     vr::{
         FreezeMode, ResolutionProgress,
@@ -74,6 +74,10 @@ pub(crate) struct VisualMetadata {
     pub motion: Option<MotionMetadata>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub environment: Option<EnvironmentMetadata>,
+    /// The exposure the post chain applied, so captures taken with the engine's own metering can be
+    /// checked for one shared exposure.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exposure: Option<f32>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -321,6 +325,9 @@ pub(crate) fn process_pending() {
                 let mut config = CONFIG.lock();
                 apply_profile_with_overrides(&mut config, mode, visual_overrides);
             }
+            // Every configuration accumulates FSR's history from its own warm-up, so modes compared
+            // against each other start from the same number of frames.
+            crate::fsr::request_history_reset();
             state.shadow_sync_required |= sun_shadows_overridden(visual_overrides.as_ref())
                 || crate::hooks::game::sun_shadow_override_active();
             state.visual_overrides = visual_overrides;
@@ -638,6 +645,7 @@ impl State {
                 .environment
                 .as_ref()
                 .and_then(EnvironmentControl::observed),
+            exposure: tone_mapping::applied_exposure(),
         }
     }
 

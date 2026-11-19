@@ -18,18 +18,26 @@
 // the vector at this eye's own previous pose:
 //   corrected = decoded + (prevUV_center - prevUV_eye)
 // Dynamic objects keep their object motion -- the correction only swaps the camera term.
+//
+// The pass can read a Size-sized window of larger sources at Offset: one eye's half of the
+// single-pass collapse's double-wide target. With CopyDepth set it also copies that window of the
+// depth into DepthOutput, so FSR can be handed an eye-sized depth (a depth-stencil resource cannot be
+// copied by region).
 
 Texture2D<float4> Velocity : register(t0);
 Texture2D<float> Depth : register(t1);
 RWTexture2D<float2> Output : register(u0);
+RWTexture2D<float> DepthOutput : register(u1);
 
 cbuffer Params : register(b0)
 {
-    uint2 Size;             // render resolution (pixels)
+    uint2 Size;             // output resolution (pixels)
     float2 SignScale;       // applied to the decoded UV motion (sign/axis convention; e.g. (1,-1))
     float4x4 ReprojCenter;  // current clip -> previous-frame clip, center camera (what the engine encoded)
     float4x4 ReprojEye;     // current clip -> previous-frame clip, this eye's camera (what FSR wants)
     uint CorrectionEnabled; // 0 = pass the decode through (no stereo disparity, or no history yet)
+    uint2 Offset;           // the window's top-left texel in the sources
+    uint CopyDepth;         // 1 = also copy the window's depth into DepthOutput
 };
 
 [numthreads(8, 8, 1)]
@@ -39,7 +47,8 @@ void main(uint3 id : SV_DispatchThreadID)
     {
         return;
     }
-    float2 stored = Velocity.Load(int3(id.xy, 0)).xy;
+    int3 source = int3(id.xy + Offset, 0);
+    float2 stored = Velocity.Load(source).xy;
     float2 motion_uv = (stored - 0.5) * 0.25;
     if (CorrectionEnabled != 0)
     {
@@ -47,7 +56,7 @@ void main(uint3 id : SV_DispatchThreadID)
         // view-projection exactly, so the reverse-Z convention passes straight through), reproject it
         // into the previous frame with both cameras, and add the UV-space difference. At the infinite
         // far plane the parallax vanishes and the correction naturally tends to zero.
-        float depth = Depth.Load(int3(id.xy, 0)).x;
+        float depth = Depth.Load(source).x;
         float2 uv = (float2(id.xy) + 0.5) / float2(Size);
         float4 clip = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
         float4 prev_center = mul(ReprojCenter, clip);
@@ -56,4 +65,8 @@ void main(uint3 id : SV_DispatchThreadID)
         motion_uv += delta_ndc * float2(0.5, -0.5);
     }
     Output[id.xy] = motion_uv * SignScale;
+    if (CopyDepth != 0)
+    {
+        DepthOutput[id.xy] = Depth.Load(source).x;
+    }
 }

@@ -97,6 +97,8 @@ single_pass_switches! {
     SsdecalPerEye => ssdecal_per_eye, true;
     CompositeOverlaysPerEye => composite_overlays_per_eye, true;
     GlarePerEye => glare_per_eye, true;
+    FoveationPerEye => foveation_per_eye, false;
+    FsrPerEye => fsr_per_eye, false;
     ClusteredPerEye => clustered_per_eye, false;
     ClusteredPerEyeLightView => clustered_per_eye_light_view, false;
     UniformViewportSlots => uniform_viewport_slots, false;

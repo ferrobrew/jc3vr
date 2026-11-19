@@ -27,7 +27,7 @@ mod post;
 mod scene;
 mod screen;
 
-pub(crate) use post::post_effects;
+pub(crate) use post::{post_effects, tone_mapping};
 pub(crate) use render_pass::shadow_fit_gap_m;
 pub(crate) use scene::render_block;
 pub use scene::terrain;

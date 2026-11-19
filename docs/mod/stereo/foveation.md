@@ -64,6 +64,10 @@ The design above is implemented, on by default, across:
   Foveation feature, and `enabled` (default **true**) is the pause menu's FOVEATED RENDERING. The
   foveated pass range is the `FOVEAL_FIRST_PASS` / `FOVEAL_LAST_PASS` constants.
 
+## Under single-pass stereo
+
+The single-pass collapse renders both eyes into one double-wide target in one dispatch, so the mask and the fill-in run once. Laid out as for one eye, they put a single fovea on the seam with a radius sized for the double-wide target: each eye's centre of view lands in the drop ramp and its inner edge stays at full rate. `single_pass.foveation_per_eye` (on) hands both passes both eyes' centres, each as a UV of its own half, an eye-sized half-diagonal, and the first column of eye 1's half. Each pixel takes its eye from the half it lies in and measures its radius, its dither, and its fill-in neighbourhood in pixels from that half's left edge; a neighbour across the seam reads as zero, as one past the edge of an eye-sized target does. Each pass stays one draw. See "The shipped settings under single-pass" in [`single-pass-stereo.md`](single-pass-stereo.md) for the measurement.
+
 ## The fill-in draw's pipeline state
 
 The fill-in draw runs on the immediate context with the pipeline state it binds itself, so

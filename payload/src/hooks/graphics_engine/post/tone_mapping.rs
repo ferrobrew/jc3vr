@@ -7,7 +7,10 @@
 //! ring indices that would otherwise step twice per real frame), and read the exposure internals
 //! for tracing.
 
-use std::ffi::c_void;
+use std::{
+    ffi::c_void,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::{
@@ -29,6 +32,18 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&TONEMAPPING_UPDATE_BINDER)
         .with_static_binder(&TONEMAPPING_APPLY_BINDER)
         .with_static_binder(&GENERATE_FINAL_HISTOGRAM_BINDER)
+}
+
+/// The exposure the last `ToneMappingEffect::Update` left applied, as `f32` bits; NaN until the
+/// first update.
+static APPLIED_EXPOSURE: AtomicU32 = AtomicU32::new(f32::NAN.to_bits());
+
+/// The exposure the post chain applies this frame (the engine's metered value, or the pinned one),
+/// or `None` before the first exposure update. The visual harness reports it with every capture, so
+/// a comparison can check that each mode settled on the same exposure.
+pub(crate) fn applied_exposure() -> Option<f32> {
+    let value = f32::from_bits(APPLIED_EXPOSURE.load(Ordering::Relaxed));
+    (!value.is_nan()).then_some(value)
 }
 
 // ToneMappingEffect::SmoothedExposure::Update -- N-frame exposure smoother (no dt term, so it
@@ -94,6 +109,7 @@ fn tonemapping_update(
     if force_exposure {
         tme.m_ExposureBrightPoint = forced_value;
     }
+    APPLIED_EXPOSURE.store(tme.m_ExposureBrightPoint.to_bits(), Ordering::Relaxed);
     if crate::debug::trace::tracing_active() {
         let target_num = unsafe { ctx.as_ref() }
             .map(|c| c.m_AutoExposureKey)

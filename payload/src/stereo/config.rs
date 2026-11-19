@@ -515,6 +515,29 @@ pub struct SinglePassConfig {
     /// composite's bloom lookups are a shader rewrite, so changing this requests a shader reload. On by
     /// default.
     pub glare_per_eye: bool,
+    /// Lay the static **foveation** out over each eye's half of the double-wide target under the
+    /// collapse.
+    ///
+    /// The foveation's mask and fill-in passes place one radial drop around one centre, sized from
+    /// the target's half-diagonal. Under the collapse they run once, so the full-rate fovea sits on
+    /// the seam with a radius sized for the double-wide target, and each eye drops pixels at its own
+    /// centre of view and keeps them at its inner edge. With this on, both passes take both eyes'
+    /// centres and an eye-sized radius, and each pixel uses its own eye's, with its dither and its
+    /// fill-in neighbourhood in eye-local pixels, in the same single draw. Applies at once. On by
+    /// default.
+    pub foveation_per_eye: bool,
+    /// Run **FSR** once per eye over that eye's half of the double-wide target under the collapse.
+    ///
+    /// FSR otherwise runs once over the whole target with one history: the motion vectors, which
+    /// the velocity pass writes in each eye's own screen space, are scaled to the double-wide width,
+    /// so the history is reprojected twice as far sideways as the eye moved, and the history and the
+    /// reconstruction's neighbourhoods reach across the seam into the other eye. With this on, each
+    /// eye's colour, depth, and motion vectors are copied into eye-sized inputs and resolved through
+    /// that eye's own context, as an eye rendered on its own is, with the stereo motion-vector
+    /// correction taken from that eye's own matrices, and the result is copied back into the eye's
+    /// half. Two FSR dispatches instead of one; no draws are added. Applies at once, with a history
+    /// reset. On by default.
+    pub fsr_per_eye: bool,
     /// Requires [`single_pass_reconstruct_per_eye`](Self::reconstruct_per_eye), and rides on the
     /// off-axis froxel tile-bounds override: build the clustered
     /// (froxel) light grid **per eye** as well, instead of building it once with eye 0's projection
@@ -789,6 +812,8 @@ impl SinglePassConfig {
             ssdecal_per_eye: true,
             composite_overlays_per_eye: true,
             glare_per_eye: true,
+            foveation_per_eye: true,
+            fsr_per_eye: true,
             clustered_per_eye: true,
             clustered_per_eye_light_view: true,
             uniform_viewport_slots: true,

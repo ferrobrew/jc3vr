@@ -35,7 +35,7 @@ use crate::{
         STEREO_STATE, draw_index, is_second_eye,
         single_pass::{ao_volumes, is_sun_pass, reissue_sun_pass},
     },
-    vr::foveation::{FORCE_STENCIL_TEST, FoveationParams},
+    vr::foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveationParams},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -549,8 +549,7 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
         tracing::warn!("foveation disabled: {e}");
         return None;
     }
-    let eye = usize::from(is_second_eye());
-    let center_uv = foveal_center_uv(eye)?;
+    let layout = foveation_layout()?;
     let ff = FOVEAL_FIRST_PASS as i32;
     let fl = FOVEAL_LAST_PASS as i32;
     let fov_start = first.max(ff);
@@ -566,14 +565,31 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
         fov_start,
         fov_end,
         do_mask: (first..last).contains(&ff),
-        params: foveation_params(&cfg, center_uv),
+        params: foveation_params(&cfg, layout),
     })
 }
 
-/// Build the pass parameters from the config and the eye's foveal centre.
-fn foveation_params(cfg: &crate::vr::FoveationConfig, center_uv: glam::Vec2) -> FoveationParams {
+/// Where the eyes this dispatch draws lie on the main buffer, with their foveal centres. Under the
+/// single-pass collapse with `single_pass.foveation_per_eye` on, the double-wide buffer holds both
+/// eyes side by side; otherwise it holds the dispatch's eye (eye 0's under the collapse, whose one
+/// fovea then lands on the seam). `None` when no VR frame is in flight.
+fn foveation_layout() -> Option<EyeLayout> {
+    if crate::stereo::single_pass::double_wide_active()
+        && Config::lock_query(|c| c.stereo.single_pass.foveation_per_eye)
+    {
+        return Some(EyeLayout::SideBySide {
+            center_uv: [foveal_center_uv(0)?, foveal_center_uv(1)?],
+        });
+    }
+    Some(EyeLayout::Single {
+        center_uv: foveal_center_uv(usize::from(is_second_eye()))?,
+    })
+}
+
+/// Build the pass parameters from the config and the eyes' layout.
+fn foveation_params(cfg: &crate::vr::FoveationConfig, layout: EyeLayout) -> FoveationParams {
     FoveationParams {
-        center_uv,
+        layout,
         inner_fraction: cfg.inner_fraction,
         outer_fraction: cfg.outer_fraction,
         max_drop: cfg.max_drop,
@@ -622,15 +638,14 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
     #[cfg(feature = "profiler")]
     // SAFETY: `ctx` is the live immediate-context handle for this dispatch.
     let _gpu = unsafe { seam(ctx.cast(), crate::profiler::gpu::GpuSeam::PostEffects) };
-    if let Some(cfg) = Config::lock_query(|c| c.foveation.enabled.then(|| c.foveation.clone())) {
-        let eye = usize::from(is_second_eye());
-        if let Some(center_uv) = foveal_center_uv(eye) {
-            run_foveation_pass(
-                crate::vr::foveation::fill_in,
-                foveation_params(&cfg, center_uv),
-                "fill-in",
-            );
-        }
+    if let Some(cfg) = Config::lock_query(|c| c.foveation.enabled.then(|| c.foveation.clone()))
+        && let Some(layout) = foveation_layout()
+    {
+        run_foveation_pass(
+            crate::vr::foveation::fill_in,
+            foveation_params(&cfg, layout),
+            "fill-in",
+        );
     }
     DRAW_POSTEFFECTS.get().unwrap().call(this, ctx, setup);
 }

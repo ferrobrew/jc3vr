@@ -240,7 +240,7 @@ SINGLE_PASS_SWITCHES = (
     "ssdecal_geometry_per_eye", "slot13_per_eye", "non_indexed_geometry_once",
     "collapse_viewport_follows_target",
     "ssao_per_eye", "ao_volumes_per_eye", "ssr_per_eye", "subsurface_per_eye", "dof_per_eye", "ssdecal_per_eye",
-    "composite_overlays_per_eye", "glare_per_eye", "clustered_per_eye",
+    "composite_overlays_per_eye", "glare_per_eye", "foveation_per_eye", "fsr_per_eye", "clustered_per_eye",
     "clustered_per_eye_light_view", "uniform_viewport_slots",
 )
 
@@ -259,6 +259,13 @@ def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool]
     return tuple(sorted(value.items()))
 
 
+# Settings the capture profile turns off or pins, put back at the mod's shipped value in every mode.
+# Mirrors `VisualOverrides::shipped` in `payload/src/testing/visual/overrides.rs`.
+# Sources left out in every mode, to attribute a difference to one.
+DISABLING_OVERRIDES = ("ssao", "ao_volumes", "fsr_mv_correction")
+SHIPPED_OVERRIDES = ("motion_blur", "fsr", "foveation", "auto_exposure", "screen_fade", "player_damage")
+
+
 @dataclass(frozen=True)
 class VisualOverrides:
     sun_shadows: SunShadows | None = None
@@ -269,20 +276,30 @@ class VisualOverrides:
     ao_volumes: str | None = None
     # The motion blur and its reconstruction run in every mode, so the final image reads the velocity buffer.
     motion_blur: str | None = None
+    # FSR, the foveation, the engine's exposure metering, the screen fade, and the player-damage
+    # overlay, each at its shipped behaviour in every mode.
+    fsr: str | None = None
+    foveation: str | None = None
+    auto_exposure: str | None = None
+    screen_fade: str | None = None
+    player_damage: str | None = None
+    # FSR's stereo motion-vector correction left out in every mode.
+    fsr_mv_correction: str | None = None
 
     def __post_init__(self):
         if self.sun_shadows is not None and not isinstance(self.sun_shadows, SunShadows):
             raise ProtocolError("visual protocol: invalid sun_shadows override")
         if self.screen_space_reflections not in (None, "enabled"):
             raise ProtocolError("visual protocol: invalid screen_space_reflections override")
-        for name in ("ssao", "ao_volumes"):
+        for name in DISABLING_OVERRIDES:
             if getattr(self, name) not in (None, "disabled"):
                 raise ProtocolError(f"visual protocol: invalid {name} override")
-        if self.motion_blur not in (None, "enabled"):
-            raise ProtocolError("visual protocol: invalid motion_blur override")
+        for name in SHIPPED_OVERRIDES:
+            if getattr(self, name) not in (None, "enabled"):
+                raise ProtocolError(f"visual protocol: invalid {name} override")
         object.__setattr__(self, "single_pass", single_pass_switches(dict(self.single_pass)))
         if (self.sun_shadows is None and self.screen_space_reflections is None and
-                self.ssao is None and self.ao_volumes is None and self.motion_blur is None and
+                all(getattr(self, name) is None for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)) and
                 not self.single_pass):
             raise ProtocolError("visual protocol: visual overrides must name at least one override")
 
@@ -297,7 +314,7 @@ class VisualOverrides:
             value["sun_shadows"] = self.sun_shadows.value
         if self.screen_space_reflections is not None:
             value["screen_space_reflections"] = self.screen_space_reflections
-        for name in ("ssao", "ao_volumes", "motion_blur"):
+        for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES):
             if getattr(self, name) is not None:
                 value[name] = getattr(self, name)
         if self.single_pass:
@@ -310,7 +327,7 @@ class VisualOverrides:
             result += f"sun_shadows = {json.dumps(self.sun_shadows.value)}\n"
         if self.screen_space_reflections is not None:
             result += f"screen_space_reflections = {json.dumps(self.screen_space_reflections)}\n"
-        for name in ("ssao", "ao_volumes", "motion_blur"):
+        for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES):
             if getattr(self, name) is not None:
                 result += f"{name} = {json.dumps(getattr(self, name))}\n"
         if self.single_pass:
@@ -321,8 +338,8 @@ class VisualOverrides:
     @classmethod
     def from_wire(cls, value):
         if not isinstance(value, dict) or not value or set(value) - {
-                "sun_shadows", "screen_space_reflections", "single_pass", "ssao", "ao_volumes",
-                "motion_blur"}:
+                "sun_shadows", "screen_space_reflections", "single_pass", *DISABLING_OVERRIDES,
+                *SHIPPED_OVERRIDES}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
         try:
             sun_shadows = SunShadows(value["sun_shadows"]) if "sun_shadows" in value else None
@@ -332,7 +349,7 @@ class VisualOverrides:
             raise ProtocolError("visual protocol: the single_pass override table is empty")
         return cls(sun_shadows, value.get("screen_space_reflections"),
                    single_pass_switches(value.get("single_pass", {})),
-                   value.get("ssao"), value.get("ao_volumes"), value.get("motion_blur"))
+                   **{name: value.get(name) for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)})
 
 
 @dataclass(frozen=True)
