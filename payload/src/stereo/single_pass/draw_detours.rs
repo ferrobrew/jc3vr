@@ -147,6 +147,9 @@ pub(super) unsafe extern "system" fn draw_detour(
     let _lake = water
         .filter(|_| _reflection.is_none())
         .and_then(water_pixel_variants::bind);
+    // SAFETY: `context` is the live immediate context this entry was called on.
+    let _glare = unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) }
+        .and_then(post_filters::bind);
     unsafe { raw_entry(RawDrawKind::NonIndexed, context) };
     let detour = DRAW.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.

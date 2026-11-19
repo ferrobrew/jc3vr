@@ -80,6 +80,7 @@ pub(crate) mod eye_globals;
 mod frame_diagnostics;
 mod instanced_exposure;
 mod per_eye_reissue;
+pub(crate) mod post_filters;
 mod shader_detours;
 pub(crate) mod shader_identity;
 mod shader_policy;

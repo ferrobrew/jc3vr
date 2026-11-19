@@ -335,6 +335,22 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if ui
+                    .checkbox(&mut cfg.stereo.single_pass.glare_per_eye, "Glare per eye")
+                    .on_hover_text(
+                        "Keeps the bloom chain's blurs, downsamples, and upsamples, and the final \
+                         composite's bloom lookups, inside each eye's half. Off, a bright sky or sun \
+                         near one eye's inner edge bleeds across the seam into the other eye. Reloads \
+                         shaders to apply the composite's half of it: that is a shader rewrite.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                ui.weak(format!(
+                    "Glare filter variants built: {}",
+                    crate::stereo::single_pass::post_filters::registered_count()
+                ));
+                if ui
                     .checkbox(&mut cfg.stereo.single_pass.ssao_per_eye, "SSAO per eye")
                     .on_hover_text(
                         "Computes ambient occlusion for each eye's half in the pass's one run: each \

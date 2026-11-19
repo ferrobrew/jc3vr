@@ -11,7 +11,8 @@
 //! address differently-sized spaces. `overlay` maps the final composite's screen-space overlays over
 //! one eye of a double-wide target, and `planar` does the same for the WaveWorks water's planar
 //! reflection lookup. `ambient` runs the ambient-occlusion generation pass over each eye's half of a
-//! double-wide target.
+//! double-wide target, and `seam` keeps the post chain's screen-mapped filters and the composite's
+//! bloom lookups inside each eye's half.
 
 mod ambient;
 pub use ambient::{
@@ -38,6 +39,8 @@ pub use resolve::{
 };
 mod remap;
 mod reproject;
+mod seam;
+pub use seam::{localize_composite_bloom, localize_post_filter};
 mod ssdecal;
 mod terrain;
 

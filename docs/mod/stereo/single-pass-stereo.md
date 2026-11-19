@@ -543,6 +543,16 @@ The composes need no matching change and must not get one: they map the whole lo
 over the whole target with a baked UV, so a half-and-half texture composites correctly on its own, and
 both blend rather than overwrite, so re-issuing either per eye would double-composite.
 
+## The glare chain at the eye seam
+
+The glare chain (engine `rendering.md` §3.3) builds the bloom in about two dozen fullscreen draws over targets at a half down to a sixteenth of the screen. Under the collapse every one of them is double-wide with the eyes side by side, and every draw reads its source by the screen UV, so each pixel reads its own eye except at the seam. There the Gaussian and saw blurs' taps, the box downsample's far corner (its tap offsets reach one source texel past the destination texel's footprint), the bilinear upsample that accumulates each level into the next, and the opening's three-by-three neighbourhood all read the other eye, where an eye-sized target would clamp to its own edge. At the sixteenth level one blur spans a large share of an eye, and the levels accumulate, so a sun near one eye's inner edge brightens the other eye's whole inner half and is missing from its own edge. In the midday sky capture with bloom running, 53% and 54% of final pixels differed from the isolated eyes by more than three codes, with the left eye brighter towards the seam and the right eye, whose sun sat near the seam, darker towards it, against 3% of the HDR main colour.
+
+`single_pass.glare_per_eye` (**on**) fixes it without re-issuing anything. `dxbc_stereo::localize_post_filter` rewrites a filter so the eye is the half its screen UV falls in, every filtered sample's horizontal coordinate is clamped to the texel centres of that eye's half of the sampled texture (measured with `resinfo`, so no size constant is involved), every gather is clamped a whole texel in, and every texel load outside the half returns zero, which is what the clamping sampler and an out-of-range load give at the edges of an eye-sized texture. The chain draws with the generic copy program and the box downsample, which other passes share, so the rewrite cannot replace them at creation: `stereo::single_pass::post_filters` builds each qualifying program's rewrite as a variant when the engine creates it (the programs are found by the names their resource tables bind their sources under), and the `Draw` detour binds the variant for the draws issued inside [`GlareEffect::Apply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::GlareEffect##func-Apply) only. The composite's `BloomTexture` and `SecondaryBloomTexture` lookups cross the seam the same way through their bilinear footprint, and since the composite always draws over the whole target, `dxbc_stereo::localize_composite_bloom` rewrites them at creation, on top of the overlay rewrite.
+
+The chain keeps the draw count of a single-eye render, one run per frame, against two under double-draw; the treatment adds a shader lookup and swap per draw on the CPU and a clamp per sample on the GPU. In run 247 the share of final pixels differing from the isolated eyes fell to 1.9% and 2.6% (2,200 and 3,006 pixels per eye, against 1,747 and 2,589 at `after_fog_volume_apply`), with all four modes repeatable. Most of what remains is a stripe two pixels wide on the left eye's inner edge and four on the right eye's, which first appears when the volumetric fog is composited and so predates the post chain.
+
+The level sizes are the screen size shifted right, so the eye boundary falls on a texel boundary at every level only while the eye's width is a multiple of sixteen; otherwise the half the clamp keeps to straddles one texel at the coarser levels.
+
 ## The clustered froxel grid, per eye
 
 Not a sliding defect, but the same shape and a defect in every collapsed frame: the grid is built with
@@ -644,6 +654,7 @@ is marked with its actual default.
 | `single_pass.subsurface_per_eye` | On | Screen-space subsurface skin. |
 | `single_pass.dof_per_eye` | On | Depth of field: splits `CDownScale2x2PackFocus::Apply`, whose closing pack draw is the sole consumer of the DoF basis. Its five-dispatch near-field prologue reads no view or projection matrix, so it runs whole-target on the first run only and the second run reads the same coverage. |
 | `single_pass.composite_overlays_per_eye` | On | The final composite's vignette and lens dirt, looked up by an eye-local UV in every `comp_*` and `dof_*` permutation that binds them (`dxbc_stereo::localize_screen_overlays`). Needs a shader reload. |
+| `single_pass.glare_per_eye` | On | The glare chain's filters and the composite's bloom lookups kept to each eye's half of the double-wide target, in the chain's single run: the filters bind an eye-half variant (`dxbc_stereo::localize_post_filter`) while `GlareEffect::Apply` runs, which applies without a reload, and the composite's bloom lookups are rewritten at creation (`dxbc_stereo::localize_composite_bloom`), which needs a shader reload. |
 | `single_pass.ssdecal_per_eye` | On | Screen-space decals: per-eye basis plus a spliced depth-UV bias in the 12 `ssdecal` pixel shaders (mechanism 2). |
 | `single_pass.water_uv_per_eye` | On | Legacy water's projective screen UV (mechanism 3). Not yet verified in the headset. |
 | `single_pass.clustered_per_eye` | On | Per-eye clustered froxel light grid. |
@@ -713,6 +724,7 @@ either: they are correctness surface, not duplicated work.
   this.
 - **`cb0`'s projection is double-wide.** Unpatched geometry that reads `cb0` rather than `cb13`
   renders horizontally squashed under double-wide.
+- **The sun halo is one sprite per screen.** [`SunHaloEffect::PreApply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::SunHaloEffect##func-PreApply) projects the sun through the render context's single projection onto the scene texture's pixel size and draws one halo there, so under the collapse it lands once, somewhere across the double-wide target, rather than once per eye. It runs only while the sun is low, so the midday sky capture does not exercise it. A per-eye halo needs two projections and two composites, which is a draw-count decision, and has not been made.
 - **Screen-space passes leak across the eye seam.** FSR and the unsplit screen-space passes run once
   over the double-wide target and sample neighbourhoods; they need a UV clamp at the seam.
 - **The 14 already-instanced shaders** need their `SV_InstanceID` consumers rewritten to

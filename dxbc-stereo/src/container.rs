@@ -140,6 +140,13 @@ pub enum DxbcError {
     /// and normal buffer), or reconstructs and samples in a shape the ambient-occlusion rewrite does
     /// not recognise; the caller should leave it untouched.
     NoAmbientOcclusion,
+    /// The pixel shader is not one of the post chain's generic filters (it binds a texture under a
+    /// name the filters do not use, or binds none), or reads a texture in a shape the post-filter
+    /// rewrite does not recognise; the caller should leave it untouched.
+    NoPostFilter,
+    /// The pixel shader binds neither of the composite's bloom textures, or reads them in a shape the
+    /// composite-bloom rewrite does not recognise; the caller should leave it untouched.
+    NoCompositeBloom,
 }
 
 impl fmt::Display for DxbcError {
@@ -179,6 +186,8 @@ impl fmt::Display for DxbcError {
             DxbcError::NoAmbientOcclusion => {
                 "dxbc: no recognised ambient-occlusion generation pass"
             }
+            DxbcError::NoPostFilter => "dxbc: no recognised post-chain filter",
+            DxbcError::NoCompositeBloom => "dxbc: no recognised composite bloom lookup",
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
             DxbcError::NoLakeRefraction => {
                 "dxbc: missing unique lake refraction displacement scale"

@@ -321,7 +321,9 @@ fn fade_apply(this: *mut c_void, a2: *mut c_void, a3: *mut c_void) -> u64 {
     FADE_APPLY.get().unwrap().call(this, a2, a3)
 }
 
-// GlareEffect::Apply -- bloom/glare generator. Skip = no bloom.
+// GlareEffect::Apply -- bloom/glare generator. Skip = no bloom. Otherwise, under the collapse, its
+// filters read only their own eye's half of each source for the length of the call
+// (`stereo::single_pass::post_filters`).
 #[detour(address = jc3gi::graphics_engine::post_effects::GlareEffect::Apply_ADDRESS)]
 fn glare_apply(
     this: *mut c_void,
@@ -335,6 +337,7 @@ fn glare_apply(
     if skip {
         return 0;
     }
+    let _eye_half = crate::stereo::single_pass::post_filters::Scope::enter();
     GLARE_APPLY.get().unwrap().call(this, a2, a3, a4, a5)
 }
 

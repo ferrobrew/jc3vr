@@ -344,6 +344,17 @@ pub struct SinglePassConfig {
     /// darkens each eye's outer edge and brightens the seam. A shader rewrite, so it needs a shader
     /// reload to apply. On by default.
     pub composite_overlays_per_eye: bool,
+    /// Keep the **glare** (bloom) chain and the composite's bloom lookups inside each eye's half of the
+    /// double-wide target under the collapse.
+    ///
+    /// The glare chain's blurs, downsamples, upsamples, and opening read their sources by the screen
+    /// UV with taps that, near the seam, reach into the other eye, so a bright sky or sun near one
+    /// eye's inner edge brightens the other eye's inner half and is missing from its own edge. While
+    /// the chain runs, each of its pixel shaders is swapped for a rewrite whose reads clamp to the
+    /// eye's half (`stereo::single_pass::post_filters`), which applies without a reload; the
+    /// composite's bloom lookups are a shader rewrite, so changing this requests a shader reload. On by
+    /// default.
+    pub glare_per_eye: bool,
     /// Requires [`single_pass_reconstruct_per_eye`](Self::reconstruct_per_eye), and rides on the
     /// off-axis froxel tile-bounds override: build the clustered
     /// (froxel) light grid **per eye** as well, instead of building it once with eye 0's projection
@@ -601,6 +612,7 @@ impl SinglePassConfig {
             dof_per_eye: true,
             ssdecal_per_eye: true,
             composite_overlays_per_eye: true,
+            glare_per_eye: true,
             clustered_per_eye: true,
             clustered_per_eye_light_view: true,
             uniform_viewport_slots: true,

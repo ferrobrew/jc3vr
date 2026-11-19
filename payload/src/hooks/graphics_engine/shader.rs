@@ -41,8 +41,8 @@ use crate::{
     config::Config,
     hooks::graphics_engine::ss_decal,
     stereo::single_pass::{
-        VsTransform, ambient_occlusion, is_terrain_shadow_pass, set_patch_pending, terrain_active,
-        water_pixel_variants,
+        VsTransform, ambient_occlusion, is_terrain_shadow_pass, post_filters, set_patch_pending,
+        terrain_active, water_pixel_variants,
     },
 };
 
@@ -62,6 +62,8 @@ static PATCHED: AtomicUsize = AtomicUsize::new(0);
 static SSDECAL_BIASED: AtomicUsize = AtomicUsize::new(0);
 /// How many composite permutations have had their screen overlays mapped per eye this session.
 static OVERLAYS_LOCALIZED: AtomicUsize = AtomicUsize::new(0);
+/// How many composite permutations have had their bloom lookups kept per eye this session.
+static BLOOM_LOCALIZED: AtomicUsize = AtomicUsize::new(0);
 static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// Read a shader program's engine debug name (a null-terminated C string in
@@ -222,6 +224,10 @@ fn create_fragment_program(
     // The ambient-occlusion generation pass computed for each eye's half. Baked into the bytecode
     // like the overlays, and decided for every fragment program so the SSAO block knows whether the
     // generation shader it will run carries it.
+    // The composite's bloom lookups, kept to each eye's half. Baked into the bytecode like the
+    // overlays.
+    let localize_bloom = crate::stereo::single_pass::collapse_active()
+        && Config::lock_query(|c| c.stereo.single_pass.glare_per_eye);
     let localize_ambient_occlusion = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye);
     let mut rewritten_ambient_occlusion = None;
@@ -244,7 +250,7 @@ fn create_fragment_program(
         p.m_Code = saved.as_ref().expect("just set").2.as_ptr();
         p.m_Size = len;
     } else if !crate::is_shutting_down()
-        && (patch_pcf || bias_ssdecal || localize_overlays)
+        && (patch_pcf || bias_ssdecal || localize_overlays || localize_bloom)
         && let Some(p) = unsafe { params.as_mut() }
     {
         let size = p.m_Size as usize;
@@ -285,6 +291,15 @@ fn create_fragment_program(
                     "composite: screen overlays mapped per eye ({count} permutations so far)",
                 );
             }
+            if localize_bloom && let Ok(blob) = dxbc_stereo::localize_composite_bloom(&copy) {
+                copy = blob;
+                localized = true;
+                let count = BLOOM_LOCALIZED.fetch_add(1, Ordering::Relaxed) + 1;
+                tracing::debug!(
+                    target: "single_pass",
+                    "composite: bloom lookups kept per eye ({count} permutations so far)",
+                );
+            }
             if pcf > 0 || biased || localized {
                 // Unlike the in-place byte patches, the decal rewrite splices an instruction in, so
                 // `m_Size` has to move with `m_Code` or the engine hands D3D a container whose chunk
@@ -306,6 +321,21 @@ fn create_fragment_program(
         && let Ok(size) = usize::try_from(p.m_Size)
         && let Some(shader) = unsafe { result.as_ref() }.and_then(|p| p.m_Program.as_ref())
         && let Err(error) = water_pixel_variants::register(shader, unsafe {
+            std::slice::from_raw_parts(p.m_Code, size)
+        })
+    {
+        tracing::warn!("{error:#}");
+    }
+
+    // The glare chain's filters get an eye-half variant the draw detour binds while the chain runs.
+    // Built whenever single-pass is on, so the switch applies without a reload.
+    if !crate::is_shutting_down()
+        && Config::lock_query(|c| c.stereo.single_pass.enabled)
+        && let Some(p) = unsafe { params.as_ref() }
+        && !p.m_Code.is_null()
+        && let Ok(size) = usize::try_from(p.m_Size)
+        && let Some(shader) = unsafe { result.as_ref() }.and_then(|p| p.m_Program.as_ref())
+        && let Err(error) = post_filters::register(shader, unsafe {
             std::slice::from_raw_parts(p.m_Code, size)
         })
     {
