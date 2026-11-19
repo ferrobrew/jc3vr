@@ -39,3 +39,7 @@ mode = "single_pass"
 
 [[single_pass_variants]]
 name = "repeat"
+
+[[single_pass_variants]]
+name = "veg-off"
+switches = { vegetation_once = false }

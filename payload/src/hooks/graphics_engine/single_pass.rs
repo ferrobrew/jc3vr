@@ -13,7 +13,9 @@
 //! instance-doubled. When the block's flag is on and the collapse is active, the block's `Draw` is
 //! re-issued once per eye with that baked constant reprojected by the eye's `M_eye`
 //! ([`reproject_baked_cb_per_eye`](crate::stereo::single_pass::reproject_baked_cb_per_eye)); otherwise
-//! it draws once, unchanged. Each is gated by its own config flag.
+//! it draws once, unchanged. Each is gated by its own config flag. The bark and foliage blocks are
+//! first offered to [`vegetation_once`](crate::stereo::single_pass::vegetation_once), which draws
+//! them once for both eyes when it can, and fall back to the re-issue when it cannot.
 //!
 //! The two vegetation flags do double duty: while one is on, its family's vertex shaders are also
 //! declined by the `cb0` remap at creation
@@ -50,9 +52,14 @@ struct BakedCbBlock {
     /// Whether the re-issue must check for a patched vertex shader before running (see
     /// [`BoundVsGate`]).
     gate: BoundVsGate,
+    /// Whether the block may be drawn once for both eyes instead
+    /// ([`vegetation_once`](crate::stereo::single_pass::vegetation_once)), falling back to the
+    /// re-issue.
+    once: bool,
 }
 
-/// Runs the shared re-issue dance for a render-block detour: if the block's flag is on, hand the
+/// Runs the shared re-issue dance for a render-block detour: if the block's flag is on, draw it once
+/// for both eyes when the block allows it and the single draw's preconditions hold, else hand the
 /// original `Draw` off to [`reproject_baked_cb_per_eye`] so it runs once per eye against a reprojected
 /// constant; otherwise (or if the re-issue declines) fall back to a single unmodified `Draw`.
 ///
@@ -65,17 +72,26 @@ unsafe fn intercept_render_block(
     rc: *mut RenderContext,
     mut draw: impl FnMut(),
 ) {
+    if !crate::stereo::single_pass::block_intercept_enabled(block.intercept) {
+        draw();
+        return;
+    }
     // SAFETY: forwarded from this function's own contract.
-    let handled = crate::stereo::single_pass::block_intercept_enabled(block.intercept)
-        && unsafe {
-            crate::stereo::single_pass::reproject_baked_cb_per_eye(
-                rc,
-                block.cb_index,
-                block.reg_offset,
-                block.gate,
-                &mut draw,
-            )
-        };
+    if block.once
+        && unsafe { crate::stereo::single_pass::vegetation_once::draw_block(rc, &mut draw) }
+    {
+        return;
+    }
+    // SAFETY: forwarded from this function's own contract.
+    let handled = unsafe {
+        crate::stereo::single_pass::reproject_baked_cb_per_eye(
+            rc,
+            block.cb_index,
+            block.reg_offset,
+            block.gate,
+            &mut draw,
+        )
+    };
     if !handled {
         draw();
     }
@@ -133,6 +149,7 @@ const BARK: BakedCbBlock = BakedCbBlock {
     cb_index: 1,
     reg_offset: 0,
     gate: BoundVsGate::Owned,
+    once: true,
 };
 
 /// The grass/foliage block bakes its view-projection into vertex `cb2` registers 4..7 (register 0 is
@@ -142,6 +159,7 @@ const FOLIAGE: BakedCbBlock = BakedCbBlock {
     cb_index: 2,
     reg_offset: 4,
     gate: BoundVsGate::Owned,
+    once: true,
 };
 
 /// The occluder depth-prime block's non-instanced path bakes its world-view-projection into vertex
@@ -154,6 +172,7 @@ const OCCLUDER: BakedCbBlock = BakedCbBlock {
     cb_index: 1,
     reg_offset: 0,
     gate: BoundVsGate::Checked,
+    once: false,
 };
 
 /// The tree-trunk/branch block bakes its world-view-projection into vertex `cb1` registers 0..3, so

@@ -74,7 +74,7 @@ pub use common::{
     STEREO_ORIGIN_CB_ROWS, STEREO_REPROJ_CB_ROWS,
 };
 pub use remap::{ClipOrigin, patch_vertex_shader, patch_vertex_shader_with};
-pub use reproject::reproject_vertex_shader;
+pub use reproject::{reproject_instanced_vertex_shader, reproject_vertex_shader};
 pub use ssdecal::{SSDECAL_EYE_BIAS_REGISTER, bias_ssdecal_depth_uv};
 pub use terrain::{
     forward_eye_hull_shader, inject_eye_forward_vertex_shader, reproject_domain_shader,

@@ -161,6 +161,16 @@ pub struct SinglePassConfig {
     /// forward-clustered-lighting black-in-VR issue. Requires the collapse. On by default, for the same
     /// reason as [`single_pass_bark`](Self::bark).
     pub foliage: bool,
+    /// Draw the bark and foliage blocks once for both eyes instead of re-issuing them per eye, while
+    /// [`bark`](Self::bark) or [`foliage`](Self::foliage) is on for the block. The block's `Draw` runs
+    /// once with each draw's vertex shader swapped for a reprojected variant (built when the engine
+    /// creates the shader, while single-pass is enabled): a plain draw is promoted to two instances,
+    /// a GPU-indirect draw is issued against a copy of its argument buffer with every instance count
+    /// doubled (the variant halves the instance id it fetches by), and a hardware-instanced draw takes
+    /// a step-rate-doubled layout twin when there is one and a per-eye re-issue of that one draw
+    /// otherwise. A block whose vertex shader has no variant keeps the whole-block re-issue (see
+    /// `crate::stereo::single_pass::vegetation_once`). On by default; applies at once.
+    pub vegetation_once: bool,
     /// Single-pass the occluder depth-prime render block (`CRenderBlockOccluder`). Its non-instanced path
     /// bakes a world-view-projection into `cb1`; the block's `DrawZ` is re-issued once per eye with `cb1`
     /// reprojected by `M_eye`, so each eye's depth is primed with its own projection. Requires the
@@ -725,6 +735,7 @@ impl SinglePassConfig {
             occluder: false,
             instanced_per_eye: true,
             hw_instanced_once: true,
+            vegetation_once: true,
             indirect_per_eye: true,
             reconstruct_per_eye: true,
             fullscreen_camera_per_eye: true,

@@ -13,6 +13,7 @@ use crate::{
     screenshot::harness::stages::velocity,
     stereo::single_pass::{
         pinned_eye::Cb13EyePin,
+        vegetation_once,
         water_fragment_state::packed_water_context,
         water_gpu_probe::{RawDrawKind, raw_entry, reflection_treatment},
     },
@@ -66,6 +67,11 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
         .and_then(water_pixel_variants::bind);
     unsafe { raw_entry(RawDrawKind::Indexed, context) };
     let detour = DRAW_INDEXED.get().expect("set before enable");
+    if vegetation_once::active()
+        && vegetation_once::draw_indexed(context, index_count, start_index, base_vertex)
+    {
+        return;
+    }
     if dual_eye_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
         let patched = BOUND_VS_PATCHED.load(Ordering::Relaxed);
         if patched {
@@ -466,6 +472,20 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_indirect_detour(
     let detour = DRAW_INDEXED_INSTANCED_INDIRECT
         .get()
         .expect("set before enable");
+    if vegetation_once::active()
+        && vegetation_once::draw_indexed_instanced_indirect(context, buffer_for_args, &|args| {
+            velocity::submit(
+                context,
+                "indexed_instanced_indirect_promoted",
+                [aligned_byte_offset.into(), 0, 0, 0, 0],
+                // SAFETY: the caller's draw against the doubled copy of its arguments, at the same
+                // offset, through the trampoline.
+                || unsafe { detour.call(context, args, aligned_byte_offset) },
+            )
+        })
+    {
+        return;
+    }
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
     let submit = |_| {
         velocity::submit(
@@ -638,6 +658,41 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
             },
         )
     };
+    let submit_promoted = |doubled: u32| {
+        velocity::submit(
+            context,
+            "indexed_instanced_promoted",
+            [
+                index_count_per_instance.into(),
+                doubled.into(),
+                start_index.into(),
+                base_vertex.into(),
+                start_instance.into(),
+            ],
+            // SAFETY: the caller's arguments with the instance count doubled, through the
+            // trampoline so the mod's own draw is not seen again as a game draw.
+            || unsafe {
+                detour.call(
+                    context,
+                    index_count_per_instance,
+                    doubled,
+                    start_index,
+                    base_vertex,
+                    start_instance,
+                )
+            },
+        )
+    };
+    if vegetation_once::active()
+        && vegetation_once::draw_indexed_instanced(
+            context,
+            instance_count,
+            &submit_promoted,
+            &submit,
+        )
+    {
+        return;
+    }
     if active() && per_eye_reissue_eye().is_none() {
         INSTANCED_TOTAL.fetch_add(1, Ordering::Relaxed);
         let patched = BOUND_VS_PATCHED.load(Ordering::Relaxed);
@@ -653,31 +708,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
         if patched && in_range && collapse_active() {
             let flags = config_flags();
             let once = flags.has(Flag::HwInstancedOnce)
-                && hw_instanced_once(context, instance_count, &|doubled| {
-                    velocity::submit(
-                        context,
-                        "indexed_instanced_promoted",
-                        [
-                            index_count_per_instance.into(),
-                            doubled.into(),
-                            start_index.into(),
-                            base_vertex.into(),
-                            start_instance.into(),
-                        ],
-                        // SAFETY: the caller's arguments with the instance count doubled, through the
-                        // trampoline so the mod's own draw is not seen again as a game draw.
-                        || unsafe {
-                            detour.call(
-                                context,
-                                index_count_per_instance,
-                                doubled,
-                                start_index,
-                                base_vertex,
-                                start_instance,
-                            )
-                        },
-                    )
-                });
+                && hw_instanced_once(context, instance_count, &submit_promoted);
             if once {
                 record_instanced_case(instance_count, true);
                 return;
@@ -711,7 +742,11 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
 /// when the doubled count overflows, and when the bound layout has no twin, which it logs once per
 /// layout. The engine's layout is bound again afterwards, so its cached input-assembler state stays
 /// true.
-fn hw_instanced_once(context: *mut c_void, instance_count: u32, submit: &dyn Fn(u32)) -> bool {
+pub(super) fn hw_instanced_once(
+    context: *mut c_void,
+    instance_count: u32,
+    submit: &dyn Fn(u32),
+) -> bool {
     // SAFETY: `context` is the live immediate context the detoured entry was called on.
     let Some(ctx) = (unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) })
     else {

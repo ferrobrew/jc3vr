@@ -58,3 +58,8 @@ switches = { screen_door_per_eye = false }
 name = "hwi-off"
 diagnostics = true
 switches = { hw_instanced_once = false }
+
+[[single_pass_variants]]
+name = "veg-off"
+diagnostics = true
+switches = { vegetation_once = false }

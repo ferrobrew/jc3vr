@@ -33,3 +33,11 @@ mode = "multipass"
 
 [[configurations]]
 mode = "single_pass"
+
+[[single_pass_variants]]
+name = "repeat"
+
+[[single_pass_variants]]
+name = "veg-off"
+diagnostics = true
+switches = { vegetation_once = false }

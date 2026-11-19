@@ -284,6 +284,22 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.vegetation_once,
+                    "Bark and foliage once for both eyes",
+                )
+                .on_hover_text(
+                    "Draws a bark or foliage block once instead of re-issuing it per eye: each \
+                     draw binds a reprojected variant of its vertex shader, plain draws take two \
+                     instances, GPU-indirect draws read a copy of their arguments with the instance \
+                     counts doubled, and hardware-instanced draws are re-issued per eye unless \
+                     their layout has a twin. Blocks without a variant keep the whole-block \
+                     re-issue. Applies at once.",
+                );
+                ui.label(format!(
+                    "Vegetation once: {}",
+                    crate::stereo::single_pass::vegetation_once::status()
+                ));
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.occluder,
                     "Occluder (depth-prime boxes)",
                 )

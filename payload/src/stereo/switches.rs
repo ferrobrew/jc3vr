@@ -65,6 +65,7 @@ single_pass_switches! {
     WaterPlanePerEye => water_plane_per_eye, true;
     Bark => bark, true;
     Foliage => foliage, true;
+    VegetationOnce => vegetation_once, false;
     Occluder => occluder, false;
     InstancedPerEye => instanced_per_eye, false;
     HwInstancedOnce => hw_instanced_once, false;

@@ -35,6 +35,7 @@ pub(super) enum Flag {
     AoVolumes,
     Bark,
     Foliage,
+    VegetationOnce,
     Occluder,
     WaterScreenUv,
     NvWater,
@@ -128,6 +129,7 @@ fn store_config_flags() -> u32 {
             | bit(s.ao_volumes_per_eye, Flag::AoVolumes)
             | bit(s.bark, Flag::Bark)
             | bit(s.foliage, Flag::Foliage)
+            | bit(s.vegetation_once, Flag::VegetationOnce)
             | bit(s.occluder, Flag::Occluder)
             | bit(s.water_uv_per_eye, Flag::WaterScreenUv)
             | bit(s.nvwater_per_eye, Flag::NvWater)

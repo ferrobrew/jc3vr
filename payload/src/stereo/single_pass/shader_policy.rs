@@ -407,7 +407,7 @@ pub(super) fn cached_vs_transform(code: &[u8]) -> Option<VsTransform> {
 /// collision probability is negligible (~1e-15). The length is part of the key to make the cheap half
 /// exact, so a collision would require two shaders of the same length with identical hash —
 /// astronomically unlikely for this corpus.
-fn vs_blob_key(code: &[u8]) -> (usize, u64) {
+pub(super) fn vs_blob_key(code: &[u8]) -> (usize, u64) {
     const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
     const PRIME: u64 = 0x0000_0100_0000_01b3;
     let mut hash = OFFSET_BASIS;

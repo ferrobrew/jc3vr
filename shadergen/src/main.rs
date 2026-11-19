@@ -89,6 +89,7 @@ const DX11_BASE_ARGS: &[&str] = &[
 const PAYLOAD_SHADERS: &[(&str, &str)] = &[
     ("velocity_decode", "cs_5_0"),
     ("marker_depth_cs", "cs_5_0"),
+    ("indirect_args_double_cs", "cs_5_0"),
     ("hud_quad_vs", "vs_5_0"),
     ("hud_quad_ps", "ps_5_0"),
     ("hud_quad_fade_ps", "ps_5_0"),

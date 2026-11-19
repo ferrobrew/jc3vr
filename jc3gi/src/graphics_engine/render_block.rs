@@ -452,6 +452,52 @@ impl RenderBlockBark {
             f(self as *const Self as _, render_context, info)
         }
     }
+    pub const Setup_ADDRESS: usize = 0x140103130;
+    /// The per-block setup (`IRenderBlock::Setup`) for the passes [`Draw`](crate::graphics_engine::render_block::RenderBlockBark::Draw) issues. The
+    /// draw kind is in `sort_id`: plain, GPU-indirect, or CPU-instanced. When `change` says the kind
+    /// changed since the previous block, it binds the type's vertex program for that kind and the
+    /// matching vertex declaration (the instanced declaration for the CPU-instanced kind), selecting
+    /// the shadow programs and declarations under the
+    /// [`RENDERSTATUS_SHADOWMAP`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_SHADOWMAP)
+    /// bits. It then binds the block's fragment program, textures, samplers, vertex streams, and
+    /// index buffer. `Draw` binds no vertex program of its own except on the billboard path.
+    pub unsafe fn Setup(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        sort_id: u64,
+        change: u64,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                sort_id: u64,
+                change: u64,
+            ) = ::std::mem::transmute(Self::Setup_ADDRESS);
+            f(self as *const Self as _, render_context, sort_id, change)
+        }
+    }
+    pub const SetupZ_ADDRESS: usize = 0x140103020;
+    /// The per-block setup for the passes [`DrawZ`](crate::graphics_engine::render_block::RenderBlockBark::DrawZ) issues: binds the depth or the
+    /// depth-and-velocity vertex program for the draw kind in `sort_id`, with the depth vertex
+    /// declaration, when `change` says the kind changed, then the block's vertex streams (the
+    /// per-instance stream too for the CPU-instanced kind) and index buffer.
+    pub unsafe fn SetupZ(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        sort_id: u64,
+        change: u64,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                sort_id: u64,
+                change: u64,
+            ) = ::std::mem::transmute(Self::SetupZ_ADDRESS);
+            f(self as *const Self as _, render_context, sort_id, change)
+        }
+    }
 }
 impl std::convert::AsRef<RenderBlockBark> for RenderBlockBark {
     fn as_ref(&self) -> &RenderBlockBark {
@@ -917,6 +963,26 @@ impl RenderBlockFoliage {
                 info: *const crate::graphics_engine::render_block::RBIInfo,
             ) = ::std::mem::transmute(Self::DrawZ_ADDRESS);
             f(self as *const Self as _, render_context, info)
+        }
+    }
+    pub const SetupZ_ADDRESS: usize = 0x14010D450;
+    /// The per-block setup for the passes [`DrawZ`](crate::graphics_engine::render_block::RenderBlockFoliage::DrawZ) issues: binds the depth or the
+    /// depth-and-velocity vertex program for the draw kind in `sort_id`, with the depth vertex
+    /// declaration, on every call, then the block's stream, texture, and index buffer.
+    pub unsafe fn SetupZ(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        sort_id: u64,
+        change: u64,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                sort_id: u64,
+                change: u64,
+            ) = ::std::mem::transmute(Self::SetupZ_ADDRESS);
+            f(self as *const Self as _, render_context, sort_id, change)
         }
     }
 }

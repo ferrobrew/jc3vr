@@ -96,6 +96,7 @@ pub(crate) mod shader_identity;
 mod shader_policy;
 mod static_lights;
 mod sun;
+pub(crate) mod vegetation_once;
 mod viewport;
 mod water_fragment_state;
 mod water_gpu_probe;
@@ -522,6 +523,7 @@ pub fn begin_dispatch() {
     pin_dispatch_config_flags();
     clear_gbuffer_range();
     hw_instanced::maintain();
+    vegetation_once::begin_dispatch();
 }
 
 /// Whether this frame is one the per-frame single-pass diagnostics log on.
@@ -620,6 +622,7 @@ pub fn uninstall_com_detours() -> bool {
     if RS_SET_VIEWPORTS.get().is_none() && shader_identity::CREATE_PIXEL_SHADER.get().is_none() {
         // No draw detour was ever installed, so no draw can be holding a twin.
         hw_instanced::release();
+        vegetation_once::release();
         return true;
     }
 
@@ -731,6 +734,7 @@ pub fn uninstall_com_detours() -> bool {
     // After the draw detours are gone: a draw still finishing holds its own reference to the twin it
     // bound, so destroying the engine handles here cannot pull a layout out from under it.
     hw_instanced::release();
+    vegetation_once::release();
     reset_instanced_exposure();
     tracing::info!("single-pass: COM detours uninstalled");
     true

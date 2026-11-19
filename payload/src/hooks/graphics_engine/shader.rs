@@ -171,6 +171,17 @@ fn create_vertex_program(
         };
         crate::stereo::single_pass::remember_vs_transform(code, transform);
         pinned = transform == VsTransform::Pinned;
+        // The bark and foliage blocks' single draw binds a reprojected variant of each eye-pass
+        // permutation, attached when the shader is created. Built whenever single-pass is live, so
+        // the switch applies without a reload.
+        if crate::stereo::single_pass::active()
+            && crate::stereo::single_pass::vegetation_once::variants::remember(
+                name.as_deref(),
+                code,
+            )
+        {
+            crate::stereo::single_pass::ensure_viewport_detours();
+        }
         let substitute = if crate::stereo::single_pass::active() {
             crate::stereo::single_pass::apply_vs_transform(
                 transform,

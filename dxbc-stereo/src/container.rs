@@ -107,9 +107,11 @@ pub enum DxbcError {
     NoPerEyeReferences,
     /// The shader already declares `cb13`, the slot the stereo constants need.
     Cb13AlreadyDeclared,
-    /// The shader already declares an `SV_InstanceID` input; rewriting its consumers is not
-    /// supported yet.
+    /// The shader already declares an `SV_InstanceID` input, which the rewrite asked for cannot
+    /// take: it appends one of its own.
     InstanceIdAlreadyDeclared,
+    /// The shader declares no `SV_InstanceID` input, which the instanced reprojection halves.
+    NoInstanceId,
     /// A per-eye operand uses an index encoding the rewrite does not support (for instance a 64-bit
     /// or already-relative element index).
     UnsupportedOperandEncoding,
@@ -197,6 +199,7 @@ impl fmt::Display for DxbcError {
             DxbcError::InstanceIdAlreadyDeclared => {
                 "dxbc: the shader already declares an SV_InstanceID input"
             }
+            DxbcError::NoInstanceId => "dxbc: the shader declares no SV_InstanceID input",
             DxbcError::UnsupportedOperandEncoding => {
                 "dxbc: a per-eye operand uses an unsupported index encoding"
             }

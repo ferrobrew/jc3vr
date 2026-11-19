@@ -146,6 +146,34 @@ pub(super) unsafe extern "system" fn create_vertex_shader_detour(
     {
         unsafe { vertex_identity_record(generation, shader, blob, len, pending_name.as_deref()) };
     }
+    if hr >= 0
+        && !out.is_null()
+        && !bytecode.is_null()
+        && let shader = unsafe { *out }
+        && !shader.is_null()
+        && let Err(error) = vegetation_once::variants::attach(
+            shader,
+            // SAFETY: the engine's bytecode for this create, which outlives the call.
+            unsafe { std::slice::from_raw_parts(bytecode.cast::<u8>(), length) },
+            |variant| {
+                let mut created = std::ptr::null_mut();
+                // SAFETY: the trampoline, so the variant's creation is not seen as an engine
+                // shader; `variant` is a complete container.
+                let hr = unsafe {
+                    detour.call(
+                        device,
+                        variant.as_ptr().cast(),
+                        variant.len(),
+                        std::ptr::null_mut(),
+                        &mut created,
+                    )
+                };
+                (hr >= 0 && !created.is_null()).then_some(created)
+            },
+        )
+    {
+        tracing::warn!(target: "single_pass", "{error:#}");
+    }
     if pinned
         && hr >= 0
         && !out.is_null()
@@ -394,6 +422,7 @@ pub fn reset_patched_vs() {
     // a decision made under config that has since changed outlive the shader it was made for, and
     // would accumulate the previous bundle's blobs across every reload.
     VS_TRANSFORM_CACHE.lock().clear();
+    vegetation_once::variants::reset();
     reset_instanced_exposure();
     CVS_PENDING.store(0, Ordering::Relaxed);
     CVS_DECIDED_TRANSFORMED.store(0, Ordering::Relaxed);

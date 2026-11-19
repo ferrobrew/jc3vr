@@ -79,14 +79,11 @@ Tree trunks and branches, [`RenderBlockBark`](https://ferrobrew.github.io/pyxis/
 
 **Draw-kind routing.** The draw kind comes from the instance data that the `RBIInfo` points at: with no instance data, a non-instanced [`DrawIndexedWithBoundState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedWithBoundState); otherwise a flag in the instance data's flags word selects a CPU-instanced [`DrawIndexedInstanced`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstanced) when set, or a GPU-indirect [`DrawIndexedInstancedIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirect) when clear. The flags word is not `RBIInfo::m_MetaFlags`. All three kinds read the same `cb1[0..3]`, so one reprojection corrects every kind.
 
-**Wiring: `single_pass.bark`, built, on by default.** `Draw` and `DrawZ` are detoured and re-issued once per eye into the eye's half-viewport, with `cb1[0..3]` reprojected as `cb1[k]_eye = M_eye · cb1[k]_mono`, one entry at a time. `M_eye` is the same matrix the mod builds for cb13. Because `Draw` itself bakes cb1, the intercept reprojects the game's own `SetVertexProgramConstants` upload to cb1 during a wrapped original-`Draw` call rather than replicating the bake. This is the shared bucket-(b) mechanism described below. It covers all three draw kinds uniformly. The GPU-indirect `DrawIndexedInstancedIndirect` sub-path can only be re-issued, never instance-doubled.
+**Wiring: `single_pass.bark`, built, on by default.** By default the block is drawn once for both eyes (`single_pass.vegetation_once`, see "Drawing the vegetation once" in [single-pass-stereo.md](single-pass-stereo.md)): `Draw` and `DrawZ` run once, each draw binds a reprojected variant of the vertex shader the block's setup bound, and the GPU-indirect draws read a copy of their arguments with the instance counts doubled. The fallback, taken when that switch is off or a precondition is missing, re-issues `Draw` and `DrawZ` once per eye into the eye's half-viewport, with `cb1[0..3]` reprojected as `cb1[k]_eye = M_eye · cb1[k]_mono`, one entry at a time. `M_eye` is the same matrix the mod builds for cb13. Because `Draw` itself bakes cb1, the re-issue reprojects the game's own `SetVertexProgramConstants` upload to cb1 during a wrapped original-`Draw` call rather than replicating the bake. This is the shared bucket-(b) mechanism described below, and it covers all three draw kinds uniformly.
 
-The velocity pass's previous-frame WVP is not reprojected: that would need the previous frame's `M_eye` retained and a second armed range. Bark's motion vectors therefore carry the centre view's parallax, which SMAA and FSR reproject slightly wrongly.
+The re-issue's velocity pass reprojects only the current-frame WVP; the previous-frame copy stays centred, so bark's motion vectors carry the centre view's parallax, which SMAA and FSR reproject slightly wrongly. The single draw reprojects only `SV_Position`, so its velocity texcoords are both the centre view's: the motion of the centre camera rather than of each eye, which differs from an isolated eye's by the change in parallax between frames.
 
-Bark's VS writes `SV_Position`, so the CB-agnostic `reproject_vertex_shader` would handle the
-non-indirect draws directly — but the VS is shared with the GPU-indirect path, and rewriting it breaks
-that path (a single indirect instance cannot select an eye). That is why Bark is not a plain reproject
-allowlist entry and takes the whole-`Draw` re-issue instead.
+The engine's bark vertex shaders stay pristine: the shadow passes and the re-issue draw with them, and the `cb0` remap declines them while the flag is on. The variants exist beside them.
 
 ## VegetationFoliage
 
@@ -96,19 +93,7 @@ Grass and ground cover, `RenderBlockFoliage` (registered `"VegetationFoliage"`),
 
 **Draw-kind routing.** The instance-data flags select one of three paths: a CPU-instanced [`DrawIndexedInstancedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedNoMutex) with a u16 instance count; the dominant grass path, [`DrawIndexedInstancedIndirectNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirectNoMutex), whose instance count is in the GPU-only `m_InstDrawParams` args that the vegetation draw-indirect compute pass populates; and a non-instanced [`DrawIndexedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedNoMutex).
 
-**Wiring — `single_pass.foliage`, built, on by default.** Same story as Bark: the non-indirect paths
-are bucket (b), but the dominant grass path is GPU-indirect and shares the VS, so a reproject allowlist
-entry would break the grass. `Draw` (colour) and [`RenderBlockFoliage::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-DrawZ) (prez/shadow/velocity/RSM) are therefore detoured and re-issued per eye with `cb2[4..7]` reprojected, which covers
-every draw kind without touching the VS. Both entry points stage the same `cb2[4..7]` copy of
-`m_OffsetViewProjection`, and both have to be reprojected: a prepass left at the centre view primes
-depth for geometry neither eye draws there, and the per-eye colour fragments are rejected against it.
-`DrawZ`'s velocity permutation also stages the previous frame's offset VP at `cb2[11..14]`, which is
-left centred — the same deferral bark's velocity matrix takes.
-
-The cheaper shape — reproject the VS and double each `m_InstDrawParams` slot's `InstanceCount` (dword
-+1) in an in-place compute pre-pass, since the args buffer has no CPU copy — is not built; it would
-also need the `SV_InstanceID >> 1` consumer rewrite on the CPU-instanced path so the doubled instance
-id still indexes the original instance.
+**Wiring — `single_pass.foliage`, built, on by default.** Drawn once for both eyes like Bark under `single_pass.vegetation_once`, with the same variants and argument copy. The fallback re-issues `Draw` (colour) and [`RenderBlockFoliage::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-DrawZ) (prez/shadow/velocity/RSM) per eye with `cb2[4..7]` reprojected, which covers every draw kind without touching the VS. Both entry points stage the same `cb2[4..7]` copy of `m_OffsetViewProjection`, and both have to be corrected the same way: a prepass left at the centre view primes depth for geometry neither eye draws there, and the per-eye colour fragments are rejected against it. `DrawZ`'s velocity permutation also stages the previous frame's offset VP at `cb2[11..14]`, which the re-issue leaves centred, the same deferral bark's velocity matrix takes.
 
 ### Black-in-VR: the clustered grid is *not* the cause
 
