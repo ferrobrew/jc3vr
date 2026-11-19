@@ -50,12 +50,12 @@ def command(output, name, args):
     return result.returncode
 
 
-def run(number, config, gpu, prior):
+def run(number, config, gpu, prior, unmatched=False):
     output = BASE / f'diagnostics-{number}'
     session = BASE / f'persistent-{number}'
     if Path.cwd() != ROOT or session.exists() or (output / 'paired').exists():
         raise RuntimeError('matched run: expected repository root and unused session and capture paths')
-    if not ExperimentConfig.load(config).matched_treatment:
+    if not unmatched and not ExperimentConfig.load(config).matched_treatment:
         raise ValueError('matched run: configuration has no matched treatment')
     for check in ('fmt', 'build', 'clippy', 'test', 'python'):
         if (output / f'{check}.exit').read_text().strip() != '0':
@@ -100,5 +100,7 @@ if __name__ == '__main__':
     controller = parser.add_mutually_exclusive_group(required=True)
     controller.add_argument('--prior', type=int)
     controller.add_argument('--fresh', action='store_true')
+    parser.add_argument('--unmatched', action='store_true',
+                        help='accept a configuration without a matched treatment')
     args = parser.parse_args()
-    sys.exit(run(args.number, args.config, args.gpu, args.prior))
+    sys.exit(run(args.number, args.config, args.gpu, args.prior, args.unmatched))
