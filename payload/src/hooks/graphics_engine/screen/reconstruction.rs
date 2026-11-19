@@ -589,6 +589,17 @@ fn half_target_remap(eye: usize) -> glam::Mat4 {
     )
 }
 
+/// `eye`'s world→clip `view_projection` re-expressed over the whole double-wide target: the eye's NDC
+/// `x' ∈ [-1, 1]` lands on its half, `x = (x' - 1 + 2e) / 2`, the inverse of [`half_target_remap`].
+///
+/// For a pass that builds its reconstruction basis by inverting a render-context view-projection
+/// itself, rather than through [`Matrix4::PerspectiveFovInverse`]: handing it this matrix makes the
+/// inverse it takes equal to `eye`'s inverse with the remap folded in, exactly what
+/// [`offaxis_inverse`] substitutes for the passes that do call it.
+pub(super) fn half_target_view_projection(eye: usize, view_projection: glam::Mat4) -> glam::Mat4 {
+    half_target_remap(eye).inverse() * view_projection
+}
+
 /// Clip the rest of this per-eye run to `state.eye`'s half of the bound target, by setting both
 /// scissor rectangles to that half and overriding the bound D3D rasterizer state. Reports whether the
 /// mask was applied; it is not when the immediate context is unreachable, nor -- under
@@ -763,6 +774,64 @@ mod tests {
                     mapped.x,
                 );
                 assert_eq!((mapped.y, mapped.z, mapped.w), (0.25, 0.5, 1.0));
+            }
+        }
+    }
+
+    /// Projecting through the half-target view-projection must land a point on the same place of its
+    /// eye's half that the eye's own projection puts it in that eye's full NDC range, leaving `y`, `z`,
+    /// and `w` alone; and inverting it must reconstruct the point from where it landed.
+    #[test]
+    fn half_target_view_projection_projects_into_the_eye_half() {
+        let fov = Fov {
+            left: -50.0_f32.to_radians(),
+            right: 40.0_f32.to_radians(),
+            up: 45.0_f32.to_radians(),
+            down: -45.0_f32.to_radians(),
+        };
+        let projection = glam::Mat4::from(
+            OffAxisProjection::new(fov, Camera::DEFAULT_NEAR_PLANE, Camera::DEFAULT_FAR_PLANE)
+                .reverse_z,
+        );
+        let view = glam::Mat4::look_at_rh(
+            glam::Vec3::new(10.0, 2.0, -3.0),
+            glam::Vec3::new(4.0, 1.0, 20.0),
+            glam::Vec3::Y,
+        );
+        let view_projection = projection * view;
+        for eye in 0..2 {
+            let staged = half_target_view_projection(eye, view_projection);
+            for point in [
+                glam::Vec3::new(4.0, 1.0, 20.0),
+                glam::Vec3::new(-3.0, 5.0, 40.0),
+                glam::Vec3::new(12.0, -1.0, 8.0),
+            ] {
+                let direct = view_projection * point.extend(1.0);
+                let through_half = staged * point.extend(1.0);
+                let (x_eye, x_full) = (direct.x / direct.w, through_half.x / through_half.w);
+                let expected = (x_eye - 1.0 + 2.0 * eye as f32) / 2.0;
+                assert!(
+                    (x_full - expected).abs() < 1e-5,
+                    "eye {eye}: {point:?} projected to full-target x {x_full}, not {expected}",
+                );
+                for (staged_value, direct_value) in [
+                    (through_half.y, direct.y),
+                    (through_half.z, direct.z),
+                    (through_half.w, direct.w),
+                ] {
+                    assert!(
+                        (staged_value - direct_value).abs() <= 1e-5 * direct_value.abs().max(1.0),
+                        "eye {eye}: {through_half:?} vs {direct:?}",
+                    );
+                }
+                // Inverting it, as the engine does, reconstructs the point from its full-target NDC.
+                let ndc = through_half / through_half.w;
+                let reconstructed = staged.inverse() * ndc;
+                let reconstructed = reconstructed.truncate() / reconstructed.w;
+                assert!(
+                    (reconstructed - point).length() <= 1e-3 * point.length(),
+                    "eye {eye}: reconstructed {reconstructed:?}, not {point:?}",
+                );
             }
         }
     }

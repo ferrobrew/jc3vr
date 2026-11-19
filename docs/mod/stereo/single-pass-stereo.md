@@ -414,6 +414,8 @@ shaders get one spliced instruction biasing the depth UV into that eye's half. T
 reconstruction matrix (which wants the per-eye value) and the depth fetch (which wants the double-wide
 one), so they cannot be corrected as one.
 
+The volumetric fog generation pass has the defect too, also without being a `PerspectiveFovInverse` consumer. [`RenderBlockFogVolume::Draw`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFogVolume##func-Draw), in `RP_FOG_VOLUME_GENERATE`, binds the block type's own half-resolution fog target and builds a texture-UV-to-world matrix by inverting the render context's [`m_ViewProjectionF`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ViewProjectionF) itself. Each pixel samples depth at its UV, reconstructs through that matrix, and ray-marches the sun cascade and cloud shadow from the camera towards the result, so one centred basis over the double-wide target is wrong in both halves, most visibly around the sun. `single_pass.fog_volume_per_eye` (**on**) runs the block once per eye with the at-entry mask, which follows the block onto its reduced-resolution target. For each masked run it gives the render context that eye's view-projection, pre-multiplied by the inverse of the full-target-NDC to eye-NDC remap, so the inverse the block takes is the eye's with the remap folded in. The depth sample keeps the double-wide UV, the march starts from the eye position the shared camera staging puts in the fragment globals, and the render context is put back after the call. The upsample pass that follows only compares depths at matching UVs and the composite maps the whole fog texture over the whole target, so neither needs a split.
+
 ### 3. A projective screen UV in per-eye space against a double-wide buffer
 
 The legacy `Water*`/`WaterBox*` family takes its reflection, refraction, and depth UV from a
@@ -607,6 +609,7 @@ is marked with its actual default.
 | `single_pass.reconstruct_per_eye` | On | Deferred clustered-lighting resolve (mechanism 2). |
 | `single_pass.fullscreen_camera_per_eye` | On | Every masked per-eye run of a split fullscreen pass: the fragment `GlobalConstants` camera position is moved to that eye for the run, with the matching sun-shadow cascade translation, and put back after. |
 | `single_pass.atmospheric_per_eye` | On | Atmospheric scattering / aerial perspective (mechanism 2). |
+| `single_pass.fog_volume_per_eye` | On | Volumetric fog generation (mechanism 2): the eye's view-projection, remapped onto its half of the block's half-resolution target, is substituted into the render context for each masked run. |
 | `single_pass.ssao_per_eye` | On | SSAO. Hazard: a temporal history advanced per invocation, snapshotted and restored across the split — but the AO generation and blur ahead of the mask still re-run unmasked. |
 | `single_pass.ssr_per_eye` | On | Screen-space reflections. The `m_UseComputeBlur` epilogue's two dispatches are issued on the second run only, once, over both halves. |
 | `single_pass.subsurface_per_eye` | On | Screen-space subsurface skin. |

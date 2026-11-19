@@ -9,6 +9,8 @@ pub(crate) mod atmospheric_scattering;
 // crate-visible so the shared `Graphics::Clear` / `SetRenderSetup` / `SetVertexProgramConstants`
 // detours (which the trace and single-pass modules own) can consult the per-eye froxel split.
 pub(crate) mod clustered_lighting;
+// The volumetric fog generation pass's per-eye re-issue under the collapse.
+mod fog_volume;
 // The remaining fullscreen depth-reconstruction passes' per-eye re-issue under the collapse (SSAO,
 // SSR, subsurface skin, and the unreachable depth-of-field basis).
 pub(crate) mod fullscreen_reconstruction;
@@ -30,6 +32,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(clustered_lighting::hook_library())
         .with_hook_library(ss_decal::hook_library())
         .with_hook_library(atmospheric_scattering::hook_library())
+        .with_hook_library(fog_volume::hook_library())
         .with_hook_library(fullscreen_reconstruction::hook_library())
         .with_hook_library(ssao::hook_library())
 }

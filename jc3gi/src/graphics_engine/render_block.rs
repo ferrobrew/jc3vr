@@ -742,6 +742,77 @@ impl std::convert::AsMut<RenderBlockDeferredLighting> for RenderBlockDeferredLig
     }
 }
 #[repr(C, align(8))]
+/// The volumetric fog render block (`NGraphicsEngine::CRenderBlockFogVolume`). `CFogManager` draws
+/// it in two passes, and its `Draw` branches on the render context's
+/// [`m_ActiveRenderPass`](crate::graphics_engine::graphics_engine::RenderContext::m_ActiveRenderPass).
+pub struct RenderBlockFogVolume {}
+impl RenderBlockFogVolume {
+    pub const Draw_ADDRESS: usize = 0x14013FAF0;
+    /// Draws one fog-volume pass, doing nothing when the block type is disabled.
+    ///
+    /// Common to both passes, it saves the bound render setup and binds the type's half-resolution
+    /// bilateral-upsample fog render setup, then stages the shared constants. Vertex `cb1` registers
+    /// 0..3 receive the instance's world matrix, made relative to
+    /// [`m_CameraPosition`](crate::graphics_engine::graphics_engine::RenderContext::m_CameraPosition) and
+    /// multiplied by
+    /// [`m_OffsetViewProjection`](crate::graphics_engine::graphics_engine::RenderContext::m_OffsetViewProjection).
+    /// The block's fullscreen vertex shader reads none of `cb1`; it passes the viewport-covering
+    /// triangle through and emits a texture UV spanning the whole bound target. The half-resolution
+    /// scene depth, the noise volume, and the two horizon maps are bound. Fragment `cb1` registers
+    /// 0..3 (`InvViewProj`) receive a texture-UV-to-world matrix: the scale and offset taking UV to
+    /// NDC composed with `Inverse(`[`m_ViewProjectionF`](crate::graphics_engine::graphics_engine::RenderContext::m_ViewProjectionF)`)`.
+    /// The same inverse also goes to vertex `cb1` registers 4..7. Fragment `cb1` registers 4, 5, 8, 9,
+    /// and 10 carry the distribution, noise, cloud-shadow, and depth parameters. The cloud-shadow
+    /// blend reads the height of
+    /// [`m_RenderCameraPosition`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderCameraPosition),
+    /// and the depth parameters derive from
+    /// [`CameraNear`](crate::graphics_engine::graphics_engine::RenderContext::CameraNear) and
+    /// [`CameraFar`](crate::graphics_engine::graphics_engine::RenderContext::CameraFar).
+    ///
+    /// In
+    /// [`RP_FOG_VOLUME_GENERATE`](crate::graphics_engine::render_engine::RenderPassId::RP_FOG_VOLUME_GENERATE)
+    /// it binds one of the `fogvolumeapply*` fragment programs (chosen by the noise and colour tweak
+    /// attributes, or the optimized one) and draws additively into the bilateral-upsample fog target.
+    /// Each pixel samples depth at its UV, reconstructs the world position through `InvViewProj`, and
+    /// ray-marches from the fragment GlobalConstants camera position towards it, sampling the sun
+    /// shadow cascade and cloud shadow map along the way.
+    ///
+    /// In
+    /// [`RP_FOG_VOLUME_UPSAMPLE`](crate::graphics_engine::render_engine::RenderPassId::RP_FOG_VOLUME_UPSAMPLE)
+    /// it bilaterally upsamples that result against the full-resolution depth and the reflection
+    /// proxy depth. When compute upsampling is enabled it restores the saved render setup and issues
+    /// one compute dispatch sized from
+    /// [`m_HiResTextureWidth`](crate::graphics_engine::render_block::RenderBlockTypeFogVolume::m_HiResTextureWidth) and
+    /// [`m_HiResTextureHeight`](crate::graphics_engine::render_block::RenderBlockTypeFogVolume::m_HiResTextureHeight). Otherwise it binds
+    /// the volume-depth render setup and draws `fogvolumebilateralupsample`. That pass reconstructs no
+    /// positions; it reads only the depth parameters. After either pass's draw it restores the saved
+    /// render setup. In any other pass it returns before drawing, leaving the fog render setup bound.
+    pub unsafe fn Draw(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        info: *const crate::graphics_engine::render_block::RBIInfo,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                info: *const crate::graphics_engine::render_block::RBIInfo,
+            ) = ::std::mem::transmute(Self::Draw_ADDRESS);
+            f(self as *const Self as _, render_context, info)
+        }
+    }
+}
+impl std::convert::AsRef<RenderBlockFogVolume> for RenderBlockFogVolume {
+    fn as_ref(&self) -> &RenderBlockFogVolume {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockFogVolume> for RenderBlockFogVolume {
+    fn as_mut(&mut self) -> &mut RenderBlockFogVolume {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The grass/foliage render block (`NGraphicsEngine::CRenderBlockFoliage`, registered name
 /// `"VegetationFoliage"`): forward-lit ground cover and small plants, drawn in `RP_VEGETATION_OPAQUE`.
 /// The bulk is grass drawn GPU-indirect.
@@ -1925,7 +1996,9 @@ impl std::convert::AsMut<RenderBlockTypeCarPaintMM> for RenderBlockTypeCarPaintM
 #[repr(C, align(8))]
 /// The fog-volume render block *type* (the
 /// `NGraphicsEngine::CRenderBlockFogVolume::CRenderBlockTypeFogVolume` singleton): owns the froxel
-/// volumetric-fog textures and recreates them when the scene render resolution changes.
+/// volumetric-fog textures and recreates them when the scene render resolution changes. It also holds
+/// the shaders, render setups, samplers, and tweak attributes that
+/// [`RenderBlockFogVolume::Draw`](crate::graphics_engine::render_block::RenderBlockFogVolume::Draw) reads.
 pub struct RenderBlockTypeFogVolume {
     _field_0: [u8; 296],
     /// The full-resolution fog target width, in pixels, latched from the last
@@ -1940,6 +2013,14 @@ fn _RenderBlockTypeFogVolume_size_check() {
         ::std::mem::transmute::<[u8; 0x130], RenderBlockTypeFogVolume>([0u8; 0x130]);
     }
     unreachable!()
+}
+impl RenderBlockTypeFogVolume {
+    pub unsafe fn get() -> Option<&'static mut Self> {
+        unsafe {
+            let ptr: *mut Self = *(5417825408usize as *mut *mut Self);
+            ptr.as_mut()
+        }
+    }
 }
 impl RenderBlockTypeFogVolume {
     pub const ResizeTextures_ADDRESS: usize = 0x14010C5A0;

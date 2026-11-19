@@ -182,6 +182,14 @@ pub struct SinglePassConfig {
     /// splitting only the deferred resolve leaves this pass painting the same sliding error back over
     /// it. On by default, for the same reason.
     pub atmospheric_per_eye: bool,
+    /// The same per-eye split for the **volumetric fog generation** pass (`RP_FOG_VOLUME_GENERATE`).
+    ///
+    /// That pass reconstructs world positions from depth into its own half-resolution target and
+    /// ray-marches the sun shadow cascade towards them, but it builds its basis by inverting the render
+    /// context's view-projection rather than through `PerspectiveFovInverse`, so the substituted
+    /// inverse never reaches it. Each run instead hands the render context that eye's view-projection,
+    /// mapped onto that eye's half of the target, for the length of the call. On by default.
+    pub fog_volume_per_eye: bool,
     /// Bias the legacy (non-WaveWorks) water blocks' screen-space reflection/refraction lookup into
     /// each eye's half of the double-wide target, by re-issuing their `Draw` once per eye.
     ///
@@ -561,6 +569,7 @@ impl SinglePassConfig {
             reconstruct_per_eye: true,
             fullscreen_camera_per_eye: true,
             atmospheric_per_eye: true,
+            fog_volume_per_eye: true,
             water_uv_per_eye: true,
             nvwater_per_eye: true,
             ssdecal_geometry_per_eye: true,

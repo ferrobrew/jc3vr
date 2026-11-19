@@ -365,6 +365,16 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      over the fixed one. Needs the off-axis reconstruction override on.",
                 );
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.fog_volume_per_eye,
+                    "Volumetric fog per eye",
+                )
+                .on_hover_text(
+                    "The same split for the volumetric fog generation pass, which reconstructs world \
+                     positions from depth into its half-resolution target and ray-marches the sun \
+                     cascade towards them. It inverts the render context's view-projection itself, \
+                     so each run is handed that eye's, mapped onto its half of the target.",
+                );
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.water_uv_per_eye,
                     "Water reflection UVs per eye (legacy non-WaveWorks water)",
                 )
