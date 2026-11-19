@@ -95,6 +95,8 @@ fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
             Some(VisualOverrides {
                 sun_shadows: None,
                 screen_space_reflections: Some(ReflectionOverride::Enabled),
+                ssao: None,
+                ao_volumes: None,
                 single_pass: Default::default(),
             }),
         );
@@ -108,6 +110,8 @@ fn shadows_disabled() -> VisualOverrides {
     VisualOverrides {
         sun_shadows: Some(SunShadowsOverride::Disabled),
         screen_space_reflections: None,
+        ssao: None,
+        ao_volumes: None,
         single_pass: Default::default(),
     }
 }

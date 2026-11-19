@@ -12,6 +12,8 @@ use crate::{
 pub(crate) const MIN_PERIOD_FRAMES: u32 = 32;
 pub(crate) const MAX_PERIOD_FRAMES: u32 = 600;
 pub(crate) const MAX_AMPLITUDE_DEG: f32 = 45.0;
+/// The largest translation amplitude along one camera axis, metres.
+pub(crate) const MAX_TRANSLATION_M: f32 = 20.0;
 pub(crate) const HISTORY_FRAMES: usize = 8;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,6 +22,7 @@ pub(crate) enum MotionError {
     PeriodOutOfRange(u32),
     NonFiniteAmplitude(&'static str),
     AmplitudeOutOfRange(&'static str),
+    TranslationOutOfRange(&'static str),
 }
 
 impl std::fmt::Display for MotionError {
@@ -38,6 +41,11 @@ impl std::fmt::Display for MotionError {
                 f,
                 "visual motion: the {angle} amplitude is outside [0, {MAX_AMPLITUDE_DEG}]"
             ),
+            Self::TranslationOutOfRange(axis) => write!(
+                f,
+                "visual motion: the {axis} translation amplitude is not finite or outside \
+                 [-{MAX_TRANSLATION_M}, {MAX_TRANSLATION_M}]"
+            ),
         }
     }
 }
@@ -50,8 +58,16 @@ pub(crate) struct MotionTable {
     yaw_deg: f32,
     pitch_deg: f32,
     roll_deg: f32,
+    #[serde(default)]
+    right_m: f32,
+    #[serde(default)]
+    up_m: f32,
+    #[serde(default)]
+    forward_m: f32,
 }
 
+/// A periodic camera trajectory about an anchor: the angles swing as `sin θ` (pitch as `sin 2θ`)
+/// and the camera-local translation as `sin θ`, with `θ` the phase's fraction of the period.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(try_from = "MotionTable")]
 pub(crate) struct MotionRequest {
@@ -60,6 +76,9 @@ pub(crate) struct MotionRequest {
     yaw_deg: f32,
     pitch_deg: f32,
     roll_deg: f32,
+    right_m: f32,
+    up_m: f32,
+    forward_m: f32,
 }
 
 impl MotionRequest {
@@ -87,7 +106,28 @@ impl MotionRequest {
             yaw_deg,
             pitch_deg,
             roll_deg,
+            right_m: 0.0,
+            up_m: 0.0,
+            forward_m: 0.0,
         })
+    }
+
+    /// Add a camera-local translation amplitude, in metres along each axis.
+    pub(crate) fn with_translation(
+        mut self,
+        right_m: f32,
+        up_m: f32,
+        forward_m: f32,
+    ) -> Result<Self, MotionError> {
+        for (axis, value) in [("right", right_m), ("up", up_m), ("forward", forward_m)] {
+            if !value.is_finite() || value.abs() > MAX_TRANSLATION_M {
+                return Err(MotionError::TranslationOutOfRange(axis));
+            }
+        }
+        self.right_m = right_m;
+        self.up_m = up_m;
+        self.forward_m = forward_m;
+        Ok(self)
     }
 
     pub(crate) fn period_frames(&self) -> u32 {
@@ -103,9 +143,19 @@ impl MotionRequest {
         }
     }
 
+    pub(crate) fn translation(&self, phase: u32) -> TranslationOffset {
+        let swing =
+            (std::f64::consts::TAU * f64::from(phase) / f64::from(self.period_frames)).sin();
+        TranslationOffset {
+            right: (f64::from(self.right_m) * swing) as f32,
+            up: (f64::from(self.up_m) * swing) as f32,
+            forward: (f64::from(self.forward_m) * swing) as f32,
+        }
+    }
+
     pub(crate) fn target(&self, anchor: PoseValues, phase: u32) -> PoseValues {
         PoseValues::from_pose(
-            anchor.position,
+            anchor.position + anchor.orientation() * self.translation(phase).vector(),
             anchor.orientation() * self.offset(phase).quaternion(),
         )
     }
@@ -119,7 +169,7 @@ impl MotionRequest {
         PoseEvidence {
             case_id: self.case_id.clone(),
             offset: self.offset(phase),
-            translation: TranslationOffset::ZERO,
+            translation: self.translation(phase),
             anchor: PoseTransform::from(anchor),
             applied: PoseTransform::from(applied),
         }
@@ -137,7 +187,8 @@ impl TryFrom<MotionTable> for MotionRequest {
             table.yaw_deg,
             table.pitch_deg,
             table.roll_deg,
-        )
+        )?
+        .with_translation(table.right_m, table.up_m, table.forward_m)
     }
 }
 

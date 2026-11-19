@@ -33,6 +33,11 @@ from tools.rendering.comparison.images import (
     load_sample,
 )
 from tools.rendering.comparison.stages import Stage, load_stage
+from tools.rendering.experiment_motion import (
+    ExperimentMotion,
+    MotionConfigError,
+    validate_motion_capture,
+)
 from tools.rendering.experiment_matched import (
     matched_capture_identity,
     matched_cross_metrics,
@@ -71,6 +76,8 @@ from tools.rendering.protocol import (
     TranslationOffset,
     VisualOverrides,
     WaterReflection,
+    StageAck,
+    StageRequest,
     WeatherControl,
     WeatherEvent,
     composed_positions_match,
@@ -87,6 +94,9 @@ RESTORATION_BUDGET = 35.0
 SPACING_POLL_SECONDS = 0.2
 ENVIRONMENT_HOUR_TOLERANCE = 0.05
 ENVIRONMENT_MAX_WEATHER_SEVERITY = 0.5
+# The rain and snow events pin the storm severity at its top; anything well below it means the
+# event did not hold.
+ENVIRONMENT_MIN_STORM_SEVERITY = 3.5
 MAX_NAME_LENGTH = 32
 
 
@@ -155,18 +165,29 @@ class Environment:
 
 @dataclass(frozen=True)
 class Scene:
-    pose: WorldPose
+    # The camera's world pose; absent in a motion experiment, whose camera moves about the game's.
+    pose: WorldPose | None
     environment: Environment | None
+    # Staged before the first configuration: the player moved to a location and objects spawned,
+    # with the world left to settle. Its request ID is replaced per run.
+    stage: StageRequest | None = None
 
     @classmethod
     def from_toml(cls, value):
         value = _table(value, "scene")
-        _keys(value, {"position", "orientation"}, {"environment"}, "scene")
-        pose = WorldPose(_vector(value.get("position"), 3, "scene.position"),
-                         _vector(value.get("orientation"), 4, "scene.orientation"))
+        _keys(value, set(), {"position", "orientation", "environment", "stage"}, "scene")
+        pose = None
+        if "position" in value or "orientation" in value:
+            pose = WorldPose(_vector(value.get("position"), 3, "scene.position"),
+                             _vector(value.get("orientation"), 4, "scene.orientation"))
         environment = (Environment.from_toml(value["environment"])
                        if "environment" in value else None)
-        return cls(pose, environment)
+        try:
+            stage = (StageRequest.from_toml("stage", value["stage"])
+                     if "stage" in value else None)
+        except ProtocolError as error:
+            raise ExperimentError(f"experiment: {error}") from error
+        return cls(pose, environment, stage)
 
 
 @dataclass(frozen=True)
@@ -585,8 +606,21 @@ class ExperimentConfig:
     visual_overrides: VisualOverrides | None = None
     matched_treatment: MatchedTreatment | None = None
     single_pass_variants: tuple[SinglePassVariant, ...] = ()
+    motion: ExperimentMotion | None = None
 
     def __post_init__(self):
+        if (self.motion is None) == (self.scene.pose is None):
+            raise ExperimentError(
+                "experiment: a config needs exactly one of scene.position/orientation (a fixed "
+                "camera) and [motion] (a trajectory about the game's frozen camera)")
+        if self.motion is not None:
+            if self.feature is not None or self.matched_treatment is not None:
+                raise ExperimentError(
+                    "experiment: a motion experiment excludes a feature check and a matched treatment")
+            if self.diagnostics not in (Diagnostics(), Diagnostics(shader_identity=True)):
+                raise ExperimentError(
+                    "experiment: a motion experiment's captures take no diagnostics beyond the "
+                    "shader identity census")
         if not valid_request_id(self.name) or len(self.name) > MAX_NAME_LENGTH:
             raise ExperimentError(
                 "experiment: config.name must be an ASCII request ID of at most "
@@ -722,7 +756,7 @@ class ExperimentConfig:
             raise ExperimentError(f"experiment: could not read config {path}: {error}") from error
         _keys(value, {"name", "warmup_frames", "samples", "scene", "configurations"},
               {"feature", "interval_seconds", "diagnostics", "visual_overrides", "matched_treatment",
-               "single_pass_variants"}, str(path))
+               "single_pass_variants", "motion"}, str(path))
         try:
             matched = MatchedTreatment(value["matched_treatment"]) if "matched_treatment" in value else None
         except (ValueError, TypeError) as error:
@@ -737,7 +771,8 @@ class ExperimentConfig:
                    Diagnostics.from_toml(value.get("diagnostics", {})),
                    VisualOverrides.from_wire(value["visual_overrides"]) if "visual_overrides" in value else None,
                    matched,
-                   parse_variants(value["single_pass_variants"]) if "single_pass_variants" in value else ())
+                   parse_variants(value["single_pass_variants"]) if "single_pass_variants" in value else (),
+                   _motion(value))
 
 
 @dataclass(frozen=True)
@@ -801,6 +836,7 @@ class ExperimentReport:
     matched_treatment: MatchedTreatment | None = None
     matched_cross_condition: tuple[dict, ...] = ()
     single_pass_variants: tuple[dict, ...] = ()
+    stage: dict | None = None
 
     @property
     def exit_code(self) -> int:
@@ -839,16 +875,33 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
     last_capture_completed = None
     conditions: dict[str, str] = {}
     image_only: set[str] = set()
+    staged = None
     try:
+        if config.scene.stage is not None:
+            stage_request = dataclasses.replace(
+                config.scene.stage, id=f"{prefix}_stage",
+                environment=config.scene.environment.request() if config.scene.environment else None)
+            acknowledgement = runner.request(stage_request)
+            if not isinstance(acknowledgement, StageAck) or acknowledgement.id != stage_request.id:
+                raise ExperimentError("experiment: expected the stage's acknowledgement")
+            staged = dataclasses.asdict(acknowledgement)
+            LOG.info("experiment: staged with the player at %s (%s m from the location), "
+                     "%d spawns submitted, %d already present", acknowledgement.player_position,
+                     acknowledgement.distance_m, acknowledgement.spawns_submitted,
+                     acknowledgement.spawns_present)
         anchor_mode = Mode(config.configurations[0].value)
         anchor_pose = PoseRequest(f"{prefix}_anchor", OrientationOffset(0.0, 0.0, 0.0),
                                   TranslationOffset())
         _, anchor = _configure(runner, config, f"{prefix}_anchor", anchor_pose, anchor_mode,
                                anchor, configurations)
-        offset, translation = offset_for_target(anchor, config.scene.pose.camera())
-        target_pose = PoseRequest(f"{prefix}_target", offset, translation)
+        if config.motion is None:
+            offset, translation = offset_for_target(anchor, config.scene.pose.camera())
+            target_pose = PoseRequest(f"{prefix}_target", offset, translation)
+        else:
+            target_pose = None
         for item in cases.values():
             item.expected_pose = target_pose
+            item.expected_motion = config.motion.expected if config.motion else None
         counters: dict[CompareMode, int] = {}
         for entry_index, configured_mode in enumerate(config.configurations, start=1):
             mode = Mode(configured_mode.value)
@@ -961,7 +1014,8 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
                     break
         for variant_index, variant in enumerate(config.single_pass_variants, start=1):
             variant_config = _variant_config(config, variant)
-            case = Case(variant_case_name(config.name, variant), {}, target_pose)
+            case = Case(variant_case_name(config.name, variant), {}, target_pose,
+                        config.motion.expected if config.motion else None)
             borrow_references(cases[DEFAULT_VARIANT], case)
             cases[variant.name] = case
             manifest.cases.append(case)
@@ -1030,8 +1084,9 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
         errors = [str(failure)]
         if restoration_error is not None:
             errors.append(f"restoration: {restoration_error}")
-        report = _failure_report(config, manifest_path, captures, tuple(errors),
-                                 restoration_error, environment_restoration, conditions)
+        report = dataclasses.replace(
+            _failure_report(config, manifest_path, captures, tuple(errors), restoration_error,
+                            environment_restoration, conditions), stage=staged)
         try:
             write_report(output / "report.json", report)
         except OSError as error:
@@ -1090,7 +1145,7 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
         feature, () if feature is None else feature.findings,
         tuple(dict.fromkeys(errors)), restoration_error, environment_restoration,
         config.interval_seconds, config.diagnostics, config.visual_overrides, config.matched_treatment,
-        matched_cross, variant_summaries)
+        matched_cross, variant_summaries, staged)
     write_report(output / "report.json", report)
     return report
 
@@ -1294,7 +1349,9 @@ def _feature_observation(config: ExperimentConfig, root: Path, capture: Capture,
 
 def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor, configurations):
     environment = config.scene.environment.request() if config.scene.environment else None
-    request = Request(Command.CONFIGURE, request_id, mode, config.warmup_frames, pose,
+    motion = config.motion.request if config.motion else None
+    request = Request(Command.CONFIGURE, request_id, mode, config.warmup_frames,
+                      None if motion else pose, motion=motion,
                       environment=environment, visual_overrides=config.visual_overrides,
                       shader_identity=True if config.diagnostics.shader_identity else None)
     acknowledgement = runner.request(request)
@@ -1312,7 +1369,8 @@ def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor,
         raise ExperimentError("experiment: configuration visual overrides disagree with the request")
     if configurations and acknowledgement.generation <= configurations[-1].generation:
         raise ExperimentError("experiment: configuration generation does not increase")
-    anchor = acknowledgement.validate_pose(request, anchor)
+    anchor = (acknowledgement.validate_motion(request, anchor) if motion
+              else acknowledgement.validate_pose(request, anchor))
     configurations.append(acknowledgement)
     LOG.info("configured %s in %s", request_id, mode.value)
     return acknowledgement, anchor
@@ -1320,6 +1378,7 @@ def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor,
 
 def _capture(runner, config, pose, anchor, mode, generation, identifier):
     acknowledgement = runner.request(Request(Command.SCREENSHOT, identifier,
+                                             motion_capture=config.motion.capture if config.motion else None,
                                              group_cards=True if config.diagnostics.group_cards else None, group_residual=True if config.diagnostics.group_residual else None, aa_weights=True if config.diagnostics.aa_weights else None, aa_draws=True if config.diagnostics.aa_draws else None, lake_owner_four=True if config.diagnostics.lake_owner_four else None, lake_producer=True if config.diagnostics.lake_producer else None, lake_gradients=True if config.diagnostics.lake_gradients else None, lake_waves=True if config.diagnostics.lake_waves else None, lake_normals=True if config.diagnostics.lake_normals else None, lake_displacement=True if config.diagnostics.lake_displacement else None, lake_samplers=True if config.diagnostics.lake_samplers else None, tess_writer=True if config.diagnostics.tess_writer else None, tess_owners=True if config.diagnostics.tess_owners else None, base_projection=True if config.diagnostics.base_projection else None, base_sources=True if config.diagnostics.base_sources else None, terrain_interval=True if config.diagnostics.terrain_interval else None, group_inputs=True if config.diagnostics.group_inputs else None, group_sources=True if config.diagnostics.group_sources else None, resolve_shadow=True if config.diagnostics.resolve_shadow else None, dof_inputs=True if config.diagnostics.dof_inputs else None, fog_generation=True if config.diagnostics.fog_generation else None, fog_inputs=True if config.diagnostics.fog_inputs else None, late_sky_stages=True if config.diagnostics.late_sky_stages else None,
                                              water_inputs=True if config.diagnostics.water_inputs else None,
                                              draw_census=True if config.diagnostics.draw_census else None,
@@ -1337,6 +1396,7 @@ def _capture(runner, config, pose, anchor, mode, generation, identifier):
         raise ExperimentError("experiment: expected a screenshot acknowledgement")
     capture = validate_capture(runner.config_dir / "captures", identifier,
                                acknowledgement.capture, mode=mode, generation=generation,
+                               motion_capture=config.motion.capture if config.motion else None,
                                group_cards=config.diagnostics.group_cards, group_residual=config.diagnostics.group_residual, aa_weights=config.diagnostics.aa_weights, aa_draws=config.diagnostics.aa_draws, lake_owner_four=config.diagnostics.lake_owner_four, lake_producer=config.diagnostics.lake_producer, lake_gradients=config.diagnostics.lake_gradients, lake_waves=config.diagnostics.lake_waves, lake_normals=config.diagnostics.lake_normals, lake_displacement=config.diagnostics.lake_displacement, lake_samplers=config.diagnostics.lake_samplers, tess_writer=config.diagnostics.tess_writer, tess_owners=config.diagnostics.tess_owners, base_projection=config.diagnostics.base_projection, base_sources=config.diagnostics.base_sources, terrain_interval=config.diagnostics.terrain_interval, group_inputs=config.diagnostics.group_inputs, group_sources=config.diagnostics.group_sources, resolve_shadow=config.diagnostics.resolve_shadow, dof_inputs=config.diagnostics.dof_inputs, fog_generation=config.diagnostics.fog_generation, fog_inputs=config.diagnostics.fog_inputs, late_sky_stages=config.diagnostics.late_sky_stages,
                                water_inputs=config.diagnostics.water_inputs,
                                draw_census=config.diagnostics.draw_census,
@@ -1364,6 +1424,9 @@ def _capture(runner, config, pose, anchor, mode, generation, identifier):
     if config.single_pass_variants and mode == Mode.SINGLE_PASS:
         verify_switches(identifier, read_object(runner.config_dir / "captures" / f"{identifier}.capture.json"),
                         config.visual_overrides)
+    if config.motion is not None:
+        validate_motion_capture(config.motion, capture, anchor)
+        return capture
     if capture.visual.pose is None:
         raise ExperimentError(f"experiment: capture {identifier} has no pose evidence")
     capture.visual.pose.validate(pose, anchor)
@@ -1389,13 +1452,19 @@ def _check_observation(config: ExperimentConfig, identifier, observation: Enviro
     if abs(observation.hour - environment.hour) > ENVIRONMENT_HOUR_TOLERANCE:
         errors.append(f"observed hour {observation.hour:.4f} differs from "
                       f"{environment.hour:.4f}")
-    if observation.weather_severity > ENVIRONMENT_MAX_WEATHER_SEVERITY:
+    pinned = WeatherControl(environment.weather.value)
+    if pinned == WeatherControl.SUNNY:
+        if observation.weather_severity > ENVIRONMENT_MAX_WEATHER_SEVERITY:
+            errors.append(f"observed weather severity {observation.weather_severity:.3f} "
+                          f"is not clear")
+    elif observation.weather_severity < ENVIRONMENT_MIN_STORM_SEVERITY:
         errors.append(f"observed weather severity {observation.weather_severity:.3f} "
-                      f"is not clear")
+                      f"is not a storm")
     if observation.weather_control is None:
         errors.append("weather control is unobserved")
-    elif observation.weather_control != WeatherControl.SUNNY:
-        errors.append(f"weather control is {observation.weather_control.value}, not sunny")
+    elif observation.weather_control != pinned:
+        errors.append(f"weather control is {observation.weather_control.value}, "
+                      f"not {pinned.value}")
 
 
 def _bright_fractions(feature: Feature, root: Path, capture: Capture, index: int):
@@ -1414,6 +1483,15 @@ def write_report(path: Path, report: ExperimentReport):
     temporary.write_text(json.dumps(report.to_wire(), indent=2) + "\n")
     temporary.replace(path)
     LOG.info("wrote %s", path)
+
+
+def _motion(value) -> ExperimentMotion | None:
+    if "motion" not in value:
+        return None
+    try:
+        return ExperimentMotion.from_toml(_string(value.get("name"), "config.name"), value["motion"])
+    except MotionConfigError as error:
+        raise ExperimentError(str(error)) from error
 
 
 def _configuration_list(value):

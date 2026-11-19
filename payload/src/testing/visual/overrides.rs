@@ -27,6 +27,13 @@ pub(crate) enum ReflectionOverride {
     Enabled,
 }
 
+/// Leave out an ambient-occlusion source in every mode, to attribute a difference to it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum AmbientOcclusionOverride {
+    Disabled,
+}
+
 /// A validated, nonempty set of overrides. Each kind is independent of the others.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) struct VisualOverrides {
@@ -34,6 +41,12 @@ pub(crate) struct VisualOverrides {
     pub sun_shadows: Option<SunShadowsOverride>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub screen_space_reflections: Option<ReflectionOverride>,
+    /// The screen-space ambient occlusion block.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ssao: Option<AmbientOcclusionOverride>,
+    /// The ambient-occlusion volumes' pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ao_volumes: Option<AmbientOcclusionOverride>,
     #[serde(skip_serializing_if = "SinglePassOverrides::is_empty")]
     pub single_pass: SinglePassOverrides,
 }
@@ -44,6 +57,8 @@ pub(crate) struct VisualOverrides {
 pub(crate) struct VisualOverridesTable {
     sun_shadows: Option<SunShadowsOverride>,
     screen_space_reflections: Option<ReflectionOverride>,
+    ssao: Option<AmbientOcclusionOverride>,
+    ao_volumes: Option<AmbientOcclusionOverride>,
     single_pass: Option<BTreeMap<String, bool>>,
 }
 
@@ -114,10 +129,14 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
         let overrides = Self {
             sun_shadows: table.sun_shadows,
             screen_space_reflections: table.screen_space_reflections,
+            ssao: table.ssao,
+            ao_volumes: table.ao_volumes,
             single_pass,
         };
         if overrides.sun_shadows.is_none()
             && overrides.screen_space_reflections.is_none()
+            && overrides.ssao.is_none()
+            && overrides.ao_volumes.is_none()
             && overrides.single_pass.is_empty()
         {
             return Err(OverrideError::Empty);
@@ -142,6 +161,12 @@ impl VisualOverrides {
         }
         if let Some(ReflectionOverride::Enabled) = self.screen_space_reflections {
             config.stereo.skip_ssr = false;
+        }
+        if let Some(AmbientOcclusionOverride::Disabled) = self.ssao {
+            config.stereo.disable_ssao = true;
+        }
+        if let Some(AmbientOcclusionOverride::Disabled) = self.ao_volumes {
+            config.stereo.skip_ao_volumes = true;
         }
         self.single_pass.apply(&mut config.stereo.single_pass);
     }
@@ -269,6 +294,41 @@ mod tests {
             assert_eq!(switch.get(&config.stereo.single_pass), expected);
         }
         assert!(!config.stereo.disable_sun_shadows);
+        assert!(!config.stereo.disable_ssao);
+        assert!(!config.stereo.skip_ao_volumes);
+    }
+
+    #[test]
+    fn ambient_occlusion_sources_can_be_left_out_in_any_mode() {
+        let overrides = parse(
+            "ssao = 'disabled'
+ao_volumes = 'disabled'
+",
+        )
+        .unwrap();
+        assert_eq!(overrides.validate_for(RenderMode::LeftOnly), Ok(()));
+        let mut config = Config::new();
+        overrides.apply(&mut config);
+        assert!(config.stereo.disable_ssao);
+        assert!(config.stereo.skip_ao_volumes);
+        assert_eq!(
+            serde_json::to_value(
+                parse(
+                    "ao_volumes = 'disabled'
+"
+                )
+                .unwrap()
+            )
+            .unwrap(),
+            serde_json::json!({"ao_volumes": "disabled"})
+        );
+        assert!(
+            toml::from_str::<VisualOverridesTable>(
+                "ssao = 'skipped'
+"
+            )
+            .is_err()
+        );
     }
 
     #[test]

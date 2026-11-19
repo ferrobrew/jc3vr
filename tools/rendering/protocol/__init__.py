@@ -46,6 +46,12 @@ from tools.rendering.protocol.base import (
     vector,
     vectors_match,
 )
+from tools.rendering.protocol.stage import (
+    Placement,
+    StageAck,
+    StageRequest,
+    StageSpawn,
+)
 from tools.rendering.protocol.motion import (
     ExpectedMotion,
     MotionEvidence,
@@ -78,6 +84,10 @@ __all__ = [
     "TranslationOffset",
     "WeatherControl",
     "WeatherEvent",
+    "Placement",
+    "StageAck",
+    "StageRequest",
+    "StageSpawn",
     "boolean",
     "boolean_pair",
     "cameras_match",
@@ -107,10 +117,14 @@ __all__ = [
 
 class WeatherEvent(StrEnum):
     SUNNY = "sunny"
+    RAIN = "rain"
+    SNOW = "snow"
 
 
 class WeatherControl(StrEnum):
     SUNNY = "sunny"
+    RAIN = "rain"
+    SNOW = "snow"
     AMBIENT = "ambient"
 
 
@@ -247,14 +261,21 @@ class VisualOverrides:
     sun_shadows: SunShadows | None = None
     screen_space_reflections: str | None = None
     single_pass: tuple[tuple[str, bool], ...] = ()
+    # Ambient-occlusion sources left out in every mode, to attribute a difference to one.
+    ssao: str | None = None
+    ao_volumes: str | None = None
 
     def __post_init__(self):
         if self.sun_shadows is not None and not isinstance(self.sun_shadows, SunShadows):
             raise ProtocolError("visual protocol: invalid sun_shadows override")
         if self.screen_space_reflections not in (None, "enabled"):
             raise ProtocolError("visual protocol: invalid screen_space_reflections override")
+        for name in ("ssao", "ao_volumes"):
+            if getattr(self, name) not in (None, "disabled"):
+                raise ProtocolError(f"visual protocol: invalid {name} override")
         object.__setattr__(self, "single_pass", single_pass_switches(dict(self.single_pass)))
-        if self.sun_shadows is None and self.screen_space_reflections is None and not self.single_pass:
+        if (self.sun_shadows is None and self.screen_space_reflections is None and
+                self.ssao is None and self.ao_volumes is None and not self.single_pass):
             raise ProtocolError("visual protocol: visual overrides must name at least one override")
 
     @property
@@ -268,6 +289,9 @@ class VisualOverrides:
             value["sun_shadows"] = self.sun_shadows.value
         if self.screen_space_reflections is not None:
             value["screen_space_reflections"] = self.screen_space_reflections
+        for name in ("ssao", "ao_volumes"):
+            if getattr(self, name) is not None:
+                value[name] = getattr(self, name)
         if self.single_pass:
             value["single_pass"] = self.switches
         return value
@@ -278,6 +302,9 @@ class VisualOverrides:
             result += f"sun_shadows = {json.dumps(self.sun_shadows.value)}\n"
         if self.screen_space_reflections is not None:
             result += f"screen_space_reflections = {json.dumps(self.screen_space_reflections)}\n"
+        for name in ("ssao", "ao_volumes"):
+            if getattr(self, name) is not None:
+                result += f"{name} = {json.dumps(getattr(self, name))}\n"
         if self.single_pass:
             result += "\n[visual_overrides.single_pass]\n" + "".join(
                 f"{name} = {json.dumps(value)}\n" for name, value in self.single_pass)
@@ -286,7 +313,7 @@ class VisualOverrides:
     @classmethod
     def from_wire(cls, value):
         if not isinstance(value, dict) or not value or set(value) - {
-                "sun_shadows", "screen_space_reflections", "single_pass"}:
+                "sun_shadows", "screen_space_reflections", "single_pass", "ssao", "ao_volumes"}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
         try:
             sun_shadows = SunShadows(value["sun_shadows"]) if "sun_shadows" in value else None
@@ -295,7 +322,8 @@ class VisualOverrides:
         if "single_pass" in value and not value["single_pass"]:
             raise ProtocolError("visual protocol: the single_pass override table is empty")
         return cls(sun_shadows, value.get("screen_space_reflections"),
-                   single_pass_switches(value.get("single_pass", {})))
+                   single_pass_switches(value.get("single_pass", {})),
+                   value.get("ssao"), value.get("ao_volumes"))
 
 
 @dataclass(frozen=True)
@@ -889,11 +917,13 @@ class Manifest:
 
     def to_wire(self):
         value = asdict(self)
-        for case in value["cases"]:
+        for case, source in zip(value["cases"], self.cases):
             if case.get("expected_pose") is None:
                 case.pop("expected_pose", None)
             if case.get("expected_motion") is None:
                 case.pop("expected_motion", None)
+            else:
+                case["expected_motion"] = source.expected_motion.to_wire()
         return value
 
 
@@ -928,7 +958,7 @@ class FailedAck:
     outcome: AckOutcome = field(default=AckOutcome.FAILED, init=False)
 
 
-Acknowledgement: TypeAlias = ConfigurationAck | RestorationAck | ScreenshotAck | FailedAck
+Acknowledgement: TypeAlias = ConfigurationAck | RestorationAck | ScreenshotAck | StageAck | FailedAck
 
 
 @dataclass(frozen=True)
@@ -1045,12 +1075,14 @@ def acknowledgement_from_wire(value, command: Command, request_id: str) -> Ackno
             raise ProtocolError("visual protocol: invalid acknowledgement error")
         return FailedAck(request_id, message or "unknown capture failure", ready)
     expected = {Command.SCREENSHOT: AckOutcome.COMPLETED, Command.CONFIGURE: AckOutcome.READY,
-                Command.END: AckOutcome.RESTORED}[command]
+                Command.END: AckOutcome.RESTORED, Command.STAGE: AckOutcome.STAGED}[command]
     if outcome != expected:
         raise ProtocolError("visual protocol: incomplete acknowledgement")
     if command == Command.CONFIGURE:
         return ConfigurationAck.from_wire(value)
     if command == Command.END:
         return RestorationAck.from_wire(value)
+    if command == Command.STAGE:
+        return StageAck.from_wire(value)
     capture_type = NativeCapture if value.get("mode") in (None, DiagnosticProfile.NATIVE) else Capture
     return ScreenshotAck(request_id, capture_type.from_wire(value))

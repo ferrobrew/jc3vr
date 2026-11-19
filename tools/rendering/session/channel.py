@@ -19,6 +19,11 @@ from tools.rendering.protocol import (
 from tools.rendering.session.errors import SessionError
 
 
+# A stage's settle is bounded by `MAX_SETTLE_SECONDS`, and its teleport streams the destination in
+# first; the payload gives up on a stage after seven minutes in all.
+STAGE_BUDGET_SECONDS = 450
+
+
 class RequestChannel:
     """Issue visual-protocol requests and cancel the one this client owns."""
 
@@ -46,7 +51,8 @@ class RequestChannel:
         temporary.write_text(request_value.to_toml())
         temporary.replace(request)
         self.pending_request = request_value
-        budget = 75 if command == Command.CONFIGURE else 60 if command == Command.SCREENSHOT else 35
+        budget = {Command.CONFIGURE: 75, Command.SCREENSHOT: 60,
+                  Command.STAGE: STAGE_BUDGET_SECONDS}.get(command, 35)
         end = time.monotonic() + budget
         if self.deadline is not None:
             end = min(end, self.deadline)

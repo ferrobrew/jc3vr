@@ -84,7 +84,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 ### stereo/
 
-- [single-pass-stereo.md](mod/stereo/single-pass-stereo.md) — rendering both eyes in one geometry walk into a double-wide target: the shader rewrites, the routing, the four ways content goes wrong under the collapse and what fixes each, and the configuration.
+- [single-pass-stereo.md](mod/stereo/single-pass-stereo.md) — rendering both eyes in one geometry walk into a double-wide target: the shader rewrites, the routing, the four ways content goes wrong under the collapse and what fixes each, the configuration, and the capture harness's switch-off variants, draw census, and staged scenes, weather, and moving camera.
 - [single-pass-render-blocks.md](mod/stereo/single-pass-render-blocks.md) — the per-render-block record of what single-pass stereo needs from each, and what it took to get there.
 - [far-field.md](mod/stereo/far-field.md) — the monoscopic far field (issue #32): identifying the far-regime scene work and sharing it between eyes.
 - [foveation.md](mod/stereo/foveation.md) — static foveated rendering (issue #29): the stencil radial-density-masking design, the depth-stencil-state seam, and the build plan.

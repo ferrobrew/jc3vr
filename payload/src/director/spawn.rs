@@ -168,43 +168,70 @@ pub(super) fn service_pending(cfg: &SpawnConfig) {
     if !with_state(|state| std::mem::take(&mut state.pending)) {
         return;
     }
-    let tags = cfg.tags.trim();
-    if tags.is_empty() {
-        with_state(|state| state.last_submission = Some(Submission::NoTags));
-        tracing::warn!("director: spawn dropped: no tags");
-        return;
-    }
-    let Ok(tags_c) = std::ffi::CString::new(tags) else {
-        with_state(|state| state.last_submission = Some(Submission::TagsContainNul));
-        tracing::warn!("director: spawn dropped: tags contain a NUL");
-        return;
+    let submission = match validated_tags(&cfg.tags) {
+        Err(rejected) => rejected,
+        // SAFETY: the spawn system singleton is main-thread data and this runs from the
+        // main-thread update.
+        Ok(_) => {
+            match unsafe { SpawnSystem::get().map(|s| (s.m_ViewPos.data, s.m_ViewDir.data)) } {
+                Some((pos, dir)) => submit(
+                    &cfg.tags,
+                    &placement(pos, dir, cfg.distance, cfg.face_player),
+                ),
+                None => {
+                    tracing::warn!("director: spawn dropped: no spawn system");
+                    Submission::NoSpawnSystem
+                }
+            }
+        }
+    };
+    with_state(|state| state.last_submission = Some(submission));
+}
+
+/// Submit a spawn request for `tags` at `transform` with the high-priority flags, which skip the
+/// line-of-sight, proximity, and spawn-block checks. Main thread. The object appears once its
+/// entity streams in; the result records the submission, not the entity's completion.
+pub(crate) fn submit(tags: &str, transform: &Matrix4) -> Submission {
+    let tags_c = match validated_tags(tags) {
+        Ok(tags_c) => tags_c,
+        Err(rejected) => return rejected,
     };
     // SAFETY: the spawn system singleton is main-thread data and this runs from the main-thread
     // update; the tag string outlives the call.
     unsafe {
         let Some(spawn_system) = SpawnSystem::get() else {
-            with_state(|state| state.last_submission = Some(Submission::NoSpawnSystem));
             tracing::warn!("director: spawn dropped: no spawn system");
-            return;
+            return Submission::NoSpawnSystem;
         };
-        let pos = spawn_system.m_ViewPos.data;
-        let dir = spawn_system.m_ViewDir.data;
-        let transform = placement(pos, dir, cfg.distance, cfg.face_player);
         tracing::info!(
-            "director: spawn \"{tags}\" at ({:.1}, {:.1}, {:.1})",
+            "director: spawn \"{}\" at ({:.1}, {:.1}, {:.1})",
+            tags.trim(),
             transform.data[12],
             transform.data[13],
             transform.data[14]
         );
         spawn_system.Spawn(
             tags_c.as_ptr().cast(),
-            &transform,
+            transform,
             SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
             std::ptr::null(),
             std::ptr::null_mut(),
         );
     }
-    with_state(|state| state.last_submission = Some(Submission::Submitted));
+    Submission::Submitted
+}
+
+/// The trimmed tag string as a C string, or why it cannot be submitted.
+fn validated_tags(tags: &str) -> Result<std::ffi::CString, Submission> {
+    let tags = tags.trim();
+    if tags.is_empty() {
+        tracing::warn!("director: spawn dropped: no tags");
+        return Err(Submission::NoTags);
+    }
+    std::ffi::CString::new(tags).map_err(|_| {
+        tracing::warn!("director: spawn dropped: tags contain a NUL");
+        Submission::TagsContainNul
+    })
 }
 
 /// The spawn transform: `distance` along the view direction from the view position, with the

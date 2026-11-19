@@ -1,0 +1,65 @@
+# Coverage: farmland outside a town, at 13 h in clear weather.
+# A fixed camera at the pose the static-motion midday config observed in run 260, for attributing the single-pass difference.
+name = "coverage-farms-road"
+warmup_frames = 30
+samples = 3
+interval_seconds = 2.0
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+
+[diagnostics]
+shader_identity = true
+draw_census = true
+
+[scene]
+position = [-883.5768, 1128.3473, 1738.3173]
+orientation = [0.0009765624, 0.9847269, 0.0019378061, 0.17409252]
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [-883.7, 1126.6, 1738.3]
+yaw_deg = 157.0
+
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
+
+[[single_pass_variants]]
+name = "repeat"
+
+[[single_pass_variants]]
+name = "reproject-off"
+switches = { reproject = false }
+
+[[single_pass_variants]]
+name = "decal-off"
+switches = { ssdecal_per_eye = false }
+
+[[single_pass_variants]]
+name = "decalgeo-off"
+switches = { ssdecal_geometry_per_eye = false }
+
+[[single_pass_variants]]
+name = "patch-off"
+switches = { terrain_patch_per_eye = false }
+
+[[single_pass_variants]]
+name = "follow-off"
+switches = { collapse_viewport_follows_target = false }
+

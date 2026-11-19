@@ -17,6 +17,7 @@ pub(crate) mod request;
 pub(crate) mod scenario;
 pub(crate) mod signal_status;
 pub(crate) mod signals;
+pub(crate) mod stage;
 mod text;
 pub(crate) mod visual;
 
@@ -29,6 +30,7 @@ pub(crate) fn update() {
     crate::screenshot::harness::tick();
     visual::tick();
     request::poll();
+    stage::update();
     replay::update();
     scenario::update();
     signal_status::publish();

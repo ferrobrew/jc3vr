@@ -819,6 +819,7 @@ either: they are correctness surface, not duplicated work.
 
 ## Known gaps
 
+- **The coverage matrix's defects.** The road surfaces, the ambient occlusion in daylight, eye 0's terrain under a moving camera, and distant trees' LOD: see "What the first matrix found" under "Capturing varied scenes".
 - **Unpatched geometry has no parallax.** It is re-issued per eye so it is present and correctly
   sized in both, but it still reads the centred `cb0`. Patching more of the geometry is what removes
   this. The terrain patch system is no longer in this set: its pipelines take the pinned-eye
@@ -940,6 +941,61 @@ After its configured modes, the experiment configures the single-pass mode once 
 A switch that is a rewrite at shader creation (the ones the tables mark as needing a shader reload) only takes effect once the shaders are re-created. The payload records the state the shader set was last created under, `ShaderBuild`: whether single-pass and its collapse were live, and the value of every creation-time switch. A configuration whose state differs from that record reloads the shaders before its warm-up starts; the reload is synchronous (the engine re-creates every shader before `LoadShaderBundle` returns), and a reload during which the configuration changed records no state, so the next configuration reloads again. The configuration fails if the record still differs after the reload, and every warm-up frame requires it to match, so a capture is never taken over bytecode built for other switches. Each capture's metadata carries the record as `visual.shader_build` next to the effective configuration, and the experiment checks, for every single-pass capture of a run with variants, that the effective configuration holds the requested values and that the shaders were built under the effective configuration.
 
 Each variant becomes its own manifest case, named `<experiment>-variant-<name>`, which borrows the default case's isolated-eye and multipass samples, so the comparator measures it against the same references. The experiment report's `single_pass_variants` lists, for the default capture and each variant, the forced switches and per eye the final-image pixels that differ from the isolated eye by more than three codes, over every pairing of an isolated-eye sample with a single-pass sample (the median, the range, and each pair), and the log states the same as one line per variant.
+
+## Capturing varied scenes
+
+The comparison so far reads the views it has been run at. To reach the shader families those views never draw, an experiment can move the player somewhere else, pin the weather, put objects in front of the camera, and move the camera.
+
+**Staging.** A `[scene.stage]` table makes the experiment send a `visual_stage` request before its first configuration (`payload/src/testing/stage.rs`, `tools/rendering/protocol/stage.py`). The payload teleports the player through the director's teleport, which streams the destination in when it is far, waits until the player has stood in gameplay with no teleport in flight for sixty frames, submits the spawns through the director's spawner, and then lets the game run for `settle_seconds` of wall-clock time so streaming, physics, and the spawned entities come to rest before a configuration holds the clock. The acknowledgement reports where the player landed, which the experiment report carries as `stage`:
+
+```toml
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [2091.2, 1040.1, 5005.0]
+yaw_deg = 270.0        # heading about world up, from +Z toward +X
+
+[[scene.stage.spawn]]
+tags = "vehicle,ground,car,civilian,vintage,mugello,sports,unarmed,unarmored,ambient,liberated,highend"
+position = [2087.0, 1041.1, 5007.5]
+yaw_deg = 0.0
+```
+
+A spawn takes any tag set the spawn system matches (the director's `spawn_defs.json` lists the shipped ones). Spawned entities persist, so the payload submits each tag set and position once per session and reports a repeat as already present; a timed explosive barrel explodes during the first settle and is gone by the next. A stage is refused while a configuration holds the clock. The player stays where the stage left them, so a config without a stage after one with it runs wherever that was, and the configs for the earlier views need the player back near them.
+
+**Weather.** `scene.environment.weather` takes `sunny`, `rain`, or `snow`, each fired as the named weather event that pins it ([`WeatherController::EVENT_RAIN`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/environment::WeatherController##const-EVENT_RAIN) and [`EVENT_SNOW`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/environment::WeatherController##const-EVENT_SNOW) beside the existing sunny one), followed by the instant event. Every capture's observed weather control must name the requested weather, and the observed severity must be clear for `sunny` and a storm for the other two. The game exposes no overcast or fog state of its own: the weather is one severity scalar with rain and snow ratios, and the named events are the states it can hold. Pinned at the configuration alone, a storm never runs with the clock: in run 260 the observed severity was the storm's but the town looked barely different from clear weather. So a staged scene's stage also carries the scene's environment: the payload sets the hour and fires the weather event before the teleport, without holding the day cycle, and the weather runs for the whole settle before the configuration pins it again. The stage saves nothing to restore; the configuration's restore returns the weather to the ambient system, and the hour stays the staged one.
+
+**A moving camera.** A `[motion]` table in place of `scene.position` and `scene.orientation` drives the camera along the payload's periodic trajectory about the game's frozen camera, one step per rendered frame, in every configuration: the angles swing as `sin θ` (pitch as `sin 2θ`) and the camera-local translation as `sin θ`, `θ` being the frame's fraction of `period_frames`. Every capture is taken at `phase`, after a full cycle and with the eight frames before the phase rendered on the trajectory, so the previous-frame matrices the temporal effects read are the same trajectory frames in every mode. The clock is held, so only the camera moves:
+
+```toml
+[motion]
+period_frames = 120
+yaw_deg = 15.0      # amplitudes, 0 to 45 degrees
+pitch_deg = 5.0
+forward_m = 3.0     # right_m, up_m, forward_m: -20 to 20 metres
+phase = 15
+```
+
+All amplitudes at zero gives a static camera at the game's own camera, which is the simplest way to frame a staged location without knowing its terrain height. A motion experiment's captures take no diagnostics beyond the shader identity census, but every capture still writes the stage images the comparison reads, and its variants work as in a fixed-pose experiment. To name a scene's draws, a fixed-pose config at the camera a motion run observed (the capture metadata's `visual.pose.anchor`) can carry `draw_census`.
+
+**Leaving a source out.** To tell whether a difference comes from one producer, `[visual_overrides]` takes `ssao = "disabled"` and `ao_volumes = "disabled"`, which leave out the screen-space ambient occlusion block and the ambient-occlusion volumes' pass ([`RP_AO_VOLUMES`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_AO_VOLUMES)) in every mode, isolated eyes included, so the comparison measures single-pass without them. The capture profile resets both on the next configuration.
+
+**Determinism.** The configuration holds the clock, which freezes everything the game animates on it: the capital's pedestrians, the traffic on a distant road, a wind turbine, and the rain's particles stood still, and the isolated eyes' captures repeated within a mode at up to about 2,300 pixels per eye on the mountain top and the farmland, a few hundred elsewhere, and none at all in the hangar, the harbour, and the tunnel. The exception is the capital's old town, where the stage had set off a timed explosive barrel: the lit walls drifted between captures with the clock held, and the isolated eyes' own repeats differed at 2,000 to 21,000 pixels per eye, so that scene cannot be compared pixel for pixel. A fire's light animating on real time is the likely source; it is unverified. Read every scene's single-pass difference against the same-schedule floor the `repeat` variant gives (see "Capturing single-pass with a switch off") and against the isolated eyes' own repeats.
+
+The coverage configs are `tools/rendering/experiments/coverage_*.toml`: eight staged locations (the capital's old town, a coastal town, a hangar at a military airport, a military harbour, a road tunnel, a mountain-top base, a meadow below a wooded hill, and farmland) at midday and at night, two at dusk and in rain and snow, the town with a spawned car and pedestrian, a rotating and a translating camera at the town, and fixed-camera configs at the poses those runs observed, carrying the draw census, switch-off variants, or a left-out source for attribution.
+
+**What the first matrix found** (runs 260 to 263, final-image pixels differing from the isolated eye by more than three codes, per eye of 115,200):
+
+- Road surfaces. The `SplineRoad` and `RoadJunction` blocks (`layeredroad` and `junctionroad*` with `layeredroadmask3`, `layeredroadmask4`, and their `wet` permutations, all instance-doubled) write G-buffer normals, albedo, and specular that differ from the isolated eye's across the whole road at matching depth, as a dense speckle on high-frequency textures: 17,000 to 30,000 pixels in the town and on the farm road, with a same-mode floor of 100 to 2,300, and the dirt road in the cliff's game-camera view; the painted stripes on the hangar floor, which keep 6,100 pixels with the ambient occlusion left out, look the same and are probably a road layer too. None of `reproject`, `pixel_camera_per_eye`, `screen_door_per_eye`, `ssdecal_per_eye`, `ssdecal_geometry_per_eye`, or `terrain_patch_per_eye` moves it. The mechanism is unverified; a road layer reading a screen-space source or a centred value is the suspicion.
+- Ambient occlusion in daylight. With the screen-space ambient occlusion left out in every mode, the tunnel fell from 43,900 to 5,500 pixels and the capital from 11,200 to 900 (its floor is 1,500): the residual `ssao_per_eye` leaves is the largest single difference in daylit interiors and shade. In the tunnel it has a sharp vertical edge at the centre column of each eye and straight wedges; in the capital a tree trunk and its planter reappear in the occlusion about half an eye's width to their left. At night, when the ambient term is small, the same scenes differ at under 50 pixels. Leaving out the ambient-occlusion volumes instead brightens the isolated eyes and darkens the single-pass capture, so skipping that pass behaves differently under the collapse and does not attribute anything by itself.
+- The terrain under a moving camera. With the camera rotating or translating, eye 0's depth differs from the isolated eye's in polygonal patches of mid-distance ground (3,700 and 5,300 pixels), where the static camera has 46 and eye 1 none; the sign of the depth difference flips with the direction of motion, as if eye 0's terrain patches took the previous frame's state. Unverified.
+- The moon. At night in the capital the moon (`open` in [`RP_MOON`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_MOON)) is missing from eye 0 and stretched to twice its width in eye 1, the full-target draw "Known gaps" describes.
+- Distant trees. Whole trees at mid distance differ in both eyes in the meadow (about 1,500 to 3,700 pixels with the grass), consistent with a different LOD or impostor choice.
+
+The particle families drew in the tunnel, the hangar, the town, and the capital (`particleeffect`, `particleeffectadditiveshadow`, `particleeffectsoftadditiveshadow`, `particleeffecttess*`, and in the tunnel `particleeffectflare` in [`RP_PARTICLE_ONSCREEN`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_PARTICLE_ONSCREEN)), all re-issued per eye; the rain added `particleeffectrefraction`, re-issued per eye too. None left a difference that stood out from the scene's others, but in the tunnel the flares sit inside the occlusion difference and were not isolated. The decal families that drew (`generalmkiiidecal`, `propdecal`, and screen-space decal permutations not seen before, all as expected for their paths) left nothing that stood out. `lightglow`, the halos, the lightning, and skidmarks did not draw in any view.
+
+
 
 ## The non-`cb0` shader census
 

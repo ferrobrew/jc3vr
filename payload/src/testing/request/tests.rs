@@ -359,7 +359,7 @@ fn visual_environment_tables_validate_hours_weather_and_commands() {
     for text in [
         format!("{header}[environment]\nweather = 'sunny'"),
         format!("{header}[environment]\nhour = 13.5"),
-        format!("{header}[environment]\nhour = 13.5\nweather = 'rain'"),
+        format!("{header}[environment]\nhour = 13.5\nweather = 'storm'"),
         format!("{header}[environment]\nhour = 13.5\nweather = 'sunny'\nday_cycle_speed = 0.0"),
     ] {
         assert!(matches!(read(&text), Err(RequestErrorKind::Parse(_))));
@@ -799,5 +799,36 @@ fn motion_capture_is_only_accepted_by_screenshot_and_carries_its_phase() {
     assert!(matches!(
         read("command = 'screenshot'\nid = 'shot'\n[motion_capture]\nphase = 0\nunknown = 1"),
         Err(RequestErrorKind::Parse(_))
+    ));
+}
+
+#[test]
+fn visual_stage_requests_need_a_stage_table_only_they_accept() {
+    let stage = "[stage]\nsettle_seconds = 5.0\n[stage.location]\nposition = [1.0, 2.0, 3.0]\n";
+    assert!(matches!(
+        read(&format!(
+            "command = 'visual_stage'\nid = 'stage-1'\n{stage}"
+        )),
+        Ok(Request::Stage(_))
+    ));
+    assert!(matches!(
+        read("command = 'visual_stage'\nid = 'stage-1'\n"),
+        Err(RequestErrorKind::NoStage)
+    ));
+    assert!(matches!(
+        read(&format!("command = 'visual_stage'\nid = 'bad id'\n{stage}")),
+        Err(RequestErrorKind::InvalidId(_))
+    ));
+    assert!(matches!(
+        read("command = 'visual_stage'\nid = 'stage-1'\n[stage]\nsettle_seconds = 5.0\n"),
+        Err(RequestErrorKind::InvalidStage(
+            crate::testing::stage::StageError::NothingToStage
+        ))
+    ));
+    assert!(matches!(
+        read(&format!(
+            "command = 'visual_configure'\nid = 'c'\nmode = 'multipass'\n{stage}"
+        )),
+        Err(RequestErrorKind::StageOnCommand(Command::VisualConfigure))
     ));
 }

@@ -1,5 +1,5 @@
-//! The visual diagnostic's environment override: a fixed hour with clear weather and a frozen day
-//! cycle. The first override saves the original world time once, and the saved values are restored
+//! The visual diagnostic's environment override: a fixed hour with pinned weather (clear, rain, or
+//! snow) and a frozen day cycle. The first override saves the original world time once, and the saved values are restored
 //! when the visual control ends.
 
 use jc3gi::environment::{LandscapeManager, Weather, WeatherController, WorldTime};
@@ -14,6 +14,8 @@ pub(crate) const HOUR_TOLERANCE: f32 = 1e-4;
 #[serde(rename_all = "snake_case")]
 pub(crate) enum WeatherControl {
     Sunny,
+    Rain,
+    Snow,
     Ambient,
 }
 
@@ -46,6 +48,27 @@ impl EnvironmentMetadata {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum EnvironmentWeather {
     Sunny,
+    Rain,
+    Snow,
+}
+
+impl EnvironmentWeather {
+    /// The named weather event that pins this weather.
+    fn event(self) -> &'static std::ffi::CStr {
+        match self {
+            Self::Sunny => WeatherController::EVENT_SUNNY,
+            Self::Rain => WeatherController::EVENT_RAIN,
+            Self::Snow => WeatherController::EVENT_SNOW,
+        }
+    }
+
+    fn control(self) -> WeatherControl {
+        match self {
+            Self::Sunny => WeatherControl::Sunny,
+            Self::Rain => WeatherControl::Rain,
+            Self::Snow => WeatherControl::Snow,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
@@ -214,13 +237,22 @@ pub(crate) fn apply(request: &EnvironmentRequest) -> Result<EnvironmentMetadata,
             observed: observed_hour,
         });
     }
-    match request.weather {
-        EnvironmentWeather::Sunny => {
-            jc3gi::event::send_event_msg(WeatherController::EVENT_SUNNY);
-            jc3gi::event::send_event_msg(WeatherController::EVENT_INSTANT);
-        }
-    }
-    observe(WeatherControl::Sunny).ok_or(EnvironmentError::WeatherUnavailable)
+    jc3gi::event::send_event_msg(request.weather.event());
+    jc3gi::event::send_event_msg(WeatherController::EVENT_INSTANT);
+    observe(request.weather.control()).ok_or(EnvironmentError::WeatherUnavailable)
+}
+
+/// Set the hour and pin the weather without holding the day cycle or saving anything to restore:
+/// for a scene being staged with the clock running, so the weather and the time of day have run
+/// for a while before a configuration holds them. The configuration that follows applies the same
+/// request with [`apply`], and its restore returns the weather to the ambient system.
+pub(crate) fn preview(request: &EnvironmentRequest) -> Result<(), EnvironmentError> {
+    available()?;
+    let time = unsafe { WorldTime::get() }.ok_or(EnvironmentError::WorldTimeUnavailable)?;
+    unsafe { time.SetTimeOfDay(request.hour) };
+    jc3gi::event::send_event_msg(request.weather.event());
+    jc3gi::event::send_event_msg(WeatherController::EVENT_INSTANT);
+    Ok(())
 }
 
 pub(crate) fn restore(
@@ -287,7 +319,17 @@ mod tests {
     }
 
     #[test]
-    fn tables_require_hour_and_sunny_and_reject_unknown_fields() {
+    fn tables_require_hour_and_a_pinned_weather_and_reject_unknown_fields() {
+        for (text, weather) in [
+            ("hour = 1.0\nweather = 'rain'", EnvironmentWeather::Rain),
+            ("hour = 1.0\nweather = 'snow'", EnvironmentWeather::Snow),
+        ] {
+            let table: EnvironmentTable = toml::from_str(text).unwrap();
+            assert_eq!(
+                EnvironmentRequest::try_from(table),
+                Ok(EnvironmentRequest::new(1.0, weather).unwrap())
+            );
+        }
         let table: EnvironmentTable = toml::from_str("hour = 13.5\nweather = 'sunny'").unwrap();
         assert_eq!(
             EnvironmentRequest::try_from(table),
@@ -296,7 +338,7 @@ mod tests {
         for text in [
             "weather = 'sunny'",
             "hour = 13.5",
-            "hour = 13.5\nweather = 'rain'",
+            "hour = 13.5\nweather = 'storm'",
             "hour = 13.5\nweather = 'sunny'\nday_cycle_speed = 0.0",
         ] {
             assert!(toml::from_str::<EnvironmentTable>(text).is_err(), "{text}");

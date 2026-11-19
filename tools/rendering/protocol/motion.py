@@ -11,14 +11,20 @@ from tools.rendering.protocol.base import (
     PoseEvidence,
     PoseRequest,
     ProtocolError,
-    cameras_match,
+    TranslationOffset,
     compose_pose,
+    composed_positions_match,
     finite_number,
     integer,
     object_value,
+    quaternions_match,
     text,
     valid_request_id,
 )
+
+
+# Mirrors `MAX_TRANSLATION_M` in `payload/src/testing/visual/motion.rs`.
+MAX_TRANSLATION_M = 20.0
 
 
 @dataclass(frozen=True)
@@ -28,6 +34,10 @@ class MotionRequest:
     yaw_deg: float
     pitch_deg: float
     roll_deg: float
+    # Camera-local translation amplitudes, metres; the translation swings as sin(theta).
+    right_m: float = 0.0
+    up_m: float = 0.0
+    forward_m: float = 0.0
 
     def __post_init__(self):
         if not valid_request_id(self.case_id):
@@ -39,15 +49,32 @@ class MotionRequest:
             if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 45:
                 raise ProtocolError(f"visual protocol: motion {name} must be finite and within [0, 45]")
             object.__setattr__(self, name, float(value))
+        for name in ("right_m", "up_m", "forward_m"):
+            value = getattr(self, name)
+            if (type(value) not in (int, float) or not math.isfinite(value) or
+                    not -MAX_TRANSLATION_M <= value <= MAX_TRANSLATION_M):
+                raise ProtocolError(f"visual protocol: motion {name} must be finite and within "
+                                    f"[-{MAX_TRANSLATION_M}, {MAX_TRANSLATION_M}]")
+            object.__setattr__(self, name, float(value))
+
+    @property
+    def translates(self) -> bool:
+        return any((self.right_m, self.up_m, self.forward_m))
 
     @classmethod
     def from_wire(cls, value):
+        translation = [finite_number(value, name) if name in value else 0.0
+                       for name in ("right_m", "up_m", "forward_m")]
         return cls(text(value, "case_id"), integer(value, "period_frames"),
                    finite_number(value, "yaw_deg"), finite_number(value, "pitch_deg"),
-                   finite_number(value, "roll_deg"))
+                   finite_number(value, "roll_deg"), *translation)
 
     def to_wire(self):
-        return asdict(self)
+        value = asdict(self)
+        if not self.translates:
+            for name in ("right_m", "up_m", "forward_m"):
+                del value[name]
+        return value
 
     def to_toml(self) -> str:
         return ("[motion]\n"
@@ -55,7 +82,9 @@ class MotionRequest:
                 f"period_frames = {self.period_frames}\n"
                 f"yaw_deg = {json.dumps(self.yaw_deg)}\n"
                 f"pitch_deg = {json.dumps(self.pitch_deg)}\n"
-                f"roll_deg = {json.dumps(self.roll_deg)}\n")
+                f"roll_deg = {json.dumps(self.roll_deg)}\n" +
+                ("".join(f"{name} = {json.dumps(getattr(self, name))}\n"
+                         for name in ("right_m", "up_m", "forward_m")) if self.translates else ""))
 
     def offset_at(self, phase):
         if type(phase) is not int or not 0 <= phase < self.period_frames:
@@ -64,6 +93,15 @@ class MotionRequest:
         return OrientationOffset(self.yaw_deg * math.sin(theta),
                                  self.pitch_deg * math.sin(2.0 * theta),
                                  self.roll_deg * math.sin(theta))
+
+    def translation_at(self, phase):
+        if type(phase) is not int or not 0 <= phase < self.period_frames:
+            raise ProtocolError("visual protocol: motion phase is outside the period")
+        swing = math.sin(2.0 * math.pi * phase / self.period_frames)
+        return TranslationOffset(self.right_m * swing, self.up_m * swing, self.forward_m * swing)
+
+    def pose_at(self, phase) -> PoseRequest:
+        return PoseRequest(self.case_id, self.offset_at(phase), self.translation_at(phase))
 
 
 @dataclass(frozen=True)
@@ -165,7 +203,7 @@ class MotionEvidence:
             raise ProtocolError("visual protocol: configuration motion evidence must have cycle zero and no history")
         if not isinstance(pose, PoseEvidence):
             raise ProtocolError("visual protocol: configuration motion evidence requires pose evidence")
-        return pose.validate(PoseRequest(request.case_id, request.offset_at(self.phase)), anchor, tolerance)
+        return pose.validate(request.pose_at(self.phase), anchor, tolerance)
 
     def validate_capture(self, request, phase, anchor, pose, camera, predicted_display_time_ns,
                          tolerance=POSE_TOLERANCE):
@@ -176,7 +214,7 @@ class MotionEvidence:
             raise ProtocolError("visual protocol: motion rendered_frame differs from the predicted display time")
         if not isinstance(pose, PoseEvidence):
             raise ProtocolError("visual protocol: capture motion evidence requires pose evidence")
-        pose.validate(PoseRequest(request.case_id, request.offset_at(phase)), anchor, tolerance)
+        pose.validate(request.pose_at(phase), anchor, tolerance)
         pose.validate_applied(camera, tolerance)
         self.validate_history(anchor if anchor is not None else pose.anchor, tolerance)
         return pose.anchor
@@ -192,8 +230,14 @@ class MotionEvidence:
             if previous is not None and entry.rendered_frame <= previous:
                 raise ProtocolError("visual protocol: motion history rendered frames are not strictly increasing")
             previous = entry.rendered_frame
-            expected_camera = compose_pose(anchor, self.request.offset_at(entry.phase))
-            if not cameras_match(entry.applied, expected_camera, tolerance):
+            expected_camera = compose_pose(anchor, self.request.offset_at(entry.phase),
+                                           self.request.translation_at(entry.phase))
+            # A translated position is composed in float32 at world magnitudes, so it carries the
+            # same quantization allowance as a pose's applied position.
+            if not (composed_positions_match(expected_camera.position, entry.applied.position,
+                                             anchor.position, tolerance) and
+                    quaternions_match(expected_camera.orientation, entry.applied.orientation,
+                                      tolerance)):
                 raise ProtocolError("visual protocol: motion history camera differs from the trajectory and anchor")
         if previous is None or previous >= self.rendered_frame:
             raise ProtocolError("visual protocol: motion history does not end before the capture")

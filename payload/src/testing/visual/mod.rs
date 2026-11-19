@@ -108,6 +108,10 @@ impl RequestId {
         }
         Ok(Self(id.to_owned()))
     }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -1144,6 +1148,7 @@ fn apply_profile(config: &mut Config, mode: Mode) {
     config.stereo.disable_ssao = false;
     config.stereo.skip_ssr = false;
     config.stereo.skip_gi = false;
+    config.stereo.skip_ao_volumes = false;
     config.stereo.symmetrize_eye_frusta = false;
     config.stereo.mirror_eye0_to_both = false;
     config.stereo.skip_pass_range_enabled = false;

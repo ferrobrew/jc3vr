@@ -81,7 +81,7 @@ impl TranslationOffset {
         Ok(Self { right, up, forward })
     }
 
-    fn vector(self) -> Vec3 {
+    pub(crate) fn vector(self) -> Vec3 {
         Vec3::new(self.right, self.up, -self.forward)
     }
 

@@ -1,4 +1,4 @@
-use glam::Quat;
+use glam::{Quat, Vec3};
 
 use super::*;
 use crate::testing::visual::{OrientationOffset, pose::orientations_match};
@@ -255,4 +255,23 @@ fn a_motion_table_parses_only_the_agreed_wire_shape() {
         )
         .is_err()
     );
+}
+
+#[test]
+fn a_translation_swings_along_the_anchor_axes() {
+    let table: MotionTable = toml::from_str(
+        "case_id = 'surge'\nperiod_frames = 40\nyaw_deg = 0.0\npitch_deg = 0.0\nroll_deg = 0.0\n\
+         forward_m = 2.0",
+    )
+    .unwrap();
+    let surge = MotionRequest::try_from(table).unwrap();
+    let anchor = PoseValues::from_pose(Vec3::new(1.0, 2.0, 3.0), Quat::IDENTITY);
+    assert_eq!(surge.translation(0), TranslationOffset::ZERO);
+    let quarter = surge.target(anchor, 10);
+    assert!((quarter.position - Vec3::new(1.0, 2.0, 1.0)).length() < 1e-5);
+    assert_eq!(surge.evidence(anchor, 10, quarter).translation.forward, 2.0);
+    for (right, up, forward) in [(20.5, 0.0, 0.0), (0.0, f32::NAN, 0.0), (0.0, 0.0, -21.0)] {
+        let request = request(40, 0.0, 0.0, 0.0);
+        assert!(request.with_translation(right, up, forward).is_err());
+    }
 }

@@ -22,6 +22,7 @@ use crate::{
     testing::{
         replay::{self, Pacing, ReplayOptions, StartMode},
         scenario,
+        stage::{self, StageRequest, StageTable},
         text::{self, TextError},
         visual,
     },
@@ -152,6 +153,7 @@ enum Request {
         sun_depth_clip: Option<crate::screenshot::harness::SunDepthClip>,
     },
     Visual(visual::Request),
+    Stage(StageRequest),
 }
 
 /// Why a request file could not be used.
@@ -175,6 +177,9 @@ enum RequestErrorKind {
     InvalidPose(visual::PoseError),
     InvalidMotion(visual::MotionError),
     InvalidEnvironment(visual::EnvironmentError),
+    InvalidStage(stage::StageError),
+    StageOnCommand(Command),
+    NoStage,
     PoseOnCommand(Command),
     MotionOnCommand(Command),
     EnvironmentOnCommand(Command),
@@ -217,6 +222,14 @@ impl std::fmt::Display for RequestError {
             RequestErrorKind::InvalidPose(error) => write!(f, "{error}"),
             RequestErrorKind::InvalidMotion(error) => write!(f, "{error}"),
             RequestErrorKind::InvalidEnvironment(error) => write!(f, "{error}"),
+            RequestErrorKind::InvalidStage(error) => write!(f, "{error}"),
+            RequestErrorKind::StageOnCommand(command) => {
+                write!(
+                    f,
+                    "only visual_stage accepts a stage table, not {command:?}"
+                )
+            }
+            RequestErrorKind::NoStage => write!(f, "visual_stage needs a stage table"),
             RequestErrorKind::PoseOnCommand(command) => {
                 write!(f, "only visual_configure accepts a pose, not {command:?}")
             }
@@ -325,6 +338,7 @@ impl std::fmt::Display for RequestError {
 enum Command {
     VisualConfigure,
     VisualEnd,
+    VisualStage,
     Screenshot,
     Record,
     StopRecording,
@@ -349,6 +363,7 @@ struct RequestFile {
     pose: Option<visual::PoseTable>,
     motion: Option<visual::MotionTable>,
     environment: Option<visual::EnvironmentTable>,
+    stage: Option<StageTable>,
     shader_identity: Option<bool>,
     visual_overrides: Option<visual::VisualOverridesTable>,
     motion_capture: Option<MotionCaptureTable>,
@@ -589,6 +604,9 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
         }
         None => None,
     };
+    if file.stage.is_some() && file.command != Command::VisualStage {
+        return Err(error(RequestErrorKind::StageOnCommand(file.command)));
+    }
     if file.shader_identity.is_some() && file.command != Command::VisualConfigure {
         return Err(error(RequestErrorKind::ShaderIdentityOnCommand(
             file.command,
@@ -854,6 +872,15 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                 }
             })
         }
+        Command::VisualStage => {
+            let id = visual::RequestId::parse(file.id.as_deref().unwrap_or_default())
+                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
+            let table = file.stage.ok_or_else(|| error(RequestErrorKind::NoStage))?;
+            Request::Stage(
+                StageRequest::new(id, table)
+                    .map_err(|e| error(RequestErrorKind::InvalidStage(e)))?,
+            )
+        }
         Command::Screenshot => Request::Screenshot {
             id: crate::screenshot::harness::RequestId::parse(
                 file.id.as_deref().unwrap_or_default(),
@@ -954,6 +981,7 @@ fn act(request: Request) {
     tracing::info!(?request, "testing: request file");
     match request {
         Request::Visual(request) => visual::enqueue(request),
+        Request::Stage(request) => stage::enqueue(request),
         Request::Screenshot {
             id,
             motion,
