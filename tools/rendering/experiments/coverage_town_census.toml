@@ -53,3 +53,8 @@ switches = { terrain = false }
 [[single_pass_variants]]
 name = "doors-off"
 switches = { screen_door_per_eye = false }
+
+[[single_pass_variants]]
+name = "hwi-off"
+diagnostics = true
+switches = { hw_instanced_once = false }

@@ -303,6 +303,21 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      split alternately between the eyes -- the building flicker.",
                 );
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.hw_instanced_once,
+                    "Hardware-instanced buildings once for both eyes",
+                )
+                .on_hover_text(
+                    "Draws a hardware-instanced building batch once, with its input layout swapped \
+                     for a twin whose per-instance step rates are doubled and its instance count \
+                     doubled, so each pair of instances shares one element and the instance parity \
+                     picks the eye. Draws whose layout has no twin keep the per-eye re-issue. \
+                     Applies at once.",
+                );
+                ui.label(format!(
+                    "Hardware-instanced twins: {}",
+                    crate::stereo::single_pass::hw_instanced::status()
+                ));
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.indirect_per_eye,
                     "GPU-indirect draws per eye (near terrain patches, foliage)",
                 )

@@ -79,6 +79,7 @@ mod draw_detours;
 pub(crate) mod eye_camera;
 pub(crate) mod eye_globals;
 mod frame_diagnostics;
+pub(crate) mod hw_instanced;
 mod impostor_pixel_size;
 mod instanced_exposure;
 mod per_eye_reissue;
@@ -520,6 +521,7 @@ pub fn begin_frame() {
 pub fn begin_dispatch() {
     pin_dispatch_config_flags();
     clear_gbuffer_range();
+    hw_instanced::maintain();
 }
 
 /// Whether this frame is one the per-frame single-pass diagnostics log on.
@@ -551,6 +553,7 @@ pub fn log_draw_split(first: u32, last: u32) {
     let indirect_reissued = INDIRECT_REISSUED.swap(0, Ordering::Relaxed);
     let indirect_forwarded = INDIRECT_FORWARDED.swap(0, Ordering::Relaxed);
     let slot13 = drain_slot13_census();
+    let (hw_once, hw_untwinned) = hw_instanced::take_counts();
     let torn = RANGE_TORN.swap(0, Ordering::Relaxed);
     let torn_total = RANGE_TORN_TOTAL.fetch_add(torn, Ordering::Relaxed) + torn;
     if torn > 0 {
@@ -582,6 +585,7 @@ pub fn log_draw_split(first: u32, last: u32) {
         "pass range [{first:#x}, {last:#x}): {patched} patched, {unpatched} unpatched draws | \
          instanced while it ran: {in_patched} patched in-range, {out_patched} patched out-of-range | \
          indirect: {indirect_reissued} re-issued per eye, {indirect_forwarded} forwarded | \
+         hardware-instanced: {hw_once} once through a twin, {hw_untwinned} untwinned | \
          torn {torn} ({torn_total} this session) | viewports: {split} split, {dup} identical-dup | \
          recorded VS={} | CreateVertexShader: pending={} reacq[patched={} cb13={} no-refs={} err={}] | \
          census[patched={} no-refs={} deferred={} errored={}] | slot-13 by pass: [{slot13}]",
@@ -614,6 +618,8 @@ pub fn uninstall_com_detours() -> bool {
         return false;
     }
     if RS_SET_VIEWPORTS.get().is_none() && shader_identity::CREATE_PIXEL_SHADER.get().is_none() {
+        // No draw detour was ever installed, so no draw can be holding a twin.
+        hw_instanced::release();
         return true;
     }
 
@@ -722,6 +728,9 @@ pub fn uninstall_com_detours() -> bool {
     // re-inject with different flags could otherwise consult the previous session's decisions for
     // any blob the engine still has cached.
     VS_TRANSFORM_CACHE.lock().clear();
+    // After the draw detours are gone: a draw still finishing holds its own reference to the twin it
+    // bound, so destroying the engine handles here cannot pull a layout out from under it.
+    hw_instanced::release();
     reset_instanced_exposure();
     tracing::info!("single-pass: COM detours uninstalled");
     true

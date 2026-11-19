@@ -39,6 +39,7 @@ pub(super) enum Flag {
     WaterScreenUv,
     NvWater,
     InstancedPerEye,
+    HwInstancedOnce,
     IndirectPerEye,
     UniformViewportSlots,
     ViewportFollowsTarget,
@@ -131,6 +132,7 @@ fn store_config_flags() -> u32 {
             | bit(s.water_uv_per_eye, Flag::WaterScreenUv)
             | bit(s.nvwater_per_eye, Flag::NvWater)
             | bit(s.instanced_per_eye, Flag::InstancedPerEye)
+            | bit(s.hw_instanced_once, Flag::HwInstancedOnce)
             | bit(s.indirect_per_eye, Flag::IndirectPerEye)
             | bit(s.uniform_viewport_slots, Flag::UniformViewportSlots)
             | bit(

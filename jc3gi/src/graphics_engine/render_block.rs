@@ -2192,9 +2192,103 @@ for RenderBlockTypeGeneralMaskedJC3 {
     }
 }
 #[repr(C, align(8))]
-/// The `RenderBlockGeneralMkIII` render block *type* (`NGraphicsEngine::CRenderBlockGeneralMkIII::CRenderBlockTypeGeneralMkIII`).
-pub struct RenderBlockTypeGeneralMkIII {}
+/// The `RenderBlockGeneralMkIII` render block *type* (`NGraphicsEngine::CRenderBlockGeneralMkIII::CRenderBlockTypeGeneralMkIII`,
+/// type name `GeneralMkIII`): the static and dynamic model block of most buildings and props.
+/// `CRenderBlockGeneralMkIII::InitType` allocates it, stores it in the singleton, calls its
+/// [`Create`](crate::graphics_engine::render_block::RenderBlockTypeGeneralMkIII::Create), and registers it. It derives from
+/// [`RenderBlockTypeBase`](crate::graphics_engine::render_engine::RenderBlockTypeBase), whose vtable slots it
+/// overrides with the functions bound here; the base is not mapped as a region so that those can be
+/// called directly.
+///
+/// The vertex declarations are indexed by vertex permutation (the `HW_INSTANCED` permutations among
+/// them take theirs from [`CreateVertexDeclarationInstanced`](crate::graphics_engine::graphics_engine::CreateVertexDeclarationInstanced));
+/// several entries alias another entry's handle rather than owning one.
+pub struct RenderBlockTypeGeneralMkIII {
+    _field_0: [u8; 5792],
+    /// The colour passes' declarations.
+    pub m_VertexDeclaration: [*mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t; 6],
+    /// The hardware-instanced declarations of the depth-and-velocity pass.
+    pub m_VertexDeclarationHWInstancingVelocity: [[*mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t; 2]; 2],
+    /// The depth-only passes' declarations.
+    pub m_VertexDeclarationDepth: [*mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t; 6],
+    /// The alpha-tested depth-only passes' declarations.
+    pub m_VertexDeclarationDepthAlphaTest: [*mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t; 6],
+    _field_1750: [u8; 424],
+}
+fn _RenderBlockTypeGeneralMkIII_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x18F8],
+            RenderBlockTypeGeneralMkIII,
+        >([0u8; 0x18F8]);
+    }
+    unreachable!()
+}
 impl RenderBlockTypeGeneralMkIII {
+    pub unsafe fn get() -> Option<&'static mut Self> {
+        unsafe {
+            let ptr: *mut Self = *(5417825480usize as *mut *mut Self);
+            ptr.as_mut()
+        }
+    }
+}
+impl RenderBlockTypeGeneralMkIII {
+    pub const Create_ADDRESS: usize = 0x140158C40;
+    /// Creates the type's GPU resources ([`RenderBlockTypeBase::Create`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Create)),
+    /// in this order and with no other side effects: binds the wind noise texture through
+    /// [`TextureCacheGetTexture`](crate::graphics_engine::render_engine::TextureCacheGetTexture), resets the
+    /// tuning fields, reads the video card info, acquires the shader holders through
+    /// [`LoadShaders`](crate::graphics_engine::render_block::RenderBlockTypeGeneralMkIII::LoadShaders), builds every vertex declaration from element arrays it
+    /// assembles on its stack (reading each declaration's vertex program from the holders) through
+    /// [`CreateVertexDeclaration`](crate::graphics_engine::graphics_engine::CreateVertexDeclaration) and
+    /// [`CreateVertexDeclarationInstanced`](crate::graphics_engine::graphics_engine::CreateVertexDeclarationInstanced),
+    /// creates the sampler states through [`CreateSamplerStates`](crate::graphics_engine::render_block::RenderBlockTypeGeneralMkIII::CreateSamplerStates), and
+    /// creates the identity skinning palette through
+    /// [`CreateConstantBuffer`](crate::graphics_engine::graphics_engine::CreateConstantBuffer). Every result is
+    /// stored in `self`.
+    pub unsafe fn Create(
+        &mut self,
+        resource_context: *const crate::graphics_engine::render_engine::ResourceContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                resource_context: *const crate::graphics_engine::render_engine::ResourceContext,
+            ) = ::std::mem::transmute(Self::Create_ADDRESS);
+            f(self as *mut Self as _, resource_context)
+        }
+    }
+    pub const LoadShaders_ADDRESS: usize = 0x140156AD0;
+    /// Acquires every vertex and fragment program holder of the type from the resource context's
+    /// shader cache.
+    pub unsafe fn LoadShaders(
+        &mut self,
+        resource_context: *const crate::graphics_engine::render_engine::ResourceContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                resource_context: *const crate::graphics_engine::render_engine::ResourceContext,
+            ) = ::std::mem::transmute(Self::LoadShaders_ADDRESS);
+            f(self as *mut Self as _, resource_context)
+        }
+    }
+    pub const CreateSamplerStates_ADDRESS: usize = 0x1401109B0;
+    /// Creates the type's sampler states (the regular and normal-map samplers, with and without the
+    /// type's anisotropy, and the wind noise sampler). `Recreate` destroys and re-creates them; it is
+    /// the only thing `Recreate` rebuilds.
+    pub unsafe fn CreateSamplerStates(
+        &mut self,
+        device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+            ) = ::std::mem::transmute(Self::CreateSamplerStates_ADDRESS);
+            f(self as *mut Self as _, device)
+        }
+    }
     pub const Setup_ADDRESS: usize = 0x14012FE40;
     /// The type-level per-pass setup (the `IRenderBlockType::Setup` override). Binds the forward lighting
     /// resources through

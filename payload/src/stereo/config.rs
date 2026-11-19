@@ -175,6 +175,14 @@ pub struct SinglePassConfig {
     /// viewport slots pinned to that eye. Requires the collapse. On by default: it fixes a visible
     /// artifact (the buildings flickering), and costs ~130 extra draw submissions of ~20k per frame.
     pub instanced_per_eye: bool,
+    /// Draw a hardware-instanced draw once for both eyes when its patched vertex shader is bound and
+    /// its input layout has a step-rate-doubled twin: the twin is bound, the instance count doubled,
+    /// and the viewport split, so each pair of instances reads one element and the instance parity
+    /// picks the eye. The twins are built after injection by replaying `GeneralMkIII`'s declaration
+    /// creation (see `crate::stereo::single_pass::hw_instanced`), so this covers the buildings'
+    /// `generalmkiiihwinstanced` family; a draw with any other layout keeps `instanced_per_eye`'s
+    /// re-issue. On by default; applies at once.
+    pub hw_instanced_once: bool,
     /// Re-issue a **GPU-indirect** draw once per eye under the collapse, so it stops inheriting
     /// whatever viewport the previous draw left bound. `DrawIndexedInstancedIndirect` and
     /// `DrawInstancedIndirect` are how the near tessellating terrain patches
@@ -716,6 +724,7 @@ impl SinglePassConfig {
             foliage: true,
             occluder: false,
             instanced_per_eye: true,
+            hw_instanced_once: true,
             indirect_per_eye: true,
             reconstruct_per_eye: true,
             fullscreen_camera_per_eye: true,

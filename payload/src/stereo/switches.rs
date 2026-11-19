@@ -67,6 +67,7 @@ single_pass_switches! {
     Foliage => foliage, true;
     Occluder => occluder, false;
     InstancedPerEye => instanced_per_eye, false;
+    HwInstancedOnce => hw_instanced_once, false;
     IndirectPerEye => indirect_per_eye, false;
     ReconstructPerEye => reconstruct_per_eye, false;
     FullscreenCameraPerEye => fullscreen_camera_per_eye, false;

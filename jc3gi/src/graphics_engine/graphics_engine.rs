@@ -1402,8 +1402,11 @@ pub const CreateVertexDeclarationInstanced_ADDRESS: usize = 0x1419530A0;
 /// with each element's [`m_StepRate`](crate::graphics_engine::graphics_engine::SInstancedVertexElement::m_StepRate)), assigning each element
 /// the running byte offset of its stream, creates the D3D input layout against `program`'s bytecode
 /// (raising the graphics critical-error path on failure), and records the streams' byte sizes in the
-/// returned handle. The element arrays are not retained. `CRenderBlockTypeGeneralMkIII::Create`
-/// calls it once per hardware-instanced layout of the type.
+/// returned handle. The element arrays are not retained. Nothing is cached: every call allocates a
+/// new handle from the device's allocator and creates a new D3D layout.
+/// [`RenderBlockTypeGeneralMkIII::Create`](crate::graphics_engine::render_block::RenderBlockTypeGeneralMkIII::Create)
+/// calls it once per hardware-instanced layout of the type, and the bark, foliage, and occluder types'
+/// `Create` call it for theirs.
 pub unsafe fn CreateVertexDeclarationInstanced(
     device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
     parameters: *const crate::graphics_engine::graphics_engine::SVertexElement,
@@ -1431,6 +1434,68 @@ pub unsafe fn CreateVertexDeclarationInstanced(
             inst_parameters_count,
             program,
         )
+    }
+}
+pub const CreateVertexDeclaration_ADDRESS: usize = 0x141952F00;
+/// Creates a vertex declaration with per-vertex elements only: the conversion
+/// [`CreateVertexDeclarationInstanced`](crate::graphics_engine::graphics_engine::CreateVertexDeclarationInstanced) applies to its `parameters`, the same allocation, and the same
+/// critical-error path on failure.
+pub unsafe fn CreateVertexDeclaration(
+    device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+    parameters: *const crate::graphics_engine::graphics_engine::SVertexElement,
+    parameters_count: i32,
+    program: *mut crate::graphics_engine::graphics_engine::HVertexProgram_t,
+) -> *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+            parameters: *const crate::graphics_engine::graphics_engine::SVertexElement,
+            parameters_count: i32,
+            program: *mut crate::graphics_engine::graphics_engine::HVertexProgram_t,
+        ) -> *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t = ::std::mem::transmute(
+            CreateVertexDeclaration_ADDRESS,
+        );
+        f(device, parameters, parameters_count, program)
+    }
+}
+pub const DestroyVertexDeclaration_ADDRESS: usize = 0x1419532D0;
+/// Destroys a vertex declaration: releases its D3D input layout and returns the handle to the
+/// device's allocator.
+pub unsafe fn DestroyVertexDeclaration(
+    device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+    declaration: *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+            declaration: *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t,
+        ) = ::std::mem::transmute(DestroyVertexDeclaration_ADDRESS);
+        f(device, declaration)
+    }
+}
+pub const CreateConstantBuffer_ADDRESS: usize = 0x141952DC0;
+/// Creates a constant buffer of `register_count` 16-byte registers with the given usage
+/// (`Graphics::EUsageType`; the dynamic usage adds CPU write access), initialised from `data` when it
+/// is non-null. Allocates the handle from the device's allocator and raises the graphics
+/// critical-error path when the D3D creation fails.
+pub unsafe fn CreateConstantBuffer(
+    device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+    register_count: i32,
+    usage: i32,
+    data: *const ::std::ffi::c_void,
+    tag: bool,
+) -> *mut ::std::ffi::c_void {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+            register_count: i32,
+            usage: i32,
+            data: *const ::std::ffi::c_void,
+            tag: bool,
+        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(
+            CreateConstantBuffer_ADDRESS,
+        );
+        f(device, register_count, usage, data, tag)
     }
 }
 pub const SetupRenderStates_ADDRESS: usize = 0x14195FEA0;

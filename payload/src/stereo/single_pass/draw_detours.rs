@@ -651,7 +651,38 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
             bucket.fetch_add(1, Ordering::Relaxed);
         }
         if patched && in_range && collapse_active() {
-            let handled = config_flags().has(Flag::InstancedPerEye) && instanced_per_eye(&submit);
+            let flags = config_flags();
+            let once = flags.has(Flag::HwInstancedOnce)
+                && hw_instanced_once(context, instance_count, &|doubled| {
+                    velocity::submit(
+                        context,
+                        "indexed_instanced_promoted",
+                        [
+                            index_count_per_instance.into(),
+                            doubled.into(),
+                            start_index.into(),
+                            base_vertex.into(),
+                            start_instance.into(),
+                        ],
+                        // SAFETY: the caller's arguments with the instance count doubled, through the
+                        // trampoline so the mod's own draw is not seen again as a game draw.
+                        || unsafe {
+                            detour.call(
+                                context,
+                                index_count_per_instance,
+                                doubled,
+                                start_index,
+                                base_vertex,
+                                start_instance,
+                            )
+                        },
+                    )
+                });
+            if once {
+                record_instanced_case(instance_count, true);
+                return;
+            }
+            let handled = flags.has(Flag::InstancedPerEye) && instanced_per_eye(&submit);
             record_instanced_case(instance_count, handled);
             if handled {
                 return;
@@ -667,6 +698,46 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
         }
     }
     submit();
+}
+
+/// Draw a hardware-instanced draw once for both eyes through its layout's step-rate-doubled twin
+/// ([`hw_instanced`]), reporting whether it did; `false` leaves the draw to the per-eye re-issue.
+///
+/// With every per-instance step rate doubled and the instance count doubled, instances `2k` and
+/// `2k + 1` read the batch's element `k`, and the patched shader routes them to the eye their parity
+/// picks, so the split viewport is all the draw needs. It declines without a live context or a
+/// recorded full viewport (the split would be a no-op and both eyes would land in one region), when
+/// a domain or geometry shader is bound (only the last stage before the rasteriser routes a draw),
+/// when the doubled count overflows, and when the bound layout has no twin, which it logs once per
+/// layout. The engine's layout is bound again afterwards, so its cached input-assembler state stays
+/// true.
+fn hw_instanced_once(context: *mut c_void, instance_count: u32, submit: &dyn Fn(u32)) -> bool {
+    // SAFETY: `context` is the live immediate context the detoured entry was called on.
+    let Some(ctx) = (unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) })
+    else {
+        return false;
+    };
+    let Some(doubled) = instance_count.checked_mul(2) else {
+        return false;
+    };
+    if COLLAPSE_FULL_VIEWPORT.lock().is_none() || vertex_shader_feeds_another_stage(ctx) {
+        return false;
+    }
+    // SAFETY: reads the bound input layout of the live immediate context.
+    let Ok(bound) = (unsafe { ctx.IAGetInputLayout() }) else {
+        return false;
+    };
+    let Some(twin) = hw_instanced::twin_for(&bound) else {
+        hw_instanced::note_untwinned(&bound);
+        return false;
+    };
+    ensure_collapse_viewport(context, CollapseViewport::Split);
+    // SAFETY: both layouts are live, and the engine's own layout is put back after the one draw.
+    unsafe { ctx.IASetInputLayout(Some(&twin)) };
+    submit(doubled);
+    unsafe { ctx.IASetInputLayout(Some(&bound)) };
+    hw_instanced::note_drawn_once();
+    true
 }
 
 /// Re-issue an already-instanced draw once per eye, so the game's own instance ids stop being read as

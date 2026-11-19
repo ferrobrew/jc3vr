@@ -1184,6 +1184,26 @@ pub unsafe fn TerrainPatchSystemUpdate(
         f(handle, ctx)
     }
 }
+pub const TextureCacheGetTexture_ADDRESS: usize = 0x1419694F0;
+/// Looks a texture up in `cache` by its path's name hash and binds it to `holder` (a
+/// `CTextureHolder`), creating the resource from the archive when it is not cached yet and falling
+/// back to the cache's fail texture when it cannot be loaded. Returns the `ETextureCacheResult`.
+pub unsafe fn TextureCacheGetTexture(
+    cache: *mut crate::graphics_engine::render_engine::TextureCache,
+    holder: *mut ::std::ffi::c_void,
+    path: *const u8,
+    texture_type: i32,
+) -> i32 {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            cache: *mut crate::graphics_engine::render_engine::TextureCache,
+            holder: *mut ::std::ffi::c_void,
+            path: *const u8,
+            texture_type: i32,
+        ) -> i32 = ::std::mem::transmute(TextureCacheGetTexture_ADDRESS);
+        f(cache, holder, path, texture_type)
+    }
+}
 pub const GetRenderPassInfo_ADDRESS: usize = 0x1401743A0;
 /// Returns the display name of render pass `pass` and writes its category (`ERenderPassCategory`) to
 /// `out_category` and the name to `out_name`; unknown ids give `"NONE"` and category 0.
