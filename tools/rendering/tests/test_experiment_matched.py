@@ -75,7 +75,7 @@ class MatchedRunner(FakeRunner):
         wire = capture_wire(request.id, self.mode, index, evidence, None)
         wire["visual"]["generation"] = self.generation
         if self.visual_overrides is not None:
-            wire["visual"]["visual_overrides"] = {k: v for k, v in dataclasses.asdict(self.visual_overrides).items() if v is not None}
+            wire["visual"]["visual_overrides"] = self.visual_overrides.to_wire()
         wire["visual"]["shader_identity"] = {"requested": True, "status": "complete", "registered": 1,
                                                   "overflow": 0, "invalid": 0}
         if self.changed == "frame" and index == 2:

@@ -2,7 +2,11 @@ use glam::{Quat, Vec3};
 use pretty_assertions::assert_eq;
 
 use super::*;
-use crate::testing::visual::{environment::WeatherControl, pose::orientations_match};
+use crate::testing::visual::{
+    environment::WeatherControl,
+    overrides::{ReflectionOverride, SunShadowsOverride},
+    pose::orientations_match,
+};
 
 fn observation(state: &State, ordinal: i64) -> FrameObservation {
     FrameObservation {
@@ -13,6 +17,7 @@ fn observation(state: &State, ordinal: i64) -> FrameObservation {
         camera_frozen: true,
         horizon_map_ready: true,
         shadow_override_ready: true,
+        shaders_current: true,
         frame_identity: Some(ordinal),
         generation: state.generation,
         pose: None,
@@ -41,6 +46,41 @@ fn warmup_counts_only_distinct_completed_frames() {
 }
 
 #[test]
+fn stale_shaders_hold_off_readiness_until_the_rebuild_lands() {
+    let mut state = warming(Mode::SinglePass, 2);
+    let mut stale = observation(&state, 1);
+    stale.shaders_current = false;
+    state.complete(stale, true);
+    assert_eq!(state.completed_frames, 0);
+    state.complete(observation(&state, 2), true);
+    let mut stale = observation(&state, 3);
+    stale.shaders_current = false;
+    state.complete(stale, true);
+    assert_eq!(state.completed_frames, 0);
+    state.complete(observation(&state, 4), true);
+    state.complete(observation(&state, 5), true);
+    assert!(state.ready);
+}
+
+#[test]
+fn single_pass_switch_overrides_survive_the_profile_and_reset_with_it() {
+    let overrides = VisualOverrides::try_from(
+        toml::from_str::<VisualOverridesTable>(
+            "[single_pass]\nssr_per_eye = false\ntree_impostors = false\n",
+        )
+        .unwrap(),
+    )
+    .unwrap();
+    let mut config = Config::new();
+    apply_profile_with_overrides(&mut config, Mode::SinglePass, Some(overrides));
+    let sps = config.stereo.single_pass;
+    assert!(sps.enabled && sps.collapse && sps.reproject);
+    assert!(!sps.ssr_per_eye && !sps.tree_impostors);
+    apply_profile_with_overrides(&mut config, Mode::SinglePass, None);
+    assert!(config.stereo.single_pass.ssr_per_eye && config.stereo.single_pass.tree_impostors);
+}
+
+#[test]
 fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
     let mut config = Config::new();
     for mode in [
@@ -52,9 +92,11 @@ fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
         apply_profile_with_overrides(
             &mut config,
             mode,
-            Some(VisualOverrides::ScreenSpaceReflections(
-                ReflectionOverride::Enabled,
-            )),
+            Some(VisualOverrides {
+                sun_shadows: None,
+                screen_space_reflections: Some(ReflectionOverride::Enabled),
+                single_pass: Default::default(),
+            }),
         );
         assert!(!config.stereo.skip_ssr && !config.stereo.disable_sun_shadows);
         apply_profile_with_overrides(&mut config, mode, None);
@@ -62,10 +104,18 @@ fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
     }
 }
 
+fn shadows_disabled() -> VisualOverrides {
+    VisualOverrides {
+        sun_shadows: Some(SunShadowsOverride::Disabled),
+        screen_space_reflections: None,
+        single_pass: Default::default(),
+    }
+}
+
 #[test]
 fn shadow_override_resets_on_new_profile() {
     let mut config = Config::new();
-    let treatment = Some(VisualOverrides::SunShadows(SunShadowsOverride::Disabled));
+    let treatment = Some(shadows_disabled());
     apply_profile_with_overrides(&mut config, Mode::Multipass, treatment);
     assert!(config.stereo.disable_sun_shadows);
     apply_profile_with_overrides(&mut config, Mode::Multipass, None);
@@ -103,7 +153,7 @@ fn shadow_override_loss_fails_running_motion_closed() {
 #[test]
 fn shadow_override_readiness_gates_frames_and_restoration() {
     let mut state = warming(Mode::Multipass, 1);
-    state.visual_overrides = Some(VisualOverrides::SunShadows(SunShadowsOverride::Disabled));
+    state.visual_overrides = Some(shadows_disabled());
     state.shadow_sync_required = true;
     let mut observed = observation(&state, 1);
     observed.shadow_override_ready = false;

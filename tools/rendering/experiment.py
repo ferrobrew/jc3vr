@@ -37,6 +37,17 @@ from tools.rendering.experiment_matched import (
     matched_capture_identity,
     matched_cross_metrics,
 )
+from tools.rendering.experiment_variants import (
+    DEFAULT_VARIANT,
+    SinglePassVariant,
+    borrow_references,
+    describe,
+    parse_variants,
+    require_reference_modes,
+    summarize,
+    variant_case_name,
+    verify_switches,
+)
 from tools.rendering.protocol import (
     POSE_TOLERANCE,
     Camera,
@@ -573,6 +584,7 @@ class ExperimentConfig:
     diagnostics: Diagnostics = dataclasses.field(default_factory=Diagnostics)
     visual_overrides: VisualOverrides | None = None
     matched_treatment: MatchedTreatment | None = None
+    single_pass_variants: tuple[SinglePassVariant, ...] = ()
 
     def __post_init__(self):
         if not valid_request_id(self.name) or len(self.name) > MAX_NAME_LENGTH:
@@ -666,6 +678,14 @@ class ExperimentConfig:
             raise ExperimentError("experiment: water reflection treatment requires multipass configurations")
         if self.visual_overrides is not None and not isinstance(self.visual_overrides, VisualOverrides):
             raise ExperimentError("experiment: invalid visual overrides")
+        if self.single_pass_variants:
+            if (not isinstance(self.single_pass_variants, tuple) or
+                    not all(isinstance(item, SinglePassVariant) for item in self.single_pass_variants)):
+                raise ExperimentError("experiment: invalid single-pass variants")
+            if self.matched_treatment is not None or self.feature is not None:
+                raise ExperimentError(
+                    "experiment: single-pass variants exclude a matched treatment and a feature check")
+            require_reference_modes(self.configurations)
         if self.feature is None:
             return
         references = set(self.feature.reference_modes)
@@ -701,7 +721,8 @@ class ExperimentConfig:
         except (OSError, tomllib.TOMLDecodeError) as error:
             raise ExperimentError(f"experiment: could not read config {path}: {error}") from error
         _keys(value, {"name", "warmup_frames", "samples", "scene", "configurations"},
-              {"feature", "interval_seconds", "diagnostics", "visual_overrides", "matched_treatment"}, str(path))
+              {"feature", "interval_seconds", "diagnostics", "visual_overrides", "matched_treatment",
+               "single_pass_variants"}, str(path))
         try:
             matched = MatchedTreatment(value["matched_treatment"]) if "matched_treatment" in value else None
         except (ValueError, TypeError) as error:
@@ -715,7 +736,8 @@ class ExperimentConfig:
                    _number(value.get("interval_seconds", 0.0), "config.interval_seconds"),
                    Diagnostics.from_toml(value.get("diagnostics", {})),
                    VisualOverrides.from_wire(value["visual_overrides"]) if "visual_overrides" in value else None,
-                   matched)
+                   matched,
+                   parse_variants(value["single_pass_variants"]) if "single_pass_variants" in value else ())
 
 
 @dataclass(frozen=True)
@@ -778,6 +800,7 @@ class ExperimentReport:
     visual_overrides: VisualOverrides | None = None
     matched_treatment: MatchedTreatment | None = None
     matched_cross_condition: tuple[dict, ...] = ()
+    single_pass_variants: tuple[dict, ...] = ()
 
     @property
     def exit_code(self) -> int:
@@ -815,6 +838,7 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
     early_errors: list[str] = []
     last_capture_completed = None
     conditions: dict[str, str] = {}
+    image_only: set[str] = set()
     try:
         anchor_mode = Mode(config.configurations[0].value)
         anchor_pose = PoseRequest(f"{prefix}_anchor", OrientationOffset(0.0, 0.0, 0.0),
@@ -935,6 +959,43 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
                     LOG.warning("experiment: reference eligibility failed; "
                                 "skipping target configurations")
                     break
+        for variant_index, variant in enumerate(config.single_pass_variants, start=1):
+            variant_config = _variant_config(config, variant)
+            case = Case(variant_case_name(config.name, variant), {}, target_pose)
+            borrow_references(cases[DEFAULT_VARIANT], case)
+            cases[variant.name] = case
+            manifest.cases.append(case)
+            _, anchor = _configure(runner, variant_config, f"{prefix}_var_{variant_index}",
+                                   target_pose, Mode.SINGLE_PASS, anchor, configurations)
+            entries = case.modes.setdefault(Mode.SINGLE_PASS, [])
+            for index in range(1, config.samples + 1):
+                identifier = f"{prefix}_v{variant_index}_{variant.name.replace('-', '_')}_{index}"
+                _wait_for_capture_interval(runner, config.interval_seconds,
+                                           last_capture_completed, monotonic, sleep)
+                runner.assert_running()
+                if runner.deadline is not None and monotonic() >= runner.deadline:
+                    raise ExperimentError("experiment: no capture can start after the run deadline")
+                result = capture(runner, variant_config, target_pose, anchor, Mode.SINGLE_PASS,
+                                 configurations[-1].generation, identifier)
+                if not isinstance(result, Capture):
+                    raise ExperimentError("experiment: capture is not a diagnostic capture")
+                previous = captures[-1] if captures else None
+                captures.append(result)
+                conditions[result.id] = variant.name
+                if not variant.diagnostics:
+                    image_only.add(result.id)
+                last_capture_completed = monotonic()
+                folder = runner.config_dir / "captures"
+                entries.append(Sample(
+                    os.path.relpath(folder / f"{identifier}.capture.png", output),
+                    os.path.relpath(folder / f"{identifier}.capture.json", output)))
+                write_manifest(manifest_path, manifest)
+                if previous is not None and (result.frame_ordinal <= previous.frame_ordinal or
+                                             result.predicted_display_time_ns <= previous.predicted_display_time_ns):
+                    raise ExperimentError(
+                        "experiment: captures do not identify increasing rendered frames"
+                    )
+                LOG.info("wrote %s after %s", manifest_path, identifier)
     except EXPECTED_ERRORS as error:
         failure = error
     finally:
@@ -986,6 +1047,8 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
     errors.extend(early_errors)
     if config.diagnostics.resolve_inputs:
         for captured in captures:
+            if captured.id in image_only:
+                continue
             try:
                 metadata = read_object(runner.config_dir / "captures" / f"{captured.id}.capture.json")
                 errors.extend(_resolve_content_errors(captured.id, metadata))
@@ -1007,6 +1070,14 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
             matched_cross = matched_cross_metrics(output, cases)
         except EXPECTED_ERRORS as error:
             errors.append(f"matched treatment comparison: {error}")
+    variant_summaries = ()
+    if config.single_pass_variants and captures:
+        try:
+            variant_summaries = summarize(output, cases, _variant_switches(config))
+            for summary in variant_summaries:
+                LOG.info("%s", describe(summary))
+        except EXPECTED_ERRORS as error:
+            errors.append(f"single-pass variants: {error}")
     if feature is not None:
         errors.extend(feature.errors)
     overall = comparison_outcome or Outcome.INCONCLUSIVE
@@ -1015,13 +1086,37 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
     report = ExperimentReport(
         config.name, overall, comparison_outcome, str(manifest_path), comparison_report,
         tuple(CaptureSummary(CompareMode(capture.mode.value), capture.id,
-                             capture.frame_ordinal, conditions.get(capture.id) if config.matched_treatment else None) for capture in captures),
+                             capture.frame_ordinal, _condition(config, conditions, capture)) for capture in captures),
         feature, () if feature is None else feature.findings,
         tuple(dict.fromkeys(errors)), restoration_error, environment_restoration,
         config.interval_seconds, config.diagnostics, config.visual_overrides, config.matched_treatment,
-        matched_cross)
+        matched_cross, variant_summaries)
     write_report(output / "report.json", report)
     return report
+
+
+def _variant_config(config: ExperimentConfig, variant: SinglePassVariant) -> ExperimentConfig:
+    """The configuration a variant's captures run under: its switches forced, and unless it asks
+    for them, none of the experiment's screenshot diagnostics beyond the shader identity census."""
+    diagnostics = (config.diagnostics if variant.diagnostics
+                   else Diagnostics(shader_identity=config.diagnostics.shader_identity))
+    return dataclasses.replace(config, visual_overrides=variant.overrides(config.visual_overrides),
+                               diagnostics=diagnostics)
+
+
+def _variant_switches(config: ExperimentConfig) -> dict[str, dict[str, bool]]:
+    base = config.visual_overrides.switches if config.visual_overrides is not None else {}
+    result = {DEFAULT_VARIANT: base}
+    for variant in config.single_pass_variants:
+        overrides = variant.overrides(config.visual_overrides)
+        result[variant.name] = overrides.switches if overrides is not None else {}
+    return result
+
+
+def _condition(config: ExperimentConfig, conditions: dict[str, str], capture) -> str | None:
+    if config.matched_treatment or config.single_pass_variants:
+        return conditions.get(capture.id)
+    return None
 
 
 def _resolve_content_errors(capture_id: str, metadata: dict) -> list[str]:
@@ -1061,7 +1156,7 @@ def _failure_report(config, manifest_path, captures, errors, restoration_error,
     return ExperimentReport(
         config.name, Outcome.INCONCLUSIVE, None, str(manifest_path), None,
         tuple(CaptureSummary(CompareMode(capture.mode.value), capture.id,
-                             capture.frame_ordinal, conditions.get(capture.id) if config.matched_treatment else None) for capture in captures),
+                             capture.frame_ordinal, _condition(config, conditions, capture)) for capture in captures),
         None, (), errors, restoration_error, environment_restoration,
         config.interval_seconds, config.diagnostics, config.visual_overrides, config.matched_treatment)
 
@@ -1266,6 +1361,9 @@ def _capture(runner, config, pose, anchor, mode, generation, identifier):
             raise ExperimentError("experiment: SSR producer remained disabled")
     if capture.visual.visual_overrides != config.visual_overrides:
         raise ExperimentError("experiment: capture visual overrides disagree with the request")
+    if config.single_pass_variants and mode == Mode.SINGLE_PASS:
+        verify_switches(identifier, read_object(runner.config_dir / "captures" / f"{identifier}.capture.json"),
+                        config.visual_overrides)
     if capture.visual.pose is None:
         raise ExperimentError(f"experiment: capture {identifier} has no pose evidence")
     capture.visual.pose.validate(pose, anchor)

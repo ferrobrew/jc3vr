@@ -211,30 +211,105 @@ class SunShadows(StrEnum):
     DISABLED = "disabled"
 
 
+# The single-pass production switches a configuration may override, by their configuration field
+# names. Mirrors `SinglePassSwitch` in `payload/src/stereo/switches.rs`; a test keeps the two equal.
+SINGLE_PASS_SWITCHES = (
+    "reproject", "reproject_camera_only", "terrain", "terrain_patch_per_eye", "tree_impostors",
+    "tree_impostor_pixel_size_per_eye", "static_lights_per_eye", "bark", "foliage", "occluder",
+    "instanced_per_eye", "indirect_per_eye", "reconstruct_per_eye", "fullscreen_camera_per_eye",
+    "pixel_camera_per_eye", "atmospheric_per_eye", "fog_volume_per_eye", "water_uv_per_eye",
+    "nvwater_per_eye", "water_reflection_per_eye", "water_camera_per_eye",
+    "ssdecal_geometry_per_eye", "slot13_per_eye", "collapse_viewport_follows_target",
+    "ssao_per_eye", "ssr_per_eye", "subsurface_per_eye", "dof_per_eye", "ssdecal_per_eye",
+    "composite_overlays_per_eye", "glare_per_eye", "clustered_per_eye",
+    "clustered_per_eye_light_view", "uniform_viewport_slots",
+)
+
+
+def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool], ...]:
+    """Validate a table of single-pass switch overrides into sorted (name, value) pairs."""
+    if not isinstance(value, dict):
+        raise ProtocolError(f"visual protocol: {context} must be a table of switches")
+    unknown = sorted(set(value) - set(SINGLE_PASS_SWITCHES))
+    if unknown:
+        raise ProtocolError(f"visual protocol: {context} names unknown single-pass switches "
+                            f"{unknown}; expected some of {list(SINGLE_PASS_SWITCHES)}")
+    for name, item in value.items():
+        if type(item) is not bool:
+            raise ProtocolError(f"visual protocol: {context}.{name} must be a boolean")
+    return tuple(sorted(value.items()))
+
+
 @dataclass(frozen=True)
 class VisualOverrides:
     sun_shadows: SunShadows | None = None
     screen_space_reflections: str | None = None
+    single_pass: tuple[tuple[str, bool], ...] = ()
 
     def __post_init__(self):
-        if not ((isinstance(self.sun_shadows, SunShadows) and self.screen_space_reflections is None) or
-                (self.sun_shadows is None and self.screen_space_reflections == "enabled")):
-            raise ProtocolError("visual protocol: invalid visual override")
+        if self.sun_shadows is not None and not isinstance(self.sun_shadows, SunShadows):
+            raise ProtocolError("visual protocol: invalid sun_shadows override")
+        if self.screen_space_reflections not in (None, "enabled"):
+            raise ProtocolError("visual protocol: invalid screen_space_reflections override")
+        object.__setattr__(self, "single_pass", single_pass_switches(dict(self.single_pass)))
+        if self.sun_shadows is None and self.screen_space_reflections is None and not self.single_pass:
+            raise ProtocolError("visual protocol: visual overrides must name at least one override")
+
+    @property
+    def switches(self) -> dict[str, bool]:
+        return dict(self.single_pass)
+
+    def to_wire(self):
+        """The table as the payload reports it: absent overrides are left out."""
+        value = {}
+        if self.sun_shadows is not None:
+            value["sun_shadows"] = self.sun_shadows.value
+        if self.screen_space_reflections is not None:
+            value["screen_space_reflections"] = self.screen_space_reflections
+        if self.single_pass:
+            value["single_pass"] = self.switches
+        return value
 
     def to_toml(self):
-        key, value = next((k,v) for k,v in asdict(self).items() if v is not None)
-        return f'[visual_overrides]\n{key} = {json.dumps(value)}\n'
+        result = "[visual_overrides]\n"
+        if self.sun_shadows is not None:
+            result += f"sun_shadows = {json.dumps(self.sun_shadows.value)}\n"
+        if self.screen_space_reflections is not None:
+            result += f"screen_space_reflections = {json.dumps(self.screen_space_reflections)}\n"
+        if self.single_pass:
+            result += "\n[visual_overrides.single_pass]\n" + "".join(
+                f"{name} = {json.dumps(value)}\n" for name, value in self.single_pass)
+        return result
 
     @classmethod
     def from_wire(cls, value):
-        if isinstance(value, dict) and value == {"screen_space_reflections": "enabled"}:
-            return cls(screen_space_reflections="enabled")
-        if not isinstance(value, dict) or set(value) != {"sun_shadows"}:
+        if not isinstance(value, dict) or not value or set(value) - {
+                "sun_shadows", "screen_space_reflections", "single_pass"}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
         try:
-            return cls(SunShadows(value["sun_shadows"]))
+            sun_shadows = SunShadows(value["sun_shadows"]) if "sun_shadows" in value else None
         except (ValueError, TypeError) as error:
             raise ProtocolError("visual protocol: invalid sun_shadows override") from error
+        if "single_pass" in value and not value["single_pass"]:
+            raise ProtocolError("visual protocol: the single_pass override table is empty")
+        return cls(sun_shadows, value.get("screen_space_reflections"),
+                   single_pass_switches(value.get("single_pass", {})))
+
+
+@dataclass(frozen=True)
+class ShaderBuild:
+    """The state the live shaders were created under, as the payload last rebuilt them."""
+    active: bool
+    collapse: bool
+    switches: tuple[tuple[str, bool], ...]
+
+    @classmethod
+    def from_wire(cls, value):
+        if (not isinstance(value, dict) or set(value) != {"active", "collapse", "switches"} or
+                type(value["active"]) is not bool or type(value["collapse"]) is not bool):
+            raise ProtocolError("visual protocol: invalid shader build")
+        return cls(value["active"], value["collapse"],
+                   single_pass_switches(value["switches"], "shader_build.switches"))
 
 
 @dataclass(frozen=True)
@@ -347,6 +422,8 @@ class Request:
         if self.visual_overrides is not None and (self.command != Command.CONFIGURE or
                                                    not isinstance(self.visual_overrides, VisualOverrides)):
             raise ProtocolError("visual protocol: only configuration accepts visual overrides")
+        if self.visual_overrides is not None and self.visual_overrides.single_pass and self.mode != Mode.SINGLE_PASS:
+            raise ProtocolError("visual protocol: single-pass switch overrides require the single_pass mode")
         if self.aa_color_edge is not None and (type(self.aa_color_edge) is not bool or not self.aa_weights or self.patch63_hull is not True):
             raise ProtocolError("AA color edge requires weights and physical hull")
         if self.patch63_hull is not None and (type(self.patch63_hull) is not bool or self.owner_four_domain is not True or self.writer_domain_camera is not True):
@@ -636,6 +713,7 @@ class VisualState:
     environment: EnvironmentObservation | None = None
     visual_overrides: VisualOverrides | None = None
     shader_identity: dict | None = None
+    shader_build: ShaderBuild | None = None
 
     @classmethod
     def from_wire(cls, value):
@@ -660,7 +738,8 @@ class VisualState:
                    None if value.get("motion") is None else MotionEvidence.from_wire(value.get("motion")),
                    None if value.get("environment") is None else EnvironmentObservation.from_wire(value.get("environment")),
                    None if value.get("visual_overrides") is None else VisualOverrides.from_wire(value["visual_overrides"]),
-                   parse_shader_identity(value.get("shader_identity")))
+                   parse_shader_identity(value.get("shader_identity")),
+                   None if value.get("shader_build") is None else ShaderBuild.from_wire(value["shader_build"]))
 
 
 

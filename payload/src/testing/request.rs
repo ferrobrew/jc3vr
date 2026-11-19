@@ -179,6 +179,7 @@ enum RequestErrorKind {
     MotionOnCommand(Command),
     EnvironmentOnCommand(Command),
     VisualOverridesOnCommand(Command),
+    InvalidVisualOverrides(visual::OverrideError),
     ShaderIdentityOnCommand(Command),
     MotionCaptureOnCommand(Command),
     WaterReflectionOnCommand(Command),
@@ -241,6 +242,7 @@ impl std::fmt::Display for RequestError {
                     "only visual_configure accepts visual_overrides, not {command:?}"
                 )
             }
+            RequestErrorKind::InvalidVisualOverrides(error) => write!(f, "{error}"),
             RequestErrorKind::MotionCaptureOnCommand(command) => {
                 write!(
                     f,
@@ -348,7 +350,7 @@ struct RequestFile {
     motion: Option<visual::MotionTable>,
     environment: Option<visual::EnvironmentTable>,
     shader_identity: Option<bool>,
-    visual_overrides: Option<visual::VisualOverrides>,
+    visual_overrides: Option<visual::VisualOverridesTable>,
     motion_capture: Option<MotionCaptureTable>,
     water_reflection: Option<crate::screenshot::harness::WaterReflection>,
     #[serde(default)]
@@ -592,11 +594,20 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             file.command,
         )));
     }
-    if file.visual_overrides.is_some() && file.command != Command::VisualConfigure {
-        return Err(error(RequestErrorKind::VisualOverridesOnCommand(
-            file.command,
-        )));
-    }
+    let visual_overrides = match file.visual_overrides {
+        Some(table) => {
+            if file.command != Command::VisualConfigure {
+                return Err(error(RequestErrorKind::VisualOverridesOnCommand(
+                    file.command,
+                )));
+            }
+            Some(
+                visual::VisualOverrides::try_from(table)
+                    .map_err(|e| error(RequestErrorKind::InvalidVisualOverrides(e)))?,
+            )
+        }
+        None => None,
+    };
     let motion_capture = match file.motion_capture {
         Some(table) => {
             if file.command != Command::Screenshot {
@@ -826,6 +837,11 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                 if warmup_frames > 300 {
                     return Err(error(RequestErrorKind::InvalidWarmup));
                 }
+                if let Some(overrides) = &visual_overrides {
+                    overrides
+                        .validate_for(mode)
+                        .map_err(|e| error(RequestErrorKind::InvalidVisualOverrides(e)))?;
+                }
                 visual::Request::Configure {
                     id,
                     mode,
@@ -834,7 +850,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                     motion,
                     environment,
                     shader_identity: file.shader_identity.unwrap_or(false),
-                    visual_overrides: file.visual_overrides,
+                    visual_overrides,
                 }
             })
         }

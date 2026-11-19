@@ -35,14 +35,18 @@ use jc3gi::graphics_engine::{
     },
     graphics_engine::GraphicsEngine,
 };
+use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
     hooks::graphics_engine::ss_decal,
-    stereo::single_pass::{
-        VsTransform, ambient_occlusion, eye_camera, is_terrain_shadow_pass, post_filters,
-        screen_space_reflection, set_patch_pending, terrain_active, water_pixel_variants,
+    stereo::{
+        single_pass::{
+            VsTransform, ambient_occlusion, eye_camera, is_terrain_shadow_pass, post_filters,
+            screen_space_reflection, set_patch_pending, terrain_active, water_pixel_variants,
+        },
+        switches::ShaderBuild,
     },
 };
 
@@ -65,6 +69,10 @@ static OVERLAYS_LOCALIZED: AtomicUsize = AtomicUsize::new(0);
 /// How many composite permutations have had their bloom lookups kept per eye this session.
 static BLOOM_LOCALIZED: AtomicUsize = AtomicUsize::new(0);
 static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
+/// The state the live shader set was created under by the last reload, or `None` before the first
+/// reload, after a failed one, or when the configuration changed while the shaders were being
+/// re-created (so some may have been created under each state).
+static BUILT_WITH: Mutex<Option<ShaderBuild>> = Mutex::new(None);
 
 /// Read a shader program's engine debug name (a null-terminated C string in
 /// `Create*ProgramParams.m_Name`), or `None` if the pointer is null. Used to log which tessellation
@@ -598,8 +606,17 @@ impl std::fmt::Display for ReloadError {
 
 impl std::error::Error for ReloadError {}
 
+/// The state the live shader set was created under, if a completed reload established one. The
+/// reload is synchronous -- `LoadShaderBundle` re-creates every shader holder before it returns --
+/// so a value equal to [`ShaderBuild::current`] means the live bytecode carries exactly the
+/// creation-time rewrites the configuration asks for.
+pub(crate) fn built_with() -> Option<ShaderBuild> {
+    *BUILT_WITH.lock()
+}
+
 pub(crate) fn reload_now() -> Result<(), ReloadError> {
     RELOAD_REQUESTED.store(false, Ordering::Relaxed);
+    *BUILT_WITH.lock() = None;
     let result = bounce_shader_bundle();
     if let Err(error) = &result {
         tracing::warn!("{error}");
@@ -663,11 +680,17 @@ fn bounce_shader_bundle() -> Result<(), ReloadError> {
         crate::stereo::single_pass::shader_identity::reset();
         crate::stereo::single_pass::reset_census();
         crate::stereo::single_pass::reset_patched_vs();
+        let build = ShaderBuild::current();
         if !ge.LoadShaderBundle(back.as_ptr()) {
             return Err(ReloadError::RestoreBundleFailed);
         }
         if !away_loaded {
             return Err(ReloadError::LoadVariantFailed);
+        }
+        // The debug UI can change the configuration from another thread while the bundle loads;
+        // a set created across that change matches neither state, so it is recorded as unknown.
+        if ShaderBuild::current() == build {
+            *BUILT_WITH.lock() = Some(build);
         }
         tracing::info!(
             "shader reload: '{current_name}' (bounced via '{other}'); {} PCF sites patched total",

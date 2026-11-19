@@ -7,13 +7,12 @@ use windows::{
             D3D11_BUFFER_DESC, D3D11_TEXTURE2D_DESC, ID3D11DeviceContext, ID3D11DeviceContext1,
             ID3D11PixelShader, ID3D11Texture2D,
         },
-        Dxgi::Common::{DXGI_FORMAT_R11G11B10_FLOAT, DXGI_FORMAT_R32_FLOAT},
+        Dxgi::Common::{DXGI_FORMAT, DXGI_FORMAT_R11G11B10_FLOAT, DXGI_FORMAT_R32_FLOAT},
     },
     core::Interface,
 };
 
 use crate::{
-    hooks::graphics_engine::reconstruction,
     screenshot::harness::{
         self,
         stages::{
@@ -118,14 +117,15 @@ pub(crate) unsafe fn before_draw(raw: *mut c_void, count: u32, start: u32) -> Op
         return None;
     }
     let id = harness::diagnostic_capture_id()?;
-    let packed = dispatch::mode() == RenderMode::SinglePass;
-    let eye = if packed {
-        reconstruction::masked_eye()?
-    } else {
-        draw_index()
-    };
+    // The ray trace binds a rewrite of the pristine ray march for one eye-sized run. Under the
+    // single-pass collapse the block runs once over both eyes, with the per-eye march rewrite bound
+    // when `single_pass.ssr_per_eye` is on, so there is no eye-sized run to trace.
+    if dispatch::mode() == RenderMode::SinglePass {
+        return None;
+    }
+    let eye = draw_index();
     let ctx = unsafe { ID3D11DeviceContext::from_raw_borrowed(&raw) }?;
-    match bind_ray(ctx, frame, eye, packed, &id) {
+    match bind_ray(ctx, frame, eye, &id) {
         Ok(guard) => Some(guard),
         Err(e) => {
             tracing::error!(%id,frame,eye,"SSR trace binding: {e:#}");
@@ -138,31 +138,12 @@ fn bind_ray(
     ctx: &ID3D11DeviceContext,
     frame: i64,
     eye: usize,
-    packed: bool,
     id: &str,
 ) -> anyhow::Result<RayGuard> {
     let (w, h) = crate::stereo::render_size().context("missing SSR size")?;
     ensure!(
         eye < 2 && u64::from(w) * u64::from(h) <= 1024 * 1024,
         "unexpected SSR target size"
-    );
-    let mut record = empty_stage_record(frame, eye, Stage::SsrRayInput);
-    capture_raster_state(ctx, &mut record);
-    ensure!(
-        !packed
-            || (record.scissor_enabled == Some(true)
-                && record.scissors.len() == 2
-                && record
-                    .scissors
-                    .iter()
-                    .all(|r| (r.left, r.top, r.right, r.bottom)
-                        == (
-                            (w / 4) as i32 * eye as i32,
-                            0,
-                            (w / 4) as i32 * (eye as i32 + 1),
-                            (h / 2) as i32
-                        ))),
-        "unexpected SSR scissor"
     );
     let mut shader = None;
     let mut count = 0;
@@ -180,12 +161,12 @@ fn bind_ray(
     let history_center = harness::history_center(frame);
     let history = harness::ssr_history_requested(frame);
     ensure!(
-        march_eye.is_none() || packed,
-        "march trial requires packed depth"
+        march_eye.is_none(),
+        "the march trial needs a per-eye run over the double-wide depth, which no mode takes"
     );
     let bytes = dxbc_stereo::trace_ssr_ray(
         &bytes,
-        march_eye.filter(|v| *v).map(|_| eye == 1),
+        None,
         veto_eye == Some(true),
         grid_eye == Some(true),
         history,
@@ -349,14 +330,11 @@ pub(crate) unsafe fn after_draw(raw: *mut c_void, count: u32, start: u32) {
     let Some(id) = harness::diagnostic_capture_id() else {
         return;
     };
+    // Under the single-pass collapse the block runs once over the double-wide target, so each eye's
+    // record holds the whole target and the comparison takes that eye's half of it, as it does for
+    // every other stage the collapse renders in one run.
     let packed = dispatch::mode() == RenderMode::SinglePass;
-    let Some(eye) = (if packed {
-        reconstruction::masked_eye()
-    } else {
-        Some(draw_index())
-    }) else {
-        return;
-    };
+    let eyes: &[usize] = if packed { &[0, 1] } else { &[draw_index()] };
     let Some(ctx) = (unsafe { ID3D11DeviceContext::from_raw_borrowed(&raw) }) else {
         return;
     };
@@ -373,7 +351,7 @@ pub(crate) unsafe fn after_draw(raw: *mut c_void, count: u32, start: u32) {
     };
     let prep_hash = "e54f7846ad37c7094c9594483d62ab935baee018f284f077380bd7b8dd005e9d";
     if n == 0 && (identity.actual_sha256 != prep_hash || identity.pristine_sha256 != prep_hash) {
-        tracing::error!(%id,frame,eye,ps=%identity.actual_sha256,"unexpected SSR preparation shader");
+        tracing::error!(%id,frame,?eyes,ps=%identity.actual_sha256,"unexpected SSR preparation shader");
         return;
     }
     let formats = if n == 0 {
@@ -398,14 +376,14 @@ pub(crate) unsafe fn after_draw(raw: *mut c_void, count: u32, start: u32) {
         })
         .collect::<Vec<_>>();
     if n == 0 {
-        if let Err(e) = log_rows(ctx, frame, eye, &id, 0, &[(1, 1)]) {
-            tracing::error!(%id,frame,eye,"SSR prep constants: {e:#}");
+        if let Err(e) = log_rows(ctx, frame, eyes[0], &id, 0, &[(1, 1)]) {
+            tracing::error!(%id,frame,?eyes,"SSR prep constants: {e:#}");
             return;
         }
         for (stage, slot) in [(Stage::SsrPrepPlane, 0), (Stage::SsrPrepScene, 2)] {
             let mut srv = None;
             unsafe { ctx.PSGetShaderResources(slot, Some(std::slice::from_mut(&mut srv))) };
-            let tex=srv.and_then(|v|{let mut d=Default::default();unsafe{v.GetDesc(&mut d)}; if d.ViewDimension!=windows::Win32::Graphics::Direct3D::D3D_SRV_DIMENSION_TEXTURE2D || unsafe{d.Anonymous.Texture2D.MostDetailedMip}!=0 {return None;} tracing::info!(target:"ssr_prepare",%id,frame,eye,slot,view_format=d.Format.0,"SSR preparation source");unsafe{v.GetResource().ok()} }).and_then(|r|r.cast::<ID3D11Texture2D>().ok());
+            let tex=srv.and_then(|v|{let mut d=Default::default();unsafe{v.GetDesc(&mut d)}; if d.ViewDimension!=windows::Win32::Graphics::Direct3D::D3D_SRV_DIMENSION_TEXTURE2D || unsafe{d.Anonymous.Texture2D.MostDetailedMip}!=0 {return None;} tracing::info!(target:"ssr_prepare",%id,frame,?eyes,slot,view_format=d.Format.0,"SSR preparation source");unsafe{v.GetResource().ok()} }).and_then(|r|r.cast::<ID3D11Texture2D>().ok());
             targets.push((
                 stage,
                 tex,
@@ -417,7 +395,44 @@ pub(crate) unsafe fn after_draw(raw: *mut c_void, count: u32, start: u32) {
             ));
         }
     }
+    let producer = Producer {
+        ctx,
+        frame,
+        id: &id,
+        n,
+        ps: &identity.actual_sha256,
+    };
     for (stage, tex, format) in targets {
+        for &eye in eyes {
+            producer.record(eye, stage, tex.as_ref(), format);
+        }
+    }
+}
+
+/// One SSR producer draw whose targets are being recorded.
+struct Producer<'a> {
+    ctx: &'a ID3D11DeviceContext,
+    frame: i64,
+    id: &'a str,
+    n: u8,
+    ps: &'a str,
+}
+
+impl Producer<'_> {
+    fn record(
+        &self,
+        eye: usize,
+        stage: Stage,
+        tex: Option<&ID3D11Texture2D>,
+        format: Option<DXGI_FORMAT>,
+    ) {
+        let Self {
+            ctx,
+            frame,
+            id,
+            n,
+            ps,
+        } = *self;
         let mut record = empty_stage_record(frame, eye, stage);
         let artifact = (|| {
             let tex = tex.context("SSR texture unbound or unsupported view")?;
@@ -433,24 +448,8 @@ pub(crate) unsafe fn after_draw(raw: *mut c_void, count: u32, start: u32) {
                 "SSR output layout mismatch"
             );
             capture_raster_state(ctx, &mut record);
-            ensure!(
-                !packed
-                    || (record.scissor_enabled == Some(true)
-                        && record.scissors.len() == 2
-                        && record
-                            .scissors
-                            .iter()
-                            .all(|r| (r.left, r.top, r.right, r.bottom)
-                                == (
-                                    (w / 4) as i32 * eye as i32,
-                                    0,
-                                    (w / 4) as i32 * (eye as i32 + 1),
-                                    (h / 2) as i32
-                                ))),
-                "SSR physical scissor mismatch"
-            );
-            tracing::info!(target:"ssr_bracket",%id,frame,eye,n,?stage,resource=tex.as_raw() as usize,ps=%identity.actual_sha256,"SSR producer target");
-            read_texture(ctx, &tex, &mut record)
+            tracing::info!(target:"ssr_bracket",%id,frame,eye,n,?stage,resource=tex.as_raw() as usize,%ps,"SSR producer target");
+            read_texture(ctx, tex, &mut record)
         })();
         let mut state = STATE.lock();
         if state.frame != Some(frame) {

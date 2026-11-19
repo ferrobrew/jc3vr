@@ -887,6 +887,25 @@ A capture can carry a census of the draw calls its frame made (`payload/src/scre
 
 `python -m tools.rendering census <capture.json> --bundle <Shaders_F.shader_bundle> --passes FIRST:LAST --totals` prints the entries for a pass range with the pixel shaders named from the bundle, and the call and submission totals per treatment, which is also the starting point for counting where the collapse still spends two submissions on one call.
 
+## Capturing single-pass with a switch off
+
+Scene content at the capture views changes between schedules and sessions (the water, the vegetation, the player's pose), so a before-and-after measured across two runs mixes a fix's effect with the scene's. An experiment can instead list single-pass variants, each with some of the `single_pass.*` switches forced:
+
+```toml
+[[single_pass_variants]]
+name = "ssr-off"
+switches = { ssr_per_eye = false }
+
+[[single_pass_variants]]
+name = "repeat"
+```
+
+After its configured modes, the experiment configures the single-pass mode once per variant and captures `samples` more frames, in the same schedule as the default single-pass capture and the isolated eyes. The switches travel in the configuration request as `[visual_overrides.single_pass]`, beside the request's other overrides, and the capture profile resets them on the next configuration, so a variant lasts exactly as long as its captures. The names are the configuration field names in the flag tables above, and the overridable set is `SinglePassSwitch` (`payload/src/stereo/switches.rs`): every production switch except the structural ones that make up the mode (`single_pass`, `dual_eye`, `collapse`, `double_wide`) and the diagnostics. An unknown name fails the configuration, on the Python side when the experiment loads and in the payload when it parses the request. A variant with no switches captures the default configuration again, which gives the others a same-schedule noise floor. Variant captures carry only the shader identity census of the experiment's diagnostics, which keeps them small, unless the variant sets `diagnostics = true`. Variants need all four modes configured and exclude a matched treatment and a feature check.
+
+A switch that is a rewrite at shader creation (the ones the tables mark as needing a shader reload) only takes effect once the shaders are re-created. The payload records the state the shader set was last created under, `ShaderBuild`: whether single-pass and its collapse were live, and the value of every creation-time switch. A configuration whose state differs from that record reloads the shaders before its warm-up starts; the reload is synchronous (the engine re-creates every shader before `LoadShaderBundle` returns), and a reload during which the configuration changed records no state, so the next configuration reloads again. The configuration fails if the record still differs after the reload, and every warm-up frame requires it to match, so a capture is never taken over bytecode built for other switches. Each capture's metadata carries the record as `visual.shader_build` next to the effective configuration, and the experiment checks, for every single-pass capture of a run with variants, that the effective configuration holds the requested values and that the shaders were built under the effective configuration.
+
+Each variant becomes its own manifest case, named `<experiment>-variant-<name>`, which borrows the default case's isolated-eye and multipass samples, so the comparator measures it against the same references. The experiment report's `single_pass_variants` lists, for the default capture and each variant, the forced switches and per eye the final-image pixels that differ from the isolated eye by more than three codes, over every pairing of an isolated-eye sample with a single-pass sample (the median, the range, and each pair), and the log states the same as one line per variant.
+
 ## The non-`cb0` shader census
 
 From a census of the shipped set (`m_Name` against the rewrite outcome; the payload re-dumps it on the next

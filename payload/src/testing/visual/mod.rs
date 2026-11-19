@@ -11,10 +11,11 @@ use jc3gi::{
     graphics_engine::{graphics_engine::GraphicsEngine, shadow_manager::get_shadow_system_enabled},
 };
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 pub(crate) mod environment;
 pub(crate) mod motion;
+pub(crate) mod overrides;
 pub(crate) mod pose;
 
 pub(crate) use environment::{
@@ -25,6 +26,7 @@ pub(crate) use motion::{
     AdvanceOutcome, HISTORY_FRAMES, MotionError, MotionMetadata, MotionRequest, MotionState,
     MotionTable, anchor_matches,
 };
+pub(crate) use overrides::{OverrideError, VisualOverrides, VisualOverridesTable};
 pub(crate) use pose::{
     OrientationOffset, PoseError, PoseEvidence, PoseFrame, PoseRequest, PoseTable, PoseTransform,
     TranslationOffset, pose_frame, pose_matches,
@@ -34,7 +36,7 @@ pub(crate) use crate::stereo::dispatch::RenderMode;
 use crate::{
     config::{CONFIG, Config},
     hooks::graphics_engine::shader,
-    stereo::{config::SinglePassConfig, dispatch, single_pass},
+    stereo::{config::SinglePassConfig, dispatch, single_pass, switches::ShaderBuild},
     vr::{
         FreezeMode, ResolutionProgress,
         pose_control::{self, PoseValues},
@@ -49,25 +51,6 @@ pub(crate) enum DiagnosticProfile {
     ControlledV3,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum SunShadowsOverride {
-    Disabled,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(deny_unknown_fields, rename_all = "snake_case")]
-pub(crate) enum VisualOverrides {
-    SunShadows(SunShadowsOverride),
-    ScreenSpaceReflections(ReflectionOverride),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum ReflectionOverride {
-    Enabled,
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct VisualMetadata {
     pub generation: u64,
@@ -76,6 +59,9 @@ pub(crate) struct VisualMetadata {
     pub shader_identity: crate::stereo::single_pass::shader_identity::CensusStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub visual_overrides: Option<VisualOverrides>,
+    /// The state the live shaders were created under, so a capture shows which creation-time
+    /// single-pass rewrites its bytecode carried; `None` when no completed reload established one.
+    pub shader_build: Option<ShaderBuild>,
     pub ready: bool,
     pub paused: bool,
     pub frozen: bool,
@@ -150,6 +136,8 @@ pub(crate) struct FrameObservation {
     pub camera_frozen: bool,
     pub horizon_map_ready: bool,
     pub shadow_override_ready: bool,
+    /// Whether the live shaders were created under the state the configuration asks for now.
+    pub shaders_current: bool,
     pub frame_identity: Option<i64>,
     pub generation: u64,
     pub pose: Option<PoseEvidence>,
@@ -329,9 +317,8 @@ pub(crate) fn process_pending() {
                 let mut config = CONFIG.lock();
                 apply_profile_with_overrides(&mut config, mode, visual_overrides);
             }
-            state.shadow_sync_required |=
-                matches!(visual_overrides, Some(VisualOverrides::SunShadows(_)))
-                    || crate::hooks::game::sun_shadow_override_active();
+            state.shadow_sync_required |= sun_shadows_overridden(visual_overrides.as_ref())
+                || crate::hooks::game::sun_shadow_override_active();
             state.visual_overrides = visual_overrides;
             CLOCK_HELD.store(true, Ordering::Release);
             unsafe {
@@ -354,10 +341,18 @@ pub(crate) fn process_pending() {
             } else if (first
                 || previous_error
                 || newly_armed
-                || previous_sps != (mode == Mode::SinglePass))
+                || previous_sps != (mode == Mode::SinglePass)
+                || !shaders_current())
                 && let Err(error) = shader::reload_now()
             {
                 state.fail(error.to_string());
+                return;
+            }
+            if !shaders_current() {
+                state.fail(
+                    "visual control: the shaders were not re-created under the requested switches"
+                        .to_owned(),
+                );
                 return;
             }
             if shader_identity && single_pass::shader_identity::status().status != "complete" {
@@ -433,10 +428,8 @@ pub(crate) fn frame_complete() {
                 && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
             shadow_override_ready: !state.shadow_sync_required
-                || shadow_override_ready(matches!(
-                    state.visual_overrides,
-                    Some(VisualOverrides::SunShadows(_))
-                )),
+                || shadow_override_ready(sun_shadows_overridden(state.visual_overrides.as_ref())),
+            shaders_current: shaders_current(),
             frame_identity,
             generation: state.generation,
             pose: None,
@@ -466,10 +459,8 @@ pub(crate) fn frame_complete() {
                 && Config::lock_query(|config| config.vr.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
             shadow_override_ready: !state.shadow_sync_required
-                || shadow_override_ready(matches!(
-                    state.visual_overrides,
-                    Some(VisualOverrides::SunShadows(_))
-                )),
+                || shadow_override_ready(sun_shadows_overridden(state.visual_overrides.as_ref())),
+            shaders_current: shaders_current(),
             frame_identity,
             generation: state.generation,
             pose,
@@ -626,6 +617,7 @@ impl State {
             },
             shader_identity: single_pass::shader_identity::status(),
             visual_overrides: self.visual_overrides,
+            shader_build: shader::built_with(),
             ready: self.is_ready(),
             paused: self.paused,
             frozen: self.frozen,
@@ -750,6 +742,7 @@ impl State {
             && observed.camera_frozen
             && observed.horizon_map_ready
             && observed.shadow_override_ready
+            && observed.shaders_current
             && (self.requested_pose.is_none() || pose.is_some());
         if !matches {
             self.completed_frames = 0;
@@ -811,7 +804,8 @@ impl State {
             && paused
             && observed.camera_frozen
             && observed.horizon_map_ready
-            && observed.shadow_override_ready;
+            && observed.shadow_override_ready
+            && observed.shaders_current;
         if !running {
             if !matches {
                 self.last_frame = Some(frame_identity);
@@ -1099,20 +1093,25 @@ fn horizon_map_ready() -> bool {
     )
 }
 
+/// Whether the live shaders were created under the state the configuration asks for now: a
+/// configuration that changes a creation-time rewrite (a single-pass switch that rebuilds shaders,
+/// or the mode itself) is not captured until a reload has re-created the shader set under it.
+fn shaders_current() -> bool {
+    shader::built_with() == Some(ShaderBuild::current())
+}
+
+fn sun_shadows_overridden(overrides: Option<&VisualOverrides>) -> bool {
+    overrides.is_some_and(|overrides| overrides.sun_shadows.is_some())
+}
+
 fn apply_profile_with_overrides(
     config: &mut Config,
     mode: Mode,
     overrides: Option<VisualOverrides>,
 ) {
     apply_profile(config, mode);
-    match overrides {
-        Some(VisualOverrides::SunShadows(SunShadowsOverride::Disabled)) => {
-            config.stereo.disable_sun_shadows = true
-        }
-        Some(VisualOverrides::ScreenSpaceReflections(ReflectionOverride::Enabled)) => {
-            config.stereo.skip_ssr = false
-        }
-        None => {}
+    if let Some(overrides) = overrides {
+        overrides.apply(config);
     }
 }
 

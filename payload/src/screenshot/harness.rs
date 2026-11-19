@@ -2192,6 +2192,7 @@ mod tests {
             mode: Some(RenderMode::Multipass),
             profile: DiagnosticProfile::ControlledV3,
             visual_overrides: None,
+            shader_build: None,
             shader_identity: crate::stereo::single_pass::shader_identity::status(),
             ready: true,
             paused: true,

@@ -176,33 +176,92 @@ fn visual_overrides_are_typed_and_configure_only() {
             ..
         }))
     ));
-    assert!(matches!(
-        read(&format!(
-            "{base}[visual_overrides]\nsun_shadows = 'disabled'\n"
-        )),
-        Ok(Request::Visual(visual::Request::Configure {
-            visual_overrides: Some(visual::VisualOverrides::SunShadows(
-                visual::SunShadowsOverride::Disabled
-            )),
-            ..
-        }))
-    ));
+    let Ok(Request::Visual(visual::Request::Configure {
+        visual_overrides: Some(overrides),
+        ..
+    })) = read(&format!(
+        "{base}[visual_overrides]\nsun_shadows = 'disabled'\n"
+    ))
+    else {
+        panic!("the sun shadows override did not parse");
+    };
+    assert_eq!(
+        overrides.sun_shadows,
+        Some(visual::overrides::SunShadowsOverride::Disabled)
+    );
+    assert!(overrides.single_pass.is_empty());
     for table in [
-        "[visual_overrides]\n",
         "[visual_overrides]\nsun_shadows = 'enabled'\n",
         "[visual_overrides]\nsun_shadows = 'disabled'\nunknown = true\n",
+        "[visual_overrides.single_pass]\nssr_per_eye = 'off'\n",
     ] {
         assert!(matches!(
             read(&format!("{base}{table}")),
             Err(RequestErrorKind::Parse(_))
         ));
     }
+    assert!(matches!(
+        read(&format!("{base}[visual_overrides]\n")),
+        Err(RequestErrorKind::InvalidVisualOverrides(
+            visual::OverrideError::Empty
+        ))
+    ));
     for command in ["visual_end", "screenshot", "record"] {
         assert!(matches!(
             read(&format!(
                 "command = '{command}'\nid = 'safe'\n[visual_overrides]\nsun_shadows = 'disabled'\n"
             )),
             Err(RequestErrorKind::VisualOverridesOnCommand(_))
+        ));
+    }
+}
+
+#[test]
+fn single_pass_switch_overrides_are_validated_against_the_switches_and_mode() {
+    let single_pass = "command = 'visual_configure'\nid = 'configure'\nmode = 'single_pass'\n";
+    let Ok(Request::Visual(visual::Request::Configure {
+        visual_overrides: Some(overrides),
+        ..
+    })) = read(&format!(
+        "{single_pass}[visual_overrides]\nscreen_space_reflections = 'enabled'\n\
+         [visual_overrides.single_pass]\nssr_per_eye = false\npixel_camera_per_eye = false\n"
+    ))
+    else {
+        panic!("the single-pass switch overrides did not parse");
+    };
+    assert_eq!(
+        overrides.single_pass.iter().collect::<Vec<_>>(),
+        [
+            (
+                crate::stereo::switches::SinglePassSwitch::PixelCameraPerEye,
+                false
+            ),
+            (crate::stereo::switches::SinglePassSwitch::SsrPerEye, false),
+        ]
+    );
+    assert!(matches!(
+        read(&format!(
+            "{single_pass}[visual_overrides.single_pass]\nssr_per_ey = false\n"
+        )),
+        Err(RequestErrorKind::InvalidVisualOverrides(
+            visual::OverrideError::UnknownSwitch(name)
+        )) if name == "ssr_per_ey"
+    ));
+    assert!(matches!(
+        read(&format!("{single_pass}[visual_overrides.single_pass]\n")),
+        Err(RequestErrorKind::InvalidVisualOverrides(
+            visual::OverrideError::EmptySinglePass
+        ))
+    ));
+    for mode in ["left_only", "right_only", "multipass"] {
+        assert!(matches!(
+            read(&format!(
+                "command = 'visual_configure'\nid = 'configure'\nmode = '{mode}'\n\
+                 [visual_overrides.single_pass]\nssr_per_eye = false\n"
+            )),
+            Err(RequestErrorKind::InvalidVisualOverrides(
+                visual::OverrideError::SinglePassOnMode(_)
+            ))
         ));
     }
 }

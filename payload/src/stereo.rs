@@ -12,6 +12,7 @@ pub mod config;
 pub mod dispatch;
 pub(crate) mod engine_context;
 pub mod single_pass;
+pub(crate) mod switches;
 
 /// The live stereo render state for the frame in flight.
 pub struct StereoState {
