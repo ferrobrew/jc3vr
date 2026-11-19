@@ -11,8 +11,8 @@ pub(crate) mod atmospheric_scattering;
 pub(crate) mod clustered_lighting;
 // The volumetric fog generation pass's per-eye re-issue under the collapse.
 mod fog_volume;
-// The remaining fullscreen depth-reconstruction passes' per-eye re-issue under the collapse (SSAO,
-// SSR, subsurface skin, and the unreachable depth-of-field basis).
+// The remaining fullscreen depth-reconstruction passes under the collapse: SSAO's per-eye rows, and
+// the per-eye re-issue of SSR, subsurface skin, and the depth-of-field basis.
 pub(crate) mod fullscreen_reconstruction;
 // The per-eye off-axis clip-to-view reconstruction fix (`PerspectiveFovInverse`); crate-visible so
 // the shared `SetRenderSetup` detour can re-derive an at-entry per-eye scissor mask from the target

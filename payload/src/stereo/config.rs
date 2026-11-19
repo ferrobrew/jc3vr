@@ -293,19 +293,18 @@ pub struct SinglePassConfig {
     /// On by default. Everywhere except those passes the two records hold the same viewport and this is
     /// a no-op, so turning it off isolates it cleanly.
     pub collapse_viewport_follows_target: bool,
-    /// Run the **SSAO** pass once per eye under the collapse, like the deferred resolve and the
-    /// atmospheric scattering.
+    /// Compute the **SSAO** pass for each eye under the collapse, in the block's single run.
     ///
-    /// SSAO is one of the seven depth-reconstruction passes (cross-reference
-    /// `CMatrix4f::PerspectiveFovInverse`; the set is closed), so collapsed it reconstructs the whole
-    /// double-wide target from one eye's basis. **Hazard:** unlike the two already split, it carries a
-    /// temporal history it advances per invocation, so re-issuing the whole block double-advances
-    /// state that is not idempotent, so the split saves and restores the history indices around the second
-    /// run. On by default; turn it off if ambient occlusion looks wrong.
+    /// Collapsed, the occlusion generation reconstructs the whole double-wide target from one basis
+    /// and one view rotation, its taps reach twice as far horizontally and read the other eye's depth
+    /// near the seam, and the right eye's noise is offset by the eye's width. This rewrites the
+    /// generation shader to compute each half for its own eye from a per-eye constant pair the block
+    /// binds (`stereo::single_pass::ambient_occlusion`). A shader rewrite: changing it requests a
+    /// shader reload. On by default.
     pub ssao_per_eye: bool,
     /// Run the **screen-space reflection** pass once per eye under the collapse.
     ///
-    /// Same reconstruction defect as [`single_pass_ssao_per_eye`](Self::ssao_per_eye).
+    /// Collapsed, it reconstructs the whole double-wide target from one eye's basis.
     /// **Hazard:** SSR ray-marches a scene-colour capture taken earlier in the frame, so a second run
     /// would consume state the first already consumed -- which it does not: the block copies scene colour
     /// into its own target and writes nothing back, so a second run reproduces the capture. On by

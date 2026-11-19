@@ -136,6 +136,10 @@ pub enum DxbcError {
     /// The pixel shader binds no planar water reflection, or forms its coordinate in a shape the
     /// planar-reflection rewrite does not recognise; the caller should leave it untouched.
     NoPlanarReflection,
+    /// The pixel shader is not the ambient-occlusion generation pass (it binds no packed linear depth
+    /// and normal buffer), or reconstructs and samples in a shape the ambient-occlusion rewrite does
+    /// not recognise; the caller should leave it untouched.
+    NoAmbientOcclusion,
 }
 
 impl fmt::Display for DxbcError {
@@ -172,6 +176,9 @@ impl fmt::Display for DxbcError {
             DxbcError::NoResolveInputs => "dxbc: unsupported deferred input sequence",
             DxbcError::NoScreenOverlay => "dxbc: no recognised screen-space overlay lookup",
             DxbcError::NoPlanarReflection => "dxbc: no recognised planar reflection coordinate",
+            DxbcError::NoAmbientOcclusion => {
+                "dxbc: no recognised ambient-occlusion generation pass"
+            }
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
             DxbcError::NoLakeRefraction => {
                 "dxbc: missing unique lake refraction displacement scale"

@@ -227,9 +227,9 @@ pub(crate) fn after_render_states() {
 /// Called from the shared `Graphics::SetRenderSetup` detour in [`crate::hooks::draw_count`]. A scissor
 /// rectangle is expressed in the bound target's pixels, so a mask derived from the target the pass
 /// started on stops meaning anything the moment the pass binds a target of a different size -- and the
-/// blocks this covers do exactly that (the ambient-occlusion block draws through a full-resolution
-/// linear-depth target, half-resolution occlusion and history targets, and the full-resolution scene
-/// target, in one `Draw`). A no-op unless an at-entry per-eye half is in flight on this thread.
+/// blocks this covers do exactly that (the volumetric fog block draws into its own half-resolution
+/// target, and the screen-space reflection and subsurface blocks ping-pong through working targets of
+/// their own sizes). A no-op unless an at-entry per-eye half is in flight on this thread.
 pub(crate) fn on_render_setup_bound() {
     let Some(state) = PER_EYE.get() else {
         return;
@@ -297,8 +297,7 @@ pub(super) fn split_fullscreen_pass(
 /// `draw` is called once per run that actually executes, with that run's eye index, so a caller that
 /// needs to act on what a particular run did -- e.g. record something only when [`SplitOutcome::Demoted`]
 /// follows a run whose own work engaged -- can capture that out of `draw` itself into a variable the
-/// caller reads back afterward, the same way [`crate::hooks::graphics_engine::fullscreen_reconstruction`]'s SSAO caller captures
-/// its temporal-history snapshot across runs.
+/// caller reads back afterward.
 ///
 /// The gate covers every issue of `draw` this function makes, including the degenerate second-run one
 /// below, and nothing outside them: a caller that falls back to issuing the pass itself does so

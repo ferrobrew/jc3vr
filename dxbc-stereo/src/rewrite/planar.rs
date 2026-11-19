@@ -142,10 +142,10 @@ struct Site {
 
 /// Where a constant lives: the constant buffer's slot, its register within the buffer, and the
 /// component the constant starts at.
-struct ConstantLocation {
-    slot: u32,
-    register: u32,
-    component: u32,
+pub(super) struct ConstantLocation {
+    pub(super) slot: u32,
+    pub(super) register: u32,
+    pub(super) component: u32,
 }
 
 const OPCODE_DIV: u32 = 0x0e;
@@ -160,7 +160,7 @@ const IMMEDIATE_SCALAR: u32 = 0x4001;
 
 /// The resource table's binding types for a constant buffer and a texture.
 const BINDING_CBUFFER: u32 = 0;
-const BINDING_TEXTURE: u32 = 2;
+pub(super) const BINDING_TEXTURE: u32 = 2;
 
 /// The operand token's fields this rewrite reads or writes.
 const OPERAND_TYPE_TEMP: u32 = 0;
@@ -216,7 +216,7 @@ fn name_at(rdef: &[u8], offset: usize, name: &[u8]) -> bool {
 }
 
 /// The register the resource table binds `name` of binding type `kind` to.
-fn binding(rdef: &[u8], name: &[u8], kind: u32) -> Option<u32> {
+pub(super) fn binding(rdef: &[u8], name: &[u8], kind: u32) -> Option<u32> {
     const BINDING_SIZE: usize = 32;
     let (count, table) = (word(rdef, 8)?, word(rdef, 12)?);
     (0..count).find_map(|index| {
@@ -230,7 +230,7 @@ fn binding(rdef: &[u8], name: &[u8], kind: u32) -> Option<u32> {
 
 /// Where the resource table places the constant named `name`: the slot its buffer is bound to, and
 /// the register and component its first element starts at.
-fn constant_location(rdef: &[u8], name: &[u8]) -> Option<ConstantLocation> {
+pub(super) fn constant_location(rdef: &[u8], name: &[u8]) -> Option<ConstantLocation> {
     const BUFFER_SIZE: usize = 24;
     // The shader-model-5 header names its variable-description stride; older ones use the
     // shader-model-4 layout.

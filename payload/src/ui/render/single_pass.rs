@@ -334,11 +334,17 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
-                ui.checkbox(&mut cfg.stereo.single_pass.ssao_per_eye, "SSAO per eye")
+                if ui
+                    .checkbox(&mut cfg.stereo.single_pass.ssao_per_eye, "SSAO per eye")
                     .on_hover_text(
-                        "Another of the seven depth-reconstruction passes. Hazardous: SSAO advances a \
-                         temporal history per invocation, so a per-eye re-issue double-advances it.",
-                    );
+                        "Computes ambient occlusion for each eye's half in the pass's one run: each \
+                         eye's basis and view rotation, taps kept to the eye's half and scaled to it, \
+                         and eye-local noise. Reloads shaders to apply: it is a shader rewrite.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
                 ui.checkbox(&mut cfg.stereo.single_pass.ssr_per_eye, "SSR per eye")
                     .on_hover_text(
                         "Same reconstruction defect. Hazardous: SSR ray-marches a scene capture taken \

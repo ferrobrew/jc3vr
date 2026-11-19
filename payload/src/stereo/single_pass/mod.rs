@@ -64,6 +64,10 @@ pub enum Capability {
     Unsupported,
 }
 
+// The ambient-occlusion generation pass's rewrite and its per-eye rows; reached by the shader
+// creation detour and the SSAO block.
+pub(crate) mod ambient_occlusion;
+
 /// Probe the D3D11 device for `VPAndRTArrayIndexFromAnyShaderFeedingRasterizer` (the D3D11.3 feature
 /// that lets a vertex shader write `SV_ViewportArrayIndex`), caching the result. Idempotent and
 /// cheap; safe to call every frame. `CheckFeatureSupport` on the device is free-threaded, so no
@@ -682,6 +686,7 @@ pub fn uninstall_com_detours() -> bool {
     drop(CREATE_VERTEX_SHADER.take());
     drop(SET_VERTEX_PROGRAM_CONSTANTS.take());
     release_cb13();
+    ambient_occlusion::release();
     for shader in std::mem::take(&mut *PATCHED_VS.lock()) {
         // SAFETY: every entry was `com_add_ref`'d exactly once when it was recorded.
         unsafe { com_release(shader as *mut c_void) };

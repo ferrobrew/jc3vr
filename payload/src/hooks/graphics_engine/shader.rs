@@ -41,7 +41,7 @@ use crate::{
     config::Config,
     hooks::graphics_engine::ss_decal,
     stereo::single_pass::{
-        VsTransform, is_terrain_shadow_pass, set_patch_pending, terrain_active,
+        VsTransform, ambient_occlusion, is_terrain_shadow_pass, set_patch_pending, terrain_active,
         water_pixel_variants,
     },
 };
@@ -219,9 +219,31 @@ fn create_fragment_program(
     // the debug UI requests a reload when the switch changes.
     let localize_overlays = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.composite_overlays_per_eye);
+    // The ambient-occlusion generation pass computed for each eye's half. Baked into the bytecode
+    // like the overlays, and decided for every fragment program so the SSAO block knows whether the
+    // generation shader it will run carries it.
+    let localize_ambient_occlusion = crate::stereo::single_pass::collapse_active()
+        && Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye);
+    let mut rewritten_ambient_occlusion = None;
+    if !crate::is_shutting_down()
+        && let Some(p) = unsafe { params.as_ref() }
+        && !p.m_Code.is_null()
+        && let Ok(size) = usize::try_from(p.m_Size)
+    {
+        let code = unsafe { std::slice::from_raw_parts(p.m_Code, size) };
+        rewritten_ambient_occlusion =
+            ambient_occlusion::rewrite_fragment_program(code, localize_ambient_occlusion);
+    }
     // Skip patching once eject begins, so the shader restore's bounce re-creates pristine fragment
     // shaders (matching the vertex side) and the clean game keeps none of the mod's edits.
-    if !crate::is_shutting_down()
+    if let Some(blob) = rewritten_ambient_occlusion
+        && let Some(p) = unsafe { params.as_mut() }
+    {
+        let len = blob.len() as u64;
+        saved = Some((p.m_Code, p.m_Size, blob));
+        p.m_Code = saved.as_ref().expect("just set").2.as_ptr();
+        p.m_Size = len;
+    } else if !crate::is_shutting_down()
         && (patch_pcf || bias_ssdecal || localize_overlays)
         && let Some(p) = unsafe { params.as_mut() }
     {

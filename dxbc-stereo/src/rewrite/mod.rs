@@ -10,8 +10,14 @@
 //! depth-texture UV from the viewport-normalized UV their reconstruction basis needs, so the two can
 //! address differently-sized spaces. `overlay` maps the final composite's screen-space overlays over
 //! one eye of a double-wide target, and `planar` does the same for the WaveWorks water's planar
-//! reflection lookup.
+//! reflection lookup. `ambient` runs the ambient-occlusion generation pass over each eye's half of a
+//! double-wide target.
 
+mod ambient;
+pub use ambient::{
+    AMBIENT_OCCLUSION_CB_REGISTER, AMBIENT_OCCLUSION_ROWS_PER_EYE, localize_ambient_occlusion,
+    localize_ambient_occlusion_filter,
+};
 mod common;
 mod lake;
 pub use lake::{
