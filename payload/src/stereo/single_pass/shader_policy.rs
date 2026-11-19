@@ -144,6 +144,22 @@ pub fn should_eye_inject(name: Option<&str>) -> bool {
         && !is_terrain_shadow_pass(Some(name))
 }
 
+/// Whether a terrain shader named `name` takes the pinned-eye reprojection
+/// (`dxbc_stereo::reproject_pinned_eye`) when the per-eye transforms decline it: the
+/// `single_pass_terrain` and `single_pass_terrain_patch_per_eye` flags are on, the name is a terrain
+/// family, and it is not a shadow pass. The vertex hook applies it to a terrain shader that already
+/// reads `SV_InstanceID` (the GPU-indirect basemesh permutations), and the domain hook to a terrain
+/// domain shader with no free eye lane (the patch system's tessellated permutations, whose vertex
+/// shaders fill all of `TEXCOORD3`). Both are drawn once per eye, never instance-doubled, so the pin
+/// the per-eye re-issue places on `cb13` gives each submission its eye.
+pub fn should_pin_terrain(name: Option<&str>) -> bool {
+    let flags = config_flags();
+    flags.has(Flag::Terrain)
+        && flags.has(Flag::TerrainPatchPerEye)
+        && name.is_some_and(|n| TERRAIN_VS_NAME_PREFIXES.iter().any(|p| n.starts_with(p)))
+        && !is_terrain_shadow_pass(name)
+}
+
 /// Whether a terrain shader named `name` is a shadow-pass variant. Shadow passes render the terrain
 /// from the light's view into the shadow atlas, not per eye, so the single-pass eye transforms
 /// (reprojection and viewport routing) must skip them: eye-transforming a shadow-pass draw corrupts
@@ -214,6 +230,10 @@ pub enum VsTransform {
     /// `SV_Position` and reproject like the model families, and only the tessellated ones (whose clip
     /// is built in the domain shader) need the eye-lane inject.
     ReprojectOrEyeInject,
+    /// The `M_eye` reprojection read from `cb13`'s first eye slot ([`should_pin_terrain`]), for a
+    /// shader whose draws are submitted once per eye with `cb13` pinned to that eye. The shader stays
+    /// out of the patched set, so its draws keep that per-eye submission.
+    Pinned,
     /// Leave the shader pristine. Either no transform applies to it, or a render-block intercept owns
     /// its draws ([`baked_cb_block_owns_vs`]) and the two mechanisms must not both claim the same
     /// geometry.
@@ -238,6 +258,9 @@ pub fn decide_vs_transform(
         Err(DxbcError::NoPerEyeReferences) if should_reproject(name) => VsTransform::Reproject,
         Err(DxbcError::NoPerEyeReferences) if should_eye_inject(name) => {
             VsTransform::ReprojectOrEyeInject
+        }
+        Err(DxbcError::InstanceIdAlreadyDeclared) if should_pin_terrain(name) => {
+            VsTransform::Pinned
         }
         Err(_) => VsTransform::None,
     }
@@ -270,6 +293,14 @@ pub fn apply_vs_transform(
             };
             tracing::info!(
                 target: "single_pass", stage = "vertex", name = ?name, path,
+                transformed = out.is_some(), "terrain: VS transform",
+            );
+            out
+        }
+        VsTransform::Pinned => {
+            let out = dxbc_stereo::reproject_pinned_eye(code).ok();
+            tracing::info!(
+                target: "single_pass", stage = "vertex", name = ?name, path = "pinned",
                 transformed = out.is_some(), "terrain: VS transform",
             );
             out

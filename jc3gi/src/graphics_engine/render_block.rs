@@ -3161,6 +3161,30 @@ impl TreeImpostorRBType {
             f(self as *mut Self as _, resource_context)
         }
     }
+    pub const Setup_ADDRESS: usize = 0x14034EEF0;
+    /// Binds the state every impostor draw in the pass shares: blend, alpha test, cull, the atlas
+    /// textures and sampler, the quad index buffer, and the per-pass vertex `cb1` scalars. Outside
+    /// the shadow passes (the
+    /// [`RENDERSTATUS_SHADOWMAP`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_SHADOWMAP)
+    /// bits of [`RenderContext::m_RenderStatus`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderStatus))
+    /// it stages the vertex shader's `PixelSize` in `cb1` register 3 as one over
+    /// [`RenderContext::m_DisplayWidth`](crate::graphics_engine::graphics_engine::RenderContext::m_DisplayWidth)
+    /// and [`m_DisplayHeight`](crate::graphics_engine::graphics_engine::RenderContext::m_DisplayHeight). The
+    /// vertex shader divides the clip-space extent of each card by it to get the card's footprint in
+    /// pixels, which the pixel shader scales its atlas-coordinate derivatives by. In the shadow passes
+    /// the same register carries a light-space axis instead.
+    pub unsafe fn Setup(
+        &mut self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::Setup_ADDRESS);
+            f(self as *mut Self as _, render_context)
+        }
+    }
 }
 impl std::convert::AsRef<TreeImpostorRBType> for TreeImpostorRBType {
     fn as_ref(&self) -> &TreeImpostorRBType {

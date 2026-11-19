@@ -114,6 +114,9 @@ fn create_vertex_program(
     // it against the `ID3D11VertexShader` the engine is about to create -- the only join between a
     // shader's engine name and the pointer the draw-time paths see.
     let mut name: Option<String> = None;
+    // Whether the substitute is a pinned-eye rewrite, which the `CreateVertexShader` detour tags
+    // rather than recording as patched.
+    let mut pinned = false;
     // Skip the census once eject begins, matching the fragment hook. The eject restore bounces the
     // bundle -- two `LoadShaderBundle` calls, so every vertex shader passes through here twice -- on
     // the game thread, which blocks in `shutdown_from_game` throughout. Running the full rewrite ~900
@@ -158,6 +161,7 @@ fn create_vertex_program(
             crate::stereo::single_pass::decide_vs_transform(name.as_deref(), code, &outcome)
         };
         crate::stereo::single_pass::remember_vs_transform(code, transform);
+        pinned = transform == VsTransform::Pinned;
         let substitute = if crate::stereo::single_pass::active() {
             crate::stereo::single_pass::apply_vs_transform(
                 transform,
@@ -183,10 +187,15 @@ fn create_vertex_program(
     // so `BOUND_VS_PATCHED` stays false and its draw is never doubled -- it renders in one eye.
     if saved.is_some() {
         crate::stereo::single_pass::ensure_viewport_detours();
-        set_patch_pending(true, name.as_deref());
+        if pinned {
+            crate::stereo::single_pass::set_pin_pending(true);
+        } else {
+            set_patch_pending(true, name.as_deref());
+        }
     }
     let result = CREATE_VERTEX_PROGRAM.get().unwrap().call(device, params);
     set_patch_pending(false, None);
+    crate::stereo::single_pass::set_pin_pending(false);
 
     if let Some((original_code, original_size, _copy)) = saved
         && let Some(p) = unsafe { params.as_mut() }
@@ -409,14 +418,18 @@ fn create_hull_program(
 /// Detour on `Graphics::CreateDomainProgram` for the single-pass terrain path: when terrain single-pass
 /// is active, reproject the domain shader's clip by the per-eye `M_eye` and route to the eye's viewport
 /// ([`dxbc_stereo::reproject_domain_shader`]), reading the eye off the `TEXCOORD3.z` lane the vertex and
-/// hull stages carried. Gated structurally like the hull hook. The domain shader reads `cb13`, which is
-/// bound to the domain stage in [`crate::stereo::single_pass`]'s per-view upload.
+/// hull stages carried. Gated structurally like the hull hook. A terrain domain shader with no free
+/// lane takes the pinned-eye reprojection instead ([`dxbc_stereo::reproject_pinned_eye`], under
+/// [`crate::stereo::single_pass::should_pin_terrain`]), and its D3D object is tagged so the per-eye
+/// re-issue knows to pin `cb13` for its draws. The domain shader reads `cb13`, which is bound to the
+/// domain stage in [`crate::stereo::single_pass`]'s per-view upload.
 #[detour(address = jc3gi::graphics_engine::draw::CreateDomainProgram_ADDRESS)]
 fn create_domain_program(
     device: *mut c_void,
     params: *mut CreateDomainProgramParams,
 ) -> *mut HDomainProgram_t {
     let mut saved: Option<(*const u8, u64, Vec<u8>)> = None;
+    let mut pinned = false;
     if terrain_active()
         && let Some(p) = unsafe { params.as_mut() }
         && !p.m_Code.is_null()
@@ -427,9 +440,23 @@ fn create_domain_program(
         // a per-eye viewport that does not exist in the shadow pass) corrupts the shadow map.
         if !is_terrain_shadow_pass(name.as_deref()) {
             let code = unsafe { std::slice::from_raw_parts(p.m_Code, p.m_Size as usize) };
-            if let Ok(blob) = dxbc_stereo::reproject_domain_shader(code) {
+            // A terrain domain shader with no free eye lane is drawn once per eye instead, and takes
+            // the pinned-eye reprojection that reads whichever eye that re-issue pins `cb13` to.
+            let rewrite = match dxbc_stereo::reproject_domain_shader(code) {
+                Ok(blob) => Some((blob, "lane")),
+                Err(dxbc_stereo::DxbcError::NoEyeLane)
+                    if crate::stereo::single_pass::should_pin_terrain(name.as_deref()) =>
+                {
+                    dxbc_stereo::reproject_pinned_eye(code)
+                        .ok()
+                        .map(|blob| (blob, "pinned"))
+                }
+                Err(_) => None,
+            };
+            if let Some((blob, path)) = rewrite {
                 let len = blob.len() as u64;
-                tracing::info!(target: "single_pass", stage = "domain", name = ?name, "terrain: reprojected");
+                tracing::info!(target: "single_pass", stage = "domain", name = ?name, path, "terrain: reprojected");
+                pinned = path == "pinned";
                 saved = Some((p.m_Code, p.m_Size, blob));
                 p.m_Code = saved.as_ref().expect("just set").2.as_ptr();
                 p.m_Size = len;
@@ -439,6 +466,13 @@ fn create_domain_program(
     }
 
     let result = CREATE_DOMAIN_PROGRAM.get().unwrap().call(device, params);
+
+    if pinned
+        && let Some(program) =
+            unsafe { result.as_ref() }.and_then(|holder| holder.m_Program.as_ref())
+    {
+        crate::stereo::single_pass::tag_pinned_eye(program);
+    }
 
     if crate::stereo::single_pass::shader_identity::requested()
         && let Some(program) =

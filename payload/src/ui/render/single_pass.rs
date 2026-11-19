@@ -172,6 +172,24 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if ui
+                    .add_enabled(
+                        cfg.stereo.single_pass.terrain,
+                        egui::Checkbox::new(
+                            &mut cfg.stereo.single_pass.terrain_patch_per_eye,
+                            "Terrain patches per eye",
+                        ),
+                    )
+                    .on_hover_text(
+                        "Reprojects the terrain patch system's tessellated and GPU-indirect \
+                         pipelines, which cannot carry an eye index, by pinning cb13 to each eye in \
+                         the per-eye re-issue their draws already take. Off, both eyes of those \
+                         draws come from the centred camera. Adds no draws. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
                     .checkbox(
                         &mut cfg.stereo.single_pass.tree_impostors,
                         "Single-pass the tree impostors (far-distance billboards)",
@@ -185,6 +203,16 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.tree_impostor_pixel_size_per_eye,
+                    "Tree impostor pixel size per eye",
+                )
+                .on_hover_text(
+                    "Stages the impostors' PixelSize at one eye's width under the double-wide \
+                     collapse. Off, it is the width of both eyes, so each card's pixel footprint is \
+                     twice its size and the derivative-scaled atlas offset moves the cards' cut-out \
+                     silhouettes.",
+                );
                 ui.label("Render-block re-issue:");
                 if ui
                     .checkbox(

@@ -55,10 +55,10 @@ rows the general rewriter targets) and the per-patch *streamed* constant buffer 
 (`SVertexInstanceConstsNoTess = { Matrix4 m_WorldViewProjection; Vector4 m_WorldPos; }`). The
 tessellating passes additionally bake `rc->m_OffsetViewProjection` into the hull/domain constants
 (`SHullDomainTypeConsts`, filled once per frame per LOD slot). So the base surface goes through cb0
-(bucket a/c), while the non-tess path may instead read the baked cb1 WVP (bucket b) — **which of cb0
-or cb1 the non-tess VS actually reads for clip position is not yet confirmed** (needs the shader
-bundle or a live VS census); it decides whether the DrawIndexed passes are already covered by the
-general path or need a bucket-b reproject.
+(bucket a/c). The non-tessellated permutations read the global constants too: the
+`volumetricterrain4notessellation*` vertex shaders project through the full view-projection in `cb0`
+rows 0 to 3 (not the `cb0[29..32]` the remap covers), and the `*instanced` ones among them, which the
+GPU-indirect near basemesh pass draws with, also read `SV_InstanceID`.
 
 Draw pass-key routing, keyed on [`RenderContext::m_ActiveRenderPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ActiveRenderPass) (pass names from [`RenderPassId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId)):
 
@@ -69,7 +69,7 @@ Draw pass-key routing, keyed on [`RenderContext::m_ActiveRenderPass`](https://fe
 | `RP_TERRAINPATCH_BASEMESH_FAR`, `RP_TERRAINPATCH_BASEMESH_COLOR` | `DrawIndexed` head range `[0, split)` | Same. |
 | `PRE_RP_REFLECTION_MESH`, `PRE_RP_SHADOW_REFLECTIVE_SUN_NEAR`, `PRE_RP_SHADOW_REFLECTIVE_SUN_FAR`, `PRE_RP_SHADOW_REFLECTIVE_CAMERA` | `DrawIndexed` full range | Depth/other. |
 
-**Wiring: no block intercept, but the near passes are covered.** The `DrawIndexed` passes ride the general path when their VS is cb0-remapped. The two near passes have no bucket-(d) block intercept. Instead, `single_pass.indirect_per_eye` (on by default) detours the two GPU-indirect D3D11 context methods wholesale and re-issues any such draw once per eye with both viewport slots pinned to that eye's half. The near patches are then present and correctly sized in both eyes, without parallax. Without the detour they inherit whatever viewport the previous draw left bound, usually the full double-wide one, which stretches them 2x horizontally and makes them appear to slide across the world. A block-level intercept overriding the transform per eye would add the parallax; it is not built.
+**Wiring: no block intercept; a draw-level re-issue with the eye pinned.** `single_pass.indirect_per_eye` (on by default) detours the two GPU-indirect D3D11 context methods wholesale and re-issues any such draw once per eye with both viewport slots pinned to that eye's half, and the far tessellated `DrawIndexed` passes, whose vertex shaders the eye-inject declines, take the unpatched `DrawIndexed` re-issue. Without the indirect detour the near patches inherit whatever viewport the previous draw left bound, usually the full double-wide one, which stretches them 2x horizontally and makes them appear to slide across the world. The re-issue alone gave both eyes the centred camera; `single_pass.terrain_patch_per_eye` (on by default) adds the parallax by rewriting the patch domain shaders and the instanced basemesh vertex shaders to read `cb13`'s first eye slot, and pinning `cb13` to each eye for each submission. That is the bucket-(d) "cb13 override" below, applied at the draw level rather than by a block intercept. See "Pipelines that cannot carry the eye" in [single-pass-stereo.md](single-pass-stereo.md).
 
 ## VegetationBark
 
@@ -342,6 +342,8 @@ draw detour with the L/R viewport split. The card faces the centre camera rather
 impostor range the per-eye facing difference is arcseconds — `M_eye` supplies the parallax, so shared
 facing is sufficient. No per-draw special-casing.
 
+**The pixel size.** [`TreeImpostorRBType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::TreeImpostorRBType##func-Setup) stages the vertex shader's `PixelSize` as one over the render context's [`m_DisplayWidth`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_DisplayWidth) and `m_DisplayHeight`. The vertex shader projects the card's centre and a point half its size away through the global view-projection, which under the collapse carries one eye's projection, and divides the clip-space difference by `PixelSize` to get the card's footprint in pixels; the pixel shader scales its atlas-coordinate derivatives by that footprint to offset the atlas lookup. Under the double-wide collapse `m_DisplayWidth` is both eyes' width, so the footprint came out twice as wide as in an eye-sized render and every card's alpha-tested silhouette moved: at the midday shore-lake view the impostors on the near ridge owned about 2,900 of the 3,000 pixels per eye whose depth differed from an isolated render, none of them a parallax shift. `single_pass.tree_impostor_pixel_size_per_eye` (on by default) detours `Setup` and halves the display width for the length of the call (`stereo::single_pass::EyeDisplayWidth`), which brought those pixels to about 70 per eye. The impostors stay one instance-doubled draw.
+
 ## Occluder
 
 Depth-priming occluder proxies, `RenderBlockOccluder` (registered `"Occluder"`), injected once per frame into [`RenderPassId::RP_Z_OCCLUDERS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_Z_OCCLUDERS) to prime the main camera depth buffer for early-Z. The block's draw is [`RenderBlockOccluder::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockOccluder##func-DrawZ); the block is depth-only (null fragment program).
@@ -379,12 +381,15 @@ paths cover every case:
   wrapped original-`Draw` call, so the game's own upload is transparently reprojected and the bake need
   not be replicated. The arm is keyed to the block's graphics context: the detour sees every
   vertex-constant stage in the process, and `(slot, offset)` alone does not identify a block.
-- **cb13 override** (bucket d, when the VS is cb0-remapped to `cb13`): before each eye's re-issue, write
-  the mod's `cb13` with both eye slots set to that eye's rows, so a single (indirect) instance reads the
-  correct eye. **Not built** — no block uses this path yet.
+- **cb13 override** (bucket d, when the shader reads its eye from `cb13`): before each eye's
+  re-issue, write the mod's `cb13` with both eye slots set to that eye's rows, so a single (indirect)
+  instance reads the correct eye. No block intercept uses it; the draw-level re-issues do, for the
+  terrain patch system's pinned-eye shaders and for the already-instanced draws.
 
 Each family has its own flag (`single_pass.bark` and `single_pass.foliage` on by default;
-`single_pass.occluder`, `single_pass.terrain`, and `single_pass.tree_impostors` off), so the model and
+`single_pass.occluder`, `single_pass.terrain`, and `single_pass.tree_impostors` off, with
+`single_pass.terrain_patch_per_eye` and `single_pass.tree_impostor_pixel_size_per_eye` on beneath
+them), so the model and
 terrain-detail paths stay isolated while a new block is validated in-game.
 
 A re-issue marks itself while it runs, so the draw and viewport detours leave the block's own calls

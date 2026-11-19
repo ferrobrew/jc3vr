@@ -95,6 +95,16 @@ pub struct SinglePassConfig {
     /// `payload/src/hooks/graphics_engine/terrain.rs`). Requires [`single_pass`](Self::enabled);
     /// independent so it can be A/B'd against the models.
     pub terrain: bool,
+    /// On top of [`terrain`](Self::terrain): reproject the terrain patch system's pipelines that cannot
+    /// carry an eye index, inside the per-eye re-issue their draws already take. The patch system's
+    /// tessellated domain shaders get no eye lane (their vertex shaders fill all of `TEXCOORD3`), and
+    /// its GPU-indirect basemesh vertex shaders already read `SV_InstanceID`, so both were drawn once
+    /// per eye from the centred camera. Each is rewritten to post-multiply its clip position by the
+    /// `M_eye` in `cb13`'s first eye slot (`dxbc_stereo::reproject_pinned_eye`), and each per-eye
+    /// re-issue that finds one bound pins `cb13` to the eye it is drawing. No draw is added. The
+    /// tessellation factors, the patch culling, and the distance fades stay centre-derived. A shader
+    /// rewrite, so it needs a shader reload to apply. On by default.
+    pub terrain_patch_per_eye: bool,
     /// Single-pass the far-distance tree impostors (`CTreeImpostorRB`): the impostor vertex shader
     /// writes its clip position from the global billboard view-projection and draws non-instanced, with
     /// no GPU-indirect path sharing it, so the reprojection rewrite plus instance-doubling covers it
@@ -102,6 +112,12 @@ pub struct SinglePassConfig {
     /// the `treeimpostor*` vertex shaders take the same `M_eye` post-multiply as the reprojected scene
     /// families. Requires [`single_pass`](Self::enabled); independent so it can be A/B'd.
     pub tree_impostors: bool,
+    /// Stage the tree impostors' `PixelSize` at one eye's width under the double-wide collapse. The
+    /// impostor type's `Setup` takes it from the render context's display width, which is both eyes'
+    /// there, so each card's pixel footprint came out twice its size and the pixel shader's
+    /// derivative-scaled atlas offset moved the cards' alpha-tested silhouettes. The display width is
+    /// halved for the length of that call. Applies without a shader reload. On by default.
+    pub tree_impostor_pixel_size_per_eye: bool,
     /// Single-pass the tree-trunk/branch render block (`CRenderBlockBark`, "VegetationBark"). Its vertex
     /// shader reads a CPU-baked world-view-projection from `cb1` (not `cb0`) and draws via one of three
     /// kinds (plain, CPU-instanced, or GPU-indirect), so it can't ride the reprojection rewrite; instead
@@ -589,7 +605,9 @@ impl SinglePassConfig {
             reproject: false,
             reproject_camera_only: true,
             terrain: false,
+            terrain_patch_per_eye: true,
             tree_impostors: false,
+            tree_impostor_pixel_size_per_eye: true,
             bark: true,
             foliage: true,
             occluder: false,

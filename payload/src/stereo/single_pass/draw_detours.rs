@@ -10,6 +10,7 @@ use super::*;
 use crate::{
     screenshot::harness::stages::velocity,
     stereo::single_pass::{
+        pinned_eye::Cb13EyePin,
         water_fragment_state::packed_water_context,
         water_gpu_probe::{RawDrawKind, raw_entry, reflection_treatment},
     },
@@ -97,8 +98,14 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                 // only; left to the full binding it would stretch across both. Re-issue it once per
                 // eye with both slots pinned to that eye's half. It still reads the centred `cb0`, so
                 // there is no parallax on it -- but it is present, in both eyes, at the right size.
+                // A pinned-eye shader in the pipeline does get the parallax, from `cb13` pinned to
+                // the eye being drawn.
+                let pin = Cb13EyePin::begin(context);
                 for eye in 0..2 {
                     ensure_collapse_viewport(context, CollapseViewport::Eye(eye));
+                    if let Some(pin) = &pin {
+                        pin.pin(eye);
+                    }
                     velocity::submit(
                         context,
                         "indexed",
@@ -113,6 +120,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                     );
                 }
                 ensure_collapse_viewport(context, CollapseViewport::Full);
+                drop(pin);
                 return;
             }
         }
@@ -398,14 +406,15 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
 /// horizontally about the target centre, and a 2x horizontal stretch is a 2x horizontal *motion* gain
 /// -- the near terrain patches and foliage sliding across the screen as the camera turns. Pinning each
 /// submission to its eye's half is the same deal the unpatched `DrawIndexed` path already takes:
-/// present and correctly sized in both eyes, with no parallax, since `cb0` stays eye 0's.
+/// present and correctly sized in both eyes, with no parallax, since `cb0` stays eye 0's. The
+/// exception is a pipeline carrying a pinned-eye shader (the terrain patch system's): for it `cb13` is
+/// pinned to each eye in turn ([`Cb13EyePin`]), which gives each submission that eye's view.
 ///
 /// Declines outside the collapse and the G-buffer range (elsewhere there is no eye split to inherit),
 /// inside a block-level per-eye re-issue (which has already pinned the viewport for this eye
 /// deliberately -- the [`PER_EYE_REISSUE`] marker), and when the bound vertex shader is patched (it
 /// writes `SV_ViewportArrayIndex` itself and would have to be routed, not pinned; that includes the
-/// tessellated terrain families once `single_pass_terrain` transforms them). `cb13` needs no pinning
-/// here for the same reason: no pristine game shader declares it, so an unpatched draw cannot read it.
+/// tessellated terrain families once `single_pass_terrain` transforms them).
 ///
 /// The re-issue does not raise [`PER_EYE_REISSUE`] itself -- it drives no engine code, only the
 /// trampolines, so nothing it calls can re-enter this module's detours.
@@ -423,10 +432,15 @@ pub(super) fn indirect_per_eye(context: *mut c_void, submit: &dyn Fn(Option<usiz
         INDIRECT_FORWARDED.fetch_add(1, Ordering::Relaxed);
         return false;
     }
+    let pin = Cb13EyePin::begin(context);
     for eye in 0..2 {
         ensure_collapse_viewport(context, CollapseViewport::Eye(eye));
+        if let Some(pin) = &pin {
+            pin.pin(eye);
+        }
         submit(Some(eye));
     }
+    drop(pin);
     // Unconditional, as on every other path that pins a viewport: a leaked eye-half would clip the
     // rest of the frame -- including the fullscreen passes -- to half the target.
     ensure_collapse_viewport(context, CollapseViewport::Full);

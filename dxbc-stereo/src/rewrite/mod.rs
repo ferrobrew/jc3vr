@@ -3,8 +3,10 @@
 //! Rewrites DXBC shader bytecode so one instance-doubled draw renders both eyes. Four functional
 //! areas each target a different shader family: `remap` retargets an opaque model VS's per-eye `cb0`
 //! rows to a mod-owned `cb13`, `reproject` post-multiplies a baked-WVP VS's clip position by a
-//! per-eye `M_eye`, and `terrain` handles the tessellation VS and DS ends of the terrain path. The
-//! shared DXBC scaffolding lives in `common`.
+//! per-eye `M_eye`, and `terrain` handles the tessellation VS and DS ends of the terrain path.
+//! `pinned` is the reprojection for a vertex or domain shader that cannot learn its eye and is drawn
+//! once per eye instead, reading whichever eye the payload pinned `cb13` to. The shared DXBC
+//! scaffolding lives in `common`.
 //!
 //! `ssdecal` is a pixel-shader rewrite: it separates the screen-space decal permutations'
 //! depth-texture UV from the viewport-normalized UV their reconstruction basis needs, so the two can
@@ -30,6 +32,8 @@ pub use lake::{
 };
 mod overlay;
 pub use overlay::localize_screen_overlays;
+mod pinned;
+pub use pinned::reproject_pinned_eye;
 mod planar;
 pub use planar::localize_planar_reflection;
 mod resolve;

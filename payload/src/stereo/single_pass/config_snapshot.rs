@@ -26,7 +26,9 @@ pub(super) enum Flag {
     Reproject,
     ReprojectCameraOnly,
     Terrain,
+    TerrainPatchPerEye,
     TreeImpostors,
+    TreeImpostorPixelSize,
     Bark,
     Foliage,
     Occluder,
@@ -108,7 +110,12 @@ fn store_config_flags() -> u32 {
             | bit(s.reproject, Flag::Reproject)
             | bit(s.reproject_camera_only, Flag::ReprojectCameraOnly)
             | bit(s.terrain, Flag::Terrain)
+            | bit(s.terrain_patch_per_eye, Flag::TerrainPatchPerEye)
             | bit(s.tree_impostors, Flag::TreeImpostors)
+            | bit(
+                s.tree_impostor_pixel_size_per_eye,
+                Flag::TreeImpostorPixelSize,
+            )
             | bit(s.bark, Flag::Bark)
             | bit(s.foliage, Flag::Foliage)
             | bit(s.occluder, Flag::Occluder)

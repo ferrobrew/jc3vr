@@ -78,8 +78,10 @@ mod detour_lifecycle;
 mod draw_detours;
 pub(crate) mod eye_globals;
 mod frame_diagnostics;
+mod impostor_pixel_size;
 mod instanced_exposure;
 mod per_eye_reissue;
+mod pinned_eye;
 pub(crate) mod post_filters;
 mod shader_detours;
 pub(crate) mod shader_identity;
@@ -98,8 +100,10 @@ pub(crate) use detour_lifecycle::{
 };
 use draw_detours::*;
 pub use frame_diagnostics::*;
+pub use impostor_pixel_size::EyeDisplayWidth;
 pub use instanced_exposure::*;
 pub use per_eye_reissue::*;
+pub(crate) use pinned_eye::tag_pinned_eye;
 pub use shader_detours::*;
 pub use shader_policy::*;
 pub use sun::*;
@@ -736,6 +740,18 @@ thread_local! {
     /// back. The D3D layer never sees the name, and the shader pointer is the only identity the
     /// draw-time paths have, so this is the one point where the two can be joined.
     static PATCH_PENDING_NAME: Cell<Option<String>> = const { Cell::new(None) };
+
+    /// Set by the `CreateVertexProgram` hook right before the engine creates the D3D shader from a
+    /// pinned-eye rewrite, so [`create_vertex_shader_detour`] tags it instead of recording it as
+    /// patched: its draws must keep their per-eye submission. Thread-local for the same reason as
+    /// [`PATCH_PENDING`].
+    static PIN_PENDING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Set (or clear) this thread's [`PIN_PENDING`] flag. Called by the `CreateVertexProgram` hook around
+/// the engine's shader creation.
+pub fn set_pin_pending(pending: bool) {
+    PIN_PENDING.with(|flag| flag.set(pending));
 }
 
 /// Set (or clear) this thread's [`PATCH_PENDING`] flag and the pending shader's engine name. Called

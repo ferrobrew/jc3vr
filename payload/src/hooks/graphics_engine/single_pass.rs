@@ -29,13 +29,13 @@ use jc3gi::graphics_engine::{
     graphics_engine::RenderContext,
     render_block::{
         RBIInfo, RenderBlockBark, RenderBlockFoliage, RenderBlockOccluder,
-        RenderBlockWaterReflectionPlane,
+        RenderBlockWaterReflectionPlane, TreeImpostorRBType,
     },
     render_engine::RenderEngine,
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::stereo::single_pass::{BlockIntercept, BoundVsGate};
+use crate::stereo::single_pass::{BlockIntercept, BoundVsGate, EyeDisplayWidth};
 
 /// Where a render block's baked view-projection lives, and how its intercept is gated: the four values
 /// that vary between the render-block detours below, pinned in one place so a block's buffer layout is
@@ -90,6 +90,19 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&RENDER_BLOCK_FOLIAGE_DRAW_BINDER)
         .with_static_binder(&RENDER_BLOCK_FOLIAGE_DRAW_Z_BINDER)
         .with_static_binder(&RENDER_BLOCK_OCCLUDER_DRAW_Z_BINDER)
+        .with_static_binder(&TREE_IMPOSTOR_TYPE_SETUP_BINDER)
+}
+
+/// The tree impostors' per-pass setup stages their `PixelSize` from the render context's display
+/// width; under the double-wide collapse that is held at one eye's for the call
+/// ([`EyeDisplayWidth`]), so the card footprints match an eye-sized render. The impostors themselves
+/// stay one instance-doubled draw.
+#[detour(address = jc3gi::graphics_engine::render_block::TreeImpostorRBType::Setup_ADDRESS)]
+fn tree_impostor_type_setup(this: *mut TreeImpostorRBType, rc: *mut RenderContext) {
+    // SAFETY: `rc` is the live render context the engine passed in, and the guard drops before this
+    // detour returns.
+    let _width = unsafe { EyeDisplayWidth::stage(rc) };
+    TREE_IMPOSTOR_TYPE_SETUP.get().unwrap().call(this, rc);
 }
 
 #[detour(address=jc3gi::graphics_engine::render_block::RenderBlockWaterReflectionPlane::Draw_ADDRESS)]

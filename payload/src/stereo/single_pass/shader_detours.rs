@@ -9,6 +9,7 @@
 use std::sync::LazyLock;
 
 use sha2::{Digest, Sha256};
+use windows::Win32::Graphics::Direct3D11::ID3D11DeviceChild;
 
 use super::*;
 
@@ -36,7 +37,7 @@ pub(super) enum Reacquired {
     /// The hook did see this blob and decided its transform by name ([`remember_vs_transform`]); that
     /// decision was re-applied here. `None` when the decision was to leave the shader pristine, or
     /// when the rewrites it allows all bowed out.
-    Decided(Option<Vec<u8>>),
+    Decided(VsTransform, Option<Vec<u8>>),
     /// The hook never saw this blob, so there is no name to decide with. Fall back to the `cb0` remap,
     /// the only transform decidable from the bytecode alone.
     Rederived(Result<Vec<u8>, DxbcError>),
@@ -77,25 +78,38 @@ pub(super) unsafe extern "system" fn create_vertex_shader_detour(
     // Taken unconditionally, so a name left behind by a create that did not reach the record below
     // cannot be attributed to a later, unrelated shader.
     let pending_name = PATCH_PENDING_NAME.with(Cell::take);
-    let reacquired = (!pending && active() && !bytecode.is_null() && length >= 4).then(|| {
-        let code = unsafe { std::slice::from_raw_parts(bytecode.cast::<u8>(), length) };
-        match cached_vs_transform(code) {
-            // No remap output to hand on (this path did not run one) and no name (the whole reason the
-            // decision had to be made elsewhere), so the terrain log line here is unnamed.
-            Some(transform) => Reacquired::Decided(apply_vs_transform(transform, code, None, None)),
-            None => Reacquired::Rederived(dxbc_stereo::patch_vertex_shader(code)),
-        }
-    });
+    // A pinned-eye blob was substituted by the hook as well, so it short-circuits the re-acquire the
+    // same way.
+    let pin_pending = PIN_PENDING.with(Cell::take);
+    let reacquired = (!pending && !pin_pending && active() && !bytecode.is_null() && length >= 4)
+        .then(|| {
+            let code = unsafe { std::slice::from_raw_parts(bytecode.cast::<u8>(), length) };
+            match cached_vs_transform(code) {
+                // No remap output to hand on (this path did not run one) and no name (the whole reason the
+                // decision had to be made elsewhere), so the terrain log line here is unnamed.
+                Some(transform) => {
+                    Reacquired::Decided(transform, apply_vs_transform(transform, code, None, None))
+                }
+                None => Reacquired::Rederived(dxbc_stereo::patch_vertex_shader(code)),
+            }
+        });
+    // A pinned-eye shader is substituted but must not be recorded as patched: recording it would
+    // instance-double its draws, and it has no instance parity to read. It is tagged instead.
+    let pinned = pin_pending
+        || matches!(
+            &reacquired,
+            Some(Reacquired::Decided(VsTransform::Pinned, Some(_)))
+        );
     let (record, blob, len) = match &reacquired {
-        Some(Reacquired::Decided(Some(transformed))) => {
+        Some(Reacquired::Decided(_, Some(transformed))) => {
             CVS_DECIDED_TRANSFORMED.fetch_add(1, Ordering::Relaxed);
             (
-                true,
+                !pinned,
                 transformed.as_ptr().cast::<c_void>(),
                 transformed.len(),
             )
         }
-        Some(Reacquired::Decided(None)) => {
+        Some(Reacquired::Decided(_, None)) => {
             CVS_DECIDED_PRISTINE.fetch_add(1, Ordering::Relaxed);
             (false, bytecode, length)
         }
@@ -119,7 +133,7 @@ pub(super) unsafe extern "system" fn create_vertex_shader_detour(
             if pending {
                 CVS_PENDING.fetch_add(1, Ordering::Relaxed);
             }
-            (pending, bytecode, length)
+            (pending && !pinned, bytecode, length)
         }
     };
     let generation = vertex_identity_generation();
@@ -131,6 +145,14 @@ pub(super) unsafe extern "system" fn create_vertex_shader_detour(
         && !shader.is_null()
     {
         unsafe { vertex_identity_record(generation, shader, blob, len, pending_name.as_deref()) };
+    }
+    if pinned
+        && hr >= 0
+        && !out.is_null()
+        && let shader = unsafe { *out }
+        && let Some(shader) = unsafe { ID3D11DeviceChild::from_raw_borrowed(&shader) }
+    {
+        tag_pinned_eye(shader);
     }
     if record
         && hr == 0
