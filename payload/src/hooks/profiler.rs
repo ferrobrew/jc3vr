@@ -99,9 +99,11 @@ fn change_render_block_type(
         }
     }
     crate::screenshot::harness::stages::velocity::type_switch(None);
+    crate::screenshot::harness::draw_census::type_switch(None);
     CHANGE_RENDER_BLOCK_TYPE
         .get()
         .unwrap()
         .call(this, ctx, prev, next, inout_count);
     crate::screenshot::harness::stages::velocity::type_switch(Some(next));
+    crate::screenshot::harness::draw_census::type_switch(Some(next));
 }

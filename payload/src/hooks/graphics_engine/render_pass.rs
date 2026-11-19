@@ -63,6 +63,7 @@ fn render_pass_draw(this: *mut RenderPass) {
     if let Some(id) = pass_id {
         crate::screenshot::harness::stages::capture_before_fog_apply(id);
     }
+    crate::screenshot::harness::draw_census::begin_pass();
     let snapshot = pass_id
         .filter(|id| {
             (RenderPassId::PRE_RP_REFLECTION_ATMOSPHERE as i16
@@ -71,6 +72,7 @@ fn render_pass_draw(this: *mut RenderPass) {
         })
         .and_then(|_| unsafe { crate::screenshot::harness::stages::eye_width_snapshot(this) });
     RENDER_PASS_DRAW.get().unwrap().call(this);
+    crate::screenshot::harness::draw_census::end_pass();
     drop(snapshot);
     let Some(id) = pass_id else { return };
     crate::screenshot::harness::stages::capture_late_sky(id);

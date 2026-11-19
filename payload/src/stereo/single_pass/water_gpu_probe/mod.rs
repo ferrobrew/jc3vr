@@ -52,7 +52,7 @@ pub(crate) enum RawDrawKind {
 impl RawDrawKind {
     const COUNT: usize = 5;
 
-    fn name(self) -> &'static str {
+    pub(crate) fn name(self) -> &'static str {
         match self {
             Self::Indexed => "indexed",
             Self::NonIndexed => "non_indexed",
@@ -70,6 +70,8 @@ pub(crate) unsafe fn raw_entry(kind: RawDrawKind, context: *mut c_void) {
     // SAFETY: per this function's contract, `context` is the live immediate context the draw entry
     // was called on.
     unsafe { crate::screenshot::harness::stages::observe_producer_draw(context) };
+    // SAFETY: per this function's contract, `context` is the live immediate context.
+    unsafe { crate::screenshot::harness::draw_census::on_call(kind, context) };
     unsafe { reflection::on_raw_draw(kind, context) };
     unsafe { inputs::on_raw_draw(context) };
     RAW_CAPTURE.with(|state| {

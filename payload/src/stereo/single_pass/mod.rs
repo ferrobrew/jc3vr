@@ -110,7 +110,9 @@ pub use shader_policy::*;
 pub use sun::*;
 pub use viewport::*;
 pub(crate) use water_fragment_state::begin_water_surface;
-pub(crate) use water_gpu_probe::{WaterGpuProbe, begin_water_input_capture, reflection_producer};
+pub(crate) use water_gpu_probe::{
+    RawDrawKind, WaterGpuProbe, begin_water_input_capture, reflection_producer,
+};
 
 pub(crate) use crate::stereo::engine_context::EngineContext;
 

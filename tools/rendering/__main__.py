@@ -12,6 +12,7 @@ commands:
   compare    compare frozen-camera captures
   stages     write native stage diagnostics for a suite manifest
   constants  write native constants diagnostics for a suite manifest
+  census     print a capture's draw census with its shaders named
   viewer     serve the local capture preview
 """
 
@@ -22,6 +23,7 @@ COMMANDS = {
     "compare": "tools.rendering.comparison.images",
     "stages": "tools.rendering.comparison.stages",
     "constants": "tools.rendering.comparison.constants",
+    "census": "tools.rendering.comparison.draw_census",
     "viewer": "tools.rendering.viewer.server",
 }
 

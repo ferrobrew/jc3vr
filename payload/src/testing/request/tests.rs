@@ -592,6 +592,27 @@ fn late_sky_stages_require_a_screenshot_without_motion() {
 }
 
 #[test]
+fn a_draw_census_requires_a_screenshot_without_motion() {
+    assert!(matches!(
+        read("command = 'screenshot'\nid = 'shot'\ndraw_census = true"),
+        Ok(Request::Screenshot {
+            draw_census: true,
+            ..
+        })
+    ));
+    assert!(matches!(
+        read("command = 'record'\ndraw_census = true"),
+        Err(RequestErrorKind::InvalidDrawCensus)
+    ));
+    assert!(matches!(
+        read(
+            "command = 'screenshot'\nid = 'shot'\ndraw_census = true\n[motion_capture]\nphase = 1"
+        ),
+        Err(RequestErrorKind::InvalidDrawCensus)
+    ));
+}
+
+#[test]
 fn water_inputs_are_explicit_and_screenshot_only() {
     assert!(matches!(
         read("command = 'screenshot'\nid = 'shot'\nwater_inputs = true"),

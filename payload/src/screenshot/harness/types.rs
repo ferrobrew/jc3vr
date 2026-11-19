@@ -99,6 +99,8 @@ pub(crate) struct CapturedFrame {
     pub(crate) sun_depth_clip: Option<crate::screenshot::harness::SunDepthClip>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) resolve_inputs: Option<crate::screenshot::harness::resolve_probe::Capture>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) draw_census: Option<crate::screenshot::harness::draw_census::DrawCensus>,
     pub(crate) single_pass: Option<FrameDiagnostics>,
 }
 

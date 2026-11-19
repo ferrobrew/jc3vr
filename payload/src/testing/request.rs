@@ -83,6 +83,7 @@ enum Request {
         second_patch_ordinal: Option<u8>,
         water_surface_inputs: bool,
         late_sky_stages: bool,
+        draw_census: bool,
         fog_inputs: bool,
         group_sources: bool,
         group_inputs: bool,
@@ -187,6 +188,7 @@ enum RequestErrorKind {
     InvalidWaterDraw,
     InvalidSurfaceInputs,
     InvalidLateSkyStages,
+    InvalidDrawCensus,
     InvalidResolveSamples,
     InvalidCascadeScale,
     SunInputsOnCommand(Command),
@@ -268,6 +270,9 @@ impl std::fmt::Display for RequestError {
             ),
             RequestErrorKind::InvalidLateSkyStages => {
                 write!(f, "late_sky_stages requires a screenshot without motion")
+            }
+            RequestErrorKind::InvalidDrawCensus => {
+                write!(f, "draw_census requires a screenshot without motion")
             }
             RequestErrorKind::InvalidSurfaceInputs => write!(
                 f,
@@ -355,6 +360,8 @@ struct RequestFile {
     water_surface_inputs: bool,
     #[serde(default)]
     late_sky_stages: bool,
+    #[serde(default)]
+    draw_census: bool,
     #[serde(default)]
     fog_inputs: bool,
     #[serde(default)]
@@ -674,6 +681,9 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
     if file.late_sky_stages && (file.command != Command::Screenshot || motion_capture.is_some()) {
         return Err(error(RequestErrorKind::InvalidLateSkyStages));
     }
+    if file.draw_census && (file.command != Command::Screenshot || motion_capture.is_some()) {
+        return Err(error(RequestErrorKind::InvalidDrawCensus));
+    }
     if file
         .second_patch_ordinal
         .is_some_and(|second| !file.patch_draw_ordinal.is_some_and(|first| first < second))
@@ -841,6 +851,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
             second_patch_ordinal: file.second_patch_ordinal,
             water_surface_inputs: file.water_surface_inputs,
             late_sky_stages: file.late_sky_stages,
+            draw_census: file.draw_census,
             fog_inputs: file.fog_inputs,
             group_sources: file.group_sources,
             group_inputs: file.group_inputs,
@@ -937,6 +948,7 @@ fn act(request: Request) {
             second_patch_ordinal,
             water_surface_inputs,
             late_sky_stages,
+            draw_census,
             fog_inputs,
             group_sources,
             group_inputs,
@@ -1012,6 +1024,7 @@ fn act(request: Request) {
                 second_patch_ordinal,
                 water_surface_inputs,
                 late_sky_stages,
+                draw_census,
                 fog_inputs,
                 group_sources,
                 group_inputs,

@@ -362,6 +362,7 @@ fn submit_impl(
     buffer: Option<*mut c_void>,
     draw: impl FnOnce(),
 ) {
+    harness::draw_census::on_submission(kind.ends_with("_promoted"));
     let mut draw = Some(draw);
     ACTIVE.with_borrow_mut(|active| {
         let Some(t) = active.as_mut().filter(|t| t.error.is_none()) else {

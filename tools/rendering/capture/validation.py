@@ -45,7 +45,7 @@ def physical_water_mvp(metadata, eye):
 
 def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capture, mode: Mode | None = None,
                      generation: int | None = None, motion_capture: PhaseCapture | None = None,
-                     water_inputs: bool = False, sun_inputs: bool = False,
+                     water_inputs: bool = False, sun_inputs: bool = False, draw_census: bool = False,
                      shader_identity: bool = False, resolve_inputs: bool = False,
                      sun_depth_clip=None, water_reflection=None, cascade_scale: CascadeScale | None = None, water_surface_inputs: bool = False, water_tess_draw: int | None = None, patch_draw_ordinal: int | None = None, second_patch_ordinal: int | None = None, base_eye_vp: bool | None = None, group_atlas_scale: bool | None = None, aa_color_edge: bool | None = None, patch63_hull: bool | None = None, owner_four_domain: bool | None = None, lake_color_mirror: bool | None = None, lake_depth_edge: bool | None = None, lake_ds_mvp: bool | None = None, card_atlas: bool | None = None, group_fade: bool | None = None, group_cards: bool = False, group_residual: bool = False, lake_inner_edge: bool | None = None, aa_weights: bool = False, aa_draws: bool = False, lake_owner_four: bool = False, lake_producer: bool = False, lake_gradients: bool = False, lake_waves: bool = False, lake_normals: bool = False, lake_displacement: bool = False, lake_samplers: bool = False, writer_domain_camera: bool | None = None, tess_writer: bool = False, tess_owners: bool = False, base_projection: bool = False, base_sources: bool = False, terrain_interval: bool = False, group_inputs: bool = False, group_sources: bool = False, resolve_shadow: bool = False, dof_inputs: bool = False, fog_generation: bool = False, fog_inputs: bool = False, late_sky_stages: bool = False, resolve_samples: bool = False, resolve_eye_camera: bool | None = None, ssr_bracket: bool = False, ssr_operands: bool = False, ssr_prepare: bool = False, ssr_history: bool = False, early_depth: bool = False, velocity_trace: bool = False, bark_color_trace: bool = False, terrain_sources: bool = False, residual_bark: bool = False, left_interval: bool = False, impostor_inputs: bool = False, interval_trace: bool = False, post_geometry: bool = False, dof_edge_local: bool | None = None, fog_local_uv: bool | None = None, terrain_camera: bool | None = None, extra_bark_dither: bool | None = None, left_atlas_scale: bool | None = None, impostor_scale: bool | None = None, color_dither: bool | None = None, bark_dither: bool | None = None, proxy_eye: bool | None = None, march_eye: bool | None = None, veto_eye: bool | None = None, grid_eye: bool | None = None, history_center: bool | None = None) -> NativeCapture | Capture:
     metadata = read_object(folder / f"{capture_id}.capture.json")
@@ -137,6 +137,10 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
             raise ProtocolError("visual protocol: screenshot cascade_scale request mismatch")
         if late_sky_stages:
             validate_late_sky_stages(folder, capture_id, metadata, mode)
+        if draw_census:
+            validate_draw_census(metadata, mode)
+        elif metadata.get("draw_census") is not None:
+            raise ProtocolError("draw census: unrequested census")
         if tess_writer:
             validate_tess_writer(metadata, capture_id, mode, writer_domain_camera)
         elif terrain_sources:
@@ -399,6 +403,19 @@ def validate_capture(folder: Path, capture_id: str, result: NativeCapture | Capt
     if (width, height) != (capture.width, capture.height) or width != capture.eye_width * 2 or height != capture.eye_height:
         raise SessionError("capture: PNG dimensions disagree with the eye metadata")
     return capture
+
+
+def validate_draw_census(metadata: dict, mode: Mode) -> None:
+    """The census rides on the stereo draw path's detours, which only the collapse installs, so only a
+    single-pass capture is required to carry entries."""
+    census = metadata.get("draw_census")
+    if not isinstance(census, dict) or census.get("frame") != metadata.get("predicted_display_time_ns"):
+        raise ProtocolError("draw census: missing census for the captured frame")
+    entries = census.get("entries")
+    if not isinstance(entries, list):
+        raise ProtocolError("draw census: entries must be a list")
+    if mode == Mode.SINGLE_PASS and (census.get("error") is not None or not entries):
+        raise ProtocolError(f"draw census: {census.get('error') or 'no entries'}")
 
 
 def validate_late_sky_stages(folder: Path, capture_id: str, metadata: dict, mode: Mode) -> None:

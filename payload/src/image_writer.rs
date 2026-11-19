@@ -937,6 +937,7 @@ mod tests {
             cascade_scale: None,
             sun_depth_clip: None,
             resolve_inputs: None,
+            draw_census: None,
             single_pass: None,
             constants: Default::default(),
             stages: [(Stage::MainColor, 0), (Stage::PreAa, 0), (Stage::PostAa, 1)]

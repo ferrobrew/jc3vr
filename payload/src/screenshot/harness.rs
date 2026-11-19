@@ -11,6 +11,7 @@ use anyhow::Context as _;
 use parking_lot::Mutex;
 pub(crate) mod bound_buffer;
 pub(crate) mod constants;
+pub(crate) mod draw_census;
 pub(crate) mod patch_draw;
 pub(crate) mod resolve_probe;
 pub(crate) mod stages;
@@ -153,6 +154,7 @@ pub(crate) struct CaptureRequest {
     pub second_patch_ordinal: Option<u8>,
     pub water_surface_inputs: bool,
     pub late_sky_stages: bool,
+    pub draw_census: bool,
     pub fog_inputs: bool,
     pub group_sources: bool,
     pub group_inputs: bool,
@@ -462,6 +464,7 @@ fn request_with_phase(id: RequestId, target_phase: Option<u32>, options: Capture
         active.second_patch_ordinal = options.second_patch_ordinal;
         active.water_surface_inputs = options.water_surface_inputs;
         active.late_sky_stages = options.late_sky_stages;
+        active.draw_census = options.draw_census;
         active.fog_inputs = options.fog_inputs;
         active.group_sources = options.group_sources;
         active.group_inputs = options.group_inputs;
@@ -631,6 +634,7 @@ fn admit(
         second_patch_ordinal: None,
         water_surface_inputs: false,
         late_sky_stages: false,
+        draw_census: false,
         fog_inputs: false,
         group_sources: false,
         group_inputs: false,
@@ -749,6 +753,15 @@ pub(crate) fn requested_water_diagnostic() -> Option<WaterReflection> {
         t.supported(dispatch::mode(), active.water_tess_draw)
             && matches!(active.phase, Phase::Pending)
     })
+}
+
+/// The frame a requested draw census records, while that frame is drawing.
+pub(crate) fn draw_census_frame() -> Option<i64> {
+    if !wants_eyes() || !STATE.lock().active.as_ref().is_some_and(|a| a.draw_census) {
+        return None;
+    }
+    diagnostic_capture_id()?;
+    frame_identity()
 }
 
 pub(crate) fn late_sky_stages_requested() -> bool {
@@ -1442,6 +1455,9 @@ pub(crate) fn capture(
         comparison_inputs,
         stages: stage_records,
         constants: constants::take(frame.unwrap()),
+        draw_census: active
+            .draw_census
+            .then(|| draw_census::take(frame.unwrap())),
         resolve_inputs,
         water_reflection: active.water_reflection,
         aa_weights: active.aa_weights.then_some(true),
@@ -1604,6 +1620,7 @@ struct Active {
     second_patch_ordinal: Option<u8>,
     water_surface_inputs: bool,
     late_sky_stages: bool,
+    draw_census: bool,
     fog_inputs: bool,
     group_sources: bool,
     group_inputs: bool,
@@ -1981,6 +1998,7 @@ mod tests {
                     second_patch_ordinal: None,
                     water_surface_inputs: false,
                     late_sky_stages: false,
+                    draw_census: false,
                     fog_inputs: false,
                     group_sources: false,
                     group_inputs: false,

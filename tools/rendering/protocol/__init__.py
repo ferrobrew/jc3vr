@@ -278,6 +278,7 @@ class Request:
     fog_generation: bool | None = None
     fog_inputs: bool | None = None
     late_sky_stages: bool | None = None
+    draw_census: bool | None = None
     water_surface_inputs: bool | None = None
     second_patch_ordinal: int | None = None
     patch_draw_ordinal: int | None = None
@@ -408,6 +409,8 @@ class Request:
             raise ProtocolError("fog inputs require the pass brackets")
         if self.late_sky_stages is not None and (self.command != Command.SCREENSHOT or self.motion_capture is not None or self.late_sky_stages is not True):
             raise ProtocolError("visual protocol: late_sky_stages requires a screenshot without motion")
+        if self.draw_census is not None and (self.command != Command.SCREENSHOT or self.motion_capture is not None or self.draw_census is not True):
+            raise ProtocolError("visual protocol: draw_census requires a screenshot without motion")
         if self.water_inputs is not None and (self.command != Command.SCREENSHOT or
                                               type(self.water_inputs) is not bool):
             raise ProtocolError("visual protocol: only screenshot requests accept a boolean water_inputs")
