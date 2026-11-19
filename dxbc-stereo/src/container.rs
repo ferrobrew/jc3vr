@@ -130,6 +130,9 @@ pub enum DxbcError {
     NoResolveInputs,
     NoLakeReflection,
     NoLakeRefraction,
+    /// The pixel shader lays no screen-space overlay over the frame in a shape the overlay rewrite
+    /// recognises; the caller should leave it untouched.
+    NoScreenOverlay,
 }
 
 impl fmt::Display for DxbcError {
@@ -164,6 +167,7 @@ impl fmt::Display for DxbcError {
             }
             DxbcError::NoEyeLane => "dxbc: no free TEXCOORD3.z lane to carry the eye index",
             DxbcError::NoResolveInputs => "dxbc: unsupported deferred input sequence",
+            DxbcError::NoScreenOverlay => "dxbc: no recognised screen-space overlay lookup",
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
             DxbcError::NoLakeRefraction => {
                 "dxbc: missing unique lake refraction displacement scale"

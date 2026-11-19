@@ -301,6 +301,20 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.composite_overlays_per_eye,
+                        "Vignette and lens dirt per eye",
+                    )
+                    .on_hover_text(
+                        "Maps the final composite's vignette and lens dirt over each eye. Off, both \
+                         stretch across the whole double-wide frame, darkening each eye's outer edge. \
+                         Reloads shaders to apply: it is a shader rewrite.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
                 ui.checkbox(&mut cfg.stereo.single_pass.ssao_per_eye, "SSAO per eye")
                     .on_hover_text(
                         "Another of the seven depth-reconstruction passes. Hazardous: SSAO advances a \

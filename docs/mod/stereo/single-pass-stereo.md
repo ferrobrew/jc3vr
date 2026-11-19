@@ -611,6 +611,7 @@ is marked with its actual default.
 | `single_pass.ssr_per_eye` | On | Screen-space reflections. The `m_UseComputeBlur` epilogue's two dispatches are issued on the second run only, once, over both halves. |
 | `single_pass.subsurface_per_eye` | On | Screen-space subsurface skin. |
 | `single_pass.dof_per_eye` | On | Depth of field: splits `CDownScale2x2PackFocus::Apply`, whose closing pack draw is the sole consumer of the DoF basis. Its five-dispatch near-field prologue reads no view or projection matrix, so it runs whole-target on the first run only and the second run reads the same coverage. |
+| `single_pass.composite_overlays_per_eye` | On | The final composite's vignette and lens dirt, looked up by an eye-local UV in every `comp_*` and `dof_*` permutation that binds them (`dxbc_stereo::localize_screen_overlays`). Needs a shader reload. |
 | `single_pass.ssdecal_per_eye` | On | Screen-space decals: per-eye basis plus a spliced depth-UV bias in the 12 `ssdecal` pixel shaders (mechanism 2). |
 | `single_pass.water_uv_per_eye` | On | Legacy water's projective screen UV (mechanism 3). Not yet verified in the headset. |
 | `single_pass.clustered_per_eye` | On | Per-eye clustered froxel light grid. |

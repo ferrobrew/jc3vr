@@ -6,9 +6,10 @@
 //! per-eye `M_eye`, and `terrain` handles the tessellation VS and DS ends of the terrain path. The
 //! shared DXBC scaffolding lives in `common`.
 //!
-//! `ssdecal` is the one pixel-shader rewrite: it separates the screen-space decal permutations'
+//! `ssdecal` is a pixel-shader rewrite: it separates the screen-space decal permutations'
 //! depth-texture UV from the viewport-normalized UV their reconstruction basis needs, so the two can
-//! address differently-sized spaces.
+//! address differently-sized spaces. `overlay` maps the final composite's screen-space overlays over
+//! one eye of a double-wide target.
 
 mod common;
 mod lake;
@@ -19,6 +20,8 @@ pub use lake::{
     trace_lake_gradients, trace_lake_inner_edge, trace_lake_lighting, trace_lake_normals,
     trace_lake_response, trace_lake_samples, trace_lake_waves,
 };
+mod overlay;
+pub use overlay::localize_screen_overlays;
 mod resolve;
 pub use resolve::{
     impostor_atlas_scale, local_aa_neighbor, local_bark_dither, local_dof_edge,

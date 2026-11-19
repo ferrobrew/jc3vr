@@ -310,6 +310,14 @@ pub struct SinglePassConfig {
     /// matrix (which wants the per-eye value) and the depth fetch (which wants the double-wide one), so
     /// they must stay separate. On by default.
     pub ssdecal_per_eye: bool,
+    /// Map the final composite's screen-space overlays, the edge-fade vignette and the lens dirt,
+    /// over each eye rather than over the whole double-wide target.
+    ///
+    /// The composite permutations look both up by the screen UV, which under the collapse spans both
+    /// eyes, so each eye gets half of the overlay stretched to twice its width: a vignette that
+    /// darkens each eye's outer edge and brightens the seam. A shader rewrite, so it needs a shader
+    /// reload to apply. On by default.
+    pub composite_overlays_per_eye: bool,
     /// Requires [`single_pass_reconstruct_per_eye`](Self::reconstruct_per_eye), and rides on the
     /// off-axis froxel tile-bounds override: build the clustered
     /// (froxel) light grid **per eye** as well, instead of building it once with eye 0's projection
@@ -563,6 +571,7 @@ impl SinglePassConfig {
             subsurface_per_eye: true,
             dof_per_eye: true,
             ssdecal_per_eye: true,
+            composite_overlays_per_eye: true,
             clustered_per_eye: true,
             clustered_per_eye_light_view: true,
             uniform_viewport_slots: true,

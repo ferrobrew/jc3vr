@@ -59,6 +59,8 @@ static PATCHED: AtomicUsize = AtomicUsize::new(0);
 /// The number of screen-space decal permutations whose depth fetch has been biased since injection --
 /// twelve per bundle load. Read on eject to decide whether the pristine shaders need restoring.
 static SSDECAL_BIASED: AtomicUsize = AtomicUsize::new(0);
+/// How many composite permutations have had their screen overlays mapped per eye this session.
+static OVERLAYS_LOCALIZED: AtomicUsize = AtomicUsize::new(0);
 static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 /// Read a shader program's engine debug name (a null-terminated C string in
@@ -211,10 +213,15 @@ fn create_fragment_program(
     let patch_pcf = Config::lock_query(|c| c.stereo.patch_shadow_pcf_hash);
     // The screen-space decal permutations' depth-UV bias, the one rewrite here that *grows* the blob.
     let bias_ssdecal = ss_decal::shader_rewrite_enabled();
+    // The final composite's vignette and lens dirt, mapped over one eye instead of the whole
+    // double-wide target. Baked into the bytecode, so it is only right while the collapse is live;
+    // the debug UI requests a reload when the switch changes.
+    let localize_overlays = crate::stereo::single_pass::collapse_active()
+        && Config::lock_query(|c| c.stereo.single_pass.composite_overlays_per_eye);
     // Skip patching once eject begins, so the shader restore's bounce re-creates pristine fragment
     // shaders (matching the vertex side) and the clean game keeps none of the mod's edits.
     if !crate::is_shutting_down()
-        && (patch_pcf || bias_ssdecal)
+        && (patch_pcf || bias_ssdecal || localize_overlays)
         && let Some(p) = unsafe { params.as_mut() }
     {
         let size = p.m_Size as usize;
@@ -244,7 +251,18 @@ fn create_fragment_program(
                     "ssdecal: depth-UV biased ({count} permutations so far)",
                 );
             }
-            if pcf > 0 || biased {
+            // Structural as well: the rewrite declines every shader that binds neither overlay.
+            let mut localized = false;
+            if localize_overlays && let Ok(blob) = dxbc_stereo::localize_screen_overlays(&copy) {
+                copy = blob;
+                localized = true;
+                let count = OVERLAYS_LOCALIZED.fetch_add(1, Ordering::Relaxed) + 1;
+                tracing::debug!(
+                    target: "single_pass",
+                    "composite: screen overlays mapped per eye ({count} permutations so far)",
+                );
+            }
+            if pcf > 0 || biased || localized {
                 // Unlike the in-place byte patches, the decal rewrite splices an instruction in, so
                 // `m_Size` has to move with `m_Code` or the engine hands D3D a container whose chunk
                 // table runs past the declared length. Both are restored after the copying call.
@@ -480,6 +498,7 @@ pub fn restore_original_shaders_on_eject() {
     let patched_anything = crate::stereo::single_pass::has_patched_shaders()
         || patched_count() > 0
         || SSDECAL_BIASED.load(Ordering::Relaxed) > 0
+        || OVERLAYS_LOCALIZED.load(Ordering::Relaxed) > 0
         || hull_forwarded > 0
         || domain_reprojected > 0;
     if !patched_anything {
