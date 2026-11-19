@@ -20,15 +20,24 @@ const STEREO_CB_REGISTER: u32 = 13;
 const STEREO_CB_ROWS: usize = 10;
 /// The row where the reprojection `M_eye` block begins (`dxbc_stereo::MEYE_ROW_BASE`).
 const MEYE_ROW_BASE: usize = 10;
-/// The full `cb13` size: the remap block plus a four-rows-per-eye `M_eye` block for the reprojection
-/// rewrite (`dxbc_stereo::STEREO_REPROJ_CB_ROWS`). Both idioms bind the same `b13` buffer.
-pub(super) const STEREO_CB_TOTAL_ROWS: usize = 18;
+/// The row of eye 0's copy of the render camera's position (`dxbc_stereo::CLIP_ORIGIN_ROW_BASE`), after
+/// the `M_eye` block; eye `e`'s copy is five rows on per eye, at the stride of the remap block.
+const CLIP_ORIGIN_ROW_BASE: usize = 18;
+/// The `cb0` row the clip-origin copies mirror (`dxbc_stereo::CLIP_ORIGIN_CB0_ROW`).
+const CLIP_ORIGIN_SOURCE_ROW: usize = 9;
+/// The full `cb13` size: the remap block, a four-rows-per-eye `M_eye` block for the reprojection
+/// rewrite, and each eye's copy of the render camera's position for the remap's per-eye clip origin
+/// (`dxbc_stereo::STEREO_ORIGIN_CB_ROWS`). Every idiom binds the same `b13` buffer.
+pub(super) const STEREO_CB_TOTAL_ROWS: usize = 24;
 
 // Keep the payload's cb13 layout in lockstep with the rewriter that reads it.
 const _: () = {
     assert!(STEREO_CB_ROWS == dxbc_stereo::STEREO_CB_ROWS as usize);
     assert!(MEYE_ROW_BASE == dxbc_stereo::MEYE_ROW_BASE as usize);
-    assert!(STEREO_CB_TOTAL_ROWS == dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize);
+    assert!(CLIP_ORIGIN_ROW_BASE == dxbc_stereo::CLIP_ORIGIN_ROW_BASE as usize);
+    assert!(CLIP_ORIGIN_SOURCE_ROW == dxbc_stereo::CLIP_ORIGIN_CB0_ROW as usize);
+    assert!(STEREO_CB_TOTAL_ROWS == dxbc_stereo::STEREO_ORIGIN_CB_ROWS as usize);
+    assert!(STEREO_CB_TOTAL_ROWS >= dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize);
     assert!(STEREO_CB_REGISTER == dxbc_stereo::STEREO_CB_REGISTER);
 };
 
@@ -98,8 +107,14 @@ fn mirror_rows(engine: &RenderEngine) -> [Vector4; STEREO_CB_TOTAL_ROWS] {
             rows[eye * PER_EYE_SOURCE_ROWS.len() + k] = vp[src];
         }
         write_meye(&mut rows, eye, glam::Mat4::IDENTITY);
+        rows[clip_origin_row(eye)] = vp[CLIP_ORIGIN_SOURCE_ROW];
     }
     rows
+}
+
+/// The row of eye `eye`'s copy of the render camera's position.
+pub(super) const fn clip_origin_row(eye: usize) -> usize {
+    CLIP_ORIGIN_ROW_BASE + eye * PER_EYE_SOURCE_ROWS.len()
 }
 
 /// Write eye `e`'s reprojection matrix into the `M_eye` block (`cb13[MEYE_ROW_BASE + 4*e ..]`), one
@@ -183,6 +198,17 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
                 eye_campos.y,
                 eye_campos.z,
                 center_campos.data[3],
+            ],
+        };
+        // The render camera's position, which the clip-origin shaders subtract in place of the pass
+        // camera's, moved by the same eye offset.
+        let origin = engine.m_VPGlobalConstData[CLIP_ORIGIN_SOURCE_ROW].data;
+        rows[clip_origin_row(eye)] = Vector4 {
+            data: [
+                origin[0] + world_offset.x,
+                origin[1] + world_offset.y,
+                origin[2] + world_offset.z,
+                origin[3],
             ],
         };
 
@@ -388,7 +414,7 @@ impl Cb13Buffer {
     }
 }
 
-/// Copy eye `eye`'s view-projection rows, camera position, and `M_eye` block over **both** eye slots of
+/// Copy eye `eye`'s view-projection rows, camera position, `M_eye` block, and clip origin over **both** eye slots of
 /// a `cb13` row set. A patched shader then reads the same eye whichever parity it computes.
 pub(super) fn pin_rows_to_eye(
     rows: &[Vector4; STEREO_CB_TOTAL_ROWS],
@@ -401,6 +427,7 @@ pub(super) fn pin_rows_to_eye(
             .copy_from_slice(&rows[eye * stride..(eye + 1) * stride]);
         pinned[MEYE_ROW_BASE + slot * 4..MEYE_ROW_BASE + slot * 4 + 4]
             .copy_from_slice(&rows[MEYE_ROW_BASE + eye * 4..MEYE_ROW_BASE + eye * 4 + 4]);
+        pinned[clip_origin_row(slot)] = rows[clip_origin_row(eye)];
     }
     pinned
 }

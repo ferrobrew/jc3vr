@@ -450,7 +450,12 @@ pub struct RenderEngine {
     /// 14--24, and [`SetAllGlobalShaderProgramConstants`](crate::graphics_engine::render_engine::RenderEngine::SetAllGlobalShaderProgramConstants)
     /// uploads the whole block to the GPU. Row layout (row = float4 index): 0--3 the full
     /// (translation-bearing) view-projection, 4 the camera world position, 5 the camera forward
-    /// axis, 9 the camera world position with `w = 1`, 14--24 fog and atmospheric scattering,
+    /// axis, 9 the render camera's world position with `w = 1` (written only by
+    /// [`SetGlobalShaderConstants`](crate::graphics_engine::render_engine::RenderEngine::SetGlobalShaderConstants), from
+    /// `CCameraManager::GetRenderCamera`, so a pass whose context carries another camera keeps the
+    /// render camera's position here while rows 4 and 5 follow the pass; the road surfaces and the
+    /// `roadbias` model permutations subtract this row, not row 4, before the offset
+    /// view-projection), 14--24 fog and atmospheric scattering,
     /// 29--32 the translation-free
     /// [`m_OffsetViewProjection`](crate::graphics_engine::graphics_engine::RenderContext::m_OffsetViewProjection)
     /// (the matrix camera-relative opaque geometry multiplies by), 33--36 the previous
@@ -669,7 +674,7 @@ impl RenderEngine {
     pub const SetGlobalShaderProgramCameraConstants_ADDRESS: usize = 0x140186370;
     /// Refreshes the per-view rows of [`m_VPGlobalConstData`](crate::graphics_engine::render_engine::RenderEngine::m_VPGlobalConstData)
     /// from a [`RenderContext`](crate::graphics_engine::graphics_engine::RenderContext): the full view-projection (rows 0--3), the camera world position
-    /// and forward axis (rows 4, 5, 9), the offset view-projection (rows 29--32), the previous
+    /// and forward axis (rows 4 and 5; row 9 is not among them), the offset view-projection (rows 29--32), the previous
     /// view-projection (rows 33--36), the frustum planes (rows 38--43), the previous offset
     /// view-projection (rows 44--47), and the previous camera position (row 48), then falls
     /// through to `SetFog`. Called by [`RenderPass::Draw`](crate::graphics_engine::render_pass::RenderPass::Draw)

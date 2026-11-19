@@ -364,6 +364,22 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.clip_origin_per_eye,
+                        "Road clip origin per eye",
+                    )
+                    .on_hover_text(
+                        "The road surfaces and the road-biased models subtract the render camera's \
+                         position, not the pass camera's, before projecting. Read per eye, each eye \
+                         projects them from its own position. Off, both eyes project them from the \
+                         centred camera, so the road's texture slides half the eye distance across \
+                         its surface. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
                 let (rewritten, declined) =
                     crate::stereo::single_pass::eye_camera::screen_door_counts();
                 ui.weak(format!(
@@ -470,6 +486,23 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                         "Computes ambient occlusion for each eye's half in the pass's one run: each \
                          eye's basis and view rotation, taps kept to the eye's half and scaled to it, \
                          and eye-local noise. Reloads shaders to apply: it is a shader rewrite.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.ao_volumes_per_eye,
+                        "Ambient-occlusion volumes per eye",
+                    )
+                    .on_hover_text(
+                        "Draws the ambient-occlusion boxes and spheres once for both eyes: the \
+                         volume is projected into each eye, and each pixel samples its own eye's \
+                         depth and maps it through its own eye's camera. Off, each eye's half reads \
+                         the depth of the wrong place through the centred camera, which in tunnels \
+                         and under cover shows as an edge down the middle of each eye. Reloads \
+                         shaders to apply.",
                     )
                     .changed()
                 {

@@ -70,10 +70,18 @@ const VEGETATION_REPROJECT_NAME_PREFIXES: &[&str] = &["treeimpostor"];
 /// the draw path promotes to two instances for a patched shader (`draw_detour`).
 const STATIC_LIGHT_REPROJECT_NAME_PREFIXES: &[&str] = &["lightsource"];
 
+/// The vertex shader of the ambient-occlusion volumes (`CRenderBlockAOBox`), gated by the
+/// [`ao_volumes_per_eye`](crate::stereo::config::SinglePassConfig::ao_volumes_per_eye) flag. It
+/// projects the box's corners through the full view-projection (`cb0[0..3]`), which the remap leaves
+/// alone, and hands the pixel shader a projective screen UV derived from that clip position; the
+/// reprojection moves the box into each eye, and the pixel-shader rewrite stops reading that UV.
+const AO_VOLUME_REPROJECT_NAME: &str = "aobox";
+
 /// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: the
 /// `single_pass_reproject` flag is on and the name is on [`REPROJECT_NAME_PREFIXES`], the
 /// `single_pass_tree_impostors` flag is on and the name is on [`VEGETATION_REPROJECT_NAME_PREFIXES`],
-/// or the static-light flag is on and the name is on [`STATIC_LIGHT_REPROJECT_NAME_PREFIXES`].
+/// the static-light flag is on and the name is on [`STATIC_LIGHT_REPROJECT_NAME_PREFIXES`], or the
+/// ambient-occlusion volume flag is on and the name is [`AO_VOLUME_REPROJECT_NAME`].
 /// Called from the `CreateVertexProgram` hook when `patch_vertex_shader` reports no per-eye `cb0`
 /// operands.
 pub fn should_reproject(name: Option<&str>) -> bool {
@@ -90,6 +98,7 @@ pub fn should_reproject(name: Option<&str>) -> bool {
             && STATIC_LIGHT_REPROJECT_NAME_PREFIXES
                 .iter()
                 .any(|p| name.starts_with(p)))
+        || (flags.has(Flag::AoVolumes) && name == AO_VOLUME_REPROJECT_NAME)
 }
 
 /// Whether a scene family the `cb0` remap *claims* should be reprojected instead, because the only
@@ -254,6 +263,19 @@ pub enum VsTransform {
     None,
 }
 
+/// The `cb0` per-eye remap of a vertex shader, reading the render camera's position per eye where
+/// the shader takes its clip origin from it and
+/// [`clip_origin_per_eye`](crate::stereo::config::SinglePassConfig::clip_origin_per_eye) is on.
+/// Decided at shader creation, so a change to the switch applies at the next shader reload.
+pub fn remap_vertex_shader(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
+    let origin = if Config::lock_query(|c| c.stereo.single_pass.clip_origin_per_eye) {
+        dxbc_stereo::ClipOrigin::PerEye
+    } else {
+        dxbc_stereo::ClipOrigin::Unchanged
+    };
+    dxbc_stereo::patch_vertex_shader_with(code, origin)
+}
+
 /// Resolve which single-pass transform a vertex shader is to be given, from its engine name and the
 /// outcome of the `cb0` remap on its bytecode. Callers that a block intercept owns must pass
 /// [`VsTransform::None`] to [`remember_vs_transform`] instead of consulting this.
@@ -290,7 +312,7 @@ pub fn apply_vs_transform(
     remapped: Option<Vec<u8>>,
     name: Option<&str>,
 ) -> Option<Vec<u8>> {
-    let remap = || remapped.or_else(|| dxbc_stereo::patch_vertex_shader(code).ok());
+    let remap = || remapped.or_else(|| remap_vertex_shader(code).ok());
     match transform {
         VsTransform::Remap => remap(),
         VsTransform::ReprojectOrRemap => dxbc_stereo::reproject_vertex_shader(code)

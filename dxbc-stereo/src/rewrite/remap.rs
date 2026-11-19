@@ -12,7 +12,10 @@
 //!    eye to its `cb13` row base -- the viewport write happens first, so overwriting the temp with
 //!    the scaled value is safe.
 //! 3. Remap every `cb0[{4,29..32}]` operand to the register-relative `cb13[rBase.x + k]` (`k = 4`
-//!    for the camera row, `n - 29` for the view-projection rows).
+//!    for the camera row, `n - 29` for the view-projection rows). With [`ClipOrigin::PerEye`], a
+//!    shader that reads the view-projection rows but not `cb0[4]` takes the camera position it
+//!    subtracts before them from `cb0[9]`, the render camera's, and every `cb0[9]` operand becomes
+//!    `cb13[rBase.x + CLIP_ORIGIN_ROW_BASE]`, the eye's copy of that row.
 //! 4. Extend `ISGN`/`OSGN` with the new elements, and set bit 13 of `SFI0`
 //!    (`VPAndRTArrayIndexFromAnyShaderFeedingRasterizer`) so the viewport output is legal from a
 //!    vertex shader.
@@ -24,25 +27,42 @@ use crate::{
     PER_EYE_CB0_ROWS,
     container::{Dxbc, DxbcError},
     rewrite::common::{
-        CB_ACCESS_DYNAMIC_INDEXED, OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_SGV,
-        OPCODE_DCL_OUTPUT_SIV, OPCODE_DCL_TEMPS, OPCODE_IMUL, OPCODE_MOV, OPERAND_CB_2D_IMM,
-        OPERAND_IMM32_SCALAR, OPERAND_INPUT_MASK_X, OPERAND_INPUT_SELECT_X, OPERAND_NULL,
-        OPERAND_OUTPUT_MASK_X, OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X, SB_NAME_INSTANCE_ID,
-        SB_NAME_VIEWPORT_ARRAY_INDEX, SIGNATURE_COMPONENT_UINT32, SIGNATURE_SYSVALUE_INSTANCE_ID,
+        CB_ACCESS_DYNAMIC_INDEXED, CLIP_ORIGIN_CB0_ROW, CLIP_ORIGIN_ROW_BASE, OPCODE_AND,
+        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_SGV, OPCODE_DCL_OUTPUT_SIV, OPCODE_DCL_TEMPS,
+        OPCODE_IMUL, OPCODE_MOV, OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR, OPERAND_INPUT_MASK_X,
+        OPERAND_INPUT_SELECT_X, OPERAND_NULL, OPERAND_OUTPUT_MASK_X, OPERAND_TEMP_MASK_X,
+        OPERAND_TEMP_SELECT_X, SB_NAME_INSTANCE_ID, SB_NAME_VIEWPORT_ARRAY_INDEX,
+        SIGNATURE_COMPONENT_UINT32, SIGNATURE_SYSVALUE_INSTANCE_ID,
         SIGNATURE_SYSVALUE_VIEWPORT_ARRAY_INDEX, STEREO_CB_REGISTER, STEREO_CB_ROWS,
-        SignatureElement, append_signature_element, declared_register, max_signature_register,
-        reassemble,
+        STEREO_ORIGIN_CB_ROWS, SignatureElement, append_signature_element, declared_register,
+        max_signature_register, reassemble,
     },
     tokens::{
         IDX_IMM32_PLUS_RELATIVE, Instruction, OperandKind, ShaderStage, TokenStream, parse_operand,
     },
 };
 
+/// Where a remapped shader takes the camera position it subtracts before the translation-free
+/// view-projection from, when that is not `cb0[4]`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ClipOrigin {
+    /// `cb0[9]` is left as it is: the centred render camera's position under the collapse.
+    Unchanged,
+    /// In a shader that reads the view-projection rows but not `cb0[4]`, `cb0[9]` is read from the
+    /// eye's copy of it in `cb13`.
+    PerEye,
+}
+
 /// Rewrites a model vertex shader for single-pass stereo (see the module docs) and returns a new,
-/// checksum-valid DXBC container. Fails without side effects if the shader is not a `SHEX` vertex
-/// shader of the expected shape (no per-eye `cb0` rows, `cb13` or `SV_InstanceID` already taken,
-/// missing signatures).
+/// checksum-valid DXBC container, leaving `cb0[9]` as it is. Fails without side effects if the shader
+/// is not a `SHEX` vertex shader of the expected shape (no per-eye `cb0` rows, `cb13` or
+/// `SV_InstanceID` already taken, missing signatures).
 pub fn patch_vertex_shader(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
+    patch_vertex_shader_with(blob, ClipOrigin::Unchanged)
+}
+
+/// [`patch_vertex_shader`], with `origin` deciding whether `cb0[9]` is read per eye.
+pub fn patch_vertex_shader_with(blob: &[u8], origin: ClipOrigin) -> Result<Vec<u8>, DxbcError> {
     let dxbc = Dxbc::parse(blob)?;
     if dxbc.chunk(b"SHEX").is_none() && dxbc.chunk(b"SHDR").is_some() {
         return Err(DxbcError::UnsupportedShaderModel);
@@ -66,7 +86,7 @@ pub fn patch_vertex_shader(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
     // and the appended element collides with that dead slot.
     let input_register = max_signature_register(isgn.body(blob)).map_or(0, |r| r + 1);
     let output_register = max_signature_register(osgn.body(blob)).map_or(0, |r| r + 1);
-    let plan = plan_rewrite(&stream, input_register, output_register)?;
+    let plan = plan_rewrite(&stream, input_register, output_register, origin)?;
     let new_shex = rewrite_shader(&stream, &plan)?;
 
     let new_isgn = append_signature_element(
@@ -112,6 +132,8 @@ struct RewritePlan {
     /// The token index of the first non-declaration instruction -- the injection point for the new
     /// declarations and the prologue.
     inject_before: usize,
+    /// Whether `cb0[9]` operands are remapped to the eye's copy of the row.
+    remap_origin: bool,
 }
 
 /// Scans the declarations: the temp count, the injection point, and the preconditions (`cb13` and
@@ -121,12 +143,14 @@ fn plan_rewrite(
     stream: &TokenStream,
     input_register: u32,
     output_register: u32,
+    origin: ClipOrigin,
 ) -> Result<RewritePlan, DxbcError> {
     let tokens = stream.tokens();
     let mut temps: u32 = 0;
     let mut dcl_temps_start = None;
     let mut inject_before = None;
     let mut per_eye_found = false;
+    let (mut reads_camera, mut reads_view_projection, mut reads_origin) = (false, false, false);
 
     for insn in stream.instructions() {
         let insn = insn?;
@@ -153,8 +177,18 @@ fn plan_rewrite(
                 inject_before = Some(insn.start);
             }
             for operand in insn.operands() {
-                if is_per_eye_operand(&operand?.kind) {
+                let kind = operand?.kind;
+                if is_per_eye_operand(&kind) {
                     per_eye_found = true;
+                }
+                if let OperandKind::ConstantBuffer {
+                    register: 0,
+                    element,
+                } = kind
+                {
+                    reads_camera |= element == 4;
+                    reads_view_projection |= (29..=32).contains(&element);
+                    reads_origin |= element == CLIP_ORIGIN_CB0_ROW;
                 }
             }
         }
@@ -169,6 +203,10 @@ fn plan_rewrite(
         temp_register: temps,
         dcl_temps_start,
         inject_before: inject_before.unwrap_or(tokens.len()),
+        remap_origin: origin == ClipOrigin::PerEye
+            && reads_origin
+            && reads_view_projection
+            && !reads_camera,
     })
 }
 
@@ -196,7 +234,7 @@ fn rewrite_shader(stream: &TokenStream, plan: &RewritePlan) -> Result<Vec<u8>, D
             out.extend_from_slice(&tokens[insn.start..insn.end]);
             continue;
         }
-        rewrite_instruction(tokens, &insn, plan.temp_register, &mut out)?;
+        rewrite_instruction(tokens, &insn, plan, &mut out)?;
     }
     if !injected {
         emit_injection(&mut out, plan);
@@ -213,12 +251,16 @@ fn emit_injection(out: &mut Vec<u32>, plan: &RewritePlan) {
     let n = plan.input_register;
     let m = plan.output_register;
     let r = plan.temp_register;
-    // dcl_constantbuffer CB13[10], dynamicIndexed.
+    // dcl_constantbuffer CB13[10], dynamicIndexed (through eye 1's origin row when it is read).
     out.extend_from_slice(&[
         (4 << 24) | CB_ACCESS_DYNAMIC_INDEXED | OPCODE_DCL_CONSTANT_BUFFER,
         OPERAND_CB_2D_IMM,
         STEREO_CB_REGISTER,
-        STEREO_CB_ROWS,
+        if plan.remap_origin {
+            STEREO_ORIGIN_CB_ROWS
+        } else {
+            STEREO_CB_ROWS
+        },
     ]);
     // dcl_input_sgv vN.x, instance_id.
     out.extend_from_slice(&[
@@ -274,9 +316,10 @@ fn emit_injection(out: &mut Vec<u32>, plan: &RewritePlan) {
 fn rewrite_instruction(
     tokens: &[u32],
     insn: &Instruction<'_>,
-    temp_register: u32,
+    plan: &RewritePlan,
     out: &mut Vec<u32>,
 ) -> Result<(), DxbcError> {
+    let temp_register = plan.temp_register;
     let opcode_at = out.len();
     out.extend_from_slice(&tokens[insn.start..insn.operands_start()]);
 
@@ -287,7 +330,11 @@ fn rewrite_instruction(
             OperandKind::ConstantBuffer {
                 register: 0,
                 element,
-            } if PER_EYE_CB0_ROWS.contains(element) => *element,
+            } if PER_EYE_CB0_ROWS.contains(element)
+                || (plan.remap_origin && *element == CLIP_ORIGIN_CB0_ROW) =>
+            {
+                *element
+            }
             _ => {
                 out.extend_from_slice(&tokens[pos..next]);
                 pos = next;
@@ -304,7 +351,11 @@ fn rewrite_instruction(
         out.push(tok | (IDX_IMM32_PLUS_RELATIVE << 25));
         out.extend_from_slice(&tokens[pos + 1..pos + 1 + extended]);
         out.push(STEREO_CB_REGISTER);
-        out.push(if row == 4 { 4 } else { row - 29 });
+        out.push(match row {
+            4 => 4,
+            CLIP_ORIGIN_CB0_ROW => CLIP_ORIGIN_ROW_BASE,
+            _ => row - 29,
+        });
         out.push(OPERAND_TEMP_SELECT_X);
         out.push(temp_register);
         pos = next;

@@ -43,8 +43,9 @@ use crate::{
     hooks::graphics_engine::ss_decal,
     stereo::{
         single_pass::{
-            VsTransform, ambient_occlusion, eye_camera, is_terrain_shadow_pass, post_filters,
-            screen_space_reflection, set_patch_pending, terrain_active, water_pixel_variants,
+            VsTransform, ambient_occlusion, ao_volumes, eye_camera, is_terrain_shadow_pass,
+            post_filters, screen_space_reflection, set_patch_pending, terrain_active,
+            water_pixel_variants,
         },
         switches::ShaderBuild,
     },
@@ -152,7 +153,7 @@ fn create_vertex_program(
         let outcome = if owned {
             Err(dxbc_stereo::DxbcError::NoPerEyeReferences)
         } else {
-            dxbc_stereo::patch_vertex_shader(code)
+            crate::stereo::single_pass::remap_vertex_shader(code)
         };
         crate::stereo::single_pass::record_patch_outcome(&outcome, name.as_deref());
         // Which transform this shader gets is decided here, because here is the only place its engine
@@ -247,6 +248,10 @@ fn create_fragment_program(
         && Config::lock_query(|c| c.stereo.single_pass.glare_per_eye);
     let localize_ambient_occlusion = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye);
+    // The ambient-occlusion volumes mapped through each eye's camera. Baked into the bytecode like
+    // the ambient occlusion; its vertex shader's reprojection is decided by name with the same switch.
+    let localize_ao_volumes = crate::stereo::single_pass::collapse_active()
+        && Config::lock_query(|c| c.stereo.single_pass.ao_volumes_per_eye);
     // The screen-space reflection ray march traced for each eye's half, and its blur kept to it.
     // Baked into the bytecode like the ambient occlusion, and decided for every fragment program so
     // the reflection block knows whether the ray march it will run carries it.
@@ -273,9 +278,11 @@ fn create_fragment_program(
     {
         let code = unsafe { std::slice::from_raw_parts(p.m_Code, size) };
         rewritten_screen_pass =
-            ambient_occlusion::rewrite_fragment_program(code, localize_ambient_occlusion).or_else(
-                || screen_space_reflection::rewrite_fragment_program(code, localize_reflections),
-            );
+            ambient_occlusion::rewrite_fragment_program(code, localize_ambient_occlusion)
+                .or_else(|| {
+                    screen_space_reflection::rewrite_fragment_program(code, localize_reflections)
+                })
+                .or_else(|| ao_volumes::rewrite_fragment_program(code, localize_ao_volumes));
     }
     // Skip patching once eject begins, so the shader restore's bounce re-creates pristine fragment
     // shaders (matching the vertex side) and the clean game keeps none of the mod's edits.

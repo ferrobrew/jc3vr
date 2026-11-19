@@ -90,7 +90,7 @@ pub(super) unsafe extern "system" fn create_vertex_shader_detour(
                 Some(transform) => {
                     Reacquired::Decided(transform, apply_vs_transform(transform, code, None, None))
                 }
-                None => Reacquired::Rederived(dxbc_stereo::patch_vertex_shader(code)),
+                None => Reacquired::Rederived(remap_vertex_shader(code)),
             }
         });
     // A pinned-eye shader is substituted but must not be recorded as patched: recording it would

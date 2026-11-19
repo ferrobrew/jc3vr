@@ -140,6 +140,10 @@ pub enum DxbcError {
     /// and normal buffer), or reconstructs and samples in a shape the ambient-occlusion rewrite does
     /// not recognise; the caller should leave it untouched.
     NoAmbientOcclusion,
+    /// The pixel shader is not the ambient-occlusion volume pass (it binds neither its depth textures
+    /// nor its screen-to-box matrix), or reads them in a shape the volume rewrite does not
+    /// recognise; the caller should leave it untouched.
+    NoAmbientOcclusionVolume,
     /// The pixel shader is not a screen-space reflection ray march (it binds no linear depth, previous
     /// scene, and reflection constants), or reads its view ray and constants in a shape the reflection
     /// rewrite does not recognise; the caller should leave it untouched.
@@ -209,6 +213,9 @@ impl fmt::Display for DxbcError {
             DxbcError::NoPlanarReflection => "dxbc: no recognised planar reflection coordinate",
             DxbcError::NoAmbientOcclusion => {
                 "dxbc: no recognised ambient-occlusion generation pass"
+            }
+            DxbcError::NoAmbientOcclusionVolume => {
+                "dxbc: no recognised ambient-occlusion volume pass"
             }
             DxbcError::NoScreenSpaceReflection => {
                 "dxbc: no recognised screen-space reflection ray march"

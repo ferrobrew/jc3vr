@@ -732,12 +732,7 @@ pub(super) unsafe fn after_raw_draw(context: *mut c_void) {
 
 fn log_bound_cb13(ctx: &ID3D11DeviceContext, capture: &Capture, index: usize) {
     let frame = crate::vr::capture_views().map(|views| views.predicted_display_time_ns);
-    match read_bound_constant_buffer(
-        ctx,
-        ShaderStage::Vertex,
-        13,
-        dxbc_stereo::STEREO_REPROJ_CB_ROWS,
-    ) {
+    match read_bound_constant_buffer(ctx, ShaderStage::Vertex, 13, STEREO_CB_TOTAL_ROWS as u32) {
         Ok(readback) => {
             let actual = readback.values.as_deref();
             let owned = CB13.lock().buffer_ptr();

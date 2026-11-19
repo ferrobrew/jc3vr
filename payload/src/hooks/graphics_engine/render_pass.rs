@@ -33,7 +33,7 @@ use crate::{
     screenshot::harness::stages::{Stage, capture_prefix_depth, velocity},
     stereo::{
         STEREO_STATE, draw_index, is_second_eye,
-        single_pass::{is_sun_pass, reissue_sun_pass},
+        single_pass::{ao_volumes, is_sun_pass, reissue_sun_pass},
     },
     vr::foveation::{FORCE_STENCIL_TEST, FoveationParams},
 };
@@ -157,6 +157,11 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     // Capture-gated producer diagnostic for the passes that feed the water's reflection inputs;
     // inert for every other pass and for an unarmed capture.
     let _reflection_producer = crate::stereo::single_pass::reflection_producer(pass_id.into());
+    // The ambient-occlusion volumes' per-eye rows, bound for the walk of their pass.
+    // SAFETY: `ctx` is the live render context of this pass.
+    let _ao_volume_rows = (pass_id == RP_AO_VOLUMES as i16)
+        .then(|| unsafe { ao_volumes::bind_rows(ctx) })
+        .flatten();
     let sun_pass = is_sun_pass(pass_id);
     let result = if sun_pass {
         reissue_sun_pass(ctx, &|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))

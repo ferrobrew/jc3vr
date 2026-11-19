@@ -281,6 +281,52 @@ impl std::convert::AsMut<RBIInfo> for RBIInfo {
     }
 }
 #[repr(C, align(8))]
+/// The ambient-occlusion volume render block (`NGraphicsEngine::CRenderBlockAOBox`): a box or a
+/// sphere, drawn in `RP_AO_VOLUMES`, that darkens the scene inside it with a falloff from its centre.
+pub struct RenderBlockAOBox {}
+impl RenderBlockAOBox {
+    pub const Draw_ADDRESS: usize = 0x1401364B0;
+    /// Stages the volume's constants and issues its box geometry as a single `DrawIndexed`.
+    ///
+    /// On the vertex side it stages the instance's world matrix at slot 1 registers 0..3, the
+    /// half-extents at register 4, and the render context's
+    /// [`m_UVScale`](crate::graphics_engine::graphics_engine::RenderContext::m_UVScale) at register 5; the
+    /// `aobox` vertex shader projects the corners through the full view-projection of the vertex
+    /// `GlobalConstants` and hands the pixel shader a projective screen UV, scaled by that UV scale.
+    /// On the fragment side it stages the falloff and the shadow floor at slot 1 register 0, and at
+    /// registers 1..4 `ScreenToLocal`: the map from the screen UV and the sampled scene depth to the
+    /// volume's unit space, composed from the UV-to-NDC flip, the inverse of the rotation-only
+    /// [`m_View`](crate::graphics_engine::graphics_engine::RenderContext::m_View) times
+    /// [`m_ProjectionF`](crate::graphics_engine::graphics_engine::RenderContext::m_ProjectionF), the inverse
+    /// of the world matrix made relative to the camera position, and the inverse half-extents. The pixel shader (`aobox` or
+    /// `aosphere`) samples the scene depth and the reflective water planes' depth at the UV, maps
+    /// both through the matrix, and multiplies the target by the occlusion.
+    pub unsafe fn Draw(
+        &self,
+        rc: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        info: *const crate::graphics_engine::render_block::RBIInfo,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                rc: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                info: *const crate::graphics_engine::render_block::RBIInfo,
+            ) = ::std::mem::transmute(Self::Draw_ADDRESS);
+            f(self as *const Self as _, rc, info)
+        }
+    }
+}
+impl std::convert::AsRef<RenderBlockAOBox> for RenderBlockAOBox {
+    fn as_ref(&self) -> &RenderBlockAOBox {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockAOBox> for RenderBlockAOBox {
+    fn as_mut(&mut self) -> &mut RenderBlockAOBox {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The atmospheric-scattering / aerial-perspective render block. Its `Draw` reconstructs world
 /// position from depth via [`Matrix4::PerspectiveFovInverse`](crate::types::math::Matrix4) -- for the whole
 /// screen, sky included -- and then ray-marches the sun shadow cascade and aerial perspective over

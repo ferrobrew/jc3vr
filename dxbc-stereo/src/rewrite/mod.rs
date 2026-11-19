@@ -18,7 +18,8 @@
 //! `reflection` traces the screen-space reflections over each eye's half of a double-wide target.
 //! `camera` gives every pixel shader that reads the camera position the position of the eye whose
 //! half of a double-wide target the pixel lies in, and `lights` measures the clustered local lights
-//! from that eye in the same shaders. `screen_door` lays the screen-door pattern the alpha-tested and
+//! from that eye in the same shaders. `volume` maps each pixel of the ambient-occlusion volumes through
+//! its own eye's camera. `screen_door` lays the screen-door pattern the alpha-tested and
 //! fading materials discard by out from each eye's own origin, reading the eye-camera rewrite's
 //! boundary.
 
@@ -67,11 +68,19 @@ mod seam;
 pub use seam::{localize_composite_bloom, localize_post_filter, localize_reflection_blur};
 mod ssdecal;
 mod terrain;
-
-pub use common::{MEYE_ROW_BASE, STEREO_CB_REGISTER, STEREO_CB_ROWS, STEREO_REPROJ_CB_ROWS};
-pub use remap::patch_vertex_shader;
+mod volume;
+pub use common::{
+    CLIP_ORIGIN_CB0_ROW, CLIP_ORIGIN_ROW_BASE, MEYE_ROW_BASE, STEREO_CB_REGISTER, STEREO_CB_ROWS,
+    STEREO_ORIGIN_CB_ROWS, STEREO_REPROJ_CB_ROWS,
+};
+pub use remap::{ClipOrigin, patch_vertex_shader, patch_vertex_shader_with};
 pub use reproject::reproject_vertex_shader;
 pub use ssdecal::{SSDECAL_EYE_BIAS_REGISTER, bias_ssdecal_depth_uv};
 pub use terrain::{
     forward_eye_hull_shader, inject_eye_forward_vertex_shader, reproject_domain_shader,
+};
+pub use volume::{
+    AMBIENT_OCCLUSION_VOLUME_BOUNDARY_ROW, AMBIENT_OCCLUSION_VOLUME_CB_REGISTER,
+    AMBIENT_OCCLUSION_VOLUME_CB_ROWS, AMBIENT_OCCLUSION_VOLUME_DEPTH_UV_ROW,
+    AMBIENT_OCCLUSION_VOLUME_ROWS_PER_EYE, localize_ambient_occlusion_volume,
 };

@@ -71,6 +71,7 @@ single_pass_switches! {
     PixelCameraPerEye => pixel_camera_per_eye, true;
     LocalLightsPerEye => local_lights_per_eye, true;
     ScreenDoorPerEye => screen_door_per_eye, true;
+    ClipOriginPerEye => clip_origin_per_eye, true;
     AtmosphericPerEye => atmospheric_per_eye, false;
     FogVolumePerEye => fog_volume_per_eye, false;
     WaterUvPerEye => water_uv_per_eye, false;
@@ -82,6 +83,7 @@ single_pass_switches! {
     Slot13PerEye => slot13_per_eye, false;
     CollapseViewportFollowsTarget => collapse_viewport_follows_target, false;
     SsaoPerEye => ssao_per_eye, true;
+    AoVolumesPerEye => ao_volumes_per_eye, true;
     SsrPerEye => ssr_per_eye, true;
     SubsurfacePerEye => subsurface_per_eye, false;
     DofPerEye => dof_per_eye, false;

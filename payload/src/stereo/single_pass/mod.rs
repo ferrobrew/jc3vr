@@ -84,6 +84,9 @@ mod instanced_exposure;
 mod per_eye_reissue;
 mod pinned_eye;
 pub(crate) mod post_filters;
+// The ambient-occlusion volumes' pixel-shader rewrite and its per-eye rows; reached by the shader
+// creation detour and the volume pass's draw walk.
+pub(crate) mod ao_volumes;
 // The screen-space reflection ray march's rewrite and its per-eye rows; reached by the shader creation
 // detour and the reflection block.
 pub(crate) mod screen_space_reflection;
@@ -121,8 +124,11 @@ pub(crate) use water_gpu_probe::{
 
 pub(crate) use crate::stereo::engine_context::EngineContext;
 
+/// The live `cb13` rows the remap and reprojection blocks occupy (the clip-origin rows after them
+/// are left out).
 pub(crate) fn live_cb13_rows() -> Option<[Vector4; dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize]> {
-    CB13.lock().live_rows()
+    let rows = CB13.lock().live_rows()?;
+    Some(std::array::from_fn(|row| rows[row]))
 }
 
 pub fn probe(device: &ID3D11Device) -> Capability {
@@ -703,6 +709,7 @@ pub fn uninstall_com_detours() -> bool {
     drop(SET_VERTEX_PROGRAM_CONSTANTS.take());
     release_cb13();
     ambient_occlusion::release();
+    ao_volumes::release();
     screen_space_reflection::release();
     eye_camera::release();
     for shader in std::mem::take(&mut *PATCHED_VS.lock()) {

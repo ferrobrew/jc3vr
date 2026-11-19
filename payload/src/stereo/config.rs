@@ -231,6 +231,17 @@ pub struct SinglePassConfig {
     /// position relative to the eye boundary `stereo::single_pass::eye_camera` publishes. A shader
     /// rewrite, so changing it needs a shader reload. On by default.
     pub screen_door_per_eye: bool,
+    /// Read the render camera's position per eye in the remapped shaders that subtract it, rather
+    /// than the pass camera's, before the translation-free view-projection.
+    ///
+    /// The road surfaces (`layeredroad`) and the `roadbias` model permutations take the camera
+    /// position they subtract from the world position from the render camera's row of the vertex
+    /// `GlobalConstants` (`cb0[9]`), not from the pass camera's row the remap gives each eye
+    /// (`cb0[4]`). Remapped, they project each eye from the centred camera's position, so the
+    /// surface slides half the eye distance within its own plane: the depth agrees while the
+    /// texturing does not. `dxbc_stereo::ClipOrigin::PerEye` reads the row from each eye's copy in
+    /// `cb13`. A shader rewrite, so changing it needs a shader reload. On by default.
+    pub clip_origin_per_eye: bool,
     /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
     /// fullscreen consumer of the reconstruction basis.
     ///
@@ -372,6 +383,19 @@ pub struct SinglePassConfig {
     /// binds (`stereo::single_pass::ambient_occlusion`). A shader rewrite: changing it requests a
     /// shader reload. On by default.
     pub ssao_per_eye: bool,
+    /// Shade the ambient-occlusion volumes for both eyes from one draw.
+    ///
+    /// Each volume (`aobox`, `aosphere`) maps the scene under it into its own unit space through a
+    /// matrix the block builds from the render context's camera, sampling the depth at the screen UV.
+    /// Under the collapse that camera is the centred one and the depth spans both eyes, so each eye's
+    /// half reads the depth of the wrong place (the left half of each eye reads the left eye, the
+    /// right half the right) and maps it through the wrong camera. The volume's vertex shader takes
+    /// the reprojection, so its draw is instance-doubled, and
+    /// `dxbc_stereo::localize_ambient_occlusion_volume` rewrites its pixel shaders to sample at the
+    /// pixel's double-wide UV and map each depth through the eye, from rows
+    /// `stereo::single_pass::ao_volumes` binds for the pass. Shader rewrites, so changing it needs a
+    /// shader reload. On by default.
+    pub ao_volumes_per_eye: bool,
     /// Trace the **screen-space reflections** for each eye under the collapse, in the block's single
     /// run.
     ///
@@ -675,6 +699,7 @@ impl SinglePassConfig {
             pixel_camera_per_eye: true,
             local_lights_per_eye: true,
             screen_door_per_eye: true,
+            clip_origin_per_eye: true,
             atmospheric_per_eye: true,
             fog_volume_per_eye: true,
             water_uv_per_eye: true,
@@ -686,6 +711,7 @@ impl SinglePassConfig {
             slot13_per_eye: true,
             collapse_viewport_follows_target: true,
             ssao_per_eye: true,
+            ao_volumes_per_eye: true,
             ssr_per_eye: true,
             subsurface_per_eye: true,
             dof_per_eye: true,

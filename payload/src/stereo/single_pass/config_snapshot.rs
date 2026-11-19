@@ -30,6 +30,7 @@ pub(super) enum Flag {
     TreeImpostors,
     TreeImpostorPixelSize,
     StaticLights,
+    AoVolumes,
     Bark,
     Foliage,
     Occluder,
@@ -118,6 +119,7 @@ fn store_config_flags() -> u32 {
                 Flag::TreeImpostorPixelSize,
             )
             | bit(s.static_lights_per_eye, Flag::StaticLights)
+            | bit(s.ao_volumes_per_eye, Flag::AoVolumes)
             | bit(s.bark, Flag::Bark)
             | bit(s.foliage, Flag::Foliage)
             | bit(s.occluder, Flag::Occluder)

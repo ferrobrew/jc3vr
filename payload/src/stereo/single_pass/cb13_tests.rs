@@ -4,7 +4,8 @@ use test_case::test_case;
 
 use crate::{
     stereo::single_pass::cb13::{
-        MEYE_ROW_BASE, STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, relative_reprojection, write_meye,
+        MEYE_ROW_BASE, STEREO_CB_TOTAL_ROWS, clip_origin_row, pin_rows_to_eye,
+        relative_reprojection, write_meye,
     },
     vr::{EyeRenderParams, Fov, OffAxisProjection, ProjectionConvention},
 };
@@ -97,6 +98,9 @@ fn writing_reprojection_preserves_per_eye_rows_and_row_orientation() {
     for (index, row) in rows.iter_mut().take(MEYE_ROW_BASE).enumerate() {
         row.data = [index as f32 + 0.125, 2.0, -3.0, 4.0];
     }
+    for eye in 0..2 {
+        rows[clip_origin_row(eye)].data = [10.0 + eye as f32, 20.0, 30.0, 1.0];
+    }
     let original = rows;
     let mut matrices = [Mat4::IDENTITY; 2];
     for (eye, matrix) in matrices.iter_mut().enumerate() {
@@ -125,6 +129,10 @@ fn writing_reprojection_preserves_per_eye_rows_and_row_orientation() {
                     rows[MEYE_ROW_BASE + eye * 4 + r].data,
                 );
             }
+            assert_eq!(
+                pinned[clip_origin_row(slot)].data,
+                original[clip_origin_row(eye)].data
+            );
         }
     }
 }
