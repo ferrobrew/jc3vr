@@ -42,7 +42,7 @@ use crate::{
     hooks::graphics_engine::ss_decal,
     stereo::single_pass::{
         VsTransform, ambient_occlusion, eye_camera, is_terrain_shadow_pass, post_filters,
-        set_patch_pending, terrain_active, water_pixel_variants,
+        screen_space_reflection, set_patch_pending, terrain_active, water_pixel_variants,
     },
 };
 
@@ -239,23 +239,30 @@ fn create_fragment_program(
         && Config::lock_query(|c| c.stereo.single_pass.glare_per_eye);
     let localize_ambient_occlusion = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye);
+    // The screen-space reflection ray march traced for each eye's half, and its blur kept to it.
+    // Baked into the bytecode like the ambient occlusion, and decided for every fragment program so
+    // the reflection block knows whether the ray march it will run carries it.
+    let localize_reflections = crate::stereo::single_pass::collapse_active()
+        && Config::lock_query(|c| c.stereo.single_pass.ssr_per_eye);
     // Every pixel shader that reads the camera position picks its eye's copy per pixel. Applied last,
     // over whatever the other rewrites produced, since it composes with all of them.
     let localize_camera = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.pixel_camera_per_eye);
-    let mut rewritten_ambient_occlusion = None;
+    let mut rewritten_screen_pass = None;
     if !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
         && !p.m_Code.is_null()
         && let Ok(size) = usize::try_from(p.m_Size)
     {
         let code = unsafe { std::slice::from_raw_parts(p.m_Code, size) };
-        rewritten_ambient_occlusion =
-            ambient_occlusion::rewrite_fragment_program(code, localize_ambient_occlusion);
+        rewritten_screen_pass =
+            ambient_occlusion::rewrite_fragment_program(code, localize_ambient_occlusion).or_else(
+                || screen_space_reflection::rewrite_fragment_program(code, localize_reflections),
+            );
     }
     // Skip patching once eject begins, so the shader restore's bounce re-creates pristine fragment
     // shaders (matching the vertex side) and the clean game keeps none of the mod's edits.
-    if let Some(blob) = rewritten_ambient_occlusion
+    if let Some(blob) = rewritten_screen_pass
         && let Some(p) = unsafe { params.as_mut() }
     {
         let len = blob.len() as u64;

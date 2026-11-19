@@ -14,8 +14,10 @@
 //! one eye of a double-wide target, and `planar` does the same for the WaveWorks water's planar
 //! reflection lookup. `ambient` runs the ambient-occlusion generation pass over each eye's half of a
 //! double-wide target, and `seam` keeps the post chain's screen-mapped filters and the composite's
-//! bloom lookups inside each eye's half. `camera` gives every pixel shader that reads the camera
-//! position the position of the eye whose half of a double-wide target the pixel lies in.
+//! bloom lookups inside each eye's half, along with the screen-space reflection blur's taps.
+//! `reflection` traces the screen-space reflections over each eye's half of a double-wide target.
+//! `camera` gives every pixel shader that reads the camera position the position of the eye whose
+//! half of a double-wide target the pixel lies in.
 
 mod ambient;
 pub use ambient::{
@@ -47,10 +49,15 @@ pub use resolve::{
     impostor_atlas_scale, local_aa_neighbor, local_bark_dither, local_dof_edge,
     local_fog_reconstruction, physical_impostor_fade, trace_deferred_samples, trace_ssr_ray,
 };
+mod reflection;
+pub use reflection::{
+    SCREEN_SPACE_REFLECTION_CB_REGISTER, SCREEN_SPACE_REFLECTION_ROWS_PER_EYE,
+    ScreenSpaceReflectionRow, localize_screen_space_reflection,
+};
 mod remap;
 mod reproject;
 mod seam;
-pub use seam::{localize_composite_bloom, localize_post_filter};
+pub use seam::{localize_composite_bloom, localize_post_filter, localize_reflection_blur};
 mod ssdecal;
 mod terrain;
 

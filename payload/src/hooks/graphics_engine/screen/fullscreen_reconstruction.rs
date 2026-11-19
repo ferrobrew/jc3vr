@@ -1,6 +1,6 @@
-//! The remaining fullscreen depth-reconstruction passes under the single-pass collapse: SSAO, run
-//! once with each eye's half computed for that eye, and screen-space reflections, screen-space
-//! subsurface skin, and the bokeh depth-of-field prepass, run once per eye.
+//! The remaining fullscreen depth-reconstruction passes under the single-pass collapse: SSAO and
+//! screen-space reflections, run once with each eye's half computed for that eye, and screen-space
+//! subsurface skin and the bokeh depth-of-field prepass, run once per eye.
 //!
 //! Cross-referencing `CMatrix4f::PerspectiveFovInverse` gives a closed set of seven consumers. The
 //! deferred resolve ([`crate::hooks::graphics_engine::clustered_lighting`]) and the aerial perspective
@@ -19,13 +19,16 @@
 //! the pair for the block, so the block keeps its single run and its temporal history advances once
 //! per frame as it does in an eye-sized render.
 //!
-//! The split blocks are behind their own config flags, because unlike the two already landed they are
-//! not idempotent -- re-issuing the whole block re-runs work that accumulates:
+//! **Screen-space reflections** are not split either. The ray march projects and reprojects through
+//! the render context's view, projection, camera transform, and two view-projections, none of which a
+//! substituted basis reaches, and marches in the pixels of the whole target.
+//! [`crate::stereo::single_pass::screen_space_reflection`] rewrites it to trace each half for its own
+//! eye from per-eye rows, and [`ssr_draw`] binds them for the block.
 //!
-//! - **SSR** re-runs its scene-colour capture, which is a *copy* rather than a consume (the block
-//!   reads the scene colour and writes only its own targets), so the second run reproduces it.
-//! - **Subsurface skin** builds its basis once per `Draw`, not once per blur axis: the two
-//!   `PerspectiveFovInverse` calls in the function sit in mutually exclusive branches.
+//! The split blocks are behind their own config flags, because unlike the two already landed they are
+//! not idempotent -- re-issuing the whole block re-runs work that accumulates. **Subsurface skin**
+//! builds its basis once per `Draw`, not once per blur axis: the two `PerspectiveFovInverse` calls in
+//! the function sit in mutually exclusive branches.
 //!
 //! The rest of the non-idempotency is handled by *when* the mask goes up. These run under
 //! [`reconstruction::MaskArming::AtEntry`]: the eye mask is raised before the block draws anything and
@@ -36,16 +39,15 @@
 //! a scissor rectangle means nothing outside the target it was measured in.
 //!
 //! The compute work is not maskable at all -- a dispatch ignores the scissor as thoroughly as it
-//! ignores the viewport -- and neither of the two blocks that dispatch offers any way to aim one: both
-//! size their thread groups from the target's full width and address their textures straight off
-//! `SV_DispatchThreadID`, with no origin term anywhere in their constant buffers. Nor can a UAV supply
-//! one, since a D3D11 texture UAV selects a mip and an array slice and never a sub-rectangle. So the
-//! compute work is *scheduled* rather than masked: [`reconstruction::DispatchPhase`] issues it
-//! whole-target on exactly one run of the split -- the first for a prologue the masked draws consume
-//! (the bokeh near-field coverage), the last for an epilogue that consumes what they produced (the SSR
-//! blur). That is the same single whole-target pass the un-split block makes, so the eye-seam bleed
-//! from the horizontal half of each separable blur (six texels of the block's own working resolution)
-//! is inherent to the collapse rather than introduced here, and is present with these flags off.
+//! ignores the viewport -- and the bokeh prepass offers no way to aim one: it sizes its thread groups
+//! from the target's full width and addresses its textures straight off `SV_DispatchThreadID`, with no
+//! origin term anywhere in its constant buffers. Nor can a UAV supply one, since a D3D11 texture UAV
+//! selects a mip and an array slice and never a sub-rectangle. So the compute work is *scheduled*
+//! rather than masked: [`reconstruction::DispatchPhase`] issues it whole-target on exactly one run of
+//! the split, the first, since its output (the bokeh near-field coverage) is what the masked draws
+//! consume. That is the same single whole-target pass the un-split block makes, so the eye-seam bleed
+//! from the horizontal half of each separable blur is inherent to the collapse rather than introduced
+//! here, and is present with these flags off.
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::{
@@ -59,7 +61,9 @@ use jc3gi::graphics_engine::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    config::Config, hooks::graphics_engine::reconstruction, stereo::single_pass::ambient_occlusion,
+    config::Config,
+    hooks::graphics_engine::reconstruction,
+    stereo::single_pass::{ambient_occlusion, screen_space_reflection},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -83,23 +87,14 @@ fn ssao_block_draw(this: *mut RenderBlockSSAO, rc: *mut RenderContext, info: *co
     SSAO_BLOCK_DRAW.get().unwrap().call(this, rc, info);
 }
 
-/// `CRenderBlockScreenSpaceReflection::Draw`, split per eye, with its compute blur left to the second
-/// run.
+/// `CRenderBlockScreenSpaceReflection::Draw`, run once with each eye's rows bound for its rewritten
+/// ray march.
 ///
-/// The block's scene-colour capture is the first thing it does, before the basis is built; under the
-/// at-entry mask each run captures only its own half, and in any case the capture is a copy out of the
-/// scene colour into the block's own target -- the block writes nothing back into the scene colour --
-/// so it is reproducible rather than consumed. The ray-march and the pixel-shader resolve that follow
-/// are masked too.
-///
-/// The `m_UseComputeBlur` path cannot be masked, so it is *scheduled* instead:
-/// [`reconstruction::DispatchPhase::LastRun`] suppresses its two dispatches on eye 0's run and lets
-/// eye 1's issue them. The blur is the block's epilogue -- it consumes the ray-march's two targets and
-/// writes the result back over them -- so by eye 1's run both halves have been ray-marched and one
-/// whole-target blur is exactly the work the un-split block does. What that leaves is the horizontal
-/// pass mixing across the eye seam, six of the block's texels either side of it; that is a property of
-/// the collapse itself, present with this flag off and with the pixel-shader blur path too, and not
-/// something the split introduces.
+/// The ray march traces each half of the double-wide target for its own eye
+/// ([`screen_space_reflection`]), the scene-colour capture before it is per pixel, and the blur after
+/// it keeps its taps to the eye's half, so the block keeps its single run. Without the rewrite live
+/// (the switch off, no collapse, or the shaders not yet reloaded) nothing is bound and the block runs
+/// as the engine issues it.
 #[detour(
     address = jc3gi::graphics_engine::render_block::RenderBlockScreenSpaceReflection::Draw_ADDRESS
 )]
@@ -108,18 +103,14 @@ fn ssr_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled = Config::lock_query(|c| c.stereo.single_pass.ssr_per_eye);
-    let call = || {
-        crate::screenshot::harness::stages::ssr::scope(|| {
-            SSR_DRAW.get().unwrap().call(this, rc, info)
-        })
-    };
-    split_or_issue_with(
-        reconstruction::DispatchPhase::LastRun,
-        enabled,
-        render_context_ctx(rc),
-        call,
-    );
+    let enabled = Config::lock_query(|c| c.stereo.single_pass.ssr_per_eye)
+        && crate::stereo::single_pass::collapse_active();
+    // SAFETY: the engine hands the block its live render context for the length of the call.
+    let context = unsafe { rc.as_ref() };
+    let _rows = context
+        .filter(|_| enabled)
+        .and_then(screen_space_reflection::bind_eye_rows);
+    crate::screenshot::harness::stages::ssr::scope(|| SSR_DRAW.get().unwrap().call(this, rc, info));
 }
 
 /// `CRenderBlockScreenSpaceSubSurfaceSkin::Draw`, split per eye.

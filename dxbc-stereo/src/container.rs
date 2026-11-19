@@ -140,6 +140,14 @@ pub enum DxbcError {
     /// and normal buffer), or reconstructs and samples in a shape the ambient-occlusion rewrite does
     /// not recognise; the caller should leave it untouched.
     NoAmbientOcclusion,
+    /// The pixel shader is not a screen-space reflection ray march (it binds no linear depth, previous
+    /// scene, and reflection constants), or reads its view ray and constants in a shape the reflection
+    /// rewrite does not recognise; the caller should leave it untouched.
+    NoScreenSpaceReflection,
+    /// The pixel shader is not the screen-space reflection blur (it binds no reflection colour and
+    /// alpha), or reads them in a shape the blur rewrite does not recognise; the caller should leave
+    /// it untouched.
+    NoReflectionBlur,
     /// The pixel shader is not one of the post chain's generic filters (it binds a texture under a
     /// name the filters do not use, or binds none), or reads a texture in a shape the post-filter
     /// rewrite does not recognise; the caller should leave it untouched.
@@ -195,6 +203,10 @@ impl fmt::Display for DxbcError {
             DxbcError::NoAmbientOcclusion => {
                 "dxbc: no recognised ambient-occlusion generation pass"
             }
+            DxbcError::NoScreenSpaceReflection => {
+                "dxbc: no recognised screen-space reflection ray march"
+            }
+            DxbcError::NoReflectionBlur => "dxbc: no recognised screen-space reflection blur",
             DxbcError::NoPostFilter => "dxbc: no recognised post-chain filter",
             DxbcError::NoCompositeBloom => "dxbc: no recognised composite bloom lookup",
             DxbcError::NoCameraPosition => "dxbc: the pixel shader reads no camera position row",

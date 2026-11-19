@@ -84,6 +84,9 @@ mod instanced_exposure;
 mod per_eye_reissue;
 mod pinned_eye;
 pub(crate) mod post_filters;
+// The screen-space reflection ray march's rewrite and its per-eye rows; reached by the shader creation
+// detour and the reflection block.
+pub(crate) mod screen_space_reflection;
 mod shader_detours;
 pub(crate) mod shader_identity;
 mod shader_policy;
@@ -700,6 +703,7 @@ pub fn uninstall_com_detours() -> bool {
     drop(SET_VERTEX_PROGRAM_CONSTANTS.take());
     release_cb13();
     ambient_occlusion::release();
+    screen_space_reflection::release();
     eye_camera::release();
     for shader in std::mem::take(&mut *PATCHED_VS.lock()) {
         // SAFETY: every entry was `com_add_ref`'d exactly once when it was recorded.

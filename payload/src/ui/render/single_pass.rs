@@ -427,11 +427,18 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
-                ui.checkbox(&mut cfg.stereo.single_pass.ssr_per_eye, "SSR per eye")
+                if ui
+                    .checkbox(&mut cfg.stereo.single_pass.ssr_per_eye, "SSR per eye")
                     .on_hover_text(
-                        "Same reconstruction defect. Hazardous: SSR ray-marches a scene capture taken \
-                         earlier in the frame, so a second run consumes what the first did.",
-                    );
+                        "Traces screen-space reflections for each eye's half in the pass's one run: \
+                         each eye's view ray, view, projection, and history lookup, the march kept \
+                         to the eye's half, and the blur's taps clamped to it. Reloads shaders to \
+                         apply: it is a shader rewrite.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.subsurface_per_eye,
                     "Subsurface skin per eye",

@@ -339,13 +339,15 @@ pub struct SinglePassConfig {
     /// binds (`stereo::single_pass::ambient_occlusion`). A shader rewrite: changing it requests a
     /// shader reload. On by default.
     pub ssao_per_eye: bool,
-    /// Run the **screen-space reflection** pass once per eye under the collapse.
+    /// Trace the **screen-space reflections** for each eye under the collapse, in the block's single
+    /// run.
     ///
-    /// Collapsed, it reconstructs the whole double-wide target from one eye's basis.
-    /// **Hazard:** SSR ray-marches a scene-colour capture taken earlier in the frame, so a second run
-    /// would consume state the first already consumed -- which it does not: the block copies scene colour
-    /// into its own target and writes nothing back, so a second run reproduces the capture. On by
-    /// default.
+    /// Collapsed, the ray march projects both halves of the double-wide target through one eye-sized
+    /// projection onto the double-wide depth, rebuilds both from one view ray basis, and looks the
+    /// previous frame up through the double-wide previous view-projection. This rewrites the ray
+    /// march to trace each half for its own eye from per-eye rows the block binds, and the blur to
+    /// keep its taps to the eye's half (`stereo::single_pass::screen_space_reflection`). A shader
+    /// rewrite: changing it requests a shader reload. On by default.
     pub ssr_per_eye: bool,
     /// Run the **screen-space subsurface-scattering** (skin) pass once per eye under the collapse.
     ///

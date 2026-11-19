@@ -24,6 +24,8 @@
 //! only while a pass that draws over the double-wide target binds it, since several of those programs
 //! are shared with passes that draw elsewhere. [`localize_composite_bloom`] rewrites only the final
 //! composite's bloom lookups, a pass that always draws over the whole target.
+//! [`localize_reflection_blur`] rewrites every texture read of the screen-space reflection blur, whose
+//! program only that block binds.
 
 use crate::{
     container::{Dxbc, DxbcError},
@@ -68,6 +70,40 @@ pub fn localize_composite_bloom(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
     }
     rewrite(&dxbc, blob, &textures, DxbcError::NoCompositeBloom)
 }
+
+/// Rewrite the screen-space reflection blur (`screenspacereflectionblur` and
+/// `screenspacereflectionblurreducedfireflies`) so each half of a double-wide target gathers only its
+/// own eye's reflections, depth, and gloss. Its taps step up to six texels along the blur axis, so the
+/// horizontal pass would otherwise read across the seam. Returns [`DxbcError::NoReflectionBlur`] for a
+/// shader that binds neither reflection texture, or reads a texture in a shape this rewrite does not
+/// recognise.
+pub fn localize_reflection_blur(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
+    let dxbc = Dxbc::parse(blob)?;
+    let rdef = chunk(&dxbc, blob, b"RDEF").ok_or(DxbcError::NoReflectionBlur)?;
+    let bindings = texture_bindings(rdef).ok_or(DxbcError::NoReflectionBlur)?;
+    let names: Vec<&[u8]> = bindings.iter().map(|(name, _)| *name).collect();
+    if !REFLECTION_BLUR_SOURCES
+        .iter()
+        .all(|name| names.contains(name))
+        || !names
+            .iter()
+            .all(|name| REFLECTION_BLUR_TEXTURES.contains(name))
+    {
+        return Err(DxbcError::NoReflectionBlur);
+    }
+    let textures: Vec<u32> = bindings.iter().map(|(_, register)| *register).collect();
+    rewrite(&dxbc, blob, &textures, DxbcError::NoReflectionBlur)
+}
+
+/// The names the screen-space reflection blur binds the reflection pair under, and every name it binds
+/// a texture under.
+const REFLECTION_BLUR_SOURCES: [&[u8]; 2] = [b"SrcReflection", b"SrcReflectionAlpha"];
+const REFLECTION_BLUR_TEXTURES: [&[u8]; 4] = [
+    b"SrcReflection",
+    b"SrcReflectionAlpha",
+    b"NormalGlossTexture",
+    b"LinearDepthTexture",
+];
 
 /// The names the post chain's generic filters bind their sources under: the bright pass, the box
 /// downsample, the separable blurs, the morphological erosion and dilation, the level composite,

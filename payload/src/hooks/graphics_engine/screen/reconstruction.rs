@@ -142,10 +142,10 @@ pub(super) enum MaskArming {
 /// Which single run of a two-run per-eye split issues the block's compute dispatches.
 ///
 /// A scissor rectangle clips rasterization; it does nothing to a dispatch, whose reach is fixed by its
-/// thread-group counts and by its program's mapping from thread id to texel. Both blocks this matters
-/// for -- the screen-space reflection blur and the bokeh near-field prologue -- size their groups from
-/// the target's full width and address their textures directly by `SV_DispatchThreadID` with no origin
-/// term in any constant buffer, so there is no way to aim a dispatch at one eye's half. What there is
+/// thread-group counts and by its program's mapping from thread id to texel. The block this matters
+/// for -- the bokeh near-field prologue -- sizes its groups from the target's full width and
+/// addresses its textures directly by `SV_DispatchThreadID` with no origin term in any constant
+/// buffer, so there is no way to aim a dispatch at one eye's half. What there is
 /// instead: run the compute work **once**, whole-target, on the one run of the split where the data it
 /// needs is already there and the data it produces is still wanted.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -157,10 +157,6 @@ pub(super) enum DispatchPhase {
     /// consume: the first run computes it over the whole target, and the second run's masked draw reads
     /// the same result rather than recomputing it on top of itself.
     FirstRun,
-    /// Only the last run. For a compute *epilogue*, which consumes what the block's masked draws
-    /// produce: by the last run both halves have been drawn, so one whole-target pass over them is both
-    /// complete and singular.
-    LastRun,
 }
 
 /// The rule a [`split_fullscreen_pass_policy`] run follows: when its mask goes up, and which run issues
@@ -196,7 +192,6 @@ pub(crate) fn dispatch_suppressed() -> bool {
     DISPATCH_GATE.get().is_some_and(|gate| match gate.phase {
         DispatchPhase::Both => false,
         DispatchPhase::FirstRun => gate.run != 0,
-        DispatchPhase::LastRun => gate.run + 1 != gate.runs,
     })
 }
 
@@ -531,7 +526,6 @@ const RUNS: usize = 2;
 struct DispatchGate {
     phase: DispatchPhase,
     run: usize,
-    runs: usize,
 }
 
 impl DispatchGate {
@@ -542,11 +536,7 @@ impl DispatchGate {
     /// Returns a guard that closes the gate on every path.
     fn enter(phase: DispatchPhase, run: usize) -> DispatchGateGuard {
         if phase != DispatchPhase::Both {
-            DISPATCH_GATE.set(Some(Self {
-                phase,
-                run,
-                runs: RUNS,
-            }));
+            DISPATCH_GATE.set(Some(Self { phase, run }));
         }
         DispatchGateGuard(())
     }
