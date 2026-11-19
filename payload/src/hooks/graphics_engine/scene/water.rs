@@ -53,7 +53,9 @@ use jc3gi::{
     types::math::Matrix4,
     water_patch_manager::WaterPatchManager,
 };
+use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
+use windows::Win32::System::Threading::GetCurrentThreadId;
 
 use crate::{
     config::Config,
@@ -218,7 +220,61 @@ fn update_reflection_camera(this: *mut WaterPatchManager) {
     if !eye_size || !unsafe { set_eye_sized_reflection_camera(this) } {
         UPDATE_REFLECTION_CAMERA.get().unwrap().call(this);
     }
+    // SAFETY: as above.
+    unsafe { log_reflection_camera_change(this, eye_size) };
 }
+
+/// Log the reflection camera's projection parameters whenever they change, with the active camera's
+/// dimensions they were derived from, so a reflection rendered at the wrong size can be traced to the
+/// frame that sized it.
+///
+/// # Safety
+///
+/// `this` must be the live water patch manager, called from its update.
+unsafe fn log_reflection_camera_change(this: *mut WaterPatchManager, eye_size: bool) {
+    // SAFETY: per this function's contract; the camera manager is the live singleton.
+    let (Some(camera), Some(active)) = (unsafe {
+        (
+            this.as_ref().and_then(|m| m.m_ReflectionCamera.as_ref()),
+            CameraManager::get().and_then(|m| m.m_ActiveCamera.as_ref()),
+        )
+    }) else {
+        return;
+    };
+    let applied = ReflectionCameraSize {
+        width: camera.m_Width,
+        height: camera.m_Height,
+        aspect: camera.m_AspectRatio,
+        eye_size,
+    };
+    let mut last = LAST_REFLECTION_CAMERA_SIZE.lock();
+    if last.as_ref() != Some(&applied) {
+        tracing::info!(
+            target: "single_pass",
+            width = applied.width,
+            height = applied.height,
+            aspect = applied.aspect,
+            eye_size,
+            active_width = active.m_Width,
+            active_height = active.m_Height,
+            // SAFETY: reads only the calling thread's own id.
+            thread_id = unsafe { GetCurrentThreadId() },
+            "water: reflection camera resized"
+        );
+        *last = Some(applied);
+    }
+}
+
+/// The reflection camera's projection parameters as last logged.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ReflectionCameraSize {
+    width: i32,
+    height: i32,
+    aspect: f32,
+    eye_size: bool,
+}
+
+static LAST_REFLECTION_CAMERA_SIZE: Mutex<Option<ReflectionCameraSize>> = Mutex::new(None);
 
 /// Give the reflection camera the active camera's parameters at one eye's width, or return `false`
 /// without touching it when the manager, either camera, or the parameters are unusable.

@@ -335,6 +335,8 @@ fn graphics_flip(device: *mut Device) -> u64 {
 #[detour(address = jc3gi::graphics_engine::render_engine::RenderEngine::PostDraw_ADDRESS)]
 fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Context) -> u64 {
     log_hook_thread("render_engine_post_draw", &RENDER_ENGINE_POST_DRAW_THREAD);
+    // The dispatch's config pin ends with this seam, on every return path.
+    let _dispatch_end = crate::stereo::single_pass::end_dispatch();
     // The last render seam of the dispatch: bracket PostDraw on both timelines, then close the GPU
     // dispatch opened in `render_pass::pre_draw` (ending the disjoint query and reading back the
     // dispatches the GPU has since finished). `Context` and `HContext_t` are the same handle.

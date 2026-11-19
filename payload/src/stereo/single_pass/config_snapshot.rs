@@ -76,6 +76,9 @@ impl ConfigFlags {
 /// because that frame's shader reload is what applies it -- reads [`CONFIG_FLAGS`], resampled at frame
 /// start ([`refresh_config_flags`]).
 ///
+/// The pin ends with the dispatch ([`end_dispatch`]): the draw thread is a job-pool worker that runs
+/// game-side jobs between dispatches, and those read the frame snapshot like everything else.
+///
 /// The frame snapshot deliberately does **not** reach the draw thread mid-dispatch. It is written on
 /// the game thread, which with the frame tail deferred runs concurrently with the previous
 /// frame's still-walking dispatch -- the same interleaving that made the game-thread G-buffer range
@@ -103,6 +106,28 @@ pub fn refresh_config_flags() {
 /// the same for the whole of it. Called from [`begin_dispatch`].
 pub(super) fn pin_dispatch_config_flags() {
     DISPATCH_FLAGS.set(Some(ConfigFlags(store_config_flags())));
+}
+
+/// The end of the dispatch this thread opened: drops the pinned flags when it goes out of scope, so
+/// whatever this thread runs between dispatches reads the frame snapshot like any other thread.
+///
+/// The engine runs its draw dispatch on a worker of its job pool, and the pool's workers run
+/// game-side jobs between dispatches too. A pin left in place outlived its dispatch on that worker:
+/// a job it later ran read the flags of whatever dispatch the worker last drew, so the
+/// water's reflection camera update, which runs as such a job, saw the collapse off on the frames it
+/// landed on a worker last used for a multipass dispatch, and sized the reflection to the double-wide
+/// target.
+pub struct DispatchEnd(());
+
+/// Open the scope that ends this thread's dispatch pin; held for the dispatch's last seam.
+pub fn end_dispatch() -> DispatchEnd {
+    DispatchEnd(())
+}
+
+impl Drop for DispatchEnd {
+    fn drop(&mut self) {
+        DISPATCH_FLAGS.set(None);
+    }
 }
 
 fn store_config_flags() -> u32 {
