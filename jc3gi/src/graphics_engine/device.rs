@@ -123,6 +123,7 @@ fn _DeviceSurface_size_check() {
 }
 pub use windows::Win32::Graphics::Direct3D11::ID3D11Device as ID3D11Device;
 pub use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext as ID3D11DeviceContext;
+pub use windows::Win32::Graphics::Direct3D11::ID3D11InputLayout as ID3D11InputLayout;
 pub use windows::Win32::Graphics::Dxgi::IDXGIOutput as IDXGIOutput;
 pub use windows::Win32::Graphics::Dxgi::IDXGISwapChain as IDXGISwapChain;
 pub const GetMasterContext_ADDRESS: usize = 0x1419550D0;
