@@ -62,7 +62,11 @@ thread_local! {
 
 const CONSTANT_SLOT: u32 = 2;
 const PROGRAM_SAMPLER_SLOTS: [u32; 16] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
-const RESOURCE_SLOTS: [u32; 4] = [13, 14, 44, 45];
+/// The pixel resource slots the second eye's run can find unbound: the shadow maps, and the three
+/// sky-lighting textures the water shaders light the surface from.
+const RESOURCE_SLOTS: [u32; 7] = [13, 14, 22, 23, 24, 44, 45];
+/// The pixel constant slot of the frame's lighting constants, which the sky lighting reads.
+const LIGHTING_CONSTANT_SLOT: u32 = 3;
 const SAMPLER_SLOTS: [u32; 2] = [13, 15];
 
 #[derive(Default)]
@@ -142,6 +146,7 @@ impl ProgramState {
 struct Shadows {
     resources: [Option<ID3D11ShaderResourceView>; RESOURCE_SLOTS.len()],
     samplers: [Option<ID3D11SamplerState>; SAMPLER_SLOTS.len()],
+    lighting: Option<ID3D11Buffer>,
 }
 
 impl Default for Shadows {
@@ -149,6 +154,7 @@ impl Default for Shadows {
         Self {
             resources: std::array::from_fn(|_| None),
             samplers: std::array::from_fn(|_| None),
+            lighting: None,
         }
     }
 }
@@ -241,6 +247,7 @@ unsafe fn capture_shadows(ctx: &ID3D11DeviceContext) -> Shadows {
         samplers: std::array::from_fn(|index| unsafe {
             captured_sampler(ctx, SAMPLER_SLOTS[index])
         }),
+        lighting: unsafe { lighting_constants(ctx) },
     }
 }
 
@@ -259,6 +266,21 @@ unsafe fn restore_shadows(ctx: &ID3D11DeviceContext, shadows: &Shadows) {
             unsafe { ctx.PSSetSamplers(slot, Some(&[saved.cloned()])) };
         }
     }
+    let current = unsafe { lighting_constants(ctx) };
+    if fills_missing(current.is_some(), shadows.lighting.is_some()) {
+        unsafe {
+            ctx.PSSetConstantBuffers(
+                LIGHTING_CONSTANT_SLOT,
+                Some(std::slice::from_ref(&shadows.lighting)),
+            )
+        };
+    }
+}
+
+unsafe fn lighting_constants(ctx: &ID3D11DeviceContext) -> Option<ID3D11Buffer> {
+    let mut buffers = [None];
+    unsafe { ctx.PSGetConstantBuffers(LIGHTING_CONSTANT_SLOT, Some(&mut buffers)) };
+    buffers[0].take()
 }
 
 unsafe fn bound_program(ctx: &ID3D11DeviceContext) -> Option<ID3D11PixelShader> {
