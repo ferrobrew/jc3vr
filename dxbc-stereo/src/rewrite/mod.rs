@@ -9,7 +9,8 @@
 //! `ssdecal` is a pixel-shader rewrite: it separates the screen-space decal permutations'
 //! depth-texture UV from the viewport-normalized UV their reconstruction basis needs, so the two can
 //! address differently-sized spaces. `overlay` maps the final composite's screen-space overlays over
-//! one eye of a double-wide target.
+//! one eye of a double-wide target, and `planar` does the same for the WaveWorks water's planar
+//! reflection lookup.
 
 mod common;
 mod lake;
@@ -22,6 +23,8 @@ pub use lake::{
 };
 mod overlay;
 pub use overlay::localize_screen_overlays;
+mod planar;
+pub use planar::localize_planar_reflection;
 mod resolve;
 pub use resolve::{
     impostor_atlas_scale, local_aa_neighbor, local_bark_dither, local_dof_edge,

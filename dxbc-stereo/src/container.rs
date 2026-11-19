@@ -133,6 +133,9 @@ pub enum DxbcError {
     /// The pixel shader lays no screen-space overlay over the frame in a shape the overlay rewrite
     /// recognises; the caller should leave it untouched.
     NoScreenOverlay,
+    /// The pixel shader binds no planar water reflection, or forms its coordinate in a shape the
+    /// planar-reflection rewrite does not recognise; the caller should leave it untouched.
+    NoPlanarReflection,
 }
 
 impl fmt::Display for DxbcError {
@@ -168,6 +171,7 @@ impl fmt::Display for DxbcError {
             DxbcError::NoEyeLane => "dxbc: no free TEXCOORD3.z lane to carry the eye index",
             DxbcError::NoResolveInputs => "dxbc: unsupported deferred input sequence",
             DxbcError::NoScreenOverlay => "dxbc: no recognised screen-space overlay lookup",
+            DxbcError::NoPlanarReflection => "dxbc: no recognised planar reflection coordinate",
             DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
             DxbcError::NoLakeRefraction => {
                 "dxbc: missing unique lake refraction displacement scale"

@@ -227,6 +227,25 @@ pub struct SinglePassConfig {
     /// headset, which makes the defect easy to miss. On by default -- the flag stays so a suspected regression can be
     /// isolated without rebuilding.
     pub nvwater_per_eye: bool,
+    /// Look the WaveWorks water's planar reflection up by an eye-local coordinate in each eye's
+    /// re-issue of the water surface, on top of [`nvwater_per_eye`](Self::nvwater_per_eye).
+    ///
+    /// The reflection pass renders one eye-sized frame, but the water pixel shaders read it by the
+    /// screen UV, which under the collapse spans both eyes: each eye gets half of the reflection
+    /// stretched over its own half, a colour shift across the whole water surface with opposite sign
+    /// in the two eyes. The re-issue binds a per-eye rewrite of the shader
+    /// (`dxbc_stereo::localize_planar_reflection`), built when the shader is created, so the switch
+    /// applies without a shader reload. On by default.
+    pub water_reflection_per_eye: bool,
+    /// Move the fragment `GlobalConstants` camera position to each eye for that eye's re-issue of the
+    /// WaveWorks water, on top of [`nvwater_per_eye`](Self::nvwater_per_eye).
+    ///
+    /// The engine stages those rows once per pass from the centred camera, and the water pixel
+    /// shaders measure the view vector of their Fresnel, reflection, and specular terms from them, so
+    /// both eyes shade the surface as seen from between them. The same staging
+    /// [`fullscreen_camera_per_eye`](Self::fullscreen_camera_per_eye) gives a split fullscreen pass,
+    /// including the matching sun-shadow cascade translation. On by default.
+    pub water_camera_per_eye: bool,
     /// Reproject the screen-space decal *box geometry* per eye, on top of
     /// [`single_pass_ssdecal_per_eye`](Self::ssdecal_per_eye), which fixes only where the
     /// decal reconstructs from.
@@ -572,6 +591,8 @@ impl SinglePassConfig {
             fog_volume_per_eye: true,
             water_uv_per_eye: true,
             nvwater_per_eye: true,
+            water_reflection_per_eye: true,
+            water_camera_per_eye: true,
             ssdecal_geometry_per_eye: true,
             slot13_per_eye: true,
             collapse_viewport_follows_target: true,

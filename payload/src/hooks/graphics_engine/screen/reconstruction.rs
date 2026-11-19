@@ -646,7 +646,9 @@ fn arm_eye_half_scissor(state: &PerEyeState) -> bool {
         masked: true,
         ..*state
     }));
-    eye_globals::stage(state.eye);
+    if Config::lock_query(|c| c.stereo.single_pass.fullscreen_camera_per_eye) {
+        eye_globals::stage(state.eye);
+    }
     if !ENGAGED.swap(true, Ordering::Relaxed) {
         let width = full.Width;
         tracing::info!(

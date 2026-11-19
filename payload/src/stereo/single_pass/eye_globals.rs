@@ -1,4 +1,4 @@
-//! Per-eye fragment global constants for a fullscreen pass run once per eye.
+//! Per-eye fragment global constants for a pass run once per eye.
 //!
 //! Under the collapse the engine stages the fragment `GlobalConstants` once per pass, from the
 //! centred render camera. A fullscreen pass split per eye
@@ -7,7 +7,9 @@
 //! position for everything measured from the camera: the view vector of the specular and reflection
 //! terms, fog distances, and the origin the sun-shadow lookup subtracts. This module moves the staged
 //! camera rows to the eye for the length of one run and puts them back afterwards, so each half is
-//! shaded from the eye it is drawn for.
+//! shaded from the eye it is drawn for. The WaveWorks water surface's per-eye re-issue stages them
+//! the same way, since its pixel shaders measure the view vector of their reflection and specular
+//! terms from the same rows.
 //!
 //! The sun-shadow cascade transform is baked relative to the camera position the lookup subtracts, so
 //! moving that position moves the lookup with it. The transform's translation row takes the same
@@ -20,17 +22,14 @@ use glam::Vec3;
 use jc3gi::{graphics_engine::render_engine::RenderEngine, types::math::Vector4};
 
 use crate::{
-    config::Config, hooks::graphics_engine::upload_global_constants, stereo::STEREO_STATE,
-    vr::render_params,
+    hooks::graphics_engine::upload_global_constants, stereo::STEREO_STATE, vr::render_params,
 };
 
-/// Move the staged fragment camera rows to `eye` and upload them, for one masked per-eye run on this
-/// thread. A no-op when the switch is off, when a run is already staged, or when the eye's offset or
-/// the engine is unavailable; [`restore`] undoes exactly what this staged.
+/// Move the staged fragment camera rows to `eye` and upload them, for one per-eye run on this
+/// thread. A no-op when a run is already staged, or when the eye's offset or the engine is
+/// unavailable; [`restore`] undoes exactly what this staged. Each caller gates it on its own switch.
 pub(crate) fn stage(eye: usize) {
-    if SAVED.get().is_some()
-        || !Config::lock_query(|c| c.stereo.single_pass.fullscreen_camera_per_eye)
-    {
+    if SAVED.get().is_some() {
         return;
     }
     let Some(delta) = eye_world_offset(eye) else {

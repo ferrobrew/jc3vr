@@ -50,13 +50,14 @@ use jc3gi::{
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
+    config::Config,
     screenshot::harness::stages::{capture_water_after, capture_water_before},
     stereo::{
         draw_index,
         single_pass::{
             BlockIntercept, WaterGpuProbe, begin_water_input_capture, begin_water_surface,
-            block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs, screen_uv_cb_per_eye,
-            with_wave_simulation_viewports,
+            block_intercept_enabled, draw_per_eye_half_ignoring_bound_vs, eye_globals,
+            screen_uv_cb_per_eye, with_wave_simulation_viewports,
         },
     },
 };
@@ -311,6 +312,7 @@ unsafe fn nv_water_per_eye(
         capture_water_before();
     }
     let replay = water_surface.then(begin_water_surface);
+    let stage_camera = Config::lock_query(|c| c.stereo.single_pass.water_camera_per_eye);
 
     draw_per_eye_half_ignoring_bound_vs(|eye| {
         if let Some(replay) = &replay {
@@ -330,6 +332,7 @@ unsafe fn nv_water_per_eye(
             None
         };
         let input_capture = water_surface.then(|| begin_water_input_capture(eye));
+        let _camera = stage_camera.then(|| EyeGlobals::stage(eye));
         draw();
         drop(input_capture);
         if let Some(probe) = probe {
@@ -371,6 +374,24 @@ impl Drop for RenderContextRestore {
             (*self.rc).m_View = self.center_view;
             (*self.rc).m_ProjectionF = self.saved_projection;
         }
+    }
+}
+
+/// The fragment `GlobalConstants` camera rows moved to one eye for one eye's draw, put back on drop.
+/// The water pixel shaders measure the view vector of their reflection and specular terms from
+/// them, and the engine stages them once per pass from the centred camera.
+struct EyeGlobals;
+
+impl EyeGlobals {
+    fn stage(eye: usize) -> Self {
+        eye_globals::stage(eye);
+        Self
+    }
+}
+
+impl Drop for EyeGlobals {
+    fn drop(&mut self) {
+        eye_globals::restore();
     }
 }
 

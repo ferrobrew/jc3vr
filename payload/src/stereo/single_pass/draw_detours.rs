@@ -60,7 +60,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
     let _reflection = unsafe { reflection_treatment(context) };
     let _lake = water
         .filter(|_| _reflection.is_none())
-        .and_then(lake_refraction::bind);
+        .and_then(water_pixel_variants::bind);
     unsafe { raw_entry(RawDrawKind::Indexed, context) };
     let detour = DRAW_INDEXED.get().expect("set before enable");
     if dual_eye_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
@@ -146,7 +146,7 @@ pub(super) unsafe extern "system" fn draw_detour(
     let _reflection = unsafe { reflection_treatment(context) };
     let _lake = water
         .filter(|_| _reflection.is_none())
-        .and_then(lake_refraction::bind);
+        .and_then(water_pixel_variants::bind);
     unsafe { raw_entry(RawDrawKind::NonIndexed, context) };
     let detour = DRAW.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
@@ -318,7 +318,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_indirect_detour(
     let _reflection = unsafe { reflection_treatment(context) };
     let _lake = water
         .filter(|_| _reflection.is_none())
-        .and_then(lake_refraction::bind);
+        .and_then(water_pixel_variants::bind);
     unsafe { raw_entry(RawDrawKind::IndexedInstancedIndirect, context) };
     let detour = DRAW_INDEXED_INSTANCED_INDIRECT
         .get()
@@ -347,7 +347,7 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
     let _reflection = unsafe { reflection_treatment(context) };
     let _lake = water
         .filter(|_| _reflection.is_none())
-        .and_then(lake_refraction::bind);
+        .and_then(water_pixel_variants::bind);
     unsafe { raw_entry(RawDrawKind::InstancedIndirect, context) };
     let detour = DRAW_INSTANCED_INDIRECT.get().expect("set before enable");
     // SAFETY: forwards the caller's arguments unchanged to the trampoline.
@@ -460,7 +460,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
     let _reflection = unsafe { reflection_treatment(context) };
     let _lake = water
         .filter(|_| _reflection.is_none())
-        .and_then(lake_refraction::bind);
+        .and_then(water_pixel_variants::bind);
     unsafe { raw_entry(RawDrawKind::IndexedInstanced, context) };
     let detour = DRAW_INDEXED_INSTANCED.get().expect("set before enable");
     let submit = || {

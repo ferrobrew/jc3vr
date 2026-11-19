@@ -75,7 +75,6 @@ mod draw_detours;
 pub(crate) mod eye_globals;
 mod frame_diagnostics;
 mod instanced_exposure;
-pub(crate) mod lake_refraction;
 mod per_eye_reissue;
 mod shader_detours;
 pub(crate) mod shader_identity;
@@ -84,6 +83,7 @@ mod sun;
 mod viewport;
 mod water_fragment_state;
 mod water_gpu_probe;
+pub(crate) mod water_pixel_variants;
 
 pub use cb13::*;
 pub use config_snapshot::*;

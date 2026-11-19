@@ -276,6 +276,25 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      Flat water at the wrong depth looks right on the mirror and wrong in the headset.",
                 );
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.water_reflection_per_eye,
+                    "...and look its reflection up per eye",
+                )
+                .on_hover_text(
+                    "Reads the WaveWorks water's planar reflection by each eye's own screen \
+                     coordinate. Off, each eye samples half of the one eye-sized reflection \
+                     stretched across its view, shifting the water's colour differently in each \
+                     eye. Applies immediately: the per-eye shaders are built with the originals.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.water_camera_per_eye,
+                    "...and shade it from each eye's position",
+                )
+                .on_hover_text(
+                    "Moves the camera position the water's Fresnel, reflection, and specular terms \
+                     are measured from to each eye for that eye's draw. Off, both eyes shade the \
+                     water as seen from the point between them.",
+                );
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.ssdecal_geometry_per_eye,
                     "...and reproject the decal box geometry",
                 )

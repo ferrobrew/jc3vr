@@ -449,6 +449,29 @@ headset comparison the only way to tell the fix from a no-op. The re-issue lives
 > [`WaveWorksSimulationStep`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::WaveWorksSimulationStep)
 > is suppressed, since it is the one non-idempotent call in the block. It has not been verified in
 > the headset either.
+>
+> One `NvWater*` screen-space read is not consistent under double-wide after all: the planar
+> reflection. The reflection pass renders one eye-sized frame from the mirrored camera (the
+> [`WaterPatchManager::m_ReflectionCamera`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/water_patch_manager::WaterPatchManager##field-m_ReflectionCamera)),
+> and every `nvwater*` pixel shader that binds `g_ReflectionTexture` forms its horizontal coordinate
+> as the screen UV divided by `g_UVScale.x`, so each eye reads half of the reflection stretched over
+> its own half. At the shore lake that shows as a low-amplitude colour shift over the whole surface,
+> opposite in sign in the two eyes, with the water's depth unchanged. `single_pass.water_reflection_per_eye`
+> (**on**) gives that division the eye-local numerator `2u - eye`; the rewrite finds the division by
+> the resource and constant names, covers the four permutations that bind the reflection, and is
+> bound per eye by the re-issue (`stereo/single_pass/water_pixel_variants.rs`) together with the lake
+> permutation's halved refraction displacement. The refraction, depth, ambient-occlusion, and
+> dynamic local reflection lookups keep the full-target UV, because those buffers are double-wide.
+>
+> Two more per-eye inputs ride on the same re-issue. The water pixel shaders measure the view vector
+> of their Fresnel, reflection, and specular terms from the fragment `GlobalConstants` camera
+> position, which the engine stages once per pass from the centred camera; `single_pass.water_camera_per_eye`
+> (**on**) moves it to each eye for that eye's draw, with the staging split fullscreen passes use. And
+> the second eye's draw can find pixel state the first eye's left bound unbound, so
+> `stereo/single_pass/water_fragment_state.rs` captures it during the first eye and fills any slot
+> that comes back empty: the shadow maps and their samplers, the WaveWorks constants and samplers,
+> and the sky-lighting textures and `LightingFrameConsts`. Without the sky lighting, the second eye's
+> water came out uniformly about 2% darker than an isolated render of that eye.
 
 #### The water box surface, and what the legacy family's clip path actually is
 
@@ -590,6 +613,8 @@ is marked with its actual default.
 | `single_pass.foliage` | On | `RenderBlockFoliage`'s colour and depth draws. Also declines the `cb0` remap on `vegetationfoliage*` (see below). |
 | `single_pass.occluder` | Off | `RenderBlockOccluder`'s depth prime. **Blind-implemented, unvalidated.** |
 | `single_pass.nvwater_per_eye` | On | The WaveWorks water blocks, whose baked model-view-projection leaves both eyes on the centre view. Not yet verified in the headset. |
+| `single_pass.water_reflection_per_eye` | On | On top of `single_pass.nvwater_per_eye`: each eye's water re-issue binds a rewrite of the water pixel shader that looks the eye-sized planar reflection up by an eye-local coordinate (`dxbc_stereo::localize_planar_reflection`). Applies without a shader reload. |
+| `single_pass.water_camera_per_eye` | On | On top of `single_pass.nvwater_per_eye`: each eye's water re-issue moves the fragment `GlobalConstants` camera position (and the matching sun-shadow cascade translation) to that eye, the staging `single_pass.fullscreen_camera_per_eye` gives a split fullscreen pass, because the water's Fresnel, reflection, and specular view vector is measured from it. |
 | `single_pass.ssdecal_geometry_per_eye` | On | The screen-space decal box geometry, same shape. On top of `single_pass.ssdecal_per_eye`. |
 
 ### Per-eye viewport and draw routing

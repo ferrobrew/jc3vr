@@ -41,7 +41,8 @@ use crate::{
     config::Config,
     hooks::graphics_engine::ss_decal,
     stereo::single_pass::{
-        VsTransform, is_terrain_shadow_pass, lake_refraction, set_patch_pending, terrain_active,
+        VsTransform, is_terrain_shadow_pass, set_patch_pending, terrain_active,
+        water_pixel_variants,
     },
 };
 
@@ -279,14 +280,14 @@ fn create_fragment_program(
     if saved.is_none()
         && !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
-        && p.m_Size == lake_refraction::BYTECODE_SIZE as u64
         && !p.m_Code.is_null()
+        && let Ok(size) = usize::try_from(p.m_Size)
         && let Some(shader) = unsafe { result.as_ref() }.and_then(|p| p.m_Program.as_ref())
-        && let Err(error) = lake_refraction::register(shader, unsafe {
-            std::slice::from_raw_parts(p.m_Code, lake_refraction::BYTECODE_SIZE)
+        && let Err(error) = water_pixel_variants::register(shader, unsafe {
+            std::slice::from_raw_parts(p.m_Code, size)
         })
     {
-        tracing::warn!("lake refraction: {error:#}");
+        tracing::warn!("{error:#}");
     }
 
     if let Some((original_code, original_size, _copy)) = saved
