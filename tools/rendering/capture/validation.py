@@ -719,7 +719,9 @@ def validate_resolve_inputs(folder: Path, capture_id: str, metadata: dict, mode:
 
 
 LAKE_SHADER = "99dd7036aa192c346c1e23883da83cf4da300dd1190dee40eedb3c2421531531"
-PACKED_LAKE_SHADER = "2de4e3c8c3174fd998bc3d26498fc5698fcacc1aa67a5f92c40b87a28748f908"
+# The lake pixel shader single-pass binds under the default switches: the per-eye water variant with
+# the pixel-shader rewrites composed onto it, so a change to any of those rewrites changes it.
+PACKED_LAKE_SHADER = "039c4406cc46bf49a7884c868631a2d9201e5efaae68f273a63376003c4554e8"
 
 
 GRADIENT_STAGES = ('lake_gradient_sample', 'lake_gradient_uv', 'lake_gradient_coarse_x',

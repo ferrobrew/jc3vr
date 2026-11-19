@@ -184,8 +184,7 @@ pub(super) unsafe extern "system" fn draw_detour(
         // A patched shader resolves its eye from the instance parity and routes itself to that eye's
         // half, so one two-instance draw covers both eyes, as the indexed path promotes its draws.
         if BOUND_VS_PATCHED.load(Ordering::Relaxed)
-            && STATIC_LIGHT_PASSES.contains(&pass)
-            && config_flags().has(Flag::StaticLights)
+            && promotes_non_indexed(pass, config_flags())
             // SAFETY: `context` is the live immediate context this entry was called on.
             && let Some(ctx) =
                 unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) }
@@ -198,6 +197,27 @@ pub(super) unsafe extern "system" fn draw_detour(
                 [vertex_count.into(), 2, start_vertex.into(), 0, 0],
                 // SAFETY: `DrawInstanced` is not detoured, so the promotion is not seen again as a
                 // game draw; the arguments are the caller's, with the instance count doubled.
+                || unsafe { ctx.DrawInstanced(vertex_count, 2, start_vertex, 0) },
+            );
+            return;
+        }
+        // The moon is one reprojected `open` quad, so it takes the same two-instance promotion, with
+        // its far-plane depth kept through the reprojection.
+        if BOUND_VS_PATCHED.load(Ordering::Relaxed)
+            && pass == RenderPassId::RP_MOON as u8
+            && config_flags().has(Flag::Moon)
+            // SAFETY: `context` is the live immediate context this entry was called on.
+            && let Some(ctx) =
+                unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) }
+            && let Some(_depth) = FarDepthRows::begin()
+        {
+            ensure_collapse_viewport(context, CollapseViewport::Split);
+            PATCHED_DRAWS.fetch_add(1, Ordering::Relaxed);
+            velocity::submit(
+                context,
+                "draw_promoted",
+                [vertex_count.into(), 2, start_vertex.into(), 0, 0],
+                // SAFETY: as for the light sprites above.
                 || unsafe { ctx.DrawInstanced(vertex_count, 2, start_vertex, 0) },
             );
             return;
@@ -328,12 +348,58 @@ pub(super) const GEOMETRY_SLOT13_PASSES: &[u8] = &[
 /// records the block drawing in [`RenderPassId::RP_LENSFLARE`]; its third pass, the planar
 /// reflection's distant lights, lies outside the routed range. It is an allowlist rather than every
 /// patched non-indexed draw because the census also records patched shaders on non-indexed draws
-/// that are not scene geometry routed to the eye halves (the light-propagation-volume initialisation
-/// inside the screen-space reflection block), and splitting those would change what they write.
+/// that are not scene geometry routed to the eye halves (the light-propagation-volume
+/// initialisation, which writes a volume texture through its own geometry shader), and splitting
+/// those would change what they write. The moon takes its own promotion, gated on
+/// `single_pass.moon_per_eye`.
 const STATIC_LIGHT_PASSES: &[u8] = &[
     RenderPassId::RP_DEFERRED_LIGHTS as u8,
     RenderPassId::RP_LENSFLARE as u8,
 ];
+
+/// Both `cb13` eye slots with their reprojection keeping the clip depth, restored to the live rows on
+/// drop.
+///
+/// The `open` vertex shader pins a sky body's clip depth to the far plane when its material asks
+/// for it. `M_eye`'s depth row mixes the other clip components back in, which moves that depth off
+/// the plane and clips the body, so the promoted moon draws with `M_eye`'s depth row replaced by the
+/// identity row in both slots, the correction the sun's per-eye re-drive takes.
+struct FarDepthRows {
+    d3d: EngineContext,
+    rows: [Vector4; STEREO_CB_TOTAL_ROWS],
+}
+
+impl FarDepthRows {
+    /// `None` when `cb13` holds no rows yet or the write fails; the caller then draws unpromoted.
+    fn begin() -> Option<Self> {
+        let d3d = EngineContext::get()?;
+        let rows = CB13.lock().live_rows()?;
+        let mut corrected = rows;
+        preserve_reprojection_depth(&mut corrected);
+        write_cb13_rows(d3d, &corrected).then_some(Self { d3d, rows })
+    }
+}
+
+impl Drop for FarDepthRows {
+    fn drop(&mut self) {
+        if !write_cb13_rows(self.d3d, &self.rows) {
+            tracing::warn!(
+                target: "single_pass",
+                "moon: cb13 restore failed; later passes may render with the far-depth rows"
+            );
+        }
+    }
+}
+
+/// Whether a non-indexed draw with a patched vertex shader in `pass` is promoted to one
+/// two-instance draw routed to the eye halves: the static light sprites' passes under
+/// `single_pass.static_lights_per_eye`, and the water reflection planes' pass under
+/// `single_pass.water_plane_per_eye`, whose proxy quad the `watermask` reprojection moves into each
+/// eye. The moon's promotion is separate, since it also has to keep its far-plane depth.
+fn promotes_non_indexed(pass: u8, flags: ConfigFlags) -> bool {
+    (STATIC_LIGHT_PASSES.contains(&pass) && flags.has(Flag::StaticLights))
+        || (pass == RenderPassId::RP_REFLECTIVE_WATER_PLANES as u8 && flags.has(Flag::WaterPlane))
+}
 
 pub(super) fn is_geometry_slot13_pass(pass: u8) -> bool {
     GEOMETRY_SLOT13_PASSES.contains(&pass)

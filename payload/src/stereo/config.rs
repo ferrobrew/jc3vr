@@ -127,6 +127,21 @@ pub struct SinglePassConfig {
     /// the type's `Setup` stages the sprites' inverse screen width at one eye's width. The
     /// reprojection needs a shader reload; the rest applies at once. On by default.
     pub static_lights_per_eye: bool,
+    /// Draw the moon (the `open` model in `RP_MOON`) once for both eyes under the double-wide
+    /// collapse. Its non-indexed draw was drawn once across the whole double-wide target with eye 0's
+    /// transform, so it was missing from eye 0 and stretched to twice its width in eye 1. The draw is
+    /// promoted to two instances routed to the eye halves, with the reprojection keeping the moon's
+    /// far-plane depth. It needs the `open` reprojection, which `reproject` gates, and applies at
+    /// once. On by default.
+    pub moon_per_eye: bool,
+    /// Draw the water reflection planes' proxy quads (`RenderBlockWaterReflectionPlane`, the depth the
+    /// screen-space reflections trace water against) once for both eyes under the double-wide
+    /// collapse. The quad's non-indexed draw was drawn once across the whole double-wide target from
+    /// the centred camera, so each eye's water depth was the other half of a stretched quad. The
+    /// `watermask` vertex shader takes the `M_eye` reprojection (the water mask volumes share it, and
+    /// their indexed draws are promoted like any patched draw), and the proxy draw is promoted to two
+    /// instances routed to the eye halves. The reprojection needs a shader reload. On by default.
+    pub water_plane_per_eye: bool,
     /// Single-pass the tree-trunk/branch render block (`CRenderBlockBark`, "VegetationBark"). Its vertex
     /// shader reads a CPU-baked world-view-projection from `cb1` (not `cb0`) and draws via one of three
     /// kinds (plain, CPU-instanced, or GPU-indirect), so it can't ride the reprojection rewrite; instead
@@ -689,6 +704,8 @@ impl SinglePassConfig {
             tree_impostors: false,
             tree_impostor_pixel_size_per_eye: true,
             static_lights_per_eye: true,
+            moon_per_eye: true,
+            water_plane_per_eye: true,
             bark: true,
             foliage: true,
             occluder: false,

@@ -230,6 +230,29 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
+                ui.checkbox(&mut cfg.stereo.single_pass.moon_per_eye, "Moon per eye")
+                    .on_hover_text(
+                        "Promotes the moon's non-indexed draw to one two-instance draw routed to the \
+                         eye halves, with its far-plane depth kept through the reprojection. Off, \
+                         the moon is drawn once across the whole double-wide target: missing from \
+                         the left eye and twice as wide in the right. Needs the reprojection; \
+                         applies at once.",
+                    );
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.water_plane_per_eye,
+                        "Water reflection planes per eye",
+                    )
+                    .on_hover_text(
+                        "Reprojects the watermask vertex shader by M_eye and promotes the water \
+                         reflection planes' proxy quad to one two-instance draw routed to the eye \
+                         halves. Off, the quad the screen-space reflections trace water against is \
+                         drawn once across the whole double-wide target. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
                 ui.label("Render-block re-issue:");
                 if ui
                     .checkbox(

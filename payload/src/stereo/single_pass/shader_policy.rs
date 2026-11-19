@@ -77,11 +77,19 @@ const STATIC_LIGHT_REPROJECT_NAME_PREFIXES: &[&str] = &["lightsource"];
 /// reprojection moves the box into each eye, and the pixel-shader rewrite stops reading that UV.
 const AO_VOLUME_REPROJECT_NAME: &str = "aobox";
 
+/// The vertex shader of the water reflection planes' proxy quad and the water mask volumes
+/// (`CRenderBlockWaterReflectionPlane`, `CRenderBlockWaterMask`), gated by the
+/// [`water_plane_per_eye`](crate::stereo::config::SinglePassConfig::water_plane_per_eye) flag. Both
+/// blocks stage an offset world-view-projection at vertex `cb1[0..3]` and the shader is a bare
+/// multiply-add chain over it, so the reprojection moves either into each eye.
+const WATER_PLANE_REPROJECT_NAME: &str = "watermask";
+
 /// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: the
 /// `single_pass_reproject` flag is on and the name is on [`REPROJECT_NAME_PREFIXES`], the
 /// `single_pass_tree_impostors` flag is on and the name is on [`VEGETATION_REPROJECT_NAME_PREFIXES`],
 /// the static-light flag is on and the name is on [`STATIC_LIGHT_REPROJECT_NAME_PREFIXES`], or the
-/// ambient-occlusion volume flag is on and the name is [`AO_VOLUME_REPROJECT_NAME`].
+/// ambient-occlusion volume flag is on and the name is [`AO_VOLUME_REPROJECT_NAME`], or the water
+/// plane flag is on and the name is [`WATER_PLANE_REPROJECT_NAME`].
 /// Called from the `CreateVertexProgram` hook when `patch_vertex_shader` reports no per-eye `cb0`
 /// operands.
 pub fn should_reproject(name: Option<&str>) -> bool {
@@ -99,6 +107,7 @@ pub fn should_reproject(name: Option<&str>) -> bool {
                 .iter()
                 .any(|p| name.starts_with(p)))
         || (flags.has(Flag::AoVolumes) && name == AO_VOLUME_REPROJECT_NAME)
+        || (flags.has(Flag::WaterPlane) && name == WATER_PLANE_REPROJECT_NAME)
 }
 
 /// Whether a scene family the `cb0` remap *claims* should be reprojected instead, because the only

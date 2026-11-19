@@ -61,6 +61,8 @@ single_pass_switches! {
     TreeImpostors => tree_impostors, true;
     TreeImpostorPixelSizePerEye => tree_impostor_pixel_size_per_eye, false;
     StaticLightsPerEye => static_lights_per_eye, true;
+    MoonPerEye => moon_per_eye, false;
+    WaterPlanePerEye => water_plane_per_eye, true;
     Bark => bark, true;
     Foliage => foliage, true;
     Occluder => occluder, false;

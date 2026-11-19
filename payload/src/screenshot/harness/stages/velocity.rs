@@ -954,7 +954,9 @@ impl Trace {
                         "{:x}",
                         sha2::digest::Output::<sha2::Sha256>::from(v.actual_sha256)
                     ) == expected_vs)
-                    && matches!(ps.as_ref().map(shader_identity::lookup),Some(shader_identity::IdentityResult::Mapped{identity}) if identity.actual_sha256==expected_ps && identity.pristine_sha256==expected_ps),
+                    // The bound shader may carry `single_pass.screen_door_per_eye`'s rewrite; the
+                    // trial replaces it with its own treatment of the pristine bytecode either way.
+                    && matches!(ps.as_ref().map(shader_identity::lookup),Some(shader_identity::IdentityResult::Mapped{identity}) if identity.pristine_sha256==expected_ps),
                 "bark trial: unexpected submission"
             );
             let bytes = dxbc_stereo::local_bark_dither(
