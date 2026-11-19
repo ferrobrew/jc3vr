@@ -83,6 +83,7 @@ single_pass_switches! {
     WaterCameraPerEye => water_camera_per_eye, false;
     SsdecalGeometryPerEye => ssdecal_geometry_per_eye, false;
     Slot13PerEye => slot13_per_eye, false;
+    NonIndexedGeometryOnce => non_indexed_geometry_once, false;
     CollapseViewportFollowsTarget => collapse_viewport_follows_target, false;
     SsaoPerEye => ssao_per_eye, true;
     AoVolumesPerEye => ao_volumes_per_eye, true;

@@ -8,11 +8,16 @@ SHA-256 of the engine's bytecode and are named here from the shader bundle.
 Usage::
 
     python -m tools.rendering census <capture.json> --bundle <Shaders_F.shader_bundle>
-        [--passes FIRST:LAST] [--totals]
+        [--passes FIRST:LAST] [--totals] [--accounting] [--multipass <capture.json>]
 
 ``--passes`` keeps the passes from ``FIRST`` to ``LAST`` inclusive, by ``RenderPassId`` name, with
 the ids taken from the pyxis definitions.
 ``--totals`` adds the calls and submissions per treatment for the passes kept.
+``--accounting`` prints, instead of the entries, the game's calls and the single-pass submissions by
+handling, by render pass, by render-block type, and by render-block type and vertex shader, the last
+two ranked by the submissions a single draw for both eyes would save (see ``draw_accounting``);
+``--multipass`` adds, by pass and by block, the submissions a multipass census of the same scene
+records.
 """
 
 import argparse
@@ -22,6 +27,8 @@ import re
 import sys
 from collections import Counter
 from pathlib import Path
+
+from tools.rendering.comparison import draw_accounting as acc
 
 SHADER_NAMES = Path(__file__).resolve().parents[2] / "shaders" / "shader_names.py"
 RENDER_PASS_IDS = (Path(__file__).resolve().parents[3] / "jc3gi" / "pyxis-defs" / "projects" / "JustCause3" /
@@ -76,8 +83,11 @@ def rows(entries: list[dict], names: dict[str, str]) -> list[str]:
     out = []
     for e in sorted(entries, key=lambda e: (e["dispatch"], e["pass"], e["block"] or "", -e["calls"])):
         eye = "" if e["reissue_eye"] is None else f" reissue_eye={e['reissue_eye']}"
+        if e.get("split_eye") is not None:
+            eye += f" split_eye={e['split_eye']}"
+        patched = " patched" if e.get("vertex_patched") else ""
         out.append(f"{e['dispatch']} {e['pass_name']} {e['block'] or '-'} "
-                   f"vs={shader_label(e['vertex_shader'], names)} ps={shader_label(e['pixel_shader'], names)} "
+                   f"vs={shader_label(e['vertex_shader'], names)}{patched} ps={shader_label(e['pixel_shader'], names)} "
                    f"{e['entry']} {e['treatment']}{eye} calls={e['calls']} submissions={e['submissions']}")
     return out
 
@@ -90,12 +100,26 @@ def totals(entries: list[dict]) -> list[str]:
     return [f"{t}: calls={calls[t]} submissions={submissions[t]}" for t in sorted(calls)]
 
 
+def accounting_report(entries: list[dict], multipass: list[dict] | None, names: dict[str, str]) -> list[str]:
+    def label(shader: dict) -> str:
+        return shader_label(shader, names)
+
+    with_mp = multipass is not None
+    out = acc.table(acc.account(entries, None, acc.by_handling, label), "handling", False, False)
+    out += [""] + acc.table(acc.account(entries, multipass, acc.by_pass, label), "pass", False, with_mp)
+    out += [""] + acc.table(acc.account(entries, multipass, acc.by_block, label), "block", True, with_mp)
+    out += [""] + acc.table(acc.account(entries, None, acc.by_family, label), "shader", True, False)
+    return out
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="python -m tools.rendering census")
     parser.add_argument("capture", type=Path)
     parser.add_argument("--bundle", type=Path, required=True)
     parser.add_argument("--passes")
     parser.add_argument("--totals", action="store_true")
+    parser.add_argument("--accounting", action="store_true")
+    parser.add_argument("--multipass", type=Path)
     args = parser.parse_args(argv)
     try:
         census = json.loads(args.capture.read_text()).get("draw_census")
@@ -104,11 +128,20 @@ def main(argv=None) -> int:
         ids = pass_ids(RENDER_PASS_IDS.read_text()) if RENDER_PASS_IDS.exists() else {}
         entries = select(census["entries"], args.passes, ids)
         names = bundle_names(args.bundle)
+        multipass = None
+        if args.multipass is not None:
+            reference = json.loads(args.multipass.read_text()).get("draw_census")
+            if not isinstance(reference, dict):
+                raise CensusError(f"census: {args.multipass} carries no draw census")
+            multipass = select(reference["entries"], args.passes, ids)
     except (CensusError, OSError, json.JSONDecodeError) as error:
         print(error, file=sys.stderr)
         return 1
     if census.get("error"):
         print(f"census: recorded with an error: {census['error']}", file=sys.stderr)
+    if args.accounting:
+        print("\n".join(accounting_report(entries, multipass, names)))
+        return 0
     print("\n".join(rows(entries, names)))
     if args.totals:
         print("\n".join(totals(entries)))

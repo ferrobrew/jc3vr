@@ -572,6 +572,13 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     "Re-issues a non-indexed Draw once per eye, with both viewport and cb13 eye slots pinned to that eye, for the passes known to submit geometry this way. Off, every slot-13 draw gets the whole double-wide viewport -- right for a fullscreen triangle, but it stretches decals and road layers 2x horizontally, which is a 2x motion gain and reads as them sliding over the world. Default off until the pass allowlist is confirmed: read the 'slot-13 by pass' census in the log to see which passes actually arrive here.",
                 );
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.non_indexed_geometry_once,
+                    "Patched non-indexed geometry once for both eyes (skidmarks)",
+                )
+                .on_hover_text(
+                    "In the same passes, a non-indexed Draw whose vertex shader is patched is promoted to one two-instance draw routed to the eye halves, instead of being re-issued once per eye. The shader picks its eye from the instance parity, so one submission covers both eyes. Applies at once.",
+                );
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.atmospheric_per_eye,
                     "Atmospheric scattering per eye (sun shadows, aerial perspective)",
                 )

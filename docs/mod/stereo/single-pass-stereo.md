@@ -777,6 +777,7 @@ is marked with its actual default.
 | `single_pass.instanced_per_eye` | On | Per-eye re-issue of an already-instanced `DrawIndexedInstanced` with a patched shader bound. |
 | `single_pass.indirect_per_eye` | On | Per-eye re-issue of the GPU-indirect draws (mechanism 1). |
 | `single_pass.slot13_per_eye` | On | Per-eye re-issue of non-indexed world geometry, by pass allowlist (mechanism 1). |
+| `single_pass.non_indexed_geometry_once` | On | In those passes, a non-indexed draw whose vertex shader is patched is promoted to one two-instance draw routed to the eye halves instead of being re-issued per eye (see "Accounting for the draw calls"). Applies at once. |
 | `single_pass.moon_per_eye` | On | Promotes the moon's non-indexed draw to one two-instance draw routed to the eye halves, with its far-plane depth kept through the reprojection (see "The moon and the water reflection planes, once for both eyes"). Needs `single_pass.reproject`. |
 | `single_pass.collapse_viewport_follows_target` | On | Derives the eye halves from the bound render target rather than the scene viewport (mechanism 4). |
 | `single_pass.uniform_viewport_slots` | On | Puts both viewport slots back to one region once the G-buffer range ends, so a patched shader's instance parity is a no-op in the passes that are not eye-split. |
@@ -866,23 +867,24 @@ either: they are correctness surface, not duplicated work.
   reprojection inside the same re-issue.
 - **The terrain patch system is drawn twice.** Its GPU-indirect near passes and its far tessellated
   passes are per-eye re-issues with the eye pinned in `cb13`, correct in both eyes but one submission
-  per eye. Bringing them into one draw needs the indirect argument doubling below for the near passes
-  and an eye interpolant through the hull stage for the far ones.
+  per eye, about 140 extra submissions per scene. Bringing them into one draw needs the indirect argument doubling below for the near passes
+  and an eye interpolant through the hull stage for the far ones (see "What blocks the largest families").
 - **`cb0`'s projection is double-wide.** Unpatched geometry that reads `cb0` rather than `cb13`
   renders horizontally squashed under double-wide.
 - **The sun halo is one sprite per screen.** [`SunHaloEffect::PreApply`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::post_effects::SunHaloEffect##func-PreApply) projects the sun through the render context's single projection onto the scene texture's pixel size and draws one halo there, so under the collapse it lands once, somewhere across the double-wide target, rather than once per eye. It runs only while the sun is low, so the midday sky capture does not exercise it. A per-eye halo needs two projections and two composites, which is a draw-count decision, and has not been made.
 - **The tree impostors' screen door is laid out over the double-wide target.** The `treeimpostor*` permutations hash their discard threshold from their own projected position divided by twice the inverse screen size, not from `SV_Position`, so `single_pass.screen_door_per_eye` does not reach them; under double-wide their pattern is scaled and offset relative to an isolated eye's. Unmeasured.
 - **The first frames after entering single-pass can reflect the double-wide field.** See "The planar reflection camera, at one eye's size": in two of three captures taken right after the harness switched from multipass into single-pass, the shore lake's reflection still had the double-wide field. Run 265's first single-pass sample at the shore lake differed from the isolated eyes at 5,407 and 5,385 pixels against 794 and 754 for the next two, consistent with the same transient; its reflection texture was not captured. Unexplained.
 - **The other screen-space light sprites are unexamined.** The particle flares (`particleeffectflare*`), the light glows (`lightglow`), and the halos place their sprites from the centred camera's screen position on the CPU, and the flares and glows test occlusion by sampling depth at one full-target UV staged per draw. Their unpatched indexed draws are re-issued into each eye's half, where that UV samples the wrong pixel. None of them drew in the dusk cliff view's draw census, so this is read from the bytecode and the symbol dump and is unverified in game.
-- **Patched non-indexed geometry is still re-issued per eye.** The geometry passes on `Draw` (skidmarks, decals, roads) go through `instanced_per_eye`, two submissions per call, where the static light sprites' promotion to one two-instance draw would serve a patched shader with one.
+- **The tessellated particles are drawn twice.** `particleeffecttess*` pass the world position through a vertex shader the `cb0` remap patches and build clip in an unpatched domain shader, so they cannot take the non-indexed promotion and stay on the per-eye re-issue (up to 85 submissions at the town view). One draw needs the eye carried to the domain shader, the terrain's problem.
 - **Screen-space passes leak across the eye seam.** FSR and the unsplit screen-space passes run once
   over the double-wide target and sample neighbourhoods; they need a UV clamp at the seam.
 - **The 14 already-instanced shaders** need their `SV_InstanceID` consumers rewritten to
   `SV_InstanceID >> 1` to survive the doubling. The DXBC transform is offline-testable; the
   per-instance semantics are not.
-- **GPU-indirect vegetation** needs an in-place compute pre-pass doubling each indirect draw's
-  `InstanceCount` (dword +1 of the 5-dword args, in the GPU-only `veg_draw_indirect` buffer, which has
-  no CPU copy) before it can be instance-doubled rather than re-issued.
+- **The hardware-instanced buildings are drawn twice.** `generalmkiiihwinstanced` and its permutations take their per-instance data from vertex-buffer elements, so `instanced_per_eye` re-issues them, about 180 extra submissions per scene and 640 in the capital. One draw needs a twin of each instanced input layout with doubled step rates (see "What blocks the largest families").
+- **GPU-indirect vegetation** needs a compute pass doubling each indirect draw's
+  `InstanceCount` (dword +1 of the 5-dword args, in the vegetation update's `veg_draw_indirect` texture buffers, which have
+  no CPU copy) before it can be instance-doubled rather than re-issued, and the block re-issue can only go once its hardware-instanced and plain draws are single draws too. It is the largest remaining cost, about 600 extra submissions per scene (see "What blocks the largest families").
 - **The reflection blur's compute path reaches across the eye seam.** The screen-space reflection block's compute blur, which [`m_ComputeBlur`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockScreenSpaceReflection##field-m_ComputeBlur) selects in place of the two blur draws, is not rewritten, so its horizontal pass still mixes six texels either side of the seam. The cliff view's captures take the draw path.
 - **Bark's velocity pass** reprojects only the current-frame matrix; the previous-frame copy that [`RenderBlockBark::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockBark##func-DrawZ) stages in `cb1` stays centred, so bark's motion vectors are slightly wrong for SMAA and FSR.
 - **The occluder intercept assumes `gfx.occluders.use_instancing` is off**, and nothing forces that cvar. The cvar's storage and default are not yet located.
@@ -916,9 +918,7 @@ draws are excluded — a promoted `DrawIndexed` is re-issued through the trampol
 bark/foliage/occluder per-eye re-issue by the `PER_EYE_REISSUE` marker, which this re-issue raises too.
 Everything else is forwarded once, unchanged.
 
-Cost is one extra submission per such draw: measured at a mean of ~131 draws per frame against ~20k
-total, dominated by `generalmkiiihwinstanced` (the buildings), then the `vegetationfoliage*hwinstanced`
-and `vegetationbark*hwinstanced` families.
+Cost is one extra submission per such draw, dominated by `generalmkiiihwinstanced` (the buildings): between 3 and 644 extra submissions at the six views of "Accounting for the draw calls", most in the capital.
 
 The counters that measure the case split it into **handled** (re-issued per eye)
 and **exposed** (the flag off, or the re-issue declined for want of a recorded full viewport, a live
@@ -958,9 +958,83 @@ reappear; it cannot move what already rendered. The log reports how many repairs
 
 ## Naming the draws in a pass range
 
-A capture can carry a census of the draw calls its frame made (`payload/src/screenshot/harness/draw_census.rs`), requested by `draw_census = true` under an experiment's `[diagnostics]` alongside `shader_identity = true`, which it needs to name the shaders; `tools/rendering/experiments/cliff_view_dusk_draw_census.toml` is the dusk cliff view with it on. For every draw call made inside a render pass on the capture's frame it records the pass, the render-block type running, the bound vertex shader (by name) and pixel shader (by the hash of its pristine bytecode), the device-context entry point, and the treatment the draw path gave the call: `instance_doubled`, `per_eye` (submitted once per eye), `once`, `suppressed`, or `repeated`, plus the eye when the call was made inside a render block's per-eye re-issue. Calls that agree on all of that are folded into one entry with call and submission counts, which keeps a frame to about two hundred entries. It only observes, and since it hangs off the collapse's draw detours, only a single-pass capture records calls.
+A capture can carry a census of the draw calls its frame made (`payload/src/screenshot/harness/draw_census.rs`), requested by `draw_census = true` under an experiment's `[diagnostics]` alongside `shader_identity = true`, which it needs to name the shaders; `tools/rendering/experiments/cliff_view_dusk_draw_census.toml` is the dusk cliff view with it on. For every draw call made inside a render pass on the capture's frame it records the pass, the render-block type running, the bound vertex shader (by name, and whether the single-pass rewrite patched it) and pixel shader (by the hash of its pristine bytecode), the device-context entry point, and the treatment the draw path gave the call: `instance_doubled`, `per_eye` (submitted once per eye), `once`, `suppressed`, or `repeated`, plus the eye when the call was made inside a render block's per-eye re-issue (`reissue_eye`) or inside one run of a fullscreen pass split per eye (`split_eye`). Calls that agree on all of that are folded into one entry with call and submission counts, which keeps a frame to about two hundred entries. It only observes. It hangs off the draw detours, which the harness also has installed in a multipass capture, so a multipass capture records both eyes' walks as dispatches 0 and 1. A multipass capture's vertex shader names are not reliable: they come from a registry keyed by the shader object, and the shader reload between modes can leave them stale. The pass, the block, and the pixel shader hashes are unaffected.
 
-`python -m tools.rendering census <capture.json> --bundle <Shaders_F.shader_bundle> --passes FIRST:LAST --totals` prints the entries for a pass range with the pixel shaders named from the bundle, and the call and submission totals per treatment, which is also the starting point for counting where the collapse still spends two submissions on one call.
+`python -m tools.rendering census <capture.json> --bundle <Shaders_F.shader_bundle> --passes FIRST:LAST --totals` prints the entries for a pass range with the pixel shaders named from the bundle, and the call and submission totals per treatment. `--accounting` prints the accounting below instead of the entries, and `--multipass <capture.json>` adds a multipass capture's submissions to it.
+
+## Accounting for the draw calls
+
+Single-pass exists to cut the submissions multipass makes, so the census is also the measure of how far it gets. `python -m tools.rendering census <single-pass capture.json> --bundle <bundle> --accounting --multipass <multipass capture.json>` (`tools/rendering/comparison/draw_accounting.py`) counts, for each render pass, each render-block type, and each block and vertex shader:
+
+- the game's calls: every call the census recorded, leaving out the collapse's own repeats, the second eye of a render block re-driven per eye (`reissue_eye` 1) and the second run of a split fullscreen pass (`split_eye` 1). Within the routed range this agrees with the multipass capture's first dispatch to within a few calls, which is the check that it is one walk of the render-pass list;
+- the single-pass submissions;
+- the multipass submissions for the same pass or block, from both of its dispatches;
+- the submissions single-pass spends beyond one per game call, which is what instance-doubling the group would save.
+
+The vertex shader key is compared against single-pass only, since a multipass capture's vertex shader names can be stale (see "Naming the draws in a pass range").
+
+### Six scenes
+
+Run 266, fixed cameras at six views: the coastal town at midday, the road tunnel, the midday shore lake, the dusk cliff view, the meadow below the wooded hill, and the capital's old town. The configs are the census configs under `tools/rendering/experiments/` (`coverage_town_census.toml`, `coverage_tunnel_census.toml`, `coverage_capital_census.toml`, `cliff_view_dusk_draw_census.toml`) `shore_lake_census.toml`, and `coverage_forest_census.toml`. The single-pass column is the `single_pass.non_indexed_geometry_once`-off variant, which in these six frames draws exactly as the final tree does (see below). The prepasses (everything before [`RP_RAIN_OCCLUDER`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_RAIN_OCCLUDER)) change from frame to frame, because the engine amortises its shadow cascade updates over frames, so they are the mean of three frames in each mode; the routed range is one frame, and it repeats within a few submissions between frames.
+
+| Scene | Prepass calls | Prepass, single-pass | Prepass, multipass | Routed game calls (multipass eye 0) | Routed, single-pass | Routed, multipass | Block re-issue extra | Draw-level per-eye extra | Split fullscreen extra | Game calls | Single-pass | Multipass | Fewer than multipass |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Town | 2,687 | 2,687 | 3,278 | 2,841 (2,733) | 4,249 | 5,464 | 1,064 | 330 | 14 | 5,528 | 6,936 | 8,742 | 21% |
+| Tunnel | 1,575 | 1,575 | 1,691 | 2,726 (2,717) | 3,625 | 5,432 | 508 | 377 | 14 | 4,301 | 5,200 | 7,123 | 27% |
+| Shore lake | 483 | 483 | 413 | 1,229 (1,221) | 1,807 | 2,439 | 416 | 148 | 14 | 1,712 | 2,290 | 2,852 | 20% |
+| Dusk cliff | 645 | 645 | 837 | 1,933 (1,932) | 3,086 | 3,861 | 893 | 247 | 13 | 2,578 | 3,731 | 4,698 | 21% |
+| Meadow | 968 | 968 | 863 | 1,720 (1,710) | 2,709 | 3,418 | 771 | 204 | 14 | 2,688 | 3,677 | 4,281 | 14% |
+| Capital | 2,820 | 2,820 | 3,535 | 8,372 (8,348) | 10,171 | 16,693 | 982 | 803 | 14 | 11,192 | 12,991 | 20,228 | 36% |
+
+The multipass submissions are measured, not estimated: the census records in a multipass capture too. Multipass submits about one walk of the prepasses (its second eye skips the view-independent ones, see "Why `PreDraw` is outside the collapse") and two of the routed range. Single-pass submits one walk of the prepasses and one walk of the routed range plus the extras, which come to between 21% (the capital, whose buildings are mostly instance-doubled) and 60% (the dusk cliff, mostly vegetation) of the routed game calls. Were every routed call drawn once for both eyes, single-pass would submit the game-calls column: 37% to 45% fewer than multipass rather than 14% to 36%.
+
+### Where the extra submissions go
+
+Summed over the six scenes, by render-block type and vertex shader (run 266, the same captures):
+
+| Block, vertex shader | How | Extra submissions (town, tunnel, shore, cliff, meadow, capital) | Total |
+|---|---|---|---|
+| `GeneralMkIII`, `generalmkiiihwinstanced` (+ `alphatest`, `vanim`, `prezvelocity` permutations) | already-instanced draw, re-issued per eye | 101, 235, 4, 53, 34, 644 | 1,071 |
+| `VegetationBark`, `vegetationbark*instanced` (colour and velocity) | block re-issue, GPU-indirect | 332, 136, 206, 306, 202, 214 | 1,396 |
+| `VegetationFoliage`, `vegetationfoliage*instanced` (colour and velocity) | block re-issue, GPU-indirect | 194, 80, 62, 240, 222, 114 | 912 |
+| `VegetationFoliage` and `VegetationBark`, `*hwinstanced` | block re-issue, hardware-instanced | 184, 14, 24, 222, 178, 188 | 810 |
+| `SSDecal`, `ssdecal` | block re-issue | 169, 102, 100, 100, 100, 170 | 741 |
+| `VegetationFoliage` and `VegetationBark`, plain indexed | block re-issue | 108, 147, 1, 0, 49, 235 | 540 |
+| `VolumetricTerrainPatch`, `volumetricterrain4blend` (tessellated far and colour passes) | unpatched indexed, re-issued per eye | 69, 62, 76, 102, 89, 78 | 476 |
+| `VolumetricTerrainPatch`, near basemesh and tessellated near | GPU-indirect, re-issued per eye | 64, 68, 66, 70, 60, 58 | 386 |
+| `NvWaterHighEnd` | block re-issue | 68, 20, 14, 16, 11, 52 | 181 |
+| Split fullscreen passes (subsurface skin, deferred lights, atmospheric scattering, fog) | second masked run | 14, 14, 14, 13, 14, 14 | 83 |
+| `TerrainDetail` | block re-issue, GPU-indirect | 8 each | 48 |
+| `ParticleRB`, tessellated particles | non-indexed, re-issued per eye | 85, 3, 1, 1, 7, 22 | 119 |
+| everything else (`renderprezvelocitynotex`, the untessellated and refraction particles, the occluder, the sun) | | | 63 |
+
+The vegetation is the largest group by a distance (3,658 between its three draw kinds), then the hardware-instanced buildings (1,071, two thirds of it in the capital), the screen-space decals (741), and the terrain patches (862).
+
+### Drawing patched non-indexed geometry once
+
+The geometry passes on the non-indexed entry point (`GEOMETRY_SLOT13_PASSES`) used to re-issue every draw per eye through `instanced_per_eye`, patched vertex shader or not. A patched shader picks its eye from the instance parity and writes the viewport index, so for it one two-instance `DrawInstanced` with the viewport split is enough, the promotion the static light sprites take. `single_pass.non_indexed_geometry_once` (**on**) promotes such a draw, and leaves it to the per-eye re-issue when a domain or geometry shader is bound: only the last stage before the rasteriser routes a draw, and the tessellated particles (`particleeffecttess*`), whose vertex shader the `cb0` remap patches, build clip in an unpatched domain shader that writes no viewport index, so both instances of a promoted draw would land in the left eye's half.
+
+In run 266 the switch did not yet exclude those pipelines. The only patched non-indexed draws in the six frames were the tessellated particles, and the promotion took them from two submissions to one (85 fewer at the town, 22 in the capital, 1 to 7 elsewhere); the final image against the isolated eyes did not move outside the repeat's range in any scene (town 10 and 12 px per eye with the switch on, off, and the repeat; capital 682 and 665 on, 625 and 626 off, 725 and 491 repeat, ranges 461 to 887; meadow 1,370 and 3,878 on, 1,389 and 3,924 off, 1,411 and 3,884 repeat; shore lake 1,095 and 811 in all three). Those particles evidently contribute nothing above the comparison's threshold at these views, so the frames cannot tell a correct promotion from the left-eye-only one the pipeline implies, and the tree now excludes them. What is left for the promotion is untessellated patched geometry drawn without an index buffer: the skidmarks (two calls at the shore lake and in the capital in run 265, none in run 266's frames) and any index-buffer-less model. Its saving in these scenes is a few submissions at most. The exclusion itself has not run in game.
+
+### What blocks the largest families
+
+The vegetation's per-eye re-issue is the largest single cost, at roughly 600 submissions per scene. Bark and foliage are re-issued as whole blocks because each block bakes its own world-view-projection into vertex `cb1` per draw, and the re-issue reprojects that upload per eye (see [`single-pass-render-blocks.md`](single-pass-render-blocks.md)). A block draws three ways inside one `Draw`, and all three would have to become single draws before the block-level re-issue can go:
+
+- **GPU-indirect** (`vegetation*instanced`, `DrawIndexedInstancedIndirect`, about two thirds of the vegetation's extra submissions). The vertex shader fetches each instance from the structured buffers at `t0` and `t1` by `SV_InstanceID` plus an offset from `cb1`, then builds clip as `(world − cb0[4]) · cb1[0..3]`, the baked matrix the re-issue reprojects. A single draw needs three things. The rewrite that already serves the scene families can post-multiply that clip by the `M_eye` the instance parity picks and write the viewport index, since the baked matrix is the centred camera's. Every other read of `SV_InstanceID` (one `iadd` in `vegetationbarkinstanced`) has to take `SV_InstanceID >> 1`. And the instance count in the argument buffer has to double. The arguments live in the vegetation update's `veg_draw_indirect` buffers, which the engine creates as `R32_UINT` texture buffers (five dwords per draw, kept per render pass) and fills from compute, so the CPU never sees the count; a compute pass of the mod's, dispatched once per routed vegetation pass before its first indirect draw, can double the `InstanceCount` dword of that pass's arguments into a shadow buffer of the mod's, and the draws can be redirected to it at the same offset. No JC3 machine lacks compute shaders, so this needs no fallback. The shadow passes keep their own per-pass arguments and are not touched. The velocity permutations also stage a previous-frame matrix in `cb1`, which needs the previous frame's `M_eye` (the bark velocity gap under "Known gaps" is the same matrix).
+- **Hardware-instanced** (`vegetation*hwinstanced`) and the buildings' `generalmkiiihwinstanced` family take their per-instance data through vertex-buffer elements (`INST_TEXCOORD0..2`, `INST_NORMAL` in `generalmkiiihwinstanced`), so a doubled instance count reads past the batch's data; that is why `instanced_per_eye` re-issues them. A twin of each instanced input layout with every per-instance element's `InstanceDataStepRate` doubled would let the draw double its instance count and keep each pair of instances on one element, with the eye in the instance parity. The engine builds those layouts in `Graphics::CreateVertexDeclarationInstanced`, called from each render-block type's `Create`, which runs before the payload is injected into a running game, and D3D11 cannot read a layout's description back. Neither that function nor `CRenderEngine::RecreateRenderBlockTypes`, which re-creates every registered type, is bound in the defs, and both are unverified. Building the twins needs the first bound and either the types re-created after injection through the second or the element descriptions reconstructed from the engine's own tables. That the step rate and `StartInstanceLocation` compose as the twin needs under DXVK is unverified.
+- **Plain indexed** (`vegetationbark`, `vegetationfoliage`) would take the ordinary two-instance promotion once the vertex shader carries the reprojection.
+
+The hardware-instanced buildings alone are worth about 180 submissions per scene, 640 in the capital, with no block re-issue in the way: their vertex shader is already patched, and only the layout twin is missing.
+
+**The screen-space decals** (about 120 per scene) are re-issued as a block because each eye needs its own reconstruction basis and depth-UV offset staged on fragment `cb1`, and the box's baked matrix reprojected. The `ssdecal` vertex shader is a bare multiply-add chain over vertex `cb1[0..3]`, like `watermask`, so the reprojection would move the box; but it also derives the projective screen UV from the clip position before the epilogue, which would leave that UV the centre's, and the 12 pixel shaders would have to pick the basis and the depth offset by the eye their pixel lies in, the way the pixel-camera rewrite picks camera rows. Both are rewrites of a kind the project already has; neither exists for this family.
+
+**The terrain patch system** (about 140 per scene: the tessellated far and colour passes, and the GPU-indirect near passes). The tessellated permutations' vertex shaders write all four lanes of `TEXCOORD3`, so the eye cannot ride the free lane the base terrain uses; a single draw needs a new interpolant added to the vertex shader's output signature, forwarded by the hull shader's control-point phase, and read by the domain shader, which then writes the viewport index. That is a signature-changing rewrite across three stages, where the lane path only widens a mask. The near passes are `DrawInstancedIndirect` with a vertex shader that already reads `SV_InstanceID`, so they need the same argument doubling as the vegetation, and their tessellated half needs the interpolant as well. The non-tessellated near basemesh is the one part that needs only the argument doubling, at about 32 submissions per scene.
+
+**Particles** (up to 85 per scene at the town, a few elsewhere). The tessellated permutations (`particleeffecttess*`) pass the world position through their vertex shader, which the `cb0` remap patches for a camera-row read, and build clip in an unpatched domain shader, so they have the terrain's problem; the others are on the policy's NDC-writer exclusion list. Not worth doing before the above.
+
+**Fullscreen passes split per eye** (about 14 submissions per scene): the screen-space subsurface skin's blurs and lighting capture, the deferred lighting's light assignment and clustered resolve, the atmospheric scattering, and the fog volume's blur. Each could become one run with an eye-picking pixel shader, as SSAO, SSR, and the glare chain now are, for a handful of submissions each.
+
+Nothing in the prepasses is issued twice: under the collapse `PreDraw` runs once (see "Why `PreDraw` is outside the collapse"), and the per-dispatch passes that multipass runs twice (the vegetation interaction volumes and the rain occluder) run once.
 
 ## Capturing single-pass with a switch off
 

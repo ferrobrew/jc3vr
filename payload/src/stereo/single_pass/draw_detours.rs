@@ -6,6 +6,8 @@
 //! the engine already instanced for its own reasons, and the GPU-indirect draws whose instance count
 //! lives in a buffer the CPU never sees -- each of which has to be submitted once per eye instead.
 
+use windows::Win32::Graphics::Direct3D11::{ID3D11DomainShader, ID3D11GeometryShader};
+
 use super::*;
 use crate::{
     screenshot::harness::stages::velocity,
@@ -173,53 +175,39 @@ pub(super) unsafe extern "system" fn draw_detour(
     if collapse_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
         let pass = current_pass_id();
         SLOT13_BY_PASS[usize::from(pass)].fetch_add(1, Ordering::Relaxed);
-        // A geometry pass on this entry point is not the fullscreen triangle the `Full` reset below
-        // exists for, so give it the same per-eye treatment the indexed path gives its draws.
-        if is_geometry_slot13_pass(pass)
-            && config_flags().has(Flag::Slot13PerEye)
-            && instanced_per_eye(&submit)
-        {
-            return;
+        let patched = BOUND_VS_PATCHED.load(Ordering::Relaxed);
+        let flags = config_flags();
+        if is_geometry_slot13_pass(pass) {
+            // A patched shader resolves its eye from the instance parity and routes itself to that
+            // eye's half, so one two-instance draw covers both eyes, as the indexed path promotes
+            // its draws.
+            if patched
+                && flags.has(Flag::NonIndexedGeometryOnce)
+                && promote_non_indexed(context, vertex_count, start_vertex)
+            {
+                return;
+            }
+            // Any other geometry on this entry point is not the fullscreen triangle the `Full`
+            // reset below exists for, so give it the same per-eye treatment the indexed path gives
+            // its unpatched draws.
+            if flags.has(Flag::Slot13PerEye) && instanced_per_eye(&submit) {
+                return;
+            }
         }
-        // A patched shader resolves its eye from the instance parity and routes itself to that eye's
-        // half, so one two-instance draw covers both eyes, as the indexed path promotes its draws.
-        if BOUND_VS_PATCHED.load(Ordering::Relaxed)
-            && promotes_non_indexed(pass, config_flags())
-            // SAFETY: `context` is the live immediate context this entry was called on.
-            && let Some(ctx) =
-                unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) }
+        if patched
+            && promotes_non_indexed(pass, flags)
+            && promote_non_indexed(context, vertex_count, start_vertex)
         {
-            ensure_collapse_viewport(context, CollapseViewport::Split);
-            PATCHED_DRAWS.fetch_add(1, Ordering::Relaxed);
-            velocity::submit(
-                context,
-                "draw_promoted",
-                [vertex_count.into(), 2, start_vertex.into(), 0, 0],
-                // SAFETY: `DrawInstanced` is not detoured, so the promotion is not seen again as a
-                // game draw; the arguments are the caller's, with the instance count doubled.
-                || unsafe { ctx.DrawInstanced(vertex_count, 2, start_vertex, 0) },
-            );
             return;
         }
         // The moon is one reprojected `open` quad, so it takes the same two-instance promotion, with
         // its far-plane depth kept through the reprojection.
-        if BOUND_VS_PATCHED.load(Ordering::Relaxed)
+        if patched
             && pass == RenderPassId::RP_MOON as u8
-            && config_flags().has(Flag::Moon)
-            // SAFETY: `context` is the live immediate context this entry was called on.
-            && let Some(ctx) =
-                unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) }
+            && flags.has(Flag::Moon)
             && let Some(_depth) = FarDepthRows::begin()
+            && promote_non_indexed(context, vertex_count, start_vertex)
         {
-            ensure_collapse_viewport(context, CollapseViewport::Split);
-            PATCHED_DRAWS.fetch_add(1, Ordering::Relaxed);
-            velocity::submit(
-                context,
-                "draw_promoted",
-                [vertex_count.into(), 2, start_vertex.into(), 0, 0],
-                // SAFETY: as for the light sprites above.
-                || unsafe { ctx.DrawInstanced(vertex_count, 2, start_vertex, 0) },
-            );
             return;
         }
         ensure_collapse_viewport(context, CollapseViewport::Full);
@@ -399,6 +387,48 @@ impl Drop for FarDepthRows {
 fn promotes_non_indexed(pass: u8, flags: ConfigFlags) -> bool {
     (STATIC_LIGHT_PASSES.contains(&pass) && flags.has(Flag::StaticLights))
         || (pass == RenderPassId::RP_REFLECTIVE_WATER_PLANES as u8 && flags.has(Flag::WaterPlane))
+}
+
+/// Submit a non-indexed draw with a patched vertex shader as one two-instance `DrawInstanced` routed
+/// to the eye halves, reporting whether it did; `false` leaves the draw to the caller.
+///
+/// It declines without a live context, and when a domain or geometry shader is bound. The routing
+/// is the viewport index the vertex shader writes, which reaches the rasteriser only from the last
+/// stage before it: behind a tessellation or geometry stage that writes none, both instances would
+/// land in the left eye's half. The tessellated particles (`particleeffecttess*`) are such a
+/// pipeline, with a vertex shader the `cb0` remap patches and clip built in the domain shader.
+fn promote_non_indexed(context: *mut c_void, vertex_count: u32, start_vertex: u32) -> bool {
+    // SAFETY: `context` is the live immediate context the detoured entry was called on.
+    let Some(ctx) = (unsafe { <ID3D11DeviceContext as Interface>::from_raw_borrowed(&context) })
+    else {
+        return false;
+    };
+    if vertex_shader_feeds_another_stage(ctx) {
+        return false;
+    }
+    ensure_collapse_viewport(context, CollapseViewport::Split);
+    PATCHED_DRAWS.fetch_add(1, Ordering::Relaxed);
+    velocity::submit(
+        context,
+        "draw_promoted",
+        [vertex_count.into(), 2, start_vertex.into(), 0, 0],
+        // SAFETY: `DrawInstanced` is not detoured, so the promotion is not seen again as a game draw;
+        // the arguments are the caller's, with the instance count doubled.
+        || unsafe { ctx.DrawInstanced(vertex_count, 2, start_vertex, 0) },
+    );
+    true
+}
+
+/// Whether a domain or geometry shader is bound after the vertex shader.
+fn vertex_shader_feeds_another_stage(ctx: &ID3D11DeviceContext) -> bool {
+    let mut domain: Option<ID3D11DomainShader> = None;
+    let mut geometry: Option<ID3D11GeometryShader> = None;
+    // SAFETY: `ctx` is the live immediate context; the getters only read bound state.
+    unsafe {
+        ctx.DSGetShader(&mut domain, None, None);
+        ctx.GSGetShader(&mut geometry, None, None);
+    }
+    domain.is_some() || geometry.is_some()
 }
 
 pub(super) fn is_geometry_slot13_pass(pass: u8) -> bool {

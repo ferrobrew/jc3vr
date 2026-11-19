@@ -25,12 +25,15 @@ use windows::{
     core::Interface,
 };
 
-use crate::stereo::{
-    draw_index,
-    single_pass::{
-        RawDrawKind, current_pass_id, per_eye_reissue_eye,
-        shader_identity::{self, IdentityResult},
-        vertex_identity_lookup,
+use crate::{
+    hooks::graphics_engine::reconstruction::split_run_eye,
+    stereo::{
+        draw_index,
+        single_pass::{
+            RawDrawKind, bound_vertex_shader_patched, current_pass_id, per_eye_reissue_eye,
+            shader_identity::{self, IdentityResult},
+            vertex_identity_lookup,
+        },
     },
 };
 
@@ -55,10 +58,15 @@ pub(crate) struct CensusEntry {
     /// The render-block type running when the call was made, when the type switch is observed.
     pub(crate) block: Option<&'static str>,
     pub(crate) vertex_shader: ShaderName,
+    /// Whether the bound vertex shader is one the single-pass rewrite patched.
+    pub(crate) vertex_patched: bool,
     pub(crate) pixel_shader: ShaderName,
     pub(crate) entry: &'static str,
     /// The eye of the per-eye render-block re-issue the call was made inside, if any.
     pub(crate) reissue_eye: Option<usize>,
+    /// The eye of the split fullscreen pass run the call was made inside, if any. A split pass runs
+    /// its whole draw sequence once per eye, so the second run's calls are the collapse's own.
+    pub(crate) split_eye: Option<usize>,
     pub(crate) treatment: Treatment,
     pub(crate) calls: u32,
     pub(crate) submissions: u32,
@@ -173,9 +181,11 @@ pub(crate) unsafe fn on_call(kind: RawDrawKind, context: *mut c_void) {
         pass: current_pass_id(),
         block: None,
         vertex_shader: vertex_name(vs.as_ref()),
+        vertex_patched: bound_vertex_shader_patched(),
         pixel_shader: pixel_name(ps.as_ref()),
         entry: kind.name(),
         reissue_eye: per_eye_reissue_eye(),
+        split_eye: split_run_eye(),
     };
     let mut recorder = RECORDER.lock();
     recorder.close_open();
@@ -307,9 +317,11 @@ struct CallKey {
     pass: u8,
     block: Option<&'static str>,
     vertex_shader: ShaderName,
+    vertex_patched: bool,
     pixel_shader: ShaderName,
     entry: &'static str,
     reissue_eye: Option<usize>,
+    split_eye: Option<usize>,
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
@@ -327,9 +339,11 @@ impl TallyKey {
             pass_name: pass_name(call.pass),
             block: call.block,
             vertex_shader: call.vertex_shader.clone(),
+            vertex_patched: call.vertex_patched,
             pixel_shader: call.pixel_shader.clone(),
             entry: call.entry,
             reissue_eye: call.reissue_eye,
+            split_eye: call.split_eye,
             treatment: self.treatment,
             calls: tally.calls,
             submissions: tally.submissions,
@@ -426,9 +440,11 @@ mod tests {
             pass: 3,
             block: Some("Block"),
             vertex_shader: ShaderName::Unbound,
+            vertex_patched: false,
             pixel_shader: ShaderName::Unbound,
             entry: "indexed",
             reissue_eye: None,
+            split_eye: None,
         };
         for submissions in [2, 2, 1] {
             recorder.open = Some(OpenCall {

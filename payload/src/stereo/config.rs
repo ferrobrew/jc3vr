@@ -369,6 +369,12 @@ pub struct SinglePassConfig {
     /// geometry is a visibly wrong frame, while missing a geometry pass is only the status quo -- so
     /// a pass is added when it is evidenced, never on suspicion.
     pub slot13_per_eye: bool,
+    /// Draw the non-indexed geometry in those passes once for both eyes when its vertex shader is
+    /// patched: one two-instance `DrawInstanced` with the viewport split, the promotion the indexed
+    /// path gives a patched draw, instead of the per-eye re-issue `slot13_per_eye` gives it. A
+    /// patched shader resolves its eye from the instance parity, so the second submission buys
+    /// nothing. On by default; applies at once.
+    pub non_indexed_geometry_once: bool,
     /// Derive the collapse's eye-half viewports from the render target the engine currently has
     /// bound, rather than always from the scene's double-wide viewport.
     ///
@@ -726,6 +732,7 @@ impl SinglePassConfig {
             water_camera_per_eye: true,
             ssdecal_geometry_per_eye: true,
             slot13_per_eye: true,
+            non_indexed_geometry_once: true,
             collapse_viewport_follows_target: true,
             ssao_per_eye: true,
             ao_volumes_per_eye: true,

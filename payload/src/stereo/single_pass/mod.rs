@@ -821,6 +821,11 @@ unsafe fn com_release(object: *mut c_void) {
 }
 /// Whether the currently-bound vertex shader is a patched one (updated on `VSSetShader`).
 static BOUND_VS_PATCHED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the vertex shader bound on the immediate context is one the single-pass rewrite patched.
+pub(crate) fn bound_vertex_shader_patched() -> bool {
+    BOUND_VS_PATCHED.load(Ordering::Relaxed)
+}
 /// The currently-bound `ID3D11VertexShader` pointer (updated on `VSSetShader`), so an exposed
 /// already-instanced draw can be attributed to a shader.
 static BOUND_VS: AtomicUsize = AtomicUsize::new(0);

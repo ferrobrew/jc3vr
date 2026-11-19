@@ -43,6 +43,7 @@ pub(super) enum Flag {
     UniformViewportSlots,
     ViewportFollowsTarget,
     Slot13PerEye,
+    NonIndexedGeometryOnce,
 }
 
 /// The single-pass config flags, sampled once per frame and pinned for the duration of a dispatch.
@@ -137,6 +138,7 @@ fn store_config_flags() -> u32 {
                 Flag::ViewportFollowsTarget,
             )
             | bit(s.slot13_per_eye, Flag::Slot13PerEye)
+            | bit(s.non_indexed_geometry_once, Flag::NonIndexedGeometryOnce)
     }) | CONFIG_FLAGS_VALID;
     CONFIG_FLAGS.store(snapshot, Ordering::Relaxed);
     snapshot
