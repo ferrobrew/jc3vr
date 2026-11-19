@@ -60,6 +60,7 @@ single_pass_switches! {
     TerrainPatchPerEye => terrain_patch_per_eye, true;
     TreeImpostors => tree_impostors, true;
     TreeImpostorPixelSizePerEye => tree_impostor_pixel_size_per_eye, false;
+    TreeImpostorScreenDoorPerEye => tree_impostor_screen_door_per_eye, true;
     StaticLightsPerEye => static_lights_per_eye, true;
     MoonPerEye => moon_per_eye, false;
     WaterPlanePerEye => water_plane_per_eye, true;

@@ -398,6 +398,7 @@ fn stage_name(stage: Stage) -> &'static str {
         Stage::GBuffer1 => "gbuffer1",
         Stage::GBuffer2 => "gbuffer2",
         Stage::GBuffer3 => "gbuffer3",
+        Stage::Velocity => "velocity",
         Stage::MainColor => "maincolor",
         Stage::AfterApplyClouds => "after_apply_clouds",
         Stage::FogGenDepth => "fog_gen_depth",
@@ -708,6 +709,7 @@ mod tests {
             (Stage::GBuffer1, "gbuffer1", 4),
             (Stage::GBuffer2, "gbuffer2", 4),
             (Stage::GBuffer3, "gbuffer3", 4),
+            (Stage::Velocity, "velocity", 4),
         ]
         .into_iter()
         .map(|(stage, name, pixel_bytes)| {

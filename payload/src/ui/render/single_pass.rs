@@ -215,6 +215,22 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 );
                 if ui
                     .checkbox(
+                        &mut cfg.stereo.single_pass.tree_impostor_screen_door_per_eye,
+                        "Tree impostor screen door per eye",
+                    )
+                    .on_hover_text(
+                        "The impostors dissolve across their distance fade by a pattern hashed from \
+                         their own projected position over the target size. Hashed from the \
+                         eye-local pixel position instead, each eye keeps the same pixels of a fading \
+                         card as an eye rendered on its own. Off, the pattern is the centred camera's \
+                         over both eyes' width. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
                         &mut cfg.stereo.single_pass.static_lights_per_eye,
                         "Static light sprites per eye (distant town lights)",
                     )
@@ -434,10 +450,11 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
-                let (rewritten, declined) =
+                let (rewritten, projected, declined) =
                     crate::stereo::single_pass::eye_camera::screen_door_counts();
                 ui.weak(format!(
-                    "Pixel shaders with a per-eye screen door: {rewritten} (declined {declined})"
+                    "Pixel shaders with a per-eye screen door: {rewritten}, from a projected \
+                     position {projected} (declined {declined})"
                 ));
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.nvwater_per_eye,

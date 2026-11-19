@@ -3,8 +3,8 @@
 
 use dxbc_stereo::{
     Dxbc, DxbcError, EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS,
-    LocalLights, ShaderStage, TokenStream, localize_eye_camera, localize_screen_door,
-    refresh_checksum,
+    LocalLights, ShaderStage, TokenStream, localize_eye_camera, localize_projected_screen_door,
+    localize_screen_door, refresh_checksum,
 };
 
 mod common;
@@ -207,6 +207,47 @@ fn stipple_builds_its_pattern_from_the_eye_local_position() {
     assert_eq!(&instructions[..5], &expected[..]);
 }
 
+/// Every pixel shader that hashes the pattern from its own projected position is rewritten, and no
+/// other: each rewrite re-parses, reads the eye-local offset at its one site, declares the position's
+/// `.xy` and the boundary's buffer, and carries a self-consistent checksum. Over the eye-camera
+/// rewrite it reads that rewrite's buffer rather than declaring it again.
+#[test]
+fn corpus_projected_rewrite_covers_the_impostor_patterns() {
+    let Some(dir) = shader_dir() else {
+        return;
+    };
+    let mut rewritten = 0;
+    for path in shader_paths(&dir) {
+        let blob = as_created(&std::fs::read(&path).expect("read a shader"));
+        let code = localize_eye_camera(&blob, LocalLights::PerEye).unwrap_or_else(|_| blob.clone());
+        let before = Shader::parse(&code);
+        match localize_projected_screen_door(&code) {
+            Ok(out) => {
+                rewritten += 1;
+                let after = Shader::parse(&out);
+                assert!(before.pattern_constants > 0, "{}", path.display());
+                assert_eq!(before.position_sites, 0, "{}", path.display());
+                assert_eq!(after.local_sites, 1, "{}", path.display());
+                assert_eq!(after.temps, before.temps + 1, "{}", path.display());
+                assert_eq!(after.buffer_declarations, 1, "{}", path.display());
+                assert_eq!(
+                    after.instructions,
+                    before.instructions + PROJECTED_PROLOGUE,
+                    "{}",
+                    path.display()
+                );
+                assert!(after.position_reads_xy, "{}", path.display());
+                let mut refreshed = out.clone();
+                refresh_checksum(&mut refreshed);
+                assert_eq!(refreshed, out, "{}: stale checksum", path.display());
+            }
+            Err(DxbcError::NoScreenDoor) => {}
+            Err(error) => panic!("{}: {error}", path.display()),
+        }
+    }
+    assert_eq!(rewritten, PROJECTED_SCREEN_DOORS);
+}
+
 /// The vehicle paint's shadow stipple: the pattern and a discard, nothing else.
 const STIPPLE: &str = "sh_0487_0018e4d0.dxbc";
 /// How many pixel shaders build the screen-door pattern from their pixel position.
@@ -219,6 +260,10 @@ const OVER_CAMERA: usize = 6;
 const IMPOSTOR_PATTERNS: usize = 18;
 /// The four instructions the eye-local position adds.
 const PROLOGUE: usize = 4;
+/// How many pixel shaders hash the pattern from their own projected position over the target size.
+const PROJECTED_SCREEN_DOORS: usize = 16;
+/// The ten instructions the eye-local offset adds at a projected site.
+const PROJECTED_PROLOGUE: usize = 10;
 /// The pattern's vector, as the engine's shaders carry it.
 const PATTERN: [u32; 2] = [0x3eef_965b, 0xbf34_2246];
 
@@ -314,6 +359,8 @@ struct Shader {
     pattern_constants: usize,
     /// The index of the first executable instruction reading the boundary.
     prologue_at: Option<usize>,
+    /// Whether the position's input declaration covers `.xy`.
+    position_reads_xy: bool,
 }
 
 impl Shader {
@@ -339,6 +386,9 @@ impl Shader {
                     0x59 if w[2] == EYE_CAMERA_CB_REGISTER => {
                         assert!(w[3] >= EYE_CAMERA_CB_ROWS);
                         shader.buffer_declarations += 1;
+                    }
+                    0x64 if Some(w[2]) == position && w[1] & 0x30 == 0x30 => {
+                        shader.position_reads_xy = true;
                     }
                     _ => {}
                 }

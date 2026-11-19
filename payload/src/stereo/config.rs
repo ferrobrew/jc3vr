@@ -118,6 +118,17 @@ pub struct SinglePassConfig {
     /// derivative-scaled atlas offset moved the cards' alpha-tested silhouettes. The display width is
     /// halved for the length of that call. Applies without a shader reload. On by default.
     pub tree_impostor_pixel_size_per_eye: bool,
+    /// Lay the tree impostors' screen door out from each eye's own origin.
+    ///
+    /// The impostor permutations dissolve their cards across the distance fade by a screen-door
+    /// pattern hashed from their own projected position over the target size, not from the pixel
+    /// position, so `screen_door_per_eye` does not reach them. Under the double-wide collapse the
+    /// projected position is the centred camera's and the target both eyes wide, so the pattern came
+    /// out twice as wide and centred between the eyes, and the cards in the fade band kept a different
+    /// set of pixels than in an eye rendered on its own. `dxbc_stereo::localize_projected_screen_door`
+    /// rewrites the hash to read the eye-local pixel position. A shader rewrite, so changing it needs
+    /// a shader reload. On by default.
+    pub tree_impostor_screen_door_per_eye: bool,
     /// Draw the static light sprites (`RenderBlockTypeLights`, the distant town and street lights)
     /// once for both eyes under the double-wide collapse. Their non-indexed `Draw` was drawn once
     /// across the whole double-wide target from the centred camera, so each light landed at twice
@@ -727,6 +738,7 @@ impl SinglePassConfig {
             terrain_patch_per_eye: true,
             tree_impostors: false,
             tree_impostor_pixel_size_per_eye: true,
+            tree_impostor_screen_door_per_eye: true,
             static_lights_per_eye: true,
             moon_per_eye: true,
             water_plane_per_eye: true,

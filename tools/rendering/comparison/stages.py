@@ -46,6 +46,7 @@ class Stage(StrEnum):
     GBUFFER1 = "gbuffer1"
     GBUFFER2 = "gbuffer2"
     GBUFFER3 = "gbuffer3"
+    VELOCITY = "velocity"
     AFTER_APPLY_CLOUDS = "after_apply_clouds"
     BEFORE_FOG_VOLUME_APPLY = "before_fog_volume_apply"
     AFTER_FOG_VOLUME_APPLY = "after_fog_volume_apply"
@@ -79,6 +80,7 @@ class Stage(StrEnum):
     def optional(self) -> bool:
         return self in (
             Stage.DOF_SCENE, Stage.DOF_COMPOSITE, Stage.DOF_RETURNED,
+            Stage.VELOCITY,
             Stage.AFTER_APPLY_CLOUDS,
             Stage.BEFORE_FOG_VOLUME_APPLY,
             Stage.AFTER_FOG_VOLUME_APPLY,

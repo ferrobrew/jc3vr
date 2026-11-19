@@ -42,7 +42,7 @@ use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 use dxbc_stereo::{
     EYE_CAMERA_BOUNDARY_ROW, EYE_CAMERA_CB_REGISTER, EYE_CAMERA_CB_ROWS,
     EYE_CAMERA_LIGHT_OFFSET_ROW, EYE_CAMERA_ROWS_PER_EYE, EYE_CAMERA_SOURCE_ROWS, LocalLights,
-    localize_eye_camera, localize_screen_door,
+    localize_eye_camera, localize_projected_screen_door, localize_screen_door,
 };
 use jc3gi::{graphics_engine::render_engine::RenderEngine, types::math::Vector4};
 use parking_lot::Mutex;
@@ -112,6 +112,31 @@ pub(crate) fn rewrite_screen_door(code: &[u8], enabled: bool) -> Option<Vec<u8>>
     }
 }
 
+/// A pixel shader's bytecode rewritten to hash the screen door it builds from its own projected
+/// position (the tree impostors') from the eye-local pixel position, or `None` when `enabled` is off
+/// or the shader builds no such pattern. Called for every fragment program the engine creates, after
+/// [`rewrite_screen_door`], whose output it takes when there is one.
+pub(crate) fn rewrite_projected_screen_door(code: &[u8], enabled: bool) -> Option<Vec<u8>> {
+    if !enabled {
+        return None;
+    }
+    match localize_projected_screen_door(code) {
+        Ok(rewritten) => {
+            PROJECTED_SCREEN_DOORS.fetch_add(1, Ordering::Relaxed);
+            Some(rewritten)
+        }
+        Err(dxbc_stereo::DxbcError::NoScreenDoor) => None,
+        Err(error) => {
+            SCREEN_DOORS_DECLINED.fetch_add(1, Ordering::Relaxed);
+            tracing::warn!(
+                target: "single_pass",
+                "screen door: a pixel shader hashing its projected position was left unrewritten: {error}",
+            );
+            None
+        }
+    }
+}
+
 /// How many pixel shaders have been rewritten since injection, and how many that read the camera
 /// position were declined.
 pub(crate) fn counts() -> (usize, usize) {
@@ -121,11 +146,13 @@ pub(crate) fn counts() -> (usize, usize) {
     )
 }
 
-/// How many pixel shaders have had their screen-door pattern laid out per eye since injection, and
-/// how many that build one were declined.
-pub(crate) fn screen_door_counts() -> (usize, usize) {
+/// How many pixel shaders have had their screen-door pattern laid out per eye since injection (from
+/// the pixel position, and from their projected position), and how many that build one were
+/// declined.
+pub(crate) fn screen_door_counts() -> (usize, usize, usize) {
     (
         SCREEN_DOORS.load(Ordering::Relaxed),
+        PROJECTED_SCREEN_DOORS.load(Ordering::Relaxed),
         SCREEN_DOORS_DECLINED.load(Ordering::Relaxed),
     )
 }
@@ -133,7 +160,10 @@ pub(crate) fn screen_door_counts() -> (usize, usize) {
 /// Rewrite the buffer from the rows the engine just staged and bind it. Called from the
 /// `SetAllGlobalShaderProgramConstants` detour after the engine's own upload, on the render thread.
 pub(crate) fn sync(engine: &RenderEngine) {
-    if REWRITTEN.load(Ordering::Relaxed) == 0 && SCREEN_DOORS.load(Ordering::Relaxed) == 0 {
+    if REWRITTEN.load(Ordering::Relaxed) == 0
+        && SCREEN_DOORS.load(Ordering::Relaxed) == 0
+        && PROJECTED_SCREEN_DOORS.load(Ordering::Relaxed) == 0
+    {
         return;
     }
     let staged = &engine.m_FPGlobalConstData;
@@ -259,6 +289,7 @@ static REWRITTEN: AtomicUsize = AtomicUsize::new(0);
 static DECLINED: AtomicUsize = AtomicUsize::new(0);
 static SCREEN_DOORS: AtomicUsize = AtomicUsize::new(0);
 static SCREEN_DOORS_DECLINED: AtomicUsize = AtomicUsize::new(0);
+static PROJECTED_SCREEN_DOORS: AtomicUsize = AtomicUsize::new(0);
 static UPLOAD_WARNED: AtomicBool = AtomicBool::new(false);
 /// Whether the live buffer was written for an eye-split pass, and the boundary it holds, so the
 /// per-bind and per-range paths can return without locking.

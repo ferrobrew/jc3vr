@@ -281,6 +281,10 @@ fn create_fragment_program(
     // Applied after the camera rewrite, whose buffer carries the eye boundary it reads.
     let localize_screen_door = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.screen_door_per_eye);
+    // The tree impostors hash theirs from their own projected position; the same buffer's boundary
+    // lays it out per eye.
+    let localize_projected_screen_door = crate::stereo::single_pass::collapse_active()
+        && Config::lock_query(|c| c.stereo.single_pass.tree_impostor_screen_door_per_eye);
     let mut rewritten_screen_pass = None;
     if !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
@@ -384,7 +388,14 @@ fn create_fragment_program(
             camera.as_deref().unwrap_or(current),
             localize_screen_door,
         );
-        if let Some(blob) = screen_door.or(camera) {
+        let projected_screen_door = eye_camera::rewrite_projected_screen_door(
+            screen_door
+                .as_deref()
+                .or(camera.as_deref())
+                .unwrap_or(current),
+            localize_projected_screen_door,
+        );
+        if let Some(blob) = projected_screen_door.or(screen_door).or(camera) {
             let len = blob.len() as u64;
             let (original_code, original_size) = saved
                 .take()

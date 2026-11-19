@@ -121,6 +121,8 @@ pub(crate) enum Stage {
     GBuffer2,
     #[serde(rename = "gbuffer3")]
     GBuffer3,
+    /// The velocity buffer the depth-and-velocity pass writes, as the G-buffer fill leaves it.
+    Velocity,
     MainColor,
     AfterApplyClouds,
     BeforeFogVolumeApply,
@@ -398,6 +400,11 @@ pub(crate) fn capture_geometry() {
             Ok(index.map_or(ge.m_MainDepthTexture, |i| ge.m_GBufferTexture[i]))
         });
     }
+    capture(Stage::Velocity, || {
+        // SAFETY: as above.
+        let ge = unsafe { GraphicsEngine::get() }.context("graphics engine unavailable")?;
+        Ok(ge.m_VelocityBufferTexture)
+    });
 }
 
 pub(crate) fn capture_main_color() {
@@ -1075,6 +1082,7 @@ mod tests {
             (Stage::GBuffer1, DXGI_FORMAT_R10G10B10A2_UNORM, 4),
             (Stage::GBuffer2, DXGI_FORMAT_R16G16B16A16_FLOAT, 8),
             (Stage::GBuffer3, DXGI_FORMAT_B8G8R8A8_UNORM, 4),
+            (Stage::Velocity, DXGI_FORMAT_R8G8B8A8_UNORM, 4),
         ] {
             let desc = D3D11_TEXTURE2D_DESC {
                 Width: 2,

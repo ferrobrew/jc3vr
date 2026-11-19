@@ -63,7 +63,7 @@ pub use reflection::{
 mod remap;
 mod reproject;
 mod screen_door;
-pub use screen_door::localize_screen_door;
+pub use screen_door::{localize_projected_screen_door, localize_screen_door};
 mod seam;
 pub use seam::{localize_composite_bloom, localize_post_filter, localize_reflection_blur};
 mod ssdecal;
