@@ -178,9 +178,9 @@ class VisualReadiness:
         try:
             profile = DiagnosticProfile(text(value, "profile"))
         except ValueError as error:
-            raise ValueError("metadata.visual.profile: expected controlled_v1 or controlled_v2") from error
+            raise ValueError("metadata.visual.profile: expected a controlled profile") from error
         if not profile.is_controlled:
-            raise ValueError("metadata.visual.profile: expected controlled_v1 or controlled_v2")
+            raise ValueError("metadata.visual.profile: expected a controlled profile")
         for name in ("ready", "paused", "frozen"):
             if value.get(name) is not True:
                 raise ValueError(f"metadata.visual.{name}: expected true")

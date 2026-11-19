@@ -2172,7 +2172,7 @@ mod tests {
         VisualMetadata {
             generation: 1,
             mode: Some(RenderMode::Multipass),
-            profile: DiagnosticProfile::ControlledV2,
+            profile: DiagnosticProfile::ControlledV3,
             visual_overrides: None,
             shader_identity: crate::stereo::single_pass::shader_identity::status(),
             ready: true,

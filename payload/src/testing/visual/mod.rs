@@ -46,7 +46,7 @@ pub(crate) type Mode = RenderMode;
 #[serde(rename_all = "snake_case")]
 pub(crate) enum DiagnosticProfile {
     Native,
-    ControlledV2,
+    ControlledV3,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
@@ -620,7 +620,7 @@ impl State {
             generation: self.generation,
             mode: self.mode,
             profile: if self.mode.is_some() {
-                DiagnosticProfile::ControlledV2
+                DiagnosticProfile::ControlledV3
             } else {
                 DiagnosticProfile::Native
             },
@@ -1116,6 +1116,11 @@ fn apply_profile_with_overrides(
     }
 }
 
+/// The controlled capture profile: everything that varies with time, input, or the headset is
+/// pinned or off, and every scene effect the game ships with stays on, so a capture exercises the
+/// shaders a player sees. Bloom, the sun halo, ambient occlusion, screen-space reflections, and
+/// global illumination all run; a profile that skipped the bloom also left the composite reading
+/// bloom textures nothing refreshed, whose contents depended on the previous capture set.
 fn apply_profile(config: &mut Config, mode: Mode) {
     config.director.paused = true;
     config.director.clean_view = true;
@@ -1131,15 +1136,15 @@ fn apply_profile(config: &mut Config, mode: Mode) {
     config.post_fx.skip_dof = false;
     config.post_fx.dof_no_reproject = true;
     config.post_fx.skip_fade = true;
-    config.post_fx.skip_glare = true;
+    config.post_fx.skip_glare = false;
     config.post_fx.skip_player_damage = true;
-    config.post_fx.skip_sun_halo = true;
+    config.post_fx.skip_sun_halo = false;
     config.post_fx.skip_histogram = true;
     config.stereo.enabled = true;
     config.stereo.cameras = true;
-    config.stereo.disable_ssao = true;
-    config.stereo.skip_ssr = true;
-    config.stereo.skip_gi = true;
+    config.stereo.disable_ssao = false;
+    config.stereo.skip_ssr = false;
+    config.stereo.skip_gi = false;
     config.stereo.symmetrize_eye_frusta = false;
     config.stereo.mirror_eye0_to_both = false;
     config.stereo.skip_pass_range_enabled = false;

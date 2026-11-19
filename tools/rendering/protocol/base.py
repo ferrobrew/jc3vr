@@ -30,10 +30,12 @@ class DiagnosticProfile(StrEnum):
     NATIVE = "native"
     CONTROLLED_V1 = "controlled_v1"
     CONTROLLED_V2 = "controlled_v2"
+    CONTROLLED_V3 = "controlled_v3"
 
     @property
     def is_controlled(self):
-        return self in (DiagnosticProfile.CONTROLLED_V1, DiagnosticProfile.CONTROLLED_V2)
+        return self in (DiagnosticProfile.CONTROLLED_V1, DiagnosticProfile.CONTROLLED_V2,
+                        DiagnosticProfile.CONTROLLED_V3)
 
 
 class Outcome(StrEnum):
