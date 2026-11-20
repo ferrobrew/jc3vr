@@ -19,6 +19,17 @@
 //   corrected = decoded + (prevUV_center - prevUV_eye)
 // Dynamic objects keep their object motion -- the correction only swaps the camera term.
 //
+// The velocity pass draws only a subset of the scene (the vegetation and a few instanced models), and
+// every other pixel keeps the target's clear value (UNDRAWN below, measured from the buffer), which no
+// velocity pixel shader writes short of a far pixel whose motion rounds to exactly that code: every
+// velocity shader writes its z from the clip w, saturating at the clear's z beyond a hundred metres,
+// and its motion in x and y. When HybridEnabled is set, such a pixel, and one
+// whose encoded motion saturated at the encoding's +/-0.125 UV clamp, takes the camera's motion
+// computed from its depth instead: the pixel reprojected into the previous frame through this eye's
+// own reprojection, at full precision and unclamped. Every other pixel keeps the engine's motion,
+// re-anchored as above. At the sky the depth is the infinite far plane and the reprojection is the
+// rotation alone.
+//
 // The pass can read a Size-sized window of larger sources at Offset: one eye's half of the
 // single-pass collapse's double-wide target. With CopyDepth set it also copies that window of the
 // depth into DepthOutput, so FSR can be handed an eye-sized depth (a depth-stencil resource cannot be
@@ -38,7 +49,12 @@ cbuffer Params : register(b0)
     uint CorrectionEnabled; // 0 = pass the decode through (no stereo disparity, or no history yet)
     uint2 Offset;           // the window's top-left texel in the sources
     uint CopyDepth;         // 1 = also copy the window's depth into DepthOutput
+    uint HybridEnabled;     // 1 = undrawn and saturated pixels take the camera motion from depth
+    uint3 Padding;
 };
+
+// The velocity target's clear value, as bytes: what a pixel the velocity pass never drew holds.
+static const uint4 UNDRAWN = uint4(127, 127, 255, 0);
 
 [numthreads(8, 8, 1)]
 void main(uint3 id : SV_DispatchThreadID)
@@ -48,21 +64,32 @@ void main(uint3 id : SV_DispatchThreadID)
         return;
     }
     int3 source = int3(id.xy + Offset, 0);
-    float2 stored = Velocity.Load(source).xy;
-    float2 motion_uv = (stored - 0.5) * 0.25;
-    if (CorrectionEnabled != 0)
+    float4 raw = Velocity.Load(source);
+    uint4 bytes = uint4(round(saturate(raw) * 255.0));
+    bool undrawn = all(bytes == UNDRAWN);
+    bool saturated = any(bytes.xy == 0u) || any(bytes.xy == 255u);
+    float2 motion_uv = (raw.xy - 0.5) * 0.25;
+    if (CorrectionEnabled != 0 || HybridEnabled != 0)
     {
         // Reconstruct the pixel's clip position from the raster depth (the matrices match the raster
-        // view-projection exactly, so the reverse-Z convention passes straight through), reproject it
-        // into the previous frame with both cameras, and add the UV-space difference. At the infinite
-        // far plane the parallax vanishes and the correction naturally tends to zero.
+        // view-projection exactly, so the reverse-Z convention passes straight through) and reproject
+        // it into the previous frame. At the infinite far plane the translation vanishes, so the
+        // camera motion there is the rotation's and the parallax correction tends to zero.
         float depth = Depth.Load(source).x;
         float2 uv = (float2(id.xy) + 0.5) / float2(Size);
         float4 clip = float4(uv.x * 2.0 - 1.0, 1.0 - uv.y * 2.0, depth, 1.0);
-        float4 prev_center = mul(ReprojCenter, clip);
         float4 prev_eye = mul(ReprojEye, clip);
-        float2 delta_ndc = prev_center.xy / prev_center.w - prev_eye.xy / prev_eye.w;
-        motion_uv += delta_ndc * float2(0.5, -0.5);
+        float2 prev_eye_ndc = prev_eye.xy / prev_eye.w;
+        if (HybridEnabled != 0 && (undrawn || saturated))
+        {
+            motion_uv = (clip.xy - prev_eye_ndc) * float2(0.5, -0.5);
+        }
+        else if (CorrectionEnabled != 0)
+        {
+            float4 prev_center = mul(ReprojCenter, clip);
+            float2 delta_ndc = prev_center.xy / prev_center.w - prev_eye_ndc;
+            motion_uv += delta_ndc * float2(0.5, -0.5);
+        }
     }
     Output[id.xy] = motion_uv * SignScale;
     if (CopyDepth != 0)

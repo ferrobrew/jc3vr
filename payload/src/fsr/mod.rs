@@ -155,6 +155,27 @@ fn side_by_side_reprojection(
     )
 }
 
+/// Whether the eye's clip-to-previous-clip reprojection is a camera cut rather than motion: the
+/// view centre, at the infinite far plane (the rotation) or at [`CUT_PROBE_DEPTH_M`] (the rotation
+/// and the translation), lands more than [`CUT_NDC`] of the half-screen away in the previous frame.
+/// No head moves that far in one frame; a teleport or a camera switch does.
+fn camera_cut(eye_reprojection: &Matrix4) -> bool {
+    let matrix = glam::Mat4::from(*eye_reprojection);
+    // Reverse-Z with an infinite far plane: the depth is the near distance over the view depth.
+    [0.0, SCENE_NEAR_CLIP_M / CUT_PROBE_DEPTH_M]
+        .into_iter()
+        .any(|depth| {
+            let previous = matrix * glam::Vec4::new(0.0, 0.0, depth, 1.0);
+            let ndc = previous.truncate().truncate() / previous.w;
+            previous.w.is_nan() || previous.w <= 0.0 || !ndc.is_finite() || ndc.length() > CUT_NDC
+        })
+}
+
+/// How far, in NDC, the view centre may move between frames before [`camera_cut`] calls it a cut.
+const CUT_NDC: f32 = 0.5;
+/// The view depth of [`camera_cut`]'s near probe, in metres.
+const CUT_PROBE_DEPTH_M: f32 = 2.0;
+
 /// Global FSR state. Locked briefly on the render thread at the AA hook.
 pub static FSR_STATE: Mutex<FsrState> = Mutex::new(FsrState::new());
 
@@ -226,14 +247,19 @@ pub fn dispatch(
         }
         EyeLayout::SideBySide => (&EYES, [Some(0), Some(build.eye_width)]),
     };
-    let correction = Config::lock_query(|c| c.stereo.cameras && c.fsr.stereo_mv_correction)
-        && crate::stereo::active();
+    let stereo = crate::stereo::active();
+    let (correction, hybrid) = Config::lock_query(|c| {
+        (
+            c.stereo.cameras && c.fsr.stereo_mv_correction && stereo,
+            c.fsr.hybrid_velocity && stereo,
+        )
+    });
     let mut ran = false;
     for &eye in eyes {
-        // A side-by-side resolve takes the correction from each eye's own matrices, which the
+        // A side-by-side resolve takes the reprojection from each eye's own matrices, which the
         // collapse's centred render camera does not carry; a whole resolve takes it from the
         // render camera's history.
-        let reprojection = if !correction {
+        let reprojection = if !correction && !hybrid {
             None
         } else if build.side_by_side {
             let current = EyeViewProjections::current(eye);
@@ -250,9 +276,17 @@ pub fn dispatch(
         let Some(eye_state) = state.eyes[eye].as_mut() else {
             continue;
         };
+        // A camera cut (a teleport, a camera switch, a configuration jumping the pose) leaves no
+        // history worth reprojecting: discard it, and send no motion against the old frame.
+        let cut = reprojection.is_some_and(|(_, eye_reprojection)| camera_cut(&eye_reprojection));
+        if cut {
+            eye_state.fresh = true;
+        }
         let request = EyeResolve {
             region_x: regions[eye],
-            reprojection,
+            reprojection: reprojection.filter(|_| !cut),
+            correct_parallax: correction,
+            hybrid,
             build,
             sharpness,
             camera: &camera,
@@ -281,6 +315,10 @@ struct EyeResolve<'a> {
     /// The stereo correction's matrices (centre, eye), when it applies; see
     /// [`velocity_decode::DecodeInputs::reprojection`].
     reprojection: Option<(Matrix4, Matrix4)>,
+    /// See [`velocity_decode::DecodeInputs::correct_parallax`].
+    correct_parallax: bool,
+    /// See [`velocity_decode::DecodeInputs::hybrid`].
+    hybrid: bool,
     /// The first column of the eye's half when the textures hold both eyes; `None` when they hold
     /// only this eye.
     region_x: Option<u32>,
@@ -303,6 +341,8 @@ unsafe fn resolve_eye(
 ) -> bool {
     let &EyeResolve {
         reprojection,
+        correct_parallax,
+        hybrid,
         region_x,
         build,
         sharpness,
@@ -352,6 +392,8 @@ unsafe fn resolve_eye(
                     depth: textures.depth,
                     sign: MV_SIGN,
                     reprojection,
+                    correct_parallax,
+                    hybrid,
                     offset: (region_x.unwrap_or(0), 0),
                 },
             )
@@ -544,6 +586,32 @@ fn camera_params() -> CameraParams {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The clip-to-previous-clip matrix of an eye that turned by `yaw` radians and moved by
+    /// `translation` metres between frames, through an infinite reverse-Z projection.
+    fn eye_reprojection(yaw: f32, translation: glam::Vec3) -> Matrix4 {
+        let projection = glam::Mat4::perspective_infinite_reverse_rh(1.5, 1.0, SCENE_NEAR_CLIP_M);
+        let current = glam::Mat4::IDENTITY;
+        let previous =
+            glam::Mat4::from_rotation_translation(glam::Quat::from_rotation_y(yaw), translation);
+        let current_vp = projection * current.inverse();
+        let previous_vp = projection * previous.inverse();
+        Matrix4::from(previous_vp * current_vp.inverse())
+    }
+
+    #[test]
+    fn head_motion_is_not_a_cut_and_a_jump_is() {
+        assert!(!camera_cut(&eye_reprojection(0.0, glam::Vec3::ZERO)));
+        assert!(!camera_cut(&eye_reprojection(
+            0.05,
+            glam::Vec3::new(0.05, 0.0, 0.02)
+        )));
+        assert!(camera_cut(&eye_reprojection(1.2, glam::Vec3::ZERO)));
+        assert!(camera_cut(&eye_reprojection(
+            0.0,
+            glam::Vec3::new(5.0, 0.0, 0.0)
+        )));
+    }
 
     #[test]
     fn a_side_by_side_resolve_is_one_eye_wide() {

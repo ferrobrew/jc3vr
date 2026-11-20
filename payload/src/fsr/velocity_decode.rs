@@ -15,6 +15,12 @@
 //! reconstructs each pixel from the raster depth and re-anchors its vector at the eye's own previous
 //! pose; see `velocity_decode.hlsl` for the math.
 //!
+//! The velocity pass draws only part of the scene, so with the hybrid decode on, every pixel it left
+//! at the target's clear value, and every pixel whose encoded motion saturated at the encoding's
+//! clamp, takes the camera's motion instead: the pixel reconstructed from its depth and reprojected
+//! through the eye's own previous view-projection, unclamped. The engine's object motion is kept
+//! wherever it wrote some.
+//!
 //! A decode can also read an eye-sized window of the single-pass collapse's double-wide buffers and
 //! copy that window's depth out, which is what lets FSR resolve each eye's half on its own.
 
@@ -60,8 +66,14 @@ pub struct DecodeInputs<'a> {
     pub depth: &'a Texture,
     /// FSR's sign/axis convention, applied to the decoded UV motion.
     pub sign: (f32, f32),
-    /// The stereo clip-to-previous-clip reprojection matrices (center, eye), when active.
+    /// The clip-to-previous-clip reprojection matrices (center, eye), when a frame of history
+    /// exists for them.
     pub reprojection: Option<(Matrix4, Matrix4)>,
+    /// Re-anchor the engine's vectors at the eye's own previous pose (the stereo correction).
+    pub correct_parallax: bool,
+    /// Give the pixels the velocity pass left undrawn, and those whose encoded motion saturated,
+    /// the camera's motion from their depth (the hybrid decode).
+    pub hybrid: bool,
     /// The top-left texel of the window the decode reads, in the engine buffers.
     pub offset: (u32, u32),
 }
@@ -102,11 +114,13 @@ struct Params {
     offset_x: u32,
     offset_y: u32,
     copy_depth: u32,
+    hybrid_enabled: u32,
+    padding: [u32; 3],
 }
 
-// The HLSL `Params` cbuffer spans ten registers: size and sign, two matrices of four, and the
-// correction flag with the window.
-const _: () = assert!(size_of::<Params>() == 10 * 16);
+// The HLSL `Params` cbuffer spans eleven registers: size and sign, two matrices of four, the
+// correction flag with the window, and the hybrid flag.
+const _: () = assert!(size_of::<Params>() == 11 * 16);
 
 impl VelocityDecode {
     /// Build the decode pass at `width`x`height`, with an R32F depth copy of that size when
@@ -208,6 +222,8 @@ impl VelocityDecode {
             depth,
             sign,
             reprojection,
+            correct_parallax,
+            hybrid,
             offset,
         } = inputs;
         // SAFETY: `device.m_Device` is live; `velocity.m_Texture` / `depth.m_Texture` are the live
@@ -239,6 +255,7 @@ impl VelocityDecode {
             // The correction and the depth copy need the depth SRV; without either the shader never
             // samples it, so a failure to build one only downgrades the dispatch back to the
             // uncorrected decode, unless the copy is what the caller needs.
+            let reprojection = reprojection.filter(|_| correct_parallax || hybrid);
             let depth_srv = (reprojection.is_some() || self.depth_copy.is_some())
                 .then(|| depth_srv(device, depth))
                 .flatten();
@@ -270,10 +287,12 @@ impl VelocityDecode {
                 sign_y: sign.1,
                 reproj_center: reproj_center.data,
                 reproj_eye: reproj_eye.data,
-                correction_enabled: u32::from(correction.is_some()),
+                correction_enabled: u32::from(correction.is_some() && correct_parallax),
                 offset_x: offset.0,
                 offset_y: offset.1,
                 copy_depth: u32::from(self.depth_copy.is_some()),
+                hybrid_enabled: u32::from(correction.is_some() && hybrid),
+                padding: [0; 3],
             };
             std::ptr::copy_nonoverlapping(&params, mapped.pData as *mut Params, 1);
             context.Unmap(&self.constants, 0);

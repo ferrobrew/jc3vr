@@ -24,6 +24,15 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
          into the parallax. Off for an A/B.",
     );
     ui.checkbox(
+        &mut cfg.fsr.hybrid_velocity,
+        "FSR hybrid motion vectors (camera motion from depth)",
+    )
+    .on_hover_text(
+        "Gives every pixel the velocity pass does not draw, and every pixel whose encoded motion hit \
+         the encoding's clamp, the camera's motion from its depth through each eye's own previous \
+         view-projection, keeping the engine's object motion where it wrote some. Off for an A/B.",
+    );
+    ui.checkbox(
         &mut cfg.stereo.shadow_anchor_to_fit,
         "Anchor shadows to the cascade fit's camera",
     )

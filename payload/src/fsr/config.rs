@@ -19,6 +19,12 @@ pub struct FsrConfig {
     /// `docs/mod/rendering/fsr.md`). Every pixel the velocity pass does not draw holds zero motion,
     /// which the correction turns into that parallax.
     pub stereo_mv_correction: bool,
+    /// Give every pixel the velocity pass does not draw (and every pixel whose encoded motion hit
+    /// the encoding's clamp) the camera's motion, computed from its depth through each eye's own
+    /// previous view-projection, keeping the engine's object motion where it wrote some. Without
+    /// it most of the frame reaches FSR with no camera motion at all.
+    #[serde(default = "default_hybrid_velocity")]
+    pub hybrid_velocity: bool,
 }
 impl FsrConfig {
     pub const fn new() -> Self {
@@ -27,6 +33,11 @@ impl FsrConfig {
             sharpen: true,
             sharpness: 0.2,
             stereo_mv_correction: true,
+            hybrid_velocity: true,
         }
     }
+}
+
+fn default_hybrid_velocity() -> bool {
+    FsrConfig::new().hybrid_velocity
 }
