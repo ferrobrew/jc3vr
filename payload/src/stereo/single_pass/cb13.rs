@@ -25,10 +25,18 @@ const MEYE_ROW_BASE: usize = 10;
 const CLIP_ORIGIN_ROW_BASE: usize = 18;
 /// The `cb0` row the clip-origin copies mirror (`dxbc_stereo::CLIP_ORIGIN_CB0_ROW`).
 const CLIP_ORIGIN_SOURCE_ROW: usize = 9;
+/// The row whose `.x` says the eye slots hold distinct per-eye rows (`dxbc_stereo::EYE_ROWS_SELECT_ROW`):
+/// one in a dual-eye upload, zero in a mirror. The terrain domain shaders that read their camera rows
+/// from an eye's slot choose by it.
+const EYE_ROWS_SELECT_ROW: usize = 24;
+/// The row where eye 0's copy of the full view-projection (`cb0[0..3]`) begins
+/// (`dxbc_stereo::FULL_VIEW_PROJECTION_ROW_BASE`); eye `e`'s is four rows on per eye.
+const FULL_VIEW_PROJECTION_ROW_BASE: usize = 25;
 /// The full `cb13` size: the remap block, a four-rows-per-eye `M_eye` block for the reprojection
-/// rewrite, and each eye's copy of the render camera's position for the remap's per-eye clip origin
-/// (`dxbc_stereo::STEREO_ORIGIN_CB_ROWS`). Every idiom binds the same `b13` buffer.
-pub(super) const STEREO_CB_TOTAL_ROWS: usize = 24;
+/// rewrite, each eye's copy of the render camera's position for the remap's per-eye clip origin, the
+/// eye-row selector, and each eye's full view-projection (`dxbc_stereo::STEREO_FULL_CB_ROWS`). Every
+/// idiom binds the same `b13` buffer.
+pub(super) const STEREO_CB_TOTAL_ROWS: usize = 33;
 
 // Keep the payload's cb13 layout in lockstep with the rewriter that reads it.
 const _: () = {
@@ -36,7 +44,11 @@ const _: () = {
     assert!(MEYE_ROW_BASE == dxbc_stereo::MEYE_ROW_BASE as usize);
     assert!(CLIP_ORIGIN_ROW_BASE == dxbc_stereo::CLIP_ORIGIN_ROW_BASE as usize);
     assert!(CLIP_ORIGIN_SOURCE_ROW == dxbc_stereo::CLIP_ORIGIN_CB0_ROW as usize);
-    assert!(STEREO_CB_TOTAL_ROWS == dxbc_stereo::STEREO_ORIGIN_CB_ROWS as usize);
+    assert!(EYE_ROWS_SELECT_ROW == dxbc_stereo::EYE_ROWS_SELECT_ROW as usize);
+    assert!(FULL_VIEW_PROJECTION_ROW_BASE == dxbc_stereo::FULL_VIEW_PROJECTION_ROW_BASE as usize);
+    assert!(STEREO_CB_TOTAL_ROWS == dxbc_stereo::STEREO_FULL_CB_ROWS as usize);
+    assert!(STEREO_CB_TOTAL_ROWS >= dxbc_stereo::STEREO_SELECT_CB_ROWS as usize);
+    assert!(STEREO_CB_TOTAL_ROWS >= dxbc_stereo::STEREO_ORIGIN_CB_ROWS as usize);
     assert!(STEREO_CB_TOTAL_ROWS >= dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize);
     assert!(STEREO_CB_REGISTER == dxbc_stereo::STEREO_CB_REGISTER);
 };
@@ -118,8 +130,19 @@ fn mirror_rows(engine: &RenderEngine) -> [Vector4; STEREO_CB_TOTAL_ROWS] {
         }
         write_meye(&mut rows, eye, glam::Mat4::IDENTITY);
         rows[clip_origin_row(eye)] = vp[CLIP_ORIGIN_SOURCE_ROW];
+        for r in 0..4 {
+            rows[full_view_projection_row(eye) + r] = vp[FULL_VIEW_PROJECTION_SOURCE_ROWS[r]];
+        }
     }
     rows
+}
+
+/// The `cb0` rows of the full view-projection, which the full-view-projection copies mirror.
+const FULL_VIEW_PROJECTION_SOURCE_ROWS: [usize; 4] = [0, 1, 2, 3];
+
+/// The first row of eye `eye`'s copy of the full view-projection.
+const fn full_view_projection_row(eye: usize) -> usize {
+    FULL_VIEW_PROJECTION_ROW_BASE + eye * 4
 }
 
 /// The row of eye `eye`'s copy of the render camera's position.
@@ -171,6 +194,9 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
     let center_offset_vp_inv = center_offset_vp.as_dmat4().inverse();
 
     let mut rows = [Vector4::default(); STEREO_CB_TOTAL_ROWS];
+    rows[EYE_ROWS_SELECT_ROW] = Vector4 {
+        data: [1.0, 0.0, 0.0, 0.0],
+    };
     let mut forwards = [glam::Vec3::ZERO; 2];
     let mut m_eyes = [glam::Mat4::IDENTITY; 2];
     for eye in 0..2 {
@@ -186,6 +212,14 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
 
         let offset_vp_glam = glam::Mat4::from(params.projection_reverse_z) * offset_view;
         let offset_vp = Matrix4::from(offset_vp_glam);
+        // The eye's full view-projection, through the same product with the view's translation kept.
+        let full_vp =
+            Matrix4::from(glam::Mat4::from(params.projection_reverse_z) * eye_world.inverse());
+        for r in 0..4 {
+            rows[full_view_projection_row(eye) + r] = Vector4 {
+                data: std::array::from_fn(|c| full_vp.data[r * 4 + c]),
+            };
+        }
 
         for r in 0..4 {
             rows[eye * 5 + r] = Vector4 {
@@ -438,6 +472,9 @@ pub(super) fn pin_rows_to_eye(
         pinned[MEYE_ROW_BASE + slot * 4..MEYE_ROW_BASE + slot * 4 + 4]
             .copy_from_slice(&rows[MEYE_ROW_BASE + eye * 4..MEYE_ROW_BASE + eye * 4 + 4]);
         pinned[clip_origin_row(slot)] = rows[clip_origin_row(eye)];
+        pinned[full_view_projection_row(slot)..full_view_projection_row(slot) + 4].copy_from_slice(
+            &rows[full_view_projection_row(eye)..full_view_projection_row(eye) + 4],
+        );
     }
     pinned
 }

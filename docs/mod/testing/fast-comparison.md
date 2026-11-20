@@ -94,6 +94,7 @@ In run 295, three runs of the town at 320 by 360 per eye on the freshly launched
 
 Two things about the eject itself:
 
+- The game's video memory grows by about 3 to 4 GB with each eject and re-injection (run 310: 10 GB after the launch, 14 GB after the first re-injection, 20 GB after the third, 24 GB after the fourth, and 32 GB after the fifth and a few runs with dumps). At the card's 32 GB the frame time rose to about 540 ms, almost all of it waiting, and a scene took three times as long. A session that has been re-injected several times needs a relaunch; check `nvidia-smi` when the cycle slows down. What leaks is not identified.
 - It takes about fifteen seconds under the harness. The human-hull participant ([human-hull-restoration.md](../body/human-hull-restoration.md)) waits out its bounded restoration, which never completes there (`clearance=PendingBody`), with the frames slowed to about 115 ms meanwhile, and then commits with the narrowed hulls left in place. That is a state the re-injected payload inherits.
 - A payload that has run the shader identity census (`shader_identity = true`, in the diagnostics of every coverage config run through the original path) cannot be ejected: the census's pixel-shader detour pins the image. The eject then tears the payload down and stops at the hook removal, which leaves the game without the mod until it restarts. The payload logs the pin when the detour is first enabled, and `iterate` reads that line and refuses to re-inject, asking for a relaunch instead. The fast comparison never arms the census.
 

@@ -135,6 +135,25 @@ pub struct SinglePassConfig {
     /// tessellation factors, the patch culling, and the distance fades stay centre-derived. A shader
     /// rewrite, so it needs a shader reload to apply. On by default.
     pub terrain_patch_per_eye: bool,
+    /// On top of [`terrain`](Self::terrain): the terrain domain shaders read their camera rows (the
+    /// offset view-projection and camera position of their terrain constants) from the eye's slot of
+    /// `cb13` instead of reprojecting the centre's clip position by `M_eye`
+    /// (`dxbc_stereo::rebase_domain_shader` on the eye-lane path, and
+    /// `dxbc_stereo::rebase_pinned_domain_shader` on the pinned-eye path under
+    /// [`terrain_patch_per_eye`](Self::terrain_patch_per_eye)). The reprojection is exact only in real
+    /// arithmetic: in floats it moved each patch's surface by a few to a few hundred floats of depth.
+    /// The shader's distance outputs and fades move to the eye with the rows, as in a separately
+    /// rendered eye; the hull shader's tessellation factors and culling stay centre-derived. A shader
+    /// rewrite, so it needs a shader reload to apply. On by default.
+    pub terrain_eye_rows: bool,
+    /// A vertex shader that projects an absolute world position through the full view-projection
+    /// (`cb0[0..3]`), and that the collapse would otherwise reproject by `M_eye`, reads the eye's copy
+    /// of those rows from `cb13` instead (`dxbc_stereo::remap_full_view_projection`, and
+    /// `dxbc_stereo::remap_pinned_full_view_projection` for the terrain patch basemesh drawn once per
+    /// eye): the tree impostors, the static light sprites, the ambient-occlusion volumes, and the
+    /// terrain's non-tessellated basemesh. The reprojection is exact only in real arithmetic. A shader
+    /// rewrite, so it needs a shader reload to apply. On by default.
+    pub full_view_projection_rows: bool,
     /// Single-pass the far-distance tree impostors (`CTreeImpostorRB`): the impostor vertex shader
     /// writes its clip position from the global billboard view-projection and draws non-instanced, with
     /// no GPU-indirect path sharing it, so the reprojection rewrite plus instance-doubling covers it
@@ -794,6 +813,12 @@ pub struct StereoConfig {
     /// material shaders subtract the render camera's position before applying it, so any gap
     /// between the two shifts every shadow by that gap in the world.
     pub shadow_anchor_to_fit: bool,
+    /// Run the terrain patch system's per-frame prep (its detail, triangles, and morph targets) from
+    /// the centre camera's position in every dispatch that renders one eye at a time, as the
+    /// single-pass collapse runs it once for both eyes. The prep morphs each patch's interior by its
+    /// distance from the camera, so without this the two eyes of a multipass frame see the ground's
+    /// surface at slightly different places. See `stereo::terrain_prep`. VR only.
+    pub terrain_prep_from_centre: bool,
     /// Diagnostic (issue #31 isolation, Test A): render each eye through a *symmetric* (zero-shear)
     /// off-axis frustum instead of the true asymmetric HMD one. The replacement preserves each eye's
     /// horizontal and vertical FOV *extent* but re-centres it, so the off-centre shear terms
@@ -837,6 +862,8 @@ impl SinglePassConfig {
             reproject_camera_only: true,
             terrain: false,
             terrain_patch_per_eye: true,
+            terrain_eye_rows: true,
+            full_view_projection_rows: true,
             tree_impostors: false,
             tree_impostor_pixel_size_per_eye: true,
             tree_impostor_screen_door_per_eye: true,
@@ -927,6 +954,7 @@ impl StereoConfig {
             shadow_update_every_frame: false,
             shadow_fit_unpadded: true,
             shadow_anchor_to_fit: true,
+            terrain_prep_from_centre: true,
             symmetrize_eye_frusta: false,
             mirror_eye0_to_both: false,
             terrain_detail_budget_scale: 4,

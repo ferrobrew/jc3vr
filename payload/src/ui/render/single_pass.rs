@@ -177,6 +177,39 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if ui
+                    .add_enabled(
+                        cfg.stereo.single_pass.terrain,
+                        egui::Checkbox::new(
+                            &mut cfg.stereo.single_pass.terrain_eye_rows,
+                            "Terrain domain shaders from each eye's own rows",
+                        ),
+                    )
+                    .on_hover_text(
+                        "The terrain domain shaders read each eye's camera position and \
+                         view-projection instead of reprojecting the centre's clip position, so they \
+                         round as a separately rendered eye does. Off, each patch's surface lands a \
+                         few to a few hundred floats of depth away. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.full_view_projection_rows,
+                        "Full view-projection from each eye's own rows",
+                    )
+                    .on_hover_text(
+                        "Shaders that project through the full view-projection (the tree impostors, \
+                         the light sprites, the ambient-occlusion volumes, the terrain basemesh) read \
+                         each eye's copy of it instead of reprojecting the centre's clip position, so \
+                         they round as a separately rendered eye does. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
                     .checkbox(
                         &mut cfg.stereo.single_pass.tree_impostors,
                         "Single-pass the tree impostors (far-distance billboards)",

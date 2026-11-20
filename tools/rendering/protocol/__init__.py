@@ -233,7 +233,7 @@ class SunShadows(StrEnum):
 # The single-pass production switches a configuration may override, by their configuration field
 # names. Mirrors `SinglePassSwitch` in `payload/src/stereo/switches.rs`; a test keeps the two equal.
 SINGLE_PASS_SWITCHES = (
-    "reproject", "reproject_camera_only", "terrain", "terrain_patch_per_eye", "tree_impostors",
+    "reproject", "reproject_camera_only", "terrain", "terrain_patch_per_eye", "terrain_eye_rows", "full_view_projection_rows", "tree_impostors",
     "tree_impostor_pixel_size_per_eye", "tree_impostor_screen_door_per_eye", "static_lights_per_eye", "moon_per_eye", "water_plane_per_eye", "clouds_per_eye", "stars_per_eye", "bark", "foliage",
     "vegetation_once", "occluder",
     "instanced_per_eye", "hw_instanced_once", "indirect_per_eye", "vertex_globals_per_eye", "reconstruct_per_eye", "fullscreen_camera_per_eye",

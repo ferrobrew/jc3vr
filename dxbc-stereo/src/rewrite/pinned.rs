@@ -11,12 +11,18 @@
 
 use crate::{
     container::{Dxbc, DxbcError},
-    rewrite::common::{
-        CB_ACCESS_DYNAMIC_INDEXED, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_OUTPUT_SIV,
-        OPCODE_DCL_TEMPS, OPCODE_MOV, OPCODE_RET, OPCODE_RETC, OPERAND_CB_2D_IMM,
-        OPERAND_IMM32_SCALAR, OPERAND_TEMP_MASK_X, SB_NAME_POSITION, STEREO_CB_REGISTER,
-        STEREO_REPROJ_CB_ROWS, declared_register, emit_meye_epilogue, reassemble,
-        rewrite_reproject_instruction,
+    rewrite::{
+        common::{
+            CB_ACCESS_DYNAMIC_INDEXED, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_OUTPUT_SIV,
+            OPCODE_DCL_TEMPS, OPCODE_MOV, OPCODE_RET, OPCODE_RETC, OPERAND_CB_2D_IMM,
+            OPERAND_IMM32_SCALAR, OPERAND_TEMP_MASK_X, SB_NAME_POSITION, STEREO_CB_REGISTER,
+            STEREO_REPROJ_CB_ROWS, STEREO_SELECT_CB_ROWS, declared_register, emit_meye_epilogue,
+            reassemble, rewrite_reproject_instruction,
+        },
+        domain_rows::{
+            EYE_ROW_TEMPS, RowBase, emit_select_rows, reads_terrain_view_projection,
+            rewrite_rows_instruction,
+        },
     },
     tokens::{ShaderStage, TokenStream},
 };
@@ -181,4 +187,131 @@ fn emit_pinned_injection(out: &mut Vec<u32>, plan: &PinnedPlan) {
         OPERAND_IMM32_SCALAR,
         0,
     ]);
+}
+
+/// Rewrites a terrain domain shader drawn once per eye to read its camera rows (the offset
+/// view-projection and camera position of its `cb1` terrain constants) from `cb13`'s first eye slot,
+/// which the payload's per-eye re-issue pins to the eye it draws, instead of reprojecting its
+/// `SV_Position` by `M_eye`. The shader then builds the eye's clip position, distances, and fades with
+/// the arithmetic of an eye rendered on its own. The rows are chosen in a prologue by
+/// [`EYE_ROWS_SELECT_ROW`](crate::EYE_ROWS_SELECT_ROW), so outside the routed range the shader reads
+/// its own constants. No interface changes, and no control-flow restriction: nothing is emitted
+/// before a `ret`.
+pub fn rebase_pinned_domain_shader(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
+    let dxbc = Dxbc::parse(blob)?;
+    if dxbc.chunk(b"SHEX").is_none() && dxbc.chunk(b"SHDR").is_some() {
+        return Err(DxbcError::UnsupportedShaderModel);
+    }
+    let shex = dxbc.chunk(b"SHEX").ok_or(DxbcError::NoShaderChunk)?;
+    let stream = TokenStream::new(shex.body(blob))?;
+    if stream.stage() != ShaderStage::Domain {
+        return Err(DxbcError::NotDomainShader);
+    }
+    if !reads_terrain_view_projection(&stream)? {
+        return Err(DxbcError::NoTerrainCameraRows);
+    }
+    let isgn = dxbc
+        .chunk(b"ISGN")
+        .ok_or(DxbcError::MissingInputSignature)?;
+    let osgn = dxbc
+        .chunk(b"OSGN")
+        .ok_or(DxbcError::MissingOutputSignature)?;
+    let plan = plan_rebase(&stream)?;
+    let new_shex = rewrite_rebase(&stream, &plan)?;
+    reassemble(
+        &dxbc,
+        blob,
+        isgn.body(blob).to_vec(),
+        osgn.body(blob).to_vec(),
+        new_shex,
+        false,
+    )
+}
+
+/// What the pinned rebase's declaration scan learned.
+struct RebasePlan {
+    /// The first of the [`EYE_ROW_TEMPS`] temps the chosen rows occupy (the old temp count).
+    rows_temp: u32,
+    /// The token index of the existing `dcl_temps`, if any.
+    dcl_temps_start: Option<usize>,
+    /// The token index of the first non-declaration instruction.
+    inject_before: usize,
+}
+
+fn plan_rebase(stream: &TokenStream) -> Result<RebasePlan, DxbcError> {
+    let tokens = stream.tokens();
+    let mut temps = 0;
+    let mut dcl_temps_start = None;
+    let mut inject_before = None;
+    for insn in stream.instructions() {
+        let insn = insn?;
+        if insn.is_declaration() {
+            match insn.opcode {
+                OPCODE_DCL_TEMPS => {
+                    temps = *tokens
+                        .get(insn.start + 1)
+                        .ok_or(DxbcError::UnexpectedEndOfTokens)?;
+                    dcl_temps_start = Some(insn.start);
+                }
+                OPCODE_DCL_CONSTANT_BUFFER
+                    if declared_register(tokens, &insn)? == STEREO_CB_REGISTER =>
+                {
+                    return Err(DxbcError::Cb13AlreadyDeclared);
+                }
+                _ => {}
+            }
+        } else if inject_before.is_none() {
+            inject_before = Some(insn.start);
+        }
+    }
+    Ok(RebasePlan {
+        rows_temp: temps,
+        dcl_temps_start,
+        inject_before: inject_before.unwrap_or(tokens.len()),
+    })
+}
+
+fn rewrite_rebase(stream: &TokenStream, plan: &RebasePlan) -> Result<Vec<u8>, DxbcError> {
+    let tokens = stream.tokens();
+    let mut out: Vec<u32> = Vec::with_capacity(tokens.len() + 96);
+    out.extend_from_slice(&tokens[..2]);
+    let mut injected = false;
+    for insn in stream.instructions() {
+        let insn = insn?;
+        if insn.start == plan.inject_before {
+            emit_rebase_injection(&mut out, plan);
+            injected = true;
+        }
+        if Some(insn.start) == plan.dcl_temps_start {
+            out.push(tokens[insn.start]);
+            out.push(plan.rows_temp + EYE_ROW_TEMPS);
+            continue;
+        }
+        if insn.is_declaration() {
+            out.extend_from_slice(&tokens[insn.start..insn.end]);
+            continue;
+        }
+        rewrite_rows_instruction(tokens, &insn, plan.rows_temp, &mut out)?;
+    }
+    if !injected {
+        emit_rebase_injection(&mut out, plan);
+    }
+    let length = out.len() as u32;
+    out[1] = length;
+    Ok(out.iter().flat_map(|t| t.to_le_bytes()).collect())
+}
+
+/// Emits `dcl_constantbuffer cb13[25], dynamicIndexed`, a `dcl_temps` when the shader had none, and
+/// the row-selecting prologue over the first eye slot.
+fn emit_rebase_injection(out: &mut Vec<u32>, plan: &RebasePlan) {
+    out.extend_from_slice(&[
+        (4 << 24) | CB_ACCESS_DYNAMIC_INDEXED | OPCODE_DCL_CONSTANT_BUFFER,
+        OPERAND_CB_2D_IMM,
+        STEREO_CB_REGISTER,
+        STEREO_SELECT_CB_ROWS,
+    ]);
+    if plan.dcl_temps_start.is_none() {
+        out.extend_from_slice(&[(2 << 24) | OPCODE_DCL_TEMPS, plan.rows_temp + EYE_ROW_TEMPS]);
+    }
+    emit_select_rows(out, plan.rows_temp, RowBase::Pinned);
 }

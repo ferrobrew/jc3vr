@@ -126,6 +126,12 @@ pub enum DxbcError {
     /// The terrain eye-lane rewrite found no free `TEXCOORD3.z` output lane to carry the eye index
     /// through the VS -> HS -> DS pipeline (the `TEXCOORD3` output is missing, or its `.z` is used).
     NoEyeLane,
+    /// The domain shader reads no offset view-projection row of its terrain constants (`cb1`), so
+    /// there are no camera rows to take from an eye's slot.
+    NoTerrainCameraRows,
+    /// The shader reads no row of the full view-projection (`cb0[0..3]`), so there is nothing to take
+    /// from an eye's slot.
+    NoFullViewProjection,
     /// The pixel shader carries no screen-space depth fetch built from a projective UV, so there is
     /// nothing for the decal depth-UV bias to separate; the caller should leave it untouched.
     NoDepthUvFetch,
@@ -218,6 +224,10 @@ impl fmt::Display for DxbcError {
                 "dxbc: reprojection does not support a conditional early return (retc)"
             }
             DxbcError::NoEyeLane => "dxbc: no free TEXCOORD3.z lane to carry the eye index",
+            DxbcError::NoFullViewProjection => "dxbc: the shader reads no full view-projection row",
+            DxbcError::NoTerrainCameraRows => {
+                "dxbc: the domain shader reads no terrain camera rows"
+            }
             DxbcError::NoResolveInputs => "dxbc: unsupported deferred input sequence",
             DxbcError::NoScreenOverlay => "dxbc: no recognised screen-space overlay lookup",
             DxbcError::NoPlanarReflection => "dxbc: no recognised planar reflection coordinate",

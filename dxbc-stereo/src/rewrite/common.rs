@@ -38,6 +38,21 @@ pub const CLIP_ORIGIN_ROW_BASE: u32 = STEREO_REPROJ_CB_ROWS;
 /// The `cb13` size a remapped shader that reads [`CLIP_ORIGIN_CB0_ROW`] per eye declares: through eye
 /// 1's copy of the row.
 pub const STEREO_ORIGIN_CB_ROWS: u32 = CLIP_ORIGIN_ROW_BASE + STEREO_CB_ROWS / 2 + 1;
+/// The `cb13` row whose `.x` is nonzero while the eye slots hold distinct per-eye rows (inside the
+/// routed range) and zero while they mirror the current view. The terrain domain shaders that read
+/// their camera rows from an eye's slot choose by it, so outside the routed range they read their own
+/// constants.
+pub const EYE_ROWS_SELECT_ROW: u32 = STEREO_ORIGIN_CB_ROWS;
+/// The `cb13` size a shader that reads [`EYE_ROWS_SELECT_ROW`] declares, and the full size the
+/// payload uploads.
+pub const STEREO_SELECT_CB_ROWS: u32 = EYE_ROWS_SELECT_ROW + 1;
+/// The `cb13` row where each eye's copy of the full, translation-bearing view-projection
+/// (`cb0[0..3]`) begins: eye `e`'s four rows are `FULL_VIEW_PROJECTION_ROW_BASE + 4*e ..`, the stride of
+/// the `M_eye` block, so a shader whose row base is `4*eye` addresses them as
+/// `cb13[rBase.x + FULL_VIEW_PROJECTION_ROW_BASE + k]`.
+pub const FULL_VIEW_PROJECTION_ROW_BASE: u32 = STEREO_SELECT_CB_ROWS;
+/// The full `cb13` size: through eye 1's copy of the full view-projection.
+pub const STEREO_FULL_CB_ROWS: u32 = FULL_VIEW_PROJECTION_ROW_BASE + 8;
 
 /// Reassembles a container with the rewritten `ISGN`/`OSGN`/`SHEX` chunks swapped in, the `SFI0`
 /// viewport-feature bit set (adding an `SFI0` chunk after `SHEX` if the container had none -- fxc's

@@ -27,6 +27,8 @@ pub(super) enum Flag {
     ReprojectCameraOnly,
     Terrain,
     TerrainPatchPerEye,
+    TerrainEyeRows,
+    FullViewProjectionRows,
     TreeImpostors,
     TreeImpostorPixelSize,
     StaticLights,
@@ -147,6 +149,8 @@ fn store_config_flags() -> u64 {
             | bit(s.reproject_camera_only, Flag::ReprojectCameraOnly)
             | bit(s.terrain, Flag::Terrain)
             | bit(s.terrain_patch_per_eye, Flag::TerrainPatchPerEye)
+            | bit(s.terrain_eye_rows, Flag::TerrainEyeRows)
+            | bit(s.full_view_projection_rows, Flag::FullViewProjectionRows)
             | bit(s.tree_impostors, Flag::TreeImpostors)
             | bit(
                 s.tree_impostor_pixel_size_per_eye,

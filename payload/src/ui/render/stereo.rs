@@ -32,6 +32,16 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
          between it and the render camera does not shift every shadow off its object. Off for an \
          A/B of shadows detached from distant objects while moving fast.",
     );
+    ui.checkbox(
+        &mut cfg.stereo.terrain_prep_from_centre,
+        "Terrain patch prep from the centre camera",
+    )
+    .on_hover_text(
+        "Runs the terrain patches' per-frame detail and morph from the centre camera when the eyes \
+         are drawn one at a time, as single-pass runs it once for both. Off, each eye morphs the \
+         ground from its own position, so the eyes disagree about the surface by a fraction of a \
+         millimetre.",
+    );
     ui.label(format!(
         "Render camera to the shadow fit's camera: {:.2} m",
         shadow_fit_gap_m()

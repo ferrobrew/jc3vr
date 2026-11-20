@@ -37,9 +37,20 @@ Every scene draw falls into one of these:
   one entry at a time — the same `mul_vec4` the mod applies. (`cb13`'s `M_eye` block is the other
   convention: the rewriter's epilogue is a `dp4` chain, so those rows are rows.)
 - **(c) hull/domain tessellation eye-inject.** The clip transform is built in the domain shader from
-  an `m_OffsetViewProjection` constant. The DS is rewritten to reproject by `M_eye` (read from `cb13`
-  bound on the domain stage); the paired VS forwards the eye index on a free interpolant. This is the
-  base VolumetricTerrain path.
+  an `m_OffsetViewProjection` constant. The DS is rewritten to read that eye's offset view-projection
+  and camera position from `cb13` (bound on the domain stage) in place of its own constants, under
+  `single_pass.terrain_eye_rows`, or to reproject by `M_eye` with it off; the paired VS forwards the
+  eye index on a free interpolant. This is the base VolumetricTerrain path. The patch system's domain
+  shaders, which have no free interpolant, read the pinned eye's slot the same way (see "Pipelines
+  that cannot carry the eye: the pinned-eye reprojection" in [single-pass-stereo.md](single-pass-stereo.md)).
+
+Whether a family reaches clip by `M_eye` or by its eye's own rows matters at the headset's size: the
+reprojection is exact only in real arithmetic. The `cb0`-remapped families, the terrain detail, the
+terrain domain shaders, and the full view-projection's readers (tree impostors, light sprites,
+ambient-occlusion volumes, terrain basemesh) use the eye's rows; the baked-matrix families in bucket
+(b), the foliage, the moon, the water planes, and the decals are reprojected, since their transform
+is a CPU product of a per-draw matrix and the centred camera that the shader cannot redo per eye. See
+"Each eye's own rows, not the centre's reprojected" in [single-pass-stereo.md](single-pass-stereo.md).
 - **(d) GPU-indirect per-eye re-issue.** The draw is `DrawInstancedIndirect` /
   `DrawIndexedInstancedIndirect(NoMutex)` — the instance count lives in a GPU buffer, so the CPU can't
   instance-double and `SV_InstanceID` stays 0 (never selects an eye). The block's `Draw` is detoured

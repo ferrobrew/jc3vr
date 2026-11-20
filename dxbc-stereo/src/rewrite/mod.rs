@@ -37,6 +37,9 @@ pub use camera::{
     VELOCITY_REPROJECTION_ROWS_PER_EYE, localize_eye_camera,
 };
 mod common;
+mod domain_rows;
+mod full_vp;
+pub use full_vp::remap_pinned_full_view_projection;
 mod lake;
 mod lights;
 pub use lake::{
@@ -49,7 +52,7 @@ pub use lake::{
 mod overlay;
 pub use overlay::localize_screen_overlays;
 mod pinned;
-pub use pinned::reproject_pinned_eye;
+pub use pinned::{rebase_pinned_domain_shader, reproject_pinned_eye};
 mod planar;
 pub use planar::localize_planar_reflection;
 mod resolve;
@@ -74,14 +77,18 @@ mod velocity;
 pub use velocity::localize_velocity;
 mod volume;
 pub use common::{
-    CLIP_ORIGIN_CB0_ROW, CLIP_ORIGIN_ROW_BASE, MEYE_ROW_BASE, STEREO_CB_REGISTER, STEREO_CB_ROWS,
-    STEREO_ORIGIN_CB_ROWS, STEREO_REPROJ_CB_ROWS,
+    CLIP_ORIGIN_CB0_ROW, CLIP_ORIGIN_ROW_BASE, EYE_ROWS_SELECT_ROW, FULL_VIEW_PROJECTION_ROW_BASE,
+    MEYE_ROW_BASE, STEREO_CB_REGISTER, STEREO_CB_ROWS, STEREO_FULL_CB_ROWS, STEREO_ORIGIN_CB_ROWS,
+    STEREO_REPROJ_CB_ROWS, STEREO_SELECT_CB_ROWS,
 };
 pub use remap::{ClipOrigin, patch_vertex_shader, patch_vertex_shader_with};
-pub use reproject::{reproject_instanced_vertex_shader, reproject_vertex_shader};
+pub use reproject::{
+    remap_full_view_projection, reproject_instanced_vertex_shader, reproject_vertex_shader,
+};
 pub use ssdecal::{SSDECAL_EYE_BIAS_REGISTER, bias_ssdecal_depth_uv};
 pub use terrain::{
-    forward_eye_hull_shader, inject_eye_forward_vertex_shader, reproject_domain_shader,
+    forward_eye_hull_shader, inject_eye_forward_vertex_shader, rebase_domain_shader,
+    reproject_domain_shader,
 };
 pub use volume::{
     AMBIENT_OCCLUSION_VOLUME_BOUNDARY_ROW, AMBIENT_OCCLUSION_VOLUME_CB_REGISTER,

@@ -550,20 +550,31 @@ fn create_domain_program(
             let code = unsafe { std::slice::from_raw_parts(p.m_Code, p.m_Size as usize) };
             // A terrain domain shader with no free eye lane is drawn once per eye instead, and takes
             // the pinned-eye reprojection that reads whichever eye that re-issue pins `cb13` to.
-            let rewrite = match dxbc_stereo::reproject_domain_shader(code) {
+            // With the eye-row switch on, either path reads the eye's camera rows rather than
+            // reprojecting the centre's clip position.
+            let eye_rows = crate::stereo::single_pass::terrain_eye_rows();
+            let lane = if eye_rows {
+                dxbc_stereo::rebase_domain_shader(code)
+            } else {
+                dxbc_stereo::reproject_domain_shader(code)
+            };
+            let rewrite = match lane {
                 Ok(blob) => Some((blob, "lane")),
                 Err(dxbc_stereo::DxbcError::NoEyeLane)
                     if crate::stereo::single_pass::should_pin_terrain(name.as_deref()) =>
                 {
-                    dxbc_stereo::reproject_pinned_eye(code)
-                        .ok()
-                        .map(|blob| (blob, "pinned"))
+                    let pinned = if eye_rows {
+                        dxbc_stereo::rebase_pinned_domain_shader(code)
+                    } else {
+                        dxbc_stereo::reproject_pinned_eye(code)
+                    };
+                    pinned.ok().map(|blob| (blob, "pinned"))
                 }
                 Err(_) => None,
             };
             if let Some((blob, path)) = rewrite {
                 let len = blob.len() as u64;
-                tracing::info!(target: "single_pass", stage = "domain", name = ?name, path, "terrain: reprojected");
+                tracing::info!(target: "single_pass", stage = "domain", name = ?name, path, eye_rows, "terrain: reprojected");
                 pinned = path == "pinned";
                 saved = Some((p.m_Code, p.m_Size, blob));
                 p.m_Code = saved.as_ref().expect("just set").2.as_ptr();

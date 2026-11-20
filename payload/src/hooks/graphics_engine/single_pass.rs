@@ -295,6 +295,14 @@ fn set_all_global_shader_program_constants(this: *mut RenderEngine, ctx: *const 
         .get()
         .unwrap()
         .call(this, ctx);
+    // The terrain patch prep takes the centre camera in an eye-at-a-time dispatch; the upload above
+    // carried the eye's, so upload again with the centre's and put the eye's back.
+    if let (Some(engine), Some(rc)) = unsafe { (this.as_mut(), ctx.as_ref()) }
+        && let Some(eye) = crate::stereo::terrain_prep::stage_centre_camera(engine, rc)
+    {
+        upload_global_constants(engine);
+        crate::stereo::terrain_prep::restore(engine, eye);
+    }
     let cb13_uploaded = crate::stereo::single_pass::active()
         && unsafe { this.as_ref() }.is_some_and(crate::stereo::single_pass::mirror_and_bind_cb13);
     if let Some(engine) = unsafe { this.as_ref() } {

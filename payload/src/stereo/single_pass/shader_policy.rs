@@ -212,6 +212,34 @@ pub fn should_pin_terrain(name: Option<&str>) -> bool {
         && !is_terrain_shadow_pass(name)
 }
 
+/// The reprojection of a vertex shader whose clip position comes from a scene view-projection: with
+/// [`full_view_projection_rows`](crate::stereo::config::SinglePassConfig::full_view_projection_rows)
+/// on, a shader that projects through the full view-projection (`cb0[0..3]`) reads the eye's copy of
+/// it from `cb13` instead (`dxbc_stereo::remap_full_view_projection`), and any other shader takes the
+/// `M_eye` reprojection.
+fn reproject_or_remap_full_view_projection(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
+    if full_view_projection_rows() {
+        match dxbc_stereo::remap_full_view_projection(code) {
+            Err(DxbcError::NoFullViewProjection) => {}
+            result => return result,
+        }
+    }
+    dxbc_stereo::reproject_vertex_shader(code)
+}
+
+/// Whether a vertex shader that projects through the full view-projection reads the eye's copy of it
+/// from `cb13` rather than reprojecting its clip position by `M_eye`.
+pub fn full_view_projection_rows() -> bool {
+    config_flags().has(Flag::FullViewProjectionRows)
+}
+
+/// Whether the terrain domain shaders take their camera rows from the eye's `cb13` slot
+/// (`dxbc_stereo::rebase_domain_shader`, `dxbc_stereo::rebase_pinned_domain_shader`) rather than
+/// reprojecting their clip position by `M_eye`.
+pub fn terrain_eye_rows() -> bool {
+    config_flags().has(Flag::TerrainEyeRows)
+}
+
 /// Whether a terrain shader named `name` is a shadow-pass variant. Shadow passes render the terrain
 /// from the light's view into the shadow atlas, not per eye, so the single-pass eye transforms
 /// (reprojection and viewport routing) must skip them: eye-transforming a shadow-pass draw corrupts
@@ -347,9 +375,9 @@ pub fn apply_vs_transform(
         VsTransform::ReprojectOrRemap => dxbc_stereo::reproject_vertex_shader(code)
             .ok()
             .or_else(remap),
-        VsTransform::Reproject => dxbc_stereo::reproject_vertex_shader(code).ok(),
+        VsTransform::Reproject => reproject_or_remap_full_view_projection(code).ok(),
         VsTransform::ReprojectOrEyeInject => {
-            let (out, path) = match dxbc_stereo::reproject_vertex_shader(code) {
+            let (out, path) = match reproject_or_remap_full_view_projection(code) {
                 Ok(blob) => (Some(blob), "reproject"),
                 Err(_) => (
                     dxbc_stereo::inject_eye_forward_vertex_shader(code).ok(),
@@ -363,7 +391,14 @@ pub fn apply_vs_transform(
             out
         }
         VsTransform::Pinned => {
-            let out = dxbc_stereo::reproject_pinned_eye(code).ok();
+            // With the eye-row switch on, the pinned slot's full view-projection replaces the
+            // reprojection.
+            let out = if full_view_projection_rows() {
+                dxbc_stereo::remap_pinned_full_view_projection(code)
+            } else {
+                dxbc_stereo::reproject_pinned_eye(code)
+            }
+            .ok();
             tracing::info!(
                 target: "single_pass", stage = "vertex", name = ?name, path = "pinned",
                 transformed = out.is_some(), "terrain: VS transform",

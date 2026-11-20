@@ -58,6 +58,8 @@ single_pass_switches! {
     ReprojectCameraOnly => reproject_camera_only, true;
     Terrain => terrain, true;
     TerrainPatchPerEye => terrain_patch_per_eye, true;
+    TerrainEyeRows => terrain_eye_rows, true;
+    FullViewProjectionRows => full_view_projection_rows, true;
     TreeImpostors => tree_impostors, true;
     TreeImpostorPixelSizePerEye => tree_impostor_pixel_size_per_eye, false;
     TreeImpostorScreenDoorPerEye => tree_impostor_screen_door_per_eye, true;

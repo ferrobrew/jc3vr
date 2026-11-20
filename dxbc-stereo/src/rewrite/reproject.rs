@@ -10,17 +10,19 @@
 use crate::{
     container::{Dxbc, DxbcError},
     rewrite::common::{
-        CB_ACCESS_DYNAMIC_INDEXED, OPCODE_AND, OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_SGV,
-        OPCODE_DCL_OUTPUT_SIV, OPCODE_DCL_TEMPS, OPCODE_IMUL, OPCODE_MOV, OPCODE_RET, OPCODE_RETC,
-        OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR, OPERAND_INPUT_MASK_X, OPERAND_INPUT_SELECT_X,
-        OPERAND_NULL, OPERAND_OUTPUT_MASK_X, OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X,
-        SB_NAME_INSTANCE_ID, SB_NAME_POSITION, SB_NAME_VIEWPORT_ARRAY_INDEX,
-        SIGNATURE_COMPONENT_UINT32, SIGNATURE_SYSVALUE_INSTANCE_ID,
-        SIGNATURE_SYSVALUE_VIEWPORT_ARRAY_INDEX, STEREO_CB_REGISTER, STEREO_REPROJ_CB_ROWS,
-        SignatureElement, append_signature_element, declared_register, emit_meye_epilogue,
-        max_signature_register, reassemble, rewrite_reproject_instruction,
+        CB_ACCESS_DYNAMIC_INDEXED, FULL_VIEW_PROJECTION_ROW_BASE, OPCODE_AND,
+        OPCODE_DCL_CONSTANT_BUFFER, OPCODE_DCL_INPUT_SGV, OPCODE_DCL_OUTPUT_SIV, OPCODE_DCL_TEMPS,
+        OPCODE_IMUL, OPCODE_MOV, OPCODE_RET, OPCODE_RETC, OPERAND_CB_2D_IMM, OPERAND_IMM32_SCALAR,
+        OPERAND_INPUT_MASK_X, OPERAND_INPUT_SELECT_X, OPERAND_NULL, OPERAND_OUTPUT_MASK_X,
+        OPERAND_TEMP_MASK_X, OPERAND_TEMP_SELECT_X, SB_NAME_INSTANCE_ID, SB_NAME_POSITION,
+        SB_NAME_VIEWPORT_ARRAY_INDEX, SIGNATURE_COMPONENT_UINT32, SIGNATURE_SYSVALUE_INSTANCE_ID,
+        SIGNATURE_SYSVALUE_VIEWPORT_ARRAY_INDEX, STEREO_CB_REGISTER, STEREO_FULL_CB_ROWS,
+        STEREO_REPROJ_CB_ROWS, SignatureElement, append_signature_element, declared_register,
+        emit_meye_epilogue, max_signature_register, reassemble, rewrite_reproject_instruction,
     },
-    tokens::{Instruction, ShaderStage, TokenStream, parse_operand},
+    tokens::{
+        IDX_IMM32_PLUS_RELATIVE, Instruction, OperandKind, ShaderStage, TokenStream, parse_operand,
+    },
 };
 
 /// Rewrites a vertex shader for single-pass stereo by **reprojection**: instead of remapping `cb0`
@@ -34,7 +36,26 @@ use crate::{
 /// from. The runtime gate (scene pass range ∩ `DrawIndexed`) is what excludes NDC-direct writers
 /// (sky, UI), which the bytecode can't distinguish.
 pub fn reproject_vertex_shader(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
-    reproject(blob, InstanceIds::Unused)
+    reproject(blob, InstanceIds::Unused, Clip::Reproject)
+}
+
+/// [`reproject_vertex_shader`]'s interface and eye prologue for a shader that projects an absolute
+/// world position through the full view-projection (`cb0[0..3]`), which reads the eye's copy of those
+/// rows from `cb13` (at [`FULL_VIEW_PROJECTION_ROW_BASE`], four rows per eye) in place of `cb0`'s
+/// instead of post-multiplying its clip position by `M_eye`. The shader then does the arithmetic an
+/// eye rendered on its own does. Fails with [`DxbcError::NoFullViewProjection`] for a shader that
+/// reads none of those rows.
+pub fn remap_full_view_projection(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
+    reproject(blob, InstanceIds::Unused, Clip::FullViewProjection)
+}
+
+/// How the eye's clip position is reached.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Clip {
+    /// Post-multiply the centre's clip position by the eye's `M_eye`.
+    Reproject,
+    /// Read the eye's full view-projection in place of `cb0[0..3]`.
+    FullViewProjection,
 }
 
 /// [`reproject_vertex_shader`] for a vertex shader that already reads `SV_InstanceID`, drawn with its
@@ -45,7 +66,7 @@ pub fn reproject_vertex_shader(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
 /// appended. Fails with [`DxbcError::NoInstanceId`] for a shader that does not read `SV_InstanceID`;
 /// [`reproject_vertex_shader`] is the rewrite for those.
 pub fn reproject_instanced_vertex_shader(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
-    reproject(blob, InstanceIds::Halved)
+    reproject(blob, InstanceIds::Halved, Clip::Reproject)
 }
 
 /// What the shader's own `SV_InstanceID` reads mean to the reprojection.
@@ -57,7 +78,7 @@ enum InstanceIds {
     Halved,
 }
 
-fn reproject(blob: &[u8], instance_ids: InstanceIds) -> Result<Vec<u8>, DxbcError> {
+fn reproject(blob: &[u8], instance_ids: InstanceIds, clip: Clip) -> Result<Vec<u8>, DxbcError> {
     let dxbc = Dxbc::parse(blob)?;
     if dxbc.chunk(b"SHEX").is_none() && dxbc.chunk(b"SHDR").is_some() {
         return Err(DxbcError::UnsupportedShaderModel);
@@ -81,7 +102,10 @@ fn reproject(blob: &[u8], instance_ids: InstanceIds) -> Result<Vec<u8>, DxbcErro
     // and the appended element collides with that dead slot.
     let input_register = max_signature_register(isgn.body(blob)).map_or(0, |r| r + 1);
     let output_register = max_signature_register(osgn.body(blob)).map_or(0, |r| r + 1);
-    let plan = plan_reproject(&stream, input_register, output_register, instance_ids)?;
+    if clip == Clip::FullViewProjection && !crate::reads_full_view_projection(blob)? {
+        return Err(DxbcError::NoFullViewProjection);
+    }
+    let plan = plan_reproject(&stream, input_register, output_register, instance_ids, clip)?;
     let new_shex = rewrite_reproject(&stream, &plan)?;
 
     let new_isgn = if plan.declared_instance_id {
@@ -119,6 +143,8 @@ fn reproject(blob: &[u8], instance_ids: InstanceIds) -> Result<Vec<u8>, DxbcErro
 /// What the reprojection declaration scan learned: the `SV_Position` output to reproject, the free
 /// registers, the temp base (`rBase` = base, `rClip` = base + 1), and the injection point.
 struct ReprojectPlan {
+    /// How the eye's clip position is reached.
+    clip: Clip,
     /// The output register `SV_Position` is declared at (`dcl_output_siv oN, position`).
     pos_register: u32,
     /// The `v` register of `SV_InstanceID`: the shader's own declaration when
@@ -149,6 +175,7 @@ fn plan_reproject(
     input_register: u32,
     output_register: u32,
     instance_ids: InstanceIds,
+    clip: Clip,
 ) -> Result<ReprojectPlan, DxbcError> {
     let tokens = stream.tokens();
     let mut temps: u32 = 0;
@@ -188,7 +215,7 @@ fn plan_reproject(
                 inject_before = Some(insn.start);
             }
             // A conditional early return would need the per-eye epilogue on that path too.
-            if insn.opcode == OPCODE_RETC {
+            if insn.opcode == OPCODE_RETC && clip == Clip::Reproject {
                 return Err(DxbcError::UnsupportedControlFlow);
             }
         }
@@ -199,6 +226,7 @@ fn plan_reproject(
         return Err(DxbcError::NoInstanceId);
     }
     Ok(ReprojectPlan {
+        clip,
         pos_register,
         input_register: declared_instance.unwrap_or(input_register),
         declared_instance_id: declared_instance.is_some(),
@@ -231,6 +259,19 @@ fn rewrite_reproject(stream: &TokenStream, plan: &ReprojectPlan) -> Result<Vec<u
         }
         if insn.is_declaration() {
             out.extend_from_slice(&tokens[insn.start..insn.end]);
+            continue;
+        }
+        if plan.clip == Clip::FullViewProjection {
+            let mut renamed = tokens[insn.start..insn.end].to_vec();
+            if plan.declared_instance_id {
+                rename_instance_reads(&mut renamed, &insn, plan)?;
+            }
+            substitute_full_view_projection(
+                &renamed,
+                insn.operands_start() - insn.start,
+                plan.temp_base,
+                &mut out,
+            )?;
             continue;
         }
         if insn.opcode == OPCODE_RET {
@@ -279,7 +320,10 @@ fn emit_reproject_injection(out: &mut Vec<u32>, plan: &ReprojectPlan) {
         (4 << 24) | CB_ACCESS_DYNAMIC_INDEXED | OPCODE_DCL_CONSTANT_BUFFER,
         OPERAND_CB_2D_IMM,
         STEREO_CB_REGISTER,
-        STEREO_REPROJ_CB_ROWS,
+        match plan.clip {
+            Clip::Reproject => STEREO_REPROJ_CB_ROWS,
+            Clip::FullViewProjection => STEREO_FULL_CB_ROWS,
+        },
     ]);
     if !plan.declared_instance_id {
         out.extend_from_slice(&[
@@ -380,6 +424,51 @@ fn rename_instance_reads(
         }
         pos = next;
     }
+    Ok(())
+}
+
+/// Re-serializes one instruction (`insn`, its operands from `operands_start`), turning every
+/// `cb0[0..3]` operand into the register-relative `cb13[rBase.x + FULL_VIEW_PROJECTION_ROW_BASE + k]`:
+/// the element index becomes immediate-plus-relative with a two-token `rBase.x` operand appended, so
+/// the instruction's length is recomputed. `rBase.x` holds `4 * eye`, the stride of the eye copies.
+fn substitute_full_view_projection(
+    insn: &[u32],
+    operands_start: usize,
+    rbase: u32,
+    out: &mut Vec<u32>,
+) -> Result<(), DxbcError> {
+    let opcode_at = out.len();
+    out.extend_from_slice(&insn[..operands_start]);
+    let mut pos = operands_start;
+    while pos < insn.len() {
+        let (operand, next) = parse_operand(insn, pos)?;
+        let OperandKind::ConstantBuffer {
+            register: 0,
+            element: element @ 0..=3,
+        } = operand.kind
+        else {
+            out.extend_from_slice(&insn[pos..next]);
+            pos = next;
+            continue;
+        };
+        let tok = insn[pos];
+        if (tok >> 22) & 0x7 != 0 || (tok >> 25) & 0x7 != 0 {
+            return Err(DxbcError::UnsupportedOperandEncoding);
+        }
+        let extended = ((tok >> 31) & 1) as usize;
+        out.push(tok | (IDX_IMM32_PLUS_RELATIVE << 25));
+        out.extend_from_slice(&insn[pos + 1..pos + 1 + extended]);
+        out.push(STEREO_CB_REGISTER);
+        out.push(FULL_VIEW_PROJECTION_ROW_BASE + element);
+        out.push(OPERAND_TEMP_SELECT_X);
+        out.push(rbase);
+        pos = next;
+    }
+    let new_len = (out.len() - opcode_at) as u32;
+    if new_len > 0x7F {
+        return Err(DxbcError::InstructionTooLong);
+    }
+    out[opcode_at] = (out[opcode_at] & !(0x7F << 24)) | (new_len << 24);
     Ok(())
 }
 
