@@ -80,6 +80,9 @@ class SnapshotRequest:
     depth_ulps: int = 0
     # Write every plane whole, per eye, whether or not it is compared.
     save: bool = False
+    # At a still camera, wait for a frame whose FSR jitter is at this index of its sequence, while
+    # the jitter runs, so every configuration's snapshot takes the same sub-pixel offset.
+    jitter_phase: int | None = None
     command: Command = field(default=Command.SNAPSHOT, init=False)
     # The channel validates these on configuration acknowledgements only.
     pose = None
@@ -104,6 +107,9 @@ class SnapshotRequest:
             raise ProtocolError(f"snapshot: depth_ulps must be an integer within [0, {MAX_DEPTH_ULPS}]")
         if type(self.save) is not bool:
             raise ProtocolError("snapshot: save must be a boolean")
+        if self.jitter_phase is not None and (type(self.jitter_phase) is not int
+                                              or self.jitter_phase < 0):
+            raise ProtocolError("snapshot: jitter_phase must be a non-negative integer")
 
     def to_toml(self) -> str:
         result = (f"command = {json.dumps(self.command.value)}\n"
@@ -122,6 +128,8 @@ class SnapshotRequest:
                    f"dump = {json.dumps(self.dump.value)}\n"
                    f"dump_crop = {json.dumps(self.dump_crop)}\n"
                    f"save = {json.dumps(self.save)}\n")
+        if self.jitter_phase is not None:
+            result += f"jitter_phase = {self.jitter_phase}\n"
         return result
 
 

@@ -3,8 +3,9 @@ schedule, at the same clock and pose, with FSR's own settings changed.
 
 An experiment that lists `[[fsr_variants]]` renders, after its configured modes, each variant in
 each of its modes: FSR on or off (off is the anti-aliasing the game falls back to, as the capture
-profile leaves it), the hybrid decode on or off, and optionally another render resolution scale (a
-supersampled reference, or a reduced size). Every configuration resets FSR's history and warms up
+profile leaves it, or none at all with `antialiasing = false`), the hybrid decode and the sub-pixel
+jitter on or off, and optionally another render resolution scale (a supersampled reference, or a
+reduced size). Every configuration resets FSR's history and warms up
 for the experiment's `warmup_frames`, so each variant accumulates from the same number of frames.
 Each variant takes two snapshots, the second compared with the first: at a still camera it is the
 next frame, so the comparison is the frame-to-frame change (the shimmer); under a motion it is the
@@ -39,6 +40,14 @@ class FsrVariant:
     fsr: bool = True
     # The hybrid decode, while FSR runs.
     hybrid_velocity: bool = True
+    # The sub-pixel camera jitter, while FSR runs.
+    jitter: bool = True
+    # The game's own anti-aliasing, while FSR does not run; off leaves the image with none.
+    antialiasing: bool = True
+    # FSR's sharpening pass as shipped (off unless the shipped settings turn it on), or off; or the
+    # pass turned on at a strength.
+    sharpen: bool = True
+    sharpness: float | None = None
     # The render resolution scale (each side), when not the session's.
     resolution_scale: float | None = None
     # The modes the variant renders in; empty for every configured mode.
@@ -49,10 +58,19 @@ class FsrVariant:
                 or len(self.name) > MAX_FSR_VARIANT_NAME_LENGTH):
             raise FsrVariantError(f"FSR variant: name {self.name!r} must be a request ID of at most "
                                   f"{MAX_FSR_VARIANT_NAME_LENGTH} characters")
-        if type(self.fsr) is not bool or type(self.hybrid_velocity) is not bool:
-            raise FsrVariantError(f"FSR variant: {self.name}.fsr and .hybrid_velocity must be booleans")
-        if not self.fsr and not self.hybrid_velocity:
-            raise FsrVariantError(f"FSR variant: {self.name} turns the hybrid decode off without FSR")
+        if any(type(value) is not bool for value in
+               (self.fsr, self.hybrid_velocity, self.jitter, self.antialiasing, self.sharpen)):
+            raise FsrVariantError(f"FSR variant: {self.name}.fsr, .hybrid_velocity, .jitter, "
+                                  ".antialiasing, and .sharpen must be booleans")
+        if self.sharpness is not None and (type(self.sharpness) not in (int, float)
+                                           or not 0 <= self.sharpness <= 1):
+            raise FsrVariantError(f"FSR variant: {self.name}.sharpness must be within [0, 1]")
+        if not self.fsr and not (self.hybrid_velocity and self.jitter and self.sharpen
+                                 and self.sharpness is None):
+            raise FsrVariantError(f"FSR variant: {self.name} changes FSR's settings without FSR")
+        if self.fsr and not self.antialiasing:
+            raise FsrVariantError(f"FSR variant: {self.name} turns the game's anti-aliasing off "
+                                  "with FSR, which replaces it")
         if self.resolution_scale is not None:
             low, high = RESOLUTION_SCALE_RANGE
             if type(self.resolution_scale) not in (int, float) or not low <= self.resolution_scale <= high:
@@ -71,6 +89,10 @@ class FsrVariant:
         changes = {
             "fsr": "enabled" if self.fsr else None,
             "fsr_hybrid_velocity": None if self.hybrid_velocity else "disabled",
+            "fsr_jitter": None if self.jitter else "disabled",
+            "anti_aliasing": None if self.antialiasing else "disabled",
+            "fsr_sharpen": None if self.sharpen else "disabled",
+            "fsr_sharpness": self.sharpness,
             "resolution_scale": self.resolution_scale,
         }
         if base is None:
@@ -97,7 +119,8 @@ class FsrVariant:
         context = f"fsr_variants[{index}]"
         if not isinstance(value, dict):
             raise FsrVariantError(f"FSR variant: {context} must be a table")
-        allowed = {"name", "fsr", "hybrid_velocity", "resolution_scale", "modes"}
+        allowed = {"name", "fsr", "hybrid_velocity", "jitter", "antialiasing", "sharpen", "sharpness",
+                   "resolution_scale", "modes"}
         extra = set(value) - allowed
         if "name" not in value or extra:
             raise FsrVariantError(f"FSR variant: {context} needs a name and accepts only "
@@ -106,6 +129,8 @@ class FsrVariant:
         if not isinstance(modes, list):
             raise FsrVariantError(f"FSR variant: {context}.modes must be an array")
         return cls(value["name"], value.get("fsr", True), value.get("hybrid_velocity", True),
+                   value.get("jitter", True), value.get("antialiasing", True),
+                   value.get("sharpen", True), value.get("sharpness"),
                    value.get("resolution_scale"), tuple(modes))
 
 

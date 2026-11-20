@@ -169,6 +169,7 @@ fn fixture(origin: f32, eye: usize) -> Fixture {
         convention: ProjectionConvention::ManualReverseZ,
         local_offset: Vec3::new(side * 0.032, 0.0013, -0.0021),
         orientation_delta: Quat::from_euler(EulerRot::YXZ, side * 0.085, 0.006, -side * 0.009),
+        jitter: None,
     };
     let center_projection = OffAxisProjection::new(
         Fov {

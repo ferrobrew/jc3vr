@@ -75,7 +75,7 @@ pub fn current(eye: usize) -> Option<(EyeView, Option<D3D11_VIEWPORT>)> {
         let center = STEREO_STATE.lock().center_transform?;
         let params = vr?;
         let eye_world = params.resolve(Mat4::from(center));
-        let view = EyeView::from_eye_world(eye_world, Mat4::from(params.projection_reverse_z));
+        let view = EyeView::from_eye_world(eye_world, params.unjittered_projection_reverse_z());
         return Some((view, Some(viewport)));
     }
     // SAFETY: reads the live camera manager singleton's render camera, which the engine rebuilds
@@ -84,14 +84,12 @@ pub fn current(eye: usize) -> Option<(EyeView, Option<D3D11_VIEWPORT>)> {
         let camera = CameraManager::get()?.m_RenderCamera.as_ref()?;
         (camera.m_TransformF, camera.m_View, camera.m_ProjectionF)
     };
-    // The VR projection is the render camera's without the upscaler's sub-pixel jitter, so the
-    // overlay stays still while the scene is jittered for temporal reconstruction.
-    let projection = vr.map_or(projection, |p| p.projection_reverse_z);
-    let view = EyeView::from_camera(
-        Mat4::from(transform),
-        Mat4::from(view),
-        Mat4::from(projection),
-    );
+    // The VR projection is the render camera's without FSR's sub-pixel jitter, so the overlay,
+    // drawn after FSR has resolved the eye, stays still while the scene is jittered.
+    let projection = vr.map_or(Mat4::from(projection), |p| {
+        p.unjittered_projection_reverse_z()
+    });
+    let view = EyeView::from_camera(Mat4::from(transform), Mat4::from(view), projection);
     Some((view, None))
 }
 
@@ -179,6 +177,7 @@ mod tests {
             local_offset: center.inverse().transform_vector3(offset),
             orientation_delta: delta,
             convention: crate::vr::ProjectionConvention::ManualReverseZ,
+            jitter: None,
         };
         let eye_world = params.resolve(center);
         let full = projection * eye_world.inverse();

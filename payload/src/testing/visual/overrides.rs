@@ -89,6 +89,35 @@ impl Serialize for ResolutionScaleOverride {
     }
 }
 
+/// FSR's sharpening strength in every mode, in place of the shipped one, held in thousandths so the
+/// overrides compare exactly. Within [0, 1].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SharpnessOverride(u16);
+
+impl SharpnessOverride {
+    pub(crate) fn sharpness(self) -> f32 {
+        f32::from(self.0) / 1000.0
+    }
+}
+
+impl<'de> Deserialize<'de> for SharpnessOverride {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = f64::deserialize(deserializer)?;
+        if !(0.0..=1.0).contains(&value) {
+            return Err(serde::de::Error::custom(format!(
+                "fsr_sharpness {value} is outside [0, 1]"
+            )));
+        }
+        Ok(Self((value * 1000.0).round() as u16))
+    }
+}
+
+impl Serialize for SharpnessOverride {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f64(f64::from(self.0) / 1000.0)
+    }
+}
+
 /// Restrict the stage images every capture writes, to keep captures at a large eye size small.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -134,6 +163,18 @@ pub(crate) struct VisualOverrides {
     /// FSR's hybrid motion vectors (the camera's motion from depth where the engine wrote none).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fsr_hybrid_velocity: Option<CorrectionOverride>,
+    /// FSR's sub-pixel camera jitter.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fsr_jitter: Option<CorrectionOverride>,
+    /// The engine's anti-aliasing where FSR does not run: disabled leaves the image with none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub anti_aliasing: Option<CorrectionOverride>,
+    /// FSR's sharpening pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fsr_sharpen: Option<CorrectionOverride>,
+    /// FSR's sharpening pass, turned on at this strength.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fsr_sharpness: Option<SharpnessOverride>,
     /// A headset-like eye rig substituted for the located views in every mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headset: Option<HeadsetRig>,
@@ -163,6 +204,10 @@ pub(crate) struct VisualOverridesTable {
     player_damage: Option<ShippedOverride>,
     fsr_mv_correction: Option<CorrectionOverride>,
     fsr_hybrid_velocity: Option<CorrectionOverride>,
+    fsr_jitter: Option<CorrectionOverride>,
+    anti_aliasing: Option<CorrectionOverride>,
+    fsr_sharpen: Option<CorrectionOverride>,
+    fsr_sharpness: Option<SharpnessOverride>,
     headset: Option<HeadsetRig>,
     resolution_scale: Option<ResolutionScaleOverride>,
     stages: Option<StagesOverride>,
@@ -238,6 +283,10 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             player_damage: table.player_damage,
             fsr_mv_correction: table.fsr_mv_correction,
             fsr_hybrid_velocity: table.fsr_hybrid_velocity,
+            fsr_jitter: table.fsr_jitter,
+            anti_aliasing: table.anti_aliasing,
+            fsr_sharpen: table.fsr_sharpen,
+            fsr_sharpness: table.fsr_sharpness,
             headset: table.headset,
             resolution_scale: table.resolution_scale,
             stages: table.stages,
@@ -251,6 +300,10 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             && overrides.shipped().all(|(_, value)| value.is_none())
             && overrides.fsr_mv_correction.is_none()
             && overrides.fsr_hybrid_velocity.is_none()
+            && overrides.fsr_jitter.is_none()
+            && overrides.anti_aliasing.is_none()
+            && overrides.fsr_sharpen.is_none()
+            && overrides.fsr_sharpness.is_none()
             && overrides.headset.is_none()
             && overrides.resolution_scale.is_none()
             && overrides.stages.is_none()
@@ -311,6 +364,19 @@ impl VisualOverrides {
         }
         if let Some(CorrectionOverride::Disabled) = self.fsr_hybrid_velocity {
             config.fsr.hybrid_velocity = false;
+        }
+        if let Some(CorrectionOverride::Disabled) = self.fsr_jitter {
+            config.fsr.jitter = false;
+        }
+        if let Some(CorrectionOverride::Disabled) = self.anti_aliasing {
+            config.post_fx.skip_anti_aliasing = true;
+        }
+        if let Some(sharpness) = self.fsr_sharpness {
+            config.fsr.sharpen = true;
+            config.fsr.sharpness = sharpness.sharpness();
+        }
+        if let Some(CorrectionOverride::Disabled) = self.fsr_sharpen {
+            config.fsr.sharpen = false;
         }
         if let Some(scale) = self.resolution_scale {
             config.vr.resolution_scale = scale.scale();
@@ -516,7 +582,7 @@ mod tests {
         config.post_fx.skip_player_damage = true;
         config.post_fx.skip_motion_blur = true;
         overrides.apply(&mut config);
-        assert!(config.fsr.enabled && config.fsr.sharpen);
+        assert!(config.fsr.enabled && config.fsr.sharpen == FsrConfig::new().sharpen);
         assert_eq!(config.fsr.sharpness, FsrConfig::new().sharpness);
         assert!(config.foveation.enabled && !config.foveation.debug_show_mask);
         assert!(!config.exposure.force && config.exposure.gate && config.exposure.gate_update);
@@ -552,6 +618,35 @@ mod tests {
             serde_json::json!({"fsr_mv_correction": "disabled"})
         );
         assert!(toml::from_str::<VisualOverridesTable>("fsr_mv_correction = 'enabled'\n").is_err());
+    }
+
+    #[test]
+    fn fsrs_jitter_sharpening_and_the_game_anti_aliasing_can_be_overridden() {
+        let overrides = parse(
+            "fsr = 'enabled'\nfsr_jitter = 'disabled'\nfsr_sharpness = 0.45\n\
+             anti_aliasing = 'disabled'\n",
+        )
+        .unwrap();
+        let mut config = Config::new();
+        overrides.apply(&mut config);
+        assert!(config.fsr.enabled && !config.fsr.jitter && config.fsr.sharpen);
+        assert!((config.fsr.sharpness - 0.45).abs() < 1e-6);
+        assert!(config.post_fx.skip_anti_aliasing);
+        assert_eq!(
+            serde_json::to_value(overrides).unwrap(),
+            serde_json::json!({
+                "fsr": "enabled",
+                "fsr_jitter": "disabled",
+                "fsr_sharpness": 0.45,
+                "anti_aliasing": "disabled",
+            })
+        );
+        let mut config = Config::new();
+        parse("fsr_sharpen = 'disabled'\n")
+            .unwrap()
+            .apply(&mut config);
+        assert!(!config.fsr.sharpen);
+        assert!(toml::from_str::<VisualOverridesTable>("fsr_sharpness = 1.5\n").is_err());
     }
 
     #[test]

@@ -83,10 +83,20 @@ impl Camera {
         }
     }
     pub const SetupRenderCamera_ADDRESS: usize = 0x1400B3B80;
-    /// Builds the render-camera matrices once per draw: applies reverse-Z and the TAA jitter to the
-    /// projection, then rebuilds `m_ViewProjection` and `m_ViewProjectionF` from `m_View`. Runs at most
-    /// once per camera, guarded by the `m_IsRenderCamera` flag. Returns the last matrix-copy
-    /// destination.
+    /// Builds the render-camera matrices once per draw: applies reverse-Z to the projection and the
+    /// previous projection, and, when `jitter` is set, the TAA jitter
+    /// ([`RenderEngine::ApplyJitterTransform`](crate::graphics_engine::render_engine::RenderEngine::ApplyJitterTransform))
+    /// to both, with the same offset (this frame's phase), so a motion vector taken between the two
+    /// view-projections carries no jitter. It then rebuilds `m_ViewProjection`,
+    /// `m_PreviousViewProjection`, and their `F` copies. Runs at most once per camera, guarded by the
+    /// `m_IsRenderCamera` flag. Returns the last matrix-copy destination.
+    ///
+    /// Only the scene render camera is set up with `jitter` set, once per
+    /// [`GraphicsEngine::Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw); a render
+    /// pass's own external camera (reflections, shadows) is set up without it by
+    /// [`RenderPass::GetSortCamera`](crate::graphics_engine::render_pass::RenderPass::GetSortCamera) and
+    /// [`RenderPass::Draw`](crate::graphics_engine::render_pass::RenderPass::Draw), and
+    /// the visibility cull and the shadow fit read the active camera, which is never jittered.
     pub unsafe fn SetupRenderCamera(&mut self, jitter: bool) -> *mut ::std::ffi::c_void {
         unsafe {
             let f: unsafe extern "system" fn(

@@ -11,6 +11,12 @@ output times FSR's scale over the render size). The pixels are split by how the 
 `camera` (the velocity pass left the clear value, or its motion saturated the encoding's clamp,
 so the hybrid decode gives them the camera's motion) and `engine` (the engine's own motion, kept).
 
+The recorded view-projections carry no jitter; the record gives the clip-space offset the eye
+rasterized with on top of them (`jitter_ndc`). FSR wants motion without it, so the expected motion is
+taken from the definition rather than from the decode's construction: the pixel's point (through the
+jittered current matrix, where the render put it) in the previous frame less the same point in the
+unjittered current one.
+
 It also checks the engine's own vectors independently of the decode: where the velocity pass drew,
 the engine's motion (current less previous, against the centre camera's previous view-projection)
 is compared with the same reconstruction through the centre camera's matrices, which validates the
@@ -152,6 +158,27 @@ def camera_motion_uv(clip: np.ndarray, reprojection: np.ndarray) -> np.ndarray:
     return delta * np.array([0.5, -0.5])
 
 
+def jitter_translation(offset) -> np.ndarray:
+    """The clip-space translation by a jitter offset (`x += offset.x * w`, `y += offset.y * w`)."""
+    result = np.eye(4)
+    result[0, 3], result[1, 3] = offset
+    return result
+
+
+def jitter_free_motion_uv(clip: np.ndarray, current: np.ndarray, previous: np.ndarray,
+                          jitter) -> np.ndarray:
+    """FSR's motion for each pixel of a render through `current` jittered by the clip-space offset
+    `jitter` (None for none), in UV with Y down: where the pixel's point lies in the previous frame
+    less where it lies in the unjittered current one. Without a jitter it is the plain
+    reprojection."""
+    offset = np.zeros(2) if jitter is None else np.asarray(jitter, np.float64)
+    point = clip @ np.linalg.inv(jitter_translation(offset) @ current).T
+    previous_clip = point @ previous.T
+    previous_ndc = previous_clip[..., :2] / previous_clip[..., 3:4]
+    current_ndc = clip[..., :2] - offset
+    return (previous_ndc - current_ndc) * np.array([0.5, -0.5])
+
+
 def check_eye(scene: str, snapshot: dict, record: dict, planes: dict[str, np.ndarray]) -> EyeCheck:
     views = record.get("views")
     if views is None:
@@ -167,12 +194,18 @@ def check_eye(scene: str, snapshot: dict, record: dict, planes: dict[str, np.nda
     if record["render_size"] != [width, height]:
         raise MotionCheckError(f"fsr-motion: {snapshot['label']} eye {record['eye']} was resolved "
                                f"at {record['render_size']}, not {width}x{height}")
-    current_eye = matrix(views["current_eye"])
-    reproject_eye = matrix(views["previous_eye"]) @ np.linalg.inv(current_eye)
+    jitter = record.get("jitter_ndc")
+    offset = np.zeros(2) if jitter is None else np.asarray(jitter, np.float64)
+    # The matrix the eye rasterized with, jitter and all.
+    current_eye = jitter_translation(offset) @ matrix(views["current_eye"])
+    # The decode's jitter-free construction, for comparing with what it recorded.
+    reproject_eye = (jitter_translation(offset) @ matrix(views["previous_eye"])
+                     @ np.linalg.inv(current_eye))
     reproject_center = matrix(views["previous_center"]) @ np.linalg.inv(current_eye)
     clip = clip_positions(depth.astype(np.float64))
     size = np.array([width, height], dtype=np.float64)
-    analytic = camera_motion_uv(clip, reproject_eye) * size
+    analytic = jitter_free_motion_uv(clip, matrix(views["current_eye"]),
+                                     matrix(views["previous_eye"]), jitter) * size
     # FSR scales the decode's output by its motion-vector scale over the render size.
     scale = np.asarray(record["motion_vector_scale"], dtype=np.float64) / size
     decoded = motion.astype(np.float64) * scale * size

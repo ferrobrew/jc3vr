@@ -486,13 +486,23 @@ fn valid_panel(params: &PanelParams) -> bool {
         && params.panel_height > 0.0
 }
 
-/// Fetch the render camera's view-projection matrix for the current eye.
+/// Fetch the render camera's view-projection matrix for the current eye, without FSR's sub-pixel
+/// jitter: the HUD draws after FSR has resolved the eye, and must hold still while the scene
+/// jitters.
 pub(super) fn fetch_view_projection() -> Option<Matrix4> {
-    unsafe {
+    // SAFETY: reads the live camera manager singleton's render camera, which the engine rebuilds for
+    // each eye's dispatch before the dispatch's draw.
+    let (view, view_projection) = unsafe {
         let cm = jc3gi::camera::camera_manager::CameraManager::get()?;
-        let cam = cm.m_RenderCamera.as_ref()?;
-        Some(cam.m_ViewProjectionF)
-    }
+        let camera = cm.m_RenderCamera.as_ref()?;
+        (camera.m_View, camera.m_ViewProjectionF)
+    };
+    Some(
+        match crate::vr::render_params(crate::stereo::draw_index()) {
+            Some(params) if params.jitter.is_some() => view * params.unjittered_camera_projection(),
+            _ => view_projection,
+        },
+    )
 }
 
 /// How one quad draw is shaded: the pixel shader, the texture it samples (if any), and the opacity

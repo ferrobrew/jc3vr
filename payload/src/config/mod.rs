@@ -18,8 +18,8 @@
 //! `docs/mod/settings.md`.
 //!
 //! TOML has no null, so a `None` is left out of the file. An optional setting defaults to `None`:
-//! the load then reads a missing key as `None` and a present one as `Some`. A setting that is on by
-//! default with a value is a switch beside the value instead (see
+//! the load then reads a missing key as `None` and a present one as `Some`. A setting whose value is
+//! kept while it is switched off is a switch beside the value instead (see
 //! [`FsrConfig::sharpen`](crate::fsr::FsrConfig::sharpen)).
 //!
 //! The trace manifest and screenshot sidecar also serialize the capture's configuration.

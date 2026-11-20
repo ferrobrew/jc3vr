@@ -55,7 +55,7 @@ fn changed_settings_round_trip() {
     // An enum, a borrowed default string made owned, and a switch beside its value.
     original.controllers.dominant_hand = Hand::Left;
     original.far_field.gated_types = Cow::Owned("Window".to_owned());
-    original.fsr.sharpen = false;
+    original.fsr.sharpen = true;
     // Values JSON could not carry, in settings no validation covers.
     original.vr.far_clip = f32::INFINITY;
     original.exposure.forced_value = f32::NAN;

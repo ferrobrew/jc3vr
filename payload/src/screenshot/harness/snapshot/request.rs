@@ -129,6 +129,10 @@ pub(crate) struct SnapshotTable {
     /// Write every plane of the snapshot whole, per eye, whether or not it is compared.
     #[serde(default)]
     save: bool,
+    /// Wait for a frame whose FSR jitter is at this index of its sequence, while the jitter runs, so
+    /// snapshots of different configurations take the same offset.
+    #[serde(default)]
+    jitter_phase: Option<u32>,
 }
 
 /// A validated snapshot request.
@@ -147,6 +151,8 @@ pub(crate) struct SnapshotRequest {
     pub dump: DumpPolicy,
     pub dump_crop: bool,
     pub save: bool,
+    /// The FSR jitter index the snapshot's frame must have, while the jitter runs.
+    pub jitter_phase: Option<u32>,
 }
 
 /// Why a snapshot table is refused.
@@ -255,6 +261,7 @@ impl SnapshotRequest {
             dump: table.dump,
             dump_crop: table.dump_crop,
             save: table.save,
+            jitter_phase: table.jitter_phase,
         })
     }
 }

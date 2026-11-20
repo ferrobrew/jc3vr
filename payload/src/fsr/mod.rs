@@ -15,9 +15,13 @@
 //! `single_pass.fsr_per_eye` on, each eye's half is copied into eye-sized inputs and resolved through
 //! that eye's own context, then copied back ([`EyeLayout::SideBySide`]), so each eye's history and
 //! reconstruction see only that eye, at its own size, as an eye rendered on its own does.
+//!
+//! Each VR frame's projections carry a sub-pixel jitter ([`jitter`]), which FSR is told per eye in
+//! its own pixels; the motion vectors it is handed are free of it ([`jitter_free_reprojection`]).
 
 mod config;
 pub use config::FsrConfig;
+pub mod jitter;
 mod velocity_decode;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -129,8 +133,10 @@ struct EyeViewProjections {
     /// The centre camera's view with the eye's projection: what the engine's velocity pass takes
     /// the previous frame through when it renders the eye on its own.
     center: glam::Mat4,
-    /// The eye's own view-projection.
+    /// The eye's own view-projection, without the FSR jitter.
     eye: glam::Mat4,
+    /// The FSR jitter's clip-space offset the eye rasterizes with, on top of [`eye`](Self::eye).
+    jitter: glam::Vec2,
 }
 
 impl EyeViewProjections {
@@ -139,10 +145,11 @@ impl EyeViewProjections {
     fn current(eye: usize) -> Option<Self> {
         let center = glam::Mat4::from(STEREO_STATE.lock().center_transform?);
         let params = crate::vr::render_params(eye)?;
-        let projection = glam::Mat4::from(params.projection_reverse_z);
+        let projection = params.unjittered_projection_reverse_z();
         Some(Self {
             center: projection * center.inverse(),
             eye: projection * params.resolve(center).inverse(),
+            jitter: params.jitter_ndc(),
         })
     }
 }
@@ -154,11 +161,45 @@ fn side_by_side_reprojection(
     previous: EyeViewProjections,
     current: EyeViewProjections,
 ) -> (Matrix4, Matrix4) {
-    let inverse = current.eye.as_dmat4().inverse();
     (
-        Matrix4::from((previous.center.as_dmat4() * inverse).as_mat4()),
-        Matrix4::from((previous.eye.as_dmat4() * inverse).as_mat4()),
+        reprojection_from_jittered(previous.center, current.eye, current.jitter),
+        jitter_free_reprojection(previous.eye, current.eye, current.jitter),
     )
+}
+
+/// The clip-to-previous-clip matrix of an eye that rasterizes with `current` jittered by `jitter`
+/// (a clip-space offset), into the unjittered `previous`, that yields motion vectors free of the
+/// jitter, as FSR wants them (its documentation: motion vectors carry no jitter unless it is told to
+/// cancel it, which the mod does not ask).
+///
+/// With `T(j)` the clip-space translation by `j`, a pixel at clip `x` of the jittered render is the
+/// point `C⁻¹ T(-j) x`; its jitter-free motion is where that point lies in the previous frame less
+/// where it lies in the unjittered current one, `ndc(P C⁻¹ T(-j) x) - (ndc(x) - j)`. The decode takes
+/// `ndc(M x) - ndc(x)`, so `M = T(j) P C⁻¹ T(-j)`: the previous view-projection with this frame's
+/// jitter, which is the engine's own construction for its TAA. The matrices are taken unjittered and
+/// the jitter applied here in `f64`, since a jitter folded into an `f32` view-projection rounds its
+/// world-scale translation differently every frame, which reads as motion at a still camera.
+pub fn jitter_free_reprojection(
+    previous: glam::Mat4,
+    current: glam::Mat4,
+    jitter: glam::Vec2,
+) -> Matrix4 {
+    let shift = jitter::translation(jitter).as_dmat4();
+    let back = jitter::translation(-jitter).as_dmat4();
+    Matrix4::from((shift * previous.as_dmat4() * current.as_dmat4().inverse() * back).as_mat4())
+}
+
+/// The clip-to-previous-clip matrix from an eye that rasterizes with `current` jittered by `jitter`
+/// into `previous` as it stands: what a velocity encoding that takes the current position from the
+/// rasterized pixel and the previous one through `previous` records, jitter and all. Formed in
+/// `f64` from the unjittered `current`, as [`jitter_free_reprojection`] is.
+pub fn reprojection_from_jittered(
+    previous: glam::Mat4,
+    current: glam::Mat4,
+    jitter: glam::Vec2,
+) -> Matrix4 {
+    let back = jitter::translation(-jitter).as_dmat4();
+    Matrix4::from((previous.as_dmat4() * current.as_dmat4().inverse() * back).as_mat4())
 }
 
 /// The previous view-projection the engine's velocity pass encodes `eye`'s motion against: the
@@ -208,11 +249,13 @@ pub fn release_on_eject() {
     *FSR_STATE.lock() = FsrState::new();
 }
 
-/// Discard every eye's history at the next resolve, so the accumulation restarts from that frame.
-/// The visual harness calls it on every configuration, so each mode it compares accumulates from the
-/// same number of frames rather than inheriting another mode's history.
+/// Discard every eye's history at the next resolve, so the accumulation restarts from that frame,
+/// and restart the jitter sequence. The visual harness calls it on every configuration, so each mode
+/// it compares accumulates from the same number of frames, through the same jitter offsets, rather
+/// than inheriting another mode's history.
 pub fn request_history_reset() {
     RESET_REQUESTED.store(true, Ordering::Relaxed);
+    jitter::reset_phase();
 }
 
 /// How many eye halves the last resolve covered side by side (0 when it resolved whole).
@@ -262,6 +305,7 @@ pub fn dispatch(
         return false;
     };
     let camera = camera_params();
+    jitter::publish_eye_size(build.eye_width, build.height);
     let (eyes, regions): (&[usize], [Option<u32>; 2]) = match layout {
         EyeLayout::Single(eye) => {
             let eye = eye.min(1);
@@ -282,7 +326,9 @@ pub fn dispatch(
         // A side-by-side resolve takes the reprojection from each eye's own matrices, which the
         // collapse's centred render camera does not carry; a whole resolve takes it from the
         // render camera's history.
-        let (reprojection, views) = if build.side_by_side {
+        // The jitter the eye's image carries this frame, as a clip-space offset on top of the
+        // recorded view-projections, which carry none.
+        let (reprojection, views, jitter_ndc) = if build.side_by_side {
             let current = EyeViewProjections::current(eye);
             let previous = std::mem::replace(&mut state.side_by_side_history[eye], current);
             let pair = previous.zip(current);
@@ -294,6 +340,7 @@ pub fn dispatch(
                     current_center: current.center.to_cols_array(),
                     previous_center: previous.center.to_cols_array(),
                 }),
+                current.map_or(glam::Vec2::ZERO, |current| current.jitter),
             )
         } else {
             let stereo_state = STEREO_STATE.lock();
@@ -301,6 +348,7 @@ pub fn dispatch(
             (
                 history.reprojection_matrices(eye),
                 RecordedViews::of_history(history, eye),
+                history.cur_jitter[eye],
             )
         };
         // The engine's velocity pass encodes the motion against its render camera's own previous
@@ -311,8 +359,10 @@ pub fn dispatch(
         let reprojection = match (reprojection, encoded_previous, views) {
             (Some((_, eye_reprojection)), Some(previous), Some(views)) => {
                 let current = glam::Mat4::from_cols_array(&views.current_eye);
-                let encoded = previous.as_dmat4() * current.as_dmat4().inverse();
-                Some((Matrix4::from(encoded.as_mat4()), eye_reprojection))
+                Some((
+                    reprojection_from_jittered(previous, current, jitter_ndc),
+                    eye_reprojection,
+                ))
             }
             (reprojection, ..) => reprojection,
         };
@@ -330,8 +380,11 @@ pub fn dispatch(
             eye_state.fresh = true;
         }
         let reset = eye_state.fresh;
+        // The same offset in FSR's pixels.
+        let jitter_pixels = jitter::pixels_from_ndc(jitter_ndc, build.eye_width, build.height);
         let request = EyeResolve {
             eye,
+            jitter: jitter_pixels,
             region_x: regions[eye],
             reprojection: reprojection.filter(|_| !cut),
             correct_parallax: correction,
@@ -372,6 +425,11 @@ pub fn dispatch(
                     eye: eye.data,
                 }),
             encoded_previous: encoded_previous.map(|matrix| matrix.to_cols_array()),
+            jitter_pixels: jitter_pixels.to_array(),
+            jitter_ndc: jitter_ndc.to_array(),
+            jitter_phase: crate::vr::render_params(eye)
+                .and_then(|params| params.jitter)
+                .map(|jitter| jitter.phase),
         });
     }
     SPLIT_DISPATCHES.store(
@@ -426,10 +484,17 @@ pub struct DispatchRecord {
     /// The previous view-projection the engine's velocity pass encoded the eye's motion against,
     /// column-major, when it is known.
     encoded_previous: Option<[f32; 16]>,
+    /// The jitter FSR was told, in the eye's pixels (x right, y down).
+    jitter_pixels: [f32; 2],
+    /// The same jitter as the clip-space offset the eye rasterized with on top of the recorded
+    /// view-projections, which carry none.
+    jitter_ndc: [f32; 2],
+    /// The jitter's index in its sequence, when the jitter runs.
+    jitter_phase: Option<u32>,
 }
 
-/// One eye's view-projections, column-major: its own and the centre camera's (with the eye's
-/// projection), this frame's and last frame's.
+/// One eye's view-projections, column-major, without the FSR jitter: its own and the centre camera's
+/// (with the eye's projection), this frame's and last frame's.
 #[derive(Clone, Copy, Serialize)]
 pub struct RecordedViews {
     current_eye: [f32; 16],
@@ -465,6 +530,8 @@ static EYES: [usize; 2] = [0, 1];
 /// One eye's resolve within a [`dispatch`].
 struct EyeResolve<'a> {
     eye: usize,
+    /// The jitter this eye's projections carry this frame, in its pixels (FSR's `jitterOffset`).
+    jitter: glam::Vec2,
     /// The stereo correction's matrices (centre, eye), when it applies; see
     /// [`velocity_decode::DecodeInputs::reprojection`].
     reprojection: Option<(Matrix4, Matrix4)>,
@@ -494,6 +561,7 @@ unsafe fn resolve_eye(
 ) -> bool {
     let &EyeResolve {
         eye,
+        jitter,
         reprojection,
         correct_parallax,
         hybrid,
@@ -584,8 +652,7 @@ unsafe fn resolve_eye(
                 width: build.eye_width,
                 height: build.height,
             },
-            // The camera is not jittered.
-            jitter: (0.0, 0.0),
+            jitter: (jitter.x, jitter.y),
             // The decode emits motion in UV space; FSR wants pixels, so scale by the render size. The
             // sign/Y convention is already applied inside the decode shader.
             motion_vector_scale: if decoded_mv.is_some() {
@@ -786,6 +853,7 @@ mod tests {
         let frame = EyeViewProjections {
             center: projection * center.inverse(),
             eye: projection * eye.inverse(),
+            jitter: glam::Vec2::ZERO,
         };
         let (to_center, to_eye) = side_by_side_reprojection(frame, frame);
         let point = glam::Vec4::new(0.25, -0.5, 0.01, 1.0);
@@ -798,5 +866,64 @@ mod tests {
             "the centre sees the point from elsewhere"
         );
         assert!((shifted.y / shifted.w - point.y).abs() < 1e-4);
+    }
+
+    /// The decode's motion for the pixel at `clip` through the clip-to-previous-clip `matrix`, in
+    /// NDC: the current position less the previous one.
+    fn decoded_motion(matrix: &Matrix4, clip: glam::Vec4) -> glam::Vec2 {
+        let previous = glam::Mat4::from(*matrix) * clip;
+        clip.truncate().truncate() - previous.truncate().truncate() / previous.w
+    }
+
+    #[test]
+    fn a_still_jittered_eye_decodes_to_no_motion() {
+        let projection = glam::Mat4::perspective_infinite_reverse_rh(1.5, 1.0, 0.1);
+        let view = glam::Mat4::from_translation(glam::Vec3::new(-5528.0, -12.0, 1926.0)).inverse();
+        let matrix = jitter_free_reprojection(
+            projection * view,
+            projection * view,
+            glam::Vec2::new(-2.3e-4, 0.4e-4),
+        );
+        for clip in [
+            glam::Vec4::new(0.3, -0.4, 0.02, 1.0),
+            glam::Vec4::new(-0.8, 0.7, 0.5, 1.0),
+            glam::Vec4::new(0.0, 0.0, 0.0, 1.0),
+        ] {
+            let motion = decoded_motion(&matrix, clip);
+            assert!(motion.abs().max_element() < 1e-6, "{motion}");
+        }
+    }
+
+    #[test]
+    fn a_moving_jittered_eye_decodes_to_the_unjittered_motion() {
+        let projection = glam::Mat4::perspective_infinite_reverse_rh(1.5, 1.0, 0.1);
+        let current_view = glam::Mat4::IDENTITY;
+        let previous_view = glam::Mat4::from_rotation_translation(
+            glam::Quat::from_rotation_y(0.02),
+            glam::Vec3::new(0.03, 0.0, 0.01),
+        )
+        .inverse();
+        let jitter = glam::Vec2::new(-1.0e-4, -2.5e-4);
+        let current = projection * current_view;
+        let previous = projection * previous_view;
+        let matrix = jitter_free_reprojection(previous, current, jitter);
+        let point = glam::Vec4::new(0.7, -0.3, -5.0, 1.0);
+        let ndc = |clip: glam::Vec4| clip.truncate().truncate() / clip.w;
+        let expected = ndc(current * point) - ndc(previous * point);
+        let rendered = jitter::translation(jitter) * current * point;
+        let motion = decoded_motion(&matrix, rendered / rendered.w);
+        assert!(
+            (motion - expected).abs().max_element() < 1e-5,
+            "{motion} {expected}"
+        );
+        // The encoding's own reprojection keeps the jitter, as the rasterized position does.
+        let encoded = decoded_motion(
+            &reprojection_from_jittered(previous, current, jitter),
+            rendered / rendered.w,
+        );
+        assert!(
+            (encoded - expected - jitter).abs().max_element() < 1e-5,
+            "{encoded}"
+        );
     }
 }

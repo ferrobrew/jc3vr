@@ -269,7 +269,7 @@ def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool]
 # Mirrors `VisualOverrides::shipped` in `payload/src/testing/visual/overrides.rs`.
 # Sources left out in every mode, to attribute a difference to one.
 DISABLING_OVERRIDES = ("ssao", "ao_volumes", "global_illumination", "fsr_mv_correction",
-                       "fsr_hybrid_velocity")
+                       "fsr_hybrid_velocity", "fsr_jitter", "anti_aliasing", "fsr_sharpen")
 SHIPPED_OVERRIDES = ("fsr", "foveation", "auto_exposure", "screen_fade", "player_damage")
 # The range of the resolution-scale override (each side). Mirrors `ResolutionScaleOverride` in
 # `payload/src/testing/visual/overrides.rs`: the top is twice the session's pixels.
@@ -297,6 +297,14 @@ class VisualOverrides:
     fsr_mv_correction: str | None = None
     # FSR's hybrid motion vectors left out in every mode.
     fsr_hybrid_velocity: str | None = None
+    # FSR's sub-pixel camera jitter left out in every mode.
+    fsr_jitter: str | None = None
+    # The engine's anti-aliasing left out wherever FSR does not run, for an image with none.
+    anti_aliasing: str | None = None
+    # FSR's sharpening pass left out in every mode.
+    fsr_sharpen: str | None = None
+    # FSR's sharpening pass turned on in every mode at this strength, within [0, 1], to three decimals.
+    fsr_sharpness: float | None = None
     # A headset-like eye rig substituted for the located views in every mode, by preset name.
     headset: str | None = None
     # The render resolution scale (each side) in every mode, in place of the session's, to three
@@ -328,11 +336,15 @@ class VisualOverrides:
                     or not low <= self.resolution_scale <= high):
                 raise ProtocolError(f"visual protocol: resolution_scale must be within [{low}, {high}]")
             object.__setattr__(self, "resolution_scale", round(float(self.resolution_scale), 3))
+        if self.fsr_sharpness is not None:
+            if type(self.fsr_sharpness) not in (int, float) or not 0 <= self.fsr_sharpness <= 1:
+                raise ProtocolError("visual protocol: fsr_sharpness must be within [0, 1]")
+            object.__setattr__(self, "fsr_sharpness", round(float(self.fsr_sharpness), 3))
         object.__setattr__(self, "single_pass", single_pass_switches(dict(self.single_pass)))
         if (self.sun_shadows is None and self.screen_space_reflections is None and
                 all(getattr(self, name) is None for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)) and
                 self.headset is None and self.resolution_scale is None and self.stages is None
-                and not self.single_pass):
+                and self.fsr_sharpness is None and not self.single_pass):
             raise ProtocolError("visual protocol: visual overrides must name at least one override")
 
     @property
@@ -353,6 +365,8 @@ class VisualOverrides:
             value["headset"] = self.headset
         if self.resolution_scale is not None:
             value["resolution_scale"] = self.resolution_scale
+        if self.fsr_sharpness is not None:
+            value["fsr_sharpness"] = self.fsr_sharpness
         if self.stages is not None:
             value["stages"] = self.stages
         if self.single_pass:
@@ -372,6 +386,8 @@ class VisualOverrides:
             result += f"headset = {json.dumps(self.headset)}\n"
         if self.resolution_scale is not None:
             result += f"resolution_scale = {json.dumps(self.resolution_scale)}\n"
+        if self.fsr_sharpness is not None:
+            result += f"fsr_sharpness = {json.dumps(self.fsr_sharpness)}\n"
         if self.stages is not None:
             result += f"stages = {json.dumps(self.stages)}\n"
         if self.single_pass:
@@ -383,7 +399,7 @@ class VisualOverrides:
     def from_wire(cls, value):
         if not isinstance(value, dict) or not value or set(value) - {
                 "sun_shadows", "screen_space_reflections", "single_pass", "headset", "resolution_scale",
-                "stages", *DISABLING_OVERRIDES, *SHIPPED_OVERRIDES}:
+                "stages", "fsr_sharpness", *DISABLING_OVERRIDES, *SHIPPED_OVERRIDES}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
         try:
             sun_shadows = SunShadows(value["sun_shadows"]) if "sun_shadows" in value else None
@@ -395,7 +411,7 @@ class VisualOverrides:
                    single_pass_switches(value.get("single_pass", {})),
                    **{name: value.get(name) for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)},
                    headset=value.get("headset"), resolution_scale=value.get("resolution_scale"),
-                   stages=value.get("stages"))
+                   stages=value.get("stages"), fsr_sharpness=value.get("fsr_sharpness"))
 
 
 @dataclass(frozen=True)

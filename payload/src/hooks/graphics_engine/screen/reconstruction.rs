@@ -867,6 +867,7 @@ mod tests {
                 local_offset: glam::Vec3::ZERO,
                 orientation_delta: glam::Quat::from_rotation_y(cant.to_radians()),
                 convention: crate::vr::ProjectionConvention::EnginePreReverseZ,
+                jitter: None,
             };
             let inverse = glam::Mat4::from(vr.projection_reverse_z).inverse();
             let through_half = center * eye_half_inverse(&vr, inverse, eye);

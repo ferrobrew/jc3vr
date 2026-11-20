@@ -40,6 +40,10 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         ui.checkbox(&mut cfg.post_fx.skip_fade, "Fade");
         ui.checkbox(&mut cfg.post_fx.skip_sun_halo, "Sun halo");
         ui.checkbox(
+            &mut cfg.post_fx.skip_anti_aliasing,
+            "Anti-aliasing (when FSR is off)",
+        );
+        ui.checkbox(
             &mut cfg.post_fx.skip_player_damage,
             "Player-damage vignette",
         );

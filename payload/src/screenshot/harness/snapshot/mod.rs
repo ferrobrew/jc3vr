@@ -326,6 +326,15 @@ pub(crate) fn capture(
             visual
         }
     };
+    // At a still camera, a snapshot that names a jitter index waits for a frame at it, so every
+    // configuration's snapshot takes the same sub-pixel offset whatever its warm-up's length.
+    let jitter_phase = crate::vr::render_params(0).and_then(|params| params.jitter);
+    if let (Some(wanted), Some(jitter)) = (pending.request.jitter_phase, jitter_phase)
+        && pending.request.phase.is_none()
+        && jitter.phase != wanted % jitter.phase_count.max(1)
+    {
+        return;
+    }
     if !crate::vr::is_running_published()
         || !crate::hooks::in_gameplay()
         || !crate::stereo::active()

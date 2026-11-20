@@ -66,9 +66,10 @@ class BenchmarkRequest:
     switches: tuple[tuple[str, bool], ...] = ()
     # `vr.overlap_render_update` for the run; None keeps the session's.
     overlap_render_update: bool | None = None
-    # FSR and its hybrid decode for the run; None runs them as shipped.
+    # FSR, its hybrid decode, and its sub-pixel jitter for the run; None runs them as shipped.
     fsr: bool | None = None
     fsr_hybrid_velocity: bool | None = None
+    fsr_jitter: bool | None = None
     # `vr.large_cache_cores` for the run; None keeps the session's.
     large_cache_cores: bool | None = None
     camera: CameraPath = field(default_factory=CameraPath)
@@ -88,7 +89,8 @@ class BenchmarkRequest:
             raise ProtocolError(f"benchmark: record_seconds must be within (0, {MAX_RECORD_SECONDS}]")
         if self.resolution_scale is not None and not 0.1 <= self.resolution_scale <= 4.0:
             raise ProtocolError("benchmark: resolution_scale must be within [0.1, 4.0]")
-        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "large_cache_cores"):
+        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "fsr_jitter",
+                     "large_cache_cores"):
             if getattr(self, name) is not None and type(getattr(self, name)) is not bool:
                 raise ProtocolError(f"benchmark: {name} must be a boolean")
         if self.switches and self.mode != BenchmarkMode.SINGLE_PASS:
@@ -111,7 +113,8 @@ class BenchmarkRequest:
         # Only when asked, so a payload from before the sampler still accepts the request.
         if self.sample_draw_task:
             lines.append("sample_draw_task = true")
-        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "large_cache_cores"):
+        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "fsr_jitter",
+                     "large_cache_cores"):
             if getattr(self, name) is not None:
                 lines.append(f"{name} = {json.dumps(getattr(self, name))}")
         if self.switches:

@@ -600,12 +600,15 @@ fn foveation_params(cfg: &crate::vr::FoveationConfig, layout: EyeLayout) -> Fove
 
 /// The per-eye foveal centre as a UV, from the eye's projection principal point (`m02`/`m12` shear terms
 /// of the column-major projection): symmetric frustums map to the buffer centre, canted HMDs to their
-/// off-axis centre. `None` when no VR frame is in flight. Clamped to the buffer.
+/// off-axis centre. `None` when no VR frame is in flight. Clamped to the buffer. The projection is
+/// taken without FSR's sub-pixel jitter, which moves the same terms, so the mask holds still in the
+/// eye's pixels while the scene jitters under it.
 fn foveal_center_uv(eye: usize) -> Option<glam::Vec2> {
-    let m = crate::vr::render_params(eye)?.projection_standard;
+    // The glam bridge's `z_axis` is the engine layout's `m02`/`m12` row.
+    let m = crate::vr::render_params(eye)?.unjittered_projection_standard();
     Some(glam::Vec2::new(
-        (0.5 - 0.5 * m.data[8]).clamp(0.0, 1.0),
-        (0.5 + 0.5 * m.data[9]).clamp(0.0, 1.0),
+        (0.5 - 0.5 * m.z_axis.x).clamp(0.0, 1.0),
+        (0.5 + 0.5 * m.z_axis.y).clamp(0.0, 1.0),
     ))
 }
 

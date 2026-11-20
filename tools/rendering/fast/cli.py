@@ -57,6 +57,12 @@ def main(argv=None, iterate=False) -> int:
     parser.add_argument("--repeat-after-seconds", type=float, default=0.0,
                         help="wait this long before each repeat snapshot, so the floor also "
                              "measures what changes with time at a frozen camera")
+    parser.add_argument("--next-frame-repeat", action="store_true",
+                        help="under a motion, take each repeat on the frame after its first "
+                             "snapshot's phase, not at the same phase a cycle later")
+    parser.add_argument("--jitter-phase", type=int, default=0,
+                        help="at a still camera, the FSR jitter index each first snapshot waits "
+                             "for (its repeat takes the next), while the jitter runs")
     parser.add_argument("--full-cycles", action="store_true",
                         help="run a motion that never moves the camera as configured, not as a "
                              "fixed pose")
@@ -107,7 +113,8 @@ def main(argv=None, iterate=False) -> int:
         options = FastOptions(planes, DumpPolicy(args.dump), not args.no_crop,
                               Limits(Thresholds(), args.noise_factor), args.restage,
                               not args.no_repeat, args.full_cycles, args.depth_ulps,
-                              args.repeat_after_seconds, args.save)
+                              args.repeat_after_seconds, args.save, args.next_frame_repeat,
+                              args.jitter_phase)
         baseline = (baseline_counts(json.loads(args.baseline.read_text()))
                     if args.baseline else None)
         output = args.output or SESSIONS / "fast" / time.strftime("%Y%m%d-%H%M%S")

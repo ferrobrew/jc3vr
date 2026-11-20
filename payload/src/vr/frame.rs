@@ -9,7 +9,7 @@
 //! thread prepares the next one. The head pose is published through the [`crate::headpose::xr`]
 //! source.
 
-use glam::{Quat, Vec3};
+use glam::{Quat, Vec2, Vec3};
 use jc3gi::types::math::Matrix4;
 use parking_lot::Mutex;
 
@@ -49,9 +49,88 @@ pub struct EyeRenderParams {
     pub orientation_delta: Quat,
     /// Which depth convention to write the projection in.
     pub convention: ProjectionConvention,
+    /// The frame's FSR sub-pixel jitter, already applied to both projections above, with the
+    /// projections it was applied to; `None` when the jitter is off. See [`crate::fsr::jitter`].
+    pub jitter: Option<AppliedJitter>,
+}
+
+/// The FSR jitter an eye's projections carry this frame.
+#[derive(Copy, Clone)]
+pub struct AppliedJitter {
+    /// The clip-space offset (the NDC translation times `w`).
+    pub ndc: Vec2,
+    /// The offset's index in the sequence.
+    pub phase: u32,
+    /// The sequence's length.
+    pub phase_count: u32,
+    /// [`EyeRenderParams::projection_standard`] before the jitter.
+    standard: Matrix4,
+    /// [`EyeRenderParams::projection_reverse_z`] before the jitter.
+    reverse_z: Matrix4,
 }
 
 impl EyeRenderParams {
+    /// These parameters with both projections jittered by the frame's `jitter`.
+    pub fn jittered(self, frame: crate::fsr::jitter::FrameJitter) -> Self {
+        let jitter = crate::fsr::jitter::translation(frame.ndc);
+        Self {
+            projection_standard: Matrix4::from(jitter * glam::Mat4::from(self.projection_standard)),
+            projection_reverse_z: Matrix4::from(
+                jitter * glam::Mat4::from(self.projection_reverse_z),
+            ),
+            jitter: Some(AppliedJitter {
+                ndc: frame.ndc,
+                phase: frame.phase,
+                phase_count: frame.phase_count,
+                standard: self.projection_standard,
+                reverse_z: self.projection_reverse_z,
+            }),
+            ..self
+        }
+    }
+
+    /// The jitter's clip-space offset in this frame's projections (zero without one).
+    pub fn jitter_ndc(self) -> Vec2 {
+        self.jitter.map_or(Vec2::ZERO, |jitter| jitter.ndc)
+    }
+
+    /// The reverse-Z projection without the frame's jitter, bit for bit as it was before the jitter
+    /// went on: for what is drawn after FSR has resolved the eye (the HUD, the overlays, the scope
+    /// lens) and must hold still while the scene jitters, and for the motion FSR is handed, which
+    /// must carry none. Undoing the jitter in `f32` instead would leave a rounding in the
+    /// view-projection's world-scale translation that changes from frame to frame.
+    pub fn unjittered_projection_reverse_z(self) -> glam::Mat4 {
+        glam::Mat4::from(
+            self.jitter
+                .map_or(self.projection_reverse_z, |jitter| jitter.reverse_z),
+        )
+    }
+
+    /// The standard-depth projection without the frame's jitter, bit for bit.
+    pub fn unjittered_projection_standard(self) -> glam::Mat4 {
+        glam::Mat4::from(
+            self.jitter
+                .map_or(self.projection_standard, |jitter| jitter.standard),
+        )
+    }
+
+    /// The reverse-Z projection the render camera holds after `SetupRenderCamera` under this frame's
+    /// [`convention`](Self::convention), without the jitter: the engine's own reverse-Z remap of the
+    /// standard-depth projection
+    /// ([`Camera::SetupRenderCamera`](jc3gi::camera::camera::Camera::SetupRenderCamera)) under
+    /// [`ProjectionConvention::EnginePreReverseZ`], so it matches the camera's bit for bit but for
+    /// the jitter.
+    pub fn unjittered_camera_projection(self) -> Matrix4 {
+        match self.convention {
+            ProjectionConvention::EnginePreReverseZ => {
+                engine_reverse_z(Matrix4::from(self.unjittered_projection_standard()))
+            }
+            ProjectionConvention::ManualReverseZ => {
+                Matrix4::from(self.unjittered_projection_reverse_z())
+            }
+        }
+    }
+
     /// Resolve displacement and cant from the final selected, interpolated center camera.
     pub fn resolve(self, center: glam::Mat4) -> glam::Mat4 {
         let mut eye = center;
@@ -62,6 +141,17 @@ impl EyeRenderParams {
     pub fn world_offset(self, center: glam::Mat4) -> Vec3 {
         center.transform_vector3(self.local_offset)
     }
+}
+
+/// The engine's reverse-Z remap of a standard-depth projection in its row-major layout, as
+/// `Camera::SetupRenderCamera` applies it: each row's depth column becomes its `w` column less
+/// itself, so the clip depth becomes `w - z`.
+fn engine_reverse_z(standard: Matrix4) -> Matrix4 {
+    let mut data = standard.data;
+    for row in data.as_chunks_mut::<4>().0 {
+        row[2] = row[3] - row[2];
+    }
+    Matrix4 { data }
 }
 
 /// The per-eye render parameters for the frame in flight, or `None` when no VR frame is rendering
@@ -464,6 +554,7 @@ fn render_frame(
             // orientation it is submitted with.
             orientation_delta: center_orientation.inverse() * quat(eye.pose.orientation),
             convention: cfg.projection_convention,
+            jitter: None,
         }
     };
 
@@ -493,6 +584,12 @@ fn render_frame(
             *frozen_params = None;
             [eye0_params, eye1_params]
         }
+    };
+    // The jitter goes on after the freeze picks the parameters, so a frozen pose keeps cycling the
+    // sequence rather than holding the phase it was captured on.
+    let params = match crate::fsr::jitter::frame_offset() {
+        Some(jitter) => params.map(|p| p.jittered(jitter)),
+        None => params,
     };
     RENDER_PARAMS.set(Some(params));
     // The recorder's sidecar wants the raw located views, not the rebased or frozen ones: they are
@@ -623,6 +720,40 @@ fn hold_fit_fov(held: Option<Fov>, fresh: Fov) -> Fov {
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_jitter_comes_off_bit_for_bit_and_the_camera_projection_matches_the_engines() {
+        let projection = OffAxisProjection::new(fov(0.4), 0.1, 38_400.0);
+        let params = EyeRenderParams {
+            projection_standard: projection.standard_depth,
+            projection_reverse_z: projection.reverse_z,
+            local_offset: Vec3::ZERO,
+            orientation_delta: Quat::IDENTITY,
+            convention: ProjectionConvention::EnginePreReverseZ,
+            jitter: None,
+        };
+        let jittered = params.jittered(crate::fsr::jitter::FrameJitter {
+            ndc: Vec2::new(1.4e-4, -0.9e-4),
+            phase: 3,
+            phase_count: 8,
+        });
+        assert_eq!(jittered.jitter_ndc(), Vec2::new(1.4e-4, -0.9e-4));
+        assert_ne!(
+            jittered.projection_reverse_z.data,
+            params.projection_reverse_z.data
+        );
+        assert_eq!(
+            Matrix4::from(jittered.unjittered_projection_reverse_z()).data,
+            params.projection_reverse_z.data
+        );
+        assert_eq!(
+            jittered.unjittered_camera_projection().data,
+            engine_reverse_z(params.projection_standard).data
+        );
+        // The engine's remap of the standard projection is the reverse-Z one.
+        let remapped = glam::Mat4::from(engine_reverse_z(params.projection_standard));
+        assert!(remapped.abs_diff_eq(glam::Mat4::from(params.projection_reverse_z), 1e-5));
+    }
+
     fn fov(scale: f32) -> Fov {
         Fov {
             left: (-2.5 * scale).atan(),
@@ -714,6 +845,7 @@ mod tests {
             local_offset: hmd.inverse() * sampled,
             orientation_delta: cant,
             convention: ProjectionConvention::ManualReverseZ,
+            jitter: None,
         };
         for alpha in [0.0, 0.3, 1.0] {
             let rotation = (body * authored0 * hmd).slerp(body * authored1 * hmd, alpha);

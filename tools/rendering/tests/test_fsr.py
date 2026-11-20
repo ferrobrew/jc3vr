@@ -7,7 +7,7 @@ from pathlib import Path
 
 import numpy as np
 
-from tools.rendering.comparison import fsr_motion, fsr_quality
+from tools.rendering.comparison import fsr_jitter, fsr_motion, fsr_quality
 from tools.rendering.comparison.images import Mode as CompareMode
 from tools.rendering.experiment import ExperimentConfig, ExperimentError, run_experiment
 from tools.rendering.experiment_fsr import FsrVariant, FsrVariantError, parse_fsr_variants
@@ -39,10 +39,24 @@ class VariantTests(unittest.TestCase):
         # A base naming FSR alone leaves nothing once the variant takes FSR out.
         self.assertIsNone(FsrVariant("off", fsr=False).overrides(VisualOverrides(fsr="enabled")))
         self.assertEqual(FsrVariant("on").overrides(None), VisualOverrides(fsr="enabled"))
+        jitter = FsrVariant("jitter-off", jitter=False).overrides(base)
+        self.assertEqual((jitter.fsr, jitter.fsr_jitter), ("enabled", "disabled"))
+        none = FsrVariant("no-aa", fsr=False, antialiasing=False).overrides(base)
+        self.assertEqual((none.fsr, none.anti_aliasing), (None, "disabled"))
+        self.assertIn('anti_aliasing = "disabled"', none.to_toml())
+        self.assertEqual(VisualOverrides.from_wire(none.to_wire()), none)
+        sharper = FsrVariant("sharp", sharpness=0.5).overrides(base)
+        self.assertEqual((sharper.fsr, sharper.fsr_sharpness), ("enabled", 0.5))
+        self.assertIn("fsr_sharpness = 0.5", sharper.to_toml())
+        self.assertEqual(VisualOverrides.from_wire(sharper.to_wire()), sharper)
+        self.assertEqual(FsrVariant("soft", sharpen=False).overrides(base).fsr_sharpen, "disabled")
 
     def test_invalid_variants_are_refused(self):
         for value in ([{"name": "no spaces"}], [{"name": "a", "fsr": False, "hybrid_velocity": False}],
                       [{"name": "a", "resolution_scale": 2.0}], [{"name": "a", "modes": ["sky"]}],
+                      [{"name": "a", "fsr": False, "jitter": False}],
+                      [{"name": "a", "antialiasing": False}], [{"name": "a", "jitter": 1}],
+                      [{"name": "a", "sharpness": 1.5}], [{"name": "a", "fsr": False, "sharpness": 0.5}],
                       [{"name": "a"}, {"name": "a"}], [{"name": "a", "extra": 1}], []):
             with self.assertRaises(FsrVariantError, msg=str(value)):
                 parse_fsr_variants(value)
@@ -59,7 +73,11 @@ class VariantTests(unittest.TestCase):
         scenes = {scene.name: scene for scene in load_suite(ROOT / "suites/fsr.toml")}
         quality = scenes["quality-rotation"].config
         self.assertEqual([v.name for v in quality.fsr_variants],
-                         ["hybrid-off", "fsr-off", "reference", "reduced"])
+                         ["jitter-off", "fsr-off", "no-aa", "reference"])
+        reference = quality.fsr_variants[-1]
+        self.assertEqual((reference.fsr, reference.antialiasing, reference.resolution_scale),
+                         (False, False, 1.414))
+        self.assertIn("quality-meadow-slow", scenes)
         self.assertEqual(scenes["motion-index"].config.visual_overrides.headset, "index")
         with self.assertRaises(ExperimentError):
             run_experiment(None, quality, Path("/nonexistent"))
@@ -186,6 +204,33 @@ class MotionCheckTests(unittest.TestCase):
         self.assertLess(check.camera.max, 1e-3)
         self.assertEqual(check.engine.pixels, 0)
         self.assertGreater(check.motion_mean, 0.01)
+
+    def test_a_still_jittered_camera_has_no_motion(self):
+        # Two frames of one still camera through different jitter offsets: the pixels move by the
+        # jitter's difference, which FSR must not be handed as motion.
+        offsets = [[2e-4, -1e-4], [-3e-4, 2.5e-4]]
+        jittered = [fsr_motion.jitter_translation(offset) @ projection() for offset in offsets]
+        clip = fsr_motion.clip_positions(np.full((4, 8), 0.05))
+        self.assertGreater(float(np.abs(fsr_motion.camera_motion_uv(
+            clip, jittered[1] @ np.linalg.inv(jittered[0]))).max()), 1e-4)
+        still = fsr_motion.jitter_free_motion_uv(clip, projection(), projection(), offsets[0])
+        self.assertLess(float(np.abs(still).max()), 1e-9)
+
+
+class JitterCheckTests(unittest.TestCase):
+    def test_a_sub_pixel_shift_is_measured_and_explained(self):
+        rng = np.random.default_rng(3)
+        base = rng.uniform(0, 255, (24, 24))
+        smooth = np.kron(base, np.ones((4, 4)))
+        smooth = sum(np.roll(np.roll(smooth, dy, 0), dx, 1) for dy in range(-3, 4)
+                     for dx in range(-3, 4)) / 49.0
+        image = np.repeat(smooth[..., None], 3, axis=2)
+        moved = fsr_jitter.shift_image(image, (0.3, -0.2))
+        measured = fsr_jitter.estimate_shift(fsr_jitter.luma(image)[8:-8, 8:-8],
+                                             fsr_jitter.luma(moved)[8:-8, 8:-8])
+        self.assertAlmostEqual(measured[0], 0.3, delta=0.02)
+        self.assertAlmostEqual(measured[1], -0.2, delta=0.02)
+        self.assertEqual(fsr_jitter.blocks(np.ones((32, 48)), 16).shape, (2, 3))
 
 
 class QualityTests(unittest.TestCase):

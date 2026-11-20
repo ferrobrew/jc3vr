@@ -169,10 +169,10 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
 
     let result = SETUP_RENDER_CAMERA.get().unwrap().call(camera, jitter);
 
-    // Snapshot the center view-projection before the FSR-jitter and per-eye blocks below patch it.
-    // This is the value the engine's own sim-side previous-VP snapshot holds (un-offset, unjittered
-    // -- the engine jitter is disabled above whenever we patch), which the velocity pass reprojects
-    // with; the FSR motion-vector correction needs it as its "what the engine encoded" matrix.
+    // Snapshot the center view-projection before the per-eye block below patches it. This is the
+    // value the engine's own sim-side previous-VP snapshot holds (un-offset, and without the engine's
+    // jitter, which is disabled above whenever we patch), which the velocity pass reprojects with;
+    // the FSR motion-vector correction needs it as its "what the engine encoded" matrix.
     if is_render_camera && let Some(camera) = unsafe { camera.as_ref() } {
         // Coordinate-frame verification (docs/mod/vr-runtime.md "Blocker 3"): trace the pristine
         // center camera's basis + travel direction before the per-eye offset below mutates
@@ -184,7 +184,18 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         {
             let mut stereo = STEREO_STATE.lock();
             let index = stereo.draw_index;
-            stereo.vp_history.cur_center[index] = Some(glam::Mat4::from(camera.m_ViewProjectionF));
+            // Under the preferred convention the projection is already the eye's, jittered for
+            // FSR; the snapshot takes it without the jitter, as the history holds every matrix.
+            let center = match vr_eye {
+                Some(vr)
+                    if vr.jitter.is_some()
+                        && vr.convention == crate::vr::ProjectionConvention::EnginePreReverseZ =>
+                {
+                    camera.m_View * vr.unjittered_camera_projection()
+                }
+                _ => camera.m_ViewProjectionF,
+            };
+            stereo.vp_history.cur_center[index] = Some(glam::Mat4::from(center));
         }
 
         // Snapshot the un-offset world transform for the HUD panel pose (see `StereoState::center_transform`).
@@ -266,13 +277,26 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         }
     }
 
-    // Snapshot the final view-projection this dispatch rasterizes with (jitter and eye offset
-    // applied). The FSR motion-vector correction inverts it to reconstruct each pixel's position and
-    // re-anchor the velocity reprojection at this eye's own previous pose.
+    // Snapshot the final view-projection this dispatch rasterizes with (eye offset applied), and
+    // the FSR jitter it carries apart from it (see `crate::fsr::jitter`; the engine's own TAA jitter
+    // is dropped above in stereo). The FSR motion-vector correction inverts it to reconstruct each
+    // pixel's position and re-anchor the velocity reprojection at this eye's own previous pose. The
+    // view-projection is rebuilt from the projection as it was before the jitter, bit for bit, so a
+    // still camera's matrices are identical from frame to frame.
     if is_render_camera && let Some(camera) = unsafe { camera.as_ref() } {
+        let jittered_eye = vr_eye
+            .filter(|vr| vr.jitter.is_some() && !crate::stereo::single_pass::collapse_active());
         let mut stereo = STEREO_STATE.lock();
         let index = stereo.draw_index;
-        stereo.vp_history.cur_eye[index] = Some(glam::Mat4::from(camera.m_ViewProjectionF));
+        let (view_projection, jitter) = match jittered_eye {
+            Some(vr) => (
+                camera.m_View * vr.unjittered_camera_projection(),
+                vr.jitter_ndc(),
+            ),
+            None => (camera.m_ViewProjectionF, glam::Vec2::ZERO),
+        };
+        stereo.vp_history.cur_eye[index] = Some(glam::Mat4::from(view_projection));
+        stereo.vp_history.cur_jitter[index] = jitter;
         stereo.vp_history.cur_eye_view[index] = Some(glam::Mat4::from(camera.m_View));
         stereo.vp_history.cur_eye_projection_f[index] =
             Some(glam::Mat4::from(camera.m_ProjectionF));

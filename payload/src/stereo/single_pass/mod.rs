@@ -370,7 +370,12 @@ pub fn collapse_ui_eye_override() -> Option<(D3D11_VIEWPORT, Matrix4)> {
         Width: half,
         ..full
     };
-    Some((viewport, full_eye_view_projection(eye)?))
+    // The UI draws after FSR has resolved the eyes, so its view-projection leaves out FSR's jitter.
+    let center_transform = crate::stereo::STEREO_STATE.lock().center_transform?;
+    let params = crate::vr::render_params(eye)?;
+    let eye_world = params.resolve(glam::Mat4::from(center_transform));
+    let view_projection = params.unjittered_projection_reverse_z() * eye_world.inverse();
+    Some((viewport, Matrix4::from(view_projection)))
 }
 
 /// Set the immediate-context viewport via the original (un-detoured) `RSSetViewports`, so a mod
@@ -387,9 +392,10 @@ pub fn set_ui_viewport_raw(context: *mut c_void, viewport: &D3D11_VIEWPORT) {
 }
 
 /// The per-eye **full** (translation-carrying) world→clip view-projection, matching the render
-/// camera's `m_ViewProjectionF` for that eye -- for projecting the mod's world-space overlay quads
-/// per eye in the collapse, where the render camera stays centered. `None` if the centre transform or
-/// per-eye params are unavailable.
+/// camera's `m_ViewProjectionF` for that eye, FSR's sub-pixel jitter included -- for the scene's own
+/// per-eye passes in the collapse, where the render camera stays centered. What draws after FSR
+/// takes [`collapse_ui_eye_override`]'s, which leaves the jitter out. `None` if the centre transform
+/// or per-eye params are unavailable.
 pub(crate) fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
     let center_transform = crate::stereo::STEREO_STATE.lock().center_transform?;
     let params = crate::vr::render_params(eye)?;

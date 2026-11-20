@@ -13,6 +13,12 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         &mut cfg.fsr.enabled,
         "FSR anti-aliasing (replaces the engine SMAA)",
     );
+    ui.checkbox(&mut cfg.fsr.jitter, "FSR sub-pixel jitter")
+        .on_hover_text(
+            "Moves each eye's projection by a sub-pixel offset of FSR's Halton sequence every frame \
+             and tells FSR the offset, so its accumulation gathers new sample positions rather than \
+             filtering one. Only while FSR runs. Off for an A/B.",
+        );
     ui.checkbox(
         &mut cfg.fsr.stereo_mv_correction,
         "FSR stereo motion-vector correction",

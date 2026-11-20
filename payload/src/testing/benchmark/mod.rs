@@ -286,6 +286,9 @@ fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<R
         if let Some(hybrid) = request.fsr_hybrid_velocity {
             next.fsr.hybrid_velocity = hybrid;
         }
+        if let Some(jitter) = request.fsr_jitter {
+            next.fsr.jitter = jitter;
+        }
         next.vr.freeze_mode = FreezeMode::FullCamera;
         *config = next;
     }
@@ -540,6 +543,7 @@ struct Environment {
     native_resolution: bool,
     fsr_enabled: bool,
     fsr_hybrid_velocity: bool,
+    fsr_jitter: bool,
     foveation_enabled: bool,
     far_field_enabled: bool,
     overlap_render_update: bool,
@@ -579,6 +583,7 @@ impl Environment {
             native_resolution,
             fsr_enabled: fsr.enabled,
             fsr_hybrid_velocity: fsr.hybrid_velocity,
+            fsr_jitter: fsr.jitter,
             foveation_enabled: foveation,
             far_field_enabled: far_field,
             overlap_render_update: overlap,
@@ -614,6 +619,7 @@ struct RequestEcho<'a> {
     overlap_render_update: Option<bool>,
     fsr: Option<bool>,
     fsr_hybrid_velocity: Option<bool>,
+    fsr_jitter: Option<bool>,
     large_cache_cores: Option<bool>,
     camera: CameraPath,
 }
@@ -633,6 +639,7 @@ impl<'a> From<&'a BenchmarkRequest> for RequestEcho<'a> {
             overlap_render_update: request.overlap_render_update,
             fsr: request.fsr,
             fsr_hybrid_velocity: request.fsr_hybrid_velocity,
+            fsr_jitter: request.fsr_jitter,
             large_cache_cores: request.large_cache_cores,
             camera: request.camera,
         }

@@ -94,7 +94,9 @@ pub struct VpHistory {
     /// This frame's center view-projection per eye, snapshotted before the per-eye patches in that
     /// eye's dispatch.
     pub cur_center: [Option<glam::Mat4>; 2],
-    /// This frame's final per-eye view-projections (the matrices each dispatch rasterizes with).
+    /// This frame's final per-eye view-projections, the matrices each dispatch rasterizes with but
+    /// for the FSR jitter, which [`cur_jitter`](Self::cur_jitter) holds apart (see
+    /// [`crate::fsr::jitter_free_reprojection`]).
     pub cur_eye: [Option<glam::Mat4>; 2],
     /// This frame's final per-eye view matrices (eye offset applied). Used by CPU-side
     /// projection paths such as the light-glow sprite, which cannot be fixed by shader constant remaps.
@@ -102,6 +104,9 @@ pub struct VpHistory {
     /// This frame's final per-eye reverse-Z projections (eye offset applied). Paired with
     /// [`cur_eye_view`](Self::cur_eye_view) for rebuilding the per-eye offset view-projection.
     pub cur_eye_projection_f: [Option<glam::Mat4>; 2],
+    /// The FSR jitter's clip-space offset each eye rasterizes with this frame, on top of
+    /// [`cur_eye`](Self::cur_eye) (zero without one; see [`crate::fsr::jitter`]).
+    pub cur_jitter: [glam::Vec2; 2],
 }
 impl VpHistory {
     const fn new() -> Self {
@@ -112,6 +117,7 @@ impl VpHistory {
             cur_eye: [None, None],
             cur_eye_view: [None, None],
             cur_eye_projection_f: [None, None],
+            cur_jitter: [glam::Vec2::ZERO; 2],
         }
     }
 
@@ -120,6 +126,7 @@ impl VpHistory {
     pub fn rotate(&mut self) {
         self.prev_center = [self.cur_center[0].take(), self.cur_center[1].take()];
         self.prev_eye = [self.cur_eye[0].take(), self.cur_eye[1].take()];
+        self.cur_jitter = [glam::Vec2::ZERO; 2];
         self.cur_eye_view = [None, None];
         self.cur_eye_projection_f = [None, None];
     }
@@ -129,14 +136,18 @@ impl VpHistory {
     /// frame of history exists. The products are formed in `f64`: the view-projections carry
     /// world-scale translations that only cancel between `prevVP` and `inv(curVP)` at
     /// higher-than-`f32` precision.
+    ///
+    /// Both take the current position from the jittered render; the eye's reprojection carries no
+    /// jitter (see [`crate::fsr::jitter_free_reprojection`]).
     pub fn reprojection_matrices(&self, eye: usize) -> Option<(Matrix4, Matrix4)> {
         let cur = (*self.cur_eye.get(eye)?)?;
         let prev_center = (*self.prev_center.get(eye)?)?;
         let prev_eye = (*self.prev_eye.get(eye)?)?;
-        let inv_cur = cur.as_dmat4().inverse();
-        let center_reproj = (prev_center.as_dmat4() * inv_cur).as_mat4();
-        let eye_reproj = (prev_eye.as_dmat4() * inv_cur).as_mat4();
-        Some((Matrix4::from(center_reproj), Matrix4::from(eye_reproj)))
+        let jitter = *self.cur_jitter.get(eye)?;
+        Some((
+            crate::fsr::reprojection_from_jittered(prev_center, cur, jitter),
+            crate::fsr::jitter_free_reprojection(prev_eye, cur, jitter),
+        ))
     }
 }
 

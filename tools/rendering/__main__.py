@@ -17,6 +17,7 @@ commands:
   constants  write native constants diagnostics for a suite manifest
   census     print a capture's draw census with its shaders named
   fsr-motion check the motion vectors FSR is handed against the camera's motion
+  fsr-jitter check the image FSR is handed moves by the jitter FSR is told
   fsr-quality
              measure FSR's image against the game's anti-aliasing and a reference
   viewer     serve the local capture preview
@@ -34,6 +35,7 @@ COMMANDS = {
     "constants": "tools.rendering.comparison.constants",
     "census": "tools.rendering.comparison.draw_census",
     "fsr-motion": "tools.rendering.comparison.fsr_motion",
+    "fsr-jitter": "tools.rendering.comparison.fsr_jitter",
     "fsr-quality": "tools.rendering.comparison.fsr_quality",
     "viewer": "tools.rendering.viewer.server",
 }

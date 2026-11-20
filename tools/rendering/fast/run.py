@@ -82,6 +82,12 @@ class FastOptions:
     repeat_after_seconds: float = 0.0
     # Write every snapshot's planes whole, for offline analysis.
     save: bool = False
+    # Under a motion, take each repeat at the phase after its first snapshot's rather than the same
+    # phase a cycle later: the next frame of the motion, for the frame-to-frame change in motion.
+    next_frame_repeat: bool = False
+    # At a still camera, the FSR jitter index every first snapshot waits for; its repeat takes the
+    # next one.
+    jitter_phase: int = 0
 
 
 @dataclass
@@ -152,12 +158,17 @@ def pinned_anchor(config_dir, config: ExperimentConfig) -> tuple[Camera | None, 
 def step_planes(planes: tuple[Plane, ...], config: ExperimentConfig) -> tuple[Plane, ...]:
     """The planes a configuration's snapshots take: FSR's planes only where FSR runs, which the
     capture profile turns off unless the overrides put it back."""
-    if config.visual_overrides is not None and config.visual_overrides.fsr == "enabled":
+    if runs_fsr(config):
         return planes
     return tuple(plane for plane in planes if plane not in FSR_PLANES)
 
 
 FSR_PLANES = (Plane.FSR_MOTION, Plane.FSR_DEPTH)
+
+
+def runs_fsr(config: ExperimentConfig) -> bool:
+    """Whether a configuration's overrides put FSR back, which the capture profile turns off."""
+    return config.visual_overrides is not None and config.visual_overrides.fsr == "enabled"
 
 
 def _still(request) -> bool:
@@ -238,11 +249,21 @@ def run_scene(runner, config: ExperimentConfig, name: str, options: FastOptions,
             for snapshot in step.snapshots:
                 if snapshot.repeat_of is not None and options.repeat_after_seconds > 0:
                     time.sleep(options.repeat_after_seconds)
+                snapshot_phase = phase
+                if (phase is not None and snapshot.repeat_of is not None
+                        and options.next_frame_repeat):
+                    snapshot_phase = (phase + 1) % config.motion.request.period_frames
+                # At a still camera every configuration's first snapshot that runs FSR takes the
+                # jitter's first offset and its repeat the next, so configurations compare at the
+                # same offset. A configuration without FSR has no jitter to wait for.
+                jitter_phase = None if phase is not None or not runs_fsr(step_config) else (
+                    options.jitter_phase + (1 if snapshot.repeat_of is not None else 0))
                 request = SnapshotRequest(
                     f"{prefix}_{snapshot.label}"[:64], snapshot.label, planes, snapshot.keep,
-                    snapshot.compare, phase, options.limits.thresholds.pixel,
+                    snapshot.compare, snapshot_phase, options.limits.thresholds.pixel,
                     options.limits.thresholds.changed_fraction, options.limits.thresholds.mean,
-                    options.dump, options.dump_crop, options.depth_ulps, options.save)
+                    options.dump, options.dump_crop, options.depth_ulps, options.save,
+                    jitter_phase)
                 acknowledgement, entry = timed(f"snapshot {snapshot.label}", request)
                 if not isinstance(acknowledgement, SnapshotAck):
                     raise FastError("fast comparison: expected a snapshot acknowledgement")

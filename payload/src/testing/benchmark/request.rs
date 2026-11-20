@@ -60,6 +60,8 @@ pub(crate) struct BenchmarkTable {
     fsr: Option<bool>,
     /// FSR's hybrid decode for the run (`fsr.hybrid_velocity`); `None` runs it as shipped.
     fsr_hybrid_velocity: Option<bool>,
+    /// FSR's sub-pixel jitter for the run (`fsr.jitter`); `None` runs it as shipped.
+    fsr_jitter: Option<bool>,
     /// `vr.large_cache_cores` for the run; `None` keeps the configured one.
     large_cache_cores: Option<bool>,
     camera: Option<CameraTable>,
@@ -118,6 +120,7 @@ pub(crate) struct BenchmarkRequest {
     pub(crate) overlap_render_update: Option<bool>,
     pub(crate) fsr: Option<bool>,
     pub(crate) fsr_hybrid_velocity: Option<bool>,
+    pub(crate) fsr_jitter: Option<bool>,
     pub(crate) large_cache_cores: Option<bool>,
     pub(crate) camera: CameraPath,
 }
@@ -234,6 +237,7 @@ impl BenchmarkRequest {
             overlap_render_update: table.overlap_render_update,
             fsr: table.fsr,
             fsr_hybrid_velocity: table.fsr_hybrid_velocity,
+            fsr_jitter: table.fsr_jitter,
             large_cache_cores: table.large_cache_cores,
             camera,
         })

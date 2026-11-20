@@ -619,6 +619,20 @@ impl RenderPass {
             f(self as *mut Self as _)
         }
     }
+    pub const GetSortCamera_ADDRESS: usize = 0x140174360;
+    /// The camera the pass's draw list is sorted against: the pass's external camera, set up with
+    /// [`Camera::SetupRenderCamera`](crate::camera::camera::Camera::SetupRenderCamera) without the TAA
+    /// jitter, or the camera manager's render camera when the pass has none.
+    pub unsafe fn GetSortCamera(&self) -> *const crate::camera::camera::Camera {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> *const crate::camera::camera::Camera = ::std::mem::transmute(
+                Self::GetSortCamera_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
     pub const PreDraw_ADDRESS: usize = 0x140186DB0;
     /// The per-pass pre-draw (a pass vtable entry): resolves the back buffer and depth buffer when the pass
     /// asks for them, binds the pass's render setup, applies its stencil state (see

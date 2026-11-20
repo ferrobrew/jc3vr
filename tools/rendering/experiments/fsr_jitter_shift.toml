@@ -1,0 +1,37 @@
+# FSR's sub-pixel jitter: the coastal town at midday, camera still, FSR on in the capture profile.
+# Each mode's snapshot and its repeat are two consecutive frames of the jitter sequence before FSR
+# resolves them; runs with `--warmup-frames` stepped by two cover the whole sequence. Run with
+# `fast --planes final pre_aa --save` and read with `fsr-jitter`. See docs/mod/rendering/fsr.md.
+name = "fsr-jitter-shift"
+warmup_frames = 120
+samples = 3
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+fsr = "enabled"
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [2091.2, 1040.1, 5005.0]
+yaw_deg = 270.0
+
+[motion]
+period_frames = 120
+phase = 15
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
+
+# The same frames without the jitter: the control for what else changes from frame to frame.
+[[fsr_variants]]
+name = "jitter-off"
+jitter = false

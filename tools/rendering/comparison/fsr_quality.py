@@ -1,11 +1,12 @@
 """Measure FSR's image against the game's own anti-aliasing and a supersampled reference.
 
 Reads a fast report of the FSR quality scenes (`tools/rendering/suites/fsr.toml`, run with `--save`),
-whose every configuration rendered in one schedule at one clock and pose: FSR with the hybrid decode
-(the mode's own snapshots), FSR without it (`hybrid-off`), the game's own anti-aliasing (`fsr-off`),
-a reduced render size with FSR (`reduced`), and the reference (`reference`: the left eye alone at twice
-the pixels with the game's anti-aliasing, downsampled here by area to the eye's size). A reduced
-render is scaled back up bilinearly, as a compositor would.
+whose every configuration rendered in one schedule at one clock and pose: FSR as shipped (the mode's
+own snapshots), FSR without its sub-pixel jitter (`jitter-off`), the game's own anti-aliasing
+(`fsr-off`), no anti-aliasing at all (`no-aa`), and the reference (`reference`: the left eye alone at
+twice the pixels with no anti-aliasing, downsampled here by area to the eye's size, so the reference
+favours no anti-aliasing method). A configuration at a reduced size is scaled back up bilinearly, as a
+compositor would.
 
 Per scene it reports, on 8-bit RGB (luma for the gradients):
 
@@ -16,7 +17,12 @@ Per scene it reports, on 8-bit RGB (luma for the gradients):
 - against the game's anti-aliasing in the same mode: the pixels more than three codes apart and the
   mean difference;
 - each configuration's repeat: the next frame at a still camera (the frame-to-frame change, which is
-  shimmer) or the same phase a cycle later in motion;
+  shimmer), or under a motion the same phase a cycle later, or the next frame with
+  `fast --next-frame-repeat`;
+- the flicker, for the left eye: the mean change of the image's error against the reference from the
+  first snapshot to the repeat, `|(b - a) - (reference_b - reference_a)|`, which takes out the change
+  the camera's own motion makes and leaves the frame-to-frame instability (shimmer, crawling edges);
+  with the next-frame repeat it measures shimmer in motion;
 - between modes: multipass against single-pass, eye by eye, per configuration.
 
     python3 -m tools.rendering fsr-quality --session N target/harness-probe/fast/<stamp>/fast-report.json
@@ -102,7 +108,7 @@ def scene_images(scene: dict) -> dict[tuple[str, str, int, str], dict]:
 def measure_scene(scene: dict, captures: Path) -> dict:
     images = scene_images(scene)
     result = {"scene": scene["name"], "reference": [], "against_fsr_off": [], "repeat": [],
-              "between_modes": []}
+              "flicker": [], "between_modes": []}
     reference_key = ("reference", "left_only", 0, "a")
     eye_key = next((key for key in images if key[0] == BASE and key[2] == 0), None)
     if reference_key in images and eye_key is not None:
@@ -118,6 +124,19 @@ def measure_scene(scene: dict, captures: Path) -> dict:
             result["reference"].append({"config": config, "mode": mode,
                                         **against_reference(image, reference, reference_gradient,
                                                             edges, flat)})
+        reference_repeat = images.get(("reference", "left_only", 0, "b"))
+        if reference_repeat is not None:
+            reference_change = load(captures, reference_repeat, size) - reference
+            for (config, mode, eye, letter), record in sorted(images.items()):
+                repeat = images.get((config, mode, eye, "b"))
+                if eye != 0 or letter != "a" or repeat is None:
+                    continue
+                change = load(captures, repeat, size) - load(captures, record, size)
+                flicker = np.abs(change - reference_change)
+                result["flicker"].append({
+                    "config": config, "mode": mode,
+                    "mean": round(float(flicker.mean()), 4),
+                    "differing": int(np.count_nonzero(flicker.max(axis=2) > THRESHOLD))})
     for (config, mode, eye, letter), record in sorted(images.items()):
         if letter != "a" or config in ("fsr-off", "reference"):
             continue
@@ -150,6 +169,9 @@ def describe(result: dict) -> str:
         for row in result[name]:
             lines.append(f"  {name:14}{row['config']:10} {row['mode']:11} eye {row['eye']}  "
                          f"{row['differing']:>9} px  mean {row['mean']:.3f}")
+    for row in result["flicker"]:
+        lines.append(f"  flicker       {row['config']:10} {row['mode']:11} eye 0  "
+                     f"{row['differing']:>9} px  mean {row['mean']:.3f}")
     for row in result["between_modes"]:
         lines.append(f"  multipass vs single-pass  {row['config']:10} eye {row['eye']}  "
                      f"{row['differing']:>9} px  mean {row['mean']:.3f}")

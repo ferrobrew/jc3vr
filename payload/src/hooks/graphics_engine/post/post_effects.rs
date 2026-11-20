@@ -187,6 +187,8 @@ fn apply_global_filters(this: *mut c_void, dt: f32, ctx: *mut c_void) {
 //     engine AA to AA_NONE so it passthrough-blits our FSR result onward (docs/mod/rendering/fsr.md).
 //   * else, in stereo, drop T2X to SMAA 1x -- T2X's temporal resolve blends a single history shared
 //     across the two eye dispatches, so each eye ghosts the other.
+//   * `post_fx.skip_anti_aliasing` drops the engine AA to AA_NONE without FSR, for a baseline with
+//     no anti-aliasing at all.
 // Either way, restore the real mode afterwards so the engine's own state stays intact.
 #[detour(address = jc3gi::graphics_engine::post_effects::AntiAliasingEffect::Apply_ADDRESS)]
 fn anti_aliasing_apply(
@@ -199,10 +201,13 @@ fn anti_aliasing_apply(
     // SAFETY: the AA hook receives the current chain slot as a live in/out parameter.
     stages::capture_slot(Stage::PreAa, mgr, unsafe { *slot });
     let force_smaa_1x = stereo::active();
-    let fsr = Config::lock_query(|c| {
-        c.fsr
-            .enabled
-            .then_some(c.fsr.sharpen.then_some(c.fsr.sharpness))
+    let (fsr, skip_aa) = Config::lock_query(|c| {
+        (
+            c.fsr
+                .enabled
+                .then_some(c.fsr.sharpen.then_some(c.fsr.sharpness)),
+            c.post_fx.skip_anti_aliasing,
+        )
     });
 
     // When FSR is on, resolve into the current slot ourselves, then let the engine AA run as a
@@ -210,14 +215,15 @@ fn anti_aliasing_apply(
     // 1x-forcing is moot here.
     let saved_mode = unsafe { (*this).m_Mode };
     let mut restore = false;
-    if let Some(sharpness) = fsr {
+    let fsr_ran = fsr.is_some_and(|sharpness| {
         // SAFETY: `slot` is a valid out-param holding the current chain slot index.
         let slot_index = unsafe { *slot };
-        if fsr_dispatch(mgr, slot_index, sharpness) {
-            unsafe { (*this).m_Mode = AAMode::AA_NONE };
-            restore = true;
-        }
-    } else if force_smaa_1x && saved_mode == AAMode::AA_SMAA_T2X {
+        fsr_dispatch(mgr, slot_index, sharpness)
+    });
+    if fsr_ran || skip_aa {
+        unsafe { (*this).m_Mode = AAMode::AA_NONE };
+        restore = true;
+    } else if fsr.is_none() && force_smaa_1x && saved_mode == AAMode::AA_SMAA_T2X {
         // T2X's temporal resolve blends a single shared history across the two eye dispatches, so each
         // eye ghosts the other; 1x carries no history.
         unsafe { (*this).m_Mode = AAMode::AA_SMAA };

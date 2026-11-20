@@ -1,7 +1,7 @@
-# FSR's image quality: the coastal town at midday, camera translating, rendered with FSR and the
-# hybrid decode, without the hybrid decode, without FSR, at a reduced size, and as a supersampled
-# reference, all in one schedule at one clock and pose. Run with `fast --save` and read with
-# `fsr-quality`. See docs/mod/rendering/fsr.md.
+# FSR's image quality: the coastal town at midday, camera translating. Rendered with FSR as shipped, FSR without its
+# sub-pixel jitter, the game's own anti-aliasing (SMAA 1x), no anti-aliasing at all, and a
+# supersampled reference, all in one schedule at one clock and pose. Run with `fast --save` and
+# read with `fsr-quality`. See docs/mod/rendering/fsr.md.
 name = "fsr-quality-translation"
 warmup_frames = 120
 # FSR's history settles about 64 frames after a reset at a still camera (docs/mod/rendering/fsr.md).
@@ -32,30 +32,26 @@ phase = 15
 mode = "left_only"
 
 [[configurations]]
-mode = "multipass"
-
-[[configurations]]
 mode = "single_pass"
 
 [[fsr_variants]]
-name = "hybrid-off"
-hybrid_velocity = false
+name = "jitter-off"
+jitter = false
 
 [[fsr_variants]]
 name = "fsr-off"
 fsr = false
 
-# The reference: twice the pixels (each side scaled by the square root of two) with the game's own
-# anti-aliasing, downsampled offline.
+[[fsr_variants]]
+name = "no-aa"
+fsr = false
+antialiasing = false
+
+# The reference: twice the pixels (each side scaled by the square root of two) with no
+# anti-aliasing, downsampled offline by area, so it favours no anti-aliasing method.
 [[fsr_variants]]
 name = "reference"
 fsr = false
+antialiasing = false
 resolution_scale = 1.414
 modes = ["left_only"]
-
-# The cheaper configuration the mod can run: a smaller render with FSR at 1:1, which the compositor
-# scales to the headset's size.
-[[fsr_variants]]
-name = "reduced"
-resolution_scale = 0.85
-modes = ["left_only", "single_pass"]

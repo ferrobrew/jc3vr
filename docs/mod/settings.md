@@ -73,7 +73,7 @@ Fields that hold state for the session rather than a choice are `#[serde(skip)]`
 
 ## TOML and the configuration types
 
-TOML has no null, so a `None` is left out of the file. An optional setting therefore defaults to `None`: its key is absent from the defaults, so a missing key loads as `None` and a present one as `Some`. A setting that is on by default with a value is a switch beside the value instead of an `Option` (`fsr.sharpen` and `fsr.sharpness`), since a saved `None` would otherwise load as the default `Some`.
+TOML has no null, so a `None` is left out of the file. An optional setting therefore defaults to `None`: its key is absent from the defaults, so a missing key loads as `None` and a present one as `Some`. A setting whose value is kept while it is switched off is a switch beside the value instead of an `Option` (`fsr.sharpen` and `fsr.sharpness`), since a saved `None` would otherwise load as a default `Some`.
 
 A list cannot hold an empty slot either, so the per-weapon sight table, a fixed array of optional entries in memory, is saved as a list of the corrections it holds. A constant default that needs owned data (the far field's gated type list, the key bindings) is a `Cow` that borrows a constant until it is edited, which keeps `Config::new` a `const fn`.
 

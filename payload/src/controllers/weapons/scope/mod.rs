@@ -517,9 +517,11 @@ fn collapse_camera(eye: usize) -> Option<EyeCamera> {
     let center = STEREO_STATE.lock().center_transform?;
     let params = crate::vr::render_params(eye)?;
     let eye_world = params.resolve(Mat4::from(center));
+    // The lens is drawn after FSR has resolved the eye, so it takes the projection without FSR's
+    // jitter, as `view::current` does.
     Some(camera_of(&EyeView::from_eye_world(
         eye_world,
-        Mat4::from(params.projection_reverse_z),
+        params.unjittered_projection_reverse_z(),
     )))
 }
 

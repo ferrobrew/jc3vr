@@ -30,7 +30,8 @@ class BenchmarkScene:
 class Variant:
     """A mode with some switches forced, to attribute a cost to what they control: single-pass
     switches (single-pass only), the frame ordering (`vr.overlap_render_update`), the placement
-    on the largest cache's cores (`vr.large_cache_cores`), or FSR and its hybrid decode."""
+    on the largest cache's cores (`vr.large_cache_cores`), or FSR, its hybrid decode, and its
+    sub-pixel jitter."""
     name: str
     switches: tuple[tuple[str, bool], ...]
     base: BenchmarkMode = BenchmarkMode.SINGLE_PASS
@@ -38,6 +39,7 @@ class Variant:
     fsr: bool | None = None
     hybrid_velocity: bool | None = None
     large_cache_cores: bool | None = None
+    jitter: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -84,7 +86,7 @@ def load_suite(path: Path) -> Suite:
             raise BenchmarkError(f"{context}: expected a table")
         switches = table.get("switches", {})
         flags = {name: table.get(name) for name in ("overlap_render_update", "fsr", "hybrid_velocity",
-                                                "large_cache_cores")}
+                                                "large_cache_cores", "jitter")}
         valid = (set(table) - {"name", "base", "switches", *flags} == set()
                  and isinstance(table.get("name"), str)
                  and table.get("base", "single_pass") in {m.value for m in BenchmarkMode}
@@ -95,11 +97,11 @@ def load_suite(path: Path) -> Suite:
         if not valid:
             raise BenchmarkError(f"{context}: expected a name, optionally a base mode, and a "
                                  "switches table of booleans or one of overlap_render_update, "
-                                 "fsr, hybrid_velocity, and large_cache_cores")
+                                 "fsr, hybrid_velocity, jitter, and large_cache_cores")
         base = BenchmarkMode(table.get("base", "single_pass"))
         if switches and base != BenchmarkMode.SINGLE_PASS:
             raise BenchmarkError(f"{context}: single-pass switches need the single_pass base")
         variants.append(Variant(table["name"], tuple(sorted(switches.items())), base,
                                 flags["overlap_render_update"], flags["fsr"], flags["hybrid_velocity"],
-                                flags["large_cache_cores"]))
+                                flags["large_cache_cores"], flags["jitter"]))
     return Suite(tuple(scenes), tuple(variants))

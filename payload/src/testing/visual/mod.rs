@@ -879,6 +879,10 @@ impl State {
                     return;
                 };
                 motion.begin(base);
+                // The motion's phases then fall on the same FSR jitter offsets in every
+                // configuration, for a period that is a whole number of the jitter's sequences
+                // (the configs' 120 frames are fifteen of them).
+                crate::fsr::jitter::reset_phase();
                 pose_control::set_current(request.target(base, 0));
                 self.pose = Some(request.evidence(base, 0, applied));
                 self.ready = true;
@@ -1185,6 +1189,7 @@ fn apply_profile(config: &mut Config, mode: Mode) {
     config.post_fx.skip_player_damage = true;
     config.post_fx.skip_sun_halo = false;
     config.post_fx.skip_histogram = true;
+    config.post_fx.skip_anti_aliasing = false;
     config.stereo.enabled = true;
     config.stereo.cameras = true;
     config.stereo.disable_ssao = false;
