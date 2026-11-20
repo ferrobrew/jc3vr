@@ -18,8 +18,8 @@ use crate::{
         clustered_lighting::{
             bounds::tile_bounds_from_projection,
             split::{
-                SPLIT, SplitState, TileGrid, assignment_transform, decline_split_for_context,
-                decline_warning, restore_viewport, unsplittable_context,
+                LightView, SPLIT, SplitState, TileGrid, assignment_transform,
+                decline_split_for_context, decline_warning, restore_viewport, unsplittable_context,
             },
         },
         reconstruction,
@@ -183,14 +183,15 @@ fn run_draw_clustered(
                     grid.exact_y,
                     eye,
                 ),
-                light_view_offset: request
+                light_view: request
                     .light_view
                     .then(|| {
-                        crate::hud::render_camera_pose().map(|(position, orientation)| {
-                            params.world_offset(glam::Mat4::from_rotation_translation(
+                        crate::hud::render_camera_pose().map(|(position, orientation)| LightView {
+                            offset: params.world_offset(glam::Mat4::from_rotation_translation(
                                 orientation,
                                 position,
-                            ))
+                            )),
+                            turn: params.orientation_delta,
                         })
                     })
                     .flatten(),

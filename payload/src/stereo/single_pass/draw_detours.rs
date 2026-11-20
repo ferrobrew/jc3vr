@@ -12,6 +12,7 @@ use super::*;
 use crate::{
     screenshot::harness::stages::velocity,
     stereo::single_pass::{
+        eye_vertex_globals::EyeVertexGlobals,
         pinned_eye::Cb13EyePin,
         vegetation_once,
         water_fragment_state::packed_water_context,
@@ -107,12 +108,16 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                 // eye with both slots pinned to that eye's half. It still reads the centred `cb0`, so
                 // there is no parallax on it -- but it is present, in both eyes, at the right size.
                 // A pinned-eye shader in the pipeline does get the parallax, from `cb13` pinned to
-                // the eye being drawn.
+                // the eye being drawn; any other gets it from that eye's copy of the vertex globals.
                 let pin = Cb13EyePin::begin(context);
+                let globals = pin.is_none().then(EyeVertexGlobals::begin).flatten();
                 for eye in 0..2 {
                     ensure_collapse_viewport(context, CollapseViewport::Eye(eye));
                     if let Some(pin) = &pin {
                         pin.pin(eye);
+                    }
+                    if let Some(globals) = &globals {
+                        globals.bind(eye);
                     }
                     velocity::submit(
                         context,
@@ -128,6 +133,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                     );
                 }
                 ensure_collapse_viewport(context, CollapseViewport::Full);
+                drop(globals);
                 drop(pin);
                 return;
             }
@@ -206,11 +212,12 @@ pub(super) unsafe extern "system" fn draw_detour(
         {
             return;
         }
-        // The moon is one reprojected `open` quad, so it takes the same two-instance promotion, with
-        // its far-plane depth kept through the reprojection.
+        // The moon is one reprojected `open` quad, and the stars one reprojected billboard draw, so
+        // each takes the same two-instance promotion, with its far-plane depth kept through the
+        // reprojection.
         if patched
-            && pass == RenderPassId::RP_MOON as u8
-            && flags.has(Flag::Moon)
+            && ((pass == RenderPassId::RP_MOON as u8 && flags.has(Flag::Moon))
+                || (pass == RenderPassId::RP_STARS as u8 && flags.has(Flag::Stars)))
             && let Some(_depth) = FarDepthRows::begin()
             && promote_non_indexed(context, vertex_count, start_vertex)
         {
@@ -585,13 +592,18 @@ pub(super) fn indirect_per_eye(context: *mut c_void, submit: &dyn Fn(Option<usiz
         return false;
     }
     let pin = Cb13EyePin::begin(context);
+    let globals = pin.is_none().then(EyeVertexGlobals::begin).flatten();
     for eye in 0..2 {
         ensure_collapse_viewport(context, CollapseViewport::Eye(eye));
         if let Some(pin) = &pin {
             pin.pin(eye);
         }
+        if let Some(globals) = &globals {
+            globals.bind(eye);
+        }
         submit(Some(eye));
     }
+    drop(globals);
     drop(pin);
     // Unconditional, as on every other path that pins a viewport: a leaked eye-half would clip the
     // rest of the frame -- including the fullscreen passes -- to half the target.
@@ -801,6 +813,11 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
         return false;
     };
     let saved = capture_viewport_slots(d3d);
+    // An unpatched shader reads neither `cb13` slot, so it takes the eye from that eye's copy of the
+    // vertex globals instead.
+    let globals = (!BOUND_VS_PATCHED.load(Ordering::Relaxed))
+        .then(EyeVertexGlobals::begin)
+        .flatten();
 
     let mut submitted = 0;
     for eye in 0..2 {
@@ -809,6 +826,9 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
         let _reissue = PerEyeReissue::enter(eye, full);
         if !write_cb13_rows(d3d, &pin_rows_to_eye(&rows, eye)) {
             break;
+        }
+        if let Some(globals) = &globals {
+            globals.bind(eye);
         }
         bind_both_viewport_slots(d3d, eye_half_viewport(full, eye));
         submit();
@@ -822,6 +842,7 @@ pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
             "cb13 restore failed after per-eye pin; geometry may render from one eye for the rest of the pass"
         );
     }
+    drop(globals);
     restore_viewport_slots(d3d, saved);
     // A map failure before the first submission leaves the draw undrawn, so the caller must still
     // submit it; one after leaves it partially drawn, where a further submission would only duplicate

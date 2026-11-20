@@ -77,6 +77,7 @@ mod detour_lifecycle;
 mod draw_detours;
 pub(crate) mod eye_camera;
 pub(crate) mod eye_globals;
+mod eye_vertex_globals;
 mod frame_diagnostics;
 pub(crate) mod hw_instanced;
 mod impostor_pixel_size;
@@ -716,6 +717,7 @@ pub fn uninstall_com_detours() -> bool {
     drop(CREATE_VERTEX_SHADER.take());
     drop(SET_VERTEX_PROGRAM_CONSTANTS.take());
     release_cb13();
+    eye_vertex_globals::release();
     ambient_occlusion::release();
     ao_volumes::release();
     screen_space_reflection::release();

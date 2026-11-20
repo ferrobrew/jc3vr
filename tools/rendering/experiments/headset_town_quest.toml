@@ -1,0 +1,51 @@
+# Standing check: the coastal town at midday under the quest-like headset rig (see "A headset-like rig" in
+# docs/mod/stereo/single-pass-stereo.md), with the repeat as the noise floor and the rig fixes' switches flipped.
+name = "headset-town-quest"
+warmup_frames = 30
+samples = 3
+interval_seconds = 2.0
+
+[visual_overrides]
+headset = "quest"
+screen_space_reflections = "enabled"
+
+[diagnostics]
+shader_identity = true
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [2091.2, 1040.1, 5005.0]
+yaw_deg = 270.0
+
+[motion]
+period_frames = 120
+phase = 15
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
+
+[[single_pass_variants]]
+name = "repeat"
+
+[[single_pass_variants]]
+name = "vglobals-on"
+switches = { vertex_globals_per_eye = true }
+
+[[single_pass_variants]]
+name = "clouds-off"
+switches = { clouds_per_eye = false }

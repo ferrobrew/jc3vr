@@ -153,6 +153,21 @@ pub struct SinglePassConfig {
     /// their indexed draws are promoted like any patched draw), and the proxy draw is promoted to two
     /// instances routed to the eye halves. The reprojection needs a shader reload. On by default.
     pub water_plane_per_eye: bool,
+    /// Draw the cloud layers from each eye under the double-wide collapse. The cloud vertex shaders
+    /// (`clouds`, `cirrusclouds`, `cloudflythrough`, `softclouds`) take their clip position from the
+    /// full view-projection, which the `cb0` remap does not make per eye, so both eye halves drew the
+    /// clouds through the centred render camera, which carries eye 0's projection and no display
+    /// cant: invisible with symmetric parallel eyes, but displaced in eye 1 under asymmetric frusta and
+    /// in both eyes under canted ones. They take the `M_eye` reprojection instead. Needs a shader
+    /// reload. On by default.
+    pub clouds_per_eye: bool,
+    /// Draw the stars (`RP_STARS`) once for both eyes under the double-wide collapse. The stars are
+    /// one non-indexed draw, so the draw path treated it as a fullscreen triangle and drew it once
+    /// across the whole double-wide target through the centred camera, stretched over both halves.
+    /// The `starsshader` vertex shader takes the `M_eye` reprojection and the draw is promoted to two
+    /// instances routed to the eye halves, with the stars' far-plane depth kept as the moon's is. The
+    /// reprojection needs a shader reload. On by default.
+    pub stars_per_eye: bool,
     /// Single-pass the tree-trunk/branch render block (`CRenderBlockBark`, "VegetationBark"). Its vertex
     /// shader reads a CPU-baked world-view-projection from `cb1` (not `cb0`) and draws via one of three
     /// kinds (plain, CPU-instanced, or GPU-indirect), so it can't ride the reprojection rewrite; instead
@@ -215,6 +230,19 @@ pub struct SinglePassConfig {
     /// `DrawIndexed` re-issue, the geometry is then present and correctly sized in both eyes but has no
     /// parallax. Requires the collapse. On by default: it fixes a confirmed visible artifact.
     pub indirect_per_eye: bool,
+    /// Give an unpatched draw the collapse re-issues once per eye (the `DrawIndexed` and GPU-indirect
+    /// re-issues, and the non-indexed geometry re-issue) that eye's copy of the vertex
+    /// `GlobalConstants`: its full and offset view-projections, camera position and axis, and render
+    /// camera position, as an eye-sized render of that eye stages them. Without it such a draw reads
+    /// the centred render camera, which carries eye 0's projection and no display cant, so whatever it
+    /// places from those rows has no parallax and, under asymmetric frusta or canted displays, lands
+    /// in the wrong place within an eye's own image. Skipped for draws whose shaders read `cb13` pinned
+    /// to the eye. Applies at once. Off by default: at night in the capital (run 292) it moved a few
+    /// re-issued draws away from the isolated eyes (13 and 20 pixels per eye against none with it
+    /// off), and no scene measured has shown a family it corrects, so a shader that pairs a baked
+    /// centred transform with the camera rows is the likely casualty and the binding is not safe as
+    /// a blanket treatment.
+    pub vertex_globals_per_eye: bool,
     /// Run the deferred clustered-lighting resolve once per eye under the collapse, each run masked to
     /// that eye's half of the double-wide target and reconstructing with that eye's own basis.
     ///
@@ -779,6 +807,8 @@ impl SinglePassConfig {
             static_lights_per_eye: true,
             moon_per_eye: true,
             water_plane_per_eye: true,
+            clouds_per_eye: true,
+            stars_per_eye: true,
             bark: true,
             foliage: true,
             occluder: false,
@@ -786,6 +816,7 @@ impl SinglePassConfig {
             hw_instanced_once: true,
             vegetation_once: true,
             indirect_per_eye: true,
+            vertex_globals_per_eye: false,
             reconstruct_per_eye: true,
             fullscreen_camera_per_eye: true,
             pixel_camera_per_eye: true,

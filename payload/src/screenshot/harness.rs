@@ -2204,6 +2204,7 @@ mod tests {
             pose: None,
             environment: None,
             exposure: None,
+            headset: None,
             motion: Some(MotionMetadata {
                 request,
                 phase,

@@ -1,6 +1,10 @@
 //! One-frame geometry and post-chain captures for the screenshot harness.
 
-use std::{ffi::c_void, path::PathBuf};
+use std::{
+    ffi::c_void,
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 mod lake_samples;
 pub(crate) mod proxy;
@@ -556,6 +560,9 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
     if !wants_eyes() || !crate::testing::visual::ready() {
         return;
     }
+    if GEOMETRY_ONLY.load(Ordering::Relaxed) && !GEOMETRY_STAGES.contains(&stage) {
+        return;
+    }
     let Some(frame) = crate::vr::capture_views().map(|v| v.predicted_display_time_ns) else {
         return;
     };
@@ -596,6 +603,23 @@ fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>)
     }
     state.records.push(record);
 }
+
+/// Restrict the stages every capture writes to [`GEOMETRY_STAGES`], for a configuration that asks
+/// for light captures (a large eye size makes every stage image tens of megabytes).
+pub(crate) fn set_geometry_only(only: bool) {
+    GEOMETRY_ONLY.store(only, Ordering::Relaxed);
+}
+
+/// Whether [`set_geometry_only`] is in force.
+static GEOMETRY_ONLY: AtomicBool = AtomicBool::new(false);
+
+/// The stages a geometry-only capture writes.
+const GEOMETRY_STAGES: [Stage; 4] = [
+    Stage::GeometryDepth,
+    Stage::GBuffer0,
+    Stage::GBuffer1,
+    Stage::Velocity,
+];
 
 pub(crate) fn record_camera_submission(eye: usize, secondary: bool) {
     if let Some(frame) = crate::vr::capture_views().map(|v| v.predicted_display_time_ns) {

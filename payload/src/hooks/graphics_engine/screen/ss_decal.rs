@@ -300,7 +300,19 @@ fn eye_bases(view: &Matrix4) -> Option<[[f32; 16]; 2]> {
     let params = [render_params(0)?, render_params(1)?];
     // `m_ProjectionF` carries the reverse-Z remap `SetupRenderCamera` applies, so the per-eye stand-in
     // for it is the reverse-Z off-axis matrix, not the standard-depth one.
-    Some(params.map(|p| reconstruction_basis(view, &p.projection_reverse_z)))
+    Some(params.map(|p| {
+        reconstruction_basis(
+            &eye_view(view, p.orientation_delta),
+            &p.projection_reverse_z,
+        )
+    }))
+}
+
+/// `eye`'s camera-relative view from the centred render camera's: the collapse keeps the render camera
+/// centred, and an eye is turned from it by `orientation_delta` (the display cant), so the eye's view
+/// is the centred view followed by the inverse of that turn. The identity turn on parallel panels.
+fn eye_view(view: &Matrix4, orientation_delta: glam::Quat) -> Matrix4 {
+    Matrix4::from(Mat4::from_quat(orientation_delta.inverse()) * Mat4::from(*view))
 }
 
 /// The basis the block type's `Setup` composes: `UV_TO_NDC · inverse(view · projection)`, in the
@@ -361,6 +373,25 @@ mod tests {
                 * Mat4::from_rotation_x(-0.2)
                 * Mat4::from_translation(glam::Vec3::new(120.0, -30.0, 4000.0)),
         )
+    }
+
+    /// A canted eye's view is the inverse of the eye's own camera rotation, the centred camera's
+    /// followed by the cant, which is what the eye's render camera holds when it is drawn on its own.
+    #[test]
+    fn a_canted_eye_view_is_the_inverse_of_its_camera() {
+        let centred = rotation_only(&view());
+        let cant = glam::Quat::from_rotation_y(5.0_f32.to_radians());
+        let eye_camera = Mat4::from(centred).inverse() * Mat4::from_quat(cant);
+        let expected = eye_camera.inverse();
+        let actual = Mat4::from(eye_view(&centred, cant));
+        assert!(
+            actual.abs_diff_eq(expected, 1e-5),
+            "{actual:?} vs {expected:?}"
+        );
+        assert!(
+            Mat4::from(eye_view(&centred, glam::Quat::IDENTITY))
+                .abs_diff_eq(Mat4::from(centred), 1e-6)
+        );
     }
 
     /// The basis must be the exact inverse of the pipeline that produced the pixel: project a

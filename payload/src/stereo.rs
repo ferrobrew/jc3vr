@@ -83,13 +83,16 @@ impl StereoState {
 /// velocity-decode pass uses these snapshots to re-anchor each vector at the eye's own previous pose
 /// (`fsr::velocity_decode`).
 pub struct VpHistory {
-    /// The previous frame's center (un-offset) view-projection -- the matrix the engine's
-    /// velocity pass reprojects with.
-    pub prev_center: Option<glam::Mat4>,
+    /// The previous frame's center (un-offset) view-projection per eye -- the matrix the engine's
+    /// velocity pass reprojects with. Per eye because the snapshot carries the projection of the
+    /// dispatch it was taken in, and the eyes' projections differ on a headset with asymmetric
+    /// frusta.
+    pub prev_center: [Option<glam::Mat4>; 2],
     /// The previous frame's final per-eye view-projections (eye offset applied).
     pub prev_eye: [Option<glam::Mat4>; 2],
-    /// This frame's center view-projection, snapshotted before the per-eye patches.
-    pub cur_center: Option<glam::Mat4>,
+    /// This frame's center view-projection per eye, snapshotted before the per-eye patches in that
+    /// eye's dispatch.
+    pub cur_center: [Option<glam::Mat4>; 2],
     /// This frame's final per-eye view-projections (the matrices each dispatch rasterizes with).
     pub cur_eye: [Option<glam::Mat4>; 2],
     /// This frame's final per-eye view matrices (eye offset applied). Used by CPU-side
@@ -102,9 +105,9 @@ pub struct VpHistory {
 impl VpHistory {
     const fn new() -> Self {
         Self {
-            prev_center: None,
+            prev_center: [None, None],
             prev_eye: [None, None],
-            cur_center: None,
+            cur_center: [None, None],
             cur_eye: [None, None],
             cur_eye_view: [None, None],
             cur_eye_projection_f: [None, None],
@@ -114,7 +117,7 @@ impl VpHistory {
     /// Advance the history one real frame: this frame's snapshots become the previous frame's.
     /// Called at the start of the eye-0 render-camera rebuild.
     pub fn rotate(&mut self) {
-        self.prev_center = self.cur_center.take();
+        self.prev_center = [self.cur_center[0].take(), self.cur_center[1].take()];
         self.prev_eye = [self.cur_eye[0].take(), self.cur_eye[1].take()];
         self.cur_eye_view = [None, None];
         self.cur_eye_projection_f = [None, None];
@@ -127,7 +130,7 @@ impl VpHistory {
     /// higher-than-`f32` precision.
     pub fn reprojection_matrices(&self, eye: usize) -> Option<(Matrix4, Matrix4)> {
         let cur = (*self.cur_eye.get(eye)?)?;
-        let prev_center = self.prev_center?;
+        let prev_center = (*self.prev_center.get(eye)?)?;
         let prev_eye = (*self.prev_eye.get(eye)?)?;
         let inv_cur = cur.as_dmat4().inverse();
         let center_reproj = (prev_center.as_dmat4() * inv_cur).as_mat4();
@@ -218,4 +221,36 @@ pub fn per_eye_render_size() -> Option<(u32, u32)> {
         width
     };
     Some((width, height))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each eye's correction reprojects through that eye's own previous centre snapshot: with
+    /// asymmetric frusta the two dispatches' centre view-projections carry different projections,
+    /// and the later dispatch's must not stand in for the earlier one's.
+    #[test]
+    fn each_eye_reprojects_through_its_own_centre_snapshot() {
+        let left = glam::Mat4::from_cols_array(&[
+            1.1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -0.08, 0.0, 0.0, -1.0, 0.0, 0.0, 0.02, 0.0,
+        ]);
+        let right = glam::Mat4::from_cols_array(&[
+            1.1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.08, 0.0, 0.0, -1.0, 0.0, 0.0, 0.02, 0.0,
+        ]);
+        let mut history = VpHistory::new();
+        for _ in 0..2 {
+            history.rotate();
+            history.cur_center = [Some(left), Some(right)];
+            history.cur_eye = [Some(left), Some(right)];
+        }
+        for eye in 0..2 {
+            let (center, own) = history.reprojection_matrices(eye).unwrap();
+            assert!(
+                glam::Mat4::from(center).abs_diff_eq(glam::Mat4::IDENTITY, 1e-5),
+                "eye {eye}: the centre reprojection of a still camera is the identity"
+            );
+            assert!(glam::Mat4::from(own).abs_diff_eq(glam::Mat4::IDENTITY, 1e-5));
+        }
+    }
 }

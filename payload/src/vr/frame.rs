@@ -19,6 +19,7 @@ use crate::{
         origin_provenance::{OriginEvidence, OriginUnavailable, TrackingReceipt},
     },
     grapple, headpose,
+    testing::visual::headset::{self, HeadsetRig},
     vr::{
         EyeView, Fov, FrameContext, FreezeMode, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
@@ -70,7 +71,16 @@ static RENDER_PARAMS: Mutex<Option<[EyeRenderParams; 2]>> = Mutex::new(None);
 /// The per-eye render parameters captured on the first frame of a [`FreezeMode::FullCamera`] freeze
 /// and reused until it ends, so the eyes hold still around the pinned camera. `None` whenever that
 /// mode is not engaged.
-static FROZEN_EYE_PARAMS: Mutex<Option<[EyeRenderParams; 2]>> = Mutex::new(None);
+static FROZEN_EYE_PARAMS: Mutex<Option<FrozenEyeParams>> = Mutex::new(None);
+
+/// The per-eye render parameters a full-camera freeze holds, with the visual harness's headset rig
+/// they were captured under: a configuration that substitutes another rig recaptures them, since
+/// the rig is what the parameters were derived from.
+#[derive(Copy, Clone)]
+struct FrozenEyeParams {
+    rig: Option<HeadsetRig>,
+    params: [EyeRenderParams; 2],
+}
 
 /// The standard-depth, symmetric, union-FOV projection that bounds *both* eyes' off-axis frusta, for
 /// widening the scene cull frustum (see [`cull_projection_standard`]). `None` when no VR frame is
@@ -371,20 +381,32 @@ fn render_frame(
     // headset's coverage.
     let max_half = 85f32.to_radians();
     let widen = |t: f32| expand(t).atan().clamp(-max_half, max_half);
+    // Each eye's extent is taken in the centre head frame, so a canted eye's outer side, which
+    // reaches past its own half-angles there, stays inside both frusta.
+    let union = union_tangents(
+        head_frame_tangents(
+            eye0.fov,
+            center_orientation.inverse() * quat(eye0.pose.orientation),
+        ),
+        head_frame_tangents(
+            eye1.fov,
+            center_orientation.inverse() * quat(eye1.pose.orientation),
+        ),
+    );
     let union_fov = Fov {
-        left: widen(eye0.fov.angle_left.tan().min(eye1.fov.angle_left.tan())),
-        right: widen(eye0.fov.angle_right.tan().max(eye1.fov.angle_right.tan())),
-        up: widen(eye0.fov.angle_up.tan().max(eye1.fov.angle_up.tan())),
-        down: widen(eye0.fov.angle_down.tan().min(eye1.fov.angle_down.tan())),
+        left: widen(union[0]),
+        right: widen(union[1]),
+        up: widen(union[2]),
+        down: widen(union[3]),
     };
     *CULL_PROJECTION.lock() =
         Some(OffAxisProjection::new(union_fov, near_clip, far_clip).standard_depth);
     let exact = |t: f32| (t + margin.copysign(t)).atan().clamp(-max_half, max_half);
     let exact_fov = Fov {
-        left: exact(eye0.fov.angle_left.tan().min(eye1.fov.angle_left.tan())),
-        right: exact(eye0.fov.angle_right.tan().max(eye1.fov.angle_right.tan())),
-        up: exact(eye0.fov.angle_up.tan().max(eye1.fov.angle_up.tan())),
-        down: exact(eye0.fov.angle_down.tan().min(eye1.fov.angle_down.tan())),
+        left: exact(union[0]),
+        right: exact(union[1]),
+        up: exact(union[2]),
+        down: exact(union[3]),
     };
     let fit_fov = {
         let mut held = SHADOW_FIT_FOV.lock();
@@ -437,7 +459,15 @@ fn render_frame(
     let params = {
         let mut frozen_params = FROZEN_EYE_PARAMS.lock();
         if cfg.freeze_mode == FreezeMode::FullCamera {
-            *frozen_params.get_or_insert([eye0_params, eye1_params])
+            let rig = headset::active().map(|geometry| geometry.rig);
+            match *frozen_params {
+                Some(frozen) if frozen.rig == rig => frozen.params,
+                _ => {
+                    let params = [eye0_params, eye1_params];
+                    *frozen_params = Some(FrozenEyeParams { rig, params });
+                    params
+                }
+            }
         } else {
             *frozen_params = None;
             [eye0_params, eye1_params]
@@ -500,6 +530,46 @@ fn symmetric_projection(fov: openxr::Fovf, near: f32, far: f32) -> OffAxisProjec
     )
 }
 
+/// The tangent extents `[left, right, up, down]` of an eye's frustum in the centre head frame: the
+/// frustum's corner rays turned by the eye's orientation relative to the head (`orientation_delta`)
+/// and projected onto the head's unit-depth plane. A frustum is a convex cone, so its projection is
+/// the quadrilateral of its projected corners, and their bounds bound it. For a parallel eye these
+/// are the eye's own tangents; a canted eye reaches further on its outer side.
+fn head_frame_tangents(fov: openxr::Fovf, orientation_delta: Quat) -> [f32; 4] {
+    let (tl, tr) = (fov.angle_left.tan(), fov.angle_right.tan());
+    let (tu, td) = (fov.angle_up.tan(), fov.angle_down.tan());
+    let mut bounds = [
+        f32::INFINITY,
+        f32::NEG_INFINITY,
+        f32::NEG_INFINITY,
+        f32::INFINITY,
+    ];
+    for (x, y) in [(tl, tu), (tr, tu), (tl, td), (tr, td)] {
+        let ray = orientation_delta * Vec3::new(x, y, -1.0);
+        // A corner turned to or past the head's side plane has no finite tangent there; the
+        // widening below clamps the bound short of a right angle in any case.
+        let depth = (-ray.z).max(1e-3);
+        let (x, y) = (ray.x / depth, ray.y / depth);
+        bounds = [
+            bounds[0].min(x),
+            bounds[1].max(x),
+            bounds[2].max(y),
+            bounds[3].min(y),
+        ];
+    }
+    bounds
+}
+
+/// The tangent extents bounding two eyes' [`head_frame_tangents`].
+fn union_tangents(a: [f32; 4], b: [f32; 4]) -> [f32; 4] {
+    [
+        a[0].min(b[0]),
+        a[1].max(b[1]),
+        a[2].max(b[2]),
+        a[3].min(b[3]),
+    ]
+}
+
 /// The relative change in any side's tangent that releases [`hold_fit_fov`]'s hold. Far above the
 /// float noise of a tracked eye separation, and far below the step of an IPD adjustment.
 const FIT_FOV_HOLD_TOLERANCE: f32 = 1e-3;
@@ -539,6 +609,54 @@ mod tests {
             up: (2.4 * scale).atan(),
             down: (-2.4 * scale).atan(),
         }
+    }
+
+    fn xr_fov(left: f32, right: f32, up: f32, down: f32) -> openxr::Fovf {
+        openxr::Fovf {
+            angle_left: left.to_radians(),
+            angle_right: right.to_radians(),
+            angle_up: up.to_radians(),
+            angle_down: down.to_radians(),
+        }
+    }
+
+    #[test]
+    fn a_parallel_eye_keeps_its_own_tangents_in_the_head_frame() {
+        let fov = xr_fov(-54.0, 51.0, 55.8, -55.8);
+        let [l, r, u, d] = head_frame_tangents(fov, Quat::IDENTITY);
+        assert_eq!(
+            [l, r, u, d],
+            [
+                fov.angle_left.tan(),
+                fov.angle_right.tan(),
+                fov.angle_up.tan(),
+                fov.angle_down.tan()
+            ]
+        );
+    }
+
+    /// A left eye canted outward by five degrees reaches five degrees further left in the head frame
+    /// and five degrees less far right, and its outer corners rise above its own vertical extent.
+    #[test]
+    fn a_canted_eye_reaches_further_on_its_outer_side() {
+        let fov = xr_fov(-54.0, 51.0, 45.0, -45.0);
+        let cant = Quat::from_rotation_y(5f32.to_radians());
+        let [l, r, u, d] = head_frame_tangents(fov, cant);
+        assert!(
+            (l.atan().to_degrees() + 59.0).abs() < 1e-3,
+            "{}",
+            l.atan().to_degrees()
+        );
+        assert!((r.atan().to_degrees() - 46.0).abs() < 1e-3);
+        assert!(
+            u > 1.0 && d < -1.0,
+            "the outer corners are nearer the head's side plane"
+        );
+        assert!((u + d).abs() < 1e-5);
+        let mirrored = head_frame_tangents(xr_fov(-51.0, 54.0, 45.0, -45.0), cant.inverse());
+        let [ul, ur, ..] = union_tangents([l, r, u, d], mirrored);
+        assert!((ul + ur).abs() < 1e-5);
+        assert!((ur.atan().to_degrees() - 59.0).abs() < 1e-3);
     }
 
     #[test]

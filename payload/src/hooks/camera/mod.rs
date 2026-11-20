@@ -182,8 +182,11 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
             crate::debug::coord_frame::record_render_camera_frame(camera);
         }
 
-        STEREO_STATE.lock().vp_history.cur_center =
-            Some(glam::Mat4::from(camera.m_ViewProjectionF));
+        {
+            let mut stereo = STEREO_STATE.lock();
+            let index = stereo.draw_index;
+            stereo.vp_history.cur_center[index] = Some(glam::Mat4::from(camera.m_ViewProjectionF));
+        }
 
         // Snapshot the un-offset world transform for the HUD panel pose (see `StereoState::center_transform`).
         STEREO_STATE.lock().center_transform = Some(camera.m_TransformF);

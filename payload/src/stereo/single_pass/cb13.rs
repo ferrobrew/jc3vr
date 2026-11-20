@@ -46,6 +46,9 @@ const _: () = {
 /// camera world position (`cb0[4]`). See `dxbc_stereo::PER_EYE_CB0_ROWS`.
 const PER_EYE_SOURCE_ROWS: [usize; 5] = [29, 30, 31, 32, 4];
 
+/// How many rows each eye's slot of the remap block holds.
+pub(super) const PER_EYE_ROW_COUNT: usize = PER_EYE_SOURCE_ROWS.len();
+
 /// Mirror the current view's per-eye `cb0` rows into the mod-owned `cb13` and bind it at `b13`.
 ///
 /// Outside the diverging case both eye slots get the **same** (current-view) rows, so a patched
@@ -64,11 +67,10 @@ pub fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
     // view-projections so the eyes diverge. Everywhere else (the shadow and reflection passes, and
     // whenever divergence is off) mirror the current view into both slots -- diverging those would be
     // wrong, since they render from the sun or reflection camera, not the eye camera.
-    let rows = if dual_eye_active() && in_gbuffer_range() {
-        compute_dual_eye_rows(engine).unwrap_or_else(|| mirror_rows(engine))
-    } else {
-        mirror_rows(engine)
-    };
+    let dual = (dual_eye_active() && in_gbuffer_range())
+        .then(|| compute_dual_eye_rows(engine))
+        .flatten();
+    let rows = dual.unwrap_or_else(|| mirror_rows(engine));
 
     // SAFETY: `GraphicsEngine::get` returns the live singleton or `None`; the device/context pointers
     // are stable once the engine has initialised, and the ops run under the engine's context mutex.
@@ -86,6 +88,14 @@ pub fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
         let result = CB13
             .lock()
             .upload_and_bind(&device.m_Device, &context.m_Context, &rows);
+        // The unpatched per-eye re-issues read each eye's copy of the vertex globals, which only a
+        // dual-eye upload can derive; any other upload leaves them stale.
+        match dual {
+            Some(rows) => {
+                eye_vertex_globals::sync(engine, &rows, &device.m_Device, &context.m_Context)
+            }
+            None => eye_vertex_globals::invalidate(),
+        }
         LeaveCriticalSection(context.m_Mutex);
         if let Err(e) = result {
             tracing::warn!("single-pass cb13: {e}");

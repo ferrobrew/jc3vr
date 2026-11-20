@@ -14,6 +14,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 
 pub(crate) mod environment;
+pub(crate) mod headset;
 pub(crate) mod motion;
 pub(crate) mod overrides;
 pub(crate) mod pose;
@@ -78,6 +79,9 @@ pub(crate) struct VisualMetadata {
     /// checked for one shared exposure.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub exposure: Option<f32>,
+    /// The headset-like rig substituted for the located views, when a configuration names one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headset: Option<headset::HeadsetGeometry>,
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
@@ -331,6 +335,10 @@ pub(crate) fn process_pending() {
             state.shadow_sync_required |= sun_shadows_overridden(visual_overrides.as_ref())
                 || crate::hooks::game::sun_shadow_override_active();
             state.visual_overrides = visual_overrides;
+            headset::set_active(visual_overrides.and_then(|overrides| overrides.headset));
+            crate::screenshot::harness::stages::set_geometry_only(
+                visual_overrides.is_some_and(|overrides| overrides.stages.is_some()),
+            );
             CLOCK_HELD.store(true, Ordering::Release);
             unsafe {
                 if let Some(clock) = Clock::get() {
@@ -378,6 +386,8 @@ pub(crate) fn process_pending() {
             }
             state.mode = None;
             state.visual_overrides = None;
+            headset::set_active(None);
+            crate::screenshot::harness::stages::set_geometry_only(false);
             state.clear_pose();
             CLOCK_HELD.store(false, Ordering::Release);
             dispatch::set_mode(RenderMode::Native);
@@ -505,6 +515,8 @@ pub(crate) fn clock_held() -> bool {
 
 pub(crate) fn shutdown() {
     single_pass::shader_identity::disarm();
+    headset::set_active(None);
+    crate::screenshot::harness::stages::set_geometry_only(false);
     CLOCK_HELD.store(false, Ordering::Release);
     let mut state = STATE.lock();
     while let Some(request) = state.pending.pop_front() {
@@ -646,6 +658,7 @@ impl State {
                 .as_ref()
                 .and_then(EnvironmentControl::observed),
             exposure: tone_mapping::applied_exposure(),
+            headset: headset::active(),
         }
     }
 

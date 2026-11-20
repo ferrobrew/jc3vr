@@ -59,7 +59,7 @@ use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
     stereo::{engine_context::EngineContext, single_pass::eye_globals},
-    vr::render_params,
+    vr::{EyeRenderParams, render_params},
 };
 
 mod scissor;
@@ -471,13 +471,13 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
         Some(state) if applies && arm_eye_half_scissor(&state) => Some(state.eye),
         _ => None,
     };
-    let result = applies
-        .then(|| params.map(|vr| glam::Mat4::from(vr.projection_reverse_z).inverse()))
-        .flatten()
-        .map(|inverse| match masked_eye {
-            Some(eye) => Matrix4::from(inverse * half_target_remap(eye)),
+    let result = applies.then_some(params).flatten().map(|vr| {
+        let inverse = glam::Mat4::from(vr.projection_reverse_z).inverse();
+        match masked_eye {
+            Some(eye) => Matrix4::from(eye_half_inverse(&vr, inverse, eye)),
             None => Matrix4::from(inverse),
-        });
+        }
+    });
 
     // Record the reconstruction's live inputs so the trace can show whether the matrix (and hence the
     // reconstructed positions the sun shadow samples over) wobbles frame to frame. Only for VR-eye
@@ -566,6 +566,17 @@ thread_local! {
     /// reason [`PER_EYE`] is, and separate from it because the gate must also cover the one run that
     /// draws with the mask down.
     static DISPATCH_GATE: Cell<Option<DispatchGate>> = const { Cell::new(None) };
+}
+
+/// The clip→view inverse a masked half of a split pass reconstructs `eye` through: the remap onto the
+/// eye's half, the eye's own projection inverse, and then the eye's turn from the centred render
+/// camera (`vr.orientation_delta`, the display cant), which takes the eye's view space into the
+/// centred camera's. A split pass runs only under the collapse, where the render camera stays centred
+/// and the pass multiplies by the centred camera's transform, so without the turn a canted eye's
+/// reconstructed positions would be turned by its cant about the camera. On parallel panels the turn
+/// is the identity.
+fn eye_half_inverse(vr: &EyeRenderParams, inverse: glam::Mat4, eye: usize) -> glam::Mat4 {
+    glam::Mat4::from_quat(vr.orientation_delta) * inverse * half_target_remap(eye)
 }
 
 /// The full-target-NDC → eye-NDC remap for `eye`'s half of the double-wide collapse target.
@@ -827,6 +838,47 @@ mod tests {
                 assert!(
                     (reconstructed - point).length() <= 1e-3 * point.length(),
                     "eye {eye}: reconstructed {reconstructed:?}, not {point:?}",
+                );
+            }
+        }
+    }
+
+    /// For a canted eye, reconstructing a point of its half through the centred camera's transform
+    /// and the half's inverse must land where the eye's own camera puts it: the turn folded into the
+    /// inverse is what makes the centred transform right for the eye.
+    #[test]
+    fn a_canted_eye_half_reconstructs_through_the_centred_camera() {
+        let fov = Fov {
+            left: -54.0_f32.to_radians(),
+            right: 51.0_f32.to_radians(),
+            up: 55.8_f32.to_radians(),
+            down: -55.8_f32.to_radians(),
+        };
+        let projection =
+            OffAxisProjection::new(fov, Camera::DEFAULT_NEAR_PLANE, Camera::DEFAULT_FAR_PLANE);
+        let center = glam::Mat4::from_rotation_translation(
+            glam::Quat::from_rotation_y(0.9) * glam::Quat::from_rotation_x(-0.2),
+            glam::Vec3::new(100.0, 20.0, -40.0),
+        );
+        for (eye, cant) in [(0usize, 5.0_f32), (1, -5.0)] {
+            let vr = EyeRenderParams {
+                projection_standard: projection.standard_depth,
+                projection_reverse_z: projection.reverse_z,
+                local_offset: glam::Vec3::ZERO,
+                orientation_delta: glam::Quat::from_rotation_y(cant.to_radians()),
+                convention: crate::vr::ProjectionConvention::EnginePreReverseZ,
+            };
+            let inverse = glam::Mat4::from(vr.projection_reverse_z).inverse();
+            let through_half = center * eye_half_inverse(&vr, inverse, eye);
+            let own = vr.resolve(center) * inverse;
+            for (x_eye, y) in [(-0.8, 0.3), (0.0, 0.0), (0.9, -0.6)] {
+                let x_full = (x_eye - 1.0 + 2.0 * eye as f32) / 2.0;
+                let a = through_half * glam::Vec4::new(x_full, y, 0.5, 1.0);
+                let b = own * glam::Vec4::new(x_eye, y, 0.5, 1.0);
+                let (a, b) = (a.truncate() / a.w, b.truncate() / b.w);
+                assert!(
+                    (a - b).length() <= 1e-4 * b.length(),
+                    "eye {eye}: {a:?} vs {b:?}"
                 );
             }
         }

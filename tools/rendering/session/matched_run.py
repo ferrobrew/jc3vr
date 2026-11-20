@@ -19,8 +19,20 @@ ROOT = Path(__file__).resolve().parents[3]
 CLI = [sys.executable, '-m', 'tools.rendering']
 
 
-def session_args(number, gpu):
-    return CLI + ['session', '--no-build', '--gpu', gpu, '--output', str(BASE / f'persistent-{number}')]
+def session_args(number, gpu, extra=()):
+    """The session command line; `extra` carries the eye-size options of a session launched at
+    another size than the harness's default one."""
+    return CLI + ['session', '--no-build', '--gpu', gpu, '--output', str(BASE / f'persistent-{number}'),
+                  *extra]
+
+
+def recorded_session_args(number, gpu):
+    """The arguments session `number` was launched with, from its launch request when it recorded
+    one (a session launched at another eye size carries its scale), else the default ones."""
+    request = BASE / f'diagnostics-{number}/launch-request.json'
+    if request.is_file():
+        return json.loads(request.read_text())['session']
+    return session_args(number, gpu)
 
 
 def stop_prior(number, gpu, output):
@@ -30,7 +42,7 @@ def stop_prior(number, gpu, output):
         proc = Path('/proc') / str(pid)
         argv = os.fsdecode((proc / 'cmdline').read_bytes()).removesuffix('\0').split('\0')
         cwd = (proc / 'cwd').resolve(strict=True)
-        if cwd != ROOT or argv != session_args(number, gpu):
+        if cwd != ROOT or argv != recorded_session_args(number, gpu):
             raise RuntimeError(f'controller: PID {pid} does not match the previous session')
         with (output / 'prior-controller.json').open('x') as stream:
             json.dump(dict(pid=pid, args=argv, cwd=str(cwd)), stream)
@@ -50,7 +62,7 @@ def command(output, name, args):
     return result.returncode
 
 
-def run(number, config, gpu, prior, unmatched=False):
+def run(number, config, gpu, prior, unmatched=False, extra=()):
     output = BASE / f'diagnostics-{number}'
     session = BASE / f'persistent-{number}'
     if Path.cwd() != ROOT or session.exists() or (output / 'paired').exists():
@@ -63,11 +75,11 @@ def run(number, config, gpu, prior, unmatched=False):
     if shutil.disk_usage(BASE).free <= 16 * 2**30:
         raise RuntimeError('matched run: less than 16 GiB of capture space available')
     with (output / 'launch-request.json').open('x') as stream:
-        json.dump(dict(config=str(config), prior=prior, session=session_args(number, gpu)), stream)
+        json.dump(dict(config=str(config), prior=prior, session=session_args(number, gpu, extra)), stream)
     if prior is not None:
         stop_prior(prior, gpu, output)
     with (output / 'controller.log').open('xb') as log:
-        child = subprocess.Popen(session_args(number, gpu), stdin=subprocess.DEVNULL, stdout=log,
+        child = subprocess.Popen(session_args(number, gpu, extra), stdin=subprocess.DEVNULL, stdout=log,
                                  stderr=subprocess.STDOUT, start_new_session=True)
     (output / 'controller.pid').write_text(f'{child.pid}\n')
     deadline = time.monotonic() + 150
@@ -102,5 +114,9 @@ if __name__ == '__main__':
     controller.add_argument('--fresh', action='store_true')
     parser.add_argument('--unmatched', action='store_true',
                         help='accept a configuration without a matched treatment')
+    parser.add_argument('--resolution-scale', help='passed to the session (see its --help)')
+    parser.add_argument('--eye-size', help='passed to the session (see its --help)')
     args = parser.parse_args()
-    sys.exit(run(args.number, args.config, args.gpu, args.prior, args.unmatched))
+    extra = [item for name, value in (('--resolution-scale', args.resolution_scale), ('--eye-size', args.eye_size))
+             if value is not None for item in (name, value)]
+    sys.exit(run(args.number, args.config, args.gpu, args.prior, args.unmatched, extra))

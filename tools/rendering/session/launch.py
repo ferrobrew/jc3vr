@@ -492,9 +492,11 @@ class RenderingSession(RequestChannel):
             raise SessionError("session: another private runner holds the launch lock") from error
 
     def _seed_settings(self):
+        eye_size = self.options.eye_size
+        override = "" if eye_size is None else f"recommended_size_override = [{eye_size[0]}, {eye_size[1]}]\n"
         (self.config_dir / "settings.toml").write_text(
-            "version = 1\n[vr]\nmirror = false\nresolution_scale = 0.5\n"
-            "[controllers]\nenabled = false\n[foveation]\nenabled = false\n"
+            f"version = 1\n[vr]\nmirror = false\nresolution_scale = {self.options.resolution_scale!r}\n"
+            f"{override}[controllers]\nenabled = false\n[foveation]\nenabled = false\n"
         )
 
     def _base_env(self):

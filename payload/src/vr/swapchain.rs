@@ -40,11 +40,13 @@ impl Swapchain {
             .first()
             .context("vr: the runtime reported no view configuration views")?;
 
-        let (width, height) = scaled_eye_size(
+        // The same size the native-resolution driver renders each eye at, so the blit stays 1:1.
+        let [recommended_width, recommended_height] = cfg.recommended_size_override.unwrap_or([
             view.recommended_image_rect_width,
             view.recommended_image_rect_height,
-            cfg.resolution_scale,
-        );
+        ]);
+        let (width, height) =
+            scaled_eye_size(recommended_width, recommended_height, cfg.resolution_scale);
 
         let formats = session
             .enumerate_swapchain_formats()

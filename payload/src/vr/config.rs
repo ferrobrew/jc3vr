@@ -131,6 +131,12 @@ pub struct VrConfig {
     /// is the runtime's recommendation; lower trades sharpness for fill rate. Clamped to a small
     /// positive minimum at swapchain creation.
     pub resolution_scale: f32,
+    /// A per-eye size, `[width, height]`, to use in place of the runtime's recommended one before
+    /// [`resolution_scale`](VrConfig::resolution_scale) applies. For running against a runtime whose
+    /// recommended size is not the headset's being studied (the visual harness's simulated headset);
+    /// `None`, the default, takes the runtime's.
+    #[serde(default)]
+    pub recommended_size_override: Option<[u32; 2]>,
     /// How often, in seconds, to retry OpenXR bring-up after a failure while
     /// [`enabled`](VrConfig::enabled). The mod runs in flatscreen stereo between attempts.
     pub retry_interval_secs: u64,
@@ -243,6 +249,7 @@ impl VrConfig {
         Self {
             enabled: true,
             resolution_scale: 1.0,
+            recommended_size_override: None,
             retry_interval_secs: 10,
             world_scale: 1.0,
             loader_path: None,

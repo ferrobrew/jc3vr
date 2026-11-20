@@ -269,6 +269,29 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
+                if ui
+                    .checkbox(&mut cfg.stereo.single_pass.clouds_per_eye, "Clouds per eye")
+                    .on_hover_text(
+                        "Reprojects the cloud vertex shaders by M_eye. Off, the clouds take their \
+                         clip position from the centred render camera in both eyes, which is \
+                         wrong for asymmetric or canted eyes. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(&mut cfg.stereo.single_pass.stars_per_eye, "Stars per eye")
+                    .on_hover_text(
+                        "Reprojects the stars' vertex shader by M_eye and promotes their \
+                         non-indexed draw to one two-instance draw routed to the eye halves, \
+                         keeping their far-plane depth. Off, the stars are drawn once across the \
+                         whole double-wide target. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
                 ui.label("Render-block re-issue:");
                 if ui
                     .checkbox(
@@ -359,6 +382,16 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      points, so the near tessellating terrain patches and the foliage inherited the \
                      full double-wide viewport and were stretched 2x horizontally -- which reads as \
                      them sliding across the screen at twice the camera's rate.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.vertex_globals_per_eye,
+                    "Per-eye vertex globals for unpatched re-issues",
+                )
+                .on_hover_text(
+                    "Binds each eye's copy of the vertex GlobalConstants (view-projections, camera \
+                     position and axis) around the unpatched draws re-issued once per eye. Off, \
+                     those draws read the centred render camera: no parallax, and misplaced under \
+                     asymmetric or canted eyes. Applies at once.",
                 );
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.reconstruct_per_eye,

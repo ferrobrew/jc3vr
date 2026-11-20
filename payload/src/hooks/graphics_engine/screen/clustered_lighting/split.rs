@@ -9,7 +9,7 @@ use std::{
     sync::atomic::{AtomicBool, Ordering},
 };
 
-use glam::{Mat4, Vec3};
+use glam::{Mat4, Quat, Vec3};
 use jc3gi::{graphics_engine::graphics_engine::RenderContext, types::math::Matrix4};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::D3D11_VIEWPORT;
@@ -84,7 +84,7 @@ pub(crate) fn substitute_assignment_view(
     if state.ctx != ctx {
         return None;
     }
-    let offset = state.light_view_offset?;
+    let light_view = state.light_view?;
     if cb_index != ASSIGNMENT_VIEW_CB
         || start_offset != 0
         || count != MATRIX4_ROWS
@@ -95,18 +95,41 @@ pub(crate) fn substitute_assignment_view(
     let mut rows = [0.0f32; MATRIX4_FLOATS];
     // SAFETY: the caller stages `count` == 4 float4 rows from `data`, i.e. the 16 floats copied here.
     unsafe { std::ptr::copy_nonoverlapping(data, rows.as_mut_ptr(), MATRIX4_FLOATS) };
-    // `RenderContext::m_View` is row-vector row-major (`view = p * M`), and the engine uploads its
-    // rows 0..2 with a `(0, 0, 0, 1)` fourth row, i.e. the rotation with the translation dropped. The
-    // proxy positions the CPU baked are relative to `m_RenderCameraPosition`, which under the collapse
-    // is the centre head pose rather than either eye. Assigning from eye `e` means rotating
-    // `p - offset` instead of `p`, and `(p - offset) * R == p * R - offset * R`, so the correction is
-    // exactly a translation row of `-(offset * R)` -- the row the engine left empty.
+    Some(eye_assignment_view(rows, light_view))
+}
+
+/// The light-assignment view for an eye, from the engine's `rows`.
+///
+/// `RenderContext::m_View` is row-vector row-major (`view = p * M`), and the engine uploads its rows
+/// 0..2 with a `(0, 0, 0, 1)` fourth row, i.e. the rotation with the translation dropped. The proxy
+/// positions the CPU baked are relative to `m_RenderCameraPosition`, which under the collapse is the
+/// centre head pose rather than either eye, and the rotation is the centred camera's. Assigning from
+/// eye `e` means turning by the inverse of the eye's turn from that camera (the display cant) after
+/// the centred rotation, and rotating `p - offset` instead of `p`; with `R` the turned rotation,
+/// `(p - offset) * R == p * R - offset * R`, so the offset is exactly a translation row of
+/// `-(offset * R)` -- the row the engine left empty.
+fn eye_assignment_view(
+    rows: [f32; MATRIX4_FLOATS],
+    light_view: LightView,
+) -> [f32; MATRIX4_FLOATS] {
+    let turned = Mat4::from_quat(light_view.turn.inverse()) * Mat4::from(Matrix4 { data: rows });
+    let mut rows = Matrix4::from(turned).data;
+    let offset = light_view.offset;
     let row = |r: usize, c: usize| rows[r * MATRIX4_COLUMNS + c];
     let translation =
         [0, 1, 2].map(|c| -(offset.x * row(0, c) + offset.y * row(1, c) + offset.z * row(2, c)));
     let translation_row = 3 * MATRIX4_COLUMNS;
     rows[translation_row..translation_row + 3].copy_from_slice(&translation);
-    Some(rows)
+    rows
+}
+
+/// Where an eye assigns its lights from, relative to the collapsed render camera.
+#[derive(Clone, Copy)]
+pub(super) struct LightView {
+    /// The eye's world offset from the collapsed camera.
+    pub(super) offset: Vec3,
+    /// The eye's turn from the collapsed camera, in the camera's local frame.
+    pub(super) turn: Quat,
 }
 
 /// The engine's froxel tile size in pixels: `DrawClustered` derives the grid dimensions as
@@ -128,8 +151,8 @@ pub(super) struct SplitState {
     pub(super) cb0: [f32; MATRIX4_FLOATS],
     /// This eye's per-tile frustum bounds, affine in the absolute tile index, substituted on `cb1`.
     pub(super) cb1: [f32; 8],
-    /// This eye's world offset from the collapsed camera, when the per-eye light view is on.
-    pub(super) light_view_offset: Option<Vec3>,
+    /// Where this eye assigns its lights from, when the per-eye light view is on.
+    pub(super) light_view: Option<LightView>,
     /// Render-setup binds seen so far in this run; the first is the light-assignment target's.
     pub(super) binds: u32,
     /// Whether the assignment viewport is narrowed to this eye's half *right now* -- true only
@@ -318,6 +341,38 @@ static DECLINE_LOGGED: AtomicBool = AtomicBool::new(false);
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The substituted view takes a point given relative to the collapsed camera into the eye's own
+    /// view space: offset to the eye, then the centred rotation, then the inverse of the eye's turn.
+    #[test]
+    fn the_assignment_view_is_the_eyes_own() {
+        let centred = Mat4::from_rotation_y(0.8) * Mat4::from_rotation_x(-0.15);
+        let rows = Matrix4::from(centred).data;
+        let light_view = LightView {
+            offset: Vec3::new(-0.03, 0.001, 0.02),
+            turn: Quat::from_rotation_y(5.0_f32.to_radians()),
+        };
+        let substituted = Mat4::from(Matrix4 {
+            data: eye_assignment_view(rows, light_view),
+        });
+        let point = Vec3::new(4.0, 1.5, -12.0);
+        let expected = Mat4::from_quat(light_view.turn.inverse())
+            * centred
+            * (point - light_view.offset).extend(1.0);
+        let actual = substituted * point.extend(1.0);
+        assert!(
+            actual.abs_diff_eq(expected, 1e-5),
+            "{actual:?} vs {expected:?}"
+        );
+        let parallel = LightView {
+            turn: Quat::IDENTITY,
+            ..light_view
+        };
+        let actual = Mat4::from(Matrix4 {
+            data: eye_assignment_view(rows, parallel),
+        }) * point.extend(1.0);
+        assert!(actual.abs_diff_eq(centred * (point - parallel.offset).extend(1.0), 1e-5));
+    }
 
     /// A grid whose double-wide width is not a multiple of two tiles has no correct split, and must be
     /// refused rather than seamed through a shared partial column.

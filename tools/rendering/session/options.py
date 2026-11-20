@@ -5,6 +5,14 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+# Mirrors the `vr.resolution_scale` clamp in `payload/src/vr/eye_resolution.rs` at the low end; the
+# high end bounds the per-eye size to what a headset's recommended size reaches.
+DEFAULT_RESOLUTION_SCALE = 0.5
+MAX_RESOLUTION_SCALE = 4.0
+# Each side of a seeded per-eye size, at most: a double-wide single-pass target is twice the width.
+MAX_EYE_SIDE = 4096
+
+
 @dataclass
 class Options:
     no_build: bool = False
@@ -28,12 +36,29 @@ class Options:
     samples: int = 3
     warmup_frames: int = 30
     reverse_multipass: bool = False
+    # The `vr.resolution_scale` the session seeds: the runtime's recommended per-eye size times this
+    # is the eye size every capture is taken at. The default gives the 320 by 360 harness eye.
+    resolution_scale: float = DEFAULT_RESOLUTION_SCALE
+    # A per-eye size the session seeds in place of the runtime's recommended one (the simulated
+    # headset's), as `(width, height)`; the scale then applies to it. `None` keeps the runtime's.
+    eye_size: tuple[int, int] | None = None
     single_pass_probe: bool = False
     probe_yaw: float = 0.0
     probe_pitch: float = 0.0
     probe_right: float = 0.0
     probe_up: float = 0.0
     probe_forward: float = 0.0
+
+
+def parse_eye_size(value: str) -> tuple[int, int]:
+    """Parse `WIDTHxHEIGHT` into a per-eye size, each side within [64, MAX_EYE_SIDE]."""
+    try:
+        width, height = (int(side) for side in value.lower().split("x"))
+    except ValueError as error:
+        raise argparse.ArgumentTypeError(f"eye size {value!r}: expected WIDTHxHEIGHT") from error
+    if not (64 <= width <= MAX_EYE_SIDE and 64 <= height <= MAX_EYE_SIDE):
+        raise argparse.ArgumentTypeError(f"eye size {value!r}: each side must be within [64, {MAX_EYE_SIDE}]")
+    return width, height
 
 
 def parse_args(argv=None, keep_alive=False, description=None):
@@ -66,6 +91,10 @@ def parse_args(argv=None, keep_alive=False, description=None):
     parser.add_argument("--probe-forward", type=float, default=0.0,
                         help="probe translation forward, in game world units")
     parser.add_argument("--reverse-multipass", action="store_true")
+    parser.add_argument("--resolution-scale", type=float, default=DEFAULT_RESOLUTION_SCALE,
+                        help="the vr.resolution_scale the session seeds, which sets the per-eye size")
+    parser.add_argument("--eye-size", type=parse_eye_size, metavar="WIDTHxHEIGHT",
+                        help="a per-eye size to seed in place of the runtime's recommended one")
     parser.add_argument("--gpu", help="Vulkan PCI vendor:device, e.g. 10de:2b85")
     parser.add_argument("--xdotool")
     parser.add_argument("--output", type=Path)
@@ -77,6 +106,8 @@ def parse_args(argv=None, keep_alive=False, description=None):
     if args.keep_alive and any((args.suite, args.orientation_sweep, args.motion_sweep,
                                 args.smoke, args.single_pass_probe)):
         parser.error("--keep-alive is mutually exclusive with an execution mode")
+    if not 0.1 <= args.resolution_scale <= MAX_RESOLUTION_SCALE:
+        parser.error(f"--resolution-scale must be within [0.1, {MAX_RESOLUTION_SCALE}]")
     if args.timeout is None:
         args.timeout = (3600 if args.orientation_sweep else 2400 if args.motion_sweep
                         else 600 if args.suite or args.single_pass_probe else 180)

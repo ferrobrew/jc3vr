@@ -104,6 +104,8 @@ fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
                 screen_fade: None,
                 player_damage: None,
                 fsr_mv_correction: None,
+                headset: None,
+                stages: None,
                 single_pass: Default::default(),
             }),
         );
@@ -126,6 +128,8 @@ fn shadows_disabled() -> VisualOverrides {
         screen_fade: None,
         player_damage: None,
         fsr_mv_correction: None,
+        headset: None,
+        stages: None,
         single_pass: Default::default(),
     }
 }

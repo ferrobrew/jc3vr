@@ -50,6 +50,22 @@ const REPROJECT_NAME_PREFIXES: &[&str] = &[
     "dirtroad",
 ];
 
+/// The cloud layers' vertex shaders, gated by the
+/// [`clouds_per_eye`](crate::stereo::config::SinglePassConfig::clouds_per_eye) flag. Each takes its
+/// clip position from the full view-projection (`cb0[0..3]`), which the remap leaves alone, so under
+/// the collapse both eyes drew the clouds through the centred render camera. Matched by exact name,
+/// because the `cloud` name space also holds the cloud-shadow pass. `clouds` and `cirrusclouds` also
+/// read the camera position (`cb0[4]`) for their shading, which claims them for the remap, so they
+/// reach the reprojection through [`should_reproject_camera_only`]; `softclouds` reads no other
+/// per-eye row and reaches it directly.
+const CLOUD_REPROJECT_NAMES: &[&str] = &["clouds", "cirrusclouds", "cloudflythrough", "softclouds"];
+
+/// The stars' vertex shader, gated by the
+/// [`stars_per_eye`](crate::stereo::config::SinglePassConfig::stars_per_eye) flag: a billboard per
+/// star, placed by a baked view-projection at vertex `cb1` with its clip depth pinned to the far
+/// plane, which the promoted draw keeps through the reprojection.
+const STARS_REPROJECT_NAME: &str = "starsshader";
+
 /// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: the
 /// Vertex-shader name prefixes of the far-distance tree impostors (`CTreeImpostorRB`), gated by the
 /// separate [`single_pass_tree_impostors`](crate::stereo::config::StereoConfig::single_pass_tree_impostors)
@@ -89,7 +105,9 @@ const WATER_PLANE_REPROJECT_NAME: &str = "watermask";
 /// `single_pass_tree_impostors` flag is on and the name is on [`VEGETATION_REPROJECT_NAME_PREFIXES`],
 /// the static-light flag is on and the name is on [`STATIC_LIGHT_REPROJECT_NAME_PREFIXES`], or the
 /// ambient-occlusion volume flag is on and the name is [`AO_VOLUME_REPROJECT_NAME`], or the water
-/// plane flag is on and the name is [`WATER_PLANE_REPROJECT_NAME`].
+/// plane flag is on and the name is [`WATER_PLANE_REPROJECT_NAME`], or the cloud flag is on and the
+/// name is one of [`CLOUD_REPROJECT_NAMES`], or the star flag is on and the name is
+/// [`STARS_REPROJECT_NAME`].
 /// Called from the `CreateVertexProgram` hook when `patch_vertex_shader` reports no per-eye `cb0`
 /// operands.
 pub fn should_reproject(name: Option<&str>) -> bool {
@@ -108,6 +126,8 @@ pub fn should_reproject(name: Option<&str>) -> bool {
                 .any(|p| name.starts_with(p)))
         || (flags.has(Flag::AoVolumes) && name == AO_VOLUME_REPROJECT_NAME)
         || (flags.has(Flag::WaterPlane) && name == WATER_PLANE_REPROJECT_NAME)
+        || (flags.has(Flag::Clouds) && CLOUD_REPROJECT_NAMES.contains(&name))
+        || (flags.has(Flag::Stars) && name == STARS_REPROJECT_NAME)
 }
 
 /// Whether a scene family the `cb0` remap *claims* should be reprojected instead, because the only

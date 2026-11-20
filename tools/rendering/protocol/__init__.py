@@ -46,6 +46,7 @@ from tools.rendering.protocol.base import (
     vector,
     vectors_match,
 )
+from tools.rendering.protocol.headset import HEADSET_RIGS, HeadsetGeometry
 from tools.rendering.protocol.stage import (
     Placement,
     StageAck,
@@ -70,6 +71,8 @@ __all__ = [
     "EnvironmentObservation",
     "EnvironmentRequest",
     "ExpectedMotion",
+    "HEADSET_RIGS",
+    "HeadsetGeometry",
     "Mode",
     "MotionEvidence",
     "MotionHistory",
@@ -229,9 +232,9 @@ class SunShadows(StrEnum):
 # names. Mirrors `SinglePassSwitch` in `payload/src/stereo/switches.rs`; a test keeps the two equal.
 SINGLE_PASS_SWITCHES = (
     "reproject", "reproject_camera_only", "terrain", "terrain_patch_per_eye", "tree_impostors",
-    "tree_impostor_pixel_size_per_eye", "tree_impostor_screen_door_per_eye", "static_lights_per_eye", "moon_per_eye", "water_plane_per_eye", "bark", "foliage",
+    "tree_impostor_pixel_size_per_eye", "tree_impostor_screen_door_per_eye", "static_lights_per_eye", "moon_per_eye", "water_plane_per_eye", "clouds_per_eye", "stars_per_eye", "bark", "foliage",
     "vegetation_once", "occluder",
-    "instanced_per_eye", "hw_instanced_once", "indirect_per_eye", "reconstruct_per_eye", "fullscreen_camera_per_eye",
+    "instanced_per_eye", "hw_instanced_once", "indirect_per_eye", "vertex_globals_per_eye", "reconstruct_per_eye", "fullscreen_camera_per_eye",
     "pixel_camera_per_eye", "local_lights_per_eye", "screen_door_per_eye", "velocity_per_eye", "clip_origin_per_eye",
     "atmospheric_per_eye",
     "fog_volume_per_eye", "water_uv_per_eye",
@@ -285,6 +288,11 @@ class VisualOverrides:
     player_damage: str | None = None
     # FSR's stereo motion-vector correction left out in every mode.
     fsr_mv_correction: str | None = None
+    # A headset-like eye rig substituted for the located views in every mode, by preset name.
+    headset: str | None = None
+    # The stage images every capture writes: "geometry" keeps only the depth, the albedo and normal
+    # G-buffers, and the velocity, for light captures at a large eye size.
+    stages: str | None = None
 
     def __post_init__(self):
         if self.sun_shadows is not None and not isinstance(self.sun_shadows, SunShadows):
@@ -297,10 +305,15 @@ class VisualOverrides:
         for name in SHIPPED_OVERRIDES:
             if getattr(self, name) not in (None, "enabled"):
                 raise ProtocolError(f"visual protocol: invalid {name} override")
+        if self.headset is not None and self.headset not in HEADSET_RIGS:
+            raise ProtocolError(f"visual protocol: unknown headset rig {self.headset!r}; expected one of "
+                                f"{sorted(HEADSET_RIGS)}")
+        if self.stages not in (None, "geometry"):
+            raise ProtocolError("visual protocol: invalid stages override")
         object.__setattr__(self, "single_pass", single_pass_switches(dict(self.single_pass)))
         if (self.sun_shadows is None and self.screen_space_reflections is None and
                 all(getattr(self, name) is None for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)) and
-                not self.single_pass):
+                self.headset is None and self.stages is None and not self.single_pass):
             raise ProtocolError("visual protocol: visual overrides must name at least one override")
 
     @property
@@ -317,6 +330,10 @@ class VisualOverrides:
         for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES):
             if getattr(self, name) is not None:
                 value[name] = getattr(self, name)
+        if self.headset is not None:
+            value["headset"] = self.headset
+        if self.stages is not None:
+            value["stages"] = self.stages
         if self.single_pass:
             value["single_pass"] = self.switches
         return value
@@ -330,6 +347,10 @@ class VisualOverrides:
         for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES):
             if getattr(self, name) is not None:
                 result += f"{name} = {json.dumps(getattr(self, name))}\n"
+        if self.headset is not None:
+            result += f"headset = {json.dumps(self.headset)}\n"
+        if self.stages is not None:
+            result += f"stages = {json.dumps(self.stages)}\n"
         if self.single_pass:
             result += "\n[visual_overrides.single_pass]\n" + "".join(
                 f"{name} = {json.dumps(value)}\n" for name, value in self.single_pass)
@@ -338,7 +359,7 @@ class VisualOverrides:
     @classmethod
     def from_wire(cls, value):
         if not isinstance(value, dict) or not value or set(value) - {
-                "sun_shadows", "screen_space_reflections", "single_pass", *DISABLING_OVERRIDES,
+                "sun_shadows", "screen_space_reflections", "single_pass", "headset", "stages", *DISABLING_OVERRIDES,
                 *SHIPPED_OVERRIDES}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
         try:
@@ -349,7 +370,8 @@ class VisualOverrides:
             raise ProtocolError("visual protocol: the single_pass override table is empty")
         return cls(sun_shadows, value.get("screen_space_reflections"),
                    single_pass_switches(value.get("single_pass", {})),
-                   **{name: value.get(name) for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)})
+                   **{name: value.get(name) for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)},
+                   headset=value.get("headset"), stages=value.get("stages"))
 
 
 @dataclass(frozen=True)
@@ -770,6 +792,7 @@ class VisualState:
     visual_overrides: VisualOverrides | None = None
     shader_identity: dict | None = None
     shader_build: ShaderBuild | None = None
+    headset: HeadsetGeometry | None = None
 
     @classmethod
     def from_wire(cls, value):
@@ -795,7 +818,8 @@ class VisualState:
                    None if value.get("environment") is None else EnvironmentObservation.from_wire(value.get("environment")),
                    None if value.get("visual_overrides") is None else VisualOverrides.from_wire(value["visual_overrides"]),
                    parse_shader_identity(value.get("shader_identity")),
-                   None if value.get("shader_build") is None else ShaderBuild.from_wire(value["shader_build"]))
+                   None if value.get("shader_build") is None else ShaderBuild.from_wire(value["shader_build"]),
+                   None if value.get("headset") is None else HeadsetGeometry.from_wire(value["headset"]))
 
 
 
@@ -909,6 +933,7 @@ class Capture(NativeCapture):
             raise ProtocolError("visual protocol: comparison input dimensions disagree with the capture")
         if self.visual.pose is not None:
             self.visual.pose.validate_applied(self.comparison_inputs.camera)
+        self.validate_headset()
         if motion_capture is not None:
             if not isinstance(motion_capture, PhaseCapture):
                 raise ProtocolError("visual protocol: screenshot motion capture phase is invalid")
@@ -921,6 +946,20 @@ class Capture(NativeCapture):
                                                 self.predicted_display_time_ns)
         elif self.visual.motion is not None:
             raise ProtocolError("visual protocol: screenshot has unexpected motion evidence")
+
+
+    def validate_headset(self):
+        """Check that the capture was rendered under the headset rig its overrides name, or under the
+        located views when they name none."""
+        overrides = self.visual.visual_overrides
+        requested = overrides.headset if overrides is not None else None
+        if requested is None:
+            if self.visual.headset is not None:
+                raise ProtocolError("visual protocol: screenshot records a headset rig no override requested")
+            return
+        if self.visual.headset is None or not self.visual.headset.matches(HEADSET_RIGS[requested]):
+            raise ProtocolError(f"visual protocol: screenshot was not rendered under the {requested} rig")
+        self.visual.headset.validate_eyes(self.comparison_inputs.eyes, self.comparison_inputs.world_scale)
 
 
 @dataclass(frozen=True)

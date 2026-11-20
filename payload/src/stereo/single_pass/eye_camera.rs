@@ -274,16 +274,19 @@ pub(crate) fn sync(engine: &RenderEngine) {
 /// Each eye's map from the render camera's previous clip space to the clip space an eye-sized render
 /// of that eye reprojects through, from the eyes' `M_eye`.
 ///
-/// An eye rendered on its own reprojects through its own previous camera position and orientation
-/// and the render camera's previous projection, which the engine builds for an eye-sized target.
-/// Under the collapse that projection is the double-wide one, whose horizontal row is the
-/// eye-sized one's halved, and the previous view is the centred camera's. `M_eye = P_eye E⁻¹ P⁻¹`
-/// takes the camera's current clip space to the eye's, with `E` the eye's pose in the camera's frame
-/// and `P` the camera's current projection, so `E⁻¹ = P_eye⁻¹ M_eye P`, and the map is
-/// `S P_prev E⁻¹ P_prev⁻¹`, with `S` doubling the horizontal clip coordinate. The eyes are rigid with
-/// respect to the camera, so the previous frame's eye cameras relate to the previous render camera
-/// as this frame's do to the current one. `None` while the render camera or an eye's parameters are
-/// unavailable, or a projection is singular.
+/// An eye rendered on its own reprojects through its own previous camera position, the centred
+/// camera's previous orientation (the engine's previous view carries none of the per-eye display
+/// cant the camera hook applies after the fact), and the render camera's previous projection, which
+/// the engine builds for an eye-sized target. Under the collapse that projection is the double-wide
+/// one, whose horizontal row is the eye-sized one's halved, and the previous view is the centred
+/// camera's. `M_eye = P_eye E⁻¹ P⁻¹` takes the camera's current clip space to the eye's, with `E` the
+/// eye's pose in the camera's frame and `P` the camera's current projection, so
+/// `E⁻¹ = P_eye⁻¹ M_eye P`; of that pose only the eye's offset is wanted ([`eye_offset_view`]), and
+/// the map is `S P_prev T⁻¹ P_prev⁻¹`, with `T` the eye's offset in the camera's frame and `S`
+/// doubling the horizontal clip coordinate. The eyes are rigid with respect to the camera, so the
+/// previous frame's eye cameras relate to the previous render camera as this frame's do to the
+/// current one. `None` while the render camera or an eye's parameters are unavailable, or a
+/// projection is singular.
 fn previous_reprojection(m_eye: [glam::Mat4; 2]) -> Option<[glam::Mat4; 2]> {
     // SAFETY: called on the render thread from the global-constant upload, where the engine's render
     // camera is live and not being written.
@@ -304,9 +307,19 @@ fn previous_reprojection(m_eye: [glam::Mat4; 2]) -> Option<[glam::Mat4; 2]> {
             return None;
         }
         let pose_inverse = eye_projection.inverse() * m_eye[eye].as_dmat4() * current;
-        *map = (eye_sized * pose_inverse * previous_inverse).as_mat4();
+        *map = (eye_sized * eye_offset_view(pose_inverse) * previous_inverse).as_mat4();
     }
     Some(maps)
+}
+
+/// The translation part of an eye's view from the camera's (`pose_inverse`, a rigid map from the
+/// camera's view space to the eye's): the camera's view moved to the eye's position, keeping the
+/// camera's orientation. `pose_inverse` maps `x` to `R x + t`, which puts the eye at `-Rᵀ t` in the
+/// camera's frame, so the offset view maps `x` to `x + Rᵀ t`. On parallel panels `R` is the identity
+/// and this is `pose_inverse` itself.
+fn eye_offset_view(pose_inverse: glam::DMat4) -> glam::DMat4 {
+    let rotation = glam::DMat3::from_mat4(pose_inverse);
+    glam::DMat4::from_translation(rotation.transpose() * pose_inverse.w_axis.truncate())
 }
 
 /// What an eye-sized render's previous projection scales the double-wide one's horizontal clip
@@ -797,6 +810,25 @@ mod tests {
 
     /// Outside an eye-split pass, with the switch off, without a map, and with the buffer unbound (all
     /// zeros), the rewritten shader subtracts exactly the positions the vertex shader handed down.
+    /// A canted eye's previous view keeps the camera's orientation and moves only to the eye: for a
+    /// point given in the camera's view space, the offset view puts it where the camera would see it
+    /// from the eye's position.
+    #[test]
+    fn the_previous_eye_view_carries_the_offset_and_not_the_cant() {
+        let cant = glam::DQuat::from_rotation_y(5f64.to_radians());
+        let eye = glam::DVec3::new(-0.032, 0.0015, 0.004);
+        let eye_pose = glam::DMat4::from_rotation_translation(cant, eye);
+        let offset = eye_offset_view(eye_pose.inverse());
+        let point = glam::DVec3::new(3.0, -1.0, -20.0);
+        assert!(
+            offset
+                .transform_point3(point)
+                .abs_diff_eq(point - eye, 1e-12)
+        );
+        let parallel = glam::DMat4::from_translation(eye);
+        assert!(eye_offset_view(parallel.inverse()).abs_diff_eq(parallel.inverse(), 1e-12));
+    }
+
     #[test]
     fn velocity_rows_outside_an_eye_split_pass_change_nothing() {
         let unbound = [ZERO; ROWS];

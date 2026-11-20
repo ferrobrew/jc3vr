@@ -64,6 +64,8 @@ single_pass_switches! {
     StaticLightsPerEye => static_lights_per_eye, true;
     MoonPerEye => moon_per_eye, false;
     WaterPlanePerEye => water_plane_per_eye, true;
+    CloudsPerEye => clouds_per_eye, true;
+    StarsPerEye => stars_per_eye, true;
     Bark => bark, true;
     Foliage => foliage, true;
     VegetationOnce => vegetation_once, false;
@@ -71,6 +73,7 @@ single_pass_switches! {
     InstancedPerEye => instanced_per_eye, false;
     HwInstancedOnce => hw_instanced_once, false;
     IndirectPerEye => indirect_per_eye, false;
+    VertexGlobalsPerEye => vertex_globals_per_eye, false;
     ReconstructPerEye => reconstruct_per_eye, false;
     FullscreenCameraPerEye => fullscreen_camera_per_eye, false;
     PixelCameraPerEye => pixel_camera_per_eye, true;

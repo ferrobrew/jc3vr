@@ -32,6 +32,8 @@ pub(super) enum Flag {
     StaticLights,
     Moon,
     WaterPlane,
+    Clouds,
+    Stars,
     AoVolumes,
     Bark,
     Foliage,
@@ -42,6 +44,7 @@ pub(super) enum Flag {
     InstancedPerEye,
     HwInstancedOnce,
     IndirectPerEye,
+    VertexGlobalsPerEye,
     UniformViewportSlots,
     ViewportFollowsTarget,
     Slot13PerEye,
@@ -151,6 +154,8 @@ fn store_config_flags() -> u32 {
             | bit(s.static_lights_per_eye, Flag::StaticLights)
             | bit(s.moon_per_eye, Flag::Moon)
             | bit(s.water_plane_per_eye, Flag::WaterPlane)
+            | bit(s.clouds_per_eye, Flag::Clouds)
+            | bit(s.stars_per_eye, Flag::Stars)
             | bit(s.ao_volumes_per_eye, Flag::AoVolumes)
             | bit(s.bark, Flag::Bark)
             | bit(s.foliage, Flag::Foliage)
@@ -161,6 +166,7 @@ fn store_config_flags() -> u32 {
             | bit(s.instanced_per_eye, Flag::InstancedPerEye)
             | bit(s.hw_instanced_once, Flag::HwInstancedOnce)
             | bit(s.indirect_per_eye, Flag::IndirectPerEye)
+            | bit(s.vertex_globals_per_eye, Flag::VertexGlobalsPerEye)
             | bit(s.uniform_viewport_slots, Flag::UniformViewportSlots)
             | bit(
                 s.collapse_viewport_follows_target,

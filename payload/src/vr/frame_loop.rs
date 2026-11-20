@@ -19,8 +19,10 @@ use crate::{
         frame as controller_frame,
     },
     frame_timing::{self, Slot},
+    testing::visual::headset,
     vr::{
         Fov, FreezeMode, OffAxisProjection, VIEW_TYPE, VrConfig,
+        convert::{posef, quat, vec3},
         input::flight_pose::{self, LocatedHead},
         pose_control,
         recenter::mid_pose,
@@ -384,7 +386,9 @@ impl VrState {
         }
         let flight_head = flight_pose::begin_located(flight_head);
         if located {
+            log_located_views_once(&eyes);
             replay::replace_located_head(&mut eyes);
+            substitute_headset_rig(&mut eyes, near_clip, far_clip);
         }
 
         if let Some(p) = head_pose {
@@ -548,6 +552,65 @@ impl VrState {
             .frame_stream
             .end(frame.predicted_display_time, blend_mode, &[&layer])
             .context("vr: end_frame failed")
+    }
+}
+
+/// Log the runtime's per-eye views the first time a frame locates them: each eye's field of view and
+/// its turn from the mid-eye head pose, and the distance between the eyes. The headset's own view
+/// geometry is otherwise recorded nowhere, and it is what a headset-like rig in the visual harness
+/// approximates.
+fn log_located_views_once(eyes: &[EyeView; 2]) {
+    if VIEWS_LOGGED.swap(true, Ordering::Relaxed) {
+        return;
+    }
+    let head = mid_pose(eyes[0].raw_pose, eyes[1].raw_pose);
+    let head_orientation = quat(head.orientation);
+    let ipd_mm =
+        1000.0 * (vec3(eyes[1].raw_pose.position) - vec3(eyes[0].raw_pose.position)).length();
+    for (eye, view) in eyes.iter().enumerate() {
+        let turn = head_orientation.inverse() * quat(view.raw_pose.orientation);
+        let (yaw, pitch, roll) = turn.to_euler(glam::EulerRot::YXZ);
+        tracing::info!(
+            target: "vr",
+            eye,
+            fov_left_deg = view.fov.angle_left.to_degrees(),
+            fov_right_deg = view.fov.angle_right.to_degrees(),
+            fov_up_deg = view.fov.angle_up.to_degrees(),
+            fov_down_deg = view.fov.angle_down.to_degrees(),
+            yaw_deg = yaw.to_degrees(),
+            pitch_deg = pitch.to_degrees(),
+            roll_deg = roll.to_degrees(),
+            ipd_mm,
+            "located view: the runtime's field of view and turn from the head for this eye",
+        );
+    }
+}
+
+/// Whether [`log_located_views_once`] has logged, so the views are recorded once per process.
+static VIEWS_LOGGED: AtomicBool = AtomicBool::new(false);
+
+/// Substitute the visual harness's headset-like rig for the located views, while a configuration
+/// names one: each eye's pose about the located head (the cockpit and the raw poses alike, so the
+/// compositor is handed the views the eyes were rendered for), its field of view, and its
+/// projection. Everything downstream then sees the rig.
+fn substitute_headset_rig(eyes: &mut [EyeView; 2], near_clip: f32, far_clip: f32) {
+    let Some(rig) = headset::active() else {
+        return;
+    };
+    let head = mid_pose(eyes[0].pose, eyes[1].pose);
+    let raw_head = mid_pose(eyes[0].raw_pose, eyes[1].raw_pose);
+    let cockpit = rig.substitute(vec3(head.position), quat(head.orientation));
+    let raw = rig.substitute(vec3(raw_head.position), quat(raw_head.orientation));
+    for ((eye, cockpit), raw) in eyes.iter_mut().zip(cockpit).zip(raw) {
+        eye.pose = posef(cockpit.position, cockpit.orientation);
+        eye.raw_pose = posef(raw.position, raw.orientation);
+        eye.fov = xr::Fovf {
+            angle_left: cockpit.fov.left,
+            angle_right: cockpit.fov.right,
+            angle_up: cockpit.fov.up,
+            angle_down: cockpit.fov.down,
+        };
+        eye.projection = OffAxisProjection::new(cockpit.fov, near_clip, far_clip);
     }
 }
 

@@ -355,11 +355,16 @@ impl VrState {
         self.session.as_ref().is_some_and(|s| s.running)
     }
 
-    /// The per-eye render resolution to drive the engine to: the runtime's recommended view size
-    /// scaled by [`VrConfig::resolution_scale`], the same computation the swapchain uses
+    /// The per-eye render resolution to drive the engine to: the runtime's recommended view size (or
+    /// [`VrConfig::recommended_size_override`] in its place) scaled by
+    /// [`VrConfig::resolution_scale`], the same computation the swapchain uses
     /// ([`scaled_eye_size`]). `None` until bring-up cached the recommended size.
     pub(super) fn eye_resolution(&self, cfg: &VrConfig) -> Option<(u32, u32)> {
         self.recommended_view
+            .map(|recommended| {
+                cfg.recommended_size_override
+                    .map_or(recommended, |[w, h]| (w, h))
+            })
             .map(|(w, h)| scaled_eye_size(w, h, cfg.resolution_scale))
     }
 

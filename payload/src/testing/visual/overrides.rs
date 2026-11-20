@@ -15,6 +15,7 @@ use crate::{
     fsr::FsrConfig,
     hooks::graphics_engine::config::ExposureConfig,
     stereo::{config::SinglePassConfig, dispatch::RenderMode, switches::SinglePassSwitch},
+    testing::visual::headset::HeadsetRig,
     vr::FoveationConfig,
 };
 
@@ -51,6 +52,14 @@ pub(crate) enum AmbientOcclusionOverride {
     Disabled,
 }
 
+/// Restrict the stage images every capture writes, to keep captures at a large eye size small.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum StagesOverride {
+    /// Only the geometry stages: the depth, the albedo and normal G-buffers, and the velocity.
+    Geometry,
+}
+
 /// A validated, nonempty set of overrides. Each kind is independent of the others.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) struct VisualOverrides {
@@ -85,6 +94,12 @@ pub(crate) struct VisualOverrides {
     /// FSR's stereo motion-vector correction.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fsr_mv_correction: Option<CorrectionOverride>,
+    /// A headset-like eye rig substituted for the located views in every mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub headset: Option<HeadsetRig>,
+    /// The stage images every capture writes.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stages: Option<StagesOverride>,
     #[serde(skip_serializing_if = "SinglePassOverrides::is_empty")]
     pub single_pass: SinglePassOverrides,
 }
@@ -104,6 +119,8 @@ pub(crate) struct VisualOverridesTable {
     screen_fade: Option<ShippedOverride>,
     player_damage: Option<ShippedOverride>,
     fsr_mv_correction: Option<CorrectionOverride>,
+    headset: Option<HeadsetRig>,
+    stages: Option<StagesOverride>,
     single_pass: Option<BTreeMap<String, bool>>,
 }
 
@@ -183,6 +200,8 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             screen_fade: table.screen_fade,
             player_damage: table.player_damage,
             fsr_mv_correction: table.fsr_mv_correction,
+            headset: table.headset,
+            stages: table.stages,
             single_pass,
         };
         if overrides.sun_shadows.is_none()
@@ -191,6 +210,8 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             && overrides.ao_volumes.is_none()
             && overrides.shipped().all(|(_, value)| value.is_none())
             && overrides.fsr_mv_correction.is_none()
+            && overrides.headset.is_none()
+            && overrides.stages.is_none()
             && overrides.single_pass.is_empty()
         {
             return Err(OverrideError::Empty);
@@ -450,6 +471,41 @@ mod tests {
             serde_json::json!({"fsr_mv_correction": "disabled"})
         );
         assert!(toml::from_str::<VisualOverridesTable>("fsr_mv_correction = 'enabled'\n").is_err());
+    }
+
+    #[test]
+    fn a_headset_rig_applies_in_any_mode_and_leaves_the_config_alone() {
+        let overrides = parse("headset = 'index'\n").unwrap();
+        assert_eq!(overrides.headset, Some(HeadsetRig::Index));
+        for mode in [
+            RenderMode::LeftOnly,
+            RenderMode::RightOnly,
+            RenderMode::Multipass,
+            RenderMode::SinglePass,
+        ] {
+            assert_eq!(overrides.validate_for(mode), Ok(()));
+        }
+        let mut config = Config::new();
+        let before = serde_json::to_value(&config).unwrap();
+        overrides.apply(&mut config);
+        assert_eq!(serde_json::to_value(&config).unwrap(), before);
+        assert_eq!(
+            serde_json::to_value(overrides).unwrap(),
+            serde_json::json!({"headset": "index"})
+        );
+        assert!(toml::from_str::<VisualOverridesTable>("headset = 'vive'\n").is_err());
+    }
+
+    #[test]
+    fn the_stage_set_can_be_restricted_in_any_mode() {
+        let overrides = parse("stages = 'geometry'\n").unwrap();
+        assert_eq!(overrides.stages, Some(StagesOverride::Geometry));
+        assert_eq!(overrides.validate_for(RenderMode::LeftOnly), Ok(()));
+        assert_eq!(
+            serde_json::to_value(overrides).unwrap(),
+            serde_json::json!({"stages": "geometry"})
+        );
+        assert!(toml::from_str::<VisualOverridesTable>("stages = 'all'\n").is_err());
     }
 
     #[test]

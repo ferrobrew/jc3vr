@@ -218,6 +218,36 @@ class KeepAliveTests(SessionTestCase):
         with patch("sys.stderr"), self.assertRaises(SystemExit):
             parse_args(["--suite"], keep_alive=True)
 
+    def test_the_resolution_scale_is_bounded_and_seeded(self):
+        self.assertEqual(parse_args([]).resolution_scale, 0.5)
+        self.assertEqual(parse_args(["--resolution-scale", "3.111"]).resolution_scale, 3.111)
+        for value in ("0.05", "4.5"):
+            with self.subTest(value=value), patch("sys.stderr"), self.assertRaises(SystemExit):
+                parse_args(["--resolution-scale", value])
+        runner = self.session(resolution_scale=3.111)
+        runner._seed_settings()
+        settings = tomllib.loads((runner.config_dir / "settings.toml").read_text())
+        self.assertEqual(settings["vr"]["resolution_scale"], 3.111)
+
+    def test_an_eye_size_is_parsed_and_seeded_in_place_of_the_runtimes(self):
+        self.assertIsNone(parse_args([]).eye_size)
+        self.assertEqual(parse_args(["--eye-size", "2560x2560"]).eye_size, (2560, 2560))
+        for value in ("2560", "32x2560", "8192x2560", "axb"):
+            with self.subTest(value=value), patch("sys.stderr"), self.assertRaises(SystemExit):
+                parse_args(["--eye-size", value])
+        runner = self.session(eye_size=(3135, 3135), resolution_scale=1.0)
+        runner._seed_settings()
+        settings = tomllib.loads((runner.config_dir / "settings.toml").read_text())
+        self.assertEqual(settings["vr"]["recommended_size_override"], [3135, 3135])
+        self.assertEqual(settings["vr"]["resolution_scale"], 1.0)
+
+    def test_matched_runs_launch_and_stop_sessions_at_their_own_size(self):
+        default = matched_run.session_args(7, "10de:2b85")
+        self.assertNotIn("--eye-size", default)
+        sized = matched_run.session_args(7, "10de:2b85", ["--resolution-scale", "1.0", "--eye-size", "2560x2560"])
+        self.assertEqual(sized[:len(default)], default)
+        self.assertEqual(sized[len(default):], ["--resolution-scale", "1.0", "--eye-size", "2560x2560"])
+
 
 class StatePointerTests(SessionTestCase):
     def test_runner_pointer_is_written_and_removed_for_its_token(self):
