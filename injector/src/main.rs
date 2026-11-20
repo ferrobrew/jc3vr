@@ -72,6 +72,12 @@ const ERROR_NO_MORE_FILES: u32 = 18;
 /// `ERROR_BAD_LENGTH`, reported when the module list changed while it was snapshotted.
 const ERROR_BAD_LENGTH: u32 = 24;
 
+/// `ERROR_SHARING_VIOLATION`, reported when a file another handle holds is replaced.
+const ERROR_SHARING_VIOLATION: i32 = 32;
+
+/// How long the injector retries a sharing violation on the payload's loaded copy.
+const SHARING_RETRY_TIMEOUT: Duration = Duration::from_secs(2);
+
 fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
@@ -122,8 +128,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     tracing::info!("injector: injecting into process {pid}");
-    let payload_path =
-        injector::inject(*handle, &payload_path).context("injector: could not inject")?;
+    let payload_path = inject_retrying_sharing(*handle, &payload_path)?;
 
     tracing::info!("injector: running the payload");
     let payload_base = injector::get_remote_module_base(pid, &payload_path)
@@ -142,6 +147,27 @@ fn main() -> anyhow::Result<()> {
         capture::serve(options.capture_port, pid)?;
     }
     Ok(())
+}
+
+/// Injects the payload, retrying while the copy to its loaded name meets a sharing violation.
+///
+/// Right after an ejection, Wine can keep the previous image's file open for a moment after the
+/// module has left the module list, and the copy that replaces it fails until it lets go.
+fn inject_retrying_sharing(handle: HANDLE, payload_path: &Path) -> anyhow::Result<PathBuf> {
+    let started = Instant::now();
+    loop {
+        match injector::inject(handle, payload_path) {
+            Ok(path) => return Ok(path),
+            Err(injector::Error::Io { source, .. })
+                if source.raw_os_error() == Some(ERROR_SHARING_VIOLATION)
+                    && started.elapsed() < SHARING_RETRY_TIMEOUT =>
+            {
+                tracing::info!("injector: the loaded payload's file is still in use; retrying");
+                std::thread::sleep(UNLOAD_POLL_INTERVAL);
+            }
+            Err(error) => return Err(error).context("injector: could not inject"),
+        }
+    }
 }
 
 /// Asks the loaded payload to shut down and waits for its image to leave the process.

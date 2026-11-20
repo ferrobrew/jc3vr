@@ -75,5 +75,6 @@ pub(crate) fn shutdown() -> bool {
     visual::shutdown();
     scenario::stop();
     log_tap::stop();
-    replay::shutdown()
+    let writers = crate::screenshot::harness::snapshot::shutdown();
+    replay::shutdown() && writers
 }

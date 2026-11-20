@@ -62,20 +62,29 @@ def command(output, name, args):
     return result.returncode
 
 
-def run(number, config, gpu, prior, unmatched=False, extra=()):
+# The checks whose exit codes a launch requires by default, and the one an inner-loop launch
+# (`--build-only`) requires: the full checks run once before committing, not before every launch.
+FULL_CHECKS = ('fmt', 'build', 'clippy', 'test', 'python')
+BUILD_CHECKS = ('build',)
+
+
+def run(number, config, gpu, prior, unmatched=False, extra=(), checks=FULL_CHECKS):
+    """Launch session `number` (stopping session `prior` first) and, given a `config`, run it as a
+    paired experiment; without one, return once the session is in gameplay."""
     output = BASE / f'diagnostics-{number}'
     session = BASE / f'persistent-{number}'
     if Path.cwd() != ROOT or session.exists() or (output / 'paired').exists():
         raise RuntimeError('matched run: expected repository root and unused session and capture paths')
-    if not unmatched and not ExperimentConfig.load(config).matched_treatment:
+    if config is not None and not unmatched and not ExperimentConfig.load(config).matched_treatment:
         raise ValueError('matched run: configuration has no matched treatment')
-    for check in ('fmt', 'build', 'clippy', 'test', 'python'):
+    for check in checks:
         if (output / f'{check}.exit').read_text().strip() != '0':
             raise RuntimeError(f'matched run: {check} did not pass')
     if shutil.disk_usage(BASE).free <= 16 * 2**30:
         raise RuntimeError('matched run: less than 16 GiB of capture space available')
     with (output / 'launch-request.json').open('x') as stream:
-        json.dump(dict(config=str(config), prior=prior, session=session_args(number, gpu, extra)), stream)
+        json.dump(dict(config=None if config is None else str(config), prior=prior,
+                       checks=list(checks), session=session_args(number, gpu, extra)), stream)
     if prior is not None:
         stop_prior(prior, gpu, output)
     with (output / 'controller.log').open('xb') as log:
@@ -94,6 +103,8 @@ def run(number, config, gpu, prior, unmatched=False, extra=()):
         time.sleep(1)
     else:
         raise RuntimeError(f'controller: gameplay readiness timed out; see {output}')
+    if config is None:
+        return 0
     paired = output / 'paired'
     rc = command(output, 'paired', ['run', '--runner', str(session / 'runner.json'), '--config', str(config),
                                     '--output', str(paired), '--timeout', '420'])
@@ -107,7 +118,9 @@ def run(number, config, gpu, prior, unmatched=False, extra=()):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('number', type=int)
-    parser.add_argument('config', type=Path)
+    parser.add_argument('config', type=Path, nargs='?',
+                        help='the experiment to run once the session is in gameplay; without one, '
+                             'only launch')
     parser.add_argument('--gpu', required=True)
     controller = parser.add_mutually_exclusive_group(required=True)
     controller.add_argument('--prior', type=int)
@@ -116,7 +129,13 @@ if __name__ == '__main__':
                         help='accept a configuration without a matched treatment')
     parser.add_argument('--resolution-scale', help='passed to the session (see its --help)')
     parser.add_argument('--eye-size', help='passed to the session (see its --help)')
+    parser.add_argument('--compositor-fps', help='passed to the session (see its --help)')
+    parser.add_argument('--build-only', action='store_true',
+                        help='require only build.exit, for the inner loop; the full checks still '
+                             'run before committing')
     args = parser.parse_args()
-    extra = [item for name, value in (('--resolution-scale', args.resolution_scale), ('--eye-size', args.eye_size))
+    extra = [item for name, value in (('--resolution-scale', args.resolution_scale), ('--eye-size', args.eye_size),
+                                      ('--compositor-fps', args.compositor_fps))
              if value is not None for item in (name, value)]
-    sys.exit(run(args.number, args.config, args.gpu, args.prior, args.unmatched, extra))
+    sys.exit(run(args.number, args.config, args.gpu, args.prior, args.unmatched, extra,
+                 BUILD_CHECKS if args.build_only else FULL_CHECKS))

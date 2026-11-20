@@ -1,0 +1,69 @@
+# The standing fast suite: the production and coverage scenes, the motion cases, the shipped
+# settings, and the headset rigs. Scenes at one location with one environment run back to back, so
+# the stage is reused after the first. Run it with `python3 -m tools.rendering fast --session N`
+# (or `iterate`), adding `--only NAME ...` for a subset. See docs/mod/testing/fast-comparison.md.
+
+[[scene]]
+name = "town"
+config = "coverage_town_midday.toml"
+
+[[scene]]
+name = "town-rotation"
+config = "coverage_town_rotation.toml"
+
+[[scene]]
+name = "town-translation"
+config = "coverage_town_translation.toml"
+
+[[scene]]
+name = "shipped-static"
+config = "shipped_town_static.toml"
+
+[[scene]]
+name = "shipped-rotation"
+config = "shipped_town_rotation.toml"
+
+[[scene]]
+name = "town-index"
+config = "headset_town_index.toml"
+
+[[scene]]
+name = "town-quest"
+config = "headset_town_quest.toml"
+
+[[scene]]
+name = "town-stress"
+config = "headset_town_stress.toml"
+
+[[scene]]
+name = "town-beyond"
+config = "coverage_town_midday.toml"
+headset = "beyond"
+
+[[scene]]
+name = "tunnel"
+config = "coverage_tunnel_midday.toml"
+
+[[scene]]
+name = "meadow"
+config = "coverage_forest_midday.toml"
+
+[[scene]]
+name = "capital-night"
+config = "coverage_capital_night.toml"
+
+# The fixed-camera production views carry no stage of their own; the player is staged below each
+# camera, as the capture batches do.
+[[scene]]
+name = "shore"
+config = "shore_lake_production.toml"
+[scene.stage]
+settle_seconds = 20.0
+location = { position = [7586.867, 1514.6827, -4081.8762], yaw_deg = 0.0 }
+
+[[scene]]
+name = "cliff-dusk"
+config = "cliff_view_dusk_production.toml"
+[scene.stage]
+settle_seconds = 20.0
+location = { position = [8257.701, 1486.9717, -4286.1167], yaw_deg = 0.0 }

@@ -14,6 +14,7 @@ pub(crate) mod constants;
 pub(crate) mod draw_census;
 pub(crate) mod patch_draw;
 pub(crate) mod resolve_probe;
+pub(crate) mod snapshot;
 pub(crate) mod stages;
 pub(crate) mod types;
 
@@ -49,6 +50,10 @@ impl RequestId {
             return Err("expected only ASCII letters, digits, underscores, or hyphens");
         }
         Ok(Self(id.to_owned()))
+    }
+
+    pub(crate) fn as_str(&self) -> &str {
+        &self.0
     }
 }
 
@@ -705,7 +710,13 @@ fn admit(
     });
 }
 
+/// Whether a screenshot or a snapshot waits for this frame's eyes.
 pub(crate) fn wants_eyes() -> bool {
+    screenshot_wants_eyes() || snapshot::wants_eyes()
+}
+
+/// Whether a screenshot (not a snapshot) waits for this frame's eyes and stages.
+pub(crate) fn screenshot_wants_eyes() -> bool {
     match PENDING_STATE.load(Ordering::Acquire) {
         NO_PENDING => false,
         ANY_PHASE => true,
@@ -714,7 +725,7 @@ pub(crate) fn wants_eyes() -> bool {
 }
 
 pub(crate) fn diagnostic_capture_id() -> Option<String> {
-    if !wants_eyes()
+    if !screenshot_wants_eyes()
         || !crate::testing::visual::ready()
         || !crate::hooks::in_gameplay()
         || !crate::vr::is_running_published()
@@ -757,7 +768,7 @@ pub(crate) fn requested_water_diagnostic() -> Option<WaterReflection> {
 
 /// The frame a requested draw census records, while that frame is drawing.
 pub(crate) fn draw_census_frame() -> Option<i64> {
-    if !wants_eyes() || !STATE.lock().active.as_ref().is_some_and(|a| a.draw_census) {
+    if !screenshot_wants_eyes() || !STATE.lock().active.as_ref().is_some_and(|a| a.draw_census) {
         return None;
     }
     diagnostic_capture_id()?;
@@ -765,7 +776,7 @@ pub(crate) fn draw_census_frame() -> Option<i64> {
 }
 
 pub(crate) fn late_sky_stages_requested() -> bool {
-    if !wants_eyes()
+    if !screenshot_wants_eyes()
         || !STATE
             .lock()
             .active
@@ -1273,7 +1284,7 @@ pub(crate) fn ssr_operands_requested(frame: i64) -> bool {
 }
 
 pub(crate) fn ssr_bracket_requested() -> bool {
-    wants_eyes()
+    screenshot_wants_eyes()
         && STATE.lock().active.as_ref().is_some_and(|a| {
             a.ssr_bracket && a.resolve_samples && matches!(a.phase, Phase::Pending)
         })
@@ -1298,12 +1309,18 @@ pub(crate) fn note_eye(eye: usize, copied: bool) {
     }
 }
 
+/// Whether the eyes `selected` names (both when `None`) were copied fresh for `frame`.
+pub(crate) fn eyes_fresh(frame: i64, selected: Option<usize>) -> bool {
+    let fresh = STATE.lock().eyes.map(|eye| eye == Some(frame));
+    required_eyes_fresh(selected, fresh)
+}
+
 pub(crate) fn capture(
     device: &ID3D11Device,
     context: &ID3D11DeviceContext,
     source: CaptureSource<'_>,
 ) {
-    if !wants_eyes() {
+    if !screenshot_wants_eyes() {
         return;
     }
     let frame = frame_identity();
@@ -1507,7 +1524,8 @@ pub(crate) fn capture(
 }
 
 pub(crate) fn tick() {
-    let latest_readiness = wants_eyes().then(readiness);
+    snapshot::tick();
+    let latest_readiness = screenshot_wants_eyes().then(readiness);
     let mut state = STATE.lock();
     advance(&mut state, Instant::now(), latest_readiness);
     sync_pending(&state);
@@ -1747,7 +1765,11 @@ fn required_eyes_fresh(selected: Option<usize>, fresh: [bool; 2]) -> bool {
         .all(|(required, fresh)| !required || fresh)
 }
 
-fn motion_capture_gate(visual: &VisualMetadata, target: u32, frame: i64) -> Result<(), String> {
+pub(crate) fn motion_capture_gate(
+    visual: &VisualMetadata,
+    target: u32,
+    frame: i64,
+) -> Result<(), String> {
     if let Some(error) = &visual.error {
         return Err(error.clone());
     }
@@ -2200,6 +2222,7 @@ mod tests {
             error: None,
             warmup_frames: 1,
             completed_frames: 1,
+            configure_frames: 1,
             engine_dimensions: Some((4096, 2048)),
             pose: None,
             environment: None,

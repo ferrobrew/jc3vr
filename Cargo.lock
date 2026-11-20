@@ -2316,6 +2316,7 @@ dependencies = [
  "egui",
  "egui-directx11",
  "egui_dock",
+ "flate2",
  "fsr-sys",
  "glam",
  "image",

@@ -15,9 +15,10 @@ from tools.rendering.protocol.base import (
     valid_request_id,
 )
 
-# Mirrors `MAX_SETTLE_SECONDS` and `MAX_SPAWNS` in `payload/src/testing/stage.rs`.
+# Mirrors `MAX_SETTLE_SECONDS`, `MAX_SPAWNS`, and `MAX_REUSE_METRES` in `payload/src/testing/stage.rs`.
 MAX_SETTLE_SECONDS = 300.0
 MAX_SPAWNS = 16
+MAX_REUSE_METRES = 50.0
 
 
 def _position(value, context) -> tuple[float, float, float]:
@@ -67,6 +68,9 @@ class StageRequest:
     # Set and pinned before the teleport, without holding the day cycle, so the weather has run for
     # the whole settle. An experiment fills it from its scene's environment.
     environment: "EnvironmentRequest | None" = None
+    # Skip the teleport, the spawns, and the settle when the player already stands this close to
+    # the location; set when this session staged the same scene last (see `tools.rendering.fast`).
+    reuse_within_m: float | None = None
     command: Command = field(default=Command.STAGE, init=False)
     # The channel validates these on configuration acknowledgements only.
     pose = None
@@ -84,12 +88,19 @@ class StageRequest:
             raise ProtocolError(f"visual stage: at most {MAX_SPAWNS} spawns")
         if self.location is None and not self.spawns:
             raise ProtocolError("visual stage: a stage names a location, a spawn, or both")
+        if self.reuse_within_m is not None and (
+                self.location is None or type(self.reuse_within_m) not in (int, float)
+                or not 0 < self.reuse_within_m <= MAX_REUSE_METRES):
+            raise ProtocolError(f"visual stage: reuse_within_m needs a location and must be within "
+                                f"(0, {MAX_REUSE_METRES}]")
 
     def to_toml(self) -> str:
         result = (f"command = {json.dumps(self.command.value)}\n"
                   f"id = {json.dumps(self.id)}\n\n"
                   "[stage]\n"
                   f"settle_seconds = {json.dumps(self.settle_seconds)}\n")
+        if self.reuse_within_m is not None:
+            result += f"reuse_within_m = {json.dumps(float(self.reuse_within_m))}\n"
         if self.location is not None:
             result += "\n[stage.location]\n" + self.location.toml_body()
         if self.environment is not None:
@@ -141,6 +152,7 @@ class StageAck:
     distance_m: float | None
     spawns_submitted: int
     spawns_present: int
+    reused: bool = False
     outcome: AckOutcome = field(default=AckOutcome.STAGED, init=False)
 
     @classmethod
@@ -155,4 +167,4 @@ class StageAck:
             raise ProtocolError("visual stage: invalid distance_m")
         return cls(text(value, "id"), position, None if distance is None else float(distance),
                    integer(value, "spawns_submitted", minimum=0),
-                   integer(value, "spawns_present", minimum=0))
+                   integer(value, "spawns_present", minimum=0), value.get("reused") is True)

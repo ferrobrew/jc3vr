@@ -12,6 +12,10 @@
 //! spawned entities come to rest). It then writes `visual/<id>.json` with `state = "staged"` and
 //! the player's landed position, or `state = "failed"` and why.
 //!
+//! A stage that sets `reuse_within_m` is acknowledged at once, with its environment set but no
+//! teleport, spawns, or settle, when the player already stands that close to its location: the
+//! requester staged the same scene last, so the world there has streamed in and settled.
+//!
 //! A stage is refused while a visual configuration is active: it needs the clock running, and a
 //! configuration holds it. Spawned objects persist in the world, so a spawn is submitted once per
 //! session for each distinct tag set and position; staging the same scene again reports it as
@@ -45,6 +49,10 @@ pub(crate) struct StageRequest {
     environment: Option<EnvironmentRequest>,
     settle: Duration,
     spawns: Vec<SpawnRequest>,
+    /// Skip the teleport, the spawns, and the settle when the player already stands within this
+    /// many metres of the location: the requester staged this scene last and nothing has moved the
+    /// player since.
+    reuse_within_m: Option<f32>,
 }
 
 /// The `[stage]` table of a request file, before validation.
@@ -56,6 +64,7 @@ pub(crate) struct StageTable {
     settle_seconds: f32,
     #[serde(default)]
     spawn: Vec<SpawnTable>,
+    reuse_within_m: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -83,6 +92,7 @@ pub(crate) enum StageError {
     TooManySpawns(usize),
     EmptyTags(usize),
     NothingToStage,
+    ReuseOutOfRange(f32),
     Environment(visual::EnvironmentError),
 }
 
@@ -105,6 +115,11 @@ impl std::fmt::Display for StageError {
                     "visual stage: the stage names neither a location nor a spawn"
                 )
             }
+            Self::ReuseOutOfRange(metres) => write!(
+                f,
+                "visual stage: reuse_within_m {metres} is outside (0, {MAX_REUSE_METRES}] or names \
+                 no location"
+            ),
             Self::Environment(error) => write!(f, "visual stage: {error}"),
         }
     }
@@ -124,6 +139,11 @@ impl StageRequest {
         }
         if table.location.is_none() && table.spawn.is_empty() {
             return Err(StageError::NothingToStage);
+        }
+        if let Some(metres) = table.reuse_within_m
+            && (!(metres > 0.0 && metres <= MAX_REUSE_METRES) || table.location.is_none())
+        {
+            return Err(StageError::ReuseOutOfRange(metres));
         }
         let environment = table
             .environment
@@ -155,6 +175,7 @@ impl StageRequest {
             environment,
             settle: Duration::from_secs_f32(settle),
             spawns,
+            reuse_within_m: table.reuse_within_m,
         })
     }
 }
@@ -191,6 +212,11 @@ pub(crate) fn update() {
                 &request.id,
                 &format!("visual stage: {error}"),
             ));
+            return;
+        }
+        if let Some(result) = reused(&request) {
+            tracing::info!(id = ?request.id, distance_m = ?result.distance_m, "visual stage: reused");
+            publish(&result);
             return;
         }
         let phase = match request.location {
@@ -286,6 +312,7 @@ pub(crate) fn update() {
                 distance_m,
                 spawns_submitted: submitted,
                 spawns_present: present,
+                reused: false,
             };
             tracing::info!(
                 id = ?run.request.id,
@@ -301,8 +328,32 @@ pub(crate) fn update() {
     }
 }
 
+/// The staged result for a request that may reuse the scene the player already stands in, or
+/// `None` when it must be staged afresh. The environment is set again either way.
+fn reused(request: &StageRequest) -> Option<StageResult> {
+    let within = request.reuse_within_m?;
+    let location = request.location?;
+    if teleport::in_flight() || !crate::hooks::in_gameplay() {
+        return None;
+    }
+    let player = teleport::player_position()?;
+    let distance = (Vec3::from(player) - Vec3::from(location.position)).length();
+    (distance <= within).then(|| StageResult {
+        id: request.id.clone(),
+        state: ResultState::Staged,
+        error: None,
+        player_position: Some(player),
+        distance_m: Some(distance),
+        spawns_submitted: 0,
+        spawns_present: request.spawns.len(),
+        reused: true,
+    })
+}
+
 /// The longest settle a request may ask for, seconds.
 const MAX_SETTLE_SECONDS: f32 = 300.0;
+/// The farthest a reused stage may find the player from its location, metres.
+const MAX_REUSE_METRES: f32 = 50.0;
 /// The most spawns one stage may submit.
 const MAX_SPAWNS: usize = 16;
 /// How many consecutive frames the player must stand in gameplay with no teleport in flight before
@@ -418,6 +469,8 @@ struct StageResult {
     distance_m: Option<f32>,
     spawns_submitted: usize,
     spawns_present: usize,
+    /// Whether the player already stood at the location, so the teleport and settle were skipped.
+    reused: bool,
 }
 
 impl StageResult {
@@ -431,6 +484,7 @@ impl StageResult {
             distance_m: None,
             spawns_submitted: 0,
             spawns_present: 0,
+            reused: false,
         }
     }
 }
@@ -494,6 +548,15 @@ mod tests {
     }
 
     #[test]
+    fn a_reuse_distance_parses() {
+        let request = table(
+            "settle_seconds = 20.0\nreuse_within_m = 3.0\n[location]\nposition = [1.0, 2.0, 3.0]",
+        )
+        .unwrap();
+        assert_eq!(request.reuse_within_m, Some(3.0));
+    }
+
+    #[test]
     fn invalid_stages_are_rejected() {
         for text in [
             "settle_seconds = 20.0",
@@ -505,6 +568,10 @@ mod tests {
             "settle_seconds = 1.0\nweather = 'rain'\n[location]\nposition = [0.0, 0.0, 0.0]",
             "settle_seconds = 1.0\n[environment]\nhour = 25.0\nweather = 'rain'\n\
              [location]\nposition = [0.0, 0.0, 0.0]",
+            "settle_seconds = 1.0\nreuse_within_m = 0.0\n[location]\nposition = [0.0, 0.0, 0.0]",
+            "settle_seconds = 1.0\nreuse_within_m = 51.0\n[location]\nposition = [0.0, 0.0, 0.0]",
+            "settle_seconds = 1.0\nreuse_within_m = 3.0\n[[spawn]]\ntags = 'car'\n\
+             position = [0.0, 0.0, 0.0]",
         ] {
             assert!(table(text).is_err(), "{text}");
         }

@@ -40,7 +40,7 @@ pub(crate) struct Scope;
 
 impl Scope {
     pub(crate) fn begin(mode: AAMode) -> Option<Self> {
-        if !harness::wants_eyes() {
+        if !harness::screenshot_wants_eyes() {
             return None;
         }
         let frame = harness::frame_identity().filter(|&f| harness::aa_draws_requested(f))?;

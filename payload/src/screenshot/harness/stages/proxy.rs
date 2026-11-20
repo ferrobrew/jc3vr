@@ -40,7 +40,7 @@ pub(crate) fn scope(
     draw: impl FnOnce(),
 ) {
     let probe = (|| {
-        if !harness::wants_eyes() {
+        if !harness::screenshot_wants_eyes() {
             return None;
         }
         let frame = harness::frame_identity()?;

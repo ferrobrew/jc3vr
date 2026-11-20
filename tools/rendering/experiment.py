@@ -87,6 +87,8 @@ from tools.rendering.protocol import (
 )
 from tools.rendering.session.attach import AttachedSession
 from tools.rendering.session.errors import SessionError
+from tools.rendering.session.stage_record import record as record_stage
+from tools.rendering.session.stage_record import reuse_distance, stage_key
 
 LOG = logging.getLogger("tools.rendering.experiment")
 
@@ -851,7 +853,7 @@ def sample_id(prefix: str, mode: CompareMode, index: int) -> str:
 
 
 def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
-                   analyze=None, monotonic=None, sleep=None) -> ExperimentReport:
+                   analyze=None, monotonic=None, sleep=None, restage=False) -> ExperimentReport:
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     capture = capture or _capture
@@ -878,17 +880,21 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
     staged = None
     try:
         if config.scene.stage is not None:
+            stage_key_value = stage_key(config.scene.stage, config.scene.environment)
             stage_request = dataclasses.replace(
                 config.scene.stage, id=f"{prefix}_stage",
+                reuse_within_m=None if restage else reuse_distance(runner.config_dir, stage_key_value),
                 environment=config.scene.environment.request() if config.scene.environment else None)
             acknowledgement = runner.request(stage_request)
             if not isinstance(acknowledgement, StageAck) or acknowledgement.id != stage_request.id:
                 raise ExperimentError("experiment: expected the stage's acknowledgement")
+            record_stage(runner.config_dir, stage_key_value)
             staged = dataclasses.asdict(acknowledgement)
-            LOG.info("experiment: staged with the player at %s (%s m from the location), "
-                     "%d spawns submitted, %d already present", acknowledgement.player_position,
-                     acknowledgement.distance_m, acknowledgement.spawns_submitted,
-                     acknowledgement.spawns_present)
+            LOG.info("experiment: %s with the player at %s (%s m from the location), "
+                     "%d spawns submitted, %d already present",
+                     "reused the stage" if acknowledgement.reused else "staged",
+                     acknowledgement.player_position, acknowledgement.distance_m,
+                     acknowledgement.spawns_submitted, acknowledgement.spawns_present)
         anchor_mode = Mode(config.configurations[0].value)
         anchor_pose = PoseRequest(f"{prefix}_anchor", OrientationOffset(0.0, 0.0, 0.0),
                                   TranslationOffset())
@@ -1347,9 +1353,12 @@ def _feature_observation(config: ExperimentConfig, root: Path, capture: Capture,
                               tuple(reasons))
 
 
-def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor, configurations):
+def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor, configurations,
+               hold_still=False):
+    """Configure `mode`; `hold_still` replaces a motion that never moves the camera with the fixed
+    `pose`, so captures need not wait out its cycles."""
     environment = config.scene.environment.request() if config.scene.environment else None
-    motion = config.motion.request if config.motion else None
+    motion = config.motion.request if config.motion and not hold_still else None
     request = Request(Command.CONFIGURE, request_id, mode, config.warmup_frames,
                       None if motion else pose, motion=motion,
                       environment=environment, visual_overrides=config.visual_overrides,
@@ -1567,6 +1576,8 @@ def main(argv=None) -> int:
                         help="scene configuration for the experiment")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=600.0)
+    parser.add_argument("--restage", action="store_true",
+                        help="stage afresh even when this session staged the same scene last")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         stream=sys.stderr)
@@ -1577,7 +1588,7 @@ def main(argv=None) -> int:
         config = ExperimentConfig.load(args.config)
         with AttachedSession.attach(args.runner, args.timeout) as runner:
             LOG.info("attached to game pid %d via %s", runner.pid, args.runner)
-            report = run_experiment(runner, config, args.output)
+            report = run_experiment(runner, config, args.output, restage=args.restage)
     except (ExperimentError, ProtocolError, SessionError, OSError, ValueError) as error:
         LOG.error("%s", error)
         return 1

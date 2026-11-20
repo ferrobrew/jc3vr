@@ -23,6 +23,10 @@ from tools.rendering.session.errors import SessionError
 # first; the payload gives up on a stage after seven minutes in all.
 STAGE_BUDGET_SECONDS = 450
 
+# How often an outstanding request's acknowledgement is looked for. The payload looks for requests
+# every frame in a harness session, so a coarser poll here would dominate short requests.
+POLL_SECONDS = 0.005
+
 
 class RequestChannel:
     """Issue visual-protocol requests and cancel the one this client owns."""
@@ -42,7 +46,8 @@ class RequestChannel:
         command, request_id = request_value.command, request_value.id
         if not re.fullmatch(r"[A-Za-z0-9_-]+", request_id):
             raise SessionError("session: invalid request ID")
-        folder = "captures" if command == Command.SCREENSHOT else "visual"
+        folder = ("captures" if command in (Command.SCREENSHOT, Command.SNAPSHOT,
+                                             Command.SNAPSHOT_RELEASE) else "visual")
         acknowledgement = self.config_dir / folder / f"{request_id}.json"
         request = self.config_dir / "test_request.toml"
         if request.exists() or acknowledgement.exists():
@@ -51,7 +56,7 @@ class RequestChannel:
         temporary.write_text(request_value.to_toml())
         temporary.replace(request)
         self.pending_request = request_value
-        budget = {Command.CONFIGURE: 75, Command.SCREENSHOT: 60,
+        budget = {Command.CONFIGURE: 75, Command.SCREENSHOT: 60, Command.SNAPSHOT: 60,
                   Command.STAGE: STAGE_BUDGET_SECONDS}.get(command, 35)
         end = time.monotonic() + budget
         if self.deadline is not None:
@@ -61,7 +66,7 @@ class RequestChannel:
             self.pump_menu()
             if time.monotonic() >= end:
                 raise SessionError(f"session: timed out waiting for {command} acknowledgement {request_id}")
-            time.sleep(0.2)
+            time.sleep(POLL_SECONDS)
         self.assert_running()
         try:
             result = acknowledgement_from_wire(_read_object(acknowledgement), command, request_id)

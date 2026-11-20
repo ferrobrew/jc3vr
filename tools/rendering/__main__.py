@@ -7,6 +7,8 @@ USAGE = """usage: python -m tools.rendering <command> [options]
 
 commands:
   run        run a configured rendering comparison
+  fast       run scenes' GPU comparisons against a live session
+  iterate    build, re-inject the payload, and run scenes' GPU comparisons
   launch     run the visual capture harness
   session    launch and serve a private session until interrupted
   compare    compare frozen-camera captures
@@ -18,6 +20,8 @@ commands:
 
 COMMANDS = {
     "run": "tools.rendering.experiment",
+    "fast": "tools.rendering.fast.cli",
+    "iterate": "tools.rendering.fast.cli",
     "launch": "tools.rendering.capture.harness",
     "session": "tools.rendering.session.cli",
     "compare": "tools.rendering.comparison.images",
@@ -43,6 +47,8 @@ def main(argv=None):
     if command == "launch" and rest and rest[0] == "_child":
         importlib.import_module("tools.rendering.session.launch").child_main(rest[1:])
         return 0
+    if command == "iterate":
+        return module.iterate_main(rest)
     return module.main(rest)
 
 

@@ -1192,6 +1192,8 @@ Nothing in the prepasses is issued twice: under the collapse `PreDraw` runs once
 
 ## Capturing single-pass with a switch off
 
+The sections from here on describe the original capture path, which writes every capture and its stages to files for the Python comparison. For hill-climbing, the fast comparison renders each mode once, compares on the GPU, and reruns a list of scenes against a re-injected payload in about a minute; see [fast-comparison.md](../testing/fast-comparison.md).
+
 Scene content at the capture views changes between schedules and sessions (the water, the vegetation, the player's pose), so a before-and-after measured across two runs mixes a fix's effect with the scene's. An experiment can instead list single-pass variants, each with some of the `single_pass.*` switches forced:
 
 ```toml

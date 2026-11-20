@@ -49,6 +49,7 @@ class AckOutcome(StrEnum):
     READY = "ready"
     RESTORED = "restored"
     STAGED = "staged"
+    RELEASED = "released"
     FAILED = "failed"
 
 
@@ -65,6 +66,8 @@ class Command(StrEnum):
     CONFIGURE = "visual_configure"
     END = "visual_end"
     STAGE = "visual_stage"
+    SNAPSHOT = "snapshot"
+    SNAPSHOT_RELEASE = "snapshot_release"
 
 
 POSE_TOLERANCE = 1e-4

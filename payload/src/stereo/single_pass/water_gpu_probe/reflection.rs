@@ -67,7 +67,7 @@ pub(crate) fn reflection_producer(pass: i32) -> Option<ReflectionProbe> {
     if !PRODUCER_PASSES.contains(&pass) {
         return None;
     }
-    if !crate::screenshot::harness::wants_eyes() {
+    if !crate::screenshot::harness::screenshot_wants_eyes() {
         return None;
     }
     let visual = crate::testing::visual::metadata();

@@ -17,8 +17,8 @@ use crate::{
     screenshot::harness::{
         WaterReflection,
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
-        diagnostic_capture_id, frame_identity, lake_producer_requested, patch_draw, wants_eyes,
-        water_reflection_requested, water_surface_inputs_requested,
+        diagnostic_capture_id, frame_identity, lake_producer_requested, patch_draw,
+        screenshot_wants_eyes, water_reflection_requested, water_surface_inputs_requested,
     },
     stereo::{draw_index, single_pass::vertex_identity_lookup},
 };
@@ -127,7 +127,7 @@ impl Drop for SnapshotGuard {
 }
 
 pub(crate) unsafe fn eye_width_snapshot(pass: *mut RenderPass) -> Option<SnapshotGuard> {
-    if !wants_eyes()
+    if !screenshot_wants_eyes()
         || draw_index() != 0
         || !crate::stereo::single_pass::double_wide_active()
         // The production switch already sizes the reflection camera to one eye.
@@ -205,7 +205,7 @@ pub(crate) unsafe fn capture_producer_context(
     pass: *const RenderPass,
     ctx: *const RenderContext,
 ) -> Option<ProducerScope> {
-    if !wants_eyes() || !water_surface_inputs_requested() {
+    if !screenshot_wants_eyes() || !water_surface_inputs_requested() {
         return None;
     }
     let capture_id = diagnostic_capture_id()?;

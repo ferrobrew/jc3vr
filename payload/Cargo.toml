@@ -62,6 +62,8 @@ serde_json = "1"
 jiff = "0.2.29"
 # PNG-only: the render-trace screenshot diagnostic encodes eye-0 frames; no other formats needed.
 image = { version = "0.25", default-features = false, features = ["png"] }
+# The capture harness's snapshot dumps compress raw planes with gzip.
+flate2 = "1"
 egui_dock = { version = "0.20", features = ["serde"] }
 smol_str = "0.3.6"
 directories = "6.0.0"

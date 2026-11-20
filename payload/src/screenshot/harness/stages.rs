@@ -70,7 +70,7 @@ use windows::{
 
 use crate::{
     image_writer::{ChannelOrder, Image},
-    screenshot::{create_staging, harness::wants_eyes},
+    screenshot::{create_staging, harness::screenshot_wants_eyes},
     stereo::{draw_index, engine_context::EngineContext},
 };
 
@@ -556,8 +556,9 @@ pub(super) static STATE: Mutex<State> = Mutex::new(State {
     images: Vec::new(),
 });
 
-fn capture(stage: Stage, texture: impl FnOnce() -> anyhow::Result<*mut Texture>) {
-    if !wants_eyes() || !crate::testing::visual::ready() {
+fn capture(stage: Stage, texture: impl Fn() -> anyhow::Result<*mut Texture>) {
+    crate::screenshot::harness::snapshot::stage_hook(stage, &texture);
+    if !screenshot_wants_eyes() || !crate::testing::visual::ready() {
         return;
     }
     if GEOMETRY_ONLY.load(Ordering::Relaxed) && !GEOMETRY_STAGES.contains(&stage) {

@@ -566,12 +566,22 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 
             if last_near_dispatch && let Some(device) = graphics_engine.m_Device.as_ref() {
                 if collapse_active() || crate::stereo::dispatch::selected_eye().is_some() {
+                    crate::screenshot::harness::snapshot::capture(
+                        &device.m_Device,
+                        &context.m_Context,
+                        &CaptureSource::Full(&src.m_Texture),
+                    );
                     crate::screenshot::harness::capture(
                         &device.m_Device,
                         &context.m_Context,
                         CaptureSource::Full(&src.m_Texture),
                     );
                 } else if let [Some(left), Some(right)] = &eye_textures {
+                    crate::screenshot::harness::snapshot::capture(
+                        &device.m_Device,
+                        &context.m_Context,
+                        &CaptureSource::Eyes([left, right]),
+                    );
                     crate::screenshot::harness::capture(
                         &device.m_Device,
                         &context.m_Context,

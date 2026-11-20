@@ -124,7 +124,7 @@ pub(crate) struct WaterGpuProbe {
 
 impl WaterGpuProbe {
     pub(crate) fn begin(pass: i32, eye: usize) -> Option<Self> {
-        if !crate::screenshot::harness::wants_eyes() {
+        if !crate::screenshot::harness::screenshot_wants_eyes() {
             return None;
         }
         let visual = crate::testing::visual::metadata();

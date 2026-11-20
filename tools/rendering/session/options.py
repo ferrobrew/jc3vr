@@ -11,6 +11,8 @@ DEFAULT_RESOLUTION_SCALE = 0.5
 MAX_RESOLUTION_SCALE = 4.0
 # Each side of a seeded per-eye size, at most: a double-wide single-pass target is twice the width.
 MAX_EYE_SIDE = 4096
+DEFAULT_COMPOSITOR_FPS = 120
+MAX_COMPOSITOR_FPS = 1000
 
 
 @dataclass
@@ -42,6 +44,9 @@ class Options:
     # A per-eye size the session seeds in place of the runtime's recommended one (the simulated
     # headset's), as `(width, height)`; the scale then applies to it. `None` keeps the runtime's.
     eye_size: tuple[int, int] | None = None
+    # The frame rate Monado's null compositor paces the session at. Every harness wait counts frames,
+    # so a faster pace shortens them; the GPU bounds it at a large eye size.
+    compositor_fps: int = DEFAULT_COMPOSITOR_FPS
     single_pass_probe: bool = False
     probe_yaw: float = 0.0
     probe_pitch: float = 0.0
@@ -95,6 +100,8 @@ def parse_args(argv=None, keep_alive=False, description=None):
                         help="the vr.resolution_scale the session seeds, which sets the per-eye size")
     parser.add_argument("--eye-size", type=parse_eye_size, metavar="WIDTHxHEIGHT",
                         help="a per-eye size to seed in place of the runtime's recommended one")
+    parser.add_argument("--compositor-fps", type=int, default=DEFAULT_COMPOSITOR_FPS,
+                        help="the frame rate the null compositor paces the session at")
     parser.add_argument("--gpu", help="Vulkan PCI vendor:device, e.g. 10de:2b85")
     parser.add_argument("--xdotool")
     parser.add_argument("--output", type=Path)
@@ -106,6 +113,8 @@ def parse_args(argv=None, keep_alive=False, description=None):
     if args.keep_alive and any((args.suite, args.orientation_sweep, args.motion_sweep,
                                 args.smoke, args.single_pass_probe)):
         parser.error("--keep-alive is mutually exclusive with an execution mode")
+    if not 1 <= args.compositor_fps <= MAX_COMPOSITOR_FPS:
+        parser.error(f"--compositor-fps must be within [1, {MAX_COMPOSITOR_FPS}]")
     if not 0.1 <= args.resolution_scale <= MAX_RESOLUTION_SCALE:
         parser.error(f"--resolution-scale must be within [0.1, {MAX_RESOLUTION_SCALE}]")
     if args.timeout is None:

@@ -10,7 +10,7 @@ Nothing runs until it is started, and `testing.enabled` (on by default) switches
 
 - The debug UI's Tools page, on the desktop or in the headset through the floating panel. Tracking capture records, and Replay replays a file, lists and runs the scenario files, shows a running scenario's verdicts as they settle, and lists every signal with its live value.
 - The director's key bindings ([trailer-tooling.md](../trailer-tooling.md)): Ctrl+Numpad/ starts or stops a tracking recording, Ctrl+Numpad* replays this session's last recording from its start marker or stops the replay, and Ctrl+Numpad- runs the last scenario again or stops it. A keymap saved by an earlier build keeps its own list; an action it does not bind takes its default chord unless the saved list binds that chord to something else.
-- The request file, for a script. Every second the game looks for `test_request.toml` in the configuration directory ([settings.md](../settings.md)), reads it, deletes it, and acts on it. `testing.request_file` turns the watch off.
+- The request file, for a script. Every second (every frame in a capture harness session, whose environment carries `JC3VR_HARNESS_TOKEN`) the game looks for `test_request.toml` in the configuration directory ([settings.md](../settings.md)), reads it, deletes it, and acts on it. `testing.request_file` turns the watch off.
 
 ```toml
 command = "scenario"  # record, stop_recording, replay, stop_replay, scenario, or stop_scenario

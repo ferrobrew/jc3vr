@@ -69,6 +69,9 @@ pub(crate) struct VisualMetadata {
     pub error: Option<String>,
     pub warmup_frames: u32,
     pub completed_frames: u32,
+    /// The frames rendered since the configuration started, including those that did not yet match
+    /// it (a shader reload, a resize, a pose still applying): how long the switch took to be ready.
+    pub configure_frames: u32,
     pub engine_dimensions: Option<(u32, u32)>,
     pub pose: Option<PoseEvidence>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -429,6 +432,9 @@ pub(crate) fn frame_complete() {
         }
         return;
     }
+    if matches!(state.operation, Operation::Configuring(_)) {
+        state.configure_frames = state.configure_frames.saturating_add(1);
+    }
     let resolution = crate::vr::resolution_status();
     let frame_identity = (crate::hooks::in_gameplay() && crate::vr::is_running_published())
         .then(crate::vr::capture_views)
@@ -557,6 +563,7 @@ struct State {
     ready: bool,
     warmup_frames: u32,
     completed_frames: u32,
+    configure_frames: u32,
     last_dimensions: Option<(u32, u32)>,
     last_frame: Option<i64>,
     paused: bool,
@@ -616,6 +623,7 @@ impl State {
             ready: false,
             warmup_frames: 0,
             completed_frames: 0,
+            configure_frames: 0,
             last_dimensions: None,
             last_frame: None,
             paused: false,
@@ -647,6 +655,7 @@ impl State {
             error: self.error.clone(),
             warmup_frames: self.warmup_frames,
             completed_frames: self.completed_frames,
+            configure_frames: self.configure_frames,
             engine_dimensions: self.last_dimensions,
             pose: self.pose.clone(),
             motion: self
@@ -950,6 +959,7 @@ impl State {
         self.ready = false;
         self.error = None;
         self.completed_frames = 0;
+        self.configure_frames = 0;
         self.last_dimensions = None;
         self.last_frame = None;
         self.pose = None;

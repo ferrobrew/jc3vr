@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::{
-    screenshot::harness::wants_eyes,
+    screenshot::harness::screenshot_wants_eyes,
     stereo::{dispatch, dispatch::RenderMode, draw_index, far_phase, single_pass},
     testing::visual,
     vr,
@@ -453,7 +453,7 @@ fn global_rows(rows: &[Vector4]) -> Vec<F32s<4>> {
 }
 
 fn observation() -> Option<(Identity, PhysicalEye)> {
-    if !wants_eyes() || far_phase() {
+    if !screenshot_wants_eyes() || far_phase() {
         return None;
     }
     let metadata = visual::metadata();

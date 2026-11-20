@@ -47,6 +47,7 @@ from tools.rendering.protocol.base import (
     vectors_match,
 )
 from tools.rendering.protocol.headset import HEADSET_RIGS, HeadsetGeometry
+from tools.rendering.protocol.snapshot import ReleaseAck, SnapshotAck
 from tools.rendering.protocol.stage import (
     Placement,
     StageAck,
@@ -793,6 +794,8 @@ class VisualState:
     shader_identity: dict | None = None
     shader_build: ShaderBuild | None = None
     headset: HeadsetGeometry | None = None
+    # The frames the configuration took to become ready, when the payload reports them.
+    configure_frames: int | None = None
 
     @classmethod
     def from_wire(cls, value):
@@ -819,7 +822,9 @@ class VisualState:
                    None if value.get("visual_overrides") is None else VisualOverrides.from_wire(value["visual_overrides"]),
                    parse_shader_identity(value.get("shader_identity")),
                    None if value.get("shader_build") is None else ShaderBuild.from_wire(value["shader_build"]),
-                   None if value.get("headset") is None else HeadsetGeometry.from_wire(value["headset"]))
+                   None if value.get("headset") is None else HeadsetGeometry.from_wire(value["headset"]),
+                   None if value.get("configure_frames") is None
+                   else integer(value, "configure_frames", minimum=0))
 
 
 
@@ -1023,7 +1028,8 @@ class FailedAck:
     outcome: AckOutcome = field(default=AckOutcome.FAILED, init=False)
 
 
-Acknowledgement: TypeAlias = ConfigurationAck | RestorationAck | ScreenshotAck | StageAck | FailedAck
+Acknowledgement: TypeAlias = (ConfigurationAck | RestorationAck | ScreenshotAck | StageAck | SnapshotAck
+                              | ReleaseAck | FailedAck)
 
 
 @dataclass(frozen=True)
@@ -1140,7 +1146,9 @@ def acknowledgement_from_wire(value, command: Command, request_id: str) -> Ackno
             raise ProtocolError("visual protocol: invalid acknowledgement error")
         return FailedAck(request_id, message or "unknown capture failure", ready)
     expected = {Command.SCREENSHOT: AckOutcome.COMPLETED, Command.CONFIGURE: AckOutcome.READY,
-                Command.END: AckOutcome.RESTORED, Command.STAGE: AckOutcome.STAGED}[command]
+                Command.END: AckOutcome.RESTORED, Command.STAGE: AckOutcome.STAGED,
+                Command.SNAPSHOT: AckOutcome.COMPLETED,
+                Command.SNAPSHOT_RELEASE: AckOutcome.RELEASED}[command]
     if outcome != expected:
         raise ProtocolError("visual protocol: incomplete acknowledgement")
     if command == Command.CONFIGURE:
@@ -1149,5 +1157,9 @@ def acknowledgement_from_wire(value, command: Command, request_id: str) -> Ackno
         return RestorationAck.from_wire(value)
     if command == Command.STAGE:
         return StageAck.from_wire(value)
+    if command == Command.SNAPSHOT:
+        return SnapshotAck.from_wire(value)
+    if command == Command.SNAPSHOT_RELEASE:
+        return ReleaseAck.from_wire(value)
     capture_type = NativeCapture if value.get("mode") in (None, DiagnosticProfile.NATIVE) else Capture
     return ScreenshotAck(request_id, capture_type.from_wire(value))

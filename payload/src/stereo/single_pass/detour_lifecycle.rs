@@ -292,8 +292,19 @@ pub(crate) fn ensure_pixel_shader_detour() -> bool {
     {
         drop(CREATE_PIXEL_SHADER.take());
     }
+    if PIXEL_SHADER_EVER_ENABLED.load(Ordering::Acquire) {
+        // The capture harness's re-injection reads this line to refuse an eject that would tear the
+        // payload down and then find it cannot unmap.
+        tracing::warn!(
+            "{PINNED_BY_PIXEL_SHADER_DETOUR}: an eject will be refused until the game restarts"
+        );
+    }
     enabled
 }
+
+/// The log line that marks the payload as pinned by the pixel-shader detour.
+const PINNED_BY_PIXEL_SHADER_DETOUR: &str =
+    "shader identity: the pixel-shader detour was enabled, which pins the payload";
 
 pub(super) static PIXEL_SHADER_EVER_ENABLED: AtomicBool = AtomicBool::new(false);
 

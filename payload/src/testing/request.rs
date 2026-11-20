@@ -1,6 +1,6 @@
 //! The request file: a TOML file a script drops into the configuration directory to start or stop
-//! the test tools without the debug UI or a key. The game thread looks for it once a second, and
-//! claims, reads, deletes, and acts on it.
+//! the test tools without the debug UI or a key. The game thread looks for it once a second (every
+//! frame in a capture harness session), and claims, reads, deletes, and acts on it.
 //!
 //! ```toml
 //! command = "scenario"  # record, stop_recording, replay, stop_replay, scenario, or stop_scenario
@@ -19,6 +19,7 @@ use serde::Deserialize;
 
 use crate::{
     config::Config,
+    screenshot::harness::snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
     testing::{
         replay::{self, Pacing, ReplayOptions, StartMode},
         scenario,
@@ -31,11 +32,17 @@ use crate::{
 /// The request file's name in the configuration directory.
 pub(crate) const FILE_NAME: &str = "test_request.toml";
 
-/// Look for the request file and act on it, at most once every [`POLL_INTERVAL`]. Game thread.
+/// Look for the request file and act on it, at most once every [`POLL_INTERVAL`], or every frame
+/// in a capture harness session. Game thread.
 pub(crate) fn poll() {
     {
         let mut last = LAST_POLL.lock();
-        if last.is_some_and(|at| at.elapsed() < POLL_INTERVAL) {
+        let interval = if harness_session() {
+            Duration::ZERO
+        } else {
+            POLL_INTERVAL
+        };
+        if last.is_some_and(|at| at.elapsed() < interval) {
             return;
         }
         *last = Some(Instant::now());
@@ -57,8 +64,16 @@ pub(crate) fn poll() {
     }
 }
 
-/// How often the request file is looked for.
+/// How often the request file is looked for outside a capture harness session.
 const POLL_INTERVAL: Duration = Duration::from_secs(1);
+
+/// Whether the game runs in a capture harness session (`tools/rendering`), whose requests come
+/// one after another and should not each wait out [`POLL_INTERVAL`]. A file check is cheap next to
+/// a frame.
+fn harness_session() -> bool {
+    static SESSION: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SESSION.get_or_init(|| std::env::var_os("JC3VR_HARNESS_TOKEN").is_some())
+}
 
 static LAST_POLL: Mutex<Option<Instant>> = Mutex::new(None);
 
@@ -154,6 +169,8 @@ enum Request {
     },
     Visual(visual::Request),
     Stage(StageRequest),
+    Snapshot(SnapshotRequest),
+    SnapshotRelease(crate::screenshot::harness::RequestId),
 }
 
 /// Why a request file could not be used.
@@ -178,6 +195,9 @@ enum RequestErrorKind {
     InvalidMotion(visual::MotionError),
     InvalidEnvironment(visual::EnvironmentError),
     InvalidStage(stage::StageError),
+    InvalidSnapshot(SnapshotError),
+    SnapshotOnCommand(Command),
+    NoSnapshot,
     StageOnCommand(Command),
     NoStage,
     PoseOnCommand(Command),
@@ -223,6 +243,11 @@ impl std::fmt::Display for RequestError {
             RequestErrorKind::InvalidMotion(error) => write!(f, "{error}"),
             RequestErrorKind::InvalidEnvironment(error) => write!(f, "{error}"),
             RequestErrorKind::InvalidStage(error) => write!(f, "{error}"),
+            RequestErrorKind::InvalidSnapshot(error) => write!(f, "{error}"),
+            RequestErrorKind::SnapshotOnCommand(command) => {
+                write!(f, "only snapshot accepts a snapshot table, not {command:?}")
+            }
+            RequestErrorKind::NoSnapshot => write!(f, "snapshot needs a snapshot table"),
             RequestErrorKind::StageOnCommand(command) => {
                 write!(
                     f,
@@ -340,6 +365,8 @@ enum Command {
     VisualEnd,
     VisualStage,
     Screenshot,
+    Snapshot,
+    SnapshotRelease,
     Record,
     StopRecording,
     Replay,
@@ -367,6 +394,7 @@ struct RequestFile {
     shader_identity: Option<bool>,
     visual_overrides: Option<visual::VisualOverridesTable>,
     motion_capture: Option<MotionCaptureTable>,
+    snapshot: Option<SnapshotTable>,
     water_reflection: Option<crate::screenshot::harness::WaterReflection>,
     #[serde(default)]
     water_inputs: bool,
@@ -626,9 +654,12 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
         }
         None => None,
     };
+    if file.snapshot.is_some() && file.command != Command::Snapshot {
+        return Err(error(RequestErrorKind::SnapshotOnCommand(file.command)));
+    }
     let motion_capture = match file.motion_capture {
         Some(table) => {
-            if file.command != Command::Screenshot {
+            if !matches!(file.command, Command::Screenshot | Command::Snapshot) {
                 return Err(error(RequestErrorKind::MotionCaptureOnCommand(
                     file.command,
                 )));
@@ -881,6 +912,23 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                     .map_err(|e| error(RequestErrorKind::InvalidStage(e)))?,
             )
         }
+        Command::Snapshot => {
+            let id = crate::screenshot::harness::RequestId::parse(
+                file.id.as_deref().unwrap_or_default(),
+            )
+            .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
+            let table = file
+                .snapshot
+                .ok_or_else(|| error(RequestErrorKind::NoSnapshot))?;
+            Request::Snapshot(
+                SnapshotRequest::parse(id, motion_capture, table)
+                    .map_err(|e| error(RequestErrorKind::InvalidSnapshot(e)))?,
+            )
+        }
+        Command::SnapshotRelease => Request::SnapshotRelease(
+            crate::screenshot::harness::RequestId::parse(file.id.as_deref().unwrap_or_default())
+                .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
+        ),
         Command::Screenshot => Request::Screenshot {
             id: crate::screenshot::harness::RequestId::parse(
                 file.id.as_deref().unwrap_or_default(),
@@ -982,6 +1030,8 @@ fn act(request: Request) {
     match request {
         Request::Visual(request) => visual::enqueue(request),
         Request::Stage(request) => stage::enqueue(request),
+        Request::Snapshot(request) => crate::screenshot::harness::snapshot::request(request),
+        Request::SnapshotRelease(id) => crate::screenshot::harness::snapshot::release(id),
         Request::Screenshot {
             id,
             motion,
