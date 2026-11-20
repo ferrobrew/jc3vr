@@ -10,7 +10,7 @@ use jc3gi::{
         game_camera_manager::GameCameraManager,
     },
     character::character::Character,
-    graphics_engine::graphics_engine::GraphicsEngine,
+    graphics_engine::{gi::LightManager, graphics_engine::GraphicsEngine},
     hash::hashlittle,
     types::math::Matrix4,
 };
@@ -45,6 +45,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&CAMERA_TREE_UPDATE_RENDER_CONTEXTS_BINDER)
         .with_static_binder(&SETUP_RENDER_CAMERA_BINDER)
         .with_static_binder(&GAME_CAMERA_MANAGER_GET_CAMERA_MATRIX_BINDER)
+        .with_static_binder(&UPDATE_PLAYER_LIGHTING_TRANSFORMS_BINDER)
 }
 
 /// The last `dtf` the active camera's `UpdateRender` received, for the debug UI: the engine's
@@ -433,6 +434,31 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
     }
 
     CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
+}
+
+/// Place the light-propagation volume around the held pose while the capture harness holds the
+/// full camera. The engine places it once per frame from the game camera's render context
+/// ([`LightManager::UpdatePlayerLightingTransforms`]), which the full-camera freeze does not
+/// pin: the context keeps following the live head and the player's idle body, so the volume, and
+/// the indirect light every lit pixel reads from it, moved between captures at a frozen render
+/// camera by more than the differences a comparison between render modes looks for.
+#[detour(address = jc3gi::graphics_engine::gi::LightManager::UpdatePlayerLightingTransforms_ADDRESS)]
+fn update_player_lighting_transforms(manager: *mut LightManager, camera_transform: *const Matrix4) {
+    let held = holds_probe_pose(
+        in_gameplay(),
+        crate::testing::visual::is_active(),
+        Config::lock_query(|c| c.vr.freeze_mode),
+    )
+    .then(pose_control::current_full_camera)
+    .flatten()
+    .map(probe_world);
+    let transform = held
+        .as_ref()
+        .map_or(camera_transform, |world| world as *const Matrix4);
+    UPDATE_PLAYER_LIGHTING_TRANSFORMS
+        .get()
+        .unwrap()
+        .call(manager, transform);
 }
 
 fn holds_probe_pose(in_gameplay: bool, visual_active: bool, freeze_mode: FreezeMode) -> bool {

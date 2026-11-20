@@ -29,6 +29,8 @@ pub(crate) enum SunShadowsOverride {
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ReflectionOverride {
     Enabled,
+    /// Leave the screen-space reflections out in every mode, to attribute a difference to them.
+    Disabled,
 }
 
 /// Put back, in every mode, a setting the profile turns off or pins, at the value the mod ships with.
@@ -73,6 +75,9 @@ pub(crate) struct VisualOverrides {
     /// The ambient-occlusion volumes' pass.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ao_volumes: Option<AmbientOcclusionOverride>,
+    /// The global illumination pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub global_illumination: Option<AmbientOcclusionOverride>,
     /// FSR in place of the engine's anti-aliasing, at the shipped sharpening.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fsr: Option<ShippedOverride>,
@@ -91,6 +96,9 @@ pub(crate) struct VisualOverrides {
     /// FSR's stereo motion-vector correction.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fsr_mv_correction: Option<CorrectionOverride>,
+    /// FSR's hybrid motion vectors (the camera's motion from depth where the engine wrote none).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fsr_hybrid_velocity: Option<CorrectionOverride>,
     /// A headset-like eye rig substituted for the located views in every mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headset: Option<HeadsetRig>,
@@ -109,12 +117,14 @@ pub(crate) struct VisualOverridesTable {
     screen_space_reflections: Option<ReflectionOverride>,
     ssao: Option<AmbientOcclusionOverride>,
     ao_volumes: Option<AmbientOcclusionOverride>,
+    global_illumination: Option<AmbientOcclusionOverride>,
     fsr: Option<ShippedOverride>,
     foveation: Option<ShippedOverride>,
     auto_exposure: Option<ShippedOverride>,
     screen_fade: Option<ShippedOverride>,
     player_damage: Option<ShippedOverride>,
     fsr_mv_correction: Option<CorrectionOverride>,
+    fsr_hybrid_velocity: Option<CorrectionOverride>,
     headset: Option<HeadsetRig>,
     stages: Option<StagesOverride>,
     single_pass: Option<BTreeMap<String, bool>>,
@@ -180,12 +190,14 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             screen_space_reflections: table.screen_space_reflections,
             ssao: table.ssao,
             ao_volumes: table.ao_volumes,
+            global_illumination: table.global_illumination,
             fsr: table.fsr,
             foveation: table.foveation,
             auto_exposure: table.auto_exposure,
             screen_fade: table.screen_fade,
             player_damage: table.player_damage,
             fsr_mv_correction: table.fsr_mv_correction,
+            fsr_hybrid_velocity: table.fsr_hybrid_velocity,
             headset: table.headset,
             stages: table.stages,
             single_pass,
@@ -194,8 +206,10 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             && overrides.screen_space_reflections.is_none()
             && overrides.ssao.is_none()
             && overrides.ao_volumes.is_none()
+            && overrides.global_illumination.is_none()
             && overrides.shipped().all(|(_, value)| value.is_none())
             && overrides.fsr_mv_correction.is_none()
+            && overrides.fsr_hybrid_velocity.is_none()
             && overrides.headset.is_none()
             && overrides.stages.is_none()
             && overrides.single_pass.is_empty()
@@ -220,14 +234,19 @@ impl VisualOverrides {
         if let Some(SunShadowsOverride::Disabled) = self.sun_shadows {
             config.stereo.disable_sun_shadows = true;
         }
-        if let Some(ReflectionOverride::Enabled) = self.screen_space_reflections {
-            config.stereo.skip_ssr = false;
+        match self.screen_space_reflections {
+            Some(ReflectionOverride::Enabled) => config.stereo.skip_ssr = false,
+            Some(ReflectionOverride::Disabled) => config.stereo.skip_ssr = true,
+            None => {}
         }
         if let Some(AmbientOcclusionOverride::Disabled) = self.ssao {
             config.stereo.disable_ssao = true;
         }
         if let Some(AmbientOcclusionOverride::Disabled) = self.ao_volumes {
             config.stereo.skip_ao_volumes = true;
+        }
+        if let Some(AmbientOcclusionOverride::Disabled) = self.global_illumination {
+            config.stereo.skip_gi = true;
         }
         if let Some(ShippedOverride::Enabled) = self.fsr {
             config.fsr = FsrConfig::new();
@@ -247,6 +266,9 @@ impl VisualOverrides {
         }
         if let Some(CorrectionOverride::Disabled) = self.fsr_mv_correction {
             config.fsr.stereo_mv_correction = false;
+        }
+        if let Some(CorrectionOverride::Disabled) = self.fsr_hybrid_velocity {
+            config.fsr.hybrid_velocity = false;
         }
         self.single_pass.apply(&mut config.stereo.single_pass);
     }

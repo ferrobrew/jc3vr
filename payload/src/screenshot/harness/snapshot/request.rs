@@ -18,6 +18,20 @@ pub(crate) enum Plane {
     Normals,
     /// The velocity buffer.
     Velocity,
+    /// The scene colour once the deferred lights' resolve has lit it.
+    PostResolve,
+    /// The scene colour before the atmospheric scattering.
+    PreAtmosphere,
+    /// The scene colour after the atmospheric scattering.
+    PostAtmosphere,
+    /// The scene colour after the sun pass.
+    PostSun,
+    /// The scene colour at the start of the post chain, before the tone map.
+    MainColor,
+    /// The tone-mapped image the anti-aliasing reads.
+    PreAa,
+    /// The tone-mapped image the anti-aliasing writes.
+    PostAa,
 }
 
 /// When a snapshot's comparisons dump the compared pixels to files.

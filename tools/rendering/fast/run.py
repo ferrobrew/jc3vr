@@ -28,6 +28,7 @@ from tools.rendering.fast.plan import (
     schedule,
 )
 from tools.rendering.protocol import (
+    Camera,
     Command,
     ConfigurationAck,
     Mode,
@@ -49,7 +50,13 @@ from tools.rendering.protocol.snapshot import (
     SnapshotRequest,
 )
 from tools.rendering.session.errors import SessionError
-from tools.rendering.session.stage_record import record, reuse_distance, stage_key
+from tools.rendering.session.stage_record import (
+    record,
+    record_anchor,
+    recorded_anchor,
+    reuse_distance,
+    stage_key,
+)
 
 LOG = logging.getLogger("tools.rendering.fast")
 
@@ -71,6 +78,8 @@ class FastOptions:
     full_cycles: bool = False
     # How many representable floats apart two depths may be and still match.
     depth_ulps: int = DEFAULT_DEPTH_ULPS
+    # How long to wait before each repeat snapshot, so the floor includes what changes with time.
+    repeat_after_seconds: float = 0.0
 
 
 @dataclass
@@ -83,6 +92,8 @@ class SceneResult:
     snapshots: list[dict] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
     stage_reused: bool | None = None
+    # The camera every configuration after the anchor's rendered from, when pinned.
+    anchor: dict | None = None
     seconds: float = 0.0
 
     def to_wire(self) -> dict:
@@ -91,6 +102,7 @@ class SceneResult:
             "config": self.config,
             "seconds": self.seconds,
             "stage_reused": self.stage_reused,
+            "anchor": self.anchor,
             "errors": self.errors,
             "timings": self.timings,
             "snapshots": self.snapshots,
@@ -113,6 +125,26 @@ def holds_still(config: ExperimentConfig, full_cycles: bool) -> bool:
     game's camera with a fixed pose instead: its snapshots then wait only for the configuration's
     warm-up, and each repeat is the next frame, rather than a cycle each."""
     return config.motion is not None and not full_cycles and _still(config.motion.request)
+
+
+def pinned_anchor(config_dir, config: ExperimentConfig) -> tuple[Camera | None, str | None]:
+    """The camera a scene's configurations render from, pinned so that it is the same to the bit
+    from run to run and between the scenes at one stage, and the stage key to record a camera under
+    when none is pinned yet. A fixed-camera scene pins its own camera, a scene with a
+    `scene.anchor` that, and a staged scene the camera the first fast comparison at its stage in
+    this session froze (recorded in the session's configuration directory); a scene with none of
+    these is not pinned."""
+    if config.scene.pose is not None:
+        return config.scene.pose.camera(), None
+    if config.scene.anchor is not None:
+        return config.scene.anchor.camera(), None
+    if config.scene.stage is None:
+        return None, None
+    key = stage_key(config.scene.stage, config.scene.environment)
+    recorded = recorded_anchor(config_dir, key)
+    if recorded is not None:
+        return Camera(*recorded), None
+    return None, key
 
 
 def _still(request) -> bool:
@@ -151,13 +183,21 @@ def run_scene(runner, config: ExperimentConfig, name: str, options: FastOptions,
         anchor_mode = Mode(config.configurations[0].value)
         anchor_pose = PoseRequest(f"{prefix}_anchor", OrientationOffset(0.0, 0.0, 0.0),
                                   TranslationOffset())
+        pin, record_key = pinned_anchor(runner.config_dir, config)
         begun = monotonic()
         _, anchor = _configure(runner, config, f"{prefix}_anchor", anchor_pose, anchor_mode, None,
-                               configurations, still)
+                               configurations, still, pin)
         result.timings.append({"step": "anchor", "seconds": round(monotonic() - begun, 4),
                                "frames": configurations[-1].metadata.configure_frames})
+        if pin is None and record_key is not None:
+            # The first scene at this stage pins the camera the freeze captured for every
+            # configuration after the anchor's and for every later scene at the stage.
+            pin = Camera(tuple(anchor.position), tuple(anchor.orientation))
+            record_anchor(runner.config_dir, record_key, pin.position, pin.orientation)
+        result.anchor = None if pin is None else {"position": list(pin.position),
+                                                  "orientation": list(pin.orientation)}
         target_pose = None
-        if still:
+        if still or (config.motion is None and pin is not None):
             target_pose = PoseRequest(f"{prefix}_target", OrientationOffset(0.0, 0.0, 0.0),
                                       TranslationOffset())
         elif config.motion is None:
@@ -172,11 +212,14 @@ def run_scene(runner, config: ExperimentConfig, name: str, options: FastOptions,
                                                   diagnostics=Diagnostics())
             begun = monotonic()
             _, anchor = _configure(runner, step_config, f"{prefix}_c{index}", target_pose,
-                                   Mode(step.mode.value), anchor, configurations, still)
+                                   Mode(step.mode.value), None if pin is not None else anchor,
+                                   configurations, still, pin)
             result.timings.append({"step": f"configure {step.name}",
                                    "seconds": round(monotonic() - begun, 4),
                                    "frames": configurations[-1].metadata.configure_frames})
             for snapshot in step.snapshots:
+                if snapshot.repeat_of is not None and options.repeat_after_seconds > 0:
+                    time.sleep(options.repeat_after_seconds)
                 request = SnapshotRequest(
                     f"{prefix}_{snapshot.label}"[:64], snapshot.label, options.planes, snapshot.keep,
                     snapshot.compare, phase, options.limits.thresholds.pixel,

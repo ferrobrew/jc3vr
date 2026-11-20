@@ -468,6 +468,13 @@ fn plane_of(stage: Stage) -> Option<Plane> {
         Stage::GBuffer0 => Some(Plane::Albedo),
         Stage::GBuffer1 => Some(Plane::Normals),
         Stage::Velocity => Some(Plane::Velocity),
+        Stage::PostResolve => Some(Plane::PostResolve),
+        Stage::PreAtmosphere => Some(Plane::PreAtmosphere),
+        Stage::PostAtmosphere => Some(Plane::PostAtmosphere),
+        Stage::PostSun => Some(Plane::PostSun),
+        Stage::MainColor => Some(Plane::MainColor),
+        Stage::PreAa => Some(Plane::PreAa),
+        Stage::PostAa => Some(Plane::PostAa),
         _ => None,
     }
 }

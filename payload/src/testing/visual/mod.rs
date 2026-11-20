@@ -29,8 +29,8 @@ pub(crate) use motion::{
 };
 pub(crate) use overrides::{OverrideError, VisualOverrides, VisualOverridesTable};
 pub(crate) use pose::{
-    OrientationOffset, PoseError, PoseEvidence, PoseFrame, PoseRequest, PoseTable, PoseTransform,
-    TranslationOffset, pose_frame, pose_matches,
+    AnchorPin, AnchorTable, OrientationOffset, PoseError, PoseEvidence, PoseFrame, PoseRequest,
+    PoseTable, PoseTransform, TranslationOffset, pose_frame, pose_matches,
 };
 
 pub(crate) use crate::stereo::dispatch::RenderMode;
@@ -132,6 +132,8 @@ pub(crate) enum Request {
         mode: Mode,
         warmup_frames: u32,
         pose: Option<PoseRequest>,
+        /// The base the full-camera freeze holds, in place of the live camera it would capture.
+        anchor: Option<Box<AnchorPin>>,
         motion: Option<MotionRequest>,
         environment: Option<EnvironmentRequest>,
         shader_identity: bool,
@@ -274,6 +276,7 @@ pub(crate) fn process_pending() {
             mode,
             warmup_frames,
             pose,
+            anchor,
             motion,
             environment,
             shader_identity,
@@ -303,6 +306,9 @@ pub(crate) fn process_pending() {
             }
             if reset_pose {
                 pose_control::reset();
+            }
+            if let Some(anchor) = anchor {
+                pose_control::pin_full_camera(anchor.values());
             }
             let newly_armed = if shader_identity {
                 let newly = single_pass::shader_identity::arm();

@@ -173,11 +173,15 @@ class Scene:
     # Staged before the first configuration: the player moved to a location and objects spawned,
     # with the world left to settle. Its request ID is replaced per run.
     stage: StageRequest | None = None
+    # The camera a motion experiment's trajectory is about, pinned so that every run renders from
+    # it to the bit; absent, the trajectory is about the game's camera as frozen at the anchor
+    # configuration, which lands centimetres and degrees apart from run to run.
+    anchor: WorldPose | None = None
 
     @classmethod
     def from_toml(cls, value):
         value = _table(value, "scene")
-        _keys(value, set(), {"position", "orientation", "environment", "stage"}, "scene")
+        _keys(value, set(), {"position", "orientation", "environment", "stage", "anchor"}, "scene")
         pose = None
         if "position" in value or "orientation" in value:
             pose = WorldPose(_vector(value.get("position"), 3, "scene.position"),
@@ -189,7 +193,17 @@ class Scene:
                      if "stage" in value else None)
         except ProtocolError as error:
             raise ExperimentError(f"experiment: {error}") from error
-        return cls(pose, environment, stage)
+        anchor = None
+        if "anchor" in value:
+            table = _table(value["anchor"], "scene.anchor")
+            _keys(table, {"position", "orientation"}, set(), "scene.anchor")
+            anchor = WorldPose(_vector(table.get("position"), 3, "scene.anchor.position"),
+                               _vector(table.get("orientation"), 4, "scene.anchor.orientation"))
+            if pose is not None:
+                raise ExperimentError(
+                    "experiment: scene.anchor is for a motion experiment; a fixed camera is "
+                    "pinned by scene.position and scene.orientation")
+        return cls(pose, environment, stage, anchor)
 
 
 @dataclass(frozen=True)
@@ -1354,13 +1368,14 @@ def _feature_observation(config: ExperimentConfig, root: Path, capture: Capture,
 
 
 def _configure(runner, config: ExperimentConfig, request_id, pose, mode, anchor, configurations,
-               hold_still=False):
+               hold_still=False, pin=None):
     """Configure `mode`; `hold_still` replaces a motion that never moves the camera with the fixed
-    `pose`, so captures need not wait out its cycles."""
+    `pose`, so captures need not wait out its cycles, and `pin` (a camera) is the base the payload's
+    freeze holds in place of the live camera."""
     environment = config.scene.environment.request() if config.scene.environment else None
     motion = config.motion.request if config.motion and not hold_still else None
     request = Request(Command.CONFIGURE, request_id, mode, config.warmup_frames,
-                      None if motion else pose, motion=motion,
+                      None if motion else pose, anchor=pin, motion=motion,
                       environment=environment, visual_overrides=config.visual_overrides,
                       shader_identity=True if config.diagnostics.shader_identity else None)
     acknowledgement = runner.request(request)

@@ -28,6 +28,13 @@ class Plane(StrEnum):
     ALBEDO = "albedo"
     NORMALS = "normals"
     VELOCITY = "velocity"
+    POST_RESOLVE = "post_resolve"
+    PRE_ATMOSPHERE = "pre_atmosphere"
+    POST_ATMOSPHERE = "post_atmosphere"
+    POST_SUN = "post_sun"
+    MAIN_COLOR = "main_color"
+    PRE_AA = "pre_aa"
+    POST_AA = "post_aa"
 
 
 class DumpPolicy(StrEnum):

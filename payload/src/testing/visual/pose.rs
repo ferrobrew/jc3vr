@@ -13,6 +13,8 @@ pub(crate) enum PoseError {
     AngleOutOfRange(&'static str),
     NonFiniteTranslation(&'static str),
     TranslationOutOfRange(&'static str),
+    NonFiniteAnchor,
+    DegenerateAnchorOrientation,
 }
 
 impl std::fmt::Display for PoseError {
@@ -33,6 +35,13 @@ impl std::fmt::Display for PoseError {
                 "visual pose: the {axis} translation is outside [-{TRANSLATION_LIMIT}, \
                  {TRANSLATION_LIMIT}]"
             ),
+            Self::NonFiniteAnchor => write!(f, "visual pose: the anchor is not finite"),
+            Self::DegenerateAnchorOrientation => {
+                write!(
+                    f,
+                    "visual pose: the anchor orientation is not a unit quaternion"
+                )
+            }
         }
     }
 }
@@ -208,6 +217,47 @@ impl TryFrom<PoseTable> for PoseRequest {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct AnchorTable {
+    position: [f32; 3],
+    orientation: [f32; 4],
+}
+
+/// A world pose the full-camera freeze holds as its base in place of the live camera it would
+/// otherwise capture. The live camera follows the player's idle body and the game's camera state
+/// at the moment of capture, so two captures at one staged location land centimetres and degrees
+/// apart; a pinned anchor makes every configuration that names it render from the same pose to the
+/// bit, whatever was live when it began.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct AnchorPin {
+    values: PoseValues,
+}
+
+impl AnchorPin {
+    pub(crate) fn values(self) -> PoseValues {
+        self.values
+    }
+}
+
+impl TryFrom<AnchorTable> for AnchorPin {
+    type Error = PoseError;
+
+    fn try_from(table: AnchorTable) -> Result<Self, Self::Error> {
+        let position = Vec3::from_array(table.position);
+        let orientation = Quat::from_array(table.orientation);
+        if !position.is_finite() || !orientation.is_finite() {
+            return Err(PoseError::NonFiniteAnchor);
+        }
+        if (orientation.length() - 1.0).abs() > ANCHOR_UNIT_TOLERANCE {
+            return Err(PoseError::DegenerateAnchorOrientation);
+        }
+        Ok(Self {
+            values: PoseValues::from_pose(position, orientation.normalize()),
+        })
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub(crate) struct PoseTransform {
     pub position: [f32; 3],
@@ -244,6 +294,7 @@ pub(crate) enum PoseFrame {
 const POSE_POSITION_TOLERANCE: f32 = 1e-5;
 const TRANSLATION_LIMIT: f32 = 5000.0;
 const POSE_ORIENTATION_TOLERANCE: f32 = 1e-5;
+const ANCHOR_UNIT_TOLERANCE: f32 = 1e-3;
 
 pub(crate) fn pose_frame(
     request: Option<&PoseRequest>,

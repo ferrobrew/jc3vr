@@ -864,3 +864,39 @@ fn a_benchmark_request_needs_its_table_and_only_it_takes_one() {
         Err(RequestErrorKind::InvalidBenchmark(_))
     ));
 }
+
+#[test]
+fn an_anchor_is_validated_and_configure_only() {
+    let base = "command = 'visual_configure'\nid = 'configure'\nmode = 'multipass'\n";
+    let Ok(Request::Visual(visual::Request::Configure {
+        anchor: Some(anchor),
+        ..
+    })) = read(&format!(
+        "{base}[anchor]\nposition = [2090.9, 1040.3, 5004.9]\norientation = [0.0, 0.0, 0.0, 1.0]\n"
+    ))
+    else {
+        panic!("the anchor did not parse");
+    };
+    let values = anchor.values();
+    assert_eq!(values.position.to_array(), [2090.9, 1040.3, 5004.9]);
+    assert_eq!(
+        [values.yaw_deg, values.pitch_deg, values.roll_deg],
+        [0.0, 0.0, 0.0]
+    );
+    for table in [
+        "[anchor]\nposition = [0.0, 0.0, nan]\norientation = [0.0, 0.0, 0.0, 1.0]\n",
+        "[anchor]\nposition = [0.0, 0.0, 0.0]\norientation = [0.0, 0.0, 0.0, 0.5]\n",
+    ] {
+        assert!(matches!(
+            read(&format!("{base}{table}")),
+            Err(RequestErrorKind::InvalidPose(_))
+        ));
+    }
+    assert!(matches!(
+        read(
+            "command = 'visual_end'\nid = 'safe'\n[anchor]\nposition = [0.0, 0.0, 0.0]\n\
+             orientation = [0.0, 0.0, 0.0, 1.0]\n"
+        ),
+        Err(RequestErrorKind::AnchorOnCommand(_))
+    ));
+}

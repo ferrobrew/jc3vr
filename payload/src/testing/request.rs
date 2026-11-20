@@ -206,6 +206,7 @@ enum RequestErrorKind {
     StageOnCommand(Command),
     NoStage,
     PoseOnCommand(Command),
+    AnchorOnCommand(Command),
     MotionOnCommand(Command),
     EnvironmentOnCommand(Command),
     VisualOverridesOnCommand(Command),
@@ -270,6 +271,12 @@ impl std::fmt::Display for RequestError {
             RequestErrorKind::NoStage => write!(f, "visual_stage needs a stage table"),
             RequestErrorKind::PoseOnCommand(command) => {
                 write!(f, "only visual_configure accepts a pose, not {command:?}")
+            }
+            RequestErrorKind::AnchorOnCommand(command) => {
+                write!(
+                    f,
+                    "only visual_configure accepts an anchor, not {command:?}"
+                )
             }
             RequestErrorKind::MotionOnCommand(command) => {
                 write!(
@@ -402,6 +409,7 @@ struct RequestFile {
     mode: Option<visual::RenderMode>,
     warmup_frames: Option<u32>,
     pose: Option<visual::PoseTable>,
+    anchor: Option<visual::AnchorTable>,
     motion: Option<visual::MotionTable>,
     environment: Option<visual::EnvironmentTable>,
     stage: Option<StageTable>,
@@ -617,6 +625,17 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                 visual::PoseRequest::try_from(table)
                     .map_err(|reason| error(RequestErrorKind::InvalidPose(reason)))?,
             )
+        }
+        None => None,
+    };
+    let anchor = match file.anchor {
+        Some(table) => {
+            if file.command != Command::VisualConfigure {
+                return Err(error(RequestErrorKind::AnchorOnCommand(file.command)));
+            }
+            Some(Box::new(visual::AnchorPin::try_from(table).map_err(
+                |reason| error(RequestErrorKind::InvalidPose(reason)),
+            )?))
         }
         None => None,
     };
@@ -914,6 +933,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                     mode,
                     warmup_frames,
                     pose,
+                    anchor,
                     motion,
                     environment,
                     shader_identity: file.shader_identity.unwrap_or(false),

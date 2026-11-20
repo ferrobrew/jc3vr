@@ -52,6 +52,9 @@ def main(argv=None, iterate=False) -> int:
                         default=DumpPolicy.NEVER.value)
     parser.add_argument("--no-crop", action="store_true", help="dump whole eyes, not the differing region")
     parser.add_argument("--no-repeat", action="store_true", help="skip the noise-floor repeats")
+    parser.add_argument("--repeat-after-seconds", type=float, default=0.0,
+                        help="wait this long before each repeat snapshot, so the floor also "
+                             "measures what changes with time at a frozen camera")
     parser.add_argument("--full-cycles", action="store_true",
                         help="run a motion that never moves the camera as configured, not as a "
                              "fixed pose")
@@ -101,7 +104,8 @@ def main(argv=None, iterate=False) -> int:
             planes = (Plane.FINAL,) + planes
         options = FastOptions(planes, DumpPolicy(args.dump), not args.no_crop,
                               Limits(Thresholds(), args.noise_factor), args.restage,
-                              not args.no_repeat, args.full_cycles, args.depth_ulps)
+                              not args.no_repeat, args.full_cycles, args.depth_ulps,
+                              args.repeat_after_seconds)
         baseline = (baseline_counts(json.loads(args.baseline.read_text()))
                     if args.baseline else None)
         output = args.output or SESSIONS / "fast" / time.strftime("%Y%m%d-%H%M%S")

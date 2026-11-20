@@ -142,6 +142,18 @@ pub fn full_camera_transform(capture: impl FnOnce() -> glam::Mat4) -> glam::Mat4
     glam::Mat4::from_rotation_translation(held.current.orientation(), held.current.position)
 }
 
+/// Hold `base` as the full-camera freeze's captured pose, as if the freeze had captured it, with the
+/// edits returned to it. The full-camera freeze then never captures the live camera while the pin
+/// stands. A pin of the base already held only returns the edits to it, so re-pinning every
+/// configuration leaves the rendered stamp in place.
+pub(crate) fn pin_full_camera(base: PoseValues) {
+    let mut state = STATE.lock();
+    match state.as_mut() {
+        Some(held) if held.cockpit.is_none() && held.base == base => held.current = base,
+        _ => *state = Some(FrozenState::new(None, base)),
+    }
+}
+
 /// The compositor submission poses for this frame: the live ones when `frozen` is false, else the
 /// pair latched when the freeze engaged.
 ///

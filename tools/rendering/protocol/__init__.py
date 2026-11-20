@@ -268,7 +268,8 @@ def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool]
 # Settings the capture profile turns off or pins, put back at the mod's shipped value in every mode.
 # Mirrors `VisualOverrides::shipped` in `payload/src/testing/visual/overrides.rs`.
 # Sources left out in every mode, to attribute a difference to one.
-DISABLING_OVERRIDES = ("ssao", "ao_volumes", "fsr_mv_correction")
+DISABLING_OVERRIDES = ("ssao", "ao_volumes", "global_illumination", "fsr_mv_correction",
+                       "fsr_hybrid_velocity")
 SHIPPED_OVERRIDES = ("fsr", "foveation", "auto_exposure", "screen_fade", "player_damage")
 
 
@@ -280,6 +281,8 @@ class VisualOverrides:
     # Ambient-occlusion sources left out in every mode, to attribute a difference to one.
     ssao: str | None = None
     ao_volumes: str | None = None
+    # The global illumination pass left out in every mode.
+    global_illumination: str | None = None
     # FSR, the foveation, the engine's exposure metering, the screen fade, and the player-damage
     # overlay, each at its shipped behaviour in every mode.
     fsr: str | None = None
@@ -289,6 +292,8 @@ class VisualOverrides:
     player_damage: str | None = None
     # FSR's stereo motion-vector correction left out in every mode.
     fsr_mv_correction: str | None = None
+    # FSR's hybrid motion vectors left out in every mode.
+    fsr_hybrid_velocity: str | None = None
     # A headset-like eye rig substituted for the located views in every mode, by preset name.
     headset: str | None = None
     # The stage images every capture writes: "geometry" keeps only the depth, the albedo and normal
@@ -298,7 +303,7 @@ class VisualOverrides:
     def __post_init__(self):
         if self.sun_shadows is not None and not isinstance(self.sun_shadows, SunShadows):
             raise ProtocolError("visual protocol: invalid sun_shadows override")
-        if self.screen_space_reflections not in (None, "enabled"):
+        if self.screen_space_reflections not in (None, "enabled", "disabled"):
             raise ProtocolError("visual protocol: invalid screen_space_reflections override")
         for name in DISABLING_OVERRIDES:
             if getattr(self, name) not in (None, "disabled"):
@@ -398,6 +403,8 @@ class Request:
     mode: Mode | None = None
     warmup_frames: int | None = None
     pose: PoseRequest | None = None
+    # The base the payload's full-camera freeze holds in place of the live camera it would capture.
+    anchor: Camera | None = None
     motion: MotionRequest | None = None
     motion_capture: PhaseCapture | None = None
     environment: EnvironmentRequest | None = None
@@ -488,6 +495,11 @@ class Request:
             raise ProtocolError("visual protocol: only configuration requests accept a mode or frame count")
         if self.pose is not None and (self.command != Command.CONFIGURE or not isinstance(self.pose, PoseRequest)):
             raise ProtocolError("visual protocol: only configuration requests accept a pose")
+        if self.anchor is not None:
+            if self.command != Command.CONFIGURE or not isinstance(self.anchor, Camera):
+                raise ProtocolError("visual protocol: only configuration requests accept an anchor")
+            finite_vector(self.anchor.position, 3, "anchor.position")
+            finite_vector(self.anchor.orientation, 4, "anchor.orientation")
         if self.motion is not None and (self.command != Command.CONFIGURE or not isinstance(self.motion, MotionRequest)):
             raise ProtocolError("visual protocol: only configuration requests accept motion")
         if self.pose is not None and self.motion is not None:
@@ -675,9 +687,14 @@ class Request:
     def to_toml(self) -> str:
         result = "".join(f"{key} = {json.dumps(value)}\n"
                          for key, value in self.to_wire().items()
-                         if key not in ("pose", "motion", "motion_capture", "environment", "visual_overrides"))
+                         if key not in ("pose", "anchor", "motion", "motion_capture", "environment",
+                                        "visual_overrides"))
         if self.pose is not None:
             result += "\n" + self.pose.to_toml()
+        if self.anchor is not None:
+            result += ("\n[anchor]\n"
+                       f"position = {json.dumps(list(self.anchor.position))}\n"
+                       f"orientation = {json.dumps(list(self.anchor.orientation))}\n")
         if self.motion is not None:
             result += "\n" + self.motion.to_toml()
         if self.motion_capture is not None:
