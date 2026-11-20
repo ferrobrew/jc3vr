@@ -23,7 +23,7 @@ pub mod shader;
 // Single-pass stereo render-thread detours (the cb13 mirror; experimental, gated off by default).
 mod single_pass;
 
-mod post;
+pub(crate) mod post;
 mod scene;
 mod screen;
 

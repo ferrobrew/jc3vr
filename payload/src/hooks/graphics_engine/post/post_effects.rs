@@ -1,12 +1,15 @@
 //! Detours on the post-effects chain.
 //!
-//! Two concerns share this file. First, the fullscreen reprojection passes (motion blur, depth of
-//! field) do a screen-space reprojection whose per-frame-once state is only valid for one camera, so
-//! a second (stereo) render can paint a sub-region -- skip the whole pass (default on: VR wants both
-//! off anyway, and it's a clean A/B for the eye-1 "wedge"). Each `Apply` returns its source slot
-//! index, so returning `input` is a clean pass-through. Second, the manager-level filter enqueues
-//! (`ApplyWorldFilters` / `ApplyGlobalFilters`) step dt-driven accumulators that must only advance
-//! once per real frame, so their `dt` is zeroed on eye 1.
+//! Two concerns share this file. First, the motion blur and the depth of field smear the view with
+//! the camera's motion and focus, which in the headset are the player's own head and eyes, so
+//! neither runs while a VR session runs ([`vr_forces_blurs_off`]): the motion blur's `Apply` is
+//! skipped (it returns its source slot index, so returning `input` is a clean pass-through), and the
+//! depth of field's own passes are dropped by answering `IsBokehActive` with false, which leaves the
+//! chain on the plain blur and the composite without depth of field. The composite itself is the
+//! HDR-to-LDR tonemap, so `DepthOfFieldEffect::Apply` always runs in VR. Outside VR the
+//! `post_fx.skip_*` switches skip the passes as bisection aids. Second, the manager-level filter
+//! enqueues (`ApplyWorldFilters` / `ApplyGlobalFilters`) step dt-driven accumulators that must only
+//! advance once per real frame, so their `dt` is zeroed on eye 1.
 
 use std::{
     ffi::c_void,
@@ -29,6 +32,13 @@ use crate::{
     stereo::{self, draw_index, far_phase, later_scene},
 };
 
+/// Whether the motion blur and the depth of field are forced off: while a VR session runs, whatever
+/// the `post_fx` switches say. The eye images then go to the headset, where both effects would blur
+/// the view with the player's own head motion and gaze.
+pub(crate) fn vr_forces_blurs_off() -> bool {
+    crate::vr::is_running_published()
+}
+
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&RENDER_BLOCK_POST_EFFECTS_DRAW_BINDER)
@@ -36,6 +46,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&APPLY_GLOBAL_FILTERS_BINDER)
         .with_static_binder(&MOTION_BLUR_APPLY_BINDER)
         .with_static_binder(&DOF_APPLY_BINDER)
+        .with_static_binder(&IS_BOKEH_ACTIVE_BINDER)
         .with_static_binder(&FADE_APPLY_BINDER)
         .with_static_binder(&GLARE_APPLY_BINDER)
         .with_static_binder(&PLAYER_DAMAGE_APPLY_BINDER)
@@ -78,6 +89,8 @@ fn fsr_dispatch(mgr: *mut c_void, slot: u32, sharpness: Option<f32>) -> bool {
             crate::fsr::EyeLayout::Single(draw_index())
         };
         let mut state = crate::fsr::FSR_STATE.lock();
+        #[cfg(feature = "profiler")]
+        let _gpu = crate::profiler::gpu::nested_seam(crate::profiler::gpu::GpuSeam::Fsr);
         crate::fsr::dispatch(
             &mut state,
             device,
@@ -256,6 +269,7 @@ fn motion_blur_apply(
 ) -> u32 {
     let (skip_motion_blur, skip_recon) =
         Config::lock_query(|c| (c.post_fx.skip_motion_blur, c.post_fx.skip_motion_blur_recon));
+    let skip_motion_blur = skip_motion_blur || vr_forces_blurs_off();
     TraceState::record_eye(TraceEvent::MotionBlurApply {
         input,
         skip: skip_motion_blur,
@@ -285,6 +299,9 @@ fn dof_apply(
 ) -> u32 {
     let (skip_dof, dof_no_reproject) =
         Config::lock_query(|c| (c.post_fx.skip_dof, c.post_fx.dof_no_reproject));
+    // The composite is also the tonemap, so skipping it in VR would hand the headset the HDR scene
+    // unmapped; the depth of field is dropped in VR by `is_bokeh_active` instead.
+    let skip_dof = skip_dof && !vr_forces_blurs_off();
     TraceState::record_eye(TraceEvent::DofApply {
         input,
         skip: skip_dof,
@@ -317,6 +334,18 @@ fn dof_apply(
     }
     capture_post_result(crate::ui::render::POST_STAGE_DOF, mgr, slot);
     slot
+}
+
+// PostEffectsManager::IsBokehActive -- the post block's choice between the depth of field's own
+// passes (the downscale-and-focus prepass, the bokeh blur, and the depth-of-field composite) and the
+// plain blur with the plain composite. Answering false in VR drops the depth of field and keeps the
+// blur the glare reads and the tonemap.
+#[detour(address = jc3gi::graphics_engine::post_effects::PostEffectsManager::IsBokehActive_ADDRESS)]
+fn is_bokeh_active(this: *const PostEffectsManager) -> bool {
+    if vr_forces_blurs_off() {
+        return false;
+    }
+    IS_BOKEH_ACTIVE.get().unwrap().call(this)
 }
 
 // FadeEffect::Apply -- alpha-blended fade quad. Skip = no-op (the u64 return is discarded).

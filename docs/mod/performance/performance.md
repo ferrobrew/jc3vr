@@ -63,7 +63,7 @@ Ordered by expected payoff.
 
 - **Foveation** (`payload/src/vr/foveation.rs`) is the structurally correct answer, because it saves more as resolution rises and it discards pixels the optics discard anyway.
 - **FSR2** (`payload/src/fsr/`) is already integrated and trades fill for sharpness directly.
-- The obvious VR post savings are available but not taken by default: `post_fx.skip_motion_blur`, `post_fx.skip_dof`, and `stereo.skip_ssr` all exist and all default **off**. What remains in the post chain is wanted output — tone mapping, bloom, AA, SSAO — so cutting it further is a quality decision, not free.
+- The motion blur and the depth of field never run in VR (see "The motion blur and the depth of field" in [`single-pass-stereo.md`](../stereo/single-pass-stereo.md)). `stereo.skip_ssr` exists and defaults **off**. What remains in the post chain is wanted output — tone mapping, bloom, AA, SSAO — so cutting it further is a quality decision, not free.
 
 **Worth checking before either.** The engine renders at the runtime's recommended size while the OpenXR swapchain keeps the size it was created at, and the eye-to-swapchain step is a scaling shader blit. If those disagree, every frame pays a resample that looks exactly like softness. Both sizes are in the log (`created the stereo swapchain …` against the resize target); confirm they match at 1.0x before attributing blur to resolution.
 
