@@ -76,9 +76,21 @@ pub enum GpuSeam {
     Scene,
     PostEffects,
     PostDraw,
+    /// The mod's FSR resolve, nested inside [`Self::PostEffects`].
+    Fsr,
 }
 
 impl GpuSeam {
+    /// Every seam, in the order of [`Self::index`].
+    pub const ALL: [GpuSeam; 6] = [
+        GpuSeam::PreDraw,
+        GpuSeam::GBuffer,
+        GpuSeam::Scene,
+        GpuSeam::PostEffects,
+        GpuSeam::PostDraw,
+        GpuSeam::Fsr,
+    ];
+
     fn name(self) -> &'static str {
         match self {
             GpuSeam::PreDraw => "PreDraw",
@@ -86,13 +98,30 @@ impl GpuSeam {
             GpuSeam::Scene => "Draw (scene)",
             GpuSeam::PostEffects => "DrawPosteffects",
             GpuSeam::PostDraw => "PostDraw",
+            GpuSeam::Fsr => "FSR",
+        }
+    }
+
+    /// The seam's position in [`Self::ALL`].
+    pub const fn index(self) -> usize {
+        match self {
+            GpuSeam::PreDraw => 0,
+            GpuSeam::GBuffer => 1,
+            GpuSeam::Scene => 2,
+            GpuSeam::PostEffects => 3,
+            GpuSeam::PostDraw => 4,
+            GpuSeam::Fsr => 5,
         }
     }
 }
 
-/// Whether the GPU layer should issue queries this frame (tied to puffin's scope switch).
+// The benchmark names the seams by position.
+const _: () = assert!(GpuSeam::ALL.len() == crate::testing::benchmark::GPU_SEAM_NAMES.len());
+
+/// Whether the GPU layer should issue queries this frame: while puffin collects, or while the
+/// benchmark records (`crate::testing::benchmark`).
 pub fn enabled() -> bool {
-    puffin::are_scopes_on()
+    puffin::are_scopes_on() || crate::testing::benchmark::gpu_timing_armed()
 }
 
 /// Opens a GPU dispatch on `ctx`, tagged with the current eye. Begins the disjoint query and
@@ -195,6 +224,26 @@ pub unsafe fn seam(ctx: *mut HContext_t, seam: GpuSeam) -> Option<IntervalGuard>
     }
     let mut guard = STATE.lock();
     let state = guard.as_mut()?;
+    let begin = unsafe { state.record_timestamp(ctx)? };
+    Some(IntervalGuard {
+        ctx: SendPtr(ctx),
+        label: IntervalLabel::Seam(seam),
+        begin: SendPtr(begin),
+    })
+}
+
+/// Brackets a seam nested inside the enclosing dispatch's seams, such as the FSR resolve inside the
+/// post effects, with a GPU timestamp pair on the dispatch's own context. Returns `None` while
+/// disabled or outside a dispatch.
+pub fn nested_seam(seam: GpuSeam) -> Option<IntervalGuard> {
+    if !enabled() {
+        return None;
+    }
+    let mut guard = STATE.lock();
+    let state = guard.as_mut()?;
+    let ctx = state.current.as_ref()?.ctx.0;
+    // SAFETY: a dispatch is open, so the context it was opened with is still live (the dispatch
+    // is closed on the same thread, inside the same `HandleDrawThreadTask`).
     let begin = unsafe { state.record_timestamp(ctx)? };
     Some(IntervalGuard {
         ctx: SendPtr(ctx),

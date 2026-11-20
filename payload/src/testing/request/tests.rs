@@ -832,3 +832,35 @@ fn visual_stage_requests_need_a_stage_table_only_they_accept() {
         Err(RequestErrorKind::StageOnCommand(Command::VisualConfigure))
     ));
 }
+
+#[test]
+fn a_benchmark_request_needs_its_table_and_only_it_takes_one() {
+    let request = read(
+        "command = 'benchmark'\nid = 'b1'\n[benchmark]\nlabel = 'town'\nmode = 'single_pass'\n\
+         record_seconds = 10.0\n[benchmark.single_pass]\nfsr_per_eye = false\n",
+    )
+    .unwrap();
+    let Request::Benchmark(benchmark) = request else {
+        panic!("expected a benchmark request");
+    };
+    assert_eq!(benchmark.label, "town");
+    assert_eq!(benchmark.switches.iter().count(), 1);
+    assert!(matches!(
+        read("command = 'benchmark'\nid = 'b1'\n"),
+        Err(RequestErrorKind::NoBenchmark)
+    ));
+    assert!(matches!(
+        read(
+            "command = 'snapshot_release'\nid = 'b1'\n[benchmark]\nlabel = 'a'\n\
+             mode = 'multipass'\nrecord_seconds = 1.0\n"
+        ),
+        Err(RequestErrorKind::BenchmarkOnCommand(_))
+    ));
+    assert!(matches!(
+        read(
+            "command = 'benchmark'\nid = 'b1'\n[benchmark]\nlabel = 'a'\nmode = 'multipass'\n\
+             record_seconds = 500.0\n"
+        ),
+        Err(RequestErrorKind::InvalidBenchmark(_))
+    ));
+}

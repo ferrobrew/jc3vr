@@ -147,6 +147,11 @@ pub(crate) enum Slot {
     Mirror,
     /// The deferred frame tail's own glue, excluding its drain, mirror, and submit.
     Tail,
+    /// The engine's draw task for one dispatch (`GraphicsEngine::HandleDrawThreadTask`), excluding
+    /// the scopes nested in it: the walk of the render passes that records the dispatch's draws on
+    /// the immediate context, with the mod's draw-path detours inside it. Runs on whichever thread
+    /// executes the task, a CPU fragment worker normally.
+    DrawTask,
     /// The mod's work in `RenderEngine::PostDraw` on the draw task: the world-space overlays, the
     /// HUD quad, the egui panel, and the eye captures, excluding the world markers' placement.
     PostDraw,
@@ -245,6 +250,7 @@ impl Slot {
         Slot::Submit,
         Slot::Mirror,
         Slot::Tail,
+        Slot::DrawTask,
         Slot::PostDraw,
         Slot::BodyEstimator,
         Slot::VrEndFrame,
@@ -256,7 +262,7 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 57;
+    pub(crate) const COUNT: usize = 58;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
     pub(crate) const fn index(self) -> usize {
@@ -315,6 +321,7 @@ impl Slot {
             Slot::Submit => "submit",
             Slot::Mirror => "mirror",
             Slot::Tail => "tail",
+            Slot::DrawTask => "draw_task",
             Slot::PostDraw => "post_draw",
             Slot::BodyEstimator => "body_estimator",
             Slot::VrEndFrame => "vr_end_frame",
@@ -378,7 +385,8 @@ impl Slot {
             | Slot::AiThread2
             | Slot::InputJob
             | Slot::EngineUpdateRender
-            | Slot::Dispatch => Kind::Engine,
+            | Slot::Dispatch
+            | Slot::DrawTask => Kind::Engine,
             Slot::VrLock
             | Slot::VrWaitFrame
             | Slot::VrSwapchainWait

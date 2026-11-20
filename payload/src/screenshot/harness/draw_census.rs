@@ -14,7 +14,7 @@
 use std::{
     collections::BTreeMap,
     ffi::c_void,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use jc3gi::graphics_engine::render_engine::{RenderBlockTypeBase, RenderPassId};
@@ -204,6 +204,7 @@ pub(crate) unsafe fn on_call(kind: RawDrawKind, context: *mut c_void) {
 /// Record one submission the draw path made for the open call. `promoted` marks the instance-doubled
 /// promotion of a single-instance draw.
 pub(crate) fn on_submission(promoted: bool) {
+    SUBMISSIONS.fetch_add(1, Ordering::Relaxed);
     if !RECORDING.load(Ordering::Acquire) {
         return;
     }
@@ -214,6 +215,15 @@ pub(crate) fn on_submission(promoted: bool) {
         open.promoted |= promoted;
     }
 }
+
+/// Every submission the stereo draw path has made since the payload loaded, never reset, for
+/// samplers that difference two readings (the benchmark, `crate::testing::benchmark`). Counted
+/// whether or not a census records, and only while the draw-path detours are installed.
+pub(crate) fn submission_total() -> u64 {
+    SUBMISSIONS.load(Ordering::Relaxed)
+}
+
+static SUBMISSIONS: AtomicU64 = AtomicU64::new(0);
 
 /// Take the census recorded for `frame`, or a census carrying the reason there is none.
 pub(crate) fn take(frame: i64) -> DrawCensus {

@@ -106,6 +106,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [performance.md](mod/performance/performance.md) — where the frame actually goes, measured: geometry bound by draw submission rather than fill, the post chain bound by pixels, and what single-pass stereo buys.
 - [profiler.md](mod/performance/profiler.md) — the in-game profiler (issue #34): puffin CPU scopes across the frame phases and render passes, the GPU timestamp lane, the flame graph, and the F9 trace capture.
+- [frame-budget.md](mod/performance/frame-budget.md) — the frame-time benchmark's results at the headset's size: multipass and single-pass per scene against 13.9 ms, the serial CPU chain and the GPU as the two limits, the resolution sweep and its knee, what the remaining per-eye families and the draw detours cost, the ranked opportunities, and the frames under 72 Hz pacing.
 - [frame-timing.md](mod/performance/frame-timing.md) — the always-on frame breakdown: self time per frame region by kind (mod, OpenXR, engine, wait) and thread, the frames split by the sim ticks they ran and the tick's phases, logged every ten seconds and shown in the debug UI's Rendering > Previews and performance feature.
 
 ### body/
@@ -168,6 +169,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 - [recorder.md](mod/testing/recorder.md) — testing without the headset: the tracking recorder and its file format, the replay at the head, controller, and STAGE seams with or without a session, the scenario file and its signals, status rows, and log probes, the PASS and FAIL results, the ways to start the tools, the templates, the synthetic recordings written by `tracking-synth` from scripted head and controller paths, and the limits of a replay.
 - [rerun.md](mod/testing/rerun.md) — `tracking-synth export-rerun`: a recording and its take's video as a Rerun recording, what it shows, how the cockpit is placed in the world, and what the format leaves out.
 - [fast-comparison.md](mod/testing/fast-comparison.md) — the capture harness's fast loop: GPU snapshots compared on the GPU per eye and plane with the Python comparison's rules, the noise floors and verdicts, the cropped compressed dumps, the still camera held as a fixed pose, the reused stage, re-injection under the harness and what pins a payload, the standing suite, the `iterate` command, and where the time went before.
+- [benchmark.md](mod/testing/benchmark.md) — the frame-time benchmark: the live game played forward per scene in each render mode with the camera held or moving, every frame's CPU time per thread, GPU time per dispatch and seam, and submissions recorded, the host's per-thread CPU time alongside, the resolution sweep, the result file format, the charts, and what a harness machine can and cannot say.
 - [view-scan.md](mod/testing/view-scan.md) — `tracking-synth scan-view`: a take's video scanned for flashes, each checked against the camera's place behind or ahead of Rico's head, run after each take's Rerun export.
 
 ## issues/

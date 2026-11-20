@@ -23,6 +23,11 @@ from tools.rendering.session.errors import SessionError
 # first; the payload gives up on a stage after seven minutes in all.
 STAGE_BUDGET_SECONDS = 450
 
+# A benchmark run waits up to 90 seconds for its configuration, then warms up and records for at
+# most 60 and 120 seconds (`MAX_WARMUP_SECONDS` and `MAX_RECORD_SECONDS` in
+# `payload/src/testing/benchmark/request.rs`).
+BENCHMARK_BUDGET_SECONDS = 300
+
 # How often an outstanding request's acknowledgement is looked for. The payload looks for requests
 # every frame in a harness session, so a coarser poll here would dominate short requests.
 POLL_SECONDS = 0.005
@@ -47,7 +52,8 @@ class RequestChannel:
         if not re.fullmatch(r"[A-Za-z0-9_-]+", request_id):
             raise SessionError("session: invalid request ID")
         folder = ("captures" if command in (Command.SCREENSHOT, Command.SNAPSHOT,
-                                             Command.SNAPSHOT_RELEASE) else "visual")
+                                             Command.SNAPSHOT_RELEASE, Command.BENCHMARK)
+                  else "visual")
         acknowledgement = self.config_dir / folder / f"{request_id}.json"
         request = self.config_dir / "test_request.toml"
         if request.exists() or acknowledgement.exists():
@@ -57,7 +63,8 @@ class RequestChannel:
         temporary.replace(request)
         self.pending_request = request_value
         budget = {Command.CONFIGURE: 75, Command.SCREENSHOT: 60, Command.SNAPSHOT: 60,
-                  Command.STAGE: STAGE_BUDGET_SECONDS}.get(command, 35)
+                  Command.STAGE: STAGE_BUDGET_SECONDS,
+                  Command.BENCHMARK: BENCHMARK_BUDGET_SECONDS}.get(command, 35)
         end = time.monotonic() + budget
         if self.deadline is not None:
             end = min(end, self.deadline)

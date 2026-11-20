@@ -68,6 +68,7 @@ class Command(StrEnum):
     STAGE = "visual_stage"
     SNAPSHOT = "snapshot"
     SNAPSHOT_RELEASE = "snapshot_release"
+    BENCHMARK = "benchmark"
 
 
 POSE_TOLERANCE = 1e-4

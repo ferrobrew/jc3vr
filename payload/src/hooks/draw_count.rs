@@ -9,7 +9,11 @@
 //! register/stack slot) rather than decode them -- they're only counted, never inspected. The
 //! buffer-flow wrappers (`Clear`/`CopySurfaceToTexture`/`ResolveSurface`) fire rarely enough to trace.
 
-use std::{cell::Cell, ffi::c_void, sync::atomic::Ordering};
+use std::{
+    cell::Cell,
+    ffi::c_void,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use detours_macro::detour;
 use re_utilities::hook_library::HookLibrary;
@@ -32,17 +36,41 @@ thread_local! {
 /// them at `draw_begin` and snapshots them into the `draw_end` event.
 pub(crate) static DRAW_COUNTS: DrawCounts = DrawCounts::new();
 
+/// The engine's draw calls and compute dispatches through its `Graphics::` wrappers, summed since the
+/// payload loaded and never reset, for samplers that difference two readings (the benchmark,
+/// `crate::testing::benchmark`). A render block re-issued per eye calls the wrappers again, so these
+/// count its draws once per eye.
+pub(crate) fn engine_call_totals() -> EngineCallTotals {
+    EngineCallTotals {
+        draws: TOTAL_DRAWS.load(Ordering::Relaxed),
+        dispatches: TOTAL_DISPATCHES.load(Ordering::Relaxed),
+    }
+}
+
+/// The totals [`engine_call_totals`] returns.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct EngineCallTotals {
+    pub(crate) draws: u64,
+    pub(crate) dispatches: u64,
+}
+
+static TOTAL_DRAWS: AtomicU64 = AtomicU64::new(0);
+static TOTAL_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+
 fn bump_draw() {
+    TOTAL_DRAWS.fetch_add(1, Ordering::Relaxed);
     DRAW_COUNTS.draw.fetch_add(1, Ordering::Relaxed);
     PASS_DRAW.with(|c| c.set(c.get() + 1));
 }
 
 fn bump_indexed() {
+    TOTAL_DRAWS.fetch_add(1, Ordering::Relaxed);
     DRAW_COUNTS.draw_indexed.fetch_add(1, Ordering::Relaxed);
     PASS_INDEXED.with(|c| c.set(c.get() + 1));
 }
 
 fn bump_dispatch() {
+    TOTAL_DISPATCHES.fetch_add(1, Ordering::Relaxed);
     DRAW_COUNTS.dispatch.fetch_add(1, Ordering::Relaxed);
     PASS_DISPATCH.with(|c| c.set(c.get() + 1));
 }

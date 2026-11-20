@@ -66,14 +66,14 @@ GPU lane: a synthetic "GPU" puffin thread built from the engine's own
 wraps its seams (`PreDraw`, `DrawGBuffer`, `Draw (scene)`, `DrawPosteffects`, `PostDraw`) in
 timestamp pairs under one disjoint query, and the resolved results are reported a few frames later
 under a per-dispatch outer scope ("GPU eye 0" / "GPU eye 1" / "GPU far field"), which also carries
-the dispatch's busy/starved/submit numbers as its scope data. GPU ticks are
+the dispatch's busy/starved/submit numbers as its scope data. The mod's FSR resolve has a seam of its own (`FSR`), nested inside `DrawPosteffects`. GPU ticks are
 mapped onto the CPU timeline via a CPU reference taken at the dispatch's start, with consecutive
 dispatches serialized on the lane (the GPU executes them in order), so the lane aligns with — and
 visibly trails — the CPU work that submitted it. Disjoint intervals are dropped rather than
 reported. The lane also carries measured "GPU idle" scopes — the true starvation gap between one
 dispatch's last timestamp and the next one's first — so the cost of the serialized dispatch
 pipeline shows up as a number (the analyzer folds them into a GPU-utilization figure) rather than
-an inference. Comparing ticks across disjoint brackets is out of contract for D3D11 but sound
+an inference. The queries also run, without the puffin lane, while the frame-time benchmark records ([benchmark.md](../testing/benchmark.md)), which takes each resolved dispatch's span, idle gap, submit span, and seam times. Comparing ticks across disjoint brackets is out of contract for D3D11 but sound
 under DXVK's monotonic timestamp clock; implausible gaps are discarded.
 
 ### Reading the GPU lane: work, not span

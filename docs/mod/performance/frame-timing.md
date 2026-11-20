@@ -10,12 +10,14 @@ Each slot has a kind:
 
 - `mod`: the mod's own CPU work. The debug UI, the input tick and the controller bindings, the physical hands, the aim update, the render-update hook's glue, the submit's blit, the desktop mirror, the frame tail's glue, and the post-draw overlays on the draw task. Inside the engine's own work: the character pose-pass hooks around the HumanIK solve (`character_pose`), the procedural torso at the solve gate (`body_gate`), the hand bodies' pre-simulation callback (`hand_bodies`), the UI capture thread's hooks (`ui_capture`), and the world markers' raycasts, placement, and depth sampling (`world_markers`).
 - `openxr`: OpenXR calls that do work rather than pace. `xrBeginFrame` with the view and head location, the controllers' action sync and reads, and `xrEndFrame`.
-- `engine`: the engine's own work. The sim tick and its phases (below), the rest of `Game::Update`, the engine's render update, and its game-thread draw per dispatch.
+- `engine`: the engine's own work. The sim tick and its phases (below), the rest of `Game::Update`, the engine's render update, its game-thread draw per dispatch, and the draw task (`draw_task`, [`GraphicsEngine::HandleDrawThreadTask`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::GraphicsEngine##func-HandleDrawThreadTask), one call per dispatch on the thread that runs it, a CPU fragment worker normally). The draw task's time includes the stereo draw path's detours around every draw, which no scope of their own times, so it is the draw-recording thread's whole cost less the post-draw work.
 - `wait`: blocking. `xrWaitFrame`, the swapchain image wait, the VR runtime lock (which the deferred tail holds until it submits the previous frame), and the drains that wait on the draw task.
 
 Self time is also bucketed by the thread it ran on, from its role in `crate::thread_role`: the game thread, the frame tail, and every other thread (the draw task and the fragment workers). The game thread is the one that bounds the frame rate. Its untracked time is the frame interval minus everything the scopes covered there, which is the engine's main loop outside `Game::Update` plus timer overhead.
 
 The frame interval is the time between successive `Game::Update` entries.
+
+Besides the windows, every slot's self time and calls and every thread bucket are also summed into counters that are never reset (`frame_timing::cumulative`), so a sampler can take the difference between two readings. The frame-time benchmark ([benchmark.md](../testing/benchmark.md)) reads them once a frame.
 
 ## The sim tick
 

@@ -1,0 +1,67 @@
+# The frame-time benchmark's scenes and single-pass variants. Each scene stands the player where an
+# experiment config stages it, holds the camera at the player's view (or moves it along `camera`),
+# and lets the clock and the world run. Run it with `python3 -m tools.rendering benchmark --session N`.
+# See docs/mod/testing/benchmark.md.
+
+[[scene]]
+name = "capital"
+config = "coverage_capital_midday.toml"
+
+[[scene]]
+name = "town"
+config = "coverage_town_midday.toml"
+
+# The same town spot with the camera turning and moving: new geometry enters the view and streams.
+[[scene]]
+name = "town-moving"
+config = "coverage_town_midday.toml"
+camera = { yaw_deg = 30.0, forward_m = 8.0, period_seconds = 10.0 }
+
+[[scene]]
+name = "tunnel"
+config = "coverage_tunnel_midday.toml"
+
+[[scene]]
+name = "shore"
+config = "shore_lake_production.toml"
+[scene.stage]
+settle_seconds = 20.0
+location = { position = [7586.867, 1514.6827, -4081.8762], yaw_deg = 0.0 }
+
+[[scene]]
+name = "meadow"
+config = "coverage_forest_midday.toml"
+
+# Single-pass with one of its draw-count reductions or per-eye passes switched off, to put a cost on
+# each. Some of these render one eye wrongly; they are measurements, not settings.
+[[variant]]
+name = "vegetation-once-off"
+switches = { vegetation_once = false }
+
+[[variant]]
+name = "hw-instanced-once-off"
+switches = { hw_instanced_once = false }
+
+[[variant]]
+name = "fsr-per-eye-off"
+switches = { fsr_per_eye = false }
+
+[[variant]]
+name = "foveation-per-eye-off"
+switches = { foveation_per_eye = false }
+
+[[variant]]
+name = "ssdecal-reissue-off"
+switches = { ssdecal_geometry_per_eye = false }
+
+[[variant]]
+name = "water-reissue-off"
+switches = { nvwater_per_eye = false }
+
+[[variant]]
+name = "indirect-reissue-off"
+switches = { indirect_per_eye = false }
+
+[[variant]]
+name = "instanced-reissue-off"
+switches = { instanced_per_eye = false }

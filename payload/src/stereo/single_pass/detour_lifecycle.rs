@@ -119,6 +119,12 @@ unsafe extern "system" fn rs_set_scissor_rects_detour(
 /// frame (a shader created in between, e.g. a character shader loaded at level start, would otherwise
 /// be patched at the blob level but never recorded, so `BOUND_VS_PATCHED` stays false and its draw is
 /// never doubled). A normal (single-pass-off) session never installs it.
+/// Whether the draw-path COM detours are installed. Once a session has run single-pass they stay
+/// installed until eject, and every draw then passes through them, single-pass or not.
+pub(crate) fn com_detours_installed() -> bool {
+    RS_SET_VIEWPORTS.get().is_some()
+}
+
 pub(crate) fn ensure_viewport_detours() {
     // The whole body is serialized, not just the published-yet check: the callers are on different
     // threads (the render thread's cb13 mirror and the shader-creation thread's `CreateVertexProgram`),

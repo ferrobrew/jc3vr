@@ -208,13 +208,10 @@ class AmbientOcclusionOverrideTests(unittest.TestCase):
 
 
 class MotionBlurOverrideTests(unittest.TestCase):
-    def test_motion_blur_round_trips_and_rejects_other_values(self):
-        overrides = VisualOverrides.from_wire({"motion_blur": "enabled"})
-        self.assertEqual(overrides.to_wire(), {"motion_blur": "enabled"})
-        self.assertEqual(tomllib.loads(overrides.to_toml())["visual_overrides"],
-                         {"motion_blur": "enabled"})
+    def test_motion_blur_is_not_an_override(self):
+        # The motion blur never runs in VR, so there is nothing for an override to put back.
         with self.assertRaises(ProtocolError):
-            VisualOverrides.from_wire({"motion_blur": "disabled"})
+            VisualOverrides.from_wire({"motion_blur": "enabled"})
 
 
 class ShippedOverrideTests(unittest.TestCase):

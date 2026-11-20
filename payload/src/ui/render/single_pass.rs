@@ -5,7 +5,10 @@ use crate::{
     config,
     far_field::FarFieldMode,
     hooks::graphics_engine::shader,
-    stereo::single_pass::{self, Capability},
+    stereo::{
+        config::set_single_pass_feature,
+        single_pass::{self, Capability},
+    },
 };
 
 pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
@@ -33,23 +36,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
             )
             .clicked()
         {
-            let on = !enabled;
-            cfg.stereo.single_pass.enabled = on;
-            cfg.stereo.single_pass.dual_eye = on;
-            cfg.stereo.single_pass.collapse = on;
-            cfg.stereo.single_pass.double_wide = on;
-            cfg.stereo.single_pass.reproject = on;
-            cfg.stereo.single_pass.reproject_camera_only = on;
-            cfg.stereo.single_pass.terrain = on;
-            cfg.stereo.single_pass.tree_impostors = on;
-            cfg.stereo.single_pass.bark = on;
-            cfg.stereo.single_pass.foliage = on;
-            cfg.stereo.single_pass.occluder = on;
-            cfg.stereo.single_pass.patch_dryrun = false;
-            cfg.vr.native_resolution = on;
-            if on && cfg.far_field.mode == FarFieldMode::Share {
-                cfg.far_field.mode = FarFieldMode::Collect;
-            }
+            set_single_pass_feature(cfg, !enabled);
             shader::request_reload();
         }
         ui.separator();

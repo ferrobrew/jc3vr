@@ -60,6 +60,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
     start_index: u32,
     base_vertex: i32,
 ) {
+    let _timing = crate::testing::benchmark::detour_timing::enter();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };
@@ -163,6 +164,7 @@ pub(super) unsafe extern "system" fn draw_detour(
     vertex_count: u32,
     start_vertex: u32,
 ) {
+    let _timing = crate::testing::benchmark::detour_timing::enter();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };
@@ -469,6 +471,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_indirect_detour(
     buffer_for_args: *mut c_void,
     aligned_byte_offset: u32,
 ) {
+    let _timing = crate::testing::benchmark::detour_timing::enter();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };
@@ -512,6 +515,7 @@ pub(super) unsafe extern "system" fn draw_instanced_indirect_detour(
     buffer_for_args: *mut c_void,
     aligned_byte_offset: u32,
 ) {
+    let _timing = crate::testing::benchmark::detour_timing::enter();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };
@@ -636,6 +640,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
     base_vertex: i32,
     start_instance: u32,
 ) {
+    let _timing = crate::testing::benchmark::detour_timing::enter();
     // SAFETY: `context` is the live immediate context this entry was called on.
     let water = unsafe { packed_water_context(&context) };
     let _reflection = unsafe { reflection_treatment(context) };

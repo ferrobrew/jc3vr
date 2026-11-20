@@ -21,6 +21,7 @@ use crate::{
     config::Config,
     screenshot::harness::snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
     testing::{
+        benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},
         replay::{self, Pacing, ReplayOptions, StartMode},
         scenario,
         stage::{self, StageRequest, StageTable},
@@ -171,6 +172,7 @@ enum Request {
     Stage(StageRequest),
     Snapshot(SnapshotRequest),
     SnapshotRelease(crate::screenshot::harness::RequestId),
+    Benchmark(BenchmarkRequest),
 }
 
 /// Why a request file could not be used.
@@ -198,6 +200,9 @@ enum RequestErrorKind {
     InvalidSnapshot(SnapshotError),
     SnapshotOnCommand(Command),
     NoSnapshot,
+    InvalidBenchmark(BenchmarkError),
+    BenchmarkOnCommand(Command),
+    NoBenchmark,
     StageOnCommand(Command),
     NoStage,
     PoseOnCommand(Command),
@@ -248,6 +253,14 @@ impl std::fmt::Display for RequestError {
                 write!(f, "only snapshot accepts a snapshot table, not {command:?}")
             }
             RequestErrorKind::NoSnapshot => write!(f, "snapshot needs a snapshot table"),
+            RequestErrorKind::InvalidBenchmark(error) => write!(f, "{error}"),
+            RequestErrorKind::BenchmarkOnCommand(command) => {
+                write!(
+                    f,
+                    "only benchmark accepts a benchmark table, not {command:?}"
+                )
+            }
+            RequestErrorKind::NoBenchmark => write!(f, "benchmark needs a benchmark table"),
             RequestErrorKind::StageOnCommand(command) => {
                 write!(
                     f,
@@ -367,6 +380,7 @@ enum Command {
     Screenshot,
     Snapshot,
     SnapshotRelease,
+    Benchmark,
     Record,
     StopRecording,
     Replay,
@@ -395,6 +409,7 @@ struct RequestFile {
     visual_overrides: Option<visual::VisualOverridesTable>,
     motion_capture: Option<MotionCaptureTable>,
     snapshot: Option<SnapshotTable>,
+    benchmark: Option<BenchmarkTable>,
     water_reflection: Option<crate::screenshot::harness::WaterReflection>,
     #[serde(default)]
     water_inputs: bool,
@@ -656,6 +671,9 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
     };
     if file.snapshot.is_some() && file.command != Command::Snapshot {
         return Err(error(RequestErrorKind::SnapshotOnCommand(file.command)));
+    }
+    if file.benchmark.is_some() && file.command != Command::Benchmark {
+        return Err(error(RequestErrorKind::BenchmarkOnCommand(file.command)));
     }
     let motion_capture = match file.motion_capture {
         Some(table) => {
@@ -925,6 +943,19 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                     .map_err(|e| error(RequestErrorKind::InvalidSnapshot(e)))?,
             )
         }
+        Command::Benchmark => {
+            let id = crate::screenshot::harness::RequestId::parse(
+                file.id.as_deref().unwrap_or_default(),
+            )
+            .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?;
+            let table = file
+                .benchmark
+                .ok_or_else(|| error(RequestErrorKind::NoBenchmark))?;
+            Request::Benchmark(
+                BenchmarkRequest::parse(id, table)
+                    .map_err(|e| error(RequestErrorKind::InvalidBenchmark(e)))?,
+            )
+        }
         Command::SnapshotRelease => Request::SnapshotRelease(
             crate::screenshot::harness::RequestId::parse(file.id.as_deref().unwrap_or_default())
                 .map_err(|reason| error(RequestErrorKind::InvalidId(reason)))?,
@@ -1032,6 +1063,7 @@ fn act(request: Request) {
         Request::Stage(request) => stage::enqueue(request),
         Request::Snapshot(request) => crate::screenshot::harness::snapshot::request(request),
         Request::SnapshotRelease(id) => crate::screenshot::harness::snapshot::release(id),
+        Request::Benchmark(request) => crate::testing::benchmark::request(request),
         Request::Screenshot {
             id,
             motion,

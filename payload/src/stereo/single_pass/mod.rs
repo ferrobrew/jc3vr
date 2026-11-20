@@ -106,7 +106,8 @@ pub use cb13::*;
 pub use config_snapshot::*;
 use detour_lifecycle::{DETOUR_INSTALL, DetourSlot, PIXEL_SHADER_EVER_ENABLED};
 pub(crate) use detour_lifecycle::{
-    ensure_pixel_shader_detour, ensure_viewport_detours, vertex_identity_detour_ready,
+    com_detours_installed, ensure_pixel_shader_detour, ensure_viewport_detours,
+    vertex_identity_detour_ready,
 };
 use draw_detours::*;
 pub use frame_diagnostics::*;

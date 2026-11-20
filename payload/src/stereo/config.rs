@@ -2,6 +2,36 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::{config::Config, far_field::FarFieldMode};
+
+/// Turn the whole single-pass feature on or off together, as the debug UI's one button does: the
+/// master switch, the dual-eye split, the collapse, the double-wide target, the reprojected scene
+/// families, the terrain, the tree impostors, and the bark, foliage, and occluder re-issues, along
+/// with the native resolution the double-wide target needs, which turning the feature off leaves as
+/// it is. The far field's share mode cannot run under the collapse, so turning the feature on moves
+/// it to collecting. The caller requests the shader reload that applies the change.
+pub(crate) fn set_single_pass_feature(config: &mut Config, on: bool) {
+    let sps = &mut config.stereo.single_pass;
+    sps.enabled = on;
+    sps.dual_eye = on;
+    sps.collapse = on;
+    sps.double_wide = on;
+    sps.reproject = on;
+    sps.reproject_camera_only = on;
+    sps.terrain = on;
+    sps.tree_impostors = on;
+    sps.bark = on;
+    sps.foliage = on;
+    sps.occluder = on;
+    sps.patch_dryrun = false;
+    if on {
+        config.vr.native_resolution = true;
+        if config.far_field.mode == FarFieldMode::Share {
+            config.far_field.mode = FarFieldMode::Collect;
+        }
+    }
+}
+
 /// The single-pass stereo configuration: rendering both eyes in one geometry walk into a
 /// double-wide target.
 ///

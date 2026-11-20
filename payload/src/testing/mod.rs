@@ -10,6 +10,7 @@
 //! also has a step at the top of the render update ([`replay::begin_frame`]) and seams in the VR
 //! frame loop and the input update. See `docs/mod/testing/recorder.md`.
 
+pub(crate) mod benchmark;
 mod config;
 pub(crate) mod log_tap;
 pub(crate) mod replay;
@@ -30,6 +31,7 @@ pub(crate) fn update() {
     crate::screenshot::harness::tick();
     visual::tick();
     request::poll();
+    benchmark::tick();
     stage::update();
     replay::update();
     scenario::update();
@@ -72,6 +74,7 @@ pub(crate) fn toggle_scenario() {
 /// Stop the tools and wait for their threads, for eject. Returns whether none is left running.
 #[must_use = "a thread that did not finish means the payload must stay mapped"]
 pub(crate) fn shutdown() -> bool {
+    benchmark::shutdown();
     visual::shutdown();
     scenario::stop();
     log_tap::stop();

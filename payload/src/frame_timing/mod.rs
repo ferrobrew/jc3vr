@@ -19,7 +19,7 @@
 //! function bounds is timed with an [`interval`], which records into its slot as a child of the
 //! enclosing scope.
 //!
-//! The cost is two clock reads, a few thread-local accesses, and four relaxed atomic adds per scope,
+//! The cost is two clock reads, a few thread-local accesses, and seven relaxed atomic adds per scope,
 //! with a few dozen scopes a frame; the clock is `QueryPerformanceCounter` through [`Instant`]. Only
 //! the game thread's once-a-frame [`frame_tick`] touches a lock, and only once a second.
 //!
@@ -189,6 +189,55 @@ pub(crate) fn latest() -> Option<Report> {
     LATEST.lock().clone()
 }
 
+/// Every slot's self time and call count, and every thread class's time by kind, summed since the
+/// payload loaded and never reset. A caller that samples it twice takes the difference: the
+/// benchmark (`crate::testing::benchmark`) does so once per frame. Lock-free, so any thread may
+/// read it; a scope closing on another thread while it is read lands in this sample or the next.
+pub(crate) fn cumulative() -> Cumulative {
+    let mut result = Cumulative {
+        slot_self_ns: [0; Slot::COUNT],
+        slot_calls: [0; Slot::COUNT],
+        buckets: [[0; Kind::COUNT]; ThreadClass::COUNT],
+    };
+    for (index, counters) in TOTALS.iter().enumerate() {
+        result.slot_self_ns[index] = counters.self_ns.load(Ordering::Relaxed);
+        result.slot_calls[index] = counters.calls.load(Ordering::Relaxed);
+    }
+    for (bucket, live) in result.buckets.iter_mut().zip(&TOTAL_BUCKETS) {
+        for (ns, live) in bucket.iter_mut().zip(live) {
+            *ns = live.load(Ordering::Relaxed);
+        }
+    }
+    result
+}
+
+/// The never-reset totals [`cumulative`] returns, in nanoseconds of self time.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Cumulative {
+    pub(crate) slot_self_ns: [u64; Slot::COUNT],
+    pub(crate) slot_calls: [u64; Slot::COUNT],
+    /// Indexed by [`ThreadClass::index`], then [`Kind::index`].
+    pub(crate) buckets: [[u64; Kind::COUNT]; ThreadClass::COUNT],
+}
+
+impl Cumulative {
+    /// `slot`'s self time since `earlier`, a sample taken before this one.
+    pub(crate) fn slot_since(&self, earlier: &Cumulative, slot: Slot) -> u64 {
+        self.slot_self_ns[slot.index()].saturating_sub(earlier.slot_self_ns[slot.index()])
+    }
+
+    /// `slot`'s calls since `earlier`.
+    pub(crate) fn calls_since(&self, earlier: &Cumulative, slot: Slot) -> u64 {
+        self.slot_calls[slot.index()].saturating_sub(earlier.slot_calls[slot.index()])
+    }
+
+    /// The time `class` spent in `kind` since `earlier`.
+    pub(crate) fn bucket_since(&self, earlier: &Cumulative, class: ThreadClass, kind: Kind) -> u64 {
+        self.buckets[class.index()][kind.index()]
+            .saturating_sub(earlier.buckets[class.index()][kind.index()])
+    }
+}
+
 /// The median and 95th percentile of the recent game frame intervals, refreshed every
 /// [`UI_WINDOW`], or `None` before the first window closes. A leaf lock, so any thread may read it.
 pub(crate) fn frame_percentiles() -> Option<FramePercentiles> {
@@ -215,6 +264,12 @@ impl SlotCounters {
 static SLOTS: [SlotCounters; Slot::COUNT] = [const { SlotCounters::new() }; Slot::COUNT];
 
 static BUCKETS: [[AtomicU64; Kind::COUNT]; ThreadClass::COUNT] =
+    [const { [const { AtomicU64::new(0) }; Kind::COUNT] }; ThreadClass::COUNT];
+
+/// The never-reset counterparts of [`SLOTS`] and [`BUCKETS`], for [`cumulative`]. Their maxima are
+/// unused.
+static TOTALS: [SlotCounters; Slot::COUNT] = [const { SlotCounters::new() }; Slot::COUNT];
+static TOTAL_BUCKETS: [[AtomicU64; Kind::COUNT]; ThreadClass::COUNT] =
     [const { [const { AtomicU64::new(0) }; Kind::COUNT] }; ThreadClass::COUNT];
 
 /// The sim ticks the current game frame has run, counted by [`note_sim_tick`] and taken by
@@ -252,7 +307,13 @@ fn record(slot: Slot, self_ns: u64, elapsed: u64) {
     counters.self_ns.fetch_add(self_ns, Ordering::Relaxed);
     counters.calls.fetch_add(1, Ordering::Relaxed);
     counters.max_ns.fetch_max(elapsed, Ordering::Relaxed);
-    BUCKETS[thread_class().index()][slot.kind().index()].fetch_add(self_ns, Ordering::Relaxed);
+    let totals = &TOTALS[slot.index()];
+    totals.self_ns.fetch_add(self_ns, Ordering::Relaxed);
+    totals.calls.fetch_add(1, Ordering::Relaxed);
+    let class = thread_class().index();
+    let kind = slot.kind().index();
+    BUCKETS[class][kind].fetch_add(self_ns, Ordering::Relaxed);
+    TOTAL_BUCKETS[class][kind].fetch_add(self_ns, Ordering::Relaxed);
 }
 
 fn duration_ns(d: Duration) -> u64 {

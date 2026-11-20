@@ -47,6 +47,7 @@ from tools.rendering.protocol.base import (
     vectors_match,
 )
 from tools.rendering.protocol.headset import HEADSET_RIGS, HeadsetGeometry
+from tools.rendering.protocol.benchmark import BenchmarkAck
 from tools.rendering.protocol.snapshot import ReleaseAck, SnapshotAck
 from tools.rendering.protocol.stage import (
     Placement,
@@ -267,7 +268,7 @@ def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool]
 # Mirrors `VisualOverrides::shipped` in `payload/src/testing/visual/overrides.rs`.
 # Sources left out in every mode, to attribute a difference to one.
 DISABLING_OVERRIDES = ("ssao", "ao_volumes", "fsr_mv_correction")
-SHIPPED_OVERRIDES = ("motion_blur", "fsr", "foveation", "auto_exposure", "screen_fade", "player_damage")
+SHIPPED_OVERRIDES = ("fsr", "foveation", "auto_exposure", "screen_fade", "player_damage")
 
 
 @dataclass(frozen=True)
@@ -278,8 +279,6 @@ class VisualOverrides:
     # Ambient-occlusion sources left out in every mode, to attribute a difference to one.
     ssao: str | None = None
     ao_volumes: str | None = None
-    # The motion blur and its reconstruction run in every mode, so the final image reads the velocity buffer.
-    motion_blur: str | None = None
     # FSR, the foveation, the engine's exposure metering, the screen fade, and the player-damage
     # overlay, each at its shipped behaviour in every mode.
     fsr: str | None = None
@@ -1029,7 +1028,7 @@ class FailedAck:
 
 
 Acknowledgement: TypeAlias = (ConfigurationAck | RestorationAck | ScreenshotAck | StageAck | SnapshotAck
-                              | ReleaseAck | FailedAck)
+                              | ReleaseAck | BenchmarkAck | FailedAck)
 
 
 @dataclass(frozen=True)
@@ -1148,7 +1147,8 @@ def acknowledgement_from_wire(value, command: Command, request_id: str) -> Ackno
     expected = {Command.SCREENSHOT: AckOutcome.COMPLETED, Command.CONFIGURE: AckOutcome.READY,
                 Command.END: AckOutcome.RESTORED, Command.STAGE: AckOutcome.STAGED,
                 Command.SNAPSHOT: AckOutcome.COMPLETED,
-                Command.SNAPSHOT_RELEASE: AckOutcome.RELEASED}[command]
+                Command.SNAPSHOT_RELEASE: AckOutcome.RELEASED,
+                Command.BENCHMARK: AckOutcome.COMPLETED}[command]
     if outcome != expected:
         raise ProtocolError("visual protocol: incomplete acknowledgement")
     if command == Command.CONFIGURE:
@@ -1161,5 +1161,7 @@ def acknowledgement_from_wire(value, command: Command, request_id: str) -> Ackno
         return SnapshotAck.from_wire(value)
     if command == Command.SNAPSHOT_RELEASE:
         return ReleaseAck.from_wire(value)
+    if command == Command.BENCHMARK:
+        return BenchmarkAck.from_wire(value)
     capture_type = NativeCapture if value.get("mode") in (None, DiagnosticProfile.NATIVE) else Capture
     return ScreenshotAck(request_id, capture_type.from_wire(value))

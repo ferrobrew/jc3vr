@@ -73,9 +73,6 @@ pub(crate) struct VisualOverrides {
     /// The ambient-occlusion volumes' pass.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ao_volumes: Option<AmbientOcclusionOverride>,
-    /// The motion blur and its reconstruction, so the final image reads the velocity buffer.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub motion_blur: Option<ShippedOverride>,
     /// FSR in place of the engine's anti-aliasing, at the shipped sharpening.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fsr: Option<ShippedOverride>,
@@ -112,7 +109,6 @@ pub(crate) struct VisualOverridesTable {
     screen_space_reflections: Option<ReflectionOverride>,
     ssao: Option<AmbientOcclusionOverride>,
     ao_volumes: Option<AmbientOcclusionOverride>,
-    motion_blur: Option<ShippedOverride>,
     fsr: Option<ShippedOverride>,
     foveation: Option<ShippedOverride>,
     auto_exposure: Option<ShippedOverride>,
@@ -177,23 +173,13 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
     fn try_from(table: VisualOverridesTable) -> Result<Self, Self::Error> {
         let single_pass = match table.single_pass {
             None => SinglePassOverrides::default(),
-            Some(entries) if entries.is_empty() => return Err(OverrideError::EmptySinglePass),
-            Some(entries) => {
-                let mut overrides = SinglePassOverrides::default();
-                for (name, value) in entries {
-                    let switch = SinglePassSwitch::from_name(&name)
-                        .ok_or(OverrideError::UnknownSwitch(name))?;
-                    overrides.0[switch as usize] = Some(value);
-                }
-                overrides
-            }
+            Some(entries) => SinglePassOverrides::from_names(entries)?,
         };
         let overrides = Self {
             sun_shadows: table.sun_shadows,
             screen_space_reflections: table.screen_space_reflections,
             ssao: table.ssao,
             ao_volumes: table.ao_volumes,
-            motion_blur: table.motion_blur,
             fsr: table.fsr,
             foveation: table.foveation,
             auto_exposure: table.auto_exposure,
@@ -243,10 +229,6 @@ impl VisualOverrides {
         if let Some(AmbientOcclusionOverride::Disabled) = self.ao_volumes {
             config.stereo.skip_ao_volumes = true;
         }
-        if let Some(ShippedOverride::Enabled) = self.motion_blur {
-            config.post_fx.skip_motion_blur = false;
-            config.post_fx.skip_motion_blur_recon = false;
-        }
         if let Some(ShippedOverride::Enabled) = self.fsr {
             config.fsr = FsrConfig::new();
         }
@@ -272,7 +254,6 @@ impl VisualOverrides {
     /// The shipped-behaviour overrides by wire name.
     pub(crate) fn shipped(&self) -> impl Iterator<Item = (&'static str, Option<ShippedOverride>)> {
         [
-            ("motion_blur", self.motion_blur),
             ("fsr", self.fsr),
             ("foveation", self.foveation),
             ("auto_exposure", self.auto_exposure),
@@ -284,6 +265,21 @@ impl VisualOverrides {
 }
 
 impl SinglePassOverrides {
+    /// The switches a `single_pass` table names, by wire name. An empty table is refused, since it
+    /// is a request for nothing.
+    pub(crate) fn from_names(entries: BTreeMap<String, bool>) -> Result<Self, OverrideError> {
+        if entries.is_empty() {
+            return Err(OverrideError::EmptySinglePass);
+        }
+        let mut overrides = Self::default();
+        for (name, value) in entries {
+            let switch =
+                SinglePassSwitch::from_name(&name).ok_or(OverrideError::UnknownSwitch(name))?;
+            overrides.0[switch as usize] = Some(value);
+        }
+        Ok(overrides)
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.0.iter().all(Option::is_none)
     }
@@ -295,7 +291,7 @@ impl SinglePassOverrides {
             .filter_map(|&switch| self.0[switch as usize].map(|value| (switch, value)))
     }
 
-    fn apply(&self, config: &mut SinglePassConfig) {
+    pub(crate) fn apply(&self, config: &mut SinglePassConfig) {
         for (switch, value) in self.iter() {
             switch.set(config, value);
         }
@@ -506,21 +502,6 @@ mod tests {
             serde_json::json!({"stages": "geometry"})
         );
         assert!(toml::from_str::<VisualOverridesTable>("stages = 'all'\n").is_err());
-    }
-
-    #[test]
-    fn motion_blur_can_be_run_in_any_mode() {
-        let overrides = parse("motion_blur = 'enabled'\n").unwrap();
-        assert_eq!(overrides.validate_for(RenderMode::LeftOnly), Ok(()));
-        let mut config = Config::new();
-        config.post_fx.skip_motion_blur = true;
-        config.post_fx.skip_motion_blur_recon = true;
-        overrides.apply(&mut config);
-        assert!(!config.post_fx.skip_motion_blur && !config.post_fx.skip_motion_blur_recon);
-        assert_eq!(
-            serde_json::to_value(overrides).unwrap(),
-            serde_json::json!({"motion_blur": "enabled"})
-        );
     }
 
     #[test]

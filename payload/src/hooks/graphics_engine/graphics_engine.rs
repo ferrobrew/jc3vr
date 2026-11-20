@@ -188,6 +188,8 @@ fn graphics_engine_draw(graphics_engine: *mut GraphicsEngine, dt: f32) {
 
 #[detour(address = GraphicsEngine::HandleDrawThreadTask_ADDRESS)]
 fn handle_draw_thread_task(engine: *mut GraphicsEngine, param: *mut DrawThreadTaskParam) -> u32 {
+    crate::testing::benchmark::note_draw_thread();
+    let _timing = frame_timing::scope(Slot::DrawTask);
     let _dispatch = UiDispatchGuard::enter(engine);
     HANDLE_DRAW_THREAD_TASK.get().unwrap().call(engine, param)
 }

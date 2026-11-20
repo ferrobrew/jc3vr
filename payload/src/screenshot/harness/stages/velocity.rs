@@ -387,7 +387,7 @@ fn submit_impl(
         }
     });
     if let Some(draw) = draw {
-        draw()
+        crate::testing::benchmark::detour_timing::forward(draw);
     }
 }
 
