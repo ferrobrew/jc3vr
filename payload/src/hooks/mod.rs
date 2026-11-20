@@ -139,6 +139,13 @@ pub(super) fn uninstall() -> bool {
     if !crate::stereo::single_pass::uninstall_com_detours() {
         return false;
     }
+    if crate::debug::texture_census::armed() {
+        tracing::error!(
+            restart_required = true,
+            "hook removal: the texture census's detours were enabled; the payload must remain mapped and the game must be restarted"
+        );
+        return false;
+    }
     let Some(state) = HOOK_STATE.get() else {
         tracing::error!("hook removal: installation state is unavailable");
         return false;

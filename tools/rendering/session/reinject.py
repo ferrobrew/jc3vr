@@ -22,6 +22,8 @@ INJECT_ATTEMPTS = 4
 # The line a payload logs once the shader identity census's pixel-shader detour pins it: such a
 # payload tears down on an eject and then refuses to unmap, which leaves the game without the mod.
 PINNED_LINE = "the pixel-shader detour was enabled, which pins the payload"
+# The line a payload logs once the texture census's detours pin it, for the same reason.
+CENSUS_PINNED_LINE = "the texture detours were enabled, which pins the payload"
 
 
 @dataclass(frozen=True)
@@ -56,10 +58,12 @@ def reinject(runner_path: Path, release: bool = False, timeout: float = 120.0) -
     before = set(sessions.glob("*/session.log"))
     if before:
         current = max(before, key=lambda path: path.parent.name)
-        if PINNED_LINE in current.read_text(errors="replace"):
-            raise SessionError(
-                f"reinject: the loaded payload ran the shader identity census, which pins it ({current}); "
-                "relaunch the session instead (python3 -m tools.rendering.session.matched_run N --build-only ...)")
+        text = current.read_text(errors="replace")
+        for line, census in ((PINNED_LINE, "the shader identity census"), (CENSUS_PINNED_LINE, "the texture census")):
+            if line in text:
+                raise SessionError(
+                    f"reinject: the loaded payload ran {census}, which pins it ({current}); "
+                    "relaunch the session instead (python3 -m tools.rendering.session.matched_run N --build-only ...)")
     steam = Path(os.environ.get("STEAM_ROOT", "~/.steam/steam")).expanduser().resolve()
     proton = Path(os.environ.get("PROTON_DIR", str(steam / "steamapps/common/Proton - Experimental"))).resolve()
     client = steam / "steamapps/common/SteamLinuxRuntime_sniper/pressure-vessel/bin/steam-runtime-launch-client"

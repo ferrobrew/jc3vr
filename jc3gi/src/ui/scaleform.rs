@@ -2012,6 +2012,99 @@ impl std::convert::AsMut<StringDataDesc> for StringDataDesc {
     }
 }
 #[repr(C, align(8))]
+/// A Scaleform `Render::TextureImage`: an image over a texture that already exists, rather than
+/// image data Scaleform uploads. Images are reference counted through their own virtuals, on the
+/// count at the same place as [`RefCountImpl::ref_count`](crate::ui::scaleform::RefCountImpl::ref_count).
+pub struct TextureImage {
+    vftable: *const crate::ui::scaleform::TextureImageVftable,
+    pub RefCount: u32,
+    _field_c: [u8; 4],
+    /// The texture the image draws, a reference-counted Scaleform texture holding one reference.
+    pub pTexture: *mut crate::ui::scaleform::RefCountImpl,
+    _field_18: [u8; 16],
+    /// The image format, taken from the texture.
+    pub Format: u32,
+    /// The image's width and height in pixels.
+    pub Width: u32,
+    pub Height: u32,
+    pub Use: u32,
+    pub ImageId: u32,
+    _field_3c: [u8; 4],
+}
+fn _TextureImage_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x40], TextureImage>([0u8; 0x40]);
+    }
+    unreachable!()
+}
+impl TextureImage {
+    pub fn vftable(&self) -> *const crate::ui::scaleform::TextureImageVftable {
+        self.vftable as *const crate::ui::scaleform::TextureImageVftable
+    }
+    /// Virtual destructor. Called by [`Release`](crate::ui::scaleform::TextureImage::Release) when the count reaches zero.
+    pub unsafe fn destructor(&mut self, flags: u32) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).destructor).read();
+            f(self as *mut Self as _, flags)
+        }
+    }
+    /// Increments the reference count atomically.
+    pub unsafe fn AddRef(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).AddRef).read();
+            f(self as *mut Self as _)
+        }
+    }
+    /// Decrements the reference count atomically, destroying the image at zero.
+    pub unsafe fn Release(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Release).read();
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<TextureImage> for TextureImage {
+    fn as_ref(&self) -> &TextureImage {
+        self
+    }
+}
+impl std::convert::AsMut<TextureImage> for TextureImage {
+    fn as_mut(&mut self) -> &mut TextureImage {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct TextureImageVftable {
+    /// Virtual destructor. Called by [`Release`](crate::ui::scaleform::TextureImage::Release) when the count reaches zero.
+    pub destructor: unsafe extern "system" fn(
+        this: *mut crate::ui::scaleform::TextureImage,
+        flags: u32,
+    ),
+    /// Increments the reference count atomically.
+    pub AddRef: unsafe extern "system" fn(this: *mut crate::ui::scaleform::TextureImage),
+    /// Decrements the reference count atomically, destroying the image at zero.
+    pub Release: unsafe extern "system" fn(
+        this: *mut crate::ui::scaleform::TextureImage,
+    ),
+}
+fn _TextureImageVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], TextureImageVftable>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl TextureImageVftable {}
+impl std::convert::AsRef<TextureImageVftable> for TextureImageVftable {
+    fn as_ref(&self) -> &TextureImageVftable {
+        self
+    }
+}
+impl std::convert::AsMut<TextureImageVftable> for TextureImageVftable {
+    fn as_mut(&mut self) -> &mut TextureImageVftable {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// A Scaleform AS3 object's type traits: the class metadata identifying an [`Object`](crate::ui::scaleform::Object)'s kind. The
 /// display-object type-id range and flag values are hard-coded magic in the engine too (the same
 /// constants appear inline in `Value::ObjectInterface::GetDisplayInfo`); their deeper AS3-builtin-type

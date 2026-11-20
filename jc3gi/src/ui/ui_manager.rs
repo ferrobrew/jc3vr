@@ -162,7 +162,13 @@ pub struct UIManager {
     /// The grab-screen timer (seconds); `CHUDUI::OnOmniDamage` sets it to
     /// [`OMNI_DAMAGE_GRAB_SCREEN_TIME`](crate::ui::hud_ui::HUDUI::OMNI_DAMAGE_GRAB_SCREEN_TIME).
     pub m_GrabScreenTimer: f32,
-    _field_d8: [u8; 314],
+    /// The Scaleform image over the UI background texture, which
+    /// [`InitBackGroundTexture`](crate::ui::ui_manager::UIManager::InitBackGroundTexture) creates anew around each new texture,
+    /// releasing the previous one. Movies that load a `.backg` image get an image delegate
+    /// (`CScaleformImageCreator`) holding the image this field holds at that moment, and keep it,
+    /// with its texture, for as long as the movie lives.
+    pub m_SFBackGroundTexture: *mut crate::ui::scaleform::TextureImage,
+    _field_e0: [u8; 306],
     /// Whether the render system is initialized. One of the three gates `Render` checks before
     /// drawing.
     pub m_RenderReady: bool,
@@ -317,6 +323,23 @@ impl UIManager {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
                 Self::RestoreAfterResetImpl_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const InitBackGroundTexture_ADDRESS: usize = 0x140FA98D0;
+    /// Recreates the UI background: destroys the previous background texture, its render setup and
+    /// sampler, and releases [`m_SFBackGroundTexture`](crate::ui::ui_manager::UIManager::m_SFBackGroundTexture) (an internal
+    /// `ResetBackGroundTexture`), then creates an RGBA8 render target named `UI BACKGROUND` at the
+    /// UI view size, its render setup and sampler, wraps the target's Direct3D texture in a
+    /// Scaleform texture through the UI texture manager (which takes its own reference to the
+    /// Direct3D texture), and stores a new [`TextureImage`](crate::ui::scaleform::TextureImage) over it in
+    /// [`m_SFBackGroundTexture`](crate::ui::ui_manager::UIManager::m_SFBackGroundTexture). Called from
+    /// [`RestoreAfterResetImpl`](crate::ui::ui_manager::UIManager::RestoreAfterResetImpl), so on every resize.
+    pub unsafe fn InitBackGroundTexture(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::InitBackGroundTexture_ADDRESS,
             );
             f(self as *mut Self as _)
         }

@@ -19,6 +19,11 @@ pub struct TestingConfig {
     /// How long a replay waits for the teleport to its start marker to settle before it gives up,
     /// seconds.
     pub teleport_timeout_s: f32,
+    /// Whether to keep a census of the live 2D textures and log it after every resize
+    /// (`debug::texture_census`). Diagnostic: once armed, the payload cannot be ejected until the
+    /// game restarts.
+    #[serde(default)]
+    pub texture_census: bool,
 }
 
 impl TestingConfig {
@@ -29,6 +34,7 @@ impl TestingConfig {
             scenario_dir: String::new(),
             request_file: true,
             teleport_timeout_s: 60.0,
+            texture_census: false,
         }
     }
 }

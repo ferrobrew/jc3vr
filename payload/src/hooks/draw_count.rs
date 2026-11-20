@@ -111,6 +111,7 @@ fn draw_indexed(
 fn draw(ctx: *mut c_void, prim: i32, arg2: i32, arg3: i32) {
     bump_draw();
     DRAW.get().unwrap().call(ctx, prim, arg2, arg3);
+    crate::screenshot::harness::snapshot::ambient_occlusion_draw_hook();
 }
 
 // The six below forward opaque args transparently -- see the module doc and draw.pyxis.

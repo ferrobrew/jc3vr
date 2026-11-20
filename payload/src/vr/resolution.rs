@@ -124,6 +124,7 @@ pub fn apply_native_resolution() {
     if !ge.m_HasBeenInitialized {
         return;
     }
+    crate::debug::texture_census::ensure_armed();
     let Some(device) = (unsafe { ge.m_Device.as_ref() }) else {
         return;
     };
@@ -154,6 +155,7 @@ pub fn apply_native_resolution() {
                 aspect_ratio = aspect,
                 "native resolution: engine resize serviced",
             );
+            crate::debug::texture_census::report(&format!("resize {}x{}", current.0, current.1));
             if !window_ok {
                 tracing::error!(
                     target: "vr",
