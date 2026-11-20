@@ -191,6 +191,13 @@ pub(crate) fn velocity_counts() -> (usize, usize) {
     )
 }
 
+/// Each eye's map from the render camera's previous clip space to its own, as the last eye-split
+/// pass published it to the velocity rewrite (`single_pass.velocity_per_eye`): what FSR's velocity
+/// decode needs to know which previous camera the motion vectors were encoded against.
+pub(crate) fn velocity_maps() -> Option<[glam::Mat4; 2]> {
+    *LAST_VELOCITY_MAPS.lock()
+}
+
 /// How many pixel shaders have been rewritten since injection, and how many that read the camera
 /// position were declined.
 pub(crate) fn counts() -> (usize, usize) {
@@ -255,6 +262,9 @@ pub(crate) fn sync(engine: &RenderEngine) {
             .then(|| *CURRENT_M_EYE.lock())
             .flatten()
             .and_then(previous_reprojection);
+        if split && state.velocity.is_some() {
+            *LAST_VELOCITY_MAPS.lock() = state.velocity;
+        }
         if split
             && velocity
             && state.velocity.is_none()
@@ -430,6 +440,7 @@ static PROJECTED_SCREEN_DOORS: AtomicUsize = AtomicUsize::new(0);
 static VELOCITIES: AtomicUsize = AtomicUsize::new(0);
 static VELOCITIES_DECLINED: AtomicUsize = AtomicUsize::new(0);
 static VELOCITY_UNPUBLISHED: AtomicBool = AtomicBool::new(false);
+static LAST_VELOCITY_MAPS: Mutex<Option<[glam::Mat4; 2]>> = Mutex::new(None);
 static UPLOAD_WARNED: AtomicBool = AtomicBool::new(false);
 /// Whether the live buffer was written for an eye-split pass, and the [`layout_key`] of the viewport
 /// it was laid out for, so the per-bind and per-range paths can return without locking.

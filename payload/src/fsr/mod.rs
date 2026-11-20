@@ -24,10 +24,11 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use fsr_sys::{Context, DispatchInfo, Extent, init_flags};
 use jc3gi::{
-    graphics_engine::{device::Device, texture::Texture},
+    graphics_engine::{device::Device, graphics_engine::GraphicsEngine, texture::Texture},
     types::math::Matrix4,
 };
 use parking_lot::Mutex;
+use serde::Serialize;
 use velocity_decode::VelocityDecode;
 use windows::{
     Win32::Graphics::{
@@ -41,7 +42,12 @@ use windows::{
     core::Interface,
 };
 
-use crate::{config::Config, hooks::camera::SCENE_NEAR_CLIP_M, stereo::STEREO_STATE};
+use crate::{
+    config::Config,
+    hooks::camera::SCENE_NEAR_CLIP_M,
+    screenshot::harness::snapshot::{self, Plane},
+    stereo::STEREO_STATE,
+};
 
 /// How the post chain's textures hold the eyes one FSR resolve covers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -155,6 +161,22 @@ fn side_by_side_reprojection(
     )
 }
 
+/// The previous view-projection the engine's velocity pass encodes `eye`'s motion against: the
+/// render camera's previous view-projection, and for an eye of the single-pass collapse that taken
+/// through the velocity rewrite's map into the eye's own clip space. `None` while the engine or the
+/// map is unavailable.
+fn encoded_previous_view_projection(eye: usize, side_by_side: bool) -> Option<glam::Mat4> {
+    // SAFETY: the render thread at the anti-aliasing hook, where the engine's render camera is live
+    // and not being written.
+    let camera = unsafe { &GraphicsEngine::get()?.m_RenderCamera };
+    let previous = glam::Mat4::from(camera.m_PreviousViewProjectionF);
+    if !side_by_side {
+        return Some(previous);
+    }
+    let maps = crate::stereo::single_pass::eye_camera::velocity_maps()?;
+    Some(maps[eye] * previous)
+}
+
 /// Whether the eye's clip-to-previous-clip reprojection is a camera cut rather than motion: the
 /// view centre, at the infinite far plane (the rotation) or at [`CUT_PROBE_DEPTH_M`] (the rotation
 /// and the translation), lands more than [`CUT_NDC`] of the half-screen away in the previous frame.
@@ -179,9 +201,6 @@ const CUT_PROBE_DEPTH_M: f32 = 2.0;
 /// Global FSR state. Locked briefly on the render thread at the AA hook.
 pub static FSR_STATE: Mutex<FsrState> = Mutex::new(FsrState::new());
 
-/// Discard every eye's history at the next resolve, so the accumulation restarts from that frame.
-/// The visual harness calls it on every configuration, so each mode it compares accumulates from the
-/// same number of frames rather than inheriting another mode's history.
 /// Release both eyes' contexts, outputs, and velocity decodes, for eject. The state lives in a
 /// static, which an unloading payload never drops, so without this every resource FSR built stays
 /// allocated on the game's device after the payload is gone.
@@ -189,6 +208,9 @@ pub fn release_on_eject() {
     *FSR_STATE.lock() = FsrState::new();
 }
 
+/// Discard every eye's history at the next resolve, so the accumulation restarts from that frame.
+/// The visual harness calls it on every configuration, so each mode it compares accumulates from the
+/// same number of frames rather than inheriting another mode's history.
 pub fn request_history_reset() {
     RESET_REQUESTED.store(true, Ordering::Relaxed);
 }
@@ -254,22 +276,47 @@ pub fn dispatch(
             c.fsr.hybrid_velocity && stereo,
         )
     });
+    let frame = crate::screenshot::harness::frame_identity();
     let mut ran = false;
     for &eye in eyes {
         // A side-by-side resolve takes the reprojection from each eye's own matrices, which the
         // collapse's centred render camera does not carry; a whole resolve takes it from the
         // render camera's history.
-        let reprojection = if !correction && !hybrid {
-            None
-        } else if build.side_by_side {
+        let (reprojection, views) = if build.side_by_side {
             let current = EyeViewProjections::current(eye);
             let previous = std::mem::replace(&mut state.side_by_side_history[eye], current);
-            previous
-                .zip(current)
-                .map(|(previous, current)| side_by_side_reprojection(previous, current))
+            let pair = previous.zip(current);
+            (
+                pair.map(|(previous, current)| side_by_side_reprojection(previous, current)),
+                pair.map(|(previous, current)| RecordedViews {
+                    current_eye: current.eye.to_cols_array(),
+                    previous_eye: previous.eye.to_cols_array(),
+                    current_center: current.center.to_cols_array(),
+                    previous_center: previous.center.to_cols_array(),
+                }),
+            )
         } else {
-            STEREO_STATE.lock().vp_history.reprojection_matrices(eye)
+            let stereo_state = STEREO_STATE.lock();
+            let history = &stereo_state.vp_history;
+            (
+                history.reprojection_matrices(eye),
+                RecordedViews::of_history(history, eye),
+            )
         };
+        // The engine's velocity pass encodes the motion against its render camera's own previous
+        // view-projection (taken through the single-pass rewrite's map for an eye of the collapse),
+        // which need not be the centre camera the mod snapshots: when it is known, the stereo
+        // correction re-anchors against it.
+        let encoded_previous = encoded_previous_view_projection(eye, build.side_by_side);
+        let reprojection = match (reprojection, encoded_previous, views) {
+            (Some((_, eye_reprojection)), Some(previous), Some(views)) => {
+                let current = glam::Mat4::from_cols_array(&views.current_eye);
+                let encoded = previous.as_dmat4() * current.as_dmat4().inverse();
+                Some((Matrix4::from(encoded.as_mat4()), eye_reprojection))
+            }
+            (reprojection, ..) => reprojection,
+        };
+        let reprojection = reprojection.filter(|_| correction || hybrid);
         if state.eyes[eye].is_none() {
             state.eyes[eye] = create_eye(device, textures.slot_color, build);
         }
@@ -282,7 +329,9 @@ pub fn dispatch(
         if cut {
             eye_state.fresh = true;
         }
+        let reset = eye_state.fresh;
         let request = EyeResolve {
+            eye,
             region_x: regions[eye],
             reprojection: reprojection.filter(|_| !cut),
             correct_parallax: correction,
@@ -293,11 +342,37 @@ pub fn dispatch(
         };
         // SAFETY: `context.m_Mutex` guards the immediate context; every resource is valid for the
         // calls, all of which `resolve_eye` records under the mutex.
-        unsafe {
+        let resolved = unsafe {
             windows::Win32::System::Threading::EnterCriticalSection(context.m_Mutex);
-            ran |= resolve_eye(eye_state, &context.m_Context, device, textures, &request);
+            let resolved = resolve_eye(eye_state, &context.m_Context, device, textures, &request);
             windows::Win32::System::Threading::LeaveCriticalSection(context.m_Mutex);
-        }
+            resolved
+        };
+        ran |= resolved;
+        RECORDS.lock()[eye] = Some(DispatchRecord {
+            frame,
+            eye,
+            side_by_side: build.side_by_side,
+            render_size: [build.eye_width, build.height],
+            resolved,
+            reset,
+            camera_cut: cut,
+            correct_parallax: correction,
+            hybrid,
+            sign: [MV_SIGN.0, MV_SIGN.1],
+            motion_vector_scale: [build.eye_width as f32, build.height as f32],
+            near: camera.near,
+            far: camera.far,
+            fov_vertical: camera.fov_vertical,
+            views,
+            reprojection: request
+                .reprojection
+                .map(|(center, eye)| RecordedReprojection {
+                    center: center.data,
+                    eye: eye.data,
+                }),
+            encoded_previous: encoded_previous.map(|matrix| matrix.to_cols_array()),
+        });
     }
     SPLIT_DISPATCHES.store(
         if build.side_by_side { eyes.len() } else { 0 },
@@ -306,12 +381,90 @@ pub fn dispatch(
     ran
 }
 
+/// What FSR resolved each eye with on `frame`, for the capture harness's snapshots: the eyes whose
+/// last resolve was on that frame.
+pub fn dispatch_records(frame: i64) -> Vec<DispatchRecord> {
+    RECORDS
+        .lock()
+        .iter()
+        .flatten()
+        .filter(|record| record.frame == Some(frame))
+        .cloned()
+        .collect()
+}
+
+/// One eye's FSR resolve, as the capture harness records it: the inputs that decide the motion
+/// vectors FSR is handed, for checking them offline against the depth.
+#[derive(Clone, Serialize)]
+pub struct DispatchRecord {
+    /// The harness's frame identity of the frame the resolve ran on.
+    frame: Option<i64>,
+    eye: usize,
+    /// Whether the eye was resolved as one half of the single-pass double-wide target.
+    side_by_side: bool,
+    /// The eye's render size, in pixels.
+    render_size: [u32; 2],
+    /// Whether FSR ran.
+    resolved: bool,
+    /// Whether the resolve discarded the eye's history.
+    reset: bool,
+    /// Whether the reprojection was taken for a camera cut, and so withheld from the decode.
+    camera_cut: bool,
+    correct_parallax: bool,
+    hybrid: bool,
+    /// The decode's sign convention, applied to its UV motion ([`MV_SIGN`]).
+    sign: [f32; 2],
+    /// FSR's motion-vector scale, which maps the decode's UV motion to pixels.
+    motion_vector_scale: [f32; 2],
+    near: f32,
+    far: f32,
+    fov_vertical: f32,
+    /// The eye's view-projections, this frame's and last frame's, when both exist.
+    views: Option<RecordedViews>,
+    /// The clip-to-previous-clip matrices the decode reprojected with, when it reprojected.
+    reprojection: Option<RecordedReprojection>,
+    /// The previous view-projection the engine's velocity pass encoded the eye's motion against,
+    /// column-major, when it is known.
+    encoded_previous: Option<[f32; 16]>,
+}
+
+/// One eye's view-projections, column-major: its own and the centre camera's (with the eye's
+/// projection), this frame's and last frame's.
+#[derive(Clone, Copy, Serialize)]
+pub struct RecordedViews {
+    current_eye: [f32; 16],
+    previous_eye: [f32; 16],
+    current_center: [f32; 16],
+    previous_center: [f32; 16],
+}
+
+impl RecordedViews {
+    /// The render camera's history for `eye`, when it holds both frames.
+    fn of_history(history: &crate::stereo::VpHistory, eye: usize) -> Option<Self> {
+        Some(Self {
+            current_eye: history.cur_eye.get(eye).copied()??.to_cols_array(),
+            previous_eye: history.prev_eye.get(eye).copied()??.to_cols_array(),
+            current_center: history.cur_center.get(eye).copied()??.to_cols_array(),
+            previous_center: history.prev_center.get(eye).copied()??.to_cols_array(),
+        })
+    }
+}
+
+/// The decode's clip-to-previous-clip matrices, column-major as uploaded.
+#[derive(Clone, Copy, Serialize)]
+pub struct RecordedReprojection {
+    center: [f32; 16],
+    eye: [f32; 16],
+}
+
+static RECORDS: Mutex<[Option<DispatchRecord>; 2]> = Mutex::new([None, None]);
 static RESET_REQUESTED: AtomicBool = AtomicBool::new(false);
 static SPLIT_DISPATCHES: AtomicUsize = AtomicUsize::new(0);
 static EYES: [usize; 2] = [0, 1];
 
 /// One eye's resolve within a [`dispatch`].
 struct EyeResolve<'a> {
+    eye: usize,
     /// The stereo correction's matrices (centre, eye), when it applies; see
     /// [`velocity_decode::DecodeInputs::reprojection`].
     reprojection: Option<(Matrix4, Matrix4)>,
@@ -340,6 +493,7 @@ unsafe fn resolve_eye(
     request: &EyeResolve<'_>,
 ) -> bool {
     let &EyeResolve {
+        eye,
         reprojection,
         correct_parallax,
         hybrid,
@@ -416,6 +570,8 @@ unsafe fn resolve_eye(
             },
             (Some(_), None) => return false,
         };
+        snapshot::eye_plane_hook(Plane::FsrMotion, eye, &mv_res);
+        snapshot::eye_plane_hook(Plane::FsrDepth, eye, &depth_res);
 
         let info = DispatchInfo {
             context,
@@ -469,11 +625,11 @@ unsafe fn resolve_eye(
     }
 }
 
-/// The sign and axis convention applied to the decoded UV motion before FSR. The decode math
-/// follows the engine's velocity encoding (see `docs/mod/rendering/fsr.md`); only FSR's expected
-/// sign and Y direction is empirical, and a wrong sign is visually obvious (trails point
-/// backwards). UV is Y-down, hence the flipped Y.
-const MV_SIGN: (f32, f32) = (1.0, -1.0);
+/// The sign convention applied to the decoded UV motion before FSR. The decode yields the engine's
+/// convention, the current UV less the previous one with Y down (see `docs/mod/rendering/fsr.md`);
+/// FSR 2 reads a pixel's history at its current UV plus its motion vector, in the same Y-down UV
+/// (`ffx_fsr2_reproject.h`), so it wants the previous UV less the current one: both axes negate.
+const MV_SIGN: (f32, f32) = (-1.0, -1.0);
 
 /// Build one eye's FSR context + UAV output texture at the build's eye size, matching the chain
 /// color's format, with an eye-sized colour input and depth copy when the textures hold both eyes.
