@@ -161,6 +161,13 @@ pub static FSR_STATE: Mutex<FsrState> = Mutex::new(FsrState::new());
 /// Discard every eye's history at the next resolve, so the accumulation restarts from that frame.
 /// The visual harness calls it on every configuration, so each mode it compares accumulates from the
 /// same number of frames rather than inheriting another mode's history.
+/// Release both eyes' contexts, outputs, and velocity decodes, for eject. The state lives in a
+/// static, which an unloading payload never drops, so without this every resource FSR built stays
+/// allocated on the game's device after the payload is gone.
+pub fn release_on_eject() {
+    *FSR_STATE.lock() = FsrState::new();
+}
+
 pub fn request_history_reset() {
     RESET_REQUESTED.store(true, Ordering::Relaxed);
 }
@@ -184,6 +191,10 @@ pub fn dispatch(
     layout: EyeLayout,
     sharpness: Option<f32>,
 ) -> bool {
+    // Nothing is built once eject has begun: the eject's release would not see it.
+    if crate::is_shutting_down() {
+        return false;
+    }
     let width = u32::from(textures.slot_color.m_Width);
     let height = u32::from(textures.slot_color.m_Height);
     let build = Build::for_layout(layout, width, height);

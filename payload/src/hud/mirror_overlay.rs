@@ -28,6 +28,11 @@ use crate::hud::target::HudTarget;
 /// The overlay texture, sized to the window client rect, holding this frame's egui output.
 static OVERLAY: Mutex<Option<HudTarget>> = Mutex::new(None);
 
+/// Release the overlay texture, for eject.
+pub(crate) fn release_on_eject() {
+    *OVERLAY.lock() = None;
+}
+
 /// Whether the flat overlay should be redirected into the offscreen texture this frame: a VR frame is
 /// rendering, the mirror is on, the floating panel is off, and the clean view is off. Read on the draw thread (the render
 /// gate) and the mirror thread (the composite gate), so it uses the draw-safe render-params signal,

@@ -559,6 +559,18 @@ pub fn compute_panel_vp() -> Option<(Matrix4, Matrix4)> {
     Some((engine_vp, engine_camera))
 }
 
+/// Put the engine's own UI binding back and release the redirected HUD texture and its depth, for
+/// eject. The cleanup above asks the per-frame [`tick`] to do this, but the eject renders no further
+/// frames, so without it the target (a colour and a depth texture at one and a half times the eye
+/// size) stays allocated after the payload is gone. Call after the engine is back at its native
+/// size, which [`restore`](state::HudState::restore) binds the UI to.
+pub(crate) fn release_on_eject() {
+    let Some((width, height)) = crate::stereo::render_size() else {
+        return;
+    };
+    HUD_STATE.lock().restore(width, height);
+}
+
 /// Register the HUD's shutdown cleanup. Call once at init. The cleanup clears the redirect config flag
 /// (so the per-frame [`tick`] restores the engine binding on the render thread, as a toggle-off does)
 /// and releases the egui preview registrations when the owning renderer is available. This requests

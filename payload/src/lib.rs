@@ -26,6 +26,7 @@ mod controllers;
 mod crash;
 mod debug;
 mod director;
+mod eject_gpu;
 mod far_field;
 mod frame_timing;
 mod fsr;
@@ -205,6 +206,7 @@ fn shutdown_startup() {
 
     // Wait to ensure we're clear of the blast radius of the hooks
     std::thread::sleep(std::time::Duration::from_millis(100));
+    eject_gpu::log_video_memory("hooks removed");
 
     // The VEH registration must not outlive the DLL: ntdll would keep calling into the unmapped
     // image on the game's next routine first-chance exception.
@@ -223,6 +225,7 @@ fn initialize_from_game() -> anyhow::Result<()> {
     }
     INITIALIZED.set(true).unwrap();
 
+    eject_gpu::install();
     EguiState::install()?;
     ui::render::install();
     hud::install();
@@ -234,6 +237,7 @@ fn initialize_from_game() -> anyhow::Result<()> {
 
 /// Called to undo `initialize_from_game`; called once shutdown is triggered
 fn shutdown_from_game() {
+    eject_gpu::log_video_memory("eject begins");
     // Let an in-flight frame tail submit before anything below takes the egui state lock: the VR
     // teardown in the cleanups locks the runtime state under it, and the tail holds that lock while
     // it waits on a draw task that takes the egui state lock. See `docs/mod/threading.md`.

@@ -86,6 +86,11 @@ pub(crate) struct FrameStatus {
 }
 
 /// The latest status.
+/// Release the atlas's GPU resources, for eject.
+pub(crate) fn release_on_eject() {
+    render::release_on_eject();
+}
+
 pub(crate) fn status() -> AtlasStatus {
     STATUS.lock().clone()
 }

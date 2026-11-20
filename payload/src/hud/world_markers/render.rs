@@ -125,6 +125,11 @@ pub(crate) fn draw_billboards(context: &ID3D11DeviceContext, device: &Device, ta
 /// The render-side state, created on the first active frame.
 static RENDERER: Mutex<Option<Renderer>> = Mutex::new(None);
 
+/// Release the marker textures and the depth probe, for eject.
+pub(super) fn release_on_eject() {
+    *RENDERER.lock() = None;
+}
+
 /// The slot textures, the cut source, the depth probe, the per-marker placement state, and the
 /// frame's plan.
 struct Renderer {

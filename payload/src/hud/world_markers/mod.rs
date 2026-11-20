@@ -103,6 +103,11 @@ pub(crate) enum DistanceSource {
 }
 
 /// The latest status, or `None` while the prototype is not drawing.
+/// Release the markers' GPU resources, for eject.
+pub(crate) fn release_on_eject() {
+    render::release_on_eject();
+}
+
 pub(crate) fn status() -> Option<Status> {
     STATUS.lock().clone()
 }

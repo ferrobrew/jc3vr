@@ -226,6 +226,14 @@ pub(crate) fn part_texture<R>(part: Part, f: impl FnOnce(PartTexture<'_>) -> R) 
     }))
 }
 
+/// Release the part and band textures, for eject.
+pub(super) fn release_on_eject() {
+    let mut renderer = RENDERER.lock();
+    renderer.slots = [const { None }; PARTS];
+    renderer.blank = None;
+    renderer.frame = None;
+}
+
 /// The render-side state.
 static RENDERER: Mutex<Renderer> = Mutex::new(Renderer {
     slots: [const { None }; PARTS],

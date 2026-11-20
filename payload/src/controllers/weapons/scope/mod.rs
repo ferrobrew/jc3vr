@@ -125,6 +125,12 @@ pub struct ScopeStatus {
 }
 
 /// The latest readout.
+/// Release the lens pipeline, for eject: it holds each eye's image copy and a render-target view
+/// over the engine's back buffer, which keeps that texture alive after the engine resizes off it.
+pub(crate) fn release_on_eject() {
+    STATE.lock().renderer = None;
+}
+
 pub fn status() -> ScopeStatus {
     STATUS.lock().clone()
 }

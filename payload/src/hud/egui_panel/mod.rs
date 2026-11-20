@@ -67,6 +67,11 @@ const SCALE: f32 = 0.85;
 /// handoff, on the game thread from the mirror).
 static EGUI_PANEL: Mutex<EguiPanelState> = Mutex::new(EguiPanelState::new());
 
+/// Release the panel texture and quad pipeline, for eject.
+pub(crate) fn release_on_eject() {
+    *EGUI_PANEL.lock() = EguiPanelState::new();
+}
+
 /// Whether the panel was active last frame, so that showing it and dismissing it each act once, on
 /// their edge.
 static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);

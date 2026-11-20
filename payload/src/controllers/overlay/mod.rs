@@ -72,6 +72,12 @@ pub struct OverlayStatus {
 }
 
 /// The latest readout.
+/// Release the pipeline, for eject: it holds a render-target view over the engine's back buffer,
+/// which keeps that texture alive after the engine resizes off it.
+pub(crate) fn release_on_eject() {
+    STATE.lock().renderer = None;
+}
+
 pub fn status() -> OverlayStatus {
     STATUS.lock().clone()
 }
