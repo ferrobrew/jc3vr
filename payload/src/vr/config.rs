@@ -236,6 +236,12 @@ pub struct VrConfig {
     /// an A/B in the benchmark or the headset.
     #[serde(default = "default_true")]
     pub overlap_render_update: bool,
+    /// Keep the game's threads on the cores that share the largest L3 cache, on a processor whose
+    /// L3 caches differ in size (see [`crate::cpu_placement`]). The draw task, which bounds the
+    /// heaviest scenes, runs far faster there. A processor with one size of L3 is left alone. On by
+    /// default; off puts the affinity it found back.
+    #[serde(default = "default_true")]
+    pub large_cache_cores: bool,
     /// Diagnostic: which pose to hold still (see [`FreezeMode`] and [`crate::vr::pose_control`]).
     /// Whichever pose the mode holds is captured on the first frame it is on and reused every frame
     /// after, and is hand-editable while held -- so a motion-dependent artifact can be driven by an
@@ -272,6 +278,7 @@ impl VrConfig {
             own_back_buffer: true,
             direct_eye_blit: true,
             overlap_render_update: true,
+            large_cache_cores: true,
             freeze_mode: FreezeMode::Off,
         }
     }

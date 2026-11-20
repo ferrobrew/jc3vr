@@ -66,6 +66,19 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
          next frame begins its OpenXR frame. Off waits for the tail before the render update, the \
          serial ordering.",
     );
+    ui.checkbox(
+        &mut cfg.vr.large_cache_cores,
+        "Run on the cores with the largest cache",
+    )
+    .on_hover_text(
+        "On a processor whose L3 caches differ in size (a two-die part with stacked cache on one), \
+         keep the game's threads on the cores of the largest one, where the draw task runs far \
+         faster. Left alone on a processor with one size of L3. Off puts the affinity back.",
+    );
+    ui.label(match crate::cpu_placement::applied_mask() {
+        Some(mask) => format!("Cores in use: {mask:#x}"),
+        None => "Cores in use: as the scheduler places them".to_owned(),
+    });
 }
 
 pub(crate) fn status(ui: &mut egui::Ui) {

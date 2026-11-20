@@ -23,6 +23,7 @@ pub mod vr;
 mod allocator;
 mod config;
 mod controllers;
+mod cpu_placement;
 mod crash;
 mod debug;
 mod director;
@@ -344,6 +345,7 @@ fn update() {
         // start.
         recorder::tracking::frame_tick();
         testing::update();
+        cpu_placement::update();
 
         // Ahead of the game's update, whose physics step fires the hand bodies' callback, so that
         // registering it never races the engine's walk over the callbacks.
