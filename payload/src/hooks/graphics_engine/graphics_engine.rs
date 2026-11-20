@@ -179,6 +179,9 @@ fn graphics_engine_draw(graphics_engine: *mut GraphicsEngine, dt: f32) {
         {
             ge.m_DrawScene = true;
         }
+        // The prologue hands the draw task this dispatch; its per-frame values are the ones the
+        // game thread prepared for this frame.
+        crate::render_frame::note_dispatch();
         GRAPHICS_ENGINE_DRAW
             .get()
             .unwrap()
@@ -189,6 +192,8 @@ fn graphics_engine_draw(graphics_engine: *mut GraphicsEngine, dt: f32) {
 #[detour(address = GraphicsEngine::HandleDrawThreadTask_ADDRESS)]
 fn handle_draw_thread_task(engine: *mut GraphicsEngine, param: *mut DrawThreadTaskParam) -> u32 {
     crate::testing::benchmark::note_draw_thread();
+    // The task records the frame its dispatch drew, whatever the game thread prepares meanwhile.
+    let _frame = crate::render_frame::pin_dispatch();
     let _timing = frame_timing::scope(Slot::DrawTask);
     let _dispatch = UiDispatchGuard::enter(engine);
     HANDLE_DRAW_THREAD_TASK.get().unwrap().call(engine, param)

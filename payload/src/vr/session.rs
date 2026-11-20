@@ -1,38 +1,37 @@
 //! The OpenXR session and its per-session resources: creation against the game's `ID3D11Device`,
-//! the LOCAL reference space, and the STAGE reference space where the runtime offers one. The state machine that drives the session (READY..STOPPING, teardown)
-//! lives in [`crate::vr::state`]; persistence across inject cycles in [`crate::vr::persist`].
+//! the LOCAL reference space, and the STAGE reference space where the runtime offers one. The frame
+//! stream and the swapchain belong to the submit side ([`crate::vr::submit`]). The state machine
+//! that drives the session (READY..STOPPING, teardown) lives in [`crate::vr::state`]; persistence
+//! across inject cycles in [`crate::vr::persist`].
 
 use anyhow::Context as _;
 use openxr as xr;
 use windows::core::Interface as _;
 
-use crate::vr::{VrConfig, stage, swapchain::Swapchain};
+use crate::vr::{VrConfig, stage};
 
 /// A created OpenXR session and its per-session resources. `running` tracks the READY..STOPPING
 /// window driven by the event pump.
 pub(super) struct Session {
     pub(super) handle: xr::Session<xr::D3D11>,
     pub(super) frame_wait: xr::FrameWaiter,
-    pub(super) frame_stream: xr::FrameStream<xr::D3D11>,
     /// The LOCAL reference space -- the cockpit-relative world frame.
     pub(super) local: xr::Space,
     /// The STAGE reference space (the floor-level play area), or `None` when the runtime does not
     /// offer one. Located against [`local`](Self::local) once per frame (see [`crate::vr::stage`]).
     pub(super) stage: Option<xr::Space>,
-    /// The stereo swapchain, created lazily once the session is running and first rendered.
-    pub(super) swapchain: Option<Swapchain>,
     pub(super) running: bool,
 }
 
 impl Session {
     /// Create the session against the game's `ID3D11Device`, after checking the D3D11 graphics
-    /// requirements the spec requires. The device is fetched from the graphics engine singleton
-    /// null-guarded, and is not stored.
+    /// requirements the spec requires, with the frame stream for the submit side. The device is
+    /// fetched from the graphics engine singleton null-guarded, and is not stored.
     pub(super) fn create(
         instance: &xr::Instance,
         system: xr::SystemId,
         _cfg: &VrConfig,
-    ) -> anyhow::Result<Self> {
+    ) -> anyhow::Result<(Self, xr::FrameStream<xr::D3D11>)> {
         // The spec requires querying graphics requirements before create_session; the returned
         // min feature level is informational for us (we share the engine's already-created device).
         let requirements = instance
@@ -62,15 +61,16 @@ impl Session {
             .context("vr: creating the LOCAL reference space")?;
         let stage = stage::create_space(&handle);
 
-        Ok(Self {
-            handle,
-            frame_wait,
+        Ok((
+            Self {
+                handle,
+                frame_wait,
+                local,
+                stage,
+                running: false,
+            },
             frame_stream,
-            local,
-            stage,
-            swapchain: None,
-            running: false,
-        })
+        ))
     }
 }
 

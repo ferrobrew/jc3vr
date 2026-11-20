@@ -2,11 +2,12 @@
 //! the per-eye render parameters (off-axis projection and head-local eye displacement) the
 //! `SetupRenderCamera` hook applies.
 //!
-//! This is the bridge between [`crate::vr`]'s frame API (which holds the OpenXR runtime lock for the
-//! duration of the frame) and the render hooks (which run during the eye Draws and must not touch
-//! that lock). The parameters are extracted once at the top of the frame into a separate,
-//! independently locked slot ([`RENDER_PARAMS`]) that the camera hook reads per eye. The head pose
-//! is published through the [`crate::headpose::xr`] source.
+//! This is the bridge between [`crate::vr`]'s frame API and the render hooks (which run during the
+//! eye Draws and must not touch the runtime's locks). The parameters are extracted once at the top
+//! of the frame into per-frame slots ([`RENDER_PARAMS`] and its siblings, each a
+//! [`RenderFrameSlot`]), so the draw task keeps reading the frame it is recording while the game
+//! thread prepares the next one. The head pose is published through the [`crate::headpose::xr`]
+//! source.
 
 use glam::{Quat, Vec3};
 use jc3gi::types::math::Matrix4;
@@ -19,9 +20,10 @@ use crate::{
         origin_provenance::{OriginEvidence, OriginUnavailable, TrackingReceipt},
     },
     grapple, headpose,
+    render_frame::RenderFrameSlot,
     testing::visual::headset::{self, HeadsetRig},
     vr::{
-        EyeView, Fov, FrameContext, FreezeMode, OffAxisProjection, VrConfig,
+        EyeView, Fov, FreezeMode, LocatedFrame, OffAxisProjection, VrConfig,
         config::ProjectionConvention,
         convert::{quat, vec3},
         pose_control,
@@ -63,10 +65,10 @@ impl EyeRenderParams {
 }
 
 /// The per-eye render parameters for the frame in flight, or `None` when no VR frame is rendering
-/// (flatscreen, or a VR frame the runtime asked to skip). A separate lock from the OpenXR runtime
-/// state so the camera hook can read it during the eye Draws without deadlocking against the
-/// frame-held runtime lock.
-static RENDER_PARAMS: Mutex<Option<[EyeRenderParams; 2]>> = Mutex::new(None);
+/// (flatscreen, or a VR frame the runtime asked to skip). Kept per frame, apart from the OpenXR
+/// runtime state, so the camera hook and the draw task read it without the runtime's locks, and
+/// the draw task reads the frame it records (see [`crate::render_frame`]).
+static RENDER_PARAMS: RenderFrameSlot<Option<[EyeRenderParams; 2]>> = RenderFrameSlot::new();
 
 /// The per-eye render parameters captured on the first frame of a [`FreezeMode::FullCamera`] freeze
 /// and reused until it ends, so the eyes hold still around the pinned camera. `None` whenever that
@@ -85,12 +87,12 @@ struct FrozenEyeParams {
 /// The standard-depth, symmetric, union-FOV projection that bounds *both* eyes' off-axis frusta, for
 /// widening the scene cull frustum (see [`cull_projection_standard`]). `None` when no VR frame is
 /// rendering.
-static CULL_PROJECTION: Mutex<Option<Matrix4>> = Mutex::new(None);
+static CULL_PROJECTION: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::new();
 
 /// The standard-depth, symmetric projection that bounds both eyes' off-axis frusta exactly, without
 /// the cull's [`CULL_FOV_PADDING`], for the sun-shadow cascade fit (see
 /// [`shadow_fit_projection_standard`]). `None` when no VR frame is rendering.
-static SHADOW_FIT_PROJECTION: Mutex<Option<Matrix4>> = Mutex::new(None);
+static SHADOW_FIT_PROJECTION: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::new();
 
 /// The field of view the sun-shadow cascade fit is currently held at (see [`hold_fit_fov`]). Kept
 /// across frames that render no VR frame, so a skipped frame does not release the hold.
@@ -100,7 +102,7 @@ static SHADOW_FIT_FOV: Mutex<Option<Fov>> = Mutex::new(None);
 /// poses in LOCAL space, the eye fields of view, and the predicted display time. Published next to
 /// [`RENDER_PARAMS`] so the render thread can read them at the eye-capture point without the
 /// runtime lock. `None` when no VR frame is rendering.
-static CAPTURE_VIEWS: Mutex<Option<CaptureViews>> = Mutex::new(None);
+static CAPTURE_VIEWS: RenderFrameSlot<Option<CaptureViews>> = RenderFrameSlot::new();
 
 /// The per-frame view record the recorder stores per captured frame.
 #[derive(Copy, Clone, Debug)]
@@ -122,13 +124,13 @@ pub struct CaptureEyeView {
 
 /// The located views for the frame in flight, or `None` when no VR frame is rendering.
 pub fn capture_views() -> Option<CaptureViews> {
-    *CAPTURE_VIEWS.lock()
+    CAPTURE_VIEWS.get().flatten()
 }
 
 /// The render parameters for `eye` (`0` = left, `1` = right) this frame, or `None` when no VR frame
 /// is rendering. Read by the `SetupRenderCamera` hook.
 pub fn render_params(eye: usize) -> Option<EyeRenderParams> {
-    RENDER_PARAMS.lock().as_ref().map(|p| p[eye.min(1)])
+    RENDER_PARAMS.get().flatten().map(|p| p[eye.min(1)])
 }
 
 /// The symmetric union-FOV projection covering both eyes' off-axis frusta, in the engine's
@@ -137,7 +139,7 @@ pub fn render_params(eye: usize) -> Option<EyeRenderParams> {
 /// engine runs once per frame against the narrower center camera -- covers everything either eye can
 /// see, removing the black voids and pop-in at the outer edges.
 pub fn cull_projection_standard() -> Option<Matrix4> {
-    *CULL_PROJECTION.lock()
+    CULL_PROJECTION.get().flatten()
 }
 
 /// The symmetric projection covering both eyes' off-axis frusta with no padding beyond the eyes'
@@ -146,7 +148,7 @@ pub fn cull_projection_standard() -> Option<Matrix4> {
 /// view; fitting to the padded cull projection instead stretched every cascade over the padding,
 /// coarsening its texels for geometry neither eye sees.
 pub fn shadow_fit_projection_standard() -> Option<Matrix4> {
-    *SHADOW_FIT_PROJECTION.lock()
+    SHADOW_FIT_PROJECTION.get().flatten()
 }
 
 /// Clear the per-eye render parameters (and the cull projection), so the camera hook falls back to
@@ -154,21 +156,20 @@ pub fn shadow_fit_projection_standard() -> Option<Matrix4> {
 /// false).
 pub fn clear_render_params() {
     live_observation::composition_unavailable();
-    *RENDER_PARAMS.lock() = None;
-    *CAPTURE_VIEWS.lock() = None;
-    *CULL_PROJECTION.lock() = None;
-    *SHADOW_FIT_PROJECTION.lock() = None;
+    RENDER_PARAMS.set(None);
+    CAPTURE_VIEWS.set(None);
+    CULL_PROJECTION.set(None);
+    SHADOW_FIT_PROJECTION.set(None);
 }
 
 /// Drive one rendered VR frame's pose and per-eye camera parameters from the located views: reduce
 /// the two eye poses to a cockpit-frame center pose, compose it into world space and publish it as
 /// the headpose, and stash the per-eye off-axis projections and world offsets for the camera hook.
 ///
-/// Only call when [`FrameContext::should_render`] is true; the located eye poses are meaningless
-/// otherwise. Holds no OpenXR runtime lock beyond the borrow of `frame` (whose methods read the
-/// held guard); publishes through the headpose state and the [`RENDER_PARAMS`] slot, both
-/// independently locked.
-pub fn begin_render_frame(frame: &FrameContext, cfg: &VrConfig) {
+/// Only call when [`LocatedFrame::should_render`] is true; the located eye poses are meaningless
+/// otherwise. Takes no OpenXR runtime lock; publishes through the headpose state and the
+/// [`RENDER_PARAMS`] slot, both independently locked.
+pub fn begin_render_frame(frame: &LocatedFrame, cfg: &VrConfig) {
     render_frame(
         [frame.eye_view(0), frame.eye_view(1)],
         Some(frame.predicted_display_time()),
@@ -399,8 +400,9 @@ fn render_frame(
         up: widen(union[2]),
         down: widen(union[3]),
     };
-    *CULL_PROJECTION.lock() =
-        Some(OffAxisProjection::new(union_fov, near_clip, far_clip).standard_depth);
+    CULL_PROJECTION.set(Some(
+        OffAxisProjection::new(union_fov, near_clip, far_clip).standard_depth,
+    ));
     let exact = |t: f32| (t + margin.copysign(t)).atan().clamp(-max_half, max_half);
     let exact_fov = Fov {
         left: exact(union[0]),
@@ -414,8 +416,9 @@ fn render_frame(
         *held = Some(fit);
         fit
     };
-    *SHADOW_FIT_PROJECTION.lock() =
-        Some(OffAxisProjection::new(fit_fov, near_clip, far_clip).standard_depth);
+    SHADOW_FIT_PROJECTION.set(Some(
+        OffAxisProjection::new(fit_fov, near_clip, far_clip).standard_depth,
+    ));
 
     // Flicker-isolation diagnostics (issue #31), read once for the frame. `symmetrize` swaps each eye's
     // asymmetric off-axis frustum for a zero-shear symmetric one of the same extent (Test A); `mirror`
@@ -473,7 +476,7 @@ fn render_frame(
             [eye0_params, eye1_params]
         }
     };
-    *RENDER_PARAMS.lock() = Some(params);
+    RENDER_PARAMS.set(Some(params));
     // The recorder's sidecar wants the raw located views, not the rebased or frozen ones: they are
     // what the submitted images were rendered for, so post can reproject against them exactly.
     let capture_eye = |view: &EyeView| CaptureEyeView {
@@ -495,10 +498,10 @@ fn render_frame(
             view.fov.angle_down,
         ],
     };
-    *CAPTURE_VIEWS.lock() = Some(CaptureViews {
+    CAPTURE_VIEWS.set(Some(CaptureViews {
         predicted_display_time_ns: display_time.as_nanos(),
         eyes: [capture_eye(&views[0]), capture_eye(&views[1])],
-    });
+    }));
 }
 
 /// A rendered HMD frame can contain replay views, so its display time does not prove live input.

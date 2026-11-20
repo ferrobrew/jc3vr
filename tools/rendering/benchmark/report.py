@@ -20,6 +20,8 @@ TABLE_METRICS = (
     ("gpu_idle_ms", "GPU idle"),
     ("wait_compositor_ms", "xrWaitFrame"),
     ("wait_draw_ms", "drain"),
+    ("wait_tail_lock_ms", "tail lock"),
+    ("pose_age_ms", "pose age"),
     ("mod_ms", "mod"),
     ("gpu_fsr_ms", "FSR (GPU)"),
     ("d3d_submissions", "submissions"),

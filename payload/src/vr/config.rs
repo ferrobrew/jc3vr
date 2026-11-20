@@ -229,6 +229,13 @@ pub struct VrConfig {
     /// submit. On by default; off restores the copy-then-blit path everywhere.
     #[serde(default = "default_true")]
     pub direct_eye_blit: bool,
+    /// Overlap the next frame's runtime wait, view location, and render update with the previous
+    /// frame's draw task and frame tail, instead of starting them once the tail has submitted (see
+    /// `docs/mod/threading.md`). The next frame then blocks on the tail only where it begins its
+    /// OpenXR frame, just before it dispatches. On by default; off restores the serial ordering, for
+    /// an A/B in the benchmark or the headset.
+    #[serde(default = "default_true")]
+    pub overlap_render_update: bool,
     /// Diagnostic: which pose to hold still (see [`FreezeMode`] and [`crate::vr::pose_control`]).
     /// Whichever pose the mode holds is captured on the first frame it is on and reused every frame
     /// after, and is hand-editable while held -- so a motion-dependent artifact can be driven by an
@@ -264,6 +271,7 @@ impl VrConfig {
             auto_recenter_on_gameplay: true,
             own_back_buffer: true,
             direct_eye_blit: true,
+            overlap_render_update: true,
             freeze_mode: FreezeMode::Off,
         }
     }

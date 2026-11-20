@@ -63,6 +63,8 @@ class BenchmarkRequest:
     recapture_camera: bool = False
     restore: bool = True
     switches: tuple[tuple[str, bool], ...] = ()
+    # `vr.overlap_render_update` for the run; None keeps the session's.
+    overlap_render_update: bool | None = None
     camera: CameraPath = field(default_factory=CameraPath)
     command: Command = field(default=Command.BENCHMARK, init=False)
     # The channel validates these on configuration acknowledgements only.
@@ -80,6 +82,8 @@ class BenchmarkRequest:
             raise ProtocolError(f"benchmark: record_seconds must be within (0, {MAX_RECORD_SECONDS}]")
         if self.resolution_scale is not None and not 0.1 <= self.resolution_scale <= 4.0:
             raise ProtocolError("benchmark: resolution_scale must be within [0.1, 4.0]")
+        if self.overlap_render_update not in (None, True, False):
+            raise ProtocolError("benchmark: overlap_render_update must be a boolean")
         if self.switches and self.mode != BenchmarkMode.SINGLE_PASS:
             raise ProtocolError("benchmark: single_pass switches apply only to the single_pass mode")
 
@@ -97,6 +101,8 @@ class BenchmarkRequest:
                  f"restore = {json.dumps(self.restore)}"]
         if self.resolution_scale is not None:
             lines.append(f"resolution_scale = {json.dumps(float(self.resolution_scale))}")
+        if self.overlap_render_update is not None:
+            lines.append(f"overlap_render_update = {json.dumps(self.overlap_render_update)}")
         if self.switches:
             lines += ["", "[benchmark.single_pass]"]
             lines += [f"{name} = {json.dumps(value)}" for name, value in self.switches]

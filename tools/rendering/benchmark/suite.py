@@ -7,7 +7,7 @@ from pathlib import Path
 
 from tools.rendering.experiment import ExperimentConfig
 from tools.rendering.protocol import ProtocolError, StageRequest
-from tools.rendering.protocol.benchmark import CameraPath
+from tools.rendering.protocol.benchmark import BenchmarkMode, CameraPath
 
 EXPERIMENTS = Path(__file__).resolve().parents[1] / "experiments"
 DEFAULT_SUITE = Path(__file__).resolve().parents[1] / "suites/benchmark.toml"
@@ -28,9 +28,12 @@ class BenchmarkScene:
 
 @dataclass(frozen=True)
 class Variant:
-    """Single-pass with some switches forced, to attribute a cost to what they control."""
+    """A mode with some switches forced, to attribute a cost to what they control: single-pass
+    switches (single-pass only), or the frame ordering (`vr.overlap_render_update`)."""
     name: str
     switches: tuple[tuple[str, bool], ...]
+    base: BenchmarkMode = BenchmarkMode.SINGLE_PASS
+    overlap_render_update: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -73,11 +76,22 @@ def load_suite(path: Path) -> Suite:
     variants = []
     for index, table in enumerate(value.get("variant", [])):
         context = f"benchmark suite {path}: variant {index}"
-        switches = table.get("switches") if isinstance(table, dict) else None
-        if (not isinstance(table, dict) or set(table) != {"name", "switches"}
-                or not isinstance(switches, dict) or not switches
-                or not all(isinstance(v, bool) for v in switches.values())):
-            raise BenchmarkError(f"{context}: expected a name and a nonempty switches table of "
-                                 "booleans")
-        variants.append(Variant(table["name"], tuple(sorted(switches.items()))))
+        if not isinstance(table, dict):
+            raise BenchmarkError(f"{context}: expected a table")
+        switches = table.get("switches", {})
+        overlap = table.get("overlap_render_update")
+        valid = (set(table) - {"name", "base", "switches", "overlap_render_update"} == set()
+                 and isinstance(table.get("name"), str)
+                 and table.get("base", "single_pass") in {m.value for m in BenchmarkMode}
+                 and isinstance(switches, dict)
+                 and all(isinstance(v, bool) for v in switches.values())
+                 and (overlap is None or isinstance(overlap, bool))
+                 and (switches or overlap is not None))
+        if not valid:
+            raise BenchmarkError(f"{context}: expected a name, optionally a base mode, and a "
+                                 "switches table of booleans or overlap_render_update, or both")
+        base = BenchmarkMode(table.get("base", "single_pass"))
+        if switches and base != BenchmarkMode.SINGLE_PASS:
+            raise BenchmarkError(f"{context}: single-pass switches need the single_pass base")
+        variants.append(Variant(table["name"], tuple(sorted(switches.items())), base, overlap))
     return Suite(tuple(scenes), tuple(variants))

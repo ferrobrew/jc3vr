@@ -1,9 +1,10 @@
 //! The OpenXR runtime: session lifecycle, event pump, and the per-frame API surface the Draw wiring
 //! drives. This module owns the OpenXR instance, session, reference spaces, and stereo swapchain. The
-//! per-frame loop ([`update`] → [`frame_begin`] → [`FrameContext`] → per-eye blit → [`present_and_submit`])
-//! is driven from `hooks::game::game_update_render`; the per-eye render parameters flow to the camera
-//! hook through [`frame`]'s separate slot ([`render_params`]), not the frame-held runtime lock. See
-//! `docs/mod/vr-runtime.md` for the loop end to end.
+//! per-frame loop ([`update`] → [`frame_wait`] → [`WaitedFrame::begin`] → [`FrameContext`] →
+//! per-eye blit → [`present_and_submit`]) is driven from `hooks::game::game_update_render`; the
+//! per-eye render parameters flow to the camera hook and the draw task through [`frame`]'s per-frame
+//! slots ([`render_params`]), not the runtime's locks. See `docs/mod/vr-runtime.md` for the loop end
+//! to end.
 //!
 //! ## Loader route
 //!
@@ -17,10 +18,11 @@
 //!
 //! ## Threading
 //!
-//! The runtime state is a single `Mutex<VrState>` singleton. The game thread locks it briefly at the
-//! top of the render update and holds it from [`frame_begin`] for the frame, and the deferred frame
-//! tail ([`tail`]) takes the frame's guard over until it submits; both wait on engine threads
-//! meanwhile, so every blocking lock goes through a thread-role check (see [`crate::thread_role`] and
+//! The runtime state is a single `Mutex<VrState>` singleton, which the game thread locks briefly at
+//! the top of the render update. The submit side (the frame stream and the swapchain, [`submit`]) is
+//! a second lock, held from [`WaitedFrame::begin`] for the frame and taken over by the deferred frame
+//! tail ([`tail`]) until it submits; both holders wait on engine threads meanwhile, so every blocking
+//! lock of either goes through a thread-role check (see [`crate::thread_role`] and
 //! `docs/mod/threading.md`), and other threads read the published slots instead. The game's
 //! `ID3D11Device` is fetched from the graphics engine singleton at session-create time,
 //! null-guarded; the device is never stored (so the state carries no raw device pointer across
@@ -66,6 +68,7 @@ mod resolution;
 mod session;
 pub mod stage;
 mod state;
+mod submit;
 mod swapchain;
 pub mod tail;
 pub(crate) mod window;
@@ -77,8 +80,8 @@ pub use back_buffer::{
 pub(crate) use blit::{DirectArm, DirectStatus, blit_direct, direct_status, texture_size};
 pub use blit::{arm_direct, disarm_direct, present_and_submit};
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
-pub(crate) use frame_loop::head_tracked;
-pub use frame_loop::{EyeImage, EyeView, FrameContext, frame_begin};
+pub use frame_loop::{EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame, frame_wait};
+pub(crate) use frame_loop::{head_tracked, pose_age_totals};
 pub(crate) use mirror::latest_present;
 pub use mirror::{present_mirror, toggle_stereo_pair};
 pub(crate) use recenter::apply_replayed_recenter;

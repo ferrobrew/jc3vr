@@ -91,13 +91,16 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
     let _timing = frame_timing::scope(Slot::UpdateRenderHook);
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("CGame::UpdateRender");
+    // Open the frame's generation of the per-frame slots before anything writes one: the draw task
+    // may still be recording the previous frame from its own.
+    crate::render_frame::begin_preparing();
     unsafe {
         mark(Phase::UpdateRenderEnter);
         let spf = Clock::get().unwrap().GetSPF(false).min(0.5);
 
         // The palms' tick the simulation's aim update left due, on the game thread: the world
         // object manager's update queue may run the aim update on a worker, and the palms change
-        // the world. After the simulation and before the VR frame takes the runtime lock; the next
+        // the world. After the simulation and before the VR frame waits on the compositor; the next
         // simulation's input tick reads the palms' targets.
         {
             let _timing = frame_timing::scope(Slot::PhysicalHands);
@@ -159,13 +162,21 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // state, so it is polled here and read by the render side.
         crate::hud::depth::poll_vehicle_state();
 
-        // Pump the OpenXR runtime once per frame and, if a session is running, begin the XR frame
-        // before the eye Draws: `xrWaitFrame` inside `frame_begin` paces the app against the
+        // Whether the next frame's runtime wait, view location, and render update overlap this
+        // frame's draw task and deferred tail (see `vr.overlap_render_update`). Serially, wait here
+        // for the tail to submit, before anything below runs; overlapped, the wait moves to the
+        // frame's `xrBeginFrame` just before the dispatches.
+        let overlap = Config::lock_query(|c| c.vr.overlap_render_update);
+        if !overlap {
+            crate::vr::wait_for_frame_tail();
+        }
+
+        // Pump the OpenXR runtime once per frame and, if a session is running, wait for the XR frame
+        // before the eye Draws: `xrWaitFrame` inside `frame_wait` paces the app against the
         // compositor, replacing vsync (which stays suppressed via BLOCK_FLIP). Set the headpose
         // source before the original UpdateRender runs the input tick, so the sim yields to the VR
-        // pose while a session is live. `frame_begin` holds the OpenXR runtime lock for the frame,
-        // so nothing on the game thread may re-enter the runtime until the frame is submitted --
-        // the per-eye render parameters flow through a separate slot (`vr::render_params`).
+        // pose while a session is live. The per-eye render parameters flow to the render hooks
+        // through their per-frame slots (`vr::render_params`), not the runtime's locks.
         #[cfg(feature = "profiler")]
         let vr_update_scope = puffin::profile_scope_custom!("vr::update");
         let vr_running = {
@@ -184,38 +195,43 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         });
 
         // Auto-recenter when gameplay control returns (after the resume-from-menu entry animation).
-        // Must run before `frame_begin` acquires the VR runtime lock for the frame, since a recenter
-        // takes that same lock.
+        // Must run before `frame_wait` locates the views, since a recenter takes the runtime lock
+        // and moves the baseline they are re-based against.
         crate::vr::auto_recenter_tick();
 
-        // Drive per-eye native render resolution before `frame_begin` (which holds the VR runtime
-        // lock for the frame) and before the eye loop: this only populates the engine's deferred
-        // display-mode state, which its own `HandleModeChange` services in the first eye's `Draw`
-        // prologue (previous dispatch drained, this frame not yet dispatched -- the idle-context
-        // boundary `ApplyResize` needs). Must sit before the first `game.Draw`.
+        // Drive per-eye native render resolution before the eye loop: this only populates the
+        // engine's deferred display-mode state, which its own `HandleModeChange` services in the
+        // first eye's `Draw` prologue (previous dispatch drained, this frame not yet dispatched --
+        // the idle-context boundary `ApplyResize` needs). Must sit before the first `game.Draw`.
         crate::vr::apply_native_resolution();
         // Once the mod owns the back buffer, bring the swapchain down to the window size (a no-op
         // otherwise, and once it already matches).
         crate::vr::sync_swapchain_to_window();
 
-        // The sum of the VR-lock tail block, xrWaitFrame, and view location -- each scoped inside
-        // `vr::frame_begin` -- so the front-load breakdown shows which dominates.
+        // The sum of xrWaitFrame and view location -- each scoped inside `vr::frame_wait` -- so the
+        // front-load breakdown shows which dominates.
         #[cfg(feature = "profiler")]
-        let frame_begin_scope = puffin::profile_scope_custom!("vr::frame_begin");
-        let mut vr_frame = vr_running.then(crate::vr::frame_begin).flatten();
+        let frame_wait_scope = puffin::profile_scope_custom!("vr::frame_wait");
+        let mut waited = vr_running.then(crate::vr::frame_wait).flatten();
         #[cfg(feature = "profiler")]
-        drop(frame_begin_scope);
-        // From here to the end of the render update this thread holds the VR runtime lock (in a
-        // frame that took one) and waits on the draw task and the CPU fragment workers, so nothing
-        // it runs may block on that lock. Scoped in flatscreen frames too, so a violation shows up
-        // without a headset.
-        let _frame_role = thread_role::enter(ThreadRole::GameFrame);
+        drop(frame_wait_scope);
+        // Serially the frame begins at once; overlapped it begins after the render update, below.
+        let mut vr_frame = if overlap {
+            None
+        } else {
+            waited.take().and_then(crate::vr::WaitedFrame::begin)
+        };
+        // From here to the end of the render update this thread waits on the draw task and the CPU
+        // fragment workers, and from the frame's begin it holds the submit side, so nothing it runs
+        // may block on the runtime's locks. Scoped in flatscreen frames too, so a violation shows up
+        // without a headset. Lifted only around the overlapped frame's begin.
+        let mut frame_role = Some(thread_role::enter(ThreadRole::GameFrame));
 
         // Publish the VR head pose and per-eye camera parameters *before* the original UpdateRender.
         // `CGame::Update` runs the sim tick (`UpdateGame`) -- which finalizes this frame's animation,
         // the head-bone anchor, and the character's `m_WorldMatrixT0/T1` -- and computes the sub-frame
         // fraction `dtf` *before* it calls `UpdateRender`, so everything the pose pair needs is already
-        // current here (and the views are located by `frame_begin` above). The camera's T0->T1
+        // current here (and the views are located by `frame_wait` above). The camera's T0->T1
         // interpolation is consumed *inside* `UpdateRender` (`Camera::UpdateRender`'s `dtf` lerp), so
         // publishing after that call fed it the previous frame's pair -- one rendered frame stale,
         // which snapped the camera a full tick backward at every `dtf` reset (the residual sawtooth
@@ -225,15 +241,17 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // parameters so the camera hook falls back to flatscreen stereo for the (non-submitted)
         // keep-alive Draws.
         let vr_cfg = Config::lock_query(|c| c.vr.clone());
-        match vr_frame.as_ref() {
+        let located = waited
+            .as_ref()
+            .map(crate::vr::WaitedFrame::located)
+            .or_else(|| vr_frame.as_ref().map(crate::vr::FrameContext::located));
+        let vr_frame_rendering = located.is_some_and(|frame| frame.should_render());
+        match located {
             Some(frame) if frame.should_render() => crate::vr::begin_render_frame(frame, &vr_cfg),
             _ => crate::vr::clear_render_params(),
         }
         if replay_driving {
-            crate::vr::drive_replay_frame(
-                vr_frame.as_ref().is_some_and(|frame| frame.should_render()),
-                &vr_cfg,
-            );
+            crate::vr::drive_replay_frame(vr_frame_rendering, &vr_cfg);
         }
         // Snapshot the render-time hand poses and the presentation layer's inputs against the head
         // pose pair just published, before the engine's render update runs the weapons' render
@@ -277,6 +295,25 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // hand snapshot with the previous frame's `dtf`.
         diagnostics::record();
 
+        // The overlapped frame begins here: taking the submit side waits for the previous frame's
+        // deferred tail to submit, which drains the previous dispatch first, so nothing below --
+        // the dispatch state, the snapshots of the draw task's state, the swapchain acquire, the
+        // dispatches -- can touch what that frame still uses. The render update above ran
+        // alongside it, as the engine's own frame runs its render update alongside the previous
+        // draw. A frame with no XR frame to begin waits for the tail all the same. The wait blocks,
+        // so it runs in the game thread's own role.
+        if overlap {
+            drop(frame_role.take());
+            vr_frame = match waited.take() {
+                Some(frame) => frame.begin(),
+                None => {
+                    crate::vr::wait_for_frame_tail();
+                    None
+                }
+            };
+            frame_role = Some(thread_role::enter(ThreadRole::GameFrame));
+        }
+
         let game = game.as_mut().unwrap();
 
         // Start of a frame: publish the master toggle from config into the live stereo state, which
@@ -298,8 +335,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // Whether this frame's tail (final drain, blit, mirror, submit) runs on the tail worker
         // instead of inline, overlapping the next frame's sim with the draw thread's last walk and
         // the GPU tail (see `vr::tail`): the frame-boundary starvation bubble the profiler measures
-        // as "GPU idle". Safe by construction: the next frame's `vr::frame_begin` blocks on the VR
-        // runtime lock, which the tail releases only after the blit is recorded. The mirror moves
+        // as "GPU idle". Safe by construction: the next frame blocks on the submit side the tail
+        // holds (at its `WaitedFrame::begin`, or at the top of the render update in the serial
+        // ordering) before it dispatches, and the tail releases it only after the blit is
+        // recorded. The mirror moves
         // before the XR submit in this mode, costing it a little HMD submit latency. Requires a VR
         // frame to hand over, and falls back to the inline tail while a render trace needs the
         // eyes drained on this thread before the frame ends.
@@ -530,7 +569,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 
         // Submit the VR frame: blit each captured eye into its swapchain slice and end the XR frame
         // (world layer when rendered, empty otherwise). Consumes the frame context, releasing the
-        // OpenXR runtime lock so the next `vr::update` can proceed. With the tail deferred, the
+        // submit side so the next frame can begin. With the tail deferred, the
         // whole sequence (including the skipped final drain and the mirror) runs on the tail
         // worker instead, and this thread returns straight to the next frame's sim.
         let mut vr_frame = vr_frame.take();
@@ -584,6 +623,8 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             crate::testing::visual::frame_complete();
         }
         mark(Phase::FrameEnd);
+        // The frame role lasts to the end of the render update.
+        drop(frame_role);
     }
 }
 

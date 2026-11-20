@@ -11,24 +11,26 @@ use jc3gi::{
     game::GameObjectRenderContext,
     types::math::Matrix4,
 };
-use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{
-    aim::gun,
-    frame::Hand,
-    hands::{
-        ik,
-        late::{
-            frame,
-            math::{lerp_transform, pose_matrix},
+use crate::{
+    controllers::{
+        aim::gun,
+        frame::Hand,
+        hands::{
+            ik,
+            late::{
+                frame,
+                math::{lerp_transform, pose_matrix},
+            },
+        },
+        weapons::{
+            c4,
+            engine::{self, weapon_at},
+            hold::{self, armed, rack::paired::stack_offset},
         },
     },
-    weapons::{
-        c4,
-        engine::{self, weapon_at},
-        hold::{self, armed, rack::paired::stack_offset},
-    },
+    render_frame::RenderFrameSlot,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -45,11 +47,11 @@ pub(crate) struct RenderedGun {
 }
 
 pub(crate) fn rendered_guns() -> [Option<RenderedGun>; 2] {
-    *RENDERED_GUNS.lock()
+    RENDERED_GUNS.get().unwrap_or([None; 2])
 }
 
 pub(super) fn begin_frame() {
-    *RENDERED_GUNS.lock() = [None; 2];
+    RENDERED_GUNS.set([None; 2]);
 }
 
 /// The hand that owns this gun, retaining paired-gun placement through native state changes.
@@ -199,16 +201,19 @@ unsafe fn late_update_weapon(game_object: *mut c_void, context: *const GameObjec
             unsafe { instance.UpdateMatrix(&matrix) };
             frame::count_weapon_update();
         }
-        RENDERED_GUNS.lock()[hand.index()] = Some(RenderedGun {
+        let gun = RenderedGun {
             weapon: weapon as *const WeaponBase as usize,
             matrix: rendered,
             fraction: dtf,
             at: Instant::now(),
-        });
+        };
+        RENDERED_GUNS.update([None; 2], |guns| guns[hand.index()] = Some(gun));
     }
 }
 
-static RENDERED_GUNS: Mutex<[Option<RenderedGun>; 2]> = Mutex::new([None; 2]);
+/// The guns as the frame's render update placed them, per frame so the draw task's readouts read
+/// the frame they draw (see [`crate::render_frame`]).
+static RENDERED_GUNS: RenderFrameSlot<[Option<RenderedGun>; 2]> = RenderFrameSlot::new();
 
 #[cfg(test)]
 mod tests {

@@ -163,6 +163,9 @@ pub fn sync_swapchain_to_window() {
         return;
     }
 
+    // The deferred frame tail presents the mirror into these buffers, and with the render update
+    // overlapped it may still be doing so: let it submit before the buffers change.
+    crate::vr::wait_for_frame_tail();
     // Drop the mirror's render-target view over buffer 0 before the resize; it is rebuilt lazily.
     crate::vr::mirror::teardown();
 

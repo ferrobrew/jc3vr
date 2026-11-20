@@ -5,7 +5,6 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 use glam::{Mat4, Vec3};
 use jc3gi::{character::character::Character, graphics_engine::render_block::Matrix3x4};
-use parking_lot::Mutex;
 
 use crate::{
     controllers::{
@@ -29,6 +28,7 @@ use crate::{
     },
     headpose,
     hooks::camera::eye_points,
+    render_frame::RenderFrameSlot,
 };
 
 /// A pose composed with both sides of the render-time head pose pair: `previous` with the
@@ -90,7 +90,7 @@ pub struct DrawnHand {
 /// one the IK did not drive this tick takes the controller's render-time pose. `None` for an inert
 /// or untracked hand.
 pub fn drawn_hands(dtf: f32) -> [Option<DrawnHand>; 2] {
-    let frame = *FRAME.lock();
+    let frame = FRAME.get().flatten();
     frame.map_or([None; 2], |frame| {
         Hand::BOTH.map(|hand| frame.drawn(hand, dtf))
     })
@@ -99,7 +99,7 @@ pub fn drawn_hands(dtf: f32) -> [Option<DrawnHand>; 2] {
 /// The world-space edit that carries a thing riding `hand`'s forearm, as the tick posed it, onto the
 /// forearm as the presentation layer draws it at `dtf`, or `None` while the layer re-poses nothing.
 pub(crate) fn drawn_forearm_delta(hand: Hand, dtf: f32) -> Option<Mat4> {
-    let frame = (*FRAME.lock())?;
+    let frame = FRAME.get().flatten()?;
     frame.forearm_delta(hand, dtf)
 }
 
@@ -183,7 +183,7 @@ pub struct LateStatus {
 
 /// The late update's readout.
 pub fn status() -> LateStatus {
-    let frame = *FRAME.lock();
+    let frame = FRAME.get().flatten();
     let dtf = crate::hooks::camera::last_dtf();
     let hands = frame.map_or([HandLateStatus::default(); 2], |frame| {
         Hand::BOTH.map(|hand| frame.hand_status(hand, dtf))
@@ -214,16 +214,16 @@ pub(crate) fn begin_frame() {
     // All model and palette consumers share this post-step measurement for the rendered frame.
     unsafe { physics::sample_render_offsets() };
     let Some(source) = frame::latest() else {
-        *FRAME.lock() = None;
+        FRAME.set(None);
         return;
     };
     let Some(active) = hands::active_hands_from_frame(&source, DrawTime::Render) else {
-        *FRAME.lock() = None;
+        FRAME.set(None);
         return;
     };
     let hands = compose_render_hands(&active);
     let solved = bones::solved();
-    *FRAME.lock() = Some(LateFrame {
+    FRAME.set(Some(LateFrame {
         hands,
         shoulders: compose_render_shoulders(&active),
         ticks: ik::tick_records(),
@@ -231,7 +231,7 @@ pub(crate) fn begin_frame() {
         solved,
         enabled: active.config.hands.late_update,
         reach: REACH,
-    });
+    }));
 }
 
 /// A draw's palette edit: per hand, the model-space transforms for the hand group and the forearm
@@ -346,7 +346,7 @@ impl PaletteEdit {
 /// The palette edit for a draw of the local player's body whose instance matrix is `instance`, at
 /// the interpolation fraction `dtf`, or `None` when no hand is corrected.
 pub(crate) fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
-    let frame = (*FRAME.lock())?;
+    let frame = FRAME.get().flatten()?;
     let to_model = instance.inverse();
     let hands = Hand::BOTH.map(|hand| {
         let d = pose_matrix(frame.hand_delta(hand, dtf)?);
@@ -368,7 +368,7 @@ pub(crate) fn palette_edit(instance: Mat4, dtf: f32) -> Option<PaletteEdit> {
 }
 
 pub(crate) fn shoulder_target(hand: Hand, dtf: f32) -> Option<Vec3> {
-    let frame = (*FRAME.lock())?;
+    let frame = FRAME.get().flatten()?;
     let target = frame.ticks.current[hand.index()]?;
     (target.owner == ik::TargetOwner::Controller)
         .then(|| frame.shoulders[hand.index()].map(|pair| pair.at(dtf).position))
@@ -376,20 +376,20 @@ pub(crate) fn shoulder_target(hand: Hand, dtf: f32) -> Option<Vec3> {
 }
 
 pub(crate) fn arm_target(hand: Hand, dtf: f32) -> Option<(Pose, f32)> {
-    let frame = (*FRAME.lock())?;
+    let frame = FRAME.get().flatten()?;
     frame.arm_target(hand, dtf)
 }
 
 /// The world-space correction of `hand` at the interpolation fraction `dtf`, as a matrix, for a
 /// render seam that re-pushes a model riding that hand; `None` when the hand is not corrected.
 pub(crate) fn hand_correction(hand: Hand, dtf: f32) -> Option<Mat4> {
-    let frame = (*FRAME.lock())?;
+    let frame = FRAME.get().flatten()?;
     frame.hand_delta(hand, dtf).map(pose_matrix)
 }
 
 /// Interpolate a model attachment in the same parent frame as this frame's hand references.
 pub(crate) fn interpolate_in_character(matrices: [Mat4; 2], dtf: f32) -> Mat4 {
-    let transport = FRAME.lock().and_then(|frame| frame.transport);
+    let transport = FRAME.get().flatten().and_then(|frame| frame.transport);
     transport.map_or_else(
         || lerp_transform(matrices[0], matrices[1], dtf),
         |parent| interpolate_attached(parent, matrices, dtf),
@@ -398,7 +398,7 @@ pub(crate) fn interpolate_in_character(matrices: [Mat4; 2], dtf: f32) -> Mat4 {
 
 /// The current frame's snapshot, for the weapon render seam's own guard and per-gun lookups.
 pub(super) fn current() -> Option<LateFrame> {
-    *FRAME.lock()
+    FRAME.get().flatten()
 }
 
 /// The frame's snapshot of the late update's inputs.
@@ -715,7 +715,7 @@ fn render_views(
     })
 }
 
-static FRAME: Mutex<Option<LateFrame>> = Mutex::new(None);
+static FRAME: RenderFrameSlot<Option<LateFrame>> = RenderFrameSlot::new();
 static WEAPONS_UPDATED: AtomicU64 = AtomicU64::new(0);
 static PALETTES_EDITED: AtomicU64 = AtomicU64::new(0);
 

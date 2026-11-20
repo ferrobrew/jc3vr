@@ -74,10 +74,10 @@ static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
 /// Whether the egui floating panel is active this frame: the opt-in panel is enabled and a VR frame
 /// is rendering. The single predicate gating every panel path; off is the untouched baseline.
 ///
-/// This runs on the render thread (per-eye `draw_quad`), which must never touch the `VR_STATE` runtime
-/// lock: the frame holds that lock across the eye draws (`FrameContext`), so locking it here (as an
-/// earlier `vr::is_running()` did) deadlocks the draw against `WaitForCPUDrawToFinish` -- even with the
-/// panel disabled, since the config check came second. The enabled flag is checked first (cheap, and
+/// This runs on the render thread (per-eye `draw_quad`), which must never block on the VR runtime's
+/// locks: the frame holds the submit side across the eye draws (`FrameContext`), so a blocking lock
+/// here (as an earlier `vr::is_running()` was) deadlocks the draw against `WaitForCPUDrawToFinish`
+/// -- even with the panel disabled, since the config check came second. The enabled flag is checked first (cheap, and
 /// `CONFIG` is never held across a draw), and the VR-frame signal is the draw-safe [`crate::vr::render_params`]
 /// slot (a separate lock, published per frame precisely so draw-thread hooks can read it), not the
 /// runtime lock.

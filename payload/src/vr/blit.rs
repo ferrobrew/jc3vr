@@ -83,7 +83,7 @@ const PIXEL_DXBC: &[u8] = include_bytes!("../shaders/vr_blit_ps.dxbc");
 static VR_BLIT: Mutex<Option<VrBlit>> = Mutex::new(None);
 
 /// Acquire the swapchain image, blit both captured eyes into their slices, release, and submit the
-/// frame. Consumes the [`FrameContext`], releasing the OpenXR runtime lock. The frame is always
+/// frame. Consumes the [`FrameContext`], releasing the submit side. The frame is always
 /// ended -- on any blit failure it submits an empty frame rather than leaving the compositor waiting.
 pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
     if !frame.should_render() {
@@ -108,7 +108,7 @@ pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
 
 /// Start the direct route for this frame: acquire the swapchain image now and publish it, so each
 /// eye's post-draw can blit into its slice ([`blit_direct`]). Call on the game thread after
-/// [`crate::vr::frame_begin`] and before the dispatches, only for a frame that renders and whose
+/// [`crate::vr::WaitedFrame::begin`] and before the dispatches, only for a frame that renders and whose
 /// dispatches each carry one eye. Any other frame calls [`disarm_direct`] instead.
 ///
 /// Acquiring here rather than at the submit moves the swapchain image wait onto the game thread,

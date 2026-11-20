@@ -28,10 +28,11 @@ RUN_FORMAT_VERSION = 1
 
 @dataclass(frozen=True)
 class Mode:
-    """A mode a run measures: multipass, single-pass, or a single-pass variant."""
+    """A mode a run measures: multipass, single-pass, or a variant of either."""
     name: str
     mode: BenchmarkMode
     switches: tuple[tuple[str, bool], ...] = ()
+    overlap_render_update: bool | None = None
 
     @classmethod
     def plain(cls, mode: BenchmarkMode) -> "Mode":
@@ -39,7 +40,7 @@ class Mode:
 
     @classmethod
     def variant(cls, variant: Variant) -> "Mode":
-        return cls(variant.name, BenchmarkMode.SINGLE_PASS, variant.switches)
+        return cls(variant.name, variant.base, variant.switches, variant.overlap_render_update)
 
 
 @dataclass(frozen=True)
@@ -96,7 +97,8 @@ def run_scene(session, scene: BenchmarkScene, modes: tuple[Mode, ...], options: 
             resolution_scale=scale, gpu=options.gpu, detour_timing=options.detour_timing,
             install_draw_detours=options.install_draw_detours,
             recapture_camera=index == 0, restore=index == len(steps) - 1,
-            switches=mode.switches, camera=scene.camera)
+            switches=mode.switches, overlap_render_update=mode.overlap_render_update,
+            camera=scene.camera)
         LOG.info("benchmark: %s (%d of %d)", label, index + 1, len(steps))
         began = time.monotonic()
         with ThreadSampler(session.pid) as sampler:
@@ -111,6 +113,7 @@ def run_scene(session, scene: BenchmarkScene, modes: tuple[Mode, ...], options: 
             "version": RUN_FORMAT_VERSION,
             "run": {"scene": scene.name, "config": scene.config.name, "mode": mode.name,
                     "base_mode": mode.mode.value, "switches": dict(mode.switches),
+                    "overlap_render_update": mode.overlap_render_update,
                     "resolution_scale": scale, "repeat": repeat, "label": label,
                     "camera": scene.camera.to_wire(), "seconds": round(time.monotonic() - began, 2)},
             "session": {"number": options.session, "compositor_fps": options.compositor_fps},

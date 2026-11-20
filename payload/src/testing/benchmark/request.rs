@@ -50,6 +50,8 @@ pub(crate) struct BenchmarkTable {
     restore: bool,
     /// Single-pass switches forced to a value, by wire name.
     single_pass: Option<BTreeMap<String, bool>>,
+    /// `vr.overlap_render_update` for the run; `None` keeps the configured one.
+    overlap_render_update: Option<bool>,
     camera: Option<CameraTable>,
 }
 
@@ -102,6 +104,7 @@ pub(crate) struct BenchmarkRequest {
     pub(crate) recapture_camera: bool,
     pub(crate) restore: bool,
     pub(crate) switches: SinglePassOverrides,
+    pub(crate) overlap_render_update: Option<bool>,
     pub(crate) camera: CameraPath,
 }
 
@@ -213,6 +216,7 @@ impl BenchmarkRequest {
             recapture_camera: table.recapture_camera,
             restore: table.restore,
             switches,
+            overlap_render_update: table.overlap_render_update,
             camera,
         })
     }
@@ -261,6 +265,19 @@ mod tests {
         assert!(request.switches.is_empty());
         assert!(request.camera.is_still());
         assert_eq!(request.resolution_scale, None);
+        assert_eq!(request.overlap_render_update, None);
+    }
+
+    #[test]
+    fn the_frame_ordering_is_forced_in_either_mode() {
+        for mode in ["multipass", "single_pass"] {
+            let request = parse(&format!(
+                "label = 'a'\nmode = '{mode}'\nrecord_seconds = 1.0\n\
+                 overlap_render_update = false\n"
+            ))
+            .unwrap();
+            assert_eq!(request.overlap_render_update, Some(false));
+        }
     }
 
     #[test]

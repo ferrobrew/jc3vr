@@ -63,7 +63,7 @@ pub(super) fn acquire_session(
     instance: &xr::Instance,
     system: xr::SystemId,
     cfg: &VrConfig,
-) -> anyhow::Result<Session> {
+) -> anyhow::Result<(Session, xr::FrameStream<xr::D3D11>)> {
     if cfg.persist_instance
         && let Some(raw) = stashed_handle(SESSION_STASH_VAR)
     {
@@ -81,27 +81,24 @@ pub(super) fn acquire_session(
     Session::create(instance, system, cfg)
 }
 
-/// Persist a session across inject cycles: destroy its recreatable children (swapchain, reference
-/// space) but keep the session handle alive — stash it and leak the wrapper — *without* ending it, so
-/// a reinject can re-wrap and resume it (an ended session cannot be resumed). Consumes the session.
+/// Persist a session across inject cycles: destroy its recreatable children (reference spaces; the
+/// submit side, swapchain included, is dropped by the caller first) but keep the session handle
+/// alive — stash it and leak the wrapper — *without* ending it, so a reinject can re-wrap and resume
+/// it (an ended session cannot be resumed). Consumes the session.
 pub(super) fn persist_session(session: Session) {
     let Session {
         handle,
         frame_wait,
-        frame_stream,
         local,
         stage,
-        swapchain,
         running: _,
     } = session;
     // Destroy the cheap-to-recreate children; the reinject rebuilds them on the reused session.
-    drop(swapchain);
     drop(stage);
     drop(local);
-    // The frame waiter/stream hold session references but issue no XR destroy; dropping them just
-    // releases those references (the leaked handle below keeps the session alive).
+    // The frame waiter holds a session reference but issues no XR destroy; dropping it just releases
+    // that reference (the leaked handle below keeps the session alive).
     drop(frame_wait);
-    drop(frame_stream);
     stash_handle(SESSION_STASH_VAR, handle.as_raw().into_raw());
     std::mem::forget(handle);
 }
@@ -212,7 +209,10 @@ unsafe fn reuse_instance(
 /// # Safety
 /// `raw` must be a D3D11 session handle created on `instance`, not currently inside a frame, and not
 /// destroyed.
-unsafe fn reuse_session(instance: &xr::Instance, raw: u64) -> anyhow::Result<Session> {
+unsafe fn reuse_session(
+    instance: &xr::Instance,
+    raw: u64,
+) -> anyhow::Result<(Session, xr::FrameStream<xr::D3D11>)> {
     let handle = xr::sys::Session::from_raw(raw);
     // An empty drop guard: the real one keeps the graphics device alive, but we share the game's
     // device, which outlives every VR session.
@@ -222,15 +222,16 @@ unsafe fn reuse_session(instance: &xr::Instance, raw: u64) -> anyhow::Result<Ses
         .create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)
         .context("recreating the LOCAL reference space for the persisted session")?;
     let stage = stage::create_space(&session);
-    Ok(Session {
-        handle: session,
-        frame_wait,
+    Ok((
+        Session {
+            handle: session,
+            frame_wait,
+            local,
+            stage,
+            running: true,
+        },
         frame_stream,
-        local,
-        stage,
-        swapchain: None,
-        running: true,
-    })
+    ))
 }
 
 #[cfg(test)]

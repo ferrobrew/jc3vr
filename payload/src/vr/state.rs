@@ -45,6 +45,7 @@ use crate::{
         resolution,
         session::Session,
         stage,
+        submit::{self, Submitter},
     },
 };
 
@@ -88,7 +89,7 @@ fn update_runtime() -> bool {
     // Once eject has begun, do nothing: the shutdown cleanup tears the runtime down (persisting the
     // instance/session handles for the next injection), and an ungated re-entry here would see
     // `instance.is_none()`, re-acquire those persisted handles, and rebuild the swapchain -- racing
-    // the hook uninstall and crashing the game on uninject. Returning false also skips `frame_begin`
+    // the hook uninstall and crashing the game on uninject. Returning false also skips `frame_wait`
     // and `present_and_submit` in the caller, quiescing the whole VR frame path.
     if crate::is_shutting_down() {
         return false;
@@ -122,13 +123,14 @@ pub fn is_running() -> bool {
     lock_state().is_running()
 }
 
-/// Wait until no frame holds the runtime state: the deferred frame tail, if one is in flight, has
+/// Wait until no frame holds the submit side: the deferred frame tail, if one is in flight, has
 /// submitted. Only the game thread hands frames to the tail, so once this returns nothing holds the
-/// lock until the game thread takes it again. The shutdown path calls it before it takes the egui
-/// state lock and tears the runtime down under it: with the tail done, the draw task it was waiting
-/// on is done too, and no longer needs that lock.
+/// submit side until the game thread begins a frame again. The shutdown path calls it before it
+/// takes the egui state lock and tears the runtime down under it: with the tail done, the draw task
+/// it was waiting on is done too, and no longer needs that lock. The serial frame ordering calls it
+/// at the top of the render update (see `vr.overlap_render_update`).
 pub fn wait_for_frame_tail() {
-    drop(lock_state());
+    drop(submit::lock_submit());
 }
 
 /// A snapshot of the VR runtime state for the debug UI ([`crate::ui::vr`]).
@@ -153,10 +155,8 @@ pub struct VrStatus {
 pub fn status() -> VrStatus {
     let cfg = Config::lock_query(|c| c.vr.clone());
     // `try_lock`, never `lock`. The debug UI runs on the game thread holding the egui state lock,
-    // and the deferred frame tail holds this lock while it waits on the draw task, which takes the
-    // egui state lock to draw the floating panel. Blocking here closes that cycle, and opening the VR
-    // tab at the wrong moment wedged the process outright. A stale readout for one frame is not
-    // worth a deadlock.
+    // and a blocking lock of the runtime state is for the top of the render update only (see
+    // `lock_state`). A stale readout for one frame is not worth a deadlock.
     let Some(state) = VR_STATE.try_lock() else {
         return VrStatus {
             enabled: cfg.enabled,
@@ -221,10 +221,10 @@ pub fn uninstall() {
 
 /// Lock the runtime state, blocking.
 ///
-/// The state is held for a whole frame, first by the game thread ([`crate::vr::FrameContext`]) and
-/// then by the frame tail until it submits, and both wait on engine threads meanwhile, so a blocking
-/// lock is safe only on the game thread at the top of a frame, holding no other lock
-/// ([`ThreadRole::may_block_on_vr_state`]). A lock from any other role is reported: debug builds
+/// The game thread takes the state briefly at the top of the render update, and teardown takes the
+/// submit side under it ([`crate::vr::submit`]), which a frame holds while it waits on engine
+/// threads, so a blocking lock is safe only on the game thread at the top of a frame, holding no
+/// other lock ([`ThreadRole::may_block_on_vr_state`]). A lock from any other role is reported: debug builds
 /// panic, and release builds log the first one at error level and go on to lock. The check is one
 /// thread-local read. See `docs/mod/threading.md`.
 #[track_caller]
@@ -254,10 +254,11 @@ static SESSION_RUNNING: AtomicBool = AtomicBool::new(false);
 /// const-constructible [`Mutex`] singleton.
 static VR_STATE: Mutex<VrState> = Mutex::new(VrState::new());
 
-/// Report a blocking lock of the runtime state from a role that must not take one.
+/// Report a blocking lock of the runtime state or the submit side from a role that must not take
+/// one.
 #[cold]
 #[inline(never)]
-fn report_forbidden_lock(role: ThreadRole, location: &'static Location<'static>) {
+pub(super) fn report_forbidden_lock(role: ThreadRole, location: &'static Location<'static>) {
     let verdict = forbidden_lock_verdict(
         cfg!(debug_assertions),
         FORBIDDEN_LOCK_REPORTED.swap(true, Ordering::Relaxed),
@@ -455,7 +456,14 @@ impl VrState {
                 })
             });
 
-        let session = acquire_session(&instance, system, cfg)?;
+        let (session, frame_stream) = acquire_session(&instance, system, cfg)?;
+        let submitter = Submitter::new(
+            instance.clone(),
+            system,
+            session.handle.clone(),
+            frame_stream,
+            blend_mode,
+        )?;
 
         // Controller input is optional: without it the headset still renders, and the mod stays on
         // the gamepad scheme.
@@ -495,6 +503,7 @@ impl VrState {
         self.system = Some(system);
         self.blend_mode = blend_mode;
         self.session = Some(session);
+        submit::install(submitter);
         self.input = input;
         self.recommended_view = recommended_view;
         self.runtime_name = runtime_name;
@@ -601,6 +610,8 @@ impl VrState {
                 session.running = true;
             }
             xr::SessionState::STOPPING => {
+                // A frame the deferred tail is still submitting ends first.
+                let _submit = submit::lock_submit();
                 if let Err(e) = session.handle.end() {
                     tracing::error!(target: "vr", "session end failed: {e}");
                 }
@@ -671,6 +682,9 @@ impl VrState {
     /// starts fresh (used when VR is genuinely stopped: `vr.enabled` off, or a lost session).
     fn teardown(&mut self, persist: bool) {
         let _origin_mutation = origin_provenance::changing();
+        // The submit side first: taking it waits for a frame the deferred tail is still submitting,
+        // so nothing below runs under a frame.
+        let submitter = submit::take();
         // Drain the GPU first, and release the flip block, so the game's own present path resumes
         // against an idle pipeline rather than deadlocking in a timestamp-query readback (see
         // `blit::drain_gpu`); the swapchain is destroyed either way (persisting keeps only the
@@ -696,6 +710,7 @@ impl VrState {
         }
 
         if persist {
+            drop(submitter);
             if let Some(session) = self.session.take() {
                 persist_session(session);
             }
@@ -703,11 +718,10 @@ impl VrState {
                 stash_instance(instance);
             }
         } else {
-            if let Some(mut session) = self.session.take() {
-                // The exit handshake ran above; destroy the swapchain (before the session handle),
-                // then dropping `session` drops the frame stream/waiter and the session handle.
-                session.swapchain = None;
-            }
+            // The exit handshake ran above; destroy the submit side with the swapchain (before the
+            // session handle), then dropping the session drops the frame waiter and the handle.
+            drop(submitter);
+            self.session = None;
             self.instance = None;
             clear_persisted();
             // A stash left by a failed bring-up names handles that die with the instance.

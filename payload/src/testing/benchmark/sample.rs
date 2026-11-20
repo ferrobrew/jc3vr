@@ -14,6 +14,9 @@ pub(crate) struct Reading {
     pub(crate) engine: EngineCallTotals,
     pub(crate) submissions: u64,
     pub(crate) detours: DetourTotals,
+    /// The submitted frames' summed head-pose age at `xrEndFrame`, and their count
+    /// ([`crate::vr::pose_age_totals`]).
+    pub(crate) pose_age: (u64, u64),
 }
 
 /// The names of a frame row's values, in order. Times are microseconds, counts are counts.
@@ -53,9 +56,11 @@ pub(crate) const COLUMNS: [&str; COLUMN_COUNT] = [
     "detour_calls",
     "forward_us",
     "forward_calls",
+    "pose_age_us",
+    "pose_ages",
 ];
 
-pub(crate) const COLUMN_COUNT: usize = 35;
+pub(crate) const COLUMN_COUNT: usize = 37;
 
 /// The slots that make up the simulation's time: the sim tick, its phases, and the managers timed
 /// inside it.
@@ -148,6 +153,8 @@ pub(crate) fn frame_row(
             .detours
             .forward_calls
             .saturating_sub(earlier.detours.forward_calls),
+        us(later.pose_age.0.saturating_sub(earlier.pose_age.0)),
+        later.pose_age.1.saturating_sub(earlier.pose_age.1),
     ]
 }
 
@@ -170,6 +177,7 @@ mod tests {
             engine: EngineCallTotals::default(),
             submissions: 0,
             detours: DetourTotals::default(),
+            pose_age: (0, 0),
         }
     }
 

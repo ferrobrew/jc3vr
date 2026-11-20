@@ -45,7 +45,7 @@ COLUMNS = ["frame_us", "sim_ticks", "game_mod_us", "game_openxr_us", "game_engin
            "vr_end_frame_us", "vr_swapchain_wait_us", "vr_lock_us", "submit_us", "sim_us",
            "engine_update_us", "engine_update_render_us", "debug_ui_us", "engine_draws",
            "engine_dispatches", "d3d_submissions", "detour_us", "detour_calls", "forward_us",
-           "forward_calls"]
+           "forward_calls", "pose_age_us", "pose_ages"]
 SEAMS = ["pre_draw", "gbuffer", "scene", "post_effects", "post_draw", "fsr"]
 
 
@@ -110,6 +110,12 @@ class StatisticsTests(unittest.TestCase):
         self.assertEqual(series["draw_ms"], [6.25])
         self.assertEqual(series["d3d_submissions"], [6000])
 
+    def test_the_pose_age_is_averaged_over_the_frames_each_row_submitted(self):
+        series = frame_series(ack([frame(14000, pose_age_us=16000, pose_ages=1),
+                                   frame(14000),
+                                   frame(28000, pose_age_us=30000, pose_ages=2)]))
+        self.assertEqual(series["pose_age_ms"], [16.0, 15.0])
+
     def test_gpu_dispatches_are_grouped_into_frames_by_the_first_eye(self):
         rows = [gpu_row(1, 3000),  # The tail of a frame begun before the recording.
                 gpu_row(0, 4000, idle=500, fsr=900), gpu_row(1, 4000, idle=200, fsr=1000),
@@ -169,6 +175,9 @@ class ProtocolTests(unittest.TestCase):
         still = tomllib.loads(BenchmarkRequest("b2", "town", "multipass", 1.0).to_toml())
         self.assertNotIn("camera", still["benchmark"])
         self.assertNotIn("resolution_scale", still["benchmark"])
+        self.assertNotIn("overlap_render_update", still["benchmark"])
+        serial = BenchmarkRequest("b3", "town", "multipass", 1.0, overlap_render_update=False)
+        self.assertIs(tomllib.loads(serial.to_toml())["benchmark"]["overlap_render_update"], False)
 
     def test_invalid_requests_are_refused(self):
         with self.assertRaises(ProtocolError):
@@ -230,9 +239,22 @@ class ScheduleTests(unittest.TestCase):
     def test_the_shipped_suite_loads(self):
         suite = load_suite(Path(__file__).resolve().parents[1] / "suites/benchmark.toml")
         self.assertIn("capital", [scene.name for scene in suite.scenes])
-        self.assertTrue(all(variant.switches for variant in suite.variants))
+        self.assertTrue(all(variant.switches or variant.overlap_render_update is not None
+                            for variant in suite.variants))
+        serial = {variant.name: variant for variant in suite.variants}["multipass-serial"]
+        self.assertEqual(serial.base, BenchmarkMode.MULTIPASS)
+        self.assertIs(Mode.variant(serial).overlap_render_update, False)
         moving = next(scene for scene in suite.scenes if scene.name == "town-moving")
         self.assertFalse(moving.camera.still)
+
+    def test_a_multipass_variant_with_single_pass_switches_is_refused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "suite.toml"
+            path.write_text("[[scene]]\nname = 'capital'\nconfig = 'coverage_capital_midday.toml'\n"
+                            "[[variant]]\nname = 'x'\nbase = 'multipass'\n"
+                            "switches = { fsr_per_eye = false }\n")
+            with self.assertRaises(BenchmarkError):
+                load_suite(path)
 
     def test_a_suite_without_a_stage_is_refused(self):
         with tempfile.TemporaryDirectory() as directory:

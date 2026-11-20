@@ -386,7 +386,7 @@ const REQUEST_MANUAL: u8 = 1 << 2;
 const REQUEST_POSTURE: u8 = 1 << 3;
 
 /// Drive the gameplay-resume auto-recenter and service the recenters asked for since the last frame.
-/// Call once per frame on the game thread, before `frame_begin` takes the runtime lock. Arms while the
+/// Call once per frame on the game thread, before `frame_wait` locates the views. Arms while the
 /// game is not in settled gameplay (frontend, loading, or no local player character), and fires a
 /// single manual recenter once gameplay is running and the player's head anchor has stopped moving (the
 /// entry animation has finished), so the neutral snaps to the player's real pose. In-session

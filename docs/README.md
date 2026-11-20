@@ -68,7 +68,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 ## mod/
 
 - [vr-runtime.md](mod/vr-runtime.md) — the OpenXR runtime as built: session lifecycle, the frame loop, pose model, per-eye resolution, mirror, and the playtest checklist.
-- [threading.md](mod/threading.md) — the threads mod code runs on, who holds the VR runtime lock across a frame, the lock rules, and the thread-role guard that checks them.
+- [threading.md](mod/threading.md) — the threads mod code runs on, who holds the VR runtime's two locks across a frame, how the next frame's render update overlaps the previous frame's draw and what keeps that safe, the lock rules, and the thread-role guard that checks them.
 - [lifecycle.md](mod/lifecycle.md): shutdown preparation, deferred retries, one-shot teardown, and the uninstalled magazine executor restriction.
 - [settings.md](mod/settings.md) — the settings file: where it and the other kept files live, the tolerant load, the `config::edit()` rule and the debounced save, what is not saved, and the TOML representation of optional values and lists.
 - [hud.md](mod/hud.md) — the floating-panel HUD: the redirect, compositing, cursor interaction, and the placement rule for HUD depth (elements tied to one world object receive depth, general elements stay on the panel) with where each element is placed.
@@ -106,7 +106,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 
 - [performance.md](mod/performance/performance.md) — where the frame actually goes, measured: geometry bound by draw submission rather than fill, the post chain bound by pixels, and what single-pass stereo buys.
 - [profiler.md](mod/performance/profiler.md) — the in-game profiler (issue #34): puffin CPU scopes across the frame phases and render passes, the GPU timestamp lane, the flame graph, and the F9 trace capture.
-- [frame-budget.md](mod/performance/frame-budget.md) — the frame-time benchmark's results at the headset's size: multipass and single-pass per scene against 13.9 ms, the serial CPU chain and the GPU as the two limits, the resolution sweep and its knee, what the remaining per-eye families and the draw detours cost, the ranked opportunities, and the frames under 72 Hz pacing.
+- [frame-budget.md](mod/performance/frame-budget.md) — the frame-time benchmark's results at the headset's size: multipass and single-pass per scene against 13.9 ms, the serial CPU chain and the GPU as the two limits, the resolution sweep and its knee, what the remaining per-eye families and the draw detours cost, the ranked opportunities, the frames under 72 Hz pacing, and what overlapping the render update with the draw gained.
 - [frame-timing.md](mod/performance/frame-timing.md) — the always-on frame breakdown: self time per frame region by kind (mod, OpenXR, engine, wait) and thread, the frames split by the sim ticks they ran and the tick's phases, logged every ten seconds and shown in the debug UI's Rendering > Previews and performance feature.
 
 ### body/

@@ -1,14 +1,16 @@
 # Where the frame goes at the headset's size
 
-Measured with the frame-time benchmark ([benchmark.md](../testing/benchmark.md)) in runs 300 to 302, to answer whether multipass and single-pass stereo fit a 72 Hz headset's 13.9 ms at the Bigscreen Beyond 2e's recommended 3584 by 3561 per eye, what limits each, and what is left to gain. The machine is an AMD Ryzen 9 9950X3D (32 threads) with an NVIDIA GeForce RTX 5090 (32 GB, driver 595.71.05), running the game under Proton Experimental and DXVK in gamescope's headless backend with Monado's simulated headset and null compositor. Every run is the release payload with FSR and the foveation at their shipped settings and the motion blur and depth of field off; the clock and the world run, and only the camera is held. The results are in `target/harness-probe/benchmark/` (`300-pristine-multipass`, `300-main`, `300-sweep`, `301-main`, `301-sweep-town`, `301-variants`, `301-detours`, `302-*`).
+Measured with the frame-time benchmark ([benchmark.md](../testing/benchmark.md)) in runs 300 to 302, and in runs 304 to 306 for the overlapped frame ordering, to answer whether multipass and single-pass stereo fit a 72 Hz headset's 13.9 ms at the Bigscreen Beyond 2e's recommended 3584 by 3561 per eye, what limits each, and what is left to gain. The machine is an AMD Ryzen 9 9950X3D (32 threads) with an NVIDIA GeForce RTX 5090 (32 GB, driver 595.71.05), running the game under Proton Experimental and DXVK in gamescope's headless backend with Monado's simulated headset and null compositor. Every run is the release payload with FSR and the foveation at their shipped settings and the motion blur and depth of field off; the clock and the world run, and only the camera is held. The results are in `target/harness-probe/benchmark/` (`300-pristine-multipass`, `300-main`, `300-sweep`, `301-main`, `301-sweep-town`, `301-variants`, `301-detours`, `302-*`).
 
 The comparison between modes on this machine is the point. A real headset adds its compositor's own GPU work, lens correction, and reprojection, and a player's GPU is not this one: the render size at which the GPU starts to limit the frame moves down on a weaker card.
 
 ## A caveat on the frame interval
 
-The null compositor was set to pace at 1000 fps, so the frame interval would show the cost of a frame rather than a display period. It does not entirely: in some runs `xrWaitFrame` blocks for several milliseconds while the GPU sits idle (`gpu_idle_ms` rises with it), and the same scene and mode can land in either state from one session to the next. The capital in single-pass took 19.2 to 19.7 ms per frame in runs 300 and 301's variant schedule and 22.9 ms in run 301's main schedule, the difference being 8 ms of `xrWaitFrame` against 0.03 ms. Monado's application pacing, which delays the frame's wake-up to cut latency, is the likely cause; it was not confirmed. The work inside the frame (the game thread's busy time, the draw task, the GPU spans) does not depend on it, and where the two disagree the work is the number to read.
+The null compositor was set to pace at 1000 fps, so the frame interval would show the cost of a frame rather than a display period. It does not entirely: in some runs `xrWaitFrame` blocks for several milliseconds while the GPU sits idle (`gpu_idle_ms` rises with it), and the same scene and mode can land in either state from one session to the next. The capital in single-pass took 19.2 to 19.7 ms per frame in runs 300 and 301's variant schedule and 22.9 ms in run 301's main schedule, the difference being 8 ms of `xrWaitFrame` against 0.03 ms. Monado's application pacing, which delays the frame's wake-up to cut latency, is the cause; [Why the compositor's wait moves](#why-the-compositors-wait-moves) has how it estimates the wake-up. The work inside the frame (the game thread's busy time, the draw task, the GPU spans) does not depend on it, and where the two disagree the work is the number to read.
 
 ## At 3584 by 3561
+
+The sections from here to the ranked opportunities were measured with the serial frame ordering, before the render update was overlapped with the draw; [Overlapping the render update](#overlapping-the-render-update) has the same scenes both ways.
 
 Run 301, three ten-second repeats per row, the compositor at 1000 fps. Frame is the median, the 99th percentile (the 1% low), and the worst frame, in milliseconds, with the spread of the repeats' medians; the other times are per-frame medians; the waits are the game thread's (`xrWaitFrame`, and the drains plus the runtime lock the frame tail holds); the last two columns are the host's busy fraction of DXVK's command-stream thread and of the game thread.
 
@@ -73,7 +75,7 @@ The frame column carries the pacing caveat: the town's 2560 single-pass row (4.5
 - the capital in single-pass sits at 16 ms up to half the headset's pixels and is limited by the GPU and the game thread from there (19.2 ms at the headset's size);
 - the town is GPU-bound from about 6 MP per eye in both modes: at the headset's size single-pass's GPU takes 10.2 ms in this session and 8.8 ms in the main schedule, against a draw task of 6 to 7 ms.
 
-At the capital, the game thread's own busy time also grows with the render size (4.6 to 8.6 ms in single-pass), which the simulation and the render update cannot do on their own: something on the game thread waits on the GPU without being timed as a wait. Which call it is was not found.
+At the capital, the game thread's median busy time also grows with the render size (4.6 to 8.6 ms in single-pass). Most of that is not a hidden wait but the median of two populations: a frame that runs the 30 Hz simulation tick is busy about 7.8 ms and one that does not about 3.8 ms, at every size from half the headset's pixels to 1.5 times them, and the tick lands in more than half the frames once the frame takes longer than 16.7 ms (48% of the frames at half the pixels, 64% at the headset's size, from run 300's sweep). At twice the pixels both populations grow by about 2.5 ms, in the engine's render update; what it waits on there was not found.
 
 ## What the remaining single-pass submissions cost
 
@@ -104,13 +106,13 @@ The forwarding call itself is cheap: DXVK records a draw in 75 ns on the draw ta
 
 By expected saving at the headset's size on this machine, largest first:
 
-1. **Overlap the next frame's render update with the draw task.** At the capital the game thread waits 9.8 ms per frame for the runtime lock while the draw task records the previous frame, then does 3.5 ms of render update, then dispatches. OpenXR's frame pipelining lets a frame's `xrWaitFrame` come after the previous frame's `xrBeginFrame` and before its `xrEndFrame` (only the next `xrBeginFrame` must follow that `xrEndFrame`; how Monado and the headset's runtime pace such a wait is unverified), so the next frame's wait, view location, and render update could run while the tail is still draining, taking the lock only to begin the frame and dispatch. That would bring the capital from about 19 ms toward the larger of the draw task and the game thread's work, about 12.5 ms in single-pass: 4 to 7 ms at the capital. The GPU-bound scenes would gain little, since the GPU already runs nearly without idle there. It is a change to the frame loop's ownership of the runtime lock (`docs/mod/threading.md`), not to rendering.
+1. **Overlap the next frame's render update with the draw task.** Done (`vr.overlap_render_update`, [below](#overlapping-the-render-update)): at the capital single-pass went from 19.1 to 14.2 ms at the 1000 fps pace, and under 72 Hz pacing from every third display period to every one.
 2. **The draw task's CPU time**, which the overlap above leaves as the floor: 12.0 ms for 12,750 submissions at the capital. Converting the families still re-issued per eye takes 0.5 to 1.8 ms of it (above). The rest is the engine's own per-draw work, which the mod can only shorten by issuing fewer draws.
 3. **FSR's GPU time**, 2.2 to 2.4 ms per frame at the headset's size in both modes, 22 to 25% of the GPU's frame in the scenes the GPU limits, and growing with the pixels (4.7 ms at twice them). It runs at the full render size as an anti-aliasing and sharpening pass; rendering below the headset's size and letting FSR upscale, or a cheaper resolve, would buy back most of it on a GPU-bound headset, at a cost in image quality. On this GPU every scene the GPU limits already fits 13.9 ms.
 4. **The multipass detour tax**, 0.5 to 1.9 ms per frame, paid by multipass whenever single-pass has run in the session. It goes away when single-pass becomes the default.
 5. **The mod's own CPU work** is not where the time goes: its scoped work is 0.4 to 1.0 ms per frame across all threads (`mod_ms`), and its per-draw work in the draw detours under 0.4 ms.
 
-The game thread's unexplained growth with the render size at the capital (up to 4 ms between half and twice the headset's pixels) is worth finding before any of these, since a wait hidden in the render update would sit on the critical path the overlap creates.
+With the overlap in, the capital in single-pass is limited by the GPU at this machine's 13.7 ms, so the next gains there are the GPU's (FSR first), and the draw task's CPU time becomes the floor again only on a faster GPU.
 
 ## Under pacing at 72 Hz
 
@@ -125,7 +127,95 @@ Run 302 launched the session with the null compositor pacing at 72 fps, the head
 | meadow | multipass | 13.9 / 16.0 / 29.6 | 1.9 | 5.0 | 10.8 | 3.1 | 7.0 |
 | meadow | single-pass | 13.9 / 14.7 / 83.4 | 1.8 | 4.5 | 11.0 | 2.9 | 7.7 |
 
-The scenes whose work fits hold the period, with single-pass's 1% low closer to it (14.7 to 14.9 ms against 16.0 to 16.9 for multipass). The capital, whose work takes 19 to 20 ms, did not fall to every second period but to every third: 41.7 ms, 24 fps, with the game thread waiting 20 to 25 ms in `xrWaitFrame`. That is the null compositor's pacing, not a headset's, but it shows what missing 13.9 ms costs once a compositor paces: not the 6 ms of overrun but whole periods. A session in the headset (`sessions/2026-11-14_02-05-36_243`) shows 19 to 22 ms frames with about 12.5 ms of wait under a real runtime, the same chain.
+The scenes whose work fits hold the period, with single-pass's 1% low closer to it (14.7 to 14.9 ms against 16.0 to 16.9 for multipass). The capital, whose work takes 19 to 20 ms, did not fall to every second period but to every third: 41.7 ms, 24 fps, with the game thread waiting 20 to 25 ms in `xrWaitFrame`. That is the null compositor's pacing, not a headset's, but it shows what missing 13.9 ms costs once a compositor paces: not the 6 ms of overrun but whole periods. A session in the headset (`sessions/2026-11-14_02-05-36_243`) shows 19 to 22 ms frames with about 12.5 ms of wait under a real runtime, the same chain. With the render update overlapped, the capital in single-pass holds the 72 Hz period in the same setup ([below](#at-72-hz-pacing)).
+
+## Overlapping the render update
+
+The serial chain above is now broken where the measurements located it. With `vr.overlap_render_update` on (the default), the next frame's `xrWaitFrame`, view location, and render update run while the previous frame's draw task and deferred tail are still running, and the frame waits for the tail only at its `xrBeginFrame`, just before it dispatches; the per-frame values the draw task reads are kept per frame so it never sees the next frame's. The frame order, why the engine allows it, and what keeps it safe are in [threading.md](../threading.md#who-holds-what-across-a-frame). The benchmark's `multipass-serial` and `single-pass-serial` variants turn it off, so each pair below ran in the same session with the modes rotated, three ten-second repeats each, at 3584 by 3561 with the release payload. Frame is the median, the 99th percentile, and the worst frame interval in milliseconds; the rest are per-frame medians. Tail lock is the game thread's wait for the previous frame's tail, and pose age is how old the head pose a submitted frame was rendered from is at its `xrEndFrame`.
+
+### At 72 Hz pacing
+
+Run 306, the null compositor pacing at 72 fps (`target/harness-probe/benchmark/306-paced`):
+
+| Scene | Mode | Frame | Game busy | Tail lock | Draw task | GPU | GPU idle | xrWaitFrame | Pose age |
+|---|---|---|---|---|---|---|---|---|---|
+| capital | multipass, serial | 41.6 / 45.7 / 48.3 | 7.1 | 4.3 | 16.8 | 19.1 | 22.5 | 20.6 | 21.0 |
+| capital | multipass | 41.7 / 45.3 / 49.6 | 7.0 | 0.0 | 17.1 | 19.4 | 22.3 | 24.7 | 21.3 |
+| capital | single-pass, serial | 41.6 / 43.0 / 43.4 | 6.8 | 9.4 | 12.2 | 17.5 | 24.0 | 25.5 | 16.0 |
+| capital | single-pass | 13.9 / 16.1 / 34.2 | 4.3 | 0.0 | 10.8 | 13.5 | 0.3 | 9.4 | 14.6 |
+| town | multipass, serial | 13.9 / 17.2 / 30.1 | 2.5 | 2.3 | 7.3 | 11.5 | 2.5 | 4.2 | 9.6 |
+| town | multipass | 13.8 / 16.6 / 29.2 | 2.5 | 0.0 | 7.3 | 11.5 | 2.4 | 5.8 | 9.7 |
+| town | single-pass, serial | 13.9 / 14.7 / 28.3 | 2.3 | 5.6 | 6.3 | 11.8 | 2.1 | 5.4 | 8.4 |
+| town | single-pass | 13.9 / 14.8 / 28.0 | 2.3 | 0.0 | 6.3 | 11.7 | 2.1 | 11.5 | 8.4 |
+| town, moving | multipass, serial | 13.9 / 24.1 / 30.3 | 2.5 | 2.4 | 7.6 | 11.6 | 2.2 | 3.7 | 9.9 |
+| town, moving | multipass | 13.9 / 18.3 / 31.6 | 2.6 | 0.0 | 7.6 | 11.6 | 2.2 | 5.6 | 10.0 |
+| town, moving | single-pass, serial | 13.9 / 14.8 / 28.3 | 2.2 | 5.5 | 6.4 | 11.9 | 2.0 | 5.3 | 8.5 |
+| town, moving | single-pass | 13.9 / 14.7 / 28.3 | 2.3 | 0.0 | 6.4 | 11.9 | 1.9 | 11.4 | 8.6 |
+| tunnel | multipass, serial | 13.9 / 16.1 / 29.0 | 2.3 | 2.0 | 6.2 | 11.9 | 2.0 | 5.3 | 8.5 |
+| tunnel | multipass | 13.9 / 16.1 / 29.5 | 2.3 | 0.0 | 6.1 | 11.7 | 2.2 | 7.3 | 8.2 |
+| tunnel | single-pass, serial | 13.9 / 14.8 / 28.1 | 2.1 | 4.5 | 5.0 | 11.7 | 2.2 | 6.9 | 7.0 |
+| tunnel | single-pass | 13.9 / 14.7 / 28.2 | 2.1 | 0.0 | 4.9 | 11.6 | 2.3 | 11.6 | 6.8 |
+| shore lake | multipass, serial | 13.9 / 15.6 / 28.9 | 1.5 | 1.4 | 4.2 | 10.9 | 3.0 | 8.1 | 5.7 |
+| shore lake | multipass | 13.9 / 15.5 / 28.6 | 1.5 | 0.0 | 4.1 | 10.9 | 3.0 | 9.4 | 5.6 |
+| shore lake | single-pass, serial | 13.9 / 14.4 / 28.2 | 1.4 | 3.2 | 3.7 | 11.0 | 2.8 | 8.9 | 5.0 |
+| shore lake | single-pass | 13.9 / 14.3 / 14.8 | 1.4 | 0.0 | 3.7 | 11.0 | 2.8 | 12.5 | 5.0 |
+| meadow | multipass, serial | 13.9 / 16.0 / 30.9 | 1.8 | 1.7 | 5.4 | 11.0 | 2.9 | 6.7 | 7.1 |
+| meadow | multipass | 13.9 / 16.1 / 30.1 | 1.8 | 0.0 | 5.1 | 10.8 | 3.0 | 8.3 | 6.8 |
+| meadow | single-pass, serial | 13.9 / 14.4 / 14.8 | 1.6 | 4.0 | 4.5 | 11.0 | 2.9 | 7.9 | 6.0 |
+| meadow | single-pass | 13.9 / 14.5 / 27.9 | 1.6 | 0.0 | 4.4 | 10.9 | 2.9 | 12.2 | 5.9 |
+
+**The capital in single-pass now holds the period.** Serially it fell to every third period (41.6 ms, 24 fps) with the game thread waiting 9.4 ms on the tail; overlapped it holds 13.9 ms with a 99th percentile of 16.1 ms and the GPU busy 13.5 ms with 0.3 ms idle: the GPU, not the CPU chain, is now its limit on this machine. Multipass at the capital does not move: its two dispatches are serial by construction (the drain between them), so its draw task takes 17 ms and its GPU 19 ms, and no ordering of the frame's other work brings that under 13.9 ms. Every other scene held the period in both orderings, with the same 99th percentiles within a millisecond (the moving town's multipass 99th percentile fell from 24.1 to 18.3 ms), and the overlap's tail lock is zero everywhere: the render update and the compositor's wait now cover the whole of the previous frame's tail.
+
+**Head-pose latency did not get worse under pacing.** The pose's age at the submit is the same within 0.3 ms in every scene that held the period in both orderings, and at the capital in single-pass it fell from 16.0 to 14.6 ms, because the frame no longer waits periods for its slot. The overlap does locate the views earlier relative to the frame's own work (before the render update instead of after it), which costs latency only when nothing else waits: see the unpaced numbers below.
+
+### Unpaced
+
+Run 304, the compositor at 1000 fps (`target/harness-probe/benchmark/304-main`):
+
+| Scene | Mode | Frame | Game busy | Tail lock | Draw task | GPU | GPU idle | xrWaitFrame | Pose age |
+|---|---|---|---|---|---|---|---|---|---|
+| capital | multipass, serial | 21.2 / 26.7 / 38.0 | 7.7 | 4.4 | 17.0 | 19.3 | 1.8 | 0.0 | 21.0 |
+| capital | multipass | 23.6 / 32.6 / 36.1 | 8.5 | 0.0 | 17.8 | 19.3 | 5.2 | 9.4 | 22.5 |
+| capital | single-pass, serial | 19.1 / 28.3 / 30.4 | 7.3 | 10.1 | 12.6 | 17.2 | 0.4 | 0.0 | 16.6 |
+| capital | single-pass | 14.2 / 21.9 / 23.9 | 11.5 | 0.0 | 12.5 | 13.7 | 0.3 | 1.4 | 20.2 |
+| town | multipass, serial | 14.9 / 19.8 / 24.0 | 2.7 | 2.4 | 7.8 | 11.7 | 3.3 | 4.9 | 10.3 |
+| town | multipass | 9.4 / 15.4 / 21.0 | 4.3 | 0.0 | 7.9 | 9.1 | 0.3 | 0.0 | 11.8 |
+| town | single-pass, serial | 9.5 / 13.5 / 16.8 | 3.0 | 5.8 | 6.1 | 8.9 | 0.3 | 0.0 | 9.0 |
+| town | single-pass | 9.2 / 14.0 / 15.8 | 4.4 | 0.0 | 6.5 | 8.9 | 0.3 | 5.1 | 10.8 |
+| town, moving | multipass, serial | 14.7 / 19.5 / 23.0 | 2.6 | 2.4 | 7.7 | 11.5 | 3.1 | 4.4 | 10.2 |
+| town, moving | multipass | 9.7 / 15.1 / 23.7 | 4.2 | 0.0 | 8.1 | 9.4 | 0.3 | 0.0 | 11.9 |
+| town, moving | single-pass, serial | 9.3 / 12.9 / 17.0 | 3.1 | 5.7 | 6.1 | 8.9 | 0.3 | 0.0 | 8.9 |
+| town, moving | single-pass | 9.1 / 13.9 / 18.5 | 4.5 | 0.0 | 6.8 | 8.9 | 0.3 | 4.7 | 11.0 |
+| tunnel | multipass, serial | 10.8 / 14.0 / 21.1 | 3.7 | 2.2 | 6.1 | 10.3 | 0.3 | 1.8 | 9.0 |
+| tunnel | multipass | 10.8 / 16.0 / 21.7 | 4.6 | 0.0 | 6.6 | 10.4 | 0.3 | 0.0 | 10.8 |
+| tunnel | single-pass, serial | 10.7 / 13.1 / 17.0 | 2.2 | 4.7 | 4.6 | 10.3 | 0.3 | 3.1 | 7.5 |
+| tunnel | single-pass | 11.4 / 18.0 / 21.0 | 4.1 | 0.0 | 5.2 | 10.4 | 0.3 | 8.6 | 7.9 |
+| shore lake | multipass, serial | 9.9 / 12.3 / 17.5 | 4.6 | 2.0 | 4.9 | 9.7 | 0.2 | 0.0 | 9.2 |
+| shore lake | multipass | 10.0 / 15.4 / 17.5 | 3.7 | 0.0 | 5.2 | 9.7 | 0.2 | 3.0 | 9.4 |
+| shore lake | single-pass, serial | 10.1 / 12.7 / 18.1 | 1.3 | 4.4 | 3.9 | 9.8 | 0.3 | 4.2 | 5.9 |
+| shore lake | single-pass | 10.7 / 17.4 / 20.5 | 2.6 | 0.0 | 4.1 | 9.9 | 0.3 | 9.0 | 5.8 |
+| meadow | multipass, serial | 10.1 / 12.4 / 19.6 | 4.8 | 1.8 | 4.8 | 9.8 | 0.2 | 1.1 | 9.3 |
+| meadow | multipass | 10.2 / 15.3 / 19.7 | 4.0 | 0.0 | 5.1 | 9.8 | 0.2 | 1.2 | 9.6 |
+| meadow | single-pass, serial | 10.1 / 12.7 / 17.7 | 1.5 | 4.3 | 3.9 | 9.8 | 0.3 | 4.1 | 6.0 |
+| meadow | single-pass | 10.7 / 17.4 / 20.6 | 3.2 | 0.0 | 4.1 | 9.9 | 0.3 | 8.6 | 6.3 |
+
+Unpaced, the overlap takes 4.9 ms off the capital in single-pass (19.1 to 14.2 ms, the GPU now busy 13.7 ms with 0.3 ms idle) and 5 ms off the town in multipass (14.9 to 9.4 ms; its GPU idle fell from 3.3 to 0.3 ms). Three things got worse, and all three are this pacing's:
+
+- **The 99th percentile of the light scenes**, which the GPU limits in either ordering, rose by 3 to 5 ms (the shore lake in single-pass from 12.7 to 17.4 ms). In the shore lake's first single-pass repeat the slowest 3% of the frames spent 14.7 ms on average in `xrWaitFrame` against 5.2 ms serially: the runtime's application pacing, not work. At 72 Hz the same scenes show no difference.
+- **The capital in multipass** got 2.4 ms slower, all of it in `xrWaitFrame` (9.4 ms against none).
+- **The pose's age** grew by 1 to 3.6 ms (16.6 to 20.2 ms at the capital in single-pass), because the views are located before the render update and the compositor did not hold the frame anywhere else.
+
+The game thread's busy time grows under the overlap when the frames are unpaced (the capital in single-pass from 7.3 to 11.5 ms): the render update now shares the CPU and the engine's locks with the draw task, so the same work takes longer on the clock. Under 72 Hz pacing it does not (at the capital in single-pass, 6.8 ms serially against 4.3 overlapped).
+
+### Why the compositor's wait moves
+
+Monado's application pacing (`u_pacing_app` in its source, read at a 2022 revision) predicts each frame from three filtered times: from the wake-up out of `xrWaitFrame` to `xrBeginFrame` (the CPU time), from `xrBeginFrame` to `xrEndFrame` (the draw time), and from `xrEndFrame` to the GPU's completion. It rounds the frame period up to a multiple of the display period that is longer than each of the three, picks the first display time after the last one it returned by at least half that period with room for all three, and wakes the application that long before it. That is the wait the earlier runs saw with the GPU idle even at 1000 fps: with the frame begun before the render update, the draw time covered the render update and the draw task (16 to 20 ms at the capital), so the period was held at that length whatever the GPU did, and the filtered estimates drifting between sessions put the wake-up sometimes early and sometimes late. Overlapped, the render update moves into the CPU time and the draw time shrinks to the dispatch and the draw task, which is why the single-pass capital drops to every period at 72 Hz. In multipass the draw time still spans both dispatches and the drain between them, about 18 ms; why the unpaced multipass capital then waits 9.4 ms rather than running at that length was not traced through the estimates.
+
+### Correctness
+
+The fast comparison ran the town, the tunnel, the meadow, and the capital at night with the overlap on and off, in run 304 (1000 fps) and run 306 (72 fps), and with the previous commit's payload once in run 304 (`target/harness-probe/fast/304-*` and `306-*`). Under the visual harness the frame tail runs inline, so the comparison exercises the reordered frame, the split runtime locks, and the per-frame slots, but not the overlap's concurrency. The two orderings came out alike: multipass against the isolated eyes passed or stayed within its noise in the tunnel and the capital at night in every run (at most 54 differing pixels per eye) and differed by 5,000 to 45,000 pixels per eye in the town and the meadow with all three payloads, the noise floor of those scenes at this pace being 2,000 to 40,000. Single-pass differed from the references by a few hundred pixels at the capital at night and 10,000 to 1,200,000 in the other three scenes in the final image, with 1 to 7 million differing depth pixels per eye, in every run with every payload, the previous commit's included, and by factors of up to three between repeats of the same payload; so it does not come from the ordering. Its cause (the release build, the headset's size, or these sessions) was not found.
+
+A first launch of the change (run 303) crashed in `d3d11.dll` inside the tone mapping's histogram readback during the render update, ten seconds in: the runtime's swapchain release and `xrEndFrame` on the frame tail recorded on the immediate context without the engine's context mutex while the overlapped render update read a query under it. Those calls now take the mutex, and runs 304 and 306 ran every benchmark and comparison above without a fault. Run 305 crashed once, seven seconds after re-injecting the release payload, while staging the capital: a streaming worker loading a model faulted in the texture cache's lookup (`TextureCacheGetTexture`) on a null resource handle. Run 306 staged the same scene with the same payload without a fault, and no path was found from the overlap to that lookup, but it was not ruled out.
 
 ## The motion blur and the depth of field
 

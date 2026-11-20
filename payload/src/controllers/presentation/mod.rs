@@ -71,6 +71,7 @@ use crate::{
     },
     frame_timing::{self, Slot},
     headpose, hooks,
+    render_frame::RenderFrameSlot,
 };
 
 /// Why the layer is or is not re-posing the body.
@@ -297,7 +298,7 @@ pub(crate) fn begin_frame() {
         (Idle::NoTick, None)
     };
     IDLE.store(idle as u8, Ordering::Relaxed);
-    *FRAME.lock() = frame;
+    FRAME.set(frame);
     add_cost(start);
 }
 
@@ -475,7 +476,7 @@ unsafe fn read_body(
 }
 
 pub(crate) fn drawn_hand(instance: Mat4, dtf: f32, hand: Hand) -> Option<(Mat4, Pose)> {
-    let frame = (*FRAME.lock())?;
+    let frame = FRAME.get().flatten()?;
     let edit = body_edit(instance, dtf)?;
     let body = frame.ticks[0]
         .body
@@ -506,7 +507,7 @@ pub(crate) fn drawn_forearm(instance: Mat4, dtf: f32, hand: Hand) -> Option<Mat4
 /// The upper body's edit for a draw, from the frame's snapshot; cached for the frame's other draws
 /// with the same instance matrix and fraction.
 fn body_edit(instance: Mat4, dtf: f32) -> Option<BodyEdit> {
-    let frame = (*FRAME.lock())?;
+    let frame = FRAME.get().flatten()?;
     let key = DrawKey {
         sequence: frame.sequence,
         dtf: dtf.to_bits(),
@@ -723,7 +724,7 @@ static TICKS: Mutex<Ticks> = Mutex::new(Ticks {
     current: None,
 });
 static RIG: Mutex<Option<(SkeletonKey, Result<PresentationRig, SmolStr>)>> = Mutex::new(None);
-static FRAME: Mutex<Option<Frame>> = Mutex::new(None);
+static FRAME: RenderFrameSlot<Option<Frame>> = RenderFrameSlot::new();
 static CACHE: Mutex<Option<(DrawKey, Option<BodyEdit>)>> = Mutex::new(None);
 static POLES: Mutex<PoleMemory> = Mutex::new(PoleMemory {
     latest: None,

@@ -41,6 +41,7 @@ mod pause_menu;
 #[cfg(feature = "profiler")]
 mod profiler;
 mod recorder;
+mod render_frame;
 mod screenshot;
 mod session;
 mod status;

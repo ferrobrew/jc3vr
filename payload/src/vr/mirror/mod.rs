@@ -104,7 +104,7 @@ static MIRROR: Mutex<Option<Mirror>> = Mutex::new(None);
 
 /// Whether [`present_mirror`] is currently in a transient-failure streak, so repeated failures log a
 /// transition and a recovery instead of one line per frame. Mirrors the pattern in
-/// [`crate::vr::frame_begin`]'s `FRAME_BEGIN_FAILING`.
+/// the frame loop's `FRAME_BEGIN_FAILING`.
 static MIRROR_FAILING: AtomicBool = AtomicBool::new(false);
 /// Frames lost to the current (or just-ended) transient mirror-present failure streak. Paired with
 /// [`MIRROR_FAILING`].

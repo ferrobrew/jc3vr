@@ -270,6 +270,9 @@ fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<R
         if let Some(scale) = request.resolution_scale {
             next.vr.resolution_scale = scale;
         }
+        if let Some(overlap) = request.overlap_render_update {
+            next.vr.overlap_render_update = overlap;
+        }
         next.vr.freeze_mode = FreezeMode::FullCamera;
         *config = next;
     }
@@ -461,6 +464,7 @@ fn read() -> Reading {
         engine: draw_count::engine_call_totals(),
         submissions: draw_census::submission_total(),
         detours: detour_timing::totals(),
+        pose_age: crate::vr::pose_age_totals(),
     }
 }
 
@@ -520,13 +524,14 @@ struct Environment {
     fsr_enabled: bool,
     foveation_enabled: bool,
     far_field_enabled: bool,
+    overlap_render_update: bool,
     clock_pair_ns: f64,
 }
 
 impl Environment {
     fn current() -> Self {
         let resolution = crate::vr::resolution_status();
-        let (resolution_scale, native_resolution, fsr, foveation, far_field) =
+        let (resolution_scale, native_resolution, fsr, foveation, far_field, overlap) =
             Config::lock_query(|c| {
                 (
                     c.vr.resolution_scale,
@@ -534,6 +539,7 @@ impl Environment {
                     c.fsr.enabled,
                     c.foveation.enabled,
                     c.far_field.enabled,
+                    c.vr.overlap_render_update,
                 )
             });
         Self {
@@ -554,6 +560,7 @@ impl Environment {
             fsr_enabled: fsr,
             foveation_enabled: foveation,
             far_field_enabled: far_field,
+            overlap_render_update: overlap,
             clock_pair_ns: detour_timing::clock_pair_ns(10_000),
         }
     }
@@ -581,6 +588,7 @@ struct RequestEcho<'a> {
     detour_timing: bool,
     install_draw_detours: bool,
     switches: &'a SinglePassOverrides,
+    overlap_render_update: Option<bool>,
     camera: CameraPath,
 }
 
@@ -595,6 +603,7 @@ impl<'a> From<&'a BenchmarkRequest> for RequestEcho<'a> {
             detour_timing: request.detour_timing,
             install_draw_detours: request.install_draw_detours,
             switches: &request.switches,
+            overlap_render_update: request.overlap_render_update,
             camera: request.camera,
         }
     }

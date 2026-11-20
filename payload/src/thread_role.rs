@@ -21,17 +21,19 @@ pub(crate) enum ThreadRole {
     /// A thread the mod has not marked: the engine's draw task, its CPU fragment workers, the UI
     /// capture and render workers, physics workers, and any other engine or system thread.
     Unmarked,
-    /// The game thread outside the scopes below: the top of `CGame::Update` and the top of the
-    /// render update, before the frame takes the VR runtime lock.
+    /// The game thread outside the scopes below: the top of `CGame::Update`, the top of the render
+    /// update up to `vr::frame_wait`, and the overlapped frame's `WaitedFrame::begin`, where it may
+    /// block on the VR runtime's locks.
     Game,
-    /// The game thread from `vr::frame_begin` to the end of the render update: it holds the VR
-    /// runtime lock (or would, in a frame that has one) and waits on the draw task and the CPU
-    /// fragment workers, and runs stolen fragments itself while it waits.
+    /// The game thread from `vr::frame_wait` to the end of the render update, outside the
+    /// overlapped frame's begin: it holds the VR submit side (or would, in a frame that has one)
+    /// and waits on the draw task and the CPU fragment workers, and runs stolen fragments itself
+    /// while it waits.
     GameFrame,
     /// The game thread while it runs the debug UI, holding the egui state lock the draw task also
     /// takes.
     GameDebugUi,
-    /// The frame-tail worker ([`crate::vr::tail`]): it owns the frame's VR runtime lock until it
+    /// The frame-tail worker ([`crate::vr::tail`]): it owns the frame's VR submit side until it
     /// submits.
     FrameTail,
     /// Whatever thread runs the engine's input job (`RunInputThread_Proxy`, scoped in

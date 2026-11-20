@@ -56,6 +56,16 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
              mirror, a screenshot, the recorder, or the previews need that eye. Off copies every \
              eye and blits at the frame submit.",
         );
+    ui.checkbox(
+        &mut cfg.vr.overlap_render_update,
+        "Overlap the render update with the draw",
+    )
+    .on_hover_text(
+        "Start the next frame's runtime wait, view location, and render update while the previous \
+         frame's draw task and frame tail are still running, waiting for the tail only where the \
+         next frame begins its OpenXR frame. Off waits for the tail before the render update, the \
+         serial ordering.",
+    );
 }
 
 pub(crate) fn status(ui: &mut egui::Ui) {

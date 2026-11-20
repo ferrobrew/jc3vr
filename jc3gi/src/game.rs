@@ -70,6 +70,11 @@ impl Game {
         }
     }
     pub const Draw_ADDRESS: usize = 0x140952390;
+    /// Waits for the previous frame's draw task
+    /// ([`GraphicsEngine::WaitForCPUDrawToFinish`](crate::graphics_engine::graphics_engine::GraphicsEngine::WaitForCPUDrawToFinish)),
+    /// decides from the game state, the UI's static background, and a full-screen video whether
+    /// the frame draws the scene, and runs
+    /// [`GraphicsEngine::Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw).
     pub unsafe fn Draw(&self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self, dt: f32) = ::std::mem::transmute(
@@ -101,7 +106,19 @@ impl Game {
         }
     }
     pub const UpdateRender_ADDRESS: usize = 0x14095A4E0;
-    /// Builds the per-frame update contexts and drives rendering.
+    /// Builds the per-frame update contexts and drives rendering: the game state's pre-render
+    /// update, the memory garbage collection, then the active state's render update (the run
+    /// state's, or its paused variant while the main draw is off, or the frontend's; in any other
+    /// state the load state's when loading, then the UI's pre-render and the video manager's render
+    /// update).
+    ///
+    /// It does not wait for the previous frame's draw task: the wait at its top
+    /// ([`GraphicsEngine::WaitForCPUDrawToFinish`](crate::graphics_engine::graphics_engine::GraphicsEngine::WaitForCPUDrawToFinish))
+    /// runs only while [`Game_EnableOldSyncPoint`](get_Game_EnableOldSyncPoint) is set, and nothing sets it. The render update
+    /// therefore runs alongside the previous frame's draw task, and the fence between them is the
+    /// wait at the top of [`Draw`](crate::game::Game::Draw). The render update's own work on the immediate
+    /// context, such as the tone mapping's histogram readback (`Graphics::GetOcclusionQueryResult`),
+    /// takes the context's mutex call by call, as the draw task's draw wrappers do.
     pub unsafe fn UpdateRender(
         &mut self,
         update_contexts: *mut crate::game::UpdateContexts,
@@ -724,6 +741,12 @@ fn _GameUpdateFlags_size_check() {
         ::std::mem::transmute::<[u8; 0x4], GameUpdateFlags>([0u8; 0x4]);
     }
     unreachable!()
+}
+/// `s_EnableSyncpoint`, the developer menu's `Dev|EnableOldSyncPoint`: while set,
+/// [`Game::UpdateRender`](crate::game::Game::UpdateRender) waits for the previous frame's draw task before the render update. The
+/// image initializes it to false, and its only reference is that read.
+pub unsafe fn get_Game_EnableOldSyncPoint() -> &'static mut bool {
+    unsafe { &mut *(0x142F33B8B as *mut bool) }
 }
 /// `g_MaxGameUpdatesPerRender`: the most [`Game::UpdateGame`](crate::game::Game::UpdateGame) calls one [`Game::Update`](crate::game::Game::Update) makes
 /// under [`INTERPOLATION_METHOD_ACCUMULATED`](crate::game::Game::INTERPOLATION_METHOD_ACCUMULATED) and

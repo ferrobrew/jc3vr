@@ -15,6 +15,8 @@ different things under a pacing compositor:
   limit when it approaches `frame_ms` with `gpu_idle_ms` near zero.
 - `wait_*`: the game thread blocked: on the compositor (`xrWaitFrame`), on the draw task (the
   drains), and on the frame tail's hold of the runtime.
+- `pose_age_ms`: how old the head pose a submitted frame was rendered from is at its `xrEndFrame`,
+  from the view location to the submit; only the rows in which a frame was submitted.
 """
 
 import math
@@ -104,6 +106,9 @@ def frame_series(ack: dict) -> dict[str, list[float]]:
         "detour_calls": col("detour_calls"),
         "forward_calls": col("forward_calls"),
     }
+    if "pose_age_us" in index:
+        series["pose_age_ms"] = [row[index["pose_age_us"]] / row[index["pose_ages"]] / 1000
+                                 for row in rows if row[index["pose_ages"]]]
     return series
 
 

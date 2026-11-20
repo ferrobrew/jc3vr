@@ -1,7 +1,4 @@
-use std::{
-    ffi::c_void,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::ffi::c_void;
 
 use body_rig::rotation::twist_about_y;
 use detours_macro::detour;
@@ -24,6 +21,7 @@ use crate::{
     config::Config,
     controllers::{cockpit::CockpitTransform, frame::Pose},
     debug::trace::{TraceEvent, TraceState},
+    render_frame::RenderFrameSlot,
     stereo::STEREO_STATE,
     vr::{FreezeMode, pose_control},
 };
@@ -54,7 +52,7 @@ pub(super) fn hook_library() -> HookLibrary {
 /// or 1.0 every frame, the engine's T0 → T1 lerp is inert and nothing smooths the sim-tick
 /// cadence.
 pub fn last_dtf() -> f32 {
-    f32::from_bits(LAST_DTF.load(Ordering::Relaxed))
+    LAST_DTF.get().unwrap_or(0.0)
 }
 
 /// The eye midpoint the camera renders from for each side of the head pose pair `poses`
@@ -320,13 +318,13 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
     unsafe {
         if is_active_camera && let Some(camera) = camera.as_mut() {
             set_scene_near_clip(&mut camera.m_Near, &mut camera.m_StateBitfield);
-            *MAIN_CAMERA_PLANES.lock() = Some((camera.m_Near, camera.m_Far));
+            MAIN_CAMERA_PLANES.set((camera.m_Near, camera.m_Far));
         }
         if is_active_camera
             && let Some(local_character) = Character::GetLocalPlayerCharacter().as_mut()
             && let Some(camera) = camera.as_mut()
         {
-            LAST_DTF.store(dtf.to_bits(), Ordering::Relaxed);
+            LAST_DTF.set(dtf);
 
             if !Config::lock_query(|c| c.camera.enabled) {
                 authored::reset(authored::Refusal::Disabled);
@@ -691,8 +689,10 @@ fn game_camera_manager_get_camera_matrix(manager: *const GameCameraManager, matr
     }
 }
 
-/// The last `dtf` seen by the active camera's `UpdateRender`, as bits (see [`last_dtf`]).
-static LAST_DTF: AtomicU32 = AtomicU32::new(0);
+/// The `dtf` the active camera's `UpdateRender` received for the frame (see [`last_dtf`]). Per
+/// frame, so the draw task's palette edits and anchored readouts interpolate at the fraction of the
+/// frame they draw (see [`crate::render_frame`]).
+static LAST_DTF: RenderFrameSlot<f32> = RenderFrameSlot::new();
 
 /// The camera world transform last written to the active camera's `m_TransformT1` with the
 /// headpose active, republished by [`game_camera_manager_get_camera_matrix`] so sim-phase readers
@@ -705,11 +705,11 @@ static LAST_CAMERA_WORLD: Mutex<Option<Matrix4>> = Mutex::new(None);
 /// skip auxiliary cameras (reflections) with different planes. The engine writes a runtime far that
 /// differs from the `Camera` constructor default (~40 km vs the constructor's 38.4 km), so gating that
 /// override on a hardcoded config plane misses every main pass. `None` until the camera hook first runs.
-static MAIN_CAMERA_PLANES: Mutex<Option<(f32, f32)>> = Mutex::new(None);
+static MAIN_CAMERA_PLANES: RenderFrameSlot<(f32, f32)> = RenderFrameSlot::new();
 
 /// The active camera's near/far as of the last `Camera::UpdateRender`, or `None` before the first.
 pub fn main_camera_planes() -> Option<(f32, f32)> {
-    *MAIN_CAMERA_PLANES.lock()
+    MAIN_CAMERA_PLANES.get()
 }
 
 pub fn main_camera_planes_or(fallback_far: f32) -> (f32, f32) {
