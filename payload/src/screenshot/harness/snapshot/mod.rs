@@ -29,7 +29,7 @@ use std::{
 use anyhow::Context as _;
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
 use parking_lot::Mutex;
-pub(crate) use request::{SnapshotError, SnapshotRequest, SnapshotTable};
+pub(crate) use request::{Plane, SnapshotError, SnapshotRequest, SnapshotTable};
 use serde::Serialize;
 use windows::{
     Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID3D11Resource},
@@ -43,8 +43,8 @@ use crate::{
             RequestId,
             snapshot::{
                 diff::{GRID, Job, Pipeline},
-                dump::{DumpImage, DumpRecord},
-                request::{DumpPolicy, Plane},
+                dump::{DumpImage, DumpRecord, SavedRecord},
+                request::DumpPolicy,
                 store::PlaneTexture,
                 summary::{Kind, Totals, totals},
             },
@@ -201,10 +201,27 @@ pub(crate) fn ambient_occlusion_draw_hook() {
 static AMBIENT_OCCLUSION_STEP: AtomicU32 = AtomicU32::new(NOT_IN_BLOCK);
 const NOT_IN_BLOCK: u32 = u32::MAX;
 
+/// Keep `resource`, an eye-sized texture of `eye`'s alone, as that eye's `plane` for a pending
+/// snapshot that wants it, whatever the mode. Render thread, with the engine's immediate context
+/// locked or not (its critical section is reentrant).
+pub(crate) fn eye_plane_hook(plane: Plane, eye: usize, resource: &ID3D11Resource) {
+    plane_source_hook(plane, Some(eye), |_| Ok(resource.clone()));
+}
+
 /// Keep the resource `source` names for a pending snapshot that wants `plane`, on a frame it may be
 /// taken on. Render thread; `source` runs with the engine's immediate context locked.
 fn plane_hook(
     plane: Plane,
+    source: impl FnOnce(&ID3D11DeviceContext) -> anyhow::Result<ID3D11Resource>,
+) {
+    plane_source_hook(plane, None, source);
+}
+
+/// [`plane_hook`] for `explicit_eye`'s texture alone when it is set, or for the eye being drawn
+/// (both eyes side by side under single-pass) when it is not.
+fn plane_source_hook(
+    plane: Plane,
+    explicit_eye: Option<usize>,
     source: impl FnOnce(&ID3D11DeviceContext) -> anyhow::Result<ID3D11Resource>,
 ) {
     if !wants_eyes() || !crate::testing::visual::ready() {
@@ -213,7 +230,7 @@ fn plane_hook(
     let Some(frame) = crate::screenshot::harness::frame_identity() else {
         return;
     };
-    let eye = crate::stereo::draw_index();
+    let eye = explicit_eye.unwrap_or_else(crate::stereo::draw_index);
     let Some(context) = EngineContext::get() else {
         return;
     };
@@ -255,6 +272,7 @@ fn plane_hook(
             Ok(texture) => stash.planes.push(StashEntry {
                 plane,
                 eye,
+                one_eye: explicit_eye.is_some(),
                 texture,
             }),
             Err(error) => stash.errors.push((plane, format!("{error:#}"))),
@@ -332,6 +350,11 @@ pub(crate) fn capture(
         }
     };
     let compared = compare(&mut state, device, context, &pending.request, &snapshot);
+    let saves = if pending.request.save {
+        save_planes(device, context, &snapshot)
+    } else {
+        Vec::new()
+    };
     let gpu_ms = started.elapsed().as_secs_f64() * 1000.0;
     let mut result = SnapshotResult {
         id: pending.request.id.as_str().to_owned(),
@@ -356,6 +379,8 @@ pub(crate) fn capture(
             .collect(),
         plane_errors: snapshot.errors.clone(),
         comparisons: Vec::new(),
+        saved: Vec::new(),
+        fsr: crate::fsr::dispatch_records(frame),
         kept: pending.request.keep,
         visual: Some(visual),
         timing: Timing {
@@ -398,6 +423,9 @@ pub(crate) fn capture(
     let spawned = std::thread::Builder::new()
         .name("jc3vr-snapshot-writer".to_owned())
         .spawn(move || {
+            if !saves.is_empty() {
+                result.saved = dump::write_saved(&dump_folder, saves);
+            }
             if !dumps.is_empty() {
                 let records = dump::write(&dump_folder, dumps);
                 for comparison in &mut result.comparisons {
@@ -513,6 +541,9 @@ struct StashEntry {
     plane: Plane,
     /// The eye the stage hook recorded: the eye being drawn (eye 0 for the single-pass walk).
     eye: usize,
+    /// Whether the texture holds `eye` alone in every mode, rather than both eyes side by side
+    /// under single-pass.
+    one_eye: bool,
     texture: PlaneTexture,
 }
 
@@ -616,7 +647,7 @@ fn take(
     for entry in stashed {
         // An isolated eye records the eye it draws; the single-pass walk records eye 0 for a
         // double-wide plane that holds both.
-        let eye = if mode == RenderMode::SinglePass {
+        let eye = if mode == RenderMode::SinglePass && !entry.one_eye {
             None
         } else {
             Some(entry.eye)
@@ -809,6 +840,55 @@ fn compare(
     Ok(compared)
 }
 
+/// Read every plane of `snapshot` back whole, eye by eye, to be written by the writer thread. A
+/// plane that cannot be read back is logged and left out.
+fn save_planes(
+    device: &ID3D11Device,
+    context: &ID3D11DeviceContext,
+    snapshot: &Snapshot,
+) -> Vec<(String, DumpImage)> {
+    snapshot
+        .planes
+        .iter()
+        .filter_map(|plane| {
+            let stem = format!(
+                "{}.{}.eye{}",
+                snapshot.label,
+                plane_name(plane.plane),
+                plane.eye
+            );
+            let region = (0, 0, plane.size[0], plane.size[1]);
+            // SAFETY: the render thread inside the engine's context critical section; the plane is
+            // live.
+            let read = unsafe {
+                DumpImage::read(
+                    device,
+                    context,
+                    &plane.texture,
+                    plane.origin,
+                    region,
+                    plane.plane == Plane::Final,
+                )
+            };
+            match read {
+                Ok(image) => Some((stem, image)),
+                Err(error) => {
+                    tracing::warn!("snapshot: saving {stem} failed: {error:#}");
+                    None
+                }
+            }
+        })
+        .collect()
+}
+
+/// The plane's wire name.
+fn plane_name(plane: Plane) -> String {
+    serde_json::to_value(plane)
+        .ok()
+        .and_then(|value| value.as_str().map(str::to_owned))
+        .unwrap_or_default()
+}
+
 fn captures_folder() -> Option<PathBuf> {
     crate::config::paths::dir().map(|dir| dir.join("captures"))
 }
@@ -826,6 +906,10 @@ struct SnapshotResult {
     planes: Vec<PlaneRecord>,
     plane_errors: Vec<PlaneError>,
     comparisons: Vec<ComparisonRecord>,
+    /// The planes written whole, when the request asked for them.
+    saved: Vec<SavedRecord>,
+    /// What FSR resolved each eye with on the snapshot's frame, for the eyes it resolved.
+    fsr: Vec<crate::fsr::DispatchRecord>,
     kept: bool,
     visual: Option<VisualMetadata>,
     timing: Timing,
@@ -860,10 +944,7 @@ impl ComparisonRecord {
         format!(
             "{}.{}.eye{}",
             self.against,
-            serde_json::to_value(self.plane)
-                .ok()
-                .and_then(|value| value.as_str().map(str::to_owned))
-                .unwrap_or_default(),
+            plane_name(self.plane),
             self.eye
         )
     }
@@ -900,6 +981,8 @@ fn publish_failure(folder: &Path, id: &RequestId, label: &str, error: String) {
         planes: Vec::new(),
         plane_errors: Vec::new(),
         comparisons: Vec::new(),
+        saved: Vec::new(),
+        fsr: Vec::new(),
         kept: false,
         visual: None,
         timing: Timing {

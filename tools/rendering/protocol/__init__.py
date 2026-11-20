@@ -271,6 +271,9 @@ def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool]
 DISABLING_OVERRIDES = ("ssao", "ao_volumes", "global_illumination", "fsr_mv_correction",
                        "fsr_hybrid_velocity")
 SHIPPED_OVERRIDES = ("fsr", "foveation", "auto_exposure", "screen_fade", "player_damage")
+# The range of the resolution-scale override (each side). Mirrors `ResolutionScaleOverride` in
+# `payload/src/testing/visual/overrides.rs`: the top is twice the session's pixels.
+RESOLUTION_SCALE_RANGE = (0.5, 1.415)
 
 
 @dataclass(frozen=True)
@@ -296,6 +299,9 @@ class VisualOverrides:
     fsr_hybrid_velocity: str | None = None
     # A headset-like eye rig substituted for the located views in every mode, by preset name.
     headset: str | None = None
+    # The render resolution scale (each side) in every mode, in place of the session's, to three
+    # decimals.
+    resolution_scale: float | None = None
     # The stage images every capture writes: "geometry" keeps only the depth, the albedo and normal
     # G-buffers, and the velocity, for light captures at a large eye size.
     stages: str | None = None
@@ -316,10 +322,17 @@ class VisualOverrides:
                                 f"{sorted(HEADSET_RIGS)}")
         if self.stages not in (None, "geometry"):
             raise ProtocolError("visual protocol: invalid stages override")
+        if self.resolution_scale is not None:
+            low, high = RESOLUTION_SCALE_RANGE
+            if (type(self.resolution_scale) not in (int, float)
+                    or not low <= self.resolution_scale <= high):
+                raise ProtocolError(f"visual protocol: resolution_scale must be within [{low}, {high}]")
+            object.__setattr__(self, "resolution_scale", round(float(self.resolution_scale), 3))
         object.__setattr__(self, "single_pass", single_pass_switches(dict(self.single_pass)))
         if (self.sun_shadows is None and self.screen_space_reflections is None and
                 all(getattr(self, name) is None for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)) and
-                self.headset is None and self.stages is None and not self.single_pass):
+                self.headset is None and self.resolution_scale is None and self.stages is None
+                and not self.single_pass):
             raise ProtocolError("visual protocol: visual overrides must name at least one override")
 
     @property
@@ -338,6 +351,8 @@ class VisualOverrides:
                 value[name] = getattr(self, name)
         if self.headset is not None:
             value["headset"] = self.headset
+        if self.resolution_scale is not None:
+            value["resolution_scale"] = self.resolution_scale
         if self.stages is not None:
             value["stages"] = self.stages
         if self.single_pass:
@@ -355,6 +370,8 @@ class VisualOverrides:
                 result += f"{name} = {json.dumps(getattr(self, name))}\n"
         if self.headset is not None:
             result += f"headset = {json.dumps(self.headset)}\n"
+        if self.resolution_scale is not None:
+            result += f"resolution_scale = {json.dumps(self.resolution_scale)}\n"
         if self.stages is not None:
             result += f"stages = {json.dumps(self.stages)}\n"
         if self.single_pass:
@@ -365,8 +382,8 @@ class VisualOverrides:
     @classmethod
     def from_wire(cls, value):
         if not isinstance(value, dict) or not value or set(value) - {
-                "sun_shadows", "screen_space_reflections", "single_pass", "headset", "stages", *DISABLING_OVERRIDES,
-                *SHIPPED_OVERRIDES}:
+                "sun_shadows", "screen_space_reflections", "single_pass", "headset", "resolution_scale",
+                "stages", *DISABLING_OVERRIDES, *SHIPPED_OVERRIDES}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
         try:
             sun_shadows = SunShadows(value["sun_shadows"]) if "sun_shadows" in value else None
@@ -377,7 +394,8 @@ class VisualOverrides:
         return cls(sun_shadows, value.get("screen_space_reflections"),
                    single_pass_switches(value.get("single_pass", {})),
                    **{name: value.get(name) for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)},
-                   headset=value.get("headset"), stages=value.get("stages"))
+                   headset=value.get("headset"), resolution_scale=value.get("resolution_scale"),
+                   stages=value.get("stages"))
 
 
 @dataclass(frozen=True)

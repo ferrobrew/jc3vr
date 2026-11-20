@@ -106,6 +106,7 @@ fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
                 fsr_mv_correction: None,
                 fsr_hybrid_velocity: None,
                 headset: None,
+                resolution_scale: None,
                 stages: None,
                 single_pass: Default::default(),
             }),
@@ -131,6 +132,7 @@ fn shadows_disabled() -> VisualOverrides {
         fsr_mv_correction: None,
         fsr_hybrid_velocity: None,
         headset: None,
+        resolution_scale: None,
         stages: None,
         single_pass: Default::default(),
     }

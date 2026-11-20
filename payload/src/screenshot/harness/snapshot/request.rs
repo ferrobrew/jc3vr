@@ -49,6 +49,11 @@ pub(crate) enum Plane {
     SsaoStep5,
     SsaoStep6,
     SsaoStep7,
+    /// The motion vectors FSR is handed for the eye, as the velocity decode writes them (two 16-bit
+    /// floats per pixel, in UV units before FSR's motion-vector scale), taken right after the decode.
+    FsrMotion,
+    /// The depth FSR is handed for the eye, taken with [`FsrMotion`](Self::FsrMotion).
+    FsrDepth,
 }
 
 impl Plane {
@@ -121,6 +126,9 @@ pub(crate) struct SnapshotTable {
     /// Dump only the differing region (grown by a margin) rather than the whole eye.
     #[serde(default = "default_true")]
     dump_crop: bool,
+    /// Write every plane of the snapshot whole, per eye, whether or not it is compared.
+    #[serde(default)]
+    save: bool,
 }
 
 /// A validated snapshot request.
@@ -138,6 +146,7 @@ pub(crate) struct SnapshotRequest {
     pub limits: FailLimits,
     pub dump: DumpPolicy,
     pub dump_crop: bool,
+    pub save: bool,
 }
 
 /// Why a snapshot table is refused.
@@ -245,6 +254,7 @@ impl SnapshotRequest {
             },
             dump: table.dump,
             dump_crop: table.dump_crop,
+            save: table.save,
         })
     }
 }
@@ -301,6 +311,7 @@ mod tests {
         assert_eq!(request.dump, DumpPolicy::Never);
         assert!(request.dump_crop);
         assert!(!request.keep);
+        assert!(!request.save);
     }
 
     #[test]
@@ -308,13 +319,13 @@ mod tests {
         let request = parse(
             "label = \"sp_a\"\nplanes = [\"velocity\", \"final\"]\nkeep = true\n\
              compare = [\"left_a\", \"right_a\"]\npixel_threshold = 5\ndump = \"on_failure\"\n\
-             dump_crop = false\nfail_fraction = 0.01\nfail_mean = 1.0\n",
+             dump_crop = false\nfail_fraction = 0.01\nfail_mean = 1.0\nsave = true\n",
         )
         .unwrap();
         assert_eq!(request.planes, vec![Plane::Final, Plane::Velocity]);
         assert_eq!(request.compare, vec!["left_a", "right_a"]);
         assert_eq!(request.dump, DumpPolicy::OnFailure);
-        assert!(request.keep && !request.dump_crop);
+        assert!(request.keep && !request.dump_crop && request.save);
     }
 
     #[test]

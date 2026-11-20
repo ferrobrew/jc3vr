@@ -33,6 +33,8 @@ class Mode:
     mode: BenchmarkMode
     switches: tuple[tuple[str, bool], ...] = ()
     overlap_render_update: bool | None = None
+    fsr: bool | None = None
+    hybrid_velocity: bool | None = None
 
     @classmethod
     def plain(cls, mode: BenchmarkMode) -> "Mode":
@@ -40,7 +42,8 @@ class Mode:
 
     @classmethod
     def variant(cls, variant: Variant) -> "Mode":
-        return cls(variant.name, variant.base, variant.switches, variant.overlap_render_update)
+        return cls(variant.name, variant.base, variant.switches, variant.overlap_render_update,
+                   variant.fsr, variant.hybrid_velocity)
 
 
 @dataclass(frozen=True)
@@ -98,7 +101,7 @@ def run_scene(session, scene: BenchmarkScene, modes: tuple[Mode, ...], options: 
             install_draw_detours=options.install_draw_detours,
             recapture_camera=index == 0, restore=index == len(steps) - 1,
             switches=mode.switches, overlap_render_update=mode.overlap_render_update,
-            camera=scene.camera)
+            fsr=mode.fsr, fsr_hybrid_velocity=mode.hybrid_velocity, camera=scene.camera)
         LOG.info("benchmark: %s (%d of %d)", label, index + 1, len(steps))
         began = time.monotonic()
         with ThreadSampler(session.pid) as sampler:
@@ -114,6 +117,7 @@ def run_scene(session, scene: BenchmarkScene, modes: tuple[Mode, ...], options: 
             "run": {"scene": scene.name, "config": scene.config.name, "mode": mode.name,
                     "base_mode": mode.mode.value, "switches": dict(mode.switches),
                     "overlap_render_update": mode.overlap_render_update,
+                    "fsr": mode.fsr, "hybrid_velocity": mode.hybrid_velocity,
                     "resolution_scale": scale, "repeat": repeat, "label": label,
                     "camera": scene.camera.to_wire(), "seconds": round(time.monotonic() - began, 2)},
             "session": {"number": options.session, "compositor_fps": options.compositor_fps},

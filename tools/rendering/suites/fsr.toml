@@ -1,0 +1,43 @@
+# FSR's measurements at the coastal town: the motion vectors FSR is handed (the `motion-*` scenes,
+# read with `fsr-motion`) and its image against the game's own anti-aliasing and a supersampled
+# reference (the `quality-*` scenes, read with `fsr-quality`). Every scene shares one stage. See
+# docs/mod/rendering/fsr.md.
+#
+#   python3 -m tools.rendering fast --session N --suite tools/rendering/suites/fsr.toml \
+#       --only motion-static motion-rotation motion-translation motion-index motion-shipped \
+#       --planes final velocity fsr_motion fsr_depth --save --no-repeat
+#   python3 -m tools.rendering fast --session N --suite tools/rendering/suites/fsr.toml \
+#       --only quality-static quality-rotation quality-translation --save
+
+[[scene]]
+name = "motion-static"
+config = "fsr_motion_static.toml"
+
+[[scene]]
+name = "motion-rotation"
+config = "fsr_motion_rotation.toml"
+
+[[scene]]
+name = "motion-translation"
+config = "fsr_motion_translation.toml"
+
+[[scene]]
+name = "motion-index"
+config = "fsr_motion_rotation.toml"
+headset = "index"
+
+[[scene]]
+name = "motion-shipped"
+config = "fsr_motion_shipped_rotation.toml"
+
+[[scene]]
+name = "quality-static"
+config = "fsr_quality_static.toml"
+
+[[scene]]
+name = "quality-rotation"
+config = "fsr_quality_rotation.toml"
+
+[[scene]]
+name = "quality-translation"
+config = "fsr_quality_translation.toml"

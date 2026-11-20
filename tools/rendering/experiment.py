@@ -38,6 +38,7 @@ from tools.rendering.experiment_motion import (
     MotionConfigError,
     validate_motion_capture,
 )
+from tools.rendering.experiment_fsr import FsrVariant, FsrVariantError, parse_fsr_variants
 from tools.rendering.experiment_matched import (
     matched_capture_identity,
     matched_cross_metrics,
@@ -623,6 +624,8 @@ class ExperimentConfig:
     matched_treatment: MatchedTreatment | None = None
     single_pass_variants: tuple[SinglePassVariant, ...] = ()
     motion: ExperimentMotion | None = None
+    # FSR's settings varied in the same schedule; only the fast comparison runs them.
+    fsr_variants: tuple[FsrVariant, ...] = ()
 
     def __post_init__(self):
         if (self.motion is None) == (self.scene.pose is None):
@@ -736,6 +739,18 @@ class ExperimentConfig:
                 raise ExperimentError(
                     "experiment: single-pass variants exclude a matched treatment and a feature check")
             require_reference_modes(self.configurations)
+        if self.fsr_variants:
+            if (not isinstance(self.fsr_variants, tuple) or
+                    not all(isinstance(item, FsrVariant) for item in self.fsr_variants)):
+                raise ExperimentError("experiment: invalid FSR variants")
+            if self.matched_treatment is not None or self.feature is not None:
+                raise ExperimentError(
+                    "experiment: FSR variants exclude a matched treatment and a feature check")
+            try:
+                for variant in self.fsr_variants:
+                    variant.modes_in(self.configurations)
+            except FsrVariantError as error:
+                raise ExperimentError(f"experiment: {error}") from error
         if self.feature is None:
             return
         references = set(self.feature.reference_modes)
@@ -772,7 +787,7 @@ class ExperimentConfig:
             raise ExperimentError(f"experiment: could not read config {path}: {error}") from error
         _keys(value, {"name", "warmup_frames", "samples", "scene", "configurations"},
               {"feature", "interval_seconds", "diagnostics", "visual_overrides", "matched_treatment",
-               "single_pass_variants", "motion"}, str(path))
+               "single_pass_variants", "motion", "fsr_variants"}, str(path))
         try:
             matched = MatchedTreatment(value["matched_treatment"]) if "matched_treatment" in value else None
         except (ValueError, TypeError) as error:
@@ -788,7 +803,8 @@ class ExperimentConfig:
                    VisualOverrides.from_wire(value["visual_overrides"]) if "visual_overrides" in value else None,
                    matched,
                    parse_variants(value["single_pass_variants"]) if "single_pass_variants" in value else (),
-                   _motion(value))
+                   _motion(value),
+                   _fsr_variants(value))
 
 
 @dataclass(frozen=True)
@@ -868,6 +884,9 @@ def sample_id(prefix: str, mode: CompareMode, index: int) -> str:
 
 def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
                    analyze=None, monotonic=None, sleep=None, restage=False) -> ExperimentReport:
+    if config.fsr_variants:
+        raise ExperimentError(f"experiment: {config.name}'s FSR variants run only in the fast "
+                              "comparison (python3 -m tools.rendering fast)")
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     capture = capture or _capture
@@ -1168,6 +1187,15 @@ def run_experiment(runner, config: ExperimentConfig, output: Path, capture=None,
         matched_cross, variant_summaries, staged)
     write_report(output / "report.json", report)
     return report
+
+
+def _fsr_variants(value) -> tuple[FsrVariant, ...]:
+    if "fsr_variants" not in value:
+        return ()
+    try:
+        return parse_fsr_variants(value["fsr_variants"])
+    except FsrVariantError as error:
+        raise ExperimentError(f"experiment: {error}") from error
 
 
 def _variant_config(config: ExperimentConfig, variant: SinglePassVariant) -> ExperimentConfig:

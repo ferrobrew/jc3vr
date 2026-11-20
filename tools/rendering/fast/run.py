@@ -80,6 +80,8 @@ class FastOptions:
     depth_ulps: int = DEFAULT_DEPTH_ULPS
     # How long to wait before each repeat snapshot, so the floor includes what changes with time.
     repeat_after_seconds: float = 0.0
+    # Write every snapshot's planes whole, for offline analysis.
+    save: bool = False
 
 
 @dataclass
@@ -147,6 +149,17 @@ def pinned_anchor(config_dir, config: ExperimentConfig) -> tuple[Camera | None, 
     return None, key
 
 
+def step_planes(planes: tuple[Plane, ...], config: ExperimentConfig) -> tuple[Plane, ...]:
+    """The planes a configuration's snapshots take: FSR's planes only where FSR runs, which the
+    capture profile turns off unless the overrides put it back."""
+    if config.visual_overrides is not None and config.visual_overrides.fsr == "enabled":
+        return planes
+    return tuple(plane for plane in planes if plane not in FSR_PLANES)
+
+
+FSR_PLANES = (Plane.FSR_MOTION, Plane.FSR_DEPTH)
+
+
 def _still(request) -> bool:
     return not any((request.yaw_deg, request.pitch_deg, request.roll_deg, request.right_m,
                     request.up_m, request.forward_m))
@@ -162,7 +175,7 @@ def run_scene(runner, config: ExperimentConfig, name: str, options: FastOptions,
     # A variant that forces no switch renders the single-pass mode again, which the repeat already
     # does in the same schedule.
     variants = tuple(variant.name for variant in config.single_pass_variants if variant.switches)
-    steps = schedule(config.configurations, variants, options.repeat)
+    steps = schedule(config.configurations, variants, options.repeat, config.fsr_variants)
     prefix = f"f{uuid.uuid4().hex[:8]}"
     configurations: list[ConfigurationAck] = []
     gathered: list[tuple[SnapshotStep, tuple]] = []
@@ -210,6 +223,10 @@ def run_scene(runner, config: ExperimentConfig, name: str, options: FastOptions,
                 variant = next(v for v in config.single_pass_variants if v.name == step.variant)
                 step_config = dataclasses.replace(_variant_config(config, variant),
                                                   diagnostics=Diagnostics())
+            elif step.fsr_variant is not None:
+                fsr_variant = next(v for v in config.fsr_variants if v.name == step.fsr_variant)
+                step_config = dataclasses.replace(
+                    config, visual_overrides=fsr_variant.overrides(config.visual_overrides))
             begun = monotonic()
             _, anchor = _configure(runner, step_config, f"{prefix}_c{index}", target_pose,
                                    Mode(step.mode.value), None if pin is not None else anchor,
@@ -217,14 +234,15 @@ def run_scene(runner, config: ExperimentConfig, name: str, options: FastOptions,
             result.timings.append({"step": f"configure {step.name}",
                                    "seconds": round(monotonic() - begun, 4),
                                    "frames": configurations[-1].metadata.configure_frames})
+            planes = step_planes(options.planes, step_config)
             for snapshot in step.snapshots:
                 if snapshot.repeat_of is not None and options.repeat_after_seconds > 0:
                     time.sleep(options.repeat_after_seconds)
                 request = SnapshotRequest(
-                    f"{prefix}_{snapshot.label}"[:64], snapshot.label, options.planes, snapshot.keep,
+                    f"{prefix}_{snapshot.label}"[:64], snapshot.label, planes, snapshot.keep,
                     snapshot.compare, phase, options.limits.thresholds.pixel,
                     options.limits.thresholds.changed_fraction, options.limits.thresholds.mean,
-                    options.dump, options.dump_crop, options.depth_ulps)
+                    options.dump, options.dump_crop, options.depth_ulps, options.save)
                 acknowledgement, entry = timed(f"snapshot {snapshot.label}", request)
                 if not isinstance(acknowledgement, SnapshotAck):
                     raise FastError("fast comparison: expected a snapshot acknowledgement")
@@ -241,6 +259,10 @@ def run_scene(runner, config: ExperimentConfig, name: str, options: FastOptions,
                     "frames_waited": acknowledgement.frames_waited,
                     "wait_ms": acknowledgement.wait_ms, "gpu_ms": acknowledgement.gpu_ms,
                     "generation": acknowledgement.visual.get("generation"),
+                    "step": step.name,
+                    "id": acknowledgement.id,
+                    "saved": list(acknowledgement.saved),
+                    "fsr": list(acknowledgement.fsr),
                 })
                 gathered.append((snapshot, acknowledgement.comparisons))
     except EXPECTED_ERRORS as error:

@@ -29,11 +29,14 @@ class BenchmarkScene:
 @dataclass(frozen=True)
 class Variant:
     """A mode with some switches forced, to attribute a cost to what they control: single-pass
-    switches (single-pass only), or the frame ordering (`vr.overlap_render_update`)."""
+    switches (single-pass only), the frame ordering (`vr.overlap_render_update`), or FSR and its
+    hybrid decode."""
     name: str
     switches: tuple[tuple[str, bool], ...]
     base: BenchmarkMode = BenchmarkMode.SINGLE_PASS
     overlap_render_update: bool | None = None
+    fsr: bool | None = None
+    hybrid_velocity: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -79,19 +82,21 @@ def load_suite(path: Path) -> Suite:
         if not isinstance(table, dict):
             raise BenchmarkError(f"{context}: expected a table")
         switches = table.get("switches", {})
-        overlap = table.get("overlap_render_update")
-        valid = (set(table) - {"name", "base", "switches", "overlap_render_update"} == set()
+        flags = {name: table.get(name) for name in ("overlap_render_update", "fsr", "hybrid_velocity")}
+        valid = (set(table) - {"name", "base", "switches", *flags} == set()
                  and isinstance(table.get("name"), str)
                  and table.get("base", "single_pass") in {m.value for m in BenchmarkMode}
                  and isinstance(switches, dict)
                  and all(isinstance(v, bool) for v in switches.values())
-                 and (overlap is None or isinstance(overlap, bool))
-                 and (switches or overlap is not None))
+                 and all(flag is None or isinstance(flag, bool) for flag in flags.values())
+                 and (switches or any(flag is not None for flag in flags.values())))
         if not valid:
             raise BenchmarkError(f"{context}: expected a name, optionally a base mode, and a "
-                                 "switches table of booleans or overlap_render_update, or both")
+                                 "switches table of booleans or one of overlap_render_update, "
+                                 "fsr, and hybrid_velocity")
         base = BenchmarkMode(table.get("base", "single_pass"))
         if switches and base != BenchmarkMode.SINGLE_PASS:
             raise BenchmarkError(f"{context}: single-pass switches need the single_pass base")
-        variants.append(Variant(table["name"], tuple(sorted(switches.items())), base, overlap))
+        variants.append(Variant(table["name"], tuple(sorted(switches.items())), base,
+                                flags["overlap_render_update"], flags["fsr"], flags["hybrid_velocity"]))
     return Suite(tuple(scenes), tuple(variants))

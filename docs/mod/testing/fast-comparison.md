@@ -21,7 +21,7 @@ python3 -m tools.rendering iterate --session N                      # the whole 
 
 `iterate` builds the payload and the injector incrementally (`cargo xwin build ... -p jc3vr_payload -p jc3vr_injector`), ejects the loaded payload and injects the new one (see "Re-injection"), and runs the scenes. `fast` does the last step alone against whatever payload is loaded (`--runner` takes a `runner.json` in place of `--session`). Both print one line per scene, test, reference, and eye with each plane's differing pixel count over its noise floor, write `fast-report.json` (every comparison, the heat maps, the floors, and the time each step took) under `target/harness-probe/fast/<stamp>/` or `--output`, and exit 0 when nothing fails, 1 when something does, and 2 when a scene could not be compared. Run the full checks (`cargo +nightly fmt --all -- --check`, `./scripts/xwin_clippy.sh`, `./scripts/xwin_test.sh`, and the Python tests) once before committing.
 
-Options: `--planes` picks the planes (the final image is always compared), `--velocity` adds the velocity buffer, `--dump never|on_failure|always` and `--no-crop` control the dumps, `--baseline <fast-report.json>` judges regressions against an earlier run, `--restage` stages afresh, `--full-cycles` runs a motion that never moves the camera as configured, `--no-repeat` skips the noise-floor repeats, and `--warmup-frames` and `--settle-seconds` override the configs' warm-up and settle.
+Options: `--planes` picks the planes (the final image is always compared), `--velocity` adds the velocity buffer, `--dump never|on_failure|always` and `--no-crop` control the dumps, `--baseline <fast-report.json>` judges regressions against an earlier run, `--restage` stages afresh, `--full-cycles` runs a motion that never moves the camera as configured, `--no-repeat` skips the noise-floor repeats, `--save` writes every snapshot's planes whole (see "Saving planes"), and `--warmup-frames` and `--settle-seconds` override the configs' warm-up and settle.
 
 ## The standing suite
 
@@ -48,9 +48,12 @@ fail_fraction = 0.001             # the failure limits the dump policy uses
 fail_mean = 0.25
 dump = "on_failure"               # never (the default), on_failure, or always
 dump_crop = true
+save = false                      # write every plane whole, compared or not
 ```
 
 Beyond the geometry planes, a snapshot can keep the scene colour at five points of the frame, each an R11G11B10 float plane: `post_resolve` (once the deferred lights' resolve has lit it), `pre_atmosphere` and `post_atmosphere` (around the atmospheric scattering), `post_sun` (after the sun pass), and `main_color` (at the start of the post chain, before the tone map), and the tone-mapped image the anti-aliasing reads and writes (`pre_aa`, `post_aa`). Their counts are of any changed bit, which a float plane changes at a large share of its pixels between any two renders; read them from dumps, with a tolerance in representable values.
+
+FSR's inputs have two planes of their own, taken right after the velocity decode for each eye it resolves: `fsr_motion`, the decoded motion vectors FSR is handed (two 16-bit floats per pixel, in UV before FSR's motion-vector scale), and `fsr_depth`, the depth handed with them (the engine's depth for an eye rendered whole, the decode's eye-sized copy for a half of the single-pass target). Each is one eye's texture in every mode, so a single-pass snapshot keeps them per eye rather than splitting a double-wide plane. They exist only where FSR runs, and the fast runner leaves them out of a configuration whose overrides do not put FSR back. Every snapshot's acknowledgement also carries `fsr`, one record per eye FSR resolved on the snapshot's frame (`fsr::DispatchRecord`): the decode's switches and sign convention, FSR's motion-vector scale, the eye's view-projections this frame and last, the clip-to-previous-clip matrices the decode reprojected with, and the previous view-projection the engine's velocity pass encoded against. `python3 -m tools.rendering fsr-motion` checks the saved planes against those records; see "Verifying the motion vectors" in [fsr.md](../rendering/fsr.md).
 
 For the ambient occlusion, `ssao` is the scene target the SSAO composite multiplies the occlusion into (its alpha), as the block leaves it, `ssao_volumes` the occlusion volumes' target the composite reads, and `ssao_step0` to `ssao_step7` the render target each draw inside the SSAO block leaves, in order, kept from a hook after the engine's draw call. A step plane may be smaller than the eye (the block's half-resolution targets); it is compared at its own size, the whole texture for an isolated eye and each half for single-pass, and its counts are against its own pixel count.
 
@@ -79,6 +82,34 @@ A scene's snapshots are taken in a fixed order (`tools/rendering/fast/plan.py`):
 ### Dumps
 
 With `dump = "on_failure"` the comparisons over the failure limits are dumped, and with `always` every one. The reference's and the test's pixels are read back cropped to the bounding box grown by 16 pixels (the whole eye with `dump_crop = false`) and written by a writer thread into `captures/<id>.dump/`: the final image as PNG, a stage as its stored bytes compressed with gzip (`<reference>.<plane>.eye<N>.reference.raw.gz` and `.test.raw.gz`). The comparison's `dump` record in the acknowledgement names the files, the crop, and the DXGI format and pixel size to decode a raw dump with (`comparison/stages.py`'s `decode_raw` reads it after `gzip.decompress`). The acknowledgement is written after its dumps, so a dump never trails its record. A full-eye dump at the headset size is about 50 MB per plane and eye compressed; the crop is the default for that reason.
+
+### Saving planes
+
+With `save = true` (`--save`), every plane of the snapshot is read back whole, eye by eye, and written to `captures/<id>.dump/<label>.<plane>.eye<N>.png` (the final image) or `.raw.gz` (any other plane, as stored), whether or not it is compared; the acknowledgement's `saved` list names each file with its size and DXGI format. It is for analysis offline: the FSR checks read these files. A saved final image at the headset's size is about 20 MB, a depth plane 40 to 60 MB.
+
+## FSR variants
+
+FSR's effect is smaller than what drifts between scenes (the clouds and the haze, see "The pinned anchor"), so its settings are compared within one schedule. A config's `[[fsr_variants]]` (`tools/rendering/experiment_fsr.py`) each render, after the configured modes and any single-pass variants, in each of their modes (`modes`, by default every configured one), at the same clock and pinned pose:
+
+```toml
+[[fsr_variants]]
+name = "fsr-off"                 # the game's own anti-aliasing, as the capture profile leaves it
+fsr = false
+
+[[fsr_variants]]
+name = "hybrid-off"
+hybrid_velocity = false
+
+[[fsr_variants]]
+name = "reference"
+fsr = false
+resolution_scale = 1.414         # twice the pixels; at most 1.415, past which video memory runs out
+modes = ["left_only"]
+```
+
+A variant replaces the experiment's `fsr` and `fsr_hybrid_velocity` overrides with its own, and `resolution_scale` sets the `[visual_overrides] resolution_scale` override (the render's `vr.resolution_scale`, each side, within [0.5, 1.415]; the payload puts the session's back at the next configuration). Every configuration resets FSR's history and warms up for the config's `warmup_frames`, so the variants accumulate alike; FSR settles about 64 frames after a reset at a still camera, so the FSR configs ask for 120. Each variant takes two snapshots, the second compared with the first: at a still camera the next frame (the frame-to-frame change), and under a motion the same phase a cycle later. Its first is compared with the mode's own first snapshot when that is kept and the variant renders at the session's size. A variant's snapshots are labelled `f<N>_<name>_<mode>_a` and `_b`, and its repeat is its own noise floor. Only the fast comparison runs FSR variants; the original path refuses a config that has them.
+
+`tools/rendering/suites/fsr.toml` lists the FSR scenes at the town: the motion-vector scenes (still, rotating, translating, rotating under the `index` rig, and rotating with every shipped setting) and the quality scenes (still, rotating, and translating, with FSR off, without the hybrid decode, at a reduced size, and a supersampled reference). `python3 -m tools.rendering fsr-quality` reads the saved images of a quality run. The results are in [fsr.md](../rendering/fsr.md).
 
 ## A still camera holds a fixed pose
 

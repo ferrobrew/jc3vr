@@ -273,6 +273,12 @@ fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<R
         if let Some(overlap) = request.overlap_render_update {
             next.vr.overlap_render_update = overlap;
         }
+        if let Some(fsr) = request.fsr {
+            next.fsr.enabled = fsr;
+        }
+        if let Some(hybrid) = request.fsr_hybrid_velocity {
+            next.fsr.hybrid_velocity = hybrid;
+        }
         next.vr.freeze_mode = FreezeMode::FullCamera;
         *config = next;
     }
@@ -522,6 +528,7 @@ struct Environment {
     resolution_scale: f32,
     native_resolution: bool,
     fsr_enabled: bool,
+    fsr_hybrid_velocity: bool,
     foveation_enabled: bool,
     far_field_enabled: bool,
     overlap_render_update: bool,
@@ -536,7 +543,7 @@ impl Environment {
                 (
                     c.vr.resolution_scale,
                     c.vr.native_resolution,
-                    c.fsr.enabled,
+                    c.fsr,
                     c.foveation.enabled,
                     c.far_field.enabled,
                     c.vr.overlap_render_update,
@@ -557,7 +564,8 @@ impl Environment {
             target_size: resolution.target,
             resolution_scale,
             native_resolution,
-            fsr_enabled: fsr,
+            fsr_enabled: fsr.enabled,
+            fsr_hybrid_velocity: fsr.hybrid_velocity,
             foveation_enabled: foveation,
             far_field_enabled: far_field,
             overlap_render_update: overlap,
@@ -589,6 +597,8 @@ struct RequestEcho<'a> {
     install_draw_detours: bool,
     switches: &'a SinglePassOverrides,
     overlap_render_update: Option<bool>,
+    fsr: Option<bool>,
+    fsr_hybrid_velocity: Option<bool>,
     camera: CameraPath,
 }
 
@@ -604,6 +614,8 @@ impl<'a> From<&'a BenchmarkRequest> for RequestEcho<'a> {
             install_draw_detours: request.install_draw_detours,
             switches: &request.switches,
             overlap_render_update: request.overlap_render_update,
+            fsr: request.fsr,
+            fsr_hybrid_velocity: request.fsr_hybrid_velocity,
             camera: request.camera,
         }
     }

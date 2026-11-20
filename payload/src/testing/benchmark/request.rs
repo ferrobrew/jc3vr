@@ -52,6 +52,10 @@ pub(crate) struct BenchmarkTable {
     single_pass: Option<BTreeMap<String, bool>>,
     /// `vr.overlap_render_update` for the run; `None` keeps the configured one.
     overlap_render_update: Option<bool>,
+    /// FSR for the run (`fsr.enabled`); `None` runs it as shipped.
+    fsr: Option<bool>,
+    /// FSR's hybrid decode for the run (`fsr.hybrid_velocity`); `None` runs it as shipped.
+    fsr_hybrid_velocity: Option<bool>,
     camera: Option<CameraTable>,
 }
 
@@ -105,6 +109,8 @@ pub(crate) struct BenchmarkRequest {
     pub(crate) restore: bool,
     pub(crate) switches: SinglePassOverrides,
     pub(crate) overlap_render_update: Option<bool>,
+    pub(crate) fsr: Option<bool>,
+    pub(crate) fsr_hybrid_velocity: Option<bool>,
     pub(crate) camera: CameraPath,
 }
 
@@ -217,6 +223,8 @@ impl BenchmarkRequest {
             restore: table.restore,
             switches,
             overlap_render_update: table.overlap_render_update,
+            fsr: table.fsr,
+            fsr_hybrid_velocity: table.fsr_hybrid_velocity,
             camera,
         })
     }

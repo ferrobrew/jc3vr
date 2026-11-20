@@ -54,6 +54,41 @@ pub(crate) enum AmbientOcclusionOverride {
     Disabled,
 }
 
+/// A render resolution scale (each side), kept in thousandths so that the overrides compare
+/// exactly. Within [`ResolutionScaleOverride::MIN`] and [`ResolutionScaleOverride::MAX`]: the top
+/// is twice the session's pixels, past which the card's video memory runs out at the headset's size.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ResolutionScaleOverride(u16);
+
+impl ResolutionScaleOverride {
+    pub(crate) const MIN: f64 = 0.5;
+    pub(crate) const MAX: f64 = 1.415;
+
+    pub(crate) fn scale(self) -> f32 {
+        f32::from(self.0) / 1000.0
+    }
+}
+
+impl<'de> Deserialize<'de> for ResolutionScaleOverride {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = f64::deserialize(deserializer)?;
+        if !(Self::MIN..=Self::MAX).contains(&value) {
+            return Err(serde::de::Error::custom(format!(
+                "resolution_scale {value} is outside [{}, {}]",
+                Self::MIN,
+                Self::MAX
+            )));
+        }
+        Ok(Self((value * 1000.0).round() as u16))
+    }
+}
+
+impl Serialize for ResolutionScaleOverride {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f64(f64::from(self.0) / 1000.0)
+    }
+}
+
 /// Restrict the stage images every capture writes, to keep captures at a large eye size small.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -102,6 +137,9 @@ pub(crate) struct VisualOverrides {
     /// A headset-like eye rig substituted for the located views in every mode.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub headset: Option<HeadsetRig>,
+    /// The render resolution scale (each side) in every mode, in place of the session's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolution_scale: Option<ResolutionScaleOverride>,
     /// The stage images every capture writes.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub stages: Option<StagesOverride>,
@@ -126,6 +164,7 @@ pub(crate) struct VisualOverridesTable {
     fsr_mv_correction: Option<CorrectionOverride>,
     fsr_hybrid_velocity: Option<CorrectionOverride>,
     headset: Option<HeadsetRig>,
+    resolution_scale: Option<ResolutionScaleOverride>,
     stages: Option<StagesOverride>,
     single_pass: Option<BTreeMap<String, bool>>,
 }
@@ -199,6 +238,7 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             fsr_mv_correction: table.fsr_mv_correction,
             fsr_hybrid_velocity: table.fsr_hybrid_velocity,
             headset: table.headset,
+            resolution_scale: table.resolution_scale,
             stages: table.stages,
             single_pass,
         };
@@ -211,6 +251,7 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             && overrides.fsr_mv_correction.is_none()
             && overrides.fsr_hybrid_velocity.is_none()
             && overrides.headset.is_none()
+            && overrides.resolution_scale.is_none()
             && overrides.stages.is_none()
             && overrides.single_pass.is_empty()
         {
@@ -269,6 +310,9 @@ impl VisualOverrides {
         }
         if let Some(CorrectionOverride::Disabled) = self.fsr_hybrid_velocity {
             config.fsr.hybrid_velocity = false;
+        }
+        if let Some(scale) = self.resolution_scale {
+            config.vr.resolution_scale = scale.scale();
         }
         self.single_pass.apply(&mut config.stereo.single_pass);
     }
@@ -388,6 +432,20 @@ mod tests {
             toml::from_str::<VisualOverridesTable>("[single_pass]\nssr_per_eye = 0\n").is_err()
         );
         assert!(toml::from_str::<VisualOverridesTable>("other = true\n").is_err());
+    }
+
+    #[test]
+    fn a_resolution_scale_applies_within_its_range() {
+        let overrides = parse("resolution_scale = 1.414\n").unwrap();
+        let mut config = Config::new();
+        overrides.apply(&mut config);
+        assert_eq!(config.vr.resolution_scale, 1.414);
+        assert_eq!(
+            serde_json::to_value(overrides).unwrap(),
+            serde_json::json!({"resolution_scale": 1.414})
+        );
+        assert!(toml::from_str::<VisualOverridesTable>("resolution_scale = 2.0\n").is_err());
+        assert!(toml::from_str::<VisualOverridesTable>("resolution_scale = 0.2\n").is_err());
     }
 
     #[test]

@@ -336,6 +336,11 @@ pub(crate) fn process_pending() {
             let previous_sps = Config::lock_query(|config| config.stereo.single_pass.enabled);
             {
                 let mut config = CONFIG.lock();
+                // The profile keeps the session's resolution scale, which an earlier
+                // configuration's override may have replaced.
+                if let Some(saved) = state.saved.as_ref() {
+                    config.vr.resolution_scale = saved.vr.resolution_scale;
+                }
                 apply_profile_with_overrides(&mut config, mode, visual_overrides);
             }
             // Every configuration accumulates FSR's history from its own warm-up, so modes compared

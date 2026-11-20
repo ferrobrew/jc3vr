@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from tools.rendering.comparison.images import Mode as CompareMode
 from tools.rendering.comparison.images import Thresholds
+from tools.rendering.experiment_fsr import FsrVariant
 from tools.rendering.protocol.snapshot import Comparison, Plane
 
 # The modes a fast comparison renders as references for the others, in the order it renders them.
@@ -36,24 +37,32 @@ class SnapshotStep:
 
 @dataclass(frozen=True)
 class ConfigureStep:
-    """A configuration for one mode, or the single-pass mode under a variant's switches, followed by
-    its snapshots."""
+    """A configuration for one mode, or the single-pass mode under a variant's switches, or a mode
+    under an FSR variant's settings, followed by its snapshots."""
     mode: CompareMode
     variant: str | None
     snapshots: tuple[SnapshotStep, ...]
+    fsr_variant: str | None = None
 
     @property
     def name(self) -> str:
+        if self.fsr_variant is not None:
+            return f"{self.fsr_variant} {self.mode.value}"
         return self.variant if self.variant is not None else self.mode.value
 
 
-def schedule(modes: tuple[CompareMode, ...], variants: tuple[str, ...], repeat: bool = True
-             ) -> tuple[ConfigureStep, ...]:
-    """The configurations and snapshots of a fast comparison over `modes` and the single-pass
-    `variants`. The isolated eyes and multipass are kept as references and taken first; every
-    other snapshot is compared with each reference before it. With `repeat`, each mode (and the
-    single-pass mode once for its variants) takes a second snapshot compared with its first, which
-    gives the same-schedule noise floor; the repeat is not kept."""
+def schedule(modes: tuple[CompareMode, ...], variants: tuple[str, ...], repeat: bool = True,
+             fsr_variants: tuple[FsrVariant, ...] = ()) -> tuple[ConfigureStep, ...]:
+    """The configurations and snapshots of a fast comparison over `modes`, the single-pass
+    `variants`, and the `fsr_variants`. The isolated eyes and multipass are kept as references and
+    taken first; every other snapshot is compared with each reference before it. With `repeat`, each
+    mode (and the single-pass mode once for its variants) takes a second snapshot compared with its
+    first, which gives the same-schedule noise floor; the repeat is not kept.
+
+    Each FSR variant renders in each of its modes after everything else, and always takes a second
+    snapshot compared with its first (the frame-to-frame change at a still camera). Its first is
+    compared with the mode's own first snapshot when that is kept and the variant renders at the
+    session's size; its floor is its own, not the mode's."""
     if CompareMode.REVERSE_MULTIPASS in modes:
         raise FastError("fast comparison: reverse_multipass is not supported")
     if len(set(modes)) != len(modes):
@@ -79,6 +88,16 @@ def schedule(modes: tuple[CompareMode, ...], variants: tuple[str, ...], repeat: 
         label = f"v{index}_{variant}".replace("-", "_")[:64]
         steps.append(ConfigureStep(CompareMode.SINGLE_PASS, variant,
                                    (SnapshotStep(label, False, tuple(references)),)))
+    kept = {step.mode for step in steps if step.variant is None and step.snapshots[0].keep}
+    for index, variant in enumerate(fsr_variants, start=1):
+        for mode in variant.modes_in(tuple(ordered)):
+            base = f"f{index}_{variant.name}_{mode.value}".replace("-", "_")[:62]
+            compare = ((f"{mode.value}_a",) if mode in kept and variant.resolution_scale is None
+                       else ())
+            steps.append(ConfigureStep(mode, None, (
+                SnapshotStep(f"{base}_a", True, compare),
+                SnapshotStep(f"{base}_b", False, (f"{base}_a",), repeat_of=base),
+            ), fsr_variant=variant.name))
     return tuple(steps)
 
 
@@ -134,7 +153,8 @@ class Row:
 
 def label_mode(label: str) -> str:
     """The mode a snapshot label belongs to: `left_only_a` is `left_only`; a variant's is
-    `single_pass`."""
+    `single_pass`; an FSR variant's is the variant in its mode (`f1_hybrid_off_multipass`), whose
+    floor is its own."""
     if label.startswith("v") and label[1:2].isdigit():
         return CompareMode.SINGLE_PASS.value
     return label.rsplit("_", 1)[0]

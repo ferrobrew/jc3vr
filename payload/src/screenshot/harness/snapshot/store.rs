@@ -18,7 +18,8 @@ use windows::{
             DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_TYPELESS, DXGI_FORMAT_R8G8B8A8_UINT,
             DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
             DXGI_FORMAT_R10G10B10A2_TYPELESS, DXGI_FORMAT_R10G10B10A2_UINT,
-            DXGI_FORMAT_R10G10B10A2_UNORM, DXGI_FORMAT_R11G11B10_FLOAT, DXGI_FORMAT_R32_FLOAT,
+            DXGI_FORMAT_R10G10B10A2_UNORM, DXGI_FORMAT_R11G11B10_FLOAT, DXGI_FORMAT_R16G16_FLOAT,
+            DXGI_FORMAT_R16G16_TYPELESS, DXGI_FORMAT_R32_FLOAT,
             DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS, DXGI_FORMAT_R32_TYPELESS,
             DXGI_FORMAT_R32G8X24_TYPELESS, DXGI_FORMAT_X32_TYPELESS_G8X24_UINT, DXGI_SAMPLE_DESC,
         },
@@ -101,6 +102,15 @@ impl Format {
                 Kind::Float3,
                 DXGI_FORMAT_R11G11B10_FLOAT,
                 DXGI_FORMAT_R11G11B10_FLOAT,
+                4,
+                false,
+            ),
+            // FSR's motion vectors: compared as floats, any changed bit, with the third channel the
+            // view reads as zero.
+            DXGI_FORMAT_R16G16_TYPELESS | DXGI_FORMAT_R16G16_FLOAT => plain(
+                Kind::Float3,
+                DXGI_FORMAT_R16G16_TYPELESS,
+                DXGI_FORMAT_R16G16_FLOAT,
                 4,
                 false,
             ),
@@ -256,6 +266,9 @@ mod tests {
         assert_eq!(depth.stencil, Some(DXGI_FORMAT_X32_TYPELESS_G8X24_UINT));
         assert_eq!(depth.pixel_bytes, 8);
         assert!(Format::of(DXGI_FORMAT_R32_FLOAT).unwrap().stencil.is_none());
+        let motion = Format::of(DXGI_FORMAT_R16G16_FLOAT).unwrap();
+        assert_eq!(motion.kind, Kind::Float3);
+        assert_eq!(motion.storage, DXGI_FORMAT_R16G16_TYPELESS);
         assert!(Format::of(DXGI_FORMAT(2)).is_err());
     }
 }

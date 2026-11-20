@@ -180,6 +180,54 @@ pub(crate) fn write(folder: &Path, dumps: Vec<(String, [DumpImage; 2])>) -> Vec<
         .collect()
 }
 
+/// What a saved plane wrote, for the acknowledgement.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct SavedRecord {
+    /// `<label>.<plane>.eye<N>`.
+    pub stem: String,
+    /// The file, relative to the captures folder.
+    pub file: String,
+    /// `png` or `raw.gz`, as for a comparison's dump.
+    pub encoding: &'static str,
+    pub width: u32,
+    pub height: u32,
+    /// The stored DXGI format and bytes per pixel, for decoding a raw file.
+    pub format: i32,
+    pub pixel_bytes: u32,
+    pub error: Option<String>,
+}
+
+/// Write each saved plane into `folder`. Writer thread.
+pub(crate) fn write_saved(folder: &Path, saves: Vec<(String, DumpImage)>) -> Vec<SavedRecord> {
+    if let Err(error) = std::fs::create_dir_all(folder) {
+        tracing::error!("snapshot: creating {}: {error}", folder.display());
+    }
+    let folder_name = folder
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    saves
+        .into_iter()
+        .map(|(stem, image)| {
+            let encoding = if image.png { "png" } else { "raw.gz" };
+            let name = format!("{stem}.{encoding}");
+            let error = encode(&folder.join(&name), &image, image.png)
+                .err()
+                .map(|error| format!("snapshot: {error:#}"));
+            SavedRecord {
+                stem,
+                file: format!("{folder_name}/{name}"),
+                encoding,
+                width: image.width,
+                height: image.height,
+                format: image.format.storage.0,
+                pixel_bytes: image.format.pixel_bytes,
+                error,
+            }
+        })
+        .collect()
+}
+
 fn encode(path: &Path, image: &DumpImage, png: bool) -> anyhow::Result<()> {
     if png {
         let mut rgba = image.bytes.clone();

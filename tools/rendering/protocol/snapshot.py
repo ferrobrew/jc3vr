@@ -45,6 +45,9 @@ class Plane(StrEnum):
     SSAO_STEP5 = "ssao_step5"
     SSAO_STEP6 = "ssao_step6"
     SSAO_STEP7 = "ssao_step7"
+    # The motion vectors and the depth FSR is handed for each eye, taken at the velocity decode.
+    FSR_MOTION = "fsr_motion"
+    FSR_DEPTH = "fsr_depth"
 
 
 class DumpPolicy(StrEnum):
@@ -75,6 +78,8 @@ class SnapshotRequest:
     dump_crop: bool = True
     # How many representable floats apart two depths may be and still match; zero counts any change.
     depth_ulps: int = 0
+    # Write every plane whole, per eye, whether or not it is compared.
+    save: bool = False
     command: Command = field(default=Command.SNAPSHOT, init=False)
     # The channel validates these on configuration acknowledgements only.
     pose = None
@@ -97,6 +102,8 @@ class SnapshotRequest:
             raise ProtocolError("snapshot: thresholds out of range")
         if type(self.depth_ulps) is not int or not 0 <= self.depth_ulps <= MAX_DEPTH_ULPS:
             raise ProtocolError(f"snapshot: depth_ulps must be an integer within [0, {MAX_DEPTH_ULPS}]")
+        if type(self.save) is not bool:
+            raise ProtocolError("snapshot: save must be a boolean")
 
     def to_toml(self) -> str:
         result = (f"command = {json.dumps(self.command.value)}\n"
@@ -113,7 +120,8 @@ class SnapshotRequest:
                    f"fail_fraction = {json.dumps(float(self.fail_fraction))}\n"
                    f"fail_mean = {json.dumps(float(self.fail_mean))}\n"
                    f"dump = {json.dumps(self.dump.value)}\n"
-                   f"dump_crop = {json.dumps(self.dump_crop)}\n")
+                   f"dump_crop = {json.dumps(self.dump_crop)}\n"
+                   f"save = {json.dumps(self.save)}\n")
         return result
 
 
@@ -212,6 +220,11 @@ class SnapshotAck:
     wait_ms: float
     gpu_ms: float
     visual: dict
+    # The planes written whole (`stem`, `file`, `encoding`, `width`, `height`, `format`,
+    # `pixel_bytes`, `error`), when the request asked for them.
+    saved: tuple[dict, ...] = ()
+    # What FSR resolved each eye with on the snapshot's frame (`fsr::DispatchRecord`).
+    fsr: tuple[dict, ...] = ()
     outcome: AckOutcome = field(default=AckOutcome.COMPLETED, init=False)
 
     @classmethod
@@ -233,6 +246,11 @@ class SnapshotAck:
         error = value.get("error")
         if error is not None and not isinstance(error, str):
             raise ProtocolError("snapshot: invalid error")
+        saved = value.get("saved", [])
+        fsr = value.get("fsr", [])
+        if (not isinstance(saved, list) or not all(isinstance(item, dict) for item in saved)
+                or not isinstance(fsr, list) or not all(isinstance(item, dict) for item in fsr)):
+            raise ProtocolError("snapshot: invalid saved planes or FSR records")
         times = []
         for key in ("wait_ms", "gpu_ms"):
             number = timing.get(key)
@@ -244,7 +262,8 @@ class SnapshotAck:
                    integer(value, "eye_height", minimum=1), parsed_planes,
                    tuple(Comparison.from_wire(item) for item in comparisons),
                    tuple(f"{text(item, 'plane')}: {text(item, 'error')}" for item in plane_errors),
-                   error, integer(timing, "frames_waited", minimum=0), times[0], times[1], visual)
+                   error, integer(timing, "frames_waited", minimum=0), times[0], times[1], visual,
+                   tuple(saved), tuple(fsr))
 
 
 @dataclass(frozen=True)

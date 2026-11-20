@@ -240,7 +240,10 @@ class ScheduleTests(unittest.TestCase):
         suite = load_suite(Path(__file__).resolve().parents[1] / "suites/benchmark.toml")
         self.assertIn("capital", [scene.name for scene in suite.scenes])
         self.assertTrue(all(variant.switches or variant.overlap_render_update is not None
+                            or variant.fsr is not None or variant.hybrid_velocity is not None
                             for variant in suite.variants))
+        fsr_off = {variant.name: variant for variant in suite.variants}["fsr-off"]
+        self.assertIs(Mode.variant(fsr_off).fsr, False)
         serial = {variant.name: variant for variant in suite.variants}["multipass-serial"]
         self.assertEqual(serial.base, BenchmarkMode.MULTIPASS)
         self.assertIs(Mode.variant(serial).overlap_render_update, False)
