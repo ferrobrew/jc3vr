@@ -47,7 +47,8 @@ def group_key(run: dict) -> tuple:
     eye = [size[0] // 2, size[1]] if double_wide else list(size)
     return (run["run"]["scene"], run["run"]["mode"], run["run"]["resolution_scale"], tuple(eye),
             run["session"].get("compositor_fps"), bool(payload["request"].get("detour_timing")),
-            bool(payload["environment"].get("com_detours_installed")))
+            bool(payload["environment"].get("com_detours_installed")),
+            bool(payload["request"].get("sample_draw_task")))
 
 
 def summarize(runs: list[dict]) -> dict:
@@ -55,13 +56,13 @@ def summarize(runs: list[dict]) -> dict:
     for run in runs:
         groups[group_key(run)].append(run)
     entries = []
-    for (scene, mode, scale, eye, fps, detours, draw_detours), members in sorted(
+    for (scene, mode, scale, eye, fps, detours, draw_detours, sampled), members in sorted(
             groups.items(), key=lambda item: str(item[0])):
         summaries = [member["summary"] for member in members]
         entry = {"scene": scene, "mode": mode, "resolution_scale": scale, "eye_size": list(eye),
                  "megapixels_per_eye": round(eye[0] * eye[1] / 1e6, 3), "compositor_fps": fps,
                  "detour_timing": detours, "draw_detours_installed": draw_detours,
-                 **aggregate(summaries)}
+                 "sampled": sampled, **aggregate(summaries)}
         threads = [member["threads"] for member in members if member.get("threads")]
         if threads:
             names = sorted({name for t in threads for name in t["groups"]})
@@ -86,6 +87,7 @@ def markdown(summary: dict) -> str:
              "| " + " | ".join(header) + " |", "|" + "---|" * len(header)]
     for entry in summary["groups"]:
         notes = (" (detour timing)" if entry["detour_timing"] else "") + (
+            " (sampled)" if entry.get("sampled") else "") + (
             "" if entry["draw_detours_installed"] else " (no draw detours)")
         cells = [entry["scene"], entry["mode"] + notes,
                  f"{entry['eye_size'][0]}x{entry['eye_size'][1]}", str(entry["compositor_fps"])]

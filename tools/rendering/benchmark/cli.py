@@ -15,6 +15,7 @@ from pathlib import Path
 from tools.rendering.benchmark.charts import render
 from tools.rendering.benchmark.report import write_summary
 from tools.rendering.benchmark.run import Mode, Options, run_scene
+from tools.rendering.benchmark.samples import main as samples_main
 from tools.rendering.benchmark.suite import DEFAULT_SUITE, BenchmarkError, load_suite
 from tools.rendering.protocol import ProtocolError
 from tools.rendering.protocol.benchmark import BenchmarkMode
@@ -32,6 +33,12 @@ def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
                         stream=sys.stderr)
+    if argv and argv[0] == "samples":
+        try:
+            return samples_main(argv[1:])
+        except (OSError, ValueError, KeyError) as error:
+            LOG.error("%s", error)
+            return 2
     if argv and argv[0] in ("summary", "charts"):
         parser = argparse.ArgumentParser(prog=f"benchmark {argv[0]}")
         parser.add_argument("output", type=Path)
@@ -66,6 +73,9 @@ def run_main(argv) -> int:
     parser.add_argument("--no-gpu", action="store_true", help="skip the GPU timestamp queries")
     parser.add_argument("--detour-timing", action="store_true",
                         help="time the draw detours (inflates the cost it measures; a run of its own)")
+    parser.add_argument("--sample-draw-task", action="store_true",
+                        help="sample where the draw task's time goes (slows the frames it "
+                             "measures; a run of its own)")
     parser.add_argument("--no-draw-detours", action="store_true",
                         help="leave the draw detours uninstalled: in a fresh session, multipass then "
                              "runs without them (and its submissions are not counted)")
@@ -101,7 +111,8 @@ def run_main(argv) -> int:
         options = Options(args.record_seconds, args.warmup_seconds, args.repeats,
                           tuple(args.scales) if args.scales else (None,), not args.no_gpu,
                           args.detour_timing, not args.no_draw_detours, args.restage,
-                          _compositor_fps(args.session), args.session)
+                          _compositor_fps(args.session), args.session,
+                          sample_draw_task=args.sample_draw_task)
         output.mkdir(parents=True, exist_ok=True)
         if args.build:
             LOG.info("benchmark: built in %.1f s", build(args.release))

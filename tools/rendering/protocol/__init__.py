@@ -247,7 +247,7 @@ SINGLE_PASS_SWITCHES = (
     "collapse_viewport_follows_target",
     "ssao_per_eye", "ssao_exact_sampling", "ao_volumes_per_eye", "ssr_per_eye", "subsurface_per_eye", "dof_per_eye", "ssdecal_per_eye",
     "composite_overlays_per_eye", "glare_per_eye", "foveation_per_eye", "fsr_per_eye", "clustered_per_eye",
-    "clustered_per_eye_light_view", "uniform_viewport_slots",
+    "clustered_per_eye_light_view", "uniform_viewport_slots", "viewport_bind_cache",
 )
 
 

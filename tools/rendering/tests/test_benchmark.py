@@ -241,7 +241,11 @@ class ScheduleTests(unittest.TestCase):
         self.assertIn("capital", [scene.name for scene in suite.scenes])
         self.assertTrue(all(variant.switches or variant.overlap_render_update is not None
                             or variant.fsr is not None or variant.hybrid_velocity is not None
+                            or variant.large_cache_cores is not None
                             for variant in suite.variants))
+        placement = {variant.name: variant for variant in suite.variants}["multipass-large-cache-off"]
+        self.assertEqual((placement.base, placement.large_cache_cores),
+                         (BenchmarkMode.MULTIPASS, False))
         fsr_off = {variant.name: variant for variant in suite.variants}["fsr-off"]
         self.assertIs(Mode.variant(fsr_off).fsr, False)
         serial = {variant.name: variant for variant in suite.variants}["multipass-serial"]

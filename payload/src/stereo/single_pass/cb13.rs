@@ -297,11 +297,12 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             cb13_camera_position: rows[i * 5 + 4].data,
             cb13_m_eye: vp16(MEYE_ROW_BASE + i * 4),
         };
-        let full_viewport = COLLAPSE_FULL_VIEWPORT.lock().map(|v| {
-            [
-                v.TopLeftX, v.TopLeftY, v.Width, v.Height, v.MinDepth, v.MaxDepth,
-            ]
-        });
+        let full_viewport =
+            crate::stereo::single_pass::viewport_record::scene_viewport().map(|v| {
+                [
+                    v.TopLeftX, v.TopLeftY, v.Width, v.Height, v.MinDepth, v.MaxDepth,
+                ]
+            });
         *LAST_FRAME_DIAG.lock() = Some(FrameDiagnostics {
             single_pass: active(),
             dual_eye: dual_eye_active(),

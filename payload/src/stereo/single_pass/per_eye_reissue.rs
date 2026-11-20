@@ -348,7 +348,7 @@ pub(super) fn eye_split_state() -> Option<([glam::Mat4; 2], D3D11_VIEWPORT, Engi
         return None;
     }
     let m_eye = (*CURRENT_M_EYE.lock())?;
-    let full = (*COLLAPSE_FULL_VIEWPORT.lock())?;
+    let full = viewport_record::scene_viewport()?;
     let d3d = EngineContext::get()?;
     Some((m_eye, full, d3d))
 }

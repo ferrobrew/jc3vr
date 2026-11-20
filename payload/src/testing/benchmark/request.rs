@@ -38,6 +38,10 @@ pub(crate) struct BenchmarkTable {
     /// draw. A diagnostic run of its own, since the timing inflates the cost it measures.
     #[serde(default)]
     detour_timing: bool,
+    /// Sample where the draw task's time goes (`crate::testing::benchmark::sampler`). A diagnostic
+    /// run of its own, since suspending the draw thread slows the frames it measures.
+    #[serde(default)]
+    sample_draw_task: bool,
     /// Install the stereo draw path's detours before the run, as a session that has run single-pass
     /// has them, so every mode's submissions are counted and every mode pays for the detours alike.
     #[serde(default)]
@@ -56,6 +60,8 @@ pub(crate) struct BenchmarkTable {
     fsr: Option<bool>,
     /// FSR's hybrid decode for the run (`fsr.hybrid_velocity`); `None` runs it as shipped.
     fsr_hybrid_velocity: Option<bool>,
+    /// `vr.large_cache_cores` for the run; `None` keeps the configured one.
+    large_cache_cores: Option<bool>,
     camera: Option<CameraTable>,
 }
 
@@ -104,6 +110,7 @@ pub(crate) struct BenchmarkRequest {
     pub(crate) resolution_scale: Option<f32>,
     pub(crate) gpu: bool,
     pub(crate) detour_timing: bool,
+    pub(crate) sample_draw_task: bool,
     pub(crate) install_draw_detours: bool,
     pub(crate) recapture_camera: bool,
     pub(crate) restore: bool,
@@ -111,6 +118,7 @@ pub(crate) struct BenchmarkRequest {
     pub(crate) overlap_render_update: Option<bool>,
     pub(crate) fsr: Option<bool>,
     pub(crate) fsr_hybrid_velocity: Option<bool>,
+    pub(crate) large_cache_cores: Option<bool>,
     pub(crate) camera: CameraPath,
 }
 
@@ -218,6 +226,7 @@ impl BenchmarkRequest {
             resolution_scale: table.resolution_scale,
             gpu: table.gpu,
             detour_timing: table.detour_timing,
+            sample_draw_task: table.sample_draw_task,
             install_draw_detours: table.install_draw_detours,
             recapture_camera: table.recapture_camera,
             restore: table.restore,
@@ -225,6 +234,7 @@ impl BenchmarkRequest {
             overlap_render_update: table.overlap_render_update,
             fsr: table.fsr,
             fsr_hybrid_velocity: table.fsr_hybrid_velocity,
+            large_cache_cores: table.large_cache_cores,
             camera,
         })
     }
@@ -269,6 +279,7 @@ mod tests {
         assert_eq!(request.warmup_seconds, 3.0);
         assert!(request.gpu && request.restore);
         assert!(!request.detour_timing && !request.recapture_camera);
+        assert!(!request.sample_draw_task);
         assert!(!request.install_draw_detours);
         assert!(request.switches.is_empty());
         assert!(request.camera.is_still());

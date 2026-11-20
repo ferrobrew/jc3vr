@@ -169,15 +169,16 @@ pub(crate) struct VisualOverridesTable {
     single_pass: Option<BTreeMap<String, bool>>,
 }
 
-/// Single-pass switches forced to a value, by [`SinglePassSwitch`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct SinglePassOverrides([Option<bool>; SinglePassSwitch::COUNT]);
-
-impl Default for SinglePassOverrides {
-    fn default() -> Self {
-        Self([None; SinglePassSwitch::COUNT])
-    }
+/// Single-pass switches forced to a value, by [`SinglePassSwitch`]: a bit per switch for whether it
+/// is forced, and one for the value it is forced to. Packed, since a request carries one and the
+/// switch list keeps growing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) struct SinglePassOverrides {
+    forced: u128,
+    values: u128,
 }
+
+const _: () = assert!(SinglePassSwitch::COUNT <= u128::BITS as usize);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum OverrideError {
@@ -341,20 +342,24 @@ impl SinglePassOverrides {
         for (name, value) in entries {
             let switch =
                 SinglePassSwitch::from_name(&name).ok_or(OverrideError::UnknownSwitch(name))?;
-            overrides.0[switch as usize] = Some(value);
+            overrides.forced |= 1 << switch as usize;
+            if value {
+                overrides.values |= 1 << switch as usize;
+            }
         }
         Ok(overrides)
     }
 
     pub(crate) fn is_empty(&self) -> bool {
-        self.0.iter().all(Option::is_none)
+        self.forced == 0
     }
 
     /// The overridden switches and their values, in [`SinglePassSwitch::ALL`] order.
     pub(crate) fn iter(&self) -> impl Iterator<Item = (SinglePassSwitch, bool)> + '_ {
         SinglePassSwitch::ALL
             .iter()
-            .filter_map(|&switch| self.0[switch as usize].map(|value| (switch, value)))
+            .filter(|&&switch| self.forced & (1 << switch as usize) != 0)
+            .map(|&switch| (switch, self.values & (1 << switch as usize) != 0))
     }
 
     pub(crate) fn apply(&self, config: &mut SinglePassConfig) {

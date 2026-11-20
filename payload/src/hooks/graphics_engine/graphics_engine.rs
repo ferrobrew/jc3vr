@@ -192,6 +192,7 @@ fn graphics_engine_draw(graphics_engine: *mut GraphicsEngine, dt: f32) {
 #[detour(address = GraphicsEngine::HandleDrawThreadTask_ADDRESS)]
 fn handle_draw_thread_task(engine: *mut GraphicsEngine, param: *mut DrawThreadTaskParam) -> u32 {
     crate::testing::benchmark::note_draw_thread();
+    let _sampled = crate::testing::benchmark::sampler::enter_draw_task();
     // The task records the frame its dispatch drew, whatever the game thread prepares meanwhile.
     let _frame = crate::render_frame::pin_dispatch();
     let _timing = frame_timing::scope(Slot::DrawTask);

@@ -477,6 +477,92 @@ pub unsafe fn DispatchIndirect(
         f(a1, a2, a3, a4, a5, a6)
     }
 }
+pub const AcquireThreadOwnership_ADDRESS: usize = 0x141954CD0;
+/// Enters the context's critical section, if it has one. The wrappers without `NoMutex` in their
+/// name take and leave it around their one call into Direct3D; a render block that issues several
+/// calls in a row takes it once here and uses the `NoMutex` variants.
+pub unsafe fn AcquireThreadOwnership(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+        ) = ::std::mem::transmute(AcquireThreadOwnership_ADDRESS);
+        f(ctx)
+    }
+}
+pub const ReleaseThreadOwnership_ADDRESS: usize = 0x141954CF0;
+/// Leaves the context's critical section that [`AcquireThreadOwnership`](crate::graphics_engine::draw::AcquireThreadOwnership) entered.
+pub unsafe fn ReleaseThreadOwnership(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+        ) = ::std::mem::transmute(ReleaseThreadOwnership_ADDRESS);
+        f(ctx)
+    }
+}
+pub const SetVertexProgramConstantBufferNoMutex_ADDRESS: usize = 0x141963DF0;
+/// Binds a constant buffer to a vertex-program slot without the context mutex: issues
+/// `ID3D11DeviceContext::VSSetConstantBuffers` (vtable slot 7) for the one slot, and for the first
+/// four slots clears the context's record of the staged constants for that slot.
+pub unsafe fn SetVertexProgramConstantBufferNoMutex(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    slot: i32,
+    buffer: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            slot: i32,
+            buffer: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(SetVertexProgramConstantBufferNoMutex_ADDRESS);
+        f(ctx, slot, buffer)
+    }
+}
+pub const SetVertexStreamNoMutex_ADDRESS: usize = 0x141963260;
+/// Binds a vertex buffer to a stream without the context mutex: issues
+/// `ID3D11DeviceContext::IASetVertexBuffers` (vtable slot 18) for the one stream, with the buffer's
+/// current Direct3D buffer and the given offset and stride.
+pub unsafe fn SetVertexStreamNoMutex(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    buffer: *mut ::std::ffi::c_void,
+    stream: i32,
+    offset: i32,
+    stride: i32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            buffer: *mut ::std::ffi::c_void,
+            stream: i32,
+            offset: i32,
+            stride: i32,
+        ) = ::std::mem::transmute(SetVertexStreamNoMutex_ADDRESS);
+        f(ctx, buffer, stream, offset, stride)
+    }
+}
+pub const LockConstantBufferNoMutex_ADDRESS: usize = 0x141963C00;
+/// Maps a constant buffer for writing without the context mutex: issues `ID3D11DeviceContext::Map`
+/// (vtable slot 14) on the buffer's resource with `D3D11_MAP_WRITE_DISCARD`, whatever `lock_type`
+/// asks, and returns the mapped pointer.
+pub unsafe fn LockConstantBufferNoMutex(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    buffer: *mut ::std::ffi::c_void,
+    lock_type: i32,
+) -> *mut ::std::ffi::c_void {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            buffer: *mut ::std::ffi::c_void,
+            lock_type: i32,
+        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(
+            LockConstantBufferNoMutex_ADDRESS,
+        );
+        f(ctx, buffer, lock_type)
+    }
+}
 pub const SetRenderSetup_ADDRESS: usize = 0x141966D20;
 /// Binds a render setup, the render-target configuration a pass draws into.
 pub unsafe fn SetRenderSetup(

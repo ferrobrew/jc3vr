@@ -46,7 +46,7 @@ use crate::{
         bound_buffer::{ShaderStage, read_bound_constant_buffer},
     },
     stereo::single_pass::{
-        BOUND_VS_PATCHED, CB13, COLLAPSE_FULL_VIEWPORT, EngineContext, PATCHED_VS_NAMES,
+        BOUND_VS_PATCHED, CB13, EngineContext, PATCHED_VS_NAMES,
         cb13::{
             STEREO_CB_TOTAL_ROWS, pin_rows_to_eye, pinned_eye_rows, preserve_reprojection_depth,
             write_cb13_rows,
@@ -58,6 +58,7 @@ use crate::{
             bind_both_viewport_slots, capture_viewport_slots, eye_half_viewport,
             restore_viewport_slots,
         },
+        viewport_record,
     },
 };
 
@@ -87,7 +88,7 @@ pub fn reissue_sun_pass(ctx: *const RenderContext, draw: &dyn Fn() -> bool) -> O
     ) {
         return None;
     }
-    let full = (*COLLAPSE_FULL_VIEWPORT.lock())?;
+    let full = viewport_record::scene_viewport()?;
     let d3d = EngineContext::get()?;
     let rows = CB13.lock().live_rows()?;
     let saved = capture_viewport_slots(d3d);

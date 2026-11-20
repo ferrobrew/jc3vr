@@ -53,6 +53,7 @@ pub(super) enum Flag {
     NonIndexedGeometryOnce,
     TerrainDetailEyeRows,
     TerrainCullBothEyes,
+    ViewportBindCache,
 }
 
 /// The single-pass config flags, sampled once per frame and pinned for the duration of a dispatch.
@@ -182,6 +183,7 @@ fn store_config_flags() -> u64 {
             | bit(s.non_indexed_geometry_once, Flag::NonIndexedGeometryOnce)
             | bit(s.terrain_detail_eye_rows, Flag::TerrainDetailEyeRows)
             | bit(s.terrain_cull_both_eyes, Flag::TerrainCullBothEyes)
+            | bit(s.viewport_bind_cache, Flag::ViewportBindCache)
     }) | CONFIG_FLAGS_VALID;
     CONFIG_FLAGS.store(snapshot, Ordering::Relaxed);
     snapshot

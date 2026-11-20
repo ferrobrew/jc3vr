@@ -110,6 +110,7 @@ single_pass_switches! {
     ClusteredPerEye => clustered_per_eye, false;
     ClusteredPerEyeLightView => clustered_per_eye_light_view, false;
     UniformViewportSlots => uniform_viewport_slots, false;
+    ViewportBindCache => viewport_bind_cache, false;
 }
 
 impl SinglePassSwitch {

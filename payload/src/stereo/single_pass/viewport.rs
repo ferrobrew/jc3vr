@@ -81,6 +81,7 @@ pub(super) fn restore_viewport_slots(d3d: EngineContext, saved: ViewportSlots) {
     // SAFETY: the context is the live immediate context and `slots` holds `count` viewports.
     d3d.with_lock(|ctx| unsafe {
         detour.call(ctx.as_raw(), saved.count, saved.slots.as_ptr());
+        viewport_record::record_bound((saved.count == 2).then_some(saved.slots));
     });
 }
 
@@ -238,6 +239,7 @@ pub(super) fn unify_viewport_slots() {
             // everything to nothing.
             if slots[0].Width > 0.0 {
                 detour.call(ctx.as_raw(), 2, [slots[0], slots[0]].as_ptr());
+                viewport_record::record_bound(Some([slots[0], slots[0]]));
                 set_viewport_slots_uniform(true);
                 VIEWPORT_UNIFIED.fetch_add(1, Ordering::Relaxed);
             }
@@ -308,6 +310,7 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
                 per_eye_reissue_full_viewport().map_or(vp, |full| reissue_viewport(vp, full, eye));
             set_viewport_slots_uniform(true);
             unsafe { detour.call(context, 2, [routed, routed].as_ptr()) };
+            viewport_record::record_bound(Some([routed, routed]));
             return;
         }
         if collapse_active() {
@@ -320,15 +323,14 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
             // Only a scene-sized viewport is recorded. The detour sees every viewport bind in the
             // frame, including the half-resolution SSAO/SSR/bloom targets, and the eye halves are
             // derived from this record -- so without the size check the eye split would follow
-            // whichever post pass happened to bind last.
-            if is_scene_sized(vp) {
-                *COLLAPSE_FULL_VIEWPORT.lock() = Some(vp);
-            }
-            // Unconditional, unlike the scene record above: this one has to follow the engine onto the
-            // reduced-resolution off-screen targets, which is the whole point of it.
-            *CURRENT_ENGINE_VIEWPORT.lock() = Some(vp);
+            // whichever post pass happened to bind last. The engine's latest bind is recorded
+            // unconditionally: it has to follow the engine onto the reduced-resolution off-screen
+            // targets, which is the whole point of it. Recorded before the eye camera reads it to
+            // lay its rows out for the newly bound target. The bound pair is recorded with it, before
+            // the bind: nothing reads it in between, the draw path being on this thread.
+            viewport_record::record_engine_bind(vp, is_scene_sized(vp), [vp, vp]);
             eye_camera::viewport_changed();
-            VIEWPORT_DUP.fetch_add(1, Ordering::Relaxed);
+            bump(&VIEWPORT_DUP);
             set_viewport_slots_uniform(true);
             unsafe { detour.call(context, 2, [vp, vp].as_ptr()) };
             return;
@@ -350,15 +352,17 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
         };
         set_viewport_slots_uniform(slot0 == slot1);
         unsafe { detour.call(context, 2, [slot0, slot1].as_ptr()) };
+        viewport_record::record_bound(Some([slot0, slot1]));
     } else {
         // A multi-slot set passes straight through, so the slots become whatever the caller asked for:
         // uniform only for the mod's own two-identical-slot binds. Anything else (including a set that
         // leaves slot 1 unbound) is taken as non-uniform, so the next patched draw outside the range
         // repairs it.
-        let uniform =
-            count == 2 && !viewports.is_null() && unsafe { *viewports == *viewports.add(1) };
-        set_viewport_slots_uniform(uniform);
+        let pair = (count == 2 && !viewports.is_null())
+            .then(|| unsafe { [*viewports, *viewports.add(1)] });
+        set_viewport_slots_uniform(pair.is_some_and(|[slot0, slot1]| slot0 == slot1));
         unsafe { detour.call(context, count, viewports) };
+        viewport_record::record_bound(pair);
     }
 }
 
@@ -381,9 +385,10 @@ pub(super) enum CollapseViewport {
 pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseViewport) {
     // Split the viewport of whatever target is actually bound, not the scene's. They are the same
     // everywhere except the reduced-resolution off-screen passes -- see [`CURRENT_ENGINE_VIEWPORT`].
-    // From the dispatch snapshot, not live: this function both pins an eye half and puts the full
-    // viewport back, and the two calls have to agree on which "full" they mean.
-    let Some(full) = collapse_base_viewport() else {
+    let flags = config_flags();
+    let (Some(full), bound) =
+        viewport_record::base_and_bound(flags.has(Flag::ViewportFollowsTarget))
+    else {
         return;
     };
     let Some(detour) = RS_SET_VIEWPORTS.get() else {
@@ -391,34 +396,35 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
     };
     let viewports = match target {
         CollapseViewport::Split => {
-            VIEWPORT_SPLIT.fetch_add(1, Ordering::Relaxed);
+            bump(&VIEWPORT_SPLIT);
             [eye_half_viewport(full, 0), eye_half_viewport(full, 1)]
         }
         CollapseViewport::Eye(eye) => {
-            VIEWPORT_SPLIT.fetch_add(1, Ordering::Relaxed);
+            bump(&VIEWPORT_SPLIT);
             let half = eye_half_viewport(full, eye);
             [half, half]
         }
         CollapseViewport::Full => [full, full],
     };
     set_viewport_slots_uniform(viewports[0] == viewports[1]);
+    // Every bind of the slots is recorded (the engine's through `rs_set_viewports_detour`, whatever
+    // its count, and the mod's own through the trampoline where it makes them), so a draw that wants
+    // what the slots already hold has nothing to bind. A pass's patched draws all want the same
+    // split, so most of them skip.
+    if flags.has(Flag::ViewportBindCache) && bound == Some(viewports) {
+        bump(&VIEWPORT_BINDS_SKIPPED);
+        return;
+    }
     // SAFETY: `context` is the live immediate context; `detour.call` invokes the original
-    // RSSetViewports (the trampoline), so this does not re-enter the detour. Bound unconditionally
-    // (no split-state skip): the engine can change the viewport underneath us via a path we do not
-    // observe (a `count != 1` set), so a cached "already split" flag would go stale and let both
-    // instances land in one half -- the doubled/"same geometry twice" artifact. Re-binding per draw
-    // is cheap (a few hundred geometry draws per frame, far below the draw budget we are cutting).
+    // RSSetViewports (the trampoline), so this does not re-enter the detour.
     unsafe { detour.call(context, 2, viewports.as_ptr()) };
+    viewport_record::record_bound(Some(viewports));
 }
 
 /// The full viewport of the target the collapse splits into eye halves: the live engine bind while
 /// the split follows the target, otherwise the scene's.
 fn collapse_base_viewport() -> Option<D3D11_VIEWPORT> {
-    if config_flags().has(Flag::ViewportFollowsTarget) {
-        (*CURRENT_ENGINE_VIEWPORT.lock()).or(*COLLAPSE_FULL_VIEWPORT.lock())
-    } else {
-        *COLLAPSE_FULL_VIEWPORT.lock()
-    }
+    viewport_record::base_viewport(config_flags().has(Flag::ViewportFollowsTarget))
 }
 
 /// The full viewport of the target the collapse splits into eye halves (see

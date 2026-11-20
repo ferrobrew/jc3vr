@@ -1,6 +1,6 @@
 # Where the frame goes at the headset's size
 
-Measured with the frame-time benchmark ([benchmark.md](../testing/benchmark.md)) in runs 300 to 302, and in runs 304 to 306 for the overlapped frame ordering, to answer whether multipass and single-pass stereo fit a 72 Hz headset's 13.9 ms at the Bigscreen Beyond 2e's recommended 3584 by 3561 per eye, what limits each, and what is left to gain. The machine is an AMD Ryzen 9 9950X3D (32 threads) with an NVIDIA GeForce RTX 5090 (32 GB, driver 595.71.05), running the game under Proton Experimental and DXVK in gamescope's headless backend with Monado's simulated headset and null compositor. Every run is the release payload with FSR and the foveation at their shipped settings and the motion blur and depth of field off; the clock and the world run, and only the camera is held. The results are in `target/harness-probe/benchmark/` (`300-pristine-multipass`, `300-main`, `300-sweep`, `301-main`, `301-sweep-town`, `301-variants`, `301-detours`, `302-*`).
+Measured with the frame-time benchmark ([benchmark.md](../testing/benchmark.md)) in runs 300 to 302, in runs 304 to 306 for the overlapped frame ordering, and in runs 321 to 326 for where the draw task's time goes and where its threads run, to answer whether multipass and single-pass stereo fit a 72 Hz headset's 13.9 ms at the Bigscreen Beyond 2e's recommended 3584 by 3561 per eye, what limits each, and what is left to gain. The machine is an AMD Ryzen 9 9950X3D (32 threads) with an NVIDIA GeForce RTX 5090 (32 GB, driver 595.71.05), running the game under Proton Experimental and DXVK in gamescope's headless backend with Monado's simulated headset and null compositor. Every run is the release payload with FSR and the foveation at their shipped settings and the motion blur and depth of field off; the clock and the world run, and only the camera is held. The results are in `target/harness-probe/benchmark/` (`300-pristine-multipass`, `300-main`, `300-sweep`, `301-main`, `301-sweep-town`, `301-variants`, `301-detours`, `302-*`).
 
 The comparison between modes on this machine is the point. A real headset adds its compositor's own GPU work, lens correction, and reprojection, and a player's GPU is not this one: the render size at which the GPU starts to limit the frame moves down on a weaker card.
 
@@ -94,25 +94,153 @@ Run 301 ran single-pass at the capital and the town with one switch at a time fo
 
 At the town every variant landed within the scene's own drift (the repeats of plain single-pass spread from 9.3 to 11.6 ms in that schedule), so no single family moved it measurably. The marginal cost of a submission on the draw task is 0.5 to 1.2 µs: from the buildings' 590 extra submissions, 1.2 µs each, and from multipass against single-pass at the capital (7,900 submissions and 4.2 ms of draw task apart), 0.53 µs. The families still drawn twice add about 1,000 to 1,500 submissions at the capital over the game's own calls (the draw accounting in [single-pass-stereo.md](../stereo/single-pass-stereo.md#accounting-for-the-draw-calls) lists them), so converting all of them would take 0.5 to 1.8 ms off the capital's draw task, and less elsewhere. On the GPU they cost tenths of a millisecond. `fsr_per_eye` and `foveation_per_eye` change how FSR and the foveation treat the two halves, not how much they cost: FSR's own GPU time (2.2 to 2.4 ms a frame at the headset's size) is the same either way.
 
+## Where the draw task's time goes
+
+The draw task at the capital was taken to be the engine's own walk of its render blocks. Sampling it says otherwise. Runs 321 and 323 sampled the draw task's thread about once a millisecond with `--sample-draw-task` ([benchmark.md](../testing/benchmark.md#where-the-draw-tasks-time-goes)) at the capital in single-pass with FSR off under 72 Hz pacing, two ten-second runs pooled (13,450 samples, a median draw task of 10.1 ms, the threads where the scheduler put them). Each sample is charged to the module its instruction pointer was in, and time in DXVK or Wine to the innermost game or payload function that called it, by unwinding the sampled stack:
+
+| Whose code, and where the instruction pointer was | Share | ms per frame |
+|---|---|---|
+| the game, inside DXVK | 46.6% | 4.72 |
+| the game's own code | 14.4% | 1.46 |
+| the game, inside Wine's `ntdll` | 12.2% | 1.24 |
+| the payload's own code | 12.1% | 1.23 |
+| the payload, inside DXVK | 7.2% | 0.73 |
+| the game or the payload, inside the C runtime | 3.7% | 0.38 |
+| the payload, inside Wine's `ntdll` | 1.7% | 0.17 |
+| the WaveWorks library | 1.7% | 0.17 |
+
+By engine seam, the G-buffer range took 5.6 ms, the prepasses 2.1 ms, the scene range 1.8 ms, the post effects under 0.1 ms, and the stretches outside any pass 0.6 ms. By render pass the models dominate ([`RP_MODELS_DYNAMIC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_MODELS_DYNAMIC) 2.2 ms, [`RP_MODELS_STATIC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_MODELS_STATIC) 1.5 ms, [`RP_MODELS_TRANSPARENT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_MODELS_TRANSPARENT) 1.0 ms), then the second shadow cascade (0.5 ms), the opaque vegetation (0.5 ms), the water (0.4 ms), the depth and velocity prepass and the screen-space decals (0.4 ms each); by render-block type [`GeneralMkIII`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeGeneralMkIII) took 3.8 ms, and the car paint, the windows, the foliage, the terrain patches, the bark, the characters, the water, and the decals 0.35 to 0.7 ms each.
+
+Nothing in the draw task waits. Wine's share is the uncontended fast path of the engine's own context lock ([`Graphics::AcquireThreadOwnership`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::draw##func-AcquireThreadOwnership) and its siblings take a critical section around each call into Direct3D), not a blocked thread, and the task is one engine fragment on one thread from its start to its end. DXVK's command-stream thread was busy 48% of the time. So the frame at the capital was bound by one thread's CPU time, and most of that time was DXVK recording the engine's state changes: the engine's binds of a vertex constant buffer ([`Graphics::SetVertexProgramConstantBufferNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::draw##func-SetVertexProgramConstantBufferNoMutex)) alone took 1.1 ms, its vertex stream binds 0.5 ms, and its constant-buffer maps 0.45 ms. The instructions DXVK spends that time on are, by the sampled addresses in its `d3d11.dll`, the atomic reference-count increments of a binding that changes, and a pointer chase in a free list: memory traffic, not computation.
+
+What the per-eye submissions cost on the draw task, read off the same samples: the second eye of a render block's per-eye re-issue took 0.32 ms (the water 0.13, the screen-space decals 0.10, the vegetation's hardware-instanced draws 0.08), and the first eye of those blocks 0.57 ms. The draw-level per-eye submissions (the terrain patches' passes, the instanced and indirect re-issues, the split fullscreen passes) carry no marker, but their families come to under 0.7 ms at the capital. The prepasses are not re-issued per eye: no sample in a shadow or reflection pass was inside a re-issue, and the collapse runs `PreDraw` once (see "Why `PreDraw` is outside the collapse" in [single-pass-stereo.md](../stereo/single-pass-stereo.md)).
+
+### The payload's share, and what removing its locks bought
+
+The payload's own instructions were 1.9 ms of the draw task in run 321's first sampled run, 0.66 ms of it on the two mutexes the collapse's viewport split took on every routed draw and 0.29 ms on the census's submission counter. The viewport records are now read through a sequence lock and the per-draw counters bumped with a plain load and store (see "The viewport record" in [single-pass-stereo.md](../stereo/single-pass-stereo.md)), and a routed draw whose viewport slots already hold its split binds nothing. That took the payload's own instructions to 1.2 ms, but most of what it removed reappeared in the next locked instruction: a locked instruction waits for the stores before it to drain, and after DXVK has recorded a call there are many, so removing one moves the wait to the engine's context lock that follows. Interleaving the two payloads at the capital in one session (run 325, four injections each, alternating) put the draw task at 11.70 and 11.50 ms with FSR off and 11.68 and 11.43 ms in single-pass, before and after: a quarter of a millisecond, inside the runs' spread of 10.7 to 12.2 ms. Skipping the redundant viewport binds was worth under a tenth of a millisecond (run 323, interleaved with `single_pass.viewport_bind_cache` off).
+
+## Where the draw task's threads run
+
+A draw task that is memory traffic depends on where it runs. The machine's processor has two dies with eight cores each: one die's cores share a 96 MB L3 (the stacked cache), the other's a 32 MB one, and the scheduler, left to itself, put the draw task and DXVK's command-stream thread on the smaller-cache die most of the time (sampled from `/proc`). Run 325 pinned the whole game process to one die or the other, or left it free, three cycles with the order rotated, at the capital under 72 Hz pacing:
+
+| Cores | Mode | Draw task | Per 1,000 submissions | GPU | Frame 99th percentile |
+|---|---|---|---|---|---|
+| free | single-pass, FSR off | 11.45 | 0.86 | 13.44 | 16.43 |
+| the 32 MB die | single-pass, FSR off | 11.44 | 0.87 | 13.50 | 16.20 |
+| the 96 MB die | single-pass, FSR off | 6.39 | 0.49 | 10.98 | 14.94 |
+| free | single-pass | 11.60 | 0.88 | 13.44 | 17.13 |
+| the 32 MB die | single-pass | 11.53 | 0.89 | 13.50 | 16.66 |
+| the 96 MB die | single-pass | 6.51 | 0.50 | 12.73 | 14.85 |
+
+On the die with the larger cache the draw task takes 56% of the time, for the same submissions: the engine's and DXVK's working set misses the smaller cache. The GPU's span falls with it (13.4 to 11.0 ms with FSR off): the span had been the GPU waiting for commands. `vr.large_cache_cores` (on by default; [`cpu_placement`](../../../payload/src/cpu_placement.rs)) narrows the process's affinity to the cores of the largest L3 when the L3 caches differ in size, and leaves a processor with one size of L3 alone. Threads created afterwards inherit the affinity; the threads the graphics driver created natively before it (its shader compilers and its event handler) keep theirs.
+
+Run 325, the switch on against off in one schedule with the modes rotated, three repeats each, under 72 Hz pacing. Frame is the median, the 99th percentile, and the worst frame; the rest are medians.
+
+| Scene | Mode | Cores | Frame | Game busy | Draw task | GPU | GPU idle | Submissions |
+|---|---|---|---|---|---|---|---|---|
+| capital | single-pass, FSR off | large cache | 13.89 / 14.90 / 28.7 | 3.37 | 6.61 | 11.06 | 2.81 | 13,473 |
+| capital | single-pass, FSR off | free | 13.91 / 19.64 / 31.2 | 5.35 | 11.88 | 13.49 | 0.34 | 13,332 |
+| capital | single-pass | large cache | 13.90 / 14.99 / 28.8 | 3.38 | 6.61 | 12.73 | 1.04 | 12,882 |
+| capital | single-pass | free | 13.85 / 16.33 / 34.3 | 4.61 | 11.36 | 13.47 | 0.35 | 13,127 |
+| capital | multipass | large cache | 13.90 / 15.95 / 28.8 | 3.58 | 8.73 | 12.51 | 1.35 | 21,266 |
+| capital | multipass | free | 41.65 / 45.22 / 47.9 | 8.11 | 18.22 | 20.35 | 21.39 | 21,211 |
+| town | single-pass, FSR off | large cache | 13.90 / 14.40 / 28.0 | 1.65 | 4.16 | 8.37 | 5.52 | 5,802 |
+| town | single-pass, FSR off | free | 13.91 / 14.85 / 28.5 | 2.40 | 6.77 | 10.45 | 3.47 | 6,057 |
+| town | single-pass | large cache | 13.89 / 14.38 / 28.0 | 1.67 | 4.09 | 9.83 | 4.04 | 6,237 |
+| town | single-pass | free | 13.89 / 14.72 / 28.0 | 2.41 | 6.75 | 12.04 | 1.84 | 5,961 |
+| town | multipass | large cache | 13.89 / 15.20 / 28.7 | 1.85 | 4.75 | 9.79 | 4.09 | 8,222 |
+| town | multipass | free | 13.90 / 18.14 / 30.6 | 2.64 | 7.60 | 11.58 | 2.33 | 8,392 |
+| tunnel | single-pass, FSR off | large cache | 13.89 / 14.33 / 27.9 | 1.56 | 3.10 | 8.73 | 5.14 | 5,148 |
+| tunnel | single-pass, FSR off | free | 13.91 / 14.62 / 28.3 | 2.12 | 5.00 | 9.77 | 4.13 | 4,864 |
+| tunnel | single-pass | large cache | 13.89 / 14.34 / 14.7 | 1.51 | 3.04 | 10.54 | 3.33 | 4,928 |
+| tunnel | single-pass | free | 13.88 / 14.66 / 27.8 | 2.10 | 5.01 | 11.52 | 2.29 | 4,881 |
+| tunnel | multipass | large cache | 13.89 / 15.26 / 28.1 | 1.60 | 3.92 | 10.44 | 3.44 | 7,361 |
+| tunnel | multipass | free | 13.88 / 16.54 / 31.2 | 2.34 | 6.21 | 11.80 | 2.06 | 7,678 |
+
+The capital in single-pass now has headroom under 13.9 ms rather than sitting on it: a draw task of 6.6 ms, the GPU idle 1 to 2.8 ms a frame, and a 99th percentile of 14.9 to 15.0 ms with FSR on or off (16.3 and 19.6 ms on the free cores). The capital in multipass, which fell to every third period on the free cores, holds the period too. The game thread's busy time falls by a third as well: the render update and the simulation share the large cache.
+
+Unpaced (run 326, the compositor at 1000 fps, the same schedule), where the frame interval is the frame's cost:
+
+| Scene | Mode | Cores | Frame | Game busy | Draw task | GPU | GPU idle |
+|---|---|---|---|---|---|---|---|
+| capital | single-pass, FSR off | large cache | 9.09 / 13.71 / 17.7 | 3.80 | 6.72 | 8.59 | 0.34 |
+| capital | single-pass, FSR off | free | 13.66 / 21.32 / 24.0 | 11.71 | 12.10 | 13.02 | 0.35 |
+| capital | single-pass | large cache | 10.61 / 16.34 / 17.9 | 5.33 | 6.69 | 10.20 | 0.36 |
+| capital | single-pass | free | 13.82 / 20.76 / 22.7 | 8.99 | 11.88 | 13.35 | 0.36 |
+| capital | multipass | large cache | 11.61 / 16.29 / 24.8 | 4.29 | 9.35 | 11.23 | 0.28 |
+| capital | multipass | free | 22.93 / 31.27 / 33.3 | 8.48 | 17.24 | 18.89 | 4.51 |
+| town | single-pass, FSR off | large cache | 7.26 / 11.59 / 13.6 | 3.25 | 4.23 | 6.93 | 0.33 |
+| town | single-pass, FSR off | free | 8.21 / 13.11 / 17.6 | 2.87 | 6.51 | 7.55 | 0.32 |
+| town | single-pass | large cache | 9.66 / 14.36 / 17.1 | 1.73 | 4.24 | 8.57 | 0.34 |
+| town | single-pass | free | 8.85 / 13.44 / 17.3 | 4.01 | 6.97 | 8.56 | 0.33 |
+| town | multipass | large cache | 8.94 / 13.64 / 19.3 | 3.76 | 5.11 | 8.63 | 0.26 |
+| town | multipass | free | 9.70 / 15.45 / 22.8 | 4.08 | 8.01 | 9.32 | 0.26 |
+| tunnel | single-pass, FSR off | large cache | 9.42 / 14.85 / 18.4 | 2.34 | 3.11 | 8.42 | 0.34 |
+| tunnel | single-pass, FSR off | free | 8.80 / 14.12 / 15.6 | 4.02 | 4.64 | 8.40 | 0.34 |
+| tunnel | single-pass | large cache | 10.64 / 20.62 / 22.0 | 4.20 | 3.17 | 10.25 | 0.35 |
+| tunnel | single-pass | free | 11.28 / 17.71 / 21.5 | 4.02 | 4.97 | 10.26 | 0.35 |
+| tunnel | multipass | large cache | 10.61 / 15.59 / 17.7 | 4.26 | 4.20 | 10.22 | 0.28 |
+| tunnel | multipass | free | 10.67 / 16.13 / 18.6 | 4.59 | 6.44 | 10.25 | 0.27 |
+
+The capital in single-pass costs 10.6 ms a frame on the large cache's cores against 13.8 ms on the free ones, and 9.1 ms with FSR off, with its GPU busy to within 0.4 ms of the frame: the GPU, not the draw task, now limits the heaviest scene on this machine. The town and the tunnel were GPU-bound before and stay so; their draw tasks shrink by a third, and their frame times move within the unpaced runs' pacing noise (see "Unpaced" under [Overlapping the render update](#overlapping-the-render-update), whose 99th percentiles moved the same way).
+
+The sampled draw task with the placement on (run 326, the capital, single-pass, FSR off, unpaced, 13,521 samples, a median of 6.8 ms): DXVK's share fell from 5.5 to 2.9 ms and the game's own code from 1.5 to 0.9 ms, while the engine's context lock in Wine (1.4 ms) and the payload's own work (1.2 ms, plus 0.5 ms of its calls into DXVK) stayed where they were, so the locked instructions and the mod's per-draw bookkeeping are now the larger shares of a smaller task.
+
+### The multipass detour tax
+
+Run 326 also ran multipass in the fresh session before anything installed the stereo draw path's detours, and again after, unpaced, three repeats each. With the placement on, the detours cost 0.74 ms of draw task at the capital (8.61 to 9.35 ms), 0.55 ms at the town, and 0.35 ms at the tunnel; on the free cores 1.8, 0.6, and 0.7 ms. Not made free when single-pass is off: what the detours do for a multipass draw (the census's count, the harness's probes, the water and velocity bookkeeping) is a few hundredths of a millisecond each in the samples, and a path that skipped them would have to know every probe that wants multipass draws.
+
+### The per-eye submissions at the capital
+
+The census at the capital ([`coverage_capital_census_headset.toml`](../../../tools/rendering/experiments/coverage_capital_census_headset.toml), run 326, the second of three frames, the accounting of [single-pass-stereo.md](../stereo/single-pass-stereo.md#accounting-for-the-draw-calls)): 14,314 game calls, 14,978 single-pass submissions, 20,094 multipass submissions. Single-pass submits 664 beyond one per game call:
+
+| Family | How | Extra submissions |
+|---|---|---|
+| `SSDecal` | block re-issue | 170 |
+| `VolumetricTerrainPatch` (tessellated colour, near, and far, the GPU-indirect near basemesh, the detail) | per-eye re-issue | 136 |
+| `VegetationFoliage`, `vegetationfoliage*hwinstanced` | hardware-instanced re-issue inside a block drawn once | 124 |
+| `NvWaterHighEnd` | block re-issue | 122 |
+| `VegetationBark`, `vegetationbark*hwinstanced` | hardware-instanced re-issue inside a block drawn once | 72 |
+| `ParticleRB`, tessellated | per-eye re-issue | 16 |
+| split fullscreen passes, the occluder, the sun, the moon | second run or re-issue | 24 |
+
+No prepass submits anything per eye: every shadow cascade, the reflection passes, and the vegetation and rain prepasses submit once, as the game calls them. At the placed draw task's 0.5 µs a submission, the 664 cost about 0.3 ms, which the samples' 0.3 ms for the second eye of the block re-issues agrees with.
+
+### Correctness
+
+The standing fast suite ran with the previous commit's payload (run 324) and with these changes (run 326). Every scene's depth, albedo, and normals against the isolated eyes and against multipass stayed within a few percent of the previous payload's or fell, and the final image of single-pass against multipass stayed within the repeat's range (the town 53,323 and 61,645 pixels per eye against 51,491 and 59,585 before; the capital at night 213 and 205 against 219 and 206; the meadow, the shore, and the tunnel, which came out high against their isolated references in the first schedule, back within their earlier values in a repeat: the meadow 159,963 and 199,192 against 154,712 and 195,602, the tunnel 2,378 and 5,957 against 3,769 and 9,296). The isolated references themselves moved between schedules by up to 700,000 pixels at the shore, so the comparisons against them carry that noise. An intermediate build that recorded the engine's viewport bind after the eye camera read it put the left eye's final image 800,000 pixels off in every town view while leaving the G-buffer untouched; the suite caught it and the order is fixed. The placement changes no image.
+
+## What is left
+
+The capital in single-pass at the headset's size now runs at 10.6 ms a frame unpaced (9.1 ms with FSR off) and holds 72 Hz with a 99th percentile of 15 ms; the GPU limits it. By expected saving, largest first:
+
+1. **FSR's GPU time**, 2.1 ms a frame, now on the critical path at the capital (see item 3 of the ranked opportunities).
+2. **The engine's context lock**, 1.3 to 1.4 ms of the draw task in Wine's critical-section fast paths, and the locked instructions generally: each waits for the runtime's recorded stores to drain. The engine takes the lock around nearly every call into Direct3D; it is the engine's, not the mod's, to remove.
+3. **The payload's per-draw work**, about 1.2 ms of its own instructions and 0.5 ms of its own calls into DXVK on the placed draw task, spread over many small sites (the `cb13` pins of the instanced re-issue, the viewport record's reads, the water and velocity probes, the census); no one site is above 0.15 ms.
+4. **The per-eye submissions**, 664 at the capital, about 0.3 ms on the placed draw task (the table above); converting the decals, the terrain patches, the water, and the vegetation's hardware-instanced draws needs the shader and layout work "What blocks the largest families" in [single-pass-stereo.md](../stereo/single-pass-stereo.md) describes.
+5. **The multipass detour tax**, 0.35 to 0.74 ms on the placed draw task, gone whenever single-pass is on.
+
+On a processor with one size of L3 the placement does nothing, and how long the draw task takes there depends on how much of its working set that cache holds; where it limits the frame, items 2 to 4 are the levers.
+
 ## The mod's own cost per draw
 
 With `--detour-timing` (run 301), the five draw entry detours took 4.3 ms per frame at the capital in single-pass over 12,960 calls, of which 1.0 ms was the forwarding calls into DXVK (13,311 calls at 75 ns each). A clock-read pair costs 120 ns under Wine, and the timing makes one pair per detour and per forward, 3.2 ms of the remaining 3.3 ms; what is left, the detours' own work around the draws, is under 0.1 ms per frame at the capital (5 ns per draw) and 0.35 ms at the town (59 ns per draw), at the resolution this method allows. In multipass the remainder was within the clock reads' own cost.
 
 The whole set of stereo draw-path detours (the draw entries, the shader binds, the viewports, and the constant stager) costs more than the draw entries' own work: in run 300, multipass in a fresh session with no detours installed took a draw task of 15.3 ms at the capital and 7.3 ms at the town, and the same scenes with the detours installed (as every session that has run single-pass has them) 17.1 and 7.9 ms, so 60 to 90 ns per draw and 0.5 to 1.9 ms per frame in multipass. Single-pass needs them.
 
-The forwarding call itself is cheap: DXVK records a draw in 75 ns on the draw task and replays it on its command-stream thread. The draw task's 0.9 µs per submission is the engine's walk of its render blocks and its state changes around each draw.
+The forwarding call itself is cheap: DXVK records a draw in 75 ns on the draw task and replays it on its command-stream thread. The draw task's 0.9 µs per submission was read here as the engine's walk of its render blocks; sampling it ([above](#where-the-draw-tasks-time-goes)) shows most of it is DXVK recording the engine's state changes, and that the mod's own work is larger than these timers suggest: 1.2 to 1.9 ms of its own instructions and 0.7 ms of its own calls into DXVK at the capital in single-pass, the clock-read pairs of `--detour-timing` having hidden most of it in their own cost.
 
 ## The ranked opportunities
 
 By expected saving at the headset's size on this machine, largest first:
 
 1. **Overlap the next frame's render update with the draw task.** Done (`vr.overlap_render_update`, [below](#overlapping-the-render-update)): at the capital single-pass went from 19.1 to 14.2 ms at the 1000 fps pace, and under 72 Hz pacing from every third display period to every one.
-2. **The draw task's CPU time**, which the overlap above leaves as the floor: 12.0 ms for 12,750 submissions at the capital. Converting the families still re-issued per eye takes 0.5 to 1.8 ms of it (above). The rest is the engine's own per-draw work, which the mod can only shorten by issuing fewer draws.
+2. **The draw task's CPU time**, which the overlap above leaves as the floor: 12.0 ms for 12,750 submissions at the capital. Done for this machine's kind of processor: on the cores of the larger L3 the same draw task takes 6.6 ms (`vr.large_cache_cores`, [above](#where-the-draw-tasks-threads-run)). What remains of it is ranked in [What is left](#what-is-left).
 3. **FSR's GPU time**, 2.2 to 2.4 ms per frame at the headset's size in both modes, 22 to 25% of the GPU's frame in the scenes the GPU limits, and growing with the pixels (4.7 ms at twice them). It runs at the full render size as an anti-aliasing and sharpening pass; rendering below the headset's size and letting FSR upscale, or a cheaper resolve, would buy back most of it on a GPU-bound headset, at a cost in image quality. On this GPU every scene the GPU limits already fits 13.9 ms. Run 321 measured FSR off against on in single-pass under 72 Hz pacing: the seam is 1.9 to 2.1 ms, and at the capital FSR turns the 1% low from 17.8 into 27 ms, while unjittered at 1:1 it renders further from a supersampled reference than the game's SMAA (see "Verdict" in [fsr.md](../rendering/fsr.md)).
-4. **The multipass detour tax**, 0.5 to 1.9 ms per frame, paid by multipass whenever single-pass has run in the session. It goes away when single-pass becomes the default.
-5. **The mod's own CPU work** is not where the time goes: its scoped work is 0.4 to 1.0 ms per frame across all threads (`mod_ms`), and its per-draw work in the draw detours under 0.4 ms.
+4. **The multipass detour tax**, 0.5 to 1.9 ms per frame, paid by multipass whenever single-pass has run in the session; 0.35 to 0.74 ms on the large cache's cores ([above](#the-multipass-detour-tax)). It goes away when single-pass becomes the default.
+5. **The mod's own CPU work**: its scoped work is 0.4 to 1.0 ms per frame across all threads (`mod_ms`). Its per-draw work in the draw path is larger than the detour timers said, about 1.7 ms of the capital's draw task by sampling ([above](#where-the-draw-tasks-time-goes)).
 
-With the overlap in, the capital in single-pass is limited by the GPU at this machine's 13.7 ms, so the next gains there are the GPU's (FSR first), and the draw task's CPU time becomes the floor again only on a faster GPU.
+With the overlap and the placement in, the capital in single-pass is limited by the GPU at 10.6 ms a frame unpaced, so the next gains there are the GPU's (FSR first); see [What is left](#what-is-left).
 
 ## Under pacing at 72 Hz
 

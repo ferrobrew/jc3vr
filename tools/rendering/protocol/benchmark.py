@@ -59,6 +59,7 @@ class BenchmarkRequest:
     resolution_scale: float | None = None
     gpu: bool = True
     detour_timing: bool = False
+    sample_draw_task: bool = False
     install_draw_detours: bool = True
     recapture_camera: bool = False
     restore: bool = True
@@ -68,6 +69,8 @@ class BenchmarkRequest:
     # FSR and its hybrid decode for the run; None runs them as shipped.
     fsr: bool | None = None
     fsr_hybrid_velocity: bool | None = None
+    # `vr.large_cache_cores` for the run; None keeps the session's.
+    large_cache_cores: bool | None = None
     camera: CameraPath = field(default_factory=CameraPath)
     command: Command = field(default=Command.BENCHMARK, init=False)
     # The channel validates these on configuration acknowledgements only.
@@ -85,7 +88,7 @@ class BenchmarkRequest:
             raise ProtocolError(f"benchmark: record_seconds must be within (0, {MAX_RECORD_SECONDS}]")
         if self.resolution_scale is not None and not 0.1 <= self.resolution_scale <= 4.0:
             raise ProtocolError("benchmark: resolution_scale must be within [0.1, 4.0]")
-        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity"):
+        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "large_cache_cores"):
             if getattr(self, name) is not None and type(getattr(self, name)) is not bool:
                 raise ProtocolError(f"benchmark: {name} must be a boolean")
         if self.switches and self.mode != BenchmarkMode.SINGLE_PASS:
@@ -105,7 +108,10 @@ class BenchmarkRequest:
                  f"restore = {json.dumps(self.restore)}"]
         if self.resolution_scale is not None:
             lines.append(f"resolution_scale = {json.dumps(float(self.resolution_scale))}")
-        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity"):
+        # Only when asked, so a payload from before the sampler still accepts the request.
+        if self.sample_draw_task:
+            lines.append("sample_draw_task = true")
+        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "large_cache_cores"):
             if getattr(self, name) is not None:
                 lines.append(f"{name} = {json.dumps(getattr(self, name))}")
         if self.switches:

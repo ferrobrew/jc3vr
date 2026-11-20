@@ -44,6 +44,12 @@ fullscreen passes use. Without that last reset the lighting pass would inherit t
 previous geometry draw left bound and light one eye only, leaving the other eye's opaque geometry
 black.
 
+#### The viewport record
+
+What the split is cut from and what the slots hold live in one record (`viewport_record`), read on every routed draw: the last scene-sized viewport the engine bound, the engine's latest bind of any size, and the pair the two slots hold now. Every bind of the slots writes it: the engine's through `rs_set_viewports_detour` (whatever its count; a set of one slot or more than two leaves the pair unknown), and the mod's own through the trampoline where it makes them. A sequence lock makes the read a few plain loads, where a lock taken on every draw costs a locked instruction that waits for the runtime's stores to drain. The eye camera's per-target rows (`eye_camera::viewport_changed`) read the record, so an engine bind is recorded before they are laid out.
+
+With `single_pass.viewport_bind_cache` on, `ensure_collapse_viewport` binds nothing when the slots already hold the pair it wants, which is most draws: a pass's patched draws all want the same split. The pair is forgotten at every pass boundary, so a change no detour saw (a state reset, which nothing calls inside a dispatch) cannot outlive the pass it happened in. At the capital the skipped binds were worth under a tenth of a millisecond of the draw task (run 323, interleaved with the switch off): DXVK's viewport bind is cheap.
+
 Without the collapse the routed range is just the G-buffer (`..RP_FIRST_SCENE`), which is a
 diagnostic shape rather than a usable one.
 
@@ -906,6 +912,7 @@ is marked with its actual default.
 | `single_pass.moon_per_eye` | On | Promotes the moon's non-indexed draw to one two-instance draw routed to the eye halves, with its far-plane depth kept through the reprojection (see "The moon and the water reflection planes, once for both eyes"). Needs `single_pass.reproject`. |
 | `single_pass.collapse_viewport_follows_target` | On | Derives the eye halves from the bound render target rather than the scene viewport (mechanism 4). |
 | `single_pass.uniform_viewport_slots` | On | Puts both viewport slots back to one region once the G-buffer range ends, so a patched shader's instance parity is a no-op in the passes that are not eye-split. |
+| `single_pass.viewport_bind_cache` | On | Skips a routed draw's viewport bind when the two slots already hold what it wants (see "The viewport record"). Applies at once. |
 
 ### Per-eye fullscreen and screen-space passes
 

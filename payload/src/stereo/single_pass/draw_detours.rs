@@ -80,7 +80,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
             if collapse_active() {
                 ensure_collapse_viewport(context, CollapseViewport::Split);
             }
-            PATCHED_DRAWS.fetch_add(1, Ordering::Relaxed);
+            bump(&PATCHED_DRAWS);
             if let Some(instanced) = DRAW_INDEXED_INSTANCED.get() {
                 // Through the trampoline, not the detoured entry: the promotion is the mod's own
                 // draw, so it must not be counted as exposure by [`draw_indexed_instanced_detour`].
@@ -101,7 +101,7 @@ pub(super) unsafe extern "system" fn draw_indexed_detour(
                 return;
             }
         } else {
-            UNPATCHED_DRAWS.fetch_add(1, Ordering::Relaxed);
+            bump(&UNPATCHED_DRAWS);
             if collapse_active() {
                 // The shader was not rewritten, so it writes no `SV_ViewportArrayIndex` and always
                 // rasterises to slot 0. Left to the split binding it would appear in the left eye
@@ -188,7 +188,7 @@ pub(super) unsafe extern "system" fn draw_detour(
 
     if collapse_active() && in_gbuffer_range() && per_eye_reissue_eye().is_none() {
         let pass = current_pass_id();
-        SLOT13_BY_PASS[usize::from(pass)].fetch_add(1, Ordering::Relaxed);
+        bump(&SLOT13_BY_PASS[usize::from(pass)]);
         let patched = BOUND_VS_PATCHED.load(Ordering::Relaxed);
         let flags = config_flags();
         if is_geometry_slot13_pass(pass) {
@@ -422,7 +422,7 @@ fn promote_non_indexed(context: *mut c_void, vertex_count: u32, start_vertex: u3
         return false;
     }
     ensure_collapse_viewport(context, CollapseViewport::Split);
-    PATCHED_DRAWS.fetch_add(1, Ordering::Relaxed);
+    bump(&PATCHED_DRAWS);
     velocity::submit(
         context,
         "draw_promoted",
@@ -591,7 +591,7 @@ pub(super) fn indirect_per_eye(context: *mut c_void, submit: &dyn Fn(Option<usiz
     }
     // Without a recorded full viewport `ensure_collapse_viewport` is a no-op, so the loop would submit
     // the draw twice into one region -- doubled geometry rather than a split.
-    if COLLAPSE_FULL_VIEWPORT.lock().is_none() {
+    if viewport_record::scene_viewport().is_none() {
         INDIRECT_FORWARDED.fetch_add(1, Ordering::Relaxed);
         return false;
     }
@@ -711,7 +711,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
         return;
     }
     if active() && per_eye_reissue_eye().is_none() {
-        INSTANCED_TOTAL.fetch_add(1, Ordering::Relaxed);
+        bump(&INSTANCED_TOTAL);
         let patched = BOUND_VS_PATCHED.load(Ordering::Relaxed);
         let in_range = in_gbuffer_range();
         if patched {
@@ -720,7 +720,7 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
             } else {
                 &INSTANCED_RANGE_OUT_PATCHED
             };
-            bucket.fetch_add(1, Ordering::Relaxed);
+            bump(bucket);
         }
         if patched && in_range && collapse_active() {
             let flags = config_flags();
@@ -772,7 +772,7 @@ pub(super) fn hw_instanced_once(
     let Some(doubled) = instance_count.checked_mul(2) else {
         return false;
     };
-    if COLLAPSE_FULL_VIEWPORT.lock().is_none() || vertex_shader_feeds_another_stage(ctx) {
+    if viewport_record::scene_viewport().is_none() || vertex_shader_feeds_another_stage(ctx) {
         return false;
     }
     // SAFETY: reads the bound input layout of the live immediate context.
@@ -808,7 +808,7 @@ pub(super) fn hw_instanced_once(
 /// as it was found rather than to the recorded full width, so a following draw that inherits the
 /// viewport (an indirect draw, which nothing detours) sees no trace of the pin.
 pub(super) fn instanced_per_eye(submit: &dyn Fn()) -> bool {
-    let Some(full) = *COLLAPSE_FULL_VIEWPORT.lock() else {
+    let Some(full) = viewport_record::scene_viewport() else {
         return false;
     };
     let Some(d3d) = EngineContext::get() else {

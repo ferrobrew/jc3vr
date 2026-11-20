@@ -17,6 +17,7 @@
 pub(crate) mod detour_timing;
 mod request;
 mod sample;
+pub(crate) mod sampler;
 
 use std::{
     cell::Cell,
@@ -50,6 +51,7 @@ use crate::{
         benchmark::{
             request::{BenchmarkMode, CameraPath},
             sample::{COLUMN_COUNT, COLUMNS, Reading, frame_row},
+            sampler::{DrawTaskSamples, Sampler},
         },
         visual::{OrientationOffset, TranslationOffset, overrides::SinglePassOverrides},
     },
@@ -236,6 +238,7 @@ struct Recording {
     previous: Reading,
     previous_at: Instant,
     dropped_before: u64,
+    sampler: Option<Sampler>,
 }
 
 /// What a completed run publishes besides its request.
@@ -246,6 +249,7 @@ struct RunResult {
     slots: Vec<SlotTotal>,
     environment: Environment,
     timing: RunTiming,
+    samples: Option<DrawTaskSamples>,
 }
 
 fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<Run, String> {
@@ -272,6 +276,9 @@ fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<R
         }
         if let Some(overlap) = request.overlap_render_update {
             next.vr.overlap_render_update = overlap;
+        }
+        if let Some(large_cache_cores) = request.large_cache_cores {
+            next.vr.large_cache_cores = large_cache_cores;
         }
         if let Some(fsr) = request.fsr {
             next.fsr.enabled = fsr;
@@ -350,6 +357,7 @@ impl Run {
                     previous: reading,
                     previous_at: now,
                     dropped_before: GPU_DROPPED.load(Ordering::Relaxed),
+                    sampler: self.request.sample_draw_task.then(Sampler::start),
                 }));
                 None
             }
@@ -361,6 +369,7 @@ impl Run {
                     previous,
                     previous_at,
                     dropped_before,
+                    sampler,
                 } = recording.as_mut();
                 let reading = read();
                 let frame_ns = duration_ns(now - *previous_at);
@@ -377,6 +386,7 @@ impl Run {
                 }
                 GPU_RECORDING.store(false, Ordering::Relaxed);
                 detour_timing::set_armed(false);
+                let samples = sampler.take().and_then(Sampler::finish);
                 let slots = slot_totals(first, previous);
                 let result = RunResult {
                     frames: std::mem::take(&mut self.frames),
@@ -392,6 +402,7 @@ impl Run {
                         epoch_start: *epoch_start,
                         epoch_end: epoch_seconds(),
                     },
+                    samples,
                 };
                 Some(Ok(result))
             }
@@ -532,6 +543,8 @@ struct Environment {
     foveation_enabled: bool,
     far_field_enabled: bool,
     overlap_render_update: bool,
+    /// The cores `vr.large_cache_cores` narrowed the process to, if it did.
+    large_cache_mask: Option<u64>,
     clock_pair_ns: f64,
 }
 
@@ -569,6 +582,7 @@ impl Environment {
             foveation_enabled: foveation,
             far_field_enabled: far_field,
             overlap_render_update: overlap,
+            large_cache_mask: crate::cpu_placement::applied_mask().map(|mask| mask as u64),
             clock_pair_ns: detour_timing::clock_pair_ns(10_000),
         }
     }
@@ -594,11 +608,13 @@ struct RequestEcho<'a> {
     resolution_scale: Option<f32>,
     gpu: bool,
     detour_timing: bool,
+    sample_draw_task: bool,
     install_draw_detours: bool,
     switches: &'a SinglePassOverrides,
     overlap_render_update: Option<bool>,
     fsr: Option<bool>,
     fsr_hybrid_velocity: Option<bool>,
+    large_cache_cores: Option<bool>,
     camera: CameraPath,
 }
 
@@ -611,11 +627,13 @@ impl<'a> From<&'a BenchmarkRequest> for RequestEcho<'a> {
             resolution_scale: request.resolution_scale,
             gpu: request.gpu,
             detour_timing: request.detour_timing,
+            sample_draw_task: request.sample_draw_task,
             install_draw_detours: request.install_draw_detours,
             switches: &request.switches,
             overlap_render_update: request.overlap_render_update,
             fsr: request.fsr,
             fsr_hybrid_velocity: request.fsr_hybrid_velocity,
+            large_cache_cores: request.large_cache_cores,
             camera: request.camera,
         }
     }
@@ -646,6 +664,8 @@ struct BenchmarkAck<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     gpu: Option<GpuRecords>,
     slots: &'a [SlotTotal],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    draw_task_samples: Option<&'a DrawTaskSamples>,
 }
 
 fn gpu_records(samples: &[GpuDispatchSample], dropped: u64) -> GpuRecords {
@@ -691,6 +711,7 @@ fn publish(request: &BenchmarkRequest, result: &RunResult) {
             .gpu
             .then(|| gpu_records(&result.gpu, result.gpu_dropped)),
         slots: &result.slots,
+        draw_task_samples: result.samples.as_ref(),
     };
     tracing::info!(
         label = request.label,
@@ -715,6 +736,7 @@ fn publish_failure(request: &BenchmarkRequest, error: String) {
         frames: Vec::new(),
         gpu: None,
         slots: &[],
+        draw_task_samples: None,
     };
     write_ack(request, &ack);
 }

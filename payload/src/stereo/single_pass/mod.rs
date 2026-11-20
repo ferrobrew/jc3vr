@@ -49,7 +49,7 @@ use windows::{
     core::{IUnknown, Interface},
 };
 
-use crate::{config::Config, hooks::suspend};
+use crate::{config::Config, hooks::suspend, util::bump};
 
 /// The result of the DXVK viewport-routing capability probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -98,6 +98,7 @@ mod static_lights;
 mod sun;
 pub(crate) mod vegetation_once;
 mod viewport;
+pub(crate) mod viewport_record;
 mod water_fragment_state;
 mod water_gpu_probe;
 pub(crate) mod water_pixel_variants;
@@ -362,7 +363,7 @@ pub fn collapse_ui_eye_override() -> Option<(D3D11_VIEWPORT, Matrix4)> {
     if eye == NO_UI_EYE || !collapse_active() {
         return None;
     }
-    let full = (*COLLAPSE_FULL_VIEWPORT.lock())?;
+    let full = viewport_record::scene_viewport()?;
     let half = full.Width / 2.0;
     let viewport = D3D11_VIEWPORT {
         TopLeftX: full.TopLeftX + eye as f32 * half,
@@ -381,6 +382,7 @@ pub fn set_ui_viewport_raw(context: *mut c_void, viewport: &D3D11_VIEWPORT) {
         set_viewport_slots_uniform(false);
         // SAFETY: `context` is the live immediate context; the trampoline is the original function.
         unsafe { detour.call(context, 1, std::slice::from_ref(viewport).as_ptr()) };
+        viewport_record::forget_bound();
     }
 }
 
@@ -471,6 +473,8 @@ const NO_PASS: u8 = 0xFF;
 /// module can classify, so it reads as [`NO_PASS`] rather than truncating into a real pass's slot.
 pub fn set_current_pass(pass: i16) -> u8 {
     let pass = u8::try_from(pass).unwrap_or(NO_PASS);
+    // A pass boundary: whatever the slots held, the next routed draw binds its viewports afresh.
+    viewport_record::forget_bound();
     CURRENT_PASS.swap(pass, Ordering::Relaxed)
 }
 
@@ -579,6 +583,7 @@ pub fn log_draw_split(first: u32, last: u32) {
     let unpatched = UNPATCHED_DRAWS.swap(0, Ordering::Relaxed);
     let split = VIEWPORT_SPLIT.swap(0, Ordering::Relaxed);
     let dup = VIEWPORT_DUP.swap(0, Ordering::Relaxed);
+    let skipped = VIEWPORT_BINDS_SKIPPED.swap(0, Ordering::Relaxed);
     let in_patched = INSTANCED_RANGE_PATCHED.swap(0, Ordering::Relaxed);
     let out_patched = INSTANCED_RANGE_OUT_PATCHED.swap(0, Ordering::Relaxed);
     let indirect_reissued = INDIRECT_REISSUED.swap(0, Ordering::Relaxed);
@@ -617,7 +622,8 @@ pub fn log_draw_split(first: u32, last: u32) {
          instanced while it ran: {in_patched} patched in-range, {out_patched} patched out-of-range | \
          indirect: {indirect_reissued} re-issued per eye, {indirect_forwarded} forwarded | \
          hardware-instanced: {hw_once} once through a twin, {hw_untwinned} untwinned | \
-         torn {torn} ({torn_total} this session) | viewports: {split} split, {dup} identical-dup | \
+         torn {torn} ({torn_total} this session) | viewports: {split} split, {dup} identical-dup, {skipped} binds \
+         skipped as already bound | \
          recorded VS={} | CreateVertexShader: pending={} reacq[patched={} cb13={} no-refs={} err={}] | \
          census[patched={} no-refs={} deferred={} errored={}] | slot-13 by pass: [{slot13}]",
         s.recorded_vs,
@@ -881,6 +887,9 @@ static INSTANCED_RANGE_PATCHED: AtomicUsize = AtomicUsize::new(0);
 static INSTANCED_RANGE_OUT_PATCHED: AtomicUsize = AtomicUsize::new(0);
 static VIEWPORT_SPLIT: AtomicUsize = AtomicUsize::new(0);
 static VIEWPORT_DUP: AtomicUsize = AtomicUsize::new(0);
+/// Routed draws whose viewport slots already held what they wanted, so `ensure_collapse_viewport`
+/// bound nothing.
+static VIEWPORT_BINDS_SKIPPED: AtomicUsize = AtomicUsize::new(0);
 /// How often [`unify_viewport_slots`] had to put a split slot pair back to one region: the number of
 /// windows in which an out-of-range patched draw would otherwise have lost its odd-parity instances.
 static VIEWPORT_UNIFIED: AtomicUsize = AtomicUsize::new(0);
@@ -915,36 +924,24 @@ static CVS_REACQ_CB13: AtomicUsize = AtomicUsize::new(0);
 static CVS_REACQ_NOREFS: AtomicUsize = AtomicUsize::new(0);
 static CVS_REACQ_ERR: AtomicUsize = AtomicUsize::new(0);
 
-/// The last full (unsplit) viewport bound during a collapsed camera scene, recorded by
-/// [`rs_set_viewports_detour`] so [`ensure_collapse_viewport`] can derive the L/R eye halves at draw
-/// time. `None` until the scene's first viewport bind.
-///
-/// Deliberately *not* cleared at the end of the G-buffer range, unlike [`CURRENT_M_EYE`]: the
-/// post-draw UI overlay ([`collapse_ui_eye_override`]) reads it to place each eye's HUD quad, and that
-/// runs long after the range. Every consumer that must not see a stale value gates on
-/// [`in_gbuffer_range`] instead.
-static COLLAPSE_FULL_VIEWPORT: Mutex<Option<D3D11_VIEWPORT>> = Mutex::new(None);
+// The collapse's viewport records live in `viewport_record`. The scene's (the last scene-sized
+// bind, the full width the eye halves are cut from) is deliberately *not* cleared at the end of the
+// G-buffer range, unlike [`CURRENT_M_EYE`]: the post-draw UI overlay ([`collapse_ui_eye_override`])
+// reads it to place each eye's HUD quad, and that runs long after the range. Every consumer that must
+// not see a stale value gates on [`in_gbuffer_range`] instead.
+//
+// The engine's (its latest bind, whatever its size) exists alongside the scene's because several
+// passes redirect their draws to a reduced-resolution off-screen target -- the shared
+// quarter-resolution buffer the low-resolution clouds, the low-resolution particles, and the
+// volumetric spot-light cones all render into, and the downsampled depth buffer -- and a draw into a
+// `W x H/2` target handed a `2W x H` viewport is magnified 2x about the target's origin and cropped,
+// which is a 2x motion gain as well. It is always the live bind, so the halves derived from it are
+// the halves of whatever target is actually bound.
 
 pub(crate) fn patch_camera_sources(eye: usize) -> Option<(D3D11_VIEWPORT, usize)> {
-    let full = (*COLLAPSE_FULL_VIEWPORT.lock())?;
+    let full = viewport_record::scene_viewport()?;
     Some((eye_half_viewport(full, eye), CB13.lock().buffer_ptr()?))
 }
-
-/// The viewport the **engine** last bound during a collapsed camera scene, whatever its size, recorded
-/// by [`rs_set_viewports_detour`].
-///
-/// [`COLLAPSE_FULL_VIEWPORT`] deliberately records only *scene-sized* binds, because the eye halves
-/// were derived from it and following a half-resolution post target would have mis-split the scene.
-/// That is right for the scene notion and wrong for the split: several passes redirect their draws to
-/// a reduced-resolution off-screen target -- the shared quarter-resolution buffer the low-resolution
-/// clouds, the low-resolution particles, and the volumetric spot-light cones all render into, and the
-/// downsampled depth buffer -- and a draw into a `W x H/2` target handed a `2W x H` viewport is
-/// magnified 2x about the target's origin and cropped, which is a 2x motion gain as well.
-///
-/// So this record exists alongside rather than replacing: it is always the live bind, so it cannot go
-/// stale the way a single shared record would, and the halves derived from it are the halves of
-/// whatever target is actually bound.
-static CURRENT_ENGINE_VIEWPORT: Mutex<Option<D3D11_VIEWPORT>> = Mutex::new(None);
 /// The two per-eye reprojection matrices `M_eye` (`clip_eye = M_eye · clip_center`), published each
 /// view by [`compute_dual_eye_rows`]. The terrain-detail render-block intercept reads them to build a
 /// per-eye `cb1` on the CPU (the detail draw is GPU-indirect, so it cannot be instance-doubled).

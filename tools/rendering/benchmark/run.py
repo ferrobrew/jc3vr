@@ -35,6 +35,7 @@ class Mode:
     overlap_render_update: bool | None = None
     fsr: bool | None = None
     hybrid_velocity: bool | None = None
+    large_cache_cores: bool | None = None
 
     @classmethod
     def plain(cls, mode: BenchmarkMode) -> "Mode":
@@ -43,7 +44,7 @@ class Mode:
     @classmethod
     def variant(cls, variant: Variant) -> "Mode":
         return cls(variant.name, variant.base, variant.switches, variant.overlap_render_update,
-                   variant.fsr, variant.hybrid_velocity)
+                   variant.fsr, variant.hybrid_velocity, variant.large_cache_cores)
 
 
 @dataclass(frozen=True)
@@ -61,6 +62,8 @@ class Options:
     # Recorded in each result, since the payload cannot see it: the null compositor's pace.
     compositor_fps: int | None = None
     session: int | None = None
+    # Sample where the draw task's time goes (slows the frames it measures; a run of its own).
+    sample_draw_task: bool = False
 
 
 def schedule(modes: tuple[Mode, ...], repeats: int, scales) -> list[tuple[float | None, int, Mode]]:
@@ -98,10 +101,12 @@ def run_scene(session, scene: BenchmarkScene, modes: tuple[Mode, ...], options: 
             id=f"b{uuid.uuid4().hex[:12]}", label=label, mode=mode.mode,
             record_seconds=options.record_seconds, warmup_seconds=options.warmup_seconds,
             resolution_scale=scale, gpu=options.gpu, detour_timing=options.detour_timing,
+            sample_draw_task=options.sample_draw_task,
             install_draw_detours=options.install_draw_detours,
             recapture_camera=index == 0, restore=index == len(steps) - 1,
             switches=mode.switches, overlap_render_update=mode.overlap_render_update,
-            fsr=mode.fsr, fsr_hybrid_velocity=mode.hybrid_velocity, camera=scene.camera)
+            fsr=mode.fsr, fsr_hybrid_velocity=mode.hybrid_velocity,
+            large_cache_cores=mode.large_cache_cores, camera=scene.camera)
         LOG.info("benchmark: %s (%d of %d)", label, index + 1, len(steps))
         began = time.monotonic()
         with ThreadSampler(session.pid) as sampler:
@@ -118,6 +123,7 @@ def run_scene(session, scene: BenchmarkScene, modes: tuple[Mode, ...], options: 
                     "base_mode": mode.mode.value, "switches": dict(mode.switches),
                     "overlap_render_update": mode.overlap_render_update,
                     "fsr": mode.fsr, "hybrid_velocity": mode.hybrid_velocity,
+                    "large_cache_cores": mode.large_cache_cores,
                     "resolution_scale": scale, "repeat": repeat, "label": label,
                     "camera": scene.camera.to_wire(), "seconds": round(time.monotonic() - began, 2)},
             "session": {"number": options.session, "compositor_fps": options.compositor_fps},

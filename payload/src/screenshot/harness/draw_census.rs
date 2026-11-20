@@ -35,6 +35,7 @@ use crate::{
             vertex_identity_lookup,
         },
     },
+    util::bump,
 };
 
 /// The census of one frame, as the capture metadata carries it.
@@ -204,7 +205,7 @@ pub(crate) unsafe fn on_call(kind: RawDrawKind, context: *mut c_void) {
 /// Record one submission the draw path made for the open call. `promoted` marks the instance-doubled
 /// promotion of a single-instance draw.
 pub(crate) fn on_submission(promoted: bool) {
-    SUBMISSIONS.fetch_add(1, Ordering::Relaxed);
+    bump(&SUBMISSIONS);
     if !RECORDING.load(Ordering::Acquire) {
         return;
     }

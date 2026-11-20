@@ -700,6 +700,10 @@ pub struct SinglePassConfig {
     /// then rasterises into the other half. Slot 0 is never touched, so this can only make dropped
     /// instances reappear, never move what already rendered. Requires the collapse. On by default.
     pub uniform_viewport_slots: bool,
+    /// Skip the per-draw viewport bind of a routed draw when the two viewport slots already hold
+    /// what it wants: every bind of the slots is recorded, the engine's and the mod's, so a pass's
+    /// patched draws bind the split once rather than once each. Applies at once. On by default.
+    pub viewport_bind_cache: bool,
 }
 
 /// Stereo rendering toggles. The live per-eye runtime state is [`crate::stereo::StereoState`].
@@ -947,6 +951,7 @@ impl SinglePassConfig {
             clustered_per_eye: true,
             clustered_per_eye_light_view: true,
             uniform_viewport_slots: true,
+            viewport_bind_cache: true,
         }
     }
 }

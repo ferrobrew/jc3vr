@@ -825,6 +825,15 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      reflections, post) keeps its odd-numbered instances instead of routing them into \
                      the other eye's half. Slot 0 is never changed.",
                 );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.viewport_bind_cache,
+                    "Skip viewport binds the slots already hold",
+                )
+                .on_hover_text(
+                    "Records every bind of the two viewport slots, the engine's and the mod's, and \
+                     skips a routed draw's bind when the slots already hold what it wants, so a \
+                     pass's patched draws bind the eye split once rather than once each.",
+                );
             });
         });
 

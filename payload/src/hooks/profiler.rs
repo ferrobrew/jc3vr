@@ -106,4 +106,5 @@ fn change_render_block_type(
         .call(this, ctx, prev, next, inout_count);
     crate::screenshot::harness::stages::velocity::type_switch(Some(next));
     crate::screenshot::harness::draw_census::type_switch(Some(next));
+    crate::testing::benchmark::sampler::note_block_type(next);
 }

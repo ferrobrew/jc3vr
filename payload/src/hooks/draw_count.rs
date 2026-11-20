@@ -21,6 +21,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     debug::trace::{DrawCounts, TraceEvent, TraceState},
     hooks::graphics_engine::{clustered_lighting, reconstruction},
+    util::bump,
 };
 
 // Per-pass tallies: bumped alongside the global per-eye counters, then read + reset on each
@@ -58,20 +59,20 @@ static TOTAL_DRAWS: AtomicU64 = AtomicU64::new(0);
 static TOTAL_DISPATCHES: AtomicU64 = AtomicU64::new(0);
 
 fn bump_draw() {
-    TOTAL_DRAWS.fetch_add(1, Ordering::Relaxed);
-    DRAW_COUNTS.draw.fetch_add(1, Ordering::Relaxed);
+    bump(&TOTAL_DRAWS);
+    bump(&DRAW_COUNTS.draw);
     PASS_DRAW.with(|c| c.set(c.get() + 1));
 }
 
 fn bump_indexed() {
-    TOTAL_DRAWS.fetch_add(1, Ordering::Relaxed);
-    DRAW_COUNTS.draw_indexed.fetch_add(1, Ordering::Relaxed);
+    bump(&TOTAL_DRAWS);
+    bump(&DRAW_COUNTS.draw_indexed);
     PASS_INDEXED.with(|c| c.set(c.get() + 1));
 }
 
 fn bump_dispatch() {
-    TOTAL_DISPATCHES.fetch_add(1, Ordering::Relaxed);
-    DRAW_COUNTS.dispatch.fetch_add(1, Ordering::Relaxed);
+    bump(&TOTAL_DISPATCHES);
+    bump(&DRAW_COUNTS.dispatch);
     PASS_DISPATCH.with(|c| c.set(c.get() + 1));
 }
 
