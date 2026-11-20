@@ -891,6 +891,7 @@ is marked with its actual default.
 | `single_pass.water_camera_per_eye` | On | On top of `single_pass.nvwater_per_eye`: each eye's water re-issue moves the fragment `GlobalConstants` camera position (and the matching sun-shadow cascade translation) to that eye, the staging `single_pass.fullscreen_camera_per_eye` gives a split fullscreen pass, because the water's Fresnel, reflection, and specular view vector is measured from it. |
 | `single_pass.ssdecal_geometry_per_eye` | On | The screen-space decal box geometry, same shape. On top of `single_pass.ssdecal_per_eye`. |
 | `single_pass.terrain_detail_eye_rows` | On | The terrain-detail draw's per-eye `cb1` built from each eye's own `cb13` rows through the engine's matrix product, as the block builds it for an isolated eye, rather than reprojected from the centre's by `M_eye` (see "Comparing at the headset's size"). Applies at once. |
+| `single_pass.terrain_cull_both_eyes` | On | The terrain hull programs' frustum cull, inside the G-buffer range under the collapse, against a frustum bounding both eyes rather than the centred camera's (see "The canted rigs"). Needs `single_pass.terrain_eye_rows`. Applies at once. |
 
 ### Per-eye viewport and draw routing
 
@@ -990,7 +991,6 @@ either: they are correctness surface, not duplicated work.
 - **The coverage matrix's defects.** Distant trees' LOD: see "What the first matrix found" under "Capturing varied scenes". The road surfaces, the ambient occlusion in daylight, the moon, and one eye's terrain patches (see "Comparing at the headset's size") are fixed.
 - **The baked-matrix families are still reprojected.** The models, characters, buildings, bark, foliage, decals, moon, and water planes take their clip position from a matrix their block bakes on the CPU per draw from the centred camera, and no per-eye form of that product exists in the shader. Their surfaces land a few floats from an isolated eye's and their alpha-tested edges flip where the sub-pixel shift crosses them, which is most of what remains at the shore, the meadow, and the cliff (see "Each eye's own rows, not the centre's reprojected").
 - **The right eye's half rasterizes at a larger screen position.** In the double-wide target the right eye's pixels lie one eye width to the right of an eye rendered on its own. With both halves drawn from eye 0's rows, the right half differs from the isolated left eye as the right eye differs from the isolated right eye, while the left half matches (see "The right eye's half of the target"). It is a property of rasterizing one eye width further right, not of any transform, and nothing in the mod reaches it.
-- **The canted rigs lose far geometry at each eye's outer edge.** See "The canted rigs".
 - **Multipass reads the other eye's frame in the screen-space reflections.** See "The reference modes' final images".
 - **Unpatched geometry has no parallax, and under asymmetric or canted eyes no per-eye projection.** It is re-issued per eye so it is present and correctly sized in both, but it still reads the centred `cb0`, which carries eye 0's projection and no cant. `single_pass.vertex_globals_per_eye` binds each eye's copy of the vertex globals around those re-issues, but is off until it has a per-family allowlist (see "Asymmetric and canted eyes"). The terrain patch system is not in this set: its pipelines take the pinned-eye reprojection inside the same re-issue.
 - **The terrain patch system is drawn twice.** Its GPU-indirect near passes and its far tessellated
@@ -1362,34 +1362,67 @@ What is left reprojected has no exact form in the shader: the baked world-view-p
 
 ### The canted rigs
 
-Under `index` and `stress` the left eye's depth differs beyond the tolerance at 15,000 to 19,000 pixels in one run (run 310) and 75,000 to 194,000 in another (run 311), against under 1,000 to 3,000 in the parallel rigs. In run 310's dumps nearly all of it lies at kilometre depths in the outer eighth of the left eye, and in the outer eighth of the right eye under `index`; single-pass's surface there is farther than the isolated eye's or missing (the sky, at a quarter of those pixels). It is distant geometry chosen once from the centred camera, which has no cant and carries eye 0's projection, where a canted eye sees past it at its outer edge: a visibility or level-of-detail choice, not a rounding, since the reprojection's differences are tens of floats. Which pass makes the choice is not attributed; the amount moves between runs with what is streamed in at that distance.
+Under `index` and `stress` the left eye's depth differed beyond the tolerance at 15,000 to 19,000 pixels in run 310, 75,000 to 194,000 in run 311, and 45,000 to 284,000 in run 312's runs: distant terrain kilometres away at the eye's outer edge, missing outright where the sky or a farther hillside showed through. In the final image it is a hard, patch-shaped cut through the far hills of the left eye (the town view under the stress rig loses most of the mountains across the bay in the outer quarter of the eye).
+
+It is the terrain's hull programs. Both terrain block types bake an offset view-projection into their hull and domain constants once per frame per slot ([`RenderBlockTypeTerrain::SetupConstantBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeTerrain##func-SetupConstantBuffers), [`RenderBlockTypeTerrainPatch::SetupConstantBuffers`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockTypeTerrainPatch##func-SetupConstantBuffers)), and the hull discards a patch whose control points, pushed out by the patch radius, fall outside one side of that frustum. The base terrain's hulls gate the test on the baked `FrustumCull` flag; the patch system's `volumetricterrain4`, `volumetricterrainhullclip4`, and `volumetricterrainwaterclip4` hulls test unconditionally, so clearing the type's flag (which `terrain_cull.rs` already did for issue #40) does not reach them. An eye rendered on its own, and each multipass dispatch, bakes its own frustum there, so the cull is exact. Under the collapse the bake is the centred camera's: eye 0's projection with no cant, its clip range stretched over the double-wide target. A canted left eye sees past its left edge, and the right eye's outer side lies inside the stretched clip range, which is why only the left eye lost geometry. The domain programs read each eye's own rows inside the routed range (`single_pass.terrain_eye_rows`), so the bake reaches nothing but the cull.
+
+The measured cut agrees with that edge. Under `index` (54° outer half-angle, 5° of cant) the outermost missing pixel in run 312's dump sat at column 285 of 3,584, against 312 predicted for eye 0's uncanted edge; under `stress` (60°, 12°) at 885 against 917. The shortfall is the patch radius the hull adds, and none of the scene-cull frusta (the cull projection, the terrain patch camera, the active camera's planes) has an edge there: they are padded well past both eyes. Multipass matched the isolated eyes at 0 to 3 depth pixels in the same runs, and the right eye under a mirrored view (the town at a yaw of 90°, where the far hills lie on the right) lost nothing.
+
+`single_pass.terrain_cull_both_eyes` (**on**, `hooks::graphics_engine::scene::terrain_cull`) substitutes, for a bake inside the G-buffer range under the collapse, an offset view-projection whose `x`, `y`, and `w` columns come from the projection bounding both eyes exactly (each eye's frustum corners taken in the head frame, plus the lateral margin for the eyes' offset; `vr::eyes_union_projection_standard`) and whose depth column is the engine's, so the near and far tests are unchanged. The per-slot cache is stamped stale whenever the substitution changes between bakes, so a reflection pass outside the range still bakes the engine's matrix. The cull only drops what the clipper would also drop, so the substitution changes no pixel an eye's own frustum covers. Same schedule, switch off (`cull-off` variant) against on, the left eye's depth beyond 64 floats, then its albedo:
+
+| Scene | Off | On |
+|---|---|---|
+| Town, `index` | 45,600; 49,390 | 2,848; 6,798 |
+| Town, `stress` | 145,436; 148,907 | 2,351; 5,893 |
+| Town at a yaw of 90°, `stress` | 113,969; 116,984 | 2,219; 4,501 |
+| Town, `beyond` | 471; 2,268 | 438; 2,231 |
+
+What remains is the parallel rigs' level. The `beyond` and `quest` rigs have parallel eyes and lost nothing to begin with. The amount lost moved from run to run (15,000 to 284,000 pixels at the same view under the same rig) with which terrain patches exist across the cut that frame: the patch selection is rebuilt from what has streamed in at that distance, so a run whose far patches straddle the edge loses more of them. The substitution adds no submission (it changes a constant, not a draw); the benchmark (run 312, the default rig, three repeats, `terrain-cull-both-eyes-off` against single-pass) put the GPU time at 12.03 against 12.15 ms at the town and 11.84 against 11.77 ms in the tunnel, within the repeats' spread, with the submission counts differing only as the running world's streaming does (6,046 against 6,156 and 5,116 against 5,062).
 
 ### The reference modes' final images
 
 Multipass differed from the isolated eyes' final images far beyond either mode's repeat: 20,000 to 43,000 pixels in the left eye at the town against a floor of 2,000 to 6,000, and 60,000 at the shore in one run of three. The geometry agreed to the bit, and the difference was a speckle over the sunlit ground. With the screen-space reflections left off (the harness's default; the coverage configs turn them on), multipass against the isolated eyes fell within the floor in every run: 5,754 and 3,240, 7,301 and 3,144, and 9,214 and 7,447 at the town, and 221 and 1,256 and 4,995 and 2,771 at the shore. Turning off the SSAO or the sun shadows instead left it in place. The reflection march samples the previous frame's scene, and in multipass the previous image was the other eye's, so it is multipass that is the odd one out; single-pass and the isolated eyes each read their own. The final-image rows below therefore compare single-pass with the isolated eyes; multipass's column is a reference for the references, not a floor.
 
+### What the final images differ by
+
+With the geometry matched, the town's final images still differ from the isolated eyes at 90,000 to 135,000 pixels per eye (0.7 % to 1.1 % of the eye) against a repeat floor of a few thousand. Run 312 dumped whole eyes and binned each differing pixel by its largest channel difference. At the town with the coverage settings (screen-space reflections on), single-pass against the isolated left eye:
+
+| | Single-pass | Multipass |
+|---|---|---|
+| Differing (more than 3 codes) | 89,935 | 29,198 |
+| 4 to 8 codes | 70,975 (79 %) | 21,745 (74 %) |
+| 9 to 16 codes | 15,407 (17 %) | 6,166 (21 %) |
+| more than 16 codes | 3,553 (4 %) | 1,287 (4 %) |
+| Mean of the differing pixels | 6.9 codes | 7.3 codes |
+| Mean over every pixel and channel | 0.15 codes | 0.08 codes |
+| Largest | 112 codes | 111 codes |
+
+The right eye is alike (106,741 differing, 86 % within 8 codes, a mean of 0.12 codes over the eye). More than 90 % of the differing pixels lie at mid depth in the lower half of the eye: the sunlit ground between a few metres and a few hundred metres, as a speckle a few codes deep, with the sky, the far field, and the near geometry contributing a few thousand each. With the shipped settings (FSR, the foveation, and the exposure metering back) the same comparison is 33,121 and 78,530 pixels against multipass's 20,249 and 14,733, 92 % and 82 % of them within 8 codes.
+
+Attributing the speckle to one pass by switching sources off in every mode (`ssao`, `ao_volumes`, `sun_shadows`, the reflections) did not hold up: two runs of nominally nested configurations at the same view, minutes apart, differed by more than the contribution being measured (single-pass against the isolated left eye at 135,103 with the reflections off and 50,456 with the reflections and the SSAO off, and 1,016,799 with the AO volumes also off, where multipass itself differed from the isolated eye at 714,774), and the view itself moved between runs (the later runs framed a telegraph pole in front of the ground that the earlier ones did not), so the reference images were not of one scene. Two things are nonetheless established. Turning the sun shadows off moved the difference from the ground to the sky and the far field (238,000 of 378,109 pixels there, most by more than 16 codes), so the shadowed atmospheric scattering, which reads the cascades, carries a single-pass difference of its own once its shadow input is constant; and the ocean band at the horizon differs between any two snapshots taken at different times, in every mode, because the ocean animates on its own clock. A per-pass attribution needs repeated runs at a fixed pose per configuration, which this work did not have the budget to collect.
+
 ### The standing suite
 
-Run 311, on the final tree, pixels per eye (left / right) against the isolated eyes, single-pass and then multipass, each with the larger of the two modes' repeat floors (final image floor in brackets). Depth counts beyond 64 floats, with the exact-bit count in parentheses:
+Run 312, on the final tree, pixels per eye (left / right) against the isolated eyes, single-pass and then multipass, each with the larger of the two modes' repeat floors (final image floor in brackets). Depth counts beyond 64 floats, with the exact-bit count in parentheses:
 
 | Scene | Depth beyond 64 (changed) | Albedo | Normals | Final [floor] | Multipass final [floor] |
 |---|---|---|---|---|---|
-| town | 185 (110,097) / 849 (1,318,110) | 1,883 / 119,038 | 22,186 / 215,313 | 121,893 [2,860] / 152,920 [4,187] | 38,521 [2,860] / 13,134 [4,187] |
-| town-rotation | 742 (140,195) / 1,006 (416,054) | 2,217 / 75,498 | 23,319 / 235,548 | 85,175 [9,164] / 105,564 [22,670] | 79,608 [14,804] / 32,893 [22,670] |
-| town-translation | 584 (81,577) / 1,076 (2,462,928) | 2,394 / 146,548 | 23,552 / 327,050 | 81,474 [34,014] / 165,072 [29,465] | 70,797 [42,798] / 9,693 [43,459] |
-| shipped-static | 559 (57,572) / 862 (1,400,923) | 1,288 / 195,910 | 17,642 / 504,696 | 80,871 [6,924] / 87,294 [6,073] | 37,511 [6,924] / 16,742 [6,073] |
-| shipped-rotation | 279 (59,992) / 923 (1,342,304) | 1,772 / 88,428 | 16,557 / 195,499 | 51,014 [39,472] / 72,601 [14,326] | 63,446 [39,472] / 64,166 [14,204] |
-| town-index | 74,744 (158,399) / 888 (1,764,066) | 76,057 / 97,637 | 99,807 / 250,496 | 193,104 [3,900] / 101,104 [2,462] | 39,739 [3,900] / 13,544 [3,404] |
-| town-quest | 512 (88,609) / 8,051 (1,215,782) | 2,149 / 113,841 | 26,350 / 276,324 | 104,168 [3,161] / 201,884 [2,972] | 13,458 [2,908] / 68,349 [2,823] |
-| town-stress | 193,616 (370,303) / 501 (2,049,493) | 195,116 / 24,024 | 228,240 / 101,376 | 350,865 [5,799] / 93,320 [1,935] | 45,597 [4,617] / 49,062 [711] |
-| town-beyond | 933 (121,074) / 2,746 (1,367,696) | 3,697 / 137,611 | 32,622 / 281,252 | 121,785 [6,406] / 217,501 [5,281] | 22,814 [6,591] / 18,989 [5,560] |
-| tunnel | 4,011 (22,035) / 14,467 (860,746) | 25,373 / 133,876 | 150,779 / 485,942 | 3,318 [7] / 3,506 [11] | 93 [7] / 47 [11] |
-| meadow | 523,326 (2,576,377) / 509,902 (2,920,702) | 135,862 / 172,158 | 1,456,283 / 1,529,158 | 199,921 [3,604] / 203,900 [2,487] | 11,064 [3,604] / 5,944 [2,632] |
-| capital-night | 1,715 (1,108,409) / 3,152 (1,838,520) | 14,481 / 42,188 | 53,744 / 151,306 | 181 [0] / 180 [0] | 0 [0] / 0 [0] |
-| shore | 536,596 (4,764,703) / 565,761 (5,111,148) | 459,970 / 509,639 | 1,796,490 / 1,973,219 | 105,533 [4,383] / 130,094 [942] | 7,266 [4,383] / 6,123 [3,842] |
-| cliff-dusk | 202,267 (5,449,620) / 113,979 (4,538,459) | 537,322 / 487,849 | 1,048,530 / 1,196,802 | 3,120 [0] / 2,659 [1] | 45,253 [0] / 30,176 [1] |
+| town | 405 (65,400) / 1,002 (1,019,445) | 2,619 / 163,252 | 22,674 / 332,544 | 93,064 [3,989] / 124,630 [3,590] | 15,556 [2,467] / 5,491 [2,379] |
+| town-rotation | 1,290 (174,828) / 1,786 (666,937) | 4,046 / 52,249 | 27,799 / 136,340 | 85,612 [17,907] / 70,152 [30,763] | 101,089 [8,867] / 68,759 [30,763] |
+| town-translation | 954 (136,463) / 2,405 (1,346,840) | 2,718 / 109,284 | 25,284 / 229,006 | 100,038 [26,266] / 123,696 [26,124] | 63,274 [21,743] / 15,079 [12,183] |
+| shipped-static | 811 (106,224) / 2,678 (538,508) | 1,764 / 161,558 | 19,597 / 412,602 | 54,281 [6,202] / 51,148 [4,804] | 18,920 [6,202] / 12,497 [4,804] |
+| shipped-rotation | 7,116 (141,201) / 960 (3,222,510) | 4,992 / 61,811 | 25,887 / 192,921 | 45,116 [6,862] / 47,870 [8,005] | 12,841 [6,862] / 112,766 [8,005] |
+| town-index | 1,876 (93,928) / 2,821 (1,449,567) | 3,013 / 71,106 | 23,902 / 252,041 | 82,262 [4,715] / 72,480 [2,904] | 27,017 [4,715] / 14,800 [2,904] |
+| town-quest | 1,635 (85,477) / 2,118 (925,463) | 3,410 / 130,551 | 27,664 / 335,819 | 91,985 [5,005] / 130,277 [1,568] | 29,626 [5,005] / 64,865 [2,424] |
+| town-stress | 1,670 (100,758) / 4,074 (3,327,864) | 4,136 / 111,189 | 42,717 / 286,921 | 89,907 [11,544] / 247,120 [2,931] | 16,667 [9,723] / 51,799 [2,504] |
+| town-beyond | 2,681 (122,265) / 1,234 (1,627,872) | 6,549 / 55,671 | 39,044 / 182,214 | 78,044 [3,425] / 81,132 [2,122] | 4,981 [4,456] / 12,408 [2,802] |
+| tunnel | 2,875 (17,282) / 16,777 (650,141) | 26,998 / 89,692 | 159,055 / 404,210 | 2,580 [0] / 2,968 [1] | 21 [0] / 23 [1] |
+| meadow | 559,172 (2,649,482) / 556,090 (2,918,368) | 158,434 / 191,778 | 1,494,677 / 1,545,447 | 175,446 [6,048] / 184,395 [5,753] | 6,628 [5,106] / 5,116 [3,068] |
+| capital-night | 1,222 (1,147,765) / 4,086 (2,173,147) | 10,888 / 34,909 | 41,349 / 122,236 | 286 [0] / 284 [0] | 0 [0] / 0 [0] |
+| shore | 566,344 (4,753,413) / 552,567 (5,205,187) | 460,229 / 514,922 | 1,796,501 / 1,974,984 | 134,551 [511] / 102,884 [365] | 7,234 [738] / 3,144 [750] |
+| cliff-dusk | 146,900 (4,956,401) / 165,400 (6,787,186) | 464,147 / 613,078 | 1,064,677 / 1,213,433 | 1,044 [0] / 1,232 [0] | 40,566 [0] / 878 [0] |
 
-Against run 309 the tunnel's depth beyond the tolerance fell from 249,999 and 154,108 to 4,011 and 14,467, the meadow's from 973,322 and 789,097 to 523,326 and 509,902, the shore's from 1,047,508 and 575,852 to 536,596 and 565,761, and the town's left eye's from 4,368 to 185. The cliff is about where it was (165,055 and 150,103 against 202,267 and 113,979): its remainder is largely the player's own body and weapon, a baked-matrix family, with the distant hillside. The canted rigs are discussed above; the right eye's large changed counts are the half's rounding.
+Against run 311 the canted rigs' left-eye depth fell from 74,744 (`index`) and 193,616 (`stress`) to 1,876 and 1,670, the parallel rigs' level (see "The canted rigs"). The other rows are within the run-to-run movement run 311 showed. The right eye's large changed counts are the half's rounding.
 
 ## The non-`cb0` shader census
 

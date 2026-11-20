@@ -383,6 +383,20 @@ pub struct SinglePassConfig {
     /// up to about one part in ten thousand over the whole ground. Applies without a shader reload.
     /// On by default.
     pub terrain_detail_eye_rows: bool,
+    /// Cull the terrain's tessellated patches against a frustum that bounds both eyes under the
+    /// collapse. The terrain's hull programs discard a patch outside the offset view-projection the
+    /// block types bake once per frame per slot from the render context
+    /// ([`RenderBlockTypeTerrain::SetupConstantBuffers`](jc3gi::graphics_engine::render_block::RenderBlockTypeTerrain::SetupConstantBuffers)
+    /// and
+    /// [`RenderBlockTypeTerrainPatch::SetupConstantBuffers`](jc3gi::graphics_engine::render_block::RenderBlockTypeTerrainPatch::SetupConstantBuffers)),
+    /// which under the collapse is the centred camera's: eye 0's projection, with no cant. A canted
+    /// eye sees past that frustum's outer edge, so the far terrain there was discarded for the left
+    /// eye (the right eye's outer side lies inside the double-wide target's clip range). With this on,
+    /// the bake inside the G-buffer range takes its horizontal and vertical rows from the projection
+    /// bounding both eyes ([`crate::vr::eyes_union_projection_standard`]); the domain programs read
+    /// each eye's own rows there (`terrain_eye_rows`), so only the cull sees the substitution, and it
+    /// needs that switch. Applies without a shader reload. On by default.
+    pub terrain_cull_both_eyes: bool,
     /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
     /// fullscreen consumer of the reconstruction basis.
     ///
@@ -888,6 +902,7 @@ impl SinglePassConfig {
             velocity_per_eye: true,
             clip_origin_per_eye: true,
             terrain_detail_eye_rows: true,
+            terrain_cull_both_eyes: true,
             atmospheric_per_eye: true,
             fog_volume_per_eye: true,
             water_uv_per_eye: true,

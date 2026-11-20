@@ -216,6 +216,34 @@ pub fn collapse_active() -> bool {
     dual_eye_active() && config_flags().has(Flag::Collapse)
 }
 
+/// The terrain block types whose hull programs cull against the baked offset view-projection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TerrainCullBlock {
+    /// The base terrain tiles, drawn once for both eyes on the eye-lane path.
+    Base,
+    /// The terrain patch system's patches, re-issued per eye on the pinned-eye path.
+    Patch,
+}
+
+/// Whether a terrain bake made now should cull against the projection bounding both eyes: under the
+/// collapse, inside the G-buffer range, with `single_pass.terrain_cull_both_eyes` on and the domain
+/// programs of `block` reading each eye's own rows, so that only the hull's cull reads the baked
+/// offset view-projection. See
+/// [`SinglePassConfig::terrain_cull_both_eyes`](crate::stereo::config::SinglePassConfig::terrain_cull_both_eyes).
+pub(crate) fn terrain_cull_both_eyes(block: TerrainCullBlock) -> bool {
+    let flags = config_flags();
+    let domain_reads_eye_rows = flags.has(Flag::Terrain)
+        && flags.has(Flag::TerrainEyeRows)
+        && match block {
+            TerrainCullBlock::Base => true,
+            TerrainCullBlock::Patch => flags.has(Flag::TerrainPatchPerEye),
+        };
+    collapse_active()
+        && in_gbuffer_range()
+        && flags.has(Flag::TerrainCullBothEyes)
+        && domain_reads_eye_rows
+}
+
 /// Whether the scene render targets are re-created at 2x per-eye width so each eye-half is full
 /// resolution (instead of a squished half of a per-eye-sized target). Requires [`collapse_active`] --
 /// it only makes sense for the single walk whose capture split reads one full-width half per eye.

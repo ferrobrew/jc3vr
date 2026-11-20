@@ -66,6 +66,10 @@ switches = { indirect_per_eye = false }
 name = "instanced-reissue-off"
 switches = { instanced_per_eye = false }
 
+[[variant]]
+name = "terrain-cull-both-eyes-off"
+switches = { terrain_cull_both_eyes = false }
+
 # The serial frame ordering (`vr.overlap_render_update` off): the next frame's render update waits
 # for the previous frame's tail to submit, as it did before the overlap. For the A/B against the
 # plain modes, which run with the overlap on.

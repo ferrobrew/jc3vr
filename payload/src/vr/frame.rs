@@ -94,6 +94,11 @@ static CULL_PROJECTION: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::new(
 /// [`shadow_fit_projection_standard`]). `None` when no VR frame is rendering.
 static SHADOW_FIT_PROJECTION: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::new();
 
+/// The standard-depth, symmetric projection that bounds both eyes' off-axis frusta exactly this
+/// frame, with neither the cull's padding nor the shadow fit's hold (see
+/// [`eyes_union_projection_standard`]). `None` when no VR frame is rendering.
+static EYES_UNION_PROJECTION: RenderFrameSlot<Option<Matrix4>> = RenderFrameSlot::new();
+
 /// The field of view the sun-shadow cascade fit is currently held at (see [`hold_fit_fov`]). Kept
 /// across frames that render no VR frame, so a skipped frame does not release the hold.
 static SHADOW_FIT_FOV: Mutex<Option<Fov>> = Mutex::new(None);
@@ -151,6 +156,15 @@ pub fn shadow_fit_projection_standard() -> Option<Matrix4> {
     SHADOW_FIT_PROJECTION.get().flatten()
 }
 
+/// The symmetric projection that bounds both eyes' off-axis frusta exactly this frame (each eye's
+/// extent taken in the head frame, so a canted eye's outer side is inside it, plus the lateral
+/// margin for the eyes' offset from the centre), in the engine's standard-depth layout, or `None`
+/// when no VR frame is rendering. For a cull that runs once from the centred camera on the GPU,
+/// where the cull projection's padding would cost work for nothing.
+pub fn eyes_union_projection_standard() -> Option<Matrix4> {
+    EYES_UNION_PROJECTION.get().flatten()
+}
+
 /// Clear the per-eye render parameters (and the cull projection), so the camera hook falls back to
 /// flatscreen stereo. Called when no VR frame renders this frame (session down, or `should_render`
 /// false).
@@ -160,6 +174,7 @@ pub fn clear_render_params() {
     CAPTURE_VIEWS.set(None);
     CULL_PROJECTION.set(None);
     SHADOW_FIT_PROJECTION.set(None);
+    EYES_UNION_PROJECTION.set(None);
 }
 
 /// Drive one rendered VR frame's pose and per-eye camera parameters from the located views: reduce
@@ -410,6 +425,9 @@ fn render_frame(
         up: exact(union[2]),
         down: exact(union[3]),
     };
+    EYES_UNION_PROJECTION.set(Some(
+        OffAxisProjection::new(exact_fov, near_clip, far_clip).standard_depth,
+    ));
     let fit_fov = {
         let mut held = SHADOW_FIT_FOV.lock();
         let fit = hold_fit_fov(*held, exact_fov);

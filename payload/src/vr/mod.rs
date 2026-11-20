@@ -44,7 +44,8 @@ pub use config::{
 use frame::begin_replay_frame;
 pub use frame::{
     CaptureEyeView, CaptureViews, EyeRenderParams, begin_render_frame, capture_views,
-    clear_render_params, cull_projection_standard, render_params, shadow_fit_projection_standard,
+    clear_render_params, cull_projection_standard, eyes_union_projection_standard, render_params,
+    shadow_fit_projection_standard,
 };
 use openxr as xr;
 pub use projection::{Fov, OffAxisProjection};

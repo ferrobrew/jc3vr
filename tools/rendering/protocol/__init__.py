@@ -238,6 +238,7 @@ SINGLE_PASS_SWITCHES = (
     "vegetation_once", "occluder",
     "instanced_per_eye", "hw_instanced_once", "indirect_per_eye", "vertex_globals_per_eye", "reconstruct_per_eye", "fullscreen_camera_per_eye",
     "pixel_camera_per_eye", "local_lights_per_eye", "screen_door_per_eye", "velocity_per_eye", "clip_origin_per_eye", "terrain_detail_eye_rows",
+    "terrain_cull_both_eyes",
     "atmospheric_per_eye",
     "fog_volume_per_eye", "water_uv_per_eye",
     "nvwater_per_eye", "water_reflection_per_eye", "water_reflection_eye_size",

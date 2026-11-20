@@ -52,6 +52,7 @@ pub(super) enum Flag {
     Slot13PerEye,
     NonIndexedGeometryOnce,
     TerrainDetailEyeRows,
+    TerrainCullBothEyes,
 }
 
 /// The single-pass config flags, sampled once per frame and pinned for the duration of a dispatch.
@@ -180,6 +181,7 @@ fn store_config_flags() -> u64 {
             | bit(s.slot13_per_eye, Flag::Slot13PerEye)
             | bit(s.non_indexed_geometry_once, Flag::NonIndexedGeometryOnce)
             | bit(s.terrain_detail_eye_rows, Flag::TerrainDetailEyeRows)
+            | bit(s.terrain_cull_both_eyes, Flag::TerrainCullBothEyes)
     }) | CONFIG_FLAGS_VALID;
     CONFIG_FLAGS.store(snapshot, Ordering::Relaxed);
     snapshot

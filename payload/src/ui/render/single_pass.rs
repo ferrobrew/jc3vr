@@ -534,6 +534,15 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      reprojected per eye, which rounds badly enough to move one eye's near ground \
                      by up to one part in ten thousand of its depth.",
                 );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.terrain_cull_both_eyes,
+                    "Terrain culled for both eyes",
+                )
+                .on_hover_text(
+                    "Culls the tessellated terrain patches against a frustum bounding both eyes. Off, \
+                     the hull programs cull them against the centred camera's frustum, which a canted \
+                     eye sees past at its outer edge: distant hills go missing there.",
+                );
                 let (rewritten, projected, declined) =
                     crate::stereo::single_pass::eye_camera::screen_door_counts();
                 ui.weak(format!(

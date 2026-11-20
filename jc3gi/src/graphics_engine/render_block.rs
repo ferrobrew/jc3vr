@@ -2916,7 +2916,46 @@ impl RenderBlockTypeTerrain {
         }
     }
 }
-impl RenderBlockTypeTerrain {}
+impl RenderBlockTypeTerrain {
+    pub const SetupConstantBuffers_ADDRESS: usize = 0x14032A4C0;
+    /// Binds the type-level constant buffers for a tessellating base-terrain pass and, once per frame
+    /// per constant-buffer slot (the slot comes from the render status and active pass; the stamp is
+    /// [`m_WasCBApplied`](crate::graphics_engine::render_block::RenderBlockTypeTerrain::m_WasCBApplied)), bakes the hull/domain constants the base-terrain
+    /// hull and domain programs read at `cb1` into that slot's
+    /// [`m_HDTypeConstants`](crate::graphics_engine::render_block::RenderBlockTypeTerrain::m_HDTypeConstants) buffer:
+    ///
+    /// - `float4` 0: `xyz` = the normalized forward vector of the camera manager's *render* camera,
+    ///   `w` = `1.0` when the pass carries
+    ///   [`RENDERSTATUS_REFLECTIONS`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_REFLECTIONS)
+    ///   and [`m_EnableBackPatchCulling`](crate::graphics_engine::render_block::RenderBlockTypeTerrain::m_EnableBackPatchCulling) is set, else `0.0`.
+    /// - `float4` 1..4: the dispatch's
+    ///   [`RenderContext::m_OffsetViewProjection`](crate::graphics_engine::graphics_engine::RenderContext::m_OffsetViewProjection),
+    ///   which the domain program projects through and the hull program's frustum test projects
+    ///   each patch through.
+    /// - `float4` 5..8: the camera position, the shadow manager's tessellation origin, the
+    ///   tessellation factors, and the frustum-cull flag: `1.0` when
+    ///   [`m_EnableFrustumPatchCulling`](crate::graphics_engine::render_block::RenderBlockTypeTerrain::m_EnableFrustumPatchCulling) is set and the active
+    ///   pass is neither a shadow cascade nor
+    ///   [`RP_TERRAIN_APPLY_NEAR`](crate::graphics_engine::render_engine::RenderPassId::RP_TERRAIN_APPLY_NEAR)
+    ///   or
+    ///   [`RP_TERRAIN_APPLY_FAR`](crate::graphics_engine::render_engine::RenderPassId::RP_TERRAIN_APPLY_FAR),
+    ///   else `0.0`.
+    ///
+    /// The buffer is then bound at hull and domain `cb1`, and the global constants at vertex and
+    /// fragment `cb0`.
+    pub unsafe fn SetupConstantBuffers(
+        &mut self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::SetupConstantBuffers_ADDRESS);
+            f(self as *mut Self as _, render_context)
+        }
+    }
+}
 impl std::convert::AsRef<RenderBlockTypeTerrain> for RenderBlockTypeTerrain {
     fn as_ref(&self) -> &RenderBlockTypeTerrain {
         self
