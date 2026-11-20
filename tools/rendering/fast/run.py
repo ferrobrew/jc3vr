@@ -18,6 +18,7 @@ from tools.rendering.experiment import (
     _variant_config,
 )
 from tools.rendering.fast.plan import (
+    DEFAULT_DEPTH_ULPS,
     DEFAULT_PLANES,
     FastError,
     Limits,
@@ -68,6 +69,8 @@ class FastOptions:
     repeat: bool = True
     # Run a motion that never moves the camera as configured, rather than as a fixed pose.
     full_cycles: bool = False
+    # How many representable floats apart two depths may be and still match.
+    depth_ulps: int = DEFAULT_DEPTH_ULPS
 
 
 @dataclass
@@ -178,7 +181,7 @@ def run_scene(runner, config: ExperimentConfig, name: str, options: FastOptions,
                     f"{prefix}_{snapshot.label}"[:64], snapshot.label, options.planes, snapshot.keep,
                     snapshot.compare, phase, options.limits.thresholds.pixel,
                     options.limits.thresholds.changed_fraction, options.limits.thresholds.mean,
-                    options.dump, options.dump_crop)
+                    options.dump, options.dump_crop, options.depth_ulps)
                 acknowledgement, entry = timed(f"snapshot {snapshot.label}", request)
                 if not isinstance(acknowledgement, SnapshotAck):
                     raise FastError("fast comparison: expected a snapshot acknowledgement")

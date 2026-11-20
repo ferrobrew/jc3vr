@@ -81,6 +81,7 @@ single_pass_switches! {
     ScreenDoorPerEye => screen_door_per_eye, true;
     VelocityPerEye => velocity_per_eye, true;
     ClipOriginPerEye => clip_origin_per_eye, true;
+    TerrainDetailEyeRows => terrain_detail_eye_rows, false;
     AtmosphericPerEye => atmospheric_per_eye, false;
     FogVolumePerEye => fog_volume_per_eye, false;
     WaterUvPerEye => water_uv_per_eye, false;

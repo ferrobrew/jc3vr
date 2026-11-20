@@ -27,9 +27,14 @@ pub(super) struct TerrainDetailEyePass {
 ///
 /// The detail draw is GPU-indirect, so it cannot be instance-doubled like the model geometry; instead
 /// the render block's `Draw` is re-issued once per eye with a per-eye `cb1`. The detail VS builds clip
-/// with a multiply-add chain over `cb1[0..3]` (`clip = Σ_i P_local[i] · cb1[i]`), so those four
-/// registers are the *columns* of `T_patch · OffsetVP` (`T_patch` translating the patch origin relative
-/// to the camera) and the per-eye buffer is the column-wise `cb1_eye[k] = M_eye · cb1_center[k]`.
+/// with a multiply-add chain over `cb1[0..3]` (`clip = Σ_i P_local[i] · cb1[i]`), and the block stages
+/// those rows as `T_patch · OffsetVP` (`T_patch` translating the patch origin relative to the camera).
+/// With `single_pass.terrain_detail_eye_rows` on, each eye's buffer is built the same way from that
+/// eye's own `cb13` rows (its offset view-projection and camera position), through the engine's own
+/// product, so it is the buffer an isolated render of the eye stages, bit for bit. Off, the centre's
+/// buffer is reprojected column by column (`cb1_eye[k] = M_eye · cb1_center[k]`), which is exact
+/// only in real arithmetic: in floats it moved one eye's terrain depth by up to about one part in
+/// ten thousand over the whole ground.
 /// `cb1[4]` (the LOD-fade position) is left untouched. `this` and `rc` are the
 /// [`RenderBlockTerrainDetail`] and [`RenderContext`] the block's `Draw` received.
 ///
@@ -49,6 +54,11 @@ pub(super) unsafe fn terrain_detail_eye_passes(
         return None;
     }
     let (m_eye, full, d3d) = baked_cb_intercept_ready("terrain-detail", BoundVsGate::Checked)?;
+    let eye_rows = if config_flags().has(Flag::TerrainDetailEyeRows) {
+        Some(live_cb13_rows()?)
+    } else {
+        None
+    };
 
     // SAFETY: caller guarantees live pointers.
     let ovp = unsafe { (*rc).m_OffsetViewProjection.data };
@@ -65,17 +75,55 @@ pub(super) unsafe fn terrain_detail_eye_passes(
     let cb1_center = [r0, r1, r2, r3 + tx * r0 + ty * r1 + tz * r2];
 
     let passes = std::array::from_fn(|eye| {
-        let mut cb1 = [0.0f32; 16];
-        for (k, center) in cb1_center.iter().enumerate() {
-            cb1[k * 4..k * 4 + 4].copy_from_slice(&m_eye[eye].mul_vec4(*center).to_array());
+        let Some(eye_rows) = eye_rows else {
+            let mut cb1 = [0.0f32; 16];
+            for (k, center) in cb1_center.iter().enumerate() {
+                cb1[k * 4..k * 4 + 4].copy_from_slice(&m_eye[eye].mul_vec4(*center).to_array());
+            }
+            return TerrainDetailEyePass { cb1 };
+        };
+        let base = eye * cb13::PER_EYE_ROW_COUNT;
+        let mut eye_ovp = Matrix4::default();
+        for r in 0..4 {
+            eye_ovp.data[r * 4..r * 4 + 4].copy_from_slice(&eye_rows[base + r].data);
         }
-        TerrainDetailEyePass { cb1 }
+        let eye_cam = eye_rows[base + 4].data;
+        TerrainDetailEyePass {
+            cb1: patch_offset_view_projection(&eye_ovp, eye_cam, patch_x, patch_z).data,
+        }
     });
     let mut cb1_center_rows = [0.0f32; 16];
     for (k, center) in cb1_center.iter().enumerate() {
         cb1_center_rows[k * 4..k * 4 + 4].copy_from_slice(&center.to_array());
     }
     Some((passes, cb1_center_rows, full, d3d))
+}
+
+/// The terrain-detail block's `cb1[0..3]` for a camera: the patch translation relative to the camera
+/// (`camera` is the camera's world position) times the offset view-projection, multiplied by the
+/// engine's own [`Matrix4::Multiply4x4`], as [`RenderBlockTerrainDetail::Draw`] builds it.
+fn patch_offset_view_projection(
+    offset_vp: &Matrix4,
+    camera: [f32; 4],
+    patch_x: f32,
+    patch_z: f32,
+) -> Matrix4 {
+    let mut patch = Matrix4 {
+        data: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+    patch.data[12] = patch_x - camera[0];
+    patch.data[13] = -camera[1];
+    patch.data[14] = patch_z - camera[2];
+    let mut product = Matrix4::default();
+    // SAFETY: a pure function of its two input matrices that writes only the output; all three are
+    // live locals.
+    unsafe { Matrix4::Multiply4x4(&patch, offset_vp, &mut product) };
+    product
 }
 
 /// The graphics context (`HContext_t*`) a render block's `Draw` stages constants into, read from its

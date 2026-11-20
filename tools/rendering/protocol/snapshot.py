@@ -17,8 +17,9 @@ from tools.rendering.protocol.base import (
     valid_request_id,
 )
 
-# Mirrors `MAX_COMPARED` in `payload/src/screenshot/harness/snapshot/request.rs`.
+# Mirrors `MAX_COMPARED` and `MAX_DEPTH_ULPS` in `payload/src/screenshot/harness/snapshot/request.rs`.
 MAX_COMPARED = 8
+MAX_DEPTH_ULPS = 512
 
 
 class Plane(StrEnum):
@@ -55,6 +56,8 @@ class SnapshotRequest:
     fail_mean: float = 0.25
     dump: DumpPolicy = DumpPolicy.NEVER
     dump_crop: bool = True
+    # How many representable floats apart two depths may be and still match; zero counts any change.
+    depth_ulps: int = 0
     command: Command = field(default=Command.SNAPSHOT, init=False)
     # The channel validates these on configuration acknowledgements only.
     pose = None
@@ -75,6 +78,8 @@ class SnapshotRequest:
         if not 0 <= self.pixel_threshold <= 255 or not 0 <= self.fail_fraction <= 1 or not (
                 math.isfinite(self.fail_mean) and self.fail_mean >= 0):
             raise ProtocolError("snapshot: thresholds out of range")
+        if type(self.depth_ulps) is not int or not 0 <= self.depth_ulps <= MAX_DEPTH_ULPS:
+            raise ProtocolError(f"snapshot: depth_ulps must be an integer within [0, {MAX_DEPTH_ULPS}]")
 
     def to_toml(self) -> str:
         result = (f"command = {json.dumps(self.command.value)}\n"
@@ -87,6 +92,7 @@ class SnapshotRequest:
                    f"keep = {json.dumps(self.keep)}\n"
                    f"compare = {json.dumps(list(self.compare))}\n"
                    f"pixel_threshold = {json.dumps(float(self.pixel_threshold))}\n"
+                   f"depth_ulps = {self.depth_ulps}\n"
                    f"fail_fraction = {json.dumps(float(self.fail_fraction))}\n"
                    f"fail_mean = {json.dumps(float(self.fail_mean))}\n"
                    f"dump = {json.dumps(self.dump.value)}\n"
@@ -120,6 +126,9 @@ class Comparison:
     failed: bool
     pixels: int
     differing: int
+    # The pixels whose stored values change at all: `differing` for an exact rule, and for a depth
+    # compared with a tolerance also the changes within it.
+    changed: int
     mean: float
     largest: float
     bbox: tuple[int, int, int, int] | None
@@ -146,7 +155,8 @@ class Comparison:
             raise ProtocolError("snapshot: invalid comparison bounding box")
         pixels = integer(value, "pixels", minimum=0)
         differing = integer(value, "differing", minimum=0)
-        if differing > pixels or sum(heat) != differing:
+        changed = integer(value, "changed", minimum=0)
+        if differing > pixels or sum(heat) != differing or changed > pixels:
             raise ProtocolError("snapshot: comparison counts disagree")
         numbers = []
         for key in ("threshold", "mean", "largest"):
@@ -165,7 +175,7 @@ class Comparison:
         except ValueError as error:
             raise ProtocolError("snapshot: unknown comparison plane or kind") from error
         return cls(text(value, "against"), plane, integer(value, "eye", minimum=0), kind, numbers[0],
-                   failed, pixels, differing, numbers[1], numbers[2],
+                   failed, pixels, differing, changed, numbers[1], numbers[2],
                    None if bbox is None else tuple(bbox), tuple(grid), tuple(heat), dump)
 
 

@@ -47,7 +47,8 @@ def comparison_wire(against, plane, eye, differing, pixels=100_000, mean=0.0, gr
     heat = [0] * (grid[0] * grid[1])
     heat[0] = differing
     return {"against": against, "plane": plane, "eye": eye, "kind": "unorm8", "threshold": 3.0,
-            "failed": False, "pixels": pixels, "differing": differing, "mean": mean,
+            "failed": False, "pixels": pixels, "differing": differing, "changed": differing,
+            "mean": mean,
             "largest": 9.0 if differing else 0.0, "bbox": [1, 2, 3, 4] if differing else None,
             "grid": list(grid), "heat": heat, "dump": None}
 
@@ -162,6 +163,10 @@ class ProtocolTests(unittest.TestCase):
         self.assertIn('planes = ["final", "depth"]', text)
         self.assertIn('compare = ["left_only_a"]', text)
         self.assertIn('dump = "never"', text)
+        self.assertIn("depth_ulps = 0", text)
+        self.assertIn("depth_ulps = 64", SnapshotRequest("a", "b", ("final",), depth_ulps=64).to_toml())
+        with self.assertRaises(ProtocolError):
+            SnapshotRequest("a", "b", ("final",), depth_ulps=513)
         self.assertEqual(ReleaseRequest("f1_rel").to_toml(),
                          'command = "snapshot_release"\nid = "f1_rel"\n')
 

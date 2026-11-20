@@ -358,6 +358,12 @@ pub struct SinglePassConfig {
     /// texturing does not. `dxbc_stereo::ClipOrigin::PerEye` reads the row from each eye's copy in
     /// `cb13`. A shader rewrite, so changing it needs a shader reload. On by default.
     pub clip_origin_per_eye: bool,
+    /// Build each eye's terrain-detail `cb1` from that eye's own `cb13` rows, as the block builds it
+    /// for a separately rendered eye, rather than reprojecting the centre's by `M_eye`. The
+    /// reprojection is exact only in real arithmetic: in floats it moved one eye's terrain depth by
+    /// up to about one part in ten thousand over the whole ground. Applies without a shader reload.
+    /// On by default.
+    pub terrain_detail_eye_rows: bool,
     /// The same per-eye split for the **atmospheric-scattering / aerial-perspective** pass, the other
     /// fullscreen consumer of the reconstruction basis.
     ///
@@ -854,6 +860,7 @@ impl SinglePassConfig {
             screen_door_per_eye: true,
             velocity_per_eye: true,
             clip_origin_per_eye: true,
+            terrain_detail_eye_rows: true,
             atmospheric_per_eye: true,
             fog_volume_per_eye: true,
             water_uv_per_eye: true,

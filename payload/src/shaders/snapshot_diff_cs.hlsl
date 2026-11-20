@@ -4,8 +4,9 @@
 // One thread group per cell of a Grid.x by Grid.y heat map over the compared region. Each group
 // walks its cell, classifies every pixel as differing or not by the plane's rule, and reduces the
 // cell to eight words: the differing pixel count, the sum of the per-pixel mean absolute channel
-// difference, the largest channel difference, and the bounding box of the differing pixels. The
-// CPU reads the cells back and totals them; nothing larger than the cells ever leaves the GPU.
+// difference, the largest channel difference, the bounding box of the differing pixels, and the
+// count of pixels whose stored values change at all, under the rule or not. The CPU reads the cells
+// back and totals them; nothing larger than the cells ever leaves the GPU.
 //
 // The rules mirror the Python comparison (`tools/rendering/comparison/images.py` for the final
 // image, `tools/rendering/comparison/stages.py` for the stages):
@@ -15,8 +16,9 @@
 // - KIND_UINT4, the 10-bit stages read as integers: a pixel differs when any channel exceeds
 //   Threshold (zero, so any changed bit).
 // - KIND_FLOAT3, the R11G11B10 float stages: a pixel differs when any channel's bits change.
-// - KIND_DEPTH, the depth buffer: a pixel differs when the depth's bits change, or its stencil
-//   does when the plane carries one.
+// - KIND_DEPTH, the depth buffer: a pixel differs when the two depths are more than Threshold
+//   representable floats apart (zero, so any changed bit, unless the request sets a tolerance), or
+//   its stencil changes when the plane carries one.
 
 #define KIND_UNORM8 0
 #define KIND_UINT4 1
@@ -55,10 +57,11 @@ Texture2D<uint2> StencilA : register(t4);
 Texture2D<uint2> StencilB : register(t5);
 
 // CELL_WORDS words per cell: count, sum (float bits), max (float bits), min x, min y, max x,
-// max y, and a spare word.
+// max y, and the count of pixels with any change.
 RWBuffer<uint> Cells : register(u0);
 
 groupshared uint g_count;
+groupshared uint g_changed;
 groupshared uint g_min_x;
 groupshared uint g_min_y;
 groupshared uint g_max_x;
@@ -66,9 +69,23 @@ groupshared uint g_max_y;
 groupshared float g_sum[GROUP_THREADS];
 groupshared float g_max[GROUP_THREADS];
 
-// The pixel's mean absolute channel difference (x), its largest channel difference (y), and
-// whether it differs by the plane's rule (z, as 0 or 1).
-float3 compare_pixel(uint2 a, uint2 b)
+// The distance between two depths in representable floats, saturating when their signs differ
+// (a depth of either zero matches the other zero).
+uint depth_ulps(float a, float b)
+{
+    const int ia = asint(a);
+    const int ib = asint(b);
+    if ((ia ^ ib) < 0)
+    {
+        return ((ia | ib) & 0x7fffffff) == 0 ? 0 : 0xffffffff;
+    }
+    return (uint)abs(ia - ib);
+}
+
+// The pixel's mean absolute channel difference (x), its largest channel difference (y), whether
+// it differs by the plane's rule (z, as 0 or 1), and whether its stored values change at all (w,
+// as 0 or 1).
+float4 compare_pixel(uint2 a, uint2 b)
 {
     if (Kind == KIND_UNORM8)
     {
@@ -82,14 +99,16 @@ float3 compare_pixel(uint2 a, uint2 b)
             largest = max(largest, d.a);
             sum += d.a;
         }
-        return float3(sum / (float)Channels, largest, largest > Threshold ? 1.0 : 0.0);
+        return float4(sum / (float)Channels, largest, largest > Threshold ? 1.0 : 0.0,
+            largest > 0.0 ? 1.0 : 0.0);
     }
     if (Kind == KIND_UINT4)
     {
         const int4 d = abs((int4)UintA[a] - (int4)UintB[b]);
         const float4 f = (float4)d;
         const float largest = max(max(f.r, f.g), max(f.b, f.a));
-        return float3((f.r + f.g + f.b + f.a) / 4.0, largest, largest > Threshold ? 1.0 : 0.0);
+        return float4((f.r + f.g + f.b + f.a) / 4.0, largest, largest > Threshold ? 1.0 : 0.0,
+            largest > 0.0 ? 1.0 : 0.0);
     }
     if (Kind == KIND_FLOAT3)
     {
@@ -99,18 +118,17 @@ float3 compare_pixel(uint2 a, uint2 b)
         float3 d = abs(va - vb);
         // A non-finite difference still counts the pixel, but stays out of the sums.
         d = (d == d && d < 3.0e38) ? d : 0.0;
-        return float3((d.r + d.g + d.b) / 3.0, max(max(d.r, d.g), d.b), differs ? 1.0 : 0.0);
+        return float4((d.r + d.g + d.b) / 3.0, max(max(d.r, d.g), d.b), differs ? 1.0 : 0.0,
+            differs ? 1.0 : 0.0);
     }
     const float da = ValueA[a].r;
     const float db = ValueB[b].r;
-    bool differs = asuint(da) != asuint(db);
-    if (HasStencil != 0)
-    {
-        differs = differs || StencilA[a].g != StencilB[b].g;
-    }
+    const bool stencil_differs = HasStencil != 0 && StencilA[a].g != StencilB[b].g;
+    const bool differs = (float)depth_ulps(da, db) > Threshold || stencil_differs;
+    const bool changed = asuint(da) != asuint(db) || stencil_differs;
     float d = abs(da - db);
     d = (d == d && d < 3.0e38) ? d : 0.0;
-    return float3(d, d, differs ? 1.0 : 0.0);
+    return float4(d, d, differs ? 1.0 : 0.0, changed ? 1.0 : 0.0);
 }
 
 [numthreads(GROUP_SIDE, GROUP_SIDE, 1)]
@@ -119,6 +137,7 @@ void main(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadID, uint index 
     if (index == 0)
     {
         g_count = 0;
+        g_changed = 0;
         g_min_x = 0xffffffff;
         g_min_y = 0xffffffff;
         g_max_x = 0;
@@ -129,6 +148,7 @@ void main(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadID, uint index 
     const uint2 lo = group.xy * Size / Grid;
     const uint2 hi = (group.xy + 1) * Size / Grid;
     uint count = 0;
+    uint changed = 0;
     float sum = 0.0;
     float largest = 0.0;
     uint2 box_lo = uint2(0xffffffff, 0xffffffff);
@@ -138,8 +158,9 @@ void main(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadID, uint index 
         for (uint x = lo.x + thread.x; x < hi.x; x += GROUP_SIDE)
         {
             const uint2 pixel = uint2(x, y);
-            const float3 result = compare_pixel(OriginA + pixel, OriginB + pixel);
+            const float4 result = compare_pixel(OriginA + pixel, OriginB + pixel);
             sum += result.x;
+            changed += result.w != 0.0 ? 1 : 0;
             largest = max(largest, result.y);
             if (result.z != 0.0)
             {
@@ -151,6 +172,10 @@ void main(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadID, uint index 
     }
     g_sum[index] = sum;
     g_max[index] = largest;
+    if (changed != 0)
+    {
+        InterlockedAdd(g_changed, changed);
+    }
     if (count != 0)
     {
         InterlockedAdd(g_count, count);
@@ -182,6 +207,6 @@ void main(uint3 group : SV_GroupID, uint3 thread : SV_GroupThreadID, uint index 
         Cells[base + 4] = g_min_y;
         Cells[base + 5] = g_max_x;
         Cells[base + 6] = g_max_y;
-        Cells[base + 7] = 0;
+        Cells[base + 7] = g_changed;
     }
 }

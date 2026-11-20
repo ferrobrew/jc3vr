@@ -491,6 +491,16 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.terrain_detail_eye_rows,
+                    "Terrain detail from each eye's own rows",
+                )
+                .on_hover_text(
+                    "Builds the terrain-detail draw's transform from each eye's own rows, as the \
+                     engine builds it for a separately rendered eye. Off, the centre's transform is \
+                     reprojected per eye, which rounds badly enough to move one eye's near ground \
+                     by up to one part in ten thousand of its depth.",
+                );
                 let (rewritten, projected, declined) =
                     crate::stereo::single_pass::eye_camera::screen_door_counts();
                 ui.weak(format!(

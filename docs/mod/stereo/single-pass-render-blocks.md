@@ -16,7 +16,10 @@ Every scene draw falls into one of these:
 - **(b) reproject a baked matrix.** The VS reads a CPU-baked world-view-projection from a per-draw
   constant buffer (not `cb0`). Single-pass reprojects that matrix by the per-eye `M_eye`
   (`clip_eye = M_eye · clip_center`) and re-issues the draw once per eye into the eye's half-viewport.
-  This is the TerrainDetail intercept.
+  The bark, foliage, and occluder intercepts. The TerrainDetail intercept re-issues the same way but
+  builds each eye's matrix from that eye's own `cb13` rows instead (`single_pass.terrain_detail_eye_rows`;
+  see "Comparing at the headset's size" in [single-pass-stereo.md](single-pass-stereo.md)), since the
+  reprojection rounds its depth badly.
 
   **The baked matrix is stored column-wise.** Every bucket-(b) VS in the bundle consumes its four
   registers as a multiply-add chain rather than four `dp4`s — for TerrainDetail (`sh_0224`), Bark

@@ -48,6 +48,10 @@ pub(crate) struct SnapshotTable {
     /// The final image's per-pixel threshold in 8-bit codes.
     #[serde(default = "default_pixel_threshold")]
     pixel_threshold: f32,
+    /// How many representable floats apart two depths may be and still match; zero (the default)
+    /// counts any changed bit.
+    #[serde(default)]
+    depth_ulps: u32,
     /// The failure limits for the dump policy.
     #[serde(default = "default_fail_fraction")]
     fail_fraction: f64,
@@ -71,6 +75,7 @@ pub(crate) struct SnapshotRequest {
     pub keep: bool,
     pub compare: Vec<String>,
     pub pixel_threshold: f32,
+    pub depth_ulps: u32,
     pub limits: FailLimits,
     pub dump: DumpPolicy,
     pub dump_crop: bool,
@@ -86,6 +91,7 @@ pub(crate) enum SnapshotError {
     CompareLabel,
     TooManyComparisons(usize),
     Threshold,
+    DepthTolerance,
     Limits,
 }
 
@@ -106,6 +112,9 @@ impl std::fmt::Display for SnapshotError {
                 "{count} snapshots to compare with; at most {MAX_COMPARED} are allowed"
             ),
             Self::Threshold => write!(f, "pixel_threshold must be within [0, 255]"),
+            Self::DepthTolerance => {
+                write!(f, "depth_ulps must be at most {MAX_DEPTH_ULPS}")
+            }
             Self::Limits => {
                 write!(
                     f,
@@ -118,6 +127,11 @@ impl std::fmt::Display for SnapshotError {
 
 /// How many kept snapshots one snapshot may be compared with.
 pub(crate) const MAX_COMPARED: usize = 8;
+
+/// The largest depth tolerance a request may ask for, in representable floats: a relative
+/// difference of about one part in sixteen thousand, beyond which a tolerance would hide displaced
+/// geometry rather than rounding.
+pub(crate) const MAX_DEPTH_ULPS: u32 = 512;
 
 impl SnapshotRequest {
     pub(crate) fn parse(
@@ -148,6 +162,9 @@ impl SnapshotRequest {
         if !(0.0..=255.0).contains(&table.pixel_threshold) {
             return Err(SnapshotError::Threshold);
         }
+        if table.depth_ulps > MAX_DEPTH_ULPS {
+            return Err(SnapshotError::DepthTolerance);
+        }
         if !(0.0..=1.0).contains(&table.fail_fraction)
             || !table.fail_mean.is_finite()
             || table.fail_mean < 0.0
@@ -162,6 +179,7 @@ impl SnapshotRequest {
             keep: table.keep,
             compare: table.compare,
             pixel_threshold: table.pixel_threshold,
+            depth_ulps: table.depth_ulps,
             limits: FailLimits {
                 fraction: table.fail_fraction,
                 mean: table.fail_mean,
@@ -213,6 +231,7 @@ mod tests {
         let request = parse("label = \"left_a\"\nplanes = [\"final\", \"depth\"]\n").unwrap();
         assert_eq!(request.planes, vec![Plane::Final, Plane::Depth]);
         assert_eq!(request.pixel_threshold, 3.0);
+        assert_eq!(request.depth_ulps, 0);
         assert_eq!(
             request.limits,
             FailLimits {
@@ -264,6 +283,10 @@ mod tests {
         assert_eq!(
             parse("label = \"a\"\nplanes = [\"final\"]\npixel_threshold = 300\n"),
             Err(SnapshotError::Threshold)
+        );
+        assert_eq!(
+            parse("label = \"a\"\nplanes = [\"final\"]\ndepth_ulps = 513\n"),
+            Err(SnapshotError::DepthTolerance)
         );
         assert_eq!(
             parse("label = \"a\"\nplanes = [\"final\"]\nfail_fraction = 2\n"),

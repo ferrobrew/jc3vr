@@ -11,6 +11,13 @@ from tools.rendering.protocol.snapshot import Comparison, Plane
 # The modes a fast comparison renders as references for the others, in the order it renders them.
 REFERENCE_MODES = (CompareMode.LEFT_ONLY, CompareMode.RIGHT_ONLY, CompareMode.MULTIPASS)
 DEFAULT_PLANES = (Plane.FINAL, Plane.DEPTH, Plane.ALBEDO, Plane.NORMALS)
+# How many representable floats apart two depths may be and still match: a relative difference of
+# about one part in 130,000, about 0.08 mm at ten metres. Two renders of the same surface through
+# transforms that are equal in real arithmetic but rounded differently (single-pass's reprojected
+# families against an isolated eye's own matrices) land a few to a few dozen floats apart over the
+# whole surface; displaced geometry lands thousands apart. See "Comparing depth" in
+# docs/mod/stereo/single-pass-stereo.md.
+DEFAULT_DEPTH_ULPS = 64
 
 
 class FastError(ValueError):
@@ -116,6 +123,8 @@ class Row:
     verdict: Verdict
     baseline: int | None = None
     dump: dict | None = None
+    # The pixels whose stored values change at all (see `Comparison.changed`).
+    changed: int | None = None
 
     def to_wire(self) -> dict:
         value = asdict(self)
@@ -168,7 +177,8 @@ def rows(scene: str, results: list[tuple[SnapshotStep, tuple[Comparison, ...]]],
                     verdict = Verdict.NOISE if previous is not None else verdict
             result.append(Row(scene, step.label, comparison.against, plane, eye, comparison.pixels,
                               comparison.differing, comparison.mean, comparison.largest,
-                              comparison.bbox, floor, verdict, previous, comparison.dump))
+                              comparison.bbox, floor, verdict, previous, comparison.dump,
+                              comparison.changed))
     return result, floors
 
 

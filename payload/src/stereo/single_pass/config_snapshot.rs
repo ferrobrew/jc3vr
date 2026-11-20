@@ -10,7 +10,7 @@
 
 use std::{
     cell::Cell,
-    sync::atomic::{AtomicU32, Ordering},
+    sync::atomic::{AtomicU64, Ordering},
 };
 
 use crate::config::Config;
@@ -49,15 +49,16 @@ pub(super) enum Flag {
     ViewportFollowsTarget,
     Slot13PerEye,
     NonIndexedGeometryOnce,
+    TerrainDetailEyeRows,
 }
 
 /// The single-pass config flags, sampled once per frame and pinned for the duration of a dispatch.
 #[derive(Clone, Copy)]
-pub(super) struct ConfigFlags(u32);
+pub(super) struct ConfigFlags(u64);
 
 impl ConfigFlags {
     pub(super) fn has(self, flag: Flag) -> bool {
-        self.0 & (1 << flag as u32) != 0
+        self.0 & (1 << flag as u64) != 0
     }
 }
 
@@ -133,8 +134,8 @@ impl Drop for DispatchEnd {
     }
 }
 
-fn store_config_flags() -> u32 {
-    let bit = |on: bool, flag: Flag| u32::from(on) << flag as u32;
+fn store_config_flags() -> u64 {
+    let bit = |on: bool, flag: Flag| u64::from(on) << flag as u64;
     let snapshot = Config::lock_query(|c| {
         let s = &c.stereo.single_pass;
         bit(s.enabled, Flag::SinglePass)
@@ -174,6 +175,7 @@ fn store_config_flags() -> u32 {
             )
             | bit(s.slot13_per_eye, Flag::Slot13PerEye)
             | bit(s.non_indexed_geometry_once, Flag::NonIndexedGeometryOnce)
+            | bit(s.terrain_detail_eye_rows, Flag::TerrainDetailEyeRows)
     }) | CONFIG_FLAGS_VALID;
     CONFIG_FLAGS.store(snapshot, Ordering::Relaxed);
     snapshot
@@ -181,8 +183,8 @@ fn store_config_flags() -> u32 {
 
 /// Marks [`CONFIG_FLAGS`] as having been sampled at least once, so a zero snapshot before the first
 /// frame is not mistaken for "everything off".
-const CONFIG_FLAGS_VALID: u32 = 1 << 31;
-static CONFIG_FLAGS: AtomicU32 = AtomicU32::new(0);
+const CONFIG_FLAGS_VALID: u64 = 1 << 63;
+static CONFIG_FLAGS: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
     /// The flags [`begin_dispatch`] pinned for the dispatch in flight on this thread, or `None` on a

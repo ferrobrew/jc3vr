@@ -45,19 +45,21 @@ pub(crate) enum Pixel {
 }
 
 /// One pixel's comparison: its mean absolute channel difference, its largest channel difference,
-/// and whether it differs by the plane's rule.
+/// whether it differs by the plane's rule, and whether its stored values change at all.
 #[cfg(test)]
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) struct PixelResult {
     pub mean: f32,
     pub largest: f32,
     pub differs: bool,
+    pub changed: bool,
 }
 
 /// The rule `compare_pixel` in `snapshot_diff_cs.hlsl` applies, for testing the totals off the
 /// GPU. `channels` is how many 8-bit channels count (three for the final image, four for a stage);
-/// `threshold` is the largest channel difference a pixel may have and still match. A mismatched
-/// pair of pixel kinds compares as differing.
+/// `threshold` is the largest channel difference a pixel may have and still match, and for a depth
+/// the largest distance in representable floats ([`depth_ulps`]). A mismatched pair of pixel kinds
+/// compares as differing.
 #[cfg(test)]
 pub(crate) fn compare_pixel(a: Pixel, b: Pixel, channels: usize, threshold: f32) -> PixelResult {
     match (a, b) {
@@ -72,6 +74,7 @@ pub(crate) fn compare_pixel(a: Pixel, b: Pixel, channels: usize, threshold: f32)
                 mean: deltas.iter().sum::<f32>() / channels as f32,
                 largest,
                 differs: largest > threshold,
+                changed: largest > 0.0,
             }
         }
         (Pixel::Uint(a), Pixel::Uint(b)) => {
@@ -81,6 +84,7 @@ pub(crate) fn compare_pixel(a: Pixel, b: Pixel, channels: usize, threshold: f32)
                 mean: deltas.iter().sum::<f32>() / 4.0,
                 largest,
                 differs: largest > threshold,
+                changed: largest > 0.0,
             }
         }
         (Pixel::Float(a), Pixel::Float(b)) => {
@@ -90,22 +94,41 @@ pub(crate) fn compare_pixel(a: Pixel, b: Pixel, channels: usize, threshold: f32)
                 mean: deltas.iter().sum::<f32>() / 3.0,
                 largest: deltas.iter().copied().fold(0.0, f32::max),
                 differs,
+                changed: differs,
             }
         }
         (Pixel::Depth(a, stencil_a), Pixel::Depth(b, stencil_b)) => {
             let delta = finite_or_zero((a - b).abs());
+            let stencil_differs = stencil_a != stencil_b;
             PixelResult {
                 mean: delta,
                 largest: delta,
-                differs: a.to_bits() != b.to_bits() || stencil_a != stencil_b,
+                differs: depth_ulps(a, b) as f32 > threshold || stencil_differs,
+                changed: a.to_bits() != b.to_bits() || stencil_differs,
             }
         }
         _ => PixelResult {
             mean: 0.0,
             largest: 0.0,
             differs: true,
+            changed: true,
         },
     }
+}
+
+/// The distance between two depths in representable floats, as `depth_ulps` in
+/// `snapshot_diff_cs.hlsl` measures it: saturating when the signs differ, with the two zeros equal.
+#[cfg(test)]
+pub(crate) fn depth_ulps(a: f32, b: f32) -> u32 {
+    let (ia, ib) = (a.to_bits() as i32, b.to_bits() as i32);
+    if (ia ^ ib) < 0 {
+        return if (ia | ib) & 0x7fff_ffff == 0 {
+            0
+        } else {
+            u32::MAX
+        };
+    }
+    ia.abs_diff(ib)
 }
 
 #[cfg(test)]
@@ -123,6 +146,8 @@ pub(crate) struct Cell {
     /// zero.
     pub min: [u32; 2],
     pub max: [u32; 2],
+    /// The pixels whose stored values change at all, whether or not they differ by the rule.
+    pub changed: u32,
 }
 
 /// The words the shader writes per cell.
@@ -137,6 +162,7 @@ impl Cell {
             largest: f32::from_bits(words[2]),
             min: [words[3], words[4]],
             max: [words[5], words[6]],
+            changed: words[7],
         }
     }
 }
@@ -163,6 +189,7 @@ pub(crate) fn reference_cells(
                 largest: 0.0,
                 min: [u32::MAX; 2],
                 max: [0; 2],
+                changed: 0,
             };
             for y in y0..y1 {
                 for x in x0..x1 {
@@ -170,6 +197,7 @@ pub(crate) fn reference_cells(
                     let result = compare_pixel(a, b, channels, threshold);
                     cell.sum += result.mean;
                     cell.largest = cell.largest.max(result.largest);
+                    cell.changed += u32::from(result.changed);
                     if result.differs {
                         cell.count += 1;
                         cell.min = [cell.min[0].min(x), cell.min[1].min(y)];
@@ -190,6 +218,9 @@ pub(crate) struct Totals {
     pub pixels: u64,
     /// The pixels that differ by the plane's rule.
     pub differing: u64,
+    /// The pixels whose stored values change at all. It equals `differing` for a plane whose rule is
+    /// exact; for a depth compared with a tolerance it counts the changes the tolerance absorbs too.
+    pub changed: u64,
     /// The mean over every compared pixel of its mean absolute channel difference.
     pub mean: f64,
     /// The largest channel difference anywhere.
@@ -206,6 +237,7 @@ pub(crate) struct Totals {
 /// Total `cells` (row by row over a `grid` heat map) for a comparison of `pixels` pixels.
 pub(crate) fn totals(cells: &[Cell], grid: [u32; 2], pixels: u64) -> Totals {
     let differing = cells.iter().map(|cell| u64::from(cell.count)).sum();
+    let changed = cells.iter().map(|cell| u64::from(cell.changed)).sum();
     let sum: f64 = cells.iter().map(|cell| f64::from(cell.sum)).sum();
     let largest = cells.iter().map(|cell| cell.largest).fold(0.0, f32::max);
     let bbox =
@@ -226,6 +258,7 @@ pub(crate) fn totals(cells: &[Cell], grid: [u32; 2], pixels: u64) -> Totals {
     Totals {
         pixels,
         differing,
+        changed,
         mean: if pixels == 0 {
             0.0
         } else {
@@ -315,6 +348,46 @@ mod tests {
     }
 
     #[test]
+    fn depth_tolerance_counts_representable_floats() {
+        let depth = 0.012_345f32;
+        let next = |value: f32, steps: u32| f32::from_bits(value.to_bits() + steps);
+        let within = compare_pixel(
+            Pixel::Depth(depth, 0),
+            Pixel::Depth(next(depth, 64), 0),
+            1,
+            64.0,
+        );
+        assert!(!within.differs);
+        assert!(within.changed);
+        let beyond = compare_pixel(
+            Pixel::Depth(depth, 0),
+            Pixel::Depth(next(depth, 65), 0),
+            1,
+            64.0,
+        );
+        assert!(beyond.differs);
+        // A stencil change differs whatever the depth tolerance.
+        assert!(compare_pixel(Pixel::Depth(depth, 0), Pixel::Depth(depth, 1), 1, 64.0).differs);
+        assert_eq!(depth_ulps(0.0, -0.0), 0);
+        assert_eq!(depth_ulps(f32::from_bits(1), -f32::from_bits(1)), u32::MAX);
+        assert_eq!(depth_ulps(next(depth, 3), depth), 3);
+    }
+
+    #[test]
+    fn cells_count_changes_under_the_tolerance() {
+        let cells = reference_cells(4, 1, [1, 1], 1, 16.0, |x, _| {
+            let a = 0.5f32;
+            (
+                Pixel::Depth(a, 0),
+                Pixel::Depth(f32::from_bits(a.to_bits() + x * 10), 0),
+            )
+        });
+        let totals = totals(&cells, [1, 1], 4);
+        // Steps of 0, 10, 20, and 30 floats: three change, two beyond the tolerance of 16.
+        assert_eq!((totals.changed, totals.differing), (3, 2));
+    }
+
+    #[test]
     fn non_finite_differences_count_but_stay_out_of_sums() {
         let result = compare_pixel(Pixel::Depth(f32::INFINITY, 0), Pixel::Depth(0.0, 0), 1, 0.0);
         assert!(result.differs);
@@ -358,8 +431,9 @@ mod tests {
 
     #[test]
     fn cells_decode_from_shader_words() {
-        let cell = Cell::from_words(&[3, 1.5f32.to_bits(), 4.0f32.to_bits(), 1, 2, 5, 6, 0]);
+        let cell = Cell::from_words(&[3, 1.5f32.to_bits(), 4.0f32.to_bits(), 1, 2, 5, 6, 9]);
         assert_eq!(cell.count, 3);
+        assert_eq!(cell.changed, 9);
         assert_eq!(cell.sum, 1.5);
         assert_eq!(cell.largest, 4.0);
         assert_eq!((cell.min, cell.max), ([1, 2], [5, 6]));

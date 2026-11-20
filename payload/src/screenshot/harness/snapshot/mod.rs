@@ -650,6 +650,8 @@ fn compare(
                 size,
                 threshold: if final_image {
                     request.pixel_threshold
+                } else if reference.texture.format.kind == Kind::Depth {
+                    request.depth_ulps as f32
                 } else {
                     0.0
                 },

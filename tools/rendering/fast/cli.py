@@ -13,7 +13,14 @@ import time
 from pathlib import Path
 
 from tools.rendering.comparison.images import Thresholds
-from tools.rendering.fast.plan import FastError, Limits, baseline_counts, failed, table
+from tools.rendering.fast.plan import (
+    DEFAULT_DEPTH_ULPS,
+    FastError,
+    Limits,
+    baseline_counts,
+    failed,
+    table,
+)
 from tools.rendering.fast.run import FastOptions, run_scene, write_report
 from tools.rendering.fast.suite import load_config, load_suite
 from tools.rendering.protocol import ProtocolError
@@ -57,6 +64,9 @@ def main(argv=None, iterate=False) -> int:
                         "(1 to 300); the configs ask for 30")
     parser.add_argument("--settle-seconds", type=float, help="override every stage's settle "
                         "(0 to 300 seconds); the configs ask for 20")
+    parser.add_argument("--depth-ulps", type=int, default=DEFAULT_DEPTH_ULPS,
+                        help="how many representable floats apart two depths may be and still match "
+                             f"(default {DEFAULT_DEPTH_ULPS}; 0 counts any changed bit)")
     parser.add_argument("--timeout", type=float, default=1800.0)
     if iterate:
         parser.add_argument("--no-build", action="store_true")
@@ -91,7 +101,7 @@ def main(argv=None, iterate=False) -> int:
             planes = (Plane.FINAL,) + planes
         options = FastOptions(planes, DumpPolicy(args.dump), not args.no_crop,
                               Limits(Thresholds(), args.noise_factor), args.restage,
-                              not args.no_repeat, args.full_cycles)
+                              not args.no_repeat, args.full_cycles, args.depth_ulps)
         baseline = (baseline_counts(json.loads(args.baseline.read_text()))
                     if args.baseline else None)
         output = args.output or SESSIONS / "fast" / time.strftime("%Y%m%d-%H%M%S")
