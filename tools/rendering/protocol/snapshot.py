@@ -35,6 +35,16 @@ class Plane(StrEnum):
     MAIN_COLOR = "main_color"
     PRE_AA = "pre_aa"
     POST_AA = "post_aa"
+    SSAO = "ssao"
+    SSAO_VOLUMES = "ssao_volumes"
+    SSAO_STEP0 = "ssao_step0"
+    SSAO_STEP1 = "ssao_step1"
+    SSAO_STEP2 = "ssao_step2"
+    SSAO_STEP3 = "ssao_step3"
+    SSAO_STEP4 = "ssao_step4"
+    SSAO_STEP5 = "ssao_step5"
+    SSAO_STEP6 = "ssao_step6"
+    SSAO_STEP7 = "ssao_step7"
 
 
 class DumpPolicy(StrEnum):

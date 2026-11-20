@@ -97,6 +97,7 @@ single_pass_switches! {
     NonIndexedGeometryOnce => non_indexed_geometry_once, false;
     CollapseViewportFollowsTarget => collapse_viewport_follows_target, false;
     SsaoPerEye => ssao_per_eye, true;
+    SsaoExactSampling => ssao_exact_sampling, true;
     AoVolumesPerEye => ao_volumes_per_eye, true;
     SsrPerEye => ssr_per_eye, true;
     SubsurfacePerEye => subsurface_per_eye, false;

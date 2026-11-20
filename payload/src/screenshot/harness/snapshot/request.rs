@@ -32,6 +32,51 @@ pub(crate) enum Plane {
     PreAa,
     /// The tone-mapped image the anti-aliasing writes.
     PostAa,
+    /// The target the ambient-occlusion block's composite multiplies the occlusion into (its alpha),
+    /// as the block leaves it.
+    Ssao,
+    /// The ambient-occlusion volumes' target the block's composite multiplies in, as the block
+    /// leaves it bound.
+    SsaoVolumes,
+    /// The render target of the ambient-occlusion block's draws, in order: the target each draw
+    /// leaves, at its own size (the reduced-resolution ones too), for attributing a difference in
+    /// [`Ssao`](Self::Ssao) to the draw that makes it.
+    SsaoStep0,
+    SsaoStep1,
+    SsaoStep2,
+    SsaoStep3,
+    SsaoStep4,
+    SsaoStep5,
+    SsaoStep6,
+    SsaoStep7,
+}
+
+impl Plane {
+    /// The [`SsaoStep0`](Self::SsaoStep0) family's plane for the block's `step`th draw, if the family
+    /// reaches that far.
+    pub(crate) fn ssao_step(step: u32) -> Option<Self> {
+        [
+            Self::SsaoStep0,
+            Self::SsaoStep1,
+            Self::SsaoStep2,
+            Self::SsaoStep3,
+            Self::SsaoStep4,
+            Self::SsaoStep5,
+            Self::SsaoStep6,
+            Self::SsaoStep7,
+        ]
+        .get(step as usize)
+        .copied()
+    }
+
+    /// Whether the plane may be smaller than the eye, compared at its own size.
+    pub(crate) fn may_be_reduced(self) -> bool {
+        Self::ssao_step_index(self).is_some()
+    }
+
+    fn ssao_step_index(self) -> Option<u32> {
+        (0..8).find(|&step| Self::ssao_step(step) == Some(self))
+    }
 }
 
 /// When a snapshot's comparisons dump the compared pixels to files.

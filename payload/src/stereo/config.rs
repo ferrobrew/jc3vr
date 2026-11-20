@@ -544,6 +544,25 @@ pub struct SinglePassConfig {
     /// binds (`stereo::single_pass::ambient_occlusion`). A shader rewrite: changing it requests a
     /// shader reload. On by default.
     pub ssao_per_eye: bool,
+    /// Compute the **SSAO** passes' coordinates, texels, and filter weights in the shader, in every
+    /// mode.
+    ///
+    /// The SSAO passes sample at places where the sampler's choice of texel or weight rests on the
+    /// coordinate's last bits: the generation's centre samples sit exactly on a full-resolution texel
+    /// boundary, the bilateral blur steps by half a texel, and the composite's bilinear upsample
+    /// quantizes its weights. The rasterizer's interpolated UV and the sampler's conversion of a
+    /// normalized coordinate both behave differently in an eye-sized target and in the double-wide
+    /// one, so the two chose differently at some pixels, in stripes 14 columns apart across the eye
+    /// that the blur spread and the composite spread again. With this on, every mode computes the UV
+    /// from the pixel position over a size read from a texture, moves the generation's centre samples
+    /// off the boundary, reads the blur's samples through loads of the texel the coordinate floors
+    /// to, and blends the composite's four texels in the shader, so the left eye's occlusion is the
+    /// isolated eye's wherever their inputs agree. Under the collapse the generation also places its
+    /// taps in the eye's own UV and takes only the samples onto the eye's half. It changes the
+    /// isolated eyes' and multipass's occlusion too, by which of two adjacent texels a sample reads
+    /// and by a weight's last bits. A shader rewrite: changing it requests a shader reload. On by
+    /// default.
+    pub ssao_exact_sampling: bool,
     /// Shade the ambient-occlusion volumes for both eyes from one draw.
     ///
     /// Each volume (`aobox`, `aosphere`) maps the scene under it into its own unit space through a
@@ -915,6 +934,7 @@ impl SinglePassConfig {
             non_indexed_geometry_once: true,
             collapse_viewport_follows_target: true,
             ssao_per_eye: true,
+            ssao_exact_sampling: true,
             ao_volumes_per_eye: true,
             ssr_per_eye: true,
             subsurface_per_eye: true,

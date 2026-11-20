@@ -27,7 +27,7 @@ use std::{
 };
 
 use detours_macro::detour;
-use dxbc_stereo::{LocalLights, refresh_checksum};
+use dxbc_stereo::{AmbientOcclusionSampling, LocalLights, refresh_checksum};
 use jc3gi::graphics_engine::{
     draw::{
         CreateDomainProgramParams, CreateFragmentProgramParams, CreateHullProgramParams,
@@ -259,6 +259,14 @@ fn create_fragment_program(
         && Config::lock_query(|c| c.stereo.single_pass.glare_per_eye);
     let localize_ambient_occlusion = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye);
+    // The SSAO passes' sampling computed in the shader, in every mode: under the collapse as part of
+    // the rewrite above, elsewhere as a rewrite of its own.
+    let exact_sampling = Config::lock_query(|c| c.stereo.single_pass.ssao_exact_sampling);
+    let ambient_occlusion_sampling = if exact_sampling {
+        AmbientOcclusionSampling::Exact
+    } else {
+        AmbientOcclusionSampling::DoubleWide
+    };
     // The ambient-occlusion volumes mapped through each eye's camera. Baked into the bytecode like
     // the ambient occlusion; its vertex shader's reprojection is decided by name with the same switch.
     let localize_ao_volumes = crate::stereo::single_pass::collapse_active()
@@ -296,12 +304,18 @@ fn create_fragment_program(
         && let Ok(size) = usize::try_from(p.m_Size)
     {
         let code = unsafe { std::slice::from_raw_parts(p.m_Code, size) };
-        rewritten_screen_pass =
-            ambient_occlusion::rewrite_fragment_program(code, localize_ambient_occlusion)
-                .or_else(|| {
-                    screen_space_reflection::rewrite_fragment_program(code, localize_reflections)
-                })
-                .or_else(|| ao_volumes::rewrite_fragment_program(code, localize_ao_volumes));
+        rewritten_screen_pass = ambient_occlusion::rewrite_fragment_program(
+            code,
+            localize_ambient_occlusion,
+            ambient_occlusion_sampling,
+        )
+        .or_else(|| {
+            (exact_sampling && !localize_ambient_occlusion)
+                .then(|| ambient_occlusion::snap_fragment_program(code))
+                .flatten()
+        })
+        .or_else(|| screen_space_reflection::rewrite_fragment_program(code, localize_reflections))
+        .or_else(|| ao_volumes::rewrite_fragment_program(code, localize_ao_volumes));
     }
     // Skip patching once eject begins, so the shader restore's bounce re-creates pristine fragment
     // shaders (matching the vertex side) and the clean game keeps none of the mod's edits.

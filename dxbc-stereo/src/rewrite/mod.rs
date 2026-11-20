@@ -26,8 +26,8 @@
 
 mod ambient;
 pub use ambient::{
-    AMBIENT_OCCLUSION_CB_REGISTER, AMBIENT_OCCLUSION_ROWS_PER_EYE, localize_ambient_occlusion,
-    localize_ambient_occlusion_filter,
+    AMBIENT_OCCLUSION_CB_REGISTER, AMBIENT_OCCLUSION_ROWS_PER_EYE, AmbientOcclusionSampling,
+    localize_ambient_occlusion, localize_ambient_occlusion_filter, snap_ambient_occlusion_uv,
 };
 mod camera;
 pub use camera::{

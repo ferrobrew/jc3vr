@@ -677,6 +677,23 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
+                        &mut cfg.stereo.single_pass.ssao_exact_sampling,
+                        "SSAO exact sampling",
+                    )
+                    .on_hover_text(
+                        "Computes the ambient occlusion's coordinates, texels, and blur and upsample \
+                         weights in the shader in every mode, so an eye rendered on its own and each \
+                         eye of the double-wide frame read the same texels with the same weights. \
+                         Off, the rasterizer and the sampler round differently at the two widths, \
+                         which shows as faint vertical stripes in the occlusion on the ground. Also \
+                         changes multipass. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
                         &mut cfg.stereo.single_pass.ao_volumes_per_eye,
                         "Ambient-occlusion volumes per eye",
                     )

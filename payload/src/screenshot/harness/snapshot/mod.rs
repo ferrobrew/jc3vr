@@ -18,7 +18,10 @@ mod summary;
 
 use std::{
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
     thread::JoinHandle,
     time::{Duration, Instant},
 };
@@ -130,6 +133,80 @@ pub(crate) fn stage_hook(stage: Stage, texture: impl FnOnce() -> anyhow::Result<
     let Some(plane) = plane_of(stage) else {
         return;
     };
+    plane_hook(plane, |_| {
+        let texture = texture()?;
+        // SAFETY: supplied by a live render hook.
+        let texture = unsafe { texture.as_ref() }.context("the stage texture is unavailable")?;
+        Ok(texture.m_Texture.clone())
+    });
+}
+
+/// Keep the texture the ambient-occlusion block's composite wrote, the render target it leaves
+/// bound, for a pending snapshot that wants the [`Plane::Ssao`] plane. Render thread, right after the
+/// block's draw.
+pub(crate) fn ambient_occlusion_hook() {
+    plane_hook(Plane::Ssao, |ctx| {
+        let mut targets = [None];
+        // SAFETY: the context is locked by `plane_hook`; the call fills one slot.
+        unsafe { ctx.OMGetRenderTargets(Some(&mut targets), None) };
+        let [Some(view)] = targets else {
+            anyhow::bail!("the ambient-occlusion block left no render target bound");
+        };
+        // SAFETY: a live view.
+        Ok(unsafe { view.GetResource() }?)
+    });
+    plane_hook(Plane::SsaoVolumes, |ctx| {
+        let mut views = [None, None];
+        // SAFETY: the context is locked by `plane_hook`; the call fills two slots.
+        unsafe { ctx.PSGetShaderResources(0, Some(&mut views)) };
+        let [_, Some(view)] = views else {
+            anyhow::bail!("the ambient-occlusion composite left no volume texture bound");
+        };
+        // SAFETY: a live view.
+        Ok(unsafe { view.GetResource() }?)
+    });
+}
+
+/// Mark the start (`true`) or the end of the ambient-occlusion block's draw, so the draws inside it
+/// are counted for the [`Plane::SsaoStep0`] family. Render thread.
+pub(crate) fn ambient_occlusion_block(inside: bool) {
+    AMBIENT_OCCLUSION_STEP.store(if inside { 0 } else { NOT_IN_BLOCK }, Ordering::Relaxed);
+}
+
+/// Keep the render target a draw inside the ambient-occlusion block left, as the next plane of the
+/// [`Plane::SsaoStep0`] family, for a pending snapshot that wants it. Render thread, right after an
+/// engine draw.
+pub(crate) fn ambient_occlusion_draw_hook() {
+    let step = AMBIENT_OCCLUSION_STEP.load(Ordering::Relaxed);
+    if step == NOT_IN_BLOCK {
+        return;
+    }
+    AMBIENT_OCCLUSION_STEP.store(step + 1, Ordering::Relaxed);
+    let Some(plane) = Plane::ssao_step(step) else {
+        return;
+    };
+    plane_hook(plane, |ctx| {
+        let mut targets = [None];
+        // SAFETY: the context is locked by `plane_hook`; the call fills one slot.
+        unsafe { ctx.OMGetRenderTargets(Some(&mut targets), None) };
+        let [Some(view)] = targets else {
+            anyhow::bail!("the ambient-occlusion draw left no render target bound");
+        };
+        // SAFETY: a live view.
+        Ok(unsafe { view.GetResource() }?)
+    });
+}
+
+/// The next draw's index inside the ambient-occlusion block, or [`NOT_IN_BLOCK`] outside it.
+static AMBIENT_OCCLUSION_STEP: AtomicU32 = AtomicU32::new(NOT_IN_BLOCK);
+const NOT_IN_BLOCK: u32 = u32::MAX;
+
+/// Keep the resource `source` names for a pending snapshot that wants `plane`, on a frame it may be
+/// taken on. Render thread; `source` runs with the engine's immediate context locked.
+fn plane_hook(
+    plane: Plane,
+    source: impl FnOnce(&ID3D11DeviceContext) -> anyhow::Result<ID3D11Resource>,
+) {
     if !wants_eyes() || !crate::testing::visual::ready() {
         return;
     }
@@ -170,12 +247,9 @@ pub(crate) fn stage_hook(stage: Stage, texture: impl FnOnce() -> anyhow::Result<
             let engine = unsafe { GraphicsEngine::get() }.context("graphics engine unavailable")?;
             let device =
                 unsafe { engine.m_Device.as_ref() }.context("graphics device unavailable")?;
-            let texture = texture()?;
-            // SAFETY: supplied by a live render hook.
-            let texture =
-                unsafe { texture.as_ref() }.context("the stage texture is unavailable")?;
-            // SAFETY: the context is locked and the texture is live.
-            unsafe { PlaneTexture::copy(&device.m_Device, ctx, &texture.m_Texture, reuse) }
+            let resource = source(ctx)?;
+            // SAFETY: the context is locked and the resource is live.
+            unsafe { PlaneTexture::copy(&device.m_Device, ctx, &resource, reuse) }
         })();
         match copied {
             Ok(texture) => stash.planes.push(StashEntry {
@@ -453,6 +527,8 @@ struct SnapshotPlane {
     plane: Plane,
     eye: usize,
     origin: [u32; 2],
+    /// The compared region's size: the eye's, or a reduced-resolution plane's own share of it.
+    size: [u32; 2],
     texture: Arc<PlaneTexture>,
 }
 
@@ -563,8 +639,18 @@ fn take(
 /// Add `texture` to `snapshot` as `eye`'s plane, or as both eyes' when `eye` is `None` and the
 /// texture holds them side by side.
 fn add_plane(snapshot: &mut Snapshot, plane: Plane, eye: Option<usize>, texture: PlaneTexture) {
-    let [width, height] = snapshot.eye_size;
+    let [mut width, mut height] = snapshot.eye_size;
     let texture = Arc::new(texture);
+    if plane.may_be_reduced() {
+        // A reduced-resolution plane is compared at its own size: the whole texture for one eye, or
+        // each half of a double-wide one.
+        width = if eye.is_some() {
+            texture.width
+        } else {
+            texture.width / 2
+        };
+        height = texture.height;
+    }
     if texture.height < height {
         snapshot.errors.push(PlaneError {
             plane,
@@ -595,6 +681,7 @@ fn add_plane(snapshot: &mut Snapshot, plane: Plane, eye: Option<usize>, texture:
             plane,
             eye,
             origin: [x, 0],
+            size: [width, height],
             texture: Arc::clone(&texture),
         });
     }
@@ -628,11 +715,9 @@ fn compare(
             );
         }
         for test in &snapshot.planes {
-            if let Some(reference) = kept
-                .planes
-                .iter()
-                .find(|entry| entry.plane == test.plane && entry.eye == test.eye)
-            {
+            if let Some(reference) = kept.planes.iter().find(|entry| {
+                entry.plane == test.plane && entry.eye == test.eye && entry.size == test.size
+            }) {
                 pairs.push((label.as_str(), reference, test));
             }
         }
@@ -644,7 +729,6 @@ fn compare(
         state.pipeline = Some(Pipeline::new(device)?);
     }
     let pipeline = state.pipeline.as_ref().expect("created above");
-    let size = snapshot.eye_size;
     let jobs: Vec<Job<'_>> = pairs
         .iter()
         .map(|(_, reference, test)| {
@@ -654,7 +738,7 @@ fn compare(
                 b: &test.texture,
                 origin_a: reference.origin,
                 origin_b: test.origin,
-                size,
+                size: test.size,
                 threshold: if final_image {
                     request.pixel_threshold
                 } else if reference.texture.format.kind == Kind::Depth {
@@ -668,9 +752,10 @@ fn compare(
         .collect();
     // SAFETY: the render thread inside the engine's context critical section; the planes are live.
     let cells = unsafe { pipeline.run(context, &jobs)? };
-    let pixels = u64::from(size[0]) * u64::from(size[1]);
     let mut compared = Vec::with_capacity(pairs.len());
     for ((label, reference, test), (cells, job)) in pairs.iter().zip(cells.iter().zip(&jobs)) {
+        let size = test.size;
+        let pixels = u64::from(size[0]) * u64::from(size[1]);
         let totals = totals(cells, GRID, pixels);
         let failed = request.limits.exceeded(&totals);
         let wants_dump = match request.dump {

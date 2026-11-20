@@ -63,6 +63,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     hooks::graphics_engine::reconstruction,
+    screenshot::harness::snapshot,
     stereo::single_pass::{ambient_occlusion, screen_space_reflection},
 };
 
@@ -84,7 +85,10 @@ fn ssao_block_draw(this: *mut RenderBlockSSAO, rc: *mut RenderContext, info: *co
     let enabled = Config::lock_query(|c| c.stereo.single_pass.ssao_per_eye)
         && crate::stereo::single_pass::collapse_active();
     let _rows = enabled.then(ambient_occlusion::bind_eye_rows).flatten();
+    snapshot::ambient_occlusion_block(true);
     SSAO_BLOCK_DRAW.get().unwrap().call(this, rc, info);
+    snapshot::ambient_occlusion_block(false);
+    snapshot::ambient_occlusion_hook();
 }
 
 /// `CRenderBlockScreenSpaceReflection::Draw`, run once with each eye's rows bound for its rewritten
