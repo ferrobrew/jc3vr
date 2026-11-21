@@ -1,4 +1,4 @@
-//! Single-pass stereo (experimental): the bring-up levers, the shader-rewrite census, and the
+//! Single-pass stereo: the whole-feature switch, the bring-up levers, the shader-rewrite census, and the
 //! instanced eye-parity exposure readout.
 
 use std::sync::atomic::Ordering;
@@ -14,14 +14,15 @@ use crate::{
 };
 
 pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
-    // Single-pass stereo (experimental, off by default): render the G-buffer geometry once, emitting
-    // both eyes via instancing + SV_ViewportArrayIndex routing, instead of the double-draw. The
-    // pipeline is under construction; the census dry-run below is safe (no rendering change) and
-    // reports how the vertex-shader rewriter fares against the game's real shader set.
-    ui.collapsing("Single-pass stereo (experimental)", |ui| {
-        // All-in/all-out toggle: flip the whole work-in-progress configuration together, so the one
-        // button is the normal way to turn the feature on or off. The individual levers below stay for
-        // bring-up. Reloads either way -- on to apply the patches, off to restore the pristine shaders.
+    // Single-pass stereo (on by default while a VR session runs): render the G-buffer geometry once,
+    // emitting both eyes via instancing + SV_ViewportArrayIndex routing, instead of the double-draw.
+    // The census dry-run below is safe (no rendering change) and reports how the vertex-shader
+    // rewriter fares against the game's real shader set.
+    ui.collapsing("Single-pass stereo", |ui| {
+        // All-in/all-out toggle: flip the whole configuration together, so the one button is the
+        // normal way to switch between single-pass and multipass. The individual levers below stay
+        // for bisection. Reloads either way -- on to apply the patches, off to restore the pristine
+        // shaders.
         let enabled = cfg.stereo.single_pass.enabled;
         let toggle_label = if enabled {
             "⚡ Disable single-pass stereo"
@@ -44,7 +45,7 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         ui.separator();
         ui.checkbox(
             &mut cfg.stereo.single_pass.enabled,
-            "Enable single-pass stereo (experimental)",
+            "Enable single-pass stereo",
         )
         .on_hover_text(
             "Master switch. Renders the G-buffer once with stereo-rewritten vertex shaders. \

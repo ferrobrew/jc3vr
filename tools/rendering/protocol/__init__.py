@@ -1007,6 +1007,11 @@ class Capture(NativeCapture):
             raise ProtocolError("visual protocol: screenshot diagnostic profile is not ready")
         if self.selected_eye != mode.selected_eye or self.rendered_eyes != mode.rendered_eyes:
             raise ProtocolError("visual protocol: screenshot eye selection mismatch")
+        # Single-pass is the payload's default, so every other mode has to have turned it off: a
+        # multipass or isolated-eye capture whose shaders were built for single-pass is not one.
+        build = self.visual.shader_build
+        if build is not None and build.active != (mode == Mode.SINGLE_PASS):
+            raise ProtocolError("visual protocol: screenshot shaders were not built for its mode")
         if any(required and not fresh for required, fresh in zip(mode.rendered_eyes, self.fresh_eyes)):
             raise ProtocolError("visual protocol: screenshot has stale rendered eyes")
         sources = ("isolated_eye",) if mode.selected_eye is not None else ("eye_textures", "collapsed_back_buffer")

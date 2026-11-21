@@ -29,7 +29,9 @@ pub struct FarFieldConfig {
     /// opaque G-buffer types belong here — a transparent type (e.g. `Window`, the car/building
     /// glass) would vanish entirely, since its passes never run in the far dispatch.
     pub gated_types: Cow<'static, str>,
-    /// What to do with the partition.
+    /// What to do with the partition. `Collect` by default: `Share` cannot run under the
+    /// single-pass collapse, which is on by default (see
+    /// [`set_single_pass_feature`](crate::stereo::config::set_single_pass_feature)).
     pub mode: FarFieldMode,
 }
 impl FarFieldConfig {
@@ -38,7 +40,7 @@ impl FarFieldConfig {
             enabled: false,
             threshold_m: 250.0,
             gated_types: Cow::Borrowed(DEFAULT_FAR_FIELD_GATED_TYPES),
-            mode: FarFieldMode::Share,
+            mode: FarFieldMode::Collect,
         }
     }
 }

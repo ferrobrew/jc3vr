@@ -7,7 +7,13 @@ geometry walks into one, so the GPU is fed from a single submission. See
 [`profiler.md`](../performance/profiler.md) for how the bottleneck was measured, and
 [`single-pass-render-blocks.md`](single-pass-render-blocks.md) for the per-render-block treatment.
 
-Single-pass is opt-in and off by default. It is inert without the DXVK viewport-routing capability.
+Single-pass is the default rendering mode while a VR session runs. Multipass stays available: the debug UI's single-pass section has one button that switches the whole feature off or back on (`stereo::config::set_single_pass_feature`), and the choice is saved. Single-pass is inert without a running VR session (on the desktop, with the runtime missing, or with the headset disconnected the game renders as it ships) and without the DXVK viewport-routing capability.
+
+### Turning on and off
+
+The feature is live when its master switch is on, a VR session is running, and the device reports the routing capability (`stereo::single_pass::active`). The session state is latched at the frame start's configuration refresh, from the previous frame's runtime pump, so a session that starts or stops changes every reader of the next frame at once. Single-pass's rewrites are applied when the engine creates a shader, so the live shader set has to be re-created whenever that state changes: the frame driver compares it each frame with the state the live set was created under (`hooks::graphics_engine::shader::reconcile_single_pass`) and requests the reload, which runs in the same frame before the draws. This is what brings single-pass up after a late injection into a running game, where the game already holds its pristine shaders, and on the first frame of the first VR session after any injection; nothing needs to be toggled. The double-wide target and the native resolution follow from the same state the next time the resolution driver runs, and the draw-path detours install with the first rewritten shader. A session that stops takes the shaders back to the pristine set the same way, and an eject restores them as well (`restore_original_shaders_on_eject`), with the scene targets and the game's own resolution.
+
+The settings file stores only what differs from the defaults (see [settings.md](../settings.md)), so a player who never touched single-pass follows its default, on. Switching it off with the button writes the group's switches as `false` under `[stereo.single_pass]`, which loads as multipass. A file written before the format carried a version held every setting, and so held the group off as it then shipped; its upgrade drops the group's `false` values and a `far_field.mode` of `Share`, so the group loads whole rather than half on.
 
 ## The technique
 
@@ -845,31 +851,31 @@ FSR is not deterministic from capture to capture: at the shore lake its input ma
 ## Configuration
 
 All under `stereo.single_pass`, except where a row says otherwise. The master switch
-(`single_pass.enabled`) is off by default, and most of the flags that depend on it default on —
-reflecting that they fix a defect the collapse introduces, not that they are validated. Each row below
-is marked with its actual default.
+(`single_pass.enabled`) and the rest of the structural group are on by default, as are most of the
+flags that depend on them, since they fix a defect the collapse introduces. Each row below is marked
+with its actual default.
 
 ### Structure
 
 | Flag | Default | Effect |
 |---|---|---|
-| `single_pass` | Off | Master switch. Substitutes the rewritten shaders and installs the routing. Forced inert without the viewport-routing capability. |
+| `single_pass` | On | Master switch. Substitutes the rewritten shaders and installs the routing. Forced inert without the viewport-routing capability. |
 | `single_pass.patch_dryrun` | Off | Runs the rewrite and tallies the outcomes at shader creation without substituting anything. No rendering change; validates the rewriter against the live shader set. |
-| `single_pass.dual_eye` | Off | Makes the eyes diverge: distinct per-eye `cb13`, eye-half viewports, instance doubling. On its own (no collapse, no double-wide) each eye renders into half a per-eye target — squished; a bisection step. |
-| `single_pass.collapse` | Off | Collapses the per-eye double-draw to one `game.Draw` walk. Requires `single_pass.dual_eye`. |
-| `single_pass.double_wide` | Off | Re-creates the scene targets at 2x per-eye width so each eye half is full resolution. Requires `single_pass.collapse` and `vr.native_resolution`. |
+| `single_pass.dual_eye` | On | Makes the eyes diverge: distinct per-eye `cb13`, eye-half viewports, instance doubling. On its own (no collapse, no double-wide) each eye renders into half a per-eye target — squished; a bisection step. |
+| `single_pass.collapse` | On | Collapses the per-eye double-draw to one `game.Draw` walk. Requires `single_pass.dual_eye`. |
+| `single_pass.double_wide` | On | Re-creates the scene targets at 2x per-eye width so each eye half is full resolution. Requires `single_pass.collapse` and `vr.native_resolution`. |
 
 ### Shader rewrites (need a shader reload to apply)
 
 | Flag | Default | Effect |
 |---|---|---|
-| `single_pass.reproject` | Off | Reprojects the no-`cb0` scene families (characters, props, buildings, roads) instead of leaving them double-drawn. |
+| `single_pass.reproject` | On | Reprojects the no-`cb0` scene families (characters, props, buildings, roads) instead of leaving them double-drawn. |
 | `single_pass.reproject_camera_only` | On | Extends that to the allowlisted families the `cb0` remap claims on a camera-position reference alone (`generaljc3`, `landmark`, `layered`, `layeredblend`), which otherwise get viewport routing but no per-eye clip. |
-| `single_pass.terrain` | Off | Rides the eye index through the terrain tessellation pipeline (VS → HS → DS); also gates the render-block re-issue that reprojects the GPU-indirect terrain-detail pass. |
+| `single_pass.terrain` | On | Rides the eye index through the terrain tessellation pipeline (VS → HS → DS); also gates the render-block re-issue that reprojects the GPU-indirect terrain-detail pass. |
 | `single_pass.terrain_patch_per_eye` | On | On top of `single_pass.terrain`: the terrain patch system's tessellated and GPU-indirect basemesh pipelines, which cannot carry an eye index, take the pinned-eye reprojection, and their per-eye re-issues pin `cb13` to each eye (see "Pipelines that cannot carry the eye"). |
 | `single_pass.terrain_eye_rows` | On | On top of `single_pass.terrain`: the terrain domain shaders, on the eye-lane and the pinned-eye paths, read their camera rows from the eye's `cb13` slot instead of reprojecting their clip position by `M_eye` (see "Each eye's own rows, not the centre's reprojected"). |
 | `single_pass.full_view_projection_rows` | On | The vertex shaders the collapse would reproject that project through the full view-projection (`cb0` rows 0 to 3) read the eye's copy of it from `cb13` instead: the tree impostors, the static light sprites, the ambient-occlusion volumes, and the terrain's non-tessellated basemesh, on the instance-parity and the pinned-eye paths. |
-| `single_pass.tree_impostors` | Off | Reprojects the far-distance tree impostors. |
+| `single_pass.tree_impostors` | On | Reprojects the far-distance tree impostors. |
 | `single_pass.pixel_camera_per_eye` | On | Every pixel shader that reads the camera position picks the rows of the eye whose half its pixel lies in (see "Each eye's camera position in the pixel shaders"). Turning it off applies at once; turning it on needs a shader reload. |
 | `single_pass.local_lights_per_eye` | On | In the same rewritten shaders, every local point and spot light position, and every spot projection, is measured from the pixel's eye rather than the centred camera the engine built them from (see "The local lights, from each eye"). Turning it off applies at once; turning it on needs a shader reload. |
 | `single_pass.screen_door_per_eye` | On | Every screen-door pattern a pixel shader hashes from its pixel position is laid out from the origin of the eye half the pixel lies in (see "The screen-door pattern, from each eye"). Needs a shader reload. |
@@ -890,7 +896,7 @@ is marked with its actual default.
 | `single_pass.bark` | On | `RenderBlockBark`'s colour and depth draws. Also declines the `cb0` remap on `vegetationbark*` (see below). |
 | `single_pass.foliage` | On | `RenderBlockFoliage`'s colour and depth draws. Also declines the `cb0` remap on `vegetationfoliage*` (see below). |
 | `single_pass.vegetation_once` | On | Draws a bark or foliage block once for both eyes instead of re-issuing it, while that block's flag is on: each draw binds a reprojected variant of its vertex shader, plain draws take two instances, GPU-indirect draws read a copy of their arguments with every instance count doubled, and hardware-instanced draws are re-issued per eye unless their layout has a twin (see "Drawing the vegetation once"). A block without a variant keeps the re-issue. Applies at once, given variants, which are built at shader creation whenever single-pass is enabled. |
-| `single_pass.occluder` | Off | `RenderBlockOccluder`'s depth prime. **Blind-implemented, unvalidated.** |
+| `single_pass.occluder` | On | `RenderBlockOccluder`'s depth prime. |
 | `single_pass.nvwater_per_eye` | On | The WaveWorks water blocks, whose baked model-view-projection leaves both eyes on the centre view. Not yet verified in the headset. |
 | `single_pass.water_reflection_per_eye` | On | On top of `single_pass.nvwater_per_eye`: each eye's water re-issue binds a rewrite of the water pixel shader that looks the eye-sized planar reflection up by an eye-local coordinate (`dxbc_stereo::localize_planar_reflection`). Applies without a shader reload. |
 | `single_pass.water_reflection_eye_size` | On | Under the double-wide collapse, sizes the water's planar reflection camera to one eye after the engine sizes it to the double-wide target (see "The planar reflection camera, at one eye's size"). Applies at once. |

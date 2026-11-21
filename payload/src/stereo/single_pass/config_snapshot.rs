@@ -7,10 +7,14 @@
 //! game thread is a frame ahead of the draw thread, so a flag that moved between an arm and its
 //! restore would leave that state raised for the rest of the frame. The game thread therefore
 //! refreshes a process-wide snapshot per frame, and the draw thread pins its own per dispatch.
+//!
+//! The master switch is taken together with whether a VR session is running, latched at the same
+//! frame refresh: single-pass renders both eyes into the halves of a double-wide target sized from
+//! the headset's views, so without a session it stays inert and the game renders as it ships.
 
 use std::{
     cell::Cell,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use crate::config::Config;
@@ -107,7 +111,13 @@ pub(super) fn config_flags() -> ConfigFlags {
 /// Re-read the single-pass config flags into the frame snapshot. Called at frame start, on the game
 /// thread, and read by everything that is not inside a draw-thread dispatch -- see [`config_flags`]
 /// for why the draw thread pins its own copy instead of reading this one.
+///
+/// It also latches whether a VR session is running, which the master switch is taken together
+/// with. The session state is the one the previous frame's runtime pump published, so a session
+/// that starts or stops takes effect from the next frame's refresh, for every reader of that frame
+/// at once.
 pub fn refresh_config_flags() {
+    SESSION_LIVE.store(crate::vr::is_running_published(), Ordering::Relaxed);
     store_config_flags();
 }
 
@@ -139,11 +149,16 @@ impl Drop for DispatchEnd {
     }
 }
 
+/// Whether a VR session was running at the last [`refresh_config_flags`]. Off until the first
+/// refresh, so nothing single-pass runs before the frame driver has seen a session.
+static SESSION_LIVE: AtomicBool = AtomicBool::new(false);
+
 fn store_config_flags() -> u64 {
     let bit = |on: bool, flag: Flag| u64::from(on) << flag as u64;
+    let session_live = SESSION_LIVE.load(Ordering::Relaxed);
     let snapshot = Config::lock_query(|c| {
         let s = &c.stereo.single_pass;
-        bit(s.enabled, Flag::SinglePass)
+        bit(s.enabled && session_live, Flag::SinglePass)
             | bit(s.patch_dryrun, Flag::DryRun)
             | bit(s.dual_eye, Flag::DualEye)
             | bit(s.collapse, Flag::Collapse)

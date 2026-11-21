@@ -38,7 +38,11 @@ use crate::{
     config::{CONFIG, Config},
     fsr::AntiAliasing,
     hooks::graphics_engine::{shader, tone_mapping},
-    stereo::{config::SinglePassConfig, dispatch, single_pass, switches::ShaderBuild},
+    stereo::{
+        config::{SinglePassConfig, set_single_pass_feature},
+        dispatch, single_pass,
+        switches::ShaderBuild,
+    },
     vr::{
         FreezeMode, ResolutionProgress,
         pose_control::{self, PoseValues},
@@ -1205,21 +1209,10 @@ fn apply_profile(config: &mut Config, mode: Mode) {
     config.stereo.disable_sun_shadows = false;
     config.stereo.ssao_eye0_only = false;
     config.far_field.enabled = false;
-    let on = mode == Mode::SinglePass;
+    // Every mode states single-pass explicitly: the isolated eyes and multipass turn the group off,
+    // whatever the defaults are, and single-pass turns it on over the default production switches.
     config.stereo.single_pass = SinglePassConfig::new();
-    let sps = &mut config.stereo.single_pass;
-    sps.enabled = on;
-    sps.dual_eye = on;
-    sps.collapse = on;
-    sps.double_wide = on;
-    sps.reproject = on;
-    sps.reproject_camera_only = on;
-    sps.terrain = on;
-    sps.tree_impostors = on;
-    sps.bark = on;
-    sps.foliage = on;
-    sps.occluder = on;
-    sps.patch_dryrun = false;
+    set_single_pass_feature(config, mode == Mode::SinglePass);
 }
 
 fn result_path(id: &RequestId) -> Option<std::path::PathBuf> {

@@ -453,6 +453,20 @@ class SuiteTests(unittest.TestCase):
                 with self.assertRaisesRegex(ProtocolError, "profile"):
                     Capture.from_wire(wire).validate("sample", Mode.MULTIPASS, 1, (2, 1))
 
+    def test_capture_shaders_must_be_built_for_its_mode(self):
+        for mode in Mode:
+            for active in (False, True):
+                with self.subTest(mode=mode, active=active):
+                    wire = capture_wire(mode)
+                    wire["visual"]["shader_build"] = {"active": active, "collapse": active, "switches": {}}
+                    capture = Capture.from_wire(wire)
+                    dimensions = (wire["width"], wire["height"])
+                    if active == (mode == Mode.SINGLE_PASS):
+                        capture.validate("sample", mode, 1, dimensions)
+                    else:
+                        with self.assertRaisesRegex(ProtocolError, "not built for its mode"):
+                            capture.validate("sample", mode, 1, dimensions)
+
     def test_capture_single_and_pair_validation(self):
         for mode in Mode:
             with self.subTest(mode=mode):

@@ -356,6 +356,27 @@ fn failed_reload_never_becomes_ready() {
 }
 
 #[test]
+fn profile_states_single_pass_for_every_mode() {
+    for mode in [
+        Mode::LeftOnly,
+        Mode::RightOnly,
+        Mode::Multipass,
+        Mode::ReverseMultipass,
+        Mode::SinglePass,
+    ] {
+        let mut config = Config::new();
+        apply_profile(&mut config, mode);
+        let on = mode == Mode::SinglePass;
+        let sps = &config.stereo.single_pass;
+        assert_eq!(sps.enabled, on, "{mode:?}");
+        assert_eq!(sps.dual_eye, on, "{mode:?}");
+        assert_eq!(sps.collapse, on, "{mode:?}");
+        assert_eq!(sps.double_wide, on, "{mode:?}");
+        assert!(!sps.patch_dryrun, "{mode:?}");
+    }
+}
+
+#[test]
 fn profile_keeps_per_eye_native_resolution_across_modes() {
     let mut config = Config::new();
     config.vr.resolution_scale = 0.75;

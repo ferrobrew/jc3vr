@@ -20,7 +20,7 @@ pub mod graphics_engine;
 mod render_pass;
 // `shader` is public so the debug UI can read its patched-shader count.
 pub mod shader;
-// Single-pass stereo render-thread detours (the cb13 mirror; experimental, gated off by default).
+// Single-pass stereo render-thread detours (the cb13 mirror; on by default while a VR session runs).
 mod single_pass;
 
 pub(crate) mod post;

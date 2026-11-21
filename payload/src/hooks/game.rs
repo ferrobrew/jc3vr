@@ -136,6 +136,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // `single_pass::begin_dispatch` -- because this write runs concurrently with the previous
         // frame's dispatch once the frame tail is deferred.
         crate::stereo::single_pass::refresh_config_flags();
+        // Re-create the shaders when this frame's snapshot turned single-pass on or off, which a
+        // VR session starting or stopping does as well as the configuration: the reload below
+        // applies it before this frame's draws.
+        graphics_engine::shader::reconcile_single_pass();
 
         // Apply the sun-shadow diagnostic override before the original runs, so this frame's
         // sim-side CShadowManager::UpdateRender sees it and drives the engine's own SetEnabled path.

@@ -1,7 +1,7 @@
-//! Single-pass stereo (experimental): render the G-buffer geometry once, emitting both eyes via
-//! instancing + `SV_ViewportArrayIndex` routing into a double-wide render target, instead of the
-//! double-draw (two full `game.Draw` walks, one per eye). See `docs/mod/stereo/single-pass-stereo.md` for
-//! the design.
+//! Single-pass stereo, the default rendering mode while a VR session runs: render the G-buffer
+//! geometry once, emitting both eyes via instancing + `SV_ViewportArrayIndex` routing into a
+//! double-wide render target, instead of the double-draw (two full `game.Draw` walks, one per eye).
+//! See `docs/mod/stereo/single-pass-stereo.md` for the design.
 //!
 //! This module owns the mod-side state that the double-draw path does not need:
 //! - the DXVK viewport-routing **capability probe** ([`probe`] / [`capability`]);
@@ -185,9 +185,11 @@ pub fn capability() -> Capability {
     }
 }
 
-/// Whether single-pass rendering should actually run this frame: the master switch is on, the
-/// census-only dry-run is off, and the device supports viewport routing. The VS-substitution and
-/// cb13 paths gate on this; when it is false the double-draw path is left untouched.
+/// Whether single-pass rendering should actually run this frame: the master switch is on, a VR
+/// session is running, the census-only dry-run is off, and the device supports viewport routing.
+/// The VS-substitution and cb13 paths gate on this; when it is false the double-draw path is left
+/// untouched. The shader set follows it: the frame driver re-creates the shaders whenever it
+/// changes ([`crate::hooks::graphics_engine::shader::reconcile_single_pass`]).
 pub fn active() -> bool {
     // Go inert the instant eject begins: the render thread keeps running through the whole teardown,
     // so an ungated single-pass path would race the hook uninstall and the D3D-resource release (the

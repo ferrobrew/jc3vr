@@ -74,6 +74,10 @@ static RELOAD_REQUESTED: AtomicBool = AtomicBool::new(false);
 /// reload, after a failed one, or when the configuration changed while the shaders were being
 /// re-created (so some may have been created under each state).
 static BUILT_WITH: Mutex<Option<ShaderBuild>> = Mutex::new(None);
+/// Whether single-pass was active when the live shader set was last created by a reload. Off at
+/// injection: a game injected after it loaded its shaders holds the pristine set, and one injected
+/// before creates them before any VR session runs, while single-pass is inert.
+static CREATED_SINGLE_PASS: AtomicBool = AtomicBool::new(false);
 
 /// Read a shader program's engine debug name (a null-terminated C string in
 /// `Create*ProgramParams.m_Name`), or `None` if the pointer is null. Used to log which tessellation
@@ -667,6 +671,29 @@ pub fn request_reload() {
     RELOAD_REQUESTED.store(true, Ordering::Relaxed);
 }
 
+/// Request a shader reload when single-pass has turned on or off since the live shader set was
+/// created. The shader-creation hooks apply single-pass's rewrites, so the set has to be re-created
+/// whenever [`crate::stereo::single_pass::active`] changes: when the configuration turns it on or
+/// off, and when a VR session starts or stops under the default configuration, including the first
+/// session after injection. Called once per frame on the game thread, after the single-pass
+/// configuration snapshot is refreshed and before [`process_reload_request`], so the reload lands
+/// in the frame whose snapshot asked for it.
+pub fn reconcile_single_pass() {
+    if crate::is_shutting_down() {
+        return;
+    }
+    let active = crate::stereo::single_pass::active();
+    if CREATED_SINGLE_PASS.load(Ordering::Relaxed) != active
+        && !RELOAD_REQUESTED.load(Ordering::Relaxed)
+    {
+        tracing::info!(
+            active,
+            "shader reload: single-pass activity changed; re-creating the shaders under it"
+        );
+        request_reload();
+    }
+}
+
 /// If a reload was requested, force the engine to re-create every shader: read the active bundle name,
 /// then `LoadShaderBundle` the *other* quality variant and back. Each call re-creates all shader
 /// holders through [`create_fragment_program`], so the PCF patch lands. Call once per frame on the game
@@ -714,6 +741,8 @@ pub(crate) fn built_with() -> Option<ShaderBuild> {
 
 pub(crate) fn reload_now() -> Result<(), ReloadError> {
     RELOAD_REQUESTED.store(false, Ordering::Relaxed);
+    // Recorded before the attempt, so a reload that fails is not retried on every frame.
+    CREATED_SINGLE_PASS.store(crate::stereo::single_pass::active(), Ordering::Relaxed);
     *BUILT_WITH.lock() = None;
     let result = bounce_shader_bundle();
     if let Err(error) = &result {

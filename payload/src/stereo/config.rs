@@ -9,7 +9,9 @@ use crate::{config::Config, far_field::FarFieldMode};
 /// families, the terrain, the tree impostors, and the bark, foliage, and occluder re-issues, along
 /// with the native resolution the double-wide target needs, which turning the feature off leaves as
 /// it is. The far field's share mode cannot run under the collapse, so turning the feature on moves
-/// it to collecting. The caller requests the shader reload that applies the change.
+/// it to collecting. The defaults are the feature turned on, so applying this with `on` to a
+/// default configuration changes nothing. The caller requests the shader reload that applies the
+/// change.
 pub(crate) fn set_single_pass_feature(config: &mut Config, on: bool) {
     let sps = &mut config.stereo.single_pass;
     sps.enabled = on;
@@ -40,13 +42,14 @@ pub(crate) fn set_single_pass_feature(config: &mut Config, on: bool) {
 /// can be read or skipped as a unit, which is what a paused feature wants.
 #[derive(Copy, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SinglePassConfig {
-    /// Master switch for single-pass stereo (experimental; see `docs/mod/stereo/single-pass-stereo.md`).
-    /// Instead of the double-draw (two full `game.Draw` walks, one per eye), render the G-buffer
-    /// geometry once with the vertex shaders patched to emit both eyes via instancing +
-    /// `SV_ViewportArrayIndex` routing into a double-wide render target. Off by default: the whole
-    /// pipeline is under construction and validated against the double-draw oracle. Requires the DXVK
-    /// viewport-routing capability (see [`crate::stereo::single_pass::capability`]); forced off if
-    /// absent.
+    /// Master switch for single-pass stereo (see `docs/mod/stereo/single-pass-stereo.md`). Instead
+    /// of the double-draw (two full `game.Draw` walks, one per eye), render the G-buffer geometry
+    /// once with the vertex shaders patched to emit both eyes via instancing +
+    /// `SV_ViewportArrayIndex` routing into a double-wide render target. On by default, together
+    /// with the rest of the group [`set_single_pass_feature`] switches; the double-draw is what
+    /// turning the group off leaves. Live only while a VR session runs (see
+    /// [`crate::stereo::single_pass::active`]), and requires the DXVK viewport-routing capability
+    /// (see [`crate::stereo::single_pass::capability`]); forced off if absent.
     pub enabled: bool,
     /// Requires [`single_pass`](Self::enabled): make the two eyes actually diverge. Fills `cb13` with **distinct** per-eye view-projections (slot 0 = eye 0, slot 1 =
     /// eye 1) instead of both = the current view, splits the bound viewport into left/right **halves**
@@ -249,7 +252,7 @@ pub struct SinglePassConfig {
     /// Single-pass the occluder depth-prime render block (`CRenderBlockOccluder`). Its non-instanced path
     /// bakes a world-view-projection into `cb1`; the block's `DrawZ` is re-issued once per eye with `cb1`
     /// reprojected by `M_eye`, so each eye's depth is primed with its own projection. Requires the
-    /// collapse. **Blind-implemented, unvalidated.**
+    /// collapse.
     pub occluder: bool,
     /// Re-issue an **already-instanced** draw once per eye under the collapse, instead of letting the
     /// patched vertex shader read the game's own instance ids as an eye parity. A `DrawIndexedInstanced`
@@ -938,19 +941,19 @@ pub struct StereoConfig {
 impl SinglePassConfig {
     pub const fn new() -> Self {
         Self {
-            enabled: false,
-            dual_eye: false,
-            double_wide: false,
-            collapse: false,
+            enabled: true,
+            dual_eye: true,
+            double_wide: true,
+            collapse: true,
             patch_dryrun: false,
             dump_vs_name_census: false,
-            reproject: false,
+            reproject: true,
             reproject_camera_only: true,
-            terrain: false,
+            terrain: true,
             terrain_patch_per_eye: true,
             terrain_eye_rows: true,
             full_view_projection_rows: true,
-            tree_impostors: false,
+            tree_impostors: true,
             tree_impostor_pixel_size_per_eye: true,
             tree_impostor_screen_door_per_eye: true,
             static_lights_per_eye: true,
@@ -960,7 +963,7 @@ impl SinglePassConfig {
             stars_per_eye: true,
             bark: true,
             foliage: true,
-            occluder: false,
+            occluder: true,
             instanced_per_eye: true,
             hw_instanced_once: true,
             vegetation_once: true,
@@ -1055,5 +1058,38 @@ impl StereoConfig {
             mirror_eye0_to_both: false,
             terrain_detail_budget_scale: 4,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    /// The defaults are the single-pass feature turned on, exactly as the debug UI's button turns it
+    /// on, so the two cannot drift apart.
+    #[test]
+    fn defaults_are_the_single_pass_feature_turned_on() {
+        let defaults = Config::new();
+        let mut turned_on = Config::new();
+        set_single_pass_feature(&mut turned_on, true);
+        assert_eq!(
+            toml::Value::try_from(&turned_on).unwrap(),
+            toml::Value::try_from(&defaults).unwrap()
+        );
+    }
+
+    /// Turning the feature off leaves the double-draw: every structural switch is off, so nothing
+    /// single-pass runs.
+    #[test]
+    fn turning_the_feature_off_clears_the_master_switch_and_the_collapse() {
+        let mut config = Config::new();
+        set_single_pass_feature(&mut config, false);
+        let sps = &config.stereo.single_pass;
+        assert!(!sps.enabled);
+        assert!(!sps.dual_eye);
+        assert!(!sps.collapse);
+        assert!(!sps.double_wide);
     }
 }
