@@ -247,10 +247,12 @@ class ScheduleTests(unittest.TestCase):
         self.assertTrue(all(variant.switches or variant.overlap_render_update is not None
                             or variant.fsr is not None or variant.hybrid_velocity is not None
                             or variant.large_cache_cores is not None or variant.jitter is not None
-                            or variant.foveation is not None
+                            or variant.foveation is not None or variant.taa is not None
                             for variant in suite.variants))
         jitter_off = {variant.name: variant for variant in suite.variants}["fsr-jitter-off"]
         self.assertIs(Mode.variant(jitter_off).jitter, False)
+        taa = {variant.name: variant for variant in suite.variants}["taa"]
+        self.assertIs(Mode.variant(taa).taa, True)
         self.assertIn("fsr_jitter = false",
                       BenchmarkRequest("b1", "x", "single_pass", 1.0, fsr_jitter=False).to_toml())
         placement = {variant.name: variant for variant in suite.variants}["multipass-large-cache-off"]

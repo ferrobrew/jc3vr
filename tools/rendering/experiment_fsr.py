@@ -3,7 +3,8 @@ schedule, at the same clock and pose, with FSR's own settings changed.
 
 An experiment that lists `[[fsr_variants]]` renders, after its configured modes, each variant in
 each of its modes: FSR on or off (off is the anti-aliasing the game falls back to, as the capture
-profile leaves it, or none at all with `antialiasing = false`), the hybrid decode and the sub-pixel
+profile leaves it, or none at all with `antialiasing = false`), the mod's own temporal resolve in
+FSR's place (`taa = true`), the hybrid decode and the sub-pixel
 jitter on or off, and optionally another render resolution scale (a supersampled reference, or a
 reduced size). Every configuration resets FSR's history and warms up
 for the experiment's `warmup_frames`, so each variant accumulates from the same number of frames.
@@ -38,6 +39,9 @@ class FsrVariant:
     name: str
     # FSR in place of the engine's anti-aliasing, at its shipped settings.
     fsr: bool = True
+    # The mod's own temporal resolve in place of FSR, with FSR's inputs (the jitter and the hybrid
+    # decode follow `jitter` and `hybrid_velocity`).
+    taa: bool = False
     # The hybrid decode, while FSR runs.
     hybrid_velocity: bool = True
     # The sub-pixel camera jitter, while FSR runs.
@@ -48,6 +52,13 @@ class FsrVariant:
     # pass turned on at a strength.
     sharpen: bool = True
     sharpness: float | None = None
+    # The temporal resolve's history share and clip box at rest, when not the shipped ones.
+    history_weight: float | None = None
+    clip_gamma_rest: float | None = None
+    # The unjitter kernel's falloff, in tenths (0.8 is a falloff of 8).
+    current_sharpness: float | None = None
+    # The history share in motion.
+    motion_history_weight: float | None = None
     # The render resolution scale (each side), when not the session's.
     resolution_scale: float | None = None
     # The modes the variant renders in; empty for every configured mode.
@@ -59,9 +70,24 @@ class FsrVariant:
             raise FsrVariantError(f"FSR variant: name {self.name!r} must be a request ID of at most "
                                   f"{MAX_FSR_VARIANT_NAME_LENGTH} characters")
         if any(type(value) is not bool for value in
-               (self.fsr, self.hybrid_velocity, self.jitter, self.antialiasing, self.sharpen)):
-            raise FsrVariantError(f"FSR variant: {self.name}.fsr, .hybrid_velocity, .jitter, "
+               (self.fsr, self.taa, self.hybrid_velocity, self.jitter, self.antialiasing,
+                self.sharpen)):
+            raise FsrVariantError(f"FSR variant: {self.name}.fsr, .taa, .hybrid_velocity, .jitter, "
                                   ".antialiasing, and .sharpen must be booleans")
+        for name in ("history_weight", "clip_gamma_rest", "current_sharpness",
+                     "motion_history_weight"):
+            value = getattr(self, name)
+            if value is not None and (type(value) not in (int, float) or not 0 <= value <= 4):
+                raise FsrVariantError(f"FSR variant: {self.name}.{name} must be within [0, 4]")
+            if value is not None and not self.taa:
+                raise FsrVariantError(f"FSR variant: {self.name}.{name} tunes the temporal "
+                                      "resolve, which needs taa = true")
+        if self.taa and not self.fsr:
+            raise FsrVariantError(f"FSR variant: {self.name} runs the temporal resolve with the "
+                                  "temporal anti-aliasing off (fsr = false)")
+        if self.taa and not (self.sharpen and self.sharpness is None):
+            raise FsrVariantError(f"FSR variant: {self.name} changes FSR's sharpening, which the "
+                                  "temporal resolve does not run")
         if self.sharpness is not None and (type(self.sharpness) not in (int, float)
                                            or not 0 <= self.sharpness <= 1):
             raise FsrVariantError(f"FSR variant: {self.name}.sharpness must be within [0, 1]")
@@ -87,13 +113,18 @@ class FsrVariant:
     def overrides(self, base: VisualOverrides | None) -> VisualOverrides | None:
         """The experiment's own overrides with this variant's FSR settings and scale in their place."""
         changes = {
-            "fsr": "enabled" if self.fsr else None,
+            "fsr": "enabled" if self.fsr and not self.taa else None,
+            "taa": "enabled" if self.taa else None,
             "fsr_hybrid_velocity": None if self.hybrid_velocity else "disabled",
             "fsr_jitter": None if self.jitter else "disabled",
             "anti_aliasing": None if self.antialiasing else "disabled",
             "fsr_sharpen": None if self.sharpen else "disabled",
             "fsr_sharpness": self.sharpness,
             "resolution_scale": self.resolution_scale,
+            "taa_history_weight": self.history_weight,
+            "taa_clip_gamma_rest": self.clip_gamma_rest,
+            "taa_current_sharpness": self.current_sharpness,
+            "taa_motion_history_weight": self.motion_history_weight,
         }
         if base is None:
             if not any(value is not None for value in changes.values()):
@@ -119,8 +150,9 @@ class FsrVariant:
         context = f"fsr_variants[{index}]"
         if not isinstance(value, dict):
             raise FsrVariantError(f"FSR variant: {context} must be a table")
-        allowed = {"name", "fsr", "hybrid_velocity", "jitter", "antialiasing", "sharpen", "sharpness",
-                   "resolution_scale", "modes"}
+        allowed = {"name", "fsr", "taa", "hybrid_velocity", "jitter", "antialiasing", "sharpen",
+                   "sharpness", "resolution_scale", "modes", "history_weight",
+                   "clip_gamma_rest", "current_sharpness", "motion_history_weight"}
         extra = set(value) - allowed
         if "name" not in value or extra:
             raise FsrVariantError(f"FSR variant: {context} needs a name and accepts only "
@@ -128,10 +160,15 @@ class FsrVariant:
         modes = value.get("modes", [])
         if not isinstance(modes, list):
             raise FsrVariantError(f"FSR variant: {context}.modes must be an array")
-        return cls(value["name"], value.get("fsr", True), value.get("hybrid_velocity", True),
+        return cls(value["name"], value.get("fsr", True), value.get("taa", False),
+                   value.get("hybrid_velocity", True),
                    value.get("jitter", True), value.get("antialiasing", True),
                    value.get("sharpen", True), value.get("sharpness"),
-                   value.get("resolution_scale"), tuple(modes))
+                   history_weight=value.get("history_weight"),
+                   clip_gamma_rest=value.get("clip_gamma_rest"),
+                   current_sharpness=value.get("current_sharpness"),
+                   motion_history_weight=value.get("motion_history_weight"),
+                   resolution_scale=value.get("resolution_scale"), modes=tuple(modes))
 
 
 def parse_fsr_variants(value) -> tuple[FsrVariant, ...]:

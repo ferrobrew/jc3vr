@@ -81,6 +81,12 @@ fsr = false
 name = "fsr-hybrid-off"
 hybrid_velocity = false
 
+# The mod's own temporal resolve in FSR's place, with the same jitter and motion vectors. See
+# docs/mod/rendering/taa.md.
+[[variant]]
+name = "taa"
+taa = true
+
 [[variant]]
 name = "foveation-off"
 foveation = false

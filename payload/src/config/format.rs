@@ -128,7 +128,7 @@ pub(crate) fn upgrade(file: &mut Table) -> Upgrade {
         Some(Value::Integer(_)) => Format::Zero,
         Some(_) => Format::Unreadable,
     };
-    let mut migrated = Vec::new();
+    let mut migrated: Vec<Migrated> = migrate_antialiasing_switch(file).into_iter().collect();
     if format == Format::Zero {
         for (path, superseded) in superseded() {
             let steps: Vec<&str> = path.split('.').collect();
@@ -159,6 +159,33 @@ pub(crate) fn upgrade(file: &mut Table) -> Upgrade {
     }
     Upgrade { format, migrated }
 }
+
+/// Replace the older `fsr.enabled` switch, in a file of any format, with the anti-aliasing choice
+/// that superseded it: off becomes the engine's anti-aliasing, and on is the choice's default, FSR,
+/// so it is left out. A file that already names the choice keeps it, and the switch is dropped.
+fn migrate_antialiasing_switch(file: &mut Table) -> Option<Migrated> {
+    let Some(Value::Table(fsr)) = file.get_mut(LEGACY_FSR_TABLE) else {
+        return None;
+    };
+    let removed = fsr.remove(LEGACY_FSR_ENABLED)?;
+    if removed == Value::Boolean(false) && !fsr.contains_key(ANTIALIASING_KEY) {
+        fsr.insert(
+            ANTIALIASING_KEY.to_owned(),
+            Value::String(ENGINE_ANTIALIASING.to_owned()),
+        );
+    }
+    Some(Migrated {
+        path: format!("{LEGACY_FSR_TABLE}.{LEGACY_FSR_ENABLED}"),
+        removed: removed.to_string(),
+    })
+}
+
+/// The table and key of the switch the anti-aliasing choice superseded.
+const LEGACY_FSR_TABLE: &str = "fsr";
+const LEGACY_FSR_ENABLED: &str = "enabled";
+/// The anti-aliasing choice's key in the `fsr` table, and its engine value as written.
+const ANTIALIASING_KEY: &str = "antialiasing";
+const ENGINE_ANTIALIASING: &str = "Engine";
 
 /// The part of `actual` that differs from `defaults`, or `None` when nothing does. Tables differ
 /// key by key; any other value differs whole.
@@ -445,6 +472,27 @@ enabled = false
 
     fn upgrade_format(file: &mut Table) -> Format {
         upgrade(file).format
+    }
+
+    #[test]
+    fn the_old_fsr_switch_becomes_the_antialiasing_choice() {
+        use crate::fsr::AntiAliasing;
+        let off = parse("version = 1\n[fsr]\nenabled = false\n").unwrap();
+        assert_eq!(off.config.fsr.antialiasing, AntiAliasing::Engine);
+        assert_eq!(paths(&off.report.migrated), ["fsr.enabled"]);
+        let on = parse("[fsr]\nenabled = true\n").unwrap();
+        assert_eq!(on.config.fsr.antialiasing, AntiAliasing::Fsr);
+        let chosen =
+            parse("version = 1\n[fsr]\nenabled = false\nantialiasing = \"Taa\"\n").unwrap();
+        assert_eq!(chosen.config.fsr.antialiasing, AntiAliasing::Taa);
+        let mut config = Config::new();
+        config.fsr.antialiasing = AntiAliasing::Taa;
+        let text = to_text(&config).unwrap();
+        assert!(text.contains("antialiasing = \"Taa\""), "{text}");
+        assert_eq!(
+            parse(&text).unwrap().config.fsr.antialiasing,
+            AntiAliasing::Taa
+        );
     }
 
     #[test]

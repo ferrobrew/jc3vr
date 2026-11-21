@@ -1,0 +1,85 @@
+# The mod's temporal resolve against FSR: the meadow below the wooded hill, camera still. Rendered with FSR as
+# shipped (in both modes; the left eye alone only to pair with the reference), the
+# mod's own TAA, the game's own anti-aliasing (SMAA 1x), no anti-aliasing at all, and
+# a supersampled reference, all in one schedule at one clock and pose, single-pass.
+# Run with `fast --save` and read with `fsr-quality`. See docs/mod/rendering/taa.md.
+name = "taa-quality-meadow-static"
+warmup_frames = 120
+# FSR's history settles about 64 frames after a reset at a still camera (docs/mod/rendering/fsr.md).
+samples = 3
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+fsr = "enabled"
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [4620.3, 1563.5, -3213.5]
+yaw_deg = 0.0
+
+[motion]
+period_frames = 120
+phase = 15
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "single_pass"
+
+[[fsr_variants]]
+name = "taa"
+taa = true
+modes = ["single_pass"]
+
+[[fsr_variants]]
+name = "fsr-off"
+fsr = false
+modes = ["single_pass"]
+
+[[fsr_variants]]
+name = "no-aa"
+fsr = false
+antialiasing = false
+modes = ["single_pass"]
+
+# The reference: twice the pixels (each side scaled by the square root of two) with no
+# anti-aliasing, downsampled offline by area, so it favours no anti-aliasing method.
+[[fsr_variants]]
+name = "reference"
+fsr = false
+antialiasing = false
+resolution_scale = 1.414
+modes = ["left_only"]
+
+# One tuning pass at rest: a longer history, a looser clip box, and a sharper and a much sharper
+# unjitter kernel (`current_sharpness` is in tenths).
+[[fsr_variants]]
+name = "taa-w95"
+taa = true
+history_weight = 0.95
+modes = ["single_pass"]
+
+[[fsr_variants]]
+name = "taa-c25"
+taa = true
+clip_gamma_rest = 2.5
+modes = ["single_pass"]
+
+[[fsr_variants]]
+name = "taa-k8"
+taa = true
+current_sharpness = 0.8
+modes = ["single_pass"]
+
+[[fsr_variants]]
+name = "taa-k16"
+taa = true
+current_sharpness = 1.6
+modes = ["single_pass"]

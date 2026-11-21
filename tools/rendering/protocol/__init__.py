@@ -272,7 +272,12 @@ def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool]
 # Sources left out in every mode, to attribute a difference to one.
 DISABLING_OVERRIDES = ("ssao", "ao_volumes", "global_illumination", "fsr_mv_correction",
                        "fsr_hybrid_velocity", "fsr_jitter", "anti_aliasing", "fsr_sharpen")
-SHIPPED_OVERRIDES = ("fsr", "foveation", "auto_exposure", "screen_fade", "player_damage")
+SHIPPED_OVERRIDES = ("fsr", "taa", "foveation", "auto_exposure", "screen_fade", "player_damage")
+# The mod's temporal resolve's tuning values, each within [0, 4]. Mirrors `TaaTuningOverride` in
+# `payload/src/testing/visual/overrides.rs`.
+# `taa_current_sharpness` is in tenths of the kernel falloff.
+TAA_TUNING_OVERRIDES = ("taa_history_weight", "taa_clip_gamma_rest", "taa_current_sharpness",
+                        "taa_motion_history_weight")
 # The range of the resolution-scale override (each side). Mirrors `ResolutionScaleOverride` in
 # `payload/src/testing/visual/overrides.rs`: the top is twice the session's pixels.
 RESOLUTION_SCALE_RANGE = (0.5, 1.415)
@@ -291,6 +296,8 @@ class VisualOverrides:
     # FSR, the foveation, the engine's exposure metering, the screen fade, and the player-damage
     # overlay, each at its shipped behaviour in every mode.
     fsr: str | None = None
+    # The mod's own temporal resolve in place of FSR, with FSR's shipped inputs.
+    taa: str | None = None
     foveation: str | None = None
     auto_exposure: str | None = None
     screen_fade: str | None = None
@@ -307,6 +314,12 @@ class VisualOverrides:
     fsr_sharpen: str | None = None
     # FSR's sharpening pass turned on in every mode at this strength, within [0, 1], to three decimals.
     fsr_sharpness: float | None = None
+    # The mod's temporal resolve's history share and clip box at rest, within [0, 4], to three
+    # decimals.
+    taa_history_weight: float | None = None
+    taa_clip_gamma_rest: float | None = None
+    taa_current_sharpness: float | None = None
+    taa_motion_history_weight: float | None = None
     # A headset-like eye rig substituted for the located views in every mode, by preset name.
     headset: str | None = None
     # The render resolution scale (each side) in every mode, in place of the session's, to three
@@ -342,11 +355,18 @@ class VisualOverrides:
             if type(self.fsr_sharpness) not in (int, float) or not 0 <= self.fsr_sharpness <= 1:
                 raise ProtocolError("visual protocol: fsr_sharpness must be within [0, 1]")
             object.__setattr__(self, "fsr_sharpness", round(float(self.fsr_sharpness), 3))
+        for name in TAA_TUNING_OVERRIDES:
+            value = getattr(self, name)
+            if value is not None:
+                if type(value) not in (int, float) or not 0 <= value <= 4:
+                    raise ProtocolError(f"visual protocol: {name} must be within [0, 4]")
+                object.__setattr__(self, name, round(float(value), 3))
         object.__setattr__(self, "single_pass", single_pass_switches(dict(self.single_pass)))
         if (self.sun_shadows is None and self.screen_space_reflections is None and
                 all(getattr(self, name) is None for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)) and
                 self.headset is None and self.resolution_scale is None and self.stages is None
-                and self.fsr_sharpness is None and not self.single_pass):
+                and self.fsr_sharpness is None and not self.single_pass
+                and all(getattr(self, name) is None for name in TAA_TUNING_OVERRIDES)):
             raise ProtocolError("visual protocol: visual overrides must name at least one override")
 
     @property
@@ -369,6 +389,9 @@ class VisualOverrides:
             value["resolution_scale"] = self.resolution_scale
         if self.fsr_sharpness is not None:
             value["fsr_sharpness"] = self.fsr_sharpness
+        for name in TAA_TUNING_OVERRIDES:
+            if getattr(self, name) is not None:
+                value[name] = getattr(self, name)
         if self.stages is not None:
             value["stages"] = self.stages
         if self.single_pass:
@@ -390,6 +413,9 @@ class VisualOverrides:
             result += f"resolution_scale = {json.dumps(self.resolution_scale)}\n"
         if self.fsr_sharpness is not None:
             result += f"fsr_sharpness = {json.dumps(self.fsr_sharpness)}\n"
+        for name in TAA_TUNING_OVERRIDES:
+            if getattr(self, name) is not None:
+                result += f"{name} = {json.dumps(getattr(self, name))}\n"
         if self.stages is not None:
             result += f"stages = {json.dumps(self.stages)}\n"
         if self.single_pass:
@@ -401,7 +427,8 @@ class VisualOverrides:
     def from_wire(cls, value):
         if not isinstance(value, dict) or not value or set(value) - {
                 "sun_shadows", "screen_space_reflections", "single_pass", "headset", "resolution_scale",
-                "stages", "fsr_sharpness", *DISABLING_OVERRIDES, *SHIPPED_OVERRIDES}:
+                "stages", "fsr_sharpness", *TAA_TUNING_OVERRIDES, *DISABLING_OVERRIDES,
+                *SHIPPED_OVERRIDES}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
         try:
             sun_shadows = SunShadows(value["sun_shadows"]) if "sun_shadows" in value else None
@@ -413,7 +440,8 @@ class VisualOverrides:
                    single_pass_switches(value.get("single_pass", {})),
                    **{name: value.get(name) for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)},
                    headset=value.get("headset"), resolution_scale=value.get("resolution_scale"),
-                   stages=value.get("stages"), fsr_sharpness=value.get("fsr_sharpness"))
+                   stages=value.get("stages"), fsr_sharpness=value.get("fsr_sharpness"),
+                   **{name: value.get(name) for name in TAA_TUNING_OVERRIDES})
 
 
 @dataclass(frozen=True)

@@ -30,8 +30,8 @@ class BenchmarkScene:
 class Variant:
     """A mode with some switches forced, to attribute a cost to what they control: single-pass
     switches (single-pass only), the frame ordering (`vr.overlap_render_update`), the placement
-    on the largest cache's cores (`vr.large_cache_cores`), FSR, its hybrid decode, and its
-    sub-pixel jitter, or the foveation."""
+    on the largest cache's cores (`vr.large_cache_cores`), FSR or the mod's own temporal resolve,
+    the hybrid decode, and the sub-pixel jitter, or the foveation."""
     name: str
     switches: tuple[tuple[str, bool], ...]
     base: BenchmarkMode = BenchmarkMode.SINGLE_PASS
@@ -41,6 +41,8 @@ class Variant:
     large_cache_cores: bool | None = None
     jitter: bool | None = None
     foveation: bool | None = None
+    # The mod's own temporal resolve in place of FSR.
+    taa: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -87,7 +89,8 @@ def load_suite(path: Path) -> Suite:
             raise BenchmarkError(f"{context}: expected a table")
         switches = table.get("switches", {})
         flags = {name: table.get(name) for name in ("overlap_render_update", "fsr", "hybrid_velocity",
-                                                "large_cache_cores", "jitter", "foveation")}
+                                                "large_cache_cores", "jitter", "foveation",
+                                                "taa")}
         valid = (set(table) - {"name", "base", "switches", *flags} == set()
                  and isinstance(table.get("name"), str)
                  and table.get("base", "single_pass") in {m.value for m in BenchmarkMode}
@@ -98,11 +101,13 @@ def load_suite(path: Path) -> Suite:
         if not valid:
             raise BenchmarkError(f"{context}: expected a name, optionally a base mode, and a "
                                  "switches table of booleans or one of overlap_render_update, "
-                                 "fsr, hybrid_velocity, jitter, foveation, and large_cache_cores")
+                                 "fsr, taa, hybrid_velocity, jitter, foveation, and "
+                                 "large_cache_cores")
         base = BenchmarkMode(table.get("base", "single_pass"))
         if switches and base != BenchmarkMode.SINGLE_PASS:
             raise BenchmarkError(f"{context}: single-pass switches need the single_pass base")
         variants.append(Variant(table["name"], tuple(sorted(switches.items())), base,
                                 flags["overlap_render_update"], flags["fsr"], flags["hybrid_velocity"],
-                                flags["large_cache_cores"], flags["jitter"], flags["foveation"]))
+                                flags["large_cache_cores"], flags["jitter"], flags["foveation"],
+                                flags["taa"]))
     return Suite(tuple(scenes), tuple(variants))

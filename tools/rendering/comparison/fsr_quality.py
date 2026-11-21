@@ -25,7 +25,13 @@ Per scene it reports, on 8-bit RGB (luma for the gradients):
   with the next-frame repeat it measures shimmer in motion;
 - between modes: multipass against single-pass, eye by eye, per configuration.
 
+A repeat the reference also took is scored against the reference's repeat. Given several reports
+(one per pair of motion phases, `fast --motion-phase P --next-frame-repeat`), it also averages each
+scene's scores against the reference, and its flicker, over every snapshot of every report: in
+motion, the average over the jitter's offsets.
+
     python3 -m tools.rendering fsr-quality --session N target/harness-probe/fast/<stamp>/fast-report.json
+    python3 -m tools.rendering fsr-quality --session N <phase-15>/fast-report.json <phase-17>/fast-report.json ...
 """
 
 import argparse
@@ -114,16 +120,26 @@ def measure_scene(scene: dict, captures: Path) -> dict:
     if reference_key in images and eye_key is not None:
         size = (images[eye_key]["width"], images[eye_key]["height"])
         reference = load(captures, images[reference_key], size)
-        reference_gradient = gradient(luma(reference))
-        edges = reference_gradient >= np.percentile(reference_gradient, 90)
-        flat = reference_gradient <= np.percentile(reference_gradient, 50)
-        for (config, mode, eye, letter), record in sorted(images.items()):
-            if eye != 0 or letter != "a" or config == "reference":
+        # Each snapshot against the reference's snapshot of the same letter: the repeat, when the
+        # reference has one, is scored against the reference's repeat, so a next-frame repeat in
+        # motion scores a second jitter offset.
+        for snapshot_letter in ("a", "b"):
+            key = ("reference", "left_only", 0, snapshot_letter)
+            if key not in images:
                 continue
-            image = load(captures, record, size)
-            result["reference"].append({"config": config, "mode": mode,
-                                        **against_reference(image, reference, reference_gradient,
-                                                            edges, flat)})
+            letter_reference = (reference if snapshot_letter == "a"
+                                else load(captures, images[key], size))
+            reference_gradient = gradient(luma(letter_reference))
+            edges = reference_gradient >= np.percentile(reference_gradient, 90)
+            flat = reference_gradient <= np.percentile(reference_gradient, 50)
+            for (config, mode, eye, letter), record in sorted(images.items()):
+                if eye != 0 or letter != snapshot_letter or config == "reference":
+                    continue
+                image = load(captures, record, size)
+                result["reference"].append({"config": config, "mode": mode,
+                                            "snapshot": snapshot_letter,
+                                            **against_reference(image, letter_reference,
+                                                                reference_gradient, edges, flat)})
         reference_repeat = images.get(("reference", "left_only", 0, "b"))
         if reference_repeat is not None:
             reference_change = load(captures, reference_repeat, size) - reference
@@ -162,7 +178,8 @@ def measure_scene(scene: dict, captures: Path) -> dict:
 def describe(result: dict) -> str:
     lines = [f"{result['scene']}:"]
     for row in result["reference"]:
-        lines.append(f"  vs reference  {row['config']:10} {row['mode']:11} mean {row['mean']:.3f}  "
+        lines.append(f"  vs reference  {row['config']:10} {row['mode']:11} "
+                     f"{row.get('snapshot', 'a')}  mean {row['mean']:.3f}  "
                      f"PSNR {row['psnr']:.2f} dB  sharpness {row['sharpness']:.3f}  "
                      f"ghosting {row['ghosting']:.3f}")
     for name in ("against_fsr_off", "repeat"):
@@ -178,9 +195,44 @@ def describe(result: dict) -> str:
     return "\n".join(lines)
 
 
+def average(results: list[dict]) -> list[dict]:
+    """Each scene's scores against the reference, and its flicker, averaged over every snapshot of
+    every report given: with one report per pair of motion phases (`fast --motion-phase P
+    --next-frame-repeat`), the average over the jitter's offsets. PSNR is averaged in decibels."""
+    groups: dict[tuple[str, str, str], dict[str, list[float]]] = {}
+    for result in results:
+        for row in result["reference"]:
+            group = groups.setdefault((result["scene"], row["config"], row["mode"]), {})
+            for name in ("psnr", "sharpness", "ghosting"):
+                group.setdefault(name, []).append(row[name])
+        for row in result["flicker"]:
+            group = groups.setdefault((result["scene"], row["config"], row["mode"]), {})
+            group.setdefault("flicker", []).append(row["mean"])
+    rows = []
+    for (scene, config, mode), values in sorted(groups.items()):
+        row = {"scene": scene, "config": config, "mode": mode,
+               "snapshots": len(values.get("psnr", []))}
+        for name, samples in values.items():
+            row[name] = round(float(np.mean(samples)), 4)
+        rows.append(row)
+    return rows
+
+
+def describe_average(rows: list[dict]) -> str:
+    lines = ["averaged over the reports' snapshots:"]
+    for row in rows:
+        scores = "  ".join(f"{name} {row[name]:.3f}" for name in
+                           ("psnr", "sharpness", "ghosting", "flicker") if name in row)
+        lines.append(f"  {row['scene']:28} {row['config']:10} {row['mode']:11} "
+                     f"n={row['snapshots']}  {scores}")
+    return "\n".join(lines)
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("report", type=Path, help="a fast-report.json")
+    parser.add_argument("report", type=Path, nargs="+",
+                        help="one or more fast-report.json files; with more than one, the scores "
+                             "are also averaged per scene over all of them")
     target = parser.add_mutually_exclusive_group(required=True)
     target.add_argument("--session", type=int, help="the session whose captures the report saved")
     target.add_argument("--captures", type=Path, help="the captures folder the report saved into")
@@ -188,15 +240,21 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
     captures = args.captures or SESSIONS / f"persistent-{args.session}/config/captures"
     try:
-        report = json.loads(args.report.read_text())
-        results = [measure_scene(scene, captures) for scene in report.get("scenes", [])]
+        results = []
+        for path in args.report:
+            report = json.loads(path.read_text())
+            results += [measure_scene(scene, captures) for scene in report.get("scenes", [])]
     except (OSError, ValueError, KeyError) as error:
         print(f"fsr-quality: {error}", file=sys.stderr)
         return 2
     for result in results:
         print(describe(result))
+    averaged = average(results) if len(args.report) > 1 else None
+    if averaged is not None:
+        print(describe_average(averaged))
     if args.json:
-        args.json.write_text(json.dumps(results, indent=1) + "\n")
+        output = results if averaged is None else {"scenes": results, "average": averaged}
+        args.json.write_text(json.dumps(output, indent=1) + "\n")
     return 0
 
 

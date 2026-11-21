@@ -41,7 +41,7 @@ pub(crate) use crate::testing::benchmark::request::{
 use crate::{
     config::{CONFIG, Config},
     frame_timing::{self, Slot},
-    fsr::FsrConfig,
+    fsr::{AntiAliasing, FsrConfig},
     hooks::{
         draw_count,
         graphics_engine::{post::post_effects::vr_forces_blurs_off, shader},
@@ -285,7 +285,14 @@ fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<R
             next.vr.large_cache_cores = large_cache_cores;
         }
         if let Some(fsr) = request.fsr {
-            next.fsr.enabled = fsr;
+            next.fsr.antialiasing = if fsr {
+                AntiAliasing::Fsr
+            } else {
+                AntiAliasing::Engine
+            };
+        }
+        if request.taa == Some(true) {
+            next.fsr.antialiasing = AntiAliasing::Taa;
         }
         if let Some(hybrid) = request.fsr_hybrid_velocity {
             next.fsr.hybrid_velocity = hybrid;
@@ -555,6 +562,8 @@ struct Environment {
     resolution_scale: f32,
     native_resolution: bool,
     fsr_enabled: bool,
+    /// The anti-aliasing resolve in use (`fsr.antialiasing`).
+    antialiasing: AntiAliasing,
     fsr_hybrid_velocity: bool,
     fsr_jitter: bool,
     foveation_enabled: bool,
@@ -594,7 +603,8 @@ impl Environment {
             target_size: resolution.target,
             resolution_scale,
             native_resolution,
-            fsr_enabled: fsr.enabled,
+            fsr_enabled: fsr.antialiasing == AntiAliasing::Fsr,
+            antialiasing: fsr.antialiasing,
             fsr_hybrid_velocity: fsr.hybrid_velocity,
             fsr_jitter: fsr.jitter,
             foveation_enabled: foveation,
@@ -632,6 +642,7 @@ struct RequestEcho<'a> {
     switches: &'a SinglePassOverrides,
     overlap_render_update: Option<bool>,
     fsr: Option<bool>,
+    taa: Option<bool>,
     fsr_hybrid_velocity: Option<bool>,
     fsr_jitter: Option<bool>,
     foveation: Option<bool>,
@@ -654,6 +665,7 @@ impl<'a> From<&'a BenchmarkRequest> for RequestEcho<'a> {
             switches: &request.switches,
             overlap_render_update: request.overlap_render_update,
             fsr: request.fsr,
+            taa: request.taa,
             fsr_hybrid_velocity: request.fsr_hybrid_velocity,
             fsr_jitter: request.fsr_jitter,
             foveation: request.foveation,

@@ -171,6 +171,12 @@ def runs_fsr(config: ExperimentConfig) -> bool:
     return config.visual_overrides is not None and config.visual_overrides.fsr == "enabled"
 
 
+def runs_temporal(config: ExperimentConfig) -> bool:
+    """Whether a configuration runs a temporal resolve (FSR or the mod's TAA), and so the jitter."""
+    return runs_fsr(config) or (config.visual_overrides is not None
+                                and config.visual_overrides.taa == "enabled")
+
+
 def _still(request) -> bool:
     return not any((request.yaw_deg, request.pitch_deg, request.roll_deg, request.right_m,
                     request.up_m, request.forward_m))
@@ -256,7 +262,7 @@ def run_scene(runner, config: ExperimentConfig, name: str, options: FastOptions,
                 # At a still camera every configuration's first snapshot that runs FSR takes the
                 # jitter's first offset and its repeat the next, so configurations compare at the
                 # same offset. A configuration without FSR has no jitter to wait for.
-                jitter_phase = None if phase is not None or not runs_fsr(step_config) else (
+                jitter_phase = None if phase is not None or not runs_temporal(step_config) else (
                     options.jitter_phase + (1 if snapshot.repeat_of is not None else 0))
                 request = SnapshotRequest(
                     f"{prefix}_{snapshot.label}"[:64], snapshot.label, planes, snapshot.keep,

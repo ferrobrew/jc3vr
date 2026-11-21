@@ -95,6 +95,7 @@ One deliberate exception: [`engine/rendering.md`](engine/rendering/rendering.md)
 ### rendering/
 
 - [fsr.md](mod/rendering/fsr.md) — FSR anti-aliasing and upscaling in the stereo pipeline.
+- [taa.md](mod/rendering/taa.md) — the mod's own single-pass temporal anti-aliasing resolve, an alternative to FSR at the same hook: its design, its cost, and its image against FSR and SMAA.
 - [presentation-layer.md](mod/rendering/presentation-layer.md) — the render-rate presentation layer: what is drawn at the render rate and what at the simulation's, the upper body re-posed on the palette copy every frame (the torso bent after the head, the arms solved again to the hands), the hand bodies' offset blended between physics steps, what rides the drawn hand, and the cost.
 - [render-trace.md](mod/rendering/render-trace.md) — the render trace: starting a capture, the output folder, the probes and their toggles, the stereo draw diff and coordinate-frame events, the end-of-trace log lines, and the analyzer.
 - [render-time-anchoring.md](mod/rendering/render-time-anchoring.md) — the rule that anything drawn relative to the player is anchored at render time, and where it applies: the overlay's head and hand anchors, the explosives re-pushed at the hand, and the carried weapons' interpolation.

@@ -36,6 +36,7 @@ pub(crate) use pose::{
 pub(crate) use crate::stereo::dispatch::RenderMode;
 use crate::{
     config::{CONFIG, Config},
+    fsr::AntiAliasing,
     hooks::graphics_engine::{shader, tone_mapping},
     stereo::{config::SinglePassConfig, dispatch, single_pass, switches::ShaderBuild},
     vr::{
@@ -137,7 +138,7 @@ pub(crate) enum Request {
         motion: Option<MotionRequest>,
         environment: Option<EnvironmentRequest>,
         shader_identity: bool,
-        visual_overrides: Option<VisualOverrides>,
+        visual_overrides: Option<Box<VisualOverrides>>,
     },
     End {
         id: RequestId,
@@ -283,6 +284,7 @@ pub(crate) fn process_pending() {
             visual_overrides,
             ..
         } => {
+            let visual_overrides = visual_overrides.map(|overrides| *overrides);
             if let Some(environment) = environment
                 && let Err(error) = state.begin_environment(environment)
             {
@@ -1176,7 +1178,7 @@ fn apply_profile(config: &mut Config, mode: Mode) {
     config.director.clean_view_scope = crate::director::clean_view::CleanViewScope::Everything;
     config.vr.freeze_mode = FreezeMode::FullCamera;
     config.vr.native_resolution = true;
-    config.fsr.enabled = false;
+    config.fsr.antialiasing = AntiAliasing::Engine;
     config.foveation.enabled = false;
     config.exposure.force = true;
     config.exposure.forced_value = 0.11;

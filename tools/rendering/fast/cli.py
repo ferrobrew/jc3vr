@@ -13,6 +13,7 @@ import time
 from pathlib import Path
 
 from tools.rendering.comparison.images import Thresholds
+from tools.rendering.experiment_motion import MotionConfigError
 from tools.rendering.fast.plan import (
     DEFAULT_DEPTH_ULPS,
     FastError,
@@ -63,6 +64,10 @@ def main(argv=None, iterate=False) -> int:
     parser.add_argument("--jitter-phase", type=int, default=0,
                         help="at a still camera, the FSR jitter index each first snapshot waits "
                              "for (its repeat takes the next), while the jitter runs")
+    parser.add_argument("--motion-phase", type=int,
+                        help="under a motion, take each first snapshot at this phase in place of "
+                             "the config's, for a sweep over the FSR jitter's offsets (the motion "
+                             "restarts the jitter sequence, so a phase is one offset)")
     parser.add_argument("--full-cycles", action="store_true",
                         help="run a motion that never moves the camera as configured, not as a "
                              "fixed pose")
@@ -99,6 +104,8 @@ def main(argv=None, iterate=False) -> int:
                 scene.config, warmup_frames=args.warmup_frames)) for scene in scene_list]
         if args.settle_seconds is not None:
             scene_list = [_with_settle(scene, args.settle_seconds) for scene in scene_list]
+        if args.motion_phase is not None:
+            scene_list = [with_motion_phase(scene, args.motion_phase) for scene in scene_list]
         if args.only:
             unknown = set(args.only) - {scene.name for scene in scene_list}
             if unknown:
@@ -155,6 +162,18 @@ def main(argv=None, iterate=False) -> int:
     if any(result.errors for result in results):
         return 2
     return 1 if failed(rows) else 0
+
+
+def with_motion_phase(scene, phase: int):
+    """The scene with its motion's snapshot phase replaced; a scene without a motion is unchanged."""
+    motion = scene.config.motion
+    if motion is None:
+        return scene
+    try:
+        motion = dataclasses.replace(motion, phase=phase)
+    except MotionConfigError as error:
+        raise FastError(f"fast: --motion-phase {phase}: {error}") from error
+    return dataclasses.replace(scene, config=dataclasses.replace(scene.config, motion=motion))
 
 
 def _with_settle(scene, seconds):

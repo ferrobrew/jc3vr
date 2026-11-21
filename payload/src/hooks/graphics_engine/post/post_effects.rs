@@ -28,6 +28,7 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
+    fsr::{AntiAliasing, TaaConfig},
     screenshot::harness::stages::{self, Stage},
     stereo::{self, draw_index, far_phase, later_scene},
 };
@@ -55,11 +56,21 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&ANTI_ALIASING_APPLY_BINDER)
 }
 
-/// Dispatch FSR for the current eye, reading the chain's current slot color
+/// The mod's temporal resolve chosen for this frame, with its settings.
+#[derive(Clone, Copy)]
+enum TemporalResolve {
+    /// FSR, with its optional RCAS strength.
+    Fsr(Option<f32>),
+    /// The mod's own resolve.
+    Taa(TaaConfig),
+}
+
+/// Dispatch the chosen temporal resolve for the current eye, reading the chain's current slot color
 /// (`mgr[slot + PostEffectsManager::RESULT_TEXTURE_SLOT_BASE]`) as
-/// input and writing the anti-aliased result back into it. Returns whether FSR ran (in which case the
-/// engine AA should be neutralized to a passthrough). Mirrors `capture_post_result`'s slot access.
-fn fsr_dispatch(mgr: *mut c_void, slot: u32, sharpness: Option<f32>) -> bool {
+/// input and writing the anti-aliased result back into it. Returns whether it ran (in which case
+/// the engine AA should be neutralized to a passthrough). Mirrors `capture_post_result`'s slot
+/// access.
+fn temporal_dispatch(mgr: *mut c_void, slot: u32, resolve: TemporalResolve) -> bool {
     if mgr.is_null() {
         return false;
     }
@@ -88,20 +99,29 @@ fn fsr_dispatch(mgr: *mut c_void, slot: u32, sharpness: Option<f32>) -> bool {
         } else {
             crate::fsr::EyeLayout::Single(draw_index())
         };
-        let mut state = crate::fsr::FSR_STATE.lock();
+        let textures = crate::fsr::ChainTextures {
+            slot_color: color,
+            depth,
+            velocity,
+        };
         #[cfg(feature = "profiler")]
         let _gpu = crate::profiler::gpu::nested_seam(crate::profiler::gpu::GpuSeam::Fsr);
-        crate::fsr::dispatch(
-            &mut state,
-            device,
-            &crate::fsr::ChainTextures {
-                slot_color: color,
-                depth,
-                velocity,
-            },
-            layout,
-            sharpness,
-        )
+        match resolve {
+            TemporalResolve::Fsr(sharpness) => crate::fsr::dispatch(
+                &mut crate::fsr::FSR_STATE.lock(),
+                device,
+                &textures,
+                layout,
+                sharpness,
+            ),
+            TemporalResolve::Taa(tuning) => crate::fsr::taa::dispatch(
+                &mut crate::fsr::taa::TAA_STATE.lock(),
+                device,
+                &textures,
+                layout,
+                tuning,
+            ),
+        }
     };
     TraceState::record_eye(TraceEvent::FsrDispatch { input: slot, ran });
     ran
@@ -185,8 +205,9 @@ fn apply_global_filters(this: *mut c_void, dt: f32, ctx: *mut c_void) {
 }
 
 // AntiAliasingEffect::Apply -- the AA stage of the post chain. Two roles:
-//   * FSR on: resolve the slot color ourselves (post-tonemap) via fsr_dispatch, then neutralize the
-//     engine AA to AA_NONE so it passthrough-blits our FSR result onward (docs/mod/rendering/fsr.md).
+//   * FSR or the mod's TAA chosen: resolve the slot color ourselves (post-tonemap) via
+//     temporal_dispatch, then neutralize the engine AA to AA_NONE so it passthrough-blits our result
+//     onward (docs/mod/rendering/fsr.md, docs/mod/rendering/taa.md).
 //   * else, in stereo, drop T2X to SMAA 1x -- T2X's temporal resolve blends a single history shared
 //     across the two eye dispatches, so each eye ghosts the other.
 //   * `post_fx.skip_anti_aliasing` drops the engine AA to AA_NONE without FSR, for a baseline with
@@ -204,12 +225,14 @@ fn anti_aliasing_apply(
     stages::capture_slot(Stage::PreAa, mgr, unsafe { *slot });
     let force_smaa_1x = stereo::active();
     let (fsr, skip_aa) = Config::lock_query(|c| {
-        (
-            c.fsr
-                .enabled
-                .then_some(c.fsr.sharpen.then_some(c.fsr.sharpness)),
-            c.post_fx.skip_anti_aliasing,
-        )
+        let resolve = match c.fsr.antialiasing {
+            AntiAliasing::Fsr => Some(TemporalResolve::Fsr(
+                c.fsr.sharpen.then_some(c.fsr.sharpness),
+            )),
+            AntiAliasing::Taa => Some(TemporalResolve::Taa(c.fsr.taa)),
+            AntiAliasing::Engine => None,
+        };
+        (resolve, c.post_fx.skip_anti_aliasing)
     });
 
     // When FSR is on, resolve into the current slot ourselves, then let the engine AA run as a
@@ -217,10 +240,10 @@ fn anti_aliasing_apply(
     // 1x-forcing is moot here.
     let saved_mode = unsafe { (*this).m_Mode };
     let mut restore = false;
-    let fsr_ran = fsr.is_some_and(|sharpness| {
+    let fsr_ran = fsr.is_some_and(|resolve| {
         // SAFETY: `slot` is a valid out-param holding the current chain slot index.
         let slot_index = unsafe { *slot };
-        fsr_dispatch(mgr, slot_index, sharpness)
+        temporal_dispatch(mgr, slot_index, resolve)
     });
     if fsr_ran || skip_aa {
         unsafe { (*this).m_Mode = AAMode::AA_NONE };

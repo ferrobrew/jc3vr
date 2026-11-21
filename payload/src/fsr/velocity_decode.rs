@@ -365,7 +365,7 @@ unsafe fn create_depth_copy(d3d: &ID3D11Device, width: u32, height: u32) -> Opti
 /// Build an SRV over the engine's depth texture. Depth resources are typeless (they carry both a DSV
 /// and SRV view), so the SRV format is derived from the underlying resource description rather than
 /// the engine's format field. `None` on failure (the correction is then skipped for this dispatch).
-fn depth_srv(device: &Device, depth: &Texture) -> Option<ID3D11ShaderResourceView> {
+pub(super) fn depth_srv(device: &Device, depth: &Texture) -> Option<ID3D11ShaderResourceView> {
     // SAFETY: `depth.m_Texture` is the live engine depth texture; the cast and desc query only read
     // it, and the created view holds its own reference.
     unsafe {

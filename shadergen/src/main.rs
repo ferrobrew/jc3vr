@@ -88,6 +88,7 @@ const DX11_BASE_ARGS: &[&str] = &[
 /// (entry point `main`) compiles to a committed `payload/src/shaders/<name>.dxbc`.
 const PAYLOAD_SHADERS: &[(&str, &str)] = &[
     ("velocity_decode", "cs_5_0"),
+    ("taa_resolve", "cs_5_0"),
     ("marker_depth_cs", "cs_5_0"),
     ("indirect_args_double_cs", "cs_5_0"),
     ("snapshot_diff_cs", "cs_5_0"),

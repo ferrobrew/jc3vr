@@ -3,21 +3,64 @@
 
 use crate::{
     config,
+    fsr::AntiAliasing,
     hooks::graphics_engine::{shader, shadow_fit_gap_m},
 };
 
 pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
     ui.checkbox(&mut cfg.stereo.enabled, "Stereo (double-Draw)")
         .on_hover_text("Issue a second game.Draw per frame; CClock::Update is gated to once/frame");
-    ui.checkbox(
-        &mut cfg.fsr.enabled,
-        "FSR anti-aliasing (replaces the engine SMAA)",
-    );
-    ui.checkbox(&mut cfg.fsr.jitter, "FSR sub-pixel jitter")
+    ui.horizontal(|ui| {
+        ui.label("Anti-aliasing");
+        for (choice, label, hover) in [
+            (
+                AntiAliasing::Fsr,
+                "FSR",
+                "FSR 2 at 1:1 in place of the engine's SMAA",
+            ),
+            (
+                AntiAliasing::Taa,
+                "TAA",
+                "The mod's own single-pass temporal resolve in place of the engine's SMAA: \
+                 reprojected, variance-clipped history from the same jitter and motion vectors \
+                 FSR uses",
+            ),
+            (
+                AntiAliasing::Engine,
+                "Engine",
+                "The engine's own anti-aliasing (SMAA 1x in stereo), without the jitter",
+            ),
+        ] {
+            ui.selectable_value(&mut cfg.fsr.antialiasing, choice, label)
+                .on_hover_text(hover);
+        }
+    });
+    if cfg.fsr.antialiasing == AntiAliasing::Taa {
+        let taa = &mut cfg.fsr.taa;
+        ui.add(egui::Slider::new(&mut taa.history_weight, 0.0..=0.98).text("TAA history at rest"))
+            .on_hover_text("The history's share of each pixel with the pixel still");
+        ui.add(
+            egui::Slider::new(&mut taa.motion_history_weight, 0.0..=0.98)
+                .text("TAA history in motion"),
+        )
+        .on_hover_text("The history's share once the pixel moves 16 pixels a frame or more");
+        ui.add(egui::Slider::new(&mut taa.clip_gamma_rest, 0.5..=3.0).text("TAA clip box at rest"))
+            .on_hover_text("The colour box's half-size in standard deviations, pixel still");
+        ui.add(egui::Slider::new(&mut taa.clip_gamma, 0.5..=3.0).text("TAA clip box in motion"))
+            .on_hover_text("The colour box's half-size in standard deviations, pixel moving");
+        ui.add(
+            egui::Slider::new(&mut taa.current_sharpness, 0.5..=16.0)
+                .text("TAA current-frame sharpness"),
+        )
+        .on_hover_text("The falloff of the kernel that unjitters the current frame");
+        ui.add(egui::Slider::new(&mut taa.depth_tolerance, 0.01..=0.5).text("TAA depth tolerance"))
+            .on_hover_text("The relative depth slack before a history counts as disoccluded");
+    }
+    ui.checkbox(&mut cfg.fsr.jitter, "Sub-pixel jitter (FSR and TAA)")
         .on_hover_text(
             "Moves each eye's projection by a sub-pixel offset of FSR's Halton sequence every frame \
-             and tells FSR the offset, so its accumulation gathers new sample positions rather than \
-             filtering one. Only while FSR runs. Off for an A/B.",
+             and tells the temporal resolve the offset, so its accumulation gathers new sample \
+             positions rather than filtering one. Only while FSR or TAA runs. Off for an A/B.",
         );
     ui.checkbox(
         &mut cfg.fsr.stereo_mv_correction,

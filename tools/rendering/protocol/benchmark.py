@@ -72,6 +72,8 @@ class BenchmarkRequest:
     fsr: bool | None = None
     fsr_hybrid_velocity: bool | None = None
     fsr_jitter: bool | None = None
+    # The mod's own temporal resolve in place of FSR when true; None or false leaves it to `fsr`.
+    taa: bool | None = None
     # The foveation for the run; None runs it as shipped.
     foveation: bool | None = None
     # `vr.large_cache_cores` for the run; None keeps the session's.
@@ -93,7 +95,7 @@ class BenchmarkRequest:
             raise ProtocolError(f"benchmark: record_seconds must be within (0, {MAX_RECORD_SECONDS}]")
         if self.resolution_scale is not None and not 0.1 <= self.resolution_scale <= 4.0:
             raise ProtocolError("benchmark: resolution_scale must be within [0.1, 4.0]")
-        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "fsr_jitter",
+        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "fsr_jitter", "taa",
                      "foveation", "large_cache_cores"):
             if getattr(self, name) is not None and type(getattr(self, name)) is not bool:
                 raise ProtocolError(f"benchmark: {name} must be a boolean")
@@ -121,7 +123,7 @@ class BenchmarkRequest:
             lines.append("sample_draw_task = true")
         if self.gpu_passes:
             lines.append("gpu_passes = true")
-        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "fsr_jitter",
+        for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "fsr_jitter", "taa",
                      "foveation", "large_cache_cores"):
             if getattr(self, name) is not None:
                 lines.append(f"{name} = {json.dumps(getattr(self, name))}")

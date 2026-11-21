@@ -937,7 +937,7 @@ fn parse(path: &Path, text: &str) -> Result<Request, RequestError> {
                     motion,
                     environment,
                     shader_identity: file.shader_identity.unwrap_or(false),
-                    visual_overrides,
+                    visual_overrides: visual_overrides.map(Box::new),
                 }
             })
         }

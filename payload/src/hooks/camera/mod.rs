@@ -119,11 +119,13 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
 
     // Snapshot the stereo + FSR config once; drop the lock before the engine call below.
     let stereo_active = crate::stereo::active();
-    let (stereo_cameras, fsr_enabled) = Config::lock_query(|c| (c.stereo.cameras, c.fsr.enabled));
+    let (stereo_cameras, fsr_enabled) =
+        Config::lock_query(|c| (c.stereo.cameras, c.fsr.antialiasing.temporal()));
 
     // The engine's TAA jitter only feeds its own SMAA T2X. Drop it when that resolve is gone --
     // either because stereo always forces SMAA 1x (T2X's single shared history ghosts each eye with
-    // the other; see `anti_aliasing_apply`), or because FSR has replaced the engine AA.
+    // the other; see `anti_aliasing_apply`), or because FSR or the mod's temporal resolve has
+    // replaced the engine AA.
     let jitter = jitter && !fsr_enabled && !stereo_active;
 
     // The VR per-eye off-axis projection and world offset (docs/mod/vr-runtime.md blockers 1 & 3).

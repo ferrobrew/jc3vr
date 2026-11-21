@@ -20,8 +20,9 @@
 //! its own pixels; the motion vectors it is handed are free of it ([`jitter_free_reprojection`]).
 
 mod config;
-pub use config::FsrConfig;
+pub use config::{AntiAliasing, FsrConfig, TaaConfig};
 pub mod jitter;
+pub mod taa;
 mod velocity_decode;
 
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -154,6 +155,77 @@ impl EyeViewProjections {
     }
 }
 
+/// One eye's motion inputs for a temporal resolve this frame: what the velocity decode reprojects
+/// with, and what the harness records of it. Shared by FSR and the mod's own resolve ([`taa`]).
+struct EyeMotion {
+    /// The clip-to-previous-clip matrices (the encoded camera, the eye), when a frame of history
+    /// exists for them.
+    reprojection: Option<(Matrix4, Matrix4)>,
+    views: Option<RecordedViews>,
+    /// The jitter the eye's image carries this frame, as a clip-space offset on top of the
+    /// recorded view-projections, which carry none.
+    jitter_ndc: glam::Vec2,
+    /// The previous view-projection the engine's velocity pass encoded against, when known.
+    encoded_previous: Option<glam::Mat4>,
+}
+
+impl EyeMotion {
+    /// The eye's motion inputs this frame. A side-by-side resolve takes the reprojection from each
+    /// eye's own matrices, which the collapse's centred render camera does not carry, rotating
+    /// `side_by_side_history` (the resolver's own record of the eye's last frame); a whole resolve
+    /// takes it from the render camera's history.
+    fn this_frame(
+        eye: usize,
+        side_by_side: bool,
+        side_by_side_history: &mut Option<EyeViewProjections>,
+    ) -> Self {
+        let (reprojection, views, jitter_ndc) = if side_by_side {
+            let current = EyeViewProjections::current(eye);
+            let previous = std::mem::replace(side_by_side_history, current);
+            let pair = previous.zip(current);
+            (
+                pair.map(|(previous, current)| side_by_side_reprojection(previous, current)),
+                pair.map(|(previous, current)| RecordedViews {
+                    current_eye: current.eye.to_cols_array(),
+                    previous_eye: previous.eye.to_cols_array(),
+                    current_center: current.center.to_cols_array(),
+                    previous_center: previous.center.to_cols_array(),
+                }),
+                current.map_or(glam::Vec2::ZERO, |current| current.jitter),
+            )
+        } else {
+            let stereo_state = STEREO_STATE.lock();
+            let history = &stereo_state.vp_history;
+            (
+                history.reprojection_matrices(eye),
+                RecordedViews::of_history(history, eye),
+                history.cur_jitter[eye],
+            )
+        };
+        // The engine's velocity pass encodes the motion against its render camera's own previous
+        // view-projection (taken through the single-pass rewrite's map for an eye of the collapse),
+        // which need not be the centre camera the mod snapshots: when it is known, the stereo
+        // correction re-anchors against it.
+        let encoded_previous = encoded_previous_view_projection(eye, side_by_side);
+        let reprojection = match (reprojection, encoded_previous, views) {
+            (Some((_, eye_reprojection)), Some(previous), Some(views)) => {
+                let current = glam::Mat4::from_cols_array(&views.current_eye);
+                Some((
+                    reprojection_from_jittered(previous, current, jitter_ndc),
+                    eye_reprojection,
+                ))
+            }
+            (reprojection, ..) => reprojection,
+        };
+        Self {
+            reprojection,
+            views,
+            jitter_ndc,
+            encoded_previous,
+        }
+    }
+}
+
 /// The stereo correction's clip-to-previous-clip matrices (centre, eye) from `previous` to
 /// `current`, formed in `f64` as [`crate::stereo::VpHistory::reprojection_matrices`] forms them for
 /// an eye rendered on its own.
@@ -242,11 +314,13 @@ const CUT_PROBE_DEPTH_M: f32 = 2.0;
 /// Global FSR state. Locked briefly on the render thread at the AA hook.
 pub static FSR_STATE: Mutex<FsrState> = Mutex::new(FsrState::new());
 
-/// Release both eyes' contexts, outputs, and velocity decodes, for eject. The state lives in a
+/// Release both eyes' contexts, outputs, and velocity decodes, and the temporal resolve's
+/// textures, for eject. The state lives in a
 /// static, which an unloading payload never drops, so without this every resource FSR built stays
 /// allocated on the game's device after the payload is gone.
 pub fn release_on_eject() {
     *FSR_STATE.lock() = FsrState::new();
+    taa::release_on_eject();
 }
 
 /// Discard every eye's history at the next resolve, so the accumulation restarts from that frame,
@@ -255,6 +329,7 @@ pub fn release_on_eject() {
 /// than inheriting another mode's history.
 pub fn request_history_reset() {
     RESET_REQUESTED.store(true, Ordering::Relaxed);
+    taa::request_history_reset();
     jitter::reset_phase();
 }
 
@@ -323,49 +398,16 @@ pub fn dispatch(
     let frame = crate::screenshot::harness::frame_identity();
     let mut ran = false;
     for &eye in eyes {
-        // A side-by-side resolve takes the reprojection from each eye's own matrices, which the
-        // collapse's centred render camera does not carry; a whole resolve takes it from the
-        // render camera's history.
-        // The jitter the eye's image carries this frame, as a clip-space offset on top of the
-        // recorded view-projections, which carry none.
-        let (reprojection, views, jitter_ndc) = if build.side_by_side {
-            let current = EyeViewProjections::current(eye);
-            let previous = std::mem::replace(&mut state.side_by_side_history[eye], current);
-            let pair = previous.zip(current);
-            (
-                pair.map(|(previous, current)| side_by_side_reprojection(previous, current)),
-                pair.map(|(previous, current)| RecordedViews {
-                    current_eye: current.eye.to_cols_array(),
-                    previous_eye: previous.eye.to_cols_array(),
-                    current_center: current.center.to_cols_array(),
-                    previous_center: previous.center.to_cols_array(),
-                }),
-                current.map_or(glam::Vec2::ZERO, |current| current.jitter),
-            )
-        } else {
-            let stereo_state = STEREO_STATE.lock();
-            let history = &stereo_state.vp_history;
-            (
-                history.reprojection_matrices(eye),
-                RecordedViews::of_history(history, eye),
-                history.cur_jitter[eye],
-            )
-        };
-        // The engine's velocity pass encodes the motion against its render camera's own previous
-        // view-projection (taken through the single-pass rewrite's map for an eye of the collapse),
-        // which need not be the centre camera the mod snapshots: when it is known, the stereo
-        // correction re-anchors against it.
-        let encoded_previous = encoded_previous_view_projection(eye, build.side_by_side);
-        let reprojection = match (reprojection, encoded_previous, views) {
-            (Some((_, eye_reprojection)), Some(previous), Some(views)) => {
-                let current = glam::Mat4::from_cols_array(&views.current_eye);
-                Some((
-                    reprojection_from_jittered(previous, current, jitter_ndc),
-                    eye_reprojection,
-                ))
-            }
-            (reprojection, ..) => reprojection,
-        };
+        let EyeMotion {
+            reprojection,
+            views,
+            jitter_ndc,
+            encoded_previous,
+        } = EyeMotion::this_frame(
+            eye,
+            build.side_by_side,
+            &mut state.side_by_side_history[eye],
+        );
         let reprojection = reprojection.filter(|_| correction || hybrid);
         if state.eyes[eye].is_none() {
             state.eyes[eye] = create_eye(device, textures.slot_color, build);

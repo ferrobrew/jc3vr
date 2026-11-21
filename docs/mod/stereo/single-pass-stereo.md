@@ -813,7 +813,7 @@ The capture profile (`apply_profile` in `payload/src/testing/visual/mod.rs`) pin
 
 | Setting | Shipped | Profile | What it controls | Under the collapse |
 |---|---|---|---|---|
-| `fsr.enabled` | on (sharpening 0.2) | off, engine SMAA instead | FSR in place of the engine's anti-aliasing, post-tonemap | once per eye over its half with `single_pass.fsr_per_eye`; once over the double-wide target without |
+| `fsr.antialiasing` | FSR (sharpening 0.2) | the engine's SMAA, or the mod's TAA ([taa.md](../rendering/taa.md)) | FSR in place of the engine's anti-aliasing, post-tonemap | once per eye over its half with `single_pass.fsr_per_eye`; once over the double-wide target without |
 | `fsr.stereo_mv_correction` | on | on (inert while FSR is off) | the parallax term FSR's velocity decode adds | per eye from each eye's own matrices with `single_pass.fsr_per_eye` |
 | `foveation.enabled` | on | off | the peripheral stencil drop before the shading passes and the fill-in after | one draw each over the double-wide target, per-pixel eye with `single_pass.foveation_per_eye` |
 | `exposure.force`, `post_fx.skip_histogram` | off, off | pinned, skipped | the engine's histogram metering and exposure adaptation | metered once per frame over both eyes; one exposure for both |

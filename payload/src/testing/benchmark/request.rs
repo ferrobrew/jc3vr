@@ -60,8 +60,12 @@ pub(crate) struct BenchmarkTable {
     single_pass: Option<BTreeMap<String, bool>>,
     /// `vr.overlap_render_update` for the run; `None` keeps the configured one.
     overlap_render_update: Option<bool>,
-    /// FSR for the run (`fsr.enabled`); `None` runs it as shipped.
+    /// FSR for the run (`fsr.antialiasing` FSR, or the engine's anti-aliasing when false); `None`
+    /// runs it as shipped.
     fsr: Option<bool>,
+    /// The mod's own temporal resolve for the run, in place of FSR, when true (`fsr.antialiasing`
+    /// TAA); `None` or false leaves the choice to `fsr`.
+    taa: Option<bool>,
     /// FSR's hybrid decode for the run (`fsr.hybrid_velocity`); `None` runs it as shipped.
     fsr_hybrid_velocity: Option<bool>,
     /// FSR's sub-pixel jitter for the run (`fsr.jitter`); `None` runs it as shipped.
@@ -126,6 +130,7 @@ pub(crate) struct BenchmarkRequest {
     pub(crate) switches: SinglePassOverrides,
     pub(crate) overlap_render_update: Option<bool>,
     pub(crate) fsr: Option<bool>,
+    pub(crate) taa: Option<bool>,
     pub(crate) fsr_hybrid_velocity: Option<bool>,
     pub(crate) fsr_jitter: Option<bool>,
     pub(crate) foveation: Option<bool>,
@@ -245,6 +250,7 @@ impl BenchmarkRequest {
             switches,
             overlap_render_update: table.overlap_render_update,
             fsr: table.fsr,
+            taa: table.taa,
             fsr_hybrid_velocity: table.fsr_hybrid_velocity,
             fsr_jitter: table.fsr_jitter,
             foveation: table.foveation,

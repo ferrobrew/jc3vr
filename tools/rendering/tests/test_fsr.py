@@ -12,7 +12,9 @@ from tools.rendering.comparison.images import Mode as CompareMode
 from tools.rendering.experiment import ExperimentConfig, ExperimentError, run_experiment
 from tools.rendering.experiment_fsr import FsrVariant, FsrVariantError, parse_fsr_variants
 from tools.rendering.fast.plan import label_mode, schedule
-from tools.rendering.fast.run import step_planes
+from tools.rendering.fast.cli import with_motion_phase
+from tools.rendering.fast.plan import FastError
+from tools.rendering.fast.run import runs_fsr, runs_temporal, step_planes
 from tools.rendering.fast.suite import load_suite
 from tools.rendering.protocol import (
     Command,
@@ -50,6 +52,44 @@ class VariantTests(unittest.TestCase):
         self.assertIn("fsr_sharpness = 0.5", sharper.to_toml())
         self.assertEqual(VisualOverrides.from_wire(sharper.to_wire()), sharper)
         self.assertEqual(FsrVariant("soft", sharpen=False).overrides(base).fsr_sharpen, "disabled")
+
+    def test_a_taa_variant_runs_the_temporal_resolve_in_fsrs_place(self):
+        base = VisualOverrides(screen_space_reflections="enabled", fsr="enabled")
+        taa = FsrVariant("taa", taa=True).overrides(base)
+        self.assertEqual((taa.fsr, taa.taa), (None, "enabled"))
+        self.assertIn('taa = "enabled"', taa.to_toml())
+        self.assertEqual(VisualOverrides.from_wire(taa.to_wire()), taa)
+        config = ExperimentConfig.load(ROOT / "experiments/taa_quality_static.toml")
+        with_taa = dataclasses.replace(config, visual_overrides=taa)
+        self.assertTrue(runs_temporal(with_taa))
+        self.assertFalse(runs_fsr(with_taa))
+        self.assertEqual(step_planes((Plane.FINAL, Plane.FSR_MOTION), with_taa), (Plane.FINAL,))
+        tuned = FsrVariant("tuned", taa=True, history_weight=0.85, clip_gamma_rest=2).overrides(base)
+        self.assertEqual((tuned.taa_history_weight, tuned.taa_clip_gamma_rest), (0.85, 2.0))
+        self.assertIn("taa_history_weight = 0.85", tuned.to_toml())
+        self.assertEqual(VisualOverrides.from_wire(tuned.to_wire()), tuned)
+        for value in ([{"name": "a", "taa": True, "fsr": False}],
+                      [{"name": "a", "history_weight": 0.9}],
+                      [{"name": "a", "taa": True, "clip_gamma_rest": 5}],
+                      [{"name": "a", "taa": True, "sharpness": 0.5}], [{"name": "a", "taa": 1}]):
+            with self.assertRaises(FsrVariantError, msg=str(value)):
+                parse_fsr_variants(value)
+
+    def test_the_taa_suite_loads(self):
+        scenes = {scene.name: scene for scene in load_suite(ROOT / "suites/taa.toml")}
+        self.assertIn("taa-meadow-slow", scenes)
+        names = [v.name for v in scenes["taa-rotation"].config.fsr_variants]
+        self.assertEqual(names[:4], ["taa", "fsr-off", "no-aa", "reference"])
+
+    def test_the_motion_phase_can_be_swept(self):
+        scene = next(scene for scene in load_suite(ROOT / "suites/taa.toml")
+                     if scene.name == "taa-translation")
+        self.assertEqual(with_motion_phase(scene, 18).config.motion.phase, 18)
+        with self.assertRaises(FastError):
+            with_motion_phase(scene, 500)
+        still = next(scene for scene in load_suite(ROOT / "suites/taa.toml")
+                     if scene.name == "taa-check")
+        self.assertEqual(with_motion_phase(still, 18).config.motion.phase, 18)
 
     def test_invalid_variants_are_refused(self):
         for value in ([{"name": "no spaces"}], [{"name": "a", "fsr": False, "hybrid_velocity": False}],
@@ -148,6 +188,11 @@ class ProtocolTests(unittest.TestCase):
         text = request.to_toml()
         self.assertIn("fsr = false", text)
         self.assertIn("fsr_hybrid_velocity = true", text)
+        self.assertNotIn("taa", text)
+        self.assertIn("taa = true", BenchmarkRequest("b1", "run", "single_pass", 5.0,
+                                                     taa=True).to_toml())
+        with self.assertRaises(ProtocolError):
+            BenchmarkRequest("b1", "run", "single_pass", 5.0, taa="yes")
         with self.assertRaises(ProtocolError):
             BenchmarkRequest("b1", "run", "single_pass", 5.0, fsr=1)
 
@@ -243,6 +288,19 @@ class QualityTests(unittest.TestCase):
                        {"stem": "f2_fsr_off_multipass_b.depth.eye0", "file": "z"}]}]}
         images = fsr_quality.scene_images(scene)
         self.assertEqual(set(images), {("fsr", "multipass", 1, "a"), ("fsr-off", "multipass", 0, "b")})
+
+    def test_scores_average_over_reports_and_snapshots(self):
+        def result(psnr_a, psnr_b):
+            return {"scene": "s", "reference": [
+                {"config": "taa", "mode": "single_pass", "snapshot": "a", "psnr": psnr_a,
+                 "sharpness": 1.0, "ghosting": 0.1},
+                {"config": "taa", "mode": "single_pass", "snapshot": "b", "psnr": psnr_b,
+                 "sharpness": 0.5, "ghosting": 0.3}],
+                "flicker": [{"config": "taa", "mode": "single_pass", "mean": 2.0}]}
+        rows = fsr_quality.average([result(30.0, 32.0), result(34.0, 36.0)])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["snapshots"], rows[0]["psnr"], rows[0]["sharpness"],
+                          rows[0]["flicker"]), (4, 33.0, 0.75, 2.0))
 
     def test_a_sharper_image_scores_above_one_and_blur_below(self):
         rng = np.random.default_rng(1)

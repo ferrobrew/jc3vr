@@ -1,0 +1,49 @@
+# The mod's own temporal resolve against FSR, the game's SMAA 1x, no anti-aliasing, and a
+# supersampled reference at the coastal town and the meadow, single-pass (read with `fsr-quality`),
+# and the stage-one check in multipass and single-pass (`taa-check`). The motion scenes are run once
+# per pair of motion phases with `--next-frame-repeat`, so the four runs cover the jitter's eight
+# offsets, and `fsr-quality` averages the reports. See docs/mod/rendering/taa.md.
+#
+#   python3 -m tools.rendering fast --session N --suite tools/rendering/suites/taa.toml \
+#       --only taa-static taa-meadow-static --save
+#   for P in 15 17 19 21; do
+#     python3 -m tools.rendering fast --session N --suite tools/rendering/suites/taa.toml \
+#         --only taa-rotation taa-translation taa-slow taa-meadow-rotation \
+#         taa-meadow-translation taa-meadow-slow --save --next-frame-repeat --motion-phase $P
+#   done
+
+[[scene]]
+name = "taa-check"
+config = "taa_check.toml"
+
+[[scene]]
+name = "taa-static"
+config = "taa_quality_static.toml"
+
+[[scene]]
+name = "taa-rotation"
+config = "taa_quality_rotation.toml"
+
+[[scene]]
+name = "taa-translation"
+config = "taa_quality_translation.toml"
+
+[[scene]]
+name = "taa-slow"
+config = "taa_quality_slow.toml"
+
+[[scene]]
+name = "taa-meadow-static"
+config = "taa_quality_meadow_static.toml"
+
+[[scene]]
+name = "taa-meadow-rotation"
+config = "taa_quality_meadow_rotation.toml"
+
+[[scene]]
+name = "taa-meadow-translation"
+config = "taa_quality_meadow_translation.toml"
+
+[[scene]]
+name = "taa-meadow-slow"
+config = "taa_quality_meadow_slow.toml"

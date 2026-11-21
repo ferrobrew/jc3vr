@@ -99,6 +99,7 @@ fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
                 ao_volumes: None,
                 global_illumination: None,
                 fsr: None,
+                taa: None,
                 foveation: None,
                 auto_exposure: None,
                 screen_fade: None,
@@ -109,6 +110,10 @@ fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
                 anti_aliasing: None,
                 fsr_sharpen: None,
                 fsr_sharpness: None,
+                taa_history_weight: None,
+                taa_clip_gamma_rest: None,
+                taa_current_sharpness: None,
+                taa_motion_history_weight: None,
                 headset: None,
                 resolution_scale: None,
                 stages: None,
@@ -129,6 +134,7 @@ fn shadows_disabled() -> VisualOverrides {
         ao_volumes: None,
         global_illumination: None,
         fsr: None,
+        taa: None,
         foveation: None,
         auto_exposure: None,
         screen_fade: None,
@@ -139,6 +145,10 @@ fn shadows_disabled() -> VisualOverrides {
         anti_aliasing: None,
         fsr_sharpen: None,
         fsr_sharpness: None,
+        taa_history_weight: None,
+        taa_clip_gamma_rest: None,
+        taa_current_sharpness: None,
+        taa_motion_history_weight: None,
         headset: None,
         resolution_scale: None,
         stages: None,
@@ -363,7 +373,7 @@ fn profile_keeps_per_eye_native_resolution_across_modes() {
         assert_eq!(config.vr.resolution_scale, 0.75);
         assert_eq!(config.vr.freeze_mode, FreezeMode::FullCamera);
         assert!(config.director.paused);
-        assert!(!config.fsr.enabled);
+        assert_eq!(config.fsr.antialiasing, crate::fsr::AntiAliasing::Engine);
         assert!(!config.foveation.enabled);
         assert!(!config.far_field.enabled);
         assert!(config.exposure.force);
