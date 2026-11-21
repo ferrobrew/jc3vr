@@ -46,6 +46,7 @@ use crate::{
         session::Session,
         stage,
         submit::{self, Submitter},
+        visibility_mask,
     },
 };
 
@@ -430,7 +431,11 @@ impl VrState {
         // enabled only beside it.
         extensions.ext_hand_joints_motion_range =
             available.ext_hand_tracking && available.ext_hand_joints_motion_range;
+        // The hidden-area mesh, queried and shown in the debug UI (`crate::vr::visibility_mask`).
+        extensions.khr_visibility_mask = available.khr_visibility_mask;
         let instance = acquire_instance(&entry, &extensions, cfg.persist_instance)?;
+        // A persisted instance keeps the extensions it was created with.
+        visibility_mask::set_supported(instance.exts().khr_visibility_mask.is_some());
 
         let system = instance
             .system(xr::FormFactor::HEAD_MOUNTED_DISPLAY)
@@ -532,6 +537,10 @@ impl VrState {
                 Ok(Some(xr::Event::InstanceLossPending(_))) => PumpAction::InstanceLost,
                 Ok(Some(xr::Event::InteractionProfileChanged(_))) => {
                     input::mark_profiles_dirty();
+                    continue;
+                }
+                Ok(Some(xr::Event::VisibilityMaskChangedKHR(_))) => {
+                    visibility_mask::mark_dirty();
                     continue;
                 }
                 Ok(Some(xr::Event::ReferenceSpaceChangePending(e))) => {

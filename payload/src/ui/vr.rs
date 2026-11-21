@@ -1,6 +1,9 @@
 //! Runtime controls and a separate read-only OpenXR status snapshot.
 
-use crate::{config, headpose, vr, vr::MirrorView};
+use crate::{
+    config, headpose, vr,
+    vr::{EyeMask, MaskStatus, MirrorView},
+};
 
 pub fn egui_debug_vr(ui: &mut egui::Ui) {
     // Live-editable, mutating the shared config directly (the frame loop reads it each frame), the
@@ -94,7 +97,75 @@ pub(crate) fn status(ui: &mut egui::Ui) {
         None => "Per-eye resolution: (no session)".to_string(),
     });
     ui.label(format!("Headpose source: {:?}", headpose::source()));
+    visibility_mask(ui);
 }
+
+/// The runtime's hidden-area mesh per eye: its counts and share of the field of view, and an outline
+/// of each eye's field-of-view rectangle with the hidden triangles drawn in it.
+fn visibility_mask(ui: &mut egui::Ui) {
+    ui.collapsing("Hidden-area mask", |ui| {
+        match vr::visibility_mask_status() {
+            MaskStatus::NotFetched => {
+                ui.label("Not fetched yet (no located frame this session).");
+            }
+            MaskStatus::Unsupported => {
+                ui.label("The runtime does not offer XR_KHR_visibility_mask.");
+            }
+            MaskStatus::Failed(error) => {
+                ui.label(format!("The query failed: {error}"));
+            }
+            MaskStatus::Fetched(masks) => {
+                ui.horizontal(|ui| {
+                    for (eye, mask) in masks.iter().enumerate() {
+                        ui.vertical(|ui| {
+                            ui.label(format!(
+                                "Eye {eye}: {} vertices, {} triangles, {:.1}% hidden",
+                                mask.vertices.len(),
+                                mask.indices.len() / 3,
+                                100.0 * mask.hidden_fraction(),
+                            ));
+                            draw_mask(ui, mask);
+                        });
+                    }
+                });
+            }
+        }
+    });
+}
+
+/// Draw the field-of-view rectangle and the hidden triangles' outlines, mapped from the tangent
+/// plane into a box of the rectangle's aspect, up at the top.
+fn draw_mask(ui: &mut egui::Ui, mask: &EyeMask) {
+    let [left, right, down, up] = mask.fov_tangents;
+    let (width, height) = (right - left, up - down);
+    if width <= 0.0 || height <= 0.0 {
+        return;
+    }
+    let size = egui::vec2(MASK_PREVIEW_WIDTH, MASK_PREVIEW_WIDTH * height / width);
+    let (rect, _) = ui.allocate_exact_size(size, egui::Sense::hover());
+    let painter = ui.painter_at(rect);
+    let to_screen = |[x, y]: [f32; 2]| {
+        egui::pos2(
+            rect.left() + (x - left) / width * rect.width(),
+            rect.top() + (up - y) / height * rect.height(),
+        )
+    };
+    let frame = egui::Stroke::new(1.0, egui::Color32::GRAY);
+    painter.rect_stroke(rect, 0.0, frame, egui::StrokeKind::Inside);
+    let edge = egui::Stroke::new(1.0, egui::Color32::LIGHT_RED);
+    for triangle in mask.indices.as_chunks::<3>().0 {
+        let points: Option<Vec<egui::Pos2>> = triangle
+            .iter()
+            .map(|&index| mask.vertices.get(index as usize).copied().map(to_screen))
+            .collect();
+        if let Some(points) = points {
+            painter.add(egui::Shape::closed_line(points, edge));
+        }
+    }
+}
+
+/// The preview box's width in points.
+const MASK_PREVIEW_WIDTH: f32 = 160.0;
 
 /// A human-readable label for the runtime's current session state.
 fn session_label(status: &vr::VrStatus) -> &'static str {
