@@ -213,6 +213,44 @@ Before the jitter, run 321's benchmark (`tools/rendering/suites/benchmark.toml` 
 
 The hybrid decode costs nothing measurable. FSR's seam is 1.9 to 2.1 ms at the headset's size and 1.4 to 1.5 ms at 0.85; at the town it adds 1.6 ms to the GPU's frame, and at the capital, where the GPU is already at the frame's length (its spans include its waits on the draw task), it turns the 1% low from 17.8 ms into 27 ms: one frame in a hundred misses a display period, which FSR off does not. The medians are the 72 Hz pace in every case. The mod cannot render below the headset's size and let FSR upscale (`renderSize` is always the display size, see *Design for upscaling, build for AA*); the cheaper configuration it can run is a smaller render with FSR at 1:1 and the compositor scaling it, which saves 0.6 ms of FSR and keeps the capital's misses, and loses 1 to 2 dB at rest against FSR at full size in exchange for 0.2 dB in rotation.
 
+## Against a higher render resolution at the same cost
+
+The question: with the frame GPU-bound, would FSR's GPU time be better spent rendering more pixels with no temporal anti-aliasing at all?
+
+**What the higher resolution costs.** Run 334's benchmark (the town, single-pass, 72 Hz pacing, three repeats of six seconds, the release payload, `--gpu-passes` in every run so the per-pass timestamps load each mode alike; `target/harness-probe/benchmark/334-eqcost`), median GPU milliseconds per frame. The benchmark has no switch for no anti-aliasing, so that column is the SMAA run less the engine anti-aliasing pass's own time (`post: engine anti-aliasing`, 0.44 ms at 1.0 to 0.71 at 1.35) plus the 0.06 ms passthrough blit the engine's no-AA branch still draws:
+
+| Scale (each side) | Per eye | FSR | SMAA 1x | No AA (derived) |
+|---|---|---|---|---|
+| 1.0 | 3584x3561 | 9.63 | 8.17 | 7.79 |
+| 1.15 | 4160x4095 | 11.86 | 9.76 | 9.28 |
+| 1.25 | 4480x4451 | 13.26 | 10.79 | 10.23 |
+| 1.35 | 4864x4807 | 14.14 | 12.15 | 11.50 |
+
+SMAA at 1.15 costs what FSR does at 1.0 (9.76 against 9.63 ms), and no anti-aliasing matches it at about 1.18 each side (1.39 times the pixels). Every row holds the 72 Hz pace except FSR at 1.35, whose 1% low is 28.8 ms.
+
+**How a larger render reaches the display.** With `vr.resolution_scale` set in the settings, the OpenXR swapchain is created at the scaled size (`vr::swapchain`), the mod's blit copies each eye into it at 1:1, and the runtime's compositor resamples it to the panel inside its lens-distortion pass, with whatever filter that runtime uses. The benchmark and the harness change the scale live and keep the swapchain at the session's size, so there the mod's own blit (`vr_blit_ps`) downsamples, with one bilinear tap per output pixel (`MIN_MAG_MIP_LINEAR` over a single-mip source) on the sRGB-encoded values. The quality comparison below uses that same filter offline. A compositor's distortion resample is a different filter, and the comparison does not model it.
+
+**The quality.** One schedule per scene at one pinned pose (run 334, `target/harness-probe/fast/334-eqcost` and `334-eqcost-slow`), single-pass, the left eye: FSR with the jitter at 1.0, no anti-aliasing at 1.15 brought down with the blit's bilinear tap, SMAA 1x at 1.15 the same way, no anti-aliasing at 1.0, and the usual reference (the left eye alone at 1.414 each side, no anti-aliasing, downsampled by area). 1.15 is the scale SMAA matches FSR's cost at, so for no anti-aliasing it is about 0.35 ms cheaper than FSR, which slightly favours FSR. PSNR against the reference, then the edge sharpness relative to the reference's:
+
+| Scene | FSR, 1.0 | No AA, 1.15 | SMAA, 1.15 | No AA, 1.0 |
+|---|---|---|---|---|
+| Town, still | 33.71 dB, 0.95 | 34.72 dB, 0.89 | 34.54 dB, 0.85 | 33.27 dB, 0.95 |
+| Town, rotating | 32.13 dB, 0.89 | 34.56 dB, 0.89 | 34.33 dB, 0.85 | 32.85 dB, 0.95 |
+| Town, translating | 31.13 dB, 0.81 | 34.14 dB, 0.89 | 33.91 dB, 0.85 | 32.38 dB, 0.95 |
+| Town, slow pan | 32.59 dB, 0.83 | 34.59 dB, 0.89 | 34.41 dB, 0.85 | 33.00 dB, 0.95 |
+| Meadow, still | 30.37 dB, 0.95 | 29.97 dB, 0.87 | 29.95 dB, 0.83 | 28.86 dB, 0.98 |
+| Meadow, rotating | 29.44 dB, 0.89 | 30.06 dB, 0.87 | 30.03 dB, 0.83 | 28.95 dB, 0.99 |
+| Meadow, translating | 28.82 dB, 0.79 | 30.09 dB, 0.87 | 30.08 dB, 0.83 | 29.00 dB, 0.98 |
+| Meadow, slow pan | 32.62 dB, 0.79 | 32.97 dB, 0.86 | 33.01 dB, 0.83 | 31.83 dB, 0.97 |
+
+A reference made by supersampling with no anti-aliasing favours the supersampled candidates, which are the same kind of image at a smaller size, so the PSNR gap overstates their lead. Brought down by area instead of the blit's bilinear tap, no anti-aliasing at 1.15 scores 1.7 to 1.9 dB lower than in the table, below FSR at rest, so the filter matters as much as the method. At the town FSR's motion figures in this run are also 0.6 to 1.4 dB below run 328's in the same scenes, with less edge sharpness (0.81 to 0.89 against 0.89 to 0.98), while no anti-aliasing at 1.0 scored within 0.25 dB of its run 328 figures. Why is not established.
+
+**Temporal stability.** At a still camera, FSR's next frame changes at 293,000 pixels of an eye at the town (a mean of 0.37 codes) and 544,000 at the meadow (0.56), its jitter as before. No anti-aliasing at 1.15 changes at 32 and 34 pixels, SMAA at 1.15 at 2,900 and 24,000, and no anti-aliasing at 1.0 at 2,000 and 27. On the slow pan with the next frame as the repeat, the flicker (the frame-to-frame change of each image's error against the reference's) is 2.25 codes for FSR against 1.86 for no anti-aliasing at 1.15, 1.99 for SMAA at 1.15, and 1.99 for no anti-aliasing at 1.0 at the town, and 3.49 against 3.17, 3.20, and 3.36 at the meadow. The higher resolution is steadier at rest and on the slow pan, by about a fifth at the town and a tenth at the meadow, and the measure, as before, cannot separate shimmer from the edges' own motion.
+
+**The edges.** Crops at four times (the left eye at a still camera, after the blit's downsample): the town's power lines are continuous even-weight curves with FSR; at 1.15 with no anti-aliasing they are still stair-stepped, with shorter steps than at 1.0 and each step's end softened by the downsample, so the stairs are fainter but plainly there; SMAA at 1.15 draws smooth but blurrier lines. A wind turbine blade at a shallow angle against the sky shows the same: a clean edge with FSR and SMAA at 1.15, a fine staircase at 1.15 with no anti-aliasing, a coarser one at 1.0. The pole's crossarms and insulators are crisper at 1.15 than with FSR, which softens small dark details a little. The meadow's dithered tree crowns look alike in all four (the dither survives every method at this size, FSR softening it slightly), and the grass blades are smoother with FSR, less crunchy at 1.15 than at 1.0.
+
+**Verdict.** At the same GPU time, FSR at 1.0 removes the stair-steps from a still edge and a higher resolution does not: at 1.15 to 1.18 each side the jaggies are smaller and softer but visible. In exchange FSR adds a sub-code shimmer over 2 to 4% of an eye at rest and changes about a tenth to a fifth more from frame to frame on a slow pan, where the higher resolution is as steady as no anti-aliasing at all. Against the reference, the higher resolution scores 1 to 3 dB better in the town and 0.35 to 1.3 dB better at the meadow in motion, and 0.4 dB worse at the meadow at rest, with the reference biased its way. For jaggies on a held edge FSR is better; for crawl and shimmer in motion, which is what a headset shows most of the time, the higher resolution is somewhat better. Neither is clearly better overall, and whether the stairs at 1.15 or FSR's shimmer reads worse at the Beyond's pixel size can only be judged in the headset. SMAA at 1.15 combines the higher resolution's steadiness with FSR's smooth line edges, at a slight softness, and is the third option worth that look.
+
 ## Verdict
 
 With the jitter, FSR does what it is for. Under single-pass it is the closest to a reference at twice the pixels with no anti-aliasing in nearly every scene measured: 0.05 to 0.41 dB closer than SMAA 1x at the town and 0.02 to 0.64 dB at the meadow, and 0.09 to 1.18 dB closer than no anti-aliasing, and sharper at the edges than SMAA; at the edges it is the only one of the three that draws a power line as a continuous line and a dithered tree crown as foliage. The jitter is the whole difference at rest (2.2 and 3.3 dB over FSR without it) and costs nothing measurable; FSR's 1.9 to 2.1 ms stays. Its price is temporal: a still image changes by a fraction of a code at 2 to 5% of an eye's pixels from frame to frame, against almost none with SMAA, and a little more than SMAA in motion. Whether that reads as shimmer in the headset, at the panel's pixel size and with the compositor's reprojection, the harness cannot say.
