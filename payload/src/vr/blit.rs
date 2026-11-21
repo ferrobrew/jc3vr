@@ -14,11 +14,12 @@
 //! through `vr.direct_eye_blit`) acquires the swapchain image at the top of the render update and
 //! blits each eye from the engine's back buffer in that eye's own post-draw ([`blit_direct`]), so the
 //! full-size copy into the eye capture is made only when something else reads that capture (the
-//! desktop mirror's eyes, a screenshot, the recorder, the previews). The capture route copies every
-//! eye into its capture in the post-draw and blits the captures at the frame submit; it remains for
-//! the single-pass collapse, whose one back buffer holds both eyes side by side and so has no
-//! per-eye source the blit can sample whole, for a back buffer the blit cannot sample, and for any
-//! eye the direct route did not reach. The submit blits exactly the eyes the direct route did not.
+//! desktop mirror's eyes, a screenshot, the recorder, the previews). Under the single-pass collapse
+//! the one dispatch blits both eyes, each from its half of the double-wide back buffer
+//! ([`BlitSource::Half`]). The capture route copies every eye into its capture in the post-draw and
+//! blits the captures at the frame submit; it remains for a back buffer the blit cannot sample, and
+//! for any eye the direct route did not reach. The submit blits exactly the eyes the direct route
+//! did not.
 //!
 //! The gamma bridge (linear source vs `_SRGB` target) is a runtime toggle; see
 //! [`crate::vr::config::BlitGamma`] and `vr_blit_ps.hlsl`. The blit also darkens the image by the
@@ -68,6 +69,8 @@ use crate::{
     ui::render::EGUI_DEBUG_RENDER_STATE,
     vr::{
         EyeImage, FrameContext, VrConfig,
+        blit_region::{BlitSource, SourceRegion, params_words},
+        blit_timer::TailBlitTimer,
         config::BlitGamma,
         foveation::{capture_state, restore_state},
     },
@@ -183,8 +186,8 @@ pub(crate) enum DirectArm {
     GaveUp,
     /// Acquiring the swapchain image failed this frame.
     AcquireFailed,
-    /// The frame did not ask for the route: it does not render, does not render in stereo, or its
-    /// one dispatch carries both eyes.
+    /// The frame did not ask for the route: it does not render, does not render in stereo, or
+    /// renders one eye in isolation.
     NotArmed,
 }
 
@@ -210,7 +213,8 @@ pub(crate) fn direct_status() -> DirectStatus {
 }
 
 /// Blit `src`, the engine's back buffer as eye `eye`'s post-draw leaves it, into that eye's
-/// swapchain slice, when the direct route is armed for this frame. Returns whether it did; on
+/// swapchain slice, when the direct route is armed for this frame; under the collapse `source`
+/// picks the eye's half of it. Returns whether it did; on
 /// `false` the caller copies the eye into its capture, so the submit blits it from there. Restores
 /// the pipeline state the engine's following passes rely on.
 ///
@@ -222,6 +226,7 @@ pub(crate) unsafe fn blit_direct(
     context: &ID3D11DeviceContext,
     src: &ID3D11Resource,
     eye: usize,
+    source: BlitSource,
 ) -> bool {
     if eye >= 2 {
         return false;
@@ -257,7 +262,12 @@ pub(crate) unsafe fn blit_direct(
     // releases it, which takes the target out of `DIRECT` first.
     let result = unsafe {
         let targets = capture_state(context);
-        blit.set_params(context, target.linearize, brightness);
+        blit.set_params(
+            context,
+            target.linearize,
+            brightness,
+            SourceRegion::of(source, src_width(&src)),
+        );
         let result = blit.draw_eye(device, context, &image, srv);
         restore_state(context, &targets);
         result
@@ -272,6 +282,12 @@ pub(crate) unsafe fn blit_direct(
             false
         }
     }
+}
+
+/// The width of a texture, in texels.
+fn src_width(texture: &ID3D11Texture2D) -> u32 {
+    // SAFETY: `GetDesc` only fills the out-parameter from a live texture.
+    unsafe { texture_size(texture).0 }
 }
 
 /// Tear down the blit pipeline (COM release). Called from the runtime cleanup.
@@ -533,7 +549,17 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
         let blit = guard.as_mut().expect("the blit pipeline was just ensured");
         // SAFETY: the context mutex is held; the images stay acquired until the release below.
         unsafe {
-            blit.set_params(&context.m_Context, linearize, brightness);
+            let timing = blit.tail_timer.begin(
+                &device.m_Device,
+                &context.m_Context,
+                blitted.contains(&false),
+            );
+            blit.set_params(
+                &context.m_Context,
+                linearize,
+                brightness,
+                SourceRegion::WHOLE,
+            );
             for (eye, src) in eye_textures.iter().enumerate() {
                 if blitted[eye] {
                     continue;
@@ -544,6 +570,9 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
                 if let Err(e) = blit.blit_eye(device, &context.m_Context, &image, src) {
                     tracing::warn!(target: "vr", eye, "eye blit draw failed: {e:#}");
                 }
+            }
+            if let Some(index) = timing {
+                blit.tail_timer.end(&context.m_Context, index);
             }
         }
         Ok(())
@@ -568,6 +597,8 @@ struct VrBlit {
     /// The parameter constant buffer (`b0`): the gamma mode and the comfort fade's brightness,
     /// updated per submit.
     params_cb: ID3D11Buffer,
+    /// The GPU timing of the submit's blit, for a benchmark run that times passes.
+    tail_timer: TailBlitTimer,
     /// Render-target views over swapchain slices, keyed by `(texture pointer, array slice)`. The
     /// swapchain images are enumerated once and stable, so this cache is valid for the runtime's
     /// lifetime.
@@ -627,13 +658,13 @@ impl VrBlit {
             .context("vr: creating the blit rasterizer state")?;
             let rasterizer = rasterizer.context("vr: the blit rasterizer state was not created")?;
 
-            // 16-byte constant buffer: the gamma mode as a uint, then the brightness as a float; the
-            // rest is padding.
-            let initial: [u32; 4] = [1, 1.0f32.to_bits(), 0, 0];
+            // 32-byte constant buffer: the gamma mode as a uint, then the brightness as a float, two
+            // words of padding, then the source region's horizontal scale, offset, and clamp.
+            let initial = params_words(true, 1.0, SourceRegion::WHOLE);
             let mut params_cb: Option<ID3D11Buffer> = None;
             d3d.CreateBuffer(
                 &D3D11_BUFFER_DESC {
-                    ByteWidth: std::mem::size_of::<[u32; 4]>() as u32,
+                    ByteWidth: std::mem::size_of::<[u32; 8]>() as u32,
                     Usage: D3D11_USAGE_DEFAULT,
                     BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
                     CPUAccessFlags: 0,
@@ -657,6 +688,7 @@ impl VrBlit {
                 sampler,
                 rasterizer,
                 params_cb,
+                tail_timer: TailBlitTimer::default(),
                 rtv_cache: Vec::new(),
                 srv_cache: [None, None],
                 back_buffer_srv: None,
@@ -669,13 +701,14 @@ impl VrBlit {
     ///
     /// # Safety
     /// `context` must be the live engine immediate context.
-    unsafe fn set_params(&self, context: &ID3D11DeviceContext, linearize: bool, brightness: f32) {
-        let brightness = if brightness.is_finite() {
-            brightness.clamp(0.0, 1.0)
-        } else {
-            1.0
-        };
-        let data: [u32; 4] = [u32::from(linearize), brightness.to_bits(), 0, 0];
+    unsafe fn set_params(
+        &self,
+        context: &ID3D11DeviceContext,
+        linearize: bool,
+        brightness: f32,
+        region: SourceRegion,
+    ) {
+        let data = params_words(linearize, brightness, region);
         unsafe {
             context.UpdateSubresource(&self.params_cb, 0, None, data.as_ptr().cast(), 0, 0);
         }

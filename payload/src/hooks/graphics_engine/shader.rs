@@ -297,6 +297,7 @@ fn create_fragment_program(
     // same buffer. Applied after the screen-door rewrites, whose buffer declaration it reads.
     let localize_velocity = crate::stereo::single_pass::collapse_active()
         && Config::lock_query(|c| c.stereo.single_pass.velocity_per_eye);
+    let ssao_far_early_out = Config::lock_query(|c| c.stereo.single_pass.ssao_far_early_out);
     let mut rewritten_screen_pass = None;
     if !crate::is_shutting_down()
         && let Some(p) = unsafe { params.as_ref() }
@@ -316,6 +317,14 @@ fn create_fragment_program(
         })
         .or_else(|| screen_space_reflection::rewrite_fragment_program(code, localize_reflections))
         .or_else(|| ao_volumes::rewrite_fragment_program(code, localize_ao_volumes));
+        // The SSAO generation's far quads skip the taps, over whichever rewrite above it carries.
+        if ssao_far_early_out
+            && let Some(skipped) = ambient_occlusion::skip_far_fragment_program(
+                rewritten_screen_pass.as_deref().unwrap_or(code),
+            )
+        {
+            rewritten_screen_pass = Some(skipped);
+        }
     }
     // Skip patching once eject begins, so the shader restore's bounce re-creates pristine fragment
     // shaders (matching the vertex side) and the clean game keeps none of the mod's edits.

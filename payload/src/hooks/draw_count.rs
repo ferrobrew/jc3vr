@@ -16,6 +16,7 @@ use std::{
 };
 
 use detours_macro::detour;
+use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -263,16 +264,43 @@ fn clear(ctx: *mut c_void, flags: u32, color: *mut c_void, depth: f32, stencil: 
     CLEAR.get().unwrap().call(ctx, flags, color, depth, stencil);
 }
 
-/// Records the VFX depth copy, which happens several times per frame, mid-frame.
+/// Records the VFX depth copy, which happens once per dispatch, mid-frame, and skips it under
+/// `single_pass.skip_unread_effect_depth_copy` when it targets one of the effect depth-history
+/// slots, which nothing reads ([`GraphicsEngine::m_EffectInfo`]).
 #[detour(address = jc3gi::graphics_engine::draw::CopySurfaceToTexture_ADDRESS)]
 fn copy_surface_to_texture(ctx: *mut c_void, dst: *mut c_void, src: *mut c_void) {
     TraceState::record_eye(TraceEvent::CopySurfaceToTexture {
         dst: dst as u64,
         src: src as u64,
     });
+    if crate::stereo::single_pass::skip_unread_effect_depth_copy() && is_effect_depth_slot(dst) {
+        bump(&EFFECT_DEPTH_COPIES_SKIPPED);
+        return;
+    }
     #[cfg(feature = "profiler")]
     let _gpu = crate::profiler::gpu::detail_interval("engine: whole-surface copy");
     COPY_SURFACE_TO_TEXTURE.get().unwrap().call(ctx, dst, src);
+}
+
+/// The effect depth-history copies [`copy_surface_to_texture`] has skipped since the payload loaded.
+pub(crate) static EFFECT_DEPTH_COPIES_SKIPPED: AtomicU64 = AtomicU64::new(0);
+
+/// Whether `dst` is the depth texture of one of the engine's effect depth-history slots. Matching the
+/// destination rather than trusting the call site keeps the skip exact if another caller ever copies
+/// through the wrapper.
+fn is_effect_depth_slot(dst: *mut c_void) -> bool {
+    if dst.is_null() {
+        return false;
+    }
+    // SAFETY: the engine singleton lives for the whole process, and only the pointer values are
+    // compared, never dereferenced.
+    let Some(engine) = (unsafe { GraphicsEngine::get() }) else {
+        return false;
+    };
+    engine
+        .m_EffectInfo
+        .iter()
+        .any(|slot| slot.m_DepthTexture.cast::<c_void>() == dst)
 }
 
 #[detour(address = jc3gi::graphics_engine::draw::ResolveSurface_ADDRESS)]

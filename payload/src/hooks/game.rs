@@ -349,13 +349,15 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             && !crate::testing::visual::requires_inline_tail();
 
         // Each eye's post-draw blits it straight into the swapchain when this frame's image is
-        // acquired now (see `vr::blit`). Not under the collapse: its one dispatch leaves both eyes
-        // side by side in one back buffer, which the submit splits from the captures instead.
+        // acquired now (see `vr::blit`); under the collapse the one dispatch blits each eye from its
+        // half of the double-wide back buffer.
+        let direct_route = !crate::stereo::single_pass::collapse_active()
+            || Config::lock_query(|c| c.stereo.single_pass.collapse_direct_blit);
         match vr_frame.as_mut() {
             Some(frame)
                 if stereo
                     && frame.should_render()
-                    && !crate::stereo::single_pass::collapse_active()
+                    && direct_route
                     && render_mode.selected_eye().is_none() =>
             {
                 crate::vr::arm_direct(frame, &vr_cfg);

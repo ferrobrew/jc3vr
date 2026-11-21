@@ -35,6 +35,7 @@ use crate::{
         replay, stage,
         state::{VrState, lock_state},
         submit::{Submitter, lock_submit},
+        visibility_mask,
     },
 };
 
@@ -513,6 +514,7 @@ impl VrState {
         let flight_head = flight_pose::begin_located(flight_head);
         if located {
             log_located_views_once(&eyes);
+            visibility_mask::refresh(&session.handle, [eyes[0].fov, eyes[1].fov]);
             replay::replace_located_head(&mut eyes);
             substitute_headset_rig(&mut eyes, near_clip, far_clip);
         }

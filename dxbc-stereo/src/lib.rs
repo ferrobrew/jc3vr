@@ -43,9 +43,9 @@ pub use rewrite::{
     rebase_pinned_domain_shader, remap_full_view_projection, remap_pinned_full_view_projection,
     reproject_domain_shader, reproject_instanced_vertex_shader, reproject_lake_reflection,
     reproject_pinned_eye, reproject_vertex_shader, scale_lake_refraction,
-    snap_ambient_occlusion_uv, trace_deferred_samples, trace_lake_displacement,
-    trace_lake_gradients, trace_lake_inner_edge, trace_lake_lighting, trace_lake_normals,
-    trace_lake_response, trace_lake_samples, trace_lake_waves, trace_ssr_ray,
+    skip_far_ambient_occlusion, snap_ambient_occlusion_uv, trace_deferred_samples,
+    trace_lake_displacement, trace_lake_gradients, trace_lake_inner_edge, trace_lake_lighting,
+    trace_lake_normals, trace_lake_response, trace_lake_samples, trace_lake_waves, trace_ssr_ray,
 };
 pub use tokens::{Operand, OperandKind, ShaderStage, TokenStream};
 

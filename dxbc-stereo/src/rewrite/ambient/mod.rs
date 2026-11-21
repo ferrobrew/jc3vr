@@ -44,11 +44,14 @@
 //! under. A shader without them, or one that touches either texture other than through a sample, is
 //! declined.
 
+mod early_out;
 mod loads;
 mod operands;
 mod rewriter;
 
 use std::collections::HashSet;
+
+pub use early_out::skip_far_ambient_occlusion;
 
 use crate::{
     container::{Dxbc, DxbcError},

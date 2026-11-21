@@ -30,6 +30,7 @@ use crate::{
     screenshot::CaptureSource,
     stereo::single_pass::{collapse_active, set_collapse_ui_eye},
     ui::render::{eye_capture_fresh, mark_eye_capture, previews_visible},
+    vr::BlitSource,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -522,20 +523,35 @@ fn mod_post_draw(context: *mut Context) {
             let copies_gpu = crate::profiler::gpu::detail_interval("mod: eye copies and blits");
             if collapse_active() {
                 // The collapsed single walk rendered both eyes into this one (viewport-split) back
-                // buffer -- left half eye 0, right half eye 1 -- so copy each half into its eye
-                // texture. `half_w` is a per-eye-width region: with `single_pass_double_wide` the back
-                // buffer is 2x per-eye wide, so each half fills its full-res eye texture; without it
-                // each half is squished and fills only the left portion of the eye texture (a
-                // bring-up limitation, not the finished look).
+                // buffer -- left half eye 0, right half eye 1. On the direct route each half is
+                // blitted straight into its swapchain slice, and copied into its eye texture only
+                // for a reader of the capture; otherwise each half is copied into its eye texture
+                // for the submit to blit. `half_w` is a per-eye-width region: with
+                // `single_pass_double_wide` the back buffer is 2x per-eye wide, so each half fills
+                // its full-res eye texture; without it each half is squished and fills only the left
+                // portion of the eye texture (a bring-up limitation, not the finished look).
                 let half_w = u32::from(src.m_Width) / 2;
                 let height = u32::from(src.m_Height);
                 for eye in 0..2u32 {
-                    mark_eye_capture(eye as usize, eye_textures[eye as usize].is_some());
+                    let blitted = !crate::stereo::far_phase()
+                        && graphics_engine.m_Device.as_ref().is_some_and(|device| {
+                            crate::vr::blit_direct(
+                                device,
+                                &context.m_Context,
+                                &src.m_Texture,
+                                eye as usize,
+                                BlitSource::Half(eye),
+                            )
+                        });
+                    let dst = eye_textures[eye as usize]
+                        .as_ref()
+                        .filter(|_| !blitted || eye_capture_wanted(eye as usize));
+                    mark_eye_capture(eye as usize, dst.is_some());
                     crate::screenshot::harness::note_eye(
                         eye as usize,
-                        !crate::stereo::far_phase() && eye_textures[eye as usize].is_some(),
+                        !crate::stereo::far_phase() && dst.is_some(),
                     );
-                    if let Some(dst) = eye_textures[eye as usize].as_ref() {
+                    if let Some(dst) = dst {
                         let region = D3D11_BOX {
                             left: eye * half_w,
                             top: 0,
@@ -561,7 +577,13 @@ fn mod_post_draw(context: *mut Context) {
                 // the near dispatch of the same eye.
                 let blitted = !crate::stereo::far_phase()
                     && graphics_engine.m_Device.as_ref().is_some_and(|device| {
-                        crate::vr::blit_direct(device, &context.m_Context, &src.m_Texture, index)
+                        crate::vr::blit_direct(
+                            device,
+                            &context.m_Context,
+                            &src.m_Texture,
+                            index,
+                            BlitSource::Whole,
+                        )
                     });
                 let copied = match eye_textures.get(index).and_then(Option::as_ref) {
                     Some(dst) if !blitted || eye_capture_wanted(index) => {

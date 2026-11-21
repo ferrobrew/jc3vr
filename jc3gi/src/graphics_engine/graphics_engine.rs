@@ -90,7 +90,14 @@ impl std::convert::AsMut<DrawThreadTaskParam> for DrawThreadTaskParam {
 /// (`CGraphicsEngine::SEffectInfo`). The graphics engine holds an array of these in
 /// [`GraphicsEngine::m_EffectInfo`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_EffectInfo), and the lifecycle byte advances once per scene dispatch.
 pub struct EffectInfo {
-    /// The reflection-proxy depth texture.
+    /// The reflection-proxy depth texture: the destination of the `CopyEffectTextures` stage's
+    /// [`CopySurfaceToTexture`](crate::graphics_engine::draw::CopySurfaceToTexture) of the
+    /// reflection-proxy depth surface, a whole-surface copy at the render size.
+    ///
+    /// Nothing reads it. Its two accessors, `GetEffectDepthTexture` and `GetEffectTransformRef`, have
+    /// no callers and no references in the image, and the passes that use the reflection-proxy depth
+    /// sample the live surface rather than a history slot. Skipping the copy leaves the rendered frame
+    /// unchanged.
     pub m_DepthTexture: *mut crate::graphics_engine::graphics_engine::HTexture_t,
     pub m_Transform: crate::types::math::Matrix4,
     /// The lifecycle counter, one of the `FRAME_INDEX_*` constants on this type. Any other non-free

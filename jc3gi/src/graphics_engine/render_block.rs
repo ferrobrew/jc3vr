@@ -1243,7 +1243,9 @@ impl RenderBlockSSAO {
     ///    is on its first frame it is preceded by a second separable blur pair, over the previous
     ///    history slot.
     /// 5. The composite into the alpha channel of the scene target (colour mask 8, depth test on),
-    ///    followed by the inlined history advance.
+    ///    outside the temporal branch: with the temporal filter on it samples the history slot the
+    ///    resolve just wrote and is followed by the inlined history advance, and with it off it
+    ///    samples the blurred occlusion target and nothing advances.
     pub unsafe fn Draw(
         &self,
         rc: *mut crate::graphics_engine::graphics_engine::RenderContext,

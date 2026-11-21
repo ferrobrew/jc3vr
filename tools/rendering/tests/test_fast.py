@@ -81,7 +81,7 @@ class ScheduleTests(unittest.TestCase):
                          ("left_only_a", "right_only_a", "multipass_a"))
         self.assertTrue(single.snapshots[0].keep)
         self.assertEqual(variant.snapshots, (SnapshotStep(
-            "v1_ssr_off", False, ("left_only_a", "right_only_a", "multipass_a")),))
+            "v1_ssr_off", False, ("left_only_a", "right_only_a", "multipass_a", "single_pass_a")),))
         self.assertEqual(variant.mode, CompareMode.SINGLE_PASS)
 
     def test_without_repeats_only_references_are_kept(self):

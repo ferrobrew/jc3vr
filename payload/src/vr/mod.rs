@@ -52,6 +52,8 @@ pub use projection::{Fov, OffAxisProjection};
 
 mod back_buffer;
 mod blit;
+mod blit_region;
+mod blit_timer;
 mod config;
 pub(crate) mod convert;
 mod eye_resolution;
@@ -72,6 +74,7 @@ mod state;
 mod submit;
 mod swapchain;
 pub mod tail;
+mod visibility_mask;
 pub(crate) mod window;
 
 pub use back_buffer::{
@@ -80,6 +83,7 @@ pub use back_buffer::{
 };
 pub(crate) use blit::{DirectArm, DirectStatus, blit_direct, direct_status, texture_size};
 pub use blit::{arm_direct, disarm_direct, present_and_submit};
+pub(crate) use blit_region::BlitSource;
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
 pub use frame_loop::{EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame, frame_wait};
 pub(crate) use frame_loop::{head_tracked, pose_age_totals};
@@ -98,6 +102,7 @@ pub(crate) use resolution::{
 };
 pub(crate) use state::{PublishedStatus, is_running_published, published_status};
 pub use state::{VrStatus, install, is_running, status, uninstall, update, wait_for_frame_tail};
+pub(crate) use visibility_mask::{EyeMask, MaskStatus, status as visibility_mask_status};
 
 /// The OpenXR view configuration: standard stereo, two views (one per eye).
 const VIEW_TYPE: xr::ViewConfigurationType = xr::ViewConfigurationType::PRIMARY_STEREO;

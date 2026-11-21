@@ -84,10 +84,13 @@ def schedule(modes: tuple[CompareMode, ...], variants: tuple[str, ...], repeat: 
         steps.append(ConfigureStep(mode, None, tuple(snapshots)))
         if is_reference:
             references.append(first)
+    # A variant is also compared with the single-pass mode's own snapshot when that is kept: the
+    # switch's direct effect, which the references only show as the difference of two differences.
+    single_pass = (f"{CompareMode.SINGLE_PASS.value}_a",) if repeat else ()
     for index, variant in enumerate(variants, start=1):
         label = f"v{index}_{variant}".replace("-", "_")[:64]
         steps.append(ConfigureStep(CompareMode.SINGLE_PASS, variant,
-                                   (SnapshotStep(label, False, tuple(references)),)))
+                                   (SnapshotStep(label, False, tuple(references) + single_pass),)))
     kept = {step.mode for step in steps if step.variant is None and step.snapshots[0].keep}
     for index, variant in enumerate(fsr_variants, start=1):
         for mode in variant.modes_in(tuple(ordered)):

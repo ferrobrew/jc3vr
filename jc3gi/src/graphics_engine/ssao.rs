@@ -6,10 +6,12 @@
 /// history index advances once per render-block draw (an inlined `SetNextHistoryBuffer` at the end of
 /// the apply), not in the per-frame list rotation.
 ///
-/// The render block's final composite draw lives inside the `m_EnableTemporalFilter` branch, so
-/// clearing that flag disables the whole apply (no AO at all). `m_FirstPass` is the engine's "no valid
-/// history, compute fresh" lever: it skips the history resolve and weights the temporal shader fully
-/// toward the current AO. The render block clears it after the first apply.
+/// The render block's final composite draw is outside the `m_EnableTemporalFilter` branch: with the
+/// flag clear the block skips the temporal resolve and the history blur, and the composite reads the
+/// blurred occlusion target instead of the current history slot (through the same sampler), and the
+/// history index does not advance. `m_FirstPass` is the engine's "no valid history, compute fresh"
+/// lever: it skips the history blur and weights the temporal shader fully toward the current AO. The
+/// render block clears it inside the temporal branch, so it stays set while the flag is clear.
 pub struct SSAOPass {
     _field_0: [u8; 2464],
     /// The previously-resolved slot of the two-slot temporal AO history; the resolve samples it. It
@@ -20,9 +22,9 @@ pub struct SSAOPass {
     pub m_CurrFrameIndex: u32,
     _field_9a8: [u8; 8],
     /// Enables the temporal filter, blending the current AO against the previous frame's result
-    /// through the history ping-pong. Defaults on. Also gates the render block's final composite draw,
-    /// so clearing it disables AO entirely. The history reset without that side effect is
-    /// [`m_FirstPass`](crate::graphics_engine::ssao::SSAOPass::m_FirstPass).
+    /// through the history ping-pong. Defaults on. With it clear the composite reads the blurred
+    /// occlusion directly and the history is neither written nor advanced. The history reset that
+    /// keeps the filter running is [`m_FirstPass`](crate::graphics_engine::ssao::SSAOPass::m_FirstPass).
     pub m_EnableTemporalFilter: bool,
     pub m_EnableDisocclusionTest: bool,
     pub m_EnableDeltaWeighting: bool,

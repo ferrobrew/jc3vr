@@ -217,6 +217,13 @@ pub fn collapse_active() -> bool {
     dual_eye_active() && config_flags().has(Flag::Collapse)
 }
 
+/// Whether the engine's copy into the effect depth-history slots is skipped: single-pass is
+/// [`active`] and `single_pass.skip_unread_effect_depth_copy` is on. See
+/// [`SinglePassConfig::skip_unread_effect_depth_copy`](crate::stereo::config::SinglePassConfig::skip_unread_effect_depth_copy).
+pub(crate) fn skip_unread_effect_depth_copy() -> bool {
+    active() && config_flags().has(Flag::SkipUnreadEffectDepthCopy)
+}
+
 /// The terrain block types whose hull programs cull against the baked offset view-projection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TerrainCullBlock {

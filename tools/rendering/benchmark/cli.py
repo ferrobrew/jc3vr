@@ -25,8 +25,8 @@ from tools.rendering.session.reinject import build, reinject
 
 LOG = logging.getLogger("tools.rendering.benchmark")
 SESSIONS = Path("target/harness-probe")
-# The run stops before the disk would drop below this.
-MIN_FREE_BYTES = 50 * 2**30
+# The run stops before the disk would drop below this many GiB (`--min-free-gib`).
+DEFAULT_MIN_FREE_GIB = 50.0
 
 
 def main(argv=None) -> int:
@@ -82,6 +82,8 @@ def run_main(argv) -> int:
                         help="leave the draw detours uninstalled: in a fresh session, multipass then "
                              "runs without them (and its submissions are not counted)")
     parser.add_argument("--restage", action="store_true")
+    parser.add_argument("--min-free-gib", type=float, default=DEFAULT_MIN_FREE_GIB,
+                        help=f"stop before the disk falls below this (default {DEFAULT_MIN_FREE_GIB:g})")
     parser.add_argument("--output", type=Path, help="the result directory (default: a new one "
                         "under target/harness-probe/benchmark)")
     parser.add_argument("--build", action="store_true", help="build and re-inject the payload first")
@@ -124,8 +126,9 @@ def run_main(argv) -> int:
         (output / "invocation.json").write_text(json.dumps({"argv": argv}, indent=1) + "\n")
         with AttachedSession.attach(runner, args.timeout) as session:
             for scene in scenes:
-                if shutil.disk_usage(output).free < MIN_FREE_BYTES:
-                    raise BenchmarkError("benchmark: less than 50 GiB free; stopping")
+                if shutil.disk_usage(output).free < args.min_free_gib * 2**30:
+                    raise BenchmarkError(f"benchmark: less than {args.min_free_gib:g} GiB free; "
+                                         "stopping")
                 LOG.info("benchmark: scene %s", scene.name)
                 run_scene(session, scene, tuple(modes), options, output)
         write_summary(output)

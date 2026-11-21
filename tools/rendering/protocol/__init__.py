@@ -248,6 +248,8 @@ SINGLE_PASS_SWITCHES = (
     "ssao_per_eye", "ssao_exact_sampling", "ao_volumes_per_eye", "ssr_per_eye", "subsurface_per_eye", "dof_per_eye", "ssdecal_per_eye",
     "composite_overlays_per_eye", "glare_per_eye", "foveation_per_eye", "foveation_gbuffer", "foveation_lighting", "foveation_quads", "fsr_per_eye", "clustered_per_eye",
     "clustered_per_eye_light_view", "uniform_viewport_slots", "viewport_bind_cache",
+    "skip_unread_effect_depth_copy", "ssao_far_early_out", "ssao_skip_temporal",
+    "collapse_direct_blit",
 )
 
 

@@ -729,6 +729,30 @@ pub struct SinglePassConfig {
     /// what it wants: every bind of the slots is recorded, the engine's and the mod's, so a pass's
     /// patched draws bind the split once rather than once each. Applies at once. On by default.
     pub viewport_bind_cache: bool,
+    /// Skip the engine's per-dispatch copy of the reflection-proxy depth into the effect
+    /// depth-history slots (`GraphicsEngine::m_EffectInfo`): nothing in the game reads those
+    /// textures (see the pyxis def), so the copy is a whole-surface `CopyResource` at the render
+    /// size spent on nothing. Only the copy is skipped; the slots' lifecycle state advances as the
+    /// engine drives it. Applies at once. On by default.
+    pub skip_unread_effect_depth_copy: bool,
+    /// Rewrite the ambient-occlusion generation shader so a 2x2 quad whose four pixels all lie beyond
+    /// the occlusion range writes its constant output without running the depth taps
+    /// ([`dxbc_stereo::skip_far_ambient_occlusion`]); the output is bit-identical. Applied in every
+    /// mode, over whichever of the other SSAO rewrites the shader carries. Baked into the bytecode,
+    /// so a change needs a shader reload. Off by default: at the headset's size the rewritten
+    /// generation pass measured about 0.04 to 0.14 ms slower than the shader without it in every
+    /// scene, sky and sea included (`docs/mod/performance/frame-budget.md`).
+    pub ssao_far_early_out: bool,
+    /// While stereo forces the SSAO pass's `m_FirstPass` (`hooks/graphics_engine/screen/ssao.rs`),
+    /// also clear its `m_EnableTemporalFilter`, so the render block skips the temporal resolve that
+    /// would copy the blurred occlusion unchanged into the history and has the composite read the
+    /// blurred occlusion directly. Applies at once. On by default.
+    pub ssao_skip_temporal: bool,
+    /// Under the collapse, blit each eye into its swapchain slice straight from its half of the
+    /// double-wide back buffer in the post-draw (`vr.direct_eye_blit`'s direct route), and copy the
+    /// half into its eye capture only for a reader of the capture, instead of copying both halves
+    /// and blitting the copies at the frame submit. Applies from the next frame. On by default.
+    pub collapse_direct_blit: bool,
 }
 
 /// Stereo rendering toggles. The live per-eye runtime state is [`crate::stereo::StereoState`].
@@ -980,6 +1004,10 @@ impl SinglePassConfig {
             clustered_per_eye_light_view: true,
             uniform_viewport_slots: true,
             viewport_bind_cache: true,
+            skip_unread_effect_depth_copy: true,
+            ssao_far_early_out: false,
+            ssao_skip_temporal: true,
+            collapse_direct_blit: true,
         }
     }
 }

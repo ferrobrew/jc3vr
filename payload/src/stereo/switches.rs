@@ -114,6 +114,10 @@ single_pass_switches! {
     ClusteredPerEyeLightView => clustered_per_eye_light_view, false;
     UniformViewportSlots => uniform_viewport_slots, false;
     ViewportBindCache => viewport_bind_cache, false;
+    SkipUnreadEffectDepthCopy => skip_unread_effect_depth_copy, false;
+    SsaoFarEarlyOut => ssao_far_early_out, true;
+    SsaoSkipTemporal => ssao_skip_temporal, false;
+    CollapseDirectBlit => collapse_direct_blit, false;
 }
 
 impl SinglePassSwitch {

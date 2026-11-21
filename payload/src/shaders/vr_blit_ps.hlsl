@@ -10,12 +10,17 @@
 // non-sRGB target). See vr::config::BlitGamma for the reasoning and the runtime toggle.
 //
 // g_brightness scales the colour for the comfort fade (1 leaves the image as it is, 0 is black).
+//
+// g_source maps the fullscreen UV's u onto the part of the source the slice shows: u * x + y,
+// clamped to [z, w]. The whole source is (1, 0, 0, 1); one eye's half of the single-pass double-wide
+// back buffer is scaled by a half, offset to the half, and clamped to its outermost texel centres.
 
 cbuffer BlitParams : register(b0)
 {
     uint g_linearize;
     float g_brightness;
     uint2 _pad;
+    float4 g_source;
 };
 
 Texture2D EyeTexture : register(t0);
@@ -28,7 +33,8 @@ float3 srgb_to_linear(float3 c)
 
 float4 main(float4 position : SV_Position, float2 uv : TEXCOORD0) : SV_Target
 {
-    float4 colour = EyeTexture.Sample(EyeSampler, uv);
+    float2 source_uv = float2(clamp(uv.x * g_source.x + g_source.y, g_source.z, g_source.w), uv.y);
+    float4 colour = EyeTexture.Sample(EyeSampler, source_uv);
     if (g_linearize != 0)
     {
         colour.rgb = srgb_to_linear(colour.rgb);

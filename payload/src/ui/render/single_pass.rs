@@ -1,10 +1,12 @@
 //! Single-pass stereo (experimental): the bring-up levers, the shader-rewrite census, and the
 //! instanced eye-parity exposure readout.
 
+use std::sync::atomic::Ordering;
+
 use crate::{
     config,
     far_field::FarFieldMode,
-    hooks::graphics_engine::shader,
+    hooks::{draw_count::EFFECT_DEPTH_COPIES_SKIPPED, graphics_engine::shader},
     stereo::{
         config::set_single_pass_feature,
         single_pass::{self, Capability},
@@ -722,6 +724,31 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 }
                 if ui
                     .checkbox(
+                        &mut cfg.stereo.single_pass.ssao_far_early_out,
+                        "SSAO far early-out",
+                    )
+                    .on_hover_text(
+                        "Lets a 2x2 pixel quad that lies wholly beyond the ambient occlusion's range \
+                         (sky, distant sea and terrain) write its constant result without running \
+                         the depth taps. The output is bit-identical, but the pass measured slower \
+                         than without it, so it ships off. Also changes multipass. Reloads shaders \
+                         to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.ssao_skip_temporal,
+                    "SSAO without the temporal copy",
+                )
+                .on_hover_text(
+                    "In stereo the ambient occlusion's history is reset every frame, so its temporal \
+                     resolve only copies the blurred occlusion. This skips that draw and has the \
+                     composite read the blurred occlusion directly.",
+                );
+                if ui
+                    .checkbox(
                         &mut cfg.stereo.single_pass.ao_volumes_per_eye,
                         "Ambient-occlusion volumes per eye",
                     )
@@ -861,6 +888,27 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     "Records every bind of the two viewport slots, the engine's and the mod's, and \
                      skips a routed draw's bind when the slots already hold what it wants, so a \
                      pass's patched draws bind the eye split once rather than once each.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.collapse_direct_blit,
+                    "Blit each eye straight from its half",
+                )
+                .on_hover_text(
+                    "Blits each eye into the headset's swapchain from its half of the double-wide \
+                     frame, and copies the half into its eye texture only when the mirror, a \
+                     screenshot, the recorder, or the previews read it.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.skip_unread_effect_depth_copy,
+                    format!(
+                        "Skip the unread effect depth copy ({} skipped)",
+                        EFFECT_DEPTH_COPIES_SKIPPED.load(Ordering::Relaxed)
+                    ),
+                )
+                .on_hover_text(
+                    "Skips the engine's per-dispatch copy of the reflection-proxy depth into its \
+                     effect depth-history textures, which nothing in the game reads. A whole-surface \
+                     copy at the render size, about half a millisecond of GPU time at the headset's.",
                 );
             });
         });
