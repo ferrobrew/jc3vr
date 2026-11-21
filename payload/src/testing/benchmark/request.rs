@@ -66,6 +66,8 @@ pub(crate) struct BenchmarkTable {
     fsr_hybrid_velocity: Option<bool>,
     /// FSR's sub-pixel jitter for the run (`fsr.jitter`); `None` runs it as shipped.
     fsr_jitter: Option<bool>,
+    /// The foveation for the run (`foveation.enabled`); `None` runs it as shipped.
+    foveation: Option<bool>,
     /// `vr.large_cache_cores` for the run; `None` keeps the configured one.
     large_cache_cores: Option<bool>,
     camera: Option<CameraTable>,
@@ -126,6 +128,7 @@ pub(crate) struct BenchmarkRequest {
     pub(crate) fsr: Option<bool>,
     pub(crate) fsr_hybrid_velocity: Option<bool>,
     pub(crate) fsr_jitter: Option<bool>,
+    pub(crate) foveation: Option<bool>,
     pub(crate) large_cache_cores: Option<bool>,
     pub(crate) camera: CameraPath,
 }
@@ -244,6 +247,7 @@ impl BenchmarkRequest {
             fsr: table.fsr,
             fsr_hybrid_velocity: table.fsr_hybrid_velocity,
             fsr_jitter: table.fsr_jitter,
+            foveation: table.foveation,
             large_cache_cores: table.large_cache_cores,
             camera,
         })

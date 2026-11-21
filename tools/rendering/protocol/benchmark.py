@@ -72,6 +72,8 @@ class BenchmarkRequest:
     fsr: bool | None = None
     fsr_hybrid_velocity: bool | None = None
     fsr_jitter: bool | None = None
+    # The foveation for the run; None runs it as shipped.
+    foveation: bool | None = None
     # `vr.large_cache_cores` for the run; None keeps the session's.
     large_cache_cores: bool | None = None
     camera: CameraPath = field(default_factory=CameraPath)
@@ -92,7 +94,7 @@ class BenchmarkRequest:
         if self.resolution_scale is not None and not 0.1 <= self.resolution_scale <= 4.0:
             raise ProtocolError("benchmark: resolution_scale must be within [0.1, 4.0]")
         for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "fsr_jitter",
-                     "large_cache_cores"):
+                     "foveation", "large_cache_cores"):
             if getattr(self, name) is not None and type(getattr(self, name)) is not bool:
                 raise ProtocolError(f"benchmark: {name} must be a boolean")
         if self.gpu_passes and not self.gpu:
@@ -120,7 +122,7 @@ class BenchmarkRequest:
         if self.gpu_passes:
             lines.append("gpu_passes = true")
         for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "fsr_jitter",
-                     "large_cache_cores"):
+                     "foveation", "large_cache_cores"):
             if getattr(self, name) is not None:
                 lines.append(f"{name} = {json.dumps(getattr(self, name))}")
         if self.switches:

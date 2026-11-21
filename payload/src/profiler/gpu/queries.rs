@@ -11,7 +11,7 @@ use puffin::{GlobalProfiler, ScopeDetails, ScopeId};
 use crate::{
     profiler::gpu::{
         GpuSeam,
-        gaps::{Resolved, starvation_gaps},
+        gaps::{Resolved, named_gaps, starvation_gaps},
         lane::{GpuScope, report_gpu_frame},
         stats::{DispatchMetrics, Stats, ms},
     },
@@ -347,14 +347,21 @@ impl GpuProfiler {
                 }
                 gpu_passes::record(
                     dispatch.lane as u8,
-                    resolved.iter().filter_map(|r| {
-                        let label = match r.label {
-                            IntervalLabel::Seam(_) => return None,
-                            IntervalLabel::Pass(_, name) => GpuPassLabel::RenderPass(name),
-                            IntervalLabel::Detail(_, name) => GpuPassLabel::Detail(name),
-                        };
-                        Some((label, r.stop_ns - r.start_ns))
-                    }),
+                    resolved
+                        .iter()
+                        .filter_map(|r| {
+                            let label = match r.label {
+                                IntervalLabel::Seam(_) => return None,
+                                IntervalLabel::Pass(_, name) => GpuPassLabel::RenderPass(name),
+                                IntervalLabel::Detail(_, name) => GpuPassLabel::Detail(name),
+                            };
+                            Some((label, r.stop_ns - r.start_ns))
+                        })
+                        .chain(
+                            named_gaps(&resolved, outer_start, outer_stop)
+                                .into_iter()
+                                .map(|(at, ns)| (GpuPassLabel::Gap(at.name()), ns)),
+                        ),
                 );
                 crate::testing::benchmark::record_gpu_dispatch(GpuDispatchSample {
                     lane: dispatch.lane as u8,

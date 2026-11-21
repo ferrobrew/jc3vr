@@ -270,6 +270,8 @@ fn copy_surface_to_texture(ctx: *mut c_void, dst: *mut c_void, src: *mut c_void)
         dst: dst as u64,
         src: src as u64,
     });
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("engine: whole-surface copy");
     COPY_SURFACE_TO_TEXTURE.get().unwrap().call(ctx, dst, src);
 }
 

@@ -361,11 +361,27 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             .unwrap()
             .call(render_engine, context)
     };
+    {
+        // The mod's own work on the eyes' images is bracketed as a seam of its own, so the GPU
+        // dispatch closes after it and its cost is part of the dispatch's span.
+        #[cfg(feature = "profiler")]
+        // SAFETY: `context` is the live immediate-context handle for this dispatch.
+        let _gpu = unsafe {
+            crate::profiler::gpu::seam(context.cast(), crate::profiler::gpu::GpuSeam::ModPostDraw)
+        };
+        mod_post_draw(context);
+    }
     #[cfg(feature = "profiler")]
     // SAFETY: `context` is the live immediate-context handle for this dispatch.
     unsafe {
         crate::profiler::gpu::end_dispatch(context.cast())
     };
+    result
+}
+
+/// The mod's work after the engine's `PostDraw`: the HUD and the world-locked overlays drawn into
+/// the eyes' images, the eye copies or direct swapchain blits, and the captures that read them.
+fn mod_post_draw(context: *mut Context) {
     TraceState::record_eye(TraceEvent::PostDraw);
     let _timing = frame_timing::scope(Slot::PostDraw);
 
@@ -376,10 +392,10 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             None => GraphicsEngine::get().map_or(std::ptr::null_mut(), |engine| engine),
         };
         let Some(graphics_engine) = engine.as_ref() else {
-            return result;
+            return;
         };
         if context.is_null() {
-            return result;
+            return;
         }
 
         let main_context = graphics_engine
@@ -448,6 +464,8 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             // with that eye's own VP (see `single_pass::collapse_ui_eye_override`); otherwise the
             // per-dispatch single draw carries the eye implicitly. The world-space overlay draws
             // first, and the scope lens over it, so the panels sit on top of both.
+            #[cfg(feature = "profiler")]
+            let overlays_gpu = crate::profiler::gpu::detail_interval("mod: HUD and overlays");
             if collapse_active() {
                 for eye in 0..2 {
                     set_collapse_ui_eye(Some(eye));
@@ -467,6 +485,8 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                 hud::summary_panel::draw(&context.m_Context, device, back_buffer, index);
                 hud::restart_notice::draw(&context.m_Context, device, back_buffer, index);
             }
+            #[cfg(feature = "profiler")]
+            drop(overlays_gpu);
             // Redirect the flat mirror overlay into an offscreen texture (consuming this frame's egui
             // output) so the desktop mirror can composite it from the deferred frame tail's thread.
             // A no-op unless a session renders, the mirror is on, and the panel is off. See
@@ -498,6 +518,8 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
         // Either way this is the image the copy would have captured: everything the eye shows is
         // drawn by now, and nothing the engine draws after this hook reaches the headset.
         if let Some(src) = graphics_engine.m_BackBufferLinear.as_ref() {
+            #[cfg(feature = "profiler")]
+            let copies_gpu = crate::profiler::gpu::detail_interval("mod: eye copies and blits");
             if collapse_active() {
                 // The collapsed single walk rendered both eyes into this one (viewport-split) back
                 // buffer -- left half eye 0, right half eye 1 -- so copy each half into its eye
@@ -551,6 +573,8 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                 mark_eye_capture(index, copied);
                 crate::screenshot::harness::note_eye(index, copied && !crate::stereo::far_phase());
             }
+            #[cfg(feature = "profiler")]
+            drop(copies_gpu);
 
             // The recorder's sidecar line for the frame, on its last near dispatch, when every eye
             // image of the frame is final, and a streamed take's eye-view capture, which needs both
@@ -632,8 +656,6 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 
         LeaveCriticalSection(context.m_Mutex);
     }
-
-    result
 }
 
 /// Whether anything besides the headset reads eye `eye`'s capture this frame, so its post-draw must

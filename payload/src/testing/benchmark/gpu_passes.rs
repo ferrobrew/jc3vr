@@ -8,6 +8,10 @@
 //! pass cost over the recording, which divided by the frames is its cost per frame. The totals are
 //! kept rather than every interval, since a dispatch draws about a hundred passes.
 //!
+//! The holes between the timed intervals are totalled too, each named by where it lies (before a
+//! seam or a pass, after a seam's last pass, or after the dispatch's last seam): the clears, copies,
+//! and resolves the engine records outside a pass's draw walk land there.
+//!
 //! A pass's interval is its GPU execution window, so idle inside it counts (see "Reading the GPU
 //! lane" in `docs/mod/performance/profiler.md`). The detail intervals can nest inside a pass or
 //! overlap one another's stretch of the frame only where the code they bracket does, which the
@@ -28,6 +32,8 @@ pub(crate) enum GpuPassLabel {
     RenderPass(&'static str),
     /// A stretch of work that is not a render pass, by a name the payload gives it.
     Detail(&'static str),
+    /// A hole between the timed intervals, by where it lies (`crate::profiler::gpu::GapAt`).
+    Gap(&'static str),
 }
 
 /// Whether the GPU layer should time every pass for the recording run.
@@ -71,6 +77,7 @@ pub(super) fn take() -> Vec<GpuPassTotal> {
             let (kind, name) = match label {
                 GpuPassLabel::RenderPass(name) => ("render_pass", name),
                 GpuPassLabel::Detail(name) => ("detail", name),
+                GpuPassLabel::Gap(name) => ("gap", name),
             };
             GpuPassTotal {
                 lane,
@@ -90,7 +97,7 @@ pub(super) fn take() -> Vec<GpuPassTotal> {
 pub(super) struct GpuPassTotal {
     /// The dispatch's eye (0 or 1) or 2 for a far-field dispatch.
     lane: u8,
-    /// `render_pass` or `detail`.
+    /// `render_pass`, `detail`, or `gap`.
     kind: &'static str,
     name: &'static str,
     /// The summed GPU time of the label's intervals, in microseconds.

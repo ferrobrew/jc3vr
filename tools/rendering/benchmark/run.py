@@ -37,6 +37,7 @@ class Mode:
     hybrid_velocity: bool | None = None
     large_cache_cores: bool | None = None
     jitter: bool | None = None
+    foveation: bool | None = None
 
     @classmethod
     def plain(cls, mode: BenchmarkMode) -> "Mode":
@@ -46,7 +47,7 @@ class Mode:
     def variant(cls, variant: Variant) -> "Mode":
         return cls(variant.name, variant.base, variant.switches, variant.overlap_render_update,
                    variant.fsr, variant.hybrid_velocity, variant.large_cache_cores,
-                   variant.jitter)
+                   variant.jitter, variant.foveation)
 
 
 @dataclass(frozen=True)
@@ -110,7 +111,7 @@ def run_scene(session, scene: BenchmarkScene, modes: tuple[Mode, ...], options: 
             recapture_camera=index == 0, restore=index == len(steps) - 1,
             switches=mode.switches, overlap_render_update=mode.overlap_render_update,
             fsr=mode.fsr, fsr_hybrid_velocity=mode.hybrid_velocity, fsr_jitter=mode.jitter,
-            large_cache_cores=mode.large_cache_cores, camera=scene.camera)
+            foveation=mode.foveation, large_cache_cores=mode.large_cache_cores, camera=scene.camera)
         LOG.info("benchmark: %s (%d of %d)", label, index + 1, len(steps))
         began = time.monotonic()
         with ThreadSampler(session.pid) as sampler:
@@ -127,7 +128,7 @@ def run_scene(session, scene: BenchmarkScene, modes: tuple[Mode, ...], options: 
                     "base_mode": mode.mode.value, "switches": dict(mode.switches),
                     "overlap_render_update": mode.overlap_render_update,
                     "fsr": mode.fsr, "hybrid_velocity": mode.hybrid_velocity, "jitter": mode.jitter,
-                    "large_cache_cores": mode.large_cache_cores,
+                    "foveation": mode.foveation, "large_cache_cores": mode.large_cache_cores,
                     "resolution_scale": scale, "repeat": repeat, "label": label,
                     "camera": scene.camera.to_wire(), "seconds": round(time.monotonic() - began, 2)},
             "session": {"number": options.session, "compositor_fps": options.compositor_fps},

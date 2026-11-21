@@ -65,13 +65,14 @@ use crate::{
 
 /// The GPU seams each dispatch record carries a time for, in the order of
 /// `crate::profiler::gpu::GpuSeam::ALL`.
-pub(crate) const GPU_SEAM_NAMES: [&str; 6] = [
+pub(crate) const GPU_SEAM_NAMES: [&str; 7] = [
     "pre_draw",
     "gbuffer",
     "scene",
     "post_effects",
     "post_draw",
     "fsr",
+    "mod_post_draw",
 ];
 
 /// One resolved GPU dispatch, from the profiler's timestamp read-back.
@@ -291,6 +292,9 @@ fn start(state: &mut State, request: BenchmarkRequest, now: Instant) -> Result<R
         }
         if let Some(jitter) = request.fsr_jitter {
             next.fsr.jitter = jitter;
+        }
+        if let Some(foveation) = request.foveation {
+            next.foveation.enabled = foveation;
         }
         next.vr.freeze_mode = FreezeMode::FullCamera;
         *config = next;
@@ -630,6 +634,7 @@ struct RequestEcho<'a> {
     fsr: Option<bool>,
     fsr_hybrid_velocity: Option<bool>,
     fsr_jitter: Option<bool>,
+    foveation: Option<bool>,
     large_cache_cores: Option<bool>,
     camera: CameraPath,
 }
@@ -651,6 +656,7 @@ impl<'a> From<&'a BenchmarkRequest> for RequestEcho<'a> {
             fsr: request.fsr,
             fsr_hybrid_velocity: request.fsr_hybrid_velocity,
             fsr_jitter: request.fsr_jitter,
+            foveation: request.foveation,
             large_cache_cores: request.large_cache_cores,
             camera: request.camera,
         }

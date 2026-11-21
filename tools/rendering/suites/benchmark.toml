@@ -82,6 +82,10 @@ name = "fsr-hybrid-off"
 hybrid_velocity = false
 
 [[variant]]
+name = "foveation-off"
+foveation = false
+
+[[variant]]
 name = "fsr-jitter-off"
 jitter = false
 

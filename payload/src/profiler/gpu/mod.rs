@@ -78,17 +78,21 @@ pub enum GpuSeam {
     PostDraw,
     /// The mod's FSR resolve, nested inside [`Self::PostEffects`].
     Fsr,
+    /// The mod's own work after `PostDraw`: the HUD and overlays drawn into the eyes' images, the
+    /// eye copies, and the direct swapchain blits.
+    ModPostDraw,
 }
 
 impl GpuSeam {
     /// Every seam, in the order of [`Self::index`].
-    pub const ALL: [GpuSeam; 6] = [
+    pub const ALL: [GpuSeam; 7] = [
         GpuSeam::PreDraw,
         GpuSeam::GBuffer,
         GpuSeam::Scene,
         GpuSeam::PostEffects,
         GpuSeam::PostDraw,
         GpuSeam::Fsr,
+        GpuSeam::ModPostDraw,
     ];
 
     fn name(self) -> &'static str {
@@ -99,6 +103,7 @@ impl GpuSeam {
             GpuSeam::PostEffects => "DrawPosteffects",
             GpuSeam::PostDraw => "PostDraw",
             GpuSeam::Fsr => "FSR",
+            GpuSeam::ModPostDraw => "mod post-draw",
         }
     }
 
@@ -111,6 +116,7 @@ impl GpuSeam {
             GpuSeam::PostEffects => 3,
             GpuSeam::PostDraw => 4,
             GpuSeam::Fsr => 5,
+            GpuSeam::ModPostDraw => 6,
         }
     }
 }
