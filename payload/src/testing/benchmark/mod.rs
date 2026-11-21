@@ -15,6 +15,7 @@
 //! and the draw-thread naming through [`note_draw_thread`].
 
 pub(crate) mod detour_timing;
+pub(crate) mod gpu_passes;
 mod request;
 mod sample;
 pub(crate) mod sampler;
@@ -49,6 +50,7 @@ use crate::{
     stereo::{config::set_single_pass_feature, single_pass, switches::ShaderBuild},
     testing::{
         benchmark::{
+            gpu_passes::GpuPassTotal,
             request::{BenchmarkMode, CameraPath},
             sample::{COLUMN_COUNT, COLUMNS, Reading, frame_row},
             sampler::{DrawTaskSamples, Sampler},
@@ -246,6 +248,7 @@ struct RunResult {
     frames: Vec<[u64; COLUMN_COUNT]>,
     gpu: Vec<GpuDispatchSample>,
     gpu_dropped: u64,
+    gpu_passes: Vec<GpuPassTotal>,
     slots: Vec<SlotTotal>,
     environment: Environment,
     timing: RunTiming,
@@ -333,6 +336,7 @@ impl Run {
                     self.path_origin = Some(now);
                     crate::fsr::request_history_reset();
                     GPU_ARMED.store(self.request.gpu, Ordering::Relaxed);
+                    gpu_passes::set_armed(self.request.gpu && self.request.gpu_passes);
                     self.phase = Phase::WarmingUp {
                         until: now + Duration::from_secs_f64(self.request.warmup_seconds),
                     };
@@ -351,6 +355,7 @@ impl Run {
                 }
                 GPU_SAMPLES.lock().clear();
                 GPU_RECORDING.store(self.request.gpu, Ordering::Relaxed);
+                gpu_passes::set_recording(self.request.gpu && self.request.gpu_passes);
                 detour_timing::set_armed(self.request.detour_timing);
                 let reading = read();
                 self.phase = Phase::Recording(Box::new(Recording {
@@ -388,6 +393,7 @@ impl Run {
                     return None;
                 }
                 GPU_RECORDING.store(false, Ordering::Relaxed);
+                gpu_passes::set_recording(false);
                 detour_timing::set_armed(false);
                 let samples = sampler.take().and_then(Sampler::finish);
                 let slots = slot_totals(first, previous);
@@ -395,6 +401,7 @@ impl Run {
                     frames: std::mem::take(&mut self.frames),
                     gpu: std::mem::take(&mut *GPU_SAMPLES.lock()),
                     gpu_dropped: GPU_DROPPED.load(Ordering::Relaxed) - *dropped_before,
+                    gpu_passes: gpu_passes::take(),
                     slots,
                     environment: Environment::current(),
                     timing: RunTiming {
@@ -491,6 +498,8 @@ fn read() -> Reading {
 fn disarm() {
     GPU_ARMED.store(false, Ordering::Relaxed);
     GPU_RECORDING.store(false, Ordering::Relaxed);
+    gpu_passes::set_armed(false);
+    gpu_passes::set_recording(false);
     NAME_THREADS.store(false, Ordering::Relaxed);
     detour_timing::set_armed(false);
 }
@@ -612,6 +621,7 @@ struct RequestEcho<'a> {
     record_seconds: f64,
     resolution_scale: Option<f32>,
     gpu: bool,
+    gpu_passes: bool,
     detour_timing: bool,
     sample_draw_task: bool,
     install_draw_detours: bool,
@@ -632,6 +642,7 @@ impl<'a> From<&'a BenchmarkRequest> for RequestEcho<'a> {
             record_seconds: request.record_seconds,
             resolution_scale: request.resolution_scale,
             gpu: request.gpu,
+            gpu_passes: request.gpu_passes,
             detour_timing: request.detour_timing,
             sample_draw_task: request.sample_draw_task,
             install_draw_detours: request.install_draw_detours,
@@ -647,12 +658,15 @@ impl<'a> From<&'a BenchmarkRequest> for RequestEcho<'a> {
 }
 
 #[derive(Serialize)]
-struct GpuRecords {
+struct GpuRecords<'a> {
     seams: [&'static str; GPU_SEAM_NAMES.len()],
     columns: Vec<String>,
     /// One row per dispatch, in microseconds; -1 for a value that was not measured.
     dispatches: Vec<Vec<i64>>,
     dropped: u64,
+    /// Each render pass's and detail's GPU time over the recording, when the run timed them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    passes: Option<&'a [GpuPassTotal]>,
 }
 
 #[derive(Serialize)]
@@ -669,13 +683,17 @@ struct BenchmarkAck<'a> {
     columns: &'static [&'static str],
     frames: Vec<&'a [u64]>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    gpu: Option<GpuRecords>,
+    gpu: Option<GpuRecords<'a>>,
     slots: &'a [SlotTotal],
     #[serde(skip_serializing_if = "Option::is_none")]
     draw_task_samples: Option<&'a DrawTaskSamples>,
 }
 
-fn gpu_records(samples: &[GpuDispatchSample], dropped: u64) -> GpuRecords {
+fn gpu_records<'a>(
+    samples: &[GpuDispatchSample],
+    dropped: u64,
+    passes: Option<&'a [GpuPassTotal]>,
+) -> GpuRecords<'a> {
     let us = |ns: i64| (ns + 500).div_euclid(1000);
     let mut columns: Vec<String> = ["lane", "span_us", "idle_before_us", "submit_us"]
         .iter()
@@ -700,6 +718,7 @@ fn gpu_records(samples: &[GpuDispatchSample], dropped: u64) -> GpuRecords {
         columns,
         dispatches,
         dropped,
+        passes,
     }
 }
 
@@ -714,9 +733,13 @@ fn publish(request: &BenchmarkRequest, result: &RunResult) {
         timing: Some(&result.timing),
         columns: &COLUMNS,
         frames: result.frames.iter().map(|row| row.as_slice()).collect(),
-        gpu: request
-            .gpu
-            .then(|| gpu_records(&result.gpu, result.gpu_dropped)),
+        gpu: request.gpu.then(|| {
+            gpu_records(
+                &result.gpu,
+                result.gpu_dropped,
+                request.gpu_passes.then_some(result.gpu_passes.as_slice()),
+            )
+        }),
         slots: &result.slots,
         draw_task_samples: result.samples.as_ref(),
     };

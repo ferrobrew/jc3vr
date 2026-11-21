@@ -71,6 +71,8 @@ def run_main(argv) -> int:
     parser.add_argument("--record-seconds", type=float, default=10.0)
     parser.add_argument("--warmup-seconds", type=float, default=3.0)
     parser.add_argument("--no-gpu", action="store_true", help="skip the GPU timestamp queries")
+    parser.add_argument("--gpu-passes", action="store_true",
+                        help="also time every render pass and post effect on the GPU")
     parser.add_argument("--detour-timing", action="store_true",
                         help="time the draw detours (inflates the cost it measures; a run of its own)")
     parser.add_argument("--sample-draw-task", action="store_true",
@@ -112,7 +114,8 @@ def run_main(argv) -> int:
                           tuple(args.scales) if args.scales else (None,), not args.no_gpu,
                           args.detour_timing, not args.no_draw_detours, args.restage,
                           _compositor_fps(args.session), args.session,
-                          sample_draw_task=args.sample_draw_task)
+                          sample_draw_task=args.sample_draw_task,
+                          gpu_passes=args.gpu_passes and not args.no_gpu)
         output.mkdir(parents=True, exist_ok=True)
         if args.build:
             LOG.info("benchmark: built in %.1f s", build(args.release))

@@ -34,6 +34,10 @@ pub(crate) struct BenchmarkTable {
     /// Bracket every dispatch with GPU timestamp queries.
     #[serde(default = "default_true")]
     gpu: bool,
+    /// Also time every render pass and post effect on the GPU, at the cost of two timestamp
+    /// queries each (`crate::testing::benchmark::gpu_passes`). Needs `gpu`.
+    #[serde(default)]
+    gpu_passes: bool,
     /// Time the draw-path detours and their forwarding calls, at the cost of four clock reads per
     /// draw. A diagnostic run of its own, since the timing inflates the cost it measures.
     #[serde(default)]
@@ -111,6 +115,7 @@ pub(crate) struct BenchmarkRequest {
     pub(crate) record_seconds: f64,
     pub(crate) resolution_scale: Option<f32>,
     pub(crate) gpu: bool,
+    pub(crate) gpu_passes: bool,
     pub(crate) detour_timing: bool,
     pub(crate) sample_draw_task: bool,
     pub(crate) install_draw_detours: bool,
@@ -228,6 +233,7 @@ impl BenchmarkRequest {
             record_seconds: table.record_seconds,
             resolution_scale: table.resolution_scale,
             gpu: table.gpu,
+            gpu_passes: table.gpu_passes,
             detour_timing: table.detour_timing,
             sample_draw_task: table.sample_draw_task,
             install_draw_detours: table.install_draw_detours,
@@ -283,7 +289,7 @@ mod tests {
         assert_eq!(request.warmup_seconds, 3.0);
         assert!(request.gpu && request.restore);
         assert!(!request.detour_timing && !request.recapture_camera);
-        assert!(!request.sample_draw_task);
+        assert!(!request.sample_draw_task && !request.gpu_passes);
         assert!(!request.install_draw_detours);
         assert!(request.switches.is_empty());
         assert!(request.camera.is_still());

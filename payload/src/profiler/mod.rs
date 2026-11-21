@@ -177,19 +177,21 @@ pub fn scope_for_name(name: &str) -> Option<EngineScope> {
 /// both named after it through the engine's own pass-name table. The pair is what makes a
 /// dispatch's GPU span decomposable into work and starvation (see [`gpu`]).
 ///
-/// Returns `None` while scope collection is off or the name is unavailable.
+/// Returns `None` while neither scope collection nor a benchmark run wants the passes, or the name
+/// is unavailable.
 ///
 /// # Safety
 /// `pass` must be null or a live [`RenderPass`] whose `m_Index` is its render-pass id.
 pub unsafe fn pass_scope(pass: *mut RenderPass) -> Option<PassScope> {
-    if !are_scopes_on() || pass.is_null() {
+    if !gpu::passes_wanted() || pass.is_null() {
         return None;
     }
     // Call the pass-name lookup through a raw `i32` signature rather than the generated
     // `RenderPassId` enum: `m_Index` can hold an unnamed id (a pass id outside the named range)
     // that is not a valid enum discriminant, and transmuting such a value into the enum would be
     // undefined behaviour. The engine's lookup returns `"NONE"` for those.
-    let name = unsafe {
+    // The engine's names are static strings in its image, which outlives the payload.
+    let name: &'static str = unsafe {
         let index = i32::from((*pass).m_Index);
         let lookup: unsafe extern "system" fn(i32) -> *const u8 =
             std::mem::transmute(GetRenderPassName_ADDRESS);
@@ -201,7 +203,7 @@ pub unsafe fn pass_scope(pass: *mut RenderPass) -> Option<PassScope> {
     };
     let id = named_scope_id(name)?;
     Some(PassScope {
-        gpu: gpu::pass_interval(id),
+        gpu: gpu::pass_interval(id, name),
         cpu: EngineScope::begin(id, ""),
     })
 }
@@ -217,7 +219,7 @@ pub struct PassScope {
     cpu: Option<EngineScope>,
 }
 
-fn named_scope_id(name: &str) -> Option<ScopeId> {
+pub(crate) fn named_scope_id(name: &str) -> Option<ScopeId> {
     let mut registry = NAMED_SCOPES.lock();
     let registry = registry.get_or_insert_with(HashMap::new);
     if let Some(&id) = registry.get(name) {

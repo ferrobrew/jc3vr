@@ -141,6 +141,8 @@ fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mu
     }
     crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
     stages::capture_main_color();
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: world block");
     RENDER_BLOCK_POST_EFFECTS_DRAW
         .get()
         .unwrap()
@@ -231,11 +233,15 @@ fn anti_aliasing_apply(
     }
 
     let aa_probe = stages::aa::Scope::begin(unsafe { (*this).m_Mode });
+    #[cfg(feature = "profiler")]
+    let gpu = crate::profiler::gpu::detail_interval("post: engine anti-aliasing");
     let r = ANTI_ALIASING_APPLY
         .get()
         .unwrap()
         .call(this, ctx, pec, mgr, slot);
     // SAFETY: the AA result updates the same live slot parameter.
+    #[cfg(feature = "profiler")]
+    drop(gpu);
     stages::capture_slot(Stage::PostAa, mgr, unsafe { *slot });
     drop(aa_probe);
     if restore {
@@ -286,6 +292,8 @@ fn motion_blur_apply(
         // `flag0` (a7) gates the reconstruction-filter motion blur (`if g_EnableMotionBlur && !a7`).
         // Forcing it true skips that reprojection blur -- the flicker -- but keeps the composite draw.
         let flag0 = flag0 || skip_recon;
+        #[cfg(feature = "profiler")]
+        let _gpu = crate::profiler::gpu::detail_interval("post: motion blur");
         MOTION_BLUR_APPLY
             .get()
             .unwrap()
@@ -316,6 +324,8 @@ fn dof_apply(
         return input;
     }
     let probe = stages::dof::begin(pec, input);
+    #[cfg(feature = "profiler")]
+    let gpu = crate::profiler::gpu::detail_interval("post: blur and composite");
     let slot = if dof_no_reproject {
         // Bit 0 of the render context's flags is the engine's underwater bit
         // (`m_CameraUnderwater`), which selects the DoF composite's underwater shader family --
@@ -335,6 +345,8 @@ fn dof_apply(
     } else {
         DOF_APPLY.get().unwrap().call(this, ctx, pec, mgr, input)
     };
+    #[cfg(feature = "profiler")]
+    drop(gpu);
     if let Some(probe) = probe {
         probe.finish(mgr, slot);
     }
@@ -362,6 +374,8 @@ fn fade_apply(this: *mut c_void, a2: *mut c_void, a3: *mut c_void) -> u64 {
     if skip {
         return 0;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: fade");
     FADE_APPLY.get().unwrap().call(this, a2, a3)
 }
 
@@ -382,6 +396,8 @@ fn glare_apply(
         return 0;
     }
     let _eye_half = crate::stereo::single_pass::post_filters::Scope::enter();
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: glare");
     GLARE_APPLY.get().unwrap().call(this, a2, a3, a4, a5)
 }
 
@@ -399,6 +415,8 @@ fn player_damage_apply(
     if skip {
         return input;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: player damage");
     PLAYER_DAMAGE_APPLY
         .get()
         .unwrap()
@@ -422,6 +440,8 @@ fn sun_halo_pre_apply(
         }
         return 0;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: sun halo prepare");
     SUN_HALO_PRE_APPLY.get().unwrap().call(this, a2, a3, a4)
 }
 
@@ -433,5 +453,7 @@ fn sun_halo_apply(this: *mut c_void, a2: *mut c_void) -> u64 {
     if skip {
         return 0;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: sun halo");
     SUN_HALO_APPLY.get().unwrap().call(this, a2)
 }

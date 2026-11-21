@@ -30,7 +30,7 @@ pub(super) fn starvation_gaps(
     seams.sort_unstable();
     let mut passes: Vec<(i64, i64)> = resolved
         .iter()
-        .filter(|r| matches!(r.label, IntervalLabel::Pass(_)))
+        .filter(|r| matches!(r.label, IntervalLabel::Pass(..)))
         .map(|r| (r.start_ns, r.stop_ns))
         .collect();
     passes.sort_unstable();
@@ -88,7 +88,7 @@ mod tests {
 
     fn pass(start_ns: i64, stop_ns: i64) -> Resolved {
         Resolved {
-            label: IntervalLabel::Pass(ScopeId(NonZeroU32::new(1).unwrap())),
+            label: IntervalLabel::Pass(ScopeId(NonZeroU32::new(1).unwrap()), "pass"),
             start_ns,
             stop_ns,
         }

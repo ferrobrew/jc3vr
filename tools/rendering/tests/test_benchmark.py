@@ -176,6 +176,9 @@ class ProtocolTests(unittest.TestCase):
         self.assertNotIn("camera", still["benchmark"])
         self.assertNotIn("resolution_scale", still["benchmark"])
         self.assertNotIn("overlap_render_update", still["benchmark"])
+        self.assertNotIn("gpu_passes", still["benchmark"])
+        passes = BenchmarkRequest("b4", "town", "single_pass", 1.0, gpu_passes=True)
+        self.assertIs(tomllib.loads(passes.to_toml())["benchmark"]["gpu_passes"], True)
         serial = BenchmarkRequest("b3", "town", "multipass", 1.0, overlap_render_update=False)
         self.assertIs(tomllib.loads(serial.to_toml())["benchmark"]["overlap_render_update"], False)
 
@@ -186,6 +189,8 @@ class ProtocolTests(unittest.TestCase):
             BenchmarkRequest("b1", "town", "multipass", 0.0)
         with self.assertRaises(ProtocolError):
             BenchmarkRequest("b1", "a b", "multipass", 1.0)
+        with self.assertRaises(ProtocolError):
+            BenchmarkRequest("b1", "town", "multipass", 1.0, gpu=False, gpu_passes=True)
         with self.assertRaises(ProtocolError):
             CameraPath(period_seconds=0)
 

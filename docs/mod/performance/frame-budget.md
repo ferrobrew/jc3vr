@@ -210,6 +210,76 @@ No prepass submits anything per eye: every shadow cascade, the reflection passes
 
 The standing fast suite ran with the previous commit's payload (run 324) and with these changes (run 326). Every scene's depth, albedo, and normals against the isolated eyes and against multipass stayed within a few percent of the previous payload's or fell, and the final image of single-pass against multipass stayed within the repeat's range (the town 53,323 and 61,645 pixels per eye against 51,491 and 59,585 before; the capital at night 213 and 205 against 219 and 206; the meadow, the shore, and the tunnel, which came out high against their isolated references in the first schedule, back within their earlier values in a repeat: the meadow 159,963 and 199,192 against 154,712 and 195,602, the tunnel 2,378 and 5,957 against 3,769 and 9,296). The isolated references themselves moved between schedules by up to 700,000 pixels at the shore, so the comparisons against them carry that noise. An intermediate build that recorded the engine's viewport bind after the eye camera read it put the left eye's final image 800,000 pixels off in every town view while leaving the G-buffer untouched; the suite caught it and the order is fixed. The placement changes no image.
 
+## Where the GPU's time goes
+
+Run 333 timed every render pass on the GPU, and each post effect and the foveation's two passes, with `--gpu-passes` ([benchmark.md](../testing/benchmark.md)): single-pass at the town and the capital (midday), 3584 by 3561 per eye, FSR and the foveation as shipped, the null compositor pacing at 72 Hz, three ten-second repeats each, the release payload (`target/harness-probe/benchmark/333-passes-town`, `333-passes-capital`). The capital was staged with the payload the session launched with and measured after the release payload was re-injected. Each figure is a pass's GPU time per frame, the mean over the repeats; the share is of the dispatch's GPU span, 9.9 ms at the town and 12.4 ms at the capital, with 4.0 and 1.5 ms of idle between frames (the 72 Hz pace's headroom). A pass's time is its execution window, idle inside it included, so a geometry pass the draw task feeds slowly reads long; with the draw task at 4.2 and 6.0 ms against these spans the GPU leads, so the windows are mostly work. The pass timestamps cost nothing measurable: two runs at the capital without them took a span of 12.8 ms against 12.3 with them, inside the scene's own drift. Engine pass names are the engine's own, without the `RP_` prefix.
+
+Town (GPU span 9.9 ms):
+
+| Pass | GPU ms | Share |
+|---|---|---|
+| FSR (the mod's resolve, inside the post block) | 1.89 | 19% |
+| SSAO and the AO volumes | 0.87 | 9% |
+| Terrain patches, the forest, and the roads (`TERRAINPATCH_DETAIL_MID` 0.42) | 0.87 | 9% |
+| Deferred lights | 0.70 | 7% |
+| Vegetation (opaque 0.47) | 0.60 | 6% |
+| Shadow cascades, dynamic, static, and reflective | 0.55 | 6% |
+| Between the seams | 0.50 | 5% |
+| Inside the seams but in no pass | 0.49 | 5% |
+| Fog volumes (generate, upsample, apply) | 0.44 | 4% |
+| Models, static, dynamic, and transparent | 0.40 | 4% |
+| Depth prepasses (`Z_AND_VELOCITY_PASS` 0.28, coarse, occluders) and the depth downsample | 0.40 | 4% |
+| Reflections (SSR 0.14, scene capture, environment, reflection passes) | 0.38 | 4% |
+| Skybox and clouds | 0.33 | 3% |
+| Post: blur and composite (the tone map) | 0.28 | 3% |
+| Water | 0.27 | 3% |
+| Foveation mask-write (0.05) and fill-in (0.21), the mod's | 0.26 | 3% |
+| Post: glare | 0.25 | 3% |
+| Subsurface skin | 0.18 | 2% |
+| Post: the rest (histograms, sun halo, fade) | 0.08 | 1% |
+| Post: the engine anti-aliasing's passthrough blit after FSR | 0.06 | 1% |
+| Other passes, particles, and transparents | 0.10 | 1% |
+
+Capital (GPU span 12.4 ms):
+
+| Pass | GPU ms | Share |
+|---|---|---|
+| FSR (the mod's resolve, inside the post block) | 2.07 | 17% |
+| Models, static (0.83), dynamic (1.02), and transparent (0.12) | 1.97 | 16% |
+| SSAO (1.17) and the AO volumes (0.19) | 1.37 | 11% |
+| Deferred lights | 1.05 | 8% |
+| Shadow cascades, dynamic (cascade 2 0.38), static, and reflective | 0.79 | 6% |
+| Vegetation (opaque 0.43) | 0.57 | 5% |
+| Between the seams | 0.50 | 4% |
+| Terrain patches, the forest, and the roads | 0.49 | 4% |
+| Inside the seams but in no pass | 0.48 | 4% |
+| Fog volumes (generate, upsample, apply) | 0.46 | 4% |
+| Reflections (SSR 0.20, scene capture, environment, reflection passes) | 0.46 | 4% |
+| Depth prepasses and the depth downsample | 0.42 | 3% |
+| Skybox and clouds | 0.35 | 3% |
+| Post: blur and composite (the tone map) | 0.31 | 2% |
+| Foveation mask-write (0.07) and fill-in (0.20), the mod's | 0.26 | 2% |
+| Post: glare | 0.26 | 2% |
+| Water | 0.20 | 2% |
+| Subsurface skin | 0.17 | 1% |
+| Post: the rest (histograms, sun halo, fade) | 0.10 | 1% |
+| Post: the engine anti-aliasing's passthrough blit after FSR | 0.07 | 1% |
+| Other passes, particles, and transparents | 0.08 | 1% |
+
+"Between the seams" is GPU time inside the dispatch but outside `PreDraw`, the G-buffer, the scene, and the post effects; "inside the seams but in no pass" is time within a seam between its passes (the engine's clears and resolves, the mod's per-dispatch work there, and idle between passes). The mod's work after `PostDraw` (the HUD, the eye copies, and the swapchain blits) is outside the dispatch and not in either table; it falls in the idle between frames. The world post block as a whole took 2.57 ms at the town and 2.80 ms at the capital, FSR three quarters of it.
+
+Where savings look plausible, by rough size, none of them tried:
+
+1. **FSR**, 1.9 to 2.1 ms: still the largest single cost. Rendering a little under the headset's size and letting FSR upscale buys back pixel-proportional work across the whole frame (about 0.5 ms per megapixel per eye of scene and post, [the knee](#the-resolution-sweep)) at a cost in sharpness; at 0.85 per side, roughly 1.5 to 2 ms over the frame.
+2. **SSAO**, 0.9 to 1.4 ms, and **the deferred lights**, 0.7 to 1.05 ms: both are screen-space and scale with the double-wide target. Whether they honour the foveation's peripheral mask is not verified; the G-buffer passes skip the masked pixels, and if these two shade them anyway, extending the mask to them would save roughly the masked fraction of their cost, perhaps 0.3 to 0.6 ms together. SSAO at a lower resolution than it runs (which was not checked) would save more.
+3. **The models at the capital**, 2.0 ms: geometry-bound passes whose cost follows the draw count more than the pixels; the per-eye re-issues still drawn twice ([above](#the-per-eye-submissions-at-the-capital)) are part of it, and converting them is worth tenths of a millisecond on the GPU.
+4. **The unattributed time**, about 1.0 ms (half between the seams, half inside them between passes): nothing names it yet, and it is the same at both scenes, which suggests fixed work (clears, copies, resolves at the double-wide size, the single-pass path's per-dispatch work) rather than scene content. Bracketing it is the next measurement; a full-target clear or copy that is not needed would be worth 0.1 to 0.3 ms each.
+5. **Fog volumes**, 0.45 ms: the volume is generated from the camera, and under single-pass from the shared centre; if its grid is sized from the double-wide target's width, it is twice as wide as it needs to be. Unverified; up to 0.2 ms.
+6. **Skybox and clouds**, 0.35 ms: drawn over the whole double-wide target; drawing it only where depth leaves sky, and skipping the foveation's masked periphery, could save 0.1 to 0.2 ms.
+7. **The foveation's own passes**, 0.26 ms: what the mask saves in the G-buffer was not measured in this run, so its net value is open; a foveation-off run against this one answers it.
+8. **Shadows**, 0.55 to 0.8 ms: rendered once per frame in single-pass already; the dynamic cascade 2 at the capital (0.38 ms) is the one candidate for a slower update cadence, which the mod forces off against flicker (`stereo.shadow_update_every_frame`). Up to 0.3 ms at the cost of the flicker that setting fixes.
+9. **The engine's anti-aliasing passthrough** after FSR, 0.06 to 0.07 ms: a full-target blit of FSR's result onward. Writing FSR's result where the chain reads it next would remove it.
+
 ## What is left
 
 The capital in single-pass at the headset's size now runs at 10.6 ms a frame unpaced (9.1 ms with FSR off) and holds 72 Hz with a 99th percentile of 15 ms; the GPU limits it. By expected saving, largest first:

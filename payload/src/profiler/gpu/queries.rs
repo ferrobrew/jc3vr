@@ -15,7 +15,10 @@ use crate::{
         lane::{GpuScope, report_gpu_frame},
         stats::{DispatchMetrics, Stats, ms},
     },
-    testing::benchmark::GpuDispatchSample,
+    testing::benchmark::{
+        GpuDispatchSample,
+        gpu_passes::{self, GpuPassLabel},
+    },
 };
 
 /// A raw handle wrapper asserting [`Send`]. Sound because every handle is created, recorded, and
@@ -33,12 +36,14 @@ pub(super) const MAX_PENDING: usize = 16;
 /// (collection toggled, a load, a hitch), not a pipeline bubble worth charting.
 pub(super) const MAX_CREDIBLE_IDLE_NS: i64 = 50_000_000;
 
-/// What a GPU interval measures: one of the coarse render seams, or one render pass nested inside
-/// a seam.
+/// What a GPU interval measures: one of the coarse render seams, one render pass nested inside a
+/// seam (by its scope and the engine's name for it), or a named stretch of work that is not a render
+/// pass, such as one post effect, which the work-and-holes subdivision does not count.
 #[derive(Clone, Copy)]
 pub(super) enum IntervalLabel {
     Seam(GpuSeam),
-    Pass(ScopeId),
+    Pass(ScopeId, &'static str),
+    Detail(ScopeId, &'static str),
 }
 
 pub(super) struct Dispatch {
@@ -340,6 +345,17 @@ impl GpuProfiler {
                         *slot = Some(slot.unwrap_or(0) + (r.stop_ns - r.start_ns));
                     }
                 }
+                gpu_passes::record(
+                    dispatch.lane as u8,
+                    resolved.iter().filter_map(|r| {
+                        let label = match r.label {
+                            IntervalLabel::Seam(_) => return None,
+                            IntervalLabel::Pass(_, name) => GpuPassLabel::RenderPass(name),
+                            IntervalLabel::Detail(_, name) => GpuPassLabel::Detail(name),
+                        };
+                        Some((label, r.stop_ns - r.start_ns))
+                    }),
+                );
                 crate::testing::benchmark::record_gpu_dispatch(GpuDispatchSample {
                     lane: dispatch.lane as u8,
                     span_ns,
@@ -389,7 +405,7 @@ impl GpuProfiler {
             scopes.extend(resolved.iter().map(|r| GpuScope {
                 id: match r.label {
                     IntervalLabel::Seam(seam) => self.seam_scopes[seam.index()],
-                    IntervalLabel::Pass(scope) => scope,
+                    IntervalLabel::Pass(scope, _) | IntervalLabel::Detail(scope, _) => scope,
                 },
                 start_ns: r.start_ns,
                 stop_ns: r.stop_ns,

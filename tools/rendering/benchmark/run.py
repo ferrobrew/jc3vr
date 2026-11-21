@@ -66,6 +66,8 @@ class Options:
     session: int | None = None
     # Sample where the draw task's time goes (slows the frames it measures; a run of its own).
     sample_draw_task: bool = False
+    # Time every render pass and post effect on the GPU (two timestamp queries each).
+    gpu_passes: bool = False
 
 
 def schedule(modes: tuple[Mode, ...], repeats: int, scales) -> list[tuple[float | None, int, Mode]]:
@@ -103,7 +105,7 @@ def run_scene(session, scene: BenchmarkScene, modes: tuple[Mode, ...], options: 
             id=f"b{uuid.uuid4().hex[:12]}", label=label, mode=mode.mode,
             record_seconds=options.record_seconds, warmup_seconds=options.warmup_seconds,
             resolution_scale=scale, gpu=options.gpu, detour_timing=options.detour_timing,
-            sample_draw_task=options.sample_draw_task,
+            sample_draw_task=options.sample_draw_task, gpu_passes=options.gpu_passes,
             install_draw_detours=options.install_draw_detours,
             recapture_camera=index == 0, restore=index == len(steps) - 1,
             switches=mode.switches, overlap_render_update=mode.overlap_render_update,

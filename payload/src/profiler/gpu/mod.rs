@@ -252,14 +252,39 @@ pub fn nested_seam(seam: GpuSeam) -> Option<IntervalGuard> {
     })
 }
 
+/// Whether the per-pass and detail intervals should be recorded: while puffin collects, or while a
+/// benchmark run asks for them (`crate::testing::benchmark::gpu_passes`).
+pub fn passes_wanted() -> bool {
+    puffin::are_scopes_on() || crate::testing::benchmark::gpu_passes::armed()
+}
+
 /// Brackets one render pass with a GPU timestamp pair, nested inside the seam that is drawing it.
-/// `scope` names the pass on the lane (the caller already resolved it for the CPU scope).
+/// `scope` names the pass on the lane (the caller already resolved it for the CPU scope), and
+/// `name` is the engine's name for it.
 ///
 /// Unlike [`seam`], this takes no context: it records on the immediate context the enclosing
 /// dispatch was opened with, which is the same handle the seams run on. Returns `None` while
 /// disabled, outside a dispatch, or once the dispatch's pass budget
 /// ([`MAX_PASS_INTERVALS`]) is spent.
-pub fn pass_interval(scope: ScopeId) -> Option<IntervalGuard> {
+pub fn pass_interval(scope: ScopeId, name: &'static str) -> Option<IntervalGuard> {
+    interval(IntervalLabel::Pass(scope, name))
+}
+
+/// Brackets a named stretch of GPU work that is not a render pass (one post effect, one of the
+/// mod's own passes) with a timestamp pair on the enclosing dispatch's context. The lane shows it,
+/// and a benchmark run that times passes totals it, but the work-and-holes subdivision does not
+/// count it. Returns `None` while the pass intervals are not wanted, outside a dispatch, or once
+/// the dispatch's budget is spent.
+pub fn detail_interval(name: &'static str) -> Option<IntervalGuard> {
+    if !passes_wanted() {
+        return None;
+    }
+    let scope = crate::profiler::named_scope_id(name)?;
+    interval(IntervalLabel::Detail(scope, name))
+}
+
+/// Opens a pass or detail interval, sharing the dispatch's pass budget.
+fn interval(label: IntervalLabel) -> Option<IntervalGuard> {
     if !enabled() || !pass_timestamps_enabled() {
         return None;
     }
@@ -277,7 +302,7 @@ pub fn pass_interval(scope: ScopeId) -> Option<IntervalGuard> {
     }
     Some(IntervalGuard {
         ctx: SendPtr(ctx),
-        label: IntervalLabel::Pass(scope),
+        label,
         begin: SendPtr(begin),
     })
 }

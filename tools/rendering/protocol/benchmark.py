@@ -58,6 +58,8 @@ class BenchmarkRequest:
     warmup_seconds: float = 3.0
     resolution_scale: float | None = None
     gpu: bool = True
+    # Also time every render pass and post effect on the GPU (needs gpu).
+    gpu_passes: bool = False
     detour_timing: bool = False
     sample_draw_task: bool = False
     install_draw_detours: bool = True
@@ -93,6 +95,8 @@ class BenchmarkRequest:
                      "large_cache_cores"):
             if getattr(self, name) is not None and type(getattr(self, name)) is not bool:
                 raise ProtocolError(f"benchmark: {name} must be a boolean")
+        if self.gpu_passes and not self.gpu:
+            raise ProtocolError("benchmark: gpu_passes needs gpu")
         if self.switches and self.mode != BenchmarkMode.SINGLE_PASS:
             raise ProtocolError("benchmark: single_pass switches apply only to the single_pass mode")
 
@@ -113,6 +117,8 @@ class BenchmarkRequest:
         # Only when asked, so a payload from before the sampler still accepts the request.
         if self.sample_draw_task:
             lines.append("sample_draw_task = true")
+        if self.gpu_passes:
+            lines.append("gpu_passes = true")
         for name in ("overlap_render_update", "fsr", "fsr_hybrid_velocity", "fsr_jitter",
                      "large_cache_cores"):
             if getattr(self, name) is not None:

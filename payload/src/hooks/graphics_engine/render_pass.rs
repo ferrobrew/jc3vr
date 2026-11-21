@@ -505,7 +505,11 @@ fn run_scene_range(first: i32, last: i32, draw: &dyn Fn(i32, i32)) {
     };
     draw(first, plan.fov_start);
     if plan.do_mask {
-        run_foveation_pass(crate::vr::foveation::mask_write, plan.params, "mask-write");
+        run_foveation_pass(
+            crate::vr::foveation::mask_write,
+            plan.params,
+            "foveation mask-write",
+        );
     }
     FORCE_STENCIL_TEST.store(true, std::sync::atomic::Ordering::Relaxed);
     draw(plan.fov_start, plan.fov_end);
@@ -616,10 +620,12 @@ fn foveal_center_uv(eye: usize) -> Option<glam::Vec2> {
 fn run_foveation_pass(
     pass: fn(FoveationParams) -> anyhow::Result<()>,
     params: FoveationParams,
-    label: &str,
+    label: &'static str,
 ) {
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval(label);
     if let Err(e) = pass(params) {
-        tracing::warn!(target: "vr", "foveation {label} pass failed: {e:#}");
+        tracing::warn!(target: "vr", "{label} pass failed: {e:#}");
     }
 }
 
@@ -647,7 +653,7 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
         run_foveation_pass(
             crate::vr::foveation::fill_in,
             foveation_params(&cfg, layout),
-            "fill-in",
+            "foveation fill-in",
         );
     }
     DRAW_POSTEFFECTS.get().unwrap().call(this, ctx, setup);

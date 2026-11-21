@@ -192,6 +192,8 @@ fn tonemapping_apply(
         }
         return out_bright_point;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: tone-mapping histogram");
     TONEMAPPING_APPLY
         .get()
         .unwrap()
@@ -221,6 +223,8 @@ fn generate_final_histogram(
     if later_scene_gated {
         return;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: final-scene histogram");
     GENERATE_FINAL_HISTOGRAM
         .get()
         .unwrap()
