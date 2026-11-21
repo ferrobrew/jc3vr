@@ -85,6 +85,24 @@ hybrid_velocity = false
 name = "foveation-off"
 foveation = false
 
+# The foveation's switches (docs/mod/stereo/foveation.md): as it was before them, with each left
+# out in turn.
+[[variant]]
+name = "foveation-before"
+switches = { foveation_gbuffer = false, foveation_lighting = false, foveation_quads = false }
+
+[[variant]]
+name = "foveation-passes-off"
+switches = { foveation_gbuffer = false, foveation_lighting = false }
+
+[[variant]]
+name = "foveation-lighting-off"
+switches = { foveation_lighting = false }
+
+[[variant]]
+name = "foveation-quads-off"
+switches = { foveation_quads = false }
+
 [[variant]]
 name = "fsr-jitter-off"
 jitter = false

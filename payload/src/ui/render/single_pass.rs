@@ -653,6 +653,34 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      sized for one eye. Off, one fovea sits on the seam, sized for the double-wide \
                      frame, so each eye drops pixels at its own centre of view.",
                 );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.foveation_gbuffer,
+                    "Foveation over the G-buffer",
+                )
+                .on_hover_text(
+                    "Skips the foveation's dropped pixels in the terrain's apply passes, the road \
+                     junctions, and the decals, in multipass too. Off, only the models, the \
+                     vegetation, and the creatures skip them.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.foveation_lighting,
+                    "Foveation over the lighting",
+                )
+                .on_hover_text(
+                    "Skips the foveation's dropped pixels in the deferred lights, the sky, and the \
+                     fog gradient, and fills them in right after, before the water and the \
+                     transparents, in multipass too. Off, the fill-in runs at the start of the \
+                     post effects.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.foveation_quads,
+                    "Foveation drops whole quads",
+                )
+                .on_hover_text(
+                    "Drops the foveation's peripheral pixels in 2 by 2 quads, so a dropped quad runs \
+                     no pixel shader at all, in multipass too. Off, single pixels are dropped and \
+                     nearly every quad still shades.",
+                );
                 ui.checkbox(&mut cfg.stereo.single_pass.fsr_per_eye, "FSR per eye")
                     .on_hover_text(
                         "Resolves FSR once per eye over that eye's half, each with its own history, \

@@ -642,6 +642,31 @@ pub struct SinglePassConfig {
     /// fill-in neighbourhood in eye-local pixels, in the same single draw. Applies at once. On by
     /// default.
     pub foveation_per_eye: bool,
+    /// Force the **foveation**'s peripheral stencil test through the G-buffer passes that write
+    /// only their own pixels and leave the depth to the prepasses (the terrain's apply passes, the
+    /// road junctions, and the decals), not just the models, the vegetation, and the creatures.
+    ///
+    /// Gates both modes, multipass included: it lives with the single-pass switches so the harness
+    /// can compare it within one schedule. The kept pixels render as before; the dropped ones are
+    /// shaded by fewer passes before the fill-in replaces them. Applies at once. On by default.
+    pub foveation_gbuffer: bool,
+    /// Force the **foveation**'s peripheral stencil test through the lighting passes that write only
+    /// their own pixels (the deferred lights, the light billboards, the stars, sun, moon, skybox, and
+    /// sky gradient, and the fog gradient), and run the fill-in right after them rather than at the
+    /// start of the post effects.
+    ///
+    /// The passes after the fill-in (the water, the clouds, the fog volumes, and the transparents)
+    /// then shade the reconstructed pixels as they shade every other, and read a reconstructed
+    /// neighbourhood where they read the lit colour's. Gates both modes, as
+    /// [`foveation_gbuffer`](Self::foveation_gbuffer) does. Applies at once. On by default.
+    pub foveation_lighting: bool,
+    /// Drop the **foveation**'s peripheral pixels in whole 2 by 2 quads rather than one by one.
+    ///
+    /// The rasterizer shades pixels in 2 by 2 quads, and a quad with one live pixel runs the pixel
+    /// shader for all four; with single dropped pixels nearly every quad keeps one, so the stencil
+    /// test skips little shading. Dropped quads have no live pixel and run nothing. The fill-in
+    /// reaches two pixels to find kept neighbours. Gates both modes. Applies at once. On by default.
+    pub foveation_quads: bool,
     /// Run **FSR** once per eye over that eye's half of the double-wide target under the collapse.
     ///
     /// FSR otherwise runs once over the whole target with one history: the motion vectors, which
@@ -947,6 +972,9 @@ impl SinglePassConfig {
             composite_overlays_per_eye: true,
             glare_per_eye: true,
             foveation_per_eye: true,
+            foveation_gbuffer: true,
+            foveation_lighting: true,
+            foveation_quads: true,
             fsr_per_eye: true,
             clustered_per_eye: true,
             clustered_per_eye_light_view: true,

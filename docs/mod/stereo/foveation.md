@@ -48,21 +48,54 @@ The design above is implemented, on by default, across:
 
 - pyxis defs: [`SetupRenderStates`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-SetupRenderStates), [`CreateDepthStencilState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::graphics_engine##func-CreateDepthStencilState), and the [`HContext_t::m_DepthStencilStateIndex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::HContext_t##field-m_DepthStencilStateIndex) and [`HContext_t::m_StencilRef`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::HContext_t##field-m_StencilRef) fields with the full packed-index bit layout.
 - **shaders** — `payload/src/shaders/foveation_mask_ps.hlsl` (radial dithered mask, interleaved-gradient
-  noise) and `foveation_fill_ps.hlsl` (neighbour-average reconstruction), compiled via `shadergen`. Both
-  take a 32-byte cbuffer `{ centre_px, inner_px, outer_px, max_drop }`; the two must keep their `ign` and
-  drop decision identical so the fill reproduces the mask's choice.
+  noise, decided per drop cell) and `foveation_fill_ps.hlsl` (neighbour-average reconstruction), compiled
+  via `shadergen`. Both take the same constant buffer (the eyes' centres, the radii, the drop, the seam
+  column, and the cell size); the two must keep their `ign` and drop decision identical so the fill
+  reproduces the mask's choice.
 - **`payload/src/vr/foveation.rs`** — the D3D pipeline (mask-write and fill-in full-screen passes on the
   immediate context under `Context::m_Mutex`, the `blit.rs` pattern), the `SetupRenderStates` force-test
   index rewrite (`apply_force_test`), and the `packed_stencil_test` bit math.
 - **`payload/src/hooks/graphics_engine/render_pass.rs`** — the `SetupRenderStates` detour, and the
-  `DrawRenderPassRange` bracketing that runs the mask-write before the foveated pass range, forces the
-  stencil test through it, and runs the fill-in after. The foveal centre comes from the eye's
+  `DrawRenderPassRange` bracketing that runs the mask-write before the first foveated pass, forces the
+  stencil test through each run of foveated passes (`FoveatedPasses` in `foveation.rs`), clears the mask
+  bit after the last, and runs the fill-in (see "Which passes skip the dropped pixels"). The foveal centre comes from the eye's
   `projection_standard` principal point (`foveal_center_uv`), so canted/off-axis eyes fovea about their
   true optical centre, not screen centre.
 - **config + UI** — `foveation.{enabled, inner_fraction, outer_fraction, max_drop, mask_bit,
   debug_show_mask}` (`config.rs`); the radii, the drop, and the mask view are in the debug UI's
-  Foveation feature, and `enabled` (default **true**) is the pause menu's FOVEATED RENDERING. The
-  foveated pass range is the `FOVEAL_FIRST_PASS` / `FOVEAL_LAST_PASS` constants.
+  Foveation feature, and `enabled` (default **true**) is the pause menu's FOVEATED RENDERING. Four
+  switches, all on, sit with the single-pass switches so the harness can compare them within one
+  schedule, but gate multipass as well: `single_pass.foveation_gbuffer`, `foveation_lighting`,
+  `foveation_quads`, and `foveation_clear_mask` (the debug UI's single-pass page).
+
+## Which passes skip the dropped pixels
+
+The forced test covers a set of render passes (`FoveatedPasses` in `payload/src/vr/foveation.rs`), and a pass belongs in it only if dropping its pixels leaves every kept pixel as it was. Two things decide that: whether the pass writes anything a later pass reads at a neighbouring pixel before the fill-in runs, and whether it writes depth the prepasses have not already written. A dropped pixel keeps whatever depth it had when the forced test began, and the SSAO, the depth downsample, the fog volumes, the water's depth test, and FSR all read depth at and around it.
+
+- Always: the models, the vegetation, and the creatures ([`RenderPassId::RP_MODELS_DYNAMIC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_MODELS_DYNAMIC) through [`RenderPassId::RP_CREATURES`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_CREATURES)), as before.
+- `single_pass.foveation_gbuffer`: the terrain's apply passes ([`RenderPassId::RP_TERRAIN_APPLY_NEAR_DETAILED`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_TERRAIN_APPLY_NEAR_DETAILED) through `RP_TERRAIN_APPLY_FAR`), the road junctions and road layers (`RP_ROAD_JUNCTION` through `RP_ROAD_JUNCTION_OPAQUE`), and the decals (`RP_DECALS` through `RP_SCREEN_SPACE_ROAD_DECALS`). Per draw, a draw that already uses stencil is left alone, as before.
+- `single_pass.foveation_lighting`: the deferred lights ([`RenderPassId::RP_DEFERRED_LIGHTS`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_DEFERRED_LIGHTS)), the light billboards (`RP_BILLBOARD`), the stars, sun, moon, skybox, and sky gradient (`RP_STARS` through `RP_SKY_GRADIENT`), and the fog gradient (`RP_FOG_GRADIENT`). Each writes the lit colour at its own pixel from that pixel's inputs. The fill-in then runs right after the fog gradient, under a stencil test that passes only the dropped pixels, instead of at the start of the post effects. That move is what makes the lighting safe to drop: from the scene-colour copy the water and the refraction read onward, every pass sees a reconstructed neighbourhood, and the passes after the fill-in (the water, the clouds, the fog volumes, the particles, and the transparents) shade the dropped pixels as they shade every other. The occlusion queries ([`RenderPassId::RP_OCCLUSION_QUERY`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_OCCLUSION_QUERY)) between them stay out, since a dropped pixel would stop counting towards a query.
+
+Left out, and why, measured at the town by masking each group alone and comparing the G-buffer's depth and the final image against the variant without it (run 333):
+
+- The depth prepasses: they give the dropped pixels their depth.
+- The terrain's detail passes (`RP_TERRAINPATCH_DETAIL_MID` and `_LOW`, the largest terrain cost) write depth the prepasses do not: masked, 2.9 and 2.0 million dropped pixels per eye lost their depth and 0.8 and 0.6 million kept pixels changed in the final image (the repeat floor is about 3,000). The base-mesh passes (`RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR` through `RP_TERRAINPATCH_BASEMESH_COLOR`) do so over a smaller area: 136,000 dropped pixels' depth and 12,600 kept pixels. The apply passes, the roads, and the decals changed neither.
+- Adding the test to draws that write stencil without testing it (keeping their writes) changed 190,000 and 700,000 kept pixels, so the draws that use stencil stay unmasked.
+- The SSAO and its blur, the reflections, the global illumination, the subsurface skin, and the depth downsample read neighbours; the post effects and FSR run after the fill-in anyway.
+
+Making the detail passes skippable would take their depth written by a prepass (the engine's own, or a mod-side depth-only draw of the same patches), which would cost part of what masking them saves; it is not done.
+
+### Dropping whole quads
+
+A pixel shader runs per 2 by 2 pixel quad: a quad with one live pixel runs all four lanes, the dropped ones as helpers. With the drop decided per pixel by the dither, only 15% of the quads in an eye lose all four pixels at the shipped radii, against 54% of the pixels dropped, so the stencil test saved little shading: the deferred lights went from 0.64 to 0.57 ms. `single_pass.foveation_quads` decides the drop per 2 by 2 cell aligned to the quads (both shaders take the cell size), so a dropped cell runs nothing, and the same lights take 0.36 ms. The fill-in then reconstructs a dropped cell from the nearest pixel of each kept cell around it, weighted by inverse squared distance (8 neighbouring cells rather than 8 neighbouring pixels); in the far periphery the image is visibly blockier than the per-pixel dither's at 1:1, at edges especially (a 2-pixel stair on a pole against the sky).
+
+### What it costs and what it changes
+
+At the town the foveation now saves about 0.1 ms of GPU time per frame against none, and 0.33 ms against the models-only, per-pixel version; see "The foveation's net value" in [frame-budget.md](../performance/frame-budget.md) for the per-pass figures.
+
+Kept pixels: single-pass with the shipped settings' foveation, the new passes on against off (`foveation_gbuffer` and `foveation_lighting`, quads in both so the two drop the same pixels), compared inside the kept set read from the stencil's mask bit (run 333, saved planes). The scene colour at the start of the post chain differed by more than 2% at 7,400 and 14,800 kept pixels per eye at the town against 10,200 and 15,100 for the repeat, at 45 and 33 at the capital at night, at 116 and 118 in the tunnel (14 for the repeat), and at 3,400 in the meadow against 52,000 for its repeat (its trees move between snapshots). The final image differs at more kept pixels than the scene colour (11,300 and 6,700 at the town against 4,300 and 3,700): the dropped pixels now hold a different reconstruction, and the post effects that read neighbours (the glare, the engine's anti-aliasing) carry that into kept pixels next to them. The G-buffer's depth at the dropped pixels is unchanged.
+
+The reconstructed periphery: with the lighting passes dropped and the fill-in moved before the water, the clouds, and the transparents, those now render at the dropped pixels instead of being averaged from neighbours, so the sea at the horizon, the clouds' edges, and thin wires are sharper there than before. The quads make the far periphery blockier at 1:1: textured ground shows a 2-pixel grain where the per-pixel dither gave a finer one, and a dark pole against the sky gets a 2-pixel stair on its edge. A few light specks showed on the occupants of a car in the far periphery, likely dropped cells with no kept cell around them, which keep their unshaded value. None of this was viewed in the headset.
 
 ## Under single-pass stereo
 
@@ -84,10 +117,8 @@ state stage it depends on, not just the ones it obviously uses.
 The feature ships on by default and touches the hottest render path, so it can be disabled (config
 or the pause menu) if it perturbs concurrent validation work. What still needs confirming in a headset:
 
-- The default foveated pass range ([`RenderPassId::RP_MODELS_DYNAMIC`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_MODELS_DYNAMIC) to [`RenderPassId::RP_CREATURES`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId##variant-RP_CREATURES)) is a starting
-  guess. It must sit *after* the depth prepass (so dropped pixels keep full-resolution depth) and cover
-  the expensive shading without breaking a pass that reads neighbour pixels. Tune `FOVEAL_FIRST_PASS` /
-  `FOVEAL_LAST_PASS` (in `payload/src/hooks/graphics_engine/render_pass.rs`) against what actually saves frametime and what corrupts.
+- The foveated passes are chosen by the measurements in "Which passes skip the dropped pixels"; how
+  the quads' blockier periphery and the reconstruction look through the lenses is not yet judged.
 - **`DrawRenderPassRange` call structure.** The bracketing assumes the scene range arrives as one call (or
   a few sequential sub-ranges); the mask/fill are gated to run once each even if split. If the engine
   interleaves the range differently, the injection points need revisiting.

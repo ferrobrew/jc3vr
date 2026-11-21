@@ -35,7 +35,7 @@ use crate::{
         STEREO_STATE, draw_index, is_second_eye,
         single_pass::{ao_volumes, is_sun_pass, reissue_sun_pass},
     },
-    vr::foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveationParams},
+    vr::foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -494,58 +494,71 @@ const RP_FIRST_GEOMETRY: i32 = RenderPassId::RP_ROAD_STENCIL as i32;
 /// the foveation bracketing, factored out of the detour so the far-field composite can split the
 /// range without duplicating either.
 fn run_scene_range(first: i32, last: i32, draw: &dyn Fn(i32, i32)) {
-    // Foveation (issue #29): write the peripheral stencil mask just before the foveated shading sub-range,
-    // then force the peripheral stencil test through it so the GPU skips the dropped GBuffer pixels. The
-    // reconstruction fill-in runs later, in the `DrawPosteffects` hook, once the scene is fully lit --
-    // filling here (right after the GBuffer passes) would reconstruct an as-yet-unlit MainColor. `plan` is
-    // `None` when foveation is off or this is not a VR eye render, collapsing to the plain split above.
+    // Foveation (issue #29): write the peripheral stencil mask just before the first foveated pass,
+    // then force the peripheral stencil test through each run of foveated passes so the GPU skips the
+    // dropped pixels. The reconstruction fill-in runs once the last foveated pass has lit the kept
+    // pixels: here, before the first pass that reads the lit colour's neighbourhood, when the
+    // lighting passes are foveated, and otherwise in the `DrawPosteffects` hook. `plan` is `None`
+    // when foveation is off or this is not a VR eye render.
     let Some(plan) = foveation_plan(first, last) else {
         draw(first, last);
         return;
     };
-    draw(first, plan.fov_start);
-    if plan.do_mask {
-        run_foveation_pass(
-            crate::vr::foveation::mask_write,
-            plan.params,
-            "foveation mask-write",
-        );
+    let fill_before = plan.passes.fill_before();
+    let mut start = first;
+    while start < last {
+        if fill_before == Some(start) {
+            run_foveation_pass(
+                crate::vr::foveation::fill_in_dropped,
+                plan.params,
+                "foveation fill-in",
+            );
+        }
+        let foveated = plan.passes.contains(start);
+        let end = (start + 1..last)
+            .find(|&pass| plan.passes.contains(pass) != foveated || fill_before == Some(pass))
+            .unwrap_or(last);
+        if foveated {
+            if start == plan.passes.first() {
+                run_foveation_pass(
+                    crate::vr::foveation::mask_write,
+                    plan.params,
+                    "foveation mask-write",
+                );
+            }
+            FORCE_STENCIL_TEST.store(true, Ordering::Relaxed);
+            draw(start, end);
+            FORCE_STENCIL_TEST.store(false, Ordering::Relaxed);
+        } else {
+            draw(start, end);
+        }
+        start = end;
     }
-    FORCE_STENCIL_TEST.store(true, std::sync::atomic::Ordering::Relaxed);
-    draw(plan.fov_start, plan.fov_end);
-    FORCE_STENCIL_TEST.store(false, std::sync::atomic::Ordering::Relaxed);
-    draw(plan.fov_end, last);
 }
 
-/// The foveation bracketing for one [`draw_render_pass_range`] call: the clamped foveated sub-range
-/// `[fov_start, fov_end)`, whether this call owns the mask-write / fill-in (so each runs once even if the
-/// scene range is split across calls), and the per-eye pass parameters.
+/// The foveation bracketing for one [`draw_render_pass_range`] call: which passes take the forced
+/// stencil test, and the per-eye pass parameters. The mask-write runs in the call whose range holds
+/// the first foveated pass, so it runs once even if the scene range is split across calls.
 struct FoveationPlan {
-    fov_start: i32,
-    fov_end: i32,
-    do_mask: bool,
+    passes: FoveatedPasses,
     params: FoveationParams,
 }
 
-/// The first render pass (inclusive) of the foveated shading range: the mask-write runs just before
-/// it, and the peripheral stencil test is forced on from here. After the depth prepass, so the
-/// dropped pixels keep full-resolution depth.
-const FOVEAL_FIRST_PASS: RenderPassId = RenderPassId::RP_MODELS_DYNAMIC;
-
-/// The last render pass (inclusive) of the foveated shading range: the peripheral stencil test is
-/// forced through it, and the fill-in runs just after.
-const FOVEAL_LAST_PASS: RenderPassId = RenderPassId::RP_CREATURES;
-
-const _: () = assert!(
-    FOVEAL_FIRST_PASS as i32 <= FOVEAL_LAST_PASS as i32,
-    "the foveated pass range is inverted"
-);
-
 /// Build the [`FoveationPlan`] for a draw-range call, or `None` when foveation is disabled, this is not a
-/// VR eye render, or the foveated range does not intersect `[first, last)`. Publishes the per-draw stencil
-/// test bits ([`crate::vr::foveation::STENCIL_TEST_BITS`]) when active.
+/// VR eye render, or no foveated pass lies in `[first, last)`. Publishes the per-draw stencil test bits
+/// ([`crate::vr::foveation::STENCIL_TEST_BITS`]) when active.
 fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
-    let cfg = Config::lock_query(|c| c.foveation.clone());
+    let (cfg, passes, quads) = Config::lock_query(|c| {
+        let sp = &c.stereo.single_pass;
+        (
+            c.foveation.clone(),
+            FoveatedPasses {
+                gbuffer: sp.foveation_gbuffer,
+                lighting: sp.foveation_lighting,
+            },
+            sp.foveation_quads,
+        )
+    });
     if !cfg.enabled {
         return None;
     }
@@ -553,23 +566,17 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
         tracing::warn!("foveation disabled: {e}");
         return None;
     }
-    let layout = foveation_layout()?;
-    let ff = FOVEAL_FIRST_PASS as i32;
-    let fl = FOVEAL_LAST_PASS as i32;
-    let fov_start = first.max(ff);
-    let fov_end = last.min(fl + 1);
-    if fov_start >= fov_end {
+    if !(first..last).any(|pass| passes.contains(pass) || passes.fill_before() == Some(pass)) {
         return None;
     }
+    let layout = foveation_layout()?;
     crate::vr::foveation::STENCIL_TEST_BITS.store(
         crate::vr::foveation::packed_stencil_test(cfg.mask_bit),
-        std::sync::atomic::Ordering::Relaxed,
+        Ordering::Relaxed,
     );
     Some(FoveationPlan {
-        fov_start,
-        fov_end,
-        do_mask: (first..last).contains(&ff),
-        params: foveation_params(&cfg, layout),
+        passes,
+        params: foveation_params(&cfg, layout, quads),
     })
 }
 
@@ -591,7 +598,11 @@ fn foveation_layout() -> Option<EyeLayout> {
 }
 
 /// Build the pass parameters from the config and the eyes' layout.
-fn foveation_params(cfg: &crate::vr::FoveationConfig, layout: EyeLayout) -> FoveationParams {
+fn foveation_params(
+    cfg: &crate::vr::FoveationConfig,
+    layout: EyeLayout,
+    quads: bool,
+) -> FoveationParams {
     FoveationParams {
         layout,
         inner_fraction: cfg.inner_fraction,
@@ -599,6 +610,7 @@ fn foveation_params(cfg: &crate::vr::FoveationConfig, layout: EyeLayout) -> Fove
         max_drop: cfg.max_drop,
         mask_bit: cfg.mask_bit,
         debug_show_mask: cfg.debug_show_mask,
+        cell_px: if quads { 2 } else { 1 },
     }
 }
 
@@ -647,12 +659,14 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
     #[cfg(feature = "profiler")]
     // SAFETY: `ctx` is the live immediate-context handle for this dispatch.
     let _gpu = unsafe { seam(ctx.cast(), crate::profiler::gpu::GpuSeam::PostEffects) };
-    if let Some(cfg) = Config::lock_query(|c| c.foveation.enabled.then(|| c.foveation.clone()))
-        && let Some(layout) = foveation_layout()
+    if let Some((cfg, quads)) = Config::lock_query(|c| {
+        (c.foveation.enabled && !c.stereo.single_pass.foveation_lighting)
+            .then(|| (c.foveation.clone(), c.stereo.single_pass.foveation_quads))
+    }) && let Some(layout) = foveation_layout()
     {
         run_foveation_pass(
             crate::vr::foveation::fill_in,
-            foveation_params(&cfg, layout),
+            foveation_params(&cfg, layout, quads),
             "foveation fill-in",
         );
     }
