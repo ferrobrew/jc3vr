@@ -67,6 +67,8 @@ pub(crate) fn item_of(address: usize) -> Option<ItemId> {
 
 /// Publish `table`'s hands and its places on the body.
 pub(super) fn publish(table: &Loadout) {
+    #[cfg(test)]
+    let _guard = PUBLICATION_TEST_LOCK.lock();
     let weapons = Hand::BOTH.map(|hand| {
         table
             .held(hand)
@@ -97,6 +99,8 @@ pub(super) fn publish(table: &Loadout) {
 
 /// Publish an empty table: the table stopped.
 pub(super) fn clear() {
+    #[cfg(test)]
+    let _guard = PUBLICATION_TEST_LOCK.lock();
     crate::controllers::weapons::hold::take::invalidate_handle_placements();
     for hand in &HANDS {
         hand.store(0, Ordering::Relaxed);
@@ -104,6 +108,10 @@ pub(super) fn clear() {
     *HELD.lock() = [None; 2];
     PLACES.lock().clear();
 }
+
+#[cfg(test)]
+static PUBLICATION_TEST_LOCK: parking_lot::ReentrantMutex<()> =
+    parking_lot::ReentrantMutex::new(());
 
 static HANDS: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
 /// What each hand holds, of any kind, by [`Hand::index`].
@@ -119,6 +127,7 @@ mod tests {
 
     #[test]
     fn safe_item_moves_publish_hand_occupancy_without_a_native_alias() {
+        let _guard = PUBLICATION_TEST_LOCK.lock();
         let mut table = Loadout::new(BodyLayout::full(Hand::Right));
         let item = table
             .admit_safe_item(ItemLeaseId::new(NonZeroU64::MIN), Hand::Left)
