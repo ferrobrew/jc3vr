@@ -1,0 +1,127 @@
+//! How the weapon handling's candidates become grip targets, and where their markers go.
+
+use crate::controllers::{
+    cockpit::CockpitTransform,
+    frame::Hand,
+    grab::{Candidate, GrabVolume, GripTarget, Mark, MarkAt, MarkStyle, Shown, Tier},
+    hands::ActiveHands,
+    weapons::foregrip::{self, FOREGRIP},
+};
+
+/// How the weapon handling's candidates become grip targets, and where the markers go.
+pub(super) struct Place {
+    pub(super) xf: CockpitTransform,
+}
+
+impl Place {
+    pub(super) fn new(active: &ActiveHands) -> Self {
+        Self {
+            xf: CockpitTransform::current(active.head.position, active.world_scale),
+        }
+    }
+
+    /// A pouch on the character's body, reached by the hand as it is drawn, always marked.
+    pub(super) fn body(&self, c: &Candidate) -> GripTarget {
+        c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)).showing(Shown::Always))
+    }
+
+    /// A pouch, and its reach margin: a hand that misses it by a little still takes from it when
+    /// nothing else is in reach, because a hand feeling for a pouch on the body lands a little off
+    /// it more often than not.
+    pub(super) fn pouch(&self, c: &Candidate, margin: f32) -> [GripTarget; 2] {
+        let pouch = self.body(c);
+        let around = Candidate {
+            radius: c.radius + margin.max(0.0),
+            ..*c
+        }
+        .target(pouch.mark.showing(Shown::Never))
+        .ranked(Tier::Fallback);
+        [pouch, around]
+    }
+
+    /// Where a hand touched a gun docked on the body, reached by the hand as it is drawn, as the
+    /// gun is.
+    pub(super) fn touch(&self, c: &Candidate) -> GripTarget {
+        c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)))
+    }
+
+    /// A socket on the character's skeleton, where its weapon is or would sit, always marked.
+    pub(super) fn on_skeleton(&self, c: &Candidate) -> GripTarget {
+        c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)).showing(Shown::Always))
+    }
+
+    /// A belt pouch the gun in the hand is being brought down onto for the belt reload: marked,
+    /// never taken, since the gun's push reloads, not a squeeze.
+    pub(super) fn belt_push(&self, c: &Candidate) -> GripTarget {
+        self.body(c).ranked(Tier::Touch)
+    }
+
+    /// A taken socket the hand's weapon swaps onto when let go of there: marked while the hand is
+    /// near as a socket that takes it, never taken by a grab, since the release decides the swap.
+    pub(super) fn swap_onto(&self, c: &Candidate) -> GripTarget {
+        c.target(Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)))
+            .ranked(Tier::Touch)
+    }
+
+    /// A socket that does not take what the hand holds: marked while the hand is near, never taken.
+    pub(super) fn no_fit(&self, c: &Candidate) -> GripTarget {
+        c.target(
+            Mark::ring(MarkAt::Cockpit(c.centre), mark_size(c.radius)).styled(MarkStyle::NoFit),
+        )
+        .ranked(Tier::Touch)
+    }
+
+    /// A part of the gun in `holder`'s hand.
+    pub(super) fn on_hand(&self, c: &Candidate, holder: Hand) -> GripTarget {
+        c.target(Mark::ring(
+            MarkAt::OnHand {
+                hand: holder,
+                point: c.centre,
+            },
+            mark_size(c.radius),
+        ))
+    }
+
+    /// Something lying in the world.
+    pub(super) fn world(&self, c: &Candidate) -> GripTarget {
+        c.target(Mark::ring(
+            MarkAt::World(self.xf.point_to_world(c.centre)),
+            Mark::WORLD_SIZE_M,
+        ))
+    }
+}
+
+/// The braced foregrip, held by the bracing hand, marked where it holds the gun.
+pub(super) fn held_foregrip(hold: &foregrip::Hold, active: &ActiveHands) -> Option<GripTarget> {
+    let mut posed = active.hands;
+    foregrip::apply(&mut posed, &FOREGRIP);
+    let brace = hold.holder.other();
+    let point = posed[brace.index()]?.grip.position;
+    let target = Candidate {
+        volume: GrabVolume::Foregrip,
+        centre: point,
+        radius: FOREGRIP.radius_m,
+        hand: Some(brace),
+    }
+    .target(Mark::ring(
+        MarkAt::OnHand {
+            hand: hold.holder,
+            point,
+        },
+        FOREGRIP_MARK_M,
+    ));
+    Some(target.held(brace))
+}
+
+/// A marker's size for a target reached within `radius`: the reach's diameter, kept within a size
+/// that marks the spot without covering what is around it.
+pub(super) fn mark_size(radius: f32) -> f32 {
+    (radius * 2.0).clamp(MIN_MARK_M, MAX_MARK_M)
+}
+
+const MIN_MARK_M: f32 = 0.03;
+const MAX_MARK_M: f32 = 0.12;
+/// The marker where a held charge would stick, metres.
+pub(super) const CHARGE_MARK_M: f32 = 0.08;
+/// The marker on a braced foregrip, metres.
+const FOREGRIP_MARK_M: f32 = 0.03;

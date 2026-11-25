@@ -1,0 +1,821 @@
+//! Carrying the weapons beyond the slots across the spawn system's resets and the game's saves and
+//! loads. The format is [`crate::controllers::weapons::inventory::persist`]; the engine side is in
+//! `docs/engine/gameplay/weapon-ownership-and-despawn.md`.
+//!
+//! A reset (a load, and possibly a death or a fast travel) releases every spawned object and
+//! replaces the slots' weapons by type. The carried weapons are the mod's to replace:
+//!
+//! - at the reset's pre-reset event, the carried weapons are recorded (type, magazine, socket)
+//!   before the carry set lets them go ([`on_pre_reset`]);
+//! - each store of the player's save data writes the save sidecar, the carried weapons with the
+//!   fingerprint of what the store writes ([`on_store`]), through one coalescing owned writer;
+//! - each load of the player's save data reads the sidecar and keeps its weapons when its
+//!   fingerprint matches what the load put into the inventory, and nothing extra otherwise
+//!   ([`on_load`]);
+//! - after the reset's post-reset event, the first input tick with the player spawns a weapon of
+//!   each recorded type ([`SpawnSystem::SpawnTagIndex`]), from the load when there was one since
+//!   the reset and from the reset's own record otherwise, and adopts each into the carry set on its
+//!   socket with its magazine as it was when its spawn comes back ([`input_tick`]).
+//!
+//! The store, load, and reset run on their native callers. The spawn callback runs inline on the
+//! caller of `SpawnSystem::PreUpdate`, including reset-time service. The callback hands retained
+//! results to the input tick; the module and carry locks are taken separately.
+
+pub(crate) mod adoption;
+pub mod give;
+
+use std::{
+    ffi::c_void,
+    fmt, fs, io,
+    io::Read,
+    path::PathBuf,
+    sync::atomic::{AtomicU64, Ordering},
+    time::{Duration, Instant},
+};
+
+use jc3gi::{
+    character::{character::Character, inventory::WeaponSlot},
+    equipment::weapon::WeaponBase,
+    game::GameObject,
+    save::PlayerSaveData,
+    spawn_system::SpawnSystem,
+    types::{math::Matrix4, shared_ptr::SharedPtr, std_vector::Vector},
+};
+use parking_lot::Mutex;
+
+use crate::{
+    config::paths,
+    controllers::{
+        hands::ik,
+        weapons::{
+            dual_wield::single,
+            engine::weapon_at,
+            hold::refs::Strong,
+            inventory::{
+                carry,
+                config::InventoryConfig,
+                engine::{self as inventory_engine, kind_of},
+                persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
+                sidecar,
+                spawn_safety::{self, RequestKind},
+            },
+        },
+    },
+};
+
+/// The sidecar's file name, beside the settings file.
+pub(crate) const SIDECAR_FILE_NAME: &str = "inventory.toml";
+
+/// What the last load made of the sidecar.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadOutcome {
+    /// It matched the save: this many weapons will come back, and this many of types the game
+    /// does not know now will not.
+    Accepted { carried: usize, unknown: usize },
+    /// There is no sidecar.
+    Missing,
+    /// It could not be read: why.
+    Unreadable(String),
+    /// It belongs to another save: how the save differs.
+    Rejected(String),
+    /// The load had no character to read.
+    NoCharacter,
+}
+
+impl fmt::Display for LoadOutcome {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            LoadOutcome::Accepted { carried, unknown } => {
+                write!(
+                    f,
+                    "accepted, {carried} to restore, {unknown} of unknown types"
+                )
+            }
+            LoadOutcome::Missing => write!(f, "no sidecar"),
+            LoadOutcome::Unreadable(why) => write!(f, "unreadable: {why}"),
+            LoadOutcome::Rejected(why) => write!(f, "another save's: {why}"),
+            LoadOutcome::NoCharacter => write!(f, "no character to read"),
+        }
+    }
+}
+
+/// Where a respawn's record came from.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Origin {
+    /// The sidecar a load accepted, or a load's empty set.
+    Load,
+    /// The carried weapons at the reset.
+    Reset,
+}
+
+/// What the last respawn of the carried weapons did.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct RespawnOutcome {
+    pub origin: Option<Origin>,
+    /// Spawns asked for, weapons adopted onto sockets, and spawns that never came or found no
+    /// place.
+    pub requested: usize,
+    pub restored: usize,
+    pub failed: usize,
+}
+
+/// The persistence's readout.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct RestoreStatus {
+    /// The sidecar's path, when there is a configuration directory.
+    pub path: Option<PathBuf>,
+    /// Successful sidecar replacements since the payload loaded, and the last attempt's error.
+    pub writes: u64,
+    pub last_write_error: Option<String>,
+    /// The carried weapons the last write recorded.
+    pub last_written: usize,
+    pub last_load: Option<LoadOutcome>,
+    pub last_respawn: Option<RespawnOutcome>,
+    /// Carried weapons respawned onto their sockets since the payload loaded.
+    pub restored: u64,
+    /// Spawns still on their way.
+    pub spawning: usize,
+}
+
+pub fn status() -> RestoreStatus {
+    let mut status = STATUS.lock().clone();
+    merge_write_status(&mut status);
+    let path = paths::file(SIDECAR_FILE_NAME);
+    let spawning = PLAN.lock().spawning.len();
+    status_with_owner_fields(status, path, spawning)
+}
+
+/// The spawn system is resetting: record the carried weapons, which the reset's release of the
+/// carry set lets go, for the respawn, and whether the pistol slot held one pistol. Any spawn still
+/// on its way belongs to the world before the reset and is forgotten.
+///
+/// A respawn the mission manager replays a checkpoint for records the carried weapons as they were
+/// at that checkpoint instead ([`checkpoint_restoring`]). While a mission or a challenge holds the
+/// player's weapons (`stashed`), the record is held back until the give-back ([`give_back`]),
+/// rather than respawned onto the body during the hold.
+pub(crate) fn on_pre_reset(records: Vec<Record>, slot_pistol_single: bool, stashed: bool) {
+    let mut plan = PLAN.lock();
+    plan.generation = plan.generation.wrapping_add(1);
+    plan.spawning.clear();
+    let (records, slot_pistol_single) = match plan.checkpoint_next.take() {
+        Some(checkpoint) => checkpoint,
+        None => (records, slot_pistol_single),
+    };
+    let pending = Pending {
+        records,
+        slot_pistol_single: Some(slot_pistol_single),
+        at: Instant::now(),
+        character: ik::local_character(),
+    };
+    if stashed {
+        // A second reset during the hold keeps the first record: the weapons are not carried then.
+        if plan.held.is_none() {
+            plan.held = Some(pending);
+        }
+        plan.from_reset = None;
+    } else {
+        plan.from_reset = Some(pending);
+    }
+    plan.due = false;
+    std::mem::drop(plan);
+    SPAWNED.lock().clear();
+    TWINS.lock().clear();
+    give::clear_pending();
+}
+
+/// The spawn system has reset: the next input tick with the player respawns the carried weapons.
+pub(crate) fn on_post_reset() {
+    PLAN.lock().due = true;
+}
+
+/// The mission manager snapshots the slots at a checkpoint: keep the carried weapons as they are
+/// now (`records`), and whether the pistol slot holds one pistol, for a restart from it.
+pub(crate) fn checkpoint_cached(records: Vec<Record>, slot_pistol_single: bool) {
+    PLAN.lock().checkpoint = Some((records, slot_pistol_single));
+}
+
+/// The mission manager replays its checkpoint for the player's respawn: the reset that follows
+/// respawns the checkpoint's carried weapons rather than the ones carried now.
+pub(crate) fn checkpoint_restoring() {
+    let mut plan = PLAN.lock();
+    plan.checkpoint_next = plan.checkpoint.clone();
+}
+
+/// A mission's or a challenge's give-back: a reset's record held back during its hold is due now.
+/// Returns whether there was one.
+pub(crate) fn give_back() -> bool {
+    let mut plan = PLAN.lock();
+    let Some(mut held) = plan.held.take() else {
+        return false;
+    };
+    held.at = Instant::now();
+    plan.from_reset = Some(held);
+    plan.due = true;
+    true
+}
+
+/// The frontend reset the game's systems: nothing recorded carries into what follows but a load's
+/// accepted sidecar.
+pub(crate) fn on_frontend() {
+    let mut plan = PLAN.lock();
+    plan.from_reset = None;
+    plan.held = None;
+    plan.checkpoint = None;
+    plan.checkpoint_next = None;
+    drop(plan);
+    give::clear_pending();
+}
+
+/// The game is storing the player's save data: write the sidecar with the carried weapons and the
+/// fingerprint of what the store writes, on a writer thread.
+///
+/// # Safety
+///
+/// `save_data` must be the save data the store is given, live for the call.
+pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData, settings: &InventoryConfig) {
+    if crate::is_shutting_down() || !(settings.enabled && settings.carry && settings.persist) {
+        return;
+    }
+    let Some(character) = (unsafe { character_of(save_data) }) else {
+        return;
+    };
+    let sequence = WRITE_SEQUENCE.fetch_add(1, Ordering::Relaxed) + 1;
+    let fingerprint = unsafe { stored_fingerprint(character) };
+    let carried = carry::records();
+    let path = paths::file(SIDECAR_FILE_NAME);
+    STATUS.lock().path.clone_from(&path);
+    let Some(path) = path else {
+        return;
+    };
+    let count = carried.len();
+    let slot_pistol_single = single::active().then(single::slot_single);
+    let text = Sidecar {
+        fingerprint,
+        carried,
+        slot_pistol_single,
+    }
+    .encode();
+    sidecar::submit(sidecar::Snapshot {
+        path,
+        text,
+        sequence,
+        count,
+    });
+}
+
+/// The game loaded the player's save data: read the sidecar, and keep its carried weapons for the
+/// respawn when its fingerprint matches what the load put into the inventory. Without a match, a
+/// load carries nothing extra, whatever the reset recorded.
+///
+/// # Safety
+///
+/// `save_data` must be the save data the load was given, live for the call.
+pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &InventoryConfig) {
+    if !(settings.enabled && settings.carry && settings.persist) {
+        return;
+    }
+    let (outcome, records, slot_pistol_single) = unsafe { read_for_load(save_data) };
+    match &outcome {
+        LoadOutcome::Accepted { carried, unknown } => tracing::info!(
+            target: "controllers",
+            carried,
+            unknown,
+            "inventory: the sidecar matches the save; its carried weapons come back"
+        ),
+        other => tracing::info!(
+            target: "controllers",
+            outcome = %other,
+            "inventory: the load carries nothing extra"
+        ),
+    }
+    PLAN.lock().from_load = Some(Pending {
+        records,
+        slot_pistol_single,
+        at: Instant::now(),
+        character: 0,
+    });
+    STATUS.lock().last_load = Some(outcome);
+}
+
+/// After a reset, respawn the carried weapons; and adopt each spawned one that has come back onto
+/// its socket. Called every input tick.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the game thread before the world update.
+pub(crate) unsafe fn input_tick(owner: &mut Character, settings: &InventoryConfig, ready: bool) {
+    if !ready || crate::is_shutting_down() || !crate::hooks::in_gameplay() {
+        return;
+    }
+    let enabled = settings.enabled && settings.carry;
+    let plan = PLAN
+        .lock()
+        .take_due(ready, owner as *const Character as usize);
+    if let Some(chosen) = plan.filter(|_| enabled) {
+        single::cover_respawn(chosen.slot_pistol_single);
+        // A respawn with the slot's one pistol and no carried twin replicates it onto the empty
+        // hip; a load or a mission's give-back keeps what was saved.
+        if chosen.origin == Origin::Reset
+            && chosen.slot_pistol_single == Some(true)
+            && !chosen.records.iter().any(|record| record.single)
+        {
+            single::cover_lone_respawn();
+        }
+        unsafe { request(owner, chosen.origin, chosen.records) };
+    }
+    unsafe { adoption::adopt(owner) };
+    unsafe { give::input_tick(owner, ready) };
+}
+
+/// Ask the spawn system for the second pistol of a pair of the type `tag_hash`, at the player, for
+/// the single pistols ([`crate::controllers::weapons::dual_wield::single`]), which take it from
+/// [`take_twins`]. Returns whether it was asked for.
+///
+/// # Safety
+///
+/// `owner` must be the live local player character, on the game thread before the world update.
+pub(crate) unsafe fn request_twin(owner: &Character, tag_hash: u32) -> bool {
+    let Some(system) = (unsafe { SpawnSystem::get() }) else {
+        return false;
+    };
+    let index = unsafe { system.GetTagIndexFromTagHash(tag_hash) };
+    if index <= 0 {
+        return false;
+    }
+    let generation = PLAN.lock().generation;
+    let transform = owner.m_WorldMatrixT1;
+    let transform: *const Matrix4 = &transform;
+    spawn_safety::submit(RequestKind::Twin, || unsafe {
+        system.SpawnTagIndex(
+            index,
+            transform,
+            SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
+            spawned as *const u8,
+            SpawnToken::Twin { generation }.user_data(),
+            u32::MAX,
+        )
+    })
+    .is_ok()
+}
+
+/// The second pistols the spawn system has handed over since the last call, asked for in the
+/// world as it is now.
+pub(crate) fn take_twins() -> Vec<Strong> {
+    let generation = PLAN.lock().generation;
+    std::mem::take(&mut *TWINS.lock())
+        .into_iter()
+        .filter(|(asked_in, _)| *asked_in == generation)
+        .map(|(_, strong)| strong)
+        .collect()
+}
+
+/// Forget everything waiting: the inventory is off, or gameplay ended.
+pub(crate) fn clear() {
+    let mut plan = PLAN.lock();
+    plan.generation = plan.generation.wrapping_add(1);
+    plan.spawning.clear();
+    plan.from_load = None;
+    plan.from_reset = None;
+    plan.held = None;
+    plan.checkpoint = None;
+    plan.checkpoint_next = None;
+    plan.due = false;
+    std::mem::drop(plan);
+    SPAWNED.lock().clear();
+    TWINS.lock().clear();
+    give::clear_pending();
+}
+
+/// A set of carried weapons waiting for the respawn.
+struct Pending {
+    records: Vec<Record>,
+    /// Whether the pistol slot held one pistol, when known.
+    slot_pistol_single: Option<bool>,
+    at: Instant,
+    /// The local player at the reset, for a reset's record.
+    character: usize,
+}
+
+/// A weapon asked of the spawn system.
+struct Spawning {
+    record: Record,
+    at: Instant,
+}
+
+struct Plan {
+    from_load: Option<Pending>,
+    from_reset: Option<Pending>,
+    /// A reset's record held back while a mission or a challenge holds the player's weapons.
+    held: Option<Pending>,
+    /// The carried weapons at the last mission checkpoint, and whether the pistol slot held one
+    /// pistol, and the same taken for the reset of a restart from it.
+    checkpoint: Option<(Vec<Record>, bool)>,
+    checkpoint_next: Option<(Vec<Record>, bool)>,
+    /// Whether a reset has finished and the respawn is waiting for the player.
+    due: bool,
+    spawning: Vec<Spawning>,
+    /// Counts the resets, so a spawn of an earlier world is told apart.
+    generation: u64,
+    origin: Option<Origin>,
+}
+
+impl Plan {
+    fn take_due(&mut self, ready: bool, character: usize) -> Option<Chosen> {
+        if !ready || !self.due {
+            return None;
+        }
+        self.due = false;
+        Some(choose(
+            self.from_load.take(),
+            self.from_reset.take(),
+            character,
+        ))
+    }
+}
+
+static PLAN: Mutex<Plan> = Mutex::new(Plan {
+    from_load: None,
+    from_reset: None,
+    held: None,
+    checkpoint: None,
+    checkpoint_next: None,
+    due: false,
+    spawning: Vec::new(),
+    generation: 0,
+    origin: None,
+});
+/// The weapons the spawn callback handed over, with the generation they were asked in.
+static SPAWNED: Mutex<Vec<(u64, Strong)>> = Mutex::new(Vec::new());
+/// The second pistols the spawn callback handed over, with the generation they were asked in.
+static TWINS: Mutex<Vec<(u64, Strong)>> = Mutex::new(Vec::new());
+static STATUS: Mutex<RestoreStatus> = Mutex::new(RestoreStatus {
+    path: None,
+    writes: 0,
+    last_write_error: None,
+    last_written: 0,
+    last_load: None,
+    last_respawn: None,
+    restored: 0,
+    spawning: 0,
+});
+
+fn status_with_owner_fields(
+    mut status: RestoreStatus,
+    path: Option<PathBuf>,
+    spawning: usize,
+) -> RestoreStatus {
+    status.path = path;
+    status.spawning = spawning;
+    status
+}
+
+fn merge_write_status(status: &mut RestoreStatus) {
+    apply_write_status(status, sidecar::status());
+}
+
+fn apply_write_status(status: &mut RestoreStatus, written: sidecar::WriteStatus) {
+    if written.sequence != 0 && written.path == status.path {
+        status.writes = written.writes;
+        status.last_written = written.last_written;
+        status.last_write_error = written.error;
+    }
+}
+
+/// The submission sequence prevents an older prepared snapshot from replacing a newer one.
+static WRITE_SEQUENCE: AtomicU64 = AtomicU64::new(0);
+
+/// How long a reset's record waits for the player: a load screen's length. A record older than
+/// this is taken for a quit to the menu, and a new game does not get it.
+const RESET_RECORD_FOR: Duration = Duration::from_secs(120);
+/// How long a spawn is waited for.
+const SPAWN_WAIT: Duration = Duration::from_secs(10);
+
+/// The player's character, from the save data.
+unsafe fn character_of(save_data: *const PlayerSaveData) -> Option<&'static Character> {
+    let save_data = unsafe { save_data.as_ref() }?;
+    let player = unsafe { save_data.m_Player.as_ref() }?;
+    unsafe { player.m_Character.as_ref() }
+}
+
+/// The fingerprint of what the store writes: each slot's weapon type as its tag hash (zero for the
+/// heavy slot and an empty slot), and every reserve.
+unsafe fn stored_fingerprint(character: &Character) -> Fingerprint {
+    let mut slots = [0; SLOTS];
+    for (index, slot) in slots.iter_mut().enumerate() {
+        if index == WeaponSlot::E_SLOT_HEAVY as usize {
+            continue;
+        }
+        let Some(weapon) = (unsafe { character.m_Inventory.m_Weapons[index].px.as_ref() }) else {
+            continue;
+        };
+        *slot = unsafe { kind_of(weapon) }.map_or(0, |k| k.tag_hash);
+    }
+    let mut reserves = [0; RESERVES];
+    reserves.copy_from_slice(&character.m_Inventory.m_Ammunition);
+    Fingerprint { slots, reserves }
+}
+
+/// The fingerprint of what a load put into `character`'s inventory: the respawn table's types and
+/// the reserves.
+unsafe fn loaded_fingerprint(character: &Character, system: &SpawnSystem) -> Fingerprint {
+    let mut slots = [0; SLOTS];
+    for (slot, &index) in slots.iter_mut().zip(&character.m_Inventory.m_WeaponToSpawn) {
+        if index > 0 {
+            *slot = unsafe { system.GetTagHashFromTagIndex(index) };
+        }
+    }
+    let mut reserves = [0; RESERVES];
+    reserves.copy_from_slice(&character.m_Inventory.m_Ammunition);
+    Fingerprint { slots, reserves }
+}
+
+/// Read the sidecar for a load: what it restores, and whether the pistol slot held one pistol.
+unsafe fn read_for_load(
+    save_data: *const PlayerSaveData,
+) -> (LoadOutcome, Vec<Record>, Option<bool>) {
+    let (Some(character), Some(system)) = (unsafe { character_of(save_data) }, unsafe {
+        SpawnSystem::get()
+    }) else {
+        return (LoadOutcome::NoCharacter, Vec::new(), None);
+    };
+    let path = paths::file(SIDECAR_FILE_NAME);
+    STATUS.lock().path.clone_from(&path);
+    let Some(path) = path else {
+        return (LoadOutcome::Missing, Vec::new(), None);
+    };
+    let text = match fs::File::open(&path).and_then(|file| {
+        let mut text = String::new();
+        file.take((MAX_BYTES + 1) as u64)
+            .read_to_string(&mut text)?;
+        Ok(text)
+    }) {
+        Ok(text) => text,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => {
+            return (LoadOutcome::Missing, Vec::new(), None);
+        }
+        Err(error) => {
+            let why = format!("could not read {}: {error}", path.display());
+            tracing::warn!(target: "controllers", %why, "inventory: the sidecar is unreadable");
+            return (LoadOutcome::Unreadable(why), Vec::new(), None);
+        }
+    };
+    let sidecar = match Sidecar::decode(&text) {
+        Ok(sidecar) => sidecar,
+        Err(error) => {
+            let why = format!("{}: {error}", path.display());
+            tracing::warn!(target: "controllers", %why, "inventory: the sidecar is unreadable");
+            return (LoadOutcome::Unreadable(why), Vec::new(), None);
+        }
+    };
+    let known = |hash: u32| unsafe { system.GetTagIndexFromTagHash(hash) } > 0;
+    let loaded = unsafe { loaded_fingerprint(character, system) };
+    if let Err(mismatch) = sidecar.fingerprint.matches(&loaded, known) {
+        return (
+            LoadOutcome::Rejected(mismatch.to_string()),
+            Vec::new(),
+            None,
+        );
+    }
+    let (records, unknown) = sidecar.restorable(known);
+    (
+        LoadOutcome::Accepted {
+            carried: records.len(),
+            unknown,
+        },
+        records,
+        sidecar.slot_pistol_single,
+    )
+}
+
+/// The set a respawn restores.
+struct Chosen {
+    origin: Origin,
+    records: Vec<Record>,
+    /// Whether the pistol slot held one pistol, when the set says.
+    slot_pistol_single: Option<bool>,
+}
+
+/// The set to respawn: a load's, when there was one since the reset; otherwise the reset's own,
+/// when it is recent and for the same character.
+fn choose(from_load: Option<Pending>, from_reset: Option<Pending>, character: usize) -> Chosen {
+    if let Some(load) = from_load {
+        return Chosen {
+            origin: Origin::Load,
+            records: load.records,
+            slot_pistol_single: load.slot_pistol_single,
+        };
+    }
+    let nothing = Chosen {
+        origin: Origin::Reset,
+        records: Vec::new(),
+        slot_pistol_single: None,
+    };
+    match from_reset {
+        Some(reset) if reset.at.elapsed() <= RESET_RECORD_FOR && reset.character == character => {
+            Chosen {
+                origin: Origin::Reset,
+                records: reset.records,
+                slot_pistol_single: reset.slot_pistol_single,
+            }
+        }
+        Some(reset) => {
+            if !reset.records.is_empty() {
+                tracing::info!(
+                    target: "controllers",
+                    carried = reset.records.len(),
+                    "inventory: the carried weapons at the reset are not restored: the reset was too long ago or for another character"
+                );
+            }
+            nothing
+        }
+        None => nothing,
+    }
+}
+
+/// Ask the spawn system for a weapon of each record's type, at the player.
+unsafe fn request(owner: &Character, origin: Origin, records: Vec<Record>) {
+    let mut outcome = RespawnOutcome {
+        origin: Some(origin),
+        ..RespawnOutcome::default()
+    };
+    let Some(system) = (unsafe { SpawnSystem::get() }) else {
+        STATUS.lock().last_respawn = Some(outcome);
+        return;
+    };
+    let transform = owner.m_WorldMatrixT1;
+    let mut plan = PLAN.lock();
+    plan.origin = Some(origin);
+    let generation = plan.generation;
+    for record in records {
+        let index = unsafe { system.GetTagIndexFromTagHash(record.tag_hash) };
+        if index <= 0 {
+            outcome.failed += 1;
+            continue;
+        }
+        let transform: *const Matrix4 = &transform;
+        if spawn_safety::submit(RequestKind::Restore, || unsafe {
+            system.SpawnTagIndex(
+                index,
+                transform,
+                SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
+                spawned as *const u8,
+                SpawnToken::Respawn { generation }.user_data(),
+                u32::MAX,
+            )
+        })
+        .is_err()
+        {
+            outcome.failed += 1;
+            continue;
+        }
+        plan.spawning.push(Spawning {
+            record,
+            at: Instant::now(),
+        });
+        outcome.requested += 1;
+    }
+    std::mem::drop(plan);
+    tracing::info!(
+        target: "controllers",
+        origin = ?origin,
+        requested = outcome.requested,
+        failed = outcome.failed,
+        "inventory: respawning the carried weapons"
+    );
+    STATUS.lock().last_respawn = Some(outcome);
+}
+
+fn expire_spawning() -> Vec<Record> {
+    let mut plan = PLAN.lock();
+    let (waiting, expired) = std::mem::take(&mut plan.spawning)
+        .into_iter()
+        .partition(|s| s.at.elapsed() <= SPAWN_WAIT);
+    plan.spawning = waiting;
+    expired.into_iter().map(|s| s.record).collect()
+}
+
+/// The spawn system's callback for every request the restore and the give make: take a strong
+/// reference to each spawned weapon and queue it, by its request's token, for the input tick that
+/// waits for it. Runs inline on the caller of `SpawnSystem::PreUpdate`.
+pub(super) unsafe extern "system" fn spawned(
+    objects: *const Vector<SharedPtr<GameObject>>,
+    userdata: *mut c_void,
+) {
+    let _entry = spawn_safety::callback_entry();
+    let Some(objects) = (unsafe { objects.as_ref() }) else {
+        return;
+    };
+    let Some(token) = SpawnToken::decode(userdata as usize as u64) else {
+        return;
+    };
+    let objects = unsafe { objects.as_slice() };
+    let mut weapons = 0;
+    for object in objects {
+        // SAFETY: the vector's reference keeps the object alive for the call.
+        if object.px.is_null() || !unsafe { (*object.px).IsType(WeaponBase::TYPE_ID()) } {
+            continue;
+        }
+        // The spawned object's own weak reference to itself, through which the inventory holds it.
+        let Some(strong) = (unsafe { inventory_engine::strong_to(&*weapon_at(object.px)) }) else {
+            continue;
+        };
+        weapons += 1;
+        match token {
+            SpawnToken::Respawn { generation } => SPAWNED.lock().push((generation, strong)),
+            SpawnToken::Twin { generation } => TWINS.lock().push((generation, strong)),
+            SpawnToken::Give { .. } => give::GIVEN.lock().push((token, strong)),
+        }
+    }
+    if weapons == 0 && matches!(token, SpawnToken::Give { .. }) {
+        give::EMPTY.lock().push((token, objects.len()));
+    }
+}
+
+/// What a spawn request asked for, carried in its user data so that the one callback
+/// ([`spawned`]) queues each weapon where it is waited for.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(super) enum SpawnToken {
+    /// A carried weapon respawned after a reset, asked in the restore's `generation`.
+    Respawn {
+        generation: u64,
+    },
+    /// A single pistol's second pistol, asked in `generation`.
+    Twin {
+        generation: u64,
+    },
+    Give {
+        request: u64,
+    },
+}
+
+impl SpawnToken {
+    /// The bits of the user data that hold the generation.
+    const GENERATION_MASK: u64 = (1 << Self::SOCKET_SHIFT) - 1;
+    const SOCKET_SHIFT: u32 = 56;
+    /// The bit that marks a second pistol's request.
+    const TWIN: u64 = 1 << 62;
+    /// The bit that marks a give's request.
+    const GIVE: u64 = 1 << 63;
+
+    /// The token as a spawn request's user data.
+    pub(super) fn user_data(self) -> *mut u8 {
+        self.encode() as usize as *mut u8
+    }
+
+    fn encode(self) -> u64 {
+        match self {
+            SpawnToken::Respawn { generation } => generation & Self::GENERATION_MASK,
+            SpawnToken::Twin { generation } => (generation & Self::GENERATION_MASK) | Self::TWIN,
+            SpawnToken::Give { request } => (request & Self::GENERATION_MASK) | Self::GIVE,
+        }
+    }
+
+    fn decode(data: u64) -> Option<SpawnToken> {
+        let generation = data & Self::GENERATION_MASK;
+        let socket = ((data & !(Self::TWIN | Self::GIVE)) >> Self::SOCKET_SHIFT) as usize;
+        match (data & Self::TWIN != 0, data & Self::GIVE != 0) {
+            (false, false) if socket == 0 => Some(SpawnToken::Respawn { generation }),
+            (true, false) if socket == 0 => Some(SpawnToken::Twin { generation }),
+            (false, true) if socket == 0 => Some(SpawnToken::Give {
+                request: generation,
+            }),
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests;
+#[cfg(test)]
+mod status_tests;
+
+#[cfg(test)]
+mod spawn_safety_tests;
+
+#[cfg(test)]
+mod token_tests {
+    use super::*;
+
+    #[test]
+    fn every_request_finds_its_queue_again() {
+        let mut tokens = vec![
+            SpawnToken::Respawn { generation: 0 },
+            SpawnToken::Respawn { generation: 41 },
+            SpawnToken::Twin { generation: 41 },
+        ];
+        tokens.extend(
+            [1, 41, SpawnToken::GENERATION_MASK].map(|request| SpawnToken::Give { request }),
+        );
+        for token in tokens {
+            assert_eq!(SpawnToken::decode(token.encode()), Some(token));
+        }
+    }
+
+    #[test]
+    fn a_token_of_no_request_is_refused() {
+        let give = SpawnToken::Give { request: 1 }.encode();
+        assert_eq!(SpawnToken::decode(give | (63 << 56)), None);
+        assert_eq!(SpawnToken::decode(1 | (1 << 56)), None);
+        assert_eq!(SpawnToken::decode(give | (1 << 62)), None);
+    }
+}

@@ -19,4 +19,11 @@ fn clock_update(clock: *mut Clock) {
         return;
     }
     CLOCK_UPDATE.get().unwrap().call(clock);
+    if crate::testing::visual::clock_held()
+        && let Some(clock) = unsafe { clock.as_mut() }
+    {
+        unsafe {
+            clock.Pause(true);
+        }
+    }
 }

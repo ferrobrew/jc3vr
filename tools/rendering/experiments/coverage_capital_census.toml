@@ -1,0 +1,67 @@
+# Coverage: the capital's old town: buildings, props, street lights, at 13 h in clear weather.
+# A fixed camera at the pose the static-motion midday config observed in run 260, with the draw census and switch-off variants for attribution.
+name = "coverage-capital-census"
+warmup_frames = 30
+samples = 3
+interval_seconds = 2.0
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+
+[diagnostics]
+shader_identity = true
+draw_census = true
+
+[scene]
+position = [3106.1663, 1045.86, 1233.9187]
+orientation = [0.007953349, -0.9075092, -0.017789997, 0.41957983]
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [3106.1, 1045.2, 1234.0]
+yaw_deg = 240.0
+
+[[scene.stage.spawn]]
+tags = "vehicle,ground,car,civilian,vintage,mugello,sports,unarmed,unarmored,ambient,liberated,highend"
+position = [3097.06, 1046.2, 1231.67]
+yaw_deg = 330.0
+
+[[scene.stage.spawn]]
+tags = "character,business,male,highend,motor_bike_rider"
+position = [3102.27, 1046.2, 1230.63]
+yaw_deg = 60.0
+
+[[scene.stage.spawn]]
+tags = "prop,barrel,explosive,timed"
+position = [3095.48, 1046.2, 1224.4]
+yaw_deg = 0.0
+
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
+
+[[single_pass_variants]]
+name = "repeat"
+[[single_pass_variants]]
+name = "lights-off"
+switches = { local_lights_per_eye = false }
+
+[[single_pass_variants]]
+name = "hwi-off"
+diagnostics = true
+switches = { hw_instanced_once = false }

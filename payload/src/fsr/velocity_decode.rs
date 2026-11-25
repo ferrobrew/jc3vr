@@ -14,6 +14,15 @@
 //! the two clip-to-previous-clip reprojection matrices from [`crate::stereo::VpHistory`], the shader
 //! reconstructs each pixel from the raster depth and re-anchors its vector at the eye's own previous
 //! pose; see `velocity_decode.hlsl` for the math.
+//!
+//! The velocity pass draws only part of the scene, so with the hybrid decode on, every pixel it left
+//! at the target's clear value, and every pixel whose encoded motion saturated at the encoding's
+//! clamp, takes the camera's motion instead: the pixel reconstructed from its depth and reprojected
+//! through the eye's own previous view-projection, unclamped. The engine's object motion is kept
+//! wherever it wrote some.
+//!
+//! A decode can also read an eye-sized window of the single-pass collapse's double-wide buffers and
+//! copy that window's depth out, which is what lets FSR resolve each eye's half on its own.
 
 use jc3gi::{
     graphics_engine::{device::Device, texture::Texture},
@@ -29,8 +38,8 @@ use windows::{
             D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_TEX2D_SRV, D3D11_TEX2D_UAV,
             D3D11_TEXTURE2D_DESC, D3D11_UAV_DIMENSION_TEXTURE2D, D3D11_UNORDERED_ACCESS_VIEW_DESC,
             D3D11_UNORDERED_ACCESS_VIEW_DESC_0, D3D11_USAGE_DEFAULT, D3D11_USAGE_DYNAMIC,
-            ID3D11Buffer, ID3D11ComputeShader, ID3D11DeviceContext, ID3D11ShaderResourceView,
-            ID3D11Texture2D, ID3D11UnorderedAccessView,
+            ID3D11Buffer, ID3D11ComputeShader, ID3D11Device, ID3D11DeviceContext,
+            ID3D11ShaderResourceView, ID3D11Texture2D, ID3D11UnorderedAccessView,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_D32_FLOAT,
@@ -57,11 +66,16 @@ pub struct DecodeInputs<'a> {
     pub depth: &'a Texture,
     /// FSR's sign/axis convention, applied to the decoded UV motion.
     pub sign: (f32, f32),
-    /// The stereo clip-to-previous-clip reprojection matrices (center, eye), when active.
+    /// The clip-to-previous-clip reprojection matrices (center, eye), when a frame of history
+    /// exists for them.
     pub reprojection: Option<(Matrix4, Matrix4)>,
-    /// The constant camera-jitter UV offset to cancel from every vector (FSR wants jitter-free
-    /// motion).
-    pub jitter_uv: (f32, f32),
+    /// Re-anchor the engine's vectors at the eye's own previous pose (the stereo correction).
+    pub correct_parallax: bool,
+    /// Give the pixels the velocity pass left undrawn, and those whose encoded motion saturated,
+    /// the camera's motion from their depth (the hybrid decode).
+    pub hybrid: bool,
+    /// The top-left texel of the window the decode reads, in the engine buffers.
+    pub offset: (u32, u32),
 }
 
 /// The decode pass: the compute shader plus the per-eye output buffer (the MV target FSR reads) and a
@@ -72,13 +86,22 @@ pub struct VelocityDecode {
     /// The R16G16F motion-vector buffer FSR consumes.
     pub output: ID3D11Texture2D,
     output_uav: ID3D11UnorderedAccessView,
+    /// The R32F copy of the window's depth, when the pass was built to copy it.
+    pub depth_copy: Option<DepthCopy>,
     constants: ID3D11Buffer,
     width: u32,
     height: u32,
 }
 
+/// An eye-sized copy of the engine depth the decode writes alongside the motion vectors.
+pub struct DepthCopy {
+    pub texture: ID3D11Texture2D,
+    uav: ID3D11UnorderedAccessView,
+}
+
 /// Matches the HLSL `Params` cbuffer: one register of size/sign, then the two column-major
-/// reprojection matrices, then the correction flag padded to a full register.
+/// reprojection matrices, then one register of the correction flag, the window offset, and the
+/// depth-copy flag.
 #[repr(C)]
 struct Params {
     width: u32,
@@ -88,14 +111,22 @@ struct Params {
     reproj_center: [f32; 16],
     reproj_eye: [f32; 16],
     correction_enabled: u32,
-    jitter_uv: [f32; 2],
-    _padding: u32,
+    offset_x: u32,
+    offset_y: u32,
+    copy_depth: u32,
+    hybrid_enabled: u32,
+    padding: [u32; 3],
 }
 
+// The HLSL `Params` cbuffer spans eleven registers: size and sign, two matrices of four, the
+// correction flag with the window, and the hybrid flag.
+const _: () = assert!(size_of::<Params>() == 11 * 16);
+
 impl VelocityDecode {
-    /// Build the decode pass at `width`x`height`. `None` on any D3D failure (the caller then skips
-    /// motion vectors -- FSR runs with none rather than crashing).
-    pub fn new(device: &Device, width: u32, height: u32) -> Option<Self> {
+    /// Build the decode pass at `width`x`height`, with an R32F depth copy of that size when
+    /// `copy_depth` is set. `None` on any D3D failure (the caller then skips motion vectors -- FSR
+    /// runs with none rather than crashing).
+    pub fn new(device: &Device, width: u32, height: u32, copy_depth: bool) -> Option<Self> {
         let d3d = &device.m_Device;
         // SAFETY: `d3d` is the live engine device; all descriptors below are valid for these calls.
         unsafe {
@@ -143,6 +174,12 @@ impl VelocityDecode {
             .ok()?;
             let output_uav = output_uav?;
 
+            let depth_copy = if copy_depth {
+                Some(create_depth_copy(d3d, width, height)?)
+            } else {
+                None
+            };
+
             let mut constants: Option<ID3D11Buffer> = None;
             d3d.CreateBuffer(
                 &D3D11_BUFFER_DESC {
@@ -163,6 +200,7 @@ impl VelocityDecode {
                 shader,
                 output,
                 output_uav,
+                depth_copy,
                 constants,
                 width,
                 height,
@@ -184,7 +222,9 @@ impl VelocityDecode {
             depth,
             sign,
             reprojection,
-            jitter_uv,
+            correct_parallax,
+            hybrid,
+            offset,
         } = inputs;
         // SAFETY: `device.m_Device` is live; `velocity.m_Texture` / `depth.m_Texture` are the live
         // engine buffers.
@@ -212,9 +252,16 @@ impl VelocityDecode {
             }
             let velocity_srv = velocity_srv;
 
-            // The correction needs the depth SRV; without matrices the shader never samples it, so a
-            // failure to build one only downgrades the dispatch back to the uncorrected decode.
-            let depth_srv = reprojection.and_then(|_| depth_srv(device, depth));
+            // The correction and the depth copy need the depth SRV; without either the shader never
+            // samples it, so a failure to build one only downgrades the dispatch back to the
+            // uncorrected decode, unless the copy is what the caller needs.
+            let reprojection = reprojection.filter(|_| correct_parallax || hybrid);
+            let depth_srv = (reprojection.is_some() || self.depth_copy.is_some())
+                .then(|| depth_srv(device, depth))
+                .flatten();
+            if self.depth_copy.is_some() && depth_srv.is_none() {
+                return false;
+            }
             let correction = reprojection.filter(|_| depth_srv.is_some());
 
             // Upload the per-dispatch params.
@@ -240,32 +287,85 @@ impl VelocityDecode {
                 sign_y: sign.1,
                 reproj_center: reproj_center.data,
                 reproj_eye: reproj_eye.data,
-                correction_enabled: u32::from(correction.is_some()),
-                jitter_uv: [jitter_uv.0, jitter_uv.1],
-                _padding: 0,
+                correction_enabled: u32::from(correction.is_some() && correct_parallax),
+                offset_x: offset.0,
+                offset_y: offset.1,
+                copy_depth: u32::from(self.depth_copy.is_some()),
+                hybrid_enabled: u32::from(correction.is_some() && hybrid),
+                padding: [0; 3],
             };
             std::ptr::copy_nonoverlapping(&params, mapped.pData as *mut Params, 1);
             context.Unmap(&self.constants, 0);
 
             context.CSSetShader(&self.shader, None);
             context.CSSetShaderResources(0, Some(&[velocity_srv, depth_srv]));
-            context.CSSetUnorderedAccessViews(0, 1, Some(&Some(self.output_uav.clone())), None);
+            let uavs = [
+                Some(self.output_uav.clone()),
+                self.depth_copy.as_ref().map(|copy| copy.uav.clone()),
+            ];
+            context.CSSetUnorderedAccessViews(0, 2, Some(uavs.as_ptr()), None);
             context
                 .CSSetConstantBuffers(0, Some(std::slice::from_ref(&Some(self.constants.clone()))));
             context.Dispatch(self.width.div_ceil(GROUP), self.height.div_ceil(GROUP), 1);
 
             // Unbind the UAV / SRVs so the engine's own passes don't see them still bound.
-            context.CSSetUnorderedAccessViews(0, 1, Some(&None), None);
+            let unbound: [Option<ID3D11UnorderedAccessView>; 2] = [None, None];
+            context.CSSetUnorderedAccessViews(0, 2, Some(unbound.as_ptr()), None);
             context.CSSetShaderResources(0, Some(&[None, None]));
             true
         }
     }
 }
 
+/// Build the R32F texture and UAV the decode copies a window of the depth into.
+///
+/// # Safety
+/// `d3d` must be the live engine device.
+unsafe fn create_depth_copy(d3d: &ID3D11Device, width: u32, height: u32) -> Option<DepthCopy> {
+    unsafe {
+        let mut texture: Option<ID3D11Texture2D> = None;
+        d3d.CreateTexture2D(
+            &D3D11_TEXTURE2D_DESC {
+                Width: width,
+                Height: height,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: DXGI_FORMAT_R32_FLOAT,
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
+                Usage: D3D11_USAGE_DEFAULT,
+                BindFlags: (D3D11_BIND_UNORDERED_ACCESS.0 | D3D11_BIND_SHADER_RESOURCE.0) as u32,
+                CPUAccessFlags: 0,
+                MiscFlags: 0,
+            },
+            None,
+            Some(&mut texture),
+        )
+        .ok()?;
+        let texture = texture?;
+        let mut uav: Option<ID3D11UnorderedAccessView> = None;
+        d3d.CreateUnorderedAccessView(
+            &texture,
+            Some(&D3D11_UNORDERED_ACCESS_VIEW_DESC {
+                Format: DXGI_FORMAT_R32_FLOAT,
+                ViewDimension: D3D11_UAV_DIMENSION_TEXTURE2D,
+                Anonymous: D3D11_UNORDERED_ACCESS_VIEW_DESC_0 {
+                    Texture2D: D3D11_TEX2D_UAV { MipSlice: 0 },
+                },
+            }),
+            Some(&mut uav),
+        )
+        .ok()?;
+        Some(DepthCopy { texture, uav: uav? })
+    }
+}
+
 /// Build an SRV over the engine's depth texture. Depth resources are typeless (they carry both a DSV
 /// and SRV view), so the SRV format is derived from the underlying resource description rather than
 /// the engine's format field. `None` on failure (the correction is then skipped for this dispatch).
-fn depth_srv(device: &Device, depth: &Texture) -> Option<ID3D11ShaderResourceView> {
+pub(super) fn depth_srv(device: &Device, depth: &Texture) -> Option<ID3D11ShaderResourceView> {
     // SAFETY: `depth.m_Texture` is the live engine depth texture; the cast and desc query only read
     // it, and the created view holds its own reference.
     unsafe {

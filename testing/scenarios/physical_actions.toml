@@ -1,0 +1,44 @@
+# Template: fill testing/recordings/physical_actions.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a pistol's slide locked back and racked by hand"
+description = "Recorded right-handed on foot with a pistol drawn, CHAMBER BY HAND and PHYSICAL SLIDES AND BOLTS on (reload.md, the physical action checklist). Fire the pistol dry, tap the reload button to eject, take a fresh magazine from the pouch and seat it, then take the slide with the left hand, pull it back, and let it go. Fire a shot."
+recording = "../recordings/physical_actions.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "the last shot locked the slide back"
+signal = "actions.locked_back"
+
+[[expect]]
+name = "the slide was taken off its catch"
+log = "reload: took the slide off its catch"
+
+[[expect]]
+name = "the left hand held the slide"
+signal = "actions.held"
+
+[[expect]]
+name = "the slide went all the way back"
+signal = "actions.travel"
+check = "eventually"
+at_least = 0.8
+
+[[expect]]
+name = "the rack cycled the action and chambered a round"
+signal = "actions.worked"
+
+[[expect]]
+log = "reload: the action cycled"
+
+[[expect]]
+name = "the slide is home at the end"
+signal = "actions.travel"
+check = "at_end"
+equals = 0.0
+
+[[expect]]
+status = "RIGHT ACTION"
+
+[[expect]]
+name = "the right action reads locked back at some point"
+status = "RIGHT ACTION"
+detail = "LOCKED BACK"

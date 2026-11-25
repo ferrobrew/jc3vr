@@ -79,6 +79,33 @@ fn _ScreenPos_size_check() {
     }
     unreachable!()
 }
+#[derive(Copy, Clone, Default)]
+#[repr(C, align(4))]
+/// A rectangle in movie stage coordinates (`Scaleform::Render::Rect<float>`): left, top, right,
+/// bottom.
+pub struct StageRect {
+    pub x1: f32,
+    pub y1: f32,
+    pub x2: f32,
+    pub y2: f32,
+}
+fn _StageRect_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], StageRect>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl StageRect {}
+impl std::convert::AsRef<StageRect> for StageRect {
+    fn as_ref(&self) -> &StageRect {
+        self
+    }
+}
+impl std::convert::AsMut<StageRect> for StageRect {
+    fn as_mut(&mut self) -> &mut StageRect {
+        self
+    }
+}
 #[repr(C, align(8))]
 /// The Scaleform-backed UI manager, the single concrete instance behind `IUIManager`. It renders the
 /// HUD into the engine surface. [`InitPlatformRT`](crate::ui::ui_manager::UIManager::InitPlatformRT) builds its render
@@ -135,7 +162,13 @@ pub struct UIManager {
     /// The grab-screen timer (seconds); `CHUDUI::OnOmniDamage` sets it to
     /// [`OMNI_DAMAGE_GRAB_SCREEN_TIME`](crate::ui::hud_ui::HUDUI::OMNI_DAMAGE_GRAB_SCREEN_TIME).
     pub m_GrabScreenTimer: f32,
-    _field_d8: [u8; 314],
+    /// The Scaleform image over the UI background texture, which
+    /// [`InitBackGroundTexture`](crate::ui::ui_manager::UIManager::InitBackGroundTexture) creates anew around each new texture,
+    /// releasing the previous one. Movies that load a `.backg` image get an image delegate
+    /// (`CScaleformImageCreator`) holding the image this field holds at that moment, and keep it,
+    /// with its texture, for as long as the movie lives.
+    pub m_SFBackGroundTexture: *mut crate::ui::scaleform::TextureImage,
+    _field_e0: [u8; 306],
     /// Whether the render system is initialized. One of the three gates `Render` checks before
     /// drawing.
     pub m_RenderReady: bool,
@@ -145,7 +178,7 @@ pub struct UIManager {
     /// The active `CSteering`, whose action map [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents)
     /// polls for the mouse-button actions ([`MOUSE1`](crate::input::input_action_map::Action::MOUSE1) and
     /// [`MOUSE2`](crate::input::input_action_map::Action::MOUSE2)).
-    pub m_Steering: *mut ::std::ffi::c_void,
+    pub m_Steering: *mut crate::input::steering::Steering,
     _field_228: [u8; 4240],
     /// The lock serializing the UI update (`PreRender`: `Advance` + `Capture`) against the UI
     /// render (`Render`, `RenderOffScreenTextures`). A Win32 critical section, so re-entrant on
@@ -165,7 +198,20 @@ pub struct UIManager {
     _field_12f0: [u8; 56],
     /// The Scaleform `Render::D3D1x::HAL` the UI render worker draws through.
     pub m_RenderHAL: *mut crate::ui::scaleform::RenderHAL,
-    _field_1330: [u8; 56],
+    _field_1330: [u8; 16],
+    /// The UI safe area in stage coordinates (`m_SafeArea`), which
+    /// [`ComputeSafeArea`](crate::ui::ui_manager::UIManager::ComputeSafeArea) derives and pushes to every UI (`CUIBase::UpdateSafeArea`),
+    /// whose movies anchor their edge containers to it. [`Get2DInfo`](crate::ui::ui_manager::UIManager::Get2DInfo)'s on-screen
+    /// test and edge clamp use it, shrunk by the margin.
+    pub m_SafeArea: crate::ui::ui_manager::StageRect,
+    /// The game view area in stage coordinates (`m_GameViewArea`), from
+    /// [`ComputeGameViewArea`](crate::ui::ui_manager::UIManager::ComputeGameViewArea).
+    pub m_GameViewArea: crate::ui::ui_manager::StageRect,
+    /// The fraction of the stage kept clear at its edges (`m_SafeAreaPercentage`), from the safe-area
+    /// setting. [`ComputeSafeArea`](crate::ui::ui_manager::UIManager::ComputeSafeArea) insets the safe area by half of it on
+    /// each side.
+    pub m_SafeAreaPercentage: f32,
+    _field_1364: [u8; 4],
     /// The UI render worker's command queue; `Render` executes it (and stamps its
     /// [`m_RenderThreadId`](crate::ui::ui_manager::UiThreadCommandQueue::m_RenderThreadId)) at the top of every call.
     pub m_ThreadCommandQueue: *mut crate::ui::ui_manager::UiThreadCommandQueue,
@@ -178,7 +224,10 @@ pub struct UIManager {
     /// views it renders into.
     pub m_RenderBuffer: *mut crate::ui::ui_manager::RenderTargetData,
     _field_1398: [u8; 229],
-    /// Whether the player is currently driving the UI with a gamepad. While set,
+    /// Whether the player is currently driving the UI with a gamepad.
+    /// [`PreUpdate`](crate::ui::ui_manager::UIManager::PreUpdate) copies it from the use-gamepad setting every frame; when the
+    /// value changes it passes the new value to every registered UI, whose base implementation
+    /// forwards it to the UI's movie as the ActionScript `OnUseGamepad` call. While set,
     /// [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents) parks the Scaleform mouse at
     /// [`GAMEPAD_PARKED_MOUSE_POSITION`](crate::ui::ui_manager::UIManager::GAMEPAD_PARKED_MOUSE_POSITION) on both axes and [`MousePointerVisibility`](crate::ui::ui_manager::UIManager::MousePointerVisibility) hides
     /// the overlay cursor.
@@ -193,7 +242,16 @@ pub struct UIManager {
     pub m_CachedStageWidth: f32,
     /// The movie stage's authored height; see [`m_CachedStageWidth`](crate::ui::ui_manager::UIManager::m_CachedStageWidth).
     pub m_CachedStageHeight: f32,
-    _field_148c: [u8; 12],
+    /// The movie stage's height over its width (`m_CachedStageRatio`), refreshed with
+    /// [`m_CachedStageWidth`](crate::ui::ui_manager::UIManager::m_CachedStageWidth). [`Convert3DCoords`](crate::ui::ui_manager::UIManager::Convert3DCoords)
+    /// compares it with [`m_CachedViewportRatio`](crate::ui::ui_manager::UIManager::m_CachedViewportRatio): when the viewport is
+    /// relatively taller it scales the projected y by `viewport ratio / stage ratio`, and when it
+    /// is relatively wider it scales x by `stage ratio / viewport ratio`, so the stage keeps its
+    /// shape and the visible frame extends past the stage on the longer axis.
+    pub m_CachedStageRatio: f32,
+    /// The centre of the stage in stage coordinates (`m_CachedScreenCenter`).
+    /// [`HUDUI::UpdatePOIs`](crate::ui::hud_ui::HUDUI::UpdatePOIs) measures each marker's label box from it.
+    pub m_CachedScreenCenter: crate::types::math::Vector2,
     /// The cached viewport width (`m_CachedViewportSize.x`), refreshed every frame from the graphics
     /// device's display resolution. [`ComputeSafeArea`](crate::ui::ui_manager::UIManager::ComputeSafeArea) reads it to expand
     /// the UI safe area to the viewport's aspect.
@@ -269,6 +327,23 @@ impl UIManager {
             f(self as *mut Self as _)
         }
     }
+    pub const InitBackGroundTexture_ADDRESS: usize = 0x140FA98D0;
+    /// Recreates the UI background: destroys the previous background texture, its render setup and
+    /// sampler, and releases [`m_SFBackGroundTexture`](crate::ui::ui_manager::UIManager::m_SFBackGroundTexture) (an internal
+    /// `ResetBackGroundTexture`), then creates an RGBA8 render target named `UI BACKGROUND` at the
+    /// UI view size, its render setup and sampler, wraps the target's Direct3D texture in a
+    /// Scaleform texture through the UI texture manager (which takes its own reference to the
+    /// Direct3D texture), and stores a new [`TextureImage`](crate::ui::scaleform::TextureImage) over it in
+    /// [`m_SFBackGroundTexture`](crate::ui::ui_manager::UIManager::m_SFBackGroundTexture). Called from
+    /// [`RestoreAfterResetImpl`](crate::ui::ui_manager::UIManager::RestoreAfterResetImpl), so on every resize.
+    pub unsafe fn InitBackGroundTexture(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::InitBackGroundTexture_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
     pub const ComputeMovieSizeOnViewSize_ADDRESS: usize = 0x140F46830;
     /// Recomputes the movie render rectangle ([`m_MovieScaleWidth`](crate::ui::ui_manager::UIManager::m_MovieScaleWidth) /
     /// [`m_MovieScaleHeight`](crate::ui::ui_manager::UIManager::m_MovieScaleHeight)). It first refreshes the cached stage and
@@ -297,7 +372,15 @@ impl UIManager {
         }
     }
     pub const ComputeSafeArea_ADDRESS: usize = 0x140F89B30;
-    /// Computes the safe-area rectangle from the current movie viewport.
+    /// Computes [`m_SafeArea`](crate::ui::ui_manager::UIManager::m_SafeArea) and pushes it to every UI. The safe area is the
+    /// stage inset by half of [`m_SafeAreaPercentage`](crate::ui::ui_manager::UIManager::m_SafeAreaPercentage) of its size on
+    /// each side, then widened on the axis where the viewport (from
+    /// [`m_CachedViewportWidth`](crate::ui::ui_manager::UIManager::m_CachedViewportWidth) and
+    /// [`m_CachedViewportHeight`](crate::ui::ui_manager::UIManager::m_CachedViewportHeight)) is relatively longer than the
+    /// stage, by half the extra extent the viewport covers at the stage's scale. So with a viewport
+    /// taller than the stage's aspect, the safe area reaches above and below the stage into the
+    /// visible frame. It reads the cached viewport size, not the movie viewport, so the two can
+    /// differ.
     pub unsafe fn ComputeSafeArea(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -358,20 +441,30 @@ impl UIManager {
         }
     }
     pub const Get2DInfo_ADDRESS: usize = 0x140F69CB0;
-    /// Marker placement: [`Convert3DCoords`](crate::ui::ui_manager::UIManager::Convert3DCoords) with the supplied `vp`, plus
-    /// an on-screen test and an off-screen edge-clamp via [`ClampToScreen`](crate::ui::ui_manager::UIManager::ClampToScreen).
-    /// Gameplay markers route through here.
+    /// Marker placement: projects `world` with [`Convert3DCoords`](crate::ui::ui_manager::UIManager::Convert3DCoords) through
+    /// `vp` and adds `offset` (stage pixels). A point in front of the camera inside
+    /// [`m_SafeArea`](crate::ui::ui_manager::UIManager::m_SafeArea) shrunk by `margin` is
+    /// [`SCREEN_POS_ONSCREEN`](crate::ui::ui_manager::ScreenPos::SCREEN_POS_ONSCREEN). Otherwise, without
+    /// `clamp_to_screen` the result is
+    /// [`SCREEN_POS_OFFSCREEN_NO_CLAMP_IN_FRONT_CAMERA`](crate::ui::ui_manager::ScreenPos::SCREEN_POS_OFFSCREEN_NO_CLAMP_IN_FRONT_CAMERA)
+    /// or [`SCREEN_POS_OFFSCREEN_NO_CLAMP_BEHIND_CAMERA`](crate::ui::ui_manager::ScreenPos::SCREEN_POS_OFFSCREEN_NO_CLAMP_BEHIND_CAMERA);
+    /// with it, a point outside the camera's horizontal field of view (`fov`, radians, with the
+    /// `camera` transform giving the view direction) is first swung back toward the view by its
+    /// yaw beyond the half-angle and re-projected, and the result is clamped to the shrunk safe
+    /// area by [`ClampToScreen`](crate::ui::ui_manager::UIManager::ClampToScreen), which also sets the edge code.
+    /// [`HUDUI::UpdatePOIs`](crate::ui::hud_ui::HUDUI::UpdatePOIs) places every point of interest
+    /// through it.
     pub unsafe fn Get2DInfo(
         &self,
         world: *const crate::types::math::Vector3,
         vp: *const crate::types::math::Matrix4,
         camera: *const crate::types::math::Matrix4,
-        a5: f32,
+        fov: f32,
         out_x: *mut f32,
         out_y: *mut f32,
         out_pos: *mut crate::ui::ui_manager::ScreenPos,
         margin: f32,
-        a10: bool,
+        clamp_to_screen: bool,
         offset: crate::types::math::Vector2,
     ) {
         unsafe {
@@ -380,12 +473,12 @@ impl UIManager {
                 world: *const crate::types::math::Vector3,
                 vp: *const crate::types::math::Matrix4,
                 camera: *const crate::types::math::Matrix4,
-                a5: f32,
+                fov: f32,
                 out_x: *mut f32,
                 out_y: *mut f32,
                 out_pos: *mut crate::ui::ui_manager::ScreenPos,
                 margin: f32,
-                a10: bool,
+                clamp_to_screen: bool,
                 offset: crate::types::math::Vector2,
             ) = ::std::mem::transmute(Self::Get2DInfo_ADDRESS);
             f(
@@ -393,12 +486,12 @@ impl UIManager {
                 world,
                 vp,
                 camera,
-                a5,
+                fov,
                 out_x,
                 out_y,
                 out_pos,
                 margin,
-                a10,
+                clamp_to_screen,
                 offset,
             )
         }
@@ -500,7 +593,8 @@ impl UIManager {
     /// The per-frame UI input step: computes gamepad use, runs
     /// [`MousePointerVisibility`](crate::ui::ui_manager::UIManager::MousePointerVisibility), dispatches the
     /// highest-input-priority `CUIBase`'s input management, then calls
-    /// [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents) and drains the queued key events.
+    /// [`SendMouseEvents`](crate::ui::ui_manager::UIManager::SendMouseEvents) and drains the queued key events. On a frame with
+    /// no input-priority UI it skips both the dispatch and `SendMouseEvents`.
     pub unsafe fn PreUpdate(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(

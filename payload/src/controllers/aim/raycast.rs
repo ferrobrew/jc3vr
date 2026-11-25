@@ -1,0 +1,295 @@
+//! A scene raycast that ignores the player: the engine's closest-hit ray query
+//! ([`PhysicsSystem::CastRay`]) with the player aim's own filter ([`PlayerAimRaycastFilter`]),
+//! built the way the player aim's raycast builds it.
+//!
+//! The filter rejects the ignored objects' every physics instance (the character's capsule, its
+//! ragdoll bodies and hit proxies, and the weapons the character uses), which an instance-only
+//! filter would not. It accepts the same instance kinds the game's aim ray does.
+//!
+//! Call it only from the simulation phase outside the physics step: the query reads the live Havok
+//! world. The player's post-camera aim update ([`crate::controllers::aim`]) qualifies.
+
+use std::{fmt, mem::MaybeUninit, num::NonZeroUsize, ptr};
+
+use glam::Vec3;
+use jc3gi::{
+    aim::aim::PlayerAimRaycastFilter,
+    character::character::Character,
+    physics::{
+        CastRayInfo, CastRayInfoBase, MaterialPassFlags, PhysicsSystem, Ray3, RaycastFilter,
+    },
+    types::math::Vector3,
+};
+
+use crate::controllers::aim::ray::Ray;
+
+/// What a cast should pass through.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct CastOptions {
+    /// Game objects never hit (primary object pointers, such as a `CCharacter`), or zero.
+    pub ignore: [usize; 2],
+    /// Pass through the materials bullets and rays pass through (foliage, fences, glass), as the
+    /// game's aim ray does.
+    pub see_through: bool,
+    /// Read the hit shape's game material ([`RayHit::material`]).
+    pub material: bool,
+}
+
+impl CastOptions {
+    /// Pass through the local player character and `other` (a game object, or zero), and nothing
+    /// else.
+    ///
+    /// # Safety
+    ///
+    /// The game thread.
+    pub unsafe fn ignoring_player(other: usize) -> CastOptions {
+        let player = unsafe { Character::GetLocalPlayerCharacter() } as usize;
+        CastOptions {
+            ignore: [player, other],
+            ..CastOptions::default()
+        }
+    }
+
+    /// Pass through `rider` and the vehicle it rides, if any, and nothing else.
+    ///
+    /// # Safety
+    ///
+    /// `rider` must be a live character, on the thread updating it.
+    pub unsafe fn ignoring_rider(rider: &Character) -> CastOptions {
+        let vehicle = unsafe { rider.GetVehiclePtr() } as usize;
+        CastOptions {
+            ignore: [rider as *const Character as usize, vehicle],
+            ..CastOptions::default()
+        }
+    }
+
+    /// These options, also passing through what the game's aim ray sees through
+    /// ([`CastOptions::see_through`]).
+    pub fn seeing_through(self) -> CastOptions {
+        CastOptions {
+            see_through: true,
+            ..self
+        }
+    }
+}
+
+/// The closest hit of a cast.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct RayHit {
+    pub position: Vec3,
+    pub normal: Vec3,
+    /// The distance from the ray's origin, metres.
+    pub distance: f32,
+    /// The hit game object's address, or `None` for world geometry.
+    pub object: Option<NonZeroUsize>,
+    /// The Havok body id of the hit body.
+    pub body: u32,
+    /// The hit shape's game material (an `EGameMaterialId`, [`CastRayInfo::GetHitMaterial`]), when
+    /// [`CastOptions::material`] asked for it.
+    pub material: Option<u32>,
+}
+
+/// Why a cast could not run.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum RaycastError {
+    /// The physics system does not exist (outside a loaded world).
+    NoPhysicsSystem,
+    /// The requested length is not a positive, finite distance.
+    InvalidDistance,
+}
+
+impl fmt::Display for RaycastError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RaycastError::NoPhysicsSystem => {
+                write!(f, "raycast: the physics system does not exist")
+            }
+            RaycastError::InvalidDistance => {
+                write!(f, "raycast: the ray length is not a positive distance")
+            }
+        }
+    }
+}
+
+impl std::error::Error for RaycastError {}
+
+/// Cast `ray` out to `max_distance` metres and return the closest hit that `options` does not
+/// exclude, or `None` for a miss.
+///
+/// # Safety
+///
+/// Must run on the simulation thread outside the physics step, and every object in
+/// `options.ignore` must be zero or a live game object.
+pub unsafe fn cast(
+    ray: &Ray,
+    max_distance: f32,
+    options: &CastOptions,
+) -> Result<Option<RayHit>, RaycastError> {
+    unsafe { cast_on(ray, max_distance, options, PhysicsSystem::QUERY_LAYER) }
+}
+
+/// [`cast`] on the query layer `layer` (a [`PfxLayer`](jc3gi::physics::PfxLayer)) in place of the
+/// player aim's: [`VEHICLE_RAYCAST`](jc3gi::physics::PfxLayer::VEHICLE_RAYCAST) also meets the
+/// weapons lying in the world, which the aim's layer does not.
+///
+/// # Safety
+///
+/// As [`cast`].
+pub unsafe fn cast_on(
+    ray: &Ray,
+    max_distance: f32,
+    options: &CastOptions,
+    layer: i32,
+) -> Result<Option<RayHit>, RaycastError> {
+    unsafe { cast_on_with(ray, max_distance, options, layer, |hit, _| hit) }
+}
+
+/// [`cast_on`], handing `f` the hit with the engine's own cast info for it, for a caller that
+/// passes the info on to the engine: the grapple's impact effect reads the hit body's material
+/// from it.
+///
+/// # Safety
+///
+/// As [`cast`]; `f` must not keep the info past the call.
+pub unsafe fn cast_on_with<R>(
+    ray: &Ray,
+    max_distance: f32,
+    options: &CastOptions,
+    layer: i32,
+    f: impl FnOnce(RayHit, &mut CastRayInfo) -> R,
+) -> Result<Option<R>, RaycastError> {
+    if !(max_distance.is_finite() && max_distance > 0.0) {
+        return Err(RaycastError::InvalidDistance);
+    }
+    let physics = unsafe { PhysicsSystem::get() }.ok_or(RaycastError::NoPhysicsSystem)?;
+
+    // A plain stack object in the engine too: nothing it holds is heap-owned, so it needs no
+    // destructor call. Every field is a pointer, an integer, or a float, so all-zero is a valid
+    // value to construct over.
+    let mut filter = unsafe { MaybeUninit::<PlayerAimRaycastFilter>::zeroed().assume_init() };
+    unsafe {
+        filter.ConstructPlayerAim(
+            MaterialPassFlags::empty(),
+            MaterialPassFlags::empty(),
+            ptr::null_mut(),
+        );
+    }
+    filter.m_IgnoreObject = options.ignore.map(|object| object as *mut _);
+    if options.see_through {
+        unsafe {
+            filter.base.SetIgnoreBulletPass(true);
+            filter.base.SetIgnoreRayPass(true);
+        }
+    }
+
+    let mut info = unsafe { hit_info() };
+
+    let query = Ray3 {
+        Origin: vector(ray.origin),
+        Direction: vector(ray.direction),
+    };
+    let hit = unsafe {
+        physics.CastRay(
+            &query,
+            0.0,
+            max_distance,
+            &mut info.base,
+            (&raw mut filter).cast::<RaycastFilter>(),
+            0,
+            layer,
+        )
+    };
+    let fraction = info.base.m_HitDistance;
+    if !hit || !(0.0..1.0).contains(&fraction) {
+        return Ok(None);
+    }
+    // With a zero start distance the fraction is of the whole length.
+    let distance = fraction * max_distance;
+    let hit = RayHit {
+        position: ray.at(distance),
+        normal: Vec3::from_array(info.base.m_Normal.data),
+        distance,
+        object: NonZeroUsize::new(info.m_GameObject as usize),
+        body: info.base.m_BodyId,
+        // SAFETY: a hit of this cast, whose body the query just found.
+        material: options
+            .material
+            .then(|| unsafe { info.GetHitMaterial() })
+            .and_then(|m| u32::try_from(m).ok()),
+    };
+    Ok(Some(f(hit, &mut info)))
+}
+
+/// Cast `ray` out to `max_distance` metres against the terrain alone ([`PhysicsSystem::CastRayTerrain`])
+/// and return the hit's position, or `None` for a miss. Cheaper than a scene cast, and blind to
+/// everything but the heightfield.
+///
+/// # Safety
+///
+/// As [`cast`].
+pub unsafe fn cast_terrain(ray: &Ray, max_distance: f32) -> Result<Option<Vec3>, RaycastError> {
+    if !(max_distance.is_finite() && max_distance > 0.0) {
+        return Err(RaycastError::InvalidDistance);
+    }
+    let physics = unsafe { PhysicsSystem::get() }.ok_or(RaycastError::NoPhysicsSystem)?;
+    let mut info = unsafe { hit_info() };
+    let query = Ray3 {
+        Origin: vector(ray.origin),
+        Direction: vector(ray.direction),
+    };
+    let hit = unsafe { physics.CastRayTerrain(&query, 0.0, max_distance, &mut info.base) };
+    let fraction = info.base.m_HitDistance;
+    if !hit || !(0.0..1.0).contains(&fraction) {
+        return Ok(None);
+    }
+    Ok(Some(ray.at(fraction * max_distance)))
+}
+
+/// Whether the line from `origin` to `end` is clear, allowing a hit within `tolerance` metres
+/// short of `end`: the line to a target's body position ends inside the target's own body. A failed
+/// cast counts as blocked.
+///
+/// # Safety
+///
+/// As [`cast`].
+pub unsafe fn line_of_sight(
+    origin: Vec3,
+    end: Vec3,
+    tolerance: f32,
+    options: &CastOptions,
+) -> bool {
+    let offset = end - origin;
+    let distance = offset.length();
+    let Some(line) = Ray::new(origin, offset) else {
+        return false;
+    };
+    match unsafe { cast(&line, distance, options) } {
+        Ok(Some(hit)) => hit.distance >= distance - tolerance.max(0.0),
+        Ok(None) => true,
+        Err(_) => false,
+    }
+}
+
+/// A hit info constructed as the engine's callers construct one: the base, then the derived virtual
+/// table. The base's virtual table is abstract, and the query calls into it on a miss, so a cast
+/// must never be handed the base alone.
+///
+/// # Safety
+///
+/// The game's image must be loaded: the virtual tables and [`CastRayInfoBase::Reset`] are its.
+unsafe fn hit_info() -> CastRayInfo {
+    // A plain stack object in the engine too: nothing it holds is heap-owned, so it needs no
+    // destructor call. Every field is a pointer, an integer, or a float, so all-zero is a valid
+    // value to construct over.
+    let mut info = unsafe { MaybeUninit::<CastRayInfo>::zeroed().assume_init() };
+    info.base.__vftable = CastRayInfoBase::VFTABLE;
+    info.base.m_HitObjectId = 0;
+    unsafe { info.base.Reset() };
+    info.base.__vftable = CastRayInfo::VFTABLE;
+    info.m_GameObject = ptr::null_mut();
+    info
+}
+
+fn vector(v: Vec3) -> Vector3 {
+    Vector3 { data: v.to_array() }
+}

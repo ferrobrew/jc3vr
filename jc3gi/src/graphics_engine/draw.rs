@@ -1,4 +1,11 @@
 #![cfg_attr(any(), rustfmt::skip)]
+pub type PixelShaderPtr = Option<
+    windows::Win32::Graphics::Direct3D11::ID3D11PixelShader,
+>;
+pub type HullShaderPtr = Option<windows::Win32::Graphics::Direct3D11::ID3D11HullShader>;
+pub type DomainShaderPtr = Option<
+    windows::Win32::Graphics::Direct3D11::ID3D11DomainShader,
+>;
 crate::__bitflags! {
     #[doc =
     " The `flags` argument of [`Clear`](crate::graphics_engine::draw::Clear) (`Graphics::EClearFlags`): which targets of the bound render"]
@@ -113,6 +120,71 @@ impl std::convert::AsRef<CreateVertexProgramParams> for CreateVertexProgramParam
 }
 impl std::convert::AsMut<CreateVertexProgramParams> for CreateVertexProgramParams {
     fn as_mut(&mut self) -> &mut CreateVertexProgramParams {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct HDomainProgram_t {
+    pub m_Program: crate::graphics_engine::draw::DomainShaderPtr,
+}
+fn _HDomainProgram_t_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], HDomainProgram_t>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl HDomainProgram_t {}
+impl std::convert::AsRef<HDomainProgram_t> for HDomainProgram_t {
+    fn as_ref(&self) -> &HDomainProgram_t {
+        self
+    }
+}
+impl std::convert::AsMut<HDomainProgram_t> for HDomainProgram_t {
+    fn as_mut(&mut self) -> &mut HDomainProgram_t {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The fragment program returned by [`CreateFragmentProgram`](crate::graphics_engine::draw::CreateFragmentProgram).
+pub struct HFragmentProgram_t {
+    /// The pixel shader written by `ID3D11Device::CreatePixelShader`, or null without a program.
+    pub m_Program: crate::graphics_engine::draw::PixelShaderPtr,
+}
+fn _HFragmentProgram_t_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], HFragmentProgram_t>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl HFragmentProgram_t {}
+impl std::convert::AsRef<HFragmentProgram_t> for HFragmentProgram_t {
+    fn as_ref(&self) -> &HFragmentProgram_t {
+        self
+    }
+}
+impl std::convert::AsMut<HFragmentProgram_t> for HFragmentProgram_t {
+    fn as_mut(&mut self) -> &mut HFragmentProgram_t {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct HHullProgram_t {
+    pub m_Program: crate::graphics_engine::draw::HullShaderPtr,
+}
+fn _HHullProgram_t_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x8], HHullProgram_t>([0u8; 0x8]);
+    }
+    unreachable!()
+}
+impl HHullProgram_t {}
+impl std::convert::AsRef<HHullProgram_t> for HHullProgram_t {
+    fn as_ref(&self) -> &HHullProgram_t {
+        self
+    }
+}
+impl std::convert::AsMut<HHullProgram_t> for HHullProgram_t {
+    fn as_mut(&mut self) -> &mut HHullProgram_t {
         self
     }
 }
@@ -405,6 +477,92 @@ pub unsafe fn DispatchIndirect(
         f(a1, a2, a3, a4, a5, a6)
     }
 }
+pub const AcquireThreadOwnership_ADDRESS: usize = 0x141954CD0;
+/// Enters the context's critical section, if it has one. The wrappers without `NoMutex` in their
+/// name take and leave it around their one call into Direct3D; a render block that issues several
+/// calls in a row takes it once here and uses the `NoMutex` variants.
+pub unsafe fn AcquireThreadOwnership(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+        ) = ::std::mem::transmute(AcquireThreadOwnership_ADDRESS);
+        f(ctx)
+    }
+}
+pub const ReleaseThreadOwnership_ADDRESS: usize = 0x141954CF0;
+/// Leaves the context's critical section that [`AcquireThreadOwnership`](crate::graphics_engine::draw::AcquireThreadOwnership) entered.
+pub unsafe fn ReleaseThreadOwnership(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+        ) = ::std::mem::transmute(ReleaseThreadOwnership_ADDRESS);
+        f(ctx)
+    }
+}
+pub const SetVertexProgramConstantBufferNoMutex_ADDRESS: usize = 0x141963DF0;
+/// Binds a constant buffer to a vertex-program slot without the context mutex: issues
+/// `ID3D11DeviceContext::VSSetConstantBuffers` (vtable slot 7) for the one slot, and for the first
+/// four slots clears the context's record of the staged constants for that slot.
+pub unsafe fn SetVertexProgramConstantBufferNoMutex(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    slot: i32,
+    buffer: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            slot: i32,
+            buffer: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(SetVertexProgramConstantBufferNoMutex_ADDRESS);
+        f(ctx, slot, buffer)
+    }
+}
+pub const SetVertexStreamNoMutex_ADDRESS: usize = 0x141963260;
+/// Binds a vertex buffer to a stream without the context mutex: issues
+/// `ID3D11DeviceContext::IASetVertexBuffers` (vtable slot 18) for the one stream, with the buffer's
+/// current Direct3D buffer and the given offset and stride.
+pub unsafe fn SetVertexStreamNoMutex(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    buffer: *mut ::std::ffi::c_void,
+    stream: i32,
+    offset: i32,
+    stride: i32,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            buffer: *mut ::std::ffi::c_void,
+            stream: i32,
+            offset: i32,
+            stride: i32,
+        ) = ::std::mem::transmute(SetVertexStreamNoMutex_ADDRESS);
+        f(ctx, buffer, stream, offset, stride)
+    }
+}
+pub const LockConstantBufferNoMutex_ADDRESS: usize = 0x141963C00;
+/// Maps a constant buffer for writing without the context mutex: issues `ID3D11DeviceContext::Map`
+/// (vtable slot 14) on the buffer's resource with `D3D11_MAP_WRITE_DISCARD`, whatever `lock_type`
+/// asks, and returns the mapped pointer.
+pub unsafe fn LockConstantBufferNoMutex(
+    ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+    buffer: *mut ::std::ffi::c_void,
+    lock_type: i32,
+) -> *mut ::std::ffi::c_void {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            ctx: *mut crate::graphics_engine::graphics_engine::HContext_t,
+            buffer: *mut ::std::ffi::c_void,
+            lock_type: i32,
+        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(
+            LockConstantBufferNoMutex_ADDRESS,
+        );
+        f(ctx, buffer, lock_type)
+    }
+}
 pub const SetRenderSetup_ADDRESS: usize = 0x141966D20;
 /// Binds a render setup, the render-target configuration a pass draws into.
 pub unsafe fn SetRenderSetup(
@@ -608,12 +766,12 @@ pub const CreateFragmentProgram_ADDRESS: usize = 0x141953470;
 pub unsafe fn CreateFragmentProgram(
     device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
     params: *mut crate::graphics_engine::draw::CreateFragmentProgramParams,
-) -> *mut ::std::ffi::c_void {
+) -> *mut crate::graphics_engine::draw::HFragmentProgram_t {
     unsafe {
         let f: unsafe extern "system" fn(
             device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
             params: *mut crate::graphics_engine::draw::CreateFragmentProgramParams,
-        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(
+        ) -> *mut crate::graphics_engine::draw::HFragmentProgram_t = ::std::mem::transmute(
             CreateFragmentProgram_ADDRESS,
         );
         f(device, params)
@@ -642,36 +800,38 @@ pub unsafe fn CreateVertexProgram(
 pub const CreateHullProgram_ADDRESS: usize = 0x141953690;
 /// The leaf hull-program creator: it wraps `ID3D11Device::CreateHullShader` (vtable slot 16) over
 /// `params.m_Code`/`params.m_Size`. `CreateHullShader` copies the bytecode, so `params.m_Code` need not
-/// remain valid past the call; unlike [`CreateVertexProgram`](crate::graphics_engine::draw::CreateVertexProgram), the returned holder is a bare shader
+/// remain valid past the call; unlike [`CreateVertexProgram`](crate::graphics_engine::draw::CreateVertexProgram), the returned holder contains only the shader
 /// pointer with no retained bytecode copy. Static (no `this`); the first argument is the graphics
 /// device.
 pub unsafe fn CreateHullProgram(
     device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
     params: *const crate::graphics_engine::draw::CreateHullProgramParams,
-) -> *mut ::std::ffi::c_void {
+) -> *mut crate::graphics_engine::draw::HHullProgram_t {
     unsafe {
         let f: unsafe extern "system" fn(
             device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
             params: *const crate::graphics_engine::draw::CreateHullProgramParams,
-        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(CreateHullProgram_ADDRESS);
+        ) -> *mut crate::graphics_engine::draw::HHullProgram_t = ::std::mem::transmute(
+            CreateHullProgram_ADDRESS,
+        );
         f(device, params)
     }
 }
 pub const CreateDomainProgram_ADDRESS: usize = 0x1419537A0;
 /// The leaf domain-program creator: it wraps `ID3D11Device::CreateDomainShader` (vtable slot 17) over
 /// `params.m_Code`/`params.m_Size`. `CreateDomainShader` copies the bytecode, so `params.m_Code` need
-/// not remain valid past the call; like [`CreateHullProgram`](crate::graphics_engine::draw::CreateHullProgram), the returned holder is a bare shader
+/// not remain valid past the call; like [`CreateHullProgram`](crate::graphics_engine::draw::CreateHullProgram), the returned holder contains only the shader
 /// pointer with no retained bytecode copy. Static (no `this`); the first argument is the graphics
 /// device.
 pub unsafe fn CreateDomainProgram(
     device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
     params: *const crate::graphics_engine::draw::CreateDomainProgramParams,
-) -> *mut ::std::ffi::c_void {
+) -> *mut crate::graphics_engine::draw::HDomainProgram_t {
     unsafe {
         let f: unsafe extern "system" fn(
             device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
             params: *const crate::graphics_engine::draw::CreateDomainProgramParams,
-        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(
+        ) -> *mut crate::graphics_engine::draw::HDomainProgram_t = ::std::mem::transmute(
             CreateDomainProgram_ADDRESS,
         );
         f(device, params)

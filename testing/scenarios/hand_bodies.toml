@@ -1,0 +1,36 @@
+# Template: fill testing/recordings/hand_bodies.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "hand bodies"
+description = "Recorded with PHYSICAL HANDS on, empty-handed, on foot beside a wall and a crate (physical-hands.md, the checklist with the hand bodies on, items 1 to 4 and 8). Load in, wave both hands in the open, press a hand flat into the wall, tap the wall, then push the crate along the floor."
+recording = "../recordings/hand_bodies.jc3trk"
+
+[[expect]]
+signal = "hand_bodies.on_game_thread"
+
+[[expect]]
+status = "CALLBACK"
+detail = "GAME THREAD"
+
+[[expect]]
+signal = "hand_bodies.left_in_world"
+
+[[expect]]
+signal = "hand_bodies.right_in_world"
+
+[[expect]]
+name = "the hand bodies touched the world"
+signal = "hand_bodies.contacts"
+
+[[expect]]
+name = "no contact was dropped"
+signal = "hand_bodies.dropped_contacts"
+at_most = 0
+
+[[expect]]
+name = "the hand bodies hold no error"
+signal = "hand_bodies.error"
+check = "never"
+
+[[expect]]
+name = "no warning about the callback's thread"
+log = "the pre-simulation callback fired on another thread"
+at_most = 0

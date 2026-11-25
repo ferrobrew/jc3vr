@@ -12,7 +12,7 @@
 //! stays pristine, which is also why it must not be rewritten -- see `shader_policy`.
 
 use super::*;
-use crate::hooks::graphics_engine::clustered_lighting;
+use crate::{hooks::graphics_engine::clustered_lighting, stereo::single_pass::static_lights};
 
 /// One eye's re-issue of a terrain-detail draw: the reprojected `cb1` (four float4 rows) to stage on
 /// vertex slot 1, and the eye-half viewport to render into.
@@ -27,9 +27,14 @@ pub(super) struct TerrainDetailEyePass {
 ///
 /// The detail draw is GPU-indirect, so it cannot be instance-doubled like the model geometry; instead
 /// the render block's `Draw` is re-issued once per eye with a per-eye `cb1`. The detail VS builds clip
-/// with a multiply-add chain over `cb1[0..3]` (`clip = Σ_i P_local[i] · cb1[i]`), so those four
-/// registers are the *columns* of `T_patch · OffsetVP` (`T_patch` translating the patch origin relative
-/// to the camera) and the per-eye buffer is the column-wise `cb1_eye[k] = M_eye · cb1_center[k]`.
+/// with a multiply-add chain over `cb1[0..3]` (`clip = Σ_i P_local[i] · cb1[i]`), and the block stages
+/// those rows as `T_patch · OffsetVP` (`T_patch` translating the patch origin relative to the camera).
+/// With `single_pass.terrain_detail_eye_rows` on, each eye's buffer is built the same way from that
+/// eye's own `cb13` rows (its offset view-projection and camera position), through the engine's own
+/// product, so it is the buffer an isolated render of the eye stages, bit for bit. Off, the centre's
+/// buffer is reprojected column by column (`cb1_eye[k] = M_eye · cb1_center[k]`), which is exact
+/// only in real arithmetic: in floats it moved one eye's terrain depth by up to about one part in
+/// ten thousand over the whole ground.
 /// `cb1[4]` (the LOD-fade position) is left untouched. `this` and `rc` are the
 /// [`RenderBlockTerrainDetail`] and [`RenderContext`] the block's `Draw` received.
 ///
@@ -49,6 +54,11 @@ pub(super) unsafe fn terrain_detail_eye_passes(
         return None;
     }
     let (m_eye, full, d3d) = baked_cb_intercept_ready("terrain-detail", BoundVsGate::Checked)?;
+    let eye_rows = if config_flags().has(Flag::TerrainDetailEyeRows) {
+        Some(live_cb13_rows()?)
+    } else {
+        None
+    };
 
     // SAFETY: caller guarantees live pointers.
     let ovp = unsafe { (*rc).m_OffsetViewProjection.data };
@@ -65,17 +75,55 @@ pub(super) unsafe fn terrain_detail_eye_passes(
     let cb1_center = [r0, r1, r2, r3 + tx * r0 + ty * r1 + tz * r2];
 
     let passes = std::array::from_fn(|eye| {
-        let mut cb1 = [0.0f32; 16];
-        for (k, center) in cb1_center.iter().enumerate() {
-            cb1[k * 4..k * 4 + 4].copy_from_slice(&m_eye[eye].mul_vec4(*center).to_array());
+        let Some(eye_rows) = eye_rows else {
+            let mut cb1 = [0.0f32; 16];
+            for (k, center) in cb1_center.iter().enumerate() {
+                cb1[k * 4..k * 4 + 4].copy_from_slice(&m_eye[eye].mul_vec4(*center).to_array());
+            }
+            return TerrainDetailEyePass { cb1 };
+        };
+        let base = eye * cb13::PER_EYE_ROW_COUNT;
+        let mut eye_ovp = Matrix4::default();
+        for r in 0..4 {
+            eye_ovp.data[r * 4..r * 4 + 4].copy_from_slice(&eye_rows[base + r].data);
         }
-        TerrainDetailEyePass { cb1 }
+        let eye_cam = eye_rows[base + 4].data;
+        TerrainDetailEyePass {
+            cb1: patch_offset_view_projection(&eye_ovp, eye_cam, patch_x, patch_z).data,
+        }
     });
     let mut cb1_center_rows = [0.0f32; 16];
     for (k, center) in cb1_center.iter().enumerate() {
         cb1_center_rows[k * 4..k * 4 + 4].copy_from_slice(&center.to_array());
     }
     Some((passes, cb1_center_rows, full, d3d))
+}
+
+/// The terrain-detail block's `cb1[0..3]` for a camera: the patch translation relative to the camera
+/// (`camera` is the camera's world position) times the offset view-projection, multiplied by the
+/// engine's own [`Matrix4::Multiply4x4`], as [`RenderBlockTerrainDetail::Draw`] builds it.
+fn patch_offset_view_projection(
+    offset_vp: &Matrix4,
+    camera: [f32; 4],
+    patch_x: f32,
+    patch_z: f32,
+) -> Matrix4 {
+    let mut patch = Matrix4 {
+        data: [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ],
+    };
+    patch.data[12] = patch_x - camera[0];
+    patch.data[13] = -camera[1];
+    patch.data[14] = patch_z - camera[2];
+    let mut product = Matrix4::default();
+    // SAFETY: a pure function of its two input matrices that writes only the output; all three are
+    // live locals.
+    unsafe { Matrix4::Multiply4x4(&patch, offset_vp, &mut product) };
+    product
 }
 
 /// The graphics context (`HContext_t*`) a render block's `Draw` stages constants into, read from its
@@ -159,16 +207,25 @@ pub(super) struct ReprojectUpload {
 pub(super) static PER_EYE_REISSUE: AtomicUsize = AtomicUsize::new(0);
 
 /// The eye whose per-eye re-issue is currently in flight, or `None` outside one.
-pub(super) fn per_eye_reissue_eye() -> Option<usize> {
+pub(crate) fn per_eye_reissue_eye() -> Option<usize> {
     match PER_EYE_REISSUE.load(Ordering::Acquire) {
         0 => None,
         marker => Some(marker - 1),
     }
 }
 
+pub(super) fn per_eye_reissue_full_viewport() -> Option<D3D11_VIEWPORT> {
+    *REISSUE_FULL_VIEWPORT.lock()
+}
+
+static REISSUE_FULL_VIEWPORT: Mutex<Option<D3D11_VIEWPORT>> = Mutex::new(None);
+
 /// Raises [`PER_EYE_REISSUE`] for one eye for as long as it lives, carrying the previous marker so a
 /// nested re-issue restores rather than clears it.
-pub(super) struct PerEyeReissue(usize);
+pub(super) struct PerEyeReissue {
+    previous_marker: usize,
+    previous_full: Option<D3D11_VIEWPORT>,
+}
 
 impl PerEyeReissue {
     /// Saves and restores the previous marker rather than clearing it, the same shape
@@ -177,15 +234,20 @@ impl PerEyeReissue {
     /// either, and clearing would un-guard the remainder of the outer loop the moment it stopped
     /// holding: this module's own draw detours would start splitting geometry the outer re-issue had
     /// already split, which is the doubled-geometry artifact the marker exists to prevent.
-    pub(super) fn enter(eye: usize) -> Self {
-        let previous = PER_EYE_REISSUE.swap(eye + 1, Ordering::Release);
-        Self(previous)
+    pub(super) fn enter(eye: usize, full: D3D11_VIEWPORT) -> Self {
+        let previous_full = REISSUE_FULL_VIEWPORT.lock().replace(full);
+        let previous_marker = PER_EYE_REISSUE.swap(eye + 1, Ordering::Release);
+        Self {
+            previous_marker,
+            previous_full,
+        }
     }
 }
 
 impl Drop for PerEyeReissue {
     fn drop(&mut self) {
-        PER_EYE_REISSUE.store(self.0, Ordering::Release);
+        *REISSUE_FULL_VIEWPORT.lock() = self.previous_full;
+        PER_EYE_REISSUE.store(self.previous_marker, Ordering::Release);
     }
 }
 
@@ -286,7 +348,7 @@ pub(super) fn eye_split_state() -> Option<([glam::Mat4; 2], D3D11_VIEWPORT, Engi
         return None;
     }
     let m_eye = (*CURRENT_M_EYE.lock())?;
-    let full = (*COLLAPSE_FULL_VIEWPORT.lock())?;
+    let full = viewport_record::scene_viewport()?;
     let d3d = EngineContext::get()?;
     Some((m_eye, full, d3d))
 }
@@ -361,12 +423,111 @@ pub unsafe fn reproject_baked_cb_per_eye_staged(
     true
 }
 
+/// Re-issue a render block's `Draw` once per eye with a *projective screen-UV* constant biased into
+/// that eye's half of the double-wide target, restoring the staged rows afterwards. Returns `false`
+/// when the intercept must not run (the same gate every other per-eye re-issue takes), in which case
+/// the caller draws normally once.
+///
+/// `base` is the four `float4` rows the block's *type* staged at (`cb_index`, `reg_offset`): a
+/// world→screen-UV transform with the NDC→UV `x·0.5 + w·0.5` already folded in, which the vertex
+/// shader applies with a multiply-add chain over the four registers (so they are the matrix's rows in
+/// the row-vector convention) and hands on as a projective `TEXCOORD1` for the pixel shader to divide
+/// by `w`. The resulting UV is normalized over the *viewport*, i.e. over one eye's half, while the
+/// buffers it indexes are the whole double-wide target -- so each eye reads the entire two-eye image
+/// across its surface, and the mismatch slides as the camera moves. [`eye_half_screen_uv_rows`]
+/// composes the one bias per eye that maps it back.
+///
+/// Unlike [`reproject_baked_cb_per_eye`] this restages rather than intercepts, because the constant is
+/// staged by the block *type*'s per-pass setup rather than inside the `Draw` being re-issued (the same
+/// reason [`terrain_detail_per_eye`] stages its own rows). It is also deliberately *not* reprojected
+/// by `M_eye`: the geometry these blocks rasterize still comes from the collapsed centre view, so the
+/// UV must describe where that geometry actually landed, not where the eye's own projection would have
+/// put it.
+///
+/// # Safety
+///
+/// `rc` must be the live [`RenderContext`] the detoured `Draw` received, and `draw` must invoke the
+/// block's original `Draw` trampoline.
+pub unsafe fn screen_uv_cb_per_eye(
+    rc: *const RenderContext,
+    cb_index: i32,
+    reg_offset: u32,
+    base: [f32; 16],
+    mut draw: impl FnMut(),
+) -> bool {
+    let Some((_, full, d3d)) =
+        baked_cb_intercept_ready("legacy-water screen UV", BoundVsGate::Checked)
+    else {
+        return false;
+    };
+    // SAFETY: `rc` is live per the caller contract.
+    let ctx = unsafe { render_context_graphics_context(rc) };
+    per_eye_halves(full, d3d, &mut |eye| {
+        let rows = eye_half_screen_uv_rows(base, eye);
+        // SAFETY: `ctx` is the render context's live graphics context; `rows` is four float4 rows.
+        unsafe { SetVertexProgramConstants(ctx, cb_index, reg_offset, rows.as_ptr(), 4) };
+        draw();
+    });
+    // Put the type's own rows back. It stages them once per pass, ahead of every block it covers, so
+    // leaving the second eye's bias behind would hand it to any later draw this intercept declines.
+    // SAFETY: as above; `base` is the four rows the type staged.
+    unsafe { SetVertexProgramConstants(ctx, cb_index, reg_offset, base.as_ptr(), 4) };
+    true
+}
+
+/// The four row-major `float4` rows of a projective screen-UV transform, biased into `eye`'s half of
+/// a double-wide target: `u' = (u + eye) · 0.5`.
+///
+/// The bias has to act on the projective components, since the pixel shader divides by `w` after
+/// interpolation: `u' · w = (u · w) · 0.5 + w · 0.5 · eye`. Both `u · w` and `w` are per-row sums of
+/// the row-vector product, so row-wise that is `row.x ← row.x · 0.5 + row.w · 0.5 · eye`, with the
+/// `y`, `z`, and `w` columns left alone.
+pub fn eye_half_screen_uv_rows(base: [f32; 16], eye: usize) -> [f32; 16] {
+    let mut rows = base;
+    for k in 0..4 {
+        rows[k * 4] = base[k * 4].mul_add(0.5, base[k * 4 + 3] * 0.5 * eye as f32);
+    }
+    rows
+}
+
 /// Run `render` once per eye with that eye's half-viewport pinned on both slots, restoring the
 /// collapse's full viewport afterwards. Returns `false` when the intercept must not run -- the same
 /// gate every other per-eye re-issue takes ([`baked_cb_intercept_ready`]) -- in which case the caller
 /// must do its work itself, exactly once.
+///
+/// The bare form of [`reproject_baked_cb_per_eye`] and [`screen_uv_cb_per_eye`], for a block whose
+/// per-eye state is not a vertex constant this module knows how to transform: `render` receives the
+/// eye and does whatever staging that block needs before invoking its own `Draw`. Each call is
+/// bracketed by [`PER_EYE_REISSUE`], so the draw and viewport detours leave the block's own
+/// submissions alone instead of splitting them a second time.
+///
+/// `site` names the calling block for the decline diagnostic (see
+/// [`warn_intercept_declined_on_patched_vs`]); it is the caller's identity rather than this helper's,
+/// because a bound-shader decline is a fact about that block's own shaders.
 pub fn draw_per_eye_half(site: &'static str, mut render: impl FnMut(usize)) -> bool {
     let Some((_, full, d3d)) = baked_cb_intercept_ready(site, BoundVsGate::Checked) else {
+        return false;
+    };
+    per_eye_halves(full, d3d, &mut render);
+    true
+}
+
+/// [`draw_per_eye_half`] for a block that binds its own vertex programs *inside* the `Draw` being
+/// re-issued, so the shader bound when the gate runs is the previous draw's and says nothing about
+/// this one.
+///
+/// [`baked_cb_intercept_ready`]'s bound-shader gate exists to leave already-patched geometry to the
+/// patched path, and it reads the shader that `VSSetShader` last saw. For a block whose type binds
+/// its programs in a per-pass setup that is a fair proxy; for one that binds them per draw it is a
+/// coin flip on whatever drew before it, which would make the re-issue fire intermittently. Callers
+/// take this variant only when the block's own vertex programs are provably outside the rewrite.
+///
+/// "Builds clip from a constant buffer of its own" is *not* on its own enough to establish that: the
+/// rewrite claims any shader referencing the per-eye `cb0` entries, and `cb0[4]` is a camera position
+/// that such a family may still read for shading. Where a family reads it, the shader has to be
+/// declined at creation instead ([`baked_cb_block_owns_vs`]).
+pub fn draw_per_eye_half_ignoring_bound_vs(mut render: impl FnMut(usize)) -> bool {
+    let Some((_, full, d3d)) = eye_split_state() else {
         return false;
     };
     per_eye_halves(full, d3d, &mut render);
@@ -381,7 +542,7 @@ pub(super) fn per_eye_halves(
     render: &mut impl FnMut(usize),
 ) {
     for eye in 0..2 {
-        let _reissue = PerEyeReissue::enter(eye);
+        let _reissue = PerEyeReissue::enter(eye, full);
         bind_both_viewport_slots(d3d, eye_half_viewport(full, eye));
         render(eye);
     }
@@ -432,6 +593,15 @@ pub(super) unsafe extern "system" fn set_vertex_program_constants_detour(
     let detour = SET_VERTEX_PROGRAM_CONSTANTS
         .get()
         .expect("set before enable");
+    unsafe {
+        crate::stereo::single_pass::sun::observe_vertex_upload(
+            ctx,
+            cb_index,
+            start_offset,
+            data,
+            count,
+        )
+    };
     // The clustered light-assignment view matrix, when the per-eye froxel split is assigning this
     // eye's lights from this eye's position. Checked first because it is scoped to a single call
     // inside `DrawClustered` and cannot overlap a baked-cb re-issue, which only arms in the G-buffer
@@ -445,6 +615,15 @@ pub(super) unsafe extern "system" fn set_vertex_program_constants_detour(
     ) {
         // SAFETY: `rows` holds the 4 float4 rows the call stages and outlives it; `detour.call` is the
         // trampoline.
+        unsafe { detour.call(ctx, cb_index, start_offset, rows.as_ptr(), count) };
+        return;
+    }
+    // SAFETY: the engine stages `count` float4 rows from `data`.
+    if let Some(rows) =
+        unsafe { static_lights::substitute_upload(cb_index, start_offset, data, count) }
+    {
+        // SAFETY: `rows` holds the `count` float4 rows the call stages and outlives it; `detour.call`
+        // is the trampoline.
         unsafe { detour.call(ctx, cb_index, start_offset, rows.as_ptr(), count) };
         return;
     }

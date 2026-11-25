@@ -1,0 +1,13 @@
+# Template: fill testing/recordings/parachute_handles.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "parachute and handles"
+description = "Recorded on a high rooftop with the parachute handles on (controllers-and-roomscale.md, checklist item 25). Jump off, open the parachute, take both handles above the shoulders, pull the right one down, pull both down, let go, and land."
+recording = "../recordings/parachute_handles.jc3trk"
+settle_s = 5.0
+
+[[expect]]
+signal = "controllers.airborne"
+
+[[expect]]
+name = "landed on foot at the end"
+signal = "controllers.on_foot"
+check = "at_end"

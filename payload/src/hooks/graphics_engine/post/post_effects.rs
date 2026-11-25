@@ -1,12 +1,15 @@
 //! Detours on the post-effects chain.
 //!
-//! Two concerns share this file. First, the fullscreen reprojection passes (motion blur, depth of
-//! field) do a screen-space reprojection whose per-frame-once state is only valid for one camera, so
-//! a second (stereo) render can paint a sub-region -- skip the whole pass (default on: VR wants both
-//! off anyway, and it's a clean A/B for the eye-1 "wedge"). Each `Apply` returns its source slot
-//! index, so returning `input` is a clean pass-through. Second, the manager-level filter enqueues
-//! (`ApplyWorldFilters` / `ApplyGlobalFilters`) step dt-driven accumulators that must only advance
-//! once per real frame, so their `dt` is zeroed on eye 1.
+//! Two concerns share this file. First, the motion blur and the depth of field smear the view with
+//! the camera's motion and focus, which in the headset are the player's own head and eyes, so
+//! neither runs while a VR session runs ([`vr_forces_blurs_off`]): the motion blur's `Apply` is
+//! skipped (it returns its source slot index, so returning `input` is a clean pass-through), and the
+//! depth of field's own passes are dropped by answering `IsBokehActive` with false, which leaves the
+//! chain on the plain blur and the composite without depth of field. The composite itself is the
+//! HDR-to-LDR tonemap, so `DepthOfFieldEffect::Apply` always runs in VR. Outside VR the
+//! `post_fx.skip_*` switches skip the passes as bisection aids. Second, the manager-level filter
+//! enqueues (`ApplyWorldFilters` / `ApplyGlobalFilters`) step dt-driven accumulators that must only
+//! advance once per real frame, so their `dt` is zeroed on eye 1.
 
 use std::{
     ffi::c_void,
@@ -25,8 +28,17 @@ use re_utilities::hook_library::HookLibrary;
 use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
-    stereo::{self, draw_index, far_phase, is_second_eye},
+    fsr::{AntiAliasing, TaaConfig},
+    screenshot::harness::stages::{self, Stage},
+    stereo::{self, draw_index, far_phase, later_scene},
 };
+
+/// Whether the motion blur and the depth of field are forced off: while a VR session runs, whatever
+/// the `post_fx` switches say. The eye images then go to the headset, where both effects would blur
+/// the view with the player's own head motion and gaze.
+pub(crate) fn vr_forces_blurs_off() -> bool {
+    crate::vr::is_running_published()
+}
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -35,6 +47,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&APPLY_GLOBAL_FILTERS_BINDER)
         .with_static_binder(&MOTION_BLUR_APPLY_BINDER)
         .with_static_binder(&DOF_APPLY_BINDER)
+        .with_static_binder(&IS_BOKEH_ACTIVE_BINDER)
         .with_static_binder(&FADE_APPLY_BINDER)
         .with_static_binder(&GLARE_APPLY_BINDER)
         .with_static_binder(&PLAYER_DAMAGE_APPLY_BINDER)
@@ -43,11 +56,21 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&ANTI_ALIASING_APPLY_BINDER)
 }
 
-/// Dispatch FSR for the current eye, reading the chain's current slot color
+/// The mod's temporal resolve chosen for this frame, with its settings.
+#[derive(Clone, Copy)]
+enum TemporalResolve {
+    /// FSR, with its optional RCAS strength.
+    Fsr(Option<f32>),
+    /// The mod's own resolve.
+    Taa(TaaConfig),
+}
+
+/// Dispatch the chosen temporal resolve for the current eye, reading the chain's current slot color
 /// (`mgr[slot + PostEffectsManager::RESULT_TEXTURE_SLOT_BASE]`) as
-/// input and writing the anti-aliased result back into it. Returns whether FSR ran (in which case the
-/// engine AA should be neutralized to a passthrough). Mirrors `capture_post_result`'s slot access.
-fn fsr_dispatch(mgr: *mut c_void, slot: u32, sharpness: Option<f32>) -> bool {
+/// input and writing the anti-aliased result back into it. Returns whether it ran (in which case
+/// the engine AA should be neutralized to a passthrough). Mirrors `capture_post_result`'s slot
+/// access.
+fn temporal_dispatch(mgr: *mut c_void, slot: u32, resolve: TemporalResolve) -> bool {
     if mgr.is_null() {
         return false;
     }
@@ -69,16 +92,36 @@ fn fsr_dispatch(mgr: *mut c_void, slot: u32, sharpness: Option<f32>) -> bool {
         ) else {
             return false;
         };
-        let mut state = crate::fsr::FSR_STATE.lock();
-        crate::fsr::dispatch_eye(
-            &mut state,
-            device,
-            draw_index(),
-            color,
+        let layout = if crate::stereo::single_pass::double_wide_active()
+            && Config::lock_query(|c| c.stereo.single_pass.fsr_per_eye)
+        {
+            crate::fsr::EyeLayout::SideBySide
+        } else {
+            crate::fsr::EyeLayout::Single(draw_index())
+        };
+        let textures = crate::fsr::ChainTextures {
+            slot_color: color,
             depth,
             velocity,
-            sharpness,
-        )
+        };
+        #[cfg(feature = "profiler")]
+        let _gpu = crate::profiler::gpu::nested_seam(crate::profiler::gpu::GpuSeam::Fsr);
+        match resolve {
+            TemporalResolve::Fsr(sharpness) => crate::fsr::dispatch(
+                &mut crate::fsr::FSR_STATE.lock(),
+                device,
+                &textures,
+                layout,
+                sharpness,
+            ),
+            TemporalResolve::Taa(tuning) => crate::fsr::taa::dispatch(
+                &mut crate::fsr::taa::TAA_STATE.lock(),
+                device,
+                &textures,
+                layout,
+                tuning,
+            ),
+        }
     };
     TraceState::record_eye(TraceEvent::FsrDispatch { input: slot, ran });
     ran
@@ -109,14 +152,17 @@ pub(crate) fn reset_post_block_gate() {
 )]
 fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mut c_void) -> u64 {
     let repeat = WORLD_POST_BLOCK_RAN.swap(true, Ordering::Relaxed);
-    let skip = repeat && Config::lock_query(|c| c.stereo.dedupe_post_block);
-    TraceState::record_eye(TraceEvent::PostEffectsBlockDraw { repeat, skip });
-    if !repeat {
-        crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
-    }
-    if skip {
+    TraceState::record_eye(TraceEvent::PostEffectsBlockDraw {
+        repeat,
+        skip: repeat,
+    });
+    if repeat {
         return 0;
     }
+    crate::debug::pipeline_probes::record_main_color_mean("post_block_entry");
+    stages::capture_main_color();
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: world block");
     RENDER_BLOCK_POST_EFFECTS_DRAW
         .get()
         .unwrap()
@@ -124,8 +170,8 @@ fn render_block_post_effects_draw(this: *mut c_void, ctx: *mut c_void, info: *mu
 }
 
 // PostEffectsManager::ApplyWorldFilters -- enqueues the world post block and steps the world-fade
-// accumulator (ApplyWorldFadeFilter) by `dt`. Zero `dt` on eye 1 so the fade advances once per real
-// frame, not twice.
+// accumulator (ApplyWorldFadeFilter) by `dt`. Zero `dt` on far-only and later scene dispatches so
+// the fade advances once per real frame.
 #[detour(address = jc3gi::graphics_engine::post_effects::PostEffectsManager::ApplyWorldFilters_ADDRESS)]
 #[allow(clippy::too_many_arguments)]
 fn apply_world_filters(
@@ -138,7 +184,7 @@ fn apply_world_filters(
     a7: *mut c_void,
     a8: *mut c_void,
 ) {
-    let gated = (is_second_eye() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
+    let gated = (later_scene() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
     TraceState::record_eye(TraceEvent::ApplyWorldFilters { gated });
     let dt = if gated { 0.0 } else { dt };
     APPLY_WORLD_FILTERS
@@ -148,21 +194,24 @@ fn apply_world_filters(
 }
 
 // PostEffectsManager::ApplyGlobalFilters -- enqueues the global post block and steps its dt-driven
-// accumulators (screen-fade alpha, sun-direction / heat-haze). Zero `dt` on eye 1 for the same
-// once-per-real-frame reason.
+// accumulators (screen-fade alpha, sun-direction / heat-haze). Zero `dt` on far-only and later scene
+// dispatches for the same once-per-real-frame reason.
 #[detour(address = jc3gi::graphics_engine::post_effects::PostEffectsManager::ApplyGlobalFilters_ADDRESS)]
 fn apply_global_filters(this: *mut c_void, dt: f32, ctx: *mut c_void) {
-    let gated = (is_second_eye() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
+    let gated = (later_scene() || far_phase()) && Config::lock_query(|c| c.stereo.gate_eye1_dt);
     TraceState::record_eye(TraceEvent::ApplyGlobalFilters { gated });
     let dt = if gated { 0.0 } else { dt };
     APPLY_GLOBAL_FILTERS.get().unwrap().call(this, dt, ctx);
 }
 
 // AntiAliasingEffect::Apply -- the AA stage of the post chain. Two roles:
-//   * FSR on: resolve the slot color ourselves (post-tonemap) via fsr_dispatch, then neutralize the
-//     engine AA to AA_NONE so it passthrough-blits our FSR result onward (docs/mod/rendering/fsr.md).
-//   * else, force-SMAA-1x in stereo: drop T2X (mode 3) to SMAA 1x (mode 2) -- T2X's temporal resolve
-//     blends a single history shared across the two eye dispatches, so each eye ghosts the other.
+//   * FSR or the mod's TAA chosen: resolve the slot color ourselves (post-tonemap) via
+//     temporal_dispatch, then neutralize the engine AA to AA_NONE so it passthrough-blits our result
+//     onward (docs/mod/rendering/fsr.md, docs/mod/rendering/taa.md).
+//   * else, in stereo, drop T2X to SMAA 1x -- T2X's temporal resolve blends a single history shared
+//     across the two eye dispatches, so each eye ghosts the other.
+//   * `post_fx.skip_anti_aliasing` drops the engine AA to AA_NONE without FSR, for a baseline with
+//     no anti-aliasing at all.
 // Either way, restore the real mode afterwards so the engine's own state stays intact.
 #[detour(address = jc3gi::graphics_engine::post_effects::AntiAliasingEffect::Apply_ADDRESS)]
 fn anti_aliasing_apply(
@@ -172,11 +221,18 @@ fn anti_aliasing_apply(
     mgr: *mut c_void,
     slot: *mut u32,
 ) -> u64 {
-    let (force_smaa_1x, fsr) = Config::lock_query(|c| {
-        (
-            stereo::active() && c.stereo.force_smaa_1x,
-            c.fsr.enabled.then_some(c.fsr.sharpness),
-        )
+    // SAFETY: the AA hook receives the current chain slot as a live in/out parameter.
+    stages::capture_slot(Stage::PreAa, mgr, unsafe { *slot });
+    let force_smaa_1x = stereo::active();
+    let (fsr, skip_aa) = Config::lock_query(|c| {
+        let resolve = match c.fsr.antialiasing {
+            AntiAliasing::Fsr => Some(TemporalResolve::Fsr(
+                c.fsr.sharpen.then_some(c.fsr.sharpness),
+            )),
+            AntiAliasing::Taa => Some(TemporalResolve::Taa(c.fsr.taa)),
+            AntiAliasing::Engine => None,
+        };
+        (resolve, c.post_fx.skip_anti_aliasing)
     });
 
     // When FSR is on, resolve into the current slot ourselves, then let the engine AA run as a
@@ -184,24 +240,33 @@ fn anti_aliasing_apply(
     // 1x-forcing is moot here.
     let saved_mode = unsafe { (*this).m_Mode };
     let mut restore = false;
-    if let Some(sharpness) = fsr {
+    let fsr_ran = fsr.is_some_and(|resolve| {
         // SAFETY: `slot` is a valid out-param holding the current chain slot index.
         let slot_index = unsafe { *slot };
-        if fsr_dispatch(mgr, slot_index, sharpness) {
-            unsafe { (*this).m_Mode = AAMode::AA_NONE };
-            restore = true;
-        }
-    } else if force_smaa_1x && saved_mode == AAMode::AA_SMAA_T2X {
+        temporal_dispatch(mgr, slot_index, resolve)
+    });
+    if fsr_ran || skip_aa {
+        unsafe { (*this).m_Mode = AAMode::AA_NONE };
+        restore = true;
+    } else if fsr.is_none() && force_smaa_1x && saved_mode == AAMode::AA_SMAA_T2X {
         // T2X's temporal resolve blends a single shared history across the two eye dispatches, so each
         // eye ghosts the other; 1x carries no history.
         unsafe { (*this).m_Mode = AAMode::AA_SMAA };
         restore = true;
     }
 
+    let aa_probe = stages::aa::Scope::begin(unsafe { (*this).m_Mode });
+    #[cfg(feature = "profiler")]
+    let gpu = crate::profiler::gpu::detail_interval("post: engine anti-aliasing");
     let r = ANTI_ALIASING_APPLY
         .get()
         .unwrap()
         .call(this, ctx, pec, mgr, slot);
+    // SAFETY: the AA result updates the same live slot parameter.
+    #[cfg(feature = "profiler")]
+    drop(gpu);
+    stages::capture_slot(Stage::PostAa, mgr, unsafe { *slot });
+    drop(aa_probe);
     if restore {
         unsafe { (*this).m_Mode = saved_mode };
     }
@@ -239,6 +304,7 @@ fn motion_blur_apply(
 ) -> u32 {
     let (skip_motion_blur, skip_recon) =
         Config::lock_query(|c| (c.post_fx.skip_motion_blur, c.post_fx.skip_motion_blur_recon));
+    let skip_motion_blur = skip_motion_blur || vr_forces_blurs_off();
     TraceState::record_eye(TraceEvent::MotionBlurApply {
         input,
         skip: skip_motion_blur,
@@ -249,6 +315,8 @@ fn motion_blur_apply(
         // `flag0` (a7) gates the reconstruction-filter motion blur (`if g_EnableMotionBlur && !a7`).
         // Forcing it true skips that reprojection blur -- the flicker -- but keeps the composite draw.
         let flag0 = flag0 || skip_recon;
+        #[cfg(feature = "profiler")]
+        let _gpu = crate::profiler::gpu::detail_interval("post: motion blur");
         MOTION_BLUR_APPLY
             .get()
             .unwrap()
@@ -268,6 +336,9 @@ fn dof_apply(
 ) -> u32 {
     let (skip_dof, dof_no_reproject) =
         Config::lock_query(|c| (c.post_fx.skip_dof, c.post_fx.dof_no_reproject));
+    // The composite is also the tonemap, so skipping it in VR would hand the headset the HDR scene
+    // unmapped; the depth of field is dropped in VR by `is_bokeh_active` instead.
+    let skip_dof = skip_dof && !vr_forces_blurs_off();
     TraceState::record_eye(TraceEvent::DofApply {
         input,
         skip: skip_dof,
@@ -275,6 +346,9 @@ fn dof_apply(
     if skip_dof {
         return input;
     }
+    let probe = stages::dof::begin(pec, input);
+    #[cfg(feature = "profiler")]
+    let gpu = crate::profiler::gpu::detail_interval("post: blur and composite");
     let slot = if dof_no_reproject {
         // Bit 0 of the render context's flags is the engine's underwater bit
         // (`m_CameraUnderwater`), which selects the DoF composite's underwater shader family --
@@ -294,8 +368,25 @@ fn dof_apply(
     } else {
         DOF_APPLY.get().unwrap().call(this, ctx, pec, mgr, input)
     };
+    #[cfg(feature = "profiler")]
+    drop(gpu);
+    if let Some(probe) = probe {
+        probe.finish(mgr, slot);
+    }
     capture_post_result(crate::ui::render::POST_STAGE_DOF, mgr, slot);
     slot
+}
+
+// PostEffectsManager::IsBokehActive -- the post block's choice between the depth of field's own
+// passes (the downscale-and-focus prepass, the bokeh blur, and the depth-of-field composite) and the
+// plain blur with the plain composite. Answering false in VR drops the depth of field and keeps the
+// blur the glare reads and the tonemap.
+#[detour(address = jc3gi::graphics_engine::post_effects::PostEffectsManager::IsBokehActive_ADDRESS)]
+fn is_bokeh_active(this: *const PostEffectsManager) -> bool {
+    if vr_forces_blurs_off() {
+        return false;
+    }
+    IS_BOKEH_ACTIVE.get().unwrap().call(this)
 }
 
 // FadeEffect::Apply -- alpha-blended fade quad. Skip = no-op (the u64 return is discarded).
@@ -306,10 +397,14 @@ fn fade_apply(this: *mut c_void, a2: *mut c_void, a3: *mut c_void) -> u64 {
     if skip {
         return 0;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: fade");
     FADE_APPLY.get().unwrap().call(this, a2, a3)
 }
 
-// GlareEffect::Apply -- bloom/glare generator. Skip = no bloom.
+// GlareEffect::Apply -- bloom/glare generator. Skip = no bloom. Otherwise, under the collapse, its
+// filters read only their own eye's half of each source for the length of the call
+// (`stereo::single_pass::post_filters`).
 #[detour(address = jc3gi::graphics_engine::post_effects::GlareEffect::Apply_ADDRESS)]
 fn glare_apply(
     this: *mut c_void,
@@ -323,6 +418,9 @@ fn glare_apply(
     if skip {
         return 0;
     }
+    let _eye_half = crate::stereo::single_pass::post_filters::Scope::enter();
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: glare");
     GLARE_APPLY.get().unwrap().call(this, a2, a3, a4, a5)
 }
 
@@ -340,6 +438,8 @@ fn player_damage_apply(
     if skip {
         return input;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: player damage");
     PLAYER_DAMAGE_APPLY
         .get()
         .unwrap()
@@ -363,6 +463,8 @@ fn sun_halo_pre_apply(
         }
         return 0;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: sun halo prepare");
     SUN_HALO_PRE_APPLY.get().unwrap().call(this, a2, a3, a4)
 }
 
@@ -374,5 +476,7 @@ fn sun_halo_apply(this: *mut c_void, a2: *mut c_void) -> u64 {
     if skip {
         return 0;
     }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("post: sun halo");
     SUN_HALO_APPLY.get().unwrap().call(this, a2)
 }

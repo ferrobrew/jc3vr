@@ -1,0 +1,22 @@
+# Template: fill testing/recordings/cockpit_buttons.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "work the horn and the nitrous by hand"
+description = "Recorded seated in a parked car with the nitrous upgrade, with the physical wheel and the cockpit buttons on (cockpit-controls.md, the buttons checklist). Take the wheel with one hand, push the other into the hub for the horn twice, then press the nitrous button beside the wheel while driving, hold it, and let go."
+recording = "../recordings/cockpit_buttons.jc3trk"
+settle_s = 5.0
+
+[[expect]]
+signal = "controllers.in_vehicle"
+
+[[expect]]
+name = "the hands worked the buttons"
+signal = "vehicles.button_presses"
+
+[[expect]]
+signal = "vehicles.horn"
+check = "eventually"
+
+[[expect]]
+log = "the hand worked the horn"
+
+[[expect]]
+log = "the hand worked the nitrous button"

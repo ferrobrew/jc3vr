@@ -10,9 +10,26 @@
 //! or a patched shader surviving into a shadow or reflection pass sends its odd instances into a half
 //! that pass never bound.
 
+use std::cell::Cell;
+
 use windows::Win32::Foundation::RECT;
 
 use super::*;
+
+thread_local! {
+    static WAVE_SIMULATION: Cell<bool> = const { Cell::new(false) };
+}
+
+pub(crate) fn with_wave_simulation_viewports<R>(submit: impl FnOnce() -> R) -> R {
+    struct Restore(bool);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            WAVE_SIMULATION.set(self.0);
+        }
+    }
+    let _restore = Restore(WAVE_SIMULATION.replace(true));
+    submit()
+}
 
 /// Bind `viewport` to both viewport slots of the immediate context. Binding two slots (rather than
 /// one) passes the collapse viewport detour through untouched -- it only special-cases a single-slot
@@ -64,6 +81,7 @@ pub(super) fn restore_viewport_slots(d3d: EngineContext, saved: ViewportSlots) {
     // SAFETY: the context is the live immediate context and `slots` holds `count` viewports.
     d3d.with_lock(|ctx| unsafe {
         detour.call(ctx.as_raw(), saved.count, saved.slots.as_ptr());
+        viewport_record::record_bound((saved.count == 2).then_some(saved.slots));
     });
 }
 
@@ -87,6 +105,19 @@ pub(super) fn eye_half_viewport(full: D3D11_VIEWPORT, eye: usize) -> D3D11_VIEWP
         TopLeftX: full.TopLeftX + eye as f32 * half,
         Width: half,
         ..full
+    }
+}
+
+pub(super) fn reissue_viewport(
+    requested: D3D11_VIEWPORT,
+    full: D3D11_VIEWPORT,
+    eye: usize,
+) -> D3D11_VIEWPORT {
+    let half = eye_half_viewport(full, eye);
+    if WAVE_SIMULATION.get() || requested == half {
+        requested
+    } else {
+        eye_half_viewport(requested, eye)
     }
 }
 
@@ -208,6 +239,7 @@ pub(super) fn unify_viewport_slots() {
             // everything to nothing.
             if slots[0].Width > 0.0 {
                 detour.call(ctx.as_raw(), 2, [slots[0], slots[0]].as_ptr());
+                viewport_record::record_bound(Some([slots[0], slots[0]]));
                 set_viewport_slots_uniform(true);
                 VIEWPORT_UNIFIED.fetch_add(1, Ordering::Relaxed);
             }
@@ -274,12 +306,11 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
     if active() && count == 1 && !viewports.is_null() {
         let vp = unsafe { *viewports };
         if let Some(eye) = per_eye_reissue_eye() {
-            // Inside a per-eye re-issue the eye half must survive whatever the block binds. Honour the
-            // requested region but keep it pinned to this eye's half, and leave `COLLAPSE_FULL_VIEWPORT`
-            // alone so the re-issue cannot redefine what "full" means for the draws that follow it.
-            let half = eye_half_viewport(vp, eye);
+            let routed =
+                per_eye_reissue_full_viewport().map_or(vp, |full| reissue_viewport(vp, full, eye));
             set_viewport_slots_uniform(true);
-            unsafe { detour.call(context, 2, [half, half].as_ptr()) };
+            unsafe { detour.call(context, 2, [routed, routed].as_ptr()) };
+            viewport_record::record_bound(Some([routed, routed]));
             return;
         }
         if collapse_active() {
@@ -292,14 +323,14 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
             // Only a scene-sized viewport is recorded. The detour sees every viewport bind in the
             // frame, including the half-resolution SSAO/SSR/bloom targets, and the eye halves are
             // derived from this record -- so without the size check the eye split would follow
-            // whichever post pass happened to bind last.
-            if is_scene_sized(vp) {
-                *COLLAPSE_FULL_VIEWPORT.lock() = Some(vp);
-            }
-            // Unconditional, unlike the scene record above: this one has to follow the engine onto the
-            // reduced-resolution off-screen targets, which is the whole point of it.
-            *CURRENT_ENGINE_VIEWPORT.lock() = Some(vp);
-            VIEWPORT_DUP.fetch_add(1, Ordering::Relaxed);
+            // whichever post pass happened to bind last. The engine's latest bind is recorded
+            // unconditionally: it has to follow the engine onto the reduced-resolution off-screen
+            // targets, which is the whole point of it. Recorded before the eye camera reads it to
+            // lay its rows out for the newly bound target. The bound pair is recorded with it, before
+            // the bind: nothing reads it in between, the draw path being on this thread.
+            viewport_record::record_engine_bind(vp, is_scene_sized(vp), [vp, vp]);
+            eye_camera::viewport_changed();
+            bump(&VIEWPORT_DUP);
             set_viewport_slots_uniform(true);
             unsafe { detour.call(context, 2, [vp, vp].as_ptr()) };
             return;
@@ -321,15 +352,17 @@ pub(super) unsafe extern "system" fn rs_set_viewports_detour(
         };
         set_viewport_slots_uniform(slot0 == slot1);
         unsafe { detour.call(context, 2, [slot0, slot1].as_ptr()) };
+        viewport_record::record_bound(Some([slot0, slot1]));
     } else {
         // A multi-slot set passes straight through, so the slots become whatever the caller asked for:
         // uniform only for the mod's own two-identical-slot binds. Anything else (including a set that
         // leaves slot 1 unbound) is taken as non-uniform, so the next patched draw outside the range
         // repairs it.
-        let uniform =
-            count == 2 && !viewports.is_null() && unsafe { *viewports == *viewports.add(1) };
-        set_viewport_slots_uniform(uniform);
+        let pair = (count == 2 && !viewports.is_null())
+            .then(|| unsafe { [*viewports, *viewports.add(1)] });
+        set_viewport_slots_uniform(pair.is_some_and(|[slot0, slot1]| slot0 == slot1));
         unsafe { detour.call(context, count, viewports) };
+        viewport_record::record_bound(pair);
     }
 }
 
@@ -352,14 +385,10 @@ pub(super) enum CollapseViewport {
 pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseViewport) {
     // Split the viewport of whatever target is actually bound, not the scene's. They are the same
     // everywhere except the reduced-resolution off-screen passes -- see [`CURRENT_ENGINE_VIEWPORT`].
-    // From the dispatch snapshot, not live: this function both pins an eye half and puts the full
-    // viewport back, and the two calls have to agree on which "full" they mean.
-    let base = if config_flags().has(Flag::ViewportFollowsTarget) {
-        (*CURRENT_ENGINE_VIEWPORT.lock()).or(*COLLAPSE_FULL_VIEWPORT.lock())
-    } else {
-        *COLLAPSE_FULL_VIEWPORT.lock()
-    };
-    let Some(full) = base else {
+    let flags = config_flags();
+    let (Some(full), bound) =
+        viewport_record::base_and_bound(flags.has(Flag::ViewportFollowsTarget))
+    else {
         return;
     };
     let Some(detour) = RS_SET_VIEWPORTS.get() else {
@@ -367,22 +396,203 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
     };
     let viewports = match target {
         CollapseViewport::Split => {
-            VIEWPORT_SPLIT.fetch_add(1, Ordering::Relaxed);
+            bump(&VIEWPORT_SPLIT);
             [eye_half_viewport(full, 0), eye_half_viewport(full, 1)]
         }
         CollapseViewport::Eye(eye) => {
-            VIEWPORT_SPLIT.fetch_add(1, Ordering::Relaxed);
+            bump(&VIEWPORT_SPLIT);
             let half = eye_half_viewport(full, eye);
             [half, half]
         }
         CollapseViewport::Full => [full, full],
     };
     set_viewport_slots_uniform(viewports[0] == viewports[1]);
+    // Every bind of the slots is recorded (the engine's through `rs_set_viewports_detour`, whatever
+    // its count, and the mod's own through the trampoline where it makes them), so a draw that wants
+    // what the slots already hold has nothing to bind. A pass's patched draws all want the same
+    // split, so most of them skip.
+    if flags.has(Flag::ViewportBindCache) && bound == Some(viewports) {
+        bump(&VIEWPORT_BINDS_SKIPPED);
+        return;
+    }
     // SAFETY: `context` is the live immediate context; `detour.call` invokes the original
-    // RSSetViewports (the trampoline), so this does not re-enter the detour. Bound unconditionally
-    // (no split-state skip): the engine can change the viewport underneath us via a path we do not
-    // observe (a `count != 1` set), so a cached "already split" flag would go stale and let both
-    // instances land in one half -- the doubled/"same geometry twice" artifact. Re-binding per draw
-    // is cheap (a few hundred geometry draws per frame, far below the draw budget we are cutting).
+    // RSSetViewports (the trampoline), so this does not re-enter the detour.
     unsafe { detour.call(context, 2, viewports.as_ptr()) };
+    viewport_record::record_bound(Some(viewports));
+}
+
+/// The full viewport of the target the collapse splits into eye halves: the live engine bind while
+/// the split follows the target, otherwise the scene's.
+fn collapse_base_viewport() -> Option<D3D11_VIEWPORT> {
+    viewport_record::base_viewport(config_flags().has(Flag::ViewportFollowsTarget))
+}
+
+/// The full viewport of the target the collapse splits into eye halves (see
+/// [`collapse_base_viewport`]). `None` until the scene's first viewport bind records one.
+pub(super) fn collapse_full_viewport() -> Option<D3D11_VIEWPORT> {
+    collapse_base_viewport()
+}
+
+/// The width of one eye's half of the target the collapse is splitting, from the same viewport
+/// [`ensure_collapse_viewport`] splits. `None` until the scene's first viewport bind records one.
+pub(super) fn collapse_eye_width() -> Option<f32> {
+    collapse_base_viewport().map(|full| eye_half_viewport(full, 0).Width)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    fn full_viewport() -> D3D11_VIEWPORT {
+        D3D11_VIEWPORT {
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: 3840.0,
+            Height: 1080.0,
+            MinDepth: 0.0,
+            MaxDepth: 1.0,
+        }
+    }
+
+    #[test]
+    fn shared_simulation_keeps_its_viewport_only_during_the_step() {
+        let scene = full_viewport();
+        let target = D3D11_VIEWPORT {
+            Width: 128.,
+            Height: 128.,
+            MaxDepth: 0.,
+            ..Default::default()
+        };
+        for eye in 0..2 {
+            with_wave_simulation_viewports(|| {
+                with_wave_simulation_viewports(|| {
+                    assert_eq!(reissue_viewport(target, scene, eye), target)
+                });
+                assert_eq!(reissue_viewport(target, scene, eye), target);
+            });
+            assert_eq!(
+                reissue_viewport(scene, scene, eye),
+                eye_half_viewport(scene, eye)
+            );
+        }
+    }
+
+    #[test]
+    fn saved_eye_half_replays_exactly_for_both_eyes() {
+        let full = full_viewport();
+        for eye in 0..2 {
+            let pinned = eye_half_viewport(full, eye);
+            assert_eq!(reissue_viewport(pinned, full, eye), pinned, "eye {eye}");
+            let mut replayed = pinned;
+            for round in 0..4 {
+                replayed = reissue_viewport(replayed, full, eye);
+                assert_eq!(replayed, pinned, "eye {eye}, round {round}");
+            }
+        }
+    }
+
+    #[test]
+    fn full_viewport_maps_to_the_eye_half() {
+        let full = full_viewport();
+        for eye in 0..2 {
+            assert_eq!(
+                reissue_viewport(full, full, eye),
+                eye_half_viewport(full, eye),
+                "eye {eye}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_request_that_is_not_the_eye_half_still_maps() {
+        let full = full_viewport();
+        let sub_region = D3D11_VIEWPORT {
+            TopLeftX: 128.0,
+            TopLeftY: 64.0,
+            Width: full.Width / 2.0,
+            Height: 540.0,
+            MinDepth: 0.1,
+            MaxDepth: 0.9,
+        };
+        for eye in 0..2 {
+            let mapped = reissue_viewport(sub_region, full, eye);
+            assert_ne!(mapped, sub_region, "eye {eye}");
+            assert_eq!(mapped, eye_half_viewport(sub_region, eye), "eye {eye}");
+            assert_eq!(mapped.Width, sub_region.Width / 2.0, "eye {eye}");
+            assert_eq!(
+                mapped.TopLeftX,
+                sub_region.TopLeftX + eye as f32 * sub_region.Width / 2.0,
+                "eye {eye}"
+            );
+            assert_eq!(mapped.TopLeftY, sub_region.TopLeftY, "eye {eye}");
+            assert_eq!(mapped.Height, sub_region.Height, "eye {eye}");
+            assert_eq!(
+                (mapped.MinDepth, mapped.MaxDepth),
+                (sub_region.MinDepth, sub_region.MaxDepth),
+                "eye {eye}"
+            );
+        }
+
+        let shifted_half = D3D11_VIEWPORT {
+            TopLeftY: 24.0,
+            ..eye_half_viewport(full, 0)
+        };
+        let mapped = reissue_viewport(shifted_half, full, 0);
+        assert_ne!(mapped, shifted_half);
+        assert_eq!(mapped, eye_half_viewport(shifted_half, 0));
+        assert_eq!(mapped.Width, shifted_half.Width / 2.0);
+    }
+
+    #[test]
+    fn the_eye_half_keeps_offsets_height_and_depth_range() {
+        let full = D3D11_VIEWPORT {
+            TopLeftX: 64.0,
+            TopLeftY: 32.0,
+            Width: 2560.0,
+            Height: 1440.0,
+            MinDepth: 0.25,
+            MaxDepth: 0.75,
+        };
+        for eye in 0..2 {
+            let half = reissue_viewport(full, full, eye);
+            assert_eq!(half.TopLeftX, 64.0 + eye as f32 * 1280.0, "eye {eye}");
+            assert_eq!(half.TopLeftY, 32.0, "eye {eye}");
+            assert_eq!(half.Width, 1280.0, "eye {eye}");
+            assert_eq!(half.Height, 1440.0, "eye {eye}");
+            assert_eq!((half.MinDepth, half.MaxDepth), (0.25, 0.75), "eye {eye}");
+            assert_eq!(reissue_viewport(half, full, eye), half, "eye {eye}");
+        }
+    }
+
+    #[test]
+    fn nested_reissue_scopes_restore_the_outer_one() {
+        let _serial = TEST_LOCK.lock();
+        let outer = full_viewport();
+        let inner = D3D11_VIEWPORT {
+            Width: outer.Width / 2.0,
+            ..outer
+        };
+        assert_eq!(per_eye_reissue_eye(), None);
+        assert_eq!(per_eye_reissue_full_viewport(), None);
+        {
+            let _outer_scope = PerEyeReissue::enter(1, outer);
+            assert_eq!(per_eye_reissue_eye(), Some(1));
+            assert_eq!(per_eye_reissue_full_viewport(), Some(outer));
+            {
+                let _inner_scope = PerEyeReissue::enter(0, inner);
+                assert_eq!(per_eye_reissue_eye(), Some(0));
+                assert_eq!(per_eye_reissue_full_viewport(), Some(inner));
+                assert_eq!(
+                    reissue_viewport(eye_half_viewport(inner, 0), inner, 0),
+                    eye_half_viewport(inner, 0)
+                );
+            }
+            assert_eq!(per_eye_reissue_eye(), Some(1));
+            assert_eq!(per_eye_reissue_full_viewport(), Some(outer));
+        }
+        assert_eq!(per_eye_reissue_eye(), None);
+        assert_eq!(per_eye_reissue_full_viewport(), None);
+    }
 }

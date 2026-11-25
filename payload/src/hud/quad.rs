@@ -5,8 +5,9 @@
 //! quaternion slerp. The panel sits at its own world-space orientation (the damped follow rotation),
 //! positioned at the camera position + panel_forward * distance. Corners are uploaded alongside the
 //! camera's per-eye view-projection matrix; the vertex shader projects each corner
-//! ([`hud_quad_vs`](../shaders/hud_quad_vs.hlsl) / `hud_quad_ps`). The panel is an alpha-blended overlay
-//! with the depth test disabled, drawn onto the linear back buffer at the end of the eye's draw.
+//! ([`hud_quad_vs`](../shaders/hud_quad_vs.hlsl) / `hud_quad_ps`). The panel is a premultiplied-alpha
+//! overlay with the depth test disabled, drawn onto the linear back buffer at the end of the eye's
+//! draw.
 //!
 //! World-space corners are computed once per frame (eye 0) via [`compute_world_corners`] and cached
 //! by [`crate::hud::state::HudState`]; both eyes then project the same world-space quad through their own
@@ -25,33 +26,37 @@ use windows::{
         Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
         Direct3D11::{
             D3D11_BIND_CONSTANT_BUFFER, D3D11_BLEND_DESC, D3D11_BLEND_INV_SRC_ALPHA,
-            D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BLEND_SRC_ALPHA, D3D11_BUFFER_DESC,
-            D3D11_COLOR_WRITE_ENABLE_ALL, D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE,
-            D3D11_DEPTH_STENCIL_DESC, D3D11_FILL_SOLID, D3D11_FILTER_MIN_MAG_MIP_LINEAR,
-            D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE, D3D11_RASTERIZER_DESC,
-            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_TEXTURE_ADDRESS_CLAMP,
-            D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11BlendState, ID3D11Buffer,
-            ID3D11DepthStencilState, ID3D11DeviceContext, ID3D11PixelShader, ID3D11RasterizerState,
-            ID3D11RenderTargetView, ID3D11SamplerState, ID3D11ShaderResourceView,
-            ID3D11VertexShader,
+            D3D11_BLEND_ONE, D3D11_BLEND_OP_ADD, D3D11_BUFFER_DESC, D3D11_COLOR_WRITE_ENABLE_ALL,
+            D3D11_CPU_ACCESS_WRITE, D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC, D3D11_FILL_SOLID,
+            D3D11_FILTER_MIN_MAG_MIP_LINEAR, D3D11_MAP_WRITE_DISCARD, D3D11_MAPPED_SUBRESOURCE,
+            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
+            D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DYNAMIC, D3D11_VIEWPORT, ID3D11BlendState,
+            ID3D11Buffer, ID3D11DepthStencilState, ID3D11DeviceContext, ID3D11PixelShader,
+            ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11SamplerState,
+            ID3D11ShaderResourceView, ID3D11VertexShader,
         },
     },
     core::Interface as _,
 };
+
+use crate::hud::cursor::{CursorFrame, LIFT, SIZE};
 
 /// The committed, precompiled quad shaders (entry point `main`).
 const VERTEX_DXBC: &[u8] = include_bytes!("../shaders/hud_quad_vs.dxbc");
 const PIXEL_DXBC: &[u8] = include_bytes!("../shaders/hud_quad_ps.dxbc");
 /// The cursor-dot pixel shader (an analytic circle with a stroke; shares the quad vertex shader).
 const CURSOR_PIXEL_DXBC: &[u8] = include_bytes!("../shaders/cursor_ps.dxbc");
+/// The textured pixel shader with an opacity, for quads that fade (shares the quad vertex shader).
+const FADE_PIXEL_DXBC: &[u8] = include_bytes!("../shaders/hud_quad_fade_ps.dxbc");
 
-/// Constant buffer uploaded per draw: view-projection matrix followed by four world-space corners.
-/// Matches the HLSL `cbuffer Quad` layout: `row_major float4x4 ViewProjection` (64 bytes) +
-/// `float4 Corners[4]` (64 bytes).
+/// Constant buffer uploaded per draw: view-projection matrix, four world-space corners, and the
+/// tint. Matches the HLSL `cbuffer Quad` layout: `row_major float4x4 ViewProjection` (64 bytes) +
+/// `float4 Corners[4]` (64 bytes) + `float4 Tint` (16 bytes, read only by the fading pixel shader).
 #[repr(C)]
 struct QuadConstants {
     view_projection: [f32; 16],
     corners: [[f32; 4]; 4], // .xyz = world-space position, .w = unused
+    tint: [f32; 4],         // .a = opacity
 }
 
 /// The quad pass: the textured-quad pipeline and a constant buffer for the per-eye draw data.
@@ -60,6 +65,8 @@ pub struct HudQuad {
     pixel_shader: ID3D11PixelShader,
     /// The cursor-dot pixel shader; the cursor draw shares every other pipeline object.
     cursor_pixel_shader: ID3D11PixelShader,
+    /// The textured pixel shader with an opacity ([`HudQuad::draw_faded`]).
+    fade_pixel_shader: ID3D11PixelShader,
     sampler: ID3D11SamplerState,
     blend: ID3D11BlendState,
     rasterizer: ID3D11RasterizerState,
@@ -90,6 +97,12 @@ impl HudQuad {
             let cursor_pixel_shader =
                 cursor_pixel_shader.context("the cursor pixel shader was not created")?;
 
+            let mut fade_pixel_shader: Option<ID3D11PixelShader> = None;
+            d3d.CreatePixelShader(FADE_PIXEL_DXBC, None, Some(&mut fade_pixel_shader))
+                .context("creating the fading HUD quad pixel shader")?;
+            let fade_pixel_shader =
+                fade_pixel_shader.context("the fading HUD quad pixel shader was not created")?;
+
             let mut sampler: Option<ID3D11SamplerState> = None;
             d3d.CreateSamplerState(
                 &D3D11_SAMPLER_DESC {
@@ -105,12 +118,17 @@ impl HudQuad {
             .context("creating the HUD quad sampler")?;
             let sampler = sampler.context("the HUD quad sampler was not created")?;
 
-            // Straight (non-premultiplied) alpha so the HUD's transparent regions show the scene.
+            // Premultiplied alpha: every texture this pass draws holds premultiplied colour. The
+            // Scaleform HAL's normal blend writes `rgb * a` with coverage alpha into the HUD
+            // target's transparent-black clear, and egui renders premultiplied. Blending the
+            // colour by its alpha again would darken every partially covered pixel (antialiased
+            // text, glows, shadows, and fades). Shaders that compute their own colour (the
+            // cursor) premultiply it.
             let mut blend: Option<ID3D11BlendState> = None;
             let mut blend_desc = D3D11_BLEND_DESC::default();
             blend_desc.RenderTarget[0] = D3D11_RENDER_TARGET_BLEND_DESC {
                 BlendEnable: true.into(),
-                SrcBlend: D3D11_BLEND_SRC_ALPHA,
+                SrcBlend: D3D11_BLEND_ONE,
                 DestBlend: D3D11_BLEND_INV_SRC_ALPHA,
                 BlendOp: D3D11_BLEND_OP_ADD,
                 SrcBlendAlpha: D3D11_BLEND_ONE,
@@ -164,6 +182,7 @@ impl HudQuad {
                 vertex_shader,
                 pixel_shader,
                 cursor_pixel_shader,
+                fade_pixel_shader,
                 sampler,
                 blend,
                 rasterizer,
@@ -190,8 +209,35 @@ impl HudQuad {
             context,
             device,
             target,
-            Some(hud_srv),
-            &self.pixel_shader,
+            Shading {
+                srv: Some(hud_srv),
+                pixel_shader: &self.pixel_shader,
+                opacity: 1.0,
+            },
+            corners,
+        )
+    }
+
+    /// Draw a premultiplied texture like [`draw`](Self::draw), with every channel scaled by
+    /// `opacity` (0 to 1), so the quad fades while staying premultiplied.
+    pub fn draw_faded(
+        &self,
+        context: &ID3D11DeviceContext,
+        device: &Device,
+        target: &Texture,
+        srv: &ID3D11ShaderResourceView,
+        corners: &[Vec4; 4],
+        opacity: f32,
+    ) -> bool {
+        self.draw_internal(
+            context,
+            device,
+            target,
+            Shading {
+                srv: Some(srv),
+                pixel_shader: &self.fade_pixel_shader,
+                opacity: opacity.clamp(0.0, 1.0),
+            },
             corners,
         )
     }
@@ -210,23 +256,30 @@ impl HudQuad {
             context,
             device,
             target,
-            None,
-            &self.cursor_pixel_shader,
+            Shading {
+                srv: None,
+                pixel_shader: &self.cursor_pixel_shader,
+                opacity: 1.0,
+            },
             corners,
         )
     }
 
     /// The shared quad draw: project four world-space corners through the eye's view-projection
-    /// and shade with `pixel_shader`, sampling `srv` when one is given.
+    /// and shade them as `shading` says.
     fn draw_internal(
         &self,
         context: &ID3D11DeviceContext,
         device: &Device,
         target: &Texture,
-        srv: Option<&ID3D11ShaderResourceView>,
-        pixel_shader: &ID3D11PixelShader,
+        shading: Shading<'_>,
         corners: &[Vec4; 4],
     ) -> bool {
+        let Shading {
+            srv,
+            pixel_shader,
+            opacity,
+        } = shading;
         let width = u32::from(target.m_Width);
         let height = u32::from(target.m_Height);
         if width == 0 || height == 0 {
@@ -264,6 +317,7 @@ impl HudQuad {
             let constants = QuadConstants {
                 view_projection: view_proj.data,
                 corners: corners.map(|c| c.to_array()),
+                tint: [1.0, 1.0, 1.0, opacity],
             };
 
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
@@ -313,6 +367,8 @@ impl HudQuad {
             context
                 .VSSetConstantBuffers(0, Some(std::slice::from_ref(&Some(self.constants.clone()))));
             context.PSSetShader(pixel_shader, None);
+            context
+                .PSSetConstantBuffers(0, Some(std::slice::from_ref(&Some(self.constants.clone()))));
             if let Some(srv) = srv {
                 context.PSSetShaderResources(0, Some(std::slice::from_ref(&Some(srv.clone()))));
                 context.PSSetSamplers(0, Some(std::slice::from_ref(&Some(self.sampler.clone()))));
@@ -352,7 +408,7 @@ pub(crate) struct PanelParams {
 /// distance`. It is NOT rotated through the camera's transform — that would stack the rotation on
 /// top of the head rotation, swinging the panel offscreen on large turns.
 pub(crate) fn compute_world_corners(params: &PanelParams) -> Option<[Vec4; 4]> {
-    if params.aspect <= 0.0 {
+    if !valid_panel(params) {
         return None;
     }
     let aspect = params.aspect;
@@ -374,21 +430,25 @@ pub(crate) fn compute_world_corners(params: &PanelParams) -> Option<[Vec4; 4]> {
         (half_w, -half_h),
     ];
 
-    Some(layout.map(|(dx, dy)| (center + right * dx + up * dy).extend(1.0)))
+    let corners = layout.map(|(dx, dy)| (center + right * dx + up * dy).extend(1.0));
+    corners
+        .iter()
+        .all(|corner| corner.is_finite())
+        .then_some(corners)
 }
 
 /// Compute the virtual mouse cursor's world-space corners: a small square quad centered on the
 /// cursor's UV position on the panel, lifted off the panel surface toward the camera
-/// ([`CursorConfig::lift`](crate::hud::config::CursorConfig)), sized as a fraction of the panel
-/// distance so it keeps a constant apparent (angular) size like the panel. Call once per frame
+/// ([`LIFT`](crate::hud::cursor::LIFT)), sized as a fraction of the panel distance
+/// ([`SIZE`](crate::hud::cursor::SIZE)) so it keeps a constant apparent (angular) size like the
+/// panel. Call once per frame
 /// (eye 0) with the same [`PanelParams`] the panel's own corners were built from, so the cursor
-/// rides exactly the surface the UI is drawn on. Returns `None` for a degenerate aspect or size.
+/// rides exactly the surface the UI is drawn on. Returns `None` for a degenerate panel or position.
 pub(crate) fn compute_cursor_corners(
     params: &PanelParams,
-    frame: crate::hud::cursor::CursorFrame,
-    cfg: &crate::hud::config::CursorConfig,
+    frame: CursorFrame,
 ) -> Option<[Vec4; 4]> {
-    if params.aspect <= 0.0 || cfg.size <= 0.0 {
+    if !valid_panel(params) || !frame.u.is_finite() || !frame.v.is_finite() {
         return None;
     }
 
@@ -404,18 +464,54 @@ pub(crate) fn compute_cursor_corners(
     let point = panel_center
         + right * ((frame.u - 0.5) * 2.0 * half_w)
         + up * ((0.5 - frame.v) * 2.0 * half_h)
-        - forward * cfg.lift;
+        - forward * LIFT;
 
-    let half = cfg.size * params.distance * 0.5;
+    let half = SIZE * params.distance * 0.5;
     let layout = [(-half, half), (half, half), (-half, -half), (half, -half)];
-    Some(layout.map(|(dx, dy)| (point + right * dx + up * dy).extend(1.0)))
+    let corners = layout.map(|(dx, dy)| (point + right * dx + up * dy).extend(1.0));
+    corners
+        .iter()
+        .all(|corner| corner.is_finite())
+        .then_some(corners)
 }
 
-/// Fetch the render camera's view-projection matrix for the current eye.
-pub(super) fn fetch_view_projection() -> Option<Matrix4> {
-    unsafe {
-        let cm = jc3gi::camera::camera_manager::CameraManager::get()?;
-        let cam = cm.m_RenderCamera.as_ref()?;
-        Some(cam.m_ViewProjectionF)
-    }
+fn valid_panel(params: &PanelParams) -> bool {
+    params.pos.is_finite()
+        && params.rot.is_finite()
+        && params.aspect.is_finite()
+        && params.aspect > 0.0
+        && params.distance.is_finite()
+        && params.distance > 0.0
+        && params.panel_height.is_finite()
+        && params.panel_height > 0.0
 }
+
+/// Fetch the render camera's view-projection matrix for the current eye, without FSR's sub-pixel
+/// jitter: the HUD draws after FSR has resolved the eye, and must hold still while the scene
+/// jitters.
+pub(super) fn fetch_view_projection() -> Option<Matrix4> {
+    // SAFETY: reads the live camera manager singleton's render camera, which the engine rebuilds for
+    // each eye's dispatch before the dispatch's draw.
+    let (view, view_projection) = unsafe {
+        let cm = jc3gi::camera::camera_manager::CameraManager::get()?;
+        let camera = cm.m_RenderCamera.as_ref()?;
+        (camera.m_View, camera.m_ViewProjectionF)
+    };
+    Some(
+        match crate::vr::render_params(crate::stereo::draw_index()) {
+            Some(params) if params.jitter.is_some() => view * params.unjittered_camera_projection(),
+            _ => view_projection,
+        },
+    )
+}
+
+/// How one quad draw is shaded: the pixel shader, the texture it samples (if any), and the opacity
+/// the fading shader reads.
+struct Shading<'a> {
+    srv: Option<&'a ID3D11ShaderResourceView>,
+    pixel_shader: &'a ID3D11PixelShader,
+    opacity: f32,
+}
+
+#[cfg(test)]
+mod geometry_tests;

@@ -1,11 +1,16 @@
-//! The Performance tab: the engine clock's frame-rate readouts and pacing controls, kept small so
-//! it can be dragged out into its own window and watched while tuning render features.
+//! The Previews and performance feature's readout: the engine clock's frame-rate readouts and
+//! pacing controls, the online hitch switch, and the profiler, kept small so the feature can be dragged out into its own
+//! window and watched while tuning render features.
 
 use std::{collections::VecDeque, time::Instant};
 
 use parking_lot::Mutex;
 
-use crate::ui::util::patchbox;
+use crate::{
+    config,
+    frame_timing::{self, Kind, ThreadClass, TickLoad, ns_to_ms},
+    ui::util::patchbox,
+};
 
 pub fn egui_debug_performance(ui: &mut egui::Ui) {
     unsafe {
@@ -33,6 +38,8 @@ pub fn egui_debug_performance(ui: &mut egui::Ui) {
         patchbox(ui, "Force to FPS", &mut clock.m_ForceToFps);
     }
 
+    frame_breakdown(ui);
+    online_controls(ui);
     far_field_summary(ui);
 
     // The profiler (issue #34): a collapsible with the live flame graph and trace capture, below
@@ -41,8 +48,103 @@ pub fn egui_debug_performance(ui: &mut egui::Ui) {
     crate::profiler::ui::egui_profiler(ui);
 }
 
+/// The always-on frame breakdown (`crate::frame_timing`) over the last second: the game thread's
+/// time per frame by kind against the frame interval, the other threads' time, and every timed
+/// slot by its self time, largest first. The same numbers go to the log every ten seconds.
+fn frame_breakdown(ui: &mut egui::Ui) {
+    ui.separator();
+    egui::CollapsingHeader::new("Frame breakdown")
+        .default_open(true)
+        .show(ui, |ui| {
+            let Some(report) = frame_timing::latest() else {
+                ui.label("(collecting; the first window closes after a second)");
+                return;
+            };
+            let t = &report.totals;
+            ui.label(format!(
+                "{} frames over {:.1} s: {:.2} ms/frame, worst {:.2} ms",
+                t.frames,
+                report.window_s,
+                t.mean_frame_ms(),
+                ns_to_ms(t.frame_max_ns),
+            ));
+            // Whether the slow frames are the ones that carried a sim tick.
+            let mut ticks = format!("{} sim ticks;", t.sim_ticks);
+            for load in TickLoad::ALL {
+                let g = t.tick_load(load);
+                if g.frames > 0 {
+                    ticks.push_str(&format!(
+                        " {} ticks: {} frames, {:.2} ms, worst {:.2} ms;",
+                        load.name(),
+                        g.frames,
+                        g.mean_ms(),
+                        ns_to_ms(g.frame_max_ns),
+                    ));
+                }
+            }
+            ui.label(ticks.trim_end_matches(';'));
+            for class in ThreadClass::ALL {
+                let mut line = format!("{}:", class.name());
+                for kind in Kind::ALL {
+                    line.push_str(&format!(
+                        " {} {:.2}",
+                        kind.name(),
+                        t.per_frame_ms(t.bucket(class, kind))
+                    ));
+                }
+                if class == ThreadClass::Game {
+                    line.push_str(&format!(
+                        ", untracked {:.2}",
+                        t.per_frame_ms(t.game_untracked_ns())
+                    ));
+                }
+                ui.label(format!("{line} ms/frame"));
+            }
+
+            let mut slots: Vec<_> = frame_timing::Slot::ALL
+                .into_iter()
+                .filter(|s| t.slot(*s).calls > 0)
+                .collect();
+            slots.sort_by_key(|s| std::cmp::Reverse(t.slot(*s).self_ns));
+            egui::Grid::new("frame_breakdown_slots")
+                .striped(true)
+                .num_columns(5)
+                .show(ui, |ui| {
+                    for heading in ["slot", "kind", "self ms/frame", "max ms", "calls/frame"] {
+                        ui.strong(heading);
+                    }
+                    ui.end_row();
+                    for slot in slots {
+                        let s = t.slot(slot);
+                        ui.label(slot.name());
+                        ui.label(slot.kind().name());
+                        ui.label(format!("{:.3}", t.per_frame_ms(s.self_ns)));
+                        ui.label(format!("{:.3}", ns_to_ms(s.max_ns)));
+                        ui.label(format!("{:.2}", s.calls as f64 / t.frames.max(1) as f64));
+                        ui.end_row();
+                    }
+                });
+        });
+}
+
+/// The switch for the online-suite manager's per-tick Steam check, beside the breakdown whose
+/// `sim_online` and `sim_logged_on` slots show its cost.
+fn online_controls(ui: &mut egui::Ui) {
+    ui.separator();
+    ui.checkbox(
+        &mut config::edit().online.skip_logged_on_check,
+        "Skip the offline suite retry's Steam check",
+    )
+    .on_hover_text(
+        "While logged in offline, the online-suite manager asks Steam on every tick whether \
+         it is logged on, to decide whether to retry the online suite. On, that check answers \
+         no without calling Steam: the periodic sim-tick stalls it is suspected of go away, and \
+         an offline session stays offline until the game is restarted. Off restores the call.",
+    );
+}
+
 /// The far-field split totals (issue #32), mirrored here so they can be watched alongside the
-/// frame rate while tuning in the Render tab.
+/// frame rate while tuning the Experimental page's far field.
 fn far_field_summary(ui: &mut egui::Ui) {
     let mut stats = crate::far_field::stats_snapshot();
     stats.retain(|(_, s)| s.updated.elapsed().as_secs_f32() < 1.0);

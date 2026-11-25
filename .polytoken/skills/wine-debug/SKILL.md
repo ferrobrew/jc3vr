@@ -17,8 +17,9 @@ The pillars:
 - **Wine parks blocked threads in visible syscalls**, and its thread state
   (TEB, syscall frames) is reachable from outside.
 
-Read the payload log first (`target/x86_64-pc-windows-msvc/debug/jc3vrs.log`
-next to the built DLL); it says what the mod last did. Debug second.
+Read the payload log first: `session.log` and `crash.log` in the newest folder
+under `sessions/` (see `docs/mod/sessions.md`). It says what the mod last did.
+Debug second.
 
 ## Resolve context at session start
 
@@ -28,7 +29,7 @@ pyxis definitions. Do not hardcode either.
 ```sh
 echo "IDB=$JC3_RELEASE_IDB"   # release IDB for symbolizing exe addresses
 pgrep -fa "JustCause3"        # the bare JustCause3.exe line is the game PID
-grep jc3vrs_payload /proc/<pid>/maps | head -2   # payload mapping range
+grep jc3vr_payload /proc/<pid>/maps | head -2   # payload mapping range
 ```
 
 For any game address you need — singletons, field offsets, vtable slots,
@@ -68,13 +69,13 @@ make a naive catcher useless under Wine:
    loop-continue past a fatal fault.
 
 `scripts/catch_crash.py` does exactly this: it auto-resolves the game PID (the one
-with `jc3vrs_payload` mapped) and the exe/payload address bands, silences the Wine
+with `jc3vr_payload` mapped) and the exe/payload address bands, silences the Wine
 signals, stops on the first real fault, and dumps registers + faulting
 instructions + backtrace + a stack scan, tagging any address in the exe or the
 payload band.
 
 ```sh
-gdb --batch -x .polytoken/skills/wine-debug/scripts/catch_crash.py > /tmp/crash.out 2>&1 &
+gdb --batch -x .claude/skills/wine-debug/scripts/catch_crash.py > /tmp/crash.out 2>&1 &
 #   wait for "=== ATTACHED ... trigger the crash now ===", then trigger it; read /tmp/crash.out
 ```
 
@@ -82,6 +83,18 @@ A fault **RIP inside the payload band** after an eject/teardown is the signature
 of a **dangling detour** — an inline hook (COM-vtable or otherwise) left enabled
 while the DLL unmapped, so the game jumped into freed payload code. The fix is a
 teardown that disables those detours before unload.
+
+## A C runtime dialog ("pure virtual function call", R6025 and friends)
+
+A pure virtual call, an invalid parameter, or an `abort()` in the game's C
+runtime raises no SEH exception, so the payload's crash handler records
+nothing and `catch_crash.py` sees no fault. The runtime shows a modal dialog
+instead, and the faulting thread stays parked inside it until it is closed.
+Ask the user to leave the dialog open, then run `scripts/stackscan.py <pid>`:
+the faulting thread's live band holds the whole call chain. A pure call ends
+in a game function that calls through an object's virtual table, and the
+object's abstract base table usually sits on the stack beside it. Read that
+table's slots in the IDB; the pure ones all point at the same `_purecall` stub.
 
 ## Spinning threads: sample the instruction pointer
 
@@ -124,6 +137,9 @@ below the saved rsp — and any whole-stack-region scan — contains dead frames
 from earlier calls, including *earlier calls of the same function you are
 interested in*. Full-region scans are for triaging which threads are worth a
 proper walk, never for reading a call chain.
+Even the live band holds leftovers in frame slots a function never wrote, so an
+address that repeats, or that cannot call its neighbours, is stale; read the
+chain by checking each hit calls the next.
 
 ## Symbolize
 
@@ -134,7 +150,7 @@ proper walk, never for reading a call chain.
   dump-to-release discipline.
 - **Payload addresses** → RVA = address − payload mapping base (from
   `/proc/<pid>/maps`), then
-  `llvm-symbolizer --obj=target/x86_64-pc-windows-msvc/debug/jc3vrs_payload.dll <0x180000000 + RVA>`
+  `llvm-symbolizer --obj=target/x86_64-pc-windows-msvc/release/jc3vr_payload_loaded.dll --relative-address --inlines <RVA>`
   (`0x180000000` is the DLL's ImageBase; confirm with `objdump -x` if in
   doubt). Output includes file:line into `payload/src`.
 

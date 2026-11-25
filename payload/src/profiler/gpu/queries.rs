@@ -8,11 +8,17 @@ use jc3gi::graphics_engine::graphics_engine::{
 };
 use puffin::{GlobalProfiler, ScopeDetails, ScopeId};
 
-use crate::profiler::gpu::{
-    GpuSeam,
-    gaps::{Resolved, starvation_gaps},
-    lane::{GpuScope, report_gpu_frame},
-    stats::{DispatchMetrics, Stats, ms},
+use crate::{
+    profiler::gpu::{
+        GpuSeam,
+        gaps::{Resolved, named_gaps, starvation_gaps},
+        lane::{GpuScope, report_gpu_frame},
+        stats::{DispatchMetrics, Stats, ms},
+    },
+    testing::benchmark::{
+        GpuDispatchSample,
+        gpu_passes::{self, GpuPassLabel},
+    },
 };
 
 /// A raw handle wrapper asserting [`Send`]. Sound because every handle is created, recorded, and
@@ -22,19 +28,22 @@ pub(super) struct SendPtr<T>(pub(super) *mut T);
 unsafe impl<T> Send for SendPtr<T> {}
 
 /// Dispatches of read-back backlog to keep polling before giving up and recycling the oldest
-/// (about three frames' worth at two to three dispatches per frame).
-pub(super) const MAX_PENDING: usize = 8;
+/// (about six frames' worth at two to three dispatches per frame, enough for a GPU-bound frame
+/// queue at a large render size).
+pub(super) const MAX_PENDING: usize = 16;
 
 /// The largest inter-dispatch gap reported as a "GPU idle" scope. Anything longer is a pause
 /// (collection toggled, a load, a hitch), not a pipeline bubble worth charting.
 pub(super) const MAX_CREDIBLE_IDLE_NS: i64 = 50_000_000;
 
-/// What a GPU interval measures: one of the coarse render seams, or one render pass nested inside
-/// a seam.
+/// What a GPU interval measures: one of the coarse render seams, one render pass nested inside a
+/// seam (by its scope and the engine's name for it), or a named stretch of work that is not a render
+/// pass, such as one post effect, which the work-and-holes subdivision does not count.
 #[derive(Clone, Copy)]
 pub(super) enum IntervalLabel {
     Seam(GpuSeam),
-    Pass(ScopeId),
+    Pass(ScopeId, &'static str),
+    Detail(ScopeId, &'static str),
 }
 
 pub(super) struct Dispatch {
@@ -228,6 +237,7 @@ impl GpuProfiler {
                 }
                 // Disjoint (unreliable), zero frequency, or an over-deep backlog: drop it.
                 _ => {
+                    crate::testing::benchmark::note_gpu_dispatch_dropped();
                     let dispatch = self.pending.pop_front().unwrap();
                     self.recycle_dispatch(dispatch);
                 }
@@ -327,6 +337,45 @@ impl GpuProfiler {
             );
             self.stats.log_if_due();
 
+            if crate::testing::benchmark::gpu_timing_armed() {
+                let mut seams_ns = [None; GpuSeam::ALL.len()];
+                for r in &resolved {
+                    if let IntervalLabel::Seam(seam) = r.label {
+                        let slot: &mut Option<i64> = &mut seams_ns[seam.index()];
+                        *slot = Some(slot.unwrap_or(0) + (r.stop_ns - r.start_ns));
+                    }
+                }
+                gpu_passes::record(
+                    dispatch.lane as u8,
+                    resolved
+                        .iter()
+                        .filter_map(|r| {
+                            let label = match r.label {
+                                IntervalLabel::Seam(_) => return None,
+                                IntervalLabel::Pass(_, name) => GpuPassLabel::RenderPass(name),
+                                IntervalLabel::Detail(_, name) => GpuPassLabel::Detail(name),
+                            };
+                            Some((label, r.stop_ns - r.start_ns))
+                        })
+                        .chain(
+                            named_gaps(&resolved, outer_start, outer_stop)
+                                .into_iter()
+                                .map(|(at, ns)| (GpuPassLabel::Gap(at.name()), ns)),
+                        ),
+                );
+                crate::testing::benchmark::record_gpu_dispatch(GpuDispatchSample {
+                    lane: dispatch.lane as u8,
+                    span_ns,
+                    idle_before_ns: idle_ns,
+                    submit_ns,
+                    seams_ns,
+                });
+            }
+            if !puffin::are_scopes_on() {
+                self.recycle_dispatch(dispatch);
+                return;
+            }
+
             self.ensure_scopes();
             let mut scopes = Vec::with_capacity(resolved.len() + gaps.len() + 2);
             if let Some(gap_ns) = idle_ns {
@@ -362,8 +411,8 @@ impl GpuProfiler {
             );
             scopes.extend(resolved.iter().map(|r| GpuScope {
                 id: match r.label {
-                    IntervalLabel::Seam(seam) => self.seam_scopes[seam_index(seam)],
-                    IntervalLabel::Pass(scope) => scope,
+                    IntervalLabel::Seam(seam) => self.seam_scopes[seam.index()],
+                    IntervalLabel::Pass(scope, _) | IntervalLabel::Detail(scope, _) => scope,
                 },
                 start_ns: r.start_ns,
                 stop_ns: r.stop_ns,
@@ -417,14 +466,7 @@ impl GpuProfiler {
         ]);
         self.idle_scope = holes.first().copied();
         self.starved_scope = holes.get(1).copied();
-        let seams = [
-            GpuSeam::PreDraw,
-            GpuSeam::GBuffer,
-            GpuSeam::Scene,
-            GpuSeam::PostEffects,
-            GpuSeam::PostDraw,
-        ];
-        let details: Vec<ScopeDetails> = seams
+        let details: Vec<ScopeDetails> = GpuSeam::ALL
             .iter()
             .map(|s| ScopeDetails::from_scope_name(s.name()))
             .collect();
@@ -446,14 +488,3 @@ struct PrevDispatchEnd {
 /// The shortest intra-dispatch hole reported as its own "GPU starved" scope. Shorter holes are
 /// still counted in the starved total; charting them all would bury the lane in slivers.
 const MIN_REPORTED_GAP_NS: i64 = 50_000;
-
-/// The index of a [`GpuSeam`] into the registered `seam_scopes` list (draw order).
-fn seam_index(seam: GpuSeam) -> usize {
-    match seam {
-        GpuSeam::PreDraw => 0,
-        GpuSeam::GBuffer => 1,
-        GpuSeam::Scene => 2,
-        GpuSeam::PostEffects => 3,
-        GpuSeam::PostDraw => 4,
-    }
-}

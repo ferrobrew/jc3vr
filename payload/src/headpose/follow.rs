@@ -1,0 +1,523 @@
+//! The body turning under the view: the character's facing follows the player's torso on foot
+//! while the view stays where the player looks. Pure.
+//!
+//! Under the VR source the view composes the head onto the character's body frame (`body ×
+//! cockpit`, see [`crate::headpose::xr`]), so turning the character turns the view. To let the
+//! body follow the player's estimated torso without turning the view, the view frame is the body
+//! frame turned back by an offset about the body's up axis: `view = body × Ry(-offset)`. The
+//! offset is the body's heading relative to the view, and the view's own heading is held apart:
+//!
+//! - **Following** (on foot, with the setting on): the view's heading is the turn accumulator's
+//!   heading, which only the turn input (the stick, the mouse, a snap step) moves, kept as a
+//!   tick-spaced pair. The body is steered to the view's heading plus the torso's heading in the
+//!   cockpit frame, so it faces the way the player's torso does. The offset is whatever the body's
+//!   real heading is minus the view's, read from the same tick-spaced body transforms the view
+//!   interpolates between, so however the game turns the body, at whatever rate, none of it reaches
+//!   the view.
+//! - **Not following** (off foot, swimming, or the setting off): the offset is frozen at its last
+//!   value, so the view rides the body as it always has, turned by a constant. The body is steered
+//!   to the accumulator's heading plus the frozen offset, which leaves the view converging on the
+//!   accumulator's heading exactly as it did before the offset existed.
+//!
+//! - **Stepping** (off foot, through a vehicle's entry or exit animation): the view's heading is
+//!   held as while following, so the clip's turn of the body does not swing the view, and every
+//!   [`STEP_INTERVAL_S`] it steps toward the body's heading by up to [`STEP_RAD`], in one hard step
+//!   rather than a turn the eyes would track. It keeps stepping past the animation until the view
+//!   faces within [`STEP_SETTLED_RAD`] of the body, so the seat and everything off foot meet the
+//!   body's forward; what is left is frozen and banked as below. Past the animation the vehicle
+//!   carries the body, so there the view rides the body's turn and steps only the difference the
+//!   animation left: a vehicle that drives off turning turns the view with it.
+//! - **Holding** (off foot, through a ragdoll, its get-up, or a death): the view's heading is held
+//!   as while stepping, but it never steps: the get-up's pose matching turns the root by up to
+//!   half a turn to wherever the ragdoll fell, and a view riding the body turned with it. Once the
+//!   body follows again it turns to the player's torso under the held view; off foot, what is left
+//!   is frozen and banked as below.
+//!
+//! A recenter clears the offset: it re-bases the cockpit to the head, which already turns the view.
+//! Once the body stops following, the frozen offset is folded into the cockpit baseline at the top
+//! of the next frame ([`BodyFollow::bank`]): the baseline turns with the body and the offset goes to
+//! zero together, so the view does not move and the cockpit frame's forward is the body's again,
+//! as everything off foot (the vehicles' controls, the driving view, the flight steering) expects.
+//!
+//! Headings are world yaws about +Y in radians, as [`crate::headpose::sim::body_yaw_of`] reads them.
+
+use body_rig::angle::wrap;
+
+/// The follow state, owned by the VR body-yaw accumulator.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct BodyFollow {
+    /// The view's heading at the previous and the current tick, while following.
+    view: Option<(f32, f32)>,
+    /// The body's target heading relative to the view while following: the torso's heading,
+    /// through the deadband.
+    target: f32,
+    /// The offset while not following.
+    frozen: f32,
+    /// The steps' state, while stepping.
+    stepping: Option<Stepping>,
+}
+
+/// The steps' state.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Stepping {
+    /// The seconds since the last step.
+    since: f32,
+    /// The body's heading at the last tick, for the view to ride its turn once the animation ends.
+    body: f32,
+}
+
+/// One input tick's inputs to [`BodyFollow::tick`].
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct FollowTick {
+    /// Whether the body follows this tick.
+    pub follow: bool,
+    /// The turn accumulator's heading after this tick's input.
+    pub heading: f32,
+    /// The body's current heading.
+    pub body: f32,
+    /// The torso's heading in the cockpit frame, when estimated.
+    pub torso: Option<f32>,
+    /// How far the torso may turn from the body's target before the target moves, radians.
+    pub deadband: f32,
+    /// Whether a vehicle's entry or exit animation turns the body this tick, so the view steps
+    /// toward the body instead of riding it. Ignored while following.
+    pub step: bool,
+    /// Whether a ragdoll, its get-up, or a death throws the body about this tick, so the view holds
+    /// its heading and does not step. Ignored while following.
+    pub hold: bool,
+    /// The tick's length, seconds, for the steps' interval.
+    pub dt: f32,
+}
+
+impl BodyFollow {
+    pub const fn new() -> Self {
+        Self {
+            view: None,
+            target: 0.0,
+            frozen: 0.0,
+            stepping: None,
+        }
+    }
+
+    /// Whether the body is following.
+    pub fn following(&self) -> bool {
+        self.view.is_some()
+    }
+
+    /// The offset a fresh turn accumulator seeds against: the view's heading is the body's minus
+    /// it. Zero until the body has followed.
+    pub fn frozen(&self) -> f32 {
+        self.frozen
+    }
+
+    /// The body's target heading relative to the view: the torso's while following, the frozen
+    /// offset otherwise.
+    pub fn target(&self) -> f32 {
+        if self.following() {
+            self.target
+        } else {
+            self.frozen
+        }
+    }
+
+    /// Advance one input tick.
+    pub fn tick(&mut self, tick: FollowTick) {
+        if !tick.follow && tick.body.is_finite() && self.steps(tick) {
+            return;
+        }
+        if !tick.follow || !tick.heading.is_finite() || !tick.body.is_finite() {
+            self.stepping = None;
+            if let Some((_, current)) = self.view.take() {
+                self.frozen = wrap(tick.body - current);
+            }
+            return;
+        }
+        let previous = match self.view {
+            Some((_, current)) if self.stepping.take().is_some() => {
+                // Out of a vehicle's exit: the body holds its place relative to the view.
+                self.target = wrap(tick.body - current);
+                current
+            }
+            Some((_, current)) => current,
+            None => {
+                // The body holds its place relative to the view until the torso moves it.
+                self.target = self.frozen;
+                tick.heading
+            }
+        };
+        self.view = Some((previous, tick.heading));
+        if let Some(torso) = tick.torso.filter(|t| t.is_finite()) {
+            let deadband = if tick.deadband.is_finite() {
+                tick.deadband.max(0.0)
+            } else {
+                0.0
+            };
+            let off = wrap(torso - self.target);
+            if off.abs() > deadband {
+                self.target = wrap(torso - off.signum() * deadband);
+            }
+        }
+    }
+
+    /// Step the view toward the body while a vehicle's entry or exit animation turns it, or until
+    /// the view has caught up with a body an animation turned. Returns whether it stepped.
+    fn steps(&mut self, tick: FollowTick) -> bool {
+        let held = match self.view {
+            Some((_, current)) => current,
+            None => wrap(tick.body - self.frozen),
+        };
+        if tick.hold {
+            self.stepping = Some(Stepping {
+                since: 0.0,
+                body: tick.body,
+            });
+            self.view = Some((held, held));
+            return true;
+        }
+        // Past the animation, the vehicle turns the body: the view rides that turn.
+        let current = match self.stepping {
+            Some(stepping) if !tick.step => wrap(held + wrap(tick.body - stepping.body)),
+            _ => held,
+        };
+        let remaining = wrap(tick.body - current);
+        let settled = remaining.abs() <= STEP_SETTLED_RAD;
+        if !tick.step && (self.stepping.is_none() || settled) {
+            if self.stepping.is_some() {
+                self.view = Some((current, current));
+            }
+            return false;
+        }
+        let dt = if tick.dt.is_finite() {
+            tick.dt.max(0.0)
+        } else {
+            0.0
+        };
+        let since = self.stepping.map_or(0.0, |stepping| stepping.since + dt);
+        let (heading, since) = if since >= STEP_INTERVAL_S && !settled {
+            (
+                wrap(current + remaining.signum() * remaining.abs().min(STEP_RAD)),
+                0.0,
+            )
+        } else {
+            (current, since)
+        };
+        self.stepping = Some(Stepping {
+            since,
+            body: tick.body,
+        });
+        self.view = Some((held, heading));
+        true
+    }
+
+    /// Whether the view is stepping toward the body through a vehicle's entry or exit.
+    pub fn is_stepping(&self) -> bool {
+        self.stepping.is_some()
+    }
+
+    /// The offset of a body whose heading is `body`, at the current tick (`current`) or the
+    /// previous one.
+    pub fn offset(&self, body: f32, current: bool) -> f32 {
+        match self.view {
+            Some((previous, now)) if body.is_finite() => {
+                wrap(body - if current { now } else { previous })
+            }
+            Some(_) => 0.0,
+            None => self.frozen,
+        }
+    }
+
+    /// Take `yaw` out of the frozen offset, for a cockpit baseline that turned by it: the view
+    /// composes the same either way.
+    pub fn bank(&mut self, yaw: f32) {
+        if yaw.is_finite() {
+            self.frozen = wrap(self.frozen - yaw);
+        }
+    }
+
+    /// Clear the offset, for a recenter: the view takes the body's heading `body` from here.
+    pub fn clear(&mut self, body: f32) {
+        self.stepping = None;
+        self.frozen = 0.0;
+        self.target = 0.0;
+        if self.view.is_some() && body.is_finite() {
+            self.view = Some((body, body));
+        }
+    }
+}
+
+/// How long the view holds its heading between steps toward a vehicle's turn of the body,
+/// seconds.
+pub const STEP_INTERVAL_S: f32 = 0.5;
+
+/// The largest step toward the body, radians: 30 degrees.
+pub const STEP_RAD: f32 = std::f32::consts::FRAC_PI_6;
+
+/// How close the view must face the body for the steps to end, radians: about 3 degrees.
+pub const STEP_SETTLED_RAD: f32 = 0.05;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn deg(d: f32) -> f32 {
+        d.to_radians()
+    }
+
+    fn tick(follow: bool, heading: f32, body: f32, torso: Option<f32>) -> FollowTick {
+        FollowTick {
+            follow,
+            heading,
+            body,
+            torso,
+            deadband: deg(5.0),
+            step: false,
+            hold: false,
+            dt: 0.02,
+        }
+    }
+
+    fn stepping_tick(step: bool, body: f32) -> FollowTick {
+        FollowTick {
+            follow: false,
+            heading: 0.0,
+            body,
+            torso: None,
+            deadband: 0.0,
+            step,
+            hold: false,
+            dt: 0.1,
+        }
+    }
+
+    #[test]
+    fn a_get_ups_turn_of_the_root_does_not_turn_the_view_and_the_body_turns_back_to_the_torso() {
+        let mut follow = BodyFollow::new();
+        let thrown = |body| FollowTick {
+            hold: true,
+            ..stepping_tick(false, body)
+        };
+        // Riding the body at 60 degrees, then the pose matching turns the root half a turn.
+        follow.tick(thrown(deg(60.0)));
+        for body in [deg(60.0), deg(-105.0), deg(-100.0), deg(-100.0)] {
+            follow.tick(thrown(body));
+            assert!(
+                wrap(body - follow.offset(body, true) - deg(60.0)).abs() < 1e-4,
+                "the view holds its heading"
+            );
+        }
+        // Standing again, the body follows the torso, straight ahead of the view.
+        follow.tick(tick(true, deg(60.0), deg(-100.0), Some(0.0)));
+        assert!(follow.following());
+        assert!(
+            follow.target().abs() <= deg(5.0) + 1e-4,
+            "{}",
+            follow.target()
+        );
+        assert!((wrap(deg(-100.0) - follow.offset(deg(-100.0), true)) - deg(60.0)).abs() < 1e-4);
+    }
+
+    #[test]
+    fn an_entry_turn_steps_the_view_in_hard_steps() {
+        let mut follow = BodyFollow::new();
+        // The body turns 70 degrees at once under a view that faced it.
+        follow.tick(stepping_tick(true, 0.0));
+        let body = deg(70.0);
+        let mut views = vec![0.0];
+        for _ in 1..30 {
+            follow.tick(stepping_tick(true, body));
+            views.push(wrap(body - follow.offset(body, true)));
+        }
+        // Held at first, then 30, 60, and the last 10 degrees, half a second apart.
+        assert!(views[0].abs() < 1e-5);
+        assert!(
+            (views[5] - deg(30.0)).abs() < 1e-4,
+            "{}",
+            views[5].to_degrees()
+        );
+        assert!((views[10] - deg(60.0)).abs() < 1e-4);
+        assert!((views[15] - deg(70.0)).abs() < 1e-4);
+        assert!(
+            views
+                .windows(2)
+                .all(|w| (w[1] - w[0]).abs() <= deg(30.0) + 1e-4)
+        );
+    }
+
+    #[test]
+    fn the_steps_finish_after_the_animation_and_then_freeze() {
+        let mut follow = BodyFollow::new();
+        follow.tick(stepping_tick(true, 0.0));
+        let body = deg(50.0);
+        follow.tick(stepping_tick(true, body));
+        // The animation ends: the steps carry on until the view has caught up.
+        for _ in 0..20 {
+            follow.tick(stepping_tick(false, body));
+        }
+        assert!(!follow.is_stepping());
+        assert!(!follow.following());
+        assert!(follow.frozen().abs() <= STEP_SETTLED_RAD);
+    }
+
+    #[test]
+    fn past_the_animation_the_view_rides_a_turning_vehicle_and_settles() {
+        let mut follow = BodyFollow::new();
+        follow.tick(stepping_tick(true, 0.0));
+        // The animation leaves the body 50 degrees from the view, and the vehicle then drives off
+        // turning at 90 degrees a second, faster than the steps alone could catch.
+        let mut body = deg(50.0);
+        follow.tick(stepping_tick(true, body));
+        let mut gap = Vec::new();
+        for _ in 0..30 {
+            body = wrap(body + deg(9.0));
+            follow.tick(stepping_tick(false, body));
+            gap.push(follow.offset(body, true));
+            if !follow.is_stepping() {
+                break;
+            }
+        }
+        assert!(!follow.is_stepping(), "the steps settle: {gap:?}");
+        assert!(follow.frozen().abs() <= STEP_SETTLED_RAD);
+        // The view's offset from the body only ever closes, a step at a time: the vehicle's own
+        // turn never opens it.
+        assert!(
+            gap.windows(2)
+                .all(|w| w[1].abs() <= w[0].abs() + 1e-4
+                    && w[0].abs() - w[1].abs() <= deg(30.0) + 1e-4),
+            "{:?}",
+            gap.iter().map(|g| g.to_degrees()).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn a_settled_view_does_not_step() {
+        let mut follow = BodyFollow::new();
+        follow.tick(stepping_tick(false, deg(40.0)));
+        assert!(!follow.is_stepping());
+        assert!((follow.frozen() - 0.0).abs() < 1e-6);
+    }
+
+    /// The body heading a rate-limited executor reaches from `body` toward `target` in a tick.
+    fn step(body: f32, target: f32, max_step: f32) -> f32 {
+        wrap(body + wrap(target - body).clamp(-max_step, max_step))
+    }
+
+    #[test]
+    fn the_view_stays_put_while_the_body_turns_to_the_torso() {
+        let mut follow = BodyFollow::new();
+        let view = deg(30.0);
+        let mut body = view;
+        let mut views = Vec::new();
+        for _ in 0..40 {
+            follow.tick(tick(true, view, body, Some(deg(90.0))));
+            let previous_body = body;
+            body = step(body, view + follow.target(), deg(10.0));
+            // The view composes each side of the pair from that side's body.
+            views.push((
+                wrap(previous_body - follow.offset(previous_body, false)),
+                wrap(body - follow.offset(body, true)),
+            ));
+        }
+        // The body faces the torso's heading, short by the deadband.
+        assert!((wrap(body - view) - deg(85.0)).abs() < 1e-4);
+        for (previous, current) in views {
+            assert!((previous - view).abs() < 1e-5 && (current - view).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn the_turn_input_alone_turns_the_view() {
+        let mut follow = BodyFollow::new();
+        let mut body = 0.0;
+        let mut heading = 0.0;
+        for i in 0..20 {
+            let previous_heading = heading;
+            heading = wrap(heading + deg(3.0));
+            follow.tick(tick(true, heading, body, Some(0.0)));
+            let previous_body = body;
+            // The game also kicks the body by a few degrees now and then.
+            body = step(body, heading + follow.target(), deg(10.0))
+                + if i % 5 == 0 { 0.05 } else { 0.0 };
+            if i > 0 {
+                let previous = wrap(previous_body - follow.offset(previous_body, false));
+                assert!((previous - previous_heading).abs() < 1e-5);
+            }
+            let current = wrap(body - follow.offset(body, true));
+            assert!((current - heading).abs() < 1e-5);
+        }
+    }
+
+    #[test]
+    fn small_torso_motion_inside_the_deadband_leaves_the_target() {
+        let mut follow = BodyFollow::new();
+        follow.tick(tick(true, 0.0, 0.0, Some(deg(20.0))));
+        assert!((follow.target() - deg(15.0)).abs() < 1e-5);
+        follow.tick(tick(true, 0.0, 0.0, Some(deg(17.0))));
+        assert!((follow.target() - deg(15.0)).abs() < 1e-5);
+        follow.tick(tick(true, 0.0, 0.0, Some(deg(5.0))));
+        assert!((follow.target() - deg(10.0)).abs() < 1e-5);
+        // No estimate holds the target.
+        follow.tick(tick(true, 0.0, 0.0, None));
+        assert!((follow.target() - deg(10.0)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn stopping_freezes_the_offset_and_keeps_the_body_where_it_is() {
+        let mut follow = BodyFollow::new();
+        follow.tick(tick(true, deg(10.0), deg(50.0), Some(deg(40.0))));
+        follow.tick(tick(false, deg(10.0), deg(50.0), Some(deg(40.0))));
+        assert!(!follow.following());
+        assert!((follow.offset(deg(80.0), true) - deg(40.0)).abs() < 1e-5);
+        assert!((follow.target() - deg(40.0)).abs() < 1e-5);
+        // A body steered to the heading plus the frozen offset does not move.
+        assert!((wrap(deg(10.0) + follow.target()) - deg(50.0)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn resuming_starts_from_the_frozen_offset() {
+        let mut follow = BodyFollow::new();
+        follow.tick(tick(true, 0.0, deg(30.0), Some(deg(30.0))));
+        follow.tick(tick(false, 0.0, deg(30.0), None));
+        // Off foot the body was turned by the game; the view rode it.
+        let body = deg(100.0);
+        let view = wrap(body - follow.offset(body, true));
+        // Back on foot the accumulator seeds at the view's heading.
+        follow.tick(tick(true, view, body, None));
+        assert!((wrap(body - follow.offset(body, true)) - view).abs() < 1e-5);
+        assert!((follow.target() - deg(30.0)).abs() < 1e-5);
+    }
+
+    #[test]
+    fn a_recenter_clears_the_offset() {
+        let mut follow = BodyFollow::new();
+        follow.tick(tick(true, 0.0, deg(45.0), Some(deg(45.0))));
+        follow.clear(deg(45.0));
+        assert_eq!(follow.offset(deg(45.0), true), 0.0);
+        assert_eq!(follow.offset(deg(45.0), false), 0.0);
+        assert_eq!(follow.target(), 0.0);
+        let mut stopped = BodyFollow::new();
+        stopped.tick(tick(true, 0.0, deg(45.0), None));
+        stopped.tick(tick(false, 0.0, deg(45.0), None));
+        stopped.clear(deg(45.0));
+        assert_eq!(stopped.offset(deg(90.0), true), 0.0);
+    }
+
+    #[test]
+    fn banking_moves_the_frozen_offset_out() {
+        let mut follow = BodyFollow::new();
+        follow.tick(tick(true, 0.0, deg(30.0), None));
+        follow.tick(tick(false, 0.0, deg(30.0), None));
+        follow.bank(deg(30.0));
+        assert!(follow.frozen().abs() < 1e-6);
+        assert!(follow.offset(deg(80.0), true).abs() < 1e-6);
+        follow.bank(f32::NAN);
+        assert!(follow.frozen().abs() < 1e-6);
+    }
+
+    #[test]
+    fn a_follow_that_never_ran_is_inert() {
+        let follow = BodyFollow::new();
+        assert_eq!(follow.offset(1.0, true), 0.0);
+        assert_eq!(follow.target(), 0.0);
+        assert!(!follow.following());
+    }
+}

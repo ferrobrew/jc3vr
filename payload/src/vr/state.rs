@@ -3,11 +3,15 @@
 //! state machine -- locating views, the swapchain acquire/release, and the frame submit -- lives in
 //! [`crate::vr::frame_loop`].
 
-use std::time::Instant;
+use std::{
+    panic::Location,
+    sync::atomic::{AtomicBool, AtomicI32, Ordering},
+    time::Instant,
+};
 
 use anyhow::Context as _;
 use openxr as xr;
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use windows::{
     Win32::UI::WindowsAndMessaging::{
         MB_ICONERROR, MB_OK, MB_SETFOREGROUND, MB_TOPMOST, MessageBoxW,
@@ -17,11 +21,21 @@ use windows::{
 
 use crate::{
     config::Config,
+    controllers::{
+        body::rig::origin_provenance::{self, ReferenceSpaceChanges},
+        frame as controller_frame,
+    },
+    frame_timing::{self, Slot},
     hooks::graphics_engine::graphics_engine,
+    thread_role::{self, ThreadRole},
     vr::{
         VIEW_TYPE, VrConfig, blit,
         eye_resolution::scaled_eye_size,
         foveation,
+        input::{
+            self, InputState,
+            flight_pose::{self, EpochChange},
+        },
         loader::{LoaderUnavailable, load_entry},
         mirror,
         persist::{
@@ -30,6 +44,9 @@ use crate::{
         recenter::Baseline,
         resolution,
         session::Session,
+        stage,
+        submit::{self, Submitter},
+        visibility_mask,
     },
 };
 
@@ -56,17 +73,31 @@ pub fn install() {
 /// frames). OpenXR failures degrade to flatscreen stereo and are retried; the one exception is a
 /// loader that will not load, which aborts the process (see [`LoaderUnavailable`]).
 pub fn update() -> bool {
+    let running = update_runtime();
+    SESSION_RUNNING.store(running, Ordering::Relaxed);
+    running
+}
+
+/// Whether an OpenXR session was running when the game thread last pumped the runtime ([`update`]).
+/// An atomic, so any thread may read it, including the main loop outside `Game::Update`, where
+/// [`is_running`] may not take the runtime lock. One frame stale at most.
+pub(crate) fn is_running_published() -> bool {
+    SESSION_RUNNING.load(Ordering::Relaxed)
+}
+
+/// The body of [`update`]: pumps the runtime and returns whether a session is running.
+fn update_runtime() -> bool {
     // Once eject has begun, do nothing: the shutdown cleanup tears the runtime down (persisting the
     // instance/session handles for the next injection), and an ungated re-entry here would see
     // `instance.is_none()`, re-acquire those persisted handles, and rebuild the swapchain -- racing
-    // the hook uninstall and crashing the game on uninject. Returning false also skips `frame_begin`
+    // the hook uninstall and crashing the game on uninject. Returning false also skips `frame_wait`
     // and `present_and_submit` in the caller, quiescing the whole VR frame path.
     if crate::is_shutting_down() {
         return false;
     }
 
     let cfg = Config::lock_query(|c| c.vr.clone());
-    let mut state = VR_STATE.lock();
+    let mut state = lock_state();
 
     if !cfg.enabled {
         if state.instance.is_some() {
@@ -86,9 +117,21 @@ pub fn update() -> bool {
     state.is_running()
 }
 
-/// Whether an OpenXR session is currently running (READY..STOPPING). Cheap; locks the state briefly.
+/// Whether an OpenXR session is currently running (READY..STOPPING). Locks the state briefly, so it
+/// is for the game thread at the top of the frame only (see [`lock_state`]); everything else asks
+/// whether a VR frame is rendering through the draw-safe [`crate::vr::render_params`] slot.
 pub fn is_running() -> bool {
-    VR_STATE.lock().is_running()
+    lock_state().is_running()
+}
+
+/// Wait until no frame holds the submit side: the deferred frame tail, if one is in flight, has
+/// submitted. Only the game thread hands frames to the tail, so once this returns nothing holds the
+/// submit side until the game thread begins a frame again. The shutdown path calls it before it
+/// takes the egui state lock and tears the runtime down under it: with the tail done, the draw task
+/// it was waiting on is done too, and no longer needs that lock. The serial frame ordering calls it
+/// at the top of the render update (see `vr.overlap_render_update`).
+pub fn wait_for_frame_tail() {
+    drop(submit::lock_submit());
 }
 
 /// A snapshot of the VR runtime state for the debug UI ([`crate::ui::vr`]).
@@ -112,10 +155,9 @@ pub struct VrStatus {
 /// Snapshot the VR runtime state for the debug UI. Locks the config and the runtime state briefly.
 pub fn status() -> VrStatus {
     let cfg = Config::lock_query(|c| c.vr.clone());
-    // `try_lock`, never `lock`. The deferred frame tail holds this lock across its drain and submit,
-    // and the debug UI runs on the game thread -- which is also what the tail waits on. Blocking here
-    // puts a diagnostic panel inside that cycle, and opening the VR tab at the wrong moment wedged
-    // the process outright. A stale readout for one frame is not worth a deadlock.
+    // `try_lock`, never `lock`. The debug UI runs on the game thread holding the egui state lock,
+    // and a blocking lock of the runtime state is for the top of the render update only (see
+    // `lock_state`). A stale readout for one frame is not worth a deadlock.
     let Some(state) = VR_STATE.try_lock() else {
         return VrStatus {
             enabled: cfg.enabled,
@@ -139,6 +181,31 @@ pub fn status() -> VrStatus {
     }
 }
 
+/// The runtime's state as the game thread last published it, for a status readout. Atomics only,
+/// so any thread may read it, unlike [`status`].
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PublishedStatus {
+    /// Whether the runtime is brought up: an instance and a session exist.
+    pub(crate) runtime_up: bool,
+    /// The session state the runtime last reported, or `None` before the first report since
+    /// bring-up. A session reused from a reinject reports none until it next changes state.
+    pub(crate) session_state: Option<xr::SessionState>,
+    /// Whether the last bring-up attempt failed, so the runtime is retrying.
+    pub(crate) bring_up_failed: bool,
+}
+
+/// The runtime's published state.
+pub(crate) fn published_status() -> PublishedStatus {
+    PublishedStatus {
+        runtime_up: RUNTIME_UP.load(Ordering::Relaxed),
+        session_state: match SESSION_STATE.load(Ordering::Relaxed) {
+            0 => None,
+            raw => Some(xr::SessionState::from_raw(raw)),
+        },
+        bring_up_failed: BRING_UP_FAILED.load(Ordering::Relaxed),
+    }
+}
+
 /// Tear the runtime down and clear all state. Idempotent. Registered with [`crate::lifecycle`], so it
 /// runs on uninject — where, if [`VrConfig::persist_instance`] is set, the instance and session are
 /// kept alive (their handles stashed in the game process environment, the wrappers leaked) for a
@@ -146,17 +213,96 @@ pub fn status() -> VrStatus {
 /// everything is destroyed.
 pub fn uninstall() {
     let persist = Config::lock_query(|c| c.vr.persist_instance);
-    let mut state = VR_STATE.lock();
+    let mut state = lock_state();
     if state.instance.is_some() {
         tracing::info!(target: "vr", persist, "uninstalling the OpenXR runtime");
     }
     state.teardown(persist);
 }
 
-/// The live VR runtime state, on the game's main thread. Locked briefly by [`update`] and held for a
-/// frame by [`crate::vr::FrameContext`]. A const-constructible [`Mutex`] singleton, the same pattern
-/// [`crate::capture`] uses.
-pub(super) static VR_STATE: Mutex<VrState> = Mutex::new(VrState::new());
+/// Lock the runtime state, blocking.
+///
+/// The game thread takes the state briefly at the top of the render update, and teardown takes the
+/// submit side under it ([`crate::vr::submit`]), which a frame holds while it waits on engine
+/// threads, so a blocking lock is safe only on the game thread at the top of a frame, holding no
+/// other lock ([`ThreadRole::may_block_on_vr_state`]). A lock from any other role is reported: debug builds
+/// panic, and release builds log the first one at error level and go on to lock. The check is one
+/// thread-local read. See `docs/mod/threading.md`.
+#[track_caller]
+pub(super) fn lock_state() -> MutexGuard<'static, VrState> {
+    let role = thread_role::current();
+    if !role.may_block_on_vr_state() {
+        report_forbidden_lock(role, Location::caller());
+    }
+    let _timing = frame_timing::scope(Slot::VrLock);
+    VR_STATE.lock()
+}
+
+/// Whether the runtime is brought up ([`published_status`]).
+static RUNTIME_UP: AtomicBool = AtomicBool::new(false);
+
+/// The raw session state the runtime last reported, `0` (not a session state) for none.
+static SESSION_STATE: AtomicI32 = AtomicI32::new(0);
+
+/// Whether the last bring-up attempt failed.
+static BRING_UP_FAILED: AtomicBool = AtomicBool::new(false);
+
+/// Whether a session was running at the last [`update`] ([`is_running_published`]).
+static SESSION_RUNNING: AtomicBool = AtomicBool::new(false);
+
+/// The live VR runtime state. Blocking locks go through [`lock_state`], which checks the caller's
+/// thread role; [`status`] alone uses `try_lock`, which cannot deadlock and so is not checked. A
+/// const-constructible [`Mutex`] singleton.
+static VR_STATE: Mutex<VrState> = Mutex::new(VrState::new());
+
+/// Report a blocking lock of the runtime state or the submit side from a role that must not take
+/// one.
+#[cold]
+#[inline(never)]
+pub(super) fn report_forbidden_lock(role: ThreadRole, location: &'static Location<'static>) {
+    let verdict = forbidden_lock_verdict(
+        cfg!(debug_assertions),
+        FORBIDDEN_LOCK_REPORTED.swap(true, Ordering::Relaxed),
+    );
+    if verdict == ForbiddenLockVerdict::Silent {
+        return;
+    }
+    let message = format!(
+        "vr: a blocking lock of the VR runtime state from {} at {location}: a frame holds that lock \
+         while it waits on this thread, or this thread already holds it, so the lock can deadlock \
+         (read a published slot such as `vr::render_params`, or defer the work to the top of the \
+         frame; see docs/mod/threading.md)",
+        role.describe(),
+    );
+    tracing::error!(target: "vr", ?role, "{message}");
+    if verdict == ForbiddenLockVerdict::Panic {
+        panic!("{message}");
+    }
+}
+
+/// What [`report_forbidden_lock`] does about a forbidden lock.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum ForbiddenLockVerdict {
+    /// Log it and panic: a debug build, where the panic names the site instead of a silent wedge.
+    Panic,
+    /// Log it and go on: the first one in a release build.
+    Log,
+    /// Go on: a release build that has already logged one.
+    Silent,
+}
+
+/// The verdict for a forbidden lock in a debug or release build, given whether one was reported
+/// before.
+fn forbidden_lock_verdict(debug_build: bool, reported_before: bool) -> ForbiddenLockVerdict {
+    match (debug_build, reported_before) {
+        (true, _) => ForbiddenLockVerdict::Panic,
+        (false, false) => ForbiddenLockVerdict::Log,
+        (false, true) => ForbiddenLockVerdict::Silent,
+    }
+}
+
+/// Whether a release build has logged a forbidden lock, so it logs only the first.
+static FORBIDDEN_LOCK_REPORTED: AtomicBool = AtomicBool::new(false);
 
 /// The maximum number of ~2 ms event polls to wait for a session to reach EXITING during the
 /// teardown exit handshake. A hard cap so teardown cannot hang if the runtime never advances the
@@ -171,10 +317,14 @@ pub(super) struct VrState {
     pub(super) system: Option<xr::SystemId>,
     pub(super) blend_mode: xr::EnvironmentBlendMode,
     pub(super) session: Option<Session>,
+    /// The controller input of the session. `None` when it could not be set up (VR still runs
+    /// without it) or while torn down.
+    pub(super) input: Option<InputState>,
     /// The last bring-up attempt, for the retry cadence.
     last_attempt: Option<Instant>,
     /// The recenter baseline (cockpit frame). `None` until first recenter.
     pub(super) baseline: Option<Baseline>,
+    pub(super) origin_reference_space: ReferenceSpaceChanges,
     /// The latest located head pose in LOCAL space, for [`crate::vr::recenter`]. `None` until a frame
     /// locates.
     pub(super) latest_head_pose: Option<xr::Posef>,
@@ -193,8 +343,10 @@ impl VrState {
             system: None,
             blend_mode: xr::EnvironmentBlendMode::OPAQUE,
             session: None,
+            input: None,
             last_attempt: None,
             baseline: None,
+            origin_reference_space: ReferenceSpaceChanges::new(),
             latest_head_pose: None,
             recommended_view: None,
             runtime_name: None,
@@ -205,11 +357,16 @@ impl VrState {
         self.session.as_ref().is_some_and(|s| s.running)
     }
 
-    /// The per-eye render resolution to drive the engine to: the runtime's recommended view size
-    /// scaled by [`VrConfig::resolution_scale`], the same computation the swapchain uses
+    /// The per-eye render resolution to drive the engine to: the runtime's recommended view size (or
+    /// [`VrConfig::recommended_size_override`] in its place) scaled by
+    /// [`VrConfig::resolution_scale`], the same computation the swapchain uses
     /// ([`scaled_eye_size`]). `None` until bring-up cached the recommended size.
     pub(super) fn eye_resolution(&self, cfg: &VrConfig) -> Option<(u32, u32)> {
         self.recommended_view
+            .map(|recommended| {
+                cfg.recommended_size_override
+                    .map_or(recommended, |[w, h]| (w, h))
+            })
             .map(|(w, h)| scaled_eye_size(w, h, cfg.resolution_scale))
     }
 
@@ -225,7 +382,9 @@ impl VrState {
         }
         self.last_attempt = Some(now);
 
-        if let Err(e) = self.bring_up(cfg) {
+        let result = self.bring_up(cfg);
+        BRING_UP_FAILED.store(result.is_err(), Ordering::Relaxed);
+        if let Err(e) = result {
             // A missing loader is a deployment fault, not a transient one: retrying cannot conjure
             // the DLL, and the warn-and-continue path below would leave the game running flat for a
             // whole session while looking, in the log, exactly like a headset that is merely idle.
@@ -265,7 +424,18 @@ impl VrState {
 
         let mut extensions = xr::ExtensionSet::default();
         extensions.khr_d3d11_enable = true;
+        // Optional: enabled whenever the runtime offers it, since an instance's extensions are fixed
+        // at creation. Whether the hand trackers are used is the controllers' own toggle.
+        extensions.ext_hand_tracking = available.ext_hand_tracking;
+        // Selects the hand-joint motion range at each locate; it extends hand tracking, so it is
+        // enabled only beside it.
+        extensions.ext_hand_joints_motion_range =
+            available.ext_hand_tracking && available.ext_hand_joints_motion_range;
+        // The hidden-area mesh, queried and shown in the debug UI (`crate::vr::visibility_mask`).
+        extensions.khr_visibility_mask = available.khr_visibility_mask;
         let instance = acquire_instance(&entry, &extensions, cfg.persist_instance)?;
+        // A persisted instance keeps the extensions it was created with.
+        visibility_mask::set_supported(instance.exts().khr_visibility_mask.is_some());
 
         let system = instance
             .system(xr::FormFactor::HEAD_MOUNTED_DISPLAY)
@@ -291,7 +461,36 @@ impl VrState {
                 })
             });
 
-        let session = acquire_session(&instance, system, cfg)?;
+        let (session, frame_stream) = acquire_session(&instance, system, cfg)?;
+        let submitter = Submitter::new(
+            instance.clone(),
+            system,
+            session.handle.clone(),
+            frame_stream,
+            blend_mode,
+        )?;
+
+        // Controller input is optional: without it the headset still renders, and the mod stays on
+        // the gamepad scheme.
+        let (want_hand_tracking, dominant) = Config::lock_query(|c| {
+            (
+                c.controllers.input.hand_tracking,
+                c.controllers.dominant_hand,
+            )
+        });
+        let input = match InputState::acquire(
+            &instance,
+            system,
+            &session.handle,
+            want_hand_tracking,
+            dominant,
+        ) {
+            Ok(input) => Some(input),
+            Err(e) => {
+                tracing::warn!(target: "vr", "{e:#}");
+                None
+            }
+        };
 
         let runtime_name = instance.properties().ok().map(|props| {
             tracing::info!(
@@ -303,12 +502,17 @@ impl VrState {
             props.runtime_name.to_string()
         });
 
+        let _origin_mutation = origin_provenance::changing();
+        self.origin_reference_space = ReferenceSpaceChanges::new();
         self.instance = Some(instance);
         self.system = Some(system);
         self.blend_mode = blend_mode;
         self.session = Some(session);
+        submit::install(submitter);
+        self.input = input;
         self.recommended_view = recommended_view;
         self.runtime_name = runtime_name;
+        RUNTIME_UP.store(true, Ordering::Relaxed);
         Ok(())
     }
 
@@ -331,13 +535,44 @@ impl VrState {
             let action = match instance.poll_event(&mut events) {
                 Ok(Some(xr::Event::SessionStateChanged(e))) => PumpAction::StateChanged(e.state()),
                 Ok(Some(xr::Event::InstanceLossPending(_))) => PumpAction::InstanceLost,
+                Ok(Some(xr::Event::InteractionProfileChanged(_))) => {
+                    input::mark_profiles_dirty();
+                    continue;
+                }
+                Ok(Some(xr::Event::VisibilityMaskChangedKHR(_))) => {
+                    visibility_mask::mark_dirty();
+                    continue;
+                }
+                Ok(Some(xr::Event::ReferenceSpaceChangePending(e))) => {
+                    let matches_session = self
+                        .session
+                        .as_ref()
+                        .is_some_and(|session| session.handle.as_raw() == e.session());
+                    let space = e.reference_space_type();
+                    self.origin_reference_space.note_event(
+                        matches_session,
+                        space,
+                        e.change_time().as_nanos(),
+                    );
+                    if matches_session
+                        && matches!(
+                            space,
+                            xr::ReferenceSpaceType::LOCAL | xr::ReferenceSpaceType::STAGE
+                        )
+                    {
+                        stage::mark_bounds_dirty();
+                    }
+                    continue;
+                }
                 Ok(Some(xr::Event::EventsLost(e))) => {
+                    self.origin_reference_space.events_unknown();
                     tracing::warn!(target: "vr", "lost {} OpenXR events", e.lost_event_count());
                     continue;
                 }
                 Ok(Some(_)) => continue,
                 Ok(None) => break,
                 Err(e) => {
+                    self.origin_reference_space.events_unknown();
                     tracing::warn!(target: "vr", "poll_event failed: {e}");
                     break;
                 }
@@ -371,6 +606,7 @@ impl VrState {
     /// (EXITING / LOSS_PENDING).
     fn on_session_state(&mut self, state: xr::SessionState) -> bool {
         tracing::info!(target: "vr", "session state -> {state:?}");
+        SESSION_STATE.store(state.into_raw(), Ordering::Relaxed);
         let Some(session) = self.session.as_mut() else {
             return false;
         };
@@ -383,10 +619,13 @@ impl VrState {
                 session.running = true;
             }
             xr::SessionState::STOPPING => {
+                // A frame the deferred tail is still submitting ends first.
+                let _submit = submit::lock_submit();
                 if let Err(e) = session.handle.end() {
                     tracing::error!(target: "vr", "session end failed: {e}");
                 }
                 session.running = false;
+                controller_frame::clear();
             }
             xr::SessionState::EXITING | xr::SessionState::LOSS_PENDING => {
                 return true;
@@ -451,6 +690,10 @@ impl VrState {
     /// budget. When not set, end and destroy everything and clear the stashes so a later bring-up
     /// starts fresh (used when VR is genuinely stopped: `vr.enabled` off, or a lost session).
     fn teardown(&mut self, persist: bool) {
+        let _origin_mutation = origin_provenance::changing();
+        // The submit side first: taking it waits for a frame the deferred tail is still submitting,
+        // so nothing below runs under a frame.
+        let submitter = submit::take();
         // Drain the GPU first, and release the flip block, so the game's own present path resumes
         // against an idle pipeline rather than deadlocking in a timestamp-query readback (see
         // `blit::drain_gpu`); the swapchain is destroyed either way (persisting keeps only the
@@ -463,7 +706,20 @@ impl VrState {
         }
         graphics_engine::BLOCK_FLIP.store(false, std::sync::atomic::Ordering::Relaxed);
 
+        // The controller input goes before the session and the instance it belongs to: stashed
+        // alongside them when persisting, destroyed with them otherwise.
+        if let Some(input) = self.input.take() {
+            match (&self.instance, &self.session) {
+                (Some(instance), Some(session)) if persist => {
+                    input.persist(instance, &session.handle);
+                }
+                (Some(instance), _) => input.destroy(instance),
+                (None, _) => drop(input),
+            }
+        }
+
         if persist {
+            drop(submitter);
             if let Some(session) = self.session.take() {
                 persist_session(session);
             }
@@ -471,19 +727,26 @@ impl VrState {
                 stash_instance(instance);
             }
         } else {
-            if let Some(mut session) = self.session.take() {
-                // The exit handshake ran above; destroy the swapchain (before the session handle),
-                // then dropping `session` drops the frame stream/waiter and the session handle.
-                session.swapchain = None;
-            }
+            // The exit handshake ran above; destroy the submit side with the swapchain (before the
+            // session handle), then dropping the session drops the frame waiter and the handle.
+            drop(submitter);
+            self.session = None;
             self.instance = None;
             clear_persisted();
+            // A stash left by a failed bring-up names handles that die with the instance.
+            input::clear_stash();
         }
         self.system = None;
+        flight_pose::source_changed(EpochChange::RuntimeReset);
         self.baseline = None;
+        self.origin_reference_space = ReferenceSpaceChanges::new();
         self.latest_head_pose = None;
+        stage::clear();
         self.recommended_view = None;
         self.runtime_name = None;
+        RUNTIME_UP.store(false, Ordering::Relaxed);
+        SESSION_STATE.store(0, Ordering::Relaxed);
+        SESSION_RUNNING.store(false, Ordering::Relaxed);
     }
 }
 
@@ -509,5 +772,70 @@ fn fatal_message_box(message: &str) {
             &HSTRING::from("jc3vr: fatal error"),
             MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_debug_build_panics_on_every_forbidden_lock() {
+        assert_eq!(
+            forbidden_lock_verdict(true, false),
+            ForbiddenLockVerdict::Panic
+        );
+        assert_eq!(
+            forbidden_lock_verdict(true, true),
+            ForbiddenLockVerdict::Panic
+        );
+    }
+
+    #[test]
+    fn a_release_build_logs_only_the_first_forbidden_lock() {
+        assert_eq!(
+            forbidden_lock_verdict(false, false),
+            ForbiddenLockVerdict::Log
+        );
+        assert_eq!(
+            forbidden_lock_verdict(false, true),
+            ForbiddenLockVerdict::Silent
+        );
+    }
+
+    #[test]
+    fn the_game_thread_locks_without_a_report() {
+        std::thread::spawn(|| {
+            thread_role::mark_thread(ThreadRole::Game);
+            assert!(!lock_state().is_running());
+        })
+        .join()
+        .unwrap();
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_lock_inside_the_frame_panics_before_it_blocks() {
+        let result = std::thread::spawn(|| {
+            thread_role::mark_thread(ThreadRole::Game);
+            // Held, as the frame holds it: the check has to fire before the lock would wait.
+            let held = lock_state();
+            let _frame = thread_role::enter(ThreadRole::GameFrame);
+            let outcome = std::panic::catch_unwind(|| drop(lock_state()));
+            drop(held);
+            outcome
+        })
+        .join()
+        .unwrap();
+        assert!(result.is_err());
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    fn a_lock_from_an_unmarked_thread_panics() {
+        let result = std::thread::spawn(|| std::panic::catch_unwind(|| drop(lock_state())))
+            .join()
+            .unwrap();
+        assert!(result.is_err());
     }
 }

@@ -37,7 +37,7 @@ def read_mem(pid: int, addr: int, size: int) -> bytes:
 def payload_range(pid: int):
     lo = hi = None
     for line in open(f"/proc/{pid}/maps"):
-        if "jc3vrs_payload" in line:
+        if "jc3vr_payload" in line:
             start, end = (int(x, 16) for x in line.split()[0].split("-"))
             lo = start if lo is None else min(lo, start)
             hi = end if hi is None else max(hi, end)

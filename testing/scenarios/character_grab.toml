@@ -1,0 +1,26 @@
+# Template: fill testing/recordings/character_grab.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "yank a soldier down and drag the body"
+description = "Recorded with GRAB CHARACTERS on, god mode on, empty-handed, beside a standing hostile soldier (character-grabs.md, checklist items 1 and 2). Grip the soldier's collar, yank back hard, keep the grip while they fall, then drag the body a step and let go."
+recording = "../recordings/character_grab.jc3trk"
+settle_s = 3.0
+
+[[expect]]
+name = "the hand took hold of the soldier"
+signal = "characters.grips"
+
+[[expect]]
+name = "the yank landed"
+signal = "characters.yanks"
+
+[[expect]]
+name = "the yank knocked the soldier down"
+signal = "characters.knockdowns"
+
+[[expect]]
+name = "the hand took hold of the ragdoll"
+signal = "characters.regrips"
+
+[[expect]]
+name = "the player is still on foot at the end"
+signal = "controllers.on_foot"
+check = "at_end"

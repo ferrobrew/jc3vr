@@ -7,7 +7,7 @@
 
 use std::{
     ffi::c_void,
-    sync::atomic::{AtomicPtr, Ordering},
+    sync::atomic::{AtomicBool, AtomicPtr, Ordering},
 };
 
 use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
@@ -16,7 +16,15 @@ use retour::{Function, GenericDetour};
 use windows::{Win32::Foundation::RECT, core::Interface};
 
 use crate::stereo::single_pass::{
-    active, draw_detours::*, per_eye_reissue::*, shader_detours::*, viewport::*,
+    active,
+    draw_detours::*,
+    per_eye_reissue::*,
+    shader_detours::*,
+    shader_identity::{
+        CREATE_PIXEL_SHADER, CREATE_PIXEL_SHADER_SLOT, CreatePixelShaderFn,
+        create_pixel_shader_detour,
+    },
+    viewport::*,
 };
 
 /// A slot for a detour that is installed once and removed on eject.
@@ -111,11 +119,17 @@ unsafe extern "system" fn rs_set_scissor_rects_detour(
 /// frame (a shader created in between, e.g. a character shader loaded at level start, would otherwise
 /// be patched at the blob level but never recorded, so `BOUND_VS_PATCHED` stays false and its draw is
 /// never doubled). A normal (single-pass-off) session never installs it.
+/// Whether the draw-path COM detours are installed. Once a session has run single-pass they stay
+/// installed until eject, and every draw then passes through them, single-pass or not.
+pub(crate) fn com_detours_installed() -> bool {
+    RS_SET_VIEWPORTS.get().is_some()
+}
+
 pub(crate) fn ensure_viewport_detours() {
     // The whole body is serialized, not just the published-yet check: the callers are on different
     // threads (the render thread's cb13 mirror and the shader-creation thread's `CreateVertexProgram`),
     // and the publish happens only after seven `GenericDetour::new` calls. Two threads could otherwise
-    // both pass an unpublished check and both reach `ThreadSuspender::for_block`, each suspending the
+    // both pass an unpublished check and both reach `crate::hooks::suspend::for_block`, each suspending the
     // other -- a silent, permanent hang. `uninstall_com_detours` takes the same lock so an eject cannot
     // interleave with an install.
     let _install = DETOUR_INSTALL.lock();
@@ -204,7 +218,7 @@ pub(crate) fn ensure_viewport_detours() {
         VS_SET_SHADER.set(vs_set_shader_detour_handle);
         CREATE_VERTEX_SHADER.set(create_vertex_shader_detour_handle);
         SET_VERTEX_PROGRAM_CONSTANTS.set(set_vs_consts_detour_handle);
-        let _ = re_utilities::ThreadSuspender::for_block(|| {
+        let _ = crate::hooks::suspend::for_block(|| {
             RS_SET_VIEWPORTS.get().expect("just set").enable().ok();
             RS_SET_SCISSOR_RECTS.get().expect("just set").enable().ok();
             DRAW_INDEXED.get().expect("just set").enable().ok();
@@ -237,7 +251,68 @@ pub(crate) fn ensure_viewport_detours() {
     }
 }
 
-/// Serializes [`ensure_viewport_detours`] against itself and against [`uninstall_com_detours`]. Both
-/// suspend every other thread while they patch, so two of them running concurrently would suspend each
-/// other and hang the process.
+pub(crate) fn vertex_identity_detour_ready() -> bool {
+    CREATE_VERTEX_SHADER
+        .get()
+        .is_some_and(|detour| detour.is_enabled())
+}
+
+pub(crate) fn ensure_pixel_shader_detour() -> bool {
+    let _install = DETOUR_INSTALL.lock();
+    if let Some(detour) = CREATE_PIXEL_SHADER.get() {
+        return detour.is_enabled();
+    }
+    if crate::is_shutting_down() {
+        return false;
+    }
+    let Some(device) =
+        (unsafe { GraphicsEngine::get() }).and_then(|ge| unsafe { ge.m_Device.as_ref() })
+    else {
+        return false;
+    };
+    let target: CreatePixelShaderFn = unsafe {
+        let vtable = *(device.m_Device.as_raw() as *const *const usize);
+        std::mem::transmute(*vtable.add(CREATE_PIXEL_SHADER_SLOT))
+    };
+    let Ok(detour) = (unsafe { GenericDetour::new(target, create_pixel_shader_detour) }) else {
+        return false;
+    };
+    CREATE_PIXEL_SHADER.set(detour);
+    let enabled = crate::hooks::suspend::for_block(|| {
+        let detour = CREATE_PIXEL_SHADER.get().expect("just set");
+        let result = unsafe { detour.enable() };
+        if result.is_ok() || detour.is_enabled() {
+            PIXEL_SHADER_EVER_ENABLED.store(true, Ordering::Release);
+        }
+        result?;
+        Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
+    })
+    .is_ok()
+        && CREATE_PIXEL_SHADER
+            .get()
+            .is_some_and(|detour| detour.is_enabled());
+    if !enabled
+        && CREATE_PIXEL_SHADER
+            .get()
+            .is_some_and(|detour| !detour.is_enabled())
+    {
+        drop(CREATE_PIXEL_SHADER.take());
+    }
+    if PIXEL_SHADER_EVER_ENABLED.load(Ordering::Acquire) {
+        // The capture harness's re-injection reads this line to refuse an eject that would tear the
+        // payload down and then find it cannot unmap.
+        tracing::warn!(
+            "{PINNED_BY_PIXEL_SHADER_DETOUR}: an eject will be refused until the game restarts"
+        );
+    }
+    enabled
+}
+
+/// The log line that marks the payload as pinned by the pixel-shader detour.
+const PINNED_BY_PIXEL_SHADER_DETOUR: &str =
+    "shader identity: the pixel-shader detour was enabled, which pins the payload";
+
+pub(super) static PIXEL_SHADER_EVER_ENABLED: AtomicBool = AtomicBool::new(false);
+
+/// Serializes COM detour installation and removal across threads.
 pub(super) static DETOUR_INSTALL: Mutex<()> = Mutex::new(());

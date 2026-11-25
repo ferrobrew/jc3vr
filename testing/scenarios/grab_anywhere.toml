@@ -1,0 +1,47 @@
+# Template: fill testing/recordings/grab_anywhere.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a rifle grabbed anywhere along it"
+description = "Recorded right-handed on foot with GRAB GUNS ANYWHERE and HOLD GRIP TO HOLD GUNS on, a rifle on the back and a dropped rifle on the ground nearby (physical-guns.md, the headset checklist). Draw the rifle from the shoulder with the left hand by its barrel, take its grip with the right hand, brace the barrel with the left and slide it back along the handguard, let go with the right so the left carries it by the handguard, take the grip again with the right, holster it, and pick the dropped rifle up by its barrel."
+recording = "../recordings/grab_anywhere.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "a rifle was taken by a part other than its grip"
+signal = "regions.carries"
+
+[[expect]]
+name = "a second hand braced it where it closed on it"
+signal = "regions.braces"
+
+[[expect]]
+name = "a hand took the grip from a carrying hand"
+signal = "regions.grips_taken"
+
+[[expect]]
+name = "the holding hand letting go left it in the brace"
+signal = "regions.let_go"
+
+[[expect]]
+name = "a hand carried the rifle at some point"
+signal = "regions.carrying"
+
+[[expect]]
+name = "the draw took the rifle at its barrel"
+log = "regions: the left hand took the gun by its barrel"
+
+[[expect]]
+name = "the grip was taken back"
+log = "regions: the right hand took the gun's grip"
+
+[[expect]]
+name = "the dropped rifle is carried by its barrel at the end"
+signal = "regions.carrying"
+check = "at_end"
+is = true
+
+[[expect]]
+status = "RIGHT HAND ON GUN"
+
+[[expect]]
+name = "the left hand braces at some point"
+status = "LEFT HAND ON GUN"
+detail = "BRACING"

@@ -76,9 +76,25 @@ pub enum GpuSeam {
     Scene,
     PostEffects,
     PostDraw,
+    /// The mod's FSR resolve, nested inside [`Self::PostEffects`].
+    Fsr,
+    /// The mod's own work after `PostDraw`: the HUD and overlays drawn into the eyes' images, the
+    /// eye copies, and the direct swapchain blits.
+    ModPostDraw,
 }
 
 impl GpuSeam {
+    /// Every seam, in the order of [`Self::index`].
+    pub const ALL: [GpuSeam; 7] = [
+        GpuSeam::PreDraw,
+        GpuSeam::GBuffer,
+        GpuSeam::Scene,
+        GpuSeam::PostEffects,
+        GpuSeam::PostDraw,
+        GpuSeam::Fsr,
+        GpuSeam::ModPostDraw,
+    ];
+
     fn name(self) -> &'static str {
         match self {
             GpuSeam::PreDraw => "PreDraw",
@@ -86,13 +102,32 @@ impl GpuSeam {
             GpuSeam::Scene => "Draw (scene)",
             GpuSeam::PostEffects => "DrawPosteffects",
             GpuSeam::PostDraw => "PostDraw",
+            GpuSeam::Fsr => "FSR",
+            GpuSeam::ModPostDraw => "mod post-draw",
+        }
+    }
+
+    /// The seam's position in [`Self::ALL`].
+    pub const fn index(self) -> usize {
+        match self {
+            GpuSeam::PreDraw => 0,
+            GpuSeam::GBuffer => 1,
+            GpuSeam::Scene => 2,
+            GpuSeam::PostEffects => 3,
+            GpuSeam::PostDraw => 4,
+            GpuSeam::Fsr => 5,
+            GpuSeam::ModPostDraw => 6,
         }
     }
 }
 
-/// Whether the GPU layer should issue queries this frame (tied to puffin's scope switch).
+// The benchmark names the seams by position.
+const _: () = assert!(GpuSeam::ALL.len() == crate::testing::benchmark::GPU_SEAM_NAMES.len());
+
+/// Whether the GPU layer should issue queries this frame: while puffin collects, or while the
+/// benchmark records (`crate::testing::benchmark`).
 pub fn enabled() -> bool {
-    puffin::are_scopes_on()
+    puffin::are_scopes_on() || crate::testing::benchmark::gpu_timing_armed()
 }
 
 /// Opens a GPU dispatch on `ctx`, tagged with the current eye. Begins the disjoint query and
@@ -203,14 +238,59 @@ pub unsafe fn seam(ctx: *mut HContext_t, seam: GpuSeam) -> Option<IntervalGuard>
     })
 }
 
+/// Brackets a seam nested inside the enclosing dispatch's seams, such as the FSR resolve inside the
+/// post effects, with a GPU timestamp pair on the dispatch's own context. Returns `None` while
+/// disabled or outside a dispatch.
+pub fn nested_seam(seam: GpuSeam) -> Option<IntervalGuard> {
+    if !enabled() {
+        return None;
+    }
+    let mut guard = STATE.lock();
+    let state = guard.as_mut()?;
+    let ctx = state.current.as_ref()?.ctx.0;
+    // SAFETY: a dispatch is open, so the context it was opened with is still live (the dispatch
+    // is closed on the same thread, inside the same `HandleDrawThreadTask`).
+    let begin = unsafe { state.record_timestamp(ctx)? };
+    Some(IntervalGuard {
+        ctx: SendPtr(ctx),
+        label: IntervalLabel::Seam(seam),
+        begin: SendPtr(begin),
+    })
+}
+
+/// Whether the per-pass and detail intervals should be recorded: while puffin collects, or while a
+/// benchmark run asks for them (`crate::testing::benchmark::gpu_passes`).
+pub fn passes_wanted() -> bool {
+    puffin::are_scopes_on() || crate::testing::benchmark::gpu_passes::armed()
+}
+
 /// Brackets one render pass with a GPU timestamp pair, nested inside the seam that is drawing it.
-/// `scope` names the pass on the lane (the caller already resolved it for the CPU scope).
+/// `scope` names the pass on the lane (the caller already resolved it for the CPU scope), and
+/// `name` is the engine's name for it.
 ///
 /// Unlike [`seam`], this takes no context: it records on the immediate context the enclosing
 /// dispatch was opened with, which is the same handle the seams run on. Returns `None` while
 /// disabled, outside a dispatch, or once the dispatch's pass budget
 /// ([`MAX_PASS_INTERVALS`]) is spent.
-pub fn pass_interval(scope: ScopeId) -> Option<IntervalGuard> {
+pub fn pass_interval(scope: ScopeId, name: &'static str) -> Option<IntervalGuard> {
+    interval(IntervalLabel::Pass(scope, name))
+}
+
+/// Brackets a named stretch of GPU work that is not a render pass (one post effect, one of the
+/// mod's own passes) with a timestamp pair on the enclosing dispatch's context. The lane shows it,
+/// and a benchmark run that times passes totals it, but the work-and-holes subdivision does not
+/// count it. Returns `None` while the pass intervals are not wanted, outside a dispatch, or once
+/// the dispatch's budget is spent.
+pub fn detail_interval(name: &'static str) -> Option<IntervalGuard> {
+    if !passes_wanted() {
+        return None;
+    }
+    let scope = crate::profiler::named_scope_id(name)?;
+    interval(IntervalLabel::Detail(scope, name))
+}
+
+/// Opens a pass or detail interval, sharing the dispatch's pass budget.
+fn interval(label: IntervalLabel) -> Option<IntervalGuard> {
     if !enabled() || !pass_timestamps_enabled() {
         return None;
     }
@@ -228,7 +308,7 @@ pub fn pass_interval(scope: ScopeId) -> Option<IntervalGuard> {
     }
     Some(IntervalGuard {
         ctx: SendPtr(ctx),
-        label: IntervalLabel::Pass(scope),
+        label,
         begin: SendPtr(begin),
     })
 }

@@ -1,0 +1,330 @@
+//! Controller-owned hands: the plan of record's "Hands", "Hand tiers", and "Body scale" sections
+//! (`docs/mod/input/controllers-and-roomscale.md`), with the engine side in
+//! `docs/engine/character/humanik.md` and `docs/engine/character/hands-locomotion-and-state.md`.
+//!
+//! - [`pose`]: the pure composition from a controller's grip pose to the character's wrist frame,
+//!   through the grip offset, the body-scale remap, and the head's world transform;
+//! - [`reach`]: the pure arm-reach logic: the remap about the character's measured shoulder, the
+//!   pull ramp near full extension, and the capped detach of the rendered hand;
+//! - [`rig`]: the character's arms measured from his animated skeleton at the pre-solve seam;
+//! - [`tiers`]: the per-state tier table and the per-hand blend between controller and animation;
+//! - [`anchor`]: the anchored tier of the grapple states: the grapple hand holding the line, and
+//!   the hang it swings;
+//! - [`ik`]: the wrist targets queued on HumanIK's `MAIN` pass at the pre-solve seam, and the
+//!   record of each tick's targets that the late update corrects from;
+//! - [`secondary`]: the per-hand switch for the game's `SECONDARY` hand IK pass;
+//! - [`grip`]: the rigid grip: a gun held in a driven hand pinned to the wrist at the hand's
+//!   canonical grip before each placement of the weapons;
+//! - [`late`]: the render-time late update of the held weapon's model and of the hand and forearm
+//!   bones in the skinning palette, and the render-time hand poses for the overlay;
+//! - [`parts`]: the render-time late update of a held gun's separate model parts (its magazine,
+//!   slide, or spinning barrel);
+//! - [`palette`]: the pure palette-entry math of the late update.
+//!
+//! Everything here is inert unless the controller scheme is in effect and the hand's controller is
+//! tracked ([`active_hands`]), and each part has its toggle in [`HandsConfig`].
+
+use glam::{Quat, Vec3};
+use re_utilities::hook_library::HookLibrary;
+
+use crate::{
+    config::Config,
+    controllers::{
+        body::{self, BodyDimensions, rig as body_rig},
+        config::{ControllersConfig, HandsConfig},
+        frame::{self, ControllerFrame, Hand, Pose},
+        hands::reach::{ArmRemap, ReachLimit},
+        physical_hands::{self, DrawTime, physics::guns},
+        scheme, vehicles,
+        weapons::{ads, collide, recoil},
+    },
+    headpose, hooks,
+};
+
+pub mod anchor;
+pub mod grip;
+pub mod held;
+pub mod ik;
+pub mod late;
+pub mod palette;
+pub mod parts;
+pub mod pose;
+pub mod reach;
+pub mod rig;
+pub mod secondary;
+pub mod tiers;
+
+pub use pose::CockpitHand;
+
+/// The hands' hooks, aggregated by [`crate::controllers::hook_library`].
+pub(crate) fn hook_library() -> HookLibrary {
+    late::hook_library()
+        .with_hook_library(parts::hook_library())
+        .with_hook_library(held::hook_library())
+        .with_hook_library(anchor::hook_library())
+}
+
+/// The inputs every hand subsystem starts from: the controllers' configuration, the head's cockpit
+/// pose, and each tracked hand's cockpit-frame poses after the grip offset and the remap.
+#[derive(Clone)]
+pub struct ActiveHands {
+    pub config: ControllersConfig,
+    /// The head (the eye midpoint) in the cockpit frame.
+    pub head: Pose,
+    /// Indexed by [`Hand::index`]; `None` for a hand whose controller is absent or not tracked.
+    pub hands: [Option<CockpitHand>; 2],
+    /// The VR world scale the head pose composes with.
+    pub world_scale: f32,
+    /// The torso's heading the player's shoulders are estimated at ([`body_rig::torso_heading`]),
+    /// in the cockpit frame.
+    pub torso: Quat,
+}
+
+/// The active hands, or `None` while the hands are inert: the controllers are disabled, the gamepad
+/// scheme is in effect, no VR session publishes a head pose, or no controller frame exists. While
+/// the off-hand holds a two-handed weapon's foregrip, the hands are in the two-handed pose
+/// through the shared support and weight targets ([`guns::targets::apply`]); a long gun held in
+/// one hand sags, trails, and sways. Physical guns use the same weighted target before their
+/// residual body correction, without adding synthetic recoil or wall-probe displacement. A
+/// kinematic gun hand carries its recoil offset ([`recoil::apply`]); a palm pressed into a surface is
+/// held at it, and a hand body's hand is drawn at its body ([`physical_hands::apply`]); an
+/// anchored
+/// grapple hand holds the line ([`anchor::apply`]); and a hand on a physical vehicle control or a
+/// mounted gun's handle holds it ([`vehicles::apply`]).
+pub fn active_hands() -> Option<ActiveHands> {
+    compose_active_hands(DrawTime::Tick)
+}
+
+/// Compose hands from this exact controller snapshot, without reading the controller slot again.
+pub(crate) fn active_hands_from_frame(
+    frame: &ControllerFrame,
+    at: DrawTime,
+) -> Option<ActiveHands> {
+    let mut active = active_hands_raw_from_frame(frame)?;
+    vehicles::apply(&mut active.hands);
+    let physical = guns::physical_hands();
+    guns::targets::apply(
+        &mut active.hands,
+        active.head.position,
+        &active.config.weapons.heft,
+    );
+    let torso = active.torso;
+    let shoulders = shoulder_joints(&active.config, active.head, active.world_scale, torso);
+    ads::apply(
+        &mut active.hands,
+        active.head,
+        shoulders,
+        torso,
+        &active.config.weapons.ads,
+    );
+    let sighted = active.hands;
+    recoil::apply(&mut active.hands, &active.config.weapons.recoil);
+    collide::apply(
+        &mut active.hands,
+        active.head,
+        active.world_scale,
+        &active.config.weapons.collide,
+    );
+    keep_physical(&mut active.hands, &sighted, physical);
+    physical_hands::apply(&mut active.hands, at);
+    anchor::apply(&mut active.hands, active.head, active.world_scale);
+    Some(active)
+}
+
+/// The active hands as the controllers hold them, before any two-handed pose: where the grab
+/// volumes are tested.
+pub fn active_hands_raw() -> Option<ActiveHands> {
+    active_hands_raw_from_frame(&frame::latest()?)
+}
+
+fn compose_active_hands(at: DrawTime) -> Option<ActiveHands> {
+    active_hands_from_frame(&frame::latest()?, at)
+}
+
+fn active_hands_raw_from_frame(frame: &ControllerFrame) -> Option<ActiveHands> {
+    let (config, world_scale) = Config::lock_query(|c| (c.controllers.clone(), c.vr.world_scale));
+    if !config.enabled || !scheme::is_controllers() || headpose::source() != headpose::Source::Vr {
+        return None;
+    }
+    let cockpit = headpose::xr::cockpit_pose()?;
+    let head = Pose {
+        position: cockpit.position,
+        orientation: cockpit.orientation,
+    };
+    // The player's own wrists, before the remap that the torso's heading places.
+    let wrists = Hand::BOTH.map(|hand| {
+        frame
+            .focused
+            .then(|| cockpit_hand(frame, hand, &config.hands, None))
+            .flatten()
+            .map(|h| h.wrist.position)
+    });
+    let torso = body_rig::torso_heading(head, wrists);
+    let remaps = arm_remaps(&config, head, torso, world_scale);
+    let limits = reach_limits(&remaps, world_scale);
+    let hands = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        let cockpit = frame
+            .focused
+            .then(|| cockpit_hand(frame, hand, &config.hands, remaps[i]))
+            .flatten()?;
+        Some(match &limits[i] {
+            Some(limit) => pose::limit_reach(cockpit, limit),
+            None => cockpit,
+        })
+    });
+    Some(ActiveHands {
+        config,
+        head,
+        hands,
+        world_scale,
+        torso,
+    })
+}
+
+/// Each hand's grip where its controller holds it in the cockpit frame of `active`, before the
+/// remap onto the character's arms and every pose after it, by [`Hand::index`]: where the player's
+/// own hand is, which the drawn hand cannot follow where the character's body does not go as low
+/// as the player's (a deep crouch to the floor).
+pub(crate) fn controller_grips(active: &ActiveHands) -> [Option<Vec3>; 2] {
+    let Some(frame) = frame::latest() else {
+        return [None; 2];
+    };
+    Hand::BOTH.map(|hand| {
+        frame
+            .focused
+            .then(|| cockpit_hand(&frame, hand, &active.config.hands, None))
+            .flatten()
+            .map(|h| h.grip.position)
+    })
+}
+
+/// Hand IK ownership without composing poses or acquiring weapon and vehicle state locks.
+pub(crate) fn ik_owned() -> [bool; 2] {
+    let enabled = Config::lock_query(|c| c.controllers.enabled && c.controllers.hands.ik);
+    if !enabled
+        || !scheme::is_controllers()
+        || headpose::source() != headpose::Source::Vr
+        || !headpose::is_active()
+        || !hooks::in_gameplay()
+        || headpose::xr::cockpit_pose().is_none()
+    {
+        return [false; 2];
+    }
+    let weights = tiers::weights();
+    frame::with_latest(|frame| {
+        Hand::BOTH.map(|hand| {
+            let h = frame.hand(hand);
+            frame.focused && h.active && h.grip.is_valid() && weights[hand.index()] > 0.0
+        })
+    })
+    .unwrap_or([false; 2])
+}
+
+/// Put back each hand on a gun whose body the hands hold (`physical`, by [`Hand::index`]) as it
+/// was in `before`: the kinematic poses between are the gun body's to give.
+fn keep_physical(
+    hands: &mut [Option<CockpitHand>; 2],
+    before: &[Option<CockpitHand>; 2],
+    physical: [bool; 2],
+) {
+    for (i, kept) in physical.into_iter().enumerate() {
+        if kept {
+            hands[i] = before[i];
+        }
+    }
+}
+
+/// Each shoulder joint of the character the hands are drawn on, in the cockpit frame, by
+/// [`Hand::index`]: the remap's shoulder where the hands are remapped, else the player's estimated
+/// shoulders.
+fn shoulder_joints(
+    config: &ControllersConfig,
+    head: Pose,
+    world_scale: f32,
+    torso: Quat,
+) -> [Option<Vec3>; 2] {
+    let remaps = arm_remaps(config, head, torso, world_scale);
+    let estimated = body::shoulder_positions(head.position, torso, &body::player());
+    Hand::BOTH.map(|hand| {
+        Some(remaps[hand.index()].map_or(estimated[hand.index()], |r| r.character_shoulder))
+    })
+}
+
+pub(crate) fn arm_remaps(
+    config: &ControllersConfig,
+    head: Pose,
+    torso: Quat,
+    world_scale: f32,
+) -> [Option<ArmRemap>; 2] {
+    let measured = reach::REACH
+        .measured_remap
+        .then(rig::arms)
+        .unwrap_or([None; 2]);
+    if measured.iter().all(Option::is_none) && !config.body.remap_hands {
+        return [None; 2];
+    }
+    let player = body::player();
+    let shoulders = body_rig::grounded::torso().map(|rig| rig.shoulders);
+    Hand::BOTH.map(|hand| {
+        let remap = measured[hand.index()]
+            .and_then(|arm| ArmRemap::measured(hand, head, torso, &player, &arm, world_scale))
+            .or_else(|| {
+                config.body.remap_hands.then(|| {
+                    ArmRemap::estimated(
+                        hand,
+                        head,
+                        torso,
+                        &player,
+                        &BodyDimensions::CHARACTER_ESTIMATE,
+                    )
+                })
+            });
+        remap.map(|remap| {
+            shoulders.map_or(remap, |shoulders| {
+                remap.with_player_shoulder(shoulders[hand.index()])
+            })
+        })
+    })
+}
+
+fn reach_limits(remaps: &[Option<ArmRemap>; 2], world_scale: f32) -> [Option<ReachLimit>; 2] {
+    if !reach::REACH.reach_limit {
+        return [None; 2];
+    }
+    let arms = rig::arms();
+    if arms.iter().all(Option::is_none) {
+        return [None; 2];
+    }
+    Hand::BOTH.map(|hand| {
+        let arm = arms[hand.index()]?;
+        let remap = remaps[hand.index()]?;
+        ReachLimit::new(remap.character_shoulder, &arm, world_scale)
+    })
+}
+
+fn cockpit_hand(
+    frame: &ControllerFrame,
+    hand: Hand,
+    config: &HandsConfig,
+    remap: Option<ArmRemap>,
+) -> Option<CockpitHand> {
+    let h = frame.hand(hand);
+    if !h.active || !h.grip.is_valid() {
+        return None;
+    }
+    // The aim pose rides with the grip when the runtime reports it invalid on its own, so that the
+    // overlay's ray still leaves the hand.
+    let aim = if h.aim.is_valid() {
+        h.aim.pose
+    } else {
+        h.grip.pose
+    };
+    Some(pose::cockpit_hand(
+        hand,
+        h.grip.pose,
+        aim,
+        &config.grip,
+        remap,
+    ))
+}

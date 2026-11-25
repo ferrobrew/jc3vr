@@ -1,17 +1,16 @@
-//! `NStateTask_InputLoco*` detours: the scoped aim-state shim behind
-//! [`force_fps_movement`](crate::hooks::input::MovementConfig::force_fps_movement).
+//! The on-foot locomotion task detours: the task counters, the jump's aim-facing suppression, the
+//! idle fidget hold, the fall steering, and the orientation, displacement, start, and speed
+//! overrides that pin the body to the camera or the headpose's heading.
 //!
 //! The on-foot locomotion tasks choose between run/steer (the body rotates toward the movement
 //! direction) and aim-relative strafe (the body faces the aim reference, the directional keys
 //! strafe) by reading [`Character::m_AimFlags`] -- the same flags that drive the weapon raise, the
-//! reticle, and auto-aim. Forcing the flags globally would drag all of that in, so the shim forces
-//! them only for the duration of each locomotion task's `Update` and restores them afterwards: the
-//! movement branch always sees "aiming", the aim system never does.
+//! reticle, and auto-aim -- so the overrides here act on the orientation and displacement
+//! evaluators rather than on the flags.
 
 use std::{
     ffi::c_void,
     sync::atomic::{AtomicU64, Ordering},
-    time::{Duration, Instant},
 };
 
 use detours_macro::detour;
@@ -50,16 +49,25 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&GET_AIM_MOVE_ANGLE_BINDER)
 }
 
-/// Diagnostic counters for the Game tab, so hook liveness and the shim's activity are visible
-/// in-game: how often each shimmed task ran, how often the shim actually forced the aim state,
-/// and how often the orientation executor was forced into face-dir tracking.
+/// The tracking turn rate: the maximum yaw step, in degrees per orientation update (one per frame),
+/// passed to the orientation executor while the body is pinned to the camera or the headpose's
+/// heading. Positive, since the executor divides by it.
+const FACE_CAMERA_TURN_STEP: f32 = 10.0;
+
+/// The half-angle, in degrees, of the input cone around camera-forward within which the face-camera
+/// pin applies while moving (it always applies while idle). At 180 the pin always applies, and the
+/// slide strafe moves the body along lateral and backward input.
+const FACE_CAMERA_INPUT_CONE_DEG: f32 = 180.0;
+
+/// Diagnostic counters for the debug UI, so hook liveness and the overrides' activity are visible
+/// in-game: how often each locomotion task ran, and how often the orientation executor was forced
+/// into face-dir tracking.
 pub static MOVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static AIM_RELATIVE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
 /// How often the orientation evaluator ran for the local player. Unlike the task counters above,
 /// this advances every on-foot frame including idle (the move/aim tasks stop running while idle),
 /// which is what makes it usable as the headpose sim's on-foot signal.
 pub static ORIENTATION_EVAL_CALLS: AtomicU64 = AtomicU64::new(0);
-pub static SHIMMED_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static FACE_CAMERA_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static SLIDE_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static SKIPPED_STARTS: AtomicU64 = AtomicU64::new(0);
@@ -70,9 +78,7 @@ pub static INSTANT_SPEED_FLOORS: AtomicU64 = AtomicU64::new(0);
 )]
 fn input_loco_move_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
     MOVE_TASK_CALLS.fetch_add(1, Ordering::Relaxed);
-    with_forced_aim_state(ctx, || {
-        INPUT_LOCO_MOVE_TASK_UPDATE.get().unwrap().call(ctx, p1, p2);
-    });
+    INPUT_LOCO_MOVE_TASK_UPDATE.get().unwrap().call(ctx, p1, p2);
 }
 
 #[detour(
@@ -80,20 +86,17 @@ fn input_loco_move_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut
 )]
 fn input_loco_aim_relative_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
     AIM_RELATIVE_TASK_CALLS.fetch_add(1, Ordering::Relaxed);
-    with_forced_aim_state(ctx, || {
-        INPUT_LOCO_AIM_RELATIVE_TASK_UPDATE
-            .get()
-            .unwrap()
-            .call(ctx, p1, p2);
-    });
+    INPUT_LOCO_AIM_RELATIVE_TASK_UPDATE
+        .get()
+        .unwrap()
+        .call(ctx, p1, p2);
 }
 
 /// The airborne (jump) actuator. Its aim-target-facing branch turns the body toward the weapon-aim
 /// target while [`AimState::m_AimingWeapon`] is set, and in VR that target follows the HMD gaze, so a
 /// head turn yaws the body mid-jump with no stick input. While the head is decoupled (the VR source),
 /// clear the aim bit around the update for the local player so the jump takes its non-aiming fallback
-/// (current forward plus the stick-gated steer) -- the mirror of [`with_forced_aim_state`], clearing
-/// rather than forcing. Restored immediately; the character updates on its own worker thread, so the
+/// (current forward plus the stick-gated steer). Restored immediately; the character updates on its own worker thread, so the
 /// temporary clear is invisible to the aim system. Passes straight through with the toggle off, off
 /// the VR source, or for a non-local character.
 #[detour(
@@ -106,8 +109,7 @@ fn movement_jump_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c
         None
     };
     // Clear the weapon-aim bit around the update so its aim-target-facing branch takes the
-    // non-aiming fallback (mirror of `with_forced_aim_state`, clearing rather than forcing). This
-    // covers only the aim-target facing path; the stick-gated air-steer is handled separately in
+    // non-aiming fallback. This covers only the aim-target facing path; the stick-gated air-steer is handled separately in
     // `update_fall_steering`.
     match character {
         Some(character) => {
@@ -133,12 +135,12 @@ const IDLE_FIDGET_TIMER_HOLD: f32 = 3600.0;
 /// negative forever, so the
 /// task keeps hitting that early return and stops queuing movement animations while idle. Instead,
 /// force the countdown positive before the update runs: the one-off branch is never taken, so Rico
-/// neither fidgets nor loses his walk animations. Passes straight through with the toggle off or for
+/// neither fidgets nor loses his walk animations, while NPCs keep their fidgets. The fidget reads as
+/// the body drifting on its own under a head the HMD drives (issue #33). Passes straight through for
 /// a non-local character.
 #[detour(address = jc3gi::input::locomotion::NStateTask_InputLocoIdleTask::Update_ADDRESS)]
 fn input_loco_idle_task_update(ctx: *mut StateContext, p1: *mut c_void, p2: *mut c_void) {
-    if Config::lock_query(|c| c.movement.suppress_idle_fidget)
-        && let Some(character) = unsafe { character_from_context(ctx) }
+    if let Some(character) = unsafe { character_from_context(ctx) }
         && character.m_IsLocalCharacter
     {
         character.m_IdleFidgetTimer = IDLE_FIDGET_TIMER_HOLD;
@@ -187,59 +189,13 @@ fn update_fall_steering(
     result
 }
 
-/// Run `call` (the wrapped task update) with the local player's aim flags forced to the
-/// aim-relative state, restoring them afterwards. Passes straight through when the toggle is off,
-/// the context has no character, or the character is not the local player. The restore makes the
-/// force invisible to everything outside the wrapped call; the character updates on its own worker
-/// thread, so nothing else reads the flags mid-task.
-fn with_forced_aim_state(ctx: *mut StateContext, call: impl FnOnce()) {
-    let character = if Config::lock_query(|c| c.movement.force_fps_movement) {
-        unsafe { character_from_context(ctx).filter(|c| c.m_IsLocalCharacter) }
-    } else {
-        None
-    };
-    let Some(character) = character else {
-        call();
-        return;
-    };
-
-    let saved = character.m_AimFlags;
-    let mut forced = saved | AimState::m_AimingWeapon;
-    // Mimic the game's own "was aiming last frame" latch: on the first shimmed frame after a gap
-    // (loco tasks stopped running -- idle, vehicle, toggle off), leave `m_WasAiming` clear so the
-    // task queues the one-shot transition act that moves the animation state machine into the
-    // aim-relative family; on contiguous frames set it so the steady acts are queued instead. The
-    // steady acts alone are dropped by the rule system unless that transition has run, which is
-    // what made the strafe engage only sporadically. When really aiming, the saved flags already
-    // carry the game's own latch and are left alone.
-    let now = Instant::now();
-    let contiguous = LAST_SHIM_AT
-        .lock()
-        .replace(now)
-        .is_some_and(|last| now.duration_since(last) < SHIM_CONTINUITY);
-    if !saved.intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple) && contiguous {
-        forced |= AimState::m_WasAiming;
-    }
-
-    character.m_AimFlags = forced;
-    SHIMMED_CALLS.fetch_add(1, Ordering::Relaxed);
-    call();
-    character.m_AimFlags = saved;
-}
-
-/// The longest gap between shimmed task updates still treated as one contiguous run of forcing;
-/// anything longer re-queues the transition act. Comfortably above one frame at any playable frame
-/// rate, and short enough that a real interruption (vehicle, idle) restarts the transition.
-const SHIM_CONTINUITY: Duration = Duration::from_millis(250);
-
-/// When the shim last forced the local player's flags; `None` until the first shimmed call.
-static LAST_SHIM_AT: Mutex<Option<Instant>> = Mutex::new(None);
-
 /// Recover the [`Character`] from a state-task context. The context's first pointer addresses a
 /// sub-object at character + 8; the game type-checks that sub-object against `CCharacter::TYPE_ID`
 /// through its vtable and then subtracts (see `NStateTask_InputLocoMoveTask::Update` in the IDB).
 /// The RTTI check is not replicated here: the hooked tasks only run on character state machines.
-unsafe fn character_from_context(ctx: *mut StateContext) -> Option<&'static mut Character> {
+pub(crate) unsafe fn character_from_context(
+    ctx: *mut StateContext,
+) -> Option<&'static mut Character> {
     unsafe {
         let sub_object = *(ctx as *const *mut u8);
         if sub_object.is_null() {
@@ -325,23 +281,15 @@ fn force_face_camera(
         return passthrough;
     };
     // The counter and snapshot run before any config gating: the headpose sim's mode detection and
-    // the Game tab readout must see every on-foot frame regardless of the toggles below.
+    // the Game tab readout must see every on-foot frame.
     ORIENTATION_EVAL_CALLS.fetch_add(1, Ordering::Relaxed);
     capture_snapshot(character);
 
     let blackboard = character_blackboard(character);
-    let (face_camera, step, cone_deg) = Config::lock_query(|c| {
-        (
-            c.movement.face_camera,
-            c.movement.face_camera_turn_step,
-            c.movement.face_camera_input_cone_deg,
-        )
-    });
 
     // Steer the body toward the headpose's requested heading, if any: the flatscreen sim's
-    // head-follow latch target, or the VR source's look-driven body yaw. This applies regardless of
-    // the face_camera toggle (reusing face_camera_turn_step as the turn rate) and intentionally
-    // bypasses the move-dir cone check: the requested heading takes priority over strafe, so the
+    // head-follow latch target, or the VR source's look-driven body yaw. This reuses
+    // [`FACE_CAMERA_TURN_STEP`] as the turn rate and intentionally bypasses the move-dir cone check: the requested heading takes priority over strafe, so the
     // native turn-toward-movement never fights it (which is what let backpedaling tank-turn the body
     // in VR).
     if let Some(face_dir) = crate::headpose::body_yaw_target() {
@@ -357,7 +305,7 @@ fn force_face_camera(
             );
         }
         FACE_CAMERA_CALLS.fetch_add(1, Ordering::Relaxed);
-        return (true, step.max(0.1));
+        return (true, FACE_CAMERA_TURN_STEP);
     }
 
     // While the head is decoupled, force the executor *out* of face-dir tracking rather than
@@ -365,14 +313,11 @@ fn force_face_camera(
     // own blackboard face dir, which derives from the aim reference — the head — so a passthrough
     // still yaws the body with the head continuously. The act-level suppression in
     // [`get_aim_move_angle`] stops the turn *acts*; this stops the executor's continuous yaw.
-    // Applies regardless of the face_camera toggle, like the latch.
+    // Applies like the latch.
     if head_decoupled(character) {
         return (false, max_step_deg);
     }
 
-    if !face_camera {
-        return passthrough;
-    }
     let Some(face_dir) = camera_ground_forward() else {
         return passthrough;
     };
@@ -384,7 +329,9 @@ fn force_face_camera(
         None => {}
         // Moving: pin only within the configured cone around camera-forward (outside it, the
         // native steer runs; see the function docs).
-        Some(move_dir) if move_dir.angle_between(face_dir).to_degrees() > cone_deg => {
+        Some(move_dir)
+            if move_dir.angle_between(face_dir).to_degrees() > FACE_CAMERA_INPUT_CONE_DEG =>
+        {
             return passthrough;
         }
         Some(_) => {}
@@ -402,7 +349,7 @@ fn force_face_camera(
         );
     }
     FACE_CAMERA_CALLS.fetch_add(1, Ordering::Relaxed);
-    (true, step.max(0.1))
+    (true, FACE_CAMERA_TURN_STEP)
 }
 
 /// Whether the body must not chase the head this frame — so both the orientation executor's face-dir
@@ -417,7 +364,7 @@ fn force_face_camera(
 /// Under the **flatscreen sim** it is the decoupled-idle-not-aiming state: the latch owns body
 /// turning past its threshold, and while idle within the cone the head moves freely, so the body is
 /// held only in that specific window.
-pub(super) fn head_decoupled(character: &Character) -> bool {
+pub(crate) fn head_decoupled(character: &Character) -> bool {
     if !crate::headpose::is_active() {
         return false;
     }
@@ -528,14 +475,13 @@ fn setup_target_dir(character: *mut Character, target_dir: *mut c_void, props: *
 
     // `SetupTargetDir`'s `this` is the character (see the pyxis def); it only runs for the local
     // player's on-foot input states.
-    let eligible = Config::lock_query(|c| c.movement.slide_strafe)
-        && (unsafe { character.as_ref() }).is_some_and(|c| {
-            c.m_IsLocalCharacter
-                && !c
-                    .m_AimFlags
-                    .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple)
-        })
-        && move_input_magnitude().is_some_and(|magnitude| magnitude >= INPUT_DEADZONE);
+    let eligible = (unsafe { character.as_ref() }).is_some_and(|c| {
+        c.m_IsLocalCharacter
+            && !c
+                .m_AimFlags
+                .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple)
+    }) && move_input_magnitude()
+        .is_some_and(|magnitude| magnitude >= INPUT_DEADZONE);
 
     let mut real_dir = None;
     if eligible && let Some(character) = unsafe { character.as_mut() } {
@@ -573,8 +519,7 @@ fn queue_starts(
     settings: *const CharacterMovementSettings,
     speed: f32,
 ) -> bool {
-    if Config::lock_query(|c| c.movement.slide_skip_starts)
-        && slide_move_dir(character).is_some()
+    if slide_move_dir(character).is_some()
         && let Some(character) = unsafe { character.as_mut() }
     {
         let act: *const u32 = unsafe { get_NCharacter_ActMoveNoAim() };
@@ -615,9 +560,7 @@ fn evaluate_character_speed(character: *mut Character, use_blackboard_override: 
         .get()
         .unwrap()
         .call(character, use_blackboard_override);
-    if !Config::lock_query(|c| c.movement.slide_instant_speed)
-        || slide_move_dir(character).is_none()
-    {
+    if slide_move_dir(character).is_none() {
         return speed;
     }
     let Some(character) = (unsafe { character.as_mut() }) else {
@@ -670,25 +613,15 @@ fn evaluate_character_displacement(
     // The direction is consumed in the *character's* frame, not world space (established in-game:
     // a world-space write slid in facing-dependent directions, correct at exactly one body yaw),
     // so bring the world move direction into the frame of the orientation matrix the game passed
-    // in. The remaining fixed offset -- the local frame's own forward convention -- is the
-    // [`slide_rotation_deg`](crate::hooks::input::MovementConfig::slide_rotation_deg) dial, applied in
-    // the local frame. If the slide still tracks the facing after this (error doubling with yaw
-    // instead of cancelling), the rotation convention of `Matrix4` -> glam is inverted here and
-    // the `inverse()` should be dropped.
+    // in. If the slide still tracks the facing after this (error doubling with yaw instead of
+    // cancelling), the rotation convention of `Matrix4` -> glam is inverted here and the
+    // `inverse()` should be dropped.
     if let Some(move_dir) = slide_move_dir(character)
         && let Some(out_direction) = unsafe { out_direction.as_mut() }
         && let Some(character) = unsafe { character.as_mut() }
     {
-        // The yaw dial (the local frame's forward convention) applied in world space; equivalent
-        // to the previous local-space application for pure-yaw orientations, and the world vector
-        // is needed anyway for the slope path below.
-        let theta = Config::lock_query(|c| c.movement.slide_rotation_deg).to_radians();
-        let (sin, cos) = theta.sin_cos();
-        let world = glam::Vec3::new(
-            move_dir.x * cos + move_dir.z * sin,
-            0.0,
-            -move_dir.x * sin + move_dir.z * cos,
-        );
+        // The world vector is needed for the slope path below.
+        let world = glam::Vec3::new(move_dir.x, 0.0, move_dir.z);
 
         let (_, rotation, _) =
             unsafe { glam::Mat4::from(*orientation) }.to_scale_rotation_translation();

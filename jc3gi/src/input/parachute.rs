@@ -206,14 +206,99 @@ impl std::convert::AsMut<CharacterSpring> for CharacterSpring {
     }
 }
 #[repr(C, align(8))]
+/// The parachute handle IK task (`NParachuteHandleIKTask`). An animation state task that, while
+/// active, moves each hand its [`ParachuteHandleIKProperties::m_LeftHand`](crate::input::parachute::ParachuteHandleIKProperties::m_LeftHand) /
+/// [`ParachuteHandleIKProperties::m_RightHand`](crate::input::parachute::ParachuteHandleIKProperties::m_RightHand) flags select onto the parachute rig's handle,
+/// rather than leaving it to the base animation.
+pub struct NParachuteHandleIKTask {}
+impl NParachuteHandleIKTask {
+    pub const Update_ADDRESS: usize = 0x14082E510;
+    /// The task's per-frame update. Derives the blend weight from the blend-in and blend-out
+    /// segments' local time (ramping up from the former, down across the latter) and writes it to
+    /// [`ParachuteHandleIKInstanceProperties::m_Weight`](crate::input::parachute::ParachuteHandleIKInstanceProperties::m_Weight). For each selected hand, blends between the
+    /// parachute rig's handle-link bone and the character's hand and second hand-attach bones to
+    /// derive a world-space target position for the wrist, then writes that position to the wrist's
+    /// `SECONDARY`-pass position key
+    /// ([`ObjectBlackboard::SECONDARY_HAND_POSITION_WS_LEFT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_POSITION_WS_LEFT_ID)
+    /// or its right twin) and the blend weight to the matching weight key
+    /// ([`ObjectBlackboard::SECONDARY_HAND_WEIGHT_LEFT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_WEIGHT_LEFT_ID)
+    /// or its right twin), both with
+    /// [`PersistenceType::PERSISTENCE_SESSION`](crate::blackboard::PersistenceType::PERSISTENCE_SESSION) —
+    /// unlike most blackboard writers, which use
+    /// [`PersistenceType::PERSISTENCE_LOCAL_FRAME`](crate::blackboard::PersistenceType::PERSISTENCE_LOCAL_FRAME).
+    /// [`Character::UpdateSecondaryHandIKPass`](crate::character::character::Character::UpdateSecondaryHandIKPass)
+    /// reads the keys and queues the wrist target on the `SECONDARY` pass.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+    pub const OnExit_ADDRESS: usize = 0x14082E490;
+    /// The task's exit: removes all four `SECONDARY`-pass hand keys
+    /// ([`ObjectBlackboard::SECONDARY_HAND_POSITION_WS_LEFT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_POSITION_WS_LEFT_ID),
+    /// [`ObjectBlackboard::SECONDARY_HAND_POSITION_WS_RIGHT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_POSITION_WS_RIGHT_ID),
+    /// [`ObjectBlackboard::SECONDARY_HAND_WEIGHT_LEFT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_WEIGHT_LEFT_ID),
+    /// and [`ObjectBlackboard::SECONDARY_HAND_WEIGHT_RIGHT_ID`](crate::blackboard::ObjectBlackboard::SECONDARY_HAND_WEIGHT_RIGHT_ID))
+    /// through [`RemoveBlackBoardValue`](crate::blackboard::RemoveBlackBoardValue), regardless of which
+    /// hand or hands the instance drove.
+    pub unsafe fn OnExit(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::OnExit_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+    pub const Load_ADDRESS: usize = 0x140835D40;
+    /// Loads [`ParachuteHandleIKProperties`](crate::input::parachute::ParachuteHandleIKProperties) from the state definition's runtime container.
+    pub unsafe fn Load(
+        properties: *mut crate::input::parachute::ParachuteHandleIKProperties,
+        container: *const ::std::ffi::c_void,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                properties: *mut crate::input::parachute::ParachuteHandleIKProperties,
+                container: *const ::std::ffi::c_void,
+            ) -> bool = ::std::mem::transmute(Self::Load_ADDRESS);
+            f(properties, container)
+        }
+    }
+}
+impl std::convert::AsRef<NParachuteHandleIKTask> for NParachuteHandleIKTask {
+    fn as_ref(&self) -> &NParachuteHandleIKTask {
+        self
+    }
+}
+impl std::convert::AsMut<NParachuteHandleIKTask> for NParachuteHandleIKTask {
+    fn as_mut(&mut self) -> &mut NParachuteHandleIKTask {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The input state task active while the character is parachuting. Delegates the per-frame
 /// movement to [`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics).
 pub struct NStateTask_MovementParachuteTask {}
 impl NStateTask_MovementParachuteTask {
     pub const Update_ADDRESS: usize = 0x14082AB10;
-    /// The per-frame update. Reads the parachute movement effectors (pitch/yaw inputs via the
-    /// action map), calls [`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics) with the resulting input vector, then handles
-    /// the cancel input that closes the parachute.
+    /// The per-frame update. Reads the move half-axes from the avatar's action map as a stick
+    /// vector (`MOVE_RIGHT` minus `MOVE_LEFT` across, `MOVE_BACKWARD` minus `MOVE_FORWARD` along,
+    /// so the stick pulled back is positive), calls [`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics) with it, then
+    /// handles the cancel input that closes the parachute.
     pub unsafe fn Update(
         ctx: *mut crate::state::StateContext,
         p1: *mut ::std::ffi::c_void,
@@ -238,6 +323,41 @@ for NStateTask_MovementParachuteTask {
 impl std::convert::AsMut<NStateTask_MovementParachuteTask>
 for NStateTask_MovementParachuteTask {
     fn as_mut(&mut self) -> &mut NStateTask_MovementParachuteTask {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The wingsuit's per-frame update. It reads the move half-axes as a stick vector (`MOVE_RIGHT`
+/// minus `MOVE_LEFT` across, `MOVE_BACKWARD` minus `MOVE_FORWARD` along) and hands it to
+/// [`NAirMovement_UpdateAirPhysics`](crate::input::parachute::NAirMovement_UpdateAirPhysics) with the wingsuit's air settings. The function carries the
+/// build's tamper-check markers.
+pub struct NStateTask_MovementWingSuitTask {}
+impl NStateTask_MovementWingSuitTask {
+    pub const Update_ADDRESS: usize = 0x14082DDD0;
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_MovementWingSuitTask>
+for NStateTask_MovementWingSuitTask {
+    fn as_ref(&self) -> &NStateTask_MovementWingSuitTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_MovementWingSuitTask>
+for NStateTask_MovementWingSuitTask {
+    fn as_mut(&mut self) -> &mut NStateTask_MovementWingSuitTask {
         self
     }
 }
@@ -286,12 +406,165 @@ impl std::convert::AsMut<ParachuteActionParams> for ParachuteActionParams {
         self
     }
 }
+#[repr(C, align(4))]
+/// The per-instance runtime state of [`NParachuteHandleIKTask`](crate::input::parachute::NParachuteHandleIKTask)
+/// (`NParachuteHandleIKTask::SInstanceProperties`): the task's current blend weight, written by
+/// [`NParachuteHandleIKTask::Update`](crate::input::parachute::NParachuteHandleIKTask::Update) each frame.
+pub struct ParachuteHandleIKInstanceProperties {
+    pub m_Weight: f32,
+}
+fn _ParachuteHandleIKInstanceProperties_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x4],
+            ParachuteHandleIKInstanceProperties,
+        >([0u8; 0x4]);
+    }
+    unreachable!()
+}
+impl ParachuteHandleIKInstanceProperties {}
+impl std::convert::AsRef<ParachuteHandleIKInstanceProperties>
+for ParachuteHandleIKInstanceProperties {
+    fn as_ref(&self) -> &ParachuteHandleIKInstanceProperties {
+        self
+    }
+}
+impl std::convert::AsMut<ParachuteHandleIKInstanceProperties>
+for ParachuteHandleIKInstanceProperties {
+    fn as_mut(&mut self) -> &mut ParachuteHandleIKInstanceProperties {
+        self
+    }
+}
+#[repr(C, align(4))]
+/// The per-instance loaded properties of [`NParachuteHandleIKTask`](crate::input::parachute::NParachuteHandleIKTask)
+/// (`NParachuteHandleIKTask::SProperties`): the blend-in and blend-out animation segments that
+/// gate the task's weight, and which hand or hands it drives.
+pub struct ParachuteHandleIKProperties {
+    /// The segment whose local time ramps the blend weight up from zero.
+    pub m_BlendInSegmentId: u32,
+    /// The segment whose local time ramps the blend weight back down to zero.
+    pub m_BlendOutSegmentId: u32,
+    /// Whether the task drives the left wrist.
+    pub m_LeftHand: bool,
+    /// Whether the task drives the right wrist.
+    pub m_RightHand: bool,
+    _field_a: [u8; 2],
+}
+fn _ParachuteHandleIKProperties_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC], ParachuteHandleIKProperties>([0u8; 0xC]);
+    }
+    unreachable!()
+}
+impl ParachuteHandleIKProperties {}
+impl std::convert::AsRef<ParachuteHandleIKProperties> for ParachuteHandleIKProperties {
+    fn as_ref(&self) -> &ParachuteHandleIKProperties {
+        self
+    }
+}
+impl std::convert::AsMut<ParachuteHandleIKProperties> for ParachuteHandleIKProperties {
+    fn as_mut(&mut self) -> &mut ParachuteHandleIKProperties {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The wingsuit's animation-graph blend state (`CWingsuitBlendState`). Besides blending the
+/// flight samplers, it decides each frame whether the character stalls, and while it does, plays
+/// one of two dedicated clips in place of the flight blend: a plain stall, or a full loop that
+/// recovers from it (the flip). Neither the stall nor the flip moves the physics body: the air
+/// physics clamps the body's pitch and orients it from the steering, so the loop is the clip's own
+/// rotation of the pose. Its layout is unmapped.
+pub struct WingsuitBlendState {}
+impl WingsuitBlendState {
+    pub const UpdateSamplers_ADDRESS: usize = 0x1408735E0;
+    /// Weights the state's samplers for the character owning `instance` over `dt`. The character
+    /// enters the stall when its forward airspeed (its velocity against its forward axis) falls
+    /// below [`WingsuitBlendState_ToStallSpeed`](get_WingsuitBlendState_ToStallSpeed) with its nose raised past
+    /// [`WingsuitBlendState_StallNoseUp`](get_WingsuitBlendState_StallNoseUp), and leaves it when the airspeed recovers past a higher
+    /// threshold; while a stall clip has weight the nose test is skipped. Stalling sets a local
+    /// flag through the instruction whose immediate is [`WingsuitBlendState_StallFlagSet`](get_WingsuitBlendState_StallFlagSet), the
+    /// only place the flag is set. While stalling, inside the clip's stall-selection segment, it
+    /// ramps up the flip clip when the nose is raised further, setting the character's
+    /// in-flip flag, and the plain stall clip otherwise, and scales every other sampler down by the
+    /// stall's weight. The stall's progression through its turn segment gates the air brake, the
+    /// wingsuit's close act, and part of the air physics' steering while it runs.
+    pub unsafe fn UpdateSamplers(
+        &mut self,
+        instance: *mut ::std::ffi::c_void,
+        dt: f32,
+        samplers: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                instance: *mut ::std::ffi::c_void,
+                dt: f32,
+                samplers: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::UpdateSamplers_ADDRESS);
+            f(self as *mut Self as _, instance, dt, samplers)
+        }
+    }
+}
+impl std::convert::AsRef<WingsuitBlendState> for WingsuitBlendState {
+    fn as_ref(&self) -> &WingsuitBlendState {
+        self
+    }
+}
+impl std::convert::AsMut<WingsuitBlendState> for WingsuitBlendState {
+    fn as_mut(&mut self) -> &mut WingsuitBlendState {
+        self
+    }
+}
+/// The immediate operand of the instruction in [`WingsuitBlendState::UpdateSamplers`](crate::input::parachute::WingsuitBlendState::UpdateSamplers) that sets
+/// its stalling flag (a byte register move of one). It is the only write of a true value to the
+/// flag, which is cleared on every path that does not stall; with the immediate zero, the blend
+/// state never stalls, its stall clips stay at no weight, the stall progression stays at its
+/// not-stalling value, and the flip never plays.
+pub unsafe fn get_WingsuitBlendState_StallFlagSet() -> &'static mut u8 {
+    unsafe { &mut *(0x140873DC7 as *mut u8) }
+}
+/// The component of the character's forward axis along the world's up axis that
+/// [`WingsuitBlendState::UpdateSamplers`](crate::input::parachute::WingsuitBlendState::UpdateSamplers) requires the nose to be raised past to enter the stall;
+/// the character's forward axis is its negative Z, so a raised nose reads below this.
+pub unsafe fn get_WingsuitBlendState_StallNoseUp() -> &'static mut f32 {
+    unsafe { &mut *(0x1423DB9D8 as *mut f32) }
+}
+/// The forward airspeed below which [`WingsuitBlendState::UpdateSamplers`](crate::input::parachute::WingsuitBlendState::UpdateSamplers) enters the stall, metres
+/// per second.
+pub unsafe fn get_WingsuitBlendState_ToStallSpeed() -> &'static mut f32 {
+    unsafe { &mut *(0x1423DB9DC as *mut f32) }
+}
 pub const UpdateParachutePhysics_ADDRESS: usize = 0x1407E6DF0;
 /// The parachute flight/steering core, called per frame by
 /// [`NStateTask_MovementParachuteTask::Update`](crate::input::parachute::NStateTask_MovementParachuteTask::Update). Computes the parachute steering values, the
 /// wanted character yaw/pitch/roll, and the camera-relative look steer via
 /// [`GetParachuteSteeringValues`](crate::input::parachute::GetParachuteSteeringValues), then drives the parachute velocities and the character/
-/// canopy orientation through the parachute action params' proxy matrices.
+/// canopy orientation through the parachute action params' proxy matrices. Besides steering
+/// through the input mixes, the input's along axis is the target of the lift and drag amounts,
+/// which follow it through the air settings' `m_LiftInputSpring` and `m_DragInputSpring`; the
+/// conventional velocity then takes its lift and drag between the settings' `m_Lift` and
+/// `m_DragX`/`m_DragY`/`m_DragZ` entries by those amounts, the last entry with the stick fully
+/// back and the first with it fully forward.
+///
+/// While the character's grappling hook is
+/// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN) under the
+/// canopy, the update runs the slingshot. It reads the line's direction
+/// ([`GetReelingInDirection`](crate::equipment::grappling_hook::GrapplingHook::GetReelingInDirection))
+/// and weights the slingshot's accelerations and drag adjustment by how far the line points along
+/// the character's facing, clamped to zero for a line beside or behind it: the direct
+/// acceleration along the line (`m_SlingshotDirectAccel`), the forward acceleration along the
+/// facing (`m_SlingshotForwardAccel`), and the raised top speed (`m_SlingshotMaxSpeedAdjust`),
+/// each blended toward the retract boost's values (`m_RetractSlingshotSettings`) while the retract
+/// is held and the hook allows it. A line beside the character therefore adds almost no speed and
+/// does not turn the canopy: the yaw toward the line (the `m_RotateCharYawToSlingshot` spring) sits
+/// behind a static switch that the game never sets, and behind the look-steer yaw from
+/// [`GetParachuteSteeringValues`](crate::input::parachute::GetParachuteSteeringValues) or the stick's across axis passing a tenth. The canopy turns
+/// toward the line only through the look steer, by the camera looking along it. The update
+/// retracts the active wire and queues `ACT_GRAPPLE_CANCEL` once the reel is within
+/// `m_SlingshotBreakDistance`, the line falls further behind the facing than the break yaw (which
+/// widens from `m_SlingshotBreakYawStart` to `m_SlingshotBreakYawEnd` over
+/// `m_SlingshotBreakYawBlendTime` of reeling), or the character pitches past
+/// `m_SlingshotBreakPitch`.
 pub unsafe fn UpdateParachutePhysics(
     character: *mut crate::character::character::Character,
     dt: f32,
@@ -428,5 +701,124 @@ pub unsafe fn ApplyAnimationVelocityWithSteering(
             velocity_out: *mut crate::types::math::Vector3,
         ) = ::std::mem::transmute(ApplyAnimationVelocityWithSteering_ADDRESS);
         f(character, dt, para_settings, transform, blend, velocity_out)
+    }
+}
+pub const NAirMovement_UpdateAirPhysics_ADDRESS: usize = 0x1407E1680;
+/// `NAirMovement::UpdateAirPhysics`: the air movement core shared by the wingsuit, falling, and
+/// free-falling tasks. It maps the stick vector `input` through the settings'
+/// `m_XInputYawPitchRollAmount` and `m_YInputYawPitchRollAmount` into a yaw, pitch, and roll
+/// steering vector and, for the local player outside an alignment segment, adds the camera
+/// look-steer from [`NAirMovement_UpdateStdLookSteering`](crate::input::parachute::NAirMovement_UpdateStdLookSteering) to it.
+///
+/// It also starts the wingsuit's evade. When the `WINGSUIT_EVADE` action fires, it tests a
+/// character value against a threshold, believed to be the boost's charge (unverified): short of
+/// it, the function reports a failed boost to the HUD (unless an enemy missile is locked on) and
+/// does nothing more; otherwise, with the move stick out of its rest, it queues
+/// [`ACT_BOOST_WINGSUIT_BARREL_ROLL`](crate::animation::symbol_table::EventIdSymbolTable::ACT_BOOST_WINGSUIT_BARREL_ROLL)
+/// directly on the character's [`AnimatedModel`](crate::character::character::AnimatedModel)
+/// ([`AnimatedModel::QueueAct`](crate::character::character::AnimatedModel::QueueAct)). While the roll's
+/// clip is inside its evade-movement segment (`SEG_IN_BARREL_ROLL_EVADE_MOVEMENT`), the function
+/// builds an orientation from a matrix the character holds and the velocity's heading; that this
+/// matrix is the animated reference bone, so that the clip carries the body sideways through the
+/// roll, is unverified.
+pub unsafe fn NAirMovement_UpdateAirPhysics(
+    character: *mut crate::character::character::Character,
+    dt: f32,
+    input: *const crate::types::math::Vector2,
+    settings: *const crate::input::parachute::CharacterAirMovementSettings,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            character: *mut crate::character::character::Character,
+            dt: f32,
+            input: *const crate::types::math::Vector2,
+            settings: *const crate::input::parachute::CharacterAirMovementSettings,
+        ) = ::std::mem::transmute(NAirMovement_UpdateAirPhysics_ADDRESS);
+        f(character, dt, input, settings)
+    }
+}
+pub const NAirMovement_UpdateStdLookSteering_ADDRESS: usize = 0x140791300;
+/// `NAirMovement::UpdateStdLookSteering`: the camera look-steer of the air movement, called only
+/// from [`NAirMovement_UpdateAirPhysics`](crate::input::parachute::NAirMovement_UpdateAirPhysics). It reads the camera input matrix
+/// (`GameCameraManager::GetInputMatrix`, inlined), takes the pitch and yaw differences between the
+/// camera and the character (`char_pitch`, `char_yaw`), shapes each through the settings'
+/// look-steer deadzone, range, and exponent, and mixes them through `m_XLookYawPitchRollAmount` and
+/// `m_YLookYawPitchRollAmount` into the yaw, pitch, and roll vector `out`. Each component is then
+/// reduced against `target_steering` where the two oppose. It has no other side effects; the
+/// caller adds `out` into its steering vector.
+pub unsafe fn NAirMovement_UpdateStdLookSteering(
+    out: *mut crate::types::math::Vector3,
+    target_steering: *const crate::types::math::Vector3,
+    char_pitch: f32,
+    char_yaw: f32,
+    settings: *const crate::input::parachute::CharacterAirMovementSettings,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            out: *mut crate::types::math::Vector3,
+            target_steering: *const crate::types::math::Vector3,
+            char_pitch: f32,
+            char_yaw: f32,
+            settings: *const crate::input::parachute::CharacterAirMovementSettings,
+        ) = ::std::mem::transmute(NAirMovement_UpdateStdLookSteering_ADDRESS);
+        f(out, target_steering, char_pitch, char_yaw, settings)
+    }
+}
+pub const NParachuteObjectControl_SyncBones_ADDRESS: usize = 0x140CD74F0;
+/// `NParachuteObjectControl::SyncBones`: moves the parachute object's own rig to track the pose of
+/// `owner`, the character it is attached to, and, for the player, places the rig's handles in the
+/// character's hands. `am` is the parachute's animated model, whose
+/// [`m_AnimationController`](crate::character::character::AnimatedModel::m_AnimationController) holds the
+/// rig's skeleton and joints; `props` is the parachute object's loaded properties.
+///
+/// Besides the rig-tracking pose (syncing the rig's `Base` bone toward the character's `BackAttach`
+/// bone over a settling segment, re-deriving each rig joint from the rig's model-space pose, and
+/// blending the joints toward their bind pose over another), it places each handle for the player.
+/// Each side has three rig bones: the handle (`RightHandle`, `LeftHandle`), its rotation bone
+/// (`RightHandleRotate`, `LeftHandleRotate`), and the link the handle's cord hangs from
+/// (`RightLink`, `LeftLink`). A placed handle takes the world position of the character's second
+/// hand-attach bone (`RightHandAttach2`, `LeftHandAttach2`) carried into the rig's model space as
+/// its joint translation, the rotation bone takes that bone's rotation, and the link is drawn a
+/// little toward the handle while the handle is further from it than in the bind pose. A handle not
+/// placed sits on its link: its joint translation is the link's.
+///
+/// The right handle is not placed while the character wields a weapon or is within a
+/// `SEG_NO_RIGHT_HANDLE_PLACEMENT` segment; the left one while the character fires the grapple,
+/// has a grapple hook out, or is within a `SEG_NO_LEFT_HANDLE_PLACEMENT` segment. A non-zero first
+/// word of `props` suspends both unless a `SEG_FORCE_HANDLE_PLACEMENT_OVERRIDE` segment is active.
+/// So the handles are drawn in the character's hands wherever its hands are, independently of the
+/// `SECONDARY` HumanIK pass that [`NParachuteHandleIKTask`](crate::input::parachute::NParachuteHandleIKTask) drives toward the links through the
+/// blackboard.
+pub unsafe fn NParachuteObjectControl_SyncBones(
+    parachute: *mut ::std::ffi::c_void,
+    am: *mut crate::character::character::AnimatedModel,
+    owner: *mut crate::character::character::Character,
+    props: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            parachute: *mut ::std::ffi::c_void,
+            am: *mut crate::character::character::AnimatedModel,
+            owner: *mut crate::character::character::Character,
+            props: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(NParachuteObjectControl_SyncBones_ADDRESS);
+        f(parachute, am, owner, props)
+    }
+}
+pub const NParachuteObjectControl_DoSyncAndPlacement_ADDRESS: usize = 0x140CD87A0;
+/// `NParachuteObjectControl::DoSyncAndPlacement`: sets the parachute object's transform from the
+/// owning character's canopy proxy
+/// ([`ParachuteActionParams::m_ParachuteProxy`](crate::input::parachute::ParachuteActionParams::m_ParachuteProxy)) and, once the object has finished initializing,
+/// calls [`NParachuteObjectControl_SyncBones`](crate::input::parachute::NParachuteObjectControl_SyncBones).
+pub unsafe fn NParachuteObjectControl_DoSyncAndPlacement(
+    parachute: *mut ::std::ffi::c_void,
+    props: *mut ::std::ffi::c_void,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            parachute: *mut ::std::ffi::c_void,
+            props: *mut ::std::ffi::c_void,
+        ) = ::std::mem::transmute(NParachuteObjectControl_DoSyncAndPlacement_ADDRESS);
+        f(parachute, props)
     }
 }

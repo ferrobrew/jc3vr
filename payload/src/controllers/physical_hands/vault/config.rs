@@ -1,0 +1,65 @@
+//! The push-up's settings, and its fixed tuning.
+
+use serde::{Deserialize, Serialize};
+
+/// Pushing the body up with the hands (see [`crate::controllers::physical_hands::vault`]): a hand
+/// body pressed down on a surface lifts the player, a jump assist bounded by how far the hand
+/// presses and how high the player has risen. Its tuning is fixed at [`VAULT`].
+#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct VaultConfig {
+    pub enabled: bool,
+}
+
+impl VaultConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for VaultConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The push-up's tuning, fixed at [`VAULT`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct VaultTuning {
+    /// The downward press left alone before it lifts, metres of the player's hand, so that a hand
+    /// resting on a table lifts nothing.
+    pub deadband_m: f32,
+    /// The lifting speed per metre of press past the deadband, per second.
+    pub stiffness_per_s: f32,
+    /// The fastest lift, metres per second.
+    pub max_lift_mps: f32,
+    /// The least downward share of a press for it to lift, `0..=1`.
+    pub min_vertical: f32,
+    /// The highest the feet rise above where the push started, metres.
+    pub max_rise_m: f32,
+    /// How far above the feet a surface must be for a press on it to lift, metres of the game
+    /// world: the ground the player stands on, and anything barely above it (a kerb, a step, the
+    /// floor where the player's real floor sits a little lower than the game's), is never pushed
+    /// on; a hand reaching down for something on the ground rests on it instead.
+    pub min_height_m: f32,
+    /// How long a press must stay past the deadband before it starts to lift, seconds: a hand
+    /// that brushes a surface on its way past, or lands on it with a moment's overshoot, lifts
+    /// nothing, and a deliberate push lifts.
+    pub hold_s: f32,
+    /// The fastest the player may be moving down for the hands to lift them, metres per second:
+    /// a player falling faster is never lifted, so that a fall is not stopped. Above zero, so that
+    /// a player settling onto the ground or stepping down a slope still pushes up.
+    pub fall_tolerance_mps: f32,
+}
+
+/// The push-up's tuning.
+pub const VAULT: VaultTuning = VaultTuning {
+    deadband_m: 0.06,
+    stiffness_per_s: 10.0,
+    max_lift_mps: 3.0,
+    min_vertical: 0.7,
+    max_rise_m: 1.4,
+    min_height_m: 0.3,
+    hold_s: 0.15,
+    fall_tolerance_mps: 0.5,
+};

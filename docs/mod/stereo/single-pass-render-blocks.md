@@ -16,7 +16,10 @@ Every scene draw falls into one of these:
 - **(b) reproject a baked matrix.** The VS reads a CPU-baked world-view-projection from a per-draw
   constant buffer (not `cb0`). Single-pass reprojects that matrix by the per-eye `M_eye`
   (`clip_eye = M_eye · clip_center`) and re-issues the draw once per eye into the eye's half-viewport.
-  This is the TerrainDetail intercept.
+  The bark, foliage, and occluder intercepts. The TerrainDetail intercept re-issues the same way but
+  builds each eye's matrix from that eye's own `cb13` rows instead (`single_pass.terrain_detail_eye_rows`;
+  see "Comparing at the headset's size" in [single-pass-stereo.md](single-pass-stereo.md)), since the
+  reprojection rounds its depth badly.
 
   **The baked matrix is stored column-wise.** Every bucket-(b) VS in the bundle consumes its four
   registers as a multiply-add chain rather than four `dp4`s — for TerrainDetail (`sh_0224`), Bark
@@ -34,9 +37,20 @@ Every scene draw falls into one of these:
   one entry at a time — the same `mul_vec4` the mod applies. (`cb13`'s `M_eye` block is the other
   convention: the rewriter's epilogue is a `dp4` chain, so those rows are rows.)
 - **(c) hull/domain tessellation eye-inject.** The clip transform is built in the domain shader from
-  an `m_OffsetViewProjection` constant. The DS is rewritten to reproject by `M_eye` (read from `cb13`
-  bound on the domain stage); the paired VS forwards the eye index on a free interpolant. This is the
-  base VolumetricTerrain path.
+  an `m_OffsetViewProjection` constant. The DS is rewritten to read that eye's offset view-projection
+  and camera position from `cb13` (bound on the domain stage) in place of its own constants, under
+  `single_pass.terrain_eye_rows`, or to reproject by `M_eye` with it off; the paired VS forwards the
+  eye index on a free interpolant. This is the base VolumetricTerrain path. The patch system's domain
+  shaders, which have no free interpolant, read the pinned eye's slot the same way (see "Pipelines
+  that cannot carry the eye: the pinned-eye reprojection" in [single-pass-stereo.md](single-pass-stereo.md)).
+
+Whether a family reaches clip by `M_eye` or by its eye's own rows matters at the headset's size: the
+reprojection is exact only in real arithmetic. The `cb0`-remapped families, the terrain detail, the
+terrain domain shaders, and the full view-projection's readers (tree impostors, light sprites,
+ambient-occlusion volumes, terrain basemesh) use the eye's rows; the baked-matrix families in bucket
+(b), the foliage, the moon, the water planes, and the decals are reprojected, since their transform
+is a CPU product of a per-draw matrix and the centred camera that the shader cannot redo per eye. See
+"Each eye's own rows, not the centre's reprojected" in [single-pass-stereo.md](single-pass-stereo.md).
 - **(d) GPU-indirect per-eye re-issue.** The draw is `DrawInstancedIndirect` /
   `DrawIndexedInstancedIndirect(NoMutex)` — the instance count lives in a GPU buffer, so the CPU can't
   instance-double and `SV_InstanceID` stays 0 (never selects an eye). The block's `Draw` is detoured
@@ -55,10 +69,10 @@ rows the general rewriter targets) and the per-patch *streamed* constant buffer 
 (`SVertexInstanceConstsNoTess = { Matrix4 m_WorldViewProjection; Vector4 m_WorldPos; }`). The
 tessellating passes additionally bake `rc->m_OffsetViewProjection` into the hull/domain constants
 (`SHullDomainTypeConsts`, filled once per frame per LOD slot). So the base surface goes through cb0
-(bucket a/c), while the non-tess path may instead read the baked cb1 WVP (bucket b) — **which of cb0
-or cb1 the non-tess VS actually reads for clip position is not yet confirmed** (needs the shader
-bundle or a live VS census); it decides whether the DrawIndexed passes are already covered by the
-general path or need a bucket-b reproject.
+(bucket a/c). The non-tessellated permutations read the global constants too: the
+`volumetricterrain4notessellation*` vertex shaders project through the full view-projection in `cb0`
+rows 0 to 3 (not the `cb0[29..32]` the remap covers), and the `*instanced` ones among them, which the
+GPU-indirect near basemesh pass draws with, also read `SV_InstanceID`.
 
 Draw pass-key routing, keyed on [`RenderContext::m_ActiveRenderPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_ActiveRenderPass) (pass names from [`RenderPassId`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderPassId)):
 
@@ -69,7 +83,7 @@ Draw pass-key routing, keyed on [`RenderContext::m_ActiveRenderPass`](https://fe
 | `RP_TERRAINPATCH_BASEMESH_FAR`, `RP_TERRAINPATCH_BASEMESH_COLOR` | `DrawIndexed` head range `[0, split)` | Same. |
 | `PRE_RP_REFLECTION_MESH`, `PRE_RP_SHADOW_REFLECTIVE_SUN_NEAR`, `PRE_RP_SHADOW_REFLECTIVE_SUN_FAR`, `PRE_RP_SHADOW_REFLECTIVE_CAMERA` | `DrawIndexed` full range | Depth/other. |
 
-**Wiring: no block intercept, but the near passes are covered.** The `DrawIndexed` passes ride the general path when their VS is cb0-remapped. The two near passes have no bucket-(d) block intercept. Instead, `single_pass.indirect_per_eye` (on by default) detours the two GPU-indirect D3D11 context methods wholesale and re-issues any such draw once per eye with both viewport slots pinned to that eye's half. The near patches are then present and correctly sized in both eyes, without parallax. Without the detour they inherit whatever viewport the previous draw left bound, usually the full double-wide one, which stretches them 2x horizontally and makes them appear to slide across the world. A block-level intercept overriding the transform per eye would add the parallax; it is not built.
+**Wiring: no block intercept; a draw-level re-issue with the eye pinned.** `single_pass.indirect_per_eye` (on by default) detours the two GPU-indirect D3D11 context methods wholesale and re-issues any such draw once per eye with both viewport slots pinned to that eye's half, and the far tessellated `DrawIndexed` passes, whose vertex shaders the eye-inject declines, take the unpatched `DrawIndexed` re-issue. Without the indirect detour the near patches inherit whatever viewport the previous draw left bound, usually the full double-wide one, which stretches them 2x horizontally and makes them appear to slide across the world. The re-issue alone gave both eyes the centred camera; `single_pass.terrain_patch_per_eye` (on by default) adds the parallax by rewriting the patch domain shaders and the instanced basemesh vertex shaders to read `cb13`'s first eye slot, and pinning `cb13` to each eye for each submission. That is the bucket-(d) "cb13 override" below, applied at the draw level rather than by a block intercept. See "Pipelines that cannot carry the eye" in [single-pass-stereo.md](single-pass-stereo.md).
 
 ## VegetationBark
 
@@ -79,14 +93,11 @@ Tree trunks and branches, [`RenderBlockBark`](https://ferrobrew.github.io/pyxis/
 
 **Draw-kind routing.** The draw kind comes from the instance data that the `RBIInfo` points at: with no instance data, a non-instanced [`DrawIndexedWithBoundState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedWithBoundState); otherwise a flag in the instance data's flags word selects a CPU-instanced [`DrawIndexedInstanced`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstanced) when set, or a GPU-indirect [`DrawIndexedInstancedIndirect`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirect) when clear. The flags word is not `RBIInfo::m_MetaFlags`. All three kinds read the same `cb1[0..3]`, so one reprojection corrects every kind.
 
-**Wiring: `single_pass.bark`, built, on by default.** `Draw` and `DrawZ` are detoured and re-issued once per eye into the eye's half-viewport, with `cb1[0..3]` reprojected as `cb1[k]_eye = M_eye · cb1[k]_mono`, one entry at a time. `M_eye` is the same matrix the mod builds for cb13. Because `Draw` itself bakes cb1, the intercept reprojects the game's own `SetVertexProgramConstants` upload to cb1 during a wrapped original-`Draw` call rather than replicating the bake. This is the shared bucket-(b) mechanism described below. It covers all three draw kinds uniformly. The GPU-indirect `DrawIndexedInstancedIndirect` sub-path can only be re-issued, never instance-doubled.
+**Wiring: `single_pass.bark`, built, on by default.** By default the block is drawn once for both eyes (`single_pass.vegetation_once`, see "Drawing the vegetation once" in [single-pass-stereo.md](single-pass-stereo.md)): `Draw` and `DrawZ` run once, each draw binds a reprojected variant of the vertex shader the block's setup bound, and the GPU-indirect draws read a copy of their arguments with the instance counts doubled. The fallback, taken when that switch is off or a precondition is missing, re-issues `Draw` and `DrawZ` once per eye into the eye's half-viewport, with `cb1[0..3]` reprojected as `cb1[k]_eye = M_eye · cb1[k]_mono`, one entry at a time. `M_eye` is the same matrix the mod builds for cb13. Because `Draw` itself bakes cb1, the re-issue reprojects the game's own `SetVertexProgramConstants` upload to cb1 during a wrapped original-`Draw` call rather than replicating the bake. This is the shared bucket-(b) mechanism described below, and it covers all three draw kinds uniformly.
 
-The velocity pass's previous-frame WVP is not reprojected: that would need the previous frame's `M_eye` retained and a second armed range. Bark's motion vectors therefore carry the centre view's parallax, which SMAA and FSR reproject slightly wrongly.
+The re-issue's velocity pass reprojects only the current-frame WVP; the previous-frame copy stays centred, so bark's motion vectors carry the centre view's parallax, which SMAA and FSR reproject slightly wrongly. The single draw reprojects only `SV_Position`, so its velocity texcoords are both the centre view's: the motion of the centre camera rather than of each eye, which differs from an isolated eye's by the change in parallax between frames.
 
-Bark's VS writes `SV_Position`, so the CB-agnostic `reproject_vertex_shader` would handle the
-non-indirect draws directly — but the VS is shared with the GPU-indirect path, and rewriting it breaks
-that path (a single indirect instance cannot select an eye). That is why Bark is not a plain reproject
-allowlist entry and takes the whole-`Draw` re-issue instead.
+The engine's bark vertex shaders stay pristine: the shadow passes and the re-issue draw with them, and the `cb0` remap declines them while the flag is on. The variants exist beside them.
 
 ## VegetationFoliage
 
@@ -96,25 +107,12 @@ Grass and ground cover, `RenderBlockFoliage` (registered `"VegetationFoliage"`),
 
 **Draw-kind routing.** The instance-data flags select one of three paths: a CPU-instanced [`DrawIndexedInstancedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedNoMutex) with a u16 instance count; the dominant grass path, [`DrawIndexedInstancedIndirectNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedInstancedIndirectNoMutex), whose instance count is in the GPU-only `m_InstDrawParams` args that the vegetation draw-indirect compute pass populates; and a non-instanced [`DrawIndexedNoMutex`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/graphics_engine::draw##func-DrawIndexedNoMutex).
 
-**Wiring — `single_pass.foliage`, built, on by default.** Same story as Bark: the non-indirect paths
-are bucket (b), but the dominant grass path is GPU-indirect and shares the VS, so a reproject allowlist
-entry would break the grass. `Draw` (colour) and [`RenderBlockFoliage::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-DrawZ) (prez/shadow/velocity/RSM) are therefore detoured and re-issued per eye with `cb2[4..7]` reprojected, which covers
-every draw kind without touching the VS. Both entry points stage the same `cb2[4..7]` copy of
-`m_OffsetViewProjection`, and both have to be reprojected: a prepass left at the centre view primes
-depth for geometry neither eye draws there, and the per-eye colour fragments are rejected against it.
-`DrawZ`'s velocity permutation also stages the previous frame's offset VP at `cb2[11..14]`, which is
-left centred — the same deferral bark's velocity matrix takes.
-
-The cheaper shape — reproject the VS and double each `m_InstDrawParams` slot's `InstanceCount` (dword
-+1) in an in-place compute pre-pass, since the args buffer has no CPU copy — is not built; it would
-also need the `SV_InstanceID >> 1` consumer rewrite on the CPU-instanced path so the doubled instance
-id still indexes the original instance.
+**Wiring — `single_pass.foliage`, built, on by default.** Drawn once for both eyes like Bark under `single_pass.vegetation_once`, with the same variants and argument copy. The fallback re-issues `Draw` (colour) and [`RenderBlockFoliage::DrawZ`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::RenderBlockFoliage##func-DrawZ) (prez/shadow/velocity/RSM) per eye with `cb2[4..7]` reprojected, which covers every draw kind without touching the VS. Both entry points stage the same `cb2[4..7]` copy of `m_OffsetViewProjection`, and both have to be corrected the same way: a prepass left at the centre view primes depth for geometry neither eye draws there, and the per-eye colour fragments are rejected against it. `DrawZ`'s velocity permutation also stages the previous frame's offset VP at `cb2[11..14]`, which the re-issue leaves centred, the same deferral bark's velocity matrix takes.
 
 ### Black-in-VR: the clustered grid is *not* the cause
 
-The earlier version of this section claimed the black grass was the clustered froxel grid and that
-`single_pass.clustered_per_eye` had fixed it. Both halves of that are wrong, and the shader bundle
-says so directly.
+The black grass is not the clustered froxel grid, and `single_pass.clustered_per_eye` does not fix
+it. The shader bundle says so directly.
 
 **The visible grass is deferred, not forward-lit.** The block's colour permutations split cleanly:
 
@@ -153,7 +151,7 @@ multiple of 128 …; the clustered light assignment ran whole-grid
 That is why toggling `single_pass.clustered_per_eye` changed nothing. Making the split usable means
 rounding the per-eye render width up to a multiple of `LIGHT_GRID_TILE_SIZE` in `vr::engine_render_resolution`, so that the double-wide width is a multiple of twice the tile size. The change is worth making for the local-lighting correctness it provides, but it does not affect the black grass.
 
-**Corrected resource map.** The old text's slot attributions were wrong. The map below comes from [`RenderBlockTypeBase::SetupForwardLightingResources`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupForwardLightingResources), [`RenderBlockTypeBase::SetupLightingTextures`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupLightingTextures), and the shader bundle's own binding tables:
+**Resource map.** The map below comes from [`RenderBlockTypeBase::SetupForwardLightingResources`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupForwardLightingResources), [`RenderBlockTypeBase::SetupLightingTextures`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_engine::RenderBlockTypeBase##func-SetupLightingTextures), and the shader bundle's own binding tables:
 
 | Slot | What it actually is | Source |
 |---|---|---|
@@ -182,10 +180,10 @@ log shows actually running). So "dark and speckled together" is the signature of
 and after that of the G-buffer *normal* (`o1`), which would leave the deferred resolve computing
 `N·L ≈ 0` on foliage while the terrain beside it lights correctly.
 
-The one-toggle experiment that separates them is `single_pass.foliage`, and it used to be unable to
-engage at all — see the next section, which is now fixed.
+The one-toggle experiment that separates them is `single_pass.foliage`, which can engage only
+because of the decline the next section describes.
 
-## The vegetation `cb0[4]` misclassification (fixed)
+## The vegetation `cb0[4]` misclassification
 
 The rewriter's per-eye set is `cb0[{4, 29..32}]`, and it patches any vertex shader that references one
 of them. But those five rows are not one thing. `cb0[29..32]` is `m_OffsetViewProjection` — it can only
@@ -200,18 +198,18 @@ rows. Their roles:
 | `vegetationfoliage*` | `add r0.w, r1.y, cb0[4].y` — turns the camera-relative position back into a world one for the wind-noise texture lookup | `cb2[4..7]`, the baked `OffsetVP` |
 | `vegetationbark*instanced` | `add r1.xyz, r0.xyzx, -cb0[4].xyzx` — makes the per-instance world position camera-relative | `cb1[0..3]`, the baked `OffsetVP` |
 
-Neither takes its clip position from `cb0`, so the remap bought them nothing: instance-doubling and
-`SV_ViewportArrayIndex` routing put them in both eye halves, but both halves were drawn from the
-collapsed **centre** camera. It also *locked out the fix*: `baked_cb_intercept_ready` declines whenever
-`BOUND_VS_PATCHED` is set, so `single_pass.foliage` and `single_pass.bark` could never run.
+Neither takes its clip position from `cb0`, so the remap buys them nothing when it claims them:
+instance-doubling and `SV_ViewportArrayIndex` routing put them in both eye halves, but both halves are
+drawn from the collapsed **centre** camera. A claim also *locks out the fix*: `baked_cb_intercept_ready`
+declines whenever `BOUND_VS_PATCHED` is set, so `single_pass.foliage` and `single_pass.bark` cannot run
+on a claimed shader.
 
 ### What that looks like, and why it is a *mono* defect
 
-The symptom was first reported as vegetation that is roughly in the right place but does not stay put
-as the camera moves, and it was first explained here as zero disparity between the eyes. **That
-explanation was wrong**, and the correction matters because it changes which mechanism to chase: it was
-observed in the **left-eye desktop mirror, with the headset not being worn**. A single view cannot show
-a stereo-depth defect at all.
+The symptom is vegetation that is roughly in the right place but does not stay put as the camera
+moves. It is **not** zero disparity between the eyes, and the distinction changes which mechanism to
+chase: it shows in the **left-eye desktop mirror, with the headset not being worn**. A single view
+cannot show a stereo-depth defect at all.
 
 Under the collapse the render camera stays centred and each patched shader gets its eye's view from
 `cb13`; so in the left half of the double-wide target, terrain, props and characters are drawn from the
@@ -235,10 +233,10 @@ at the viewpoint:
 | Foliage's remapped `cb0[4]` in the wind-noise UV | no | bounded by the *vertical* component of a 32 mm offset, against a world-scaled noise lookup |
 
 So of the two `cb0[4]` mis-substitutions, bark's actually *supplied* the correct eye viewpoint (it
-rebases by `cb0[4]`, which the remap made per-eye) and left only the fixed projection difference, while
+rebases by `cb0[4]`, which the remap makes per-eye) and leaves only the fixed projection difference, while
 foliage's is confined to a wind-noise coordinate and is negligible. The distance-dependent term belongs
-entirely to foliage, whose clip path never touches `cb0` and was therefore wholly centre-viewed. The
-`cb0[4]` misclassification is what *prevented the repair*, not what caused the displacement.
+entirely to foliage, whose clip path never touches `cb0` and is therefore wholly centre-viewed. The
+`cb0[4]` misclassification is what *prevents the repair*, not what caused the displacement.
 
 What the arithmetic predicts precisely is a rigid ~32 mm lateral displacement that swings around with
 the camera heading and grows angularly as you close on it. Whether "recedes as I approach" is the right
@@ -247,15 +245,10 @@ which has not been taken. The mechanism is pinned by the distance dependence reg
 adjective.
 
 The stereo consequence — both eyes seeing the identical centre image, so the vegetation also fuses at
-infinite depth in a headset — is real, and the same fix addresses it. It is simply not what was seen
-here.
+infinite depth in a headset — is real, and the same fix addresses it. It is simply not what the mirror
+shows.
 
-**The fix, in `stereo::single_pass::baked_cb_block_owns_vs`.** While a family's intercept flag is on,
-its vertex shaders are declined by the `cb0` remap at creation, so the block intercept owns them end to
-end. It is name-prefixed (`vegetationbark`, `vegetationfoliage`) but bytecode-confirmed: a permutation
-that really does read `cb0[29..32]` is left to the remap. The decline and the intercept share a flag
-because either alone is wrong — declining without the intercept forwards an unpatched instanced draw
-once at whatever viewport is bound, which is the 2× horizontal stretch.
+**The fix, in `stereo::single_pass::baked_cb_block_owns_vs`.** While a family's intercept flag is on, its vertex shaders are declined by the `cb0` remap at creation, so the block intercept owns them end to end. It is name-prefixed (`vegetationbark`, `vegetationfoliage`, `nvwater`) but bytecode-confirmed: a permutation that really does read `cb0[29..32]` is left to the remap. The decline and the intercept share a flag because either alone is wrong — declining without the intercept forwards an unpatched instanced draw once at whatever viewport is bound, which is the 2× horizontal stretch.
 
 Reprojecting `cb2[4..7]` by `M_eye` is exactly the right correction, and not only approximately: the
 shader computes `clip = OffsetVP_c · (world − campos_c) = VP_centre · world`, and
@@ -272,7 +265,7 @@ and that is true whether or not the remap claims the shader. Un-patching without
 transform makes things worse, not better — an unpatched instanced draw is forwarded once at whatever
 viewport is bound.
 
-All fifty were then read out of the disassembly one at a time, and the classification is pinned by
+Each of the fifty is classified from its disassembly, and the classification is pinned by
 `corpus_camera_only_population_is_the_triaged_fifty`. The axis that matters is where each takes its
 clip from:
 
@@ -281,7 +274,7 @@ clip from:
   (`sh_0086`), and `layeredblend` (`sh_0087`) are one shared body — `clip = cb1[0..3] · objectPosition`,
   `cb0[4]` differenced into a `dp3` for a LOD fade (`mad_sat o3.w, r0.x, l(-0.0001), l(1.0)`), and a
   post-projection depth bias `mad o0.z, cb2[0].x, r0.w, r0.z`. None of them is an NDC writer: each
-  multiplies an object-space position by a 4×4 matrix. All four are now on `REPROJECT_NAME_PREFIXES`
+  multiplies an object-space position by a 4×4 matrix. All four are on `REPROJECT_NAME_PREFIXES`
   and take `single_pass.reproject_camera_only` (on by default, requires `single_pass.reproject`), at no
   extra draw cost. The vegetation families and `terrainshadowsimple` are also in this group but are
   owned elsewhere — the block intercepts and the shadow atlas respectively.
@@ -289,7 +282,7 @@ clip from:
   (translation-bearing, mapping *absolute* world to clip), staged into `m_VPGlobalConstData[0..3]` by
   `SetGlobalShaderProgramCameraConstants` — verified in the IDB, not just read off the def. It is
   per-view data, but it is **not** one of the five rows the remap makes per-eye, so these shaders are
-  centre-viewed for a reason the remap could never have fixed. The legacy water surfaces (`waterbelow`,
+  centre-viewed for a reason the remap cannot fix. The legacy water surfaces (`waterbelow`,
   `waterbox`, `waterboxbelow`, `waterboxsurface`, `waterhighend`, `watershader_lod0/1`), the clouds
   (`cirrusclouds`, `cloudflythrough`, `clouds`, `cloudsshadow`), and `weather` are all here. They are
   structurally reprojectable — the reprojection post-multiplies whatever clip the shader computed, so
@@ -322,21 +315,13 @@ clip from:
   shader, and the reprojection refuses them with `NoPositionOutput`. The particles read only
   `cb0[4].w` / `cb0[5].w`.
 
-`nvwaterbox` (`sh_0163`) and `nvwaterbox_tess` (`sh_0290`) sit apart, and they are the clearest
-remaining instance of the bug this whole section is about. Both add the camera position to a
-model-space position before the baked `cb1[0..3]` multiply, so `cb0[4]` really is on their position
-path. `single_pass.nvwater_per_eye` is precisely a baked-cb block intercept — it restages that matrix
-from the eye's own camera — but `nvwater*` is **not** on `BAKED_CB_VS_NAME_PREFIXES`, so the remap
-claims these two before the handler that owns them is ever consulted, exactly as it did `generaljc3`.
-The remapped `cb0[4]` is then added on top of a transform that already accounts for the eye offset,
-displacing the water box by that offset again. Half an IPD on a water surface, so not urgent, but the
-fix has the same shape as the vegetation one: add the prefix so the remap declines while the intercept
-is on. It is not done here because it needs a `BlockIntercept` variant for the WaveWorks flag (which
-`water.rs` currently queries directly) and live validation that the decline and the intercept's
-`draw_per_eye_half_ignoring_bound_vs` re-issue compose — the two must land together, since declining
-without the intercept forwards the draw once at whatever viewport is bound.
+`nvwaterbox` (`sh_0163`) and `nvwaterbox_tess` (`sh_0290`) add the camera position to a model-space position before the baked `cb1[0..3]` multiply, so `cb0[4]` is on their position path.
 
-**The bound-shader gate also had to change.** `baked_cb_intercept_ready`'s `BOUND_VS_PATCHED` check
+`single_pass.nvwater_per_eye` is a baked-cb block intercept that restages that matrix from the eye's own camera, and `nvwater*` is on `BAKED_CB_VS_NAME_PREFIXES`, so while the flag is on the remap declines these two and the intercept owns them end to end. Remapping them instead rewrites the selector to the stereo constant buffer, and `cb13` is unbound during the second invocation of the re-issue, so the patched box and tessellation shaders read an unbound constant buffer and reconstruct the wrong camera origin, which puts the water surface at the wrong depth.
+
+The prefix is gated on `BlockIntercept::NvWater` because the decline and the intercept's `draw_per_eye_half_ignoring_bound_vs` re-issue must land together: declining without the intercept forwards the draw once at whatever viewport is bound.
+
+**The bound-shader gate.** `baked_cb_intercept_ready`'s `BOUND_VS_PATCHED` check
 reads the shader bound by the *previous* draw, because these blocks bind their own inside the `Draw`
 being wrapped. Bark is drawn interleaved with patched model geometry, so the check would stand its
 intercept down on a neighbour's shader. `BoundVsGate::Owned` skips it for the two families whose
@@ -355,6 +340,8 @@ name prefix in the reproject set. The CB-agnostic reproject rewriter post-multip
 draw detour with the L/R viewport split. The card faces the centre camera rather than each eye, but at
 impostor range the per-eye facing difference is arcseconds — `M_eye` supplies the parallax, so shared
 facing is sufficient. No per-draw special-casing.
+
+**The pixel size.** [`TreeImpostorRBType::Setup`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::render_block::TreeImpostorRBType##func-Setup) stages the vertex shader's `PixelSize` as one over the render context's [`m_DisplayWidth`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::RenderContext##field-m_DisplayWidth) and `m_DisplayHeight`. The vertex shader projects the card's centre and a point half its size away through the global view-projection, which under the collapse carries one eye's projection, and divides the clip-space difference by `PixelSize` to get the card's footprint in pixels; the pixel shader scales its atlas-coordinate derivatives by that footprint to offset the atlas lookup. Under the double-wide collapse `m_DisplayWidth` is both eyes' width, so the footprint came out twice as wide as in an eye-sized render and every card's alpha-tested silhouette moved: at the midday shore-lake view the impostors on the near ridge owned about 2,900 of the 3,000 pixels per eye whose depth differed from an isolated render, none of them a parallax shift. `single_pass.tree_impostor_pixel_size_per_eye` (on by default) detours `Setup` and halves the display width for the length of the call (`stereo::single_pass::EyeDisplayWidth`), which brought those pixels to about 70 per eye. The impostors stay one instance-doubled draw.
 
 ## Occluder
 
@@ -393,12 +380,15 @@ paths cover every case:
   wrapped original-`Draw` call, so the game's own upload is transparently reprojected and the bake need
   not be replicated. The arm is keyed to the block's graphics context: the detour sees every
   vertex-constant stage in the process, and `(slot, offset)` alone does not identify a block.
-- **cb13 override** (bucket d, when the VS is cb0-remapped to `cb13`): before each eye's re-issue, write
-  the mod's `cb13` with both eye slots set to that eye's rows, so a single (indirect) instance reads the
-  correct eye. **Not built** — no block uses this path yet.
+- **cb13 override** (bucket d, when the shader reads its eye from `cb13`): before each eye's
+  re-issue, write the mod's `cb13` with both eye slots set to that eye's rows, so a single (indirect)
+  instance reads the correct eye. No block intercept uses it; the draw-level re-issues do, for the
+  terrain patch system's pinned-eye shaders and for the already-instanced draws.
 
 Each family has its own flag (`single_pass.bark` and `single_pass.foliage` on by default;
-`single_pass.occluder`, `single_pass.terrain`, and `single_pass.tree_impostors` off), so the model and
+`single_pass.occluder`, `single_pass.terrain`, and `single_pass.tree_impostors` off, with
+`single_pass.terrain_patch_per_eye` and `single_pass.tree_impostor_pixel_size_per_eye` on beneath
+them), so the model and
 terrain-detail paths stay isolated while a new block is validated in-game.
 
 A re-issue marks itself while it runs, so the draw and viewport detours leave the block's own calls

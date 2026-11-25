@@ -1,20 +1,33 @@
 //! Render-call tracing subsystem: collects per-call NDJSON records over a fixed number of frames and
-//! dumps them next to the injected DLL, with a self-describing manifest as the first record.
+//! dumps them into the trace's session folder (see [`crate::session`]), with a self-describing
+//! manifest as the first record.
 
 use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 
 use parking_lot::Mutex;
 
+use crate::{
+    debug::{
+        coord_frame::{self, CoordFrameSample},
+        stereo_diff::{self, DrawDiff},
+    },
+    session::CaptureFolder,
+};
+
 /// Frames left in the active trace; 0 = inactive. Kept as a standalone atomic so the hot-path
 /// [`tracing_active`] gate is lock-free -- the heavier state lives in [`TRACE_STATE`]. Driven by the
-/// "Dump render trace" button.
+/// render capture's button.
 static TRACE_FRAMES: AtomicI32 = AtomicI32::new(0);
+
+/// The frame count a manual trace covers, edited from the render capture and reused as the floor
+/// of the brightness-step auto-capture.
+pub static CAPTURE_FRAMES: AtomicI32 = AtomicI32::new(60);
 
 /// The in-progress trace's collected-but-unwritten state.
 pub struct TraceState {
     /// NDJSON records collected so far.
     log: Vec<String>,
-    /// Local-time stamp (YYYYMMDD-HHMMSS) for this trace's filename, set at [`TraceState::start`].
+    /// The trace's [`crate::session::stamp`], naming its session folder, set at [`TraceState::start`].
     stamp: String,
     /// Absolute path of the most recent dump, shown in the UI so it's findable.
     last_path: Option<String>,
@@ -84,7 +97,7 @@ pub enum TraceEvent {
     /// self-describing (which gates / skips / the exposure pin were on) without external notes.
     #[serde(rename = "manifest")]
     Manifest {
-        /// Local capture time (YYYYMMDD-HHMMSS), matching the trace filename.
+        /// The trace's [`crate::session::stamp`], matching its folder name.
         timestamp: String,
         /// The full runtime configuration snapshot (nests cleanly via its own `Serialize`). Boxed
         /// so the one-off manifest doesn't inflate every event in the enum
@@ -283,6 +296,14 @@ pub enum TraceEvent {
     /// per-dispatch reset -- the "stronger in one eye" accumulation bug.
     #[serde(rename = "rt_hash")]
     RtHash { rt: RtKind, hash: u64 },
+    /// One stereo frame's per-pass draw-sequence diff between the eyes, recorded after both eyes
+    /// drain (see [`crate::debug::stereo_diff`]). Gated on `stereo.diagnose_stereo_draw_diff`.
+    #[serde(rename = "StereoDrawDiff")]
+    StereoDrawDiff(DrawDiff),
+    /// The render camera's world frame and travel direction, once per real frame (see
+    /// [`crate::debug::coord_frame`]).
+    #[serde(rename = "CoordFrame")]
+    CoordFrame(CoordFrameSample),
 }
 
 /// The engine render targets hashed by the per-eye RT-doubling diagnostic. The colour/material buffers
@@ -311,14 +332,6 @@ pub fn tracing_active() -> bool {
 /// Frames left in the active trace (0 = inactive), for the debug UI's countdown.
 pub fn active_frames() -> i32 {
     TRACE_FRAMES.load(Ordering::Relaxed)
-}
-
-/// The per-trace output directory `traces/<stamp>` in the session directory (see [`crate::session`]),
-/// collecting one capture's NDJSON and its per-frame screenshots together. `None` when the session
-/// directory is unavailable.
-fn trace_dir(stamp: &str) -> Option<std::path::PathBuf> {
-    let base = crate::session::subdir("traces")?.ok()?;
-    Some(base.join(if stamp.is_empty() { "latest" } else { stamp }))
 }
 
 impl Default for TraceState {
@@ -357,17 +370,16 @@ impl TraceState {
         }
     }
 
-    /// Write the collected log to an NDJSON file next to the injected DLL (same place as `jc3vr.log`)
-    /// and record its path for the UI (caller holds the lock).
+    /// Write the collected log to `trace.ndjson` in the trace's session folder and record its path
+    /// for the UI (caller holds the lock).
     fn dump(&mut self) {
-        let Some(dir) = trace_dir(&self.stamp) else {
-            tracing::error!("Failed to write render trace: module path unavailable");
-            return;
+        let dir = match crate::session::capture_folder(CaptureFolder::Trace, &self.stamp) {
+            Ok(dir) => dir,
+            Err(e) => {
+                tracing::error!("render trace: {e}");
+                return;
+            }
         };
-        if let Err(e) = std::fs::create_dir_all(&dir) {
-            tracing::error!("Failed to create trace dir {}: {e}", dir.display());
-            return;
-        }
         let path = dir.join("trace.ndjson");
         match std::fs::write(&path, self.log.join("\n")) {
             Ok(()) => {
@@ -383,20 +395,15 @@ impl TraceState {
         }
     }
 
-    /// The per-trace output directory (created) and current real-frame index for a diagnostic
-    /// screenshot, or `None` when no trace is collecting. Used by [`crate::debug::rt_hash`] to write
-    /// per-frame render-target dumps into the same `traces/<stamp>/` folder as the trace NDJSON.
-    pub fn screenshot_target() -> Option<(std::path::PathBuf, u32)> {
+    /// The collecting trace's stamp and current real-frame index, or `None` when no trace is
+    /// collecting. Used by [`crate::debug::rt_hash`] to name per-frame render-target images into the
+    /// same folder as the trace NDJSON.
+    pub fn current_frame() -> Option<(String, u32)> {
         if !tracing_active() {
             return None;
         }
-        let (stamp, frame) = {
-            let state = TRACE_STATE.lock();
-            (state.stamp.clone(), state.frame)
-        };
-        let dir = trace_dir(&stamp)?;
-        std::fs::create_dir_all(&dir).ok()?;
-        Some((dir, frame))
+        let state = TRACE_STATE.lock();
+        Some((state.stamp.clone(), state.frame))
     }
 
     /// Append a frame/driver marker record (no dispatch eye) while a trace is active (auto-locks).
@@ -430,6 +437,8 @@ impl TraceState {
             };
             state.push_event(None, build_manifest(stamp));
         }
+        stereo_diff::begin_run();
+        coord_frame::begin_run();
         TRACE_FRAMES.store(frames, Ordering::Relaxed);
         tracing::info!("Render trace started ({frames} frames)");
     }
@@ -445,6 +454,9 @@ impl TraceState {
         state.frame += 1;
         if finished {
             state.dump();
+            drop(state);
+            stereo_diff::finish_run();
+            coord_frame::finish_run();
         }
     }
 
@@ -459,5 +471,68 @@ fn build_manifest(timestamp: String) -> TraceEvent {
     TraceEvent::Manifest {
         timestamp,
         config: Box::new(crate::config::get()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+    use serde_json::json;
+
+    use super::*;
+    use crate::debug::stereo_diff::NamedPass;
+
+    /// `tools/analyze_trace_frames.py` reads the probe events by their `ev` tag with the payload's
+    /// fields flattened beside it; this pins that shape.
+    #[test]
+    fn probe_events_flatten_beside_their_tag() {
+        let record = TraceRecord {
+            time_ns: 5,
+            frame: 2,
+            eye: None,
+            event: TraceEvent::StereoDrawDiff(DrawDiff {
+                shared_passes: 1,
+                shared_ops: 4,
+                matched_ops: 4,
+                order_consistent: true,
+                eye1_only: vec![NamedPass {
+                    pass: 3,
+                    name: "P3".into(),
+                }],
+                ..DrawDiff::default()
+            }),
+        };
+        assert_eq!(
+            serde_json::to_value(&record).unwrap(),
+            json!({
+                "time_ns": 5,
+                "frame": 2,
+                "event": {
+                    "ev": "StereoDrawDiff",
+                    "shared_passes": 1,
+                    "shared_ops": 4,
+                    "matched_ops": 4,
+                    "eye0_only_passes": 0,
+                    "eye0_only_ops": 0,
+                    "order_consistent": true,
+                    "divergent": [],
+                    "eye1_only": [{ "pass": 3, "name": "P3" }],
+                },
+            })
+        );
+        let event = serde_json::to_value(TraceEvent::CoordFrame(CoordFrameSample {
+            position: [0.0; 3],
+            right: [1.0, 0.0, 0.0],
+            up: [0.0, 1.0, 0.0],
+            z_basis: [0.0, 0.0, 1.0],
+            delta: [0.0; 3],
+            dot_neg_z: 0.0,
+            dot_pos_z: 0.0,
+            dot_right: 0.0,
+            dot_up: 0.0,
+        }))
+        .unwrap();
+        assert_eq!(event["ev"], "CoordFrame");
+        assert_eq!(event["z_basis"], json!([0.0, 0.0, 1.0]));
     }
 }

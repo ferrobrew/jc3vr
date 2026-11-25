@@ -1,0 +1,1063 @@
+//! The reload's engine reads, calls, and detours.
+//!
+//! Input reads use the tick's weapon addresses. Physical magazine detachment executes only from
+//! the native serial post-physics character callback after its consumer resolves current ownership.
+//! Detach calls keep no owner borrow across reentrant engine calls.
+//!
+//! - [`Character::StartReloadingWieldingWeapon`]: every animated reload start, refused while the
+//!   weapon is reloaded by hand.
+//! - [`SniperWeapon::UpdateFromUserPostSim_Parallel`]: the bolt rifle's update, run with its
+//!   bolt-action setting cleared while the bolt is worked by hand, so it never queues the bolt act;
+//!   the rifle's own bolt lock ([`SniperWeapon::m_HasFiredThisInput`]) keeps it from firing until
+//!   the worked bolt clears it. With the manual action off, the setting is cleared the same way and
+//!   the lock is cleared once the trigger is let go ([`trigger_released`]), so the rifle fires
+//!   once per pull with no bolt act.
+//! - [`DoActWeaponComponent::Fire_Start`]: the pump's per-shot act, skipped while the pump is
+//!   worked by hand.
+
+use std::{ffi::CString, ptr::NonNull, sync::OnceLock};
+
+use detours_macro::detour;
+use glam::{Mat4, Vec3};
+use jc3gi::{
+    animation::symbol_table::EventIdSymbolTable,
+    character::character::Character,
+    equipment::weapon::{
+        DoActWeaponComponent, ModelAttachementWeaponComponent, ReloadType, SniperWeapon,
+        WeaponBase, WeaponComponentType, WeaponData, WeaponInputs,
+    },
+    physics::GameMaterialId,
+    spawn_system::SpawnSystem,
+    types::math::{Matrix4, Vector3},
+};
+use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
+
+use crate::{
+    controllers::{
+        aim::gun,
+        frame::{Hand, Pose},
+        hands::{
+            ik::{self, TickTarget},
+            late,
+        },
+        weapons::{
+            dual_wield::single,
+            empty,
+            engine::{
+                FULL_WEIGHT, credit_reserve, gun_at, gun_at_mut, gun_count, gun_ptr, limited_ammo,
+                reserve,
+            },
+            fire,
+            hold::armed,
+            inventory::{carry, engine as inventory_engine},
+            reload::{
+                ammo::{self, Ammo, NativeAmmo},
+                bones,
+                chamber::{ActionKind, Chamber},
+                frames, gate,
+                loose::{self, EjectRounds, Loose, Retention},
+                render, wells,
+            },
+        },
+    },
+    hooks::character::acts::resolve_act_id,
+};
+
+pub(super) fn hook_library() -> HookLibrary {
+    HookLibrary::new()
+        .with_static_binder(&START_RELOADING_WIELDING_WEAPON_BINDER)
+        .with_static_binder(&SNIPER_UPDATE_FROM_USER_POST_SIM_PARALLEL_BINDER)
+        .with_static_binder(&DO_ACT_FIRE_START_BINDER)
+        .with_static_binder(&UPDATE_WEAPON_PARALLEL_BINDER)
+}
+
+/// What the reload reads of a weapon each tick.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct Reading {
+    /// The weapon's class, as its raw value.
+    pub class: i32,
+    pub name_hash: u32,
+    /// The magazine size; negative means no limit.
+    pub capacity: i32,
+    pub magazine: i32,
+    /// Chamber-owned rounds already included in `magazine`.
+    pub chambers: i32,
+    /// The game's magazine-out flag.
+    pub out: bool,
+    /// The weapon has unlimited magazines or an untimed reload.
+    pub exempt: bool,
+    /// The local player's rounds for the weapon come without limit ([`unlimited`]).
+    pub unlimited: bool,
+}
+
+impl Reading {
+    pub(super) fn magazine_rounds(self) -> i32 {
+        magazine_rounds(self.magazine, self.chambers)
+    }
+
+    pub(super) fn has_space(self) -> bool {
+        self.magazine_rounds() < self.capacity
+    }
+}
+
+/// Native loaded totals include protected chamber rounds, which do not occupy magazine space.
+fn magazine_rounds(total: i32, chambers: i32) -> i32 {
+    total.max(0).saturating_sub(chambers.max(0)).max(0)
+}
+
+/// Read `weapon`.
+///
+/// # Safety
+///
+/// `weapon` must be live; game thread before the world update.
+pub unsafe fn read(weapon: &WeaponBase) -> Reading {
+    // Read as raw values: an unset class or reload type is out of its enum's range.
+    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
+    let reload_type = unsafe { (&raw const weapon.m_ReloadType).cast::<i32>().read() };
+    let capacity = unsafe { single::magazine_size(weapon) };
+    Reading {
+        class,
+        name_hash: weapon.m_WeaponNameHash,
+        capacity,
+        magazine: weapon.m_MagazineAmmo,
+        chambers: ammo::protected_rounds(weapon as *const WeaponBase as usize),
+        out: weapon.m_WeaponIsWithoutMagazine,
+        exempt: reload_type == ReloadType::E_RELOAD_NO_ANIMATION as i32
+            || unsafe { limited_ammo(weapon) }.is_none(),
+        unlimited: unsafe { unlimited(weapon) },
+    }
+}
+
+/// Whether the local player's rounds for `weapon` come without limit: the game's own rule
+/// ([`WeaponBase::HasUnlimitedAmmo`]) as it reads with the local player as the holder, whoever
+/// the weapon's user is. The player's half is [`Character::HasUnlimitedAmmo`] (the game's
+/// unlimited-ammunition option, or the challenge-island mode); the weapon's is its tuning's
+/// [`WeaponTuning::m_unlimited_ammo`]. The weapon's own query reads its user, which for a gun taken
+/// from another character, or one only armed in a hand, need not be the player, and answers for a
+/// character that is not the player with true.
+///
+/// [`WeaponTuning::m_unlimited_ammo`]: jc3gi::equipment::weapon::WeaponTuning::m_unlimited_ammo
+///
+/// # Safety
+///
+/// `weapon` must be live. The local character's address is the one the input tick publishes
+/// ([`ik::local_character`]), so this may run on the weapon's update thread.
+pub(super) unsafe fn unlimited(weapon: &WeaponBase) -> bool {
+    let player = unsafe { (ik::local_character() as *const Character).as_ref() };
+    let player = player.is_some_and(|player| unsafe { player.HasUnlimitedAmmo() });
+    player || unsafe { weapon.m_Tuning.as_ref() }.is_some_and(|tuning| tuning.m_unlimited_ammo)
+}
+
+/// Which gun entries belong to the weapon, independent of hand-pose tracking.
+///
+/// # Safety
+///
+/// As [`read`].
+pub(super) unsafe fn gun_topology(weapon: &WeaponBase) -> [bool; 2] {
+    let mut topology = [false; 2];
+    for (entry, gun) in unsafe { gun::guns(weapon) }.take(2).enumerate() {
+        topology[entry] = gun.is_some_and(|gun| std::ptr::eq(gun.m_Owner, weapon));
+    }
+    topology
+}
+
+/// The index of `weapon`'s gun that rides `hand`.
+///
+/// # Safety
+///
+/// As [`read`].
+pub unsafe fn gun_index(weapon: &WeaponBase, hand: Hand) -> Option<usize> {
+    unsafe { gun::guns(weapon) }.position(|gun| {
+        gun.and_then(|g| {
+            g.m_lBoneAttachementPerWeaponState
+                .get(weapon.m_State as usize)
+        })
+        .and_then(|&bone| late::attach_hand(bone))
+            == Some(hand)
+    })
+}
+
+/// Gun `index` of `weapon` relative to the wrist, measured against the wrist target `target` its
+/// placement followed. `None` unless the target was reached at full weight.
+///
+/// # Safety
+///
+/// As [`read`].
+pub unsafe fn measure_gun(
+    weapon: &WeaponBase,
+    index: usize,
+    target: TickTarget,
+    world_scale: f32,
+) -> Option<Pose> {
+    if target.weight < FULL_WEIGHT {
+        return None;
+    }
+    let gun = unsafe { gun::guns(weapon) }.nth(index).flatten()?;
+    frames::gun_in_wrist(Mat4::from(gun.m_WorldMatrixT1), target.wrist, world_scale)
+}
+
+/// Drop the magazine of gun `index` of the weapon at `address` as the game's throw-away-magazine
+/// message does: the spare prop thrown from the magazine part (hiding it) or from the gun, the next
+/// spare requested, and the magazine-out flag set.
+///
+/// # Safety
+///
+/// `address` must have just been resolved from the current character's owned inventory, and this
+/// call must execute inside the native serial post-physics character callback.
+pub(super) unsafe fn detach_serial(
+    address: usize,
+    index: usize,
+    retention: Option<&Retention>,
+) -> DetachOutcome {
+    unsafe { detach_magazine(address, index, retention.is_some(), retention) }
+}
+
+/// The engine drop and retention are separate operations with separate accounting.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) enum DetachOutcome {
+    NoThrow,
+    /// The prop could not be retained; rounds remain in the weapon for native reload accounting.
+    DroppedUnretained,
+    Retained(Loose),
+}
+
+/// Whether the native callback is installed and currently accepts magazine requests.
+pub(super) fn physical_detach_available() -> bool {
+    crate::controllers::weapons::reload::serial::available()
+}
+
+/// Resolve an identity to its original current native source, never to a pointer from the key.
+/// The caller's input or owner-update phase must retain that source and serialize native access.
+unsafe fn owned_handle(address: usize) -> Option<NonNull<WeaponBase>> {
+    let owner = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+    inventory_engine::slot_handle(&owner.m_Inventory, address)
+        .or_else(|| unsafe { carry::weapon_handle(address) })
+}
+
+unsafe fn detach_magazine(
+    address: usize,
+    index: usize,
+    retain: bool,
+    reserved: Option<&Retention>,
+) -> DetachOutcome {
+    let Some(source) = (unsafe { owned_handle(address) }) else {
+        return DetachOutcome::NoThrow;
+    };
+    let weapon = source.as_ptr();
+    let Some((character, part, rounds, gun, spare)) = (unsafe { detach_inputs(weapon, index) })
+    else {
+        return DetachOutcome::NoThrow;
+    };
+    let origin = unsafe { weapon.as_ref() }
+        .and_then(|w| wells::lookup(w.m_WeaponNameHash))
+        .and_then(|e| e.spare_origin_m)
+        .filter(|o| o.is_finite());
+    let partition = ammo::change(address, |ammo| {
+        ammo.reconcile(NativeAmmo {
+            total: rounds,
+            out: false,
+        });
+        *ammo
+    });
+    let unlimited = unsafe { weapon.as_ref() }.is_some_and(|w| unsafe { unlimited(w) });
+    let magazine_rounds =
+        dropped_magazine_rounds(unlimited, partition.map_or(rounds, |ammo| ammo.magazine));
+    let execute = |retention: Option<&Retention>| {
+        if retention.is_some_and(|r| !r.matches(gun as usize, spare)) {
+            return DetachOutcome::NoThrow;
+        }
+        // No owner borrow crosses either engine call: both can re-enter the owner through old pointers.
+        // A gun without its spare prop yet has nothing to throw: the magazine leaves with no prop,
+        // its part hidden as the throw would hide it, and the spawn after it requests the next
+        // spare.
+        let throw = || {
+            if spare == 0 {
+                unsafe { show_magazine_part(address, false) };
+                true
+            } else {
+                unsafe { throw_spare(gun, character, part, origin) }
+            }
+        };
+        let (thrown, retained) = if let Some(retention) = retention {
+            EjectRounds::with(retention, magazine_rounds, throw)
+        } else {
+            (throw(), None)
+        };
+        finish_detach(
+            (thrown, retained),
+            || unsafe { (*gun).SpawnMagazineObject() },
+            |retained| unsafe {
+                (&raw mut (*weapon).m_WeaponIsWithoutMagazine).write(true);
+                if let Some(total) = ammo::change(address, |ammo| {
+                    ammo.detach(retained);
+                    ammo.total()
+                }) {
+                    (*weapon).SetMagazineAmmo(total);
+                } else if retained {
+                    (*weapon).SetMagazineAmmo(0);
+                }
+            },
+        )
+    };
+    if !retain || spare == 0 {
+        execute(None)
+    } else if let Some(reserved) = reserved {
+        execute(Some(reserved))
+    } else {
+        loose::with_admission(
+            || Retention::reserve(gun as usize, spare),
+            DetachOutcome::NoThrow,
+            |reservation| execute(Some(reservation)),
+        )
+    }
+}
+
+unsafe fn detach_inputs(
+    weapon: *mut WeaponBase,
+    index: usize,
+) -> Option<(*mut Character, u32, i32, *mut WeaponData, usize)> {
+    let (character, rounds) = {
+        let base = unsafe { weapon.as_ref() }?;
+        if base.m_WeaponIsWithoutMagazine {
+            return None;
+        }
+        (base.m_User[0] as *mut Character, base.m_MagazineAmmo.max(0))
+    };
+    let part = unsafe { magazine_part(weapon) }
+        .map_or(WeaponData::NO_MAGAZINE_MODEL_NAME_HASH, |p| p.m_NameHash);
+    let gun = unsafe { gun_ptr(weapon.as_ref()?, index) }?.as_ptr();
+    let spare = unsafe { (*gun).m_MagazineObject.px as usize };
+    Some((character, part, rounds, gun, spare))
+}
+
+/// Drop `gun`'s spare magazine for `character` from the part `part`. A gun with no magazine part
+/// drops it from its own transform; one that borrows another weapon's spare
+/// ([`wells::WellEntry::spare_from`]) drops it from its transform moved to where the borrowed
+/// model's origin sits seated, `origin`, so it leaves from the built-in magazine. The transform is
+/// moved only for the call and put back after.
+///
+/// # Safety
+///
+/// As [`WeaponData::ThrowAwayMagazineObject`]: the gun is live, on the thread the drop runs on.
+unsafe fn throw_spare(
+    gun: *mut WeaponData,
+    character: *mut Character,
+    part: u32,
+    origin: Option<Vec3>,
+) -> bool {
+    let Some(origin) = origin.filter(|_| part == WeaponData::NO_MAGAZINE_MODEL_NAME_HASH) else {
+        return unsafe { (*gun).ThrowAwayMagazineObject(character, part) };
+    };
+    let world = unsafe { &raw mut (*gun).m_WorldMatrixT1 };
+    let saved = unsafe { world.read() };
+    let moved = Mat4::from(saved) * Mat4::from_translation(origin);
+    unsafe { world.write(Matrix4::from(moved)) };
+    let thrown = unsafe { (*gun).ThrowAwayMagazineObject(character, part) };
+    unsafe { world.write(saved) };
+    thrown
+}
+
+/// Give each gun of the weapon at `address` that has no magazine prop the spare magazine prop the
+/// wells table borrows for it ([`wells::WellEntry::spare_from`]), and request its first spare, so
+/// the game spawns, drops, and respawns the borrowed prop as it does a gun's own. Returns whether
+/// a gun took the borrowed tag this call. `name_hash` is the weapon's, as read this tick.
+///
+/// # Safety
+///
+/// The game thread, before the world update; the weapon is the local player's, read this tick.
+pub(super) unsafe fn borrow_spare(address: usize, name_hash: u32) -> bool {
+    let Some(tag) = wells::lookup(name_hash).and_then(|e| e.spare_from.as_deref()) else {
+        return false;
+    };
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
+        return false;
+    };
+    let weapon = unsafe { source.as_mut() };
+    let mut unique = None;
+    let mut borrowed = false;
+    for index in 0..unsafe { gun_count(weapon) } {
+        let Some(gun) = (unsafe { gun_ptr(weapon, index) }) else {
+            continue;
+        };
+        let gun = gun.as_ptr();
+        if unsafe { (*gun).m_MagazineUniqueTag } != WeaponData::NO_MAGAZINE_UNIQUE_TAG {
+            continue;
+        }
+        let Some(resolved) = *unique.get_or_insert_with(|| unsafe { unique_tag(tag) }) else {
+            return borrowed;
+        };
+        unsafe {
+            (*gun).m_MagazineUniqueTag = resolved;
+            (*gun).SpawnMagazineObject();
+        }
+        borrowed = true;
+    }
+    if borrowed {
+        tracing::info!(
+            target: "controllers",
+            weapon = format_args!("{:#010x}", weapon.m_WeaponNameHash),
+            tag,
+            "reload: the gun borrows another weapon's spare magazine"
+        );
+    }
+    borrowed
+}
+
+/// The spawn system's unique tag for the tag string `tag`, or `None` when it names no definition.
+/// The definitions are built once when the system initializes, so each tag is resolved once.
+///
+/// # Safety
+///
+/// The game thread.
+unsafe fn unique_tag(tag: &str) -> Option<i32> {
+    static RESOLVED: Mutex<Vec<(String, Option<i32>)>> = Mutex::new(Vec::new());
+    if let Some((_, unique)) = RESOLVED.lock().iter().find(|(t, _)| t == tag) {
+        return *unique;
+    }
+    let tags = CString::new(tag).ok()?;
+    let system = unsafe { SpawnSystem::get() }?;
+    let unique = Some(unsafe { system.GetUniqueTag(tags.as_ptr().cast()) }).filter(|&u| u != 0);
+    if unique.is_none() {
+        tracing::warn!(
+            target: "controllers",
+            tag,
+            "reload: the borrowed spare magazine's tag names no spawn definition"
+        );
+    }
+    RESOLVED.lock().push((tag.to_owned(), unique));
+    unique
+}
+
+/// The rounds a dropped magazine carries into the world, of the `magazine` rounds it held. With
+/// unlimited rounds every seated magazine is kept full, so a dropped one carries none of its own: a
+/// magazine from the world is filled once it seats, and none of the rounds the unlimited
+/// ammunition made can reach a later finite load through it.
+pub(super) fn dropped_magazine_rounds(unlimited: bool, magazine: i32) -> i32 {
+    if unlimited { 0 } else { magazine.max(0) }
+}
+
+pub(super) fn finish_detach(
+    result: (bool, Option<Loose>),
+    spawn: impl FnOnce(),
+    commit: impl FnOnce(bool),
+) -> DetachOutcome {
+    let (thrown, retained) = result;
+    if !thrown {
+        return DetachOutcome::NoThrow;
+    }
+    spawn();
+    commit(retained.is_some());
+    retained.map_or(DetachOutcome::DroppedUnretained, DetachOutcome::Retained)
+}
+
+/// Seat a magazine of `rounds` from the world into the weapon at `address`: the rounds still
+/// counted in the weapon go back to the reserve, the magazine holds the seated magazine's rounds
+/// and the magazine part shows again. The retained-magazine admission has already checked its size.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub unsafe fn load_rounds(address: usize, rounds: i32) {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
+        return;
+    };
+    let weapon = unsafe { source.as_mut() };
+    unsafe { armed::release_fire(weapon) };
+    let partition = current_ammo(weapon);
+    let chambers = partition.map_or(0, Ammo::chamber_rounds);
+    let leftover = weapon.m_MagazineAmmo.max(0) - chambers;
+    let unlimited = unsafe { unlimited(weapon) };
+    if !unlimited && let Some(user) = unsafe { user_mut(weapon) } {
+        unsafe { credit_reserve(user, weapon, leftover) };
+    }
+    let total = ammo::change(address, |ammo| {
+        ammo.insert(rounds);
+        ammo.total()
+    })
+    .unwrap_or(rounds);
+    unsafe { weapon.SetMagazineAmmo(total) };
+    weapon.m_KeepReloading = false;
+    weapon.m_WeaponIsWithoutMagazine = false;
+    unsafe { show_magazine(weapon) };
+}
+
+/// The magazine spawn tag of gun `index` of the weapon at `address`.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub unsafe fn magazine_tag(address: usize, index: usize) -> Option<i32> {
+    let mut source = unsafe { owned_handle(address) }?;
+    let weapon = unsafe { source.as_mut() };
+    let gun = unsafe { gun_at(weapon, index) }?;
+    Some(gun.m_MagazineUniqueTag)
+}
+
+/// The local player character's world matrix.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub unsafe fn local_player_matrix() -> Option<Mat4> {
+    let player = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
+    Some(Mat4::from(player.m_WorldMatrixT1))
+}
+
+/// Load a whole magazine into the weapon at `address` through its own reload, show its magazine
+/// part again, and end a shell-by-shell reload's loop. With `replace_spent`, the round the fresh
+/// one replaces (a one-round launcher's spent round) is discarded first: its count and any burst
+/// it left unfinished go with it, so the reload draws a whole fresh round from the reserve.
+/// Returns whether it loaded: the reload refilled the magazine, or the magazine was out and is in
+/// again with rounds in it (the rounds of a magazine that left the gun still counted in it, which
+/// the reload leaves where they are).
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub unsafe fn load_full(address: usize, replace_spent: bool) -> bool {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
+        return false;
+    };
+    let weapon = unsafe { source.as_mut() };
+    unsafe { armed::release_fire(weapon) };
+    let was_out = weapon.m_WeaponIsWithoutMagazine;
+    if replace_spent {
+        unsafe { discard_spent_round(weapon) };
+    }
+    let partition = current_ammo(weapon);
+    let chambers = partition.map_or(0, Ammo::chamber_rounds);
+    ammo::magazine_only(address, true);
+    if let Some(partition) = partition {
+        unsafe { weapon.SetMagazineAmmo(partition.reload_start()) };
+    }
+    let refilled = unsafe { weapon.Reload() };
+    // The game's reload fills a single pistol to the pair's size; it holds half.
+    if let Some(user) = unsafe { user_mut(weapon) } {
+        unsafe { single::clamp_magazine(user, weapon) };
+    }
+    let magazine = weapon.m_MagazineAmmo.max(0);
+    if chambers > 0 {
+        unsafe { weapon.SetMagazineAmmo(magazine + chambers) };
+    }
+    ammo::change(address, |ammo| ammo.reload_finish(magazine));
+    ammo::magazine_only(address, false);
+    weapon.m_KeepReloading = false;
+    weapon.m_WeaponIsWithoutMagazine = false;
+    unsafe { show_magazine(weapon) };
+    refilled || (was_out && weapon.m_MagazineAmmo > 0)
+}
+
+/// Discard the spent round of a one-round launcher before a fresh one replaces it: empty its
+/// magazine and end each gun's burst ([`WeaponData::m_BurstShotsLeft`]). A burst counts its round
+/// against the magazine only at its last shot ([`WeaponBase::ConsumeAmmoBase`]), so a burst cut
+/// short leaves the spent round's count in the magazine, where the reload would see a full
+/// magazine and refill nothing; a burst left running would fire the fresh round at once.
+///
+/// [`WeaponBase::ConsumeAmmoBase`]: jc3gi::equipment::weapon::WeaponBase::ConsumeAmmoBase
+///
+/// # Safety
+///
+/// As [`load_full`].
+unsafe fn discard_spent_round(weapon: &mut WeaponBase) {
+    for index in 0..unsafe { gun_count(weapon) } {
+        if let Some(gun) = unsafe { gun_at_mut(weapon, index) } {
+            gun.m_BurstShotsLeft = 0;
+        }
+    }
+    if weapon.m_MagazineAmmo != 0 {
+        unsafe { weapon.SetMagazineAmmo(0) };
+    }
+}
+
+/// Load one round into the weapon at `address`, taking it from the reserve unless the ammunition
+/// is unlimited. Returns whether it loaded.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub unsafe fn load_one(address: usize) -> bool {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
+        return false;
+    };
+    let weapon = unsafe { source.as_mut() };
+    current_ammo(weapon);
+    if !unsafe { read(weapon) }.has_space() {
+        return false;
+    }
+    unsafe { armed::release_fire(weapon) };
+    let unlimited = unsafe { unlimited(weapon) };
+    let reserve = unsafe { reserve(weapon) };
+    if !unlimited && reserve <= 0 {
+        return false;
+    }
+    let ammo = weapon.m_MagazineAmmo.max(0) + 1;
+    unsafe { weapon.SetMagazineAmmo(ammo) };
+    if !unlimited && let Some(user) = unsafe { user_mut(weapon) } {
+        let ammo_type = weapon.m_AmmunitionType;
+        unsafe { user.m_Inventory.SetAmmoCount(ammo_type, reserve - 1, true) };
+    }
+    weapon.m_WeaponIsWithoutMagazine = false;
+    current_ammo(weapon);
+    true
+}
+
+/// Write the native loaded total of the weapon at `address` and adopt it into the chamber
+/// partition, which keeps its chambers and gives the rest to the magazine. Returns whether the
+/// weapon was found.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn set_loaded(address: usize, total: i32) -> bool {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
+        return false;
+    };
+    let weapon = unsafe { source.as_mut() };
+    unsafe { weapon.SetMagazineAmmo(total) };
+    current_ammo(weapon);
+    true
+}
+
+/// Adopt `total` into the chamber partition of the weapon at `address` with its magazine in, as the
+/// shot's native total before it is written. Returns `total`.
+pub(super) fn refill_partition(address: usize, total: i32) -> i32 {
+    ammo::change(address, |ammo| {
+        ammo.reconcile(NativeAmmo { total, out: false });
+    });
+    total
+}
+
+pub(super) unsafe fn set_shot_ammo(address: usize, total: i32) {
+    if let Some(mut source) = unsafe { owned_handle(address) } {
+        unsafe { source.as_mut().SetMagazineAmmo(total) };
+    }
+}
+
+fn current_ammo(weapon: &WeaponBase) -> Option<Ammo> {
+    ammo::change(weapon as *const WeaponBase as usize, |ammo| {
+        ammo.reconcile(NativeAmmo {
+            total: weapon.m_MagazineAmmo,
+            out: weapon.m_WeaponIsWithoutMagazine,
+        });
+        *ammo
+    })
+}
+
+/// Read the current loaded-round count and magazine presence after this tick's reload operations.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn action_ammo(address: usize) -> Option<(i32, bool)> {
+    let weapon = unsafe { (address as *const WeaponBase).as_ref() }?;
+    Some((
+        current_ammo(weapon).map_or(weapon.m_MagazineAmmo.max(0), |ammo| ammo.magazine),
+        !weapon.m_WeaponIsWithoutMagazine,
+    ))
+}
+
+/// Discard a live round extracted by a hand-worked action, without firing or refunding it.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn eject_chamber_round(address: usize, gun: usize) -> Option<(i32, bool)> {
+    let mut source = unsafe { owned_handle(address) }?;
+    let weapon = unsafe { source.as_mut() };
+    let partition = current_ammo(weapon);
+    let total = if partition.is_some() {
+        ammo::change(address, |ammo| {
+            ammo.eject(gun);
+            ammo.total()
+        })?
+    } else {
+        (weapon.m_MagazineAmmo - 1).max(0)
+    };
+    // ConsumeAmmo also changes burst state and can debit reserve ammunition. A rack only discards
+    // the chamber-owned round; SetMagazineAmmo keeps the native HUD in sync.
+    unsafe { weapon.SetMagazineAmmo(total) };
+    unsafe { action_ammo(address) }
+}
+
+pub(super) fn feed_chamber(address: usize, gun: usize) -> Option<Chamber> {
+    ammo::change(address, |ammo| ammo.feed(gun))
+}
+
+/// Tell the weapon at `address` that its action was worked by hand: the bolt rifle's lock cleared
+/// and, with `clip`, the gun's own bolt or pump clip played.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub unsafe fn cycled(address: usize, kind: ActionKind, clip: bool) {
+    let Some(mut source) = (unsafe { owned_handle(address) }) else {
+        return;
+    };
+    let weapon = unsafe { source.as_mut() };
+    let act = match kind {
+        ActionKind::Bolt => {
+            if is_sniper(weapon) {
+                let sniper = unsafe { &mut *(weapon as *mut WeaponBase).cast::<SniperWeapon>() };
+                sniper.m_HasFiredThisInput = false;
+            }
+            sniper_bolt_act()
+        }
+        ActionKind::Pump => pump_act(),
+        _ => None,
+    };
+    let Some(act) = act.filter(|_| clip) else {
+        return;
+    };
+    let act = act as u32;
+    let count = unsafe { gun::guns(weapon) }.count();
+    for index in 0..count {
+        if let Some(mut gun) = unsafe { gun_ptr(weapon, index) } {
+            unsafe { gun.as_mut().DoAct(&act) };
+        }
+    }
+}
+
+/// Play the magazine-in sound on gun `index` of the weapon at `address`, where the round seats: the
+/// gun's own insert sound where its effects have one, the end of a reload otherwise, or failing
+/// both the dry-fire click, borrowed as a click of the magazine catching. Returns the usage played.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn play_seat_sound(address: usize, index: usize) -> Option<u32> {
+    let source = unsafe { owned_handle(address) }?;
+    let mut gun = unsafe { gun_ptr(source.as_ref(), index) }?;
+    let effects = unsafe { &mut gun.as_mut().m_AttachedEffects };
+    let material = GameMaterialId::EGameMaterialId_Default;
+    SEAT_SOUNDS.into_iter().find(|&hash| {
+        let usage = unsafe { effects.FindAttachedEffectUsage(hash) };
+        !usage.is_null()
+            && !unsafe { effects.IsAttachedEffectLooping(usage, material) }
+            && unsafe { effects.ActivateAttachedEffect(usage, true, material) }
+    })
+}
+
+/// The usages a seat plays, the first a gun has: the insert sound, the reload's end, and the
+/// dry-fire click.
+const SEAT_SOUNDS: [u32; 3] = [
+    WeaponData::RELOAD_INSERT_AMMO_USAGE,
+    WeaponData::RELOAD_END_USAGE,
+    WeaponData::OUT_OF_AMMO_FIRE_USAGE,
+];
+
+/// Play the dry-fire click on gun `index` of the weapon at `address`, as the refusal of an action
+/// the gun will not take. Returns the usage played.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn play_refuse_sound(address: usize, index: usize) -> Option<u32> {
+    let source = unsafe { owned_handle(address) }?;
+    let mut gun = unsafe { gun_ptr(source.as_ref(), index) }?;
+    let effects = unsafe { &mut gun.as_mut().m_AttachedEffects };
+    let material = GameMaterialId::EGameMaterialId_Default;
+    let usage = unsafe { effects.FindAttachedEffectUsage(WeaponData::OUT_OF_AMMO_FIRE_USAGE) };
+    (!usage.is_null()
+        && !unsafe { effects.IsAttachedEffectLooping(usage, material) }
+        && unsafe { effects.ActivateAttachedEffect(usage, true, material) })
+    .then_some(WeaponData::OUT_OF_AMMO_FIRE_USAGE)
+}
+
+/// The address of gun `index` of the weapon at `address`, whose skeleton the action's bone rides.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub unsafe fn gun_address(address: usize, index: usize) -> Option<usize> {
+    let source = unsafe { owned_handle(address) }?;
+    unsafe { gun_ptr(source.as_ref(), index) }.map(|gun| gun.as_ptr() as usize)
+}
+
+/// Gun `index` of the weapon at `address`'s world matrix, as of the last simulation tick.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn gun_world(address: usize, index: usize) -> Option<Mat4> {
+    let source = unsafe { owned_handle(address) }?;
+    let gun = unsafe { gun_at(source.as_ref(), index) }?;
+    let matrix = Mat4::from(gun.m_WorldMatrixT1);
+    matrix.is_finite().then_some(matrix)
+}
+
+/// Whether gun `index` of the weapon at `address` has the bone named by `hash` in its own
+/// skeleton, through its animation controller.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn gun_has_bone(address: usize, index: usize, hash: u32) -> bool {
+    let Some(source) = (unsafe { owned_handle(address) }) else {
+        return false;
+    };
+    let Some(gun) = (unsafe { gun_at(source.as_ref(), index) }) else {
+        return false;
+    };
+    let Some(model) = (unsafe { gun.m_AnimatedModel.as_ref() }) else {
+        return false;
+    };
+    let Some(controller) = (unsafe { model.m_AnimationController.as_ref() }) else {
+        return false;
+    };
+    unsafe { bones::bone_index(controller, hash) }.is_some()
+}
+
+/// Empty a revolver's cylinder, its chambers dumped: the rounds still in it go back to the reserve
+/// unless the ammunition is unlimited. Returns how many rounds it held.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub(super) unsafe fn dump_cylinder(address: usize) -> Option<i32> {
+    let mut source = unsafe { owned_handle(address) }?;
+    let weapon = unsafe { source.as_mut() };
+    let rounds = weapon.m_MagazineAmmo.max(0);
+    if !unsafe { unlimited(weapon) }
+        && let Some(user) = unsafe { user_mut(weapon) }
+    {
+        unsafe { credit_reserve(user, weapon, rounds) };
+    }
+    if weapon.m_MagazineAmmo != 0 {
+        unsafe { weapon.SetMagazineAmmo(0) };
+    }
+    current_ammo(weapon);
+    Some(rounds)
+}
+
+/// The local player's reload start, refused while the weapon is reloaded by hand (see [`gate`]).
+#[detour(address = jc3gi::character::character::Character::StartReloadingWieldingWeapon_ADDRESS)]
+fn start_reloading_wielding_weapon(character: *mut Character) {
+    let local = crate::controllers::hands::ik::local_character();
+    // The per-hand tick's guns each ask for the wielded weapon's reload from their own check.
+    // SAFETY: the game passes the live character whose reload it starts.
+    let is_local = unsafe { character.as_ref() }.is_some_and(|c| c.m_IsLocalCharacter);
+    if empty::refuses_check_request(character)
+        || gate::stops_reload(character as usize, local, is_local)
+    {
+        return;
+    }
+    START_RELOADING_WIELDING_WEAPON
+        .get()
+        .unwrap()
+        .call(character);
+}
+
+#[detour(address = WeaponBase::UpdateWeapon_Parallel_ADDRESS)]
+fn update_weapon_parallel(
+    weapon: *mut WeaponBase,
+    dt: f32,
+    gun_data: *mut WeaponData,
+    input: *const WeaponInputs,
+) -> bool {
+    let blocked = unsafe { weapon.as_ref() }
+        .filter(|weapon| weapon.m_IsUserLocalPlayer)
+        .and_then(|weapon| unsafe { fire::gun_hand(weapon, gun_data) })
+        .is_some_and(|hand| gate::holds_fire(weapon as usize, hand));
+    if blocked && let Some(weapon) = unsafe { weapon.as_mut() } {
+        unsafe { armed::release_fire(weapon) };
+    }
+    let filtered = unsafe { input.as_ref() }.map(|input| reload_input(*input, blocked));
+    let input = filtered.as_ref().map_or(input, |input| input as *const _);
+    UPDATE_WEAPON_PARALLEL
+        .get()
+        .unwrap()
+        .call(weapon, dt, gun_data, input)
+}
+
+fn reload_input(input: WeaponInputs, blocked: bool) -> WeaponInputs {
+    if blocked {
+        WeaponInputs {
+            m_PrimaryFireInput: 0.0,
+            m_SecondaryFireInput: 0.0,
+        }
+    } else {
+        input
+    }
+}
+
+/// The bolt rifle's update, with its bolt-action setting cleared for the call while the bolt is
+/// worked by hand.
+#[detour(address = jc3gi::equipment::weapon::SniperWeapon::UpdateFromUserPostSim_Parallel_ADDRESS)]
+fn sniper_update_from_user_post_sim_parallel(
+    sniper: *mut SniperWeapon,
+    dt: f32,
+    aim_position: *const Vector3,
+    input: *const WeaponInputs,
+) {
+    let original = || {
+        SNIPER_UPDATE_FROM_USER_POST_SIM_PARALLEL
+            .get()
+            .unwrap()
+            .call(sniper, dt, aim_position, input)
+    };
+    let local =
+        unsafe { sniper.cast::<WeaponBase>().as_ref() }.is_some_and(|w| w.m_IsUserLocalPlayer);
+    let by_hand = local && gate::manual_action(sniper as usize);
+    let on_release = local && !by_hand && gate::self_cycling(sniper as usize);
+    if !(by_hand || on_release) {
+        return original();
+    }
+    let Some(s) = (unsafe { sniper.as_mut() }) else {
+        return original();
+    };
+    let bolt_action = std::mem::replace(&mut s.m_BoltAction, false);
+    original();
+    let Some(s) = (unsafe { sniper.as_mut() }) else {
+        return;
+    };
+    s.m_BoltAction = bolt_action;
+    if on_release {
+        // SAFETY: the update's own input and its weapon's tuning, live for the call.
+        let released = unsafe { input.as_ref() }.is_some_and(|input| {
+            let tuning = unsafe { sniper.cast::<WeaponBase>().as_ref() }
+                .and_then(|w| unsafe { w.m_Tuning.as_ref() });
+            trigger_released(
+                input.m_PrimaryFireInput,
+                tuning.map(|t| t.m_trigger_sensitivity),
+            )
+        });
+        if released {
+            s.m_HasFiredThisInput = false;
+        }
+    }
+}
+
+/// Whether a primary trigger reading of `input` counts as let go against the weapon's thresholds
+/// ([`WeaponTuning::m_trigger_sensitivity`]): at or below the value a pulled trigger must stay
+/// above, or at rest without thresholds.
+///
+/// [`WeaponTuning::m_trigger_sensitivity`]: jc3gi::equipment::weapon::WeaponTuning::m_trigger_sensitivity
+fn trigger_released(input: f32, sensitivity: Option<[f32; 2]>) -> bool {
+    let hold = sensitivity.map_or(0.0, |[_, hold]| hold);
+    input.is_finite() && input <= hold.max(0.0)
+}
+
+/// The do-act component's per-shot act, skipped for the local player's weapon while its pump is
+/// worked by hand.
+#[detour(address = jc3gi::equipment::weapon::DoActWeaponComponent::Fire_Start_ADDRESS)]
+fn do_act_fire_start(component: *mut DoActWeaponComponent, weapon_data: *mut WeaponData) {
+    let owner = unsafe { component.as_ref() }.map_or(std::ptr::null_mut(), |c| c.m_Owner);
+    let local = unsafe { owner.as_ref() }.is_some_and(|w| w.m_IsUserLocalPlayer);
+    if local && gate::manual_action(owner as usize) {
+        return;
+    }
+    DO_ACT_FIRE_START
+        .get()
+        .unwrap()
+        .call(component, weapon_data);
+}
+
+/// The weapon's user, mutably: the character is its own object, not part of the weapon.
+unsafe fn user_mut<'a>(weapon: *const WeaponBase) -> Option<&'a mut Character> {
+    unsafe { (weapon.as_ref()?.m_User[0] as *mut Character).as_mut() }
+}
+
+/// The weapon's round part: the model part the game's reload hides and shows, by name, or a
+/// launcher's rocket ([`render::is_round_part`]).
+pub(super) unsafe fn magazine_part<'a>(
+    weapon: *const WeaponBase,
+) -> Option<&'a mut ModelAttachementWeaponComponent> {
+    unsafe { model_parts(weapon) }.find(|p| render::is_round_part(p.m_NameHash))
+}
+
+/// The weapon's plain model parts, as the game's own part lookup takes them: by component kind.
+/// Each component is its own object, not part of the weapon.
+unsafe fn model_parts<'a>(
+    weapon: *const WeaponBase,
+) -> impl Iterator<Item = &'a mut ModelAttachementWeaponComponent> {
+    unsafe { weapon.as_ref() }
+        .map_or(&[][..], |w| unsafe { w.m_WeaponComponents.as_slice() })
+        .iter()
+        .filter_map(|c| unsafe { c.px.as_mut() })
+        .filter(|c| c.m_Type == WeaponComponentType::E_WEAPON_COMPONENT_MODEL_ATTACHEMENT)
+        .map(|c| unsafe { &mut *(c as *mut _ as *mut ModelAttachementWeaponComponent) })
+}
+
+/// Show or hide the magazine part of the weapon at `address`.
+///
+/// # Safety
+///
+/// The weapon must be owned and live on the input thread, outside the world update.
+pub unsafe fn show_magazine_part(address: usize, shown: bool) {
+    let Some(source) = (unsafe { owned_handle(address) }) else {
+        return;
+    };
+    if let Some(part) = unsafe { magazine_part(source.as_ptr()) }
+        && part.m_Enabled != shown
+    {
+        unsafe { part.Enable(shown) };
+    }
+}
+
+/// Show the weapon's magazine part, as the reload clips' enable message does.
+unsafe fn show_magazine(weapon: &WeaponBase) {
+    if let Some(part) = unsafe { magazine_part(weapon) }
+        && !part.m_Enabled
+    {
+        unsafe { part.Enable(true) };
+    }
+}
+
+fn is_sniper(weapon: &WeaponBase) -> bool {
+    let class = unsafe { (&raw const weapon.m_Class).cast::<i32>().read() };
+    class == jc3gi::equipment::weapon::WeaponClass::E_WEAPON_CLASS_SNIPER as i32
+}
+
+/// The gun-side bolt act's runtime id, once the symbol table is live.
+fn sniper_bolt_act() -> Option<i32> {
+    static ID: OnceLock<i32> = OnceLock::new();
+    cached(&ID, EventIdSymbolTable::ACT_SNIPER_BOLT_ACTION)
+}
+
+/// The gun-side pump act's runtime id, once the symbol table is live.
+fn pump_act() -> Option<i32> {
+    static ID: OnceLock<i32> = OnceLock::new();
+    cached(&ID, EventIdSymbolTable::ACT_SHOTGUN_PUMP)
+}
+
+fn cached(cell: &OnceLock<i32>, name: &std::ffi::CStr) -> Option<i32> {
+    if let Some(id) = cell.get() {
+        return Some(*id);
+    }
+    let id = resolve_act_id(name)?;
+    Some(*cell.get_or_init(|| id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_reload_hold_masks_only_the_current_call_and_preserves_future_input() {
+        let input = WeaponInputs {
+            m_PrimaryFireInput: 1.0,
+            m_SecondaryFireInput: 0.75,
+        };
+        let blocked = reload_input(input, true);
+        assert_eq!(blocked.m_PrimaryFireInput, 0.0);
+        assert_eq!(blocked.m_SecondaryFireInput, 0.0);
+        assert_eq!(input.m_PrimaryFireInput, 1.0);
+        assert_eq!(input.m_SecondaryFireInput, 0.75);
+        let resumed = reload_input(input, false);
+        assert_eq!(resumed.m_PrimaryFireInput, input.m_PrimaryFireInput);
+        assert_eq!(resumed.m_SecondaryFireInput, input.m_SecondaryFireInput);
+    }
+
+    #[test]
+    fn the_bolt_lock_clears_once_the_trigger_falls_below_its_hold() {
+        let thresholds = Some([0.5, 0.2]);
+        assert!(!trigger_released(1.0, thresholds));
+        assert!(!trigger_released(0.3, thresholds));
+        assert!(trigger_released(0.2, thresholds));
+        assert!(trigger_released(0.0, thresholds));
+        assert!(trigger_released(0.0, None));
+        assert!(!trigger_released(0.1, None));
+        assert!(!trigger_released(f32::NAN, thresholds));
+    }
+}

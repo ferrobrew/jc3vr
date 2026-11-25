@@ -1,0 +1,20 @@
+# Template: record testing/recordings/door_tearing.jc3trk during live acceptance.
+name = "tear an open vehicle door and keep holding it"
+description = "Beside a healthy parked car with a detachable door: open normally, settle the grip, then sharply yank. Keep holding the detached door, strike scenery, and release. Repeat on another door with a sustained forceful push against its opening limit. Check native missing-door state, retained body/joint, and held-body impact feedback live. Protected and non-detachable vehicles must refuse tearing."
+recording = "../recordings/door_tearing.jc3trk"
+settle_s = 3.0
+
+[[expect]]
+name = "both deliberate tear gestures detached a door"
+signal = "doors.tears"
+at_least = 2
+
+[[expect]]
+name = "the ordinary opening grip reached the latch handoff"
+signal = "doors.unlatches"
+at_least = 1
+
+[[expect]]
+name = "the player remains on foot"
+signal = "controllers.on_foot"
+check = "at_end"

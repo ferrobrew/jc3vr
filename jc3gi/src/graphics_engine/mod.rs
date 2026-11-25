@@ -17,3 +17,4 @@ pub mod ssao;
 pub mod surface;
 pub mod texture;
 pub mod tone_mapping;
+pub mod window_damage;

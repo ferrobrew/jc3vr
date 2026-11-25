@@ -1,0 +1,20 @@
+# Template: fill testing/recordings/aim_down_sights.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a rifle shouldered and aimed down its sights, then a sniper rifle's scope"
+description = "Recorded right-handed on foot with an assault rifle on the back and a sniper rifle in the special slot (physical-weapons.md, the aiming checklist). Draw the rifle, brace it on the foregrip, bring the stock to the right shoulder and the rear sight to the right eye, fire a few rounds at a wall, lower it; then draw the sniper rifle and put the scope to the eye."
+recording = "../recordings/aim_down_sights.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "the stock seats in the shoulder"
+signal = "ads.shouldered"
+
+[[expect]]
+name = "the sights come onto the eye"
+signal = "ads.sighted"
+
+[[expect]]
+name = "the scope comes onto the eye"
+signal = "ads.welded"
+
+[[expect]]
+status = "DOWN THE SIGHTS"

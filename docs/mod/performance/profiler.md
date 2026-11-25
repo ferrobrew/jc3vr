@@ -14,7 +14,7 @@ feature off, the hooks and scopes do not exist.
 
 ## Using it
 
-- **Performance tab → "Profiler (issue #34)"**: a checkbox enables scope collection and shows
+- **Rendering > Previews and performance → "Profiler (issue #34)"**: a checkbox enables scope collection and shows
   puffin's live flame graph; a button captures ~5 s of frames. Two further checkboxes control the
   fine layers — the per-draw render-block scopes (off by default, because they inflate the
   draw-submission path they measure) and the GPU per-pass timestamps (on by default, because they
@@ -22,18 +22,27 @@ feature off, the hooks and scopes do not exist.
   and the per-render-block-type draw counts sit under them.
 - **F9** starts the same capture without the overlay (usable in-headset). Progress shows in the
   collapsible; the result is logged.
-- Captures are written to the session's `profile/` directory
-  (`sessions/<timestamp>/profile/jc3vr-profile-<stamp>.json`) in Chrome trace-event format — open
+- Captures are written to `profiles/<stamp>.json` in the session folder
+  ([sessions.md](../sessions.md)) in Chrome trace-event format — open
   in [ui.perfetto.dev](https://ui.perfetto.dev) (or `chrome://tracing`). Each puffin thread is a
   named lane ("game", "draw", "GPU"); timestamps are rebased to the capture start. Serialization
   runs on a background thread (a capture is tens of megabytes of JSON), so the game keeps rendering
   while the file is written.
 
+## Taking a capture
+
+1. Build with the feature. It is a default feature, so the ordinary build has it: `scripts/proton_run.sh --release` builds and injects the release payload. Capture in release; a debug payload's numbers describe the debug build. `cargo xwin build ... -p jc3vr_payload --no-default-features` builds without it, which is the comparison to make when the question is the profiler's own overhead.
+2. In the game, get to the situation you want measured, then press F9. The log says `F9: profiler trace capture started` and `profiler: capturing 5.0s of frames`, and, once the file is written, the path. Hold the situation for the whole five seconds.
+3. Leave the per-draw render-block scopes off unless the per-type timeline is the question (see below). The GPU per-pass timestamps are on by default and should stay on.
+4. The capture lands in the session folder, `<session>/profiles/<stamp>.json` under the sessions root ([sessions.md](../sessions.md#the-sessions-root)); the startup log and the Status page name the session folder.
+5. Summarize it with `uv run tools/analyze_profile.py <file>`, or open it in [ui.perfetto.dev](https://ui.perfetto.dev).
+
+Take the capture alongside the always-on breakdown in the same log ([frame-timing.md](frame-timing.md)): the breakdown says which part of the frame grew, and the capture shows what is inside it.
+
 ## What is instrumented
 
-CPU scopes, main thread: `CGame::Update` (the frame), `UpdateGame` (each sim tick),
-`UpdateRender`, the per-eye dispatch loop (one `Dispatch` scope per `CGame::Draw`, tagged with the
-eye and ordinal), and the post-Draw drain (`WaitForCPUDraw + drain`).
+CPU scopes, main thread: `CGame::Update` (the frame), `CGame::UpdateGame` (each sim tick) and, inside it, the game world's two update queues, the physics phase, and the streaming block's three calls, `UpdateRender`, the per-eye dispatch loop (one `Dispatch` scope per `CGame::Draw`, tagged with the
+eye and ordinal), and the post-Draw drain (`WaitForCPUDraw + drain`). The two AI threads' bodies get a scope each on the fragment worker that runs them.
 
 CPU scopes, draw thread: `RenderEngine::PreDraw` / `DrawGBuffer` / `Draw (scene)` /
 `DrawPosteffects` / `PostDraw`, `DrawRenderPassRange` (with the pass range as data), and
@@ -48,7 +57,7 @@ turns it on for the cases where the per-type timeline is actually the question.
 
 What survives unconditionally is the cheap part of its signal: the same hook adds each finished
 type run's block count to a per-type counter (a relaxed atomic add against a thread-memoized slot,
-no lock and no allocation), and those totals go to the Performance tab and the periodic log line.
+no lock and no allocation), and those totals go to the Previews and performance readout and the periodic log line.
 They undercount by the final run of each pass draw, which the engine closes at the pass tail rather
 than through a type switch.
 
@@ -57,14 +66,14 @@ GPU lane: a synthetic "GPU" puffin thread built from the engine's own
 wraps its seams (`PreDraw`, `DrawGBuffer`, `Draw (scene)`, `DrawPosteffects`, `PostDraw`) in
 timestamp pairs under one disjoint query, and the resolved results are reported a few frames later
 under a per-dispatch outer scope ("GPU eye 0" / "GPU eye 1" / "GPU far field"), which also carries
-the dispatch's busy/starved/submit numbers as its scope data. GPU ticks are
+the dispatch's busy/starved/submit numbers as its scope data. The mod's FSR resolve has a seam of its own (`FSR`), nested inside `DrawPosteffects`. Each post effect the payload hooks and the foveation's two passes get a named detail interval (`gpu::detail_interval`): they show on the lane beside the passes, but the work-and-holes split below does not count them. GPU ticks are
 mapped onto the CPU timeline via a CPU reference taken at the dispatch's start, with consecutive
 dispatches serialized on the lane (the GPU executes them in order), so the lane aligns with — and
 visibly trails — the CPU work that submitted it. Disjoint intervals are dropped rather than
 reported. The lane also carries measured "GPU idle" scopes — the true starvation gap between one
 dispatch's last timestamp and the next one's first — so the cost of the serialized dispatch
 pipeline shows up as a number (the analyzer folds them into a GPU-utilization figure) rather than
-an inference. Comparing ticks across disjoint brackets is out of contract for D3D11 but sound
+an inference. The queries also run, without the puffin lane, while the frame-time benchmark records ([benchmark.md](../testing/benchmark.md)), which takes each resolved dispatch's span, idle gap, submit span, and seam times. Comparing ticks across disjoint brackets is out of contract for D3D11 but sound
 under DXVK's monotonic timestamp clock; implausible gaps are discarded.
 
 ### Reading the GPU lane: work, not span
@@ -72,7 +81,7 @@ under DXVK's monotonic timestamp clock; implausible gaps are discarded.
 A dispatch's outer scope, and each seam inside it, is a *span*: the GPU's whole execution window
 for that stretch, idle included. If the draw thread cannot record commands as fast as the GPU
 retires them, the GPU drains **inside** the span and the scope still reads its full width — which
-is how an earlier capture produced "the GPU is the ceiling at 13 ms" for a frame that was actually
+is how a capture can read "the GPU is the ceiling at 13 ms" for a frame that is actually
 waiting on submission.
 
 So each render pass is bracketed with its own timestamp pair inside its seam (from the
@@ -87,7 +96,7 @@ recording the dispatch, measured between the dispatch's begin and end and report
 span that tracks the submit span dispatch after dispatch is a pipeline being fed just in time
 (submission-bound); a GPU span that outruns submission is real shading cost. The per-frame
 averages of all four numbers go to the log every five seconds while collection is on, and to the
-Performance tab, so a session can be read without opening a trace at all.
+Previews and performance readout, so a session can be read without opening a trace at all.
 
 The per-pass subdivision costs two timestamp queries per pass per dispatch and has its own
 checkbox; turning it off leaves the coarse seams, and busy degenerates to the whole span.
@@ -108,8 +117,9 @@ the frame bars.
 - `payload/src/profiler/chrome_trace.rs` — puffin frames → Chrome trace-event JSON.
 - `payload/src/profiler/ui.rs` — the Performance-tab collapsible.
 - `payload/src/hooks/profiler.rs` — the profiler-only detours (`DrawGBuffer`,
-  `RenderEngine::Draw`, `CGame::UpdateGame`, `ChangeRenderBlockType`); seams the mod already hooks
-  for other reasons are instrumented inline in those hooks under `#[cfg(feature = "profiler")]`.
+  `RenderEngine::Draw`, `ChangeRenderBlockType`); seams the mod already hooks
+  for other reasons are instrumented inline in those hooks under `#[cfg(feature = "profiler")]`,
+  among them the sim tick and its phases in `payload/src/hooks/sim.rs`, which the frame breakdown times in every build.
 
 ## Deliberate omissions
 

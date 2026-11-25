@@ -1,0 +1,59 @@
+- primed grenades in the hand have no feedback to indicate they're primed: nothing about them changes visually, they make no sound, and you find out that they've been primed when they blow up in your hand. can we bring the in-world representation of priming over?
+- headbobbing quite bad
+- 26.75 (and throughout, like 47.48 and 62.52): forearm and hand are aligned, but the grappling hook detaches / lags behind where they are, resulting in an unsettling break in the arm. animation timing issue?
+- ragdolling doesn't really work properly - 76.7s, grabbing onto someone doesn't make them go limp in your hands at the point you grabbed them, it causes them to yeet into oblivion
+- 78-85s: can't grapple-snatch dropped grenade
+- 94s: held grenade lags behind hands/movement; catches up when still
+- 122s: dropping from a grapple plays an animation and moves the head with it. very unpleasant. suppress this head movement
+- Rico is maybe a bit too strong now. let's try 2/3rds grip strength
+- 154s: more ragdoll instacollapse 
+- 160s: grapple drag of the ragdoll is pretty decent, but quite weak
+- 179s: why did I fail to grab the launcher here?
+- 204s: I successfully loaded the launcher with new ammo, but that ammo didn't appear until 206s, where I grabbed it from the waist again. also, my capacity isn't going down - it stays at 0 or 1 out of 5, no matter how many times I shoot
+- 251-253s: similar failed grab
+- 260-270s: all of these should be pistol draws/holsters, but some fail to pick up, and some fail to holster
+- similar at 306-308s
+- 330s: this should be a pretty uncomplicated door grab, but I end up partially climbing it instead
+- 346-350s: virtual controls are _way_ submerged and unreachable. they're also wrong for this plane: this has a steering wheel, not a yoke
+- 362s: getting in from the other side of the plane and moving over to the pilot seat, the virtual controls are still wrong, but in a different place. path dependent placement???
+- 440-450s: the C4 detonation controls are still very inconsistent/intuitive. I would expect to be able to push the virtual button to detonate: but I keep having to come in at it from an angle, sometimes almost entirely perpendicular to the big circular surface. part of me is wondering if this is even the right solution? maybe we should go for a more physical solution where you can hold the detonator and activate it? (maybe pulling the trigger while holding the C4 autoswitches you to the detonator, and you pull the detonator out/hold it when you have no more C4 to draw from your chest?)
+- 458s: we are not carrying velocity when we enter the swing. any velocity we had is instantly lost. no fun. this is true of all swings, regardless of entry angle
+- 534-536s: honestly, I think we should probably just suppress this parachute roll entry animation? we can tweak the camera to make this look less janky, but it will always be barf-inducing, and not congruent with what the player themselves are doing. let's just cut the animation entirely (i.e. stop Rico's body from doing that altogether)
+- 563s: throughout this session, I frequently failed to grab C4. I know we've discussed using the player's body for the holsters, as opposed to Rico's body, to avoid these kinds of things; incidents like this make me consider that again, but I would still prefer to figure out if we can fix this. what's going on here?
+- 580s: really unpleasant landing camera animation. must suppress (can probably be seen from my camera's head position?)
+- 588-605s: more struggling to detonate C4. the motion I made at the start should have been sufficient
+- 614-637s: a solid 20 seconds of C4-grabbing struggling
+- 658s: grapple arm separation
+- 721s: these controls are awesome. nice work! the throttle should have steps that you can feel through vibrations as you drag it, and it should have a very strong snap to the zero point in the middle; I found it difficult to know where zero throttle was, and repeatedly found myself keeping a small amount of positive or negative thrust. also not sure about negative thrust in general - slamming the throttle all the way back feels like it should be zero thrust, not full negative thrust - but I can't think of a better solution at this time. thoughts?
+    - also, it might be nice to have some feedback for the yoke - knowing when you're at the edge of its range, when you've centered it, etc. just light haptics to help guide your positioning
+- 957s: struggling to get at my gun
+- 973s: not sure why this is "left back" instead of left hip? also, I've been meaning to mention this: I think the ordering of this display is wrong: it reads as though the pistols will be swapped for the launcher, but it should be the other way around (launcher will become pistols: not that will happen, it replaces my waist as expected). just odd all around
+- 1111s: colliding with the fence I'm holding while trying to walk forward
+- 1240-1255s: my character controller/collider gets stuck and fails to clear things that the regular controller would have easily cleared. this has been around for a few days now, and happens in all kinds of scenarios. I suspect it might have to do with the shrinking we did? unsure
+- 1261s: another example of grapple-to-swing conversion completely killing velocity: I would have expected some kind of Spiderman swing, but we just stop entirely midair
+- 1264-1265s: similarly, exit doesn't fully preserve velocity, but it's still better than the entry
+- 1273-1724s: I swear I held the grapple button here to swing, but it just didn't engage
+- while swimming: we don't seem to adjust our body yaw to match the direction of movement. stroking in any given direction moves me along the facing direction of my body, but the facing direction of my body is not adjusted to match the stroke itself. should be able to see examples of this from the swimming around this time
+- 1329s: so, in JC3, when you attach to a ceiling, you enter a spider-like pose and invert. I've thought about this and I just don't think there's any way we can make this work in VR; it is simply too distant from what the player's real body is doing. instead, I think we should suppress this and have it act as a grapple-swing with a short distance, so that you remain upright, can control your swing a bit with your left arm, and are free to use your right arm to do things. this should be true of other scenarios in which you would invert, too, like stunt position on a helicopter. this might be a matter of some discussion
+- +1357.787396s: camera clipping into body. interpolation issue? put together a gallery of a few frames around here to see what's going on
+- as already noted, the grapple-pulls while parachuting seem... excessively strong. I should not be going faster than a sports car from a single pull
+- 1391.65s: I shoot a grapple to the right of me; this imparts some velocity, but it doesn't seem to pull me towards that direction. this might be original game behaviour, I don't recall, but it's not intuitive/doesn't seem to match what I'd expect to physically happen. I'd expect it to impart a rotational impulse to pull me towards the direction of the grapple
+- also, throughout this sequence, the body camera clipping issue, as mentioned before. appears as flashing throughout. you could probably slap something together to analyse the frames to detect this and maybe find a pattern here
+- 1468.5s: I believe this was me trying to engage the wingsuit by spreading my arms, but I ended up dropping out of the sky instead. incomplete state change?
+- 1492-1528s: during these grapples, I was attempting to engage the wingsuit by spreading my arms; instead, my grapple pulled me towards my target at superspeed. I'm pretty sure that we added logic to engage the wingsuit during grapple, but if we didn't, well, it should be there :P
+- 1577s: can't swap the weapon in my holster by dropping the revolver over it. should automatically drop my old weapon in this case, and show the old -> new overlay
+- 1593s: body yaw IK not quite keeping up? camera seems to be clipping into my body. also 1603s
+- as noted, no way to reload the revolvers. the ammo for them doesn't appear on my body, I can't release the chamber, etc. not actually sure how the game reloads revolvers out of the box anyway, but we'll have to figure something out, I suppose
+- 1768s: do we actually support grapple-lining an object without pulling it towards us? not really sure how to grab this barrel and swing it around without also pulling it towards me
+- 1778s: I would like to be able to throw barrels and have them explode on contact if going sufficiently fast. is that a thing that's possible under our current regime? I'm not actually sure. I spend some time trying to do this, until 1835s, but I don't know if my throws are just bad
+- 1883s: as before, can't grapple-snatch grenade dropped by dead NPC
+- 1939s: trying to grab the NPC out of the machine gun spot puts me in the driver's seat? that's... uhh... not what I expected. I expected them to ragdoll in place, for me to be able to pick them up and place them outside, and then to be able to hop in the seat myself
+- 1967s: indeed, after repeating that a few times, I shoot them and step into the empty space, but I don't enter the now-empty gunner seat
+- 1974s: I can shoot the machine gun from this position, but I can't turn it, despite having a solid grip o nit
+- 2092s: tried to snatch a machine gun, it just flew off. not sure if this is a weapon I can carry, but still, weird
+- 2123-2125s: collider getting stuck on something, as mentioned before
+- 2145s: struggling to knock the clip out. skill issue on my part?
+- 2265-2274s: repeatedly struggle to put the shotgun on my back. assuming that this is it trying and failing to enter a holster that already has a weapon in it
+- 2288s: the usual camera-clipping-into-body with parachute unfurling. have a look at a sequence of frames from this
+- 2331.1s: not a gameplay bug, but a rendering bug! shadows are separated from the objects they're for when the camera is at a distance from that object. see the car in the center of the frame, which appears to be floating because its shadow is misaligned. as I get closer, the shadow meets the car again (2333s). this is consistent in both eyes, so I'm assuming the shadow camera doesn't match the perspective I have or such
+- don't have an exact timestamp for this, but our "your camera is inside the world" check doesn't work great in vehicles; during the segment in which I was flying the plane, my vision blacked out at several points because I got too close to the (transparent!) cockpit window. probably safest to just suppress this check when you're in a vehicle?

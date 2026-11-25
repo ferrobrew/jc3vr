@@ -1,10 +1,216 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[derive(Copy, Clone)]
+#[repr(C, align(8))]
+/// The grappling hook's tuning (`SGrappleTuning`), a resource the hook reads through its tuning
+/// handle ([`GrapplingHook::GetTuning`](crate::equipment::grappling_hook::GrapplingHook::GetTuning)). The reel-in fields below are the ones the reel's
+/// velocity update ([`NStateTask_ReelIn::UpdateReelVelocity`](crate::equipment::grappling_hook::NStateTask_ReelIn::UpdateReelVelocity)) reads; the rest of the layout (the
+/// tether spring and break settings, the wire's look, and the auto-aim, push, kick, and wire
+/// settings) is unmapped.
+pub struct GrappleTuning {
+    /// The grapple's range, metres: the aim's grapple slot range, and the length a fired wire may
+    /// run ([`GrapplingHookWire::m_MaxLength`](crate::equipment::grappling_hook::GrapplingHookWire::m_MaxLength)).
+    pub m_GrappleDistance: f32,
+    /// How long the fire input must be held, seconds, for its release to fire a tether
+    /// ([`GrapplingHook::m_CachedDualTetherFire`](crate::equipment::grappling_hook::GrapplingHook::m_CachedDualTetherFire)) rather than reel in.
+    pub m_HoldTime: f32,
+    _field_8: [u8; 32],
+    /// The reel's top speed along the line (metres per second): a reel moving faster is slowed by
+    /// [`m_ReelInClampAccel`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInClampAccel).
+    pub m_ReelInSpeedMax: f32,
+    /// The reel's top speed while the reel boost applies (metres per second): the retract
+    /// accelerates the reel ([`GrapplingHook::GetRetractAcceleratesReelIn`](crate::equipment::grappling_hook::GrapplingHook::GetRetractAcceleratesReelIn)) and the retract has
+    /// been held ([`GrapplingHook::m_TimeHoldingRetract`](crate::equipment::grappling_hook::GrapplingHook::m_TimeHoldingRetract)) for longer than a tenth of a second.
+    pub m_RetractReelInSpeedMax: f32,
+    /// The reel's least speed along the line (metres per second): a reel moving slower is sped up
+    /// by [`m_ReelInClampAccel`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInClampAccel).
+    pub m_ReelInSpeedMin: f32,
+    /// The acceleration (metres per second squared) that brings the reel's speed back between
+    /// [`m_ReelInSpeedMin`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInSpeedMin) and the top speed.
+    pub m_ReelInClampAccel: f32,
+    /// The reel's acceleration along the line (metres per second squared).
+    pub m_ReelInAccel: f32,
+    /// The reel's acceleration along the line while the character's control parameters hold the
+    /// retract context flag (metres per second squared). It replaces
+    /// [`m_ReelInAccel`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInAccel) rather than adding to it, and applies only beyond
+    /// [`m_ReelInDragMaxDistance`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInDragMaxDistance) from the target.
+    pub m_RetractReelInAccel: f32,
+    /// The drag on the reel's velocity across the line, per second.
+    pub m_ReelInPerpDrag: f32,
+    /// The distance from the target (metres) within which the reel stops at the target rather
+    /// than pass it in one step.
+    pub m_ReelInDragMaxDistance: f32,
+    /// The distance from the target (metres) at which the reel counts as arrived and finishes.
+    pub m_ReelInArrivedDistance: f32,
+    _field_4c: [u8; 32],
+    /// The hook's flight speed, metres per second, which every fire gives the far end
+    /// ([`WireEnd::SetExtend`](crate::equipment::wire_end::WireEnd::SetExtend)).
+    pub m_GrappleFireSpeed: f32,
+}
+fn _GrappleTuning_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x70], GrappleTuning>([0u8; 0x70]);
+    }
+    unreachable!()
+}
+impl GrappleTuning {}
+impl std::convert::AsRef<GrappleTuning> for GrappleTuning {
+    fn as_ref(&self) -> &GrappleTuning {
+        self
+    }
+}
+impl std::convert::AsMut<GrappleTuning> for GrappleTuning {
+    fn as_mut(&mut self) -> &mut GrappleTuning {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The physics proxy a character hangs from under a grapple line (`CGrapplingHangPhysicsProxy`, a
+/// `CGrapplePointProxy`): a rigid body the hang task swings, with the character attached to it.
+/// Only some members are bound.
+pub struct GrapplingHangPhysicsProxy {
+    vftable: *const crate::equipment::grappling_hook::GrapplingHangPhysicsProxyVftable,
+    _field_8: [u8; 24],
+    /// The proxy's rigid body, which the character hangs from. The hang task sets its angular
+    /// velocity and applies its impulses to it.
+    pub m_PfxProxyBody: crate::types::shared_ptr::SharedPtr<
+        crate::physics::PfxRigidBody,
+    >,
+}
+fn _GrapplingHangPhysicsProxy_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x30], GrapplingHangPhysicsProxy>([0u8; 0x30]);
+    }
+    unreachable!()
+}
+impl GrapplingHangPhysicsProxy {
+    pub fn vftable(
+        &self,
+    ) -> *const crate::equipment::grappling_hook::GrapplingHangPhysicsProxyVftable {
+        self.vftable
+            as *const crate::equipment::grappling_hook::GrapplingHangPhysicsProxyVftable
+    }
+    /// Whether the proxy is set up and its body live. The hang task
+    /// ([`NStateTask_GrapplingHangTask::Update`](crate::equipment::grappling_hook::NStateTask_GrapplingHangTask::Update)) acts on the proxy only while it holds.
+    pub unsafe fn IsOk(&self) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).IsOk).read();
+            f(self as *const Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<GrapplingHangPhysicsProxy> for GrapplingHangPhysicsProxy {
+    fn as_ref(&self) -> &GrapplingHangPhysicsProxy {
+        self
+    }
+}
+impl std::convert::AsMut<GrapplingHangPhysicsProxy> for GrapplingHangPhysicsProxy {
+    fn as_mut(&mut self) -> &mut GrapplingHangPhysicsProxy {
+        self
+    }
+}
+#[repr(C, align(8))]
+pub struct GrapplingHangPhysicsProxyVftable {
+    _vfunc_0: unsafe extern "system" fn(
+        this: *mut crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
+    ),
+    _vfunc_1: unsafe extern "system" fn(
+        this: *mut crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
+    ),
+    _vfunc_2: unsafe extern "system" fn(
+        this: *mut crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
+    ),
+    /// Whether the proxy is set up and its body live. The hang task
+    /// ([`NStateTask_GrapplingHangTask::Update`](crate::equipment::grappling_hook::NStateTask_GrapplingHangTask::Update)) acts on the proxy only while it holds.
+    pub IsOk: unsafe extern "system" fn(
+        this: *const crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
+    ) -> bool,
+}
+fn _GrapplingHangPhysicsProxyVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x20],
+            GrapplingHangPhysicsProxyVftable,
+        >([0u8; 0x20]);
+    }
+    unreachable!()
+}
+impl GrapplingHangPhysicsProxyVftable {}
+impl std::convert::AsRef<GrapplingHangPhysicsProxyVftable>
+for GrapplingHangPhysicsProxyVftable {
+    fn as_ref(&self) -> &GrapplingHangPhysicsProxyVftable {
+        self
+    }
+}
+impl std::convert::AsMut<GrapplingHangPhysicsProxyVftable>
+for GrapplingHangPhysicsProxyVftable {
+    fn as_mut(&mut self) -> &mut GrapplingHangPhysicsProxyVftable {
+        self
+    }
+}
+/// Enables the hang task's discrete stick swing (`NStateTask_GrapplingHangTask::s_enable_discrete_swing`).
+/// Zero-initialised and written by no code in this build.
+pub unsafe fn get_GrapplingHangTask_EnableDiscreteSwing() -> &'static mut bool {
+    unsafe { &mut *(0x142F30E90 as *mut bool) }
+}
+/// Enables the hang task's continuous stick swing
+/// (`NStateTask_GrapplingHangTask::s_enable_small_impulse_swing`). Zero-initialised and written by
+/// no code in this build.
+pub unsafe fn get_GrapplingHangTask_EnableSmallImpulseSwing() -> &'static mut bool {
+    unsafe { &mut *(0x142F30E84 as *mut bool) }
+}
+/// The continuous stick swing's impulse at full stick deflection
+/// ([`GrapplingHangTask_EnableSmallImpulseSwing`](get_GrapplingHangTask_EnableSmallImpulseSwing)), applied once per hang-task tick and scaled by
+/// the stick's magnitude.
+pub unsafe fn get_GrapplingHangTask_SmallImpulseSwingMagnitude() -> &'static mut f32 {
+    unsafe { &mut *(0x142D65A80 as *mut f32) }
+}
 #[repr(C, align(8))]
 /// The grappling-hook equipment item (`CGrapplingHook`, a `CGameObject`): owns the wires, the
 /// reel/tether state machine, and the cached fire target. A character's hook is held by its
 /// inventory ([`Inventory::m_GrapplingHook`](crate::character::inventory::Inventory::m_GrapplingHook)).
 pub struct GrapplingHook {
-    _field_0: [u8; 564],
+    _field_0: [u8; 208],
+    /// The hook's attached effects and sounds (its `CAttachedEffectContainer` base), loaded from
+    /// the grapple device's effect container when the hook's properties are set. The fire
+    /// animation's track messages play one-off usages from it by the message's hash
+    /// (`CGrapplingHook::OnTrackMessage`, through `CGrapplingHook::PlayEffectOnMessage`, which
+    /// refuses a looping usage); the hook's own state plays the rest
+    /// ([`UpdateLoopingEffects`](crate::equipment::grappling_hook::GrapplingHook::UpdateLoopingEffects) and the one-off usages below).
+    pub m_AttachedEffects: crate::equipment::attached_effects::AttachedEffectContainer,
+    _field_160: [u8; 88],
+    /// Whether the hook's one looping usage, the reel's
+    /// ([`m_ReelingInEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_ReelingInEffectUsage)), is playing, as
+    /// [`UpdateLoopingEffects`](crate::equipment::grappling_hook::GrapplingHook::UpdateLoopingEffects) last set it.
+    pub m_ActiveLoopingEffects: [bool; 1],
+    _field_1b9: [u8; 7],
+    /// The reel's looping effect and sound ([`REELING_IN_USAGE`](crate::equipment::grappling_hook::GrapplingHook::REELING_IN_USAGE)), playing
+    /// while the hook is [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN).
+    pub m_ReelingInEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+    /// The one-off effect and sound of the active wire retracting into the device
+    /// ([`RETRACTING_USAGE`](crate::equipment::grappling_hook::GrapplingHook::RETRACTING_USAGE)).
+    pub m_RetractingActiveWireEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+    /// The one-off effect and sound of a fire that finds no target
+    /// ([`GRAPPLE_FAIL_USAGE`](crate::equipment::grappling_hook::GrapplingHook::GRAPPLE_FAIL_USAGE)).
+    pub m_GrappleFireFailEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+    /// The one-off effect and sound of letting go of a reeled-in attachment
+    /// ([`RELEASE_FROM_ATTACHED_USAGE`](crate::equipment::grappling_hook::GrapplingHook::RELEASE_FROM_ATTACHED_USAGE)).
+    pub m_ReleaseFromAttachedEffectUsage: *mut crate::equipment::attached_effects::AttachedEffectUsage,
+    _field_1e0: [u8; 64],
+    /// The character holding the hook (a `boost::weak_ptr<CCharacter>`).
+    pub m_Holder: crate::types::shared_ptr::WeakPtrGameObject,
+    _field_230: [u8; 1],
+    /// Whether the animation graph lets the fire input reach the hook. The graph's disable
+    /// grapple use task (`NStateTask_DisableGrappleUseTask`) clears it on entering a state that
+    /// carries it (every vehicle seat, the grapple fires, landings, stumbles, and many traversal
+    /// transitions), optionally retracting the active wire and detaching a reeled-in attachment
+    /// first, sets it again while the state's animation is within the task's named segment, and
+    /// sets it on leaving the state. [`GetFireInputEnabled`](crate::equipment::grappling_hook::GrapplingHook::GetFireInputEnabled) combines
+    /// it with the hook's other fire gates.
+    pub m_GrappleFireInputEnabled: bool,
+    /// Whether the fire input has been held past [`GrappleTuning::m_HoldTime`](crate::equipment::grappling_hook::GrappleTuning::m_HoldTime) with an attached
+    /// active wire, so that its release fires a tether rather than reel in.
+    pub m_CachedDualTetherFire: bool,
+    _field_233: [u8; 1],
     /// The current state-machine state; see [`GrapplingHookState`](crate::equipment::grappling_hook::GrapplingHookState). The state records the *last*
     /// reel outcome as much as the current one: leaving a `GHS_REELED_*` attachment does not
     /// reliably return it to [`GHS_INACTIVE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_INACTIVE) — readers such as
@@ -34,16 +240,47 @@ pub struct GrapplingHook {
     /// toward it while a wire is active. The offset is confirmed; the name is
     /// unconfirmed.
     pub m_CachedReelTargetPosition: crate::types::math::Vector3,
-    _field_324: [u8; 164],
+    _field_324: [u8; 104],
+    /// Whether the dual tethers were squeezed on the last update: set by
+    /// [`SqueezeDualTethers`](crate::equipment::grappling_hook::GrapplingHook::SqueezeDualTethers) when its squeeze value is above zero, and
+    /// cleared when it is zero or no tether exists.
+    pub m_IsSqueezingDualTethers: bool,
+    _field_38d: [u8; 3],
+    /// How long the retract input (`RETRACT_GRAPPLE`) has been released, seconds: counted up by
+    /// [`UpdateDualTetherHandling`](crate::equipment::grappling_hook::GrapplingHook::UpdateDualTetherHandling) while the input's value is zero
+    /// and reset to zero while it is above.
+    pub m_TimeSinceRetractHeld: f32,
+    /// How long the retract input (`RETRACT_GRAPPLE`) has been held, seconds: counted up by
+    /// [`UpdateDualTetherHandling`](crate::equipment::grappling_hook::GrapplingHook::UpdateDualTetherHandling) while the input's value is above
+    /// zero and reset to zero while it is zero. It ramps the tether squeeze in, and the reel's
+    /// boosted top speed ([`GrappleTuning::m_RetractReelInSpeedMax`](crate::equipment::grappling_hook::GrappleTuning::m_RetractReelInSpeedMax)) applies once it passes a
+    /// tenth of a second.
+    pub m_TimeHoldingRetract: f32,
+    _field_398: [u8; 16],
+    /// The tethers: wires handed off from the active wire once their second end was fired, and
+    /// the wires [`CancelActiveWire`](crate::equipment::grappling_hook::GrapplingHook::CancelActiveWire) dropped.
+    pub m_Wires: crate::types::std_vector::Vector<
+        crate::types::shared_ptr::SharedPtr<
+            crate::equipment::grappling_hook::GrapplingHookWire,
+        >,
+    >,
     /// The wire currently driving the reel/attach flow, or null when none is live. The state
     /// readers null-check this before interpreting [`m_State`](crate::equipment::grappling_hook::GrapplingHook::m_State).
     pub m_ActiveWire: crate::types::shared_ptr::SharedPtr<
         crate::equipment::grappling_hook::GrapplingHookWire,
     >,
+    /// The wire the character hangs from or is attached by after a reel, or null.
+    pub m_AttachmentWire: crate::types::shared_ptr::SharedPtr<
+        crate::equipment::grappling_hook::GrapplingHookWire,
+    >,
+    _field_3e8: [u8; 8],
+    /// The physics proxy the character hangs from while reeled into a hang
+    /// ([`GHS_REELED_HANG`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELED_HANG)).
+    pub m_GrapplingHangProxy: crate::equipment::grappling_hook::GrapplingHangPhysicsProxy,
 }
 fn _GrapplingHook_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x3D8], GrapplingHook>([0u8; 0x3D8]);
+        ::std::mem::transmute::<[u8; 0x420], GrapplingHook>([0u8; 0x420]);
     }
     unreachable!()
 }
@@ -134,13 +371,78 @@ impl GrapplingHook {
     }
     pub const OnPreSimUpdate_ADDRESS: usize = 0x140949F70;
     /// The pre-simulation hook update: dispatches the grapple input (fire, reel, dual tether,
-    /// retract, release) and advances the reel and tether state.
+    /// retract, release) and advances the reel and tether state. While
+    /// [`GHS_INACTIVE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_INACTIVE) without an active wire, a press of the fire
+    /// input latches the aim ([`SetUpTarget`](crate::equipment::grappling_hook::GrapplingHook::SetUpTarget)) and queues the fire act at once,
+    /// before a tap and a hold are told apart. While inactive with an active wire whose far end is
+    /// attached, a held fire input sets
+    /// [`m_CachedDualTetherFire`](crate::equipment::grappling_hook::GrapplingHook::m_CachedDualTetherFire) past the hold time; on its release
+    /// with that set it latches the aim again and fires the tether's second end, and otherwise, the
+    /// input up, it enters [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN) and queues the
+    /// pre-reel act: the reel runs whenever an attached active wire meets a released input, a quick
+    /// tap that let go before the hook arrived included. While
+    /// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN) with an attached far end, a press of
+    /// the fire input (its press edge, or a press still queued within its window) fires again from
+    /// the reel ([`FireHookFromReelingIn`](crate::equipment::grappling_hook::GrapplingHook::FireHookFromReelingIn)) when the hook is ready to
+    /// fire, the re-reel upgrade is bought and enabled, and the grapple slot is in range; from the
+    /// parachute or the wingsuit it ends the line and fires a fresh one instead. Without such a
+    /// press, a cancel click retracts the active wire, rights the character (unless it uses the
+    /// parachute or the wingsuit), and queues the grapple cancel act.
     pub unsafe fn OnPreSimUpdate(&mut self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
                 Self::OnPreSimUpdate_ADDRESS,
             );
             f(self as *mut Self as _, dt)
+        }
+    }
+    pub const FireHookFromReelingIn_ADDRESS: usize = 0x140943FA0;
+    /// Fires again while the hook is [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN): latches
+    /// the player's grapple slot into [`m_HookFireInfo`](crate::equipment::grappling_hook::GrapplingHook::m_HookFireInfo)
+    /// ([`SetUpTarget`](crate::equipment::grappling_hook::GrapplingHook::SetUpTarget)), queues the fire act toward it as a reel fire
+    /// ([`DoActFire`](crate::equipment::grappling_hook::GrapplingHook::DoActFire)), and arms the wait for the fire animation
+    /// ([`m_WaitForFireSignalTimeout`](crate::equipment::grappling_hook::GrapplingHook::m_WaitForFireSignalTimeout),
+    /// [`m_WaitingForGrappleFire`](crate::equipment::grappling_hook::GrapplingHook::m_WaitingForGrappleFire)). It does nothing in any other
+    /// state.
+    pub unsafe fn FireHookFromReelingIn(
+        &mut self,
+        player: *mut ::std::ffi::c_void,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                player: *mut ::std::ffi::c_void,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+            ) = ::std::mem::transmute(Self::FireHookFromReelingIn_ADDRESS);
+            f(self as *mut Self as _, player, holder)
+        }
+    }
+    pub const StartReelUpsideDown_ADDRESS: usize = 0x1408C92B0;
+    /// Starts the reel's upside-down ending, the ceiling attach: clears the holder's velocities,
+    /// queues the grapple upside-down act, and resets the reel's blocked timer. The arrival
+    /// ([`NStateTask_ReelIn::FinishReel`](crate::equipment::grappling_hook::NStateTask_ReelIn::FinishReel)) calls it when the attachment setup it made for the far end
+    /// chose the upside-down attachment; the act's states then hold the character inverted against
+    /// the surface ([`GHS_REELED_UPSIDEDOWN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELED_UPSIDEDOWN)). The
+    /// disassembler mislabels it `boost::shared_ptr<CGrapplingHookWire>::operator->`.
+    pub unsafe fn StartReelUpsideDown(
+        &mut self,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+            ) = ::std::mem::transmute(Self::StartReelUpsideDown_ADDRESS);
+            f(self as *mut Self as _, holder)
         }
     }
     pub const OnPostCamUpdate_ADDRESS: usize = 0x14094ED60;
@@ -154,6 +456,21 @@ impl GrapplingHook {
                 Self::OnPostCamUpdate_ADDRESS,
             );
             f(self as *mut Self as _, dt)
+        }
+    }
+    pub const UpdateLoopingEffects_ADDRESS: usize = 0x1408C9610;
+    /// Starts or stops the reel's looping usage
+    /// ([`m_ReelingInEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_ReelingInEffectUsage)) to match the state: playing while
+    /// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN), stopped softly otherwise. It acts
+    /// only on a change from [`m_ActiveLoopingEffects`](crate::equipment::grappling_hook::GrapplingHook::m_ActiveLoopingEffects), which it
+    /// updates. [`OnPostCamUpdate`](crate::equipment::grappling_hook::GrapplingHook::OnPostCamUpdate) calls it every update of the local
+    /// player's hook, after the wires.
+    pub unsafe fn UpdateLoopingEffects(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdateLoopingEffects_ADDRESS,
+            );
+            f(self as *mut Self as _)
         }
     }
     pub const CreateNewWire_ADDRESS: usize = 0x140923BC0;
@@ -180,15 +497,235 @@ impl GrapplingHook {
             f(self as *mut Self as _, result, spawn_pos)
         }
     }
+    pub const FireHookCustom_ADDRESS: usize = 0x14094CB20;
+    /// Fires a wire at `target_info` at once, with no fire act or animation, when the hook has no
+    /// [`m_ActiveWire`](crate::equipment::grappling_hook::GrapplingHook::m_ActiveWire) and is
+    /// [`GHS_INACTIVE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_INACTIVE); otherwise it does nothing. It creates the
+    /// wire at the holder's left hand position, makes it the active wire with the tuning's
+    /// [`m_GrappleDistance`](crate::equipment::grappling_hook::GrappleTuning::m_GrappleDistance) as its
+    /// [`m_MaxLength`](crate::equipment::grappling_hook::GrapplingHookWire::m_MaxLength), attaches the device end
+    /// ([`AttachLocalWireEndToDevice`](crate::equipment::grappling_hook::GrapplingHook::AttachLocalWireEndToDevice)), sets the ends' cast
+    /// filters to ignore `ignore_object` and the holder, starts the far end extending toward the
+    /// target at [`m_GrappleFireSpeed`](crate::equipment::grappling_hook::GrappleTuning::m_GrappleFireSpeed) as a ghost wire when
+    /// `ghost_wire`, and enters [`GHS_CUSTOM_ACTIVE_WIRE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE),
+    /// where the fire, reel, and tether input does nothing. It does not test
+    /// [`m_WaitingForGrappleFire`](crate::equipment::grappling_hook::GrapplingHook::m_WaitingForGrappleFire) or
+    /// [`m_WaitingForTetherFire`](crate::equipment::grappling_hook::GrapplingHook::m_WaitingForTetherFire). The vehicle grapple
+    /// ([`VehicleGrappleHook::PreSimUpdate`](crate::equipment::grappling_hook::VehicleGrappleHook::PreSimUpdate)) and the stunt-position grapple fire through it.
+    pub unsafe fn FireHookCustom(
+        &mut self,
+        target_info: *mut crate::equipment::wire_end::HookTargetInfo,
+        ignore_object: *mut ::std::ffi::c_void,
+        ghost_wire: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                target_info: *mut crate::equipment::wire_end::HookTargetInfo,
+                ignore_object: *mut ::std::ffi::c_void,
+                ghost_wire: bool,
+            ) = ::std::mem::transmute(Self::FireHookCustom_ADDRESS);
+            f(self as *mut Self as _, target_info, ignore_object, ghost_wire)
+        }
+    }
+    pub const GetFireInputEnabled_ADDRESS: usize = 0x140923750;
+    /// Whether the fire input fires the hook now: [`m_GrappleFireInputEnabled`](crate::equipment::grappling_hook::GrapplingHook::m_GrappleFireInputEnabled),
+    /// cleared further when the holder is not the player, while the player aims down a sniper
+    /// rifle's scope, without the grappling hook ability, under the parachute without the parachute
+    /// slingshot ability, in cinematic mode, in the wingsuit while the grapple's aim point lies
+    /// too far behind the character's facing, when the inventory's animation does not allow a
+    /// grapple fire, or while a character state bit blocks it. The hook's readiness to fire and its
+    /// pre-simulation input dispatch ([`OnPreSimUpdate`](crate::equipment::grappling_hook::GrapplingHook::OnPreSimUpdate)) test it before a
+    /// fire. Reads only.
+    pub unsafe fn GetFireInputEnabled(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetFireInputEnabled_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const FireHookCustomAtTarget_ADDRESS: usize = 0x14094DD60;
+    /// Builds a target info on `target` at `local_position` in its space (in range, no bone),
+    /// fires it as [`FireHookCustom`](crate::equipment::grappling_hook::GrapplingHook::FireHookCustom), and releases the info.
+    pub unsafe fn FireHookCustomAtTarget(
+        &mut self,
+        target: *mut crate::aim::target::Target,
+        local_position: *const crate::types::math::Vector3,
+        ignore_object: *mut ::std::ffi::c_void,
+        ghost_wire: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                target: *mut crate::aim::target::Target,
+                local_position: *const crate::types::math::Vector3,
+                ignore_object: *mut ::std::ffi::c_void,
+                ghost_wire: bool,
+            ) = ::std::mem::transmute(Self::FireHookCustomAtTarget_ADDRESS);
+            f(self as *mut Self as _, target, local_position, ignore_object, ghost_wire)
+        }
+    }
+    pub const CancelActiveWire_ADDRESS: usize = 0x14090B200;
+    /// Ends the active wire, when there is one: destroys its constraint, kills both ends, marks it
+    /// [`GHWS_INVALID`](crate::equipment::grappling_hook::WireState::GHWS_INVALID), moves it to [`m_Wires`](crate::equipment::grappling_hook::GrapplingHook::m_Wires), clears
+    /// [`m_ActiveWire`](crate::equipment::grappling_hook::GrapplingHook::m_ActiveWire), and notifies the HUD. It leaves
+    /// [`m_State`](crate::equipment::grappling_hook::GrapplingHook::m_State): [`OnPreSimUpdate`](crate::equipment::grappling_hook::GrapplingHook::OnPreSimUpdate) returns
+    /// [`GHS_CUSTOM_ACTIVE_WIRE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE) to
+    /// [`GHS_INACTIVE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_INACTIVE) on its next run once neither an active nor
+    /// an attachment wire is left.
+    pub unsafe fn CancelActiveWire(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::CancelActiveWire_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const GetTuning_ADDRESS: usize = 0x140839F30;
+    /// The hook's tuning resource, or null. The disassembler swaps the names of this function and
+    /// [`GetActiveWireAttachmentObjectInfo`](crate::equipment::grappling_hook::GrapplingHook::GetActiveWireAttachmentObjectInfo).
+    pub unsafe fn GetTuning(
+        &self,
+    ) -> *const crate::equipment::grappling_hook::GrappleTuning {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> *const crate::equipment::grappling_hook::GrappleTuning = ::std::mem::transmute(
+                Self::GetTuning_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetActiveWireAttachmentObjectInfo_ADDRESS: usize = 0x1408C9170;
+    /// The attachment-object kind (`CGrapplePointProxy::EAttachmentObjectInfo`) of the active
+    /// wire's far-end proxy, or zero without an attached active wire. The disassembler swaps the
+    /// names of this function and [`GetTuning`](crate::equipment::grappling_hook::GrapplingHook::GetTuning).
+    pub unsafe fn GetActiveWireAttachmentObjectInfo(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::GetActiveWireAttachmentObjectInfo_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetFireDirection_ADDRESS: usize = 0x14093A090;
+    /// Writes the unit direction from `holder`'s chest to the latched target of `target_info` and
+    /// returns whether there is one. The disassembler mislabels it
+    /// `CAIAirplaneSteering::TakeOffInDirection`.
+    pub unsafe fn GetFireDirection(
+        direction: *mut crate::types::math::Vector3,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+        target_info: *const crate::equipment::wire_end::HookTargetInfo,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                direction: *mut crate::types::math::Vector3,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+                target_info: *const crate::equipment::wire_end::HookTargetInfo,
+            ) -> bool = ::std::mem::transmute(Self::GetFireDirection_ADDRESS);
+            f(direction, holder, target_info)
+        }
+    }
+    pub const GetDualTetherFireInputEnabled_ADDRESS: usize = 0x1409239E0;
+    /// Whether the fire input may fire a tether: the holder is the player, no control flag blocks
+    /// it, and the player has the tether ability. The disassembler mislabels it
+    /// `CIsParachuteEnabledCondition::Evaluate`.
+    pub unsafe fn GetDualTetherFireInputEnabled(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetDualTetherFireInputEnabled_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const AttachLocalWireEndToDevice_ADDRESS: usize = 0x14094C3D0;
+    /// Attaches `wire`'s device end (`m_WireEnds[1]`) to `holder`'s grapple device bone.
+    pub unsafe fn AttachLocalWireEndToDevice(
+        wire: *mut crate::types::shared_ptr::SharedPtr<
+            crate::equipment::grappling_hook::GrapplingHookWire,
+        >,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                wire: *mut crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::grappling_hook::GrapplingHookWire,
+                >,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+            ) = ::std::mem::transmute(Self::AttachLocalWireEndToDevice_ADDRESS);
+            f(wire, holder)
+        }
+    }
     pub const RetractActiveWire_ADDRESS: usize = 0x1408F7A10;
-    /// Retracts the active wire: destroys its physics constraint, detaches the near end, and
-    /// notifies the HUD.
+    /// Retracts the active wire: destroys its physics constraint, detaches its hook (far) end
+    /// ([`m_WireEnds[0]`](crate::equipment::grappling_hook::GrapplingHookWire::m_WireEnds)), returns it to
+    /// [`GHWS_ACTIVE_VIRTUAL`](crate::equipment::grappling_hook::WireState::GHWS_ACTIVE_VIRTUAL), notifies the HUD, and plays the
+    /// retracting usage ([`m_RetractingActiveWireEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_RetractingActiveWireEffectUsage)).
+    /// A reel under way then cancels itself on its next update
+    /// ([`NStateTask_ReelIn::Update`](crate::equipment::grappling_hook::NStateTask_ReelIn::Update)), its far end no longer attached.
     pub unsafe fn RetractActiveWire(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
                 Self::RetractActiveWire_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const GetReelingInDirection_ADDRESS: usize = 0x140943940;
+    /// Writes the unit direction from the holder's position to the point the hook reels toward
+    /// into `direction`, and returns whether it could: false while the holder is gone, there is no
+    /// active wire, the active wire has no attached far end, or the direction is degenerate. The
+    /// parachute's slingshot ([`UpdateParachutePhysics`](crate::input::parachute::UpdateParachutePhysics))
+    /// reads it each update while the hook is
+    /// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN).
+    pub unsafe fn GetReelingInDirection(
+        &self,
+        direction: *mut crate::types::math::Vector3,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                direction: *mut crate::types::math::Vector3,
+            ) -> bool = ::std::mem::transmute(Self::GetReelingInDirection_ADDRESS);
+            f(self as *const Self as _, direction)
+        }
+    }
+    pub const TetherActiveWireToVehicleCOM_ADDRESS: usize = 0x140943420;
+    /// Turns the active wire into a tether between its far end and `vehicle`. While the far end is
+    /// attached and the near end is still on the holder's bone
+    /// ([`AOI_Character`](crate::equipment::grapple_point_proxy::AttachmentObjectInfo::AOI_Character)), it
+    /// destroys the wire's constraint, detaches the near end, returns the wire to
+    /// [`GHWS_ACTIVE_VIRTUAL`](crate::equipment::grappling_hook::WireState::GHWS_ACTIVE_VIRTUAL), attaches the near end to a new
+    /// vehicle point proxy (`CVehicleGrapplePointProxy`, built for `holder` at `vehicle`'s centre
+    /// of mass), marks the wire as no longer the active wire, moves it to the tether list
+    /// ([`m_Wires`](crate::equipment::grappling_hook::GrapplingHook::m_Wires)), clears [`m_ActiveWire`](crate::equipment::grappling_hook::GrapplingHook::m_ActiveWire), enters
+    /// [`GHS_INACTIVE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_INACTIVE), and notifies the HUD. Otherwise it does
+    /// nothing. Its one caller is the vehicle grapple ([`VehicleGrappleHook::PreSimUpdate`](crate::equipment::grappling_hook::VehicleGrappleHook::PreSimUpdate)).
+    pub unsafe fn TetherActiveWireToVehicleCOM(
+        &mut self,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+        vehicle: *mut crate::vehicle::vehicle::Vehicle,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+                vehicle: *mut crate::vehicle::vehicle::Vehicle,
+            ) = ::std::mem::transmute(Self::TetherActiveWireToVehicleCOM_ADDRESS);
+            f(self as *mut Self as _, holder, vehicle)
         }
     }
     pub const IsHookAimingState_ADDRESS: usize = 0x1408C8EA0;
@@ -245,6 +782,172 @@ impl GrapplingHook {
             f(self as *const Self as _)
         }
     }
+    pub const GetNumDualTethers_ADDRESS: usize = 0x1408E5030;
+    /// The number of dual tethers: the wires of the hook's tether list that are neither invalid
+    /// nor broken and have neither end retracting. The tether release reads it.
+    pub unsafe fn GetNumDualTethers(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::GetNumDualTethers_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetHighestWireTension_ADDRESS: usize = 0x1408E5090;
+    /// The highest tension fraction among the dual tethers that
+    /// [`GetNumDualTethers`](crate::equipment::grappling_hook::GrapplingHook::GetNumDualTethers) counts, or zero without one. A wire's tension
+    /// fraction is updated with its constraint (`CGrapplingHookWire::UpdateWireTension`). The
+    /// player's camera shake and rumble (`CPlayer::UpdateCameraShakeRumble`) read it while the
+    /// tethers are squeezed, with a stronger effect above four fifths.
+    pub unsafe fn GetHighestWireTension(&self) -> f32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> f32 = ::std::mem::transmute(
+                Self::GetHighestWireTension_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const HasValidTethers_ADDRESS: usize = 0x1408E5100;
+    /// Whether the hook's tether list holds a wire that is neither invalid nor broken and has both
+    /// ends attached.
+    pub unsafe fn HasValidTethers(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::HasValidTethers_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const GetRetractAcceleratesReelIn_ADDRESS: usize = 0x1408BD090;
+    /// Whether the retract accelerates a reel: the hook's own retract-accelerates flag is set and
+    /// the retract reel-in boost upgrade is purchased and enabled.
+    pub unsafe fn GetRetractAcceleratesReelIn(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::GetRetractAcceleratesReelIn_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const UpdateDualTetherHandling_ADDRESS: usize = 0x14093A290;
+    /// The per-tick tether input. It reads the retract input's value (`RETRACT_GRAPPLE`, `0..=1`)
+    /// and the release input's click (`RELEASE_GRAPPLE`) from `action_map` (a `CActionMap`), and
+    /// counts [`m_TimeHoldingRetract`](crate::equipment::grappling_hook::GrapplingHook::m_TimeHoldingRetract) and
+    /// [`m_TimeSinceRetractHeld`](crate::equipment::grappling_hook::GrapplingHook::m_TimeSinceRetractHeld). A release click releases the
+    /// tethers. Otherwise the squeeze value is the cube of the retract value, while the hook is
+    /// neither initialising, reeling in, nor holding a custom wire, the character can retract the
+    /// grapple, and the player has the tether retract ability, and zero otherwise. Unless a game
+    /// setting selects otherwise, the squeeze is scaled by a ramp of the hold time, from a tenth of
+    /// the squeeze to all of it over the three tenths of a second after the first three. The value
+    /// goes to [`SqueezeDualTethers`](crate::equipment::grappling_hook::GrapplingHook::SqueezeDualTethers).
+    pub unsafe fn UpdateDualTetherHandling(
+        &mut self,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+        player: *mut ::std::ffi::c_void,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        action_map: *mut ::std::ffi::c_void,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+                player: *mut ::std::ffi::c_void,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                action_map: *mut ::std::ffi::c_void,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::UpdateDualTetherHandling_ADDRESS);
+            f(self as *mut Self as _, holder, player, tuning, action_map, dt)
+        }
+    }
+    pub const ReleaseAllDualTethers_ADDRESS: usize = 0x1408F7A80;
+    /// Releases every non-invalid wire in [`m_Wires`](crate::equipment::grappling_hook::GrapplingHook::m_Wires): plays its detached
+    /// effect, destroys its constraint, detaches both ends, and returns it to
+    /// [`GHWS_ACTIVE_VIRTUAL`](crate::equipment::grappling_hook::WireState::GHWS_ACTIVE_VIRTUAL).
+    /// The disassembler mislabels this function `CGrapplingHook::OnSuccessfulGrappleFromReelIn`.
+    pub unsafe fn ReleaseAllDualTethers(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::ReleaseAllDualTethers_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SqueezeDualTethers_ADDRESS: usize = 0x140923E00;
+    /// Squeezes every wire of the tether list by `squeeze_value` (`0..=1`): each wire rebuilds its
+    /// constraint toward a shorter length and smooths its squeeze factor toward the value. It sets
+    /// [`m_IsSqueezingDualTethers`](crate::equipment::grappling_hook::GrapplingHook::m_IsSqueezingDualTethers).
+    pub unsafe fn SqueezeDualTethers(
+        &mut self,
+        player: *mut ::std::ffi::c_void,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        squeeze_value: f32,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                player: *mut ::std::ffi::c_void,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                squeeze_value: f32,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::SqueezeDualTethers_ADDRESS);
+            f(self as *mut Self as _, player, tuning, squeeze_value, dt)
+        }
+    }
+    pub const CheckReelCollisions_ADDRESS: usize = 0x140948280;
+    /// The reel's stuck check, run by the hook's post-simulation update while the hook is
+    /// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN) and the character is in the reel. Past
+    /// the reel's opening jump, it measures how fast the hips close on the reel target, smoothed
+    /// over ticks; while the character's proxy touches something and that speed is under 1 metre
+    /// per second, a timer runs, and past a fifth of a second the reel is resolved: dropped
+    /// (retract, cancel act) for a custom attachment or on walkable ground, otherwise reattached to
+    /// a nearby foot support or floor, or dropped when none is found.
+    pub unsafe fn CheckReelCollisions(
+        &mut self,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::CheckReelCollisions_ADDRESS);
+            f(self as *mut Self as _, holder, dt)
+        }
+    }
+}
+impl GrapplingHook {
+    /// The hash of the failed fire's one-off usage (`hashlittle("GrappleFail")`), resolved into
+    /// [`m_GrappleFireFailEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_GrappleFireFailEffectUsage).
+    pub const GRAPPLE_FAIL_USAGE: u32 = 3180463715;
+    /// The hash of the fire's one-off usage (`hashlittle("GrappleFire")`): the device's fire sound
+    /// and its muzzle effect. No code names it: it plays only from a track message to the hook
+    /// (`CGrapplingHook::PlayEffectOnMessage`), which finds it in
+    /// [`m_AttachedEffects`](crate::equipment::grappling_hook::GrapplingHook::m_AttachedEffects) by this hash.
+    pub const GRAPPLE_FIRE_USAGE: u32 = 201876191;
+    /// The hash of the pre-fire's one-off usage (`hashlittle("GrapplePreFire")`): a sound with no
+    /// effect, which also plays only from a track message to the hook. Which animation sends it,
+    /// and when, is unverified.
+    pub const GRAPPLE_PRE_FIRE_USAGE: u32 = 87262980;
+    /// The hash of the reel's looping usage (`hashlittle("ReelingIn")`), resolved into
+    /// [`m_ReelingInEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_ReelingInEffectUsage).
+    pub const REELING_IN_USAGE: u32 = 322054904;
+    /// The hash of the release-from-attached one-off usage (`hashlittle("ReleaseFromAttached")`),
+    /// resolved into [`m_ReleaseFromAttachedEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_ReleaseFromAttachedEffectUsage).
+    pub const RELEASE_FROM_ATTACHED_USAGE: u32 = 791276483;
+    /// The hash of the retracting active wire's one-off usage (`hashlittle("Retracting")`),
+    /// resolved into [`m_RetractingActiveWireEffectUsage`](crate::equipment::grappling_hook::GrapplingHook::m_RetractingActiveWireEffectUsage).
+    pub const RETRACTING_USAGE: u32 = 3231152827;
 }
 impl std::convert::AsRef<GrapplingHook> for GrapplingHook {
     fn as_ref(&self) -> &GrapplingHook {
@@ -264,8 +967,10 @@ impl std::convert::AsMut<GrapplingHook> for GrapplingHook {
 /// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN) -- during which
 /// `NReeledInController::RotateToGrappleTarget` rotates the character's root toward the target as
 /// the reel pulls them in -- and completes into one of the `GHS_REELED_*` attachment states
-/// depending on the landing surface and pose. `GHS_CUSTOM_ACTIVE_WIRE` is a wire held open outside
-/// the reel flow (tethers).
+/// depending on the landing surface and pose.
+/// [`GHS_CUSTOM_ACTIVE_WIRE`](crate::equipment::grappling_hook::GrapplingHookState::GHS_CUSTOM_ACTIVE_WIRE) is the state of a scripted wire fired
+/// outside the reel flow (`CGrapplingHook::FireHookCustom`, which the vehicle grapple and the
+/// stunt-position grapple use).
 pub enum GrapplingHookState {
     GHS_INITIALIZING = 0isize as _,
     GHS_INACTIVE = 1isize as _,
@@ -282,12 +987,197 @@ fn _GrapplingHookState_size_check() {
     }
     unreachable!()
 }
-#[repr(C, align(8))]
-/// A single grapple wire (`CGrapplingHookWire`, a `CGameObject`): two `CWireEnd`s (near/device and
-/// far/hook), the physics constraint, and the wire rendering. Only referenced through
-/// [`GrapplingHook::m_ActiveWire`](crate::equipment::grappling_hook::GrapplingHook::m_ActiveWire) here; the layout is unmapped.
-pub struct GrapplingHookWire {}
-impl GrapplingHookWire {}
+#[repr(C, align(16))]
+/// A single grapple wire (`CGrapplingHookWire`, a `CGameObject`): two [`WireEnd`](crate::equipment::wire_end::WireEnd)s, the physics
+/// constraint, and the wire rendering. [`m_WireEnds[0]`](crate::equipment::grappling_hook::GrapplingHookWire::m_WireEnds) is the hook (far) end
+/// and `m_WireEnds[1]` the device end. Only some members are bound.
+pub struct GrapplingHookWire {
+    _field_0: [u8; 2092],
+    /// The wire's state; see [`WireState`](crate::equipment::grappling_hook::WireState).
+    pub m_WireState: crate::equipment::grappling_hook::WireState,
+    /// The state before the last change.
+    pub m_PreviousWireState: crate::equipment::grappling_hook::WireState,
+    /// The longest the wire may run, metres: the tuning's
+    /// [`m_GrappleDistance`](crate::equipment::grappling_hook::GrappleTuning::m_GrappleDistance) when the hook fires it. An end
+    /// flying past it retracts.
+    pub m_MaxLength: f32,
+    _field_838: [u8; 8],
+    /// The hook (far) end, then the device end.
+    pub m_WireEnds: [crate::equipment::wire_end::WireEnd; 2],
+    pub m_WireId: u32,
+    _field_c24: [u8; 4],
+    /// Whether the wire is the hook's [`m_ActiveWire`](crate::equipment::grappling_hook::GrapplingHook::m_ActiveWire).
+    pub m_IsActiveWire: bool,
+    /// Whether the wire is the hook's [`m_AttachmentWire`](crate::equipment::grappling_hook::GrapplingHook::m_AttachmentWire).
+    pub m_IsAttachmentWire: bool,
+    _field_c2a: [u8; 6],
+}
+fn _GrapplingHookWire_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0xC30], GrapplingHookWire>([0u8; 0xC30]);
+    }
+    unreachable!()
+}
+impl GrapplingHookWire {
+    pub const Update_ADDRESS: usize = 0x14094DE00;
+    /// Advances both ends, creates or updates a physical constraint when
+    /// [`ShouldUseConstraint`](crate::equipment::grappling_hook::GrapplingHookWire::ShouldUseConstraint) permits it, and updates the wire effects.
+    pub unsafe fn Update(
+        &mut self,
+        owner: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                owner: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(self as *mut Self as _, owner, tuning, dt)
+        }
+    }
+    pub const ShouldUseConstraint_ADDRESS: usize = 0x1408CC640;
+    /// Whether both ends have live proxies, neither end is invalid, both proxies permit a
+    /// constraint, and at least one requests a physical constraint. The disassembler mislabels
+    /// this function as `CWireEnd::GetAttachmentObjectInfo`.
+    pub unsafe fn ShouldUseConstraint(&self) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> bool = ::std::mem::transmute(
+                Self::ShouldUseConstraint_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    pub const CreateConstraint_ADDRESS: usize = 0x1408F3DE0;
+    /// Creates the spring and linear-motor constraint between distinct valid proxy bodies. A new
+    /// attachment snapshots the current length into [`m_MaxLength`](crate::equipment::grappling_hook::GrapplingHookWire::m_MaxLength); a wire
+    /// that is neither active nor an attachment wire also receives a safety buffer. The spring's
+    /// length is the maximum length less `tether_shorten_length`, bounded away from zero. The
+    /// disassembler mislabels this function as `NPfxVehicle::SStaticWheelFrictionData::addFrictionConstraint`.
+    pub unsafe fn CreateConstraint(
+        &mut self,
+        tether_shorten_length: f32,
+        reattaching: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                tether_shorten_length: f32,
+                reattaching: bool,
+            ) = ::std::mem::transmute(Self::CreateConstraint_ADDRESS);
+            f(self as *mut Self as _, tether_shorten_length, reattaching)
+        }
+    }
+    pub const DestroyConstraint_ADDRESS: usize = 0x1408CC6D0;
+    /// Removes the wire's physics constraint and releases its data.
+    pub unsafe fn DestroyConstraint(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DestroyConstraint_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const UpdateConstraint_ADDRESS: usize = 0x1408F4250;
+    /// Updates the existing spring and motor, including their pivots and tension response.
+    pub unsafe fn UpdateConstraint(
+        &mut self,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::UpdateConstraint_ADDRESS);
+            f(self as *mut Self as _, tuning, dt)
+        }
+    }
+    pub const UpdateWireTension_ADDRESS: usize = 0x140944CB0;
+    /// Computes the wire tension and break state and sends tension to both attachment proxies.
+    pub unsafe fn UpdateWireTension(
+        &mut self,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::UpdateWireTension_ADDRESS);
+            f(self as *mut Self as _, tuning, dt)
+        }
+    }
+    pub const SetupHookCastFilters_ADDRESS: usize = 0x1408CC5C0;
+    /// Sets both ends' cast-filter ignore objects
+    /// ([`WireEndCastFilter::m_IgnoreObject1`](crate::equipment::wire_end::WireEndCastFilter::m_IgnoreObject1)
+    /// and [`m_IgnoreObject2`](crate::equipment::wire_end::WireEndCastFilter::m_IgnoreObject2)).
+    pub unsafe fn SetupHookCastFilters(
+        &mut self,
+        ignore1: *mut ::std::ffi::c_void,
+        ignore2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                ignore1: *mut ::std::ffi::c_void,
+                ignore2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::SetupHookCastFilters_ADDRESS);
+            f(self as *mut Self as _, ignore1, ignore2)
+        }
+    }
+    pub const PushGrapplingHookWire_ADDRESS: usize = 0x140909A60;
+    /// Appends a retained wire reference to a grapple wire list. Reallocation preserves the shared
+    /// references held by the existing list entries.
+    pub unsafe fn PushGrapplingHookWire(
+        wires: *mut crate::types::std_vector::Vector<
+            crate::types::shared_ptr::SharedPtr<
+                crate::equipment::grappling_hook::GrapplingHookWire,
+            >,
+        >,
+        wire: *const crate::types::shared_ptr::SharedPtr<
+            crate::equipment::grappling_hook::GrapplingHookWire,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                wires: *mut crate::types::std_vector::Vector<
+                    crate::types::shared_ptr::SharedPtr<
+                        crate::equipment::grappling_hook::GrapplingHookWire,
+                    >,
+                >,
+                wire: *const crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::grappling_hook::GrapplingHookWire,
+                >,
+            ) = ::std::mem::transmute(Self::PushGrapplingHookWire_ADDRESS);
+            f(wires, wire)
+        }
+    }
+    pub const ResetGrapplingHookWire_ADDRESS: usize = 0x1408EA870;
+    /// Releases and clears one shared wire reference.
+    pub unsafe fn ResetGrapplingHookWire(
+        wire: *mut crate::types::shared_ptr::SharedPtr<
+            crate::equipment::grappling_hook::GrapplingHookWire,
+        >,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                wire: *mut crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::grappling_hook::GrapplingHookWire,
+                >,
+            ) = ::std::mem::transmute(Self::ResetGrapplingHookWire_ADDRESS);
+            f(wire)
+        }
+    }
+}
 impl std::convert::AsRef<GrapplingHookWire> for GrapplingHookWire {
     fn as_ref(&self) -> &GrapplingHookWire {
         self
@@ -299,14 +1189,66 @@ impl std::convert::AsMut<GrapplingHookWire> for GrapplingHookWire {
     }
 }
 #[repr(C, align(8))]
+/// The hang task (`NStateTask_GrapplingHangTask`): the character state task that runs while the
+/// character hangs under a grapple line.
+pub struct NStateTask_GrapplingHangTask {}
+impl NStateTask_GrapplingHangTask {
+    pub const Update_ADDRESS: usize = 0x1408151D0;
+    /// The per-tick update. While the hook's
+    /// [`m_GrapplingHangProxy`](crate::equipment::grappling_hook::GrapplingHook::m_GrapplingHangProxy) is
+    /// [`IsOk`](crate::equipment::grappling_hook::GrapplingHangPhysicsProxy::IsOk), it post-updates the proxy for the context's
+    /// time step, reads the move stick (squared to a circle and turned into the world through the
+    /// camera's input matrix), and blends the proxy body's angular velocity toward a yaw rate: toward
+    /// the weapon aim point while the character aims a weapon or the grapple or throws a grenade,
+    /// and toward zero otherwise. A gun held in a hand that fired within the last tenth of a second
+    /// pushes the body back along the weapon's forward axis at that hand. Two stick-driven swings
+    /// follow, each behind its own flag: a discrete swing impulse
+    /// ([`GrapplingHangTask_EnableDiscreteSwing`](get_GrapplingHangTask_EnableDiscreteSwing)) and a continuous one scaled by the stick's
+    /// magnitude ([`GrapplingHangTask_EnableSmallImpulseSwing`](get_GrapplingHangTask_EnableSmallImpulseSwing),
+    /// [`GrapplingHangTask_SmallImpulseSwingMagnitude`](get_GrapplingHangTask_SmallImpulseSwingMagnitude)), both applied at the hips
+    /// ([`Character::GetHipsPosition`](crate::character::character::Character::GetHipsPosition)) with
+    /// [`PfxRigidBody::ApplyImpulse`](crate::physics::PfxRigidBody::ApplyImpulse). Nothing in this build sets either flag, so the stick does not
+    /// swing a hanging character. Without a valid proxy it runs the drop-out alignment instead, or
+    /// cancels the hang.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_GrapplingHangTask> for NStateTask_GrapplingHangTask {
+    fn as_ref(&self) -> &NStateTask_GrapplingHangTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_GrapplingHangTask> for NStateTask_GrapplingHangTask {
+    fn as_mut(&mut self) -> &mut NStateTask_GrapplingHangTask {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The in-air grapple fire motion state task (`NStateTask_InAirGrappleFireMotionTask`). Like the
 /// other `NStateTask` functions, it runs against the character's state context.
 pub struct NStateTask_InAirGrappleFireMotionTask {}
 impl NStateTask_InAirGrappleFireMotionTask {
     pub const OnEnter_ADDRESS: usize = 0x140810B60;
-    /// Enters the task, orienting the fire motion from the camera matrix
-    /// (`CGameCameraManager::GetCameraMatrix`, read directly rather than through the aim slot) and
-    /// the latched target ([`GrapplingHook::GetLastGrappleTargetPos`](crate::equipment::grappling_hook::GrapplingHook::GetLastGrappleTargetPos)).
+    /// Enters the task. While either of the two character state bits it tests is set (which state
+    /// they mark is unverified), and the latched target
+    /// ([`GrapplingHook::GetLastGrappleTargetPos`](crate::equipment::grappling_hook::GrapplingHook::GetLastGrappleTargetPos)) lies within 2 metres of the character
+    /// horizontally (a fire nearly straight up or down), it arms a half-second horizontal boost
+    /// from the character toward the camera's position (`CGameCameraManager::GetCameraMatrix`, read
+    /// directly rather than through the aim slot), which the task's update applies; otherwise the
+    /// update damps the character's horizontal velocity instead. Either way the update turns the
+    /// character toward the grapple target over the fire segment.
     pub unsafe fn OnEnter(
         ctx: *mut crate::state::StateContext,
         p1: *mut ::std::ffi::c_void,
@@ -333,4 +1275,346 @@ for NStateTask_InAirGrappleFireMotionTask {
     fn as_mut(&mut self) -> &mut NStateTask_InAirGrappleFireMotionTask {
         self
     }
+}
+#[repr(C, align(8))]
+/// The reel-in state task (`NStateTask_ReelIn`): the character state task that carries the
+/// character along the grapple line to its target while the hook is
+/// [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN).
+pub struct NStateTask_ReelIn {}
+impl NStateTask_ReelIn {
+    pub const Update_ADDRESS: usize = 0x140841470;
+    /// The per-tick update. It cancels the reel (queues the grapple cancel act, rights the
+    /// character, and retracts the active wire with [`GrapplingHook::RetractActiveWire`](crate::equipment::grappling_hook::GrapplingHook::RetractActiveWire)) when the
+    /// context's time step is not positive, when the active wire's far end is not attached or the
+    /// hook has left [`GHS_REELING_IN`](crate::equipment::grappling_hook::GrapplingHookState::GHS_REELING_IN), or when the hook gives
+    /// no reel target or direction. Otherwise it reads the character's velocity, advances it with
+    /// [`UpdateReelVelocity`](crate::equipment::grappling_hook::NStateTask_ReelIn::UpdateReelVelocity), hands it to the character with
+    /// [`UpdateMotion`](crate::equipment::grappling_hook::NStateTask_ReelIn::UpdateMotion), and finishes the reel with
+    /// [`FinishReel`](crate::equipment::grappling_hook::NStateTask_ReelIn::FinishReel) on arrival, tested by what the far end is attached to
+    /// ([`AttachmentObjectInfo`](crate::equipment::grapple_point_proxy::AttachmentObjectInfo)):
+    ///
+    /// - a character: once the distance left after this tick's travel along the line is within the
+    ///   tuning's kick distance;
+    /// - a vehicle: [`CheckReelToVehicleRelease`](crate::equipment::grappling_hook::NStateTask_ReelIn::CheckReelToVehicleRelease);
+    /// - anything else: when the character faces along the line within
+    ///   [`GrappleTuning::m_ReelInArrivedDistance`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInArrivedDistance) of the target, or when the distance less this
+    ///   tick's travel (the speed, at least 1 metre per second, times the step) is under 0.4 metres.
+    ///
+    /// No test times the reel out or watches its progress: a velocity that does not close the
+    /// distance keeps the task running. The hook's post-simulation update watches for a reel stuck
+    /// against geometry ([`GrapplingHook::CheckReelCollisions`](crate::equipment::grappling_hook::GrapplingHook::CheckReelCollisions)).
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        properties: *mut ::std::ffi::c_void,
+        instance: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                properties: *mut ::std::ffi::c_void,
+                instance: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, properties, instance)
+        }
+    }
+    pub const UpdateMotion_ADDRESS: usize = 0x140838690;
+    /// Hands the reel's velocity to the character: turns the character toward `target_dir` (over
+    /// the act's rotation segment, or at a fixed rate), sets its motion state to
+    /// [`MOTION_STATE_TASK_DEFINED`](crate::character::character::Character::MOTION_STATE_TASK_DEFINED),
+    /// flags the proxy's input velocity as game controlled
+    /// ([`CharacterInput::gameControledVelocity`](crate::physics::CharacterInput::gameControledVelocity)),
+    /// and sets `wanted_velocity` as the character's wanted world velocity. The velocity is the
+    /// whole of the character's motion for the step.
+    pub unsafe fn UpdateMotion(
+        character: *mut crate::character::character::Character,
+        target_dir: *const crate::types::math::Vector3,
+        wanted_velocity: *const crate::types::math::Vector3,
+        instance: *mut ::std::ffi::c_void,
+        properties: *mut ::std::ffi::c_void,
+        layer: i32,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+                target_dir: *const crate::types::math::Vector3,
+                wanted_velocity: *const crate::types::math::Vector3,
+                instance: *mut ::std::ffi::c_void,
+                properties: *mut ::std::ffi::c_void,
+                layer: i32,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::UpdateMotion_ADDRESS);
+            f(character, target_dir, wanted_velocity, instance, properties, layer, dt)
+        }
+    }
+    pub const FinishReel_ADDRESS: usize = 0x140841100;
+    /// Ends the reel at `target_position` into the reeled state its attachment setup chose: a
+    /// perch, a hang, upside down, a vehicle's stunt position, or a fall. [`Update`](crate::equipment::grappling_hook::NStateTask_ReelIn::Update)
+    /// is its only caller.
+    pub unsafe fn FinishReel(
+        character: *mut crate::character::character::Character,
+        hook: *const crate::types::shared_ptr::SharedPtr<
+            crate::equipment::grappling_hook::GrapplingHook,
+        >,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        target_position: *const crate::types::math::Vector3,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+                hook: *const crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::grappling_hook::GrapplingHook,
+                >,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                target_position: *const crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::FinishReel_ADDRESS);
+            f(character, hook, tuning, target_position)
+        }
+    }
+    pub const CheckReelToVehicleRelease_ADDRESS: usize = 0x14083B060;
+    /// The arrival test of a reel onto a vehicle: within a fixed distance of the vehicle's entry
+    /// point (`target_position`), overshooting it along the reel's direction
+    /// (`to_target_next` is the offset to it after this tick's travel), or a sphere around it
+    /// predicted to be met within this tick's travel. It also sets the character's collision
+    /// group to the vehicle's while the vehicle's entry is chosen. The disassembler mislabels it
+    /// `CJumpToFallTransitionState::UpdateSamplers`.
+    pub unsafe fn CheckReelToVehicleRelease(
+        character: *mut crate::character::character::Character,
+        hook: *const crate::types::shared_ptr::SharedPtr<
+            crate::equipment::grappling_hook::GrapplingHook,
+        >,
+        dt: f32,
+        target_position: *const crate::types::math::Vector3,
+        target_velocity: *const crate::types::math::Vector3,
+        to_target_next: *const crate::types::math::Vector3,
+        distance_to_target: f32,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+                hook: *const crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::grappling_hook::GrapplingHook,
+                >,
+                dt: f32,
+                target_position: *const crate::types::math::Vector3,
+                target_velocity: *const crate::types::math::Vector3,
+                to_target_next: *const crate::types::math::Vector3,
+                distance_to_target: f32,
+            ) -> bool = ::std::mem::transmute(Self::CheckReelToVehicleRelease_ADDRESS);
+            f(
+                character,
+                hook,
+                dt,
+                target_position,
+                target_velocity,
+                to_target_next,
+                distance_to_target,
+            )
+        }
+    }
+    pub const UpdateReelVelocity_ADDRESS: usize = 0x14083A0D0;
+    /// Advances the reel's velocity by `dt`. It accelerates `velocity` (in and out: the
+    /// character's world velocity less the velocity it inherited) along `wanted_reel_direction` by
+    /// [`GrappleTuning::m_ReelInAccel`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInAccel), or [`GrappleTuning::m_RetractReelInAccel`](crate::equipment::grappling_hook::GrappleTuning::m_RetractReelInAccel) while the
+    /// character's control parameters hold the retract context flag, adds the wind-up,
+    /// collision-avoidance, and
+    /// vehicle-entry pushes, drags the velocity across the line, clamps its speed along the line
+    /// between [`GrappleTuning::m_ReelInSpeedMin`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInSpeedMin) and the top speed
+    /// ([`GrappleTuning::m_ReelInSpeedMax`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInSpeedMax), or [`GrappleTuning::m_RetractReelInSpeedMax`](crate::equipment::grappling_hook::GrappleTuning::m_RetractReelInSpeedMax) while the
+    /// reel boost applies), stops at the target within [`GrappleTuning::m_ReelInDragMaxDistance`](crate::equipment::grappling_hook::GrappleTuning::m_ReelInDragMaxDistance),
+    /// and adds back the blended inherited velocity. The inherited velocity blends, with a
+    /// smoothstep over the reel's running time, from the velocity the character carried into the
+    /// reel toward the far end's attach point velocity
+    /// ([`GrapplePointProxy::GetObjectAttachPointVelocity`](crate::equipment::grapple_point_proxy::GrapplePointProxy::GetObjectAttachPointVelocity)),
+    /// so a reel onto a moving body chases it; it is zero without an attached far end. It applies
+    /// no gravity: [`UpdateMotion`](crate::equipment::grappling_hook::NStateTask_ReelIn::UpdateMotion) hands the result to the character as its
+    /// whole velocity. `current_position` is the character's
+    /// position and `distance_to_target` its distance from the target. The reel task's update
+    /// calls it once per tick, and the trajectory prediction (`SimulateImmediateTrajectory`) calls
+    /// it per predicted step with `is_simulating` set, which only suppresses its debug drawing. The
+    /// disassembler mislabels it `NStateTask_ReelIn::DoPreReelBlockCheck`.
+    pub unsafe fn UpdateReelVelocity(
+        character: *mut crate::character::character::Character,
+        hook: *const crate::types::shared_ptr::SharedPtr<
+            crate::equipment::grappling_hook::GrapplingHook,
+        >,
+        velocity: *mut crate::types::math::Vector3,
+        instance_properties: *mut ::std::ffi::c_void,
+        current_position: *const crate::types::math::Vector3,
+        wanted_reel_direction: *const crate::types::math::Vector3,
+        distance_to_target: f32,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        dt: f32,
+        is_simulating: bool,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+                hook: *const crate::types::shared_ptr::SharedPtr<
+                    crate::equipment::grappling_hook::GrapplingHook,
+                >,
+                velocity: *mut crate::types::math::Vector3,
+                instance_properties: *mut ::std::ffi::c_void,
+                current_position: *const crate::types::math::Vector3,
+                wanted_reel_direction: *const crate::types::math::Vector3,
+                distance_to_target: f32,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                dt: f32,
+                is_simulating: bool,
+            ) = ::std::mem::transmute(Self::UpdateReelVelocity_ADDRESS);
+            f(
+                character,
+                hook,
+                velocity,
+                instance_properties,
+                current_position,
+                wanted_reel_direction,
+                distance_to_target,
+                tuning,
+                dt,
+                is_simulating,
+            )
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_ReelIn> for NStateTask_ReelIn {
+    fn as_ref(&self) -> &NStateTask_ReelIn {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_ReelIn> for NStateTask_ReelIn {
+    fn as_mut(&mut self) -> &mut NStateTask_ReelIn {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The reeled-in ledge climb's motion task (`NStateTask_ReeledInLedgeClimbMotionTask`): the
+/// character state task that carries the character over a ledge it has reeled in to. The grapple's
+/// climb (`ACT_GRPL_CLIMB` into `S_GRAPPLE_CLIMB_START` in `rico_base.afsmb`) is the only ledge
+/// climb the player's state machine has: no state machine under `animations/jc_statemachine` uses
+/// the vault or obstacle-climb acts.
+pub struct NStateTask_ReeledInLedgeClimbMotionTask {}
+impl NStateTask_ReeledInLedgeClimbMotionTask {
+    pub const OnEnter_ADDRESS: usize = 0x140845520;
+    /// Enters the task: records the character's upright orientation and its measured world
+    /// velocity, and reads the climb's speed tuning from the character's blackboard.
+    pub unsafe fn OnEnter(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::OnEnter_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+    pub const Update_ADDRESS: usize = 0x140845630;
+    /// The per-tick update. Runs the non-swimming movement update, then drives the character over
+    /// the ledge with a code-controlled velocity: projected along the climb from the climb
+    /// segment's local time (`NGrapplingMotionUtils::ProjectClimbOverVelocityAtTime`) while the
+    /// segment plays, the animation's root velocity after it, plus the velocity the character
+    /// entered with. It sets the motion state to
+    /// [`MOTION_STATE_TASK_DEFINED`](crate::character::character::Character::MOTION_STATE_TASK_DEFINED)
+    /// and writes the proxy's wanted velocity. It runs on every tick its state is active.
+    pub unsafe fn Update(
+        ctx: *mut crate::state::StateContext,
+        p1: *mut ::std::ffi::c_void,
+        p2: *mut ::std::ffi::c_void,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                ctx: *mut crate::state::StateContext,
+                p1: *mut ::std::ffi::c_void,
+                p2: *mut ::std::ffi::c_void,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(ctx, p1, p2)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_ReeledInLedgeClimbMotionTask>
+for NStateTask_ReeledInLedgeClimbMotionTask {
+    fn as_ref(&self) -> &NStateTask_ReeledInLedgeClimbMotionTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_ReeledInLedgeClimbMotionTask>
+for NStateTask_ReeledInLedgeClimbMotionTask {
+    fn as_mut(&mut self) -> &mut NStateTask_ReeledInLedgeClimbMotionTask {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The vehicle grapple (`CVehicleGrappleHook`): a grapple fired from a vehicle seat, which fires
+/// the holder's hook at the player aim's target and tethers what it hits to the vehicle. The hook
+/// embeds one. Nothing calls its update: the hook's pre-simulation update
+/// ([`GrapplingHook::OnPreSimUpdate`](crate::equipment::grappling_hook::GrapplingHook::OnPreSimUpdate)) calls it only under a static switch
+/// (`CGrapplingHook::s_VehicleHookEnabled`) that this build compiles out, so the feature is
+/// present but unreachable.
+pub struct VehicleGrappleHook {}
+impl VehicleGrappleHook {
+    pub const PreSimUpdate_ADDRESS: usize = 0x14094D910;
+    /// The vehicle grapple's state machine, run while the holder rides in a vehicle
+    /// ([`Character::IsInRidingInVehicleState`](crate::character::character::Character::IsInRidingInVehicleState)):
+    /// a press of [`FIRE_GRAPPLE`](crate::input::input_action_map::Action::FIRE_GRAPPLE) fires through
+    /// [`GrapplingHook::FireHookCustom`](crate::equipment::grappling_hook::GrapplingHook::FireHookCustom) at the player aim's target position, ignoring the
+    /// vehicle, with no game object and no bone; once the press is released and the far end is
+    /// attached (the active wire not [`GHWS_INVALID`](crate::equipment::grappling_hook::WireState::GHWS_INVALID) and its far end
+    /// holding a proxy), it tethers the wire to the vehicle
+    /// ([`GrapplingHook::TetherActiveWireToVehicleCOM`](crate::equipment::grappling_hook::GrapplingHook::TetherActiveWireToVehicleCOM)). With no active wire left it cancels and
+    /// starts over ([`GrapplingHook::CancelActiveWire`](crate::equipment::grappling_hook::GrapplingHook::CancelActiveWire)).
+    pub unsafe fn PreSimUpdate(
+        &mut self,
+        holder: *const crate::types::shared_ptr::SharedPtr<
+            crate::character::character::Character,
+        >,
+        player: *mut ::std::ffi::c_void,
+        action_map: *mut ::std::ffi::c_void,
+        tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+        p5: bool,
+        dt: f32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                holder: *const crate::types::shared_ptr::SharedPtr<
+                    crate::character::character::Character,
+                >,
+                player: *mut ::std::ffi::c_void,
+                action_map: *mut ::std::ffi::c_void,
+                tuning: *const crate::equipment::grappling_hook::GrappleTuning,
+                p5: bool,
+                dt: f32,
+            ) = ::std::mem::transmute(Self::PreSimUpdate_ADDRESS);
+            f(self as *mut Self as _, holder, player, action_map, tuning, p5, dt)
+        }
+    }
+}
+impl std::convert::AsRef<VehicleGrappleHook> for VehicleGrappleHook {
+    fn as_ref(&self) -> &VehicleGrappleHook {
+        self
+    }
+}
+impl std::convert::AsMut<VehicleGrappleHook> for VehicleGrappleHook {
+    fn as_mut(&mut self) -> &mut VehicleGrappleHook {
+        self
+    }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// A grapple wire's state (`CGrapplingHookWire::EWireState`).
+pub enum WireState {
+    GHWS_ACTIVE_VIRTUAL = 0isize as _,
+    GHWS_ACTIVE_PHYSICAL = 1isize as _,
+    GHWS_BROKEN = 2isize as _,
+    GHWS_INVALID = 3isize as _,
+}
+fn _WireState_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], WireState>([0u8; 0x4]);
+    }
+    unreachable!()
 }

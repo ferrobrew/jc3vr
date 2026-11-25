@@ -1,0 +1,146 @@
+# The grip
+
+The grip takes things: a gun from a holster or a rack, a grenade from its pouch, a prop off the ground, the steering wheel, a door's handle, a wall to climb. This doc is the one description of how a hand's grip decides what it takes, when it takes it, what letting go does, and the markers that show it. The subsystems that act on what was taken describe their own side ([physical-weapons.md](physical-weapons.md), [physical-hands.md](physical-hands.md), [steering-wheel.md](steering-wheel.md), and the others linked below). The code is `payload/src/controllers/grab/`.
+
+## Decisions
+
+- Hold to hold, everywhere. A gun, a prop, a grenade, a control, or anything else stays in the hand only while the hand stays closed (see ["The grip's press"](#the-grips-press)). Letting go drops it with the hand's velocity, or docks it in the socket that fits it when the hand is over one (a rifle on the back, a pistol on the hip).
+- One targeting rule. Of everything a hand is within reach of, the target whose grab point is nearest the hand wins, whatever subsystem placed it: the sockets and pouches on the body, objects in the world, weapons (in the world, on racks and in lockers, in characters' hands, docked on the body), vehicle controls, doors, characters, and surfaces to climb.
+- Targeting runs continuously while the grip is held. A hand closed in the air and then laid on a handle takes the handle.
+- An empty grip in the air is a fist and fires no game action. A grip on a surface the hand touches climbs it. The grapple is on the off-hand's upper face button, not the grip ([controllers-and-roomscale.md, "On foot"](controllers-and-roomscale.md#on-foot)).
+- In a vehicle and in the wingsuit the grips fire nothing either: the vehicle weapons are on the upper face buttons, which fire a gun held in the hand instead ([controllers-and-roomscale.md, "Land vehicles"](controllers-and-roomscale.md#land-vehicles-car-motorcycle-in-the-last-rows)), and the suit's on the triggers.
+- Every target has a marker in its kind's colour, and the one a squeeze would take is highlighted before the squeeze. The markers are anchored at render time.
+
+## Targets
+
+Everything a hand can take is one `GripTarget` (`grab/target.rs`):
+
+- what a squeeze takes, a `GrabVolume`, which also names the subsystem that acts on the grab (`GrabVolume::consumer`);
+- the one hand that may take it, or either;
+- its tier: a handle, a target, a fallback, a remote target, or a touch target (below);
+- its reach: a grab point in the cockpit frame with a radius around it, reached by one of the hand's two points, or a distance the providing subsystem measured itself;
+- the hand that holds it now, if one does;
+- its marker: where it is drawn, the surface it lies on, its size, its style, and when it shows.
+
+A hand reaches every target as it is drawn: the holsters and pouches on Rico's body, a held gun's parts, what lies on the character, the world, and the cockpit.
+
+The holsters and pouches ride Rico's skeleton, the body the player sees, through a crouch, a lean, a fall, or the parachute, so what the player sees on the body is where they reach ([controllers.md](controllers.md#sockets-pouches-the-foregrip-and-the-action-runs-tier), [rig.md](../body/rig.md#the-bodys-volumes-on-ricos-skeleton)). Where Rico's body and the player's disagree, the rig closes the gap, rather than the volumes following the player's body.
+
+The providers place their targets on every input tick:
+
+| Provider | Targets | Consumer |
+| --- | --- | --- |
+| The weapon handling (`weapons/begin/`) | The holsters, the grenade, C4, and reload pouches (each with a reach margin, and only while it has something to give: a grenade, room for another charge, or a round in reserve), a long gun docked on a shoulder where the hand touches it, the carried weapons' sockets, the held gun's grip, the held grenade, and the held charge (each to take it over from the other hand), foregrip, action, and magazine well, a braced foregrip as held, the guns in characters' hands, on racks, and in lockers (each at the point of the gun nearest the hand), a live grenade or a dropped one, the surface a held charge would stick to, a charge the player placed (to take it back), and a magazine in the world | `weapons::finish_tick` |
+| The vehicle handling (`vehicles/begin.rs`) | The driver's controls (one grab point per hand on each), the cockpit's buttons, the parachute's handles (each with a reach margin), and the mounted gun's handles, with what a hand holds as held | `vehicles::finish_tick` |
+| The physical hands (`physical_hands/targets.rs`) | What each empty hand's reach found (an object, a hinged object, a weapon, a door, a character), every door near the hand by its handle, what a hand holds, a surface to climb, and the helicopter the player hangs from | `pickup::finish_tick`, `climb::finish_tick`, `stunt::finish_tick` |
+
+Each subsystem only provides and consumes. The input tick (`bindings::input_tick`) gathers the targets, resolves the hands among them, steps the grips, and hands each grab to the subsystem its target names.
+
+## Resolving a hand
+
+`grab::resolve` finds, for each hand, every target it may take and is within reach of, and the one its grip would take:
+
+1. A touch target is never taken. It is worked by the hand without a squeeze (a cockpit button pressed by the palm, a gun's magazine well that a round goes into on contact), and is in the list only for its marker.
+2. A mounted gun's handle in reach wins over every other target: it sits on the gun's own body and its holder, which the nearest grab point would take by a few millimetres, and a grip on the body is a loose hold on a hinge the hand cannot turn. A loser to it is logged as `a mounted gun's handle is in reach`. Otherwise, of the targets in reach, the nearest grab point wins. Equally near ones go to the first placed, and each provider places what a hand holds first, so a hand keeps what it holds.
+3. With no target in reach, the nearest fallback wins. The fallbacks are a surface to climb, the helicopter to hang from, and the reach margins around the pouches and the parachute's handles. A hand that reaches for anything resting on a surface touches that surface too, so a surface ranks below everything a hand reaches for on purpose; and a hand feeling for a pouch lands a little off it more often than not, so a press just outside a pouch still takes from it when nothing else is near.
+4. With nothing at all in reach, not even a fallback, a remote target wins: the thing out of reach under the grapple's aim that the empty grapple hand would snatch ([grapple-snatch.md](grapple-snatch.md)). Its reach is measured, so it is always in reach when offered, and it is offered only to the grapple hand, empty, on foot, with the hook free and the grapple button up. A fist never takes it: only a press aimed at it arms the snatch, so a closed hand swung past a gun under the aim does nothing.
+5. A hand with nothing in reach, or only a remote target, takes the slot on the body (a socket or a pouch) it was last in reach of within `grab::tick::RECALL_S` (0.3 s), if that slot is still offered to it (`grab::resolve::recall`); the press's log notes `recalled the ... the hand left ... ms ago`. A hand reaching for a holster or a pouch often starts to pull away as the press lands, and on a force-sensing grip the press lands a few frames after the fingers close: in the 10 November 17:07 session the right hand reached over the left shoulder for the launcher with its "Left back" hint showing, and pressed a frame after the hint went (t 178.98), and the C4 pouch presses that missed had been inside its reach a tenth of a second before.
+
+Targets are reached by the hand's grip as it is drawn, with one exception for things on the floor (`grab::resolve::reach_low`): a grenade or a magazine lying there, offered to one hand, is also reached from that hand's controller grip (before the remap onto Rico's arms) once the controller is more than 0.1 m below the drawn grip and the drawn grip is out of reach. Rico's crouch does not go as low as the player's, so in the 2 November 2026 session a player crouched with the controller 2 cm off the floor had Rico's drawn hand about 0.75 m above his feet, and three presses missed the grenade on the floor by 65 to 193 mm. A floor target reached that way is offered at the controller's distance.
+
+The physical hands' reach is measured by their own casts on the simulation tick, so its targets come with their distance and are in reach whenever they are offered. A surface to climb is offered only where the reach found one: a hand that merely presses into something the reach did not find offers nothing, since a grip there would have nothing to hold.
+
+## The grip's press
+
+Each hand's grip runs a small state machine (`grab/latch.rs`, `GripLatch`), stepped by the binding tables every input tick:
+
+- Open. A press takes the target the hand would take. With nothing in reach, a press on a grip that a game action of the mode reads drives that action for the whole press. Otherwise the hand closes into a fist.
+- Fist. The fist takes the first target the hand comes to within 0.2 s of closing, however fast the hand moves, so a hand that closes a moment before it reaches a handle still takes it; after that, only while the hand moves slower than 1.2 m/s, and then, for the grapple's hand while its line is out or reeling (its fist holds the line), never a socket or a pouch on the body; the other hand's slow fist still reaches them. A fist that stays closed and moves fast stays a fist: a punch does not take what it strikes (the hand bodies deal it as a blow), and a fist swung past the hip draws nothing. The hand's speed is measured against the room, and the body can swing under a still hand (a grapple swing, a landing): on the 14 November take a fist closed on the grapple line took a holstered gun off the hip twice as the body moved under it, and threw it when the hand let go of the line.
+- Holding. The press took a target, and holds it until the hand opens. While it holds, no game action reads the grip.
+- Open again. The hand opening lets go of whatever the press took: each holder reads it itself, from the one rule below.
+
+A hand is closed from a grip press until it opens (`bindings::controls::ClosedHand`, read as `HandControls::hold`). On a Touch controller the hand opens when the press ends. The Index controller's grip presses on its force, a deliberate squeeze, and a hand wrapped round a handle relaxes that force toward nothing while it holds on: in the 6 November 2026 session ten of the twenty-one wheel losses were the force sagging to under 0.06 with the capacitive squeeze still full. So on a force-sensing grip the hand stays closed while the grip's squeeze value, the fingers' capacitive sense round the handle, stays at or above the value grips release at (`input.squeeze_press.release`, 0.5), and opens when the fingers come off. Only a press closes the hand, so fingers resting round the handle keep a hold but never start one, and a fist or a game action on the grip still ends with the press. Every hold reads the rule: the grab latch, the guns and their parts, the pickups, the climb and the stunt holds, the snatch's catch, the vehicle controls, the mounted gun's and the parachute's handles, the ripcord, and the magazine pull.
+
+A press and release between two ticks is a fresh press even while the last one is still latched, so a quick tap reaches the target in reach at that moment.
+
+While a grapple snatch's line is out, the free, empty hand other than the grapple hand has its grip held for the catch: a press closes it into a fist whatever is in reach and drives no game action, and the fist takes nothing it comes to. If that hand catches the snatched target, its grip holds the target from then on ([grapple-snatch.md, "The interaction"](grapple-snatch.md#the-interaction)).
+
+## Letting go
+
+What letting go does is the holder's, with one shared rule for docking (`grab::resolve::dock_target`): of the targets the opening hand is within reach of, the nearest that fits what it holds takes it. A weapon goes onto the free socket under the hand that fits it, as the loadout table decides ([two-handed-inventory.md](two-handed-inventory.md#the-grabs-against-the-table)), and anywhere else is let go of with the hand's velocity, as is anything else. A hand over both a pouch and a socket puts the gun on the socket, because a pouch does not fit a gun.
+
+A grenade or a charge is let go when the fingers open, not when the press ends (`weapons/opening.rs`): a throwing hand relaxes its squeeze before the fingers leave the handle, so a release read from the press drops the grenade mid-throw. The fingers are read from the grip's value, the Index controller's capacitive sense or the Touch controller's pull, closed above 0.6 and open below 0.35, and a controller without a value falls back to the press. The throw's velocity comes from the fastest moment of the last quarter second before the fingers opened ([controllers.md, "Grenades, aim assist, and reloads"](controllers.md#grenades-aim-assist-and-reloads)), and the release is logged at info level with its speed. While a hand holds a grenade or a charge, the fire input is held back unless the other hand holds a gun, since with nothing wielded it would draw one into the hand with the explosive.
+
+A charge is the same whether it came from the chest pouch or the weapon wheel: choosing the explosives on the wheel puts the game in its planting mode, which the mod leaves at once for a charge in a free hand. Held near a surface, a red ring marks where it would stick; pressed onto the surface it sticks there, and let go in the air it is thrown ([physical-weapons.md, "C4 pressed onto a surface"](physical-weapons.md#c4-pressed-onto-a-surface)).
+
+## Markers
+
+One renderer draws every target (`grab/markers.rs`), submitted to the overlay at the input tick's rate:
+
+| Kind | Colour | Targets |
+| --- | --- | --- |
+| Object | white | loose and hinged objects, a magazine in the world |
+| Weapon | gold | a weapon in the world, on a rack, or in a character's hands, and the held gun's grip, foregrip, action, and well |
+| Body | blue | the holsters, the sockets, and the pouches |
+| Vehicle | green | the driver's controls, the cockpit's buttons, the doors, the parachute's and the mounted gun's handles, and the helicopter to hang from |
+| Climb | orange | a surface to climb |
+| Character | violet | a character |
+| Explosive | red | a live grenade, a dropped grenade, the surface a held charge would stick to |
+
+A marker shows as its target says: always, faintly while no hand is within reach (the sockets and pouches on the body, the vehicle's controls and buttons, the parachute's handles); only while a hand is within reach (everything in the world and on a gun); or never (a reach margin, which its pouch or handle already marks). It is brighter while a hand is within reach of it, brightest and a little larger on the target a squeeze would take, and solid while a hand holds it. Its styles are a ring around the grab point, a handle (a dot, ringed once a hand is near), and a button (a disc on its face, ringed while a hand is in front of it). A marker on something in the world lies on its surface where the reach knows the surface's normal, and one on a weapon in the world sits where the hand would take it.
+
+The markers are anchored at render time ([render-time-anchoring.md](../rendering/render-time-anchoring.md)): a marker in the cockpit frame (the body's sockets, the vehicle's controls) to the render-time head, one on a held gun to its hand's render-time grip, and only what lies in the world to the world.
+
+`overlay.markers` (on; the pause menu's `GRIP MARKERS`) is the one switch for every marker; the weapon, vehicle, and pickup handling have no highlight switches of their own.
+
+## The grab hint
+
+The markers on the body's slots are out of sight when they matter most: a hand reaching over the shoulder or to the hip cannot see the socket or what is docked there. So while a hand is within reach of a slot on the body, the game's own icon of what its grip would take shows in front of the player, on the floating panel's plane below its centre, where the flat game shows its weapon selection (`hud::grab_hint`). The weapon handling's input tick publishes each hand's hint from the grip resolution (`controllers::weapons::begin::hint`):
+
+- an empty hand within reach of a socket shows the icon of the weapon docked there;
+- a hand within reach of the grenade pouch or the C4 pouch shows the icon of the weapon in the player's hand grenade or planted explosive slot;
+- a hand within reach of the belt's magazine pouch shows the icon of the gun in the other hand, the gun the magazine is for;
+- a hand holding a weapon inside the attraction of a taken socket, where letting go swaps ([physical-weapons.md](physical-weapons.md#attraction)), shows the docked weapon's icon dimmed, an arrow, and the held weapon's icon: the socket's old weapon becoming the new one. The hint follows the release's own choice, so a hand that is also inside a free socket's attraction, which the release takes first, shows no swap. A free socket only docks, which needs no hint.
+
+The icons are the game's weapon icons, read from its archives and decoded by the mod ([ui-rendering.md](../../engine/rendering/ui-rendering.md#weapon-icons), `hud::game_icons`). They are drawn with no card, border, or backing, only a soft dark halo around the icons, the arrow, and the label, so the game's white icons read against a bright sky or sand. Above the middle element (the icon of a take, the arrow of a swap) a small label names the socket or pouch the hint is about, in sentence case: "Left hip", "Right hip", "Left back" and "Right back" for the shoulder sockets across the back, "Outer back", "Chest", "Grenade pouch", "C4 pouch", or "Magazine pouch" (`Socket::display_name`, `hud::grab_hint::Place`). The label is set in the controls summary's heading face and rasterised on the CPU with the icons (`hud::label`). A hint whose icons have not loaded, or that has no icon, shows nothing; it never falls back to text alone. Each hand has its own hint. Two at once are by design: each hand armed its own swap or reached its own slot. A lone hint is centred across the panel; with two, each moves toward its own hand's side, about a quarter of the panel's width from the middle (farther apart if two wide swaps would otherwise meet), so it is plain which hand's each is. A hint fades in and out over a tenth of a second and goes when the input tick stops publishing. `hud.grab_hint.enabled` (on; Rendering > HUD in the debug UI) switches it.
+
+## Readouts and logs
+
+The `GRIP` section of the debug UI's Status page has a row per hand, saying what the hand holds, or what a squeeze would take and how far its grab point is, or that it is a fist; and a row for the markers. The grab view ([grab-view.md](grab-view.md)) draws the same in the headset, around each hand: the reach's rays and what they hit, a line to each target near the hand coloured by whether it is out of reach, in reach, chosen, or held, the palms' state on the wrist, a flash where a grab was refused, and the things near the hands a hand might take. Each grip press is logged at info (target `controllers`, `grip: pressed`), as is what a fist takes (`grip: the closed hand came to a target and took it`), with what the hand was within reach of, what it took, why each other target lost (farther by how much, a fallback, or worked by the palm), the nearest target it was out of reach of when it took nothing, whether the hand was slow, and the physical hands' notes on what their reach found: each body it hit, the kind of object (with its class's virtual table for anything the reach does not know), and why it was not taken (the player stands on it, it is static, it is too heavy, a weapon that is not lying dropped). The line's `palms` field says what the palms' last tick did for that hand: why the palms stood down, or how long ago they ticked, whether the hand was free, driven by its body and whether that body's pose was fresh, had a palm, and reached anything, with the tick's casts and the last cast failure; a grab that the notes leave empty is explained by it.
+
+## Adding a grab target
+
+A new kind of target is a provider and a consumer:
+
+1. Add the `GrabVolume` variant, with its label, its category (the marker's colour), and its consumer. A new subsystem that acts on grabs adds a `Consumer` and is handed its grabs in `bindings::input_tick` with `grabs_for`.
+2. In the providing subsystem's begin tick, place a `GripTarget` for it each input tick: a sphere around its grab point (`GripTarget::sphere`, or `Candidate::target` from a placement), or a measured distance (`GripTarget::measured`), with the marker it shows (`Mark`). Place what a hand holds as held (`GripTarget::held`), first. A reach margin is the same target with a larger radius, ranked a fallback and never shown.
+3. In the consumer's finish tick, act on a grab of the variant, and read the grip's release to let go.
+4. Add the variant to `every_kind` in `grab/tests.rs`, which checks that every kind goes through the resolver and the renderer.
+
+Nothing else draws a marker, logs a press, or decides between two subsystems' targets.
+
+## Settings
+
+`overlay.markers` switches the markers. The reach margins are `POUCHES.reach_margin_m` (`controllers::weapons::volumes`) and `parachute::REACH_M` (`controllers::vehicles`). The fist's speed is fixed (`grab::tick::SLOW_HAND_MPS`).
+
+## In the headset
+
+1. Look down with `GRIP MARKERS` on: the holsters and pouches show faint blue rings on the body, at the hips, shoulders, chest, and belt, where the hands reach for them. Move a hand toward one: it brightens, and the one a squeeze would take is brightest. The Status page names it in `LEFT GRIP` or `RIGHT GRIP`.
+2. Close a hand in the air, then lay it on the grenade pouch: the grenade comes into the hand. Swing a closed fist through a crate: the crate is struck, not taken.
+3. Hold a hand over a pouch and the hip holster at once: the nearer marker is the brightest, and a squeeze takes that one.
+4. Draw a rifle from the back and let go over the back: it docks. Let go in front of the body: it falls.
+5. Reach for a crate on the ground with the palm on the ground beside it: the crate's white marker is highlighted, not the ground's orange one. Lay the palm on a bare wall: the wall's orange marker is highlighted, and a squeeze climbs.
+6. Sit in a car: green markers sit on the wheel's rim near each hand, and on the nitrous button, in a car with nitrous, once a hand comes in front of it. Grip the rim: the marker goes solid. Stand beside a parked car: a green marker sits on each door's handle once a hand comes within 15 cm of it, and a squeeze takes the door.
+7. Press a grip near a barrel and read the log's `grip: pressed` line: its notes say what the reach hit and why it did or did not take it.
+8. Lean over a table without stepping: the markers stay on Rico's hips, belt, and chest as his body leans. Open the parachute and look down: the markers ride his body there too. Step back half a metre, so Rico is drawn ahead of you until the body rig's step catches up: the markers stay on Rico, and the drawn hand reaches them there.
+9. Throw every grenade: the grenade pouch's marker goes, and comes back with a grenade picked up. Take a gun from a soldier's hands, and one from a locker: the gold marker sits on the gun where the hand would close.
+10. Take a grenade and throw it overhand, relaxing the squeeze through the swing: it leaves the hand only as the fingers open, and the log's `grenade: the fingers opened` line shows a `speed_mps` near the hand's peak. Pull the trigger of the hand holding it with no gun drawn: no pistol comes out.
+11. With the gaze level, lay each hand flat on the chest below the shoulder: the grenade pouch on the dominant side and the C4 pouch on the other take there, and a reach out in front of the chest still takes. Look straight down at the chest: the pouches' markers stay where the hands reach rather than moving out in front with Rico's bent chest. Lean over a table with the head level: they ride the bent chest.
+12. Holding a rifle, reach over a free shoulder a hand's width below where the docked rifle's grip sits and squeeze: it docks.
+13. Drop a grenade with its pin in and crouch as far as you can, the controller at the floor: a squeeze at the grenade takes it, although Rico's hand does not reach the floor.
+14. Choose C4 on the weapon wheel with a hand empty: the planting mode ends and a charge is in the dominant hand. Bring it near a wall: a red ring lies on the wall where it would stick; press it on: it sticks. Punch a civilian solidly: they stagger; swing hard: they fall.
+15. Reach across the body to the C4 pouch with the dominant hand and close it on the chest: it takes a charge. With charges placed, pull that hand's trigger: they go off and the charge stays in the hand.
+16. With a rifle on the right shoulder, reach the empty right hand over it without looking: the rifle's icon shows in front of you, below the middle of the view, with "Right back" above it, while the hand is within reach, and goes when it leaves. Do the same at a hip holster ("Left hip" or "Right hip"), the grenade pouch, the C4 pouch, and, with a gun in the other hand and its magazine out, the belt's magazine pouch, each with its name.
+17. On Index controllers, take the steering wheel, a rifle, and a crate, and hold each with the hand wrapped round the controller but relaxed, no longer squeezing: each stays held for as long as the fingers stay round the handle, and opening the hand drops or lets go of it at once. A relaxed hand laid on something without a squeeze takes nothing.
+17. Holding a second rifle, bring it over the taken shoulder: the docked rifle's icon, dimmed, an arrow with the socket's name above it, and the held rifle's icon show; let go and the swap matches it. Reach both hands to two slots at once: the two hints sit apart, each toward its own hand's side. Check that the hint reads at a glance and does not cover the reticle, and that with no card behind it the icons, the arrow, and the label still read against a bright sky, sand, and a dark interior (the halo); adjust `HALO_GAIN` or `palette::HALO` if not.
+18. Reach for a holster or the C4 pouch and squeeze as the hand starts to pull away: it still takes, and the press's log notes `recalled the ...`. Squeeze a moment after sweeping the left hand past the hip for the grapple: within the recall the hip's pistol is drawn instead of the hook firing, which should not get in the way of a deliberate grapple shot.

@@ -1,66 +1,163 @@
-//! The Director tab: the directing tools for staging footage (`crate::director`), grouped by
-//! what a shot needs: time, the actor, heat, where you are, what is in frame, and the overlays.
+//! The Director and Video features: the directing tools for staging footage (`crate::director`),
+//! grouped by what a shot needs: time, the actor, heat, where you are, what is in frame, and the
+//! keyboard shortcuts; and the video recorder with its take markers.
 
 use egui::Slider;
 use jc3gi::heat_manager::HeatManager;
 use parking_lot::Mutex;
 
 use crate::{
-    config::CONFIG,
+    config,
     director::{
+        clean_view::CleanViewScope,
         heat, keymap, markers, safety, spawn,
         teleport::{self, TeleportMode},
         time,
     },
-    recorder,
+    recorder::{self, Arrangement, HostState, VideoStatus, session_recording},
+    ui::catalog::FeatureId,
 };
 
-/// Render the Director tab body.
-pub(crate) fn render(ui: &mut egui::Ui) {
-    egui::CollapsingHeader::new("Overlays")
-        .default_open(true)
-        .show(ui, cinematic_ui);
-    egui::CollapsingHeader::new("Time")
-        .default_open(true)
-        .show(ui, time_ui);
-    egui::CollapsingHeader::new("Actor safety")
-        .default_open(true)
-        .show(ui, safety_ui);
-    egui::CollapsingHeader::new("Heat")
-        .default_open(true)
-        .show(ui, heat_ui);
-    egui::CollapsingHeader::new("Teleport")
-        .default_open(true)
-        .show(ui, teleport_ui);
-    egui::CollapsingHeader::new("Spawn")
-        .default_open(true)
-        .show(ui, spawn_ui);
-    egui::CollapsingHeader::new("Recording")
-        .default_open(true)
-        .show(ui, recording_ui);
-    egui::CollapsingHeader::new("Take markers")
-        .default_open(true)
-        .show(ui, markers_ui);
-    egui::CollapsingHeader::new("Key bindings")
-        .default_open(false)
-        .show(ui, keymap_ui);
+/// Render the Director or Video feature's controls.
+pub(crate) fn feature(ui: &mut egui::Ui, id: FeatureId) {
+    match id {
+        FeatureId::Director => {
+            clean_view_ui(ui);
+            time_ui(ui);
+            safety_ui(ui);
+            heat_ui(ui);
+            ui.separator();
+            teleport_ui(ui);
+            ui.separator();
+            spawn_ui(ui);
+            ui.collapsing("Keyboard shortcuts", keymap_ui);
+        }
+        FeatureId::Video => {
+            session_ui(ui);
+            ui.separator();
+            capture_host_ui(ui);
+            markers_ui(ui);
+        }
+        _ => {}
+    }
 }
 
-fn cinematic_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
-    ui.checkbox(
-        &mut cfg.director.cinematic,
-        "Cinematic mode (hide the HUD, the panel, and the overlay)",
-    )
-    .on_hover_text(
-        "Skips the floating HUD quad, the egui panel, the desktop overlay, and the flat debug \
-         overlay without changing their settings. With the HUD redirect off (flatscreen) the \
-         game's own HUD stays; turn the redirect on in the Hud tab to hide it too.",
-    );
+/// Render the actor, heat-manager, teleport, and spawn-request facts without settings or
+/// commands.
+pub(crate) fn director_status(ui: &mut egui::Ui) {
+    safety_readout(ui);
+    heat_readout(ui);
+    let position = teleport::player_position();
+    let in_flight = teleport::in_flight();
+    let bookmark_count = teleport::bookmarks().len();
+    let submission = spawn::status();
+    position_readout(ui, position);
+    ui.label(if in_flight {
+        "Teleport: queued or in flight"
+    } else {
+        "Teleport: idle"
+    });
+    ui.label(format!("Saved bookmarks: {bookmark_count}"));
+    ui.label(if submission.pending {
+        "Spawn request: queued"
+    } else {
+        "Spawn request: idle"
+    });
+    ui.label(match submission.last_submission {
+        None => "Last spawn request: none processed",
+        Some(spawn::Submission::NoTags) => "Last spawn request: not submitted (no tags)",
+        Some(spawn::Submission::TagsContainNul) => {
+            "Last spawn request: not submitted (tags contain a NUL)"
+        }
+        Some(spawn::Submission::NoSpawnSystem) => {
+            "Last spawn request: not submitted (no spawn system)"
+        }
+        Some(spawn::Submission::Submitted) => {
+            "Last spawn request: submitted; object completion is not tracked"
+        }
+    });
+}
+
+/// Render the recorder snapshot without settings or commands.
+pub(crate) fn video_status(ui: &mut egui::Ui) {
+    ui.label(session_line(&session_recording::status()));
+    let status = recorder::status();
+    ui.label(host_line(&status));
+    if let Some(video) = &status.video {
+        stream_readout(ui, video);
+    }
+    if status.recording {
+        ui.label(format!("Sidecar lines written: {}", status.lines));
+    }
+    if let Some(folder) = &status.folder {
+        ui.label(format!("Recording folder in the session folder: {folder}"));
+    }
+    if let Some(error) = &status.error {
+        ui.colored_label(egui::Color32::LIGHT_RED, format!("Last error: {error}"));
+    }
+}
+
+/// The recorder's one-line state, naming what the capture host records.
+pub(crate) fn host_line(status: &recorder::Status) -> String {
+    let streamed = status.video.is_some();
+    match &status.host {
+        None => "Video: stopped".to_owned(),
+        Some(HostState::Waiting)
+            if streamed && status.video.as_ref().is_some_and(|v| v.size.is_none()) =>
+        {
+            "Video: waiting for the first eye views".to_owned()
+        }
+        Some(HostState::Waiting) => "Video: waiting for the capture host to listen".to_owned(),
+        Some(HostState::Starting) if streamed => {
+            "Video: the capture host is starting its encoder".to_owned()
+        }
+        Some(HostState::Starting) => "Video: the capture host is finding the window".to_owned(),
+        Some(HostState::Capturing(capture)) => match capture.region {
+            Some(region) => format!(
+                "Video: recording the mirror window, {}x{} at {},{} on {}",
+                region.width,
+                region.height,
+                region.x,
+                region.y,
+                capture.output.as_deref().unwrap_or("the screen")
+            ),
+            None => format!(
+                "Video: streaming the eye views, encoded with {}; audio: {}",
+                capture.encoder.as_deref().unwrap_or("an unnamed encoder"),
+                capture.audio.as_deref().unwrap_or("not reported")
+            ),
+        },
+        Some(HostState::Finishing) => "Video: the capture host is finalizing the file".to_owned(),
+        Some(HostState::Closed) => "Video: not recording (see the error)".to_owned(),
+    }
+}
+
+fn clean_view_ui(ui: &mut egui::Ui) {
+    let mut cfg = config::edit();
+    let d = &mut cfg.director;
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut d.clean_view, "Clean view (F4)")
+            .on_hover_text(
+                "Hides the mod's overlays at the chosen scope without changing their settings. At \
+             the desktop scope this hides the debug overlay, so F4 brings it back.",
+            );
+        ui.selectable_value(&mut d.clean_view_scope, CleanViewScope::Desktop, "Desktop")
+            .on_hover_text("Hide the flat debug overlay from the desktop window only.");
+        ui.selectable_value(
+            &mut d.clean_view_scope,
+            CleanViewScope::Everything,
+            "Everything",
+        )
+        .on_hover_text(
+            "Also hide the floating HUD, the floating panel, and the in-world overlays. With \
+                 the HUD redirect off (flatscreen) the game's own HUD stays; turn the redirect on \
+                 in Rendering > HUD to hide it too.",
+        );
+    });
 }
 
 fn time_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
+    let mut cfg = config::edit();
     let d = &mut cfg.director;
     ui.add(
         Slider::new(
@@ -91,7 +188,7 @@ fn time_ui(ui: &mut egui::Ui) {
 }
 
 fn safety_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
+    let mut cfg = config::edit();
     let d = &mut cfg.director;
     ui.checkbox(&mut d.god_mode, "God mode (re-asserted every frame)")
         .on_hover_text(
@@ -101,7 +198,9 @@ fn safety_ui(ui: &mut egui::Ui) {
         &mut d.unlimited_ammo,
         "Unlimited ammo (re-asserted every frame)",
     );
-    drop(cfg);
+}
+
+fn safety_readout(ui: &mut egui::Ui) {
     match safety::live_state() {
         Some((god, ammo)) => {
             ui.label(format!(
@@ -117,7 +216,7 @@ fn safety_ui(ui: &mut egui::Ui) {
 }
 
 fn heat_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
+    let mut cfg = config::edit();
     let d = &mut cfg.director;
     ui.checkbox(&mut d.heat_lock, "Lock heat (no rise, no decay)")
         .on_hover_text(
@@ -142,6 +241,9 @@ fn heat_ui(ui: &mut egui::Ui) {
             }
         }
     });
+}
+
+fn heat_readout(ui: &mut egui::Ui) {
     match heat::live_state() {
         Some((level, locked, cap)) => {
             ui.label(format!(
@@ -173,9 +275,8 @@ struct TeleportForm {
     position: [f32; 3],
 }
 
-fn teleport_ui(ui: &mut egui::Ui) {
-    let mut form = TELEPORT_FORM.lock();
-    match teleport::player_position() {
+fn position_readout(ui: &mut egui::Ui, position: Option<[f32; 3]>) {
+    match position {
         Some(p) => {
             ui.label(format!("Player at ({:.1}, {:.1}, {:.1})", p[0], p[1], p[2]));
         }
@@ -183,6 +284,11 @@ fn teleport_ui(ui: &mut egui::Ui) {
             ui.label("Player position unavailable");
         }
     }
+}
+
+fn teleport_ui(ui: &mut egui::Ui) {
+    let mut form = TELEPORT_FORM.lock();
+    position_readout(ui, teleport::player_position());
     ui.horizontal(|ui| {
         ui.label("Mode:");
         for (mode, label, hint) in [
@@ -268,7 +374,7 @@ struct SpawnPicker {
 }
 
 fn spawn_ui(ui: &mut egui::Ui) {
-    let mut cfg = CONFIG.lock();
+    let mut cfg = config::edit();
     let s = &mut cfg.director.spawn;
     ui.horizontal(|ui| {
         ui.label("Tags:");
@@ -344,67 +450,161 @@ fn spawn_ui(ui: &mut egui::Ui) {
         });
 }
 
-fn recording_ui(ui: &mut egui::Ui) {
-    let status = recorder::status();
+fn session_ui(ui: &mut egui::Ui) {
+    let status = session_recording::status();
     ui.horizontal(|ui| {
-        if status.recording {
-            if ui.button("Stop recording").clicked() {
-                recorder::stop();
-            }
-        } else if ui.button("Start recording").clicked() {
-            recorder::start();
-        }
-        ui.label(if status.recording {
-            if status.connected {
-                "recording"
-            } else {
-                "recording, waiting for the host listener"
-            }
+        let running = status.video || status.tracking;
+        let label = if running {
+            "Stop session recording (F1)"
         } else {
-            "stopped"
-        });
+            "Start session recording (F1)"
+        };
+        if ui.button(label).clicked() {
+            session_recording::toggle();
+        }
+        if ui
+            .button("Mark (F2)")
+            .on_hover_text(
+                "Drops an unlabelled take marker; with no tracking recording running, also saves \
+                 the lookback.",
+            )
+            .clicked()
+        {
+            session_recording::mark();
+        }
     });
-    if let Some((w, h)) = status.size {
-        ui.label(format!(
-            "Stream {w}x{h}: {} frames sent, {} repeated, {} dropped",
-            status.frames_sent, status.frames_duplicated, status.frames_dropped
-        ));
+    ui.label(session_line(&status));
+    let video = recorder::status();
+    ui.label(host_line(&video));
+    if let Some(stream) = &video.video {
+        stream_readout(ui, stream);
     }
-    if let Some(folder) = &status.folder {
-        ui.label(format!("Sidecar in the session folder under {folder}"));
+    if let Some(error) = &status.video_error {
+        ui.colored_label(egui::Color32::LIGHT_RED, format!("Video: {error}"));
     }
-    if let Some(error) = &status.error {
-        ui.colored_label(egui::Color32::LIGHT_RED, format!("Last error: {error}"));
+    if let Some(error) = &status.tracking_error {
+        ui.colored_label(
+            egui::Color32::LIGHT_RED,
+            format!("Tracking recording: {error}"),
+        );
     }
-    {
-        let mut cfg = CONFIG.lock();
+    ui.label(
+        "Starts the video recorder and a tracking recording together, both into \
+         recordings/<stamp>/ in the session folder. If the capture host is not running, the \
+         session records tracking only and says so here.",
+    );
+}
+
+/// A streamed take's counters.
+fn stream_readout(ui: &mut egui::Ui, video: &VideoStatus) {
+    ui.label(match video.size {
+        Some((width, height)) => format!(
+            "Stream: {width}x{height} at {} fps, {}",
+            video.frame_rate,
+            arrangement_label(video.arrangement)
+        ),
+        None => format!("Stream: size not fixed yet, {} fps", video.frame_rate),
+    });
+    ui.label(format!(
+        "Frames captured: {}; sent: {} ({} repeated); dropped: {}; given up: {}; queued: {}",
+        video.captured, video.written, video.repeated, video.dropped, video.given_up, video.queued
+    ));
+}
+
+fn arrangement_label(arrangement: Arrangement) -> &'static str {
+    match arrangement {
+        Arrangement::SideBySide => "both eyes side by side",
+        Arrangement::LeftWithHalfRight => "the left eye with the right at half size",
+    }
+}
+
+/// The session recording's one-line state.
+fn session_line(status: &session_recording::SessionStatus) -> String {
+    let running = match (status.video, status.tracking) {
+        (true, true) => "video and tracking",
+        (true, false) => "video only",
+        (false, true) => "tracking only",
+        (false, false) => "stopped",
+    };
+    match &status.stamp {
+        Some(stamp) => format!("Session recording: {running} ({stamp})"),
+        None => format!("Session recording: {running}"),
+    }
+}
+
+fn capture_host_ui(ui: &mut egui::Ui) {
+    let session = session_recording::status();
+    let running = session.video || session.tracking;
+    let in_process = {
+        let mut cfg = config::edit();
         let r = &mut cfg.recorder;
-        ui.add_enabled_ui(!status.recording, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("Eye:");
-                ui.selectable_value(&mut r.eye, 0, "left");
-                ui.selectable_value(&mut r.eye, 1, "right");
-            });
-            ui.add(Slider::new(&mut r.scale, recorder::MIN_SCALE..=1.0).text("Scale"))
-                .on_hover_text("The stream size as a fraction of the eye render size.");
-            ui.add(Slider::new(&mut r.frame_rate, 24..=144).text("Frame rate (header)"))
+        ui.add_enabled_ui(!running, |ui| {
+            ui.checkbox(&mut r.in_process, "Capture the eye views in process")
                 .on_hover_text(
-                    "Written into the stream header, which is what the encoder times frames by. \
-                     Set it to the headset's refresh rate.",
+                    "Streams both eyes from inside the game to the capture host, which encodes \
+                     them. Off, the capture host records the desktop mirror window from the \
+                     screen instead, which only scripts/capture_host.sh does.",
                 );
+            ui.add_enabled_ui(r.in_process, |ui| {
+                ui.add(
+                    Slider::new(
+                        &mut r.eye_width,
+                        recorder::MIN_EYE_WIDTH..=recorder::MAX_EYE_WIDTH,
+                    )
+                    .step_by(2.0)
+                    .text("Width of each eye"),
+                )
+                .on_hover_text(
+                    "Each eye keeps its aspect at this width. 1920 holds a 1920x1080 crop of one \
+                     eye; smaller costs less bandwidth.",
+                );
+                ui.horizontal(|ui| {
+                    ui.selectable_value(&mut r.arrangement, Arrangement::SideBySide, "Both eyes")
+                        .on_hover_text("Both eyes at the full width, side by side.");
+                    ui.selectable_value(
+                        &mut r.arrangement,
+                        Arrangement::LeftWithHalfRight,
+                        "Left eye, right at half size",
+                    )
+                    .on_hover_text(
+                        "The left eye at the full width and the right at half size beside it: \
+                         about 40 percent less to read back and send, for a host that cannot \
+                         keep up.",
+                    );
+                });
+                ui.add(
+                    Slider::new(
+                        &mut r.frame_rate,
+                        recorder::MIN_FRAME_RATE..=recorder::MAX_FRAME_RATE,
+                    )
+                    .text("Frame rate"),
+                )
+                .on_hover_text(
+                    "The stream's rate, kept by the wall clock: a slower game repeats frames, a \
+                     faster one skips them.",
+                );
+            });
             ui.horizontal(|ui| {
-                ui.label("Host:");
+                ui.label("Capture host:");
                 ui.text_edit_singleline(&mut r.host)
                     .on_hover_text("Blank for loopback.");
                 ui.label("Port:");
                 ui.add(egui::DragValue::new(&mut r.port));
             });
         });
-    }
-    ui.label(
-        "Run scripts/capture_host.sh on the host to listen; the stream is yuv4mpegpipe over TCP \
-         and the per-frame pose sidecar goes to the session folder.",
-    );
+        r.in_process
+    };
+    ui.label(if in_process {
+        "The injector stays running as the capture host and encodes the stream with the ffmpeg \
+         beside it (scripts/fetch_ffmpeg.sh), recording the default output's audio. On Linux, \
+         scripts/capture_host.sh can take the stream instead, with the host's own ffmpeg. Start \
+         the session recording above; without a host it records tracking only."
+    } else {
+        "Run scripts/capture_host.sh on the host. It records the mirror window as it is on \
+         screen, so the mirror view (F10) decides what is recorded, and the window must stay \
+         visible and in place for the take. Start the session recording above; without the host \
+         it records tracking only."
+    });
 }
 
 /// The debug tab's marker label field.
@@ -431,13 +631,16 @@ fn markers_ui(ui: &mut egui::Ui) {
             }
         ));
     }
-    ui.label("Appended to markers.jsonl in the session folder.");
+    ui.label(
+        "Written into the video sidecar while recording; otherwise appended to markers.jsonl in \
+         the session folder.",
+    );
 }
 
 fn keymap_ui(ui: &mut egui::Ui) {
     let map = keymap::current();
     egui::Grid::new("director_keymap").show(ui, |ui| {
-        for binding in &map.bindings {
+        for binding in map.effective() {
             ui.label(binding.chord.describe());
             if ui.button(binding.action.label()).clicked() {
                 keymap::run(binding.action);
@@ -445,7 +648,7 @@ fn keymap_ui(ui: &mut egui::Ui) {
             ui.end_row();
         }
     });
-    ui.label("Edit director_keymap.json beside the DLL to rebind (virtual-key codes).");
+    ui.label("Edit director.keymap in the settings file to rebind (virtual-key codes).");
     if ui.button("Reset to defaults").clicked() {
         keymap::reset_to_defaults();
     }

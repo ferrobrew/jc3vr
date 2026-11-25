@@ -14,9 +14,7 @@
 //! off-axis projection while a VR eye is drawn, correcting those passes at their shared source --
 //! including the atmospheric-scattering / aerial-perspective pass, which reconstructs the whole screen
 //! and samples the sun shadow cascade over it (with the depth basis correct, the off-axis inverse
-//! reconstructs the sky and distant terrain without swimming).
-//!
-//! See [`StereoConfig::reconstruct_offaxis_inverse`](crate::stereo::config::StereoConfig).
+//! reconstructs the sky and distant terrain without swimming). A no-op on flatscreen frames.
 //!
 //! Substituting one eye's inverse presumes the pass is drawing *for* one eye, which the single-pass
 //! collapse breaks: there the fullscreen quad covers both eye halves of the double-wide target in a
@@ -50,22 +48,21 @@ use std::{
 };
 
 use detours_macro::detour;
-use jc3gi::{
-    graphics_engine::{draw::SetScissorEnable, graphics_engine::HContext_t},
-    types::math::Matrix4,
-};
+use jc3gi::{graphics_engine::graphics_engine::HContext_t, types::math::Matrix4};
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{
     Foundation::RECT,
-    Graphics::Direct3D11::{D3D11_RASTERIZER_DESC, D3D11_VIEWPORT, ID3D11DeviceContext},
+    Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext},
 };
 
 use crate::{
     config::Config,
     debug::trace::{TraceEvent, TraceState},
-    stereo::engine_context::EngineContext,
-    vr::render_params,
+    stereo::{engine_context::EngineContext, single_pass::eye_globals},
+    vr::{EyeRenderParams, render_params},
 };
+
+mod scissor;
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&PERSPECTIVE_FOV_INVERSE_BINDER)
@@ -96,7 +93,7 @@ pub(super) fn hook_library() -> HookLibrary {
 pub(super) fn enter_per_eye_half_with(
     arming: MaskArming,
     eye: usize,
-    ctx: *mut HContext_t,
+    _ctx: *mut HContext_t,
 ) -> PerEyeHalf {
     let saved = with_immediate_context(|d3d| {
         let mut count = 2u32;
@@ -106,12 +103,10 @@ pub(super) fn enter_per_eye_half_with(
         SavedScissor {
             rects,
             count: bound_scissor_count(&rects, count),
-            enable: current_scissor_enable(d3d),
         }
     });
     let state = PerEyeState {
         eye,
-        ctx,
         arming,
         masked: false,
         saved_scissor: saved,
@@ -147,10 +142,10 @@ pub(super) enum MaskArming {
 /// Which single run of a two-run per-eye split issues the block's compute dispatches.
 ///
 /// A scissor rectangle clips rasterization; it does nothing to a dispatch, whose reach is fixed by its
-/// thread-group counts and by its program's mapping from thread id to texel. Both blocks this matters
-/// for -- the screen-space reflection blur and the bokeh near-field prologue -- size their groups from
-/// the target's full width and address their textures directly by `SV_DispatchThreadID` with no origin
-/// term in any constant buffer, so there is no way to aim a dispatch at one eye's half. What there is
+/// thread-group counts and by its program's mapping from thread id to texel. The block this matters
+/// for -- the bokeh near-field prologue -- sizes its groups from the target's full width and
+/// addresses its textures directly by `SV_DispatchThreadID` with no origin term in any constant
+/// buffer, so there is no way to aim a dispatch at one eye's half. What there is
 /// instead: run the compute work **once**, whole-target, on the one run of the split where the data it
 /// needs is already there and the data it produces is still wanted.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -162,10 +157,6 @@ pub(super) enum DispatchPhase {
     /// consume: the first run computes it over the whole target, and the second run's masked draw reads
     /// the same result rather than recomputing it on top of itself.
     FirstRun,
-    /// Only the last run. For a compute *epilogue*, which consumes what the block's masked draws
-    /// produce: by the last run both halves have been drawn, so one whole-target pass over them is both
-    /// complete and singular.
-    LastRun,
 }
 
 /// The rule a [`split_fullscreen_pass_policy`] run follows: when its mask goes up, and which run issues
@@ -201,8 +192,33 @@ pub(crate) fn dispatch_suppressed() -> bool {
     DISPATCH_GATE.get().is_some_and(|gate| match gate.phase {
         DispatchPhase::Both => false,
         DispatchPhase::FirstRun => gate.run != 0,
-        DispatchPhase::LastRun => gate.run + 1 != gate.runs,
     })
+}
+
+/// The eye of the split fullscreen run in flight on this thread, masked or not yet masked.
+pub(crate) fn split_run_eye() -> Option<usize> {
+    PER_EYE.get().map(|state| state.eye)
+}
+
+pub(crate) fn masked_eye() -> Option<usize> {
+    PER_EYE
+        .get()
+        .filter(|state| state.masked)
+        .map(|state| state.eye)
+}
+
+/// Remove the D3D override before the engine flushes its staged render states.
+pub(crate) fn before_render_states() {
+    if PER_EYE.get().is_some_and(|state| state.masked) {
+        with_immediate_context(scissor::restore);
+    }
+}
+
+/// Override the flushed rasterizer without changing the engine's staged state key.
+pub(crate) fn after_render_states() {
+    if PER_EYE.get().is_some_and(|state| state.masked) {
+        with_immediate_context(scissor::reapply);
+    }
 }
 
 /// Re-derive an [`MaskArming::AtEntry`] mask from the render target that was just bound on this
@@ -211,9 +227,9 @@ pub(crate) fn dispatch_suppressed() -> bool {
 /// Called from the shared `Graphics::SetRenderSetup` detour in [`crate::hooks::draw_count`]. A scissor
 /// rectangle is expressed in the bound target's pixels, so a mask derived from the target the pass
 /// started on stops meaning anything the moment the pass binds a target of a different size -- and the
-/// blocks this covers do exactly that (the ambient-occlusion block draws through a full-resolution
-/// linear-depth target, half-resolution occlusion and history targets, and the full-resolution scene
-/// target, in one `Draw`). A no-op unless an at-entry per-eye half is in flight on this thread.
+/// blocks this covers do exactly that (the volumetric fog block draws into its own half-resolution
+/// target, and the screen-space reflection and subsurface blocks ping-pong through working targets of
+/// their own sizes). A no-op unless an at-entry per-eye half is in flight on this thread.
 pub(crate) fn on_render_setup_bound() {
     let Some(state) = PER_EYE.get() else {
         return;
@@ -281,8 +297,7 @@ pub(super) fn split_fullscreen_pass(
 /// `draw` is called once per run that actually executes, with that run's eye index, so a caller that
 /// needs to act on what a particular run did -- e.g. record something only when [`SplitOutcome::Demoted`]
 /// follows a run whose own work engaged -- can capture that out of `draw` itself into a variable the
-/// caller reads back afterward, the same way [`crate::hooks::graphics_engine::fullscreen_reconstruction`]'s SSAO caller captures
-/// its temporal-history snapshot across runs.
+/// caller reads back afterward.
 ///
 /// The gate covers every issue of `draw` this function makes, including the degenerate second-run one
 /// below, and nothing outside them: a caller that falls back to issuing the pass itself does so
@@ -366,17 +381,8 @@ impl Drop for PerEyeHalf {
         if let Some(state) = PER_EYE.replace(None)
             && state.masked
         {
-            // Restore the bit that was actually there, not an unconditional `false`: arming the mask
-            // always turns scissor on, but the pass it interrupted may have had it on already for its own
-            // reasons (a masked post pass, a clipped UI draw), and a bare disable would silently carry
-            // that change into the rest of the frame instead of undoing only what this guard did.
-            // `saved_scissor` is `None` only when the immediate context could not be reached at capture,
-            // in which case nothing is known to restore and `false` is what this unconditionally did
-            // before the bit was tracked.
-            let enable = state.saved_scissor.is_some_and(|saved| saved.enable);
-            // SAFETY: `ctx` is the graphics context the detoured `Draw` was running on, live for the
-            // duration of the guard.
-            unsafe { SetScissorEnable(state.ctx, enable) };
+            eye_globals::restore();
+            with_immediate_context(scissor::restore);
             if let Some(saved) = state.saved_scissor {
                 with_immediate_context(|d3d| {
                     if saved.count > 0 {
@@ -416,29 +422,15 @@ fn perspective_fov_inverse(
 }
 
 /// The engine-format inverse of the off-axis projection for the VR eye currently being drawn, or
-/// `None` when the override does not apply: the toggle is off, this is not a VR eye dispatch
+/// `None` when the override does not apply: this is not a VR eye dispatch
 /// (flatscreen frames carry no render params), or the requested near/far do not match the *live*
 /// main-camera planes (an auxiliary camera -- e.g. a reflection -- whose own symmetric rebuild is
 /// already correct).
 fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
-    let (toggle, near_fallback, far_fallback) = Config::lock_query(|c| {
-        (
-            c.stereo.reconstruct_offaxis_inverse,
-            c.vr.near_clip,
-            c.vr.far_clip,
-        )
-    });
+    let far_fallback = Config::lock_query(|c| c.vr.far_clip);
     // A per-eye half run reconstructs for *its* eye, not for the collapse's single dispatch index
     // (which is always eye 0); everything else keeps reading the dispatch's own eye.
     let half = PER_EYE.get();
-    // Inside a per-eye half the toggle is not consulted: every caller that opens one sampled it once,
-    // at block entry, and only opened the split because it was on, so the split's own runs must all
-    // answer the way that sample did. Re-reading it here would let the debug UI flip it *between* the
-    // two runs -- and this read is what arms the eye mask, so eye 0's run would mask to its half and
-    // eye 1's would draw across the whole target, compositing eye 0's half twice into an accumulating
-    // pass. Outside a split the live read stands: that is the plain detour path, with no second run to
-    // disagree with.
-    let enabled = toggle || half.is_some();
     let eye = half.map_or_else(crate::stereo::draw_index, |state| state.eye);
     let params = render_params(eye);
     // Recognize the main-view depth passes by the engine's ACTUAL active-camera planes, the single
@@ -447,12 +439,11 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
     // mirrors (38.4 km), so comparing against the config rejected every main pass and the off-axis
     // inverse never engaged. A pass whose near/far differ from the live main camera belongs to another
     // camera (e.g. a reflection) whose symmetric rebuild is already correct, so leave it untouched.
-    let (near_ref, far_ref) =
-        crate::hooks::camera::main_camera_planes_or((near_fallback, far_fallback));
+    let (near_ref, far_ref) = crate::hooks::camera::main_camera_planes_or(far_fallback);
     let near_ok = (near - near_ref).abs() <= near_ref.abs().max(0.01) * 0.1;
     let far_ok = (far - far_ref).abs() <= far_ref.abs() * 0.01;
 
-    let applies = enabled && near_ok && far_ok;
+    let applies = near_ok && far_ok;
     // The `Matrix4` <-> glam bridge transposes each way, so `Matrix4::from(Mat4::from(engine).inverse())`
     // yields the inverse back in engine row-major format -- the same pattern the camera hook uses to
     // write `m_View`. The engine's `PerspectiveFovInverse`
@@ -461,10 +452,10 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
     // near->NDC z 1, far->0), matching the reverse-Z depth buffer the game renders. So invert the
     // reverse-Z off-axis projection, not the standard-depth one: `inverse(projection_reverse_z)`
     // reproduces the engine's inverse exactly for a symmetric frustum and adds the off-center shear the
-    // symmetric rebuild omits. Inverting `projection_standard` (the earlier code) matched the x/y and
-    // shear -- so specular/SSR looked fixed -- but sign-flipped and mis-scaled the depth basis, so the
-    // sun shadow sampled over the reconstructed positions swam with the off-axis shear as the camera
-    // rotated (issue #31).
+    // symmetric rebuild omits. Inverting `projection_standard` instead matches the x/y and shear -- so
+    // specular/SSR look fixed -- but sign-flips and mis-scales the depth basis, so the sun shadow
+    // sampled over the reconstructed positions swims with the off-axis shear as the camera rotates
+    // (issue #31).
     // A per-eye half run masks the pass to this eye's half of the double-wide target and folds the
     // full-target-NDC -> eye-NDC remap into the inverse, so the half reconstructs exactly. If the mask
     // cannot be applied (the bound target is not the collapse's double-wide scene target), the run is
@@ -480,13 +471,13 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
         Some(state) if applies && arm_eye_half_scissor(&state) => Some(state.eye),
         _ => None,
     };
-    let result = applies
-        .then(|| params.map(|vr| glam::Mat4::from(vr.projection_reverse_z).inverse()))
-        .flatten()
-        .map(|inverse| match masked_eye {
-            Some(eye) => Matrix4::from(inverse * half_target_remap(eye)),
+    let result = applies.then_some(params).flatten().map(|vr| {
+        let inverse = glam::Mat4::from(vr.projection_reverse_z).inverse();
+        match masked_eye {
+            Some(eye) => Matrix4::from(eye_half_inverse(&vr, inverse, eye)),
             None => Matrix4::from(inverse),
-        });
+        }
+    });
 
     // Record the reconstruction's live inputs so the trace can show whether the matrix (and hence the
     // reconstructed positions the sun shadow samples over) wobbles frame to frame. Only for VR-eye
@@ -511,9 +502,6 @@ fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
 struct PerEyeState {
     /// The eye this run renders.
     eye: usize,
-    /// The graphics context the run's draws are issued on, whose rasterizer-state key carries the
-    /// scissor-enable bit.
-    ctx: *mut HContext_t,
     /// When this run raises its mask, and whether the mask follows the pass onto its own targets.
     arming: MaskArming,
     /// Whether the mask was actually applied; see [`PerEyeHalf::masked`].
@@ -531,8 +519,6 @@ struct SavedScissor {
     rects: [RECT; 2],
     /// How many leading slots of `rects` were actually bound; see [`bound_scissor_count`].
     count: u32,
-    /// Whether scissor testing was enabled.
-    enable: bool,
 }
 
 /// How many runs a per-eye split makes: one per eye half of the double-wide collapse target.
@@ -545,7 +531,6 @@ const RUNS: usize = 2;
 struct DispatchGate {
     phase: DispatchPhase,
     run: usize,
-    runs: usize,
 }
 
 impl DispatchGate {
@@ -556,11 +541,7 @@ impl DispatchGate {
     /// Returns a guard that closes the gate on every path.
     fn enter(phase: DispatchPhase, run: usize) -> DispatchGateGuard {
         if phase != DispatchPhase::Both {
-            DISPATCH_GATE.set(Some(Self {
-                phase,
-                run,
-                runs: RUNS,
-            }));
+            DISPATCH_GATE.set(Some(Self { phase, run }));
         }
         DispatchGateGuard(())
     }
@@ -587,6 +568,17 @@ thread_local! {
     static DISPATCH_GATE: Cell<Option<DispatchGate>> = const { Cell::new(None) };
 }
 
+/// The clip→view inverse a masked half of a split pass reconstructs `eye` through: the remap onto the
+/// eye's half, the eye's own projection inverse, and then the eye's turn from the centred render
+/// camera (`vr.orientation_delta`, the display cant), which takes the eye's view space into the
+/// centred camera's. A split pass runs only under the collapse, where the render camera stays centred
+/// and the pass multiplies by the centred camera's transform, so without the turn a canted eye's
+/// reconstructed positions would be turned by its cant about the camera. On parallel panels the turn
+/// is the identity.
+fn eye_half_inverse(vr: &EyeRenderParams, inverse: glam::Mat4, eye: usize) -> glam::Mat4 {
+    glam::Mat4::from_quat(vr.orientation_delta) * inverse * half_target_remap(eye)
+}
+
 /// The full-target-NDC → eye-NDC remap for `eye`'s half of the double-wide collapse target.
 ///
 /// The fullscreen quad spans the whole target, so its NDC `x ∈ [-1, 1]` covers both eyes; eye `e`'s
@@ -602,8 +594,19 @@ fn half_target_remap(eye: usize) -> glam::Mat4 {
     )
 }
 
+/// `eye`'s world→clip `view_projection` re-expressed over the whole double-wide target: the eye's NDC
+/// `x' ∈ [-1, 1]` lands on its half, `x = (x' - 1 + 2e) / 2`, the inverse of [`half_target_remap`].
+///
+/// For a pass that builds its reconstruction basis by inverting a render-context view-projection
+/// itself, rather than through [`Matrix4::PerspectiveFovInverse`]: handing it this matrix makes the
+/// inverse it takes equal to `eye`'s inverse with the remap folded in, exactly what
+/// [`offaxis_inverse`] substitutes for the passes that do call it.
+pub(super) fn half_target_view_projection(eye: usize, view_projection: glam::Mat4) -> glam::Mat4 {
+    half_target_remap(eye).inverse() * view_projection
+}
+
 /// Clip the rest of this per-eye run to `state.eye`'s half of the bound target, by setting both
-/// scissor rectangles to that half and raising the context's scissor-enable bit. Reports whether the
+/// scissor rectangles to that half and overriding the bound D3D rasterizer state. Reports whether the
 /// mask was applied; it is not when the immediate context is unreachable, nor -- under
 /// [`MaskArming::OnReconstruction`] -- when the bound viewport is not the double-wide scene target
 /// (a reduced-resolution or auxiliary pass, which must be left alone).
@@ -637,21 +640,20 @@ fn arm_eye_half_scissor(state: &PerEyeState) -> bool {
             return false;
         }
     }
-    if set_eye_half_scissor(full, state.eye).is_none() {
+    if with_immediate_context(scissor::apply) != Some(true) {
         return false;
     }
-    // `SetScissorEnable` is a pyxis-generated binding to the engine's own function, not a D3D11 API
-    // method: it writes the context's rasterizer-state key field (`ctx->m_RasterizerStateKey`)
-    // directly rather than issuing `RSSetScissorEnable`. The render thread owns the context at this
-    // point -- the detour runs inside a `Draw` that the engine dispatched on it -- so there is no
-    // race with an engine state flush. Routing it through `with_immediate_context` would add a
-    // critical-section acquire on every per-draw call for no safety benefit.
-    // SAFETY: `ctx` is the graphics context the bracketed pass draws on, live for the guard's scope.
-    unsafe { SetScissorEnable(state.ctx, true) };
+    if set_eye_half_scissor(full, state.eye).is_none() {
+        with_immediate_context(scissor::restore);
+        return false;
+    }
     PER_EYE.set(Some(PerEyeState {
         masked: true,
         ..*state
     }));
+    if Config::lock_query(|c| c.stereo.single_pass.fullscreen_camera_per_eye) {
+        eye_globals::stage(state.eye);
+    }
     if !ENGAGED.swap(true, Ordering::Relaxed) {
         let width = full.Width;
         tracing::info!(
@@ -699,23 +701,6 @@ fn bound_scissor_count(rects: &[RECT; 2], reported: u32) -> u32 {
         .take(reported.min(2) as usize)
         .take_while(|r| r.right > r.left && r.bottom > r.top)
         .count() as u32
-}
-
-/// Whether scissor testing is enabled in the rasterizer state currently bound on the immediate context.
-///
-/// [`RSGetState`](ID3D11DeviceContext::RSGetState) reports no object at all (rather than a real one) only
-/// when nothing has ever been explicitly bound, which is exactly the D3D11 default rasterizer state --
-/// whose `ScissorEnable` is `FALSE` -- so that case folds into the same answer a bound state would give
-/// if it matched the default.
-fn current_scissor_enable(d3d: &ID3D11DeviceContext) -> bool {
-    // SAFETY: `d3d` is the live immediate context.
-    let Ok(state) = (unsafe { d3d.RSGetState() }) else {
-        return false;
-    };
-    let mut desc = D3D11_RASTERIZER_DESC::default();
-    // SAFETY: `desc` is a valid receiver for a rasterizer-state description.
-    unsafe { state.GetDesc(&mut desc) };
-    desc.ScissorEnable.as_bool()
 }
 
 /// The viewport bound on the immediate context, which is the space a scissor rectangle set now would
@@ -796,6 +781,106 @@ mod tests {
                     mapped.x,
                 );
                 assert_eq!((mapped.y, mapped.z, mapped.w), (0.25, 0.5, 1.0));
+            }
+        }
+    }
+
+    /// Projecting through the half-target view-projection must land a point on the same place of its
+    /// eye's half that the eye's own projection puts it in that eye's full NDC range, leaving `y`, `z`,
+    /// and `w` alone; and inverting it must reconstruct the point from where it landed.
+    #[test]
+    fn half_target_view_projection_projects_into_the_eye_half() {
+        let fov = Fov {
+            left: -50.0_f32.to_radians(),
+            right: 40.0_f32.to_radians(),
+            up: 45.0_f32.to_radians(),
+            down: -45.0_f32.to_radians(),
+        };
+        let projection = glam::Mat4::from(
+            OffAxisProjection::new(fov, Camera::DEFAULT_NEAR_PLANE, Camera::DEFAULT_FAR_PLANE)
+                .reverse_z,
+        );
+        let view = glam::Mat4::look_at_rh(
+            glam::Vec3::new(10.0, 2.0, -3.0),
+            glam::Vec3::new(4.0, 1.0, 20.0),
+            glam::Vec3::Y,
+        );
+        let view_projection = projection * view;
+        for eye in 0..2 {
+            let staged = half_target_view_projection(eye, view_projection);
+            for point in [
+                glam::Vec3::new(4.0, 1.0, 20.0),
+                glam::Vec3::new(-3.0, 5.0, 40.0),
+                glam::Vec3::new(12.0, -1.0, 8.0),
+            ] {
+                let direct = view_projection * point.extend(1.0);
+                let through_half = staged * point.extend(1.0);
+                let (x_eye, x_full) = (direct.x / direct.w, through_half.x / through_half.w);
+                let expected = (x_eye - 1.0 + 2.0 * eye as f32) / 2.0;
+                assert!(
+                    (x_full - expected).abs() < 1e-5,
+                    "eye {eye}: {point:?} projected to full-target x {x_full}, not {expected}",
+                );
+                for (staged_value, direct_value) in [
+                    (through_half.y, direct.y),
+                    (through_half.z, direct.z),
+                    (through_half.w, direct.w),
+                ] {
+                    assert!(
+                        (staged_value - direct_value).abs() <= 1e-5 * direct_value.abs().max(1.0),
+                        "eye {eye}: {through_half:?} vs {direct:?}",
+                    );
+                }
+                // Inverting it, as the engine does, reconstructs the point from its full-target NDC.
+                let ndc = through_half / through_half.w;
+                let reconstructed = staged.inverse() * ndc;
+                let reconstructed = reconstructed.truncate() / reconstructed.w;
+                assert!(
+                    (reconstructed - point).length() <= 1e-3 * point.length(),
+                    "eye {eye}: reconstructed {reconstructed:?}, not {point:?}",
+                );
+            }
+        }
+    }
+
+    /// For a canted eye, reconstructing a point of its half through the centred camera's transform
+    /// and the half's inverse must land where the eye's own camera puts it: the turn folded into the
+    /// inverse is what makes the centred transform right for the eye.
+    #[test]
+    fn a_canted_eye_half_reconstructs_through_the_centred_camera() {
+        let fov = Fov {
+            left: -54.0_f32.to_radians(),
+            right: 51.0_f32.to_radians(),
+            up: 55.8_f32.to_radians(),
+            down: -55.8_f32.to_radians(),
+        };
+        let projection =
+            OffAxisProjection::new(fov, Camera::DEFAULT_NEAR_PLANE, Camera::DEFAULT_FAR_PLANE);
+        let center = glam::Mat4::from_rotation_translation(
+            glam::Quat::from_rotation_y(0.9) * glam::Quat::from_rotation_x(-0.2),
+            glam::Vec3::new(100.0, 20.0, -40.0),
+        );
+        for (eye, cant) in [(0usize, 5.0_f32), (1, -5.0)] {
+            let vr = EyeRenderParams {
+                projection_standard: projection.standard_depth,
+                projection_reverse_z: projection.reverse_z,
+                local_offset: glam::Vec3::ZERO,
+                orientation_delta: glam::Quat::from_rotation_y(cant.to_radians()),
+                convention: crate::vr::ProjectionConvention::EnginePreReverseZ,
+                jitter: None,
+            };
+            let inverse = glam::Mat4::from(vr.projection_reverse_z).inverse();
+            let through_half = center * eye_half_inverse(&vr, inverse, eye);
+            let own = vr.resolve(center) * inverse;
+            for (x_eye, y) in [(-0.8, 0.3), (0.0, 0.0), (0.9, -0.6)] {
+                let x_full = (x_eye - 1.0 + 2.0 * eye as f32) / 2.0;
+                let a = through_half * glam::Vec4::new(x_full, y, 0.5, 1.0);
+                let b = own * glam::Vec4::new(x_eye, y, 0.5, 1.0);
+                let (a, b) = (a.truncate() / a.w, b.truncate() / b.w);
+                assert!(
+                    (a - b).length() <= 1e-4 * b.length(),
+                    "eye {eye}: {a:?} vs {b:?}"
+                );
             }
         }
     }

@@ -1,0 +1,26 @@
+# Template: fill testing/recordings/weapon_left_hand.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a pistol drawn and held in the left hand"
+description = "Recorded right-handed with a pistol in the hip slot (controllers-and-roomscale.md, checklist items 8 and 13). Draw the pistol from the left hip with the left hand, hold it up and turn the wrist, fire twice, then holster it at its own holster."
+recording = "../recordings/weapon_left_hand.jc3trk"
+
+[[expect]]
+signal = "weapons.in_left_hand"
+
+[[expect]]
+name = "the right hand never takes it"
+signal = "weapons.in_right_hand"
+check = "never"
+
+[[expect]]
+status = "RIGID GRIP"
+
+[[expect]]
+name = "the gun never snaps on the wrist"
+signal = "grip.flips"
+at_most = 0
+
+[[expect]]
+name = "the pistol is holstered at the end"
+signal = "weapons.wielded"
+check = "at_end"
+is = false

@@ -32,20 +32,13 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 .on_hover_text(
                     "Registry type names (comma-separated) whose draws are inherently distant \
                      and skip with the far field, with no distance split — find candidates by \
-                     bisecting the Diagnostics tab's render-block-type registry",
+                     bisecting the render RE window's render-block-type registry",
                 );
         });
         let gated = crate::far_field::gated_type_names();
         if !gated.is_empty() {
             ui.label(format!("gated: {}", gated.join(", ")));
         }
-        // Keep the IsEnabled overrides in sync with the list (and drop them all when the split is
-        // disabled); `sync_type_gates` no-ops when nothing changed.
-        crate::far_field::sync_type_gates(if cfg.far_field.enabled {
-            &cfg.far_field.gated_types
-        } else {
-            ""
-        });
         ui.horizontal(|ui| {
             ui.label("Mode:");
             for (mode, label, hover) in [
@@ -101,13 +94,12 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
         {
             crate::far_field::request_dump(16);
         }
-        stats_table(ui);
     });
 }
 
 /// The per-pass near/far split counters, freshest first. Entries older than a second (passes that
 /// stopped drawing, or the split disabled) are dropped from view.
-fn stats_table(ui: &mut egui::Ui) {
+pub(super) fn readout(ui: &mut egui::Ui) {
     let mut stats = crate::far_field::stats_snapshot();
     stats.retain(|(_, s)| s.updated.elapsed().as_secs_f32() < 1.0);
     if stats.is_empty() {

@@ -1,0 +1,36 @@
+# The mod's temporal resolve at the coastal town at midday, camera still, in multipass and single-pass:
+# the stage-one check that it converges and draws nothing at the eye seam. FSR as shipped is the
+# configurations' own image, and `taa` the resolve. Run with `fast --save`. See
+# docs/mod/rendering/taa.md.
+name = "taa-check"
+warmup_frames = 120
+samples = 3
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+fsr = "enabled"
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [2091.2, 1040.1, 5005.0]
+yaw_deg = 270.0
+
+[motion]
+period_frames = 120
+phase = 15
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
+
+[[fsr_variants]]
+name = "taa"
+taa = true

@@ -1,5 +1,5 @@
 //! Character render-block detours: hide the local player's head from every non-shadow pass
-//! (issue #19).
+//! (issue #19), and re-pose the controller-driven hands at render time.
 //!
 //! A character model is one render block per material, and the same block objects are drawn for
 //! every pass — shadow, depth prepass, GBuffer — branching internally on
@@ -16,13 +16,20 @@
 //! real palette is never touched, so the shadow passes draw a full, headful character that
 //! follows the player-driven head pose.
 //!
+//! The same palette spoof carries the render-rate presentation of the player's body: while the
+//! player's body draws in any pass, shadows included, the upper body's entries (the spine, the head,
+//! the arms, and the hands) are re-posed from the latest tracking (see
+//! [`crate::controllers::presentation`], which falls back to the hands' and forearms' late update in
+//! [`crate::controllers::hands::late`]), in the same copy and the same detected layout as the
+//! collapse.
+//!
 //! Ownership is settled by pointer identity: every draw receives its owning model instance's
 //! embedded `CRBIInfo` as the `info` argument, and the character hook publishes the player's
 //! instance-info pointers slot-for-slot — the hide matches the body-model slot only. Character
 //! draws run concurrently on multiple render worker threads, so the spoof flag and the palette
 //! copy are thread-local.
 
-use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering};
 
 use detours_macro::detour;
 use jc3gi::{
@@ -39,7 +46,13 @@ use jc3gi::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{config::Config, stereo::STEREO_STATE};
+use crate::{
+    controllers::{
+        hands::palette::PaletteLayout,
+        presentation::{self, DrawEdit},
+    },
+    stereo::STEREO_STATE,
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -50,18 +63,6 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&RENDER_BLOCK_CHARACTER_SET_MATRIX_PALETTE_BINDER)
         .with_static_binder(&RENDER_BLOCK_CHARACTER_SKIN_SET_MATRIX_PALETTE_BINDER)
         .with_static_binder(&RENDER_BLOCK_LIGHT_GLOW_DRAW_BINDER)
-}
-
-/// One-shot diagnostics: while positive, each character-block draw near the player logs its
-/// class, instance transform, and per-batch skeleton lookups, then decrements. Armed from the
-/// debug UI to establish ground truth about the batch bone-index space and transform placement.
-pub static DUMP_DRAWS: AtomicI32 = AtomicI32::new(0);
-
-/// Publish the local player's root position pair (the T0 and T1 world-matrix translations), from
-/// the character hook. Diagnostics only (the dump's distance columns and focus filter); ownership
-/// uses the exact instance-info pointers below.
-pub fn publish_player_root(t0: glam::Vec3, t1: glam::Vec3) {
-    *PLAYER_ROOT.lock() = Some((t0, t1));
 }
 
 /// Publish the `CRBIInfo` pointers of the local player's model instances, slot-for-slot (zero for
@@ -128,15 +129,12 @@ fn render_block_character_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
-    unsafe { maybe_dump("Character::Draw", this as usize, batches, rc, info) };
-    let hide = unsafe { should_hide_facial(rc, info) };
-    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_DRAW
         .get()
         .unwrap()
         .call(this, rc, info);
-    HIDE_ACTIVE.with(|flag| flag.set(false));
+    end_player_draw();
 }
 
 #[detour(
@@ -147,15 +145,12 @@ fn render_block_character_draw_z(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
-    unsafe { maybe_dump("Character::DrawZ", this as usize, batches, rc, info) };
-    let hide = unsafe { should_hide_facial(rc, info) };
-    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_DRAW_Z
         .get()
         .unwrap()
         .call(this, rc, info);
-    HIDE_ACTIVE.with(|flag| flag.set(false));
+    end_player_draw();
 }
 
 #[detour(
@@ -166,15 +161,12 @@ fn render_block_character_skin_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
-    unsafe { maybe_dump("CharacterSkin::Draw", this as usize, batches, rc, info) };
-    let hide = unsafe { should_hide_facial(rc, info) };
-    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_SKIN_DRAW
         .get()
         .unwrap()
         .call(this, rc, info);
-    HIDE_ACTIVE.with(|flag| flag.set(false));
+    end_player_draw();
 }
 
 #[detour(
@@ -185,15 +177,12 @@ fn render_block_character_skin_draw_z(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let batches = unsafe { this.as_ref() }.map(|b| (b.m_SkinBatchesBegin, b.m_SkinBatchesEnd));
-    unsafe { maybe_dump("CharacterSkin::DrawZ", this as usize, batches, rc, info) };
-    let hide = unsafe { should_hide_facial(rc, info) };
-    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    unsafe { begin_player_draw(rc, info) };
     RENDER_BLOCK_CHARACTER_SKIN_DRAW_Z
         .get()
         .unwrap()
         .call(this, rc, info);
-    HIDE_ACTIVE.with(|flag| flag.set(false));
+    end_player_draw();
 }
 
 #[detour(
@@ -239,6 +228,12 @@ thread_local! {
     /// by index collision (observed in-game as a stretched holstered weapon).
     static HIDE_ACTIVE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 
+    /// Set around the original `Draw`/`DrawZ` call for the local player's body in every pass,
+    /// shadows included, while the presentation layer or the hands' late update re-poses it: the
+    /// palette hooks then re-pose the bones the edit names (see
+    /// [`crate::controllers::presentation`]). Thread-local for the same reason as the hide flag.
+    static HAND_EDIT: std::cell::Cell<Option<DrawEdit>> = const { std::cell::Cell::new(None) };
+
     /// The scratch palette the spoof writes into, one per draw thread for the same reason.
     static PALETTE_BUF: std::cell::RefCell<[Matrix3x4; PALETTE_BUF_LEN]> =
         const { std::cell::RefCell::new([Matrix3x4 { m: [0.0; 12] }; PALETTE_BUF_LEN]) };
@@ -254,35 +249,57 @@ static COLLAPSE_BONE_LEN: AtomicUsize = AtomicUsize::new(0);
 static COLLAPSE_TARGET: [AtomicU32; 3] = [const { AtomicU32::new(0) }; 3];
 static COLLAPSE_TARGET_VALID: AtomicBool = AtomicBool::new(false);
 
-/// The local player's root position pair, published by the character hook for the dump's
-/// distance display; `None` until a local character exists.
-static PLAYER_ROOT: parking_lot::Mutex<Option<(glam::Vec3, glam::Vec3)>> =
-    parking_lot::Mutex::new(None);
-
 /// The `CRBIInfo` pointers of the local player's model instances, slot-for-slot (zero = empty).
 static PLAYER_RBI_INFOS: [AtomicUsize; PLAYER_MODEL_SLOTS] =
     [const { AtomicUsize::new(0) }; PLAYER_MODEL_SLOTS];
 
-/// Whether this draw belongs to the local player's body model in a non-shadow pass with the hide
-/// enabled. Ownership is pointer identity: the draw's `info` is the owning model instance's
-/// embedded `CRBIInfo`, matched against the body slot's published pointer. Fail-safe: any missing
-/// piece (config off, shadow pass, nothing published) means "draw normally".
+/// Raise the draw's palette-spoof flags: the head hide for the player's body in non-shadow passes,
+/// and the body's render-time re-pose for the player's body in every pass.
+unsafe fn begin_player_draw(rc: *mut RenderContext, info: *const RBIInfo) {
+    let hide = unsafe { should_hide_facial(rc, info) };
+    HIDE_ACTIVE.with(|flag| flag.set(hide));
+    let edit = unsafe { hand_palette_edit(rc, info) };
+    HAND_EDIT.with(|cell| cell.set(edit));
+}
+
+/// Lower the flags [`begin_player_draw`] raised.
+fn end_player_draw() {
+    HIDE_ACTIVE.with(|flag| flag.set(false));
+    HAND_EDIT.with(|cell| cell.set(None));
+}
+
+/// The body's palette edit for this draw, when it belongs to the local player's body model: the
+/// render-time re-pose brought into the draw's model space through its instance matrix. Every pass
+/// takes it, so the shadow's body matches the rendered one.
+unsafe fn hand_palette_edit(rc: *mut RenderContext, info: *const RBIInfo) -> Option<DrawEdit> {
+    let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
+    if body == 0 || info as usize != body {
+        return None;
+    }
+    let (rc, info) = (unsafe { rc.as_ref() }?, unsafe { info.as_ref() }?);
+    let mut instance = Matrix4::default();
+    unsafe { info.GetMatrix(&mut instance, rc.m_RenderFrameIndex as i32) };
+    presentation::draw_edit(glam::Mat4::from(instance), crate::hooks::camera::last_dtf())
+}
+
+/// Whether this draw belongs to the local player's body model in a non-shadow pass. Ownership is
+/// pointer identity: the draw's `info` is the owning model instance's embedded `CRBIInfo`, matched
+/// against the body slot's published pointer. Fail-safe: any missing piece (a shadow pass, nothing
+/// published) means "draw normally".
 unsafe fn should_hide_facial(rc: *mut RenderContext, info: *const RBIInfo) -> bool {
-    if !Config::lock_query(|c| c.camera.hide_head_draws) {
+    // The pointer identity first: it rules out every draw but the player's body without a lock,
+    // and this runs for every character draw.
+    let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
+    if body == 0 || info as usize != body {
         return false;
     }
     let Some(rc_ref) = (unsafe { rc.as_ref() }) else {
         return false;
     };
     // Shadow passes draw everything: that is the whole point.
-    if rc_ref
+    !rc_ref
         .m_RenderStatus
         .intersects(RenderStatus::RENDERSTATUS_SHADOWMAP)
-    {
-        return false;
-    }
-    let body = PLAYER_RBI_INFOS[AnimatedModel::BODY_MODEL_SLOT as usize].load(Ordering::Relaxed);
-    body != 0 && info as usize == body
 }
 
 const PALETTE_BUF_LEN: usize = 256;
@@ -298,26 +315,31 @@ fn ortho_error(x: glam::Vec3, y: glam::Vec3, z: glam::Vec3) -> f32 {
         + y.dot(z).abs()
 }
 
-/// While the hide flag is up and this batch references a collapse bone, build a copy of the bone
-/// matrices with the collapse bones replaced by a zero rotation and the published neck-point
-/// translation, so their vertices contract to a point inside the collar. Returns `None` — draw
-/// with the real palette — whenever the spoof does not apply.
+/// Build a spoofed copy of the bone matrices when this batch references a bone either flag edits:
+/// while the hide flag is up, the collapse bones are replaced by a zero rotation and the published
+/// neck-point translation, so their vertices contract to a point inside the collar; while the hand
+/// edit is up, the bones it names are re-posed at render time. Both edits go
+/// into the one copy. Returns `None` — draw with the real palette — whenever neither applies.
 unsafe fn spoofed_matrices(
     matrices: *const Matrix3x4,
     batch: *const SkinBatch,
 ) -> Option<*const Matrix3x4> {
-    if !HIDE_ACTIVE.with(|flag| flag.get()) || matrices.is_null() {
+    if matrices.is_null() {
+        return None;
+    }
+    let len = COLLAPSE_BONE_LEN.load(Ordering::Relaxed);
+    let hide = HIDE_ACTIVE.with(|flag| flag.get())
+        && len > 0
+        && COLLAPSE_TARGET_VALID.load(Ordering::Relaxed);
+    let hands = HAND_EDIT.with(|cell| cell.get());
+    if !hide && hands.is_none() {
         return None;
     }
     let b = unsafe { batch.as_ref() }?;
     if b.BatchToSkeletonLookup.is_null() {
         return None;
     }
-    let len = COLLAPSE_BONE_LEN.load(Ordering::Relaxed);
-    if len == 0 || !COLLAPSE_TARGET_VALID.load(Ordering::Relaxed) {
-        return None;
-    }
-    let collapse = &COLLAPSE_BONES[..len];
+    let collapse = if hide { &COLLAPSE_BONES[..len] } else { &[] };
     let is_collapse = |bone: usize| {
         collapse
             .iter()
@@ -325,10 +347,12 @@ unsafe fn spoofed_matrices(
     };
 
     // The upload reads `matrices[lookup[i]]` per batch slot, so the copy must span the batch's
-    // highest referenced skeleton index; skip the spoof entirely if no collapse bone is used.
+    // highest referenced skeleton index; skip the spoof entirely if neither a collapse bone nor a
+    // re-posed bone of the body is used.
     let mut max_index = 0usize;
     let mut bones_counted = 0usize;
     let mut collapse_hits = 0usize;
+    let mut hand_hits = 0usize;
     for i in 0..b.BatchSize.max(0) as usize {
         let bone = unsafe { *b.BatchToSkeletonLookup.add(i) } as u16 as usize;
         max_index = max_index.max(bone);
@@ -337,9 +361,12 @@ unsafe fn spoofed_matrices(
             if is_collapse(bone) {
                 collapse_hits += 1;
             }
+            if hands.is_some_and(|edit| edit.touches(bone)) {
+                hand_hits += 1;
+            }
         }
     }
-    if collapse_hits == 0 || max_index >= PALETTE_BUF_LEN {
+    if (collapse_hits == 0 && hand_hits == 0) || max_index >= PALETTE_BUF_LEN {
         return None;
     }
     // A batch that is mostly facial is face *gear* (eyewear and the like, sometimes also rigged
@@ -347,8 +374,15 @@ unsafe fn spoofed_matrices(
     // non-facial anchor holds part of it mid-body and the connecting triangles stretch into a rod
     // (observed in-game). Mixed batches — the body skin carries the face and the hands together —
     // keep the selective collapse so the hands stay.
-    let collapse_whole_batch = collapse_hits * 2 >= bones_counted;
+    let collapse_whole_batch = collapse_hits > 0 && collapse_hits * 2 >= bones_counted;
 
+    let source_len = hands
+        .filter(|_| hand_hits > 0)
+        .map_or(0, |edit| edit.source_len());
+    if source_len > PALETTE_BUF_LEN {
+        return None;
+    }
+    let source = unsafe { std::slice::from_raw_parts(matrices, source_len.max(max_index + 1)) };
     PALETTE_BUF.with(|buf| {
         let mut buf = buf.borrow_mut();
         for (i, slot) in buf[..=max_index].iter_mut().enumerate() {
@@ -360,13 +394,17 @@ unsafe fn spoofed_matrices(
         // The point deliberately does NOT come from the palette: its translation slots depend on
         // the per-block layout below, and sampling them without knowing it parks the collapsed
         // cluster at a phantom point (see [`publish_collapse_target`]).
+        // The presentation layer's neck edit carries it with the neck it re-poses.
         let target = {
             let [x, y, z] = &COLLAPSE_TARGET;
-            [
+            let point = glam::Vec3::new(
                 f32::from_bits(x.load(Ordering::Relaxed)),
                 f32::from_bits(y.load(Ordering::Relaxed)),
                 f32::from_bits(z.load(Ordering::Relaxed)),
-            ]
+            );
+            hands
+                .map_or(point, |edit| edit.neck().transform_point3(point))
+                .to_array()
         };
         // The palette layout differs per block (empirically: the body/facial blocks store four
         // 3-float columns with the translation last, the face-gear and one skin block store
@@ -405,6 +443,19 @@ unsafe fn spoofed_matrices(
                 }
             }
         };
+        let layout = if row_layout {
+            PaletteLayout::Rows
+        } else {
+            PaletteLayout::Columns
+        };
+        // The hands first: a face-gear batch collapsed wholesale below overwrites any bone it
+        // shares with them, as it should.
+        if let Some(edit) = hands.filter(|_| hand_hits > 0) {
+            edit.apply(&mut buf[..=max_index], source, layout);
+            if HIDE_ACTIVE.with(|flag| flag.get()) && crate::stereo::draw_index() == 0 {
+                edit.sample_drawn_arms(&buf[..=max_index], layout);
+            }
+        }
         if collapse_whole_batch {
             // Including the root: face gear can anchor blend weights on bone 0 (leaving it kept
             // stretched a thin thread from the ground to the collar), and the upload is
@@ -413,103 +464,16 @@ unsafe fn spoofed_matrices(
                 let bone = unsafe { *b.BatchToSkeletonLookup.add(i) } as u16 as usize;
                 collapse_bone(bone, &mut buf[..]);
             }
-        } else {
+        } else if collapse_hits > 0 {
             for slot in collapse {
                 collapse_bone(slot.load(Ordering::Relaxed) as usize, &mut buf[..]);
             }
-        }
-        if DUMP_DRAWS.load(Ordering::Relaxed) > 0 {
-            tracing::info!(
-                target: "render_block_dump",
-                "  spoof batch={:?} size={} target=({:.2},{:.2},{:.2}) whole={} layout={} \
-                 (col_err={:.2} row_err={:.2})",
-                batch,
-                b.BatchSize,
-                target[0],
-                target[1],
-                target[2],
-                collapse_whole_batch,
-                if row_layout { "row" } else { "col" },
-                col_error,
-                row_error,
-            );
         }
         // The pointer stays valid for the original call below: the thread-local outlives the
         // draw, and the engine copies the constants into the command stream at call time (its
         // own callers pass stack buffers).
         Some(buf.as_ptr())
     })
-}
-
-/// Log one draw's ground truth while [`DUMP_DRAWS`] is armed: the block class and pointer, the
-/// pass status, the instance transform against the player roots, the collapse indices in use, and
-/// every batch's skeleton lookup (capped). Draws further than 10 m from the player are skipped so
-/// the dump stays focused.
-unsafe fn maybe_dump(
-    class: &str,
-    block: usize,
-    batches: Option<(*mut SkinBatch, *mut SkinBatch)>,
-    rc: *mut RenderContext,
-    info: *const RBIInfo,
-) {
-    if DUMP_DRAWS.load(Ordering::Relaxed) <= 0 {
-        return;
-    }
-    let Some((rc_ref, info_ref)) = (unsafe { rc.as_ref() }).zip(unsafe { info.as_ref() }) else {
-        return;
-    };
-    let Some((root_t0, root_t1)) = *PLAYER_ROOT.lock() else {
-        return;
-    };
-    let mut matrix = Matrix4::default();
-    unsafe { info_ref.GetMatrix(&mut matrix, rc_ref.m_RenderFrameIndex as i32) };
-    let translation = glam::Vec3::new(matrix.data[12], matrix.data[13], matrix.data[14]);
-    let d0 = translation.distance(root_t0);
-    let d1 = translation.distance(root_t1);
-    if d0.min(d1) > 10.0 {
-        return;
-    }
-    // Which of the player's model-instance slots (if any) this draw belongs to.
-    let slot = PLAYER_RBI_INFOS
-        .iter()
-        .position(|slot| slot.load(Ordering::Relaxed) == info as usize && info as usize != 0)
-        .map(|i| i as isize)
-        .unwrap_or(-1);
-    if DUMP_DRAWS.fetch_sub(1, Ordering::Relaxed) <= 0 {
-        return;
-    }
-    let len = COLLAPSE_BONE_LEN.load(Ordering::Relaxed);
-    let collapse: Vec<u32> = COLLAPSE_BONES[..len]
-        .iter()
-        .map(|c| c.load(Ordering::Relaxed))
-        .collect();
-    let mut lines = String::new();
-    if let Some((begin, end)) = batches {
-        let mut batch = begin;
-        while !batch.is_null() && batch < end {
-            let b = unsafe { &*batch };
-            let mut bones = Vec::new();
-            if !b.BatchToSkeletonLookup.is_null() {
-                for i in 0..(b.BatchSize.max(0) as usize).min(48) {
-                    bones.push(unsafe { *b.BatchToSkeletonLookup.add(i) });
-                }
-            }
-            lines.push_str(&format!(
-                "\n  batch size={} indices={} offset={} bones={:?}",
-                b.BatchSize, b.Size, b.Offset, bones
-            ));
-            batch = unsafe { batch.add(1) };
-        }
-    }
-    tracing::info!(
-        target: "render_block_dump",
-        "{class} block={block:#x} status={:#x} tidx={} pos=({:.2},{:.2},{:.2}) d0={d0:.2} d1={d1:.2} slot={slot} collapse={collapse:?}{lines}",
-        rc_ref.m_RenderStatus,
-        rc_ref.m_RenderFrameIndex,
-        translation.x,
-        translation.y,
-        translation.z,
-    );
 }
 
 /// The light-glow sprite is a screen-space billboard whose vertices are placed on the CPU by

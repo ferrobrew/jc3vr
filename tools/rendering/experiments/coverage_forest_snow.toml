@@ -1,0 +1,41 @@
+# Coverage: a meadow below a wooded hill, with a wind turbine and a road, at 13 h in snow.
+name = "coverage-forest-snow"
+warmup_frames = 30
+samples = 3
+interval_seconds = 2.0
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+
+[diagnostics]
+shader_identity = true
+
+[scene.environment]
+hour = 13.0
+weather = "snow"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [4620.3, 1563.5, -3213.5]
+yaw_deg = 0.0
+
+[motion]
+period_frames = 120
+phase = 15
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
+
+[[single_pass_variants]]
+name = "repeat"

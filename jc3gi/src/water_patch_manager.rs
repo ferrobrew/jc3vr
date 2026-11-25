@@ -9,7 +9,7 @@ pub struct WaterPatchManager {
     _field_0: [u8; 264],
     /// The camera the water reflection passes render from. `UpdateThread` rebuilds its transform
     /// each frame by mirroring the active camera across the water plane, and
-    /// `UpdateReflectionCamera` copies the active camera's FOV, near, far, and aspect onto it; the
+    /// [`UpdateReflectionCamera`](crate::water_patch_manager::WaterPatchManager::UpdateReflectionCamera) supplies its projection parameters. The
     /// reflection pre-passes (`PRE_RP_REFLECTION_PRE` through `PRE_RP_REFLECTION_POST`) then draw
     /// the mirrored backdrop, atmosphere, clouds, meshes, and distant lights from it into the
     /// distant/full reflection textures.
@@ -37,7 +37,19 @@ impl WaterPatchManager {
         }
     }
 }
-impl WaterPatchManager {}
+impl WaterPatchManager {
+    pub const UpdateReflectionCamera_ADDRESS: usize = 0x14033CD00;
+    /// Copies the active camera's dimensions, field of view, and clip distances to the reflection
+    /// camera and sets its aspect ratio from the camera manager.
+    pub unsafe fn UpdateReflectionCamera(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdateReflectionCamera_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+}
 impl std::convert::AsRef<WaterPatchManager> for WaterPatchManager {
     fn as_ref(&self) -> &WaterPatchManager {
         self

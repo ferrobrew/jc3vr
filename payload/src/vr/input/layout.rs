@@ -1,0 +1,591 @@
+//! The action layout: the `hands` set's poses, haptic output, and raw inputs, each input's OpenXR
+//! action name and suggested binding on each interaction profile, and the order every set and
+//! action takes in the persisted handle stash. Pure data; [`crate::vr::input::actions`] creates
+//! the OpenXR objects from it. The semantic sets' vocabulary is in [`crate::vr::input::semantic`].
+//!
+//! The raw inputs serve what has no game meaning of its own: the hand poses and finger curls, the
+//! grab volumes, the chords, input recovery, scheme detection, and the debug panel's pointer. Their
+//! localized names ask the player not to rebind them.
+//!
+//! The order of the items here is the order of the persisted handle stash (see
+//! [`crate::vr::input::stash`]), and [`fingerprint`] hashes it with each action's type and every
+//! suggested binding, so that a payload with a different layout or different suggestions never
+//! re-wraps another payload's handles: a runtime takes suggestions only before the sets are
+//! attached, so re-wrapping would keep the old suggestions without a sign.
+
+use crate::{
+    controllers::frame::{Hand, InteractionProfile},
+    vr::input::semantic::{SemanticSet, defaults},
+};
+
+/// Append the note that marks a raw input's localized name.
+macro_rules! raw_name {
+    ($name:literal) => {
+        concat!($name, " (raw: hand poses, grabs, chords; do not rebind)")
+    };
+}
+
+/// A boolean input.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum BoolInput {
+    TriggerClick,
+    TriggerTouch,
+    ThumbstickClick,
+    ThumbstickTouch,
+    TrackpadTouch,
+    AClick,
+    ATouch,
+    BClick,
+    BTouch,
+    SystemClick,
+    /// The grip as a boolean the runtime thresholds: the squeeze force on the Index, the squeeze
+    /// value on Touch. Read only by the input self-check, which compares the runtime's threshold
+    /// with the mod's own.
+    SqueezeClick,
+}
+
+impl BoolInput {
+    pub(crate) const ALL: [BoolInput; 11] = [
+        BoolInput::TriggerClick,
+        BoolInput::TriggerTouch,
+        BoolInput::ThumbstickClick,
+        BoolInput::ThumbstickTouch,
+        BoolInput::TrackpadTouch,
+        BoolInput::AClick,
+        BoolInput::ATouch,
+        BoolInput::BClick,
+        BoolInput::BTouch,
+        BoolInput::SystemClick,
+        BoolInput::SqueezeClick,
+    ];
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            BoolInput::TriggerClick => "trigger_click",
+            BoolInput::TriggerTouch => "trigger_touch",
+            BoolInput::ThumbstickClick => "thumbstick_click",
+            BoolInput::ThumbstickTouch => "thumbstick_touch",
+            BoolInput::TrackpadTouch => "trackpad_touch",
+            BoolInput::AClick => "a_click",
+            BoolInput::ATouch => "a_touch",
+            BoolInput::BClick => "b_click",
+            BoolInput::BTouch => "b_touch",
+            BoolInput::SystemClick => "system_click",
+            BoolInput::SqueezeClick => "squeeze_click",
+        }
+    }
+
+    pub(crate) const fn localized_name(self) -> &'static str {
+        match self {
+            BoolInput::TriggerClick => raw_name!("Trigger click"),
+            BoolInput::TriggerTouch => raw_name!("Trigger touch"),
+            BoolInput::ThumbstickClick => raw_name!("Thumbstick click"),
+            BoolInput::ThumbstickTouch => raw_name!("Thumbstick touch"),
+            BoolInput::TrackpadTouch => raw_name!("Trackpad touch"),
+            BoolInput::AClick => raw_name!("A (lower face button)"),
+            BoolInput::ATouch => raw_name!("A touch"),
+            BoolInput::BClick => raw_name!("B (upper face button)"),
+            BoolInput::BTouch => raw_name!("B touch"),
+            BoolInput::SystemClick => raw_name!("System or menu button"),
+            BoolInput::SqueezeClick => raw_name!("Grip press"),
+        }
+    }
+}
+
+/// A scalar input, `0..=1`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum FloatInput {
+    Trigger,
+    Squeeze,
+    SqueezeForce,
+    TrackpadForce,
+}
+
+impl FloatInput {
+    pub(crate) const ALL: [FloatInput; 4] = [
+        FloatInput::Trigger,
+        FloatInput::Squeeze,
+        FloatInput::SqueezeForce,
+        FloatInput::TrackpadForce,
+    ];
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            FloatInput::Trigger => "trigger_value",
+            FloatInput::Squeeze => "squeeze_value",
+            FloatInput::SqueezeForce => "squeeze_force",
+            FloatInput::TrackpadForce => "trackpad_force",
+        }
+    }
+
+    pub(crate) const fn localized_name(self) -> &'static str {
+        match self {
+            FloatInput::Trigger => raw_name!("Trigger pull"),
+            FloatInput::Squeeze => raw_name!("Grip squeeze"),
+            FloatInput::SqueezeForce => raw_name!("Grip force"),
+            FloatInput::TrackpadForce => raw_name!("Trackpad force"),
+        }
+    }
+}
+
+/// A two-axis input, each axis `-1..=1`.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Vec2Input {
+    Thumbstick,
+    Trackpad,
+}
+
+impl Vec2Input {
+    pub(crate) const ALL: [Vec2Input; 2] = [Vec2Input::Thumbstick, Vec2Input::Trackpad];
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Vec2Input::Thumbstick => "thumbstick",
+            Vec2Input::Trackpad => "trackpad",
+        }
+    }
+
+    pub(crate) const fn localized_name(self) -> &'static str {
+        match self {
+            Vec2Input::Thumbstick => raw_name!("Thumbstick"),
+            Vec2Input::Trackpad => raw_name!("Trackpad"),
+        }
+    }
+}
+
+/// The name of the always-active action set holding the poses, the haptic output, and the raw
+/// inputs.
+pub(crate) const HANDS_SET_NAME: &str = "hands";
+pub(crate) const HANDS_SET_LOCALIZED_NAME: &str = "Hands and raw input";
+
+/// The pose and output actions of the hands set, in stash order.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum HandsAction {
+    GripPose,
+    AimPose,
+    Haptic,
+}
+
+impl HandsAction {
+    pub(crate) const ALL: [HandsAction; 3] = [
+        HandsAction::GripPose,
+        HandsAction::AimPose,
+        HandsAction::Haptic,
+    ];
+
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            HandsAction::GripPose => "grip_pose",
+            HandsAction::AimPose => "aim_pose",
+            HandsAction::Haptic => "haptic",
+        }
+    }
+
+    pub(crate) const fn localized_name(self) -> &'static str {
+        match self {
+            HandsAction::GripPose => "Grip pose",
+            HandsAction::AimPose => "Aim pose",
+            HandsAction::Haptic => "Vibration",
+        }
+    }
+
+    /// The type tag [`stash_order`] gives the action.
+    const fn tag(self) -> &'static str {
+        match self {
+            HandsAction::GripPose | HandsAction::AimPose => "pose",
+            HandsAction::Haptic => "haptic",
+        }
+    }
+}
+
+/// Any action of the layout, for the binding table.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Input {
+    Bool(BoolInput),
+    Float(FloatInput),
+    Vec2(Vec2Input),
+    Hands(HandsAction),
+}
+
+/// An interaction profile the mod ships suggested bindings for.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Profile {
+    ValveIndex,
+    OculusTouch,
+}
+
+impl Profile {
+    /// In suggestion order: the primary profile first.
+    pub(crate) const ALL: [Profile; 2] = [Profile::ValveIndex, Profile::OculusTouch];
+
+    pub(crate) const fn path(self) -> &'static str {
+        match self {
+            Profile::ValveIndex => "/interaction_profiles/valve/index_controller",
+            Profile::OculusTouch => "/interaction_profiles/oculus/touch_controller",
+        }
+    }
+}
+
+/// The top-level user path of a hand, the subaction path every action is created with.
+pub(crate) const fn hand_path(hand: Hand) -> &'static str {
+    match hand {
+        Hand::Left => "/user/hand/left",
+        Hand::Right => "/user/hand/right",
+    }
+}
+
+/// The component path, relative to the hand's user path, that `input` suggests binding to on
+/// `hand` of `profile`, or `None` when the profile lacks the input.
+///
+/// The Touch layout maps onto the Index names by position: the left controller's X and Y are the
+/// lower and upper face buttons like A and B, and its menu button stands in for the system button.
+/// Touch has no trigger click, so the boolean trigger click binds to the trigger value, which
+/// OpenXR thresholds into a boolean. The right Touch controller's system button is reserved for the
+/// runtime and is not suggested.
+pub(crate) const fn binding(profile: Profile, hand: Hand, input: Input) -> Option<&'static str> {
+    match profile {
+        Profile::ValveIndex => Some(index_binding(input)),
+        Profile::OculusTouch => touch_binding(hand, input),
+    }
+}
+
+/// The shipped profile `profile` names, or `None` for no profile or one the runtime emulates
+/// through another profile's bindings.
+pub(crate) const fn shipped(profile: InteractionProfile) -> Option<Profile> {
+    match profile {
+        InteractionProfile::ValveIndex => Some(Profile::ValveIndex),
+        InteractionProfile::OculusTouch => Some(Profile::OculusTouch),
+        InteractionProfile::None | InteractionProfile::Other => None,
+    }
+}
+
+/// Whether a hand bound to `profile` reads `input` from a physical input of its own. Only a
+/// profile the mod ships bindings for is known to: an emulated profile reads whatever the runtime
+/// maps onto the shipped bindings, which for an input the emulated controller lacks is nothing.
+pub(crate) const fn provides(profile: InteractionProfile, hand: Hand, input: Input) -> bool {
+    match shipped(profile) {
+        Some(profile) => binding(profile, hand, input).is_some(),
+        None => false,
+    }
+}
+
+/// Every set and action in stash order, each with a tag naming its type, for [`fingerprint`] and
+/// the stash's handle count: the hands set, its pose and output actions, and its raw inputs, then
+/// each semantic set and its actions.
+pub(crate) fn stash_order() -> impl Iterator<Item = (&'static str, &'static str)> {
+    std::iter::once((HANDS_SET_NAME, SET_TAG))
+        .chain(HandsAction::ALL.iter().map(|a| (a.name(), a.tag())))
+        .chain(BoolInput::ALL.iter().map(|i| (i.name(), "bool")))
+        .chain(FloatInput::ALL.iter().map(|i| (i.name(), "float")))
+        .chain(Vec2Input::ALL.iter().map(|i| (i.name(), "vec2")))
+        .chain(SemanticSet::ALL.iter().flat_map(|&set| {
+            std::iter::once((set.name(), SET_TAG)).chain(
+                set.actions()
+                    .iter()
+                    .map(|action| (action.name, action.kind.label())),
+            )
+        }))
+}
+
+/// The number of handles the stash holds.
+pub(crate) fn stash_len() -> usize {
+    stash_order().count()
+}
+
+/// An FNV-1a hash identifying this layout and its suggested bindings for a player whose dominant
+/// hand is `dominant`: [`stash_order`], names and types, then [`suggested_bindings`].
+pub(crate) fn fingerprint(dominant: Hand) -> u64 {
+    fingerprint_of(stash_order().chain(suggested_bindings(dominant)))
+}
+
+/// Every binding the payload suggests for a player whose dominant hand is `dominant`, as name and
+/// path pairs: per shipped profile, a marker naming it, then the raw inputs' bindings per hand,
+/// then the semantic actions' suggestions.
+fn suggested_bindings(dominant: Hand) -> impl Iterator<Item = (&'static str, &'static str)> {
+    Profile::ALL.into_iter().flat_map(move |profile| {
+        let raw = Hand::BOTH.into_iter().flat_map(move |hand| {
+            std::iter::once((hand.label(), HAND_TAG)).chain(raw_inputs().filter_map(
+                move |(name, input)| binding(profile, hand, input).map(|path| (name, path)),
+            ))
+        });
+        let semantic = defaults::suggestions(profile, dominant)
+            .into_iter()
+            .flat_map(|suggestion| {
+                [
+                    (suggestion.set.name(), suggestion.hand.label()),
+                    (
+                        suggestion.set.actions()[suggestion.index].name,
+                        suggestion.path,
+                    ),
+                ]
+            });
+        std::iter::once((profile.path(), PROFILE_TAG))
+            .chain(raw)
+            .chain(semantic)
+    })
+}
+
+/// Every raw input with its action name, in stash order.
+fn raw_inputs() -> impl Iterator<Item = (&'static str, Input)> {
+    HandsAction::ALL
+        .iter()
+        .map(|&a| (a.name(), Input::Hands(a)))
+        .chain(BoolInput::ALL.iter().map(|&i| (i.name(), Input::Bool(i))))
+        .chain(FloatInput::ALL.iter().map(|&i| (i.name(), Input::Float(i))))
+        .chain(Vec2Input::ALL.iter().map(|&i| (i.name(), Input::Vec2(i))))
+}
+
+/// The tags [`suggested_bindings`] gives a profile and a hand.
+const PROFILE_TAG: &str = "profile";
+const HAND_TAG: &str = "hand";
+
+/// The tag [`stash_order`] gives an action set.
+const SET_TAG: &str = "set";
+
+fn fingerprint_of(items: impl Iterator<Item = (&'static str, &'static str)>) -> u64 {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for (name, tag) in items {
+        for byte in name
+            .bytes()
+            .chain(std::iter::once(0))
+            .chain(tag.bytes())
+            .chain(std::iter::once(0))
+        {
+            hash ^= u64::from(byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    hash
+}
+
+const fn index_binding(input: Input) -> &'static str {
+    match input {
+        Input::Bool(b) => match b {
+            BoolInput::TriggerClick => "input/trigger/click",
+            BoolInput::TriggerTouch => "input/trigger/touch",
+            BoolInput::ThumbstickClick => "input/thumbstick/click",
+            BoolInput::ThumbstickTouch => "input/thumbstick/touch",
+            BoolInput::TrackpadTouch => "input/trackpad/touch",
+            BoolInput::AClick => "input/a/click",
+            BoolInput::ATouch => "input/a/touch",
+            BoolInput::BClick => "input/b/click",
+            BoolInput::BTouch => "input/b/touch",
+            BoolInput::SystemClick => "input/system/click",
+            BoolInput::SqueezeClick => "input/squeeze/force",
+        },
+        Input::Float(f) => match f {
+            FloatInput::Trigger => "input/trigger/value",
+            FloatInput::Squeeze => "input/squeeze/value",
+            FloatInput::SqueezeForce => "input/squeeze/force",
+            FloatInput::TrackpadForce => "input/trackpad/force",
+        },
+        Input::Vec2(v) => match v {
+            Vec2Input::Thumbstick => "input/thumbstick",
+            Vec2Input::Trackpad => "input/trackpad",
+        },
+        Input::Hands(h) => hands_binding(h),
+    }
+}
+
+const fn touch_binding(hand: Hand, input: Input) -> Option<&'static str> {
+    let left = matches!(hand, Hand::Left);
+    match input {
+        Input::Bool(b) => match b {
+            BoolInput::TriggerClick => Some("input/trigger/value"),
+            BoolInput::TriggerTouch => Some("input/trigger/touch"),
+            BoolInput::ThumbstickClick => Some("input/thumbstick/click"),
+            BoolInput::ThumbstickTouch => Some("input/thumbstick/touch"),
+            BoolInput::TrackpadTouch => None,
+            BoolInput::AClick if left => Some("input/x/click"),
+            BoolInput::AClick => Some("input/a/click"),
+            BoolInput::ATouch if left => Some("input/x/touch"),
+            BoolInput::ATouch => Some("input/a/touch"),
+            BoolInput::BClick if left => Some("input/y/click"),
+            BoolInput::BClick => Some("input/b/click"),
+            BoolInput::BTouch if left => Some("input/y/touch"),
+            BoolInput::BTouch => Some("input/b/touch"),
+            BoolInput::SystemClick if left => Some("input/menu/click"),
+            BoolInput::SystemClick => None,
+            BoolInput::SqueezeClick => Some("input/squeeze/value"),
+        },
+        Input::Float(f) => match f {
+            FloatInput::Trigger => Some("input/trigger/value"),
+            FloatInput::Squeeze => Some("input/squeeze/value"),
+            FloatInput::SqueezeForce | FloatInput::TrackpadForce => None,
+        },
+        Input::Vec2(v) => match v {
+            Vec2Input::Thumbstick => Some("input/thumbstick"),
+            Vec2Input::Trackpad => None,
+        },
+        Input::Hands(h) => Some(hands_binding(h)),
+    }
+}
+
+const fn hands_binding(action: HandsAction) -> &'static str {
+    match action {
+        HandsAction::GripPose => "input/grip/pose",
+        HandsAction::AimPose => "input/aim/pose",
+        HandsAction::Haptic => "output/haptic",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::*;
+
+    fn every_input() -> Vec<Input> {
+        BoolInput::ALL
+            .iter()
+            .map(|&b| Input::Bool(b))
+            .chain(FloatInput::ALL.iter().map(|&f| Input::Float(f)))
+            .chain(Vec2Input::ALL.iter().map(|&v| Input::Vec2(v)))
+            .chain(HandsAction::ALL.iter().map(|&h| Input::Hands(h)))
+            .collect()
+    }
+
+    #[test]
+    fn index_binds_every_input_on_both_hands() {
+        for hand in Hand::BOTH {
+            for input in every_input() {
+                assert!(
+                    binding(Profile::ValveIndex, hand, input).is_some(),
+                    "{input:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn touch_binds_the_poses_haptics_and_core_inputs() {
+        for hand in Hand::BOTH {
+            for input in [
+                Input::Hands(HandsAction::GripPose),
+                Input::Hands(HandsAction::AimPose),
+                Input::Hands(HandsAction::Haptic),
+                Input::Float(FloatInput::Trigger),
+                Input::Float(FloatInput::Squeeze),
+                Input::Vec2(Vec2Input::Thumbstick),
+                Input::Bool(BoolInput::AClick),
+                Input::Bool(BoolInput::BClick),
+            ] {
+                assert!(
+                    binding(Profile::OculusTouch, hand, input).is_some(),
+                    "{input:?}"
+                );
+            }
+        }
+        let x = binding(
+            Profile::OculusTouch,
+            Hand::Left,
+            Input::Bool(BoolInput::AClick),
+        );
+        assert_eq!(x, Some("input/x/click"));
+    }
+
+    #[test]
+    fn binding_paths_are_well_formed_component_paths() {
+        for profile in Profile::ALL {
+            for hand in Hand::BOTH {
+                for input in every_input() {
+                    let Some(path) = binding(profile, hand, input) else {
+                        continue;
+                    };
+                    assert!(!path.starts_with('/') && !path.ends_with('/'), "{path}");
+                    assert!(
+                        path.starts_with("input/") || path.starts_with("output/"),
+                        "{path}"
+                    );
+                    assert!(
+                        path.bytes()
+                            .all(|c| c.is_ascii_lowercase() || c == b'/' || c == b'_'),
+                        "{path}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn action_names_are_valid_and_unique_per_set() {
+        let valid = |name: &str| {
+            !name.is_empty()
+                && name
+                    .bytes()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'_')
+        };
+        let names: Vec<&str> = HandsAction::ALL
+            .iter()
+            .map(|a| a.name())
+            .chain(BoolInput::ALL.iter().map(|i| i.name()))
+            .chain(FloatInput::ALL.iter().map(|i| i.name()))
+            .chain(Vec2Input::ALL.iter().map(|i| i.name()))
+            .collect();
+        assert_eq!(names.iter().collect::<HashSet<_>>().len(), names.len());
+        assert!(names.iter().all(|n| valid(n)));
+        let sets: HashSet<&str> = SemanticSet::ALL
+            .iter()
+            .map(|s| s.name())
+            .chain(std::iter::once(HANDS_SET_NAME))
+            .collect();
+        assert_eq!(sets.len(), SemanticSet::ALL.len() + 1);
+    }
+
+    #[test]
+    fn only_the_index_provides_the_grip_force_and_the_trackpad() {
+        let force = Input::Float(FloatInput::SqueezeForce);
+        let pad = Input::Vec2(Vec2Input::Trackpad);
+        for hand in Hand::BOTH {
+            assert!(provides(InteractionProfile::ValveIndex, hand, force));
+            assert!(provides(InteractionProfile::ValveIndex, hand, pad));
+            for profile in [
+                InteractionProfile::OculusTouch,
+                InteractionProfile::Other,
+                InteractionProfile::None,
+            ] {
+                assert!(!provides(profile, hand, force), "{profile:?}");
+                assert!(!provides(profile, hand, pad), "{profile:?}");
+            }
+            assert!(provides(
+                InteractionProfile::OculusTouch,
+                hand,
+                Input::Float(FloatInput::Squeeze)
+            ));
+        }
+    }
+
+    #[test]
+    fn the_stash_holds_every_set_and_action() {
+        let semantic: usize = SemanticSet::ALL.iter().map(|s| 1 + s.actions().len()).sum();
+        assert_eq!(stash_len(), 1 + 3 + 11 + 4 + 2 + semantic);
+        assert_eq!(fingerprint(Hand::Right), fingerprint(Hand::Right));
+    }
+
+    #[test]
+    fn the_fingerprint_covers_the_suggested_bindings() {
+        // The left-handed table moves the dominant-hand rows, so the two hands' suggestions differ.
+        assert_ne!(fingerprint(Hand::Left), fingerprint(Hand::Right));
+        let moved = stash_order()
+            .chain(suggested_bindings(Hand::Right))
+            .map(|(name, tag)| match (name, tag) {
+                ("jump", "input/a/click") => (name, "input/b/click"),
+                _ => (name, tag),
+            });
+        assert_ne!(fingerprint_of(moved), fingerprint(Hand::Right));
+    }
+
+    #[test]
+    fn the_fingerprint_covers_the_action_types() {
+        let retyped = stash_order().map(|(name, tag)| match name {
+            "jump" => (name, "float"),
+            _ => (name, tag),
+        });
+        assert_ne!(fingerprint_of(retyped), fingerprint_of(stash_order()));
+        let renamed = stash_order().map(|(name, tag)| match name {
+            "jump" => ("hop", tag),
+            _ => (name, tag),
+        });
+        assert_ne!(fingerprint_of(renamed), fingerprint_of(stash_order()));
+    }
+}

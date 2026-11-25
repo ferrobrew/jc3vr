@@ -22,19 +22,32 @@
 //!
 //! Input arrives on the engine's fixed-rate sim tick (the device poll in
 //! `InputDeviceManager::Update`), not per rendered frame. The whole sim step ([`on_input_tick`])
-//! runs inside that hook, on the engine's own tick timeline: the published pose pair
-//! ([`crate::headpose::snapshot_prev`]) rotates at the exact moment the engine resets its sub-frame
-//! interpolation fraction, so the camera hook's previous/current pair is phase-aligned with the
-//! `dtf` lerp that smooths it across the frames between ticks. (Deferring the step to the next
-//! frame's update left the render lerping a stale pair at `dtf ≈ 0` on every tick frame — a
-//! per-tick jerk.)
+//! runs inside that hook, in the engine's input job in play, on the engine's own tick timeline: the
+//! published pose pair ([`crate::headpose::snapshot_prev`]) rotates at the exact moment the engine
+//! resets its sub-frame interpolation fraction, so the camera hook's previous/current pair is
+//! phase-aligned with the `dtf` lerp that smooths it across the frames between ticks. (Deferring
+//! the step to the next frame's update left the render lerping a stale pair at `dtf ≈ 0` on every
+//! tick frame — a per-tick jerk.)
 
-use std::sync::atomic::Ordering;
+use std::{sync::atomic::Ordering, time::Instant};
 
+use body_rig::angle::{direction, wrap};
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
-use crate::{config::Config, grapple, headpose::HeadPose, hooks::input::locomotion};
+use crate::{
+    config::Config,
+    controllers::{
+        body::procedural::{authority::Case, published_status},
+        roomscale::{frame_shared, seat::SeatPhase},
+    },
+    grapple,
+    headpose::{
+        HeadPose,
+        xr::{YawTick, advance_body_yaw, follow_turn},
+    },
+    hooks::input::locomotion,
+};
 
 /// The latch state (on-foot only).
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
@@ -57,15 +70,17 @@ pub enum HeadMode {
     Other,
 }
 
-/// Handle one engine input tick, called from the `InputDeviceManager::Update` hook (on the game
-/// thread, inside the engine's fixed-rate sim tick): detect the mode, rotate the published pose
-/// pair, integrate the look deltas, update the latch and the smoothed posture, and publish the
-/// headpose. `dt` is the engine's tick delta, used for the posture low-pass.
+/// Handle one engine input tick, called from the `InputDeviceManager::Update` hook (in the poll
+/// stage, [`crate::controllers::bindings::stage`]: the engine's input job in play, inside the
+/// engine's fixed-rate sim tick): detect the mode, rotate the published pose
+/// pair, integrate the look deltas, update the latch, and publish the headpose.
 pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     let config = Config::lock_query(|c| c.headpose);
     if !config.enabled {
         return;
     }
+    // Read before the SIM lock: it takes the config lock and the torso estimate's slot.
+    let follow = crate::controllers::body::rig::follow_settings();
 
     let mut s = SIM.lock();
 
@@ -87,8 +102,14 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // The in-water counterpart, from the swim movement cores (the swim family never runs the
     // orientation evaluator). Kept out of `HeadMode` deliberately: swimming only extends the VR
     // body-yaw accumulator below, while the flatscreen latch machinery stays off-foot in water.
+    // The character's motion state counts too: the cores run on the character update's cadence,
+    // which need not give every input tick a run, and a tick read as out of the water clears the
+    // accumulator. Without a target the swim detours stand down for that tick and the core turns
+    // the body toward the camera-relative stick; the view rides the body, so the camera turns with
+    // it, and the next tick re-seeds the accumulator from the turned body, which compounds into a
+    // circle.
     let swim_evals = crate::hooks::input::swim::SWIM_EVAL_CALLS.load(Ordering::Relaxed);
-    let swimming = swim_evals > s.last_swim_evals;
+    let swimming = swim_evals > s.last_swim_evals || crate::hooks::input::swim::swimming();
     s.last_swim_evals = swim_evals;
 
     // Advance the grapple reel-in body-frame filter on this tick, likewise before the VR
@@ -97,11 +118,14 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // loop advances it per rendered frame as well, so under VR this tick advance is the flatscreen
     // fallback and the state read that keeps `sim` coverage.
     {
-        let body = read_body_rotation().unwrap_or(Quat::IDENTITY);
-        let anchor = crate::headpose::anchor().unwrap_or(Vec3::ZERO);
+        // The view frame, with any turn of the body under the view taken out, so the frame the
+        // filter holds is the one the view composes with.
+        let body = read_body_rotation().unwrap_or(Quat::IDENTITY) * follow_turn(true);
+        let rooted = crate::headpose::anchor_pair()
+            .map(|pair| pair[1].view_head() - pair[1].root.w_axis.truncate());
         // `on_foot` is passed in rather than read back via `sim::mode()`: the SIM lock is held
         // here, and re-locking it inside `advance` deadlocks the input tick.
-        grapple::advance(body, anchor, s.mode == HeadMode::OnFoot, &config.grapple);
+        grapple::advance(body, rooted, s.mode == HeadMode::OnFoot, &config.grapple);
         grapple::telemetry::log_tick(body, dt);
     }
 
@@ -114,12 +138,25 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
         // Swimming keeps the accumulator seeded: the swim yaw override
         // (`crate::hooks::input::swim`) consumes the same body-yaw target, and clearing the
         // accumulator in water would hand the body back to the game's act-quantized turns.
-        crate::headpose::xr::advance_body_yaw(
-            look_x,
-            look_x_delta,
-            s.mode == HeadMode::OnFoot,
-            swimming,
+        let vehicle_transition = frame_shared()
+            .filter(|shared| shared.fresh(Instant::now()))
+            .is_some_and(|shared| matches!(shared.seat, SeatPhase::Entering | SeatPhase::Exiting));
+        let body_thrown = matches!(
+            published_status().case,
+            Case::Ragdoll | Case::GettingUp | Case::Dead
+        );
+        advance_body_yaw(
+            YawTick {
+                look_x,
+                delta_based: look_x_delta,
+                on_foot: s.mode == HeadMode::OnFoot,
+                swimming,
+                vehicle_transition,
+                body_thrown,
+                dt,
+            },
             &config,
+            &follow,
         );
         return;
     }
@@ -133,9 +170,8 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
 
     // Negated: a positive net LOOK_RIGHT delta must turn the head clockwise from above, which is
     // a negative rotation about +Y (established in-game; the unnegated form turned the wrong way).
-    let yaw_delta = -(look_x * config.mouse_sensitivity).to_radians();
-    let pitch_delta =
-        (if config.invert_y { -look_y } else { look_y } * config.mouse_sensitivity).to_radians();
+    let yaw_delta = -(look_x * MOUSE_SENSITIVITY).to_radians();
+    let pitch_delta = (look_y * MOUSE_SENSITIVITY).to_radians();
 
     match s.mode {
         HeadMode::OnFoot => {
@@ -143,26 +179,26 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
             // rotation since the last tick from the body-relative offset. Without this, the offset
             // rides the turning body and the latch never converges.
             if let (Some(now), Some(then)) = (body_yaw, s.last_body_yaw) {
-                s.yaw = wrap_angle(s.yaw - wrap_angle(now - then));
+                s.yaw = wrap(s.yaw - wrap(now - then));
             }
-            s.yaw = wrap_angle(s.yaw + yaw_delta);
+            s.yaw = wrap(s.yaw + yaw_delta);
         }
         HeadMode::Other => {
-            let yaw_limit = config.free_look_yaw_limit_deg.to_radians();
+            let yaw_limit = FREE_LOOK_YAW_LIMIT_DEG.to_radians();
             s.yaw = (s.yaw + yaw_delta).clamp(-yaw_limit, yaw_limit);
         }
     }
     // The pitch is clamped in every mode: a real head cannot pitch past vertical, and letting the
     // euler pitch cross ±90° flips the yaw/roll decomposition.
-    let pitch_limit = config.free_look_pitch_limit_deg.to_radians();
+    let pitch_limit = FREE_LOOK_PITCH_LIMIT_DEG.to_radians();
     s.pitch = (s.pitch + pitch_delta).clamp(-pitch_limit, pitch_limit);
     s.last_body_yaw = body_yaw;
 
     match s.mode {
         HeadMode::OnFoot => {
-            s.latch = update_latch(s.latch, s.yaw.to_degrees(), s.mode, &config);
+            s.latch = update_latch(s.latch, s.yaw.to_degrees(), s.mode);
             s.body_yaw_target = (s.latch == LatchState::BodyFollowing)
-                .then(|| body_yaw.map(|b| yaw_forward(b + s.yaw)))
+                .then(|| body_yaw.map(|b| direction(b + s.yaw)))
                 .flatten();
         }
         HeadMode::Other => {
@@ -174,42 +210,14 @@ pub fn on_input_tick(look_x: f32, look_y: f32, look_x_delta: bool, dt: f32) {
     // Publish: the head orientation rides the full body frame — the body-relative offset composed
     // onto the body's world rotation. On foot the body is upright and this reduces to a yaw
     // composition; in vehicles and the wingsuit it carries the body's pitch and roll too, so a
-    // banking wingsuit rolls the view with it. Animation-driven posture (hanging, ledge grabs)
-    // inverts the body in the *bone pose* over an upright root, which the root rotation alone
-    // never sees, so the animated neck axis's swing away from body-up is folded in as an extra
-    // posture factor — measured from the published anchors (joint translations, whose conventions
-    // are proven in-game), not from joint orientations (whose rest frames are not). The position
-    // anchors to the animated head bone plus the configured roomscale-testing offset.
-    let posture_target = if config.posture_enabled {
-        let up_body = body_rotation
-            .map(|rotation| rotation.inverse() * -crate::headpose::neck_delta())
-            .unwrap_or(Vec3::Y);
-        posture_swing(
-            up_body,
-            config.posture_deadband_deg,
-            config.posture_full_deg,
-        )
-    } else {
-        Quat::IDENTITY
-    };
-    // Low-pass the posture toward its target: the raw per-tick swing carries the walk cycle's
-    // torso oscillation, and near full inversion its axis is derived from a near-zero cross
-    // product and flaps tick to tick (the view's yaw spun wildly while hanging). The exponential
-    // smoothing keeps only the low-frequency component — a hang settles into the inverted view
-    // over the time constant, while animation-rate motion is attenuated away.
-    let alpha = if config.posture_smoothing_s > f32::EPSILON {
-        1.0 - (-dt.max(0.0) / config.posture_smoothing_s).exp()
-    } else {
-        1.0
-    };
-    s.posture = s.posture.slerp(posture_target, alpha).normalize();
+    // banking wingsuit rolls the view with it. The position anchors to the animated head bone.
     let head_offset = Quat::from_euler(glam::EulerRot::YXZ, s.yaw, s.pitch, s.roll);
     // The grapple filter cancels the body rotation the reel adds while reeling in (issue #36), so
     // the alignment toward the target never reaches the composed view; see `crate::grapple`.
     let body_rotation = grapple::filter_body_rotation(body_rotation.unwrap_or(Quat::IDENTITY));
-    let orientation = body_rotation * s.posture * head_offset;
+    let orientation = body_rotation * head_offset;
     let anchor = grapple::filter_anchor(crate::headpose::anchor().unwrap_or(Vec3::ZERO));
-    let position = anchor + orientation * config.position_offset;
+    let position = anchor;
     drop(s);
     crate::headpose::set_pose(HeadPose {
         position,
@@ -248,7 +256,6 @@ pub fn reset() {
     s.roll = 0.0;
     s.latch = LatchState::Decoupled;
     s.body_yaw_target = None;
-    s.posture = Quat::IDENTITY;
 }
 
 struct SimState {
@@ -268,12 +275,28 @@ struct SimState {
     last_swim_evals: u64,
     /// The body yaw at the last processed input tick, for the on-foot compensation.
     last_body_yaw: Option<f32>,
-    /// The smoothed animation-posture swing (see [`posture_swing`] and the low-pass in
-    /// [`on_input_tick`]).
-    posture: Quat,
     /// The last computed body-yaw target, for [`body_yaw_target`].
     body_yaw_target: Option<Vec3>,
 }
+
+/// Mouse-look sensitivity, degrees per unit of look-effector delta.
+pub(crate) const MOUSE_SENSITIVITY: f32 = 7.5;
+
+/// On foot: the half-angle, degrees, of the decoupled cone. Beyond it, body yaw begins following
+/// the head.
+const LATCH_THRESHOLD_DEG: f32 = 75.0;
+
+/// On foot: the half-angle, degrees, below which the latch disengages. Lower than
+/// [`LATCH_THRESHOLD_DEG`] to provide hysteresis and prevent jitter at the boundary.
+const LATCH_DISENGAGE_THRESHOLD_DEG: f32 = 65.0;
+
+/// Off foot: the most body-relative yaw, degrees, in either direction. Ranges beyond a real head's
+/// ~80° are made anatomically plausible by the neck twist in [`crate::hooks::character::head`].
+const FREE_LOOK_YAW_LIMIT_DEG: f32 = 135.0;
+
+/// The most pitch, degrees, in either direction, applied in every mode: a real head cannot pitch
+/// past vertical, and letting the euler pitch cross ±90° flips the yaw/roll decomposition.
+const FREE_LOOK_PITCH_LIMIT_DEG: f32 = 70.0;
 
 const SIM_DEFAULT: SimState = SimState {
     yaw: 0.0,
@@ -284,7 +307,6 @@ const SIM_DEFAULT: SimState = SimState {
     last_orientation_evals: 0,
     last_swim_evals: 0,
     last_body_yaw: None,
-    posture: Quat::IDENTITY,
     body_yaw_target: None,
 };
 
@@ -302,25 +324,20 @@ fn detect_mode(old: u64, new: u64) -> HeadMode {
 
 /// Update the latch state given the body-relative yaw and the current mode. On-foot uses the
 /// hysteresis latch; other modes are always decoupled.
-fn update_latch(
-    latch: LatchState,
-    relative_yaw_deg: f32,
-    mode: HeadMode,
-    config: &crate::headpose::HeadPoseConfig,
-) -> LatchState {
+fn update_latch(latch: LatchState, relative_yaw_deg: f32, mode: HeadMode) -> LatchState {
     if mode != HeadMode::OnFoot {
         return LatchState::Decoupled;
     }
     match latch {
         LatchState::Decoupled => {
-            if relative_yaw_deg.abs() >= config.latch_threshold_deg {
+            if relative_yaw_deg.abs() >= LATCH_THRESHOLD_DEG {
                 LatchState::BodyFollowing
             } else {
                 LatchState::Decoupled
             }
         }
         LatchState::BodyFollowing => {
-            if relative_yaw_deg.abs() <= config.latch_disengage_threshold_deg {
+            if relative_yaw_deg.abs() <= LATCH_DISENGAGE_THRESHOLD_DEG {
                 LatchState::Decoupled
             } else {
                 LatchState::BodyFollowing
@@ -329,45 +346,12 @@ fn update_latch(
     }
 }
 
-/// The animation-posture swing: the rotation taking body-up to the animated neck axis, scaled by
-/// an engagement ramp. Deviations below the deadband return identity, so idle sway and locomotion
-/// lean never wobble the view; between the deadband and `full_deg`, the swing ramps in; past it,
-/// the full deviation applies (a hang reads as fully inverted). At exact inversion the swing axis
-/// is ambiguous; body X (a pitch flip) is chosen, the common way a body ends up upside down.
-fn posture_swing(up_body: Vec3, deadband_deg: f32, full_deg: f32) -> Quat {
-    let Some(up) = up_body.try_normalize() else {
-        return Quat::IDENTITY;
-    };
-    let deviation = up.dot(Vec3::Y).clamp(-1.0, 1.0).acos();
-    let deadband = deadband_deg.to_radians();
-    if deviation <= deadband {
-        return Quat::IDENTITY;
-    }
-    let full = full_deg.to_radians().max(deadband + 1e-3);
-    let engagement = ((deviation - deadband) / (full - deadband)).clamp(0.0, 1.0);
-    let axis = Vec3::Y.cross(up);
-    let axis = if axis.length_squared() > 1e-6 {
-        axis.normalize()
-    } else {
-        Vec3::X
-    };
-    Quat::from_axis_angle(axis, deviation * engagement)
-}
-
-/// Wrap an angle (radians) into `[-π, π]`.
-pub fn wrap_angle(angle: f32) -> f32 {
-    let wrapped = angle.rem_euclid(std::f32::consts::TAU);
-    if wrapped > std::f32::consts::PI {
-        wrapped - std::f32::consts::TAU
-    } else {
-        wrapped
-    }
-}
-
-/// The ground-plane forward direction for a world yaw, matching the game's convention (yaw about
-/// +Y, forward -Z).
-pub(super) fn yaw_forward(world_yaw: f32) -> Vec3 {
-    Quat::from_rotation_y(world_yaw) * Vec3::NEG_Z
+/// Compose the latest input state in a captured current body frame without advancing input.
+pub(crate) fn orientation_at(root: glam::Mat4) -> Quat {
+    let (_, body, _) = root.to_scale_rotation_translation();
+    let body = grapple::filter_body_rotation(body);
+    let state = SIM.lock();
+    body * Quat::from_euler(glam::EulerRot::YXZ, state.yaw, state.pitch, state.roll)
 }
 
 /// Read the local player character's world rotation from `m_WorldMatrixT1`.

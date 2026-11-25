@@ -163,6 +163,9 @@ pub fn sync_swapchain_to_window() {
         return;
     }
 
+    // The deferred frame tail presents the mirror into these buffers, and with the render update
+    // overlapped it may still be doing so: let it submit before the buffers change.
+    crate::vr::wait_for_frame_tail();
     // Drop the mirror's render-target view over buffer 0 before the resize; it is rebuilt lazily.
     crate::vr::mirror::teardown();
 
@@ -331,9 +334,12 @@ pub unsafe fn substitute_render_setups(engine: &mut GraphicsEngine) {
             // pointing at something neither side owns. Clear the config flag too, not just the
             // runtime one -- otherwise the next frame sees the flag still set, takes ownership again,
             // and drives another full `ApplyResize`, turning a persistent failure into a per-frame
-            // teardown-and-rebuild storm.
+            // teardown-and-rebuild storm. The saved setting keeps the user's choice.
             OWNED.store(false, Ordering::Release);
-            crate::config::CONFIG.lock().vr.own_back_buffer = false;
+            crate::config::disable_automatically(crate::config::Switch {
+                path: "vr.own_back_buffer",
+                place: |c| &mut c.vr.own_back_buffer,
+            });
             tracing::error!(
                 target: "vr",
                 "back buffer: substitution failed; disabling vr.own_back_buffer: {e:#}",

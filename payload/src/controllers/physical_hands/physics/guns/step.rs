@@ -1,0 +1,799 @@
+//! The gun bodies' lifecycle, owned by the pre-simulation step: each holding hand's gun body is
+//! made on its seat on the holding hand's body (the gun's last placement in the frame of the palm
+//! the hand is driven to), joined to the holding hand's body and to the bracing hand's where that
+//! hand holds it, moved with the holding hand's body as one rigid body (the bracing hand's body
+//! riding it) and kept on its seat, kicked by the shots, its brace broken when the tracked support
+//! palm leaves it, and destroyed, its joints first, when the gun leaves the hand or the hand's body
+//! stops.
+//!
+//! Every function here changes the physics world, so it runs only on the thread that steps it,
+//! outside the step: from the pre-simulation callback, or from the shutdown cleanup on the game
+//! thread.
+
+use std::time::Instant;
+
+use body_rig::{geometry::point_velocity, rotation::angle};
+use glam::Vec3;
+use jc3gi::physics::CustomGroupCollisionFilter;
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    frame::{Hand, Pose},
+    physical_hands::physics::{
+        body::{BodyError, BodyShape, BodySpec, HandBody},
+        config::{BraceConfig, HeldGunsTuning},
+        contact::{self, Source},
+        drive::BodyMotion,
+        guns::{
+            GunBodyStatus, GunHolds, HeldGun, SHARED,
+            engine::{GunError, GunSource, check_own_body, read_source},
+            math::{
+                BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
+                brace_palm, clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit,
+                seat, seated, settled, shot_impulse, strayed,
+            },
+        },
+        joint::Joint,
+        lifecycle::{Hands, PLACED_MUTE_STEPS},
+        types::BodyPhase,
+    },
+};
+
+/// A holding hand's gun body.
+pub(crate) struct GunSlot {
+    body: HandBody,
+    held: HeldGun,
+    mass_kg: f32,
+    mass_source: MassSource,
+    axes: Option<GunAxes>,
+    /// The joint to the holding hand's body, and the gun's seat on it.
+    holder: Option<(Joint, Pose)>,
+    /// The joint to the bracing hand's body.
+    brace: Option<Brace>,
+    /// How many steps in a row the bracing hand's tracked palm has been past the break distance
+    /// from its place on the gun.
+    support_strays: u8,
+}
+
+/// A brace's joint, with the palm frame in the gun it holds and when it was made.
+struct Brace {
+    joint: Joint,
+    frame: Pose,
+    made: Instant,
+}
+
+/// What one step's gun phase works from.
+pub(crate) struct GunStep<'a> {
+    /// The guns in the hands, as last published; empty when stale or switched off.
+    pub holds: GunHolds,
+    pub config: &'a HeldGunsTuning,
+    /// When the brace's joint is remade, and when it breaks.
+    pub brace: BraceConfig,
+    /// Whether the gun bodies' contacts are listened for.
+    pub contact_events: bool,
+    /// The player's collision system group.
+    pub group: Option<u32>,
+    /// Where each controller's palm is, which its hand's body is driven to, game space; `None`
+    /// while stale.
+    pub palms: [Option<Pose>; 2],
+    /// Where each hand's tracked palm centre is before the two-handed pose moves it onto the gun,
+    /// game space; `None` while stale or for a hand off the guns.
+    pub tracked: [Option<Vec3>; 2],
+    /// The VR world scale, game units per metre.
+    pub scale: f32,
+    /// The physics step's length, seconds.
+    pub step_s: f32,
+}
+
+/// Make, join, keep, and destroy the gun bodies for this step, after the hands acted.
+///
+/// # Safety
+///
+/// The thread that steps the physics world, outside the step.
+pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
+    let now = Instant::now();
+    let shots = std::mem::take(&mut SHARED.lock().shots);
+    let mut statuses = [None; 2];
+    let mut deviations = [None; 2];
+    let mut broken = [false; 2];
+    let mut tally = Tally::default();
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        let wanted = input.holds.guns[i].filter(|_| input.group.is_some());
+        let acting = hands.phase(hand) == BodyPhase::Acting;
+        if let Some(slot) = hands.guns[i].take() {
+            let reason = if !acting {
+                Some("the holding hand's body stopped")
+            } else if wanted.is_some_and(|w| {
+                HeldGun {
+                    carry: slot.held.carry,
+                    ..w
+                } == slot.held
+            }) && wanted != Some(slot.held)
+            {
+                Some("the hand holds the gun by another part")
+            } else if wanted != Some(slot.held) {
+                Some("the gun left the hand")
+            } else if Some(slot.body.spec().system_group) != input.group {
+                Some("the player's collision group changed")
+            } else if slot.body.spec().contact_events != input.contact_events {
+                Some("the hits were switched on or off")
+            } else {
+                None
+            };
+            match reason {
+                Some(reason) => {
+                    // SAFETY: forwarded from the caller.
+                    tally.destroyed += u64::from(unsafe { destroy_slot(slot, hand, reason) });
+                }
+                None => hands.guns[i] = Some(slot),
+            }
+        }
+        let (Some(held), Some(group)) = (wanted, input.group) else {
+            continue;
+        };
+        if !acting {
+            continue;
+        }
+        if hands.guns[i].is_none() {
+            // SAFETY: forwarded from the caller.
+            match unsafe { make(hands, hand, held, group, &input) } {
+                Ok(slot) => {
+                    tally.made += 1;
+                    hands.guns[i] = Some(slot);
+                    forget_refusal(hand);
+                }
+                Err(e) => {
+                    note_refusal(hand, held, e);
+                    // A gun on its way into the hand, or just let go of, is no fault.
+                    if !matches!(
+                        e,
+                        GunError::NotInHand | GunError::OwnBodyInWorld | GunError::HandUnsettled
+                    ) {
+                        tally.error = Some(e.to_string());
+                    }
+                    continue;
+                }
+            }
+        }
+        // SAFETY: forwarded from the caller.
+        let kept = unsafe { keep(hands, hand, &input, shots[i], &mut tally, now) };
+        match kept {
+            Ok(kept) => {
+                statuses[i] = Some(kept.status);
+                broken[hand.other().index()] |= kept.support_broke;
+                let drawn = limit(
+                    kept.deviation,
+                    input.config.drawn_max_shift_m,
+                    input.config.drawn_max_turn_deg.to_radians(),
+                );
+                deviations[i] = Some((held.weapon.get(), drawn));
+            }
+            Err(reason) => {
+                if let Some(slot) = hands.guns[i].take() {
+                    // SAFETY: forwarded from the caller.
+                    tally.destroyed += u64::from(unsafe { destroy_slot(slot, hand, reason) });
+                }
+            }
+        }
+    }
+    let mut shared = SHARED.lock();
+    for (flag, now_broken) in shared.support_broke.iter_mut().zip(broken) {
+        *flag |= now_broken;
+    }
+    shared.deviations = deviations;
+    shared.stepped = Some(now);
+    let status = &mut shared.status;
+    status.hands = statuses;
+    status.made += tally.made;
+    status.destroyed += tally.destroyed;
+    status.reseats += tally.reseats;
+    status.shots += tally.shots;
+    if let Some(error) = tally.error {
+        status.last_error = Some(error);
+    }
+}
+
+/// Forget the last step's gun bodies and the shots queued, for a step that acts on no hand (the
+/// hand bodies off, or the game out of gameplay), whose bodies, guns included, it destroys.
+pub(crate) fn stand_down() {
+    let mut shared = SHARED.lock();
+    shared.shots = [None; 2];
+    shared.deviations = [None; 2];
+    shared.status.hands = [None; 2];
+}
+
+/// Destroy every gun body that hangs from `hand`'s body: the gun it holds, with its joints, and
+/// the brace joint it holds the other hand's gun by. Called before `hand`'s body is parked, held,
+/// forgotten, or destroyed, so that no joint outlives either of its bodies.
+///
+/// # Safety
+///
+/// As [`step`].
+pub(crate) unsafe fn drop_hand(guns: &mut [Option<GunSlot>; 2], hand: Hand, reason: &str) {
+    if let Some(slot) = guns[hand.index()].take() {
+        // SAFETY: forwarded from the caller.
+        let destroyed = unsafe { destroy_slot(slot, hand, reason) };
+        SHARED.lock().status.destroyed += u64::from(destroyed);
+    }
+    if let Some(slot) = guns[hand.other().index()].as_mut()
+        && let Some(brace) = slot.brace.take()
+    {
+        // SAFETY: forwarded from the caller.
+        unsafe { end_joint(brace.joint, hand, "brace", reason) };
+    }
+}
+
+/// What one step did to the gun bodies, for the readout.
+#[derive(Default)]
+struct Tally {
+    made: u64,
+    destroyed: u64,
+    reseats: u64,
+    shots: u64,
+    error: Option<String>,
+}
+
+/// Make `hand`'s gun body on its seat on the hand's body, moving with the hand, and join it there.
+/// The seat is the gun's last placement in the frame of the controller's palm, which the hand's
+/// body is driven to; the body must be on its palm, or the gun would be joined as far off the hand
+/// as the body lags.
+///
+/// # Safety
+///
+/// As [`step`]; `hand`'s body acts.
+unsafe fn make(
+    hands: &mut Hands,
+    hand: Hand,
+    held: HeldGun,
+    group: u32,
+    input: &GunStep<'_>,
+) -> Result<GunSlot, GunError> {
+    let hand_body = hands.bodies[hand.index()]
+        .as_ref()
+        .ok_or(GunError::Body("the holding hand has no body"))?;
+    // SAFETY: forwarded from the caller.
+    let hand_motion =
+        unsafe { hand_body.motion() }.map_err(|_| GunError::Body("the hand body is unreadable"))?;
+    let hand_id = hand_body.body_id();
+    // SAFETY: forwarded from the caller.
+    let source = unsafe { read_source(&held) }?;
+    let hand_pose = pose_of(&hand_motion);
+    let palm = input.palms[hand.index()].unwrap_or(hand_pose);
+    let seat = intended_seat(palm, source.pose);
+    // A gun held by its grip sits in the palm; one held by another part may sit far along it.
+    let seat_limit = if held.carry.is_some() {
+        input.config.stray_distance_m.max(0.0) + source_reach(&source)
+    } else {
+        MAX_GRIP_SEAT_M
+    };
+    let reach = seat.position.length();
+    if !reach.is_finite() || reach > seat_limit {
+        return Err(GunError::NotInHand);
+    }
+    if !settled(hand_pose, palm) {
+        return Err(GunError::HandUnsettled);
+    }
+    let at = seated(hand_pose, seat);
+    let (mass_kg, mass_source) = gun_mass(source.inverse_mass, held.class, held.guns, input.config);
+    let spec = BodySpec {
+        shape: BodyShape::Shared(source.shape),
+        mass_kg,
+        system_group: group,
+        contact_events: input.contact_events,
+        gravity: true,
+    };
+    // SAFETY: forwarded from the caller; the shape is the live gun's own body's, read just now.
+    let mut body =
+        unsafe { HandBody::create(Source::Gun(hand), spec, at.position, at.orientation) }
+            .map_err(|_| GunError::Body("the gun body could not be made"))?;
+    // Added, then placed, as the engine activates its own free bodies, moving with the hand.
+    let placed = unsafe {
+        body.add()
+            .and_then(|()| body.place(at.position, at.orientation))
+            .and_then(|()| {
+                carry_with_hand(&mut body, hand_body, &hand_motion, (Vec3::ZERO, Vec3::ZERO))
+                    .map(|_| ())
+            })
+    };
+    if placed.is_err() {
+        unsafe { body.destroy() };
+        return Err(GunError::Body("the gun body could not be placed"));
+    }
+    // In the player's group, the gun body never meets the player's body or the hands.
+    let in_group = unsafe { body.filter_info() }
+        .is_ok_and(|filter| filter >> CustomGroupCollisionFilter::SYSTEM_GROUP_SHIFT == group);
+    if !in_group {
+        unsafe { body.destroy() };
+        return Err(GunError::NotInPlayerGroup);
+    }
+    contact::mute_for(Source::Gun(hand), PLACED_MUTE_STEPS);
+    // SAFETY: forwarded from the caller; both bodies are in the simulation.
+    let joint = match unsafe { Joint::create_between(hand_id, body.body_id()) } {
+        Ok(joint) => joint,
+        Err(e) => {
+            tracing::warn!(
+                hand = hand.label(),
+                error = %e,
+                "held guns: could not join a gun body to its hand"
+            );
+            unsafe { body.destroy() };
+            return Err(GunError::Body(
+                "the gun body could not be joined to its hand",
+            ));
+        }
+    };
+    let gun_pose = unsafe { body.motion() }.map_or(at, |m| pose_of(&m));
+    let made_seat = seat_of(hand_pose, gun_pose);
+    tracing::info!(
+        hand = hand.label(),
+        weapon = format_args!("{:#x}", held.weapon.get()),
+        class = held.class.label(),
+        body_id = body.body_id(),
+        hand_body = hand_id,
+        constraint = joint.id(),
+        mass_kg,
+        mass_from = mass_source.label(),
+        seat_m = seat.position.length(),
+        seat_error_m = made_seat.position.distance(seat.position),
+        hand_off_palm_m = hand_pose.position.distance(palm.position),
+        listens = input.contact_events,
+        "held guns: made a gun body and joined it to its hand"
+    );
+    Ok(GunSlot {
+        body,
+        held,
+        mass_kg,
+        mass_source,
+        axes: source.axes,
+        holder: Some((joint, seat)),
+        brace: None,
+        support_strays: 0,
+    })
+}
+
+/// One step of a kept gun body.
+struct Kept {
+    status: GunBodyStatus,
+    deviation: Pose,
+    /// Whether the bracing hand's tracked palm left the gun this step, breaking the brace.
+    support_broke: bool,
+}
+
+/// Keep `hand`'s gun body for this step: check its joint, put it back on its seat when its hand
+/// was put somewhere or it strayed, give it the shots queued for it, make, end, or break its
+/// brace, and carry the bracing hand's body with it. `Err` with the reason when the gun body must
+/// go.
+///
+/// # Safety
+///
+/// As [`step`]; `hand` has a gun slot and an acting body.
+unsafe fn keep(
+    hands: &mut Hands,
+    hand: Hand,
+    input: &GunStep<'_>,
+    shots: Option<(usize, u32)>,
+    tally: &mut Tally,
+    now: Instant,
+) -> Result<Kept, &'static str> {
+    let i = hand.index();
+    let off = hand.other();
+    let placed = hands.placed;
+    let off_body = hands.bodies[off.index()]
+        .as_ref()
+        .filter(|_| hands.phase(off) == BodyPhase::Acting && hands.guns[off.index()].is_none())
+        .map(HandBody::body_id);
+    let hand_motion = hands.bodies[i]
+        .as_ref()
+        // SAFETY: forwarded from the caller.
+        .and_then(|b| unsafe { b.motion() }.ok())
+        .ok_or("the holding hand's body is unreadable")?;
+    let slot = hands.guns[i].as_mut().ok_or("the gun body is gone")?;
+    // SAFETY: forwarded from the caller.
+    match unsafe { check_own_body(&slot.held) } {
+        Ok(()) => {}
+        Err(GunError::OwnBodyInWorld) => return Err("the gun's own body is back in the world"),
+        Err(_) => return Err("the gun is gone"),
+    }
+    let (joint, holder_seat) = slot.holder.as_ref().ok_or("the gun body has no joint")?;
+    // SAFETY: forwarded from the caller.
+    if !unsafe { joint.intact() } {
+        return Err("the joint to the holding hand went away");
+    }
+    let holder_seat = *holder_seat;
+    // SAFETY: forwarded from the caller.
+    let gun_motion = unsafe { slot.body.motion() }.map_err(|_| "the gun body was lost")?;
+    let hand_pose = pose_of(&hand_motion);
+    let mut gun_pose = pose_of(&gun_motion);
+    let mut drift = deviation(hand_pose, holder_seat, gun_pose);
+    let reseat = if placed[i] {
+        Some("its hand was put somewhere")
+    } else if strayed(
+        drift,
+        input.config.stray_distance_m,
+        input.config.stray_turn_deg.to_radians(),
+    ) {
+        Some("it strayed from its seat")
+    } else {
+        None
+    };
+    if let Some(reason) = reseat {
+        let back = seated(hand_pose, holder_seat);
+        // SAFETY: forwarded from the caller.
+        unsafe { slot.body.place(back.position, back.orientation) }
+            .map_err(|_| "the gun body could not be put back on its seat")?;
+        contact::mute_for(Source::Gun(hand), PLACED_MUTE_STEPS);
+        tracing::debug!(
+            hand = hand.label(),
+            reason,
+            "held guns: put a gun body back on its seat"
+        );
+        // The bracing hand rides the gun, so it goes back on the gun with it.
+        if let Some(brace) = &slot.brace
+            && let Some(off_hand) = hands.bodies[off.index()].as_mut()
+        {
+            let palm = seated(back, brace.frame);
+            // SAFETY: forwarded from the caller.
+            if unsafe { off_hand.place(palm.position, palm.orientation) }.is_ok() {
+                contact::mute_for(Source::Hand(off), PLACED_MUTE_STEPS);
+            }
+        }
+        gun_pose = back;
+        drift = Pose::IDENTITY;
+        tally.reseats += 1;
+    }
+    // The gun moves with the hand's body as one rigid body, so the joint holds it on its seat
+    // rather than catching it up a step late; what it meets still stops it within the step. A
+    // body past the drawn clamps is steered back to them, so it is where the drawn gun is.
+    let hand_body = hands.bodies[i]
+        .as_ref()
+        .ok_or("the holding hand's body is gone")?;
+    let correction = clamp_velocity(
+        seated(hand_pose, holder_seat),
+        gun_pose,
+        input.config.drawn_max_shift_m,
+        input.config.drawn_max_turn_deg.to_radians(),
+        input.step_s,
+    )
+    .unwrap_or((Vec3::ZERO, Vec3::ZERO));
+    // SAFETY: forwarded from the caller.
+    let carried = unsafe { carry_with_hand(&mut slot.body, hand_body, &hand_motion, correction) }
+        .map_err(|_| "the gun body could not be moved with its hand")?;
+    if let Some((_, count)) = shots.filter(|(w, _)| *w == slot.held.weapon.get())
+        && let Some(axes) = slot.axes
+    {
+        let per_shot = class_value(&input.config.recoil_impulse_ns, slot.held.class);
+        let (impulse, at) = shot_impulse(
+            gun_pose,
+            &axes,
+            per_shot * count as f32,
+            input.config.muzzle_rise,
+        );
+        // SAFETY: forwarded from the caller.
+        if unsafe { slot.body.apply_impulse(impulse, at) }.is_ok() {
+            tally.shots += u64::from(count);
+        }
+    }
+    contact::record_motion(Source::Gun(hand), gun_pose.position, gun_motion.linear);
+
+    let contact = input.holds.contacts[off.index()]
+        .filter(|_| input.holds.braces[off.index()] && off_body.is_some());
+    let target = contact
+        .zip(input.palms[off.index()])
+        .map(|(contact, palm)| brace_palm(gun_pose, palm, contact));
+    let local = target.map(|palm| seat(gun_pose, palm));
+    // The tracked palm, not the one the two-handed pose moved onto the gun, says whether the hand
+    // is still on it.
+    let off_the_gun = target
+        .zip(input.tracked[off.index()])
+        .is_some_and(|(palm, tracked)| {
+            brace_broken(
+                tracked,
+                palm.position,
+                input.brace.break_distance_m * input.scale,
+            )
+        });
+    slot.support_strays = if off_the_gun {
+        slot.support_strays.saturating_add(1)
+    } else {
+        0
+    };
+    let support_broke = slot.support_strays >= BRACE_BREAK_STEPS;
+    // Whether the joint is remade for a moved palm, rather than made afresh.
+    let mut remade = false;
+    if let Some(brace) = slot.brace.take() {
+        let broke = support_broke;
+        let ended =
+            broke || local.is_none() || placed[off.index()] || !unsafe { brace.joint.intact() };
+        let due = local.is_some_and(|wanted| {
+            let age_s = now.saturating_duration_since(brace.made).as_secs_f32();
+            brace_due(brace.frame, wanted, age_s, &input.brace)
+        });
+        if ended {
+            let reason = if broke {
+                "the support hand left the gun"
+            } else if local.is_none() {
+                "the support contact ended"
+            } else if placed[off.index()] {
+                "the support hand's body was put somewhere"
+            } else {
+                "the joint went away"
+            };
+            // SAFETY: forwarded from the caller.
+            unsafe { end_joint(brace.joint, off, "brace", reason) };
+        } else if due {
+            // SAFETY: forwarded from the caller.
+            unsafe { end_quietly(brace.joint, off) };
+            remade = true;
+        } else {
+            slot.brace = Some(brace);
+        }
+    }
+    if slot.brace.is_none()
+        && !support_broke
+        && let (Some(off_id), Some(target), Some(local)) = (off_body, target, local)
+        && let Some(off_hand) = hands.bodies[off.index()].as_mut()
+    {
+        // A fixed joint captures the bodies' present frames, not the selected region. Seat the
+        // support palm first, or an acquisition miss becomes the permanent brace offset.
+        // SAFETY: forwarded from the caller.
+        let jump = unsafe { off_hand.motion() }
+            .map_or(f32::INFINITY, |m| m.position.distance(target.position));
+        // SAFETY: forwarded from the caller.
+        let placed = unsafe { off_hand.place(target.position, target.orientation) };
+        if placed.is_err() {
+            tally.error = Some(
+                "held guns: the support palm could not be seated on its gun region".to_owned(),
+            );
+        } else {
+            // A palm remade a little along the gun it already holds meets nothing new.
+            if !(remade && jump <= QUIET_REBRACE_M) {
+                contact::mute_for(Source::Hand(off), PLACED_MUTE_STEPS);
+            }
+            // SAFETY: forwarded from the caller; both bodies are in the simulation.
+            match unsafe { Joint::create_between(off_id, slot.body.body_id()) } {
+                Ok(joint) => {
+                    if remade {
+                        tracing::debug!(
+                            hand = off.label(),
+                            constraint = joint.id(),
+                            jump_m = jump,
+                            "held guns: remade the brace for the moved support palm"
+                        );
+                    } else {
+                        tracing::info!(
+                            hand = off.label(),
+                            constraint = joint.id(),
+                            gun_body = slot.body.body_id(),
+                            "held guns: joined the bracing hand to the selected gun region"
+                        );
+                    }
+                    slot.brace = Some(Brace {
+                        joint,
+                        frame: local,
+                        made: now,
+                    });
+                }
+                Err(e) => {
+                    tracing::warn!(hand = off.label(), error = %e, "held guns: could not join the bracing hand to the gun");
+                }
+            }
+        }
+    }
+    // The bracing hand rides the gun: its body moves with the gun's as one rigid body, whatever
+    // its own drive asked, so the two hands never pull the gun between them. The holding hand's
+    // drive steers the gun alone, toward the two-handed pose the line between the hands sets.
+    if slot.brace.is_some()
+        && let Some(off_hand) = hands.bodies[off.index()].as_mut()
+    {
+        // SAFETY: forwarded from the caller.
+        if unsafe { carry_with(off_hand, carried) }.is_err() {
+            tally.error =
+                Some("held guns: the bracing hand could not be moved with its gun".to_owned());
+        }
+    }
+    let holder_joint = slot.holder.as_ref().map(|(j, _)| j.id());
+    Ok(Kept {
+        status: GunBodyStatus {
+            weapon: slot.held.weapon.get(),
+            body_id: slot.body.body_id(),
+            // SAFETY: forwarded from the caller.
+            in_world: unsafe { slot.body.is_added() }.unwrap_or(false),
+            mass_kg: slot.mass_kg,
+            mass_source: slot.mass_source,
+            holder_joint,
+            brace_joint: slot.brace.as_ref().map(|brace| brace.joint.id()),
+            deviation_m: drift.position.length(),
+            deviation_rad: angle(drift.orientation),
+            speed_mps: gun_motion.linear.length(),
+        },
+        deviation: drift,
+        support_broke,
+    })
+}
+
+/// Destroy a gun body: its brace joint, its holder joint, then the body. Returns whether the body
+/// was destroyed rather than forgotten.
+///
+/// # Safety
+///
+/// As [`step`].
+unsafe fn destroy_slot(slot: GunSlot, hand: Hand, reason: &str) -> bool {
+    let GunSlot {
+        body,
+        holder,
+        brace,
+        held,
+        ..
+    } = slot;
+    if let Some(brace) = brace {
+        // SAFETY: forwarded from the caller.
+        unsafe { end_joint(brace.joint, hand.other(), "brace", reason) };
+    }
+    if let Some((joint, _)) = holder {
+        // SAFETY: forwarded from the caller.
+        unsafe { end_joint(joint, hand, "holder", reason) };
+    }
+    let body_id = body.body_id();
+    // SAFETY: forwarded from the caller; no joint names the body any more.
+    let destroyed = unsafe { body.destroy() };
+    tracing::info!(
+        hand = hand.label(),
+        weapon = format_args!("{:#x}", held.weapon.get()),
+        body_id,
+        destroyed,
+        reason,
+        "held guns: destroyed a gun body"
+    );
+    destroyed
+}
+
+/// End a gun's joint, `role` the holder's or the brace's.
+///
+/// # Safety
+///
+/// As [`step`].
+unsafe fn end_joint(joint: Joint, hand: Hand, role: &str, reason: &str) {
+    let constraint = joint.id();
+    // SAFETY: forwarded from the caller.
+    let destroyed = unsafe { joint.destroy() };
+    tracing::info!(
+        hand = hand.label(),
+        role,
+        constraint,
+        destroyed,
+        reason,
+        "held guns: ended a gun's joint"
+    );
+}
+
+/// End a brace's joint to remake it for a moved palm: a routine change, logged below info.
+///
+/// # Safety
+///
+/// As [`step`].
+unsafe fn end_quietly(joint: Joint, hand: Hand) {
+    let constraint = joint.id();
+    // SAFETY: forwarded from the caller.
+    let destroyed = unsafe { joint.destroy() };
+    tracing::trace!(
+        hand = hand.label(),
+        constraint,
+        destroyed,
+        "held guns: ended the brace to remake it"
+    );
+}
+
+/// How far a remade brace may move the support palm without muting its contacts, metres: a palm
+/// seated a little along the gun it already holds is no placement into the world.
+const QUIET_REBRACE_M: f32 = 0.05;
+
+/// The motion a body was given: its centre of mass and its velocities, world space.
+#[derive(Copy, Clone)]
+struct Carried {
+    centre: Vec3,
+    linear: Vec3,
+    angular: Vec3,
+}
+
+/// Give the gun body `gun` the velocity it has as part of the hand's body `hand`, which moves as
+/// `hand_motion`: the hand's linear velocity at the gun's centre of mass, and the hand's turn,
+/// with `correction`'s linear and angular velocities added. Returns the motion given.
+///
+/// # Safety
+///
+/// As [`step`].
+unsafe fn carry_with_hand(
+    gun: &mut HandBody,
+    hand: &HandBody,
+    hand_motion: &BodyMotion,
+    correction: (Vec3, Vec3),
+) -> Result<Carried, BodyError> {
+    // SAFETY: forwarded from the caller.
+    let (gun_centre, hand_centre) = unsafe { (gun.centre_of_mass()?, hand.centre_of_mass()?) };
+    // The gun body seated on the hand moves with the hand's body, as one rigid body.
+    let linear = point_velocity(
+        hand_centre,
+        hand_motion.linear,
+        hand_motion.angular,
+        gun_centre,
+    );
+    let (linear_correction, angular_correction) = correction;
+    let given = Carried {
+        centre: gun_centre,
+        linear: linear + linear_correction,
+        angular: hand_motion.angular + angular_correction,
+    };
+    // SAFETY: forwarded from the caller.
+    unsafe { gun.set_velocities(given.linear, given.angular) }?;
+    Ok(given)
+}
+
+/// Give `body` the velocity it has as part of a body moving as `carrier`: the carrier's velocity
+/// at `body`'s centre of mass, and the carrier's turn.
+///
+/// # Safety
+///
+/// As [`step`].
+unsafe fn carry_with(body: &mut HandBody, carrier: Carried) -> Result<(), BodyError> {
+    // SAFETY: forwarded from the caller.
+    let centre = unsafe { body.centre_of_mass() }?;
+    let linear = point_velocity(carrier.centre, carrier.linear, carrier.angular, centre);
+    // SAFETY: forwarded from the caller.
+    unsafe { body.set_velocities(linear, carrier.angular) }
+}
+
+/// How far along the gun a hand may hold it by a part other than its grip: the gun's muzzle's
+/// distance from its origin, or a long gun's length when the fire point is unknown.
+fn source_reach(source: &GunSource) -> f32 {
+    source
+        .axes
+        .map_or(MAX_CARRY_REACH_M, |axes| axes.muzzle.length())
+        .clamp(MAX_GRIP_SEAT_M, MAX_CARRY_REACH_M)
+}
+
+/// The furthest from a gun's origin a hand may hold it, metres: past the longest gun's muzzle.
+const MAX_CARRY_REACH_M: f32 = 1.5;
+
+/// The seat a gun at `gun` has on a hand body at `hand`: the made joint's, for the log.
+fn seat_of(hand: Pose, gun: Pose) -> Pose {
+    seat(hand, gun)
+}
+
+fn pose_of(motion: &BodyMotion) -> Pose {
+    Pose {
+        position: motion.position,
+        orientation: motion.orientation,
+    }
+}
+
+/// The gun each hand last could not make a body for, so that a refusal is logged once per gun.
+static REFUSED: Mutex<[Option<(usize, GunError)>; 2]> = Mutex::new([None; 2]);
+
+fn note_refusal(hand: Hand, held: HeldGun, error: GunError) {
+    let mut refused = REFUSED.lock();
+    let entry = Some((held.gun.get(), error));
+    if refused[hand.index()] == entry {
+        return;
+    }
+    refused[hand.index()] = entry;
+    // A gun still sliding into the hand, just let go of, or waiting for its hand to settle, is not
+    // worth more than a debug line.
+    if matches!(
+        error,
+        GunError::NotInHand | GunError::OwnBodyInWorld | GunError::HandUnsettled
+    ) {
+        tracing::debug!(hand = hand.label(), error = %error, "held guns: no gun body yet");
+    } else {
+        tracing::info!(
+            hand = hand.label(),
+            weapon = format_args!("{:#x}", held.weapon.get()),
+            error = %error,
+            "held guns: could not make a gun body"
+        );
+    }
+}
+
+fn forget_refusal(hand: Hand) {
+    REFUSED.lock()[hand.index()] = None;
+}

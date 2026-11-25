@@ -13,6 +13,10 @@ pub mod terrain;
 // The stereo relaxation of the volumetric-patch terrain's view-dependent hull culls (black terrain
 // patch gaps).
 pub(crate) mod terrain_cull;
+// The water blocks' per-eye re-issues under the collapse: the legacy family's screen-UV bias and the
+// WaveWorks family's per-eye camera.
+pub(crate) mod water;
+
 /// Bundle the world-geometry detours into one hook library.
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -20,4 +24,5 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(culling::hook_library())
         .with_hook_library(terrain::hook_library())
         .with_hook_library(terrain_cull::hook_library())
+        .with_hook_library(water::hook_library())
 }

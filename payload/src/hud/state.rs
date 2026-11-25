@@ -1,9 +1,12 @@
 //! The HUD-redirect state machine: it lazily creates the target, applies and relinquishes the rebind,
 //! owns the egui preview registration, and drives the lazy-follow damping for the floating panel.
 
-use std::time::Instant;
+mod resources;
 
-use glam::{Quat, Vec3, Vec4};
+use std::time::{Duration, Instant};
+
+use body_rig::smooth::half_life_factor;
+use glam::{Quat, Vec2, Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{
@@ -11,34 +14,94 @@ use windows::Win32::Graphics::Direct3D11::{
 };
 
 use crate::hud::{
-    binding,
-    config::FollowConfig,
-    markers::MarkerDepth,
+    HudMode, binding,
+    depth::{DEPTH_SHIFT, DepthShift, DepthShiftStatus},
     quad::{HudQuad, PanelParams},
-    split,
+    state::resources::{Native, Retry, Surface},
     target::HudTarget,
-    warp::{HudWarp, WarpInputs},
+    world_markers::layout::StageFrame,
 };
-
-/// The per-frame inputs for the panel warp, chosen on eye 0.
-pub struct WarpFrame {
-    /// The panel anchor (head position) the corners were built around.
-    pub anchor: Vec3,
-    /// The frame's recorded on-screen markers (plus, in single-panel mode, the center bubble as
-    /// the first entry).
-    pub markers: Vec<MarkerDepth>,
-    /// The flat (base) distance of the surface being warped: the panel distance in single-panel
-    /// mode, the marker layer's distance under the split.
-    pub base_distance: f32,
-}
 
 /// Global HUD state. Locked briefly on the render thread.
 pub static HUD_STATE: Mutex<HudState> = Mutex::new(HudState::new());
+
+/// What the applied redirect laid the HUD out for: the texture's size and whether the safe area
+/// hugs the stage. Read by the capture seam, which must not take [`HUD_STATE`] for it.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct AppliedRedirect {
+    pub texture: (u32, u32),
+    pub stage_safe_area: bool,
+}
+
+/// The applied redirect, or `None` while the HUD is not redirected.
+pub(crate) fn applied_redirect() -> Option<AppliedRedirect> {
+    *APPLIED_REDIRECT.lock()
+}
+
+/// Owned UI layout values copied at the main movie's capture boundary.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct StageSafeArea {
+    pub bounds: [f32; 4],
+    pub percentage: f32,
+    pub stage: Vec2,
+    pub aspect: f32,
+}
+
+/// A main-movie capture sample; it contains no engine pointers or renderer resources.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) struct StageSafeAreaSample {
+    pub at: Instant,
+    pub layout: Option<StageSafeArea>,
+}
+
+/// Availability of the most recent safe-area publication.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum StageSafeAreaReadout {
+    Unavailable,
+    Busy,
+    Captured(StageSafeAreaSample),
+}
+
+impl StageSafeAreaSample {
+    pub(crate) fn new(layout: StageSafeArea, at: Instant) -> Self {
+        let [x1, y1, x2, y2] = layout.bounds;
+        let valid = layout.bounds.into_iter().all(f32::is_finite)
+            && x2 > x1
+            && y2 > y1
+            && layout.percentage.is_finite()
+            && layout.stage.is_finite()
+            && layout.stage.min_element() > 0.0
+            && layout.aspect.is_finite()
+            && layout.aspect > 0.0
+            && StageFrame::new(layout.stage, layout.aspect)
+                .is_some_and(|frame| frame.origin.is_finite() && frame.size.is_finite());
+        Self {
+            at,
+            layout: valid.then_some(layout),
+        }
+    }
+
+    pub(crate) fn fresh(self, now: Instant) -> bool {
+        now.saturating_duration_since(self.at) < STAGE_SAFE_AREA_STALE
+    }
+}
+
+/// Publish only owned values from the main movie's capture boundary.
+pub(crate) fn publish_stage_safe_area(layout: StageSafeArea, at: Instant) {
+    *STAGE_SAFE_AREA.lock() = Some(StageSafeAreaSample::new(layout, at));
+}
+
+/// Copy the publication without waiting for the capture producer or accessing the engine.
+pub(crate) fn stage_safe_area_readout() -> StageSafeAreaReadout {
+    copy_stage_safe_area(&STAGE_SAFE_AREA)
+}
 
 /// The live HUD-redirect state (render thread only, apart from the preview registration on the UI
 /// thread).
 pub struct HudState {
     target: Option<HudTarget>,
+    retry: Retry,
+    pending_unregisters: Vec<egui::TextureId>,
     /// Whether the redirect is currently applied to the UI's render buffer.
     redirected: bool,
     /// The last engine render size seen by [`ensure_redirected`]. A change means the engine re-ran
@@ -46,18 +109,15 @@ pub struct HudState {
     /// and discarding our rebind -- so the redirect must be re-applied even though our target texture
     /// is independent of the engine's own targets.
     render_size: Option<(u32, u32)>,
+    /// Whether the applied redirect computed the safe area against the stage's aspect (the atlas
+    /// viewport probe). A change re-applies the redirect.
+    stage_safe_area: bool,
     /// The egui texture id for the HUD preview, registered lazily on the UI thread.
     preview_id: Option<egui::TextureId>,
-    /// The egui texture ids for the marker/center layer previews, registered lazily.
-    layer_preview_ids: [Option<egui::TextureId>; split::LAYER_COUNT - 1],
     /// The quad pass that draws the redirected HUD back into the scene, built lazily on first draw.
     quad: Option<HudQuad>,
-    /// The marker-layer warp pass, built lazily on the first warped draw.
-    warp: Option<HudWarp>,
     /// The dynamic-distance depth sampler, built lazily on the first enabled frame.
-    depth_shift: Option<crate::hud::depth::DepthShift>,
-    /// The frame's warp inputs (eye 0), or `None` when the warp is off this frame.
-    warp_frame: Option<WarpFrame>,
+    depth_shift: Option<DepthShift>,
     /// Lazy-follow damping state for the floating panel (gameplay HUD mode).
     follow: FollowState,
     /// The latched world-static pose `(position, rotation)` for [`HudMode::Movie`](crate::hud::HudMode::Movie):
@@ -67,25 +127,16 @@ pub struct HudState {
     /// The panel pose `(position, rotation)` chosen for the current frame, cached for the marker
     /// projection ([`compute_panel_vp`](crate::hud::compute_panel_vp)) to reuse.
     current_pose: Option<(Vec3, Quat)>,
-    /// The extra layer targets for the split ([`HudLayer::Markers`](split::HudLayer)
-    /// and [`HudLayer::Center`](split::HudLayer)); layer 0 (static) renders into
-    /// [`target`](HudState::target). Present only while the split is enabled and sized like the
-    /// main target.
-    layer_targets: [Option<HudTarget>; split::LAYER_COUNT - 1],
     /// World-space panel corners, computed once per frame on eye 0 and reused for eye 1 so both
     /// eyes project the same world position through their own per-eye VP (correct stereo depth).
     cached_corners: Option<[Vec4; 4]>,
     /// The virtual mouse cursor's world-space corners, computed once per frame on eye 0 alongside
     /// the panel corners; `None` while the cursor is hidden (see [`crate::hud::cursor`]).
     cursor_corners: Option<[Vec4; 4]>,
-    /// While split: per-layer world-space corners and their distances, chosen on eye 0. Index
-    /// matches [`split::LAYERS`]. The static and center entries are recomputed every frame
-    /// (head-locked); the marker entry is frozen at each marker-texture refresh so the stale
-    /// texture stays glued to the world pose it was rendered for.
-    cached_layer_corners: [Option<([Vec4; 4], f32)>; split::LAYER_COUNT],
-    /// Whether the split composite is live this frame (chosen on eye 0; also gates the clear).
-    split_composite: bool,
 }
+
+/// The floating panel's rotation follow halflife, in seconds. Lower is a snappier follow.
+const FOLLOW_ROTATION_HALFLIFE_S: f32 = 0.2;
 
 /// Damped follow state: tracks the panel's eased orientation via quaternion slerp.
 struct FollowState {
@@ -107,7 +158,7 @@ impl FollowState {
     /// slerp: `alpha = 1 - 2^(-dt/halflife); current = slerp(current, target, alpha)`. No deadzone
     /// -- the panel always follows, with the halflife controlling the lag. Returns the damped
     /// quaternion for the quad's world-space orientation.
-    fn update(&mut self, head_rotation: Quat, config: &FollowConfig) -> Quat {
+    fn update(&mut self, head_rotation: Quat) -> Quat {
         let dt = self
             .last_time
             .map(|t| t.elapsed().as_secs_f32())
@@ -115,7 +166,7 @@ impl FollowState {
         self.last_time = Some(Instant::now());
         let dt = dt.min(0.1);
 
-        let alpha = (1.0 - 2.0_f32.powf(-dt / config.rotation_halflife)).min(1.0);
+        let alpha = half_life_factor(dt, FOLLOW_ROTATION_HALFLIFE_S);
         self.rotation = self.rotation.slerp(head_rotation, alpha);
 
         self.rotation
@@ -126,22 +177,19 @@ impl HudState {
     const fn new() -> Self {
         Self {
             target: None,
+            retry: Retry::new(),
+            pending_unregisters: Vec::new(),
             redirected: false,
             render_size: None,
+            stage_safe_area: false,
             preview_id: None,
-            layer_preview_ids: [None, None],
             quad: None,
-            warp: None,
             depth_shift: None,
-            warp_frame: None,
             follow: FollowState::new(),
             latched_pose: None,
             current_pose: None,
             cached_corners: None,
             cursor_corners: None,
-            cached_layer_corners: [None, None, None],
-            split_composite: false,
-            layer_targets: [None, None],
         }
     }
 
@@ -149,7 +197,10 @@ impl HudState {
     /// the target on a config-size change and applying the rebind once. A render-size change
     /// (`render_width`/`render_height`) forces a re-apply without recreating the target,
     /// because the engine re-runs `InitPlatformRT` on a device/reset and discards our rebind. A failed
-    /// target build or a not-yet-live UI leaves the state unredirected, so the next tick retries.
+    /// allocation keeps an applied old target usable. A failed binding restores the engine binding
+    /// and clears the applied publication. Failed requests retry at most once per second.
+    /// `stage_safe_area` selects the atlas viewport probe's safe area (see
+    /// [`binding::redirect_to`]); a change re-applies the redirect.
     pub(super) fn ensure_redirected(
         &mut self,
         device: &Device,
@@ -157,102 +208,36 @@ impl HudState {
         texture_height: u32,
         render_width: u32,
         render_height: u32,
+        stage_safe_area: bool,
     ) {
-        if texture_width == 0 || texture_height == 0 {
-            return;
+        let mut native = Native(device);
+        let replaced = resources::redirect(
+            Surface {
+                target: &mut self.target,
+                redirected: &mut self.redirected,
+                render_size: &mut self.render_size,
+                stage_safe_area: &mut self.stage_safe_area,
+                retry: &mut self.retry,
+            },
+            &mut native,
+            AppliedRedirect {
+                texture: (texture_width, texture_height),
+                stage_safe_area,
+            },
+            (render_width, render_height),
+            Instant::now(),
+        );
+        if replaced {
+            resources::retire(&mut self.preview_id, &mut self.pending_unregisters);
         }
-
-        // Recreate the target when the configured HUD resolution changes (or when none exists yet).
-        if self.target.as_ref().map(HudTarget::size) != Some((texture_width, texture_height)) {
-            match HudTarget::new(device, texture_width, texture_height) {
-                Ok(target) => {
-                    self.target = Some(target);
-                    self.redirected = false;
-                    // The preview SRV belonged to the old texture; re-register it on the next preview.
-                    self.preview_id = None;
-                }
-                Err(e) => {
-                    tracing::error!("HUD: {e:#}");
-                    self.target = None;
-                    return;
-                }
-            }
-        }
-
-        // A render-size change means the engine re-ran `InitPlatformRT` (its device/reset path),
-        // which rebuilds `m_RenderBuffer` from the engine surface and discards our rebind. Re-apply it
-        // even though our target texture is independent of the engine's own targets.
-        if self.render_size != Some((render_width, render_height)) {
-            self.render_size = Some((render_width, render_height));
-            self.redirected = false;
-        }
-
-        // The engine's device-reset path (`RestoreAfterReset`) can replace the movie's viewport
-        // with device-sized state without the back buffer changing size (e.g. an alt-tab
-        // fullscreen reacquire), which skews the Scaleform mouse transform off the
-        // texture-shaped render. Detect the drift and re-apply.
-        if self.redirected && !binding::movie_viewport_matches(texture_width, texture_height) {
-            tracing::warn!(
-                target: "hud",
-                "the movie viewport drifted from the redirect (engine reset path?); re-applying"
-            );
-            self.redirected = false;
-        }
-
-        let Some(target) = self.target.as_ref() else {
-            return;
-        };
-        if !self.redirected && binding::redirect_to(target, texture_width, texture_height) {
-            self.redirected = true;
-        }
-    }
-
-    /// Ensure the extra layer targets exist at the main target's size while the split is enabled,
-    /// and drop them while it is not. Layer creation failures log and leave the slot empty, which
-    /// keeps the split inactive (see [`split_views`](HudState::split_views)).
-    pub(super) fn ensure_layers(&mut self, device: &Device, enabled: bool) {
-        if !enabled {
-            if self.layer_targets.iter().any(Option::is_some) {
-                self.layer_targets = [None, None];
-                // The preview SRVs belonged to the dropped textures; re-register next preview.
-                self.layer_preview_ids = [None, None];
-            }
-            return;
-        }
-        let Some((width, height)) = self.target.as_ref().map(HudTarget::size) else {
-            return;
-        };
-        for slot in &mut self.layer_targets {
-            if slot.as_ref().map(HudTarget::size) != Some((width, height)) {
-                match HudTarget::new(device, width, height) {
-                    Ok(target) => {
-                        *slot = Some(target);
-                        self.layer_preview_ids = [None, None];
-                    }
-                    Err(e) => {
-                        tracing::error!("HUD split layer: {e:#}");
-                        *slot = None;
-                        return;
-                    }
-                }
-            }
-        }
-    }
-
-    /// The per-layer render-target views for the split passes, or `None` unless the redirect is
-    /// applied and every layer target exists. The views are cloned (COM-refcounted), so they stay
-    /// valid for the frame even if the targets are recreated concurrently.
-    pub fn split_views(&self) -> Option<split::LayerViews> {
-        if !self.redirected {
-            return None;
-        }
-        let main = self.target.as_ref()?;
-        let markers = self.layer_targets[0].as_ref()?;
-        let center = self.layer_targets[1].as_ref()?;
-        Some(split::LayerViews {
-            views: [main, markers, center].map(|t| (t.color_rtv().clone(), t.depth_dsv().clone())),
-            sizes: [main, markers, center].map(HudTarget::size),
-        })
+        *APPLIED_REDIRECT.lock() = self.redirected.then(|| AppliedRedirect {
+            texture: self
+                .target
+                .as_ref()
+                .expect("a redirect owns its target")
+                .size(),
+            stage_safe_area: self.stage_safe_area,
+        });
     }
 
     /// Restore the engine's own binding and drop our target, so the UI no longer renders into our
@@ -264,72 +249,22 @@ impl HudState {
             self.redirected = false;
         }
         self.target = None;
+        resources::retire(&mut self.preview_id, &mut self.pending_unregisters);
+        self.retry.succeeded();
+        *APPLIED_REDIRECT.lock() = None;
     }
 
-    /// The frame's dynamic panel distance: dispatch the depth-histogram pass, pick up the async
-    /// readback, and ease toward the policy's target (see [`crate::hud::depth`]). Falls back to
-    /// `base` when the pipeline cannot be built. Call once per frame (eye 0) with the engine
-    /// context mutex held.
-    pub fn depth_distance(
-        &mut self,
-        context: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
-        device: &jc3gi::graphics_engine::device::Device,
-        cfg: &crate::hud::config::DepthShiftConfig,
-        mode: crate::hud::HudMode,
-        base: f32,
-    ) -> f32 {
-        if self.depth_shift.is_none() {
-            match crate::hud::depth::DepthShift::new(device) {
-                Ok(shift) => self.depth_shift = Some(shift),
-                Err(e) => {
-                    // Log the build failure once, not per frame; the next attempt happens on the
-                    // next frame regardless.
-                    static LOGGED: std::sync::atomic::AtomicBool =
-                        std::sync::atomic::AtomicBool::new(false);
-                    if !LOGGED.swap(true, std::sync::atomic::Ordering::Relaxed) {
-                        tracing::error!("hud depth: {e:#}");
-                    }
-                    return base;
-                }
-            }
-        }
-        let Some(shift) = self.depth_shift.as_mut() else {
-            return base;
-        };
-        // The histogram dispatch only runs for the histogram policy; the vehicle policy needs
-        // no GPU work. The mask uses the previous frame's corners (this frame's depend on the
-        // distance being computed) and the redirected HUD texture's alpha.
-        if cfg.use_depth_histogram
-            && let Some(graphics_engine) =
-                // SAFETY: the graphics engine is the live singleton on the render thread.
-                unsafe { jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() }
-        {
-            let hud_srv = self.target.as_ref().map(|t| t.color_srv().clone());
-            let mask = match (
-                cfg.mask_by_hud,
-                self.cached_corners,
-                self.current_pose,
-                &hud_srv,
-            ) {
-                (true, Some(corners), Some((pos, _)), Some(srv)) => {
-                    Some(crate::hud::depth::MaskInputs {
-                        camera_pos: pos,
-                        corners,
-                        hud_srv: srv,
-                    })
-                }
-                _ => None,
-            };
-            shift.sample(context, graphics_engine, cfg, mask);
-        }
-        shift.distance(cfg, mode, base)
+    /// The frame's dynamic panel distance, eased toward the policy's target (see
+    /// [`crate::hud::depth`]). Call once per frame (eye 0).
+    pub fn depth_distance(&mut self, mode: HudMode, base: f32) -> f32 {
+        self.depth_shift
+            .get_or_insert_with(DepthShift::default)
+            .distance(&DEPTH_SHIFT, mode, base)
     }
 
     /// The dynamic-distance state's live snapshot, for the debug UI.
-    pub fn depth_status(&self) -> Option<crate::hud::depth::DepthShiftStatus> {
-        self.depth_shift
-            .as_ref()
-            .map(crate::hud::depth::DepthShift::status)
+    pub fn depth_status(&self) -> Option<DepthShiftStatus> {
+        self.depth_shift.as_ref().map(DepthShift::status)
     }
 
     /// Choose the panel pose `(position, rotation)` for the current frame from the head pose, caching
@@ -345,13 +280,12 @@ impl HudState {
         freeze: bool,
         head_pos: Vec3,
         head_rotation: Quat,
-        follow: &FollowConfig,
     ) -> (Vec3, Quat) {
         let pose = if freeze {
             *self.latched_pose.get_or_insert((head_pos, head_rotation))
         } else {
             self.latched_pose = None;
-            (head_pos, self.follow.update(head_rotation, follow))
+            (head_pos, self.follow.update(head_rotation))
         };
         self.current_pose = Some(pose);
         pose
@@ -373,14 +307,26 @@ impl HudState {
         }
     }
 
-    /// Set (or clear) the frame's marker-warp inputs. Chosen on eye 0 alongside the corners.
-    pub fn set_warp_frame(&mut self, frame: Option<WarpFrame>) {
-        self.warp_frame = frame;
-    }
-
     /// Set (or clear) the frame's cursor corners. Chosen on eye 0 alongside the panel corners.
     pub fn set_cursor_corners(&mut self, corners: Option<[Vec4; 4]>) {
         self.cursor_corners = corners;
+    }
+
+    /// Clear the cached panel geometry when the redirected panel is not being rendered.
+    pub fn clear_panel_corners(&mut self) {
+        self.cached_corners = None;
+    }
+
+    /// The world-space corners of the panel rendered this frame. The pointer uses this exact cache
+    /// rather than reconstructing the pose, so world-lock, depth shifting, and follow damping cannot
+    /// make the ray hit a different surface than the player sees.
+    pub fn panel_corners(&self) -> Option<[Vec4; 4]> {
+        self.cached_corners
+    }
+
+    /// The redirected HUD target, or `None` while the redirect is not applied.
+    pub(super) fn redirected_target(&self) -> Option<&HudTarget> {
+        self.target.as_ref().filter(|_| self.redirected)
     }
 
     /// The redirected texture's size, or `None` while the redirect is not applied. The mouse
@@ -391,24 +337,6 @@ impl HudState {
             return None;
         }
         self.target.as_ref().map(HudTarget::size)
-    }
-
-    /// Set the frame's split state (eye 0): whether the composite is live, and every layer's
-    /// world-space corner set (all recomputed per frame -- the partition redraws every texture
-    /// every frame, so nothing freezes).
-    pub fn set_split_frame(
-        &mut self,
-        active: bool,
-        params: Option<[PanelParams; split::LAYER_COUNT]>,
-    ) {
-        self.split_composite = active;
-        self.cached_layer_corners = [None, None, None];
-        let Some(params) = params else {
-            return;
-        };
-        for (slot, params) in self.cached_layer_corners.iter_mut().zip(params.iter()) {
-            *slot = crate::hud::quad::compute_world_corners(params).map(|c| (c, params.distance));
-        }
     }
 
     /// Draw the redirected HUD as a floating quad for `eye` over `target` (the eye's linear back
@@ -422,18 +350,17 @@ impl HudState {
         target: &Texture,
         _eye: usize,
     ) {
-        // Cinematic mode hides the HUD by skipping the quad: the redirect keeps drawing the game's
-        // HUD into the offscreen texture, so flipping the mode back shows the live HUD at once.
-        if crate::director::cinematic::active() {
+        // The clean view hides the HUD by skipping the quad: the redirect keeps drawing the game's
+        // HUD into the offscreen texture, so switching it off shows the live HUD at once.
+        if crate::director::clean_view::hides_everything() {
             return;
         }
-        self.draw_panels(context, device, target);
+        self.draw_panel(context, device, target);
         self.draw_cursor(context, device, target);
     }
 
-    /// Draw the panel surface(s): the single (possibly warped) panel, or every split layer at its
-    /// own distance.
-    fn draw_panels(&mut self, context: &ID3D11DeviceContext, device: &Device, target: &Texture) {
+    /// Draw the panel surface: the whole HUD texture on one flat quad.
+    fn draw_panel(&mut self, context: &ID3D11DeviceContext, device: &Device, target: &Texture) {
         if !self.redirected {
             return;
         }
@@ -452,92 +379,8 @@ impl HudState {
                 }
             }
         }
-        if self.quad.is_none() {
-            return;
-        }
-
-        // While split (all layer corner sets and textures present), draw every layer at its own
-        // distance, farthest first: the quads are alpha-blended overlays without a depth test, so
-        // painter's order is what makes a near layer (the reticle group) occlude a far one (a
-        // distant marker) and not vice versa. Otherwise, the single flat panel.
-        let layer_srvs = [
-            Some(hud_srv.clone()),
-            self.layer_targets[0]
-                .as_ref()
-                .map(|t| t.color_srv().clone()),
-            self.layer_targets[1]
-                .as_ref()
-                .map(|t| t.color_srv().clone()),
-        ];
-        let split_ready = self.split_composite
-            && self.cached_layer_corners.iter().all(Option::is_some)
-            && layer_srvs.iter().all(Option::is_some);
-        if !split_ready {
-            // Single-panel mode: the whole HUD texture on one surface, depth-warped per element
-            // when the frame has warp inputs (markers at world depth, the reticle region at aim
-            // depth), flat otherwise.
-            if let Some(frame) = self.warp_frame.as_ref() {
-                if self.warp.is_none() {
-                    match HudWarp::new(device) {
-                        Ok(warp) => self.warp = Some(warp),
-                        Err(e) => tracing::error!("HUD warp: {e:#}"),
-                    }
-                }
-                if let Some(warp) = self.warp.as_ref() {
-                    let inputs = WarpInputs {
-                        corners,
-                        anchor: frame.anchor,
-                        base_distance: frame.base_distance,
-                        markers: frame.markers.clone(),
-                    };
-                    if warp.draw(context, device, target, &hud_srv, &inputs) {
-                        return;
-                    }
-                }
-            }
-            if let Some(quad) = self.quad.as_ref() {
-                quad.draw(context, device, target, &hud_srv, &corners);
-            }
-            return;
-        }
-
-        let distances: [f32; split::LAYER_COUNT] =
-            std::array::from_fn(|i| self.cached_layer_corners[i].map_or(0.0, |(_, d)| d));
-        let mut order: [usize; split::LAYER_COUNT] = [0, 1, 2];
-        order.sort_by(|&a, &b| {
-            distances[b]
-                .partial_cmp(&distances[a])
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        for i in order {
-            let (layer_corners, distance) = self.cached_layer_corners[i].unwrap();
-            let srv = layer_srvs[i].as_ref().unwrap();
-            // The marker layer draws depth-warped when the frame has warp inputs; the warp
-            // pipeline is built lazily and a build failure falls back to the flat quad.
-            if i == split::HudLayer::Markers as usize
-                && let Some(frame) = self.warp_frame.as_ref()
-            {
-                if self.warp.is_none() {
-                    match HudWarp::new(device) {
-                        Ok(warp) => self.warp = Some(warp),
-                        Err(e) => tracing::error!("HUD warp: {e:#}"),
-                    }
-                }
-                if let Some(warp) = self.warp.as_ref() {
-                    let inputs = WarpInputs {
-                        corners: layer_corners,
-                        anchor: frame.anchor,
-                        base_distance: distance,
-                        markers: frame.markers.clone(),
-                    };
-                    if warp.draw(context, device, target, srv, &inputs) {
-                        continue;
-                    }
-                }
-            }
-            if let Some(quad) = self.quad.as_ref() {
-                quad.draw(context, device, target, srv, &layer_corners);
-            }
+        if let Some(quad) = self.quad.as_ref() {
+            quad.draw(context, device, target, &hud_srv, &corners);
         }
     }
 
@@ -557,12 +400,9 @@ impl HudState {
     }
 
     /// Clear the HUD render target and depth-stencil so the next frame starts clean. A no-op when
-    /// not redirected, and while the split composite is live -- the layer textures (including the
-    /// main target, which doubles as the static layer) must persist between their refreshes, so
-    /// the UI render detour clears each one right before re-rendering it instead. The caller must
-    /// hold the engine context mutex.
+    /// not redirected. The caller must hold the engine context mutex.
     pub fn clear(&mut self, context: &ID3D11DeviceContext) {
-        if !self.redirected || self.split_composite {
+        if !self.redirected {
             return;
         }
         let Some(target) = self.target.as_ref() else {
@@ -587,6 +427,7 @@ impl HudState {
         &mut self,
         renderer: &mut egui_directx11::Renderer,
     ) -> Option<egui::TextureId> {
+        self.drain_preview_retirements(renderer);
         if self.preview_id.is_none()
             && let Some(target) = self.target.as_ref()
         {
@@ -595,36 +436,126 @@ impl HudState {
         self.preview_id
     }
 
-    /// Register (once) and return the egui texture ids for the marker/center layer previews.
-    /// `None` per slot until the layer target exists.
-    pub fn layer_preview_ids(
-        &mut self,
-        renderer: &mut egui_directx11::Renderer,
-    ) -> [Option<egui::TextureId>; split::LAYER_COUNT - 1] {
-        for (id, target) in self
-            .layer_preview_ids
-            .iter_mut()
-            .zip(self.layer_targets.iter())
-        {
-            if id.is_none()
-                && let Some(target) = target.as_ref()
-            {
-                *id = Some(renderer.register_user_texture(target.color_srv().clone()));
-            }
-        }
-        self.layer_preview_ids
-    }
-
     /// Drop the egui preview registration. Call on the UI thread (it owns the renderer), so the texture
     /// id is released rather than leaked.
     pub fn release_preview(&mut self, renderer: &mut egui_directx11::Renderer) {
-        if let Some(id) = self.preview_id.take() {
+        resources::retire(&mut self.preview_id, &mut self.pending_unregisters);
+        self.drain_preview_retirements(renderer);
+    }
+
+    pub(crate) fn drain_preview_retirements(&mut self, renderer: &mut egui_directx11::Renderer) {
+        resources::drain(&mut self.pending_unregisters, |id| {
             renderer.unregister_user_texture(id);
+        });
+    }
+}
+
+/// The applied redirect, written by [`HudState`] on the render thread (a leaf lock).
+static APPLIED_REDIRECT: Mutex<Option<AppliedRedirect>> = Mutex::new(None);
+
+const STAGE_SAFE_AREA_STALE: Duration = Duration::from_secs(1);
+static STAGE_SAFE_AREA: Mutex<Option<StageSafeAreaSample>> = Mutex::new(None);
+
+fn copy_stage_safe_area(source: &Mutex<Option<StageSafeAreaSample>>) -> StageSafeAreaReadout {
+    match source.try_lock() {
+        Some(sample) => sample.map_or(
+            StageSafeAreaReadout::Unavailable,
+            StageSafeAreaReadout::Captured,
+        ),
+        None => StageSafeAreaReadout::Busy,
+    }
+}
+
+#[cfg(test)]
+mod test_stage_safe_area {
+    use super::*;
+
+    #[test]
+    fn publication_copy_is_nonblocking_and_preserves_owned_samples() {
+        let source = Mutex::new(None);
+        assert_eq!(
+            copy_stage_safe_area(&source),
+            StageSafeAreaReadout::Unavailable
+        );
+        let sample = StageSafeAreaSample::new(layout(), Instant::now());
+        *source.lock() = Some(sample);
+        assert_eq!(
+            copy_stage_safe_area(&source),
+            StageSafeAreaReadout::Captured(sample)
+        );
+        let _guard = source.lock();
+        assert_eq!(copy_stage_safe_area(&source), StageSafeAreaReadout::Busy);
+    }
+
+    #[test]
+    fn capture_freshness_expires_at_the_boundary() {
+        let at = Instant::now();
+        let sample = StageSafeAreaSample::new(layout(), at);
+        assert!(sample.fresh(at));
+        assert!(sample.fresh(at + STAGE_SAFE_AREA_STALE - Duration::from_nanos(1)));
+        assert!(!sample.fresh(at + STAGE_SAFE_AREA_STALE));
+    }
+
+    #[test]
+    fn invalid_capture_values_do_not_publish_a_layout() {
+        let original = layout();
+        let invalid = [
+            StageSafeArea {
+                bounds: [f32::NAN, 0.0, 1.0, 1.0],
+                ..original
+            },
+            StageSafeArea {
+                bounds: [0.0, 0.0, 0.0, 1.0],
+                ..original
+            },
+            StageSafeArea {
+                bounds: [0.0, 1.0, 1.0, 0.0],
+                ..original
+            },
+            StageSafeArea {
+                percentage: f32::INFINITY,
+                ..original
+            },
+            StageSafeArea {
+                stage: Vec2::ZERO,
+                ..original
+            },
+            StageSafeArea {
+                stage: Vec2::splat(f32::NAN),
+                ..original
+            },
+            StageSafeArea {
+                aspect: 0.0,
+                ..original
+            },
+            StageSafeArea {
+                aspect: f32::INFINITY,
+                ..original
+            },
+            StageSafeArea {
+                aspect: f32::MIN_POSITIVE,
+                ..original
+            },
+        ];
+        for layout in invalid {
+            assert!(
+                StageSafeAreaSample::new(layout, Instant::now())
+                    .layout
+                    .is_none()
+            );
         }
-        for id in &mut self.layer_preview_ids {
-            if let Some(id) = id.take() {
-                renderer.unregister_user_texture(id);
-            }
+        assert_eq!(
+            StageSafeAreaSample::new(original, Instant::now()).layout,
+            Some(original)
+        );
+    }
+
+    fn layout() -> StageSafeArea {
+        StageSafeArea {
+            bounds: [32.0, 18.0, 1248.0, 702.0],
+            percentage: 0.05,
+            stage: Vec2::new(1280.0, 720.0),
+            aspect: 1.0,
         }
     }
 }

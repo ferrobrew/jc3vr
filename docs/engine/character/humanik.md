@@ -36,17 +36,18 @@ Everything runs in the SIM phase inside [`Character::UpdatePassFinalizePose_Para
 
 ```
 UpdatePassFinalizePose_Parallel(context):
+  UpdateStateTasksInRange(dt, FINALIZE_POSE_STATE_TASK_RANGE)    <-- aim, look-at, loco, off-hand IK tasks
   ... UpdateGroundInfo / UpdateAttachmentTransforms ...
   if m_EnableHIK && not-reduced-LOD:
     # ---- MAIN pass (body IK: aim, reach) ----
     if HasTargets(m_HIK, PASS_MAIN):                             <-- THE GATE
         SetActiveIKPass(m_HIK, PASS_MAIN)
         DriveAllCurrentEffectorControlValues(m_HIK, dt)
-        # UpdateIKForTargets — inlined:
-        CharacterToIKState(m_HIK, pose)
-        UpdateEffectorsFromTargets(m_HIK, dt)
-        Solve(m_HIK)
-        IKToCharacterState(m_HIK, pose, updateAllBones)          -> writes solved pose back
+        CCharacter::UpdateIKForTargets(this, dt):
+            CharacterToIKState(m_HIK, pose)
+            UpdateEffectorsFromTargets(m_HIK, dt)
+            Solve(m_HIK)
+            IKToCharacterState(m_HIK, pose, updateAllBones)      -> writes solved pose back
         UpdatePropTransforms(...)
     ResetSolveStep(m_HIK, PASS_MAIN)
     if ClearTargets(m_HIK, PASS_MAIN): ResetProperties(m_HIK)
@@ -63,7 +64,9 @@ UpdatePassFinalizePose_Parallel(context):
   Character::UpdatePropEffects(this, dt)             <-- LAST call
 ```
 
-The `HumanIK` calls in the listing are bound as [`HasTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-HasTargets), [`SetActiveIKPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-SetActiveIKPass), [`DriveAllCurrentEffectorControlValues`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-DriveAllCurrentEffectorControlValues), [`CharacterToIKState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-CharacterToIKState), [`UpdateEffectorsFromTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-UpdateEffectorsFromTargets), [`Solve`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-Solve), [`IKToCharacterState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-IKToCharacterState), [`ResetSolveStep`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-ResetSolveStep), [`ClearTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-ClearTargets), and [`ResetProperties`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-ResetProperties). The last call is [`Character::UpdatePropEffects`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdatePropEffects). `CCharacter::UpdateSecondaryHandIKPass` is not bound in the defs.
+The `HumanIK` calls in the listing are bound as [`HasTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-HasTargets), [`SetActiveIKPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-SetActiveIKPass), [`DriveAllCurrentEffectorControlValues`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-DriveAllCurrentEffectorControlValues), [`CharacterToIKState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-CharacterToIKState), [`UpdateEffectorsFromTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-UpdateEffectorsFromTargets), [`Solve`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-Solve), [`IKToCharacterState`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-IKToCharacterState), [`ResetSolveStep`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-ResetSolveStep), [`ClearTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-ClearTargets), and [`ResetProperties`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##func-ResetProperties). The last call is [`Character::UpdatePropEffects`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdatePropEffects). `CCharacter::UpdateSecondaryHandIKPass` is bound as [`Character::UpdateSecondaryHandIKPass`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdateSecondaryHandIKPass). The state tasks the pass runs first, and why a blackboard key zeroed at the pass's entry is written again before the solves, are in [animation-layers.md](animation-layers.md#state-tasks-inside-the-pose-finalization-pass).
+
+The MAIN solve is a separate function, [`Character::UpdateIKForTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdateIKForTargets), which runs the four `HumanIK` calls from `CharacterToIKState` to `IKToCharacterState`. The IDB mislabels it `CAnimationRuleSystem::GetState`; its body and its sole call site identify it correctly. Inside the same branch, after the solve, `CInventory::UpdateAttachmentTransforms` (not bound) re-derives each held weapon's cached world transform from its attach bone, a child of the wrist, so a weapon on an IK-driven wrist follows the solved wrist within the same tick. `UpdateSecondaryHandIKPass` runs the same refresh after its own solve when that pass had targets, through [`Character::UpdateSecondaryHandIKForTargets`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::character::Character##func-UpdateSecondaryHandIKForTargets), the `SECONDARY`-pass counterpart of `UpdateIKForTargets` — it skips `CharacterToIKState` when the MAIN solve already ran this frame, reusing that pose copy instead of refetching it.
 
 Key ordering facts:
 - The MAIN solve is **gated by `HasTargets(PASS_MAIN)`**. No targets ⇒ the entire body solve is skipped that frame.
@@ -101,6 +104,8 @@ The mapping (`GetEffectorIdMapping`, node to effector) fixes the ids, bound as t
 | `LEFT_SHOULDER` / `RIGHT_SHOULDER` | Left / Right shoulder |
 | `HEAD` | Head |
 | `LEFT_HIP` / `RIGHT_HIP` | Left / Right hip |
+
+Each effector's bone is the one named after its HumanIK node, and HumanIK names its nodes in MotionBuilder's convention (`HIKNodeNameFromNodeId` reads a fixed name table): the shoulder node is the upper-arm joint, so `LEFT_SHOULDER` drives the bone named `LeftArm`, `LEFT_ELBOW` drives `LeftForeArm`, and `LEFT_WRIST` drives `LeftHand`, and likewise on the right. The rig's `LeftShoulder` bone is the collar, HumanIK's separate collar node, which has no effector. The shoulder, elbow, and wrist effectors therefore span exactly the arm chain from the glenohumeral joint to the wrist.
 
 The head effector is therefore [`Effector::HEAD`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::Effector##variant-HEAD), provided the characterization uses a head node, which the humanoid rig does. The per-effector control arrays (`m_TargetReachT` and the others) are indexed by this effector id.
 
@@ -157,6 +162,7 @@ The consequences that matter to any external supplier:
 - **An invalidated entry keeps steering.** `UpdateEffectorsFromTargets` applies every entry in the lists, valid or not, so a leftover keeps pushing its effector toward the (now stale) pose it was queued with while `DriveAllCurrentEffectorControlValues` runs its reach down — `SpeedLerp` toward zero at the blend-out rate when the entry carries the blend-out flag (the game's hand-pass default, `HumanIK::HAND_PASS_BLEND_OUT_RATE` per second, gives a tail of about 0.7 s from full reach), zeroed outright on the next driven frame without it. For valid entries the reach drive is the mirror image: `SpeedLerp` toward the target reach with the interpolation flag, snap without it — each flag governs only its own direction.
 - **Presence in the list is not a claim; `is_valid` is.** Every system that queued recently has entries sitting in the lists mid-decay. Only a set `is_valid` means the supplier queued since the last solve — the game's own systems re-queue their active targets every frame, so "the game is driving this effector this frame" is exactly the set of valid entries at pose-finalization entry. Matching on presence alone mistakes leftovers (including one's own from the previous frame) for live targets.
 - **Re-queuing per frame refreshes, never duplicates.** A supplier that re-adds each frame re-validates and overwrites the same entry before the gate, so its data never goes stale; with `interpolation=false` the reach also snaps back to the written `m_TargetReach*` each frame.
+- **The reach values are shared by both passes.** [`m_ReachT`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/animation::ik::HumanIK##field-m_ReachT) and its siblings have one slot per effector, not one per pass. An invalidated entry on one pass is never removed while the other pass keeps that effector's reach up every frame, so it keeps its stale pose, and it pulls the effector back to that pose whenever its own pass solves for some other target. A `SECONDARY` hand target queued once and then left behind by a `MAIN` supplier on the same wrist is the case that matters.
 
 Defaults the game itself uses:
 
@@ -202,4 +208,3 @@ Where those shoulder targets should *go* is a rig question rather than a solver 
 - **Weight source.** `DriveAllCurrentEffectorControlValues` runs *before* the solve inside the pass; it eases `m_ReachT` toward `m_TargetReachT`. With `interpolation=false` the value snaps; with interpolation it ramps over several frames, so the body eases into the target rather than snapping. Choose per the desired feel.
 - **`updateAllBones`.** `IKToCharacterState` takes `CCharacter::m_IkToCharacterUpdateAllBones`. How the flag changes which bones receive the solved result is not characterized. A `SetJoint` on the same bones later in the same frame, such as one at `UpdatePropEffects`, overwrites the solved joint and re-derives its descendants.
 - **`hkaPose` pointer.** `CharacterToIKState`/`IKToCharacterState` take the character's `hkaPose*`; the engine invokes them inside the pass. An external caller therefore only queues targets. The engine runs the solve, and a direct call to `Solve` is not part of the sequence.
-- `UpdateIKForTargets` is inlined (there is no standalone function); the ordering above is reconstructed from the inlined body in `UpdatePassFinalizePose_Parallel`.

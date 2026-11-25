@@ -6,7 +6,9 @@ its definitions, which ship as RTPC property containers (`settings/spawn_*_defs.
 `settings/spawn_budget_pools.bin`). This script reads those files after they have been extracted
 and converted to XML with the Gibbed tools (see the reverse-engineering skill for the extraction
 workflow) and writes one compact JSON table the payload embeds, so the spawner's picker offers the
-game's own definitions by name, category, and tag set.
+game's own definitions by name, category, and tag set. Each entry also carries the `hashlittle` hash
+of its entity's name (`entity_hash`), which is the name hash a spawned weapon carries and the key of
+its display name in the game's localisation store.
 
 Usage:
     extract_spawn_defs.py <dir with spawn_*_defs.xml> [output.json]
@@ -18,6 +20,9 @@ import json
 import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "sights"))
+from archives import hashlittle  # noqa: E402
 
 # The definition files whose entries are worth spawning by hand. The road decorations, trains,
 # effects, and encounters are placement-system objects that do not spawn meaningfully in isolation.
@@ -59,6 +64,7 @@ def entries(path: Path):
             "category": values.get("debug", ""),
             "tags": tags,
             "pool": path.stem.removeprefix("spawn_").removesuffix("_defs"),
+            "entity_hash": hashlittle(Path(entity.replace("\\", "/")).stem),
         }
 
 

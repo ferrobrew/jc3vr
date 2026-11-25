@@ -1,0 +1,799 @@
+//! Arm reach, all pure: the remap of a wrist from the player's arm onto the character's measured
+//! arm, the pull ramp that lets the character's shoulder and chest follow a hand near full
+//! extension, and the capped detach of the rendered hand from a wrist the solve left short.
+//!
+//! The pieces, each behind its toggle in [`REACH`]:
+//!
+//! - [`ArmRemap`]: a wrist's offset from the player's shoulder, scaled by the ratio of the two arm
+//!   lengths and placed at the character's shoulder. Both shoulders hang from the same eye point,
+//!   the camera's, turned by the torso's heading: the player's at the generic proportions of his
+//!   [`BodyDimensions`], the character's at the place his skeleton holds his shoulder joints from
+//!   his eyes ([`body::character_shoulder_positions`]), so the hands land where the character's own
+//!   proportions put them. The character's shoulder never follows his animation: a run swings the
+//!   animated shoulders back and forth each stride, and a remap that followed them pumped a held
+//!   rifle in and out of the hands. With the character's arm measured ([`ArmTracker`]), the ratio
+//!   is his measured shoulder-to-wrist length over the player's reach
+//!   ([`BodyDimensions::arm_reach`]), so a fully extended player arm, forward or hanging, asks for
+//!   a fully extended character arm about the joint HumanIK reaches from. Without a measurement,
+//!   the remap takes the arm-span ratio ([`ArmRemap::estimated`]).
+//! - [`pull_ramp`]: the wrist target's pull, ramping from zero as the target nears the arm's full
+//!   length, so reach propagates into the girdle only when the arm alone cannot get there.
+//! - [`ReachLimit`]: the wrist held within the character's measured arm length of his solved
+//!   shoulder joint, so the arm can always reach its hand: the hand body's goal, the wrist target,
+//!   and what the hand holds all start from the limited wrist, and a controller past the arm's
+//!   reach leaves the hand at full extension along the line to it.
+//! - [`detach_offset`]: how far the rendered hand leaves the solved wrist toward the target, past a
+//!   small threshold and up to a cap. With the reach limited, only a body that moves against the
+//!   hands within a tick leaves a shortfall for it.
+
+use body_rig::{
+    body::{EYES_TO_NECK, neck_pivot},
+    geometry::within_sphere,
+    rotation::level,
+    smooth::{follow_factor, smoothstep_between},
+};
+use glam::{FloatExt, Quat, Vec3};
+
+use crate::controllers::{
+    body::{self, BodyDimensions},
+    frame::{Hand, Pose},
+};
+
+/// The arm-reach tuning, fixed at [`REACH`]. Each part acts only under the controller scheme with
+/// the hand IK or the late update on.
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct ReachTuning {
+    pub measured_remap: bool,
+    /// The time constant of the smoothing on the character's measured shoulder positions, seconds.
+    pub shoulder_smoothing_s: f32,
+    pub chest_shoulder_smoothing_s: f32,
+    pub reach_limit: bool,
+    /// Ramp the wrist targets' pull up as a hand nears full extension, so the character's shoulder
+    /// and chest follow a reach.
+    pub reach_pull: bool,
+    /// The extension, as a fraction of the character's arm length, where the pull starts.
+    pub pull_start: f32,
+    /// The extension where the pull reaches [`pull_max`](Self::pull_max).
+    pub pull_full: f32,
+    /// The pull at and beyond full extension, `0..=1`.
+    pub pull_max: f32,
+    /// Move the rendered hand from a solved wrist that fell short of its target toward the target.
+    pub detach: bool,
+    /// The shortfall left alone, metres: below it, the rendered hand stays on the arm.
+    pub detach_threshold_m: f32,
+    /// The furthest the rendered hand leaves the arm, metres.
+    pub detach_cap_m: f32,
+    /// Stretch the rendered forearm along its axis so it stays attached to a detached hand.
+    pub stretch_forearm: bool,
+}
+
+/// The arm-reach tuning.
+pub const REACH: ReachTuning = ReachTuning {
+    measured_remap: true,
+    shoulder_smoothing_s: 0.1,
+    chest_shoulder_smoothing_s: 0.5,
+    reach_limit: true,
+    reach_pull: true,
+    pull_start: 0.9,
+    pull_full: 1.0,
+    pull_max: 0.4,
+    detach: true,
+    detach_threshold_m: 0.01,
+    detach_cap_m: 0.1,
+    stretch_forearm: true,
+};
+
+/// The remap of one arm's wrist: the offset from `player_shoulder`, scaled by `scale`, placed at
+/// `character_shoulder`. All positions are in the cockpit frame.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ArmRemap {
+    pub player_shoulder: Vec3,
+    pub character_shoulder: Vec3,
+    pub scale: f32,
+}
+
+impl ArmRemap {
+    /// The remap from the shoulders of both bodies at the same eye point, scaled by the arm-span
+    /// ratio. The shoulders hang from the head (the eye midpoint) by the torso's heading `torso`
+    /// ([`torso_heading`]), because the view puts the character's eyes where the player's are: the
+    /// player's estimated from `player`, the character's from his skeleton.
+    pub fn estimated(
+        hand: Hand,
+        head: Pose,
+        torso: Quat,
+        player: &BodyDimensions,
+        character: &BodyDimensions,
+    ) -> Self {
+        Self {
+            player_shoulder: shoulders(head, torso, player)[hand.index()],
+            character_shoulder: character_shoulders(head, torso)[hand.index()],
+            scale: body::arm_span_ratio(player, character),
+        }
+    }
+
+    /// The remap onto the character's measured arm `arm`: the shoulders as for
+    /// [`Self::estimated`], scaled by the measured arm's length over the player's reach
+    /// ([`BodyDimensions::arm_reach`]), at the VR world scale `world_scale`. `None` when either arm
+    /// or the scale is not a usable length.
+    pub fn measured(
+        hand: Hand,
+        head: Pose,
+        torso: Quat,
+        player: &BodyDimensions,
+        arm: &MeasuredArm,
+        world_scale: f32,
+    ) -> Option<Self> {
+        let player_arm = player.arm_reach();
+        let character_arm = arm.length();
+        let usable = |l: f32| l.is_finite() && l > MIN_ARM_M;
+        if !usable(player_arm)
+            || !usable(character_arm)
+            || !world_scale.is_finite()
+            || world_scale <= 0.0
+        {
+            return None;
+        }
+        let character_shoulder = character_shoulders(head, torso)[hand.index()];
+        Some(Self {
+            player_shoulder: shoulders(head, torso, player)[hand.index()],
+            character_shoulder: head.position + (character_shoulder - head.position) / world_scale,
+            scale: character_arm / player_arm / world_scale,
+        })
+    }
+
+    pub(crate) fn with_player_shoulder(self, player_shoulder: Vec3) -> Self {
+        let shift = (player_shoulder - self.player_shoulder) * self.scale;
+        Self {
+            player_shoulder,
+            character_shoulder: self.character_shoulder + shift,
+            ..self
+        }
+    }
+
+    pub fn apply(&self, wrist: Vec3) -> Vec3 {
+        self.character_shoulder + (wrist - self.player_shoulder) * self.scale
+    }
+}
+
+/// The sphere a wrist is held within: the character's arm length about his shoulder joint, both
+/// in the cockpit frame.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ReachLimit {
+    pub shoulder: Vec3,
+    pub length: f32,
+}
+
+impl ReachLimit {
+    /// The limit for `arm` about `shoulder`, the solved shoulder joint in the cockpit frame, at
+    /// the VR world scale `world_scale`. `None` when the arm or the scale is not a usable length or
+    /// the shoulder is not finite.
+    pub fn new(shoulder: Vec3, arm: &MeasuredArm, world_scale: f32) -> Option<Self> {
+        let length = arm.length() / world_scale;
+        (shoulder.is_finite()
+            && world_scale.is_finite()
+            && world_scale > 0.0
+            && length.is_finite()
+            && length > MIN_ARM_M / world_scale)
+            .then_some(Self { shoulder, length })
+    }
+
+    /// `wrist`, or where the line from the shoulder to it meets the sphere when it is further than
+    /// the arm reaches. A wrist within reach is untouched, so the limit is continuous and the hand
+    /// slides along the sphere's surface as the controller moves past it.
+    pub fn apply(&self, wrist: Vec3) -> Vec3 {
+        within_sphere(wrist, self.shoulder, self.length)
+    }
+}
+
+/// One of the character's arms as measured from his animated skeleton, smoothed.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct MeasuredArm {
+    /// Shoulder joint to elbow, metres.
+    pub upper_arm: f32,
+    /// Elbow to wrist, metres.
+    pub forearm: f32,
+    /// The shoulder joint's offset from the eye midpoint, in the body frame's axes (the cockpit
+    /// frame's axes), world metres.
+    pub eye_to_shoulder: Vec3,
+    /// The shoulder joint's offset from the eye midpoint in the clip's chest frame (facing the line
+    /// across the clip's shoulders), world metres, followed over
+    /// [`ReachTuning::chest_shoulder_smoothing_s`].
+    pub shoulder_in_chest: Vec3,
+}
+
+impl MeasuredArm {
+    /// The shoulder-to-wrist length along the bones.
+    pub fn length(&self) -> f32 {
+        self.upper_arm + self.forearm
+    }
+}
+
+/// One tick's reading of an arm: the shoulder, elbow, and wrist joints and the eye midpoint, all in
+/// one space, the rotation from that space into the body frame's axes, and the rotation from it
+/// into the clip's chest frame.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ArmSample {
+    pub shoulder: Vec3,
+    pub elbow: Vec3,
+    pub wrist: Vec3,
+    pub eyes: Vec3,
+    pub to_body: Quat,
+    pub to_chest: Quat,
+}
+
+impl ArmSample {
+    /// Whether the sample can describe an arm: every segment within the plausible bounds.
+    pub fn plausible(&self) -> bool {
+        let segment = |a: Vec3, b: Vec3| {
+            let l = a.distance(b);
+            l.is_finite() && (MIN_SEGMENT_M..=MAX_SEGMENT_M).contains(&l)
+        };
+        segment(self.shoulder, self.elbow)
+            && segment(self.elbow, self.wrist)
+            && segment(self.eyes, self.shoulder)
+            && self.to_body.is_finite()
+            && self.to_chest.is_finite()
+    }
+}
+
+/// The smoothed measurement of one arm, updated once per tick.
+///
+/// The bone lengths are constant across animation (the rig carries no scale), so they settle over
+/// a fixed half-second time constant and then hold. The eye-to-shoulder offset changes with the
+/// animation and follows it over [`ReachTuning::shoulder_smoothing_s`], and the offset in the clip's
+/// chest over [`ReachTuning::chest_shoulder_smoothing_s`].
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct ArmTracker {
+    arm: Option<MeasuredArm>,
+    samples: u32,
+    rejected: u32,
+}
+
+impl ArmTracker {
+    /// No measurement yet.
+    pub const EMPTY: Self = Self {
+        arm: None,
+        samples: 0,
+        rejected: 0,
+    };
+
+    /// The measurement so far, or `None` before the first plausible sample.
+    pub fn arm(&self) -> Option<MeasuredArm> {
+        self.arm
+    }
+
+    /// The plausible samples taken.
+    pub fn samples(&self) -> u32 {
+        self.samples
+    }
+
+    /// The implausible samples dropped.
+    pub fn rejected(&self) -> u32 {
+        self.rejected
+    }
+
+    /// Fold in one tick's sample, `dt` seconds after the last, smoothing the offsets over
+    /// [`REACH`]'s time constants. An implausible sample is dropped and counted.
+    pub fn update(&mut self, sample: ArmSample, dt: f32) {
+        if !sample.plausible() {
+            self.rejected = self.rejected.saturating_add(1);
+            return;
+        }
+        let reading = MeasuredArm {
+            upper_arm: sample.shoulder.distance(sample.elbow),
+            forearm: sample.elbow.distance(sample.wrist),
+            eye_to_shoulder: sample.to_body * (sample.shoulder - sample.eyes),
+            shoulder_in_chest: sample.to_chest * (sample.shoulder - sample.eyes),
+        };
+        self.samples = self.samples.saturating_add(1);
+        self.arm = Some(match self.arm {
+            None => reading,
+            Some(previous) => {
+                let lengths = follow_factor(dt, LENGTH_SMOOTHING_S);
+                let offset = follow_factor(dt, REACH.shoulder_smoothing_s);
+                let chest = follow_factor(dt, REACH.chest_shoulder_smoothing_s);
+                MeasuredArm {
+                    upper_arm: previous.upper_arm.lerp(reading.upper_arm, lengths),
+                    forearm: previous.forearm.lerp(reading.forearm, lengths),
+                    eye_to_shoulder: previous
+                        .eye_to_shoulder
+                        .lerp(reading.eye_to_shoulder, offset),
+                    shoulder_in_chest: previous
+                        .shoulder_in_chest
+                        .lerp(reading.shoulder_in_chest, chest),
+                }
+            }
+        });
+    }
+}
+
+/// The share of the pull a wrist target takes at `extension`, its distance from the shoulder as a
+/// fraction of the arm's length: zero up to `start`, one from `full`, and a smoothstep between. With
+/// `full` at or below `start` the ramp is a step at `start`.
+pub fn pull_ramp(extension: f32, start: f32, full: f32) -> f32 {
+    smoothstep_between(start, full, extension)
+}
+
+/// How far the rendered hand moves from the solved wrist toward the target, given the shortfall
+/// `miss` (target minus solved wrist): the shortfall beyond `threshold`, up to `cap`, along the
+/// shortfall. Continuous in the shortfall, so a hand crossing the threshold does not jump.
+pub fn detach_offset(miss: Vec3, threshold: f32, cap: f32) -> Vec3 {
+    let length = miss.length();
+    if !length.is_finite() || length <= 0.0 {
+        return Vec3::ZERO;
+    }
+    let applied = (length - threshold.max(0.0)).clamp(0.0, cap.max(0.0));
+    miss * (applied / length)
+}
+
+/// The torso's heading the player's shoulders are estimated at: the estimated torso's `torso` when
+/// there is one, and the head's heading otherwise.
+pub fn torso_heading(head: Pose, torso: Option<Quat>) -> Quat {
+    torso.unwrap_or_else(|| level(head.orientation))
+}
+
+fn shoulders(head: Pose, torso: Quat, dimensions: &BodyDimensions) -> [Vec3; 2] {
+    body::shoulder_positions(level_eyes(head, torso), torso, dimensions)
+}
+
+fn character_shoulders(head: Pose, torso: Quat) -> [Vec3; 2] {
+    body::character_shoulder_positions(level_eyes(head, torso), torso)
+}
+
+/// Where the eyes of `head` would be with the head facing the torso's heading `torso` and level,
+/// about the same neck pivot: the point both bodies' shoulders hang from, so a nod or a glance
+/// does not move them.
+fn level_eyes(head: Pose, torso: Quat) -> Vec3 {
+    neck_pivot(head.position, head.orientation) - torso * EYES_TO_NECK
+}
+
+/// The shortest player or character arm the measured remap accepts, metres.
+const MIN_ARM_M: f32 = 0.2;
+/// The bounds on one measured segment (a bone, or the eyes to a shoulder), metres.
+const MIN_SEGMENT_M: f32 = 0.05;
+const MAX_SEGMENT_M: f32 = 0.6;
+/// The time constant the bone lengths settle over, seconds.
+const LENGTH_SMOOTHING_S: f32 = 0.5;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const EPS: f32 = 1e-4;
+
+    const PLAYER: BodyDimensions = BodyDimensions {
+        height: 1.80,
+        eye_height: 1.68,
+        shoulder_height: 1.47,
+        shoulder_width: 0.40,
+        arm_span: 1.84,
+        upper_arm: 0.29,
+        forearm: 0.23,
+        hand: 0.19,
+        ..BodyDimensions::GENERIC_ADULT
+    };
+
+    fn head() -> Pose {
+        Pose {
+            position: Vec3::new(0.1, PLAYER.eye_height, -0.2),
+            orientation: Quat::from_rotation_y(0.3),
+        }
+    }
+
+    fn rico() -> MeasuredArm {
+        MeasuredArm {
+            upper_arm: 0.27,
+            forearm: 0.25,
+            eye_to_shoulder: Vec3::new(0.19, -0.22, 0.12),
+            shoulder_in_chest: Vec3::new(0.19, -0.22, 0.12),
+        }
+    }
+
+    #[test]
+    fn a_crouched_shoulder_rebases_reach_without_moving_the_registered_wrist() {
+        let remap =
+            ArmRemap::measured(Hand::Left, head(), Quat::IDENTITY, &PLAYER, &rico(), 1.2).unwrap();
+        let offset = Vec3::new(0.12, 0.18, -0.14);
+        let bent = remap.with_player_shoulder(remap.player_shoulder + offset);
+        for wrist in [Vec3::ZERO, Vec3::new(-0.2, 0.4, -0.6)] {
+            assert!(remap.apply(wrist).abs_diff_eq(bent.apply(wrist), EPS));
+        }
+        assert!(
+            bent.character_shoulder
+                .abs_diff_eq(remap.character_shoulder + offset * remap.scale, EPS,)
+        );
+        assert_eq!(bent.scale, remap.scale);
+        let wrist = bent.player_shoulder + Vec3::NEG_Z * PLAYER.arm_reach();
+        let target = bent.apply(wrist);
+        let limit = ReachLimit::new(bent.character_shoulder, &rico(), 1.2).unwrap();
+        assert!(limit.apply(target).abs_diff_eq(target, EPS));
+        assert!((target.distance(bent.character_shoulder) - limit.length).abs() < EPS);
+    }
+
+    #[test]
+    fn the_measured_remap_scales_by_the_player_s_reach_not_the_t_pose_arm() {
+        let remap =
+            ArmRemap::measured(Hand::Right, head(), Quat::IDENTITY, &PLAYER, &rico(), 1.0).unwrap();
+        assert!((remap.scale - rico().length() / PLAYER.arm_reach()).abs() < EPS);
+        // A wrist the T-pose's arm length out, a bent arm, stays within the character's reach.
+        let bent = remap.player_shoulder + Vec3::NEG_Z * PLAYER.shoulder_to_wrist();
+        let reach = remap.apply(bent).distance(remap.character_shoulder);
+        assert!(reach < rico().length() * 0.9, "{reach}");
+    }
+
+    #[test]
+    fn full_player_extension_maps_to_full_character_extension_about_his_shoulder() {
+        let head = head();
+        let remap = ArmRemap::measured(
+            Hand::Right,
+            head,
+            torso_heading(head, None),
+            &PLAYER,
+            &rico(),
+            1.0,
+        )
+        .unwrap();
+        for direction in [Vec3::NEG_Z, Vec3::X, Vec3::new(0.3, -0.5, -0.8).normalize()] {
+            let wrist = remap.player_shoulder + direction * PLAYER.arm_reach();
+            let remapped = remap.apply(wrist);
+            let reach = remapped - remap.character_shoulder;
+            assert!((reach.length() - rico().length()).abs() < EPS);
+            assert!(reach.normalize().dot(direction) > 1.0 - EPS);
+        }
+        assert!(
+            remap.character_shoulder.distance(
+                character_shoulders(head, torso_heading(head, None))[Hand::Right.index()]
+            ) < EPS
+        );
+    }
+
+    #[test]
+    fn animation_stance_and_gait_do_not_move_a_controller_target() {
+        let head = head();
+        let torso = Quat::from_rotation_y(-0.4);
+        for hand in Hand::BOTH {
+            let arm = rico();
+            let rest = ArmRemap::measured(hand, head, torso, &PLAYER, &arm, 1.3).unwrap();
+            let wrist = rest.player_shoulder + Vec3::new(0.1, -0.3, -0.2);
+            for phase in [0.0_f32, 0.7, 1.4, 2.1] {
+                let animated = MeasuredArm {
+                    eye_to_shoulder: Vec3::new(0.2, -0.35, phase.sin() * 0.12),
+                    shoulder_in_chest: Vec3::new(0.2, -0.3, phase.cos() * 0.1),
+                    ..arm
+                };
+                let remap = ArmRemap::measured(hand, head, torso, &PLAYER, &animated, 1.3).unwrap();
+                assert_eq!(remap.apply(wrist), rest.apply(wrist));
+                let limit = ReachLimit::new(remap.character_shoulder, &animated, 1.3).unwrap();
+                assert!(
+                    limit
+                        .apply(remap.apply(wrist))
+                        .abs_diff_eq(rest.apply(wrist), EPS)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn crouching_translates_the_hand_and_nodding_keeps_the_shoulders_at_the_neck() {
+        let head = head();
+        let torso = Quat::from_rotation_y(-0.4);
+        let arm = rico();
+        let base = ArmRemap::measured(Hand::Right, head, torso, &PLAYER, &arm, 1.0).unwrap();
+        let wrist = base.player_shoulder + Vec3::new(0.1, -0.3, -0.2);
+        let drop = Vec3::NEG_Y * 0.5;
+        let crouched = Pose {
+            position: head.position + drop,
+            ..head
+        };
+        let remap = ArmRemap::measured(Hand::Right, crouched, torso, &PLAYER, &arm, 1.0).unwrap();
+        assert!(
+            remap
+                .apply(wrist + drop)
+                .abs_diff_eq(base.apply(wrist) + drop, EPS)
+        );
+        let orientation = torso * Quat::from_rotation_x(-1.2);
+        let nodded = Pose {
+            position: neck_pivot(head.position, head.orientation) - orientation * EYES_TO_NECK,
+            orientation,
+        };
+        let remap = ArmRemap::measured(Hand::Right, nodded, torso, &PLAYER, &arm, 1.0).unwrap();
+        assert!(remap.player_shoulder.abs_diff_eq(base.player_shoulder, EPS));
+        assert!(
+            remap
+                .character_shoulder
+                .abs_diff_eq(base.character_shoulder, EPS)
+        );
+    }
+
+    #[test]
+    fn the_measured_remap_divides_out_the_world_scale() {
+        let head = head();
+        let scaled = ArmRemap::measured(
+            Hand::Left,
+            head,
+            torso_heading(head, None),
+            &PLAYER,
+            &rico(),
+            2.0,
+        )
+        .unwrap();
+        let wrist = scaled.player_shoulder + Vec3::NEG_Z * PLAYER.arm_reach();
+        // Composed into the world, cockpit offsets scale by the world scale; Rico's arm does not.
+        let world_reach = (scaled.apply(wrist) - scaled.character_shoulder) * 2.0;
+        assert!((world_reach.length() - rico().length()).abs() < EPS);
+    }
+
+    #[test]
+    fn an_unusable_arm_has_no_measured_remap() {
+        let short = MeasuredArm {
+            upper_arm: 0.05,
+            forearm: 0.05,
+            ..rico()
+        };
+        assert!(
+            ArmRemap::measured(Hand::Right, head(), Quat::IDENTITY, &PLAYER, &short, 1.0).is_none()
+        );
+        assert!(
+            ArmRemap::measured(Hand::Right, head(), Quat::IDENTITY, &PLAYER, &rico(), 0.0)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn the_estimated_remap_of_the_same_span_only_carries_the_hand_to_his_shoulder() {
+        let wrist = Vec3::new(0.4, 1.1, -0.3);
+        let remap = ArmRemap::estimated(
+            Hand::Right,
+            head(),
+            torso_heading(head(), None),
+            &PLAYER,
+            &PLAYER,
+        );
+        assert!((remap.scale - 1.0).abs() < EPS);
+        let carried = remap.character_shoulder - remap.player_shoulder;
+        assert!(remap.apply(wrist).distance(wrist + carried) < EPS);
+    }
+
+    #[test]
+    fn the_shoulders_follow_the_torso_rather_than_the_head_when_it_is_estimated() {
+        let head = head();
+        let torso = Quat::from_rotation_y(-0.4);
+        assert_eq!(torso_heading(head, Some(torso)), torso);
+        assert!(torso_heading(head, None).angle_between(head.orientation) < EPS);
+        let remap = ArmRemap::estimated(Hand::Right, head, torso, &PLAYER, &PLAYER);
+        let expected = shoulders(head, torso, &PLAYER)[Hand::Right.index()];
+        assert!(remap.player_shoulder.distance(expected) < EPS);
+        let measured = ArmRemap::measured(Hand::Right, head, torso, &PLAYER, &rico(), 1.0).unwrap();
+        assert!(measured.player_shoulder.distance(expected) < EPS);
+    }
+
+    #[test]
+    fn the_estimated_remap_scales_reach_by_the_span_ratio() {
+        let player = BodyDimensions {
+            arm_span: 1.5,
+            ..BodyDimensions::GENERIC_ADULT
+        };
+        let character = BodyDimensions::CHARACTER_ESTIMATE;
+        let head = Pose {
+            position: Vec3::new(0.0, player.eye_height, 0.0),
+            orientation: Quat::IDENTITY,
+        };
+        let remap = ArmRemap::estimated(Hand::Right, head, Quat::IDENTITY, &player, &character);
+        let wrist = remap.player_shoulder + Vec3::NEG_Z * 0.5;
+        let reach = (remap.apply(wrist) - remap.character_shoulder).length();
+        assert!((reach - 0.5 * character.arm_span / player.arm_span).abs() < EPS);
+    }
+
+    fn sample(upper: f32, forearm: f32, offset: Vec3) -> ArmSample {
+        let eyes = Vec3::new(0.0, 1.7, 0.0);
+        let shoulder = eyes + offset;
+        let elbow = shoulder + Vec3::NEG_Y * upper;
+        ArmSample {
+            shoulder,
+            elbow,
+            wrist: elbow + Vec3::NEG_Z * forearm,
+            eyes,
+            to_body: Quat::IDENTITY,
+            to_chest: Quat::IDENTITY,
+        }
+    }
+
+    #[test]
+    fn the_tracker_takes_the_first_sample_and_settles_on_constant_lengths() {
+        let mut tracker = ArmTracker::default();
+        assert!(tracker.arm().is_none());
+        let offset = Vec3::new(0.2, -0.2, 0.1);
+        tracker.update(sample(0.27, 0.25, offset), 0.0);
+        let arm = tracker.arm().unwrap();
+        assert!((arm.upper_arm - 0.27).abs() < EPS);
+        assert!((arm.forearm - 0.25).abs() < EPS);
+        assert!(arm.eye_to_shoulder.distance(offset) < EPS);
+        for _ in 0..200 {
+            tracker.update(sample(0.27, 0.25, offset), 1.0 / 30.0);
+        }
+        assert!((tracker.arm().unwrap().length() - 0.52).abs() < EPS);
+        assert_eq!(tracker.samples(), 201);
+    }
+
+    #[test]
+    fn the_shoulder_offset_follows_over_its_time_constant() {
+        let mut tracker = ArmTracker::default();
+        tracker.update(sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0)), 0.0);
+        tracker.update(sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.1)), 0.1);
+        let z = tracker.arm().unwrap().eye_to_shoulder.z;
+        assert!((z - 0.1 * (1.0 - (-1.0f32).exp())).abs() < EPS);
+    }
+
+    #[test]
+    fn the_shoulder_offset_turns_into_the_body_frame() {
+        let mut tracker = ArmTracker::default();
+        let mut s = sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0));
+        s.to_body = Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        tracker.update(s, 0.0);
+        let offset = tracker.arm().unwrap().eye_to_shoulder;
+        assert!(offset.distance(Vec3::new(0.0, -0.2, -0.2)) < EPS);
+    }
+
+    #[test]
+    fn a_stride_swing_of_the_shoulders_barely_moves_the_remap() {
+        let mut tracker = ArmTracker::default();
+        let rest = Vec3::new(0.2, -0.2, 0.05);
+        tracker.update(sample(0.27, 0.25, rest), 0.0);
+        // A run swinging the shoulder ten centimetres forward and back, a stride every 0.7 s.
+        let dt = 1.0 / 60.0;
+        let mut furthest = 0.0f32;
+        for i in 0..600 {
+            let t = i as f32 * dt;
+            let swing = Vec3::Z * 0.1 * (t * std::f32::consts::TAU / 0.7).sin();
+            tracker.update(sample(0.27, 0.25, rest + swing), dt);
+            if t > 2.0 {
+                let arm = tracker.arm().unwrap();
+                furthest = furthest.max(arm.shoulder_in_chest.distance(rest));
+            }
+        }
+        assert!(furthest < 0.025, "{furthest}");
+    }
+
+    #[test]
+    fn the_shoulder_in_the_chest_is_turned_by_the_torso() {
+        let mut tracker = ArmTracker::default();
+        let mut bladed = sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0));
+        // The clip's chest is turned a quarter turn left, so its right shoulder lies ahead.
+        bladed.shoulder = bladed.eyes + Vec3::new(0.0, -0.2, -0.2);
+        bladed.elbow = bladed.shoulder + Vec3::NEG_Y * 0.27;
+        bladed.wrist = bladed.elbow + Vec3::NEG_Z * 0.25;
+        bladed.to_chest = Quat::from_rotation_y(-std::f32::consts::FRAC_PI_2);
+        tracker.update(bladed, 0.0);
+        let arm = tracker.arm().unwrap();
+        assert!(arm.shoulder_in_chest.distance(Vec3::new(0.2, -0.2, 0.0)) < EPS);
+        let head = Pose {
+            position: Vec3::ZERO,
+            orientation: Quat::IDENTITY,
+        };
+        let torso = Quat::from_rotation_y(0.4);
+        let remap = ArmRemap::measured(Hand::Right, head, torso, &PLAYER, &arm, 1.0).unwrap();
+        assert!(
+            remap
+                .character_shoulder
+                .distance(character_shoulders(head, torso)[Hand::Right.index()])
+                < EPS
+        );
+    }
+
+    #[test]
+    fn an_implausible_sample_is_dropped() {
+        let mut tracker = ArmTracker::default();
+        tracker.update(sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0)), 0.0);
+        let before = tracker.arm();
+        tracker.update(sample(2.0, 0.25, Vec3::new(0.2, -0.2, 0.0)), 0.03);
+        tracker.update(sample(0.27, 0.0, Vec3::new(0.2, -0.2, 0.0)), 0.03);
+        let mut nan = sample(0.27, 0.25, Vec3::new(0.2, -0.2, 0.0));
+        nan.wrist = Vec3::NAN;
+        tracker.update(nan, 0.03);
+        assert_eq!(tracker.arm(), before);
+        assert_eq!(tracker.rejected(), 3);
+    }
+
+    #[test]
+    fn the_character_shoulder_hangs_from_the_eyes_by_his_skeleton() {
+        let head = Pose {
+            position: Vec3::new(0.3, 1.6, -0.4),
+            orientation: Quat::from_rotation_y(0.7),
+        };
+        let torso = Quat::from_rotation_y(0.7);
+        for remap in [
+            ArmRemap::measured(Hand::Right, head, torso, &PLAYER, &rico(), 1.0).unwrap(),
+            ArmRemap::estimated(
+                Hand::Right,
+                head,
+                torso,
+                &PLAYER,
+                &BodyDimensions::CHARACTER_ESTIMATE,
+            ),
+        ] {
+            let offset = torso.inverse() * (remap.character_shoulder - head.position);
+            assert!(
+                offset.abs_diff_eq(body::CHARACTER_EYES_TO_RIGHT_SHOULDER, EPS),
+                "{offset}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_character_s_lower_and_further_back_shoulder_moves_the_hand_with_it() {
+        // The same controller, remapped about the skeleton's shoulder and about the generic
+        // estimate's: the hand moves by the difference between the two shoulders, down, back, and
+        // in, and its reach from the shoulder is the same.
+        let head = head();
+        let torso = Quat::from_rotation_y(0.3);
+        let remap = ArmRemap::measured(Hand::Right, head, torso, &PLAYER, &rico(), 1.0).unwrap();
+        let estimate = shoulders(head, torso, &BodyDimensions::CHARACTER_ESTIMATE)[1];
+        let generic = ArmRemap {
+            character_shoulder: estimate,
+            ..remap
+        };
+        let wrist = remap.player_shoulder + torso * Vec3::new(0.05, -0.2, -0.35);
+        let moved = torso.inverse() * (remap.apply(wrist) - generic.apply(wrist));
+        assert!(moved.abs_diff_eq(torso.inverse() * (remap.character_shoulder - estimate), EPS));
+        assert!(
+            moved.y < -0.03 && moved.z > 0.02 && moved.x < 0.0,
+            "{moved}"
+        );
+    }
+
+    #[test]
+    fn the_detach_ignores_a_small_miss_and_caps_a_large_one() {
+        assert_eq!(detach_offset(Vec3::X * 0.005, 0.01, 0.1), Vec3::ZERO);
+        assert!(
+            detach_offset(Vec3::X * 0.05, 0.01, 0.1).distance(Vec3::X * 0.04) < EPS,
+            "the miss beyond the threshold"
+        );
+        assert!(detach_offset(Vec3::NEG_Z * 0.5, 0.01, 0.1).distance(Vec3::NEG_Z * 0.1) < EPS);
+        assert_eq!(detach_offset(Vec3::ZERO, 0.01, 0.1), Vec3::ZERO);
+        assert_eq!(detach_offset(Vec3::NAN, 0.01, 0.1), Vec3::ZERO);
+    }
+
+    #[test]
+    fn the_detach_is_continuous_at_the_threshold() {
+        let below = detach_offset(Vec3::X * 0.0099, 0.01, 0.1);
+        let above = detach_offset(Vec3::X * 0.0101, 0.01, 0.1);
+        assert!(below.distance(above) < 1e-3);
+    }
+
+    #[test]
+    fn a_wrist_past_the_arm_s_reach_stops_at_full_extension_toward_it() {
+        let shoulder = Vec3::new(0.19, 1.45, 0.1);
+        let limit = ReachLimit::new(shoulder, &rico(), 1.0).unwrap();
+        assert!((limit.length - 0.52).abs() < EPS);
+        // Within reach, untouched.
+        let near = shoulder + Vec3::new(0.1, -0.2, -0.3);
+        assert_eq!(limit.apply(near), near);
+        // A controller a metre out, into a wall or across the body: the hand sits at the reach's
+        // limit along the line to it, so it keeps following the controller's direction.
+        for direction in [Vec3::NEG_Z, Vec3::NEG_X, Vec3::new(-1.0, 0.5, -1.0)] {
+            let far = shoulder + direction.normalize() * 1.0;
+            let limited = limit.apply(far);
+            assert!((limited.distance(shoulder) - limit.length).abs() < EPS);
+            assert!((limited - shoulder).normalize().dot(direction.normalize()) > 1.0 - EPS);
+        }
+        // Continuous across the sphere's surface.
+        let inside = limit.apply(shoulder + Vec3::NEG_Z * (limit.length - 1e-4));
+        let outside = limit.apply(shoulder + Vec3::NEG_Z * (limit.length + 1e-4));
+        assert!(inside.distance(outside) < 1e-3);
+    }
+
+    #[test]
+    fn the_reach_limit_scales_with_the_world_and_refuses_bad_lengths() {
+        let shoulder = Vec3::ZERO;
+        let doubled = ReachLimit::new(shoulder, &rico(), 2.0).unwrap();
+        assert!((doubled.length - 0.26).abs() < EPS);
+        assert!(ReachLimit::new(shoulder, &rico(), 0.0).is_none());
+        assert!(ReachLimit::new(Vec3::NAN, &rico(), 1.0).is_none());
+        let stub = MeasuredArm {
+            upper_arm: 0.05,
+            forearm: 0.05,
+            ..rico()
+        };
+        assert!(ReachLimit::new(shoulder, &stub, 1.0).is_none());
+    }
+}

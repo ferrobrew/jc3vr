@@ -19,8 +19,8 @@
 //!   as it smooths its own camera.
 //!
 //! Recentering is a source concern: the sim's pose is body-relative, so it recenters by zeroing
-//! its accumulated angles ([`recenter`] delegates to [`sim::reset`]). The VR source will own its
-//! own re-basing against the HMD's absolute pose when it lands (issue #12).
+//! its accumulated angles ([`recenter`] delegates to [`sim::reset`]). The VR source re-bases
+//! against the HMD's absolute pose instead ([`crate::vr::recenter`]).
 
 use std::sync::{
     OnceLock,
@@ -30,7 +30,10 @@ use std::sync::{
 use glam::{Quat, Vec3};
 use parking_lot::Mutex;
 
+pub(crate) mod anchors;
+pub(crate) mod animation;
 pub mod config;
+pub mod follow;
 pub mod sim;
 pub mod xr;
 
@@ -86,7 +89,7 @@ pub fn query_prev() -> HeadPose {
 }
 
 /// The head's rotation *relative to the body frame*: how far the head is turned from neutral, with
-/// the body's own facing (and, under the sim source, its animation-posture swing) divided out. The
+/// the body's own facing divided out. The
 /// identity means the head faces exactly where the body does.
 ///
 /// Both sources compose their published world orientation as `body × (…) × this`, so this is the
@@ -105,7 +108,12 @@ pub fn body_relative_rotation() -> Quat {
             let (yaw, pitch, roll) = sim::euler_angles();
             Quat::from_euler(glam::EulerRot::YXZ, yaw, pitch, roll)
         }
-        Source::Vr => xr::cockpit_pose().map_or(Quat::IDENTITY, |pose| pose.orientation),
+        // The view frame is the body frame turned by `xr::follow_turn` while the body follows
+        // the torso, so the cockpit orientation is relative to the view, and the turn carries it
+        // onto the body.
+        Source::Vr => xr::cockpit_pose().map_or(Quat::IDENTITY, |pose| {
+            xr::follow_turn(true) * pose.orientation
+        }),
     }
 }
 
@@ -134,85 +142,88 @@ pub fn set_pose_pair(prev: HeadPose, cur: HeadPose) {
     s.prev_pose = prev;
 }
 
-/// The animated bone positions the character hook captures each frame *before* it overrides the
-/// head bone, for [`set_anchors`].
+/// The current geometry passed through the root-stabilization adapter before publication.
 #[derive(Copy, Clone)]
 pub struct Anchors {
     /// The head bone world position (this sim tick, from `m_WorldMatrixT1`).
     pub head: Vec3,
-    /// The head bone world position as of the previous sim tick (the same animated joint through
-    /// `m_WorldMatrixT0`). The VR source composes the previous-tick side of its pose pair from this,
-    /// so the engine's sub-frame lerp smooths fast per-tick anchor motion (vehicles, parachuting)
-    /// instead of stepping at the tick rate.
+    /// The root-stabilization adapter's previous head position. Published history retains the
+    /// complete preceding capture instead of reconstructing it from this field.
     pub head_prev: Vec3,
     /// The neck bone world position (the camera's pitch pivot).
     pub neck: Vec3,
-    /// The neck-to-eye-midpoint arm in the body frame: rotated by the published head orientation,
-    /// it places the eyes anatomically about the neck pivot.
+    /// The neck-to-eye-midpoint arm in the body frame. The camera hangs the eye point from the neck
+    /// by it: swung by the head orientation under the sim source, held at rest in the body frame
+    /// under the VR source (whose tracked translation already carries the neck pivot).
     pub eye_arm: Vec3,
 }
 
-/// Publish the animated bone anchors, captured by the character hook each frame *before* it
-/// overrides the head bone. Non-finite or absurdly distant positions (loading screens,
-/// uninitialized bone data) are rejected, leaving the previous anchors in place. The pose position
-/// is refreshed immediately so the character hook, which reads the pose right after publishing the
-/// anchors, sees a position anchored to this frame's animated pose: the sim source recomputes it
-/// from the new anchor outright, and the VR pose is shifted by the anchor delta, keeping its
-/// room-scale component while moving the anchor component onto this frame's anchor.
+/// Publish a collapsed anchor sample for non-historical callers.
+#[cfg(test)]
 pub fn set_anchors(anchors: Anchors) {
-    if !anchors.head.is_finite()
-        || !anchors.head_prev.is_finite()
-        || !anchors.neck.is_finite()
-        || anchors.head.length_squared() > MAX_ANCHOR_RADIUS * MAX_ANCHOR_RADIUS
-        || anchors.head_prev.length_squared() > MAX_ANCHOR_RADIUS * MAX_ANCHOR_RADIUS
-        || anchors.neck.length_squared() > MAX_ANCHOR_RADIUS * MAX_ANCHOR_RADIUS
-    {
-        return;
-    }
-    let offset = Config::lock_query(|c| c.headpose.position_offset);
-    let mut s = state().lock();
-    let previous_anchor = s.anchor;
-    s.anchor = Some(anchors.head);
-    s.anchor_prev = Some(anchors.head_prev);
-    s.neck_delta = anchors.neck - anchors.head;
-    // The eye arm has its own sanity bound: a neck-to-eye distance beyond a metre is garbage bone
-    // data (missing eye bones resolve to the model origin).
-    if anchors.eye_arm.is_finite() && anchors.eye_arm.length_squared() < 1.0 {
-        s.eye_arm = anchors.eye_arm;
-    }
-    // The sim's pose position is anchor-derived, so recompute it here from this frame's animated
-    // head bone. The VR source composes the full position (the anchor plus the room-scale HMD
-    // translation) at its own render cadence, so between publishes the anchor advances up to one
-    // sim tick ahead of the published pose -- and the sim-tick consumers (the head-bone override,
-    // the HumanIK target) read it against the *new* anchor, sitting the head bone one tick behind
-    // the moving body (issue #44: the shadow's head trails the torso). Shifting by the anchor
-    // delta brings the anchor component current without touching the room-scale component; the
-    // next render-frame publish recomposes the full pose anyway.
-    if source() == Source::Sim {
-        s.pose.position = anchors.head + s.pose.orientation * offset;
-    } else if let Some(previous_anchor) = previous_anchor {
-        s.pose.position += anchors.head - previous_anchor;
-    }
+    let geometry = anchors::Geometry::from_anchors(anchors, glam::Mat4::IDENTITY);
+    set_anchor_pair([geometry; 2]);
 }
 
-/// The animated head bone world position, or `None` until the character hook has published a valid
-/// one (no local character yet, or only garbage bone data so far).
+/// Publish the complete pre-override endpoints captured on distinct simulation ticks.
+/// Invalid geometry withdraws the whole pair rather than retaining individual old components.
+pub(crate) fn set_anchor_pair(pair: [anchors::Geometry; 2]) {
+    if !pair.into_iter().all(anchors::Geometry::valid) {
+        withdraw_anchors();
+        return;
+    }
+    let sim_orientation = (source() == Source::Sim).then(|| sim::orientation_at(pair[1].root));
+    let tracking = if sim_orientation.is_none() {
+        xr::cockpit_pose().map(|cockpit| RetainedTracking {
+            cockpit,
+            follow_turn: xr::follow_turn(true),
+            world_scale: Config::lock_query(|c| c.vr.world_scale),
+        })
+    } else {
+        None
+    };
+    state()
+        .lock()
+        .publish_anchors_with_tracking(pair, sim_orientation, tracking);
+}
+
+/// Read both complete endpoints from the same publication.
+pub(crate) fn anchor_pair() -> Option<[anchors::Geometry; 2]> {
+    state().lock().anchor_pair
+}
+
+/// The filtered synthetic head frame relative to the captured root. Tracking is not part of it.
+pub(crate) fn animation_rotation(current: bool) -> Quat {
+    let pair = anchor_pair();
+    pair.map_or(Quat::IDENTITY, |pair| {
+        pair[usize::from(current || pair[0].collapsed)].animation_rotation
+    })
+}
+
+/// Withdraw simulation anchor authority while leaving the separately published display pose alone.
+pub(crate) fn withdraw_anchors() {
+    state().lock().withdraw_anchors();
+}
+
+/// The head the published pose hangs from ([`anchors::Geometry::view_head`]): the neutral head over
+/// the root while the headset's view is held off the walking animation, else the animated head
+/// bone. `None` until the character hook has published a valid one (no local character yet, or
+/// only garbage bone data so far). The pose minus this is the tracked offset.
 pub fn anchor() -> Option<Vec3> {
     state().lock().anchor
 }
 
-/// The animated head bone world position as of the previous sim tick (see [`Anchors::head_prev`]),
-/// or `None` until the character hook has published a valid one. The VR source composes the
-/// previous-tick side of its pose pair from this.
+/// [`anchor`] as of the previous sim tick, or `None` until the character hook has published a valid
+/// one. The VR source composes the previous-tick side of its pose pair from this.
 pub fn anchor_prev() -> Option<Vec3> {
     state().lock().anchor_prev
 }
 
-/// The world-space vector from the head bone anchor to the neck bone: the camera pivots the
-/// configured eye offset about the neck rather than the head bone, so pitching the head swings
-/// the eyes forward over the chest instead of rotating in place at the skull base. Zero until the
-/// character hook has published anchors. Body-local and effectively constant between ticks, so
-/// consumers may apply the current value to both sides of the pose pair.
+/// The world-space vector from the head bone anchor to the neck bone: the camera hangs the eye arm
+/// from the neck rather than the head bone, so under the sim source pitching the head swings the
+/// eyes forward over the chest instead of rotating in place at the skull base. Zero until the
+/// character hook has published anchors. Camera consumers read the matching endpoint from
+/// [`anchor_pair`] instead of sharing this current value across ticks.
 pub fn neck_delta() -> Vec3 {
     state().lock().neck_delta
 }
@@ -226,7 +237,8 @@ pub fn eye_arm() -> Vec3 {
 /// Recenter the headpose. The sim is body-relative and recenters by zeroing its accumulated angles;
 /// the VR source re-bases the cockpit baseline against the HMD's latest located pose. Both are
 /// re-based so one action recenters whichever source is live (and the other stays consistent for a
-/// later switch).
+/// later switch). The sim recenters at once; the VR re-base runs at the start of the next frame
+/// ([`crate::vr::recenter`]), so this is safe from any thread.
 pub fn recenter() {
     sim::reset();
     crate::vr::recenter();
@@ -249,19 +261,106 @@ pub fn is_active() -> bool {
 }
 
 #[derive(Default)]
-struct HeadPoseState {
+pub(crate) struct HeadPoseState {
     /// The current headpose, written by the active source (sim or VR).
     pose: HeadPose,
     /// The headpose as of the previous input tick, for engine interpolation.
     prev_pose: HeadPose,
-    /// The animated head bone world position, published by the character hook.
+    /// The head the pose hangs from (see [`anchor`]), published by the character hook.
     anchor: Option<Vec3>,
-    /// The previous sim tick's animated head bone world position (see [`Anchors::head_prev`]).
+    /// The previous sim tick's [`anchor`].
     anchor_prev: Option<Vec3>,
+    anchor_pair: Option<[anchors::Geometry; 2]>,
     /// The world-space head-to-neck vector, published alongside the anchor (see [`neck_delta`]).
     neck_delta: Vec3,
     /// The body-frame neck-to-eye-midpoint arm (see [`Anchors::eye_arm`]).
     eye_arm: Vec3,
+}
+
+impl HeadPoseState {
+    #[cfg(test)]
+    pub(crate) fn publish_anchors(
+        &mut self,
+        pair: [anchors::Geometry; 2],
+        sim_orientation: Option<Quat>,
+    ) {
+        self.publish_anchors_with_tracking(pair, sim_orientation, None);
+    }
+
+    fn publish_anchors_with_tracking(
+        &mut self,
+        pair: [anchors::Geometry; 2],
+        sim_orientation: Option<Quat>,
+        tracking: Option<RetainedTracking>,
+    ) {
+        let [previous, current] = pair;
+        let previous_anchor = self.anchor;
+        self.anchor = Some(current.view_head());
+        self.anchor_prev = Some(previous.view_head());
+        self.neck_delta = current.neck_delta;
+        self.eye_arm = current.eye_arm;
+        if let Some(orientation) = sim_orientation {
+            self.pose = HeadPose {
+                position: current.head,
+                orientation,
+            };
+            if current.collapsed {
+                self.prev_pose = self.pose;
+            }
+        } else if let Some(previous_geometry) = self.anchor_pair {
+            // Preserve the last tracked delta in the newly published synthetic frame. The
+            // simulation consumes this before the next display-time HMD publication.
+            let old = previous_geometry[1];
+            let (_, old_root, _) = old.root.to_scale_rotation_translation();
+            let (_, root, _) = current.root.to_scale_rotation_translation();
+            let transport =
+                root * current.animation_rotation * (old_root * old.animation_rotation).inverse();
+            self.pose.position = current.view_head()
+                + transport * (self.pose.position - previous_anchor.unwrap_or(old.view_head()));
+            self.pose.orientation = transport * self.pose.orientation;
+            if current.collapsed {
+                self.prev_pose = self.pose;
+            }
+        } else if let Some(tracking) = tracking {
+            let (_, root, _) = current.root.to_scale_rotation_translation();
+            self.pose = xr::compose(
+                tracking.cockpit.position,
+                tracking.cockpit.orientation,
+                root * current.animation_rotation * tracking.follow_turn,
+                current.view_head(),
+                tracking.world_scale,
+            );
+            if current.collapsed {
+                self.prev_pose = self.pose;
+            }
+        }
+        self.anchor_pair = Some(pair);
+    }
+
+    fn withdraw_anchors(&mut self) {
+        self.anchor = None;
+        self.anchor_prev = None;
+        self.anchor_pair = None;
+        self.neck_delta = Vec3::ZERO;
+        self.eye_arm = Vec3::ZERO;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_poses(&self) -> [HeadPose; 2] {
+        [self.prev_pose, self.pose]
+    }
+
+    #[cfg(test)]
+    pub(crate) fn test_set_poses(&mut self, poses: [HeadPose; 2]) {
+        [self.prev_pose, self.pose] = poses;
+    }
+}
+
+#[derive(Copy, Clone)]
+struct RetainedTracking {
+    cockpit: xr::CockpitPose,
+    follow_turn: Quat,
+    world_scale: f32,
 }
 
 static STATE: OnceLock<Mutex<HeadPoseState>> = OnceLock::new();
@@ -270,6 +369,129 @@ fn state() -> &'static Mutex<HeadPoseState> {
     STATE.get_or_init(|| Mutex::new(HeadPoseState::default()))
 }
 
-/// Anchor positions beyond this radius from the origin are rejected as garbage. The world is
-/// ~32 km across, so 100 km is well outside any legitimate game position.
-const MAX_ANCHOR_RADIUS: f32 = 100_000.0;
+#[cfg(test)]
+mod tests {
+    use glam::Mat4;
+
+    use super::*;
+    use crate::headpose::anchors::{
+        History,
+        tests::{identity_fixture, request, rooted},
+    };
+
+    #[test]
+    fn withdrawn_anchors_recompose_relocated_capture_before_immediate_consumption() {
+        let mut history = History::new();
+        let identity = identity_fixture();
+        let old_root =
+            Mat4::from_rotation_translation(Quat::from_rotation_y(0.4), Vec3::new(10.0, 2.0, -3.0));
+        let old_pair = history
+            .capture(request(identity, 20, 1, old_root, old_root), || {
+                Some(rooted(0.0, old_root))
+            })
+            .unwrap();
+        let mut state = HeadPoseState::default();
+        state.publish_anchors_with_tracking(old_pair.geometry(), None, None);
+        let stale = HeadPose {
+            position: old_pair.current.geometry.head + Vec3::new(0.5, -0.2, 0.3),
+            orientation: Quat::from_rotation_z(-0.9),
+        };
+        state.test_set_poses([stale; 2]);
+
+        history.clear();
+        state.withdraw_anchors();
+        assert!(state.anchor_pair.is_none());
+        assert!(state.anchor.is_none() && state.anchor_prev.is_none());
+        assert_eq!(state.neck_delta, Vec3::ZERO);
+        assert_eq!(state.eye_arm, Vec3::ZERO);
+        for pose in state.test_poses() {
+            assert_eq!(pose.position, stale.position);
+            assert_eq!(pose.orientation, stale.orientation);
+        }
+
+        let root_rotation = Quat::from_euler(glam::EulerRot::YXZ, -0.8, 0.4, 0.2);
+        let root = Mat4::from_rotation_translation(root_rotation, Vec3::new(150.0, 12.0, -80.0));
+        let filtered_animation = Quat::from_rotation_x(0.25) * Quat::from_rotation_z(-0.3);
+        let pair = history
+            .capture(request(identity, 21, 2, old_root, root), || {
+                let mut sample = rooted(1.0, root);
+                sample.geometry.animation_rotation = filtered_animation;
+                Some(sample)
+            })
+            .unwrap();
+        assert!(pair.collapsed);
+        let tracking = RetainedTracking {
+            cockpit: xr::CockpitPose {
+                position: Vec3::new(0.17, -0.6, 0.23),
+                orientation: Quat::from_rotation_y(2.1) * Quat::from_rotation_x(-0.7),
+            },
+            follow_turn: Quat::from_rotation_y(-0.45),
+            world_scale: 1.7,
+        };
+        state.publish_anchors_with_tracking(pair.geometry(), None, Some(tracking));
+
+        let current = state.anchor_pair.unwrap()[1];
+        let synthetic = root_rotation * filtered_animation * tracking.follow_turn;
+        assert_eq!(state.anchor, Some(current.head));
+        assert_eq!(state.anchor_prev, Some(current.head));
+        let consumed_model_position = root.inverse().transform_point3(state.pose.position);
+        let expected_world_position =
+            current.head + synthetic * (tracking.cockpit.position * tracking.world_scale);
+        assert!(consumed_model_position.abs_diff_eq(
+            root.inverse().transform_point3(expected_world_position),
+            1.0e-4,
+        ));
+        assert!(!state.pose.position.abs_diff_eq(stale.position, 1.0e-4));
+        for pose in state.test_poses() {
+            assert!(pose.position.abs_diff_eq(expected_world_position, 1.0e-4));
+            assert!(
+                (synthetic.inverse() * (pose.position - current.head) / tracking.world_scale)
+                    .abs_diff_eq(tracking.cockpit.position, 1.0e-4)
+            );
+            assert!(
+                (synthetic.inverse() * pose.orientation)
+                    .abs_diff_eq(tracking.cockpit.orientation, 1.0e-5)
+            );
+        }
+    }
+    /// While the view is held off the walking animation, the pose hangs from the neutral head, and
+    /// a new tick's animated head bob does not move it: only the neutral head's own motion does.
+    #[test]
+    fn a_stable_view_hangs_the_pose_from_the_neutral_head() {
+        let mut history = History::new();
+        let identity = identity_fixture();
+        let root = Mat4::from_translation(Vec3::new(4.0, 1.0, -2.0));
+        let stable = |step: f32| {
+            let mut sample = rooted(step, root);
+            sample.geometry.camera_stable = true;
+            sample.geometry.camera_head = Vec3::new(4.0, 2.65, -2.0);
+            sample
+        };
+        let first = history
+            .capture(request(identity, 30, 1, root, root), || Some(stable(0.0)))
+            .unwrap();
+        let tracking = RetainedTracking {
+            cockpit: xr::CockpitPose {
+                position: Vec3::new(0.1, 0.05, -0.2),
+                orientation: Quat::IDENTITY,
+            },
+            follow_turn: Quat::IDENTITY,
+            world_scale: 1.0,
+        };
+        let mut state = HeadPoseState::default();
+        state.publish_anchors_with_tracking(first.geometry(), None, Some(tracking));
+        let neutral = Vec3::new(4.0, 2.65, -2.0);
+        assert_eq!(state.anchor, Some(neutral));
+        let tracked = state.pose.position - neutral;
+        assert!(tracked.abs_diff_eq(tracking.cockpit.position, 1.0e-5));
+
+        // The next tick's animated head bobs; the neutral head does not move.
+        let second = history
+            .capture(request(identity, 31, 2, root, root), || Some(stable(1.0)))
+            .unwrap();
+        assert_ne!(second.current.geometry.head, first.current.geometry.head);
+        state.publish_anchors_with_tracking(second.geometry(), None, Some(tracking));
+        assert_eq!(state.anchor, Some(neutral));
+        assert!(state.pose.position.abs_diff_eq(neutral + tracked, 1.0e-5));
+    }
+}

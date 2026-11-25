@@ -1,26 +1,32 @@
-//! The recorder's writer thread: the TCP stream to the host encoder and the per-frame sidecar.
+//! A streamed take's writer thread: the eye-view frames on their way to the capture host.
 //!
-//! The stream is `yuv4mpegpipe`: a one-line text header carrying the size, rate, and chroma
-//! layout, then `FRAME\n` followed by the planar bytes for each frame. It is self-describing, so
-//! the host side needs no dimensions up front, and every frame is the same size, so a dropped or
-//! duplicated frame never desynchronizes the parser. The connection is made from this thread with
-//! retries, so the recording can be started before the host listener is up; frames that arrive
-//! before the connection exists are dropped and counted.
+//! The render thread converts and reads back each due frame ([`crate::recorder::convert`]) and
+//! queues it here as a [`VideoFrame`] without blocking; a full queue refuses the frame, and the
+//! render thread owes its stream frames to the next one ([`crate::recorder::pacing`]). The writer
+//! receives the connection from the take's thread once the host has confirmed the take
+//! ([`crate::recorder::protocol`], version 2), writes the `yuv4mpegpipe` header, and then each frame:
+//! the previous image again for each repeat the message carries, then its fresh image. The stream
+//! is self-describing and every frame is the same size, so a repeated frame cannot desynchronize
+//! the host's parser.
 //!
-//! The sidecar lives in `capture/<stamp>/` under the session folder: `stream.json` with the
-//! stream parameters, and `frames.jsonl` with one line per frame written to the stream, carrying
-//! the stream frame index (what the video's frame number is), the capture index from the render
-//! thread, the wall clock, the engine's game-run time, whether the frame is a duplicate, and the
-//! located HMD views for the frame.
+//! Each stream frame gets a line in `frame_map.jsonl` beside the take's sidecar: `stream_frame`,
+//! the frame's number in the video, `frame`, the take frame ordinal of the image it shows (the
+//! sidecar's `frame`), and `repeat`, whether it repeats the previous stream frame's image.
+//!
+//! Frames that arrive before the host has confirmed, or after the stream failed, are dropped and
+//! counted. When the take ends the render thread's sender is closed; the writer writes what is
+//! queued within [`FINISH_GRACE`], closes its half of the connection, which is the stop, and exits.
+//! The take's thread then waits for the host to finalize the file.
 
 use std::{
-    io::Write as _,
-    net::TcpStream,
-    path::PathBuf,
+    fs::File,
+    io::{BufWriter, Write},
+    net::{Shutdown, TcpStream},
+    path::Path,
     sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-        mpsc::{self, Receiver, SyncSender, TrySendError},
+        Arc, OnceLock,
+        atomic::{AtomicBool, AtomicU32, Ordering},
+        mpsc::{self, Receiver, RecvTimeoutError, Sender, SyncSender, TrySendError},
     },
     thread::JoinHandle,
     time::{Duration, Instant},
@@ -30,371 +36,440 @@ use anyhow::Context as _;
 use parking_lot::Mutex;
 use serde::Serialize;
 
-use crate::{recorder::RecorderConfig, vr::CaptureViews};
+use crate::{
+    recorder::protocol::{FRAME_TAG, VideoFormat, stream_header},
+    session::RecordingFile,
+};
 
-/// What the render thread knows about a frame at capture time.
-#[derive(Clone, Copy, Debug)]
-pub struct FrameMetadata {
-    /// The render thread's capture ordinal, from zero at the start of the recording.
-    pub frame: u32,
-    pub unix_ms: i64,
-    pub game_run_time_us: Option<u64>,
-    pub eye: usize,
-    /// The stream's luma plane size.
-    pub width: u32,
-    pub height: u32,
-    pub views: Option<CaptureViews>,
+/// One message to the writer: `repeats` stream frames of the previous image, then `image`, the
+/// planar bytes of a fresh frame with the take frame ordinal it was converted from.
+pub(crate) struct VideoFrame {
+    pub(crate) repeats: u32,
+    pub(crate) image: Option<(Vec<u8>, u32)>,
 }
 
-/// One unit of work for the writer.
-pub enum Frame {
-    /// Fresh planar bytes for the frame.
-    Fresh(Vec<u8>, FrameMetadata),
-    /// The readback was not ready: re-send the previous frame's bytes under this metadata.
-    Duplicate(FrameMetadata),
+/// Why a frame was not queued.
+pub(crate) enum QueueError {
+    /// The writer's queue is full; the frame comes back so its buffer can be reused.
+    Full(VideoFrame),
+    /// The take is finishing or the writer has exited.
+    Closed,
 }
 
-/// The result of queueing a frame.
-pub enum SendOutcome {
-    Queued,
-    /// The writer's queue is full; the frame is dropped.
-    Full,
-    /// The writer has failed with this message; the recording should stop.
-    Failed(String),
+/// The counters the debug UI reads.
+#[derive(Debug, Default)]
+pub(crate) struct VideoStats {
+    /// Fresh images the render thread queued.
+    pub(crate) captured: AtomicU32,
+    /// Stream frames written to the host, fresh and repeated.
+    pub(crate) written: AtomicU32,
+    /// Stream frames that repeat the previous image.
+    pub(crate) repeated: AtomicU32,
+    /// Frames the queue could not take, or the writer could not send.
+    pub(crate) dropped: AtomicU32,
+    /// Stream frames given up because the host fell more than a second behind.
+    pub(crate) given_up: AtomicU32,
+    /// Messages waiting in the queue.
+    pub(crate) queued: AtomicU32,
 }
 
-/// The writer thread's handle, owned by the recorder state.
-pub struct Writer {
-    sender: Option<SyncSender<Frame>>,
-    pool: Receiver<Vec<u8>>,
+/// The render thread's end of a streamed take: the format it publishes, the queue, and the buffer
+/// pool. Shared, so the render thread can use it without holding the recorder's state lock.
+pub(crate) struct VideoChannel {
+    sender: Mutex<Option<SyncSender<VideoFrame>>>,
+    pool: Mutex<Receiver<Vec<u8>>>,
+    /// Buffers the render thread filled but did not send, kept for its next frame.
+    spare: Mutex<Vec<Vec<u8>>>,
+    format: OnceLock<VideoFormat>,
+    streaming: AtomicBool,
+    stats: VideoStats,
+}
+
+impl VideoChannel {
+    /// Publish the stream's format, which the take's thread waits for before it connects. The
+    /// first format published stands.
+    pub(crate) fn publish(&self, format: VideoFormat) {
+        let _ = self.format.set(format);
+    }
+
+    pub(crate) fn format(&self) -> Option<&VideoFormat> {
+        self.format.get()
+    }
+
+    /// Whether the writer holds a confirmed connection, so frames sent now reach the host.
+    pub(crate) fn streaming(&self) -> bool {
+        self.streaming.load(Ordering::Acquire)
+    }
+
+    /// A buffer of `len` bytes for the converter to fill: one the writer has finished with, or a
+    /// fresh one.
+    pub(crate) fn take_buffer(&self, len: usize) -> Vec<u8> {
+        let spare = self.spare.lock().pop();
+        let mut buffer = spare
+            .or_else(|| self.pool.lock().try_recv().ok())
+            .unwrap_or_default();
+        buffer.resize(len, 0);
+        buffer
+    }
+
+    /// Keep a buffer that was not sent for the next frame.
+    pub(crate) fn recycle(&self, buffer: Vec<u8>) {
+        let mut spare = self.spare.lock();
+        if spare.len() < MAX_SPARE {
+            spare.push(buffer);
+        }
+    }
+
+    /// Queue a frame without blocking.
+    pub(crate) fn send(&self, frame: VideoFrame) -> Result<(), QueueError> {
+        let sender = self.sender.lock();
+        let Some(sender) = sender.as_ref() else {
+            return Err(QueueError::Closed);
+        };
+        match sender.try_send(frame) {
+            Ok(()) => {
+                self.stats.queued.fetch_add(1, Ordering::Relaxed);
+                Ok(())
+            }
+            Err(TrySendError::Full(frame)) => Err(QueueError::Full(frame)),
+            Err(TrySendError::Disconnected(_)) => Err(QueueError::Closed),
+        }
+    }
+
+    pub(crate) fn stats(&self) -> &VideoStats {
+        &self.stats
+    }
+
+    /// Close the queue: the writer writes what is queued and ends the stream.
+    pub(crate) fn close(&self) {
+        self.sender.lock().take();
+    }
+}
+
+/// The writer thread, owned by the take's thread.
+pub(crate) struct Writer {
+    channel: Arc<VideoChannel>,
+    connection: Sender<TcpStream>,
     handle: Option<JoinHandle<()>>,
-    shared: Arc<Shared>,
+    shared: Arc<WriterShared>,
 }
 
 impl Writer {
-    /// Create the sidecar folder and spawn the writer thread, which connects to the host in the
-    /// background.
-    pub fn spawn(cfg: &RecorderConfig, stamp: &str) -> anyhow::Result<Self> {
-        let folder = crate::session::subdir("capture")
-            .context("the session folder is unavailable")?
-            .context("could not create the session capture folder")?
-            .join(stamp);
-        std::fs::create_dir_all(&folder)
-            .with_context(|| format!("could not create {}", folder.display()))?;
-        let sidecar = std::fs::File::create(folder.join("frames.jsonl"))
-            .with_context(|| format!("could not create the sidecar in {}", folder.display()))?;
-        let (sender, receiver) = mpsc::sync_channel(QUEUE_DEPTH);
+    /// Create `frame_map.jsonl` in `folder` and spawn the writer, which waits for the format and
+    /// the connection.
+    pub(crate) fn spawn(folder: &Path) -> anyhow::Result<Self> {
+        let path = folder.join(RecordingFile::FrameMap.name());
+        let sidecar = File::create(&path).with_context(|| {
+            format!(
+                "recorder: could not create the video sidecar at {}",
+                path.display()
+            )
+        })?;
+        Self::spawn_with(BufWriter::new(sidecar))
+    }
+
+    fn spawn_with(sidecar: impl Write + Send + 'static) -> anyhow::Result<Self> {
+        let (sender, frames) = mpsc::sync_channel(QUEUE_DEPTH);
         let (pool_sender, pool) = mpsc::sync_channel(QUEUE_DEPTH + 2);
-        let shared = Arc::new(Shared {
-            connected: AtomicBool::new(false),
-            error: Mutex::new(None),
+        let (connection, connections) = mpsc::channel();
+        let channel = Arc::new(VideoChannel {
+            sender: Mutex::new(Some(sender)),
+            pool: Mutex::new(pool),
+            spare: Mutex::new(Vec::new()),
+            format: OnceLock::new(),
+            streaming: AtomicBool::new(false),
+            stats: VideoStats::default(),
         });
-        let thread_shared = Arc::clone(&shared);
-        let target = format!("{}:{}", cfg.host(), cfg.port);
-        let frame_rate = cfg.frame_rate.max(1);
+        let shared = Arc::new(WriterShared::default());
+        let thread = WriterThread {
+            channel: Arc::clone(&channel),
+            shared: Arc::clone(&shared),
+            connections,
+            pool: pool_sender,
+            sidecar,
+            sidecar_failed: false,
+            stream: None,
+            header_written: false,
+            last: None,
+            stream_frame: 0,
+            finish_deadline: None,
+        };
         let handle = std::thread::Builder::new()
-            .name("jc3vr-recorder".to_owned())
-            .spawn(move || {
-                let mut session = WriterThread {
-                    target,
-                    frame_rate,
-                    folder,
-                    sidecar: std::io::BufWriter::new(sidecar),
-                    stream: None,
-                    header_written: false,
-                    last_fresh: None,
-                    stream_frame: 0,
-                    dropped_before_connect: 0,
-                    pool: pool_sender,
-                    shared: thread_shared,
-                };
-                session.run(receiver);
-            })
-            .context("could not spawn the recorder writer thread")?;
+            .name("jc3vr-recorder-video".to_owned())
+            .spawn(move || thread.run(frames))
+            .context("recorder: could not spawn the video writer thread")?;
         Ok(Self {
-            sender: Some(sender),
-            pool,
+            channel,
+            connection,
             handle: Some(handle),
             shared,
         })
     }
 
-    /// A buffer for the converter to fill: one the writer has finished with, or a fresh one.
-    pub fn take_buffer(&self, len: usize) -> Vec<u8> {
-        let mut buffer = self.pool.try_recv().unwrap_or_default();
-        buffer.resize(len, 0);
-        buffer
+    pub(crate) fn channel(&self) -> &Arc<VideoChannel> {
+        &self.channel
     }
 
-    /// Queue a frame without blocking the render thread.
-    pub fn send(&self, frame: Frame) -> SendOutcome {
-        if let Some(error) = self.shared.error.lock().clone() {
-            return SendOutcome::Failed(error);
-        }
-        let Some(sender) = self.sender.as_ref() else {
-            return SendOutcome::Failed("the writer is finishing".to_owned());
-        };
-        match sender.try_send(frame) {
-            Ok(()) => SendOutcome::Queued,
-            Err(TrySendError::Full(_)) => SendOutcome::Full,
-            Err(TrySendError::Disconnected(_)) => {
-                SendOutcome::Failed("the writer thread has exited".to_owned())
-            }
-        }
+    /// Hand the writer the host's confirmed connection.
+    pub(crate) fn connect(&self, stream: TcpStream) {
+        // A writer that has exited has nothing left to send; the take's thread closes the stream.
+        let _ = self.connection.send(stream);
     }
 
-    /// Whether the thread holds a live connection to the host.
-    pub fn connected(&self) -> bool {
-        self.shared.connected.load(Ordering::Relaxed)
+    /// Stop sending: the host refused or dropped the take.
+    pub(crate) fn host_closed(&self) {
+        self.shared.host_closed.store(true, Ordering::Release);
     }
 
-    /// Close the queue so the thread drains what it has, closes the stream, and exits.
-    pub fn finish(&mut self) {
-        self.sender = None;
-    }
-
-    /// Wait for the thread to exit, up to `budget`. Returns whether it did.
-    pub fn join(mut self, budget: Duration) -> bool {
-        self.finish();
-        let Some(handle) = self.handle.take() else {
-            return true;
-        };
+    /// Wait up to `budget` for the writer to finish the stream and exit. Returns whether it did;
+    /// the stream's failure, if any, is in [`Self::error`].
+    pub(crate) fn finish(&mut self, budget: Duration) -> bool {
+        self.channel.close();
         let deadline = Instant::now() + budget;
-        while !handle.is_finished() {
+        while self
+            .handle
+            .as_ref()
+            .is_some_and(|handle| !handle.is_finished())
+        {
             if Instant::now() >= deadline {
-                tracing::error!(
-                    "recorder: the writer did not finish within {} s; leaving the payload mapped \
-                     rather than unmapping under a live thread",
-                    budget.as_secs()
-                );
                 return false;
             }
-            std::thread::sleep(Duration::from_millis(10));
+            std::thread::sleep(FINISH_POLL);
         }
-        let _ = handle.join();
+        if let Some(handle) = self.handle.take()
+            && handle.join().is_err()
+        {
+            self.shared
+                .error
+                .lock()
+                .get_or_insert_with(|| "the video writer thread panicked".to_owned());
+        }
         true
+    }
+
+    /// Whether any frame reached the host.
+    pub(crate) fn wrote_frames(&self) -> bool {
+        self.channel.stats.written.load(Ordering::Relaxed) > 0
+    }
+
+    /// The stream's failure, if it failed.
+    pub(crate) fn error(&self) -> Option<String> {
+        self.shared.error.lock().clone()
     }
 }
 
-/// How many frames may wait for the writer before the render thread starts dropping. At full eye
-/// resolution each is around ten megabytes, so this is a bound on memory as much as latency.
-const QUEUE_DEPTH: usize = 6;
+/// How many frames may wait for the writer before the render thread starts dropping. A side-by-side
+/// frame is about twelve megabytes, so this bounds memory as much as latency.
+const QUEUE_DEPTH: usize = 4;
+/// How many unsent buffers the render thread keeps.
+const MAX_SPARE: usize = 2;
+/// How long the writer keeps writing queued frames after the take ends.
+const FINISH_GRACE: Duration = Duration::from_secs(5);
+/// How long one frame's write may take before the host counts as stalled.
+const FRAME_WRITE_BUDGET: Duration = Duration::from_secs(5);
+/// How long a write the socket's buffer could not take waits before retrying. The socket is
+/// non-blocking, since Winsock leaves a timed-out blocking send in an indeterminate state.
+const WOULD_BLOCK_RETRY: Duration = Duration::from_millis(1);
+/// How often the writer checks for the connection while no frame arrives.
+const IDLE_POLL: Duration = Duration::from_millis(50);
+const FINISH_POLL: Duration = Duration::from_millis(10);
 
-/// How often the thread retries the host while waiting for the listener.
-const CONNECT_RETRY: Duration = Duration::from_millis(500);
-
-struct Shared {
-    connected: AtomicBool,
+#[derive(Default)]
+struct WriterShared {
+    host_closed: AtomicBool,
     error: Mutex<Option<String>>,
 }
 
-struct WriterThread {
-    target: String,
-    frame_rate: u32,
-    folder: PathBuf,
-    sidecar: std::io::BufWriter<std::fs::File>,
+struct WriterThread<W> {
+    channel: Arc<VideoChannel>,
+    shared: Arc<WriterShared>,
+    connections: Receiver<TcpStream>,
+    pool: SyncSender<Vec<u8>>,
+    sidecar: W,
+    sidecar_failed: bool,
     stream: Option<TcpStream>,
     header_written: bool,
-    /// The bytes of the last fresh frame, re-sent for duplicates.
-    last_fresh: Option<Vec<u8>>,
-    /// The next stream frame index: the frame number the video will have for the next write.
+    /// The last fresh image and its take frame ordinal, re-sent for repeats.
+    last: Option<(Vec<u8>, u32)>,
+    /// The next stream frame's number in the video.
     stream_frame: u32,
-    dropped_before_connect: u32,
-    pool: SyncSender<Vec<u8>>,
-    shared: Arc<Shared>,
+    /// Set once the queue closes: writes stop at this time.
+    finish_deadline: Option<Instant>,
 }
 
-/// One sidecar line.
 #[derive(Serialize)]
-struct SidecarLine<'a> {
+struct FrameLine {
     stream_frame: u32,
-    capture_frame: u32,
-    duplicate: bool,
-    unix_ms: i64,
-    game_run_time_us: Option<u64>,
-    eye: usize,
-    predicted_display_time_ns: Option<i64>,
-    views: Option<[SidecarView<'a>; 2]>,
+    frame: u32,
+    repeat: bool,
 }
 
-#[derive(Serialize)]
-struct SidecarView<'a> {
-    position: &'a [f32; 3],
-    orientation: &'a [f32; 4],
-    fov: &'a [f32; 4],
-}
-
-/// The stream parameters, written once the first frame fixes the size.
-#[derive(Serialize)]
-struct StreamInfo<'a> {
-    width: u32,
-    height: u32,
-    frame_rate: u32,
-    eye: usize,
-    pixel_format: &'a str,
-    color_space: &'a str,
-    color_range: &'a str,
-    target: &'a str,
-    started_unix_ms: i64,
-}
-
-impl WriterThread {
-    fn run(&mut self, receiver: Receiver<Frame>) {
-        let mut next_attempt = Instant::now();
-        for frame in receiver {
-            if self.stream.is_none() {
-                if Instant::now() >= next_attempt {
-                    self.try_connect();
-                    next_attempt = Instant::now() + CONNECT_RETRY;
+impl<W: Write> WriterThread<W> {
+    fn run(mut self, frames: Receiver<VideoFrame>) {
+        loop {
+            match frames.recv_timeout(IDLE_POLL) {
+                Ok(frame) => {
+                    self.channel.stats.queued.fetch_sub(1, Ordering::Relaxed);
+                    self.accept_connection();
+                    self.write(frame);
                 }
-                if self.stream.is_none() {
-                    self.dropped_before_connect += 1;
-                    if let Frame::Fresh(buffer, _) = frame {
-                        let _ = self.pool.try_send(buffer);
-                    }
-                    continue;
-                }
+                Err(RecvTimeoutError::Timeout) => self.accept_connection(),
+                Err(RecvTimeoutError::Disconnected) => break,
             }
-            if let Err(e) = self.write_frame(frame) {
-                let message = format!("{e:#}");
-                tracing::error!("recorder: writer: {message}");
-                *self.shared.error.lock() = Some(message);
-                self.shared.connected.store(false, Ordering::Relaxed);
-                self.stream = None;
-                // Drain the rest so the render thread's sends fail fast rather than block on a
-                // full queue, then leave.
-                break;
+            if self.finish_deadline.is_none() && self.channel.sender.lock().is_none() {
+                self.finish_deadline = Some(Instant::now() + FINISH_GRACE);
             }
         }
-        if let Some(mut stream) = self.stream.take() {
-            let _ = stream.flush();
-            let _ = stream.shutdown(std::net::Shutdown::Write);
+        self.channel.streaming.store(false, Ordering::Release);
+        if let Some(stream) = self.stream.take() {
+            // The end of the stream is the stop: the host finalizes the file on it.
+            let _ = stream.shutdown(Shutdown::Write);
         }
-        let _ = self.sidecar.flush();
-        self.shared.connected.store(false, Ordering::Relaxed);
-        if self.dropped_before_connect > 0 {
-            tracing::warn!(
-                "recorder: {} frames arrived before the host connected and were dropped",
-                self.dropped_before_connect
-            );
+        if !self.sidecar_failed
+            && let Err(error) = self.sidecar.flush()
+        {
+            self.fail(format!("could not write frame_map.jsonl: {error}"));
         }
         tracing::info!(
-            "recorder: writer finished, {} frames streamed to {}",
-            self.stream_frame,
-            self.target
+            "recorder: the video writer finished after {} stream frames",
+            self.stream_frame
         );
     }
 
-    fn try_connect(&mut self) {
-        match TcpStream::connect(&self.target) {
-            Ok(stream) => {
-                let _ = stream.set_nodelay(true);
-                tracing::info!("recorder: connected to {}", self.target);
-                self.stream = Some(stream);
-                self.shared.connected.store(true, Ordering::Relaxed);
-            }
-            Err(e) => {
-                tracing::debug!("recorder: waiting for the host at {}: {e}", self.target);
-            }
+    fn accept_connection(&mut self) {
+        if self.stream.is_some() || self.channel.format.get().is_none() {
+            return;
+        }
+        if let Ok(stream) = self.connections.try_recv() {
+            self.stream = Some(stream);
+            self.channel.streaming.store(true, Ordering::Release);
         }
     }
 
-    fn write_frame(&mut self, frame: Frame) -> anyhow::Result<()> {
-        // The bytes to send are held outside `self` for the duration so the header and sidecar
-        // writes below can borrow `self` freely; they go back into `last_fresh` at the end.
-        let (held, metadata, duplicate) = match frame {
-            Frame::Fresh(buffer, metadata) => {
-                if let Some(previous) = self.last_fresh.take() {
-                    let _ = self.pool.try_send(previous);
-                }
-                (buffer, metadata, false)
+    fn write(&mut self, frame: VideoFrame) {
+        let usable = self.stream.is_some()
+            && !self.shared.host_closed.load(Ordering::Acquire)
+            && self.shared.error.lock().is_none();
+        if !usable {
+            self.channel.stats.dropped.fetch_add(1, Ordering::Relaxed);
+            if let Some((buffer, _)) = frame.image {
+                let _ = self.pool.try_send(buffer);
             }
-            Frame::Duplicate(metadata) => match self.last_fresh.take() {
-                Some(bytes) => (bytes, metadata, true),
-                // Nothing to repeat yet (the ring is still priming): the stream simply starts a
-                // frame later.
-                None => return Ok(()),
-            },
-        };
-        let result = self.write_bytes(&held, &metadata, duplicate);
-        self.last_fresh = Some(held);
-        result
+            return;
+        }
+        if let Err(error) = self.write_frame(frame) {
+            self.channel.streaming.store(false, Ordering::Release);
+            self.fail(format!("capture host: {error:#}"));
+        }
     }
 
-    fn write_bytes(
-        &mut self,
-        bytes: &[u8],
-        metadata: &FrameMetadata,
-        duplicate: bool,
-    ) -> anyhow::Result<()> {
+    fn write_frame(&mut self, frame: VideoFrame) -> anyhow::Result<()> {
+        let deadline = self.deadline();
         if !self.header_written {
-            let header = format!(
-                "YUV4MPEG2 W{} H{} F{}:1 Ip A1:1 C420jpeg XYSCSS=420JPEG XCOLORRANGE=LIMITED\n",
-                metadata.width, metadata.height, self.frame_rate
-            );
-            self.stream
-                .as_mut()
-                .context("no stream")?
-                .write_all(header.as_bytes())
-                .context("writing the stream header")?;
+            let format = *self
+                .channel
+                .format
+                .get()
+                .context("the stream has no format")?;
+            let stream = self.stream.as_mut().context("no stream")?;
+            write_nonblocking(stream, stream_header(&format).as_bytes(), deadline)
+                .context("could not send the stream header")?;
             self.header_written = true;
-            self.write_stream_info(metadata);
         }
-        let stream_frame = self.stream_frame;
-        let stream = self.stream.as_mut().context("no stream")?;
-        stream
-            .write_all(b"FRAME\n")
-            .and_then(|()| stream.write_all(bytes))
-            .with_context(|| format!("writing frame {stream_frame} to the host"))?;
-        self.write_sidecar_line(metadata, duplicate);
-        self.stream_frame += 1;
+        for _ in 0..frame.repeats {
+            match self.last.take() {
+                Some(last) => {
+                    let result = self.send(&last.0, last.1, true, deadline);
+                    self.last = Some(last);
+                    result?;
+                    self.channel.stats.repeated.fetch_add(1, Ordering::Relaxed);
+                }
+                // Nothing to repeat yet: the stream starts with the first fresh image.
+                None => break,
+            }
+        }
+        if let Some((buffer, source)) = frame.image {
+            let result = self.send(&buffer, source, false, deadline);
+            if let Some((previous, _)) = self.last.replace((buffer, source)) {
+                let _ = self.pool.try_send(previous);
+            }
+            result?;
+        }
         Ok(())
     }
 
-    fn write_stream_info(&self, metadata: &FrameMetadata) {
-        let info = StreamInfo {
-            width: metadata.width,
-            height: metadata.height,
-            frame_rate: self.frame_rate,
-            eye: metadata.eye,
-            pixel_format: "yuv420p",
-            color_space: "bt709",
-            color_range: "limited",
-            target: &self.target,
-            started_unix_ms: metadata.unix_ms,
-        };
-        let path = self.folder.join("stream.json");
-        let result = serde_json::to_string_pretty(&info)
+    fn send(
+        &mut self,
+        bytes: &[u8],
+        source: u32,
+        repeat: bool,
+        deadline: Instant,
+    ) -> anyhow::Result<()> {
+        let stream_frame = self.stream_frame;
+        let stream = self.stream.as_mut().context("no stream")?;
+        write_nonblocking(stream, FRAME_TAG, deadline)
+            .and_then(|()| write_nonblocking(stream, bytes, deadline))
+            .with_context(|| format!("could not send stream frame {stream_frame}"))?;
+        self.stream_frame += 1;
+        self.channel.stats.written.fetch_add(1, Ordering::Relaxed);
+        self.append(&FrameLine {
+            stream_frame,
+            frame: source,
+            repeat,
+        });
+        Ok(())
+    }
+
+    fn deadline(&self) -> Instant {
+        let budget = Instant::now() + FRAME_WRITE_BUDGET;
+        self.finish_deadline
+            .map_or(budget, |finish| finish.min(budget))
+    }
+
+    fn append(&mut self, line: &FrameLine) {
+        if self.sidecar_failed {
+            return;
+        }
+        let result = serde_json::to_writer(&mut self.sidecar, line)
             .map_err(std::io::Error::other)
-            .and_then(|json| std::fs::write(&path, json));
-        if let Err(e) = result {
-            tracing::warn!("recorder: could not write {}: {e}", path.display());
+            .and_then(|()| self.sidecar.write_all(b"\n"));
+        if let Err(error) = result {
+            self.sidecar_failed = true;
+            tracing::error!("recorder: could not write frame_map.jsonl: {error}");
         }
     }
 
-    fn write_sidecar_line(&mut self, metadata: &FrameMetadata, duplicate: bool) {
-        let views = metadata.views.as_ref().map(|v| {
-            [0, 1].map(|eye| SidecarView {
-                position: &v.eyes[eye].position,
-                orientation: &v.eyes[eye].orientation,
-                fov: &v.eyes[eye].fov,
-            })
-        });
-        let line = SidecarLine {
-            stream_frame: self.stream_frame,
-            capture_frame: metadata.frame,
-            duplicate,
-            unix_ms: metadata.unix_ms,
-            game_run_time_us: metadata.game_run_time_us,
-            eye: metadata.eye,
-            predicted_display_time_ns: metadata.views.map(|v| v.predicted_display_time_ns),
-            views,
-        };
-        let result = serde_json::to_writer(&mut self.sidecar, &line)
-            .map_err(std::io::Error::other)
-            .and_then(|()| self.sidecar.write_all(b"\n"));
-        if let Err(e) = result {
-            tracing::warn!("recorder: could not append to the sidecar: {e}");
-        }
+    fn fail(&self, message: String) {
+        tracing::error!("recorder: video: {message}");
+        self.shared.error.lock().get_or_insert(message);
     }
 }
+
+/// Write all of `bytes` to the non-blocking `stream` by `deadline`.
+fn write_nonblocking(
+    stream: &mut impl Write,
+    mut bytes: &[u8],
+    deadline: Instant,
+) -> std::io::Result<()> {
+    while !bytes.is_empty() {
+        if Instant::now() >= deadline {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "the host stopped reading the stream",
+            ));
+        }
+        match stream.write(bytes) {
+            Ok(0) => return Err(std::io::ErrorKind::WriteZero.into()),
+            Ok(count) => bytes = &bytes[count..],
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                std::thread::sleep(WOULD_BLOCK_RETRY);
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests;

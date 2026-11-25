@@ -1,4 +1,4 @@
-//! Logging: stdout + a `jc3vr.log` in the session's `log/` directory (see [`crate::session`]),
+//! Logging: stdout + the session's `session.log` (see [`crate::session`]),
 //! filtered by `RUST_LOG` from the game
 //! process's environment (fixed at game launch), with a live reload path so the filter can be
 //! changed from the debug UI without relaunching the game.
@@ -10,8 +10,10 @@ use tracing_subscriber::{
     EnvFilter, Layer as _, layer::SubscriberExt as _, reload, util::SubscriberInitExt as _,
 };
 
+use crate::session::SessionFile;
+
 /// Replace the active log filter with `spec` (standard `RUST_LOG` directive syntax, e.g.
-/// `warn,vr=debug,coord_frame=debug`). Applies to both the stdout and file layers. Returns a
+/// `warn,vr=debug,stereo=debug`). Applies to both the stdout and file layers. Returns a
 /// user-displayable error when the spec does not parse or logging is not installed.
 pub fn set_filter(spec: &str) -> Result<(), String> {
     let handles = RELOAD_HANDLES
@@ -33,43 +35,6 @@ pub fn active_spec() -> Option<String> {
     ACTIVE_SPEC.lock().clone()
 }
 
-/// Turn a single target's `DEBUG` output on or off, leaving the rest of the active spec alone. This
-/// backs the debug UI's per-subsystem verbosity checkboxes: composing a directive by hand is fine at
-/// a desk but not in a headset, where there is no comfortable keyboard.
-///
-/// Any existing directive for the same target is replaced. If no spec has been applied yet, the
-/// launch environment's `RUST_LOG` cannot be read back as a string, so the base becomes the plain
-/// INFO floor — a launch-time `RUST_LOG` is dropped the first time a checkbox is used.
-pub fn set_target_debug(target: &str, on: bool) -> Result<(), String> {
-    let prefix = format!("{target}=");
-    let base = active_spec().unwrap_or_else(|| DEFAULT_LEVEL.to_string());
-    let mut directives: Vec<&str> = base
-        .split(',')
-        .map(str::trim)
-        .filter(|d| !d.is_empty() && !d.starts_with(&prefix))
-        .collect();
-    let enabled = format!("{target}=debug");
-    if on {
-        directives.push(&enabled);
-    }
-    if directives.is_empty() {
-        directives.push(DEFAULT_LEVEL);
-    }
-    set_filter(&directives.join(","))
-}
-
-/// Whether the active spec turns `target` up to `DEBUG` (see [`set_target_debug`]).
-pub fn is_target_debug(target: &str) -> bool {
-    active_spec().is_some_and(|spec| {
-        spec.split(',')
-            .any(|d| d.trim() == format!("{target}=debug"))
-    })
-}
-
-/// The level the filter falls back to with no other directive: the same floor [`initial_filter`]
-/// installs.
-const DEFAULT_LEVEL: &str = "info";
-
 pub(super) fn install() {
     let (stdout_filter, stdout_handle) = reload::Layer::new(initial_filter());
     let (file_filter, file_handle) = reload::Layer::new(initial_filter());
@@ -84,9 +49,9 @@ pub(super) fn install() {
                 .with_filter(stdout_filter),
         )
         .with(
-            crate::session::dir()
-                .and_then(|r| r.ok())
-                .map(|dir| dir.join("jc3vr.log"))
+            crate::session::file(SessionFile::Log)
+                .map_err(|e| eprintln!("logging: {e}"))
+                .ok()
                 .and_then(|path| match std::fs::File::create(&path) {
                     Ok(file) => Some(file),
                     Err(e) => {
@@ -101,6 +66,12 @@ pub(super) fn install() {
                         .with_writer(file)
                         .with_filter(file_filter)
                 }),
+        )
+        // The scenario runner's log probes, at the file's floor whatever the filter says, so a
+        // probe matches what a default log file holds. Inert unless a scenario runs.
+        .with(
+            crate::testing::log_tap::TapLayer
+                .with_filter(tracing_subscriber::filter::LevelFilter::INFO),
         )
         .init();
 

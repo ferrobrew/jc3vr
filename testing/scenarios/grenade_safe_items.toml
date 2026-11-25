@@ -1,0 +1,58 @@
+# Template: fill testing/recordings/grenade_safe_items.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a grenade drawn, stowed, dropped, recovered, and thrown"
+description = "Recorded right-handed on foot with no native grenade ammunition. Take a grenade from the pouch, stow it in the hip holster, and draw it again. Take a second into the other hand and open that hand slowly so the grenade falls to the ground; pick it up again. Then throw the first one deliberately. Nothing else is thrown: the drops, the stow, and the recovery must all leave their items inert, and no pin is pulled."
+recording = "../recordings/grenade_safe_items.jc3trk"
+settle_s = 4.0
+
+[[expect]]
+name = "both source draws succeed"
+signal = "grenade.drawn"
+delta = true
+at_least = 2
+at_most = 2
+
+[[expect]]
+name = "the first item reaches its holster"
+signal = "grenade.stowed"
+delta = true
+at_least = 1
+at_most = 1
+
+[[expect]]
+name = "the stowed item returns to the hand"
+signal = "grenade.redrawn"
+delta = true
+at_least = 1
+at_most = 1
+
+[[expect]]
+name = "the slow release creates an inert world item"
+signal = "grenade.dropped"
+delta = true
+at_least = 1
+at_most = 1
+
+[[expect]]
+name = "the loose item is recovered"
+signal = "grenade.recovered"
+delta = true
+at_least = 1
+at_most = 1
+
+[[expect]]
+name = "the deliberate throw launches one grenade"
+signal = "grenade.thrown"
+delta = true
+at_least = 1
+
+[[expect]]
+name = "the stow, the drops, and the recovery launch nothing"
+signal = "grenade.thrown"
+delta = true
+at_most = 1
+
+[[expect]]
+name = "nothing in the recording is a caught live grenade"
+signal = "grenade.caught"
+delta = true
+at_most = 0

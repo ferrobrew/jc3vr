@@ -85,6 +85,12 @@ impl std::convert::AsMut<CharacterOnFootSettings> for CharacterOnFootSettings {
 /// `SCharacterSwimSettings`: the swim block of [`CharacterMovementSettings`](crate::input::locomotion::CharacterMovementSettings). The offsets of the
 /// two turn-rate fields within the movement settings are confirmed.
 pub struct CharacterSwimSettings {
+    /// The move-stick magnitude, `0..=1`, at or above which
+    /// [`NStateTask_InputSurfaceSwimTask::Update`](crate::input::swim::NStateTask_InputSurfaceSwimTask::Update)
+    /// queues a swim-start act from a state that is not already starting or crawling. Below it
+    /// the task queues only the crawl act (or the idle act once the stick has rested for
+    /// [`m_SurfaceSwimNoInputToStopTime`](crate::input::locomotion::CharacterSwimSettings::m_SurfaceSwimNoInputToStopTime)). The stick's
+    /// magnitude sets nothing else: the swim speed is the animation's root speed.
     pub m_SurfaceSwimFullDeflection: f32,
     /// The surface-swim velocity turn rate; `UpdateSurfaceMovement` scales it by [`SWIM_TURN_RATE_SCALE`](crate::input::swim::SWIM_TURN_RATE_SCALE) degrees per second.
     pub m_SurfaceSwimDirSlerpSpeed: f32,
@@ -98,6 +104,10 @@ pub struct CharacterSwimSettings {
     pub m_ShallowDepthBobDepth: f32,
     pub m_ShallowDepthMaxBobVelocity: f32,
     pub m_SpeedNoRotationControl: f32,
+    /// How long, seconds, the move stick must stay below a tenth of full deflection before
+    /// [`NStateTask_InputSurfaceSwimTask::Update`](crate::input::swim::NStateTask_InputSurfaceSwimTask::Update)
+    /// queues the surface idle act instead of the crawl act. The task keeps the running time in
+    /// its instance data.
     pub m_SurfaceSwimNoInputToStopTime: f32,
 }
 fn _CharacterSwimSettings_size_check() {
@@ -364,6 +374,51 @@ for NStateTask_InputLocoSetTargetDirTask {
     }
 }
 #[repr(C, align(8))]
+/// The on-foot input task that picks the target speed. Like the other `NStateTask` functions, it
+/// takes the character.
+pub struct NStateTask_InputLocoSetTargetSpeedsTask {}
+impl NStateTask_InputLocoSetTargetSpeedsTask {
+    pub const SetupTargetSpeeds_ADDRESS: usize = 0x14082FCE0;
+    /// Writes the move stick's magnitude (clamped to one) and the target speed to the character's
+    /// blackboard, the speed at [`ObjectBlackboard::SPEED_ID`](crate::blackboard::ObjectBlackboard::SPEED_ID),
+    /// from the character's movement settings. The speed is zero when the stick is at or below
+    /// [`m_WalkMinInput`](crate::input::locomotion::CharacterOnFootSettings::m_WalkMinInput); when a blackboard key
+    /// (unmapped) is present or [`Character::ShouldPreventFall`](crate::character::character::Character::ShouldPreventFall) reports a drop ahead, which
+    /// also sets a bit in the character's control parameters; when the predicted wall distance on
+    /// the blackboard is non-zero and closer than
+    /// [`m_PredictedWallDistanceTolerance`](crate::input::locomotion::CharacterOnFootSettings::m_PredictedWallDistanceTolerance);
+    /// and when a second blackboard key (unmapped) is present. Otherwise it is the run speed
+    /// ([`m_RunSpeed`](crate::input::locomotion::CharacterOnFootSettings::m_RunSpeed), or
+    /// [`m_RunBackpedalSpeed`](crate::input::locomotion::CharacterOnFootSettings::m_RunBackpedalSpeed) under a state bit)
+    /// above [`m_RunMinInput`](crate::input::locomotion::CharacterOnFootSettings::m_RunMinInput) when the character may run,
+    /// a fixed stunt speed under the stunt modification, and the walk speed
+    /// ([`m_WalkSpeed`](crate::input::locomotion::CharacterOnFootSettings::m_WalkSpeed), or
+    /// [`m_NonCombatWalkSpeed`](crate::input::locomotion::CharacterOnFootSettings::m_NonCombatWalkSpeed) by the mental
+    /// state) otherwise, never above the run speed.
+    pub unsafe fn SetupTargetSpeeds(
+        character: *mut crate::character::character::Character,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) = ::std::mem::transmute(Self::SetupTargetSpeeds_ADDRESS);
+            f(character)
+        }
+    }
+}
+impl std::convert::AsRef<NStateTask_InputLocoSetTargetSpeedsTask>
+for NStateTask_InputLocoSetTargetSpeedsTask {
+    fn as_ref(&self) -> &NStateTask_InputLocoSetTargetSpeedsTask {
+        self
+    }
+}
+impl std::convert::AsMut<NStateTask_InputLocoSetTargetSpeedsTask>
+for NStateTask_InputLocoSetTargetSpeedsTask {
+    fn as_mut(&mut self) -> &mut NStateTask_InputLocoSetTargetSpeedsTask {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The melee input task.
 pub struct NStateTask_InputMeleeTask {}
 impl NStateTask_InputMeleeTask {
@@ -613,6 +668,82 @@ impl NStateTask_LocoUtil {
             let f: unsafe extern "system" fn(
                 character: *mut crate::character::character::Character,
             ) -> bool = ::std::mem::transmute(Self::QueueStopTurns_ADDRESS);
+            f(character)
+        }
+    }
+    pub const QueueFlickStick_ADDRESS: usize = 0x14081C340;
+    /// Queues the flick, a turn toward a new move direction while a start plays: measures the XZ
+    /// angle from the body forward to the blackboard move direction, and within a sixth of a turn
+    /// to either side queues [`ACT_FLICK_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0),
+    /// past it the third-turn flick to that side, writing the residual angle correction as
+    /// [`QueueStarts`](crate::input::locomotion::NStateTask_LocoUtil::QueueStarts) does. Returns false, queuing nothing, without a move
+    /// direction on the blackboard. Called from the starts task in place of
+    /// [`QueueStops`](crate::input::locomotion::NStateTask_LocoUtil::QueueStops) while the start clip is inside its
+    /// `FLICK_STICK_TURN_VALID_SEG` segment.
+    pub unsafe fn QueueFlickStick(
+        character: *mut crate::character::character::Character,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) -> bool = ::std::mem::transmute(Self::QueueFlickStick_ADDRESS);
+            f(character)
+        }
+    }
+    pub const QueueAimFlickStick_ADDRESS: usize = 0x14081C430;
+    /// The aiming flicks, called from the aim flick-stick task: measures the XZ angle from the body
+    /// forward to the blackboard move direction and queues
+    /// [`ACT_FLICK_0_AIM`](crate::animation::symbol_table::EventIdSymbolTable::ACT_FLICK_0_AIM) within an
+    /// eighth of a turn, the quarter-turn flick to that side within three eighths, and the half
+    /// turn past that. It writes no angle correction. Returns false, queuing nothing, without a
+    /// move direction on the blackboard.
+    pub unsafe fn QueueAimFlickStick(
+        character: *mut crate::character::character::Character,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) -> bool = ::std::mem::transmute(Self::QueueAimFlickStick_ADDRESS);
+            f(character)
+        }
+    }
+    pub const QueueStuntTurns_ADDRESS: usize = 0x14081C210;
+    /// The stunt turns, for a character standing in a vehicle's stunt area: measures the XZ angle
+    /// from the body forward to the blackboard move direction and queues `ACT_TO_IDLE` when it is
+    /// small, otherwise
+    /// [`ACT_STUNT_TURN_0`](crate::animation::symbol_table::EventIdSymbolTable::ACT_STUNT_TURN_0) up to a
+    /// sixth of a turn and the third-turn stunt turn to that side beyond, writing the residual
+    /// angle correction. The idle, stops, flick-stick, and rotate-on-spot input tasks call it on
+    /// their stunt branch when the state machine would not take `ACT_STUNT_TRANSITION` (a step to
+    /// the next stunt area) or the move is not a start, and only while
+    /// [`Character::ShouldApplyStuntModification`](crate::character::character::Character::ShouldApplyStuntModification)
+    /// holds. Returns false, queuing nothing, without a move direction on the blackboard.
+    pub unsafe fn QueueStuntTurns(
+        character: *mut crate::character::character::Character,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) -> bool = ::std::mem::transmute(Self::QueueStuntTurns_ADDRESS);
+            f(character)
+        }
+    }
+    pub const QueueAimRelativeOnSpotActions_ADDRESS: usize = 0x140831B00;
+    /// The on-spot acts of a player wielding a heavy weapon, called from the idle and move input
+    /// tasks: with the aim (from [`GetAimMoveAngle`](crate::input::locomotion::NStateTask_LocoUtil::GetAimMoveAngle)) within a sixth of a
+    /// turn of the body's forward it queues `ACT_TO_IDLE`, and past it
+    /// [`ACT_AIM_FOCUS_ROTATE_90L`](crate::animation::symbol_table::EventIdSymbolTable::ACT_AIM_FOCUS_ROTATE_90L)
+    /// or its right-hand counterpart. It writes no angle correction. Returns false for a character
+    /// that is not the player or wields no heavy weapon.
+    pub unsafe fn QueueAimRelativeOnSpotActions(
+        character: *mut crate::character::character::Character,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                character: *mut crate::character::character::Character,
+            ) -> bool = ::std::mem::transmute(
+                Self::QueueAimRelativeOnSpotActions_ADDRESS,
+            );
             f(character)
         }
     }

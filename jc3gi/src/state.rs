@@ -36,7 +36,7 @@ fn _ContextBitFlag_size_check() {
 /// [`Character`](crate::character::character::Character) (wingsuit, parachute, free fall, fast fall,
 /// reeling in, motorbike, swimming, attached parachute, pre-reel, pre-hang), the grapple bits of
 /// `IsReeledIn` and `IsGrappleHanging`, the aim, drawing, holstering, and pause-aim-timer bits
-/// `HandleAimingInputNPC` tests, and `SB_DISABLE_SHOOT`. The other values are unconfirmed.
+/// `HandleAimingInputPlayer` tests, and `SB_DISABLE_SHOOT`. The other values are unconfirmed.
 pub enum StateBitFlag {
     SB_IS_WINGSUIT = 0isize as _,
     SB_IS_NO_FIRING = 1isize as _,
@@ -202,9 +202,27 @@ fn _StateBitFlag_size_check() {
     unreachable!()
 }
 #[repr(C, align(8))]
-/// The opaque per-task state-machine context passed to character and task update functions. Used only
-/// behind pointers; the layout is not yet mapped.
-pub struct StateContext {}
+/// The per-task state-machine context (`SStateContext`) passed to character and task update
+/// functions. Only the leading members are bound.
+pub struct StateContext {
+    /// The object the state machine runs for: the `CGameObject` base subobject of a character,
+    /// which sits [`Character::GAME_OBJECT_BASE_OFFSET`](crate::character::character::Character::GAME_OBJECT_BASE_OFFSET)
+    /// bytes into the character.
+    pub m_User: *mut ::std::ffi::c_void,
+    _field_8: [u8; 12],
+    /// The sub-frame interpolation fraction of the update.
+    pub m_Dtf: f32,
+    /// The simulation time step of the update, seconds. The movement tasks integrate their
+    /// orientation steps and speed blends with it.
+    pub m_Dt: f32,
+    _field_1c: [u8; 4],
+}
+fn _StateContext_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x20], StateContext>([0u8; 0x20]);
+    }
+    unreachable!()
+}
 impl StateContext {}
 impl std::convert::AsRef<StateContext> for StateContext {
     fn as_ref(&self) -> &StateContext {

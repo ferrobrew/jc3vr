@@ -1,0 +1,321 @@
+//! The post-simulation half of the hand bodies' tick: publish each acting hand's palm pose and
+//! velocity for the next step, and take the last step's results to draw the hands and pulse a
+//! pressed one.
+
+use std::{
+    sync::atomic::Ordering,
+    time::{Duration, Instant},
+};
+
+use glam::Vec3;
+use parking_lot::Mutex;
+
+use crate::{
+    config::Config,
+    controllers::{
+        clock::TimeScale,
+        frame::{Hand, Pose},
+        hands::CockpitHand,
+        haptics::{self, Sustain},
+        physical_hands::{
+            physics::{
+                HAND_BODIES, blows, callback, drawn_body,
+                drive::rig_jumped,
+                guns,
+                lifecycle::HANDS,
+                render::{RenderOffset, apply_offsets},
+                state::{
+                    CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD,
+                    RENDER_TURN_DEADBAND_RAD, SHARED, STALE_AFTER, TRACKERS_AT_REST, Target,
+                    acting_palms, enabled, steps,
+                },
+            },
+            state::VELOCITY_SMOOTHING_S,
+        },
+        roomscale::teleport,
+        weapons::foregrip,
+    },
+    headpose, hooks,
+    vr::recenter_count,
+};
+
+/// Register the pre-simulation callback when the hand bodies are wanted, and the cleanup that
+/// removes it. Called once per frame on the game thread, ahead of the game's update.
+pub(crate) fn frame_tick() {
+    if crate::is_shutting_down() {
+        blows::discard();
+        return;
+    }
+    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    // SAFETY: the game thread, ahead of the game's update.
+    unsafe { crate::controllers::physical_hands::impacts::deliver() };
+    if hooks::in_gameplay() {
+        // The shoves come from the pickups, which hold characters with or without the bodies.
+        // SAFETY: the game thread, ahead of the game's update.
+        let shoves = unsafe { blows::deliver_shoves() };
+        if shoves.shoves > 0 {
+            let mut shared = SHARED.lock();
+            shared.status.shoves += shoves.shoves;
+            shared.status.knockdowns += shoves.knockdowns;
+            shared.status.last_shove = shoves.last;
+        }
+    }
+    // SAFETY: the game thread, ahead of the game's update, which fires the callbacks.
+    let registered = unsafe { callback::ensure_registered() };
+    if registered && !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
+        crate::lifecycle::on_cleanup(|_renderer| {
+            // SAFETY: the shutdown cleanups run on the game thread, outside the game's update.
+            unsafe { shutdown() };
+        });
+    }
+    if !enabled(&config) || !hooks::in_gameplay() {
+        blows::discard();
+        return;
+    }
+    // SAFETY: the game thread, ahead of the game's update.
+    let delivered = unsafe { blows::deliver(&config) };
+    let mut shared = SHARED.lock();
+    let now = Instant::now();
+    let follow_through = Duration::from_secs_f32(HAND_BODIES.hits.follow_through_s.max(0.0));
+    for (until, struck) in shared
+        .follow_through
+        .iter_mut()
+        .zip(delivered.follow_through)
+    {
+        if struck {
+            *until = Some(now + follow_through);
+        }
+    }
+    let status = &mut shared.status;
+    status.registered = registered;
+    status.contacts += delivered.contacts;
+    status.dropped_contacts += delivered.dropped;
+    status.blows += delivered.blows;
+    if delivered.last.is_some() {
+        status.last_blow = delivered.last;
+    }
+}
+
+/// Publish each acting hand's palm pose and velocity for the next step, and take the last step's
+/// results. Called from the player aim control's post-simulation update, `dt` seconds after the
+/// last.
+pub(crate) fn observe(dt: f32) {
+    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let now = Instant::now();
+    let acting = enabled(&config).then(|| acting_palms(&config)).flatten();
+    let step = steps();
+    let park_now = acting.as_ref().map(|a| (step, a.park_now));
+    let tracked = acting.as_ref().map_or([None; 2], |a| a.tracked);
+    let palms = acting
+        .filter(|a| a.palms.iter().any(Option::is_some))
+        .map(|a| (a.palms, a.world_scale, a.origin));
+    let body_rotation = headpose::xr::body_rotation();
+    let recenters = recenter_count();
+    let mut loads = [0.0; 2];
+    {
+        let mut shared = SHARED.lock();
+        if teleport::epoch() != shared.epoch {
+            shared.epoch = teleport::epoch();
+            shared.trackers = TRACKERS_AT_REST;
+            shared.carrier.reset();
+        }
+        // A snap turn or a recenter moves every palm at once without the hands moving: the
+        // palms' motion starts afresh, and the next step carries the bodies with the rig.
+        let jumped = rig_jumped(shared.rig, body_rotation, recenters);
+        shared.rig = Some((body_rotation, recenters));
+        if jumped {
+            shared.trackers = TRACKERS_AT_REST;
+            shared.carrier.reset();
+        }
+        let previous = shared.targets;
+        let world_scale = palms.as_ref().map_or(1.0, |(_, scale, _)| *scale);
+        // The palms move in real time, so their velocities, per game second, smooth over a real
+        // stretch of time.
+        // SAFETY: the observation runs while the game runs.
+        let smoothing_s = unsafe { TimeScale::current() }.game_s(VELOCITY_SMOOTHING_S);
+        let carrier = match &palms {
+            Some((_, _, origin)) => shared.carrier.update(*origin, dt, smoothing_s),
+            None => {
+                shared.carrier.reset();
+                Vec3::ZERO
+            }
+        };
+        let mut targets = [None; 2];
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            let palm = palms.as_ref().and_then(|(palms, _, _)| palms[i]);
+            let Some(palm) = palm else {
+                shared.trackers[i].0.reset();
+                shared.trackers[i].1.reset();
+                continue;
+            };
+            let linear = shared.trackers[i].0.update(palm.centre, dt, smoothing_s);
+            let angular = shared.trackers[i]
+                .1
+                .update(palm.orientation, dt, smoothing_s);
+            targets[i] = Some(Target {
+                position: palm.centre,
+                orientation: palm.orientation,
+                linear,
+                angular,
+                carrier,
+            });
+            if jumped && let Some(from) = previous[i] {
+                shared.rig_moves[i] =
+                    Some((from.goal(), targets[i].map_or(from.goal(), |t| t.goal())));
+            }
+        }
+        shared.targets = targets;
+        shared.tracked = tracked;
+        shared.park_now = park_now;
+        shared.world_scale = world_scale;
+        shared.published = palms.is_some().then_some(now);
+        shared.published_step = palms.is_some().then_some(step);
+        let stepped = shared.stepped_lately(now);
+        let show = stepped;
+        let scale = world_scale.max(1e-3);
+        let offsets = shared.world_offsets;
+        for hand in Hand::BOTH {
+            let i = hand.index();
+            shared.shown[i] = show && targets[i].is_some();
+            shared.cockpit_offsets[i] = if shared.shown[i] {
+                offsets[i].to_cockpit(body_rotation, scale)
+            } else {
+                RenderOffset::NONE
+            };
+            if stepped && targets[i].is_some() {
+                loads[i] = shared.loads[i];
+            }
+        }
+    }
+    for hand in Hand::BOTH {
+        let load = loads[hand.index()];
+        if load >= MIN_PRESSURE_LOAD {
+            haptics::sustain(hand, Sustain::BodyPressure, load);
+        }
+    }
+}
+
+/// Draw each driven hand where its body is, in the cockpit frame, turning it about the palm's
+/// centre at `palm_offset` in the wrist frame. Called by
+/// [`crate::controllers::physical_hands::apply`].
+pub(crate) fn apply(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
+    let offsets = {
+        let shared = SHARED.lock();
+        if !shared.fresh(Instant::now()) {
+            return;
+        }
+        shared.cockpit_offsets
+    };
+    apply_offsets(
+        cockpit,
+        offsets.map(|offset| (!offset.is_none()).then_some(offset)),
+        palm_offset,
+        braced_by_hold(),
+    );
+}
+
+/// The holding hand of the engaged two-handed hold, whose bracing hand rides its offset.
+fn braced_by_hold() -> Option<Hand> {
+    foregrip::two_hand_grip().map(|grip| grip.holder)
+}
+
+/// Freeze post-step presentation offsets against the published palms, in their transport frame.
+/// This reads bodies but never drives or places them.
+///
+/// # Safety
+///
+/// The game thread, after simulation and outside the physics step.
+pub(crate) unsafe fn sample_render_offsets() {
+    let now = Instant::now();
+    let config = Config::lock_query(|c| c.controllers.physical_hands);
+    let (targets, rotation, scale, shown, fallback) = {
+        let shared = SHARED.lock();
+        if !enabled(&config) || !shared.fresh(now) || !shared.stepped_lately(now) {
+            *RENDER_OFFSETS.lock() = None;
+            return;
+        }
+        (
+            shared.targets,
+            shared
+                .rig
+                .map_or_else(headpose::xr::body_rotation, |rig| rig.0),
+            shared.world_scale.max(1e-3),
+            shared.shown,
+            shared.offset_timeline.at(now),
+        )
+    };
+    let on_gun = guns::physical_hands();
+    let hands = HANDS.lock();
+    let offsets = Hand::BOTH.map(|hand| {
+        let i = hand.index();
+        targets[i].filter(|_| shown[i])?;
+        let body = hands.bodies[i].as_ref()?;
+        // SAFETY: the caller excludes the physics step; the owning body validates its slot.
+        let motion = match unsafe { body.motion() } {
+            Ok(motion) => motion,
+            Err(_) => return fallback.map(|offsets| offsets[i].to_cockpit(rotation, scale)),
+        };
+        // The step drove the body toward the published palm led by the palm's world velocity
+        // (`Target::led`), so the body leads the published palm by that motion even with nothing
+        // in its way: a hand moving fast, or a player running, would be drawn ahead of its
+        // controller by it. Measured against the led palm, the offset is only what holds the body
+        // back. The led palm comes from `acting_palms`' support/weight-adjusted target, so the
+        // residual does not cancel that target when it is applied.
+        let palm = hands.sent_palm(hand)?;
+        let offset = RenderOffset::between(
+            Pose {
+                position: palm.position,
+                orientation: palm.orientation,
+            },
+            Pose {
+                position: motion.position,
+                orientation: motion.orientation,
+            },
+            HAND_BODIES.break_distance_m * scale,
+            if on_gun[i] {
+                0.0
+            } else {
+                RENDER_TURN_DEADBAND_RAD
+            },
+            RENDER_MAX_TURN_RAD,
+        );
+        Some(offset.to_cockpit(rotation, scale))
+    });
+    drop(hands);
+    *RENDER_OFFSETS.lock() = Some((now, offsets));
+}
+
+/// Apply the frame's post-step offsets without adding another physics-step interpolation delay.
+pub(crate) fn apply_at_render(cockpit: &mut [Option<CockpitHand>; 2], palm_offset: Vec3) {
+    let sampled = *RENDER_OFFSETS.lock();
+    let Some((at, offsets)) = sampled else {
+        apply(cockpit, palm_offset);
+        return;
+    };
+    if Instant::now().saturating_duration_since(at) > STALE_AFTER {
+        apply(cockpit, palm_offset);
+        return;
+    }
+    apply_offsets(cockpit, offsets, palm_offset, braced_by_hold());
+}
+
+static RENDER_OFFSETS: Mutex<Option<(Instant, [Option<RenderOffset>; 2])>> = Mutex::new(None);
+
+/// Remove the callback and destroy the bodies.
+///
+/// # Safety
+///
+/// The game thread, outside the game's update.
+unsafe fn shutdown() {
+    crate::controllers::physical_hands::climb::native::clear();
+    // SAFETY: shutdown runs outside the world update before hooks are removed.
+    unsafe { crate::controllers::physical_hands::impacts::clear() };
+    unsafe { callback::unregister() };
+    // SAFETY: as above.
+    unsafe { drawn_body::clear() };
+    let destroyed = unsafe { HANDS.lock().destroy_all("the payload is unloading") };
+    let mut shared = SHARED.lock();
+    shared.status.registered = false;
+    shared.status.destroyed += destroyed;
+}

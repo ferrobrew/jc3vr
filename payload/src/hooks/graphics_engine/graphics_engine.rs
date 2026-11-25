@@ -1,32 +1,44 @@
-use std::sync::atomic::{AtomicBool, AtomicU32};
+use std::{
+    cell::Cell,
+    sync::atomic::{AtomicBool, AtomicU32},
+};
 
 use detours_macro::detour;
 use jc3gi::{
     graphics_engine::{
         device::{Context, Device, DeviceInfo},
-        graphics_engine::{GraphicsEngine, HDevice_t},
+        graphics_engine::{DrawThreadTaskParam, GraphicsEngine, HContext_t, HDevice_t},
         render_engine::RenderEngine,
     },
-    ui::ui_manager::GetIUIManager,
+    ui::ui_manager::{GetIUIManager, UIManager},
 };
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{
     Graphics::Direct3D11::{D3D11_BOX, ID3D11Texture2D},
-    System::Threading::{EnterCriticalSection, GetCurrentThreadId, LeaveCriticalSection},
+    System::Threading::{
+        CRITICAL_SECTION, EnterCriticalSection, GetCurrentThreadId, LeaveCriticalSection,
+    },
 };
 
 use crate::{
+    config::Config,
+    controllers::{overlay, weapons::scope},
     debug::trace::{TraceEvent, TraceState},
+    frame_timing::{self, Slot},
     hud,
     hud::egui_panel::draw_quad,
     screenshot::CaptureSource,
     stereo::single_pass::{collapse_active, set_collapse_ui_eye},
+    ui::render::{eye_capture_fresh, mark_eye_capture, previews_visible},
+    vr::BlitSource,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&GRAPHICS_FLIP_BINDER)
         .with_static_binder(&GRAPHICS_ENGINE_DRAW_BINDER)
+        .with_static_binder(&HANDLE_DRAW_THREAD_TASK_BINDER)
+        .with_static_binder(&UI_START_RENDER_IMPL_BINDER)
         .with_static_binder(&RENDER_ENGINE_POST_DRAW_BINDER)
         .with_static_binder(&CREATE_RENDER_SETUPS_BINDER)
         .with_static_binder(&DEVICE_RESIZE_BUFFERS_BINDER)
@@ -38,14 +50,13 @@ pub(super) fn hook_library() -> HookLibrary {
 /// `crate::hooks::game::game_update_render` (which calls this too, `pub(crate)` for exactly that),
 /// whose thread identity settles two questions static reasoning could not.
 ///
-/// The first was a lock-order inversion against `crate::update`, which takes the `EguiState` lock and
-/// then `crate::ui::render::EGUI_DEBUG_RENDER_STATE` inside it: `render_engine_post_draw` used to hold
+/// The first is whether `render_engine_post_draw` runs apart from `crate::update`, which is what this
+/// hook's shared state has to assume. `crate::update` takes the `EguiState` lock and then
+/// `crate::ui::render::EGUI_DEBUG_RENDER_STATE` inside it, so `render_engine_post_draw` does not hold
 /// `EGUI_DEBUG_RENDER_STATE` across `hud::egui_panel::draw_quad` and `hud::mirror_overlay::render`,
-/// both of which take the `EguiState` lock. Two blocking mutexes in opposite orders deadlock if and
-/// only if the two sides run on different threads. The nesting is gone (the captures are now cloned
-/// under a brief lock, as everywhere else), so the answer no longer decides whether that pair was a
-/// bug -- but it still says whether the two do run apart, which is what the rest of this hook's
-/// shared state has to assume.
+/// both of which take the `EguiState` lock: it clones the captures under a brief lock, as everywhere
+/// else. Two blocking mutexes in opposite orders deadlock if and only if the two sides run on
+/// different threads.
 ///
 /// The second is whether [`crate::vr::back_buffer`]'s safety argument holds: it is built on
 /// `CreateRenderSetups` running on the render thread under the drained idle context while the
@@ -53,6 +64,11 @@ pub(super) fn hook_library() -> HookLibrary {
 ///
 /// `target: "thread_identity"` and the `hook`/`thread_id` field names are shared across all three call
 /// sites so the logs can be compared directly across a session.
+///
+/// The first call logs at info and later changes at debug (`RUST_LOG=thread_identity=debug`): the
+/// draw task runs on whichever CPU fragment worker picks it up, so `render_engine_post_draw` changes
+/// thread on most dispatches, and logging each change at info would write some eighty synchronous
+/// log lines a second for the whole session.
 pub(crate) fn log_hook_thread(hook: &'static str, last_thread_id: &AtomicU32) {
     // SAFETY: `GetCurrentThreadId` reads only the calling thread's own TEB entry; it has no
     // preconditions and cannot fail.
@@ -64,7 +80,7 @@ pub(crate) fn log_hook_thread(hook: &'static str, last_thread_id: &AtomicU32) {
     if previous == 0 {
         tracing::info!(target: "thread_identity", hook, thread_id, "hook entry thread (first call)");
     } else if previous != thread_id {
-        tracing::info!(
+        tracing::debug!(
             target: "thread_identity",
             hook,
             thread_id,
@@ -164,10 +180,139 @@ fn graphics_engine_draw(graphics_engine: *mut GraphicsEngine, dt: f32) {
         {
             ge.m_DrawScene = true;
         }
+        // The prologue hands the draw task this dispatch; its per-frame values are the ones the
+        // game thread prepared for this frame.
+        crate::render_frame::note_dispatch();
         GRAPHICS_ENGINE_DRAW
             .get()
             .unwrap()
             .call(graphics_engine, dt);
+    }
+}
+
+#[detour(address = GraphicsEngine::HandleDrawThreadTask_ADDRESS)]
+fn handle_draw_thread_task(engine: *mut GraphicsEngine, param: *mut DrawThreadTaskParam) -> u32 {
+    crate::testing::benchmark::note_draw_thread();
+    let _sampled = crate::testing::benchmark::sampler::enter_draw_task();
+    // The task records the frame its dispatch drew, whatever the game thread prepares meanwhile.
+    let _frame = crate::render_frame::pin_dispatch();
+    let _timing = frame_timing::scope(Slot::DrawTask);
+    let _dispatch = UiDispatchGuard::enter(engine);
+    HANDLE_DRAW_THREAD_TASK.get().unwrap().call(engine, param)
+}
+
+#[detour(address = UIManager::StartRenderImpl_ADDRESS)]
+fn ui_start_render_impl(manager: *mut UIManager, context: *const HContext_t) {
+    let main_context = UI_DISPATCH.get().and_then(|dispatch| unsafe {
+        if manager.is_null() || manager != GetIUIManager() {
+            return None;
+        }
+        let engine = dispatch.engine.as_ref()?;
+        let main_context = engine.m_Device.as_ref()?.m_Context;
+        if maintain_ui_redirect(dispatch.engine, manager, main_context) {
+            UI_DISPATCH.set(Some(UiDispatch {
+                maintenance_ran: true,
+                ..dispatch
+            }));
+        }
+        (!main_context.is_null()).then_some(main_context)
+    });
+
+    UI_START_RENDER_IMPL.get().unwrap().call(manager, context);
+
+    if let Some(main_context) = main_context {
+        UI_DISPATCH.set(UI_DISPATCH.get().map(|dispatch| UiDispatch {
+            pending: Some(PendingUiJob {
+                manager,
+                context: main_context,
+            }),
+            ..dispatch
+        }));
+    }
+}
+
+#[derive(Clone, Copy)]
+struct UiDispatch {
+    engine: *mut GraphicsEngine,
+    maintenance_ran: bool,
+    pending: Option<PendingUiJob>,
+}
+
+#[derive(Clone, Copy)]
+struct PendingUiJob {
+    manager: *mut UIManager,
+    context: *mut Context,
+}
+
+thread_local! {
+    static UI_DISPATCH: Cell<Option<UiDispatch>> = const { Cell::new(None) };
+}
+
+struct UiDispatchGuard(Option<UiDispatch>);
+
+impl UiDispatchGuard {
+    fn enter(engine: *mut GraphicsEngine) -> Self {
+        Self(UI_DISPATCH.replace(Some(UiDispatch {
+            engine,
+            maintenance_ran: false,
+            pending: None,
+        })))
+    }
+}
+
+impl Drop for UiDispatchGuard {
+    fn drop(&mut self) {
+        UI_DISPATCH.set(self.0);
+    }
+}
+
+unsafe fn maintain_ui_redirect(
+    engine: *mut GraphicsEngine,
+    manager: *mut UIManager,
+    context: *mut Context,
+) -> bool {
+    unsafe {
+        let Some(engine) = engine.as_ref() else {
+            return false;
+        };
+        let Some(device) = engine.m_Device.as_ref() else {
+            return false;
+        };
+        let Some(back_buffer) = device.m_BackBuffer.as_ref() else {
+            return false;
+        };
+        let Some(context) = context.as_ref() else {
+            return false;
+        };
+        if manager.is_null()
+            || (*manager).m_DeferredRenderLock.is_null()
+            || context.m_Mutex.is_null()
+        {
+            return false;
+        }
+        let _ui_lock = UiCriticalSectionGuard::enter((*manager).m_DeferredRenderLock);
+        let _context_lock = UiCriticalSectionGuard::enter(context.m_Mutex);
+        hud::tick(
+            device,
+            u32::from(back_buffer.m_Width),
+            u32::from(back_buffer.m_Height),
+        );
+        true
+    }
+}
+
+struct UiCriticalSectionGuard(*mut CRITICAL_SECTION);
+
+impl UiCriticalSectionGuard {
+    unsafe fn enter(lock: *mut CRITICAL_SECTION) -> Self {
+        unsafe { EnterCriticalSection(lock) };
+        Self(lock)
+    }
+}
+
+impl Drop for UiCriticalSectionGuard {
+    fn drop(&mut self) {
+        unsafe { LeaveCriticalSection(self.0) };
     }
 }
 
@@ -184,9 +329,9 @@ fn graphics_flip(device: *mut Device) -> u64 {
     }
 
     if let Some(egui_state) = crate::egui_impl::EguiState::get().as_mut() {
-        // Hide the debug overlay while the F10 capture window is up or cinematic mode is on, so the
-        // recording is clean.
-        if !crate::capture::is_active() && !crate::director::cinematic::active() {
+        // Hide the debug overlay while the clean view is on (the deferred mirror-overlay path in
+        // `crate::hud::mirror_overlay` honours the same switch).
+        if !crate::director::clean_view::hides_desktop() {
             egui_state.render();
         }
     }
@@ -199,6 +344,8 @@ fn graphics_flip(device: *mut Device) -> u64 {
 #[detour(address = jc3gi::graphics_engine::render_engine::RenderEngine::PostDraw_ADDRESS)]
 fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Context) -> u64 {
     log_hook_thread("render_engine_post_draw", &RENDER_ENGINE_POST_DRAW_THREAD);
+    // The dispatch's config pin ends with this seam, on every return path.
+    let _dispatch_end = crate::stereo::single_pass::end_dispatch();
     // The last render seam of the dispatch: bracket PostDraw on both timelines, then close the GPU
     // dispatch opened in `render_pass::pre_draw` (ending the disjoint query and reading back the
     // dispatches the GPU has since finished). `Context` and `HContext_t` are the same handle.
@@ -215,38 +362,76 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             .unwrap()
             .call(render_engine, context)
     };
+    {
+        // The mod's own work on the eyes' images is bracketed as a seam of its own, so the GPU
+        // dispatch closes after it and its cost is part of the dispatch's span.
+        #[cfg(feature = "profiler")]
+        // SAFETY: `context` is the live immediate-context handle for this dispatch.
+        let _gpu = unsafe {
+            crate::profiler::gpu::seam(context.cast(), crate::profiler::gpu::GpuSeam::ModPostDraw)
+        };
+        mod_post_draw(context);
+    }
     #[cfg(feature = "profiler")]
     // SAFETY: `context` is the live immediate-context handle for this dispatch.
     unsafe {
         crate::profiler::gpu::end_dispatch(context.cast())
     };
+    result
+}
+
+/// The mod's work after the engine's `PostDraw`: the HUD and the world-locked overlays drawn into
+/// the eyes' images, the eye copies or direct swapchain blits, and the captures that read them.
+fn mod_post_draw(context: *mut Context) {
     TraceState::record_eye(TraceEvent::PostDraw);
+    let _timing = frame_timing::scope(Slot::PostDraw);
 
     unsafe {
-        let Some(context) = context.as_mut() else {
-            return result;
+        let dispatch = UI_DISPATCH.get();
+        let engine = match dispatch {
+            Some(dispatch) => dispatch.engine,
+            None => GraphicsEngine::get().map_or(std::ptr::null_mut(), |engine| engine),
         };
-
-        let Some(graphics_engine) = GraphicsEngine::get() else {
-            return result;
+        let Some(graphics_engine) = engine.as_ref() else {
+            return;
         };
-
-        // Drive the HUD redirect on the render thread: redirect while enabled, restore while disabled.
-        // The rebind is sticky, so applying it here -- before the UI renders later in the frame --
-        // takes effect on the next UI render.
-        if let Some(device) = graphics_engine.m_Device.as_ref()
-            && let Some(back_buffer) = device.m_BackBuffer.as_ref()
-        {
-            hud::tick(
-                device,
-                u32::from(back_buffer.m_Width),
-                u32::from(back_buffer.m_Height),
-            );
+        if context.is_null() {
+            return;
         }
+
+        let main_context = graphics_engine
+            .m_Device
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |device| device.m_Context);
+        if !dispatch.is_some_and(|dispatch| dispatch.maintenance_ran)
+            && maintain_ui_redirect(engine, GetIUIManager(), main_context)
+            && let Some(dispatch) = dispatch
+        {
+            UI_DISPATCH.set(Some(UiDispatch {
+                maintenance_ran: true,
+                ..dispatch
+            }));
+        }
+        let pending = UI_DISPATCH.get().and_then(|mut dispatch| {
+            let pending = dispatch
+                .pending
+                .filter(|job| job.context == context && job.context == main_context)?;
+            dispatch.pending = None;
+            UI_DISPATCH.set(Some(dispatch));
+            Some(pending)
+        });
+        if let Some(pending) = pending
+            && hud::redirect_applied()
+        {
+            (*pending.manager).SyncRender();
+            (*pending.manager).Submit();
+        }
+
+        let context = &mut *context;
 
         // Clone (AddRef) the per-eye capture textures under a brief EGUI lock, released before the
         // context work below, mirroring the lock discipline of the other consumers of these captures
-        // (`vr::blit::submit`, `vr::mirror::present_mirror_inner`, `capture::present_active`). Held
+        // (`vr::blit::submit` and `vr::mirror::present_mirror_inner`). Held
         // across the body instead, this deadlocks: the panel and mirror-overlay draws below take the
         // `EguiState` lock, while `crate::update` takes `EguiState` and then this one inside it. One
         // acquisition, not one per eye, so the collapse's two half-copies cannot straddle a resize
@@ -256,6 +441,12 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             [lock.texture(0).cloned(), lock.texture(1).cloned()]
         };
         let index = crate::stereo::draw_index();
+        // The frame's last near dispatch: after it, every eye image of the frame is final.
+        let last_near_dispatch = crate::stereo::last_near_dispatch();
+        // The world-space overlay's producers, once per frame, outside the context lock: they read
+        // the controller subsystems' published state under those subsystems' own locks.
+        overlay::tick(index);
+        scope::tick(index);
 
         EnterCriticalSection(context.m_Mutex);
 
@@ -266,45 +457,101 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
             graphics_engine.m_Device.as_ref(),
             graphics_engine.m_BackBufferLinear.as_ref(),
         ) {
+            // The scope lens reads the eyes' images as the scene left them, before the overlay.
+            scope::capture(&context.m_Context, device, back_buffer, index);
             // The interactive egui debug panel (issue #24) is an independent floating surface drawn
             // right after the gameplay HUD. Under collapse the render camera is centered and the
             // target is double-wide, so draw both world-locked overlays once per eye into each half
             // with that eye's own VP (see `single_pass::collapse_ui_eye_override`); otherwise the
-            // per-dispatch single draw carries the eye implicitly.
+            // per-dispatch single draw carries the eye implicitly. The world-space overlay draws
+            // first, and the scope lens over it, so the panels sit on top of both.
+            #[cfg(feature = "profiler")]
+            let overlays_gpu = crate::profiler::gpu::detail_interval("mod: HUD and overlays");
             if collapse_active() {
                 for eye in 0..2 {
                     set_collapse_ui_eye(Some(eye));
+                    overlay::draw(&context.m_Context, device, back_buffer, eye);
+                    scope::draw(&context.m_Context, device, back_buffer, eye);
                     hud::draw_quad(&context.m_Context, device, back_buffer, eye);
                     draw_quad(&context.m_Context, device, back_buffer, eye);
+                    hud::summary_panel::draw(&context.m_Context, device, back_buffer, eye);
+                    hud::restart_notice::draw(&context.m_Context, device, back_buffer, eye);
                 }
                 set_collapse_ui_eye(None);
             } else {
+                overlay::draw(&context.m_Context, device, back_buffer, index);
+                scope::draw(&context.m_Context, device, back_buffer, index);
                 hud::draw_quad(&context.m_Context, device, back_buffer, index);
                 draw_quad(&context.m_Context, device, back_buffer, index);
+                hud::summary_panel::draw(&context.m_Context, device, back_buffer, index);
+                hud::restart_notice::draw(&context.m_Context, device, back_buffer, index);
             }
-            // Redirect the flat mirror overlay into an offscreen texture on eye 0 (consuming this
-            // frame's egui output) so the desktop mirror can composite it from the deferred frame
-            // tail's thread. A no-op unless a session renders, the mirror is on, and the panel is
-            // off. See `crate::hud::mirror_overlay`.
-            if index == 0 {
+            #[cfg(feature = "profiler")]
+            drop(overlays_gpu);
+            // Redirect the flat mirror overlay into an offscreen texture (consuming this frame's egui
+            // output) so the desktop mirror can composite it from the deferred frame tail's thread.
+            // A no-op unless a session renders, the mirror is on, and the panel is off. See
+            // `crate::hud::mirror_overlay`.
+            //
+            // It renders on the frame's last near dispatch rather than eye 0's: with the tail
+            // deferred, the game thread waits on eye 0's walk but not on the last one, which the
+            // tail drains before it composites the mirror. Nothing per-eye reads the overlay, and
+            // the floating panel, which consumes the same egui output, is off whenever this runs.
+            if last_near_dispatch {
                 hud::mirror_overlay::render(&context.m_Context, device, back_buffer);
+            }
+            // The learned body estimator's GPU pass, once per frame: it takes the window the game
+            // thread posted and collects finished estimates without waiting.
+            if last_near_dispatch {
+                let _timing = frame_timing::scope(Slot::BodyEstimator);
+                crate::controllers::body::estimator::render_tick(
+                    &context.m_Context,
+                    &device.m_Device,
+                );
             }
         }
 
         // Final back buffer for this eye. (The HDR scene / MainColor is captured earlier, at the
         // start of the post chain, before it gets read and recycled -- see capture_main_color.)
+        //
+        // On the direct route the eye is blitted straight into its swapchain slice here, and the
+        // copy into its capture is made only for a reader of the capture (see `crate::vr::blit`).
+        // Either way this is the image the copy would have captured: everything the eye shows is
+        // drawn by now, and nothing the engine draws after this hook reaches the headset.
         if let Some(src) = graphics_engine.m_BackBufferLinear.as_ref() {
+            #[cfg(feature = "profiler")]
+            let copies_gpu = crate::profiler::gpu::detail_interval("mod: eye copies and blits");
             if collapse_active() {
                 // The collapsed single walk rendered both eyes into this one (viewport-split) back
-                // buffer -- left half eye 0, right half eye 1 -- so copy each half into its eye
-                // texture. `half_w` is a per-eye-width region: with `single_pass_double_wide` the back
-                // buffer is 2x per-eye wide, so each half fills its full-res eye texture; without it
-                // each half is squished and fills only the left portion of the eye texture (a
-                // bring-up limitation, not the finished look).
+                // buffer -- left half eye 0, right half eye 1. On the direct route each half is
+                // blitted straight into its swapchain slice, and copied into its eye texture only
+                // for a reader of the capture; otherwise each half is copied into its eye texture
+                // for the submit to blit. `half_w` is a per-eye-width region: with
+                // `single_pass_double_wide` the back buffer is 2x per-eye wide, so each half fills
+                // its full-res eye texture; without it each half is squished and fills only the left
+                // portion of the eye texture (a bring-up limitation, not the finished look).
                 let half_w = u32::from(src.m_Width) / 2;
                 let height = u32::from(src.m_Height);
                 for eye in 0..2u32 {
-                    if let Some(dst) = eye_textures[eye as usize].as_ref() {
+                    let blitted = !crate::stereo::far_phase()
+                        && graphics_engine.m_Device.as_ref().is_some_and(|device| {
+                            crate::vr::blit_direct(
+                                device,
+                                &context.m_Context,
+                                &src.m_Texture,
+                                eye as usize,
+                                BlitSource::Half(eye),
+                            )
+                        });
+                    let dst = eye_textures[eye as usize]
+                        .as_ref()
+                        .filter(|_| !blitted || eye_capture_wanted(eye as usize));
+                    mark_eye_capture(eye as usize, dst.is_some());
+                    crate::screenshot::harness::note_eye(
+                        eye as usize,
+                        !crate::stereo::far_phase() && dst.is_some(),
+                    );
+                    if let Some(dst) = dst {
                         let region = D3D11_BOX {
                             left: eye * half_w,
                             top: 0,
@@ -325,39 +572,100 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
                         );
                     }
                 }
-            } else if let Some(dst) = eye_textures.get(index).and_then(Option::as_ref) {
-                context.m_Context.CopyResource(dst, &src.m_Texture);
+            } else {
+                // A share frame's far dispatch is not an eye image; its capture is overwritten by
+                // the near dispatch of the same eye.
+                let blitted = !crate::stereo::far_phase()
+                    && graphics_engine.m_Device.as_ref().is_some_and(|device| {
+                        crate::vr::blit_direct(
+                            device,
+                            &context.m_Context,
+                            &src.m_Texture,
+                            index,
+                            BlitSource::Whole,
+                        )
+                    });
+                let copied = match eye_textures.get(index).and_then(Option::as_ref) {
+                    Some(dst) if !blitted || eye_capture_wanted(index) => {
+                        context.m_Context.CopyResource(dst, &src.m_Texture);
+                        true
+                    }
+                    _ => false,
+                };
+                mark_eye_capture(index, copied);
+                crate::screenshot::harness::note_eye(index, copied && !crate::stereo::far_phase());
+            }
+            #[cfg(feature = "profiler")]
+            drop(copies_gpu);
+
+            // The recorder's sidecar line for the frame, on its last near dispatch, when every eye
+            // image of the frame is final, and a streamed take's eye-view capture, which needs both
+            // eyes' captures to hold the frame. Both are no-ops unless recording.
+            if last_near_dispatch {
+                let frame = crate::recorder::frame_rendered();
+                match (graphics_engine.m_Device.as_ref(), &eye_textures) {
+                    (Some(device), [Some(left), Some(right)])
+                        if eye_capture_fresh(0) && eye_capture_fresh(1) =>
+                    {
+                        crate::recorder::capture_frame(
+                            &device.m_Device,
+                            &context.m_Context,
+                            [left, right],
+                            frame,
+                        );
+                    }
+                    _ => crate::recorder::release_capture(),
+                }
             }
 
-            // The in-process recorder: pack and read back the chosen eye's capture on the dispatch
-            // that refreshed it. A no-op unless recording.
-            if let Some(device) = graphics_engine.m_Device.as_ref() {
-                crate::recorder::capture_frame(
-                    &device.m_Device,
-                    &context.m_Context,
-                    &eye_textures,
-                    index,
-                );
+            if last_near_dispatch && let Some(device) = graphics_engine.m_Device.as_ref() {
+                if collapse_active() || crate::stereo::dispatch::selected_eye().is_some() {
+                    crate::screenshot::harness::snapshot::capture(
+                        &device.m_Device,
+                        &context.m_Context,
+                        &CaptureSource::Full(&src.m_Texture),
+                    );
+                    crate::screenshot::harness::capture(
+                        &device.m_Device,
+                        &context.m_Context,
+                        CaptureSource::Full(&src.m_Texture),
+                    );
+                } else if let [Some(left), Some(right)] = &eye_textures {
+                    crate::screenshot::harness::snapshot::capture(
+                        &device.m_Device,
+                        &context.m_Context,
+                        &CaptureSource::Eyes([left, right]),
+                    );
+                    crate::screenshot::harness::capture(
+                        &device.m_Device,
+                        &context.m_Context,
+                        CaptureSource::Eyes([left, right]),
+                    );
+                }
             }
 
             // Service an F12 screenshot request with a source that carries both eyes. Under
             // collapse the linear back buffer already holds the two eye-halves side by side; in
             // two-pass stereo it only holds the eye that just rendered, so the per-eye capture
-            // textures (copied just above) are stitched instead -- serviced on the second eye's
-            // dispatch, when both hold the current frame. A no-op unless one was requested.
+            // textures (copied just above) are stitched instead, after the last near dispatch,
+            // when both hold the current frame. An isolated mode uses its one physical eye's buffer.
             if let Some(device) = graphics_engine.m_Device.as_ref() {
                 let two_pass_stereo = crate::stereo::active() && !collapse_active();
-                let source = if !two_pass_stereo {
-                    Some(CaptureSource::Full(&src.m_Texture))
-                } else if index != 1 || crate::stereo::far_phase() {
-                    None
-                } else if let [Some(left), Some(right)] = &eye_textures {
-                    Some(CaptureSource::Eyes([left, right]))
-                } else {
-                    // A missing eye capture (the pair is being rebuilt across a resize) still
-                    // yields a screenshot -- of this eye's back buffer -- rather than none.
-                    Some(CaptureSource::Full(&src.m_Texture))
-                };
+                let source =
+                    if !two_pass_stereo || crate::stereo::dispatch::selected_eye().is_some() {
+                        Some(CaptureSource::Full(&src.m_Texture))
+                    } else if !last_near_dispatch {
+                        None
+                    } else if let [Some(left), Some(right)] = &eye_textures {
+                        // Both captures must hold this frame; one the direct route skipped leaves the
+                        // request pending, and the next frame copies both for it.
+                        (eye_capture_fresh(0) && eye_capture_fresh(1))
+                            .then_some(CaptureSource::Eyes([left, right]))
+                    } else {
+                        // A missing eye capture (the pair is being rebuilt across a resize) still
+                        // yields a screenshot -- of this eye's back buffer -- rather than none.
+                        Some(CaptureSource::Full(&src.m_Texture))
+                    };
                 if let Some(source) = source {
                     crate::screenshot::capture_if_requested(
                         &device.m_Device,
@@ -370,8 +678,17 @@ fn render_engine_post_draw(render_engine: *mut RenderEngine, context: *mut Conte
 
         LeaveCriticalSection(context.m_Mutex);
     }
+}
 
-    result
+/// Whether anything besides the headset reads eye `eye`'s capture this frame, so its post-draw must
+/// copy the eye into it even when the eye went straight to the swapchain: the desktop mirror's eyes,
+/// a pending screenshot, the Previews tab, and a recording that streams the eye views.
+fn eye_capture_wanted(eye: usize) -> bool {
+    Config::lock_query(|c| c.vr.mirror && c.vr.mirror_view.shows_eye(eye))
+        || crate::screenshot::is_requested()
+        || crate::screenshot::harness::wants_eyes()
+        || previews_visible()
+        || crate::recorder::wants_eye_captures()
 }
 
 /// Last-seen thread id for [`render_engine_post_draw`]. See [`log_hook_thread`].

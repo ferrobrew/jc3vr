@@ -1,0 +1,9 @@
+# Record the intentional native grapple hang separately from physical vehicle grips.
+name = "enter the native helicopter hang through the grapple"
+description = "Use the normal grapple to enter a helicopter hang, then leave through the game controls. This recording is separate from the physical-grip recording so an intentional hang cannot satisfy or invalidate its no-hang observation."
+recording = "../recordings/stunt_hang.jc3trk"
+settle_s = 3.0
+
+[[expect]]
+name = "the normal grapple enters an observed native hang"
+signal = "stunt.hanging"

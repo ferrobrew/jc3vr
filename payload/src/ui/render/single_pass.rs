@@ -1,22 +1,28 @@
-//! Single-pass stereo (experimental): the bring-up levers, the shader-rewrite census, and the
+//! Single-pass stereo: the whole-feature switch, the bring-up levers, the shader-rewrite census, and the
 //! instanced eye-parity exposure readout.
+
+use std::sync::atomic::Ordering;
 
 use crate::{
     config,
     far_field::FarFieldMode,
-    hooks::graphics_engine::shader,
-    stereo::single_pass::{self, Capability},
+    hooks::{draw_count::EFFECT_DEPTH_COPIES_SKIPPED, graphics_engine::shader},
+    stereo::{
+        config::set_single_pass_feature,
+        single_pass::{self, Capability},
+    },
 };
 
 pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
-    // Single-pass stereo (experimental, off by default): render the G-buffer geometry once, emitting
-    // both eyes via instancing + SV_ViewportArrayIndex routing, instead of the double-draw. The
-    // pipeline is under construction; the census dry-run below is safe (no rendering change) and
-    // reports how the vertex-shader rewriter fares against the game's real shader set.
-    ui.collapsing("Single-pass stereo (experimental)", |ui| {
-        // All-in/all-out toggle: flip the whole work-in-progress configuration together, so the one
-        // button is the normal way to turn the feature on or off. The individual levers below stay for
-        // bring-up. Reloads either way -- on to apply the patches, off to restore the pristine shaders.
+    // Single-pass stereo (on by default while a VR session runs): render the G-buffer geometry once,
+    // emitting both eyes via instancing + SV_ViewportArrayIndex routing, instead of the double-draw.
+    // The census dry-run below is safe (no rendering change) and reports how the vertex-shader
+    // rewriter fares against the game's real shader set.
+    ui.collapsing("Single-pass stereo", |ui| {
+        // All-in/all-out toggle: flip the whole configuration together, so the one button is the
+        // normal way to switch between single-pass and multipass. The individual levers below stay
+        // for bisection. Reloads either way -- on to apply the patches, off to restore the pristine
+        // shaders.
         let enabled = cfg.stereo.single_pass.enabled;
         let toggle_label = if enabled {
             "⚡ Disable single-pass stereo"
@@ -33,29 +39,13 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
             )
             .clicked()
         {
-            let on = !enabled;
-            cfg.stereo.single_pass.enabled = on;
-            cfg.stereo.single_pass.dual_eye = on;
-            cfg.stereo.single_pass.collapse = on;
-            cfg.stereo.single_pass.double_wide = on;
-            cfg.stereo.single_pass.reproject = on;
-            cfg.stereo.single_pass.reproject_camera_only = on;
-            cfg.stereo.single_pass.terrain = on;
-            cfg.stereo.single_pass.tree_impostors = on;
-            cfg.stereo.single_pass.bark = on;
-            cfg.stereo.single_pass.foliage = on;
-            cfg.stereo.single_pass.occluder = on;
-            cfg.stereo.single_pass.patch_dryrun = false;
-            cfg.vr.native_resolution = on;
-            if on && cfg.far_field.mode == FarFieldMode::Share {
-                cfg.far_field.mode = FarFieldMode::Collect;
-            }
+            set_single_pass_feature(cfg, !enabled);
             shader::request_reload();
         }
         ui.separator();
         ui.checkbox(
             &mut cfg.stereo.single_pass.enabled,
-            "Enable single-pass stereo (experimental)",
+            "Enable single-pass stereo",
         )
         .on_hover_text(
             "Master switch. Renders the G-buffer once with stereo-rewritten vertex shaders. \
@@ -172,6 +162,57 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 if ui
+                    .add_enabled(
+                        cfg.stereo.single_pass.terrain,
+                        egui::Checkbox::new(
+                            &mut cfg.stereo.single_pass.terrain_patch_per_eye,
+                            "Terrain patches per eye",
+                        ),
+                    )
+                    .on_hover_text(
+                        "Reprojects the terrain patch system's tessellated and GPU-indirect \
+                         pipelines, which cannot carry an eye index, by pinning cb13 to each eye in \
+                         the per-eye re-issue their draws already take. Off, both eyes of those \
+                         draws come from the centred camera. Adds no draws. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .add_enabled(
+                        cfg.stereo.single_pass.terrain,
+                        egui::Checkbox::new(
+                            &mut cfg.stereo.single_pass.terrain_eye_rows,
+                            "Terrain domain shaders from each eye's own rows",
+                        ),
+                    )
+                    .on_hover_text(
+                        "The terrain domain shaders read each eye's camera position and \
+                         view-projection instead of reprojecting the centre's clip position, so they \
+                         round as a separately rendered eye does. Off, each patch's surface lands a \
+                         few to a few hundred floats of depth away. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.full_view_projection_rows,
+                        "Full view-projection from each eye's own rows",
+                    )
+                    .on_hover_text(
+                        "Shaders that project through the full view-projection (the tree impostors, \
+                         the light sprites, the ambient-occlusion volumes, the terrain basemesh) read \
+                         each eye's copy of it instead of reprojecting the centre's clip position, so \
+                         they round as a separately rendered eye does. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
                     .checkbox(
                         &mut cfg.stereo.single_pass.tree_impostors,
                         "Single-pass the tree impostors (far-distance billboards)",
@@ -180,6 +221,95 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                         "Reprojects the treeimpostor* vertex shaders by the per-eye M_eye, like the \
                          scene families. They draw non-instanced with no GPU-indirect path, so this \
                          covers them completely. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.tree_impostor_pixel_size_per_eye,
+                    "Tree impostor pixel size per eye",
+                )
+                .on_hover_text(
+                    "Stages the impostors' PixelSize at one eye's width under the double-wide \
+                     collapse. Off, it is the width of both eyes, so each card's pixel footprint is \
+                     twice its size and the derivative-scaled atlas offset moves the cards' cut-out \
+                     silhouettes.",
+                );
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.tree_impostor_screen_door_per_eye,
+                        "Tree impostor screen door per eye",
+                    )
+                    .on_hover_text(
+                        "The impostors dissolve across their distance fade by a pattern hashed from \
+                         their own projected position over the target size. Hashed from the \
+                         eye-local pixel position instead, each eye keeps the same pixels of a fading \
+                         card as an eye rendered on its own. Off, the pattern is the centred camera's \
+                         over both eyes' width. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.static_lights_per_eye,
+                        "Static light sprites per eye (distant town lights)",
+                    )
+                    .on_hover_text(
+                        "Reprojects the lightsource* vertex shaders by M_eye, promotes their \
+                         non-indexed draw to one two-instance draw routed to the eye halves, and \
+                         stages the sprites' inverse screen width at one eye's width. Off, the \
+                         sprites are drawn once across the whole double-wide target, at twice their \
+                         distance from its centre and depth-tested at the wrong pixel. Reloads \
+                         shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                ui.checkbox(&mut cfg.stereo.single_pass.moon_per_eye, "Moon per eye")
+                    .on_hover_text(
+                        "Promotes the moon's non-indexed draw to one two-instance draw routed to the \
+                         eye halves, with its far-plane depth kept through the reprojection. Off, \
+                         the moon is drawn once across the whole double-wide target: missing from \
+                         the left eye and twice as wide in the right. Needs the reprojection; \
+                         applies at once.",
+                    );
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.water_plane_per_eye,
+                        "Water reflection planes per eye",
+                    )
+                    .on_hover_text(
+                        "Reprojects the watermask vertex shader by M_eye and promotes the water \
+                         reflection planes' proxy quad to one two-instance draw routed to the eye \
+                         halves. Off, the quad the screen-space reflections trace water against is \
+                         drawn once across the whole double-wide target. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(&mut cfg.stereo.single_pass.clouds_per_eye, "Clouds per eye")
+                    .on_hover_text(
+                        "Reprojects the cloud vertex shaders by M_eye. Off, the clouds take their \
+                         clip position from the centred render camera in both eyes, which is \
+                         wrong for asymmetric or canted eyes. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(&mut cfg.stereo.single_pass.stars_per_eye, "Stars per eye")
+                    .on_hover_text(
+                        "Reprojects the stars' vertex shader by M_eye and promotes their \
+                         non-indexed draw to one two-instance draw routed to the eye halves, \
+                         keeping their far-plane depth. Off, the stars are drawn once across the \
+                         whole double-wide target. Reloads shaders to apply.",
                     )
                     .changed()
                 {
@@ -216,6 +346,22 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     shader::request_reload();
                 }
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.vegetation_once,
+                    "Bark and foliage once for both eyes",
+                )
+                .on_hover_text(
+                    "Draws a bark or foliage block once instead of re-issuing it per eye: each \
+                     draw binds a reprojected variant of its vertex shader, plain draws take two \
+                     instances, GPU-indirect draws read a copy of their arguments with the instance \
+                     counts doubled, and hardware-instanced draws are re-issued per eye unless \
+                     their layout has a twin. Blocks without a variant keep the whole-block \
+                     re-issue. Applies at once.",
+                );
+                ui.label(format!(
+                    "Vegetation once: {}",
+                    crate::stereo::single_pass::vegetation_once::status()
+                ));
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.occluder,
                     "Occluder (depth-prime boxes)",
                 )
@@ -235,6 +381,21 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      split alternately between the eyes -- the building flicker.",
                 );
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.hw_instanced_once,
+                    "Hardware-instanced buildings once for both eyes",
+                )
+                .on_hover_text(
+                    "Draws a hardware-instanced building batch once, with its input layout swapped \
+                     for a twin whose per-instance step rates are doubled and its instance count \
+                     doubled, so each pair of instances shares one element and the instance parity \
+                     picks the eye. Draws whose layout has no twin keep the per-eye re-issue. \
+                     Applies at once.",
+                );
+                ui.label(format!(
+                    "Hardware-instanced twins: {}",
+                    crate::stereo::single_pass::hw_instanced::status()
+                ));
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.indirect_per_eye,
                     "GPU-indirect draws per eye (near terrain patches, foliage)",
                 )
@@ -244,6 +405,16 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      points, so the near tessellating terrain patches and the foliage inherited the \
                      full double-wide viewport and were stretched 2x horizontally -- which reads as \
                      them sliding across the screen at twice the camera's rate.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.vertex_globals_per_eye,
+                    "Per-eye vertex globals for unpatched re-issues",
+                )
+                .on_hover_text(
+                    "Binds each eye's copy of the vertex GlobalConstants (view-projections, camera \
+                     position and axis) around the unpatched draws re-issued once per eye. Off, \
+                     those draws read the centred render camera: no parallax, and misplaced under \
+                     asymmetric or canted eyes. Applies at once.",
                 );
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.reconstruct_per_eye,
@@ -257,6 +428,131 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      screen. Needs the off-axis reconstruction override on.",
                 );
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.fullscreen_camera_per_eye,
+                    "Fullscreen passes use each eye's camera position",
+                )
+                .on_hover_text(
+                    "Stages each eye's own camera position, and the matching sun-shadow lookup \
+                     correction, for every per-eye run of a split fullscreen pass. Off, both halves \
+                     measure view vectors, fog distances, and shadow lookups from the centred camera.",
+                );
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.pixel_camera_per_eye,
+                        "Geometry shades from each eye's camera position",
+                    )
+                    .on_hover_text(
+                        "Every pixel shader that measures a view vector or a camera distance reads \
+                         the camera position of the eye whose half its pixel lies in. Off, every \
+                         instance-doubled draw shades both eyes from the point between them: cloth \
+                         sheen, specular, Fresnel, and reflections differ from an eye rendered on its \
+                         own. Reloads shaders to apply the rewrite; turning it off takes effect at \
+                         once.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.local_lights_per_eye,
+                        "Local lights measured from each eye",
+                    )
+                    .on_hover_text(
+                        "In the same rewritten pixel shaders, measures every local point and spot \
+                         light from the eye whose half the pixel lies in. The engine stores the \
+                         lights relative to the centred camera, so off, the lights near the camera \
+                         (a held device's glow) sit where the point between the eyes sees them. \
+                         Reloads shaders to apply the rewrite; turning it off takes effect at once.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                let (rewritten, declined) = crate::stereo::single_pass::eye_camera::counts();
+                ui.weak(format!(
+                    "Pixel shaders reading each eye's camera: {rewritten} (declined {declined})"
+                ));
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.screen_door_per_eye,
+                        "Screen-door fades laid out per eye",
+                    )
+                    .on_hover_text(
+                        "The alpha-tested and fading materials (vegetation, props, buildings, the \
+                         vehicle paint's stipple) and the volumetric fog dither by a pattern hashed \
+                         from the pixel position. Laid out from each eye's own origin, every eye \
+                         keeps the same pixels as an eye rendered on its own. Off, the right eye's \
+                         pattern is shifted by the left eye's width, and a different set of pixels \
+                         survives each fade. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.velocity_per_eye,
+                        "Motion vectors per eye",
+                    )
+                    .on_hover_text(
+                        "The velocity pass writes each pixel's motion since the last frame, which \
+                         the motion blur and FSR read. Per eye, each eye's half measures it in that \
+                         eye's own screen space, as an eye rendered on its own does. Off, every \
+                         eye's motion carries a sideways ramp of half a pixel per pixel from its \
+                         centre. Reloads shaders to apply the rewrite; turning it off takes effect \
+                         at once.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                let (velocities, declined) = crate::stereo::single_pass::eye_camera::velocity_counts();
+                ui.weak(format!(
+                    "Velocity pixel shaders per eye: {velocities} (declined {declined})"
+                ));
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.clip_origin_per_eye,
+                        "Road clip origin per eye",
+                    )
+                    .on_hover_text(
+                        "The road surfaces and the road-biased models subtract the render camera's \
+                         position, not the pass camera's, before projecting. Read per eye, each eye \
+                         projects them from its own position. Off, both eyes project them from the \
+                         centred camera, so the road's texture slides half the eye distance across \
+                         its surface. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.terrain_detail_eye_rows,
+                    "Terrain detail from each eye's own rows",
+                )
+                .on_hover_text(
+                    "Builds the terrain-detail draw's transform from each eye's own rows, as the \
+                     engine builds it for a separately rendered eye. Off, the centre's transform is \
+                     reprojected per eye, which rounds badly enough to move one eye's near ground \
+                     by up to one part in ten thousand of its depth.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.terrain_cull_both_eyes,
+                    "Terrain culled for both eyes",
+                )
+                .on_hover_text(
+                    "Culls the tessellated terrain patches against a frustum bounding both eyes. Off, \
+                     the hull programs cull them against the centred camera's frustum, which a canted \
+                     eye sees past at its outer edge: distant hills go missing there.",
+                );
+                let (rewritten, projected, declined) =
+                    crate::stereo::single_pass::eye_camera::screen_door_counts();
+                ui.weak(format!(
+                    "Pixel shaders with a per-eye screen door: {rewritten}, from a projected \
+                     position {projected} (declined {declined})"
+                ));
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.nvwater_per_eye,
                     "WaveWorks water per eye (parallax)",
                 )
@@ -265,6 +561,35 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      fine; what is missing is parallax -- the vertex shader transforms from a baked \
                      matrix in its own constant buffer, so both eyes get the collapsed centre view. \
                      Flat water at the wrong depth looks right on the mirror and wrong in the headset.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.water_reflection_per_eye,
+                    "...and look its reflection up per eye",
+                )
+                .on_hover_text(
+                    "Reads the WaveWorks water's planar reflection by each eye's own screen \
+                     coordinate. Off, each eye samples half of the one eye-sized reflection \
+                     stretched across its view, shifting the water's colour differently in each \
+                     eye. Applies immediately: the per-eye shaders are built with the originals.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.water_reflection_eye_size,
+                    "...and render its reflection at one eye's size",
+                )
+                .on_hover_text(
+                    "Sizes the water's planar reflection camera to one eye. Off, the engine sizes it \
+                     to the double-wide target, so the reflection covers twice an eye's horizontal \
+                     field and each eye sees it squeezed to half its width, which shows as a \
+                     sparkle over far water. Applies immediately.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.water_camera_per_eye,
+                    "...and shade it from each eye's position",
+                )
+                .on_hover_text(
+                    "Moves the camera position the water's Fresnel, reflection, and specular terms \
+                     are measured from to each eye for that eye's draw. Off, both eyes shade the \
+                     water as seen from the point between them.",
                 );
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.ssdecal_geometry_per_eye,
@@ -292,16 +617,166 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                 {
                     shader::request_reload();
                 }
-                ui.checkbox(&mut cfg.stereo.single_pass.ssao_per_eye, "SSAO per eye")
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.composite_overlays_per_eye,
+                        "Vignette and lens dirt per eye",
+                    )
                     .on_hover_text(
-                        "Another of the seven depth-reconstruction passes. Hazardous: SSAO advances a \
-                         temporal history per invocation, so a per-eye re-issue double-advances it.",
-                    );
-                ui.checkbox(&mut cfg.stereo.single_pass.ssr_per_eye, "SSR per eye")
+                        "Maps the final composite's vignette and lens dirt over each eye. Off, both \
+                         stretch across the whole double-wide frame, darkening each eye's outer edge. \
+                         Reloads shaders to apply: it is a shader rewrite.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(&mut cfg.stereo.single_pass.glare_per_eye, "Glare per eye")
                     .on_hover_text(
-                        "Same reconstruction defect. Hazardous: SSR ray-marches a scene capture taken \
-                         earlier in the frame, so a second run consumes what the first did.",
+                        "Keeps the bloom chain's blurs, downsamples, and upsamples, and the final \
+                         composite's bloom lookups, inside each eye's half. Off, a bright sky or sun \
+                         near one eye's inner edge bleeds across the seam into the other eye. Reloads \
+                         shaders to apply the composite's half of it: that is a shader rewrite.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                ui.weak(format!(
+                    "Glare filter variants built: {}",
+                    crate::stereo::single_pass::post_filters::registered_count()
+                ));
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.foveation_per_eye,
+                    "Foveation per eye",
+                )
+                .on_hover_text(
+                    "Centres the foveation's full-rate region and its peripheral drop on each eye, \
+                     sized for one eye. Off, one fovea sits on the seam, sized for the double-wide \
+                     frame, so each eye drops pixels at its own centre of view.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.foveation_gbuffer,
+                    "Foveation over the G-buffer",
+                )
+                .on_hover_text(
+                    "Skips the foveation's dropped pixels in the terrain's apply passes, the road \
+                     junctions, and the decals, in multipass too. Off, only the models, the \
+                     vegetation, and the creatures skip them.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.foveation_lighting,
+                    "Foveation over the lighting",
+                )
+                .on_hover_text(
+                    "Skips the foveation's dropped pixels in the deferred lights, the sky, and the \
+                     fog gradient, and fills them in right after, before the water and the \
+                     transparents, in multipass too. Off, the fill-in runs at the start of the \
+                     post effects.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.foveation_quads,
+                    "Foveation drops whole quads",
+                )
+                .on_hover_text(
+                    "Drops the foveation's peripheral pixels in 2 by 2 quads, so a dropped quad runs \
+                     no pixel shader at all, in multipass too. Off, single pixels are dropped and \
+                     nearly every quad still shades.",
+                );
+                ui.checkbox(&mut cfg.stereo.single_pass.fsr_per_eye, "FSR per eye")
+                    .on_hover_text(
+                        "Resolves FSR once per eye over that eye's half, each with its own history, \
+                         as an eye rendered on its own is. Off, one FSR pass covers both eyes: its \
+                         history moves twice as far sideways as the eye did and reaches across the \
+                         seam.",
                     );
+                ui.weak(format!(
+                    "FSR dispatches per eye this frame: {}",
+                    crate::fsr::split_dispatch_count()
+                ));
+                if ui
+                    .checkbox(&mut cfg.stereo.single_pass.ssao_per_eye, "SSAO per eye")
+                    .on_hover_text(
+                        "Computes ambient occlusion for each eye's half in the pass's one run: each \
+                         eye's basis and view rotation, taps kept to the eye's half and scaled to it, \
+                         and eye-local noise. Reloads shaders to apply: it is a shader rewrite.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.ssao_exact_sampling,
+                        "SSAO exact sampling",
+                    )
+                    .on_hover_text(
+                        "Computes the ambient occlusion's coordinates, texels, and blur and upsample \
+                         weights in the shader in every mode, so an eye rendered on its own and each \
+                         eye of the double-wide frame read the same texels with the same weights. \
+                         Off, the rasterizer and the sampler round differently at the two widths, \
+                         which shows as faint vertical stripes in the occlusion on the ground. Also \
+                         changes multipass. Reloads shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.ssao_far_early_out,
+                        "SSAO far early-out",
+                    )
+                    .on_hover_text(
+                        "Lets a 2x2 pixel quad that lies wholly beyond the ambient occlusion's range \
+                         (sky, distant sea and terrain) write its constant result without running \
+                         the depth taps. The output is bit-identical, but the pass measured slower \
+                         than without it, so it ships off. Also changes multipass. Reloads shaders \
+                         to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.ssao_skip_temporal,
+                    "SSAO without the temporal copy",
+                )
+                .on_hover_text(
+                    "In stereo the ambient occlusion's history is reset every frame, so its temporal \
+                     resolve only copies the blurred occlusion. This skips that draw and has the \
+                     composite read the blurred occlusion directly.",
+                );
+                if ui
+                    .checkbox(
+                        &mut cfg.stereo.single_pass.ao_volumes_per_eye,
+                        "Ambient-occlusion volumes per eye",
+                    )
+                    .on_hover_text(
+                        "Draws the ambient-occlusion boxes and spheres once for both eyes: the \
+                         volume is projected into each eye, and each pixel samples its own eye's \
+                         depth and maps it through its own eye's camera. Off, each eye's half reads \
+                         the depth of the wrong place through the centred camera, which in tunnels \
+                         and under cover shows as an edge down the middle of each eye. Reloads \
+                         shaders to apply.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
+                if ui
+                    .checkbox(&mut cfg.stereo.single_pass.ssr_per_eye, "SSR per eye")
+                    .on_hover_text(
+                        "Traces screen-space reflections for each eye's half in the pass's one run: \
+                         each eye's view ray, view, projection, and history lookup, the march kept \
+                         to the eye's half, and the blur's taps clamped to it. Reloads shaders to \
+                         apply: it is a shader rewrite.",
+                    )
+                    .changed()
+                {
+                    shader::request_reload();
+                }
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.subsurface_per_eye,
                     "Subsurface skin per eye",
@@ -331,6 +806,13 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                     "Re-issues a non-indexed Draw once per eye, with both viewport and cb13 eye slots pinned to that eye, for the passes known to submit geometry this way. Off, every slot-13 draw gets the whole double-wide viewport -- right for a fullscreen triangle, but it stretches decals and road layers 2x horizontally, which is a 2x motion gain and reads as them sliding over the world. Default off until the pass allowlist is confirmed: read the 'slot-13 by pass' census in the log to see which passes actually arrive here.",
                 );
                 ui.checkbox(
+                    &mut cfg.stereo.single_pass.non_indexed_geometry_once,
+                    "Patched non-indexed geometry once for both eyes (skidmarks)",
+                )
+                .on_hover_text(
+                    "In the same passes, a non-indexed Draw whose vertex shader is patched is promoted to one two-instance draw routed to the eye halves, instead of being re-issued once per eye. The shader picks its eye from the instance parity, so one submission covers both eyes. Applies at once.",
+                );
+                ui.checkbox(
                     &mut cfg.stereo.single_pass.atmospheric_per_eye,
                     "Atmospheric scattering per eye (sun shadows, aerial perspective)",
                 )
@@ -340,6 +822,16 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      perspective over it. It is the second consumer of the reconstruction basis, so \
                      with only the deferred resolve split this pass paints the sliding error back \
                      over the fixed one. Needs the off-axis reconstruction override on.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.fog_volume_per_eye,
+                    "Volumetric fog per eye",
+                )
+                .on_hover_text(
+                    "The same split for the volumetric fog generation pass, which reconstructs world \
+                     positions from depth into its half-resolution target and ray-marches the sun \
+                     cascade towards them. It inverts the render context's view-projection itself, \
+                     so each run is handed that eye's, mapped onto its half of the target.",
                 );
                 ui.checkbox(
                     &mut cfg.stereo.single_pass.water_uv_per_eye,
@@ -388,6 +880,36 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
                      instanced draw with a patched shader in a pass that is not eye-split (shadows, \
                      reflections, post) keeps its odd-numbered instances instead of routing them into \
                      the other eye's half. Slot 0 is never changed.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.viewport_bind_cache,
+                    "Skip viewport binds the slots already hold",
+                )
+                .on_hover_text(
+                    "Records every bind of the two viewport slots, the engine's and the mod's, and \
+                     skips a routed draw's bind when the slots already hold what it wants, so a \
+                     pass's patched draws bind the eye split once rather than once each.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.collapse_direct_blit,
+                    "Blit each eye straight from its half",
+                )
+                .on_hover_text(
+                    "Blits each eye into the headset's swapchain from its half of the double-wide \
+                     frame, and copies the half into its eye texture only when the mirror, a \
+                     screenshot, the recorder, or the previews read it.",
+                );
+                ui.checkbox(
+                    &mut cfg.stereo.single_pass.skip_unread_effect_depth_copy,
+                    format!(
+                        "Skip the unread effect depth copy ({} skipped)",
+                        EFFECT_DEPTH_COPIES_SKIPPED.load(Ordering::Relaxed)
+                    ),
+                )
+                .on_hover_text(
+                    "Skips the engine's per-dispatch copy of the reflection-proxy depth into its \
+                     effect depth-history textures, which nothing in the game reads. A whole-surface \
+                     copy at the render size, about half a millisecond of GPU time at the headset's.",
                 );
             });
         });

@@ -9,8 +9,10 @@ pub(crate) mod atmospheric_scattering;
 // crate-visible so the shared `Graphics::Clear` / `SetRenderSetup` / `SetVertexProgramConstants`
 // detours (which the trace and single-pass modules own) can consult the per-eye froxel split.
 pub(crate) mod clustered_lighting;
-// The remaining fullscreen depth-reconstruction passes' per-eye re-issue under the collapse (SSAO,
-// SSR, subsurface skin, and the unreachable depth-of-field basis).
+// The volumetric fog generation pass's per-eye re-issue under the collapse.
+mod fog_volume;
+// The remaining fullscreen depth-reconstruction passes under the collapse: SSAO's per-eye rows, and
+// the per-eye re-issue of SSR, subsurface skin, and the depth-of-field basis.
 pub(crate) mod fullscreen_reconstruction;
 // The per-eye off-axis clip-to-view reconstruction fix (`PerspectiveFovInverse`); crate-visible so
 // the shared `SetRenderSetup` detour can re-derive an at-entry per-eye scissor mask from the target
@@ -30,6 +32,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_hook_library(clustered_lighting::hook_library())
         .with_hook_library(ss_decal::hook_library())
         .with_hook_library(atmospheric_scattering::hook_library())
+        .with_hook_library(fog_volume::hook_library())
         .with_hook_library(fullscreen_reconstruction::hook_library())
         .with_hook_library(ssao::hook_library())
 }

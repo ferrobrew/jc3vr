@@ -1,0 +1,22 @@
+# Template: fill testing/recordings/climb_moving.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "hang from a moving truck"
+description = "Recorded with CLIMB MOVING THINGS on, empty-handed, beside a truck about to drive off (hand-climbing.md, checklist item 9). Grip the truck's side with both hands as it pulls away, hang on for a few seconds, then let go."
+recording = "../recordings/climb_moving.jc3trk"
+settle_s = 3.0
+
+[[expect]]
+name = "a hand gripped the moving truck"
+signal = "climb.moving_grips"
+
+[[expect]]
+signal = "climb.climbing"
+
+[[expect]]
+name = "no grip ended against the player's wish"
+signal = "climb.drops"
+at_most = 0
+
+[[expect]]
+name = "the game stays on foot while a hand grips"
+log = "the game left on foot"
+at_most = 0

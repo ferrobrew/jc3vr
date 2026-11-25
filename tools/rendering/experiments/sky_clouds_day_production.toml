@@ -1,0 +1,34 @@
+name = "sky-clouds-day-production"
+warmup_frames = 30
+samples = 3
+interval_seconds = 4.0
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+
+[diagnostics]
+late_sky_stages = true
+resolve_inputs = true
+resolve_samples = true
+resolve_shadow = true
+shader_identity = true
+
+[scene]
+position = [8257.701, 1486.9717, -4286.1167]
+orientation = [0.164687191, 0.777390859, -0.201935331, 0.57250651]
+
+[scene.environment]
+hour = 13.226033
+weather = "sunny"
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"

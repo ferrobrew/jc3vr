@@ -1,43 +1,7 @@
 //! VR runtime configuration. See [`crate::vr`] and `docs/mod/vr-runtime.md`.
 
-use jc3gi::{camera::camera::Camera, graphics_engine::render_engine::RenderPassId};
+use jc3gi::camera::camera::Camera;
 use serde::{Deserialize, Serialize};
-
-/// Serialize a [`RenderPassId`] as its `i32` discriminant, matching the pre-typing on-disk format
-/// (e.g. [`RenderPassId::RP_MODELS_DYNAMIC`]'s discriminant) so existing config files stay readable.
-fn serialize_render_pass_id<S: serde::Serializer>(
-    pass: &RenderPassId,
-    serializer: S,
-) -> Result<S::Ok, S::Error> {
-    serializer.serialize_i32(*pass as i32)
-}
-
-/// Deserialize a [`RenderPassId`] from an `i32`, accepting any value that falls within the enum's
-/// range. The config file stores the integer; an out-of-range value is a deserialization error.
-fn deserialize_render_pass_id<'de, D: serde::Deserializer<'de>>(
-    deserializer: D,
-) -> Result<RenderPassId, D::Error> {
-    let raw = i32::deserialize(deserializer)?;
-    render_pass_id_from_i32(raw).ok_or_else(|| {
-        serde::de::Error::custom(format!(
-            "render pass id {raw:#x} is out of the RenderPassId range"
-        ))
-    })
-}
-
-/// Map an `i32` to the matching [`RenderPassId`] variant, or `None` if it is outside the enum range.
-///
-/// `RenderPassId` is `#[repr(i32)]` with contiguous discriminants `0..=157`
-/// (`RP_NONE` through `RP_RENDERPASS_COUNT`), so every value in that range is a valid variant.
-fn render_pass_id_from_i32(raw: i32) -> Option<RenderPassId> {
-    if (0..=157).contains(&raw) {
-        // SAFETY: `RenderPassId` is `#[repr(i32)]` and every value in `0..=157` is a named variant,
-        // so transmuting an in-range `i32` is sound.
-        Some(unsafe { std::mem::transmute::<i32, RenderPassId>(raw) })
-    } else {
-        None
-    }
-}
 
 /// Which depth convention the per-eye off-axis projection is written in, and where in the
 /// `SetupRenderCamera` sequence it lands (`docs/engine/rendering/rendering.md` §2.7, `docs/mod/vr-runtime.md` blocker 1).
@@ -56,11 +20,11 @@ pub enum ProjectionConvention {
     /// `SetupRenderCamera` (so the engine does not re-reverse it), then rebuild the view-projections
     /// manually. TAA jitter is not applied on this path.
     ///
-    /// The consume-vs-rebuild question this guarded against is now settled against the engine
+    /// The consume-vs-rebuild question this guards against is settled against the engine
     /// (`docs/engine/rendering/rendering.md` §2.9): `Camera::SetupRenderCamera` *consumes* whatever is in
     /// `m_Projection`, applying `z' = w - z` to it in place — it never rebuilds from FOV/near/far —
     /// so the pre-call [`EnginePreReverseZ`](Self::EnginePreReverseZ) write flows through correctly
-    /// and is the verified-correct default. This variant is retained only as a runtime escape hatch
+    /// and is the verified-correct default. This variant exists only as a runtime escape hatch
     /// for a headset playtest, in case the depth still reads wrong for a reason not visible from the
     /// desktop.
     ManualReverseZ,
@@ -114,24 +78,45 @@ pub enum BlitGamma {
     Passthrough,
 }
 
-/// How the desktop mirror frames one eye's image inside the game window.
-///
-/// While a session runs the swapchain buffers are the per-eye render resolution, which is near-square
-/// (often taller than wide), while the Win32 client rect keeps its original widescreen aspect. The two
-/// aspects have to be reconciled, and the choice is the same one every VR game's companion view makes.
-#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum MirrorFraming {
-    /// Scale the eye image up until it covers the whole window, cropping whatever falls outside
-    /// (centred). No bars; the periphery of the eye render -- most of which is outside the lens's
-    /// useful area anyway -- is cut off. This is what other VR titles' desktop views do, and the
-    /// default.
+/// What the desktop mirror draws into the game window.
+#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default, Debug)]
+pub enum MirrorView {
+    /// The left eye alone, filling the window.
     #[default]
-    Fill,
-    /// Scale the eye image down until all of it is visible, letterboxing the remainder with black
-    /// bars. Nothing is cropped, so it shows exactly what the eye rendered -- useful when checking
-    /// coverage at the edges of the frame -- but a near-square eye in a widescreen window wastes most
-    /// of the window.
-    Fit,
+    Left,
+    /// The right eye alone, filling the window.
+    Right,
+    /// Both eyes side by side, letterboxed as a pair so neither is cropped, in cross-eyed order: the
+    /// right eye's image on the left and the left eye's on the right, so the pair fuses by crossing
+    /// the eyes.
+    StereoPair,
+}
+
+impl MirrorView {
+    /// Whether this view reads eye `eye`'s capture.
+    pub fn shows_eye(self, eye: usize) -> bool {
+        match self {
+            Self::Left => eye == 0,
+            Self::Right => eye == 1,
+            Self::StereoPair => eye <= 1,
+        }
+    }
+
+    /// The F10 toggle: a single eye switches to the stereo pair, and the pair switches back to
+    /// `last_mono`. Returns the new view and the single eye to return to next time, which is the
+    /// eye being left when that is a single eye, so the toggle round-trips.
+    pub fn toggled(self, last_mono: Self) -> (Self, Self) {
+        match self {
+            Self::StereoPair => {
+                let back = match last_mono {
+                    Self::StereoPair => Self::Left,
+                    eye => eye,
+                };
+                (back, back)
+            }
+            eye => (Self::StereoPair, eye),
+        }
+    }
 }
 
 /// OpenXR runtime settings. `Clone` (not `Copy`) because [`loader_path`](VrConfig::loader_path) owns
@@ -146,6 +131,12 @@ pub struct VrConfig {
     /// is the runtime's recommendation; lower trades sharpness for fill rate. Clamped to a small
     /// positive minimum at swapchain creation.
     pub resolution_scale: f32,
+    /// A per-eye size, `[width, height]`, to use in place of the runtime's recommended one before
+    /// [`resolution_scale`](VrConfig::resolution_scale) applies. For running against a runtime whose
+    /// recommended size is not the headset's being studied (the visual harness's simulated headset);
+    /// `None`, the default, takes the runtime's.
+    #[serde(default)]
+    pub recommended_size_override: Option<[u32; 2]>,
     /// How often, in seconds, to retry OpenXR bring-up after a failure while
     /// [`enabled`](VrConfig::enabled). The mod runs in flatscreen stereo between attempts.
     pub retry_interval_secs: u64,
@@ -154,12 +145,6 @@ pub struct VrConfig {
     /// Override path to the OpenXR loader DLL. `None` loads `openxr_loader.dll` next to the payload
     /// DLL, falling back to the platform default search path.
     pub loader_path: Option<String>,
-    /// Fallback near clip plane, in metres, for the per-eye off-axis projection, used only until the
-    /// first camera update publishes the engine's live plane. The mod reads the active camera's actual
-    /// `m_Near` each frame as the source of truth (see
-    /// [`crate::hooks::camera::main_camera_planes_or`]); this default (`[Camera::DEFAULT_NEAR_PLANE]`)
-    /// mirrors the engine's `Camera` constructor value (`docs/engine/rendering/rendering.md` §2.9) so the bootstrap frame matches.
-    pub near_clip: f32,
     /// Fallback far clip plane, in metres, for the per-eye off-axis projection, used only until the
     /// first camera update publishes the engine's live plane. The mod reads the active camera's actual
     /// `m_Far` each frame as the source of truth (see
@@ -184,28 +169,23 @@ pub struct VrConfig {
     /// [`resolution_scale`]: VrConfig::resolution_scale
     #[serde(default = "default_true")]
     pub native_resolution: bool,
-    /// Mirror one eye to the game's own desktop window while a session is running. The engine's
-    /// present stays blocked (`BLOCK_FLIP`); the mirror draws the configured eye's capture into the
+    /// Mirror the eyes to the game's own desktop window while a session is running. The engine's
+    /// present stays blocked (`BLOCK_FLIP`); the mirror draws the configured view's captures into the
     /// game swapchain's back buffer, framed to the window aspect, and presents it unsynced (see
     /// [`crate::vr::mirror`]). On by default; disabled automatically at runtime on any draw/present
     /// fault, after which the game window simply shows the last mirrored (or stale) frame.
     #[serde(default = "default_true")]
     pub mirror: bool,
-    /// Which eye the desktop [`mirror`](VrConfig::mirror) shows (`0` = left, `1` = right). Clamped to
-    /// a valid eye at use.
+    /// What the desktop [`mirror`](VrConfig::mirror) shows: one eye, or both side by side (see
+    /// [`MirrorView`]). F10 toggles between the stereo pair and the last single eye.
     #[serde(default)]
-    pub mirror_eye: u8,
-    /// How the desktop [`mirror`](VrConfig::mirror) reconciles the eye image's aspect with the window's
-    /// (see [`MirrorFraming`]). Defaults to filling the window.
-    #[serde(default)]
-    pub mirror_framing: MirrorFraming,
-    /// Extra magnification applied to the desktop [`mirror`](VrConfig::mirror) image on top of its
-    /// framing, about the centre. `1.0` is the plain fill/fit; above that crops in further, which
-    /// tightens the desktop view onto the middle of the eye render (the eye covers a much wider field
-    /// of view than a flat game would frame). Clamped to a sane range at use; a non-finite value falls
-    /// back to `1.0`.
-    #[serde(default = "default_mirror_zoom")]
-    pub mirror_zoom: f32,
+    pub mirror_view: MirrorView,
+    /// While a capture take runs, stamp the mirror's present counter into the window's corner as a
+    /// strip of black and white blocks, which the take's sidecar logs per present (see
+    /// [`crate::vr::mirror`]), so a recording shows whether a repeated frame comes from the mod or
+    /// from downstream. On by default.
+    #[serde(default = "default_true")]
+    pub mirror_frame_stamp: bool,
     /// Persist the OpenXR **instance and session** across inject/uninject cycles instead of destroying
     /// them on teardown. The runtime allows only a small number of instances *and* sessions per
     /// process (often one each), and Proton's own startup VR probe contends for that budget, so a
@@ -242,21 +222,33 @@ pub struct VrConfig {
     /// (with the engine's own objects rebuilt over the live swapchain) on session end and on eject.
     #[serde(default = "default_true")]
     pub own_back_buffer: bool,
+    /// Blit each eye's finished image into its swapchain slice from the eye's own post-draw, instead
+    /// of copying it into the eye capture there and blitting the capture at the frame submit (see
+    /// [`crate::vr::blit`]). Saves a full-size copy per eye whenever nothing else reads that eye's
+    /// capture; the swapchain image is acquired at the top of the render update instead of at the
+    /// submit. On by default; off restores the copy-then-blit path everywhere.
+    #[serde(default = "default_true")]
+    pub direct_eye_blit: bool,
+    /// Overlap the next frame's runtime wait, view location, and render update with the previous
+    /// frame's draw task and frame tail, instead of starting them once the tail has submitted (see
+    /// `docs/mod/threading.md`). The next frame then blocks on the tail only where it begins its
+    /// OpenXR frame, just before it dispatches. On by default; off restores the serial ordering, for
+    /// an A/B in the benchmark or the headset.
+    #[serde(default = "default_true")]
+    pub overlap_render_update: bool,
+    /// Keep the game's threads on the cores that share the largest L3 cache, on a processor whose
+    /// L3 caches differ in size (see [`crate::cpu_placement`]). The draw task, which bounds the
+    /// heaviest scenes, runs far faster there. A processor with one size of L3 is left alone. On by
+    /// default; off puts the affinity it found back.
+    #[serde(default = "default_true")]
+    pub large_cache_cores: bool,
     /// Diagnostic: which pose to hold still (see [`FreezeMode`] and [`crate::vr::pose_control`]).
     /// Whichever pose the mode holds is captured on the first frame it is on and reused every frame
     /// after, and is hand-editable while held -- so a motion-dependent artifact can be driven by an
     /// exact, repeatable step instead of an eyeballed head movement. Not for gameplay: the view locks
-    /// in place. **Default off.**
-    #[serde(default)]
+    /// in place. **Default off**, and not saved, so a launch never starts with the view locked.
+    #[serde(skip)]
     pub freeze_mode: FreezeMode,
-    /// The translation step, in metres, of one nudge of the frozen pose's position (see
-    /// [`crate::vr::pose_control`]). Nudges snap to this grid, so a step is exactly repeatable.
-    #[serde(default = "default_freeze_pose_step_m")]
-    pub freeze_pose_step_m: f32,
-    /// The rotation step, in degrees, of one nudge of the frozen pose's yaw/pitch/roll (see
-    /// [`crate::vr::pose_control`]). Nudges snap to this grid, so a step is exactly repeatable.
-    #[serde(default = "default_freeze_pose_step_deg")]
-    pub freeze_pose_step_deg: f32,
 }
 
 /// The serde default for [`VrConfig::native_resolution`] (the manual [`Default`] via
@@ -265,44 +257,29 @@ fn default_true() -> bool {
     true
 }
 
-/// The serde default for [`VrConfig::mirror_zoom`] (see [`default_true`] for why this is needed).
-fn default_mirror_zoom() -> f32 {
-    1.0
-}
-
-/// The serde default for [`VrConfig::freeze_pose_step_m`] (see [`default_true`] for why this is needed).
-fn default_freeze_pose_step_m() -> f32 {
-    0.1
-}
-
-/// The serde default for [`VrConfig::freeze_pose_step_deg`] (see [`default_true`] for why this is needed).
-fn default_freeze_pose_step_deg() -> f32 {
-    1.0
-}
-
 impl VrConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
             resolution_scale: 1.0,
+            recommended_size_override: None,
             retry_interval_secs: 10,
             world_scale: 1.0,
             loader_path: None,
-            near_clip: Camera::DEFAULT_NEAR_PLANE,
             far_clip: Camera::DEFAULT_FAR_PLANE,
             projection_convention: ProjectionConvention::EnginePreReverseZ,
             blit_srgb_gamma: BlitGamma::Linearize,
             native_resolution: true,
             mirror: true,
-            mirror_eye: 0,
-            mirror_framing: MirrorFraming::Fill,
-            mirror_zoom: 1.0,
+            mirror_view: MirrorView::Left,
+            mirror_frame_stamp: true,
             persist_instance: true,
             auto_recenter_on_gameplay: true,
             own_back_buffer: true,
+            direct_eye_blit: true,
+            overlap_render_update: true,
+            large_cache_cores: true,
             freeze_mode: FreezeMode::Off,
-            freeze_pose_step_m: 0.1,
-            freeze_pose_step_deg: 1.0,
         }
     }
 }
@@ -335,24 +312,6 @@ pub struct FoveationConfig {
     /// stencil use is bits 0, 1, 5, 6, so bit 7 is free; change it if an effect corrupts with foveation
     /// on (a data-driven pass may write it).
     pub mask_bit: u32,
-    /// The first [`RenderPassId`](jc3gi::graphics_engine::render_engine::RenderPassId) (inclusive) of the
-    /// foveated shading range: the mask-write runs just before it, and the peripheral stencil test is
-    /// forced on from here. Default `RP_MODELS_DYNAMIC` -- after the depth prepass, so the
-    /// dropped pixels keep full-resolution depth. A tuning knob; widen it toward the lighting passes to
-    /// save more, narrow it if an effect misbehaves.
-    #[serde(
-        serialize_with = "serialize_render_pass_id",
-        deserialize_with = "deserialize_render_pass_id"
-    )]
-    pub foveal_first_pass: RenderPassId,
-    /// The last [`RenderPassId`](jc3gi::graphics_engine::render_engine::RenderPassId) (inclusive) of the
-    /// foveated shading range: the peripheral stencil test is forced through it, and the fill-in runs just
-    /// after. Default `RP_CREATURES`.
-    #[serde(
-        serialize_with = "serialize_render_pass_id",
-        deserialize_with = "deserialize_render_pass_id"
-    )]
-    pub foveal_last_pass: RenderPassId,
     /// Diagnostic: paint the dropped peripheral pixels magenta (in the fill-in pass) instead of
     /// reconstructing them, so the mask is directly visible. Off by default.
     pub debug_show_mask: bool,
@@ -365,22 +324,13 @@ impl FoveationConfig {
             outer_fraction: 0.55,
             max_drop: 0.8,
             mask_bit: 0x80,
-            foveal_first_pass: RenderPassId::RP_MODELS_DYNAMIC,
-            foveal_last_pass: RenderPassId::RP_CREATURES,
             debug_show_mask: false,
         }
     }
 
-    /// Validate the foveation configuration: the first pass must not exceed the last, and the mask
-    /// bit must be a single set bit (a power of two). Returns `Err` with a description of the first
-    /// problem found.
+    /// Validate the foveation configuration: the mask bit must be a single set bit (a power of
+    /// two).
     pub fn validate(&self) -> Result<(), FoveationConfigError> {
-        if self.foveal_first_pass > self.foveal_last_pass {
-            return Err(FoveationConfigError::PassRange {
-                first: self.foveal_first_pass as i32,
-                last: self.foveal_last_pass as i32,
-            });
-        }
         if self.mask_bit == 0 || (self.mask_bit & (self.mask_bit - 1)) != 0 {
             return Err(FoveationConfigError::MaskNotPowerOfTwo {
                 mask_bit: self.mask_bit,
@@ -398,8 +348,6 @@ impl Default for FoveationConfig {
 /// A configuration error found by [`FoveationConfig::validate`].
 #[derive(Debug)]
 pub enum FoveationConfigError {
-    /// The foveal pass range is inverted (`first > last`).
-    PassRange { first: i32, last: i32 },
     /// The stencil mask bit is zero or not a single set bit.
     MaskNotPowerOfTwo { mask_bit: u32 },
 }
@@ -407,10 +355,6 @@ pub enum FoveationConfigError {
 impl std::fmt::Display for FoveationConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FoveationConfigError::PassRange { first, last } => write!(
-                f,
-                "foveation: foveal_first_pass ({first:#x}) is greater than foveal_last_pass ({last:#x})"
-            ),
             FoveationConfigError::MaskNotPowerOfTwo { mask_bit } => write!(
                 f,
                 "foveation: mask_bit ({mask_bit:#x}) must be a single set bit (a power of two)"
@@ -424,17 +368,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn foveation_config_validate_accepts_defaults() {
-        let cfg = FoveationConfig::new();
-        assert!(cfg.validate().is_ok());
+    fn mirror_view_toggle_round_trips_through_the_pair() {
+        for eye in [MirrorView::Left, MirrorView::Right] {
+            let (pair, remembered) = eye.toggled(MirrorView::Left);
+            assert_eq!(pair, MirrorView::StereoPair);
+            assert_eq!(remembered, eye);
+            assert_eq!(pair.toggled(remembered).0, eye);
+        }
     }
 
     #[test]
-    fn foveation_config_validate_rejects_inverted_range() {
-        let mut cfg = FoveationConfig::new();
-        cfg.foveal_first_pass = RenderPassId::RP_CREATURES;
-        cfg.foveal_last_pass = RenderPassId::RP_MODELS_DYNAMIC;
-        assert!(cfg.validate().is_err());
+    fn mirror_view_toggle_from_the_pair_defaults_to_left() {
+        // A pair chosen in the debug UI with no F10 press before it returns to the left eye.
+        assert_eq!(
+            MirrorView::StereoPair.toggled(MirrorView::StereoPair),
+            (MirrorView::Left, MirrorView::Left)
+        );
+    }
+
+    #[test]
+    fn mirror_view_reads_the_eyes_it_draws() {
+        assert!(MirrorView::Left.shows_eye(0) && !MirrorView::Left.shows_eye(1));
+        assert!(!MirrorView::Right.shows_eye(0) && MirrorView::Right.shows_eye(1));
+        assert!(MirrorView::StereoPair.shows_eye(0) && MirrorView::StereoPair.shows_eye(1));
+    }
+
+    #[test]
+    fn foveation_config_validate_accepts_defaults() {
+        let cfg = FoveationConfig::new();
+        assert!(cfg.validate().is_ok());
     }
 
     #[test]
@@ -449,13 +411,5 @@ mod tests {
         let mut cfg = FoveationConfig::new();
         cfg.mask_bit = 0x60;
         assert!(cfg.validate().is_err());
-    }
-
-    #[test]
-    fn foveation_config_validate_accepts_equal_range() {
-        let mut cfg = FoveationConfig::new();
-        cfg.foveal_first_pass = RenderPassId::RP_CREATURES;
-        cfg.foveal_last_pass = RenderPassId::RP_CREATURES;
-        assert!(cfg.validate().is_ok());
     }
 }

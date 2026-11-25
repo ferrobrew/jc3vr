@@ -21,25 +21,35 @@ pub mod util;
 pub mod vr;
 
 mod allocator;
-mod capture;
 mod config;
+mod controllers;
+mod cpu_placement;
 mod crash;
 mod debug;
 mod director;
+mod eject_gpu;
 mod far_field;
+mod frame_timing;
 mod fsr;
 mod grapple;
+mod hash;
 mod headpose;
 mod hooks;
 mod hud;
+mod image_writer;
 mod lifecycle;
 mod logging;
+mod pause_menu;
 #[cfg(feature = "profiler")]
 mod profiler;
 mod recorder;
+mod render_frame;
 mod screenshot;
 mod session;
+mod status;
 mod stereo;
+mod testing;
+mod thread_role;
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
@@ -59,6 +69,16 @@ pub extern "system" fn run(_: *mut c_void) {
     initialize_startup();
 }
 
+/// Asks the game thread to eject the payload, for an injector that cannot signal it any other way.
+///
+/// The request only records the intent: teardown happens on the game thread, and the module stays
+/// mapped until that thread reaches the end of its shutdown.
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "system" fn eject(_: *mut c_void) {
+    lifecycle::request_shutdown();
+}
+
 /// Called when the DLL is loaded
 fn initialize_startup() {
     // Resolve this run's output directory first, so the log, crash dumps, and every other artifact
@@ -67,8 +87,8 @@ fn initialize_startup() {
 
     std::panic::set_hook(Box::new(|info| {
         // Log the location before touching the payload: for formatted panics, `payload()` runs the
-        // format arguments' Display impls, and one reading dead game memory faults — which
-        // previously killed the process before anything was logged. The location is plain static
+        // format arguments' Display impls, and one reading dead game memory faults, which
+        // kills the process before anything is logged. The location is plain static
         // data and always safe.
         let location = info.location().map(|l| l.to_string());
         tracing::error!(
@@ -100,8 +120,14 @@ fn initialize_startup() {
 
     logging::install();
     tracing::info!(build = BUILD_STAMP, "jc3vr startup");
+    session::log_location();
     crash::install();
+    // Before the hooks: VR initialization, on the game thread's first frame, reads the configuration
+    // (the dominant hand and the input layout among it), so it must already hold the saved settings.
+    config::init();
+    tracing::info!("startup: config init complete");
     hooks::install();
+    tracing::info!("startup: hook installation returned");
 }
 
 /// Called to undo `initialize_startup` and eject
@@ -125,10 +151,11 @@ fn shutdown_startup() {
         module::pin();
     }
 
-    // And for an F12 screenshot's writer. The PNG encode of a double-wide capture runs off-thread
-    // precisely because it is too slow to do inline, so the same unjoined-thread hazard applies --
-    // and unlike the profiler's, this one is not behind a feature.
-    if !screenshot::shutdown() {
+    // And for the image writer that encodes the F12 screenshots and the render trace's frames. The
+    // PNG encode of a double-wide capture runs off-thread precisely because it is too slow to do
+    // inline, so the same unjoined-thread hazard applies -- and unlike the profiler's, this one is
+    // not behind a feature.
+    if !image_writer::shutdown() {
         module::pin();
     }
 
@@ -138,16 +165,49 @@ fn shutdown_startup() {
         module::pin();
     }
 
+    // And for the tracking recorder's writer and a replay's loader.
+    if !recorder::tracking::shutdown() {
+        module::pin();
+    }
+    if !testing::shutdown() {
+        module::pin();
+    }
+
+    if !ui::layout::shutdown() {
+        module::pin();
+    }
+
+    // And for the settings writers, after which a change still waiting to settle is written here.
+    if !config::shutdown() {
+        module::pin();
+    }
+    // Sidecar replacement and its status publication must finish before the DLL can unmap.
+    if !controllers::weapons::inventory::sidecar::shutdown() {
+        module::pin();
+    }
+    if !hud::game_icons::shutdown() {
+        module::pin();
+    }
+    if !controllers::body::estimator::shutdown() {
+        module::pin();
+    }
+
     // The cleanups cleared render-thread-driven config flags (e.g. the HUD redirect). Give the still-
     // live hooks a few frames to tick those changes through -- the per-frame restore runs on the
     // render thread -- before uninstalling.
     std::thread::sleep(std::time::Duration::from_millis(100));
 
     tracing::info!("Uninstalling hooks");
-    hooks::uninstall();
+    if !hooks::uninstall() {
+        // Cleanup has already committed. Retention here is fatal containment, not live deferral.
+        module::pin();
+        tracing::error!("shutdown: hook removal is incomplete; ejection is blocked");
+        return;
+    }
 
     // Wait to ensure we're clear of the blast radius of the hooks
     std::thread::sleep(std::time::Duration::from_millis(100));
+    eject_gpu::log_video_memory("hooks removed");
 
     // The VEH registration must not outlive the DLL: ntdll would keep calling into the unmapped
     // image on the game's next routine first-chance exception.
@@ -166,12 +226,10 @@ fn initialize_from_game() -> anyhow::Result<()> {
     }
     INITIALIZED.set(true).unwrap();
 
+    eject_gpu::install();
     EguiState::install()?;
     ui::render::install();
-    config::CONFIG.lock().far_field.gated_types =
-        crate::far_field::DEFAULT_FAR_FIELD_GATED_TYPES.to_owned();
     hud::install();
-    capture::install();
     vr::install();
     tracing::info!("Initialized in game thread");
 
@@ -180,6 +238,12 @@ fn initialize_from_game() -> anyhow::Result<()> {
 
 /// Called to undo `initialize_from_game`; called once shutdown is triggered
 fn shutdown_from_game() {
+    eject_gpu::log_video_memory("eject begins");
+    // Let an in-flight frame tail submit before anything below takes the egui state lock: the VR
+    // teardown in the cleanups locks the runtime state under it, and the tail holds that lock while
+    // it waits on a draw task that takes the egui state lock. See `docs/mod/threading.md`.
+    vr::wait_for_frame_tail();
+    hooks::ui::cancel_pointer_on_game_thread();
     // Re-create the original vertex shaders before anything is torn down: single-pass substitutes
     // patched (cb13-reading) shaders that the game holds, so without this the clean game would keep
     // rendering with them after eject. `SHUTTING_DOWN` is already set, so the reload's create hooks
@@ -202,13 +266,11 @@ fn shutdown_from_game() {
     EguiState::uninstall();
 }
 
-/// Whether shutdown/eject has begun. Read by subsystems that must quiesce the moment F5 is pressed --
-/// notably the VR frame loop: after [`shutdown_from_game`] tears the OpenXR runtime down (persisting
-/// the instance/session handles for the next injection), the game thread keeps ticking, and an
-/// ungated `vr::update` re-acquires those persisted handles and rebuilds the swapchain, racing the
-/// hook uninstall in [`shutdown_startup`] -- the crash on uninject.
+/// Whether irreversible shutdown has committed. A pending request leaves this false so gameplay,
+/// input, and the VR runtime continue while reversible participants defer preparation.
+/// After commit, the frame loop must not recreate the runtime during hook removal.
 pub(crate) fn is_shutting_down() -> bool {
-    SHUTTING_DOWN.load(Ordering::Relaxed)
+    SHUTTING_DOWN.load(Ordering::Acquire)
 }
 
 static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
@@ -219,32 +281,58 @@ static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 /// the stamp is how a stale payload is caught at a glance.
 pub const BUILD_STAMP: &str = env!("jc3vr_build_stamp");
 
-/// Request that we shut down and exit
-fn shutdown() {
-    if SHUTTING_DOWN.swap(true, Ordering::SeqCst) {
-        return;
-    }
-
-    tracing::info!("Shutting down");
+/// Run only after lifecycle preparation commits on the game pre-update entry.
+fn commit_shutdown() {
+    tracing::info!("Shutdown preparation committed; tearing down");
     shutdown_from_game();
     std::thread::spawn(shutdown_startup);
 }
 
+fn contain_fatal_failure() {
+    let first_failure = lifecycle::mark_fatal();
+    module::pin();
+    if first_failure {
+        tracing::error!(
+            "payload failure: safe gameplay continuation is unverified; cleanup and ejection are \
+             blocked, and the game must be restarted"
+        );
+    } else if is_shutting_down() {
+        tracing::error!("shutdown failure: teardown is incomplete; the game must be restarted");
+    }
+}
+
+/// Whether any surface will draw this frame's egui output: the VR floating panel, the desktop
+/// mirror's overlay, or, outside a VR frame, the flat overlay `graphics_flip` renders onto the
+/// back buffer under the same conditions it checks.
+fn debug_ui_visible(panel_active: bool) -> bool {
+    panel_active
+        || crate::hud::mirror_overlay::is_active()
+        || (crate::vr::render_params(0).is_none() && !crate::director::clean_view::hides_desktop())
+}
+
 fn update() {
-    if let Err(e) = initialize_from_game() {
-        tracing::error!("Failed to initialize in game thread, shutting down: {e:?}");
-        shutdown();
+    if is_shutting_down() || lifecycle::is_fatal() {
         return;
     }
-
     let panic = std::panic::catch_unwind(|| {
+        if let Err(error) = initialize_from_game() {
+            tracing::error!(
+                ?error,
+                "game-thread initialization failed; ejection is not proven safe"
+            );
+            contain_fatal_failure();
+            return;
+        }
         // Close the previous real frame's puffin scopes and open the next; the frame scope itself
         // is opened by `game_update` right after this returns. Once per real frame, main thread.
         #[cfg(feature = "profiler")]
         profiler::new_frame();
 
         if util::is_pressed(VK_F5) {
-            shutdown();
+            lifecycle::request_shutdown();
+        }
+        if lifecycle::advance_shutdown(&SHUTTING_DOWN) {
+            commit_shutdown();
             return;
         }
 
@@ -253,7 +341,18 @@ fn update() {
         // one pass, and before the game's own update consumes the state they set.
         director::update();
 
-        // The per-eye captures feed the VR blit, the desktop mirror, and the F10 capture composite.
+        // The test tools, after the director's pass, which services a replay's teleport to its
+        // start.
+        recorder::tracking::frame_tick();
+        testing::update();
+        cpu_placement::update();
+
+        // Ahead of the game's update, whose physics step fires the hand bodies' callback, so that
+        // registering it never races the engine's walk over the callbacks.
+        controllers::physical_hands::physics::frame_tick();
+        controllers::physical_hands::collider_view::frame_tick();
+
+        // The per-eye captures feed the VR blit, the desktop mirror, the recorder, and the screenshots.
         // Driven here rather than from inside the egui closure below: they are what VR submits, and
         // preparing them only as a side effect of the debug UI meant an `EguiState` that failed to
         // install left VR with nothing to present and no indication why.
@@ -261,48 +360,68 @@ fn update() {
             .lock()
             .ensure_eye_targets();
 
-        if let Some(egui_state) = EguiState::get().as_mut() {
-            // While the F10 capture mode is active, keep input with the game rather than letting
-            // this toggle hand it to egui. The overlay itself is hidden by skipping
-            // `egui_state.render()` in `graphics_flip` while capture is active.
-            if util::is_pressed(VK_F6) && !crate::capture::is_active() {
-                egui_state.toggle_game_input_capture();
-            }
+        {
+            let mut egui_state_guard = EguiState::get();
+            if let Some(egui_state) = egui_state_guard.as_mut() {
+                // The debug UI runs holding the egui state lock, which the draw task also takes, so
+                // nothing in it may block on the VR runtime lock (see `crate::thread_role`).
+                let _debug_ui_role = thread_role::enter(thread_role::ThreadRole::GameDebugUi);
+                if util::is_pressed(VK_F6) {
+                    egui_state.toggle_game_input_capture();
+                }
 
-            // Drive the egui UI as the VR floating panel when a session is running and the panel is
-            // enabled (issue #24): size the layout to the panel texture and re-source the pointer from
-            // the desktop mouse onto the panel surface. Off, this is `None` and the flat overlay path
-            // is unchanged.
-            let panel_size = crate::hud::egui_panel::active_size();
-            egui_state.set_panel_mode(panel_size);
-            if let Some(size) = panel_size {
-                egui_state.push_events(crate::hud::pointer::window_mouse_events(size));
-            }
+                // Drive the egui UI as the VR floating panel when a session is running and the panel is
+                // enabled (issue #24): size the layout to the panel texture and re-source the pointer from
+                // the desktop mouse or a controller onto the panel surface. Off, this is `None` and the
+                // flat overlay path is unchanged.
+                let panel_size = crate::hud::egui_panel::active_size();
+                egui_state.set_panel_mode(panel_size);
+                match panel_size {
+                    Some(size) => {
+                        egui_state.push_events(crate::hud::pointer::egui_panel_events(size));
+                    }
+                    None => crate::hud::pointer::reset_egui_pointer(),
+                }
 
-            egui_state.run(|ctx, renderer| {
-                // The UI-side half of capture upkeep: the Previews tab's own textures, and the egui
-                // registrations for surfaces the render thread created without a renderer. The eye
-                // captures themselves are prepared above, off this path.
-                ui::render::EGUI_DEBUG_RENDER_STATE
-                    .lock()
-                    .prepare_if_necessary(renderer);
-                ui::startup_banner(ctx);
-                // The dock area fills whatever space the window gives it, so the window carries an
-                // explicit default size instead of auto-sizing to content.
-                egui::Window::new("Debug")
-                    .default_pos(egui::pos2(0.0, 0.0))
-                    .default_size(egui::vec2(760.0, 560.0))
-                    .resizable(true)
-                    .show(ctx, |ui| ui::egui_debug_window(ui, renderer));
-            });
+                let visible = debug_ui_visible(panel_size.is_some());
+                egui_state.run(|ctx, renderer| {
+                    crate::hud::pointer::apply_panel_input_options(ctx, panel_size.is_some());
+                    // The UI-side half of capture upkeep: the Previews tab's own textures, and the egui
+                    // registrations for surfaces the render thread created without a renderer. The eye
+                    // captures themselves are prepared above, off this path.
+                    ui::render::EGUI_DEBUG_RENDER_STATE
+                        .lock()
+                        .prepare_if_necessary(renderer);
+                    // Laying out and tessellating the debug window is the bulk of this pass, and
+                    // nothing would draw its output while every surface that shows it is off.
+                    if !visible {
+                        return;
+                    }
+                    ui::startup_banner(ctx);
+                    ui::restart_banner(ctx);
+                    // The dock area fills whatever space the window gives it, so the window carries an
+                    // explicit default size instead of auto-sizing to content.
+                    egui::Window::new("Debug")
+                        .default_pos(egui::pos2(0.0, 0.0))
+                        .default_size(egui::vec2(760.0, 560.0))
+                        .resizable(true)
+                        .show(ctx, |ui| ui::egui_debug_window(ui, renderer));
+                });
+            }
         }
+
+        // After the debug UI, whose controls are the most frequent edits, and outside its lock.
+        config::tick();
     });
     if let Err(e) = panic {
         let panic_msg = e
             .downcast_ref::<String>()
             .cloned()
             .or_else(|| e.downcast_ref::<&str>().map(|s| s.to_string()));
-        tracing::error!("Panic in update, shutting down: {panic_msg:?}");
-        shutdown();
+        tracing::error!(
+            ?panic_msg,
+            "panic in update; safe continuation and ejection are unverified"
+        );
+        contain_fatal_failure();
     }
 }

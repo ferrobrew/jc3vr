@@ -8,7 +8,8 @@
 
 use dxbc_stereo::{
     Dxbc, DxbcError, MEYE_ROW_BASE, STEREO_REPROJ_CB_ROWS, ShaderStage, TokenStream,
-    patch_vertex_shader, refresh_checksum, reproject_vertex_shader,
+    patch_vertex_shader, refresh_checksum, reproject_instanced_vertex_shader,
+    reproject_vertex_shader,
 };
 
 mod common;
@@ -143,6 +144,29 @@ fn reprojected_vs_checksum_is_valid_and_second_pass_rejected() {
     ));
 }
 
+/// The static light sprites' vertex shaders (`lightsource` and `lightsource_fakelight`) project a world
+/// position through the full view-projection in `cb0` rows 0 to 3 and expand the sprite in clip space,
+/// with no per-eye `cb0` row, so they are reprojection candidates; both must take it soundly.
+#[test]
+fn static_light_sprite_vs_reprojects() {
+    let Some(dir) = shader_dir() else {
+        eprintln!("skipping: extracted shaders not present");
+        return;
+    };
+    for file in ["sh_0094_0003e7a0.dxbc", "sh_0095_0003f2a0.dxbc"] {
+        let blob = std::fs::read(dir.join(file)).expect("read the light sprite vertex shader");
+        assert!(
+            matches!(
+                patch_vertex_shader(&blob),
+                Err(DxbcError::NoPerEyeReferences)
+            ),
+            "{file} should carry no per-eye cb0 reference"
+        );
+        let out = reproject_vertex_shader(&blob).expect("reproject the light sprite vertex shader");
+        validate_reprojected(&out).unwrap_or_else(|e| panic!("{file}: {e}"));
+    }
+}
+
 /// Sweeps the corpus: every no-`cb0` vertex shader that reprojects must produce a structurally sound
 /// blob (re-parses, declares the interface, has the four-`dp4` epilogue). Reports the tally.
 #[test]
@@ -184,6 +208,161 @@ fn corpus_reproject_is_sound() {
         "corpus has no-refs vertex shaders to reproject"
     );
     assert_eq!(other_err, 0, "no unexpected reprojection failures");
+}
+
+/// The vegetation vertex shaders the bark and foliage blocks draw with in the eye passes, and whether
+/// each reads `SV_InstanceID` (the GPU-indirect permutations, which fetch each instance from
+/// structured buffers by it).
+const VEGETATION_EYE_PASS_VS: &[(&str, &str, bool)] = &[
+    ("sh_0236_000927e0.dxbc", "vegetationbark", false),
+    ("sh_0238_00093d90.dxbc", "vegetationbarkhwinstanced", false),
+    ("sh_0239_000949b0.dxbc", "vegetationbarkinstanced", true),
+    ("sh_0240_00095950.dxbc", "vegetationbarkprez", false),
+    (
+        "sh_0241_00095e30.dxbc",
+        "vegetationbarkprezhwinstanced",
+        false,
+    ),
+    ("sh_0242_00096530.dxbc", "vegetationbarkprezinstanced", true),
+    ("sh_0246_000984b0.dxbc", "vegetationbarkvelocity", false),
+    (
+        "sh_0247_00098ad0.dxbc",
+        "vegetationbarkvelocityhwinstanced",
+        false,
+    ),
+    (
+        "sh_0248_00099300.dxbc",
+        "vegetationbarkvelocityinstanced",
+        true,
+    ),
+    ("sh_0249_00099e00.dxbc", "vegetationfoliage", false),
+    (
+        "sh_0251_0009bdb0.dxbc",
+        "vegetationfoliagehwinstanced",
+        false,
+    ),
+    (
+        "sh_0252_0009d960.dxbc",
+        "vegetationfoliagehwinstanced_osnormalmap",
+        false,
+    ),
+    ("sh_0253_0009f330.dxbc", "vegetationfoliageinstanced", true),
+    (
+        "sh_0254_000a1270.dxbc",
+        "vegetationfoliageinstanced_osnormalmap",
+        true,
+    ),
+    ("sh_0255_000a2f00.dxbc", "vegetationfoliageprez", false),
+    (
+        "sh_0256_000a3d00.dxbc",
+        "vegetationfoliageprezhwinstanced",
+        false,
+    ),
+    (
+        "sh_0257_000a5160.dxbc",
+        "vegetationfoliageprezinstanced",
+        true,
+    ),
+    ("sh_0264_000ab050.dxbc", "vegetationfoliagevelocity", false),
+    (
+        "sh_0265_000abf90.dxbc",
+        "vegetationfoliagevelocityhwinstanced",
+        false,
+    ),
+    (
+        "sh_0266_000ad540.dxbc",
+        "vegetationfoliagevelocityinstanced",
+        true,
+    ),
+    (
+        "sh_0267_000aeda0.dxbc",
+        "vegetationfoliage_osnormalmap",
+        false,
+    ),
+];
+
+/// Every eye-pass vegetation vertex shader takes exactly one of the two reprojections: the plain one
+/// when it reads no `SV_InstanceID`, the instanced one when it does, and each refuses the other's
+/// shaders.
+#[test]
+fn vegetation_eye_pass_shaders_take_one_reprojection_each() {
+    let Some(dir) = shader_dir() else {
+        return;
+    };
+    for &(file, name, instanced) in VEGETATION_EYE_PASS_VS {
+        let blob = std::fs::read(dir.join(file)).expect("read vegetation blob");
+        let (plain, halved) = (
+            reproject_vertex_shader(&blob),
+            reproject_instanced_vertex_shader(&blob),
+        );
+        let out = if instanced {
+            assert!(
+                matches!(plain, Err(DxbcError::InstanceIdAlreadyDeclared)),
+                "{name}"
+            );
+            halved.unwrap_or_else(|e| panic!("{name}: {e}"))
+        } else {
+            assert!(matches!(halved, Err(DxbcError::NoInstanceId)), "{name}");
+            plain.unwrap_or_else(|e| panic!("{name}: {e}"))
+        };
+        validate_reprojected(&out).unwrap_or_else(|e| panic!("{name}: {e}"));
+    }
+}
+
+/// The instanced reprojection reuses the shader's own `SV_InstanceID`: the input signature is
+/// unchanged, and the id is read only by the injected eye parity and the halving, so every fetch the
+/// shader makes by it reads the halved id.
+#[test]
+fn instanced_reprojection_halves_every_instance_id_read() {
+    let Some(dir) = shader_dir() else {
+        return;
+    };
+    for &(file, name, instanced) in VEGETATION_EYE_PASS_VS {
+        if !instanced {
+            continue;
+        }
+        let blob = std::fs::read(dir.join(file)).expect("read vegetation blob");
+        let out = reproject_instanced_vertex_shader(&blob).expect("reproject");
+        let original = Dxbc::parse(&blob).expect("parse original");
+        let rewritten = Dxbc::parse(&out).expect("parse rewritten");
+        assert_eq!(
+            original.chunk(b"ISGN").expect("ISGN").body(&blob),
+            rewritten.chunk(b"ISGN").expect("ISGN").body(&out),
+            "{name}: the input signature is reused"
+        );
+        let instance = signature_elements(original.chunk(b"ISGN").expect("ISGN").body(&blob))
+            .into_iter()
+            .find(|e| e.system_value == 8)
+            .expect("SV_InstanceID input")
+            .register;
+        let body = rewritten.shader_chunk().expect("SHEX").body(&out);
+        let tokens: Vec<u32> = body
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|b| u32::from_le_bytes(*b))
+            .collect();
+        let stream = TokenStream::new(body).expect("stream");
+        let mut readers = Vec::new();
+        for insn in stream.instructions() {
+            let insn = insn.expect("insn");
+            if insn.is_declaration() {
+                continue;
+            }
+            for operand in insn.operands() {
+                let operand = operand.expect("operand");
+                let tok = tokens[operand.token_offset];
+                let extended = ((tok >> 31) & 1) as usize;
+                if (tok >> 12) & 0xFF == 1
+                    && tokens.get(operand.token_offset + 1 + extended) == Some(&instance)
+                {
+                    readers.push(insn.opcode);
+                }
+            }
+        }
+        // `and` (the eye parity) and `ushr` (the halved id), nothing else.
+        assert_eq!(readers, [0x01, 0x55], "{name}");
+    }
 }
 
 /// Structural validation of a reprojected blob: re-parses, `SFI0` viewport bit set, `cb13` at the

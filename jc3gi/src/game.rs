@@ -3,7 +3,15 @@
 pub struct Game {
     _field_0: [u8; 16],
     pub m_CountAccumulator: u64,
+    /// The sim tick rate, ticks per second. The constructor writes 30 here and into
+    /// [`m_DefaultUpdateFrequency`](crate::game::Game::m_DefaultUpdateFrequency). [`Update`](crate::game::Game::Update)
+    /// reads it every frame (raising it to 1 when it is not positive): the step it derives,
+    /// one over this rate, is each tick's `m_Dt` and `m_OriginalDt` in the update context, and the
+    /// rate the clock is forced to for the duration of the sim. Writing it changes the tick from
+    /// the next frame on. [`PhysicsSystem::Update`](crate::physics::PhysicsSystem::Update) does not
+    /// follow it: it steps the world by its own fixed step.
     pub m_UpdateFrequency: u32,
+    /// The tick rate the constructor sets, kept beside [`m_UpdateFrequency`](crate::game::Game::m_UpdateFrequency).
     pub m_DefaultUpdateFrequency: u32,
     _field_20: [u8; 20],
     pub m_Exit: u8,
@@ -23,7 +31,11 @@ pub struct Game {
     /// A console override for [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod);
     /// [`INTERPOLATION_OVERRIDE_NONE`](crate::game::Game::INTERPOLATION_OVERRIDE_NONE) when unset.
     pub m_InterpolationOverride: i32,
-    _field_a4: [u8; 444],
+    _field_a4: [u8; 300],
+    /// The simulation dispatch counter, incremented by [`UpdateGame`](crate::game::Game::UpdateGame) before
+    /// the active state's update. Render-only updates do not advance it.
+    pub m_FrameCounter: u64,
+    _field_1d8: [u8; 136],
     pub m_DecoupleEnabled: bool,
     _field_261: [u8; 87],
     /// The [`GameUpdateFlags`](crate::game::GameUpdateFlags) bit set gating the phases of [`Update`](crate::game::Game::Update): the sim
@@ -58,6 +70,11 @@ impl Game {
         }
     }
     pub const Draw_ADDRESS: usize = 0x140952390;
+    /// Waits for the previous frame's draw task
+    /// ([`GraphicsEngine::WaitForCPUDrawToFinish`](crate::graphics_engine::graphics_engine::GraphicsEngine::WaitForCPUDrawToFinish)),
+    /// decides from the game state, the UI's static background, and a full-screen video whether
+    /// the frame draws the scene, and runs
+    /// [`GraphicsEngine::Draw`](crate::graphics_engine::graphics_engine::GraphicsEngine::Draw).
     pub unsafe fn Draw(&self, dt: f32) {
         unsafe {
             let f: unsafe extern "system" fn(this: *const Self, dt: f32) = ::std::mem::transmute(
@@ -68,6 +85,18 @@ impl Game {
     }
     pub const Update_ADDRESS: usize = 0x1409604E0;
     /// The top-level per-frame update: advances the sim and drives rendering. Returns false on exit.
+    ///
+    /// Each frame it derives the sim step as one over [`m_UpdateFrequency`](crate::game::Game::m_UpdateFrequency),
+    /// builds the update contexts with that step as their `m_Dt`, and, while
+    /// [`E_GUF_UPDATE`](crate::game::GameUpdateFlags::E_GUF_UPDATE) is set, forces the clock to that rate
+    /// (`CClock::EnableForceToFPS`), so that [`Clock::GetSPF`](crate::clock::Clock::GetSPF) returns the
+    /// step during the sim; it undoes the forcing before [`UpdateRender`](crate::game::Game::UpdateRender).
+    /// The frame's seconds per frame, capped at half a second, are converted into ticks by
+    /// the chosen [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod), each tick one
+    /// [`UpdateGame`](crate::game::Game::UpdateGame) call, and the fraction left over is the render context's
+    /// `m_Dtf`. While the clock is paused, or [`m_DecoupleEnabled`](crate::game::Game::m_DecoupleEnabled) is
+    /// clear, it instead runs one [`UpdateGame`](crate::game::Game::UpdateGame) with the frame's time as the
+    /// step.
     pub unsafe fn Update(&mut self) -> bool {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) -> bool = ::std::mem::transmute(
@@ -77,7 +106,19 @@ impl Game {
         }
     }
     pub const UpdateRender_ADDRESS: usize = 0x14095A4E0;
-    /// Builds the per-frame update contexts and drives rendering.
+    /// Builds the per-frame update contexts and drives rendering: the game state's pre-render
+    /// update, the memory garbage collection, then the active state's render update (the run
+    /// state's, or its paused variant while the main draw is off, or the frontend's; in any other
+    /// state the load state's when loading, then the UI's pre-render and the video manager's render
+    /// update).
+    ///
+    /// It does not wait for the previous frame's draw task: the wait at its top
+    /// ([`GraphicsEngine::WaitForCPUDrawToFinish`](crate::graphics_engine::graphics_engine::GraphicsEngine::WaitForCPUDrawToFinish))
+    /// runs only while [`Game_EnableOldSyncPoint`](get_Game_EnableOldSyncPoint) is set, and nothing sets it. The render update
+    /// therefore runs alongside the previous frame's draw task, and the fence between them is the
+    /// wait at the top of [`Draw`](crate::game::Game::Draw). The render update's own work on the immediate
+    /// context, such as the tone mapping's histogram readback (`Graphics::GetOcclusionQueryResult`),
+    /// takes the context's mutex call by call, as the draw task's draw wrappers do.
     pub unsafe fn UpdateRender(
         &mut self,
         update_contexts: *mut crate::game::UpdateContexts,
@@ -110,7 +151,10 @@ impl Game {
 impl Game {
     /// The [`m_InterpolationMethod`](crate::game::Game::m_InterpolationMethod) chosen while a cutscene plays:
     /// the same accumulator, but [`UpdateGame`](crate::game::Game::UpdateGame) runs once per whole step
-    /// accumulated (capped), subtracting one per update.
+    /// accumulated, subtracting one per update, up to [`Game_MaxGameUpdatesPerRender`](get_Game_MaxGameUpdatesPerRender) a frame;
+    /// the frame's contribution to the accumulator is capped at the same count, so a frame that
+    /// would need more ticks loses the time. A filtered-timer guard drops the frame to one tick
+    /// when the recent ticks took longer than a step.
     pub const INTERPOLATION_METHOD_ACCUMULATED: u32 = 2;
     /// The [`m_PrevInterpolationMethod`](crate::game::Game::m_PrevInterpolationMethod) value written when the
     /// frame takes the paused path; it matches no method, so the next unpaused frame resets the
@@ -144,6 +188,120 @@ impl std::convert::AsRef<Game> for Game {
 }
 impl std::convert::AsMut<Game> for Game {
     fn as_mut(&mut self) -> &mut Game {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A game object's `CGameObject` subobject, through which the engine's run-time type tests go. A
+/// [`PhysicsGameObject`](crate::physics::PhysicsGameObject) carries it at
+/// [`GAME_OBJECT_BASE_OFFSET`](crate::physics::PhysicsGameObject::GAME_OBJECT_BASE_OFFSET). Only some
+/// virtuals are bound.
+pub struct GameObject {
+    vftable: *const crate::game::GameObjectVftable,
+    _field_8: [u8; 88],
+    /// A weak reference to the object itself (`m_WeakThis`), from which the engine hands out
+    /// references to the object: the player aim's direct hit takes the slot's game object from it
+    /// ([`PlayerAimControl::CheckDirectTargets`](crate::aim::aim::PlayerAimControl::CheckDirectTargets)),
+    /// and a grapple target info its target object
+    /// ([`HookTargetInfo::SetupTargetFromGameObject`](crate::equipment::wire_end::HookTargetInfo::SetupTargetFromGameObject)).
+    pub m_WeakThis: crate::types::shared_ptr::WeakPtrGameObject,
+    /// A weak reference to the object's parent in its entity hierarchy (`m_Parent`), empty for a
+    /// root. [`GetParentTransform`](crate::game::GameObject::GetParentTransform) locks it for the parent's world
+    /// transform: a child object such as the grappling hook's mesh takes its world transform from
+    /// its parent's.
+    pub m_Parent: crate::types::shared_ptr::WeakPtrGameObject,
+}
+fn _GameObject_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x80], GameObject>([0u8; 0x80]);
+    }
+    unreachable!()
+}
+impl GameObject {
+    pub fn vftable(&self) -> *const crate::game::GameObjectVftable {
+        self.vftable as *const crate::game::GameObjectVftable
+    }
+    pub const GetParentTransform_ADDRESS: usize = 0x1404E6760;
+    /// Locks [`m_Parent`](crate::game::GameObject::m_Parent) and copies the parent's world transform into `out`
+    /// through the parent's [`GetTransform`](crate::game::GameObject::GetTransform); returns false without a parent.
+    pub unsafe fn GetParentTransform(
+        &self,
+        out: *mut crate::types::math::Matrix4,
+    ) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                out: *mut crate::types::math::Matrix4,
+            ) -> bool = ::std::mem::transmute(Self::GetParentTransform_ADDRESS);
+            f(self as *const Self as _, out)
+        }
+    }
+    pub const GetUniqueSpawnTagIndex_ADDRESS: usize = 0x1404CCF60;
+    /// The object's spawn tag index (`CGameObject::GetUniqueSpawnTagIndex`): the index of the
+    /// spawn tag the spawn system spawned it from, which identifies its type. The spawn system
+    /// converts it to the tag's hash, the persistent form, with
+    /// [`GetTagHashFromTagIndex`](crate::spawn_system::SpawnSystem::GetTagHashFromTagIndex). The player
+    /// save data stores each inventory weapon's type this way, and the inventory's respawn table
+    /// ([`Inventory::m_WeaponToSpawn`](crate::character::inventory::Inventory::m_WeaponToSpawn)) holds it.
+    pub unsafe fn GetUniqueSpawnTagIndex(&self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self) -> i32 = ::std::mem::transmute(
+                Self::GetUniqueSpawnTagIndex_ADDRESS,
+            );
+            f(self as *const Self as _)
+        }
+    }
+    /// `CRtti::IsType`: whether the object is of the class `type_id` names or derives from it.
+    /// `type_id` points at the class's run-time type id, as a class's `TYPE_ID` function
+    /// returns it (such as [`Character::TYPE_ID`](crate::character::character::Character::TYPE_ID)).
+    pub unsafe fn IsType(&self, type_id: *const u32) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).IsType).read();
+            f(self as *const Self as _, type_id)
+        }
+    }
+    /// Copies the object's current world transform into `out` and reports whether a transform
+    /// is available. The skeletal animated object's implementation copies its current world
+    /// matrix without changing the object. The adjacent mutable overload forwards to this
+    /// const overload.
+    pub unsafe fn GetTransform(&self, out: *mut crate::types::math::Matrix4) -> bool {
+        unsafe {
+            let f = (&raw const (*self.vftable()).GetTransform).read();
+            f(self as *const Self as _, out)
+        }
+    }
+    /// Enables or disables the object. A rigid object's override
+    /// ([`RigidObject`](crate::physics::RigidObject)) records the state and, when it changes, adds its
+    /// body to the physics world on enabling and removes it on disabling. A gun's spare
+    /// magazine prop ([`WeaponData::m_MagazineObject`](crate::equipment::weapon::WeaponData::m_MagazineObject))
+    /// is disabled from its spawn until
+    /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject)
+    /// enables it.
+    pub unsafe fn Enable(&mut self, enable: bool) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).Enable).read();
+            f(self as *mut Self as _, enable)
+        }
+    }
+    /// Registers the object for the updates its update-type virtual asks for
+    /// (`CGameObject::AddToUpdate`). The base implementation queries the object's required
+    /// update types and registers its pre-simulation, post-simulation, and render updates
+    /// accordingly, then adds its children. A weapon's post-simulation update calls it when
+    /// its post-simulation flag rises from clear.
+    pub unsafe fn AddToUpdate(&mut self) {
+        unsafe {
+            let f = (&raw const (*self.vftable()).AddToUpdate).read();
+            f(self as *mut Self as _)
+        }
+    }
+}
+impl std::convert::AsRef<GameObject> for GameObject {
+    fn as_ref(&self) -> &GameObject {
+        self
+    }
+}
+impl std::convert::AsMut<GameObject> for GameObject {
+    fn as_mut(&mut self) -> &mut GameObject {
         self
     }
 }
@@ -231,6 +389,97 @@ impl std::convert::AsMut<GameObjectUpdateContext> for GameObjectUpdateContext {
         self
     }
 }
+#[repr(C, align(8))]
+pub struct GameObjectVftable {
+    _vfunc_0: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_1: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    /// `CRtti::IsType`: whether the object is of the class `type_id` names or derives from it.
+    /// `type_id` points at the class's run-time type id, as a class's `TYPE_ID` function
+    /// returns it (such as [`Character::TYPE_ID`](crate::character::character::Character::TYPE_ID)).
+    pub IsType: unsafe extern "system" fn(
+        this: *const crate::game::GameObject,
+        type_id: *const u32,
+    ) -> bool,
+    _vfunc_3: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_4: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_5: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_6: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_7: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_8: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_9: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_10: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_11: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_12: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_13: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_14: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_15: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_16: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_17: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_18: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_19: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_20: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    /// Copies the object's current world transform into `out` and reports whether a transform
+    /// is available. The skeletal animated object's implementation copies its current world
+    /// matrix without changing the object. The adjacent mutable overload forwards to this
+    /// const overload.
+    pub GetTransform: unsafe extern "system" fn(
+        this: *const crate::game::GameObject,
+        out: *mut crate::types::math::Matrix4,
+    ) -> bool,
+    _vfunc_22: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_23: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_24: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_25: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_26: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_27: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_28: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_29: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_30: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_31: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_32: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_33: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_34: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_35: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_36: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_37: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    /// Enables or disables the object. A rigid object's override
+    /// ([`RigidObject`](crate::physics::RigidObject)) records the state and, when it changes, adds its
+    /// body to the physics world on enabling and removes it on disabling. A gun's spare
+    /// magazine prop ([`WeaponData::m_MagazineObject`](crate::equipment::weapon::WeaponData::m_MagazineObject))
+    /// is disabled from its spawn until
+    /// [`ThrowAwayMagazineObject`](crate::equipment::weapon::WeaponData::ThrowAwayMagazineObject)
+    /// enables it.
+    pub Enable: unsafe extern "system" fn(
+        this: *mut crate::game::GameObject,
+        enable: bool,
+    ),
+    _vfunc_39: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_40: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    _vfunc_41: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+    /// Registers the object for the updates its update-type virtual asks for
+    /// (`CGameObject::AddToUpdate`). The base implementation queries the object's required
+    /// update types and registers its pre-simulation, post-simulation, and render updates
+    /// accordingly, then adds its children. A weapon's post-simulation update calls it when
+    /// its post-simulation flag rises from clear.
+    pub AddToUpdate: unsafe extern "system" fn(this: *mut crate::game::GameObject),
+}
+fn _GameObjectVftable_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x158], GameObjectVftable>([0u8; 0x158]);
+    }
+    unreachable!()
+}
+impl GameObjectVftable {}
+impl std::convert::AsRef<GameObjectVftable> for GameObjectVftable {
+    fn as_ref(&self) -> &GameObjectVftable {
+        self
+    }
+}
+impl std::convert::AsMut<GameObjectVftable> for GameObjectVftable {
+    fn as_mut(&mut self) -> &mut GameObjectVftable {
+        self
+    }
+}
 #[repr(u32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 pub enum GameState {
@@ -254,6 +503,30 @@ impl GameState {
     }
 }
 impl GameState {
+    pub const PreUpdate_ADDRESS: usize = 0x1409AC0E0;
+    /// `CGameState::PreUpdate`: the input update. In order, it sets the UI manager's capture thread
+    /// to the calling thread, starts the sound library's pre-simulation job, updates the message
+    /// boxes and the account manager, restores the steering objects' action maps when the device
+    /// manager has marked them dirty, runs the device poll
+    /// ([`InputDeviceManager::Update`](crate::input::input_device_manager::InputDeviceManager::Update))
+    /// and [`UpdateForceClicks`](crate::input::input_device_manager::InputDeviceManager::UpdateForceClicks)
+    /// unless the out-of-focus input setting is on and the window is out of focus, runs the UI's
+    /// input update (`CUIManager::PreUpdate`, which reads the pause and commlink actions from the
+    /// player action map and dispatches the screens' input handlers), waits for the sound job, and
+    /// reverts the capture thread. It touches input devices, the action maps, the UI, the message
+    /// boxes, the accounts, and the sound job, and nothing of the world.
+    ///
+    /// Callers: the input job ([`RunInputThread_Proxy`](crate::game::RunInputThread_Proxy)), [`GameStateLoad::Update`](crate::game::GameStateLoad::Update), and
+    /// [`GameStateFrontend::Update`](crate::game::GameStateFrontend::Update) before its main-menu sub-states. The disassembler mislabels
+    /// the capture thread's revert as `ProfilerInitThread`.
+    pub unsafe fn PreUpdate(update_contexts: *mut crate::game::UpdateContexts) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                update_contexts: *mut crate::game::UpdateContexts,
+            ) = ::std::mem::transmute(Self::PreUpdate_ADDRESS);
+            f(update_contexts)
+        }
+    }
     pub const PostUpdateRender_ADDRESS: usize = 0x140A00E90;
     pub unsafe fn PostUpdateRender(update_contexts: *const crate::game::UpdateContexts) {
         unsafe {
@@ -263,11 +536,176 @@ impl GameState {
             f(update_contexts)
         }
     }
+    pub const UpdatePhysics_ADDRESS: usize = 0x1409AC2A0;
+    /// `CGameState::UpdatePhysics`: the run state's physics phase, between the game world's
+    /// pre-simulation and post-simulation queues ([`GameWorld::UpdatePreSim`](crate::game_world::GameWorld::UpdatePreSim)
+    /// and [`GameWorld::UpdatePostSim`](crate::game_world::GameWorld::UpdatePostSim)). Unless the clock's
+    /// update speed is below a tenth (deep slow motion, which skips the step), it calls
+    /// [`PhysicsSystem::Update`](crate::physics::PhysicsSystem::Update) with `dt`, the update context's
+    /// `m_Dt`. It then dispatches the queued collisions, clears the collision array, runs the
+    /// vehicles' post-collision update, processes the damage listeners' events, and updates the
+    /// shape sensors.
+    pub unsafe fn UpdatePhysics(dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(dt: f32) = ::std::mem::transmute(
+                Self::UpdatePhysics_ADDRESS,
+            );
+            f(dt)
+        }
+    }
+    pub const UpdateDeletionOfObjects_ADDRESS: usize = 0x1409BA410;
+    /// `CGameState::UpdateDeletionOfObjects`: deletes the queued background objects and the
+    /// locator's queued resources within `budget_us` microseconds. The run state's update calls
+    /// it once per tick, after [`StreamerUpdate`](crate::game::StreamerUpdate) and [`GameLocationSystemUpdate`](crate::game::GameLocationSystemUpdate), with what is
+    /// left of the tick's streaming budget.
+    pub unsafe fn UpdateDeletionOfObjects(budget_us: u32) {
+        unsafe {
+            let f: unsafe extern "system" fn(budget_us: u32) = ::std::mem::transmute(
+                Self::UpdateDeletionOfObjects_ADDRESS,
+            );
+            f(budget_us)
+        }
+    }
+}
+#[repr(C, align(8))]
+/// The game's frontend state (`CGameStateFrontend`), the main menu. Its layout is unmapped.
+pub struct GameStateFrontend {}
+impl GameStateFrontend {
+    pub const Update_ADDRESS: usize = 0x140A15A40;
+    /// `CGameStateFrontend::Update`: the frontend's tick, stepping its sub-state machine (waiting
+    /// for IO, the title, login, language, loading the global data, the spawn, landscape, and
+    /// location loads, and the main menu). Before the main menu's sub-states it calls
+    /// [`GameState::PreUpdate`](crate::game::GameState::PreUpdate) inline on the game thread with its own reduced update. Once the
+    /// world is loaded behind the main menu it calls [`GameStateRun::Update`](crate::game::GameStateRun::Update) instead, so the input
+    /// job runs as it does in play.
+    pub unsafe fn Update(update_contexts: *mut crate::game::UpdateContexts) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                update_contexts: *mut crate::game::UpdateContexts,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(update_contexts)
+        }
+    }
+    pub const ResetSystems_ADDRESS: usize = 0x1409AC700;
+    /// The frontend's reset of the game systems on the quit to the menu, which resets the spawn
+    /// system ([`SpawnSystem::ResetSystem`](crate::spawn_system::SpawnSystem::ResetSystem)).
+    pub unsafe fn ResetSystems() {
+        unsafe {
+            let f: unsafe extern "system" fn() = ::std::mem::transmute(
+                Self::ResetSystems_ADDRESS,
+            );
+            f()
+        }
+    }
+}
+impl std::convert::AsRef<GameStateFrontend> for GameStateFrontend {
+    fn as_ref(&self) -> &GameStateFrontend {
+        self
+    }
+}
+impl std::convert::AsMut<GameStateFrontend> for GameStateFrontend {
+    fn as_mut(&mut self) -> &mut GameStateFrontend {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The game's load state (`CGameStateLoad`), entered for a load, a continue, a new game, a world
+/// reload, and every teleport with the load state
+/// ([`GameWorld::TeleportPlayer`](crate::game_world::GameWorld::TeleportPlayer)). Its layout is unmapped.
+pub struct GameStateLoad {}
+impl GameStateLoad {
+    pub const Update_ADDRESS: usize = 0x140A11CC0;
+    /// `CGameStateLoad::Update`: the load state's tick. It calls [`GameState::PreUpdate`](crate::game::GameState::PreUpdate) inline on
+    /// the game thread.
+    pub unsafe fn Update(update_contexts: *mut crate::game::UpdateContexts) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                update_contexts: *mut crate::game::UpdateContexts,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(update_contexts)
+        }
+    }
+    pub const OnEnter_ADDRESS: usize = 0x1409FEC80;
+    /// The load state's entry. It runs [`ResetSystems`](crate::game::GameStateLoad::ResetSystems), so every entry to
+    /// the load state resets the spawn system.
+    pub unsafe fn OnEnter() {
+        unsafe {
+            let f: unsafe extern "system" fn() = ::std::mem::transmute(
+                Self::OnEnter_ADDRESS,
+            );
+            f()
+        }
+    }
+    pub const ResetSystems_ADDRESS: usize = 0x1409BABB0;
+    /// The load state's reset step, called only by [`OnEnter`](crate::game::GameStateLoad::OnEnter): aborts an active
+    /// challenge unless the no-unload flag is set, gives back a challenge's loadout its
+    /// destruction left to the reset
+    /// ([`ROMObject::RestoreWeaponsAndAmmo`](crate::mission::ROMObject::RestoreWeaponsAndAmmo)), resets the
+    /// dialogue, resets the spawn system
+    /// ([`SpawnSystem::ResetSystem`](crate::spawn_system::SpawnSystem::ResetSystem)), and resets the heat.
+    /// The disassembler mislabels it `IConsole::GetLoadingLock`.
+    pub unsafe fn ResetSystems() {
+        unsafe {
+            let f: unsafe extern "system" fn() = ::std::mem::transmute(
+                Self::ResetSystems_ADDRESS,
+            );
+            f()
+        }
+    }
+}
+impl std::convert::AsRef<GameStateLoad> for GameStateLoad {
+    fn as_ref(&self) -> &GameStateLoad {
+        self
+    }
+}
+impl std::convert::AsMut<GameStateLoad> for GameStateLoad {
+    fn as_mut(&mut self) -> &mut GameStateLoad {
+        self
+    }
 }
 #[repr(C, align(8))]
 /// `CGameStateRun`: the in-game state's static update functions.
 pub struct GameStateRun {}
 impl GameStateRun {
+    pub const Update_ADDRESS: usize = 0x1409F0EE0;
+    /// `CGameStateRun::Update`: the run state's sim tick, called by [`Game::UpdateGame`](crate::game::Game::UpdateGame) once per
+    /// tick in play and by [`GameStateFrontend::Update`](crate::game::GameStateFrontend::Update) once its sub-state reaches the main menu
+    /// with the world loaded behind it. It queues the frame's raycast fragments, then the input
+    /// job ([`RunInputThread`](crate::game::RunInputThread)), and runs the network, traffic and ambient-spawn starts, the task
+    /// pool's continuations, the road decorations, the water, the effects' pre-simulation update,
+    /// the world time, the render cameras' transform history, the character manager's
+    /// pre-simulation step, the settings, the AI's queued messages and path requests, and the
+    /// effects' physics-model spawn while the input job runs. It then spins on the input job's
+    /// completion signal (yielding, without running queued fragments), and runs the dialogue,
+    /// the sound post-simulation update, the vehicles' pre-update, the operations, login, rebel
+    /// support, ammunition, and mission updates, the traffic and ambient-spawn sync halves, the
+    /// posted-event dispatch, the challenge (ROM), encounter, heat, and spawn-system updates, and
+    /// the video's pre-simulation update before the game world's pre-simulation queue
+    /// ([`GameWorld::UpdatePreSim`](crate::game_world::GameWorld::UpdatePreSim)), the physics phase
+    /// ([`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics)), and the post-simulation queue. Nothing between the
+    /// completion spin and the pre-simulation queue returns early. The tick ends with the game
+    /// world's post-camera queue and then the ammunition manager's post-simulation pass
+    /// ([`AmmunitionManagerUpdatePostSim`](crate::equipment::explosive::AmmunitionManagerUpdatePostSim)),
+    /// which gives the explosives spawned since the previous pass their physics bodies. The challenge update reads the
+    /// player action map there: an active race reads how long
+    /// [`CHALLENGE_RESET_VEHICLE`](crate::input::input_action_map::Action::CHALLENGE_RESET_VEHICLE) has
+    /// been held.
+    ///
+    /// The disassembler mislabels several callees: the effects' pre-simulation update as
+    /// `CCharacterManager::UpdateVDB`, the ambient-spawn sync as
+    /// `CGameCameraManager::UpdateBeforeGameWorld`, the posted-event dispatch as
+    /// `CPropertyUtil::RegisterEvent`, the continuation pump as `CGameStateInit::UpdateDone`, the
+    /// network pre-simulation update as `CNetworkManager::Update_PostSim`, the pathfinder's message
+    /// processing as `CAiPathfinder2::UpdatePathRequest`, and [`GameState::UpdatePhysics`](crate::game::GameState::UpdatePhysics) as
+    /// `IsStillAlive`.
+    pub unsafe fn Update(update_contexts: *mut crate::game::UpdateContexts) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                update_contexts: *mut crate::game::UpdateContexts,
+            ) = ::std::mem::transmute(Self::Update_ADDRESS);
+            f(update_contexts)
+        }
+    }
     pub const UpdateRenderPaused_ADDRESS: usize = 0x1409AE200;
     /// The render-side update the run state performs while the game is paused: drives the
     /// landscape, UI prerender, video, water simulation, and resource streaming, and waits for the
@@ -304,7 +742,21 @@ fn _GameUpdateFlags_size_check() {
     }
     unreachable!()
 }
+/// `s_EnableSyncpoint`, the developer menu's `Dev|EnableOldSyncPoint`: while set,
+/// [`Game::UpdateRender`](crate::game::Game::UpdateRender) waits for the previous frame's draw task before the render update. The
+/// image initializes it to false, and its only reference is that read.
+pub unsafe fn get_Game_EnableOldSyncPoint() -> &'static mut bool {
+    unsafe { &mut *(0x142F33B8B as *mut bool) }
+}
+/// `g_MaxGameUpdatesPerRender`: the most [`Game::UpdateGame`](crate::game::Game::UpdateGame) calls one [`Game::Update`](crate::game::Game::Update) makes
+/// under [`INTERPOLATION_METHOD_ACCUMULATED`](crate::game::Game::INTERPOLATION_METHOD_ACCUMULATED) and
+/// [`INTERPOLATION_METHOD_TIME_BASED`](crate::game::Game::INTERPOLATION_METHOD_TIME_BASED). The image
+/// initializes it to 2.
+pub unsafe fn get_Game_MaxGameUpdatesPerRender() -> &'static mut u32 {
+    unsafe { &mut *(0x142D6EA50 as *mut u32) }
+}
 #[repr(C, align(8))]
+/// The project context carried by game-object update contexts. Its layout is unmapped.
 pub struct ProjectContext {}
 impl ProjectContext {}
 impl std::convert::AsRef<ProjectContext> for ProjectContext {
@@ -318,7 +770,18 @@ impl std::convert::AsMut<ProjectContext> for ProjectContext {
     }
 }
 #[repr(C, align(8))]
-pub struct ResourceCache {}
+/// The resource cache shared by resource handles and game-object initialization contexts.
+pub struct ResourceCache {
+    _field_0: [u8; 88],
+    /// The resource records indexed by [`ResourceHandle::m_Index`](crate::game::ResourceHandle::m_Index).
+    pub m_Resources: *mut crate::game::ResourceInfo,
+}
+fn _ResourceCache_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x60], ResourceCache>([0u8; 0x60]);
+    }
+    unreachable!()
+}
 impl ResourceCache {}
 impl std::convert::AsRef<ResourceCache> for ResourceCache {
     fn as_ref(&self) -> &ResourceCache {
@@ -327,6 +790,56 @@ impl std::convert::AsRef<ResourceCache> for ResourceCache {
 }
 impl std::convert::AsMut<ResourceCache> for ResourceCache {
     fn as_mut(&mut self) -> &mut ResourceCache {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A handle identifying a resource record in its owning cache.
+pub struct ResourceHandle {
+    /// The index into the owning cache's [`m_Resources`](crate::game::ResourceCache::m_Resources) array.
+    pub m_Index: u16,
+    _field_2: [u8; 6],
+    /// The cache that owns the indexed resource record.
+    pub m_ResourceCache: *mut crate::game::ResourceCache,
+}
+fn _ResourceHandle_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x10], ResourceHandle>([0u8; 0x10]);
+    }
+    unreachable!()
+}
+impl ResourceHandle {}
+impl std::convert::AsRef<ResourceHandle> for ResourceHandle {
+    fn as_ref(&self) -> &ResourceHandle {
+        self
+    }
+}
+impl std::convert::AsMut<ResourceHandle> for ResourceHandle {
+    fn as_mut(&mut self) -> &mut ResourceHandle {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A resource cache record containing the loaded resource pointer and bookkeeping.
+pub struct ResourceInfo {
+    /// The loaded resource pointer.
+    pub m_Resource: *mut ::std::ffi::c_void,
+    _field_8: [u8; 32],
+}
+fn _ResourceInfo_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x28], ResourceInfo>([0u8; 0x28]);
+    }
+    unreachable!()
+}
+impl ResourceInfo {}
+impl std::convert::AsRef<ResourceInfo> for ResourceInfo {
+    fn as_ref(&self) -> &ResourceInfo {
+        self
+    }
+}
+impl std::convert::AsMut<ResourceInfo> for ResourceInfo {
+    fn as_mut(&mut self) -> &mut ResourceInfo {
         self
     }
 }
@@ -352,5 +865,143 @@ impl std::convert::AsRef<UpdateContexts> for UpdateContexts {
 impl std::convert::AsMut<UpdateContexts> for UpdateContexts {
     fn as_mut(&mut self) -> &mut UpdateContexts {
         self
+    }
+}
+pub const FindOptionalInternal_ADDRESS: usize = 0x1404F5310;
+/// `CGameObject::FindOptionalInternal`: looks up the game object with the object id `id`
+/// (`SObjectID`, passed by value) and writes a strong reference to it into `result`, the
+/// `CGameObject` subobject, or a null reference when none exists; returns whether it found one.
+/// The reference keeps the object alive until it is released with
+/// [`ReleaseSharedPtrGameObject`](crate::types::shared_ptr::ReleaseSharedPtrGameObject). The bullets'
+/// hit handling calls it on their worker threads.
+pub unsafe fn FindOptionalInternal(
+    id: u64,
+    result: *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+) -> bool {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            id: u64,
+            result: *mut crate::types::shared_ptr::SharedPtr<crate::game::GameObject>,
+        ) -> bool = ::std::mem::transmute(FindOptionalInternal_ADDRESS);
+        f(id, result)
+    }
+}
+pub const StreamerUpdate_ADDRESS: usize = 0x14118A180;
+/// The resource streamer's update: polls the file system and the decompressors, creates the
+/// loaded resources, and starts the pending requests, within `budget_us` microseconds. The run
+/// state's update calls it once per tick after the physics phase, with a budget of at least
+/// a fixed minimum taken from a reservoir it refills every tick, so the streaming time per second
+/// grows with the tick rate when there is work. Returns the streamer's result code.
+pub unsafe fn StreamerUpdate(budget_us: u32) -> u32 {
+    unsafe {
+        let f: unsafe extern "system" fn(budget_us: u32) -> u32 = ::std::mem::transmute(
+            StreamerUpdate_ADDRESS,
+        );
+        f(budget_us)
+    }
+}
+pub const GameLocationSystemUpdate_ADDRESS: usize = 0x1404BC110;
+/// The game location system's update: checks which locations to load and advances their loading
+/// and the landmarks' visibility, within `budget_us` microseconds. The run state's update calls it
+/// once per tick, after [`StreamerUpdate`](crate::game::StreamerUpdate).
+pub unsafe fn GameLocationSystemUpdate(budget_us: u32) {
+    unsafe {
+        let f: unsafe extern "system" fn(budget_us: u32) = ::std::mem::transmute(
+            GameLocationSystemUpdate_ADDRESS,
+        );
+        f(budget_us)
+    }
+}
+pub const RunLightThread_ADDRESS: usize = 0x1409AE070;
+/// `RunLightThread`: queues the light manager's update on a CPU fragment, with `dt` the tick's
+/// step, and clears the signal the run state's update later waits on. The run state's update calls
+/// it once per tick after the effects' post-simulation update.
+pub unsafe fn RunLightThread(dt: f32) {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: f32) = ::std::mem::transmute(
+            RunLightThread_ADDRESS,
+        );
+        f(dt)
+    }
+}
+pub const RunInputThread_ADDRESS: usize = 0x1409AE130;
+/// `RunInputThread`: clears the input job's completion signal and queues [`RunInputThread_Proxy`](crate::game::RunInputThread_Proxy)
+/// as a `CallProxy` CPU fragment, with `update_contexts` as its argument and the signal attached.
+/// [`GameStateRun::Update`](crate::game::GameStateRun::Update) calls it once per tick and spins on the signal before the world's
+/// pre-simulation queue.
+pub unsafe fn RunInputThread(update_contexts: *mut crate::game::UpdateContexts) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            update_contexts: *mut crate::game::UpdateContexts,
+        ) = ::std::mem::transmute(RunInputThread_ADDRESS);
+        f(update_contexts)
+    }
+}
+pub const RunInputThread_Proxy_ADDRESS: usize = 0x1409AE110;
+/// The input job's body: calls [`GameState::PreUpdate`](crate::game::GameState::PreUpdate) with `update_contexts` and returns 1. It
+/// runs on whichever CPU fragment worker takes the fragment, or on the game thread when that
+/// thread runs queued fragments while it waits on the previous frame's signals
+/// (`CGameStateRun::WaitForLocksFromPreviousFrame`), concurrently with the rest of
+/// [`GameStateRun::Update`](crate::game::GameStateRun::Update) up to the completion spin. The engine keeps the two apart by partition:
+/// the job touches only input, the UI, the message boxes, the accounts, and the sound job.
+pub unsafe fn RunInputThread_Proxy(
+    update_contexts: *mut crate::game::UpdateContexts,
+) -> i32 {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            update_contexts: *mut crate::game::UpdateContexts,
+        ) -> i32 = ::std::mem::transmute(RunInputThread_Proxy_ADDRESS);
+        f(update_contexts)
+    }
+}
+pub const RunAIThread1_ADDRESS: usize = 0x1409F0D40;
+/// `RunAIThread1`: queues [`RunAIThread1_Proxy`](crate::game::RunAIThread1_Proxy) on a CPU fragment with `dt` the tick's step, and
+/// clears its completion signal. The run state's update calls it once per tick after the awareness
+/// events' dispatch, and waits for the signal near the end of the same tick.
+pub unsafe fn RunAIThread1(dt: f32) {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: f32) = ::std::mem::transmute(
+            RunAIThread1_ADDRESS,
+        );
+        f(dt)
+    }
+}
+pub const RunAIThread1_Proxy_ADDRESS: usize = 0x1409F0B30;
+/// The first AI thread's body, run on a CPU fragment worker (or by a thread that runs queued
+/// fragments while it waits): the per-character AI update, the road graph, traffic, and action
+/// token managers, and the pathfinder's instant-rotation switch. `dt` points at the tick's step.
+/// Returns 1.
+pub unsafe fn RunAIThread1_Proxy(dt: *mut f32) -> i32 {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: *mut f32) -> i32 = ::std::mem::transmute(
+            RunAIThread1_Proxy_ADDRESS,
+        );
+        f(dt)
+    }
+}
+pub const RunAIThread2_ADDRESS: usize = 0x1409F0DE0;
+/// `RunAIThread2`: caches the game camera's position for the AI pathfinder, then queues
+/// [`RunAIThread2_Proxy`](crate::game::RunAIThread2_Proxy) on a CPU fragment with `dt` the tick's step, and clears its completion
+/// signal. The run state's update calls it last in the tick, so the thread runs alongside the rest
+/// of the frame: the run state's render update waits for the signal before its raycast threads,
+/// and the next tick's update waits for it before its input.
+pub unsafe fn RunAIThread2(dt: f32) {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: f32) = ::std::mem::transmute(
+            RunAIThread2_ADDRESS,
+        );
+        f(dt)
+    }
+}
+pub const RunAIThread2_Proxy_ADDRESS: usize = 0x1409F0BC0;
+/// The second AI thread's body, run on a CPU fragment worker: the pathfinders' work, the navmesh
+/// pathfinder, the behavior trees, the AI system's update, and the terrain pathfinder; it queues a
+/// further fragment of its own. `dt` points at the tick's step. Returns 1.
+pub unsafe fn RunAIThread2_Proxy(dt: *mut f32) -> i32 {
+    unsafe {
+        let f: unsafe extern "system" fn(dt: *mut f32) -> i32 = ::std::mem::transmute(
+            RunAIThread2_Proxy_ADDRESS,
+        );
+        f(dt)
     }
 }

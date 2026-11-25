@@ -1,0 +1,170 @@
+# Haptics
+
+Every vibration the mod sends to the controllers is one of a few named primitives, played at a strength within that primitive's range, and every source of one goes through the same mixer. A tick always feels like a tick and a thud like a thud, whatever raised it, and a hand that several sources reach at once feels the strongest of them clearly rather than a saturated buzz. The code is `payload/src/controllers/haptics/`: `vocabulary.rs` (the primitives), `cues.rs` (every source and its cue), `mixer.rs` (what each hand plays), `rumble.rs` (the game's own rumble), and `mod.rs` (the entry points and the readout).
+
+## The vocabulary
+
+Seven primitives. Five play once (one-off cues) and two follow a level that their source sends every tick it lasts (sustained cues).
+
+| Primitive | Kind | Soft | Full | Length | Frequency hint | Priority | Feels like |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| tick | one-off | 0.06 | 0.25 | 8 ms | 320 Hz | 0 | a hand crossing into a volume, a detent, a selection moving |
+| click | one-off | 0.15 | 0.55 | 20 ms | 250 Hz | 1 | a button, a catch, a round, a release |
+| bump | one-off | 0.12 | 0.75 | 40 ms | 160 Hz | 2 | a grip taken, a hand meeting a surface, a stop reached |
+| buzz | one-off | 0.2 | 0.6 | 140 ms | 200 Hz | 3 | no: a refused grab, a press that does nothing |
+| thud | one-off | 0.4 | 1.0 | 70 ms | 90 Hz | 4 | a shot, a hook taking hold, a body caught, a detonation |
+| hum | sustained | 0 | 0.7 | 100 ms hold | 70 Hz | - | the game's rumble, the reel's speed |
+| tension | sustained | 0 | 0.6 | 60 ms hold | 130 Hz | - | a pull, a press, a hang |
+
+A cue's strength places it between the primitive's soft and full amplitudes; a source whose cue follows how hard something happened (a palm's speed, a climb's fling, a recoil kick) scales that strength by its share. A sustained cue's amplitude is its strength times the level its source sends, so a level of zero is still. The length is how long a one-off cue plays, and for a sustained one how long a level holds without being sent again. One cue, the detonation, plays a long thud: three and a half times the thud's length. The shot plays for the length the game's fire rumble sets, capped at 0.4 s (`haptics::rumble::MAX_SHOT_S`).
+
+The frequency is a hint (OpenXR's `XrHapticVibration::frequency`); a runtime may ignore it. Every vibration carries its primitive's hint.
+
+The shapes are fixed in `haptics::vocabulary::VOCABULARY`, so a shape changes every cue built on it together.
+
+## The mixer
+
+OpenXR plays one vibration per controller at a time, and a new one replaces whatever is playing. The sources queue their cues from any thread, and the VR frame loop asks the mixer once per rendered frame what each hand plays (`haptics::mix`, from the input update under the runtime lock). The mixer holds per hand the one-off cues queued since the last flush, the cue playing and when it ends, and each sustained source's level and when it expires.
+
+- Sustained sources sum. The sum passes a soft limiter: unchanged up to `MIX.sustain_knee` (0.45, the mixer's fixed tuning in `haptics::mixer::MIX`), then bent smoothly toward `MIX.sustain_ceiling` (0.7). However many sustained sources stack (a held load, the game's rumble, the grapple's tension), the hand never reaches full strength from them, and a one-off cue stands out above them. With no cue playing, the hand plays the limited sum for `MIX.refresh_s` (100 ms), refreshed at every flush. A source that sends a level of zero ends at once; one that stops sending ends when its hold runs out.
+- One-off cues play at the next flush. The cue of the highest priority (then the strongest) among the frame's arrivals leads and sets the length and the frequency. Each other arrival, and a cue still playing, adds `MIX.stack_share` (0.35) of its amplitude, and the mod's sustained level adds `MIX.duck_share` (0.5) of itself beneath the lead. The total passes the soft limiter at full strength with its knee at `MIX.knee` (0.85), so a single cue below the knee plays exactly as shaped and a pile of them never clips. The cue plays for the longer of its own length and what remained of the one it cut into.
+- The game's rumble is left out of a one-off cue's onset entirely (it ducks under the mod's cues), and every sustained source is held off a hand while a one-off cue plays there, resuming at the first flush after it ends.
+- An arrival weaker than the cue playing and of a lower priority is masked: dropped rather than cutting a heavier cue short (a holster tick during a long burst of fire).
+
+The global strength (`intensity`) scales the mixer's output as it is sent, so it scales every cue the same way, and it never changes the mix.
+
+## Categories
+
+Each source belongs to one category, which the readout counts its cues under. Every category always plays while the master switch is on; the game's rumble also needs `game_rumble`.
+
+| Category | Sources |
+| --- | --- |
+| Contact | the palms and the hand bodies meeting, pressing, and striking things, taking hold and letting go, a door's latch, the snatch's catch |
+| Weapons | shots and kicks, dry fire, holsters and pouches, the foregrip, the true reload's steps, grenades, C4, the weapon wheel |
+| Vehicles | the physical controls' stops, detents, and gate, the cockpit buttons, the mounted gun's handles and recoil |
+| Traversal | climbing, the stunt positions, the grapple (fire, attach, yank, tether retract, line tension, reel), and the snatch (armed, fired, hook bit, refused) |
+| Interface | the controller chords (the recenter and the debug panel) |
+| Game | the game's own rumble, behind `game_rumble` |
+
+The shot and the recoil kick are the weapons category's, and also need `game_rumble`, as they always have: the shot is the game's own fire rumble routed to the firing hand.
+
+The pause menu's `VR: CONTROLS` page has `HAPTICS` (`enabled`), `HAPTIC STRENGTH` (`intensity`), and `GAME RUMBLE` under HAPTICS. `gamepad_rumble` is in the debug UI's Feedback feature. Everything is on by default except `gamepad_rumble`. The settings live in `controllers.haptics` ([settings.md](../settings.md)); they moved there from `controllers.weapons.haptics`, so a settings file from before the move loads them as defaults once. The per-source switches that came before the categories (the holster and pouch cues, the line tension, the hand bodies' pressure and hit pulses, the palms' contact pulses, the grapple's pulses) and every per-source amplitude and duration are gone: the vocabulary's shapes replace them.
+
+## Every source
+
+The one-off sources are `Event` and the sustained ones `Sustain` (`cues.rs`), and the table there is the one below. Strength is the cue's place within its primitive's range at full scale; a source marked scaled multiplies it by its share.
+
+| Source | Raised when | Primitive | Strength | Category | Raised by |
+| --- | --- | --- | --- | --- | --- |
+| `Event::PalmTouch` | a palm meets a surface, scaled by how fast (a quarter at a touch) | bump | 0.4 | contact | `physical_hands::touch` |
+| `Event::HandStrike` | a hand body's contact, or a blow on a character, scaled by the arm's momentum; a held gun's contact by the arm's alone, at most once every `HAND_BODIES.guns.contact_pulse_interval_s` per hand | bump | 0.4 | contact | `physical_hands::physics::blows` |
+| `Event::Take` | a hand takes hold of an object, a character, a door, or a weapon off the ground | bump | 0.6 | contact | `physical_hands`, `physical_hands::pickup` |
+| `Event::LetGo` | a hand lets go of what it held | click | 0.25 | contact | `physical_hands` |
+| `Event::DoorPressureContact` | an ungripped palm first establishes valid inner-panel opening pressure; retained probe gaps do not repeat it | tick | 0.2 | contact | `physical_hands::doors::pressure` |
+| `Event::Unlatch` | a door's latch gives under the hand | bump | 0.9 | contact | `physical_hands` |
+| `Event::Shot` | a weapon's fire rumble, on the firing hand; the game sets its strength (raised by the kick) and length | thud | game | weapons | `haptics::rumble` |
+| `Event::Kick` | a shot of a weapon with no fire rumble, scaled by its kick | bump | 1.0 | weapons | `haptics::rumble`, from `weapons::fire` |
+| `Event::DryFire` | a trigger pull of an empty gun that cannot fire | click | 0.4 | weapons | `weapons::empty`, `weapons::reload::steps` |
+| `Event::VolumeEnter` | a hand enters a holster or a pouch | tick | 0.3 | weapons | `weapons` |
+| `Event::DockAttraction` | a hand holding a weapon comes into a free socket's attraction, where letting go docks it, or a taken back socket's, where letting go swaps; once per entry, again only after the hand has left by `ATTRACTION.exit_margin_m` ([physical-weapons.md, "Attraction"](physical-weapons.md#attraction)) | tick | 0.4 | weapons | `weapons::docks::attract` |
+| `Event::SocketSwap` | a weapon let go of over a taken socket on the back docks there, and the weapon that was docked falls clear, on the docking hand | bump | 0.7 | weapons | `weapons::finish` |
+| `Event::VolumeGrab` | a draw, a dock (by a grab or by opening the grip over the socket), a handover, a take, or a foregrip grab or release | click | 0.5 | weapons | `weapons` |
+| `Event::Eject` | the magazine or the rounds are ejected | click | 0.6 | weapons | `weapons::reload::steps` |
+| `Event::PouchTake` | a round or a magazine comes out of the pouch | click | 0.25 | weapons | `weapons::reload::steps` |
+| `Event::PouchEmpty` | a grab at an empty ammunition pouch | tick | 0.75 | weapons | `weapons::reload::steps` |
+| `Event::WellCatch` | the well catches a round or a magazine, on both hands | click | 0.4 | weapons | `weapons::reload::steps` |
+| `Event::MagazineSeat` | a magazine seats, on the gun hand | thud | 1.0 | weapons | `weapons::reload::steps` |
+| `Event::MagazineKnock` | a held magazine knocks the inserted one out, on both hands; the same cue as `Event::MagazineSeat` by design, its own source so that a log or recording names which it was | thud | 1.0 | weapons | `weapons::reload::knocking` |
+| `Event::BeltSeat` | a belt seats, on the gun hand; the same cue as `Event::MagazineSeat` by design, its own source so that a log or recording names which it was | thud | 1.0 | weapons | `weapons::reload::steps` |
+| `Event::Rack` | a full pull of the action, on the working hand | click | 0.9 | weapons | `weapons::reload::steps` |
+| `Event::ActionDetent` | the action's part meeting a stop of its travel (home, a bolt turned all the way up or down, a slide caught at the rear), on the working hand | click | 0.35 | weapons | `weapons::reload::steps` |
+| `Event::Chambered` | a worked action chambers a round, on the gun hand | click | 0.5 | weapons | `weapons::reload::action` |
+| `Event::ReadyToFire` | a seat leaves the gun ready to fire with nothing to work, played twice shortly after the seat's thud, on the gun hand | bump | 0.8 | weapons | `weapons::reload::steps` |
+| `Event::GrenadePrime` | a grenade is drawn into the hand, its pin in | click | 0.4 | weapons | `weapons::grenade` |
+| `Event::GrenadePin` | a held grenade's pin is pulled with the trigger, starting its fuse | bump | 0.8 | weapons | `weapons::grenade` |
+| `Event::GrenadeWarning` | a live grenade's fuse warning in the hand, from the pin on, faster toward the end | click | 0.75 | weapons | `weapons::grenade` |
+| `Event::GrenadeCatch` | a live grenade is caught | bump | 0.75 | weapons | `weapons::grenade` |
+| `Event::PouchRefused` | the game refuses a grab at the grenade or C4 pouch | buzz | 0.75 | weapons | `weapons::grenade`, `weapons::c4` |
+| `Event::PouchFull` | a full grenade pouch refuses a grenade pressed onto it: the grenade stays in the hand and falls once it opens | long buzz | 1.0 | weapons | `weapons::grenade` |
+| `Event::PouchReturn` | a held grenade or C4 charge pressed back into its pouch goes in | click | 0.5 | weapons | `weapons::grenade`, `weapons::c4` |
+| `Event::C4Prime` | a charge is primed in the hand | click | 0.4 | weapons | `weapons::c4` |
+| `Event::C4Throw` | a charge leaves the hand | click | 0.6 | weapons | `weapons::c4` |
+| `Event::C4Stick` | a charge pressed onto a surface sticks | bump | 0.6 | weapons | `weapons::c4` |
+| `Event::C4Detonate` | the placed charges detonate, on both hands | thud, long | 1.0 | weapons | `weapons::c4` |
+| `Event::DetonatorPress` | the detonator's trigger is pressed with charges placed, on both hands | click | 1.0 | weapons | `weapons::c4` |
+| `Event::DetonatorEmpty` | the detonator's trigger is pressed with nothing to detonate | buzz | 0.1 | weapons | `weapons::c4` |
+| `Event::WheelTick` | the weapon wheel opens or its choice changes | tick | 0.75 | weapons | `weapons::wheel` |
+| `Event::WheelCommit` | the weapon wheel's release commits a weapon | click | 0.75 | weapons | `weapons::wheel` |
+| `Event::SteeringStop` | the held wheel reaches its lock | bump | 0.6 | vehicles | `vehicles::control_haptics` |
+| `Event::SteeringCentre` | the held wheel passes centre | tick | 0.5 | vehicles | `vehicles::control_haptics` |
+| `Event::ControlStop` | a held stick, yoke, or lever reaches a stop | bump | 0.6 | vehicles | `vehicles::control_haptics` |
+| `Event::ControlNeutral` | a held lever passes neutral, or a held stick or yoke comes back to centre | tick | 0.5 | vehicles | `vehicles::control_haptics` |
+| `Event::ThrottleGate` | the held throttle reaches its afterburner gate | bump | 0.9 | vehicles | `vehicles::control_haptics` |
+| `Event::ThrottleStep` | the held throttle passes a tenth of its forward section | tick | 0.3 | vehicles | `vehicles::control_haptics` |
+| `Event::ThrottleZero` | the held throttle comes back to zero and stops at its reverse gate | thud | 1.0 | vehicles | `vehicles::control_haptics` |
+| `Event::ThrottleReverse` | the held throttle goes through its zero gate into reverse or back out | buzz | 0.8 | vehicles | `vehicles::control_haptics` |
+| `Event::ButtonPress` | a cockpit button presses, or a twist grip twists far enough to act | click | 0.75 | vehicles | `vehicles::control_haptics` |
+| `Event::ButtonRelease` | a cockpit button or a twist grip is let go | tick | 0.5 | vehicles | `vehicles::control_haptics` |
+| `Event::HandleGrab` | a hand takes a mounted gun's handle | click | 0.5 | vehicles | `vehicles` |
+| `Event::MountedKick` | a shot of the mounted gun, on each holding hand | bump | 0.6 | vehicles | `vehicles::mounted_recoil` |
+| `Event::GrappleFire` | the grapple fires, or the snatch fires its hook | bump | 0.4 | traversal | `hands::anchor`, `snatch` |
+| `Event::GrappleAttach` | the hook takes hold, the snatch's hook opens a car door, or a tap tosses a gun | thud | 0.5 | traversal | `hands::anchor`, `snatch` |
+| `Event::Yank` | a yank of the grapple hand, or a yank that boosts the reel | bump | 0.6 | traversal | `bindings`, `grapple::physical` |
+| `Event::SnatchArm` | the grapple hand's grip arming a snatch on a target out of reach: the hand has latched on | bump | 0.6 | traversal | `snatch` |
+| `Event::SnatchFire` | the yank that fires an armed snatch | thud | 0.8 | traversal | `snatch` |
+| `Event::SnatchHit` | the snatch's hook biting its target, as the line goes taut | thud | 0.7 | traversal | `snatch` |
+| `Event::SnatchCatch` | the hand catching what the snatch's line yanked to it | thud, long | 1.0 | contact | `snatch` |
+| `Event::SnatchRefused` | a snatch refused or failed | buzz | 0.6 | traversal | `snatch` |
+| `Event::TetherRetract` | the tethers start to retract under the hand's pull | bump | 0.75 | traversal | `grapple::physical` |
+| `Event::LineLock` | the grapple's line locks during the reel ([grapple-lock.md](grapple-lock.md)) | thud | 0.7 | traversal | `grapple::physical::lock` |
+| `Event::LineRelease` | the locked line let go of: the button released or Rico landed | click | 0.4 | traversal | `grapple::physical::lock` |
+| `Event::LineSnap` | the locked line breaks | buzz | 0.8 | traversal | `grapple::physical::lock` |
+| `Event::ClimbGrip` | a hand grips the world to climb | bump | 0.75 | traversal | `physical_hands::climb` |
+| `Event::ClimbRelease` | a climbing hand lets go | click | 0.25 | traversal | `physical_hands::climb` |
+| `Event::ClimbFling` | the body is flung off a climbing grip, scaled by the throw | thud | 0.85 | traversal | `physical_hands::climb` |
+| `Event::StuntEnter` | a hand takes a stunt position | thud | 0.65 | traversal | `physical_hands::stunt` |
+| `Event::StuntRelease` | the hands let go of a stunt position | click | 0.5 | traversal | `physical_hands::stunt` |
+| `Event::SwimStroke` | a swimming hand's stroke catches the water, scaled by how hard it pulls | bump | 0.45 | traversal | `locomotion::strokes` |
+| `Event::Chord` | a controller chord the mod acts on (the recenter or the debug panel) | bump | 0.6 | interface | `bindings` |
+| `Sustain::PalmPressure` | a palm presses into an object, by its shove's load | tension | 0.5 | contact | `physical_hands::touch` |
+| `Sustain::HeldLoad` | a hand pulls or twists what it holds, by the load | tension | 0.5 | contact | `physical_hands::touch` |
+| `Sustain::BodyPressure` | a hand body is held back by what it presses, by its lag | tension | 0.5 | contact | `physical_hands::physics` |
+| `Sustain::ClimbStrain` | the climbing hands move the body, by its speed | tension | 0.5 | traversal | `physical_hands::climb` |
+| `Sustain::StuntHang` | a hand hangs from a stunt position, by the vehicle's speed | tension | 0.35 | traversal | `physical_hands::stunt` |
+| `Sustain::GrappleTension` | the grapple hand while the tethers are squeezed, by their tension, or while the snatch's line yanks its target, by the line's load, or while the held line swings its target, by its tension's share of the line's strength, on the bracing hand too while it braces | tension | 0.75 | traversal | `grapple::physical`, `snatch` |
+| `Sustain::GrappleReel` | the grapple hand while the reel carries the character, by its speed | hum | 0.35 | traversal | `grapple::physical` |
+| `Sustain::GameRumble` | the game's per-frame motor strength: the low motor on the left hand, the high one on the right | hum | 1.0 | game | `haptics::rumble` |
+
+Each default is rounded onto the primitive its source belongs to. The pressure and tension sources are sustained levels that sum, not short pulses resent every tick, and the softest end of the kick and the palm contact is the bump's soft amplitude.
+
+## The game's rumble
+
+The game's rumble reaches the controllers through two detours ([controllers.md, "Recoil, haptics, and the grapple hand"](controllers.md#recoil-haptics-and-the-grapple-hand)): the weapon's own fire rumble inside a shot of a gun in a hand plays as `Event::Shot` on that hand, and the rumble manager's per-frame motor strength plays as `Sustain::GameRumble`, the low motor on the left hand and the high motor on the right. The gamepad itself is silenced unless `gamepad_rumble` is on. The forward sends every motor value, zero included, so the game's rumble stops on the controllers the frame it stops on the pad.
+
+## Threading
+
+`haptics::play`, `play_hands` (one cue on several hands), `play_scaled`, and `sustain` are called from the input tick, the hand bodies' callbacks and frame tick, the weapon hooks, and the rumble detours. Each reads the settings under the config lock, then takes the mixer's lock, a leaf held only to queue the cue ([threading.md](../threading.md)). The frame loop takes the same lock once per frame to mix, under the runtime lock.
+
+## Readout and log
+
+The debug UI's Feedback feature opens with the `HAPTIC CUES` and `IMPACT SOUNDS` status rows, then has the haptics readout: the cues sent per category, the mixer's played and stacked counts (the row has the masked and limited), the amplitude each hand was last sent, and the last dozen one-off cues with their primitive, hand, amplitude, and length. The live controller frame has a test button per primitive for each hand, which plays it at full strength.
+
+The debug UI's Status page has `HAPTIC CUES` under FEEDBACK: the cues sent, masked, and limited. The cues themselves are not logged (they are too frequent); the events that raise them are, by their own subsystems.
+
+## In the headset
+
+1. Open the debug UI's Status page: `HAPTIC CUES` reads `WAITING` with nothing sent. Use the debug UI's test buttons on each hand: tick, click, bump, buzz, and thud should feel distinct in weight and length, and hum and tension should feel like a held vibration. If the five one-off primitives feel the same, the runtime is probably ignoring the frequency.
+2. Reach into a holster and out again: a faint tick on entering. Draw: a click. `HAPTIC CUES` counts up.
+3. Fire a pistol: a thud on the gun hand only. Fire a long burst from an automatic weapon while reaching into a pouch with the other hand: the burst stays clean on the gun hand, and the pouch tick plays on the other.
+4. Hold a gun on its foregrip and fire a burst while the reel or a vehicle's rumble runs: the shots stand out above the rumble rather than merging into it, and the rumble resumes between shots.
+5. Press a palm into a crate and push: a tension that rises with the push. Grip a wall to climb and pull yourself up: a bump on the grip, a tension while moving, and a click on letting go. Do both hands at once while the game rumbles (stand near an explosion): the hands buzz together but never at full strength, and `LIMITED` counts up.
+6. Slap a wall at speed and then gently: a firm bump, then a faint one.
+7. Take the wheel of a car, turn to the lock and back through centre: a bump at the lock and a tick at centre. Press the horn: a click, and a tick on letting go.
+8. Grapple to a wall: a bump as it fires and a thud as it attaches. Tether two objects and squeeze: a tension on the grapple hand.
+9. Detonate C4: a long thud on both hands.
+10. Turn `GAME RUMBLE` off: landings and vehicles no longer rumble, and shots no longer pulse. Lower `HAPTIC STRENGTH`: everything weakens together.
+
+## Open questions
+
+- Whether the runtimes in use (SteamVR's Index driver through Monado, and WiVRn) honour the frequency hint, and whether the low hint of the thud and the hum feels weaker than the runtime's default on the Index's actuators.
+- Whether the sustained ceiling leaves the game's strongest rumbles (a landing from height, an explosion close by) strong enough, since they sum under it.

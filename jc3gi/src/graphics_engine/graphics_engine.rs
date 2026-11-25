@@ -90,7 +90,14 @@ impl std::convert::AsMut<DrawThreadTaskParam> for DrawThreadTaskParam {
 /// (`CGraphicsEngine::SEffectInfo`). The graphics engine holds an array of these in
 /// [`GraphicsEngine::m_EffectInfo`](crate::graphics_engine::graphics_engine::GraphicsEngine::m_EffectInfo), and the lifecycle byte advances once per scene dispatch.
 pub struct EffectInfo {
-    /// The reflection-proxy depth texture.
+    /// The reflection-proxy depth texture: the destination of the `CopyEffectTextures` stage's
+    /// [`CopySurfaceToTexture`](crate::graphics_engine::draw::CopySurfaceToTexture) of the
+    /// reflection-proxy depth surface, a whole-surface copy at the render size.
+    ///
+    /// Nothing reads it. Its two accessors, `GetEffectDepthTexture` and `GetEffectTransformRef`, have
+    /// no callers and no references in the image, and the passes that use the reflection-proxy depth
+    /// sample the live surface rather than a history slot. Skipping the copy leaves the rendered frame
+    /// unchanged.
     pub m_DepthTexture: *mut crate::graphics_engine::graphics_engine::HTexture_t,
     pub m_Transform: crate::types::math::Matrix4,
     /// The lifecycle counter, one of the `FRAME_INDEX_*` constants on this type. Any other non-free
@@ -797,7 +804,24 @@ impl std::convert::AsMut<HTimeStampQuery_t> for HTimeStampQuery_t {
 #[repr(C, align(8))]
 /// A vertex-declaration handle: the input layout a render block binds before its draws, passed to the
 /// render block types' `Setup` and on to `Graphics::SetVertexDeclaration`.
-pub struct HVertexDeclaration_t {}
+///
+/// [`CreateVertexDeclarationInstanced`](crate::graphics_engine::graphics_engine::CreateVertexDeclarationInstanced) and its non-instanced sibling build it from an element array
+/// that the creating code assembles on its stack (each render block type's `Create` does so once,
+/// at registration). The handle keeps only the D3D layout and each stream's byte size, and D3D11 offers
+/// no way to read a layout's elements back.
+pub struct HVertexDeclaration_t {
+    /// The D3D input layout `Graphics::SetVertexDeclaration` binds.
+    pub m_Layout: crate::graphics_engine::device::ID3D11InputLayout,
+    /// Each vertex stream's byte size: the sum of the sizes of the elements the declaration placed on
+    /// that stream, in declaration order, which is also how each element's byte offset was assigned.
+    pub m_element_bytesize: [u32; 4],
+}
+fn _HVertexDeclaration_t_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], HVertexDeclaration_t>([0u8; 0x18]);
+    }
+    unreachable!()
+}
 impl HVertexDeclaration_t {}
 impl std::convert::AsRef<HVertexDeclaration_t> for HVertexDeclaration_t {
     fn as_ref(&self) -> &HVertexDeclaration_t {
@@ -806,6 +830,31 @@ impl std::convert::AsRef<HVertexDeclaration_t> for HVertexDeclaration_t {
 }
 impl std::convert::AsMut<HVertexDeclaration_t> for HVertexDeclaration_t {
     fn as_mut(&mut self) -> &mut HVertexDeclaration_t {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// A vertex program handle: the D3D vertex shader and the bytecode it was created from, which an
+/// input layout is validated against at creation.
+pub struct HVertexProgram_t {
+    _field_0: [u8; 8],
+    pub m_Code: *const u8,
+    pub m_CodeSize: u64,
+}
+fn _HVertexProgram_t_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], HVertexProgram_t>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl HVertexProgram_t {}
+impl std::convert::AsRef<HVertexProgram_t> for HVertexProgram_t {
+    fn as_ref(&self) -> &HVertexProgram_t {
+        self
+    }
+}
+impl std::convert::AsMut<HVertexProgram_t> for HVertexProgram_t {
+    fn as_mut(&mut self) -> &mut HVertexProgram_t {
         self
     }
 }
@@ -1212,6 +1261,72 @@ impl std::convert::AsMut<RenderFrameCounters> for RenderFrameCounters {
         self
     }
 }
+#[derive(Copy, Clone)]
+#[repr(C, align(4))]
+/// One per-instance element of a vertex declaration: an [`SVertexElement`](crate::graphics_engine::graphics_engine::SVertexElement) whose semantic comes from
+/// the instanced-semantic table (the `INST_`-prefixed names) and which advances once every
+/// [`m_StepRate`](crate::graphics_engine::graphics_engine::SInstancedVertexElement::m_StepRate) instances.
+pub struct SInstancedVertexElement {
+    pub m_Stream: i32,
+    pub m_Size: i32,
+    pub m_Type: i32,
+    pub m_Usage: i32,
+    pub m_UsageIndex: i32,
+    /// The D3D `InstanceDataStepRate` of the element.
+    pub m_StepRate: i32,
+}
+fn _SInstancedVertexElement_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x18], SInstancedVertexElement>([0u8; 0x18]);
+    }
+    unreachable!()
+}
+impl SInstancedVertexElement {}
+impl std::convert::AsRef<SInstancedVertexElement> for SInstancedVertexElement {
+    fn as_ref(&self) -> &SInstancedVertexElement {
+        self
+    }
+}
+impl std::convert::AsMut<SInstancedVertexElement> for SInstancedVertexElement {
+    fn as_mut(&mut self) -> &mut SInstancedVertexElement {
+        self
+    }
+}
+#[derive(Copy, Clone)]
+#[repr(C, align(4))]
+/// One per-vertex element of a vertex declaration, as [`CreateVertexDeclarationInstanced`](crate::graphics_engine::graphics_engine::CreateVertexDeclarationInstanced) takes it.
+/// The type and size select the element's DXGI format and byte size through the engine's format
+/// tables; the usage selects its semantic name, and one usage value marks padding that occupies bytes
+/// on its stream but emits no input element.
+pub struct SVertexElement {
+    /// The vertex stream (input slot), below four.
+    pub m_Stream: i32,
+    /// The component count.
+    pub m_Size: i32,
+    /// The component type (`Graphics::EType`).
+    pub m_Type: i32,
+    /// The semantic (`Graphics::EVertexDeclarationUsage`).
+    pub m_Usage: i32,
+    /// The semantic index.
+    pub m_UsageIndex: i32,
+}
+fn _SVertexElement_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x14], SVertexElement>([0u8; 0x14]);
+    }
+    unreachable!()
+}
+impl SVertexElement {}
+impl std::convert::AsRef<SVertexElement> for SVertexElement {
+    fn as_ref(&self) -> &SVertexElement {
+        self
+    }
+}
+impl std::convert::AsMut<SVertexElement> for SVertexElement {
+    fn as_mut(&mut self) -> &mut SVertexElement {
+        self
+    }
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
 /// When a pending screenshot is taken relative to the UI draw
@@ -1287,6 +1402,108 @@ pub unsafe fn get_render_frame_counters() -> &'static mut crate::graphics_engine
 /// (`CGraphicsEngine::RenderFrameIndex`).
 pub unsafe fn get_render_frame_index() -> &'static mut u32 {
     unsafe { &mut *(0x142E5B664 as *mut u32) }
+}
+pub const CreateVertexDeclarationInstanced_ADDRESS: usize = 0x1419530A0;
+/// Creates a vertex declaration with per-instance elements. Converts `parameters` into per-vertex
+/// D3D input elements and then `inst_parameters` into per-instance ones (`D3D11_INPUT_PER_INSTANCE_DATA`
+/// with each element's [`m_StepRate`](crate::graphics_engine::graphics_engine::SInstancedVertexElement::m_StepRate)), assigning each element
+/// the running byte offset of its stream, creates the D3D input layout against `program`'s bytecode
+/// (raising the graphics critical-error path on failure), and records the streams' byte sizes in the
+/// returned handle. The element arrays are not retained. Nothing is cached: every call allocates a
+/// new handle from the device's allocator and creates a new D3D layout.
+/// [`RenderBlockTypeGeneralMkIII::Create`](crate::graphics_engine::render_block::RenderBlockTypeGeneralMkIII::Create)
+/// calls it once per hardware-instanced layout of the type, and the bark, foliage, and occluder types'
+/// `Create` call it for theirs.
+pub unsafe fn CreateVertexDeclarationInstanced(
+    device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+    parameters: *const crate::graphics_engine::graphics_engine::SVertexElement,
+    parameters_count: i32,
+    inst_parameters: *const crate::graphics_engine::graphics_engine::SInstancedVertexElement,
+    inst_parameters_count: i32,
+    program: *mut crate::graphics_engine::graphics_engine::HVertexProgram_t,
+) -> *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+            parameters: *const crate::graphics_engine::graphics_engine::SVertexElement,
+            parameters_count: i32,
+            inst_parameters: *const crate::graphics_engine::graphics_engine::SInstancedVertexElement,
+            inst_parameters_count: i32,
+            program: *mut crate::graphics_engine::graphics_engine::HVertexProgram_t,
+        ) -> *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t = ::std::mem::transmute(
+            CreateVertexDeclarationInstanced_ADDRESS,
+        );
+        f(
+            device,
+            parameters,
+            parameters_count,
+            inst_parameters,
+            inst_parameters_count,
+            program,
+        )
+    }
+}
+pub const CreateVertexDeclaration_ADDRESS: usize = 0x141952F00;
+/// Creates a vertex declaration with per-vertex elements only: the conversion
+/// [`CreateVertexDeclarationInstanced`](crate::graphics_engine::graphics_engine::CreateVertexDeclarationInstanced) applies to its `parameters`, the same allocation, and the same
+/// critical-error path on failure.
+pub unsafe fn CreateVertexDeclaration(
+    device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+    parameters: *const crate::graphics_engine::graphics_engine::SVertexElement,
+    parameters_count: i32,
+    program: *mut crate::graphics_engine::graphics_engine::HVertexProgram_t,
+) -> *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+            parameters: *const crate::graphics_engine::graphics_engine::SVertexElement,
+            parameters_count: i32,
+            program: *mut crate::graphics_engine::graphics_engine::HVertexProgram_t,
+        ) -> *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t = ::std::mem::transmute(
+            CreateVertexDeclaration_ADDRESS,
+        );
+        f(device, parameters, parameters_count, program)
+    }
+}
+pub const DestroyVertexDeclaration_ADDRESS: usize = 0x1419532D0;
+/// Destroys a vertex declaration: releases its D3D input layout and returns the handle to the
+/// device's allocator.
+pub unsafe fn DestroyVertexDeclaration(
+    device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+    declaration: *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+            declaration: *mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t,
+        ) = ::std::mem::transmute(DestroyVertexDeclaration_ADDRESS);
+        f(device, declaration)
+    }
+}
+pub const CreateConstantBuffer_ADDRESS: usize = 0x141952DC0;
+/// Creates a constant buffer of `register_count` 16-byte registers with the given usage
+/// (`Graphics::EUsageType`; the dynamic usage adds CPU write access), initialised from `data` when it
+/// is non-null. Allocates the handle from the device's allocator and raises the graphics
+/// critical-error path when the D3D creation fails.
+pub unsafe fn CreateConstantBuffer(
+    device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+    register_count: i32,
+    usage: i32,
+    data: *const ::std::ffi::c_void,
+    tag: bool,
+) -> *mut ::std::ffi::c_void {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+            register_count: i32,
+            usage: i32,
+            data: *const ::std::ffi::c_void,
+            tag: bool,
+        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(
+            CreateConstantBuffer_ADDRESS,
+        );
+        f(device, register_count, usage, data, tag)
+    }
 }
 pub const SetupRenderStates_ADDRESS: usize = 0x14195FEA0;
 /// The pre-draw pipeline-state flush at the top of every draw wrapper: for each dirty state category

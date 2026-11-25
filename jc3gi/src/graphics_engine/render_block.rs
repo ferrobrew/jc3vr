@@ -281,6 +281,52 @@ impl std::convert::AsMut<RBIInfo> for RBIInfo {
     }
 }
 #[repr(C, align(8))]
+/// The ambient-occlusion volume render block (`NGraphicsEngine::CRenderBlockAOBox`): a box or a
+/// sphere, drawn in `RP_AO_VOLUMES`, that darkens the scene inside it with a falloff from its centre.
+pub struct RenderBlockAOBox {}
+impl RenderBlockAOBox {
+    pub const Draw_ADDRESS: usize = 0x1401364B0;
+    /// Stages the volume's constants and issues its box geometry as a single `DrawIndexed`.
+    ///
+    /// On the vertex side it stages the instance's world matrix at slot 1 registers 0..3, the
+    /// half-extents at register 4, and the render context's
+    /// [`m_UVScale`](crate::graphics_engine::graphics_engine::RenderContext::m_UVScale) at register 5; the
+    /// `aobox` vertex shader projects the corners through the full view-projection of the vertex
+    /// `GlobalConstants` and hands the pixel shader a projective screen UV, scaled by that UV scale.
+    /// On the fragment side it stages the falloff and the shadow floor at slot 1 register 0, and at
+    /// registers 1..4 `ScreenToLocal`: the map from the screen UV and the sampled scene depth to the
+    /// volume's unit space, composed from the UV-to-NDC flip, the inverse of the rotation-only
+    /// [`m_View`](crate::graphics_engine::graphics_engine::RenderContext::m_View) times
+    /// [`m_ProjectionF`](crate::graphics_engine::graphics_engine::RenderContext::m_ProjectionF), the inverse
+    /// of the world matrix made relative to the camera position, and the inverse half-extents. The pixel shader (`aobox` or
+    /// `aosphere`) samples the scene depth and the reflective water planes' depth at the UV, maps
+    /// both through the matrix, and multiplies the target by the occlusion.
+    pub unsafe fn Draw(
+        &self,
+        rc: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        info: *const crate::graphics_engine::render_block::RBIInfo,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                rc: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                info: *const crate::graphics_engine::render_block::RBIInfo,
+            ) = ::std::mem::transmute(Self::Draw_ADDRESS);
+            f(self as *const Self as _, rc, info)
+        }
+    }
+}
+impl std::convert::AsRef<RenderBlockAOBox> for RenderBlockAOBox {
+    fn as_ref(&self) -> &RenderBlockAOBox {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockAOBox> for RenderBlockAOBox {
+    fn as_mut(&mut self) -> &mut RenderBlockAOBox {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The atmospheric-scattering / aerial-perspective render block. Its `Draw` reconstructs world
 /// position from depth via [`Matrix4::PerspectiveFovInverse`](crate::types::math::Matrix4) -- for the whole
 /// screen, sky included -- and then ray-marches the sun shadow cascade and aerial perspective over
@@ -404,6 +450,52 @@ impl RenderBlockBark {
                 info: *const crate::graphics_engine::render_block::RBIInfo,
             ) = ::std::mem::transmute(Self::DrawZ_ADDRESS);
             f(self as *const Self as _, render_context, info)
+        }
+    }
+    pub const Setup_ADDRESS: usize = 0x140103130;
+    /// The per-block setup (`IRenderBlock::Setup`) for the passes [`Draw`](crate::graphics_engine::render_block::RenderBlockBark::Draw) issues. The
+    /// draw kind is in `sort_id`: plain, GPU-indirect, or CPU-instanced. When `change` says the kind
+    /// changed since the previous block, it binds the type's vertex program for that kind and the
+    /// matching vertex declaration (the instanced declaration for the CPU-instanced kind), selecting
+    /// the shadow programs and declarations under the
+    /// [`RENDERSTATUS_SHADOWMAP`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_SHADOWMAP)
+    /// bits. It then binds the block's fragment program, textures, samplers, vertex streams, and
+    /// index buffer. `Draw` binds no vertex program of its own except on the billboard path.
+    pub unsafe fn Setup(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        sort_id: u64,
+        change: u64,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                sort_id: u64,
+                change: u64,
+            ) = ::std::mem::transmute(Self::Setup_ADDRESS);
+            f(self as *const Self as _, render_context, sort_id, change)
+        }
+    }
+    pub const SetupZ_ADDRESS: usize = 0x140103020;
+    /// The per-block setup for the passes [`DrawZ`](crate::graphics_engine::render_block::RenderBlockBark::DrawZ) issues: binds the depth or the
+    /// depth-and-velocity vertex program for the draw kind in `sort_id`, with the depth vertex
+    /// declaration, when `change` says the kind changed, then the block's vertex streams (the
+    /// per-instance stream too for the CPU-instanced kind) and index buffer.
+    pub unsafe fn SetupZ(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        sort_id: u64,
+        change: u64,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                sort_id: u64,
+                change: u64,
+            ) = ::std::mem::transmute(Self::SetupZ_ADDRESS);
+            f(self as *const Self as _, render_context, sort_id, change)
         }
     }
 }
@@ -742,6 +834,77 @@ impl std::convert::AsMut<RenderBlockDeferredLighting> for RenderBlockDeferredLig
     }
 }
 #[repr(C, align(8))]
+/// The volumetric fog render block (`NGraphicsEngine::CRenderBlockFogVolume`). `CFogManager` draws
+/// it in two passes, and its `Draw` branches on the render context's
+/// [`m_ActiveRenderPass`](crate::graphics_engine::graphics_engine::RenderContext::m_ActiveRenderPass).
+pub struct RenderBlockFogVolume {}
+impl RenderBlockFogVolume {
+    pub const Draw_ADDRESS: usize = 0x14013FAF0;
+    /// Draws one fog-volume pass, doing nothing when the block type is disabled.
+    ///
+    /// Common to both passes, it saves the bound render setup and binds the type's half-resolution
+    /// bilateral-upsample fog render setup, then stages the shared constants. Vertex `cb1` registers
+    /// 0..3 receive the instance's world matrix, made relative to
+    /// [`m_CameraPosition`](crate::graphics_engine::graphics_engine::RenderContext::m_CameraPosition) and
+    /// multiplied by
+    /// [`m_OffsetViewProjection`](crate::graphics_engine::graphics_engine::RenderContext::m_OffsetViewProjection).
+    /// The block's fullscreen vertex shader reads none of `cb1`; it passes the viewport-covering
+    /// triangle through and emits a texture UV spanning the whole bound target. The half-resolution
+    /// scene depth, the noise volume, and the two horizon maps are bound. Fragment `cb1` registers
+    /// 0..3 (`InvViewProj`) receive a texture-UV-to-world matrix: the scale and offset taking UV to
+    /// NDC composed with `Inverse(`[`m_ViewProjectionF`](crate::graphics_engine::graphics_engine::RenderContext::m_ViewProjectionF)`)`.
+    /// The same inverse also goes to vertex `cb1` registers 4..7. Fragment `cb1` registers 4, 5, 8, 9,
+    /// and 10 carry the distribution, noise, cloud-shadow, and depth parameters. The cloud-shadow
+    /// blend reads the height of
+    /// [`m_RenderCameraPosition`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderCameraPosition),
+    /// and the depth parameters derive from
+    /// [`CameraNear`](crate::graphics_engine::graphics_engine::RenderContext::CameraNear) and
+    /// [`CameraFar`](crate::graphics_engine::graphics_engine::RenderContext::CameraFar).
+    ///
+    /// In
+    /// [`RP_FOG_VOLUME_GENERATE`](crate::graphics_engine::render_engine::RenderPassId::RP_FOG_VOLUME_GENERATE)
+    /// it binds one of the `fogvolumeapply*` fragment programs (chosen by the noise and colour tweak
+    /// attributes, or the optimized one) and draws additively into the bilateral-upsample fog target.
+    /// Each pixel samples depth at its UV, reconstructs the world position through `InvViewProj`, and
+    /// ray-marches from the fragment GlobalConstants camera position towards it, sampling the sun
+    /// shadow cascade and cloud shadow map along the way.
+    ///
+    /// In
+    /// [`RP_FOG_VOLUME_UPSAMPLE`](crate::graphics_engine::render_engine::RenderPassId::RP_FOG_VOLUME_UPSAMPLE)
+    /// it bilaterally upsamples that result against the full-resolution depth and the reflection
+    /// proxy depth. When compute upsampling is enabled it restores the saved render setup and issues
+    /// one compute dispatch sized from
+    /// [`m_HiResTextureWidth`](crate::graphics_engine::render_block::RenderBlockTypeFogVolume::m_HiResTextureWidth) and
+    /// [`m_HiResTextureHeight`](crate::graphics_engine::render_block::RenderBlockTypeFogVolume::m_HiResTextureHeight). Otherwise it binds
+    /// the volume-depth render setup and draws `fogvolumebilateralupsample`. That pass reconstructs no
+    /// positions; it reads only the depth parameters. After either pass's draw it restores the saved
+    /// render setup. In any other pass it returns before drawing, leaving the fog render setup bound.
+    pub unsafe fn Draw(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        info: *const crate::graphics_engine::render_block::RBIInfo,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                info: *const crate::graphics_engine::render_block::RBIInfo,
+            ) = ::std::mem::transmute(Self::Draw_ADDRESS);
+            f(self as *const Self as _, render_context, info)
+        }
+    }
+}
+impl std::convert::AsRef<RenderBlockFogVolume> for RenderBlockFogVolume {
+    fn as_ref(&self) -> &RenderBlockFogVolume {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockFogVolume> for RenderBlockFogVolume {
+    fn as_mut(&mut self) -> &mut RenderBlockFogVolume {
+        self
+    }
+}
+#[repr(C, align(8))]
 /// The grass/foliage render block (`NGraphicsEngine::CRenderBlockFoliage`, registered name
 /// `"VegetationFoliage"`): forward-lit ground cover and small plants, drawn in `RP_VEGETATION_OPAQUE`.
 /// The bulk is grass drawn GPU-indirect.
@@ -800,6 +963,26 @@ impl RenderBlockFoliage {
                 info: *const crate::graphics_engine::render_block::RBIInfo,
             ) = ::std::mem::transmute(Self::DrawZ_ADDRESS);
             f(self as *const Self as _, render_context, info)
+        }
+    }
+    pub const SetupZ_ADDRESS: usize = 0x14010D450;
+    /// The per-block setup for the passes [`DrawZ`](crate::graphics_engine::render_block::RenderBlockFoliage::DrawZ) issues: binds the depth or the
+    /// depth-and-velocity vertex program for the draw kind in `sort_id`, with the depth vertex
+    /// declaration, on every call, then the block's stream, texture, and index buffer.
+    pub unsafe fn SetupZ(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        sort_id: u64,
+        change: u64,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                sort_id: u64,
+                change: u64,
+            ) = ::std::mem::transmute(Self::SetupZ_ADDRESS);
+            f(self as *const Self as _, render_context, sort_id, change)
         }
     }
 }
@@ -1060,7 +1243,9 @@ impl RenderBlockSSAO {
     ///    is on its first frame it is preceded by a second separable blur pair, over the previous
     ///    history slot.
     /// 5. The composite into the alpha channel of the scene target (colour mask 8, depth test on),
-    ///    followed by the inlined history advance.
+    ///    outside the temporal branch: with the temporal filter on it samples the history slot the
+    ///    resolve just wrote and is followed by the inlined history advance, and with it off it
+    ///    samples the blurred occlusion target and nothing advances.
     pub unsafe fn Draw(
         &self,
         rc: *mut crate::graphics_engine::graphics_engine::RenderContext,
@@ -1925,7 +2110,9 @@ impl std::convert::AsMut<RenderBlockTypeCarPaintMM> for RenderBlockTypeCarPaintM
 #[repr(C, align(8))]
 /// The fog-volume render block *type* (the
 /// `NGraphicsEngine::CRenderBlockFogVolume::CRenderBlockTypeFogVolume` singleton): owns the froxel
-/// volumetric-fog textures and recreates them when the scene render resolution changes.
+/// volumetric-fog textures and recreates them when the scene render resolution changes. It also holds
+/// the shaders, render setups, samplers, and tweak attributes that
+/// [`RenderBlockFogVolume::Draw`](crate::graphics_engine::render_block::RenderBlockFogVolume::Draw) reads.
 pub struct RenderBlockTypeFogVolume {
     _field_0: [u8; 296],
     /// The full-resolution fog target width, in pixels, latched from the last
@@ -1940,6 +2127,14 @@ fn _RenderBlockTypeFogVolume_size_check() {
         ::std::mem::transmute::<[u8; 0x130], RenderBlockTypeFogVolume>([0u8; 0x130]);
     }
     unreachable!()
+}
+impl RenderBlockTypeFogVolume {
+    pub unsafe fn get() -> Option<&'static mut Self> {
+        unsafe {
+            let ptr: *mut Self = *(5417825408usize as *mut *mut Self);
+            ptr.as_mut()
+        }
+    }
 }
 impl RenderBlockTypeFogVolume {
     pub const ResizeTextures_ADDRESS: usize = 0x14010C5A0;
@@ -2065,9 +2260,103 @@ for RenderBlockTypeGeneralMaskedJC3 {
     }
 }
 #[repr(C, align(8))]
-/// The `RenderBlockGeneralMkIII` render block *type* (`NGraphicsEngine::CRenderBlockGeneralMkIII::CRenderBlockTypeGeneralMkIII`).
-pub struct RenderBlockTypeGeneralMkIII {}
+/// The `RenderBlockGeneralMkIII` render block *type* (`NGraphicsEngine::CRenderBlockGeneralMkIII::CRenderBlockTypeGeneralMkIII`,
+/// type name `GeneralMkIII`): the static and dynamic model block of most buildings and props.
+/// `CRenderBlockGeneralMkIII::InitType` allocates it, stores it in the singleton, calls its
+/// [`Create`](crate::graphics_engine::render_block::RenderBlockTypeGeneralMkIII::Create), and registers it. It derives from
+/// [`RenderBlockTypeBase`](crate::graphics_engine::render_engine::RenderBlockTypeBase), whose vtable slots it
+/// overrides with the functions bound here; the base is not mapped as a region so that those can be
+/// called directly.
+///
+/// The vertex declarations are indexed by vertex permutation (the `HW_INSTANCED` permutations among
+/// them take theirs from [`CreateVertexDeclarationInstanced`](crate::graphics_engine::graphics_engine::CreateVertexDeclarationInstanced));
+/// several entries alias another entry's handle rather than owning one.
+pub struct RenderBlockTypeGeneralMkIII {
+    _field_0: [u8; 5792],
+    /// The colour passes' declarations.
+    pub m_VertexDeclaration: [*mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t; 6],
+    /// The hardware-instanced declarations of the depth-and-velocity pass.
+    pub m_VertexDeclarationHWInstancingVelocity: [[*mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t; 2]; 2],
+    /// The depth-only passes' declarations.
+    pub m_VertexDeclarationDepth: [*mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t; 6],
+    /// The alpha-tested depth-only passes' declarations.
+    pub m_VertexDeclarationDepthAlphaTest: [*mut crate::graphics_engine::graphics_engine::HVertexDeclaration_t; 6],
+    _field_1750: [u8; 424],
+}
+fn _RenderBlockTypeGeneralMkIII_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x18F8],
+            RenderBlockTypeGeneralMkIII,
+        >([0u8; 0x18F8]);
+    }
+    unreachable!()
+}
 impl RenderBlockTypeGeneralMkIII {
+    pub unsafe fn get() -> Option<&'static mut Self> {
+        unsafe {
+            let ptr: *mut Self = *(5417825480usize as *mut *mut Self);
+            ptr.as_mut()
+        }
+    }
+}
+impl RenderBlockTypeGeneralMkIII {
+    pub const Create_ADDRESS: usize = 0x140158C40;
+    /// Creates the type's GPU resources ([`RenderBlockTypeBase::Create`](crate::graphics_engine::render_engine::RenderBlockTypeBase::Create)),
+    /// in this order and with no other side effects: binds the wind noise texture through
+    /// [`TextureCacheGetTexture`](crate::graphics_engine::render_engine::TextureCacheGetTexture), resets the
+    /// tuning fields, reads the video card info, acquires the shader holders through
+    /// [`LoadShaders`](crate::graphics_engine::render_block::RenderBlockTypeGeneralMkIII::LoadShaders), builds every vertex declaration from element arrays it
+    /// assembles on its stack (reading each declaration's vertex program from the holders) through
+    /// [`CreateVertexDeclaration`](crate::graphics_engine::graphics_engine::CreateVertexDeclaration) and
+    /// [`CreateVertexDeclarationInstanced`](crate::graphics_engine::graphics_engine::CreateVertexDeclarationInstanced),
+    /// creates the sampler states through [`CreateSamplerStates`](crate::graphics_engine::render_block::RenderBlockTypeGeneralMkIII::CreateSamplerStates), and
+    /// creates the identity skinning palette through
+    /// [`CreateConstantBuffer`](crate::graphics_engine::graphics_engine::CreateConstantBuffer). Every result is
+    /// stored in `self`.
+    pub unsafe fn Create(
+        &mut self,
+        resource_context: *const crate::graphics_engine::render_engine::ResourceContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                resource_context: *const crate::graphics_engine::render_engine::ResourceContext,
+            ) = ::std::mem::transmute(Self::Create_ADDRESS);
+            f(self as *mut Self as _, resource_context)
+        }
+    }
+    pub const LoadShaders_ADDRESS: usize = 0x140156AD0;
+    /// Acquires every vertex and fragment program holder of the type from the resource context's
+    /// shader cache.
+    pub unsafe fn LoadShaders(
+        &mut self,
+        resource_context: *const crate::graphics_engine::render_engine::ResourceContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                resource_context: *const crate::graphics_engine::render_engine::ResourceContext,
+            ) = ::std::mem::transmute(Self::LoadShaders_ADDRESS);
+            f(self as *mut Self as _, resource_context)
+        }
+    }
+    pub const CreateSamplerStates_ADDRESS: usize = 0x1401109B0;
+    /// Creates the type's sampler states (the regular and normal-map samplers, with and without the
+    /// type's anisotropy, and the wind noise sampler). `Recreate` destroys and re-creates them; it is
+    /// the only thing `Recreate` rebuilds.
+    pub unsafe fn CreateSamplerStates(
+        &mut self,
+        device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                device: *mut crate::graphics_engine::graphics_engine::HDevice_t,
+            ) = ::std::mem::transmute(Self::CreateSamplerStates_ADDRESS);
+            f(self as *mut Self as _, device)
+        }
+    }
     pub const Setup_ADDRESS: usize = 0x14012FE40;
     /// The type-level per-pass setup (the `IRenderBlockType::Setup` override). Binds the forward lighting
     /// resources through
@@ -2123,6 +2412,52 @@ impl std::convert::AsRef<RenderBlockTypeLayered> for RenderBlockTypeLayered {
 }
 impl std::convert::AsMut<RenderBlockTypeLayered> for RenderBlockTypeLayered {
     fn as_mut(&mut self) -> &mut RenderBlockTypeLayered {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The static light-sprite render block *type* (`NGraphicsEngine::CRenderBlockLights::CRenderBlockTypeLights`,
+/// registered name `"StaticLights"`): the point-light sprites `CLightManager` builds for the world's
+/// static lights, drawn as additive camera-facing quads. Each block draws its lights with one
+/// non-indexed `Draw` over a vertex stream of six vertices per light. The vertex programs
+/// (`Lightsource` and `Lightsource_FakeLight`) project each light's world position through the
+/// translation-bearing view-projection in the global vertex constants and expand the quad around it
+/// in clip space by a pixel size scaled by the clip `w`, so a sprite keeps a screen-space size set by
+/// its distance. The block draws in the sky-tail lens-flare pass, in the planar reflection's
+/// distant-light pass, and, through the fake-light permutation, in
+/// [`RP_DEFERRED_LIGHTS`](crate::graphics_engine::render_engine::RenderPassId::RP_DEFERRED_LIGHTS).
+pub struct RenderBlockTypeLights {}
+impl RenderBlockTypeLights {
+    pub const Setup_ADDRESS: usize = 0x14017CE90;
+    /// Binds the state every light-sprite draw in the pass shares and stages the vertex program's
+    /// constants in vertex `cb1`. In [`RP_DEFERRED_LIGHTS`](crate::graphics_engine::render_engine::RenderPassId::RP_DEFERRED_LIGHTS)
+    /// it selects the fake-light program pair, binds the depth texture its pixel program fades
+    /// against, and applies the distant-light size and intensity scales; elsewhere both scales are
+    /// one. The sprite size scale is derived from the render context's projection and the height of
+    /// [`RenderContext::m_BackBufferTexture`](crate::graphics_engine::graphics_engine::RenderContext::m_BackBufferTexture),
+    /// and the inverse screen width and height that convert the pixel size to clip units are one over
+    /// that texture's width and height. The constants also carry the intensity, the distance fade, the
+    /// size-distance curve, and an animation time from the render context's accumulated frame time.
+    pub unsafe fn Setup(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::Setup_ADDRESS);
+            f(self as *const Self as _, render_context)
+        }
+    }
+}
+impl std::convert::AsRef<RenderBlockTypeLights> for RenderBlockTypeLights {
+    fn as_ref(&self) -> &RenderBlockTypeLights {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockTypeLights> for RenderBlockTypeLights {
+    fn as_mut(&mut self) -> &mut RenderBlockTypeLights {
         self
     }
 }
@@ -2583,7 +2918,46 @@ impl RenderBlockTypeTerrain {
         }
     }
 }
-impl RenderBlockTypeTerrain {}
+impl RenderBlockTypeTerrain {
+    pub const SetupConstantBuffers_ADDRESS: usize = 0x14032A4C0;
+    /// Binds the type-level constant buffers for a tessellating base-terrain pass and, once per frame
+    /// per constant-buffer slot (the slot comes from the render status and active pass; the stamp is
+    /// [`m_WasCBApplied`](crate::graphics_engine::render_block::RenderBlockTypeTerrain::m_WasCBApplied)), bakes the hull/domain constants the base-terrain
+    /// hull and domain programs read at `cb1` into that slot's
+    /// [`m_HDTypeConstants`](crate::graphics_engine::render_block::RenderBlockTypeTerrain::m_HDTypeConstants) buffer:
+    ///
+    /// - `float4` 0: `xyz` = the normalized forward vector of the camera manager's *render* camera,
+    ///   `w` = `1.0` when the pass carries
+    ///   [`RENDERSTATUS_REFLECTIONS`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_REFLECTIONS)
+    ///   and [`m_EnableBackPatchCulling`](crate::graphics_engine::render_block::RenderBlockTypeTerrain::m_EnableBackPatchCulling) is set, else `0.0`.
+    /// - `float4` 1..4: the dispatch's
+    ///   [`RenderContext::m_OffsetViewProjection`](crate::graphics_engine::graphics_engine::RenderContext::m_OffsetViewProjection),
+    ///   which the domain program projects through and the hull program's frustum test projects
+    ///   each patch through.
+    /// - `float4` 5..8: the camera position, the shadow manager's tessellation origin, the
+    ///   tessellation factors, and the frustum-cull flag: `1.0` when
+    ///   [`m_EnableFrustumPatchCulling`](crate::graphics_engine::render_block::RenderBlockTypeTerrain::m_EnableFrustumPatchCulling) is set and the active
+    ///   pass is neither a shadow cascade nor
+    ///   [`RP_TERRAIN_APPLY_NEAR`](crate::graphics_engine::render_engine::RenderPassId::RP_TERRAIN_APPLY_NEAR)
+    ///   or
+    ///   [`RP_TERRAIN_APPLY_FAR`](crate::graphics_engine::render_engine::RenderPassId::RP_TERRAIN_APPLY_FAR),
+    ///   else `0.0`.
+    ///
+    /// The buffer is then bound at hull and domain `cb1`, and the global constants at vertex and
+    /// fragment `cb0`.
+    pub unsafe fn SetupConstantBuffers(
+        &mut self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::SetupConstantBuffers_ADDRESS);
+            f(self as *mut Self as _, render_context)
+        }
+    }
+}
 impl std::convert::AsRef<RenderBlockTypeTerrain> for RenderBlockTypeTerrain {
     fn as_ref(&self) -> &RenderBlockTypeTerrain {
         self
@@ -2862,6 +3236,97 @@ impl std::convert::AsMut<RenderBlockTypeWindow> for RenderBlockTypeWindow {
         self
     }
 }
+#[repr(C, align(8))]
+/// The water-plane proxy that supplies depth to the screen-space reflection pass.
+pub struct RenderBlockWaterReflectionPlane {
+    _field_0: [u8; 24],
+    /// The world transform of the proxy quad.
+    pub m_WorldTransform: crate::types::math::Matrix4,
+}
+fn _RenderBlockWaterReflectionPlane_size_check() {
+    unsafe {
+        ::std::mem::transmute::<
+            [u8; 0x58],
+            RenderBlockWaterReflectionPlane,
+        >([0u8; 0x58]);
+    }
+    unreachable!()
+}
+impl RenderBlockWaterReflectionPlane {
+    pub const Draw_ADDRESS: usize = 0x140184540;
+    /// Uploads the offset world-view-projection matrix to the WaterMask vertex program and draws the quad against the downsampled scene depth.
+    pub unsafe fn Draw(
+        &self,
+        rc: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        info: *const crate::graphics_engine::render_block::RBIInfo,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                rc: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                info: *const crate::graphics_engine::render_block::RBIInfo,
+            ) = ::std::mem::transmute(Self::Draw_ADDRESS);
+            f(self as *const Self as _, rc, info)
+        }
+    }
+}
+impl std::convert::AsRef<RenderBlockWaterReflectionPlane>
+for RenderBlockWaterReflectionPlane {
+    fn as_ref(&self) -> &RenderBlockWaterReflectionPlane {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockWaterReflectionPlane>
+for RenderBlockWaterReflectionPlane {
+    fn as_mut(&mut self) -> &mut RenderBlockWaterReflectionPlane {
+        self
+    }
+}
+#[repr(C, align(8))]
+/// The window render block (`NGraphicsEngine::CRenderBlockWindow`): alpha-blended glass, the
+/// vehicles' windows and the world's panes, drawn with the window shader, and with its damage when
+/// the instance carries window metadata
+/// ([`MetaWindow`](crate::graphics_engine::window_damage::MetaWindow)).
+pub struct RenderBlockWindow {}
+impl RenderBlockWindow {
+    pub const Draw_ADDRESS: usize = 0x1401A2C70;
+    /// Draws the block for the current pass. Nothing is drawn while the instance's colour alpha
+    /// (the byte [`ModelInstance::m_FadeAlpha`](crate::graphics_engine::model_instance::ModelInstance::m_FadeAlpha)
+    /// holds) is zero, nor in the two outline-effect passes. Otherwise it sets the world and
+    /// world-view-projection constants and the damage weights and the alpha for the window shader,
+    /// binds the damage points of the instance's window metadata, when it has some, through the
+    /// list's constant buffer, and draws the glass: back faces then front faces, or front faces only
+    /// for a single-sided block.
+    pub unsafe fn Draw(
+        &self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+        info: *const crate::graphics_engine::render_block::RBIInfo,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+                info: *const crate::graphics_engine::render_block::RBIInfo,
+            ) = ::std::mem::transmute(Self::Draw_ADDRESS);
+            f(self as *const Self as _, render_context, info)
+        }
+    }
+}
+impl RenderBlockWindow {
+    /// The address of the `CRenderBlockWindow` virtual table, by which a render block is told to be
+    /// a window.
+    pub const VFTABLE: u64 = 5405627096;
+}
+impl std::convert::AsRef<RenderBlockWindow> for RenderBlockWindow {
+    fn as_ref(&self) -> &RenderBlockWindow {
+        self
+    }
+}
+impl std::convert::AsMut<RenderBlockWindow> for RenderBlockWindow {
+    fn as_mut(&mut self) -> &mut RenderBlockWindow {
+        self
+    }
+}
 #[derive(Copy, Clone)]
 #[repr(C, align(8))]
 /// A skinned draw batch within a character render block. The vertex data references palette slots;
@@ -2987,6 +3452,30 @@ impl TreeImpostorRBType {
                 resource_context: *const crate::graphics_engine::render_engine::ResourceContext,
             ) = ::std::mem::transmute(Self::Create_ADDRESS);
             f(self as *mut Self as _, resource_context)
+        }
+    }
+    pub const Setup_ADDRESS: usize = 0x14034EEF0;
+    /// Binds the state every impostor draw in the pass shares: blend, alpha test, cull, the atlas
+    /// textures and sampler, the quad index buffer, and the per-pass vertex `cb1` scalars. Outside
+    /// the shadow passes (the
+    /// [`RENDERSTATUS_SHADOWMAP`](crate::graphics_engine::render_pass::RenderStatus::RENDERSTATUS_SHADOWMAP)
+    /// bits of [`RenderContext::m_RenderStatus`](crate::graphics_engine::graphics_engine::RenderContext::m_RenderStatus))
+    /// it stages the vertex shader's `PixelSize` in `cb1` register 3 as one over
+    /// [`RenderContext::m_DisplayWidth`](crate::graphics_engine::graphics_engine::RenderContext::m_DisplayWidth)
+    /// and [`m_DisplayHeight`](crate::graphics_engine::graphics_engine::RenderContext::m_DisplayHeight). The
+    /// vertex shader divides the clip-space extent of each card by it to get the card's footprint in
+    /// pixels, which the pixel shader scales its atlas-coordinate derivatives by. In the shadow passes
+    /// the same register carries a light-space axis instead.
+    pub unsafe fn Setup(
+        &mut self,
+        render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                render_context: *mut crate::graphics_engine::graphics_engine::RenderContext,
+            ) = ::std::mem::transmute(Self::Setup_ADDRESS);
+            f(self as *mut Self as _, render_context)
         }
     }
 }

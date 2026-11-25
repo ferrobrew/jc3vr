@@ -1,0 +1,118 @@
+//! Physical weapon handling's settings.
+
+use serde::{Deserialize, Serialize};
+
+use crate::controllers::{
+    snatch::SnatchConfig,
+    weapons::{
+        ads::config::AdsConfig,
+        collide::config::CollideConfig,
+        config::{
+            C4Config, ForegripConfig, GrenadeConfig, HeftConfig, HoldConfig, HolstersConfig,
+            PouchesConfig, RecoilConfig,
+        },
+        inventory::config::InventoryConfig,
+        regions::config::RegionsConfig,
+        reload::config::ReloadConfig,
+        wheel::config::WheelConfig,
+    },
+};
+
+/// Physical weapon handling. Acts only under the controller scheme.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WeaponsConfig {
+    /// Draw and dock weapons with a grip at the body's sockets.
+    pub holsters: HolstersConfig,
+    /// The pouches on the front of the body: the magazines, the grenades, and the C4.
+    pub pouches: PouchesConfig,
+    /// Let the off-hand grab a two-handed weapon's foregrip, which then sets the weapon's
+    /// direction.
+    pub foregrip: ForegripConfig,
+    /// The recoil offset between the controller and the rendered weapon.
+    pub recoil: RecoilConfig,
+    /// The one-handed weight of long guns: sag, lag, sway, a stronger kick, and a wider spread,
+    /// all gone while the off-hand braces the weapon on its foregrip.
+    pub heft: HeftConfig,
+    /// Make the two pistols two weapons: the pair the game hands over becomes the slot's pistol
+    /// and a second one carried on the other hip, each its own item, picked up, held, docked,
+    /// dropped, reloaded, and fired on its own, and a pistol taken from the world is one pistol.
+    /// Needs the VR inventory and its carrying; without them, or while the second pistol has not
+    /// come, the pistols stay the game's pair, one item with a gun in each hand.
+    pub separate_pistols: bool,
+    /// Which hand holds the weapon: the hand that drew it, picked it up, or was handed it.
+    pub hold: HoldConfig,
+    /// A long gun grabbed anywhere along it: held where the hand closed on it, braced there by a
+    /// second hand, and fired only from its grip.
+    pub regions: RegionsConfig,
+    /// The true reload: eject, load from the belt pouch, and chamber by hand, in place of the
+    /// game's timed reload.
+    pub reload: ReloadConfig,
+    /// Throw grenades physically: grab from the chest pouch, release the grip to throw with the
+    /// hand's velocity. The grenade pouch exists only while this is on.
+    pub grenade_throw: bool,
+    /// The physical throw's release, warning, and fallback settings.
+    pub grenade: GrenadeConfig,
+    /// Throw C4 physically: grab a charge from the chest pouch, release the grip to throw it with
+    /// the hand's velocity, and it sticks where it lands; the trigger of a hand holding a charge
+    /// swaps it for the detonator, whose trigger detonates the placed charges. The C4 pouch exists
+    /// only while this is on.
+    pub c4_throw: bool,
+    /// The C4 throw's switches.
+    pub c4: C4Config,
+    /// Draw a magnified image on a scoped weapon's lens while the scope is at an eye, in place of
+    /// the game's precision-aim zoom, which is suppressed under the controller scheme whatever this
+    /// says ([`crate::controllers::weapons::scope::suppress`]).
+    pub scopes: bool,
+    /// Let the game switch to another weapon when the trigger of an empty weapon that cannot
+    /// reload is pulled. Off, the empty weapon stays in the hand until it is holstered or another
+    /// is drawn, and the pull only dry-fires.
+    pub auto_switch_when_empty: bool,
+    /// The weapon wheel: the game's selection cross, opened with a held input and steered by the
+    /// hand.
+    pub wheel: WheelConfig,
+    /// Aiming a long gun down its sights: the sights onto the eye, the stock into the shoulder,
+    /// and a scope's cheek weld.
+    pub ads: AdsConfig,
+    /// Held long guns stop at walls: turned aside and pulled back into the hands.
+    pub collide: CollideConfig,
+    /// The VR inventory: the weapons the player owns, holds, and lets go of, and the ones kept
+    /// from the game's despawn.
+    pub inventory: InventoryConfig,
+    /// The grapple snatch: a grip of the empty grapple hand at a weapon out of reach, and a yank,
+    /// pull it into the hand on the game's hook.
+    pub snatch: SnatchConfig,
+}
+
+impl WeaponsConfig {
+    pub const fn new() -> Self {
+        Self {
+            holsters: HolstersConfig::new(),
+            pouches: PouchesConfig::new(),
+            foregrip: ForegripConfig::new(),
+            recoil: RecoilConfig::new(),
+            heft: HeftConfig::new(),
+            separate_pistols: true,
+            hold: HoldConfig::new(),
+            regions: RegionsConfig::new(),
+            reload: ReloadConfig::new(),
+            grenade_throw: true,
+            grenade: GrenadeConfig::new(),
+            c4_throw: true,
+            c4: C4Config::new(),
+            scopes: true,
+            auto_switch_when_empty: false,
+            wheel: WheelConfig::new(),
+            ads: AdsConfig::new(),
+            collide: CollideConfig::new(),
+            inventory: InventoryConfig::new(),
+            snatch: SnatchConfig::new(),
+        }
+    }
+}
+
+impl Default for WeaponsConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}

@@ -13,7 +13,9 @@
 //! instance-doubled. When the block's flag is on and the collapse is active, the block's `Draw` is
 //! re-issued once per eye with that baked constant reprojected by the eye's `M_eye`
 //! ([`reproject_baked_cb_per_eye`](crate::stereo::single_pass::reproject_baked_cb_per_eye)); otherwise
-//! it draws once, unchanged. Each is gated by its own config flag.
+//! it draws once, unchanged. Each is gated by its own config flag. The bark and foliage blocks are
+//! first offered to [`vegetation_once`](crate::stereo::single_pass::vegetation_once), which draws
+//! them once for both eyes when it can, and fall back to the re-issue when it cannot.
 //!
 //! The two vegetation flags do double duty: while one is on, its family's vertex shaders are also
 //! declined by the `cb0` remap at creation
@@ -22,17 +24,20 @@
 //! on the collapsed centre view. The decline and the intercept only make sense together, so they share
 //! a flag.
 
-use std::ffi::c_void;
+use std::sync::atomic::{AtomicPtr, Ordering};
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::{
     graphics_engine::RenderContext,
-    render_block::{RBIInfo, RenderBlockBark, RenderBlockFoliage, RenderBlockOccluder},
+    render_block::{
+        RBIInfo, RenderBlockBark, RenderBlockFoliage, RenderBlockOccluder, RenderBlockTypeLights,
+        RenderBlockWaterReflectionPlane, TreeImpostorRBType,
+    },
     render_engine::RenderEngine,
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::stereo::single_pass::{BlockIntercept, BoundVsGate};
+use crate::stereo::single_pass::{BlockIntercept, BoundVsGate, EyeDisplayWidth, EyeLightWidth};
 
 /// Where a render block's baked view-projection lives, and how its intercept is gated: the four values
 /// that vary between the render-block detours below, pinned in one place so a block's buffer layout is
@@ -47,9 +52,14 @@ struct BakedCbBlock {
     /// Whether the re-issue must check for a patched vertex shader before running (see
     /// [`BoundVsGate`]).
     gate: BoundVsGate,
+    /// Whether the block may be drawn once for both eyes instead
+    /// ([`vegetation_once`](crate::stereo::single_pass::vegetation_once)), falling back to the
+    /// re-issue.
+    once: bool,
 }
 
-/// Runs the shared re-issue dance for a render-block detour: if the block's flag is on, hand the
+/// Runs the shared re-issue dance for a render-block detour: if the block's flag is on, draw it once
+/// for both eyes when the block allows it and the single draw's preconditions hold, else hand the
 /// original `Draw` off to [`reproject_baked_cb_per_eye`] so it runs once per eye against a reprojected
 /// constant; otherwise (or if the re-issue declines) fall back to a single unmodified `Draw`.
 ///
@@ -62,17 +72,26 @@ unsafe fn intercept_render_block(
     rc: *mut RenderContext,
     mut draw: impl FnMut(),
 ) {
+    if !crate::stereo::single_pass::block_intercept_enabled(block.intercept) {
+        draw();
+        return;
+    }
     // SAFETY: forwarded from this function's own contract.
-    let handled = crate::stereo::single_pass::block_intercept_enabled(block.intercept)
-        && unsafe {
-            crate::stereo::single_pass::reproject_baked_cb_per_eye(
-                rc,
-                block.cb_index,
-                block.reg_offset,
-                block.gate,
-                &mut draw,
-            )
-        };
+    if block.once
+        && unsafe { crate::stereo::single_pass::vegetation_once::draw_block(rc, &mut draw) }
+    {
+        return;
+    }
+    // SAFETY: forwarded from this function's own contract.
+    let handled = unsafe {
+        crate::stereo::single_pass::reproject_baked_cb_per_eye(
+            rc,
+            block.cb_index,
+            block.reg_offset,
+            block.gate,
+            &mut draw,
+        )
+    };
     if !handled {
         draw();
     }
@@ -81,11 +100,47 @@ unsafe fn intercept_render_block(
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&SET_ALL_GLOBAL_SHADER_PROGRAM_CONSTANTS_BINDER)
+        .with_static_binder(&PROXY_DRAW_BINDER)
         .with_static_binder(&RENDER_BLOCK_BARK_DRAW_BINDER)
         .with_static_binder(&RENDER_BLOCK_BARK_DRAW_Z_BINDER)
         .with_static_binder(&RENDER_BLOCK_FOLIAGE_DRAW_BINDER)
         .with_static_binder(&RENDER_BLOCK_FOLIAGE_DRAW_Z_BINDER)
         .with_static_binder(&RENDER_BLOCK_OCCLUDER_DRAW_Z_BINDER)
+        .with_static_binder(&TREE_IMPOSTOR_TYPE_SETUP_BINDER)
+        .with_static_binder(&LIGHTS_TYPE_SETUP_BINDER)
+}
+
+/// The tree impostors' per-pass setup stages their `PixelSize` from the render context's display
+/// width; under the double-wide collapse that is held at one eye's for the call
+/// ([`EyeDisplayWidth`]), so the card footprints match an eye-sized render. The impostors themselves
+/// stay one instance-doubled draw.
+#[detour(address = jc3gi::graphics_engine::render_block::TreeImpostorRBType::Setup_ADDRESS)]
+fn tree_impostor_type_setup(this: *mut TreeImpostorRBType, rc: *mut RenderContext) {
+    // SAFETY: `rc` is the live render context the engine passed in, and the guard drops before this
+    // detour returns.
+    let _width = unsafe { EyeDisplayWidth::stage(rc) };
+    TREE_IMPOSTOR_TYPE_SETUP.get().unwrap().call(this, rc);
+}
+
+/// The static light sprites' per-pass setup stages their inverse screen width from the back buffer's
+/// width; under the double-wide collapse its upload is held at one eye's width for the call
+/// ([`EyeLightWidth`]), so the sprites routed to each eye half keep an eye-sized render's width. The
+/// sprites themselves stay one instance-doubled draw.
+#[detour(address = jc3gi::graphics_engine::render_block::RenderBlockTypeLights::Setup_ADDRESS)]
+fn lights_type_setup(this: *const RenderBlockTypeLights, rc: *mut RenderContext) {
+    let _width = EyeLightWidth::stage();
+    LIGHTS_TYPE_SETUP.get().unwrap().call(this, rc);
+}
+
+#[detour(address=jc3gi::graphics_engine::render_block::RenderBlockWaterReflectionPlane::Draw_ADDRESS)]
+fn proxy_draw(
+    this: *const RenderBlockWaterReflectionPlane,
+    rc: *mut RenderContext,
+    info: *const RBIInfo,
+) {
+    crate::screenshot::harness::stages::proxy::scope(this, rc, || {
+        PROXY_DRAW.get().unwrap().call(this, rc, info)
+    });
 }
 
 /// The tree-trunk/branch block bakes its world-view-projection into vertex `cb1` registers 0..3.
@@ -94,6 +149,7 @@ const BARK: BakedCbBlock = BakedCbBlock {
     cb_index: 1,
     reg_offset: 0,
     gate: BoundVsGate::Owned,
+    once: true,
 };
 
 /// The grass/foliage block bakes its view-projection into vertex `cb2` registers 4..7 (register 0 is
@@ -103,6 +159,7 @@ const FOLIAGE: BakedCbBlock = BakedCbBlock {
     cb_index: 2,
     reg_offset: 4,
     gate: BoundVsGate::Owned,
+    once: true,
 };
 
 /// The occluder depth-prime block's non-instanced path bakes its world-view-projection into vertex
@@ -115,6 +172,7 @@ const OCCLUDER: BakedCbBlock = BakedCbBlock {
     cb_index: 1,
     reg_offset: 0,
     gate: BoundVsGate::Checked,
+    once: false,
 };
 
 /// The tree-trunk/branch block bakes its world-view-projection into vertex `cb1` registers 0..3, so
@@ -169,7 +227,7 @@ fn render_block_foliage_draw(
 /// [`render_block_foliage_draw`], so it takes the same reprojection.
 ///
 /// It has to: the depth prepass and the colour pass must agree on where a blade of grass is, and the
-/// colour pass is now per-eye. A prepass left at the centre view primes depth for geometry neither eye
+/// colour pass is per-eye. A prepass left at the centre view primes depth for geometry neither eye
 /// draws there, and the colour fragments that follow are rejected against it.
 ///
 /// The velocity permutation additionally stages the previous frame's offset view-projection at
@@ -208,17 +266,49 @@ fn render_block_occluder_draw_z(
     unsafe { intercept_render_block(&OCCLUDER, rc, || detour.call(this, rc, info)) };
 }
 
+/// Upload the render engine's global constant staging blocks again, into the context the engine
+/// last uploaded them to on this dispatch, without the per-pass work the detour hangs off the
+/// engine's own upload. For a caller that has changed staged rows mid-pass. `false` when the engine
+/// has not uploaded yet.
+pub(crate) fn upload_global_constants(engine: &mut RenderEngine) -> bool {
+    let ctx = GLOBALS_CONTEXT.load(Ordering::Relaxed);
+    let Some(upload) = SET_ALL_GLOBAL_SHADER_PROGRAM_CONSTANTS.get() else {
+        return false;
+    };
+    if ctx.is_null() {
+        return false;
+    }
+    upload.call(engine, ctx);
+    true
+}
+
+/// The render context of the engine's most recent global constant upload. The engine's render
+/// contexts live for the process, and only the render thread uploads to them.
+static GLOBALS_CONTEXT: AtomicPtr<RenderContext> = AtomicPtr::new(std::ptr::null_mut());
+
 #[detour(
     address = jc3gi::graphics_engine::render_engine::RenderEngine::SetAllGlobalShaderProgramConstants_ADDRESS
 )]
-fn set_all_global_shader_program_constants(this: *mut RenderEngine, ctx: *const c_void) {
+fn set_all_global_shader_program_constants(this: *mut RenderEngine, ctx: *const RenderContext) {
+    GLOBALS_CONTEXT.store(ctx.cast_mut(), Ordering::Relaxed);
     SET_ALL_GLOBAL_SHADER_PROGRAM_CONSTANTS
         .get()
         .unwrap()
         .call(this, ctx);
-    if crate::stereo::single_pass::active()
-        && let Some(engine) = unsafe { this.as_ref() }
+    // The terrain patch prep takes the centre camera in an eye-at-a-time dispatch; the upload above
+    // carried the eye's, so upload again with the centre's and put the eye's back.
+    if let (Some(engine), Some(rc)) = unsafe { (this.as_mut(), ctx.as_ref()) }
+        && let Some(eye) = crate::stereo::terrain_prep::stage_centre_camera(engine, rc)
     {
-        crate::stereo::single_pass::mirror_and_bind_cb13(engine);
+        upload_global_constants(engine);
+        crate::stereo::terrain_prep::restore(engine, eye);
+    }
+    let cb13_uploaded = crate::stereo::single_pass::active()
+        && unsafe { this.as_ref() }.is_some_and(crate::stereo::single_pass::mirror_and_bind_cb13);
+    if let Some(engine) = unsafe { this.as_ref() } {
+        crate::stereo::single_pass::eye_camera::sync(engine);
+    }
+    if let (Some(engine), Some(ctx)) = unsafe { (this.as_ref(), ctx.as_ref()) } {
+        crate::screenshot::harness::constants::capture(engine, ctx, cb13_uploaded);
     }
 }

@@ -1,10 +1,24 @@
 # Input
 
-Just Cause 3's local-player input runs through a single action-effector map plus a separate movie-facing mouse pipeline for the Scaleform UI. The sections below cover the effector accessors, the action enumeration, the write API, an anti-tamper protection in the camera input path, the mouse and UI pipeline, and the semantic button-mapping layer above the raw actions.
+Just Cause 3's local-player input runs through a single action-effector map plus a separate movie-facing mouse pipeline for the Scaleform UI. The sections below cover the effector accessors, where the device poll runs, the action enumeration, the write API, an anti-tamper protection in the camera input path, the mouse and UI pipeline, and the semantic button-mapping layer above the raw actions.
 
 ## Action effectors
 
 The engine exposes input through action effectors: [`LocalPlayerActionMap::GetActionEffector`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::LocalPlayerActionMap##func-GetActionEffector) returns an `SEffectorElement` per action, and there is a `Freeze` path. The camera look axes are `LOOK_LEFT` / `LOOK_RIGHT` / `LOOK_UP` / `LOOK_DOWN` (net `yaw = right − left`, `pitch = up − down`), and the move axes are `MOVE_LEFT` / `MOVE_RIGHT` / `MOVE_FORWARD` / `MOVE_BACKWARD`. All of these resolve through the [`Action`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::Action) enum (see below). The gameplay buttons (fire, jump, grapple, reload, enter-vehicle, …) are likewise enumerated.
+
+## Where the device poll runs
+
+[`InputDeviceManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_device_manager::InputDeviceManager##func-Update), the per-frame device poll, has one caller, [`GameState::PreUpdate`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameState##func-PreUpdate), the input update, which reaches it through the manager's virtual table. `PreUpdate` sets the UI manager's capture thread to its own thread, starts the sound library's pre-simulation job, updates the message boxes and the accounts, restores the steering objects' action maps when they are dirty, runs the poll and then [`UpdateForceClicks`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_device_manager::InputDeviceManager##func-UpdateForceClicks) (unless the out-of-focus input setting is on and the window is out of focus), runs the UI's input update (`CUIManager::PreUpdate`), waits for the sound job, and reverts the capture thread. `UpdateForceClicks` touches only the effectors whose force-click flag is latched, so a write made right after the poll, with the flag clear, is not changed by it.
+
+Which thread runs `PreUpdate` depends on its caller. [`GameStateLoad::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameStateLoad##func-Update) calls it inline on the game thread, and so does [`GameStateFrontend::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameStateFrontend##func-Update) while the frontend is still loading (waiting for IO, the title, login, language, and the global, spawn, landscape, and location loads). Once the world is loaded behind the main menu, the frontend calls the run state's tick, [`GameStateRun::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::GameStateRun##func-Update), instead, as [`Game::UpdateGame`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game::Game##func-UpdateGame) does in play. The run state does not call `PreUpdate` inline: it queues it as the input job ([`RunInputThread`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/game##func-RunInputThread), whose fragment body is [`RunInputThread_Proxy`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/game##func-RunInputThread_Proxy)), carries on with its own pre-simulation work, and only then spins on the job's completion signal, before the world update. So in play, and in the main menu with the world behind it, the poll and everything hooked after it run on a CPU fragment worker, concurrently with that stretch of the game thread's update, and only occasionally on the game thread itself, when it steals the fragment while it waits on one of the previous frame's signals. A game-state check cannot tell the two cases apart, since the state is the frontend while the main menu runs the run state's tick; code that must run on the game thread cannot use the poll's thread as its reference.
+
+What the game thread runs during the job: the network updates, the traffic and ambient-spawn starts (their jobs create and remove vehicles and characters), the task pool's continuations, the road decorations, the water, the effects' pre-simulation update, the world time, the render cameras' transform history, the character manager's pre-simulation step (which frees animation controls queued for deletion), the settings, the AI's queued messages and path requests, and the effects' physics-model spawn, which adds debris bodies to the physics world. The engine keeps the job safe by partition, not by locks: the job touches only input devices, the action maps, the UI, the message boxes, the accounts, and the sound job. Code hooked into the job inherits that contract.
+
+After the completion spin, the game thread runs the dialogue, the sound post-simulation update, the vehicles' pre-update, the operations, login, rebel-support, ammunition, and mission updates, the traffic and ambient-spawn sync halves, the posted-event dispatch, the challenge, encounter, heat, and spawn-system updates, and the video, then the world's pre-simulation queue ([`GameWorld::UpdatePreSim`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world::GameWorld##vfunc-UpdatePreSim)), the physics phase, and the post-simulation queue. Nothing on that path returns early. The top of the pre-simulation queue is therefore on the game thread, after the job, and before any character, weapon, or vehicle update and the physics step.
+
+The world's pre-simulation update ([`GameWorld::UpdatePreSimImpl`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/game_world::GameWorld##func-UpdatePreSimImpl)) commits the world's update queue before it runs the queue ([`UpdateQueue::CommitAddRemove`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/update_queue::UpdateQueue##func-CommitAddRemove)). An object registers for its updates as a pending entry, and a commit makes the entries registered since the previous one live; the only other commit in the tick closes the world's render update. An object registered before the pre-simulation commit is therefore updated by the same tick's pre-simulation and post-simulation queues, and one spawned from inside the queue, as the weapons spawn their grenades and charges, is first updated in the next tick. For explosives the difference matters. An explosive gets its physics body from the ammunition manager's post-simulation pass ([`AmmunitionManagerUpdatePostSim`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/module/equipment::explosive##func-AmmunitionManagerUpdatePostSim)), which ends the tick after the post-simulation queue, and a grenade's post-simulation update reads that body unchecked ([`Grenade::UpdatePostSim`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/equipment::explosive::Grenade##func-UpdatePostSim)), so a grenade registered before the commit faults in that tick's post-simulation queue.
+
+The player action map is read on both sides of the spin, not only by the world update. Inside the job, `CUIManager::PreUpdate` reads [`GUI_PAUSE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::Action##variant-GUI_PAUSE) and the commlink action from the player steering to open and close the pause menu and the commlink, and the screens' input handlers it dispatches read the player steering too. After the spin, the challenge update reads how long [`CHALLENGE_RESET_VEHICLE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::Action##variant-CHALLENGE_RESET_VEHICLE) has been held during a race. An effector write made after the job, at the top of the world update, is overwritten by the next poll before either reader sees it.
 
 ## The action enumeration
 
@@ -14,7 +28,13 @@ The action-name table, [`action_name_table`](https://ferrobrew.github.io/pyxis/#
 
 The write API is on `LocalPlayerActionMap` (its instance pointer is a global; the def models it as a singleton). It sets an action by its `Action` value. `ForceSetPressed(actionId, value)` sets an analog or held value (sticks, triggers, held buttons), and `ForceSetClicked(actionId)` produces a one-frame press edge. Both guard against the null-effector sentinel that invalid actions resolve to. The low-level effector mutators (`Click`, `Press`, `Freeze`, `ForceClick`) are on `InputDeviceEffector`.
 
-[`InputDeviceManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_device_manager::InputDeviceManager##func-Update)`(dt)` is the per-frame device poll. It overwrites the effector values, so a value written before it in the frame does not survive. `Update` runs `UpdateForceClicks` after polling, which is the `m_ForceClick` mechanism: a click latched through `ForceSetClicked` or `ForceClick` sets the effector's [`InputDeviceEffector::m_ForceClick`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::InputDeviceEffector##field-m_ForceClick) flag, so the press edge survives the poll instead of being cleared by it. `InputDeviceManager::m_Enabled` gates the whole poll, and clearing it freezes device input.
+[`ForceSetPressed`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::LocalPlayerActionMap##func-ForceSetPressed) goes through `InputDeviceEffector::Press`, which zeroes the effector's state time ([`InputDeviceEffector::m_StateTime`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::InputDeviceEffector##field-m_StateTime)) on every call. The readers that tell a tap from a hold report that state time as the time held, so a press repeated through `ForceSetPressed` every tick never registers as a hold. A held input has to be written as the effector's whole state instead: its value, its state, and a state time that grows while it is held. The effector's layout and the poll's state transitions are documented on [`InputDeviceEffector`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::InputDeviceEffector).
+
+The game's menus read a separate action map, [`ui_action_map`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::ui_action_map), not the player's map.
+
+The cutscene skip reads the UI map too. `CSequenceObject2::UpdateSkip`, and the full-screen video's `CVideoManager::UpdateSkip`, ask the UI steering (`CSteeringUI`, whose action map is `ui_action_map`) whether [`SKIP_CUTSCENE`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::Action##variant-SKIP_CUTSCENE) is held, and only while no game screen takes input. While it is held the skip progress rises with the frame time, and the skip prompt fills; let go, it falls back. The UI map's own bindings (`CSteering::LoadGUIActionMap`) put `SKIP_CUTSCENE` on the gamepad's B, which is the button the skip prompt shows. Neither function is bound in the defs; both were read in the release IDB.
+
+[`InputDeviceManager::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_device_manager::InputDeviceManager##func-Update)`(dt)` is the per-frame device poll. It overwrites the effector values, so a value written before it in the frame does not survive. `PreUpdate` runs `UpdateForceClicks` after the poll, which is the `m_ForceClick` mechanism: a click latched through `ForceSetClicked` or `ForceClick` sets the effector's [`InputDeviceEffector::m_ForceClick`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/input::input_action_map::InputDeviceEffector##field-m_ForceClick) flag, so the press edge survives the poll instead of being cleared by it. `InputDeviceManager::m_Enabled` gates the whole poll, and clearing it freezes device input.
 
 ## Anti-tamper protection
 
@@ -33,6 +53,15 @@ Two further engine seams bear on that pipeline:
 - **The engine's reset path**: `CUIManager::RestoreAfterReset` (device reset, alt-tab reacquire) resizes the movie's viewport from the device without the back buffer necessarily changing size.
 - **The map's own conversion**: `CCommMapUI::OnManageInput` — the only caller of `CUIManager::GetMovieSpaceMouseCursor` — converts `GetMousePos` window-client pixels to stage space through `m_MouseDeltaX/Y`/`m_MouseScaleFac`, which only `ComputeMovieSizeOnViewSize` writes.
 
+### The map's cursor and selection
+
+The map ([`CommMapUI`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::comm_map_ui::CommMapUI)) does not take its input from Scaleform. [`CommMapUI::OnManageInput`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::comm_map_ui::CommMapUI##func-OnManageInput) reads the actions itself, on the UI manager's steering, inside `CUIManager::PreUpdate`'s input dispatch (the commlink forwards its own dispatch to the map), and it has two branches, chosen by [`UIManager::m_IsUsingGamepad`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::ui_manager::UIManager##field-m_IsUsingGamepad). The two select in different places:
+
+- With a gamepad, the cursor is a fixed point at the centre of the stage and the left stick pans the map under it. Whenever the map moves or zooms, the map picks the icon or province under that point, and a clicked `GUI_OK` opens the context menu (place a waypoint, fast travel, the icon's actions) there.
+- With the mouse, the cursor is wherever the mouse is, but the map selects only on a button release: a released `MOUSE1` outside a drag selects at the cursor, and a released `MOUSE2` selects there and opens the context menu. Either release writes the cursor to [`m_MouseCursorUiPosition`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::comm_map_ui::CommMapUI##field-m_MouseCursorUiPosition), and nothing else does, so between selections it holds the last one. A held `MOUSE1` becomes a drag once the cursor leaves the press point by a few stage pixels (see [`m_MouseDragging`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::comm_map_ui::CommMapUI##field-m_MouseDragging)), and its release then ends the drag instead of selecting.
+
+A clicked `GUI_OK` requests the context menu in the mouse branch too ([`m_ActivateCtxMenu`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::comm_map_ui::CommMapUI##field-m_ActivateCtxMenu)), but it does not select. [`CommMapUI::ActivateCtxMenu`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::comm_map_ui::CommMapUI##func-ActivateCtxMenu), which the map's update calls later in the frame, reads `m_IsUsingGamepad` again and places the menu at the gamepad cursor or at `m_MouseCursorUiPosition`. In the mouse branch, a `GUI_OK` with no earlier mouse selection therefore opens the menu wherever that field was left, for whatever was last picked. Where the field is initialised was not traced; on a freshly opened map the menu has been seen at the stage's top-left corner.
+
 For ground-truth debugging, the [`MouseState::LastPosition`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MouseState##field-LastPosition) field of the first entry in [`MovieImpl::MouseStates`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/ui::scaleform::MovieImpl##field-MouseStates) (stage twips) holds the movie's post-`Advance` mouse position — the exact point the hit test used.
 
 ## The semantic button layer
@@ -41,7 +70,7 @@ For ground-truth debugging, the [`MouseState::LastPosition`](https://ferrobrew.g
 
 ## The default gamepad keymap
 
-The default gamepad bindings, extracted from `settings/keymap_gamepad.bin`, grouped by the game's mapping sections. Buttons use Xbox names. Where one button carries several mappings, the active one depends on the context and the mode partition described in [the semantic button layer](#the-semantic-button-layer). Bindings not listed here (the pause and commlink buttons, the d-pad directions for each weapon slot, and the weaponized wingsuit's buttons) have not been extracted.
+The default gamepad bindings, extracted from `settings/keymap_gamepad.bin`, grouped by the game's mapping sections. Buttons use Xbox names. Where one button carries several mappings, the active one depends on the context and the mode partition described in [the semantic button layer](#the-semantic-button-layer). The pause and commlink are START and BACK, and the d-pad's directions select the weapon slots (up the dual-wield pistols, right the two-handed weapon, left the special weapon, down the explosives).
 
 ### On foot
 
@@ -117,6 +146,43 @@ The default gamepad bindings, extracted from `settings/keymap_gamepad.bin`, grou
 | Air brake (`CANCEL`, upgrade-gated) | hold B |
 | Open or close the parachute | A |
 | Grapple (slingshot boost) | LB |
+| Boost (weaponized, `WINGSUIT_BOOST`) | RT |
+| Brake (weaponized, `WINGSUIT_AIRBRAKE`) | LT |
+| Primary and secondary weapon (weaponized) | RB and X |
+| Evade and take off (weaponized, `WINGSUIT_EVADE` with a stick flick, `WINGSUIT_TAKEOFF` held) | Y |
+
+### Mech
+
+| Mapping | Button |
+|---|---|
+| Move | L stick |
+| Punch (`MECH_PUNCH`) | LB |
+| Jump (`MECH_JUMP`) | B |
+| Gravity gun: attract (hold) and throw (release) (`MECH_FIRE_GRAVITY_WEAPON_PRIMARY`) | LT |
+| Gravity gun: drop (`MECH_FIRE_GRAVITY_WEAPON_SECONDARY`) | RB |
+| Right-hand weapon (`MECH_FIRE_RIGHT_HAND_WEAPON`) | RT |
+
+### Everywhere
+
+| Mapping | Button |
+|---|---|
+| Skip a cutscene (`SKIP_CUTSCENE`, read from the UI map) | hold B |
+| Look at the objective (`LOOK_AT`) | hold R3 |
+| Release a tether fired from a vehicle (`VEHICLE_RELEASE_GRAPPLE`) | d-pad down |
+| Pause, commlink | START, BACK |
+
+`MOVE_TO_DRIVERS_SEAT` has no binding in either the gamepad or the keyboard keymap, and no reader in the gameplay code passes it to a steering as an immediate, so the game does not offer it to the player; a passenger reaches the driver's seat by leaving and entering again.
+
+## Leaving and changing seats
+
+A seated player leaves the vehicle and changes seat through two input tasks of the character's animation graph, and both read `ENTER_VEHICLE`, not `EXIT_VEHICLE`: `EXIT_VEHICLE` names the exit's button hint (`MAPPING_EXIT_VEHICLE`), while the gamepad's Y carries both actions.
+
+- [`NStateTask_InputVehicleExitTask::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::NStateTask_InputVehicleExitTask##func-Update) leaves the seat on the frame the action map reports the button released, and only when it was pressed for no longer than the task's [`m_Time`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::InputVehicleExitTaskProperties##field-m_Time) before the release. The exit is therefore a tap: a press held past that time and then let go leaves nothing behind.
+- [`NStateTask_InputVehicleEnterTask::Update`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::NStateTask_InputVehicleEnterTask##func-Update) changes seat once the button has been held for its [`m_Holdtime`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::InputVehicleEnterTaskProperties##field-m_Holdtime), while it is still held, where a change is available: a transition from the player's node to a gunner seat ([`HasAvailableGunnerDestination`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::NStateTask_InputVehicleEnterTask##func-HasAvailableGunnerDestination)), the driver's seat from a gunner seat, or a reachable cargo bay from the driver's seat. With no change available, the task queues `ACT_ENTER_VEHICLE` on every pressed frame instead; with one available, a release short of the hold time queues it once.
+
+The two times are task properties in the character's animation graph (`rico_base`), equal in the shipped graph. The exit task runs in every seated state: the driver's and passenger's idle, forward, and reverse states, the motorcycle's riding states, and the mounted-weapon states. The enter task runs beside it only in the car-style driver's idle and reverse states, the passenger's idle state, and the spinning mounted weapon's idle state, so the seat change is offered there and nowhere else, and a release within the exit's time exits from any seat.
+
+The driver's states, the motorcycle's riding states, and the spinning mounted weapon's idle state also run an `INPUTHOLD` task on `OPEN_PARACHUTE` (the gamepad's A) that queues `ACT_TRIGGER_PARACHUTE` once the action has been held for the task's time. That act leads to `S_EXIT_VEHICLE_PARA`, which leaves the seat with the parachute open, only while `C_VEHICLE_IS_FAST_ENOUGH_FOR_PARA_TRANSITION` holds: a `CGraphParentVehicleSpeedCondition` between a minimum and a maximum speed of the parent vehicle, both properties in `rico_base` (the maximum far beyond any vehicle's speed), squared and compared against the squared length of the vehicle's ground-relative velocity at the character's position ([`Vehicle::GetGroundRelativePointVelocity`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##func-GetGroundRelativePointVelocity)); the unit is unverified, presumed metres per second, together with the interaction graph's exit verification. The passenger's states have no such task. A tap of Y queued before the hold completes exits the ordinary way first.
 
 ## The mapping → action table
 
@@ -257,6 +323,12 @@ Interaction legend ([`ButtonInteraction`](https://ferrobrew.github.io/pyxis/#/Ju
 | `MAPPING_STUNT_JUMP_PLANE` | tap | `STUNT_JUMP` | |
 | `MAPPING_NITROUS_PLANE` | hold | `PLANE_INC_TRUST` | upgrade `air_vehicle_nitrous_unlock` |
 
+### The plane's thrust and nitrous
+
+The plane's input reader, [`AirPlane::UpdateVehicleInputsFromActionMap`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::AirPlane##func-UpdateVehicleInputsFromActionMap), runs on top of the vehicle's own each tick unless the plane is destroyed, its driver is knocked out or dead, an AI's input has gone stale, or it is under an EMP. It reads the turn from `PLANE_TURN_LEFT` and `PLANE_TURN_RIGHT`, the roll from `PLANE_ROLL_LEFT` and `PLANE_ROLL_RIGHT`, the pitch from `PLANE_PITCH_UP` and `PLANE_PITCH_DOWN`, and the throttle as the `PLANE_INC_TRUST` value less the `PLANE_DEC_TRUST` value into [`Vehicle::m_SteeringAcceleration`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringAcceleration), with the `PLANE_DEC_TRUST` value alone as the brake ([`Vehicle::m_SteeringBrake`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_SteeringBrake)). Both are values, not rates: the thrust is where the trigger is.
+
+The nitrous is not an input of its own. With a living driver and the plane in control, a `PLANE_INC_TRUST` value above [`AirPlane::NITROUS_THRUST_THRESHOLD`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::AirPlane) raises [`Vehicle::m_NitrousInput`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/vehicle::vehicle::Vehicle##field-m_NitrousInput) to it, and otherwise the nitrous input is left as it is. `MAPPING_NITROUS_PLANE`'s hold describes the button hint; the reader tests the value, not a hold time.
+
 ### UI
 
 All UI mappings are tap and `m_Customizable = false`.
@@ -333,7 +405,7 @@ The wingsuit is not a vehicle. `NStateTask_MovementWingSuitTask::Update` reads t
 
 ## Weapon selection, rebel drops, and gear mods
 
-There is no weapon wheel and no slow-motion selector. The slot-select actions (`SELECT_DUEL_WIELD`, `SELECT_TWO_HANDED`, `SELECT_TWO_HANDED_SPECIAL`, `SELECT_EXPLOSIVES`, and the PC-only `PREV_WEAPON`/`NEXT_WEAPON`) are consumed by the animation state machine: `NInventorySelect` state tasks queue a configured act within a configured time window. The HUD's `CHUDUI::UpdateWeaponSelection` shows a four-slot strip (dual-wield, two-handed, two-handed special, planted explosive). `CGamePauseUtility` is a script facility that pauses the game until an action is pressed, used by tutorials; it is not a weapon selector.
+The game has a weapon selection cross but no radial wheel and no slow-motion selector. The slot-select actions (`SELECT_DUEL_WIELD`, `SELECT_TWO_HANDED`, `SELECT_TWO_HANDED_SPECIAL`, `SELECT_EXPLOSIVES`, and the PC-only `PREV_WEAPON`/`NEXT_WEAPON`) are read into the character's weapon inputs and acted on by [`Inventory::UpdateWeaponHandling`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/character::inventory::Inventory##func-UpdateWeaponHandling), not by the animation state machine; while a slot-select action is held, the HUD shows a four-armed cross (dual-wield, two-handed, two-handed special, planted explosive) that highlights the held slot and commits on release. The reader, the decision, and the cross are in [weapon-selection.md](weapon-selection.md). `CGamePauseUtility` is a script facility that pauses the game until an action is pressed, used by tutorials; it is not a weapon selector.
 
 Rebel drops are ordered from the PDA/comm UI (`CRebelSupport`), not through a gameplay action (medium confidence).
 

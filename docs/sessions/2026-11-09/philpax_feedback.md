@@ -1,0 +1,54 @@
+- 11.05s: ammo counters should be text-only (no border/black box), use a more pleasing font, and hover above the center of the weapon, and be aligned with the weapon. that is, they should read as if they're attached to the weapon, not to their visual bounding box
+- 93s: vehicle-entering camera animation clips into the vehicle. not actually sure where this comes from, but we should follow the head more closely, I guess?
+- 97s-100s (well, longer, but this is enough to demonstrate the issue): the yoke is too low, and slightly misplaced. I wonder if we can do something intelligent with analysing the models to figure out where the yoke should be? this is also an issue for all of the other vehicles, which I'll point out later on
+- 192s: vicious arm-forearm-hand detachment. this happens throughout, but it's very obvious here
+- 202-210: body yaw/clipping issues. honestly, this probably just needs a new rig entirely, but in case you can do anything about it...
+- 235s: throughout the session, I am unable to grapple-snatch any weapons on the floor
+- 261.5s: while grappling, I should be able to spread my arms to break the grapple and start wingsuiting
+- 264s: clipping into my own body. I believe my head and camera should ride up, as they're yanked up by the force of pulling the chute, but we're maintaining horizon lock instead
+- 265-266s: (take a gallery composite here): our camera or our body is lagging behind, so we end up clipping into our moving body. interpolation issue? while parchuting
+- same again at 271-273s, except with the wingsuit
+- 289.68s-295s: our hand/arm is very broken while wingsuiting. it is more responsive to what my hands are doing, for sure, but like withat 192s, our IK cannot keep up
+- 376.17s: C4 snatches _immediately_, without any physics / catching involved, unlike everything else. if it doesn't have a physics object, we should simulate it with a cylinder or something
+- 392.6s: struggling to put the c4 back in the pouch
+- 452.84s: sometimes the C4 detonation button is activated when I approach it when my palm is facing away from me, and sometimes it's when my palm's facing towards me. please standardise on facing away from me
+- 523s: another example of elevated camera during vehicle enter
+- 542.8s: vehicle exits are not the smoothest: similar kind of camera-clipping through the body
+- 556-558s: as before, yoke misplaced. needs to be much higher and a bit closer I think?
+- 619-625s: I struggle to put my SMG back on my waist; instead, it gets wedged within the jet (lol)
+- 687s-739s: I find it extremely difficult, possibly impossible, to do anything with my body here, including grabbing C4 and weapons. I suspect that this is because I'm in the stunt position stance, which completely misaligns my virtual body with my real body, and we may need to just override this state with something more neutral to compensate
+- 746s: weapon hints are visible in the loading screen. suppress
+- 769s: can't grab onto people to ragdoll them etc.
+- 778s: can't grapple-snatch weapon off floor
+- general issue: the NPC AI treats _any_ grenade as live and/or reacts to it, which is not ideal with our physicalised grenades, which spawn much more frequently (i.e. they run away from weapon racks because there are grenades in there). we should patch them to only respond to actually live grenades
+- 819s: yeah, really can't grab this fella out of the way
+- 838.78s: I can grab this mounted machine gun with my two hands, which feels great, but I can't actually shoot it - the trigger does nothing. I also see a persistent notice to use weapon, and activating that puts me in a broken state. we should suppress that, make it possible to shoot from the gripped state alone, and have sufficient force tear the minigun off for use as a heavy weapon
+- 890s: after failing to grapple-snatch this weapon, I also fail to pick it up off the ground
+- 916s: fail to drag this ragdoll anywhere really (but grapple-snatching the ragdoll does work for dragging it around)
+- 967-970s: held physical objects do not do any damage to other NPCs. I was hoping smashing this explosive barrel against the NPC would cause it to explode
+- 1060s: our physics-activation hands mean you can grab the weapons locker, which is very funny, but also very unintentional. exclude that from consideration, it breaks a lot of things
+- 1161-1163s: we don't render the clip-insertion guide when there's already a clip in the gun, even though we're holding a clip. we should do this so it's more obvious that you can knock the clips out / where they're meant to go, even if you haven't released the clip yet
+- 1190-1191s: we will probably fix this as part of our other ammo counter work, but the ammo counters lag behind the weapon. they should match the interpolated pose to the best of their ability
+- 1224-1225s: despite just grappling a ragdoll before, I can't grapple this one consistently; I do manage to do it immediately after, but I'm not sure what the distinction was
+- 1278-1282s: there is a very funny bug (that I reproduce a few items) where reloading this weapon causes it to immediately fire with no trigger being held. possibly related, its ammo counter does not go down while I'm doing this
+- 1241.0s: more upperarm - forearm separation
+- 1490s: from this point onwards, I am no longer able to reload any weapons. the clip-dropping key doesn't work, I can't load new clips in, I can't pull clips out. this is the case with all weapons
+- 1562.0s: for some reason, I have a gun at my feet. I think this might be another kind of slot, but we shouldn't have this. let's discuss what the available slots currently are, and why they exist?
+- 1608.8s: be cool if you could knock out the clip of one gun with the clip of another. also, in general, they probably shouldn't phase through each other. think we can enable collisions between them, or will that be too messy a business?
+- 1612s: you can see that I can't pull the clip from this gun any more
+- 1664.133s: arm/hand detachment
+- 1752.52s: the controls for this jet are unreachable. way too far forward, possibly too off to the right as well (the throttle stick seems to be centered, as opposed to the left of my left leg?)
+- 1785.4s: ditto this different jet
+- 1901-1929s: dev menu does not actually reflect the options I selected for the weapons. I think we're delaying the spawns or something, or not updating the states. think about how to best make this work. they do spawn in, but it is very confusing to change the option in the dev menu and not see them change
+- 1967s: controls are on the wrong side of the helicopter (?!), and the yoke is too low/too forward, as before
+- 1983s: takes a strong hold of the exit button to exit, despite there not being a stunt position for me to exit into, or anything blocking me. tapping the exit button should take me out immediately, given that
+- 1985-2000s: lots of the camera clipping into my own body/not keeping up
+- we need to work on our UI controls. with motion controls, it is difficult to navigate the UI: there is no way to tab between the various screens
+- 2026-2035s: we should suppress the upper body animations so that your hands are free to do whatever. also, applying a lateral movement (whether through physically stepping or by using your sticks) should push you off the helicopter's rail and immediately put you into a skydiving state
+- 2037s: entering the wingsuiting state causes a violent jerk of the camera, pitching downwards, before correcting at 2038.78s. very strange, as we should be going from the skydiving state to wingsuiting, where the pitch differential should be very limited (at least conceptually). something else we need to suppress?
+- 2040.951s: looking left just doesn't look great. clipping into your own wingsuit, left arm struggling to be held where it should be
+- 2079.78s: looking backwards has the camera looking through my body. unsure what the best way to deal with this. could potentially bring the near plane closer still, but I can't actually tell if this is a rendering issue or a rig issue? is this head movement physically plausible?
+- 2095.478s: this wingsuit landing is not pleasant to look through; I suspect the camera's not following the head, so we just end up seeing a lot of the ground when we should be seeing Rico's body/head doing a forward roll?
+- 2175-2180s: can't interact with the man on the bike in any substantial way. can't ragdoll him, can't punch him. also, can't seem to lift the bike, even though that seems like it should be possible given Rico's strength
+- 2192-2200s: can't clear the grapples without getting off the bike
+- 2201-2260s: I struggle to drive the bike. the controls are not super intuitive, both throttle/brake and steering. can we analyse what I was doing during this to figure out why I was struggling so much?

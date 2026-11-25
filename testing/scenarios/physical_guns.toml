@@ -1,0 +1,52 @@
+# Template: fill testing/recordings/physical_guns.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "a held rifle as a body joined to the hands"
+description = "Recorded right-handed on foot with the hand bodies and PHYSICAL GUNS on, facing a wall a few metres away with a soldier nearby (physical-guns.md, the headset checklist). Draw a rifle from the shoulder, brace it on the foregrip, fire a burst at the wall, walk up to the wall and brush the rifle's side along it, swing its butt into the soldier, let go of the foregrip, and holster the rifle at the shoulder."
+recording = "../recordings/physical_guns.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "a gun body was made"
+signal = "guns.made"
+
+[[expect]]
+name = "the rifle's body is joined to its hand at some point"
+signal = "guns.held"
+
+[[expect]]
+name = "and to the bracing hand"
+signal = "guns.braced"
+
+[[expect]]
+name = "the burst kicked the gun body"
+signal = "guns.shots"
+
+[[expect]]
+name = "the rifle met the wall or the soldier"
+signal = "guns.contacts"
+
+[[expect]]
+name = "the gun body was joined"
+log = "held guns: made a gun body and joined it to its hand"
+
+[[expect]]
+name = "and destroyed when the rifle was holstered"
+log = "held guns: destroyed a gun body"
+
+[[expect]]
+name = "no gun body once holstered"
+signal = "guns.held"
+check = "at_end"
+is = false
+
+[[expect]]
+name = "no gun error"
+signal = "guns.error"
+check = "never"
+
+[[expect]]
+status = "RIGHT GUN BODY"
+
+[[expect]]
+name = "the right gun body is held and braced at some point"
+status = "RIGHT GUN BODY"
+detail = "HELD+BRACED"

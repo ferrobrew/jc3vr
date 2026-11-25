@@ -8,6 +8,7 @@ use detours_macro::detour;
 use jc3gi::graphics_engine::{
     graphics_engine::{HTexture_t, RenderContext},
     render_block::RenderBlockDeferredLighting,
+    render_engine::RenderPassId,
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -17,8 +18,8 @@ use crate::{
         clustered_lighting::{
             bounds::tile_bounds_from_projection,
             split::{
-                SPLIT, SplitState, TileGrid, assignment_transform, decline_split_for_context,
-                decline_warning, restore_viewport, unsplittable_context,
+                LightView, SPLIT, SplitState, TileGrid, assignment_transform,
+                decline_split_for_context, decline_warning, restore_viewport, unsplittable_context,
             },
         },
         reconstruction,
@@ -35,7 +36,7 @@ thread_local! {
     pub(super) static CLUSTERED_ACTIVE: Cell<bool> = const { Cell::new(false) };
 
     /// The pre-computed whole-grid off-axis cb1 values for the current `DrawClustered` call, or `None`
-    /// when no VR frame is in flight (flatscreen, or the fix is disabled). Used whenever the per-eye
+    /// when no VR frame is in flight (flatscreen). Used whenever the per-eye
     /// split is not engaged, including when a split run demotes itself.
     pub(super) static OFF_AXIS_CB1: Cell<Option<[f32; 8]>> = const { Cell::new(None) };
 }
@@ -49,27 +50,15 @@ fn draw_clustered(
     a3: *mut c_void,
     a4: *mut HTexture_t,
 ) {
-    let (fix_frustum, per_eye, clustered, light_view) = Config::lock_query(|c| {
+    let (per_eye, clustered, light_view) = Config::lock_query(|c| {
         (
-            c.stereo.fix_clustered_light_frustum,
-            c.stereo.single_pass.reconstruct_per_eye && c.stereo.reconstruct_offaxis_inverse,
+            c.stereo.single_pass.reconstruct_per_eye,
             c.stereo.single_pass.clustered_per_eye,
             c.stereo.single_pass.clustered_per_eye_light_view,
         )
     });
-    let run = |eye: Option<usize>| {
-        run_draw_clustered(
-            RunRequest {
-                fix_frustum,
-                eye,
-                light_view,
-            },
-            this,
-            rc,
-            a3,
-            a4,
-        )
-    };
+    let run =
+        |eye: Option<usize>| run_draw_clustered(RunRequest { eye, light_view }, this, rc, a3, a4);
 
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
     // dispatch) guarantees it is valid for the duration of `DrawClustered`.
@@ -80,7 +69,7 @@ fn draw_clustered(
     // `decline_split_for_context`'s doc comment.
     let split_eye = |eye: usize| {
         let splittable = ctx.is_some_and(|ctx| !unsplittable_context(ctx as usize));
-        (clustered && fix_frustum && splittable).then_some(eye)
+        (clustered && splittable).then_some(eye)
     };
 
     // `demoted_engaged` is read only when `split_fullscreen_pass` reports `Demoted`, in which case
@@ -126,14 +115,18 @@ fn draw_clustered(
         }
     }
 
+    if unsafe { rc.as_ref() }
+        .is_some_and(|rc| rc.m_ActiveRenderPass == RenderPassId::RP_DEFERRED_LIGHTS as i32)
+    {
+        crate::screenshot::harness::stages::capture_after_resolve();
+    }
+
     crate::debug::pipeline_probes::record_main_color_mean("post_resolve");
 }
 
 /// What one `run_draw_clustered` is asked to do.
 #[derive(Clone, Copy)]
 struct RunRequest {
-    /// Whether to override the tile bounds at all.
-    fix_frustum: bool,
     /// The eye whose half of the tile grid this run should assign lights into, or `None` to build the
     /// whole grid as the un-split pass does.
     eye: Option<usize>,
@@ -141,8 +134,14 @@ struct RunRequest {
     light_view: bool,
 }
 
-/// One `DrawClustered`, with the off-axis tile-bounds override armed around it when enabled, and the
-/// per-eye froxel split armed when requested. Reports whether the split actually engaged.
+/// One `DrawClustered`, with the off-axis tile-bounds override armed around it, and the per-eye
+/// froxel split armed when requested. Reports whether the split actually engaged.
+///
+/// The override replaces the symmetric froxel tile-bounds constants that `DrawClustered` uploads to
+/// the light-assignment fragment shader with per-eye off-axis-derived values. The engine
+/// reconstructs a symmetric frustum from the vertical FOV and aspect ratio, which cannot encode the
+/// off-axis shift of the per-eye projections, so lights would otherwise be assigned to the wrong
+/// tiles: blocky, screen-aligned lighting artifacts. A no-op when no VR frame is in flight.
 fn run_draw_clustered(
     request: RunRequest,
     this: *const RenderBlockDeferredLighting,
@@ -150,12 +149,6 @@ fn run_draw_clustered(
     a3: *mut c_void,
     a4: *mut HTexture_t,
 ) -> bool {
-    // When the fix is disabled, call through without setting the thread-local flag.
-    if !request.fix_frustum {
-        DRAW_CLUSTERED.get().unwrap().call(this, rc, a3, a4);
-        return false;
-    }
-
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
     // dispatch) guarantees it is valid for the duration of `DrawClustered`.
     let rc_ref = unsafe { rc.as_ref() };
@@ -190,7 +183,18 @@ fn run_draw_clustered(
                     grid.exact_y,
                     eye,
                 ),
-                light_view_offset: request.light_view.then_some(params.world_offset),
+                light_view: request
+                    .light_view
+                    .then(|| {
+                        crate::hud::render_camera_pose().map(|(position, orientation)| LightView {
+                            offset: params.world_offset(glam::Mat4::from_rotation_translation(
+                                orientation,
+                                position,
+                            )),
+                            turn: params.orientation_delta,
+                        })
+                    })
+                    .flatten(),
                 binds: 0,
                 viewport_pinned: false,
                 saved_viewport: None,
@@ -208,8 +212,12 @@ fn run_draw_clustered(
     // The scope puts every pinned or suppressed piece of state back on *every* path out of the call,
     // so a leaked eye-half viewport or clear suppression cannot corrupt the rest of the frame.
     let scope = ClusteredScope(armed);
+    let resolve_scope = crate::screenshot::harness::resolve_probe::begin(
+        rc_ref.is_some_and(|rc| rc.m_ActiveRenderPass == RenderPassId::RP_DEFERRED_LIGHTS as i32),
+    );
 
     DRAW_CLUSTERED.get().unwrap().call(this, rc, a3, a4);
+    drop(resolve_scope);
 
     let engaged = SPLIT
         .get()

@@ -1,0 +1,426 @@
+//! The physical hands' side of the grapple snatch ([`crate::controllers::snatch`]): what a thing out
+//! of reach under the grapple's aim is to a hand, by the same rules as the reach in reach, and the
+//! hand-over of a snatched prop to the hand's ordinary hold.
+
+use std::num::NonZeroUsize;
+
+use glam::Vec3;
+use jc3gi::character::character::Character;
+
+use crate::controllers::{
+    frame::Hand,
+    physical_hands::{
+        STATE,
+        bodies::{self, BodyError},
+        characters::ragdoll::{Bone, Ragdoll},
+        collider_view::{self, model::Aabb},
+        contact::{Surface, SurfaceHit},
+        doors::{self, DoorTarget, DoorsConfig, acquisition::PanelReach, engine as door_engine},
+        engine,
+        grasp::{self, Reach, TargetKind},
+        pickup::{PICKUP, Request},
+    },
+};
+
+/// The mass of `object`'s body `body`, when it is a loose object by the reach's own classification
+/// ([`bodies::classify`]): not a character, a vehicle or a part still on it, a weapon, or a
+/// grenade, with a finite mass. A part that has come off its vehicle, such as a door torn off, is a
+/// loose object.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `object` and `body` must be held alive or come from
+/// a cast this tick.
+pub(crate) unsafe fn loose_mass(object: NonZeroUsize, body: u32) -> Option<f32> {
+    if unsafe { engine::is_character(object) } {
+        return None;
+    }
+    let TargetKind::Prop { mass_kg } = (unsafe { bodies::classify(object, body) }).ok()? else {
+        return None;
+    };
+    Some(mass_kg)
+}
+
+/// Where `object`'s body `body` is, world space: its centre while it is dynamic, or where a placed
+/// object at rest stands ([`bodies::position`]).
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `object` must be held alive or come from a cast this
+/// tick.
+pub(crate) unsafe fn position(object: NonZeroUsize, body: u32) -> Result<Vec3, BodyError> {
+    unsafe { bodies::position(body, object) }
+}
+
+/// Turn a placed object at rest loose, so the line can pull it: its body becomes dynamic with the
+/// mass it was placed with ([`bodies::loosen`]). A body already dynamic is left as it is.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `object` must be held alive.
+pub(crate) unsafe fn loosen(object: NonZeroUsize, body: u32) -> Result<(), BodyError> {
+    let loosened = unsafe { bodies::loosen(object, body) }?;
+    if loosened {
+        tracing::info!(target: "controllers", body, "physical hands: a placed object was turned loose for the snatch");
+    }
+    Ok(())
+}
+
+/// A ragdolling character under the grapple's aim: the bone of its ragdoll the line pulls, and
+/// the whole ragdoll's mass, which that bone drags.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct RagdollTarget {
+    pub bone: Bone,
+    /// The whole ragdoll's mass, kilograms.
+    pub mass_kg: f32,
+}
+
+/// The ragdoll of the character `object`, hit on its body `body` at `point`, when it ragdolls,
+/// taken by the bone the hit lands on ([`Ragdoll::bone_at`]). `None` for anything that is not a
+/// ragdolling character.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `object` must be held alive or come from a cast
+/// this tick.
+pub(crate) unsafe fn ragdoll_target(
+    object: NonZeroUsize,
+    body: u32,
+    point: Vec3,
+) -> Option<RagdollTarget> {
+    if !unsafe { engine::is_character(object) } {
+        return None;
+    }
+    let character = unsafe { &*(object.get() as *const Character) };
+    let ragdoll = unsafe { Ragdoll::of(character) }?;
+    Some(RagdollTarget {
+        bone: ragdoll.bone_at(body, point)?,
+        mass_kg: ragdoll.mass_kg(),
+    })
+}
+
+/// Push the body `body` of `owner` by `impulse` at `at`, world space, after checking it still
+/// belongs to `owner`: the line's pull on a loose object.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step.
+#[track_caller]
+pub(crate) unsafe fn push(
+    body: u32,
+    owner: NonZeroUsize,
+    impulse: Vec3,
+    at: Vec3,
+) -> Result<(), BodyError> {
+    unsafe { bodies::shove(body, owner, impulse, at) }
+}
+
+/// Pull the ragdoll of `character` by `impulse` at `at` on its body `body` of `owner`, world space:
+/// the line's pull on a ragdoll, sized for the whole ragdoll's mass. [`RAGDOLL_LEAD_SHARE`] of it
+/// goes to the hooked body at the hook, so the body comes by the limb the hook holds, and the rest
+/// is spread over every body of the ragdoll by its mass ([`spread_pull`]). The whole pull given to
+/// the one limb would ask the ragdoll's constraints to pass a whole body's momentum along the
+/// chain of bones in one physics step, which they do not: the limb would be flung and the body
+/// would barely move. A character whose ragdoll cannot be read is pulled by the hooked body alone.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `character` must be held alive.
+#[track_caller]
+pub(crate) unsafe fn pull_ragdoll(
+    character: NonZeroUsize,
+    body: u32,
+    owner: NonZeroUsize,
+    impulse: Vec3,
+    at: Vec3,
+) -> Result<(), BodyError> {
+    let ragdoll = unsafe { engine::is_character(character) }
+        .then(|| unsafe { Ragdoll::of(&*(character.get() as *const Character)) })
+        .flatten();
+    let Some(ragdoll) = ragdoll.filter(|r| r.bone(body).is_some()) else {
+        return unsafe { push(body, owner, impulse, at) };
+    };
+    let pull = spread_pull(ragdoll.bones(), body, impulse, at, RAGDOLL_LEAD_SHARE);
+    // The hooked body's share first: its failure is the line's.
+    if let Some(lead) = pull.lead {
+        unsafe { push(lead.body, lead.owner, lead.impulse, lead.at) }?;
+    }
+    for share in pull.spread {
+        // A bone the game has freed since the read is passed over; the rest still pull.
+        let _ = unsafe { push(share.body, share.owner, share.impulse, share.at) };
+    }
+    Ok(())
+}
+
+/// The share of the line's pull on a ragdoll the hooked body takes at the hook, `0..=1`.
+pub(crate) const RAGDOLL_LEAD_SHARE: f32 = 0.3;
+
+/// One body's share of a pull spread over a ragdoll.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct BonePush {
+    pub owner: NonZeroUsize,
+    pub body: u32,
+    pub impulse: Vec3,
+    pub at: Vec3,
+}
+
+/// A pull spread over a ragdoll's bodies.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub(crate) struct SpreadPull {
+    /// The hooked body's share at the hook.
+    pub lead: Option<BonePush>,
+    /// Every body's share of the rest, at its centre.
+    pub spread: Vec<BonePush>,
+}
+
+/// Spread `impulse` over `bones`: `lead` of it at `at` on the bone of the body `hooked`, and the
+/// rest over every bone by its share of their mass, at its centre, so that it moves the bodies
+/// alike. The pushes add up to `impulse`; without the hooked bone among them, the whole impulse is
+/// spread by mass. Nothing for bones without mass or an impulse or point that is not finite.
+pub(crate) fn spread_pull(
+    bones: &[Bone],
+    hooked: u32,
+    impulse: Vec3,
+    at: Vec3,
+    lead: f32,
+) -> SpreadPull {
+    let total_kg: f32 = bones.iter().map(|b| b.mass_kg).sum();
+    if !(total_kg.is_finite() && total_kg > 0.0 && impulse.is_finite() && at.is_finite()) {
+        return SpreadPull::default();
+    }
+    let lead = bones
+        .iter()
+        .find(|b| b.body == hooked)
+        .filter(|_| lead.is_finite() && lead > 0.0)
+        .map(|b| BonePush {
+            owner: b.owner,
+            body: b.body,
+            impulse: impulse * lead.min(1.0),
+            at,
+        });
+    let spread = impulse - lead.map_or(Vec3::ZERO, |l| l.impulse);
+    SpreadPull {
+        lead,
+        spread: bones
+            .iter()
+            .map(|b| BonePush {
+                owner: b.owner,
+                body: b.body,
+                impulse: spread * (b.mass_kg / total_kg),
+                at: b.centre,
+            })
+            .collect(),
+    }
+}
+
+/// The heaviest loose object one hand lifts and carries, kilograms: within the pickup's heaviest,
+/// and no heavier than one hand's strongest pull holds up.
+pub(crate) fn carry_max_kg() -> f32 {
+    let lifted = PICKUP.hand_force_n / PICKUP.gravity_mps2;
+    if grasp::can_hold(lifted, &PICKUP) {
+        lifted
+    } else {
+        PICKUP.max_mass_kg
+    }
+}
+
+/// A weapon lying in the world or a loose object, found by its box rather than by a cast.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct NearBody {
+    /// The object (its physics game object: a `CWeaponBase` for a weapon).
+    pub object: NonZeroUsize,
+    pub body: u32,
+    /// The body's centre, world space.
+    pub centre: Vec3,
+    pub kind: NearKind,
+}
+
+/// What a body found by its box is.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) enum NearKind {
+    /// A weapon lying in the world.
+    Weapon,
+    /// A loose object of this mass, kilograms ([`loose_mass`]).
+    Prop { mass_kg: f32 },
+}
+
+/// The weapons lying in the world and the loose objects whose dynamic bodies' boxes `keep` accepts,
+/// at most [`MAX_NEAR_BODIES`] boxes considered. A weapon's body is on a layer the ordinary casts
+/// never meet, and a small object far off subtends too little for a cast to be asked to hit it, so
+/// either is found by its box and then checked by the reach's classification on a body that still
+/// reads as its owner's.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step.
+pub(crate) unsafe fn dynamic_near(keep: impl FnMut(&Aabb) -> bool) -> Vec<NearBody> {
+    let Ok(boxes) = (unsafe { collider_view::dynamic_boxes(keep, MAX_NEAR_BODIES) }) else {
+        return Vec::new();
+    };
+    boxes
+        .into_iter()
+        .filter_map(|(body, _)| {
+            let object = unsafe { bodies::owner_of(body) }?;
+            let kind = match unsafe { bodies::classify(object, body) } {
+                Ok(TargetKind::Weapon) => NearKind::Weapon,
+                Ok(TargetKind::Prop { mass_kg }) if !unsafe { engine::is_character(object) } => {
+                    NearKind::Prop { mass_kg }
+                }
+                _ => return None,
+            };
+            let state = unsafe { bodies::read(body, object) }.ok()?;
+            Some(NearBody {
+                object,
+                body,
+                centre: state.pose.centre,
+                kind,
+            })
+        })
+        .collect()
+}
+
+/// The most boxes [`dynamic_near`] considers: its filter keeps only boxes near the aim, so this
+/// bounds a pathological pile of debris, not an ordinary scene.
+const MAX_NEAR_BODIES: usize = 48;
+
+/// The closed door of the vehicle `object` (or the vehicle a part of it belongs to) whose handle
+/// area is within `reach_m` of `point`, a point the grapple's aim hit on its body `body` with the
+/// surface normal `normal`, with the handle's point.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; `object` and `body` must come from a cast this tick.
+pub(crate) unsafe fn closed_door(
+    object: NonZeroUsize,
+    body: u32,
+    point: Vec3,
+    normal: Vec3,
+    reach_m: f32,
+    config: &DoorsConfig,
+) -> Option<(DoorTarget, Vec3)> {
+    let hit = SurfaceHit {
+        position: point,
+        normal,
+        surface: Surface::Solid {
+            object: Some(object),
+            body,
+        },
+        material: None,
+    };
+    let reach = unsafe {
+        doors::reach(
+            object,
+            body,
+            &hit,
+            point,
+            PanelReach::uniform(reach_m),
+            config,
+        )
+    }?;
+    match reach.kind {
+        TargetKind::Door(door) if door.latched => Some((door, reach.point)),
+        _ => None,
+    }
+}
+
+/// Open the latched door `door` and push it outward at `at` with `speed` metres per second's worth
+/// of its own mass.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step; the door's vehicle must be live.
+#[track_caller]
+pub(crate) unsafe fn swing_open(door: &DoorTarget, at: Vec3, speed: f32) -> Result<(), String> {
+    let (owner, body) = unsafe { door_engine::unlatch(door.vehicle, door.part_index) }
+        .map_err(|e| e.to_string())?;
+    let mass = unsafe { bodies::read(body, owner) }
+        .map_err(|e| e.to_string())?
+        .mass_kg
+        .unwrap_or(0.0);
+    let impulse = door.outward.normalize_or_zero() * mass * speed.max(0.0);
+    unsafe { bodies::shove(body, owner, impulse, at) }.map_err(|e| e.to_string())
+}
+
+/// Whether the vehicle of `door` moves faster than `max_speed_mps`, by the body the door was found
+/// on; a vehicle whose body cannot be read counts as moving.
+///
+/// # Safety
+///
+/// The main thread, outside the physics step.
+pub(crate) unsafe fn door_moving(door: &DoorTarget, max_speed_mps: f32) -> bool {
+    let Some(body) = door.vehicle_body else {
+        return true;
+    };
+    unsafe { bodies::read(body, door.vehicle) }.map_or(true, |state| {
+        state.velocities.linear.length() > max_speed_mps
+    })
+}
+
+/// Hand a snatched loose object, its body `body` arrived at the hand, over to the hand's ordinary
+/// hold, taken at `point`: the next palms' tick takes hold of it as of a grab in reach, and the
+/// grip's release lets go of it.
+pub(crate) fn hold_remote(hand: Hand, object: NonZeroUsize, body: u32, point: Vec3, mass_kg: f32) {
+    let mut state = STATE.lock();
+    state.pickup.requests[hand.index()] = Some(Request::Grab(Reach {
+        object,
+        body,
+        point,
+        distance: 0.0,
+        normal: Vec3::ZERO,
+        kind: TargetKind::Prop { mass_kg },
+    }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn bone(body: u32, centre: Vec3, mass_kg: f32) -> Bone {
+        Bone {
+            owner: NonZeroUsize::new(64).unwrap(),
+            body,
+            centre,
+            mass_kg,
+            linear: Vec3::ZERO,
+        }
+    }
+
+    #[test]
+    fn a_ragdolls_pull_leads_by_the_hooked_limb_and_moves_every_body_alike() {
+        let bones = [
+            bone(1, Vec3::ZERO, 40.0),
+            bone(2, Vec3::Y * 0.5, 20.0),
+            bone(3, Vec3::X * 0.6, 4.0),
+        ];
+        let impulse = Vec3::new(64.0, 0.0, 0.0);
+        let hook = Vec3::X * 0.7;
+        let pull = spread_pull(&bones, 3, impulse, hook, 0.25);
+        let lead = pull.lead.expect("the hooked bone leads");
+        assert_eq!(lead.body, 3);
+        assert_eq!(lead.at, hook);
+        assert!(lead.impulse.abs_diff_eq(impulse * 0.25, 1e-5));
+        // The rest gives every body the same change of velocity, at its centre.
+        for (push, b) in pull.spread.iter().zip(&bones) {
+            assert_eq!(push.at, b.centre);
+            assert!((push.impulse / b.mass_kg).abs_diff_eq(impulse * 0.75 / 64.0, 1e-5));
+        }
+        let total = pull.spread.iter().map(|p| p.impulse).sum::<Vec3>() + lead.impulse;
+        assert!(total.abs_diff_eq(impulse, 1e-4));
+    }
+
+    #[test]
+    fn a_pull_on_no_bone_of_the_ragdoll_is_spread_whole_and_a_broken_one_is_nothing() {
+        let bones = [bone(1, Vec3::ZERO, 30.0), bone(2, Vec3::Y, 10.0)];
+        let pull = spread_pull(&bones, 9, Vec3::Y * 40.0, Vec3::ZERO, 0.3);
+        assert!(pull.lead.is_none());
+        assert!(pull.spread[0].impulse.abs_diff_eq(Vec3::Y * 30.0, 1e-5));
+        assert_eq!(
+            spread_pull(&bones, 1, Vec3::NAN, Vec3::ZERO, 0.3),
+            SpreadPull::default()
+        );
+        assert_eq!(
+            spread_pull(&[], 1, Vec3::Y, Vec3::ZERO, 0.3),
+            SpreadPull::default()
+        );
+    }
+}

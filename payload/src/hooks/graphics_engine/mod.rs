@@ -11,38 +11,39 @@ use re_utilities::hook_library::HookLibrary;
 // Exposure and post-effect config structs, accessed by `tone_mapping` and `post_effects` via
 // `Config::lock_query`.
 pub(crate) mod config;
+// The replay of `GeneralMkIII`'s declaration creation that builds the hardware-instanced layout twins.
+mod declaration_replay;
 // `graphics_engine` stays public for hooks::game's BLOCK_FLIP reference. The inner name mirrors
 // jc3gi (CGraphicsEngine in its own module), hence the module_inception allow.
 #[allow(clippy::module_inception)]
 pub mod graphics_engine;
 mod render_pass;
-// The three VR resolution levers (`ResizeTextures`, LR-particle, spot-light cone) for issue #8's
-// pixelation.
-mod resolution;
 // `shader` is public so the debug UI can read its patched-shader count.
 pub mod shader;
-// Single-pass stereo render-thread detours (the cb13 mirror; experimental, gated off by default).
+// Single-pass stereo render-thread detours (the cb13 mirror; on by default while a VR session runs).
 mod single_pass;
 
-mod post;
+pub(crate) mod post;
 mod scene;
 mod screen;
 
-pub(crate) use post::post_effects;
+pub(crate) use post::{post_effects, tone_mapping};
+pub(crate) use render_pass::shadow_fit_gap_m;
 pub(crate) use scene::render_block;
 pub use scene::terrain;
 pub(crate) use screen::{clustered_lighting, reconstruction, ss_decal, ssao};
+pub(crate) use single_pass::upload_global_constants;
 
 /// Bundle every CGraphicsEngine-area detour into one hook library, mirroring how the game groups
 /// these classes.
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_hook_library(graphics_engine::hook_library())
+        .with_hook_library(declaration_replay::hook_library())
         .with_hook_library(scene::hook_library())
         .with_hook_library(screen::hook_library())
         .with_hook_library(post::hook_library())
         .with_hook_library(render_pass::hook_library())
-        .with_hook_library(resolution::hook_library())
         .with_hook_library(shader::hook_library())
         .with_hook_library(single_pass::hook_library())
 }

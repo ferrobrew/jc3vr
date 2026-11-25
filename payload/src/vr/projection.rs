@@ -308,4 +308,36 @@ mod tests {
         assert!((near_rev - 1.0).abs() < 1e-4, "rev near z = {near_rev}");
         assert!(far_rev.abs() < 1e-4, "rev far z = {far_rev}");
     }
+
+    #[test]
+    fn scene_near_clip_preserves_close_body_and_map_distance_geometry() {
+        let fov = Fov {
+            left: -0.8,
+            right: 0.9,
+            up: 0.8,
+            down: -0.9,
+        };
+        let near = crate::hooks::camera::SCENE_NEAR_CLIP_M;
+        let far = Camera::DEFAULT_FAR_PLANE;
+        let projection = OffAxisProjection::new(fov, near, far);
+        let previous = OffAxisProjection::new(fov, Camera::DEFAULT_NEAR_PLANE, far);
+        let inverse = GlamMat4::from(projection.reverse_z).inverse();
+        let mut previous_depth = f32::INFINITY;
+        for distance in [near, 0.03, 0.05, 1.0, 1_000.0, 32_000.0] {
+            let point = [0.0, 0.0, -distance, 1.0];
+            let ndc = project(&projection.reverse_z, point);
+            assert!(
+                (0.0..=1.000_001).contains(&ndc[2]),
+                "distance {distance}: {ndc:?}"
+            );
+            assert!(ndc[2] < previous_depth);
+            previous_depth = ndc[2];
+            let old_ndc = project(&previous.reverse_z, point);
+            assert_eq!(&ndc[..2], &old_ndc[..2]);
+            let reconstructed = inverse * Vec4::new(ndc[0], ndc[1], ndc[2], 1.0);
+            let reconstructed_distance = -reconstructed.z / reconstructed.w;
+            assert!((reconstructed_distance / distance - 1.0).abs() < 1e-5);
+        }
+        assert!(project(&projection.reverse_z, [0.0, 0.0, -near * 0.5, 1.0])[2] > 1.0);
+    }
 }

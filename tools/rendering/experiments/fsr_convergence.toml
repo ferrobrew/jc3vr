@@ -1,0 +1,28 @@
+# How many frames FSR's history takes to settle at rest: the coastal town at midday, camera still,
+# FSR on. Run with `fast --warmup-frames N --save` for a range of N; each configuration resets FSR's
+# history, and the repeat is the next frame. See docs/mod/rendering/fsr.md.
+name = "fsr-convergence"
+warmup_frames = 30
+samples = 3
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+fsr = "enabled"
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [2091.2, 1040.1, 5005.0]
+yaw_deg = 270.0
+
+[motion]
+period_frames = 120
+phase = 15
+
+[[configurations]]
+mode = "multipass"

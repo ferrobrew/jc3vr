@@ -1,0 +1,470 @@
+//! The fixed set of timed regions and how each is classified in the breakdown.
+
+/// A timed region of the frame. The set is closed and small so the counters can live in a static
+/// array indexed by the slot, with no registration and no lookup on the hot path.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Slot {
+    /// `crate::update`: the directing tools, the eye-capture upkeep, and the egui debug UI pass.
+    DebugUi,
+    /// The engine's `Game::Update`, excluding the mod scopes nested in it and the sim ticks: the
+    /// tick scheduler, the update contexts, and the parts of the frame the mod does not hook.
+    EngineUpdate,
+    /// One sim tick (`Game::UpdateGame`), excluding the scopes and intervals nested in it: what is
+    /// left between the game world's queues and the streaming block once [`Self::SimHead`] and
+    /// [`Self::SimTail`] take the stretches before and after them.
+    SimTick,
+    /// The game world's pre-simulation queue (`GameWorld::UpdatePreSim`): the registered objects'
+    /// pre-simulation updates, the characters' state-machine and pre-physics passes among them.
+    SimWorldPreSim,
+    /// The run state's physics phase (`GameState::UpdatePhysics`): the physics step and the
+    /// collision, damage, and shape-sensor dispatch after it, excluding the hand bodies' callback.
+    SimPhysics,
+    /// The game world's post-simulation queue (`GameWorld::UpdatePostSim`): the objects'
+    /// post-simulation updates, the teleport, and the removal queue.
+    SimWorldPostSim,
+    /// The tick's time-budgeted streaming block: the resource streamer, the location system, and
+    /// the deletion of queued objects.
+    SimStreaming,
+    /// The run state's tick up to the game world's pre-simulation queue, excluding the scopes
+    /// nested in it: the managers before the world update, the spin on the input job's completion
+    /// among them. Timed as an interval of [`Self::SimTick`] rather than a hook of its own.
+    SimHead,
+    /// The run state's tick after its streaming block, excluding the scopes nested in it: the
+    /// post-simulation managers, the AI and light kicks and waits, and the online managers. Timed as
+    /// an interval of [`Self::SimTick`] rather than a hook of its own.
+    SimTail,
+    /// The online-suite manager's update (`OnlineSuiteManager::Update`), excluding the online
+    /// suite's parts timed in the `Osuite` slots: the queued online login and the suite's platform
+    /// initialization retry.
+    SimOnline,
+    /// The statistic manager, the asynchronous brags, and the profile manager's deadlines.
+    SimStats,
+    /// The Steam platform system's update, which runs the Steam API's callbacks.
+    SimSteam,
+    /// The online operations queue (`OperationManager::Update`), in the tick's head.
+    SimOperations,
+    /// The login state machine (`LoginManager::Update`), in the tick's head.
+    SimLogin,
+    /// The online-suite manager's first-party check in its suite retry
+    /// (`AccountManagerSteam::IsConnectedToFirstPartyService`, which asks the Steam client whether
+    /// it is logged on), nested in [`Self::SimOnline`]. Its calls count the ticks that reach the
+    /// check, whether or not the call is skipped (`crate::hooks::online`).
+    SimLoggedOn,
+    /// The online suite's player accounts (`osuite::PlayerAccountManager::Update`), excluding the
+    /// service-account parts timed on their own: the manager's mutex and the Steam account's
+    /// connection check.
+    OsuiteAccounts,
+    /// The Steam account's authentication with the online suite (`AuthenticationBase::Update`),
+    /// excluding [`Self::OsuiteTicket`] and [`Self::OsuiteServlet`]: its mutex and state machine.
+    OsuiteAuth,
+    /// The authentication's Steam ticket request (`SteamAuthentication::RequestTicket`), sent on the
+    /// retry timer.
+    OsuiteTicket,
+    /// The authentication's servlet request (`AuthenticationBase::AuthenticateOnServlet`), sent once
+    /// a ticket has arrived.
+    OsuiteServlet,
+    /// The online suite's Steam friends refresh (`SteamFriends::Update`), which walks the friends
+    /// list through the Steam client once a minute.
+    OsuiteFriends,
+    /// The Square Enix Membership account's update (`InternalSemAccount::Update`) and its login
+    /// retry.
+    OsuiteSem,
+    /// The online suite's consumables (`OnlineSuiteConsumables::Update`).
+    OsuiteConsumables,
+    /// The online suite's language refresh (`OsInfo::Update`).
+    OsuiteInfo,
+    /// The online suite's worker callbacks (`Worker::CallCallbacks`): the replies of its HTTP
+    /// requests, handled on the game thread.
+    OsuiteCallbacks,
+    /// The first AI thread's body (`RunAIThread1_Proxy`), on the fragment worker that runs it.
+    AiThread1,
+    /// The second AI thread's body (`RunAIThread2_Proxy`), on the fragment worker that runs it. It
+    /// is kicked at the end of a tick and runs alongside the render update.
+    AiThread2,
+    /// The engine's input job (`RunInputThread_Proxy`), on the thread that runs it, excluding the
+    /// mod's [`Self::InputTick`] inside it. The run state's tick spins on its completion, so a long
+    /// job shows up in [`Self::SimHead`] too.
+    InputJob,
+    /// The mod's work after the engine's input-device poll, the input tick's poll stage: landing
+    /// the bindings' writes and the headpose look handling. In play it runs in the engine's input
+    /// job; an inline game stage nests its [`Self::Bindings`] time inside it.
+    InputTick,
+    /// The input tick's game stage (`controllers::bindings::stage::game_stage`): the bindings,
+    /// the controller subsystems they drive, and the gamepad-setting hold. In play it runs at the
+    /// top of the world's pre-simulation queue, inside [`Self::SimWorldPreSim`].
+    Bindings,
+    /// The physical hands' input tick and post-aim update (`controllers::physical_hands`): the palm
+    /// probes, pushes, and pickups.
+    PhysicalHands,
+    /// The local player's aim-control post-simulation update with the controllers active
+    /// (`controllers::aim`), excluding the physical hands: the hand composition, the engine's own aim
+    /// update it wraps (with the grapple visibility checks the mod makes immediate), and the hand
+    /// rays.
+    Aim,
+    /// The mod's work in the character pose-pass hooks, around the HumanIK solve: the head, hand,
+    /// stance, and crouch targets queued at the pose finalization's entry, the secondary hand pass's
+    /// switches, and the head override and post-solve fix-ups after the prop effects. Excludes the
+    /// solve gate.
+    CharacterPose,
+    /// The local player's HumanIK solve gate: the procedural body's pose and the controllers' wrist
+    /// targets queued on it.
+    BodyGate,
+    /// The physical hands' pre-simulation callback, which drives the hand bodies before each physics
+    /// step.
+    HandBodies,
+    HumanHull,
+    HandImpacts,
+    /// The render-rate presentation layer (`controllers::presentation`): the frame's snapshot, and
+    /// the upper body's re-solve for the draws of the player's body.
+    Presentation,
+    /// The tracking recorder's samples outside the capture itself: the bodies near Rico after a
+    /// step, and the pose samples of the pose-finalization pass.
+    Recorder,
+    /// The mod's work in the UI capture thread's hooks: at the main UI movie's capture seam, the HUD
+    /// partition, the overlay and reticle hiding, and the atlas's and the world markers' moves into
+    /// their cells and back; and the pause menu's VR pages' per-frame update.
+    UiCapture,
+    /// The world markers' fallback raycasts in the simulation update, and their placement and depth
+    /// sampling on eye 0's post-draw.
+    WorldMarkers,
+    /// The render-update hook's own glue, excluding everything timed separately inside it.
+    UpdateRenderHook,
+    /// `vr::update`: the OpenXR event pump.
+    VrUpdate,
+    /// `xrBeginFrame`, the view location, and the head location in the frame begin.
+    VrBeginFrame,
+    /// The controllers' OpenXR input update in the frame begin: the action sync, the action-state
+    /// reads, and the space locations.
+    VrInput,
+    /// The engine's own render update.
+    EngineUpdateRender,
+    /// The engine's game-thread draw for each dispatch (`Game::Draw`).
+    Dispatch,
+    /// The blit and composition work of the frame submit, excluding the swapchain wait and
+    /// `xrEndFrame`.
+    Submit,
+    /// The desktop mirror.
+    Mirror,
+    /// The deferred frame tail's own glue, excluding its drain, mirror, and submit.
+    Tail,
+    /// The engine's draw task for one dispatch (`GraphicsEngine::HandleDrawThreadTask`), excluding
+    /// the scopes nested in it: the walk of the render passes that records the dispatch's draws on
+    /// the immediate context, with the mod's draw-path detours inside it. Runs on whichever thread
+    /// executes the task, a CPU fragment worker normally.
+    DrawTask,
+    /// The mod's work in `RenderEngine::PostDraw` on the draw task: the world-space overlays, the
+    /// HUD quad, the egui panel, and the eye captures, excluding the world markers' placement.
+    PostDraw,
+    /// The learned body estimator's pass on the game's device, once per frame: posting the window,
+    /// recording the dispatches, and collecting finished estimates. Timed apart from
+    /// [`Self::PostDraw`] for the frame time's A/B against the estimator switched off.
+    BodyEstimator,
+    /// `xrEndFrame`.
+    VrEndFrame,
+    /// Blocking on the VR runtime lock, which the deferred tail holds until it submits the previous
+    /// frame.
+    VrLock,
+    /// `xrWaitFrame`: the compositor's pacing.
+    VrWaitFrame,
+    /// Acquiring and waiting on the swapchain image.
+    VrSwapchainWait,
+    /// The game thread waiting on the draw task between and after the dispatches.
+    Drain,
+    /// The deferred tail waiting on the draw task's completion signals.
+    TailDrain,
+}
+
+/// What kind of time a slot measures, for the per-thread totals.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Kind {
+    /// The mod's own CPU work.
+    Mod,
+    /// OpenXR calls that do work rather than pace: the begin, the view and input reads, the end.
+    Runtime,
+    /// The engine's own CPU work, with the mod's nested hooks taken out.
+    Engine,
+    /// Waiting on the compositor, the GPU, the draw task, or the frame tail.
+    Wait,
+}
+
+/// Which thread a span of time was spent on, for the per-thread totals.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum ThreadClass {
+    /// The game thread, which is what bounds the frame rate.
+    Game,
+    /// The deferred frame tail's worker.
+    Tail,
+    /// Every other thread: the draw task and the CPU fragment workers.
+    Other,
+}
+
+impl Slot {
+    /// Every slot, in index order.
+    pub(crate) const ALL: [Slot; Self::COUNT] = [
+        Slot::DebugUi,
+        Slot::EngineUpdate,
+        Slot::SimTick,
+        Slot::SimWorldPreSim,
+        Slot::SimPhysics,
+        Slot::SimWorldPostSim,
+        Slot::SimStreaming,
+        Slot::SimHead,
+        Slot::SimTail,
+        Slot::SimOnline,
+        Slot::SimStats,
+        Slot::SimSteam,
+        Slot::SimOperations,
+        Slot::SimLogin,
+        Slot::SimLoggedOn,
+        Slot::OsuiteAccounts,
+        Slot::OsuiteAuth,
+        Slot::OsuiteTicket,
+        Slot::OsuiteServlet,
+        Slot::OsuiteFriends,
+        Slot::OsuiteSem,
+        Slot::OsuiteConsumables,
+        Slot::OsuiteInfo,
+        Slot::OsuiteCallbacks,
+        Slot::AiThread1,
+        Slot::AiThread2,
+        Slot::InputJob,
+        Slot::InputTick,
+        Slot::Bindings,
+        Slot::PhysicalHands,
+        Slot::Aim,
+        Slot::CharacterPose,
+        Slot::BodyGate,
+        Slot::HandBodies,
+        Slot::HumanHull,
+        Slot::HandImpacts,
+        Slot::Presentation,
+        Slot::Recorder,
+        Slot::UiCapture,
+        Slot::WorldMarkers,
+        Slot::UpdateRenderHook,
+        Slot::VrUpdate,
+        Slot::VrBeginFrame,
+        Slot::VrInput,
+        Slot::EngineUpdateRender,
+        Slot::Dispatch,
+        Slot::Submit,
+        Slot::Mirror,
+        Slot::Tail,
+        Slot::DrawTask,
+        Slot::PostDraw,
+        Slot::BodyEstimator,
+        Slot::VrEndFrame,
+        Slot::VrLock,
+        Slot::VrWaitFrame,
+        Slot::VrSwapchainWait,
+        Slot::Drain,
+        Slot::TailDrain,
+    ];
+
+    /// The number of slots.
+    pub(crate) const COUNT: usize = 58;
+
+    /// The slot's position in [`Self::ALL`] and in the counter arrays.
+    pub(crate) const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// The slot's name in the log line and the debug UI.
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Slot::DebugUi => "debug_ui",
+            Slot::EngineUpdate => "engine_update",
+            Slot::SimTick => "sim_tick",
+            Slot::SimWorldPreSim => "sim_world_pre",
+            Slot::SimPhysics => "sim_physics",
+            Slot::SimWorldPostSim => "sim_world_post",
+            Slot::SimStreaming => "sim_streaming",
+            Slot::SimHead => "sim_head",
+            Slot::SimTail => "sim_tail",
+            Slot::SimOnline => "sim_online",
+            Slot::SimStats => "sim_stats",
+            Slot::SimSteam => "sim_steam",
+            Slot::SimOperations => "sim_ops",
+            Slot::SimLogin => "sim_login",
+            Slot::SimLoggedOn => "sim_logged_on",
+            Slot::OsuiteAccounts => "osuite_accounts",
+            Slot::OsuiteAuth => "osuite_auth",
+            Slot::OsuiteTicket => "osuite_ticket",
+            Slot::OsuiteServlet => "osuite_servlet",
+            Slot::OsuiteFriends => "osuite_friends",
+            Slot::OsuiteSem => "osuite_sem",
+            Slot::OsuiteConsumables => "osuite_consumables",
+            Slot::OsuiteInfo => "osuite_info",
+            Slot::OsuiteCallbacks => "osuite_callbacks",
+            Slot::AiThread1 => "ai_thread_1",
+            Slot::AiThread2 => "ai_thread_2",
+            Slot::InputJob => "input_job",
+            Slot::InputTick => "input_tick",
+            Slot::Bindings => "bindings",
+            Slot::PhysicalHands => "physical_hands",
+            Slot::Aim => "aim",
+            Slot::CharacterPose => "character_pose",
+            Slot::BodyGate => "body_gate",
+            Slot::HandBodies => "hand_bodies",
+            Slot::HumanHull => "human_hull",
+            Slot::HandImpacts => "hand_impacts",
+            Slot::Presentation => "presentation",
+            Slot::Recorder => "recorder",
+            Slot::UiCapture => "ui_capture",
+            Slot::WorldMarkers => "world_markers",
+            Slot::UpdateRenderHook => "update_render_hook",
+            Slot::VrUpdate => "vr_update",
+            Slot::VrBeginFrame => "vr_begin_frame",
+            Slot::VrInput => "vr_input",
+            Slot::EngineUpdateRender => "engine_update_render",
+            Slot::Dispatch => "dispatch",
+            Slot::Submit => "submit",
+            Slot::Mirror => "mirror",
+            Slot::Tail => "tail",
+            Slot::DrawTask => "draw_task",
+            Slot::PostDraw => "post_draw",
+            Slot::BodyEstimator => "body_estimator",
+            Slot::VrEndFrame => "vr_end_frame",
+            Slot::VrLock => "vr_lock",
+            Slot::VrWaitFrame => "vr_wait_frame",
+            Slot::VrSwapchainWait => "vr_swapchain_wait",
+            Slot::Drain => "drain",
+            Slot::TailDrain => "tail_drain",
+        }
+    }
+
+    /// What kind of time the slot measures.
+    pub(crate) const fn kind(self) -> Kind {
+        match self {
+            Slot::DebugUi
+            | Slot::InputTick
+            | Slot::Bindings
+            | Slot::PhysicalHands
+            | Slot::Aim
+            | Slot::CharacterPose
+            | Slot::BodyGate
+            | Slot::HandBodies
+            | Slot::HumanHull
+            | Slot::HandImpacts
+            | Slot::Presentation
+            | Slot::Recorder
+            | Slot::UiCapture
+            | Slot::WorldMarkers
+            | Slot::UpdateRenderHook
+            | Slot::VrUpdate
+            | Slot::Submit
+            | Slot::Mirror
+            | Slot::Tail
+            | Slot::PostDraw
+            | Slot::BodyEstimator => Kind::Mod,
+            Slot::VrBeginFrame | Slot::VrInput | Slot::VrEndFrame => Kind::Runtime,
+            Slot::EngineUpdate
+            | Slot::SimTick
+            | Slot::SimWorldPreSim
+            | Slot::SimPhysics
+            | Slot::SimWorldPostSim
+            | Slot::SimStreaming
+            | Slot::SimHead
+            | Slot::SimTail
+            | Slot::SimOnline
+            | Slot::SimStats
+            | Slot::SimSteam
+            | Slot::SimOperations
+            | Slot::SimLogin
+            | Slot::SimLoggedOn
+            | Slot::OsuiteAccounts
+            | Slot::OsuiteAuth
+            | Slot::OsuiteTicket
+            | Slot::OsuiteServlet
+            | Slot::OsuiteFriends
+            | Slot::OsuiteSem
+            | Slot::OsuiteConsumables
+            | Slot::OsuiteInfo
+            | Slot::OsuiteCallbacks
+            | Slot::AiThread1
+            | Slot::AiThread2
+            | Slot::InputJob
+            | Slot::EngineUpdateRender
+            | Slot::Dispatch
+            | Slot::DrawTask => Kind::Engine,
+            Slot::VrLock
+            | Slot::VrWaitFrame
+            | Slot::VrSwapchainWait
+            | Slot::Drain
+            | Slot::TailDrain => Kind::Wait,
+        }
+    }
+}
+
+impl Kind {
+    /// Every kind, in index order.
+    pub(crate) const ALL: [Kind; Self::COUNT] =
+        [Kind::Mod, Kind::Runtime, Kind::Engine, Kind::Wait];
+
+    /// The number of kinds.
+    pub(crate) const COUNT: usize = 4;
+
+    /// The kind's position in [`Self::ALL`] and in the bucket arrays.
+    pub(crate) const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// The kind's name in the log line and the debug UI.
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            Kind::Mod => "mod",
+            Kind::Runtime => "openxr",
+            Kind::Engine => "engine",
+            Kind::Wait => "wait",
+        }
+    }
+}
+
+impl ThreadClass {
+    /// Every thread class, in index order.
+    pub(crate) const ALL: [ThreadClass; Self::COUNT] =
+        [ThreadClass::Game, ThreadClass::Tail, ThreadClass::Other];
+
+    /// The number of thread classes.
+    pub(crate) const COUNT: usize = 3;
+
+    /// The class's position in [`Self::ALL`] and in the bucket arrays.
+    pub(crate) const fn index(self) -> usize {
+        self as usize
+    }
+
+    /// The class's name in the log line and the debug UI.
+    pub(crate) const fn name(self) -> &'static str {
+        match self {
+            ThreadClass::Game => "game",
+            ThreadClass::Tail => "tail",
+            ThreadClass::Other => "other",
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_tables_are_in_index_order() {
+        for (i, slot) in Slot::ALL.iter().enumerate() {
+            assert_eq!(slot.index(), i, "{}", slot.name());
+        }
+        for (i, kind) in Kind::ALL.iter().enumerate() {
+            assert_eq!(kind.index(), i);
+        }
+        for (i, class) in ThreadClass::ALL.iter().enumerate() {
+            assert_eq!(class.index(), i);
+        }
+    }
+
+    #[test]
+    fn slot_names_are_unique() {
+        let mut names: Vec<_> = Slot::ALL.iter().map(|s| s.name()).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), Slot::COUNT);
+    }
+}

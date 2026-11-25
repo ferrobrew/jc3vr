@@ -1,0 +1,56 @@
+# Standing regression: the coastal town at midday with every setting the capture profile pins put back at
+# its shipped value (FSR, foveation, exposure metering, screen fade, player damage), camera still.
+# The repeat variant is the same-schedule noise floor; the -off variants measure the single-pass fixes.
+name = "shipped-town-static"
+warmup_frames = 30
+samples = 3
+interval_seconds = 2.0
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+fsr = "enabled"
+foveation = "enabled"
+auto_exposure = "enabled"
+screen_fade = "enabled"
+player_damage = "enabled"
+
+[diagnostics]
+shader_identity = true
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [2091.2, 1040.1, 5005.0]
+yaw_deg = 270.0
+
+[motion]
+period_frames = 120
+phase = 15
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
+
+[[single_pass_variants]]
+name = "repeat"
+
+[[single_pass_variants]]
+name = "fsr-off"
+switches = { fsr_per_eye = false }
+
+[[single_pass_variants]]
+name = "fov-off"
+switches = { foveation_per_eye = false }

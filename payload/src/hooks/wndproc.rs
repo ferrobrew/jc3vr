@@ -5,19 +5,21 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_F9;
 use windows::Win32::{
     Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM},
     UI::{
-        Input::KeyboardAndMouse::{VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
+        Input::KeyboardAndMouse::{VK_F1, VK_F2, VK_F4, VK_F7, VK_F8, VK_F10, VK_F11, VK_F12},
         WindowsAndMessaging::{
-            GetClientRect, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-            WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SYSKEYDOWN,
+            GetClientRect, SIZE_MINIMIZED, SIZE_RESTORED, WM_ACTIVATEAPP, WM_KEYDOWN, WM_KILLFOCUS,
+            WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDOWN,
+            WM_RBUTTONUP, WM_SETFOCUS, WM_SIZE, WM_SYSKEYDOWN,
         },
     },
 };
 
-use crate::{config::CONFIG, egui_impl::EguiState, hooks::graphics_engine::shader, hud::cursor};
-
-/// Whether F10 toggles the fullscreen stereo capture mode. Off for now: the capture window's
-/// fullscreen toggle is finicky under some setups. The F12 screenshot path covers diagnosis meanwhile.
-const F10_CAPTURE_ENABLED: bool = false;
+use crate::{
+    config,
+    egui_impl::{EguiState, consume_desktop_shortcut, observe_desktop_message},
+    hooks::graphics_engine::shader,
+    hud::{cursor, egui_panel},
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&WNDPROC_BINDER)
@@ -25,9 +27,55 @@ pub(super) fn hook_library() -> HookLibrary {
 
 #[detour(address = jc3gi::window::WndProc_ADDRESS)]
 fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    log_window_state(msg, wparam);
+    if observe_desktop_message(msg, wparam, lparam) {
+        return LRESULT(0);
+    }
+    if matches!(msg, WM_ACTIVATEAPP | WM_KILLFOCUS | WM_SETFOCUS) {
+        return WNDPROC.get().unwrap().call(hwnd, msg, wparam, lparam);
+    }
+    // F1 starts or stops a session recording: the video recorder and a tracking recording together,
+    // under one stamp (`crate::recorder::session_recording`). Edge-detected; consumed.
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F1.0 as usize {
+        consume_desktop_shortcut(wparam.0);
+        let previous_down = (lparam.0 & 0x4000_0000) != 0;
+        if !previous_down {
+            crate::recorder::session_recording::toggle();
+        }
+        return LRESULT(0);
+    }
+
+    // F2 drops a take marker into whatever records, and saves the lookback when no tracking
+    // recording runs (`crate::recorder::session_recording::mark`). Edge-detected; consumed.
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F2.0 as usize {
+        consume_desktop_shortcut(wparam.0);
+        let previous_down = (lparam.0 & 0x4000_0000) != 0;
+        if !previous_down {
+            crate::recorder::session_recording::mark();
+        }
+        return LRESULT(0);
+    }
+
+    // F4 toggles the clean view at its scope (`crate::director::clean_view`): the flat egui debug
+    // overlay leaves the desktop window, and at the everything scope every other overlay goes too.
+    // With no live VR panel, hiding releases editing and showing requests Editing through
+    // device/neutral gates. The consumed key episode remains blocked through its release.
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F4.0 as usize {
+        consume_desktop_shortcut(wparam.0);
+        let previous_down = (lparam.0 & 0x4000_0000) != 0;
+        if !previous_down {
+            let clean = crate::director::clean_view::toggle();
+            if let Some(egui_state) = EguiState::get().as_mut() {
+                egui_state.desktop_visibility_changed(!clean);
+            }
+        }
+        return LRESULT(0);
+    }
+
     // F7 recenters the headpose: snapshots the current headpose as the neutral reference so
-    // subsequent poses are relative to it. Edge-detected like F10/F11.
+    // subsequent poses are relative to it. Edge-detected like F11.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F7.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             crate::headpose::recenter();
@@ -36,35 +84,13 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         return LRESULT(0);
     }
 
-    // F10 toggles the fullscreen stereo capture mode. Intercept it before egui or the game sees it:
-    // F10 is a system key (it activates the menu bar via WM_SYSKEYDOWN), so consuming it here also
-    // suppresses that default behaviour. Edge-detect on the previous-state bit (lparam bit 30) so
-    // holding F10 toggles once, not on every repeat. Disabled for now (the fullscreen toggle is
-    // finicky under some setups); flip `F10_CAPTURE_ENABLED` to restore it.
-    if F10_CAPTURE_ENABLED
-        && (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
-        && wparam.0 == VK_F10.0 as usize
-    {
-        let previous_down = (lparam.0 & 0x4000_0000) != 0;
-        if !previous_down {
-            // Release egui's input capture if held, so the game retains input while the overlay is
-            // hidden.
-            if let Some(egui_state) = EguiState::get().as_mut()
-                && egui_state.is_input_captured()
-            {
-                egui_state.toggle_game_input_capture();
-            }
-            crate::capture::toggle();
-        }
-        return LRESULT(0);
-    }
-
     // F9 starts a profiler trace capture (issue #34): records a few seconds of CPU and GPU frames
-    // and dumps them to the session's profile/ folder as Chrome trace-event JSON, so a capture can be
+    // and dumps them to the session's `profiles/` folder as Chrome trace-event JSON, so a capture can be
     // taken in-headset without the overlay. Edge-detected; consumed. A no-op while one is already
     // recording.
     #[cfg(feature = "profiler")]
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F9.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down
             && crate::profiler::capture::start(crate::profiler::capture::DEFAULT_CAPTURE_SECS)
@@ -74,23 +100,13 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         return LRESULT(0);
     }
 
-    // F8 summons/dismisses the interactive egui floating panel in VR (issue #24). The panel-up state
-    // and egui's input capture are toggled together so "panel visible" always means "egui focused":
-    // the mirror composite and the `SendMouseEvents` cursor suppression both key off the input
-    // capture, so they cannot disagree with the panel's visibility. Edge-detected like F7/F10/F11.
+    // F8 summons/dismisses the interactive egui floating panel in VR (issue #24), together with
+    // egui's input capture (`hud::egui_panel::toggle`). Edge-detected like F7/F11.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F8.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
-            let enabled = {
-                let mut cfg = CONFIG.lock();
-                cfg.hud.egui_panel.enabled = !cfg.hud.egui_panel.enabled;
-                cfg.hud.egui_panel.enabled
-            };
-            if let Some(egui_state) = EguiState::get().as_mut()
-                && egui_state.is_input_captured() != enabled
-            {
-                egui_state.toggle_game_input_capture();
-            }
+            let enabled = egui_panel::toggle();
             tracing::info!(
                 "F8: egui floating panel {}",
                 if enabled { "ON" } else { "OFF" }
@@ -99,14 +115,28 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         return LRESULT(0);
     }
 
+    // F10 switches the desktop mirror between the stereo pair and the last single eye
+    // (`crate::vr::toggle_stereo_pair`). Edge-detected; consumed, which also keeps the system's
+    // menu activation off it.
+    if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F10.0 as usize {
+        consume_desktop_shortcut(wparam.0);
+        let previous_down = (lparam.0 & 0x4000_0000) != 0;
+        if !previous_down {
+            let view = crate::vr::toggle_stereo_pair();
+            tracing::info!("F10: desktop mirror view {view:?}");
+        }
+        return LRESULT(0);
+    }
+
     // F11 flips the sun-shadow PCF patch and reloads the shaders, for a live in-headset A/B of the
-    // patch without reaching for the debug overlay. Edge-detected like F10; consumed so the game does
+    // patch without reaching for the debug overlay. Edge-detected like F7; consumed so the game does
     // not also act on it.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F11.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             let now_on = {
-                let mut cfg = CONFIG.lock();
+                let mut cfg = config::edit();
                 cfg.stereo.patch_shadow_pcf_hash = !cfg.stereo.patch_shadow_pcf_hash;
                 cfg.stereo.patch_shadow_pcf_hash
             };
@@ -120,9 +150,10 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     }
 
     // F12 writes a PNG of the linear back buffer to the session's `screenshots/` folder -- under
-    // single-pass collapse that is the full side-by-side render (both eyes). A robust alternative to
-    // the F10 fullscreen capture for in-headset diagnosis. Edge-detected; consumed.
+    // single-pass collapse that is the full side-by-side render (both eyes), for in-headset
+    // diagnosis. Edge-detected; consumed.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F12.0 as usize {
+        consume_desktop_shortcut(wparam.0);
         let previous_down = (lparam.0 & 0x4000_0000) != 0;
         if !previous_down {
             crate::screenshot::request();
@@ -137,6 +168,7 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN)
         && crate::director::keymap::on_key_down(wparam.0 as u16, (lparam.0 & 0x4000_0000) == 0)
     {
+        consume_desktop_shortcut(wparam.0);
         return LRESULT(0);
     }
 
@@ -176,4 +208,25 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         egui_state.wndproc(hwnd, msg, wparam, lparam);
     }
     WNDPROC.get().unwrap().call(hwnd, msg, wparam, lparam)
+}
+
+/// Log the game window gaining or losing the foreground, and being minimized or restored. Outside a
+/// VR session the engine's main loop skips `Game::Update` for as long as the window is in the
+/// background (`window::AVAMainLoop`, `crate::hooks::window_focus`), which the frame breakdown can
+/// only report as untracked time, so these lines are what places a long frame against what the
+/// window was doing. The engine itself ignores these messages and polls the foreground window.
+fn log_window_state(msg: u32, wparam: WPARAM) {
+    match msg {
+        WM_ACTIVATEAPP => {
+            let active = wparam.0 != 0;
+            tracing::info!(target: "window", active, "window: the application activation changed");
+        }
+        WM_SIZE if wparam.0 == SIZE_MINIMIZED as usize => {
+            tracing::info!(target: "window", "window: minimized");
+        }
+        WM_SIZE if wparam.0 == SIZE_RESTORED as usize => {
+            tracing::debug!(target: "window", "window: restored");
+        }
+        _ => {}
+    }
 }

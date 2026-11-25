@@ -22,9 +22,9 @@ A corollary worth recording: the D3D11 backend would not work here **even on an 
 
 This confirms the claim already recorded in [`fsr.md`](fsr.md) against primary sources. What it does *not* do is end the evaluation.
 
-## The D3D12 path is reachable, contrary to my first assessment
+## The D3D12 path is reachable
 
-An earlier revision of this document assessed cross-API interop as impractical and stated that no report of anyone doing it existed. **That was wrong**, and the correction matters more than the original claim did.
+Cross-API interop for XeSS is practical, and it has been done.
 
 **OptiScaler does exactly this, in production, for this class of mod.** Its documented backends are `XeSS 2.X (native DX11, Intel ARC only)` versus `XeSS, FSR 2.1.2, 2.2.1, FSR 3.X w/Dx12 (via D3D11on12)`, footnoted: *"These implementations use a background DirectX12 device to be able to use DX12-only upscalers. There's a performance penalty up to 10-ish % for this method."* Their wiki puts the range at 10–15%. The shape is a known, shipped one: stand up a background D3D12 device, share the engine's textures across the boundary, run XeSS there.
 
@@ -107,4 +107,4 @@ The quality evidence is the weakest part of this document and the part most wort
 
 **Marketing, not evidence.** Intel's "boosts frame rates on all GPUs with SM 6.4 (DP4a) support".
 
-**Corrected mid-evaluation.** An earlier revision asserted that D3D11↔D3D12 interop for XeSS was impractical under Proton and that no report of anyone doing it existed. Both parts were wrong. The recommendation did not change, but its basis moved from "not viable" to "viable and not worth it" — a materially weaker claim, and the one the evidence supports.
+**The basis of the recommendation.** D3D11↔D3D12 interop for XeSS is practical under Proton, and it has been done. The recommendation rests on "viable and not worth it", not on "not viable" — a materially weaker claim, and the one the evidence supports.

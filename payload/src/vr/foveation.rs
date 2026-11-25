@@ -16,11 +16,15 @@
 //!    their depth test intact.
 //! 3. **Fill-in** ([`fill_in`]): a full-screen pass over the main colour buffer that reconstructs each
 //!    dropped pixel from the average of its kept neighbours (`foveation_fill_ps.hlsl`), reading a copy of
-//!    the colour buffer taken just before. Runs once per eye, after the foveated shading range.
+//!    the colour buffer taken just before. Runs once per eye, after the last foveated pass
+//!    ([`FoveatedPasses::fill_before`]).
+//!
+//! [`FoveatedPasses`] names the passes the test is forced through: always the models, the vegetation,
+//! and the creatures, and by default the G-buffer and lighting passes that write only their own pixels.
 //!
 //! The packed-index bit layout is documented on `jc3gi`'s `HContext_t::m_DepthStencilStateIndex`. The two
 //! D3D passes borrow the engine's immediate context under `Context::m_Mutex`, the same discipline as
-//! [`crate::vr::blit`] and `crate::capture::composite`. On by default, but still experimental;
+//! [`crate::vr::blit`] and [`crate::vr::mirror`]. On by default, but still experimental;
 //! disabling it skips the two passes and the per-draw index rewrite; see
 //! [`crate::vr::FoveationConfig`].
 
@@ -31,7 +35,9 @@ use std::{
 };
 
 use anyhow::Context as _;
-use jc3gi::graphics_engine::{device::Device, graphics_engine::HContext_t};
+use jc3gi::graphics_engine::{
+    device::Device, graphics_engine::HContext_t, render_engine::RenderPassId,
+};
 use parking_lot::Mutex;
 use windows::{
     Win32::{
@@ -39,14 +45,14 @@ use windows::{
             Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
             Direct3D11::{
                 D3D11_BIND_CONSTANT_BUFFER, D3D11_BIND_SHADER_RESOURCE, D3D11_BUFFER_DESC,
-                D3D11_COMPARISON_ALWAYS, D3D11_CULL_NONE, D3D11_DEPTH_STENCIL_DESC,
-                D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_WRITE_MASK_ZERO, D3D11_FILL_SOLID,
-                D3D11_RASTERIZER_DESC, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE,
-                D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT, D3D11_VIEWPORT, ID3D11BlendState,
-                ID3D11Buffer, ID3D11DepthStencilState, ID3D11DepthStencilView, ID3D11Device,
-                ID3D11DeviceContext, ID3D11PixelShader, ID3D11RasterizerState,
-                ID3D11RenderTargetView, ID3D11ShaderResourceView, ID3D11Texture2D,
-                ID3D11VertexShader,
+                D3D11_COMPARISON_ALWAYS, D3D11_COMPARISON_EQUAL, D3D11_CULL_NONE,
+                D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_STENCILOP_DESC, D3D11_DEPTH_WRITE_MASK_ZERO,
+                D3D11_FILL_SOLID, D3D11_RASTERIZER_DESC, D3D11_STENCIL_OP_KEEP,
+                D3D11_STENCIL_OP_REPLACE, D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
+                D3D11_VIEWPORT, ID3D11BlendState, ID3D11Buffer, ID3D11DepthStencilState,
+                ID3D11DepthStencilView, ID3D11Device, ID3D11DeviceContext, ID3D11PixelShader,
+                ID3D11RasterizerState, ID3D11RenderTargetView, ID3D11ShaderResourceView,
+                ID3D11Texture2D, ID3D11VertexShader,
             },
             Dxgi::Common::{DXGI_FORMAT, DXGI_SAMPLE_DESC},
         },
@@ -74,13 +80,13 @@ const STENCIL_INDEX_MASK: u64 = 0x0000_00FF_7FFF_FFC0;
 /// stencil for its own purpose and is left alone.
 const STENCIL_ENABLE_BIT: u64 = 1 << 6;
 
-/// Per-eye parameters for the mask-write and fill-in passes, in surface-independent units; the passes
+/// Parameters for the mask-write and fill-in passes, in surface-independent units; the passes
 /// convert them to pixels against the live main-buffer size.
 #[derive(Clone, Copy)]
 pub struct FoveationParams {
-    /// Foveal centre as a UV in `[0, 1]` (the eye's principal point); `(0.5, 0.5)` is the buffer centre.
-    pub center_uv: glam::Vec2,
-    /// Foveal radius as a fraction of the buffer half-diagonal: inside it nothing is dropped.
+    /// How the eyes are laid out on the target the passes run over.
+    pub layout: EyeLayout,
+    /// Foveal radius as a fraction of an eye's half-diagonal: inside it nothing is dropped.
     pub inner_fraction: f32,
     /// Radius (fraction of the half-diagonal) at which the drop reaches [`max_drop`](Self::max_drop).
     pub outer_fraction: f32,
@@ -90,7 +96,124 @@ pub struct FoveationParams {
     pub mask_bit: u32,
     /// Diagnostic: the fill-in pass paints the dropped set magenta instead of reconstructing it.
     pub debug_show_mask: bool,
+    /// The side of a drop cell in pixels: 1 drops single pixels, 2 drops whole 2 by 2 pixel quads.
+    pub cell_px: u32,
 }
+
+/// Where the eyes lie on the target a foveation pass runs over, each with its foveal centre as a UV in
+/// `[0, 1]` of the eye's own region (the eye's principal point; `(0.5, 0.5)` is the region's centre).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum EyeLayout {
+    /// The target holds one eye.
+    Single { center_uv: glam::Vec2 },
+    /// The target holds both eyes side by side, eye 0 in the left half (the single-pass collapse's
+    /// double-wide target): each half is masked and filled as an eye-sized target would be.
+    SideBySide { center_uv: [glam::Vec2; 2] },
+}
+
+/// The pass constants for `params` on a `width` x `height` target, matching the shaders'
+/// `FoveationParams`: both eyes' centres in eye-local pixels, the inner and outer radii in pixels
+/// (fractions of an eye's half-diagonal), the maximum drop, the debug flag, the first column of eye 1's
+/// half (past the target when it holds one eye), and the drop cell's side, padded to a whole number of
+/// registers.
+pub fn pass_constants(params: &FoveationParams, width: u32, height: u32) -> [f32; 12] {
+    let (eye_width, centers, split) = match params.layout {
+        EyeLayout::Single { center_uv } => (width, [center_uv; 2], width as f32 + 1.0),
+        EyeLayout::SideBySide { center_uv } => (width / 2, center_uv, (width / 2) as f32),
+    };
+    let (eye_width, height) = (eye_width as f32, height as f32);
+    let half_diag = 0.5 * (eye_width.powi(2) + height.powi(2)).sqrt();
+    [
+        centers[0].x * eye_width,
+        centers[0].y * height,
+        centers[1].x * eye_width,
+        centers[1].y * height,
+        params.inner_fraction * half_diag,
+        params.outer_fraction * half_diag,
+        params.max_drop,
+        if params.debug_show_mask { 1.0 } else { 0.0 },
+        split,
+        params.cell_px as f32,
+        0.0,
+        0.0,
+    ]
+}
+
+/// Which render passes the peripheral stencil test is forced through.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FoveatedPasses {
+    /// Add the G-buffer passes that write only their own pixels and leave depth to the prepasses:
+    /// the terrain's apply passes, the road junctions, and the decals
+    /// (`single_pass.foveation_gbuffer`).
+    pub gbuffer: bool,
+    /// Add the lighting passes that write only their own pixels, from the deferred lights through
+    /// the fog gradient, and move the fill-in to just after them (`single_pass.foveation_lighting`).
+    pub lighting: bool,
+}
+
+impl FoveatedPasses {
+    /// Whether the peripheral stencil test is forced through `pass`.
+    pub fn contains(self, pass: i32) -> bool {
+        let within =
+            |&(lo, hi): &(RenderPassId, RenderPassId)| (lo as i32..=hi as i32).contains(&pass);
+        within(&BASE_FOVEATED_PASSES)
+            || (self.gbuffer && GBUFFER_FOVEATED_PASSES.iter().any(within))
+            || (self.lighting && LIGHTING_FOVEATED_PASSES.iter().any(within))
+    }
+
+    /// The first pass the test is forced through: the mask-write runs just before it.
+    pub fn first(self) -> i32 {
+        (0..RenderPassId::RP_RENDERPASS_COUNT as i32)
+            .find(|&pass| self.contains(pass))
+            .expect("the base passes are always foveated")
+    }
+
+    /// The pass the fill-in runs just before, or `None` when it runs at the start of the post
+    /// effects.
+    pub fn fill_before(self) -> Option<i32> {
+        self.lighting
+            .then_some(RenderPassId::RP_FOG_GRADIENT as i32 + 1)
+    }
+}
+
+/// The passes the test is always forced through (inclusive): the models, the vegetation, and the
+/// creatures.
+const BASE_FOVEATED_PASSES: (RenderPassId, RenderPassId) =
+    (RenderPassId::RP_MODELS_DYNAMIC, RenderPassId::RP_CREATURES);
+
+/// The G-buffer passes [`FoveatedPasses::gbuffer`] adds (inclusive ranges). Each writes the G-buffer
+/// at its own pixels and no depth the prepasses have not already written, so a dropped pixel keeps
+/// its depth for every later reader (the SSAO, the depth downsample, the fog, the water's depth test,
+/// and FSR). The terrain's detail and base-mesh passes are left out: they write depth the prepasses
+/// do not, and a dropped pixel without it changes the kept pixels that read its neighbourhood.
+const GBUFFER_FOVEATED_PASSES: [(RenderPassId, RenderPassId); 3] = [
+    (
+        RenderPassId::RP_TERRAIN_APPLY_NEAR_DETAILED,
+        RenderPassId::RP_TERRAIN_APPLY_FAR,
+    ),
+    (
+        RenderPassId::RP_ROAD_JUNCTION,
+        RenderPassId::RP_ROAD_JUNCTION_OPAQUE,
+    ),
+    (
+        RenderPassId::RP_DECALS,
+        RenderPassId::RP_SCREEN_SPACE_ROAD_DECALS,
+    ),
+];
+
+/// The lighting passes [`FoveatedPasses::lighting`] adds (inclusive ranges). Each writes the lit
+/// colour at its own pixels from that pixel's inputs alone, and nothing reads the lit colour's
+/// neighbourhood until the fill-in has run after the last of them. The occlusion queries between
+/// them stay out: a dropped pixel would no longer count towards a query's visible samples.
+const LIGHTING_FOVEATED_PASSES: [(RenderPassId, RenderPassId); 4] = [
+    (
+        RenderPassId::RP_DEFERRED_LIGHTS,
+        RenderPassId::RP_DEFERRED_LIGHTS,
+    ),
+    (RenderPassId::RP_BILLBOARD, RenderPassId::RP_BILLBOARD),
+    (RenderPassId::RP_STARS, RenderPassId::RP_SKY_GRADIENT),
+    (RenderPassId::RP_FOG_GRADIENT, RenderPassId::RP_FOG_GRADIENT),
+];
 
 /// Compute the packed stencil-*test* bits for `mask_bit`: `StencilEnable`, `StencilFunc = EQUAL` against a
 /// zero reference through the mask bit, all ops `KEEP` (the test never writes). OR this into a draw's
@@ -153,8 +276,20 @@ pub fn mask_write(params: FoveationParams) -> anyhow::Result<()> {
 }
 
 /// Run the fill-in pass for one eye: reconstruct the dropped peripheral pixels in the main colour buffer
-/// from their kept neighbours. Acquires the engine context internally under its mutex.
+/// from their kept neighbours, drawing every pixel (the kept ones pass through). For a point in the
+/// frame where the mask bit may no longer be in the stencil. Acquires the engine context internally
+/// under its mutex.
 pub fn fill_in(params: FoveationParams) -> anyhow::Result<()> {
+    fill_in_with(params, false)
+}
+
+/// Run the fill-in pass for one eye under a stencil test against the mask bit, so only the dropped
+/// pixels run the pixel shader. The mask bit must still be in the main depth surface's stencil.
+pub fn fill_in_dropped(params: FoveationParams) -> anyhow::Result<()> {
+    fill_in_with(params, true)
+}
+
+fn fill_in_with(params: FoveationParams, stenciled: bool) -> anyhow::Result<()> {
     with_context(|device, context| {
         let mut guard = FOVEATION.lock();
         if guard.is_none() {
@@ -164,7 +299,7 @@ pub fn fill_in(params: FoveationParams) -> anyhow::Result<()> {
             .as_mut()
             .expect("the foveation pipeline was just ensured");
         // SAFETY: `context` is the live engine immediate context, held under its mutex by `with_context`.
-        unsafe { fov.fill_in(device, context, params) }
+        unsafe { fov.fill_in(device, context, params, stenciled) }
     })
 }
 
@@ -213,6 +348,8 @@ struct Foveation {
     fill_shader: ID3D11PixelShader,
     /// Writes the mask bit where the mask shader keeps the fragment (REPLACE on pass, depth off).
     mask_state: ID3D11DepthStencilState,
+    /// Passes only the pixels carrying the mask bit, writing nothing (depth off).
+    fill_state: ID3D11DepthStencilState,
     rasterizer: ID3D11RasterizerState,
     /// The `FoveationParams` constant buffer (`b0`), updated per pass.
     params_cb: ID3D11Buffer,
@@ -260,6 +397,7 @@ impl Foveation {
 
             let mask_state_bit = 0x80;
             let mask_state = create_mask_state(d3d, mask_state_bit)?;
+            let fill_state = create_fill_state(d3d, mask_state_bit)?;
 
             let mut rasterizer = None;
             d3d.CreateRasterizerState(
@@ -281,6 +419,7 @@ impl Foveation {
                 mask_shader,
                 fill_shader,
                 mask_state,
+                fill_state,
                 rasterizer,
                 params_cb,
                 mask_state_bit,
@@ -303,6 +442,7 @@ impl Foveation {
     ) -> anyhow::Result<()> {
         if params.mask_bit != self.mask_state_bit {
             self.mask_state = unsafe { create_mask_state(&device.m_Device, params.mask_bit)? };
+            self.fill_state = unsafe { create_fill_state(&device.m_Device, params.mask_bit)? };
             self.mask_state_bit = params.mask_bit;
         }
         let (dsv, width, height) = self.main_depth(device)?;
@@ -327,7 +467,18 @@ impl Foveation {
         device: &Device,
         context: &ID3D11DeviceContext,
         params: FoveationParams,
+        stenciled: bool,
     ) -> anyhow::Result<()> {
+        if params.mask_bit != self.mask_state_bit {
+            self.mask_state = unsafe { create_mask_state(&device.m_Device, params.mask_bit)? };
+            self.fill_state = unsafe { create_fill_state(&device.m_Device, params.mask_bit)? };
+            self.mask_state_bit = params.mask_bit;
+        }
+        let dsv = if stenciled {
+            Some(self.main_depth(device)?.0)
+        } else {
+            None
+        };
         let (rtv, color_tex, width, height, format) = self.main_color(device)?;
         let srv = self.ensure_copy(device, &color_tex, width, height, format)?;
         unsafe {
@@ -341,8 +492,12 @@ impl Foveation {
             context.CopyResource(&copy_tex, &color_tex);
             let backup = capture_state(context);
             self.update_params(context, params, width, height);
-            context.OMSetRenderTargets(Some(&[Some(rtv.clone())]), None);
-            context.OMSetDepthStencilState(None, 0);
+            context.OMSetRenderTargets(Some(&[Some(rtv.clone())]), dsv.as_ref());
+            if dsv.is_some() {
+                context.OMSetDepthStencilState(&self.fill_state, params.mask_bit);
+            } else {
+                context.OMSetDepthStencilState(None, 0);
+            }
             self.bind_fullscreen(context, &self.fill_shader, width, height);
             context.PSSetShaderResources(0, Some(&[Some(srv.clone())]));
             context.Draw(3, 0);
@@ -400,19 +555,7 @@ impl Foveation {
         width: u32,
         height: u32,
     ) {
-        let half_diag = 0.5 * ((width as f32).powi(2) + (height as f32).powi(2)).sqrt();
-        // Matches `FoveationParams` in the shaders: float2 centre (px), float inner (px), float outer
-        // (px), float max_drop, float debug_mode, float2 pad -- 32 bytes.
-        let data: [f32; 8] = [
-            params.center_uv.x * width as f32,
-            params.center_uv.y * height as f32,
-            params.inner_fraction * half_diag,
-            params.outer_fraction * half_diag,
-            params.max_drop,
-            if params.debug_show_mask { 1.0 } else { 0.0 },
-            0.0,
-            0.0,
-        ];
+        let data = pass_constants(&params, width, height);
         unsafe {
             context.UpdateSubresource(&self.params_cb, 0, None, data.as_ptr().cast(), 0, 0);
         }
@@ -552,6 +695,37 @@ unsafe fn create_mask_state(
     state.context("foveation: the mask-write depth-stencil state was not created")
 }
 
+/// Create the fill-in's depth-stencil state: the stencil test passes only where the mask bit is set
+/// (`EQUAL` against a reference of the mask bit through the mask bit), and nothing is written.
+///
+/// # Safety
+/// `d3d` must be the live engine device.
+unsafe fn create_fill_state(
+    d3d: &ID3D11Device,
+    mask_bit: u32,
+) -> anyhow::Result<ID3D11DepthStencilState> {
+    let op = D3D11_DEPTH_STENCILOP_DESC {
+        StencilFailOp: D3D11_STENCIL_OP_KEEP,
+        StencilDepthFailOp: D3D11_STENCIL_OP_KEEP,
+        StencilPassOp: D3D11_STENCIL_OP_KEEP,
+        StencilFunc: D3D11_COMPARISON_EQUAL,
+    };
+    let desc = D3D11_DEPTH_STENCIL_DESC {
+        DepthEnable: false.into(),
+        DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ZERO,
+        DepthFunc: D3D11_COMPARISON_ALWAYS,
+        StencilEnable: true.into(),
+        StencilReadMask: (mask_bit & 0xFF) as u8,
+        StencilWriteMask: 0,
+        FrontFace: op,
+        BackFace: op,
+    };
+    let mut state = None;
+    unsafe { d3d.CreateDepthStencilState(&desc, Some(&mut state)) }
+        .context("foveation: creating the fill-in depth-stencil state")?;
+    state.context("foveation: the fill-in depth-stencil state was not created")
+}
+
 /// Create the 32-byte `FoveationParams` constant buffer (`b0`).
 ///
 /// # Safety
@@ -561,7 +735,7 @@ unsafe fn create_params_cb(d3d: &ID3D11Device) -> anyhow::Result<ID3D11Buffer> {
     unsafe {
         d3d.CreateBuffer(
             &D3D11_BUFFER_DESC {
-                ByteWidth: std::mem::size_of::<[f32; 8]>() as u32,
+                ByteWidth: std::mem::size_of::<[f32; 12]>() as u32,
                 Usage: D3D11_USAGE_DEFAULT,
                 BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
                 CPUAccessFlags: 0,
@@ -677,4 +851,122 @@ pub(crate) fn resource_as_texture(
     let resource =
         unsafe { windows::Win32::Graphics::Direct3D11::ID3D11Resource::from_raw_borrowed(&raw) }?;
     resource.cast::<ID3D11Texture2D>().ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    fn params(layout: EyeLayout) -> FoveationParams {
+        FoveationParams {
+            layout,
+            inner_fraction: 0.5,
+            outer_fraction: 1.0,
+            max_drop: 0.8,
+            mask_bit: 0x80,
+            debug_show_mask: false,
+            cell_px: 2,
+        }
+    }
+
+    #[test]
+    fn the_gbuffer_switch_extends_the_foveated_passes() {
+        let base = FoveatedPasses {
+            gbuffer: false,
+            lighting: false,
+        };
+        let gbuffer = FoveatedPasses {
+            gbuffer: true,
+            lighting: false,
+        };
+        for pass in [
+            RenderPassId::RP_TERRAIN_APPLY_NEAR,
+            RenderPassId::RP_ROAD_JUNCTION_OPAQUE,
+            RenderPassId::RP_DECALS,
+        ] {
+            assert!(!base.contains(pass as i32));
+            assert!(gbuffer.contains(pass as i32));
+        }
+        for pass in [
+            RenderPassId::RP_Z_AND_VELOCITY_PASS,
+            RenderPassId::RP_ROAD_STENCIL,
+            RenderPassId::RP_TERRAINPATCH_DETAIL_MID,
+            RenderPassId::RP_TERRAINPATCH_BASEMESH_NEAR,
+            RenderPassId::RP_DOWNSAMPLE_DEPTH,
+            RenderPassId::RP_SSAO,
+            RenderPassId::RP_DEFERRED_LIGHTS,
+        ] {
+            assert!(!gbuffer.contains(pass as i32));
+        }
+        assert!(base.contains(RenderPassId::RP_VEGETATION_OPAQUE as i32));
+        assert!(gbuffer.first() < base.first());
+        assert!(gbuffer.contains(gbuffer.first()));
+        assert_eq!(gbuffer.fill_before(), None);
+    }
+
+    #[test]
+    fn the_lighting_switch_foveates_the_lighting_and_fills_after_it() {
+        let lighting = FoveatedPasses {
+            gbuffer: false,
+            lighting: true,
+        };
+        for pass in [
+            RenderPassId::RP_DEFERRED_LIGHTS,
+            RenderPassId::RP_SKYBOX,
+            RenderPassId::RP_FOG_GRADIENT,
+        ] {
+            assert!(lighting.contains(pass as i32));
+        }
+        for pass in [
+            RenderPassId::RP_SSAO,
+            RenderPassId::RP_SCREEN_SPACE_REFLECTIONS,
+            RenderPassId::RP_OCCLUSION_QUERY,
+            RenderPassId::RP_COPY_FRAMEBUFFER,
+            RenderPassId::RP_WATER,
+        ] {
+            assert!(!lighting.contains(pass as i32));
+        }
+        let fill = lighting.fill_before().expect("the fill-in moves");
+        assert!(lighting.contains(fill - 1));
+        assert!(fill <= RenderPassId::RP_COPY_FRAMEBUFFER as i32);
+        assert!((fill..RenderPassId::RP_RENDERPASS_COUNT as i32).all(|p| !lighting.contains(p)));
+    }
+
+    #[test]
+    fn one_eye_uses_the_whole_target_and_never_splits() {
+        let constants = pass_constants(
+            &params(EyeLayout::Single {
+                center_uv: glam::Vec2::new(0.25, 0.5),
+            }),
+            300,
+            400,
+        );
+        // Half-diagonal of 300 x 400 is 250.
+        assert_eq!(
+            constants,
+            [
+                75.0, 200.0, 75.0, 200.0, 125.0, 250.0, 0.8, 0.0, 301.0, 2.0, 0.0, 0.0
+            ]
+        );
+    }
+
+    #[test]
+    fn side_by_side_eyes_get_eye_sized_radii_and_eye_local_centres() {
+        let constants = pass_constants(
+            &params(EyeLayout::SideBySide {
+                center_uv: [glam::Vec2::new(0.6, 0.5), glam::Vec2::new(0.4, 0.25)],
+            }),
+            600,
+            400,
+        );
+        // Each eye is 300 x 400, whose half-diagonal is 250, and eye 1 starts at column 300.
+        assert_eq!(
+            constants,
+            [
+                180.0, 200.0, 120.0, 100.0, 125.0, 250.0, 0.8, 0.0, 300.0, 2.0, 0.0, 0.0
+            ]
+        );
+    }
 }

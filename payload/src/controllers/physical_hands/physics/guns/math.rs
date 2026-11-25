@@ -1,0 +1,651 @@
+//! The held guns' pure math: the gun body's mass, its place on the holding hand and how far it
+//! strays from it, the motion that keeps it on the hand, the gun's barrel and up axes in its own
+//! frame, and a shot's impulse.
+
+use body_rig::rotation::{angle, angle_between, angular_velocity, clamp_angle};
+use glam::{Mat4, Vec3};
+
+use crate::controllers::{
+    frame::Pose,
+    hands::{CockpitHand, pose as hand_pose},
+    physical_hands::physics::{
+        config::{BraceConfig, GunClassValues, HeldGunsTuning},
+        guns::BraceContact,
+    },
+    weapons::{foregrip::GripGeometry, heft::HeftClass},
+};
+
+/// Convert a measured support region and the tracked hand's grip-to-palm displacement into the
+/// gun's local contact. The measured gun translation is in cockpit metres; native gun-local
+/// coordinates and the physical palm offset are in game units after this conversion.
+pub fn brace_contact(
+    geometry: &GripGeometry,
+    off: &CockpitHand,
+    palm_offset_m: Vec3,
+    world_scale: f32,
+) -> Option<BraceContact> {
+    if !(world_scale.is_finite() && world_scale > 0.0) {
+        return None;
+    }
+    let point = geometry.gun.orientation.inverse()
+        * (geometry.foregrip - geometry.gun.position)
+        * world_scale;
+    let palm = off.wrist.position + off.wrist.orientation * palm_offset_m;
+    let palm_from_grip = off.wrist.orientation.inverse() * (palm - off.grip.position) * world_scale;
+    (point.is_finite() && palm_from_grip.is_finite()).then_some(BraceContact {
+        point,
+        palm_from_grip,
+    })
+}
+
+/// The support palm seated on its selected region on the actual gun body, preserving the tracked
+/// wrist's orientation. This is also the pose captured by its fixed brace joint.
+pub fn brace_palm(gun: Pose, palm: Pose, contact: BraceContact) -> Pose {
+    Pose {
+        position: gun.position
+            + gun.orientation * contact.point
+            + palm.orientation * contact.palm_from_grip,
+        orientation: palm.orientation,
+    }
+}
+
+/// Whether a brace's palm frame changed enough, past `rebuild`, to remake the fixed joint. A fixed
+/// joint otherwise keeps a stale contact when the hand slides or rotates its grip around the gun.
+pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceConfig) -> bool {
+    before.position.distance(after.position) > rebuild.distance_m
+        || angle_between(before.orientation, after.orientation) > rebuild.angle_rad
+}
+
+/// Whether a brace's fixed joint, made `age_s` seconds ago holding the palm frame `built` in the
+/// gun, is remade for the palm frame `wanted`: the frame changed past `rebuild` from the one the
+/// joint holds (not from the last step's, so a slow slide is caught and jitter is not), and the
+/// joint has stood for `rebuild.min_interval_s`, so a hand sliding along the gun remakes it at a
+/// bounded rate.
+pub fn brace_due(built: Pose, wanted: Pose, age_s: f32, rebuild: &BraceConfig) -> bool {
+    let stood = !age_s.is_finite() || age_s >= rebuild.min_interval_s;
+    stood && brace_changed(built, wanted, rebuild)
+}
+
+/// Whether a brace has broken: the tracked support palm at `tracked` is further than `break_m`
+/// from `held`, where the brace holds the palm on the gun, both world space. A pose that is not
+/// finite breaks nothing here: a hand that lost tracking ends its hold elsewhere.
+pub fn brace_broken(tracked: Vec3, held: Vec3, break_m: f32) -> bool {
+    let gap = tracked.distance(held);
+    gap.is_finite() && break_m.is_finite() && gap > break_m.max(0.0)
+}
+
+/// How many steps in a row the tracked support palm must be past the break distance before the
+/// brace breaks: a single stray sample of the tracking breaks nothing.
+pub const BRACE_BREAK_STEPS: u8 = 3;
+
+/// The value of `values` for a gun of weight class `class`.
+pub fn class_value(values: &GunClassValues, class: HeftClass) -> f32 {
+    match class {
+        HeftClass::Sidearm => values.sidearm,
+        HeftClass::Smg => values.smg,
+        HeftClass::Rifle => values.rifle,
+        HeftClass::Heavy => values.heavy,
+    }
+}
+
+/// Where the gun's mass comes from.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum MassSource {
+    /// The gun's own body.
+    Body,
+    /// The class's fallback: the gun's own body gives no finite, positive mass.
+    Class,
+}
+
+impl MassSource {
+    pub const fn label(self) -> &'static str {
+        match self {
+            MassSource::Body => "its own body",
+            MassSource::Class => "its class",
+        }
+    }
+}
+
+/// The mass a gun body is made with, kilograms, from the inverse mass of the gun's own body
+/// (`inverse_mass`, zero for an infinite one), or the class's fallback when that gives no finite,
+/// positive mass. A weapon of `guns` guns (the dual-wield pair) shares its own body's mass among
+/// them. Either is held between the lightest and the class's heaviest.
+pub fn gun_mass(
+    inverse_mass: f32,
+    class: HeftClass,
+    guns: usize,
+    config: &HeldGunsTuning,
+) -> (f32, MassSource) {
+    let lightest = config.min_mass_kg.max(0.01);
+    let heaviest = class_value(&config.max_mass_by_class_kg, class).max(lightest);
+    let from_body = (inverse_mass.is_finite() && inverse_mass > 0.0)
+        .then(|| 1.0 / inverse_mass / guns.max(1) as f32);
+    let (mass, source) = match from_body.filter(|m| m.is_finite()) {
+        Some(mass) => (mass, MassSource::Body),
+        None => (
+            class_value(&config.fallback_mass_kg, class),
+            MassSource::Class,
+        ),
+    };
+    let mass = if mass.is_finite() { mass } else { lightest };
+    (mass.clamp(lightest, heaviest), source)
+}
+
+/// The gun body's place on the holding hand's body: the gun's pose `gun` in the frame of the hand
+/// body's pose `hand`, both world space.
+pub fn seat(hand: Pose, gun: Pose) -> Pose {
+    hand_pose::mul(hand_pose::inverse(hand), gun)
+}
+
+/// Where the gun body sits on the holding hand's body at `seat`, world space.
+pub fn seated(hand: Pose, seat: Pose) -> Pose {
+    hand_pose::mul(hand, seat)
+}
+
+/// How far the gun body at `gun` strays from its seat on the hand body at `hand`, in the gun's own
+/// frame: the transform that carries the seated gun onto the gun body. The identity while the
+/// joint holds the gun exactly where it took it.
+pub fn deviation(hand: Pose, seat: Pose, gun: Pose) -> Pose {
+    hand_pose::mul(hand_pose::inverse(seated(hand, seat)), gun)
+}
+
+/// Whether a deviation is past what a held gun may stray before it is put back on its seat: a
+/// shift past `max_shift_m`, or a turn past `max_turn_rad`.
+pub fn strayed(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> bool {
+    let finite = deviation.position.is_finite() && deviation.orientation.is_finite();
+    !finite
+        || deviation.position.length() > max_shift_m.max(0.0)
+        || angle(deviation.orientation) > max_turn_rad.max(0.0)
+}
+
+/// `deviation` held to a shift of `max_shift_m` and a turn of `max_turn_rad`, about the same axis:
+/// how far the drawn gun is carried off the hand's grip by its body's stray. A non-finite
+/// deviation is none.
+pub fn limit(deviation: Pose, max_shift_m: f32, max_turn_rad: f32) -> Pose {
+    if !(deviation.position.is_finite() && deviation.orientation.is_finite()) {
+        return Pose::IDENTITY;
+    }
+    Pose {
+        position: deviation.position.clamp_length_max(max_shift_m.max(0.0)),
+        orientation: clamp_angle(deviation.orientation, max_turn_rad),
+    }
+}
+
+/// The velocities, world space, that steer a gun body at `gun` back within the drawn clamps of its
+/// seated pose `seated` in one step of `step_s` seconds: from its deviation to the same deviation
+/// held to a shift of `max_shift_m` and a turn of `max_turn_rad` ([`limit`]). `None` while the
+/// body is within them, or for a step or pose that is not finite. Added to the velocities the
+/// hand carries the gun with, they keep the body where the drawn gun is drawn, so a shot's muzzle
+/// rise or a knock moves the body no further than the render shows.
+pub fn clamp_velocity(
+    seated: Pose,
+    gun: Pose,
+    max_shift_m: f32,
+    max_turn_rad: f32,
+    step_s: f32,
+) -> Option<(Vec3, Vec3)> {
+    if !(step_s.is_finite() && step_s > 0.0) {
+        return None;
+    }
+    let drift = hand_pose::mul(hand_pose::inverse(seated), gun);
+    if !(drift.position.is_finite() && drift.orientation.is_finite())
+        || !strayed(drift, max_shift_m, max_turn_rad)
+    {
+        return None;
+    }
+    let target = hand_pose::mul(seated, limit(drift, max_shift_m, max_turn_rad));
+    let angular =
+        angular_velocity(gun.orientation, target.orientation, step_s).unwrap_or(Vec3::ZERO);
+    Some(((target.position - gun.position) / step_s, angular))
+}
+
+/// The gun's seat on the holding hand, from where the hand is meant to be: the gun's pose `gun`,
+/// as its placement on the tick put it in the hand, in the frame of the controller's palm `palm`,
+/// which the hand's body is driven to. The hand's body may lag its palm while it carries the gun
+/// in, so the seat taken from where the body is would hold the gun as far off the hand as the
+/// body lagged, for as long as it is held.
+pub fn intended_seat(palm: Pose, gun: Pose) -> Pose {
+    seat(palm, gun)
+}
+
+/// Whether a hand body at `body` is close enough to its palm `palm` for a gun to be seated on it:
+/// within [`SETTLED_SHIFT_M`] and [`SETTLED_TURN_RAD`].
+pub fn settled(body: Pose, palm: Pose) -> bool {
+    let shift = body.position.distance(palm.position);
+    let turn = angle_between(body.orientation, palm.orientation);
+    shift.is_finite() && shift <= SETTLED_SHIFT_M && turn <= SETTLED_TURN_RAD
+}
+
+/// How far a hand body may be off its palm for a gun to be seated on it, metres.
+pub const SETTLED_SHIFT_M: f32 = 0.05;
+
+/// How far a hand body may be turned off its palm for a gun to be seated on it, radians.
+pub const SETTLED_TURN_RAD: f32 = 0.2;
+
+/// The furthest a gun held by its grip sits from the palm, metres: a seat further out is a gun
+/// still on its way into the hand, or one the hand's pose put somewhere else.
+pub const MAX_GRIP_SEAT_M: f32 = 0.15;
+
+/// The gun's barrel and muzzle in its own frame: the barrel the axis of its fire point `fire_point`
+/// (the fire point's -Z, as the sight line's), and the muzzle the fire point's origin.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct GunAxes {
+    pub muzzle: Vec3,
+    /// A unit vector.
+    pub barrel: Vec3,
+    /// A unit vector across the barrel: the gun's up, as it is held when the body is made.
+    pub up: Vec3,
+}
+
+/// The gun's axes from its fire point `fire_point` in its own frame, with `up_in_gun` the world's
+/// up in the gun's frame when the body is made. `None` for a degenerate fire point.
+pub fn gun_axes(fire_point: Mat4, up_in_gun: Vec3) -> Option<GunAxes> {
+    let barrel = fire_point.transform_vector3(Vec3::NEG_Z).try_normalize()?;
+    let muzzle = fire_point.w_axis.truncate();
+    // The world's up across the barrel; a gun made pointing straight up takes any axis across.
+    let up = (up_in_gun - barrel * up_in_gun.dot(barrel))
+        .try_normalize()
+        .unwrap_or_else(|| barrel.any_orthonormal_vector());
+    muzzle.is_finite().then_some(GunAxes { muzzle, barrel, up })
+}
+
+/// A shot's impulse on the gun body, world space, for a gun at `gun` with its axes `axes`: back
+/// along the barrel by `impulse_ns`, and up across it by `muzzle_rise` of that, which, given at the
+/// muzzle, also turns the gun's muzzle up about its centre of mass. Returns the impulse and the
+/// point it is given at, game space.
+pub fn shot_impulse(gun: Pose, axes: &GunAxes, impulse_ns: f32, muzzle_rise: f32) -> (Vec3, Vec3) {
+    let back = -(gun.orientation * axes.barrel);
+    let up = gun.orientation * axes.up;
+    let impulse_ns = if impulse_ns.is_finite() {
+        impulse_ns.max(0.0)
+    } else {
+        0.0
+    };
+    let rise = if muzzle_rise.is_finite() {
+        muzzle_rise.clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let at = gun.position + gun.orientation * axes.muzzle;
+    ((back + up * rise) * impulse_ns, at)
+}
+
+#[cfg(test)]
+mod tests {
+    use body_rig::geometry::point_velocity;
+    use glam::Quat;
+    use pretty_assertions::assert_eq;
+
+    use super::*;
+
+    fn pose(position: Vec3, orientation: Quat) -> Pose {
+        Pose {
+            position,
+            orientation,
+        }
+    }
+
+    #[test]
+    fn support_contact_uses_the_selected_region_and_scales_once() {
+        let geometry = GripGeometry {
+            foregrip: Vec3::new(-0.04, -0.06, -0.35),
+            gun: pose(Vec3::new(0.02, -0.03, -0.01), Quat::from_rotation_y(0.4)),
+            barrel: Vec3::NEG_Z,
+            sight: Vec3::Y * 0.08,
+            muzzle: Vec3::NEG_Z * 0.7,
+            native: false,
+        };
+        let off = CockpitHand {
+            wrist: pose(Vec3::new(-0.2, 0.1, -0.3), Quat::from_rotation_z(0.6)),
+            grip: pose(Vec3::new(-0.18, 0.08, -0.32), Quat::IDENTITY),
+            aim: Pose::IDENTITY,
+        };
+        let offset = Vec3::new(0.0, -0.01, -0.07);
+        let contact = brace_contact(&geometry, &off, offset, 1.7).unwrap();
+        let point = geometry.gun.position + geometry.gun.orientation * contact.point / 1.7;
+        assert!(point.abs_diff_eq(geometry.foregrip, 1e-5));
+        let palm = off.wrist.position + off.wrist.orientation * offset;
+        assert!(
+            (off.grip.position + off.wrist.orientation * contact.palm_from_grip / 1.7)
+                .abs_diff_eq(palm, 1e-5)
+        );
+        assert!(brace_contact(&geometry, &off, offset, f32::NAN).is_none());
+    }
+
+    #[test]
+    fn the_physical_support_palm_stays_on_the_gun_during_motion_and_rotation() {
+        let contact = BraceContact {
+            point: Vec3::new(-0.03, -0.05, -0.4),
+            palm_from_grip: Vec3::new(0.02, 0.01, -0.03),
+        };
+        for sign in [-1.0, 1.0] {
+            for frame in 0..24 {
+                let t = frame as f32 * 0.1;
+                let gun = pose(Vec3::new(t, 1.4 + t * 0.2, -t), Quat::from_rotation_y(t));
+                let palm = pose(Vec3::ZERO, Quat::from_rotation_z(sign * t));
+                let target = brace_palm(gun, palm, contact);
+                let grip = target.position - target.orientation * contact.palm_from_grip;
+                assert!(grip.abs_diff_eq(gun.position + gun.orientation * contact.point, 1e-5));
+                assert_eq!(target.orientation, palm.orientation);
+            }
+        }
+        let gun = pose(Vec3::Y, Quat::IDENTITY);
+        let before = seat(gun, brace_palm(gun, Pose::IDENTITY, contact));
+        let rotated = pose(Vec3::ZERO, Quat::from_rotation_x(0.2));
+        let after = seat(gun, brace_palm(gun, rotated, contact));
+        let rebuild = BraceConfig::new();
+        assert!(brace_changed(before, after, &rebuild));
+        assert!(!brace_changed(before, before, &rebuild));
+        let slid = BraceContact {
+            point: contact.point + Vec3::NEG_Z * 0.04,
+            ..contact
+        };
+        assert!(brace_changed(
+            before,
+            seat(gun, brace_palm(gun, Pose::IDENTITY, slid)),
+            &rebuild
+        ));
+    }
+
+    #[test]
+    fn a_body_past_the_drawn_clamps_is_steered_back_to_them_in_one_step() {
+        let config = HeldGunsTuning::new();
+        let (shift, turn) = (
+            config.drawn_max_shift_m,
+            config.drawn_max_turn_deg.to_radians(),
+        );
+        let seated = pose(Vec3::new(0.3, 1.4, -0.2), Quat::from_rotation_y(0.7));
+        let step_s = 1.0 / 60.0;
+        // Within the clamps the hand alone carries the body.
+        let near = hand_pose::mul(seated, pose(Vec3::X * shift * 0.5, Quat::IDENTITY));
+        assert_eq!(clamp_velocity(seated, near, shift, turn, step_s), None);
+        // A shot's muzzle rise past the clamp: one step of the correction lands on the clamp.
+        let rise = Quat::from_rotation_x(turn * 3.0);
+        let kicked = hand_pose::mul(seated, pose(Vec3::Z * shift * 2.0, rise));
+        let (linear, angular) = clamp_velocity(seated, kicked, shift, turn, step_s).unwrap();
+        let next = Pose {
+            position: kicked.position + linear * step_s,
+            orientation: (Quat::from_scaled_axis(angular * step_s) * kicked.orientation)
+                .normalize(),
+        };
+        let drift = hand_pose::mul(hand_pose::inverse(seated), next);
+        assert!((drift.position.length() - shift).abs() < 1e-4);
+        assert!((angle(drift.orientation) - turn).abs() < 1e-3);
+        assert!(!strayed(drift, shift + 1e-4, turn + 1e-3));
+        assert_eq!(clamp_velocity(seated, kicked, shift, turn, 0.0), None);
+        assert_eq!(clamp_velocity(seated, kicked, shift, turn, f32::NAN), None);
+    }
+
+    #[test]
+    fn a_brace_is_remade_against_its_built_frame_at_a_bounded_rate() {
+        let rebuild = BraceConfig::new();
+        let built = pose(Vec3::new(0.0, 0.0, -0.4), Quat::IDENTITY);
+        let step = |by: f32| pose(built.position + Vec3::NEG_Z * by, Quat::IDENTITY);
+        // Aim jitter within the thresholds never remakes the joint, however long it stands.
+        assert!(!brace_due(
+            built,
+            step(rebuild.distance_m * 0.5),
+            10.0,
+            &rebuild
+        ));
+        let turned = pose(
+            built.position,
+            Quat::from_rotation_x(rebuild.angle_rad * 0.5),
+        );
+        assert!(!brace_due(built, turned, 10.0, &rebuild));
+        // A slow slide adds up against the built frame, where step-to-step changes would not.
+        let slid = step(rebuild.distance_m * 1.5);
+        assert!(brace_due(built, slid, rebuild.min_interval_s, &rebuild));
+        // A joint just made waits out the interval.
+        assert!(!brace_due(
+            built,
+            slid,
+            rebuild.min_interval_s * 0.5,
+            &rebuild
+        ));
+        assert!(brace_due(built, slid, f32::NAN, &rebuild));
+    }
+
+    #[test]
+    fn a_brace_breaks_once_the_tracked_palm_leaves_the_gun() {
+        let brace = BraceConfig::new();
+        let held = Vec3::new(0.2, 1.3, -0.5);
+        let at = |by: Vec3| held + by;
+        // A hand on the gun, or steering it with the usual slop, keeps the brace.
+        assert!(!brace_broken(held, held, brace.break_distance_m));
+        let slop = Vec3::new(0.0, 0.03, 0.06);
+        assert!(!brace_broken(at(slop), held, brace.break_distance_m));
+        // A hand beside the gun, as far off as the one the drawn line pointed at, breaks it, in any
+        // direction and at any world scale.
+        for side in [Vec3::X, Vec3::NEG_X, Vec3::Y, Vec3::NEG_Z] {
+            let away = at(side * brace.break_distance_m * 1.2);
+            assert!(brace_broken(away, held, brace.break_distance_m));
+            let scale = 1.7;
+            assert!(brace_broken(
+                held * scale + side * brace.break_distance_m * 1.2 * scale,
+                held * scale,
+                brace.break_distance_m * scale
+            ));
+        }
+        // Lost tracking breaks nothing here.
+        assert!(!brace_broken(
+            Vec3::splat(f32::NAN),
+            held,
+            brace.break_distance_m
+        ));
+        assert!(!brace_broken(at(Vec3::X), held, f32::NAN));
+    }
+
+    #[test]
+    fn a_bracing_hand_carried_with_the_gun_keeps_its_place_on_it() {
+        // The gun's centre of mass, its velocities, and the bracing palm on its handguard.
+        let centre = Vec3::new(0.1, 1.3, -0.3);
+        let (linear, angular) = (Vec3::new(0.4, -0.2, 0.9), Vec3::new(0.8, -1.5, 0.3));
+        let palm = centre + Vec3::new(-0.05, -0.04, -0.3);
+        let step_s = 1.0 / 30.0;
+        let off = point_velocity(centre, linear, angular, palm);
+        let carried = palm + off * step_s;
+        // Where the palm would be as a rigid part of the gun after the step.
+        let turn = Quat::from_scaled_axis(angular * step_s);
+        let rigid = centre + linear * step_s + turn * (palm - centre);
+        // The two agree to the step's second order: no joint error for the brace to fight.
+        let bound = angular.length_squared() * (palm - centre).length() * step_s * step_s;
+        assert!(
+            carried.distance(rigid) <= bound,
+            "{}",
+            carried.distance(rigid)
+        );
+    }
+
+    #[test]
+    fn a_gun_takes_its_own_bodys_mass_within_bounds() {
+        let config = HeldGunsTuning::new();
+        assert_eq!(
+            gun_mass(0.4, HeftClass::Rifle, 1, &config),
+            (2.5, MassSource::Body)
+        );
+        // An infinite mass, or a broken one, takes the class's.
+        assert_eq!(
+            gun_mass(0.0, HeftClass::Heavy, 1, &config),
+            (config.fallback_mass_kg.heavy, MassSource::Class)
+        );
+        assert_eq!(
+            gun_mass(f32::NAN, HeftClass::Sidearm, 1, &config).1,
+            MassSource::Class
+        );
+        // Held within the bounds: a rifle's pickup mass of ten kilograms is held to the rifle's.
+        assert_eq!(
+            gun_mass(1000.0, HeftClass::Rifle, 1, &config).0,
+            config.min_mass_kg
+        );
+        assert_eq!(
+            gun_mass(0.1, HeftClass::Rifle, 1, &config).0,
+            config.max_mass_by_class_kg.rifle
+        );
+        assert!(gun_mass(0.1, HeftClass::Rifle, 1, &config).0 <= 4.0);
+        // Crossed bounds hold the lighter.
+        let crossed = HeldGunsTuning {
+            min_mass_kg: 5.0,
+            max_mass_by_class_kg: GunClassValues::new(2.0, 2.0, 2.0, 2.0),
+            ..config
+        };
+        assert_eq!(gun_mass(0.25, HeftClass::Rifle, 1, &crossed).0, 5.0);
+    }
+
+    #[test]
+    fn a_dual_pair_shares_its_mass_and_each_pistol_is_held_to_a_sidearms() {
+        let config = HeldGunsTuning {
+            max_mass_by_class_kg: GunClassValues::new(10.0, 10.0, 10.0, 10.0),
+            ..HeldGunsTuning::new()
+        };
+        assert_eq!(gun_mass(0.2, HeftClass::Sidearm, 2, &config).0, 2.5);
+        let config = HeldGunsTuning::new();
+        let (each, _) = gun_mass(0.2, HeftClass::Sidearm, 2, &config);
+        assert!((0.9..=1.1).contains(&each), "{each}");
+        // No guns counts as one.
+        assert_eq!(
+            gun_mass(0.4, HeftClass::Smg, 0, &config),
+            gun_mass(0.4, HeftClass::Smg, 1, &config)
+        );
+    }
+
+    #[test]
+    fn a_seated_gun_has_no_deviation_and_follows_its_hand() {
+        let hand = pose(Vec3::new(1.0, 1.5, -0.3), Quat::from_rotation_y(0.6));
+        let gun = pose(
+            Vec3::new(1.05, 1.45, -0.4),
+            Quat::from_rotation_x(-0.2) * Quat::from_rotation_y(0.5),
+        );
+        let seat = seat(hand, gun);
+        let d = deviation(hand, seat, gun);
+        assert!(d.position.length() < 1e-5);
+        assert!(angle(d.orientation) < 1e-3);
+        // The hand moves; the gun seated on it moves with it.
+        let moved = pose(Vec3::new(-2.0, 0.5, 4.0), Quat::from_rotation_z(1.1));
+        let carried = seated(moved, seat);
+        let d = deviation(moved, seat, carried);
+        assert!(d.position.length() < 1e-5);
+        assert!(!strayed(d, 0.05, 0.14));
+    }
+
+    #[test]
+    fn the_seat_is_taken_from_the_palm_not_from_a_lagging_hand_body() {
+        let palm = pose(Vec3::new(0.3, 1.2, -0.4), Quat::from_rotation_y(0.3));
+        // The gun sits four centimetres into the palm, as its grip puts it.
+        let gun = seated(palm, pose(Vec3::new(0.0, -0.04, 0.0), Quat::IDENTITY));
+        let intended = intended_seat(palm, gun);
+        assert!((intended.position.length() - 0.04).abs() < 1e-5);
+        // A body twenty centimetres behind its palm would have seated the gun that far off.
+        let lagging = pose(palm.position + Vec3::new(0.0, 0.0, 0.2), palm.orientation);
+        assert!(seat(lagging, gun).position.length() > 0.19);
+        assert!(!settled(lagging, palm));
+        assert!(settled(palm, palm));
+        let turned = pose(palm.position, palm.orientation * Quat::from_rotation_x(0.5));
+        assert!(!settled(turned, palm));
+    }
+
+    #[test]
+    fn the_drawn_deviation_is_held_to_a_couple_of_degrees() {
+        let max_turn = 2.0_f32.to_radians();
+        let d = pose(Vec3::new(0.1, 0.0, 0.0), Quat::from_rotation_x(0.3));
+        let held = limit(d, 0.015, max_turn);
+        assert!((held.position.length() - 0.015).abs() < 1e-6);
+        assert!((angle(held.orientation) - max_turn).abs() < 1e-4);
+        // The turn keeps its axis.
+        let (axis, _) = held.orientation.to_axis_angle();
+        assert!(axis.abs_diff_eq(Vec3::X, 1e-4));
+        // A small deviation is kept as it is.
+        let small = pose(Vec3::new(0.005, 0.0, 0.0), Quat::from_rotation_z(0.01));
+        assert_eq!(limit(small, 0.015, max_turn).position, small.position);
+        assert!(
+            limit(small, 0.015, max_turn)
+                .orientation
+                .abs_diff_eq(small.orientation, 1e-6)
+        );
+        assert_eq!(
+            limit(pose(Vec3::NAN, Quat::IDENTITY), 0.015, max_turn),
+            Pose::IDENTITY
+        );
+    }
+
+    #[test]
+    fn a_deviation_is_in_the_guns_own_frame() {
+        let hand = pose(
+            Vec3::ZERO,
+            Quat::from_rotation_y(std::f32::consts::FRAC_PI_2),
+        );
+        let seat = Pose::IDENTITY;
+        // The gun body sags 5 cm down in the world; in the gun's frame, also down, since the turn
+        // is about the vertical.
+        let gun = pose(Vec3::new(0.0, -0.05, 0.0), hand.orientation);
+        let d = deviation(hand, seat, gun);
+        assert!(d.position.abs_diff_eq(Vec3::new(0.0, -0.05, 0.0), 1e-5));
+        // Composing the seated pose with the deviation is the gun body.
+        let back = hand_pose::mul(seated(hand, seat), d);
+        assert!(back.position.abs_diff_eq(gun.position, 1e-5));
+        assert!(strayed(
+            pose(Vec3::new(0.06, 0.0, 0.0), Quat::IDENTITY),
+            0.05,
+            0.14
+        ));
+        assert!(strayed(
+            pose(Vec3::ZERO, Quat::from_rotation_x(0.2)),
+            0.05,
+            0.14
+        ));
+        assert!(!strayed(
+            pose(Vec3::new(0.03, 0.0, 0.0), Quat::from_rotation_x(0.1)),
+            0.05,
+            0.14
+        ));
+        assert!(strayed(pose(Vec3::NAN, Quat::IDENTITY), 0.05, 0.14));
+    }
+
+    #[test]
+    fn the_axes_come_from_the_fire_point() {
+        let fire_point = Mat4::from_translation(Vec3::new(0.0, 0.05, -0.6));
+        let axes = gun_axes(fire_point, Vec3::Y).unwrap();
+        assert!(axes.barrel.abs_diff_eq(Vec3::NEG_Z, 1e-6));
+        assert!(axes.up.abs_diff_eq(Vec3::Y, 1e-6));
+        assert!(axes.muzzle.abs_diff_eq(Vec3::new(0.0, 0.05, -0.6), 1e-6));
+        // A tilted up is taken across the barrel.
+        let axes = gun_axes(fire_point, Vec3::new(0.0, 1.0, 1.0)).unwrap();
+        assert!(axes.up.dot(axes.barrel).abs() < 1e-6);
+        assert!(axes.up.abs_diff_eq(Vec3::Y, 1e-6));
+        // Pointing straight up still gives an up across it.
+        let up = Mat4::from_rotation_x(std::f32::consts::FRAC_PI_2);
+        let axes = gun_axes(up, Vec3::Y).unwrap();
+        assert!(axes.up.dot(axes.barrel).abs() < 1e-5);
+        assert!(gun_axes(Mat4::ZERO, Vec3::Y).is_none());
+    }
+
+    #[test]
+    fn a_shot_pushes_back_along_the_barrel_and_lifts_the_muzzle() {
+        let axes = GunAxes {
+            muzzle: Vec3::new(0.0, 0.0, -0.5),
+            barrel: Vec3::NEG_Z,
+            up: Vec3::Y,
+        };
+        let gun = pose(
+            Vec3::new(0.0, 1.5, 0.0),
+            Quat::from_rotation_y(std::f32::consts::PI),
+        );
+        let (impulse, at) = shot_impulse(gun, &axes, 3.0, 0.5);
+        // Turned half round, the barrel points along +Z, so back is -Z.
+        assert!(impulse.abs_diff_eq(Vec3::new(0.0, 1.5, -3.0), 1e-5));
+        assert!(at.abs_diff_eq(Vec3::new(0.0, 1.5, 0.5), 1e-5));
+        let (none, _) = shot_impulse(gun, &axes, f32::NAN, 0.5);
+        assert_eq!(none, Vec3::ZERO);
+        let (flat, _) = shot_impulse(gun, &axes, 2.0, -1.0);
+        assert!(flat.abs_diff_eq(Vec3::new(0.0, 0.0, -2.0), 1e-5));
+    }
+
+    #[test]
+    fn class_values_pick_by_class() {
+        let values = GunClassValues::new(1.0, 2.0, 3.0, 4.0);
+        assert_eq!(
+            HeftClass::ALL.map(|c| class_value(&values, c)),
+            [1.0, 2.0, 3.0, 4.0]
+        );
+    }
+}

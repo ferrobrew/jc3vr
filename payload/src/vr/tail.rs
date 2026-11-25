@@ -10,10 +10,13 @@
 //!
 //! Synchronization is by construction rather than by flushing:
 //!
-//! - The [`crate::vr::FrameContext`] in the job holds the VR runtime lock (`parking_lot` with
-//!   `send_guard` makes the guard movable). The next frame's `vr::update` / `frame_begin` block on
-//!   that lock, so no next-frame VR work — and nothing downstream of it, including the next
-//!   dispatches — can start before the tail submits.
+//! - The [`crate::vr::FrameContext`] in the job holds the VR submit side (`parking_lot` with
+//!   `send_guard` makes the guard movable). The next frame blocks on it before it dispatches --
+//!   at its `WaitedFrame::begin`, or, in the serial ordering, at the top of its render update -- so
+//!   neither the next frame's `xrBeginFrame` nor its dispatches can start before the tail submits.
+//!   With the render update overlapped, the next frame's `xrWaitFrame`, view location, and render
+//!   update do run alongside the tail; what they publish for the draw task is kept per frame
+//!   ([`crate::render_frame`]), so the draw the tail drains keeps reading its own frame.
 //! - The blit and mirror are recorded on the engine's immediate context under the context mutex
 //!   *before* the lock is released, so the next frame's `PostDraw` capture copies cannot overwrite
 //!   the eye textures the tail reads.
@@ -31,11 +34,15 @@ use std::{
 use jc3gi::{cpu_fragment::CpuPrimaryCount, graphics_engine::graphics_engine::GraphicsEngine};
 use windows::Win32::{Foundation::HANDLE, System::Threading::WaitForSingleObject};
 
-use crate::vr::{FrameContext, config::VrConfig};
+use crate::{
+    frame_timing::{self, Slot},
+    thread_role::{self, ThreadRole},
+    vr::{FrameContext, config::VrConfig},
+};
 
 /// One deferred frame tail.
 pub struct TailJob {
-    /// The frame to submit; carries the VR runtime lock.
+    /// The frame to submit; carries the VR submit side.
     pub frame: FrameContext,
     /// The frame's VR config snapshot (blit gamma, mirror settings).
     pub vr_cfg: VrConfig,
@@ -109,6 +116,7 @@ const SHUTDOWN_POLLS: u32 = 500;
 static QUIT_ACKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn worker(rx: mpsc::Receiver<Message>) {
+    thread_role::mark_thread(ThreadRole::FrameTail);
     #[cfg(feature = "profiler")]
     crate::profiler::label_thread("tail");
     while let Ok(message) = rx.recv() {
@@ -142,6 +150,7 @@ unsafe fn poll_signal(signal: *const u32, deadline: Instant, what: &str) {
 fn run_tail(job: TailJob) {
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("Frame tail");
+    let _timing = frame_timing::scope(Slot::Tail);
 
     // Drain the draw thread (CPU submission completeness) so the blit records after the last
     // eye's commands on the immediate context.
@@ -157,6 +166,7 @@ fn run_tail(job: TailJob) {
         if let Some(ge) = GraphicsEngine::get() {
             #[cfg(feature = "profiler")]
             puffin::profile_scope!("WaitForCPUDraw + drain (tail)");
+            let _timing = frame_timing::scope(Slot::TailDrain);
             let deadline = Instant::now() + DRAIN_TIMEOUT;
 
             let fragment_signal = ge.m_DrawFragmentSignal;
@@ -169,9 +179,7 @@ fn run_tail(job: TailJob) {
                     DRAIN_TIMEOUT.as_millis() as u32,
                 );
             }
-            if crate::config::Config::lock_query(|c| c.stereo.drain_draw_fragment)
-                && CpuPrimaryCount() > 1
-            {
+            if CpuPrimaryCount() > 1 {
                 poll_signal(
                     &raw const ge.m_DrawThreadWorkSignal,
                     deadline,
@@ -186,20 +194,22 @@ fn run_tail(job: TailJob) {
     // eye-1 render (freezing the right eye -- see the deferred-reset note in `game_update_render`).
     crate::hooks::game::reset_dispatch_state();
 
-    // Mirror before the submit: both must be recorded before the runtime lock is released, and
-    // the submit releasing the lock is what keeps the next frame off the capture textures. The
-    // flat overlay was rendered into its texture on eye 0's post-draw, so the mirror only
-    // composites it -- safe off-thread.
+    // Mirror before the submit: both must be recorded before the submit side is released, and
+    // the submit releasing it is what keeps the next frame off the capture textures. The
+    // flat overlay was rendered into its texture on the last dispatch's post-draw, which the drain
+    // above waited for, so the mirror only composites it -- safe off-thread.
     if job.mirror {
         #[cfg(feature = "profiler")]
         puffin::profile_scope!("Desktop mirror (tail)");
-        crate::vr::present_mirror(usize::from(job.vr_cfg.mirror_eye));
+        let _timing = frame_timing::scope(Slot::Mirror);
+        crate::vr::present_mirror(job.vr_cfg.mirror_view);
     }
 
     let should_render = job.frame.should_render();
     {
         #[cfg(feature = "profiler")]
         puffin::profile_scope!("VR present + submit (tail)");
+        let _timing = frame_timing::scope(Slot::Submit);
         crate::vr::present_and_submit(job.frame, &job.vr_cfg);
     }
     crate::hooks::game::log_vr_frame_health(should_render);

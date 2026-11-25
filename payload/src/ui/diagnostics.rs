@@ -1,10 +1,11 @@
-//! The Diagnostics tab: observation and bisect tooling — the render-trace dump, the per-eye A/B
-//! isolation levers, live engine cull state, the render-block-type registry, the per-eye camera
-//! snapshot diff, and the log filter. Feature and quality toggles live in the Render tab.
+//! The render RE window: a separate egui window, opened from the Experimental page, holding the
+//! tools that serve single-pass stereo and render reverse-engineering. These are the render-block
+//! type registry, the per-eye skips and the skip-pass range, the eye-1 gates, the exposure A/B, the
+//! render trace's probes, the terrain and flicker diagnostics, and the per-eye camera readout.
 
 use std::{
     collections::BTreeSet,
-    sync::atomic::{AtomicI32, Ordering},
+    sync::atomic::{AtomicBool, Ordering},
 };
 
 use jc3gi::{
@@ -19,84 +20,96 @@ use jc3gi::{
 
 use crate::{
     config,
-    debug::{
-        camera::{CAMERA_SNAPSHOTS, CameraSnapshot},
-        trace,
-    },
+    debug::camera::{CAMERA_SNAPSHOTS, CameraSnapshot},
     hooks::graphics_engine::terrain,
     ui::camera::matrix_grid,
 };
 
-/// The frame count for the editable "Dump N frames" trace button, persisted across UI frames.
-pub(crate) static TRACE_FRAME_COUNT: AtomicI32 = AtomicI32::new(60);
+/// The Experimental page's entry point: the button that opens the render RE window.
+pub(crate) fn open_button(ui: &mut egui::Ui) {
+    let open = OPEN.load(Ordering::Relaxed);
+    if ui
+        .add_enabled(!open, egui::Button::new("Open the render RE window"))
+        .on_hover_text(
+            "The render-block type registry, per-eye skips, eye-1 gates, exposure A/B, render trace \
+             probes, terrain and flicker diagnostics, and the per-eye camera readout.",
+        )
+        .clicked()
+    {
+        OPEN.store(true, Ordering::Relaxed);
+    }
+}
 
-pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
-    let mut cfg = config::CONFIG.lock();
-    // Deferred so the trace button's start() doesn't re-lock CONFIG (it snapshots the config for the
-    // manifest) while this guard is held -- parking_lot is not reentrant, so that self-deadlocks.
-    let mut start_trace: Option<i32> = None;
+/// Draws the render RE window while it is open. `editing` mirrors the main window's edit
+/// boundary, so the window is read-only while gameplay input owns the controls.
+pub(crate) fn window(ctx: &egui::Context, editing: bool) {
+    let mut open = OPEN.load(Ordering::Relaxed);
+    if !open {
+        return;
+    }
+    egui::Window::new("Render RE")
+        .open(&mut open)
+        .default_size(egui::vec2(520.0, 640.0))
+        .vscroll(true)
+        .show(ctx, |ui| {
+            ui.add_enabled_ui(editing, |ui| {
+                diagnostics_controls(ui);
+                trace_options(ui);
+                ui.separator();
+                camera_visualization(ui);
+            });
+        });
+    OPEN.store(open, Ordering::Relaxed);
+}
 
-    // Render trace at the top -- it dumps the next few frames' render events under whatever every
-    // option below is set to (writes next to the DLL). `diagnose_rt_hashes` adds per-eye render-target
-    // hashes to the dump. The long capture exists for periodic artifacts whose cadence exceeds the
-    // short window (e.g. the one-frame exposure/shadow pulses of issue #10).
-    ui.horizontal(|ui| {
-        if ui.button("Dump render trace (4 frames)").clicked() {
-            start_trace = Some(4);
-        }
-        let mut count = TRACE_FRAME_COUNT.load(Ordering::Relaxed);
-        if ui.button(format!("Dump {count} frames")).clicked() {
-            start_trace = Some(count);
-        }
-        if ui
-            .add(egui::DragValue::new(&mut count).range(1..=600).speed(1))
-            .changed()
-        {
-            TRACE_FRAME_COUNT.store(count, Ordering::Relaxed);
-        }
-        let remaining = trace::active_frames();
-        if remaining > 0 {
-            ui.label(format!("tracing... {remaining} frames left"));
-        } else if trace::TraceState::last_path().is_some() {
-            ui.label("dumped");
-        } else {
-            ui.label("(writes to traces/<stamp>/)");
-        }
+/// Whether the render RE window is open. The Experimental page's button opens it and its close
+/// button closes it; it is not persisted.
+static OPEN: AtomicBool = AtomicBool::new(false);
+
+/// The render trace's probes and the brightness-step auto-capture; a manual trace is started from
+/// the Tools page's render capture ([`crate::ui::render_capture`]). The render camera's coordinate
+/// frame is recorded into every trace and has no toggle.
+fn trace_options(ui: &mut egui::Ui) {
+    let mut cfg = config::edit();
+    ui.collapsing("Render trace probes", |ui| {
+        ui.checkbox(
+            &mut cfg.stereo.diagnose_rt_screenshots,
+            "Write each eye's BackBufferLinear to a PNG per frame into the trace folder",
+        );
+        ui.checkbox(
+            &mut cfg.stereo.auto_trace_brightness_step,
+            "Auto-capture a trace when the frame brightness steps (one-shot; disarms after firing)",
+        );
+        ui.checkbox(
+            &mut cfg.stereo.diagnose_main_color_means,
+            "Record MainColor means at the pipeline stage brackets (slower traces)",
+        );
+        ui.checkbox(
+            &mut cfg.stereo.diagnose_pass_sweep,
+            "Record MainColor means after every late-scene pass (per-pass ladder; much slower)",
+        );
+        ui.checkbox(
+            &mut cfg.stereo.diagnose_global_constants,
+            "Dump the FP/VP global constant staging into the trace (scene + frame end)",
+        );
+        ui.checkbox(
+            &mut cfg.stereo.diagnose_rt_hashes,
+            "Hash engine RTs per eye into the trace (run with cameras off)",
+        );
+        ui.checkbox(
+            &mut cfg.stereo.diagnose_stereo_draw_diff,
+            "Diff the two eyes' per-pass draw counts into the trace (single-pass-stereo feasibility)",
+        )
+        .on_hover_text(
+            "Records a StereoDrawDiff event per stereo frame: which passes draw identically between \
+             eyes vs diverge, and what fraction of draws are replayable from one walk. The log gets \
+             one summary line when the trace ends.",
+        );
     });
-    ui.checkbox(
-        &mut cfg.stereo.auto_trace_brightness_step,
-        "Auto-capture a trace when the frame brightness steps (one-shot; disarms after firing)",
-    );
-    ui.checkbox(
-        &mut cfg.stereo.diagnose_main_color_means,
-        "Record MainColor means at the pipeline stage brackets (slower traces)",
-    );
-    ui.checkbox(
-        &mut cfg.stereo.diagnose_pass_sweep,
-        "Record MainColor means after every late-scene pass (per-pass ladder; much slower)",
-    );
-    ui.checkbox(
-        &mut cfg.stereo.diagnose_global_constants,
-        "Dump the FP/VP global constant staging into the trace (scene + frame end)",
-    );
-    ui.checkbox(
-        &mut cfg.stereo.diagnose_rt_hashes,
-        "Hash engine RTs per eye into the trace (run with cameras off)",
-    );
-    ui.checkbox(
-        &mut cfg.stereo.diagnose_rt_screenshots,
-        "Dump per-eye frames into the trace (BackBufferLinear PNG per eye per frame)",
-    );
-    ui.checkbox(
-        &mut cfg.stereo.diagnose_stereo_draw_diff,
-        "Diff the two eyes' per-pass draw counts (single-pass-stereo feasibility)",
-    )
-    .on_hover_text(
-        "Logs (target \"stereo_diff\") which passes draw identically between eyes vs diverge, and \
-         what fraction of draws are replayable from one walk. Forces the inline frame tail while on.",
-    );
-    ui.separator();
+}
 
+fn diagnostics_controls(ui: &mut egui::Ui) {
+    let mut cfg = config::edit();
     // The #31 flicker-isolation A/B levers -- all default off; enable one at a time to localize the
     // whole-terrain sun-shadow flicker. See `crate::stereo::config::StereoConfig`.
     ui.collapsing("Flicker isolation (#31)", |ui| {
@@ -118,11 +131,6 @@ pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
             .on_hover_text(
                 "Renders both eyes with eye 0's projection and offset (mono), removing all per-eye \
                  divergence while keeping the off-axis projection and its reconstruction.",
-            );
-            ui.label(
-                "C: Freeze render camera -- moved to the Camera tab's \"Frozen pose (diagnostic)\" \
-                 section, as the \"Full camera (world)\" freeze mode. It pins the same \
-                 m_TransformF/m_View, and the held pose can be driven by hand from there.",
             );
             ui.checkbox(
                 &mut cfg.stereo.shadow_update_every_frame,
@@ -339,6 +347,10 @@ pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
     // Investigation levers -- normally off; used to isolate what differs between the eyes.
     ui.collapsing("Per-eye diagnostics", |ui| {
         ui.checkbox(
+            &mut cfg.stereo.cameras,
+            "Stereo cameras (per-eye IPD offset; off for the render-target hash diagnostic)",
+        );
+        ui.checkbox(
             &mut cfg.stereo.present_eye_0,
             "Present eye 0 (else eye 1) -- flip to compare each eye live",
         );
@@ -430,7 +442,9 @@ pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
              darkening was the exposure loop; stereo still darker => a render path.",
         );
     });
+}
 
+fn camera_visualization(ui: &mut egui::Ui) {
     ui.collapsing("Per-eye render camera (differences in yellow)", |ui| {
         let (s0, s1) = {
             let g = CAMERA_SNAPSHOTS.lock();
@@ -441,37 +455,7 @@ pub fn egui_debug_diagnostics(ui: &mut egui::Ui) {
             show_camera_snapshot(&mut cols[1], "Eye 1", &s1, &s0);
         });
     });
-
-    ui.collapsing("Logging", |ui| {
-        ui.label(match crate::logging::active_spec() {
-            Some(spec) => format!("Active filter: {spec}"),
-            None => "Active filter: (launch RUST_LOG, INFO floor)".to_string(),
-        });
-        let mut edit = FILTER_EDIT.lock();
-        let mut error = FILTER_ERROR.lock();
-        ui.horizontal(|ui| {
-            ui.text_edit_singleline(&mut *edit)
-                .on_hover_text("RUST_LOG directive syntax, e.g. warn,vr=debug,coord_frame=debug.");
-            if ui.button("Apply").clicked() {
-                *error = crate::logging::set_filter(&edit).err();
-            }
-        });
-        if let Some(e) = error.as_ref() {
-            ui.colored_label(egui::Color32::LIGHT_RED, e);
-        }
-    });
-
-    // Release CONFIG before start(), whose manifest snapshot re-locks it.
-    drop(cfg);
-    if let Some(frames) = start_trace {
-        trace::TraceState::start(frames);
-    }
 }
-
-/// The in-progress log-filter text, kept across frames until applied.
-static FILTER_EDIT: parking_lot::Mutex<String> = parking_lot::Mutex::new(String::new());
-/// The last log-filter apply error, shown until the next successful apply.
-static FILTER_ERROR: parking_lot::Mutex<Option<String>> = parking_lot::Mutex::new(None);
 
 fn show_camera_snapshot(
     ui: &mut egui::Ui,

@@ -1,7 +1,7 @@
-//! Single-pass stereo (experimental): render the G-buffer geometry once, emitting both eyes via
-//! instancing + `SV_ViewportArrayIndex` routing into a double-wide render target, instead of the
-//! double-draw (two full `game.Draw` walks, one per eye). See `docs/mod/stereo/single-pass-stereo.md` for
-//! the design.
+//! Single-pass stereo, the default rendering mode while a VR session runs: render the G-buffer
+//! geometry once, emitting both eyes via instancing + `SV_ViewportArrayIndex` routing into a
+//! double-wide render target, instead of the double-draw (two full `game.Draw` walks, one per eye).
+//! See `docs/mod/stereo/single-pass-stereo.md` for the design.
 //!
 //! This module owns the mod-side state that the double-draw path does not need:
 //! - the DXVK viewport-routing **capability probe** ([`probe`] / [`capability`]);
@@ -36,7 +36,6 @@ use jc3gi::{
     types::math::{Matrix4, Vector4},
 };
 use parking_lot::Mutex;
-use re_utilities::ThreadSuspender;
 use windows::{
     Win32::{
         Graphics::Direct3D11::{
@@ -50,7 +49,7 @@ use windows::{
     core::{IUnknown, Interface},
 };
 
-use crate::config::Config;
+use crate::{config::Config, hooks::suspend, util::bump};
 
 /// The result of the DXVK viewport-routing capability probe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +63,10 @@ pub enum Capability {
     Unsupported,
 }
 
+// The ambient-occlusion generation pass's rewrite and its per-eye rows; reached by the shader
+// creation detour and the SSAO block.
+pub(crate) mod ambient_occlusion;
+
 /// Probe the D3D11 device for `VPAndRTArrayIndexFromAnyShaderFeedingRasterizer` (the D3D11.3 feature
 /// that lets a vertex shader write `SV_ViewportArrayIndex`), caching the result. Idempotent and
 /// cheap; safe to call every frame. `CheckFeatureSupport` on the device is free-threaded, so no
@@ -72,26 +75,65 @@ mod cb13;
 mod config_snapshot;
 mod detour_lifecycle;
 mod draw_detours;
+pub(crate) mod eye_camera;
+pub(crate) mod eye_globals;
+mod eye_vertex_globals;
 mod frame_diagnostics;
+pub(crate) mod hw_instanced;
+mod impostor_pixel_size;
 mod instanced_exposure;
 mod per_eye_reissue;
+mod pinned_eye;
+pub(crate) mod post_filters;
+// The ambient-occlusion volumes' pixel-shader rewrite and its per-eye rows; reached by the shader
+// creation detour and the volume pass's draw walk.
+pub(crate) mod ao_volumes;
+// The screen-space reflection ray march's rewrite and its per-eye rows; reached by the shader creation
+// detour and the reflection block.
+pub(crate) mod screen_space_reflection;
 mod shader_detours;
+pub(crate) mod shader_identity;
 mod shader_policy;
+mod static_lights;
+mod sun;
+pub(crate) mod vegetation_once;
 mod viewport;
+pub(crate) mod viewport_record;
+mod water_fragment_state;
+mod water_gpu_probe;
+pub(crate) mod water_pixel_variants;
 
 pub use cb13::*;
 pub use config_snapshot::*;
-pub(crate) use detour_lifecycle::ensure_viewport_detours;
-use detour_lifecycle::{DETOUR_INSTALL, DetourSlot};
+use detour_lifecycle::{DETOUR_INSTALL, DetourSlot, PIXEL_SHADER_EVER_ENABLED};
+pub(crate) use detour_lifecycle::{
+    com_detours_installed, ensure_pixel_shader_detour, ensure_viewport_detours,
+    vertex_identity_detour_ready,
+};
 use draw_detours::*;
 pub use frame_diagnostics::*;
+pub use impostor_pixel_size::EyeDisplayWidth;
 pub use instanced_exposure::*;
 pub use per_eye_reissue::*;
+pub(crate) use pinned_eye::tag_pinned_eye;
 pub use shader_detours::*;
 pub use shader_policy::*;
+pub use static_lights::EyeLightWidth;
+pub use sun::*;
 pub use viewport::*;
+pub(crate) use water_fragment_state::begin_water_surface;
+pub(crate) use water_gpu_probe::{
+    RawDrawKind, WaterGpuProbe, begin_water_input_capture, reflection_producer,
+};
 
 pub(crate) use crate::stereo::engine_context::EngineContext;
+
+/// The live `cb13` rows the remap and reprojection blocks occupy (the clip-origin rows after them
+/// are left out).
+pub(crate) fn live_cb13_rows() -> Option<[Vector4; dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize]> {
+    let rows = CB13.lock().live_rows()?;
+    Some(std::array::from_fn(|row| rows[row]))
+}
 
 pub fn probe(device: &ID3D11Device) -> Capability {
     let mut options = D3D11_FEATURE_DATA_D3D11_OPTIONS3::default();
@@ -143,9 +185,11 @@ pub fn capability() -> Capability {
     }
 }
 
-/// Whether single-pass rendering should actually run this frame: the master switch is on, the
-/// census-only dry-run is off, and the device supports viewport routing. The VS-substitution and
-/// cb13 paths gate on this; when it is false the double-draw path is left untouched.
+/// Whether single-pass rendering should actually run this frame: the master switch is on, a VR
+/// session is running, the census-only dry-run is off, and the device supports viewport routing.
+/// The VS-substitution and cb13 paths gate on this; when it is false the double-draw path is left
+/// untouched. The shader set follows it: the frame driver re-creates the shaders whenever it
+/// changes ([`crate::hooks::graphics_engine::shader::reconcile_single_pass`]).
 pub fn active() -> bool {
     // Go inert the instant eject begins: the render thread keeps running through the whole teardown,
     // so an ungated single-pass path would race the hook uninstall and the D3D-resource release (the
@@ -175,6 +219,41 @@ pub fn collapse_active() -> bool {
     dual_eye_active() && config_flags().has(Flag::Collapse)
 }
 
+/// Whether the engine's copy into the effect depth-history slots is skipped: single-pass is
+/// [`active`] and `single_pass.skip_unread_effect_depth_copy` is on. See
+/// [`SinglePassConfig::skip_unread_effect_depth_copy`](crate::stereo::config::SinglePassConfig::skip_unread_effect_depth_copy).
+pub(crate) fn skip_unread_effect_depth_copy() -> bool {
+    active() && config_flags().has(Flag::SkipUnreadEffectDepthCopy)
+}
+
+/// The terrain block types whose hull programs cull against the baked offset view-projection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TerrainCullBlock {
+    /// The base terrain tiles, drawn once for both eyes on the eye-lane path.
+    Base,
+    /// The terrain patch system's patches, re-issued per eye on the pinned-eye path.
+    Patch,
+}
+
+/// Whether a terrain bake made now should cull against the projection bounding both eyes: under the
+/// collapse, inside the G-buffer range, with `single_pass.terrain_cull_both_eyes` on and the domain
+/// programs of `block` reading each eye's own rows, so that only the hull's cull reads the baked
+/// offset view-projection. See
+/// [`SinglePassConfig::terrain_cull_both_eyes`](crate::stereo::config::SinglePassConfig::terrain_cull_both_eyes).
+pub(crate) fn terrain_cull_both_eyes(block: TerrainCullBlock) -> bool {
+    let flags = config_flags();
+    let domain_reads_eye_rows = flags.has(Flag::Terrain)
+        && flags.has(Flag::TerrainEyeRows)
+        && match block {
+            TerrainCullBlock::Base => true,
+            TerrainCullBlock::Patch => flags.has(Flag::TerrainPatchPerEye),
+        };
+    collapse_active()
+        && in_gbuffer_range()
+        && flags.has(Flag::TerrainCullBothEyes)
+        && domain_reads_eye_rows
+}
+
 /// Whether the scene render targets are re-created at 2x per-eye width so each eye-half is full
 /// resolution (instead of a squished half of a per-eye-sized target). Requires [`collapse_active`] --
 /// it only makes sense for the single walk whose capture split reads one full-width half per eye.
@@ -184,15 +263,17 @@ pub fn double_wide_active() -> bool {
     collapse_active() && config_flags().has(Flag::DoubleWide)
 }
 
-/// Whether the per-eye re-issue intercept for one of the baked-view-projection render blocks is
-/// enabled. Read from the frame's config snapshot, so the block `Draw` detours -- which fire for
-/// every draw of their type whether or not single-pass is on -- cost a relaxed load rather than a
-/// mutex acquisition.
+/// Whether the per-eye re-issue intercept for one of the intercepted render blocks is enabled. Read
+/// from the frame's config snapshot, so the block `Draw` detours -- which fire for every draw of
+/// their type whether or not single-pass is on -- cost a relaxed load rather than a mutex
+/// acquisition.
 pub fn block_intercept_enabled(block: BlockIntercept) -> bool {
     config_flags().has(match block {
         BlockIntercept::Bark => Flag::Bark,
         BlockIntercept::Foliage => Flag::Foliage,
         BlockIntercept::Occluder => Flag::Occluder,
+        BlockIntercept::WaterScreenUv => Flag::WaterScreenUv,
+        BlockIntercept::NvWater => Flag::NvWater,
     })
 }
 
@@ -205,6 +286,7 @@ pub fn block_intercept_enabled(block: BlockIntercept) -> bool {
 const BAKED_CB_VS_NAME_PREFIXES: &[(&str, BlockIntercept)] = &[
     ("vegetationbark", BlockIntercept::Bark),
     ("vegetationfoliage", BlockIntercept::Foliage),
+    ("nvwater", BlockIntercept::NvWater),
 ];
 
 /// Whether a baked-view-projection block intercept owns this vertex shader, so the `cb0` remap must
@@ -232,21 +314,42 @@ const BAKED_CB_VS_NAME_PREFIXES: &[(&str, BlockIntercept)] = &[
 /// honours it too -- that path has no name to decline by, and left to itself it would remap the very
 /// shaders this declined.
 pub fn baked_cb_block_owns_vs(name: Option<&str>, code: &[u8]) -> bool {
+    let reads = dxbc_stereo::reads_global_view_projection(code);
+    baked_cb_vs_owned(
+        name,
+        reads.is_ok_and(|reads| !reads),
+        block_intercept_enabled,
+    )
+}
+
+fn baked_cb_vs_owned(
+    name: Option<&str>,
+    no_global_view_projection: bool,
+    enabled: impl Fn(BlockIntercept) -> bool,
+) -> bool {
     let Some(name) = name else {
         return false;
     };
     BAKED_CB_VS_NAME_PREFIXES
         .iter()
-        .any(|(prefix, block)| name.starts_with(prefix) && block_intercept_enabled(*block))
-        && dxbc_stereo::reads_global_view_projection(code).is_ok_and(|reads| !reads)
+        .any(|(prefix, block)| name.starts_with(prefix) && enabled(*block))
+        && no_global_view_projection
 }
 
-/// A render block with a baked-view-projection per-eye intercept.
+/// A render block with a per-eye re-issue intercept: the baked-view-projection blocks, and the two
+/// water families, whose per-eye state is restaged around the re-issue rather than transformed in
+/// flight.
 #[derive(Clone, Copy)]
 pub enum BlockIntercept {
     Bark,
     Foliage,
     Occluder,
+    /// The legacy water blocks' projective screen UV
+    /// ([`water_uv_per_eye`](crate::stereo::config::SinglePassConfig::water_uv_per_eye)).
+    WaterScreenUv,
+    /// The WaveWorks water blocks' per-eye camera
+    /// ([`nvwater_per_eye`](crate::stereo::config::SinglePassConfig::nvwater_per_eye)).
+    NvWater,
 }
 
 /// The eye whose viewport + view-projection the collapse UI overlays (HUD panel, egui panel) should
@@ -269,14 +372,19 @@ pub fn collapse_ui_eye_override() -> Option<(D3D11_VIEWPORT, Matrix4)> {
     if eye == NO_UI_EYE || !collapse_active() {
         return None;
     }
-    let full = (*COLLAPSE_FULL_VIEWPORT.lock())?;
+    let full = viewport_record::scene_viewport()?;
     let half = full.Width / 2.0;
     let viewport = D3D11_VIEWPORT {
         TopLeftX: full.TopLeftX + eye as f32 * half,
         Width: half,
         ..full
     };
-    Some((viewport, full_eye_view_projection(eye)?))
+    // The UI draws after FSR has resolved the eyes, so its view-projection leaves out FSR's jitter.
+    let center_transform = crate::stereo::STEREO_STATE.lock().center_transform?;
+    let params = crate::vr::render_params(eye)?;
+    let eye_world = params.resolve(glam::Mat4::from(center_transform));
+    let view_projection = params.unjittered_projection_reverse_z() * eye_world.inverse();
+    Some((viewport, Matrix4::from(view_projection)))
 }
 
 /// Set the immediate-context viewport via the original (un-detoured) `RSSetViewports`, so a mod
@@ -288,19 +396,19 @@ pub fn set_ui_viewport_raw(context: *mut c_void, viewport: &D3D11_VIEWPORT) {
         set_viewport_slots_uniform(false);
         // SAFETY: `context` is the live immediate context; the trampoline is the original function.
         unsafe { detour.call(context, 1, std::slice::from_ref(viewport).as_ptr()) };
+        viewport_record::forget_bound();
     }
 }
 
 /// The per-eye **full** (translation-carrying) world→clip view-projection, matching the render
-/// camera's `m_ViewProjectionF` for that eye -- for projecting the mod's world-space overlay quads
-/// per eye in the collapse, where the render camera stays centered. `None` if the centre transform or
-/// per-eye params are unavailable.
-fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
+/// camera's `m_ViewProjectionF` for that eye, FSR's sub-pixel jitter included -- for the scene's own
+/// per-eye passes in the collapse, where the render camera stays centered. What draws after FSR
+/// takes [`collapse_ui_eye_override`]'s, which leaves the jitter out. `None` if the centre transform
+/// or per-eye params are unavailable.
+pub(crate) fn full_eye_view_projection(eye: usize) -> Option<Matrix4> {
     let center_transform = crate::stereo::STEREO_STATE.lock().center_transform?;
     let params = crate::vr::render_params(eye)?;
-    let mut eye_world = glam::Mat4::from(center_transform);
-    eye_world.w_axis += params.world_offset.extend(0.0);
-    let eye_world = eye_world * glam::Mat4::from_quat(params.orientation_delta);
+    let eye_world = params.resolve(glam::Mat4::from(center_transform));
     let vp = glam::Mat4::from(params.projection_reverse_z) * eye_world.inverse();
     Some(Matrix4::from(vp))
 }
@@ -341,6 +449,8 @@ impl Drop for GBufferRange {
         if collapse_active() {
             unify_viewport_slots();
         }
+        // The pixel shaders' per-eye camera rows belong to the range too.
+        eye_camera::range_ended();
     }
 }
 
@@ -348,6 +458,7 @@ impl Drop for GBufferRange {
 /// interrupted dispatch cannot bleed into the next one. See [`begin_frame`] for the caller.
 fn clear_gbuffer_range() {
     IN_GBUFFER_RANGE.store(false, Ordering::Relaxed);
+    eye_camera::range_ended();
     // The per-eye matrices belong to the range that just ended. Dropping them means a re-issue that
     // somehow runs outside a range -- or in a later frame where `compute_dual_eye_rows` declined to
     // publish -- reprojects with nothing rather than with a stale head pose.
@@ -377,6 +488,8 @@ const NO_PASS: u8 = 0xFF;
 /// module can classify, so it reads as [`NO_PASS`] rather than truncating into a real pass's slot.
 pub fn set_current_pass(pass: i16) -> u8 {
     let pass = u8::try_from(pass).unwrap_or(NO_PASS);
+    // A pass boundary: whatever the slots held, the next routed draw binds its viewports afresh.
+    viewport_record::forget_bound();
     CURRENT_PASS.swap(pass, Ordering::Relaxed)
 }
 
@@ -385,7 +498,7 @@ pub fn restore_current_pass(pass: u8) {
     CURRENT_PASS.store(pass, Ordering::Relaxed);
 }
 
-fn current_pass_id() -> u8 {
+pub(crate) fn current_pass_id() -> u8 {
     CURRENT_PASS.load(Ordering::Relaxed)
 }
 
@@ -445,8 +558,8 @@ pub fn begin_frame() {
 /// This is the only place the range flag may be forced down from outside its guard. The flag is
 /// written and read exclusively on the draw thread, and the dispatch prologue is the one point in
 /// that thread's sequence where no range can be live -- so a clear here cannot interleave with a range
-/// in progress, as the former frame-start clear on the game thread could once the frame tail was
-/// deferred.
+/// in progress, as a frame-start clear on the game thread could while a deferred frame tail is still
+/// drawing.
 ///
 /// The config flags are pinned here for the same reason and at the same point. They gate state this
 /// thread arms and restores in pairs -- the eye-half viewport, the armed constant reprojection, the
@@ -457,6 +570,8 @@ pub fn begin_frame() {
 pub fn begin_dispatch() {
     pin_dispatch_config_flags();
     clear_gbuffer_range();
+    hw_instanced::maintain();
+    vegetation_once::begin_dispatch();
 }
 
 /// Whether this frame is one the per-frame single-pass diagnostics log on.
@@ -483,11 +598,13 @@ pub fn log_draw_split(first: u32, last: u32) {
     let unpatched = UNPATCHED_DRAWS.swap(0, Ordering::Relaxed);
     let split = VIEWPORT_SPLIT.swap(0, Ordering::Relaxed);
     let dup = VIEWPORT_DUP.swap(0, Ordering::Relaxed);
+    let skipped = VIEWPORT_BINDS_SKIPPED.swap(0, Ordering::Relaxed);
     let in_patched = INSTANCED_RANGE_PATCHED.swap(0, Ordering::Relaxed);
     let out_patched = INSTANCED_RANGE_OUT_PATCHED.swap(0, Ordering::Relaxed);
     let indirect_reissued = INDIRECT_REISSUED.swap(0, Ordering::Relaxed);
     let indirect_forwarded = INDIRECT_FORWARDED.swap(0, Ordering::Relaxed);
     let slot13 = drain_slot13_census();
+    let (hw_once, hw_untwinned) = hw_instanced::take_counts();
     let torn = RANGE_TORN.swap(0, Ordering::Relaxed);
     let torn_total = RANGE_TORN_TOTAL.fetch_add(torn, Ordering::Relaxed) + torn;
     if torn > 0 {
@@ -519,7 +636,9 @@ pub fn log_draw_split(first: u32, last: u32) {
         "pass range [{first:#x}, {last:#x}): {patched} patched, {unpatched} unpatched draws | \
          instanced while it ran: {in_patched} patched in-range, {out_patched} patched out-of-range | \
          indirect: {indirect_reissued} re-issued per eye, {indirect_forwarded} forwarded | \
-         torn {torn} ({torn_total} this session) | viewports: {split} split, {dup} identical-dup | \
+         hardware-instanced: {hw_once} once through a twin, {hw_untwinned} untwinned | \
+         torn {torn} ({torn_total} this session) | viewports: {split} split, {dup} identical-dup, {skipped} binds \
+         skipped as already bound | \
          recorded VS={} | CreateVertexShader: pending={} reacq[patched={} cb13={} no-refs={} err={}] | \
          census[patched={} no-refs={} deferred={} errored={}] | slot-13 by pass: [{slot13}]",
         s.recorded_vs,
@@ -540,10 +659,21 @@ pub fn log_draw_split(first: u32, last: u32) {
 /// payload code, so leaving them enabled while the DLL unmaps dangles those jumps and the next D3D
 /// call crashes. Runs under a thread suspender and the install lock, like install -- with the same
 /// caveat that suspension narrows rather than closes the in-prologue window.
-pub fn uninstall_com_detours() {
+pub fn uninstall_com_detours() -> bool {
     let _install = DETOUR_INSTALL.lock();
-    if RS_SET_VIEWPORTS.get().is_none() {
-        return; // never installed (single-pass never activated this session)
+    if !allow_com_reclamation(PIXEL_SHADER_EVER_ENABLED.load(Ordering::Acquire), true, 0) {
+        tracing::error!(
+            subsystem = "shader_identity",
+            restart_required = true,
+            "COM detour removal: shader identity detour was enabled; the payload must remain mapped and the game must be restarted"
+        );
+        return false;
+    }
+    if RS_SET_VIEWPORTS.get().is_none() && shader_identity::CREATE_PIXEL_SHADER.get().is_none() {
+        // No draw detour was ever installed, so no draw can be holding a twin.
+        hw_instanced::release();
+        vegetation_once::release();
+        return true;
     }
 
     // Ordering here has to satisfy two constraints that pull against each other.
@@ -563,10 +693,10 @@ pub fn uninstall_com_detours() {
     // not happen while other threads are suspended below. `disable_detour!` writes through a
     // checked accessor, so a slot count that falls behind the number of call sites drops the
     // overflowing name from the log instead of indexing out of bounds in this `nounwind` context.
-    let mut failed: [Option<&'static str>; 10] = [None; 10];
+    let mut failed: [Option<&'static str>; 11] = [None; 11];
     let mut failures = 0usize;
 
-    let _ = ThreadSuspender::for_block(|| {
+    let suspension = suspend::for_block(|| {
         // A detour left enabled here is a relay still pointing into the about-to-be-freed payload
         // image, so a swallowed failure would be an undiagnosable crash -- record it. Recorded
         // rather than logged because formatting a `tracing` event allocates, which is the very
@@ -601,15 +731,25 @@ pub fn uninstall_com_detours() {
         );
         disable_detour!(DRAW_INSTANCED_INDIRECT, "DrawInstancedIndirect");
         disable_detour!(VS_SET_SHADER, "VSSetShader");
+        disable_detour!(shader_identity::CREATE_PIXEL_SHADER, "CreatePixelShader");
         disable_detour!(CREATE_VERTEX_SHADER, "CreateVertexShader");
         disable_detour!(SET_VERTEX_PROGRAM_CONSTANTS, "SetVertexProgramConstants");
         Ok::<(), Box<dyn std::error::Error + Send + Sync>>(())
     });
 
+    if let Err(error) = &suspension {
+        tracing::error!(%error, restart_required = true,
+            "COM detour removal: thread suspension failed; the payload must remain mapped and the game must be restarted");
+    }
     for name in failed.iter().flatten() {
         tracing::error!(
-            "single-pass: {name} did not disable (still dangling into the freed payload image)"
+            detour = name,
+            restart_required = true,
+            "COM detour removal: detour did not disable; the payload must remain mapped and the game must be restarted"
         );
+    }
+    if !allow_com_reclamation(false, suspension.is_ok(), failures) {
+        return false;
     }
 
     // Threads are running again and the functions are unpatched, so these drops are unreachable by
@@ -622,9 +762,16 @@ pub fn uninstall_com_detours() {
     drop(DRAW_INDEXED_INSTANCED_INDIRECT.take());
     drop(DRAW_INSTANCED_INDIRECT.take());
     drop(VS_SET_SHADER.take());
+    drop(shader_identity::CREATE_PIXEL_SHADER.take());
+    shader_identity::disarm();
     drop(CREATE_VERTEX_SHADER.take());
     drop(SET_VERTEX_PROGRAM_CONSTANTS.take());
     release_cb13();
+    eye_vertex_globals::release();
+    ambient_occlusion::release();
+    ao_volumes::release();
+    screen_space_reflection::release();
+    eye_camera::release();
     for shader in std::mem::take(&mut *PATCHED_VS.lock()) {
         // SAFETY: every entry was `com_add_ref`'d exactly once when it was recorded.
         unsafe { com_release(shader as *mut c_void) };
@@ -635,8 +782,21 @@ pub fn uninstall_com_detours() {
     // re-inject with different flags could otherwise consult the previous session's decisions for
     // any blob the engine still has cached.
     VS_TRANSFORM_CACHE.lock().clear();
+    // After the draw detours are gone: a draw still finishing holds its own reference to the twin it
+    // bound, so destroying the engine handles here cannot pull a layout out from under it.
+    hw_instanced::release();
+    vegetation_once::release();
     reset_instanced_exposure();
     tracing::info!("single-pass: COM detours uninstalled");
+    true
+}
+
+fn allow_com_reclamation(
+    identity_ever_enabled: bool,
+    suspension_ok: bool,
+    failures: usize,
+) -> bool {
+    !identity_ever_enabled && suspension_ok && failures == 0
 }
 
 static IN_GBUFFER_RANGE: AtomicBool = AtomicBool::new(false);
@@ -664,6 +824,18 @@ thread_local! {
     /// back. The D3D layer never sees the name, and the shader pointer is the only identity the
     /// draw-time paths have, so this is the one point where the two can be joined.
     static PATCH_PENDING_NAME: Cell<Option<String>> = const { Cell::new(None) };
+
+    /// Set by the `CreateVertexProgram` hook right before the engine creates the D3D shader from a
+    /// pinned-eye rewrite, so [`create_vertex_shader_detour`] tags it instead of recording it as
+    /// patched: its draws must keep their per-eye submission. Thread-local for the same reason as
+    /// [`PATCH_PENDING`].
+    static PIN_PENDING: Cell<bool> = const { Cell::new(false) };
+}
+
+/// Set (or clear) this thread's [`PIN_PENDING`] flag. Called by the `CreateVertexProgram` hook around
+/// the engine's shader creation.
+pub fn set_pin_pending(pending: bool) {
+    PIN_PENDING.with(|flag| flag.set(pending));
 }
 
 /// Set (or clear) this thread's [`PATCH_PENDING`] flag and the pending shader's engine name. Called
@@ -713,6 +885,11 @@ unsafe fn com_release(object: *mut c_void) {
 }
 /// Whether the currently-bound vertex shader is a patched one (updated on `VSSetShader`).
 static BOUND_VS_PATCHED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the vertex shader bound on the immediate context is one the single-pass rewrite patched.
+pub(crate) fn bound_vertex_shader_patched() -> bool {
+    BOUND_VS_PATCHED.load(Ordering::Relaxed)
+}
 /// The currently-bound `ID3D11VertexShader` pointer (updated on `VSSetShader`), so an exposed
 /// already-instanced draw can be attributed to a shader.
 static BOUND_VS: AtomicUsize = AtomicUsize::new(0);
@@ -725,6 +902,9 @@ static INSTANCED_RANGE_PATCHED: AtomicUsize = AtomicUsize::new(0);
 static INSTANCED_RANGE_OUT_PATCHED: AtomicUsize = AtomicUsize::new(0);
 static VIEWPORT_SPLIT: AtomicUsize = AtomicUsize::new(0);
 static VIEWPORT_DUP: AtomicUsize = AtomicUsize::new(0);
+/// Routed draws whose viewport slots already held what they wanted, so `ensure_collapse_viewport`
+/// bound nothing.
+static VIEWPORT_BINDS_SKIPPED: AtomicUsize = AtomicUsize::new(0);
 /// How often [`unify_viewport_slots`] had to put a split slot pair back to one region: the number of
 /// windows in which an out-of-range patched draw would otherwise have lost its odd-parity instances.
 static VIEWPORT_UNIFIED: AtomicUsize = AtomicUsize::new(0);
@@ -759,31 +939,24 @@ static CVS_REACQ_CB13: AtomicUsize = AtomicUsize::new(0);
 static CVS_REACQ_NOREFS: AtomicUsize = AtomicUsize::new(0);
 static CVS_REACQ_ERR: AtomicUsize = AtomicUsize::new(0);
 
-/// The last full (unsplit) viewport bound during a collapsed camera scene, recorded by
-/// [`rs_set_viewports_detour`] so [`ensure_collapse_viewport`] can derive the L/R eye halves at draw
-/// time. `None` until the scene's first viewport bind.
-///
-/// Deliberately *not* cleared at the end of the G-buffer range, unlike [`CURRENT_M_EYE`]: the
-/// post-draw UI overlay ([`collapse_ui_eye_override`]) reads it to place each eye's HUD quad, and that
-/// runs long after the range. Every consumer that must not see a stale value gates on
-/// [`in_gbuffer_range`] instead.
-static COLLAPSE_FULL_VIEWPORT: Mutex<Option<D3D11_VIEWPORT>> = Mutex::new(None);
+// The collapse's viewport records live in `viewport_record`. The scene's (the last scene-sized
+// bind, the full width the eye halves are cut from) is deliberately *not* cleared at the end of the
+// G-buffer range, unlike [`CURRENT_M_EYE`]: the post-draw UI overlay ([`collapse_ui_eye_override`])
+// reads it to place each eye's HUD quad, and that runs long after the range. Every consumer that must
+// not see a stale value gates on [`in_gbuffer_range`] instead.
+//
+// The engine's (its latest bind, whatever its size) exists alongside the scene's because several
+// passes redirect their draws to a reduced-resolution off-screen target -- the shared
+// quarter-resolution buffer the low-resolution clouds, the low-resolution particles, and the
+// volumetric spot-light cones all render into, and the downsampled depth buffer -- and a draw into a
+// `W x H/2` target handed a `2W x H` viewport is magnified 2x about the target's origin and cropped,
+// which is a 2x motion gain as well. It is always the live bind, so the halves derived from it are
+// the halves of whatever target is actually bound.
 
-/// The viewport the **engine** last bound during a collapsed camera scene, whatever its size, recorded
-/// by [`rs_set_viewports_detour`].
-///
-/// [`COLLAPSE_FULL_VIEWPORT`] deliberately records only *scene-sized* binds, because the eye halves
-/// were derived from it and following a half-resolution post target would have mis-split the scene.
-/// That is right for the scene notion and wrong for the split: several passes redirect their draws to
-/// a reduced-resolution off-screen target -- the shared quarter-resolution buffer the low-resolution
-/// clouds, the low-resolution particles, and the volumetric spot-light cones all render into, and the
-/// downsampled depth buffer -- and a draw into a `W x H/2` target handed a `2W x H` viewport is
-/// magnified 2x about the target's origin and cropped, which is a 2x motion gain as well.
-///
-/// So this record exists alongside rather than replacing: it is always the live bind, so it cannot go
-/// stale the way a single shared record would, and the halves derived from it are the halves of
-/// whatever target is actually bound.
-static CURRENT_ENGINE_VIEWPORT: Mutex<Option<D3D11_VIEWPORT>> = Mutex::new(None);
+pub(crate) fn patch_camera_sources(eye: usize) -> Option<(D3D11_VIEWPORT, usize)> {
+    let full = viewport_record::scene_viewport()?;
+    Some((eye_half_viewport(full, eye), CB13.lock().buffer_ptr()?))
+}
 /// The two per-eye reprojection matrices `M_eye` (`clip_eye = M_eye · clip_center`), published each
 /// view by [`compute_dual_eye_rows`]. The terrain-detail render-block intercept reads them to build a
 /// per-eye `cb1` on the CPU (the detail draw is GPU-indirect, so it cannot be instance-doubled).
@@ -799,3 +972,76 @@ static ERRORED: AtomicUsize = AtomicUsize::new(0);
 /// the terrain path is catching anything.
 static TERRAIN_HS_FORWARDED: AtomicUsize = AtomicUsize::new(0);
 static TERRAIN_DS_REPROJECTED: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn com_reclamation_fails_closed() {
+        assert!(allow_com_reclamation(false, true, 0));
+        assert!(!allow_com_reclamation(true, true, 0));
+        assert!(!allow_com_reclamation(false, false, 0));
+        assert!(!allow_com_reclamation(false, true, 1));
+        assert!(!allow_com_reclamation(true, false, 1));
+    }
+
+    const CAPTURE_VS: &[u8] = include_bytes!("../../shaders/capture_vs.dxbc");
+
+    fn only_nv_water(block: BlockIntercept) -> bool {
+        matches!(block, BlockIntercept::NvWater)
+    }
+
+    #[test]
+    fn waveworks_permutations_are_owned_when_the_intercept_is_on() {
+        for name in ["nvwaterbox", "nvwaterbox_tess"] {
+            assert!(baked_cb_vs_owned(Some(name), true, only_nv_water), "{name}");
+            assert!(!baked_cb_vs_owned(Some(name), true, |_| false), "{name}");
+        }
+    }
+
+    #[test]
+    fn global_view_projection_reads_are_left_to_the_remap() {
+        for name in ["nvwaterbox", "nvwaterbox_tess"] {
+            assert!(
+                !baked_cb_vs_owned(Some(name), false, only_nv_water),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_water_permutations_and_unnamed_shaders_are_not_owned() {
+        for name in [
+            "waterbox",
+            "waterboxsurface",
+            "waterhighend",
+            "watershader_lod0",
+        ] {
+            assert!(!baked_cb_vs_owned(Some(name), true, |_| true), "{name}");
+        }
+        assert!(!baked_cb_vs_owned(None, true, |_| true));
+    }
+
+    #[test]
+    fn baked_cb_block_owns_vs_agrees_with_the_intercept_flag_on_real_bytecode() {
+        for name in ["nvwaterbox", "nvwaterbox_tess"] {
+            assert_eq!(
+                baked_cb_block_owns_vs(Some(name), CAPTURE_VS),
+                block_intercept_enabled(BlockIntercept::NvWater),
+                "{name}"
+            );
+        }
+        assert!(!baked_cb_block_owns_vs(Some("waterbox"), CAPTURE_VS));
+        assert!(!baked_cb_block_owns_vs(None, CAPTURE_VS));
+    }
+
+    #[test]
+    fn malformed_bytecode_is_never_owned() {
+        assert!(!baked_cb_block_owns_vs(
+            Some("nvwaterbox"),
+            b"not a dxbc container"
+        ));
+        assert!(!baked_cb_block_owns_vs(Some("nvwaterbox_tess"), &[]));
+    }
+}

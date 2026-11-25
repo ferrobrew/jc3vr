@@ -1,12 +1,10 @@
-//! The Render tab: how the frame is produced — the core stereo widgets, FSR, and the stereo
-//! correctness/quality levers — plus the render-thread capture state that feeds the Previews tab
-//! and the VR blit.
+//! The Rendering page's stereo and foveation controls, the Experimental page's single-pass stereo,
+//! far field, and post-FX controls, plus render-thread capture state.
 //!
-//! The tab's body is assembled from one section module per concern; the capture state lives in
-//! [`capture`], independent of whether the tab is ever drawn.
+//! The feature bodies use one section module per concern. The capture state lives in [`capture`],
+//! independent of whether a feature is drawn.
 
 mod capture;
-mod corrections;
 mod far_field;
 mod passes;
 mod post_fx;
@@ -14,26 +12,35 @@ mod resolution;
 mod single_pass;
 mod stereo;
 
-use crate::config;
 pub use crate::ui::render::capture::{
     EGUI_DEBUG_RENDER_STATE, EguiDebugRenderState, POST_STAGE_DOF, POST_STAGE_MB,
-    capture_main_color, capture_post_stage, install, mark_previews_visible, previews_visible,
+    capture_main_color, capture_post_stage, eye_capture_fresh, install, mark_eye_capture,
+    mark_previews_visible, previews_visible,
+};
+use crate::{
+    config,
+    ui::{catalog::FeatureId, dispatch::FeatureBody},
 };
 
 /// Debug-UI only: swap the two eyes in the side-by-side stereo preview, so the pair can be fused
-/// cross-eyed (left image -> right eye) instead of parallel (left image -> left eye). Read by the
-/// F10 capture composite so the recording window fuses the same way as the preview.
+/// cross-eyed (left image -> right eye) instead of parallel (left image -> left eye).
 pub(crate) static STEREO_CROSS_EYED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(true);
 
-pub fn egui_debug_render(ui: &mut egui::Ui) {
-    let mut cfg = config::CONFIG.lock();
+pub(crate) fn controls(ui: &mut egui::Ui, id: FeatureId) {
+    let mut cfg = config::edit();
     let cfg = &mut *cfg;
+    match id {
+        FeatureId::Stereo => stereo::section(ui, cfg),
+        FeatureId::Foveation => resolution::section(ui, cfg),
+        FeatureId::SinglePass => single_pass::section(ui, cfg),
+        FeatureId::FarField => far_field::section(ui, cfg),
+        FeatureId::PostFx => post_fx::section(ui, cfg),
+        _ => {}
+    }
+}
 
-    stereo::section(ui, cfg);
-    far_field::section(ui, cfg);
-    corrections::section(ui, cfg);
-    single_pass::section(ui, cfg);
-    resolution::section(ui, cfg);
-    post_fx::section(ui, cfg);
+pub(crate) fn status(id: FeatureId) -> Option<FeatureBody> {
+    let body: FeatureBody = |ui, _| far_field::readout(ui);
+    (id == FeatureId::FarField).then_some(body)
 }

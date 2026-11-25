@@ -1,0 +1,18 @@
+# Template: fill testing/recordings/magazines_in_the_world.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "an ejected magazine picked up from the ground and seated"
+description = "Recorded right-handed on foot with a rifle drawn and its magazine part full (reload.md, the magazines checklist). Fire a few rounds, tap the reload button to eject, reach down with the left hand and take the magazine from the ground, and seat it in the rifle's well."
+recording = "../recordings/magazines_in_the_world.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+signal = "magazines.dropped"
+
+[[expect]]
+signal = "magazines.picked_up"
+
+[[expect]]
+name = "the magazine from the ground seats"
+signal = "magazines.seated"
+
+[[expect]]
+status = "MAGAZINES"

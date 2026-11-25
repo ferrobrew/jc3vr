@@ -1,0 +1,48 @@
+# Coverage: a meadow below a wooded hill, at 13 h in clear weather.
+# A fixed camera at the pose the static-motion midday config observed in run 260, with the draw census, for the draw accounting.
+name = "coverage-forest-census"
+warmup_frames = 30
+samples = 3
+interval_seconds = 2.0
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+
+[diagnostics]
+shader_identity = true
+draw_census = true
+
+[scene]
+position = [4635.404, 1563.6123, -3208.491]
+orientation = [-0.015881814, 0.020486008, -0.005912541, 0.9996464]
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [4620.3, 1563.5, -3213.5]
+yaw_deg = 0.0
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
+
+[[single_pass_variants]]
+name = "repeat"
+
+[[single_pass_variants]]
+name = "veg-off"
+diagnostics = true
+switches = { vegetation_once = false }

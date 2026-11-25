@@ -107,9 +107,11 @@ pub enum DxbcError {
     NoPerEyeReferences,
     /// The shader already declares `cb13`, the slot the stereo constants need.
     Cb13AlreadyDeclared,
-    /// The shader already declares an `SV_InstanceID` input; rewriting its consumers is not
-    /// supported yet.
+    /// The shader already declares an `SV_InstanceID` input, which the rewrite asked for cannot
+    /// take: it appends one of its own.
     InstanceIdAlreadyDeclared,
+    /// The shader declares no `SV_InstanceID` input, which the instanced reprojection halves.
+    NoInstanceId,
     /// A per-eye operand uses an index encoding the rewrite does not support (for instance a 64-bit
     /// or already-relative element index).
     UnsupportedOperandEncoding,
@@ -124,9 +126,70 @@ pub enum DxbcError {
     /// The terrain eye-lane rewrite found no free `TEXCOORD3.z` output lane to carry the eye index
     /// through the VS -> HS -> DS pipeline (the `TEXCOORD3` output is missing, or its `.z` is used).
     NoEyeLane,
+    /// The domain shader reads no offset view-projection row of its terrain constants (`cb1`), so
+    /// there are no camera rows to take from an eye's slot.
+    NoTerrainCameraRows,
+    /// The shader reads no row of the full view-projection (`cb0[0..3]`), so there is nothing to take
+    /// from an eye's slot.
+    NoFullViewProjection,
     /// The pixel shader carries no screen-space depth fetch built from a projective UV, so there is
     /// nothing for the decal depth-UV bias to separate; the caller should leave it untouched.
     NoDepthUvFetch,
+    NoResolveInputs,
+    NoLakeReflection,
+    NoLakeRefraction,
+    /// The pixel shader lays no screen-space overlay over the frame in a shape the overlay rewrite
+    /// recognises; the caller should leave it untouched.
+    NoScreenOverlay,
+    /// The pixel shader binds no planar water reflection, or forms its coordinate in a shape the
+    /// planar-reflection rewrite does not recognise; the caller should leave it untouched.
+    NoPlanarReflection,
+    /// The pixel shader is not the ambient-occlusion generation pass (it binds no packed linear depth
+    /// and normal buffer), or reconstructs and samples in a shape the ambient-occlusion rewrite does
+    /// not recognise; the caller should leave it untouched.
+    NoAmbientOcclusion,
+    /// The pixel shader is not the ambient-occlusion volume pass (it binds neither its depth textures
+    /// nor its screen-to-box matrix), or reads them in a shape the volume rewrite does not
+    /// recognise; the caller should leave it untouched.
+    NoAmbientOcclusionVolume,
+    /// The pixel shader is not a screen-space reflection ray march (it binds no linear depth, previous
+    /// scene, and reflection constants), or reads its view ray and constants in a shape the reflection
+    /// rewrite does not recognise; the caller should leave it untouched.
+    NoScreenSpaceReflection,
+    /// The pixel shader is not the screen-space reflection blur (it binds no reflection colour and
+    /// alpha), or reads them in a shape the blur rewrite does not recognise; the caller should leave
+    /// it untouched.
+    NoReflectionBlur,
+    /// The pixel shader is not one of the post chain's generic filters (it binds a texture under a
+    /// name the filters do not use, or binds none), or reads a texture in a shape the post-filter
+    /// rewrite does not recognise; the caller should leave it untouched.
+    NoPostFilter,
+    /// The pixel shader binds neither of the composite's bloom textures, or reads them in a shape the
+    /// composite-bloom rewrite does not recognise; the caller should leave it untouched.
+    NoCompositeBloom,
+    /// The pixel shader reads none of the camera rows of the fragment `GlobalConstants`, so there is
+    /// nothing for the eye-camera rewrite to localize; the caller should leave it untouched.
+    NoCameraPosition,
+    /// The pixel shader has no `SV_Position` input to select its eye by.
+    NoPixelPosition,
+    /// The pixel shader already declares the constant-buffer slot the eye-camera rewrite needs.
+    EyeCameraSlotTaken,
+    /// The pixel shader indexes `cb0` dynamically from a base that could reach a camera row.
+    DynamicCameraAccess,
+    /// The pixel shader builds no screen-door pattern from its pixel position (no `dp2` of the
+    /// `SV_Position` input's `.xy` with an immediate vector), so there is nothing for the screen-door
+    /// rewrite to localize; the caller should leave it untouched.
+    NoScreenDoor,
+    /// The pixel shader declares the eye-camera constant-buffer slot smaller than the screen-door
+    /// rewrite reads it, so the slot is not the eye-camera buffer.
+    ScreenDoorSlotTaken,
+    /// The pixel shader writes no motion vector in the engine's encoding (the current and previous
+    /// clip positions divided, mapped to UV, and subtracted), so there is nothing for the velocity
+    /// rewrite to localize; the caller should leave it untouched.
+    NoVelocity,
+    /// The pixel shader declares the eye-camera constant-buffer slot smaller than the velocity
+    /// rewrite reads it, so the slot is not the eye-camera buffer.
+    VelocitySlotTaken,
 }
 
 impl fmt::Display for DxbcError {
@@ -149,6 +212,7 @@ impl fmt::Display for DxbcError {
             DxbcError::InstanceIdAlreadyDeclared => {
                 "dxbc: the shader already declares an SV_InstanceID input"
             }
+            DxbcError::NoInstanceId => "dxbc: the shader declares no SV_InstanceID input",
             DxbcError::UnsupportedOperandEncoding => {
                 "dxbc: a per-eye operand uses an unsupported index encoding"
             }
@@ -160,6 +224,49 @@ impl fmt::Display for DxbcError {
                 "dxbc: reprojection does not support a conditional early return (retc)"
             }
             DxbcError::NoEyeLane => "dxbc: no free TEXCOORD3.z lane to carry the eye index",
+            DxbcError::NoFullViewProjection => "dxbc: the shader reads no full view-projection row",
+            DxbcError::NoTerrainCameraRows => {
+                "dxbc: the domain shader reads no terrain camera rows"
+            }
+            DxbcError::NoResolveInputs => "dxbc: unsupported deferred input sequence",
+            DxbcError::NoScreenOverlay => "dxbc: no recognised screen-space overlay lookup",
+            DxbcError::NoPlanarReflection => "dxbc: no recognised planar reflection coordinate",
+            DxbcError::NoAmbientOcclusion => {
+                "dxbc: no recognised ambient-occlusion generation pass"
+            }
+            DxbcError::NoAmbientOcclusionVolume => {
+                "dxbc: no recognised ambient-occlusion volume pass"
+            }
+            DxbcError::NoScreenSpaceReflection => {
+                "dxbc: no recognised screen-space reflection ray march"
+            }
+            DxbcError::NoReflectionBlur => "dxbc: no recognised screen-space reflection blur",
+            DxbcError::NoPostFilter => "dxbc: no recognised post-chain filter",
+            DxbcError::NoCompositeBloom => "dxbc: no recognised composite bloom lookup",
+            DxbcError::NoCameraPosition => "dxbc: the pixel shader reads no camera position row",
+            DxbcError::NoPixelPosition => "dxbc: the pixel shader has no SV_Position input",
+            DxbcError::EyeCameraSlotTaken => {
+                "dxbc: the pixel shader already declares the eye-camera constant buffer slot"
+            }
+            DxbcError::DynamicCameraAccess => {
+                "dxbc: a dynamically indexed cb0 read could reach a camera row"
+            }
+            DxbcError::NoScreenDoor => {
+                "dxbc: the pixel shader builds no screen-door pattern from its pixel position"
+            }
+            DxbcError::ScreenDoorSlotTaken => {
+                "dxbc: the pixel shader declares the eye-camera constant buffer slot too small for \
+                 the eye boundary"
+            }
+            DxbcError::NoVelocity => "dxbc: the pixel shader writes no motion vector",
+            DxbcError::VelocitySlotTaken => {
+                "dxbc: the pixel shader declares the eye-camera constant buffer slot too small for \
+                 the velocity rows"
+            }
+            DxbcError::NoLakeReflection => "dxbc: missing unique planar lake reflection sample",
+            DxbcError::NoLakeRefraction => {
+                "dxbc: missing unique lake refraction displacement scale"
+            }
             DxbcError::NoDepthUvFetch => "dxbc: no projective screen-space depth fetch to bias",
         };
         f.write_str(msg)

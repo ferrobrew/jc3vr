@@ -4,11 +4,82 @@
 /// physics body, trail effect, detonation timers, and the deferred launch that
 /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) sets up for the physics body to apply later.
 pub struct Explosive {
-    _field_0: [u8; 1344],
+    _field_0: [u8; 36],
+    /// The ammunition-pool slot. Awareness events pair it with
+    /// [`m_InstanceUniqueId`](crate::equipment::explosive::Explosive::m_InstanceUniqueId) to reject recycled instances.
+    pub m_PoolIndex: u32,
+    /// The current allocation's identity within the ammunition pool.
+    pub m_InstanceUniqueId: u32,
+    _field_2c: [u8; 1156],
+    /// The explosive's model instance, or null. [`UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender) pushes the
+    /// interpolated world matrix to it. The first
+    /// [`UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager) after the explosive spawns
+    /// creates it from [`m_ModelHash`](crate::equipment::explosive::Explosive::m_ModelHash)
+    /// ([`ModelInstanceManager::CreateInstanceFromHash`](crate::graphics_engine::model_instance::ModelInstanceManager::CreateInstanceFromHash),
+    /// at [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1), casting no shadow, added to the world),
+    /// clears its [`FLAG_CLIPONDISTANCE`](crate::graphics_engine::model_instance::ModelInstanceFlags::FLAG_CLIPONDISTANCE),
+    /// and shows it; the destructor releases it.
+    pub m_ModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
+    /// The explosive's physics body (the pointer of a shared pointer), or null until the first
+    /// [`UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager) after the explosive spawns
+    /// creates it, which is at the end of a tick, after the world's post-simulation queue.
+    /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) and [`SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform)
+    /// do nothing without it.
+    pub m_PfxInstance: *mut crate::physics::PfxRigidBody,
+    _field_4c0: [u8; 8],
+    /// The trail effect resource (the pointer of a shared pointer), or null when the explosive has
+    /// none. The owning weapon sets it up when it spawns the explosive, and
+    /// [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) plays it.
+    pub m_TrailEffect: *mut ::std::ffi::c_void,
+    _field_4d0: [u8; 8],
+    /// The trail sound event (the pointer of a shared pointer), or null when the explosive has
+    /// none. The owning weapon sets it up when it spawns the explosive, and
+    /// [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) plays it.
+    pub m_TrailSound: *mut ::std::ffi::c_void,
+    _field_4e0: [u8; 8],
+    /// The playing trail effect's instance data, or null while no trail effect plays.
+    /// [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) starts it, stopping a looping effect already
+    /// playing in it, and [`UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) moves it to
+    /// [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1) every tick the explosive has a physics body.
+    pub m_TrailEffectInstance: *mut ::std::ffi::c_void,
+    /// The playing trail sound's instance data, or null while no trail sound plays.
+    /// [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) starts it, stopping a sound already playing in
+    /// it, and [`UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) moves it with the explosive and drives its
+    /// fuse parameter
+    /// ([`m_TrailSoundDetonationParameterIndex`](crate::equipment::explosive::Explosive::m_TrailSoundDetonationParameterIndex)).
+    pub m_TrailSoundInstance: *mut ::std::ffi::c_void,
+    /// The index of the trail sound's `detonation_timer` parameter, or `0xFF` when the trail sound
+    /// has no such parameter. [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect) looks it up when it starts
+    /// the sound. Every [`UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) after that, while the sound plays
+    /// and [`m_StartDetonationTimer`](crate::equipment::explosive::Explosive::m_StartDetonationTimer) is not zero, sets the parameter
+    /// to how far the fuse has burnt: zero when [`m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer)
+    /// is at its start and one when it reaches zero. This is the engine's audible fuse.
+    pub m_TrailSoundDetonationParameterIndex: u8,
+    _field_4f9: [u8; 7],
+    /// The explosive's world matrix as of the previous simulation tick, which
+    /// [`UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender) interpolates from toward
+    /// [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1).
+    pub m_WorldMatrixT0: crate::types::math::Matrix4,
     /// The explosive's world matrix as of the current simulation tick. Its translation row is the
-    /// launch start position [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) solves from.
+    /// launch start position [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) solves from. The `CGameObject`
+    /// transform setter writes it, and the post-simulation update moves a physics body that is not
+    /// simulating to it.
     pub m_WorldMatrixT1: crate::types::math::Matrix4,
-    _field_580: [u8; 92],
+    /// Whether [`m_DeferredPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredPhysicsTransform) is pending: set by
+    /// [`SetPhysicsTransform`](crate::equipment::explosive::Explosive::SetPhysicsTransform) and applied to the physics body, then
+    /// cleared, by the next [`UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager), before a
+    /// pending launch.
+    pub m_DeferredSetPhysicsTransform: bool,
+    _field_581: [u8; 3],
+    /// The transform awaiting application to the physics body.
+    pub m_DeferredPhysicsTransform: crate::types::math::Matrix4,
+    /// The angular velocity, world axes, radians per second, that the pending launch
+    /// ([`m_DeferredPropelTowards`](crate::equipment::explosive::Explosive::m_DeferredPropelTowards)) gives the physics body. The
+    /// launch's application in [`UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager) sets
+    /// it just before [`m_DeferredInitialVelocity`](crate::equipment::explosive::Explosive::m_DeferredInitialVelocity); nothing in
+    /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) writes it.
+    pub m_InitialAngularVelocity: crate::types::math::Vector3,
+    _field_5d0: [u8; 12],
     /// The velocity of the thrower when the explosive was launched, stored by
     /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward).
     pub m_RelativeVelocity: crate::types::math::Vector3,
@@ -21,17 +92,86 @@ pub struct Explosive {
     /// The solved launch velocity awaiting application to the physics body, written by
     /// [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) from the virtual `VelocityToHitTarget`.
     pub m_DeferredInitialVelocity: crate::types::math::Vector3,
-    _field_5f8: [u8; 12],
+    _field_5f8: [u8; 4],
+    /// The compiled-name hash of the explosive's model, from which
+    /// [`m_ModelInstance`](crate::equipment::explosive::Explosive::m_ModelInstance) is created; no instance is created unless the
+    /// model is in the model manager's cache. Zero for an explosive without a model.
+    pub m_ModelHash: u32,
+    _field_600: [u8; 4],
     /// Seconds since the explosive was thrown; [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) resets it.
     pub m_TimeSinceThrow: f32,
+    /// Seconds until the explosive detonates. The constructor sets it to the grenade weapon's
+    /// detonation time; [`UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) counts it down by the tick delta
+    /// while the virtual `ShouldTickDetonationTimer` holds (a hand grenade's does from the moment it
+    /// spawns, primed or thrown) and calls the virtual `Detonate` once it is at or below zero, a
+    /// dispatch that does not consult that virtual again.
+    pub m_DetonationTimer: f32,
+    /// The detonation time [`m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) started from.
+    pub m_StartDetonationTimer: f32,
 }
 fn _Explosive_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x608], Explosive>([0u8; 0x608]);
+        ::std::mem::transmute::<[u8; 0x610], Explosive>([0u8; 0x610]);
     }
     unreachable!()
 }
 impl Explosive {
+    pub const SetupEffects_ADDRESS: usize = 0x1408ED7B0;
+    /// Sets the explosive's trail resources by shared-pointer assignment: `trail_effect` into
+    /// [`m_TrailEffect`](crate::equipment::explosive::Explosive::m_TrailEffect) and `trail_sound` into
+    /// [`m_TrailSound`](crate::equipment::explosive::Explosive::m_TrailSound). It plays nothing; [`PlayTrailEffect`](crate::equipment::explosive::Explosive::PlayTrailEffect)
+    /// does. The weapons that spawn an explosive call it with their own trail resources
+    /// ([`ThrownGrenadeWeapon::m_TrailEffectPlayer`](crate::equipment::weapon::ThrownGrenadeWeapon::m_TrailEffectPlayer)
+    /// and its siblings): the hand grenade's launch, the planted explosive's prime, and the balloon
+    /// and Namaste launches. The hand grenade's prime does not, so a primed grenade has no trail
+    /// resources until its launch.
+    pub unsafe fn SetupEffects(
+        &mut self,
+        trail_effect: *const crate::types::shared_ptr::SharedPtr<::std::ffi::c_void>,
+        trail_sound: *const crate::types::shared_ptr::SharedPtr<::std::ffi::c_void>,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                trail_effect: *const crate::types::shared_ptr::SharedPtr<
+                    ::std::ffi::c_void,
+                >,
+                trail_sound: *const crate::types::shared_ptr::SharedPtr<
+                    ::std::ffi::c_void,
+                >,
+            ) = ::std::mem::transmute(Self::SetupEffects_ADDRESS);
+            f(self as *mut Self as _, trail_effect, trail_sound)
+        }
+    }
+    pub const RemoveSelf_ADDRESS: usize = 0x1408F2E50;
+    /// Marks the explosive removed and erases it from the ammunition manager's active objects.
+    /// This operation does not return ammunition to an inventory.
+    pub unsafe fn RemoveSelf(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::RemoveSelf_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SetPhysicsTransform_ADDRESS: usize = 0x1408C8180;
+    /// Queues `transform` for the physics body: when the explosive has a
+    /// [`m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance), copies it to
+    /// [`m_DeferredPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredPhysicsTransform) and raises
+    /// [`m_DeferredSetPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredSetPhysicsTransform). A later call before
+    /// the body applies it replaces it.
+    pub unsafe fn SetPhysicsTransform(
+        &mut self,
+        transform: *const crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                transform: *const crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::SetPhysicsTransform_ADDRESS);
+            f(self as *mut Self as _, transform)
+        }
+    }
     pub const PropelToward_ADDRESS: usize = 0x1408E4D50;
     /// Launches the explosive toward `target_position`: when it has a physics body, stores
     /// `relative_velocity` in [`m_RelativeVelocity`](crate::equipment::explosive::Explosive::m_RelativeVelocity), raises
@@ -102,6 +242,103 @@ impl Explosive {
             )
         }
     }
+    pub const UpdateRender_ADDRESS: usize = 0x1408C81B0;
+    /// The render-phase `CGameObject::UpdateRender` override: interpolates
+    /// [`m_WorldMatrixT0`](crate::equipment::explosive::Explosive::m_WorldMatrixT0) toward [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1)
+    /// by the render context's interpolation factor (`CTransform::Lerp`) and pushes the result to
+    /// [`m_ModelInstance`](crate::equipment::explosive::Explosive::m_ModelInstance) when there is one. `game_object` is the
+    /// explosive's `CGameObject` subobject
+    /// ([`GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)), not the start of the
+    /// explosive. [`PlantedExplosive::UpdateRender`](crate::equipment::explosive::PlantedExplosive::UpdateRender) calls it before drawing its in-hand model.
+    pub unsafe fn UpdateRender(
+        game_object: *mut ::std::ffi::c_void,
+        context: *const crate::game::GameObjectRenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *const crate::game::GameObjectRenderContext,
+            ) = ::std::mem::transmute(Self::UpdateRender_ADDRESS);
+            f(game_object, context)
+        }
+    }
+    pub const PlayTrailEffect_ADDRESS: usize = 0x1408D6E20;
+    /// Starts the explosive's trail: plays the trail effect ([`m_TrailEffect`](crate::equipment::explosive::Explosive::m_TrailEffect))
+    /// at [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1) into
+    /// [`m_TrailEffectInstance`](crate::equipment::explosive::Explosive::m_TrailEffectInstance), and the trail sound
+    /// ([`m_TrailSound`](crate::equipment::explosive::Explosive::m_TrailSound)) there into
+    /// [`m_TrailSoundInstance`](crate::equipment::explosive::Explosive::m_TrailSoundInstance), recording the sound's
+    /// `detonation_timer` parameter in
+    /// [`m_TrailSoundDetonationParameterIndex`](crate::equipment::explosive::Explosive::m_TrailSoundDetonationParameterIndex). Each
+    /// half is skipped when its resource is null. A call while a trail plays restarts it: the new
+    /// effect replaces the instance (a looping one is stopped softly) and the new sound stops the
+    /// old one. [`PropelToward`](crate::equipment::explosive::Explosive::PropelToward) calls it, so a thrown explosive's trail and
+    /// its audible fuse start at the throw. It plays effects, so it runs on the game thread outside
+    /// the effect system's simulation and render updates.
+    pub unsafe fn PlayTrailEffect(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::PlayTrailEffect_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const UpdatePostSim_ADDRESS: usize = 0x14091DB90;
+    /// The explosive's post-simulation update (its override of the `CGameObject` virtual). It is
+    /// where the fuse runs: it counts [`m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) down by the
+    /// context's tick delta while the virtual `ShouldTickDetonationTimer` returns true, and calls the
+    /// virtual `Detonate` once the timer is at or below zero, without consulting that virtual again.
+    /// Between the two it sets the trail sound's fuse parameter from the timers
+    /// ([`m_TrailSoundDetonationParameterIndex`](crate::equipment::explosive::Explosive::m_TrailSoundDetonationParameterIndex)).
+    /// The rest of the update places a body attached to a parent object at the parent's transform,
+    /// moves the trail effect and the trail sound to [`m_WorldMatrixT1`](crate::equipment::explosive::Explosive::m_WorldMatrixT1),
+    /// re-enables collisions that were disabled against the thrower once the explosive has been
+    /// loose for a moment, and drops the explosive from the update when it has no physics body. `game_object` is the explosive's `CGameObject` subobject
+    /// ([`GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)), not the start of the explosive.
+    pub unsafe fn UpdatePostSim(
+        game_object: *mut ::std::ffi::c_void,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdatePostSim_ADDRESS);
+            f(game_object, context)
+        }
+    }
+    pub const UpdatePostSimFromManager_ADDRESS: usize = 0x140936A90;
+    /// The explosive's update from the ammunition manager's post-simulation pass
+    /// ([`AmmunitionManagerUpdatePostSim`](crate::equipment::explosive::AmmunitionManagerUpdatePostSim)), its override of the `CAmmunition` virtual. It creates
+    /// [`m_ModelInstance`](crate::equipment::explosive::Explosive::m_ModelInstance) when there is none, creates
+    /// [`m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance) when the body is still pending and returns false
+    /// when that fails, applies a pending
+    /// [`m_DeferredPhysicsTransform`](crate::equipment::explosive::Explosive::m_DeferredPhysicsTransform) and then a pending launch
+    /// ([`m_DeferredPropelTowards`](crate::equipment::explosive::Explosive::m_DeferredPropelTowards)), and returns true. The body it
+    /// creates gets a high angular damping, so a spin dies out within a fraction of a second. The
+    /// launch sets the body's angular velocity from
+    /// [`m_InitialAngularVelocity`](crate::equipment::explosive::Explosive::m_InitialAngularVelocity), puts the body into the
+    /// simulation, sets its linear velocity from
+    /// [`m_DeferredInitialVelocity`](crate::equipment::explosive::Explosive::m_DeferredInitialVelocity), and disables collision
+    /// between it and a character thrower's body; the launch is applied at the end of the tick,
+    /// so the body first moves in the next tick's physics step.
+    pub unsafe fn UpdatePostSimFromManager(&mut self, dt: f32) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) -> bool = ::std::mem::transmute(
+                Self::UpdatePostSimFromManager_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
+}
+impl Explosive {
+    /// The offset of the embedded `CGameObject` subobject. Weak references to the explosive (such
+    /// as [`ThrownGrenadeWeapon::m_PrimedGrenade`](crate::equipment::weapon::ThrownGrenadeWeapon::m_PrimedGrenade))
+    /// point there rather than at the start of the explosive.
+    pub const GAME_OBJECT_BASE_OFFSET: u64 = 112;
+    /// The offset of the embedded `CPfxBodyListener` subobject, the `this` of the explosive's
+    /// collision handler ([`Grenade::OnCollision`](crate::equipment::explosive::Grenade::OnCollision)).
+    pub const PFX_BODY_LISTENER_OFFSET: u64 = 104;
 }
 impl std::convert::AsRef<Explosive> for Explosive {
     fn as_ref(&self) -> &Explosive {
@@ -118,13 +355,22 @@ impl std::convert::AsMut<Explosive> for Explosive {
 /// targets, extra trail effects, and the landing position.
 pub struct Grenade {
     _field_0: [u8; 1568],
-    /// Whether the grenade applies the thrower's grenade upgrades (homing and similar).
+    /// Whether the grenade applies the thrower's grenade upgrades. The collision handler gates
+    /// the contact, hostile-contact, and character-or-vehicle contact upgrades on this field.
+    /// Those upgrades can zero [`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) without consulting
+    /// [`m_ShouldTickDetonationTimer`](crate::equipment::explosive::Grenade::m_ShouldTickDetonationTimer).
     pub m_CanUseUpgrades: bool,
     _field_621: [u8; 255],
     /// The target position the grenade was thrown at, recorded by
     /// [`PropelToward`](crate::equipment::explosive::Grenade::PropelToward).
     pub m_InitialLandingPos: crate::types::math::Vector3,
-    _field_72c: [u8; 4],
+    _field_72c: [u8; 2],
+    /// What the grenade's override of the virtual `ShouldTickDetonationTimer` returns, so whether
+    /// its post-simulation update counts [`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) down. The constructor
+    /// sets it, so a hand grenade's fuse runs from the moment it spawns, primed in the hand or
+    /// thrown; the beacon weapon clears it on the beacon it primes, whose timer then never runs.
+    pub m_ShouldTickDetonationTimer: bool,
+    _field_72f: [u8; 1],
 }
 fn _Grenade_size_check() {
     unsafe {
@@ -133,6 +379,57 @@ fn _Grenade_size_check() {
     unreachable!()
 }
 impl Grenade {
+    pub const TYPE_ID_ADDRESS: usize = 0x14060FD60;
+    /// `CGrenade::TYPE_ID`: the run-time type id of `CGrenade`, for
+    /// [`GameObject::IsType`](crate::game::GameObject::IsType). Registers it on first use. The thrown
+    /// grenade weapon checks its primed object against it before treating it as a grenade.
+    pub unsafe fn TYPE_ID() -> *const u32 {
+        unsafe {
+            let f: unsafe extern "system" fn() -> *const u32 = ::std::mem::transmute(
+                Self::TYPE_ID_ADDRESS,
+            );
+            f()
+        }
+    }
+    pub const OnCollision_ADDRESS: usize = 0x1409374B0;
+    /// The grenade's collision handler (`CGrenade::OnCollision`, its override of the
+    /// `CPfxBodyListener` virtual). It reads the profile's contact upgrades, gated on
+    /// [`m_CanUseUpgrades`](crate::equipment::explosive::Grenade::m_CanUseUpgrades) and on a flag of the grenade's ammunition
+    /// entry, as every upgrade check of the grenade is: explode on contact, explode on hostile
+    /// contact, and explode on characters and vehicles only. For a contact with an object it
+    /// classifies the object by its physics instance's type and sets
+    /// [`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) to zero when the enabled upgrade accepts it; a contact with
+    /// the static world ([`Collision::m_GB`](crate::physics::Collision::m_GB) null) zeroes the timer only under explode on contact
+    /// alone. The zeroed timer makes the next [`Explosive::UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) detonate the grenade.
+    /// The handler also plays the impact effects and the first-bounce sound, counts bounces,
+    /// redirects the first bounce's velocity under the upgrades, and records the contact normal.
+    /// `listener` is the grenade's `CPfxBodyListener` subobject
+    /// ([`Explosive::PFX_BODY_LISTENER_OFFSET`](crate::equipment::explosive::Explosive::PFX_BODY_LISTENER_OFFSET)), not the start of the grenade.
+    pub unsafe fn OnCollision(
+        listener: *mut ::std::ffi::c_void,
+        collision: *const crate::physics::Collision,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                listener: *mut ::std::ffi::c_void,
+                collision: *const crate::physics::Collision,
+            ) = ::std::mem::transmute(Self::OnCollision_ADDRESS);
+            f(listener, collision)
+        }
+    }
+    pub const Detonate_ADDRESS: usize = 0x14091F560;
+    /// The grenade's override of the virtual `Detonate`: runs the explosive's detonation (the
+    /// blast and the explosive's removal), then tells a thrown grenade weapon that owns the grenade
+    /// that the grenade is gone. [`Explosive::UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim) calls the virtual once
+    /// [`Explosive::m_DetonationTimer`](crate::equipment::explosive::Explosive::m_DetonationTimer) is at or below zero; `dt` is the tick's delta.
+    pub unsafe fn Detonate(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::Detonate_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
     pub const PropelToward_ADDRESS: usize = 0x14091F5C0;
     /// The [`Explosive::PropelToward`](crate::equipment::explosive::Explosive::PropelToward) override: calls it, records `target_position` in
     /// [`m_InitialLandingPos`](crate::equipment::explosive::Grenade::m_InitialLandingPos), plays the extra trail effects, and, with
@@ -196,6 +493,31 @@ impl Grenade {
             )
         }
     }
+    pub const UpdatePostSim_ADDRESS: usize = 0x14091F890;
+    /// The grenade's post-simulation update (its override of the `CGameObject` virtual): steps the
+    /// homing and smart-fuse upgrades, runs [`Explosive::UpdatePostSim`](crate::equipment::explosive::Explosive::UpdatePostSim), then reads the physics
+    /// body's velocity for the trail sounds without checking that the body exists. The base update
+    /// only drops a grenade without a body from the update queue, so a grenade whose
+    /// post-simulation update runs before its first
+    /// [`Explosive::UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager) faults here. That is a grenade spawned before the
+    /// update queue's commit at the top of the world's pre-simulation update
+    /// ([`GameWorld::UpdatePreSimImpl`](crate::game_world::GameWorld::UpdatePreSimImpl)), whose
+    /// registration that commit makes live in the same tick; one spawned from inside the world's
+    /// update, as the grenade weapon's own priming is, is first run in the next tick, after the
+    /// ammunition manager's pass has made its body. `game_object` is the grenade's `CGameObject` subobject
+    /// ([`Explosive::GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)), not the start of the grenade.
+    pub unsafe fn UpdatePostSim(
+        game_object: *mut ::std::ffi::c_void,
+        context: *mut crate::game::GameObjectUpdateContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *mut crate::game::GameObjectUpdateContext,
+            ) = ::std::mem::transmute(Self::UpdatePostSim_ADDRESS);
+            f(game_object, context)
+        }
+    }
 }
 impl std::convert::AsRef<Grenade> for Grenade {
     fn as_ref(&self) -> &Grenade {
@@ -205,5 +527,187 @@ impl std::convert::AsRef<Grenade> for Grenade {
 impl std::convert::AsMut<Grenade> for Grenade {
     fn as_mut(&mut self) -> &mut Grenade {
         self
+    }
+}
+#[repr(C, align(8))]
+/// A C4 charge (`CPlantedExplosive`, a [`Explosive`](crate::equipment::explosive::Explosive)), spawned and owned by the
+/// [`PlantedExplosiveWeapon`](crate::equipment::weapon::PlantedExplosiveWeapon). It has two models: the
+/// in-hand model, shown while the charge is primed and placed at
+/// [`m_InactiveModelWorldMatrixT1`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT1), and the live model at
+/// the explosive's own transform, which [`Activate`](crate::equipment::explosive::PlantedExplosive::Activate) shows in its place.
+///
+/// The charge keeps the base explosive's collision handler (the grenade overrides it): on a
+/// collision it moves the charge to the contact point, oriented by the
+/// contact normal, and attaches itself to the object it hit (or plays its stick effect against the
+/// world), so a charge that is dropped
+/// ([`DropExplosive`](crate::equipment::explosive::PlantedExplosive::DropExplosive)) sticks where it lands.
+pub struct PlantedExplosive {
+    _field_0: [u8; 1572],
+    /// The compiled-name hash of the in-hand model, from which
+    /// [`m_InactiveModelInstance`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelInstance) is created.
+    pub m_InactiveModelHash: u32,
+    /// The in-hand model's world matrix as of the previous simulation tick, which
+    /// [`UpdateRender`](crate::equipment::explosive::PlantedExplosive::UpdateRender) interpolates from toward
+    /// [`m_InactiveModelWorldMatrixT1`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT1).
+    pub m_InactiveModelWorldMatrixT0: crate::types::math::Matrix4,
+    /// The in-hand model's world matrix, written by
+    /// [`SetInactiveModelMatrix`](crate::equipment::explosive::PlantedExplosive::SetInactiveModelMatrix). The pre-simulation update copies
+    /// it to the previous frame's matrix, and the render update draws the in-hand model between
+    /// the two.
+    pub m_InactiveModelWorldMatrixT1: crate::types::math::Matrix4,
+    /// The in-hand model's instance, or null. The charge's `UpdatePostSimFromManager` creates it
+    /// from [`m_InactiveModelHash`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelHash) in the same update that creates
+    /// the live model's [`Explosive::m_ModelInstance`](crate::equipment::explosive::Explosive::m_ModelInstance), hiding the live one and showing this one
+    /// with [`FLAG_CLIPONDISTANCE`](crate::graphics_engine::model_instance::ModelInstanceFlags::FLAG_CLIPONDISTANCE)
+    /// cleared.
+    pub m_InactiveModelInstance: *mut crate::graphics_engine::model_instance::ModelInstance,
+    _field_6b0: [u8; 4],
+    /// Whether the charge is live, set by [`Activate`](crate::equipment::explosive::PlantedExplosive::Activate).
+    pub m_ExplosiveIsPlanted: bool,
+    _field_6b5: [u8; 3],
+}
+fn _PlantedExplosive_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x6B8], PlantedExplosive>([0u8; 0x6B8]);
+    }
+    unreachable!()
+}
+impl PlantedExplosive {
+    pub const Activate_ADDRESS: usize = 0x140922BE0;
+    /// Makes the charge live: sets [`m_ExplosiveIsPlanted`](crate::equipment::explosive::PlantedExplosive::m_ExplosiveIsPlanted), plays the
+    /// stick effect, shows the live model, and hides the in-hand model.
+    pub unsafe fn Activate(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::Activate_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const DropExplosive_ADDRESS: usize = 0x140922CD0;
+    /// Drops the charge into the simulation: makes its physics body dynamic in the world, disables
+    /// collision between it and the thrower's character body, and, under a parachute, moves the body
+    /// into the thrower's collision group. The body must exist
+    /// ([`Explosive::m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance)).
+    pub unsafe fn DropExplosive(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::DropExplosive_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
+    pub const SetVelocity_ADDRESS: usize = 0x1408C8870;
+    /// Sets the physics body's linear velocity, world axes, metres per second. The body must exist
+    /// ([`Explosive::m_PfxInstance`](crate::equipment::explosive::Explosive::m_PfxInstance)); the call dereferences it unchecked. The velocity is a
+    /// by-value `CVector3f`, which the calling convention passes by address.
+    pub unsafe fn SetVelocity(&mut self, velocity: *const crate::types::math::Vector3) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                velocity: *const crate::types::math::Vector3,
+            ) = ::std::mem::transmute(Self::SetVelocity_ADDRESS);
+            f(self as *mut Self as _, velocity)
+        }
+    }
+    pub const UpdateRender_ADDRESS: usize = 0x1408C8920;
+    /// The render-phase `CGameObject::UpdateRender` override: runs [`Explosive::UpdateRender`](crate::equipment::explosive::Explosive::UpdateRender)
+    /// for the live model, then interpolates
+    /// [`m_InactiveModelWorldMatrixT0`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT0) toward
+    /// [`m_InactiveModelWorldMatrixT1`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT1) by the render
+    /// context's interpolation factor and pushes the result to
+    /// [`m_InactiveModelInstance`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelInstance) when there is one.
+    /// `game_object` is the charge's `CGameObject` subobject
+    /// ([`Explosive::GAME_OBJECT_BASE_OFFSET`](crate::equipment::explosive::Explosive::GAME_OBJECT_BASE_OFFSET)), not the start of the charge.
+    pub unsafe fn UpdateRender(
+        game_object: *mut ::std::ffi::c_void,
+        context: *const crate::game::GameObjectRenderContext,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                game_object: *mut ::std::ffi::c_void,
+                context: *const crate::game::GameObjectRenderContext,
+            ) = ::std::mem::transmute(Self::UpdateRender_ADDRESS);
+            f(game_object, context)
+        }
+    }
+    pub const SetInactiveModelMatrix_ADDRESS: usize = 0x1408BCC40;
+    /// Copies `world_matrix` to [`m_InactiveModelWorldMatrixT1`](crate::equipment::explosive::PlantedExplosive::m_InactiveModelWorldMatrixT1).
+    pub unsafe fn SetInactiveModelMatrix(
+        &mut self,
+        world_matrix: *const crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                world_matrix: *const crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::SetInactiveModelMatrix_ADDRESS);
+            f(self as *mut Self as _, world_matrix)
+        }
+    }
+}
+impl std::convert::AsRef<PlantedExplosive> for PlantedExplosive {
+    fn as_ref(&self) -> &PlantedExplosive {
+        self
+    }
+}
+impl std::convert::AsMut<PlantedExplosive> for PlantedExplosive {
+    fn as_mut(&mut self) -> &mut PlantedExplosive {
+        self
+    }
+}
+pub const AllocateGrenade_ADDRESS: usize = 0x1409630C0;
+/// Reserves a grenade slot under the ammunition manager's critical section. When no slot remains,
+/// `reclaim` permits `FreePoolSoPlayerCanFire` to erase an existing entry before retrying.
+/// With `reclaim` false, exhaustion returns null without removing another object.
+pub unsafe fn AllocateGrenade(
+    manager: *mut ::std::ffi::c_void,
+    allocation_type: u32,
+    position: *const crate::types::math::Vector3,
+    reclaim: bool,
+) -> *mut ::std::ffi::c_void {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            manager: *mut ::std::ffi::c_void,
+            allocation_type: u32,
+            position: *const crate::types::math::Vector3,
+            reclaim: bool,
+        ) -> *mut ::std::ffi::c_void = ::std::mem::transmute(AllocateGrenade_ADDRESS);
+        f(manager, allocation_type, position, reclaim)
+    }
+}
+pub const AmmunitionManagerUpdatePostSim_ADDRESS: usize = 0x1408F28F0;
+/// `CAmmunitionManager::UpdatePostSim`: unless the update context is paused, runs every pooled
+/// object's `UpdatePostSimFromManager` (an explosive's is
+/// [`Explosive::UpdatePostSimFromManager`](crate::equipment::explosive::Explosive::UpdatePostSimFromManager)) and erases the objects whose call returns false, then
+/// erases the objects queued for removal. Pooled objects are reached through the manager's own
+/// pool, not the world update queue, so an object takes part from its allocation on.
+/// [`GameStateRun::Update`](crate::game::GameStateRun::Update) calls it last in the tick, after the
+/// game world's post-simulation queue.
+pub unsafe fn AmmunitionManagerUpdatePostSim(
+    manager: *mut ::std::ffi::c_void,
+    update_contexts: *const crate::game::UpdateContexts,
+) {
+    unsafe {
+        let f: unsafe extern "system" fn(
+            manager: *mut ::std::ffi::c_void,
+            update_contexts: *const crate::game::UpdateContexts,
+        ) = ::std::mem::transmute(AmmunitionManagerUpdatePostSim_ADDRESS);
+        f(manager, update_contexts)
+    }
+}
+pub const AmmunitionManagerHandleDeferredQueue_ADDRESS: usize = 0x14090BDC0;
+/// `CAmmunitionManager::HandleDeferredQueue`: runs, in order, the calls queued on the manager's
+/// deferred render-update list (`std::function<void ()>` entries that the bullets, which update on
+/// worker threads, queue for main-thread work such as their window damage,
+/// [`Bullet::OnBulletHitGlass`](crate::equipment::weapon::Bullet::OnBulletHitGlass)), then empties the
+/// list. `CAmmunitionManager::UpdateRender` calls it first, on the main thread in the game's render
+/// update, and the loading state's update calls it too.
+pub unsafe fn AmmunitionManagerHandleDeferredQueue(manager: *mut ::std::ffi::c_void) {
+    unsafe {
+        let f: unsafe extern "system" fn(manager: *mut ::std::ffi::c_void) = ::std::mem::transmute(
+            AmmunitionManagerHandleDeferredQueue_ADDRESS,
+        );
+        f(manager)
     }
 }

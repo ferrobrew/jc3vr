@@ -1,0 +1,644 @@
+//! Copied observations of the latest inventory-gun release attempt.
+//!
+//! Native identifiers are correlation values only. No reader dereferences them, and no record
+//! retains a weapon reference or a native body. Cached gun motion has no known producer timestamp.
+//!
+//! Each attempt is also a tracking-recording event ([`ReleaseRecord::event`]) while a recording or
+//! the lookback collects.
+
+use std::time::Duration;
+
+use body_rig::rotation::{angular_velocity, shortest};
+use glam::{Quat, Vec3};
+use jc3gi::character::inventory::WeaponSlot;
+use tracking_format::event::{GunRelease, ReleaseController, ReleaseDrop, WorldMotion};
+
+use crate::{
+    controllers::{
+        clock::TimeScale,
+        cockpit::CockpitTransform,
+        diagnostics::Thrown,
+        frame::{self, ControllerFrame, Hand},
+        motion::{self, MotionSample, ReleaseEstimate},
+        physical_hands::BodyError,
+        weapons::hold::equip::DockRefusal,
+    },
+    recorder::tracking::format::{debug_label, hand_to_file},
+};
+
+/// The cockpit-to-world transform sampled on an input tick, without controller translation.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct ReleaseFrame {
+    pub origin: Vec3,
+    pub rotation: Quat,
+    pub scale: f32,
+    pub teleport_epoch: u64,
+    pub recenters: u32,
+}
+
+/// A fresh rig transform and its world-space motion, excluding hand motion.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct RigMotion {
+    pub frame: ReleaseFrame,
+    pub motion: WorldMotion,
+}
+
+/// The bounded, per-input-tick producer of inherited movement for gun releases.
+#[derive(Debug, Copy, Clone, Default)]
+pub(crate) struct ReleaseTransport {
+    previous: Option<ReleaseFrame>,
+    history_after_s: Option<f64>,
+}
+
+impl ReleaseTransport {
+    pub(crate) const fn new() -> Self {
+        Self {
+            previous: None,
+            history_after_s: None,
+        }
+    }
+
+    /// Samples at or before the latest coordinate change cannot feed a release or a difference.
+    pub(crate) fn history_after_s(&self) -> Option<f64> {
+        self.history_after_s
+    }
+
+    pub(crate) fn update(
+        &mut self,
+        frame: Option<ReleaseFrame>,
+        dt: f32,
+        time_s: Option<f64>,
+    ) -> Option<RigMotion> {
+        let previous = self.previous;
+        self.previous = frame.filter(|frame| frame.valid());
+        let pair = self.previous.zip(previous);
+        let Some((current, previous)) = pair else {
+            self.cut_history(time_s);
+            return None;
+        };
+        if !(0.001..=MAX_RELEASE_AGE_S).contains(&dt)
+            || current.teleport_epoch != previous.teleport_epoch
+            || current.recenters != previous.recenters
+            || (current.scale - previous.scale).abs() > 1e-4
+            || current.origin.distance(previous.origin) > 5.0
+        {
+            self.cut_history(time_s);
+            return None;
+        }
+        let angle = shortest(current.rotation * previous.rotation.inverse()).to_scaled_axis();
+        if !angle.is_finite() || angle.length() > std::f32::consts::FRAC_PI_4 {
+            self.cut_history(time_s);
+            return None;
+        }
+        if self.history_after_s == Some(f64::INFINITY) {
+            self.cut_history(time_s);
+        }
+        Some(RigMotion {
+            frame: current,
+            motion: WorldMotion {
+                linear: (current.origin - previous.origin) / dt,
+                angular: angle / dt,
+            },
+        })
+    }
+
+    fn cut_history(&mut self, time_s: Option<f64>) {
+        self.history_after_s = Some(
+            time_s
+                .filter(|time| time.is_finite())
+                .unwrap_or(f64::INFINITY),
+        );
+    }
+}
+
+impl ReleaseFrame {
+    /// Recover the transform used by hand composition without adding HMD translation twice: the
+    /// origin is where the cockpit frame's origin lands with the head at `head_world`.
+    pub(crate) fn with_composed_head(mut self, head_world: Vec3, head_cockpit: Vec3) -> Self {
+        self.origin = CockpitTransform {
+            head_world,
+            head_cockpit,
+            body: self.rotation,
+            world_scale: self.scale,
+        }
+        .point_to_world(Vec3::ZERO);
+        self
+    }
+
+    fn valid(self) -> bool {
+        self.origin.is_finite()
+            && self.rotation.is_finite()
+            && (self.rotation.length_squared() - 1.0).abs() < 1e-3
+            && self.scale.is_finite()
+            && self.scale > 0.0
+    }
+}
+
+/// The copied release estimate used by the native drop adapter, captured before disarm, and by
+/// every other release of a held item.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct ReleaseMotion {
+    /// Per game second: the world's.
+    pub world: WorldMotion,
+    /// The rig's own part of [`world`](Self::world): the player's movement at the released point,
+    /// without the tracked hand's.
+    pub inherited: WorldMotion,
+    pub source: SampleSource,
+    pub history_age_s: Option<f32>,
+    /// The game's time scale the hand's part of [`world`](Self::world) was converted at.
+    pub time_scale: TimeScale,
+}
+
+impl ReleaseMotion {
+    pub(crate) const REST: Self = Self {
+        world: WorldMotion::ZERO,
+        inherited: WorldMotion::ZERO,
+        source: SampleSource::UnavailableAtRelease,
+        history_age_s: None,
+        time_scale: TimeScale::REAL,
+    };
+
+    /// This release in a world running at `time_scale`. The hand's part, measured per real second
+    /// from the controller's display times, becomes the same motion per game second, `1 /
+    /// time_scale` as fast in the world's units: under slow motion the item leaves the hand as fast
+    /// as the hand moved, carrying on from the hold, which kept it with the hand in real time,
+    /// instead of slowing at the release. The player's own movement through the rig is already
+    /// per game second and is kept.
+    pub(crate) fn in_game_time(self, time_scale: TimeScale) -> Self {
+        let hand = WorldMotion {
+            linear: self.world.linear - self.inherited.linear,
+            angular: self.world.angular - self.inherited.angular,
+        };
+        Self {
+            world: WorldMotion {
+                linear: self.inherited.linear + time_scale.to_game_rate(hand.linear),
+                angular: self.inherited.angular + time_scale.to_game_rate(hand.angular),
+            },
+            time_scale,
+            ..self
+        }
+    }
+
+    /// The motion a release requests: non-finite parts are zero, and the hand's own part of the
+    /// linear motion, beyond what the player's movement carries, is held to `max_speed_mps` per
+    /// real second (zero when the cap is not a finite number), so a tracking glitch is capped alike
+    /// at any time scale. The carried part is bounded only by [`MAX_CARRIED_MPS`]: a throw from a
+    /// vehicle keeps the vehicle's speed, and a stale or corrupt reading does not fling the
+    /// released object.
+    pub(crate) fn capped(self, max_speed_mps: f32) -> WorldMotion {
+        let cap = if max_speed_mps.is_finite() {
+            max_speed_mps.max(0.0) / self.time_scale.get()
+        } else {
+            0.0
+        };
+        let finite = |velocity: Vec3| {
+            if velocity.is_finite() {
+                velocity
+            } else {
+                Vec3::ZERO
+            }
+        };
+        let carried = finite(self.inherited.linear).clamp_length_max(MAX_CARRIED_MPS);
+        let own = finite(self.world.linear) - carried;
+        WorldMotion {
+            linear: carried + own.clamp_length_max(cap),
+            angular: finite(self.world.angular),
+        }
+    }
+}
+
+/// The actual release selection, shared by both hands and the inventory and carried routes.
+/// Hand history is cockpit-relative; rig motion contains world transport exactly once.
+pub(crate) fn estimate_release(input: ReleaseInput<'_>) -> ReleaseMotion {
+    let Some(rig) = input.rig.filter(|rig| {
+        rig.frame.valid()
+            && rig.motion.linear.is_finite()
+            && rig.motion.angular.is_finite()
+            && input.point_world.is_finite()
+    }) else {
+        return ReleaseMotion::REST;
+    };
+    let inherited = WorldMotion {
+        linear: rig.motion.linear
+            + rig
+                .motion
+                .angular
+                .cross(input.point_world - rig.frame.origin),
+        angular: rig.motion.angular,
+    };
+    let fallback = ReleaseMotion {
+        world: inherited,
+        inherited,
+        source: SampleSource::RigTransportOnly,
+        history_age_s: None,
+        time_scale: TimeScale::REAL,
+    };
+    let Some(controller) = input.controller else {
+        return fallback;
+    };
+    if !(controller.focused
+        && controller.active
+        && controller.position_valid
+        && controller.orientation_valid
+        && controller.position_tracked
+        && controller.orientation_tracked)
+        || controller.publication_age.as_secs_f32() > MAX_RELEASE_AGE_S
+    {
+        return fallback;
+    }
+    let release_s = controller.display_time_ns as f64 * 1e-9;
+    let Some(latest) = input
+        .samples
+        .iter()
+        .rev()
+        .find(|sample| input.accepts_time(sample.time_s, release_s))
+    else {
+        return fallback;
+    };
+    let age_s = (release_s - latest.time_s) as f32;
+    if !(0.0..=MAX_RELEASE_AGE_S).contains(&age_s) || !input.point_world.is_finite() {
+        return fallback;
+    }
+    let mut samples = input
+        .samples
+        .iter()
+        .copied()
+        .filter(|sample| input.accepts_time(sample.time_s, release_s))
+        .collect::<Vec<_>>();
+    for sample in &mut samples {
+        sample.linear_velocity = sample
+            .linear_velocity
+            .filter(|velocity| velocity.is_finite());
+        sample.angular_velocity = sample
+            .angular_velocity
+            .filter(|velocity| velocity.is_finite());
+    }
+    for index in 1..samples.len() {
+        let previous = samples[index - 1];
+        let sample = &mut samples[index];
+        let dt = (sample.time_s - previous.time_s) as f32;
+        if sample.angular_velocity.is_none() {
+            sample.angular_velocity =
+                angular_velocity(previous.orientation, sample.orientation, dt);
+        }
+    }
+    let point_cockpit =
+        rig.frame.rotation.inverse() * (input.point_world - rig.frame.origin) / rig.frame.scale;
+    let offset = latest.orientation.inverse() * (point_cockpit - latest.position);
+    let Some(linear) = motion::release_velocity(&samples, release_s, offset, RELEASE_ESTIMATE)
+    else {
+        return fallback;
+    };
+    let angular = motion::release_angular_velocity(&samples, release_s, RELEASE_ESTIMATE)
+        .unwrap_or(Vec3::ZERO);
+    let world = WorldMotion {
+        linear: rig.frame.rotation * linear * rig.frame.scale + inherited.linear,
+        angular: rig.frame.rotation * angular + inherited.angular,
+    };
+    if !(world.linear.is_finite() && world.angular.is_finite()) {
+        return fallback;
+    }
+    ReleaseMotion {
+        world,
+        inherited,
+        source: SampleSource::TimestampedHandHistory,
+        history_age_s: Some(age_s),
+        time_scale: TimeScale::REAL,
+    }
+}
+
+pub(crate) struct ReleaseInput<'a> {
+    pub rig: Option<RigMotion>,
+    pub controller: Option<&'a ControllerContext>,
+    pub samples: &'a [MotionSample],
+    pub since_s: f64,
+    pub history_after_s: Option<f64>,
+    pub point_world: Vec3,
+}
+
+impl ReleaseInput<'_> {
+    fn accepts_time(&self, time_s: f64, release_s: f64) -> bool {
+        time_s >= self.since_s
+            && time_s <= release_s
+            && self
+                .history_after_s
+                .is_none_or(|boundary| time_s > boundary)
+    }
+}
+
+pub(crate) const MAX_RELEASE_AGE_S: f32 = 0.15;
+
+/// How a release reads the hand's history: the fastest moment in the last quarter second, averaged
+/// with its immediate neighbours, because a throwing hand slows before the fingers finish opening.
+pub(crate) const RELEASE_ESTIMATE: ReleaseEstimate = ReleaseEstimate {
+    window_s: 0.25,
+    peak_span_s: 0.015,
+};
+
+/// A fixed-size readout containing only the latest release attempt.
+#[derive(Debug, Copy, Clone, PartialEq, Default)]
+pub struct ReleaseStatus {
+    pub attempts: u64,
+    pub latest: Option<ReleaseRecord>,
+}
+
+impl ReleaseStatus {
+    pub const EMPTY: Self = Self {
+        attempts: 0,
+        latest: None,
+    };
+
+    pub(crate) fn record(&mut self, mut record: ReleaseRecord) {
+        self.attempts = self.attempts.saturating_add(1);
+        record.sequence = self.attempts;
+        self.latest = Some(record);
+    }
+}
+
+/// One input-tick attempt, copied before publication to the readout.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ReleaseRecord {
+    pub sequence: u64,
+    /// The physical controller hand, independent of the acting or dominant hand.
+    pub hand: Hand,
+    /// The loadout object's address, copied while it is held. This is not a live reference.
+    pub weapon: Option<usize>,
+    pub route: ReleaseRoute,
+    pub max_speed_mps: f32,
+    pub controller: Option<ControllerContext>,
+    pub stages: ReleaseStages,
+    pub drop: Option<DropObservation>,
+    pub refusal: Option<DockRefusal>,
+    /// No existing pre-disarm motion read is added for diagnostics.
+    pub before_disarm_sample: Unavailable,
+    pub native_readback: NativeReadback,
+}
+
+impl ReleaseRecord {
+    pub(crate) fn new(hand: Hand, max_speed_mps: f32) -> Self {
+        Self {
+            sequence: 0,
+            hand,
+            weapon: None,
+            route: ReleaseRoute::Unresolved,
+            max_speed_mps,
+            controller: frame::with_latest(|frame| ControllerContext::from_frame(frame, hand)),
+            stages: ReleaseStages::default(),
+            drop: None,
+            refusal: None,
+            before_disarm_sample: Unavailable::NoExistingObservation,
+            native_readback: NativeReadback::UNAVAILABLE,
+        }
+    }
+}
+
+impl ReleaseRecord {
+    /// The gun's motion as a recorded throw, when the release requested one of the native drop.
+    pub(crate) fn thrown(&self) -> Option<Thrown> {
+        let drop = self.drop?;
+        let requested = drop.requested_world_motion?;
+        Some(Thrown {
+            hand: self.hand,
+            item: "gun",
+            linear: requested.linear,
+            angular: requested.angular,
+            time_scale: drop.time_scale,
+            source: Some(drop.release_source.label()),
+            armed: None,
+        })
+    }
+
+    /// The attempt as a tracking-recording event. The controller's poses and flags are left to the
+    /// frame of the same display time; nested runtime values are recorded as their Debug text.
+    pub(crate) fn event(&self) -> GunRelease {
+        GunRelease {
+            hand: hand_to_file(self.hand),
+            attempt: self.sequence,
+            weapon: self.weapon.map(|weapon| weapon as u64),
+            route: debug_label(&self.route),
+            max_speed_mps: self.max_speed_mps,
+            refusal: self.refusal.map(|refusal| debug_label(&refusal)),
+            before_disarm: self.stages.before_disarm,
+            disarm_returned: self.stages.disarm_returned,
+            slot_clear_returned: self.stages.slot_clear_returned,
+            reconcile_returned: self.stages.reconcile_returned,
+            controller: self.controller.map(|controller| ReleaseController {
+                frame_sequence: controller.frame_sequence,
+                display_time_ns: controller.display_time_ns,
+                publication_age_ns: u64::try_from(controller.publication_age.as_nanos())
+                    .unwrap_or(u64::MAX),
+            }),
+            drop: self.drop.map(|drop| ReleaseDrop {
+                weapon: drop.weapon as u64,
+                slot: drop.slot.map(|slot| debug_label(&slot)),
+                sample_stage: debug_label(&drop.sample_stage),
+                sample_source: debug_label(&drop.sample_source),
+                cached_motion: drop.cached_world_motion,
+                native_body: drop.native_body_id,
+                requested_motion: drop.requested_world_motion,
+                release_source: debug_label(&drop.release_source),
+                history_age_s: drop.history_age_s,
+                write: debug_label(&drop.write),
+                on_drop_returned: drop.on_drop_returned,
+                slot_clear_returned: drop.slot_clear_returned,
+            }),
+        }
+    }
+}
+
+/// The route reached by the release executor.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum ReleaseRoute {
+    Unresolved,
+    Wielded,
+    ArmedInHand,
+}
+
+/// Returned calls, not observations of the weapon after those calls.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct ReleaseStages {
+    pub before_disarm: bool,
+    pub disarm_returned: bool,
+    pub slot_clear_returned: bool,
+    pub reconcile_returned: bool,
+}
+
+/// Latest published controller context, used to validate the timestamped hand release estimate.
+/// The reported cockpit velocities remain a readout; the estimator reads the motion history.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct ControllerContext {
+    pub frame_sequence: u64,
+    /// Runtime predicted display time; not a timestamp of the cached gun velocity or grip edge.
+    pub display_time_ns: i64,
+    /// Host publication age at the attempt, not the age of the cached gun motion.
+    pub publication_age: Duration,
+    pub focused: bool,
+    pub active: bool,
+    pub position_valid: bool,
+    pub orientation_valid: bool,
+    pub position_tracked: bool,
+    pub orientation_tracked: bool,
+    pub linear_cockpit_mps: Option<Vec3>,
+    pub angular_cockpit_rad_s: Option<Vec3>,
+}
+
+impl ControllerContext {
+    pub(crate) fn from_frame(frame: &ControllerFrame, hand: Hand) -> Self {
+        let controller = frame.hand(hand);
+        let grip = controller.grip;
+        Self {
+            frame_sequence: frame.sequence,
+            display_time_ns: frame.display_time_ns,
+            publication_age: frame.age(),
+            focused: frame.focused,
+            active: controller.active,
+            position_valid: grip.position_valid,
+            orientation_valid: grip.orientation_valid,
+            position_tracked: grip.position_tracked,
+            orientation_tracked: grip.orientation_tracked,
+            linear_cockpit_mps: grip.linear_velocity,
+            angular_cockpit_rad_s: grip.angular_velocity,
+        }
+    }
+}
+
+/// Existing native motion and body reads, copied before `OnDrop` or the heavy-slot drop.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct DropObservation {
+    /// The address read at the native drop site, for comparison with the loadout identity.
+    pub weapon: usize,
+    pub slot: Option<WeaponSlot>,
+    pub branch: DropBranch,
+    pub sample_stage: SampleStage,
+    pub sample_source: SampleSource,
+    pub sample_age: Unavailable,
+    pub cached_world_motion: Option<WorldMotion>,
+    /// From `WeaponData::m_PfxInstance`, distinct from the mod-owned held-gun body.
+    /// This identifier is never used for a later native read.
+    pub native_body_id: Option<u32>,
+    /// Sanitized, capped world-space values passed to the existing native setter, if called.
+    pub requested_world_motion: Option<WorldMotion>,
+    pub release_source: SampleSource,
+    pub history_age_s: Option<f32>,
+    /// The game's time scale the release was converted at.
+    pub time_scale: f32,
+    pub write: NativeWrite,
+    pub on_drop_returned: bool,
+    pub slot_clear_returned: bool,
+}
+
+impl DropObservation {
+    /// Prepare the exact world-space request consumed by the native velocity setter.
+    pub(crate) fn prepare_release(
+        &mut self,
+        release: ReleaseMotion,
+        max_speed_mps: f32,
+    ) -> WorldMotion {
+        let requested = release.capped(max_speed_mps);
+        self.release_source = release.source;
+        self.history_age_s = release.history_age_s;
+        self.time_scale = release.time_scale.get();
+        self.requested_world_motion = Some(requested);
+        requested
+    }
+
+    pub(crate) fn sampled(
+        weapon: usize,
+        slot: Option<WeaponSlot>,
+        sample_stage: SampleStage,
+        motion: Option<(Vec3, Vec3)>,
+        body: Option<u32>,
+    ) -> Self {
+        Self {
+            weapon,
+            slot,
+            branch: DropBranch::OnDropThenVelocityWrite,
+            sample_stage,
+            sample_source: SampleSource::CachedWeaponDataWorldMatrices,
+            sample_age: Unavailable::ProducerTimeUnknown,
+            cached_world_motion: motion.map(|(linear, angular)| WorldMotion { linear, angular }),
+            native_body_id: body,
+            requested_world_motion: None,
+            release_source: SampleSource::UnavailableAtRelease,
+            history_age_s: None,
+            time_scale: 1.0,
+            write: NativeWrite::NotAttempted,
+            on_drop_returned: false,
+            slot_clear_returned: false,
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum DropBranch {
+    OnDropThenVelocityWrite,
+}
+
+/// All samples are taken before the drop.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SampleStage {
+    Wielded,
+    AfterDisarm,
+    OutsideInventory,
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum SampleSource {
+    CachedWeaponDataWorldMatrices,
+    TimestampedHandHistory,
+    RigTransportOnly,
+    UnavailableAtRelease,
+}
+
+impl SampleSource {
+    /// The source's name, as a recorded throw carries it.
+    pub(crate) const fn label(self) -> &'static str {
+        match self {
+            Self::CachedWeaponDataWorldMatrices => "cached weapon world matrices",
+            Self::TimestampedHandHistory => "timestamped hand history",
+            Self::RigTransportOnly => "rig transport only",
+            Self::UnavailableAtRelease => "unavailable at release",
+        }
+    }
+}
+
+/// Setter completion is distinct from applied velocity, which requires a native readback.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum NativeWrite {
+    NotAttempted,
+    MissingBody,
+    MissingOwner,
+    Rejected(BodyError),
+    SetterReturned,
+}
+
+/// No native motion reader is called at any of these stages.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct NativeReadback {
+    pub after_setter: Unavailable,
+    pub after_slot_clear: Unavailable,
+    pub next_step: Unavailable,
+}
+
+impl NativeReadback {
+    const UNAVAILABLE: Self = Self {
+        after_setter: Unavailable::ReadbackContractUnproven,
+        after_slot_clear: Unavailable::LifetimeAndPhaseUnproven,
+        next_step: Unavailable::LifetimeAndPhaseUnproven,
+    };
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum Unavailable {
+    NoExistingObservation,
+    ProducerTimeUnknown,
+    ReadbackContractUnproven,
+    LifetimeAndPhaseUnproven,
+}
+
+/// The fastest carried motion a release keeps, metres per second: past the game's fastest jets.
+const MAX_CARRIED_MPS: f32 = 150.0;
+
+#[cfg(test)]
+#[path = "release_diagnostics_tests.rs"]
+mod tests;

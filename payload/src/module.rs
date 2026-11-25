@@ -39,7 +39,7 @@ pub fn exit() {
 /// nothing written to the log. Leaking this DLL for the rest of the game's run is a far smaller cost,
 /// and the player ends it by quitting.
 ///
-/// Reinjection after this still works -- the injector loads a fresh copy under a new name.
+/// This only retains code. It neither restores engine state nor proves that reinjection is safe.
 pub fn pin() {
     let Some(module) = MODULE.get() else {
         return;

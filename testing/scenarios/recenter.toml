@@ -1,0 +1,13 @@
+# Template: fill testing/recordings/recenter.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "recenter"
+description = "Recorded on foot, standing (controllers-and-roomscale.md, checklist item 11). Turn the body a quarter turn from the recentered forward, recenter with the stick click chord, and walk a few steps."
+recording = "../recordings/recenter.jc3trk"
+
+[[expect]]
+name = "the recorded recenter is applied"
+signal = "vr.recenters"
+
+[[expect]]
+name = "the player stays on foot"
+signal = "controllers.on_foot"
+check = "always"

@@ -1,17 +1,12 @@
-//! Scaleform display-tree debugging: dump the live clip tree and toggle clip visibility by path.
+//! Scaleform display-tree plumbing: the clip-handle registry the capture-seam writers share.
 //!
-//! The multi-texture HUD split (issue #14) needs the runtime clip paths of the element groups
-//! (`MCI_poi_stage`, `MCI_safe_area_center.MCI_reticles`, ...) and a working per-clip visibility
-//! toggle. This module provides both as debug operations: the UI thread queues requests, and
-//! [`process_requests`] executes them on the game update thread (the Scaleform capture thread,
-//! where the display tree is stable and the engine makes its own AS3 calls).
-//!
-//! The tree dump walks [`Movie::GetDisplayObjectsTree`] and logs one line per clip; the toggle
-//! writes `<path>.visible` through [`Movie::SetVariable`]. Both are read-modify operations on the
-//! live movie, guarded by a vtable check so a mismatched `m_Movie` model logs instead of calling
-//! through a wrong vtable.
-
-use std::ffi::CString;
+//! The overlay suppression (issue #8), the controller scheme's reticle and hint hiding, and the
+//! HUD atlas address clips (`MCI_safe_area_center.MCI_reticles`, ...) through pinned handles
+//! resolved by a layout discovery. [`process_requests`] runs the discovery on the game update
+//! thread (the Scaleform capture thread, where the display tree is stable and the engine makes its
+//! own AS3 calls). The discovery walks [`Movie::GetDisplayObjectsTree`] on the live movie, guarded
+//! by a vtable check so a mismatched `m_Movie` model logs instead of calling through a wrong
+//! vtable.
 
 use jc3gi::ui::{
     scaleform::{AmpMovieObjectDesc, DisplayInfo, Movie, MovieImpl, Value},
@@ -19,33 +14,13 @@ use jc3gi::ui::{
 };
 use parking_lot::Mutex;
 
-use crate::{config::Config, hud::split::roots};
-
-/// A queued Scaleform debug operation. Queued from the UI thread, executed on the game thread.
-enum Request {
-    /// Log the movie's full display tree, one line per clip.
-    DumpTree,
-    /// Set `<path>.visible` on the clip at the dot-separated `path` (from the root timeline).
-    SetClipVisible { path: String, visible: bool },
-}
-
-/// The pending requests. UI thread pushes, game thread drains.
-static REQUESTS: Mutex<Vec<Request>> = Mutex::new(Vec::new());
-
-/// Whether a layout discovery is wanted (set by the split when its paths do not resolve, or by
-/// the debug UI). Throttled to one walk per second by [`process_requests`].
+/// Whether a layout discovery is wanted (set by [`process_requests`] while the registry is needed
+/// and missing or due a refresh). Throttled to one walk per second.
 static DISCOVERY_REQUESTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
 /// The last discovery attempt, for the once-per-second throttle.
 static LAST_DISCOVERY: Mutex<Option<std::time::Instant>> = Mutex::new(None);
-
-/// Request a display-tree layout discovery: derive the split's clip-path prefix from the live
-/// tree (by locating `MCI_safe_area_center`'s parent), collect the HUD clip's anonymous children
-/// (the POI pool), and build the split's clip-handle registry.
-pub fn request_layout_discovery() {
-    DISCOVERY_REQUESTED.store(true, std::sync::atomic::Ordering::Relaxed);
-}
 
 /// Whether a handle release is wanted (set at shutdown so the managed values are released on the
 /// capture thread before the hooks come down).
@@ -53,53 +28,102 @@ static RELEASE_REQUESTED: std::sync::atomic::AtomicBool = std::sync::atomic::Ato
 
 /// Whether the current handle registry was resolved during gameplay ([`HudMode::Hud`]
 /// (crate::hud::HudMode)). The game re-attaches the HUD clips around the frontend/gameplay
-/// transition, so handles resolved in a menu can point at a detached tree -- the render-root
-/// partition must never build from those (moving nodes the game is about to re-insert into the
-/// live tree double-parents them, which hangs the renderer's cache reconciliation).
+/// transition, so handles resolved in a menu can point at a detached tree; the atlas moves no
+/// clips through those.
 static DISCOVERED_IN_HUD: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
-/// Whether the live handle registry was resolved during gameplay (see [`DISCOVERED_IN_HUD`]).
-pub fn handles_hud_fresh() -> bool {
-    DISCOVERED_IN_HUD.load(std::sync::atomic::Ordering::Relaxed) && CLIP_HANDLES.lock().is_some()
+/// Whether the live handle registry was resolved during gameplay, without taking the registry's
+/// lock (for a caller that holds it).
+pub(crate) fn discovered_in_hud() -> bool {
+    DISCOVERED_IN_HUD.load(std::sync::atomic::Ordering::Relaxed)
 }
 
-/// The number of HUD layers the registry groups containers into (see
-/// [`HudLayer`](crate::hud::split::HudLayer)).
-pub const LAYER_COUNT: usize = 3;
-
-/// The authored top-level containers of `hud.gfx` assigned to each layer. Paths are relative to
-/// the HUD movie's timeline; [`HudConfig::split_path_prefix`](crate::hud::HudConfig) is prepended
-/// at call time once the runtime attachment point is known.
-pub(crate) const LAYER_CONTAINERS: [&[&str]; LAYER_COUNT] = [
-    // Static: the six corner/edge safe-area groups and the selection wheel.
-    &[
-        "MCI_safe_area_top_left",
-        "MCI_safe_area_top_middle",
-        "MCI_safe_area_top_right",
-        "MCI_safe_area_bottom_left",
-        "MCI_safe_area_bottom_middle",
-        "MCI_safe_area_bottom_right",
-        "MCI_weapon_selection_wheel",
-    ],
-    // Markers: the POI stage, and MCI_hud (the target-tracker stage plus score/ghost data).
-    &["MCI_poi_stage", "MCI_hud"],
-    // Center: the whole screen-center group (reticles and center indicators).
-    &["MCI_safe_area_center"],
-];
-
 /// The full-screen overlay clips of issue #8, all children of the center container: held
-/// invisible while [`HudConfig::suppress_overlays`](crate::hud::HudConfig::suppress_overlays) is
-/// on. Paths confirmed against an in-game display-tree dump; `MCI_omni_damage` (the screen-wide
-/// damage flash) is a direct child of the center container, not of the health-damage manager.
+/// invisible by [`apply_overlay_suppression`], since they were authored to cover a flat screen and
+/// would cover the whole panel in VR instead. Paths confirmed against an in-game display-tree dump;
+/// `MCI_omni_damage` (the screen-wide damage flash) is a direct child of the center container, not
+/// of the health-damage manager.
+///
+/// The directional damage indicators are not among them. The movie builds them at runtime as
+/// children of the HUD document itself, beside the point-of-interest pool, and leaves the center
+/// container's `MCI_character_damage_indicators` and `MCI_vehicle_damage_indicators` stages empty.
+/// They are small arrows on an ellipse around the stage centre that give only the attacker's
+/// direction, so they stay on the panel.
 pub(crate) const OVERLAY_CLIPS: &[&str] = &[
     "MCI_safe_area_center.MCI_omni_damage",
     "MCI_safe_area_center.MCI_drowning_container",
     "MCI_safe_area_center.MCI_health_damage_manager",
-    "MCI_safe_area_center.MCI_character_damage_indicators",
-    "MCI_safe_area_center.MCI_vehicle_damage_indicators",
-    "MCI_safe_area_center.MCI_inflict_damage",
     "MCI_safe_area_center.MCI_sniper",
 ];
+
+/// The HUD's weapon and grapple reticle groups, children of the center container's reticle
+/// container, and the hit marker, in that order: held invisible by [`apply_reticle_suppression`],
+/// the hit marker with the weapon group, since it plays at the weapon reticle. The movie's own
+/// `UpdateWeaponReticle` writes the weapon group's and the hit marker's visibility on every HUD
+/// update, which the intent tracking absorbs; nothing in the movie writes the grapple group's.
+pub(crate) const RETICLE_CLIPS: [&str; 3] = [
+    "MCI_safe_area_center.MCI_reticles.MCI_weapon_reticle_group",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group",
+    "MCI_safe_area_center.MCI_inflict_damage",
+];
+
+/// The HUD's two button-hint stages: the bottom-right stage of systemic and context hints and the
+/// centre stage of the big hint. Held invisible by [`apply_hint_suppression`]. The movie writes its
+/// hint clips' visibility, not the stages', except that the cinematic code lists the centre stage
+/// among the clips it re-shows after a cinematic, which the intent tracking absorbs.
+pub(crate) const HINT_CLIPS: [&str; 2] = [
+    "MCI_safe_area_bottom_right.MCI_sys_button_hints_stage",
+    "MCI_safe_area_center.MCI_button_hints_stage",
+];
+
+/// The HUD clips the atlas moves into cells, and the containers it reads their parents' placements
+/// from, in [`AtlasClip`] order (see [`crate::hud::atlas`]).
+///
+/// The readouts are children of the bottom-right safe-area container, whose placement converts a
+/// cell's stage position into theirs. `MCI_dual_tether` is the tether readout: the count of tethers
+/// in use and the retract state. The movie also builds a per-tether list in
+/// `MCI_dualtether_stage` beside it, but holds that stage invisible, so it is left alone.
+/// `MCI_grenade_parent` holds the grenade readout, one icon per grenade the player can carry, full
+/// or empty, laid out for the current capacity.
+///
+/// The aim part gathers the weapon reticle group, the grapple reticle's clips, and the hit marker
+/// from under the center container. The movie places the grapple reticle's base clip at the
+/// projected grapple aim point, its ghost there too while a wire is attached, and its attached clip
+/// at the projected attach point while a wire is attached and at the base otherwise; the weapon
+/// reticle group and the hit marker stay at the center.
+pub(crate) const ATLAS_CLIPS: [&str; 13] = [
+    "MCI_safe_area_bottom_right",
+    "MCI_safe_area_bottom_right.MCI_weapons_parent",
+    "MCI_safe_area_bottom_right.MCI_heat_container",
+    "MCI_safe_area_bottom_right.MCI_dual_tether",
+    "MCI_safe_area_center",
+    "MCI_safe_area_center.MCI_reticles",
+    "MCI_safe_area_center.MCI_reticles.MCI_weapon_reticle_group",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group.MCI_reticle_grapple_base",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group.MCI_reticle_grapple_ghost",
+    "MCI_safe_area_center.MCI_reticles.MCI_grapple_reticle_group.MCI_reticle_grapple_attached",
+    "MCI_safe_area_center.MCI_inflict_damage",
+    "MCI_safe_area_bottom_right.MCI_grenade_parent",
+];
+
+/// The index of each clip in [`ATLAS_CLIPS`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum AtlasClip {
+    BottomRight = 0,
+    Weapons = 1,
+    Heat = 2,
+    Tether = 3,
+    Center = 4,
+    Reticles = 5,
+    WeaponReticle = 6,
+    GrappleReticle = 7,
+    GrappleBase = 8,
+    GrappleGhost = 9,
+    GrappleAttached = 10,
+    HitMarker = 11,
+    Grenades = 12,
+}
 
 /// A heap-pinned managed [`Value`] handle to a clip, plus the game-intent tracking the mask needs.
 /// The `Value` is an intrusive list node on the movie's external-references list, so it must never
@@ -147,12 +171,14 @@ impl ClipHandle {
 /// thread; masked on the game thread; replaced wholesale on rediscovery (old handles released
 /// first).
 pub(crate) struct ClipHandles {
-    /// Per layer, the named containers (in [`LAYER_CONTAINERS`] order, missing clips skipped).
-    pub containers: [Vec<ClipHandle>; LAYER_COUNT],
     /// The issue #8 overlay clips.
     pub overlays: Vec<ClipHandle>,
-    /// The anonymous POI pool (markers layer).
-    pub dynamic: Vec<ClipHandle>,
+    /// The reticle groups, in [`RETICLE_CLIPS`] order.
+    pub reticles: Vec<ClipHandle>,
+    /// The button-hint stages, in [`HINT_CLIPS`] order.
+    pub hints: Vec<ClipHandle>,
+    /// The atlas's clips, in [`ATLAS_CLIPS`] order.
+    pub atlas: Vec<ClipHandle>,
 }
 
 // SAFETY: the raw pointers inside the handles (the pinned Values and their object interfaces)
@@ -164,13 +190,13 @@ unsafe impl Send for ClipHandle {}
 pub(crate) static CLIP_HANDLES: parking_lot::Mutex<Option<ClipHandles>> =
     parking_lot::Mutex::new(None);
 
-/// Hold the issue #8 overlay clips hidden while `suppress` is on, tracking the game's own
-/// visibility intent across our writes and restoring it on the off-transition. Runs at the
-/// capture seam (game update thread, deferred render lock held).
+/// Hold the issue #8 overlay clips hidden, tracking the game's own visibility intent across our
+/// writes (the handle release restores it). Runs at the capture seam (game update thread,
+/// deferred render lock held).
 ///
 /// # Safety
 /// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
-pub unsafe fn apply_overlay_suppression(suppress: bool) {
+pub unsafe fn apply_overlay_suppression() {
     let mut handles = CLIP_HANDLES.lock();
     let Some(handles) = handles.as_mut() else {
         return;
@@ -179,6 +205,64 @@ pub unsafe fn apply_overlay_suppression(suppress: bool) {
     // values from the registry.
     unsafe {
         for handle in &mut handles.overlays {
+            refresh_intent(handle);
+            force_visible(handle, false);
+        }
+    }
+}
+
+/// Hold the weapon reticle group and the hit marker hidden while `weapon` is set and the grapple
+/// reticle group while `grapple` is, tracking the game's own visibility intent across our writes
+/// and restoring it when released. Runs at the capture seam, like [`apply_overlay_suppression`].
+///
+/// # Safety
+/// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
+pub unsafe fn apply_reticle_suppression(weapon: bool, grapple: bool) {
+    GRAPPLE_RETICLE_HIDDEN.store(grapple, std::sync::atomic::Ordering::Relaxed);
+    let mut handles = CLIP_HANDLES.lock();
+    let Some(handles) = handles.as_mut() else {
+        return;
+    };
+    // SAFETY: capture-seam threading per the function contract; the handles are pinned managed
+    // values from the registry.
+    unsafe {
+        for (handle, suppress) in handles.reticles.iter_mut().zip([weapon, grapple, weapon]) {
+            if suppress {
+                refresh_intent(handle);
+                force_visible(handle, false);
+            } else if handle.forced.is_some() {
+                refresh_intent(handle);
+                unforce_visible(handle);
+            }
+        }
+    }
+}
+
+/// Whether the grapple reticle group is held hidden, for the aim part's placement.
+pub(crate) fn grapple_reticle_hidden() -> bool {
+    GRAPPLE_RETICLE_HIDDEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// Whether [`apply_reticle_suppression`] last held the grapple reticle group hidden.
+static GRAPPLE_RETICLE_HIDDEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+/// Hold the HUD's button-hint stages hidden while `suppress` is on, tracking the game's own
+/// visibility intent across our writes and restoring it when released. Runs at the capture seam,
+/// like [`apply_overlay_suppression`].
+///
+/// # Safety
+/// Must be called from the [`MovieImpl::Capture`](jc3gi::ui::scaleform::MovieImpl) detour.
+pub unsafe fn apply_hint_suppression(suppress: bool) {
+    let suppress = suppress || !crate::hud::gameplay_hints_active();
+    let mut handles = CLIP_HANDLES.lock();
+    let Some(handles) = handles.as_mut() else {
+        return;
+    };
+    // SAFETY: capture-seam threading per the function contract; the handles are pinned managed
+    // values from the registry.
+    unsafe {
+        for handle in &mut handles.hints {
             if suppress {
                 refresh_intent(handle);
                 force_visible(handle, false);
@@ -222,21 +306,7 @@ pub(crate) unsafe fn unforce_visible(handle: &mut ClipHandle) {
 /// # Safety
 /// The caller must be on the capture (game update) thread (see [`ClipHandle`]).
 pub(crate) unsafe fn get_visible(handle: &mut ClipHandle) -> bool {
-    // SAFETY: the handle's value is pinned and managed; the interface pointer comes from it.
-    unsafe {
-        let Some(value) = handle.value.as_mut() else {
-            return true;
-        };
-        let Some(interface) = value.pObjectInterface.as_mut() else {
-            return true;
-        };
-        let mut info = DisplayInfo::default();
-        let data = value.mValue as *mut std::ffi::c_void;
-        if !interface.GetDisplayInfo(data, &mut info) {
-            return true;
-        }
-        info.Visible
-    }
+    unsafe { display_info(handle) }.is_none_or(|info| info.Visible)
 }
 
 /// Write a clip's visibility through its cached handle (a `VarsSet = V_VISIBLE` display-info
@@ -261,6 +331,32 @@ pub(crate) unsafe fn set_visible(handle: &mut ClipHandle, visible: bool) {
     }
 }
 
+/// Read a clip's display info through its cached handle, or `None` for an unresolved handle or a
+/// failed read.
+///
+/// # Safety
+/// The caller must be on the capture (game update) thread (see [`ClipHandle`]).
+pub(crate) unsafe fn display_info(handle: &mut ClipHandle) -> Option<DisplayInfo> {
+    // SAFETY: the handle's value is pinned and managed.
+    unsafe { value_display_info(handle.value.as_mut()?) }
+}
+
+/// Read a clip's display info through its managed value, or `None` for a value without an object
+/// interface or a failed read.
+///
+/// # Safety
+///
+/// `value` must be a live managed display-object value, read on the capture (game update) thread.
+pub(crate) unsafe fn value_display_info(value: &mut Value) -> Option<DisplayInfo> {
+    // SAFETY: forwarded from the caller; the interface pointer comes from the value.
+    unsafe {
+        let interface = value.pObjectInterface.as_mut()?;
+        let mut info = DisplayInfo::default();
+        let data = value.mValue as *mut std::ffi::c_void;
+        interface.GetDisplayInfo(data, &mut info).then_some(info)
+    }
+}
+
 /// Request the clip-handle registry's release (from the shutdown path; executed on the game
 /// thread by [`process_requests`]).
 pub fn request_release_handles() {
@@ -269,22 +365,18 @@ pub fn request_release_handles() {
 
 /// Release and drop the clip-handle registry (capture thread). Every clip is first restored to
 /// the game's tracked visibility intent: the periodic rediscovery replaces the registry while
-/// the split mask holds most clips hidden, and without the restore the fresh handles would read
-/// that mask state back as the game's intent -- baking the clips permanently invisible, a few
-/// layers' worth per rediscovery until the whole HUD is dark.
+/// the suppressions hold clips hidden, and without the restore the fresh handles would read that
+/// forced state back as the game's intent, baking the clips permanently invisible.
 fn release_clip_handles() {
-    // The render-root partition resolved its nodes through these handles; restore the render
-    // tree before they go away (rebuilt from the fresh registry on the next capture).
-    roots::teardown_now();
     if let Some(mut handles) = CLIP_HANDLES.lock().take() {
         // SAFETY: called on the capture thread; each handle releases through its own interface.
         unsafe {
             for handle in handles
-                .containers
+                .overlays
                 .iter_mut()
-                .flatten()
-                .chain(handles.overlays.iter_mut())
-                .chain(handles.dynamic.iter_mut())
+                .chain(handles.reticles.iter_mut())
+                .chain(handles.hints.iter_mut())
+                .chain(handles.atlas.iter_mut())
             {
                 unforce_visible(handle);
                 handle.release();
@@ -293,79 +385,42 @@ fn release_clip_handles() {
     }
 }
 
-/// Queue a display-tree dump (from the debug UI).
-pub fn request_dump_tree() {
-    REQUESTS.lock().push(Request::DumpTree);
-}
-
-/// Queue a clip visibility change (from the debug UI). `path` is dot-separated from the root
-/// timeline, e.g. `MCI_hud.MCI_poi_stage`.
-pub fn request_set_clip_visible(path: String, visible: bool) {
-    REQUESTS
-        .lock()
-        .push(Request::SetClipVisible { path, visible });
-}
-
-/// Execute all pending requests. Call once per frame on the game update thread (the Scaleform
-/// capture thread), before the frame's UI advance.
+/// Execute the pending handle release and layout discovery. Call once per frame on the game update
+/// thread (the Scaleform capture thread), before the frame's UI advance.
 pub fn process_requests() {
     if RELEASE_REQUESTED.swap(false, std::sync::atomic::Ordering::Relaxed) {
         release_clip_handles();
     }
 
-    // The capture-seam hooks (the render-root partition and the overlay suppression) need the
-    // handle registry; request the initial discovery when either wants it. While the partition
-    // is live the registry must stay stable (a rebuild would tear the partition down for a
-    // frame), so the periodic refresh only runs before the partition takes.
-    let handles_needed = Config::lock_query(|c| c.hud.split || c.hud.suppress_overlays);
+    // The capture-seam writers need the handle registry (the overlay suppression always does);
+    // request the initial discovery, and refresh it periodically.
     let handles_live = CLIP_HANDLES.lock().is_some();
-    if handles_needed
-        && (!handles_live
-            || (!roots::live()
-                && LAST_DISCOVERY
-                    .lock()
-                    .is_some_and(|t| t.elapsed().as_secs_f32() >= 5.0)))
+    if !handles_live
+        || LAST_DISCOVERY
+            .lock()
+            .is_some_and(|t| t.elapsed().as_secs_f32() >= 5.0)
     {
-        // Menu-era handles resolve against a tree the game re-attaches on entering gameplay, so
-        // the partition refuses to build from them (and its build-time root-chain walk catches a
-        // stale registry regardless); the periodic refresh here re-resolves until a discovery
-        // lands during gameplay.
+        // Menu-era handles resolve against a tree the game re-attaches on entering gameplay; the
+        // periodic refresh here re-resolves until a discovery lands during gameplay.
         DISCOVERY_REQUESTED.store(true, std::sync::atomic::Ordering::Relaxed);
     }
 
-    let requests = std::mem::take(&mut *REQUESTS.lock());
-    if requests.is_empty() && !DISCOVERY_REQUESTED.load(std::sync::atomic::Ordering::Relaxed) {
+    if !DISCOVERY_REQUESTED.load(std::sync::atomic::Ordering::Relaxed) {
         return;
     }
     let Some((movie_impl, movie_root)) = live_movie() else {
-        if !requests.is_empty() {
-            tracing::warn!(
-                "scaleform: the UI movie is not available; dropping the queued requests"
-            );
-        }
         return;
     };
-    for request in requests {
-        match request {
-            Request::DumpTree => dump_tree(movie_impl, movie_root),
-            Request::SetClipVisible { path, visible } => {
-                set_clip_visible(movie_root, &path, visible)
-            }
+    let due = {
+        let mut last = LAST_DISCOVERY.lock();
+        let due = last.is_none_or(|t| t.elapsed().as_secs_f32() >= 1.0);
+        if due {
+            *last = Some(std::time::Instant::now());
         }
-    }
-
-    if DISCOVERY_REQUESTED.load(std::sync::atomic::Ordering::Relaxed) {
-        let due = {
-            let mut last = LAST_DISCOVERY.lock();
-            let due = last.is_none_or(|t| t.elapsed().as_secs_f32() >= 1.0);
-            if due {
-                *last = Some(std::time::Instant::now());
-            }
-            due
-        };
-        if due && discover_layout(movie_impl, movie_root) {
-            DISCOVERY_REQUESTED.store(false, std::sync::atomic::Ordering::Relaxed);
-        }
+        due
+    };
+    if due && discover_layout(movie_impl, movie_root) {
+        DISCOVERY_REQUESTED.store(false, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -392,49 +447,6 @@ fn live_movie() -> Option<(&'static mut MovieImpl, &'static Movie)> {
     }
 }
 
-/// Log the movie's display tree, one line per clip, as `path`-style names with child counts.
-fn dump_tree(movie_impl: &MovieImpl, movie_root: &Movie) {
-    // SAFETY: called on the capture thread; the movie's heap is live for the whole frame. The
-    // returned tree is a fresh allocation we release when done.
-    unsafe {
-        if movie_impl.pHeap.is_null() {
-            tracing::warn!("scaleform: the movie's heap is null; cannot dump the tree");
-            return;
-        }
-        let root = movie_root.GetDisplayObjectsTree(movie_impl.pHeap);
-        let Some(root_ref) = root.as_ref() else {
-            tracing::warn!("scaleform: GetDisplayObjectsTree returned no tree");
-            return;
-        };
-        tracing::info!("scaleform: display tree dump begins");
-        let mut lines = 0usize;
-        dump_node(root_ref, &mut String::new(), &mut lines);
-        tracing::info!("scaleform: display tree dump ends ({lines} clips)");
-        root_ref.Release();
-
-        // Probe the split's known clip paths: whether each resolves and its current visibility,
-        // with the configured prefix applied. This is the ground truth for the split partition
-        // and the overlay suppression (a suppressed clip that still shows means the effect lives
-        // at a different path).
-        let prefix = Config::lock_query(|c| c.hud.split_path_prefix);
-        let prefix = prefix.as_str();
-        tracing::info!("scaleform: split path probe (prefix {prefix:?})");
-        let containers = LAYER_CONTAINERS.iter().flat_map(|layer| layer.iter());
-        for path in containers.chain(OVERLAY_CLIPS.iter()) {
-            let full = format!("{prefix}{path}.visible\0");
-            let mut value = Value::new_boolean(true);
-            let ok = movie_root.GetVariable(&mut value, full.as_ptr());
-            if ok && let Some(visible) = value.as_bool() {
-                tracing::info!("scaleform: probe {path}: visible={visible}");
-            } else if ok {
-                tracing::info!("scaleform: probe {path}: resolves (non-boolean visible)");
-            } else {
-                tracing::warn!("scaleform: probe {path}: does not resolve");
-            }
-        }
-    }
-}
-
 /// A tree node's instance name. The `name` field is a `Scaleform::String`: its `pData` carries
 /// heap flags in the pointer's low bits, and the characters live at
 /// [`StringDataDesc::m_Data`](jc3gi::ui::scaleform::StringDataDesc::m_Data), NUL-terminated.
@@ -450,43 +462,9 @@ unsafe fn node_name(node: &AmpMovieObjectDesc) -> String {
     }
 }
 
-/// Log one tree node and recurse into its children. `prefix` is the dot-joined path of the
-/// ancestors; `lines` counts emitted nodes.
-unsafe fn dump_node(node: &AmpMovieObjectDesc, prefix: &mut String, lines: &mut usize) {
-    // SAFETY (whole body): the node came from a live GetDisplayObjectsTree result that is not
-    // released until the walk completes; `name` points into the node's own string allocation.
-    unsafe {
-        let name = node_name(node);
-        let path = if prefix.is_empty() {
-            name.clone()
-        } else {
-            format!("{prefix}.{name}")
-        };
-        tracing::info!("scaleform: {path} ({} children)", node.child_count);
-        *lines += 1;
-
-        if node.children.is_null() {
-            return;
-        }
-        for i in 0..node.child_count as usize {
-            let child = *node.children.add(i);
-            if let Some(child) = child.as_ref() {
-                let saved = prefix.len();
-                if !prefix.is_empty() {
-                    prefix.push('.');
-                }
-                prefix.push_str(&name);
-                dump_node(child, prefix, lines);
-                prefix.truncate(saved);
-            }
-        }
-    }
-}
-
-/// Walk the live display tree once: locate `MCI_safe_area_center`, derive the split path prefix
-/// from its parent's path, and collect that parent's anonymous (`instanceNNNN`) children -- the
-/// POI pool -- as the split's dynamic marker clips. Returns whether the layout was found (the
-/// HUD movie may not be attached yet).
+/// Walk the live display tree once: locate `MCI_safe_area_center`, derive the HUD clip-path
+/// prefix from its parent's path, and resolve the registry's handles under it. Returns whether
+/// the layout was found (the HUD movie may not be attached yet).
 fn discover_layout(movie_impl: &MovieImpl, movie_root: &Movie) -> bool {
     // SAFETY: called on the capture thread; the heap is live; the tree is released after the walk.
     unsafe {
@@ -500,18 +478,9 @@ fn discover_layout(movie_impl: &MovieImpl, movie_root: &Movie) -> bool {
         let found = find_hud_clip(root_ref, &mut String::new());
         root_ref.Release();
 
-        let Some((prefix, anonymous)) = found else {
+        let Some(prefix) = found else {
             return false;
         };
-        if let Err(e) = crate::config::CONFIG
-            .lock()
-            .hud
-            .split_path_prefix
-            .set(&prefix)
-        {
-            tracing::warn!("scaleform: layout discovery: {e}");
-            return false;
-        }
 
         // Resolve a pinned managed handle per clip, on this (capture) thread. The Value is an
         // intrusive list node on the movie's external-references list once filled, so it is
@@ -534,19 +503,13 @@ fn discover_layout(movie_impl: &MovieImpl, movie_root: &Movie) -> bool {
         };
 
         let handles = ClipHandles {
-            containers: std::array::from_fn(|layer| {
-                LAYER_CONTAINERS[layer]
-                    .iter()
-                    .map(|path| resolve(path))
-                    .collect()
-            }),
             overlays: OVERLAY_CLIPS.iter().map(|path| resolve(path)).collect(),
-            dynamic: anonymous.iter().map(|name| resolve(name)).collect(),
+            reticles: RETICLE_CLIPS.iter().map(|path| resolve(path)).collect(),
+            hints: HINT_CLIPS.iter().map(|path| resolve(path)).collect(),
+            atlas: ATLAS_CLIPS.iter().map(|path| resolve(path)).collect(),
         };
         tracing::debug!(
-            "scaleform: layout discovery: prefix {prefix:?}, {resolved}/{total} clips resolved \
-             ({} anonymous marker clips)",
-            anonymous.len()
+            "scaleform: layout discovery: prefix {prefix:?}, {resolved}/{total} clips resolved"
         );
 
         release_clip_handles();
@@ -560,11 +523,8 @@ fn discover_layout(movie_impl: &MovieImpl, movie_root: &Movie) -> bool {
 }
 
 /// Recursively search for the node named `MCI_safe_area_center`; on a hit, return its parent's
-/// dot-path prefix (ending in a dot, or empty at the root) and the parent's anonymous children.
-unsafe fn find_hud_clip(
-    node: &AmpMovieObjectDesc,
-    path: &mut String,
-) -> Option<(String, Vec<String>)> {
+/// dot-path prefix (ending in a dot, or empty at the root).
+unsafe fn find_hud_clip(node: &AmpMovieObjectDesc, path: &mut String) -> Option<String> {
     // SAFETY (whole body): the tree is live for the duration of the walk.
     unsafe {
         if node.children.is_null() {
@@ -579,17 +539,11 @@ unsafe fn find_hud_clip(
             .iter()
             .any(|c| node_name(c) == "MCI_safe_area_center")
         {
-            let prefix = if path.is_empty() {
+            return Some(if path.is_empty() {
                 String::new()
             } else {
                 format!("{path}.")
-            };
-            let anonymous = children
-                .iter()
-                .map(|c| node_name(c))
-                .filter(|name| !name.starts_with("MCI_") && name != "<null>")
-                .collect();
-            return Some((prefix, anonymous));
+            });
         }
 
         for child in children {
@@ -605,23 +559,5 @@ unsafe fn find_hud_clip(
             path.truncate(saved);
         }
         None
-    }
-}
-
-/// Set `<path>.visible` through `Movie::SetVariable`, logging the outcome.
-fn set_clip_visible(movie: &Movie, path: &str, visible: bool) {
-    let full_path = format!("{path}.visible");
-    let Ok(c_path) = CString::new(full_path.clone()) else {
-        tracing::warn!("scaleform: the clip path {full_path:?} contains a NUL; ignoring");
-        return;
-    };
-    let value = Value::new_boolean(visible);
-    // SAFETY: called on the capture thread with a checked live movie; the value is an unmanaged
-    // stack boolean the movie copies.
-    let ok = unsafe { movie.SetVariable(c_path.as_ptr() as *const u8, &value, 0) };
-    if ok {
-        tracing::info!("scaleform: set {full_path} = {visible}");
-    } else {
-        tracing::warn!("scaleform: SetVariable failed for {full_path} (path not found?)");
     }
 }

@@ -1,0 +1,69 @@
+name = "shore-lake-patch63-hull"
+warmup_frames = 30
+samples = 3
+interval_seconds = 4.0
+matched_treatment = "patch63_hull_abba"
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+
+[diagnostics]
+late_sky_stages = true
+dof_inputs = true
+fog_inputs = true
+fog_generation = true
+ssr_bracket = true
+ssr_operands = true
+ssr_prepare = true
+ssr_history = true
+early_depth = true
+velocity_trace = true
+bark_color_trace = true
+post_geometry = true
+terrain_interval = true
+tess_writer = true
+tess_owners = true
+base_sources = true
+base_projection = true
+interval_trace = true
+impostor_inputs = true
+left_interval = true
+group_sources = true
+group_inputs = true
+group_residual = true
+group_cards = true
+terrain_sources = true
+residual_bark = true
+resolve_inputs = true
+resolve_samples = true
+resolve_shadow = true
+patch_draw_ordinal = 28
+second_patch_ordinal = 30
+water_inputs = true
+lake_samplers = true
+lake_displacement = true
+lake_owner_four = true
+lake_producer = true
+water_surface_inputs = true
+water_tess_draw = 7
+shader_identity = true
+
+[scene]
+position = [7586.867, 1514.6827, -4081.8762]
+orientation = [0.073511092, 0.907424474, 0.221448052, -0.34948205]
+
+[scene.environment]
+hour = 13.226033
+weather = "sunny"
+
+[[configurations]]
+mode = "left_only"
+
+[[configurations]]
+mode = "right_only"
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"

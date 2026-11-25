@@ -1,101 +1,131 @@
-//! The core stereo widgets: the double-Draw toggles, the per-eye camera offset, and FSR.
+//! The core stereo widgets: the double-Draw switch, FSR, and the shader reload that applies the
+//! shader patches.
 
-use crate::config;
+use crate::{
+    config,
+    fsr::AntiAliasing,
+    hooks::graphics_engine::{shader, shadow_fit_gap_m},
+};
 
 pub(super) fn section(ui: &mut egui::Ui, cfg: &mut config::Config) {
     ui.checkbox(&mut cfg.stereo.enabled, "Stereo (double-Draw)")
         .on_hover_text("Issue a second game.Draw per frame; CClock::Update is gated to once/frame");
-
-    ui.checkbox(
-        &mut cfg.stereo.cameras,
-        "Stereo cameras (per-eye IPD offset)",
-    )
-    .on_hover_text("Offset the active camera per eye so the two draws diverge");
-    ui.add(egui::Slider::new(&mut cfg.stereo.ipd, 0.0..=100.0).text("IPD (m)"));
-
-    ui.collapsing("FSR", |ui| {
-        ui.checkbox(
-            &mut cfg.fsr.enabled,
-            "Anti-aliasing (replaces the engine SMAA)",
-        );
-        ui.checkbox(
-            &mut cfg.fsr.jitter,
-            "Temporal jitter (off = FSR blurs; A/B to confirm the jitter)",
-        );
-        ui.horizontal(|ui| {
-            ui.label("Jitter sign (camera side):");
-            let (sx, sy) = &mut cfg.fsr.jitter_sign;
-            if ui.selectable_label(*sx > 0.0, "x+").clicked() {
-                *sx = 1.0;
-            }
-            if ui.selectable_label(*sx < 0.0, "x-").clicked() {
-                *sx = -1.0;
-            }
-            if ui.selectable_label(*sy > 0.0, "y+").clicked() {
-                *sy = 1.0;
-            }
-            if ui.selectable_label(*sy < 0.0, "y-").clicked() {
-                *sy = -1.0;
-            }
-        })
-        .response
-        .on_hover_text(
-            "Must agree with the offset reported to the FSR dispatch, or fine detail \
-                 pulses at the jitter cadence -- flip live to settle the convention",
-        );
-        ui.add(
-            egui::Slider::new(&mut cfg.fsr.jitter_scale, 0.0..=1.0)
-                .text("Jitter scale (diagnostic)"),
-        );
-        ui.horizontal(|ui| {
-            let mut sharpen = cfg.fsr.sharpness.is_some();
-            ui.checkbox(&mut sharpen, "Sharpening");
-            match (sharpen, cfg.fsr.sharpness) {
-                (true, None) => cfg.fsr.sharpness = Some(0.5),
-                (false, Some(_)) => cfg.fsr.sharpness = None,
-                _ => {}
-            }
-            if let Some(s) = cfg.fsr.sharpness.as_mut() {
-                ui.add(egui::Slider::new(s, 0.0..=1.0).text("strength"));
-            }
-        });
-        ui.checkbox(
-            &mut cfg.fsr.motion_vectors,
-            "Motion vectors (off = ghosts moving objects; A/B the decode)",
-        );
-        ui.checkbox(
-            &mut cfg.fsr.mv_jitter_cancel,
-            "MV jitter cancel (vectors carry the camera jitter; FSR wants them jitter-free)",
-        )
-        .on_hover_text(
-            "The +/-0.5 px jitter wobble in the vectors flips FSR's history validation over \
-                 steep depth gradients -- region-scale one-frame pops at the jitter cadence",
-        );
-        ui.checkbox(
-            &mut cfg.fsr.mv_stereo_correction,
-            "Stereo MV correction (re-anchor velocity at the per-eye camera)",
-        )
-        .on_hover_text(
-            "The engine's velocity reprojects with the center camera's previous \
-                 view-projection; each eye rasterizes with its own, so static pixels carry a \
-                 spurious parallax vector and FSR flickers shadow edges per eye under motion \
-                 (issue #10)",
-        );
-        ui.horizontal(|ui| {
-            ui.label("MV sign:");
-            let (sx, sy) = &mut cfg.fsr.mv_sign;
-            if ui.selectable_label(*sx > 0.0, "x+").clicked() {
-                *sx = 1.0;
-            }
-            if ui.selectable_label(*sx < 0.0, "x-").clicked() {
-                *sx = -1.0;
-            }
-            if ui.selectable_label(*sy > 0.0, "y+").clicked() {
-                *sy = 1.0;
-            }
-            if ui.selectable_label(*sy < 0.0, "y-").clicked() {
-                *sy = -1.0;
-            }
-        });
+    ui.horizontal(|ui| {
+        ui.label("Anti-aliasing");
+        for (choice, label, hover) in [
+            (
+                AntiAliasing::Fsr,
+                "FSR",
+                "FSR 2 at 1:1 in place of the engine's SMAA",
+            ),
+            (
+                AntiAliasing::Taa,
+                "TAA",
+                "The mod's own single-pass temporal resolve in place of the engine's SMAA: \
+                 reprojected, variance-clipped history from the same jitter and motion vectors \
+                 FSR uses",
+            ),
+            (
+                AntiAliasing::Engine,
+                "Engine",
+                "The engine's own anti-aliasing (SMAA 1x in stereo), without the jitter",
+            ),
+        ] {
+            ui.selectable_value(&mut cfg.fsr.antialiasing, choice, label)
+                .on_hover_text(hover);
+        }
     });
+    if cfg.fsr.antialiasing == AntiAliasing::Taa {
+        let taa = &mut cfg.fsr.taa;
+        ui.add(egui::Slider::new(&mut taa.history_weight, 0.0..=0.98).text("TAA history at rest"))
+            .on_hover_text("The history's share of each pixel with the pixel still");
+        ui.add(
+            egui::Slider::new(&mut taa.motion_history_weight, 0.0..=0.98)
+                .text("TAA history in motion"),
+        )
+        .on_hover_text("The history's share once the pixel moves 16 pixels a frame or more");
+        ui.add(egui::Slider::new(&mut taa.clip_gamma_rest, 0.5..=3.0).text("TAA clip box at rest"))
+            .on_hover_text("The colour box's half-size in standard deviations, pixel still");
+        ui.add(egui::Slider::new(&mut taa.clip_gamma, 0.5..=3.0).text("TAA clip box in motion"))
+            .on_hover_text("The colour box's half-size in standard deviations, pixel moving");
+        ui.add(
+            egui::Slider::new(&mut taa.current_sharpness, 0.5..=16.0)
+                .text("TAA current-frame sharpness"),
+        )
+        .on_hover_text("The falloff of the kernel that unjitters the current frame");
+        ui.add(egui::Slider::new(&mut taa.depth_tolerance, 0.01..=0.5).text("TAA depth tolerance"))
+            .on_hover_text("The relative depth slack before a history counts as disoccluded");
+    }
+    ui.checkbox(&mut cfg.fsr.jitter, "Sub-pixel jitter (FSR and TAA)")
+        .on_hover_text(
+            "Moves each eye's projection by a sub-pixel offset of FSR's Halton sequence every frame \
+             and tells the temporal resolve the offset, so its accumulation gathers new sample \
+             positions rather than filtering one. Only while FSR or TAA runs. Off for an A/B.",
+        );
+    ui.checkbox(
+        &mut cfg.fsr.stereo_mv_correction,
+        "FSR stereo motion-vector correction",
+    )
+    .on_hover_text(
+        "Adds the parallax between each eye and the centre camera to FSR's motion vectors, for a \
+         velocity buffer written against the centre camera's previous frame. Only the velocity \
+         pass's own draws write that buffer; every other pixel holds zero motion, which this turns \
+         into the parallax. Off for an A/B.",
+    );
+    ui.checkbox(
+        &mut cfg.fsr.hybrid_velocity,
+        "FSR hybrid motion vectors (camera motion from depth)",
+    )
+    .on_hover_text(
+        "Gives every pixel the velocity pass does not draw, and every pixel whose encoded motion hit \
+         the encoding's clamp, the camera's motion from its depth through each eye's own previous \
+         view-projection, keeping the engine's object motion where it wrote some. Off for an A/B.",
+    );
+    ui.checkbox(
+        &mut cfg.stereo.shadow_anchor_to_fit,
+        "Anchor shadows to the cascade fit's camera",
+    )
+    .on_hover_text(
+        "Re-anchors the sun-shadow lookup at the camera position the cascade fit read, so a gap \
+         between it and the render camera does not shift every shadow off its object. Off for an \
+         A/B of shadows detached from distant objects while moving fast.",
+    );
+    ui.checkbox(
+        &mut cfg.stereo.terrain_prep_from_centre,
+        "Terrain patch prep from the centre camera",
+    )
+    .on_hover_text(
+        "Runs the terrain patches' per-frame detail and morph from the centre camera when the eyes \
+         are drawn one at a time, as single-pass runs it once for both. Off, each eye morphs the \
+         ground from its own position, so the eyes disagree about the surface by a fraction of a \
+         millimetre.",
+    );
+    ui.label(format!(
+        "Render camera to the shadow fit's camera: {:.2} m",
+        shadow_fit_gap_m()
+    ));
+    ui.checkbox(
+        &mut cfg.stereo.shadow_fit_unpadded,
+        "Fit shadow cascades to the eyes' exact field of view",
+    )
+    .on_hover_text(
+        "Fits the sun-shadow cascades to the union of the two eyes' fields of view instead of the \
+         padded cull frustum, for finer shadow texels. Off for an A/B.",
+    );
+    ui.horizontal(|ui| {
+        if ui.button("Reload shaders").clicked() {
+            shader::request_reload();
+        }
+        let patched = shader::patched_count();
+        ui.label(if patched == 0 {
+            "0 shadow PCF sites patched".to_string()
+        } else {
+            format!("{patched} shadow PCF sites patched")
+        });
+    })
+    .response
+    .on_hover_text(
+        "Re-creates every shader so the shader patches take effect on shaders created before \
+         injection (F11 toggles the shadow PCF patch and reloads).",
+    );
 }

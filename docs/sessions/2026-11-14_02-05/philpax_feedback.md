@@ -1,0 +1,124 @@
+- I think we should go back to directly capturing the eye views (possibly both, if bandwidth tolerates it) from the game, but in a sane way: not full-resolution, but an appropriate resolution (either 1920 wide or 1080 tall, whichever offers us more useful surface area). we should keep as much of the processing on the GPU as possible, to avoid paying the cost of doing this on the CPU. if at all possible, we should also integrate this into the client proper: our current sidecar script solution won't work on Windows.
+    - I'd like to use this as a mechanism for beta testers to be able to record their entire sessions for me to test, as well. something portable will be useful for that.
+    - I bring this up because this particular capture has quite a lot of bleedthrough from the desktop underneath, probably as a result of a capture timing issue
+- when in the idle pose (e.g. not moving), I'd like us to apply more of our IK. that is, I should be able to see my legs moving around when I move IRL while I'm on-foot. we should only shift to authored poses when the IK would be ill-posed (e.g. movement)
+    - we should also consider blending/replacing animations in more scenarios, too. e.g. the start of a jump should be animated, but it's less clear if the peak and descent should be, or if they should be IK'd
+    - also, this may behave poorly, but we should consider it during walking, too, but with a less-strong blend. we primarily want to make sure we're capturing _some_ of the user's natural body movement, even if we're 80% the authored walk
+- ??s: walking forward pushes my body's chest in front, taking up more of my field of view. hard to show from the footage (which drops the top and bottom), but it's pretty obvious in headset. I suspect that this is an animation thing where our centre of mass is pushed forward as a result of the stride or such. have a look during walk states?
+    - 278s: visible when walking backwards. 280s: walking forward
+- 83s: I'm trying to interact with this ragdoll using my grapple here, but nothing much is happening. I guess we should discuss waht should happen?
+    - we show the grapple hint laser when we're already grappled. seems redundant
+- 92s: I can't shoot while the grapple is active
+- 115s: primed grenade in hand does not make the same sounds or effects as a primed grenade in the live world. study this more. figure out how we can replicate this in the most efficient way possible (e.g. avoid reimplementing all of the effect stack)
+- 132-140s: study my body's movement/IK here. there's sliding, slight misalignment, etc. a more IK'd regime should help with this, but we also presumably need to think about where the body should be located, as well as how we resolve discrepancies. I noticed that after a time, the body does eventually catch up to where my head was, but I think we might need to make that a bit more evident
+- 191-252s: riding a bike/scooter remains really quite difficult. I'm not sure why this is. it's a combination of the acceleration/brake controls going and stopping at perceived-random times, and losing grip of the steering. I think, for now, let's give up on grip-driven acceleration/braking and rely on the triggers, and focus on making the steering as good as possible. for that, I think we want to be somewhat generous and rely on haptics to guide users to move their hands in the right ways. our in-car steering is pretty decent now, so I'd use that as a template
+- 262s: as already discovered by you, we do not suppress the parachute roll, and this is truly terrible in terms of both camera movement and clipping into your own body. we've got to stop the entire roll animation from happening
+- let's hide the body yaw arrows by default
+- 295s: grapple to wingsuit transition. so, two issues: there's a massive loss of speed, and our head violently bobs down before going back to looking at horizon. the latter is the most pressing issue - we should maintain our head angle throughout this - but the former is also disorienting. looking at the chart, the wingsuit's active speed is lower than the velocity we went into it with - can we lerp down to wingsuit speed instead of the sudden impulse?
+- 297s: there are better examples of it, but we no longer follow the body when it gets up, so we have head-body-camera detachment again. need to revert the relevant change from the last batch, but do this in a way where it doesn't reintroduce the nauseating head shift from jumping off roofs
+- 301s: also evident here
+- 322-344s: when grapple-swinging like this, our body is doing all kinds of strange things. I think we should have a blended ragdoll-IK pose (rotated into the coordinate frame): we want to convey that Rico's body is subject to the forces that are being acted upon it, but that his muscles are also able to keep his body somewhat firm during this. certainly, it should be firm enough for us to be able to grab at our holsters
+    - it also shouldn't be quite this stiff - our legs should be properly reacting to the fact we're swinging around a windmill
+- 370.2s: what's going on with our wingsuit arms man :sob: my hands are nowhere near this. is the wingsuit itself constraining the IK target or something? my hands were straight out at the shoulders, and that's what I'd expect to see here. instead, the hands are bent in, the wingsuit is wrapping in a weird way, and this just looks super weird
+- 388.682s: I'm not actually sure what this is, but there's an object on my body that's failing to interpolate properly, so it keeps popping in and out of my view. look at the frames around this, I suppose
+- 441.91s: we have not solved the shadows being distant from the originating object - see the car, whose shadow still appears somewhat distant from it. good hypothesis from before, though. perhaps I need to do a render trace when this happens?
+- 445.836s: camera clips underground
+- 445.911s: clipping into my own body. study this landing sequence frame-by-frame, it's not amazing
+- 446.576: similarly, body visible when it should not be
+- 459s: starting to think that we should not couple door opening to hitting the exact spot on the door that opens it. instead, you should be able to open the door from anywhere on the door, it's just that the force you're applying will be at that specific point and thus modulated accordingly. it already behaves like this once the door is open, so I think it's just a matter of consistency
+    - this isn't exactly real-world accurate, but 1) Rico is a supersoldier and 2) the open-door positions aren't exact anyway, especially for more esoteric vehicles, so this is less annoying from a gameplay perspective
+- 465-468s: pretty sure I was trying to regrapple to the car throughout this grapple, but it wasn't working. my grapple cursor was intersecting the vehicle, I was mashing the button, and yet nothing happened
+- 478s: pulling the trigger on the C4 should immediately pull out the detonator and detonate it. that is, there should be no intermediate step where you need to pull out the detonator and _then_ detonate it
+- 489.5s: the detonator that appears (and then disappears!) is upside down. I guess we might just not want to render this second detonator and rely on the authored detonator? (which, to be clear, also in the wrong place, but at least we'll only need to fix one)
+- 490-492.5s: awful getting up animation. head-body-camera detachment, our body's yawed differently from where we were before, etc. let's study this and see what we can do to fix this
+- 510-519s: weird things happening with my hands. they keep snapping back and forth. think there's some kind of conflict with the stunt position state
+- 532.5s: I successfully extract the gunner from the gunner seat so I can sit in, but they just fall through the vehicle, instead of being caught by my hands and pulled upwards. another moving reference frame issue that interferes with the ragdoll process?
+- 535s: I successfully enter the gunner seat, but I'm too close to the gun and have to physically step back to be able to grab the controls
+- 536-550s: grabbing the controls doesn't work. my hands don't appear (but the grab circles do), and I cannot actually reorient the gun in any way. it does not respond to my hands. shooting works, though
+- 556.8s/560.57s: throwing projectiles don't appear to account for the moving reference frame. I can see the C4 I threw in front of me land behind me at 561.5s
+- 565-572s: lots of unpleasant camera-body clipping. check the frames on this
+- 576s: same with death animation. falling over *is* cool, just wish we didn't clip into our body while doing so
+- 582s: loading screens, unlike the game menus, should loosely follow your face, like the HUD, as they're the only thing you see (i.e. there is no reference frame)
+- 592.69s: same violent head pitch occurs when wingsuiting from any elevated postion, as discussed before. need to suppress
+- 597.3s: same getting up from landing camera-body-head detachment
+- 646s: I think this was the point at which I realised I had lost my left pistol on respawn? I'm not actually sure if that happened before I died or not, but we should verify that left/right holsters are carried across respawns correctly, and as a safe guard, if you only have one of the two holsters filled, we should replicate that item over to the second holster
+- 730-734s: to make it easier to target things in the UI, we should freeze the cursor where it's at when the trigger starts being pressed, and apply the input at full press. this allows users to narrow down on what they want by lightly holding the trigger, and then commit to it safely
+- 740.35s: can see a grab circle visible in loading screen. suppress all grab circles
+- 743-754s: suppress this helicopter-grab animation/state. instead, we should be standing on the helicopter's rail with a degree of stickiness, and be free to move around on that rail with our full IK. in this position, it should be possible for us to open the helicopter's door, for example. stepping fully off the rail, as I attempted to do here, should be the same as jumping (e.g. I am walking into open air and should start a skydive).
+    - ideally, without actually playing the jump animation. if the user didn't trigger a jump, we shouldn't jump.
+- 755.419s: camera-body detachment
+- 757.5s: wingsuit camera pitch swing
+- throughout this flight sequence, a dot cursor is visible on screen. I think this might be from the map screen and wasn't clewared properly?
+    - it's quite clear at 774.24s, and is left of the mouse cursor
+- 800-801s: I attempt to grapple swing behind the plane here, and my motion vector goes crazy. I go from moving towards the plane to being shunted to the left. this is a problem for all grapple swings, in all directions, as I'll show
+- 802s: hitting the ground breaks the grapple. undesirable. my grapple should hold for as long as I hold
+- 807.9s: another tangential jump from grapple swing
+- 824.91: camera-body detachment
+- 833.8: grapple swing tangential jump
+- 844.69-865s: my body is upside down, not vertical, and isn't swinging from my arm correctly. I also can't release this grapple without regrappling; jumping does not work to release
+    - also, during this, both my back weaopn and right pistol dropped, but I'm willing to believe that was an artifact of incorrect body positioning interacting poorly with grips
+- 870.2: camera-body detachment landing
+- 885.89: I engage the grapple swing, my vertical velocity rapidly changes. tangential jump
+- 899.7-900.2s: legs misbehaving. IK not fitting to the ground underneath correctly?
+- 906.45s: disengaging grapple swing immediately terminates all of my velocity
+- 918.54s: grapple-swinging at a diagonal drives me into the ground
+- same is much more obvious at 927.524s
+- in general, there shouldn't _be_ a vertical_mps discontinuity at grapple swing engagement. the retract force should stop (perhaps gently), and the grapple should become taut and act as a swing
+- 950s: trapped in the grapple-attached-to-ceiling state again. I think we're not fully suppressing the spider state, which is why this is happening?
+- 1097.4s: do you think that, after we apply the grab-door-anywhere change, I will be able to open the cockpit and drag the pilot out of this?
+- 1121.42: I am unable to reload my gun. clip release does nothing
+- 1153.93s: not obvious that my hand can grab the parachute's handle at this distance (I'm not entirely sure why the handle is so far out of grasp?)
+    - we should investigate why it's so far up, but in addition to that, we should extrude the grab circle into a grab column that demonstrates the valid placements for the hand to be to grab
+    - also, there's another example of this later on, but I don't think there's a way for me to actually pitch with the parachute? that is, up and down on the left stick will pitch the parachute normally, but no amount of motion back and forth while holding the handles does the same thing. there's just no way for me to actually descend or bleed speed
+- 1166s: my legs are not where I'd expect them to be. let's apply the blended IK-ragdoll-physics treatment from before here, too: they should be solid enough to let me grab items from them, but free enough that they can reflect the physical movements I'm making with my real body
+- 1176s: parachute to wingsuit head pitch swing
+- 1223-1244s: throughout this, I was trying to use my left hand to point at a point on the ground and grapple to gain velocity, to no luck. wingsuit grappling seems a bit broken right now
+- 1313s: climbing up a cliffside. my legs aren't resting on the cliffside. not sure how much we can do about this, but anything we can do for versimilitude would be welcome. cast forward from the feet when in this rough state and tell the IK to park the feet accordingly?
+- during the next 30 seconds of climbing, I had to keep pushing my physical body forward. intuitively, this makes sense, but it makes for dangerous gameplay. not sure what we could do about this: perhaps casual recentering to bring the world closer to you? idk
+- 1382.8: camera-body detachment
+- 1384s: I am not actually sure what state I'm in here? I'm freefalling but also standing? very confusing. this should be a clean freefall
+- 1400s: struggling to grab the parachute handle. any idea what's going on here?
+- 1438.8s-1442s: we intentionally suppress held prop-player collisions to avoid problems with walking into a prop you're holding, but this barrel is swinging directly into where my body is. doesn't feel right. what can we do about this?
+- 1459.4s: not sure what happened here - I opened my parachute and my body swung left? did I hit something, or is this an unexplained impulse?
+- ragdoll gripping is inconsistent. sometimes it works perfectly, sometimes the grip gets lost with movement, sometimes the two-point grip causes the ragdolls to violently spasm in Rico's hands
+- 1629s: I am putting grenades into my full grenade pouch, which is rejecting them, causing the grenades to drop to the floor without me noticing. can we add more feedback here to make it more obvious that they've been rejected? a noise, a haptic vibration, idk
+- standing in front of a locker should refill all of my spare ammo, as it does in the base game. it shouldn't reload my loaded clips, but the clips that I'm carrying should be refilled
+- 1653s: for our dual-wielded duplicates, we spawn a second weapon when we grab the first one. can this be avoided? can we just spawn the two stacked on each other immediately? that is more honest/less confusing
+- 1735s: not sure if we actually got around to implementing mounted machine gun yanking, but it registers as a valid target here, but can't be yanked
+- 1742.59s: camera-body detachment while entering mounted gun
+- 1747-1754s: as before, can't aim the gun at all
+- 1794s: this is me grappling to the helicopter under our suppress-upside-down logic. this sort of works, but: I violently swing around it - I don't land in a stable position underneath the helicopter, we need to apply some dampening - and there is no way for me to actually enter the helicopter from this position. pressing Y to enter, as you would in the base game, puts me into the wingsuit
+- 1806s: camera clipping into body. think this is because my body is misaligned yaw-wise with where my head's looking?
+- 1886-1891s: struggling to reload by knockout. might need to make this more generous still? or is this merely a skill issue on my part?
+- 2044-2050s: struggling to grab the clip from my waist, because my body yaw was misaligned. I think we can safely keep the body yaw fairly strongly aligned with the direction of movement to avoid this?
+- vehicle entry camera is always a bit painful, but I think this is a problem for most VR games. a solution I've seen is to step the camera angle to be aligned with the vehicle's forward direction, so that if you keep your head yaw still, your camera yaw is stepped from yaw at entry to vehicle forward yaw with limited discomfort. "step" being choice word here - it's not a lerp, it is segmented to move you closer in hard steps every half a second
+- 2362.54s: reaching for my gun on my left leg in its holster, grab circle's not there. where are the grab circles placed, exactly? are they relative to the waist, or relative to the left leg?
+- 2526s: after a bad grapple swing, my weapon flies off? I don't think I let go of anything...?
+- 2539s: ceiling attach, should be hang
+- 2560-2580s: oddly difficult to put my grenades back in. body yaw issue?
+- 2634s: wrong pose for this to be in - as before, should be hanging, body nearly-fully-IK'd with physics, grapple swinging from left arm, rest of the body free to act as it wants. tried to enter the helicopter from this position, couldn't
+- 2659-2665s: two-handed NPC grab goes terribly wrong. spasms, as mentioned before
+- 2674-2768s: propane tank grab goes terribly wrong. hand and prop spasms
+- 2702s: example of what I mean by trying to grab doors by their visual handles, which do not correspond to their animation-derived handles
+- 2806s: I open a parachute from wingsuiting here: my camera does not whip up to match the parachute force, resulting in my camera clipping into the body reaching upwards
+- as mentioned before, I have no way to descend or bleed speed through the parachute handles alone
+- grapple cursor doesn't account for moving reference frames gracefully - go frame-by-frame at 2926s, you'll see it bounce back and forth despite my hand pointing in the same rough location
+- 2993s: camera-body detachment during this ragdolling
+- 3238s: hitting people with props that you're holding doesn't seem to do anything
+- 3257s: ragdoll grabbing not working
+- 3265s: cannot hit people with the weapon I'm swinging
+- 3270s: grabbing NPC behaves poorly. ditto all attempts to grab ragdoll NPCs afterwards. spasming, inconsistent grabs, difficult to move
+- 3382-3389s: couldn't ragdoll-grab machine gunner out of spot
+- 3395s: as before, couldn't operate machine gun with grips. is a regression, I think, because I remember being able to actually grip and move this around its joint before. also still shows the prompt to enter machine gun mode with Y, which I thought we suppressed
+- I managed to "pull" it off its mount, but it was still very much stuck in place, and I couldn't actually hold it with my hands. doing so ejected my existing weapons from my body, which is not ideal
+- 3442s: couldn't pick it up off the ground with either grapple or handes
+- 3518s: struggled to grapple C4 off the ground until I got closer
+- 3715.6-3718.2s: right hand/gun stuttering/moving oddly until I stop and let it settle, at which point it's fine
+- 3791s: yoke is in the right place, collective is outside of the helicopter. bring that closer in. where are these located? is there an easy way to calibrate them in-game?
+- 3824.8: camera-body detachment
+- 3879.97: both controls are very out of place for this helicopter
+- 3894s: I tried to put my SMG away, limited success, not sure where it went
+- 4055-4070s: I tried to grab this machine gun on the boat, and it ended up separating from the boat entirely. very strange
+- something I keep forgetting to mention: there is no way to reload a weapon while in a vehicle. I wonder what we can do about this. maybe double-tapping the fire button drops the mag? not ideal but it is something
+- 4147s: can't bring out the C4 detonator or grenades while seated
+

@@ -27,7 +27,7 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config, debug::pipeline_probes::record_main_color_mean,
-    hooks::graphics_engine::reconstruction,
+    hooks::graphics_engine::reconstruction, screenshot::harness::stages,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -42,9 +42,7 @@ fn atmospheric_scattering_draw(
     rc: *mut RenderContext,
     info: *const RBIInfo,
 ) {
-    let enabled = Config::lock_query(|c| {
-        c.stereo.single_pass.atmospheric_per_eye && c.stereo.reconstruct_offaxis_inverse
-    });
+    let enabled = Config::lock_query(|c| c.stereo.single_pass.atmospheric_per_eye);
     let call = || {
         ATMOSPHERIC_SCATTERING_DRAW
             .get()
@@ -59,6 +57,7 @@ fn atmospheric_scattering_draw(
     if scene_pass {
         crate::debug::pipeline_probes::record_global_constants("scene");
         record_main_color_mean("pre_atmosphere");
+        stages::capture_before_atmosphere();
     }
 
     // SAFETY: `rc` is the live render context for this dispatch; the caller (the engine's draw
@@ -71,6 +70,7 @@ fn atmospheric_scattering_draw(
     }
 
     if scene_pass {
+        stages::capture_after_atmosphere();
         record_main_color_mean("post_atmosphere");
     }
 }

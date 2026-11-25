@@ -13,6 +13,7 @@ use dxbc_stereo::DxbcError;
 use parking_lot::Mutex;
 
 use super::*;
+use crate::session::CaptureFile;
 
 /// Vertex-shader name prefixes whose no-`cb0` shaders are reprojected for single-pass: the scene
 /// geometry that writes clip as `scene-VP · world` (skinned characters/NPCs, static and dynamic
@@ -49,6 +50,22 @@ const REPROJECT_NAME_PREFIXES: &[&str] = &[
     "dirtroad",
 ];
 
+/// The cloud layers' vertex shaders, gated by the
+/// [`clouds_per_eye`](crate::stereo::config::SinglePassConfig::clouds_per_eye) flag. Each takes its
+/// clip position from the full view-projection (`cb0[0..3]`), which the remap leaves alone, so under
+/// the collapse both eyes drew the clouds through the centred render camera. Matched by exact name,
+/// because the `cloud` name space also holds the cloud-shadow pass. `clouds` and `cirrusclouds` also
+/// read the camera position (`cb0[4]`) for their shading, which claims them for the remap, so they
+/// reach the reprojection through [`should_reproject_camera_only`]; `softclouds` reads no other
+/// per-eye row and reaches it directly.
+const CLOUD_REPROJECT_NAMES: &[&str] = &["clouds", "cirrusclouds", "cloudflythrough", "softclouds"];
+
+/// The stars' vertex shader, gated by the
+/// [`stars_per_eye`](crate::stereo::config::SinglePassConfig::stars_per_eye) flag: a billboard per
+/// star, placed by a baked view-projection at vertex `cb1` with its clip depth pinned to the far
+/// plane, which the promoted draw keeps through the reprojection.
+const STARS_REPROJECT_NAME: &str = "starsshader";
+
 /// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: the
 /// Vertex-shader name prefixes of the far-distance tree impostors (`CTreeImpostorRB`), gated by the
 /// separate [`single_pass_tree_impostors`](crate::stereo::config::StereoConfig::single_pass_tree_impostors)
@@ -60,9 +77,37 @@ const REPROJECT_NAME_PREFIXES: &[&str] = &[
 /// the coordinated indirect handling (see `docs/mod/stereo/single-pass-render-blocks.md`).
 const VEGETATION_REPROJECT_NAME_PREFIXES: &[&str] = &["treeimpostor"];
 
-/// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: either the
-/// `single_pass_reproject` flag is on and the name is on [`REPROJECT_NAME_PREFIXES`], or the
-/// `single_pass_tree_impostors` flag is on and the name is on [`VEGETATION_REPROJECT_NAME_PREFIXES`].
+/// Vertex-shader name prefixes of the static light sprites (`RenderBlockTypeLights`), gated by the
+/// separate [`static_lights_per_eye`](crate::stereo::config::SinglePassConfig::static_lights_per_eye)
+/// flag. Unlike the other screen-space effects, `lightsource` and `lightsource_fakelight` project a
+/// world position through the scene view-projection and only then expand the sprite in clip space, by
+/// a size scaled by the clip `w`; post-multiplying that clip position by `M_eye` moves the whole
+/// sprite into the eye, offset included, because `M_eye` is linear. Their draw is non-indexed, which
+/// the draw path promotes to two instances for a patched shader (`draw_detour`).
+const STATIC_LIGHT_REPROJECT_NAME_PREFIXES: &[&str] = &["lightsource"];
+
+/// The vertex shader of the ambient-occlusion volumes (`CRenderBlockAOBox`), gated by the
+/// [`ao_volumes_per_eye`](crate::stereo::config::SinglePassConfig::ao_volumes_per_eye) flag. It
+/// projects the box's corners through the full view-projection (`cb0[0..3]`), which the remap leaves
+/// alone, and hands the pixel shader a projective screen UV derived from that clip position; the
+/// reprojection moves the box into each eye, and the pixel-shader rewrite stops reading that UV.
+const AO_VOLUME_REPROJECT_NAME: &str = "aobox";
+
+/// The vertex shader of the water reflection planes' proxy quad and the water mask volumes
+/// (`CRenderBlockWaterReflectionPlane`, `CRenderBlockWaterMask`), gated by the
+/// [`water_plane_per_eye`](crate::stereo::config::SinglePassConfig::water_plane_per_eye) flag. Both
+/// blocks stage an offset world-view-projection at vertex `cb1[0..3]` and the shader is a bare
+/// multiply-add chain over it, so the reprojection moves either into each eye.
+const WATER_PLANE_REPROJECT_NAME: &str = "watermask";
+
+/// Whether a no-`cb0` vertex shader named `name` should be reprojected for single-pass: the
+/// `single_pass_reproject` flag is on and the name is on [`REPROJECT_NAME_PREFIXES`], the
+/// `single_pass_tree_impostors` flag is on and the name is on [`VEGETATION_REPROJECT_NAME_PREFIXES`],
+/// the static-light flag is on and the name is on [`STATIC_LIGHT_REPROJECT_NAME_PREFIXES`], or the
+/// ambient-occlusion volume flag is on and the name is [`AO_VOLUME_REPROJECT_NAME`], or the water
+/// plane flag is on and the name is [`WATER_PLANE_REPROJECT_NAME`], or the cloud flag is on and the
+/// name is one of [`CLOUD_REPROJECT_NAMES`], or the star flag is on and the name is
+/// [`STARS_REPROJECT_NAME`].
 /// Called from the `CreateVertexProgram` hook when `patch_vertex_shader` reports no per-eye `cb0`
 /// operands.
 pub fn should_reproject(name: Option<&str>) -> bool {
@@ -75,6 +120,14 @@ pub fn should_reproject(name: Option<&str>) -> bool {
             && VEGETATION_REPROJECT_NAME_PREFIXES
                 .iter()
                 .any(|p| name.starts_with(p)))
+        || (flags.has(Flag::StaticLights)
+            && STATIC_LIGHT_REPROJECT_NAME_PREFIXES
+                .iter()
+                .any(|p| name.starts_with(p)))
+        || (flags.has(Flag::AoVolumes) && name == AO_VOLUME_REPROJECT_NAME)
+        || (flags.has(Flag::WaterPlane) && name == WATER_PLANE_REPROJECT_NAME)
+        || (flags.has(Flag::Clouds) && CLOUD_REPROJECT_NAMES.contains(&name))
+        || (flags.has(Flag::Stars) && name == STARS_REPROJECT_NAME)
 }
 
 /// Whether a scene family the `cb0` remap *claims* should be reprojected instead, because the only
@@ -91,8 +144,9 @@ pub fn should_reproject(name: Option<&str>) -> bool {
 /// a rigid half-IPD offset from everything around it. That is visible in a single eye, not only in
 /// stereo.
 ///
-/// Reprojection is the fix and is already built; it was simply unreachable, because the remap claimed
-/// the shader before [`should_reproject`] was ever consulted. Routing it there costs nothing extra --
+/// Reprojection fixes it, and this check routes such a shader to it even though the remap's
+/// candidacy test claims it, which would otherwise keep [`should_reproject`] from being consulted.
+/// Routing it there costs nothing extra --
 /// the shader still resolves its eye from `SV_InstanceID & 1` and the draw is still the one
 /// instance-doubled submission.
 ///
@@ -140,6 +194,50 @@ pub fn should_eye_inject(name: Option<&str>) -> bool {
     config_flags().has(Flag::Terrain)
         && TERRAIN_VS_NAME_PREFIXES.iter().any(|p| name.starts_with(p))
         && !is_terrain_shadow_pass(Some(name))
+}
+
+/// Whether a terrain shader named `name` takes the pinned-eye reprojection
+/// (`dxbc_stereo::reproject_pinned_eye`) when the per-eye transforms decline it: the
+/// `single_pass_terrain` and `single_pass_terrain_patch_per_eye` flags are on, the name is a terrain
+/// family, and it is not a shadow pass. The vertex hook applies it to a terrain shader that already
+/// reads `SV_InstanceID` (the GPU-indirect basemesh permutations), and the domain hook to a terrain
+/// domain shader with no free eye lane (the patch system's tessellated permutations, whose vertex
+/// shaders fill all of `TEXCOORD3`). Both are drawn once per eye, never instance-doubled, so the pin
+/// the per-eye re-issue places on `cb13` gives each submission its eye.
+pub fn should_pin_terrain(name: Option<&str>) -> bool {
+    let flags = config_flags();
+    flags.has(Flag::Terrain)
+        && flags.has(Flag::TerrainPatchPerEye)
+        && name.is_some_and(|n| TERRAIN_VS_NAME_PREFIXES.iter().any(|p| n.starts_with(p)))
+        && !is_terrain_shadow_pass(name)
+}
+
+/// The reprojection of a vertex shader whose clip position comes from a scene view-projection: with
+/// [`full_view_projection_rows`](crate::stereo::config::SinglePassConfig::full_view_projection_rows)
+/// on, a shader that projects through the full view-projection (`cb0[0..3]`) reads the eye's copy of
+/// it from `cb13` instead (`dxbc_stereo::remap_full_view_projection`), and any other shader takes the
+/// `M_eye` reprojection.
+fn reproject_or_remap_full_view_projection(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
+    if full_view_projection_rows() {
+        match dxbc_stereo::remap_full_view_projection(code) {
+            Err(DxbcError::NoFullViewProjection) => {}
+            result => return result,
+        }
+    }
+    dxbc_stereo::reproject_vertex_shader(code)
+}
+
+/// Whether a vertex shader that projects through the full view-projection reads the eye's copy of it
+/// from `cb13` rather than reprojecting its clip position by `M_eye`.
+pub fn full_view_projection_rows() -> bool {
+    config_flags().has(Flag::FullViewProjectionRows)
+}
+
+/// Whether the terrain domain shaders take their camera rows from the eye's `cb13` slot
+/// (`dxbc_stereo::rebase_domain_shader`, `dxbc_stereo::rebase_pinned_domain_shader`) rather than
+/// reprojecting their clip position by `M_eye`.
+pub fn terrain_eye_rows() -> bool {
+    config_flags().has(Flag::TerrainEyeRows)
 }
 
 /// Whether a terrain shader named `name` is a shadow-pass variant. Shadow passes render the terrain
@@ -212,10 +310,27 @@ pub enum VsTransform {
     /// `SV_Position` and reproject like the model families, and only the tessellated ones (whose clip
     /// is built in the domain shader) need the eye-lane inject.
     ReprojectOrEyeInject,
+    /// The `M_eye` reprojection read from `cb13`'s first eye slot ([`should_pin_terrain`]), for a
+    /// shader whose draws are submitted once per eye with `cb13` pinned to that eye. The shader stays
+    /// out of the patched set, so its draws keep that per-eye submission.
+    Pinned,
     /// Leave the shader pristine. Either no transform applies to it, or a render-block intercept owns
     /// its draws ([`baked_cb_block_owns_vs`]) and the two mechanisms must not both claim the same
     /// geometry.
     None,
+}
+
+/// The `cb0` per-eye remap of a vertex shader, reading the render camera's position per eye where
+/// the shader takes its clip origin from it and
+/// [`clip_origin_per_eye`](crate::stereo::config::SinglePassConfig::clip_origin_per_eye) is on.
+/// Decided at shader creation, so a change to the switch applies at the next shader reload.
+pub fn remap_vertex_shader(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
+    let origin = if Config::lock_query(|c| c.stereo.single_pass.clip_origin_per_eye) {
+        dxbc_stereo::ClipOrigin::PerEye
+    } else {
+        dxbc_stereo::ClipOrigin::Unchanged
+    };
+    dxbc_stereo::patch_vertex_shader_with(code, origin)
 }
 
 /// Resolve which single-pass transform a vertex shader is to be given, from its engine name and the
@@ -237,6 +352,9 @@ pub fn decide_vs_transform(
         Err(DxbcError::NoPerEyeReferences) if should_eye_inject(name) => {
             VsTransform::ReprojectOrEyeInject
         }
+        Err(DxbcError::InstanceIdAlreadyDeclared) if should_pin_terrain(name) => {
+            VsTransform::Pinned
+        }
         Err(_) => VsTransform::None,
     }
 }
@@ -251,15 +369,15 @@ pub fn apply_vs_transform(
     remapped: Option<Vec<u8>>,
     name: Option<&str>,
 ) -> Option<Vec<u8>> {
-    let remap = || remapped.or_else(|| dxbc_stereo::patch_vertex_shader(code).ok());
+    let remap = || remapped.or_else(|| remap_vertex_shader(code).ok());
     match transform {
         VsTransform::Remap => remap(),
         VsTransform::ReprojectOrRemap => dxbc_stereo::reproject_vertex_shader(code)
             .ok()
             .or_else(remap),
-        VsTransform::Reproject => dxbc_stereo::reproject_vertex_shader(code).ok(),
+        VsTransform::Reproject => reproject_or_remap_full_view_projection(code).ok(),
         VsTransform::ReprojectOrEyeInject => {
-            let (out, path) = match dxbc_stereo::reproject_vertex_shader(code) {
+            let (out, path) = match reproject_or_remap_full_view_projection(code) {
                 Ok(blob) => (Some(blob), "reproject"),
                 Err(_) => (
                     dxbc_stereo::inject_eye_forward_vertex_shader(code).ok(),
@@ -268,6 +386,21 @@ pub fn apply_vs_transform(
             };
             tracing::info!(
                 target: "single_pass", stage = "vertex", name = ?name, path,
+                transformed = out.is_some(), "terrain: VS transform",
+            );
+            out
+        }
+        VsTransform::Pinned => {
+            // With the eye-row switch on, the pinned slot's full view-projection replaces the
+            // reprojection.
+            let out = if full_view_projection_rows() {
+                dxbc_stereo::remap_pinned_full_view_projection(code)
+            } else {
+                dxbc_stereo::reproject_pinned_eye(code)
+            }
+            .ok();
+            tracing::info!(
+                target: "single_pass", stage = "vertex", name = ?name, path = "pinned",
                 transformed = out.is_some(), "terrain: VS transform",
             );
             out
@@ -329,7 +462,7 @@ pub(super) fn cached_vs_transform(code: &[u8]) -> Option<VsTransform> {
 /// collision probability is negligible (~1e-15). The length is part of the key to make the cheap half
 /// exact, so a collision would require two shaders of the same length with identical hash —
 /// astronomically unlikely for this corpus.
-fn vs_blob_key(code: &[u8]) -> (usize, u64) {
+pub(super) fn vs_blob_key(code: &[u8]) -> (usize, u64) {
     const OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
     const PRIME: u64 = 0x0000_0100_0000_01b3;
     let mut hash = OFFSET_BASIS;
@@ -382,11 +515,11 @@ enum PatchClass {
 }
 
 /// Every censused vertex shader's name and its rewrite class (populated only while
-/// [`vs_name_census_enabled`] is on), dumped to `vs-name-census.txt` on a shader reload to build the
+/// [`vs_name_census_enabled`] is on), dumped to the session's shader dumps on a shader reload to build the
 /// reprojection allowlist from real data.
 static VS_NAME_CENSUS: Mutex<BTreeMap<String, PatchClass>> = Mutex::new(BTreeMap::new());
 
-/// Write the vertex-shader name census (see [`VS_NAME_CENSUS`]) to the session directory, grouped by
+/// Write the vertex-shader name census (see [`VS_NAME_CENSUS`]) to a new session shader dump, grouped by
 /// rewrite class with the reprojection candidates first. A no-op unless [`vs_name_census_enabled`] was on
 /// (the census is empty otherwise). Called after a shader reload, once the bounce has re-created every
 /// shader through the census hook.
@@ -395,9 +528,15 @@ pub fn dump_vs_name_census() {
     if census.is_empty() {
         return;
     }
-    let Some(dir) = crate::session::dir().and_then(|r| r.ok()) else {
-        return;
-    };
+    let path =
+        match crate::session::capture_file(CaptureFile::ShaderDump, &crate::session::stamp(), None)
+        {
+            Ok(path) => path,
+            Err(e) => {
+                tracing::warn!("vs name census: {e}");
+                return;
+            }
+        };
     let mut out = String::new();
     for (label, class) in [
         (
@@ -420,7 +559,6 @@ pub fn dump_vs_name_census() {
         }
         out.push('\n');
     }
-    let path = dir.join("vs-name-census.txt");
     match std::fs::write(&path, out) {
         Ok(()) => tracing::info!("vs name census -> {}", path.display()),
         Err(e) => tracing::warn!("vs name census: failed to write {}: {e}", path.display()),

@@ -1,0 +1,578 @@
+//! The hand bodies' own state, owned by the pre-simulation step: each hand's body, whether it is in
+//! the simulation, where it was last sent, its joint, and the gun body it holds, and the
+//! transitions between them: made, added, driven, held in place, parked, and destroyed. A hand's
+//! body never stops, parks, or goes while a gun body hangs from it: the gun's joints, and with a
+//! holding hand the gun body, go first ([`drop_hand`]).
+
+use std::{num::NonZeroUsize, time::Instant};
+
+use glam::Vec3;
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    frame::{Hand, Pose},
+    physical_hands::physics::{
+        BodyPhase, HandBodyStatus, HoldTarget,
+        body::{BodyError, BodyShape, BodySpec, HandBody},
+        contact,
+        drive::{DriveTuning, Goal, JoinedLoad, drive, drive_joined, rig_carry},
+        guns::step::{GunSlot, drop_hand},
+        joint::{Joint, JointKind},
+        render::RenderOffset,
+    },
+};
+
+/// One hand's drive request.
+pub(super) struct ActRequest<'a> {
+    pub hand: Hand,
+    pub spec: BodySpec,
+    /// Where the body is driven: the controller's palm at the end of the step, or a grip's pin.
+    pub goal: Goal,
+    /// Where the controller's palm will be at the end of the step, which the hand is drawn
+    /// against.
+    pub palm: Goal,
+    /// The world velocity of the frame that carries the goal, fed forward to the drive.
+    pub carrier: Vec3,
+    pub render: &'a RenderTuning,
+    /// Where the body is measured against for [`break_distance_m`](Self::break_distance_m): the
+    /// controller's palm now, without the lead of the goal, or a grip's pin.
+    pub anchor: Vec3,
+    /// How far the body may fall behind [`anchor`](Self::anchor) before it is put back on its
+    /// hand; none for a hand that holds an object through a joint, whose hold's strain decides
+    /// when it is torn away
+    /// ([`grasp::Strain`](crate::controllers::physical_hands::grasp::Strain)).
+    pub break_distance_m: Option<f32>,
+    /// Whether nothing solid lies between two points, game space: a body put back on its hand
+    /// must not pass through a wall or a character to get there.
+    pub clear: &'a mut dyn FnMut(Vec3, Vec3) -> bool,
+    pub tuning: &'a DriveTuning,
+    pub joined: Option<JoinedLoad>,
+    pub step_s: f32,
+}
+
+/// How a hand is drawn at its body.
+pub(super) struct RenderTuning {
+    pub max_shift_m: f32,
+    pub deadband_rad: f32,
+    pub max_turn_rad: f32,
+}
+
+/// What driving one hand did.
+pub(super) struct Acted {
+    pub status: HandBodyStatus,
+    /// How far the body was short of where it was last sent, world space.
+    pub lag: Vec3,
+    /// The offset from the controller's palm, as the last step was sent it, to where the body is
+    /// now: what draws the hand at its body.
+    pub render: RenderOffset,
+    pub created: bool,
+    pub destroyed: bool,
+    /// Whether the body's joint ended against the grip's wish.
+    pub joint_lost: bool,
+}
+
+/// The bodies, owned by the step.
+pub(super) struct Hands {
+    pub bodies: [Option<HandBody>; 2],
+    /// Each body's joint to what its grip holds.
+    pub joints: [Option<Joint>; 2],
+    /// Each holding hand's gun body.
+    pub guns: [Option<GunSlot>; 2],
+    /// Which bodies were put somewhere this step rather than driven there (added, put back on
+    /// their hand, or carried by the rig), so a gun hanging from one is put back on its seat.
+    pub placed: [bool; 2],
+    /// Whether each body is in the simulation.
+    added: [bool; 2],
+    /// Where each body was last sent, world space.
+    goals: [Option<Goal>; 2],
+    /// Where each controller's palm was predicted for the end of the last step, world space.
+    palms: [Option<Goal>; 2],
+    /// When each hand stopped acting.
+    pub missing_since: [Option<Instant>; 2],
+    resets: [u64; 2],
+    pub steps: u64,
+    pub last_log: Option<Instant>,
+}
+
+pub(super) static HANDS: Mutex<Hands> = Mutex::new(Hands {
+    bodies: [None, None],
+    joints: [None, None],
+    guns: [None, None],
+    placed: [false; 2],
+    added: [false; 2],
+    goals: [None; 2],
+    palms: [None; 2],
+    missing_since: [None; 2],
+    resets: [0; 2],
+    steps: 0,
+    last_log: None,
+});
+
+impl Hands {
+    /// Where the last step predicted `hand`'s palm for the end of the step, world space: what a
+    /// free hand's body was driven toward, so a post-step body that kept up sits on it.
+    pub(super) fn sent_palm(&self, hand: Hand) -> Option<Goal> {
+        self.palms[hand.index()]
+    }
+
+    pub(super) fn phase(&self, hand: Hand) -> BodyPhase {
+        let i = hand.index();
+        match (&self.bodies[i], self.added[i]) {
+            (None, _) => BodyPhase::Absent,
+            (Some(_), false) => BodyPhase::Parked,
+            (Some(_), true) => BodyPhase::Acting,
+        }
+    }
+
+    /// Make, add, and drive one hand's body toward `request.goal`.
+    pub(super) unsafe fn act(&mut self, request: ActRequest<'_>) -> Result<Acted, BodyError> {
+        let hand = request.hand;
+        let result = unsafe { self.act_checked(request) };
+        if matches!(result, Err(BodyError::Lost)) {
+            unsafe { self.lost(hand) };
+        }
+        result
+    }
+
+    unsafe fn lost(&mut self, hand: Hand) {
+        let i = hand.index();
+        unsafe { self.unjoin(hand, "the hand body was lost") };
+        unsafe { drop_hand(&mut self.guns, hand, "the hand body was lost") };
+        if let Some(body) = self.bodies[i].take() {
+            body.abandon();
+        }
+        self.added[i] = false;
+        self.goals[i] = None;
+        self.palms[i] = None;
+        self.placed[i] = false;
+        self.missing_since[i] = None;
+    }
+
+    unsafe fn act_checked(&mut self, request: ActRequest<'_>) -> Result<Acted, BodyError> {
+        let ActRequest {
+            hand,
+            spec,
+            goal,
+            palm,
+            carrier,
+            render,
+            anchor,
+            break_distance_m,
+            clear,
+            tuning,
+            joined,
+            step_s,
+        } = request;
+        let i = hand.index();
+        let mut destroyed = false;
+        if let Some(existing) = &self.bodies[i]
+            && let Some(reason) = incompatible(&existing.spec(), &spec)
+        {
+            // SAFETY: forwarded from the caller.
+            destroyed = unsafe { self.destroy(hand, reason) };
+        }
+        let mut created = false;
+        let body = match &mut self.bodies[i] {
+            Some(body) => body,
+            empty @ None => {
+                // SAFETY: forwarded from the caller.
+                let body =
+                    unsafe { HandBody::create(hand, spec, goal.position, goal.orientation) }?;
+                let filter = unsafe { body.filter_info() }.ok();
+                let contact_events = unsafe { body.raises_contact_events() }.ok();
+                tracing::info!(
+                    hand = hand.label(),
+                    body_id = body.body_id(),
+                    filter_info = ?filter.map(|f| format!("{f:#010x}")),
+                    system_group = spec.system_group,
+                    mass_kg = spec.mass_kg,
+                    shape = ?spec.shape,
+                    listens = spec.contact_events,
+                    contact_events = ?contact_events,
+                    "hand bodies: created a hand body"
+                );
+                self.added[i] = false;
+                created = true;
+                empty.insert(body)
+            }
+        };
+        if !self.added[i] {
+            // Added, then placed, as the engine activates its own free bodies: a parked body comes
+            // back at its hand, at rest.
+            // SAFETY: forwarded from the caller.
+            unsafe { body.add() }?;
+            self.added[i] = true;
+            self.goals[i] = None;
+            self.palms[i] = None;
+            unsafe { body.place(goal.position, goal.orientation) }?;
+            contact::mute_for(hand, PLACED_MUTE_STEPS);
+            self.placed[i] = true;
+            tracing::info!(
+                hand = hand.label(),
+                body_id = body.body_id(),
+                in_world = unsafe { body.is_added() }?,
+                "hand bodies: added a hand body to the world"
+            );
+        }
+        let motion = unsafe { body.motion() }?;
+        let lag = self.goals[i].map_or(Vec3::ZERO, |sent| sent.position - motion.position);
+        let drawn = self.palms[i].map_or(RenderOffset::NONE, |sent| {
+            RenderOffset::between(
+                Pose {
+                    position: sent.position,
+                    orientation: sent.orientation,
+                },
+                Pose {
+                    position: motion.position,
+                    orientation: motion.orientation,
+                },
+                render.max_shift_m,
+                render.deadband_rad,
+                render.max_turn_rad,
+            )
+        });
+        self.palms[i] = Some(palm);
+        let mut status = HandBodyStatus {
+            phase: BodyPhase::Acting,
+            body_id: Some(body.body_id()),
+            filter_info: unsafe { body.filter_info() }.ok(),
+            lag_m: lag.length(),
+            speed_mps: motion.linear.length(),
+            force_share: 0.0,
+            torque_share: 0.0,
+            resets: self.resets[i],
+            joint: None,
+        };
+        // A body far from its hand is put back on it only along a clear path; one held back by
+        // a wall or a character keeps pressing into it, so it never passes through.
+        if break_distance_m.is_some_and(|limit| (anchor - motion.position).length() > limit)
+            && clear(motion.position, goal.position)
+        {
+            // A body put back on its hand would drag what it is joined to with it.
+            // SAFETY: forwarded from the caller.
+            let joint_lost = unsafe {
+                end_joint(
+                    &mut self.joints[i],
+                    hand,
+                    "the hand body fell too far behind",
+                )
+            };
+            unsafe { body.place(goal.position, goal.orientation) }?;
+            contact::mute_for(hand, PLACED_MUTE_STEPS);
+            contact::record_motion(hand, goal.position, Vec3::ZERO);
+            self.placed[i] = true;
+            self.resets[i] += 1;
+            status.resets = self.resets[i];
+            self.goals[i] = Some(goal);
+            tracing::debug!(
+                hand = hand.label(),
+                "hand bodies: a hand body fell too far behind and was put back on its hand"
+            );
+            return Ok(Acted {
+                status,
+                lag: Vec3::ZERO,
+                render: RenderOffset::NONE,
+                created,
+                destroyed,
+                joint_lost,
+            });
+        }
+        let driven = match joined {
+            Some(load) => drive_joined(&motion, &goal, carrier, tuning, &load, step_s),
+            None => drive(&motion, &goal, carrier, tuning, step_s),
+        };
+        unsafe { body.set_velocities(driven.linear, driven.angular) }?;
+        contact::record_motion(hand, motion.position, driven.linear);
+        self.goals[i] = Some(goal);
+        status.force_share = driven.force_share;
+        status.torque_share = driven.torque_share;
+        Ok(Acted {
+            status,
+            lag,
+            render: drawn,
+            created,
+            destroyed,
+            joint_lost: false,
+        })
+    }
+
+    /// Make, keep, or end `hand`'s joint so that it holds `wanted`. Returns whether a hold the grip
+    /// wanted was lost: its joint ended or could not be made.
+    pub(super) unsafe fn join(&mut self, hand: Hand, wanted: Option<HoldTarget>) -> bool {
+        let i = hand.index();
+        // Two hands on one assembly that hangs on constraints of its own (a ragdoll, an
+        // articulated object) hold it by points: a fixed pose for each over-constrains its chain.
+        let kind = wanted.map(|w| {
+            if w.constrained && w.shared {
+                JointKind::Point
+            } else {
+                JointKind::Fixed
+            }
+        });
+        if let Some(joint) = &self.joints[i] {
+            let same = wanted.is_some_and(|w| joint.target() == (Some(w.object), w.body))
+                && kind == Some(joint.kind());
+            // SAFETY: forwarded from the caller.
+            if same && unsafe { joint.intact() } {
+                return false;
+            }
+            let rejoin = wanted.is_some_and(|w| joint.target() == (Some(w.object), w.body));
+            let reason = if same {
+                "the constraint or the object's body went away"
+            } else if rejoin {
+                "the joint changes kind as a hand joins or leaves"
+            } else {
+                "the grip let go"
+            };
+            // SAFETY: forwarded from the caller.
+            unsafe { self.unjoin(hand, reason) };
+            if same {
+                return true;
+            }
+        }
+        let Some(wanted) = wanted else {
+            return false;
+        };
+        let Some(body) = self.bodies[i].as_ref().filter(|_| self.added[i]) else {
+            return true;
+        };
+        // SAFETY: forwarded from the caller; the body is in the simulation.
+        let kind = kind.unwrap_or(JointKind::Fixed);
+        match unsafe {
+            Joint::create_at(
+                body.body_id(),
+                wanted.body,
+                wanted.object,
+                wanted.palm,
+                kind,
+            )
+        } {
+            Ok(joint) => {
+                tracing::info!(
+                    hand = hand.label(),
+                    ?kind,
+                    constraint = joint.id(),
+                    hand_body = body.body_id(),
+                    object_body = wanted.body,
+                    "hand bodies: joined a hand to what it holds"
+                );
+                self.joints[i] = Some(joint);
+                false
+            }
+            Err(e) => {
+                tracing::warn!(
+                    hand = hand.label(),
+                    object_body = wanted.body,
+                    error = %e,
+                    "hand bodies: could not join a hand to what it holds"
+                );
+                true
+            }
+        }
+    }
+
+    /// End `hand`'s joint, if it has one. Returns whether it had one.
+    pub(super) unsafe fn unjoin(&mut self, hand: Hand, reason: &str) -> bool {
+        // SAFETY: forwarded from the caller.
+        unsafe { end_joint(&mut self.joints[hand.index()], hand, reason) }
+    }
+
+    /// Carry a hand's acting body with the rig, which moved its palm from `from` to `to` without
+    /// the hand moving: put it where it keeps its place against the palm, at rest, and ignore its
+    /// contacts for a while, so that a snap turn neither swings it through what is around nor
+    /// strikes with it.
+    pub(super) unsafe fn carry(&mut self, hand: Hand, from: Goal, to: Goal) {
+        let i = hand.index();
+        let Some(body) = self.bodies[i].as_mut().filter(|_| self.added[i]) else {
+            return;
+        };
+        // SAFETY: forwarded from the caller.
+        let motion = match unsafe { body.motion() } {
+            Ok(motion) => motion,
+            Err(BodyError::Lost) => {
+                unsafe { self.lost(hand) };
+                return;
+            }
+            Err(_) => return,
+        };
+        let carried = rig_carry(
+            Goal {
+                position: motion.position,
+                orientation: motion.orientation,
+            },
+            from,
+            to,
+        );
+        // SAFETY: forwarded from the caller.
+        match unsafe { body.place(carried.position, carried.orientation) } {
+            Ok(()) => {
+                contact::mute_for(hand, RIG_MUTE_STEPS);
+                self.placed[i] = true;
+                self.goals[i] = None;
+                self.palms[i] = None;
+            }
+            Err(BodyError::Lost) => unsafe { self.lost(hand) },
+            Err(_) => {}
+        }
+    }
+
+    /// Keep a hand's body where it is for a moment without driving it toward its hand.
+    pub(super) unsafe fn hold(&mut self, hand: Hand) {
+        let i = hand.index();
+        // A gun does not hang from a body held still.
+        // SAFETY: forwarded from the caller.
+        unsafe { drop_hand(&mut self.guns, hand, "the hand stopped acting") };
+        if let Some(body) = self.bodies[i].as_mut()
+            && self.added[i]
+            && matches!(
+                unsafe { body.set_velocities(Vec3::ZERO, Vec3::ZERO) },
+                Err(BodyError::Lost)
+            )
+        {
+            unsafe { self.lost(hand) };
+        }
+        // A body held in place deals no blows: it is not swung.
+        contact::mute_for(hand, 1);
+        self.goals[i] = None;
+        self.palms[i] = None;
+    }
+
+    /// Take a hand's body out of the simulation.
+    pub(super) unsafe fn park(&mut self, hand: Hand, reason: &str) {
+        let i = hand.index();
+        // SAFETY: forwarded from the caller.
+        unsafe { self.unjoin(hand, reason) };
+        unsafe { drop_hand(&mut self.guns, hand, reason) };
+        self.goals[i] = None;
+        self.palms[i] = None;
+        let Some(body) = self.bodies[i].as_mut() else {
+            return;
+        };
+        if !self.added[i] {
+            return;
+        }
+        if matches!(unsafe { body.remove() }, Err(BodyError::Lost)) {
+            unsafe { self.lost(hand) };
+            return;
+        }
+        self.added[i] = false;
+        tracing::info!(
+            hand = hand.label(),
+            body_id = body.body_id(),
+            reason,
+            "hand bodies: removed a hand body from the world"
+        );
+    }
+
+    /// Destroy a hand's body, after its joint. Returns whether there was one.
+    unsafe fn destroy(&mut self, hand: Hand, reason: &str) -> bool {
+        let i = hand.index();
+        // SAFETY: forwarded from the caller.
+        unsafe { self.unjoin(hand, reason) };
+        unsafe { drop_hand(&mut self.guns, hand, reason) };
+        self.added[i] = false;
+        self.goals[i] = None;
+        self.palms[i] = None;
+        self.missing_since[i] = None;
+        let Some(body) = self.bodies[i].take() else {
+            return false;
+        };
+        let body_id = body.body_id();
+        // SAFETY: forwarded from the caller.
+        if unsafe { body.destroy() } {
+            tracing::info!(
+                hand = hand.label(),
+                body_id,
+                reason,
+                "hand bodies: destroyed a hand body"
+            );
+        } else {
+            tracing::warn!(
+                hand = hand.label(),
+                body_id,
+                reason,
+                "hand bodies: a hand body's slot no longer holds it; forgot it without destroying it"
+            );
+        }
+        true
+    }
+
+    /// Destroy both hands' bodies. Returns how many there were.
+    pub(super) unsafe fn destroy_all(&mut self, reason: &str) -> u64 {
+        Hand::BOTH
+            .into_iter()
+            .map(|hand| u64::from(unsafe { self.destroy(hand, reason) }))
+            .sum()
+    }
+}
+
+/// End the joints to a body before a carry drive takes ownership.
+///
+/// # Safety
+///
+/// The game thread, outside the physics step.
+pub(crate) unsafe fn release_body_joints(object: NonZeroUsize, body: u32) {
+    let mut hands = HANDS.lock();
+    for hand in Hand::BOTH {
+        if hands.joints[hand.index()]
+            .as_ref()
+            .is_some_and(|j| j.target() == (Some(object), body))
+        {
+            unsafe { hands.unjoin(hand, "the body is carried") };
+        }
+    }
+}
+
+/// End the joint in `slot`, `hand`'s, if there is one. Returns whether there was one.
+///
+/// # Safety
+///
+/// The thread that steps the physics world, outside the step.
+unsafe fn end_joint(slot: &mut Option<Joint>, hand: Hand, reason: &str) -> bool {
+    let Some(joint) = slot.take() else {
+        return false;
+    };
+    let constraint = joint.id();
+    // SAFETY: forwarded from the caller.
+    let destroyed = unsafe { joint.destroy() };
+    tracing::info!(
+        hand = hand.label(),
+        constraint,
+        destroyed,
+        reason,
+        "hand bodies: ended a joint"
+    );
+    true
+}
+
+/// Why a body made to `existing` cannot serve as one made to `wanted`, if it cannot.
+fn incompatible(existing: &BodySpec, wanted: &BodySpec) -> Option<&'static str> {
+    if existing.system_group != wanted.system_group {
+        return Some("the player's collision group changed");
+    }
+    if existing.contact_events != wanted.contact_events {
+        return Some("the hits were switched on or off");
+    }
+    let close = |a: f32, b: f32| (a - b).abs() <= SPEC_TOLERANCE * a.abs().max(b.abs());
+    let same_shape = match (existing.shape, wanted.shape) {
+        (BodyShape::Capsule(a), BodyShape::Capsule(b)) => {
+            close(a.radius_m, b.radius_m) && close(a.half_length_m, b.half_length_m)
+        }
+        (a, b) => a == b,
+    };
+    if !(close(existing.mass_kg, wanted.mass_kg) && same_shape) {
+        return Some("the hand's size or mass changed");
+    }
+    None
+}
+
+/// How many steps a body put somewhere, rather than moved there, ignores its contacts, at the
+/// game's 30 Hz tick ([`contact::mute_for`] scales it at another sim rate).
+pub(super) const PLACED_MUTE_STEPS: u64 = 3;
+
+/// How many steps a body the rig carried ignores its contacts: a fifth of a second at the game's
+/// 30 Hz tick ([`contact::mute_for`] scales it at another sim rate).
+const RIG_MUTE_STEPS: u64 = 6;
+
+/// The relative change in a body's size or mass that remakes it.
+const SPEC_TOLERANCE: f32 = 0.02;

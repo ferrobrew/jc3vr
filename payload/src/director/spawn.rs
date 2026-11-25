@@ -4,7 +4,7 @@
 //! Requests go through `CSpawnSystem::Spawn` with the high-priority flags, which skip the
 //! line-of-sight, proximity, and spawn-block checks; those exist to keep spawns out of the player's
 //! view, and putting something in view is the point. The spawn is asynchronous: the object appears
-//! once its entity streams in, so a request logs when it is queued and nothing more.
+//! once its entity streams in. The request state records submission, not entity completion.
 //!
 //! The picker's definitions come from the game's own spawn definition files, extracted once into
 //! `spawn_defs.json` (see `tools/spawn_defs/extract_spawn_defs.py`) and embedded, so what it
@@ -16,6 +16,8 @@ use std::sync::OnceLock;
 use jc3gi::{spawn_system::SpawnSystem, types::math::Matrix4};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+
+use crate::hash::hashlittle;
 
 /// What the spawner spawns and where.
 #[derive(Clone, Serialize, Deserialize)]
@@ -93,6 +95,21 @@ pub struct SpawnDefinition {
     pub tags: String,
     /// The budget pool the definition file belongs to (`vehicle`, `aircraft`, `combatant`, ...).
     pub pool: String,
+    /// The `hashlittle` hash of the definition's entity name, which is a weapon's name hash
+    /// ([`WeaponBase::m_WeaponNameHash`](jc3gi::equipment::weapon::WeaponBase::m_WeaponNameHash)).
+    /// Absent from a table extracted before the tool wrote it; see [`Self::name_hash`].
+    #[serde(default)]
+    pub entity_hash: Option<u32>,
+}
+
+impl SpawnDefinition {
+    /// The name hash a weapon of this definition carries, by which the game names it: the entity
+    /// name's hash, or, from a table without it, the hash of the definition's name, which for the
+    /// shipped weapons is their entity's name.
+    pub fn name_hash(&self) -> u32 {
+        self.entity_hash
+            .unwrap_or_else(|| hashlittle(self.name.as_bytes()))
+    }
 }
 
 /// Every shipped definition the picker offers, parsed once from the embedded table.
@@ -120,49 +137,101 @@ pub fn pools() -> Vec<&'static str> {
 /// The shipped definition table; regenerate with `tools/spawn_defs/extract_spawn_defs.py`.
 const SPAWN_DEFS_JSON: &str = include_str!("spawn_defs.json");
 
+/// The last request-processing result; submission does not confirm an object has spawned.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Submission {
+    NoTags,
+    TagsContainNul,
+    NoSpawnSystem,
+    Submitted,
+}
+
+/// Owned request state, independent of asynchronous entity streaming.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Status {
+    pub pending: bool,
+    pub last_submission: Option<Submission>,
+}
+
+/// Copy the request state without servicing it or querying the engine.
+pub(crate) fn status() -> Status {
+    with_state(|state| *state)
+}
+
 /// Queue a spawn of the config's tags; serviced on the next main-thread update.
 pub fn request() {
-    *PENDING.lock() = true;
+    with_state(|state| state.pending = true);
 }
 
 /// Run the queued spawn, if any. Main thread: the spawn system is game-thread data.
 pub(super) fn service_pending(cfg: &SpawnConfig) {
-    if !std::mem::take(&mut *PENDING.lock()) {
+    if !with_state(|state| std::mem::take(&mut state.pending)) {
         return;
     }
-    let tags = cfg.tags.trim();
-    if tags.is_empty() {
-        tracing::warn!("director: spawn dropped: no tags");
-        return;
-    }
-    let Ok(tags_c) = std::ffi::CString::new(tags) else {
-        tracing::warn!("director: spawn dropped: tags contain a NUL");
-        return;
+    let submission = match validated_tags(&cfg.tags) {
+        Err(rejected) => rejected,
+        // SAFETY: the spawn system singleton is main-thread data and this runs from the
+        // main-thread update.
+        Ok(_) => {
+            match unsafe { SpawnSystem::get().map(|s| (s.m_ViewPos.data, s.m_ViewDir.data)) } {
+                Some((pos, dir)) => submit(
+                    &cfg.tags,
+                    &placement(pos, dir, cfg.distance, cfg.face_player),
+                ),
+                None => {
+                    tracing::warn!("director: spawn dropped: no spawn system");
+                    Submission::NoSpawnSystem
+                }
+            }
+        }
+    };
+    with_state(|state| state.last_submission = Some(submission));
+}
+
+/// Submit a spawn request for `tags` at `transform` with the high-priority flags, which skip the
+/// line-of-sight, proximity, and spawn-block checks. Main thread. The object appears once its
+/// entity streams in; the result records the submission, not the entity's completion.
+pub(crate) fn submit(tags: &str, transform: &Matrix4) -> Submission {
+    let tags_c = match validated_tags(tags) {
+        Ok(tags_c) => tags_c,
+        Err(rejected) => return rejected,
     };
     // SAFETY: the spawn system singleton is main-thread data and this runs from the main-thread
     // update; the tag string outlives the call.
     unsafe {
         let Some(spawn_system) = SpawnSystem::get() else {
             tracing::warn!("director: spawn dropped: no spawn system");
-            return;
+            return Submission::NoSpawnSystem;
         };
-        let pos = spawn_system.m_ViewPos.data;
-        let dir = spawn_system.m_ViewDir.data;
-        let transform = placement(pos, dir, cfg.distance, cfg.face_player);
         tracing::info!(
-            "director: spawn \"{tags}\" at ({:.1}, {:.1}, {:.1})",
+            "director: spawn \"{}\" at ({:.1}, {:.1}, {:.1})",
+            tags.trim(),
             transform.data[12],
             transform.data[13],
             transform.data[14]
         );
         spawn_system.Spawn(
             tags_c.as_ptr().cast(),
-            &transform,
+            transform,
             SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS,
             std::ptr::null(),
             std::ptr::null_mut(),
         );
     }
+    Submission::Submitted
+}
+
+/// The trimmed tag string as a C string, or why it cannot be submitted.
+fn validated_tags(tags: &str) -> Result<std::ffi::CString, Submission> {
+    let tags = tags.trim();
+    if tags.is_empty() {
+        tracing::warn!("director: spawn dropped: no tags");
+        return Err(Submission::NoTags);
+    }
+    std::ffi::CString::new(tags).map_err(|_| {
+        tracing::warn!("director: spawn dropped: tags contain a NUL");
+        Submission::TagsContainNul
+    })
 }
 
 /// The spawn transform: `distance` along the view direction from the view position, with the
@@ -197,11 +266,118 @@ pub fn placement(
     m
 }
 
-static PENDING: Mutex<bool> = Mutex::new(false);
+fn with_state<R>(operation: impl FnOnce(&mut Status) -> R) -> R {
+    #[cfg(test)]
+    if test_status::is_installed() {
+        return test_status::with_state(operation);
+    }
+    operation(&mut STATE.lock())
+}
+
+static STATE: Mutex<Status> = Mutex::new(Status {
+    pending: false,
+    last_submission: None,
+});
+
+#[cfg(test)]
+pub(crate) mod test_status {
+    use std::cell::RefCell;
+
+    use crate::director::spawn::Status;
+
+    pub(crate) struct Fixture {
+        previous: Option<Status>,
+    }
+
+    pub(crate) fn install(status: Status) -> Fixture {
+        Fixture {
+            previous: STATE.replace(Some(status)),
+        }
+    }
+
+    pub(crate) fn snapshot() -> Option<Status> {
+        STATE.with_borrow(|state| *state)
+    }
+
+    pub(crate) fn is_installed() -> bool {
+        STATE.with_borrow(Option::is_some)
+    }
+
+    pub(crate) fn with_state<R>(operation: impl FnOnce(&mut Status) -> R) -> R {
+        STATE.with_borrow_mut(|state| operation(state.as_mut().unwrap()))
+    }
+
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            STATE.replace(self.previous.take());
+        }
+    }
+
+    thread_local! {
+        static STATE: RefCell<Option<Status>> = const { RefCell::new(None) };
+    }
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_peeks_preserve_queued_and_submitted_requests() {
+        assert_eq!(test_status::snapshot(), None);
+        let initial = Status {
+            pending: false,
+            last_submission: Some(Submission::Submitted),
+        };
+        {
+            let _fixture = test_status::install(initial);
+            assert_eq!(status(), initial);
+            request();
+            let queued = Status {
+                pending: true,
+                ..initial
+            };
+            assert_eq!(status(), queued);
+            assert_eq!(status(), queued);
+            assert_eq!(test_status::snapshot(), Some(queued));
+            {
+                let nested = Status {
+                    pending: false,
+                    last_submission: Some(Submission::NoSpawnSystem),
+                };
+                let _nested = test_status::install(nested);
+                assert_eq!(status(), nested);
+            }
+            assert_eq!(status(), queued);
+        }
+        assert_eq!(test_status::snapshot(), None);
+    }
+
+    #[test]
+    fn invalid_requests_record_rejections_without_native_submission() {
+        let _fixture = test_status::install(Status {
+            pending: false,
+            last_submission: Some(Submission::Submitted),
+        });
+        for (tags, expected) in [
+            (" \t ", Submission::NoTags),
+            ("vehicle\0ground", Submission::TagsContainNul),
+        ] {
+            request();
+            let cfg = SpawnConfig {
+                tags: tags.to_owned(),
+                ..SpawnConfig::new()
+            };
+            service_pending(&cfg);
+            let processed = Status {
+                pending: false,
+                last_submission: Some(expected),
+            };
+            assert_eq!(status(), processed);
+            service_pending(&cfg);
+            assert_eq!(status(), processed);
+        }
+    }
 
     #[test]
     fn the_embedded_definition_table_parses_and_has_the_barrel() {
@@ -240,5 +416,32 @@ mod tests {
         let m = placement([0.0, 0.0, 0.0], [0.0, 1.0, 0.0], 1.0, false);
         assert_eq!(&m.data[8..11], &[0.0, 0.0, 1.0]);
         assert_eq!(&m.data[0..3], &[1.0, 0.0, 0.0]);
+    }
+
+    #[test]
+    fn a_shipped_weapon_carries_its_entity_names_hash() {
+        // The sight table's key for the same weapon, taken from its entity's name.
+        let pistol = definitions()
+            .iter()
+            .find(|def| def.name == "w011_pistol_u_pozhar_98")
+            .expect("the shipped table has the pistol");
+        assert_eq!(pistol.name_hash(), 4040374394);
+    }
+
+    #[test]
+    fn an_extracted_entity_hash_wins_over_the_name() {
+        let def = SpawnDefinition {
+            name: "Display name".to_owned(),
+            category: String::new(),
+            tags: "weapon".to_owned(),
+            pool: "weapon".to_owned(),
+            entity_hash: Some(7),
+        };
+        assert_eq!(def.name_hash(), 7);
+        let unhashed = SpawnDefinition {
+            entity_hash: None,
+            ..def
+        };
+        assert_eq!(unhashed.name_hash(), hashlittle(b"Display name"));
     }
 }

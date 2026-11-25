@@ -28,15 +28,9 @@ use anyhow::Context as _;
 use jc3gi::graphics_engine::{graphics_engine::GraphicsEngine, texture::Texture};
 use windows::{
     Win32::{
-        Graphics::{
-            Direct3D11::{
-                D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE,
-                D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING, ID3D11Texture2D,
-            },
-            Dxgi::Common::{
-                DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-            },
+        Graphics::Direct3D11::{
+            D3D11_CPU_ACCESS_READ, D3D11_MAP_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_TEXTURE2D_DESC,
+            D3D11_USAGE_STAGING, ID3D11Texture2D,
         },
         System::Threading::{EnterCriticalSection, LeaveCriticalSection},
     },
@@ -46,6 +40,7 @@ use windows::{
 use crate::{
     config::Config,
     debug::trace::{RtKind, TraceEvent, TraceState, tracing_active},
+    image_writer::{self, ChannelOrder, Image, ImageTarget},
 };
 
 /// Hash the curated engine render targets for the eye that just finished drawing, recording each into
@@ -132,8 +127,7 @@ unsafe fn hash_inner(want_hashes: bool, want_shots: bool) -> anyhow::Result<()> 
 
         // CopyResource + Map drive the immediate context: serialise with the render thread via the
         // engine context mutex, exactly as the capture path does. The screenshot pixels are copied out
-        // of the mapping under the lock but written to disk after it releases, so the render thread is
-        // never blocked on file I/O.
+        // of the mapping under the lock and handed to the image writer after it releases.
         let (hash, shot) = unsafe {
             EnterCriticalSection(context.m_Mutex);
             ctx.CopyResource(&staging, &tex.m_Texture);
@@ -146,7 +140,7 @@ unsafe fn hash_inner(want_hashes: bool, want_shots: bool) -> anyhow::Result<()> 
                 let bytes = std::slice::from_raw_parts(mapped.pData.cast::<u8>(), len);
                 let hash = want_hashes.then(|| hash_bytes(bytes));
                 let shot = shot_this
-                    .then(|| to_rgba8(bytes, mapped.RowPitch, desc.Width, desc.Height, desc.Format))
+                    .then(|| read_image(bytes, mapped.RowPitch, &desc))
                     .flatten();
                 ctx.Unmap(&staging, 0);
                 (hash, shot)
@@ -160,72 +154,42 @@ unsafe fn hash_inner(want_hashes: bool, want_shots: bool) -> anyhow::Result<()> 
         if let Some(hash) = hash {
             TraceState::record_eye(TraceEvent::RtHash { rt: kind, hash });
         }
-        if let Some(rgba) = shot {
-            write_png_frame(eye, desc.Width, desc.Height, rgba);
+        if let Some(image) = shot {
+            submit_frame(eye, image);
         }
     }
 
     Ok(())
 }
 
-/// Convert the mapped staging bytes of a supported 8-bit-per-channel target into a tightly-packed
-/// (row-pitch-stripped) RGBA8 buffer, swizzling BGRA to RGBA. `None` for any other format (skipped with
-/// a log rather than writing a mislabeled image); the diagnostic only shoots `BackBufferLinear`, a
-/// presentable 8-bit target in practice.
-fn to_rgba8(
-    bytes: &[u8],
-    row_pitch: u32,
-    width: u32,
-    height: u32,
-    format: DXGI_FORMAT,
-) -> Option<Vec<u8>> {
-    let swap_rb = match format {
-        DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => false,
-        DXGI_FORMAT_B8G8R8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => true,
-        _ => {
-            tracing::warn!(
-                "rt_hash: screenshot skipped, unsupported format {}",
-                format.0
-            );
-            return None;
-        }
+/// Copy the mapped staging bytes of a supported 8-bit-per-channel target into an owned [`Image`].
+/// `None` for any other format (skipped with a log rather than writing a mislabeled image); the
+/// diagnostic only shoots `BackBufferLinear`, a presentable 8-bit target in practice.
+fn read_image(bytes: &[u8], row_pitch: u32, desc: &D3D11_TEXTURE2D_DESC) -> Option<Image> {
+    let Some(order) = ChannelOrder::of(desc.Format) else {
+        tracing::warn!(
+            "rt_hash: screenshot skipped, unsupported format {}",
+            desc.Format.0
+        );
+        return None;
     };
-    let tight = (width * 4) as usize;
-    let pitch = row_pitch as usize;
-    let mut out = Vec::with_capacity(tight * height as usize);
-    for y in 0..height as usize {
-        let row = bytes.get(y * pitch..y * pitch + tight)?;
-        if swap_rb {
-            for px in row.as_chunks::<4>().0 {
-                out.extend_from_slice(&[px[2], px[1], px[0], px[3]]);
-            }
-        } else {
-            out.extend_from_slice(row);
-        }
-    }
-    Some(out)
+    Image::from_rows(bytes, row_pitch as usize, desc.Width, desc.Height, order)
 }
 
-/// Encode one frame's RGBA8 pixels to a PNG in this trace's `traces/<stamp>/` folder, named by frame
+/// Queue one eye's image of this frame for the image writer, into the trace's folder, named by frame
 /// index and eye so the sequence reassembles and aligns 1:1 with the per-frame trace events.
-fn write_png_frame(eye: usize, width: u32, height: u32, rgba: Vec<u8>) {
-    write_png_named(format!("eye{eye}"), width, height, rgba);
-}
-
-/// Encode one frame-stamped PNG with a caller-chosen suffix (`frameNNN_<label>.png`) into this
-/// trace's folder.
-fn write_png_named(label: String, width: u32, height: u32, rgba: Vec<u8>) {
-    let Some((dir, frame)) = TraceState::screenshot_target() else {
+fn submit_frame(eye: usize, image: Image) {
+    let Some((trace_stamp, frame)) = TraceState::current_frame() else {
         return;
     };
-    let Some(image) = image::RgbaImage::from_raw(width, height, rgba) else {
-        tracing::warn!("rt_hash: screenshot buffer size mismatch");
-        return;
-    };
-    let path = dir.join(format!("frame{frame:03}_{label}.png"));
-    if let Err(e) = image.save_with_format(&path, image::ImageFormat::Png) {
-        tracing::warn!("rt_hash: screenshot PNG write failed: {e}");
-    }
+    image_writer::submit(
+        ImageTarget::TraceFrame {
+            trace_stamp,
+            frame,
+            eye,
+        },
+        image,
+    );
 }
 
 /// FNV-1a over 64-bit words (with a byte tail), fast enough to hash several multi-megabyte targets per

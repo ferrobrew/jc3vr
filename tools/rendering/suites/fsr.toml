@@ -1,0 +1,84 @@
+# FSR's measurements: the motion vectors FSR is handed at the coastal town (the `motion-*` scenes,
+# read with `fsr-motion`) and its image against the game's own anti-aliasing, no anti-aliasing, and a
+# supersampled reference at the town and the meadow (the `quality-*` scenes, read with
+# `fsr-quality`). The `*-slow` scenes pan slowly and are run with `--next-frame-repeat`, so the
+# repeat is the next frame and the flicker measures shimmer in motion. See docs/mod/rendering/fsr.md.
+#
+#   python3 -m tools.rendering fast --session N --suite tools/rendering/suites/fsr.toml \
+#       --only motion-static motion-rotation motion-translation motion-index motion-shipped \
+#       --planes final velocity fsr_motion fsr_depth --save --no-repeat
+#   python3 -m tools.rendering fast --session N --suite tools/rendering/suites/fsr.toml \
+#       --only quality-static quality-rotation quality-translation quality-meadow-static \
+#       quality-meadow-rotation quality-meadow-translation --save
+#   python3 -m tools.rendering fast --session N --suite tools/rendering/suites/fsr.toml \
+#       --only quality-slow quality-meadow-slow --save --next-frame-repeat
+
+[[scene]]
+name = "motion-static"
+config = "fsr_motion_static.toml"
+
+[[scene]]
+name = "motion-rotation"
+config = "fsr_motion_rotation.toml"
+
+[[scene]]
+name = "motion-translation"
+config = "fsr_motion_translation.toml"
+
+[[scene]]
+name = "motion-index"
+config = "fsr_motion_rotation.toml"
+headset = "index"
+
+[[scene]]
+name = "motion-shipped"
+config = "fsr_motion_shipped_rotation.toml"
+
+[[scene]]
+name = "quality-static"
+config = "fsr_quality_static.toml"
+
+[[scene]]
+name = "quality-rotation"
+config = "fsr_quality_rotation.toml"
+
+[[scene]]
+name = "quality-translation"
+config = "fsr_quality_translation.toml"
+
+[[scene]]
+name = "quality-slow"
+config = "fsr_quality_slow.toml"
+
+[[scene]]
+name = "quality-meadow-static"
+config = "fsr_quality_meadow_static.toml"
+
+[[scene]]
+name = "quality-meadow-rotation"
+config = "fsr_quality_meadow_rotation.toml"
+
+[[scene]]
+name = "quality-meadow-translation"
+config = "fsr_quality_meadow_translation.toml"
+
+[[scene]]
+name = "quality-meadow-slow"
+config = "fsr_quality_meadow_slow.toml"
+
+[[scene]]
+name = "jitter-shift"
+config = "fsr_jitter_shift.toml"
+
+[[scene]]
+name = "jitter-shift-index"
+config = "fsr_jitter_shift.toml"
+headset = "index"
+
+[[scene]]
+name = "sharpness-town"
+config = "fsr_sharpness_town.toml"
+
+[[scene]]
+name = "sharpness-meadow"
+config = "fsr_sharpness_meadow.toml"

@@ -40,6 +40,10 @@ pub struct PostFxConfig {
     pub skip_player_damage: bool,
     pub skip_sun_halo: bool,
     pub skip_histogram: bool,
+    /// Drop the engine's anti-aliasing to none whenever FSR is not resolving in its place, so the
+    /// image has no anti-aliasing at all (a baseline for comparing FSR and SMAA against).
+    #[serde(default)]
+    pub skip_anti_aliasing: bool,
 }
 impl PostFxConfig {
     pub const fn new() -> Self {
@@ -53,6 +57,7 @@ impl PostFxConfig {
             skip_player_damage: false,
             skip_sun_halo: false,
             skip_histogram: false,
+            skip_anti_aliasing: false,
         }
     }
 }

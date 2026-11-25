@@ -9,6 +9,10 @@
 use super::*;
 use crate::vr::render_params;
 
+#[cfg(test)]
+#[path = "cb13_tests.rs"]
+mod tests;
+
 /// The stereo constant buffer's register slot (`b13`, free across the game's vertex shaders) and its
 /// size in float4 rows (five per eye: four view-projection rows then the camera position, two eyes).
 const STEREO_CB_REGISTER: u32 = 13;
@@ -16,15 +20,36 @@ const STEREO_CB_REGISTER: u32 = 13;
 const STEREO_CB_ROWS: usize = 10;
 /// The row where the reprojection `M_eye` block begins (`dxbc_stereo::MEYE_ROW_BASE`).
 const MEYE_ROW_BASE: usize = 10;
-/// The full `cb13` size: the remap block plus a four-rows-per-eye `M_eye` block for the reprojection
-/// rewrite (`dxbc_stereo::STEREO_REPROJ_CB_ROWS`). Both idioms bind the same `b13` buffer.
-const STEREO_CB_TOTAL_ROWS: usize = 18;
+/// The row of eye 0's copy of the render camera's position (`dxbc_stereo::CLIP_ORIGIN_ROW_BASE`), after
+/// the `M_eye` block; eye `e`'s copy is five rows on per eye, at the stride of the remap block.
+const CLIP_ORIGIN_ROW_BASE: usize = 18;
+/// The `cb0` row the clip-origin copies mirror (`dxbc_stereo::CLIP_ORIGIN_CB0_ROW`).
+const CLIP_ORIGIN_SOURCE_ROW: usize = 9;
+/// The row whose `.x` says the eye slots hold distinct per-eye rows (`dxbc_stereo::EYE_ROWS_SELECT_ROW`):
+/// one in a dual-eye upload, zero in a mirror. The terrain domain shaders that read their camera rows
+/// from an eye's slot choose by it.
+const EYE_ROWS_SELECT_ROW: usize = 24;
+/// The row where eye 0's copy of the full view-projection (`cb0[0..3]`) begins
+/// (`dxbc_stereo::FULL_VIEW_PROJECTION_ROW_BASE`); eye `e`'s is four rows on per eye.
+const FULL_VIEW_PROJECTION_ROW_BASE: usize = 25;
+/// The full `cb13` size: the remap block, a four-rows-per-eye `M_eye` block for the reprojection
+/// rewrite, each eye's copy of the render camera's position for the remap's per-eye clip origin, the
+/// eye-row selector, and each eye's full view-projection (`dxbc_stereo::STEREO_FULL_CB_ROWS`). Every
+/// idiom binds the same `b13` buffer.
+pub(super) const STEREO_CB_TOTAL_ROWS: usize = 33;
 
 // Keep the payload's cb13 layout in lockstep with the rewriter that reads it.
 const _: () = {
     assert!(STEREO_CB_ROWS == dxbc_stereo::STEREO_CB_ROWS as usize);
     assert!(MEYE_ROW_BASE == dxbc_stereo::MEYE_ROW_BASE as usize);
-    assert!(STEREO_CB_TOTAL_ROWS == dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize);
+    assert!(CLIP_ORIGIN_ROW_BASE == dxbc_stereo::CLIP_ORIGIN_ROW_BASE as usize);
+    assert!(CLIP_ORIGIN_SOURCE_ROW == dxbc_stereo::CLIP_ORIGIN_CB0_ROW as usize);
+    assert!(EYE_ROWS_SELECT_ROW == dxbc_stereo::EYE_ROWS_SELECT_ROW as usize);
+    assert!(FULL_VIEW_PROJECTION_ROW_BASE == dxbc_stereo::FULL_VIEW_PROJECTION_ROW_BASE as usize);
+    assert!(STEREO_CB_TOTAL_ROWS == dxbc_stereo::STEREO_FULL_CB_ROWS as usize);
+    assert!(STEREO_CB_TOTAL_ROWS >= dxbc_stereo::STEREO_SELECT_CB_ROWS as usize);
+    assert!(STEREO_CB_TOTAL_ROWS >= dxbc_stereo::STEREO_ORIGIN_CB_ROWS as usize);
+    assert!(STEREO_CB_TOTAL_ROWS >= dxbc_stereo::STEREO_REPROJ_CB_ROWS as usize);
     assert!(STEREO_CB_REGISTER == dxbc_stereo::STEREO_CB_REGISTER);
 };
 
@@ -32,6 +57,9 @@ const _: () = {
 /// lays them out in `cb13`: the four translation-free view-projection rows (`cb0[29..32]`), then the
 /// camera world position (`cb0[4]`). See `dxbc_stereo::PER_EYE_CB0_ROWS`.
 const PER_EYE_SOURCE_ROWS: [usize; 5] = [29, 30, 31, 32, 4];
+
+/// How many rows each eye's slot of the remap block holds.
+pub(super) const PER_EYE_ROW_COUNT: usize = PER_EYE_SOURCE_ROWS.len();
 
 /// Mirror the current view's per-eye `cb0` rows into the mod-owned `cb13` and bind it at `b13`.
 ///
@@ -43,7 +71,7 @@ const PER_EYE_SOURCE_ROWS: [usize; 5] = [29, 30, 31, 32, 4];
 ///
 /// Called from the `SetAllGlobalShaderProgramConstants` detour, after the engine has refreshed
 /// `m_VPGlobalConstData` and uploaded `cb0`, on the render thread.
-pub fn mirror_and_bind_cb13(engine: &RenderEngine) {
+pub fn mirror_and_bind_cb13(engine: &RenderEngine) -> bool {
     // Ensure the viewport-duplication detours are installed (once, on the first active frame).
     ensure_viewport_detours();
 
@@ -51,32 +79,41 @@ pub fn mirror_and_bind_cb13(engine: &RenderEngine) {
     // view-projections so the eyes diverge. Everywhere else (the shadow and reflection passes, and
     // whenever divergence is off) mirror the current view into both slots -- diverging those would be
     // wrong, since they render from the sun or reflection camera, not the eye camera.
-    let rows = if dual_eye_active() && in_gbuffer_range() {
-        compute_dual_eye_rows(engine).unwrap_or_else(|| mirror_rows(engine))
-    } else {
-        mirror_rows(engine)
-    };
+    let dual = (dual_eye_active() && in_gbuffer_range())
+        .then(|| compute_dual_eye_rows(engine))
+        .flatten();
+    let rows = dual.unwrap_or_else(|| mirror_rows(engine));
 
     // SAFETY: `GraphicsEngine::get` returns the live singleton or `None`; the device/context pointers
     // are stable once the engine has initialised, and the ops run under the engine's context mutex.
     unsafe {
         let Some(ge) = GraphicsEngine::get() else {
-            return;
+            return false;
         };
         let Some(device) = ge.m_Device.as_ref() else {
-            return;
+            return false;
         };
         let Some(context) = device.m_Context.as_ref() else {
-            return;
+            return false;
         };
         EnterCriticalSection(context.m_Mutex);
         let result = CB13
             .lock()
             .upload_and_bind(&device.m_Device, &context.m_Context, &rows);
+        // The unpatched per-eye re-issues read each eye's copy of the vertex globals, which only a
+        // dual-eye upload can derive; any other upload leaves them stale.
+        match dual {
+            Some(rows) => {
+                eye_vertex_globals::sync(engine, &rows, &device.m_Device, &context.m_Context)
+            }
+            None => eye_vertex_globals::invalidate(),
+        }
         LeaveCriticalSection(context.m_Mutex);
         if let Err(e) = result {
             tracing::warn!("single-pass cb13: {e}");
+            return false;
         }
+        true
     }
 }
 
@@ -92,8 +129,25 @@ fn mirror_rows(engine: &RenderEngine) -> [Vector4; STEREO_CB_TOTAL_ROWS] {
             rows[eye * PER_EYE_SOURCE_ROWS.len() + k] = vp[src];
         }
         write_meye(&mut rows, eye, glam::Mat4::IDENTITY);
+        rows[clip_origin_row(eye)] = vp[CLIP_ORIGIN_SOURCE_ROW];
+        for r in 0..4 {
+            rows[full_view_projection_row(eye) + r] = vp[FULL_VIEW_PROJECTION_SOURCE_ROWS[r]];
+        }
     }
     rows
+}
+
+/// The `cb0` rows of the full view-projection, which the full-view-projection copies mirror.
+const FULL_VIEW_PROJECTION_SOURCE_ROWS: [usize; 4] = [0, 1, 2, 3];
+
+/// The first row of eye `eye`'s copy of the full view-projection.
+const fn full_view_projection_row(eye: usize) -> usize {
+    FULL_VIEW_PROJECTION_ROW_BASE + eye * 4
+}
+
+/// The row of eye `eye`'s copy of the render camera's position.
+pub(super) const fn clip_origin_row(eye: usize) -> usize {
+    CLIP_ORIGIN_ROW_BASE + eye * PER_EYE_SOURCE_ROWS.len()
 }
 
 /// Write eye `e`'s reprojection matrix into the `M_eye` block (`cb13[MEYE_ROW_BASE + 4*e ..]`), one
@@ -115,7 +169,7 @@ fn write_meye(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS], eye: usize, m_eye: gla
 ///
 /// Per eye: offset the center world transform by the eye parallax + orientation delta, invert to a
 /// view, zero its translation for the camera-relative OffsetVP, multiply by the reverse-Z eye
-/// projection, and pair it with the eye's camera world position (`center campos + world_offset`).
+/// projection, and pair it with the eye's camera position resolved from the final center.
 /// The engine `Matrix4` <-> `glam::Mat4` bridge is a transpose, so the math is done in glam
 /// column-vector form and converted back once (see the `Matrix4` doc-comment).
 fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TOTAL_ROWS]> {
@@ -123,11 +177,8 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
     let center_world = glam::Mat4::from(center_transform);
     let center_campos = engine.m_VPGlobalConstData[4];
 
-    // The reprojection `M_eye = VP_eye · VP_center⁻¹` needs the engine's *center* full view-projection
-    // (world -> clip, column-vector) -- the one the baked-WVP shaders folded into their `cb1`. It is
-    // `cb0[29..32]` (the translation-free OffsetVP, stored row-major so `glam::Mat4::from` -- which is
-    // `from_cols_array` -- yields its transpose, the column-vector form) composed with the
-    // camera-relative `−campos` translation. Inverted in f64: the reverse-Z VP is near-singular.
+    // Invert only the translation-free center VP; a full f32 world-space VP loses precision before
+    // its conversion to f64.
     let center_offset_vp = {
         let mut data = [0.0f32; 16];
         for r in 0..4 {
@@ -140,18 +191,19 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
         center_campos.data[1],
         center_campos.data[2],
     );
-    let vp_center = center_offset_vp * glam::Mat4::from_translation(-center_campos_v);
-    let vp_center_inv = vp_center.as_dmat4().inverse();
+    let center_offset_vp_inv = center_offset_vp.as_dmat4().inverse();
 
     let mut rows = [Vector4::default(); STEREO_CB_TOTAL_ROWS];
+    rows[EYE_ROWS_SELECT_ROW] = Vector4 {
+        data: [1.0, 0.0, 0.0, 0.0],
+    };
     let mut forwards = [glam::Vec3::ZERO; 2];
     let mut m_eyes = [glam::Mat4::IDENTITY; 2];
     for eye in 0..2 {
         let params = render_params(eye)?;
 
-        let mut eye_world = center_world;
-        eye_world.w_axis += params.world_offset.extend(0.0);
-        let eye_world = eye_world * glam::Mat4::from_quat(params.orientation_delta);
+        let eye_world = params.resolve(center_world);
+        let world_offset = params.world_offset(center_world);
         // Camera forward is -Z of the world transform; kept for the divergence diagnostic below.
         forwards[eye] = (-eye_world.z_axis.truncate()).normalize_or_zero();
 
@@ -160,6 +212,14 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
 
         let offset_vp_glam = glam::Mat4::from(params.projection_reverse_z) * offset_view;
         let offset_vp = Matrix4::from(offset_vp_glam);
+        // The eye's full view-projection, through the same product with the view's translation kept.
+        let full_vp =
+            Matrix4::from(glam::Mat4::from(params.projection_reverse_z) * eye_world.inverse());
+        for r in 0..4 {
+            rows[full_view_projection_row(eye) + r] = Vector4 {
+                data: std::array::from_fn(|c| full_vp.data[r * 4 + c]),
+            };
+        }
 
         for r in 0..4 {
             rows[eye * 5 + r] = Vector4 {
@@ -172,9 +232,9 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             };
         }
         let eye_campos = glam::Vec3::new(
-            center_campos.data[0] + params.world_offset.x,
-            center_campos.data[1] + params.world_offset.y,
-            center_campos.data[2] + params.world_offset.z,
+            center_campos.data[0] + world_offset.x,
+            center_campos.data[1] + world_offset.y,
+            center_campos.data[2] + world_offset.z,
         );
         rows[eye * 5 + 4] = Vector4 {
             data: [
@@ -184,11 +244,24 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
                 center_campos.data[3],
             ],
         };
+        // The render camera's position, which the clip-origin shaders subtract in place of the pass
+        // camera's, moved by the same eye offset.
+        let origin = engine.m_VPGlobalConstData[CLIP_ORIGIN_SOURCE_ROW].data;
+        rows[clip_origin_row(eye)] = Vector4 {
+            data: [
+                origin[0] + world_offset.x,
+                origin[1] + world_offset.y,
+                origin[2] + world_offset.z,
+                origin[3],
+            ],
+        };
 
-        // M_eye maps this eye's own centre-clip to eye-clip: build the eye's full VP the same way as
-        // the centre (offset VP composed with −campos) and post-compose the centre's inverse.
-        let vp_eye = offset_vp_glam * glam::Mat4::from_translation(-eye_campos);
-        let m_eye = (vp_eye.as_dmat4() * vp_center_inv).as_mat4();
+        let m_eye = relative_reprojection(
+            center_offset_vp_inv,
+            center_campos_v,
+            offset_vp_glam,
+            eye_campos,
+        );
         write_meye(&mut rows, eye, m_eye);
         m_eyes[eye] = m_eye;
     }
@@ -215,7 +288,7 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             m
         };
         let eye_diag = |p: &crate::vr::EyeRenderParams, i: usize| EyeDiagnostics {
-            world_offset: p.world_offset.to_array(),
+            world_offset: p.world_offset(center_world).to_array(),
             orientation_delta_quat: p.orientation_delta.to_array(),
             orientation_delta_deg: p.orientation_delta.to_axis_angle().1.to_degrees(),
             forward: forwards[i].to_array(),
@@ -224,11 +297,12 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             cb13_camera_position: rows[i * 5 + 4].data,
             cb13_m_eye: vp16(MEYE_ROW_BASE + i * 4),
         };
-        let full_viewport = COLLAPSE_FULL_VIEWPORT.lock().map(|v| {
-            [
-                v.TopLeftX, v.TopLeftY, v.Width, v.Height, v.MinDepth, v.MaxDepth,
-            ]
-        });
+        let full_viewport =
+            crate::stereo::single_pass::viewport_record::scene_viewport().map(|v| {
+                [
+                    v.TopLeftX, v.TopLeftY, v.Width, v.Height, v.MinDepth, v.MaxDepth,
+                ]
+            });
         *LAST_FRAME_DIAG.lock() = Some(FrameDiagnostics {
             single_pass: active(),
             dual_eye: dual_eye_active(),
@@ -262,14 +336,26 @@ fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TO
             tracing::info!(
                 target: "single_pass",
                 "cb13 eyes: fwd divergence={diverge:.2}deg | eye0 delta={:.2}deg off={:.4?} | eye1 delta={:.2}deg off={:.4?} | M_eye dev eye0={:.4} eye1={:.4}",
-                p0.orientation_delta.to_axis_angle().1.to_degrees(), p0.world_offset,
-                p1.orientation_delta.to_axis_angle().1.to_degrees(), p1.world_offset,
+                p0.orientation_delta.to_axis_angle().1.to_degrees(), p0.world_offset(center_world),
+                p1.orientation_delta.to_axis_angle().1.to_degrees(), p1.world_offset(center_world),
                 meye_dev(MEYE_ROW_BASE), meye_dev(MEYE_ROW_BASE + 4),
             );
         }
     }
 
     Some(rows)
+}
+
+fn relative_reprojection(
+    center_offset_vp_inv: glam::DMat4,
+    center_position: glam::Vec3,
+    eye_offset_vp: glam::Mat4,
+    eye_position: glam::Vec3,
+) -> glam::Mat4 {
+    // Use the stored camera positions, not the unrounded eye offset, to match the per-eye rows.
+    let center_to_eye = center_position.as_dvec3() - eye_position.as_dvec3();
+    (eye_offset_vp.as_dmat4() * glam::DMat4::from_translation(center_to_eye) * center_offset_vp_inv)
+        .as_mat4()
 }
 
 static CB13_DIVERGE_LOG: AtomicUsize = AtomicUsize::new(0);
@@ -290,6 +376,14 @@ impl Cb13Buffer {
     pub(super) fn live_rows(&self) -> Option<[Vector4; STEREO_CB_TOTAL_ROWS]> {
         self.buffer.as_ref()?;
         self.rows
+    }
+
+    /// The mod-owned buffer's COM identity, for comparing against the buffer actually bound at
+    /// `b13`. `None` before the buffer exists.
+    pub(super) fn buffer_ptr(&self) -> Option<usize> {
+        self.buffer
+            .as_ref()
+            .map(|buffer| <ID3D11Buffer as windows::core::Interface>::as_raw(buffer) as usize)
     }
 
     /// Overwrite the live buffer's contents without re-binding it.
@@ -365,7 +459,7 @@ impl Cb13Buffer {
     }
 }
 
-/// Copy eye `eye`'s view-projection rows, camera position, and `M_eye` block over **both** eye slots of
+/// Copy eye `eye`'s view-projection rows, camera position, `M_eye` block, and clip origin over **both** eye slots of
 /// a `cb13` row set. A patched shader then reads the same eye whichever parity it computes.
 pub(super) fn pin_rows_to_eye(
     rows: &[Vector4; STEREO_CB_TOTAL_ROWS],
@@ -378,8 +472,31 @@ pub(super) fn pin_rows_to_eye(
             .copy_from_slice(&rows[eye * stride..(eye + 1) * stride]);
         pinned[MEYE_ROW_BASE + slot * 4..MEYE_ROW_BASE + slot * 4 + 4]
             .copy_from_slice(&rows[MEYE_ROW_BASE + eye * 4..MEYE_ROW_BASE + eye * 4 + 4]);
+        pinned[clip_origin_row(slot)] = rows[clip_origin_row(eye)];
+        pinned[full_view_projection_row(slot)..full_view_projection_row(slot) + 4].copy_from_slice(
+            &rows[full_view_projection_row(eye)..full_view_projection_row(eye) + 4],
+        );
     }
     pinned
+}
+
+pub(super) fn preserve_reprojection_depth(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS]) {
+    for eye in 0..2 {
+        rows[MEYE_ROW_BASE + eye * 4 + 2].data = [0.0, 0.0, 1.0, 0.0];
+    }
+}
+
+/// The four view-projection rows and four `M_eye` rows a per-eye pin places in the first `cb13` slot
+/// for `eye`, for the draw-state diagnostic.
+pub(super) fn pinned_eye_rows(
+    rows: &[Vector4; STEREO_CB_TOTAL_ROWS],
+    eye: usize,
+) -> ([[f32; 4]; 4], [[f32; 4]; 4]) {
+    let pinned = pin_rows_to_eye(rows, eye);
+    (
+        std::array::from_fn(|row| pinned[row].data),
+        std::array::from_fn(|row| pinned[MEYE_ROW_BASE + row].data),
+    )
 }
 
 /// Write `rows` into the live `cb13` buffer, reporting whether it landed. Takes the engine context

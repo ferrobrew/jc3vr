@@ -1,20 +1,37 @@
-use std::sync::OnceLock;
+use std::sync::{
+    Arc, OnceLock,
+    atomic::{AtomicBool, Ordering},
+};
 
 use jc3gi::game::GameState;
 use parking_lot::{Mutex, MutexGuard};
-use re_utilities::{ThreadSuspender, hook_library::HookLibrary};
+use re_utilities::hook_library::HookLibrary;
+
+use crate::{
+    controllers::weapons::{inventory::spawn_safety, reload},
+    lifecycle::{
+        self, DeferReason, ParticipantId, Preparation, PrepareOutcome, PreparedParticipant,
+        ShutdownParticipant,
+    },
+    thread_role::{self, ThreadRole},
+};
 
 pub mod animation;
 pub mod camera;
 pub mod character;
 pub mod clock;
 pub mod draw_count;
+mod equipment;
 pub mod game;
 pub mod graphics_engine;
 pub mod input;
+pub mod online;
 #[cfg(feature = "profiler")]
 pub mod profiler;
+pub mod sim;
+pub(crate) mod suspend;
 pub mod ui;
+pub mod window_focus;
 pub mod wndproc;
 
 /// Whether the game is in interactive gameplay (`GameState::E_GAME_RUN`), as opposed to any
@@ -34,23 +51,63 @@ struct HookState {
 unsafe impl Send for HookState {}
 unsafe impl Sync for HookState {}
 
+/// Open magazine admission after the native serial callback detour has been installed.
+fn activate_magazine_executor() {
+    MAGAZINE_BINDER_INSTALLED.store(true, Ordering::Release);
+    reload::serial::set_installed(true);
+}
+
 pub(super) fn install() {
+    if let Err(error) =
+        lifecycle::register_participant(ParticipantId::InventorySpawn, spawn_safety::participant())
+    {
+        tracing::error!(%error, "inventory spawn installation refused without shutdown preparation");
+        return;
+    }
+    if let Err(error) =
+        lifecycle::register_participant(ParticipantId::MagazineExecutor, Arc::new(MagazineShutdown))
+    {
+        tracing::error!(%error, "hook installation refused without shutdown preparation");
+        return;
+    }
+    if let Err(error) = lifecycle::register_participant(
+        ParticipantId::HumanCollider,
+        Arc::new(crate::controllers::physical_hands::human_hull::HumanHullShutdown),
+    ) {
+        tracing::error!(%error, "human hull installation refused without shutdown preparation");
+        return;
+    }
+    tracing::info!("startup: lifecycle participants registered; hook installation begin");
     let mut patcher = re_utilities::Patcher::new();
-    let hook_library = ThreadSuspender::for_block(|| {
+    tracing::info!("startup: before thread suspension");
+    let hook_library = suspend::for_block(|| {
+        tracing::info!("startup: inside thread suspension, before hook library construction");
         let library = HookLibrary::new()
             .with_hook_library(game::hook_library())
+            .with_hook_library(sim::hook_library())
+            .with_hook_library(online::hook_library())
             .with_hook_library(clock::hook_library())
             .with_hook_library(graphics_engine::hook_library())
             .with_hook_library(draw_count::hook_library())
+            .with_hook_library(equipment::hook_library())
             .with_hook_library(camera::hook_library())
             .with_hook_library(wndproc::hook_library())
+            .with_hook_library(window_focus::hook_library())
             .with_hook_library(character::hook_library())
             .with_hook_library(animation::hook_library())
             .with_hook_library(input::hook_library())
-            .with_hook_library(ui::hook_library());
+            .with_hook_library(ui::hook_library())
+            .with_hook_library(crate::pause_menu::hook_library())
+            .with_hook_library(crate::controllers::hook_library())
+            .with_hook_library(crate::controllers::physical_hands::human_hull::hook_library())
+            .with_hook_library(crate::grapple::physical::hook_library())
+            .with_hook_library(crate::grapple::device::hook_library());
         #[cfg(feature = "profiler")]
         let library = library.with_hook_library(profiler::hook_library());
-        Ok(library.enable(&mut patcher)?)
+        tracing::info!("startup: before enable");
+        let library = library.enable(&mut patcher);
+        tracing::info!("startup: after enable");
+        Ok(library?)
     });
     let hook_library = match hook_library {
         Ok(hook_library) => hook_library,
@@ -59,23 +116,48 @@ pub(super) fn install() {
             return;
         }
     };
-    let _ = HOOK_STATE.set(HookState {
-        patcher: Mutex::new(patcher),
-        hook_library,
-    });
+    if HOOK_STATE
+        .set(HookState {
+            patcher: Mutex::new(patcher),
+            hook_library,
+        })
+        .is_ok()
+    {
+        activate_magazine_executor();
+        spawn_safety::activate();
+    }
 }
 
-pub(super) fn uninstall() {
+pub(super) fn uninstall() -> bool {
+    if !crate::is_shutting_down() {
+        tracing::error!("hook removal refused before shutdown commit");
+        return false;
+    }
     // The single-pass COM-vtable detours inline-patch the DXVK functions to jump into payload code
     // and are managed outside the HookLibrary, so tear them down explicitly before the DLL unloads --
     // otherwise the dangling jumps crash the game on the next D3D call.
-    crate::stereo::single_pass::uninstall_com_detours();
-    let state = HOOK_STATE.get().unwrap();
-    let _ = ThreadSuspender::for_block(|| {
+    if !crate::stereo::single_pass::uninstall_com_detours() {
+        return false;
+    }
+    if crate::debug::texture_census::armed() {
+        tracing::error!(
+            restart_required = true,
+            "hook removal: the texture census's detours were enabled; the payload must remain mapped and the game must be restarted"
+        );
+        return false;
+    }
+    let Some(state) = HOOK_STATE.get() else {
+        tracing::error!("hook removal: installation state is unavailable");
+        return false;
+    };
+    if let Err(error) = suspend::for_block(|| {
         Ok(state
             .hook_library
             .set_enabled(&mut state.patcher.lock(), false)?)
-    });
+    }) {
+        tracing::error!(?error, "hook removal failed; the image must remain mapped");
+        return false;
+    }
 
     // `HookLibrary::set_enabled(false)` unpatches only the addresses it owns. Everything applied
     // through [`patcher`] shares the same `Patcher` but belongs to no hook library -- the
@@ -94,8 +176,75 @@ pub(super) fn uninstall() {
         &mut *state.patcher.lock(),
         re_utilities::Patcher::new(),
     ));
+    MAGAZINE_BINDER_INSTALLED.store(false, Ordering::Release);
+    reload::serial::set_installed(false);
+    if let Err(error) = spawn_safety::post_unpatch_check() {
+        tracing::error!(%error, "hook removal: inventory spawn callbacks require the image to remain mapped");
+        return false;
+    }
+    if character::magazine::active_entries() != 0
+        || crate::controllers::physical_hands::human_hull::active_entries() != 0
+        || crate::controllers::weapons::grenade::locker_active_entries() != 0
+    {
+        tracing::error!(
+            "native callback remains active after hook removal; the image must remain mapped"
+        );
+        return false;
+    }
+    true
 }
+
+struct MagazineShutdown;
+
+impl ShutdownParticipant for MagazineShutdown {
+    fn prepare(&self, preparation: Preparation) -> PrepareOutcome<Box<dyn PreparedParticipant>> {
+        if thread_role::current() != ThreadRole::Game {
+            return PrepareOutcome::Deferred(DeferReason::ParticipantBusy(
+                ParticipantId::MagazineExecutor,
+            ));
+        }
+        // This cancels only extraction. It must not stand down other gameplay during a retry.
+        reload::cancel_extraction_on_standdown();
+        match magazine_preparation(
+            reload::serial::stop_and_drain(),
+            character::magazine::active_entries() != 0,
+        ) {
+            PrepareOutcome::Ready(()) => {
+                PrepareOutcome::Ready(Box::new(InactiveMagazine { preparation }))
+            }
+            PrepareOutcome::Deferred(reason) => PrepareOutcome::Deferred(reason),
+            PrepareOutcome::Failed(error) => PrepareOutcome::Failed(error),
+        }
+    }
+}
+
+fn magazine_preparation(drained: bool, entry_active: bool) -> PrepareOutcome<()> {
+    if !drained || entry_active {
+        PrepareOutcome::Deferred(DeferReason::MagazineBusy)
+    } else {
+        PrepareOutcome::Ready(())
+    }
+}
+
+struct InactiveMagazine {
+    preparation: Preparation,
+}
+
+impl PreparedParticipant for InactiveMagazine {
+    fn validate(&self, preparation: Preparation) -> bool {
+        self.preparation == preparation
+            && character::magazine::active_entries() == 0
+            && reload::serial::stop_and_drain()
+    }
+
+    fn commit(&mut self) {}
+}
+
+static MAGAZINE_BINDER_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 pub(super) fn patcher() -> Option<MutexGuard<'static, re_utilities::Patcher>> {
     HOOK_STATE.get().map(|state| state.patcher.lock())
 }
+
+#[cfg(test)]
+mod lifecycle_tests;

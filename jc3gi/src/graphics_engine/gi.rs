@@ -79,7 +79,28 @@ impl LightManager {
         }
     }
 }
-impl LightManager {}
+impl LightManager {
+    pub const UpdatePlayerLightingTransforms_ADDRESS: usize = 0x1400D0250;
+    /// Places the light-propagation volume around a camera: hands `camera_transform` (a camera's
+    /// world transform) to the [`m_GIPass`](crate::graphics_engine::gi::LightManager::m_GIPass), which keeps it and repositions the
+    /// cascade [`GISolver::m_CascadeToUpdate`](crate::graphics_engine::gi::GISolver::m_CascadeToUpdate) names at the camera's position, rotated to its
+    /// forward axis. `CGameCameraManager::UpdateRender` calls it once per frame with the game
+    /// camera's render context (or a special camera's, when one is the lighting reference), not
+    /// with the render camera, so the volume follows the game camera rather than the camera a
+    /// pass renders from.
+    pub unsafe fn UpdatePlayerLightingTransforms(
+        &mut self,
+        camera_transform: *const crate::types::math::Matrix4,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                camera_transform: *const crate::types::math::Matrix4,
+            ) = ::std::mem::transmute(Self::UpdatePlayerLightingTransforms_ADDRESS);
+            f(self as *mut Self as _, camera_transform)
+        }
+    }
+}
 impl std::convert::AsRef<LightManager> for LightManager {
     fn as_ref(&self) -> &LightManager {
         self

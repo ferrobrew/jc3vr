@@ -76,11 +76,18 @@ impl std::convert::AsMut<SpawnBudgetEntry> for SpawnBudgetEntry {
         self
     }
 }
-/// The completion callback for [`Spawn`](crate::spawn_system::SpawnSystem::Spawn): a code pointer with the signature
-/// `void (*)(const std::vector<boost::shared_ptr<CGameObject>>* spawned_objects, void* userdata)`,
-/// invoked with the spawned objects and the caller's userdata once the request has been serviced.
-/// Modeled as a raw pointer because the definition language does not yet express function-pointer
-/// types.
+/// The completion callback for [`Spawn`](crate::spawn_system::SpawnSystem::Spawn) and
+/// [`SpawnTagIndex`](crate::spawn_system::SpawnSystem::SpawnTagIndex). Its signature is
+/// `void (*)(const std::vector<boost::shared_ptr<CGameObject>>* spawned_objects, void* userdata)`.
+/// The vector uses [`Vector`](crate::types::std_vector::Vector) of
+/// [`SharedPtr`](crate::types::shared_ptr::SharedPtr) to [`GameObject`](crate::game::GameObject).
+///
+/// [`PreUpdate`](crate::spawn_system::SpawnSystem::PreUpdate) invokes the callback inline on its caller while holding the
+/// request lock. The vector and its strong references are borrowed until the callback returns.
+/// PreUpdate then releases those references and the vector storage. Retaining an object beyond the
+/// callback requires an additional strong reference; copying a borrowed pointer pair does not take
+/// one. The system copies the userdata value without taking ownership of it. Cancellation and an
+/// invalid factory do not invoke the callback.
 pub type SpawnCallback = *const u8;
 #[repr(C, align(8))]
 /// `CSpawnSystem::CSpawnFactoryImpl`: the factory that vets and performs individual spawns.
@@ -121,8 +128,38 @@ impl std::convert::AsMut<SpawnFactoryImpl> for SpawnFactoryImpl {
     }
 }
 #[repr(C, align(8))]
-/// An opaque `CSpawnSystem::SResourceDef`: one spawnable resource's definition.
-pub struct SpawnResourceDef {}
+/// `CSpawnSystem::SResourceDef`: one spawnable resource's definition, built at initialization from
+/// an entry of a budget pool's definition file (its exported entity, its tags, and its selection
+/// weight). Partial: only the members below are mapped.
+pub struct SpawnResourceDef {
+    _field_0: [u8; 148],
+    /// Whether the definition came from its pool's prototype definition file. Only a request with
+    /// [`FF_PROTOTYPE_SPAWN`](crate::spawn_system::SpawnSystem::FF_PROTOTYPE_SPAWN) matches it, unless the system's
+    /// debug switch for prototypes is on.
+    pub m_PrototypeContent: bool,
+    /// Whether the definition came from its pool's premium definition file. Only a request with
+    /// [`FF_PREMIUM_SPAWN`](crate::spawn_system::SpawnSystem::FF_PREMIUM_SPAWN) matches it, and such a request that
+    /// matches any premium definition takes only the premium ones.
+    pub m_PremiumContent: bool,
+    _field_96: [u8; 138],
+    /// The load state of the definition's exported entity.
+    pub m_Status: crate::spawn_system::SpawnResourceDefStatus,
+    /// How many live factories want the definition loaded: each factory that matched it counts
+    /// once, unless it was created with
+    /// [`FF_NO_RESOURCE_REQUEST`](crate::spawn_system::SpawnSystem::FF_NO_RESOURCE_REQUEST).
+    pub m_RequestCount: u32,
+    _field_128: [u8; 60],
+    /// How many objects one spawn of the definition creates, counted from the exported entity when
+    /// its load completes.
+    pub m_ObjectsPerSpawn: i32,
+    _field_168: [u8; 336],
+}
+fn _SpawnResourceDef_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x2B8], SpawnResourceDef>([0u8; 0x2B8]);
+    }
+    unreachable!()
+}
 impl SpawnResourceDef {}
 impl std::convert::AsRef<SpawnResourceDef> for SpawnResourceDef {
     fn as_ref(&self) -> &SpawnResourceDef {
@@ -133,6 +170,22 @@ impl std::convert::AsMut<SpawnResourceDef> for SpawnResourceDef {
     fn as_mut(&mut self) -> &mut SpawnResourceDef {
         self
     }
+}
+#[repr(i32)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Copy, Clone)]
+/// The load state of a [`SpawnResourceDef`](crate::spawn_system::SpawnResourceDef)'s exported entity (`SResourceDef::EStatus`).
+pub enum SpawnResourceDefStatus {
+    UNLOADED = 0isize as _,
+    LOADING = 1isize as _,
+    LOADED = 2isize as _,
+    UNLOADING = 3isize as _,
+    LOAD_ERROR = 4isize as _,
+}
+fn _SpawnResourceDefStatus_size_check() {
+    unsafe {
+        ::std::mem::transmute::<[u8; 0x4], SpawnResourceDefStatus>([0u8; 0x4]);
+    }
+    unreachable!()
 }
 #[repr(C, align(8))]
 /// The spawn system: manages streaming (de)spawn of dynamic objects around the player. Each
@@ -157,7 +210,15 @@ pub struct SpawnSystem {
     pub m_BudgetEntries: crate::types::std_vector::Vector<
         crate::spawn_system::SpawnBudgetEntry,
     >,
-    _field_50: [u8; 280],
+    _field_50: [u8; 248],
+    /// The completion signal for the resource and despawn-ranking job run by
+    /// [`Update`](crate::spawn_system::SpawnSystem::Update). `StartUpdate` clears it before scheduling that job.
+    /// [`ResetSystem`](crate::spawn_system::SpawnSystem::ResetSystem) waits for it with
+    /// [`CpuFragmentWaitUntilSignalIsNonZero`](crate::cpu_fragment::CpuFragmentWaitUntilSignalIsNonZero).
+    /// [`PreUpdate`](crate::spawn_system::SpawnSystem::PreUpdate) and [`DespawnObject`](crate::spawn_system::SpawnSystem::DespawnObject) require that job to
+    /// have finished; their internal locks do not establish worker completion.
+    pub m_ThreadSignal: u32,
+    _field_14c: [u8; 28],
     /// The BFBC cull context the spawn system's visibility gate runs against.
     pub m_SpawnBFBC: *mut crate::spawn_system::SBFBCContext,
     /// The BFBC cull-frustum parameters, populated each frame by
@@ -192,6 +253,31 @@ impl SpawnSystem {
     }
 }
 impl SpawnSystem {
+    pub const PreUpdate_ADDRESS: usize = 0x140ECBF40;
+    /// Services deferred despawns, queued cancellations, and pending spawn requests, in that order.
+    /// The resource and despawn-ranking job must have finished before entry; see
+    /// [`m_ThreadSignal`](crate::spawn_system::SpawnSystem::m_ThreadSignal). The request and despawn locks do not wait for that
+    /// job.
+    ///
+    /// First releases the strong references queued for despawn. Then removes every pending request
+    /// matching both fields of each [`CancelSpawn`](crate::spawn_system::SpawnSystem::CancelSpawn) record, destroys its factory,
+    /// and clears the cancellation records without invoking callbacks. Finally services the remaining
+    /// ready factories under the request lock. A successful request invokes its
+    /// [`SpawnCallback`](crate::spawn_system::SpawnCallback) inline on the caller, destroys the factory, and removes the request.
+    /// An invalid factory is removed without a callback; an unsuccessful spawn attempt can remain
+    /// pending without invoking one.
+    ///
+    /// The run, load, and frontend state updates call this function. [`ResetSystem`](crate::spawn_system::SpawnSystem::ResetSystem)
+    /// also calls it and can deliver callbacks while resetting. Callback delivery does not run in
+    /// the separate ranking job in [`Update`](crate::spawn_system::SpawnSystem::Update).
+    pub unsafe fn PreUpdate(&mut self, dt: f32) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, dt: f32) = ::std::mem::transmute(
+                Self::PreUpdate_ADDRESS,
+            );
+            f(self as *mut Self as _, dt)
+        }
+    }
     pub const Update_ADDRESS: usize = 0x140EFEE90;
     /// The per-frame spawn update: walks every resource definition, evaluates despawn ranks against the
     /// view position, and at its tail builds a BFBC cull frustum from the camera manager's active camera
@@ -199,6 +285,17 @@ impl SpawnSystem {
     /// [`GetBFBCFrustumParamsForCameraAndTime`](crate::graphics_engine::graphics_engine::OccluderCollectionManager::GetBFBCFrustumParamsForCameraAndTime),
     /// storing the result in [`m_SpawnBFBCParams`](crate::spawn_system::SpawnSystem::m_SpawnBFBCParams) and
     /// [`m_SpawnBFBCState`](crate::spawn_system::SpawnSystem::m_SpawnBFBCState) for the factory's visibility gate.
+    ///
+    /// The despawn ranking visits every spawned object of every resource definition. An object
+    /// whose own weak reference's control block (for a weapon,
+    /// [`WeaponBase::m_WeakThis`](crate::equipment::weapon::WeaponBase::m_WeakThis)) has a strong count
+    /// other than one, the spawn system's own reference, is held by something else: it is given
+    /// rank zero and is never queued for despawn, nor chosen when its pool is over budget. Any
+    /// other object is ranked by `CalcDespawnRank` from its position, whether it is dead, and its
+    /// interest; its mission-critical flag protects it only while a mission or an encounter is
+    /// active, and is cleared otherwise. An object whose rank exceeds its pool's despawn threshold
+    /// is queued for despawn; otherwise the pool's highest-ranked object is remembered and queued
+    /// when the pool's instance count is over its limit.
     pub unsafe fn Update(&mut self) {
         unsafe {
             let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
@@ -231,13 +328,15 @@ impl SpawnSystem {
     /// Queues an asynchronous spawn request for the resource definitions matching the given tag
     /// string. Tags are separated by spaces, commas, or pipes; a definition matches when it
     /// carries every requested tag, and the matching set must belong to a single budget pool. The
-    /// request creates a spawn factory, streams the selected definition's exported entity in if
-    /// needed, and is serviced on a later frame by the spawn thread's update; on success the
-    /// callback fires with the spawned objects and the given userdata. The transform is the
-    /// world-space placement for the spawned object. `flags` is a combination of the
-    /// `EFactoryFlags` constants ([`FF_DEFAULT`](crate::spawn_system::SpawnSystem::FF_DEFAULT) and friends) controlling which
-    /// spawn checks apply. The callback may be null when the caller does not need the spawned
-    /// objects.
+    /// request creates a spawn factory and streams the selected definition's exported entity in if
+    /// needed. [`PreUpdate`](crate::spawn_system::SpawnSystem::PreUpdate) services it later and invokes the callback inline on
+    /// its caller on success, with the borrowed objects and the given userdata. The transform is
+    /// the world-space placement for the spawned object. `flags` is a combination of the
+    /// `EFactoryFlags` constants ([`FF_DEFAULT`](crate::spawn_system::SpawnSystem::FF_DEFAULT) and friends) controlling the
+    /// spawn checks and ownership. Unless [`FF_NO_SYSTEM_LOCK`](crate::spawn_system::SpawnSystem::FF_NO_SYSTEM_LOCK) is set,
+    /// the resource definition retains the complete spawned group independently of the callback's
+    /// references. Releasing the callback's references does not remove that persistent ownership.
+    /// The callback may be null when the caller does not need the spawned objects.
     pub unsafe fn Spawn(
         &mut self,
         tags: *const u8,
@@ -256,6 +355,183 @@ impl SpawnSystem {
                 userdata: *mut u8,
             ) = ::std::mem::transmute(Self::Spawn_ADDRESS);
             f(self as *mut Self as _, tags, transform, flags, callback, userdata)
+        }
+    }
+    pub const SpawnTagIndex_ADDRESS: usize = 0x140E97EE0;
+    /// Queues an asynchronous spawn request for the spawn tag `tag_index`, a type as
+    /// [`GameObject::GetUniqueSpawnTagIndex`](crate::game::GameObject::GetUniqueSpawnTagIndex) names it
+    /// (the tag-index overload of `CSpawnSystem::Spawn`). The request is queued under the system's
+    /// request lock and serviced by [`PreUpdate`](crate::spawn_system::SpawnSystem::PreUpdate), as for [`Spawn`](crate::spawn_system::SpawnSystem::Spawn).
+    /// The request copies the transform, callback, userdata, and network identifier; it does not
+    /// retain the transform pointer or take ownership of userdata. If factory creation fails, it
+    /// returns without queueing a request or invoking the callback. A queued request can also be
+    /// removed without a callback if its factory becomes invalid.
+    ///
+    /// On success PreUpdate invokes `callback` inline on its caller with the borrowed spawned group
+    /// and `userdata`. The group has the persistent ownership described by [`Spawn`](crate::spawn_system::SpawnSystem::Spawn).
+    /// The inventory's respawn of a slot passes
+    /// [`FF_HIGH_PRIO_SPAWN_CHECKS`](crate::spawn_system::SpawnSystem::FF_HIGH_PRIO_SPAWN_CHECKS) for the player and
+    /// [`FF_SECONDARY_SPAWN_CHECKS`](crate::spawn_system::SpawnSystem::FF_SECONDARY_SPAWN_CHECKS) otherwise, the character's
+    /// transform, and an all-bits-set network identifier.
+    pub unsafe fn SpawnTagIndex(
+        &mut self,
+        tag_index: i32,
+        transform: *const crate::types::math::Matrix4,
+        flags: u32,
+        callback: *const u8,
+        userdata: *mut u8,
+        network_id: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                tag_index: i32,
+                transform: *const crate::types::math::Matrix4,
+                flags: u32,
+                callback: *const u8,
+                userdata: *mut u8,
+                network_id: u32,
+            ) = ::std::mem::transmute(Self::SpawnTagIndex_ADDRESS);
+            f(
+                self as *mut Self as _,
+                tag_index,
+                transform,
+                flags,
+                callback,
+                userdata,
+                network_id,
+            )
+        }
+    }
+    pub const CancelSpawn_ADDRESS: usize = 0x140EA3720;
+    /// Queues a cancellation record containing `callback` and `userdata` under the request lock.
+    /// It neither invokes the callback nor dereferences or releases userdata. Returning only
+    /// confirms that the cancellation record is queued; it does not wait for request service or
+    /// worker completion.
+    ///
+    /// [`PreUpdate`](crate::spawn_system::SpawnSystem::PreUpdate) removes all pending requests matching both values before
+    /// servicing remaining requests. It destroys their factories without invoking callbacks.
+    /// Once that PreUpdate has processed the record and returned, no matching request remains,
+    /// provided no new request has reused the pair. A callback delivered before cancellation is
+    /// unaffected, as are the objects it returned.
+    pub unsafe fn CancelSpawn(&mut self, callback: *const u8, userdata: *mut u8) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                callback: *const u8,
+                userdata: *mut u8,
+            ) = ::std::mem::transmute(Self::CancelSpawn_ADDRESS);
+            f(self as *mut Self as _, callback, userdata)
+        }
+    }
+    pub const DespawnObject_ADDRESS: usize = 0x140EFFD40;
+    /// Queues the complete spawn group containing `object` for deferred despawn. The caller must
+    /// keep the object alive with a strong reference through the call, and the resource and
+    /// despawn-ranking job must have finished; see [`m_ThreadSignal`](crate::spawn_system::SpawnSystem::m_ThreadSignal).
+    /// Internal locks do not wait for that job.
+    ///
+    /// This is the raw-object overload of `CSpawnSystem::Despawn`. It takes a temporary weak
+    /// reference and passes it by value to the weak-pointer overload. When the object belongs to
+    /// a persistent spawned group, the system moves the whole group's strong references from the
+    /// resource definition into the deferred despawn list and reduces the spawn and budget counts.
+    /// [`PreUpdate`](crate::spawn_system::SpawnSystem::PreUpdate) later releases those deferred references. Other strong
+    /// references can keep the objects alive, and final strong-reference disposal can itself queue
+    /// engine deletion.
+    ///
+    /// Returns the number of objects queued, not whether destruction has completed. A zero result
+    /// can mean that the object is protected, has no matching resource, or is no longer in the
+    /// persistent list. `force` bypasses the critical-object check, but does not bypass missing
+    /// membership. Objects spawned with [`FF_NO_SYSTEM_LOCK`](crate::spawn_system::SpawnSystem::FF_NO_SYSTEM_LOCK) are not in
+    /// that list.
+    pub unsafe fn DespawnObject(
+        &mut self,
+        object: *mut crate::game::GameObject,
+        force: bool,
+    ) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                object: *mut crate::game::GameObject,
+                force: bool,
+            ) -> i32 = ::std::mem::transmute(Self::DespawnObject_ADDRESS);
+            f(self as *mut Self as _, object, force)
+        }
+    }
+    pub const GetTagHashFromTagIndex_ADDRESS: usize = 0x140E0D2C0;
+    /// The hash of the spawn tag `tag_index`, or zero for an index out of range.
+    pub unsafe fn GetTagHashFromTagIndex(&self, tag_index: i32) -> u32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self, tag_index: i32) -> u32 = ::std::mem::transmute(
+                Self::GetTagHashFromTagIndex_ADDRESS,
+            );
+            f(self as *const Self as _, tag_index)
+        }
+    }
+    pub const GetTagIndexFromTagHash_ADDRESS: usize = 0x140E5D5A0;
+    /// The index of the spawn tag whose hash is `tag_hash`, or `-1` when no loaded tag has it.
+    pub unsafe fn GetTagIndexFromTagHash(&self, tag_hash: u32) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *const Self, tag_hash: u32) -> i32 = ::std::mem::transmute(
+                Self::GetTagIndexFromTagHash_ADDRESS,
+            );
+            f(self as *const Self as _, tag_hash)
+        }
+    }
+    pub const GetUniqueTag_ADDRESS: usize = 0x140E83A90;
+    /// The unique spawn tag of the first resource definition matching the tag string `tags`
+    /// (parsed and matched as [`Spawn`](crate::spawn_system::SpawnSystem::Spawn) does, with premium and prototype definitions
+    /// included and no shuffle), or zero when the string has no valid tag or nothing matches. A
+    /// definition's unique tag is the first of its tags, the one only it carries. The game's
+    /// completion reward looks up its weapon's definition by name this way and hands the tag to the
+    /// inventory's weapon give.
+    pub unsafe fn GetUniqueTag(&mut self, tags: *const u8) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self, tags: *const u8) -> i32 = ::std::mem::transmute(
+                Self::GetUniqueTag_ADDRESS,
+            );
+            f(self as *mut Self as _, tags)
+        }
+    }
+    pub const GetResourceDefFromTagHash_ADDRESS: usize = 0x140E5D750;
+    /// The first resource definition carrying the spawn tag whose hash is `tag_hash` (a unique
+    /// tag's hash names exactly one), or null when no loaded tag has that hash or no definition
+    /// carries it. [`GetTagHashFromTagIndex`](crate::spawn_system::SpawnSystem::GetTagHashFromTagIndex) turns a tag index such
+    /// as [`GetUniqueTag`](crate::spawn_system::SpawnSystem::GetUniqueTag)'s into the hash. The definitions are built once when
+    /// the system initializes, so the pointer stays valid until the system is released.
+    pub unsafe fn GetResourceDefFromTagHash(
+        &self,
+        tag_hash: u32,
+    ) -> *mut crate::spawn_system::SpawnResourceDef {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                tag_hash: u32,
+            ) -> *mut crate::spawn_system::SpawnResourceDef = ::std::mem::transmute(
+                Self::GetResourceDefFromTagHash_ADDRESS,
+            );
+            f(self as *const Self as _, tag_hash)
+        }
+    }
+    pub const ResetSystem_ADDRESS: usize = 0x140ECC450;
+    /// Resets the system: waits for its spawn job through [`m_ThreadSignal`](crate::spawn_system::SpawnSystem::m_ThreadSignal),
+    /// sends `spawn.reset_all_spawn_rules` at once, and calls [`PreUpdate`](crate::spawn_system::SpawnSystem::PreUpdate). This
+    /// service call can invoke successful pending spawn callbacks inline while the reset is in
+    /// progress. It then destroys every remaining pending spawn request and its factory, releases
+    /// the system's references to every spawned object of every resource definition and every
+    /// object queued for despawn, and posts `spawn.post_reset_all_spawn_rules`, which its receivers
+    /// handle later. An object that something else still holds a strong reference to outlives the
+    /// reset, outside the system.
+    /// The load state's reset step
+    /// ([`GameStateLoad::ResetSystems`](crate::game::GameStateLoad::ResetSystems)) and the frontend's
+    /// ([`GameStateFrontend::ResetSystems`](crate::game::GameStateFrontend::ResetSystems)) call it, so a
+    /// death, a mission failure or checkpoint restart, a fast travel, a challenge's start, retry,
+    /// restart, or abort, a load, and the quit to the menu all reset.
+    pub unsafe fn ResetSystem(&mut self) -> i32 {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) -> i32 = ::std::mem::transmute(
+                Self::ResetSystem_ADDRESS,
+            );
+            f(self as *mut Self as _)
         }
     }
 }
@@ -305,7 +581,11 @@ impl SpawnSystem {
     pub const FF_NO_SPAWN_BLOCK_CHECK: u32 = 32;
     /// `EFactoryFlags`: skip the spawn-pool budget check.
     pub const FF_NO_SPAWN_POOL_CHECK: u32 = 128;
-    /// `EFactoryFlags`: skip taking the system lock.
+    /// `EFactoryFlags`: skip retaining the spawned group in the resource definition's persistent
+    /// spawned-object list and skip its spawn and budget accounting. The callback output still
+    /// receives the group. [`DespawnObject`](crate::spawn_system::SpawnSystem::DespawnObject) cannot find objects omitted from
+    /// that persistent list. This flag does not remove the request lock used for queueing and
+    /// callback delivery.
     pub const FF_NO_SYSTEM_LOCK: u32 = 2;
     /// `EFactoryFlags`: skip the frame time-budget check.
     pub const FF_NO_TIME_CHECK: u32 = 64;

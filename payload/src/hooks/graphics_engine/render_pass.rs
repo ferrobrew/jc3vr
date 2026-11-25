@@ -1,14 +1,16 @@
 //! Detours that gate per-frame render-list state so it advances only once per *real* frame, even
 //! though we render the scene twice (once per eye). See `docs/mod/stereo/single-pass-stereo.md`.
 //!
-//! Each gate is toggleable at runtime (debug UI) so the working combination can be found in-game.
 //! `SetupRenderFrameData` (the per-batch list *build*, not the swap) and `HandBackBuffers`
 //! (constant-buffer recycle) run on both eyes. The add/draw list parity is handled separately by
 //! saving and restoring `current_add_buffer` in `game::game_update_render` between eyes, so the
 //! per-frame `CKeep1000Frames` call (which toggles the parity and calls `SaveRenderFrameData` on
 //! every pass) runs on both eyes and produces the same list pointers on both.
 
-use std::ffi::c_void;
+use std::{
+    ffi::c_void,
+    sync::atomic::{AtomicU32, Ordering},
+};
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::{
@@ -19,15 +21,21 @@ use jc3gi::graphics_engine::{
 };
 use re_utilities::hook_library::HookLibrary;
 
+#[cfg(feature = "profiler")]
+use crate::profiler::gpu::seam;
 use crate::{
     config::Config,
     debug::{
-        stereo_diff::op_total,
+        stereo_diff::{op_total, record_pass, recording},
         trace::{TraceEvent, TraceState, tracing_active},
     },
-    profiler::gpu::seam,
-    stereo::{STEREO_STATE, draw_index, is_second_eye},
-    vr::foveation::{FORCE_STENCIL_TEST, FoveationParams},
+    hooks::graphics_engine::screen::reconstruction,
+    screenshot::harness::stages::{Stage, capture_prefix_depth, velocity},
+    stereo::{
+        STEREO_STATE, draw_index, is_second_eye,
+        single_pass::{ao_volumes, is_sun_pass, reissue_sun_pass},
+    },
+    vr::foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams},
 };
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -51,18 +59,30 @@ pub(super) fn hook_library() -> HookLibrary {
 // the readback stalls.
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::Draw_ADDRESS)]
 fn render_pass_draw(this: *mut RenderPass) {
+    let pass_id = unsafe { this.as_ref() }.map(|pass| pass.m_Index);
+    if let Some(id) = pass_id {
+        crate::screenshot::harness::stages::capture_before_fog_apply(id);
+    }
+    crate::screenshot::harness::draw_census::begin_pass();
+    let snapshot = pass_id
+        .filter(|id| {
+            (RenderPassId::PRE_RP_REFLECTION_ATMOSPHERE as i16
+                ..=RenderPassId::PRE_RP_REFLECTION_CLOUDS as i16)
+                .contains(id)
+        })
+        .and_then(|_| unsafe { crate::screenshot::harness::stages::eye_width_snapshot(this) });
     RENDER_PASS_DRAW.get().unwrap().call(this);
+    crate::screenshot::harness::draw_census::end_pass();
+    drop(snapshot);
+    let Some(id) = pass_id else { return };
+    crate::screenshot::harness::stages::capture_late_sky(id);
     if !tracing_active() || draw_index() != 0 {
         return;
     }
-    let Some(pass) = (unsafe { this.as_ref() }) else {
-        return;
-    };
-    let id = pass.m_Index;
     if !SWEEP_PASS_RANGE.contains(&id) {
         return;
     }
-    let even_frame = TraceState::screenshot_target().is_some_and(|(_, frame)| frame % 2 == 0);
+    let even_frame = TraceState::current_frame().is_some_and(|(_, frame)| frame % 2 == 0);
     if !even_frame {
         return;
     }
@@ -79,7 +99,8 @@ const SWEEP_PASS_RANGE: std::ops::RangeInclusive<i16> =
 // `current_add_buffer` between eyes in `game::game_update_render`).
 #[detour(address = jc3gi::graphics_engine::render_pass::RenderPass::SetupRenderFrameData_ADDRESS)]
 fn setup_render_frame_data(a1: *mut c_void, count: i32, a3: *mut c_void, items: *mut c_void) {
-    let gated = is_second_eye() && Config::lock_query(|c| c.stereo.gate_setup_render_frame_data);
+    let gated = crate::stereo::later_scene()
+        && Config::lock_query(|c| c.stereo.gate_setup_render_frame_data);
     TraceState::record_eye(TraceEvent::SetupRenderFrameData { gated });
     if gated {
         return;
@@ -94,7 +115,8 @@ fn setup_render_frame_data(a1: *mut c_void, count: i32, a3: *mut c_void, items: 
 // pool. Suppressing it on eye 1 starves the second render of constant buffers. Off by default.
 #[detour(address = jc3gi::graphics_engine::render_pass::ConstantBufferPool::HandBackBuffers_ADDRESS)]
 fn hand_back_buffers(this: *mut c_void) {
-    let gated = is_second_eye() && Config::lock_query(|c| c.stereo.gate_hand_back_buffers);
+    let gated =
+        crate::stereo::later_scene() && Config::lock_query(|c| c.stereo.gate_hand_back_buffers);
     TraceState::record_eye(TraceEvent::HandBackBuffers { gated });
     if gated {
         return;
@@ -115,23 +137,46 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
     // SAFETY: `this` is the live render pass being drawn.
     let _pass = unsafe { crate::profiler::pass_scope(this) };
     // Single-pass-stereo feasibility probe: record this pass's per-eye GPU-op count so the two
-    // eyes' draw sequences can be diffed at frame end. Off by default; two atomic loads when on.
-    let diff = crate::debug::stereo_diff::is_active();
+    // eyes' draw sequences can be diffed at frame end. Armed per traced stereo frame; two atomic
+    // loads when on.
+    let diff = recording();
     let ops_before = if diff { op_total() } else { 0 };
     // SAFETY: `this` and `ctx` are the live pass and render context of this draw call.
     let window = unsafe { crate::far_field::before_do_draw(this, ctx) };
     // Publish the pass for the duration of the walk: the draw detours see only a D3D context, and
     // which pass a draw belongs to is what tells a geometry draw apart from a fullscreen one.
     // SAFETY: `this` is the live render pass; `m_Index` is its render-pass id.
-    let previous_pass = crate::stereo::single_pass::set_current_pass(unsafe { (*this).m_Index });
-    let result = DO_DRAW.get().unwrap().call(this, ctx, color_mask);
+    let pass_id = unsafe { (*this).m_Index };
+    let previous_pass = crate::stereo::single_pass::set_current_pass(pass_id);
+    let _lake_producer = (RenderPassId::PRE_RP_REFLECTION_DISTANT_BACKDROP as i16
+        ..=RenderPassId::PRE_RP_REFLECTION_CLOUDS as i16)
+        .contains(&pass_id)
+        .then(|| unsafe {
+            crate::screenshot::harness::stages::capture_producer_context(this, ctx)
+        });
+    // Capture-gated producer diagnostic for the passes that feed the water's reflection inputs;
+    // inert for every other pass and for an unarmed capture.
+    let _reflection_producer = crate::stereo::single_pass::reflection_producer(pass_id.into());
+    // The ambient-occlusion volumes' per-eye rows, bound for the walk of their pass.
+    // SAFETY: `ctx` is the live render context of this pass.
+    let _ao_volume_rows = (pass_id == RP_AO_VOLUMES as i16)
+        .then(|| unsafe { ao_volumes::bind_rows(ctx) })
+        .flatten();
+    let sun_pass = is_sun_pass(pass_id);
+    let result = if sun_pass {
+        reissue_sun_pass(ctx, &|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
+            .unwrap_or_else(|| DO_DRAW.get().unwrap().call(this, ctx, color_mask))
+    } else {
+        DO_DRAW.get().unwrap().call(this, ctx, color_mask)
+    };
     crate::stereo::single_pass::restore_current_pass(previous_pass);
+    if sun_pass {
+        crate::screenshot::harness::stages::capture_after_sun();
+    }
     drop(window);
     if diff {
         let ops = op_total().wrapping_sub(ops_before);
-        // SAFETY: `this` is the live render pass; `m_Index` is its render-pass id.
-        let pass_id = unsafe { (*this).m_Index };
-        crate::debug::stereo_diff::record_pass(pass_id, draw_index(), ops);
+        record_pass(pass_id, draw_index(), ops);
     }
     // Close the final render-block-type run's scope before the pass scope closes.
     #[cfg(feature = "profiler")]
@@ -199,7 +244,7 @@ fn draw_render_pass_range(
     };
 
     // Draw maximal runs of non-skipped passes in [lo, hi), omitting the skipped ones.
-    let draw = |lo: i32, hi: i32| {
+    let draw_runs = |lo: i32, hi: i32| {
         let mut run_start = lo;
         for pass in lo..hi {
             if skipped(pass) {
@@ -211,6 +256,177 @@ fn draw_render_pass_range(
         }
         if run_start < hi {
             original.call(this, ctx, setup, run_start, hi);
+        }
+    };
+
+    let bracket = (first == RP_Z_OCCLUDERS
+        && last == RenderPassId::RP_LAST_GBUFFER as i32
+        && !share_frame
+        && !far_phase)
+        .then(crate::screenshot::harness::requested_water_diagnostic)
+        .flatten()
+        .and_then(|diag| match diag {
+            crate::screenshot::harness::WaterReflection::LakeNearPatch => {
+                Some((RenderPassId::RP_TERRAINPATCH_BASEMESH_NEAR as i32, false))
+            }
+            crate::screenshot::harness::WaterReflection::LakeTessPatch
+            | crate::screenshot::harness::WaterReflection::LakePatchDraw
+            | crate::screenshot::harness::WaterReflection::LakeCameraControl
+            | crate::screenshot::harness::WaterReflection::LakePatchOwners
+            | crate::screenshot::harness::WaterReflection::LakeDomainCamera
+            | crate::screenshot::harness::WaterReflection::LakeHullCamera => Some((
+                RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_NEAR as i32,
+                true,
+            )),
+            _ => None,
+        });
+    let draw = |lo, hi| {
+        if let Some((near_patch, tess)) = bracket
+            && (lo..hi).contains(&near_patch)
+            && !skipped(near_patch)
+        {
+            let z = RenderPassId::RP_Z_PASS as i32;
+            let velocity = RenderPassId::RP_Z_AND_VELOCITY_PASS as i32;
+            if tess
+                && lo <= z
+                && velocity < near_patch
+                && !skipped(z)
+                && !skipped(velocity)
+                && crate::screenshot::harness::frame_identity()
+                    .is_some_and(crate::screenshot::harness::early_depth_requested)
+            {
+                draw_runs(lo, z);
+                capture_prefix_depth(Stage::BeforeZPassDepth);
+                draw_runs(z, velocity);
+                capture_prefix_depth(Stage::AfterZPassDepth);
+                velocity::scope(velocity::Scope::Velocity, || {
+                    draw_runs(velocity, velocity + 1)
+                });
+                capture_prefix_depth(Stage::AfterZVelocityDepth);
+                draw_runs(velocity + 1, near_patch);
+            } else {
+                draw_runs(lo, near_patch);
+            }
+            crate::screenshot::harness::stages::capture_near_patch(false, tess);
+            crate::screenshot::harness::patch_draw::scope(tess, || {
+                if tess {
+                    velocity::scope(velocity::Scope::Terrain, || {
+                        draw_runs(near_patch, near_patch + 1)
+                    });
+                } else {
+                    draw_runs(near_patch, near_patch + 1);
+                }
+            });
+            crate::screenshot::harness::stages::capture_near_patch(true, tess);
+            velocity::scope(velocity::Scope::BarkColor, || {
+                let mut start = near_patch + 1;
+                if crate::screenshot::harness::frame_identity()
+                    .is_some_and(crate::screenshot::harness::post_geometry_requested)
+                {
+                    for (end, stage) in [
+                        (
+                            RenderPassId::RP_MODELS_DYNAMIC as i32,
+                            Stage::BeforeDynamicModelsDepth,
+                        ),
+                        (
+                            RenderPassId::RP_MODELS_DYNAMIC as i32 + 1,
+                            Stage::AfterDynamicModelsDepth,
+                        ),
+                        (
+                            RenderPassId::RP_MODELS_STATIC as i32 + 1,
+                            Stage::AfterStaticModelsDepth,
+                        ),
+                        (
+                            RenderPassId::RP_VEGETATION_OPAQUE as i32 + 1,
+                            Stage::AfterOpaqueVegetationDepth,
+                        ),
+                        (
+                            RenderPassId::RP_TERRAIN_FOREST as i32 + 1,
+                            Stage::AfterForestDepth,
+                        ),
+                    ] {
+                        if start < end && end <= hi {
+                            if stage == Stage::BeforeDynamicModelsDepth
+                                && crate::screenshot::harness::frame_identity().is_some_and(
+                                    crate::screenshot::harness::terrain_interval_requested,
+                                )
+                            {
+                                let mut next = start;
+                                for (pass, boundary) in [
+                                    (
+                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_NEAR,
+                                        Stage::AfterBaseNearDepth,
+                                    ),
+                                    (
+                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_FAR,
+                                        Stage::AfterTessFarDepth,
+                                    ),
+                                    (
+                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_FAR,
+                                        Stage::AfterBaseFarDepth,
+                                    ),
+                                    (
+                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_TESSELLATE_COLOR,
+                                        Stage::AfterTessColorDepth,
+                                    ),
+                                    (
+                                        RenderPassId::RP_TERRAINPATCH_BASEMESH_COLOR,
+                                        Stage::AfterBaseColorDepth,
+                                    ),
+                                    (
+                                        RenderPassId::RP_TERRAIN_APPLY_NEAR_DETAILED,
+                                        Stage::AfterApplyNearDetailedDepth,
+                                    ),
+                                    (
+                                        RenderPassId::RP_TERRAIN_APPLY_NEAR,
+                                        Stage::AfterApplyNearDepth,
+                                    ),
+                                ] {
+                                    let after = pass as i32 + 1;
+                                    if pass == RenderPassId::RP_TERRAINPATCH_BASEMESH_NEAR {
+                                        velocity::scope(velocity::Scope::Base, || {
+                                            draw_runs(next, after)
+                                        });
+                                    } else {
+                                        draw_runs(next, after);
+                                    }
+                                    capture_prefix_depth(boundary);
+                                    next = after;
+                                }
+                                draw_runs(next, end);
+                            } else if stage == Stage::AfterForestDepth
+                                && crate::screenshot::harness::frame_identity().is_some_and(
+                                    crate::screenshot::harness::interval_trace_requested,
+                                )
+                            {
+                                velocity::scope(velocity::Scope::Interval, || {
+                                    for (pass, boundary) in [
+                                        (RenderPassId::RP_VEGETATIONFINS, Stage::AfterFinsDepth),
+                                        (RenderPassId::RP_VEGETATIONGROUP, Stage::AfterGroupDepth),
+                                        (
+                                            RenderPassId::RP_VEGETATIONGROUP2,
+                                            Stage::AfterGroup2Depth,
+                                        ),
+                                        (RenderPassId::RP_TERRAIN_FOREST, Stage::AfterForestDepth),
+                                    ] {
+                                        draw_runs(pass as i32, pass as i32 + 1);
+                                        if boundary != Stage::AfterForestDepth {
+                                            capture_prefix_depth(boundary);
+                                        }
+                                    }
+                                });
+                            } else {
+                                draw_runs(start, end);
+                            }
+                            capture_prefix_depth(stage);
+                            start = end;
+                        }
+                    }
+                }
+                draw_runs(start, hi);
+            });
+        } else {
+            draw_runs(lo, hi);
         }
     };
 
@@ -227,6 +443,7 @@ fn draw_render_pass_range(
             run_scene_range(first, RP_FIRST_GEOMETRY, &draw);
             crate::far_field::share::composite(draw_index());
             run_scene_range(RP_FIRST_GEOMETRY, last, &draw);
+            capture_geometry_range(first, last);
         }
         return;
     }
@@ -249,9 +466,19 @@ fn draw_render_pass_range(
         range
     });
     run_scene_range(first, last, &draw);
+    capture_geometry_range(first, last);
     if range.is_some() {
         drop(range);
         crate::stereo::single_pass::log_draw_split(first as u32, last as u32);
+    }
+}
+
+fn capture_geometry_range(first: i32, last: i32) {
+    if first == RP_Z_OCCLUDERS
+        && last == RenderPassId::RP_LAST_GBUFFER as i32
+        && !STEREO_STATE.lock().far_phase
+    {
+        crate::screenshot::harness::stages::capture_geometry();
     }
 }
 
@@ -267,40 +494,71 @@ const RP_FIRST_GEOMETRY: i32 = RenderPassId::RP_ROAD_STENCIL as i32;
 /// the foveation bracketing, factored out of the detour so the far-field composite can split the
 /// range without duplicating either.
 fn run_scene_range(first: i32, last: i32, draw: &dyn Fn(i32, i32)) {
-    // Foveation (issue #29): write the peripheral stencil mask just before the foveated shading sub-range,
-    // then force the peripheral stencil test through it so the GPU skips the dropped GBuffer pixels. The
-    // reconstruction fill-in runs later, in the `DrawPosteffects` hook, once the scene is fully lit --
-    // filling here (right after the GBuffer passes) would reconstruct an as-yet-unlit MainColor. `plan` is
-    // `None` when foveation is off or this is not a VR eye render, collapsing to the plain split above.
+    // Foveation (issue #29): write the peripheral stencil mask just before the first foveated pass,
+    // then force the peripheral stencil test through each run of foveated passes so the GPU skips the
+    // dropped pixels. The reconstruction fill-in runs once the last foveated pass has lit the kept
+    // pixels: here, before the first pass that reads the lit colour's neighbourhood, when the
+    // lighting passes are foveated, and otherwise in the `DrawPosteffects` hook. `plan` is `None`
+    // when foveation is off or this is not a VR eye render.
     let Some(plan) = foveation_plan(first, last) else {
         draw(first, last);
         return;
     };
-    draw(first, plan.fov_start);
-    if plan.do_mask {
-        run_foveation_pass(crate::vr::foveation::mask_write, plan.params, "mask-write");
+    let fill_before = plan.passes.fill_before();
+    let mut start = first;
+    while start < last {
+        if fill_before == Some(start) {
+            run_foveation_pass(
+                crate::vr::foveation::fill_in_dropped,
+                plan.params,
+                "foveation fill-in",
+            );
+        }
+        let foveated = plan.passes.contains(start);
+        let end = (start + 1..last)
+            .find(|&pass| plan.passes.contains(pass) != foveated || fill_before == Some(pass))
+            .unwrap_or(last);
+        if foveated {
+            if start == plan.passes.first() {
+                run_foveation_pass(
+                    crate::vr::foveation::mask_write,
+                    plan.params,
+                    "foveation mask-write",
+                );
+            }
+            FORCE_STENCIL_TEST.store(true, Ordering::Relaxed);
+            draw(start, end);
+            FORCE_STENCIL_TEST.store(false, Ordering::Relaxed);
+        } else {
+            draw(start, end);
+        }
+        start = end;
     }
-    FORCE_STENCIL_TEST.store(true, std::sync::atomic::Ordering::Relaxed);
-    draw(plan.fov_start, plan.fov_end);
-    FORCE_STENCIL_TEST.store(false, std::sync::atomic::Ordering::Relaxed);
-    draw(plan.fov_end, last);
 }
 
-/// The foveation bracketing for one [`draw_render_pass_range`] call: the clamped foveated sub-range
-/// `[fov_start, fov_end)`, whether this call owns the mask-write / fill-in (so each runs once even if the
-/// scene range is split across calls), and the per-eye pass parameters.
+/// The foveation bracketing for one [`draw_render_pass_range`] call: which passes take the forced
+/// stencil test, and the per-eye pass parameters. The mask-write runs in the call whose range holds
+/// the first foveated pass, so it runs once even if the scene range is split across calls.
 struct FoveationPlan {
-    fov_start: i32,
-    fov_end: i32,
-    do_mask: bool,
+    passes: FoveatedPasses,
     params: FoveationParams,
 }
 
 /// Build the [`FoveationPlan`] for a draw-range call, or `None` when foveation is disabled, this is not a
-/// VR eye render, or the foveated range does not intersect `[first, last)`. Publishes the per-draw stencil
-/// test bits ([`crate::vr::foveation::STENCIL_TEST_BITS`]) when active.
+/// VR eye render, or no foveated pass lies in `[first, last)`. Publishes the per-draw stencil test bits
+/// ([`crate::vr::foveation::STENCIL_TEST_BITS`]) when active.
 fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
-    let cfg = Config::lock_query(|c| c.foveation.clone());
+    let (cfg, passes, quads) = Config::lock_query(|c| {
+        let sp = &c.stereo.single_pass;
+        (
+            c.foveation.clone(),
+            FoveatedPasses {
+                gbuffer: sp.foveation_gbuffer,
+                lighting: sp.foveation_lighting,
+            },
+            sp.foveation_quads,
+        )
+    });
     if !cfg.enabled {
         return None;
     }
@@ -308,47 +566,65 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
         tracing::warn!("foveation disabled: {e}");
         return None;
     }
-    let eye = usize::from(is_second_eye());
-    let center_uv = foveal_center_uv(eye)?;
-    let ff = cfg.foveal_first_pass as i32;
-    let fl = cfg.foveal_last_pass as i32;
-    let fov_start = first.max(ff);
-    let fov_end = last.min(fl + 1);
-    if fov_start >= fov_end {
+    if !(first..last).any(|pass| passes.contains(pass) || passes.fill_before() == Some(pass)) {
         return None;
     }
+    let layout = foveation_layout()?;
     crate::vr::foveation::STENCIL_TEST_BITS.store(
         crate::vr::foveation::packed_stencil_test(cfg.mask_bit),
-        std::sync::atomic::Ordering::Relaxed,
+        Ordering::Relaxed,
     );
     Some(FoveationPlan {
-        fov_start,
-        fov_end,
-        do_mask: (first..last).contains(&ff),
-        params: foveation_params(&cfg, center_uv),
+        passes,
+        params: foveation_params(&cfg, layout, quads),
     })
 }
 
-/// Build the pass parameters from the config and the eye's foveal centre.
-fn foveation_params(cfg: &crate::vr::FoveationConfig, center_uv: glam::Vec2) -> FoveationParams {
+/// Where the eyes this dispatch draws lie on the main buffer, with their foveal centres. Under the
+/// single-pass collapse with `single_pass.foveation_per_eye` on, the double-wide buffer holds both
+/// eyes side by side; otherwise it holds the dispatch's eye (eye 0's under the collapse, whose one
+/// fovea then lands on the seam). `None` when no VR frame is in flight.
+fn foveation_layout() -> Option<EyeLayout> {
+    if crate::stereo::single_pass::double_wide_active()
+        && Config::lock_query(|c| c.stereo.single_pass.foveation_per_eye)
+    {
+        return Some(EyeLayout::SideBySide {
+            center_uv: [foveal_center_uv(0)?, foveal_center_uv(1)?],
+        });
+    }
+    Some(EyeLayout::Single {
+        center_uv: foveal_center_uv(usize::from(is_second_eye()))?,
+    })
+}
+
+/// Build the pass parameters from the config and the eyes' layout.
+fn foveation_params(
+    cfg: &crate::vr::FoveationConfig,
+    layout: EyeLayout,
+    quads: bool,
+) -> FoveationParams {
     FoveationParams {
-        center_uv,
+        layout,
         inner_fraction: cfg.inner_fraction,
         outer_fraction: cfg.outer_fraction,
         max_drop: cfg.max_drop,
         mask_bit: cfg.mask_bit,
         debug_show_mask: cfg.debug_show_mask,
+        cell_px: if quads { 2 } else { 1 },
     }
 }
 
 /// The per-eye foveal centre as a UV, from the eye's projection principal point (`m02`/`m12` shear terms
 /// of the column-major projection): symmetric frustums map to the buffer centre, canted HMDs to their
-/// off-axis centre. `None` when no VR frame is in flight. Clamped to the buffer.
+/// off-axis centre. `None` when no VR frame is in flight. Clamped to the buffer. The projection is
+/// taken without FSR's sub-pixel jitter, which moves the same terms, so the mask holds still in the
+/// eye's pixels while the scene jitters under it.
 fn foveal_center_uv(eye: usize) -> Option<glam::Vec2> {
-    let m = crate::vr::render_params(eye)?.projection_standard;
+    // The glam bridge's `z_axis` is the engine layout's `m02`/`m12` row.
+    let m = crate::vr::render_params(eye)?.unjittered_projection_standard();
     Some(glam::Vec2::new(
-        (0.5 - 0.5 * m.data[8]).clamp(0.0, 1.0),
-        (0.5 + 0.5 * m.data[9]).clamp(0.0, 1.0),
+        (0.5 - 0.5 * m.z_axis.x).clamp(0.0, 1.0),
+        (0.5 + 0.5 * m.z_axis.y).clamp(0.0, 1.0),
     ))
 }
 
@@ -356,10 +632,12 @@ fn foveal_center_uv(eye: usize) -> Option<glam::Vec2> {
 fn run_foveation_pass(
     pass: fn(FoveationParams) -> anyhow::Result<()>,
     params: FoveationParams,
-    label: &str,
+    label: &'static str,
 ) {
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval(label);
     if let Err(e) = pass(params) {
-        tracing::warn!(target: "vr", "foveation {label} pass failed: {e:#}");
+        tracing::warn!(target: "vr", "{label} pass failed: {e:#}");
     }
 }
 
@@ -381,15 +659,16 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
     #[cfg(feature = "profiler")]
     // SAFETY: `ctx` is the live immediate-context handle for this dispatch.
     let _gpu = unsafe { seam(ctx.cast(), crate::profiler::gpu::GpuSeam::PostEffects) };
-    if let Some(cfg) = Config::lock_query(|c| c.foveation.enabled.then(|| c.foveation.clone())) {
-        let eye = usize::from(is_second_eye());
-        if let Some(center_uv) = foveal_center_uv(eye) {
-            run_foveation_pass(
-                crate::vr::foveation::fill_in,
-                foveation_params(&cfg, center_uv),
-                "fill-in",
-            );
-        }
+    if let Some((cfg, quads)) = Config::lock_query(|c| {
+        (c.foveation.enabled && !c.stereo.single_pass.foveation_lighting)
+            .then(|| (c.foveation.clone(), c.stereo.single_pass.foveation_quads))
+    }) && let Some(layout) = foveation_layout()
+    {
+        run_foveation_pass(
+            crate::vr::foveation::fill_in,
+            foveation_params(&cfg, layout, quads),
+            "foveation fill-in",
+        );
     }
     DRAW_POSTEFFECTS.get().unwrap().call(this, ctx, setup);
 }
@@ -403,19 +682,22 @@ fn draw_posteffects(this: *mut c_void, ctx: *mut c_void, setup: *mut c_void) {
 fn setup_render_states(context: *mut HContext_t, a2: *mut c_void) {
     // SAFETY: `context` is the live render context the game passed to its own state flush.
     unsafe { crate::vr::foveation::apply_force_test(context) };
+    reconstruction::before_render_states();
     SETUP_RENDER_STATES.get().unwrap().call(context, a2);
+    reconstruction::after_render_states();
 }
 
 // ShadowManager::UpdateRender -- the sim-side sun-shadow update, which fits the scheduled cascades to
 // the active camera (the fit frustum comes from its m_ProjectionF via CFrustum::Compute). Two scoped
 // tweaks around the fit, both restored after:
-//   * widen_shadow_fit: widen the two FOV-scale terms (data[0]/data[5]) to the union FOV so the
-//     cascades are fit to cover BOTH eyes. The fit is once-per-frame from the narrow centre camera, so
-//     the wider, laterally shifted VR eyes otherwise exceed the fitted coverage box -- their distant
-//     shadows fall outside it and disagree between the eyes, and the boundary crawls under motion.
-//     This is the coverage half of the shadow fix; fix_shadow_cascade_anchor is the sampling half. The
-//     centre, shear, and z (near/far/split) terms are left untouched, so split distances are unchanged.
-//   * stabilize_shadow_fit: horizontalize the active camera's forward vector (m_TransformT1 row 2,
+//   * Widen the two FOV-scale terms (data[0]/data[5]) to the union FOV so the cascades are fit to
+//     cover BOTH eyes (VR only). The fit is once-per-frame from the narrow centre camera, so the wider,
+//     laterally shifted VR eyes otherwise exceed the fitted coverage box -- their distant shadows fall
+//     outside it and disagree between the eyes, and the boundary crawls under motion. This is the
+//     coverage half of the shadow fix; the cascade-anchor correction in `set_global_shader_constants`
+//     is the sampling half. Costs some shadow resolution. The centre, shear, and z (near/far/split)
+//     terms are left untouched, so split distances are unchanged.
+//   * Stabilize the fit against head orientation: horizontalize the active camera's forward vector (m_TransformT1 row 2,
 //     data[8..10]) to yaw-only for the fit. The engine pushes each cascade box's centre forward along
 //     that vector, so head pitch/roll slides the cascade centre and the shadows shift, re-quantize, and
 //     scale as you look around (view-dependent shadows). Projecting the forward onto the ground plane
@@ -428,13 +710,7 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("ShadowManager::UpdateRender");
     let original = SHADOW_MANAGER_UPDATE_RENDER.get().unwrap();
-    let (widen, stabilize, update_every_frame) = Config::lock_query(|c| {
-        (
-            c.stereo.widen_shadow_fit,
-            c.stereo.stabilize_shadow_fit,
-            c.stereo.shadow_update_every_frame,
-        )
-    });
+    let update_every_frame = Config::lock_query(|c| c.stereo.shadow_update_every_frame);
     // Defeat the cascade update-pattern amortization (issue #31): force every cascade to update level 0
     // so it re-fits and re-renders each frame instead of on its 2^L cadence, eliminating the periodic
     // re-fit snaps that surface as flicker with the mod's forced SMAA 1x (no T2X to average them). The
@@ -443,11 +719,13 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
     if update_every_frame && let Some(manager) = unsafe { this.cast::<ShadowManager>().as_mut() } {
         manager.m_CascadeUpdateLevels = [0; 6];
     }
-    // The widen reuses the union-FOV cull projection; `None` on flatscreen, so widening is VR-only.
-    let union = widen.then(crate::vr::cull_projection_standard).flatten();
-    if union.is_none() && !stabilize {
-        return original.call(this, dt, dtf);
-    }
+    // The widen uses the eyes' exact union (or the padded cull projection with the switch off);
+    // `None` on flatscreen, so widening is VR-only.
+    let union = if Config::lock_query(|c| c.stereo.shadow_fit_unpadded) {
+        crate::vr::shadow_fit_projection_standard()
+    } else {
+        crate::vr::cull_projection_standard()
+    };
     // SAFETY: the camera-manager singleton and the active camera are live on the game thread for
     // the duration of this call; the projection and transform writes are scoped save/restore.
     unsafe {
@@ -457,34 +735,36 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
         let Some(camera) = camera.as_mut() else {
             return original.call(this, dt, dtf);
         };
+        // The fit bakes the cascade transform relative to this position (`m_TransformF`'s
+        // translation); the shadow lookup is re-anchored to it in `set_global_shader_constants`.
+        STEREO_STATE.lock().shadow_fit_position = Some(glam::Vec3::new(
+            camera.m_TransformF.data[12],
+            camera.m_TransformF.data[13],
+            camera.m_TransformF.data[14],
+        ));
         let saved_proj = [camera.m_ProjectionF.data[0], camera.m_ProjectionF.data[5]];
         if let Some(union) = union {
             camera.m_ProjectionF.data[0] = union.data[0];
             camera.m_ProjectionF.data[5] = union.data[5];
         }
         // Horizontalize the camera forward (row 2) so the cascade centre's forward-push is yaw-only.
-        let saved_row2 = stabilize.then(|| {
-            let row2 = [
-                camera.m_TransformT1.data[8],
-                camera.m_TransformT1.data[9],
-                camera.m_TransformT1.data[10],
-            ];
-            let len = (row2[0] * row2[0] + row2[2] * row2[2]).sqrt();
-            if len > 1e-4 {
-                camera.m_TransformT1.data[8] = row2[0] / len;
-                camera.m_TransformT1.data[9] = 0.0;
-                camera.m_TransformT1.data[10] = row2[2] / len;
-            }
-            row2
-        });
+        let saved_row2 = [
+            camera.m_TransformT1.data[8],
+            camera.m_TransformT1.data[9],
+            camera.m_TransformT1.data[10],
+        ];
+        let len = (saved_row2[0] * saved_row2[0] + saved_row2[2] * saved_row2[2]).sqrt();
+        if len > 1e-4 {
+            camera.m_TransformT1.data[8] = saved_row2[0] / len;
+            camera.m_TransformT1.data[9] = 0.0;
+            camera.m_TransformT1.data[10] = saved_row2[2] / len;
+        }
         let result = original.call(this, dt, dtf);
         camera.m_ProjectionF.data[0] = saved_proj[0];
         camera.m_ProjectionF.data[5] = saved_proj[1];
-        if let Some(row2) = saved_row2 {
-            camera.m_TransformT1.data[8] = row2[0];
-            camera.m_TransformT1.data[9] = row2[1];
-            camera.m_TransformT1.data[10] = row2[2];
-        }
+        camera.m_TransformT1.data[8] = saved_row2[0];
+        camera.m_TransformT1.data[9] = saved_row2[1];
+        camera.m_TransformT1.data[10] = saved_row2[2];
         result
     }
 }
@@ -530,8 +810,9 @@ fn commit_render_pass_settings(this: *mut ShadowManager, ctx: *mut c_void) {
 // frame instead of twice -- which also removes the per-eye shadow flicker (issue #31). PreDraw runs after
 // CommitRenderPassSettings (which re-enables the frame's scheduled shadow cascades), so the clear here is
 // the last word before the loop; the passes are re-enabled after so the next frame's first eye runs them.
-// Gated on `restore_frame_counters` so both eyes share the shadow-atlas parity slot (without it, eye 1
-// advances parity and would sample the other, unrendered slot).
+// This relies on the between-eye frame-counter restore in `game::game_update_render`, so both eyes
+// share the shadow-atlas parity slot (without it, eye 1 advances parity and would sample the other,
+// unrendered slot).
 //
 // Under the single-pass collapse this whole path is inert, and correctly so: the collapse runs one
 // dispatch, so `dispatch_ordinal()` is never > 0 and PreDraw already runs exactly once per frame.
@@ -562,9 +843,7 @@ fn pre_draw(this: *mut RenderEngine, ctx: *mut HContext_t) -> u64 {
     // deferred.
     crate::stereo::single_pass::begin_dispatch();
     let original = PRE_DRAW.get().unwrap();
-    let share_cfg =
-        Config::lock_query(|c| c.stereo.share_prepasses && c.stereo.restore_frame_counters);
-    if crate::stereo::dispatch_ordinal() > 0 && crate::stereo::active() && share_cfg {
+    if crate::stereo::dispatch_ordinal() > 0 && crate::stereo::active() {
         // SAFETY: `this` is the live render engine; its per-category `m_RenderPasses` vectors hold
         // engine-owned, null-checked pass pointers; the `m_Enabled` flag write mirrors the shadow
         // scheduler's own store in `commit_render_pass_settings`.
@@ -605,8 +884,8 @@ unsafe fn disable_shared_prepasses(this: *mut RenderEngine) -> Vec<*mut RenderPa
     };
     let mut disabled = Vec::new();
     for &(lo, hi) in SHARED_PREPASS_CATEGORIES {
-        for cat in lo..=hi {
-            for &pass in unsafe { engine.m_RenderPasses[cat].as_slice() } {
+        for category in &engine.m_RenderPasses[lo..=hi] {
+            for &pass in unsafe { category.as_slice() } {
                 if let Some(pass) = (unsafe { pass.as_mut() })
                     && pass.m_StateFlags.contains(RenderPassState::m_Enabled)
                 {
@@ -643,14 +922,48 @@ unsafe fn reenable_passes(passes: &[*mut RenderPass]) {
 #[detour(address = jc3gi::graphics_engine::render_engine::RenderEngine::SetGlobalShaderConstants_ADDRESS)]
 fn set_global_shader_constants(this: *mut c_void, ctx: *mut c_void) {
     if let Some(ctx) = unsafe { ctx.cast::<RenderContext>().as_mut() } {
-        let delta = STEREO_STATE.lock().shadow_anchor_delta;
+        // The config is read before the stereo state's lock, never under it.
+        let anchor_to_fit = Config::lock_query(|c| c.stereo.shadow_anchor_to_fit);
+        let delta = shadow_lookup_delta(&STEREO_STATE.lock(), anchor_to_fit);
         record_shadow_state(ctx, delta);
-        if Config::lock_query(|c| c.stereo.fix_shadow_cascade_anchor) {
-            apply_shadow_cascade_anchor_fix(ctx, delta);
-        }
+        apply_shadow_cascade_anchor_fix(ctx, delta);
     }
     SET_GLOBAL_SHADER_CONSTANTS.get().unwrap().call(this, ctx);
 }
+
+/// The world offset to re-anchor the sun-shadow lookup by: from the point the cascade transform is
+/// baked relative to, to the camera position the material shaders subtract. That is the eye's offset
+/// from the render camera's centre, plus, with `anchor_to_fit` (`stereo.shadow_anchor_to_fit`), the centre's offset
+/// from the camera position the fit read. The second gap is published as
+/// [`shadow_fit_gap_m`] for the debug UI.
+fn shadow_lookup_delta(state: &crate::stereo::StereoState, anchor_to_fit: bool) -> glam::Vec3 {
+    let to_fit = match (state.center_transform, state.shadow_fit_position) {
+        (Some(center), Some(fit)) => {
+            let center = glam::Vec3::new(center.data[12], center.data[13], center.data[14]);
+            center - fit
+        }
+        _ => glam::Vec3::ZERO,
+    };
+    let to_fit = if to_fit.is_finite() {
+        to_fit
+    } else {
+        glam::Vec3::ZERO
+    };
+    SHADOW_FIT_GAP_BITS.store(to_fit.length().to_bits(), Ordering::Relaxed);
+    if anchor_to_fit {
+        state.shadow_anchor_delta + to_fit
+    } else {
+        state.shadow_anchor_delta
+    }
+}
+
+/// How far the render camera's centre sat from the camera position the sun-shadow cascade fit read,
+/// at the last staging of the shader constants, metres.
+pub(crate) fn shadow_fit_gap_m() -> f32 {
+    f32::from_bits(SHADOW_FIT_GAP_BITS.load(Ordering::Relaxed))
+}
+
+static SHADOW_FIT_GAP_BITS: AtomicU32 = AtomicU32::new(0);
 
 /// Record the staged sun-shadow constants into the active render trace (no-op outside a trace) --
 /// the raw parity-slot values, read before the anchor correction mutates them. See

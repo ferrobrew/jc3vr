@@ -44,7 +44,10 @@
 use glam::{EulerRot, Quat, Vec3};
 use parking_lot::Mutex;
 
-use crate::vr::EyeView;
+use crate::vr::{
+    EyeView,
+    convert::{posef, quat, vec3},
+};
 
 /// The euler convention for the frozen pose: yaw about +Y, then pitch about +X, then roll about +Z.
 /// Matches the flatscreen head sim's composition (`headpose::sim`), so a yaw/pitch/roll reading means
@@ -125,6 +128,7 @@ pub fn frozen_frame(capture: impl FnOnce() -> ([EyeView; 2], Quat, Vec3)) -> Fro
 /// matrix→euler→matrix round trip to drift through. Re-composition is rigid (rotation + translation
 /// only), which is all a camera world transform carries.
 pub fn full_camera_transform(capture: impl FnOnce() -> glam::Mat4) -> glam::Mat4 {
+    let frame = crate::vr::capture_views().map(|views| views.predicted_display_time_ns);
     let mut state = STATE.lock();
     if !state.as_ref().is_some_and(|s| s.cockpit.is_none()) {
         let (_, orientation, position) = capture().to_scale_rotation_translation();
@@ -133,8 +137,21 @@ pub fn full_camera_transform(capture: impl FnOnce() -> glam::Mat4) -> glam::Mat4
             PoseValues::from_pose(position, orientation),
         ));
     }
-    let values = state.as_ref().expect("just captured").current;
-    glam::Mat4::from_rotation_translation(values.orientation(), values.position)
+    let held = state.as_mut().expect("just captured");
+    held.rendered = stamp(frame, held.base, held.current);
+    glam::Mat4::from_rotation_translation(held.current.orientation(), held.current.position)
+}
+
+/// Hold `base` as the full-camera freeze's captured pose, as if the freeze had captured it, with the
+/// edits returned to it. The full-camera freeze then never captures the live camera while the pin
+/// stands. A pin of the base already held only returns the edits to it, so re-pinning every
+/// configuration leaves the rendered stamp in place.
+pub(crate) fn pin_full_camera(base: PoseValues) {
+    let mut state = STATE.lock();
+    match state.as_mut() {
+        Some(held) if held.cockpit.is_none() && held.base == base => held.current = base,
+        _ => *state = Some(FrozenState::new(None, base)),
+    }
 }
 
 /// The compositor submission poses for this frame: the live ones when `frozen` is false, else the
@@ -172,6 +189,22 @@ pub fn current() -> Option<PoseValues> {
     STATE.lock().as_ref().map(|s| s.current)
 }
 
+pub(crate) fn current_full_camera() -> Option<PoseValues> {
+    STATE
+        .lock()
+        .as_ref()
+        .and_then(FrozenState::current_full_camera)
+}
+
+pub(crate) fn rendered_full_camera(frame: i64) -> Option<(PoseValues, PoseValues)> {
+    STATE
+        .lock()
+        .as_ref()
+        .and_then(|state| state.rendered)
+        .filter(|stamp| stamp.frame == frame)
+        .map(|stamp| (stamp.base, stamp.current))
+}
+
 /// The pose captured at freeze time, the base [`reset`] returns to. `None` when nothing is frozen.
 pub fn base() -> Option<PoseValues> {
     STATE.lock().as_ref().map(|s| s.base)
@@ -192,6 +225,14 @@ pub fn reset() {
     }
 }
 
+/// The translation step, in metres, of one nudge of the frozen pose's position. Nudges snap to this
+/// grid, so a step is exactly repeatable.
+pub const STEP_M: f32 = 0.1;
+
+/// The rotation step, in degrees, of one nudge of the frozen pose's yaw, pitch, or roll. Nudges snap
+/// to this grid, so a step is exactly repeatable.
+pub const STEP_DEG: f32 = 1.0;
+
 /// Step `value` by `steps` increments of `step`, snapped to the `step` grid.
 ///
 /// Snapping is what makes a nudge exact and repeatable: the result is always an integer multiple of
@@ -206,43 +247,26 @@ pub fn nudge(value: f32, step: f32, steps: i32) -> f32 {
     ((value / step).round() + steps as f32) * step
 }
 
-/// The position of an OpenXR pose as a [`Vec3`].
-pub(super) fn pose_position(pose: openxr::Posef) -> Vec3 {
-    Vec3::new(pose.position.x, pose.position.y, pose.position.z)
-}
-
-/// The orientation of an OpenXR pose as a [`Quat`].
-pub(super) fn pose_orientation(pose: openxr::Posef) -> Quat {
-    Quat::from_xyzw(
-        pose.orientation.x,
-        pose.orientation.y,
-        pose.orientation.z,
-        pose.orientation.w,
-    )
-}
-
-/// An OpenXR pose from a position and orientation.
-fn posef(position: Vec3, orientation: Quat) -> openxr::Posef {
-    openxr::Posef {
-        position: openxr::Vector3f {
-            x: position.x,
-            y: position.y,
-            z: position.z,
-        },
-        orientation: openxr::Quaternionf {
-            x: orientation.x,
-            y: orientation.y,
-            z: orientation.z,
-            w: orientation.w,
-        },
-    }
-}
-
 /// The captured pose and the edits layered on it (`None` while the freeze is off).
 static STATE: Mutex<Option<FrozenState>> = Mutex::new(None);
 
 /// The compositor submission poses latched while a freeze is engaged (see [`submission_poses`]).
 static SUBMISSION: Mutex<Option<[openxr::Posef; 2]>> = Mutex::new(None);
+
+#[derive(Copy, Clone)]
+struct RenderedFullCamera {
+    frame: i64,
+    base: PoseValues,
+    current: PoseValues,
+}
+
+fn stamp(frame: Option<i64>, base: PoseValues, current: PoseValues) -> Option<RenderedFullCamera> {
+    frame.map(|frame| RenderedFullCamera {
+        frame,
+        base,
+        current,
+    })
+}
 
 #[derive(Copy, Clone)]
 struct FrozenState {
@@ -255,14 +279,20 @@ struct FrozenState {
     base: PoseValues,
     /// The pose in force, as edited.
     current: PoseValues,
+    rendered: Option<RenderedFullCamera>,
 }
 
 impl FrozenState {
+    fn current_full_camera(&self) -> Option<PoseValues> {
+        self.cockpit.is_none().then_some(self.current)
+    }
+
     fn new(cockpit: Option<CockpitCapture>, base: PoseValues) -> Self {
         Self {
             cockpit,
             base,
             current: base,
+            rendered: None,
         }
     }
 }
@@ -284,8 +314,8 @@ struct CockpitCapture {
 
 impl CockpitCapture {
     fn capture((eyes, body_rotation, anchor): ([EyeView; 2], Quat, Vec3)) -> Self {
-        let positions = eyes.map(|e| pose_position(e.pose));
-        let orientations = eyes.map(|e| pose_orientation(e.pose));
+        let positions = eyes.map(|e| vec3(e.pose.position));
+        let orientations = eyes.map(|e| quat(e.pose.orientation));
         let centre_position = 0.5 * (positions[0] + positions[1]);
         let centre_orientation = orientations[0].slerp(orientations[1], 0.5);
         let inverse = centre_orientation.inverse();
@@ -409,7 +439,7 @@ mod tests {
 
         let cockpit = frozen_frame(|| (test_eyes(0.0), Quat::IDENTITY, Vec3::ZERO));
         let centre =
-            0.5 * (pose_position(cockpit.eyes[0].pose) + pose_position(cockpit.eyes[1].pose));
+            0.5 * (vec3(cockpit.eyes[0].pose.position) + vec3(cockpit.eyes[1].pose.position));
         assert!((centre - Vec3::new(0.0, 1.6, -0.2)).length() < 1e-5);
         assert!((current().expect("frozen").position - centre).length() < 1e-5);
         clear();
@@ -531,8 +561,8 @@ mod tests {
         current.position = Vec3::new(2.0, 1.0, -3.0);
 
         let frame = capture.frame(current);
-        let positions = frame.eyes.map(|e| pose_position(e.pose));
-        let orientations = frame.eyes.map(|e| pose_orientation(e.pose));
+        let positions = frame.eyes.map(|e| vec3(e.pose.position));
+        let orientations = frame.eyes.map(|e| quat(e.pose.orientation));
         let centre_position = 0.5 * (positions[0] + positions[1]);
         let centre_orientation = orientations[0].slerp(orientations[1], 0.5);
         let reduced = PoseValues::from_pose(centre_position, centre_orientation);
@@ -546,5 +576,52 @@ mod tests {
         // So does the inter-eye canting.
         let inter_eye = orientations[0].inverse() * orientations[1];
         assert!((inter_eye.to_euler(EULER).0 + 2.0 * cant).abs() < 1e-4);
+    }
+
+    #[test]
+    fn full_camera_current_excludes_a_cockpit_capture() {
+        let base = PoseValues {
+            position: Vec3::new(1.0, 2.0, 3.0),
+            yaw_deg: 10.0,
+            pitch_deg: 0.0,
+            roll_deg: 0.0,
+        };
+        let mut full = FrozenState::new(None, base);
+        full.current.yaw_deg = 20.0;
+        assert_eq!(full.current_full_camera(), Some(full.current));
+
+        let cockpit = CockpitCapture::capture((test_eyes(0.0), Quat::IDENTITY, Vec3::ZERO));
+        let cockpit_state = FrozenState::new(Some(cockpit), base);
+        assert_eq!(cockpit_state.current_full_camera(), None);
+    }
+
+    #[test]
+    fn rendered_full_camera_stamp_is_keyed_by_frame_and_cleared() {
+        let _guard = TEST_LOCK.lock();
+        clear();
+        let base = PoseValues {
+            position: Vec3::new(1.0, 2.0, 3.0),
+            yaw_deg: 10.0,
+            pitch_deg: 0.0,
+            roll_deg: 0.0,
+        };
+        let current = PoseValues {
+            yaw_deg: 20.0,
+            ..base
+        };
+        assert!(stamp(None, base, current).is_none());
+        full_camera_transform(|| transform(0.0, 0.0, 0.0, base.position));
+        {
+            let mut state = STATE.lock();
+            state.as_mut().unwrap().rendered = stamp(Some(7), base, current);
+        }
+        assert_eq!(rendered_full_camera(7), Some((base, current)));
+        assert_eq!(rendered_full_camera(8), None);
+        set_current(current);
+        assert_eq!(rendered_full_camera(7), Some((base, current)));
+        reset();
+        assert_eq!(rendered_full_camera(7), Some((base, current)));
+        clear();
+        assert_eq!(rendered_full_camera(7), None);
     }
 }

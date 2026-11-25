@@ -1,4 +1,34 @@
 #![cfg_attr(any(), rustfmt::skip)]
+#[repr(C, align(8))]
+/// The player's ability table (`CAbilitiesHandler`): the status of each unlockable ability, keyed
+/// by the ability's hash. It sits at [`Player::ABILITIES_OFFSET`](crate::character::player::Player::ABILITIES_OFFSET) within the player. Its layout is
+/// unmapped.
+pub struct AbilitiesHandler {}
+impl AbilitiesHandler {
+    pub const IsAbilityEnabled_ADDRESS: usize = 0x140C7E250;
+    /// Whether the ability `ability` (a `CHashString` hash, passed by reference) is enabled: its
+    /// status is forced on, or it is unlocked and not forced off. The ability must be registered,
+    /// as the game's own abilities are.
+    pub unsafe fn IsAbilityEnabled(&self, ability: *const u32) -> bool {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+                ability: *const u32,
+            ) -> bool = ::std::mem::transmute(Self::IsAbilityEnabled_ADDRESS);
+            f(self as *const Self as _, ability)
+        }
+    }
+}
+impl std::convert::AsRef<AbilitiesHandler> for AbilitiesHandler {
+    fn as_ref(&self) -> &AbilitiesHandler {
+        self
+    }
+}
+impl std::convert::AsMut<AbilitiesHandler> for AbilitiesHandler {
+    fn as_mut(&mut self) -> &mut AbilitiesHandler {
+        self
+    }
+}
 #[repr(i32)]
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug)]
 /// The player's aim mode (`CPlayer::EAimModes`), held in [`Player::m_AimMode`](crate::character::player::Player::m_AimMode).
@@ -28,7 +58,19 @@ pub struct Player {
     /// [`m_AimPos`](crate::aim::aim::PlayerAimControl::m_AimPos)) is the target the arm aim IK tasks steer
     /// toward.
     pub m_AimControl: *mut crate::aim::aim::PlayerAimControl,
-    _field_160: [u8; 4780],
+    _field_160: [u8; 4728],
+    /// Whether the player is the local player; the weapons' fire statistics read it.
+    pub m_LocalPlayer: bool,
+    _field_13d9: [u8; 31],
+    /// The damage of the player's melee hit, in health points, from the player's settings. The
+    /// melee input task tests it against the target's health to choose a killing act, and the melee
+    /// hit message ([`Character::HandleTrackMessage`](crate::character::character::Character::HandleTrackMessage))
+    /// deals it.
+    pub m_MeleeDamage: i32,
+    _field_13fc: [u8; 12],
+    /// The impulse the player's melee hit gives each object body it strikes, along the
+    /// character's forward, from the player's settings.
+    pub m_MeleeImpulse: f32,
     /// The player's aim mode: [`AIM_PRECISION`](crate::character::player::AimMode::AIM_PRECISION) while in precision
     /// (down-sights) aim, [`AIM_NORMAL`](crate::character::player::AimMode::AIM_NORMAL) otherwise. Written by
     /// [`SetAimMode`](crate::character::player::Player::SetAimMode).
@@ -36,11 +78,20 @@ pub struct Player {
     /// The game time ([`Clock`](crate::clock::Clock) game-time milliseconds) at which
     /// [`m_AimMode`](crate::character::player::Player::m_AimMode) last changed.
     pub m_AimModeChangeTime: u32,
-    _field_1414: [u8; 4],
+    _field_1414: [u8; 156],
+    /// The weapon id ([`WeaponBase::m_WeaponId`](crate::equipment::weapon::WeaponBase::m_WeaponId)) of
+    /// the weapon the HUD's pickup panel last offered, or -1 when the panel is cleared.
+    /// [`UpdateWeaponHUD`](crate::character::player::Player::UpdateWeaponHUD) compares it with this frame's offer to decide
+    /// whether to tell the HUD, and writes this frame's offer back.
+    pub m_CurrentWeaponPickupId: i16,
+    _field_14b2: [u8; 2],
+    /// The ammunition the HUD's pickup panel last showed for
+    /// [`m_CurrentWeaponPickupId`](crate::character::player::Player::m_CurrentWeaponPickupId), or -1.
+    pub m_CurrentWeaponPickupAmmo: i32,
 }
 fn _Player_size_check() {
     unsafe {
-        ::std::mem::transmute::<[u8; 0x1418], Player>([0u8; 0x1418]);
+        ::std::mem::transmute::<[u8; 0x14B8], Player>([0u8; 0x14B8]);
     }
     unreachable!()
 }
@@ -51,7 +102,19 @@ impl Player {
     /// falling without a parachute or when the character has none of the aimable weapon slots
     /// filled. On a change it records [`m_AimModeChangeTime`](crate::character::player::Player::m_AimModeChangeTime), adds or
     /// removes the precision-aim camera hint (adding it only when `add_camera_hint` is set), sets
-    /// the aim control's aim state, and forwards the mode to the selected weapon (or draws it).
+    /// the aim control's aim state, and forwards the mode to the selected weapon
+    /// ([`Character::GetSelectedWeapon`](crate::character::character::Character::GetSelectedWeapon)) only,
+    /// and only while the player is that weapon's user
+    /// ([`WeaponBase::IsCharacterUsingWeapon`](crate::equipment::weapon::WeaponBase::IsCharacterUsingWeapon));
+    /// otherwise it draws the selected weapon when that weapon has a precision hint. It skips the
+    /// forward while planting. Any other weapon the player uses keeps the mode it was given at
+    /// [`WeaponBase::StartUsing`](crate::equipment::weapon::WeaponBase::StartUsing).
+    ///
+    /// Precision aim is entered from three places: the player's weapon handling
+    /// (`CInventory::UpdateWeaponHandling`) on the precision-aim input, for a weapon with
+    /// [`m_SupportsPrecisionAim`](crate::equipment::weapon::WeaponBase::m_SupportsPrecisionAim); the sniper
+    /// rifle's update, returning to precision aim after a bolt-action cycle that left it; and the
+    /// guided rocket launcher's `Fire_Projectile`, on each shot.
     pub unsafe fn SetAimMode(
         &mut self,
         mode: crate::character::player::AimMode,
@@ -79,8 +142,62 @@ impl Player {
             f(self as *mut Self as _)
         }
     }
+    pub const ReInit_ADDRESS: usize = 0x140C54EE0;
+    /// Respawns the player at `transform` (`CPlayer::ReInit`): revives the character (which forces
+    /// its neutral state, [`Character::ForceNeutralState`](crate::character::character::Character::ForceNeutralState)),
+    /// returns to normal aim, teleports with the load state
+    /// ([`GameWorld::TeleportPlayer`](crate::game_world::GameWorld::TeleportPlayer)), fills the slot
+    /// weapons' reserves
+    /// ([`Inventory::GiveMaxAmmoToAllWeaponInInventory`](crate::character::inventory::Inventory::GiveMaxAmmoToAllWeaponInInventory)),
+    /// and writes `inventory_reset_flags` to
+    /// [`Inventory::m_SpawnSystemResetFlags`](crate::character::inventory::Inventory::m_SpawnSystemResetFlags).
+    /// The mission manager's restart ([`MissionManager::GoToRestartPoint`](crate::mission::MissionManager::GoToRestartPoint))
+    /// and the player's post-physics update call it.
+    pub unsafe fn ReInit(
+        &mut self,
+        transform: *mut crate::types::math::Matrix4,
+        teleport_flags: u32,
+        inventory_reset_flags: u32,
+    ) {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *mut Self,
+                transform: *mut crate::types::math::Matrix4,
+                teleport_flags: u32,
+                inventory_reset_flags: u32,
+            ) = ::std::mem::transmute(Self::ReInit_ADDRESS);
+            f(self as *mut Self as _, transform, teleport_flags, inventory_reset_flags)
+        }
+    }
+    pub const UpdateWeaponHUD_ADDRESS: usize = 0x140CE04C0;
+    /// Drives the HUD's weapon pickup panel, which names the weapon on offer, the ammunition it
+    /// would bring, and the weapon it would replace in its slot, beside the use-item glyph. It
+    /// takes the weapon the first of the character's interaction entries offers
+    /// ([`InteractionUserProxy::m_ValidEntries`](crate::interaction::InteractionUserProxy::m_ValidEntries)):
+    /// the entry's graph's context's parent when that is a weapon, or the weapon a weapon placement
+    /// rule among them spawned. There is no offer while the
+    /// [`USE_ITEM`](crate::input::input_action_map::Action::USE_ITEM) action is disabled in the player's
+    /// action map or the animation forbids a pickup
+    /// ([`Inventory::GetAnimationAllowsPickup`](crate::character::inventory::Inventory::GetAnimationAllowsPickup)).
+    /// With no offer it clears the panel
+    /// ([`HUDUI::ClearValidWeaponPickup`](crate::ui::hud_ui::HUDUI::ClearValidWeaponPickup)) when one was
+    /// shown; a changed weapon or ammunition shows it again
+    /// ([`HUDUI::OnNewValidWeaponPickup`](crate::ui::hud_ui::HUDUI::OnNewValidWeaponPickup)). Either way
+    /// it stores the offer in [`m_CurrentWeaponPickupId`](crate::character::player::Player::m_CurrentWeaponPickupId) and
+    /// [`m_CurrentWeaponPickupAmmo`](crate::character::player::Player::m_CurrentWeaponPickupAmmo). `CPlayer::UpdatePostPhysics`
+    /// calls it each frame.
+    pub unsafe fn UpdateWeaponHUD(&mut self) {
+        unsafe {
+            let f: unsafe extern "system" fn(this: *mut Self) = ::std::mem::transmute(
+                Self::UpdateWeaponHUD_ADDRESS,
+            );
+            f(self as *mut Self as _)
+        }
+    }
 }
 impl Player {
+    /// The offset of the player's [`AbilitiesHandler`](crate::character::player::AbilitiesHandler) within the player.
+    pub const ABILITIES_OFFSET: u64 = 376;
     /// The offset of the [`Avatar`](crate::character::avatar::Avatar) base within the player.
     pub const AVATAR_BASE_OFFSET: u64 = 16;
 }
@@ -93,6 +210,11 @@ impl std::convert::AsMut<Player> for Player {
     fn as_mut(&mut self) -> &mut Player {
         self
     }
+}
+/// The hash of the hammer ability (`hash_ability_hammer`), which gates the player's melee attack
+/// in `NStateTask_InputMeleeTask`.
+pub unsafe fn get_hash_ability_hammer() -> &'static mut u32 {
+    unsafe { &mut *(0x142DA7988 as *mut u32) }
 }
 pub const Player_UpdatePostCamera_ADDRESS: usize = 0x140CF7BB0;
 /// `CPlayer::UpdatePostCamera`, the player's override of the `CAvatar::UpdatePostCamera` virtual;
@@ -120,7 +242,9 @@ pub const Player_UpdateMentalState_ADDRESS: usize = 0x140C12BE0;
 /// set, combat while [`Character_ForceCombat`](crate::character::character::get_Character_ForceCombat) is
 /// set, relaxed while the character is holstering (or a further character state check holds), and
 /// combat while it has weapon input, throws a grenade, wields a heavy weapon, or aims a weapon
-/// outside explosive planting. Otherwise combat decays to relaxed once the combat hold expires.
+/// outside explosive planting. Otherwise combat decays to relaxed once the combat hold expires,
+/// and on that transition, with a weapon wielded, it queues `ACT_ON_UNEQUIP_WEAPON_SLOW` through
+/// [`Character::QueueAct`](crate::character::character::Character::QueueAct), an automatic holster.
 pub unsafe fn Player_UpdateMentalState(
     avatar: *mut crate::character::avatar::Avatar,
     dt: f32,

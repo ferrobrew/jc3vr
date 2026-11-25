@@ -6,7 +6,7 @@ use anyhow::Context as _;
 use openxr as xr;
 use openxr::sys::Handle as _;
 
-use crate::vr::{VrConfig, session::Session};
+use crate::vr::{VrConfig, input::semantic::SCHEMA_VERSION, session::Session, stage};
 
 /// Acquire an OpenXR instance: reuse a persisted handle if `persist` is set and one is stashed and
 /// still live, otherwise create a fresh one. A stashed handle that fails to re-wrap or validate (the
@@ -17,7 +17,13 @@ pub(super) fn acquire_instance(
     persist: bool,
 ) -> anyhow::Result<xr::Instance> {
     if persist && let Some(raw) = stashed_handle(INSTANCE_STASH_VAR) {
-        match unsafe { reuse_instance(entry, raw, extensions) } {
+        // A persisted instance keeps the extensions it was created with; loading the function table
+        // of one it lacks fails, so re-wrap with the optional extensions it recorded (an instance
+        // stashed by a payload that did not record them had none).
+        let mut extensions = extensions.clone();
+        extensions.ext_hand_tracking &= stashed_handle(HAND_TRACKING_STASH_VAR).is_some();
+        extensions.ext_hand_joints_motion_range &= stashed_handle(MOTION_RANGE_STASH_VAR).is_some();
+        match unsafe { reuse_instance(entry, raw, &extensions) } {
             Ok(instance) => {
                 tracing::info!(target: "vr", handle = format_args!("{raw:#x}"), "reused the persisted OpenXR instance");
                 return Ok(instance);
@@ -29,17 +35,7 @@ pub(super) fn acquire_instance(
         }
     }
     entry
-        .create_instance(
-            &xr::ApplicationInfo {
-                application_name: "jc3vr",
-                application_version: 0,
-                engine_name: "jc3vr",
-                engine_version: 0,
-                api_version: xr::Version::new(1, 0, 0),
-            },
-            extensions,
-            &[],
-        )
+        .create_instance(&application_info(), extensions, &[])
         .context("vr: creating the OpenXR instance")
 }
 
@@ -49,6 +45,14 @@ pub(super) fn acquire_instance(
 /// halves (stash the handle, suppress the destroy) cannot be split. See [`VrConfig::persist_instance`].
 pub(super) fn stash_instance(instance: xr::Instance) {
     stash_handle(INSTANCE_STASH_VAR, instance.as_raw().into_raw());
+    stash_handle(
+        HAND_TRACKING_STASH_VAR,
+        u64::from(instance.exts().ext_hand_tracking.is_some()),
+    );
+    stash_handle(
+        MOTION_RANGE_STASH_VAR,
+        u64::from(instance.exts().ext_hand_joints_motion_range.is_some()),
+    );
     std::mem::forget(instance);
 }
 
@@ -59,7 +63,7 @@ pub(super) fn acquire_session(
     instance: &xr::Instance,
     system: xr::SystemId,
     cfg: &VrConfig,
-) -> anyhow::Result<Session> {
+) -> anyhow::Result<(Session, xr::FrameStream<xr::D3D11>)> {
     if cfg.persist_instance
         && let Some(raw) = stashed_handle(SESSION_STASH_VAR)
     {
@@ -77,25 +81,24 @@ pub(super) fn acquire_session(
     Session::create(instance, system, cfg)
 }
 
-/// Persist a session across inject cycles: destroy its recreatable children (swapchain, reference
-/// space) but keep the session handle alive — stash it and leak the wrapper — *without* ending it, so
-/// a reinject can re-wrap and resume it (an ended session cannot be resumed). Consumes the session.
+/// Persist a session across inject cycles: destroy its recreatable children (reference spaces; the
+/// submit side, swapchain included, is dropped by the caller first) but keep the session handle
+/// alive — stash it and leak the wrapper — *without* ending it, so a reinject can re-wrap and resume
+/// it (an ended session cannot be resumed). Consumes the session.
 pub(super) fn persist_session(session: Session) {
     let Session {
         handle,
         frame_wait,
-        frame_stream,
         local,
-        swapchain,
+        stage,
         running: _,
     } = session;
     // Destroy the cheap-to-recreate children; the reinject rebuilds them on the reused session.
-    drop(swapchain);
+    drop(stage);
     drop(local);
-    // The frame waiter/stream hold session references but issue no XR destroy; dropping them just
-    // releases those references (the leaked handle below keeps the session alive).
+    // The frame waiter holds a session reference but issues no XR destroy; dropping it just releases
+    // that reference (the leaked handle below keeps the session alive).
     drop(frame_wait);
-    drop(frame_stream);
     stash_handle(SESSION_STASH_VAR, handle.as_raw().into_raw());
     std::mem::forget(handle);
 }
@@ -104,6 +107,8 @@ pub(super) fn persist_session(session: Session) {
 /// reinject) — a session loss, or `vr.enabled` turned off — so a later bring-up starts fresh.
 pub(super) fn clear_persisted() {
     clear_handle(INSTANCE_STASH_VAR);
+    clear_handle(HAND_TRACKING_STASH_VAR);
+    clear_handle(MOTION_RANGE_STASH_VAR);
     clear_handle(SESSION_STASH_VAR);
 }
 
@@ -114,6 +119,26 @@ pub(super) fn clear_persisted() {
 /// reuse both rather than create new ones.
 const INSTANCE_STASH_VAR: windows::core::PCWSTR = windows::core::w!("jc3vr_xr_instance");
 const SESSION_STASH_VAR: windows::core::PCWSTR = windows::core::w!("jc3vr_xr_session");
+/// Whether the persisted instance was created with `XR_EXT_hand_tracking` (`1`), so that a reinject
+/// re-wraps it with the same extension set.
+const HAND_TRACKING_STASH_VAR: windows::core::PCWSTR =
+    windows::core::w!("jc3vr_xr_instance_hand_tracking");
+/// Whether the persisted instance was created with `XR_EXT_hand_joints_motion_range` (`1`), for the
+/// same reason.
+const MOTION_RANGE_STASH_VAR: windows::core::PCWSTR =
+    windows::core::w!("jc3vr_xr_instance_hand_joints_motion_range");
+
+/// The application the instance is created for. The version is the semantic action schema's, so a
+/// runtime that keys saved bindings on it can tell the schemas apart.
+fn application_info() -> xr::ApplicationInfo<'static> {
+    xr::ApplicationInfo {
+        application_name: "jc3vr",
+        application_version: SCHEMA_VERSION,
+        engine_name: "jc3vr",
+        engine_version: 0,
+        api_version: xr::Version::new(1, 0, 0),
+    }
+}
 
 /// Store a handle value in the game process's environment under `var`, as hex.
 fn stash_handle(var: windows::core::PCWSTR, raw: u64) {
@@ -184,7 +209,10 @@ unsafe fn reuse_instance(
 /// # Safety
 /// `raw` must be a D3D11 session handle created on `instance`, not currently inside a frame, and not
 /// destroyed.
-unsafe fn reuse_session(instance: &xr::Instance, raw: u64) -> anyhow::Result<Session> {
+unsafe fn reuse_session(
+    instance: &xr::Instance,
+    raw: u64,
+) -> anyhow::Result<(Session, xr::FrameStream<xr::D3D11>)> {
     let handle = xr::sys::Session::from_raw(raw);
     // An empty drop guard: the real one keeps the graphics device alive, but we share the game's
     // device, which outlives every VR session.
@@ -193,12 +221,25 @@ unsafe fn reuse_session(instance: &xr::Instance, raw: u64) -> anyhow::Result<Ses
     let local = session
         .create_reference_space(xr::ReferenceSpaceType::LOCAL, xr::Posef::IDENTITY)
         .context("recreating the LOCAL reference space for the persisted session")?;
-    Ok(Session {
-        handle: session,
-        frame_wait,
+    let stage = stage::create_space(&session);
+    Ok((
+        Session {
+            handle: session,
+            frame_wait,
+            local,
+            stage,
+            running: true,
+        },
         frame_stream,
-        local,
-        swapchain: None,
-        running: true,
-    })
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_application_version_is_the_action_schema_version() {
+        assert_eq!(application_info().application_version, SCHEMA_VERSION);
+    }
 }

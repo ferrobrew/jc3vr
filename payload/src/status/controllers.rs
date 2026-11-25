@@ -1,0 +1,809 @@
+//! The status rows for the controller systems: the gun in the hand, the hand bodies, the
+//! locomotion, and the procedural body.
+
+use std::time::Instant;
+
+use smol_str::{SmolStr, format_smolstr};
+
+use crate::{
+    controllers::{
+        body::procedural::{
+            self, ProceduralStatus, authority::Case, config::ProceduralMode, twist::TwistStatus,
+        },
+        frame::Hand,
+        hands::grip::{self, GripRead},
+        locomotion::{
+            self,
+            acts::{self, ActFilterStatus},
+            anchor::{self, AnchorStatus},
+        },
+        menu::read_config,
+        physical_hands::{
+            collider_view::{self, ColliderViewStatus},
+            physics::{
+                self, BodyPhase, CallbackStatus, HandBodyStatus,
+                guns::{self, GunBodyStatus},
+            },
+        },
+        weapons::{grip_watch, heft::HeftClass},
+    },
+    director::keymap::{self, Action},
+    status::{Health, Line, Row, Text, prose, text},
+};
+
+pub(crate) const RIGID_GRIP: Row = Row::new("RIGID GRIP", "Rigid grip", rigid_grip);
+pub(crate) const CANONICAL_GRIP: Row = Row::new("CANONICAL GRIP", "Canonical grip", canonical_grip);
+pub(crate) const FLIP_WATCH: Row = Row::new("FLIP WATCH", "Flip watch", flip_watch);
+pub(crate) const ANIMATED_DEVIATION: Row = Row::new(
+    "ANIMATED GRIP OFFSET",
+    "Animated grip offset",
+    animated_deviation,
+);
+pub(crate) const BONE_CHANGES: Row =
+    Row::new("ATTACH BONE CHANGES", "Attach bone changes", bone_changes);
+pub(crate) const CALLBACK: Row = Row::new("CALLBACK", "Callback", callback);
+pub(crate) const CALLBACK_FIRES: Row = Row::new("CALLBACK FIRES", "Callback fires", callback_fires);
+pub(crate) const LEFT_BODY: Row = Row::new("LEFT BODY", "Left body", left_body);
+pub(crate) const RIGHT_BODY: Row = Row::new("RIGHT BODY", "Right body", right_body);
+pub(crate) const BODY_ERRORS: Row = Row::new("BODY ERRORS", "Body errors", body_errors);
+pub(crate) const CONTACT_EVENTS: Row = Row::new("CONTACT EVENTS", "Contact events", contact_events);
+pub(crate) const BLOWS: Row = Row::new("BLOWS DEALT", "Blows dealt", blows);
+pub(crate) const JOINTS: Row = Row::new("GRAB JOINTS", "Grab joints", joints);
+pub(crate) const COLLIDER_VIEW: Row = Row::new("COLLIDER VIEW", "Collider view", collider_view);
+pub(crate) const LEFT_GUN_BODY: Row = Row::new("LEFT GUN BODY", "Left gun body", left_gun_body);
+pub(crate) const RIGHT_GUN_BODY: Row = Row::new("RIGHT GUN BODY", "Right gun body", right_gun_body);
+pub(crate) const STICK_VELOCITY: Row = Row::new("STICK VELOCITY", "Stick velocity", stick_velocity);
+pub(crate) const ACT_FILTER: Row = Row::new("ACT FILTER", "Act filter", act_filter);
+pub(crate) const ACT_WATCHDOG: Row = Row::new("ACT WATCHDOG", "Act watchdog", act_watchdog);
+pub(crate) const STEADY_VIEW: Row = Row::new("STEADY VIEW", "Steady view", steady_view);
+pub(crate) const NEUTRAL_HEAD: Row = Row::new("NEUTRAL HEAD", "Neutral head", neutral_head);
+pub(crate) const PROCEDURAL_MODE: Row = Row::new("MODE", "Mode", procedural_mode);
+pub(crate) const HAND_OVER: Row = Row::new("HAND-OVER CASE", "Hand-over case", hand_over);
+pub(crate) const TWIST_BONES: Row = Row::new("TWIST BONES", "Twist bones", twist_bones);
+
+fn rigid_grip() -> Line {
+    if !read_config(|c| c.controllers.hands.rigid_grip) {
+        return Line::off("");
+    }
+    let pinned = grip_watch::status().pinned;
+    let pins = grip::status().pins;
+    rigid_grip_line(pinned, pins)
+}
+
+fn canonical_grip() -> Line {
+    canonical_grip_line(grip::grip_reads())
+}
+
+fn flip_watch() -> Line {
+    let watch = grip_watch::status();
+    let flips: u64 = watch.flips.iter().sum();
+    let sweeps: u64 = watch.sweeps.iter().sum();
+    let detail = text!(flips.to_string(), " flips, ", sweeps.to_string(), " sweeps");
+    if flips > 0 {
+        Line::failed(detail)
+    } else {
+        Line::ok(detail)
+    }
+}
+
+fn animated_deviation() -> Line {
+    animated_deviation_line(grip_watch::status().by_class)
+}
+
+fn bone_changes() -> Line {
+    let [left, right] = grip_watch::status().bone_changes;
+    Line::ok(format_smolstr!("L {left}, R {right}"))
+}
+
+fn callback() -> Line {
+    let enabled = read_config(|c| physics::enabled(&c.controllers.physical_hands));
+    callback_line(enabled, physics::callback_status())
+}
+
+fn callback_fires() -> Line {
+    let status = physics::callback_status();
+    let detail = text!(status.fires.to_string(), " fires");
+    match status.fires {
+        0 if status.registered => Line::waiting(detail),
+        0 => Line::off(detail),
+        _ => Line::ok(detail),
+    }
+}
+
+fn left_body() -> Line {
+    body(Hand::Left)
+}
+
+fn right_body() -> Line {
+    body(Hand::Right)
+}
+
+fn body_errors() -> Line {
+    let status = physics::status();
+    let made = text!(
+        status.created.to_string(),
+        " made, ",
+        status.destroyed.to_string(),
+        " gone"
+    );
+    match status.last_error {
+        Some(error) => Line::failed(prose("See log")).with_note(error),
+        None => Line::ok(made),
+    }
+}
+
+fn contact_events() -> Line {
+    let hits = read_config(|c| physics::enabled(&c.controllers.physical_hands));
+    if !hits {
+        return Line::off("");
+    }
+    let listening = physics::callback_status().listening;
+    let status = physics::status();
+    let hands = hands_label(listening);
+    let detail = text!(hands, ", ", status.contacts.to_string(), " contacts");
+    if status.dropped_contacts > 0 {
+        Line::failed(text!(status.dropped_contacts.to_string(), " dropped"))
+    } else if listening.contains(&true) {
+        Line::ok(detail)
+    } else {
+        Line::waiting(detail)
+    }
+}
+
+fn collider_view() -> Line {
+    collider_view_line(
+        &collider_view::status(),
+        keymap::chord_label(Action::ToggleColliderView),
+    )
+}
+
+fn blows() -> Line {
+    let status = physics::status();
+    match status.last_blow {
+        Some(blow) => Line::ok(text!(
+            status.blows.to_string(),
+            ", last ",
+            format!("{:.0}", blow.impulse_ns),
+            " Ns"
+        )),
+        None => Line::ok(format_smolstr!("{}", status.blows)),
+    }
+}
+
+fn joints() -> Line {
+    let on = read_config(|c| physics::enabled(&c.controllers.physical_hands));
+    if !on {
+        return Line::off("");
+    }
+    let joined = physics::status().hands.map(|hand| hand.joint.is_some());
+    Line::ok(text!(
+        joined.iter().filter(|&&joined| joined).count().to_string(),
+        " active, ",
+        hands_label(joined)
+    ))
+}
+
+fn stick_velocity() -> Line {
+    if !read_config(|c| c.controllers.locomotion.stick.enabled) {
+        return Line::off("");
+    }
+    // The last tick's, not this one's: the movement task does not run while the game is paused,
+    // which it is while the page is shown.
+    let status = locomotion::status();
+    match status.velocity {
+        Some(velocity) => Line::ok(text!(format!("{:.1}", velocity.length()), " m/s")),
+        None if status.at.is_some() => Line::waiting(prose("Not driving")),
+        None => Line::waiting(prose("Not on foot yet")),
+    }
+}
+
+fn act_filter() -> Line {
+    if !read_config(|c| c.controllers.locomotion.acts.enabled) {
+        return Line::off("");
+    }
+    act_filter_line(acts::status())
+}
+
+fn act_watchdog() -> Line {
+    if !read_config(|c| c.controllers.locomotion.acts.enabled) {
+        return Line::off("");
+    }
+    let status = acts::status();
+    let trips = text!(status.releases.to_string(), " trips");
+    if status.released {
+        Line::waiting(text!("Open, ", trips))
+    } else {
+        Line::ok(trips)
+    }
+}
+
+fn steady_view() -> Line {
+    if !read_config(|c| c.controllers.locomotion.view.enabled) {
+        return Line::off("");
+    }
+    steady_view_line(&anchor::status())
+}
+
+fn neutral_head() -> Line {
+    if !read_config(|c| c.controllers.locomotion.view.enabled) {
+        return Line::off("");
+    }
+    match anchor::status().neutral {
+        Some(neutral) => Line::ok(text!("Eyes ", format!("{:.2}", neutral.eyes.y), " m"))
+            .with_note(format!("head {:.2} m", neutral.head.y)),
+        None => Line::waiting(prose("Not measured")),
+    }
+}
+
+fn procedural_mode() -> Line {
+    let mode = read_config(|c| c.controllers.body.procedural.mode);
+    procedural_mode_line(mode, &procedural::published_status(), Instant::now())
+}
+
+fn hand_over() -> Line {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+        return Line::off("");
+    }
+    hand_over_line(procedural::published_status().case)
+}
+
+fn twist_bones() -> Line {
+    if read_config(|c| c.controllers.body.procedural.mode) != ProceduralMode::Full {
+        return Line::off("");
+    }
+    twist_line(&procedural::twist::status())
+}
+
+/// The twist bones found and the largest twist they carried on the last pass.
+fn twist_line(status: &TwistStatus) -> Line {
+    match status.bones {
+        None => Line::waiting(prose("Not read")),
+        Some((0, _)) => Line::failed(prose("None found")),
+        Some((bones, segments)) => {
+            let detail = text!(
+                bones.to_string(),
+                " on ",
+                segments.to_string(),
+                ", ",
+                format!("{:.0}°", status.largest_twist.to_degrees())
+            );
+            if status.wrote {
+                Line::ok(detail)
+            } else {
+                Line::waiting(detail)
+            }
+        }
+    }
+}
+
+fn rigid_grip_line(pinned: [Option<bool>; 2], pins: u64) -> Line {
+    let pins = text!(pins.to_string(), " pins");
+    let hands = |want: bool| pinned.map(|pinned| pinned == Some(want));
+    if hands(true).contains(&true) {
+        Line::ok(text!(hands_label(hands(true)), ", ", pins))
+    } else if hands(false).contains(&true) {
+        Line::waiting(text!(hands_label(hands(false)), " not pinned"))
+    } else {
+        Line::waiting(prose("No gun")).with_note(pins)
+    }
+}
+
+fn canonical_grip_line(reads: [Option<GripRead>; 2]) -> Line {
+    let failed = reads
+        .iter()
+        .zip(Hand::BOTH)
+        .find_map(|(read, hand)| match read {
+            Some(GripRead::BonesUnresolved) => Some((hand, prose("bones missing"))),
+            Some(GripRead::DegenerateBindPose) => Some((hand, prose("bad bind pose"))),
+            Some(GripRead::Read) | None => None,
+        });
+    if let Some((hand, reason)) = failed {
+        return Line::failed(text!(hand_letter(hand), " ", reason));
+    }
+    let read = reads.map(|read| read == Some(GripRead::Read));
+    if read.contains(&true) {
+        Line::ok(text!(hands_label(read), " read"))
+    } else {
+        Line::waiting(prose("No gun yet"))
+    }
+}
+
+/// The animated deviation seen for each weight class, in degrees, the classes seen so far only.
+/// A diagnostic for whether the bind-pose grip is the pose the aiming clips hold each kind of gun
+/// in, which is unverified; it shows numbers rather than a verdict.
+fn animated_deviation_line(by_class: [Option<f32>; 4]) -> Line {
+    let mut detail = Text::default();
+    for (class, deviation) in HeftClass::ALL.iter().zip(by_class) {
+        let Some(deviation) = deviation else {
+            continue;
+        };
+        let separator = if detail.is_empty() { "" } else { ", " };
+        detail.push(text!(
+            separator,
+            prose(class.label()),
+            " ",
+            format!("{deviation:.0}°")
+        ));
+    }
+    if detail.is_empty() {
+        Line::waiting(prose("No gun yet"))
+    } else {
+        Line::ok(detail)
+    }
+}
+
+fn callback_line(enabled: bool, status: CallbackStatus) -> Line {
+    if !status.registered {
+        return if enabled {
+            Line::waiting(prose("Not registered"))
+        } else {
+            Line::off("")
+        };
+    }
+    if status.firing_thread == 0 {
+        Line::waiting(prose("Not fired"))
+    } else if status.firing_thread == status.game_thread {
+        Line::ok(prose("Game thread"))
+    } else {
+        Line::ok(text!("Thread ", status.firing_thread.to_string()))
+    }
+}
+
+fn left_gun_body() -> Line {
+    gun_body(Hand::Left)
+}
+
+fn right_gun_body() -> Line {
+    gun_body(Hand::Right)
+}
+
+fn gun_body(hand: Hand) -> Line {
+    let enabled = read_config(|c| guns::enabled(&c.controllers.physical_hands));
+    let status = guns::status();
+    gun_body_line(
+        enabled,
+        status.hands[hand.index()],
+        status.contacts[hand.index()],
+    )
+}
+
+/// One hand's gun body: whether it is in the world, its mass, its joints, and its contacts.
+fn gun_body_line(enabled: bool, status: Option<GunBodyStatus>, contacts: u64) -> Line {
+    if !enabled {
+        return Line::off("");
+    }
+    let Some(gun) = status else {
+        return Line::waiting(prose("No gun body"));
+    };
+    let joints = match (gun.holder_joint, gun.brace_joint) {
+        (Some(_), Some(_)) => prose("held+braced"),
+        (Some(_), None) => prose("held"),
+        (None, _) => return Line::failed(prose("Not joined")),
+    };
+    if !gun.in_world {
+        return Line::failed(prose("Not in world"));
+    }
+    Line::ok(text!(
+        format!("#{} {:.1}", gun.body_id, gun.mass_kg),
+        " kg, ",
+        joints,
+        ", ",
+        contacts.to_string(),
+        " hits"
+    ))
+    .with_note(format!(
+        "mass from {}, {:.0} mm and {:.1} degrees off its seat",
+        gun.mass_source.label(),
+        gun.deviation_m * 1000.0,
+        gun.deviation_rad.to_degrees()
+    ))
+}
+
+fn body(hand: Hand) -> Line {
+    let enabled = read_config(|c| physics::enabled(&c.controllers.physical_hands));
+    body_line(enabled, &physics::status().hands[hand.index()])
+}
+
+fn body_line(enabled: bool, status: &HandBodyStatus) -> Line {
+    let id = status
+        .body_id
+        .map_or(SmolStr::default(), |id| format_smolstr!(" #{id}"));
+    match status.phase {
+        BodyPhase::Acting => Line::ok(text!("In world", id)),
+        BodyPhase::Parked => Line::ok(text!("Parked", id)),
+        BodyPhase::Absent if enabled => Line::waiting(prose("No body")),
+        BodyPhase::Absent => Line::off(""),
+    }
+}
+
+fn act_filter_line(status: ActFilterStatus) -> Line {
+    let detail = text!(
+        status.dropped.to_string(),
+        " drop, ",
+        status.replaced.to_string(),
+        " swap"
+    );
+    if status.refused > 0 {
+        Line::ok(text!(detail, ", ", status.refused.to_string(), " ref"))
+            .with_note(format!("{} swaps refused", status.refused))
+    } else {
+        Line::ok(detail)
+    }
+}
+
+fn steady_view_line(status: &AnchorStatus) -> Line {
+    if status.weight >= 1.0 {
+        Line::ok(prose("Engaged"))
+    } else if status.weight > 0.0 {
+        Line::ok(text!("Blending ", format!("{:.0}%", status.weight * 100.0)))
+    } else if status.eligible && status.neutral.is_none() {
+        if status.capture_progress > 0.0 {
+            Line::waiting(text!(
+                "Measuring ",
+                format!("{:.1}", status.capture_progress),
+                " s"
+            ))
+        } else {
+            Line::waiting(prose("Stand still"))
+        }
+    } else if status.eligible {
+        Line::waiting(prose("Ready"))
+    } else {
+        Line::ok(prose("Idle"))
+    }
+}
+
+fn procedural_mode_line(mode: ProceduralMode, status: &ProceduralStatus, now: Instant) -> Line {
+    let label = match mode {
+        ProceduralMode::Off => return Line::off(""),
+        ProceduralMode::Full => prose("Full body"),
+    };
+    if let Some(error) = status.rig_error {
+        return Line::failed(prose("Rig, see log")).with_note(error.to_string());
+    }
+    // Whether the gate has run in this mode, however long ago: it does not run while the game is
+    // paused, which it is while the page is shown.
+    match status.at {
+        Some(at) if status.mode == mode => Line::ok(label).with_note(format!(
+            "last gate {:.1} s ago",
+            now.saturating_duration_since(at).as_secs_f32()
+        )),
+        _ => Line::waiting(text!(label, " idle")),
+    }
+}
+
+fn hand_over_line(case: Case) -> Line {
+    let word = prose(match case {
+        Case::NotInHeadset => "No headset",
+        Case::SwitchedOff => "Switched off",
+        Case::NotInGameplay => "Not in gameplay",
+        Case::Sequence => "Sequence",
+        Case::Dead => "Dead",
+        Case::Ragdoll => "Ragdoll",
+        Case::GettingUp => "Getting up",
+        Case::Seated => "Seated",
+        Case::StuntStanding => "On a roof",
+        Case::StuntHanging => "On a helicopter rail",
+        Case::Vehicle => "Vehicle",
+        Case::GrappleAttach => "Wall attach",
+        Case::Traversal => "Traversal",
+        Case::GrappleLock => "Line locked",
+        Case::LedgeClimb => "Ledge climb",
+        Case::Swimming => "Swimming",
+        Case::Wingsuit => "Wingsuit",
+        Case::Parachute => "Parachute",
+        Case::Flight => "Falling",
+        Case::HitReaction => "Hit reaction",
+        Case::HandClimb => "Hand climb",
+        Case::Jump => "Jump",
+        Case::AuthoredMotion => "Authored motion",
+        Case::NoMovementTask => "No move task",
+        Case::OnFoot => "On foot",
+    });
+    // The animation has the body in every case but on foot, which is what the hand-over is for.
+    let health = match case {
+        Case::OnFoot => Health::Ok,
+        _ => Health::Waiting,
+    };
+    Line::new(health, word).with_note(case.label())
+}
+
+/// The hands a per-hand flag is set for: `L`, `R`, `L+R`, or `NONE`.
+fn hands_label(set: [bool; 2]) -> Text {
+    match set {
+        [true, true] => Text::from("L+R"),
+        [true, false] => Text::from("L"),
+        [false, true] => Text::from("R"),
+        [false, false] => prose("none"),
+    }
+}
+
+fn hand_letter(hand: Hand) -> &'static str {
+    match hand {
+        Hand::Left => "L",
+        Hand::Right => "R",
+    }
+}
+
+/// The collider view's row: off with the key that shows it (`key`, from the keymap), waiting for
+/// the step counter or a read, or the bodies drawn and those the budget left out.
+fn collider_view_line(status: &ColliderViewStatus, key: Option<String>) -> Line {
+    if !status.enabled {
+        return Line::off(match key {
+            Some(key) => prose(format!("{key} shows it")),
+            None => prose("No key shows it"),
+        });
+    }
+    if let Some(error) = &status.last_error
+        && status.reads == 0
+    {
+        return Line::failed(prose("See log")).with_note(error.clone());
+    }
+    if !status.registered || status.reads == 0 {
+        return Line::waiting(prose("No physics step yet"));
+    }
+    let detail = text!(
+        status.drawn.bodies.to_string(),
+        " of ",
+        status.in_range.to_string(),
+        " bodies, ",
+        status.primitives.to_string(),
+        " primitives"
+    );
+    if status.drawn.dropped > 0 {
+        Line::ok(text!(
+            detail,
+            ", ",
+            status.drawn.dropped.to_string(),
+            " over budget"
+        ))
+    } else {
+        Line::ok(detail)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use glam::Vec3;
+
+    use super::*;
+    use crate::controllers::{
+        locomotion::view::Neutral, physical_hands::collider_view::draw::Drawn,
+    };
+
+    #[test]
+    fn the_collider_view_row_says_how_to_show_it_and_what_it_draws() {
+        let off = ColliderViewStatus::default();
+        assert_eq!(
+            collider_view_line(&off, Some("F3".to_owned())).text(),
+            "OFF, F3 SHOWS IT"
+        );
+        assert_eq!(
+            collider_view_line(&off, None).text(),
+            "OFF, NO KEY SHOWS IT"
+        );
+        let waiting = ColliderViewStatus {
+            enabled: true,
+            registered: true,
+            ..ColliderViewStatus::default()
+        };
+        assert_eq!(collider_view_line(&waiting, None).health, Health::Waiting);
+        let drawing = ColliderViewStatus {
+            enabled: true,
+            registered: true,
+            reads: 3,
+            in_range: 40,
+            primitives: 1200,
+            drawn: Drawn {
+                bodies: 30,
+                dropped: 10,
+                ..Drawn::default()
+            },
+            ..ColliderViewStatus::default()
+        };
+        assert_eq!(
+            collider_view_line(&drawing, None).text(),
+            "OK, 30 OF 40 BODIES, 1200 PRIMITIVES, 10 OVER BUDGET"
+        );
+    }
+
+    #[test]
+    fn a_gun_body_shows_its_mass_joints_and_hits() {
+        let gun = GunBodyStatus {
+            weapon: 1,
+            body_id: 812,
+            in_world: true,
+            mass_kg: 3.96,
+            mass_source: guns::MassSource::Body,
+            holder_joint: Some(4),
+            brace_joint: Some(5),
+            deviation_m: 0.004,
+            deviation_rad: 0.01,
+            speed_mps: 0.0,
+        };
+        assert_eq!(
+            gun_body_line(true, Some(gun), 3).text(),
+            "OK, #812 4.0 KG, HELD+BRACED, 3 HITS"
+        );
+        assert_eq!(
+            gun_body_line(true, Some(gun), 3).display_detail,
+            "#812 4.0 kg, held+braced, 3 hits"
+        );
+        let one_hand = GunBodyStatus {
+            brace_joint: None,
+            ..gun
+        };
+        assert_eq!(
+            gun_body_line(true, Some(one_hand), 0).text(),
+            "OK, #812 4.0 KG, HELD, 0 HITS"
+        );
+        let loose = GunBodyStatus {
+            holder_joint: None,
+            ..gun
+        };
+        assert_eq!(
+            gun_body_line(true, Some(loose), 0).text(),
+            "FAILED, NOT JOINED"
+        );
+        let out = GunBodyStatus {
+            in_world: false,
+            ..gun
+        };
+        assert_eq!(
+            gun_body_line(true, Some(out), 0).text(),
+            "FAILED, NOT IN WORLD"
+        );
+        assert_eq!(gun_body_line(true, None, 0).text(), "WAITING, NO GUN BODY");
+        assert_eq!(gun_body_line(false, Some(gun), 0).text(), "OFF");
+    }
+
+    #[test]
+    fn the_animated_deviation_lists_the_classes_seen() {
+        assert_eq!(
+            animated_deviation_line([Some(12.4), None, Some(31.6), None]).text(),
+            "OK, SIDEARM 12°, RIFLE 32°"
+        );
+        assert_eq!(
+            animated_deviation_line([None; 4]).text(),
+            "WAITING, NO GUN YET"
+        );
+    }
+
+    #[test]
+    fn the_rigid_grip_names_the_pinned_hands() {
+        assert_eq!(
+            rigid_grip_line([None, Some(true)], 40).text(),
+            "OK, R, 40 PINS"
+        );
+        assert_eq!(
+            rigid_grip_line([Some(false), None], 0).text(),
+            "WAITING, L NOT PINNED"
+        );
+        assert_eq!(rigid_grip_line([None, None], 3).text(), "WAITING, NO GUN");
+    }
+
+    #[test]
+    fn a_failed_grip_read_wins_over_a_good_one() {
+        assert_eq!(
+            canonical_grip_line([Some(GripRead::Read), Some(GripRead::BonesUnresolved)]).text(),
+            "FAILED, R BONES MISSING"
+        );
+        assert_eq!(
+            canonical_grip_line([Some(GripRead::Read), None]).text(),
+            "OK, L READ"
+        );
+        assert_eq!(canonical_grip_line([None, None]).health, Health::Waiting);
+    }
+
+    #[test]
+    fn the_callback_reports_its_thread() {
+        let fired = |firing_thread| CallbackStatus {
+            registered: true,
+            game_thread: 7,
+            firing_thread,
+            ..CallbackStatus::default()
+        };
+        assert_eq!(callback_line(true, fired(7)).text(), "OK, GAME THREAD");
+        assert_eq!(callback_line(true, fired(9)).text(), "OK, THREAD 9");
+        assert_eq!(callback_line(true, fired(0)).health, Health::Waiting);
+        assert_eq!(
+            callback_line(false, CallbackStatus::default()).health,
+            Health::Off
+        );
+    }
+
+    #[test]
+    fn bodies_read_their_phase() {
+        let acting = HandBodyStatus {
+            phase: BodyPhase::Acting,
+            body_id: Some(12),
+            ..HandBodyStatus::default()
+        };
+        assert_eq!(body_line(true, &acting).text(), "OK, IN WORLD #12");
+        assert_eq!(
+            body_line(true, &HandBodyStatus::default()).health,
+            Health::Waiting
+        );
+        assert_eq!(
+            body_line(false, &HandBodyStatus::default()).health,
+            Health::Off
+        );
+    }
+
+    #[test]
+    fn the_steady_view_walks_its_states() {
+        let neutral = Neutral {
+            head: Vec3::Y,
+            neck: Vec3::Y,
+            eyes: Vec3::Y,
+        };
+        let status = |weight, eligible, measured: bool, capture_progress| AnchorStatus {
+            weight,
+            eligible,
+            neutral: measured.then_some(neutral),
+            capture_progress,
+            ..AnchorStatus::default()
+        };
+        let text = |s: AnchorStatus| steady_view_line(&s).text();
+        assert_eq!(text(status(1.0, true, true, 0.0)), "OK, ENGAGED");
+        assert_eq!(text(status(0.5, true, true, 0.0)), "OK, BLENDING 50%");
+        assert_eq!(
+            text(status(0.0, true, false, 1.24)),
+            "WAITING, MEASURING 1.2 S"
+        );
+        assert_eq!(text(status(0.0, true, false, 0.0)), "WAITING, STAND STILL");
+        assert_eq!(text(status(0.0, false, true, 0.0)), "OK, IDLE");
+    }
+
+    #[test]
+    fn the_twist_bones_line_counts_them_and_names_the_twist() {
+        let mut status = TwistStatus::default();
+        assert_eq!(twist_line(&status).text(), "WAITING, NOT READ");
+        status.bones = Some((0, 0));
+        assert_eq!(twist_line(&status).text(), "FAILED, NONE FOUND");
+        status.bones = Some((4, 4));
+        status.largest_twist = 1.0;
+        assert_eq!(twist_line(&status).text(), "WAITING, 4 ON 4, 57°");
+        status.wrote = true;
+        assert_eq!(twist_line(&status).text(), "OK, 4 ON 4, 57°");
+    }
+
+    #[test]
+    fn the_procedural_mode_must_have_run_in_it() {
+        let now = Instant::now();
+        let ran = ProceduralStatus {
+            at: Some(now),
+            mode: ProceduralMode::Full,
+            ..ProceduralStatus::default()
+        };
+        assert_eq!(
+            procedural_mode_line(ProceduralMode::Full, &ran, now).text(),
+            "OK, FULL BODY"
+        );
+        let later = now + Duration::from_secs(60);
+        assert_eq!(
+            procedural_mode_line(ProceduralMode::Full, &ran, later)
+                .note
+                .as_deref(),
+            Some("last gate 60.0 s ago")
+        );
+        assert_eq!(
+            procedural_mode_line(ProceduralMode::Full, &ProceduralStatus::default(), now).health,
+            Health::Waiting
+        );
+        assert_eq!(
+            procedural_mode_line(ProceduralMode::Off, &ran, now).health,
+            Health::Off
+        );
+    }
+
+    #[test]
+    fn the_hand_over_is_live_on_foot() {
+        assert_eq!(hand_over_line(Case::OnFoot).text(), "OK, ON FOOT");
+        let climb = hand_over_line(Case::LedgeClimb);
+        assert_eq!(climb.text(), "WAITING, LEDGE CLIMB");
+        assert_eq!(climb.note.as_deref(), Some(Case::LedgeClimb.label()));
+    }
+}

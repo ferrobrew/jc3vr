@@ -9,14 +9,20 @@
 //! register/stack slot) rather than decode them -- they're only counted, never inspected. The
 //! buffer-flow wrappers (`Clear`/`CopySurfaceToTexture`/`ResolveSurface`) fire rarely enough to trace.
 
-use std::{cell::Cell, ffi::c_void, sync::atomic::Ordering};
+use std::{
+    cell::Cell,
+    ffi::c_void,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use detours_macro::detour;
+use jc3gi::graphics_engine::graphics_engine::GraphicsEngine;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     debug::trace::{DrawCounts, TraceEvent, TraceState},
     hooks::graphics_engine::{clustered_lighting, reconstruction},
+    util::bump,
 };
 
 // Per-pass tallies: bumped alongside the global per-eye counters, then read + reset on each
@@ -32,18 +38,42 @@ thread_local! {
 /// them at `draw_begin` and snapshots them into the `draw_end` event.
 pub(crate) static DRAW_COUNTS: DrawCounts = DrawCounts::new();
 
+/// The engine's draw calls and compute dispatches through its `Graphics::` wrappers, summed since the
+/// payload loaded and never reset, for samplers that difference two readings (the benchmark,
+/// `crate::testing::benchmark`). A render block re-issued per eye calls the wrappers again, so these
+/// count its draws once per eye.
+pub(crate) fn engine_call_totals() -> EngineCallTotals {
+    EngineCallTotals {
+        draws: TOTAL_DRAWS.load(Ordering::Relaxed),
+        dispatches: TOTAL_DISPATCHES.load(Ordering::Relaxed),
+    }
+}
+
+/// The totals [`engine_call_totals`] returns.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct EngineCallTotals {
+    pub(crate) draws: u64,
+    pub(crate) dispatches: u64,
+}
+
+static TOTAL_DRAWS: AtomicU64 = AtomicU64::new(0);
+static TOTAL_DISPATCHES: AtomicU64 = AtomicU64::new(0);
+
 fn bump_draw() {
-    DRAW_COUNTS.draw.fetch_add(1, Ordering::Relaxed);
+    bump(&TOTAL_DRAWS);
+    bump(&DRAW_COUNTS.draw);
     PASS_DRAW.with(|c| c.set(c.get() + 1));
 }
 
 fn bump_indexed() {
-    DRAW_COUNTS.draw_indexed.fetch_add(1, Ordering::Relaxed);
+    bump(&TOTAL_DRAWS);
+    bump(&DRAW_COUNTS.draw_indexed);
     PASS_INDEXED.with(|c| c.set(c.get() + 1));
 }
 
 fn bump_dispatch() {
-    DRAW_COUNTS.dispatch.fetch_add(1, Ordering::Relaxed);
+    bump(&TOTAL_DISPATCHES);
+    bump(&DRAW_COUNTS.dispatch);
     PASS_DISPATCH.with(|c| c.set(c.get() + 1));
 }
 
@@ -83,6 +113,7 @@ fn draw_indexed(
 fn draw(ctx: *mut c_void, prim: i32, arg2: i32, arg3: i32) {
     bump_draw();
     DRAW.get().unwrap().call(ctx, prim, arg2, arg3);
+    crate::screenshot::harness::snapshot::ambient_occlusion_draw_hook();
 }
 
 // The six below forward opaque args transparently -- see the module doc and draw.pyxis.
@@ -233,18 +264,43 @@ fn clear(ctx: *mut c_void, flags: u32, color: *mut c_void, depth: f32, stencil: 
     CLEAR.get().unwrap().call(ctx, flags, color, depth, stencil);
 }
 
-/// Note for anyone comparing against a trace captured before the defs were corrected: this address
-/// used to resolve to `Graphics::EndDraw`, which the IDB had mislabelled. Traces recorded then show
-/// one `CopySurfaceToTexture` per dispatch, at its end -- that was the command-list submission, not a
-/// copy. It now records the real thing: the VFX depth copy, several times per frame, mid-frame. The
-/// end-of-dispatch marker those older traces happened to carry is simply gone.
+/// Records the VFX depth copy, which happens once per dispatch, mid-frame, and skips it under
+/// `single_pass.skip_unread_effect_depth_copy` when it targets one of the effect depth-history
+/// slots, which nothing reads ([`GraphicsEngine::m_EffectInfo`]).
 #[detour(address = jc3gi::graphics_engine::draw::CopySurfaceToTexture_ADDRESS)]
 fn copy_surface_to_texture(ctx: *mut c_void, dst: *mut c_void, src: *mut c_void) {
     TraceState::record_eye(TraceEvent::CopySurfaceToTexture {
         dst: dst as u64,
         src: src as u64,
     });
+    if crate::stereo::single_pass::skip_unread_effect_depth_copy() && is_effect_depth_slot(dst) {
+        bump(&EFFECT_DEPTH_COPIES_SKIPPED);
+        return;
+    }
+    #[cfg(feature = "profiler")]
+    let _gpu = crate::profiler::gpu::detail_interval("engine: whole-surface copy");
     COPY_SURFACE_TO_TEXTURE.get().unwrap().call(ctx, dst, src);
+}
+
+/// The effect depth-history copies [`copy_surface_to_texture`] has skipped since the payload loaded.
+pub(crate) static EFFECT_DEPTH_COPIES_SKIPPED: AtomicU64 = AtomicU64::new(0);
+
+/// Whether `dst` is the depth texture of one of the engine's effect depth-history slots. Matching the
+/// destination rather than trusting the call site keeps the skip exact if another caller ever copies
+/// through the wrapper.
+fn is_effect_depth_slot(dst: *mut c_void) -> bool {
+    if dst.is_null() {
+        return false;
+    }
+    // SAFETY: the engine singleton lives for the whole process, and only the pointer values are
+    // compared, never dereferenced.
+    let Some(engine) = (unsafe { GraphicsEngine::get() }) else {
+        return false;
+    };
+    engine
+        .m_EffectInfo
+        .iter()
+        .any(|slot| slot.m_DepthTexture.cast::<c_void>() == dst)
 }
 
 #[detour(address = jc3gi::graphics_engine::draw::ResolveSurface_ADDRESS)]

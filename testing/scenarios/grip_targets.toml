@@ -1,0 +1,33 @@
+# Template: fill testing/recordings/grip_targets.jc3trk, then run. See docs/mod/testing/recorder.md.
+name = "the grip takes the nearest target, and a closed hand takes what it is laid on"
+description = "Recorded right-handed on foot with GRIP MARKERS on, empty-handed, grenades in stock, a crate on the ground nearby (grip.md, the headset checklist). Close the left hand in the air, then lay it on the grenade pouch and hold; let go. Swing a closed right fist quickly through the crate. Lay the open right hand on the crate beside the ground and squeeze; let go. Draw the pistol from the right hip and let go over the hip."
+recording = "../recordings/grip_targets.jc3trk"
+settle_s = 2.0
+
+[[expect]]
+name = "a closed hand came to the pouch and took it"
+log = "grip: the closed hand came to a target and took it"
+
+[[expect]]
+name = "every press is logged with what was in reach"
+log = "grip: pressed"
+at_least = 3
+
+[[expect]]
+name = "the grips took targets"
+signal = "grab.taken"
+at_least = 3
+
+[[expect]]
+name = "the left grip was a fist at some point"
+signal = "grab.left_fist"
+
+[[expect]]
+name = "the right grip held what it took at some point"
+signal = "grab.right_holds"
+
+[[expect]]
+name = "the right hand ends empty"
+status = "RIGHT GRIP"
+detail = "NOTHING IN REACH"
+check = "at_end"

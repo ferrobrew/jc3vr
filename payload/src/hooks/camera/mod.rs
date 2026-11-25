@@ -1,18 +1,16 @@
-use std::{
-    ffi::c_void,
-    sync::atomic::{AtomicU32, Ordering},
-};
+use std::ffi::c_void;
 
+use body_rig::rotation::twist_about_y;
 use detours_macro::detour;
 use jc3gi::{
     camera::{
-        camera::Camera,
+        camera::{Camera, CameraState},
         camera_context::{CameraContext, CameraControlContext},
         camera_manager::CameraManager,
         game_camera_manager::GameCameraManager,
     },
-    character::character::{Character, SafeBoneIndex},
-    graphics_engine::graphics_engine::GraphicsEngine,
+    character::character::Character,
+    graphics_engine::{gi::LightManager, graphics_engine::GraphicsEngine},
     hash::hashlittle,
     types::math::Matrix4,
 };
@@ -21,16 +19,23 @@ use re_utilities::hook_library::HookLibrary;
 
 use crate::{
     config::Config,
+    controllers::{cockpit::CockpitTransform, frame::Pose},
     debug::trace::{TraceEvent, TraceState},
+    render_frame::RenderFrameSlot,
     stereo::STEREO_STATE,
+    vr::{FreezeMode, pose_control},
 };
 
+pub(crate) mod authored;
 pub(crate) mod config;
-pub(crate) use config::CameraConfig;
+pub mod height;
+pub(crate) use config::{CameraConfig, SCENE_NEAR_CLIP_M};
 
 use crate::{
-    fsr::apply_jitter_to_projection,
-    headpose::{anchor, is_active, query, query_prev},
+    headpose::{
+        HeadPose, Source, anchor, anchor_prev, is_active, query, query_prev, source,
+        xr::follow_turn,
+    },
     hooks::in_gameplay,
 };
 
@@ -40,6 +45,7 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&CAMERA_TREE_UPDATE_RENDER_CONTEXTS_BINDER)
         .with_static_binder(&SETUP_RENDER_CAMERA_BINDER)
         .with_static_binder(&GAME_CAMERA_MANAGER_GET_CAMERA_MATRIX_BINDER)
+        .with_static_binder(&UPDATE_PLAYER_LIGHTING_TRANSFORMS_BINDER)
 }
 
 /// The last `dtf` the active camera's `UpdateRender` received, for the debug UI: the engine's
@@ -47,8 +53,43 @@ pub(super) fn hook_library() -> HookLibrary {
 /// or 1.0 every frame, the engine's T0 → T1 lerp is inert and nothing smooths the sim-tick
 /// cadence.
 pub fn last_dtf() -> f32 {
-    f32::from_bits(LAST_DTF.load(Ordering::Relaxed))
+    LAST_DTF.get().unwrap_or(0.0)
 }
+
+/// The eye midpoint the camera renders from for each side of the head pose pair `poses`
+/// (previous tick, then current), world space: each published head position with the eye rig's
+/// arm hung off it ([`camera_position`]), from the anchors and view turns published for that side.
+/// The headpose path writes these into the camera's T0/T1 pair, so this is where the player's eyes
+/// are in the world. Without published anchors there is no arm, and each is the head position.
+pub fn eye_points(poses: [HeadPose; 2]) -> [glam::Vec3; 2] {
+    eye_points_from(
+        poses,
+        crate::headpose::anchor_pair(),
+        [follow_turn(false), follow_turn(true)],
+        source(),
+    )
+}
+
+/// The eye midpoint the camera renders from for the published head pose now ([`eye_points`]):
+/// the origin the cockpit frame composes the hands, the body's grab volumes, and every other
+/// cockpit-frame point through ([`CockpitTransform::current`]), so that each lands where the
+/// player sees it.
+pub fn eye_point() -> glam::Vec3 {
+    eye_points([query_prev(), query()])[1]
+}
+
+/// The offset from the published head position to the eye point now ([`eye_point`]), world space:
+/// the eye rig's arm with the neck's offset and the view's turn applied, unlike the body-frame
+/// neck-to-eyes arm [`crate::headpose::eye_arm`]. Added to the head anchor, it is where the
+/// character's eyes are before the HMD's travel.
+pub fn head_to_eye_point() -> glam::Vec3 {
+    let current = query();
+    eye_points([query_prev(), current])[1] - current.position
+}
+
+/// The interpupillary distance, in metres, of the flatscreen stereo per-eye camera offset. A VR
+/// session takes each eye's offset from the runtime's eye poses instead.
+const FLATSCREEN_IPD: f32 = 0.068;
 
 /// The scene render camera is the engine-owned copy (`GraphicsEngine::m_RenderCamera`), rebuilt
 /// each Draw by `SetupRenderCamera` (reverse-Z + jitter, then `m_ViewProjection`/`m_ViewProjectionF`
@@ -59,6 +100,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     let is_render_camera = unsafe {
         GraphicsEngine::get().is_some_and(|ge| std::ptr::eq(&raw const ge.m_RenderCamera, camera))
     };
+    let mut first_dispatch = false;
     if is_render_camera {
         TraceState::record_eye(TraceEvent::SetupRenderCamera);
         let mut stereo = STEREO_STATE.lock();
@@ -69,29 +111,22 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         // snapshots become "previous". Keyed on the dispatch ordinal, not the eye index — a share
         // frame's far dispatch and eye 0's near dispatch both carry eye index 0, and rotating
         // twice would collapse the FSR reprojection history to intra-frame deltas.
-        if stereo.dispatch_ordinal == 0 {
+        first_dispatch = stereo.dispatch_ordinal == 0;
+        if first_dispatch {
             stereo.vp_history.rotate();
         }
     }
 
     // Snapshot the stereo + FSR config once; drop the lock before the engine call below.
-    let (stereo_active, force_smaa_1x, stereo_cameras, ipd, fsr_enabled) = {
-        let active = crate::stereo::active();
-        Config::lock_query(|c| {
-            (
-                active,
-                c.stereo.force_smaa_1x,
-                c.stereo.cameras,
-                c.stereo.ipd,
-                c.fsr.enabled,
-            )
-        })
-    };
+    let stereo_active = crate::stereo::active();
+    let (stereo_cameras, fsr_enabled) =
+        Config::lock_query(|c| (c.stereo.cameras, c.fsr.antialiasing.temporal()));
 
     // The engine's TAA jitter only feeds its own SMAA T2X. Drop it when that resolve is gone --
-    // either because we force SMAA 1x in stereo, or because FSR has replaced the engine AA. FSR still
-    // needs jitter, but its own Halton sequence, applied below.
-    let jitter = jitter && !fsr_enabled && !(stereo_active && force_smaa_1x);
+    // either because stereo always forces SMAA 1x (T2X's single shared history ghosts each eye with
+    // the other; see `anti_aliasing_apply`), or because FSR or the mod's temporal resolve has
+    // replaced the engine AA.
+    let jitter = jitter && !fsr_enabled && !stereo_active;
 
     // The VR per-eye off-axis projection and world offset (docs/mod/vr-runtime.md blockers 1 & 3).
     // Fetch this eye's parameters once; `None` on flatscreen frames. Under the preferred convention,
@@ -113,11 +148,13 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     // streaming/LOD system does not read -- around the frozen upright loading base, so the player can
     // look around during the load. Written before the engine call so it builds the view-projections
     // from the head-tracked view; the per-eye offset below then applies on top.
+    let pointer_cockpit = crate::headpose::xr::cockpit_pose();
+    let pointer_scale = Config::lock_query(|c| c.vr.world_scale);
     if is_render_camera
         && vr_loading_view_active()
         && let Some(camera) = unsafe { camera.as_mut() }
     {
-        head_track_render_camera(camera);
+        head_track_render_camera(camera, pointer_cockpit, pointer_scale);
     }
 
     // The full-camera freeze diagnostic. This is the last write to the scene camera before the engine
@@ -134,44 +171,42 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
 
     let result = SETUP_RENDER_CAMERA.get().unwrap().call(camera, jitter);
 
-    // Snapshot the center view-projection before the FSR-jitter and per-eye blocks below patch it.
-    // This is the value the engine's own sim-side previous-VP snapshot holds (un-offset, unjittered
-    // -- the engine jitter is disabled above whenever we patch), which the velocity pass reprojects
-    // with; the FSR motion-vector correction needs it as its "what the engine encoded" matrix.
+    // Snapshot the center view-projection before the per-eye block below patches it. This is the
+    // value the engine's own sim-side previous-VP snapshot holds (un-offset, and without the engine's
+    // jitter, which is disabled above whenever we patch), which the velocity pass reprojects with;
+    // the FSR motion-vector correction needs it as its "what the engine encoded" matrix.
     if is_render_camera && let Some(camera) = unsafe { camera.as_ref() } {
-        // Coordinate-frame verification (docs/mod/vr-runtime.md "Blocker 3"): log the pristine center
-        // camera's basis + travel direction before the per-eye offset below mutates m_TransformF.
-        crate::debug::coord_frame::log_render_camera_frame(camera);
+        // Coordinate-frame verification (docs/mod/vr-runtime.md "Blocker 3"): trace the pristine
+        // center camera's basis + travel direction before the per-eye offset below mutates
+        // m_TransformF, once per real frame (every dispatch sees the same center).
+        if first_dispatch {
+            crate::debug::coord_frame::record_render_camera_frame(camera);
+        }
 
-        STEREO_STATE.lock().vp_history.cur_center =
-            Some(glam::Mat4::from(camera.m_ViewProjectionF));
+        {
+            let mut stereo = STEREO_STATE.lock();
+            let index = stereo.draw_index;
+            // Under the preferred convention the projection is already the eye's, jittered for
+            // FSR; the snapshot takes it without the jitter, as the history holds every matrix.
+            let center = match vr_eye {
+                Some(vr)
+                    if vr.jitter.is_some()
+                        && vr.convention == crate::vr::ProjectionConvention::EnginePreReverseZ =>
+                {
+                    camera.m_View * vr.unjittered_camera_projection()
+                }
+                _ => camera.m_ViewProjectionF,
+            };
+            stereo.vp_history.cur_center[index] = Some(glam::Mat4::from(center));
+        }
 
         // Snapshot the un-offset world transform for the HUD panel pose (see `StereoState::center_transform`).
         STEREO_STATE.lock().center_transform = Some(camera.m_TransformF);
-    }
-
-    // FSR is a temporal reconstructor: it needs the camera jittered by its sequence, with the same
-    // offset fed to the dispatch. Apply it to the render camera's projections after SetupRenderCamera
-    // has built them (reverse-Z done), then rebuild the view-projections from the jittered proj.
-    if is_render_camera && fsr_enabled {
-        unsafe {
-            if let Some(camera) = camera.as_mut()
-                && let Some(ge) = GraphicsEngine::get()
-                && let Some(mc) = ge.m_MainColorBuffer.as_ref()
-            {
-                let (w, h) = (u32::from(mc.m_Width), u32::from(mc.m_Height));
-                apply_jitter_to_projection(&mut camera.m_Projection, w, h);
-                apply_jitter_to_projection(&mut camera.m_ProjectionF, w, h);
-                // Publish the UV-space shift this jitter applies to every projected position, for
-                // the motion-vector jitter cancellation (the velocity pass measures curUV under the
-                // jittered projection, so every vector carries this shift as a constant offset).
-                let jitter_uv = crate::fsr::current_camera_jitter_ndc(w, h)
-                    .map_or((0.0, 0.0), |(x, y)| (0.5 * x, -0.5 * y));
-                STEREO_STATE.lock().vp_history.cur_jitter_uv = jitter_uv;
-                camera.m_ViewProjection = camera.m_View * camera.m_Projection;
-                camera.m_ViewProjectionF = camera.m_View * camera.m_ProjectionF;
-            }
-        }
+        crate::hud::pointer::publish_camera(
+            glam::Mat4::from(camera.m_TransformF),
+            pointer_cockpit,
+            pointer_scale,
+        );
     }
 
     // Per-eye parallax: shift the camera world position (`m_TransformF` translation, the
@@ -197,16 +232,9 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
                         camera.m_Projection = vr.projection_reverse_z;
                         camera.m_ProjectionF = vr.projection_reverse_z;
                     }
-                    let delta = vr.world_offset;
-                    let mut transform = glam::Mat4::from(camera.m_TransformF);
-                    transform.w_axis += delta.extend(0.0);
-                    // Rotate the camera basis to this eye's orientation (display canting) about the
-                    // now-offset eye position. m_TransformF is a column-vector world transform (its
-                    // columns are the basis vectors), so a head-local rotation composes on the right
-                    // and leaves the translation column -- the eye position just written -- intact.
-                    // Identity for parallel-panel HMDs; corrects the Valve Index's ~5°/eye cant,
-                    // without which the two eyes are rotationally mismatched and will not fuse.
-                    let transform = transform * glam::Mat4::from_quat(vr.orientation_delta);
+                    let center = glam::Mat4::from(camera.m_TransformF);
+                    let delta = vr.world_offset(center);
+                    let transform = vr.resolve(center);
                     camera.m_TransformF = Matrix4::from(transform);
                     // Re-derive m_View = inverse(m_TransformF); the engine's data reads straight into
                     // glam's column-major matrix (see the Matrix4 glam bridge), so the inverse is
@@ -224,10 +252,10 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
             unsafe {
                 if let Some(camera) = camera.as_mut() {
                     let eye1 = crate::stereo::draw_index() == 1;
-                    let half_ipd = ipd * 0.5;
+                    let half_ipd = FLATSCREEN_IPD * 0.5;
                     // Eye 0 is the LEFT eye (shift -right), eye 1 the RIGHT (shift +right), so view 0
-                    // == left (OpenXR convention). Previously reversed, which made the debug pair
-                    // fuse cross-eyed when the "parallel" toggle was off.
+                    // == left (OpenXR convention). The reverse assignment fuses the debug pair
+                    // cross-eyed when the "parallel" toggle is off.
                     let offset = if eye1 { half_ipd } else { -half_ipd };
                     let mut transform = glam::Mat4::from(camera.m_TransformF);
                     let delta = offset * transform.x_axis.truncate();
@@ -251,13 +279,26 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         }
     }
 
-    // Snapshot the final view-projection this dispatch rasterizes with (jitter and eye offset
-    // applied). The FSR motion-vector correction inverts it to reconstruct each pixel's position and
-    // re-anchor the velocity reprojection at this eye's own previous pose.
+    // Snapshot the final view-projection this dispatch rasterizes with (eye offset applied), and
+    // the FSR jitter it carries apart from it (see `crate::fsr::jitter`; the engine's own TAA jitter
+    // is dropped above in stereo). The FSR motion-vector correction inverts it to reconstruct each
+    // pixel's position and re-anchor the velocity reprojection at this eye's own previous pose. The
+    // view-projection is rebuilt from the projection as it was before the jitter, bit for bit, so a
+    // still camera's matrices are identical from frame to frame.
     if is_render_camera && let Some(camera) = unsafe { camera.as_ref() } {
+        let jittered_eye = vr_eye
+            .filter(|vr| vr.jitter.is_some() && !crate::stereo::single_pass::collapse_active());
         let mut stereo = STEREO_STATE.lock();
         let index = stereo.draw_index;
-        stereo.vp_history.cur_eye[index] = Some(glam::Mat4::from(camera.m_ViewProjectionF));
+        let (view_projection, jitter) = match jittered_eye {
+            Some(vr) => (
+                camera.m_View * vr.unjittered_camera_projection(),
+                vr.jitter_ndc(),
+            ),
+            None => (camera.m_ViewProjectionF, glam::Vec2::ZERO),
+        };
+        stereo.vp_history.cur_eye[index] = Some(glam::Mat4::from(view_projection));
+        stereo.vp_history.cur_jitter[index] = jitter;
         stereo.vp_history.cur_eye_view[index] = Some(glam::Mat4::from(camera.m_View));
         stereo.vp_history.cur_eye_projection_f[index] =
             Some(glam::Mat4::from(camera.m_ProjectionF));
@@ -299,22 +340,22 @@ fn freeze_render_camera(camera: &mut Camera) {
 /// tick-rate headpose across rendered frames.
 #[detour(address = jc3gi::camera::camera::Camera::UpdateRender_ADDRESS)]
 fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
+    let is_active_camera =
+        unsafe { CameraManager::get() }.is_some_and(|cm| cm.m_ActiveCamera == camera);
     unsafe {
-        if let Some(local_character) = Character::GetLocalPlayerCharacter().as_mut()
+        if is_active_camera && let Some(camera) = camera.as_mut() {
+            set_scene_near_clip(&mut camera.m_Near, &mut camera.m_StateBitfield);
+            MAIN_CAMERA_PLANES.set((camera.m_Near, camera.m_Far));
+        }
+        if is_active_camera
+            && let Some(local_character) = Character::GetLocalPlayerCharacter().as_mut()
             && let Some(camera) = camera.as_mut()
-            && let Some(cm) = CameraManager::get()
-            && cm.m_ActiveCamera == camera
         {
-            LAST_DTF.store(dtf.to_bits(), Ordering::Relaxed);
+            LAST_DTF.set(dtf);
 
-            // Publish the engine's own near/far for the active camera so the reconstruction override
-            // can recognize the main-view depth passes by their planes. The engine sets a runtime far
-            // that differs from the `Camera` constructor default, so keying that override on a
-            // hardcoded plane silently misses every main pass (see `main_camera_planes`).
-            *MAIN_CAMERA_PLANES.lock() = Some((camera.m_Near, camera.m_Far));
-
-            let camera_settings = Config::lock_query(|c| c.camera);
-            if !camera_settings.enabled {
+            if !Config::lock_query(|c| c.camera.enabled) {
+                authored::reset(authored::Refusal::Disabled);
+                *LAST_CAMERA_WORLD.lock() = None;
                 CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
                 return;
             }
@@ -328,6 +369,8 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             // (which the streaming system does not read); absolute placement resumes and the
             // auto-recenter re-bases onto Rico's updated head once gameplay returns.
             if !in_gameplay() {
+                authored::reset(authored::Refusal::OutsideGameplay);
+                *LAST_CAMERA_WORLD.lock() = None;
                 CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
                 return;
             }
@@ -336,7 +379,21 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             // back to the translation-only bone-derived placement below.
             let headpose_active = is_active() && anchor().is_some();
 
-            if headpose_active {
+            if !headpose_active {
+                authored::reset(authored::Refusal::NoTrackedHead);
+                *LAST_CAMERA_WORLD.lock() = None;
+            }
+            if headpose_active
+                && let Some([previous, current]) = authored::selected(local_character)
+            {
+                camera.m_TransformT0 = Matrix4::from(previous);
+                camera.m_TransformT1 = Matrix4::from(current);
+                *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
+                height::record(
+                    glam::Mat4::from(local_character.m_WorldMatrixT1),
+                    current.w_axis.truncate(),
+                );
+            } else if headpose_active {
                 // Both position and orientation come from the tick-spaced pose pair, so the
                 // engine's dtf Lerp smooths the whole camera placement — the bone reads
                 // (`GetSafeBoneMatrix`) only carry the finalized sim-rate pose, and placing T0/T1
@@ -344,58 +401,37 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
                 // interpolates via the skinning-palette pose pair.
                 let cur = query();
                 let prev = query_prev();
+                let [previous_position, position] = eye_points([prev, cur]);
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
-                write_camera_transform(
-                    &mut camera.m_TransformT1,
-                    cur.orientation,
-                    camera_position(&cur, character_t1_matrix, &camera_settings),
-                );
+                write_camera_transform(&mut camera.m_TransformT1, cur.orientation, position);
+                height::record(character_t1_matrix, position);
                 // Republish the transform for the sim-phase readers (see the GetCameraMatrix
                 // hook below).
                 *LAST_CAMERA_WORLD.lock() = Some(camera.m_TransformT1);
-
-                if camera_settings.always_use_t1 {
-                    camera.m_TransformT0 = camera.m_TransformT1;
-                } else {
-                    let character_t0_matrix = glam::Mat4::from(local_character.m_WorldMatrixT0);
-                    write_camera_transform(
-                        &mut camera.m_TransformT0,
-                        prev.orientation,
-                        camera_position(&prev, character_t0_matrix, &camera_settings),
-                    );
-                }
+                write_camera_transform(
+                    &mut camera.m_TransformT0,
+                    prev.orientation,
+                    previous_position,
+                );
             } else {
-                let head_matrix = head_matrix(local_character);
                 let (left_eye_matrix, right_eye_matrix) = eye_matrices(local_character);
                 let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
-                let head_position = calculate_head_position(
-                    character_t1_matrix,
-                    head_matrix,
-                    left_eye_matrix,
-                    right_eye_matrix,
-                    camera_settings.use_eye_matrices,
-                    &camera_settings,
-                );
+                let head_position =
+                    eye_midpoint(character_t1_matrix, left_eye_matrix, right_eye_matrix);
                 camera.m_TransformT1.data[12] = head_position.x;
                 camera.m_TransformT1.data[13] = head_position.y;
                 camera.m_TransformT1.data[14] = head_position.z;
 
-                if camera_settings.always_use_t1 {
-                    camera.m_TransformT0 = camera.m_TransformT1;
-                } else {
-                    let character_t0_matrix = glam::Mat4::from(local_character.m_WorldMatrixT0);
-                    let head_position_t0 = calculate_head_position(
-                        character_t0_matrix,
-                        head_matrix,
-                        left_eye_matrix,
-                        right_eye_matrix,
-                        camera_settings.use_eye_matrices,
-                        &camera_settings,
-                    );
-                    camera.m_TransformT0.data[12] = head_position_t0.x;
-                    camera.m_TransformT0.data[13] = head_position_t0.y;
-                    camera.m_TransformT0.data[14] = head_position_t0.z;
-                }
+                let character_t0_matrix = glam::Mat4::from(local_character.m_WorldMatrixT0);
+                let head_position_t0 =
+                    eye_midpoint(character_t0_matrix, left_eye_matrix, right_eye_matrix);
+                camera.m_TransformT0.data[12] = head_position_t0.x;
+                camera.m_TransformT0.data[13] = head_position_t0.y;
+                camera.m_TransformT0.data[14] = head_position_t0.z;
+            }
+
+            if authored::take_normal_reset() {
+                camera.m_TransformT0 = camera.m_TransformT1;
             }
 
             // Capture this gameplay frame's viewpoint as the upright loading base (issue #27): its
@@ -405,37 +441,183 @@ fn camera_update_render(camera: *mut Camera, dt: f32, dtf: f32) {
             // look around and the floating panel a fixed world anchor.
             let (_, gameplay_rotation, gameplay_position) =
                 glam::Mat4::from(camera.m_TransformT1).to_scale_rotation_translation();
-            *LOADING_BASE.lock() = Some((gameplay_position, yaw_only(gameplay_rotation)));
+            *LOADING_BASE.lock() = Some((gameplay_position, twist_about_y(gameplay_rotation)));
         }
+    }
+
+    if is_active_camera
+        && holds_probe_pose(
+            in_gameplay(),
+            crate::testing::visual::is_active(),
+            Config::lock_query(|c| c.vr.freeze_mode),
+        )
+        && let Some(pose) = pose_control::current_full_camera()
+        && let Some(camera) = unsafe { camera.as_mut() }
+    {
+        let world = probe_world(pose);
+        camera.m_TransformT0 = world;
+        camera.m_TransformT1 = world;
     }
 
     CAMERA_UPDATE_RENDER.get().unwrap().call(camera, dt, dtf);
 }
 
-/// The camera position for a headpose: a head-frame eye arm pivoted about the *neck* (the pose
-/// position shifted by the head-to-neck delta), plus the body-frame offset. Pivoting at the neck
-/// makes pitching the head swing the eyes forward over the chest — looking down clears the body
-/// instead of rotating in place at the skull base and staring into the neck.
+/// Place the light-propagation volume around the held pose while the capture harness holds the
+/// full camera. The engine places it once per frame from the game camera's render context
+/// ([`LightManager::UpdatePlayerLightingTransforms`]), which the full-camera freeze does not
+/// pin: the context keeps following the live head and the player's idle body, so the volume, and
+/// the indirect light every lit pixel reads from it, moved between captures at a frozen render
+/// camera by more than the differences a comparison between render modes looks for.
+#[detour(address = jc3gi::graphics_engine::gi::LightManager::UpdatePlayerLightingTransforms_ADDRESS)]
+fn update_player_lighting_transforms(manager: *mut LightManager, camera_transform: *const Matrix4) {
+    let held = holds_probe_pose(
+        in_gameplay(),
+        crate::testing::visual::is_active(),
+        Config::lock_query(|c| c.vr.freeze_mode),
+    )
+    .then(pose_control::current_full_camera)
+    .flatten()
+    .map(probe_world);
+    let transform = held
+        .as_ref()
+        .map_or(camera_transform, |world| world as *const Matrix4);
+    UPDATE_PLAYER_LIGHTING_TRANSFORMS
+        .get()
+        .unwrap()
+        .call(manager, transform);
+}
+
+fn holds_probe_pose(in_gameplay: bool, visual_active: bool, freeze_mode: FreezeMode) -> bool {
+    in_gameplay && visual_active && freeze_mode == FreezeMode::FullCamera
+}
+
+fn probe_world(pose: pose_control::PoseValues) -> Matrix4 {
+    Matrix4::from(glam::Mat4::from_rotation_translation(
+        pose.orientation(),
+        pose.position,
+    ))
+}
+
+fn set_scene_near_clip(near: &mut f32, state: &mut CameraState) {
+    if *near != SCENE_NEAR_CLIP_M {
+        *near = SCENE_NEAR_CLIP_M;
+        state.insert(CameraState::m_DirtyProjection);
+    }
+}
+
+/// The camera position for a headpose: the eye point hung off the published head position through
+/// the [`EyeRig`]. The arm is the *measured* neck-to-eye-midpoint arm from the animated eye bones,
+/// turned by the character matrix matching the pose's side of the T0/T1 pair.
 ///
-/// With `use_eye_matrices` on, the arm's base is the *measured* neck-to-eye-midpoint arm from the
-/// animated eye bones, and `head_offset` is a correction on top of it; with it off, `head_offset`
-/// is the whole arm. The body-frame offset uses the character matrix matching the pose's side of
-/// the T0/T1 pair.
+/// How the arm turns with the head depends on the source (see [`NeckModel`]): the sim pivots it
+/// about the neck by the head orientation, while the VR source holds it at rest in the body frame
+/// because the HMD's tracked translation already carries the player's own neck pivot.
+///
+/// `view_turn` is the turn from the character's body frame to the view frame on the pose's side of
+/// the pair ([`crate::headpose::xr::follow_turn`]): the identity unless the body has turned under
+/// the view.
 fn camera_position(
-    pose: &crate::headpose::HeadPose,
-    character_matrix: glam::Mat4,
-    camera_settings: &config::CameraConfig,
+    pose: &HeadPose,
+    view_turn: glam::Quat,
+    geometry: crate::headpose::anchors::Geometry,
+    pose_source: Source,
 ) -> glam::Vec3 {
-    let (_, character_rotation, _) = character_matrix.to_scale_rotation_translation();
-    let neck_pivot = pose.position + crate::headpose::neck_delta();
-    let eye_arm = if camera_settings.use_eye_matrices {
-        crate::headpose::eye_arm()
+    let character_rotation = geometry.arm_frame();
+    // While the root carries the body in the headset, the camera hangs from the neutral head, so
+    // the walking animation's bob stays on the body and out of the view.
+    let (neck_delta, arm) = if geometry.camera_stable {
+        (geometry.camera_neck_delta, geometry.camera_eye_arm)
     } else {
-        glam::Vec3::ZERO
+        (geometry.neck_delta, geometry.eye_arm)
     };
-    neck_pivot
-        + pose.orientation * (eye_arm + camera_settings.head_offset)
-        + character_rotation * camera_settings.body_offset
+    let rig = EyeRig {
+        neck_delta,
+        arm,
+        view_turn,
+    };
+    eye_position(
+        pose,
+        character_rotation,
+        &rig,
+        NeckModel::for_source(pose_source),
+    )
+}
+
+/// [`eye_points`] from its inputs: the pose pair, the anchors published for each side (`None`
+/// before any are), the view turn on each side ([`follow_turn`]), and the pose source. A collapsed
+/// pair shares the current side's view turn.
+fn eye_points_from(
+    poses: [HeadPose; 2],
+    geometry: Option<[crate::headpose::anchors::Geometry; 2]>,
+    view_turns: [glam::Quat; 2],
+    pose_source: Source,
+) -> [glam::Vec3; 2] {
+    let Some([previous_geometry, current_geometry]) = geometry else {
+        return poses.map(|pose| pose.position);
+    };
+    let [previous, current] = poses;
+    [
+        camera_position(
+            &previous,
+            previous_geometry.previous_endpoint(view_turns[0], view_turns[1]),
+            previous_geometry,
+            pose_source,
+        ),
+        camera_position(&current, view_turns[1], current_geometry, pose_source),
+    ]
+}
+
+/// The geometry the camera's eye point hangs from the published head position by.
+#[derive(Copy, Clone, Debug)]
+struct EyeRig {
+    /// The world-space vector from the head anchor to the animated neck bone, the arm's pivot.
+    neck_delta: glam::Vec3,
+    /// The neck-to-eyes arm in the body frame.
+    arm: glam::Vec3,
+    /// The turn from the body frame to the view frame. The tracked neck model holds the arm at rest
+    /// in the view frame: the HMD's translation already carries the player's eyes round with a
+    /// turn of their torso, so the arm must not turn again with a body that turns under the view
+    /// to follow it.
+    view_turn: glam::Quat,
+}
+
+/// How the neck-to-eyes arm follows the head's orientation.
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+enum NeckModel {
+    /// The arm swings about the neck by the head orientation, so pitching the head carries the
+    /// eyes forward over the chest. The sim source's published position is the head anchor alone
+    /// and has no neck kinematics of its own, so this supplies them.
+    Synthetic,
+    /// The arm stays at its rest pose in the body frame whatever the head orientation. The VR
+    /// source's published position already moves with the HMD's tracked translation, which
+    /// includes the player's real neck pivot; swinging the arm as well would apply the pivot twice
+    /// (looking down would drop the view into the chest).
+    Tracked,
+}
+
+impl NeckModel {
+    fn for_source(source: Source) -> Self {
+        match source {
+            Source::Sim => NeckModel::Synthetic,
+            Source::Vr => NeckModel::Tracked,
+        }
+    }
+}
+
+/// The eye point for `pose`: the head position, plus the neck delta, plus the arm rotated per
+/// `neck`. Under [`NeckModel::Tracked`] the head anchor to eye offset
+/// is a pure function of the body frame, so the eye point moves exactly as the pose position does.
+fn eye_position(
+    pose: &HeadPose,
+    character_rotation: glam::Quat,
+    rig: &EyeRig,
+    neck: NeckModel,
+) -> glam::Vec3 {
+    let arm_rotation = match neck {
+        NeckModel::Synthetic => pose.orientation,
+        NeckModel::Tracked => character_rotation * rig.view_turn,
+    };
+    pose.position + rig.neck_delta + arm_rotation * rig.arm
 }
 
 /// Write a full world transform (rotation + translation) into a camera transform slot.
@@ -455,9 +637,7 @@ fn write_camera_transform(target: &mut Matrix4, orientation: glam::Quat, positio
 /// `setup_render_camera`) and the floating panel's world-lock in `crate::hud`, so the render camera and
 /// the panel always agree on when it is active and hand off together.
 pub fn vr_loading_view_active() -> bool {
-    !in_gameplay()
-        && crate::headpose::source() == crate::headpose::Source::Vr
-        && LOADING_BASE.lock().is_some()
+    !in_gameplay() && source() == Source::Vr && LOADING_BASE.lock().is_some()
 }
 
 /// Head-track the *render* camera around the [`LOADING_BASE`] (the last gameplay viewpoint, upright)
@@ -476,15 +656,18 @@ pub fn vr_loading_view_active() -> bool {
 /// The caller gates on [`vr_loading_view_active`] (non-gameplay, VR source, base captured), so this only
 /// resolves the frame's data: it no-ops on a VR frame that published no cockpit pose (a skipped render),
 /// leaving the render copy as the engine left it.
-fn head_track_render_camera(camera: &mut Camera) {
-    let Some(cockpit) = crate::headpose::xr::cockpit_pose() else {
+fn head_track_render_camera(
+    camera: &mut Camera,
+    cockpit: Option<crate::headpose::xr::CockpitPose>,
+    world_scale: f32,
+) {
+    let Some(cockpit) = cockpit else {
         return;
     };
     let Some((base_position, base_rotation)) = *LOADING_BASE.lock() else {
         return;
     };
     let base = glam::Mat4::from_rotation_translation(base_rotation, base_position);
-    let world_scale = Config::lock_query(|c| c.vr.world_scale);
     let world = compose_relative(base, &cockpit, world_scale);
     camera.m_TransformF = Matrix4::from(world);
     camera.m_View = Matrix4::from(world.inverse());
@@ -500,9 +683,12 @@ fn compose_relative(
     world_scale: f32,
 ) -> glam::Mat4 {
     let (_, base_rotation, base_position) = base.to_scale_rotation_translation();
-    let position = base_position + base_rotation * (cockpit.position * world_scale);
-    let orientation = base_rotation * cockpit.orientation;
-    glam::Mat4::from_rotation_translation(orientation, position)
+    let world = CockpitTransform::from_origin(base_position, base_rotation, world_scale)
+        .pose_to_world(Pose {
+            position: cockpit.position,
+            orientation: cockpit.orientation,
+        });
+    glam::Mat4::from_rotation_translation(world.orientation, world.position)
 }
 
 /// The upright loading base pose `(position, yaw-only rotation)`: the last gameplay viewpoint, held
@@ -511,18 +697,6 @@ fn compose_relative(
 /// frame captures one.
 static LOADING_BASE: Mutex<Option<(glam::Vec3, glam::Quat)>> = Mutex::new(None);
 
-/// Project a rotation onto yaw only (rotation about the world up axis), zeroing pitch and roll. A
-/// degenerate (looking straight up or down) rotation falls back to identity yaw. Mirrors the recenter
-/// baseline's yaw extraction ([`crate::vr`]).
-fn yaw_only(rotation: glam::Quat) -> glam::Quat {
-    let yaw = glam::Quat::from_xyzw(0.0, rotation.y, 0.0, rotation.w);
-    if yaw.length_squared() > 1e-6 {
-        yaw.normalize()
-    } else {
-        glam::Quat::IDENTITY
-    }
-}
-
 /// The sim-phase camera matrix reader: `m_NextCameraContext`'s transform, which the game's
 /// sim-phase camera update rewrites from its internal camera *after* the mod's render-phase
 /// context patch. With the look input consumed by the headpose, that internal camera's yaw is
@@ -530,6 +704,10 @@ fn yaw_only(rotation: glam::Quat) -> glam::Quat {
 /// matrix, the weapon aim-target queries, melee and grapple tasks — aimed at a fixed world
 /// direction regardless of where the head looked. Overriding the getter's output hands them the
 /// same transform the render camera uses.
+///
+/// Inside the grapple's scoped aim calls, the getter instead returns the grapple ray's camera
+/// matrix ([`crate::controllers::aim::camera_matrix_override`]), so that the game's grapple
+/// targeting casts from the off-hand.
 #[detour(
     address = jc3gi::camera::game_camera_manager::GameCameraManager::GetCameraMatrix_ADDRESS
 )]
@@ -538,6 +716,14 @@ fn game_camera_manager_get_camera_matrix(manager: *const GameCameraManager, matr
         .get()
         .unwrap()
         .call(manager, matrix);
+    if let (Some(view), Some(matrix)) =
+        (crate::controllers::aim::camera_matrix_override(), unsafe {
+            matrix.as_mut()
+        })
+    {
+        *matrix = view;
+        return;
+    }
     if !is_active() {
         return;
     }
@@ -555,8 +741,10 @@ fn game_camera_manager_get_camera_matrix(manager: *const GameCameraManager, matr
     }
 }
 
-/// The last `dtf` seen by the active camera's `UpdateRender`, as bits (see [`last_dtf`]).
-static LAST_DTF: AtomicU32 = AtomicU32::new(0);
+/// The `dtf` the active camera's `UpdateRender` received for the frame (see [`last_dtf`]). Per
+/// frame, so the draw task's palette edits and anchored readouts interpolate at the fraction of the
+/// frame they draw (see [`crate::render_frame`]).
+static LAST_DTF: RenderFrameSlot<f32> = RenderFrameSlot::new();
 
 /// The camera world transform last written to the active camera's `m_TransformT1` with the
 /// headpose active, republished by [`game_camera_manager_get_camera_matrix`] so sim-phase readers
@@ -569,19 +757,18 @@ static LAST_CAMERA_WORLD: Mutex<Option<Matrix4>> = Mutex::new(None);
 /// skip auxiliary cameras (reflections) with different planes. The engine writes a runtime far that
 /// differs from the `Camera` constructor default (~40 km vs the constructor's 38.4 km), so gating that
 /// override on a hardcoded config plane misses every main pass. `None` until the camera hook first runs.
-static MAIN_CAMERA_PLANES: Mutex<Option<(f32, f32)>> = Mutex::new(None);
+static MAIN_CAMERA_PLANES: RenderFrameSlot<(f32, f32)> = RenderFrameSlot::new();
 
 /// The active camera's near/far as of the last `Camera::UpdateRender`, or `None` before the first.
 pub fn main_camera_planes() -> Option<(f32, f32)> {
-    *MAIN_CAMERA_PLANES.lock()
+    MAIN_CAMERA_PLANES.get()
 }
 
-/// The single source of truth for the VR near/far planes: the engine's live active-camera planes,
-/// falling back to `fallback` (the configured VR planes) only until the first camera update. The
-/// per-eye projections, the cull frustum, and the reconstruction gate all resolve through here, so the
-/// eyes render, cull, and reconstruct against the same planes the engine is actually using.
-pub fn main_camera_planes_or(fallback: (f32, f32)) -> (f32, f32) {
-    main_camera_planes().unwrap_or(fallback)
+pub fn main_camera_planes_or(fallback_far: f32) -> (f32, f32) {
+    (
+        SCENE_NEAR_CLIP_M,
+        main_camera_planes().map_or(fallback_far, |(_, far)| far),
+    )
 }
 
 #[detour(address = jc3gi::camera::camera_tree::CameraTree::UpdateRenderContexts_ADDRESS)]
@@ -595,15 +782,18 @@ fn camera_tree_update_render_contexts(
         .call(tree, camera_control_context);
 
     unsafe {
+        *LAST_CAMERA_WORLD.lock() = None;
         let Some(local_character) = Character::GetLocalPlayerCharacter().as_mut() else {
+            authored::reset(authored::Refusal::MissingChannel);
             return;
         };
         let Some(ccc) = camera_control_context.as_mut() else {
+            authored::reset(authored::Refusal::MissingChannel);
             return;
         };
 
-        let camera_settings = Config::lock_query(|c| c.camera);
-        if !camera_settings.enabled {
+        if !Config::lock_query(|c| c.camera.enabled) {
+            authored::reset(authored::Refusal::Disabled);
             return;
         }
 
@@ -612,14 +802,11 @@ fn camera_tree_update_render_contexts(
         // placement stops entirely here; the player's head-tracking for the view is applied to the
         // render camera copy in `setup_render_camera`, which does not touch these contexts.
         if !in_gameplay() {
+            authored::reset(authored::Refusal::OutsideGameplay);
             return;
         }
 
-        let character_t0_matrix = glam::Mat4::from(if camera_settings.always_use_t1 {
-            local_character.m_WorldMatrixT1
-        } else {
-            local_character.m_WorldMatrixT0
-        });
+        let character_t0_matrix = glam::Mat4::from(local_character.m_WorldMatrixT0);
         let character_t1_matrix = glam::Mat4::from(local_character.m_WorldMatrixT1);
 
         // The previous contexts get the previous-tick headpose placement and the next contexts
@@ -630,68 +817,105 @@ fn camera_tree_update_render_contexts(
             if headpose_active {
                 let cur = query();
                 let prev = query_prev();
+                let [previous_position, next_position] = eye_points([prev, cur]);
                 (
-                    camera_position(&prev, character_t0_matrix, &camera_settings),
-                    camera_position(&cur, character_t1_matrix, &camera_settings),
+                    previous_position,
+                    next_position,
                     Some(prev.orientation),
                     Some(cur.orientation),
                 )
             } else {
-                let head_matrix = head_matrix(local_character);
                 let (left_eye_matrix, right_eye_matrix) = eye_matrices(local_character);
                 (
-                    calculate_head_position(
-                        character_t0_matrix,
-                        head_matrix,
-                        left_eye_matrix,
-                        right_eye_matrix,
-                        camera_settings.use_eye_matrices,
-                        &camera_settings,
-                    ),
-                    calculate_head_position(
-                        character_t1_matrix,
-                        head_matrix,
-                        left_eye_matrix,
-                        right_eye_matrix,
-                        camera_settings.use_eye_matrices,
-                        &camera_settings,
-                    ),
+                    eye_midpoint(character_t0_matrix, left_eye_matrix, right_eye_matrix),
+                    eye_midpoint(character_t1_matrix, left_eye_matrix, right_eye_matrix),
                     None,
                     None,
                 )
             };
 
+        let selected = if headpose_active {
+            let previous = query_prev();
+            let current = query();
+            let views = [
+                authored::TrackedView {
+                    world: glam::Mat4::from_rotation_translation(
+                        previous.orientation,
+                        previous_position,
+                    ),
+                    tracking_translation: previous.position
+                        - anchor_prev().unwrap_or(previous.position),
+                },
+                authored::TrackedView {
+                    world: glam::Mat4::from_rotation_translation(
+                        current.orientation,
+                        next_position,
+                    ),
+                    tracking_translation: current.position - anchor().unwrap_or(current.position),
+                },
+            ];
+            authored::capture(local_character, views)
+        } else {
+            authored::reset(authored::Refusal::NoTrackedHead);
+            None
+        };
+        if let Some([previous, current]) = selected {
+            patch_authored_context(&mut ccc.m_PreviousCameraContext, previous);
+            patch_authored_context(&mut ccc.m_PreviousRenderContext, previous);
+            patch_authored_context(&mut ccc.m_NextCameraContext, current);
+            patch_authored_context(&mut ccc.m_NextRenderContext, current);
+            *LAST_CAMERA_WORLD.lock() = Some(Matrix4::from(current));
+            return;
+        }
+        if headpose_active {
+            *LAST_CAMERA_WORLD.lock() = Some(Matrix4::from(glam::Mat4::from_rotation_translation(
+                next_orientation.unwrap_or(glam::Quat::IDENTITY),
+                next_position,
+            )));
+        } else {
+            *LAST_CAMERA_WORLD.lock() = None;
+        }
+
+        let normal_reset = authored::normal_reset();
+        let (previous_position, previous_orientation) = if normal_reset {
+            (next_position, next_orientation)
+        } else {
+            (previous_position, previous_orientation)
+        };
         patch_context(
             &mut ccc.m_PreviousCameraContext,
             previous_position,
             previous_orientation,
-            camera_settings.blurs_enabled,
         );
         patch_context(
             &mut ccc.m_PreviousRenderContext,
             previous_position,
             previous_orientation,
-            camera_settings.blurs_enabled,
         );
         patch_context(
             &mut ccc.m_NextCameraContext,
             next_position,
             next_orientation,
-            camera_settings.blurs_enabled,
         );
         patch_context(
             &mut ccc.m_NextRenderContext,
             next_position,
             next_orientation,
-            camera_settings.blurs_enabled,
         );
+    }
+
+    fn patch_authored_context(context: &mut CameraContext, world: glam::Mat4) {
+        context.m_CameraTransform = Matrix4::from(world);
+        context.m_AlternateAimTransform = context.m_CameraTransform;
+        context.m_ListenerTransform = context.m_CameraTransform;
+        context.m_FOV = 90.0_f32.to_radians();
+        clear_blurs(context);
     }
 
     fn patch_context(
         context: &mut CameraContext,
         head_position: glam::Vec3,
         headpose_orientation: Option<glam::Quat>,
-        blurs_enabled: bool,
     ) {
         if let Some(orientation) = headpose_orientation {
             let camera_world = glam::Mat4::from_rotation_translation(orientation, head_position);
@@ -707,21 +931,16 @@ fn camera_tree_update_render_contexts(
         context.m_AlternateAimTransform = context.m_CameraTransform;
         context.m_ListenerTransform = context.m_CameraTransform;
         context.m_FOV = 90.0_f32.to_radians();
-
-        if !blurs_enabled {
-            context.m_MaxMotionBlur = 0.0;
-            context.m_MotionBlurFactor = 0.0_f32;
-            context.m_RadialBlurFactor = 0.0;
-        }
+        clear_blurs(context);
     }
-}
 
-fn head_matrix(character: &mut Character) -> glam::Mat4 {
-    let mut head_matrix = Matrix4::default();
-    unsafe {
-        character.GetSafeBoneMatrix(SafeBoneIndex::HEAD, &mut head_matrix);
+    /// Zero the context's motion and radial blur: both smear the view with the camera's motion,
+    /// which in the headset is the player's own head motion.
+    fn clear_blurs(context: &mut CameraContext) {
+        context.m_MaxMotionBlur = 0.0;
+        context.m_MotionBlurFactor = 0.0;
+        context.m_RadialBlurFactor = 0.0;
     }
-    glam::Mat4::from(head_matrix)
 }
 
 fn eye_matrices(character: &mut Character) -> (glam::Mat4, glam::Mat4) {
@@ -745,42 +964,61 @@ fn eye_matrices(character: &mut Character) -> (glam::Mat4, glam::Mat4) {
     )
 }
 
-fn calculate_head_position(
+/// The midpoint of the animated eye bones in the world, for the character's world matrix
+/// `character_matrix`.
+fn eye_midpoint(
     character_matrix: glam::Mat4,
-    head_matrix: glam::Mat4,
     left_eye_matrix: glam::Mat4,
     right_eye_matrix: glam::Mat4,
-    use_eye_matrices: bool,
-    camera_settings: &config::CameraConfig,
 ) -> glam::Vec3 {
-    let (_, character_rotation, _character_position) =
-        character_matrix.to_scale_rotation_translation();
-
-    if use_eye_matrices {
-        let left_eye_worldspace_matrix = character_matrix * left_eye_matrix;
-        let (_, _, left_eye_position) = left_eye_worldspace_matrix.to_scale_rotation_translation();
-
-        let right_eye_worldspace_matrix = character_matrix * right_eye_matrix;
-        let (_, _, right_eye_position) =
-            right_eye_worldspace_matrix.to_scale_rotation_translation();
-
-        (left_eye_position + right_eye_position) / 2.0
-    } else {
-        let head_worldspace_matrix = character_matrix * head_matrix;
-        let (_, head_rotation, mut head_position) =
-            head_worldspace_matrix.to_scale_rotation_translation();
-
-        head_position += head_rotation * camera_settings.head_offset;
-        head_position += character_rotation * camera_settings.body_offset;
-
-        head_position
-    }
+    let (_, _, left_eye_position) =
+        (character_matrix * left_eye_matrix).to_scale_rotation_translation();
+    let (_, _, right_eye_position) =
+        (character_matrix * right_eye_matrix).to_scale_rotation_translation();
+    (left_eye_position + right_eye_position) / 2.0
 }
+
+#[cfg(test)]
+mod anchor_tests;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::headpose::xr::CockpitPose;
+
+    #[test]
+    fn scene_near_clip_marks_projection_dirty_and_preserves_other_flags() {
+        for initial in [Camera::DEFAULT_NEAR_PLANE, 0.005, f32::NAN] {
+            let mut near = initial;
+            let mut state = CameraState::m_ComputeView | CameraState::m_UseOffCenter;
+            set_scene_near_clip(&mut near, &mut state);
+            assert_eq!(near, SCENE_NEAR_CLIP_M);
+            assert_eq!(
+                state,
+                CameraState::m_ComputeView
+                    | CameraState::m_UseOffCenter
+                    | CameraState::m_DirtyProjection
+            );
+        }
+    }
+
+    #[test]
+    fn scene_near_clip_does_not_dirty_an_unchanged_projection() {
+        for initial in [CameraState::empty(), CameraState::m_DirtyProjection] {
+            let mut near = SCENE_NEAR_CLIP_M;
+            let mut state = initial;
+            set_scene_near_clip(&mut near, &mut state);
+            assert_eq!(near, SCENE_NEAR_CLIP_M);
+            assert_eq!(state, initial);
+        }
+    }
+
+    #[test]
+    fn scene_planes_use_shared_near_before_camera_publication() {
+        assert!(main_camera_planes().is_none());
+        let far = 40_000.0;
+        assert_eq!(main_camera_planes_or(far), (SCENE_NEAR_CLIP_M, far));
+    }
 
     /// The identity cockpit pose (looking straight ahead at the recenter neutral, no room-scale
     /// translation) reproduces the engine base transform exactly, so the relative composition adds
@@ -829,5 +1067,162 @@ mod tests {
         let (_, orientation, position) = composed.to_scale_rotation_translation();
         assert!((position - glam::Vec3::new(0.0, 0.0, -1.0)).length() < 1e-6);
         assert!(orientation.abs_diff_eq(glam::Quat::IDENTITY, 1e-6));
+    }
+
+    /// A rig shaped like a standing character: the neck a little below and behind the head anchor,
+    /// the eyes forward of and above the neck.
+    fn standing_rig() -> EyeRig {
+        EyeRig {
+            neck_delta: glam::Vec3::new(0.0, -0.08, 0.02),
+            arm: glam::Vec3::new(0.0, 0.12, -0.1),
+            view_turn: glam::Quat::IDENTITY,
+        }
+    }
+
+    fn pose(position: glam::Vec3, orientation: glam::Quat) -> HeadPose {
+        HeadPose {
+            position,
+            orientation,
+        }
+    }
+
+    /// Under the VR source, looking down must not move the eye point: the tracked translation already
+    /// carries the player's neck pivot, so the orientation alone contributes nothing.
+    #[test]
+    fn tracked_pitch_does_not_move_the_eye() {
+        let body = glam::Quat::from_rotation_y(0.9);
+        let rig = standing_rig();
+        let position = glam::Vec3::new(5.0, 1.7, -2.0);
+        let level = eye_position(&pose(position, body), body, &rig, NeckModel::Tracked);
+        for pitch in [
+            -std::f32::consts::FRAC_PI_4,
+            -std::f32::consts::FRAC_PI_2,
+            0.6,
+        ] {
+            let pitched = eye_position(
+                &pose(position, body * glam::Quat::from_rotation_x(pitch)),
+                body,
+                &rig,
+                NeckModel::Tracked,
+            );
+            assert!(
+                pitched.distance(level) < 1e-6,
+                "a pitch of {pitch} rad moved the tracked eye by {:?}",
+                pitched - level
+            );
+        }
+    }
+
+    /// Under the VR source the eye point follows the tracked translation one to one: a pose that
+    /// dropped and moved forward (as a real head does when looking down) moves the eye by exactly
+    /// that much and no further.
+    #[test]
+    fn tracked_eye_follows_the_pose_translation_exactly() {
+        let body = glam::Quat::from_rotation_y(-0.4);
+        let rig = standing_rig();
+        let rest = glam::Vec3::new(1.0, 1.7, 3.0);
+        let tracked_delta = body * glam::Vec3::new(0.0, -0.06, -0.08);
+        let looking_down = body * glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_4);
+        let neutral_eye = eye_position(&pose(rest, body), body, &rig, NeckModel::Tracked);
+        let down_eye = eye_position(
+            &pose(rest + tracked_delta, looking_down),
+            body,
+            &rig,
+            NeckModel::Tracked,
+        );
+        assert!((down_eye - neutral_eye - tracked_delta).length() < 1e-6);
+    }
+
+    /// The tracked arm is the rest-pose anchor-to-eyes offset carried by the body frame, so it turns
+    /// with the character's facing.
+    #[test]
+    fn tracked_arm_rides_the_body_frame() {
+        let body = glam::Quat::from_rotation_y(std::f32::consts::FRAC_PI_2);
+        let rig = standing_rig();
+        let eye = eye_position(
+            &pose(glam::Vec3::ZERO, glam::Quat::IDENTITY),
+            body,
+            &rig,
+            NeckModel::Tracked,
+        );
+        assert!((eye - (rig.neck_delta + body * rig.arm)).length() < 1e-6);
+    }
+
+    /// A body turned under the view leaves the tracked arm where the view has it: the headset's
+    /// translation already carries the player's eyes round with a torso turn.
+    #[test]
+    fn tracked_arm_stays_in_the_view_frame_when_the_body_turns_under_it() {
+        let view = glam::Quat::from_rotation_y(0.3);
+        let body = glam::Quat::from_rotation_y(1.4);
+        let rig = EyeRig {
+            view_turn: body.inverse() * view,
+            ..standing_rig()
+        };
+        let eye = eye_position(
+            &pose(glam::Vec3::ZERO, glam::Quat::IDENTITY),
+            body,
+            &rig,
+            NeckModel::Tracked,
+        );
+        assert!((eye - (rig.neck_delta + view * rig.arm)).length() < 1e-5);
+    }
+
+    /// The flatscreen sim keeps its synthetic neck: pitching the head down swings the eyes forward
+    /// and down about the neck, which its anchor-only position cannot otherwise express.
+    #[test]
+    fn synthetic_pitch_swings_the_eye_about_the_neck() {
+        let rig = standing_rig();
+        let position = glam::Vec3::new(0.0, 1.7, 0.0);
+        let level = eye_position(
+            &pose(position, glam::Quat::IDENTITY),
+            glam::Quat::IDENTITY,
+            &rig,
+            NeckModel::Synthetic,
+        );
+        let down = eye_position(
+            &pose(
+                position,
+                glam::Quat::from_rotation_x(-std::f32::consts::FRAC_PI_4),
+            ),
+            glam::Quat::IDENTITY,
+            &rig,
+            NeckModel::Synthetic,
+        );
+        assert!(down.y < level.y, "the eye drops when looking down");
+        let neck = position + rig.neck_delta;
+        assert!(
+            (down.distance(neck) - level.distance(neck)).abs() < 1e-6,
+            "the eye stays on the arm's sphere about the neck"
+        );
+    }
+
+    #[test]
+    fn probe_pose_is_held_only_in_gameplay_during_a_visual_full_camera_freeze() {
+        assert!(holds_probe_pose(true, true, FreezeMode::FullCamera));
+        assert!(!holds_probe_pose(false, true, FreezeMode::FullCamera));
+        assert!(!holds_probe_pose(true, false, FreezeMode::FullCamera));
+        assert!(!holds_probe_pose(true, true, FreezeMode::Off));
+        assert!(!holds_probe_pose(true, true, FreezeMode::CockpitPose));
+    }
+
+    #[test]
+    fn probe_world_is_the_frozen_pose_rotation_and_translation() {
+        let pose = pose_control::PoseValues {
+            position: glam::Vec3::new(1.0, 2.0, 3.0),
+            yaw_deg: 70.0,
+            pitch_deg: -12.0,
+            roll_deg: 7.5,
+        };
+        let world = glam::Mat4::from(probe_world(pose));
+        let (scale, rotation, translation) = world.to_scale_rotation_translation();
+        assert!((scale - glam::Vec3::ONE).length() < 1e-6);
+        assert!((translation - pose.position).length() < 1e-6);
+        let expected = glam::Quat::from_euler(
+            pose_control::EULER,
+            pose.yaw_deg.to_radians(),
+            pose.pitch_deg.to_radians(),
+            pose.roll_deg.to_radians(),
+        );
+        assert!(rotation.dot(expected).abs() > 1.0 - 1e-6);
     }
 }

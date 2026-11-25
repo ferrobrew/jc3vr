@@ -1,0 +1,158 @@
+use super::*;
+use crate::{
+    controllers::bindings::controls::{Controls, HandControls},
+    vr::input::semantic::{
+        defaults::default_binding,
+        vocabulary::{MenuAction, OnFootAction},
+    },
+};
+
+const DOWN: ButtonControl = ButtonControl {
+    down: true,
+    pressed: true,
+    released: false,
+};
+
+/// The on-foot input of right-handed raw controls with every button held and both grips squeezed.
+fn everything_held() -> SemanticInput {
+    let mut c = Controls {
+        dominant: Hand::Right,
+        ..Default::default()
+    };
+    for h in &mut c.hands {
+        *h = HandControls {
+            trigger: 1.0,
+            trigger_press: DOWN,
+            grip: DOWN,
+            a: DOWN,
+            b: DOWN,
+            stick_click: DOWN,
+            ..Default::default()
+        };
+    }
+    simulate::simulate(&c, SemanticSet::OnFoot, default_binding)
+}
+
+fn build(input: &SemanticInput, masks: &[Mask]) -> Intents {
+    Intents::build(input, masks, Gestures::default(), Hand::Left)
+}
+
+#[test]
+fn an_input_mask_rests_only_the_actions_bound_to_it_on_its_hand() {
+    let input = everything_held();
+    let upper = |hand| Mask {
+        hand,
+        scope: MaskScope::Input(Physical::UpperFace),
+        exempt: None,
+    };
+    let grapple = OnFootAction::Grapple.id();
+    let open = build(&input, &[]);
+    assert!(open.button(grapple).held());
+    // The grapple is on the left upper face button: a mask on the right one leaves it alone.
+    let right = build(&input, &[upper(Hand::Right)]);
+    assert!(right.button(grapple).held());
+    let left = build(&input, &[upper(Hand::Left)]);
+    assert!(!left.button(grapple).held());
+    // The left hand's other actions are untouched.
+    assert!(left.button(OnFootAction::Reload.id()).held());
+}
+
+#[test]
+fn an_exempt_action_keeps_its_masked_input() {
+    let input = everything_held();
+    let mask = Mask {
+        hand: Hand::Left,
+        scope: MaskScope::Input(Physical::Trigger),
+        exempt: Some(OnFootAction::FireOffHandPistol.id()),
+    };
+    let intents = build(&input, &[mask]);
+    assert!(intents.button(OnFootAction::FireOffHandPistol.id()).held());
+    assert!(!intents.button(OnFootAction::RetractTethers.id()).held());
+    assert!(intents.button(OnFootAction::Fire.id()).held());
+}
+
+#[test]
+fn a_hand_mask_rests_every_action_on_the_hand() {
+    let input = everything_held();
+    let mask = Mask {
+        hand: Hand::Right,
+        scope: MaskScope::Hand,
+        exempt: None,
+    };
+    let intents = build(&input, &[mask]);
+    for action in [OnFootAction::Jump, OnFootAction::Fire, OnFootAction::Use] {
+        assert!(!intents.button(action.id()).held(), "{action:?}");
+    }
+    assert!(intents.button(OnFootAction::Reload.id()).held());
+}
+
+#[test]
+fn an_unknown_source_is_masked_only_with_its_hand() {
+    let mut input = everything_held();
+    let jump = OnFootAction::Jump.id();
+    input.mode.actions[jump.index()].bound[Hand::Right.index()] = PhysicalSet::EMPTY.with_unknown();
+    let face = Mask {
+        hand: Hand::Right,
+        scope: MaskScope::Input(Physical::LowerFace),
+        exempt: None,
+    };
+    assert!(build(&input, &[face]).button(jump).held());
+    let hand = Mask {
+        scope: MaskScope::Hand,
+        ..face
+    };
+    assert!(!build(&input, &[hand]).button(jump).held());
+}
+
+#[test]
+fn semantic_values_are_not_fabricated_or_replaced_by_contextual_masks() {
+    let mut input = everything_held();
+    let detonate = OnFootAction::Detonate.id();
+    input.mode.actions[detonate.index()].hands = Default::default();
+    assert!(!build(&input, &[]).button(detonate).held());
+    input.mode.actions[detonate.index()].hands[1].button = DOWN;
+    assert!(build(&input, &[]).button(detonate).held());
+}
+
+#[test]
+fn the_yank_presses_the_grapple_on_the_grapple_hand() {
+    let c = Controls {
+        dominant: Hand::Right,
+        ..Default::default()
+    };
+    let input = simulate::simulate(&c, SemanticSet::OnFoot, default_binding);
+    let intents = Intents::build(&input, &[], Gestures { yank: true }, Hand::Left);
+    let grapple = intents.hand(OnFootAction::FireGrapple.id(), Hand::Left);
+    assert!(grapple.button.held());
+    assert!(!grapple.button.down);
+    // An action of a set that is not the tick's reads at rest.
+    assert_eq!(
+        intents.button(MenuAction::MenuConfirm.id()),
+        ButtonControl::default()
+    );
+}
+
+#[test]
+fn the_hands_combine_as_openxr_combines_bindings() {
+    let mut c = Controls {
+        dominant: Hand::Right,
+        ..Default::default()
+    };
+    c.hands[0].stick = glam::Vec2::new(0.2, 0.0);
+    c.hands[1].stick = glam::Vec2::new(0.0, -0.6);
+    c.hands[0].a = DOWN;
+    let input = simulate::simulate(&c, SemanticSet::Menu, default_binding);
+    let intents = build(&input, &[]);
+    assert_eq!(
+        intents.vector(MenuAction::MenuNavigate.id()),
+        glam::Vec2::new(0.0, -0.6)
+    );
+    assert!(intents.button(MenuAction::MenuConfirm.id()).held());
+}
+
+#[test]
+fn a_stick_axis_has_a_signed_deadzone() {
+    assert_eq!(signed_deadzone(0.1, 0.15), 0.0);
+    assert_eq!(signed_deadzone(-1.0, 0.15), -1.0);
+    assert!((signed_deadzone(-0.575, 0.15) + 0.5).abs() < 1e-5);
+}

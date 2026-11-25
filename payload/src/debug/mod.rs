@@ -6,4 +6,5 @@ pub mod coord_frame;
 pub mod pipeline_probes;
 pub mod rt_hash;
 pub mod stereo_diff;
+pub mod texture_census;
 pub mod trace;

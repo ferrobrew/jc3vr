@@ -9,14 +9,17 @@ use jc3gi::types::math::Matrix4;
 use parking_lot::Mutex;
 
 pub mod config;
+pub mod dispatch;
 pub(crate) mod engine_context;
 pub mod single_pass;
+pub(crate) mod switches;
+pub(crate) mod terrain_prep;
 
 /// The live stereo render state for the frame in flight.
 pub struct StereoState {
     /// Whether the current frame is being rendered in stereo (the Draw driver double-Draws).
     pub active: bool,
-    /// The eye currently being drawn: 0 = first, 1 = second. During a share frame's far
+    /// The physical eye currently being drawn: 0 = left, 1 = right. During a share frame's far
     /// dispatch this stays 0 (the far phase renders at eye 0's pose).
     pub draw_index: usize,
     /// Whether the current dispatch is a share frame's far-only dispatch (issue #32): the far
@@ -31,6 +34,8 @@ pub struct StereoState {
     /// a share frame. Once-per-frame work (the shared pre-passes) keys on `> 0`, independent of
     /// eye indexing.
     pub dispatch_ordinal: usize,
+    /// Whether the current dispatch is the frame's last near-scene dispatch.
+    pub last_near_dispatch: bool,
     /// The current eye's world-space camera offset from the center camera (`offset * right`, in
     /// metres), set by the `SetupRenderCamera` hook. The sun-shadow cascade correction adds
     /// `M * shadow_anchor_delta` to the cascade transform translation so the shadow lookup stays
@@ -46,6 +51,11 @@ pub struct StereoState {
     /// carries eye 0's half-IPD offset. Using the offset transform would shift the cached panel
     /// position toward eye 0, doubling the stereo disparity for eye 1.
     pub center_transform: Option<Matrix4>,
+    /// The active camera's world position (`m_TransformF` translation) as the sun-shadow cascade fit
+    /// read it this frame, captured by the `ShadowManager::UpdateRender` hook. The cascade transform
+    /// is baked relative to it, and the material shaders anchor the shadow lookup at the render
+    /// camera instead, so the cascade correction re-anchors the lookup to this point.
+    pub shadow_fit_position: Option<glam::Vec3>,
 }
 impl StereoState {
     const fn new() -> Self {
@@ -55,9 +65,11 @@ impl StereoState {
             far_phase: false,
             share_frame: false,
             dispatch_ordinal: 0,
+            last_near_dispatch: true,
             shadow_anchor_delta: glam::Vec3::ZERO,
             vp_history: VpHistory::new(),
             center_transform: None,
+            shadow_fit_position: None,
         }
     }
 }
@@ -72,50 +84,51 @@ impl StereoState {
 /// velocity-decode pass uses these snapshots to re-anchor each vector at the eye's own previous pose
 /// (`fsr::velocity_decode`).
 pub struct VpHistory {
-    /// The previous frame's center (un-offset, unjittered) view-projection -- the matrix the engine's
-    /// velocity pass reprojects with.
-    pub prev_center: Option<glam::Mat4>,
-    /// The previous frame's final per-eye view-projections (jitter and eye offset applied).
+    /// The previous frame's center (un-offset) view-projection per eye -- the matrix the engine's
+    /// velocity pass reprojects with. Per eye because the snapshot carries the projection of the
+    /// dispatch it was taken in, and the eyes' projections differ on a headset with asymmetric
+    /// frusta.
+    pub prev_center: [Option<glam::Mat4>; 2],
+    /// The previous frame's final per-eye view-projections (eye offset applied).
     pub prev_eye: [Option<glam::Mat4>; 2],
-    /// This frame's center view-projection, snapshotted before the per-eye patches.
-    pub cur_center: Option<glam::Mat4>,
-    /// This frame's final per-eye view-projections (the matrices each dispatch rasterizes with).
+    /// This frame's center view-projection per eye, snapshotted before the per-eye patches in that
+    /// eye's dispatch.
+    pub cur_center: [Option<glam::Mat4>; 2],
+    /// This frame's final per-eye view-projections, the matrices each dispatch rasterizes with but
+    /// for the FSR jitter, which [`cur_jitter`](Self::cur_jitter) holds apart (see
+    /// [`crate::fsr::jitter_free_reprojection`]).
     pub cur_eye: [Option<glam::Mat4>; 2],
-    /// This frame's final per-eye view matrices (jitter and eye offset applied). Used by CPU-side
+    /// This frame's final per-eye view matrices (eye offset applied). Used by CPU-side
     /// projection paths such as the light-glow sprite, which cannot be fixed by shader constant remaps.
     pub cur_eye_view: [Option<glam::Mat4>; 2],
-    /// This frame's final per-eye reverse-Z projections (jitter and eye offset applied). Paired with
+    /// This frame's final per-eye reverse-Z projections (eye offset applied). Paired with
     /// [`cur_eye_view`](Self::cur_eye_view) for rebuilding the per-eye offset view-projection.
     pub cur_eye_projection_f: [Option<glam::Mat4>; 2],
-    /// The UV-space shift the previous frame's camera jitter applied to every projected position
-    /// (zero when jitter was off) -- the previous-frame half of the motion-vector jitter
-    /// cancellation.
-    pub prev_jitter_uv: (f32, f32),
-    /// This frame's camera-jitter UV shift.
-    pub cur_jitter_uv: (f32, f32),
+    /// The FSR jitter's clip-space offset each eye rasterizes with this frame, on top of
+    /// [`cur_eye`](Self::cur_eye) (zero without one; see [`crate::fsr::jitter`]).
+    pub cur_jitter: [glam::Vec2; 2],
 }
 impl VpHistory {
     const fn new() -> Self {
         Self {
-            prev_center: None,
+            prev_center: [None, None],
             prev_eye: [None, None],
-            cur_center: None,
+            cur_center: [None, None],
             cur_eye: [None, None],
             cur_eye_view: [None, None],
             cur_eye_projection_f: [None, None],
-            prev_jitter_uv: (0.0, 0.0),
-            cur_jitter_uv: (0.0, 0.0),
+            cur_jitter: [glam::Vec2::ZERO; 2],
         }
     }
 
     /// Advance the history one real frame: this frame's snapshots become the previous frame's.
     /// Called at the start of the eye-0 render-camera rebuild.
     pub fn rotate(&mut self) {
-        self.prev_center = self.cur_center.take();
+        self.prev_center = [self.cur_center[0].take(), self.cur_center[1].take()];
         self.prev_eye = [self.cur_eye[0].take(), self.cur_eye[1].take()];
+        self.cur_jitter = [glam::Vec2::ZERO; 2];
         self.cur_eye_view = [None, None];
         self.cur_eye_projection_f = [None, None];
-        self.prev_jitter_uv = std::mem::take(&mut self.cur_jitter_uv);
     }
 
     /// The two clip-to-previous-clip reprojection matrices for `eye`: the center reprojection the
@@ -123,14 +136,18 @@ impl VpHistory {
     /// frame of history exists. The products are formed in `f64`: the view-projections carry
     /// world-scale translations that only cancel between `prevVP` and `inv(curVP)` at
     /// higher-than-`f32` precision.
+    ///
+    /// Both take the current position from the jittered render; the eye's reprojection carries no
+    /// jitter (see [`crate::fsr::jitter_free_reprojection`]).
     pub fn reprojection_matrices(&self, eye: usize) -> Option<(Matrix4, Matrix4)> {
         let cur = (*self.cur_eye.get(eye)?)?;
-        let prev_center = self.prev_center?;
+        let prev_center = (*self.prev_center.get(eye)?)?;
         let prev_eye = (*self.prev_eye.get(eye)?)?;
-        let inv_cur = cur.as_dmat4().inverse();
-        let center_reproj = (prev_center.as_dmat4() * inv_cur).as_mat4();
-        let eye_reproj = (prev_eye.as_dmat4() * inv_cur).as_mat4();
-        Some((Matrix4::from(center_reproj), Matrix4::from(eye_reproj)))
+        let jitter = *self.cur_jitter.get(eye)?;
+        Some((
+            crate::fsr::reprojection_from_jittered(prev_center, cur, jitter),
+            crate::fsr::jitter_free_reprojection(prev_eye, cur, jitter),
+        ))
     }
 }
 
@@ -142,15 +159,31 @@ pub fn active() -> bool {
     STEREO_STATE.lock().active
 }
 
-/// The eye currently being drawn (0 = first, 1 = second).
+/// The physical eye currently being drawn (0 = left, 1 = right).
 pub fn draw_index() -> usize {
     STEREO_STATE.lock().draw_index
 }
 
-/// True while the Draw driver is rendering the *second* eye of a stereo frame.
+/// True while the Draw driver is rendering the physical right eye of a stereo frame.
 pub fn is_second_eye() -> bool {
     let state = STEREO_STATE.lock();
     state.active && state.draw_index == 1
+}
+
+/// True for a near-scene dispatch that follows another near-scene dispatch this frame.
+pub fn later_scene() -> bool {
+    let state = STEREO_STATE.lock();
+    dispatch::later_scene_dispatch(
+        state.active,
+        state.far_phase,
+        state.share_frame,
+        state.dispatch_ordinal,
+    )
+}
+
+/// True on the frame's last near-scene dispatch, regardless of its physical eye.
+pub fn last_near_dispatch() -> bool {
+    STEREO_STATE.lock().last_near_dispatch
 }
 
 /// True while the Draw driver is rendering a share frame's far-only dispatch.
@@ -200,4 +233,36 @@ pub fn per_eye_render_size() -> Option<(u32, u32)> {
         width
     };
     Some((width, height))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Each eye's correction reprojects through that eye's own previous centre snapshot: with
+    /// asymmetric frusta the two dispatches' centre view-projections carry different projections,
+    /// and the later dispatch's must not stand in for the earlier one's.
+    #[test]
+    fn each_eye_reprojects_through_its_own_centre_snapshot() {
+        let left = glam::Mat4::from_cols_array(&[
+            1.1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -0.08, 0.0, 0.0, -1.0, 0.0, 0.0, 0.02, 0.0,
+        ]);
+        let right = glam::Mat4::from_cols_array(&[
+            1.1, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.08, 0.0, 0.0, -1.0, 0.0, 0.0, 0.02, 0.0,
+        ]);
+        let mut history = VpHistory::new();
+        for _ in 0..2 {
+            history.rotate();
+            history.cur_center = [Some(left), Some(right)];
+            history.cur_eye = [Some(left), Some(right)];
+        }
+        for eye in 0..2 {
+            let (center, own) = history.reprojection_matrices(eye).unwrap();
+            assert!(
+                glam::Mat4::from(center).abs_diff_eq(glam::Mat4::IDENTITY, 1e-5),
+                "eye {eye}: the centre reprojection of a still camera is the identity"
+            );
+            assert!(glam::Mat4::from(own).abs_diff_eq(glam::Mat4::IDENTITY, 1e-5));
+        }
+    }
 }

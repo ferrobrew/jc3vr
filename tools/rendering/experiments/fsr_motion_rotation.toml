@@ -1,0 +1,38 @@
+# FSR's motion vectors: the coastal town at midday, camera rotating, FSR on in the capture profile.
+# Run with `fast --planes final velocity fsr_motion fsr_depth --save` and read with
+# `fsr-motion`; the hybrid-off variant renders the same frames with the engine's vectors
+# alone. See docs/mod/rendering/fsr.md.
+name = "fsr-motion-rotation"
+warmup_frames = 30
+samples = 3
+
+[visual_overrides]
+screen_space_reflections = "enabled"
+fsr = "enabled"
+
+[scene.environment]
+hour = 13.0
+weather = "sunny"
+
+[scene.stage]
+settle_seconds = 20.0
+
+[scene.stage.location]
+position = [2091.2, 1040.1, 5005.0]
+yaw_deg = 270.0
+
+[motion]
+period_frames = 120
+yaw_deg = 15.0
+pitch_deg = 5.0
+phase = 15
+
+[[configurations]]
+mode = "multipass"
+
+[[configurations]]
+mode = "single_pass"
+
+[[fsr_variants]]
+name = "hybrid-off"
+hybrid_velocity = false

@@ -1,0 +1,1045 @@
+//! The live table: the one [`Loadout`] of the local player's items, fed by the game and the hands,
+//! and published as a snapshot each input tick.
+//!
+//! The table is the only writer of where the player's weapons are. The game's slots follow it
+//! ([`crate::controllers::weapons::inventory::reconcile`]), the placement reads its hands and its
+//! places on the body ([`published`]), and a weapon the game wields lands in the hand a grab
+//! expected, or in a free hand for the game's own draw ([`expect`]). What the hands and the game do
+//! comes here as events:
+//!
+//! - the hand moves (the draws, docks, takes, hand-overs, and drops), at once from the call that
+//!   makes them, and the game's own holster or draw of the wielded weapon at the input tick that
+//!   sees it ([`hands`]);
+//! - what the game did with a weapon of the table's that is in no slot, the carry set, or a hand
+//!   (its fate, from the inventory's weak reference to it): a weapon the game dropped lies in the
+//!   world, and one gone or taken by another character leaves;
+//! - a weapon lying in the world the pins left to the game leaves;
+//! - the spawn reset's begin and end, the store of the save, the mission's weapon cache, its
+//!   removal and its give-back, and the weapons the sidecar restores or the split pistol pair adds.
+//!
+//! The weapons lying in the world are the table's alone: the pins read them from it
+//! ([`crate::controllers::weapons::inventory::pins`]). The table takes the weapons of the slots the
+//! inventory tracks, and a heavy weapon while a hand holds it.
+//!
+//! The table is behind one lock. The input tick and the detours (the reset's, the store's, and the
+//! mission cache's, on whatever thread the game runs them) fold their events under it, and make no
+//! engine call and take no other lock while they hold it but the published places' and the
+//! status's, leaf locks of their own, which the placement and the readouts read.
+
+mod expect;
+mod hands;
+mod published;
+mod restoration;
+mod safe;
+
+use std::{sync::Arc, time::Instant};
+
+use parking_lot::Mutex;
+
+pub(crate) use crate::controllers::loadout::live::{
+    expect::{Expect, Pending},
+    hands::{Held, Whereabouts},
+    published::{hand_of, held_kind, in_hand, item_of, place_of},
+    safe::{
+        admit_safe_item, admit_safe_item_to_world, move_safe_item, retire_safe_item, safe_item,
+        safe_items,
+    },
+};
+use crate::controllers::{
+    frame::Hand,
+    loadout::{
+        binding::{Awaiting, Binding, ObjectAddress},
+        event::Event,
+        item::{ItemKind, WeaponType},
+        live::expect::landing,
+        projection::{StoreProjection, project_store},
+        reset::{CacheKind, ResetKind, SlotObject},
+        restore::{RestoreAdmission, RestoreRefusal},
+        socket::{BodyLayout, Socket},
+        table::{Loadout, LoadoutSnapshot, Place},
+        transition::{
+            Delivery, Give, GiveSource, LostWhy, Release, Removal, RemovalWhy, Restored, TakeSource,
+        },
+    },
+    weapons::grenade::safe::reset as retire_safe_items,
+};
+
+/// The live table as the readouts show it.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct LiveStatus {
+    /// The table as of the last input tick, while the table runs.
+    pub snapshot: Option<Arc<LoadoutSnapshot>>,
+    /// Transitions applied and events refused since the payload loaded.
+    pub transitions: u64,
+    pub refusals: u64,
+    /// The latest transitions and refusals, the newest last.
+    pub log: Vec<String>,
+}
+
+pub fn status() -> LiveStatus {
+    STATUS.lock().clone()
+}
+
+pub(crate) fn publish_status() {
+    let live = LIVE.lock();
+    let status = LiveStatus {
+        snapshot: live.started.then(|| Arc::new(live.table.snapshot())),
+        ..live.published()
+    };
+    drop(live);
+    *STATUS.lock() = status;
+}
+
+/// What became of a weapon of the table's that is in no slot, the carry set, or a hand.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) enum Fate {
+    /// It lies in the world.
+    Lying,
+    /// Another character holds it.
+    HeldByOther,
+    /// The object is gone.
+    Gone,
+}
+
+/// One input tick of the game, as the table is fed from it.
+pub(crate) struct Tick<'a> {
+    /// The weapons in the slots the inventory tracks.
+    pub slots: &'a [SlotObject],
+    /// The carry set's weapons: each one's object and its spawn tag's hash.
+    pub carried: &'a [(ObjectAddress, u32)],
+    /// The weapon the game wields in the hands.
+    pub wielded: Option<Held>,
+    /// The weapon armed in each hand, by [`Hand::index`].
+    pub armed: [Option<ObjectAddress>; 2],
+    /// What became of the table's weapons that are in no slot, the carry set, or a hand.
+    pub fates: &'a [(ObjectAddress, Fate)],
+    /// What the hands hold that is not a weapon.
+    pub others: &'a HeldOthers,
+}
+
+/// What the hands hold that is not a weapon, as the physical hands and the throws have it: each
+/// hand's prop, grenade, or charge, by [`Hand::index`].
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub(crate) struct HeldOthers {
+    pub hands: [Option<HeldOther>; 2],
+    /// The hands that threw what they held since the last input tick.
+    pub thrown: [bool; 2],
+}
+
+/// Something that is not a weapon in a hand.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct HeldOther {
+    pub object: ObjectAddress,
+    /// A prop, a grenade, or a charge.
+    pub kind: ItemKind,
+    /// Where the hand took it from.
+    pub source: TakeSource,
+}
+
+/// Start the input tick's feed: start the table from the slots on its first tick, complete a spawn
+/// reset or a load since the last tick, and a checkpoint's, a mission's, or a challenge's restore.
+/// `slots` are the tracked slots' weapons, and `spawning` whether a slot's spawn is still on its
+/// way: a completion waits for the slots to settle, up to [`SETTLE_WAIT`]. Called before anything
+/// restores a weapon this tick, so a restore lands in the table that the reset left.
+pub(crate) fn begin_tick(dominant: Hand, slots: &[SlotObject], spawning: bool) -> bool {
+    LIVE.lock()
+        .begin_restoration(dominant, slots, spawning, Instant::now())
+}
+
+/// A weapon the game wields that came into a hand this tick, and the expectation it met (`None`
+/// for the game's own draw).
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct Arrival {
+    pub hand: Hand,
+    pub expect: Option<Expect>,
+}
+
+/// Fold one input tick of the game into the table, and publish the table. Returns the wielded weapon's arrival in a hand, when it came into one.
+pub(crate) fn input_tick(tick: &Tick) -> Option<Arrival> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    let now = Instant::now();
+    let dt_s = live
+        .last
+        .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
+    live.last = Some(now);
+    live.pending = live.pending.and_then(|p| p.aged(dt_s));
+    live.rebind_kept(tick.carried);
+    let arrival = live.hand_moves(tick);
+    live.sync_others(tick.others);
+    for &(object, fate) in tick.fates {
+        let place = live.place_of(object);
+        let event = match (fate, place) {
+            (_, None) | (Fate::Lying, Some(Place::World(_))) => continue,
+            (Fate::Lying, Some(_)) => Event::Dropped { object },
+            (Fate::HeldByOther, Some(_)) => Event::Removed {
+                target: Removal::Object(object),
+                why: RemovalWhy::TakenByOther,
+            },
+            (Fate::Gone, Some(_)) => Event::Removed {
+                target: Removal::Object(object),
+                why: RemovalWhy::Gone,
+            },
+        };
+        live.fold(event);
+    }
+    let snapshot = live.table.snapshot();
+    live.publish_places();
+    let published = live.published();
+    drop(live);
+    let mut status = STATUS.lock();
+    *status = LiveStatus {
+        snapshot: Some(Arc::new(snapshot)),
+        ..published
+    };
+    arrival
+}
+
+/// Whether the table runs.
+pub(crate) fn running() -> bool {
+    LIVE.lock().started
+}
+
+/// Whether a spawn reset or a load is under way: begun, or done and not yet folded into the table.
+pub(crate) fn resetting() -> bool {
+    let live = LIVE.lock();
+    live.started && (live.reset.began || live.reset.completed)
+}
+
+/// Whether a mission or a challenge holds the player's weapons with its cache, its give-back still
+/// to come or not yet folded.
+pub(crate) fn mission_holds() -> bool {
+    let live = LIVE.lock();
+    live.started && (live.mission != Hold::Idle || live.challenge != Hold::Idle)
+}
+
+/// The game gave the player `held` from `source`, the weapon in its slot and not equipped: the
+/// table's give rule places it, an empty hand first (the dominant first), else a free socket that
+/// fits it, else the player's feet. Returns where the table has it.
+pub(crate) fn given(held: Held, source: GiveSource) -> Option<Place> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    live.fold(Event::Given(Give {
+        object: held.object,
+        weapon: held.weapon,
+        source,
+    }));
+    live.publish_places();
+    live.place_of(held.object)
+}
+
+/// `hand` expects the next weapon the game wields, or `weapon` when it is named, to come into it
+/// as `expect` says: a grab started a draw or a take that the game carries out.
+pub(crate) fn expect(hand: Hand, expect: Expect, weapon: Option<ObjectAddress>) {
+    LIVE.lock().pending = Some(Pending::new(hand, expect, weapon));
+}
+
+/// The hand expecting a weapon, while one is.
+pub(crate) fn pending() -> Option<Pending> {
+    LIVE.lock().pending
+}
+
+/// What brought the weapon in `hand` there, as far as the hands know: the expectation it met, or
+/// `None` for the game's own draw.
+pub(crate) fn origin(hand: Hand) -> Option<Expect> {
+    LIVE.lock().origins[hand.index()]
+}
+
+/// The game now wields `held`, which a call the mod made put into the hands (an equip or a
+/// pickup): it lands in the hand that expected it, or in a free one, at once rather than at the
+/// next input tick, so that the next placement already puts it there. Left to the next input tick
+/// when that hand still holds the weapon the call replaced, whose departure the tick sees first.
+/// Returns its arrival, when it landed now.
+pub(crate) fn adopt(held: Held) -> Option<Arrival> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    let arrival = live.land(held);
+    live.publish_places();
+    arrival
+}
+
+/// Hand the weapon at `object` from the other hand to `to`, when the table has it there and `to`
+/// is empty. Returns whether it moved.
+pub(crate) fn hand_over(to: Hand, object: ObjectAddress) -> bool {
+    let mut live = LIVE.lock();
+    let from = to.other();
+    let movable = live.started
+        && live.table.held(to).is_none()
+        && live
+            .table
+            .held(from)
+            .is_some_and(|item| item.binding == Binding::Live(object));
+    if !movable {
+        return false;
+    }
+    live.fold(Event::HandOver { from });
+    let moved = live.hand_holding(object) == Some(to);
+    if moved {
+        live.origins[to.index()] = live.origins[from.index()].take();
+    }
+    live.publish_places();
+    moved
+}
+
+/// The hands put `held` into `hand` (a draw, or a take off the body): the table
+/// takes the move at once. Returns whether the table holds it there.
+pub(crate) fn arrive(hand: Hand, held: Held) -> bool {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return false;
+    }
+    if let Some(event) = hands::arrival(&live.table, hand, held, TakeSource::World) {
+        live.fold(event);
+        if live.hand_holding(held.object) == Some(hand) {
+            live.origins[hand.index()] = Some(Expect::Draw);
+        }
+    }
+    live.publish_places();
+    live.hand_holding(held.object) == Some(hand)
+}
+
+/// `hand` took `held` from `source` (off the ground, a rack, a locker, or a character's hands),
+/// delivered as `delivery` says, the weapon kept alive by the carry set: the table takes it into
+/// the hand at once, as a weapon of its own, or as the same item for one it has lying in the world.
+/// Returns whether the table holds it there.
+pub(crate) fn take(hand: Hand, held: Held, source: TakeSource, delivery: Delivery) -> bool {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return false;
+    }
+    if let Some(event) = hands::arrival(&live.table, hand, held, source) {
+        live.fold(event);
+        if live.hand_holding(held.object) == Some(hand) {
+            live.origins[hand.index()] = Some(Expect::Take(source, delivery));
+            live.took = Some(held.object);
+        }
+    }
+    live.publish_places();
+    live.hand_holding(held.object) == Some(hand)
+}
+
+/// The hands took the weapon at `object` out of `hand` to `whereabouts` (a dock, a put-back, or a
+/// let-go): the table takes the move at once.
+pub(crate) fn depart(hand: Hand, object: ObjectAddress, whereabouts: Whereabouts) {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return;
+    }
+    if let Some(event) = hands::departure(&live.table, hand, object, whereabouts) {
+        let event = live.at_pace(event);
+        live.fold(event);
+    }
+    live.publish_places();
+}
+
+/// Move a weapon to the world before its last carry owner releases it.
+pub(crate) fn dropped(object: ObjectAddress) {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return;
+    }
+    live.fold(Event::Dropped { object });
+    live.publish_places();
+}
+
+/// Whether the player travels fast now (the wingsuit, a vehicle, the parachute, a fall), as the
+/// inventory measures it each input tick: a let-go while it holds is a let-go at speed, which a
+/// weapon left behind comes back from.
+pub(crate) fn set_fast(fast: bool) {
+    LIVE.lock().fast = fast;
+}
+
+/// The weapon at `object`, lying in the world, is lost rather than dropped (`why`): it returns to
+/// the first free socket that fits it, else the player's feet. Returns where the table has it now.
+pub(crate) fn lost(object: ObjectAddress, why: LostWhy) -> Option<Place> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    live.fold(Event::Lost { object, why });
+    live.publish_places();
+    live.place_of(object)
+}
+
+/// The hands docked the weapon at `object`, held in `hand`, on `socket`: the table takes the move at
+/// once. Returns whether the table has it there.
+pub(crate) fn dock(hand: Hand, object: ObjectAddress, socket: Socket) -> bool {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return false;
+    }
+    let holds = live
+        .table
+        .held(hand)
+        .is_some_and(|item| item.binding == Binding::Live(object));
+    if holds {
+        live.fold(Event::Dock { hand, socket });
+    }
+    live.publish_places();
+    live.place_of(object) == Some(Place::Socket(socket))
+}
+
+/// The socket a weapon of `weapon` would go onto now when no hand chooses one: `preferred` when the
+/// body has it free and it fits, otherwise the first free socket of the body's preference for it.
+/// `None` with no such socket free, or while the table does not run.
+pub(crate) fn free_socket(weapon: WeaponType, preferred: Option<Socket>) -> Option<Socket> {
+    let live = LIVE.lock();
+    live.started
+        .then(|| hands::free_socket(&live.table, weapon, preferred))
+        .flatten()
+}
+
+/// The body's sockets in the order a weapon of `weapon` goes onto them when no hand chooses one.
+pub(crate) fn body_preference(weapon: WeaponType) -> Vec<Socket> {
+    LIVE.lock().table.body().preference(weapon).collect()
+}
+
+/// Every live object the table's weapons are bound to, and where each is, as of now.
+pub(crate) fn bound() -> Vec<(ObjectAddress, Place)> {
+    let live = LIVE.lock();
+    live.table
+        .items()
+        .filter(|item| item.kind.weapon().is_some())
+        .filter_map(|item| Some((item.binding.address()?, item.place)))
+        .collect()
+}
+
+/// Whether the table has the object at `address` lying in the world, where the player let go of
+/// it. The published places ([`place_of`]) hold only the body's, so this reads the table itself.
+pub(crate) fn lies_in_world(address: usize) -> bool {
+    let Some(object) = ObjectAddress::from_address(address) else {
+        return false;
+    };
+    LIVE.lock().lies_in_world(object)
+}
+
+/// The pins left `objects`, lying in the world, to the game: they leave the table.
+pub(crate) fn forgotten(objects: &[ObjectAddress]) {
+    let mut live = LIVE.lock();
+    for &object in objects {
+        if matches!(live.place_of(object), Some(Place::World(_))) {
+            live.fold(Event::Removed {
+                target: Removal::Object(object),
+                why: RemovalWhy::Forgotten,
+            });
+        }
+    }
+}
+
+/// Stop the table: the old inventory is off, so the game's slots are the player's weapons again.
+/// Safe actors and queued releases retire before the table lock; native removal waits for the
+/// serialized render boundary.
+/// The next tick with the inventory on starts it again from the slots.
+pub(crate) fn stop() {
+    retire_safe_items();
+    let mut live = LIVE.lock();
+    if !live.started {
+        return;
+    }
+    live.started = false;
+    live.table = Loadout::new(live.table.body());
+    live.mission = Hold::Idle;
+    live.challenge = Hold::Idle;
+    live.reset = ResetWatch::default();
+    live.pending = None;
+    live.origins = [None; 2];
+    live.neutral = None;
+    live.took = None;
+    live.displaced = None;
+    live.push("loadout: the table stopped, the inventory is off".to_owned());
+    published::clear();
+    let published = live.published();
+    drop(live);
+    *STATUS.lock() = published;
+}
+
+/// The game's forced neutral state unequipped the weapon at `object`: while the table holds it in
+/// a hand, the hand keeps it rather than the next input tick taking the unequip for a holster, and
+/// the reconcile wields or arms it again. Returns whether a hand holds it.
+pub(crate) fn neutral_forced(object: ObjectAddress) -> bool {
+    let mut live = LIVE.lock();
+    if !live.started || live.hand_holding(object).is_none() {
+        return false;
+    }
+    live.neutral = Some(object);
+    true
+}
+
+/// A take displaced `object` from the game's hands, which the table has on a socket: while the
+/// game still wields it from there, it stays docked rather than coming off its socket into the
+/// free hand.
+pub(crate) fn displaced(object: ObjectAddress) {
+    LIVE.lock().displaced = Some(object);
+}
+
+/// The game is respawning the player ([`jc3gi::character::player::Player::ReInit`]): the spawn
+/// reset its teleport enters is a respawn.
+pub(crate) fn respawning() {
+    LIVE.lock().reset.respawn = true;
+}
+
+/// The frontend reset the game's systems (the quit to the menu): whatever follows starts the table
+/// again from the slots, as a load does.
+pub(crate) fn frontend_reset() {
+    retire_safe_items();
+    let mut live = LIVE.lock();
+    live.reset.frontend = true;
+    live.reset.began = true;
+}
+
+/// The spawn reset is about to replace the slots' weapons, and the inventory releases the carry
+/// set's weapons (`released`), which the reset then removes.
+pub(crate) fn reset_began(released: &[ObjectAddress]) {
+    retire_safe_items();
+    let mut live = LIVE.lock();
+    if !live.started {
+        return;
+    }
+    live.reset.began = true;
+    live.neutral = None;
+    live.took = None;
+    live.displaced = None;
+    live.fold(Event::ResetBegan);
+    for &object in released {
+        if live.place_of(object).is_some() {
+            live.fold(Event::Removed {
+                target: Removal::Object(object),
+                why: RemovalWhy::Gone,
+            });
+        }
+    }
+    live.publish_places();
+}
+
+/// The spawn reset is done: the next input tick reports the slots it left, once they settle.
+pub(crate) fn reset_ended() {
+    LIVE.lock().reset.completed = true;
+}
+
+/// The game loaded the player's save data: the next input tick starts the table again from the
+/// slots the load put in the inventory.
+pub(crate) fn loaded() {
+    retire_safe_items();
+    let mut live = LIVE.lock();
+    live.reset.loaded = true;
+    live.reset.completed = true;
+}
+
+/// The game is about to store the player's save data.
+/// Returns the slots and the sidecar the store should be given.
+pub(crate) fn store_imminent() -> Option<StoreProjection> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    live.fold(Event::StoreImminent)
+}
+
+/// A mission is about to cache the local player's slots. Returns the slots the cache should take.
+pub(crate) fn mission_caching() -> Option<StoreProjection> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    live.fold(Event::Cached(CacheKind::Mission))
+}
+
+/// The mission manager is about to snapshot the slots at a checkpoint. Returns the slots the
+/// snapshot should take.
+pub(crate) fn checkpoint_caching() -> Option<StoreProjection> {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return None;
+    }
+    live.fold(Event::Cached(CacheKind::Checkpoint))
+}
+
+/// The mission manager replayed its checkpoint snapshot onto the slots, after the player's
+/// respawn: the respawn's completion restores the table's checkpoint snapshot too.
+pub(crate) fn checkpoint_restoring() {
+    let mut live = LIVE.lock();
+    if live.started && live.table.caches_held().any(|c| c == CacheKind::Checkpoint) {
+        live.reset.checkpoint = true;
+    }
+}
+
+/// A challenge is about to record the player's loadout. Returns the slots the record should take,
+/// or `None` while the table runs a challenge's snapshot already (a retry or a restart keeps the
+/// first).
+pub(crate) fn challenge_caching() -> Option<StoreProjection> {
+    let mut live = LIVE.lock();
+    if !live.started || live.table.caches_held().any(|c| c == CacheKind::Challenge) {
+        return None;
+    }
+    live.fold(Event::Cached(CacheKind::Challenge))
+}
+
+/// A challenge took the local player's weapons: every weapon on the body leaves the table until its
+/// give-back.
+pub(crate) fn challenge_took() {
+    let mut live = LIVE.lock();
+    if !live.started || live.challenge != Hold::Idle {
+        return;
+    }
+    live.challenge = Hold::Taken;
+    live.fold(Event::Removed {
+        target: Removal::AllWeapons,
+        why: RemovalWhy::Challenge,
+    });
+    live.publish_places();
+}
+
+/// A mission's or a challenge's give-back ran (the graph script's cache restore, a challenge's end
+/// or abort): once the slots settle, the table's snapshot comes back beside what the player holds.
+pub(crate) fn given_back(cache: CacheKind) {
+    let mut live = LIVE.lock();
+    if !live.started || !live.table.caches_held().any(|c| c == cache) {
+        return;
+    }
+    *live.hold_mut(cache) = Hold::Restoring(Instant::now());
+}
+
+/// What a store would write now, while the table runs, without telling the table of a store: for
+/// putting the table back into the game's slots when the table stops.
+pub(crate) fn store_projection_now() -> Option<StoreProjection> {
+    let live = LIVE.lock();
+    live.started.then(|| project_store(&live.table))
+}
+
+/// The table as it is now, while it runs, for a pass that must see the moves the hands made since
+/// the last input tick.
+pub(crate) fn snapshot_now() -> Option<LoadoutSnapshot> {
+    let live = LIVE.lock();
+    live.started.then(|| live.table.snapshot())
+}
+
+/// A mission took the local player's weapons with its cache: everything on the body leaves the
+/// table until the give-back ([`given_back`]).
+pub(crate) fn mission_took() {
+    let mut live = LIVE.lock();
+    if !live.started {
+        return;
+    }
+    live.mission = Hold::Taken;
+    live.fold(Event::Removed {
+        target: Removal::AllWeapons,
+        why: RemovalWhy::Mission,
+    });
+    live.publish_places();
+}
+
+/// Resolve the destination before the native carry operation, including an item's own reservation.
+pub(crate) fn admit_restore(restored: Restored) -> Result<RestoreAdmission, RestoreRefusal> {
+    let live = LIVE.lock();
+    if !live.restore_ready() {
+        return Err(RestoreRefusal::NotReady);
+    }
+    live.table.admit_restore(restored)
+}
+
+/// Revalidate admission before the native carry operation without holding the table lock in native code.
+pub(crate) fn restore_admission_current(admission: RestoreAdmission) -> bool {
+    admit_restore(admission.restored) == Ok(admission)
+}
+
+/// Commit the same destination the carry operation used; never silently choose another socket.
+pub(crate) fn commit_restore(admission: RestoreAdmission) -> Result<Socket, RestoreRefusal> {
+    let mut live = LIVE.lock();
+    if !live.restore_ready() {
+        return Err(RestoreRefusal::NotReady);
+    }
+    let transitions = live.table.commit_restore(admission)?;
+    live.transitions += transitions.len() as u64;
+    for transition in transitions {
+        live.log.push(transition.to_string());
+    }
+    live.publish_places();
+    Ok(admission.restored.socket)
+}
+
+/// The mod spawned `restored` to stand for a weapon the player has, and the carry set keeps it
+/// on its socket.
+pub(crate) fn restored(restored: Restored) {
+    let mut live = LIVE.lock();
+    if live.started {
+        live.fold(Event::Restored(restored));
+        live.publish_places();
+    }
+}
+
+/// The longest a completion waits for the slots' spawns to arrive.
+const SETTLE_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// How many log lines the readouts keep.
+const LOG_LINES: usize = 24;
+
+struct Live {
+    table: Loadout,
+    /// Whether the table runs: it starts from the slots on the first tick with the inventory on.
+    started: bool,
+    /// The hand expecting the next weapon the game wields: per-hand runtime state, not a place.
+    pending: Option<Pending>,
+    /// What brought each hand's weapon there, by [`Hand::index`], for the readouts.
+    origins: [Option<Expect>; 2],
+    /// Whether the player travels fast, as of the last input tick.
+    fast: bool,
+    /// The weapon the game's forced neutral state unequipped, which its hand keeps until the
+    /// reconcile wields or arms it again: per-hand runtime state, not a place.
+    neutral: Option<ObjectAddress>,
+    /// The weapon the last take put into a hand, since the last input tick: it is not taken for a
+    /// departure on that tick, when the game's capture of the wielded weapon is still the take's
+    /// predecessor.
+    took: Option<ObjectAddress>,
+    /// The weapon a take displaced from the game's hands, which the game may still wield from its
+    /// socket: it stays docked until the game stops wielding it or the table moves it off the
+    /// socket.
+    displaced: Option<ObjectAddress>,
+    /// When the last input tick ran, for the expectation's age.
+    last: Option<Instant>,
+    reset: ResetWatch,
+    mission: Hold,
+    challenge: Hold,
+    transitions: u64,
+    refusals: u64,
+    log: Vec<String>,
+}
+
+/// A spawn reset or a load waiting for the next input tick to report the slots it left.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+struct ResetWatch {
+    /// The reset's pre-reset event came, and its completion has not been folded yet.
+    began: bool,
+    completed: bool,
+    /// When the completion was first seen, for the wait on the slots' spawns.
+    completed_at: Option<Instant>,
+    /// The game respawned the player before the reset ([`respawning`]).
+    respawn: bool,
+    /// The game loaded the player's save data since the last completion.
+    loaded: bool,
+    /// The frontend reset the game's systems since the last completion.
+    frontend: bool,
+    /// The mission manager replayed its checkpoint snapshot for this respawn.
+    checkpoint: bool,
+}
+
+impl ResetWatch {
+    /// What the reset was: a load of the save data or the frontend starts the table again, the
+    /// player's respawn empties the hands, and anything else (a fast travel, a challenge's start,
+    /// retry, or abort) is a travel.
+    fn kind(&self) -> ResetKind {
+        if self.loaded || self.frontend {
+            ResetKind::Load
+        } else if self.respawn {
+            ResetKind::Respawn
+        } else {
+            ResetKind::Travel
+        }
+    }
+}
+
+/// A mission's or a challenge's hold of the player's weapons.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+enum Hold {
+    Idle,
+    /// The weapons are taken, and the give-back is still to come.
+    Taken,
+    /// The give-back ran at this moment; it is folded once the slots settle.
+    Restoring(Instant),
+}
+
+impl Live {
+    fn restore_ready(&self) -> bool {
+        self.started
+            && !(self.reset.began || self.reset.completed)
+            && !matches!(self.mission, Hold::Restoring(_))
+            && !matches!(self.challenge, Hold::Restoring(_))
+    }
+
+    const fn new() -> Live {
+        Live {
+            table: Loadout::new(BodyLayout::full(Hand::Right)),
+            started: false,
+            pending: None,
+            origins: [None; 2],
+            fast: false,
+            neutral: None,
+            took: None,
+            displaced: None,
+            last: None,
+            reset: ResetWatch {
+                began: false,
+                completed: false,
+                completed_at: None,
+                respawn: false,
+                loaded: false,
+                frontend: false,
+                checkpoint: false,
+            },
+            mission: Hold::Idle,
+            challenge: Hold::Idle,
+            transitions: 0,
+            refusals: 0,
+            log: Vec::new(),
+        }
+    }
+
+    fn held_by(&self, cache: CacheKind) -> Hold {
+        match cache {
+            CacheKind::Mission => self.mission,
+            CacheKind::Challenge => self.challenge,
+            CacheKind::Checkpoint => Hold::Idle,
+        }
+    }
+
+    fn hold_mut(&mut self, cache: CacheKind) -> &mut Hold {
+        match cache {
+            CacheKind::Challenge => &mut self.challenge,
+            CacheKind::Mission | CacheKind::Checkpoint => &mut self.mission,
+        }
+    }
+
+    /// Fold `event`, logging what it did or why it was refused. Returns, for a store or a cache,
+    /// the slots and the sidecar the game should be given.
+    fn fold(&mut self, event: Event) -> Option<StoreProjection> {
+        match self.table.fold(event) {
+            Ok(folded) => {
+                for transition in &folded.transitions {
+                    tracing::info!(target: "controllers", "{transition}");
+                    self.push(transition.to_string());
+                }
+                self.transitions += folded.transitions.len() as u64;
+                folded.store
+            }
+            Err(error) => {
+                tracing::info!(target: "controllers", %error, "loadout: an event was refused");
+                self.refusals += 1;
+                self.push(format!("refused: {error}"));
+                None
+            }
+        }
+    }
+
+    /// The game's moves of the hands' weapons the table has not seen yet: first each weapon in a
+    /// hand of the table's that the game no longer wields and that is not armed there (the game
+    /// holstered or dropped it on its own), then the wielded weapon landing in a hand when the table
+    /// has it in none. A weapon a take displaced from the game's hands stays docked while the game
+    /// still wields it from its socket. Returns the wielded weapon's arrival.
+    fn hand_moves(&mut self, tick: &Tick) -> Option<Arrival> {
+        let took = self.took.take();
+        let wielded = tick.wielded.map(|h| h.object);
+        // The weapon a take displaced stays docked while the game still wields it from its socket.
+        self.displaced = self.displaced.filter(|&object| {
+            Some(object) == wielded && matches!(self.place_of(object), Some(Place::Socket(_)))
+        });
+        // The forced neutral state's weapon is kept until it is wielded or armed again, or no hand
+        // holds it.
+        self.neutral = self.neutral.filter(|&object| {
+            Some(object) != wielded
+                && !tick.armed.contains(&Some(object))
+                && self.hand_holding(object).is_some()
+        });
+        for hand in Hand::BOTH {
+            let Some(object) = self
+                .table
+                .held(hand)
+                .filter(|item| item.kind.weapon().is_some())
+                .and_then(|item| item.binding.address())
+            else {
+                continue;
+            };
+            if Some(object) == wielded
+                || Some(object) == took
+                || tick.armed.contains(&Some(object))
+                || Some(object) == self.neutral
+            {
+                continue;
+            }
+            let Some(whereabouts) = whereabouts(tick, object) else {
+                continue;
+            };
+            if let Some(event) = hands::departure(&self.table, hand, object, whereabouts) {
+                let event = self.at_pace(event);
+                self.fold(event);
+            }
+        }
+        let held = tick.wielded?;
+        // A weapon the game still wields from a socket after a take is the one the take displaced:
+        // it stays docked rather than coming off its socket into the free hand.
+        if self.displaced == Some(held.object) {
+            tracing::debug!(
+                target: "controllers",
+                "loadout: the weapon the game still wields stays on its socket; a take displaced it"
+            );
+            return None;
+        }
+        self.land(held)
+    }
+
+    /// The hands' props, grenades, and charges as the physical hands and the throws have them: a
+    /// hand that let go of one, or whose grenade went off, leaves it, and one that took one takes
+    /// it ([`hands::other_departure`], [`hands::other_arrival`]).
+    fn sync_others(&mut self, others: &HeldOthers) {
+        for hand in Hand::BOTH {
+            let wanted = others.hands[hand.index()];
+            let thrown = others.thrown[hand.index()];
+            if let Some(event) = hands::other_departure(&self.table, hand, wanted, thrown) {
+                self.fold(event);
+            }
+            if let Some(event) = hands::other_arrival(&self.table, hand, wanted) {
+                self.fold(event);
+            }
+        }
+    }
+
+    /// Land the weapon `held` the game wields in a hand, when the table has it in none: the hand
+    /// that expected it, or a free one. Nothing is folded while that hand holds something, and the
+    /// expectation is kept: the weapon is left to the game's layout until the hand empties, rather
+    /// than refused anew every tick.
+    fn land(&mut self, held: Held) -> Option<Arrival> {
+        if self.hand_holding(held.object).is_some() {
+            return None;
+        }
+        let free = Hand::BOTH.map(|hand| self.table.held(hand).is_none());
+        let (hand, expect, used) = landing(
+            self.pending,
+            held.object,
+            free,
+            self.table.body().dominant(),
+        );
+        if !free[hand.index()] {
+            return None;
+        }
+        if used {
+            self.pending = None;
+        }
+        let source = match expect {
+            Some(Expect::Take(source, _)) => source,
+            Some(Expect::Draw) | None => TakeSource::Give,
+        };
+        let event = hands::arrival(&self.table, hand, held, source)?;
+        self.fold(event);
+        if self.hand_holding(held.object) != Some(hand) {
+            return None;
+        }
+        self.origins[hand.index()] = expect;
+        Some(Arrival { hand, expect })
+    }
+
+    /// `event` as at the player's pace: a let-go while the player travels fast is one at speed.
+    fn at_pace(&self, event: Event) -> Event {
+        match event {
+            Event::LetGo {
+                hand,
+                release: Release::Dropped,
+            } if self.fast => Event::LetGo {
+                hand,
+                release: Release::AtSpeed,
+            },
+            other => other,
+        }
+    }
+
+    /// The hand the table holds the object at `object` in.
+    fn hand_holding(&self, object: ObjectAddress) -> Option<Hand> {
+        Hand::BOTH.into_iter().find(|&hand| {
+            self.table
+                .held(hand)
+                .is_some_and(|item| item.binding == Binding::Live(object))
+        })
+    }
+
+    /// Publish the hands and the places on the body for the detours, forgetting the origin of a
+    /// hand that holds nothing.
+    fn publish_places(&mut self) {
+        for hand in Hand::BOTH {
+            let weapon = self
+                .table
+                .held(hand)
+                .is_some_and(|item| matches!(item.kind, ItemKind::Weapon(_)));
+            if !weapon {
+                self.origins[hand.index()] = None;
+            }
+        }
+        published::publish(&self.table);
+    }
+
+    /// Bind each item waiting to be spawned again to a weapon of its type the carry set kept and
+    /// the table does not know: a mission's stash keeps the carried weapons' objects, which its
+    /// give-back brings back.
+    fn rebind_kept(&mut self, carried: &[(ObjectAddress, u32)]) {
+        let waiting: Vec<_> = self
+            .table
+            .items()
+            .filter(|item| item.binding == Binding::Awaiting(Awaiting::Respawn))
+            .filter_map(|item| Some((item.id, item.kind.weapon()?.tag_hash())))
+            .collect();
+        for (item, tag) in waiting {
+            let kept = carried
+                .iter()
+                .find(|&&(object, kept_tag)| kept_tag == tag && self.place_of(object).is_none());
+            if let Some(&(object, _)) = kept {
+                self.fold(Event::Spawned { item, object });
+            }
+        }
+    }
+
+    fn place_of(&self, object: ObjectAddress) -> Option<Place> {
+        self.table
+            .items()
+            .find(|item| item.binding == Binding::Live(object))
+            .map(|item| item.place)
+    }
+
+    fn lies_in_world(&self, object: ObjectAddress) -> bool {
+        matches!(self.place_of(object), Some(Place::World(_)))
+    }
+
+    fn push(&mut self, line: String) {
+        self.log.push(line);
+        if self.log.len() > LOG_LINES {
+            let excess = self.log.len() - LOG_LINES;
+            self.log.drain(..excess);
+        }
+    }
+
+    /// The status to publish, without the tick's snapshot.
+    fn published(&self) -> LiveStatus {
+        LiveStatus {
+            snapshot: None,
+            transitions: self.transitions,
+            refusals: self.refusals,
+            log: self.log.clone(),
+        }
+    }
+}
+
+/// Where `object` went when it left the hands, or `None` while the carry set keeps it off the slots.
+fn whereabouts(tick: &Tick, object: ObjectAddress) -> Option<Whereabouts> {
+    if tick.carried.iter().any(|&(o, _)| o == object) {
+        // Off the slots the game neither wields nor holsters it: the hand keeps it, and the
+        // reconcile arms it.
+        None
+    } else if tick.slots.iter().any(|slot| slot.object == object) {
+        Some(Whereabouts::Slot)
+    } else {
+        Some(Whereabouts::Away)
+    }
+}
+
+static LIVE: Mutex<Live> = Mutex::new(Live::new());
+
+static STATUS: Mutex<LiveStatus> = Mutex::new(LiveStatus {
+    snapshot: None,
+    transitions: 0,
+    refusals: 0,
+    log: Vec::new(),
+});
+
+#[cfg(test)]
+mod tests;

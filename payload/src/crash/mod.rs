@@ -4,8 +4,8 @@
 //! backtrace of the faulting thread, and a backtrace of every other thread the moment a fatal
 //! exception is *raised* -- before any handler unwinds. This covers the case where the game catches a
 //! fault itself and turns it into a clean exit: Wine prints no backtrace and the window just
-//! vanishes, but the record still lands in the session's crash log (`jc3vr-crash.log`) -- a
-//! dedicated file, separate from `jc3vr.log` because the handler writes it through a raw file handle
+//! vanishes, but the record still lands in the session's crash log (`crash.log`) -- a
+//! dedicated file, separate from `session.log` because the handler writes it through a raw file handle
 //! with no allocation and no dependence on the tracing subscriber (see below), so a record survives a
 //! fault that has already broken the normal logging path; each record head carries a UTC timestamp
 //! matching the tracing log's, for cross-correlation. A panic hook does the same for Rust panics,
@@ -67,50 +67,50 @@ use windows::{
 };
 
 pub use crate::crash::breadcrumbs::{Phase, mark};
-use crate::crash::{
-    line::{CRASH_LOG, Line, stamp},
-    memory::{readable, resolve_probe_host_bases},
-    report::{log_backtrace, record_exception},
+use crate::{
+    crash::{
+        line::{CRASH_LOG, Line, stamp},
+        memory::{readable, resolve_probe_host_bases},
+        report::{log_backtrace, record_exception},
+    },
+    session::SessionFile,
 };
 
 pub fn install() {
-    // Open the crash log with a raw handle. It is a *separate* file from `jc3vr.log` because the
+    // Open the crash log with a raw handle. It is a *separate* file from `session.log` because the
     // vectored handler writes it directly (raw `WriteFile`, no allocation, no tracing subscriber), so
     // a record survives a fault that has already broken the normal logging path. It lives in the
     // session directory (see [`crate::session`]), opened append-only; each record is timestamped to
     // line up with the (UTC-stamped) tracing log of the run that produced it.
-    if let Some(dir_result) = crate::session::dir() {
-        match dir_result {
-            Ok(dir) => {
-                let path = dir.join("jc3vr-crash.log");
-                let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
-                wide.push(0);
-                // SAFETY: `wide` is a null-terminated UTF-16 path; all other arguments are plain flags.
-                let handle = unsafe {
-                    CreateFileW(
-                        PCWSTR(wide.as_ptr()),
-                        FILE_APPEND_DATA.0,
-                        FILE_SHARE_READ | FILE_SHARE_WRITE,
-                        None,
-                        OPEN_ALWAYS,
-                        FILE_ATTRIBUTE_NORMAL,
-                        None,
-                    )
-                };
-                if let Ok(handle) = handle
-                    && !handle.is_invalid()
-                {
-                    CRASH_LOG.store(handle.0 as isize, Ordering::Relaxed);
-                    let mut line = Line::new();
-                    line.str("=== session start ");
-                    stamp(&mut line);
-                    line.str("===").flush();
-                }
+    match crate::session::file(SessionFile::CrashLog) {
+        Ok(path) => {
+            let mut wide: Vec<u16> = path.as_os_str().encode_wide().collect();
+            wide.push(0);
+            // SAFETY: `wide` is a null-terminated UTF-16 path; all other arguments are plain flags.
+            let handle = unsafe {
+                CreateFileW(
+                    PCWSTR(wide.as_ptr()),
+                    FILE_APPEND_DATA.0,
+                    FILE_SHARE_READ | FILE_SHARE_WRITE,
+                    None,
+                    OPEN_ALWAYS,
+                    FILE_ATTRIBUTE_NORMAL,
+                    None,
+                )
+            };
+            if let Ok(handle) = handle
+                && !handle.is_invalid()
+            {
+                CRASH_LOG.store(handle.0 as isize, Ordering::Relaxed);
+                let mut line = Line::new();
+                line.str("=== session start ");
+                stamp(&mut line);
+                line.str("===").flush();
             }
-            Err(e) => {
-                // The crash log itself cannot be opened; this runs at startup so just print to stderr.
-                eprintln!("crash: could not create session directory: {e}");
-            }
+        }
+        Err(e) => {
+            // The crash log itself cannot be opened; this runs at startup so just print to stderr.
+            eprintln!("crash: {e}");
         }
     }
 
@@ -125,7 +125,7 @@ pub fn install() {
     // ones -- the sentinel and location touch nothing heap-derived.
     //
     // The previously installed hook (lib.rs installs the tracing hook before this runs) is
-    // chained afterwards, so panics still reach jc3vr.log: set_hook replaces rather than stacks,
+    // chained afterwards, so panics still reach `session.log`: set_hook replaces rather than stacks,
     // which silently disabled the tracing hook until this chaining. The allocation-free crash-log
     // lines land first, so a fault in the richer tracing path cannot mask them.
     let previous_hook = std::panic::take_hook();

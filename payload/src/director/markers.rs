@@ -1,19 +1,27 @@
 //! Take markers: a timestamped line per hotkey press, so a take can be found inside a long
 //! recording without scrubbing.
 //!
-//! Each marker is appended to `markers.jsonl` in the session folder, one JSON object per line
-//! with the wall clock, the engine's game-run time, and a label. The wall clock is what lines a
-//! marker up against a host-side recording; the game time is what lines it up against the pose
-//! sidecar the capture path writes. The capture path is expected to fold these into its own
-//! sidecar once it exists; until then the session file is the record.
+//! A marker carries the wall clock, the engine's game-run time, and a label. While the video
+//! recorder runs, it goes into the recording's per-frame sidecar before the next rendered frame
+//! ([`crate::recorder::mark`]), so post finds the take by frame and wall clock. Otherwise it is appended to
+//! `markers.jsonl` in the session folder, one JSON object per line, where the wall clock is what
+//! lines it up against a host-side recording. Either way, while a tracking recording or the
+//! lookback collects, the same marker is also noted as a `take_marker` event on the tracking
+//! timeline, joinable to the other copy by its index and stamp.
 
 use std::io::Write as _;
 
 use jc3gi::clock::Clock;
 use parking_lot::Mutex;
 use serde::Serialize;
+use tracking_format::event::{Label, TakeMarker};
 
-/// One marker line.
+use crate::{
+    recorder::tracking::events::{self, EventKind},
+    session::SessionFile,
+};
+
+/// One take marker.
 #[derive(Serialize, Clone)]
 pub struct Marker {
     /// A session-local ordinal, from 1.
@@ -55,7 +63,17 @@ pub fn mark(label: &str) {
     if state.recent.len() > RECENT_SHOWN {
         state.recent.remove(0);
     }
-    write_line(&marker);
+    drop(state);
+    events::note(EventKind::TakeMarker(Box::new(TakeMarker {
+        index: marker.index,
+        stamp: Label::Owned(marker.stamp.clone()),
+        unix_ms: marker.unix_ms,
+        game_run_time_us: marker.game_run_time_us,
+        label: Label::Owned(marker.label.clone()),
+    })));
+    if let Err(marker) = crate::recorder::mark(marker) {
+        write_line(&marker);
+    }
 }
 
 /// The most recent markers, newest last, for the debug tab.
@@ -77,13 +95,10 @@ static STATE: Mutex<State> = Mutex::new(State {
 });
 
 fn write_line(marker: &Marker) {
-    let Some(dir) = crate::session::dir() else {
-        return;
-    };
-    let path = match dir {
-        Ok(dir) => dir.join("markers.jsonl"),
+    let path = match crate::session::file(SessionFile::Markers) {
+        Ok(path) => path,
         Err(e) => {
-            tracing::warn!("director: could not create the session folder for markers: {e}");
+            tracing::warn!("director: markers: {e}");
             return;
         }
     };

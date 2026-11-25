@@ -1,0 +1,1152 @@
+//! The true reload: the plan of record's "Reloads" (`docs/mod/input/controllers-and-roomscale.md`),
+//! described in `docs/mod/input/reload.md`, with the engine side in
+//! `docs/engine/gameplay/weapon-ammo-and-reload.md`.
+//!
+//! Under the controller scheme the game's own reloads of the weapons the mod reloads are stopped
+//! ([`gate`]), and the player reloads by hand:
+//!
+//! - **Eject.** A tap of the reload button ejects the magazine of the driest gun in either hand
+//!   (the dominant hand's on a tie), so a double tap ejects both, and a flick of a gun hand ejects
+//!   that gun's ([`eject`]). The game drops the
+//!   magazine as a prop from the gun, with the gun's velocity, and hides the magazine part. The
+//!   magazine keeps the rounds left in it as an object in the world, to be picked up and seated
+//!   again ([`loose`]); with that off, they go back to the reserve when the next magazine seats,
+//!   as the game's own reload does.
+//! - **Load.** The free hand takes a round from the universal pouch on the belt (a magazine, a
+//!   shell, a rocket, or a pod, whatever the gun takes) and pushes it into the gun's well
+//!   ([`insert`]). The well is the gun's own, from the wells table ([`wells`]), carried to the
+//!   hand through the gun's measured placement ([`frames`]). A seated magazine reloads through the
+//!   game's own reload, so the reserve, unlimited ammunition, the upgrades, and the HUD all follow
+//!   the game's rules; a shell adds one round. A fresh magazine seats only once the well is empty.
+//! - **Knock.** The fresh magazine in the hand, struck against the one still in the gun, knocks
+//!   that one out through the eject's drop, with an impulse from the strike ([`knock`]).
+//! - **Belt.** Pushing a gun's well down onto the pouch reloads it in one hand, swapping a magazine
+//!   still in it, and works its action ([`belt`]).
+//! - **Chamber.** A gun that ran dry fires again only once its action is worked by hand; a bolt
+//!   or a pump is worked after every shot ([`chamber`]). The action is a part that follows the
+//!   hand through its travel ([`travel`]), drawn on a separate slide part or on the gun's own
+//!   skeleton ([`render`], [`bones`]).
+//! - **Two weapons.** With a gun in each hand, the reload acts on each hand's gun at once, each
+//!   with its own weapon's plan, magazine, and chamber. With both hands full, no hand is free to
+//!   take a round, so a flick ejects and the belt push loads.
+//!
+//! What the reload remembers of a weapon, its chambers and its action, outlives the weapon's time
+//! in the hands ([`records`]).
+//!
+//! What a weapon loads and how is its plan ([`plan`]). The minigun, the mounted guns, and the
+//! special weapons keep the game's reload. With the reload off, every weapon does.
+
+mod action;
+mod ammo;
+pub mod belt;
+mod bones;
+mod casings;
+pub mod chamber;
+pub mod config;
+mod cylinders;
+mod deferred;
+pub mod eject;
+mod engine;
+#[cfg(test)]
+mod engine_tests;
+mod extraction;
+pub mod fire_hold;
+pub mod frames;
+pub(super) mod gate;
+mod guide;
+mod infinite;
+pub mod insert;
+pub(crate) mod knock;
+mod knocking;
+pub mod loose;
+pub mod plan;
+mod pouch;
+mod records;
+mod render;
+mod retained;
+mod revolver;
+pub(crate) mod serial;
+mod steps;
+pub mod travel;
+pub mod tuning;
+pub mod wells;
+pub(crate) mod zones;
+
+use glam::Vec3;
+use jc3gi::equipment::weapon::WeaponBase;
+use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
+
+use crate::controllers::{
+    bindings::{
+        controls::ButtonControl,
+        tables::describe::{Control, Effect, Gesture, ModAction, Row},
+    },
+    body::rig::frames::Frames,
+    config::ControllersConfig,
+    diagnostics,
+    frame::{Hand, Pose},
+    grab::{Candidate, GrabVolume, GripTarget},
+    hands::{ActiveHands, pose::CockpitHand},
+    weapons::{
+        capabilities::{GunHand, GunOwner},
+        docks,
+        dual_wield::single::magazine::Dealt,
+        engine::{HeldWeapon, reserve},
+        inventory::engine::strong_to,
+        pouch_models::{self, MODEL_PLACEMENT},
+        reload::{
+            belt::{BeltPush, PushStage},
+            chamber::{ActionWork, Chamber},
+            eject::{DoubleTapDetector, FlickDetector, TapDetector},
+            engine::Reading,
+            extraction::{DetachRequest, PendingDetach, Pull},
+            fire_hold::FireHold,
+            frames::GunFrame,
+            insert::{Insertion, InsertionSource, ReadyCue, Well},
+            knock::Knocks,
+            plan::ReloadPlan,
+            records::{RecordKey, Records, gun_entry},
+            travel::ActionTravel,
+            tuning::{RELOAD, Reload},
+        },
+        volumes::{self, BodyFrame, POUCHES},
+    },
+};
+
+/// The reload's hooks, aggregated by [`crate::controllers::weapons::hook_library`].
+pub(crate) fn hook_library() -> HookLibrary {
+    engine::hook_library()
+        .with_hook_library(loose::hook_library())
+        .with_hook_library(bones::hook_library())
+}
+
+/// The reload's readout.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct ReloadStatus {
+    /// Whether the last input tick reloaded a weapon by hand.
+    pub active: bool,
+    /// The weapon of each hand's gun, by [`Hand::index`]; the game's dual-wield pair's is in both
+    /// hands.
+    pub weapons: [Option<WeaponReadout>; 2],
+    pub insertion: Insertion,
+    /// The hand holding a round, and the gun's hand it is for.
+    pub insert_hands: Option<(Hand, Hand)>,
+    /// Each gun hand's belt push, by [`Hand::index`].
+    pub belt: [PushStage; 2],
+    pub work: ActionWork,
+    /// The angular speed of each hand over the last tick, degrees per second.
+    pub flick_dps: [f32; 2],
+    /// Why each hand's gun may not fire, by [`Hand::index`].
+    pub fire_held: [Option<FireHold>; 2],
+    pub counts: ReloadCounts,
+    /// Native serial magazine execution and the most recent refusal.
+    pub serial: serial::SerialStatus,
+    /// The most recent reload events, newest last.
+    pub events: Vec<String>,
+}
+
+/// A hand's gun and its weapon as the last input tick saw them.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub struct WeaponReadout {
+    /// The weapon's address, which tells the game's dual-wield pair's two readouts for one weapon.
+    pub address: usize,
+    pub name_hash: u32,
+    pub plan: ReloadPlan,
+    /// Whether the plan's well came from the wells table.
+    pub from_table: bool,
+    pub magazine: i32,
+    pub capacity: i32,
+    pub reserve: i32,
+    pub unlimited: bool,
+    /// The game's magazine-out flag.
+    pub out: bool,
+    /// Whether the gun's well holds a round that has to leave before a fresh one seats.
+    pub occupied: bool,
+    /// The hand's gun's chamber.
+    pub chamber: Chamber,
+    /// The hand's gun's action on its travel, with the physical action on.
+    pub action: Option<ActionTravel>,
+}
+
+/// The reload's counters since the payload loaded.
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
+pub struct ReloadCounts {
+    pub ejects: u64,
+    pub seats: u64,
+    /// Magazines knocked out by a held one.
+    pub knocks: u64,
+    pub belt_reloads: u64,
+    pub racks: u64,
+    /// Slides caught at the rear.
+    pub lock_backs: u64,
+    pub empty_pouch: u64,
+    /// Reload starts of the game's that the stop refused.
+    pub refused: u64,
+}
+
+pub fn status() -> ReloadStatus {
+    let mut status = STATE.lock().status.clone();
+    status.counts.refused = gate::refused();
+    status.serial = serial::status();
+    status
+}
+
+/// What the first half of the weapon handling's input tick hands the reload.
+pub(super) struct BeginInputs<'a> {
+    /// The weapons in the hands: the wielded weapon, then the one beside it. Each one's guns are
+    /// reloaded in the hands its [`Wielded::hands`] marks.
+    ///
+    /// [`Wielded::hands`]: crate::controllers::weapons::engine::Wielded::hands
+    pub weapons: [Option<&'a HeldWeapon>; 2],
+    /// The hands holding any gun, of these weapons or another, by [`Hand::index`].
+    pub occupied: [bool; 2],
+    pub active: &'a ActiveHands,
+    pub config: &'a ControllersConfig,
+    /// The character's body the pouch rides, when its skeleton could be read.
+    pub body: Option<&'a BodyFrame>,
+    /// The hand the pouches are laid out around ([`volumes::gun_side`]).
+    pub gun_side: Hand,
+    /// Whether the tick's mode is one the weapon handling acts in.
+    pub gameplay: bool,
+}
+
+/// The first half of the reload's input tick: read the hands' weapons and their plans, carry their
+/// guns into the cockpit frame, and place the pouch and the action's handle. Returns the volumes to
+/// place.
+pub(super) fn begin_tick(inputs: &BeginInputs) -> Vec<Candidate> {
+    let BeginInputs {
+        weapons,
+        occupied,
+        active,
+        config,
+        body,
+        gun_side,
+        gameplay,
+    } = *inputs;
+    let reload = &Reload::of(&config.weapons.reload);
+    // SAFETY: bounded world-record maintenance runs on the input thread before eligibility exits.
+    unsafe { loose::maintain(&reload.loose) };
+    let mut state = STATE.lock();
+    if !(reload.enabled && gameplay) {
+        state.clear_tick();
+        return Vec::new();
+    }
+    // SAFETY: the game stage runs on the game thread before the world update, and the weapons
+    // were read this tick.
+    let Some(tick) = (unsafe { state.read_tick(weapons, active, config) }) else {
+        state.clear_tick();
+        return Vec::new();
+    };
+    let mut candidates = Vec::new();
+    let gun_hands = tick.gun_hands();
+    let free = Hand::BOTH.into_iter().find(|h| {
+        !gun_hands[h.index()] && !occupied[h.index()] && active.hands[h.index()].is_some()
+    });
+    let loading_hand = insert::loading_hand(gun_hands, free, tick.dominant);
+    let pouch_side = loading_hand.map_or(gun_side.other(), Hand::other);
+    // With one gun or none the pouch is at the middle of the belt, where both the free hand and the
+    // gun's push reach it without crossing the body; with a gun in each hand, it is on the side
+    // away from the gun being loaded.
+    let pouch = body.map(|b| {
+        let pouch = if gun_hands == [true; 2] {
+            volumes::magazine_pouch(b, &POUCHES, pouch_side, Some(pouch_side))
+        } else {
+            volumes::centre_magazine_pouch(b, &POUCHES, Some(pouch_side))
+        };
+        Candidate {
+            hand: free,
+            ..pouch
+        }
+    });
+    // The displayed source stays on the loading gun's opposite side while its taker is occupied.
+    let loaded = loading_hand
+        .and_then(|hand| tick.gun(hand))
+        .map(|(weapon, _)| weapon);
+    // A pouch with nothing to give is not offered: no round comes out of it.
+    let stocked = loaded.is_some_and(WeaponTick::has_ammo);
+    // The pouch where its model is drawn, on `side` of the body.
+    let displayed = |mut pouch: Candidate, side: Hand| {
+        if config.weapons.pouches.models.enabled
+            && let Some(body) = body
+        {
+            pouch.centre = pouch_models::display_centre(
+                Pose {
+                    position: pouch.centre,
+                    orientation: body.pelvis,
+                },
+                &MODEL_PLACEMENT,
+                side,
+                tick.world_scale,
+            );
+        }
+        pouch
+    };
+    let target_pouch = pouch.map(|pouch| displayed(pouch, pouch_side));
+    // With a gun in each hand, each is pushed onto a pouch on its own side of the belt, so neither
+    // reaches across the body for the one pouch.
+    let belt_pouches = if gun_hands == [true; 2] {
+        Hand::BOTH.map(|hand| {
+            body.map(|b| displayed(volumes::magazine_pouch(b, &POUCHES, hand, None), hand))
+                .map(|pouch| pouch.centre)
+        })
+    } else {
+        [target_pouch.map(|pouch| pouch.centre); 2]
+    };
+    let pouch_refusal = pouch::refusal(pouch::PouchFacts {
+        placed: target_pouch.is_some(),
+        free: free.is_some(),
+        gun: loaded.is_some(),
+        stocked,
+        takes: loaded.is_some_and(|weapon| state.can_take_from_pouch(weapon)),
+        holding: state.status.insertion.holding(),
+    });
+    // The pouch going unplaced is a failure worth a note; its other refusals follow the hands.
+    if pouch_refusal == Some(pouch::PouchRefusal::NoBody) && state.pouch_refusal != pouch_refusal {
+        diagnostics::report("pouch", None, pouch::PouchRefusal::NoBody.label(), || None);
+    }
+    state.pouch_refusal = pouch_refusal;
+    if let Some(pouch) = target_pouch
+        && state.pouch_refusal.is_none()
+    {
+        candidates.push(pouch);
+    }
+    if let Some(handle) = state.handle_candidate(&tick, free, reload) {
+        candidates.push(handle);
+    }
+    // SAFETY: as above.
+    let (seen, frames) = unsafe { loose_sightings(&tick, free, active, reload) };
+    state.loose_seen = seen;
+    state.frames = frames;
+    if state.frames.is_some()
+        && let Some(magazine) = state.extraction_candidate(&tick, free, reload)
+    {
+        candidates.push(magazine);
+    }
+    if let Some(hand) = free {
+        candidates.extend(loose::candidates(
+            &state.loose_seen,
+            reload.loose.radius_m,
+            hand,
+        ));
+    }
+    // A revolver is pushed onto a speedloader standing on its belt pouch.
+    state.speedloaders = Hand::BOTH.map(|hand| {
+        let (weapon, _) = tick.gun(hand)?;
+        let round = weapon
+            .plan
+            .round
+            .filter(|_| weapon.plan.load == plan::LoadKind::Cylinder && weapon.has_ammo())?;
+        let side = if gun_hands == [true; 2] {
+            hand
+        } else {
+            pouch_side
+        };
+        Some(BeltSpeedloader {
+            pouch: Pose {
+                position: belt_pouches[hand.index()]?,
+                orientation: body?.pelvis,
+            },
+            side,
+            weapon: weapon.address,
+            round,
+        })
+    });
+    state.tick = Some(tick);
+    state.pouches = belt_pouches;
+    state.stocked_pouch = pouch
+        .zip(loaded)
+        .filter(|_| stocked)
+        .map(|(p, weapon)| StockedPouch {
+            centre: p.centre,
+            side: pouch_side,
+            weapon: weapon.address,
+        });
+    state.free = free;
+    candidates
+}
+
+/// The hands participating in the current physical action, before ordinary release routing.
+pub(super) fn action_hands() -> [bool; 2] {
+    let mut state = STATE.lock();
+    let Some(tick) = state.tick else {
+        return [false; 2];
+    };
+    let working = Hand::BOTH.into_iter().any(|hand| {
+        tick.gun(hand).is_some_and(|(weapon, gun)| {
+            state.records.get(weapon.key).travels[gun.entry()].holds_release(weapon.plan.action)
+        })
+    });
+    [working; 2]
+}
+
+/// The gun hands whose gun's action the other, free hand holds by its handle, by [`Hand::index`]:
+/// a hand holding the slide or the bolt of the gun in the other hand. A pump is left out, since a
+/// hand on a pump holds the foregrip, and the brace decides what its holding hand's release does.
+pub(super) fn action_held_by_other() -> [bool; 2] {
+    let mut state = STATE.lock();
+    let Some(tick) = state.tick else {
+        return [false; 2];
+    };
+    let free = state.free;
+    Hand::BOTH.map(|hand| {
+        free == Some(hand.other())
+            && tick.gun(hand).is_some_and(|(weapon, gun)| {
+                weapon.plan.action != chamber::ActionKind::Pump
+                    && state.records.get(weapon.key).travels[gun.entry()]
+                        .grip
+                        .is_some()
+            })
+    })
+}
+
+/// Resolve direct magazine intent before ordinary nearest-target selection. An existing action
+/// or foregrip remains held; an unheld brace or transfer cannot steal a magazine grip. A gun waiting
+/// on its action offers its handle first ([`chamber::prefer_waiting_action`]).
+pub(super) fn prioritize_extraction(targets: &mut Vec<GripTarget>, grips: [Option<Vec3>; 2]) {
+    let waiting = {
+        let mut state = STATE.lock();
+        state.tick.map_or([false; 2], |tick| {
+            Hand::BOTH.map(|worker| {
+                tick.gun(worker.other()).is_some_and(|(weapon, gun)| {
+                    steps::chambering(&weapon.plan)
+                        && weapon.plan.action != chamber::ActionKind::Pump
+                        && !weapon.reading.out
+                        && weapon.reading.magazine_rounds() > 0
+                        && state.records.get(weapon.key).chambers[gun.entry()] == Chamber::Empty
+                })
+            })
+        })
+    };
+    chamber::prefer_waiting_action(targets, grips, waiting);
+    let (pulling, action) = {
+        let mut state = STATE.lock();
+        let action = state.tick.and_then(|tick| {
+            Hand::BOTH.into_iter().find_map(|hand| {
+                let (weapon, gun) = tick.gun(hand)?;
+                (weapon.plan.action != chamber::ActionKind::Pump
+                    && state.records.get(weapon.key).travels[gun.entry()]
+                        .grip
+                        .is_some())
+                .then_some(hand.other())
+            })
+        });
+        (state.extraction_hand(), action)
+    };
+    if let Some(hand) = action {
+        for target in targets
+            .iter_mut()
+            .filter(|t| t.volume == GrabVolume::WeaponAction && t.hand == Some(hand))
+        {
+            *target = target.held(hand);
+        }
+        targets.retain(|t| !t.for_hand(hand) || t.volume == GrabVolume::WeaponAction);
+    }
+    if let Some(hand) = pulling {
+        for target in targets
+            .iter_mut()
+            .filter(|t| t.volume == GrabVolume::InsertedMagazine && t.hand == Some(hand))
+        {
+            *target = target.held(hand);
+        }
+        targets.retain(|t| !t.for_hand(hand) || t.volume == GrabVolume::InsertedMagazine);
+    }
+    extraction::prioritize(targets, grips);
+}
+
+/// The magazine pouch on a tick it has a round to give: its centre in the cockpit frame, the side
+/// of the body it is on, and the weapon of the gun a round from it is for (a `WeaponBase`
+/// address).
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(super) struct StockedPouch {
+    pub centre: Vec3,
+    pub side: Hand,
+    pub weapon: usize,
+}
+
+/// The belt pouches a gun is being brought down onto for the belt reload, as of the last tick: the
+/// gun's push is eligible and the point it pushes is near. Each is a volume for the gun's hand, to
+/// mark the pouch; the push reloads, not a squeeze.
+pub(super) fn belt_marks() -> Vec<Candidate> {
+    let state = STATE.lock();
+    if state.tick.is_none() {
+        return Vec::new();
+    }
+    Hand::BOTH
+        .into_iter()
+        .filter_map(|hand| {
+            let centre = state.belt_rings[hand.index()]?;
+            Some(Candidate {
+                volume: GrabVolume::MagazinePouch,
+                centre,
+                radius: RELOAD.belt.radius_m,
+                hand: Some(hand),
+            })
+        })
+        .collect()
+}
+
+/// The magazine pouch on this tick, while it has a round to give.
+pub(super) fn stocked_pouch() -> Option<StockedPouch> {
+    STATE.lock().stocked_pouch
+}
+
+/// A speedloader on the belt pouch a revolver is pushed onto: the pouch's centre and the
+/// orientation of the girdle it rides, in the cockpit frame, the side of the body it is on, the
+/// revolver's weapon (a `WeaponBase` address), and the stand-in round it is drawn with.
+#[derive(Debug, Copy, Clone, PartialEq)]
+pub(crate) struct BeltSpeedloader {
+    pub pouch: Pose,
+    pub side: Hand,
+    pub weapon: usize,
+    pub round: plan::RoundModel,
+}
+
+/// Each gun hand's speedloader on its belt pouch this tick, by [`Hand::index`]: a revolver
+/// reloaded by hand with rounds to load, whose pouch is placed.
+pub(crate) fn belt_speedloaders() -> [Option<BeltSpeedloader>; 2] {
+    let state = STATE.lock();
+    if state.tick.is_none() {
+        return [None; 2];
+    }
+    state.speedloaders
+}
+
+/// Why the magazine pouch is not a grab target this tick, for the grip press's log; `None` while
+/// it is, or while the reload is not acting.
+/// Play the refusal's click, the dry-fire sound of the first gun of the weapon at `address`, for a
+/// refusal that is not a gun's own (a full pouch). Returns whether it played.
+///
+/// # Safety
+///
+/// The game thread before the world update; the weapon is the local player's.
+pub(crate) unsafe fn refusal_click(address: usize) -> bool {
+    unsafe { engine::play_refuse_sound(address, 0) }.is_some()
+}
+
+pub(crate) fn pouch_note() -> Option<&'static str> {
+    let state = STATE.lock();
+    state
+        .tick
+        .and(state.pouch_refusal)
+        .map(pouch::PouchRefusal::label)
+}
+
+/// What the bindings hand the second half of the reload's input tick.
+pub(super) struct FinishInputs {
+    /// The grab volume each hand grabbed this tick, by [`Hand::index`].
+    pub grabs: [Option<GrabVolume>; 2],
+    pub grips: [ButtonControl; 2],
+    /// The reload action's press over the tick.
+    pub reload_button: ButtonControl,
+    /// Each hand's fire press for the gun it holds, over the tick, by [`Hand::index`]: in a
+    /// vehicle seat a double tap of it on a dry gun drops the magazine.
+    pub fire_presses: [ButtonControl; 2],
+    /// The tick's length, real seconds: the player's taps, flicks, grips, and the rounds and the
+    /// action in the player's hands.
+    pub dt: f32,
+    /// The tick's length, game seconds: a loose round carried as a body in the world.
+    pub game_dt: f32,
+}
+
+/// The second half of the reload's input tick: eject, load, push, and work the action, and decide
+/// which guns may fire. The copied finish facts are consumed after weapon ownership settles.
+pub(super) fn finish_tick(inputs: &FinishInputs, config: &ControllersConfig) -> FinishResult {
+    let mut state = STATE.lock();
+    let Some(tick) = state.tick else {
+        state.stand_down();
+        drop(state);
+        gate::publish(None);
+        return FinishResult {
+            held: [None; 2],
+            belt: None,
+        };
+    };
+    let held = state.step(&tick, inputs, config);
+    for hand in Hand::BOTH {
+        let (before, after) = (state.status.fire_held[hand.index()], held[hand.index()]);
+        if before != after {
+            tracing::info!(
+                target: "controllers",
+                hand = ?hand,
+                was = before.map_or("nothing", FireHold::label),
+                now = after.map_or("nothing", FireHold::label),
+                "reload: what holds the gun from firing changed"
+            );
+        }
+    }
+    state.status.fire_held = held;
+    state.status.active = true;
+    let belt = state.belt_finish(&tick);
+    drop(state);
+    let weapons = Hand::BOTH.map(|hand| tick.gun(hand).map(|(weapon, _)| weapon));
+    gate::publish(Some(gate::Published {
+        weapons: weapons.map(|w| w.map_or(0, |w| w.address)),
+        manual_action: weapons
+            .map(|w| w.is_some_and(|w| w.plan.action.manual() && steps::chambering(&w.plan))),
+        self_cycling: weapons.map(|w| w.is_some() && !config.weapons.reload.manual_action),
+        held: held.map(|h| h.is_some()),
+    }));
+    FinishResult {
+        held,
+        belt: Some(belt),
+    }
+}
+
+/// The reload's fire hold and copied post-step belt facts, not its persistent debug readout.
+pub(super) struct FinishResult {
+    /// Why the reload keeps each hand's gun from firing, by [`Hand::index`].
+    pub held: [Option<FireHold>; 2],
+    belt: Option<BeltFinish>,
+}
+
+/// A same-input-tick offer of the belt reload motion: the dominant hand's gun, and with a gun in
+/// each hand, each.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub(crate) struct BeltEligibility {
+    sequence: u64,
+    /// The hands offered the push, by [`Hand::index`].
+    hands: [bool; 2],
+    guns: [Option<GunOwner>; 2],
+}
+
+impl BeltEligibility {
+    /// The row of `hand`'s push. Final claims and hand readiness can revoke the offer without
+    /// another engine query.
+    pub(crate) fn row(
+        self,
+        sequence: u64,
+        hand: Hand,
+        guns: [Option<GunOwner>; 2],
+        ready: [bool; 2],
+    ) -> Option<Row> {
+        (self.sequence == sequence
+            && self.hands[hand.index()]
+            && self.guns == guns
+            && ready[hand.index()])
+        .then_some(Row {
+            control: Control::Motion(hand),
+            gesture: Gesture::Press,
+            effect: Effect::Mod(ModAction::BeltReload),
+        })
+    }
+}
+
+/// The reload owner's final read, after all weapon actions, while matching gun claims prove life.
+impl FinishResult {
+    pub(super) fn belt_eligibility(
+        self,
+        sequence: u64,
+        config: &ControllersConfig,
+        source_guns: [Option<GunOwner>; 2],
+        guns: [Option<GunOwner>; 2],
+    ) -> Option<BeltEligibility> {
+        let finish = self.belt?;
+        finish.eligibility_with(sequence, config, source_guns, guns, |address| {
+            // SAFETY: the matching current firing grip or native pair owns this tick's weapon.
+            let weapon =
+                unsafe { (address as *const jc3gi::equipment::weapon::WeaponBase).as_ref() }?;
+            let reading = unsafe { engine::read(weapon) };
+            if reading.exempt {
+                return None;
+            }
+            Some((reading, unsafe { reserve(weapon) }))
+        })
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+struct BeltFinish {
+    sequence: Option<u64>,
+    dominant: Hand,
+    /// Whether both hands hold guns of the tick, which offers each its own push.
+    dual: bool,
+    /// Each hand's gun, by [`Hand::index`].
+    hands: [HandBelt; 2],
+}
+
+/// One hand's gun as the belt's offer reads it.
+#[derive(Debug, Copy, Clone)]
+struct HandBelt {
+    weapon: Option<usize>,
+    gate: BeltGate,
+    well: bool,
+    pouch: bool,
+}
+
+impl BeltFinish {
+    fn eligibility_with(
+        self,
+        sequence: u64,
+        config: &ControllersConfig,
+        source_guns: [Option<GunOwner>; 2],
+        guns: [Option<GunOwner>; 2],
+        mut read: impl FnMut(usize) -> Option<(Reading, i32)>,
+    ) -> Option<BeltEligibility> {
+        if source_guns != guns
+            || !config.weapons.reload.enabled
+            || self.sequence != Some(sequence)
+            || self.dominant != config.acting_hand()
+        {
+            return None;
+        }
+        let reload = Reload::of(&config.weapons.reload);
+        let hands = Hand::BOTH.map(|hand| {
+            (hand == self.dominant || self.dual)
+                && self.hand_eligible(hand, &reload, guns, &mut read)
+        });
+        hands.contains(&true).then_some(BeltEligibility {
+            sequence,
+            hands,
+            guns,
+        })
+    }
+
+    fn hand_eligible(
+        &self,
+        hand: Hand,
+        reload: &Reload,
+        guns: [Option<GunOwner>; 2],
+        read: &mut impl FnMut(usize) -> Option<(Reading, i32)>,
+    ) -> bool {
+        let belt = self.hands[hand.index()];
+        let (Some(address), Some(current)) = (belt.weapon, guns[hand.index()]) else {
+            return false;
+        };
+        if current.weapon != address
+            || !matches!(current.role, GunHand::Grip | GunHand::NativePair(_))
+            || !belt.well
+            || !belt.pouch
+        {
+            return false;
+        }
+        let Some((reading, reserve)) = read(address) else {
+            return false;
+        };
+        BeltGate {
+            has_ammo: reading.unlimited || reserve > 0,
+            can_belt: reading.out || reading.has_space(),
+            ..belt.gate
+        }
+        .allows(reload)
+    }
+}
+
+/// The exact non-motion gate shared by belt execution and its current offer.
+#[derive(Debug, Copy, Clone)]
+struct BeltGate {
+    holding: bool,
+    extracting: bool,
+    blocked: bool,
+    since_draw_s: f32,
+    has_ammo: bool,
+    can_belt: bool,
+}
+
+impl BeltGate {
+    fn allows(self, reload: &Reload) -> bool {
+        reload.belt.enabled
+            && !self.holding
+            && !self.extracting
+            && !self.blocked
+            && self.since_draw_s >= reload.belt.after_draw_s
+            && self.has_ammo
+            && self.can_belt
+    }
+}
+
+#[cfg(test)]
+pub(crate) fn eligible_belt_for_test(
+    config: &ControllersConfig,
+) -> (BeltEligibility, [Option<GunOwner>; 2]) {
+    steps::eligible_belt_for_test(config)
+}
+
+/// Cancel only physical magazine manipulation on a mode boundary. Other weapon holds remain.
+/// The resumed input path must observe neutral grips before accepting a fresh magazine claim.
+pub(crate) fn cancel_extraction_on_standdown() {
+    let mut state = STATE.lock();
+    state.cancel_extraction();
+    state.cancel_ejects();
+}
+
+/// Stop acting: drop any round in hand, forget the tick, and hand the weapons back to the game.
+pub(super) fn stand_down() {
+    STATE.lock().stand_down();
+    gate::publish(None);
+    render::clear();
+    // SAFETY: the weapon handling stands down in the game stage, on the game thread before the
+    // world update.
+    unsafe { casings::release() };
+}
+
+/// The magazines in the world that fit the gun the free hand would load (the gun in the other
+/// hand), while its magazine is out.
+///
+/// # Safety
+///
+/// The game thread, before the world update, with the tick's weapons read this tick.
+unsafe fn loose_sightings(
+    tick: &Tick,
+    free: Option<Hand>,
+    active: &ActiveHands,
+    reload: &Reload,
+) -> (Vec<loose::Sighting>, Option<Frames>) {
+    let Some((weapon, gun)) = free.and_then(|free| tick.gun(free.other())) else {
+        return (Vec::new(), None);
+    };
+    let wants = reload.loose.enabled
+        && weapon.plan.load == plan::LoadKind::Magazine
+        && (weapon.reading.out || reload.extraction.enabled);
+    if !wants {
+        return (Vec::new(), None);
+    }
+    let Some(tag) = (unsafe { engine::magazine_tag(weapon.address, gun.index) }) else {
+        return (Vec::new(), None);
+    };
+    let Some(player) = (unsafe { engine::local_player_matrix() }) else {
+        return (Vec::new(), None);
+    };
+    let Some(frames) = docks::cockpit_frames(active, player) else {
+        return (Vec::new(), None);
+    };
+    let seen = if weapon.reading.out {
+        unsafe { loose::sightings(player.w_axis.truncate(), tag, &frames, &reload.loose) }
+    } else {
+        Vec::new()
+    };
+    (seen, Some(frames))
+}
+
+/// The hand holding the gun, the well's mouth and the capture radius its round catches at, and
+/// whether the well already holds a round, while the other hand holds a round for it.
+pub(super) fn well(config: &Reload) -> Option<(Hand, Vec3, f32, bool)> {
+    let state = STATE.lock();
+    let (_, gun_hand) = state.status.insert_hands?;
+    let tick = state.tick.as_ref()?;
+    let (weapon, gun) = tick.gun(gun_hand)?;
+    let well = gun.well?;
+    Some((
+        gun_hand,
+        well.mouth,
+        config.for_plan(&weapon.plan).capture_radius_m,
+        weapon.occupied(),
+    ))
+}
+
+/// The hand holding a round or pulling an inserted magazine, for occupancy and the overlay.
+pub(super) fn holding_hand() -> Option<Hand> {
+    let state = STATE.lock();
+    state
+        .status
+        .insert_hands
+        .map(|(hand, _)| hand)
+        .or_else(|| state.extraction_hand())
+}
+
+/// The matrix to push for `part` of the weapon at `weapon` in place of `matrix`, from the late
+/// update of the held gun's parts on the render thread: a slide held back or worked, or a magazine
+/// part in the hand. `None` leaves the part as it is.
+pub(crate) fn adjust_part(
+    part: &jc3gi::equipment::weapon::ModelAttachementWeaponComponent,
+    weapon: usize,
+    matrix: glam::Mat4,
+    dtf: f32,
+) -> Option<glam::Mat4> {
+    render::adjust(part, weapon, matrix, dtf)
+}
+
+/// Place the casings a revolver's dumped cylinder drops for the frame being drawn.
+///
+/// # Safety
+///
+/// The game thread, outside the world update.
+pub(crate) unsafe fn render_frame() {
+    unsafe { casings::render_frame() };
+}
+
+/// The world matrix of the pouch magazine in the hand for the weapon at `weapon`, drawn with an
+/// instance of its spare magazine model, at the render interpolation fraction `dtf`: the same
+/// place the gun's own round part would be drawn in the hand.
+pub(crate) fn held_round_matrix(weapon: usize, dtf: f32) -> Option<glam::Mat4> {
+    render::held_round_matrix(weapon, dtf)
+}
+
+/// A shot of `weapon` from `hand` that left `magazine` rounds, from the per-shot seam on the
+/// weapon's thread.
+pub(super) fn on_shot(weapon: usize, hand: Hand, magazine: i32) {
+    let total = if gate::tracks(weapon, hand) {
+        let total = ammo::on_shot(weapon, hand.index(), magazine).unwrap_or(magazine);
+        // SAFETY: the per-shot caller keeps this weapon live on its native update thread.
+        unsafe { infinite::after_shot(weapon, total) }
+    } else {
+        magazine
+    };
+    if total != magazine {
+        // SAFETY: the per-shot caller keeps this weapon live on its native update thread.
+        unsafe { engine::set_shot_ammo(weapon, total) };
+    }
+    gate::on_shot(weapon, hand, total);
+}
+
+/// Whether the gun of `weapon` in `hand` is held from firing, from the ammunition check on the
+/// weapon's thread.
+pub(super) fn holds_fire(weapon: usize, hand: Hand) -> bool {
+    gate::holds_fire(weapon, hand)
+        || (gate::tracks(weapon, hand) && ammo::holds_fire(weapon, hand.index()))
+}
+
+/// Preserve each chamber when an observed native pair is dealt to two single pistols.
+///
+/// # Safety
+///
+/// Both weapons must be live and owned on the input thread at the pair's native ammo allocation.
+pub(crate) unsafe fn split_pair(pair: &WeaponBase, twin: &WeaponBase, tuned: i32) -> Option<Dealt> {
+    let owner = unsafe { strong_to(twin) }?;
+    ammo::split_pair(
+        pair as *const _ as usize,
+        twin as *const _ as usize,
+        owner,
+        twin.m_User[1] as usize,
+        ammo::NativeAmmo {
+            total: pair.m_MagazineAmmo,
+            out: pair.m_WeaponIsWithoutMagazine,
+        },
+        tuned,
+    )
+}
+
+/// Release native ammunition identities before the spawn system resets its objects.
+pub(crate) fn on_pre_reset() {
+    guide::clear();
+    STATE.lock().records.on_pre_reset();
+    ammo::on_pre_reset();
+}
+
+/// Loaded rounds excluded from a single pistol's magazine-capacity clamp.
+pub(crate) fn chamber_rounds(weapon: usize) -> i32 {
+    ammo::protected_rounds(weapon)
+}
+
+/// The native ammo check may see a magazine-less weapon as loaded only for a live owned chamber.
+pub(super) fn chamber_without_magazine(weapon: usize, hand: Hand) -> bool {
+    gate::tracks(weapon, hand)
+        && !holds_fire(weapon, hand)
+        && ammo::active_snapshot(weapon).is_some_and(|ammo| ammo.out && ammo.chamber_rounds() > 0)
+}
+
+/// How many events the readout keeps.
+const MAX_EVENTS: usize = 8;
+
+/// One input tick's view of the hands' guns.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct Tick {
+    sequence: Option<u64>,
+    /// The weapons the reload acts on, in the order of [`BeginInputs::weapons`]. A weapon the
+    /// reload leaves to the game is not among them.
+    weapons: [Option<WeaponTick>; 2],
+    /// The dominant hand, whose gun a tap ejects when both guns are equally dry.
+    dominant: Hand,
+    /// Each hand's gun, by [`Hand::index`].
+    guns: [Option<GunTick>; 2],
+    /// The tick's hands, as tracked.
+    hands: [Option<CockpitHand>; 2],
+    world_scale: f32,
+}
+
+impl Tick {
+    /// `hand`'s gun and the weapon it belongs to.
+    fn gun(&self, hand: Hand) -> Option<(&WeaponTick, &GunTick)> {
+        let gun = self.guns[hand.index()].as_ref()?;
+        Some((self.weapons.get(gun.weapon)?.as_ref()?, gun))
+    }
+
+    /// The tick's weapon at `address`.
+    fn weapon(&self, address: usize) -> Option<&WeaponTick> {
+        self.weapons.iter().flatten().find(|w| w.address == address)
+    }
+
+    /// The hands holding a gun of the tick's weapons, by [`Hand::index`].
+    fn gun_hands(&self) -> [bool; 2] {
+        self.guns.map(|g| g.is_some())
+    }
+}
+
+/// One weapon of the tick.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct WeaponTick {
+    address: usize,
+    /// Whether this tick's observation adopted the active ammo partition.
+    ammo_owned: bool,
+    /// The weapon's record.
+    key: RecordKey,
+    plan: ReloadPlan,
+    /// A revolver's cylinder that swings out on its crane, for a revolver whose skeleton has one.
+    cylinder: Option<cylinders::CylinderTick>,
+    from_table: bool,
+    reading: Reading,
+    reserve: i32,
+}
+
+impl WeaponTick {
+    /// Whether a round for the weapon can be taken from the pouch.
+    fn has_ammo(&self) -> bool {
+        self.reading.unlimited || self.reserve > 0
+    }
+
+    /// Whether the gun's well holds a round that has to leave before a fresh one seats: a magazine
+    /// still in, but for a one-round launcher's spent round (the UPU-210's empty cartridge, the
+    /// Hydra's empty pod), which the fresh one replaces as it seats. A revolver's cylinder never
+    /// does: a speedloader pushed onto it loads it whole, and the game's reload returns the rounds
+    /// it held to the reserve.
+    fn occupied(&self) -> bool {
+        if let Some(cylinder) = self.cylinder {
+            return !cylinder.takes_speedloader;
+        }
+        self.plan.load.well_occupied(self.reading.out)
+            && !(self.plan.spent_round_replaced && self.reading.magazine_rounds() <= 0)
+    }
+
+    /// Whether a round seating now replaces a one-round launcher's spent round, whose count is
+    /// discarded rather than returned to the reserve.
+    fn replaces_spent(&self) -> bool {
+        self.plan.spent_round_replaced && !self.occupied()
+    }
+
+    /// Whether the gun shows its round part on its own with no round in the hand: as its load
+    /// does ([`LoadKind::part_shown`]), and for a one-round launcher only while it holds a round.
+    ///
+    /// [`LoadKind::part_shown`]: crate::controllers::weapons::reload::plan::LoadKind::part_shown
+    fn part_shown(&self) -> bool {
+        if self.plan.spent_round_replaced {
+            !self.reading.out && self.reading.magazine_rounds() > 0
+        } else {
+            self.plan
+                .load
+                .part_shown(self.reading.out, self.reading.magazine)
+        }
+    }
+}
+
+/// One gun of the tick.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct GunTick {
+    /// The weapon it belongs to, as an index into [`Tick::weapons`].
+    weapon: usize,
+    /// The gun's index within its weapon.
+    index: usize,
+    magazine: Option<serial::Identity>,
+    wrist: Pose,
+    frame: Option<GunFrame>,
+    well: Option<Well>,
+    /// The action's handle and the gun's rearward axis.
+    handle: Option<(Vec3, Vec3)>,
+}
+
+impl GunTick {
+    /// The gun's entry in its weapon's record.
+    fn entry(&self) -> usize {
+        gun_entry(self.index)
+    }
+}
+
+struct State {
+    status: ReloadStatus,
+    tick: Option<Tick>,
+    /// The belt pouch each gun hand's gun is pushed onto, by [`Hand::index`], cockpit frame.
+    pouches: [Option<Vec3>; 2],
+    /// The speedloader on each gun hand's belt pouch, by [`Hand::index`].
+    speedloaders: [Option<BeltSpeedloader>; 2],
+    /// Each gun hand's revolver cylinder, by [`Hand::index`], for a revolver whose skeleton
+    /// carries its crane.
+    cylinders: [Option<revolver::Cylinder>; 2],
+    /// The belt pouches marked as ready for a push on the last tick, by gun hand.
+    belt_rings: [Option<Vec3>; 2],
+    /// The pouch on the tick it has a round to give.
+    stocked_pouch: Option<StockedPouch>,
+    /// Why the pouch is not a grab target this tick.
+    pouch_refusal: Option<pouch::PouchRefusal>,
+    free: Option<Hand>,
+    /// The magazines in the world that fit the tick's gun, within reach.
+    loose_seen: Vec<loose::Sighting>,
+    /// The tick's transforms between the cockpit frame and the world, while a magazine is wanted.
+    frames: Option<Frames>,
+    /// The remembered weapons.
+    records: Records,
+    /// Each gun hand's measured gun relative to its wrist, and the weapon it belongs to.
+    measured: [Option<(usize, Pose)>; 2],
+    extraction: Pull,
+    pending_detach: Option<PendingDetach>,
+    pending_ejects: [Option<DetachRequest>; 2],
+    detach_generation: u64,
+    extraction_blocks_belt: [bool; 2],
+    extraction_needs_neutral: [bool; 2],
+    insertion_source: InsertionSource,
+    ready_cue: ReadyCue,
+    tap: TapDetector,
+    /// Each gun hand's fire press double tap, the seated magazine release, by [`Hand::index`].
+    fire_taps: [DoubleTapDetector; 2],
+    flicks: [FlickDetector; 2],
+    belts: [BeltPush; 2],
+    /// Each hand's grip on the last tick, for its velocity.
+    last_grips: [Option<Vec3>; 2],
+    /// The weapon of each hand's gun as of the last tick, by [`Hand::index`], and the seconds since
+    /// either changed.
+    drawn: Option<[Option<usize>; 2]>,
+    since_draw_s: f32,
+    /// The tactical knock's tip, strikes, and pending impulse.
+    knocks: Knocks,
+}
+
+static STATE: Mutex<State> = Mutex::new(State {
+    status: ReloadStatus {
+        active: false,
+        weapons: [None; 2],
+        insertion: Insertion::new(),
+        insert_hands: None,
+        belt: [PushStage::Outside; 2],
+        work: ActionWork::new(),
+        flick_dps: [0.0; 2],
+        fire_held: [None; 2],
+        counts: ReloadCounts {
+            ejects: 0,
+            seats: 0,
+            knocks: 0,
+            belt_reloads: 0,
+            racks: 0,
+            lock_backs: 0,
+            empty_pouch: 0,
+            refused: 0,
+        },
+        serial: serial::SerialStatus::new(),
+        events: Vec::new(),
+    },
+    tick: None,
+    pouches: [None; 2],
+    speedloaders: [None; 2],
+    cylinders: [None; 2],
+    belt_rings: [None; 2],
+    stocked_pouch: None,
+    pouch_refusal: None,
+    free: None,
+    loose_seen: Vec::new(),
+    frames: None,
+    records: Records::new(),
+    measured: [None; 2],
+    extraction: Pull::new(),
+    pending_detach: None,
+    pending_ejects: [None; 2],
+    detach_generation: 0,
+    extraction_blocks_belt: [false; 2],
+    extraction_needs_neutral: [false; 2],
+    insertion_source: InsertionSource::Pouch,
+    ready_cue: ReadyCue::new(),
+    tap: TapDetector::new(),
+    fire_taps: [DoubleTapDetector::new(); 2],
+    flicks: [FlickDetector::new(); 2],
+    belts: [BeltPush::new(); 2],
+    last_grips: [None; 2],
+    drawn: None,
+    since_draw_s: 0.0,
+    knocks: Knocks::new(),
+});

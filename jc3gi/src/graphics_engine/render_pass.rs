@@ -484,11 +484,18 @@ pub struct RenderPass {
     pub m_SortStateFlags: crate::graphics_engine::render_pass::RenderPassSortState,
     /// The pass's [`RenderPassId`](crate::graphics_engine::render_engine::RenderPassId), stored narrow.
     pub m_Index: i16,
-    _field_a0: [u8; 1976],
+    _field_a0: [u8; 1952],
+    /// The camera supplied to the pass. [`SaveRenderFrameData`](crate::graphics_engine::render_pass::RenderPass::SaveRenderFrameData) copies
+    /// it into [`ExternalRenderCamera`](crate::graphics_engine::render_pass::RenderPass::ExternalRenderCamera) before drawing.
+    pub ExternalCamera: *mut crate::camera::camera::Camera,
+    _field_848: [u8; 16],
     /// The spinlock serializing [`SortList`](crate::graphics_engine::render_pass::RenderPass::SortList) against concurrent callers
     /// (the render-engine sort task and the lazy sort in [`DoDraw`](crate::graphics_engine::render_pass::RenderPass::DoDraw)).
     pub m_SortLock: *mut ::std::ffi::c_void,
-    _field_860: [u8; 24],
+    _field_860: [u8; 16],
+    /// The pass-owned snapshot that [`Draw`](crate::graphics_engine::render_pass::RenderPass::Draw) converts to a render camera and uses to
+    /// populate the render context.
+    pub ExternalRenderCamera: *mut crate::camera::camera::Camera,
     /// How [`SortList`](crate::graphics_engine::render_pass::RenderPass::SortList) orders the draw list. Most passes leave the
     /// constructor default (`Auto`); passes that opt out set `None`.
     pub m_SortMethod: crate::graphics_engine::render_pass::RenderPassSortMethod,
@@ -610,6 +617,20 @@ impl RenderPass {
                 Self::Draw_ADDRESS,
             );
             f(self as *mut Self as _)
+        }
+    }
+    pub const GetSortCamera_ADDRESS: usize = 0x140174360;
+    /// The camera the pass's draw list is sorted against: the pass's external camera, set up with
+    /// [`Camera::SetupRenderCamera`](crate::camera::camera::Camera::SetupRenderCamera) without the TAA
+    /// jitter, or the camera manager's render camera when the pass has none.
+    pub unsafe fn GetSortCamera(&self) -> *const crate::camera::camera::Camera {
+        unsafe {
+            let f: unsafe extern "system" fn(
+                this: *const Self,
+            ) -> *const crate::camera::camera::Camera = ::std::mem::transmute(
+                Self::GetSortCamera_ADDRESS,
+            );
+            f(self as *const Self as _)
         }
     }
     pub const PreDraw_ADDRESS: usize = 0x140186DB0;

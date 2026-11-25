@@ -1,0 +1,908 @@
+//! Bounded policy-A arbitration for the physical left stick click, right stick click, right B, and
+//! right A.
+//!
+//! Each observation is one coherent, unmasked timestamp group. Changes within a group have
+//! unknown internal order. All changes at an equal timestamp belong in one group; splitting
+//! them cannot establish LS-before-B. Callers retain multiple ordered groups from one sync
+//! when distinct observation times are available. A snapshot cannot recover missed events.
+//!
+//! Source decisions authorize only contributions from these controls. They never assert a
+//! semantic action. An adapter must retain sampled semantic values, quarantine inseparable
+//! merged routes through their own neutral observation, and leave independent commands alone.
+//! OpenXR binding enumeration does not identify contributors to a merged action value.
+
+mod attribution;
+mod recording;
+pub(crate) mod runtime;
+
+use std::{error::Error, fmt, time::Duration};
+
+/// How many physical controls the arbiter covers, the recorded decision's width.
+pub(crate) const CONTROLS: usize = tracking_format::input::policy::PROTECTED_CONTROLS;
+
+/// The only physical controls in this arbiter's overlap domain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Control {
+    LeftStick,
+    RightStick,
+    RightB,
+    RightA,
+}
+
+impl Control {
+    pub(crate) const ALL: [Self; CONTROLS] = [
+        Self::LeftStick,
+        Self::RightStick,
+        Self::RightB,
+        Self::RightA,
+    ];
+
+    pub(crate) const fn index(self) -> usize {
+        match self {
+            Self::LeftStick => 0,
+            Self::RightStick => 1,
+            Self::RightB => 2,
+            Self::RightA => 3,
+        }
+    }
+}
+
+/// The validated physical-source interpretation, including device and binding changes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct BindingGeneration(pub(crate) u64);
+
+/// The gameplay interpretation of a single, independent of system-command availability.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct GameplayContext(pub(crate) u64);
+
+/// An explicitly replaced input-clock history; ordinary resets retain this identity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ClockEpoch(pub(crate) u64);
+
+/// Logical input time and observed order, not consumer time or rendering time.
+/// All equal-time changes share one group; successive groups strictly increase `at`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ObservationStamp {
+    pub(crate) epoch: ClockEpoch,
+    pub(crate) at: Duration,
+    pub(crate) sync: u64,
+    /// Strictly increasing between groups; it never resolves internal timestamp-group order.
+    pub(crate) sequence: u64,
+}
+
+/// An observed down-to-up episode under one physical-source interpretation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PressIdentity {
+    pub(crate) control: Control,
+    pub(crate) generation: BindingGeneration,
+    pub(crate) onset: ObservationStamp,
+}
+
+/// Explicit timings; no default or saved-settings migration is implied.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct PolicyAConfig {
+    pub(crate) recenter_join: Duration,
+    /// The join window of both left-stick-first chords, the panel's and the mark's.
+    pub(crate) panel_join: Duration,
+    pub(crate) recenter_hold: Duration,
+    /// Withhold the panel and mark chords while the observation is in a vehicle, so that the left
+    /// stick click waits only for the recenter join window.
+    pub(crate) suppress_developer_chords_in_vehicles: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ConfigError {
+    ZeroRecenterJoin,
+    ZeroPanelJoin,
+}
+
+impl fmt::Display for ConfigError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let cause = match self {
+            Self::ZeroRecenterJoin => "the recenter join window must be positive",
+            Self::ZeroPanelJoin => "the panel join window must be positive",
+        };
+        write!(f, "policy-A arbitration: {cause}")
+    }
+}
+
+impl Error for ConfigError {}
+
+/// A discontinuity cancels pending work and neutralizes only owned single output.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ResetReason {
+    #[cfg(test)]
+    FocusLost,
+    #[cfg(test)]
+    TrackingLost,
+    MissingOrStaleInput,
+    #[cfg(test)]
+    ControllerDisabled,
+    #[cfg(test)]
+    SchemeChanged,
+    BindingUnresolved,
+    BindingChanged,
+    MaskedObservation,
+    InvalidHistory,
+    ClockDiscontinuity,
+}
+
+/// Verification applies to the physical labels and the coherent source interpretation.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum InputEvidence {
+    VerifiedUnmasked,
+    Unavailable(ResetReason),
+}
+
+/// One valid group may contain at most one observed level change per control.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Observation {
+    pub(crate) stamp: ObservationStamp,
+    pub(crate) generation: BindingGeneration,
+    pub(crate) context: GameplayContext,
+    pub(crate) singles_enabled: bool,
+    /// Whether a vehicle action set is active, where
+    /// [`PolicyAConfig::suppress_developer_chords_in_vehicles`] applies.
+    pub(crate) vehicle: bool,
+    /// Real, unmasked levels, indexed by `Control::index`.
+    pub(crate) down: [bool; CONTROLS],
+    #[cfg(test)]
+    pub(crate) evidence: InputEvidence,
+}
+
+/// Releases use the last accepted clock watermark, never an unvalidated reset timestamp.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ResetRequest {
+    pub(crate) reason: ResetReason,
+}
+
+/// Ends the old history before accepting a new, strictly newer epoch identity.
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ClockEpochRequest {
+    pub(crate) next: ClockEpoch,
+}
+
+/// Singles begin at acceptance, with no credit for the reservation's physical dwell.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SingleEvent {
+    Pressed {
+        press: PressIdentity,
+        accepted_at: Duration,
+    },
+    Released {
+        press: PressIdentity,
+        at: Duration,
+    },
+    /// One logical press/release with zero accepted hold duration.
+    Tap {
+        press: PressIdentity,
+        accepted_at: Duration,
+    },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Disposition {
+    Idle,
+    Pending,
+    Single,
+    Consumed,
+    AwaitingNeutral,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SourceDecision {
+    pub(crate) press: Option<PressIdentity>,
+    pub(crate) disposition: Disposition,
+    /// The arbiter's owned single contribution, never a semantic action value.
+    pub(crate) single_down: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SystemCommand {
+    Recenter,
+    TogglePanel,
+    Mark,
+}
+
+/// Member identities also identify the request; holding cannot generate duplicates.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct SystemRequest {
+    pub(crate) command: SystemCommand,
+    pub(crate) members: [Option<PressIdentity>; CONTROLS],
+    pub(crate) formed_at: Duration,
+    pub(crate) accepted_at: Duration,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RefusalReason {
+    CommittedSingle,
+    ClaimedPress,
+    JoinExpired,
+    /// Both members of a left-stick-first chord were first seen in one group, so their order is
+    /// unknown.
+    AmbiguousOrder,
+    CompetingChord,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ObservationStatus {
+    Accepted,
+    AwaitingNeutral,
+    Recovered,
+    Reset(ResetReason),
+}
+
+/// Fixed-size output for one group, suitable for raw, semantic, and pointer adapters.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct Arbitration {
+    pub(crate) status: ObservationStatus,
+    pub(crate) singles: [Option<SingleEvent>; CONTROLS],
+    pub(crate) sources: [SourceDecision; CONTROLS],
+    /// Suppress raw and attributable constituent edges for this entire group, including neutral.
+    /// `singles` is the only accepted edge stream; a true flag never cancels an earlier commit.
+    pub(crate) withheld: [bool; CONTROLS],
+    pub(crate) request: Option<SystemRequest>,
+    pub(crate) refused: [Option<RefusalReason>; CONTROLS],
+}
+
+/// Four source episodes, one exclusive chord, and one common-neutral consumption set.
+#[derive(Debug, Clone)]
+pub(crate) struct PolicyA {
+    config: PolicyAConfig,
+    epoch: ClockEpoch,
+    last: Option<ObservationStamp>,
+    interpretation: Option<Interpretation>,
+    down: [bool; CONTROLS],
+    presses: [Option<Press>; CONTROLS],
+    locked: Members,
+    chord: Option<Chord>,
+    awaiting_neutral: bool,
+    unavailable: [bool; CONTROLS],
+}
+
+impl PolicyA {
+    /// Positive join windows are required; a zero completion hold is explicitly supported.
+    pub(crate) fn new(config: PolicyAConfig, epoch: ClockEpoch) -> Result<Self, ConfigError> {
+        if config.recenter_join.is_zero() {
+            return Err(ConfigError::ZeroRecenterJoin);
+        }
+        if config.panel_join.is_zero() {
+            return Err(ConfigError::ZeroPanelJoin);
+        }
+        Ok(Self {
+            config,
+            epoch,
+            last: None,
+            interpretation: None,
+            down: [false; CONTROLS],
+            presses: [None; CONTROLS],
+            locked: Members::EMPTY,
+            chord: None,
+            awaiting_neutral: true,
+            unavailable: [true; CONTROLS],
+        })
+    }
+
+    /// Reset retains the temporal watermark and never treats masked up levels as neutral.
+    /// Even `ClockDiscontinuity` is only a reason here; it does not replace the clock epoch.
+    pub(crate) fn reset(&mut self, request: ResetRequest) -> Arbitration {
+        let mut out = Arbitration::empty(ObservationStatus::Reset(request.reason));
+        self.release_owned(self.last.map_or(Duration::ZERO, |last| last.at), &mut out);
+        self.interpretation = None;
+        self.down = [false; CONTROLS];
+        self.presses = [None; CONTROLS];
+        self.locked = Members::EMPTY;
+        self.chord = None;
+        self.awaiting_neutral = true;
+        self.unavailable = [true; CONTROLS];
+        self.describe(&mut out);
+        out
+    }
+
+    /// Neutralize old output before replacing the clock; a lower new time is valid only here.
+    /// Every observation carries its epoch, so queued observations from the old history stay stale.
+    #[cfg(test)]
+    pub(crate) fn begin_clock_epoch(&mut self, request: ClockEpochRequest) -> Arbitration {
+        if request.next.0 <= self.epoch.0 {
+            return self.reset(ResetRequest {
+                reason: ResetReason::InvalidHistory,
+            });
+        }
+        let out = self.reset(ResetRequest {
+            reason: ResetReason::ClockDiscontinuity,
+        });
+        self.epoch = request.next;
+        self.last = None;
+        out
+    }
+
+    /// Feed every observed group in order, even when several groups precede one game tick.
+    /// Gameplay context changes invalidate singles but retain system-chord ownership.
+    #[cfg(test)]
+    pub(crate) fn observe(&mut self, input: Observation) -> Arbitration {
+        self.observe_available(input, [true; CONTROLS])
+    }
+
+    /// Availability is observed with each group. A missing control never supplies an up level.
+    pub(crate) fn observe_available(
+        &mut self,
+        input: Observation,
+        available: [bool; CONTROLS],
+    ) -> Arbitration {
+        if input.stamp.epoch != self.epoch
+            || self.last.is_some_and(|last| {
+                input.stamp.at <= last.at
+                    || input.stamp.sequence <= last.sequence
+                    || input.stamp.sync < last.sync
+            })
+        {
+            return self.reset(ResetRequest {
+                reason: ResetReason::InvalidHistory,
+            });
+        }
+        // Only a validated stamp can advance time. Unavailable evidence still cannot arm a press.
+        self.last = Some(input.stamp);
+        #[cfg(test)]
+        if let InputEvidence::Unavailable(reason) = input.evidence {
+            return self.reset(ResetRequest { reason });
+        }
+        let interpretation = Interpretation::of(&input);
+        if self
+            .interpretation
+            .is_some_and(|previous| previous.generation != input.generation)
+        {
+            let out = self.reset(ResetRequest {
+                reason: ResetReason::BindingChanged,
+            });
+            self.interpretation = Some(interpretation);
+            return out;
+        }
+        let mut out = Arbitration::empty(ObservationStatus::Accepted);
+        if self
+            .interpretation
+            .is_some_and(|previous| previous != interpretation)
+        {
+            self.invalidate_singles(input.stamp.at, &mut out);
+        }
+        self.interpretation = Some(interpretation);
+        if self.awaiting_neutral && available == [true; CONTROLS] {
+            if input.down == [false; CONTROLS] {
+                self.awaiting_neutral = false;
+                self.unavailable = [false; CONTROLS];
+                out.status = ObservationStatus::Recovered;
+            } else {
+                out.status = ObservationStatus::AwaitingNeutral;
+            }
+            self.describe(&mut out);
+            return out;
+        }
+        let was_awaiting = self.awaiting_neutral;
+        self.awaiting_neutral = false;
+        let mut recovered = [false; CONTROLS];
+        for control in Control::ALL {
+            let i = control.index();
+            if !available[i] {
+                if !self.unavailable[i] {
+                    for &pair in self.pairs() {
+                        if pair.contains(control)
+                            && Control::ALL.into_iter().any(|member| {
+                                pair.contains(member)
+                                    && (self.locked.contains(member)
+                                        || self.presses[member.index()]
+                                            .is_some_and(|press| press.kind == PressKind::Pending))
+                            })
+                        {
+                            self.claim(pair);
+                        }
+                    }
+                }
+                self.release_single(control, input.stamp.at, &mut out);
+                self.presses[i] = None;
+                self.unavailable[i] = true;
+                if let Some(chord) = &mut self.chord
+                    && chord.members.contains(control)
+                {
+                    chord.cancelled = true;
+                }
+            } else if self.unavailable[i] && !input.down[i] {
+                self.unavailable[i] = false;
+                self.down[i] = false;
+                recovered[i] = true;
+            }
+        }
+        if was_awaiting {
+            out.status = if self.unavailable == [true; CONTROLS] {
+                ObservationStatus::AwaitingNeutral
+            } else {
+                ObservationStatus::Recovered
+            };
+        }
+        let previous = self.down;
+        for i in 0..CONTROLS {
+            if available[i] && !self.unavailable[i] && !recovered[i] {
+                self.down[i] = input.down[i];
+            }
+        }
+        for control in Control::ALL {
+            let i = control.index();
+            if !available[i] || self.unavailable[i] || recovered[i] {
+                continue;
+            }
+            if input.down[i] && !previous[i] {
+                self.presses[i] = Some(Press {
+                    identity: PressIdentity {
+                        control,
+                        generation: input.generation,
+                        onset: input.stamp,
+                    },
+                    kind: if self.locked.contains(control) {
+                        PressKind::Consumed
+                    } else {
+                        PressKind::Pending
+                    },
+                    single_eligible: input.singles_enabled,
+                });
+            }
+            if !input.down[i] && previous[i] {
+                self.release_single(control, input.stamp.at, &mut out);
+            }
+        }
+        self.cancel_interrupted_chord();
+        self.refuse_committed_overlaps(previous, &mut out);
+        self.resolve_chords(input.stamp, &mut out);
+        self.resolve_singles(input.stamp.at, &mut out);
+        self.advance_chord(input.stamp.at, &mut out);
+        self.describe(&mut out);
+        self.finish_neutral();
+        out
+    }
+}
+
+impl Arbitration {
+    fn empty(status: ObservationStatus) -> Self {
+        Self {
+            status,
+            singles: [None; CONTROLS],
+            sources: [SourceDecision {
+                press: None,
+                disposition: Disposition::Idle,
+                single_down: false,
+            }; CONTROLS],
+            withheld: [true; CONTROLS],
+            request: None,
+            refused: [None; CONTROLS],
+        }
+    }
+}
+
+impl PolicyA {
+    fn release_owned(&mut self, at: Duration, out: &mut Arbitration) {
+        for control in Control::ALL {
+            self.release_single(control, at, out);
+        }
+    }
+
+    fn release_single(&mut self, control: Control, at: Duration, out: &mut Arbitration) {
+        if let Some(press) = self.presses[control.index()].as_mut()
+            && press.kind == (PressKind::Single { live: true })
+        {
+            out.singles[control.index()] = Some(SingleEvent::Released {
+                press: press.identity,
+                at,
+            });
+            press.kind = PressKind::Single { live: false };
+        }
+    }
+
+    fn describe(&self, out: &mut Arbitration) {
+        for control in Control::ALL {
+            let i = control.index();
+            out.sources[i] = if self.unavailable[i] {
+                SourceDecision {
+                    press: None,
+                    disposition: Disposition::AwaitingNeutral,
+                    single_down: false,
+                }
+            } else if let Some(press) = self.presses[i] {
+                SourceDecision {
+                    press: Some(press.identity),
+                    disposition: match press.kind {
+                        PressKind::Pending => Disposition::Pending,
+                        PressKind::Single { .. } => Disposition::Single,
+                        PressKind::Consumed => Disposition::Consumed,
+                    },
+                    single_down: press.kind == (PressKind::Single { live: true }),
+                }
+            } else {
+                SourceDecision {
+                    press: None,
+                    disposition: if self.locked.contains(control) {
+                        Disposition::Consumed
+                    } else {
+                        Disposition::Idle
+                    },
+                    single_down: false,
+                }
+            };
+            out.withheld[i] = self.unavailable[i]
+                || self.locked.contains(control)
+                || self.presses[i].is_some_and(|press| {
+                    matches!(press.kind, PressKind::Pending | PressKind::Consumed)
+                });
+        }
+    }
+
+    fn invalidate_singles(&mut self, at: Duration, out: &mut Arbitration) {
+        self.release_owned(at, out);
+        for press in self.presses.iter_mut().flatten() {
+            press.single_eligible = false;
+        }
+    }
+
+    fn cancel_interrupted_chord(&mut self) {
+        if let Some(chord) = self.chord.as_mut()
+            && !chord.members.all_down(self.down)
+        {
+            chord.cancelled = true;
+        }
+    }
+
+    fn refuse_committed_overlaps(&mut self, previous: [bool; CONTROLS], out: &mut Arbitration) {
+        for &pair in self.pairs() {
+            if !pair.all_down(self.down)
+                || !pair.all_up(self.unavailable)
+                || !Control::ALL
+                    .into_iter()
+                    .any(|c| pair.contains(c) && !previous[c.index()])
+            {
+                continue;
+            }
+            let committed = Control::ALL.into_iter().any(|c| {
+                pair.contains(c)
+                    && self.presses[c.index()]
+                        .is_some_and(|p| matches!(p.kind, PressKind::Single { .. }))
+            });
+            let claimed = Control::ALL.into_iter().any(|c| {
+                pair.contains(c)
+                    && (self.locked.contains(c)
+                        || self.presses[c.index()].is_some_and(|p| p.kind == PressKind::Consumed))
+            });
+            if committed || claimed {
+                self.consume(
+                    pair,
+                    if committed {
+                        RefusalReason::CommittedSingle
+                    } else {
+                        RefusalReason::ClaimedPress
+                    },
+                    out,
+                );
+            }
+        }
+    }
+
+    fn resolve_chords(&mut self, stamp: ObservationStamp, out: &mut Arbitration) {
+        // Recenter takes priority, then the panel, then the mark: a group that makes two of them
+        // eligible at once forms the first and refuses the others as competing.
+        let eligible = self.pairs().iter().copied().find(|&members| {
+            self.pending_pair(members).is_some_and(|[left, other]| {
+                if members == Members::RECENTER {
+                    onset_gap(left, other) < self.config.recenter_join
+                } else {
+                    left.onset.sequence < other.onset.sequence
+                        && other.onset.at - left.onset.at < self.config.panel_join
+                }
+            })
+        });
+        if let Some(members) = eligible {
+            let command = members.command();
+            let identities = Control::ALL.map(|c| {
+                if members.contains(c) {
+                    self.presses[c.index()].map(|press| press.identity)
+                } else {
+                    None
+                }
+            });
+            self.claim(members);
+            self.chord = Some(Chord {
+                command,
+                members,
+                identities,
+                formed_at: stamp.at,
+                fired: false,
+                cancelled: false,
+            });
+            for &pair in self.pairs() {
+                if pair != members && pair.all_down(self.down) {
+                    self.consume(pair, RefusalReason::CompetingChord, out);
+                }
+            }
+            return;
+        }
+        for &pair in &self.pairs()[1..] {
+            if self
+                .pending_pair(pair)
+                .is_some_and(|[left, other]| left.onset.sequence == other.onset.sequence)
+            {
+                self.consume(pair, RefusalReason::AmbiguousOrder, out);
+            }
+        }
+        // Expired older singles commit before a late partner is refused. A newly joining B
+        // cannot commit here and escape consumption through its zero single-button delay.
+        for control in Control::ALL {
+            let i = control.index();
+            if self.presses[i].is_some_and(|p| {
+                p.kind == PressKind::Pending
+                    && p.identity.onset.sequence < stamp.sequence
+                    && self.down[i]
+                    && stamp.at - p.identity.onset.at >= self.reservation(control)
+            }) {
+                self.commit_single(control, stamp.at, out);
+            }
+        }
+        for &pair in self.pairs() {
+            if pair.all_down(self.down)
+                && pair.all_up(self.unavailable)
+                && Control::ALL.into_iter().any(|c| {
+                    pair.contains(c)
+                        && self.presses[c.index()].is_some_and(|p| p.kind == PressKind::Pending)
+                })
+            {
+                let committed = Control::ALL.into_iter().any(|c| {
+                    pair.contains(c)
+                        && self.presses[c.index()]
+                            .is_some_and(|p| matches!(p.kind, PressKind::Single { .. }))
+                });
+                self.consume(
+                    pair,
+                    if committed {
+                        RefusalReason::CommittedSingle
+                    } else {
+                        RefusalReason::JoinExpired
+                    },
+                    out,
+                );
+            }
+        }
+    }
+
+    fn pending_pair(&self, members: Members) -> Option<[PressIdentity; 2]> {
+        if !members.all_down(self.down) || !members.all_up(self.unavailable) {
+            return None;
+        }
+        let left = self.presses[Control::LeftStick.index()]?;
+        let other = self.presses[members.partner().index()]?;
+        (left.kind == PressKind::Pending && other.kind == PressKind::Pending)
+            .then_some([left.identity, other.identity])
+    }
+
+    fn claim(&mut self, members: Members) {
+        self.locked = self.locked.union(members);
+        for control in Control::ALL {
+            if members.contains(control)
+                && let Some(press) = self.presses[control.index()].as_mut()
+                && press.kind == PressKind::Pending
+            {
+                press.kind = PressKind::Consumed;
+            }
+        }
+    }
+
+    fn consume(&mut self, members: Members, reason: RefusalReason, out: &mut Arbitration) {
+        self.claim(members);
+        for control in Control::ALL {
+            if members.contains(control) {
+                out.refused[control.index()] = Some(reason);
+            }
+        }
+    }
+
+    /// The chord pairs the current interpretation admits, in priority order. Recenter always
+    /// leads, so the developer chords are the tail.
+    fn pairs(&self) -> &'static [Members] {
+        if self.developer_chords() {
+            &Members::PAIRS
+        } else {
+            &Members::PAIRS[..1]
+        }
+    }
+
+    fn developer_chords(&self) -> bool {
+        !(self.config.suppress_developer_chords_in_vehicles
+            && self.interpretation.is_some_and(|i| i.vehicle))
+    }
+
+    fn reservation(&self, control: Control) -> Duration {
+        match control {
+            Control::LeftStick if self.developer_chords() => {
+                self.config.recenter_join.max(self.config.panel_join)
+            }
+            Control::LeftStick => self.config.recenter_join,
+            Control::RightStick => self.config.recenter_join,
+            // Neither face button leads a chord, so either commits at once while the left click is
+            // neutral; the left click's own wait covers the mark chord, which shares the panel's
+            // window.
+            Control::RightB | Control::RightA => Duration::ZERO,
+        }
+    }
+
+    fn commit_single(&mut self, control: Control, at: Duration, out: &mut Arbitration) {
+        let i = control.index();
+        let Some(press) = self.presses[i].as_mut() else {
+            return;
+        };
+        if !press.single_eligible {
+            press.kind = PressKind::Consumed;
+            self.locked = self.locked.union(Members::of(control));
+            return;
+        }
+        if self.down[i] {
+            press.kind = PressKind::Single { live: true };
+            out.singles[i] = Some(SingleEvent::Pressed {
+                press: press.identity,
+                accepted_at: at,
+            });
+        } else {
+            out.singles[i] = Some(SingleEvent::Tap {
+                press: press.identity,
+                accepted_at: at,
+            });
+            self.presses[i] = None;
+        }
+    }
+
+    fn resolve_singles(&mut self, at: Duration, out: &mut Arbitration) {
+        for control in Control::ALL {
+            let i = control.index();
+            if self.presses[i].is_some_and(|p| {
+                p.kind == PressKind::Pending
+                    && (!self.down[i] || at - p.identity.onset.at >= self.reservation(control))
+            }) {
+                self.commit_single(control, at, out);
+            }
+        }
+    }
+
+    fn advance_chord(&mut self, at: Duration, out: &mut Arbitration) {
+        let Some(chord) = self.chord.as_mut() else {
+            return;
+        };
+        if !chord.cancelled
+            && !chord.fired
+            && (chord.command != SystemCommand::Recenter
+                || at - chord.formed_at >= self.config.recenter_hold)
+        {
+            chord.fired = true;
+            out.request = Some(SystemRequest {
+                command: chord.command,
+                members: chord.identities,
+                formed_at: chord.formed_at,
+                accepted_at: at,
+            });
+        }
+    }
+
+    fn finish_neutral(&mut self) {
+        if self.locked.all_up(self.down) && self.locked.all_up(self.unavailable) {
+            for control in Control::ALL {
+                if self.locked.contains(control) {
+                    self.presses[control.index()] = None;
+                }
+            }
+            self.locked = Members::EMPTY;
+            self.chord = None;
+        }
+        for control in Control::ALL {
+            if !self.down[control.index()] && !self.locked.contains(control) {
+                self.presses[control.index()] = None;
+            }
+        }
+    }
+}
+
+/// What an observation means beyond its levels; a change invalidates pending singles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Interpretation {
+    generation: BindingGeneration,
+    context: GameplayContext,
+    singles_enabled: bool,
+    vehicle: bool,
+}
+
+impl Interpretation {
+    fn of(input: &Observation) -> Self {
+        Self {
+            generation: input.generation,
+            context: input.context,
+            singles_enabled: input.singles_enabled,
+            vehicle: input.vehicle,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Press {
+    identity: PressIdentity,
+    kind: PressKind,
+    single_eligible: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum PressKind {
+    Pending,
+    Single { live: bool },
+    Consumed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Members(u8);
+
+impl Members {
+    const EMPTY: Self = Self(0);
+    const RECENTER: Self = Self(0b0011);
+    const PANEL: Self = Self(0b0101);
+    const MARK: Self = Self(0b1001);
+    /// Every chord pair, in priority order.
+    const PAIRS: [Self; 3] = [Self::RECENTER, Self::PANEL, Self::MARK];
+
+    /// The member that joins the left stick click in this pair.
+    fn partner(self) -> Control {
+        match self {
+            Self::RECENTER => Control::RightStick,
+            Self::PANEL => Control::RightB,
+            _ => Control::RightA,
+        }
+    }
+
+    /// The command this pair issues.
+    fn command(self) -> SystemCommand {
+        match self {
+            Self::RECENTER => SystemCommand::Recenter,
+            Self::PANEL => SystemCommand::TogglePanel,
+            _ => SystemCommand::Mark,
+        }
+    }
+
+    const fn of(control: Control) -> Self {
+        Self(1 << control.index())
+    }
+
+    const fn contains(self, control: Control) -> bool {
+        self.0 & Self::of(control).0 != 0
+    }
+
+    const fn union(self, other: Self) -> Self {
+        Self(self.0 | other.0)
+    }
+
+    fn all_down(self, down: [bool; CONTROLS]) -> bool {
+        Control::ALL
+            .into_iter()
+            .all(|c| !self.contains(c) || down[c.index()])
+    }
+
+    fn all_up(self, down: [bool; CONTROLS]) -> bool {
+        Control::ALL
+            .into_iter()
+            .all(|c| !self.contains(c) || !down[c.index()])
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Chord {
+    command: SystemCommand,
+    members: Members,
+    identities: [Option<PressIdentity>; CONTROLS],
+    formed_at: Duration,
+    fired: bool,
+    cancelled: bool,
+}
+
+fn onset_gap(left: PressIdentity, right: PressIdentity) -> Duration {
+    left.onset.at.abs_diff(right.onset.at)
+}
+
+#[cfg(test)]
+mod tests;

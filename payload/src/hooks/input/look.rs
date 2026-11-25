@@ -5,7 +5,16 @@
 //! slots including `LOOK_LEFT` / `LOOK_RIGHT` / `LOOK_UP` / `LOOK_DOWN`. These are the mouse-look
 //! deltas the game's camera system reads. We intercept them post-call: read the values, clear the
 //! effectors so the game's camera doesn't respond, and feed the deltas into the headpose simulation.
-//! The same seam is where [`crate::hooks::input::swim`] refuses backward movement in water.
+//! The same seam is where [`crate::hooks::input::swim`] refuses backward and sideways movement in
+//! water, and where the motion controllers' poll stage lands their bindings' writes
+//! ([`crate::controllers::bindings::stage::poll_stage`]): after the poll, so the injected state
+//! survives until the game reads it, and before the swim refusal, so it covers the controllers'
+//! input too. The bindings' decisions and acts run in the game stage, on the game thread before the
+//! world update; in play this detour runs in the engine's input job, which overlaps the game
+//! thread's world-mutating work, so it touches only the action maps and the mod's own state. The
+//! controllers' right stick turns the body through the same VR turn scheme as the look effectors,
+//! and the bindings are told whether this call polled the devices, since they stand down while it
+//! does not.
 
 use detours_macro::detour;
 use jc3gi::input::{
@@ -14,7 +23,12 @@ use jc3gi::input::{
 };
 use re_utilities::hook_library::HookLibrary;
 
-use crate::headpose;
+use crate::{
+    controllers::{self, bindings::hold::DevicePoll},
+    frame_timing::{self, Slot},
+    headpose,
+    hooks::input::swim::{log_tick, refuse_swim_moves},
+};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&INPUT_DEVICE_MANAGER_UPDATE_BINDER)
@@ -22,7 +36,17 @@ pub(super) fn hook_library() -> HookLibrary {
 
 #[detour(address = jc3gi::input::input_device_manager::InputDeviceManager::Update_ADDRESS)]
 fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
+    // Read before the call: `InputDeviceManager::m_Enabled` decides whether this call polls the
+    // devices, and egui's input capture may flip it from the window thread.
+    // SAFETY: the manager is the live singleton the game passes to its own update.
+    let poll = match unsafe { manager.as_ref() } {
+        Some(manager) if manager.m_Enabled => DevicePoll::Running,
+        _ => DevicePoll::Disabled,
+    };
     INPUT_DEVICE_MANAGER_UPDATE.get().unwrap().call(manager, dt);
+
+    let _timing = frame_timing::scope(Slot::InputTick);
+    let body_turn = controllers::bindings::stage::poll_stage(dt, poll);
 
     if !headpose::is_active() {
         return;
@@ -41,18 +65,30 @@ fn input_device_manager_update(manager: *mut InputDeviceManager, dt: f32) {
         return;
     };
     unsafe {
-        let (look_x, look_x_delta) = read_look_axis(map, Action::LOOK_RIGHT, Action::LOOK_LEFT);
+        let (mut look_x, mut look_x_delta) =
+            read_look_axis(map, Action::LOOK_RIGHT, Action::LOOK_LEFT);
+        // A deflected controller stick takes the turn over from the look effectors: the two are
+        // different kinds of input (a stick rate against a possible mouse delta), and summing them
+        // would scale neither correctly.
+        if let Some(turn) = body_turn
+            && turn != 0.0
+        {
+            look_x = turn;
+            look_x_delta = false;
+        }
         let (look_y, _) = read_look_axis(map, Action::LOOK_UP, Action::LOOK_DOWN);
 
         clear_effector(map, Action::LOOK_LEFT);
         clear_effector(map, Action::LOOK_RIGHT);
         clear_effector(map, Action::LOOK_UP);
         clear_effector(map, Action::LOOK_DOWN);
-        // Swimming refuses backward input outright; done here so the game's own input never carries
-        // it, rather than unpicking its effects downstream.
-        crate::hooks::input::swim::suppress_backward_input(map);
+        // Swimming refuses backward and sideways input outright; done here so the game's own input
+        // never carries it, rather than unpicking its effects downstream.
+        refuse_swim_moves(map);
 
         headpose::sim::on_input_tick(look_x, look_y, look_x_delta, dt);
+        // The swim heading's telemetry, after the headpose took this tick's turn.
+        log_tick(look_x);
     }
 }
 
