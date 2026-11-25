@@ -297,13 +297,9 @@ unsafe fn should_hide_facial(rc: *mut RenderContext, info: *const RBIInfo) -> bo
         return false;
     };
     // Shadow passes draw everything: that is the whole point.
-    if rc_ref
+    !rc_ref
         .m_RenderStatus
         .intersects(RenderStatus::RENDERSTATUS_SHADOWMAP)
-    {
-        return false;
-    }
-    true
 }
 
 const PALETTE_BUF_LEN: usize = 256;

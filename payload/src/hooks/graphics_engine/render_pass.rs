@@ -884,8 +884,8 @@ unsafe fn disable_shared_prepasses(this: *mut RenderEngine) -> Vec<*mut RenderPa
     };
     let mut disabled = Vec::new();
     for &(lo, hi) in SHARED_PREPASS_CATEGORIES {
-        for cat in lo..=hi {
-            for &pass in unsafe { engine.m_RenderPasses[cat].as_slice() } {
+        for category in &engine.m_RenderPasses[lo..=hi] {
+            for &pass in unsafe { category.as_slice() } {
                 if let Some(pass) = (unsafe { pass.as_mut() })
                     && pass.m_StateFlags.contains(RenderPassState::m_Enabled)
                 {

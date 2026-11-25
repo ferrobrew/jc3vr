@@ -377,11 +377,8 @@ fn equal_stamp_pose_and_input_backlogs_are_bounded_without_eviction() {
         history::take_gameplay();
     }
     assert_eq!(actual, loaded.recording.input);
-    for index in 1..4 {
-        assert_eq!(
-            state.stage_frame(now).unwrap(),
-            loaded.recording.frames[index].recenters
-        );
+    for (index, frame) in loaded.recording.frames.iter().enumerate().take(4).skip(1) {
+        assert_eq!(state.stage_frame(now).unwrap(), frame.recenters);
         let frames = take_frames().unwrap();
         assert_eq!(frames.len(), 1);
         assert_eq!(
