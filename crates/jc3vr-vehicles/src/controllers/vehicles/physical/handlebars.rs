@@ -18,7 +18,7 @@
 //! on the bars works nothing, so the grip that drops as a wrist turns the bars neither leans nor
 //! steers.
 
-use body_rig::angle::wrap;
+use body_rig::math::{angle::wrap, axis::shaped};
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Hand;
 
@@ -90,17 +90,7 @@ pub(super) fn step_bars(
 pub(super) fn steer_for_turn(turn: f32, spec: &HandlebarsSpec) -> f32 {
     let lock = lock(spec);
     let deadzone = spec.deadzone_deg.to_radians().clamp(0.0, lock * 0.5);
-    let magnitude = turn.abs();
-    if !magnitude.is_finite() || magnitude <= deadzone {
-        return 0.0;
-    }
-    let share = ((magnitude - deadzone) / (lock - deadzone).max(1e-3)).min(1.0);
-    let response = if spec.response.is_finite() {
-        spec.response.clamp(0.2, 5.0)
-    } else {
-        1.0
-    };
-    turn.signum() * share.powf(response)
+    shaped(turn, deadzone, lock, spec.response)
 }
 
 /// The bars' turn for the holding `grips` as they are now, which may be fresher than the last

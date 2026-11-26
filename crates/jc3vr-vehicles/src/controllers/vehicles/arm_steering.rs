@@ -31,6 +31,7 @@
 //! once they come in past a narrower share (the tuning's `arm_steering.spread_hysteresis`), so a wing held near the
 //! threshold does not flicker in and out.
 
+use body_rig::math::axis::past_deadzone;
 use glam::{Quat, Vec2, Vec3};
 use jc3vr_body::controllers::body::EYES_FORWARD_OF_SHOULDERS;
 
@@ -131,11 +132,15 @@ pub fn steer(pose: &ArmPose, config: &ArmSteeringConfig, engaged: bool) -> Optio
         return None;
     }
     let tuning = &VEHICLES.get().arm_steering;
-    let bank = shape(pose.bank_m, tuning.deadzone_m, tuning.full_bank_m);
+    let bank = past_deadzone(pose.bank_m, tuning.deadzone_m, tuning.full_bank_m);
     let pitch = match pitch_input(pose, config) {
-        PitchInput::Height(height) => shape(-height, tuning.deadzone_m, tuning.full_pitch_m),
-        PitchInput::TiltDeg(tilt) => shape(tilt, tuning.tilt_deadzone_deg, tuning.full_tilt_deg),
-        PitchInput::Sweep(sweep) => shape(-sweep, tuning.deadzone_m, tuning.full_sweep_m),
+        PitchInput::Height(height) => {
+            past_deadzone(-height, tuning.deadzone_m, tuning.full_pitch_m)
+        }
+        PitchInput::TiltDeg(tilt) => {
+            past_deadzone(tilt, tuning.tilt_deadzone_deg, tuning.full_tilt_deg)
+        }
+        PitchInput::Sweep(sweep) => past_deadzone(-sweep, tuning.deadzone_m, tuning.full_sweep_m),
     };
     let pitch = if config.invert_pitch { -pitch } else { pitch };
     Some(Vec2::new(bank, pitch))
@@ -179,16 +184,6 @@ pub(crate) fn wrist_tilt(wrist: Quat, lead: f32) -> f32 {
     };
     let tilt = lead * fingers.dot(level.cross(back)).atan2(level.dot(back));
     if tilt.is_finite() { tilt } else { 0.0 }
-}
-
-/// A signed offset over a deadzone, reaching one at `full`.
-fn shape(value: f32, deadzone: f32, full: f32) -> f32 {
-    let magnitude = value.abs();
-    if !magnitude.is_finite() || magnitude <= deadzone {
-        return 0.0;
-    }
-    let span = (full - deadzone).max(1e-3);
-    value.signum() * ((magnitude - deadzone) / span).min(1.0)
 }
 
 #[cfg(test)]

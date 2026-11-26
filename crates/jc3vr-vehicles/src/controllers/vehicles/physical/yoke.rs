@@ -8,6 +8,7 @@
 //! plane on its way, as the stick's does. The held yoke cues its hands at the centre and at the
 //! ends of each axis, so the hands find centre and the limits without looking.
 
+use body_rig::math::{angle::wrap, axis::past_deadzone};
 use glam::{Quat, Vec2, Vec3};
 use jc3vr_input::frame::Hand;
 
@@ -167,9 +168,10 @@ impl YokeState {
 pub fn yoke_value(spec: &YokeSpec, roll: f32, pitch: f32) -> Vec2 {
     let roll_share = roll / spec.max_roll_deg.to_radians().max(1e-3);
     let pitch_share = pitch / spec.travel_m.max(1e-3);
+    let deadzone = spec.deadzone.clamp(0.0, 0.9);
     Vec2::new(
-        past_deadzone(roll_share, spec.deadzone),
-        -past_deadzone(pitch_share, spec.deadzone),
+        past_deadzone(roll_share, deadzone, 1.0),
+        -past_deadzone(pitch_share, deadzone, 1.0),
     )
 }
 
@@ -269,20 +271,6 @@ pub(super) fn nearest_horn(frame: &YokeFrame, state: &YokeState, point: Vec3) ->
     } else {
         right
     }
-}
-
-fn past_deadzone(share: f32, deadzone: f32) -> f32 {
-    let deadzone = deadzone.clamp(0.0, 0.9);
-    if !share.is_finite() || share.abs() <= deadzone {
-        return 0.0;
-    }
-    share.signum() * ((share.abs() - deadzone) / (1.0 - deadzone)).min(1.0)
-}
-
-/// `angle` wrapped into `-π..=π`.
-fn wrap(angle: f32) -> f32 {
-    let tau = std::f32::consts::TAU;
-    angle - tau * ((angle + std::f32::consts::PI) / tau).floor()
 }
 
 #[cfg(test)]

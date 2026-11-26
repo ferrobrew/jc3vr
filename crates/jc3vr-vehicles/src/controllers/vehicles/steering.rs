@@ -40,7 +40,11 @@
 //! vehicle's own steering. Let go, the wheel returns to centre at the return rate, easing in over
 //! the last stretch ([`return_step`]).
 
-use body_rig::{angle::wrap, rotation::twist_angle};
+use body_rig::math::{
+    angle::wrap,
+    axis::{shaped, unshaped},
+    rotation::twist_angle,
+};
 use glam::{Quat, Vec3};
 
 use crate::controllers::vehicles::{
@@ -298,23 +302,12 @@ pub fn return_step(angle: f32, spec: &WheelSpec, dt: f32) -> f32 {
 /// The steering, `-1..=1` with positive right, the wheel at `angle` (clockwise) gives: past the
 /// deadzone, the rest of the way to the lock shaped by the response exponent.
 pub fn steer_for_angle(angle: f32, spec: &WheelSpec) -> f32 {
-    let deadzone = deadzone(spec);
-    let magnitude = angle.abs();
-    if !magnitude.is_finite() || magnitude <= deadzone {
-        return 0.0;
-    }
-    let share = ((magnitude - deadzone) / (lock(spec) - deadzone).max(1e-3)).min(1.0);
-    angle.signum() * share.powf(response(spec))
+    shaped(angle, deadzone(spec), lock(spec), spec.response)
 }
 
 /// The wheel angle that gives the steering `steer`: the inverse of [`steer_for_angle`].
 pub fn angle_for_steer(steer: f32, spec: &WheelSpec) -> f32 {
-    if !steer.is_finite() || steer == 0.0 {
-        return 0.0;
-    }
-    let deadzone = deadzone(spec);
-    let share = steer.abs().min(1.0).powf(1.0 / response(spec));
-    steer.signum() * (deadzone + share * (lock(spec) - deadzone).max(0.0))
+    unshaped(steer, deadzone(spec), lock(spec), spec.response)
 }
 
 fn lock(spec: &WheelSpec) -> f32 {
@@ -323,14 +316,6 @@ fn lock(spec: &WheelSpec) -> f32 {
 
 fn deadzone(spec: &WheelSpec) -> f32 {
     spec.deadzone_deg.to_radians().clamp(0.0, lock(spec) * 0.5)
-}
-
-fn response(spec: &WheelSpec) -> f32 {
-    if spec.response.is_finite() {
-        spec.response.clamp(0.2, 5.0)
-    } else {
-        1.0
-    }
 }
 
 /// How much a hand at `position` counts by its travel around the hub: nothing near the hub, fully

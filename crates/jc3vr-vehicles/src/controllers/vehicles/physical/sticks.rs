@@ -7,7 +7,10 @@
 //! the shaft, measured from the hand's orientation when it took the stick, so a wrist held at any
 //! angle starts from no rudder.
 
-use body_rig::rotation::twist_angle;
+use body_rig::math::{
+    axis::{past_deadzone, radial_past_deadzone},
+    rotation::twist_angle,
+};
 use glam::{Quat, Vec2, Vec3};
 use jc3vr_body::controllers::grab::cockpit::ControlKind;
 use jc3vr_input::frame::Hand;
@@ -36,12 +39,7 @@ pub fn stick_deflection(spec: &StickSpec, top: Vec3, top_now: Vec3) -> Vec2 {
 pub fn stick_value(spec: &StickSpec, deflection: Vec2) -> Vec2 {
     let max = spec.max_deflection_m.max(1e-3);
     let share = Vec2::new(deflection.x, -deflection.y) / max;
-    let length = share.length();
-    let deadzone = spec.deadzone.clamp(0.0, 0.9);
-    if !length.is_finite() || length <= deadzone {
-        return Vec2::ZERO;
-    }
-    share / length * ((length - deadzone) / (1.0 - deadzone)).min(1.0)
+    radial_past_deadzone(share, spec.deadzone.clamp(0.0, 0.9), 1.0)
 }
 
 /// The released stick's deflection after `dt` seconds of its centring spring.
@@ -138,10 +136,11 @@ fn twist_rudder_about_axis(
     axis: Vec3,
 ) -> f32 {
     let twist = -twist_angle(now * grab.inverse(), axis);
-    let deadzone = config.twist_deadzone_deg.to_radians().max(0.0);
-    let full = config.twist_full_deg.to_radians().max(deadzone + 1e-3);
-    let past = (twist.abs() - deadzone).max(0.0);
-    twist.signum() * (past / (full - deadzone)).min(1.0)
+    past_deadzone(
+        twist,
+        config.twist_deadzone_deg.to_radians(),
+        config.twist_full_deg.to_radians(),
+    )
 }
 
 #[cfg(test)]

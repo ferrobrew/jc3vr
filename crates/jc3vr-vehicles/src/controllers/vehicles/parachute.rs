@@ -39,6 +39,7 @@
 //! nothing. The holding hand is drawn on the handle ([`anchor_point`]): where it was taken, moved
 //! down, up, or forward with the hand by no more than a full pull.
 
+use body_rig::math::axis::past_deadzone;
 use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::grab::{Candidate, GrabVolume};
 use jc3vr_input::frame::Hand;
@@ -168,22 +169,15 @@ pub fn release_all(state: &mut HandleState, events: &mut Vec<HandleEvent>) {
 /// or, with no drop, the rise above it or the travel forward of it (the cockpit's -Z), whichever is
 /// further, the same way, negative.
 pub fn pull(config: &ParachuteHandlesTuning, hold: HandleHold, grip: Vec3) -> f32 {
-    let deadzone = config.deadzone_m;
-    let span = (config.full_pull_m - deadzone).max(1e-3);
-    let share = |travel: f32| ((travel - deadzone) / span).min(1.0);
-    let drop = hold.rest.y - grip.y;
-    if !drop.is_finite() {
+    if !grip.is_finite() {
         return 0.0;
     }
-    if drop > deadzone {
-        return share(drop);
+    let share = |travel: f32| past_deadzone(travel.max(0.0), config.deadzone_m, config.full_pull_m);
+    let drop = share(hold.rest.y - grip.y);
+    if drop > 0.0 {
+        return drop;
     }
-    let push = (grip.y - hold.rest.y).max(hold.rest.z - grip.z);
-    if push.is_finite() && push > deadzone {
-        -share(push)
-    } else {
-        0.0
-    }
+    -share((grip.y - hold.rest.y).max(hold.rest.z - grip.z))
 }
 
 /// The stick vector the pulls steer with (+X right, +Y forward): the right pull less the left one
