@@ -17,6 +17,8 @@ pub(crate) mod runtime;
 
 use std::{error::Error, fmt, time::Duration};
 
+use crate::controllers::intent::config::BindingsConfig;
+
 /// How many physical controls the arbiter covers, the recorded decision's width.
 pub(crate) const CONTROLS: usize = tracking_format::input::policy::PROTECTED_CONTROLS;
 
@@ -88,6 +90,29 @@ pub(crate) struct PolicyAConfig {
     /// Withhold the panel and mark chords while the observation is in a vehicle, so that the left
     /// stick click waits only for the recenter join window.
     pub(crate) suppress_developer_chords_in_vehicles: bool,
+}
+
+/// The policy's effective timings from the bindings' settings. Invalid live edits withhold
+/// protected input rather than silently substituting a different join window.
+pub(crate) fn effective_config(bindings: &BindingsConfig) -> Option<PolicyAConfig> {
+    let recenter_join = Duration::try_from_secs_f32(bindings.stick_chord_window_s).ok()?;
+    let panel_join = Duration::try_from_secs_f32(bindings.panel_chord_window_s).ok()?;
+    let recenter_hold = Duration::try_from_secs_f32(bindings.recenter_hold_s).ok()?;
+    for duration in [recenter_join, panel_join, recenter_hold] {
+        u64::try_from(duration.as_nanos()).ok()?;
+    }
+    (!recenter_join.is_zero()
+        && recenter_join <= Duration::from_secs(1)
+        && !panel_join.is_zero()
+        && panel_join <= Duration::from_secs(1)
+        && !recenter_hold.is_zero()
+        && recenter_hold <= Duration::from_secs(60))
+    .then_some(PolicyAConfig {
+        recenter_join,
+        panel_join,
+        recenter_hold,
+        suppress_developer_chords_in_vehicles: bindings.suppress_developer_chords_in_vehicles,
+    })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

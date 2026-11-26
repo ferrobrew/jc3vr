@@ -31,7 +31,7 @@ use crate::controllers::{
         controls::ButtonControl,
         intents::{Intent, SemanticInput, shape},
         policy_a::{
-            Arbitration, CONTROLS, ClockEpoch, Control, Disposition, PolicyA, PolicyAConfig,
+            self, Arbitration, CONTROLS, ClockEpoch, Control, Disposition, PolicyA, PolicyAConfig,
             ResetReason, ResetRequest, SingleEvent, SystemCommand,
             attribution::{Attribution, SourceIdentity, raw_location, raw_verified},
             recording,
@@ -100,7 +100,7 @@ impl Runtime {
     }
 
     pub(crate) fn step(&mut self, input: TickInput<'_>) -> Tick {
-        let config = input.config.policy_a();
+        let config = policy_a::effective_config(input.config);
         if self.config != config {
             let watermark = self.watermark;
             self.config = config;
