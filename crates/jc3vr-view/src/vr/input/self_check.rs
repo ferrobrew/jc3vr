@@ -38,7 +38,7 @@ use parking_lot::Mutex;
 
 use crate::vr::input::{
     actions::{Actions, SetId},
-    config::InputConfig,
+    config::grip_press,
     layout,
     layout::{BoolInput, FloatInput, Input, Profile, Vec2Input},
     semantic::{
@@ -81,7 +81,6 @@ pub(crate) struct CheckFrame<'a> {
     pub(crate) dominant: Hand,
     pub(crate) hands: &'a [HandFrame; 2],
     pub(crate) semantic: &'a SemanticFrame,
-    pub(crate) config: &'a InputConfig,
 }
 
 /// The self-check's progress through one input state.
@@ -162,7 +161,7 @@ impl SelfCheck {
                 value: inputs.squeeze,
             };
             if let Some(finding) = watch.observe(state.value, reading) {
-                let rule = match frame.config.grip_press(frame.profiles[hand.index()], hand) {
+                let rule = match grip_press(frame.profiles[hand.index()], hand) {
                     GripPress::Force(t) => {
                         format!("force, press {:.2} release {:.2}", t.press, t.release)
                     }

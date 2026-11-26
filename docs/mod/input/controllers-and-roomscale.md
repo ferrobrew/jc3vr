@@ -469,7 +469,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 
 | Part | Settings | State |
 |---|---|---|
-| OpenXR actions, poses, haptics queue, and hand tracking | `enabled`, `input.trigger_press`, `input.squeeze_press`, `input.squeeze_force_press`, `input.trackpad_press`, `input.hand_tracking` | Built. The hand-tracking joints are published for the finger curls. |
+| OpenXR actions, poses, haptics queue, and hand tracking | `enabled`, `input.hand_tracking`; the press thresholds are fixed in `vr::input::config` | Built. The hand-tracking joints are published for the finger curls. |
 | Scheme selection | `enabled`; the controller scheme is in effect while a controller is active | Built. |
 | Body dimensions and remap | the settings file's `[body]` section; `body.remap_hands` (on), `body.remap_head` (on) | Built. The head remap feeds the view through the posture (milestone 2). |
 | Mode detection | none (`mode::DEBOUNCE_TICKS`) | Built. The headpose sim keeps its own on-foot test. |

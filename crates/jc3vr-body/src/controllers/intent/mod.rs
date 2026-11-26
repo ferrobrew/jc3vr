@@ -18,7 +18,7 @@ pub mod yank;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use jc3vr_input::frame::{self, Button, GripPress, Hand};
-use jc3vr_view::vr::input::config::INPUT_CONFIG;
+use jc3vr_view::vr::input::config::{SQUEEZE_PRESS, grip_press};
 
 use crate::controllers::intent::controls::holds_unseen;
 
@@ -49,15 +49,14 @@ pub fn clear_hands_closed() {
 /// ([`holds_unseen`]), for a hold resumed with no tick's history of the hand. `None`
 /// while the frame is unfocused or the hand is not tracked, when the grip is not known.
 pub fn grip_holds_now(hand: Hand) -> Option<bool> {
-    let input = *INPUT_CONFIG.lock();
     frame::with_latest(|f| {
         let source = f.hand(hand);
         (f.focused && source.active).then(|| {
-            let force = matches!(input.grip_press(source.profile, hand), GripPress::Force(_));
+            let force = matches!(grip_press(source.profile, hand), GripPress::Force(_));
             holds_unseen(
                 source.buttons.contains(Button::SqueezePress),
                 force.then_some(source.inputs.squeeze),
-                input.squeeze_press.release,
+                SQUEEZE_PRESS.release,
             )
         })
     })

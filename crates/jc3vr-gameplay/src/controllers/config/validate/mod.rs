@@ -28,7 +28,6 @@ use crate::controllers::config::ControllersConfig;
 pub fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     c.body.rig.validate()?;
     c.body.ik.validate()?;
-    c.input.validate()?;
     input::bindings(&c.bindings)?;
     aim::hands(&c.hands)?;
     aim::aim(&c.aim)?;

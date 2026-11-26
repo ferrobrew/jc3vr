@@ -28,7 +28,7 @@ use crate::vr::{
         PROFILES_DIRTY, STATUS,
         actions::{SetId, State},
         active_action_set,
-        config::SamplingConfig,
+        config::{SamplingConfig, press_rules},
         flight_pose,
         flight_pose::PendingHead,
         layout::{BoolInput, FloatInput, HandsAction, Vec2Input},
@@ -99,7 +99,6 @@ impl InputState {
             local,
             time,
             baseline,
-            cfg,
         };
         let mut hands: [HandFrame; 2] = Default::default();
         let mut first_error = None;
@@ -167,14 +166,12 @@ impl InputState {
             global: self.read_set(
                 session,
                 SemanticSet::Global,
-                cfg,
                 &mut first_error,
                 &mut observed,
             ),
             mode: self.read_set(
                 session,
                 SemanticSet::of(mode),
-                cfg,
                 &mut first_error,
                 &mut observed,
             ),
@@ -189,7 +186,6 @@ impl InputState {
                 dominant: self.dominant,
                 hands: &frame.hands,
                 semantic: &semantic,
-                config: &cfg.input,
             });
         }
         let flight_controllers = flight_head
@@ -240,12 +236,11 @@ impl InputState {
         &self,
         session: &xr::Session<xr::D3D11>,
         set: SemanticSet,
-        cfg: &SamplingConfig,
         first_error: &mut Option<anyhow::Error>,
         observed: &mut Vec<RouteSample>,
     ) -> SetState {
         let previous = semantic_frame::previous_down(set);
-        let rules = Hand::BOTH.map(|hand| cfg.input.press_rules(self.profiles[hand.index()], hand));
+        let rules = Hand::BOTH.map(|hand| press_rules(self.profiles[hand.index()], hand));
         let actions = set
             .actions()
             .iter()
@@ -335,7 +330,6 @@ impl InputState {
             local,
             time,
             baseline,
-            cfg,
         } = *sampling;
         let actions = &self.actions;
         let mut active = false;
@@ -402,7 +396,7 @@ impl InputState {
         let buttons = derive_buttons(
             &inputs,
             self.previous_buttons[hand.index()],
-            &cfg.input.press_rules(profile, hand),
+            &press_rules(profile, hand),
         );
 
         let locate = |space: &xr::Space| -> anyhow::Result<TrackedPose> {
@@ -520,7 +514,6 @@ struct Sampling<'a> {
     time: xr::Time,
     /// The recenter baseline, re-basing LOCAL into the cockpit frame.
     baseline: Option<Baseline>,
-    cfg: &'a SamplingConfig,
 }
 
 /// How many consecutive failed frames pass between repeated failure logs (a few seconds at a

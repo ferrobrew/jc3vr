@@ -3,43 +3,20 @@
 use egui::Ui;
 use jc3vr_gameplay::controllers::{
     bindings::{Blocker, HandRecovery},
-    config::{CONTROLLERS_CONFIG, ControllersConfig},
+    config::ControllersConfig,
 };
 use jc3vr_input::{
     frame,
-    frame::{Button, GripPress, Hand, PressThresholds},
+    frame::{Button, GripPress, Hand},
 };
-use jc3vr_view::vr::input::config::{InputConfig, validate_thresholds};
+use jc3vr_view::vr::input::config::grip_press;
 
 pub(super) fn devices(ui: &mut Ui, c: &mut ControllersConfig) {
     ui.checkbox(&mut c.input.hand_tracking, "Hand tracking")
         .on_hover_text("Locate the hand skeleton through XR_EXT_hand_tracking when offered.");
-    let input = &mut c.input;
-    threshold_pair(ui, &mut input.trigger_press, "Trigger", None);
-    threshold_pair(
-        ui,
-        &mut input.squeeze_press,
-        "Squeeze",
-        Some("The grip press on a controller without grip force (Touch)."),
-    );
-    threshold_pair(
-        ui,
-        &mut input.squeeze_force_press,
-        "Grip force",
-        Some(
-            "The grip press on a controller with grip force (Index), whose capacitive squeeze \
-             value is full whenever the hand rests round the handle.",
-        ),
-    );
-    threshold_pair(
-        ui,
-        &mut input.trackpad_press,
-        "Trackpad",
-        Some("The trackpad force that presses a half, which pages the menu tabs."),
-    );
 }
 
-/// Each hand's input recovery and its grip and trackpad readings beside their thresholds.
+/// Each hand's input recovery and its grip and trackpad readings.
 pub(super) fn devices_readout(ui: &mut Ui, recovery: [HandRecovery; 2]) {
     for hand in Hand::BOTH {
         ui.label(format!(
@@ -52,54 +29,11 @@ pub(super) fn devices_readout(ui: &mut Ui, recovery: [HandRecovery; 2]) {
              grip, buttons, and stick rest.",
         );
     }
-    let input = CONTROLLERS_CONFIG.query(|c| c.input);
-    grip_readout(ui, &input);
+    grip_readout(ui);
 }
 
-/// The press and release sliders of one threshold pair, kept in order and valid.
-fn threshold_pair(ui: &mut Ui, pair: &mut PressThresholds, label: &str, hover: Option<&str>) {
-    let before = *pair;
-    let response =
-        ui.add(egui::Slider::new(&mut pair.press, 0.05..=1.0).text(format!("{label} press")));
-    if let Some(hover) = hover {
-        response.on_hover_text(hover);
-    }
-    settle_threshold(pair, before, true);
-    let before = *pair;
-    ui.add(egui::Slider::new(&mut pair.release, 0.0..=1.0).text(format!("{label} release")));
-    settle_threshold(pair, before, false);
-}
-
-fn settle_threshold(pair: &mut PressThresholds, before: PressThresholds, press: bool) {
-    let value = if press { pair.press } else { pair.release };
-    *pair = before;
-    set_threshold(pair, press, value);
-}
-
-fn set_threshold(pair: &mut PressThresholds, press: bool, value: f32) {
-    let candidate = if press {
-        PressThresholds {
-            press: value,
-            release: pair.release.min(value),
-        }
-    } else {
-        PressThresholds {
-            press: pair.press.max(value),
-            release: value,
-        }
-    };
-    if validate_thresholds(candidate, "input").is_ok() {
-        *pair = candidate;
-    }
-}
-
-#[cfg(test)]
-mod tests;
-#[cfg(test)]
-mod widget_tests;
-
-/// Each hand's grip and trackpad readings beside their thresholds, for tuning them.
-fn grip_readout(ui: &mut Ui, input: &InputConfig) {
+/// Each hand's grip and trackpad readings.
+fn grip_readout(ui: &mut Ui) {
     let Some(hands) =
         frame::with_latest(|f| f.hands.each_ref().map(|h| (h.profile, h.inputs, h.buttons)))
     else {
@@ -108,7 +42,7 @@ fn grip_readout(ui: &mut Ui, input: &InputConfig) {
     };
     for hand in Hand::BOTH {
         let (profile, inputs, buttons) = hands[hand.index()];
-        let source = match input.grip_press(profile, hand) {
+        let source = match grip_press(profile, hand) {
             GripPress::Force(_) => "force",
             GripPress::Value(_) => "value",
         };

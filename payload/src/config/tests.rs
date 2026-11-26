@@ -392,22 +392,6 @@ fn an_invalid_vector_component_resets_the_vector() {
 }
 
 #[test]
-fn an_inconsistency_the_default_does_not_fix_resets_the_group() {
-    let mut config = Config::new();
-    config.controllers.dominant_hand = Hand::Left;
-    // The release keeps its default, which is above this press: resetting the setting the check
-    // names does not help, so the group around it is reset.
-    config.controllers.input.trigger_press.press = 0.05;
-    let Loaded { config, report, .. } = parse(&toml::to_string(&config).unwrap()).unwrap();
-    assert_eq!(
-        config.controllers.input.trigger_press,
-        Config::new().controllers.input.trigger_press
-    );
-    assert_eq!(config.controllers.dominant_hand, Hand::Left);
-    assert_eq!(reset_paths(&report), ["controllers.input.trigger_press"]);
-}
-
-#[test]
 fn several_invalid_controller_settings_are_each_reset() {
     let mut config = Config::new();
     config.controllers.aim.assist_strength = 5.0;

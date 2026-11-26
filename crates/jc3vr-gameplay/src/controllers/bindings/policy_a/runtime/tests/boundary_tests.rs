@@ -9,19 +9,19 @@ use jc3vr_input::{
     frame::{HandFrame, InteractionProfile, TrackedPose},
     semantic::vocabulary::WingsuitAction,
 };
-use jc3vr_view::vr::input::semantic::{
-    admission,
-    bound::of_sources,
-    frame::{ActionValue, digital},
+use jc3vr_view::vr::input::{
+    config::press_rules,
+    semantic::{
+        admission,
+        bound::of_sources,
+        frame::{ActionValue, digital},
+    },
 };
 
 use super::*;
-use crate::controllers::{
-    bindings::{
-        tables::Bindings,
-        trigger_ownership::{TriggerMask, mask_routes},
-    },
-    config::ControllersConfig,
+use crate::controllers::bindings::{
+    tables::Bindings,
+    trigger_ownership::{TriggerMask, mask_routes},
 };
 
 fn hands() -> [HandFrame; 2] {
@@ -319,9 +319,7 @@ fn analog_grapple_without_default_uses_sampler_hysteresis_through_policy_and_tab
         assert!(default_binding(id.set, id.index()).is_none());
         let mut runtime = Runtime::default();
         let mut bindings = Bindings::new();
-        let rules = ControllersConfig::new()
-            .input
-            .press_rules(InteractionProfile::ValveIndex, Hand::Right);
+        let rules = press_rules(InteractionProfile::ValveIndex, Hand::Right);
         let controls = Controls {
             dominant: Hand::Right,
             ..Default::default()

@@ -16,7 +16,10 @@ use jc3vr_body::controllers::intent::config::{BindingsConfig, TRIGGER_DEADZONE};
 use jc3vr_input::frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame};
 use jc3vr_view::{
     headpose::config::{VrTurnConfig, VrTurnMode},
-    vr::input::{config::InputConfig, semantic::admission::hand_usable},
+    vr::input::{
+        config::{TRIGGER_PRESS, grip_press},
+        semantic::admission::hand_usable,
+    },
 };
 
 /// One hand's recovery state, for the tick report.
@@ -40,7 +43,7 @@ pub enum Blocker {
     /// The trigger's analog value.
     Trigger(f32),
     /// The grip reading its press is derived from: the squeeze force on a force-sensing grip, the
-    /// squeeze value elsewhere ([`InputConfig::grip_press`]).
+    /// squeeze value elsewhere ([`grip_press`]).
     Squeeze(f32),
     /// The thumbstick's magnitude and the neutral threshold it must fall under.
     Stick { magnitude: f32, neutral: f32 },
@@ -48,10 +51,6 @@ pub enum Blocker {
 
 /// The thresholds a hand's controls must fall under to count as at rest.
 pub(super) struct NeutralPolicy {
-    trigger_release: f32,
-    trigger_deadzone: f32,
-    /// The grip press thresholds, per profile ([`InputConfig::grip_press`]).
-    input: InputConfig,
     /// Per hand, in [`Hand::index`] order.
     stick_neutral: [f32; 2],
 }
@@ -74,12 +73,7 @@ impl NeutralPolicy {
         })
     }
 
-    pub fn new(
-        input: &InputConfig,
-        bindings: &BindingsConfig,
-        turn: &VrTurnConfig,
-        dominant: Hand,
-    ) -> Self {
+    pub fn new(bindings: &BindingsConfig, turn: &VrTurnConfig, dominant: Hand) -> Self {
         let move_deadzone = finite_or_zero(bindings.move_deadzone).clamp(0.0, 0.99);
         // The dominant stick also turns the body: continuously past the smooth deadzone, or by a
         // snap that rearms once the stick relaxes under half its threshold.
@@ -91,12 +85,7 @@ impl NeutralPolicy {
         let mut stick_neutral = [0.0; 2];
         stick_neutral[dominant.index()] = dominant_stick.max(STICK_NEUTRAL_FLOOR);
         stick_neutral[dominant.other().index()] = move_deadzone.max(STICK_NEUTRAL_FLOOR);
-        Self {
-            trigger_release: input.trigger_press.release,
-            trigger_deadzone: TRIGGER_DEADZONE,
-            input: *input,
-            stick_neutral,
-        }
+        Self { stick_neutral }
     }
 }
 
@@ -233,15 +222,12 @@ fn blocker(hand: &HandFrame, config: &NeutralPolicy, index: usize) -> Option<Blo
     // Both digital release and analog deadzones matter: a released trigger can still accelerate.
     if !(input.trigger.is_finite()
         && input.trigger >= 0.0
-        && input.trigger < config.trigger_release
-        && input.trigger <= config.trigger_deadzone)
+        && input.trigger < TRIGGER_PRESS.release
+        && input.trigger <= TRIGGER_DEADZONE)
     {
         return Some(Blocker::Trigger(input.trigger));
     }
-    let (grip, grip_thresholds) = config
-        .input
-        .grip_press(hand.profile, Hand::BOTH[index])
-        .reading(input);
+    let (grip, grip_thresholds) = grip_press(hand.profile, Hand::BOTH[index]).reading(input);
     if !(grip.is_finite() && grip >= 0.0 && grip < grip_thresholds.release) {
         return Some(Blocker::Squeeze(grip));
     }
@@ -310,17 +296,13 @@ mod tests {
         yank::LineYank,
     };
     use jc3vr_input::frame::{ActionSetKind, Button, Hand, InteractionProfile, derive_buttons};
+    use jc3vr_view::vr::input::config::{SQUEEZE_FORCE_PRESS, SQUEEZE_PRESS, press_rules};
 
     use super::*;
     use crate::controllers::bindings::{State, TickReport, tables::Bindings};
 
     fn policy() -> NeutralPolicy {
-        NeutralPolicy::new(
-            &InputConfig::new(),
-            &BindingsConfig::new(),
-            &VrTurnConfig::new(),
-            Hand::Right,
-        )
+        NeutralPolicy::new(&BindingsConfig::new(), &VrTurnConfig::new(), Hand::Right)
     }
 
     fn neutral(hand: &HandFrame, config: &NeutralPolicy, which: Hand) -> bool {
@@ -328,7 +310,6 @@ mod tests {
     }
 
     fn published(sequence: u64, usable: [bool; 2], triggers: [f32; 2]) -> ControllerFrame {
-        let config = InputConfig::new();
         let hands = std::array::from_fn(|i| {
             let mut hand = HandFrame {
                 active: usable[i],
@@ -340,7 +321,7 @@ mod tests {
             hand.buttons = derive_buttons(
                 &hand.inputs,
                 ButtonSet::EMPTY,
-                &config.press_rules(hand.profile, Hand::BOTH[i]),
+                &press_rules(hand.profile, Hand::BOTH[i]),
             );
             hand
         });
@@ -530,27 +511,24 @@ mod tests {
 
     #[test]
     fn configured_neutral_allows_a_resting_grip_and_ignores_touch_position() {
-        let mut input = InputConfig::new();
-        input.trigger_press.release = 0.4;
-        input.squeeze_press.release = 0.6;
         let mut bindings = BindingsConfig::new();
         bindings.move_deadzone = 0.3;
         let mut turn = VrTurnConfig::new();
         turn.deadzone = 0.3;
-        let config = NeutralPolicy::new(&input, &bindings, &turn, Hand::Right);
+        let config = NeutralPolicy::new(&bindings, &turn, Hand::Right);
         let mut sample = published(1, [true, false], [0.0; 2]);
         let hand = &mut sample.hands[0];
         hand.profile = InteractionProfile::OculusTouch;
         hand.inputs.trigger = 0.04;
-        hand.inputs.squeeze = 0.5;
+        hand.inputs.squeeze = 0.4;
         hand.inputs.thumbstick = Vec2::new(0.2, 0.0);
         hand.inputs.trackpad = Vec2::ONE;
         hand.buttons.set(Button::TrackpadTouch, true);
         assert!(neutral(hand, &config, Hand::Left));
-        hand.inputs.squeeze = input.squeeze_press.release;
+        hand.inputs.squeeze = SQUEEZE_PRESS.release;
         assert!(!neutral(hand, &config, Hand::Left));
-        hand.inputs.squeeze = 0.5;
-        hand.inputs.trigger = input.trigger_press.release;
+        hand.inputs.squeeze = 0.4;
+        hand.inputs.trigger = TRIGGER_PRESS.release;
         assert!(!neutral(hand, &config, Hand::Left));
         hand.inputs.trigger = 0.04;
         hand.inputs.thumbstick = Vec2::X;
@@ -563,18 +541,17 @@ mod tests {
 
     #[test]
     fn a_force_grip_rests_on_its_force_not_its_value() {
-        let input = InputConfig::new();
         let config = policy();
         let mut hand = published(1, [true, false], [0.0; 2]).hands[0].clone();
         hand.profile = InteractionProfile::ValveIndex;
         // The hand closed round the capacitive grip reads a full squeeze value, and is at rest.
         hand.inputs.squeeze = 1.0;
-        hand.inputs.squeeze_force = input.squeeze_force_press.release * 0.5;
+        hand.inputs.squeeze_force = SQUEEZE_FORCE_PRESS.release * 0.5;
         assert!(neutral(&hand, &config, Hand::Left));
-        hand.inputs.squeeze_force = input.squeeze_force_press.release;
+        hand.inputs.squeeze_force = SQUEEZE_FORCE_PRESS.release;
         assert_eq!(
             blocker(&hand, &config, Hand::Left.index()),
-            Some(Blocker::Squeeze(input.squeeze_force_press.release))
+            Some(Blocker::Squeeze(SQUEEZE_FORCE_PRESS.release))
         );
         // The same reading on a value grip is a held squeeze.
         hand.profile = InteractionProfile::OculusTouch;
@@ -609,13 +586,12 @@ mod tests {
 
     #[test]
     fn each_stick_rests_under_its_own_consumers_deadzone() {
-        let input = InputConfig::new();
         let mut bindings = BindingsConfig::new();
         bindings.move_deadzone = 0.2;
         let mut turn = VrTurnConfig::new();
         turn.mode = VrTurnMode::Smooth;
         turn.deadzone = 0.15;
-        let config = NeutralPolicy::new(&input, &bindings, &turn, Hand::Right);
+        let config = NeutralPolicy::new(&bindings, &turn, Hand::Right);
         let mut hand = published(1, [true, true], [0.0; 2]).hands[0].clone();
         // The off hand only walks, so drift under the move deadzone is at rest.
         hand.inputs.thumbstick = Vec2::new(0.18, 0.0);
@@ -632,14 +608,14 @@ mod tests {
             })
         );
         // A left-handed layout swaps the roles.
-        let config = NeutralPolicy::new(&input, &bindings, &turn, Hand::Left);
+        let config = NeutralPolicy::new(&bindings, &turn, Hand::Left);
         hand.inputs.thumbstick = Vec2::new(0.18, 0.0);
         assert!(!neutral(&hand, &config, Hand::Left));
         assert!(neutral(&hand, &config, Hand::Right));
         // Snap turning acts only past its threshold and rearms under half of it.
         turn.mode = VrTurnMode::Snap;
         turn.snap_threshold = 0.3;
-        let config = NeutralPolicy::new(&input, &bindings, &turn, Hand::Right);
+        let config = NeutralPolicy::new(&bindings, &turn, Hand::Right);
         hand.inputs.thumbstick = Vec2::new(0.14, 0.0);
         assert!(neutral(&hand, &config, Hand::Right));
         hand.inputs.thumbstick = Vec2::new(0.16, 0.0);
@@ -648,13 +624,12 @@ mod tests {
 
     #[test]
     fn slight_drift_rests_even_under_tiny_deadzones() {
-        let input = InputConfig::new();
         let mut bindings = BindingsConfig::new();
         bindings.move_deadzone = 0.0;
         let mut turn = VrTurnConfig::new();
         turn.mode = VrTurnMode::Smooth;
         turn.deadzone = 0.0;
-        let config = NeutralPolicy::new(&input, &bindings, &turn, Hand::Right);
+        let config = NeutralPolicy::new(&bindings, &turn, Hand::Right);
         let mut hand = published(1, [true, true], [0.0; 2]).hands[0].clone();
         for which in Hand::BOTH {
             hand.inputs.thumbstick = Vec2::new(0.0, STICK_NEUTRAL_FLOOR * 0.9);

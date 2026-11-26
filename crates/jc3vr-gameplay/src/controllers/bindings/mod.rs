@@ -113,7 +113,10 @@ use jc3vr_view::{
     headpose,
     headpose::config::HEADPOSE_CONFIG,
     vr,
-    vr::input::semantic::{frame as semantic_frame, history},
+    vr::input::{
+        config::{SQUEEZE_PRESS, grip_press},
+        semantic::{frame as semantic_frame, history},
+    },
 };
 use jc3vr_weapons::controllers::weapons;
 use parking_lot::Mutex;
@@ -199,12 +202,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     let real_dt = unsafe { TimeScale::current() }.real_dt(dt);
     let config = CONTROLLERS_CONFIG.lock().clone();
     let vr_turn = HEADPOSE_CONFIG.lock().vr_turn;
-    let neutral_policy = NeutralPolicy::new(
-        &config.input,
-        &config.bindings,
-        &vr_turn,
-        config.acting_hand(),
-    );
+    let neutral_policy = NeutralPolicy::new(&config.bindings, &vr_turn, config.acting_hand());
     let flight_dimensions = *BODY_CONFIG.lock();
     let desktop = desktop_input_observation();
     let raw_frame = frame::latest();
@@ -559,14 +557,11 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         controls.hands[i].grab_slow = targets.slow[i];
         controls.hands[i].catch_reserved = catch_reserved[i];
         let source = frame.hand(hand);
-        let force = matches!(
-            config.input.grip_press(source.profile, hand),
-            GripPress::Force(_)
-        );
+        let force = matches!(grip_press(source.profile, hand), GripPress::Force(_));
         controls.hands[i].hold = state.closed[i].step(
             controls.hands[i].grip,
             (force && source.active).then_some(source.inputs.squeeze),
-            config.input.squeeze_press.release,
+            SQUEEZE_PRESS.release,
         );
         intent::record_hand_closed(hand, controls.hands[i].hold.down);
     }
