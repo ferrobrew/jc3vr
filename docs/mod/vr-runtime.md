@@ -48,8 +48,6 @@ The off-axis matrix is built element-for-element the way the engine's `CMatrix4f
 
 The headset path writes a standard (non-reverse-Z) off-axis projection *before* `SetupRenderCamera`, so the engine applies its own reverse-Z remap and TAA jitter to it exactly once, and the blit linearizes the display-referred capture so the `_SRGB` swapchain's hardware encode reproduces the original bytes. Both used to be switchable as headset escape hatches and were never needed.
 
-Before trusting a real HMD *rotation*, clear the coordinate-frame gate: every [render trace](rendering/render-trace.md) records the render camera's `m_TransformF` basis rows and the travel-direction dot products as `CoordFrame` events, so one trace captured while walking forward confirms JC3's world frame (almost certainly right-handed Y-up, but unverified). See `docs/mod/body/head-and-body.md`'s RE notes.
-
 ## Per-eye native resolution
 
 While a session runs and `vr.native_resolution` is on (default), each eye renders at the runtime's recommended per-eye resolution × `vr.resolution_scale`, the same size the swapchain uses (one shared `scaled_eye_size`, so the blit is a straight scale-1 pass). The engine has no dynamic-resolution path (rendering §9): every render target is sized from `device->m_DeviceInfo.m_DisplayWidth`/`m_DisplayHeight` through `CreateRenderSetups`.
@@ -92,9 +90,8 @@ Everything below needs a headset in the loop; the desktop build could not settle
 - Toggle `vr.enabled` off and on in the debug UI mid-session: the runtime tears down cleanly (flatscreen resumes, resolution restores) and brings back up on re-enable.
 - Uninject (F5) and reinject: the game stays running and stable, the display resolution is restored to the pre-VR size, and a fresh inject brings the runtime back up cleanly.
 
-**Coordinate frame and pose.**
+**Pose.**
 
-- Capture a render trace while walking forward and read its `CoordFrame` summary (`tools/analysis/analyze_trace_frames.py`, or the `coord_frame` log line at the trace's end) to confirm the world frame before trusting HMD rotation (blocker 3, `docs/mod/body/head-and-body.md`).
 - Confirm head rotation and roomscale translation track 1:1 with no perceptible lag or smoothing.
 - Confirm Recenter (F7 or the pause menu's RECENTER VIEW) re-bases heading only, leaving pitch and roll (real head tilt) intact.
 - Confirm the stereo separation reads as depth (not a flat or hyperstereo image) and that near/far objects fuse — the true per-eye `locate_views` delta, not the synthetic IPD.

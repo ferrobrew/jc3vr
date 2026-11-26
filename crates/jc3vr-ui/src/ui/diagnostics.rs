@@ -1,6 +1,6 @@
 //! The render RE window: a separate egui window, opened from the Experimental page, holding the
 //! tools that serve single-pass stereo and render reverse-engineering. These are the render-block
-//! type registry, the eye-1 gates, the exposure A/B, and the terrain and shadow diagnostics.
+//! type registry, the exposure A/B, and the terrain and shadow diagnostics.
 
 use std::{
     collections::BTreeSet,
@@ -23,8 +23,7 @@ pub(crate) fn open_button(ui: &mut egui::Ui) {
     if ui
         .add_enabled(!open, egui::Button::new("Open the render RE window"))
         .on_hover_text(
-            "The render-block type registry, eye-1 gates, exposure A/B, and terrain and shadow \
-             diagnostics.",
+            "The render-block type registry, exposure A/B, and terrain and shadow diagnostics.",
         )
         .clicked()
     {
@@ -250,17 +249,6 @@ fn diagnostics_controls(ui: &mut egui::Ui) {
             show_unregistered_render_block_types(ui);
         },
     );
-
-    ui.collapsing("Eye-1 gates (skip on second Draw)", |ui| {
-        ui.checkbox(
-            &mut cfg.part_mut(&EXPOSURE_CONFIG).gate,
-            "Auto-exposure (SmoothedExposure + Histogram)",
-        );
-        ui.checkbox(
-            &mut cfg.part_mut(&EXPOSURE_CONFIG).gate_update,
-            "ToneMappingEffect::Update ring-index step",
-        );
-    });
 
     ui.collapsing("Exposure A/B (pin the applied exposure)", |ui| {
         ui.checkbox(

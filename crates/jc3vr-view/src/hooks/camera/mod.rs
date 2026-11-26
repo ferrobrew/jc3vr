@@ -98,7 +98,6 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     let is_render_camera = unsafe {
         GraphicsEngine::get().is_some_and(|ge| std::ptr::eq(&raw const ge.m_RenderCamera, camera))
     };
-    let mut first_dispatch = false;
     if is_render_camera {
         participants::tap_setup_entered();
         let mut stereo = STEREO_STATE.lock();
@@ -109,8 +108,7 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         // snapshots become "previous". Keyed on the dispatch ordinal, not the eye index — a share
         // frame's far dispatch and eye 0's near dispatch both carry eye index 0, and rotating
         // twice would collapse the FSR reprojection history to intra-frame deltas.
-        first_dispatch = stereo.dispatch_ordinal == 0;
-        if first_dispatch {
+        if stereo.dispatch_ordinal == 0 {
             stereo.vp_history.rotate();
         }
     }
@@ -172,13 +170,6 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     // jitter, which is disabled above whenever we patch), which the velocity pass reprojects with;
     // the FSR motion-vector correction needs it as its "what the engine encoded" matrix.
     if is_render_camera && let Some(camera) = unsafe { camera.as_ref() } {
-        // Coordinate-frame verification (docs/mod/vr-runtime.md "Blocker 3"): trace the pristine
-        // center camera's basis + travel direction before the per-eye offset below mutates
-        // m_TransformF, once per real frame (every dispatch sees the same center).
-        if first_dispatch {
-            participants::tap_centre_rebuilt(camera);
-        }
-
         {
             let mut stereo = STEREO_STATE.lock();
             let index = stereo.draw_index;

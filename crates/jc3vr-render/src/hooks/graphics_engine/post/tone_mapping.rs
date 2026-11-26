@@ -2,10 +2,10 @@
 //!
 //! The exposure pipeline runs once per scene dispatch, so a stereo (twice-per-frame) render
 //! double-adapts and over-meters unless the work is gated to the first scene dispatch. These hooks
-//! pin the exposure for the A/B, gate the smoother and histogram metering on later dispatches, gate the
-//! `ToneMappingEffect::Update` step itself under a separate toggle (it advances internal histogram
-//! ring indices that would otherwise step twice per real frame), and read the exposure internals
-//! for tracing.
+//! pin the exposure for the A/B, gate the smoother, the histogram metering, and the
+//! `ToneMappingEffect::Update` step (it advances internal histogram ring indices that would
+//! otherwise step twice per real frame) on later dispatches, and read the exposure internals for
+//! tracing.
 
 use std::{
     ffi::c_void,
@@ -54,7 +54,7 @@ pub fn applied_exposure() -> Option<f32> {
 // share the first scene dispatch's exposure without binocular rivalry.
 #[detour(address = jc3gi::graphics_engine::tone_mapping::SmoothedExposure::Update_ADDRESS)]
 fn smoothed_exposure_update(this: *mut c_void, exposure: f32) {
-    let gated = later_scene() && EXPOSURE_CONFIG.query(|c| c.gate);
+    let gated = later_scene();
     TraceState::record_eye(TraceEvent::SmoothedExposureUpdate { gated, exposure });
     if gated {
         return;
@@ -73,7 +73,7 @@ fn calc_histogram_mid_bright(
     arg3: f32,
     hist: *mut HistogramGeneration,
 ) {
-    let gated = later_scene() && EXPOSURE_CONFIG.query(|c| c.gate);
+    let gated = later_scene();
     TraceState::record_eye(TraceEvent::CalcHistogramMidBright { gated });
     if gated {
         return;
@@ -90,15 +90,14 @@ fn calc_histogram_mid_bright(
 // converged exposure tracks, NOT m_Histogram. Update also advances internal histogram ring indices
 // (notably the occlusion-query slot selector, [`ToneMappingEffect::m_OcclusionQuerySlotSelector`]);
 // running it on both eyes steps those indices twice per real frame and can read back a stale
-// histogram once head motion makes consecutive frames diverge. Gate it to the first scene dispatch
-// under its own toggle so the effect is isolatable.
+// histogram once head motion makes consecutive frames diverge. Gate it to the first scene dispatch.
 #[detour(address = jc3gi::graphics_engine::tone_mapping::ToneMappingEffect::Update_ADDRESS)]
 fn tonemapping_update(
     this: *mut ToneMappingEffect,
     manager: *mut c_void,
     ctx: *mut PostEffectContext,
 ) {
-    let gated = later_scene() && EXPOSURE_CONFIG.query(|c| c.gate_update);
+    let gated = later_scene();
     TraceState::record_eye(TraceEvent::ToneMappingUpdate { gated });
     if gated {
         return;
@@ -157,12 +156,10 @@ fn tonemapping_apply(
     out_bright_point: *mut f32,
 ) -> *mut f32 {
     // Gate histogram population on later scene dispatches, symmetric to the exposure-adaptation
-    // gate (exposure.gate). Both eyes otherwise write the GPU luminance buckets, so the gated
+    // gate. Both eyes otherwise write the GPU luminance buckets, so the gated
     // per-frame exposure Update reads a histogram populated by both dispatches and settles too dark.
     let skip_histogram = POST_FX_CONFIG.lock().skip_histogram;
-    let gate_exposure = EXPOSURE_CONFIG.lock().gate;
-    let later_scene_gated = later_scene() && gate_exposure;
-    let skip = skip_histogram || later_scene_gated;
+    let skip = skip_histogram || later_scene();
     TraceState::record_eye(TraceEvent::ToneMappingApply { skip });
     // The histogram reads the final HDR scene (MainColor) for auto-exposure, so this is the first
     // point in the post chain where MainColor still holds this dispatch's clean scene -- grab it for
@@ -200,7 +197,7 @@ fn tonemapping_apply(
 // by. It runs once per dispatch, so ungated in stereo m_Histogram2 is metered on both eyes, its
 // occlusion-query ring inflates and corrupts, and the exposure divides by a too-large brightness,
 // which darkens the frame. Gating only the exposure-weighted meter is not enough. Gate it to the
-// first scene dispatch (under exposure.gate), symmetric with tonemapping_apply, so it meters once.
+// first scene dispatch, symmetric with tonemapping_apply, so it meters once.
 #[detour(
     address = jc3gi::graphics_engine::tone_mapping::ToneMappingEffect::GenerateHistogramForFinalScene_ADDRESS
 )]
@@ -211,11 +208,9 @@ fn generate_final_histogram(
     mgr: *mut c_void,
     index: u32,
 ) {
-    let later_scene_gated = later_scene() && EXPOSURE_CONFIG.query(|c| c.gate);
-    TraceState::record_eye(TraceEvent::GenerateFinalHistogram {
-        skip: later_scene_gated,
-    });
-    if later_scene_gated {
+    let gated = later_scene();
+    TraceState::record_eye(TraceEvent::GenerateFinalHistogram { skip: gated });
+    if gated {
         return;
     }
     #[cfg(feature = "profiler")]

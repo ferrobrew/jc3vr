@@ -1,6 +1,6 @@
 //! The debug tools' taps on the VR runtime and the camera hooks, which sit below them: the render
-//! trace and the coordinate-frame verification on the render camera's setup, and the texture census
-//! on the engine resizes the native-resolution driver requests.
+//! trace on the render camera's setup, and the texture census on the engine resizes the
+//! native-resolution driver requests.
 
 use jc3vr_view::{
     hooks::camera::{CameraDebugTaps, register_camera_debug_taps},
@@ -8,14 +8,13 @@ use jc3vr_view::{
 };
 
 use crate::debug::{
-    coord_frame, texture_census,
+    texture_census,
     trace::{TraceEvent, TraceState},
 };
 
 pub fn register() {
     register_camera_debug_taps(CameraDebugTaps {
         setup_entered: || TraceState::record_eye(TraceEvent::SetupRenderCamera),
-        centre_rebuilt: coord_frame::record_render_camera_frame,
     });
     register_resize_observer(&RESIZE_OBSERVER);
 }

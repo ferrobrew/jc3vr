@@ -16,16 +16,8 @@ The trace is held in memory and written when its last frame ends, so a crash mid
 
 ## Events
 
-Every trace records the frame and dispatch markers, the post-effect and exposure gates, the buffer-flow events, the shadow and depth-reconstruction state, and the coordinate frame.
-
-## Coordinate frame
-
-The coordinate-frame probe (`crates/jc3vr-render/src/debug/coord_frame.rs`) records a `CoordFrame` event once per real frame from the render camera before the per-eye offset: the `m_TransformF` position and basis rows, the position change since the previous sample, and the travel direction's dot products with `-z_basis`, `z_basis`, right, and up. Walking forward with `dot_neg_z` near +1 confirms the world frame is right-handed and Y-up with forward along −Z (the coordinate-frame gate in [vr-runtime.md](../vr-runtime.md)).
+Every trace records the frame and dispatch markers, the post-effect and exposure gates, the buffer-flow events, and the shadow and depth-reconstruction state.
 
 ## Log lines
 
-The coordinate-frame probe logs nothing per frame. When a trace ends, it logs one summary line if it recorded anything: the sample count and mean forward dot while moving (target `coord_frame`). The trace dump itself logs the record count and path.
-
-## Analysis
-
-`tools/analysis/analyze_trace_frames.py <trace folder>` (run with `uv run`) summarises the `CoordFrame` events.
+The trace dump logs the record count and path.

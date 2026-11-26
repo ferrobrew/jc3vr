@@ -20,7 +20,7 @@ Rendering holds Runtime, Stereo, Foveation, HUD, and Previews and performance. T
 
 ## Render RE window
 
-The render RE window is a separate egui window (`crates/jc3vr-ui/src/ui/diagnostics.rs`) for single-pass stereo and render reverse-engineering. It holds the render-block type registry toggles, the eye-1 gates, the exposure A/B, and the terrain and shadow-cascade diagnostics. The Experimental page's button opens it and its close button closes it. Its open state lives in the UI and is not persisted. It follows the main window's read-only boundary: while gameplay input owns the controls, its contents are disabled.
+The render RE window is a separate egui window (`crates/jc3vr-ui/src/ui/diagnostics.rs`) for single-pass stereo and render reverse-engineering. It holds the render-block type registry toggles, the exposure A/B, and the terrain and shadow-cascade diagnostics. The Experimental page's button opens it and its close button closes it. Its open state lives in the UI and is not persisted. It follows the main window's read-only boundary: while gameplay input owns the controls, its contents are disabled.
 
 ## Input ownership
 

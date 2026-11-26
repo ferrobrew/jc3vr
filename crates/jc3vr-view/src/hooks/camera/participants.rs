@@ -10,7 +10,7 @@
 use std::sync::OnceLock;
 
 use glam::{Mat4, Vec3};
-use jc3gi::{camera::camera::Camera, types::math::Matrix4};
+use jc3gi::types::math::Matrix4;
 
 use crate::headpose::xr::CockpitPose;
 
@@ -29,15 +29,12 @@ pub struct CameraParticipants {
 /// and the world scale that placed it.
 pub(crate) type RenderCameraObserver = fn(Mat4, Option<CockpitPose>, f32);
 
-/// The debug tools' taps on `SetupRenderCamera` for the scene render camera. Each fires at its own
-/// point of the hook, unlike the render camera observer, which sees the published world transform.
+/// The debug tools' tap on `SetupRenderCamera` for the scene render camera. It fires on entry,
+/// unlike the render camera observer, which sees the published world transform.
 #[derive(Clone, Copy)]
 pub struct CameraDebugTaps {
     /// The hook was entered for the scene render camera, before anything in it ran.
     pub setup_entered: fn(),
-    /// The un-offset centre render camera after the engine rebuilt its view-projections, before the
-    /// per-eye offset is applied. Fires once per real frame, on its first dispatch.
-    pub centre_rebuilt: fn(&Camera),
 }
 
 /// Register the camera's gameplay-side participants. The first registration stands.
@@ -84,12 +81,6 @@ pub(super) fn publish_render_camera(world: Mat4, cockpit: Option<CockpitPose>, s
 pub(super) fn tap_setup_entered() {
     if let Some(taps) = DEBUG_TAPS.get() {
         (taps.setup_entered)();
-    }
-}
-
-pub(super) fn tap_centre_rebuilt(camera: &Camera) {
-    if let Some(taps) = DEBUG_TAPS.get() {
-        (taps.centre_rebuilt)(camera);
     }
 }
 

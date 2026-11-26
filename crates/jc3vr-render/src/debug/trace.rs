@@ -7,8 +7,6 @@ use std::sync::atomic::{AtomicI32, AtomicUsize, Ordering};
 use jc3vr_core::{config::engine::Snapshot, session::CaptureFolder};
 use parking_lot::Mutex;
 
-use crate::debug::{coord_frame, coord_frame::CoordFrameSample};
-
 /// Frames left in the active trace; 0 = inactive. Kept as a standalone atomic so the hot-path
 /// [`tracing_active`] gate is lock-free -- the heavier state lives in [`TRACE_STATE`]. Driven by the
 /// render capture's button.
@@ -262,10 +260,6 @@ pub enum TraceEvent {
     CopySurfaceToTexture { dst: u64, src: u64 },
     #[serde(rename = "ResolveSurface")]
     ResolveSurface,
-    /// The render camera's world frame and travel direction, once per real frame (see
-    /// [`crate::debug::coord_frame`]).
-    #[serde(rename = "CoordFrame")]
-    CoordFrame(CoordFrameSample),
 }
 
 /// Whether a render trace is currently collecting. Lock-free; lets hooks skip readback work when off.
@@ -371,7 +365,6 @@ impl TraceState {
             };
             state.push_event(None, build_manifest(stamp));
         }
-        coord_frame::begin_run();
         TRACE_FRAMES.store(frames, Ordering::Relaxed);
         tracing::info!("Render trace started ({frames} frames)");
     }
@@ -387,8 +380,6 @@ impl TraceState {
         state.frame += 1;
         if finished {
             state.dump();
-            drop(state);
-            coord_frame::finish_run();
         }
     }
 
@@ -403,40 +394,5 @@ fn build_manifest(timestamp: String) -> TraceEvent {
     TraceEvent::Manifest {
         timestamp,
         config: Snapshot::take(),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use pretty_assertions::assert_eq;
-    use serde_json::json;
-
-    use super::*;
-
-    /// `tools/analysis/analyze_trace_frames.py` reads the probe events by their `ev` tag with the
-    /// payload's fields flattened beside it; this pins that shape.
-    #[test]
-    fn probe_events_flatten_beside_their_tag() {
-        let record = TraceRecord {
-            time_ns: 5,
-            frame: 2,
-            eye: None,
-            event: TraceEvent::CoordFrame(CoordFrameSample {
-                position: [0.0; 3],
-                right: [1.0, 0.0, 0.0],
-                up: [0.0, 1.0, 0.0],
-                z_basis: [0.0, 0.0, 1.0],
-                delta: [0.0; 3],
-                dot_neg_z: 0.0,
-                dot_pos_z: 0.0,
-                dot_right: 0.0,
-                dot_up: 0.0,
-            }),
-        };
-        let value = serde_json::to_value(&record).unwrap();
-        assert_eq!(value["time_ns"], 5);
-        assert_eq!(value["frame"], 2);
-        assert_eq!(value["event"]["ev"], "CoordFrame");
-        assert_eq!(value["event"]["z_basis"], json!([0.0, 0.0, 1.0]));
     }
 }

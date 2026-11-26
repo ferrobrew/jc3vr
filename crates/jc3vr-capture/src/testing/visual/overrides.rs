@@ -609,11 +609,7 @@ mod tests {
             config.part(&FOVEATION_CONFIG).enabled
                 && !config.part(&FOVEATION_CONFIG).debug_show_mask
         );
-        assert!(
-            !config.part(&EXPOSURE_CONFIG).force
-                && config.part(&EXPOSURE_CONFIG).gate
-                && config.part(&EXPOSURE_CONFIG).gate_update
-        );
+        assert!(!config.part(&EXPOSURE_CONFIG).force);
         assert!(!config.part(&POST_FX_CONFIG).skip_histogram);
         assert!(
             !config.part(&POST_FX_CONFIG).skip_fade

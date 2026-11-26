@@ -7,16 +7,9 @@ use serde::{Deserialize, Serialize};
 /// startup.
 pub static EXPOSURE_CONFIG: ConfigSlot<ExposureConfig> = ConfigSlot::new("exposure");
 
-/// Auto-exposure toggles.
+/// The exposure pin.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct ExposureConfig {
-    /// Skip the per-frame auto-exposure metering on eye 1 (the stereo-darkening fix).
-    pub gate: bool,
-    /// Gate `ToneMappingEffect::Update` itself to eye 0. Update advances internal ring indices used
-    /// for histogram occlusion queries; running it on both eyes advances those indices twice per
-    /// real frame and can read back a stale histogram once head motion makes consecutive frames
-    /// diverge.
-    pub gate_update: bool,
     /// Pin the applied exposure (`m_ExposureBrightPoint`) to `forced_value` instead of the engine's auto-exposure (A/B aid).
     pub force: bool,
     /// The pinned exposure value, used when `force` is set.
@@ -25,8 +18,6 @@ pub struct ExposureConfig {
 impl ExposureConfig {
     pub const fn new() -> Self {
         Self {
-            gate: true,
-            gate_update: true,
             force: false,
             forced_value: 0.11,
         }
