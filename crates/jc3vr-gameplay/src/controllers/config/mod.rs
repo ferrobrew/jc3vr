@@ -14,13 +14,15 @@
 //! a second copy of the smooth and snap settings.
 //!
 //! One file per subsystem cluster: [`input`] (raw input, locomotion, and the bindings), [`aim`] (controller-owned hands and per-hand aiming), [`overlay`], [`weapons`],
-//! [`body`], and [`roomscale`].
+//! [`body`], and [`roomscale`]. The range and consistency checks the payload's load runs on the
+//! settings live in [`validate`].
 
 mod aim;
 mod body;
 mod input;
 mod overlay;
 mod roomscale;
+pub mod validate;
 mod weapons;
 
 use jc3vr_core::config::engine::ConfigSlot;

@@ -1,8 +1,8 @@
 //! Checks for the controller-to-game bindings.
 
-use crate::{
-    config::validate::{Invalid, positive, range},
-    controllers::config::BindingsConfig,
+use crate::controllers::config::{
+    BindingsConfig,
+    validate::{Invalid, positive, range},
 };
 
 /// Check the controller-to-game bindings. Paths are relative to `controllers.bindings`.

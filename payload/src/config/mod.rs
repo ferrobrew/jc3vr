@@ -60,7 +60,6 @@ pub(crate) mod format;
 pub(crate) mod load;
 mod schema;
 pub(crate) mod slots;
-pub(crate) mod validate;
 
 use std::sync::Once;
 

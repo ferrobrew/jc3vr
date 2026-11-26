@@ -1,9 +1,9 @@
 //! Checks for physical hand handling: the throw, the hands' strength, the brace's rebuild and break, and
 //! climbing.
 
-use crate::{
+use crate::controllers::{
     config::validate::{Invalid, nonnegative, range},
-    controllers::physical_hands::PhysicalHandsConfig,
+    physical_hands::PhysicalHandsConfig,
 };
 
 /// Check the physical hand settings. Paths are relative to `controllers.physical_hands`.

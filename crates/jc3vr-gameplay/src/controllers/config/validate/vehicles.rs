@@ -1,9 +1,9 @@
 //! Checks for vehicle settings: the wingsuit gestures and evade, the physical wheel, the arm
 //! steering, the parachute handles, and the ripcord.
 
-use crate::{
+use crate::controllers::{
     config::validate::{Invalid, nonnegative, positive, range},
-    controllers::vehicles::{config::VehiclesConfig, ripcord::MIN_PULL_M},
+    vehicles::{config::VehiclesConfig, ripcord::MIN_PULL_M},
 };
 
 /// Check the vehicle settings. Paths are relative to `controllers.vehicles`.
@@ -62,7 +62,7 @@ pub(super) fn vehicles(v: &VehiclesConfig) -> Result<(), Invalid> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{config::validate::controllers, controllers::config::ControllersConfig};
+    use crate::controllers::config::{ControllersConfig, validate::controllers};
 
     #[test]
     fn invalid_wingsuit_thresholds_reach_the_controller_validator() {

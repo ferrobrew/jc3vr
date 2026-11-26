@@ -1,8 +1,8 @@
 //! Checks for posture and roomscale: the crouch.
 
-use crate::{
-    config::validate::{Invalid, nonnegative},
-    controllers::config::RoomscaleConfig,
+use crate::controllers::config::{
+    RoomscaleConfig,
+    validate::{Invalid, nonnegative},
 };
 
 /// Check the roomscale settings. Paths are relative to `controllers.roomscale`.

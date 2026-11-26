@@ -1,8 +1,8 @@
 //! Checks for physical weapon handling: the recoil strength the pause menu sets.
 
-use crate::{
-    config::validate::{Invalid, nonnegative},
-    controllers::config::WeaponsConfig,
+use crate::controllers::config::{
+    WeaponsConfig,
+    validate::{Invalid, nonnegative},
 };
 
 /// Check the physical weapon settings. Paths are relative to `controllers.weapons`.

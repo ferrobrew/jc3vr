@@ -10,9 +10,8 @@ use crate::{
     config::{
         Config,
         engine::{Invalid, load::reset_named},
-        validate,
     },
-    controllers::config::{ControllersConfig, SightTable},
+    controllers::config::{ControllersConfig, SightTable, validate},
     headpose::config::VrTurnConfig,
     hud::HudConfig,
 };

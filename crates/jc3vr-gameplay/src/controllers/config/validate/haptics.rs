@@ -1,8 +1,8 @@
 //! Checks for the controller haptics: the strength.
 
-use crate::{
+use crate::controllers::{
     config::validate::{Invalid, range},
-    controllers::haptics::HapticsConfig,
+    haptics::HapticsConfig,
 };
 
 pub(super) fn haptics(h: &HapticsConfig) -> Result<(), Invalid> {

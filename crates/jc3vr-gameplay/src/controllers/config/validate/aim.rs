@@ -1,9 +1,9 @@
 //! Checks for the controller-owned hands, per-hand aiming, and the world-space
 //! overlay.
 
-use crate::{
-    config::validate::{Invalid, nonnegative, positive, range, vec3},
-    controllers::config::{AimConfig, HandsConfig, OverlayConfig},
+use crate::controllers::config::{
+    AimConfig, HandsConfig, OverlayConfig,
+    validate::{Invalid, nonnegative, positive, range, vec3},
 };
 
 /// Check the controller-owned hands' settings. Paths are relative to `controllers.hands`.
