@@ -7,16 +7,13 @@
 //! validation runs the same checks the payload's tolerant load runs, with the same resets, so a page
 //! test that checks the settings stay valid checks what a load of the saved file would.
 //!
-//! The registration runs from the C runtime's initializer table (`.CRT$XCU`), before the test
-//! harness's `main`, so a test finds every slot bound whichever test runs first, and no test calls
-//! a registration of its own.
+//! The root registers itself before the test harness runs; see
+//! [`test_root`](jc3vr_core::config::engine::test_root).
 
 use jc3vr_core::{
     config::engine::{
-        ConfigRoot, Invalid, Schema,
-        format::{Format, Migrated},
+        Invalid,
         load::{Reset, reset_named},
-        projection, store,
     },
     director::clean_view::CLEAN_VIEW_CONFIG,
     hooks::online::{ONLINE_CONFIG, OnlineConfig},
@@ -78,205 +75,144 @@ use jc3vr_tooling::{
     recorder::{RECORDER_CONFIG, RecorderConfig},
     testing::{TESTING_CONFIG, TestingConfig},
 };
-use serde::{Deserialize, Serialize};
-use toml::Table;
 
-/// Bind every slot the payload binds to the test root, and register the root's schema.
-fn register() {
-    STEREO_CONFIG.bind(projection!(TestRoot, stereo));
-    EXPOSURE_CONFIG.bind(projection!(TestRoot, exposure));
-    FOVEATION_CONFIG.bind(projection!(TestRoot, foveation));
-    FAR_FIELD_CONFIG.bind(projection!(TestRoot, far_field));
-    POST_FX_CONFIG.bind(projection!(TestRoot, post_fx));
-    CAMERA_CONFIG.bind(projection!(TestRoot, camera));
-    MOVEMENT_CONFIG.bind(projection!(TestRoot, movement));
-    FSR_CONFIG.bind(projection!(TestRoot, fsr));
-    HUD_CONFIG.bind(projection!(TestRoot, hud));
-    HEADPOSE_CONFIG.bind(projection!(TestRoot, headpose));
-    BODY_IK_CONFIG.bind(projection!(TestRoot, body_ik));
-    VR_CONFIG.bind(projection!(TestRoot, vr));
-    DIRECTOR_CONFIG.bind(projection!(TestRoot, director));
-    RECORDER_CONFIG.bind(projection!(TestRoot, recorder));
-    CONTROLLERS_CONFIG.bind(projection!(TestRoot, controllers));
-    TESTING_CONFIG.bind(projection!(TestRoot, testing));
-    ONLINE_CONFIG.bind(projection!(TestRoot, online));
-    BODY_CONFIG.bind(projection!(TestRoot, body));
-    INPUT_CONFIG.bind(projection!(TestRoot, controllers.input));
-    CONTROLLERS_ENABLED.bind(projection!(TestRoot, controllers.enabled));
-    DOMINANT_HAND.bind(projection!(TestRoot, controllers.dominant_hand));
-    HAPTICS_ENABLED.bind(projection!(TestRoot, controllers.haptics.enabled));
-    HAPTICS_INTENSITY.bind(projection!(TestRoot, controllers.haptics.intensity));
-    scheme::CONTROLLERS_ENABLED.bind(projection!(TestRoot, controllers.enabled));
-    scheme::DOMINANT_HAND.bind(projection!(TestRoot, controllers.dominant_hand));
-    LOCOMOTION_CONFIG.bind(projection!(TestRoot, controllers.locomotion));
-    BINDINGS_CONFIG.bind(projection!(TestRoot, controllers.bindings));
-    AIM_STATE_CONFIG.bind(projection!(TestRoot, controllers.aim_state));
-    HANDS_CONFIG.bind(projection!(TestRoot, controllers.hands));
-    AIM_CONFIG.bind(projection!(TestRoot, controllers.aim));
-    OVERLAY_CONFIG.bind(projection!(TestRoot, controllers.overlay));
-    WEAPONS_CONFIG.bind(projection!(TestRoot, controllers.weapons));
-    BODY_REMAP_CONFIG.bind(projection!(TestRoot, controllers.body));
-    ROOMSCALE_CONFIG.bind(projection!(TestRoot, controllers.roomscale));
-    VEHICLES_CONFIG.bind(projection!(TestRoot, controllers.vehicles));
-    FINGERS_CONFIG.bind(projection!(TestRoot, controllers.fingers));
-    PHYSICAL_HANDS_CONFIG.bind(projection!(TestRoot, controllers.physical_hands));
-    SUMMARY_CONFIG.bind(projection!(TestRoot, controllers.summary));
-    GRAPPLE_CONFIG.bind(projection!(TestRoot, controllers.grapple));
-    HAPTICS_CONFIG.bind(projection!(TestRoot, controllers.haptics));
-    GLASS_CONFIG.bind(projection!(TestRoot, controllers.glass));
-    MOUNTED_AIM_BY_HANDS.bind(projection!(
-        TestRoot,
-        controllers.vehicles.mounted.aim_by_hands
-    ));
-    GRAPPLE_PUMP.bind(projection!(TestRoot, controllers.grapple.pump));
-    DRIVING_VIEW_ENABLED.bind(projection!(
-        TestRoot,
-        controllers.vehicles.driving_view.enabled
-    ));
-    TAKE_OFF_TO_HEAD.bind(projection!(TestRoot, controllers.vehicles.take_off_to_head));
-    GRAPPLE_SEAT.bind(projection!(TestRoot, controllers.grapple.seat));
-    CANOPY_LINE_TURN.bind(projection!(TestRoot, controllers.vehicles.canopy.line_turn));
-    CANOPY_LINE_TURN_SCALE.bind(projection!(
-        TestRoot,
-        controllers.vehicles.canopy.line_turn_scale
-    ));
-    SKIP_REEL_OPENING.bind(projection!(
-        TestRoot,
-        controllers.vehicles.canopy.skip_reel_opening
-    ));
-    WINGSUIT_EVADE_ENABLED.bind(projection!(
-        TestRoot,
-        controllers.vehicles.wingsuit_evade.enabled
-    ));
-    WORLD_MARKERS_ENABLED.bind(projection!(TestRoot, hud.world_markers.enabled));
-    PANEL_ENABLED.bind(projection!(TestRoot, hud.egui_panel.enabled));
-    PANEL_ON_MIRROR.bind(projection!(TestRoot, hud.egui_panel.show_on_mirror));
-    PANEL_RESOLUTION.bind(projection!(TestRoot, hud.egui_panel.resolution));
-    TEXTURE_CENSUS.bind(projection!(TestRoot, testing.texture_census));
-    TESTING_ENABLED.bind(projection!(TestRoot, testing.enabled));
-    RECORD_HAND_JOINTS.bind(projection!(TestRoot, testing.record_hand_joints));
-    TIME_SCALE.bind(projection!(TestRoot, director.time_scale));
-    CLEAN_VIEW_CONFIG.bind(projection!(TestRoot, director.clean_view));
-    PAUSED.bind(projection!(TestRoot, director.paused));
-    store::register(&SCHEMA);
+jc3vr_core::test_root! {
+    root {
+        stereo: StereoConfig = StereoConfig::new(),
+        exposure: ExposureConfig = ExposureConfig::new(),
+        #[serde(default)]
+        foveation: FoveationConfig = FoveationConfig::new(),
+        #[serde(default)]
+        far_field: FarFieldConfig = FarFieldConfig::new(),
+        post_fx: PostFxConfig = PostFxConfig::new(),
+        camera: CameraConfig = CameraConfig::new(),
+        movement: MovementConfig = MovementConfig::new(),
+        fsr: FsrConfig = FsrConfig::new(),
+        hud: HudConfig = HudConfig::new(),
+        headpose: HeadPoseConfig = HeadPoseConfig::new(),
+        body_ik: BodyIkConfig = BodyIkConfig::new(),
+        vr: VrConfig = VrConfig::new(),
+        director: DirectorConfig = DirectorConfig::new(),
+        recorder: RecorderConfig = RecorderConfig::new(),
+        #[serde(default)]
+        controllers: ControllersConfig = ControllersConfig::new(),
+        #[serde(default)]
+        testing: TestingConfig = TestingConfig::new(),
+        #[serde(default)]
+        online: OnlineConfig = OnlineConfig::new(),
+        body: BodyDimensions = BodyDimensions::GENERIC_ADULT,
+    }
+    binds {
+        STEREO_CONFIG => stereo,
+        EXPOSURE_CONFIG => exposure,
+        FOVEATION_CONFIG => foveation,
+        FAR_FIELD_CONFIG => far_field,
+        POST_FX_CONFIG => post_fx,
+        CAMERA_CONFIG => camera,
+        MOVEMENT_CONFIG => movement,
+        FSR_CONFIG => fsr,
+        HUD_CONFIG => hud,
+        HEADPOSE_CONFIG => headpose,
+        BODY_IK_CONFIG => body_ik,
+        VR_CONFIG => vr,
+        DIRECTOR_CONFIG => director,
+        RECORDER_CONFIG => recorder,
+        CONTROLLERS_CONFIG => controllers,
+        TESTING_CONFIG => testing,
+        ONLINE_CONFIG => online,
+        BODY_CONFIG => body,
+        INPUT_CONFIG => controllers.input,
+        CONTROLLERS_ENABLED => controllers.enabled,
+        DOMINANT_HAND => controllers.dominant_hand,
+        HAPTICS_ENABLED => controllers.haptics.enabled,
+        HAPTICS_INTENSITY => controllers.haptics.intensity,
+        scheme::CONTROLLERS_ENABLED => controllers.enabled,
+        scheme::DOMINANT_HAND => controllers.dominant_hand,
+        LOCOMOTION_CONFIG => controllers.locomotion,
+        BINDINGS_CONFIG => controllers.bindings,
+        AIM_STATE_CONFIG => controllers.aim_state,
+        HANDS_CONFIG => controllers.hands,
+        AIM_CONFIG => controllers.aim,
+        OVERLAY_CONFIG => controllers.overlay,
+        WEAPONS_CONFIG => controllers.weapons,
+        BODY_REMAP_CONFIG => controllers.body,
+        ROOMSCALE_CONFIG => controllers.roomscale,
+        VEHICLES_CONFIG => controllers.vehicles,
+        FINGERS_CONFIG => controllers.fingers,
+        PHYSICAL_HANDS_CONFIG => controllers.physical_hands,
+        SUMMARY_CONFIG => controllers.summary,
+        GRAPPLE_CONFIG => controllers.grapple,
+        HAPTICS_CONFIG => controllers.haptics,
+        GLASS_CONFIG => controllers.glass,
+        MOUNTED_AIM_BY_HANDS => controllers.vehicles.mounted.aim_by_hands,
+        GRAPPLE_PUMP => controllers.grapple.pump,
+        DRIVING_VIEW_ENABLED => controllers.vehicles.driving_view.enabled,
+        TAKE_OFF_TO_HEAD => controllers.vehicles.take_off_to_head,
+        GRAPPLE_SEAT => controllers.grapple.seat,
+        CANOPY_LINE_TURN => controllers.vehicles.canopy.line_turn,
+        CANOPY_LINE_TURN_SCALE => controllers.vehicles.canopy.line_turn_scale,
+        SKIP_REEL_OPENING => controllers.vehicles.canopy.skip_reel_opening,
+        WINGSUIT_EVADE_ENABLED => controllers.vehicles.wingsuit_evade.enabled,
+        WORLD_MARKERS_ENABLED => hud.world_markers.enabled,
+        PANEL_ENABLED => hud.egui_panel.enabled,
+        PANEL_ON_MIRROR => hud.egui_panel.show_on_mirror,
+        PANEL_RESOLUTION => hud.egui_panel.resolution,
+        TEXTURE_CENSUS => testing.texture_census,
+        TESTING_ENABLED => testing.enabled,
+        RECORD_HAND_JOINTS => testing.record_hand_joints,
+        TIME_SCALE => director.time_scale,
+        CLEAN_VIEW_CONFIG => director.clean_view,
+        PAUSED => director.paused,
+    }
+    validate: validate_root,
 }
 
-/// The C runtime calls each pointer in the `.CRT$XCU` section before `main`.
-#[used]
-#[unsafe(link_section = ".CRT$XCU")]
-static REGISTER_BEFORE_TESTS: extern "C" fn() = {
-    extern "C" fn register_before_tests() {
-        register();
+/// The checks the payload's load runs on a loaded configuration, with the same resets.
+fn validate_root(root: &mut TestRoot, resets: &mut Vec<Reset>) {
+    let fail = |resets: &mut Vec<Reset>, path: &str, error: Invalid| {
+        resets.push(Reset {
+            path: path.to_owned(),
+            reason: error.to_string(),
+        });
+    };
+    if let Err(error) = validate::sights(&root.controllers.aim.sights) {
+        root.controllers.aim.sights = SightTable::EMPTY;
+        fail(resets, "controllers.aim.sights", error);
     }
-    register_before_tests
-};
-
-static SCHEMA: Schema = Schema::of::<TestRoot>();
-
-#[derive(Clone, Serialize, Deserialize)]
-struct TestRoot {
-    stereo: StereoConfig,
-    exposure: ExposureConfig,
-    #[serde(default)]
-    foveation: FoveationConfig,
-    #[serde(default)]
-    far_field: FarFieldConfig,
-    post_fx: PostFxConfig,
-    camera: CameraConfig,
-    movement: MovementConfig,
-    fsr: FsrConfig,
-    hud: HudConfig,
-    headpose: HeadPoseConfig,
-    body_ik: BodyIkConfig,
-    vr: VrConfig,
-    director: DirectorConfig,
-    recorder: RecorderConfig,
-    #[serde(default)]
-    controllers: ControllersConfig,
-    #[serde(default)]
-    testing: TestingConfig,
-    #[serde(default)]
-    online: OnlineConfig,
-    body: BodyDimensions,
-}
-
-impl ConfigRoot for TestRoot {
-    fn defaults() -> Self {
-        Self {
-            stereo: StereoConfig::new(),
-            exposure: ExposureConfig::new(),
-            foveation: FoveationConfig::new(),
-            far_field: FarFieldConfig::new(),
-            post_fx: PostFxConfig::new(),
-            camera: CameraConfig::new(),
-            movement: MovementConfig::new(),
-            fsr: FsrConfig::new(),
-            hud: HudConfig::new(),
-            headpose: HeadPoseConfig::new(),
-            body_ik: BodyIkConfig::new(),
-            vr: VrConfig::new(),
-            director: DirectorConfig::new(),
-            recorder: RecorderConfig::new(),
-            controllers: ControllersConfig::new(),
-            testing: TestingConfig::new(),
-            online: OnlineConfig::new(),
-            body: BodyDimensions::GENERIC_ADULT,
-        }
+    if let Err(error) = reset_named(
+        &mut root.controllers,
+        &ControllersConfig::new(),
+        "controllers",
+        validate::controllers,
+        resets,
+    ) {
+        let sights = root.controllers.aim.sights;
+        root.controllers = ControllersConfig::new();
+        root.controllers.aim.sights = sights;
+        fail(resets, "controllers", error);
     }
-
-    fn migrate(_file: &mut Table, _format: Format) -> Vec<Migrated> {
-        Vec::new()
+    if let Err(error) = reset_named(
+        &mut root.headpose.vr_turn,
+        &VrTurnConfig::new(),
+        "headpose.vr_turn",
+        validate::vr_turn,
+        resets,
+    ) {
+        root.headpose.vr_turn = VrTurnConfig::new();
+        fail(resets, "headpose.vr_turn", error);
     }
-
-    /// The checks the payload's load runs on a loaded configuration, with the same resets.
-    fn validate(&mut self, resets: &mut Vec<Reset>) {
-        let fail = |resets: &mut Vec<Reset>, path: &str, error: Invalid| {
-            resets.push(Reset {
-                path: path.to_owned(),
-                reason: error.to_string(),
-            });
-        };
-        if let Err(error) = validate::sights(&self.controllers.aim.sights) {
-            self.controllers.aim.sights = SightTable::EMPTY;
-            fail(resets, "controllers.aim.sights", error);
-        }
-        if let Err(error) = reset_named(
-            &mut self.controllers,
-            &ControllersConfig::new(),
-            "controllers",
-            validate::controllers,
-            resets,
-        ) {
-            let sights = self.controllers.aim.sights;
-            self.controllers = ControllersConfig::new();
-            self.controllers.aim.sights = sights;
-            fail(resets, "controllers", error);
-        }
-        if let Err(error) = reset_named(
-            &mut self.headpose.vr_turn,
-            &VrTurnConfig::new(),
-            "headpose.vr_turn",
-            validate::vr_turn,
-            resets,
-        ) {
-            self.headpose.vr_turn = VrTurnConfig::new();
-            fail(resets, "headpose.vr_turn", error);
-        }
-        if let Err(error) = reset_named(
-            &mut self.hud,
-            &HudConfig::new(),
-            "hud",
-            HudConfig::validate,
-            resets,
-        ) {
-            self.hud = HudConfig::new();
-            fail(resets, "hud", error);
-        }
-        if let Err(error) = self.body.validate() {
-            self.body = BodyDimensions::GENERIC_ADULT;
-            fail(resets, "body", Invalid(error.to_string()));
-        }
+    if let Err(error) = reset_named(
+        &mut root.hud,
+        &HudConfig::new(),
+        "hud",
+        HudConfig::validate,
+        resets,
+    ) {
+        root.hud = HudConfig::new();
+        fail(resets, "hud", error);
     }
-
-    fn note_saved(_text: &str) {}
+    if let Err(error) = root.body.validate() {
+        root.body = BodyDimensions::GENERIC_ADULT;
+        fail(resets, "body", Invalid(error.to_string()));
+    }
 }

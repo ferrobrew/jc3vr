@@ -9,17 +9,10 @@
 //! configuration through the slots exactly as the payload does, and takes it exclusively with
 //! [`test_fixture`](jc3vr_core::config::engine::test_fixture).
 //!
-//! The registration runs from the C runtime's initializer table (`.CRT$XCU`), before the test
-//! harness's `main`, so a test finds every slot bound whichever test runs first, and no test calls
-//! a registration of its own.
+//! The root registers itself before the test harness runs; see
+//! [`test_root`](jc3vr_core::config::engine::test_root).
 
 use jc3vr_core::{
-    config::engine::{
-        ConfigRoot, Schema,
-        format::{Format, Migrated},
-        load::Reset,
-        projection, store,
-    },
     director::clean_view::{CLEAN_VIEW_CONFIG, CleanViewConfig},
     hooks::online::{ONLINE_CONFIG, OnlineConfig},
 };
@@ -43,8 +36,6 @@ use jc3vr_render::{
         },
     },
 };
-use serde::{Deserialize, Serialize};
-use toml::Table;
 
 use crate::{
     controllers::{
@@ -78,191 +69,100 @@ use crate::{
     },
 };
 
-/// Bind every slot the crate's code reads to the test root, and register the root's schema.
-fn register() {
-    CONTROLLERS_CONFIG.bind(projection!(TestRoot, controllers));
-    BODY_CONFIG.bind(projection!(TestRoot, body));
-    MOVEMENT_CONFIG.bind(projection!(TestRoot, movement));
-    BODY_IK_CONFIG.bind(projection!(TestRoot, body_ik));
-    scheme::CONTROLLERS_ENABLED.bind(projection!(TestRoot, controllers.enabled));
-    scheme::DOMINANT_HAND.bind(projection!(TestRoot, controllers.dominant_hand));
-    LOCOMOTION_CONFIG.bind(projection!(TestRoot, controllers.locomotion));
-    BINDINGS_CONFIG.bind(projection!(TestRoot, controllers.bindings));
-    AIM_STATE_CONFIG.bind(projection!(TestRoot, controllers.aim_state));
-    HANDS_CONFIG.bind(projection!(TestRoot, controllers.hands));
-    AIM_CONFIG.bind(projection!(TestRoot, controllers.aim));
-    OVERLAY_CONFIG.bind(projection!(TestRoot, controllers.overlay));
-    WEAPONS_CONFIG.bind(projection!(TestRoot, controllers.weapons));
-    BODY_REMAP_CONFIG.bind(projection!(TestRoot, controllers.body));
-    ROOMSCALE_CONFIG.bind(projection!(TestRoot, controllers.roomscale));
-    VEHICLES_CONFIG.bind(projection!(TestRoot, controllers.vehicles));
-    FINGERS_CONFIG.bind(projection!(TestRoot, controllers.fingers));
-    PHYSICAL_HANDS_CONFIG.bind(projection!(TestRoot, controllers.physical_hands));
-    SUMMARY_CONFIG.bind(projection!(TestRoot, controllers.summary));
-    GRAPPLE_CONFIG.bind(projection!(TestRoot, controllers.grapple));
-    HAPTICS_CONFIG.bind(projection!(TestRoot, controllers.haptics));
-    GLASS_CONFIG.bind(projection!(TestRoot, controllers.glass));
-    MOUNTED_AIM_BY_HANDS.bind(projection!(
-        TestRoot,
-        controllers.vehicles.mounted.aim_by_hands
-    ));
-    GRAPPLE_PUMP.bind(projection!(TestRoot, controllers.grapple.pump));
-    DRIVING_VIEW_ENABLED.bind(projection!(
-        TestRoot,
-        controllers.vehicles.driving_view.enabled
-    ));
-    TAKE_OFF_TO_HEAD.bind(projection!(TestRoot, controllers.vehicles.take_off_to_head));
-    GRAPPLE_SEAT.bind(projection!(TestRoot, controllers.grapple.seat));
-    CANOPY_LINE_TURN.bind(projection!(TestRoot, controllers.vehicles.canopy.line_turn));
-    CANOPY_LINE_TURN_SCALE.bind(projection!(
-        TestRoot,
-        controllers.vehicles.canopy.line_turn_scale
-    ));
-    SKIP_REEL_OPENING.bind(projection!(
-        TestRoot,
-        controllers.vehicles.canopy.skip_reel_opening
-    ));
-    WINGSUIT_EVADE_ENABLED.bind(projection!(
-        TestRoot,
-        controllers.vehicles.wingsuit_evade.enabled
-    ));
-    WORLD_MARKERS_ENABLED.bind(projection!(TestRoot, hud.world_markers.enabled));
-    STEREO_CONFIG.bind(projection!(TestRoot, stereo));
-    EXPOSURE_CONFIG.bind(projection!(TestRoot, exposure));
-    FOVEATION_CONFIG.bind(projection!(TestRoot, foveation));
-    FAR_FIELD_CONFIG.bind(projection!(TestRoot, far_field));
-    POST_FX_CONFIG.bind(projection!(TestRoot, post_fx));
-    CAMERA_CONFIG.bind(projection!(TestRoot, camera));
-    FSR_CONFIG.bind(projection!(TestRoot, fsr));
-    HEADPOSE_CONFIG.bind(projection!(TestRoot, headpose));
-    VR_CONFIG.bind(projection!(TestRoot, vr));
-    ONLINE_CONFIG.bind(projection!(TestRoot, online));
-    INPUT_CONFIG.bind(projection!(TestRoot, controllers.input));
-    CONTROLLERS_ENABLED.bind(projection!(TestRoot, controllers.enabled));
-    DOMINANT_HAND.bind(projection!(TestRoot, controllers.dominant_hand));
-    HAPTICS_ENABLED.bind(projection!(TestRoot, controllers.haptics.enabled));
-    HAPTICS_INTENSITY.bind(projection!(TestRoot, controllers.haptics.intensity));
-    PANEL_ENABLED.bind(projection!(TestRoot, hud.egui_panel.enabled));
-    PANEL_ON_MIRROR.bind(projection!(TestRoot, hud.egui_panel.show_on_mirror));
-    PANEL_RESOLUTION.bind(projection!(TestRoot, hud.egui_panel.resolution));
-    TESTING_ENABLED.bind(projection!(TestRoot, testing.enabled));
-    RECORD_HAND_JOINTS.bind(projection!(TestRoot, testing.record_hand_joints));
-    TEXTURE_CENSUS.bind(projection!(TestRoot, testing.texture_census));
-    TIME_SCALE.bind(projection!(TestRoot, director.time_scale));
-    PAUSED.bind(projection!(TestRoot, director.paused));
-    CLEAN_VIEW_CONFIG.bind(projection!(TestRoot, director.clean_view));
-    store::register(&SCHEMA);
-}
-
-/// The C runtime calls each pointer in the `.CRT$XCU` section before `main`.
-#[used]
-#[unsafe(link_section = ".CRT$XCU")]
-static REGISTER_BEFORE_TESTS: extern "C" fn() = {
-    extern "C" fn register_before_tests() {
-        register();
-    }
-    register_before_tests
-};
-
-static SCHEMA: Schema = Schema::of::<TestRoot>();
-
-#[derive(Clone, Serialize, Deserialize)]
-struct TestRoot {
-    stereo: StereoConfig,
-    exposure: ExposureConfig,
-    foveation: FoveationConfig,
-    far_field: FarFieldConfig,
-    post_fx: PostFxConfig,
-    camera: CameraConfig,
-    movement: MovementConfig,
-    fsr: FsrConfig,
-    hud: Hud,
-    headpose: HeadPoseConfig,
-    body_ik: BodyIkConfig,
-    vr: VrConfig,
-    director: Director,
-    controllers: ControllersConfig,
-    testing: Testing,
-    online: OnlineConfig,
-    body: BodyDimensions,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-struct Hud {
-    egui_panel: EguiPanel,
-    world_markers: WorldMarkers,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-struct EguiPanel {
-    enabled: bool,
-    show_on_mirror: bool,
-    resolution: (u32, u32),
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-struct WorldMarkers {
-    enabled: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-struct Testing {
-    enabled: bool,
-    record_hand_joints: bool,
-    texture_census: bool,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-struct Director {
-    time_scale: f32,
-    paused: bool,
-    #[serde(skip, default = "CleanViewConfig::new")]
-    clean_view: CleanViewConfig,
-}
-
-impl ConfigRoot for TestRoot {
-    fn defaults() -> Self {
-        Self {
-            stereo: StereoConfig::new(),
-            exposure: ExposureConfig::new(),
-            foveation: FoveationConfig::new(),
-            far_field: FarFieldConfig::new(),
-            post_fx: PostFxConfig::new(),
-            camera: CameraConfig::new(),
-            movement: MovementConfig::new(),
-            fsr: FsrConfig::new(),
-            hud: Hud {
-                egui_panel: EguiPanel {
-                    enabled: false,
-                    show_on_mirror: false,
-                    resolution: (1280, 960),
-                },
-                world_markers: WorldMarkers { enabled: true },
+jc3vr_core::test_root! {
+    root {
+        stereo: StereoConfig = StereoConfig::new(),
+        exposure: ExposureConfig = ExposureConfig::new(),
+        foveation: FoveationConfig = FoveationConfig::new(),
+        far_field: FarFieldConfig = FarFieldConfig::new(),
+        post_fx: PostFxConfig = PostFxConfig::new(),
+        camera: CameraConfig = CameraConfig::new(),
+        movement: MovementConfig = MovementConfig::new(),
+        fsr: FsrConfig = FsrConfig::new(),
+        hud: Hud {
+            egui_panel: EguiPanel {
+                enabled: bool = false,
+                show_on_mirror: bool = false,
+                resolution: (u32, u32) = (1280, 960),
             },
-            headpose: HeadPoseConfig::new(),
-            body_ik: BodyIkConfig::new(),
-            vr: VrConfig::new(),
-            director: Director {
-                time_scale: 1.0,
-                paused: false,
-                clean_view: CleanViewConfig::new(),
+            world_markers: WorldMarkers {
+                enabled: bool = true,
             },
-            controllers: ControllersConfig::new(),
-            testing: Testing {
-                enabled: true,
-                record_hand_joints: true,
-                texture_census: false,
-            },
-            online: OnlineConfig::new(),
-            body: BodyDimensions::GENERIC_ADULT,
-        }
+        },
+        headpose: HeadPoseConfig = HeadPoseConfig::new(),
+        body_ik: BodyIkConfig = BodyIkConfig::new(),
+        vr: VrConfig = VrConfig::new(),
+        director: Director {
+            time_scale: f32 = 1.0,
+            paused: bool = false,
+            #[serde(skip, default = "CleanViewConfig::new")]
+            clean_view: CleanViewConfig = CleanViewConfig::new(),
+        },
+        controllers: ControllersConfig = ControllersConfig::new(),
+        testing: Testing {
+            enabled: bool = true,
+            record_hand_joints: bool = true,
+            texture_census: bool = false,
+        },
+        online: OnlineConfig = OnlineConfig::new(),
+        body: BodyDimensions = BodyDimensions::GENERIC_ADULT,
     }
-
-    fn migrate(_file: &mut Table, _format: Format) -> Vec<Migrated> {
-        Vec::new()
+    binds {
+        CONTROLLERS_CONFIG => controllers,
+        BODY_CONFIG => body,
+        MOVEMENT_CONFIG => movement,
+        BODY_IK_CONFIG => body_ik,
+        scheme::CONTROLLERS_ENABLED => controllers.enabled,
+        scheme::DOMINANT_HAND => controllers.dominant_hand,
+        LOCOMOTION_CONFIG => controllers.locomotion,
+        BINDINGS_CONFIG => controllers.bindings,
+        AIM_STATE_CONFIG => controllers.aim_state,
+        HANDS_CONFIG => controllers.hands,
+        AIM_CONFIG => controllers.aim,
+        OVERLAY_CONFIG => controllers.overlay,
+        WEAPONS_CONFIG => controllers.weapons,
+        BODY_REMAP_CONFIG => controllers.body,
+        ROOMSCALE_CONFIG => controllers.roomscale,
+        VEHICLES_CONFIG => controllers.vehicles,
+        FINGERS_CONFIG => controllers.fingers,
+        PHYSICAL_HANDS_CONFIG => controllers.physical_hands,
+        SUMMARY_CONFIG => controllers.summary,
+        GRAPPLE_CONFIG => controllers.grapple,
+        HAPTICS_CONFIG => controllers.haptics,
+        GLASS_CONFIG => controllers.glass,
+        MOUNTED_AIM_BY_HANDS => controllers.vehicles.mounted.aim_by_hands,
+        GRAPPLE_PUMP => controllers.grapple.pump,
+        DRIVING_VIEW_ENABLED => controllers.vehicles.driving_view.enabled,
+        TAKE_OFF_TO_HEAD => controllers.vehicles.take_off_to_head,
+        GRAPPLE_SEAT => controllers.grapple.seat,
+        CANOPY_LINE_TURN => controllers.vehicles.canopy.line_turn,
+        CANOPY_LINE_TURN_SCALE => controllers.vehicles.canopy.line_turn_scale,
+        SKIP_REEL_OPENING => controllers.vehicles.canopy.skip_reel_opening,
+        WINGSUIT_EVADE_ENABLED => controllers.vehicles.wingsuit_evade.enabled,
+        WORLD_MARKERS_ENABLED => hud.world_markers.enabled,
+        STEREO_CONFIG => stereo,
+        EXPOSURE_CONFIG => exposure,
+        FOVEATION_CONFIG => foveation,
+        FAR_FIELD_CONFIG => far_field,
+        POST_FX_CONFIG => post_fx,
+        CAMERA_CONFIG => camera,
+        FSR_CONFIG => fsr,
+        HEADPOSE_CONFIG => headpose,
+        VR_CONFIG => vr,
+        ONLINE_CONFIG => online,
+        INPUT_CONFIG => controllers.input,
+        CONTROLLERS_ENABLED => controllers.enabled,
+        DOMINANT_HAND => controllers.dominant_hand,
+        HAPTICS_ENABLED => controllers.haptics.enabled,
+        HAPTICS_INTENSITY => controllers.haptics.intensity,
+        PANEL_ENABLED => hud.egui_panel.enabled,
+        PANEL_ON_MIRROR => hud.egui_panel.show_on_mirror,
+        PANEL_RESOLUTION => hud.egui_panel.resolution,
+        TESTING_ENABLED => testing.enabled,
+        RECORD_HAND_JOINTS => testing.record_hand_joints,
+        TEXTURE_CENSUS => testing.texture_census,
+        TIME_SCALE => director.time_scale,
+        PAUSED => director.paused,
+        CLEAN_VIEW_CONFIG => director.clean_view,
     }
-
-    fn validate(&mut self, _resets: &mut Vec<Reset>) {}
-
-    fn note_saved(_text: &str) {}
 }
