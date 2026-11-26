@@ -22,7 +22,7 @@ use jc3vr_physical::controllers::physical_hands::{
     collider_view,
     collider_view::ColliderViewStatus,
     physics,
-    physics::{BodyPhase, CallbackStatus, HandBodyStatus, guns},
+    physics::{BodyPhase, CallbackStatus, HandBodyStatus},
 };
 use jc3vr_tooling::director::{keymap, keymap::Action};
 use jc3vr_weapons::controllers::weapons::grip_watch;
@@ -95,8 +95,7 @@ fn bone_changes() -> Line {
 }
 
 fn callback() -> Line {
-    let enabled = read(&CONTROLLERS_CONFIG, |c| physics::enabled(&c.physical_hands));
-    callback_line(enabled, physics::callback_status())
+    callback_line(physics::callback_status())
 }
 
 fn callback_fires() -> Line {
@@ -132,10 +131,6 @@ fn body_errors() -> Line {
 }
 
 fn contact_events() -> Line {
-    let hits = read(&CONTROLLERS_CONFIG, |c| physics::enabled(&c.physical_hands));
-    if !hits {
-        return Line::off("");
-    }
     let listening = physics::callback_status().listening;
     let status = physics::status();
     let hands = hands_label(listening);
@@ -170,10 +165,6 @@ fn blows() -> Line {
 }
 
 fn joints() -> Line {
-    let on = read(&CONTROLLERS_CONFIG, |c| physics::enabled(&c.physical_hands));
-    if !on {
-        return Line::off("");
-    }
     let joined = physics::status().hands.map(|hand| hand.joint.is_some());
     Line::ok(text!(
         joined.iter().filter(|&&joined| joined).count().to_string(),
@@ -312,13 +303,9 @@ fn animated_deviation_line(by_class: [Option<f32>; 4]) -> Line {
     }
 }
 
-fn callback_line(enabled: bool, status: CallbackStatus) -> Line {
+fn callback_line(status: CallbackStatus) -> Line {
     if !status.registered {
-        return if enabled {
-            Line::waiting(prose("Not registered"))
-        } else {
-            Line::off("")
-        };
+        return Line::waiting(prose("Not registered"));
     }
     if status.firing_thread == 0 {
         Line::waiting(prose("Not fired"))
@@ -338,20 +325,12 @@ fn right_gun_body() -> Line {
 }
 
 fn gun_body(hand: Hand) -> Line {
-    let enabled = read(&CONTROLLERS_CONFIG, |c| guns::enabled(&c.physical_hands));
     let status = held_guns::status();
-    gun_body_line(
-        enabled,
-        status.hands[hand.index()],
-        status.contacts[hand.index()],
-    )
+    gun_body_line(status.hands[hand.index()], status.contacts[hand.index()])
 }
 
 /// One hand's gun body: whether it is in the world, its mass, its joints, and its contacts.
-fn gun_body_line(enabled: bool, status: Option<GunBodyStatus>, contacts: u64) -> Line {
-    if !enabled {
-        return Line::off("");
-    }
+fn gun_body_line(status: Option<GunBodyStatus>, contacts: u64) -> Line {
     let Some(gun) = status else {
         return Line::waiting(prose("No gun body"));
     };
@@ -380,19 +359,17 @@ fn gun_body_line(enabled: bool, status: Option<GunBodyStatus>, contacts: u64) ->
 }
 
 fn body(hand: Hand) -> Line {
-    let enabled = read(&CONTROLLERS_CONFIG, |c| physics::enabled(&c.physical_hands));
-    body_line(enabled, &physics::status().hands[hand.index()])
+    body_line(&physics::status().hands[hand.index()])
 }
 
-fn body_line(enabled: bool, status: &HandBodyStatus) -> Line {
+fn body_line(status: &HandBodyStatus) -> Line {
     let id = status
         .body_id
         .map_or(SmolStr::default(), |id| format_smolstr!(" #{id}"));
     match status.phase {
         BodyPhase::Acting => Line::ok(text!("In world", id)),
         BodyPhase::Parked => Line::ok(text!("Parked", id)),
-        BodyPhase::Absent if enabled => Line::waiting(prose("No body")),
-        BodyPhase::Absent => Line::off(""),
+        BodyPhase::Absent => Line::waiting(prose("No body")),
     }
 }
 
@@ -599,11 +576,11 @@ mod tests {
             speed_mps: 0.0,
         };
         assert_eq!(
-            gun_body_line(true, Some(gun), 3).text(),
+            gun_body_line(Some(gun), 3).text(),
             "OK, #812 4.0 KG, HELD+BRACED, 3 HITS"
         );
         assert_eq!(
-            gun_body_line(true, Some(gun), 3).display_detail,
+            gun_body_line(Some(gun), 3).display_detail,
             "#812 4.0 kg, held+braced, 3 hits"
         );
         let one_hand = GunBodyStatus {
@@ -611,27 +588,20 @@ mod tests {
             ..gun
         };
         assert_eq!(
-            gun_body_line(true, Some(one_hand), 0).text(),
+            gun_body_line(Some(one_hand), 0).text(),
             "OK, #812 4.0 KG, HELD, 0 HITS"
         );
         let loose = GunBodyStatus {
             holder_joint: None,
             ..gun
         };
-        assert_eq!(
-            gun_body_line(true, Some(loose), 0).text(),
-            "FAILED, NOT JOINED"
-        );
+        assert_eq!(gun_body_line(Some(loose), 0).text(), "FAILED, NOT JOINED");
         let out = GunBodyStatus {
             in_world: false,
             ..gun
         };
-        assert_eq!(
-            gun_body_line(true, Some(out), 0).text(),
-            "FAILED, NOT IN WORLD"
-        );
-        assert_eq!(gun_body_line(true, None, 0).text(), "WAITING, NO GUN BODY");
-        assert_eq!(gun_body_line(false, Some(gun), 0).text(), "OFF");
+        assert_eq!(gun_body_line(Some(out), 0).text(), "FAILED, NOT IN WORLD");
+        assert_eq!(gun_body_line(None, 0).text(), "WAITING, NO GUN BODY");
     }
 
     #[test]
@@ -680,13 +650,9 @@ mod tests {
             firing_thread,
             ..CallbackStatus::default()
         };
-        assert_eq!(callback_line(true, fired(7)).text(), "OK, GAME THREAD");
-        assert_eq!(callback_line(true, fired(9)).text(), "OK, THREAD 9");
-        assert_eq!(callback_line(true, fired(0)).health, Health::Waiting);
-        assert_eq!(
-            callback_line(false, CallbackStatus::default()).health,
-            Health::Off
-        );
+        assert_eq!(callback_line(fired(7)).text(), "OK, GAME THREAD");
+        assert_eq!(callback_line(fired(9)).text(), "OK, THREAD 9");
+        assert_eq!(callback_line(fired(0)).health, Health::Waiting);
     }
 
     #[test]
@@ -696,14 +662,10 @@ mod tests {
             body_id: Some(12),
             ..HandBodyStatus::default()
         };
-        assert_eq!(body_line(true, &acting).text(), "OK, IN WORLD #12");
+        assert_eq!(body_line(&acting).text(), "OK, IN WORLD #12");
         assert_eq!(
-            body_line(true, &HandBodyStatus::default()).health,
+            body_line(&HandBodyStatus::default()).health,
             Health::Waiting
-        );
-        assert_eq!(
-            body_line(false, &HandBodyStatus::default()).health,
-            Health::Off
         );
     }
 

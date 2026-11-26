@@ -1,49 +1,14 @@
-//! The vehicle doors' settings, and the tearing's fixed tuning.
+//! The vehicle door tearing's fixed tuning.
 
-use serde::{Deserialize, Serialize};
-
-use crate::controllers::physical_hands::doors::hinge::HingeConfig;
-
-/// Opening vehicle doors by hand (see [`crate::controllers::physical_hands::doors`]): a grip on a
-/// closed door's handle area takes hold of it, a pull unlatches it onto its hinge, and the hand
-/// swings it from there. A shove swings it shut, and the game latches it.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct DoorsConfig {
-    pub enabled: bool,
-    /// Tear a detachable door off its hinge by hand, with a yank, a hard pull, or a push past its
-    /// opening limit once the grip has settled ([`TEARING`]).
-    pub tear: bool,
-    /// What keeps a door the hands opened where it is left, and when it latches.
-    pub hinge: HingeConfig,
-}
-
-impl DoorsConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            tear: true,
-            hinge: HingeConfig::new(),
-        }
-    }
-}
-
-impl Default for DoorsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// Deliberate tearing after an open grip settles; distances and speeds use player metres. The
-/// tuning is fixed at [`TEARING`], and the tick sets [`enabled`](Self::enabled) from the switches.
+/// Deliberate tearing of a detachable door off its hinge after an open grip settles, with a yank, a
+/// hard pull, or a push past its opening limit; distances and speeds use player metres. The tuning
+/// is fixed at [`TEARING`].
 ///
 /// The lags are measured above the grip's settled lag, the lag it held while it settled: a heavy
 /// door held through a joint hangs a few centimetres off the hand, and a door taken by a reach
 /// sits wherever the hand stopped, so a settled grip need not be a close one.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct TearTuning {
-    /// Whether a grip may tear its door at all.
-    pub enabled: bool,
     /// How long the grip's lag must hold steady before a gesture tears, seconds.
     pub settle_s: f32,
     /// The fastest the lag may change for the grip to count as steady, metres per second.
@@ -75,7 +40,6 @@ pub struct TearTuning {
 
 /// The tearing's tuning.
 pub const TEARING: TearTuning = TearTuning {
-    enabled: true,
     settle_s: 0.2,
     settle_speed_mps: 0.15,
     direction_cos: 0.866_025_4,

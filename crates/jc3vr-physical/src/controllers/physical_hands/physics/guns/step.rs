@@ -24,7 +24,7 @@ use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::physics::{
     body::{BodyError, BodyShape, BodySpec, HandBody},
-    config::{BraceConfig, HeldGunsTuning},
+    config::HeldGunsTuning,
     contact::{self, Source},
     drive::BodyMotion,
     guns::{
@@ -68,8 +68,6 @@ pub(crate) struct GunStep<'a> {
     /// The guns in the hands, as last published; empty when stale or switched off.
     pub holds: GunHolds,
     pub config: &'a HeldGunsTuning,
-    /// When the brace's joint is remade, and when it breaks.
-    pub brace: BraceConfig,
     /// Whether the gun bodies' contacts are listened for.
     pub contact_events: bool,
     /// The player's collision system group.
@@ -484,7 +482,7 @@ unsafe fn keep(
             brace_broken(
                 tracked,
                 palm.position,
-                input.brace.break_distance_m * input.scale,
+                input.config.brace.break_distance_m * input.scale,
             )
         });
     slot.support_strays = if off_the_gun {
@@ -501,7 +499,7 @@ unsafe fn keep(
             broke || local.is_none() || placed[off.index()] || !unsafe { brace.joint.intact() };
         let due = local.is_some_and(|wanted| {
             let age_s = now.saturating_duration_since(brace.made).as_secs_f32();
-            brace_due(brace.frame, wanted, age_s, &input.brace)
+            brace_due(brace.frame, wanted, age_s, &input.config.brace)
         });
         if ended {
             let reason = if broke {

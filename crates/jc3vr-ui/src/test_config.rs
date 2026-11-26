@@ -12,7 +12,7 @@
 
 use jc3vr_body::{
     controllers::{
-        aim::{config::AIM_CONFIG, sights::config::SightTable},
+        aim::{WORLD_MARKERS_ENABLED, config::AIM_CONFIG, sights::config::SightTable},
         body::{BODY_CONFIG, BodyDimensions, config::BODY_REMAP_CONFIG},
         hands::config::HANDS_CONFIG,
         haptics::config::HAPTICS_CONFIG,
@@ -126,6 +126,7 @@ jc3vr_core::test_root! {
         GLASS_CONFIG => controllers.glass,
         DRIVING_VIEW_ENABLED => controllers.vehicles.driving_view.enabled,
         WINGSUIT_EVADE_ENABLED => controllers.vehicles.wingsuit_evade.enabled,
+        WORLD_MARKERS_ENABLED => hud.world_markers.enabled,
         PANEL_ENABLED => hud.egui_panel.enabled,
         PANEL_ON_MIRROR => hud.egui_panel.show_on_mirror,
         PANEL_RESOLUTION => hud.egui_panel.resolution,

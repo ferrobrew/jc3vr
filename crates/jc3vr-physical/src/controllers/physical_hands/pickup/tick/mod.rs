@@ -14,7 +14,7 @@ use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::physical_hands::{
     STALE_AFTER, carry_collision, characters,
-    characters::{CharactersConfig, Regrip, Seize},
+    characters::{Regrip, Seize},
     doors,
     doors::Latch,
     grasp,
@@ -38,9 +38,6 @@ use crate::controllers::physical_hands::{
 /// What the hand bodies tell a pickup tick about the joints.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub(crate) struct JointInputs {
-    /// Whether joint grabs are enabled (the hand bodies are on), independent of which hands
-    /// currently act.
-    pub enabled: bool,
     /// Which hands take what they grab through a joint: those their bodies drive.
     pub join: [bool; 2],
     /// Which hands lost the joint their grip held.
@@ -65,7 +62,6 @@ pub(crate) struct TickInputs {
     pub tearing: doors::config::TearTuning,
     /// The VR world scale.
     pub world_scale: f32,
-    pub characters: CharactersConfig,
     /// What each hand reaches this tick, from which a hand that yanked a character takes hold of
     /// its ragdoll.
     pub reaches: [Option<Reach>; 2],
@@ -190,12 +186,11 @@ pub(crate) unsafe fn tick(
         .map(|request| matches!(request, Some(Request::Release)));
     let time_scale = inputs.time_scale;
     let dt = inputs.dt;
-    let characters_config = inputs.characters;
     let outcome = unsafe { tick_with(state, inputs, config, &mut NativeBodies) };
     // SAFETY: forwarded from the caller.
     unsafe { damping::damp_held(state, dt) };
     // SAFETY: forwarded from the caller.
-    unsafe { held_ragdolls::follow(state, &outcome, &characters_config, dt) };
+    unsafe { held_ragdolls::follow(state, &outcome, dt) };
     log_losses(subjects, &outcome);
     note_releases(subjects, opened, time_scale, &outcome);
     outcome
@@ -282,7 +277,6 @@ unsafe fn tick_with(
         unlatch_pull_m,
         tearing,
         world_scale,
-        characters: character_config,
         reaches,
         carrier_velocity,
         carrier_pose,
@@ -314,14 +308,6 @@ unsafe fn tick_with(
     };
     state.carrier_pose = carrier_pose;
     state.carrier_angular = transport.angular();
-    if state
-        .joints_enabled
-        .is_some_and(|previous| previous != joints.enabled)
-    {
-        outcome.released = Hand::BOTH.map(|h| state.has_interaction(h));
-        state.drop_all();
-    }
-    state.joints_enabled = Some(joints.enabled);
     for hand in Hand::BOTH {
         let i = hand.index();
         if joints.lost[i] && state.held[i].is_some_and(|h| h.joined) {
@@ -425,15 +411,7 @@ unsafe fn tick_with(
                 }
                 if let TargetKind::Character(target) = reach.kind {
                     // SAFETY: the queued target is checked before any character access.
-                    match unsafe {
-                        Seize::take(
-                            target,
-                            reach.point,
-                            palm.pose,
-                            world_scale,
-                            &character_config,
-                        )
-                    } {
+                    match unsafe { Seize::take(target, reach.point, palm.pose, world_scale) } {
                         Some(seize) => {
                             tracing::info!(
                                 hand = hand.label(),
@@ -444,12 +422,9 @@ unsafe fn tick_with(
                             state.evidence_holds[i] = evidence;
                             // SAFETY: forwarded from the caller; the body's owner is checked
                             // before the character is read.
-                            let direction =
-                                unsafe { characters::topples(target, &character_config) }
-                                    .then(|| {
-                                        characters::topple_direction(palm.velocity, reach.normal)
-                                    })
-                                    .flatten();
+                            let direction = unsafe { characters::topples(target) }
+                                .then(|| characters::topple_direction(palm.velocity, reach.normal))
+                                .flatten();
                             match direction {
                                 Some(direction) => {
                                     topple(hand, seize, reach.point, direction, &mut outcome);
@@ -468,20 +443,10 @@ unsafe fn tick_with(
                             // body the reach hit, as any loose body is.
                             // SAFETY: forwarded from the caller; the owner check inside proves
                             // the character live.
-                            let fallen = if character_config.grab {
-                                unsafe {
-                                    characters::fallen_reach(
-                                        target,
-                                        reach.point,
-                                        palm.pose.position,
-                                    )
-                                }
-                            } else {
-                                None
+                            let fallen = unsafe {
+                                characters::fallen_reach(target, reach.point, palm.pose.position)
                             };
-                            let take = fallen.or_else(|| {
-                                (character_config.grab && target.ragdoll).then_some(reach)
-                            });
+                            let take = fallen.or_else(|| target.ragdoll.then_some(reach));
                             if let Some(reach) = take {
                                 let body = engine.read(reach.body, reach.object);
                                 let result = take_body(
@@ -620,16 +585,7 @@ unsafe fn tick_with(
             )
         };
         // SAFETY: forwarded from the caller.
-        unsafe {
-            keep_seize(
-                state,
-                hand,
-                palms[i],
-                world_scale,
-                &character_config,
-                &mut outcome,
-            )
-        };
+        unsafe { keep_seize(state, hand, palms[i], world_scale, &mut outcome) };
         // SAFETY: forwarded from the caller.
         unsafe { keep_latch(state, hand, palms[i], unlatch_pull_m, &mut outcome) };
         if state.held[i].is_none()

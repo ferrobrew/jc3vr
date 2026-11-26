@@ -51,7 +51,10 @@ use jc3gi::{
     character::character::Character,
     types::math::{Matrix4, Vector3},
 };
-use jc3vr_core::frame_timing::{self, Slot};
+use jc3vr_core::{
+    config::engine::ConfigSlot,
+    frame_timing::{self, Slot},
+};
 use jc3vr_input::frame::{Hand, Pose};
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
@@ -81,6 +84,10 @@ use crate::controllers::{
 /// along the ray, because the game fires along the barrel instead of at an aim point near the
 /// muzzle, and skips the weapon's update entirely for one almost at the muzzle.
 const MIN_TARGET_DISTANCE_M: f32 = 2.0;
+
+/// Whether the HUD's world markers are on, at `hud.world_markers.enabled` in the settings file;
+/// the payload binds the slot at startup. The aim casts the markers' fallback rays.
+pub static WORLD_MARKERS_ENABLED: ConfigSlot<bool> = ConfigSlot::new("hud.world_markers.enabled");
 
 /// The aiming hooks, aggregated by `controllers::hook_library`.
 pub fn hook_library() -> HookLibrary {
@@ -232,8 +239,9 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     // The world markers' fallback raycasts run here whatever the control scheme: this is the
     // simulation update, outside the physics step, where the game casts its own aim ray.
     if let Some(owner) = owner {
+        let markers = *WORLD_MARKERS_ENABLED.lock();
         // SAFETY: the owner is the live local player character, on the simulation thread.
-        unsafe { marker_rays::resolve_rays(owner) };
+        unsafe { marker_rays::resolve_rays(owner, markers) };
         // SAFETY: as above. The head probe runs in every state and scheme, for the comfort fade.
         unsafe { crate::controllers::body::rig::collision::tick(owner) };
         // SAFETY: as above. The feet's ground probes the IK body asked for at the solve gate.

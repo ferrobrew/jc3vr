@@ -18,7 +18,7 @@ use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    PhysicalHandsConfig, STATE, free_hands,
+    STATE, free_hands,
     grasp::{AngularTracker, VelocityTracker},
     mode_acts,
     palm::PalmBox,
@@ -47,11 +47,6 @@ pub fn callback_status() -> CallbackStatus {
         firing_thread: callback::firing_thread(),
         listening: Hand::BOTH.map(contact::listening),
     }
-}
-
-/// Whether the hand bodies are on: their switch, under the physical hands' master switch.
-pub fn enabled(config: &PhysicalHandsConfig) -> bool {
-    config.enabled && config.bodies.enabled
 }
 
 /// Publish what each hand's grip holds through a joint, for the next step to join. Called from the
@@ -310,14 +305,14 @@ pub(super) static SHARED: Mutex<Shared> = Mutex::new(Shared {
 /// The hands' palms when they act, with the VR world scale: on foot on the ground or falling, for
 /// a tracked hand the controllers drive that holds nothing, or that holds or braces a gun whose
 /// body it holds ([`guns::acting_hands`]).
-pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> {
+pub(super) fn acting_palms() -> Option<ActingPalms> {
     if !scheme::is_controllers() || !jc3vr_core::hooks::in_gameplay() {
         return None;
     }
     let detection = mode::current();
     let ordinary = mode_acts(detection);
     let on_gun = if guns::mode_allows_bodies(detection) {
-        guns::acting_hands(config)
+        guns::acting_hands()
     } else {
         [false; 2]
     };
@@ -333,9 +328,7 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
         Hand::BOTH.map(|hand| state.pickup.carrying(hand))
     };
     let tracked_hands = active.hands;
-    if guns::enabled(config) {
-        guns::targets::apply_physical(&mut active.hands, active.head.position);
-    }
+    guns::targets::apply_physical(&mut active.hands, active.head.position);
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let palm_of = |cockpit: CockpitHand| {
         PalmBox::from_wrist(xf.pose_to_world(cockpit.wrist), active.world_scale, &PALMS)

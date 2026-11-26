@@ -9,10 +9,10 @@
 //! - a door a hand holds never latches, so the hold keeps it wherever the hand has it;
 //! - a free side door is damped, so a door thrown open slows and settles rather than bouncing back
 //!   off its stop;
-//! - a free lid (a hood, a trunk, a hatch) above [`HingeConfig::strut_fraction`] of its travel is
+//! - a free lid (a hood, a trunk, a hatch) above [`HingeTuning::strut_fraction`] of its travel is
 //!   held where it is against its weight, as a gas strut holds it, and falls freely below it;
-//! - a free door latches only when it swings shut faster than [`HingeConfig::latch_speed_deg_s`], or
-//!   when it rests shut for [`HingeConfig::settle_s`], through the controller's own merge
+//! - a free door latches only when it swings shut faster than [`HingeTuning::latch_speed_deg_s`], or
+//!   when it rests shut for [`HingeTuning::settle_s`], through the controller's own merge
 //!   ([`engine::latch`]).
 //!
 //! A door the game turns with its motor (an entry or exit animation, the AI, a script) is the
@@ -28,15 +28,13 @@ use jc3vr_body::controllers::physics::{
     rigid::{BodyPose, Velocities},
 };
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
 
 use crate::controllers::physical_hands::doors::{engine, table};
 
-/// The hinges of the doors the hands opened (see [`crate::controllers::physical_hands::doors::hinge`]).
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct HingeConfig {
-    pub enabled: bool,
+/// The hinges of the doors the hands opened (see [`crate::controllers::physical_hands::doors::hinge`]),
+/// fixed at [`HINGE`].
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct HingeTuning {
     /// The closing speed past which a free door within the controller's latch angle latches,
     /// degrees per second. The controller's own is a tenth of a typical shove.
     pub latch_speed_deg_s: f32,
@@ -49,23 +47,13 @@ pub struct HingeConfig {
     pub strut_fraction: f32,
 }
 
-impl HingeConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            latch_speed_deg_s: 60.0,
-            settle_s: 1.0,
-            damping_per_s: 1.5,
-            strut_fraction: 0.3,
-        }
-    }
-}
-
-impl Default for HingeConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// The hinges' tuning.
+pub const HINGE: HingeTuning = HingeTuning {
+    latch_speed_deg_s: 60.0,
+    settle_s: 1.0,
+    damping_per_s: 1.5,
+    strut_fraction: 0.3,
+};
 
 /// Note that a hand undid the latch of the door at part index `part_index` of `vehicle`, whose body
 /// `vehicle_body` proves it alive.
@@ -103,14 +91,14 @@ pub(crate) fn yield_support(vehicle: NonZeroUsize, part_index: u32) {
 }
 
 /// Keep the doors the hands opened, for a palm tick of `dt` game seconds in which the hands hold
-/// the bodies `held`. With `config` off, every door gets the controller's latch back.
+/// the bodies `held`. While the hands are not `active`, every door gets the controller's latch back.
 ///
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-pub(crate) unsafe fn tick(dt: f32, held: &[u32], config: &HingeConfig, gravity_mps2: f32) {
+pub(crate) unsafe fn tick(dt: f32, held: &[u32], active: bool, gravity_mps2: f32) {
     let mut doors = DOORS.lock();
-    if !config.enabled {
+    if !active {
         for door in doors.drain(..) {
             // SAFETY: the vehicle is proven alive by its body before it is touched.
             if unsafe { engine::alive(door.vehicle, door.vehicle_body) } {
@@ -119,7 +107,7 @@ pub(crate) unsafe fn tick(dt: f32, held: &[u32], config: &HingeConfig, gravity_m
         }
         return;
     }
-    doors.retain_mut(|door| unsafe { keep(door, dt, held, config, gravity_mps2) });
+    doors.retain_mut(|door| unsafe { keep(door, dt, held, &HINGE, gravity_mps2) });
 }
 
 /// What a door's hinge does this tick.
@@ -173,7 +161,7 @@ pub(crate) struct HingeTick {
 }
 
 /// What the hinge of a door does this tick.
-pub(crate) fn swing(tick: &HingeTick, config: &HingeConfig) -> Swing {
+pub(crate) fn swing(tick: &HingeTick, config: &HingeTuning) -> Swing {
     if tick.held {
         return Swing::Held;
     }
@@ -254,7 +242,7 @@ impl CanopySupport {
         };
     }
 
-    fn swing(&mut self, tick: &HingeTick, config: &HingeConfig) -> Swing {
+    fn swing(&mut self, tick: &HingeTick, config: &HingeTuning) -> Swing {
         if tick.held {
             *self = Self::Free;
             return Swing::Held;
@@ -385,7 +373,7 @@ const RESTING_RAD_S: f32 = 0.05;
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeConfig, g: f32) -> bool {
+unsafe fn keep(door: &mut Opened, dt: f32, held: &[u32], config: &HingeTuning, g: f32) -> bool {
     if !unsafe { engine::alive(door.vehicle, door.vehicle_body) } {
         return false;
     }

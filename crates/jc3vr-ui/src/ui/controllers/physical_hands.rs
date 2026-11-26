@@ -1,12 +1,12 @@
-//! Physical hands: each palm's contacts and push, what each hand reaches and holds, and the palm
-//! and pickup settings.
+//! Physical hands: each palm's contacts and push, what each hand reaches and holds, and the human
+//! hull's switches.
 
 use egui::Ui;
 use jc3vr_body::controllers::grab::world_reach::{SeatAccess, TargetKind};
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::{
-    PhysicalHandsConfig, PhysicalHandsStatus, doors, human_hull, human_hull::step_up, impacts,
-    pickup::diagnostics, sounds::SoundsStatus,
+    PhysicalHandsStatus, doors, human_hull, human_hull::step_up, impacts, pickup::diagnostics,
+    sounds::SoundsStatus,
 };
 
 pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
@@ -150,7 +150,7 @@ pub(super) fn physical_hands_readout(ui: &mut Ui, status: &PhysicalHandsStatus) 
     }
 }
 
-pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
+pub(super) fn physical_hands_settings(ui: &mut Ui) {
     let mut hull_enabled = human_hull::status().enabled;
     if ui
         .checkbox(&mut hull_enabled, "Half-width human collision hulls")
@@ -182,88 +182,6 @@ pub(super) fn physical_hands_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) 
             .map_or_else(|| "none".to_owned(), |h| format!("{h:.2} m")),
         step_up.lifting
     ));
-    ui.checkbox(&mut p.enabled, "Physical palms");
-    ui.add_enabled_ui(p.enabled, |ui| {
-        ui.checkbox(&mut p.bodies.enabled, "Hand bodies")
-            .on_hover_text(
-                "Give each empty hand a body in the physics world, in place of the palm probes.",
-            );
-        ui.checkbox(&mut p.push, "Push off surfaces");
-        ui.checkbox(&mut p.body_proxies, "Held objects meet Rico's torso")
-            .on_hover_text(
-                "Keyframed capsules on the drawn chest and belly that held props and ragdolls \
-                 collide with.",
-            );
-        ui.checkbox(&mut p.pickup.enabled, "Pick up objects with the grip");
-        ui.add_enabled_ui(p.pickup.enabled, |ui| {
-            ui.add(egui::Slider::new(&mut p.pickup.throw_scale, 0.0..=4.0).text("Throw (× hand)"));
-            ui.add(
-                egui::Slider::new(&mut p.pickup.carrier_motion_share, 0.0..=1.0)
-                    .text("Carry with the body's motion"),
-            )
-            .on_hover_text(
-                "The share of the body's own jumps, landings, and launches a carried object \
-                 takes on, so that it stays in the hands rather than being torn away.",
-            );
-        });
-        ui.checkbox(
-            &mut p.vault.enabled,
-            "Push the body up with the hands pressed down",
-        );
-        ui.checkbox(&mut p.bodies.reactions, "Characters react to blows");
-    });
-}
-
-pub(super) fn characters_doors_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
-    ui.add_enabled_ui(p.enabled, |ui| {
-        ui.checkbox(&mut p.characters.grab, "Take hold of characters on foot");
-        ui.add_enabled_ui(p.characters.grab, |ui| {
-            ui.checkbox(
-                &mut p.characters.topple,
-                "Throw a gripped character into their ragdoll",
-            );
-            ui.checkbox(
-                &mut p.characters.hold_off_get_up,
-                "Keep a held character in their ragdoll",
-            )
-            .on_hover_text(
-                "Write back a held character's ragdolling timers through the hold, so the game's \
-                 get-up does not stand them up out of the hand.",
-            );
-        });
-        ui.checkbox(
-            &mut p.characters.hijack,
-            "Pull occupants out through open doors and broken windows",
-        );
-        ui.checkbox(&mut p.doors.enabled, "Open vehicle doors by hand");
-        ui.add_enabled_ui(p.doors.enabled, |ui| {
-            ui.checkbox(&mut p.doors.tear, "Tear detachable doors by hand");
-            let hinge = &mut p.doors.hinge;
-            ui.checkbox(&mut hinge.enabled, "Hold opened doors where they are left")
-                .on_hover_text(
-                    "Damp a door the hands opened, prop a lid open like a gas strut, and latch \
-                     only a door shoved shut or resting shut, never one a hand holds.",
-                );
-            ui.add_enabled_ui(hinge.enabled, |ui| {
-                ui.add(
-                    egui::Slider::new(&mut hinge.latch_speed_deg_s, 10.0..=200.0)
-                        .text("Latches past (deg/s)"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut hinge.settle_s, 0.2..=5.0)
-                        .text("Latches at rest after (s)"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut hinge.damping_per_s, 0.0..=10.0)
-                        .text("Door damping (/s)"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut hinge.strut_fraction, 0.0..=1.0)
-                        .text("Lid strut above (share of travel)"),
-                );
-            });
-        });
-    });
 }
 
 pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus) {
@@ -340,15 +258,6 @@ pub(super) fn characters_doors_readout(ui: &mut Ui, status: &PhysicalHandsStatus
         "Doors torn: {} · tear refusals {}",
         p.tears, p.tear_refusals
     ));
-}
-
-pub(super) fn impact_sounds_settings(ui: &mut Ui, p: &mut PhysicalHandsConfig) {
-    ui.add_enabled_ui(p.enabled, |ui| {
-        ui.checkbox(&mut p.sounds.enabled, "Impact sounds")
-            .on_hover_text(
-                "The game's melee impact sound where a hand meets something hard enough.",
-            );
-    });
 }
 
 pub(super) fn impact_sounds_readout(ui: &mut Ui, status: &SoundsStatus) {

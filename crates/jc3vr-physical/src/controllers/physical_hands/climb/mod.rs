@@ -38,12 +38,10 @@ mod state;
 mod step;
 mod types;
 
-pub use config::ClimbConfig;
-
 pub use self::{
     observe::{observe, reach},
     state::{
-        climbing, enabled, finish_tick, gripped, reach_hold, stand_down, static_reaches, status,
+        climbing, finish_tick, gripped, reach_hold, stand_down, static_reaches, status,
         take_landing,
     },
     step::step,

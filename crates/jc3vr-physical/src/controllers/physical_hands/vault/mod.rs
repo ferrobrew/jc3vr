@@ -2,7 +2,7 @@
 //! lifts the player, so the hands vault the body up onto what they press on. The design is in
 //! `docs/mod/input/physical-hands.md`, "Pushing up".
 //!
-//! - [`config`]: the settings.
+//! - [`config`]: the fixed tuning.
 //!
 //! A hand that presses down on what does not give falls behind its goal downward: its controller is
 //! below the surface its body rests on. Past [`VaultTuning::deadband_m`], that lag lifts the player
@@ -33,7 +33,7 @@
 
 pub mod config;
 
-pub use config::{VAULT, VaultConfig, VaultTuning};
+pub use config::{VAULT, VaultTuning};
 use glam::Vec3;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
@@ -189,7 +189,7 @@ pub(crate) struct Press {
 ///
 /// The thread that steps the physics world, outside the step, after the characters' proxy updates
 /// (the pre-simulation callback).
-pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
+pub(crate) unsafe fn step(press: Press) -> bool {
     let mut state = STATE.lock();
     let tuning = LiftTuning::of(&VAULT, press.scale);
     // Each hand that presses on a surface under it, with its lift and the surface.
@@ -199,7 +199,7 @@ pub(crate) unsafe fn step(press: Press, config: &VaultConfig) -> bool {
         let lift = supported_press_lift(press.lags[i]?, Some(&support), &tuning);
         Some((lift, support)).filter(|(lift, _)| *lift > 0.0)
     });
-    if !config.enabled || pressing.iter().all(Option::is_none) {
+    if pressing.iter().all(Option::is_none) {
         state.release();
         return false;
     }

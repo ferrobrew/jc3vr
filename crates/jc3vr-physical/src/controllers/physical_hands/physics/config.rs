@@ -1,31 +1,20 @@
-//! The hand bodies' settings, and their fixed tuning.
+//! The hand bodies' setting, and their fixed tuning.
 
 use serde::{Deserialize, Serialize};
 
 /// The hand bodies (see [`crate::controllers::physical_hands::physics`]): each empty hand is a body
-/// in the game's physics world, driven toward the controller within the hand's strength. Their
-/// fixed tuning is [`HAND_BODIES`].
+/// in the game's physics world, driven toward the controller within the hand's strength, and a
+/// character struck by a hand reacts to the blow. Their fixed tuning is [`HAND_BODIES`].
 #[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct HandBodiesConfig {
-    /// Give each empty hand a body in the physics world, in place of the palm's ray probes.
-    pub enabled: bool,
     /// The hands' strength, a scale on their force and twist: one is the default "Rico strength".
     pub strength: f32,
-    /// A character struck by a hand reacts to the blow: staggers, or is knocked down.
-    pub reactions: bool,
-    /// When the joint between a held gun and its bracing hand is remade, and when it breaks.
-    pub brace: BraceConfig,
 }
 
 impl HandBodiesConfig {
     pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            strength: 1.0,
-            reactions: true,
-            brace: BraceConfig::new(),
-        }
+        Self { strength: 1.0 }
     }
 }
 
@@ -50,10 +39,8 @@ impl Default for HandBodiesConfig {
 /// [`brace_broken`](crate::controllers::physical_hands::physics::guns::math::brace_broken)), and the
 /// two-handed hold lets go, once the tracked palm is further than
 /// [`break_distance_m`](Self::break_distance_m) from where the joint holds the palm on the gun.
-/// These are settings so the brace's feel can be tuned in the headset.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct BraceConfig {
+#[derive(Copy, Clone, Debug, PartialEq)]
+pub struct BraceTuning {
     /// The palm frame's furthest move, metres.
     pub distance_m: f32,
     /// The palm frame's largest turn, radians.
@@ -63,23 +50,6 @@ pub struct BraceConfig {
     /// The furthest the tracked palm may be from its place on the gun before the brace breaks,
     /// metres.
     pub break_distance_m: f32,
-}
-
-impl BraceConfig {
-    pub const fn new() -> Self {
-        Self {
-            distance_m: 0.01,
-            angle_rad: 0.08,
-            min_interval_s: 0.25,
-            break_distance_m: 0.15,
-        }
-    }
-}
-
-impl Default for BraceConfig {
-    fn default() -> Self {
-        Self::new()
-    }
 }
 
 /// The hand bodies' tuning, fixed at [`HAND_BODIES`].
@@ -222,6 +192,8 @@ pub struct HeldGunsTuning {
     /// The least time between two pulses of a gun body's contacts in one hand, seconds: a gun
     /// rubbing along a wall touches it on every step.
     pub contact_pulse_interval_s: f32,
+    /// When the joint between a held gun and its bracing hand is remade, and when it breaks.
+    pub brace: BraceTuning,
 }
 
 /// One value per gun weight class.
@@ -257,6 +229,12 @@ impl HeldGunsTuning {
             drawn_max_shift_m: 0.015,
             drawn_max_turn_deg: 2.0,
             contact_pulse_interval_s: 0.2,
+            brace: BraceTuning {
+                distance_m: 0.01,
+                angle_rad: 0.08,
+                min_interval_s: 0.25,
+                break_distance_m: 0.15,
+            },
         }
     }
 }

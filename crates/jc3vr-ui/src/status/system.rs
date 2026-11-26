@@ -144,6 +144,9 @@ fn atlas() -> Line {
 }
 
 fn world_markers() -> Line {
+    if !read(&HUD_CONFIG, |c| c.world_markers.enabled) {
+        return Line::off("");
+    }
     match world_markers::status() {
         Some(status) if status.skipped > 0 => Line::ok(text!(
             status.markers.len().to_string(),
@@ -157,6 +160,9 @@ fn world_markers() -> Line {
 }
 
 fn marker_depth() -> Line {
+    if !read(&HUD_CONFIG, |c| c.world_markers.enabled) {
+        return Line::off("");
+    }
     let Some(status) = world_markers::status() else {
         return Line::waiting(prose("Not drawing"));
     };

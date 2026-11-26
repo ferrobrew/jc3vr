@@ -188,9 +188,7 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &SnatchSettin
             let Some(_alive) = weak.lock() else {
                 return false;
             };
-            if !config.physical_hands.doors.enabled
-                || unsafe { remote::door_moving(door, SNATCH.door_max_vehicle_speed_mps) }
-            {
+            if unsafe { remote::door_moving(door, SNATCH.door_max_vehicle_speed_mps) } {
                 return false;
             }
             let Some(body) = door.vehicle_body else {
@@ -203,7 +201,6 @@ pub(super) unsafe fn refresh(offer: &mut Offer, ray: &Ray, config: &SnatchSettin
                     *handle,
                     door.outward,
                     SNATCH.door_reach_m,
-                    &config.physical_hands.doors,
                 )
             }) else {
                 return false;
@@ -820,7 +817,6 @@ unsafe fn aimed_offer(
             weak: weak(),
         });
     }
-    let hands = &config.physical_hands;
     // A part still on its vehicle (a turret, a door on its hinge) is the vehicle's to the hook,
     // whose attachment then selects the vehicle's body and refuses the snatch: offered as an
     // object, an armoured car's turret armed three yanks on the 14 November take that each fired
@@ -840,26 +836,22 @@ unsafe fn aimed_offer(
             weak: weak(),
         });
     }
-    if hands.doors.enabled {
-        let (door, handle) = unsafe {
-            remote::closed_door(
-                aimed.object,
-                aimed.body,
-                aimed.point,
-                aimed.normal,
-                SNATCH.door_reach_m,
-                &hands.doors,
-            )
-        }?;
-        if unsafe { remote::door_moving(&door, SNATCH.door_max_vehicle_speed_mps) } {
-            return None;
-        }
-        // SAFETY: the door's vehicle is the object under the aim, or the vehicle of a part of it,
-        // live for this tick.
-        let weak = unsafe { weak_of(door.vehicle) };
-        return Some(OfferKind::Door { door, handle, weak });
+    let (door, handle) = unsafe {
+        remote::closed_door(
+            aimed.object,
+            aimed.body,
+            aimed.point,
+            aimed.normal,
+            SNATCH.door_reach_m,
+        )
+    }?;
+    if unsafe { remote::door_moving(&door, SNATCH.door_max_vehicle_speed_mps) } {
+        return None;
     }
-    None
+    // SAFETY: the door's vehicle is the object under the aim, or the vehicle of a part of it,
+    // live for this tick.
+    let weak = unsafe { weak_of(door.vehicle) };
+    Some(OfferKind::Door { door, handle, weak })
 }
 
 /// The mass of the loose object under the grapple's aim, whatever the snatch would do with it, for

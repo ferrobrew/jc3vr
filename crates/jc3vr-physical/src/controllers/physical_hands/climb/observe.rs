@@ -16,12 +16,11 @@ use jc3vr_input::{
 use jc3vr_view::vr::recenter_count;
 
 use crate::controllers::physical_hands::{
-    PhysicalHandsConfig,
     climb::{
         config::CLIMB,
         engine,
         solve::tension,
-        state::{Event, MIN_TENSION, STATE, enabled},
+        state::{Event, MIN_TENSION, STATE},
         types::{Hold, Observed},
     },
     contact::{Surface, SurfaceHit},
@@ -72,18 +71,17 @@ pub unsafe fn reach(
 /// Publish what the palms' tick found, with where the player's body is, and pulse the hands for
 /// the last step's grips and releases. Called from the palms' tick, on the game thread outside the
 /// physics step.
-pub fn observe(observed: Observed, config: &PhysicalHandsConfig) {
+pub fn observe(observed: Observed) {
     let Observed {
         palms,
         reaches,
         pressing,
         body_rotation,
     } = observed;
-    let on = enabled(config);
     // SAFETY: the game thread outside the physics step (the palms' tick).
-    let player = on.then(|| unsafe { engine::player_place() }.ok()).flatten();
+    let player = unsafe { engine::player_place() }.ok();
     // SAFETY: as above.
-    let in_air = on.then(|| unsafe { engine::in_air() }).flatten();
+    let in_air = unsafe { engine::in_air() };
     let mode = mode::current().mode;
     let events = {
         let mut state = STATE.lock();
@@ -95,11 +93,11 @@ pub fn observe(observed: Observed, config: &PhysicalHandsConfig) {
         }
         state.rig = Some((body_rotation, recenters));
         state.palms = palms;
-        state.pressing = pressing.map(|p| p && on);
-        state.published = (on && player.is_some()).then(Instant::now);
+        state.pressing = pressing;
+        state.published = player.is_some().then(Instant::now);
         state.publishes = state.publishes.wrapping_add(1);
         for hand in Hand::BOTH {
-            state.status.hands[hand.index()].reach = reaches[hand.index()].filter(|_| on);
+            state.status.hands[hand.index()].reach = reaches[hand.index()];
         }
         state.status.in_air = in_air;
         let climbing = state.grips.iter().any(Option::is_some);

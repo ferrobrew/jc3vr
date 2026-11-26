@@ -375,8 +375,7 @@ impl Intent {
             at_limit,
             free_swing,
         } = input;
-        if !c.enabled
-            || !dt.is_finite()
+        if !dt.is_finite()
             || dt <= 0.0
             || dt > 0.1
             || !lag_m.is_finite()

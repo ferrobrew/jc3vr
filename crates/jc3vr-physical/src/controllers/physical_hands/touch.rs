@@ -12,7 +12,7 @@ use jc3vr_input::{
 };
 
 use crate::controllers::physical_hands::{
-    HandStatus, PhysicalHandsConfig, ShoveReport, State,
+    HandStatus, ShoveReport, State,
     contact::{Surface, SurfaceHit},
     engine, shove,
     shove::ShoveTuning,
@@ -48,12 +48,7 @@ impl State {
     ///
     /// As [`crate::controllers::physical_hands::main_thread_tick`], with the touch's object found by this
     /// tick's casts.
-    pub(super) unsafe fn touch(
-        &mut self,
-        touch: Touch,
-        melee_impulse: Option<f32>,
-        config: &PhysicalHandsConfig,
-    ) {
+    pub(super) unsafe fn touch(&mut self, touch: Touch, melee_impulse: Option<f32>) {
         let Touch {
             hand,
             hit,
@@ -71,17 +66,14 @@ impl State {
         };
         // SAFETY: forwarded from the caller: the palms' tick on the game thread.
         unsafe {
-            sounds::play(
-                Impact {
-                    hand,
-                    kind: ImpactKind::Touch,
-                    at: hit.position,
-                    velocity,
-                    material,
-                    strength: impact,
-                },
-                &config.sounds,
-            )
+            sounds::play(Impact {
+                hand,
+                kind: ImpactKind::Touch,
+                at: hit.position,
+                velocity,
+                material,
+                strength: impact,
+            })
         };
         let Surface::Solid {
             object: Some(_),

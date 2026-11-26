@@ -9,9 +9,7 @@ use jc3vr_body::controllers::{
     physics::{bodies::owner_of, characters as engine},
 };
 
-use crate::controllers::physical_hands::characters::{
-    CharactersConfig, Seize, bone_frame, frame, open_door_near,
-};
+use crate::controllers::physical_hands::characters::{Seize, bone_frame, frame, open_door_near};
 
 /// # Safety
 /// The game thread, outside the physics step. The queued target need not still be live.
@@ -20,16 +18,11 @@ pub(super) unsafe fn take(
     point: Vec3,
     palm: Vec3,
     world_scale: f32,
-    config: &CharactersConfig,
 ) -> Option<Seize> {
     take_with(
         target,
         point,
-        Conditions {
-            palm,
-            world_scale,
-            config,
-        },
+        Conditions { palm, world_scale },
         &mut NativeAcquisition,
     )
 }
@@ -40,15 +33,10 @@ pub(super) unsafe fn seated(
     target: CharacterTarget,
     palm: Vec3,
     world_scale: f32,
-    config: &CharactersConfig,
 ) -> Option<Seated> {
     refresh(
         target,
-        Conditions {
-            palm,
-            world_scale,
-            config,
-        },
+        Conditions { palm, world_scale },
         &mut NativeAcquisition,
     )?
     .seated
@@ -57,7 +45,7 @@ pub(super) unsafe fn seated(
 fn take_with(
     target: CharacterTarget,
     point: Vec3,
-    conditions: Conditions<'_>,
+    conditions: Conditions,
     engine: &mut impl AcquisitionEngine,
 ) -> Option<Seize> {
     let target = refresh(target, conditions, engine)?;
@@ -76,7 +64,7 @@ fn take_with(
 
 fn refresh(
     mut target: CharacterTarget,
-    conditions: Conditions<'_>,
+    conditions: Conditions,
     engine: &mut impl AcquisitionEngine,
 ) -> Option<CharacterTarget> {
     if engine.owner(target.body) != Some(target.character) {
@@ -86,18 +74,13 @@ fn refresh(
     // ragdoll's, so ownership alone admits it: the hand holds the bone, and the rest of the
     // ragdoll hangs from it by the ragdoll's own constraints.
     if target.ragdoll {
-        if !conditions.config.grab {
-            return None;
-        }
         target.seated = None;
         return Some(target);
     }
     // Ownership proves the character live before the adapter forms any character reference.
     target.seated = match (target.seated, engine.attachment(target.character)?) {
-        (None, Attachment::OnFoot) if conditions.config.grab => None,
-        (Some(before), Attachment::Vehicle(vehicle))
-            if conditions.config.hijack && before.vehicle == vehicle =>
-        {
+        (None, Attachment::OnFoot) => None,
+        (Some(before), Attachment::Vehicle(vehicle)) if before.vehicle == vehicle => {
             match before.access {
                 // The current character supplies this vehicle, not the queued seat observation.
                 SeatAccess::Door { .. } => Some(engine.open_door(vehicle, conditions)?),
@@ -112,9 +95,7 @@ fn refresh(
             }
         }
         (Some(before), Attachment::Exposed(vehicle))
-            if conditions.config.hijack
-                && before.vehicle == vehicle
-                && before.access == SeatAccess::Exposed =>
+            if before.vehicle == vehicle && before.access == SeatAccess::Exposed =>
         {
             Some(Seated {
                 vehicle,
@@ -127,10 +108,9 @@ fn refresh(
 }
 
 #[derive(Copy, Clone)]
-struct Conditions<'a> {
+struct Conditions {
     palm: Vec3,
     world_scale: f32,
-    config: &'a CharactersConfig,
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -143,7 +123,7 @@ enum Attachment {
 trait AcquisitionEngine {
     fn owner(&mut self, body: u32) -> Option<NonZeroUsize>;
     fn attachment(&mut self, character: NonZeroUsize) -> Option<Attachment>;
-    fn open_door(&mut self, vehicle: NonZeroUsize, conditions: Conditions<'_>) -> Option<Seated>;
+    fn open_door(&mut self, vehicle: NonZeroUsize, conditions: Conditions) -> Option<Seated>;
     fn frame(&mut self, character: NonZeroUsize) -> Mat4;
     fn anchor(&mut self, character: NonZeroUsize, _point: Vec3) -> (Option<SafeBoneIndex>, Mat4) {
         (None, self.frame(character))
@@ -213,7 +193,7 @@ impl AcquisitionEngine for NativeAcquisition {
         })
     }
 
-    fn open_door(&mut self, vehicle: NonZeroUsize, conditions: Conditions<'_>) -> Option<Seated> {
+    fn open_door(&mut self, vehicle: NonZeroUsize, conditions: Conditions) -> Option<Seated> {
         // SAFETY: refresh obtains the vehicle from the owner-checked live character this call.
         let (slot, open_deg) =
             unsafe { open_door_near(vehicle, conditions.palm, conditions.world_scale) }?;

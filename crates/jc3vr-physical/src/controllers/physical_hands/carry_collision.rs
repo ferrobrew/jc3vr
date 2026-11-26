@@ -15,8 +15,7 @@ use jc3vr_body::controllers::{
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    STALE_AFTER, config::PHYSICAL_HANDS_CONFIG, doors::engine::is_vehicle_part,
-    physics::drawn_body, world::World,
+    STALE_AFTER, doors::engine::is_vehicle_part, physics::drawn_body, world::World,
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -48,7 +47,6 @@ pub(super) fn publish(held: [Option<Subject>; 2]) {
 
 pub(super) unsafe fn step() {
     let enabled = scheme::enabled()
-        && PHYSICAL_HANDS_CONFIG.query(|c| c.enabled && c.pickup.enabled)
         && scheme::is_controllers()
         && jc3vr_core::hooks::in_gameplay()
         && !jc3vr_core::is_shutting_down();

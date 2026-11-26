@@ -59,7 +59,7 @@ use crate::{
         },
         atlas,
         atlas::Part,
-        config::{HUD_CONFIG, HudConfig},
+        config::{AtlasConfig, HUD_CONFIG, HudConfig},
         log_once::LogOnce,
         quad::HudQuad,
         target::KeyedTexture,
@@ -73,7 +73,8 @@ use crate::{
 /// # Safety
 /// Must be called from the `MovieImpl::Capture` detour for the main movie.
 pub(crate) unsafe fn sample_status(cfg: &HudConfig) {
-    let wanted = cfg.atlas.enabled && crate::hud::current_mode() == HudMode::Hud;
+    let wanted =
+        cfg.atlas.enabled && cfg.atlas.wrist.enabled && crate::hud::current_mode() == HudMode::Hud;
     let sample = wanted
         .then(|| {
             // SAFETY: the local player character and the heat manager are live in gameplay; the
@@ -102,7 +103,7 @@ pub(crate) fn draw(context: &ID3D11DeviceContext, device: &Device, target: &Text
             && world_quads_active(&cfg)
             && scheme::is_controllers()
             && jc3vr_view::vr::render_params(0).is_some();
-        state.prepare(context, device, active, dominant);
+        state.prepare(context, device, active, dominant, &cfg.atlas);
     }
     state.draw(context, device, target);
 }
@@ -299,6 +300,7 @@ impl State {
         device: &Device,
         active: bool,
         dominant: Hand,
+        cfg: &AtlasConfig,
     ) {
         let now = Instant::now();
         let dt = self
@@ -341,7 +343,7 @@ impl State {
         let grip = |hand: Hand| hands[hand.index()].map(|h| h.grip);
 
         let guns = late::rendered_guns();
-        let sampled = ammo_sample::sampled();
+        let sampled = ammo_sample::sampled().filter(|_| cfg.ammo.enabled);
         self.status.counts = [false; 2];
         for hand in Hand::BOTH {
             let count = &mut self.counts[hand.index()];
@@ -382,7 +384,8 @@ impl State {
         // The tether readout, above the off-hand's forearm, where the grapple fires from.
         self.status.tether_drawn = false;
         let off = dominant.other();
-        if let Some(head) = head
+        if cfg.tether.enabled
+            && let Some(head) = head
             && let Some(wrist) = hands[off.index()].map(|h| h.wrist)
             && let Some(cell) = atlas::part_texture(Part::Tether, |part| part.cell)
         {
@@ -412,7 +415,7 @@ impl State {
 
         // The selection cross, where the steering hand was when the wheel opened, relative to the
         // head so it moves with the player; it fades out over the cross's hide animation.
-        let anchor = wheel::cross_anchor();
+        let anchor = cfg.cross.enabled.then(wheel::cross_anchor).flatten();
         let cell = atlas::part_texture(Part::Cross, |part| part.cell);
         self.status.cross_alpha = None;
         match (anchor, head, cell) {
@@ -478,7 +481,7 @@ impl State {
         let glance = self.glance.step(looked, dt, &WRIST_GLANCE);
         // The wrist shows on a glance, and also on its own while the player's state wants
         // attention.
-        let shown = pose.is_some() && (glance || attention);
+        let shown = cfg.wrist.enabled && pose.is_some() && (glance || attention);
         self.wrist_alpha = fade(self.wrist_alpha, shown, dt, WRIST_FADE_S);
         let trail = fraction.map(|f| self.trail.step(f, dt));
         self.status.health = fraction.zip(trail);

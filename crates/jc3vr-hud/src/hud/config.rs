@@ -12,6 +12,8 @@ pub struct HudConfig {
     /// Redirect the HUD into our own offscreen texture (the first step toward the floating panel).
     /// Off leaves the HUD on the engine surface as normal.
     pub redirect: bool,
+    /// Draw the redirected HUD back into the scene as a floating quad, per eye. Requires `redirect`.
+    pub quad: bool,
     /// Distance from the eye to the panel, in meters. The panel resizes with distance to keep a
     /// constant apparent (angular) size, so this can be changed freely without the HUD growing or
     /// shrinking. Comfort band: 1.5-3m.
@@ -21,16 +23,33 @@ pub struct HudConfig {
     /// aspect (see [`crate::hud::panel_height`]), so changing the distance or aspect keeps the panel
     /// looking the same size and fitting the same horizontal content.
     pub panel_scale: f32,
+    /// Dynamic panel distance from the scene. See [`crate::hud::depth`].
+    pub depth_shift: DepthShiftConfig,
     /// The interactive egui debug panel floating in 3D space in VR (issue #24). Off by default;
     /// only takes effect while an OpenXR session is running.
     #[serde(default)]
     pub egui_panel: EguiPanelConfig,
+    /// The world-marker prototype: the game's on-screen point-of-interest markers drawn as
+    /// billboards at their world points instead of on the floating panel. See
+    /// [`crate::hud::world_markers`].
+    #[serde(default)]
+    pub world_markers: WorldMarkersConfig,
     /// The HUD atlas: parts of the gameplay HUD moved into their own cells of the HUD texture for
     /// the capture and drawn on their own quads (the world markers, the ammunition readout at the
     /// gun hand, the tether readout on the forearm, and the heat readout on the wrist). See
     /// [`crate::hud::atlas`].
     #[serde(default)]
     pub atlas: AtlasConfig,
+    /// The grab hint ([`crate::hud::grab_hint`]): while a hand is within reach of a slot on the
+    /// body, the game's icon of what its grip would take, or of the swap a release would make, in
+    /// front of the player on the panel's plane, under the controller scheme.
+    #[serde(default)]
+    pub grab_hint: IconFeatureConfig,
+    /// The markers over the weapons the player let go of ([`crate::hud::lost_weapons`]): the
+    /// game's icon of each weapon the loadout table has lying in the world, above where it lies,
+    /// under the controller scheme.
+    #[serde(default)]
+    pub lost_weapons: IconFeatureConfig,
 }
 /// The Direct3D 11 two-dimensional texture axis limit.
 pub(crate) const MAX_TEXTURE_DIMENSION: u32 = 16384;
@@ -60,10 +79,15 @@ impl HudConfig {
     pub const fn new() -> Self {
         Self {
             redirect: true,
+            quad: true,
             distance: 6.0,
             panel_scale: 0.8,
+            depth_shift: DepthShiftConfig::new(),
             egui_panel: EguiPanelConfig::new(),
+            world_markers: WorldMarkersConfig::new(),
             atlas: AtlasConfig::new(),
+            grab_hint: IconFeatureConfig::new(),
+            lost_weapons: IconFeatureConfig::new(),
         }
     }
 }
@@ -74,27 +98,113 @@ impl Default for HudConfig {
     }
 }
 
-/// The HUD atlas ([`crate::hud::atlas`]): while it is on, the gameplay HUD lays out inside the
-/// stage, and at each capture its body-anchored readouts are moved into cells in the bands above
-/// and below the stage, then moved back: the ammunition counters above each gun hand, the health,
-/// heat, and grenade readouts on the off-hand's wrist, the weapon selection cross at the hand
-/// steering the weapon wheel, and the tether readout above the off-hand's forearm, each under the
-/// controller scheme. The world-placed markers move into cells too; markers that find no cell are
-/// cropped from the panel. The placements are fixed in [`crate::hud::anchored`].
+/// A HUD feature drawn by the mod with the game's icons: the grab hint
+/// ([`crate::hud::grab_hint`]) or the lost weapon markers ([`crate::hud::lost_weapons`]). Its
+/// placement and look are fixed there.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 #[serde(default)]
-pub struct AtlasConfig {
-    /// Master toggle.
+pub struct IconFeatureConfig {
     pub enabled: bool,
 }
 
-impl AtlasConfig {
+impl IconFeatureConfig {
     pub const fn new() -> Self {
         Self { enabled: true }
     }
 }
 
+impl Default for IconFeatureConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The world-marker prototype ([`crate::hud::world_markers`]): each on-screen point-of-interest
+/// marker is cropped out of the HUD texture and drawn as a billboard at its world point, keeping
+/// the angular size it has on the panel, and its rectangle is cut out of the panel.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WorldMarkersConfig {
+    /// Master toggle.
+    pub enabled: bool,
+}
+
+impl WorldMarkersConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for WorldMarkersConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// The HUD atlas ([`crate::hud::atlas`]): while it is on, the gameplay HUD lays out inside the
+/// stage, and at each capture the parts below are moved into cells in the bands above and below
+/// the stage, then moved back. The world-placed markers move into cells too (with
+/// [`WorldMarkersConfig::enabled`]); markers that find no cell are cropped from the panel.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AtlasConfig {
+    /// Master toggle.
+    pub enabled: bool,
+    /// The ammunition counters the mod draws above each hand holding a gun (the magazine and the
+    /// reserve), under the controller scheme, upright and facing the eye. The game's own weapon
+    /// readout (`MCI_weapons_parent`) shows the wielded weapon alone; with the atlas on it keeps
+    /// its cell, off the panel, and is not drawn, so both hands' guns read alike.
+    pub ammo: AtlasPartConfig,
+    /// The health bar (drawn by the mod from the player character's health), the heat readout
+    /// (`MCI_heat_container`), and the grenade readout (`MCI_grenade_parent`), both moved into
+    /// cells, on the inside of the off-hand's wrist, under the controller scheme. The controls
+    /// summary sits on the back of the same wrist.
+    pub wrist: AtlasPartConfig,
+    /// The game's weapon selection cross (`MCI_weapon_selection_wheel`) drawn where the hand
+    /// steering the weapon wheel was when the wheel opened, under the controller scheme, while the
+    /// wheel shows it and for its hide animation after. Without the atlas, the wheel places the
+    /// cross on the panel instead.
+    pub cross: AtlasPartConfig,
+    /// The game's tether readout (`MCI_dual_tether`: the count of tethers in use out of the most
+    /// the grapple holds, and the retract state) drawn above the off-hand's forearm, where the
+    /// grapple fires from, under the controller scheme, upright and facing the eye. The game shows
+    /// it while tethers are attached and fades it out after; the quad carries that fade.
+    pub tether: AtlasPartConfig,
+}
+
+impl AtlasConfig {
+    pub const fn new() -> Self {
+        Self {
+            enabled: true,
+            ammo: AtlasPartConfig::new(),
+            wrist: AtlasPartConfig::new(),
+            cross: AtlasPartConfig::new(),
+            tether: AtlasPartConfig::new(),
+        }
+    }
+}
+
 impl Default for AtlasConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// One of the atlas's body-anchored readouts. Its placement is fixed in [`crate::hud::anchored`]
+/// and its capture in [`crate::hud::atlas`].
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AtlasPartConfig {
+    pub enabled: bool,
+}
+
+impl AtlasPartConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for AtlasPartConfig {
     fn default() -> Self {
         Self::new()
     }
@@ -126,6 +236,10 @@ pub struct EguiPanelConfig {
     /// default: the panel is already visible in the headset, so the desktop mirror shows the
     /// unobstructed scene.
     pub show_on_mirror: bool,
+    /// Whether the controllers point at the panel: either hand's aim ray moves the pointer, its
+    /// trigger clicks, its upper face button right-clicks, and its thumbstick scrolls. The desktop
+    /// mouse keeps working alongside; whichever was used last owns the pointer. On by default.
+    pub controller_pointer: bool,
 }
 
 impl EguiPanelConfig {
@@ -135,11 +249,34 @@ impl EguiPanelConfig {
             aspect: 4.0 / 3.0,
             resolution: (1280, 960),
             show_on_mirror: false,
+            controller_pointer: true,
         }
     }
 }
 
 impl Default for EguiPanelConfig {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+/// Dynamic panel distance (issue #14): the panel eases toward a near distance while the player
+/// rides a vehicle, back to the base [`distance`](HudConfig::distance) otherwise, and always far
+/// during full-screen UI. The tuning is fixed in [`crate::hud::depth`].
+#[derive(Copy, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DepthShiftConfig {
+    /// Master toggle.
+    pub enabled: bool,
+}
+
+impl DepthShiftConfig {
+    pub const fn new() -> Self {
+        Self { enabled: true }
+    }
+}
+
+impl Default for DepthShiftConfig {
     fn default() -> Self {
         Self::new()
     }

@@ -164,7 +164,7 @@ pub(super) fn capture(game: &GameTick<'_>, input: Refresh<'_>) -> Eligibility {
     let doors = Hand::BOTH.map(|hand| {
         input.selected[hand.index()]
             .and_then(|target| target.door_eligibility)
-            .is_some_and(|offer| door_offer_current(offer, hand, &input.config.physical_hands))
+            .is_some_and(|offer| door_offer_current(offer, hand))
     });
     let hint = snatch::hint().filter(|hint| {
         input.ready[hint.hand.index()]

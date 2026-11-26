@@ -11,7 +11,7 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::Pose;
 
 use crate::controllers::physical_hands::physics::config::{
-    BraceConfig, GunClassValues, HeldGunsTuning,
+    BraceTuning, GunClassValues, HeldGunsTuning,
 };
 
 /// The support palm seated on its selected region on the actual gun body, preserving the tracked
@@ -27,7 +27,7 @@ pub fn brace_palm(gun: Pose, palm: Pose, contact: BraceContact) -> Pose {
 
 /// Whether a brace's palm frame changed enough, past `rebuild`, to remake the fixed joint. A fixed
 /// joint otherwise keeps a stale contact when the hand slides or rotates its grip around the gun.
-pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceConfig) -> bool {
+pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceTuning) -> bool {
     before.position.distance(after.position) > rebuild.distance_m
         || angle_between(before.orientation, after.orientation) > rebuild.angle_rad
 }
@@ -37,7 +37,7 @@ pub fn brace_changed(before: Pose, after: Pose, rebuild: &BraceConfig) -> bool {
 /// joint holds (not from the last step's, so a slow slide is caught and jitter is not), and the
 /// joint has stood for `rebuild.min_interval_s`, so a hand sliding along the gun remakes it at a
 /// bounded rate.
-pub fn brace_due(built: Pose, wanted: Pose, age_s: f32, rebuild: &BraceConfig) -> bool {
+pub fn brace_due(built: Pose, wanted: Pose, age_s: f32, rebuild: &BraceTuning) -> bool {
     let stood = !age_s.is_finite() || age_s >= rebuild.min_interval_s;
     stood && brace_changed(built, wanted, rebuild)
 }
@@ -235,6 +235,7 @@ mod tests {
     use pretty_assertions::assert_eq;
 
     use super::*;
+    use crate::controllers::physical_hands::physics::config::HAND_BODIES;
 
     fn pose(position: Vec3, orientation: Quat) -> Pose {
         Pose {
@@ -264,7 +265,7 @@ mod tests {
         let before = seat(gun, brace_palm(gun, Pose::IDENTITY, contact));
         let rotated = pose(Vec3::ZERO, Quat::from_rotation_x(0.2));
         let after = seat(gun, brace_palm(gun, rotated, contact));
-        let rebuild = BraceConfig::new();
+        let rebuild = HAND_BODIES.guns.brace;
         assert!(brace_changed(before, after, &rebuild));
         assert!(!brace_changed(before, before, &rebuild));
         let slid = BraceContact {
@@ -309,7 +310,7 @@ mod tests {
 
     #[test]
     fn a_brace_is_remade_against_its_built_frame_at_a_bounded_rate() {
-        let rebuild = BraceConfig::new();
+        let rebuild = HAND_BODIES.guns.brace;
         let built = pose(Vec3::new(0.0, 0.0, -0.4), Quat::IDENTITY);
         let step = |by: f32| pose(built.position + Vec3::NEG_Z * by, Quat::IDENTITY);
         // Aim jitter within the thresholds never remakes the joint, however long it stands.
@@ -339,7 +340,7 @@ mod tests {
 
     #[test]
     fn a_brace_breaks_once_the_tracked_palm_leaves_the_gun() {
-        let brace = BraceConfig::new();
+        let brace = HAND_BODIES.guns.brace;
         let held = Vec3::new(0.2, 1.3, -0.5);
         let at = |by: Vec3| held + by;
         // A hand on the gun, or steering it with the usual slop, keeps the brace.

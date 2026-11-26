@@ -93,7 +93,9 @@ pub fn update_egui_controller(
     let samples = hud
         .zip(settings)
         .zip(input)
-        .filter(|((hud, _), (frame, _))| frame.is_fresh_at(now) && (hud.panel_accepts_edit_input)())
+        .filter(|((hud, settings), (frame, _))| {
+            settings.enabled && frame.is_fresh_at(now) && (hud.panel_accepts_edit_input)()
+        })
         .map(|((hud, settings), (frame, edges))| {
             let samples = Hand::BOTH.map(|hand| {
                 let mut sample = sample(frame, edges, hand);
@@ -106,7 +108,7 @@ pub fn update_egui_controller(
         });
     let placed = hud.is_some_and(|hud| (hud.panel_is_placed)());
     let mut state = STATE.lock();
-    let Some((hud, EguiPointerSettings { aspect }, mut samples)) = samples else {
+    let Some((hud, EguiPointerSettings { aspect, .. }, mut samples)) = samples else {
         let grabbed = state.grab.hand().is_some();
         if state.hand.is_some() || grabbed {
             *state = EguiControllerState::new();

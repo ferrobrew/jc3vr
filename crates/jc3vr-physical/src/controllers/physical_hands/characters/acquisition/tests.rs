@@ -85,19 +85,6 @@ fn a_ragdoll_target_is_admitted_by_ownership_without_a_seat_or_attachment() {
         assert_eq!(seize.grab, Vec3::X);
         assert_eq!(engine.calls, [Call::Owner, Call::Frame]);
     }
-    // The grab's switch still refuses a ragdoll before any character read.
-    let config = CharactersConfig {
-        grab: false,
-        topple: false,
-        hijack: false,
-        hold_off_get_up: false,
-    };
-    let mut target = target(None);
-    target.ragdoll = true;
-    let mut engine = engine(Attachment::OnFoot);
-    engine.attachment = None;
-    assert!(take_with(target, Vec3::X, conditions(&config), &mut engine).is_none());
-    assert_eq!(engine.calls, [Call::Owner]);
 }
 
 #[test]
@@ -165,15 +152,6 @@ fn a_seat_reached_through_a_broken_window_keeps_it_without_a_door_while_seated()
         assert!(acquire(target(Some(through_pane)), &mut engine).is_none());
         assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
     }
-    // The hijack's switch refuses it as it refuses a door.
-    let config = CharactersConfig {
-        hijack: false,
-        ..CharactersConfig::default()
-    };
-    engine.calls.clear();
-    engine.attachment = Some(Attachment::Vehicle(address(64)));
-    assert!(refresh(target(Some(through_pane)), conditions(&config), &mut engine).is_none());
-    assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
 }
 
 #[test]
@@ -204,48 +182,27 @@ fn a_singular_frame_refuses_after_live_access_checks() {
 }
 
 #[test]
-fn disabled_current_capabilities_do_not_reuse_the_queued_offer() {
-    let config = CharactersConfig {
-        grab: false,
-        topple: false,
-        hijack: false,
-        hold_off_get_up: false,
-    };
-    for (target, attachment) in [
-        (target(None), Attachment::OnFoot),
-        (target(Some(seated(64))), Attachment::Vehicle(address(64))),
-    ] {
-        let mut engine = engine(attachment);
-        assert!(take_with(target, Vec3::X, conditions(&config), &mut engine).is_none());
-        assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
-    }
-}
-
-#[test]
 fn refreshing_a_held_seated_grip_uses_the_same_owner_and_attachment_checks_without_a_frame() {
-    let config = CharactersConfig::default();
     let mut engine = engine(Attachment::Vehicle(address(64)));
-    assert!(refresh(target(Some(seated(64))), conditions(&config), &mut engine).is_some());
+    assert!(refresh(target(Some(seated(64))), conditions(), &mut engine).is_some());
     assert_eq!(
         engine.calls,
         [Call::Owner, Call::Attachment, Call::Door(address(64))]
     );
     engine.calls.clear();
     engine.attachment = Some(Attachment::Vehicle(address(96)));
-    assert!(refresh(target(Some(seated(64))), conditions(&config), &mut engine).is_none());
+    assert!(refresh(target(Some(seated(64))), conditions(), &mut engine).is_none());
     assert_eq!(engine.calls, [Call::Owner, Call::Attachment]);
 }
 
 fn acquire(target: CharacterTarget, engine: &mut Engine) -> Option<Seize> {
-    let config = CharactersConfig::default();
-    take_with(target, Vec3::X, conditions(&config), engine)
+    take_with(target, Vec3::X, conditions(), engine)
 }
 
-fn conditions(config: &CharactersConfig) -> Conditions<'_> {
+fn conditions() -> Conditions {
     Conditions {
         palm: Vec3::Y,
         world_scale: 2.0,
-        config,
     }
 }
 
@@ -314,7 +271,7 @@ impl AcquisitionEngine for Engine {
         self.attachment
     }
 
-    fn open_door(&mut self, vehicle: NonZeroUsize, conditions: Conditions<'_>) -> Option<Seated> {
+    fn open_door(&mut self, vehicle: NonZeroUsize, conditions: Conditions) -> Option<Seated> {
         assert_eq!(self.attachment, Some(Attachment::Vehicle(vehicle)));
         assert_eq!(self.calls.last(), Some(&Call::Attachment));
         assert_eq!(conditions.palm, Vec3::Y);

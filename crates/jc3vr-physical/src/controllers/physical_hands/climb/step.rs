@@ -10,7 +10,7 @@ use jc3vr_view::headpose::teleport;
 
 use crate::controllers::physical_hands::{
     climb::{
-        config::HandClimbTuning,
+        config::CLIMB,
         engine, native,
         solve::{
             ClimbTuning, Follow, MantleTuning, body_target, carry_velocity, climb_velocity,
@@ -18,10 +18,9 @@ use crate::controllers::physical_hands::{
         },
         state::{
             Carry, Event, Grip, LOG_PERIOD, MAX_MANTLE_STEPS, MAX_STALE_STEPS, MantleStep,
-            MantleTick, Request, STATE, enabled,
+            MantleTick, Request, STATE,
         },
     },
-    config::PHYSICAL_HANDS_CONFIG,
     physics::{self, drive::Goal},
     pickup::PICKUP,
     stunt,
@@ -36,8 +35,7 @@ use crate::controllers::physical_hands::{
 /// The thread that steps the physics world, outside the step, after the characters' proxy
 /// updates (the pre-simulation callback).
 pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
-    let config = *PHYSICAL_HANDS_CONFIG.lock();
-    let climb = HandClimbTuning::of(&config.climb);
+    let climb = CLIMB;
     let context = unsafe { engine::gate_context() };
     native::observe(context);
     let mut state = STATE.lock();
@@ -66,9 +64,7 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
         native::clear();
     }
     state.observe_movement_owner(held_by_game);
-    let reason = if !enabled(&config) {
-        Some("climbing is off")
-    } else if teleport::epoch() != state.epoch {
+    let reason = if teleport::epoch() != state.epoch {
         state.epoch = teleport::epoch();
         Some("the player was teleported")
     } else if state.input_at.is_none_or(|at| {
@@ -351,49 +347,47 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
     let mut ground = state.grips.iter().flatten().next().map(|g| g.hold);
 
     let stands = support.is_some_and(|y| y >= climb.min_ledge_normal_y);
-    if climb.mantle || state.mantle.is_some() {
-        let mantle = state.step_mantle(
-            MantleTick {
-                feet: place.feet,
-                supported: support.is_some(),
-                stands,
-                tuning: &mantle_tuning,
-                max_steps: MAX_MANTLE_STEPS,
-                max_carry_speed_mps: climb.max_carry_speed_mps,
-                context,
-            },
-            |hold| {
-                let valid = unsafe { hold.valid() };
-                let frame = valid
-                    .then(|| unsafe { engine::body_frame(hold.body) })
-                    .flatten();
-                (valid, frame)
-            },
-        );
-        match mantle {
-            MantleStep::Inactive => {}
-            MantleStep::Move(motion) => {
-                velocity = motion.velocity;
-                carry = motion.carry;
-                ground = Some(motion.ground);
+    let mantle = state.step_mantle(
+        MantleTick {
+            feet: place.feet,
+            supported: support.is_some(),
+            stands,
+            tuning: &mantle_tuning,
+            max_steps: MAX_MANTLE_STEPS,
+            max_carry_speed_mps: climb.max_carry_speed_mps,
+            context,
+        },
+        |hold| {
+            let valid = unsafe { hold.valid() };
+            let frame = valid
+                .then(|| unsafe { engine::body_frame(hold.body) })
+                .flatten();
+            (valid, frame)
+        },
+    );
+    match mantle {
+        MantleStep::Inactive => {}
+        MantleStep::Move(motion) => {
+            velocity = motion.velocity;
+            carry = motion.carry;
+            ground = Some(motion.ground);
+        }
+        MantleStep::Completed(landing) => {
+            if let (Some((owner, landing)), Some(context)) = (landing, context) {
+                unsafe { native::landed(context, owner, landing, Instant::now()) };
             }
-            MantleStep::Completed(landing) => {
-                if let (Some((owner, landing)), Some(context)) = (landing, context) {
-                    unsafe { native::landed(context, owner, landing, Instant::now()) };
+            for hand in Hand::BOTH {
+                if state.grips[hand.index()].take().is_some() {
+                    state.events.push((hand, Event::Released));
                 }
-                for hand in Hand::BOTH {
-                    if state.grips[hand.index()].take().is_some() {
-                        state.events.push((hand, Event::Released));
-                    }
-                }
-                state.finish_climb();
-                return [None; 2];
             }
-            MantleStep::Cancelled(reason) => {
-                state.drop_all(reason);
-                state.finish_climb();
-                return [None; 2];
-            }
+            state.finish_climb();
+            return [None; 2];
+        }
+        MantleStep::Cancelled(reason) => {
+            state.drop_all(reason);
+            state.finish_climb();
+            return [None; 2];
         }
     }
 

@@ -8,7 +8,7 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    characters::{CharactersConfig, get_up},
+    characters::get_up,
     pickup::{state::PickupState, tick::TickOutcome},
 };
 
@@ -19,12 +19,7 @@ use crate::controllers::physical_hands::{
 /// # Safety
 ///
 /// The game thread, outside the physics step and the game's update, after the pickup tick.
-pub(super) unsafe fn follow(
-    state: &PickupState,
-    outcome: &TickOutcome,
-    config: &CharactersConfig,
-    dt: f32,
-) {
+pub(super) unsafe fn follow(state: &PickupState, outcome: &TickOutcome, dt: f32) {
     let mut holds = HOLDS.lock();
     let mut held: [Option<NonZeroUsize>; 2] = [None; 2];
     for hand in Hand::BOTH {
@@ -50,7 +45,7 @@ pub(super) unsafe fn follow(
         if dt.is_finite() && dt > 0.0 {
             hold.held_s += dt;
         }
-        if !config.hold_off_get_up || held.contains(&Some(character)) {
+        if held.contains(&Some(character)) {
             continue;
         }
         held[i] = Some(character);

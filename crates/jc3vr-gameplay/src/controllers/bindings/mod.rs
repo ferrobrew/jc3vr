@@ -1401,6 +1401,5 @@ fn snatch_settings(config: &ControllersConfig) -> SnatchSettings {
     SnatchSettings {
         snatch: config.weapons.snatch,
         overlay: config.overlay,
-        physical_hands: config.physical_hands,
     }
 }

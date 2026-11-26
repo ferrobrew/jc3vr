@@ -45,9 +45,7 @@ use self::{
     draw::{DrawInputs, Drawn},
     model::{Candidate, CandidateKind, HandleSeen, PalmState, REFUSAL_FLASH_S, ReachRay},
 };
-use crate::controllers::physical_hands::{
-    PhysicalHandsConfig, config::PHYSICAL_HANDS_CONFIG, palm_readout,
-};
+use crate::controllers::physical_hands::{config::PHYSICAL_HANDS_CONFIG, palm_readout};
 
 /// The view's readout for the debug UI.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -84,11 +82,6 @@ pub fn toggle() {
     let view = &mut config.grab_view;
     view.enabled = !view.enabled;
     tracing::info!(enabled = view.enabled, "grab view: toggled");
-}
-
-/// Whether the palms' tick should record its reach for the view, under `config`.
-pub(crate) fn recording(config: &PhysicalHandsConfig) -> bool {
-    config.grab_view.enabled
 }
 
 /// What the palms' tick cast, for the view: each hand's reach rays and the door handles near it,

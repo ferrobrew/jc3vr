@@ -19,7 +19,7 @@ use crate::controllers::physical_hands::{
 /// Why the palms did nothing on their last tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Idle {
-    /// The physical hands are off, or the controller scheme is not in effect.
+    /// The controller scheme is not in effect, or the game is not in play.
     Disabled,
     /// Not on foot on the ground or falling.
     Mode,
@@ -32,7 +32,7 @@ pub enum Idle {
 impl Idle {
     pub const fn label(self) -> &'static str {
         match self {
-            Idle::Disabled => "off",
+            Idle::Disabled => "not in play under the controller scheme",
             Idle::Mode => "not on foot on the ground or falling",
             Idle::NoHands => "no tracked hands",
             Idle::OffThread => "the tick ran off the game thread",

@@ -9,8 +9,7 @@ use jc3vr_input::frame::Pose;
 
 use super::*;
 use crate::controllers::physical_hands::{
-    characters::{CharactersConfig, RAGDOLL_CARRY_STRENGTH},
-    doors::DoorsConfig,
+    characters::RAGDOLL_CARRY_STRENGTH,
     grasp::PalmMotion,
     hold,
     hold::{HandHold, HoldTuning},
@@ -197,7 +196,6 @@ fn queue_replacement_and_no_palm_consumer_preserve_the_actual_request_key() {
                 unlatch_pull_m: 0.05,
                 tearing: crate::controllers::physical_hands::doors::config::TEARING,
                 world_scale: 1.0,
-                characters: CharactersConfig::default(),
                 reaches: [None; 2],
                 carrier_velocity: None,
                 carrier_pose: None,
@@ -248,7 +246,6 @@ fn an_evicted_observed_request_consumes_the_same_target_as_a_remote_grab() {
                     unlatch_pull_m: 0.05,
                     tearing: crate::controllers::physical_hands::doors::config::TEARING,
                     world_scale: 1.0,
-                    characters: CharactersConfig::default(),
                     reaches: [None; 2],
                     carrier_velocity: None,
                     carrier_pose: None,
@@ -457,14 +454,10 @@ fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
 fn the_actual_ray_scan_records_misses_without_engine_reads() {
     let mut scan = scan::Scan::new();
     let pickup = PICKUP;
-    let doors = DoorsConfig::default();
-    let characters = CharactersConfig::default();
     let tuning = ReachTuning {
         floor_weapons: &[],
         world_scale: 1.0,
         pickup: &pickup,
-        doors: &doors,
-        characters: &characters,
         hand_bodies: [None; 2],
     };
     let mut casts = 0;

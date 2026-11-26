@@ -1,9 +1,8 @@
 //! Taking hold of characters with an empty hand. A grip on a character on foot throws them into
 //! their ragdoll at once by the character's own hit reaction ([`topples`]), and the hand takes
 //! hold of the bone of that ragdoll nearest the anatomical contact, which it drags and throws
-//! through the hand body's joint; the game's own get-up takes them back once they lie still. With
-//! the topple off, or for
-//! a character whose state keeps it on its feet, the grip holds the hand on them instead: a yank
+//! through the hand body's joint; the game's own get-up takes them back once they lie still. For a
+//! character whose state keeps it on its feet, the grip holds the hand on them instead: a yank
 //! throws a character the player is hostile to off their feet, and letting go with a push shoves
 //! them. A character the game protects, mission-critical or in a scripted sequence, is not
 //! taken. A grip on an enclosed vehicle occupant requires an open door, or a window of the
@@ -16,7 +15,6 @@
 //! in `docs/mod/input/character-grabs.md`, the engine side in
 //! `docs/engine/gameplay/melee-and-damage.md` and `docs/engine/gameplay/vehicle-doors.md`.
 //!
-//! - [`config`]: the settings;
 //! - [`engine`]: a character's capsule body, the player's hostility to it, and whether it is dead
 //!   (in [`jc3vr_body::controllers::physics`]);
 //! - [`get_up`]: holding a held ragdoll's get-up off, and what ended a hold;
@@ -38,14 +36,12 @@
 //! ([`crate::controllers::physical_hands::physics::queue_shove`]), outside the game's update.
 
 mod acquisition;
-pub mod config;
 pub(crate) mod get_up;
 pub(crate) mod pane;
 pub mod ragdoll;
 
 use std::num::NonZeroUsize;
 
-pub use config::CharactersConfig;
 pub use engine::{GunnerOut, Protection, SeatOut};
 use glam::{Mat4, Vec3};
 use jc3gi::{
@@ -65,8 +61,6 @@ use crate::controllers::physical_hands::{
 /// Why a character the reach hit is not one a hand takes.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Unavailable {
-    /// The grab, or the hijack for a seated character, is off.
-    Off,
     /// The character is seated in a vehicle with no door open beside the hand, and the hand did not
     /// come in through a window the glass brought down.
     NoOpening,
@@ -81,7 +75,6 @@ pub enum Unavailable {
 impl Unavailable {
     pub const fn label(self) -> &'static str {
         match self {
-            Unavailable::Off => "the grab is off",
             Unavailable::NoOpening => "seated with no open door or broken window beside the hand",
             Unavailable::Dying => "dying, not yet a ragdoll",
             Unavailable::NoBody => "no body of its ragdoll could be read",
@@ -122,16 +115,16 @@ pub(crate) const TOPPLE_STRENGTH: f32 = 1.1;
 /// than the bone's. Scoped to ragdolls: every other hold keeps the hand's own strength.
 pub(crate) const RAGDOLL_CARRY_STRENGTH: f32 = 4.0;
 
-/// Whether a grip that took `target` throws the character into their ragdoll at once
-/// ([`CharactersConfig::topple`]): a character on foot, alive, and not one whose state keeps it out
+/// Whether a grip that took `target` throws the character into their ragdoll at once, held by the
+/// bone nearest the palm, rather than holding on until a yank: a character on foot, alive, and not one whose state keeps it out
 /// of its ragdoll, so that the game's own hit reaction ragdolls it.
 ///
 /// # Safety
 ///
 /// The game thread, outside the physics step. The target need not still be live: its body's owner
 /// is checked before the character is read.
-pub(crate) unsafe fn topples(target: CharacterTarget, config: &CharactersConfig) -> bool {
-    if !config.topple || target.seated.is_some() || target.ragdoll {
+pub(crate) unsafe fn topples(target: CharacterTarget) -> bool {
+    if target.seated.is_some() || target.ragdoll {
         return false;
     }
     if unsafe { owner_of(target.body) } != Some(target.character) {
@@ -171,7 +164,6 @@ pub(crate) unsafe fn reach(
     hit: &SurfaceHit,
     palm: Vec3,
     world_scale: f32,
-    config: &CharactersConfig,
 ) -> Result<Reach, Unavailable> {
     let character = unsafe { &*(object.get() as *const Character) };
     if let Some(protection) = unsafe { engine::protection(character) } {
@@ -196,9 +188,6 @@ pub(crate) unsafe fn reach(
             }),
         };
     if unsafe { character.IsAttachedToVehicle() } {
-        if !config.hijack {
-            return Err(Unavailable::Off);
-        }
         let vehicle = NonZeroUsize::new(unsafe { character.GetVehiclePtr() } as usize)
             .ok_or(Unavailable::NoOpening)?;
         let access = if unsafe { character.IsRidingMC() } {
@@ -212,9 +201,6 @@ pub(crate) unsafe fn reach(
             return Err(Unavailable::NoOpening);
         };
         return Ok(reach(object, body, Some(Seated { vehicle, access }), None));
-    }
-    if !config.grab {
-        return Err(Unavailable::Off);
     }
     if let Some(ragdoll) = unsafe { Ragdoll::of(character) } {
         let bone = ragdoll
@@ -410,11 +396,9 @@ impl Seize {
         point: Vec3,
         palm: Pose,
         world_scale: f32,
-        config: &CharactersConfig,
     ) -> Option<Self> {
         // SAFETY: the adapter checks body ownership before any character access.
-        let mut seize =
-            unsafe { acquisition::take(target, point, palm.position, world_scale, config) }?;
+        let mut seize = unsafe { acquisition::take(target, point, palm.position, world_scale) }?;
         seize.in_palm = palm.orientation.inverse() * (point - palm.position);
         seize.in_palm.is_finite().then_some(seize)
     }
@@ -527,9 +511,8 @@ pub(crate) unsafe fn occupant_access(
     target: CharacterTarget,
     palm: Vec3,
     world_scale: f32,
-    config: &CharactersConfig,
 ) -> Option<Seated> {
-    unsafe { acquisition::seated(target, palm, world_scale, config) }
+    unsafe { acquisition::seated(target, palm, world_scale) }
 }
 
 /// The open door of `vehicle` nearest the palm at `palm`, within the hijack's reach and open at

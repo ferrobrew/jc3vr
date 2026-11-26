@@ -14,7 +14,7 @@ fn tick() -> HingeTick {
     }
 }
 
-const CONFIG: HingeConfig = HingeConfig::new();
+const CONFIG: HingeTuning = HINGE;
 
 #[test]
 fn damping_preserves_vehicle_translation_and_rotation_at_the_door_com() {

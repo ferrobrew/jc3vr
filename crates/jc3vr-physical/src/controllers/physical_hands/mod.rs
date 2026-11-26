@@ -60,7 +60,6 @@ pub mod collider_view;
 pub mod config;
 pub mod contact;
 pub mod doors;
-mod draw;
 mod engine;
 pub mod grab_view;
 pub mod grasp;
@@ -100,8 +99,6 @@ pub(crate) use status::{PalmReadout, palm_readout, press_summary};
 pub use targets::test_support::DoorProvider;
 pub use targets::{door_offer_current, targets};
 pub use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
-
-use crate::controllers::physical_hands::config::PHYSICAL_HANDS_CONFIG;
 
 pub mod lifetime;
 
@@ -154,14 +151,10 @@ use jc3vr_body::controllers::hands::DrawTime;
 /// body's hand at its body, for `at`. Called by [`jc3vr_body::controllers::hands::active_hands`] and
 /// its `active_hands_from_frame`.
 pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
-    let enabled = PHYSICAL_HANDS_CONFIG.lock().enabled;
     let palm_offset = tuning::PALMS.palm_offset_m;
     match at {
         DrawTime::Tick => physics::apply(cockpit, palm_offset),
         DrawTime::Render => physics::apply_at_render(cockpit, palm_offset),
-    }
-    if !enabled {
-        return;
     }
     let offsets = {
         let state = STATE.lock();
@@ -190,16 +183,13 @@ pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
 /// `character` must be the live local player character, after the locomotion task wrote its
 /// velocity.
 pub(crate) unsafe fn push_body(character: &mut Character) {
-    let enabled = PHYSICAL_HANDS_CONFIG.query(|c| c.enabled && c.push);
-    let palms = if enabled {
+    let palms = {
         let state = STATE.lock();
         if state.fresh(std::time::Instant::now()) {
             state.status.push
         } else {
             glam::Vec2::ZERO
         }
-    } else {
-        glam::Vec2::ZERO
     };
     let Some(push) = admitted_push(stunt::game_holds(), palms, physics::push()) else {
         return;

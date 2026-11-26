@@ -45,7 +45,6 @@ pub(crate) struct PickupState {
     pub(crate) scans: [Scan; 2],
     /// When the input tick last acted on the grips.
     pub(crate) input_at: Option<Instant>,
-    pub(crate) joints_enabled: Option<bool>,
     /// The player character's world velocity at the last tick, from which a carried object takes
     /// on the character's change of velocity.
     pub(crate) carrier_velocity: Option<Vec3>,
@@ -68,7 +67,6 @@ impl PickupState {
             evidence_holds: [None; 2],
             scans: [Scan::new(); 2],
             input_at: None,
-            joints_enabled: None,
             carrier_velocity: None,
             carrier_pose: None,
             carrier_angular: Vec3::ZERO,
@@ -178,7 +176,6 @@ impl PickupState {
             evidence_holds: _,
             scans: _,
             input_at: _,
-            joints_enabled: _,
             carrier_velocity: _,
             carrier_pose: _,
             carrier_angular: _,

@@ -20,11 +20,8 @@ use crate::controllers::physical_hands::{
     config::PHYSICAL_HANDS_CONFIG,
     contact::{HandContact, PointContact, Surface, SurfaceHit},
     doors,
-    doors::{
-        acquisition::PanelReach,
-        config::{TEARING, TearTuning},
-    },
-    draw, grab_view,
+    doors::{acquisition::PanelReach, config::TEARING},
+    grab_view,
     grab_view::model::{RayOutcome, ReachRay},
     grasp,
     grasp::PalmMotion,
@@ -87,12 +84,8 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
         state.seated_vehicle = Some(vehicle);
     }
     scope(&mut state.pickup, vehicle);
-    let enabled = config.pickup.enabled && config.doors.enabled;
-    if !enabled {
-        state.pickup.drop_all();
-    }
     let now = Instant::now();
-    let viewing = grab_view::recording(&config);
+    let viewing = config.grab_view.enabled;
     let mut palms = [None; 2];
     let mut wrists = [None; 2];
     let mut hand_status = [HandStatus::default(); 2];
@@ -131,12 +124,12 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
         };
         palms[i] = Some(motion);
         hand_status[i] = HandStatus {
-            acting: enabled,
+            acting: true,
             palm: Some(palm),
             speed,
             ..HandStatus::default()
         };
-        if !enabled || state.pickup.holding(hand) {
+        if state.pickup.holding(hand) {
             state.door_press[i] = doors::pressure::Press::new();
             continue;
         }
@@ -176,19 +169,11 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
                 hit,
                 &palm,
                 PanelReach::uniform(doors::pressure::REACH_M * active.world_scale),
-                &config.doors,
                 &mut scans[i],
             )
         });
         let panel = contact_hit.and_then(|hit| unsafe {
-            panel_reach(
-                vehicle,
-                hit,
-                &palm,
-                active.world_scale,
-                &config.doors,
-                &mut scans[i],
-            )
+            panel_reach(vehicle, hit, &palm, active.world_scale, &mut scans[i])
         });
         match unsafe {
             state.door_press[i].step(doors::pressure::Input {
@@ -219,14 +204,7 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
             let to = origin + (palm.orientation * direction).normalize_or_zero() * length;
             let hit = cast(origin, to);
             let reached = hit.and_then(|hit| unsafe {
-                panel_reach(
-                    vehicle,
-                    hit,
-                    &palm,
-                    active.world_scale,
-                    &config.doors,
-                    &mut scans[i],
-                )
+                panel_reach(vehicle, hit, &palm, active.world_scale, &mut scans[i])
             });
             reaches.extend(reached);
             if viewing {
@@ -246,63 +224,55 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
             clamp[i] = xf.offset_to_cockpit(contact.clamp_offset());
         }
     }
-    let mut refused = [None, None];
-    if enabled {
-        let strength = if config.bodies.strength.is_finite() {
-            config.bodies.strength.max(0.0)
-        } else {
-            0.0
-        };
-        let tuning = pickup::PickupTuning {
-            hand_force_n: PICKUP.hand_force_n * strength,
-            hand_torque_nm: PICKUP.hand_torque_nm * strength,
-            ..PICKUP.configured(&config.pickup)
-        };
-        let inputs = pickup::TickInputs {
-            palms,
-            space: None,
-            joints: pickup::JointInputs::default(),
-            dt,
-            time_scale: time_scale.get(),
-            unlatch_pull_m: doors::UNLATCH_PULL_M * active.world_scale,
-            tearing: TearTuning {
-                enabled: config.doors.tear,
-                ..TEARING
-            },
-            world_scale: active.world_scale,
-            characters: config.characters,
-            reaches: hand_status.map(|hand| hand.reach),
-            carrier_velocity: Some(Vec3::from_array(owner.m_MeasuredWorldVelocity.data)),
-            carrier_pose: Some(Pose {
-                position: xf.point_to_world(Vec3::ZERO),
-                orientation: xf.body,
-            }),
-        };
-        let mut outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &tuning) };
-        scope(&mut state.pickup, vehicle);
-        for hand in Hand::BOTH {
-            let i = hand.index();
-            if state.pickup.held[i].is_none() {
-                outcome.reports[i] = None;
-            }
-            if let Some(palm) = palms[i] {
-                let target = outcome.pins[i]
-                    .filter(|_| state.pickup.latches[i].is_some())
-                    .or_else(|| {
-                        outcome.reports[i]
-                            .map(|held| palm.pose.position + held.anchor - held.target)
-                    });
-                if let Some(target) = target {
-                    clamp[i] = xf.offset_to_cockpit(
-                        (target - palm.pose.position).clamp_length_max(PICKUP.tear_distance_m),
-                    );
-                }
-            }
-            hand_status[i].latched = state.pickup.latched(hand);
+    let strength = if config.bodies.strength.is_finite() {
+        config.bodies.strength.max(0.0)
+    } else {
+        0.0
+    };
+    let tuning = pickup::PickupTuning {
+        hand_force_n: PICKUP.hand_force_n * strength,
+        hand_torque_nm: PICKUP.hand_torque_nm * strength,
+        ..PICKUP
+    };
+    let inputs = pickup::TickInputs {
+        palms,
+        space: None,
+        joints: pickup::JointInputs::default(),
+        dt,
+        time_scale: time_scale.get(),
+        unlatch_pull_m: doors::UNLATCH_PULL_M * active.world_scale,
+        tearing: TEARING,
+        world_scale: active.world_scale,
+        reaches: hand_status.map(|hand| hand.reach),
+        carrier_velocity: Some(Vec3::from_array(owner.m_MeasuredWorldVelocity.data)),
+        carrier_pose: Some(Pose {
+            position: xf.point_to_world(Vec3::ZERO),
+            orientation: xf.body,
+        }),
+    };
+    let mut outcome = unsafe { pickup::tick(&mut state.pickup, inputs, &tuning) };
+    scope(&mut state.pickup, vehicle);
+    for hand in Hand::BOTH {
+        let i = hand.index();
+        if state.pickup.held[i].is_none() {
+            outcome.reports[i] = None;
         }
-        refused.clone_from(&outcome.refused);
-        state.record_pickup(outcome, &mut hand_status);
+        if let Some(palm) = palms[i] {
+            let target = outcome.pins[i]
+                .filter(|_| state.pickup.latches[i].is_some())
+                .or_else(|| {
+                    outcome.reports[i].map(|held| palm.pose.position + held.anchor - held.target)
+                });
+            if let Some(target) = target {
+                clamp[i] = xf.offset_to_cockpit(
+                    (target - palm.pose.position).clamp_length_max(PICKUP.tear_distance_m),
+                );
+            }
+        }
+        hand_status[i].latched = state.pickup.latched(hand);
     }
+    let refused = outcome.refused.clone();
+    state.record_pickup(outcome, &mut hand_status);
     declare_grips(&state.pickup, &hand_status, wrists, &mut cast);
     pressure_haptics(&hand_status);
     state.status.idle = None;
@@ -319,7 +289,6 @@ pub(super) unsafe fn run(owner: &Character, dt: f32) {
     physics::publish_holds([None; 2]);
     physics::publish_pins([None; 2]);
     drop(state);
-    draw::submit(&hand_status, &config);
     for hand in Hand::BOTH {
         if let Some((at, why)) = &refused[hand.index()] {
             grab_view::refused(hand, Some(*at), why);
@@ -373,7 +342,6 @@ unsafe fn panel_reach(
     hit: SurfaceHit,
     palm: &PalmBox,
     world_scale: f32,
-    config: &doors::DoorsConfig,
     scan: &mut Scan,
 ) -> Option<Reach> {
     unsafe {
@@ -385,7 +353,6 @@ unsafe fn panel_reach(
                 box_m: doors::REACH_M * world_scale,
                 handle_m: doors::HANDLE_REACH_M * world_scale,
             },
-            config,
             scan,
         )
     }
@@ -396,7 +363,6 @@ unsafe fn panel_reach_with(
     hit: SurfaceHit,
     palm: &PalmBox,
     reach: PanelReach,
-    config: &doors::DoorsConfig,
     scan: &mut Scan,
 ) -> Option<Reach> {
     let Surface::Solid {
@@ -406,7 +372,7 @@ unsafe fn panel_reach_with(
     else {
         return None;
     };
-    unsafe { doors::observed_reach(object, body, &hit, palm.centre, reach, config, scan) }
+    unsafe { doors::observed_reach(object, body, &hit, palm.centre, reach, scan) }
         .filter(|reach| in_scope(*reach, vehicle))
 }
 

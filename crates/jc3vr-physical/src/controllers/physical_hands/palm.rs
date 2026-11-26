@@ -53,39 +53,7 @@ impl PalmBox {
             self.point(Vec3::new(1.0, 1.0, -1.0)),
         ]
     }
-
-    /// The box's eight corners, for drawing: the four of the -Z face, then the four of the +Z face,
-    /// each face in winding order.
-    pub fn corners(&self) -> [Vec3; 8] {
-        [
-            (-1.0, -1.0, -1.0),
-            (1.0, -1.0, -1.0),
-            (1.0, 1.0, -1.0),
-            (-1.0, 1.0, -1.0),
-            (-1.0, -1.0, 1.0),
-            (1.0, -1.0, 1.0),
-            (1.0, 1.0, 1.0),
-            (-1.0, 1.0, 1.0),
-        ]
-        .map(|(x, y, z)| self.point(Vec3::new(x, y, z)))
-    }
 }
-
-/// The edges of a box drawn from [`PalmBox::corners`], as corner index pairs.
-pub const EDGES: [(usize, usize); 12] = [
-    (0, 1),
-    (1, 2),
-    (2, 3),
-    (3, 0),
-    (4, 5),
-    (5, 6),
-    (6, 7),
-    (7, 4),
-    (0, 4),
-    (1, 5),
-    (2, 6),
-    (3, 7),
-];
 
 #[cfg(test)]
 mod tests {
@@ -129,7 +97,7 @@ mod tests {
     }
 
     #[test]
-    fn every_probe_point_and_corner_is_on_the_box() {
+    fn every_probe_point_is_on_the_box() {
         let config = PALMS;
         let palm = PalmBox::from_wrist(
             wrist(Vec3::new(1.0, 2.0, 3.0), Quat::from_rotation_x(0.4)),
@@ -141,12 +109,5 @@ mod tests {
             (local.abs() - palm.half_extents).max_element() < 1e-5
         };
         assert!(palm.probe_points().into_iter().all(inside));
-        assert!(palm.corners().into_iter().all(inside));
-        for (a, b) in EDGES {
-            // Every edge joins corners that differ along exactly one axis.
-            let local = palm.orientation.inverse() * (palm.corners()[a] - palm.corners()[b]);
-            let axes = local.to_array().iter().filter(|v| v.abs() > 1e-5).count();
-            assert_eq!(axes, 1);
-        }
     }
 }

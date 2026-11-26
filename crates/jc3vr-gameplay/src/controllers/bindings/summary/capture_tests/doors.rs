@@ -39,10 +39,7 @@ fn capture_door_with_owner(
     grabs: [Option<GrabVolume>; 2],
     current: BeforeFinish,
 ) -> Eligibility {
-    let config = ControllersConfig {
-        physical_hands: provider.config,
-        ..Default::default()
-    };
+    let config = ControllersConfig::default();
     let before = owner_state([None; 2]);
     let selected = Hand::BOTH
         .map(|hand| tick.selected_for_summary()[hand.index()].filter(|_| !released[hand.index()]));
@@ -186,7 +183,7 @@ fn final_capture_revokes_door_offers_after_release_consumption_and_unready_hands
 #[test]
 fn final_capture_does_not_reuse_a_selected_door_after_source_or_claim_changes() {
     for hand in Hand::BOTH {
-        for change in 0..12 {
+        for change in 0..9 {
             let mut provider = DoorProvider::new();
             let tick = select(vec![provider.door(hand, true)]);
             match change {
@@ -197,10 +194,7 @@ fn final_capture_does_not_reuse_a_selected_door_after_source_or_claim_changes() 
                 4 => provider.claim(hand),
                 5 => provider.hold(hand),
                 6 => provider.latch(hand),
-                7 => provider.config.enabled = false,
-                8 => provider.config.pickup.enabled = false,
-                9 => provider.config.doors.enabled = false,
-                10 => provider.replace_door(hand),
+                7 => provider.replace_door(hand),
                 _ => provider.claim_same_door(hand),
             }
             assert!(

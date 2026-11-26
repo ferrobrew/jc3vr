@@ -19,7 +19,6 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    PhysicalHandsConfig,
     climb::{
         engine,
         native::Context,
@@ -28,7 +27,6 @@ use crate::controllers::physical_hands::{
         },
         types::{ClimbHandStatus, ClimbStatus, Hold, Landing},
     },
-    physics,
     physics::drive::Goal,
 };
 
@@ -76,11 +74,6 @@ pub fn static_reaches() -> [Option<Hold>; 2] {
         .status
         .hands
         .map(|h| h.reach.filter(|r| fresh && !r.moving))
-}
-
-/// Whether the climbing is on: its switch, under the hand bodies, which it needs.
-pub fn enabled(config: &PhysicalHandsConfig) -> bool {
-    config.climb.enabled && physics::enabled(config)
 }
 
 /// The surface `hand` could climb: the one its reach found, while the hand grips nothing. A hand

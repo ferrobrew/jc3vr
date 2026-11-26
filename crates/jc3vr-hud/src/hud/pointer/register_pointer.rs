@@ -27,11 +27,12 @@ static POINTER_HUD: PointerHud = PointerHud {
 };
 
 fn native_pointer_enabled() -> bool {
-    HUD_CONFIG.query(|c| c.redirect)
+    HUD_CONFIG.query(|c| c.redirect && c.quad)
 }
 
 fn egui_pointer() -> EguiPointerSettings {
     HUD_CONFIG.query(|c| EguiPointerSettings {
+        enabled: c.egui_panel.controller_pointer,
         aspect: c.egui_panel.aspect,
     })
 }

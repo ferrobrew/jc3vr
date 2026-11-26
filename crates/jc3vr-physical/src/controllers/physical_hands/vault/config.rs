@@ -1,29 +1,8 @@
-//! The push-up's settings, and its fixed tuning.
+//! The push-up's fixed tuning.
 
-use serde::{Deserialize, Serialize};
-
-/// Pushing the body up with the hands (see [`crate::controllers::physical_hands::vault`]): a hand
-/// body pressed down on a surface lifts the player, a jump assist bounded by how far the hand
-/// presses and how high the player has risen. Its tuning is fixed at [`VAULT`].
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct VaultConfig {
-    pub enabled: bool,
-}
-
-impl VaultConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl Default for VaultConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-/// The push-up's tuning, fixed at [`VAULT`].
+/// The push-up's tuning, fixed at [`VAULT`] (see [`crate::controllers::physical_hands::vault`]): a
+/// hand body pressed down on a surface lifts the player, a jump assist bounded by how far the hand
+/// presses and how high the player has risen.
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct VaultTuning {
     /// The downward press left alone before it lifts, metres of the player's hand, so that a hand

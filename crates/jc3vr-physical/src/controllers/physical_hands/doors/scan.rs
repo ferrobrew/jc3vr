@@ -29,7 +29,7 @@ use parking_lot::Mutex;
 use crate::controllers::physical_hands::{
     contact::{Surface, SurfaceHit},
     doors::{
-        DoorsConfig, HANDLE_REACH_M,
+        HANDLE_REACH_M,
         acquisition::PanelReach,
         engine,
         engine::DoorRead,
@@ -93,7 +93,6 @@ pub(crate) unsafe fn handle_reach(
     palm: Vec3,
     vehicles: &[NonZeroUsize],
     world_scale: f32,
-    config: &DoorsConfig,
     cast: &mut impl FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
     observations: HandleObservations<'_>,
 ) -> Option<Reach> {
@@ -113,9 +112,6 @@ pub(crate) unsafe fn handle_reach(
             handles.push(HandleSeen { at, outcome });
         }
     };
-    if !config.enabled {
-        return None;
-    }
     let scale = world_scale.max(1e-3);
     let reach_m = HANDLE_REACH_M * scale;
     let mut best: Option<Reach> = None;
@@ -164,7 +160,6 @@ pub(crate) unsafe fn handle_reach(
                                 &hit,
                                 palm,
                                 PanelReach::uniform(reach_m),
-                                config,
                                 scan,
                             )
                         }?;

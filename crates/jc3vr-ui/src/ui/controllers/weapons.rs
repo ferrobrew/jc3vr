@@ -16,7 +16,7 @@ use jc3vr_body::controllers::{
     },
     intent::yank::Yank,
 };
-use jc3vr_gameplay::controllers::{bindings, config::ControllersConfig};
+use jc3vr_gameplay::controllers::bindings;
 use jc3vr_grapple::controllers::snatch;
 use jc3vr_input::frame::Hand;
 use jc3vr_weapons::controllers::{
@@ -558,26 +558,6 @@ fn assist_readout(ui: &mut Ui, a: &AimStatus) {
         "Aim assist: corrections {} · last update {per_hand}",
         a.assist_corrections
     ));
-}
-
-pub(super) fn support_settings(ui: &mut Ui, c: &mut ControllersConfig) {
-    let brace = &mut c.physical_hands.bodies.brace;
-    ui.label("Brace joint rebuild").on_hover_text(
-        "How far the bracing palm's frame on a held gun may move before its joint is remade, \
-         and how long a joint stands at least.",
-    );
-    ui.add(egui::Slider::new(&mut brace.distance_m, 0.0..=0.05).text("Moved past (m)"));
-    ui.add(
-        egui::Slider::new(&mut brace.angle_rad, 0.0..=0.3)
-            .text("Turned past (rad)")
-            .fixed_decimals(3),
-    );
-    ui.add(egui::Slider::new(&mut brace.min_interval_s, 0.0..=1.0).text("Stands at least (s)"));
-    ui.add(egui::Slider::new(&mut brace.break_distance_m, 0.05..=0.5).text("Breaks past (m)"))
-        .on_hover_text(
-            "How far the tracked support hand may be from its place on the gun before the brace \
-             breaks and the two-handed hold lets go.",
-        );
 }
 
 pub(super) fn reload_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {

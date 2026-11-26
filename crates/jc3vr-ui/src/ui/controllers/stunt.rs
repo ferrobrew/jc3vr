@@ -1,8 +1,8 @@
-//! Stunt positions held by the grip: the last entry, what each hand holds, and the settings.
+//! Stunt positions held by the grip: the last entry, and what each hand holds.
 
 use egui::Ui;
 use jc3vr_input::frame::Hand;
-use jc3vr_physical::controllers::physical_hands::stunt::{StuntConfig, StuntStatus};
+use jc3vr_physical::controllers::physical_hands::stunt::StuntStatus;
 
 pub(super) fn stunt_readout(ui: &mut Ui, status: &StuntStatus) {
     if let Some(entry) = status.last_entry {
@@ -22,15 +22,4 @@ pub(super) fn stunt_readout(ui: &mut Ui, status: &StuntStatus) {
             });
         }
     });
-}
-
-pub(super) fn stunt_settings(ui: &mut Ui, c: &mut StuntConfig) {
-    ui.checkbox(
-        &mut c.enabled,
-        "Hold stunt positions with the grip (needs the hand climbing)",
-    )
-    .on_hover_text(
-        "Physical grips stay at the handhold, a mantle onto a roof enters its stunt area, and \
-         opening every grip lets go of a hang; the normal grapple can still enter a hang.",
-    );
 }

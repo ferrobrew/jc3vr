@@ -30,7 +30,7 @@ use crate::controllers::physical_hands::{
         render::RenderOffset,
         state::{
             MAX_LEAD_S, PARK_AFTER, READOUT_PERIOD, RENDER_MAX_TURN_RAD, RENDER_TURN_DEADBAND_RAD,
-            SHARED, enabled, gun_tuning, holding_tuning, press_load,
+            SHARED, gun_tuning, holding_tuning, press_load,
         },
         types::{BodyPhase, HandBodyStatus},
     },
@@ -50,14 +50,11 @@ pub unsafe fn step() {
     let time_scale = unsafe { TimeScale::current() };
     let step_number = count_step();
     let step_s = step_seconds();
-    let config = *PHYSICAL_HANDS_CONFIG.lock();
     contact::step_tick();
     let mut hands = HANDS.lock();
     hands.steps += 1;
     hands.placed = [false; 2];
-    let reason = if !enabled(&config) {
-        Some("the hand bodies are off")
-    } else if !jc3vr_core::hooks::in_gameplay() {
+    let reason = if !jc3vr_core::hooks::in_gameplay() {
         Some("the game left gameplay")
     } else if jc3vr_core::is_shutting_down() {
         Some("the payload is shutting down")
@@ -123,7 +120,7 @@ pub unsafe fn step() {
     let pins = if fresh && ordinary { pins } else { [None; 2] };
     // The hands on a gun act to hold it, with a holding hand's strength.
     let gun_holds = if fresh && guns::mode_allows_bodies(detection) {
-        guns::holds_for_step(&config, step_number)
+        guns::holds_for_step(step_number)
     } else {
         held_guns::GunHolds::default()
     };
@@ -150,7 +147,7 @@ pub unsafe fn step() {
     // SAFETY: forwarded from the caller.
     let group = unsafe { player_system_group() };
     let b = &HAND_BODIES;
-    let strength = config.bodies.strength;
+    let strength = PHYSICAL_HANDS_CONFIG.query(|c| c.bodies.strength);
     let scale = if world_scale.is_finite() && world_scale > 0.0 {
         world_scale
     } else {
@@ -326,7 +323,7 @@ pub unsafe fn step() {
                         if grips[i].is_none() && holds[i].is_none() && !on_gun[i] {
                             press_lags[i] = Some(acted.lag);
                         }
-                        if config.push && !bracing[i] {
+                        if !bracing[i] {
                             let lag = if let Some(held) = holding {
                                 impacts::obstruction(held.body, held.object, acted.lag)
                             } else if pins[i].is_some() {
@@ -380,7 +377,6 @@ pub unsafe fn step() {
             GunStep {
                 holds: gun_holds,
                 config: &b.guns,
-                brace: config.bodies.brace,
                 contact_events: true,
                 group,
                 palms: targets.map(|target| {
@@ -410,11 +406,11 @@ pub unsafe fn step() {
         };
         // SAFETY: forwarded from the caller; the characters' proxy updates ran before this
         // callback.
-        unsafe { vault::step(press, &config.vault) };
+        unsafe { vault::step(press) };
     } else {
         vault::stand_down();
     }
-    push = if config.push && may_move {
+    push = if may_move {
         smooth_push(
             push,
             hand_push,

@@ -35,9 +35,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::controllers::physical_hands::{
-    carry_collision,
-    config::PHYSICAL_HANDS_CONFIG,
-    engine,
+    carry_collision, engine,
     impacts::{
         policy::{Motion, object_damage},
         state::{Contact, Enabled, FlagCall, Identity, Lease, Observation, State},
@@ -143,7 +141,6 @@ pub(crate) fn deliver(game: &GameTick<'_>) {
         unsafe { clear() };
         return;
     }
-    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let retained = std::mem::take(&mut *RETAINED.lock());
     let locked: Vec<_> = retained
         .iter()
@@ -194,17 +191,7 @@ pub(crate) fn deliver(game: &GameTick<'_>) {
             continue;
         }
         if let (Some(impulse), Some((_, target))) = (feedback.damage_impulse, target.as_ref()) {
-            unsafe {
-                damage(
-                    game,
-                    event,
-                    impulse,
-                    feedback.native,
-                    held,
-                    target,
-                    config.bodies.reactions,
-                )
-            };
+            unsafe { damage(game, event, impulse, feedback.native, held, target) };
         }
         for hand in Hand::BOTH {
             if feedback.hands[hand.index()] {
@@ -220,17 +207,14 @@ pub(crate) fn deliver(game: &GameTick<'_>) {
             Hand::Right
         };
         unsafe {
-            sounds::play(
-                Impact {
-                    hand,
-                    kind: ImpactKind::Strike,
-                    at: event.at,
-                    velocity: event.motion.velocity_at(event.at),
-                    material: sounds::strike_material(event.character),
-                    strength: feedback.share,
-                },
-                &config.sounds,
-            )
+            sounds::play(Impact {
+                hand,
+                kind: ImpactKind::Strike,
+                at: event.at,
+                velocity: event.motion.velocity_at(event.at),
+                material: sounds::strike_material(event.character),
+                strength: feedback.share,
+            })
         };
     }
 }
@@ -460,11 +444,8 @@ static HAS_LEASES: AtomicBool = AtomicBool::new(false);
 
 fn enabled() -> Enabled {
     let controllers = scheme::enabled();
-    let (hands, pickup) = PHYSICAL_HANDS_CONFIG.query(|c| (c.enabled, c.pickup.enabled));
     Enabled {
         controllers,
-        hands,
-        pickup,
         gameplay: jc3vr_core::hooks::in_gameplay(),
         running: !jc3vr_core::is_shutting_down(),
     }
@@ -482,7 +463,6 @@ unsafe fn damage(
     native: [bool; 2],
     held: &Strong,
     target: &Strong,
-    reactions: bool,
 ) {
     let (Some(target_identity), Some(target_motion)) = (contact.target, contact.target_motion)
     else {
@@ -504,7 +484,7 @@ unsafe fn damage(
     // native hit reaction call, so deferring to that call skipped nearly every held prop's blow,
     // while the native reaction does nothing visible for a hand-held prop: on the 14 November take
     // a roof panel swung at 7 to 11 m/s through a soldier moved nobody.
-    if reactions && contact.character && unsafe { engine::is_character(target_identity.owner) } {
+    if contact.character && unsafe { engine::is_character(target_identity.owner) } {
         let victim = unsafe { &mut *(target_identity.owner.get() as *mut Character) };
         // A native reaction that also acted is told, so that a take shows any blow the character
         // took twice.

@@ -15,7 +15,7 @@ use jc3vr_input::frame::Pose;
 
 use super::*;
 use crate::controllers::physical_hands::{
-    characters::{CharactersConfig, Regrip, Seize},
+    characters::{Regrip, Seize},
     doors::{Latch, config::TEARING, tearing::TearGrip},
     grasp::Grip,
     pickup::{
@@ -221,7 +221,6 @@ fn tick_inputs() -> TickInputs {
         unlatch_pull_m: 0.05,
         tearing: TEARING,
         world_scale: 1.0,
-        characters: CharactersConfig::default(),
         reaches: [None; 2],
         carrier_velocity: None,
         carrier_pose: None,

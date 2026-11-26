@@ -20,7 +20,6 @@ use jc3vr_view::{headpose, headpose::teleport, vr::recenter_count};
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    config::PHYSICAL_HANDS_CONFIG,
     physics::{
         HAND_BODIES, blows, callback, drawn_body,
         drive::rig_jumped,
@@ -28,7 +27,7 @@ use crate::controllers::physical_hands::{
         render::{RenderOffset, apply_offsets},
         state::{
             CLEANUP_REGISTERED, MIN_PRESSURE_LOAD, RENDER_MAX_TURN_RAD, RENDER_TURN_DEADBAND_RAD,
-            SHARED, STALE_AFTER, TRACKERS_AT_REST, Target, acting_palms, enabled,
+            SHARED, STALE_AFTER, TRACKERS_AT_REST, Target, acting_palms,
         },
     },
     state::VELOCITY_SMOOTHING_S,
@@ -41,7 +40,6 @@ pub fn frame_tick(game: &GameTick<'_>) {
         blows::discard();
         return;
     }
-    let config = *PHYSICAL_HANDS_CONFIG.lock();
     crate::controllers::physical_hands::impacts::deliver(game);
     if jc3vr_core::hooks::in_gameplay() {
         // The shoves come from the pickups, which hold characters with or without the bodies.
@@ -61,11 +59,11 @@ pub fn frame_tick(game: &GameTick<'_>) {
             unsafe { shutdown() };
         });
     }
-    if !enabled(&config) || !jc3vr_core::hooks::in_gameplay() {
+    if !jc3vr_core::hooks::in_gameplay() {
         blows::discard();
         return;
     }
-    let delivered = blows::deliver(game, &config);
+    let delivered = blows::deliver(game);
     let mut shared = SHARED.lock();
     let now = Instant::now();
     let follow_through = Duration::from_secs_f32(HAND_BODIES.hits.follow_through_s.max(0.0));
@@ -92,9 +90,8 @@ pub fn frame_tick(game: &GameTick<'_>) {
 /// results. Called from the player aim control's post-simulation update, `dt` seconds after the
 /// last.
 pub fn observe(dt: f32) {
-    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let now = Instant::now();
-    let acting = enabled(&config).then(|| acting_palms(&config)).flatten();
+    let acting = acting_palms();
     let step = steps();
     let park_now = acting.as_ref().map(|a| (step, a.park_now));
     let tracked = acting.as_ref().map_or([None; 2], |a| a.tracked);
@@ -220,10 +217,9 @@ fn braced_by_hold() -> Option<Hand> {
 /// The game thread, after simulation and outside the physics step.
 pub unsafe fn sample_render_offsets() {
     let now = Instant::now();
-    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let (targets, rotation, scale, shown, fallback) = {
         let shared = SHARED.lock();
-        if !enabled(&config) || !shared.fresh(now) || !shared.stepped_lately(now) {
+        if !shared.fresh(now) || !shared.stepped_lately(now) {
             *RENDER_OFFSETS.lock() = None;
             return;
         }

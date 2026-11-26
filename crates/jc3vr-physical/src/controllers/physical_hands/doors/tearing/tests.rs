@@ -299,18 +299,13 @@ fn push_requires_limit_direction_and_duration() {
 }
 
 #[test]
-fn disabled_or_stale_tracking_resets_intent() {
+fn stale_tracking_resets_intent() {
     let mut intent = armed();
     assert!(!tears(
         &mut intent,
         Gesture { dt: 0.5, ..quiet() },
         &TEARING
     ));
-    assert!(intent.settled_lag.is_none());
-    let mut c = TEARING;
-    c.enabled = false;
-    let mut intent = armed();
-    assert!(!tears(&mut intent, quiet(), &c));
     assert!(intent.settled_lag.is_none());
 }
 

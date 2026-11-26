@@ -36,13 +36,10 @@ use jc3vr_body::controllers::{
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::physical_hands::{
-    config::PHYSICAL_HANDS_CONFIG,
-    physics::{
-        body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
-        contact::Source,
-        step::step_seconds,
-    },
+use crate::controllers::physical_hands::physics::{
+    body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
+    contact::Source,
+    step::step_seconds,
 };
 
 /// Whether `body` is one of the drawn torso's capsules. Lock-free, for the carry collision's
@@ -122,7 +119,6 @@ pub(crate) unsafe fn rests_against(body: u32) -> bool {
 /// The thread that steps the physics world, before the step.
 pub(super) unsafe fn step() {
     let enabled = scheme::enabled()
-        && PHYSICAL_HANDS_CONFIG.query(|c| c.enabled && c.body_proxies)
         && scheme::is_controllers()
         && jc3vr_core::hooks::in_gameplay()
         && !jc3vr_core::is_shutting_down();

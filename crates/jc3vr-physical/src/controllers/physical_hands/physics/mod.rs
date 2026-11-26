@@ -72,8 +72,8 @@ pub(crate) use lifecycle::release_body_joints;
 pub use self::{
     observe::{apply, apply_at_render, frame_tick, observe, sample_render_offsets},
     state::{
-        body_pose, callback_status, drives, enabled, pressing, publish_holds, publish_pins, push,
-        status, take_joint_losses,
+        body_pose, callback_status, drives, pressing, publish_holds, publish_pins, push, status,
+        take_joint_losses,
     },
     step::{step, step_seconds},
     types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},

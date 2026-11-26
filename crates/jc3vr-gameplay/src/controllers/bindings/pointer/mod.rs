@@ -63,6 +63,8 @@ pub struct PointerHud {
 /// The egui panel pointer's settings, read together.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct EguiPointerSettings {
+    /// Whether the controllers point at the panel.
+    pub enabled: bool,
     /// The panel's width over its height.
     pub aspect: f32,
 }

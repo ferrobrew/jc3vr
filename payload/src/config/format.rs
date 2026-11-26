@@ -179,10 +179,6 @@ settle_s = [1.0]
 [controllers.body.rig.yaw]
 moving_deadzone_deg = [15.0]
 
-[controllers.physical_hands.bodies.brace]
-distance_m = [0.002]
-angle_rad = [0.01]
-
 [controllers.weapons.snatch.yank]
 min_distance_m = [0.12]
 min_speed_mps = [1.5, 1.0]
@@ -373,9 +369,9 @@ enabled = true
 enabled = false
 [controllers.overlay]
 debug_gizmos = true
-[controllers.physical_hands.climb]
+[controllers.physical_hands.grab_view]
 enabled = false
-[hud.atlas]
+[hud.world_markers]
 enabled = false
 "#;
         let mut file: Table = toml::from_str(text).unwrap();

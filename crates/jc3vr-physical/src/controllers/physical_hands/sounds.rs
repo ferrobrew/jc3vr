@@ -31,27 +31,6 @@ use jc3gi::{
 };
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
-use serde::{Deserialize, Serialize};
-
-/// The impact sounds' settings, `physical_hands.sounds`.
-#[derive(Copy, Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct ImpactSoundsConfig {
-    /// Play the game's melee impact sound where a hand meets something hard enough.
-    pub enabled: bool,
-}
-
-impl ImpactSoundsConfig {
-    pub const fn new() -> Self {
-        Self { enabled: true }
-    }
-}
-
-impl Default for ImpactSoundsConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 /// The impact sounds' tuning, fixed at [`SOUNDS`].
 #[derive(Copy, Clone, Debug, PartialEq)]
@@ -178,8 +157,8 @@ pub const fn strike_material(character: bool) -> u32 {
 /// # Safety
 ///
 /// The game thread, outside the physics step.
-pub(super) unsafe fn play(impact: Impact, config: &ImpactSoundsConfig) {
-    if !config.enabled || !strong_enough(&impact, &SOUNDS) {
+pub(super) unsafe fn play(impact: Impact) {
+    if !strong_enough(&impact, &SOUNDS) {
         return;
     }
     let mut state = STATE.lock();

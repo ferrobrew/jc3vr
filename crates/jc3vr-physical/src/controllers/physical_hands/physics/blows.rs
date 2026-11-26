@@ -56,7 +56,6 @@ use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    PhysicalHandsConfig,
     characters::pane,
     collider_view, engine,
     physics::{
@@ -100,7 +99,7 @@ pub struct Delivered {
 }
 
 /// Deal the blows of the contacts recorded since the last frame tick, and pulse their hands.
-pub(super) fn deliver(game: &GameTick<'_>, config: &PhysicalHandsConfig) -> Delivered {
+pub(super) fn deliver(game: &GameTick<'_>) -> Delivered {
     let (contacts, dropped) = contact::take();
     let mut delivered = Delivered {
         contacts: contacts.len() as u64,
@@ -169,21 +168,15 @@ pub(super) fn deliver(game: &GameTick<'_>, config: &PhysicalHandsConfig) -> Deli
             .and_then(|attacker| unsafe { contact_victim(&contact, attacker) });
         // SAFETY: forwarded from the caller: the game thread, outside the game's update.
         unsafe {
-            sounds::play(
-                Impact {
-                    hand: contact.hand,
-                    kind: ImpactKind::Strike,
-                    at: contact.hand_position,
-                    velocity: contact.hand_velocity,
-                    material: sounds::strike_material(victim.is_some()),
-                    strength: share,
-                },
-                &config.sounds,
-            )
+            sounds::play(Impact {
+                hand: contact.hand,
+                kind: ImpactKind::Strike,
+                at: contact.hand_position,
+                velocity: contact.hand_velocity,
+                material: sounds::strike_material(victim.is_some()),
+                strength: share,
+            })
         };
-        if !config.bodies.reactions {
-            continue;
-        }
         let (Some(attacker), Some(victim)) = (attacker.as_deref(), victim) else {
             continue;
         };

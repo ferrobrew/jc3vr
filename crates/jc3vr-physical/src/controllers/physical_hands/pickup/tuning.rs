@@ -3,10 +3,9 @@
 
 use jc3vr_body::controllers::physics::GRAVITY_MPS2;
 
-use crate::controllers::physical_hands::{config::PickupConfig, physics::config::HAND_BODIES};
+use crate::controllers::physical_hands::physics::config::HAND_BODIES;
 
-/// The pickups' tuning, fixed at [`PICKUP`] apart from what [`PickupConfig`] sets from the debug UI
-/// ([`PickupTuning::configured`]).
+/// The pickups' tuning, fixed at [`PICKUP`].
 #[derive(Copy, Clone, Debug, PartialEq)]
 pub struct PickupTuning {
     /// How far from the palm an object can be taken, metres of the player's hand.
@@ -64,17 +63,6 @@ pub struct PickupTuning {
     /// or another body by a constraint, such as a hinged gate, a hatch, or a lever, is taken
     /// whatever its weight up to this, since the constraint carries it.
     pub max_articulated_mass_kg: f32,
-}
-
-impl PickupTuning {
-    /// The tuning with the debug UI's settings from `config` applied.
-    pub const fn configured(self, config: &PickupConfig) -> Self {
-        Self {
-            throw_scale: config.throw_scale,
-            carrier_motion_share: config.carrier_motion_share,
-            ..self
-        }
-    }
 }
 
 /// The pickups' tuning.

@@ -16,11 +16,10 @@ use crate::controllers::physical_hands::{
     articulated,
     bodies::{classify, describe},
     characters,
-    characters::CharactersConfig,
     collider_view::{model::Aabb, nearby},
     contact::{Surface, SurfaceHit},
     doors,
-    doors::{DoorsConfig, acquisition::PanelReach},
+    doors::acquisition::PanelReach,
     engine as hand_engine,
     grab_view::model::{RayOutcome, ReachRay},
     grasp,
@@ -48,8 +47,6 @@ pub(crate) struct ReachTuning<'a> {
     /// The VR world scale, which scales the reaches.
     pub world_scale: f32,
     pub pickup: &'a PickupTuning,
-    pub doors: &'a DoorsConfig,
-    pub characters: &'a CharactersConfig,
     /// The hand bodies, whose grip joints do not make what they hold articulated.
     pub hand_bodies: [Option<u32>; 2],
     /// Live dropped-weapon bodies discovered once for both hands this simulation tick.
@@ -319,7 +316,6 @@ pub(crate) unsafe fn reach_with(
                     &hit,
                     palm.centre,
                     tuning.world_scale,
-                    tuning.characters,
                 )
             }) else {
                 continue;
@@ -504,8 +500,6 @@ unsafe fn judge(
     let ReachTuning {
         world_scale,
         pickup: config,
-        doors: door_config,
-        characters: character_config,
         ..
     } = *tuning;
     let (object, body) = match hit.surface {
@@ -539,16 +533,7 @@ unsafe fn judge(
     );
     if let Surface::Character { object, body } = hit.surface {
         // SAFETY: forwarded from the caller; the hit was found this tick.
-        match unsafe {
-            characters::reach(
-                object,
-                body,
-                hit,
-                palm.centre,
-                world_scale,
-                character_config,
-            )
-        } {
+        match unsafe { characters::reach(object, body, hit, palm.centre, world_scale) } {
             Ok(reach) => {
                 let what = match reach.kind {
                     TargetKind::Character(target) if target.ragdoll => "a character's ragdoll",
@@ -597,7 +582,6 @@ unsafe fn judge(
                 box_m: doors::REACH_M * world_scale,
                 handle_m: doors::HANDLE_REACH_M * world_scale,
             },
-            door_config,
             judged.scan,
         )
     } {
@@ -728,13 +712,9 @@ mod tests {
     #[test]
     fn nearby_floor_probes_use_the_injected_layer_without_engine_reads() {
         let pickup = PICKUP;
-        let doors = DoorsConfig::default();
-        let characters = CharactersConfig::default();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,
-            doors: &doors,
-            characters: &characters,
             hand_bodies: [None; 2],
             floor_weapons: &[weapon()],
         };
@@ -776,13 +756,9 @@ mod tests {
     #[test]
     fn nearby_character_surface_requires_the_exact_body_and_owner() {
         let pickup = PICKUP;
-        let doors = DoorsConfig::default();
-        let characters = CharactersConfig::default();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,
-            doors: &doors,
-            characters: &characters,
             hand_bodies: [None; 2],
             floor_weapons: &[],
         };
@@ -815,13 +791,9 @@ mod tests {
     #[test]
     fn floor_surface_reach_does_not_depend_on_the_five_wrist_directions() {
         let pickup = PICKUP;
-        let doors = DoorsConfig::default();
-        let characters = CharactersConfig::default();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,
-            doors: &doors,
-            characters: &characters,
             hand_bodies: [None; 2],
             floor_weapons: &[],
         };
@@ -870,13 +842,9 @@ mod tests {
     #[test]
     fn a_diagonal_probe_cannot_extend_reach_beyond_the_palm_surface() {
         let pickup = PICKUP;
-        let doors = DoorsConfig::default();
-        let characters = CharactersConfig::default();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,
-            doors: &doors,
-            characters: &characters,
             hand_bodies: [None; 2],
             floor_weapons: &[],
         };
@@ -929,13 +897,9 @@ mod tests {
     #[test]
     fn a_broadphase_box_is_not_a_hit_and_another_body_cannot_validate_the_weapon() {
         let pickup = PICKUP;
-        let doors = DoorsConfig::default();
-        let characters = CharactersConfig::default();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,
-            doors: &doors,
-            characters: &characters,
             hand_bodies: [None; 2],
             floor_weapons: &[],
         };

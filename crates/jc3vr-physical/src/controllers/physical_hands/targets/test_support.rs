@@ -9,7 +9,6 @@ use jc3vr_body::controllers::grab::{
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
-    config::PhysicalHandsConfig,
     contact::PointProbe,
     doors::pressure::Press,
     grasp::{AngularTracker, VelocityTracker},
@@ -23,7 +22,6 @@ use crate::controllers::physical_hands::{
 
 /// An isolated source for the production provider and final validation helpers.
 pub struct DoorProvider {
-    pub config: PhysicalHandsConfig,
     state: State,
     now: Instant,
 }
@@ -38,7 +36,6 @@ impl DoorProvider {
     pub fn new() -> Self {
         let now = Instant::now();
         Self {
-            config: PhysicalHandsConfig::new(),
             state: State {
                 status: PhysicalHandsStatus::default(),
                 probes: [[PointProbe::new(); PROBE_POINTS]; 2],
@@ -68,7 +65,7 @@ impl DoorProvider {
             kind,
         };
         self.state.status.hands[hand.index()].reach = Some(reach);
-        provided_reach(hand, &reach, 1.0, &self.config, &self.state, self.now)
+        provided_reach(hand, &reach, 1.0, &self.state, self.now)
     }
 
     pub fn door(&mut self, hand: Hand, latched: bool) -> GripTarget {
@@ -86,9 +83,9 @@ impl DoorProvider {
     }
 
     pub fn current(&self, hand: Hand, target: GripTarget) -> bool {
-        target.door_eligibility.is_some_and(|offer| {
-            door_offer_current_in(offer, hand, &self.config, &self.state, self.now)
-        })
+        target
+            .door_eligibility
+            .is_some_and(|offer| door_offer_current_in(offer, hand, &self.state, self.now))
     }
 
     pub fn expire(&mut self) {

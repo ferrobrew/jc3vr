@@ -15,7 +15,6 @@ use crate::controllers::physical_hands::{
     climb,
     contact::PointProbe,
     doors::pressure::Press,
-    draw,
     grasp::{AngularTracker, VelocityTracker},
     palm::PROBE_POINTS,
     physics, pickup,
@@ -45,7 +44,6 @@ pub(super) fn stand_down(idle: Idle) {
     state.status.casts = 0;
     drop(state);
     climb::stand_down();
-    draw::clear();
 }
 
 pub(super) struct State {

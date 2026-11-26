@@ -1,8 +1,8 @@
-//! Hand climbing: what each hand reaches and grips, how the body is moved, and the settings.
+//! Hand climbing: what each hand reaches and grips, and how the body is moved.
 
 use egui::Ui;
 use jc3vr_input::frame::Hand;
-use jc3vr_physical::controllers::physical_hands::climb::{ClimbConfig, ClimbStatus, Hold};
+use jc3vr_physical::controllers::physical_hands::climb::{ClimbStatus, Hold};
 
 pub(super) fn climb_readout(ui: &mut Ui, status: &ClimbStatus) {
     ui.label(format!(
@@ -53,18 +53,6 @@ pub(super) fn climb_readout(ui: &mut Ui, status: &ClimbStatus) {
     if let Some(error) = &status.last_error {
         ui.label(format!("Last error: {error}"));
     }
-}
-
-pub(super) fn climb_settings(ui: &mut Ui, c: &mut ClimbConfig) {
-    ui.checkbox(
-        &mut c.enabled,
-        "Climb by gripping the world (needs the hand bodies)",
-    );
-    ui.add_enabled_ui(c.enabled, |ui| {
-        ui.checkbox(&mut c.mantle, "Mantle over ledges");
-        ui.add(egui::Slider::new(&mut c.fling_scale, 0.0..=3.0).text("Fling (×)"))
-            .on_hover_text("The share of the climbing speed the body keeps when the grips let go.");
-    });
 }
 
 fn hold_label(hold: &Hold) -> String {

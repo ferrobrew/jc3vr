@@ -34,9 +34,6 @@ fn haptic_cues() -> Line {
 }
 
 fn impact_sounds() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.physical_hands.sounds.enabled) {
-        return Line::off("");
-    }
     let status = sounds::status();
     let detail = text!(
         status.played.to_string(),

@@ -33,8 +33,7 @@ use jc3vr_body::controllers::{
 use jc3vr_core::game_tick::GameTick;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::{
-    physical_hands,
-    physical_hands::{config::PHYSICAL_HANDS_CONFIG, doors::engine::vehicle_of as resolve_vehicle},
+    physical_hands, physical_hands::doors::engine::vehicle_of as resolve_vehicle,
 };
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use jc3vr_weapons::controllers::{
@@ -93,10 +92,7 @@ pub unsafe fn observe(weapon: &WeaponBase) {
 ///
 /// After the physical hands and weapon handling settled this tick.
 pub unsafe fn tick(game: &GameTick<'_>, inputs: &FinishInputs, desired: &mut Vec<Desired>) {
-    let enabled = scheme::is_controllers()
-        && !jc3vr_core::is_shutting_down()
-        && scheme::enabled()
-        && PHYSICAL_HANDS_CONFIG.query(|config| config.enabled);
+    let enabled = scheme::is_controllers() && !jc3vr_core::is_shutting_down() && scheme::enabled();
     let held = physical_hands::held_bodies();
     let now = Instant::now();
     let mut previous = std::mem::take(&mut *CONTROLLED.lock());

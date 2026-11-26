@@ -65,7 +65,7 @@ pub(crate) fn prepare_frame(
     let _timing = jc3vr_core::frame_timing::scope(jc3vr_core::frame_timing::Slot::WorldMarkers);
     let cfg = *HUD_CONFIG.lock();
     let mut renderer = RENDERER.lock();
-    let active = world_quads_active(&cfg);
+    let active = cfg.world_markers.enabled && world_quads_active(&cfg);
     let Some(hud) = inputs.hud.filter(|_| active) else {
         if let Some(renderer) = renderer.as_mut() {
             renderer.plan.clear();

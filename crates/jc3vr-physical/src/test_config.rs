@@ -14,7 +14,10 @@
 
 use jc3vr_body::{
     controllers::{
-        aim::config::{AIM_CONFIG, AimConfig},
+        aim::{
+            WORLD_MARKERS_ENABLED,
+            config::{AIM_CONFIG, AimConfig},
+        },
         body::{
             BODY_CONFIG, BodyDimensions,
             config::{BODY_REMAP_CONFIG, BodyRemapConfig},
@@ -66,6 +69,9 @@ jc3vr_core::test_root! {
                 enabled: bool = false,
                 show_on_mirror: bool = false,
                 resolution: (u32, u32) = (1280, 960),
+            },
+            world_markers: WorldMarkers {
+                enabled: bool = true,
             },
         },
         headpose: HeadPoseConfig = HeadPoseConfig::new(),
@@ -121,6 +127,7 @@ jc3vr_core::test_root! {
         GLASS_CONFIG => controllers.glass,
         DRIVING_VIEW_ENABLED => controllers.vehicles.driving_view.enabled,
         WINGSUIT_EVADE_ENABLED => controllers.vehicles.wingsuit_evade.enabled,
+        WORLD_MARKERS_ENABLED => hud.world_markers.enabled,
         STEREO_CONFIG => stereo,
         FOVEATION_CONFIG => foveation,
         CAMERA_CONFIG => camera,

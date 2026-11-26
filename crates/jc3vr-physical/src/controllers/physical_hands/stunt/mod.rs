@@ -4,7 +4,6 @@
 //! on a roof needs no grip. The design is in `docs/mod/input/stunt-positions.md`, the engine side
 //! in `docs/engine/gameplay/stunt-positions.md`.
 //!
-//! - [`config`]: the settings;
 //! - [`solve`]: when to enter a stunt position and when to let go, pure;
 //! - [`engine`]: the game's stunt position, the vehicle a grip holds, and the entry.
 //!
@@ -17,14 +16,12 @@
 //! update, where the game's own entries are safe to call. [`game_holds`] reads a short-lived,
 //! lifecycle-matched observation; missing observations conservatively yield movement.
 
-pub mod config;
 pub mod engine;
 mod observation;
 pub mod solve;
 
 use std::time::{Duration, Instant};
 
-pub use config::StuntConfig;
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     fingers::{
@@ -42,8 +39,7 @@ use jc3vr_input::{
 use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
-    PhysicalHandsConfig, climb,
-    config::PHYSICAL_HANDS_CONFIG,
+    climb,
     stunt::{
         engine::Entry,
         solve::{Decision, StuntKind, Tick, Tracker, Tuning},
@@ -84,11 +80,6 @@ pub(crate) fn game_holds() -> bool {
     observation::movement_owner().yields()
 }
 
-/// Whether the stunt positions are on: their switch, under the hand climbing, which they need.
-pub fn enabled(config: &PhysicalHandsConfig) -> bool {
-    config.stunt.enabled && climb::enabled(config)
-}
-
 /// Whether the player hangs from a helicopter, so that either hand's grip holds on. Called from the
 /// input tick.
 #[inline]
@@ -104,7 +95,6 @@ pub fn hanging() -> bool {
 /// whose grips opened. `held` is each hand's grip; a let-go asks the game for its jump, which
 /// leaves the hang, through `desired`. Called from the input tick after the climb's.
 pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desired>) {
-    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let now = Instant::now();
     let mut state = STATE.lock();
     let dt = state
@@ -113,7 +103,7 @@ pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desir
         .min(MAX_TICK_S);
     state.ticked = Some(now);
     let read = engine::position(game);
-    state.observe_read(read, enabled(&config));
+    state.observe_read(read, true);
     observation::publish(read, now);
     let Some(read) = read else {
         climb::native::reject_landing();
@@ -123,11 +113,6 @@ pub fn finish_tick(game: &GameTick<'_>, held: [bool; 2], desired: &mut Vec<Desir
         state.status.on_helicopter = [false; 2];
         return;
     };
-    if !enabled(&config) {
-        climb::native::reject_landing();
-        return;
-    }
-
     let gripped = climb::gripped();
     // SAFETY: the game tick; the grips were taken on bodies of the live world.
     let helicopters = gripped.map(|grip| unsafe { helicopter_grip(grip) });

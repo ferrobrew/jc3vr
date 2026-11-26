@@ -2,7 +2,6 @@
 //! weapon-handling settings ([`SnatchConfig`]).
 
 use jc3vr_body::controllers::overlay::config::OverlayConfig;
-use jc3vr_physical::controllers::physical_hands::config::PhysicalHandsConfig;
 pub use jc3vr_weapons::controllers::weapons::config::{SnatchConfig, SwingConfig};
 
 use crate::controllers::snatch::landing::LandingTuning;
@@ -15,8 +14,6 @@ pub struct SnatchSettings {
     pub snatch: SnatchConfig,
     /// The world-space overlay, which draws the armed snatch's latch.
     pub overlay: OverlayConfig,
-    /// The physical hands, whose door handling decides which doors are snatched.
-    pub physical_hands: PhysicalHandsConfig,
 }
 
 /// The mass the line's [`strength_n`](SwingConfig::strength_n) is given at, kilograms.

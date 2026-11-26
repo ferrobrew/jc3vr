@@ -61,15 +61,6 @@ use jc3vr_body::controllers::{
     physics::steps::steps,
 };
 
-use crate::controllers::physical_hands::{
-    PhysicalHandsConfig, physics::state::enabled as hand_bodies_enabled,
-};
-
-/// Whether held guns are bodies: whenever the hand bodies are.
-pub fn enabled(config: &PhysicalHandsConfig) -> bool {
-    hand_bodies_enabled(config)
-}
-
 pub(crate) fn mode_allows_bodies(detection: Detection) -> bool {
     matches!(
         detection.mode,
@@ -77,21 +68,15 @@ pub(crate) fn mode_allows_bodies(detection: Detection) -> bool {
     )
 }
 
-/// The guns in the hands for step `step`: the last publication while it is current and held guns
-/// are bodies, and none otherwise.
-pub(super) fn holds_for_step(config: &PhysicalHandsConfig, step: u64) -> GunHolds {
-    if !enabled(config) {
-        return GunHolds::default();
-    }
+/// The guns in the hands for step `step`: the last publication while it is current, and none
+/// otherwise.
+pub(super) fn holds_for_step(step: u64) -> GunHolds {
     held_guns::holds_at(step).unwrap_or_default()
 }
 
 /// The hands that act because they hold or brace a gun, from the last publication: their bodies
 /// are driven and joined to the gun's.
-pub(crate) fn acting_hands(config: &PhysicalHandsConfig) -> [bool; 2] {
-    if !enabled(config) {
-        return [false; 2];
-    }
+pub(crate) fn acting_hands() -> [bool; 2] {
     held_guns::holds_at(steps()).map_or([false; 2], |h| h.hands())
 }
 

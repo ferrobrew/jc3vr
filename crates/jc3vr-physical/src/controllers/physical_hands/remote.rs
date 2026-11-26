@@ -20,7 +20,7 @@ use crate::controllers::physical_hands::{
     collider_view::model::Aabb,
     contact::{Surface, SurfaceHit},
     doors,
-    doors::{DoorsConfig, acquisition::PanelReach, engine as door_engine},
+    doors::{acquisition::PanelReach, engine as door_engine},
     engine, grasp,
     pickup::{PICKUP, Request},
 };
@@ -302,7 +302,6 @@ pub unsafe fn closed_door(
     point: Vec3,
     normal: Vec3,
     reach_m: f32,
-    config: &DoorsConfig,
 ) -> Option<(DoorTarget, Vec3)> {
     let hit = SurfaceHit {
         position: point,
@@ -313,16 +312,7 @@ pub unsafe fn closed_door(
         },
         material: None,
     };
-    let reach = unsafe {
-        doors::reach(
-            object,
-            body,
-            &hit,
-            point,
-            PanelReach::uniform(reach_m),
-            config,
-        )
-    }?;
+    let reach = unsafe { doors::reach(object, body, &hit, point, PanelReach::uniform(reach_m)) }?;
     match reach.kind {
         TargetKind::Door(door) if door.latched => Some((door, reach.point)),
         _ => None,

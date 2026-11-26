@@ -74,13 +74,12 @@ fn held(joined: bool, kind: HeldKind) -> Held {
     }
 }
 
-fn inputs(enabled: bool) -> TickInputs {
+fn inputs(join: bool) -> TickInputs {
     TickInputs {
         palms: [Some(palm()); 2],
         space: None,
         joints: JointInputs {
-            enabled,
-            join: [enabled; 2],
+            join: [join; 2],
             ..Default::default()
         },
         dt: 1.0 / 30.0,
@@ -88,16 +87,15 @@ fn inputs(enabled: bool) -> TickInputs {
         unlatch_pull_m: 0.1,
         tearing: TEARING,
         world_scale: 1.0,
-        characters: CharactersConfig::default(),
         reaches: [None; 2],
         carrier_velocity: None,
         carrier_pose: None,
     }
 }
 
-fn run(state: &mut PickupState, enabled: bool, fake: &mut FakeBodies) -> TickOutcome {
+fn run(state: &mut PickupState, join: bool, fake: &mut FakeBodies) -> TickOutcome {
     state.input_at = Some(Instant::now());
-    unsafe { tick_with(state, inputs(enabled), &PICKUP, fake) }
+    unsafe { tick_with(state, inputs(join), &PICKUP, fake) }
 }
 
 #[test]
@@ -225,26 +223,6 @@ fn latch_handoff_tear_and_regrab_keep_one_body_mode_in_the_production_tick() {
     assert_eq!(outcome.joints, [None; 2]);
     assert_eq!(fake.calls.iter().filter(|&&c| c == "drive").count(), 1);
     assert!(outcome.reports.iter().flatten().all(|r| r.shared));
-}
-
-#[test]
-fn a_joint_feature_toggle_releases_the_whole_group_without_a_carry_command() {
-    for joined in [false, true] {
-        let mut state = PickupState::new();
-        state.held = [Some(held(joined, HeldKind::Prop)); 2];
-        state.joints_enabled = Some(true);
-        let mut fake = FakeBodies {
-            body: body(),
-            calls: Vec::new(),
-            driven: None,
-        };
-        let outcome = run(&mut state, false, &mut fake);
-        assert_eq!(state.held, [None; 2]);
-        assert_eq!(outcome.released, [true; 2]);
-        assert_eq!(outcome.joints, [None; 2]);
-        assert!(fake.calls.is_empty());
-        assert_eq!(outcome.throw, None);
-    }
 }
 
 #[test]

@@ -12,7 +12,7 @@ use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
     characters,
-    characters::{CharactersConfig, GunnerOut, Regrip, SeatOut, Seize, SeizeStep},
+    characters::{GunnerOut, Regrip, SeatOut, Seize, SeizeStep},
     doors,
     doors::LatchStep,
     grasp,
@@ -167,7 +167,6 @@ pub(super) unsafe fn keep_seize(
     hand: Hand,
     palm: Option<PalmMotion>,
     world_scale: f32,
-    config: &CharactersConfig,
     outcome: &mut TickOutcome,
 ) {
     let i = hand.index();
@@ -227,9 +226,8 @@ pub(super) unsafe fn keep_seize(
             {
                 // SAFETY: forwarded from the caller; the access and the target's owner are checked
                 // first.
-                let out =
-                    unsafe { characters::occupant_access(seize.target, palm, world_scale, config) }
-                        .and_then(|_| unsafe { characters::unseat(seize.target) });
+                let out = unsafe { characters::occupant_access(seize.target, palm, world_scale) }
+                    .and_then(|_| unsafe { characters::unseat(seize.target) });
                 match out {
                     Some(SeatOut::Queued) => {
                         // The occupant falls where they sit, and the hand takes hold of the
@@ -260,7 +258,7 @@ pub(super) unsafe fn keep_seize(
                 .target
                 .seated
                 .is_some_and(|seat| seat.access == SeatAccess::Exposed)
-                && unsafe { characters::occupant_access(seize.target, palm, world_scale, config) }
+                && unsafe { characters::occupant_access(seize.target, palm, world_scale) }
                     .is_some_and(|seat| seat.access == SeatAccess::Exposed);
             if seize.target.seated.is_none() || exposed {
                 // An exposed rider is pulled by the hit reaction, not the seat-entry action.
@@ -286,7 +284,7 @@ pub(super) unsafe fn keep_seize(
             }
             outcome.released[i] = true;
             // SAFETY: the current attachment is read only after rechecking character ownership.
-            match unsafe { characters::occupant_access(seize.target, palm, world_scale, config) } {
+            match unsafe { characters::occupant_access(seize.target, palm, world_scale) } {
                 Some(seated) => {
                     tracing::info!(
                         hand = hand.label(),

@@ -32,7 +32,6 @@ pub(crate) mod tearing;
 
 use std::{num::NonZeroUsize, time::Instant};
 
-pub use config::DoorsConfig;
 use glam::{Mat4, Vec3};
 use jc3gi::{physics::GameMaterialId, vehicle::vehicle::DoorSlot};
 use jc3vr_body::controllers::grab::world_reach::{DoorTarget, Reach, TargetKind};
@@ -74,10 +73,9 @@ pub(crate) unsafe fn reach(
     hit: &SurfaceHit,
     palm: Vec3,
     reach: PanelReach,
-    config: &DoorsConfig,
 ) -> Option<Reach> {
     // SAFETY: forwarded from the caller; the bounded output is discarded for remote reach.
-    unsafe { observed_reach(object, body, hit, palm, reach, config, &mut Scan::new()) }
+    unsafe { observed_reach(object, body, hit, palm, reach, &mut Scan::new()) }
 }
 
 /// The same production door reach, with a bounded copy of its evaluated panel refusals.
@@ -91,10 +89,9 @@ pub(crate) unsafe fn observed_reach(
     hit: &SurfaceHit,
     palm: Vec3,
     reach: PanelReach,
-    config: &DoorsConfig,
     scan: &mut Scan,
 ) -> Option<Reach> {
-    if !config.enabled || hit.position.distance(palm) > reach.box_m.max(reach.handle_m) {
+    if hit.position.distance(palm) > reach.box_m.max(reach.handle_m) {
         return None;
     }
     let vehicle = unsafe { engine::vehicle_of(object) }?;

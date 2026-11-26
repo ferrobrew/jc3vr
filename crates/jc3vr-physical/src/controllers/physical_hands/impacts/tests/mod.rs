@@ -19,8 +19,6 @@ use crate::controllers::physical_hands::impacts::{
 fn active() -> Enabled {
     Enabled {
         controllers: true,
-        hands: true,
-        pickup: true,
         gameplay: true,
         running: true,
     }
@@ -251,14 +249,6 @@ fn each_delivery_gate_rejects_a_contact_queued_before_disable() {
             ..active()
         },
         Enabled {
-            hands: false,
-            ..active()
-        },
-        Enabled {
-            pickup: false,
-            ..active()
-        },
-        Enabled {
             gameplay: false,
             ..active()
         },
@@ -350,7 +340,7 @@ fn expired_and_disabled_holds_plan_restoration() {
         (
             0,
             Enabled {
-                pickup: false,
+                gameplay: false,
                 ..active()
             },
         ),
@@ -575,7 +565,7 @@ fn a_disabled_step_invalidates_old_contacts_before_same_identity_reacquisition()
     let changes = state.plan_step(
         disabled_at,
         Enabled {
-            pickup: false,
+            gameplay: false,
             ..active()
         },
         &[observation],

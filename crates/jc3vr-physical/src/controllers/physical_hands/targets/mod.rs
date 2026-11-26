@@ -15,34 +15,22 @@ use jc3vr_body::controllers::grab::{
 use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
-    STATE, climb,
-    config::{PHYSICAL_HANDS_CONFIG, PhysicalHandsConfig},
-    pickup::diagnostics::scan::Scan,
-    state::State,
-    stunt,
+    STATE, climb, pickup::diagnostics::scan::Scan, state::State, stunt,
 };
 
 /// Whether `offer` still stands for `hand`: the same fresh sample of the same source, and the door
 /// it offers still unclaimed and in reach.
-pub fn door_offer_current(
-    offer: DoorEligibility,
-    hand: Hand,
-    config: &PhysicalHandsConfig,
-) -> bool {
+pub fn door_offer_current(offer: DoorEligibility, hand: Hand) -> bool {
     let state = STATE.lock();
-    door_offer_current_in(offer, hand, config, &state, Instant::now())
+    door_offer_current_in(offer, hand, &state, Instant::now())
 }
 
 /// The physical hands' targets for this input tick, with the reach's notes for each hand, at the VR
 /// world scale `world_scale`.
 pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
     *scans = [None; 2];
-    let config = *PHYSICAL_HANDS_CONFIG.lock();
     let scale = world_scale.max(1e-3);
     let mut out = Provided::default();
-    if !config.enabled {
-        return out;
-    }
     let palms = {
         let state = STATE.lock();
         let now = Instant::now();
@@ -53,9 +41,6 @@ pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
                 continue;
             }
             out.notes[i].clone_from(&state.reach_notes[i]);
-            if !config.pickup.enabled {
-                continue;
-            }
             scans[i] = Some(state.pickup.scans[i]);
             let status = &state.status.hands[i];
             if let (Some(held), Some(kind)) = (status.held, state.pickup.held_kind(hand)) {
@@ -72,24 +57,22 @@ pub fn targets(world_scale: f32, scans: &mut [Option<Scan>; 2]) -> Provided {
             }
             if let Some(reach) = status.reach {
                 out.targets
-                    .push(provided_reach(hand, &reach, scale, &config, &state, now));
+                    .push(provided_reach(hand, &reach, scale, &state, now));
             }
         }
         state.status.hands.map(|h| h.palm.map(|p| p.centre))
     };
-    if climb::enabled(&config) {
-        for hand in Hand::BOTH {
-            let Some(hold) = climb::reach_hold(hand) else {
-                continue;
-            };
-            let distance = palms[hand.index()].map_or(0.0, |p| p.distance(hold.point) / scale);
-            out.targets.push(GripTarget::measured(
-                GrabVolume::Climb,
-                hand,
-                distance,
-                Mark::ring(MarkAt::World(hold.point), Mark::WORLD_SIZE_M).on_surface(hold.normal),
-            ));
-        }
+    for hand in Hand::BOTH {
+        let Some(hold) = climb::reach_hold(hand) else {
+            continue;
+        };
+        let distance = palms[hand.index()].map_or(0.0, |p| p.distance(hold.point) / scale);
+        out.targets.push(GripTarget::measured(
+            GrabVolume::Climb,
+            hand,
+            distance,
+            Mark::ring(MarkAt::World(hold.point), Mark::WORLD_SIZE_M).on_surface(hold.normal),
+        ));
     }
     if stunt::hanging() {
         for hand in Hand::BOTH {
@@ -109,43 +92,27 @@ fn provided_reach(
     hand: Hand,
     reach: &Reach,
     scale: f32,
-    config: &PhysicalHandsConfig,
     state: &State,
     now: Instant,
 ) -> GripTarget {
     let mut target = reach_target(hand, reach, scale);
-    target.door_eligibility = door_offer(hand, reach, config, state, now);
+    target.door_eligibility = door_offer(hand, reach, state, now);
     target
 }
 
-fn door_offer_current_in(
-    offer: DoorEligibility,
-    hand: Hand,
-    config: &PhysicalHandsConfig,
-    state: &State,
-    now: Instant,
-) -> bool {
+fn door_offer_current_in(offer: DoorEligibility, hand: Hand, state: &State, now: Instant) -> bool {
     offer.hand() == hand
         && state.epoch == offer.epoch()
         && state.at == Some(offer.at())
-        && door_offer(hand, &offer.reach(), config, state, now) == Some(offer)
+        && door_offer(hand, &offer.reach(), state, now) == Some(offer)
 }
 
-fn door_offer(
-    hand: Hand,
-    reach: &Reach,
-    config: &PhysicalHandsConfig,
-    state: &State,
-    now: Instant,
-) -> Option<DoorEligibility> {
+fn door_offer(hand: Hand, reach: &Reach, state: &State, now: Instant) -> Option<DoorEligibility> {
     let i = hand.index();
     let TargetKind::Door(door) = reach.kind else {
         return None;
     };
-    (config.enabled
-        && config.pickup.enabled
-        && config.doors.enabled
-        && state.fresh(now)
+    (state.fresh(now)
         && door.latched
         && state.status.hands[i].held.is_none()
         && !state.status.hands[i].latched

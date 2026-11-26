@@ -78,25 +78,13 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             hands::grip_settings(ui, &mut c.hands);
         },
         FeatureId::PhysicalHands => |ui, _| {
-            let mut c = CONTROLLERS_CONFIG.edit();
-            physical_hands::physical_hands_settings(ui, &mut c.physical_hands);
+            physical_hands::physical_hands_settings(ui);
             ui.separator();
-            glass::glass_settings(ui, &mut c.glass);
-        },
-        FeatureId::CharactersDoors => |ui, _| {
-            physical_hands::characters_doors_settings(
-                ui,
-                &mut CONTROLLERS_CONFIG.edit().physical_hands,
-            );
+            glass::glass_settings(ui, &mut CONTROLLERS_CONFIG.edit().glass);
         },
         FeatureId::Snatch => {
             |ui, _| snatch::snatch_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons.snatch)
         }
-        FeatureId::Feedback => |ui, _| {
-            let mut c = CONTROLLERS_CONFIG.edit();
-            physical_hands::impact_sounds_settings(ui, &mut c.physical_hands);
-        },
-        FeatureId::Support => |ui, _| weapons::support_settings(ui, &mut CONTROLLERS_CONFIG.edit()),
         FeatureId::Aim => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             aim::aim_settings(ui, &mut c);
@@ -107,11 +95,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::WeaponSelection => {
             |ui, _| weapon_selection::selection_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
-        FeatureId::Climbing => |ui, _| {
-            let mut c = CONTROLLERS_CONFIG.edit();
-            climb::climb_settings(ui, &mut c.physical_hands.climb);
-            stunt::stunt_settings(ui, &mut c.physical_hands.stunt);
-        },
         FeatureId::Vehicles => |ui, id| {
             vehicles::feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().vehicles, id);
         },

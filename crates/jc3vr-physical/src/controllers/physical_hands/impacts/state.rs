@@ -92,15 +92,13 @@ pub(super) struct FlagCall {
 #[derive(Debug, Copy, Clone)]
 pub(super) struct Enabled {
     pub controllers: bool,
-    pub hands: bool,
-    pub pickup: bool,
     pub gameplay: bool,
     pub running: bool,
 }
 
 impl Enabled {
     pub fn active(self) -> bool {
-        self.controllers && self.hands && self.pickup && self.gameplay && self.running
+        self.controllers && self.gameplay && self.running
     }
 }
 

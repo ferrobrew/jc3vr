@@ -20,9 +20,7 @@ use windows::Win32::System::Threading::{
     CRITICAL_SECTION, EnterCriticalSection, LeaveCriticalSection,
 };
 
-use crate::controllers::physical_hands::{
-    STALE_AFTER, climb::engine::body_identity, config::PHYSICAL_HANDS_CONFIG,
-};
+use crate::controllers::physical_hands::{STALE_AFTER, climb::engine::body_identity};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&UPDATE_REMOVE_QUEUE_BINDER)
@@ -126,7 +124,6 @@ fn active(state: &State, now: Instant) -> bool {
         && !jc3vr_core::is_shutting_down()
         && scheme::is_controllers()
         && scheme::enabled()
-        && PHYSICAL_HANDS_CONFIG.query(|config| config.enabled)
 }
 
 /// A physical hold whose object may be waiting in the remove queue.
