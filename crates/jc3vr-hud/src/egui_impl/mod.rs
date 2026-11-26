@@ -295,6 +295,7 @@ impl EguiState {
         tracing::info!("Uninitialized egui");
     }
 
+    #[inline]
     pub fn get() -> MutexGuard<'static, Option<Self>> {
         STATE.lock()
     }

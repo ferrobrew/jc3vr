@@ -46,6 +46,7 @@ pub fn hook_library() -> HookLibrary {
 /// default-VP projection each frame is the game's smoothed aim position; its later calls (the
 /// wire-attachment point, the grip-radius sample) are different points and must not be recorded.
 /// Called from the game-thread tick.
+#[inline]
 pub fn begin_frame_aim_recording() {
     AIM_RECORDED_THIS_FRAME.store(false, Ordering::Relaxed);
 }

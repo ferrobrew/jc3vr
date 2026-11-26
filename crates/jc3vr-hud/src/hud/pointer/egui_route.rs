@@ -57,6 +57,7 @@ pub fn egui_cursor_uv() -> Option<(f32, f32)> {
 /// Set egui's click options for the panel: while the panel is shown, a press held up to
 /// [`PANEL_CLICK_DURATION_S`] still clicks; otherwise egui's own default applies. Call from the
 /// egui frame on the game thread.
+#[inline]
 pub fn apply_panel_input_options(ctx: &egui::Context, panel: bool) {
     let duration = if panel {
         PANEL_CLICK_DURATION_S

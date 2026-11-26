@@ -443,6 +443,7 @@ impl HudState {
         self.drain_preview_retirements(renderer);
     }
 
+    #[inline]
     pub fn drain_preview_retirements(&mut self, renderer: &mut egui_directx11::Renderer) {
         resources::drain(&mut self.pending_unregisters, |id| {
             renderer.unregister_user_texture(id);
