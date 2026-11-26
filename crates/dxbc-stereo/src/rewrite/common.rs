@@ -58,6 +58,18 @@ pub const FULL_VIEW_PROJECTION_ROW_BASE: u32 = STEREO_SELECT_CB_ROWS;
 /// The full `cb13` size: through eye 1's copy of the full view-projection.
 pub const STEREO_FULL_CB_ROWS: u32 = FULL_VIEW_PROJECTION_ROW_BASE + 8;
 
+/// The error for a container that lacks the chunk `tag`: the missing signature for `ISGN` or
+/// `OSGN`, the shader-model mismatch for the `SHEX` of an SM4 shader, and a missing shader chunk
+/// otherwise.
+pub(super) fn missing_chunk(dxbc: &Dxbc, tag: &[u8; 4]) -> DxbcError {
+    match tag {
+        b"ISGN" => DxbcError::MissingInputSignature,
+        b"OSGN" => DxbcError::MissingOutputSignature,
+        b"SHEX" if dxbc.chunk(b"SHDR").is_some() => DxbcError::UnsupportedShaderModel,
+        _ => DxbcError::NoShaderChunk,
+    }
+}
+
 /// Reassembles a container with the rewritten `ISGN`/`OSGN`/`SHEX` chunks swapped in, the `SFI0`
 /// viewport-feature bit set (adding an `SFI0` chunk after `SHEX` if the container had none -- fxc's
 /// chunk order is `RDEF, ISGN, OSGN, SHEX, SFI0, STAT`), and a refreshed checksum. Shared by the

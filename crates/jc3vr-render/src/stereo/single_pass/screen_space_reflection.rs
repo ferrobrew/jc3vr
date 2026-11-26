@@ -35,7 +35,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use dxbc_stereo::{
-    SCREEN_SPACE_REFLECTION_CB_REGISTER, SCREEN_SPACE_REFLECTION_ROWS_PER_EYE,
+    Applicable, SCREEN_SPACE_REFLECTION_CB_REGISTER, SCREEN_SPACE_REFLECTION_ROWS_PER_EYE,
     ScreenSpaceReflectionRow, localize_reflection_blur, localize_screen_space_reflection,
 };
 use jc3gi::{
@@ -52,19 +52,25 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, ID3D11Buffer, ID3D11DeviceContext,
 };
 
+use crate::stereo::single_pass::{applied, report_malformed};
+
 /// A reflection pass's bytecode rewritten for the collapse, or `None` for any other shader.
 ///
 /// Called for every fragment program the engine creates. `enabled` is whether the rewrite applies
 /// now; a ray march created without it records that the block must not bind the eye rows. The blur
 /// is rewritten alongside it and reads no eye rows.
 pub(crate) fn rewrite_fragment_program(code: &[u8], enabled: bool) -> Option<Vec<u8>> {
-    let rewritten = match localize_screen_space_reflection(code) {
-        Ok(rewritten) => {
+    let rewritten = match localize_screen_space_reflection(code).applicable() {
+        Ok(Some(rewritten)) => {
             REWRITTEN.store(enabled, Ordering::Relaxed);
             rewritten
         }
-        Err(_) if !enabled => return None,
-        Err(_) => localize_reflection_blur(code).ok()?,
+        Ok(None) if !enabled => return None,
+        Ok(None) => applied("ssr blur", localize_reflection_blur(code))?,
+        Err(error) => {
+            report_malformed("ssr ray march", error);
+            return None;
+        }
     };
     if enabled && !LOGGED.swap(true, Ordering::Relaxed) {
         tracing::info!(

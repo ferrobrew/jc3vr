@@ -2,7 +2,8 @@ use crate::{
     Dxbc, DxbcError, ShaderStage, TokenStream,
     isa::{OPERAND_IMM32_SCALAR, OPERAND_IMM32_VECTOR},
     rewrite::common::{
-        SignatureElement, append_signature_element, max_signature_register, reassemble,
+        SignatureElement, append_signature_element, max_signature_register, missing_chunk,
+        reassemble,
     },
 };
 
@@ -34,7 +35,7 @@ fn edit_planar(blob: &[u8], right: bool, lookup: PlanarLookup) -> Result<Vec<u8>
     let dxbc = Dxbc::parse(blob)?;
     let stream = TokenStream::new(
         dxbc.chunk(b"SHEX")
-            .ok_or(DxbcError::NoShaderChunk)?
+            .ok_or_else(|| missing_chunk(&dxbc, b"SHEX"))?
             .body(blob),
     )?;
     let tokens = stream.tokens();
@@ -145,7 +146,7 @@ pub fn capture_lake_planar_uv(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
     let dxbc = Dxbc::parse(blob)?;
     let stream = TokenStream::new(
         dxbc.chunk(b"SHEX")
-            .ok_or(DxbcError::NoShaderChunk)?
+            .ok_or_else(|| missing_chunk(&dxbc, b"SHEX"))?
             .body(blob),
     )?;
     if stream.stage() != ShaderStage::Pixel {
@@ -236,7 +237,7 @@ pub fn bound_lake_candidate_depth(displacement: &[u8]) -> Result<Vec<u8>, DxbcEr
     let dxbc = Dxbc::parse(displacement)?;
     let stream = TokenStream::new(
         dxbc.chunk(b"SHEX")
-            .ok_or(DxbcError::NoShaderChunk)?
+            .ok_or_else(|| missing_chunk(&dxbc, b"SHEX"))?
             .body(displacement),
     )?;
     let tokens = stream.tokens();
@@ -299,7 +300,7 @@ pub fn mirror_lake_color_overflow(depth_bounded: &[u8]) -> Result<Vec<u8>, DxbcE
     let dxbc = Dxbc::parse(depth_bounded)?;
     let stream = TokenStream::new(
         dxbc.chunk(b"SHEX")
-            .ok_or(DxbcError::NoShaderChunk)?
+            .ok_or_else(|| missing_chunk(&dxbc, b"SHEX"))?
             .body(depth_bounded),
     )?;
     let tokens = stream.tokens();
@@ -381,7 +382,7 @@ fn wave_layout(response: &[u8], gradients: bool) -> Result<Vec<u8>, DxbcError> {
     let body = |tag| {
         dxbc.chunk(tag)
             .map(|chunk| chunk.body(response))
-            .ok_or(DxbcError::NoShaderChunk)
+            .ok_or_else(|| missing_chunk(&dxbc, tag))
     };
     let stream = TokenStream::new(body(b"SHEX")?)?;
     let mut signature = body(b"OSGN")?.to_vec();
@@ -516,7 +517,7 @@ fn trace_lake_operands(response: &[u8], normals: bool) -> Result<Vec<u8>, DxbcEr
     let body = |tag| {
         dxbc.chunk(tag)
             .map(|chunk| chunk.body(response))
-            .ok_or(DxbcError::NoShaderChunk)
+            .ok_or_else(|| missing_chunk(&dxbc, tag))
     };
     let stream = TokenStream::new(body(b"SHEX")?)?;
     let mut signature = body(b"OSGN")?.to_vec();
@@ -659,7 +660,7 @@ fn trace_lake(blob: &[u8], inner_edge: bool, trace: LakeTrace) -> Result<Vec<u8>
     let body = |tag| {
         dxbc.chunk(tag)
             .map(|c| c.body(blob))
-            .ok_or(DxbcError::NoShaderChunk)
+            .ok_or_else(|| missing_chunk(&dxbc, tag))
     };
     let stream = TokenStream::new(body(b"SHEX")?)?;
     let mut signature = body(b"OSGN")?.to_vec();

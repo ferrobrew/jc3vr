@@ -5,7 +5,10 @@
 //! distance, so the packed variant the per-eye water re-issue binds halves the horizontal scale and
 //! leaves the vertical one alone.
 
-use crate::{Dxbc, DxbcError, ShaderStage, TokenStream, isa::OPERAND_IMM32_VECTOR};
+use crate::{
+    Dxbc, DxbcError, ShaderStage, TokenStream, isa::OPERAND_IMM32_VECTOR,
+    rewrite::common::missing_chunk,
+};
 
 /// Halves the horizontal scale of the lake pixel shader's refraction displacement. Fails with
 /// [`DxbcError::NoLakeRefraction`] unless the shader is a pixel shader holding exactly one
@@ -23,9 +26,10 @@ pub fn scale_lake_refraction(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
         0,
         0,
     ];
-    let chunk = Dxbc::parse(blob)?
+    let dxbc = Dxbc::parse(blob)?;
+    let chunk = dxbc
         .chunk(b"SHEX")
-        .ok_or(DxbcError::NoShaderChunk)?;
+        .ok_or_else(|| missing_chunk(&dxbc, b"SHEX"))?;
     let stream = TokenStream::new(chunk.body(blob))?;
     let mut site = None;
     if stream.stage() != ShaderStage::Pixel {

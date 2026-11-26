@@ -29,7 +29,8 @@ use std::sync::atomic::{AtomicBool, AtomicU8, Ordering};
 
 use dxbc_stereo::{
     AMBIENT_OCCLUSION_CB_REGISTER, AMBIENT_OCCLUSION_ROWS_PER_EYE, AmbientOcclusionSampling,
-    localize_ambient_occlusion, localize_ambient_occlusion_filter, snap_ambient_occlusion_uv,
+    Applicable, localize_ambient_occlusion, localize_ambient_occlusion_filter,
+    snap_ambient_occlusion_uv,
 };
 use jc3gi::types::math::{Matrix4, Vector4};
 use jc3vr_view::{
@@ -41,6 +42,8 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_BIND_CONSTANT_BUFFER, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_WRITE, D3D11_MAP_WRITE_DISCARD,
     D3D11_MAPPED_SUBRESOURCE, D3D11_USAGE_DYNAMIC, ID3D11Buffer, ID3D11DeviceContext,
 };
+
+use crate::stereo::single_pass::{applied, report_malformed};
 
 /// An ambient-occlusion pass's bytecode rewritten for the collapse, or `None` for any other shader.
 ///
@@ -56,8 +59,8 @@ pub(crate) fn rewrite_fragment_program(
     enabled: bool,
     sampling: AmbientOcclusionSampling,
 ) -> Option<Vec<u8>> {
-    let rewritten = match localize_ambient_occlusion(code, sampling) {
-        Ok(rewritten) => {
+    let rewritten = match localize_ambient_occlusion(code, sampling).applicable() {
+        Ok(Some(rewritten)) => {
             REWRITTEN.store(
                 if enabled {
                     BuiltWith::from(sampling)
@@ -68,10 +71,14 @@ pub(crate) fn rewrite_fragment_program(
             );
             rewritten
         }
-        Err(_) if !enabled => return None,
-        Err(_) => {
-            localize_ambient_occlusion_filter(code, sampling == AmbientOcclusionSampling::Exact)
-                .ok()?
+        Ok(None) if !enabled => return None,
+        Ok(None) => applied(
+            "ssao filter",
+            localize_ambient_occlusion_filter(code, sampling == AmbientOcclusionSampling::Exact),
+        )?,
+        Err(error) => {
+            report_malformed("ssao generation", error);
+            return None;
         }
     };
     if enabled && !LOGGED.swap(true, Ordering::Relaxed) {
@@ -88,7 +95,7 @@ pub(crate) fn rewrite_fragment_program(
 /// that is not double-wide, or `None` for any other shader. The block binds no rows for a snapped
 /// generation pass: it reads the engine's own constants.
 pub(crate) fn snap_fragment_program(code: &[u8]) -> Option<Vec<u8>> {
-    let snapped = snap_ambient_occlusion_uv(code).ok()?;
+    let snapped = applied("ssao uv snap", snap_ambient_occlusion_uv(code))?;
     REWRITTEN.store(BuiltWith::Unrewritten as u8, Ordering::Relaxed);
     Some(snapped)
 }

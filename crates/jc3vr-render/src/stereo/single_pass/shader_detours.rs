@@ -125,7 +125,8 @@ pub(super) unsafe extern "system" fn create_vertex_shader_detour(
             CVS_REACQ_NOREFS.fetch_add(1, Ordering::Relaxed);
             (false, bytecode, length)
         }
-        Some(Reacquired::Rederived(Err(_))) => {
+        Some(Reacquired::Rederived(Err(error))) => {
+            report_malformed("cb0 remap", *error);
             CVS_REACQ_ERR.fetch_add(1, Ordering::Relaxed);
             (false, bytecode, length)
         }

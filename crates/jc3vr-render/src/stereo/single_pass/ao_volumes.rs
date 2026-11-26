@@ -54,7 +54,7 @@ pub(crate) fn rewrite_fragment_program(code: &[u8], enabled: bool) -> Option<Vec
     if !enabled {
         return None;
     }
-    let rewritten = localize_ambient_occlusion_volume(code).ok()?;
+    let rewritten = applied("ao volumes", localize_ambient_occlusion_volume(code))?;
     REWRITTEN.store(true, Ordering::Relaxed);
     if !LOGGED.swap(true, Ordering::Relaxed) {
         tracing::info!(

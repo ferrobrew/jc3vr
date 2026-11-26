@@ -2,7 +2,8 @@ use crate::{
     Dxbc, DxbcError, ShaderStage, TokenStream,
     isa::{OPERAND_IMM32_SCALAR, OPERAND_IMM32_VECTOR},
     rewrite::common::{
-        SignatureElement, append_signature_element, max_signature_register, reassemble,
+        SignatureElement, append_signature_element, max_signature_register, missing_chunk,
+        reassemble,
     },
 };
 
@@ -514,9 +515,10 @@ pub fn local_bark_dither(blob: &[u8], origin: f32, color: bool) -> Result<Vec<u8
 }
 
 pub fn physical_impostor_fade(blob: &[u8]) -> Result<Vec<u8>, DxbcError> {
-    let chunk = Dxbc::parse(blob)?
+    let dxbc = Dxbc::parse(blob)?;
+    let chunk = dxbc
         .chunk(b"SHEX")
-        .ok_or(DxbcError::NoShaderChunk)?;
+        .ok_or_else(|| missing_chunk(&dxbc, b"SHEX"))?;
     let stream = TokenStream::new(chunk.body(blob))?;
     if stream.stage() != ShaderStage::Pixel {
         return Err(DxbcError::NoResolveInputs);

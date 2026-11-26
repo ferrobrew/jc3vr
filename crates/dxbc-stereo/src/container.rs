@@ -73,7 +73,8 @@ impl Dxbc {
     }
 }
 
-/// A DXBC parse error.
+/// Why a parse or a rewrite failed. [`DxbcError::kind`] says whether the bytecode is malformed or the
+/// rewrite does not apply to it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DxbcError {
     /// The blob does not start with the `DXBC` magic.
@@ -198,6 +199,90 @@ pub enum DxbcError {
     /// The pixel shader declares the eye-camera constant-buffer slot smaller than the velocity
     /// rewrite reads it, so the slot is not the eye-camera buffer.
     VelocitySlotTaken,
+}
+
+/// Whether a [`DxbcError`] is a defect of the bytecode or a rewrite declining a sound shader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DxbcErrorKind {
+    /// The bytecode is not a well-formed container or token stream. A shader the runtime compiled
+    /// never is, so the caller reports it and tries no other rewrite on it.
+    Malformed,
+    /// The shader is well formed, but the rewrite does not apply to it: another stage, another
+    /// shader model, a shape the rewrite does not recognise, or a resource it would need already in
+    /// use. The caller leaves the shader as it is or tries the next rewrite.
+    NotApplicable,
+}
+
+impl DxbcError {
+    /// Whether the bytecode is malformed or the rewrite does not apply to it.
+    pub fn kind(&self) -> DxbcErrorKind {
+        match self {
+            DxbcError::NotDxbc
+            | DxbcError::Truncated
+            | DxbcError::NoShaderChunk
+            | DxbcError::ZeroLengthInstruction
+            | DxbcError::UnexpectedEndOfTokens
+            | DxbcError::MalformedSignature => DxbcErrorKind::Malformed,
+            DxbcError::NotVertexShader
+            | DxbcError::NotDomainShader
+            | DxbcError::NotHullShader
+            | DxbcError::UnsupportedShaderModel
+            | DxbcError::MissingInputSignature
+            | DxbcError::MissingOutputSignature
+            | DxbcError::NoPerEyeReferences
+            | DxbcError::Cb13AlreadyDeclared
+            | DxbcError::InstanceIdAlreadyDeclared
+            | DxbcError::NoInstanceId
+            | DxbcError::UnsupportedOperandEncoding
+            | DxbcError::InstructionTooLong
+            | DxbcError::NoPositionOutput
+            | DxbcError::UnsupportedControlFlow
+            | DxbcError::NoEyeLane
+            | DxbcError::NoTerrainCameraRows
+            | DxbcError::NoFullViewProjection
+            | DxbcError::NoDepthUvFetch
+            | DxbcError::NoLakeRefraction
+            | DxbcError::NoScreenOverlay
+            | DxbcError::NoPlanarReflection
+            | DxbcError::NoAmbientOcclusion
+            | DxbcError::NoAmbientOcclusionVolume
+            | DxbcError::NoScreenSpaceReflection
+            | DxbcError::NoReflectionBlur
+            | DxbcError::NoPostFilter
+            | DxbcError::NoCompositeBloom
+            | DxbcError::NoCameraPosition
+            | DxbcError::NoPixelPosition
+            | DxbcError::EyeCameraSlotTaken
+            | DxbcError::DynamicCameraAccess
+            | DxbcError::NoScreenDoor
+            | DxbcError::ScreenDoorSlotTaken
+            | DxbcError::NoVelocity
+            | DxbcError::VelocitySlotTaken => DxbcErrorKind::NotApplicable,
+            #[cfg(feature = "capture-rewrites")]
+            DxbcError::NoResolveInputs | DxbcError::NoLakeReflection => {
+                DxbcErrorKind::NotApplicable
+            }
+        }
+    }
+}
+
+/// A rewrite's result with its declines separated from its failures.
+pub trait Applicable<T> {
+    /// `Ok(Some)` for a rewritten shader, `Ok(None)` when the rewrite does not apply, and the error
+    /// only when the bytecode is malformed.
+    fn applicable(self) -> Result<Option<T>, DxbcError>;
+}
+
+impl<T> Applicable<T> for Result<T, DxbcError> {
+    fn applicable(self) -> Result<Option<T>, DxbcError> {
+        match self {
+            Ok(value) => Ok(Some(value)),
+            Err(error) => match error.kind() {
+                DxbcErrorKind::NotApplicable => Ok(None),
+                DxbcErrorKind::Malformed => Err(error),
+            },
+        }
+    }
 }
 
 impl fmt::Display for DxbcError {

@@ -12,6 +12,8 @@ The mod edits some of the game's shaders as the engine creates them. The edits a
 
 The two fragment patches are byte patches at fixed immediates, found by scanning the bytecode for a byte pattern. The single-pass rewrites are structural and live in the `dxbc-stereo` crate.
 
+A structural rewrite fails in one of two ways, which `DxbcError::kind` tells apart. It does not apply (another stage, a shape it does not recognise, a slot already taken), and the hook leaves the shader as it is or tries the next rewrite in its chain. Or the bytecode is malformed, which no shader the runtime compiled is: the hook logs an error naming the rewrite, leaves the shader as the engine compiled it, and tries nothing further on it. A corpus test checks that every shipped rewrite only declines the game's own shaders.
+
 ## The DXBC checksum
 
 Every patch recomputes the container checksum before the create call, with `dxbc_stereo::refresh_checksum` (`crates/dxbc-stereo/src/checksum.rs`). The D3D stack under Proton rejects a blob whose stored checksum does not match ([shaders.md, "The DXBC container checksum"](../../engine/rendering/shaders.md#the-dxbc-container-checksum)), so a patch that skips this step fails to create the shader. For the PCF patch the symptom is that the shadow shaders fail to create and the scene renders near-black with speckle. The structural rewrites reassemble the container and refresh the checksum themselves.

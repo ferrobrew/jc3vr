@@ -30,6 +30,7 @@ use std::{
 };
 
 use anyhow::Context as _;
+use dxbc_stereo::Applicable;
 use windows::{
     Win32::Graphics::Direct3D11::{ID3D11DeviceContext, ID3D11PixelShader},
     core::{GUID, IUnknown, Interface},
@@ -40,7 +41,10 @@ use crate::stereo::single_pass::shader_identity;
 /// Build and attach the eye-half variant of a newly created pixel shader. A shader that is not one
 /// of the glare chain's filters gets none.
 pub(crate) fn register(original: &ID3D11PixelShader, code: &[u8]) -> anyhow::Result<()> {
-    let Ok(rewritten) = dxbc_stereo::localize_post_filter(code) else {
+    let Some(rewritten) = dxbc_stereo::localize_post_filter(code)
+        .applicable()
+        .context("glare filter variants: post filter")?
+    else {
         return Ok(());
     };
     let device = unsafe { original.GetDevice() }?;

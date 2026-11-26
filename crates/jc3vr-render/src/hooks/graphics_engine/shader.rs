@@ -341,7 +341,12 @@ fn create_fragment_program(
             // Structural, not name-gated: the rewrite declines every shader without the decals'
             // projective-UV depth fetch, and reassembles (and re-checksums) the container itself.
             let mut biased = false;
-            if bias_ssdecal && let Ok(blob) = dxbc_stereo::bias_ssdecal_depth_uv(&copy) {
+            if bias_ssdecal
+                && let Some(blob) = crate::stereo::single_pass::applied(
+                    "ssdecal depth-UV bias",
+                    dxbc_stereo::bias_ssdecal_depth_uv(&copy),
+                )
+            {
                 copy = blob;
                 biased = true;
                 // `CreateFragmentProgramParams` carries no debug name (unlike the vertex/hull/domain
@@ -354,7 +359,12 @@ fn create_fragment_program(
             }
             // Structural as well: the rewrite declines every shader that binds neither overlay.
             let mut localized = false;
-            if localize_overlays && let Ok(blob) = dxbc_stereo::localize_screen_overlays(&copy) {
+            if localize_overlays
+                && let Some(blob) = crate::stereo::single_pass::applied(
+                    "screen overlays",
+                    dxbc_stereo::localize_screen_overlays(&copy),
+                )
+            {
                 copy = blob;
                 localized = true;
                 let count = OVERLAYS_LOCALIZED.fetch_add(1, Ordering::Relaxed) + 1;
@@ -363,7 +373,12 @@ fn create_fragment_program(
                     "composite: screen overlays mapped per eye ({count} permutations so far)",
                 );
             }
-            if localize_bloom && let Ok(blob) = dxbc_stereo::localize_composite_bloom(&copy) {
+            if localize_bloom
+                && let Some(blob) = crate::stereo::single_pass::applied(
+                    "composite bloom",
+                    dxbc_stereo::localize_composite_bloom(&copy),
+                )
+            {
                 copy = blob;
                 localized = true;
                 let count = BLOOM_LOCALIZED.fetch_add(1, Ordering::Relaxed) + 1;
@@ -499,7 +514,10 @@ fn create_hull_program(
         // a shadow-atlas draw an eye it must not have.
         if !is_terrain_shadow_pass(name.as_deref()) {
             let code = unsafe { std::slice::from_raw_parts(p.m_Code, p.m_Size as usize) };
-            if let Ok(blob) = dxbc_stereo::forward_eye_hull_shader(code) {
+            if let Some(blob) = crate::stereo::single_pass::applied(
+                "terrain hull eye forward",
+                dxbc_stereo::forward_eye_hull_shader(code),
+            ) {
                 let len = blob.len() as u64;
                 tracing::info!(target: "single_pass", stage = "hull", name = ?name, "terrain: eye-lane forwarded");
                 saved = Some((p.m_Code, p.m_Size, blob));
@@ -565,11 +583,16 @@ fn create_domain_program(
                 Err(dxbc_stereo::DxbcError::NoEyeLane)
                     if crate::stereo::single_pass::should_pin_terrain(name.as_deref()) =>
                 {
-                    dxbc_stereo::rebase_pinned_domain_shader(code)
-                        .ok()
-                        .map(|blob| (blob, "pinned"))
+                    crate::stereo::single_pass::applied(
+                        "pinned terrain domain rebase",
+                        dxbc_stereo::rebase_pinned_domain_shader(code),
+                    )
+                    .map(|blob| (blob, "pinned"))
                 }
-                Err(_) => None,
+                Err(error) => {
+                    crate::stereo::single_pass::report_malformed("terrain domain rebase", error);
+                    None
+                }
             };
             if let Some((blob, path)) = rewrite {
                 let len = blob.len() as u64;

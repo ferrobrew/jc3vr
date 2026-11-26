@@ -9,7 +9,7 @@
 
 use std::{collections::BTreeMap, sync::atomic::Ordering};
 
-use dxbc_stereo::DxbcError;
+use dxbc_stereo::{Applicable, DxbcError, DxbcErrorKind};
 use parking_lot::Mutex;
 
 use crate::stereo::single_pass::*;
@@ -303,6 +303,32 @@ pub fn remap_vertex_shader(code: &[u8]) -> Result<Vec<u8>, DxbcError> {
     dxbc_stereo::patch_vertex_shader_with(code, origin)
 }
 
+/// A creation-time rewrite's output, or `None` when the rewrite does not apply to the shader. A
+/// malformed shader also yields `None`, leaving it as the engine compiled it, and is reported
+/// through [`report_malformed`]: it never falls through to another rewrite.
+pub(crate) fn applied(
+    rewrite: &'static str,
+    result: Result<Vec<u8>, DxbcError>,
+) -> Option<Vec<u8>> {
+    result.applicable().unwrap_or_else(|error| {
+        report_malformed(rewrite, error);
+        None
+    })
+}
+
+/// Report a rewrite's error when it says the engine's bytecode is malformed rather than that the
+/// rewrite does not apply. The game's shaders are all well formed, so this names a defect in the
+/// parser or in a shader patched before the rewrite.
+pub(crate) fn report_malformed(rewrite: &'static str, error: DxbcError) {
+    if error.kind() == DxbcErrorKind::Malformed {
+        tracing::error!(
+            target: "single_pass",
+            rewrite,
+            "shader rewrite: malformed bytecode, so the shader is left as compiled: {error}",
+        );
+    }
+}
+
 /// Resolve which single-pass transform a vertex shader is to be given, from its engine name and the
 /// outcome of the `cb0` remap on its bytecode. Callers that a block intercept owns must pass
 /// [`VsTransform::None`] to [`remember_vs_transform`] instead of consulting this.
@@ -339,20 +365,37 @@ pub fn apply_vs_transform(
     remapped: Option<Vec<u8>>,
     name: Option<&str>,
 ) -> Option<Vec<u8>> {
-    let remap = || remapped.or_else(|| remap_vertex_shader(code).ok());
+    let remap = || remapped.or_else(|| applied("cb0 remap", remap_vertex_shader(code)));
     match transform {
         VsTransform::Remap => remap(),
-        VsTransform::ReprojectOrRemap => dxbc_stereo::reproject_vertex_shader(code)
-            .ok()
-            .or_else(remap),
-        VsTransform::Reproject => reproject_or_remap_full_view_projection(code).ok(),
+        VsTransform::ReprojectOrRemap => {
+            match dxbc_stereo::reproject_vertex_shader(code).applicable() {
+                Ok(Some(blob)) => Some(blob),
+                Ok(None) => remap(),
+                Err(error) => {
+                    report_malformed("reprojection", error);
+                    None
+                }
+            }
+        }
+        VsTransform::Reproject => applied(
+            "reprojection",
+            reproject_or_remap_full_view_projection(code),
+        ),
         VsTransform::ReprojectOrEyeInject => {
-            let (out, path) = match reproject_or_remap_full_view_projection(code) {
-                Ok(blob) => (Some(blob), "reproject"),
-                Err(_) => (
-                    dxbc_stereo::inject_eye_forward_vertex_shader(code).ok(),
+            let (out, path) = match reproject_or_remap_full_view_projection(code).applicable() {
+                Ok(Some(blob)) => (Some(blob), "reproject"),
+                Ok(None) => (
+                    applied(
+                        "terrain eye inject",
+                        dxbc_stereo::inject_eye_forward_vertex_shader(code),
+                    ),
                     "eye-inject",
                 ),
+                Err(error) => {
+                    report_malformed("reprojection", error);
+                    (None, "reproject")
+                }
             };
             tracing::info!(
                 target: "single_pass", stage = "vertex", name = ?name, path,
@@ -362,7 +405,10 @@ pub fn apply_vs_transform(
         }
         VsTransform::Pinned => {
             // The pinned slot's full view-projection replaces the reprojection.
-            let out = dxbc_stereo::remap_pinned_full_view_projection(code).ok();
+            let out = applied(
+                "pinned full view-projection",
+                dxbc_stereo::remap_pinned_full_view_projection(code),
+            );
             tracing::info!(
                 target: "single_pass", stage = "vertex", name = ?name, path = "pinned",
                 transformed = out.is_some(), "terrain: VS transform",
@@ -449,7 +495,10 @@ pub fn record_patch_outcome(outcome: &Result<Vec<u8>, DxbcError>) {
         Ok(_) => &PATCHED,
         Err(DxbcError::NoPerEyeReferences) => &NO_REFS,
         Err(DxbcError::InstanceIdAlreadyDeclared) => &DEFERRED,
-        Err(_) => &ERRORED,
+        Err(error) => {
+            report_malformed("cb0 remap", *error);
+            &ERRORED
+        }
     };
     counter.fetch_add(1, Ordering::Relaxed);
 }

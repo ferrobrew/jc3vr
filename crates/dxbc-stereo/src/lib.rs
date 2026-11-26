@@ -18,7 +18,7 @@ mod rewrite;
 mod tokens;
 
 pub use checksum::refresh_checksum;
-pub use container::{Chunk, Dxbc, DxbcError};
+pub use container::{Applicable, Chunk, Dxbc, DxbcError, DxbcErrorKind};
 pub use rewrite::{
     AMBIENT_OCCLUSION_CB_REGISTER, AMBIENT_OCCLUSION_ROWS_PER_EYE,
     AMBIENT_OCCLUSION_VOLUME_BOUNDARY_ROW, AMBIENT_OCCLUSION_VOLUME_CB_REGISTER,
