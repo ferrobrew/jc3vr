@@ -41,7 +41,7 @@ use crate::config::engine::{
 
 /// The state of the settings file, for a readout.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub(crate) enum SaveStatus {
+pub enum SaveStatus {
     /// The file holds the settings, or nothing has changed since they were loaded.
     UpToDate,
     /// A change is waiting to settle or being written.
@@ -57,7 +57,7 @@ pub(crate) enum SaveStatus {
 /// is the first run, and an unreadable or unparseable one is left as it is until a setting changes,
 /// when the first save moves it aside before writing. A file of format zero is rewritten on the
 /// first tick, after a copy of it is kept.
-pub(crate) fn init() {
+pub fn init() {
     let Some(path) = paths::settings_file() else {
         return;
     };
@@ -84,7 +84,7 @@ pub(crate) fn note_edit() {
 
 /// Save the configuration if the user's changes have settled. Called once per frame on the game
 /// thread; the disk write itself runs on a writer thread.
-pub(crate) fn tick() {
+pub fn tick() {
     let now = Instant::now();
     let mut saver = SAVER.lock();
     saver.reap(now);
@@ -120,7 +120,7 @@ pub(crate) fn tick() {
 /// Returns `false` when a writer did not finish in time, in which case the payload must stay
 /// mapped.
 #[must_use = "a writer that did not finish means the payload must stay mapped"]
-pub(crate) fn shutdown() -> bool {
+pub fn shutdown() -> bool {
     let writers = {
         let mut saver = SAVER.lock();
         saver.closed = true;
@@ -167,7 +167,7 @@ pub(crate) fn shutdown() -> bool {
 }
 
 /// The settings file's state.
-pub(crate) fn status() -> SaveStatus {
+pub fn status() -> SaveStatus {
     let saver = SAVER.lock();
     status_of(StatusInputs {
         available: paths::dir().is_some(),
@@ -202,8 +202,8 @@ static EDITS: Mutex<Edits> = Mutex::new(Edits::new());
 
 /// Take the configuration for a test: other tests that take it wait, and the configuration and
 /// the edit marks are restored when the fixture drops. A schema must be registered.
-#[cfg(test)]
-pub(crate) fn test_fixture() -> TestFixture {
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_fixture() -> TestFixture {
     let guard = TEST_CONFIG.lock();
     let schema = store::schema();
     let root = schema.clone_root(&*store::lock_root());
@@ -216,24 +216,24 @@ pub(crate) fn test_fixture() -> TestFixture {
     }
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 static TEST_CONFIG: Mutex<()> = Mutex::new(());
 
 /// Whether a change is waiting to be saved.
-#[cfg(test)]
-pub(crate) fn edit_pending() -> bool {
+#[cfg(any(test, feature = "test-support"))]
+pub fn edit_pending() -> bool {
     EDITS.lock().pending()
 }
 
-#[cfg(test)]
-pub(crate) struct TestFixture {
+#[cfg(any(test, feature = "test-support"))]
+pub struct TestFixture {
     _guard: parking_lot::MutexGuard<'static, ()>,
     schema: &'static Schema,
     root: Box<Root>,
     edits: Edits,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Drop for TestFixture {
     fn drop(&mut self) {
         store::lock_root().replace(self.schema.clone_root(self.root.as_ref()));

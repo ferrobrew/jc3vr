@@ -5,6 +5,7 @@
 //! guards through final validation and commit; dropping an uncommitted guard aborts preparation.
 
 use std::{
+    any::Any,
     fmt,
     sync::{
         Arc, OnceLock,
@@ -17,7 +18,7 @@ use parking_lot::Mutex;
 /// Whether irreversible shutdown has committed. A pending request leaves this false so gameplay,
 /// input, and the VR runtime continue while reversible participants defer preparation.
 /// After commit, the frame loop must not recreate the runtime during hook removal.
-pub(crate) fn is_shutting_down() -> bool {
+pub fn is_shutting_down() -> bool {
     SHUTTING_DOWN.load(Ordering::Acquire)
 }
 
@@ -25,18 +26,18 @@ pub(crate) fn is_shutting_down() -> bool {
 /// startup: the stamp identifies the DLL build, so the module that embeds it supplies it rather than
 /// any module beneath it. A second call, from a re-run of the entry point in the same resident
 /// image, carries the same stamp and is ignored.
-pub(crate) fn set_build_stamp(stamp: &'static str) {
+pub fn set_build_stamp(stamp: &'static str) {
     let _ = BUILD_STAMP.set(stamp);
 }
 
 /// The stamp [`set_build_stamp`] recorded, or a placeholder before startup has recorded one.
-pub(crate) fn build_stamp() -> &'static str {
+pub fn build_stamp() -> &'static str {
     BUILD_STAMP.get().copied().unwrap_or(UNRECORDED_BUILD_STAMP)
 }
 
 /// The participants with reversible work that must precede all ordinary cleanup.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum ParticipantId {
+pub enum ParticipantId {
     InventorySpawn,
     MagazineExecutor,
     #[allow(dead_code)] // Reserved until the reversible collider adapter is installed.
@@ -44,7 +45,7 @@ pub(crate) enum ParticipantId {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum DeferReason {
+pub enum DeferReason {
     SpawnCallbackActive,
     MagazineBusy,
     ParticipantBusy(ParticipantId),
@@ -64,7 +65,7 @@ impl fmt::Display for DeferReason {
 }
 
 /// The current refusal, without changing admission or consuming cleanup registrations.
-pub(crate) fn deferred_reason() -> Option<DeferReason> {
+pub fn deferred_reason() -> Option<DeferReason> {
     match SHUTDOWN.lock().phase {
         Phase::Pending {
             blocked: Some(Blocked::Deferred(reason)),
@@ -75,7 +76,7 @@ pub(crate) fn deferred_reason() -> Option<DeferReason> {
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct PrepareError {
+pub struct PrepareError {
     pub(crate) participant: ParticipantId,
     pub(crate) operation: &'static str,
 }
@@ -94,15 +95,15 @@ impl std::error::Error for PrepareError {}
 
 /// Authority for one preparation attempt. A retry invalidates every earlier attempt.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) struct Preparation {
+pub struct Preparation {
     request: u64,
     attempt: u64,
     revision: u64,
 }
 
-#[cfg(test)]
+#[cfg(any(test, feature = "test-support"))]
 impl Preparation {
-    pub(crate) fn for_test() -> Self {
+    pub fn for_test() -> Self {
         Self {
             request: 1,
             attempt: 1,
@@ -111,7 +112,7 @@ impl Preparation {
     }
 }
 
-pub(crate) enum PrepareOutcome<T> {
+pub enum PrepareOutcome<T> {
     Ready(T),
     Deferred(DeferReason),
     #[allow(dead_code)] // The collider adapter can fail after transactional rollback.
@@ -122,7 +123,7 @@ pub(crate) enum PrepareOutcome<T> {
 ///
 /// Ready retains the synchronization needed for `validate` and `commit`. No engine query runs
 /// while the lifecycle mutex is held. A participant cannot register another participant here.
-pub(crate) trait ShutdownParticipant: Send + Sync {
+pub trait ShutdownParticipant: Send + Sync {
     fn prepare(&self, preparation: Preparation) -> PrepareOutcome<Box<dyn PreparedParticipant>>;
 }
 
@@ -132,7 +133,7 @@ pub(crate) trait ShutdownParticipant: Send + Sync {
 /// It cannot query the engine, re-enter lifecycle, fail, or release exclusion before guard drop.
 /// A participant that cannot meet this contract must return Deferred instead of Ready.
 /// This is not a physics-write capability.
-pub(crate) trait PreparedParticipant {
+pub trait PreparedParticipant {
     fn validate(&self, preparation: Preparation) -> bool;
     fn commit(&mut self);
 }
@@ -143,7 +144,7 @@ pub(crate) trait PreparedParticipant {
 /// retain the proven reader barrier, and roll back on guard drop until the whole attempt commits;
 /// after a bounded wait it may instead commit with the bodies as they are, keeping every shape
 /// reference so nothing a body names can be freed.
-pub(crate) fn register_participant(
+pub fn register_participant(
     id: ParticipantId,
     participant: Arc<dyn ShutdownParticipant>,
 ) -> Result<(), RegistrationError> {
@@ -151,7 +152,7 @@ pub(crate) fn register_participant(
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum RegistrationError {
+pub enum RegistrationError {
     Duplicate(ParticipantId),
     ShutdownStarted,
 }
@@ -168,7 +169,7 @@ impl fmt::Display for RegistrationError {
 impl std::error::Error for RegistrationError {}
 
 /// Coalesce requests without changing gameplay or consuming cleanup registrations.
-pub(crate) fn request_shutdown() {
+pub fn request_shutdown() {
     if SHUTDOWN.lock().request() {
         tracing::info!("shutdown requested; preparing before teardown");
     }
@@ -178,37 +179,38 @@ pub(crate) fn request_shutdown() {
 ///
 /// The caller continues normal frame work unless this returns true. Time only bounds work; it
 /// never proves native quiescence. Ready is validated and consumed here without a frame gap.
-pub(crate) fn advance_shutdown() -> bool {
+pub fn advance_shutdown() -> bool {
     advance_shutdown_state(&SHUTDOWN, &SHUTTING_DOWN)
 }
 
 /// Fatal initialization or update failure is not a recoverable shutdown deferral.
 /// No cleanup or hook removal is attempted without the ordinary preparation prerequisite.
-pub(crate) fn mark_fatal() -> bool {
+pub fn mark_fatal() -> bool {
     SHUTDOWN.lock().mark_fatal()
 }
 
-pub(crate) fn is_fatal() -> bool {
+pub fn is_fatal() -> bool {
     matches!(SHUTDOWN.lock().phase, Phase::Fatal)
 }
 
 /// Register a one-shot cleanup. These are not preparation participants and cannot veto teardown.
-pub fn on_cleanup(cleanup: impl FnOnce(Option<&mut egui_directx11::Renderer>) + Send + 'static) {
+///
+/// A cleanup receives the debug UI's renderer while it is still alive, so it can release its
+/// texture registrations. The renderer belongs to a layer above this one, so it arrives erased, and
+/// a cleanup that needs it downcasts it.
+pub fn on_cleanup(cleanup: impl FnOnce(Option<&mut dyn Any>) + Send + 'static) {
     CLEANUPS.lock().push(Box::new(cleanup));
 }
 
 /// Drain cleanups once, in reverse registration order, only after the commit boundary.
-pub(crate) fn run_cleanups(renderer: Option<&mut egui_directx11::Renderer>) {
+pub fn run_cleanups(renderer: Option<&mut dyn Any>) {
     assert!(is_shutting_down(), "cleanup requires committed shutdown");
     run_cleanup_registry(&CLEANUPS, renderer);
 }
 
-type Cleanup = Box<dyn FnOnce(Option<&mut egui_directx11::Renderer>) + Send>;
+type Cleanup = Box<dyn FnOnce(Option<&mut dyn Any>) + Send>;
 
-fn run_cleanup_registry(
-    registry: &Mutex<Vec<Cleanup>>,
-    renderer: Option<&mut egui_directx11::Renderer>,
-) {
+fn run_cleanup_registry(registry: &Mutex<Vec<Cleanup>>, renderer: Option<&mut dyn Any>) {
     let cleanups = std::mem::take(&mut *registry.lock());
     let mut renderer = renderer;
     for cleanup in cleanups.into_iter().rev() {
@@ -445,7 +447,7 @@ impl Drop for PreparedShutdown {
     }
 }
 
-#[cfg(test)]
-pub(crate) mod test_support;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 #[cfg(test)]
 mod tests;

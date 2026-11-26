@@ -27,7 +27,7 @@ use windows::Win32::System::{
 
 /// Apply or release the placement to match `wanted`, the `vr.large_cache_cores` switch. Game
 /// thread, once per frame; does nothing while the placement already matches the switch.
-pub(crate) fn update(wanted: bool) {
+pub fn update(wanted: bool) {
     let mut state = STATE.lock();
     match (wanted, state.applied) {
         (true, None) if !state.declined => apply(&mut state),
@@ -42,7 +42,7 @@ pub(crate) fn restore() {
 }
 
 /// The cores the placement narrowed the process to, if it did.
-pub(crate) fn applied_mask() -> Option<usize> {
+pub fn applied_mask() -> Option<usize> {
     STATE.lock().applied.map(|applied| applied.mask)
 }
 

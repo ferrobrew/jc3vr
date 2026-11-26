@@ -14,19 +14,19 @@
 //! the payload turned off on its own ([`automatic`]).
 
 pub(crate) mod automatic;
-pub(crate) mod format;
-pub(crate) mod load;
+pub mod format;
+pub mod load;
 mod parts;
-pub(crate) mod paths;
-pub(crate) mod persist;
+pub mod paths;
+pub mod persist;
 mod slot;
-pub(crate) mod store;
+pub mod store;
 mod validate;
-pub(crate) mod write;
+pub mod write;
 
-#[cfg(test)]
-pub(crate) use crate::config::engine::persist::{TestFixture, test_fixture};
-pub(crate) use crate::config::engine::{
+#[cfg(any(test, feature = "test-support"))]
+pub use crate::config::engine::persist::{TestFixture, test_fixture};
+pub use crate::config::engine::{
     automatic::{Switch, disable_automatically},
     parts::{Parts, Snapshot, edit_parts, lock_parts},
     persist::{SaveStatus, init, shutdown, status, tick},

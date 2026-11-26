@@ -38,10 +38,10 @@ use crate::config::engine::{
 };
 
 /// The configuration root, with its type erased.
-pub(crate) type Root = dyn Any + Send;
+pub type Root = dyn Any + Send;
 
 /// A configuration root's type: the whole configuration, as the settings file holds it.
-pub(crate) trait ConfigRoot: Serialize + DeserializeOwned + Clone + Send + 'static {
+pub trait ConfigRoot: Serialize + DeserializeOwned + Clone + Send + 'static {
     /// The defaults, which a setting the file lacks takes and which a save leaves out.
     fn defaults() -> Self;
 
@@ -57,7 +57,7 @@ pub(crate) trait ConfigRoot: Serialize + DeserializeOwned + Clone + Send + 'stat
 }
 
 /// The functions the engine needs from a [`ConfigRoot`], with its type erased.
-pub(crate) struct Schema {
+pub struct Schema {
     defaults: fn() -> Box<Root>,
     clone: fn(&Root) -> Box<Root>,
     serialize: fn(&Root) -> Result<String, toml::ser::Error>,
@@ -77,7 +77,7 @@ pub(crate) type DeserializeError = serde_path_to_error::Error<toml::de::Error>;
 
 impl Schema {
     /// The schema of the root type `C`.
-    pub(crate) const fn of<C: ConfigRoot>() -> Self {
+    pub const fn of<C: ConfigRoot>() -> Self {
         Self {
             defaults: defaults_of::<C>,
             clone: clone_of::<C>,
@@ -100,7 +100,7 @@ impl Schema {
     }
 
     /// The root as TOML text.
-    pub(crate) fn serialize(&self, root: &Root) -> Result<String, toml::ser::Error> {
+    pub fn serialize(&self, root: &Root) -> Result<String, toml::ser::Error> {
         (self.serialize)(root)
     }
 
@@ -128,7 +128,7 @@ impl Schema {
         (self.migrate)(file, format)
     }
 
-    pub(crate) fn validate(&self, root: &mut Root, resets: &mut Vec<Reset>) {
+    pub fn validate(&self, root: &mut Root, resets: &mut Vec<Reset>) {
         (self.validate)(root, resets)
     }
 
@@ -139,7 +139,7 @@ impl Schema {
 
 /// Register the configuration's schema and put its defaults in the store. Every later call must
 /// pass the same schema; registering another is a programming error and panics.
-pub(crate) fn register(schema: &'static Schema) {
+pub fn register(schema: &'static Schema) {
     if let Some(registered) = SCHEMA.get() {
         assert!(ptr::eq(*registered, schema), "{SECOND_SCHEMA}");
         return;
@@ -158,7 +158,7 @@ pub(crate) fn register(schema: &'static Schema) {
 }
 
 /// The registered schema. Panics when none is registered.
-pub(crate) fn schema() -> &'static Schema {
+pub fn schema() -> &'static Schema {
     SCHEMA.get().copied().expect(UNREGISTERED)
 }
 
@@ -213,12 +213,12 @@ pub(crate) fn lock_mapped<T: 'static>(
 pub(crate) type MappedGuard<T> = parking_lot::MappedMutexGuard<'static, T>;
 
 /// The root as `C`, the registered schema's type. Panics when it is not.
-pub(crate) fn downcast_ref<C: 'static>(root: &Root) -> &C {
+pub fn downcast_ref<C: 'static>(root: &Root) -> &C {
     root.downcast_ref().expect(WRONG_TYPE)
 }
 
 /// The root as `C`, the registered schema's type. Panics when it is not.
-pub(crate) fn downcast_mut<C: 'static>(root: &mut Root) -> &mut C {
+pub fn downcast_mut<C: 'static>(root: &mut Root) -> &mut C {
     root.downcast_mut().expect(WRONG_TYPE)
 }
 

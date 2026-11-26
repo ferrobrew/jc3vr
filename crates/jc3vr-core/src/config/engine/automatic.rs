@@ -19,7 +19,7 @@ use crate::config::engine::{
 
 /// A boolean setting a fallback can turn off: its path in the settings file, for the log, and its
 /// place in a slot's part.
-pub(crate) struct Switch<T: 'static> {
+pub struct Switch<T: 'static> {
     pub path: &'static str,
     pub slot: &'static ConfigSlot<T>,
     pub place: for<'a> fn(&'a mut T) -> &'a mut bool,
@@ -36,7 +36,7 @@ impl<T: 'static> Copy for Switch<T> {}
 /// Switch `switch` off because the payload cannot keep it on (a fallback after a failure, or a
 /// teardown), without saving that as the user's choice: the live configuration changes at once,
 /// while a save keeps the value the user chose until the user changes the switch through an edit.
-pub(crate) fn disable_automatically<T: 'static>(switch: Switch<T>) {
+pub fn disable_automatically<T: 'static>(switch: Switch<T>) {
     let mut root = store::lock_root();
     OVERRIDES.lock().disable(&mut *root, switch);
 }

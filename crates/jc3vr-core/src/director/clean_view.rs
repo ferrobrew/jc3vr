@@ -23,8 +23,7 @@ use crate::config::engine::ConfigSlot;
 
 /// The clean view's settings, at `director.clean_view` in the configuration (never in the file).
 /// The payload binds the slot to its field in the directing settings at startup.
-pub(crate) static CLEAN_VIEW_CONFIG: ConfigSlot<CleanViewConfig> =
-    ConfigSlot::new("director.clean_view");
+pub static CLEAN_VIEW_CONFIG: ConfigSlot<CleanViewConfig> = ConfigSlot::new("director.clean_view");
 
 /// The clean view's settings: the switch and its scope. Neither is saved: the switch is on at every
 /// launch, which keeps the flat debug overlay off the desktop window until F4 shows it, so a session
@@ -84,7 +83,7 @@ pub fn toggle() -> bool {
 }
 
 /// Switch the clean view on at its current scope: the debug UI's Hide.
-pub(crate) fn hide() {
+pub fn hide() {
     let mut clean_view = CLEAN_VIEW_CONFIG.edit();
     clean_view.on = true;
     publish(*clean_view);
@@ -93,7 +92,7 @@ pub(crate) fn hide() {
 /// Publish the config's clean view, once per frame from [`crate::director::update`], so a change
 /// made in the debug UI reaches the gates. Logs the edges so a recording's log shows when the
 /// overlays went away.
-pub(super) fn update(cfg: &CleanViewConfig) {
+pub fn update(cfg: &CleanViewConfig) {
     publish(*cfg);
 }
 

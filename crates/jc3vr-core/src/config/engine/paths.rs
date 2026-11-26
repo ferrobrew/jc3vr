@@ -17,17 +17,17 @@ use crate::session::wine::{self, ConversionError};
 pub(crate) const SETTINGS_FILE_NAME: &str = "settings.toml";
 
 /// The configuration directory, created on first use. `None` when no usable directory is available.
-pub(crate) fn dir() -> Option<&'static Path> {
+pub fn dir() -> Option<&'static Path> {
     DIR.get_or_init(resolve).as_deref()
 }
 
 /// A file named `name` in the configuration directory.
-pub(crate) fn file(name: &str) -> Option<PathBuf> {
+pub fn file(name: &str) -> Option<PathBuf> {
     Some(dir()?.join(name))
 }
 
 /// The settings file.
-pub(crate) fn settings_file() -> Option<PathBuf> {
+pub fn settings_file() -> Option<PathBuf> {
     file(SETTINGS_FILE_NAME)
 }
 

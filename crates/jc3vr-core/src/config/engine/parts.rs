@@ -19,7 +19,7 @@ use crate::config::engine::{
 };
 
 /// Access to slots' parts of one configuration root.
-pub(crate) trait Parts {
+pub trait Parts {
     fn root(&self) -> &Root;
 
     fn root_mut(&mut self) -> &mut Root;
@@ -37,7 +37,7 @@ pub(crate) trait Parts {
 
 /// Lock the whole configuration to read several parts, or to change them on the payload's own
 /// account, which is not a reason to save.
-pub(crate) fn lock_parts() -> PartsGuard {
+pub fn lock_parts() -> PartsGuard {
     PartsGuard {
         root: store::lock_root(),
     }
@@ -45,20 +45,20 @@ pub(crate) fn lock_parts() -> PartsGuard {
 
 /// Lock the whole configuration for a change the user meant. When the guard drops, the
 /// configuration is marked changed and a save follows once the changes settle.
-pub(crate) fn edit_parts() -> PartsEdit {
+pub fn edit_parts() -> PartsEdit {
     let mut root = store::lock_root();
     let before = automatic::observe(&mut *root);
     PartsEdit { root, before }
 }
 
 /// The guard [`lock_parts`] returns.
-pub(crate) struct PartsGuard {
+pub struct PartsGuard {
     root: RootGuard,
 }
 
 impl PartsGuard {
     /// Replace the whole configuration with `snapshot`.
-    pub(crate) fn restore(&mut self, snapshot: &Snapshot) {
+    pub fn restore(&mut self, snapshot: &Snapshot) {
         self.root
             .replace(store::schema().clone_root(snapshot.root.as_ref()));
     }
@@ -75,7 +75,7 @@ impl Parts for PartsGuard {
 }
 
 /// The guard [`edit_parts`] returns.
-pub(crate) struct PartsEdit {
+pub struct PartsEdit {
     root: RootGuard,
     before: Observed,
 }
@@ -98,38 +98,38 @@ impl Drop for PartsEdit {
 }
 
 /// A copy of the whole configuration.
-pub(crate) struct Snapshot {
+pub struct Snapshot {
     root: Box<Root>,
 }
 
 impl Snapshot {
     /// Copy the live configuration.
-    pub(crate) fn take() -> Self {
+    pub fn take() -> Self {
         Self::of(&lock_parts())
     }
 
     /// Copy the configuration `parts` holds.
-    pub(crate) fn of(parts: &impl Parts) -> Self {
+    pub fn of(parts: &impl Parts) -> Self {
         Self {
             root: store::schema().clone_root(parts.root()),
         }
     }
 
     /// The configuration's defaults.
-    #[cfg(test)]
-    pub(crate) fn defaults() -> Self {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn defaults() -> Self {
         Self {
             root: store::schema().defaults(),
         }
     }
 
     /// Every setting as TOML text, for a capture's manifest or a comparison.
-    pub(crate) fn to_toml(&self) -> Result<String, toml::ser::Error> {
+    pub fn to_toml(&self) -> Result<String, toml::ser::Error> {
         store::schema().serialize(self.root.as_ref())
     }
 
     /// Replace the live configuration with this copy, on the payload's own account.
-    pub(crate) fn restore(&self) {
+    pub fn restore(&self) {
         lock_parts().restore(self);
     }
 }

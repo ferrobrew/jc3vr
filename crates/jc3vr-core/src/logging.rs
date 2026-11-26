@@ -35,7 +35,7 @@ pub fn active_spec() -> Option<String> {
     ACTIVE_SPEC.lock().clone()
 }
 
-pub(super) fn install() {
+pub fn install() {
     let (stdout_filter, stdout_handle) = reload::Layer::new(initial_filter());
     let (file_filter, file_handle) = reload::Layer::new(initial_filter());
 
@@ -79,7 +79,7 @@ pub(super) fn install() {
         .ok();
 }
 
-pub(super) fn uninstall() {}
+pub fn uninstall() {}
 
 /// The filter in effect until [`set_filter`] replaces it: the launch environment's `RUST_LOG`
 /// directives over an INFO floor.

@@ -584,7 +584,7 @@ pub fn install() {
             slot: &HUD_CONFIG,
             place: |hud| &mut hud.redirect,
         });
-        if let Some(renderer) = renderer {
+        if let Some(renderer) = renderer.and_then(|renderer| renderer.downcast_mut()) {
             HUD_STATE.lock().release_preview(renderer);
         }
         // The clip handles must be released on the capture (game) thread; the shutdown path lets

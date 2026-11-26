@@ -58,7 +58,7 @@ use crate::{
 
 /// The online-feature settings, at `online` in the settings file; the payload binds the slot at
 /// startup.
-pub(crate) static ONLINE_CONFIG: ConfigSlot<OnlineConfig> = ConfigSlot::new("online");
+pub static ONLINE_CONFIG: ConfigSlot<OnlineConfig> = ConfigSlot::new("online");
 
 /// The online hooks' settings.
 #[derive(Clone, Serialize, Deserialize)]
@@ -83,7 +83,7 @@ impl Default for OnlineConfig {
     }
 }
 
-pub(crate) fn hook_library() -> HookLibrary {
+pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
         .with_static_binder(&STATISTIC_MANAGER_UPDATE_BINDER)
         .with_static_binder(&BRAG_MANAGER_UPDATE_BINDER)

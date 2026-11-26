@@ -559,6 +559,8 @@ pub fn capture_main_color(eye: usize) {
 /// egui registrations at shutdown.
 pub fn install() {
     crate::lifecycle::on_cleanup(|renderer| {
-        EGUI_DEBUG_RENDER_STATE.lock().uninstall(renderer);
+        EGUI_DEBUG_RENDER_STATE
+            .lock()
+            .uninstall(renderer.and_then(|renderer| renderer.downcast_mut()));
     });
 }

@@ -36,7 +36,7 @@ use crate::config::engine::{
 };
 
 /// A loaded configuration and what the load had to change to get it.
-pub(crate) struct Loaded {
+pub struct Loaded {
     pub root: Box<Root>,
     pub report: LoadReport,
     /// The format the file was written in.
@@ -45,7 +45,7 @@ pub(crate) struct Loaded {
 
 /// The settings a load defaulted, migrated, skipped, or reset, by path (`controllers.hands.grip`).
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(crate) struct LoadReport {
+pub struct LoadReport {
     /// Settings a file of format zero lacked, which took their defaults. A file of the current
     /// format leaves out every setting at its default, so its missing settings are not listed.
     pub defaulted: Vec<String>,
@@ -62,14 +62,14 @@ pub(crate) struct LoadReport {
 
 /// A setting, or a group of settings, reset to its defaults, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Reset {
+pub struct Reset {
     pub path: String,
     pub reason: String,
 }
 
 /// Why a settings file could not be loaded at all.
 #[derive(Debug)]
-pub(crate) enum LoadError {
+pub enum LoadError {
     /// The file is not a TOML document.
     Syntax(toml::de::Error),
     /// The defaults could not be serialized to merge the file over; a programming error.
@@ -150,7 +150,7 @@ impl LoadReport {
 
 /// Load a settings file's text: parse it, merge it over the defaults, deserialize it resetting the
 /// values that cannot be read, and validate it. Fails only when the text is not TOML.
-pub(crate) fn parse(schema: &Schema, text: &str) -> Result<Loaded, LoadError> {
+pub fn parse(schema: &Schema, text: &str) -> Result<Loaded, LoadError> {
     let mut file: Table = toml::from_str(text).map_err(LoadError::Syntax)?;
     let defaults = schema
         .to_value(schema.defaults().as_ref())
@@ -329,7 +329,7 @@ fn reset(merged: &mut Value, defaults: &Value, steps: &[Step]) -> Option<String>
 /// by its value in `defaults`, or, when it already has that value, the group enclosing it is
 /// ([`reset`]). Returns the check's error when a failure names no setting that can be reset, or
 /// the resets run out, so that the caller resets `value` whole.
-pub(crate) fn reset_named<T: Serialize + DeserializeOwned>(
+pub fn reset_named<T: Serialize + DeserializeOwned>(
     value: &mut T,
     defaults: &T,
     prefix: &str,

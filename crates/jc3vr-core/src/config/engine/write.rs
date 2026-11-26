@@ -11,7 +11,7 @@ use std::{
 
 /// Why a file could not be replaced.
 #[derive(Debug)]
-pub(crate) enum WriteError {
+pub enum WriteError {
     /// The path has no parent directory or no file name.
     InvalidPath(PathBuf),
     /// A file operation failed.
@@ -45,7 +45,7 @@ impl std::error::Error for WriteError {
 }
 
 /// Replace the file at `path` with `contents`.
-pub(crate) fn replace(path: &Path, contents: &[u8]) -> Result<(), WriteError> {
+pub fn replace(path: &Path, contents: &[u8]) -> Result<(), WriteError> {
     let invalid_path = || WriteError::InvalidPath(path.to_owned());
     let parent = path.parent().ok_or_else(invalid_path)?;
     let file_name = path

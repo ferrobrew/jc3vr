@@ -11,12 +11,12 @@
 //! state against the config, which is what makes the settings survive the game's own resets (a
 //! respawn clearing god mode, a mission reset unlocking heat).
 
+pub(crate) use jc3vr_core::director::clean_view;
 use serde::{Deserialize, Serialize};
 
 use crate::config::engine::ConfigSlot;
 pub(crate) use crate::controllers::spawn;
 
-pub mod clean_view;
 pub mod heat;
 pub mod keymap;
 pub mod markers;

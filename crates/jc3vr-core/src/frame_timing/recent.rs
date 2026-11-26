@@ -6,9 +6,9 @@ const CAPACITY: usize = 240;
 
 /// The median and the 95th percentile of the recent frame intervals.
 #[derive(Copy, Clone, Debug, PartialEq)]
-pub(crate) struct FramePercentiles {
-    pub(crate) p50_ms: f32,
-    pub(crate) p95_ms: f32,
+pub struct FramePercentiles {
+    pub p50_ms: f32,
+    pub p95_ms: f32,
 }
 
 /// The last [`CAPACITY`] frame intervals, in microseconds, oldest overwritten first.

@@ -11,7 +11,7 @@ default = ["profiler"]
 # The in-game profiler (issue #34): puffin scopes across the mod's hooks and the engine's frame
 # phases, a flame-graph panel in the Performance tab, and on-demand trace capture to disk.
 # Compile-time so the extra hooks and per-scope overhead vanish entirely when disabled.
-profiler = ["dep:puffin", "dep:puffin_egui"]
+profiler = ["dep:puffin", "dep:puffin_egui", "jc3vr-core/profiler"]
 
 [dependencies]
 windows = { workspace = true }
@@ -24,6 +24,8 @@ retour = { git = "https://github.com/Hpmason/retour-rs.git" }
 glam = { workspace = true }
 
 jc3gi = { path = "../jc3gi" }
+# The core layer: the lifecycle, the configuration engine, the hook plumbing, and frame timing.
+jc3vr-core = { path = "../crates/jc3vr-core" }
 fsr-sys = { path = "../crates/fsr-sys" }
 dxbc-stereo = { path = "../crates/dxbc-stereo" }
 tracking-format = { path = "../crates/tracking-format" }
@@ -80,6 +82,7 @@ erased-serde = "0.4.10"
 jiff = "0.2.29"
 
 [dev-dependencies]
+jc3vr-core = { path = "../crates/jc3vr-core", features = ["test-support"] }
 pretty_assertions = "1.4.1"
 proptest = "1.11.0"
 test-case = "3.3.1"

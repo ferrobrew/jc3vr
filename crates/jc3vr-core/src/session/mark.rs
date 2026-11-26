@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 /// Ask for an unlabelled take marker. Any thread. Without a registered handler the request is
 /// dropped with a warning.
-pub(crate) fn request_mark() {
+pub fn request_mark() {
     match MARK_HANDLER.get() {
         Some(handler) => handler(),
         None => tracing::warn!("session: a take marker was requested with no marker handler"),
@@ -14,7 +14,7 @@ pub(crate) fn request_mark() {
 
 /// Register what a take-marker request does. Only one handler is held: the first registration wins
 /// and a later one is refused with a warning.
-pub(crate) fn set_mark_handler(handler: fn()) {
+pub fn set_mark_handler(handler: fn()) {
     if MARK_HANDLER.set(handler).is_err() {
         tracing::warn!("session: a marker handler is already registered; the new one is ignored");
     }

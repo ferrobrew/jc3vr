@@ -2297,6 +2297,33 @@ dependencies = [
 ]
 
 [[package]]
+name = "jc3vr-core"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "detours-macro",
+ "directories",
+ "erased-serde",
+ "glam",
+ "jc3gi",
+ "jiff",
+ "parking_lot",
+ "pretty_assertions",
+ "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",
+ "re-utilities",
+ "serde",
+ "serde_ignored",
+ "serde_json",
+ "serde_path_to_error",
+ "test-case",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tracing-subscriber",
+ "tracking-format",
+ "windows 0.62.2",
+]
+
+[[package]]
 name = "jc3vr-input"
 version = "0.1.0"
 dependencies = [
@@ -2344,6 +2371,7 @@ dependencies = [
  "glam",
  "image",
  "jc3gi",
+ "jc3vr-core",
  "jc3vr-input",
  "jiff",
  "openxr",

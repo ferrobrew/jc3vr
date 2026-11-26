@@ -12,7 +12,7 @@ use re_utilities::{Error, ThreadSuspender, UserCallbackResult, error::WindowsErr
 
 /// Run `f` with every other thread suspended, as [`ThreadSuspender::for_block`] does, retrying the
 /// suspension when a thread exited between the snapshot and its open.
-pub(crate) fn for_block<T>(f: impl FnOnce() -> UserCallbackResult<T>) -> UserCallbackResult<T> {
+pub fn for_block<T>(f: impl FnOnce() -> UserCallbackResult<T>) -> UserCallbackResult<T> {
     let suspender = retry_transient(SUSPEND_ATTEMPTS, ThreadSuspender::new, |error| {
         matches!(error, Error::Windows(WindowsError::ThreadOpenFailed { .. }))
     })

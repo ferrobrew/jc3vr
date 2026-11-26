@@ -4,28 +4,11 @@ use jc3gi::game::GameState;
 use parking_lot::{Mutex, MutexGuard};
 use re_utilities::hook_library::HookLibrary;
 
-pub(crate) use crate::hooks::stages::{
-    register_post_enable, register_post_unpatch, register_pre_unpatch,
-};
+pub use crate::hooks::stages::{register_post_enable, register_post_unpatch, register_pre_unpatch};
 
-pub mod animation;
-pub mod camera;
-pub mod character;
-pub mod clock;
-pub mod draw_count;
-pub(crate) mod equipment;
-pub mod game;
-pub mod graphics_engine;
-pub mod input;
 pub mod online;
-#[cfg(feature = "profiler")]
-pub mod profiler;
-pub mod sim;
 mod stages;
-pub(crate) mod suspend;
-pub mod ui;
-pub mod window_focus;
-pub mod wndproc;
+pub mod suspend;
 
 /// Whether the game is in interactive gameplay (`GameState::E_GAME_RUN`), as opposed to any
 /// non-gameplay state (install, init, frontend, loading, startup). The single gameplay-boundary
@@ -49,7 +32,7 @@ unsafe impl Sync for HookState {}
 ///
 /// The caller registers every lifecycle participant and removal step first: a participant must be
 /// registered before its engine policy is enabled or its work accepted.
-pub(super) fn install(build: impl FnOnce() -> HookLibrary) {
+pub fn install(build: impl FnOnce() -> HookLibrary) {
     tracing::info!("startup: lifecycle participants registered; hook installation begin");
     let mut patcher = re_utilities::Patcher::new();
     tracing::info!("startup: before thread suspension");
@@ -79,7 +62,7 @@ pub(super) fn install(build: impl FnOnce() -> HookLibrary) {
     }
 }
 
-pub(super) fn uninstall() -> bool {
+pub fn uninstall() -> bool {
     if !crate::is_shutting_down() {
         tracing::error!("hook removal refused before shutdown commit");
         return false;
@@ -120,6 +103,6 @@ pub(super) fn uninstall() -> bool {
     stages::run_post_unpatch()
 }
 
-pub(super) fn patcher() -> Option<MutexGuard<'static, re_utilities::Patcher>> {
+pub fn patcher() -> Option<MutexGuard<'static, re_utilities::Patcher>> {
     HOOK_STATE.get().map(|state| state.patcher.lock())
 }

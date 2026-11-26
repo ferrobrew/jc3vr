@@ -17,7 +17,7 @@ use std::{cell::Cell, marker::PhantomData};
 
 /// What the calling thread is doing, as far as the lock rules care.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum ThreadRole {
+pub enum ThreadRole {
     /// A thread the mod has not marked: the engine's draw task, its CPU fragment workers, the UI
     /// capture and render workers, physics workers, and any other engine or system thread.
     Unmarked,
@@ -50,12 +50,12 @@ impl ThreadRole {
     /// Whether a thread in this role may block on the VR runtime lock. Only the game thread outside
     /// a frame and outside the debug UI may: everywhere else either already holds the lock or is
     /// something a holder waits on.
-    pub(crate) const fn may_block_on_vr_state(self) -> bool {
+    pub const fn may_block_on_vr_state(self) -> bool {
         matches!(self, Self::Game)
     }
 
     /// A short description of the role, for diagnostics.
-    pub(crate) const fn describe(self) -> &'static str {
+    pub const fn describe(self) -> &'static str {
         match self {
             Self::Unmarked => "an engine or worker thread (not the game thread)",
             Self::Game => "the game thread",
@@ -68,13 +68,13 @@ impl ThreadRole {
 }
 
 /// The calling thread's current role.
-pub(crate) fn current() -> ThreadRole {
+pub fn current() -> ThreadRole {
     ROLE.with(Cell::get)
 }
 
 /// Mark the calling thread's base role. A thread that already has a role keeps it, so the game
 /// thread can mark itself at the top of every frame without clobbering a scope it is inside.
-pub(crate) fn mark_thread(role: ThreadRole) {
+pub fn mark_thread(role: ThreadRole) {
     ROLE.with(|cell| {
         if cell.get() == ThreadRole::Unmarked {
             cell.set(role);
@@ -85,7 +85,7 @@ pub(crate) fn mark_thread(role: ThreadRole) {
 /// Narrow the calling thread's role to `role` until the returned scope drops, which restores the
 /// role it replaced.
 #[must_use = "the role lasts only as long as the scope is held"]
-pub(crate) fn enter(role: ThreadRole) -> RoleScope {
+pub fn enter(role: ThreadRole) -> RoleScope {
     let previous = ROLE.with(|cell| cell.replace(role));
     RoleScope {
         previous,
@@ -95,7 +95,7 @@ pub(crate) fn enter(role: ThreadRole) -> RoleScope {
 
 /// A role set by [`enter`]. It restores the previous role when dropped, and is bound to the thread
 /// that created it, since the role it restores is that thread's.
-pub(crate) struct RoleScope {
+pub struct RoleScope {
     previous: ThreadRole,
     _thread_bound: PhantomData<*const ()>,
 }

@@ -17,14 +17,14 @@ use toml::{Table, Value};
 use crate::config::engine::store::{Root, Schema};
 
 /// The format a save writes.
-pub(crate) const VERSION: i64 = 1;
+pub const VERSION: i64 = 1;
 
 /// The key the format's version is stored under, at the top of the file.
-pub(crate) const VERSION_KEY: &str = "version";
+pub const VERSION_KEY: &str = "version";
 
 /// What [`upgrade`] found and did.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Upgrade {
+pub struct Upgrade {
     pub format: Format,
     /// The settings that held a superseded default and were removed.
     pub migrated: Vec<Migrated>,
@@ -32,7 +32,7 @@ pub(crate) struct Upgrade {
 
 /// A setting that held a superseded default and was removed, so that it takes the current one.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Migrated {
+pub struct Migrated {
     /// The setting's path (`controllers.body.rig.yaw.moving_deadzone_deg`).
     pub path: String,
     /// The value the file held, as TOML.
@@ -41,7 +41,7 @@ pub(crate) struct Migrated {
 
 /// The format a file was written in.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Format {
+pub enum Format {
     /// No version: every setting, with the defaults of its day.
     Zero,
     /// The format this build writes.
@@ -62,7 +62,7 @@ impl Format {
 
 /// The configuration as a save writes it: the version, then each setting that differs from its
 /// default. A list that differs is written whole.
-pub(crate) fn to_text(schema: &Schema, root: &Root) -> Result<String, TextError> {
+pub fn to_text(schema: &Schema, root: &Root) -> Result<String, TextError> {
     let actual = tree(schema, root)?;
     let defaults = tree(schema, schema.defaults().as_ref())?;
     let mut file = Table::new();
@@ -75,7 +75,7 @@ pub(crate) fn to_text(schema: &Schema, root: &Root) -> Result<String, TextError>
 
 /// Why the settings could not be written as text.
 #[derive(Debug)]
-pub(crate) enum TextError {
+pub enum TextError {
     /// The configuration could not be serialized.
     Serialize(toml::ser::Error),
     /// The serialized configuration did not parse back; a programming error.
@@ -103,7 +103,7 @@ impl std::error::Error for TextError {
 }
 
 /// Take the version out of a settings file's table, and run the schema's migration on it.
-pub(crate) fn upgrade(schema: &Schema, file: &mut Table) -> Upgrade {
+pub fn upgrade(schema: &Schema, file: &mut Table) -> Upgrade {
     let format = match file.remove(VERSION_KEY) {
         None => Format::Zero,
         Some(Value::Integer(version)) if version > VERSION => Format::Newer(version),
@@ -118,10 +118,7 @@ pub(crate) fn upgrade(schema: &Schema, file: &mut Table) -> Upgrade {
 /// Remove from `file` each setting that holds one of its superseded defaults, given by path
 /// (`controllers.body.rig.yaw.moving_deadzone_deg`) in `entries`, so that it takes the current
 /// default. Returns the settings removed, in `entries`' order.
-pub(crate) fn remove_superseded(
-    file: &mut Table,
-    entries: Vec<(String, Vec<Value>)>,
-) -> Vec<Migrated> {
+pub fn remove_superseded(file: &mut Table, entries: Vec<(String, Vec<Value>)>) -> Vec<Migrated> {
     let mut migrated = Vec::new();
     for (path, superseded) in entries {
         let steps: Vec<&str> = path.split('.').collect();
@@ -154,7 +151,7 @@ pub(crate) fn remove_superseded(
 
 /// Whether two values are the same setting value. Floats compare at the precision the settings
 /// hold them, so a value written from an `f32` matches the same number written by hand.
-pub(crate) fn same(a: &Value, b: &Value) -> bool {
+pub fn same(a: &Value, b: &Value) -> bool {
     match (a, b) {
         (Value::Float(a), Value::Float(b)) => (*a as f32) == (*b as f32),
         (Value::Array(a), Value::Array(b)) => {

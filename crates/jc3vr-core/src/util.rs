@@ -26,7 +26,7 @@ pub fn is_pressed(key: VIRTUAL_KEY) -> bool {
 /// The draw path runs its calls one at a time under the engine's context mutex, so a plain load and
 /// store counts every call; were two threads ever to bump one counter at once, a count could be lost,
 /// which these counts tolerate.
-pub(crate) trait DrawPathCounter {
+pub trait DrawPathCounter {
     fn bump(&self);
 }
 
@@ -58,6 +58,6 @@ impl DrawPathCounter for AtomicU32 {
 }
 
 /// Bump a [`DrawPathCounter`].
-pub(crate) fn bump(counter: &impl DrawPathCounter) {
+pub fn bump(counter: &impl DrawPathCounter) {
     counter.bump();
 }

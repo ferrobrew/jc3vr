@@ -43,7 +43,7 @@ use std::{
 
 use parking_lot::Mutex;
 
-pub(crate) use crate::frame_timing::{
+pub use crate::frame_timing::{
     recent::FramePercentiles,
     report::{Report, TickLoad, Totals, ns_to_ms},
     slot::{Kind, Slot, ThreadClass},
@@ -62,7 +62,7 @@ pub(crate) const UI_WINDOW: Duration = Duration::from_secs(1);
 /// Time `slot` until the returned scope drops. Scopes on one thread must drop in the reverse order
 /// they were opened, which holding them as locals guarantees.
 #[must_use = "the region is timed only while the scope is held"]
-pub(crate) fn scope(slot: Slot) -> Scope {
+pub fn scope(slot: Slot) -> Scope {
     let outer_child_ns = CHILD_NS.with(|c| c.replace(0));
     Scope {
         slot,
@@ -73,7 +73,7 @@ pub(crate) fn scope(slot: Slot) -> Scope {
 }
 
 /// A timed region opened by [`scope`]. Bound to its thread, since its nesting is per thread.
-pub(crate) struct Scope {
+pub struct Scope {
     slot: Slot,
     start: Instant,
     /// The enclosing scope's child time so far, restored (plus this scope's time) on drop.
@@ -94,7 +94,7 @@ impl Drop for Scope {
 /// [`Interval::finish`] on the same thread, inside the same scope, and outside any scope opened
 /// after it.
 #[must_use = "the stretch is attributed only when the interval is finished"]
-pub(crate) fn interval() -> Interval {
+pub fn interval() -> Interval {
     Interval {
         start: Instant::now(),
         child_ns_at_start: CHILD_NS.with(Cell::get),
@@ -104,7 +104,7 @@ pub(crate) fn interval() -> Interval {
 
 /// A stretch of the innermost open scope, opened by [`interval`]. Bound to its thread, since it
 /// reads the thread's nesting.
-pub(crate) struct Interval {
+pub struct Interval {
     start: Instant,
     /// The enclosing scope's child time when the interval opened, so the scopes that close inside
     /// the interval can be taken out of it.
@@ -115,7 +115,7 @@ pub(crate) struct Interval {
 impl Interval {
     /// Attribute the stretch to `slot` as a child of the enclosing scope: its time minus the scopes
     /// that closed inside it becomes `slot`'s self time, and comes out of the enclosing scope's.
-    pub(crate) fn finish(self, slot: Slot) {
+    pub fn finish(self, slot: Slot) {
         let elapsed = duration_ns(self.start.elapsed());
         let self_ns = CHILD_NS.with(|c| {
             let children = c.get().saturating_sub(self.child_ns_at_start);
@@ -129,14 +129,14 @@ impl Interval {
 
 /// Count a sim tick against the current game frame, so the breakdown can split the frames by how
 /// many ticks they ran. Call at the start of each `Game::UpdateGame`, on the game thread.
-pub(crate) fn note_sim_tick() {
+pub fn note_sim_tick() {
     TICKS_THIS_FRAME.fetch_add(1, Ordering::Relaxed);
 }
 
 /// Mark the start of a game frame: records the interval since the previous call, and closes the
 /// reporting windows that have run their length, publishing the debug UI's breakdown and logging
 /// the long one. Call once per frame from the game thread, at the top of `Game::Update`.
-pub(crate) fn frame_tick() {
+pub fn frame_tick() {
     let now = duration_ns(epoch().elapsed());
     // A stall averages into its ten-second window as a frame time a few hundred milliseconds long,
     // which hides that it was one frame, so a frame past the threshold is also logged on its own;
@@ -179,7 +179,7 @@ pub(crate) fn frame_tick() {
 /// Register the consumer of every closed [`UI_WINDOW`] breakdown, which [`frame_tick`] hands to it
 /// on the game thread before publishing it to [`latest`]. Only one sink is held: the first
 /// registration wins and a later one is refused with a warning.
-pub(crate) fn set_report_sink(sink: fn(&Report)) {
+pub fn set_report_sink(sink: fn(&Report)) {
     if REPORT_SINK.set(sink).is_err() {
         tracing::warn!("frame timing: a report sink is already registered; the new one is ignored");
     }
@@ -187,7 +187,7 @@ pub(crate) fn set_report_sink(sink: fn(&Report)) {
 
 /// The last complete game frame's interval, `None` before the second frame, and the sim ticks it
 /// ran. Lock-free, so any thread may read it.
-pub(crate) fn last_frame() -> (Option<Duration>, u32) {
+pub fn last_frame() -> (Option<Duration>, u32) {
     let ns = LAST_FRAME_NS.load(Ordering::Relaxed);
     (
         (ns != 0).then(|| Duration::from_nanos(ns)),
@@ -196,7 +196,7 @@ pub(crate) fn last_frame() -> (Option<Duration>, u32) {
 }
 
 /// The breakdown over the last complete [`UI_WINDOW`], or `None` before the first one closes.
-pub(crate) fn latest() -> Option<Report> {
+pub fn latest() -> Option<Report> {
     LATEST.lock().clone()
 }
 
@@ -204,7 +204,7 @@ pub(crate) fn latest() -> Option<Report> {
 /// payload loaded and never reset. A caller that samples it twice takes the difference: the
 /// benchmark (`crate::testing::benchmark`) does so once per frame. Lock-free, so any thread may
 /// read it; a scope closing on another thread while it is read lands in this sample or the next.
-pub(crate) fn cumulative() -> Cumulative {
+pub fn cumulative() -> Cumulative {
     let mut result = Cumulative {
         slot_self_ns: [0; Slot::COUNT],
         slot_calls: [0; Slot::COUNT],
@@ -224,26 +224,26 @@ pub(crate) fn cumulative() -> Cumulative {
 
 /// The never-reset totals [`cumulative`] returns, in nanoseconds of self time.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct Cumulative {
-    pub(crate) slot_self_ns: [u64; Slot::COUNT],
-    pub(crate) slot_calls: [u64; Slot::COUNT],
+pub struct Cumulative {
+    pub slot_self_ns: [u64; Slot::COUNT],
+    pub slot_calls: [u64; Slot::COUNT],
     /// Indexed by [`ThreadClass::index`], then [`Kind::index`].
-    pub(crate) buckets: [[u64; Kind::COUNT]; ThreadClass::COUNT],
+    pub buckets: [[u64; Kind::COUNT]; ThreadClass::COUNT],
 }
 
 impl Cumulative {
     /// `slot`'s self time since `earlier`, a sample taken before this one.
-    pub(crate) fn slot_since(&self, earlier: &Cumulative, slot: Slot) -> u64 {
+    pub fn slot_since(&self, earlier: &Cumulative, slot: Slot) -> u64 {
         self.slot_self_ns[slot.index()].saturating_sub(earlier.slot_self_ns[slot.index()])
     }
 
     /// `slot`'s calls since `earlier`.
-    pub(crate) fn calls_since(&self, earlier: &Cumulative, slot: Slot) -> u64 {
+    pub fn calls_since(&self, earlier: &Cumulative, slot: Slot) -> u64 {
         self.slot_calls[slot.index()].saturating_sub(earlier.slot_calls[slot.index()])
     }
 
     /// The time `class` spent in `kind` since `earlier`.
-    pub(crate) fn bucket_since(&self, earlier: &Cumulative, class: ThreadClass, kind: Kind) -> u64 {
+    pub fn bucket_since(&self, earlier: &Cumulative, class: ThreadClass, kind: Kind) -> u64 {
         self.buckets[class.index()][kind.index()]
             .saturating_sub(earlier.buckets[class.index()][kind.index()])
     }
@@ -251,7 +251,7 @@ impl Cumulative {
 
 /// The median and 95th percentile of the recent game frame intervals, refreshed every
 /// [`UI_WINDOW`], or `None` before the first window closes. A leaf lock, so any thread may read it.
-pub(crate) fn frame_percentiles() -> Option<FramePercentiles> {
+pub fn frame_percentiles() -> Option<FramePercentiles> {
     *PERCENTILES.lock()
 }
 

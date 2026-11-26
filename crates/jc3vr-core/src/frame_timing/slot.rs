@@ -3,7 +3,7 @@
 /// A timed region of the frame. The set is closed and small so the counters can live in a static
 /// array indexed by the slot, with no registration and no lookup on the hot path.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Slot {
+pub enum Slot {
     /// `crate::update`: the directing tools, the eye-capture upkeep, and the egui debug UI pass.
     DebugUi,
     /// The engine's `Game::Update`, excluding the mod scopes nested in it and the sim ticks: the
@@ -176,7 +176,7 @@ pub(crate) enum Slot {
 
 /// What kind of time a slot measures, for the per-thread totals.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum Kind {
+pub enum Kind {
     /// The mod's own CPU work.
     Mod,
     /// OpenXR calls that do work rather than pace: the begin, the view and input reads, the end.
@@ -189,7 +189,7 @@ pub(crate) enum Kind {
 
 /// Which thread a span of time was spent on, for the per-thread totals.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum ThreadClass {
+pub enum ThreadClass {
     /// The game thread, which is what bounds the frame rate.
     Game,
     /// The deferred frame tail's worker.
@@ -200,7 +200,7 @@ pub(crate) enum ThreadClass {
 
 impl Slot {
     /// Every slot, in index order.
-    pub(crate) const ALL: [Slot; Self::COUNT] = [
+    pub const ALL: [Slot; Self::COUNT] = [
         Slot::DebugUi,
         Slot::EngineUpdate,
         Slot::SimTick,
@@ -262,15 +262,15 @@ impl Slot {
     ];
 
     /// The number of slots.
-    pub(crate) const COUNT: usize = 58;
+    pub const COUNT: usize = 58;
 
     /// The slot's position in [`Self::ALL`] and in the counter arrays.
-    pub(crate) const fn index(self) -> usize {
+    pub const fn index(self) -> usize {
         self as usize
     }
 
     /// The slot's name in the log line and the debug UI.
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Slot::DebugUi => "debug_ui",
             Slot::EngineUpdate => "engine_update",
@@ -334,7 +334,7 @@ impl Slot {
     }
 
     /// What kind of time the slot measures.
-    pub(crate) const fn kind(self) -> Kind {
+    pub const fn kind(self) -> Kind {
         match self {
             Slot::DebugUi
             | Slot::InputTick
@@ -398,19 +398,18 @@ impl Slot {
 
 impl Kind {
     /// Every kind, in index order.
-    pub(crate) const ALL: [Kind; Self::COUNT] =
-        [Kind::Mod, Kind::Runtime, Kind::Engine, Kind::Wait];
+    pub const ALL: [Kind; Self::COUNT] = [Kind::Mod, Kind::Runtime, Kind::Engine, Kind::Wait];
 
     /// The number of kinds.
-    pub(crate) const COUNT: usize = 4;
+    pub const COUNT: usize = 4;
 
     /// The kind's position in [`Self::ALL`] and in the bucket arrays.
-    pub(crate) const fn index(self) -> usize {
+    pub const fn index(self) -> usize {
         self as usize
     }
 
     /// The kind's name in the log line and the debug UI.
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             Kind::Mod => "mod",
             Kind::Runtime => "openxr",
@@ -422,19 +421,19 @@ impl Kind {
 
 impl ThreadClass {
     /// Every thread class, in index order.
-    pub(crate) const ALL: [ThreadClass; Self::COUNT] =
+    pub const ALL: [ThreadClass; Self::COUNT] =
         [ThreadClass::Game, ThreadClass::Tail, ThreadClass::Other];
 
     /// The number of thread classes.
-    pub(crate) const COUNT: usize = 3;
+    pub const COUNT: usize = 3;
 
     /// The class's position in [`Self::ALL`] and in the bucket arrays.
-    pub(crate) const fn index(self) -> usize {
+    pub const fn index(self) -> usize {
         self as usize
     }
 
     /// The class's name in the log line and the debug UI.
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             ThreadClass::Game => "game",
             ThreadClass::Tail => "tail",

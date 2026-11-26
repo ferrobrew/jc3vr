@@ -1,5 +1,10 @@
 use std::{ffi::c_void, sync::OnceLock};
 
+// The core layer lives in its own crate; the old paths keep working until the final cleanup pass.
+pub(crate) use jc3vr_core::{
+    cpu_placement, crash, frame_timing, hash, is_shutting_down, lifecycle, logging, module,
+    render_frame, session, thread_role, util,
+};
 use windows::Win32::{
     Foundation::HMODULE,
     System::{LibraryLoader::DisableThreadLibraryCalls, SystemServices::DLL_PROCESS_ATTACH},
@@ -7,48 +12,36 @@ use windows::Win32::{
 };
 
 use crate::egui_impl::EguiState;
-pub(crate) use crate::lifecycle::is_shutting_down;
 
 pub mod egui_impl;
-pub mod module;
 pub mod ui;
-pub mod util;
 pub mod vr;
 
 mod allocator;
 mod composition;
 mod config;
 mod controllers;
-mod cpu_placement;
-mod crash;
 mod debug;
 mod diagnostics;
 mod director;
 mod eject_gpu;
 mod far_field;
-mod frame_timing;
 mod fsr;
 mod grapple;
-mod hash;
 mod headpose;
 mod hooks;
 mod hud;
 mod image_writer;
 // The input layer lives in its own crate; the old path keeps working until the final cleanup pass.
 pub(crate) use jc3vr_input as input_core;
-mod lifecycle;
-mod logging;
 mod pause_menu;
 #[cfg(feature = "profiler")]
 mod profiler;
 mod recorder;
-mod render_frame;
 mod screenshot;
-mod session;
 mod status;
 mod stereo;
 mod testing;
-mod thread_role;
 
 #[unsafe(no_mangle)]
 #[allow(non_snake_case)]
@@ -261,7 +254,7 @@ fn shutdown_from_game() {
     lifecycle::run_cleanups(
         EguiState::get()
             .as_mut()
-            .map(|state| &mut state.egui_renderer),
+            .map(|state| &mut state.egui_renderer as &mut dyn std::any::Any),
     );
     EguiState::uninstall();
 }

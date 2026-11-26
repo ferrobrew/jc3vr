@@ -17,7 +17,7 @@ use crate::lifecycle::{
     run_cleanup_registry,
 };
 
-pub(crate) struct Harness {
+pub struct Harness {
     pub(super) shutdown: Mutex<Shutdown>,
     pub(super) shutting_down: AtomicBool,
     pub(super) normal_frames: AtomicUsize,
@@ -26,8 +26,14 @@ pub(crate) struct Harness {
     pub(super) events: Arc<Mutex<Vec<&'static str>>>,
 }
 
+impl Default for Harness {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Harness {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             shutdown: Mutex::new(Shutdown::new()),
             shutting_down: AtomicBool::new(false),
@@ -38,7 +44,7 @@ impl Harness {
         }
     }
 
-    pub(crate) fn register(&self, participant: &Arc<FakeParticipant>) {
+    pub fn register(&self, participant: &Arc<FakeParticipant>) {
         self.shutdown
             .lock()
             .register(participant.id, participant.clone())
@@ -46,7 +52,7 @@ impl Harness {
     }
 
     /// Register an owner the lifecycle does not know about, such as a subsystem's own participant.
-    pub(crate) fn register_participant(
+    pub fn register_participant(
         &self,
         id: ParticipantId,
         participant: Arc<dyn ShutdownParticipant>,
@@ -54,23 +60,23 @@ impl Harness {
         self.shutdown.lock().register(id, participant).unwrap();
     }
 
-    pub(crate) fn request(&self) {
+    pub fn request(&self) {
         self.shutdown.lock().request();
     }
 
-    pub(crate) fn is_shutting_down(&self) -> bool {
+    pub fn is_shutting_down(&self) -> bool {
         self.shutting_down.load(Ordering::Acquire)
     }
 
-    pub(crate) fn cleanup_calls(&self) -> usize {
+    pub fn cleanup_calls(&self) -> usize {
         self.cleanup_calls.load(Ordering::Relaxed)
     }
 
-    pub(crate) fn pending_cleanups(&self) -> usize {
+    pub fn pending_cleanups(&self) -> usize {
         self.cleanups.lock().len()
     }
 
-    pub(crate) fn add_cleanup(&self, label: &'static str) {
+    pub fn add_cleanup(&self, label: &'static str) {
         let calls = self.cleanup_calls.clone();
         let events = self.events.clone();
         self.cleanups.lock().push(Box::new(move |renderer| {
@@ -81,7 +87,7 @@ impl Harness {
     }
 
     /// Run one pre-update entry: advance shutdown, and drain the cleanups if it commits.
-    pub(crate) fn frame(&self) -> bool {
+    pub fn frame(&self) -> bool {
         if advance_shutdown_state(&self.shutdown, &self.shutting_down) {
             self.events.lock().push("commit");
             run_cleanup_registry(&self.cleanups, None);
@@ -94,13 +100,13 @@ impl Harness {
 }
 
 #[derive(Copy, Clone)]
-pub(crate) enum Answer {
+pub enum Answer {
     Ready,
     Deferred,
     Failed,
 }
 
-pub(crate) struct FakeParticipant {
+pub struct FakeParticipant {
     id: ParticipantId,
     answers: Mutex<VecDeque<Answer>>,
     pub(super) calls: AtomicUsize,
@@ -110,7 +116,7 @@ pub(crate) struct FakeParticipant {
 }
 
 impl FakeParticipant {
-    pub(crate) fn new(id: ParticipantId, answers: impl IntoIterator<Item = Answer>) -> Arc<Self> {
+    pub fn new(id: ParticipantId, answers: impl IntoIterator<Item = Answer>) -> Arc<Self> {
         Arc::new(Self {
             id,
             answers: Mutex::new(answers.into_iter().collect()),
@@ -121,7 +127,7 @@ impl FakeParticipant {
         })
     }
 
-    pub(crate) fn calls(&self) -> usize {
+    pub fn calls(&self) -> usize {
         self.calls.load(Ordering::Relaxed)
     }
 }

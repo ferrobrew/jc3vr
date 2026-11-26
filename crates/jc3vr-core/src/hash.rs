@@ -12,7 +12,7 @@
 use std::collections::HashMap;
 
 /// Bob Jenkins' lookup3 `hashlittle` of `data` with a zero seed: the game's name hash.
-pub(crate) fn hashlittle(data: &[u8]) -> u32 {
+pub fn hashlittle(data: &[u8]) -> u32 {
     let mut a = 0xdead_beef_u32.wrapping_add(data.len() as u32);
     let (mut b, mut c) = (a, a);
     let mut rest = data;
@@ -36,13 +36,13 @@ pub(crate) fn hashlittle(data: &[u8]) -> u32 {
 
 /// A value for each of a set of rule states, by the hash of their names.
 #[derive(Debug, Clone)]
-pub(crate) struct StateTable<T> {
+pub struct StateTable<T> {
     entries: HashMap<u32, T>,
 }
 
 impl<T: Copy> StateTable<T> {
     /// Hash each state's name. A name listed twice keeps its last value.
-    pub(crate) fn new<'a>(entries: impl IntoIterator<Item = (&'a str, T)>) -> Self {
+    pub fn new<'a>(entries: impl IntoIterator<Item = (&'a str, T)>) -> Self {
         Self {
             entries: entries
                 .into_iter()
@@ -52,23 +52,23 @@ impl<T: Copy> StateTable<T> {
     }
 
     /// The value of the rule state whose name hash is `state`, if it is one of the table's.
-    pub(crate) fn get(&self, state: u32) -> Option<T> {
+    pub fn get(&self, state: u32) -> Option<T> {
         self.entries.get(&state).copied()
     }
 }
 
 /// A set of rule states, by the hash of their names.
 #[derive(Debug, Clone)]
-pub(crate) struct StateSet(StateTable<()>);
+pub struct StateSet(StateTable<()>);
 
 impl StateSet {
     /// Hash each state's name.
-    pub(crate) fn new<'a>(names: impl IntoIterator<Item = &'a str>) -> Self {
+    pub fn new<'a>(names: impl IntoIterator<Item = &'a str>) -> Self {
         Self(StateTable::new(names.into_iter().map(|name| (name, ()))))
     }
 
     /// Whether the rule state whose name hash is `state` is one of the set's.
-    pub(crate) fn contains(&self, state: u32) -> bool {
+    pub fn contains(&self, state: u32) -> bool {
         self.0.get(state).is_some()
     }
 }

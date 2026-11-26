@@ -19,14 +19,14 @@ use crate::config::engine::{
 };
 
 /// One part of the configuration, of type `T`, at `path` in the settings file.
-pub(crate) struct ConfigSlot<T: 'static> {
+pub struct ConfigSlot<T: 'static> {
     path: &'static str,
     projection: OnceLock<Projection<T>>,
 }
 
 impl<T: 'static> ConfigSlot<T> {
     /// A slot for the part at `path` (`hud`, `controllers`), not yet bound.
-    pub(crate) const fn new(path: &'static str) -> Self {
+    pub const fn new(path: &'static str) -> Self {
         Self {
             path,
             projection: OnceLock::new(),
@@ -34,13 +34,13 @@ impl<T: 'static> ConfigSlot<T> {
     }
 
     /// The part's path in the settings file; empty for the whole root.
-    #[cfg(test)]
-    pub(crate) fn path(&self) -> &'static str {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn path(&self) -> &'static str {
         self.path
     }
 
     /// Give the slot its projection. Binding a slot twice is a programming error and panics.
-    pub(crate) fn bind(&self, projection: Projection<T>) {
+    pub fn bind(&self, projection: Projection<T>) {
         assert!(
             self.projection.set(projection).is_ok(),
             "config: the slot `{}` is bound twice",
@@ -51,7 +51,7 @@ impl<T: 'static> ConfigSlot<T> {
     /// Lock the configuration to read the part, or to change it on the payload's own account (a
     /// fallback, a value discovered at runtime), which is not a reason to save. The guard derefs
     /// to the part; see the [nesting rule](crate::config::engine::store#lock-nesting).
-    pub(crate) fn lock(&self) -> SlotGuard<T> {
+    pub fn lock(&self) -> SlotGuard<T> {
         let (guard, held) = store::lock_mapped(self.projection().exclusive);
         SlotGuard { guard, _held: held }
     }
@@ -60,13 +60,13 @@ impl<T: 'static> ConfigSlot<T> {
     /// only for `f`, so the read can sit inside a larger expression that locks the configuration
     /// again (`HUD.query(|h| h.quad) && VR.query(|v| v.mirror)`), which two [`lock`](Self::lock)
     /// temporaries in one statement cannot.
-    pub(crate) fn query<R>(&self, f: impl FnOnce(&T) -> R) -> R {
+    pub fn query<R>(&self, f: impl FnOnce(&T) -> R) -> R {
         f(&self.lock())
     }
 
     /// Lock the configuration for a change the user meant. The guard derefs to the part; when it
     /// drops, the configuration is marked changed and a save follows once the changes settle.
-    pub(crate) fn edit(&self) -> EditGuard<T> {
+    pub fn edit(&self) -> EditGuard<T> {
         let projection = *self.projection();
         let mut root = store::lock_root();
         let before = automatic::observe(&mut *root);
@@ -83,7 +83,7 @@ impl<T: 'static> ConfigSlot<T> {
     }
 
     /// The part's default: its value in the registered schema's defaults.
-    pub(crate) fn default_value(&self) -> T
+    pub fn default_value(&self) -> T
     where
         T: Clone,
     {
@@ -91,7 +91,7 @@ impl<T: 'static> ConfigSlot<T> {
     }
 
     /// The part in `root`, which must be of the registered schema's type.
-    pub(crate) fn project_mut<'a>(&self, root: &'a mut Root) -> &'a mut T {
+    pub fn project_mut<'a>(&self, root: &'a mut Root) -> &'a mut T {
         (self.projection().exclusive)(root)
     }
 
@@ -108,13 +108,13 @@ impl<T: 'static> ConfigSlot<T> {
 
 /// The functions that find a slot's part in the root. Build one with
 /// [`projection!`](crate::config::engine::projection).
-pub(crate) struct Projection<T: 'static> {
+pub struct Projection<T: 'static> {
     shared: for<'a> fn(&'a Root) -> &'a T,
     exclusive: for<'a> fn(&'a mut Root) -> &'a mut T,
 }
 
 impl<T: 'static> Projection<T> {
-    pub(crate) const fn new(
+    pub const fn new(
         shared: for<'a> fn(&'a Root) -> &'a T,
         exclusive: for<'a> fn(&'a mut Root) -> &'a mut T,
     ) -> Self {
@@ -132,6 +132,7 @@ impl<T: 'static> Copy for Projection<T> {}
 
 /// The [`Projection`] of the field path `$field` (`controllers.input`) in a root of type `$root`,
 /// or of the whole root when no path is given.
+#[macro_export]
 macro_rules! projection {
     ($root:ty $(, $($field:ident).+)?) => {
         $crate::config::engine::Projection::new(
@@ -140,10 +141,10 @@ macro_rules! projection {
         )
     };
 }
-pub(crate) use projection;
+pub use crate::projection;
 
 /// The guard [`ConfigSlot::lock`] returns.
-pub(crate) struct SlotGuard<T: 'static> {
+pub struct SlotGuard<T: 'static> {
     guard: MappedGuard<T>,
     _held: Held,
 }
@@ -165,7 +166,7 @@ impl<T: 'static> DerefMut for SlotGuard<T> {
 /// The guard [`ConfigSlot::edit`] returns. Holding it through a frame of debug UI without changing
 /// anything is harmless: the save compares the serialized text with the file's and writes nothing
 /// when they match.
-pub(crate) struct EditGuard<T: 'static> {
+pub struct EditGuard<T: 'static> {
     root: RootGuard,
     projection: Projection<T>,
     before: Observed,

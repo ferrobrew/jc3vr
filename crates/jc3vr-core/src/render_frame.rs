@@ -29,19 +29,25 @@ use parking_lot::Mutex;
 
 /// A per-frame value: written for the frame being prepared, read for the frame the reader's thread
 /// is drawing (see the module docs).
-pub(crate) struct RenderFrameSlot<T: Copy> {
+pub struct RenderFrameSlot<T: Copy> {
     entries: Mutex<[Option<(u64, T)>; 2]>,
 }
 
+impl<T: Copy> Default for RenderFrameSlot<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Copy> RenderFrameSlot<T> {
-    pub(crate) const fn new() -> Self {
+    pub const fn new() -> Self {
         Self {
             entries: Mutex::new([None, None]),
         }
     }
 
     /// Write the value for the frame being prepared, replacing any written earlier for it.
-    pub(crate) fn set(&self, value: T) {
+    pub fn set(&self, value: T) {
         let generation = PREPARING.load(Ordering::Acquire);
         let mut entries = self.entries.lock();
         let index = index_for(&entries, generation);
@@ -50,7 +56,7 @@ impl<T: Copy> RenderFrameSlot<T> {
 
     /// Modify the value for the frame being prepared, starting from `initial` when nothing has been
     /// written for it yet.
-    pub(crate) fn update(&self, initial: T, f: impl FnOnce(&mut T)) {
+    pub fn update(&self, initial: T, f: impl FnOnce(&mut T)) {
         let generation = PREPARING.load(Ordering::Acquire);
         let mut entries = self.entries.lock();
         let index = index_for(&entries, generation);
@@ -65,7 +71,7 @@ impl<T: Copy> RenderFrameSlot<T> {
     /// The value for the frame this thread reads: the dispatched frame on a pinned draw task, else
     /// the frame being prepared. The latest value written at or before that frame, so a frame that
     /// wrote nothing reads the one before it; `None` when nothing that old is held.
-    pub(crate) fn get(&self) -> Option<T> {
+    pub fn get(&self) -> Option<T> {
         let generation = reader_generation();
         select(&self.entries.lock(), generation)
     }
@@ -73,24 +79,24 @@ impl<T: Copy> RenderFrameSlot<T> {
 
 /// Open the next frame's generation. Called once per frame on the game thread at the top of the
 /// render update, before any slot is written for it.
-pub(crate) fn begin_preparing() {
+pub fn begin_preparing() {
     PREPARING.fetch_add(1, Ordering::AcqRel);
 }
 
 /// Record that the dispatch being issued draws the frame being prepared. Called on the game thread
 /// in the engine's `Draw` prologue, before the draw task is handed the dispatch.
-pub(crate) fn note_dispatch() {
+pub fn note_dispatch() {
     DISPATCHED.store(PREPARING.load(Ordering::Acquire), Ordering::Release);
 }
 
 /// Pin the dispatched frame's generation on this thread until the returned guard drops. Held by
 /// the draw task's detour for the extent of the task.
-pub(crate) fn pin_dispatch() -> DispatchPin {
+pub fn pin_dispatch() -> DispatchPin {
     DispatchPin(PINNED.replace(Some(DISPATCHED.load(Ordering::Acquire))))
 }
 
 /// Restores this thread's previous pin when dropped.
-pub(crate) struct DispatchPin(Option<u64>);
+pub struct DispatchPin(Option<u64>);
 
 impl Drop for DispatchPin {
     fn drop(&mut self) {

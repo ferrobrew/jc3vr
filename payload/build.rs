@@ -14,8 +14,10 @@ use std::{
 
 fn main() {
     // Re-stamp whenever any payload source changes, so the stamp tracks the code it was built
-    // from rather than the last time this script happened to run.
+    // from rather than the last time this script happened to run. The layer crates the payload is
+    // built from count as its source.
     println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=../crates/jc3vr-core/src");
     let stamp = jiff::Zoned::now().strftime("%Y-%m-%d %H:%M:%S").to_string();
     println!("cargo:rustc-env=jc3vr_build_stamp={stamp}");
     embed_checklist();

@@ -8,13 +8,13 @@ use crate::frame_timing::slot::{Kind, Slot, ThreadClass};
 
 /// One slot's accumulated time over a window.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub(crate) struct SlotTotals {
+pub struct SlotTotals {
     /// Time inside the slot's scopes, excluding the scopes nested in them.
-    pub(crate) self_ns: u64,
+    pub self_ns: u64,
     /// How many scopes of the slot closed.
-    pub(crate) calls: u64,
+    pub calls: u64,
     /// The longest single scope of the slot, nested scopes included.
-    pub(crate) max_ns: u64,
+    pub max_ns: u64,
 }
 
 impl SlotTotals {
@@ -35,7 +35,7 @@ impl SlotTotals {
 /// How many sim ticks a game frame ran, for the split of the frame intervals: whether a slow
 /// frame is a frame that carried a tick.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum TickLoad {
+pub enum TickLoad {
     /// The frame ran no sim tick: it interpolated between the last two.
     None,
     /// The frame ran one sim tick.
@@ -46,8 +46,7 @@ pub(crate) enum TickLoad {
 
 impl TickLoad {
     /// Every load, in index order.
-    pub(crate) const ALL: [TickLoad; Self::COUNT] =
-        [TickLoad::None, TickLoad::One, TickLoad::Several];
+    pub const ALL: [TickLoad; Self::COUNT] = [TickLoad::None, TickLoad::One, TickLoad::Several];
 
     /// The number of loads.
     pub(crate) const COUNT: usize = 3;
@@ -67,7 +66,7 @@ impl TickLoad {
     }
 
     /// The load's name in the log line and the debug UI.
-    pub(crate) const fn name(self) -> &'static str {
+    pub const fn name(self) -> &'static str {
         match self {
             TickLoad::None => "0",
             TickLoad::One => "1",
@@ -78,13 +77,13 @@ impl TickLoad {
 
 /// The frame intervals of one group of frames over a window.
 #[derive(Debug, Copy, Clone, Default, PartialEq, Eq)]
-pub(crate) struct FrameGroup {
+pub struct FrameGroup {
     /// How many frames the group holds.
-    pub(crate) frames: u64,
+    pub frames: u64,
     /// The sum of their intervals.
     pub(crate) frame_ns: u64,
     /// The longest of their intervals.
-    pub(crate) frame_max_ns: u64,
+    pub frame_max_ns: u64,
 }
 
 impl FrameGroup {
@@ -96,7 +95,7 @@ impl FrameGroup {
     };
 
     /// The mean interval in milliseconds, or zero without frames.
-    pub(crate) fn mean_ms(&self) -> f64 {
+    pub fn mean_ms(&self) -> f64 {
         if self.frames == 0 {
             return 0.0;
         }
@@ -118,23 +117,23 @@ impl FrameGroup {
 
 /// Everything the counters accumulated over a window.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Totals {
+pub struct Totals {
     /// Game frames that ended in the window, as counted by the interval between successive
     /// `Game::Update` entries.
-    pub(crate) frames: u64,
+    pub frames: u64,
     /// The sum of those frame intervals.
     pub(crate) frame_ns: u64,
     /// The longest of those frame intervals.
-    pub(crate) frame_max_ns: u64,
+    pub frame_max_ns: u64,
     /// The sim ticks the window's frames ran.
-    pub(crate) sim_ticks: u64,
+    pub sim_ticks: u64,
     /// The window's frames split by how many sim ticks each ran, indexed by [`TickLoad::index`].
     pub(crate) by_tick_load: [FrameGroup; TickLoad::COUNT],
     /// Per-slot totals, indexed by [`Slot::index`].
-    pub(crate) slots: [SlotTotals; Slot::COUNT],
+    pub slots: [SlotTotals; Slot::COUNT],
     /// Self time by the thread it ran on and its kind, indexed by [`ThreadClass::index`] then
     /// [`Kind::index`].
-    pub(crate) buckets: [[u64; Kind::COUNT]; ThreadClass::COUNT],
+    pub buckets: [[u64; Kind::COUNT]; ThreadClass::COUNT],
 }
 
 impl Default for Totals {
@@ -184,24 +183,24 @@ impl Totals {
     }
 
     /// The frames that ran `load` sim ticks.
-    pub(crate) fn tick_load(&self, load: TickLoad) -> &FrameGroup {
+    pub fn tick_load(&self, load: TickLoad) -> &FrameGroup {
         &self.by_tick_load[load.index()]
     }
 
     /// A slot's totals.
-    pub(crate) fn slot(&self, slot: Slot) -> &SlotTotals {
+    pub fn slot(&self, slot: Slot) -> &SlotTotals {
         &self.slots[slot.index()]
     }
 
     /// The self time a thread class spent on one kind of work.
-    pub(crate) fn bucket(&self, class: ThreadClass, kind: Kind) -> u64 {
+    pub fn bucket(&self, class: ThreadClass, kind: Kind) -> u64 {
         self.buckets[class.index()][kind.index()]
     }
 
     /// The game thread's time per frame that no timed scope covers: the frame interval minus every
     /// self time recorded on the game thread. This is the engine's work outside `Game::Update` (the
     /// message pump and the main loop around it) plus timer overhead.
-    pub(crate) fn game_untracked_ns(&self) -> u64 {
+    pub fn game_untracked_ns(&self) -> u64 {
         let covered = self.buckets[ThreadClass::Game.index()]
             .iter()
             .fold(0u64, |sum, ns| sum.saturating_add(*ns));
@@ -209,7 +208,7 @@ impl Totals {
     }
 
     /// `ns` as milliseconds per frame over this window, or zero for a window with no frames.
-    pub(crate) fn per_frame_ms(&self, ns: u64) -> f64 {
+    pub fn per_frame_ms(&self, ns: u64) -> f64 {
         if self.frames == 0 {
             return 0.0;
         }
@@ -217,17 +216,17 @@ impl Totals {
     }
 
     /// The mean frame interval in milliseconds.
-    pub(crate) fn mean_frame_ms(&self) -> f64 {
+    pub fn mean_frame_ms(&self) -> f64 {
         self.per_frame_ms(self.frame_ns)
     }
 }
 
 /// A finished window, ready to show: its totals and how long it ran.
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct Report {
+pub struct Report {
     /// The wall-clock length of the window, in seconds.
-    pub(crate) window_s: f64,
-    pub(crate) totals: Totals,
+    pub window_s: f64,
+    pub totals: Totals,
 }
 
 impl fmt::Display for Report {
@@ -297,7 +296,7 @@ impl fmt::Display for Report {
 }
 
 /// Nanoseconds as milliseconds.
-pub(crate) fn ns_to_ms(ns: u64) -> f64 {
+pub fn ns_to_ms(ns: u64) -> f64 {
     ns as f64 / 1e6
 }
 

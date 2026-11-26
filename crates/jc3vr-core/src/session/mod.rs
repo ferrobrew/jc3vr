@@ -34,9 +34,11 @@ use std::{
     sync::OnceLock,
 };
 
-pub(crate) use crate::session::mark::{request_mark, set_mark_handler};
-pub use crate::session::root::{ENV_VAR, Source};
 use crate::session::root::{Resolution, RootError};
+pub use crate::session::{
+    mark::{request_mark, set_mark_handler},
+    root::{ENV_VAR, Source},
+};
 
 /// The files kept once per session, directly in the session root.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

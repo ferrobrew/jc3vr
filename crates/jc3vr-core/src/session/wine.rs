@@ -19,7 +19,7 @@ use windows::{
 
 /// Why a path could not be converted.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ConversionError {
+pub enum ConversionError {
     /// The process is not running under wine (the export is missing).
     NotWine,
     /// The path holds a NUL, which neither namespace allows.

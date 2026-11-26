@@ -56,7 +56,6 @@
 //! [`TestingConfig`](crate::testing::TestingConfig) in `testing::config`, and
 //! [`BodyDimensions`](crate::controllers::body::BodyDimensions) in `controllers::body`.
 
-pub(crate) mod engine;
 pub(crate) mod format;
 pub(crate) mod load;
 mod schema;
@@ -65,6 +64,7 @@ pub(crate) mod validate;
 
 use std::sync::Once;
 
+pub(crate) use jc3vr_core::config::engine;
 use serde::{Deserialize, Serialize};
 
 pub(crate) use crate::config::engine::{paths, write};

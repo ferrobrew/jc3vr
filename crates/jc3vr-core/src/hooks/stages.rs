@@ -11,21 +11,21 @@ use parking_lot::Mutex;
 
 /// Run `activate` once the composed hook library is enabled and its state is recorded. A failed
 /// installation runs none of them.
-pub(crate) fn register_post_enable(activate: fn()) {
+pub fn register_post_enable(activate: fn()) {
     POST_ENABLE.lock().push(activate);
 }
 
 /// Run `guard` at hook removal, after the shutdown commit is confirmed and before the hook library
 /// is disabled. A guard returns false to refuse removal, which leaves the image mapped; the guards
 /// after it do not run. A guard that refuses logs its own reason.
-pub(crate) fn register_pre_unpatch(guard: fn() -> bool) {
+pub fn register_pre_unpatch(guard: fn() -> bool) {
     PRE_UNPATCH.lock().push(guard);
 }
 
 /// Run `check` at hook removal, after the hook library is disabled and every patch is reverted. A
 /// check returns false when payload code may still be running, which leaves the image mapped; the
 /// checks after it do not run. A check that refuses logs its own reason.
-pub(crate) fn register_post_unpatch(check: fn() -> bool) {
+pub fn register_post_unpatch(check: fn() -> bool) {
     POST_UNPATCH.lock().push(check);
 }
 

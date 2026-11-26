@@ -16,15 +16,13 @@
 //!
 //! The module splits along its consumers. The core (this module, [`blocks`], [`capture`], and
 //! [`chrome_trace`]) holds the scopes, the frame advance, and the trace capture, and calls into
-//! neither half above it. [`gpu`] is the render half: the timestamp lane over the draw thread's
-//! dispatches and the render-pass scopes. [`ui`] is the debug UI's half, the Performance tab's
-//! panel.
+//! neither half above it, so it lives in the core crate. The payload's `profiler::gpu` is the render
+//! half: the timestamp lane over the draw thread's dispatches and the render-pass scopes. Its
+//! `profiler::ui` is the debug UI's half, the Performance tab's panel.
 
 pub mod blocks;
 pub mod capture;
 pub mod chrome_trace;
-pub mod gpu;
-pub mod ui;
 
 use std::{
     collections::HashMap,
@@ -166,7 +164,7 @@ pub fn scope_for_name(name: &str) -> Option<EngineScope> {
     EngineScope::begin(id, "")
 }
 
-pub(crate) fn named_scope_id(name: &str) -> Option<ScopeId> {
+pub fn named_scope_id(name: &str) -> Option<ScopeId> {
     let mut registry = NAMED_SCOPES.lock();
     let registry = registry.get_or_insert_with(HashMap::new);
     if let Some(&id) = registry.get(name) {
