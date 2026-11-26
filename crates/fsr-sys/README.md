@@ -21,6 +21,6 @@ The regenerator is the separate `shadergen` crate — kept out of `fsr-sys` so i
 
 Requirements (non-Windows host): `wine` on `PATH` (provided by `shell.nix`) and network access on the first run. The download and 7-zip extraction are done in-crate (`ureq` + `sevenz-rust2`), so no `curl`/`7z` needed.
 
-Environment overrides (all optional): `FFX_SC`, `FSR_VENDOR_DIR`, `FSR_GENERATED_DIR`, `WINE`, `WINEPREFIX`, `D3DCOMPILER_DLL` — see the module docs in `shadergen/src/main.rs`.
+Environment overrides (all optional): `FFX_SC`, `FSR_VENDOR_DIR`, `FSR_GENERATED_DIR`, `WINE`, `WINEPREFIX`, `D3DCOMPILER_DLL` — see the module docs in `tools/shadergen/src/main.rs`.
 
 The compile recipe (pass list, the `FFX_HALF` 16-bit variants, and the compiler args) mirrors the upstream CMake (`src/ffx-fsr2-api/CMakeLists.txt` + `src/ffx-fsr2-api/dx11/CMakeLists.txt`); if a version bump changes those, update `PASSES` / the `*_ARGS` constants in `shadergen` to match.

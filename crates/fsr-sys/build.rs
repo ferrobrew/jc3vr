@@ -38,7 +38,7 @@ fn main() {
             "fsr-sys: generated FSR2 shader headers are missing and {HEADERS_ARCHIVE} did not \
              unpack them.\n       Regenerate both with:\n           \
              cargo run -p shadergen --target x86_64-unknown-linux-gnu\n       \
-             (see fsr-sys/README.md)."
+             (see crates/fsr-sys/README.md)."
         );
     }
 
@@ -93,5 +93,5 @@ fn unpack_headers(archive: &Path, dest: &Path) {
 fn vendor_dir(crate_dir: &Path) -> PathBuf {
     std::env::var_os("FSR_VENDOR_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| crate_dir.join("../vendor/FidelityFX-FSR2-DX11"))
+        .unwrap_or_else(|| crate_dir.join("../../vendor/FidelityFX-FSR2-DX11"))
 }

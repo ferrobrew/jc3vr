@@ -18,7 +18,8 @@ pub const ALLOW_MISSING: &str = "JC3VR_ALLOW_MISSING_SHADER_CORPUS";
 /// The local extracted-shader directory. Panics with instructions when it is absent, unless
 /// [`ALLOW_MISSING`] is set, in which case it returns `None` and the caller skips.
 pub fn shader_dir() -> Option<PathBuf> {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../tools/shaders/Shaders_F.shaders");
+    let path =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tools/shaders/Shaders_F.shaders");
     match path.canonicalize() {
         Ok(dir) if dir.is_dir() => Some(dir),
         _ if std::env::var_os(ALLOW_MISSING).is_some() => {

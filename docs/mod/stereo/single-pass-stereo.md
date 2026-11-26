@@ -140,7 +140,7 @@ A remapped shader that reads the view-projection rows but not `cb0[4]` takes the
 
 Compiling a reference VS that writes `SV_ViewportArrayIndex` (`scripts/dxbc.sh compile`, a
 `D3DCompile` harness over the `dxbc-tool` crate) settles the encodings the transform reproduces. It is
-committed as `dxbc-stereo/tests/data/ref_vs50.dxbc` and the unit tests diff against it byte for byte.
+committed as `crates/dxbc-stereo/tests/data/ref_vs50.dxbc` and the unit tests diff against it byte for byte.
 
 - **A vs_5_0 writing `SV_ViewportArrayIndex` compiles** — vs_5_1 is not needed. But fxc adds an
   **`SFI0` (shader-feature-info) chunk**, an 8-byte body with **bit 13 (`0x2000`)** set:

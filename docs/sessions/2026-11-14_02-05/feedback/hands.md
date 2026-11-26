@@ -419,7 +419,7 @@ It also conflicts with the binding answer for idle. Idle on foot, the legs and b
 What the data supports instead is aligning Rico's body to the player (the "align Rico, don't decouple" principle) during an idle reach:
 
 - Tighten the idle body yaw's dead band, or turn the body toward the head's yaw target (or the estimate's pelvis yaw) faster while a hand reaches toward a belt or hip volume, below the chest and within about 0.35 m of the pelvis.
-- Find why the estimate-driven turn at 2047-2050 overshot the head by about 21 degrees and held there. That belongs to the body area (`body-rig/src/rig.rs`, the yaw and estimate stage).
+- Find why the estimate-driven turn at 2047-2050 overshot the head by about 21 degrees and held there. That belongs to the body area (`crates/body-rig/src/rig.rs`, the yaw and estimate stage).
 - Optionally, orient the magazine pouch by the chest girdle, or a blend of chest and pelvis, instead of the pelvis alone. The chest tracked the head within a few degrees in both windows.
 
 #### Fixes for item 2

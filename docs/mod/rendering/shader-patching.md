@@ -14,7 +14,7 @@ The two fragment patches are byte patches at fixed immediates, found by scanning
 
 ## The DXBC checksum
 
-Every patch recomputes the container checksum before the create call, with `dxbc_stereo::refresh_checksum` (`dxbc-stereo/src/checksum.rs`). The D3D stack under Proton rejects a blob whose stored checksum does not match ([shaders.md, "The DXBC container checksum"](../../engine/rendering/shaders.md#the-dxbc-container-checksum)), so a patch that skips this step fails to create the shader. For the PCF patch the symptom is that the shadow shaders fail to create and the scene renders near-black with speckle. The structural rewrites reassemble the container and refresh the checksum themselves.
+Every patch recomputes the container checksum before the create call, with `dxbc_stereo::refresh_checksum` (`crates/dxbc-stereo/src/checksum.rs`). The D3D stack under Proton rejects a blob whose stored checksum does not match ([shaders.md, "The DXBC container checksum"](../../engine/rendering/shaders.md#the-dxbc-container-checksum)), so a patch that skips this step fails to create the shader. For the PCF patch the symptom is that the shadow shaders fail to create and the scene renders near-black with speckle. The structural rewrites reassemble the container and refresh the checksum themselves.
 
 ## Reloading the shaders
 

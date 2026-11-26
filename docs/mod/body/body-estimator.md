@@ -23,7 +23,7 @@ A window is 80 frames at 60 Hz. It splits into a slow stream, every second frame
 
 ## The CPU reference
 
-`EgoPoser::infer` is the network in plain Rust, matrix products through `matrixmultiply`. It is written to be clear rather than fast, and golden tests check it against the original PyTorch model's outputs on real windows from a recorded take (`body-estimator/tests/fixtures/egoposer_golden.safetensors`, inputs and outputs only), every stage to a relative error of about 1e-6. `EgoPoser::infer_traced` also returns the intermediate tensors.
+`EgoPoser::infer` is the network in plain Rust, matrix products through `matrixmultiply`. It is written to be clear rather than fast, and golden tests check it against the original PyTorch model's outputs on real windows from a recorded take (`crates/body-estimator/tests/fixtures/egoposer_golden.safetensors`, inputs and outputs only), every stage to a relative error of about 1e-6. `EgoPoser::infer_traced` also returns the intermediate tensors.
 
 Only the last token reaches the decoders, so the last encoder layer computes its output alone: its keys and values come from all 40 tokens, but the query, the attention's output projection, both residuals, both layer norms, and the feed-forward are the last token's only. After the attention every token's row is computed independently of the others', so this is exact. On one core of the development machine (release build, single-threaded, `taskset` to one CPU) it took an inference from 3.0 ms to 2.56 ms. That is still too much to spend on the game's CPU every frame, which is why the GPU executor exists; the CPU pass stays as the reference the GPU pass is tested against.
 
@@ -35,7 +35,7 @@ Creating it uploads the weights once. The weight matrices are stored as 32-bit o
 
 Each inference never waits on the GPU. `submit` computes the 40 token inputs on the CPU (the slow stream's frame plus the fast stream's; the embedding is linear, so embedding the sum with the bias added twice gives the summed embeddings), uploads them, records the pass on the given device context, and copies the estimate into the next staging buffer of a ring of three. A frame or more later, `poll` maps the oldest staging buffer without waiting and returns its estimate with the number `submit` gave it once the GPU has finished. An estimate still uncollected when its staging buffer comes round again is dropped. `infer_blocking` waits instead, for tests and tools. The executor saves and restores the compute state it changes, so it can record onto a context the engine shares.
 
-The pass is four kernels in `body-estimator/src/shaders/`, compiled by `shadergen` into committed `.dxbc` beside their sources:
+The pass is four kernels in `crates/body-estimator/src/shaders/`, compiled by `shadergen` into committed `.dxbc` beside their sources:
 
 - `egoposer_linear.hlsl`, a linear layer with an optional ReLU, compiled once for 32-bit and once for 16-bit weights. A thread group computes one output for eight rows; each row's sixteen threads split the inputs four values at a time, interleaved so the weight row and the input rows are read coalesced, and their partial sums meet in groupshared memory. Each thread keeps a single running sum, so nothing spills to local memory.
 - `egoposer_layer_norm.hlsl`, the residual add and the layer norm, a thread group per row with tree reductions for the mean and the variance.
@@ -61,7 +61,7 @@ The tests print the adapter they run on and every comparison's maximum error. On
 
 In the game the pass's CPU side (posting the window, recording the dispatches, collecting finished estimates) is timed in its own frame-timing slot, `body_estimator` ([frame-timing.md](../performance/frame-timing.md)), apart from the draw task's other work. The 14 November take's median frame rose from 20.5 to 24.5 ms against the take before, with the estimator the obvious suspect; the slot and an A/B with `controllers.body.estimator.enabled` off in one session settle it.
 
-`body-estimator/examples/egoposer_bench.rs` times the CPU reference and, on Windows, the GPU executor. For the real GPU, run it through DXVK:
+`crates/body-estimator/examples/egoposer_bench.rs` times the CPU reference and, on Windows, the GPU executor. For the real GPU, run it through DXVK:
 
 ```sh
 cargo xwin build --xwin-cache-dir .xwin --target x86_64-pc-windows-msvc -p body-estimator --release --example egoposer_bench

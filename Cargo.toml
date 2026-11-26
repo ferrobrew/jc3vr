@@ -1,5 +1,21 @@
 [workspace]
-members = ["injector", "jc3gi", "payload", "fsr-sys", "shadergen", "dxbc-stereo", "tracking-format", "body-rig", "body-estimator", "tools/dxbc-tool", "tools/scaleform-gfx-examine", "tools/tracking-synth"]
+members = [
+    # Runtime: the injector, the injected payload, and the game bindings.
+    "injector",
+    "payload",
+    "jc3gi",
+    # Shared libraries used by the payload and the offline tools.
+    "crates/body-estimator",
+    "crates/body-rig",
+    "crates/dxbc-stereo",
+    "crates/fsr-sys",
+    "crates/tracking-format",
+    # Offline tools.
+    "tools/dxbc-tool",
+    "tools/scaleform-gfx-examine",
+    "tools/shadergen",
+    "tools/tracking-synth",
+]
 resolver = "3"
 default-members = ["injector"]
 
