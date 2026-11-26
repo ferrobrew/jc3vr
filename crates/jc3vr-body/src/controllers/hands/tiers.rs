@@ -35,7 +35,6 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use crate::controllers::{
-    body::{config::BODY_REMAP_CONFIG, procedural::config::ProceduralMode},
     hands::{anchor::ANCHOR_BLEND_S, config::MOUNTED_AIM_BY_HANDS},
     held,
     mode::{self, AirborneVariant, CharacterSnapshot, Detection, Mode, OnFootVariant, Traversal},
@@ -449,9 +448,8 @@ pub fn weights() -> [f32; 2] {
 /// Classify this input tick and advance the blends. Called from the game stage after the mode
 /// detector, while the controllers are enabled.
 pub fn tick(game: &GameTick<'_>, dt: f32) {
-    let swim_arms = BODY_REMAP_CONFIG.query(|c| c.procedural.mode == ProceduralMode::Full);
     let config = TierConfig {
-        table: HandTierTable::PLAN.with_swim_arms(swim_arms),
+        table: HandTierTable::PLAN.with_swim_arms(true),
     };
     let dominant = scheme::acting_hand();
     let mounted_anchor = *MOUNTED_AIM_BY_HANDS.lock();

@@ -28,7 +28,6 @@ impl Track {
                 Self::Hold
             }
             Case::NotInHeadset
-            | Case::SwitchedOff
             | Case::NotInGameplay
             | Case::Sequence
             | Case::Dead
@@ -210,13 +209,7 @@ mod tests {
         ] {
             assert_eq!(Track::of(case), Track::Hold, "{case:?}");
         }
-        for case in [
-            Case::SwitchedOff,
-            Case::Flight,
-            Case::Swimming,
-            Case::Vehicle,
-            Case::Ragdoll,
-        ] {
+        for case in [Case::Flight, Case::Swimming, Case::Vehicle, Case::Ragdoll] {
             assert_eq!(Track::of(case), Track::Reset, "{case:?}");
         }
         // A held heading carries on smoothly when the follower measures again.

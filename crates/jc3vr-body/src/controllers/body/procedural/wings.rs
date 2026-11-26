@@ -32,7 +32,6 @@ use crate::controllers::{
         self,
         procedural::{
             authority::Case,
-            config::ProceduralBodyConfig,
             gate_state::State,
             rig::{Rig, RigBone},
             solver::{
@@ -41,6 +40,7 @@ use crate::controllers::{
                 pose::RigPose,
                 wings::{PlayerArms, RicoArms, WingTarget, flight_heading, wing_targets},
             },
+            tuning::ProceduralTuning,
         },
     },
     hands::{config::HANDS_CONFIG, ik::queue_model_wrists, pose::cockpit_hand},
@@ -124,7 +124,7 @@ impl State {
     pub(super) fn step_wings(
         &mut self,
         request: &WingRequest<'_>,
-        config: &ProceduralBodyConfig,
+        config: &ProceduralTuning,
     ) -> Option<WingQueue> {
         let WingRequest {
             case,

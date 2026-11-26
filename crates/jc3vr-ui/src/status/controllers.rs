@@ -6,9 +6,7 @@ use std::time::Instant;
 use jc3vr_body::controllers::{
     body::{
         procedural,
-        procedural::{
-            ProceduralStatus, authority::Case, config::ProceduralMode, twist::TwistStatus,
-        },
+        procedural::{ProceduralStatus, authority::Case, twist::TwistStatus},
     },
     hands::{grip, grip::GripRead},
     held::{
@@ -225,21 +223,14 @@ fn neutral_head() -> Line {
 }
 
 fn procedural_mode() -> Line {
-    let mode = read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode);
-    procedural_mode_line(mode, &procedural::published_status(), Instant::now())
+    procedural_mode_line(&procedural::published_status(), Instant::now())
 }
 
 fn hand_over() -> Line {
-    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
     hand_over_line(procedural::published_status().case)
 }
 
 fn twist_bones() -> Line {
-    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
     twist_line(&procedural::twist::status())
 }
 
@@ -442,18 +433,15 @@ fn steady_view_line(status: &AnchorStatus) -> Line {
     }
 }
 
-fn procedural_mode_line(mode: ProceduralMode, status: &ProceduralStatus, now: Instant) -> Line {
-    let label = match mode {
-        ProceduralMode::Off => return Line::off(""),
-        ProceduralMode::Full => prose("Full body"),
-    };
+fn procedural_mode_line(status: &ProceduralStatus, now: Instant) -> Line {
+    let label = prose("Full body");
     if let Some(error) = status.rig_error {
         return Line::failed(prose("Rig, see log")).with_note(error.to_string());
     }
-    // Whether the gate has run in this mode, however long ago: it does not run while the game is
-    // paused, which it is while the page is shown.
+    // Whether the gate has run, however long ago: it does not run while the game is paused, which
+    // it is while the page is shown.
     match status.at {
-        Some(at) if status.mode == mode => Line::ok(label).with_note(format!(
+        Some(at) => Line::ok(label).with_note(format!(
             "last gate {:.1} s ago",
             now.saturating_duration_since(at).as_secs_f32()
         )),
@@ -464,7 +452,6 @@ fn procedural_mode_line(mode: ProceduralMode, status: &ProceduralStatus, now: In
 fn hand_over_line(case: Case) -> Line {
     let word = prose(match case {
         Case::NotInHeadset => "No headset",
-        Case::SwitchedOff => "Switched off",
         Case::NotInGameplay => "Not in gameplay",
         Case::Sequence => "Sequence",
         Case::Dead => "Dead",
@@ -763,27 +750,22 @@ mod tests {
         let now = Instant::now();
         let ran = ProceduralStatus {
             at: Some(now),
-            mode: ProceduralMode::Full,
             ..ProceduralStatus::default()
         };
         assert_eq!(
-            procedural_mode_line(ProceduralMode::Full, &ran, now).text(),
+            procedural_mode_line(&ran, now).text(),
             "OK, FULL BODY"
         );
         let later = now + Duration::from_secs(60);
         assert_eq!(
-            procedural_mode_line(ProceduralMode::Full, &ran, later)
+            procedural_mode_line(&ran, later)
                 .note
                 .as_deref(),
             Some("last gate 60.0 s ago")
         );
         assert_eq!(
-            procedural_mode_line(ProceduralMode::Full, &ProceduralStatus::default(), now).health,
+            procedural_mode_line(&ProceduralStatus::default(), now).health,
             Health::Waiting
-        );
-        assert_eq!(
-            procedural_mode_line(ProceduralMode::Off, &ran, now).health,
-            Health::Off
         );
     }
 

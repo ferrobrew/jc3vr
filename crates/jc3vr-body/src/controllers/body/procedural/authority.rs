@@ -45,15 +45,13 @@
 
 use body_rig::smooth::critically_damped;
 
-use crate::controllers::body::procedural::config::ProceduralBodyConfig;
+use crate::controllers::body::procedural::tuning::ProceduralTuning;
 
 /// Why the torso is posed the way it is: the case [`classify`] matched.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub enum Case {
     #[default]
     NotInHeadset,
-    /// The procedural body is switched off and blends back to the animation.
-    SwitchedOff,
     NotInGameplay,
     Sequence,
     Dead,
@@ -93,7 +91,6 @@ impl Case {
     pub const fn label(self) -> &'static str {
         match self {
             Self::NotInHeadset => "not in the headset",
-            Self::SwitchedOff => "switched off",
             Self::NotInGameplay => "not in gameplay",
             Self::Sequence => "scripted sequence",
             Self::Dead => "dead",
@@ -393,7 +390,7 @@ impl TorsoBlend {
 
     /// Ease toward `case`'s weight over `dt` seconds, or toward the procedural pose while a flight
     /// holds the torso.
-    pub fn step(&mut self, case: Case, dt: f32, config: &ProceduralBodyConfig) -> f32 {
+    pub fn step(&mut self, case: Case, dt: f32, config: &ProceduralTuning) -> f32 {
         let target = self.hold(case, dt);
         self.target = target;
         if case.snaps() {
@@ -508,6 +505,7 @@ const SETTLE: f32 = 1e-3;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::body::procedural::tuning::TUNING;
 
     fn on_foot() -> CharacterState {
         CharacterState {
@@ -853,7 +851,7 @@ mod tests {
 
     #[test]
     fn the_torso_eases_in_smoothly_and_reaches_its_target() {
-        let config = ProceduralBodyConfig::new();
+        let config = TUNING;
         let mut blend = TorsoBlend::new();
         let mut last = 0.0;
         for _ in 0..90 {
@@ -867,7 +865,7 @@ mod tests {
 
     #[test]
     fn leaving_is_quicker_than_arriving() {
-        let config = ProceduralBodyConfig::new();
+        let config = TUNING;
         let ticks_to = |from: Case, to: Case, done: fn(f32) -> bool| {
             let mut blend = TorsoBlend::new();
             for _ in 0..300 {
@@ -882,24 +880,9 @@ mod tests {
         assert!(leave < arrive, "{leave} >= {arrive}");
     }
 
-    #[test]
-    fn switching_off_blends_back_rather_than_snapping() {
-        let config = ProceduralBodyConfig::new();
-        let mut blend = TorsoBlend::new();
-        for _ in 0..60 {
-            blend.step(Case::OnFoot, 1.0 / 30.0, &config);
-        }
-        let w = blend.step(Case::SwitchedOff, 1.0 / 30.0, &config);
-        assert!(w > 0.0 && w < 1.0);
-        for _ in 0..60 {
-            blend.step(Case::SwitchedOff, 1.0 / 30.0, &config);
-        }
-        assert_eq!(blend.weight(), 0.0);
-    }
-
     /// The weights over `seconds` of `case` at 60 Hz.
     fn ease(blend: &mut TorsoBlend, case: Case, seconds: f32) -> Vec<f32> {
-        let config = ProceduralBodyConfig::new();
+        let config = TUNING;
         (0..(seconds * 60.0) as usize)
             .map(|_| blend.step(case, 1.0 / 60.0, &config))
             .collect()
@@ -952,7 +935,7 @@ mod tests {
 
     #[test]
     fn a_ragdoll_snaps_to_the_animation() {
-        let config = ProceduralBodyConfig::new();
+        let config = TUNING;
         let mut blend = TorsoBlend::new();
         for _ in 0..60 {
             blend.step(Case::OnFoot, 1.0 / 30.0, &config);

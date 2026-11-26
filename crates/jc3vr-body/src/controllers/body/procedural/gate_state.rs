@@ -10,7 +10,6 @@ use crate::controllers::{
     body::procedural::{
         ArmContext, INITIAL_STATUS, ProceduralStatus,
         authority::{Case, TorsoBlend, WeightFollower},
-        config::ProceduralBodyConfig,
         hips::HipFollower,
         joints::{LiveRig, RigCache},
         rig::{Rig, RigBone},
@@ -24,6 +23,7 @@ use crate::controllers::{
         stance::StanceBlend,
         state::StateTracker,
         targets::TargetFade,
+        tuning::ProceduralTuning,
         wings::WingQueue,
     },
     hands::ik::deferred_wrist_targets,
@@ -93,7 +93,7 @@ impl State {
         rig: &Rig,
         pose: &RigPose,
         dt: f32,
-        config: &ProceduralBodyConfig,
+        config: &ProceduralTuning,
     ) -> [ClavicleTurn; 2] {
         let wanted = {
             let targets = unsafe { deferred_wrist_targets(character) };

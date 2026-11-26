@@ -6,7 +6,7 @@ use std::time::Instant;
 use egui::Ui;
 use jc3vr_body::controllers::body::{
     ik_body,
-    procedural::{ProceduralStatus, config::ProceduralMode, owns_body},
+    procedural::{ProceduralStatus, owns_body},
 };
 
 use crate::{
@@ -39,25 +39,23 @@ pub(super) fn procedural_readout(ui: &mut Ui, status: &ProceduralStatus) {
         status.weight,
         if owns_body() { "yes" } else { "no" },
     ));
-    if status.mode == ProceduralMode::Full {
-        ui.label(format!("Neck {:.3} m from its target", status.neck_error_m));
-        let [left, right] = status.clavicles;
-        ui.label(format!(
-            "Clavicles: left up {:+.1}° forward {:.1}° · right up {:+.1}° forward {:.1}°",
-            left.elevation.to_degrees(),
-            left.protraction.to_degrees(),
-            right.elevation.to_degrees(),
-            right.protraction.to_degrees(),
-        ));
-        ui.label(format!(
-            "Wingsuit arm targets placed: L {} R {}",
-            status.wing_hands[0], status.wing_hands[1],
-        ));
-        ui.label(format!(
-            "Square stance {:.2} · foot targets moved {}",
-            status.stance_weight, status.stance_targets,
-        ));
-    }
+    ui.label(format!("Neck {:.3} m from its target", status.neck_error_m));
+    let [left, right] = status.clavicles;
+    ui.label(format!(
+        "Clavicles: left up {:+.1}° forward {:.1}° · right up {:+.1}° forward {:.1}°",
+        left.elevation.to_degrees(),
+        left.protraction.to_degrees(),
+        right.elevation.to_degrees(),
+        right.protraction.to_degrees(),
+    ));
+    ui.label(format!(
+        "Wingsuit arm targets placed: L {} R {}",
+        status.wing_hands[0], status.wing_hands[1],
+    ));
+    ui.label(format!(
+        "Square stance {:.2} · foot targets moved {}",
+        status.stance_weight, status.stance_targets,
+    ));
 }
 
 /// The IK body's readout: its state, why it stands down, its weights, and the feet.

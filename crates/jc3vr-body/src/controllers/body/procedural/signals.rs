@@ -98,14 +98,18 @@ pub fn in_ledge_climb(now: Instant) -> bool {
         .is_some_and(|at| now.saturating_duration_since(at) <= TASK_GAP)
 }
 
-/// Whether a hit reaction's act was queued within the last `hold_s` seconds.
-pub fn in_hit_reaction(now: Instant, hold_s: f32) -> bool {
-    let hold = Duration::try_from_secs_f32(hold_s.max(0.0)).unwrap_or_default();
+/// Whether a hit reaction's act was queued within the last [`HIT_REACTION_HOLD`].
+pub fn in_hit_reaction(now: Instant) -> bool {
+    let hold = HIT_REACTION_HOLD;
     STATE
         .lock()
         .hit_reaction_at
         .is_some_and(|at| now.saturating_duration_since(at) <= hold)
 }
+
+/// How long a hit reaction (a stumble or a knock-back) holds the body on the animation after its
+/// act: the game keeps no state for the reaction's length.
+const HIT_REACTION_HOLD: Duration = Duration::from_millis(1200);
 
 /// How long after the climb's task last ran it still counts as running: a tick or two.
 const TASK_GAP: Duration = Duration::from_millis(100);

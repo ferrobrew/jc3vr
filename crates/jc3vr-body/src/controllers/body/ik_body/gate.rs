@@ -40,7 +40,7 @@ use crate::controllers::{
             authority::Case,
             rig::{Rig, RigBone},
             solver::pose::RigPose,
-            stance::StanceConfig,
+            stance::{STANCE_TOE_OUT_DEG, STANCE_WIDTH_M},
         },
         rig::grounded,
     },
@@ -52,8 +52,6 @@ use crate::controllers::{
 /// Why the IK body leaves the body to the game.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum StandDown {
-    /// The procedural torso is off, so nothing writes the seeded pose.
-    TorsoOff,
     /// The gamepad scheme: the estimator does not run.
     Gamepad,
     /// The firm ragdoll owns the legs.
@@ -77,7 +75,6 @@ pub enum StandDown {
 impl StandDown {
     pub fn label(self) -> &'static str {
         match self {
-            StandDown::TorsoOff => "the procedural torso is off",
             StandDown::Gamepad => "the gamepad scheme",
             StandDown::FirmRagdoll => "the firm ragdoll owns the legs",
             StandDown::NoEstimate => "no fresh estimate",
@@ -390,8 +387,8 @@ impl GateState {
             ankle_height_m: geometry.rico.ankle_height,
             root: input.world.w_axis.truncate(),
             stance: Stance {
-                width_m: input.stance.width_m,
-                toe_out_deg: input.stance.toe_out_deg,
+                width_m: STANCE_WIDTH_M,
+                toe_out_deg: STANCE_TOE_OUT_DEG,
             },
             animated: [animated[0], animated[1]],
             dt,
@@ -502,9 +499,6 @@ pub(crate) struct GateInput<'a> {
     pub model_neck: Vec3,
     /// The character's world transform.
     pub world: Mat4,
-    pub stance: StanceConfig,
-    /// Whether the procedural torso is on.
-    pub torso_on: bool,
     /// The weight the procedural torso is headed for: the seeded pose is written only while the
     /// torso is procedural, so the IK hands back with it.
     pub torso_target: f32,
@@ -703,9 +697,6 @@ fn classify(
     hold: &mut Option<Hold>,
 ) -> (IkState, Option<StandDown>) {
     let unchanged = |reason| (IkState::Unchanged, Some(reason));
-    if !input.torso_on {
-        return unchanged(StandDown::TorsoOff);
-    }
     if !scheme::is_controllers() {
         return unchanged(StandDown::Gamepad);
     }
@@ -887,7 +878,6 @@ mod tests {
     #[test]
     fn every_stand_down_has_a_label() {
         for reason in [
-            StandDown::TorsoOff,
             StandDown::Gamepad,
             StandDown::FirmRagdoll,
             StandDown::NoEstimate,

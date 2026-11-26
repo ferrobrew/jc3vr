@@ -36,7 +36,6 @@ use body_rig::{
 use glam::{Quat, Vec3};
 
 use crate::controllers::body::procedural::{
-    config::ProceduralBodyConfig,
     rig::RigBone,
     solver::{
         SolveInput,
@@ -46,10 +45,11 @@ use crate::controllers::body::procedural::{
             chest_pitch, swing_toward,
         },
     },
+    tuning::ProceduralTuning,
 };
 
 /// Solve the torso on the animated hips of `input.animated`, toward `input.head`.
-pub fn solve_anchored(input: &SolveInput, config: &ProceduralBodyConfig) -> RigPose {
+pub fn solve_anchored(input: &SolveInput, config: &ProceduralTuning) -> RigPose {
     let animated = input.animated;
     let mut pose = animated;
     let base = pose.position(RigBone::Spine);
@@ -150,12 +150,7 @@ pub fn solve_anchored(input: &SolveInput, config: &ProceduralBodyConfig) -> RigP
 /// Swing the spine back about its base `base` until none of the chest's points within
 /// `chest_clear_below_m` below the eyes is less than `chest_clear_back_m` behind them, along the
 /// view's level forward (the head's heading), swinging no further than [`CLEAR_LIMIT`] in all.
-fn keep_chest_clear(
-    pose: &mut RigPose,
-    input: &SolveInput,
-    base: Vec3,
-    config: &ProceduralBodyConfig,
-) {
+fn keep_chest_clear(pose: &mut RigPose, input: &SolveInput, base: Vec3, config: &ProceduralTuning) {
     let Some(heading) = head_heading(input.head_rotation.normalize()) else {
         return;
     };
@@ -205,7 +200,7 @@ pub fn clear_clavicle_offset(
     points: [Vec3; 2],
     offset: Vec3,
     input: &SolveInput,
-    config: &ProceduralBodyConfig,
+    config: &ProceduralTuning,
 ) -> Vec3 {
     let Some(heading) = head_heading(input.head_rotation.normalize()) else {
         return offset;
@@ -268,9 +263,12 @@ mod tests {
     use body_rig::angle::line_yaw;
 
     use super::*;
-    use crate::controllers::body::procedural::rig::{Rig, test_support::skeleton};
+    use crate::controllers::body::procedural::{
+        rig::{Rig, test_support::skeleton},
+        tuning::TUNING,
+    };
 
-    fn setup() -> (SolveInput, ProceduralBodyConfig) {
+    fn setup() -> (SolveInput, ProceduralTuning) {
         let rig = Rig::from_skeleton(&skeleton()).unwrap();
         let animated = RigPose {
             bones: rig.reference,
@@ -283,7 +281,7 @@ mod tests {
             torso_yaw: Some(0.0),
             delean: 0.0,
         };
-        (input, ProceduralBodyConfig::new())
+        (input, TUNING)
     }
 
     /// The clip leaning the whole body by `angle` about +Z (a bike in a turn), from the hips.

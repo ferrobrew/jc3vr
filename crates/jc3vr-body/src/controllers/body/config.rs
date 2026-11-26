@@ -3,10 +3,7 @@
 use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
-use crate::controllers::body::{
-    estimator::EstimatorConfig, ik_body::IkBodyConfig, procedural::config::ProceduralBodyConfig,
-    rig::RigConfig,
-};
+use crate::controllers::body::{estimator::EstimatorConfig, ik_body::IkBodyConfig, rig::RigConfig};
 
 /// The body remap settings, at `controllers.body` in the settings file; the payload binds the slot
 /// at startup.
@@ -24,14 +21,11 @@ pub struct BodyRemapConfig {
     /// Scale the hands' offsets from the shoulders by the ratio of the arm spans. Acts only under
     /// the controller scheme.
     pub remap_hands: bool,
-    /// The procedural body: Rico's pose built from the player's head and body.
-    pub procedural: ProceduralBodyConfig,
-    /// The body rig: who moves the root, the chase after the player's head, the lean, the
-    /// push-back, and the torso.
+    /// The body rig: the step drive's switch and the pure core's tuning.
     pub rig: RigConfig,
-    /// The learned body estimator: whether it runs, its weights, and how often.
+    /// The learned body estimator: whether it runs and its weights.
     pub estimator: EstimatorConfig,
-    /// The IK-first on-foot body: the lower body posed from the estimate while Rico stands.
+    /// The IK-first on-foot body: the firm ragdoll's target switch and the feet's contacts.
     pub ik: IkBodyConfig,
 }
 
@@ -40,7 +34,6 @@ impl BodyRemapConfig {
         Self {
             remap_head: true,
             remap_hands: true,
-            procedural: ProceduralBodyConfig::new(),
             rig: RigConfig::new(),
             estimator: EstimatorConfig::new(),
             ik: IkBodyConfig::new(),

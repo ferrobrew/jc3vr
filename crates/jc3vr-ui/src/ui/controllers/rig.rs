@@ -10,7 +10,6 @@ use jc3vr_body::controllers::body::{
     config::BodyRemapConfig,
     firm_ragdoll,
     ik_body::IkBodyConfig,
-    procedural::config::ProceduralMode,
     rig::{collision::probe::STALE_AFTER, grounded, root::RootStatus},
 };
 
@@ -103,28 +102,6 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
     {
         jc3vr_view::vr::recenter();
     }
-    let mut procedural = body.procedural.mode == ProceduralMode::Full;
-    if ui
-        .checkbox(&mut procedural, "Procedural torso")
-        .on_hover_text(
-            "Pose the spine, the neck, and the clavicles from the player on the animation's hips.",
-        )
-        .changed()
-    {
-        body.procedural.mode = if procedural {
-            ProceduralMode::Full
-        } else {
-            ProceduralMode::Off
-        };
-    }
-    ui.checkbox(
-        &mut body.procedural.firm_ragdoll,
-        "Firm ragdoll on the line and the canopy",
-    )
-    .on_hover_text(
-        "Hang the hips and legs from the physics, the upper body held to the pose, while the \
-         grapple lock holds the line and under the canopy.",
-    );
     let firm = firm_ragdoll::status();
     ui.label(match firm.preset {
         Some(preset) => format!(
@@ -148,15 +125,6 @@ pub(super) fn rig_settings(ui: &mut Ui, body: &mut BodyRemapConfig) {
     ui.checkbox(&mut r.steps.enabled, "Step after the head")
         .on_hover_text("Walk Rico under the player's neck once the head is out past a lean.");
     ik_body_settings(ui, &mut body.ik);
-    ui.collapsing("Stance", |ui| {
-        let s = &mut body.procedural.stance;
-        ui.checkbox(&mut s.enabled, "Square the feet standing idle")
-            .on_hover_text("Move the game's foot targets to a square stance under the hips.");
-        ui.add(egui::Slider::new(&mut s.width_m, 0.1..=0.6).text("Feet apart (m)"));
-        ui.add(egui::Slider::new(&mut s.toe_out_deg, -10.0..=40.0).text("Toes out (°)"));
-        ui.add(egui::Slider::new(&mut s.blend_s, 0.0..=1.5).text("Blend (s)"))
-            .on_hover_text("How quickly the stance comes in standing still and goes out moving.");
-    });
     ui.collapsing("Lean and steps", |ui| {
         let p = &mut r.pelvis;
         ui.add(egui::Slider::new(&mut p.lean_radius_m, 0.0..=0.5).text("Lean radius (m)"))

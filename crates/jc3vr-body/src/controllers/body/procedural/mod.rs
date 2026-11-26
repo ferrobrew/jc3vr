@@ -30,15 +30,13 @@
 //! - [`hips`]: the clip's hips against Rico's facing, which the yaw follow squares.
 //! - [`stance`]: the feet squared under the hips while Rico stands idle.
 //! - [`twist`]: the arms' twist bones.
-//! - [`config`]: the mode and the tuning.
+//! - [`tuning`]: the blends, the limits, and the clavicles' tuning.
 //!
-//! [`at_solve_gate`] runs the mode: `Full` poses the torso, handing it between the player and the
-//! animation by the table in [`authority`], and fades the game's own IK targets on the bones it
-//! owns. While it has any weight, [`owns_body`] tells the pre-solve IK (the body IK's torso) to
+//! [`at_solve_gate`] poses the torso, handing it between the player and the animation by the table
+//! in [`authority`], and fades the game's own IK targets on the bones it owns. While it has any weight, [`owns_body`] tells the pre-solve IK (the body IK's torso) to
 //! stand down.
 
 pub mod authority;
-pub mod config;
 mod gate_state;
 pub mod head;
 pub mod hips;
@@ -50,6 +48,7 @@ pub mod solver;
 pub mod stance;
 pub mod state;
 pub mod targets;
+pub mod tuning;
 pub mod twist;
 pub mod wings;
 
@@ -83,7 +82,6 @@ use crate::{
             ik_body::{self, GateInput},
             procedural::{
                 authority::{Case, WeightFollower, classify_locked, relaxes_legs},
-                config::{ProceduralBodyConfig, ProceduralMode},
                 gate_state::{STATE, State, relaxed_legs},
                 hips::square_pose,
                 rig::{Rig, RigBone},
@@ -94,8 +92,9 @@ use crate::{
                     clavicles::{self, ClavicleTurn},
                     pose::RigPose,
                 },
-                stance::{place_feet, square_stance},
+                stance::{STANCE_BLEND_S, place_feet, square_stance},
                 targets::{Fade, Slot, TargetFade},
+                tuning::{ProceduralTuning, TUNING},
                 wings::{WingRequest, read_player_arms},
             },
             rig::{grounded, torso::relative_heading, torso_turn},
@@ -112,7 +111,6 @@ use crate::{
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
 pub struct ProceduralStatus {
     pub at: Option<Instant>,
-    pub mode: ProceduralMode,
     /// The torso's weight of the procedural pose against the animation.
     pub weight: f32,
     /// The hand-over table's case at the last gate.
@@ -261,7 +259,8 @@ pub(crate) unsafe fn at_solve_gate(character: &mut Character, dt: f32) -> bool {
 ///
 /// As [`at_solve_gate`].
 unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
-    let (config, ik_config) = BODY_REMAP_CONFIG.query(|c| (c.procedural, c.ik));
+    let config = TUNING;
+    let ik_config = BODY_REMAP_CONFIG.query(|c| c.ik);
     let scale = VR_CONFIG.lock().world_scale;
     let now = Instant::now();
     // Read before the gate's own state too: it takes the configuration and the controller frame.
@@ -310,15 +309,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     state.status.wing_hands = [false; 2];
     state.status.wing_weight = 0.0;
     state.status.at = Some(now);
-    state.status.mode = config.mode;
     state.arms = None;
-    // Switched off, the body blends back to the animation before the gate stops acting.
-    if config.mode == ProceduralMode::Off && state.blend.weight() <= 0.0 && state.leg_weight <= 0.0
-    {
-        state.blend.reset();
-        state.status.weight = 0.0;
-        return false;
-    }
     let Some(controller) = (unsafe { character.m_AnimatedModel.m_AnimationController.as_mut() })
     else {
         return false;
@@ -332,13 +323,9 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let read = unsafe {
         state
             .tracker
-            .read(character, &locomotion, now, dt, JUMP_GRACE_S, &config)
+            .read(character, &locomotion, now, dt, JUMP_GRACE_S)
     };
-    let case = if config.mode == ProceduralMode::Off {
-        Case::SwitchedOff
-    } else {
-        classify_locked(&read, locked)
-    };
+    let case = classify_locked(&read, locked);
     state.hips.track(case, &animated, dt);
     // The square stance is for the standing idle only: a landing's or a get-up's clip that has
     // stopped the root still turns the hips and places the feet itself, and squared under it the
@@ -369,7 +356,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let stance_weight = if stance_authorized {
         state
             .stance
-            .step(locomotion.standing_still(), dt, config.stance.blend_s)
+            .step(locomotion.standing_still(), dt, STANCE_BLEND_S)
     } else {
         state.stance.reset();
         0.0
@@ -392,8 +379,6 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         locomotion,
         model_neck: head::read(&world, scale).head,
         world,
-        stance: config.stance,
-        torso_on: config.mode == ProceduralMode::Full,
         torso_target: target,
         config: ik_config,
         dt,
@@ -402,8 +387,8 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let stance_weight = stance_weight * (1.0 - ik.feet_weight);
     state.status.stance_weight = stance_weight;
     state.status.stance_targets = match visual_hips.or_else(|| state.hips.yaw()) {
-        Some(heading) if config.stance.enabled && stance_weight > 0.0 => {
-            let feet = square_stance(&animated, heading, &config.stance);
+        Some(heading) if stance_weight > 0.0 => {
+            let feet = square_stance(&animated, heading);
             unsafe { place_feet(&mut character.m_HIK, rig, &animated, &feet, stance_weight) }
         }
         _ => 0,
@@ -424,15 +409,14 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         dt,
     };
     state.wing_queue = state.step_wings(&wings, &config);
-    state.leg_weight = if (relaxes_legs(case)
+    state.leg_weight = if relaxes_legs(case)
         && !read.ledge_climb
         && !read.swimming
         && !read.wingsuit
         && !read.parachute
         && !read.hit_reaction
         && !read.hand_climb
-        && !read.authored_motion)
-        || case == Case::SwitchedOff
+        && !read.authored_motion
     {
         // The firm ragdoll's physics owns the legs on the line.
         state.legs.step(
@@ -450,17 +434,13 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
         0.0
     };
     let leg_weight = state.leg_weight;
-    if config.neutralize_targets {
-        fade_targets(
-            &mut character.m_HIK,
-            LEG_EFFECTORS
-                .into_iter()
-                .map(|e| (e as usize, leg_weight, Fade::All)),
-            &mut state.leg_fade,
-        );
-    } else {
-        state.leg_fade.forget();
-    }
+    fade_targets(
+        &mut character.m_HIK,
+        LEG_EFFECTORS
+            .into_iter()
+            .map(|e| (e as usize, leg_weight, Fade::All)),
+        &mut state.leg_fade,
+    );
     let leg_down = state
         .leg_swing
         .step(world.w_axis.truncate(), leg_weight > 0.0, dt);
@@ -569,7 +549,7 @@ unsafe fn pose_torso(
     state: &mut State,
     rig: &Rig,
     gate: &TorsoGate<'_>,
-    config: &ProceduralBodyConfig,
+    config: &ProceduralTuning,
 ) -> Option<RigPose> {
     let mut input = solve_input(gate.character, gate.animated, gate.scale)?;
     if gate.case == Case::Parachute {
@@ -641,7 +621,7 @@ fn finish_write(
     character: &mut Character,
     pose: &RigPose,
     weight: f32,
-    config: &ProceduralBodyConfig,
+    config: &ProceduralTuning,
 ) {
     publish_torso_weight(weight);
     // The elbow hints point down and back from the chest, which only holds for a chest near
@@ -656,18 +636,14 @@ fn finish_write(
             config.abdomen_radius_m,
             config.hand_margin_m,
         ),
-        elbow_reach: (config.elbow_hints && upright).then_some(config.elbow_hint_reach * weight),
+        elbow_reach: upright.then_some(config.elbow_hint_reach * weight),
         chest_yaw: line_yaw(
             pose.position(RigBone::LeftShoulder),
             pose.position(RigBone::RightShoulder),
         )
         .unwrap_or(0.0),
     });
-    if config.neutralize_targets {
-        neutralize_owned_targets(&mut character.m_HIK, weight, &mut state.fade);
-    } else {
-        state.fade.forget();
-    }
+    neutralize_owned_targets(&mut character.m_HIK, weight, &mut state.fade);
 }
 
 /// How long after the gate last ran the body still counts as solved: a few ticks.
@@ -725,7 +701,6 @@ static PUBLISHED: Mutex<ProceduralStatus> = Mutex::new(INITIAL_STATUS);
 /// The status before the first gate.
 const INITIAL_STATUS: ProceduralStatus = ProceduralStatus {
     at: None,
-    mode: ProceduralMode::Off,
     weight: 0.0,
     case: Case::NotInHeadset,
     rig_error: None,

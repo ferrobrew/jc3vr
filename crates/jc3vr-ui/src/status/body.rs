@@ -11,7 +11,7 @@ use jc3vr_body::controllers::{
         mirror,
         mirror::MirrorStatus,
         procedural,
-        procedural::{ProceduralStatus, authority::Case, config::ProceduralMode},
+        procedural::{ProceduralStatus, authority::Case},
     },
     presentation,
     presentation::{ElbowReadout, PresentationStatus},
@@ -33,9 +33,6 @@ pub(crate) const ROOF_TORSO: Row = Row::new("ROOF TORSO", "Roof torso", roof_tor
 pub(crate) const BODY_MIRROR: Row = Row::new("BODY MIRROR", "Body mirror", body_mirror);
 
 fn seated_torso() -> Line {
-    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
     seated_line(&procedural::published_status())
 }
 
@@ -65,9 +62,6 @@ fn torso_on_hips_line(status: &ProceduralStatus) -> Line {
 }
 
 fn wingsuit_arms() -> Line {
-    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
     wings_line(&procedural::published_status())
 }
 
@@ -91,9 +85,6 @@ fn wings_line(status: &ProceduralStatus) -> Line {
 }
 
 fn parachute_body() -> Line {
-    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
     parachute_line(&procedural::published_status())
 }
 
@@ -106,9 +97,6 @@ fn parachute_line(status: &ProceduralStatus) -> Line {
 }
 
 fn swim_torso() -> Line {
-    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
     let status = procedural::published_status();
     if status.case != Case::Swimming {
         return Line::waiting(prose("Not swimming")).with_note(status.case.label());
@@ -117,9 +105,6 @@ fn swim_torso() -> Line {
 }
 
 fn roof_torso() -> Line {
-    if read(&CONTROLLERS_CONFIG, |c| c.body.procedural.mode) != ProceduralMode::Full {
-        return Line::off("");
-    }
     roof_line(&procedural::published_status())
 }
 

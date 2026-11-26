@@ -168,10 +168,6 @@ const ENGINE_ANTIALIASING: &str = "Engine";
 /// default on purpose), so it is kept as written. A default changed after the current format was
 /// introduced needs no entry here, since the current format does not write defaults.
 const SUPERSEDED: &str = r#"
-[controllers.body.procedural]
-blend_s = [0.3]
-chest_clear_back_m = [0.05]
-
 [controllers.body.rig.pelvis]
 back_bend_deg = [20.0]
 
@@ -376,8 +372,8 @@ back_bend_deg = 12.0
         let text = r#"
 [controllers.weapons.wheel]
 enabled = true
-[controllers.body.procedural]
-mode = "Off"
+[controllers.body.rig.steps]
+enabled = false
 [controllers.overlay]
 debug_gizmos = true
 [controllers.physical_hands.climb]

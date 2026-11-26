@@ -164,18 +164,17 @@ pub(crate) unsafe fn feed(character: &Character, producer: *mut PoseProducer) ->
     }
 }
 
-/// Step the firm mode for the local player on an input tick, asked for `want`, with the switch
-/// `enabled`, in a game tick before the world update.
-pub fn input_tick(game: &GameTick<'_>, want: Want, enabled: bool) {
+/// Step the firm mode for the local player on an input tick, asked for `want`, in a game tick
+/// before the world update.
+pub fn input_tick(game: &GameTick<'_>, want: Want) {
     if let Some(mut player) = LocalPlayer::get(game) {
-        tick(&mut player, want, enabled);
+        tick(&mut player, want);
     }
 }
 
 /// Step the firm mode for the local `player`.
-fn tick(player: &mut LocalPlayer<'_>, want: Want, enabled: bool) {
+fn tick(player: &mut LocalPlayer<'_>, want: Want) {
     let character = player.character_mut();
-    let want = if enabled { want } else { Want::Off };
     let now = Instant::now();
     let mut state = STATE.lock();
     let current = character.m_CurrentRagdollParamsID;

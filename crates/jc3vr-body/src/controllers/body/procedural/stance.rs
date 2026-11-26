@@ -21,44 +21,19 @@ use jc3gi::{
     animation::ik::{HumanIK, Pass, SolveStep},
     types::math::Vector3,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::controllers::body::procedural::{
     rig::{Rig, RigBone},
     solver::{arms::Side, pose::RigPose},
 };
 
-/// The stance's settings, `controllers.body.procedural.stance`.
-#[derive(Debug, Copy, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
-pub struct StanceConfig {
-    /// Square Rico's feet while he stands idle on foot.
-    pub enabled: bool,
-    /// How far apart the ankles stand, metres.
-    pub width_m: f32,
-    /// How far each foot turns out from the facing, degrees.
-    pub toe_out_deg: f32,
-    /// How long the stance takes to blend in once Rico stands still, and out once he moves,
-    /// seconds: the time constant of its follower.
-    pub blend_s: f32,
-}
-
-impl StanceConfig {
-    pub const fn new() -> Self {
-        Self {
-            enabled: true,
-            width_m: 0.29,
-            toe_out_deg: 10.0,
-            blend_s: 0.25,
-        }
-    }
-}
-
-impl Default for StanceConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+/// How far apart the ankles stand, metres.
+pub const STANCE_WIDTH_M: f32 = 0.29;
+/// How far each foot turns out from the facing, degrees.
+pub const STANCE_TOE_OUT_DEG: f32 = 10.0;
+/// How long the stance takes to blend in once Rico stands still, and out once he moves, seconds:
+/// the time constant of its follower.
+pub const STANCE_BLEND_S: f32 = 0.25;
 
 /// One foot's targets across the ground, model `(x, z)`.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -69,14 +44,10 @@ pub struct FootPlacement {
 
 /// The square stance for the animated pose `animated`, facing the model-space heading `heading`
 /// (the clip's hips' heading, which the yaw follow turns to face the player): the ankles
-/// `width_m` apart square across the heading, centred across it under the hips and along it where
+/// [`STANCE_WIDTH_M`] apart square across the heading, centred across it under the hips and along it where
 /// the clip's ankles stand on average, and each toe ahead of its ankle by the clip's own foot
-/// length, turned out by `toe_out_deg`. Left, then right.
-pub fn square_stance(
-    animated: &RigPose,
-    heading: f32,
-    config: &StanceConfig,
-) -> [FootPlacement; 2] {
+/// length, turned out by [`STANCE_TOE_OUT_DEG`]. Left, then right.
+pub fn square_stance(animated: &RigPose, heading: f32) -> [FootPlacement; 2] {
     let flat = |v: Vec3| Vec2::new(v.x, v.z);
     let ahead = forward(heading);
     let across = right(heading);
@@ -88,8 +59,8 @@ pub fn square_stance(
         .sum::<f32>()
         * 0.5;
     let centre = hips + ahead * along;
-    let half = config.width_m.max(0.0) * 0.5;
-    let toe_out = config.toe_out_deg.to_radians();
+    let half = STANCE_WIDTH_M * 0.5;
+    let toe_out = STANCE_TOE_OUT_DEG.to_radians();
     Side::BOTH.map(|side| {
         let (offset, turn) = match side {
             Side::Left => (-half, toe_out),
@@ -266,11 +237,10 @@ mod tests {
 
     #[test]
     fn the_stance_is_square_across_the_heading_and_as_wide_as_asked() {
-        let config = StanceConfig::new();
         for heading in [0.0f32, -0.4, 0.9] {
-            let feet = square_stance(&bladed(-0.7, 0.2), heading, &config);
+            let feet = square_stance(&bladed(-0.7, 0.2), heading);
             let across = feet[1].ankle - feet[0].ankle;
-            assert!((across.length() - config.width_m).abs() < 1e-4);
+            assert!((across.length() - STANCE_WIDTH_M).abs() < 1e-4);
             let faces = line_yaw(
                 Vec3::new(feet[0].ankle.x, 0.0, feet[0].ankle.y),
                 Vec3::new(feet[1].ankle.x, 0.0, feet[1].ankle.y),
@@ -282,10 +252,9 @@ mod tests {
 
     #[test]
     fn the_toes_turn_out_by_the_toe_out() {
-        let config = StanceConfig::new();
         let heading = 0.3;
-        let feet = square_stance(&pose(), heading, &config);
-        let out = config.toe_out_deg.to_radians();
+        let feet = square_stance(&pose(), heading);
+        let out = STANCE_TOE_OUT_DEG.to_radians();
         let left = yaw_of_flat(feet[0].toe - feet[0].ankle).unwrap();
         let right = yaw_of_flat(feet[1].toe - feet[1].ankle).unwrap();
         // A positive heading turns toward the left.
@@ -297,7 +266,7 @@ mod tests {
     fn the_stance_stays_under_the_hips_and_where_the_clip_stands_along_the_heading() {
         let animated = bladed(-0.7, 0.25);
         let heading = 0.0;
-        let feet = square_stance(&animated, heading, &StanceConfig::new());
+        let feet = square_stance(&animated, heading);
         let flat = |v: Vec3| Vec2::new(v.x, v.z);
         let hips = flat(animated.position(RigBone::Hips));
         let centre = (feet[0].ankle + feet[1].ankle) * 0.5;

@@ -408,7 +408,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         // SAFETY: the bindings tick runs on the game thread, before the world update.
         unsafe { vehicles::mounted::stand_down() };
         grapple::physical::stand_down();
-        firm_ragdoll::input_tick(game, firm_ragdoll::Want::Off, false);
+        firm_ragdoll::input_tick(game, firm_ragdoll::Want::Off);
         snatch::stand_down();
         grab::tick::stand_down();
         state.report = TickReport {
@@ -762,7 +762,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     } else {
         firm_ragdoll::Want::Off
     };
-    firm_ragdoll::input_tick(game, firm, config.body.procedural.firm_ragdoll);
+    firm_ragdoll::input_tick(game, firm);
     grapple::seat::tick(
         game,
         &grapple::seat::SeatTickInput {

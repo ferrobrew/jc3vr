@@ -15,13 +15,9 @@ use jc3vr_view::headpose::{Source, source};
 
 use crate::{
     controllers::{
-        body::{
-            config::BODY_REMAP_CONFIG,
-            procedural::{
-                authority::CharacterState,
-                config::ProceduralBodyConfig,
-                signals::{in_hit_reaction, in_ledge_climb},
-            },
+        body::procedural::{
+            authority::CharacterState,
+            signals::{in_hit_reaction, in_ledge_climb},
         },
         facts::climb,
         hands::tiers::{self, TierState},
@@ -40,9 +36,8 @@ use crate::{
 ///
 /// `character` must be the live local character, on the thread running its update.
 pub(crate) unsafe fn animation_moves_body(character: &Character, now: Instant) -> bool {
-    let hold_s = BODY_REMAP_CONFIG.lock().procedural.hit_reaction_hold_s;
     let bits = unsafe { StateBits::of(character) };
-    bits.authored_motion() || in_hit_reaction(now, hold_s)
+    bits.authored_motion() || in_hit_reaction(now)
 }
 
 /// The history the hand-over table's reads keep between gates.
@@ -79,7 +74,6 @@ impl StateTracker {
         now: Instant,
         dt: f32,
         jump_grace_s: f32,
-        config: &ProceduralBodyConfig,
     ) -> CharacterState {
         let detection = current_mode();
         let bits = unsafe { StateBits::of(character) };
@@ -145,7 +139,7 @@ impl StateTracker {
                 || has(StateBitFlag::SB_IN_GRAPPLE_STRUGGLE),
             grapple_attach: unsafe { grapple_attached(character) },
             ledge_climb: in_ledge_climb(now),
-            hit_reaction: in_hit_reaction(now, config.hit_reaction_hold_s),
+            hit_reaction: in_hit_reaction(now),
             hand_climb: climb::climbing(),
             swimming: detection.mode == Mode::OnFoot(OnFootVariant::Swimming)
                 || motion == Character::MOTION_STATE_SWIMMING
