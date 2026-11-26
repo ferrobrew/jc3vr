@@ -16,6 +16,7 @@
 pub(crate) mod automatic;
 pub(crate) mod format;
 pub(crate) mod load;
+mod parts;
 pub(crate) mod paths;
 pub(crate) mod persist;
 mod slot;
@@ -27,6 +28,7 @@ pub(crate) mod write;
 pub(crate) use crate::config::engine::persist::{TestFixture, test_fixture};
 pub(crate) use crate::config::engine::{
     automatic::{Switch, disable_automatically},
+    parts::{Parts, Snapshot, edit_parts, lock_parts},
     persist::{SaveStatus, init, shutdown, status, tick},
     slot::{ConfigSlot, EditGuard, Projection, SlotGuard, projection},
     store::{ConfigRoot, Schema, downcast_mut, downcast_ref, register},

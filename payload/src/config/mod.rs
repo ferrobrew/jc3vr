@@ -6,23 +6,25 @@
 //! session (a value discovered at runtime, a diagnostic armed for one capture) is `#[serde(skip)]`.
 //!
 //! The store, the load, and the save are the configuration engine ([`engine`]), which names no
-//! subsystem: it holds the configuration as an erased root and works through the [`Schema`](engine::Schema) this
-//! module registers for [`Config`] ([`schema`]). This module owns the aggregate, binds the slot
-//! table ([`slots`]) to it, and keeps the access paths the payload uses ([`CONFIG`], [`edit`],
-//! [`disable_automatically`]); each registers the configuration on first use ([`register`]).
+//! subsystem: it holds the configuration as an erased root and works through the
+//! [`Schema`](engine::Schema) this module registers for [`Config`] ([`schema`]). Each subsystem
+//! reads and changes its own settings through the [`ConfigSlot`](engine::ConfigSlot) it declares
+//! beside their type; this module owns the aggregate, binds every slot to its place in it
+//! ([`slots`]), and keeps the access paths over the whole configuration ([`CONFIG`], [`get`],
+//! [`edit`]), each of which registers the configuration on first use ([`register`]).
 //!
 //! The configuration is saved to `settings.toml` in the per-user configuration directory
 //! ([`paths`]), which holds only the settings that differ from their defaults ([`format`]), so a
 //! setting the user never changed follows its default when a later build changes it. It is loaded
 //! once at startup, before VR initialization reads it ([`init`]); the load is tolerant ([`load`]),
 //! so a file from another build costs at most the settings it gets wrong. A change the user meant
-//! goes through [`edit`], which marks the configuration changed; [`tick`] saves it from the game
-//! thread's frame once the changes settle, handing the write to a short-lived writer thread, and
-//! [`shutdown`] flushes a pending save. A change the payload makes on its own, such as a fallback
-//! after a failure, takes the plain [`CONFIG`] lock instead and is not saved for its own sake; one
-//! that switches off a setting the user chose goes through [`disable_automatically`], so a later
-//! save keeps the user's choice. Every guard locks the one configuration lock, so a thread must
-//! not lock it again while it holds one (the
+//! goes through an edit guard (a slot's `edit`, or [`edit`]), which marks the configuration
+//! changed; [`tick`] saves it from the game thread's frame once the changes settle, handing the
+//! write to a short-lived writer thread, and [`shutdown`] flushes a pending save. A change the
+//! payload makes on its own, such as a fallback after a failure, takes a plain lock instead and is
+//! not saved for its own sake; one that switches off a setting the user chose goes through
+//! [`engine::disable_automatically`], so a later save keeps the user's choice. Every guard locks
+//! the one configuration lock, so a thread must not lock it again while it holds one (the
 //! [nesting rule](crate::config::engine::store#lock-nesting)). See `docs/mod/settings.md`.
 //!
 //! TOML has no null, so a `None` is left out of the file. An optional setting defaults to `None`:
@@ -65,7 +67,7 @@ use std::sync::Once;
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) use crate::config::engine::{SaveStatus, paths, status, write};
+pub(crate) use crate::config::engine::{paths, write};
 use crate::{
     config::engine::{EditGuard, SlotGuard},
     controllers::{ControllersConfig, body::BodyDimensions},
@@ -124,26 +126,6 @@ pub(crate) fn edit() -> ConfigEdit {
 
 /// The guard [`edit`] returns.
 pub(crate) type ConfigEdit = EditGuard<Config>;
-
-/// A boolean setting a fallback can turn off: its path in the settings file, for the log, and its
-/// place in the configuration.
-#[derive(Copy, Clone)]
-pub(crate) struct Switch {
-    pub path: &'static str,
-    pub place: for<'a> fn(&'a mut Config) -> &'a mut bool,
-}
-
-/// Switch `switch` off because the payload cannot keep it on (a fallback after a failure, or a
-/// teardown), without saving that as the user's choice: the live configuration changes at once,
-/// while a save keeps the value the user chose until the user changes the switch through [`edit`].
-pub(crate) fn disable_automatically(switch: Switch) {
-    register();
-    engine::disable_automatically(engine::Switch {
-        path: switch.path,
-        slot: &slots::ROOT,
-        place: switch.place,
-    });
-}
 
 /// Load the settings file into the configuration. Called once at startup, before anything reads
 /// the configuration for initialization; see [`engine::init`].

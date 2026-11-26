@@ -3,9 +3,11 @@
 //! ([`crate::config::register`]).
 //!
 //! Each subsystem declares the slot for its own settings beside their type (`HUD_CONFIG` beside
-//! [`HudConfig`](crate::hud::HudConfig)), so it reads them without naming the aggregate. A slot
-//! locks the whole configuration, as [`crate::config::CONFIG`] does, and derefs to its group. Two
-//! guards held at once on one thread deadlock; see the
+//! [`HudConfig`](crate::hud::HudConfig)), so it reads them without naming the aggregate. A
+//! subsystem that reads a field of a group owned by a subsystem above it declares a slot onto that
+//! field alone (`controllers.input` for the VR runtime's input sampling), so it names neither the
+//! group's type nor its owner. A slot locks the whole configuration, as [`crate::config::CONFIG`]
+//! does, and derefs to its part. Two guards held at once on one thread deadlock; see the
 //! [nesting rule](crate::config::engine::store#lock-nesting).
 
 #[cfg(test)]
@@ -20,28 +22,29 @@ use crate::config::{
 pub(crate) static ROOT: ConfigSlot<Config> = ConfigSlot::new("");
 
 macro_rules! slots {
-    ($($slot:path = $field:ident),* $(,)?) => {
+    ($($slot:path = $($field:ident).+),* $(,)?) => {
         /// Bind every slot. Called once, when the payload registers the configuration.
         pub(crate) fn bind() {
             ROOT.bind(projection!(Config));
-            $($slot.bind(projection!(Config, $field));)*
+            $($slot.bind(projection!(Config, $($field).+));)*
         }
 
-        /// Check that each slot is bound to the field it is listed with, and that its path is
-        /// that field's key in `groups`, the configuration's top-level table.
+        /// Check that each slot is bound to the field it is listed with, that its path names that
+        /// field, and that a group's path is a key of `settings`, the configuration's table.
         #[cfg(test)]
-        fn check_projections(config: &mut Config, groups: &toml::Table) {
+        fn check_projections(config: &mut Config, settings: &toml::Table) {
             let root: *const Config = ROOT.project_mut(config);
             assert!(ptr::eq(root, config));
             $(
                 let projected: *const _ = $slot.project_mut(config);
+                let path = [$(stringify!($field)),+].join(".");
                 assert!(
-                    ptr::eq(projected, &config.$field),
-                    "the `{}` slot projects another field",
-                    stringify!($field)
+                    ptr::eq(projected, &config.$($field).+),
+                    "the `{path}` slot projects another field"
                 );
-                assert_eq!($slot.path(), stringify!($field));
-                assert!(groups.contains_key($slot.path()), "{}", $slot.path());
+                assert_eq!($slot.path(), path);
+                // A nested field may be session state the file leaves out (`#[serde(skip)]`).
+                assert!(path.contains('.') || settings.contains_key(&path), "{path}");
             )*
         }
     };
@@ -66,6 +69,21 @@ slots! {
     crate::testing::TESTING_CONFIG = testing,
     crate::hooks::online::ONLINE_CONFIG = online,
     crate::controllers::body::BODY_CONFIG = body,
+    // Fields of a higher layer's group that a lower layer reads.
+    crate::vr::input::config::INPUT_CONFIG = controllers.input,
+    crate::vr::input::config::CONTROLLERS_ENABLED = controllers.enabled,
+    crate::vr::input::config::DOMINANT_HAND = controllers.dominant_hand,
+    crate::vr::input::config::HAPTICS_ENABLED = controllers.haptics.enabled,
+    crate::vr::input::config::HAPTICS_INTENSITY = controllers.haptics.intensity,
+    crate::vr::PANEL_ENABLED = hud.egui_panel.enabled,
+    crate::vr::PANEL_ON_MIRROR = hud.egui_panel.show_on_mirror,
+    crate::vr::PANEL_RESOLUTION = hud.egui_panel.resolution,
+    crate::debug::texture_census::TEXTURE_CENSUS = testing.texture_census,
+    crate::recorder::tracking::TESTING_ENABLED = testing.enabled,
+    crate::recorder::tracking::RECORD_HAND_JOINTS = testing.record_hand_joints,
+    crate::recorder::tracking::TIME_SCALE = director.time_scale,
+    crate::director::clean_view::CLEAN_VIEW_CONFIG = director.clean_view,
+    crate::testing::visual::PAUSED = director.paused,
 }
 
 #[cfg(test)]
@@ -75,8 +93,8 @@ mod tests {
     #[test]
     fn every_slot_projects_the_field_it_is_named_after() {
         crate::config::register();
-        let groups: toml::Table =
+        let settings: toml::Table =
             toml::from_str(&toml::to_string(&Config::new()).unwrap()).unwrap();
-        check_projections(&mut Config::new(), &groups);
+        check_projections(&mut Config::new(), &settings);
     }
 }

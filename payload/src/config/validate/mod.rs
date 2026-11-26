@@ -23,7 +23,6 @@ use crate::{
     config::engine::{nonnegative, positive, range, vec2, vec3},
     controllers::{
         config::{ControllersConfig, SightTable},
-        frame::PressThresholds,
         locomotion::config::validate as locomotion,
     },
     headpose::config::VrTurnConfig,
@@ -37,7 +36,7 @@ pub(crate) fn controllers(c: &ControllersConfig) -> Result<(), Invalid> {
     c.body.rig.validate()?;
     c.body.estimator.validate()?;
     c.body.ik.validate()?;
-    input::input(&c.input)?;
+    c.input.validate()?;
     input::bindings(&c.bindings)?;
     aim::hands(&c.hands)?;
     aim::aim(&c.aim)?;
@@ -71,14 +70,5 @@ pub(crate) fn vr_turn(turn: &VrTurnConfig) -> Result<(), Invalid> {
     range("snap_angle_deg", turn.snap_angle_deg, 0.0, 180.0)?;
     range("snap_threshold", turn.snap_threshold, 0.0, 1.0)?;
     range("deadzone", turn.deadzone, 0.0, 1.0)?;
-    Ok(())
-}
-
-pub(crate) fn press_thresholds(name: &str, thresholds: PressThresholds) -> Result<(), Invalid> {
-    range(&format!("{name}.press"), thresholds.press, 0.0, 1.0)?;
-    range(&format!("{name}.release"), thresholds.release, 0.0, 1.0)?;
-    if thresholds.release > thresholds.press {
-        return Err(Invalid(format!("{name}.release exceeds press")));
-    }
     Ok(())
 }

@@ -1,17 +1,9 @@
-//! Checks for raw input interpretation and the controller-to-game bindings.
+//! Checks for the controller-to-game bindings.
 
 use crate::{
-    config::validate::{Invalid, positive, press_thresholds, range},
-    controllers::config::{BindingsConfig, InputConfig},
+    config::validate::{Invalid, positive, range},
+    controllers::config::BindingsConfig,
 };
-
-/// Check the raw input settings. Paths are relative to `controllers.input`.
-pub(super) fn input(input: &InputConfig) -> Result<(), Invalid> {
-    press_thresholds("input.trigger_press", input.trigger_press)?;
-    press_thresholds("input.squeeze_press", input.squeeze_press)?;
-    press_thresholds("input.squeeze_force_press", input.squeeze_force_press)?;
-    press_thresholds("input.trackpad_press", input.trackpad_press)
-}
 
 /// Check the controller-to-game bindings. Paths are relative to `controllers.bindings`.
 pub(super) fn bindings(c: &BindingsConfig) -> Result<(), Invalid> {

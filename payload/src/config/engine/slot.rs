@@ -78,9 +78,16 @@ impl<T: 'static> ConfigSlot<T> {
     }
 
     /// The part in `root`, which must be of the registered schema's type.
-    #[cfg(test)]
     pub(crate) fn project<'a>(&self, root: &'a Root) -> &'a T {
         (self.projection().shared)(root)
+    }
+
+    /// The part's default: its value in the registered schema's defaults.
+    pub(crate) fn default_value(&self) -> T
+    where
+        T: Clone,
+    {
+        self.project(store::schema().defaults().as_ref()).clone()
     }
 
     /// The part in `root`, which must be of the registered schema's type.
