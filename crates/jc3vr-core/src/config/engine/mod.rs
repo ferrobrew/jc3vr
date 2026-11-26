@@ -21,6 +21,8 @@ pub mod paths;
 pub mod persist;
 mod slot;
 pub mod store;
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_root;
 mod validate;
 pub mod write;
 

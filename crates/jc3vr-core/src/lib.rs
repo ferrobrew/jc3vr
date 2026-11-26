@@ -19,7 +19,7 @@
 //!   [`director::clean_view`]: small process-wide services.
 //!
 //! The `test-support` feature exposes the fixtures other crates' tests use: the configuration
-//! fixture and the lifecycle harness.
+//! fixture, the test configuration root (`test_root!`), and the lifecycle harness.
 
 pub mod config;
 pub mod cpu_placement;

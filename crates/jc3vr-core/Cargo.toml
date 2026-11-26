@@ -9,7 +9,8 @@ publish = false
 # The in-game profiler's core (issue #34): the puffin scopes, the frame advance, and the trace
 # capture. The payload's `profiler` feature forwards here.
 profiler = ["dep:puffin"]
-# Test fixtures other crates' tests use: the configuration fixture and the lifecycle harness.
+# Test fixtures other crates' tests use: the configuration fixture, the test configuration root
+# macro, and the lifecycle harness.
 test-support = []
 
 [dependencies]

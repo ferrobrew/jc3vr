@@ -12,6 +12,8 @@ use std::{
     sync::OnceLock,
 };
 
+#[cfg(any(test, feature = "test-support"))]
+use crate::config::engine::test_root;
 use crate::config::engine::{
     automatic::{self, Observed},
     persist,
@@ -96,14 +98,25 @@ impl<T: 'static> ConfigSlot<T> {
     }
 
     fn projection(&self) -> &Projection<T> {
-        self.projection.get().unwrap_or_else(|| {
-            panic!(
-                "config: the slot `{}` is not bound; the payload binds every slot before \
-                 reading the configuration",
-                self.path
-            )
-        })
+        self.projection.get().unwrap_or_else(|| unbound(self.path))
     }
+}
+
+/// Panic for a read of the unbound slot at `path`, naming the test root that should bind it when
+/// one is registered.
+#[cold]
+fn unbound(path: &str) -> ! {
+    #[cfg(any(test, feature = "test-support"))]
+    if let Some(module) = test_root::root_module() {
+        panic!(
+            "config: the slot `{path}` is not bound; the test root in `{module}` does not bind it, \
+             so add it to that root's `binds`"
+        );
+    }
+    panic!(
+        "config: the slot `{path}` is not bound; the payload binds every slot before reading the \
+         configuration"
+    )
 }
 
 /// The functions that find a slot's part in the root. Build one with
