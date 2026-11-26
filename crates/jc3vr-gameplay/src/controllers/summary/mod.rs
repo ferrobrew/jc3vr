@@ -56,6 +56,7 @@ use jc3vr_body::controllers::{
     mode::{AirborneVariant, Mode},
 };
 use jc3vr_view::vr::input::sources;
+use jc3vr_weapons::controllers::weapons::{c4, wheel::tuning::WHEEL};
 use parking_lot::Mutex;
 
 pub use crate::controllers::summary::config::SummaryConfig;
@@ -72,7 +73,6 @@ use crate::controllers::{
         eligibility::{Eligibility, Omission},
         labels::{HOLD_KEY, ModText, Text},
     },
-    weapons::{c4, wheel::tuning::WHEEL},
 };
 
 /// The latest summary, for the panel.

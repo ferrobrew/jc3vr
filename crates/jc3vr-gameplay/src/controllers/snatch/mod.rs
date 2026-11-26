@@ -5,7 +5,7 @@
 //! The grapple's aim sees weapons lying in the world through a patch scoped to the grapple's pass
 //! of the aim ray ([`jc3vr_body::controllers::aim::grapple_weapons`]), which also publishes what the
 //! aim hit, and the steal notes the guns in characters' hands and holsters out to the snatch's
-//! range ([`crate::controllers::weapons::hold::steal`]). On each input tick:
+//! range ([`jc3vr_weapons::controllers::weapons::hold::steal`]). On each input tick:
 //!
 //! 1. [`targets`] offers the grip one remote target ([`GrabVolume::Snatch`], ranked
 //!    [`Tier::Remote`](jc3vr_body::controllers::grab::Tier::Remote), taken only when nothing at all is
@@ -93,27 +93,28 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
 use jc3vr_physical::controllers::physical_hands;
+pub use jc3vr_weapons::controllers::weapons::config::{SnatchConfig, SwingConfig};
+use jc3vr_weapons::controllers::{
+    loadout::slot_label,
+    weapons::hold::{source::SourceRefusal, steal},
+};
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
+use crate::controllers::snatch::{
+    arrival::ArrivalWatch,
+    brace::Brace,
+    config::SnatchSettings,
+    moment::Moment,
+    prearm::Prearm,
+    pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, SlingInput, Step, Swinging},
+    rules::PropHandling,
+    target::{Offer, OfferKind},
+};
 pub use crate::controllers::snatch::{
-    config::{SNATCH, SnatchConfig, SwingConfig},
+    config::SNATCH,
     readout::{SnatchStatus, SwingReadout, TargetReadout},
     refusal::Refusal,
-};
-use crate::controllers::{
-    loadout::slot_label,
-    snatch::{
-        arrival::ArrivalWatch,
-        brace::Brace,
-        config::SnatchSettings,
-        moment::Moment,
-        prearm::Prearm,
-        pull::{Arrival, Attached, Fired, Flight, Freeing, Grabbed, SlingInput, Step, Swinging},
-        rules::PropHandling,
-        target::{Offer, OfferKind},
-    },
-    weapons::hold::{source::SourceRefusal, steal},
 };
 
 /// The snatch's hooks, aggregated by `controllers::hook_library`.

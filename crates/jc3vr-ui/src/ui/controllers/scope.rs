@@ -4,7 +4,8 @@
 
 use egui::Ui;
 use jc3vr_body::controllers::aim::sights::SightSource;
-use jc3vr_gameplay::controllers::weapons::{
+use jc3vr_input::frame::Hand;
+use jc3vr_weapons::controllers::weapons::{
     ads,
     ads::{
         AdsStatus,
@@ -15,7 +16,6 @@ use jc3vr_gameplay::controllers::weapons::{
     scope,
     scope::{ScopeStatus, suppress, suppress::SuppressCounters},
 };
-use jc3vr_input::frame::Hand;
 
 use crate::{
     status::explosives::{DOWN_THE_SIGHTS, GUN_AGAINST_WALLS},

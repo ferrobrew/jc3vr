@@ -50,7 +50,6 @@ use jc3vr_gameplay::{
         config::{CONTROLLERS_CONFIG, ControllersConfig, validate},
         summary::config::SUMMARY_CONFIG,
         vehicles::config::VEHICLES_CONFIG,
-        weapons::config::WEAPONS_CONFIG,
     },
     grapple::physical::config::GRAPPLE_CONFIG,
 };
@@ -84,6 +83,7 @@ use jc3vr_view::{
         },
     },
 };
+use jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG;
 
 jc3vr_core::test_root! {
     root {

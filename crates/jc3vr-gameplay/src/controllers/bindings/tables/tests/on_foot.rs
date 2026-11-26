@@ -1,10 +1,10 @@
 //! On-foot bindings: face buttons, sticks, grab volumes, weapons, the grapple, crouch, and the
 //! sight chord.
 
+use jc3vr_weapons::controllers::weapons::wheel::select::WheelSlot;
+
 use super::*;
-use crate::controllers::{
-    bindings::tables::declare::WEAPON_SELECT, weapons::wheel::select::WheelSlot,
-};
+use crate::controllers::bindings::tables::declare::WEAPON_SELECT;
 
 #[test]
 fn nothing_pressed_wants_nothing() {

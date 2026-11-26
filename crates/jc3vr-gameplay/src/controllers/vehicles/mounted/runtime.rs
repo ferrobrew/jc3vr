@@ -33,23 +33,23 @@ use jc3vr_physical::controllers::{
     physical_hands::{config::PHYSICAL_HANDS_CONFIG, doors::engine::vehicle_of as resolve_vehicle},
 };
 use jc3vr_view::controllers::cockpit::CockpitTransform;
+use jc3vr_weapons::controllers::{
+    loadout::{Delivery, TakeSource},
+    weapons::hold::{armed, pickup},
+};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    loadout::{Delivery, TakeSource},
-    vehicles::{
-        is_mounted_weapon,
-        mounted::{
-            Held, Mount, MountedGun,
-            control::{Identity, Input, Tear},
-            gunner_seat, handle, mount_matches, native,
-            native::{Motor, Prompt},
-            pivot_and_barrel,
-            vehicle_hold::VehicleHold,
-        },
-        summary as vehicles_summary,
+use crate::controllers::vehicles::{
+    is_mounted_weapon,
+    mounted::{
+        Held, Mount, MountedGun,
+        control::{Identity, Input, Tear},
+        gunner_seat, handle, mount_matches, native,
+        native::{Motor, Prompt},
+        pivot_and_barrel,
+        vehicle_hold::VehicleHold,
     },
-    weapons::hold::{armed, pickup},
+    summary as vehicles_summary,
 };
 
 /// Record a mounted weapon the late weapon update saw, so the next input tick can find it.

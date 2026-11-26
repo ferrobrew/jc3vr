@@ -1,10 +1,8 @@
 use jc3vr_body::controllers::mode::OnFootVariant;
+use jc3vr_weapons::controllers::weapons::{config::WeaponSettings, reload::eligible_belt_for_test};
 
 use super::*;
-use crate::controllers::{
-    summary::eligibility,
-    weapons::{config::WeaponSettings, reload::eligible_belt_for_test},
-};
+use crate::controllers::summary::eligibility;
 
 mod climb;
 mod doors;

@@ -100,7 +100,7 @@ fn on_foot<S: Sink>(s: &mut S, ctx: &TableCtx) {
 
 /// The hand-weapon fire inputs: the dominant trigger, and with a pistol in the off-hand its
 /// trigger too. The one fire action reaches the weapon, and the dual-wield split
-/// ([`crate::controllers::weapons::dual_wield`]) hands it to the pistol of the pulling hand.
+/// ([`jc3vr_weapons::controllers::weapons::dual_wield`]) hands it to the pistol of the pulling hand.
 fn fire_trigger(ctx: &TableCtx) -> &'static [Press] {
     const ONE: &[Press] = &[press(Dom, Trigger)];
     const BOTH: &[Press] = &[press(Dom, Trigger), press(Off, Trigger)];

@@ -1,6 +1,6 @@
 //! The ammunition counter the mod draws above a hand holding a gun: its magazine and its reserve,
 //! painted from the input tick's sample of each hand's gun
-//! ([`jc3vr_gameplay::controllers::weapons::hud_feed::hand_ammo`]).
+//! ([`jc3vr_weapons::controllers::weapons::hud_feed::hand_ammo`]).
 //!
 //! The game's weapon readout shows the wielded weapon alone, and the game wields nothing in the
 //! seats whose update skips the wielded weapon. Each hand holds a weapon of its own under the
@@ -9,7 +9,7 @@
 //! one: the wielded weapon, a gun armed beside it, and each gun of the game's own dual-wield pair,
 //! which share one magazine. A magazine out of its gun reads as empty.
 
-use jc3vr_gameplay::controllers::weapons::hud_feed::hand_ammo::HandAmmo;
+use jc3vr_weapons::controllers::weapons::hud_feed::hand_ammo::HandAmmo;
 
 use crate::hud::{
     label,

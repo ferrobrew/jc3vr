@@ -72,21 +72,19 @@ use jc3vr_input::{
     },
 };
 use jc3vr_view::vr::input::semantic::bound::{Physical, PhysicalSet};
+use jc3vr_weapons::controllers::weapons::wheel::select::WheelPress;
 
-use crate::controllers::{
-    bindings::{
-        bail::ExitLatch,
-        intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
-        policy_a::runtime::Tick,
-        tables::{
-            declare::{PAD_Y_VEHICLE, TableCtx, declare, exit_action, stunt_action},
-            sink::{
-                Axis, EvalSink, Input, Latches, MAX_TIMED, MenuLatch, PadLatch, Press, PressTimer,
-                Sink, TimedLatch,
-            },
+use crate::controllers::bindings::{
+    bail::ExitLatch,
+    intents::{Gestures, Intents, Mask, MaskScope, SemanticInput},
+    policy_a::runtime::Tick,
+    tables::{
+        declare::{PAD_Y_VEHICLE, TableCtx, declare, exit_action, stunt_action},
+        sink::{
+            Axis, EvalSink, Input, Latches, MAX_TIMED, MenuLatch, PadLatch, Press, PressTimer,
+            Sink, TimedLatch,
         },
     },
-    weapons::wheel::select::WheelPress,
 };
 
 /// One tick's output of the tables.
@@ -107,7 +105,7 @@ pub struct Step {
     pub sight_capture: bool,
     /// Each hand's weapon wheel inputs, by [`Hand::index`]: the weapon-select trackpad press with
     /// the quadrant it latched to, and the `weapon_wheel` action's value. The wheel
-    /// ([`crate::controllers::weapons::wheel`]) acts on them; the tables inject nothing for the
+    /// ([`jc3vr_weapons::controllers::weapons::wheel`]) acts on them; the tables inject nothing for the
     /// `weapon_wheel` action.
     pub wheel: [WheelPress; 2],
     /// The grapple's button is held this tick, in a mode with a grapple: the hand is aiming it.

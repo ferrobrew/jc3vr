@@ -11,11 +11,11 @@ use jc3vr_body::{
 use jc3vr_physical::controllers::physical_hands::physics::{
     guns::targets::register_vehicle_targets, register_rail_step,
 };
+use jc3vr_weapons::controllers::weapons::fire::register_mounted_shot_observer;
 
 use crate::controllers::{
     vehicles,
     vehicles::{mounted_recoil, rail, take_off},
-    weapons::fire::register_mounted_shot_observer,
 };
 
 pub(crate) fn register() {

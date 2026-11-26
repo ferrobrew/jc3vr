@@ -23,11 +23,12 @@ use jc3vr_body::{
     },
 };
 use jc3vr_physical::controllers::{physical_hands, physical_hands::physics as hand_bodies};
-
-use crate::controllers::{
-    vehicles, weapons,
+use jc3vr_weapons::controllers::{
+    weapons,
     weapons::{fire, hold::take, inventory},
 };
+
+use crate::controllers::vehicles;
 
 pub(super) fn register() {
     physical_hands::register_body::register();

@@ -100,7 +100,7 @@ pub(crate) unsafe fn begin_capture(cfg: &HudConfig) -> Option<AtlasLayout> {
     // The selection cross moves only while the wheel shows it at a hand; otherwise it stays where
     // the wheel or the game placed it on the panel.
     if let Some(cell) = layout.cross
-        && jc3vr_gameplay::controllers::weapons::wheel::cross_anchor().is_some()
+        && jc3vr_weapons::controllers::weapons::wheel::cross_anchor().is_some()
         // SAFETY: the HUD is a live singleton in gameplay, read on the capture thread.
         && let Some(hud) = unsafe { HUDUI::get() }
         && hud.m_SelectionWheelUi.value_type() != 0

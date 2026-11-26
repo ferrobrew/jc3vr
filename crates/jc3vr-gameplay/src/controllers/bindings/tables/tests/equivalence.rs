@@ -29,14 +29,12 @@ use jc3vr_input::semantic::vocabulary::{
     WingsuitAction,
 };
 use jc3vr_view::vr::input::semantic::defaults::{Component, DefaultBinding, Side};
+use jc3vr_weapons::controllers::loadout::Socket;
 
 use super::*;
-use crate::controllers::{
-    bindings::tables::{
-        coverage::{all_contexts, all_modes},
-        tests::legacy,
-    },
-    loadout::Socket,
+use crate::controllers::bindings::tables::{
+    coverage::{all_contexts, all_modes},
+    tests::legacy,
 };
 
 #[test]

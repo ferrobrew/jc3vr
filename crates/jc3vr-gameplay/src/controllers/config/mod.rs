@@ -14,7 +14,7 @@
 //! a second copy of the smooth and snap settings.
 //!
 //! Each group's type and its slot live beside the subsystem that owns them (`WEAPONS_CONFIG` beside
-//! [`WeaponsConfig`] in [`crate::controllers::weapons::config`], `controllers.enabled` in
+//! [`WeaponsConfig`] in [`jc3vr_weapons::controllers::weapons::config`], `controllers.enabled` in
 //! [`jc3vr_body::controllers::scheme`]), and every subsystem reads its own group through its slot. This
 //! module only assembles the groups into the `controllers` table of the settings file, and the
 //! payload's load runs the range and consistency checks in [`validate`] over the whole table.
@@ -31,9 +31,9 @@ use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::{glass::GlassConfig, physical_hands::PhysicalHandsConfig};
 use jc3vr_view::vr::input::config::InputConfig;
+pub use jc3vr_weapons::controllers::weapons::config::WeaponsConfig;
 use serde::{Deserialize, Serialize};
 
-pub use crate::controllers::weapons::config::WeaponsConfig;
 use crate::{
     controllers::{summary::SummaryConfig, vehicles::config::VehiclesConfig},
     grapple::physical::PhysicalGrappleConfig,

@@ -2,7 +2,7 @@
 name = "jc3vr-gameplay"
 version = "0.1.0"
 edition = "2024"
-description = "The gameplay layer of the payload: the controller subsystems built on the body and physical layers (the bindings, the weapons, the vehicles, the snatch, and the summary model), the grapple, and the look, equipment, and sim detours."
+description = "The gameplay layer of the payload: the controller subsystems built on the body, weapons, and physical layers (the bindings, the vehicles, the snatch, and the summary model), the grapple, and the look, equipment, and sim detours."
 publish = false
 
 [features]
@@ -20,6 +20,8 @@ jc3vr-view = { path = "../jc3vr-view" }
 # The body layer below: the body-bound subsystems, the shared vocabulary, facts, and physics
 # substrate, and the character, animation, and input detours.
 jc3vr-body = { path = "../jc3vr-body" }
+# The weapons layer below: the weapon handling and the loadout table.
+jc3vr-weapons = { path = "../jc3vr-weapons" }
 # The physical layer beside the weapons: the physical hands and the glass.
 jc3vr-physical = { path = "../jc3vr-physical" }
 # The gameplay detours. The detour macro emits `::re_utilities` paths, so a crate that defines
@@ -40,6 +42,7 @@ toml = "1.1.6"
 
 [dev-dependencies]
 jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
+jc3vr-weapons = { path = "../jc3vr-weapons", features = ["test-support"] }
 jc3vr-physical = { path = "../jc3vr-physical", features = ["test-support"] }
 jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
 jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }

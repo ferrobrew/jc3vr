@@ -3,8 +3,9 @@
 
 use jc3gi::character::inventory::WeaponSlot;
 use jc3vr_body::controllers::hands::grip;
-use jc3vr_gameplay::controllers::{
-    config::CONTROLLERS_CONFIG,
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
+use jc3vr_input::frame::Hand;
+use jc3vr_weapons::controllers::{
     loadout::{Delivery, TakeSource, live::Expect, slot_label},
     weapons,
     weapons::{
@@ -14,7 +15,6 @@ use jc3vr_gameplay::controllers::{
         reload::chamber::{ActionKind, Chamber},
     },
 };
-use jc3vr_input::frame::Hand;
 
 use crate::{
     controllers::menu::read,

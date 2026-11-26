@@ -10,23 +10,21 @@ use jc3vr_body::controllers::{
     mode::{Mode, VehicleClass, VehicleSeat},
 };
 use jc3vr_input::semantic::vocabulary::LandVehicleAction;
+use jc3vr_weapons::controllers::loadout::Socket;
 
 use super::{
     snatch_tests::{GRIP, LEFT_A, MODE, TRIGGER, fixture},
     *,
 };
-use crate::controllers::{
-    bindings::{
-        summary::permitted_routes,
-        tables::{
-            Bindings,
-            declare::TableCtx,
-            describe::{DescribeCtx, Features, describe_current},
-        },
-        trigger_ownership,
-        trigger_ownership::TriggerMask,
+use crate::controllers::bindings::{
+    summary::permitted_routes,
+    tables::{
+        Bindings,
+        declare::TableCtx,
+        describe::{DescribeCtx, Features, describe_current},
     },
-    loadout::Socket,
+    trigger_ownership,
+    trigger_ownership::TriggerMask,
 };
 
 #[test]

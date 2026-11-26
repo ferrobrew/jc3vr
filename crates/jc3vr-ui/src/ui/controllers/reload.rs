@@ -3,7 +3,8 @@
 //! switches.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::weapons::reload::{
+use jc3vr_input::frame::Hand;
+use jc3vr_weapons::controllers::weapons::reload::{
     ReloadStatus, WeaponReadout,
     belt::PushStage,
     chamber::{Chamber, WorkStage},
@@ -12,7 +13,6 @@ use jc3vr_gameplay::controllers::weapons::reload::{
     insert::InsertStage,
     loose, wells,
 };
-use jc3vr_input::frame::Hand;
 
 use crate::{
     status::{

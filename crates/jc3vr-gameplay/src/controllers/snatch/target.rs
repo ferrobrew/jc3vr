@@ -24,28 +24,26 @@ use jc3vr_physical::controllers::{
         remote::{NearBody, NearKind, RagdollTarget},
     },
 };
+use jc3vr_weapons::controllers::weapons::{
+    c4::{
+        placed as placed_charges,
+        placed::{ChargeIdentity, PlacedCharge},
+    },
+    grenade,
+    hold::{
+        rack,
+        rack::remote::RemoteRack,
+        steal,
+        steal::HolsteredTarget,
+        world::{TargetKind, WorldTarget},
+    },
+};
 
-use crate::controllers::{
-    snatch::{
-        OfferInput, Refusal, SNATCH,
-        config::SnatchSettings,
-        engine, rules,
-        rules::{Candidate, PropHandling},
-    },
-    weapons::{
-        c4::{
-            placed as placed_charges,
-            placed::{ChargeIdentity, PlacedCharge},
-        },
-        grenade,
-        hold::{
-            rack,
-            rack::remote::RemoteRack,
-            steal,
-            steal::HolsteredTarget,
-            world::{TargetKind, WorldTarget},
-        },
-    },
+use crate::controllers::snatch::{
+    OfferInput, Refusal, SNATCH,
+    config::SnatchSettings,
+    engine, rules,
+    rules::{Candidate, PropHandling},
 };
 
 /// Revalidate a recent offer without selecting a different object.

@@ -2,7 +2,7 @@
 //! [`MountedConfig::aim_by_hands`](crate::controllers::vehicles::config::MountedConfig::aim_by_hands).
 //!
 //! Every shot of the mounted gun the hands aim (seen by the per-shot seam,
-//! [`crate::controllers::weapons::fire`]) kicks a damped spring: back along the barrel and down,
+//! [`jc3vr_weapons::controllers::weapons::fire`]) kicks a damped spring: back along the barrel and down,
 //! as the gun's breech jumps back and its muzzle climbs about the pivot. The spring's offset moves
 //! the handles the hands are drawn on, so the hands ride the kick, and each shot pulses the hands
 //! that hold the handles. The aim is left alone: the gun's own pivot takes the kick in the game.
@@ -13,7 +13,7 @@
 //! The shots arrive on the thread that updates the weapon and the offset is read by the hands at
 //! every rate, so the spring lives in a leaf slot and runs on wall-clock time, advanced lazily by
 //! whichever reads or kicks it, as the hand-held guns' recoil does
-//! ([`crate::controllers::weapons::recoil`]).
+//! ([`jc3vr_weapons::controllers::weapons::recoil`]).
 
 use std::{
     sync::atomic::{AtomicU8, AtomicU64, Ordering},
@@ -23,9 +23,10 @@ use std::{
 use glam::{Vec2, Vec3};
 use jc3vr_body::controllers::haptics;
 use jc3vr_input::{frame::Hand, haptics::cues::Event};
+use jc3vr_weapons::controllers::weapons::recoil::Spring;
 use parking_lot::Mutex;
 
-use crate::controllers::{vehicles::config::VEHICLES_CONFIG, weapons::recoil::Spring};
+use crate::controllers::vehicles::config::VEHICLES_CONFIG;
 
 /// Kick the handles by one shot of the mounted gun, and pulse the hands holding them.
 pub(crate) fn on_shot() {

@@ -11,7 +11,7 @@
 //! left hand's on the left ([`layout`]).
 //!
 //! The weapon handling's input tick publishes each hand's hint
-//! ([`jc3vr_gameplay::controllers::weapons::hud_feed::grab_hint`]), with the icons named by weapon id. The
+//! ([`jc3vr_weapons::controllers::weapons::hud_feed::grab_hint`]), with the icons named by weapon id. The
 //! draw reads the icons from the archives ([`crate::hud::game_icons`]), paints a texture per hand
 //! when its hint changes, and draws it on the panel's plane after the panel, with a short fade. A hint whose icons are not all loaded is not drawn: it never falls back to text.
 
@@ -28,8 +28,8 @@ use anyhow::Context as _;
 use glam::Vec4;
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_body::controllers::scheme;
-use jc3vr_gameplay::controllers::weapons::hud_feed::{grab_hint as feed, grab_hint::Hint};
 use jc3vr_input::frame::Hand;
+use jc3vr_weapons::controllers::weapons::hud_feed::{grab_hint as feed, grab_hint::Hint};
 pub(crate) use paint::{
     MARKER_TEXELS, TAG_TEXELS, marker as paint_marker, tag as paint_tag, tag_fits,
 };
@@ -270,7 +270,7 @@ static FAILURES: LogOnce = LogOnce::new("hud grab hint");
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_gameplay::controllers::{loadout::Socket, weapons::hud_feed::grab_hint::Place};
+    use jc3vr_weapons::controllers::{loadout::Socket, weapons::hud_feed::grab_hint::Place};
 
     use super::*;
     use crate::hud::label;

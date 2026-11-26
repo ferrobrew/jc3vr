@@ -23,7 +23,6 @@ use jc3vr_core::{
     render_frame,
     thread_role::{self, ThreadRole},
 };
-use jc3vr_gameplay::controllers;
 use jc3vr_hud::{hooks::ui, hud};
 use jc3vr_physical::controllers::{glass, physical_hands};
 use jc3vr_render::{
@@ -58,6 +57,7 @@ use jc3vr_view::{
     vr,
     vr::tail,
 };
+use jc3vr_weapons::controllers::weapons;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
@@ -281,10 +281,10 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // The pouches' models ride the body as it is drawn: placed at this frame's interpolation
         // fraction before the engine's render update culls and draws the frame. The game thread,
         // outside the world update.
-        controllers::weapons::pouch_models::render_frame((*update_contexts).m_RenderContext.m_Dtf);
-        controllers::weapons::grenade::render_frame((*update_contexts).m_RenderContext.m_Dtf);
-        controllers::weapons::c4::detonator::render_frame((*update_contexts).m_RenderContext.m_Dtf);
-        controllers::weapons::reload::render_frame();
+        weapons::pouch_models::render_frame((*update_contexts).m_RenderContext.m_Dtf);
+        weapons::grenade::render_frame((*update_contexts).m_RenderContext.m_Dtf);
+        weapons::c4::detonator::render_frame((*update_contexts).m_RenderContext.m_Dtf);
+        weapons::reload::render_frame();
         input::wingsuit::sync();
 
         mark(Phase::OriginalUpdateRender);

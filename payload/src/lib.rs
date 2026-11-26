@@ -5,7 +5,6 @@ use jc3vr_core::{
     cpu_placement, director::clean_view, is_shutting_down, lifecycle, logging, module, session,
     thread_role, util,
 };
-use jc3vr_gameplay::controllers;
 use jc3vr_hud::{egui_impl::EguiState, hooks::ui::cancel_pointer_on_game_thread, hud};
 use jc3vr_physical::controllers::physical_hands;
 use jc3vr_render::{
@@ -14,6 +13,7 @@ use jc3vr_render::{
 use jc3vr_tooling::{director, recorder, testing};
 use jc3vr_ui::ui;
 use jc3vr_view::{hooks::graphics_engine::capture, recorder::tracking, vr};
+use jc3vr_weapons::controllers::weapons;
 use windows::Win32::{
     Foundation::HMODULE,
     System::{LibraryLoader::DisableThreadLibraryCalls, SystemServices::DLL_PROCESS_ATTACH},
@@ -159,7 +159,7 @@ fn shutdown_startup() {
         module::pin();
     }
     // Sidecar replacement and its status publication must finish before the DLL can unmap.
-    if !controllers::weapons::inventory::sidecar::shutdown() {
+    if !weapons::inventory::sidecar::shutdown() {
         module::pin();
     }
     if !hud::game_icons::shutdown() {

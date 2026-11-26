@@ -8,6 +8,10 @@ use jc3vr_body::controllers::{
     mode::{Mode, OnFootVariant},
 };
 use jc3vr_view::vr::input::semantic::bound::{EnumeratedSource, SourceTable, of_sources};
+use jc3vr_weapons::controllers::{
+    loadout::Socket,
+    weapons::capabilities::{GunHand, GunOwner},
+};
 
 use super::*;
 use crate::controllers::{
@@ -17,9 +21,7 @@ use crate::controllers::{
         trigger_ownership,
         trigger_ownership::{Owner, TriggerMask},
     },
-    loadout::Socket,
     summary::{current::CurrentContext, eligibility::SnatchHint, snatch},
-    weapons::capabilities::{GunHand, GunOwner},
 };
 
 pub(super) const MODE: Mode = Mode::OnFoot(OnFootVariant::Ground);

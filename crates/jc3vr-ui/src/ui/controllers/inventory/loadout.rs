@@ -9,7 +9,9 @@
 
 use egui::{Button, CollapsingHeader, ComboBox, Grid, Ui};
 use jc3vr_body::controllers::{fingers::grip::GripSource, spawn::SpawnDefinition};
-use jc3vr_gameplay::controllers::{
+use jc3vr_input::frame::Hand;
+use jc3vr_physical::controllers::physical_hands::PhysicalHandsStatus;
+use jc3vr_weapons::controllers::{
     loadout::{
         Binding, Departure, ItemKind, ItemView, LoadoutSnapshot, Place, Socket, live::LiveStatus,
         slot_label,
@@ -27,8 +29,6 @@ use jc3vr_gameplay::controllers::{
         },
     },
 };
-use jc3vr_input::frame::Hand;
-use jc3vr_physical::controllers::physical_hands::PhysicalHandsStatus;
 
 /// What the loadout section reads besides the table.
 pub(super) struct LoadoutInputs<'a> {

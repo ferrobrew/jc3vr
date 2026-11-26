@@ -5,9 +5,10 @@
 
 use glam::Vec3;
 use jc3vr_body::controllers::physics::rigid::RigidBody;
+use jc3vr_weapons::controllers::weapons::config::SwingConfig;
 
 use crate::{
-    controllers::snatch::config::{REFERENCE_MASS_KG, SwingConfig},
+    controllers::snatch::config::REFERENCE_MASS_KG,
     grapple::{
         rope,
         rope::{Rope, RopeEnd, RopeFault, RopeOutput, RopeTuning},

@@ -4,8 +4,7 @@
 
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::{grab_view, held_props};
-
-use crate::controllers::weapons::{
+use jc3vr_weapons::controllers::weapons::{
     hold::take::register_refusal_sink, inventory::register_held_props,
 };
 

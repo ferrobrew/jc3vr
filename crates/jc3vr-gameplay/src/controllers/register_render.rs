@@ -17,9 +17,10 @@ use jc3vr_view::{
         },
     },
 };
+use jc3vr_weapons::controllers::weapons::scope;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
-use crate::{controllers::weapons::scope, hooks::camera::height};
+use crate::hooks::camera::height;
 
 pub(super) fn register() {
     register_dispatch_tick(DispatchTick::WorldOverlay, overlay::tick);

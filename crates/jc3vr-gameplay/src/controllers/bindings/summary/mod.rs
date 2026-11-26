@@ -22,6 +22,13 @@ use jc3vr_body::controllers::{
 use jc3vr_input::{frame::Hand, semantic::vocabulary::ActionId};
 use jc3vr_physical::controllers::physical_hands::door_offer_current;
 use jc3vr_view::vr::input::semantic::bound::PhysicalSet;
+use jc3vr_weapons::controllers::{
+    weapons,
+    weapons::{
+        capabilities::{GunHand, GunOwner},
+        reload::{BeltEligibility, ReloadStatus},
+    },
+};
 
 use crate::controllers::{
     bindings::{
@@ -37,11 +44,6 @@ use crate::controllers::{
         eligibility::{Eligibility, SnatchHint},
     },
     vehicles::{parachute::HandleHold, wingsuit_gestures::GestureAvailability},
-    weapons,
-    weapons::{
-        capabilities::{GunHand, GunOwner},
-        reload::{BeltEligibility, ReloadStatus},
-    },
 };
 
 /// State that can invalidate an offer between the provider pass and final publication.
@@ -610,9 +612,7 @@ mod capture_tests;
 mod tests {
     use glam::Vec3;
     use jc3vr_body::controllers::mode::{OnFootVariant, Traversal, VehicleClass, VehicleSeat};
-
-    use super::*;
-    use crate::controllers::weapons::{
+    use jc3vr_weapons::controllers::weapons::{
         capabilities::NativePair,
         reload::{
             WeaponReadout,
@@ -621,6 +621,8 @@ mod tests {
             plan::{LoadKind, ReloadPlan, WellFrame},
         },
     };
+
+    use super::*;
 
     fn reload_read() -> ReloadPermissionRead {
         ReloadPermissionRead {

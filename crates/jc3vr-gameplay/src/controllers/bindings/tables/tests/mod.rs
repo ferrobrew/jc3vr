@@ -8,9 +8,10 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::semantic::SemanticSet;
 use jc3vr_view::vr::input::semantic::defaults::default_binding;
+use jc3vr_weapons::controllers::loadout::Socket;
 
 use super::*;
-use crate::controllers::{bindings::intents::simulate::simulate, loadout::Socket};
+use crate::controllers::bindings::intents::simulate::simulate;
 
 const DT: f32 = 1.0 / 30.0;
 /// The table inputs are already accepted; chord timing does not change their interpretation.

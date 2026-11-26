@@ -2,12 +2,10 @@
 //! and their switches.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::{
+use jc3vr_weapons::controllers::weapons::{
+    c4,
+    c4::{C4Status, detonator},
     config::WeaponsConfig,
-    weapons::{
-        c4,
-        c4::{C4Status, detonator},
-    },
 };
 
 use crate::ui::controllers::{vec3, yes_no};

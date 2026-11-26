@@ -10,16 +10,15 @@
 //! the body, the hands, fingers, and presentation, the aim and the aim-state pin, the haptics, the
 //! overlay producers, locomotion and roomscale, the spawn table, the telemetry notes, and the
 //! shared vocabulary, held-item facts, physics substrate, and published facts) are the body
-//! crate's, under [`jc3vr_body::controllers`], and the physical hands and the glass are the physical
-//! crate's, under [`jc3vr_physical::controllers`]. This module owns what builds on them:
+//! crate's, under [`jc3vr_body::controllers`]. Physical weapon handling with the loadout table is
+//! the weapons crate's, under [`jc3vr_weapons::controllers`], and the physical hands and the glass
+//! are the physical crate's, under [`jc3vr_physical::controllers`]. This module owns what builds on
+//! them:
 //!
 //! - [`config`]: [`ControllersConfig`], the controllers' settings assembled from each subsystem's
 //!   group;
 //! - [`bindings`]: the per-mode mapping from the controllers to the game's actions, and its
 //!   injection on the input tick;
-//! - [`weapons`]: physical weapon handling: the holsters and grab volumes, the two-handed
-//!   foregrip, the weapon actions that run with the hands on the controllers, recoil, and
-//!   the dual-wield split, with the [`loadout`];
 //! - [`snatch`]: the grapple snatch: the empty grapple hand pulls a weapon out of reach into itself
 //!   on the game's hook;
 //! - [`vehicles`]: vehicles, mounted guns, the wingsuit, and the parachute: the opt-in physical
@@ -39,11 +38,11 @@
 use jc3vr_body::controllers::{aim, aim_state, body, hands, haptics, roomscale};
 use jc3vr_core::lifecycle::RegistrationError;
 use jc3vr_physical::controllers::{glass, physical_hands};
+use jc3vr_weapons::controllers::weapons;
 use re_utilities::hook_library::HookLibrary;
 
 pub mod bindings;
 pub mod config;
-pub mod loadout;
 mod register_aim;
 mod register_below;
 mod register_hands;
@@ -55,7 +54,6 @@ mod register_vr_frame;
 pub mod snatch;
 pub mod summary;
 pub mod vehicles;
-pub mod weapons;
 
 pub use config::ControllersConfig;
 

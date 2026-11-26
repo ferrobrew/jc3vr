@@ -24,6 +24,7 @@ use jc3vr_view::{
     recorder::tracking::{events, events::EventKind},
     vr::input::flight_pose,
 };
+use jc3vr_weapons::controllers::weapons;
 use tracking_format::event::{Label, WingsuitGesture};
 
 use crate::controllers::{
@@ -36,7 +37,6 @@ use crate::controllers::{
             desired_for,
         },
     },
-    weapons,
 };
 
 /// Recognition and the calibration that interprets its pose history belong to one binding state.

@@ -24,12 +24,12 @@ use jc3vr_body::controllers::{
     physics::rigid::BodyPose,
 };
 use jc3vr_input::frame::{Hand, Pose};
-
-use crate::controllers::{
+use jc3vr_weapons::controllers::{
     loadout::live,
-    snatch::{SNATCH, landing, landing::Turning},
     weapons::{engine::gun_pose, hold::act},
 };
+
+use crate::controllers::snatch::{SNATCH, landing, landing::Turning};
 
 /// A snatched gun's landing, from the bite to the catch.
 #[derive(Debug, Clone, PartialEq)]

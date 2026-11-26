@@ -1,16 +1,16 @@
 //! The payload's gameplay layer: the controller subsystems built on the body layer, which change
 //! how the game plays in the headset, and naming nothing above it.
 //!
-//! The crate sits above the core, input, view, body, and physical crates (`docs/architecture.md`,
-//! "Crate layering") and owns:
+//! The crate sits above the core, input, view, body, weapons, and physical crates
+//! (`docs/architecture.md`, "Crate layering") and owns:
 //!
-//! - [`controllers`]: the controller subsystems built on the body: the bindings, the weapons with
-//!   the loadout, the vehicles, the snatch, the scope state, and the summary model, with the
-//!   controllers' settings aggregate, their install, and their hook library. The body-bound
-//!   subsystems they build on (the body, hands, aim, grip, locomotion, roomscale, the mode
-//!   detector, the haptics, and the shared vocabulary and facts) live in the body crate, under
-//!   [`jc3vr_body::controllers`], and the physical hands and the glass in the physical crate, under
-//!   [`jc3vr_physical::controllers`]. The data the render halves of the overlay and
+//! - [`controllers`]: the controller subsystems built on the body: the bindings, the vehicles, the
+//!   snatch, the scope state, and the summary model, with the controllers' settings aggregate,
+//!   their install, and their hook library. The body-bound subsystems they build on (the body,
+//!   hands, aim, grip, locomotion, roomscale, the mode detector, the haptics, and the shared
+//!   vocabulary and facts) live in the body crate, under [`jc3vr_body::controllers`], the weapon
+//!   handling with the loadout in the weapons crate, under [`jc3vr_weapons::controllers`], and the
+//!   physical hands and the glass in the physical crate, under [`jc3vr_physical::controllers`]. The data the render halves of the overlay and
 //!   the scope read, and the cockpit transform, live in the view crate, under
 //!   [`jc3vr_view::controllers`]; the passes that draw them live in the render crate's
 //!   `controllers`, which this crate does not depend on.
@@ -42,8 +42,8 @@
 //!   [`grapple::physical::hook_library`], and [`grapple::device::hook_library`].
 //! - The settings: each subsystem declares the [`ConfigSlot`](jc3vr_core::config::engine::ConfigSlot)
 //!   for its group beside the group's type (one per controllers group, such as
-//!   [`controllers::weapons::config::WEAPONS_CONFIG`]), and the payload binds them to its
-//!   aggregate. A subsystem reads only its own group and the groups of the subsystems it builds on,
+//!   [`jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG`]), and the payload binds them
+//!   to its aggregate. A subsystem reads only its own group and the groups of the subsystems it builds on,
 //!   through their slots; the whole `controllers` table
 //!   ([`controllers::config::CONTROLLERS_CONFIG`]) is read only by the bindings, the summary, and
 //!   the layers above.

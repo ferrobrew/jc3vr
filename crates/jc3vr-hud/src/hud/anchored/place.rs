@@ -2,8 +2,8 @@
 
 use body_rig::smooth::half_life_factor;
 use glam::{Mat3, Mat4, Quat, Vec2, Vec3};
-use jc3vr_gameplay::controllers::weapons::hud_feed::hand_ammo::ModelBox;
 use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_weapons::controllers::weapons::hud_feed::hand_ammo::ModelBox;
 
 use crate::controllers::summary::glance::PanelPose;
 

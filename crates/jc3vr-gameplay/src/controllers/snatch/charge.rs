@@ -19,8 +19,7 @@ use jc3gi::{
 use jc3vr_body::controllers::{
     aim::targets::weak_target, held::native::object_of, physics::refs::Weak,
 };
-
-use crate::controllers::weapons::{
+use jc3vr_weapons::controllers::weapons::{
     c4::placed::ChargeIdentity as Identity, grenade::catch::body_of,
 };
 

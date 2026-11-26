@@ -11,7 +11,7 @@
 //! - the heat readout (`MCI_heat_container`) and the grenade readout (`MCI_grenade_parent`), drawn
 //!   on the off-hand's wrist;
 //! - the weapon selection cross (`MCI_weapon_selection_wheel`), drawn at the hand steering the
-//!   weapon wheel ([`jc3vr_gameplay::controllers::weapons::wheel`]) while the wheel shows it;
+//!   weapon wheel ([`jc3vr_weapons::controllers::weapons::wheel`]) while the wheel shows it;
 //! - the tether readout (`MCI_dual_tether`), drawn above the off-hand's forearm, where the
 //!   grapple sits;
 //! - the aim part: the weapon reticle group, the grapple reticle, and the hit marker

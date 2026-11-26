@@ -76,7 +76,7 @@ slots! {
     jc3vr_body::controllers::hands::config::HANDS_CONFIG = controllers.hands,
     jc3vr_body::controllers::aim::config::AIM_CONFIG = controllers.aim,
     jc3vr_body::controllers::overlay::config::OVERLAY_CONFIG = controllers.overlay,
-    jc3vr_gameplay::controllers::weapons::config::WEAPONS_CONFIG = controllers.weapons,
+    jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG = controllers.weapons,
     jc3vr_body::controllers::body::config::BODY_REMAP_CONFIG = controllers.body,
     jc3vr_body::controllers::roomscale::config::ROOMSCALE_CONFIG = controllers.roomscale,
     jc3vr_gameplay::controllers::vehicles::config::VEHICLES_CONFIG = controllers.vehicles,

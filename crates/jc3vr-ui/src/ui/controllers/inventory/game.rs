@@ -4,7 +4,7 @@
 
 use egui::{Grid, RichText, Ui};
 use jc3gi::equipment::weapon::{WeaponClass, WeaponState};
-use jc3vr_gameplay::controllers::{
+use jc3vr_weapons::controllers::{
     loadout::{LoadoutSnapshot, SlotContent, slot_label},
     weapons::inventory::{
         InventoryReadout,

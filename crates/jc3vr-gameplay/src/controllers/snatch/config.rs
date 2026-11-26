@@ -3,11 +3,11 @@
 
 use jc3vr_body::controllers::overlay::config::OverlayConfig;
 use jc3vr_physical::controllers::physical_hands::config::PhysicalHandsConfig;
+use jc3vr_weapons::controllers::weapons::config::HoldConfig;
+pub use jc3vr_weapons::controllers::weapons::config::{SnatchConfig, SwingConfig};
 
-pub use crate::controllers::weapons::config::{SnatchConfig, SwingConfig};
 use crate::{
-    controllers::{snatch::landing::LandingTuning, weapons::config::HoldConfig},
-    grapple::physical::config::PhysicalGrappleConfig,
+    controllers::snatch::landing::LandingTuning, grapple::physical::config::PhysicalGrappleConfig,
 };
 
 /// The settings one snatch tick reads: its own group and the fields of the other groups it

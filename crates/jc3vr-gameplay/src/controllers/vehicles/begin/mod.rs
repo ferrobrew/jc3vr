@@ -24,34 +24,32 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{controllers::cockpit::CockpitTransform, headpose};
+use jc3vr_weapons::controllers::loadout::live;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    loadout::live,
-    vehicles::{
-        arm_tick::arms_act,
-        config::VehicleSettings,
-        driving_view,
-        entry::{VehicleEntry, VehicleEntryIdentity},
-        fit,
-        fit::{FitInputs, VehicleLatch},
-        handle_tick::handles_act,
-        mounted_grip,
-        mounted_tick::{MountedTick, mounted_tick, offered},
-        parachute, parachute_rig, physical,
-        physical::{
-            ControlEvent, Placement,
-            buttons::{ButtonPlacement, PushPhase},
-        },
-        ripcord_tick,
-        state::{
-            MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events,
-            mounted_hand_weight, push_events,
-        },
-        tuning::PhysicalControlsTuning,
-        types::TickVolumes,
-        wing_guide,
+use crate::controllers::vehicles::{
+    arm_tick::arms_act,
+    config::VehicleSettings,
+    driving_view,
+    entry::{VehicleEntry, VehicleEntryIdentity},
+    fit,
+    fit::{FitInputs, VehicleLatch},
+    handle_tick::handles_act,
+    mounted_grip,
+    mounted_tick::{MountedTick, mounted_tick, offered},
+    parachute, parachute_rig, physical,
+    physical::{
+        ControlEvent, Placement,
+        buttons::{ButtonPlacement, PushPhase},
     },
+    ripcord_tick,
+    state::{
+        MOUNTED_WEAPON, MountedHandWeight, STATE, State, log_handle_events, mounted_hand_weight,
+        push_events,
+    },
+    tuning::PhysicalControlsTuning,
+    types::TickVolumes,
+    wing_guide,
 };
 
 /// The first half of the vehicle handling's input tick: read the mounted gun, place the physical

@@ -16,13 +16,15 @@ use jc3vr_body::controllers::{
     },
     intent::yank::Yank,
 };
-use jc3vr_gameplay::controllers::{
-    bindings,
-    config::{ControllersConfig, WeaponsConfig},
+use jc3vr_gameplay::controllers::{bindings, config::ControllersConfig, snatch};
+use jc3vr_input::frame::Hand;
+use jc3vr_weapons::controllers::{
     loadout::slot_label,
-    snatch, weapons,
+    weapons,
     weapons::{
-        WeaponsStatus, empty,
+        WeaponsStatus,
+        config::WeaponsConfig,
+        empty,
         empty::EmptyStatus,
         foregrip,
         foregrip::ForegripStatus,
@@ -47,7 +49,6 @@ use jc3vr_gameplay::controllers::{
         unarmed_fire::UnarmedFireStatus,
     },
 };
-use jc3vr_input::frame::Hand;
 
 use crate::{
     status::{

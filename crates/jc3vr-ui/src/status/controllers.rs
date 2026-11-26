@@ -11,14 +11,14 @@ use jc3vr_body::controllers::{
         },
     },
     hands::{grip, grip::GripRead},
-    held::{guns as held_guns, guns::GunBodyStatus},
+    held::{
+        guns as held_guns,
+        guns::{GunBodyStatus, HeftClass},
+    },
     locomotion,
     locomotion::{acts, acts::ActFilterStatus, anchor, anchor::AnchorStatus},
 };
-use jc3vr_gameplay::controllers::{
-    config::CONTROLLERS_CONFIG,
-    weapons::{grip_watch, heft::HeftClass},
-};
+use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::{
     collider_view,
@@ -27,6 +27,7 @@ use jc3vr_physical::controllers::physical_hands::{
     physics::{BodyPhase, CallbackStatus, HandBodyStatus, guns},
 };
 use jc3vr_tooling::director::{keymap, keymap::Action};
+use jc3vr_weapons::controllers::weapons::grip_watch;
 use smol_str::{SmolStr, format_smolstr};
 
 use crate::{

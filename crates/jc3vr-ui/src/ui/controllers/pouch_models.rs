@@ -1,7 +1,7 @@
 //! The pouches' models: whether they are drawn, and which are.
 
 use egui::Ui;
-use jc3vr_gameplay::controllers::weapons::{
+use jc3vr_weapons::controllers::weapons::{
     config::PouchModelsConfig, pouch_models, pouch_models::Prop,
 };
 

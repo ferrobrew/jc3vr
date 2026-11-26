@@ -7,14 +7,12 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::ActionSetKind;
 use jc3vr_view::vr::input::flight_pose::GestureSample;
+use jc3vr_weapons::controllers::loadout::Socket;
 
 use super::*;
-use crate::controllers::{
-    loadout::Socket,
-    vehicles::{
-        config::WingsuitGesturesConfig,
-        wingsuit_gestures::{FlightPose, SuitTransition},
-    },
+use crate::controllers::vehicles::{
+    config::WingsuitGesturesConfig,
+    wingsuit_gestures::{FlightPose, SuitTransition},
 };
 
 const SUIT: Mode = Mode::Airborne(AirborneVariant::Wingsuit);

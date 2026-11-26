@@ -28,11 +28,9 @@ use jc3vr_body::controllers::{
         refs::{Strong, null_weak},
     },
 };
+use jc3vr_weapons::controllers::weapons::{engine, grenade};
 
-use crate::controllers::{
-    snatch::{Refusal, sling_hooks},
-    weapons::{engine, grenade},
-};
+use crate::controllers::snatch::{Refusal, sling_hooks};
 
 /// Why the hook cannot fire now, if it cannot: a line is out, or a fire or a reel is under way.
 pub(super) fn busy(hook: &GrapplingHook) -> Option<Refusal> {

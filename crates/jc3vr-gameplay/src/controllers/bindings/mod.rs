@@ -109,6 +109,7 @@ use jc3vr_view::{
     vr,
     vr::input::semantic::{frame as semantic_frame, history},
 };
+use jc3vr_weapons::controllers::weapons;
 use parking_lot::Mutex;
 
 pub use crate::controllers::bindings::{
@@ -140,7 +141,7 @@ use crate::{
         config::{CONTROLLERS_CONFIG, ControllersConfig},
         snatch,
         snatch::config::SnatchSettings,
-        vehicles, weapons,
+        vehicles,
     },
     grapple,
 };

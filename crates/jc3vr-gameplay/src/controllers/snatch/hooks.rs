@@ -26,10 +26,9 @@ use jc3vr_body::controllers::physics::{
     grapple_hook::{attached_hook_end, local_hook},
     refs::{Strong, Weak},
 };
+use jc3vr_weapons::controllers::weapons::inventory::engine::weapon_of;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
-
-use crate::controllers::weapons::inventory::engine::weapon_of;
 
 /// The hooks, aggregated by [`crate::controllers::snatch::hook_library`].
 pub(super) fn hook_library() -> HookLibrary {

@@ -12,7 +12,7 @@
 //! being where the weapon is.
 //!
 //! The inventory's input tick publishes the weapons and their places
-//! ([`jc3vr_gameplay::controllers::weapons::hud_feed::lost_weapons`]); the marker is kept for as long as
+//! ([`jc3vr_weapons::controllers::weapons::hud_feed::lost_weapons`]); the marker is kept for as long as
 //! the table keeps the weapon, which forgets one left far away (the pins' forget distance). It fades in past arm's length, where the grip's own markers take over, keeps
 //! a constant angular size, and only the nearest few are drawn.
 
@@ -21,7 +21,7 @@ use std::time::{Duration, Instant};
 use glam::{Vec3, Vec4};
 use jc3gi::graphics_engine::{device::Device, texture::Texture};
 use jc3vr_body::controllers::scheme;
-use jc3vr_gameplay::controllers::weapons::hud_feed::{
+use jc3vr_weapons::controllers::weapons::hud_feed::{
     icon::IconId, lost_weapons, lost_weapons::LostWeapon,
 };
 use parking_lot::Mutex;

@@ -161,7 +161,7 @@ fn grapple() -> [Press; 2] {
 
 /// The hand-weapon fire actions: the dominant trigger's, and with a pistol in the off-hand its
 /// own. The one fire action reaches the weapon, and the dual-wield split
-/// ([`crate::controllers::weapons::dual_wield`]) hands it to the pistol of the pulling hand.
+/// ([`jc3vr_weapons::controllers::weapons::dual_wield`]) hands it to the pistol of the pulling hand.
 fn fire(ctx: &TableCtx) -> Vec<Press> {
     if ctx.dual_wield {
         vec![p(F::Fire), p(F::FireOffHandPistol)]
@@ -362,7 +362,7 @@ fn vehicle<S: Sink>(s: &mut S, ctx: &TableCtx, seat: VehicleSeat) {
     // aimed by the hands, and with a pistol in the off-hand its own fire action fires too; so does
     // the vehicle weapon action of a hand holding a gun. The game's fire reaches the wielded weapon
     // and the game's own dual-wield pair, and the per-hand fire input the gun in each hand
-    // (`crate::controllers::weapons::hold::tick`).
+    // (`jc3vr_weapons::controllers::weapons::hold::tick`).
     if !seat.driver {
         let mut presses = vec![p(v.fire)];
         if ctx.dual_wield {

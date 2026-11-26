@@ -58,13 +58,13 @@ use jc3vr_view::{
         },
     },
 };
+use jc3vr_weapons::controllers::weapons::config::WEAPONS_CONFIG;
 
 use crate::{
     controllers::{
         config::{CONTROLLERS_CONFIG, ControllersConfig},
         summary::config::SUMMARY_CONFIG,
         vehicles::config::VEHICLES_CONFIG,
-        weapons::config::WEAPONS_CONFIG,
     },
     grapple::physical::config::GRAPPLE_CONFIG,
 };

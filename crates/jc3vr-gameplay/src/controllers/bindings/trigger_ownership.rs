@@ -17,16 +17,14 @@ use jc3vr_input::{
     },
 };
 use jc3vr_view::vr::input::semantic::bound::{Physical, PhysicalSet};
+use jc3vr_weapons::controllers::weapons::capabilities::{GunHand, GunOwner};
 
-use crate::controllers::{
-    bindings::{
-        intents::{Intent, SemanticInput},
-        tables::{
-            declare::{TableCtx, declare},
-            sink::{Axis, Press, Sink},
-        },
+use crate::controllers::bindings::{
+    intents::{Intent, SemanticInput},
+    tables::{
+        declare::{TableCtx, declare},
+        sink::{Axis, Press, Sink},
     },
-    weapons::capabilities::{GunHand, GunOwner},
 };
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -305,12 +303,12 @@ mod tests {
     };
     use jc3vr_input::semantic::vocabulary::WingsuitAction;
     use jc3vr_view::vr::input::semantic::{bound::PhysicalSet, defaults::default_binding};
+    use jc3vr_weapons::controllers::weapons::capabilities::{
+        Capabilities, NativePair, TriggerClaim, trigger_claims,
+    };
 
     use super::*;
-    use crate::controllers::{
-        bindings::{intents::simulate::simulate, tables::Bindings},
-        weapons::capabilities::{Capabilities, NativePair, TriggerClaim, trigger_claims},
-    };
+    use crate::controllers::bindings::{intents::simulate::simulate, tables::Bindings};
 
     fn owner(weapon: Option<usize>, role: GunHand) -> Owner {
         Owner {

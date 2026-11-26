@@ -9,15 +9,8 @@ use jc3vr_body::controllers::{
 };
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::physical_hands::doors::engine::vehicle_frame;
-
-use crate::controllers::{
+use jc3vr_weapons::controllers::{
     loadout::TakeSource,
-    snatch::{
-        Refusal, SNATCH, charge, engine,
-        pull::fire_hook,
-        rules::PropHandling,
-        target::{Offer, OfferKind},
-    },
     weapons::{
         c4::placed,
         hold::{
@@ -27,6 +20,13 @@ use crate::controllers::{
             steal::CharacterGun,
         },
     },
+};
+
+use crate::controllers::snatch::{
+    Refusal, SNATCH, charge, engine,
+    pull::fire_hook,
+    rules::PropHandling,
+    target::{Offer, OfferKind},
 };
 
 /// What the snatch fired at, with its lifetime checked throughout the flight.

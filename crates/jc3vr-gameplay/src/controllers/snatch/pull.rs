@@ -23,30 +23,28 @@ use jc3vr_physical::controllers::physical_hands::{
     remote,
 };
 use jc3vr_view::hooks::camera;
+use jc3vr_weapons::controllers::weapons::{
+    grenade,
+    hold::{SNAP_S, source as hold_source},
+    inventory::engine::weapon_of,
+};
 
 pub(super) use crate::controllers::snatch::acquisition::{
     Fired, Freeing, Grabbed, Pulled, collect, fire_at,
 };
 use crate::{
-    controllers::{
-        snatch::{
-            FinishInput, Refusal, SNATCH, arrival,
-            arrival::{Landing, LandingInput},
-            brace,
-            brace::{Brace, BraceInput, BraceReach, LineInput, Regrip},
-            catch,
-            catch::{CatchHand, CatchTuning, CatchWatch},
-            engine, juice, landing, rules,
-            rules::{FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
-            sling::{LineTuning, Sling, SlingStep},
-            sling_hooks,
-            target::weak_of,
-        },
-        weapons::{
-            grenade,
-            hold::{SNAP_S, source as hold_source},
-            inventory::engine::weapon_of,
-        },
+    controllers::snatch::{
+        FinishInput, Refusal, SNATCH, arrival,
+        arrival::{Landing, LandingInput},
+        brace,
+        brace::{Brace, BraceInput, BraceReach, LineInput, Regrip},
+        catch,
+        catch::{CatchHand, CatchTuning, CatchWatch},
+        engine, juice, landing, rules,
+        rules::{FlightLimits, FlightSample, PropHandling, StallWatch, Verdict},
+        sling::{LineTuning, Sling, SlingStep},
+        sling_hooks,
+        target::weak_of,
     },
     grapple::{line_grab, rope, rope::RopeFault},
 };

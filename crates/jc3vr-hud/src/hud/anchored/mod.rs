@@ -36,12 +36,11 @@ use jc3gi::{
     heat_manager::HeatManager,
 };
 use jc3vr_body::controllers::{hands::late, scheme};
-use jc3vr_gameplay::controllers::{
-    config::CONTROLLERS_CONFIG,
-    summary::config::GlanceConfig,
-    weapons::{hud_feed::hand_ammo as ammo_sample, wheel, wheel::CROSS_LINGER},
-};
+use jc3vr_gameplay::controllers::{config::CONTROLLERS_CONFIG, summary::config::GlanceConfig};
 use jc3vr_input::frame::{Hand, Pose};
+use jc3vr_weapons::controllers::weapons::{
+    hud_feed::hand_ammo as ammo_sample, wheel, wheel::CROSS_LINGER,
+};
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext;
 
