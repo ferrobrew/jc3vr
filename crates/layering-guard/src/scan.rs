@@ -1,4 +1,10 @@
-//! Phase one: the file-level reference map of `payload/src` checked against the allowlist.
+//! Phase one: the file-level reference map of `payload/src` and the cut-out layer crates' sources,
+//! checked against the allowlist.
+//!
+//! A file in `payload/src` belongs to the crate the module table assigns it, and so does a `crate::`
+//! path it names. A file under `crates/jc3vr-<layer>/src` already lives in its crate, so it belongs
+//! to that layer whatever its module path, and its `crate::` paths stay inside it; only the
+//! `jc3vr_<layer>::` paths it names can point upward.
 
 use std::{
     collections::{BTreeMap, BTreeSet},
@@ -31,6 +37,9 @@ pub struct SourceFile {
 pub struct SourceTree {
     /// The root relative to the repository root, such as `payload/src`.
     pub root: String,
+    /// The layer every file under the root belongs to, for a cut-out layer crate; `None` for
+    /// `payload/src`, whose files the module table places.
+    pub layer: Option<Layer>,
     pub files: Vec<SourceFile>,
 }
 
@@ -51,30 +60,84 @@ pub struct Hit {
     pub from: Layer,
 }
 
-/// Reads every `.rs` file under `repo/root`, in a stable order.
+/// Reads every `.rs` file under `repo/root`, in a stable order, for files the module table places.
 pub fn scan_tree(repo: &Path, root: &str) -> io::Result<SourceTree> {
+    read_tree(repo, root, None)
+}
+
+/// Reads the sources of every layer crate under `repo/crates` (`crates/jc3vr-<layer>/src`), in a
+/// stable order. A `jc3vr-*` directory that names no layer is an error, so a misnamed crate cannot
+/// escape the scan.
+pub fn scan_layer_crates(repo: &Path) -> io::Result<Vec<SourceTree>> {
+    let mut names = Vec::new();
+    for entry in fs::read_dir(repo.join("crates"))? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if name.starts_with("jc3vr-") && entry.file_type()?.is_dir() {
+            names.push(name);
+        }
+    }
+    names.sort();
+    names
+        .into_iter()
+        .map(|name| {
+            let layer = Layer::from_package(&name).ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("crates/{name} is not a layer crate (expected jc3vr-<layer>)"),
+                )
+            })?;
+            read_tree(repo, &format!("crates/{name}/src"), Some(layer))
+        })
+        .collect()
+}
+
+/// Maps every file and reference in `tree` and collects the upward edges.
+pub fn scan_files(table: &ModuleTable, tree: &SourceTree) -> PhaseOneReport {
+    scan_trees(table, std::slice::from_ref(tree))
+}
+
+/// Maps every file and reference in `trees` and collects the upward edges into one report.
+pub fn scan_trees(table: &ModuleTable, trees: &[SourceTree]) -> PhaseOneReport {
+    let mut report = PhaseOneReport::default();
+    for tree in trees {
+        scan_into(&mut report, table, tree);
+    }
+    for hits in report.edges.values_mut() {
+        hits.sort();
+        hits.dedup();
+    }
+    report
+}
+
+fn read_tree(repo: &Path, root: &str, layer: Option<Layer>) -> io::Result<SourceTree> {
     let mut files = Vec::new();
     collect(&repo.join(root), root, &mut files)?;
     files.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(SourceTree {
         root: root.to_owned(),
+        layer,
         files,
     })
 }
 
-/// Maps every file and reference in `tree` through `table` and collects the upward edges.
-pub fn scan_files(table: &ModuleTable, tree: &SourceTree) -> PhaseOneReport {
-    let mut report = PhaseOneReport::default();
+fn scan_into(report: &mut PhaseOneReport, table: &ModuleTable, tree: &SourceTree) {
     for file in &tree.files {
         let module = module_path(&tree.root, &file.path);
-        let Some(from) = table.resolve(&module) else {
-            report
-                .unmapped_files
-                .push((file.path.clone(), module.join("::")));
-            continue;
+        let from = match tree.layer {
+            Some(layer) => layer,
+            None => match table.resolve(&module) {
+                Some(layer) => layer,
+                None => {
+                    report
+                        .unmapped_files
+                        .push((file.path.clone(), module.join("::")));
+                    continue;
+                }
+            },
         };
         for reference in references(&file.text) {
-            let Some(to) = resolve(table, &reference) else {
+            let Some(to) = resolve(table, tree.layer, &reference) else {
                 report.unmapped_references.push((
                     file.path.clone(),
                     reference.line,
@@ -99,11 +162,6 @@ pub fn scan_files(table: &ModuleTable, tree: &SourceTree) -> PhaseOneReport {
                 });
         }
     }
-    for hits in report.edges.values_mut() {
-        hits.sort();
-        hits.dedup();
-    }
-    report
 }
 
 impl PhaseOneReport {
@@ -217,9 +275,15 @@ fn module_path(root: &str, file: &str) -> Vec<String> {
     segments
 }
 
-fn resolve(table: &ModuleTable, reference: &Reference) -> Option<Layer> {
+/// The layer a reference points into: a `crate::` path in a layer crate stays in that crate, one in
+/// `payload/src` goes through the table, and a `jc3vr_<layer>::` path names its crate directly.
+fn resolve(
+    table: &ModuleTable,
+    crate_layer: Option<Layer>,
+    reference: &Reference,
+) -> Option<Layer> {
     match &reference.root {
-        Root::Local => table.resolve(&reference.segments),
+        Root::Local => crate_layer.or_else(|| table.resolve(&reference.segments)),
         Root::Extern(name) => Layer::from_package(name),
     }
 }
@@ -244,6 +308,7 @@ mod tests {
     fn tree(files: &[(&str, &str)]) -> SourceTree {
         SourceTree {
             root: "payload/src".into(),
+            layer: None,
             files: files
                 .iter()
                 .map(|(path, text)| SourceFile {
@@ -349,6 +414,50 @@ mod tests {
         assert_eq!(
             report.edges.keys().cloned().collect::<Vec<_>>(),
             [edge("vr/mod.rs", Layer::Gameplay)]
+        );
+    }
+
+    fn crate_tree(layer: Layer, files: &[(&str, &str)]) -> SourceTree {
+        let root = format!("crates/{}/src", layer.package());
+        SourceTree {
+            files: files
+                .iter()
+                .map(|(path, text)| SourceFile {
+                    path: format!("{root}/{path}"),
+                    text: (*text).to_owned(),
+                })
+                .collect(),
+            root,
+            layer: Some(layer),
+        }
+    }
+
+    #[test]
+    fn layer_crate_files_belong_to_their_crate() {
+        let table = ModuleTable::parse(TABLE).unwrap();
+        let core = crate_tree(
+            Layer::Core,
+            &[
+                // `lib` and `director` map to payload and tooling in the table, and `crate::hud`
+                // to the HUD, but inside the core crate they are the core crate's own.
+                (
+                    "lib.rs",
+                    "pub mod director;
+use crate::hud::Thing;",
+                ),
+                ("director/mod.rs", "use crate::director::clean_view;"),
+                ("hooks/mod.rs", "use jc3vr_render::vr;"),
+            ],
+        );
+        let render = crate_tree(Layer::Render, &[("vr/mod.rs", "use jc3vr_core::hash;")]);
+        let report = scan_trees(&table, &[core, render]);
+        assert!(report.unmapped_files.is_empty() && report.unmapped_references.is_empty());
+        assert_eq!(
+            report.edges.keys().cloned().collect::<Vec<_>>(),
+            [Edge {
+                file: "crates/jc3vr-core/src/hooks/mod.rs".into(),
+                to: Layer::Render,
+            }]
         );
     }
 

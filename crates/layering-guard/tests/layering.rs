@@ -8,7 +8,7 @@ use std::{
 
 use layering_guard::{
     Allowlist, ModuleTable, check_manifests, check_render_hooks, load_layer_manifests,
-    load_render_hooks, scan_files, scan_tree,
+    load_render_hooks, scan_layer_crates, scan_tree, scan_trees,
 };
 
 fn repo() -> PathBuf {
@@ -33,7 +33,11 @@ fn payload_references_respect_the_layering() {
         !tree.files.is_empty(),
         "layering guard: payload/src holds no Rust files"
     );
-    if let Err(message) = scan_files(&table, &tree).check(&allowlist) {
+    let crates = scan_layer_crates(&repo()).unwrap_or_else(|error| {
+        panic!("layering guard: could not read the layer crates' sources: {error}")
+    });
+    let trees: Vec<_> = std::iter::once(tree).chain(crates).collect();
+    if let Err(message) = scan_trees(&table, &trees).check(&allowlist) {
         panic!("{message}");
     }
 }

@@ -1,5 +1,9 @@
 # The target crate of every payload module, for the layering guard's phase one.
 #
+# The table places the files under `payload/src` and the `crate::` paths they name. A file in a
+# cut-out `crates/jc3vr-<layer>/src` belongs to its crate without a lookup, so a module's line stays
+# here after its cut only while payload paths still name it.
+#
 # Each line is `<module path> <layer>`. A file or a `crate::` path resolves to the entry with the
 # longest matching prefix, in whole segments, so a submodule or item entry overrides its parent's.
 # `lib` is the crate root file, `lib.rs`; root items such as `is_shutting_down` are listed by name.

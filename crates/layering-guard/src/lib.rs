@@ -8,7 +8,9 @@
 //! - Phase one scans `payload/src`, maps every file and every `crate::` reference to its target
 //!   crate through the module table (`modules.txt`), and fails on any upward edge that is not in
 //!   the allowlist (`allowlist.txt`). It also fails on an allowlisted edge that no longer exists,
-//!   so the allowlist only shrinks.
+//!   so the allowlist only shrinks. It scans each cut-out `crates/jc3vr-<layer>/src` the same way,
+//!   except that such a file already belongs to its crate, so only the `jc3vr_<layer>::` paths it
+//!   names can point upward.
 //! - Phase two reads each `crates/jc3vr-*/Cargo.toml` and the payload's manifest, and checks the
 //!   dependencies against the same layer order, that only the payload is a `cdylib`, and that the
 //!   render crate's `hooks` module never names the gameplay or HUD crates. It checks whichever of
@@ -29,6 +31,9 @@ pub use crate::{
         ManifestSource, RENDER_HOOKS_FORBIDDEN, check_manifests, check_render_hooks,
         load_layer_manifests, load_render_hooks,
     },
-    scan::{Hit, PhaseOneReport, SourceFile, SourceTree, scan_files, scan_tree},
+    scan::{
+        Hit, PhaseOneReport, SourceFile, SourceTree, scan_files, scan_layer_crates, scan_tree,
+        scan_trees,
+    },
     table::{ModuleTable, TableError},
 };
