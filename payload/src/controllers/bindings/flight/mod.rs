@@ -24,15 +24,16 @@ use crate::{
         vehicles::{
             config::WingsuitGesturesConfig,
             wingsuit_gestures::{
-                Blocked, FlightPose, GestureAvailability, GestureCommands, GestureInput,
-                GesturePhase, HandClaims, Stage, SuitTransition, WingsuitGestures,
+                Blocked, FlightCalibration, FlightPose, GestureAvailability, GestureCommands,
+                GestureInput, GesturePhase, HandClaims, Stage, SuitTransition, WingsuitGestures,
+                desired_for,
             },
         },
         weapons,
     },
     grapple::hook,
     recorder::tracking::events::{self, EventKind},
-    vr::input::flight_pose::{self, FlightCalibration},
+    vr::input::flight_pose,
 };
 
 /// Recognition and the calibration that interprets its pose history belong to one binding state.
@@ -337,7 +338,8 @@ fn observation(tick: &Tick<'_>, desired: &[Desired], now: Instant) -> Option<Ges
         deploy_grapple: deploy_grapple(tick.detection, tick.airborne, tick.grapple),
         gameplay: suspension(tick).is_none(),
         canopy_requested: canopy(desired),
-        pose: packet.measure(
+        pose: FlightPose::from_packet(
+            &packet,
             &FlightCalibration {
                 grip_offset: &tick.config.hands.grip,
                 dimensions: tick.dimensions,
@@ -412,7 +414,7 @@ fn commit_input(
         Stage::Parachute => Stage::Fall,
         stage => stage,
     };
-    match flight_pose::desired_for(commands, stage, canopy(desired)) {
+    match desired_for(commands, stage, canopy(desired)) {
         Ok(inputs) => {
             if commands.transition == Some(SuitTransition::Deploy) {
                 desired.retain(|input| {

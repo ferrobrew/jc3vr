@@ -7,7 +7,7 @@ use std::f32::consts::FRAC_PI_2;
 
 use super::*;
 use crate::controllers::{
-    frame::{ActionSetKind, HandFrame},
+    frame::{ActionSetKind, HandFrame, TrackedPose},
     mode::{OnFootVariant, VehicleClass, VehicleSeat},
 };
 

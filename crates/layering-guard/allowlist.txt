@@ -205,7 +205,6 @@ payload/src/vr/back_buffer.rs -> payload
 payload/src/vr/eye_resolution.rs -> payload
 payload/src/vr/frame.rs -> payload
 payload/src/vr/frame_loop.rs -> payload
-payload/src/vr/input/flight_pose.rs -> gameplay
 payload/src/vr/input/restart.rs -> payload
 payload/src/vr/input/sample.rs -> gameplay
 payload/src/vr/input/self_check.rs -> gameplay

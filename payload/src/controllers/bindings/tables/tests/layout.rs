@@ -4,20 +4,18 @@
 use std::collections::BTreeSet;
 
 use super::*;
-use crate::{
-    controllers::{
-        bindings::tables::{
-            coverage::{all_contexts, all_modes, injected, injected_with},
-            tests::equivalence::legacy_layout,
-        },
-        vehicles::{
-            config::WingsuitGesturesConfig,
-            wingsuit_gestures::{
-                FlightPose, GestureInput, GestureSample, HandClaims, Stage, WingsuitGestures,
-            },
+use crate::controllers::{
+    bindings::tables::{
+        coverage::{all_contexts, all_modes, injected, injected_with},
+        tests::equivalence::legacy_layout,
+    },
+    vehicles::{
+        config::WingsuitGesturesConfig,
+        wingsuit_gestures::{
+            FlightPose, GestureInput, GestureSample, HandClaims, Stage, WingsuitGestures,
+            desired_for,
         },
     },
-    vr::input::flight_pose::desired_for,
 };
 
 /// The game actions the new layout leaves without a button: grenades come from their pouch and

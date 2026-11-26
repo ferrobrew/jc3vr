@@ -4,20 +4,11 @@
 
 use std::{sync::LazyLock, time::Instant};
 
-use jc3gi::input::input_action_map::Action::{CANCEL, OPEN_WINGSUIT, WINGSUIT_AIRBRAKE};
 use openxr as xr;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{
-        bindings::hold::{Desired, MapKind, Target, Want},
-        body::BodyDimensions,
-        config::GripOffset,
-        frame::{ControllerFrame, Pose, TrackedPose},
-        vehicles::wingsuit_gestures::{
-            FlightPose, GestureCommands, GestureHead, GestureObservation, Stage, SuitTransition,
-        },
-    },
+    controllers::frame::{ControllerFrame, Pose, TrackedPose},
     vr::convert,
 };
 
@@ -36,6 +27,17 @@ pub(crate) struct GestureSample {
     pub epoch: u64,
     pub sequence: u64,
     pub time_ns: i64,
+}
+
+/// A head pose published from the same locate and cockpit baseline as the controller observation.
+///
+/// The producer must preserve the original sample identity and tracking flags. Copying the current
+/// controller stamp onto a separately queried global head pose does not satisfy this contract.
+#[derive(Debug, Copy, Clone)]
+pub(crate) struct GestureHead {
+    pub sample: GestureSample,
+    pub pose: TrackedPose,
+    pub published_at: Instant,
 }
 
 /// Head data from this frame's located and already-rebased eye views.
@@ -72,29 +74,15 @@ impl FlightPacket {
         self.head.pose.pose
     }
 
-    /// Derive palms and shoulder-relative distances from this packet, not a later snapshot.
-    pub(crate) fn measure(
-        &self,
-        calibration: &FlightCalibration<'_>,
-        now: Instant,
-    ) -> Option<FlightPose> {
-        FlightPose::from_tracking(&GestureObservation {
-            sample: self.head.sample,
-            head: self.head,
-            controllers: &self.controllers,
-            grip_offset: calibration.grip_offset,
-            dimensions: calibration.dimensions,
-            torso: None,
-            now,
-        })
+    /// The head from the same locate and cockpit baseline as the controllers.
+    pub(crate) fn head(&self) -> GestureHead {
+        self.head
     }
-}
 
-/// Physical player dimensions and the configured controller grip-to-wrist transform.
-/// `None` torso in the observation uses the packet's own head yaw rather than a global estimate.
-pub(crate) struct FlightCalibration<'a> {
-    pub grip_offset: &'a GripOffset,
-    pub dimensions: &'a BodyDimensions,
+    /// The controller frame published with the head.
+    pub(crate) fn controllers(&self) -> &ControllerFrame {
+        &self.controllers
+    }
 }
 
 /// Start this live frame even when no tracked views are available, clearing the previous packet.
@@ -133,62 +121,6 @@ pub(crate) fn source_changed(change: EpochChange) {
 /// `None` once it has overflowed.
 pub(crate) fn epoch() -> Option<u64> {
     SLOT.lock().epoch
-}
-
-/// Invalid command contexts emit no partial action list. The caller retains canopy precedence.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub(crate) enum CommandRejection {
-    CanopyRequested,
-    WrongMode,
-    ConflictingCommands,
-}
-
-/// Translate typed transitions through the existing narrow player-map action, with stage guards.
-/// Both suit transitions use `OPEN_WINGSUIT`; the broad use/vehicle-entry family is not emitted. A
-/// deploy goes in during the game's jump as in its fall: both take the suit's opening.
-pub(crate) fn desired_for(
-    commands: GestureCommands,
-    stage: Stage,
-    canopy_requested: bool,
-) -> Result<Vec<Desired>, CommandRejection> {
-    if canopy_requested {
-        return Err(CommandRejection::CanopyRequested);
-    }
-    let suit = stage == Stage::Suit;
-    if commands.transition.is_some() && commands.brake {
-        return Err(CommandRejection::ConflictingCommands);
-    }
-    let transition = match commands.transition {
-        Some(SuitTransition::Deploy) if stage == Stage::Fall => true,
-        Some(SuitTransition::Close) if suit => true,
-        Some(SuitTransition::Deploy | SuitTransition::Close) => {
-            return Err(CommandRejection::WrongMode);
-        }
-        None => false,
-    };
-    if commands.brake && !suit {
-        return Err(CommandRejection::WrongMode);
-    }
-    let mut desired = Vec::with_capacity(2);
-    if transition {
-        desired.push(Desired {
-            target: Target {
-                map: MapKind::Player,
-                action: OPEN_WINGSUIT,
-            },
-            want: Want::Click,
-        });
-    }
-    if commands.brake {
-        desired.extend([CANCEL, WINGSUIT_AIRBRAKE].map(|action| Desired {
-            target: Target {
-                map: MapKind::Player,
-                action,
-            },
-            want: Want::Hold(1.0),
-        }));
-    }
-    Ok(desired)
 }
 
 struct Producer {
@@ -547,85 +479,5 @@ mod tests {
         let current = publish(&mut producer, 200, 2, now);
         assert!(!producer.complete(old, frame(100, now), (1, now)));
         assert!(producer.for_frame(&current, now).is_some());
-    }
-
-    #[test]
-    fn typed_transitions_emit_only_the_narrow_player_action_in_the_correct_mode() {
-        for (transition, stage) in [
-            (SuitTransition::Deploy, Stage::Fall),
-            (SuitTransition::Close, Stage::Suit),
-        ] {
-            let commands = GestureCommands {
-                transition: Some(transition),
-                ..Default::default()
-            };
-            assert_eq!(
-                desired_for(commands, stage, false).unwrap(),
-                vec![Desired {
-                    target: Target {
-                        map: MapKind::Player,
-                        action: OPEN_WINGSUIT
-                    },
-                    want: Want::Click,
-                }]
-            );
-            assert_eq!(
-                desired_for(commands, Stage::Other, false),
-                Err(CommandRejection::WrongMode)
-            );
-            assert_eq!(
-                desired_for(commands, stage, true),
-                Err(CommandRejection::CanopyRequested)
-            );
-        }
-    }
-
-    #[test]
-    fn brake_uses_existing_held_pair_and_rejects_conflicts_or_nonflight_contexts() {
-        let stage = Stage::Suit;
-        let commands = GestureCommands {
-            brake: true,
-            ..Default::default()
-        };
-        let desired = desired_for(commands, stage, false).unwrap();
-        assert_eq!(desired.len(), 2);
-        assert_eq!(desired[0].target.action, CANCEL);
-        assert_eq!(desired[1].target.action, WINGSUIT_AIRBRAKE);
-        assert!(
-            desired
-                .iter()
-                .all(|input| input.target.map == MapKind::Player && input.want == Want::Hold(1.0))
-        );
-        assert!(
-            desired_for(GestureCommands::default(), stage, false)
-                .unwrap()
-                .is_empty()
-        );
-        assert_eq!(
-            desired_for(commands, Stage::Other, false),
-            Err(CommandRejection::WrongMode)
-        );
-        assert_eq!(
-            desired_for(
-                GestureCommands {
-                    transition: Some(SuitTransition::Close),
-                    ..commands
-                },
-                stage,
-                false
-            ),
-            Err(CommandRejection::ConflictingCommands)
-        );
-        assert_eq!(
-            desired_for(
-                GestureCommands {
-                    transition: Some(SuitTransition::Deploy),
-                    ..Default::default()
-                },
-                stage,
-                false
-            ),
-            Err(CommandRejection::WrongMode)
-        );
     }
 }

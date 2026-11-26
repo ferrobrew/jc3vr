@@ -14,20 +14,23 @@
 //! wrist's roll about the fingers, the measure the arm steering's wrist tilt reads, so turning the
 //! hands to face the wind reads the same whether the arms are level, raised, or swept back.
 
+mod commands;
+
 use std::{fmt, time::Instant};
 
 use body_rig::{angle::yaw_of, rotation::level};
+pub(crate) use commands::desired_for;
 use glam::{Quat, Vec3};
 
 use crate::controllers::{
     body::{self, BodyDimensions},
     config::GripOffset,
-    frame::{ControllerFrame, Hand, Pose, TrackedPose},
+    frame::{ControllerFrame, Hand, Pose},
     hands::pose::cockpit_hand,
     mode::{AirborneVariant, Mode, OnFootVariant},
     vehicles::{arm_steering::wrist_tilt, config::WingsuitGesturesConfig},
 };
-pub(crate) use crate::vr::input::flight_pose::GestureSample;
+pub(crate) use crate::vr::input::flight_pose::{FlightPacket, GestureHead, GestureSample};
 
 /// A single transition request. The binding owner emits it once, never as a held toggle.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -177,17 +180,6 @@ pub(crate) struct HandClaims {
     pub grapple: bool,
 }
 
-/// A head pose published from the same locate and cockpit baseline as the controller observation.
-///
-/// The producer must preserve the original sample identity and tracking flags. Copying the current
-/// controller stamp onto a separately queried global head pose does not satisfy this contract.
-#[derive(Debug, Copy, Clone)]
-pub(crate) struct GestureHead {
-    pub sample: GestureSample,
-    pub pose: TrackedPose,
-    pub published_at: Instant,
-}
-
 /// Explicit pose inputs. The producer supplies a common epoch for one cockpit baseline.
 ///
 /// Controller frames do not carry a head pose or baseline epoch. The integration must publish the
@@ -201,6 +193,13 @@ pub(crate) struct GestureObservation<'a> {
     /// A torso estimate in the same cockpit baseline, or no estimate to use the supplied head yaw.
     pub torso: Option<Quat>,
     pub now: Instant,
+}
+
+/// Physical player dimensions and the configured controller grip-to-wrist transform.
+/// `None` torso in the observation uses the packet's own head yaw rather than a global estimate.
+pub(crate) struct FlightCalibration<'a> {
+    pub grip_offset: &'a GripOffset,
+    pub dimensions: &'a BodyDimensions,
 }
 
 /// Continuous pose measures in the calibrated shoulder frame, normalized by the arm span.
@@ -220,6 +219,24 @@ pub(crate) struct FlightPose {
 }
 
 impl FlightPose {
+    /// Derive palms and shoulder-relative distances from `packet`, not a later snapshot.
+    pub(crate) fn from_packet(
+        packet: &FlightPacket,
+        calibration: &FlightCalibration<'_>,
+        now: Instant,
+    ) -> Option<Self> {
+        let head = packet.head();
+        Self::from_tracking(&GestureObservation {
+            sample: head.sample,
+            head,
+            controllers: packet.controllers(),
+            grip_offset: calibration.grip_offset,
+            dimensions: calibration.dimensions,
+            torso: None,
+            now,
+        })
+    }
+
     /// Measure raw wrists against calibrated shoulders from explicitly matched head/hand samples.
     /// The configured grip-to-wrist offset supplies the wrist frame; the aim pose is not a palm
     /// basis. Without a torso estimate, the body faces along [`flight_heading`].
