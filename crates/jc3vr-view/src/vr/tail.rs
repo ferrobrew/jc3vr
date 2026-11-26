@@ -28,6 +28,7 @@
 
 use std::{
     sync::{OnceLock, mpsc},
+    thread::JoinHandle,
     time::{Duration, Instant},
 };
 
@@ -94,10 +95,16 @@ pub fn log_vr_frame_health(should_render: bool) {
 pub fn submit(job: Box<TailJob>) -> Result<(), Box<TailJob>> {
     let sender = SENDER.get_or_init(|| {
         let (tx, rx) = mpsc::channel();
-        std::thread::Builder::new()
+        let (exited_tx, exited) = mpsc::channel::<()>();
+        let handle = std::thread::Builder::new()
             .name("jc3vr-frame-tail".to_owned())
-            .spawn(move || worker(rx))
+            .spawn(move || {
+                // Dropped when the worker returns or unwinds, which is what `shutdown` waits for.
+                let _exited = exited_tx;
+                worker(rx);
+            })
             .expect("spawning the frame-tail worker");
+        *WORKER.lock() = Some(WorkerThread { handle, exited });
         tx
     });
     sender.send(Message::Job(job)).map_err(|e| {
@@ -108,44 +115,53 @@ pub fn submit(job: Box<TailJob>) -> Result<(), Box<TailJob>> {
     })
 }
 
-/// Stops the worker and waits for it to exit. Called on shutdown before the hooks are torn down; the
-/// in-flight job (if any) finishes first because the channel is drained in order.
+/// Stops the worker and joins it. Called on shutdown before the hooks are torn down; the in-flight
+/// job (if any) finishes first because the channel is drained in order.
 ///
-/// Returns whether the worker actually acknowledged. **A `false` return means the payload must not
-/// unload**: a thread still executing in an image that then unmaps has no return address, so it
-/// parks forever holding whatever locks it took, and the process wedges with no runnable threads and
-/// nothing in the log. That failure was observed after the tail timed out draining the draw dispatch
-/// signal, and it is unrecoverable -- there is no thread left able to resolve it. Waiting longer is
-/// strictly better than unloading underneath a live thread.
+/// Returns whether the worker exited. **A `false` return means the payload must not unload**: a
+/// thread still executing in an image that then unmaps has no return address, so it parks forever
+/// holding whatever locks it took, and the process wedges with no runnable threads and nothing in
+/// the log. That failure was observed after the tail timed out draining the draw dispatch signal,
+/// and it is unrecoverable -- there is no thread left able to resolve it. Waiting longer is strictly
+/// better than unloading underneath a live thread.
 #[must_use = "a tail that did not stop means the payload must stay mapped"]
 pub fn shutdown() -> bool {
     let Some(sender) = SENDER.get() else {
         return true; // never spawned
     };
     let _ = sender.send(Message::Quit);
-    // The worker acknowledges by closing the ack channel; poll its liveness cheaply instead of
-    // holding a JoinHandle across the OnceLock (the handle is not clonable out of the init closure).
-    for _ in 0..SHUTDOWN_POLLS {
-        if QUIT_ACKED.load(std::sync::atomic::Ordering::Acquire) {
-            return true;
-        }
-        std::thread::sleep(std::time::Duration::from_millis(10));
+    let Some(WorkerThread { handle, exited }) = WORKER.lock().take() else {
+        return true; // already joined
+    };
+    // The standard join has no timeout, so wait for the worker's exit signal first and join only a
+    // thread that is already returning.
+    if let Err(mpsc::RecvTimeoutError::Timeout) = exited.recv_timeout(SHUTDOWN_BUDGET) {
+        tracing::error!(
+            target: "vr",
+            "the frame-tail worker did not stop within {} s; leaving the payload mapped rather than \
+             unmapping under a live thread",
+            SHUTDOWN_BUDGET.as_secs(),
+        );
+        return false;
     }
-    tracing::error!(
-        target: "vr",
-        "the frame-tail worker did not stop within {} s; leaving the payload mapped rather than \
-         unmapping under a live thread",
-        SHUTDOWN_POLLS / 100,
-    );
-    false
+    if handle.join().is_err() {
+        tracing::error!(target: "vr", "the frame-tail worker panicked; it has exited");
+    }
+    true
 }
 
-/// How long [`shutdown`] waits for the worker, in 10 ms polls. Generous on purpose: the tail can be
-/// mid-submit against a compositor that is itself pacing, and the cost of waiting too long is a
-/// slow eject, while the cost of waiting too little is an unrecoverable wedge.
-const SHUTDOWN_POLLS: u32 = 500;
+/// How long [`shutdown`] waits for the worker. Generous on purpose: the tail can be mid-submit
+/// against a compositor that is itself pacing, and the cost of waiting too long is a slow eject,
+/// while the cost of waiting too little is an unrecoverable wedge.
+const SHUTDOWN_BUDGET: Duration = Duration::from_secs(5);
 
-static QUIT_ACKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// The worker's handle and the receiver its exit closes.
+struct WorkerThread {
+    handle: JoinHandle<()>,
+    exited: mpsc::Receiver<()>,
+}
+
+static WORKER: Mutex<Option<WorkerThread>> = Mutex::new(None);
 
 fn worker(rx: mpsc::Receiver<Message>) {
     thread_role::mark_thread(ThreadRole::FrameTail);
@@ -157,7 +173,6 @@ fn worker(rx: mpsc::Receiver<Message>) {
             Message::Quit => break,
         }
     }
-    QUIT_ACKED.store(true, std::sync::atomic::Ordering::Release);
 }
 
 /// How long the tail waits on any one draw-completion signal before proceeding anyway. A stuck
