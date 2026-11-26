@@ -21,40 +21,32 @@ use std::{
     sync::atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use jc3vr_view::stereo::{config::STEREO_CONFIG, layout, layout::LayoutFlags};
+use jc3vr_view::stereo::{
+    config::{STEREO_CONFIG, SinglePassSwitch},
+    layout,
+    layout::LayoutFlags,
+};
 
-/// One flag in the per-frame single-pass config snapshot.
-#[derive(Clone, Copy)]
-pub(super) enum Flag {
-    SinglePass,
-    Reproject,
-    Terrain,
-    TerrainPatchPerEye,
-    Clouds,
-    AoVolumes,
-    VegetationOnce,
-    NvWater,
-    InstancedPerEye,
-    HwInstancedOnce,
-    IndirectPerEye,
-    ViewportFollowsTarget,
-    Slot13PerEye,
-    TerrainCullBothEyes,
-    ViewportBindCache,
-}
-
-/// The single-pass config flags, sampled once per frame and pinned for the duration of a dispatch.
+/// The single-pass config flags, sampled once per frame and pinned for the duration of a dispatch:
+/// every switch at its [`SinglePassSwitch`] index (from
+/// [`SinglePassConfig::switch_bits`](jc3vr_view::stereo::config::SinglePassConfig::switch_bits)),
+/// and the master switch taken together with the session at [`SINGLE_PASS_BIT`].
 #[derive(Clone, Copy)]
 pub(super) struct ConfigFlags(u64);
 
 impl ConfigFlags {
-    pub(super) fn has(self, flag: Flag) -> bool {
-        self.0 & (1 << flag as u64) != 0
+    pub(super) fn has(self, switch: SinglePassSwitch) -> bool {
+        self.0 & (1 << switch as u64) != 0
+    }
+
+    /// Whether the master switch is on and a VR session is running.
+    pub(super) fn single_pass(self) -> bool {
+        self.0 & SINGLE_PASS_BIT != 0
     }
 
     /// The stereo layout these flags ask for, as [`layout`] publishes it.
     fn layout(self) -> LayoutFlags {
-        LayoutFlags::new(self.has(Flag::SinglePass))
+        LayoutFlags::new(self.single_pass())
     }
 }
 
@@ -144,37 +136,27 @@ impl Drop for DispatchEnd {
 static SESSION_LIVE: AtomicBool = AtomicBool::new(false);
 
 fn store_config_flags() -> u64 {
-    let bit = |on: bool, flag: Flag| u64::from(on) << flag as u64;
     let session_live = SESSION_LIVE.load(Ordering::Relaxed);
     let snapshot = STEREO_CONFIG.query(|c| {
         let s = &c.single_pass;
-        bit(s.enabled && session_live, Flag::SinglePass)
-            | bit(s.reproject, Flag::Reproject)
-            | bit(s.terrain, Flag::Terrain)
-            | bit(s.terrain_patch_per_eye, Flag::TerrainPatchPerEye)
-            | bit(s.clouds_per_eye, Flag::Clouds)
-            | bit(s.ao_volumes_per_eye, Flag::AoVolumes)
-            | bit(s.vegetation_once, Flag::VegetationOnce)
-            | bit(s.nvwater_per_eye, Flag::NvWater)
-            | bit(s.instanced_per_eye, Flag::InstancedPerEye)
-            | bit(s.hw_instanced_once, Flag::HwInstancedOnce)
-            | bit(s.indirect_per_eye, Flag::IndirectPerEye)
-            | bit(
-                s.collapse_viewport_follows_target,
-                Flag::ViewportFollowsTarget,
-            )
-            | bit(s.slot13_per_eye, Flag::Slot13PerEye)
-            | bit(s.terrain_cull_both_eyes, Flag::TerrainCullBothEyes)
-            | bit(s.viewport_bind_cache, Flag::ViewportBindCache)
+        s.switch_bits()
+            | if s.enabled && session_live {
+                SINGLE_PASS_BIT
+            } else {
+                0
+            }
     }) | CONFIG_FLAGS_VALID;
     CONFIG_FLAGS.store(snapshot, Ordering::Relaxed);
     layout::publish_frame_layout(ConfigFlags(snapshot).layout());
     snapshot
 }
 
+/// The master switch's bit, just past the switches'.
+const SINGLE_PASS_BIT: u64 = 1 << SinglePassSwitch::COUNT;
 /// Marks [`CONFIG_FLAGS`] as having been sampled at least once, so a zero snapshot before the first
 /// frame is not mistaken for "everything off".
 const CONFIG_FLAGS_VALID: u64 = 1 << 63;
+const _: () = assert!(SINGLE_PASS_BIT < CONFIG_FLAGS_VALID);
 static CONFIG_FLAGS: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {

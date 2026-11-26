@@ -386,7 +386,7 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
     // everywhere except the reduced-resolution off-screen passes -- see [`CURRENT_ENGINE_VIEWPORT`].
     let flags = config_flags();
     let (Some(full), bound) =
-        viewport_record::base_and_bound(flags.has(Flag::ViewportFollowsTarget))
+        viewport_record::base_and_bound(flags.has(SinglePassSwitch::CollapseViewportFollowsTarget))
     else {
         return;
     };
@@ -410,7 +410,7 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
     // its count, and the mod's own through the trampoline where it makes them), so a draw that wants
     // what the slots already hold has nothing to bind. A pass's patched draws all want the same
     // split, so most of them skip.
-    if flags.has(Flag::ViewportBindCache) && bound == Some(viewports) {
+    if flags.has(SinglePassSwitch::ViewportBindCache) && bound == Some(viewports) {
         bump(&VIEWPORT_BINDS_SKIPPED);
         return;
     }
@@ -423,7 +423,9 @@ pub(super) fn ensure_collapse_viewport(context: *mut c_void, target: CollapseVie
 /// The full viewport of the target the collapse splits into eye halves: the live engine bind while
 /// the split follows the target, otherwise the scene's.
 fn collapse_base_viewport() -> Option<D3D11_VIEWPORT> {
-    viewport_record::base_viewport(config_flags().has(Flag::ViewportFollowsTarget))
+    viewport_record::base_viewport(
+        config_flags().has(SinglePassSwitch::CollapseViewportFollowsTarget),
+    )
 }
 
 /// The full viewport of the target the collapse splits into eye halves (see

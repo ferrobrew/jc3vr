@@ -42,7 +42,7 @@ use windows::{
 };
 
 use crate::stereo::single_pass::{
-    BOUND_VS, CollapseViewport, DRAW_INDEXED_INSTANCED, Flag, bind_both_viewport_slots,
+    BOUND_VS, CollapseViewport, DRAW_INDEXED_INSTANCED, SinglePassSwitch, bind_both_viewport_slots,
     config_flags, current_pass_id, ensure_collapse_viewport, eye_split_state, hw_instanced_once,
     instanced_per_eye, probes,
 };
@@ -54,7 +54,7 @@ use crate::stereo::single_pass::{
 ///
 /// `rc` must be the live render context the block's detour received.
 pub(crate) unsafe fn draw_block(rc: *const RenderContext, draw: &mut dyn FnMut()) -> bool {
-    if !config_flags().has(Flag::VegetationOnce) {
+    if !config_flags().has(SinglePassSwitch::VegetationOnce) {
         return false;
     }
     let Some((_, full, d3d)) = eye_split_state() else {
@@ -146,7 +146,7 @@ pub(super) fn draw_indexed_instanced(
         note_unconverted("a hardware-instanced draw's vertex shader has no variant");
     }
     let once = variant.is_some()
-        && config_flags().has(Flag::HwInstancedOnce)
+        && config_flags().has(SinglePassSwitch::HwInstancedOnce)
         && hw_instanced_once(context, instance_count, submit_doubled);
     once || instanced_per_eye(submit)
 }

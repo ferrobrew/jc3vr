@@ -204,7 +204,7 @@ pub(super) unsafe extern "system" fn draw_detour(
             // Any other geometry on this entry point is not the fullscreen triangle the `Full`
             // reset below exists for, so give it the same per-eye treatment the indexed path gives
             // its unpatched draws.
-            if flags.has(Flag::Slot13PerEye) && instanced_per_eye(&submit) {
+            if flags.has(SinglePassSwitch::Slot13PerEye) && instanced_per_eye(&submit) {
                 return;
             }
         }
@@ -599,7 +599,9 @@ pub(super) fn indirect_per_eye(context: *mut c_void, submit: &dyn Fn(Option<usiz
     if !collapse_active() || !in_gbuffer_range() || per_eye_reissue_eye().is_some() {
         return false;
     }
-    if !config_flags().has(Flag::IndirectPerEye) || BOUND_VS_PATCHED.load(Ordering::Relaxed) {
+    if !config_flags().has(SinglePassSwitch::IndirectPerEye)
+        || BOUND_VS_PATCHED.load(Ordering::Relaxed)
+    {
         INDIRECT_FORWARDED.fetch_add(1, Ordering::Relaxed);
         return false;
     }
@@ -737,13 +739,14 @@ pub(super) unsafe extern "system" fn draw_indexed_instanced_detour(
         }
         if patched && in_range && collapse_active() {
             let flags = config_flags();
-            let once = flags.has(Flag::HwInstancedOnce)
+            let once = flags.has(SinglePassSwitch::HwInstancedOnce)
                 && hw_instanced_once(context, instance_count, &submit_promoted);
             if once {
                 record_instanced_case(instance_count, true);
                 return;
             }
-            let handled = flags.has(Flag::InstancedPerEye) && instanced_per_eye(&submit);
+            let handled =
+                flags.has(SinglePassSwitch::InstancedPerEye) && instanced_per_eye(&submit);
             record_instanced_case(instance_count, handled);
             if handled {
                 return;

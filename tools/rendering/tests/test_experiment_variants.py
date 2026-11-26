@@ -2,7 +2,6 @@
 
 import dataclasses
 import json
-import re
 import tomllib
 import unittest
 from pathlib import Path
@@ -21,6 +20,7 @@ from tools.rendering.experiment_variants import (
     verify_switches,
 )
 from tools.rendering.protocol import (
+    SINGLE_PASS_DEFAULTS,
     SINGLE_PASS_SWITCHES,
     Capture,
     Command,
@@ -43,7 +43,7 @@ REPOSITORY = Path(__file__).resolve().parents[3]
 CANONICAL = ("left_only", "right_only", "multipass", "single_pass")
 # The creation-time switches the fake payload reports in its shader build.
 REBUILDING = ("ssr_per_eye", "pixel_camera_per_eye", "screen_door_per_eye")
-DEFAULTS = {name: True for name in SINGLE_PASS_SWITCHES}
+DEFAULTS = SINGLE_PASS_DEFAULTS
 CHANGED_PIXELS = 7
 
 
@@ -180,12 +180,10 @@ class VariantConfigTests(ExperimentTestCase):
 
 
 class VariantProtocolTests(unittest.TestCase):
-    def test_switch_names_match_the_payload(self):
-        source = (REPOSITORY / "crates/jc3vr-render/src/stereo/switches.rs").read_text()
-        invocation = source[source.index("single_pass_switches! {"):]
-        invocation = invocation[:invocation.index("\n}\n")]
-        names = tuple(re.findall(r"^\s*\w+ => (\w+), (?:true|false);$", invocation, re.M))
-        self.assertEqual(names, SINGLE_PASS_SWITCHES)
+    def test_the_switch_manifest_names_each_switch_once(self):
+        self.assertTrue(SINGLE_PASS_SWITCHES)
+        self.assertEqual(len(set(SINGLE_PASS_SWITCHES)), len(SINGLE_PASS_SWITCHES))
+        self.assertEqual(set(SINGLE_PASS_DEFAULTS), set(SINGLE_PASS_SWITCHES))
 
     def test_overrides_round_trip_through_the_request_file(self):
         overrides = VisualOverrides(SunShadows.DISABLED, "enabled",

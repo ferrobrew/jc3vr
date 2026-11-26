@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
+use jc3vr_view::stereo::config::SinglePassSwitch;
 use pretty_assertions::assert_eq;
 
 use super::*;
@@ -232,14 +233,8 @@ fn single_pass_switch_overrides_are_validated_against_the_switches_and_mode() {
     assert_eq!(
         overrides.single_pass.iter().collect::<Vec<_>>(),
         [
-            (
-                jc3vr_render::stereo::switches::SinglePassSwitch::PixelCameraPerEye,
-                false
-            ),
-            (
-                jc3vr_render::stereo::switches::SinglePassSwitch::SsrPerEye,
-                false
-            ),
+            (SinglePassSwitch::PixelCameraPerEye, false),
+            (SinglePassSwitch::SsrPerEye, false),
         ]
     );
     assert!(matches!(

@@ -105,16 +105,17 @@ pub fn should_reproject(name: Option<&str>) -> bool {
         return false;
     };
     let flags = config_flags();
-    (flags.has(Flag::Reproject) && REPROJECT_NAME_PREFIXES.iter().any(|p| name.starts_with(p)))
+    (flags.has(SinglePassSwitch::Reproject)
+        && REPROJECT_NAME_PREFIXES.iter().any(|p| name.starts_with(p)))
         || VEGETATION_REPROJECT_NAME_PREFIXES
             .iter()
             .any(|p| name.starts_with(p))
         || STATIC_LIGHT_REPROJECT_NAME_PREFIXES
             .iter()
             .any(|p| name.starts_with(p))
-        || (flags.has(Flag::AoVolumes) && name == AO_VOLUME_REPROJECT_NAME)
+        || (flags.has(SinglePassSwitch::AoVolumesPerEye) && name == AO_VOLUME_REPROJECT_NAME)
         || name == WATER_PLANE_REPROJECT_NAME
-        || (flags.has(Flag::Clouds) && CLOUD_REPROJECT_NAMES.contains(&name))
+        || (flags.has(SinglePassSwitch::CloudsPerEye) && CLOUD_REPROJECT_NAMES.contains(&name))
         || name == STARS_REPROJECT_NAME
 }
 
@@ -178,7 +179,7 @@ pub fn should_eye_inject(name: Option<&str>) -> bool {
     let Some(name) = name else {
         return false;
     };
-    config_flags().has(Flag::Terrain)
+    config_flags().has(SinglePassSwitch::Terrain)
         && TERRAIN_VS_NAME_PREFIXES.iter().any(|p| name.starts_with(p))
         && !is_terrain_shadow_pass(Some(name))
 }
@@ -193,8 +194,8 @@ pub fn should_eye_inject(name: Option<&str>) -> bool {
 /// the per-eye re-issue places on `cb13` gives each submission its eye.
 pub fn should_pin_terrain(name: Option<&str>) -> bool {
     let flags = config_flags();
-    flags.has(Flag::Terrain)
-        && flags.has(Flag::TerrainPatchPerEye)
+    flags.has(SinglePassSwitch::Terrain)
+        && flags.has(SinglePassSwitch::TerrainPatchPerEye)
         && name.is_some_and(|n| TERRAIN_VS_NAME_PREFIXES.iter().any(|p| n.starts_with(p)))
         && !is_terrain_shadow_pass(name)
 }
@@ -233,7 +234,7 @@ pub fn is_terrain_shadow_pass(name: Option<&str>) -> bool {
 /// Whether the single-pass terrain path is live: single-pass is [`active`] and the `single_pass_terrain`
 /// flag is on. Gates the hull-forward and domain-reproject substitutions in the shader-creation hooks.
 pub fn terrain_active() -> bool {
-    active() && config_flags().has(Flag::Terrain)
+    active() && config_flags().has(SinglePassSwitch::Terrain)
 }
 
 /// Record that a terrain hull shader's eye lane was forwarded (its `TEXCOORD3.z` widened), for the

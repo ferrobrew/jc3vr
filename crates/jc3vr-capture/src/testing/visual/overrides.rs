@@ -9,14 +9,13 @@
 use std::collections::BTreeMap;
 
 use jc3vr_core::config::engine::Parts;
-use jc3vr_render::{
-    hooks::graphics_engine::config::{EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG},
-    stereo::switches::SinglePassSwitch,
+use jc3vr_render::hooks::graphics_engine::config::{
+    EXPOSURE_CONFIG, ExposureConfig, POST_FX_CONFIG,
 };
 use jc3vr_view::{
     fsr::{AntiAliasing, FSR_CONFIG, FsrConfig},
     stereo::{
-        config::{STEREO_CONFIG, SinglePassConfig},
+        config::{STEREO_CONFIG, SinglePassConfig, SinglePassSwitch},
         dispatch::RenderMode,
     },
     vr::{FOVEATION_CONFIG, FoveationConfig, VR_CONFIG},
@@ -554,8 +553,8 @@ mod tests {
         assert_eq!(
             overrides.single_pass.iter().collect::<Vec<_>>(),
             [
-                (SinglePassSwitch::SsrPerEye, false),
-                (SinglePassSwitch::FsrPerEye, true)
+                (SinglePassSwitch::FsrPerEye, true),
+                (SinglePassSwitch::SsrPerEye, false)
             ]
         );
     }

@@ -98,7 +98,10 @@ pub use frame_diagnostics::*;
 pub use impostor_pixel_size::EyeDisplayWidth;
 pub use instanced_exposure::*;
 pub(crate) use jc3vr_view::stereo::engine_context::EngineContext;
-use jc3vr_view::stereo::layout::{Capability, capability, collapse_active};
+use jc3vr_view::stereo::{
+    config::SinglePassSwitch,
+    layout::{Capability, capability, collapse_active},
+};
 pub use per_eye_reissue::*;
 pub(crate) use pinned_eye::tag_pinned_eye;
 pub use probes::RawDrawKind;
@@ -131,7 +134,7 @@ pub fn active() -> bool {
         return false;
     }
     let flags = config_flags();
-    flags.has(Flag::SinglePass)
+    flags.single_pass()
         && capability() == Capability::Supported
         && !detour_lifecycle::com_detours_failed()
 }
@@ -161,14 +164,14 @@ pub(crate) enum TerrainCullBlock {
 /// [`SinglePassConfig::terrain_cull_both_eyes`](jc3vr_view::stereo::config::SinglePassConfig::terrain_cull_both_eyes).
 pub(crate) fn terrain_cull_both_eyes(block: TerrainCullBlock) -> bool {
     let flags = config_flags();
-    let domain_reads_eye_rows = flags.has(Flag::Terrain)
+    let domain_reads_eye_rows = flags.has(SinglePassSwitch::Terrain)
         && match block {
             TerrainCullBlock::Base => true,
-            TerrainCullBlock::Patch => flags.has(Flag::TerrainPatchPerEye),
+            TerrainCullBlock::Patch => flags.has(SinglePassSwitch::TerrainPatchPerEye),
         };
     collapse_active()
         && in_gbuffer_range()
-        && flags.has(Flag::TerrainCullBothEyes)
+        && flags.has(SinglePassSwitch::TerrainCullBothEyes)
         && domain_reads_eye_rows
 }
 
@@ -177,7 +180,7 @@ pub(crate) fn terrain_cull_both_eyes(block: TerrainCullBlock) -> bool {
 /// the frame's config snapshot, so the block `Draw` detour, which fires for every draw of its type
 /// whether or not single-pass is on, costs a relaxed load rather than a mutex acquisition.
 pub fn nv_water_per_eye() -> bool {
-    config_flags().has(Flag::NvWater)
+    config_flags().has(SinglePassSwitch::NvwaterPerEye)
 }
 
 /// Vertex-shader name prefixes whose draws a baked-view-projection block intercept owns end to end,

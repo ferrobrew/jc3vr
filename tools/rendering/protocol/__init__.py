@@ -4,6 +4,7 @@ import json
 import math
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
+from pathlib import Path
 from typing import TypeAlias
 
 from tools.rendering.protocol.base import (
@@ -231,40 +232,12 @@ class SunShadows(StrEnum):
 
 
 # The single-pass production switches a configuration may override, by their configuration field
-# names. Mirrors `SinglePassSwitch` in `crates/jc3vr-render/src/stereo/switches.rs`; a test keeps the two equal.
-SINGLE_PASS_SWITCHES = (
-    "reproject",
-    "terrain",
-    "terrain_patch_per_eye",
-    "clouds_per_eye",
-    "vegetation_once",
-    "instanced_per_eye",
-    "hw_instanced_once",
-    "indirect_per_eye",
-    "reconstruct_per_eye",
-    "fullscreen_camera_per_eye",
-    "pixel_camera_per_eye",
-    "local_lights_per_eye",
-    "screen_door_per_eye",
-    "clip_origin_per_eye",
-    "terrain_cull_both_eyes",
-    "nvwater_per_eye",
-    "ssdecal_geometry_per_eye",
-    "slot13_per_eye",
-    "collapse_viewport_follows_target",
-    "ssao_per_eye",
-    "ssao_exact_sampling",
-    "ao_volumes_per_eye",
-    "ssr_per_eye",
-    "ssdecal_per_eye",
-    "foveation_per_eye",
-    "foveation_gbuffer",
-    "foveation_lighting",
-    "foveation_quads",
-    "fsr_per_eye",
-    "clustered_per_eye",
-    "viewport_bind_cache",
-)
+# names, in table order, with each one's default and whether changing it needs a shader reload. Read
+# from the manifest the switch table in `crates/jc3vr-view/src/stereo/config/single_pass.rs`
+# generates; a test there keeps the manifest current.
+SINGLE_PASS_MANIFEST = json.loads((Path(__file__).with_name("single_pass_switches.json")).read_text())
+SINGLE_PASS_SWITCHES = tuple(switch["name"] for switch in SINGLE_PASS_MANIFEST["switches"])
+SINGLE_PASS_DEFAULTS = {switch["name"]: switch["default"] for switch in SINGLE_PASS_MANIFEST["switches"]}
 
 
 def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool], ...]:
