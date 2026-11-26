@@ -69,7 +69,6 @@ slots! {
     jc3vr_body::controllers::scheme::DOMINANT_HAND = controllers.dominant_hand,
     jc3vr_body::controllers::locomotion::config::LOCOMOTION_CONFIG = controllers.locomotion,
     jc3vr_body::controllers::intent::config::BINDINGS_CONFIG = controllers.bindings,
-    jc3vr_body::controllers::aim_state::AIM_STATE_CONFIG = controllers.aim_state,
     jc3vr_body::controllers::hands::config::HANDS_CONFIG = controllers.hands,
     jc3vr_body::controllers::aim::config::AIM_CONFIG = controllers.aim,
     jc3vr_body::controllers::overlay::config::OVERLAY_CONFIG = controllers.overlay,

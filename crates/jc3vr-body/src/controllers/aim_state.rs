@@ -26,9 +26,7 @@
 //! - The weapon handling above runs its own contributions around the local player's weapon
 //!   handling ([`PreWeaponHook`]), registered at install, in the enum's order.
 //!
-//! Every part acts only under the controller scheme, so the game behaves as before otherwise. The
-//! arm aim IK skip alone has a switch,
-//! [`skip_arm_ik`](crate::controllers::aim_state::AimStateConfig::skip_arm_ik).
+//! Every part acts only under the controller scheme, so the game behaves as before otherwise.
 
 use std::{
     cell::Cell,
@@ -59,11 +57,9 @@ use jc3gi::{
     state::{StateBitFlag, StateContext},
     types::math::Vector3,
 };
-use jc3vr_core::config::engine::ConfigSlot;
 use jc3vr_view::headpose;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     controllers::{
@@ -378,11 +374,6 @@ fn controllers() -> bool {
     scheme::is_controllers()
 }
 
-/// Whether the arm aim IK skip acts now: its switch is on, under the controller scheme.
-fn skip_arm_ik() -> bool {
-    AIM_STATE_CONFIG.query(|c| c.skip_arm_ik) && controllers()
-}
-
 /// The local player character behind `character`, or `None` for any other character.
 unsafe fn local(character: *mut Character) -> Option<&'static mut Character> {
     unsafe { character.as_mut() }.filter(|c| c.m_IsLocalCharacter)
@@ -494,7 +485,7 @@ fn pre_sim_update_grapple(character: *mut Character, dt: f32) {
 /// Skipping `Update` alone keeps the tasks' enter and exit bookkeeping.
 fn skip_ik_task(ctx: *mut StateContext, task: IkTask) -> bool {
     let local = unsafe { character_from_context(ctx) }.is_some_and(|c| c.m_IsLocalCharacter);
-    if !local || !skip_arm_ik() {
+    if !local || !controllers() {
         return false;
     }
     if !ik_task_owned(task, hands::ik_owned()) {
@@ -759,33 +750,6 @@ fn watched_act(id: i32) -> Option<WatchedAct> {
 pub(crate) const NEUTRAL_AIM_DISTANCE_M: f32 = 25.0;
 
 static WATCHED_ACT_IDS: OnceLock<[i32; 2]> = OnceLock::new();
-
-/// The aim-state work's settings, at `controllers.aim_state` in the settings file; the payload
-/// binds the slot at startup.
-pub static AIM_STATE_CONFIG: ConfigSlot<AimStateConfig> = ConfigSlot::new("controllers.aim_state");
-
-/// The aim-state work (see [`crate::controllers::aim_state`]): the pins, the neutral aim point, the
-/// wall-block clear, and the mental-state cuts act under the controller scheme whenever it is in
-/// effect; the arm aim IK skip has a switch.
-#[derive(Copy, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct AimStateConfig {
-    /// Skip the local player's arm and upper-body aim IK tasks, because the controllers own the
-    /// arms.
-    pub skip_arm_ik: bool,
-}
-
-impl AimStateConfig {
-    pub const fn new() -> Self {
-        Self { skip_arm_ik: true }
-    }
-}
-
-impl Default for AimStateConfig {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 
 #[cfg(test)]
 mod tests {

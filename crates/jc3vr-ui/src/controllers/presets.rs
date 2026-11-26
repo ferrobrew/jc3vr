@@ -35,7 +35,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.input.hand_tracking = on;
     c.bindings.enabled = on;
     c.bindings.yank.enabled = on;
-    c.aim_state.skip_arm_ik = on;
     c.hands.ik = on;
     c.hands.late_update = on;
     c.hands.presentation.enabled = on;

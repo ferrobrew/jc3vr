@@ -19,7 +19,6 @@ use jc3vr_body::{
             GRAPPLE_SEAT, WORLD_MARKERS_ENABLED,
             config::{AIM_CONFIG, AimConfig},
         },
-        aim_state::{AIM_STATE_CONFIG, AimStateConfig},
         body::{
             BODY_CONFIG, BodyDimensions,
             config::{BODY_REMAP_CONFIG, BodyRemapConfig},
@@ -95,7 +94,6 @@ jc3vr_core::test_root! {
             input: InputConfig = InputConfig::new(),
             locomotion: LocomotionConfig = LocomotionConfig::new(),
             bindings: BindingsConfig = BindingsConfig::new(),
-            aim_state: AimStateConfig = AimStateConfig::new(),
             hands: HandsConfig = HandsConfig::new(),
             aim: AimConfig = AimConfig::new(),
             overlay: OverlayConfig = OverlayConfig::new(),
@@ -139,7 +137,6 @@ jc3vr_core::test_root! {
         scheme::DOMINANT_HAND => controllers.dominant_hand,
         LOCOMOTION_CONFIG => controllers.locomotion,
         BINDINGS_CONFIG => controllers.bindings,
-        AIM_STATE_CONFIG => controllers.aim_state,
         HANDS_CONFIG => controllers.hands,
         AIM_CONFIG => controllers.aim,
         OVERLAY_CONFIG => controllers.overlay,

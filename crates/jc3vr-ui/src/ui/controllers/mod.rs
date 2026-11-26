@@ -49,7 +49,6 @@ use jc3vr_body::controllers::{
     haptics as controller_haptics, locomotion as controller_locomotion, mode as controller_mode,
     roomscale as controller_roomscale, scheme,
 };
-use jc3vr_core::config::engine::edit_parts;
 use jc3vr_gameplay::controllers::{
     bindings, config::CONTROLLERS_CONFIG, summary as controller_summary,
 };
@@ -82,7 +81,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             settings::grapple_settings(ui, &mut c);
             hands::anchor_settings(ui, &mut c.hands);
         },
-        FeatureId::AnimationIk => |ui, _| settings::animation_settings(ui, &mut edit_parts()),
         FeatureId::Presentation => {
             |ui, _| hands::presentation_settings(ui, &mut CONTROLLERS_CONFIG.edit().hands)
         }

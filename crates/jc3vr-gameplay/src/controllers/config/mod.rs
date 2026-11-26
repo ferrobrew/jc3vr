@@ -22,8 +22,8 @@
 pub mod validate;
 
 use jc3vr_body::controllers::{
-    aim::config::AimConfig, aim_state::AimStateConfig, body::config::BodyRemapConfig,
-    fingers::config::FingersConfig, hands::config::HandsConfig, haptics::HapticsConfig,
+    aim::config::AimConfig, body::config::BodyRemapConfig,
+    hands::config::HandsConfig, haptics::HapticsConfig,
     intent::config::BindingsConfig, locomotion::config::LocomotionConfig,
     overlay::config::OverlayConfig, roomscale::config::RoomscaleConfig, scheme,
 };
@@ -62,8 +62,6 @@ pub struct ControllersConfig {
     pub locomotion: LocomotionConfig,
     /// The controller-to-game bindings.
     pub bindings: BindingsConfig,
-    /// The aim-state pin and the mental-state cuts.
-    pub aim_state: AimStateConfig,
     /// Controller-owned hands.
     pub hands: HandsConfig,
     /// Per-hand aiming.
@@ -113,7 +111,6 @@ impl ControllersConfig {
             input: InputConfig::new(),
             locomotion: LocomotionConfig::new(),
             bindings: BindingsConfig::new(),
-            aim_state: AimStateConfig::new(),
             hands: HandsConfig::new(),
             aim: AimConfig::new(),
             overlay: OverlayConfig::new(),

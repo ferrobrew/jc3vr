@@ -1,7 +1,6 @@
 //! Every controller setting except those with their own section's file.
 
-use egui::{Slider, Ui};
-use jc3vr_core::config::engine::Parts;
+use egui::Ui;
 use jc3vr_gameplay::controllers::{
     bindings::{Blocker, HandRecovery},
     config::{CONTROLLERS_CONFIG, ControllersConfig},
@@ -117,11 +116,6 @@ pub(super) fn vehicle_chord_settings(ui: &mut Ui, c: &mut ControllersConfig) {
 pub(super) fn locomotion_settings(ui: &mut Ui, c: &mut ControllersConfig) {
     let l = &mut c.locomotion;
     locomotion::locomotion_settings(ui, &mut l.stick, &mut l.acts, &mut l.view, &mut l.strokes);
-}
-
-pub(super) fn animation_settings(ui: &mut Ui, cfg: &mut impl Parts) {
-    let c = cfg.part_mut(&CONTROLLERS_CONFIG);
-    ui.checkbox(&mut c.aim_state.skip_arm_ik, "Skip the game's arm aim IK");
 }
 
 /// The press and release sliders of one threshold pair, kept in order and valid.
