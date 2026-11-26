@@ -876,7 +876,7 @@ mod tests {
         let config = TierConfig::PLAN;
         let status = advance(
             TierStatus::INITIAL,
-            Some(TierState::Swimming),
+            Some(TierState::Wingsuit),
             YIELD_BLEND_S,
             &config,
             Hand::Right,
@@ -886,7 +886,7 @@ mod tests {
         assert_eq!(status.tiers, [HandTier::Yielded; 2]);
         assert_eq!(status.weights, [0.0; 2]);
         let held = advance(status, None, 0.01, &config, Hand::Right, true, [false; 2]);
-        assert_eq!(held.state, Some(TierState::Swimming));
+        assert_eq!(held.state, Some(TierState::Wingsuit));
         assert_eq!(held.weights, [0.0; 2]);
     }
 
