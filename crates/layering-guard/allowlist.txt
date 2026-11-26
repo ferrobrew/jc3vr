@@ -30,7 +30,6 @@ payload/src/controllers/body/rig/mod.rs -> payload
 payload/src/controllers/body/rig/root/mod.rs -> payload
 payload/src/controllers/body/rig/skeleton.rs -> payload
 payload/src/controllers/body/unarmed.rs -> payload
-payload/src/controllers/clock.rs -> tooling
 payload/src/controllers/diagnostics/mod.rs -> tooling
 payload/src/controllers/fingers/mod.rs -> payload
 payload/src/controllers/gamepad_setting.rs -> payload

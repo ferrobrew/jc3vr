@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use jc3gi::{clock::Clock, slow_motion::get_SlowMotionManager_NormalGameSpeed};
 
+pub(crate) use crate::controllers::clock::{MAX_TIME_SCALE, MIN_TIME_SCALE};
 use crate::director::DirectorConfig;
 
 /// Whether the last applied pass held the clock, so the pause call is made on the edge only.
@@ -51,9 +52,3 @@ pub fn toggle_slow_motion(cfg: &mut DirectorConfig) {
 pub fn step_time_scale(cfg: &mut DirectorConfig, factor: f32) {
     cfg.time_scale = (cfg.time_scale * factor).clamp(MIN_TIME_SCALE, MAX_TIME_SCALE);
 }
-
-/// The slowest rate the slider and the step hotkeys allow. Below this the game's fixed sub-step
-/// budget makes physics visibly stall.
-pub const MIN_TIME_SCALE: f32 = 0.05;
-/// The fastest rate allowed; above real time is useful for skipping to a time of day.
-pub const MAX_TIME_SCALE: f32 = 4.0;

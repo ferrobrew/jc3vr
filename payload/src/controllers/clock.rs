@@ -13,7 +13,12 @@
 use glam::Vec3;
 use jc3gi::clock::Clock;
 
-use crate::director::time::{MAX_TIME_SCALE, MIN_TIME_SCALE};
+/// The slowest time scale the director reaches, and the floor of a clock's [`TimeScale`]. Below
+/// this the game's fixed sub-step budget makes physics visibly stall.
+pub const MIN_TIME_SCALE: f32 = 0.05;
+/// The fastest time scale the director reaches, and the ceiling of a clock's [`TimeScale`]; above
+/// real time is useful for skipping to a time of day.
+pub const MAX_TIME_SCALE: f32 = 4.0;
 
 /// The game's time scale: game seconds per real second, one at full speed and below one in slow
 /// motion.
