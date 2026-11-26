@@ -5,6 +5,7 @@
 
 use std::{collections::VecDeque, sync::LazyLock, time::Instant};
 
+use jc3vr_core::published::Stamp;
 use parking_lot::Mutex;
 use tracking_format::input::{
     ClockDomain, DiscontinuityReason, GroupOrder, HISTORY_CAPACITY, InputGroup, InputRecord,
@@ -37,7 +38,6 @@ pub struct LiveSample {
 
 /// Capture this immediately after a successful sync, not after the action-reading loops.
 pub fn observation_time() -> Instant {
-    let _ = *ORIGIN;
     Instant::now()
 }
 
@@ -69,15 +69,7 @@ impl Published {
             return;
         };
         slot.sequence = sequence;
-        let Ok(time_ns) = u64::try_from(
-            sample
-                .observed_at
-                .saturating_duration_since(*ORIGIN)
-                .as_nanos(),
-        ) else {
-            slot.interrupt(DiscontinuityReason::ClockChanged, sample.observed_at);
-            return;
-        };
+        let time_ns = Stamp::from_instant(sample.observed_at).as_nanos();
         let group = InputGroup {
             stamp: InputStamp {
                 epoch: 1,
@@ -245,7 +237,6 @@ fn record_loss(record: &InputRecord) -> u64 {
     }
 }
 
-static ORIGIN: LazyLock<Instant> = LazyLock::new(Instant::now);
 static SLOT: LazyLock<Mutex<Published>> = LazyLock::new(|| {
     Mutex::new(Published {
         sequence: 0,

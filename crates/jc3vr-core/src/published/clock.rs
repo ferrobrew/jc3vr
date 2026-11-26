@@ -50,6 +50,12 @@ impl Stamp {
         Self(ns)
     }
 
+    /// The reading at `instant`, for a time taken with [`Instant`] by a crate below this one (the
+    /// input frame's publication times). An instant before the epoch reads as the epoch.
+    pub fn from_instant(instant: Instant) -> Self {
+        Self(duration_ns(instant.saturating_duration_since(epoch())))
+    }
+
     pub const fn as_nanos(self) -> u64 {
         self.0
     }
@@ -249,6 +255,18 @@ mod tests {
             Window::new(Duration::MAX).duration().as_nanos(),
             u64::MAX as u128
         );
+    }
+
+    #[test]
+    fn an_instant_maps_onto_the_epoch() {
+        let before = Stamp::now();
+        let at = Instant::now();
+        let stamp = Stamp::from_instant(at);
+        assert_eq!(
+            Stamp::from_instant(at + Duration::from_nanos(5)).saturating_duration_since(stamp),
+            Duration::from_nanos(5)
+        );
+        assert!(before <= stamp && stamp <= Stamp::now());
     }
 
     #[test]

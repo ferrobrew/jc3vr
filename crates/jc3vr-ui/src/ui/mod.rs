@@ -6,9 +6,12 @@
 //! ([`jc3vr_core::config::engine::paths`]), apart from the settings, so a customized arrangement survives
 //! relaunches.
 
-use std::{sync::OnceLock, time::Instant};
+use std::sync::OnceLock;
 
-use jc3vr_core::config::{engine, engine::SaveStatus};
+use jc3vr_core::{
+    config::{engine, engine::SaveStatus},
+    published::Stamp,
+};
 use jc3vr_hud::{egui_impl::request_debug_ui, hud::egui_panel};
 use jc3vr_input::capture::{OwnershipBlocker, PanelMode, PanelRequest, debug_ui_capture};
 
@@ -181,11 +184,8 @@ fn settings_line(ui: &mut egui::Ui) {
 /// injection failed and the game is still running a stale resident payload — the failure mode this
 /// exists to make obvious from inside the headset.
 pub fn startup_banner(ctx: &egui::Context) {
-    static FIRST_FRAME: OnceLock<Instant> = OnceLock::new();
-    let age = FIRST_FRAME
-        .get_or_init(Instant::now)
-        .elapsed()
-        .as_secs_f32();
+    static FIRST_FRAME: OnceLock<Stamp> = OnceLock::new();
+    let age = FIRST_FRAME.get_or_init(Stamp::now).elapsed().as_secs_f32();
     if age > UI.get().banner.startup_s {
         return;
     }
