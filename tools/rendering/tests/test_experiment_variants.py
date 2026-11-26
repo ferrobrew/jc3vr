@@ -29,7 +29,6 @@ from tools.rendering.protocol import (
     Request,
     ScreenshotAck,
     ShaderBuild,
-    SunShadows,
     VisualOverrides,
 )
 from tools.rendering.tests.test_experiment import (
@@ -163,11 +162,10 @@ class VariantConfigTests(ExperimentTestCase):
             self.load(variant_config_text(variant, extra='matched_treatment = "cascade_abba"'))
 
     def test_the_variant_overrides_compose_with_the_experiment_overrides(self):
-        base = VisualOverrides(screen_space_reflections="enabled",
-                               single_pass=(("ssdecal_per_eye", False),))
+        base = VisualOverrides(fsr="enabled", single_pass=(("ssdecal_per_eye", False),))
         variant = SinglePassVariant("x", (("ssr_per_eye", False), ("ssdecal_per_eye", True)))
         self.assertEqual(variant.overrides(base), VisualOverrides(
-            screen_space_reflections="enabled",
+            fsr="enabled",
             single_pass=(("ssdecal_per_eye", True), ("ssr_per_eye", False))))
         self.assertEqual(variant.overrides(None), VisualOverrides(single_pass=variant.switches))
         self.assertIs(SinglePassVariant("repeat").overrides(base), base)
@@ -186,11 +184,11 @@ class VariantProtocolTests(unittest.TestCase):
         self.assertEqual(set(SINGLE_PASS_DEFAULTS), set(SINGLE_PASS_SWITCHES))
 
     def test_overrides_round_trip_through_the_request_file(self):
-        overrides = VisualOverrides(SunShadows.DISABLED, "enabled",
-                                    (("ssr_per_eye", False), ("ssdecal_per_eye", True)))
+        overrides = VisualOverrides((("ssr_per_eye", False), ("ssdecal_per_eye", True)),
+                                    fsr_jitter="disabled")
         request = Request(Command.CONFIGURE, "cfg", Mode.SINGLE_PASS, 30, visual_overrides=overrides)
         table = tomllib.loads(request.to_toml())["visual_overrides"]
-        self.assertEqual(table, {"sun_shadows": "disabled", "screen_space_reflections": "enabled",
+        self.assertEqual(table, {"fsr_jitter": "disabled",
                                  "single_pass": {"ssdecal_per_eye": True, "ssr_per_eye": False}})
         self.assertEqual(VisualOverrides.from_wire(table), overrides)
         self.assertEqual(VisualOverrides.from_wire(overrides.to_wire()), overrides)

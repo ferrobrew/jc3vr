@@ -1467,10 +1467,6 @@ def _capture(runner, config, pose, anchor, mode, generation, identifier):
     if config.diagnostics.shader_identity and (capture.visual.shader_identity is None or
             capture.visual.shader_identity.get("status") != "complete"):
         raise ExperimentError("experiment: capture shader identity census is not complete")
-    if config.visual_overrides and config.visual_overrides.screen_space_reflections == "enabled":
-        metadata = json.loads((runner.config_dir / "captures" / f"{identifier}.capture.json").read_text())
-        if metadata["effective_config"]["stereo"]["skip_ssr"] is not False:
-            raise ExperimentError("experiment: SSR producer remained disabled")
     if capture.visual.visual_overrides != config.visual_overrides:
         raise ExperimentError("experiment: capture visual overrides disagree with the request")
     if config.single_pass_variants and mode == Mode.SINGLE_PASS:

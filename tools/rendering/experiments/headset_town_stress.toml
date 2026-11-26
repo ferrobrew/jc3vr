@@ -7,7 +7,6 @@ interval_seconds = 2.0
 
 [visual_overrides]
 headset = "stress"
-screen_space_reflections = "enabled"
 
 [diagnostics]
 shader_identity = true

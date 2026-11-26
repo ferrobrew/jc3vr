@@ -7,7 +7,6 @@ samples = 3
 interval_seconds = 2.0
 
 [visual_overrides]
-screen_space_reflections = "enabled"
 fsr = "enabled"
 foveation = "enabled"
 auto_exposure = "enabled"

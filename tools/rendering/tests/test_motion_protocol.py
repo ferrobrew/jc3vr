@@ -12,7 +12,6 @@ from tools.rendering.protocol import (
     ProtocolError,
     Request,
     SunDepthClip,
-    SunShadows,
     VisualOverrides,
     WaterReflection,
     compose_pose,
@@ -150,12 +149,12 @@ class MotionProtocolTests(unittest.TestCase):
         with self.assertRaises(ProtocolError):
             Request(Command.END, "end", sun_inputs=True)
 
-    def test_shadow_override_is_configure_only_and_closed(self):
-        override = VisualOverrides(SunShadows.DISABLED)
+    def test_an_override_is_configure_only_and_closed(self):
+        override = VisualOverrides(fsr_jitter="disabled")
         request = Request(Command.CONFIGURE, "cfg", Mode.MULTIPASS, 30, visual_overrides=override)
-        self.assertEqual(tomllib.loads(request.to_toml())["visual_overrides"], {"sun_shadows": "disabled"})
-        self.assertEqual(VisualOverrides.from_wire({"sun_shadows": "disabled"}), override)
-        for value in ({}, {"sun_shadows": "enabled"}, {"sun_shadows": "disabled", "other": True}):
+        self.assertEqual(tomllib.loads(request.to_toml())["visual_overrides"], {"fsr_jitter": "disabled"})
+        self.assertEqual(VisualOverrides.from_wire({"fsr_jitter": "disabled"}), override)
+        for value in ({}, {"fsr_jitter": "enabled"}, {"fsr_jitter": "disabled", "other": True}):
             with self.subTest(value=value), self.assertRaises(ProtocolError):
                 VisualOverrides.from_wire(value)
         with self.assertRaises(ProtocolError):

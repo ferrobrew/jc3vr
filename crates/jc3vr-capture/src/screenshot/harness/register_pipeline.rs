@@ -133,10 +133,9 @@ impl PipelineProbes for CaptureProbes {
         bracket: NearPatchBracket,
         lo: i32,
         hi: i32,
-        skipped: &dyn Fn(i32) -> bool,
         draw_runs: &dyn Fn(i32, i32),
     ) {
-        draw_near_patch_bracket(bracket, lo, hi, skipped, draw_runs);
+        draw_near_patch_bracket(bracket, lo, hi, draw_runs);
     }
 
     fn capture_point(&self, point: PipelinePoint) {
@@ -250,7 +249,6 @@ fn draw_near_patch_bracket(
     }: NearPatchBracket,
     lo: i32,
     hi: i32,
-    skipped: &dyn Fn(i32) -> bool,
     draw_runs: &dyn Fn(i32, i32),
 ) {
     let z = RenderPassId::RP_Z_PASS as i32;
@@ -258,8 +256,6 @@ fn draw_near_patch_bracket(
     if tess
         && lo <= z
         && velocity < near_patch
-        && !skipped(z)
-        && !skipped(velocity)
         && harness::frame_identity().is_some_and(harness::early_depth_requested)
     {
         draw_runs(lo, z);

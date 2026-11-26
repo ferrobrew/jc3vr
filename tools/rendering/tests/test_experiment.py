@@ -39,7 +39,6 @@ from tools.rendering.protocol import (
     OrientationOffset,
     ProtocolError,
     RestorationAck,
-    SunShadows,
     VisualOverrides,
     WeatherControl,
     WeatherEvent,
@@ -364,18 +363,6 @@ class ConfigTests(ExperimentTestCase):
         self.assertEqual(control.scene, treated.scene)
         self.assertEqual(control.configurations, treated.configurations)
         self.assertEqual((control.samples, control.interval_seconds), (treated.samples, treated.interval_seconds))
-
-    def test_shadow_experiments_are_a_matched_pair(self):
-        root = Path(__file__).resolve().parents[1] / "experiments"
-        control = ExperimentConfig.load(root / "cliff_shadow_control.toml")
-        disabled = ExperimentConfig.load(root / "cliff_shadow_disabled.toml")
-        self.assertIsNone(control.visual_overrides)
-        self.assertEqual(disabled.visual_overrides, VisualOverrides(SunShadows.DISABLED))
-        self.assertEqual(control.scene, disabled.scene)
-        self.assertEqual(control.configurations, (CompareMode.MULTIPASS, CompareMode.MULTIPASS))
-        self.assertEqual(control.configurations, disabled.configurations)
-        self.assertEqual((control.samples, control.interval_seconds), (3, 4.0))
-        self.assertEqual((disabled.samples, disabled.interval_seconds), (3, 4.0))
 
     def test_diagnostics_default_and_type_validation(self):
         config = write_config(self.root, ["multipass"])

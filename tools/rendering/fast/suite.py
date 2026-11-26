@@ -50,9 +50,9 @@ def load_suite(path: Path) -> list[Scene]:
         if headset is not None:
             if headset not in HEADSET_RIGS:
                 raise FastError(f"{context}: unknown headset {headset!r}")
-            overrides = config.visual_overrides or VisualOverrides()
-            config = dataclasses.replace(config, visual_overrides=dataclasses.replace(
-                overrides, headset=headset))
+            overrides = (VisualOverrides(headset=headset) if config.visual_overrides is None
+                         else dataclasses.replace(config.visual_overrides, headset=headset))
+            config = dataclasses.replace(config, visual_overrides=overrides)
         if "stage" in table:
             if config.scene.stage is not None:
                 raise FastError(f"{context}: the config already has a stage")

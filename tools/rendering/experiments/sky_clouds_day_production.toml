@@ -3,9 +3,6 @@ warmup_frames = 30
 samples = 3
 interval_seconds = 4.0
 
-[visual_overrides]
-screen_space_reflections = "enabled"
-
 [diagnostics]
 late_sky_stages = true
 resolve_inputs = true

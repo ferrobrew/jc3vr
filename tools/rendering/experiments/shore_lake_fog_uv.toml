@@ -4,9 +4,6 @@ samples = 3
 interval_seconds = 4.0
 matched_treatment = "fog_uv_abba"
 
-[visual_overrides]
-screen_space_reflections = "enabled"
-
 [diagnostics]
 late_sky_stages = true
 fog_inputs = true

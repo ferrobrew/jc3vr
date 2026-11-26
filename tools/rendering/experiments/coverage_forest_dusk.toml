@@ -4,9 +4,6 @@ warmup_frames = 30
 samples = 3
 interval_seconds = 2.0
 
-[visual_overrides]
-screen_space_reflections = "enabled"
-
 [diagnostics]
 shader_identity = true
 

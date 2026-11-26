@@ -37,7 +37,6 @@ use jc3vr_render::{
         },
     },
     stereo,
-    stereo::sun_shadows,
 };
 use jc3vr_tooling::diagnostics;
 use jc3vr_view::{
@@ -160,10 +159,6 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // VR session starting or stopping does as well as the configuration: the reload below
         // applies it before this frame's draws.
         graphics_engine::shader::reconcile_single_pass();
-
-        // Apply the sun-shadow diagnostic override before the original runs, so this frame's
-        // sim-side CShadowManager::UpdateRender sees it and drives the engine's own SetEnabled path.
-        sun_shadows::apply_override(Config::lock_query(|c| c.stereo.disable_sun_shadows));
 
         // Apply a requested shader reload here, on the game thread before this frame's draws, so the
         // PCF-patch hook re-creates the already-loaded shaders (injection is normally after the game

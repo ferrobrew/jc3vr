@@ -23,7 +23,7 @@ use std::{
 
 use detours_macro::detour;
 use jc3gi::graphics_engine::ssao::SSAOPass;
-use jc3vr_view::{stereo, stereo::config::STEREO_CONFIG};
+use jc3vr_view::stereo;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::debug::trace::{TraceEvent, TraceState};
@@ -85,17 +85,6 @@ fn ssao_draw(this: *mut SSAOPass) {
     SSAO_PASS.store(this, Ordering::Relaxed);
 
     let stereo = stereo::active();
-    let disable = STEREO_CONFIG.query(|c| c.disable_ssao);
-
-    // Skipping the pass leaves the GBuffer-alpha AO untouched (material AO only, no screen AO) and
-    // is fully reversible: turning it back on resumes the pass next dispatch with no engine state
-    // clobbered.
-    if stereo && disable {
-        TraceState::record_eye(TraceEvent::SsaoDraw {
-            forced_first_pass: false,
-        });
-        return;
-    }
 
     if let Some(pass) = unsafe { this.as_mut() } {
         pass.m_FirstPass |= stereo;

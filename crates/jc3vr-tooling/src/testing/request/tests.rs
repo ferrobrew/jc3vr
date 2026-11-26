@@ -181,19 +181,19 @@ fn visual_overrides_are_typed_and_configure_only() {
         visual_overrides: Some(overrides),
         ..
     })) = read(&format!(
-        "{base}[visual_overrides]\nsun_shadows = 'disabled'\n"
+        "{base}[visual_overrides]\nfsr_jitter = 'disabled'\n"
     ))
     else {
-        panic!("the sun shadows override did not parse");
+        panic!("the FSR jitter override did not parse");
     };
     assert_eq!(
-        overrides.sun_shadows,
-        Some(visual::overrides::SunShadowsOverride::Disabled)
+        overrides.fsr_jitter,
+        Some(visual::overrides::CorrectionOverride::Disabled)
     );
     assert!(overrides.single_pass.is_empty());
     for table in [
-        "[visual_overrides]\nsun_shadows = 'enabled'\n",
-        "[visual_overrides]\nsun_shadows = 'disabled'\nunknown = true\n",
+        "[visual_overrides]\nfsr_jitter = 'enabled'\n",
+        "[visual_overrides]\nfsr_jitter = 'disabled'\nunknown = true\n",
         "[visual_overrides.single_pass]\nssr_per_eye = 'off'\n",
     ] {
         assert!(matches!(
@@ -210,7 +210,7 @@ fn visual_overrides_are_typed_and_configure_only() {
     for command in ["visual_end", "screenshot", "record"] {
         assert!(matches!(
             read(&format!(
-                "command = '{command}'\nid = 'safe'\n[visual_overrides]\nsun_shadows = 'disabled'\n"
+                "command = '{command}'\nid = 'safe'\n[visual_overrides]\nfsr_jitter = 'disabled'\n"
             )),
             Err(RequestErrorKind::VisualOverridesOnCommand(_))
         ));
@@ -224,8 +224,8 @@ fn single_pass_switch_overrides_are_validated_against_the_switches_and_mode() {
         visual_overrides: Some(overrides),
         ..
     })) = read(&format!(
-        "{single_pass}[visual_overrides]\nscreen_space_reflections = 'enabled'\n\
-         [visual_overrides.single_pass]\nssr_per_eye = false\npixel_camera_per_eye = false\n"
+        "{single_pass}[visual_overrides.single_pass]\nssr_per_eye = false\n\
+         pixel_camera_per_eye = false\n"
     ))
     else {
         panic!("the single-pass switch overrides did not parse");

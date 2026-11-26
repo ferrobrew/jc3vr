@@ -6,10 +6,7 @@ use std::{
 };
 
 use anyhow::Context as _;
-use jc3gi::{
-    clock::Clock,
-    graphics_engine::{graphics_engine::GraphicsEngine, shadow_manager::get_shadow_system_enabled},
-};
+use jc3gi::{clock::Clock, graphics_engine::graphics_engine::GraphicsEngine};
 use jc3vr_render::{
     capture_arming::{Arming, arm},
     hooks::graphics_engine::config::{EXPOSURE_CONFIG, POST_FX_CONFIG},
@@ -38,7 +35,7 @@ use jc3vr_core::{
 };
 use jc3vr_render::{
     hooks::graphics_engine::{shader, tone_mapping},
-    stereo::{single_pass, sun_shadows, switches::ShaderBuild},
+    stereo::{single_pass, switches::ShaderBuild},
 };
 pub use jc3vr_view::stereo::dispatch::RenderMode;
 use jc3vr_view::{
@@ -171,7 +168,6 @@ pub(crate) struct FrameObservation {
     pub single_pass: bool,
     pub camera_frozen: bool,
     pub horizon_map_ready: bool,
-    pub shadow_override_ready: bool,
     /// Whether the live shaders were created under the state the configuration asks for now.
     pub shaders_current: bool,
     pub frame_identity: Option<i64>,
@@ -368,8 +364,6 @@ pub fn process_pending() {
             // Every configuration accumulates FSR's history from its own warm-up, so modes compared
             // against each other start from the same number of frames.
             jc3vr_render::fsr::request_history_reset();
-            state.shadow_sync_required |=
-                sun_shadows_overridden(visual_overrides.as_ref()) || sun_shadows::override_active();
             state.visual_overrides = visual_overrides;
             headset::set_active(visual_overrides.and_then(|overrides| overrides.headset));
             crate::screenshot::harness::stages::set_geometry_only(
@@ -451,14 +445,11 @@ pub fn frame_complete() {
             let resolution = jc3vr_view::vr::resolution_progress();
             let config = lock_parts();
             let paused = unsafe { Clock::get().map(|clock| clock.m_Stop) };
-            let shadow_ready = !state.shadow_sync_required
-                || shadow_override_ready(config.part(&STEREO_CONFIG).disable_sun_shadows);
             if let Some(active) = state.complete_restore(
                 resolution,
                 paused,
                 *config.part(&PAUSED),
                 config.part(&VR_CONFIG).freeze_mode != FreezeMode::Off,
-                shadow_ready,
             ) {
                 let metadata = state.metadata();
                 state.environment = None;
@@ -490,8 +481,6 @@ pub fn frame_complete() {
             camera_frozen: live.is_some()
                 && VR_CONFIG.query(|config| config.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
-            shadow_override_ready: !state.shadow_sync_required
-                || shadow_override_ready(sun_shadows_overridden(state.visual_overrides.as_ref())),
             shaders_current: shaders_current(),
             frame_identity,
             generation: state.generation,
@@ -521,8 +510,6 @@ pub fn frame_complete() {
             camera_frozen: live.is_some()
                 && VR_CONFIG.query(|config| config.freeze_mode == FreezeMode::FullCamera),
             horizon_map_ready: horizon_map_ready(),
-            shadow_override_ready: !state.shadow_sync_required
-                || shadow_override_ready(sun_shadows_overridden(state.visual_overrides.as_ref())),
             shaders_current: shaders_current(),
             frame_identity,
             generation: state.generation,
@@ -595,7 +582,6 @@ struct State {
     operation: Operation,
     mode: Option<Mode>,
     visual_overrides: Option<VisualOverrides>,
-    shadow_sync_required: bool,
     generation: u64,
     ready: bool,
     warmup_frames: u32,
@@ -655,7 +641,6 @@ impl State {
             operation: Operation::Idle,
             mode: None,
             visual_overrides: None,
-            shadow_sync_required: false,
             generation: 0,
             ready: false,
             warmup_frames: 0,
@@ -812,7 +797,6 @@ impl State {
             && paused
             && observed.camera_frozen
             && observed.horizon_map_ready
-            && observed.shadow_override_ready
             && observed.shaders_current
             && (self.requested_pose.is_none() || pose.is_some());
         if !matches {
@@ -875,7 +859,6 @@ impl State {
             && paused
             && observed.camera_frozen
             && observed.horizon_map_ready
-            && observed.shadow_override_ready
             && observed.shaders_current;
         if !running {
             if !matches {
@@ -1015,18 +998,15 @@ impl State {
         paused: Option<bool>,
         expected_paused: bool,
         frozen: bool,
-        shadow_ready: bool,
     ) -> Option<Active> {
         if !matches!(self.operation, Operation::Restoring(_))
             || self.error.is_some()
             || !resolution.settled()
             || paused != Some(expected_paused)
-            || !shadow_ready
         {
             return None;
         }
         self.saved = None;
-        self.shadow_sync_required = false;
         self.paused = expected_paused;
         self.frozen = frozen;
         self.last_dimensions = resolution.engine;
@@ -1087,27 +1067,6 @@ impl State {
         };
         Some(active)
     }
-}
-
-fn shadow_state_matches(disable: bool, setting: Option<bool>, live: bool, active: bool) -> bool {
-    let Some(setting) = setting else {
-        return false;
-    };
-    if disable {
-        active && !setting && !live
-    } else {
-        !active && setting == live
-    }
-}
-
-fn shadow_override_ready(disable: bool) -> bool {
-    let setting = unsafe {
-        GraphicsEngine::get()
-            .and_then(|engine| engine.m_ShadowManager.as_ref())
-            .map(|shadow| shadow.m_Enabled)
-    };
-    let live = unsafe { *get_shadow_system_enabled() };
-    shadow_state_matches(disable, setting, live, sun_shadows::override_active())
 }
 
 /// Whether both horizon-map slices are loaded for both frame parities.
@@ -1171,10 +1130,6 @@ fn shaders_current() -> bool {
     shader::built_with() == Some(ShaderBuild::current())
 }
 
-fn sun_shadows_overridden(overrides: Option<&VisualOverrides>) -> bool {
-    overrides.is_some_and(|overrides| overrides.sun_shadows.is_some())
-}
-
 fn apply_profile_with_overrides(
     config: &mut impl Parts,
     mode: Mode,
@@ -1215,15 +1170,9 @@ fn apply_profile(config: &mut impl Parts, mode: Mode) {
     post_fx.skip_sun_halo = false;
     post_fx.skip_histogram = true;
     post_fx.skip_anti_aliasing = false;
-    let stereo = config.part_mut(&STEREO_CONFIG);
-    stereo.disable_ssao = false;
-    stereo.skip_ssr = false;
-    stereo.skip_gi = false;
-    stereo.skip_ao_volumes = false;
-    stereo.disable_sun_shadows = false;
     // Every mode states single-pass explicitly: the isolated eyes and multipass turn the group off,
     // whatever the defaults are, and single-pass turns it on over the default production switches.
-    stereo.single_pass = SinglePassConfig::new();
+    config.part_mut(&STEREO_CONFIG).single_pass = SinglePassConfig::new();
     set_single_pass_feature(config, mode == Mode::SinglePass);
 }
 

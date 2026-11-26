@@ -86,8 +86,6 @@ class MatchedRunner(FakeRunner):
         if self.changed == "generation" and index == 2:
             wire["visual"]["generation"] += 1
         metadata = {"effective_config": {"test": 2 if self.changed == "config" and index == 2 else 1}}
-        if self.visual_overrides and self.visual_overrides.screen_space_reflections == "enabled":
-            metadata["effective_config"]["stereo"] = {"skip_ssr": False}
         (self.config_dir / "captures" / f"{request.id}.capture.json").write_text(json.dumps(metadata))
         return ScreenshotAck(request.id, Capture.from_wire(wire))
 

@@ -7,7 +7,6 @@ warmup_frames = 30
 samples = 3
 
 [visual_overrides]
-screen_space_reflections = "enabled"
 fsr = "enabled"
 
 [scene.environment]

@@ -33,30 +33,6 @@ pub static STEREO_CONFIG: ConfigSlot<StereoConfig> = ConfigSlot::new("stereo");
 pub struct StereoConfig {
     /// Single-pass stereo; see [`SinglePassConfig`].
     pub single_pass: SinglePassConfig,
-    /// Diagnostic: skip the SSAO pass on both eyes in stereo, to confirm whether SSAO drives the
-    /// "stronger in one eye" darkening. (Equivalent to lowering the in-game AO setting, but toggleable
-    /// live.)
-    pub disable_ssao: bool,
-    /// Diagnostic: skip the screen-space reflections pass (`RP_SCREEN_SPACE_REFLECTIONS`) on both eyes.
-    /// SSR reads a previous-frame scene-color capture that is regenerated every `Draw`, so eye 1 reads
-    /// what eye 0 just wrote -- a content-based per-eye divergence no counter restore can fix. If
-    /// dropping SSR converges the per-eye MainColor, the SSR feedback is the source.
-    pub skip_ssr: bool,
-    /// Diagnostic: skip the global-illumination pass (`RP_GLOBAL_ILLUMINATION`) on both eyes. GI can
-    /// carry a temporal/probe history that differs per eye; a companion to [`skip_ssr`](Self::skip_ssr)
-    /// for isolating the residual per-eye MainColor divergence that survives SSR-off and SSAO-off.
-    pub skip_gi: bool,
-    /// Diagnostic: skip the AO-volumes pass (`RP_AO_VOLUMES`) on both eyes. AO volumes are
-    /// artist-placed darkening volumes rendered as depth-tested proxy geometry; a volume whose proxy
-    /// faces are borderline against nearby geometry can flip its entire contribution on a sub-pixel
-    /// depth shift, so the temporal jitter cycles it -- the prime suspect for the blob-scale
-    /// "shadows flicker in and out" artifact in MainColor (issue #10's residual flicker).
-    pub skip_ao_volumes: bool,
-    /// Diagnostic: disable the sun-shadow system entirely through the engine's own settings path
-    /// (`CShadowManager` enabled flag, synced by the sim-side `UpdateRender` via `SetEnabled`). The
-    /// sharpest shadow-pipeline discriminator: an artifact that survives with no shadows at all
-    /// cannot be shadow data.
-    pub disable_sun_shadows: bool,
     /// Refresh every sun-shadow cascade every frame, defeating the engine's update-pattern amortisation.
     /// The engine re-fits and re-renders cascade level L only every `2^L` frames (via
     /// `ShadowManager::m_CascadeUpdateLevels`), copying each cascade's fit forward between refreshes, so
@@ -79,11 +55,6 @@ impl StereoConfig {
     pub const fn new() -> Self {
         Self {
             single_pass: SinglePassConfig::new(),
-            disable_ssao: false,
-            skip_ssr: false,
-            skip_gi: false,
-            skip_ao_volumes: false,
-            disable_sun_shadows: false,
             shadow_update_every_frame: false,
             shadow_fit_unpadded: true,
             shadow_anchor_to_fit: true,

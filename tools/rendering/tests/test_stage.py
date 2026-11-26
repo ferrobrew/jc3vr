@@ -197,16 +197,6 @@ class MotionTranslationHistoryTests(unittest.TestCase):
             evidence.validate_history(moved)
 
 
-class AmbientOcclusionOverrideTests(unittest.TestCase):
-    def test_ambient_occlusion_sources_round_trip_and_reject_other_values(self):
-        overrides = VisualOverrides.from_wire({"ao_volumes": "disabled", "ssao": "disabled"})
-        self.assertEqual(overrides.to_wire(), {"ssao": "disabled", "ao_volumes": "disabled"})
-        self.assertEqual(tomllib.loads(overrides.to_toml())["visual_overrides"],
-                         {"ssao": "disabled", "ao_volumes": "disabled"})
-        with self.assertRaises(ProtocolError):
-            VisualOverrides.from_wire({"ao_volumes": "skipped"})
-
-
 class MotionBlurOverrideTests(unittest.TestCase):
     def test_motion_blur_is_not_an_override(self):
         # The motion blur never runs in VR, so there is nothing for an override to put back.

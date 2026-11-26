@@ -85,8 +85,8 @@ would pin is left free-running:
   (candidate C).
 - `restore_render_camera` = **false** — the pristine render camera is not written back mid-frame
   (candidate G); note it is a hygiene A/B, not believed load-bearing.
-- `unjitter_shadow_fit`, `PATCH_LOD_DISSOLVE`, `disable_sun_shadows`, `skip_ssr`, `skip_gi`,
-  `skip_ao_volumes`, `disable_ssao`, `FOG/PARTICLES/SPOTLIGHT_FULL_RES` — pure diagnostics, off.
+- `unjitter_shadow_fit`, `PATCH_LOD_DISSOLVE`, `FOG/PARTICLES/SPOTLIGHT_FULL_RES` — pure
+  diagnostics, off.
 
 ## Sim-side, once per frame (not part of the double-draw fence)
 

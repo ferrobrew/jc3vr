@@ -30,10 +30,10 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class VariantTests(unittest.TestCase):
     def test_overrides_put_fsr_and_the_scale_in_place(self):
-        base = VisualOverrides(screen_space_reflections="enabled", fsr="enabled")
+        base = VisualOverrides(fsr="enabled", stages="geometry")
         off = FsrVariant("fsr-off", fsr=False).overrides(base)
         self.assertIsNone(off.fsr)
-        self.assertEqual(off.screen_space_reflections, "enabled")
+        self.assertEqual(off.stages, "geometry")
         hybrid = FsrVariant("hybrid-off", hybrid_velocity=False).overrides(base)
         self.assertEqual((hybrid.fsr, hybrid.fsr_hybrid_velocity), ("enabled", "disabled"))
         reference = FsrVariant("reference", fsr=False, resolution_scale=1.414).overrides(base)
@@ -54,7 +54,7 @@ class VariantTests(unittest.TestCase):
         self.assertEqual(FsrVariant("soft", sharpen=False).overrides(base).fsr_sharpen, "disabled")
 
     def test_a_taa_variant_runs_the_temporal_resolve_in_fsrs_place(self):
-        base = VisualOverrides(screen_space_reflections="enabled", fsr="enabled")
+        base = VisualOverrides(fsr="enabled")
         taa = FsrVariant("taa", taa=True).overrides(base)
         self.assertEqual((taa.fsr, taa.taa), (None, "enabled"))
         self.assertIn('taa = "enabled"', taa.to_toml())

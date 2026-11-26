@@ -4,9 +4,6 @@ samples = 3
 interval_seconds = 4.0
 matched_treatment = "color_dither_abba"
 
-[visual_overrides]
-screen_space_reflections = "enabled"
-
 [diagnostics]
 ssr_bracket = true
 ssr_operands = true

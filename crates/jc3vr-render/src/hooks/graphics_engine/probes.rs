@@ -127,14 +127,12 @@ pub trait PipelineProbes: Sync {
     }
 
     /// Draws the passes `[lo, hi)`, which contain `bracket.pass`, with the capture's brackets around
-    /// the patch pass and the depth boundaries it asks for. `draw_runs` draws a pass range minus the
-    /// passes `skipped` names.
+    /// the patch pass and the depth boundaries it asks for. `draw_runs` draws a pass range.
     fn draw_near_patch_bracket(
         &self,
         _bracket: NearPatchBracket,
         lo: i32,
         hi: i32,
-        _skipped: &dyn Fn(i32) -> bool,
         draw_runs: &dyn Fn(i32, i32),
     ) {
         draw_runs(lo, hi);

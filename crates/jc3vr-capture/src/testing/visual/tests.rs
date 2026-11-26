@@ -2,11 +2,7 @@ use glam::{Quat, Vec3};
 use pretty_assertions::assert_eq;
 
 use super::*;
-use crate::testing::visual::{
-    environment::WeatherControl,
-    overrides::{ReflectionOverride, SunShadowsOverride},
-    pose::orientations_match,
-};
+use crate::testing::visual::{environment::WeatherControl, pose::orientations_match};
 
 fn observation(state: &State, ordinal: i64) -> FrameObservation {
     FrameObservation {
@@ -16,7 +12,6 @@ fn observation(state: &State, ordinal: i64) -> FrameObservation {
         single_pass: state.mode == Some(Mode::SinglePass),
         camera_frozen: true,
         horizon_map_ready: true,
-        shadow_override_ready: true,
         shaders_current: true,
         frame_identity: Some(ordinal),
         generation: state.generation,
@@ -82,154 +77,6 @@ fn single_pass_switch_overrides_survive_the_profile_and_reset_with_it() {
         config.part(&STEREO_CONFIG).single_pass.ssr_per_eye
             && config.part(&STEREO_CONFIG).single_pass.clouds_per_eye
     );
-}
-
-#[test]
-fn reflection_override_runs_the_producer_without_disabling_sun_shadows() {
-    crate::test_config::register();
-    let mut config = Snapshot::defaults();
-    for mode in [
-        Mode::LeftOnly,
-        Mode::RightOnly,
-        Mode::Multipass,
-        Mode::SinglePass,
-    ] {
-        apply_profile_with_overrides(
-            &mut config,
-            mode,
-            Some(VisualOverrides {
-                sun_shadows: None,
-                screen_space_reflections: Some(ReflectionOverride::Enabled),
-                ssao: None,
-                ao_volumes: None,
-                global_illumination: None,
-                fsr: None,
-                taa: None,
-                foveation: None,
-                auto_exposure: None,
-                screen_fade: None,
-                player_damage: None,
-                fsr_mv_correction: None,
-                fsr_hybrid_velocity: None,
-                fsr_jitter: None,
-                anti_aliasing: None,
-                fsr_sharpen: None,
-                fsr_sharpness: None,
-                taa_history_weight: None,
-                taa_clip_gamma_rest: None,
-                taa_current_sharpness: None,
-                taa_motion_history_weight: None,
-                headset: None,
-                resolution_scale: None,
-                stages: None,
-                single_pass: Default::default(),
-            }),
-        );
-        assert!(
-            !config.part(&STEREO_CONFIG).skip_ssr
-                && !config.part(&STEREO_CONFIG).disable_sun_shadows
-        );
-        apply_profile_with_overrides(&mut config, mode, None);
-        assert!(!config.part(&STEREO_CONFIG).skip_ssr);
-    }
-}
-
-fn shadows_disabled() -> VisualOverrides {
-    VisualOverrides {
-        sun_shadows: Some(SunShadowsOverride::Disabled),
-        screen_space_reflections: None,
-        ssao: None,
-        ao_volumes: None,
-        global_illumination: None,
-        fsr: None,
-        taa: None,
-        foveation: None,
-        auto_exposure: None,
-        screen_fade: None,
-        player_damage: None,
-        fsr_mv_correction: None,
-        fsr_hybrid_velocity: None,
-        fsr_jitter: None,
-        anti_aliasing: None,
-        fsr_sharpen: None,
-        fsr_sharpness: None,
-        taa_history_weight: None,
-        taa_clip_gamma_rest: None,
-        taa_current_sharpness: None,
-        taa_motion_history_weight: None,
-        headset: None,
-        resolution_scale: None,
-        stages: None,
-        single_pass: Default::default(),
-    }
-}
-
-#[test]
-fn shadow_override_resets_on_new_profile() {
-    crate::test_config::register();
-    let mut config = Snapshot::defaults();
-    let treatment = Some(shadows_disabled());
-    apply_profile_with_overrides(&mut config, Mode::Multipass, treatment);
-    assert!(config.part(&STEREO_CONFIG).disable_sun_shadows);
-    apply_profile_with_overrides(&mut config, Mode::Multipass, None);
-    assert!(!config.part(&STEREO_CONFIG).disable_sun_shadows);
-}
-
-#[test]
-fn shadow_override_readiness_waits_for_settings_and_live_state() {
-    assert!(!shadow_state_matches(true, None, false, true));
-    assert!(!shadow_state_matches(true, Some(false), false, false));
-    assert!(!shadow_state_matches(true, Some(true), false, true));
-    assert!(!shadow_state_matches(true, Some(false), true, true));
-    assert!(shadow_state_matches(true, Some(false), false, true));
-    assert!(!shadow_state_matches(false, None, false, false));
-    assert!(!shadow_state_matches(false, Some(false), false, true));
-    assert!(!shadow_state_matches(false, Some(true), false, false));
-    assert!(shadow_state_matches(false, Some(false), false, false));
-    assert!(shadow_state_matches(false, Some(true), true, false));
-}
-
-#[test]
-fn shadow_override_loss_fails_running_motion_closed() {
-    let base = base_pose();
-    let mut state = motion_state(Mode::Multipass, 1, 32);
-    complete_motion_frame(&mut state, 1, base, base);
-    let request = state.requested_motion.clone().unwrap();
-    let mut observed = observation(&state, 2);
-    observed.shadow_override_ready = false;
-    state.complete_motion(&request, observed, Some((base, base)), true);
-    assert!(!state.ready);
-    assert!(state.error.is_some());
-    assert!(state.motion.is_none());
-}
-
-#[test]
-fn shadow_override_readiness_gates_frames_and_restoration() {
-    let mut state = warming(Mode::Multipass, 1);
-    state.visual_overrides = Some(shadows_disabled());
-    state.shadow_sync_required = true;
-    let mut observed = observation(&state, 1);
-    observed.shadow_override_ready = false;
-    state.complete(observed, true);
-    assert!(!state.ready);
-    state.complete(observation(&state, 2), true);
-    assert!(state.ready);
-    assert_eq!(
-        serde_json::to_value(state.metadata()).unwrap()["visual_overrides"]["sun_shadows"],
-        "disabled"
-    );
-    state.start(Operation::Restoring(active("restore-shadow")));
-    assert!(
-        state
-            .complete_restore(restored_resolution(), Some(false), false, false, false)
-            .is_none()
-    );
-    assert!(
-        state
-            .complete_restore(restored_resolution(), Some(false), false, false, true)
-            .is_some()
-    );
-    assert!(!state.shadow_sync_required);
 }
 
 #[test]
@@ -415,10 +262,7 @@ fn profile_keeps_per_eye_native_resolution_across_modes() {
         assert!(
             !config.part(&POST_FX_CONFIG).skip_dof && config.part(&POST_FX_CONFIG).dof_no_reproject
         );
-        assert!(!config.part(&STEREO_CONFIG).skip_ssr && !config.part(&STEREO_CONFIG).skip_gi);
-        assert!(
-            !config.part(&STEREO_CONFIG).disable_ssao && !config.part(&POST_FX_CONFIG).skip_glare
-        );
+        assert!(!config.part(&POST_FX_CONFIG).skip_glare);
         assert!(
             config.part(&POST_FX_CONFIG).skip_fade
                 && config.part(&POST_FX_CONFIG).skip_player_damage
@@ -482,25 +326,25 @@ fn restoration_requires_serviced_resize_and_restored_clock() {
     ] {
         assert!(
             state
-                .complete_restore(observed, Some(false), false, false, true)
+                .complete_restore(observed, Some(false), false, false)
                 .is_none()
         );
         assert!(!state.metadata().ready);
     }
     assert!(
         state
-            .complete_restore(resolution, Some(true), false, false, true)
+            .complete_restore(resolution, Some(true), false, false)
             .is_none()
     );
     let completed = state
-        .complete_restore(resolution, Some(false), false, false, true)
+        .complete_restore(resolution, Some(false), false, false)
         .unwrap();
     assert_eq!(completed.id, RequestId::parse("end").unwrap());
     assert!(state.metadata().ready);
     assert!(!state.requires_inline_tail());
     assert!(
         state
-            .complete_restore(resolution, Some(false), false, false, true)
+            .complete_restore(resolution, Some(false), false, false)
             .is_none()
     );
 }
@@ -518,7 +362,7 @@ fn restore_reload_failure_retains_protection_and_cannot_acknowledge_success() {
     assert!(!state.metadata().ready);
     assert!(
         state
-            .complete_restore(restored_resolution(), Some(false), false, false, true)
+            .complete_restore(restored_resolution(), Some(false), false, false)
             .is_none()
     );
     assert!(
@@ -574,7 +418,7 @@ fn retry_after_failed_restoration_does_not_report_failure_twice() {
     assert!(state.requires_inline_tail());
     assert!(
         state
-            .complete_restore(restored_resolution(), Some(false), false, false, true)
+            .complete_restore(restored_resolution(), Some(false), false, false)
             .is_some()
     );
 }
@@ -680,7 +524,7 @@ fn restoration_retains_the_original_configuration_until_completion() {
     let resolution = restored_resolution();
     assert!(
         state
-            .complete_restore(resolution, None, false, false, true)
+            .complete_restore(resolution, None, false, false)
             .is_none()
     );
     assert!(!state.metadata().ready);
@@ -704,7 +548,7 @@ fn restoration_retains_the_original_configuration_until_completion() {
     state.start(Operation::Restoring(active("retry-baseline")));
     assert!(
         state
-            .complete_restore(resolution, Some(false), false, false, true)
+            .complete_restore(resolution, Some(false), false, false)
             .is_some()
     );
     assert!(state.saved.is_none());

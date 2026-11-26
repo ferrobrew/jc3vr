@@ -24,20 +24,6 @@ use serde::{Deserialize, Serialize, Serializer, ser::SerializeMap as _};
 
 use crate::testing::visual::headset::HeadsetRig;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SunShadowsOverride {
-    Disabled,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReflectionOverride {
-    Enabled,
-    /// Leave the screen-space reflections out in every mode, to attribute a difference to them.
-    Disabled,
-}
-
 /// Put back, in every mode, a setting the profile turns off or pins, at the value the mod ships with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -49,13 +35,6 @@ pub enum ShippedOverride {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum CorrectionOverride {
-    Disabled,
-}
-
-/// Leave out an ambient-occlusion source in every mode, to attribute a difference to it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AmbientOcclusionOverride {
     Disabled,
 }
 
@@ -163,19 +142,6 @@ pub enum StagesOverride {
 /// A validated, nonempty set of overrides. Each kind is independent of the others.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub struct VisualOverrides {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sun_shadows: Option<SunShadowsOverride>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub screen_space_reflections: Option<ReflectionOverride>,
-    /// The screen-space ambient occlusion block.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ssao: Option<AmbientOcclusionOverride>,
-    /// The ambient-occlusion volumes' pass.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub ao_volumes: Option<AmbientOcclusionOverride>,
-    /// The global illumination pass.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub global_illumination: Option<AmbientOcclusionOverride>,
     /// FSR in place of the engine's anti-aliasing, at the shipped sharpening.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fsr: Option<ShippedOverride>,
@@ -242,11 +208,6 @@ pub struct VisualOverrides {
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VisualOverridesTable {
-    sun_shadows: Option<SunShadowsOverride>,
-    screen_space_reflections: Option<ReflectionOverride>,
-    ssao: Option<AmbientOcclusionOverride>,
-    ao_volumes: Option<AmbientOcclusionOverride>,
-    global_illumination: Option<AmbientOcclusionOverride>,
     fsr: Option<ShippedOverride>,
     taa: Option<ShippedOverride>,
     foveation: Option<ShippedOverride>,
@@ -326,11 +287,6 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             Some(entries) => SinglePassOverrides::from_names(entries)?,
         };
         let overrides = Self {
-            sun_shadows: table.sun_shadows,
-            screen_space_reflections: table.screen_space_reflections,
-            ssao: table.ssao,
-            ao_volumes: table.ao_volumes,
-            global_illumination: table.global_illumination,
             fsr: table.fsr,
             taa: table.taa,
             foveation: table.foveation,
@@ -352,12 +308,7 @@ impl TryFrom<VisualOverridesTable> for VisualOverrides {
             stages: table.stages,
             single_pass,
         };
-        if overrides.sun_shadows.is_none()
-            && overrides.screen_space_reflections.is_none()
-            && overrides.ssao.is_none()
-            && overrides.ao_volumes.is_none()
-            && overrides.global_illumination.is_none()
-            && overrides.shipped().all(|(_, value)| value.is_none())
+        if overrides.shipped().all(|(_, value)| value.is_none())
             && overrides.fsr_mv_correction.is_none()
             && overrides.fsr_hybrid_velocity.is_none()
             && overrides.fsr_jitter.is_none()
@@ -390,23 +341,6 @@ impl VisualOverrides {
 
     /// Apply the overrides on top of a freshly applied capture profile.
     pub(crate) fn apply(&self, config: &mut impl Parts) {
-        if let Some(SunShadowsOverride::Disabled) = self.sun_shadows {
-            config.part_mut(&STEREO_CONFIG).disable_sun_shadows = true;
-        }
-        match self.screen_space_reflections {
-            Some(ReflectionOverride::Enabled) => config.part_mut(&STEREO_CONFIG).skip_ssr = false,
-            Some(ReflectionOverride::Disabled) => config.part_mut(&STEREO_CONFIG).skip_ssr = true,
-            None => {}
-        }
-        if let Some(AmbientOcclusionOverride::Disabled) = self.ssao {
-            config.part_mut(&STEREO_CONFIG).disable_ssao = true;
-        }
-        if let Some(AmbientOcclusionOverride::Disabled) = self.ao_volumes {
-            config.part_mut(&STEREO_CONFIG).skip_ao_volumes = true;
-        }
-        if let Some(AmbientOcclusionOverride::Disabled) = self.global_illumination {
-            config.part_mut(&STEREO_CONFIG).skip_gi = true;
-        }
         if let Some(ShippedOverride::Enabled) = self.fsr {
             *config.part_mut(&FSR_CONFIG) = FsrConfig::new();
         }
@@ -541,15 +475,10 @@ mod tests {
     #[test]
     fn overrides_are_independent() {
         let overrides = parse(
-            "sun_shadows = 'disabled'\nscreen_space_reflections = 'enabled'\n\
-             [single_pass]\nssr_per_eye = false\nfsr_per_eye = true\n",
+            "fsr_jitter = 'disabled'\n[single_pass]\nssr_per_eye = false\nfsr_per_eye = true\n",
         )
         .unwrap();
-        assert_eq!(overrides.sun_shadows, Some(SunShadowsOverride::Disabled));
-        assert_eq!(
-            overrides.screen_space_reflections,
-            Some(ReflectionOverride::Enabled)
-        );
+        assert_eq!(overrides.fsr_jitter, Some(CorrectionOverride::Disabled));
         assert_eq!(
             overrides.single_pass.iter().collect::<Vec<_>>(),
             [
@@ -617,8 +546,8 @@ mod tests {
                 Err(OverrideError::SinglePassOnMode(mode))
             );
         }
-        let shadows = parse("sun_shadows = 'disabled'\n").unwrap();
-        assert_eq!(shadows.validate_for(RenderMode::Multipass), Ok(()));
+        let jitter = parse("fsr_jitter = 'disabled'\n").unwrap();
+        assert_eq!(jitter.validate_for(RenderMode::Multipass), Ok(()));
     }
 
     #[test]
@@ -639,9 +568,6 @@ mod tests {
                 expected
             );
         }
-        assert!(!config.part(&STEREO_CONFIG).disable_sun_shadows);
-        assert!(!config.part(&STEREO_CONFIG).disable_ssao);
-        assert!(!config.part(&STEREO_CONFIG).skip_ao_volumes);
     }
 
     #[test]
@@ -797,50 +723,16 @@ mod tests {
     }
 
     #[test]
-    fn ambient_occlusion_sources_can_be_left_out_in_any_mode() {
-        crate::test_config::register();
-        let overrides = parse(
-            "ssao = 'disabled'
-ao_volumes = 'disabled'
-",
-        )
-        .unwrap();
-        assert_eq!(overrides.validate_for(RenderMode::LeftOnly), Ok(()));
-        let mut config = Snapshot::defaults();
-        overrides.apply(&mut config);
-        assert!(config.part(&STEREO_CONFIG).disable_ssao);
-        assert!(config.part(&STEREO_CONFIG).skip_ao_volumes);
-        assert_eq!(
-            serde_json::to_value(
-                parse(
-                    "ao_volumes = 'disabled'
-"
-                )
-                .unwrap()
-            )
-            .unwrap(),
-            serde_json::json!({"ao_volumes": "disabled"})
-        );
-        assert!(
-            toml::from_str::<VisualOverridesTable>(
-                "ssao = 'skipped'
-"
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
     fn overrides_serialize_by_name() {
         let overrides = parse("[single_pass]\nssr_per_eye = false\n").unwrap();
         assert_eq!(
             serde_json::to_value(overrides).unwrap(),
             serde_json::json!({"single_pass": {"ssr_per_eye": false}})
         );
-        let shadows = parse("sun_shadows = 'disabled'\n").unwrap();
+        let jitter = parse("fsr_jitter = 'disabled'\n").unwrap();
         assert_eq!(
-            serde_json::to_value(shadows).unwrap(),
-            serde_json::json!({"sun_shadows": "disabled"})
+            serde_json::to_value(jitter).unwrap(),
+            serde_json::json!({"fsr_jitter": "disabled"})
         );
     }
 }

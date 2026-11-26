@@ -115,8 +115,6 @@ fn do_draw(this: *mut RenderPass, ctx: *mut RenderContext, color_mask: u32) -> b
 }
 
 const RP_AO_VOLUMES: i32 = RenderPassId::RP_AO_VOLUMES as i32;
-const RP_SCREEN_SPACE_REFLECTIONS: i32 = RenderPassId::RP_SCREEN_SPACE_REFLECTIONS as i32;
-const RP_GLOBAL_ILLUMINATION: i32 = RenderPassId::RP_GLOBAL_ILLUMINATION as i32;
 
 // RenderEngine::DrawRenderPassRange -- draws the half-open pass-index range [first, last). The engine
 // calls it three times per dispatch, from `CGraphicsEngine::HandleDrawThreadTask` in this order:
@@ -125,9 +123,6 @@ const RP_GLOBAL_ILLUMINATION: i32 = RenderPassId::RP_GLOBAL_ILLUMINATION as i32;
 // (`RP_POSTEFFECTS`..`RP_LAST_MAIN`); the bounds are compile-time constants at each call site, so
 // the ranges never vary between frames. `PreDraw` (the shadow, reflection, and vegetation prepasses)
 // runs before all three and does not come through here.
-//
-// The capture overrides that leave out SSR, GI, or the AO volumes drop those passes by splitting
-// the range around them, so every other pass runs untouched.
 #[detour(address = jc3gi::graphics_engine::render_engine::RenderEngine::DrawRenderPassRange_ADDRESS)]
 fn draw_render_pass_range(
     this: *mut c_void,
@@ -139,28 +134,10 @@ fn draw_render_pass_range(
     #[cfg(feature = "profiler")]
     puffin::profile_scope!("DrawRenderPassRange", format!("{first}..{last}"));
     let original = DRAW_RENDER_PASS_RANGE.get().unwrap();
-    let (skip_ssr, skip_gi, skip_ao_volumes) =
-        STEREO_CONFIG.query(|c| (c.skip_ssr, c.skip_gi, c.skip_ao_volumes));
-
-    let skipped = |pass: i32| {
-        (skip_ssr && pass == RP_SCREEN_SPACE_REFLECTIONS)
-            || (skip_gi && pass == RP_GLOBAL_ILLUMINATION)
-            || (skip_ao_volumes && pass == RP_AO_VOLUMES)
-    };
-
-    // Draw maximal runs of non-skipped passes in [lo, hi), omitting the skipped ones.
+    // Draw the passes [lo, hi), skipping an empty range.
     let draw_runs = |lo: i32, hi: i32| {
-        let mut run_start = lo;
-        for pass in lo..hi {
-            if skipped(pass) {
-                if run_start < pass {
-                    original.call(this, ctx, setup, run_start, pass);
-                }
-                run_start = pass + 1;
-            }
-        }
-        if run_start < hi {
-            original.call(this, ctx, setup, run_start, hi);
+        if lo < hi {
+            original.call(this, ctx, setup, lo, hi);
         }
     };
 
@@ -173,9 +150,8 @@ fn draw_render_pass_range(
     let draw = |lo, hi| {
         if let Some((probes, bracket)) = bracket
             && (lo..hi).contains(&bracket.pass)
-            && !skipped(bracket.pass)
         {
-            probes.draw_near_patch_bracket(bracket, lo, hi, &skipped, &draw_runs);
+            probes.draw_near_patch_bracket(bracket, lo, hi, &draw_runs);
         } else {
             draw_runs(lo, hi);
         }
@@ -218,8 +194,7 @@ const RP_FIRST_SCENE: i32 = RenderPassId::RP_REFLECTIVE_WATER_PLANES as i32;
 /// The head of the G-buffer range (where the depth clear lands via the pass's own PreDraw flags).
 const RP_Z_OCCLUDERS: i32 = RenderPassId::RP_Z_OCCLUDERS as i32;
 
-/// One (possibly sub-)range of the G-buffer/scene pass chain: the maximal-run skip splitting plus
-/// the foveation bracketing.
+/// One range of the G-buffer/scene pass chain, with the foveation bracketing.
 fn run_scene_range(first: i32, last: i32, draw: &dyn Fn(i32, i32)) {
     // Foveation (issue #29): write the peripheral stencil mask just before the first foveated pass,
     // then force the peripheral stencil test through each run of foveated passes so the GPU skips the

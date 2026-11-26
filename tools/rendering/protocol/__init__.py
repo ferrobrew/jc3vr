@@ -227,10 +227,6 @@ class SunDepthClip(StrEnum):
     DISABLED_RIGHT = "disabled_right"
 
 
-class SunShadows(StrEnum):
-    DISABLED = "disabled"
-
-
 # The single-pass production switches a configuration may override, by their configuration field
 # names, in table order, with each one's default and whether changing it needs a shader reload. Read
 # from the manifest the switch table in `crates/jc3vr-view/src/stereo/config/single_pass.rs`
@@ -254,11 +250,11 @@ def single_pass_switches(value, context="single_pass") -> tuple[tuple[str, bool]
     return tuple(sorted(value.items()))
 
 
+# Sources left out in every mode, to attribute a difference to one.
+DISABLING_OVERRIDES = ("fsr_mv_correction", "fsr_hybrid_velocity", "fsr_jitter", "anti_aliasing",
+                       "fsr_sharpen")
 # Settings the capture profile turns off or pins, put back at the mod's shipped value in every mode.
 # Mirrors `VisualOverrides::shipped` in `crates/jc3vr-capture/src/testing/visual/overrides.rs`.
-# Sources left out in every mode, to attribute a difference to one.
-DISABLING_OVERRIDES = ("ssao", "ao_volumes", "global_illumination", "fsr_mv_correction",
-                       "fsr_hybrid_velocity", "fsr_jitter", "anti_aliasing", "fsr_sharpen")
 SHIPPED_OVERRIDES = ("fsr", "taa", "foveation", "auto_exposure", "screen_fade", "player_damage")
 # The mod's temporal resolve's tuning values, each within [0, 4]. Mirrors `TaaTuningOverride` in
 # `crates/jc3vr-capture/src/testing/visual/overrides.rs`.
@@ -272,14 +268,7 @@ RESOLUTION_SCALE_RANGE = (0.5, 1.415)
 
 @dataclass(frozen=True)
 class VisualOverrides:
-    sun_shadows: SunShadows | None = None
-    screen_space_reflections: str | None = None
     single_pass: tuple[tuple[str, bool], ...] = ()
-    # Ambient-occlusion sources left out in every mode, to attribute a difference to one.
-    ssao: str | None = None
-    ao_volumes: str | None = None
-    # The global illumination pass left out in every mode.
-    global_illumination: str | None = None
     # FSR, the foveation, the engine's exposure metering, the screen fade, and the player-damage
     # overlay, each at its shipped behaviour in every mode.
     fsr: str | None = None
@@ -317,10 +306,6 @@ class VisualOverrides:
     stages: str | None = None
 
     def __post_init__(self):
-        if self.sun_shadows is not None and not isinstance(self.sun_shadows, SunShadows):
-            raise ProtocolError("visual protocol: invalid sun_shadows override")
-        if self.screen_space_reflections not in (None, "enabled", "disabled"):
-            raise ProtocolError("visual protocol: invalid screen_space_reflections override")
         for name in DISABLING_OVERRIDES:
             if getattr(self, name) not in (None, "disabled"):
                 raise ProtocolError(f"visual protocol: invalid {name} override")
@@ -349,8 +334,7 @@ class VisualOverrides:
                     raise ProtocolError(f"visual protocol: {name} must be within [0, 4]")
                 object.__setattr__(self, name, round(float(value), 3))
         object.__setattr__(self, "single_pass", single_pass_switches(dict(self.single_pass)))
-        if (self.sun_shadows is None and self.screen_space_reflections is None and
-                all(getattr(self, name) is None for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)) and
+        if (all(getattr(self, name) is None for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)) and
                 self.headset is None and self.resolution_scale is None and self.stages is None
                 and self.fsr_sharpness is None and not self.single_pass
                 and all(getattr(self, name) is None for name in TAA_TUNING_OVERRIDES)):
@@ -363,10 +347,6 @@ class VisualOverrides:
     def to_wire(self):
         """The table as the payload reports it: absent overrides are left out."""
         value = {}
-        if self.sun_shadows is not None:
-            value["sun_shadows"] = self.sun_shadows.value
-        if self.screen_space_reflections is not None:
-            value["screen_space_reflections"] = self.screen_space_reflections
         for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES):
             if getattr(self, name) is not None:
                 value[name] = getattr(self, name)
@@ -387,10 +367,6 @@ class VisualOverrides:
 
     def to_toml(self):
         result = "[visual_overrides]\n"
-        if self.sun_shadows is not None:
-            result += f"sun_shadows = {json.dumps(self.sun_shadows.value)}\n"
-        if self.screen_space_reflections is not None:
-            result += f"screen_space_reflections = {json.dumps(self.screen_space_reflections)}\n"
         for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES):
             if getattr(self, name) is not None:
                 result += f"{name} = {json.dumps(getattr(self, name))}\n"
@@ -413,18 +389,13 @@ class VisualOverrides:
     @classmethod
     def from_wire(cls, value):
         if not isinstance(value, dict) or not value or set(value) - {
-                "sun_shadows", "screen_space_reflections", "single_pass", "headset", "resolution_scale",
+                "single_pass", "headset", "resolution_scale",
                 "stages", "fsr_sharpness", *TAA_TUNING_OVERRIDES, *DISABLING_OVERRIDES,
                 *SHIPPED_OVERRIDES}:
             raise ProtocolError("visual protocol: invalid visual_overrides table")
-        try:
-            sun_shadows = SunShadows(value["sun_shadows"]) if "sun_shadows" in value else None
-        except (ValueError, TypeError) as error:
-            raise ProtocolError("visual protocol: invalid sun_shadows override") from error
         if "single_pass" in value and not value["single_pass"]:
             raise ProtocolError("visual protocol: the single_pass override table is empty")
-        return cls(sun_shadows, value.get("screen_space_reflections"),
-                   single_pass_switches(value.get("single_pass", {})),
+        return cls(single_pass_switches(value.get("single_pass", {})),
                    **{name: value.get(name) for name in (*DISABLING_OVERRIDES, *SHIPPED_OVERRIDES)},
                    headset=value.get("headset"), resolution_scale=value.get("resolution_scale"),
                    stages=value.get("stages"), fsr_sharpness=value.get("fsr_sharpness"),
