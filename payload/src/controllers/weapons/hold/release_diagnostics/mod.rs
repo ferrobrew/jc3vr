@@ -13,13 +13,14 @@ use glam::{Quat, Vec3};
 use jc3gi::character::inventory::WeaponSlot;
 use tracking_format::event::{GunRelease, ReleaseController, ReleaseDrop, WorldMotion};
 
+pub(crate) use crate::input_core::motion::RELEASE_ESTIMATE;
 use crate::{
     controllers::{
         clock::TimeScale,
         cockpit::CockpitTransform,
         diagnostics::Thrown,
         frame::{self, ControllerFrame, Hand},
-        motion::{self, MotionSample, ReleaseEstimate},
+        motion::{self, MotionSample},
         physical_hands::BodyError,
         weapons::hold::equip::DockRefusal,
     },
@@ -327,13 +328,6 @@ impl ReleaseInput<'_> {
 }
 
 pub(crate) const MAX_RELEASE_AGE_S: f32 = 0.15;
-
-/// How a release reads the hand's history: the fastest moment in the last quarter second, averaged
-/// with its immediate neighbours, because a throwing hand slows before the fingers finish opening.
-pub(crate) const RELEASE_ESTIMATE: ReleaseEstimate = ReleaseEstimate {
-    window_s: 0.25,
-    peak_span_s: 0.015,
-};
 
 /// A fixed-size readout containing only the latest release attempt.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
