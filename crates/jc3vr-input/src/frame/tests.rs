@@ -53,7 +53,6 @@ fn publication_identity_advances_even_when_display_time_does_not() {
     let now = Instant::now();
     let mut slot = Slot {
         frame: None,
-        edges: Edges::default(),
         sequence: 40,
     };
     let frame = ControllerFrame {
@@ -248,16 +247,11 @@ fn button_set_iterates_in_bit_order() {
 fn empty_slot() -> Slot {
     Slot {
         frame: None,
-        edges: Edges::default(),
         sequence: 0,
     }
 }
 
 fn frame_with(right: ButtonSet) -> ControllerFrame {
-    frame_with_set(right, ActionSetKind::OnFoot)
-}
-
-fn frame_with_set(right: ButtonSet, action_set: ActionSetKind) -> ControllerFrame {
     let mut hands: [HandFrame; 2] = Default::default();
     hands[Hand::Right.index()].active = true;
     hands[Hand::Right.index()].buttons = right;
@@ -266,7 +260,7 @@ fn frame_with_set(right: ButtonSet, action_set: ActionSetKind) -> ControllerFram
         display_time_ns: 0,
         published_at: Instant::now(),
         focused: true,
-        action_set,
+        action_set: ActionSetKind::OnFoot,
         hands,
     }
 }
@@ -293,59 +287,6 @@ fn a_clear_hides_the_frame() {
     slot.publish(frame_with(ButtonSet::EMPTY), t0);
     slot.clear();
     assert!(slot.fresh(t0).is_none());
-}
-
-#[test]
-fn publishing_latches_press_edges() {
-    let mut slot = empty_slot();
-    let t0 = Instant::now();
-    slot.publish(frame_with(ButtonSet::EMPTY), t0);
-    slot.publish(frame_with(set(&[Button::TriggerPress])), t0);
-    assert!(slot.edges.pressed(Hand::Right, Button::TriggerPress));
-}
-
-#[test]
-fn changing_action_sets_keeps_the_raw_edge_stream() {
-    let mut slot = empty_slot();
-    let t0 = Instant::now();
-    let held = set(&[Button::TriggerPress]);
-    slot.publish(frame_with(ButtonSet::EMPTY), t0);
-    slot.publish(frame_with(held), t0);
-    slot.edges = Edges::default();
-
-    slot.publish(frame_with_set(held, ActionSetKind::LandVehicle), t0);
-    assert_eq!(
-        slot.edges,
-        Edges::default(),
-        "a held button is not pressed anew"
-    );
-    slot.publish(
-        frame_with_set(ButtonSet::EMPTY, ActionSetKind::LandVehicle),
-        t0,
-    );
-    assert!(slot.edges.released(Hand::Right, Button::TriggerPress));
-
-    slot.edges = Edges::default();
-    slot.publish(frame_with_set(held, ActionSetKind::Ui), t0);
-    assert!(
-        slot.edges.pressed(Hand::Right, Button::TriggerPress),
-        "a press across a set change is kept"
-    );
-}
-
-#[test]
-fn a_button_held_across_a_clear_is_not_pressed_again() {
-    let mut slot = empty_slot();
-    let t0 = Instant::now();
-    let held = set(&[Button::TriggerPress]);
-    slot.publish(frame_with(ButtonSet::EMPTY), t0);
-    slot.publish(frame_with(held), t0);
-    slot.edges = Edges::default();
-    slot.clear();
-    slot.publish(frame_with(held), t0);
-    assert_eq!(slot.edges, Edges::default());
-    slot.publish(frame_with(ButtonSet::EMPTY), t0);
-    assert!(slot.edges.released(Hand::Right, Button::TriggerPress));
 }
 
 #[test]

@@ -1,4 +1,5 @@
-//! The published per-frame controller snapshot ([`ControllerFrame`]) and the input edge latch.
+//! The published per-frame controller snapshot ([`ControllerFrame`]) and its press and release
+//! edges ([`Edges`]).
 //!
 //! The VR runtime (`vr::input` in the payload) produces one [`ControllerFrame`] per rendered
 //! frame, on the main thread inside the VR frame loop: it syncs the OpenXR actions, locates the
@@ -10,11 +11,11 @@
 //!   poses, velocities, tracking validity, and every input value. Both hide a frame older than
 //!   [`MAX_FRAME_AGE`], so a frame that stops being refreshed stops driving anything even when no
 //!   path cleared it.
-//! - [`take_edges`] for the press and release edges since the last take. Render frames outpace the
-//!   engine's roughly 30 Hz sim tick, so a button pressed and released between two ticks would be
-//!   invisible to a consumer that only compared states tick to tick. The latch accumulates edges
-//!   across publishes until they are taken. The input tick is the single consumer: a second taker
-//!   would steal edges from it.
+//!
+//! The press and release edges since the input tick's last take are latched beside the semantic
+//! actions' (`vr::input::semantic::frame` in the payload), which publishes each frame here and
+//! folds its [`Edges`] under the same lock as the semantic frame's, so the two streams are taken
+//! and cleared together.
 //!
 //! Poses are in the **cockpit frame**: the OpenXR LOCAL space re-based by the recenter baseline
 //! (position and yaw), metres, OpenXR axes (+X right, +Y up, -Z forward). This is the frame the eye
@@ -609,8 +610,8 @@ impl ControllerFrame {
 /// for one such tick would drop whatever the hands hold.
 pub const MAX_FRAME_AGE: Duration = Duration::from_millis(500);
 
-/// The press and release edges of every button since the last [`take_edges`], per hand. A button
-/// pressed and released between two takes appears in both sets.
+/// The press and release edges of every button since the input tick's last take, per hand. A
+/// button pressed and released between two takes appears in both sets.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct Edges {
     pub pressed: [ButtonSet; 2],
@@ -651,14 +652,7 @@ pub fn with_latest<R>(f: impl FnOnce(&ControllerFrame) -> R) -> Option<R> {
     SLOT.lock().fresh(Instant::now()).map(f)
 }
 
-/// Take the edges accumulated since the last take, and reset the latch. The input tick is the one
-/// consumer.
-pub fn take_edges() -> Edges {
-    std::mem::take(&mut SLOT.lock().edges)
-}
-
-/// Publish a frame: fold its button transitions into the edge latch and make it the latest. The
-/// caller leaves [`ControllerFrame::sequence`] and [`ControllerFrame::published_at`] to this
+/// Publish a frame: make it the latest. The caller leaves [`ControllerFrame::sequence`] and [`ControllerFrame::published_at`] to this
 /// function, which stamps them.
 pub fn publish(frame: ControllerFrame) -> (u64, Instant) {
     let mut slot = SLOT.lock();
@@ -667,29 +661,21 @@ pub fn publish(frame: ControllerFrame) -> (u64, Instant) {
     (frame.sequence, frame.published_at)
 }
 
-/// Drop the latest frame and any untaken edges: the controllers are disabled, the session is gone,
-/// or the frame loop stopped sampling. Buttons held at the time produce no release edge; consumers
-/// treat a missing frame as everything released. The first frame published after a clear has no
-/// baseline, so it produces no edges either: a button held across the clear is not pressed anew.
+/// Drop the latest frame: the controllers are disabled, the session is gone, or the frame loop
+/// stopped sampling. Consumers treat a missing frame as everything released.
 pub fn clear() {
     SLOT.lock().clear();
     motion::clear();
 }
 
-/// The published frame and the edge latch, under one lock so that a publish and a take never
-/// interleave.
+/// The published frame and its sequence counter.
 static SLOT: Mutex<Slot> = Mutex::new(Slot {
     frame: None,
-    edges: Edges {
-        pressed: [ButtonSet::EMPTY; 2],
-        released: [ButtonSet::EMPTY; 2],
-    },
     sequence: 0,
 });
 
 struct Slot {
     frame: Option<ControllerFrame>,
-    edges: Edges,
     sequence: u64,
 }
 
@@ -698,26 +684,16 @@ impl Slot {
         self.frame.as_ref().filter(|f| f.is_fresh_at(now))
     }
 
-    /// Stamp `frame`, fold its transitions from the previous frame into the edges, and store it.
-    /// Without a previous frame (the first publish, or the first after a clear) there is no
-    /// transition to fold. A change of mode set does not interrupt the stream: the raw inputs are
-    /// read from the always-active `hands` set, so consecutive frames compare whichever mode set
-    /// was active.
+    /// Stamp `frame` and store it.
     fn publish(&mut self, mut frame: ControllerFrame, now: Instant) -> &ControllerFrame {
         self.sequence += 1;
         frame.sequence = self.sequence;
         frame.published_at = now;
-        let current = [frame.hands[0].buttons, frame.hands[1].buttons];
-        if let Some(previous) = &self.frame {
-            let previous = [previous.hands[0].buttons, previous.hands[1].buttons];
-            self.edges.accumulate(previous, current);
-        }
         self.frame.insert(frame)
     }
 
     fn clear(&mut self) {
         self.frame = None;
-        self.edges = Edges::default();
     }
 }
 

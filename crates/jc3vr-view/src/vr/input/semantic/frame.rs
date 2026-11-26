@@ -1,11 +1,13 @@
 //! The published per-frame semantic state ([`SemanticFrame`]): each action's per-hand state, for
 //! `global` and for the mode set that was active when the frame was sampled.
 //!
-//! The VR frame loop publishes one beside every
-//! [`ControllerFrame`](jc3vr_input::frame::ControllerFrame), read in the same sync. The
-//! input tick takes the latest with the press and release edges accumulated since its last take
-//! ([`take`]), as it takes the raw frame's: render frames outpace the sim tick, and a tap between
-//! two ticks must still reach the bindings.
+//! The VR frame loop publishes one with every [`ControllerFrame`], read in the same sync, through
+//! [`publish`], which also publishes the controller frame. This module holds the input's one edge
+//! latch: the press and release edges of the raw buttons and of the semantic actions, accumulated
+//! across publishes under one lock until the input tick takes both together ([`take`]). Render
+//! frames outpace the sim tick, and a tap between two ticks must still reach the bindings. One
+//! [`clear`] drops both frames and both sets of edges, so the raw and semantic streams can never
+//! disagree about what was pressed since the last take.
 //!
 //! Each action also carries a digital state ([`ActionState::down`]): a boolean action's value, or
 //! a float action's value past its action-owned trigger, grip, or trackpad thresholds, with
@@ -16,7 +18,10 @@ use std::time::Instant;
 
 use glam::Vec2;
 use jc3vr_input::{
-    frame::{ActionSetKind, GripPress, Hand, MAX_FRAME_AGE, PressRules},
+    frame::{
+        self as controller_frame, ActionSetKind, ButtonSet, ControllerFrame, Edges, GripPress,
+        Hand, MAX_FRAME_AGE, PressRules,
+    },
     semantic::{
         ActionKind, SemanticSet,
         vocabulary::{ActionId, FloatPress},
@@ -174,18 +179,30 @@ impl SemanticEdges {
     }
 }
 
-/// The latest published frame, or `None` when there is none or it is older than
-/// [`MAX_FRAME_AGE`], with the edges accumulated since the last take; the edges are reset. The
-/// input tick is the one taker.
-pub fn take() -> (Option<SemanticFrame>, SemanticEdges) {
+/// What the input tick takes: the latest semantic frame, or `None` when there is none or it is
+/// older than [`MAX_FRAME_AGE`], and every raw and semantic edge since the last take.
+#[derive(Debug, Clone)]
+pub struct Taken {
+    pub semantic: Option<SemanticFrame>,
+    pub edges: Edges,
+    pub semantic_edges: SemanticEdges,
+}
+
+/// Take the latest semantic frame and both sets of edges, resetting the latch. The input tick is
+/// the one taker: a second would steal edges from it.
+pub fn take() -> Taken {
     let now = Instant::now();
     let mut slot = SLOT.lock();
-    let frame = slot
+    let semantic = slot
         .frame
         .as_ref()
         .filter(|f| now.saturating_duration_since(f.published_at) <= MAX_FRAME_AGE)
         .cloned();
-    (frame, std::mem::take(&mut slot.edges))
+    Taken {
+        semantic,
+        edges: std::mem::take(&mut slot.edges),
+        semantic_edges: std::mem::take(&mut slot.semantic_edges),
+    }
 }
 
 /// A copy of the latest published frame, or `None` when there is none or it is older than
@@ -213,34 +230,28 @@ pub(crate) fn previous_down(set: SemanticSet) -> Option<Vec<[bool; 2]>> {
     )
 }
 
-/// Publish a frame: fold its transitions from the previous frame into the edges and make it the
-/// latest. A set the previous frame did not read (the mode set just changed) has no transition to
-/// fold, so an input held across the change is not pressed anew.
-pub(crate) fn publish(frame: SemanticFrame) {
+/// Publish a sync's controller frame and semantic frame together: publish `raw` (which stamps its
+/// sequence and time, returned here), stamp `semantic` with the same time, fold both frames'
+/// transitions from the previous ones into the latch, and make `semantic` the latest. There are no
+/// raw transitions without a previous raw frame (the first publish, or the first after a
+/// [`clear`]), and none for a set the previous semantic frame did not read (the mode set just
+/// changed), so an input held across either is not pressed anew. A change of mode set does not
+/// interrupt the raw edges: the raw inputs are read from the always-active `hands` set.
+pub(crate) fn publish(raw: ControllerFrame, semantic: SemanticFrame) -> (u64, Instant) {
     let mut slot = SLOT.lock();
-    let Slot {
-        frame: previous,
-        edges,
-    } = &mut *slot;
-    if let Some(previous) = previous {
-        for current in [&frame.global, &frame.mode] {
-            if let Some(before) = previous.set(current.set) {
-                edges.accumulate(before, current);
-            }
-        }
-    }
-    *previous = Some(frame);
+    let buttons = [raw.hands[0].buttons, raw.hands[1].buttons];
+    let (sequence, published_at) = controller_frame::publish(raw);
+    slot.fold(buttons, published_at, semantic);
+    (sequence, published_at)
 }
 
-/// Drop the latest frame and any untaken edges, alongside [`jc3vr_input::frame::clear`].
+/// Drop the latest controller and semantic frames and any untaken edges: the controllers are
+/// disabled, the session is gone, or the frame loop stopped sampling. Buttons held at the time
+/// produce no release edge; consumers treat a missing frame as everything released.
 pub(crate) fn clear() {
-    *SLOT.lock() = Slot {
-        frame: None,
-        edges: SemanticEdges {
-            pressed: [[0; 2]; SET_COUNT],
-            released: [[0; 2]; SET_COUNT],
-        },
-    };
+    let mut slot = SLOT.lock();
+    controller_frame::clear();
+    *slot = Slot::EMPTY;
 }
 
 const SET_COUNT: usize = SemanticSet::ALL.len();
@@ -249,15 +260,168 @@ const fn bit(index: usize) -> u32 {
     1 << index
 }
 
-static SLOT: Mutex<Slot> = Mutex::new(Slot {
-    frame: None,
-    edges: SemanticEdges {
-        pressed: [[0; 2]; SET_COUNT],
-        released: [[0; 2]; SET_COUNT],
-    },
-});
+/// The latest semantic frame and the edge latch. The controller frame is published under this lock
+/// too, so a publish and a take never interleave.
+static SLOT: Mutex<Slot> = Mutex::new(Slot::EMPTY);
 
 struct Slot {
     frame: Option<SemanticFrame>,
-    edges: SemanticEdges,
+    /// The previous controller frame's buttons, by [`Hand::index`], or `None` when there is no
+    /// previous frame to compare against.
+    buttons: Option<[ButtonSet; 2]>,
+    edges: Edges,
+    semantic_edges: SemanticEdges,
+}
+
+impl Slot {
+    /// Fold a publish into the latch: the controller frame's `buttons`, and `semantic`, stamped
+    /// `published_at` (see [`publish`]).
+    fn fold(
+        &mut self,
+        buttons: [ButtonSet; 2],
+        published_at: Instant,
+        mut semantic: SemanticFrame,
+    ) {
+        if let Some(previous) = self.buttons {
+            self.edges.accumulate(previous, buttons);
+        }
+        self.buttons = Some(buttons);
+        semantic.published_at = published_at;
+        if let Some(previous) = &self.frame {
+            for current in [&semantic.global, &semantic.mode] {
+                if let Some(before) = previous.set(current.set) {
+                    self.semantic_edges.accumulate(before, current);
+                }
+            }
+        }
+        self.frame = Some(semantic);
+    }
+
+    const EMPTY: Slot = Slot {
+        frame: None,
+        buttons: None,
+        edges: Edges {
+            pressed: [ButtonSet::EMPTY; 2],
+            released: [ButtonSet::EMPTY; 2],
+        },
+        semantic_edges: SemanticEdges {
+            pressed: [[0; 2]; SET_COUNT],
+            released: [[0; 2]; SET_COUNT],
+        },
+    };
+}
+
+#[cfg(test)]
+mod tests {
+    use jc3vr_input::{frame::Button, semantic::vocabulary::ActionId};
+
+    use super::*;
+
+    fn buttons(right: &[Button]) -> [ButtonSet; 2] {
+        let mut set = ButtonSet::EMPTY;
+        for &button in right {
+            set.set(button, true);
+        }
+        [ButtonSet::EMPTY, set]
+    }
+
+    /// A semantic frame whose mode set is `mode`, with its first action down on the right hand
+    /// when `down`.
+    fn semantic(mode: SemanticSet, down: bool) -> SemanticFrame {
+        let state = |set: SemanticSet, down: bool| SetState {
+            set,
+            actions: set
+                .actions()
+                .iter()
+                .enumerate()
+                .map(|(index, action)| {
+                    let mut right = ActionState::rest(action.kind);
+                    right.down = down && index == 0;
+                    [ActionState::rest(action.kind), right]
+                })
+                .collect(),
+        };
+        SemanticFrame {
+            published_at: Instant::now(),
+            action_set: ActionSetKind::OnFoot,
+            global: state(SemanticSet::Global, false),
+            mode: state(mode, down),
+        }
+    }
+
+    fn first(set: SemanticSet) -> ActionId {
+        ActionId { set, index: 0 }
+    }
+
+    fn take(slot: &mut Slot) -> (Edges, SemanticEdges) {
+        (
+            std::mem::take(&mut slot.edges),
+            std::mem::take(&mut slot.semantic_edges),
+        )
+    }
+
+    #[test]
+    fn a_tap_between_takes_reaches_both_streams() {
+        let mut slot = Slot::EMPTY;
+        let now = Instant::now();
+        let on_foot = SemanticSet::OnFoot;
+        slot.fold(buttons(&[]), now, semantic(on_foot, false));
+        slot.fold(buttons(&[Button::AClick]), now, semantic(on_foot, true));
+        slot.fold(buttons(&[]), now, semantic(on_foot, false));
+        let (edges, semantic_edges) = take(&mut slot);
+        assert!(edges.pressed(Hand::Right, Button::AClick));
+        assert!(edges.released(Hand::Right, Button::AClick));
+        assert!(semantic_edges.pressed(first(on_foot), Hand::Right));
+        assert!(semantic_edges.released(first(on_foot), Hand::Right));
+        assert_eq!(
+            take(&mut slot),
+            (Edges::default(), SemanticEdges::default())
+        );
+    }
+
+    #[test]
+    fn a_mode_set_change_keeps_the_raw_edges_and_presses_no_action_anew() {
+        let mut slot = Slot::EMPTY;
+        let now = Instant::now();
+        let held = buttons(&[Button::TriggerPress]);
+        slot.fold(held, now, semantic(SemanticSet::OnFoot, true));
+        slot.fold(held, now, semantic(SemanticSet::LandVehicle, true));
+        assert_eq!(
+            take(&mut slot),
+            (Edges::default(), SemanticEdges::default())
+        );
+        slot.fold(buttons(&[]), now, semantic(SemanticSet::LandVehicle, false));
+        let (edges, semantic_edges) = take(&mut slot);
+        assert!(edges.released(Hand::Right, Button::TriggerPress));
+        assert!(semantic_edges.released(first(SemanticSet::LandVehicle), Hand::Right));
+    }
+
+    #[test]
+    fn an_input_held_across_a_clear_is_not_pressed_again() {
+        let mut slot = Slot::EMPTY;
+        let now = Instant::now();
+        let held = buttons(&[Button::TriggerPress]);
+        slot.fold(buttons(&[]), now, semantic(SemanticSet::OnFoot, false));
+        slot.fold(held, now, semantic(SemanticSet::OnFoot, true));
+        slot = Slot::EMPTY;
+        slot.fold(held, now, semantic(SemanticSet::OnFoot, true));
+        assert_eq!(
+            take(&mut slot),
+            (Edges::default(), SemanticEdges::default())
+        );
+        slot.fold(buttons(&[]), now, semantic(SemanticSet::OnFoot, false));
+        assert!(
+            take(&mut slot)
+                .0
+                .released(Hand::Right, Button::TriggerPress)
+        );
+    }
+
+    #[test]
+    fn a_publish_stamps_the_semantic_frame_with_the_controller_frames_time() {
+        let mut slot = Slot::EMPTY;
+        let at = Instant::now() + std::time::Duration::from_millis(3);
+        slot.fold(buttons(&[]), at, semantic(SemanticSet::OnFoot, false));
+        assert_eq!(slot.frame.map(|f| f.published_at), Some(at));
+    }
 }

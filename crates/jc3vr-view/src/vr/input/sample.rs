@@ -8,7 +8,6 @@ use std::{ptr, sync::atomic::Ordering, time::Instant};
 
 use glam::Vec3;
 use jc3vr_input::{
-    frame,
     frame::{
         ButtonSet, ControllerFrame, HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint,
         InteractionProfile, Pose, TrackedPose, derive_buttons,
@@ -63,7 +62,6 @@ impl InputState {
         if !cfg.enabled {
             flight_pose::unavailable();
             history::interrupt(DiscontinuityReason::Unavailable);
-            frame::clear();
             semantic_frame::clear();
             haptic_output::clear();
             self.previous_buttons = [ButtonSet::EMPTY; 2];
@@ -78,7 +76,6 @@ impl InputState {
                 self.note_failure(&e);
                 flight_pose::unavailable();
                 history::interrupt(DiscontinuityReason::Unavailable);
-                frame::clear();
                 semantic_frame::clear();
                 return None;
             }
@@ -164,7 +161,7 @@ impl InputState {
             hands,
         };
 
-        let mut semantic = SemanticFrame {
+        let semantic = SemanticFrame {
             published_at: Instant::now(),
             action_set: mode,
             global: self.read_set(
@@ -197,7 +194,7 @@ impl InputState {
             .map(|_| frame.clone());
         let mut live_controllers = first_error.is_none().then(|| frame.clone());
         admission::apply(&frame.hands, &mut observed);
-        let (frame_sequence, published_at) = frame::publish(frame);
+        let (frame_sequence, published_at) = semantic_frame::publish(frame, semantic);
         if let Some(controllers) = live_controllers.as_mut() {
             controllers.sequence = frame_sequence;
             controllers.published_at = published_at;
@@ -208,8 +205,6 @@ impl InputState {
             }
             _ => flight_pose::unavailable(),
         }
-        semantic.published_at = published_at;
-        semantic_frame::publish(semantic);
         history::publish_observation(
             history::LiveSample {
                 samples: observed,

@@ -13,7 +13,6 @@ use std::{
 use anyhow::Context as _;
 use jc3gi::camera::camera::Camera;
 use jc3vr_core::{frame_timing, frame_timing::Slot};
-use jc3vr_input::frame as controller_frame;
 use openxr as xr;
 use parking_lot::MutexGuard;
 
@@ -34,6 +33,7 @@ use crate::{
             },
             flight_pose,
             flight_pose::LocatedHead,
+            semantic::frame as input_frame,
         },
         live_tracking,
         live_tracking::LocatedTracking,
@@ -64,7 +64,7 @@ pub fn frame_wait() -> Option<WaitedFrame> {
     // keep standing for the controllers' state.
     if !guard.is_running() {
         flight_pose::unavailable();
-        controller_frame::clear();
+        input_frame::clear();
         return None;
     }
 
@@ -73,7 +73,7 @@ pub fn frame_wait() -> Option<WaitedFrame> {
         Ok(frame) => Some(WaitedFrame { frame: Some(frame) }),
         Err(e) => {
             flight_pose::unavailable();
-            controller_frame::clear();
+            input_frame::clear();
             note_frame_begin_failure(&e);
             None
         }

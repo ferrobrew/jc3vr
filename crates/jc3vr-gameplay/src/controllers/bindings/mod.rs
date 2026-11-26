@@ -263,7 +263,6 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         state.stand_down(poll, sink);
         state.recovery.suspend();
         state.publish_recovery();
-        frame::take_edges();
         semantic_frame::take();
         let publications = history::take_gameplay();
         INPUT_POLICY.lock().step(TickInput {
@@ -307,8 +306,11 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     };
     // The edges are taken even while idle, so that a press from before injection resumed is not
     // replayed then.
-    let mut edges = frame::take_edges();
-    let (semantic, semantic_edges) = semantic_frame::take();
+    let semantic_frame::Taken {
+        semantic,
+        mut edges,
+        semantic_edges,
+    } = semantic_frame::take();
     let publications = history::take_gameplay();
     let mut routed = INPUT_POLICY.lock().step(TickInput {
         publications,
@@ -1203,7 +1205,6 @@ fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
     let publications = history::take_gameplay();
     INPUT_POLICY.lock().cancel_publications(publications);
     PANEL_RECOVERY.lock().suspend();
-    frame::take_edges();
     semantic_frame::take();
     clear_controller();
     update_egui_controller(

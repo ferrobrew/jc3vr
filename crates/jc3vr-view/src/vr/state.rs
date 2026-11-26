@@ -11,7 +11,6 @@ use std::{
 
 use anyhow::Context as _;
 use jc3vr_core::{frame_timing, frame_timing::Slot, thread_role, thread_role::ThreadRole};
-use jc3vr_input::frame as controller_frame;
 use openxr as xr;
 use parking_lot::{Mutex, MutexGuard};
 use windows::{
@@ -33,6 +32,7 @@ use crate::{
             config::{DOMINANT_HAND, INPUT_CONFIG},
             flight_pose,
             flight_pose::EpochChange,
+            semantic::frame as input_frame,
         },
         loader::{LoaderUnavailable, load_entry},
         mirror,
@@ -606,7 +606,7 @@ impl VrState {
                     tracing::error!(target: "vr", "session end failed: {e}");
                 }
                 session.running = false;
-                controller_frame::clear();
+                input_frame::clear();
             }
             xr::SessionState::EXITING | xr::SessionState::LOSS_PENDING => {
                 return true;

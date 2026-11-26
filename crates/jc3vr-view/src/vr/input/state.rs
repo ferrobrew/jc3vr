@@ -5,7 +5,6 @@ use std::sync::atomic::Ordering;
 
 use anyhow::Context as _;
 use jc3vr_input::{
-    frame,
     frame::{ButtonSet, Hand, InteractionProfile},
     haptics::output as haptic_output,
 };
@@ -154,7 +153,6 @@ impl InputState {
 
     fn clear_published() {
         crate::vr::input::flight_pose::unavailable();
-        frame::clear();
         semantic::frame::clear();
         sources::clear();
         haptic_output::clear();
