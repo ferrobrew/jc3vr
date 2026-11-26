@@ -9,7 +9,10 @@ use jc3vr_view::{headpose, headpose::Source, hooks::graphics_engine::player_draw
 
 use crate::{
     controllers::body::procedural::head::head_bone_world,
-    hooks::character::body_ik::{PRE_IK_POSE, PreIkPose, body_ik_status, tuning::BODY_IK_TUNING},
+    hooks::character::{
+        body_ik::{PRE_IK_POSE, PreIkPose, body_ik_status},
+        tuning::CHARACTER,
+    },
 };
 
 /// Hide the player's head and drive its full pose from the headpose.
@@ -144,7 +147,8 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             // requires an effective reach, not just a queued target — with the reach dialled to
             // zero the solve moves nothing and this add must take over, or roomscale placement
             // silently dies.
-            let hik_places_head = BODY_IK_TUNING.head_reach_t * BODY_IK_TUNING.weight > 0.0
+            let body_ik = &CHARACTER.get().body_ik;
+            let hik_places_head = body_ik.head_reach_t * body_ik.weight > 0.0
                 && body_ik_status().is_some_and(|s| s.skip.is_none());
             let animated_head_world = headpose::anchor().unwrap_or(glam::Vec3::ZERO);
             let scale = VR_CONFIG.lock().world_scale;
@@ -160,17 +164,18 @@ pub(crate) unsafe fn override_head(character: *mut Character) {
             }
         }
 
-        // Twist the neck along with the head beyond [`NECK_TWIST_START_DEG`]: the head bone carries
-        // the whole body-relative yaw, and past a real head's range the neck must follow or the
-        // skinning between the (hidden) head and the animated neck knots up — this is what makes
-        // the extended free-look yaw range anatomically plausible. Body-relative yaw is exactly a
-        // model-space Y rotation, so the twist pre-multiplies the *animated* model-space neck
-        // orientation captured above — no rest-frame knowledge needed, and the neck's translation
-        // (its own origin) is untouched.
+        // Twist the neck along with the head beyond the character tuning's `neck.twist_start_deg`:
+        // the head bone carries the whole body-relative yaw, and past a real head's range the neck
+        // must follow or the skinning between the (hidden) head and the animated neck knots up —
+        // this is what makes the extended free-look yaw range anatomically plausible. Body-relative
+        // yaw is exactly a model-space Y rotation, so the twist pre-multiplies the *animated*
+        // model-space neck orientation captured above — no rest-frame knowledge needed, and the
+        // neck's translation (its own origin) is untouched.
         if in_gameplay && headpose::is_active() && headpose::anchor().is_some() {
             let yaw = headpose::sim::body_yaw_of(headpose::body_relative_rotation());
+            let neck = &CHARACTER.get().neck;
             let excess_deg =
-                (yaw.abs().to_degrees() - NECK_TWIST_START_DEG).clamp(0.0, NECK_TWIST_MAX_DEG);
+                (yaw.abs().to_degrees() - neck.twist_start_deg).clamp(0.0, neck.twist_max_deg);
             if excess_deg > 0.0 {
                 let twist = excess_deg.to_radians().copysign(yaw);
                 // Pre-multiply onto the pre-IK neck orientation for the same reason as the head
@@ -202,16 +207,6 @@ fn head_orientation(
         Source::Sim => Some(tracking * animated),
     }
 }
-
-/// The body-relative yaw, degrees, beyond which the neck bone twists along with the head. A real
-/// head only turns so far before the neck must follow, and with the hidden head bone carrying the
-/// whole yaw, leaving the neck animated knots the visible neck skinning once the head turns past
-/// it.
-const NECK_TWIST_START_DEG: f32 = 60.0;
-
-/// The most yaw the neck takes, degrees: the excess beyond [`NECK_TWIST_START_DEG`] goes to the
-/// neck up to this cap.
-const NECK_TWIST_MAX_DEG: f32 = 55.0;
 
 #[cfg(test)]
 mod tests {

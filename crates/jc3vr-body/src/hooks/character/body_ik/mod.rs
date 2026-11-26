@@ -34,7 +34,7 @@ use crate::{
     },
     hooks::{
         animation::{active_state_type_id, body_rule_system},
-        character::body_ik::tuning::BODY_IK_TUNING,
+        character::tuning::CHARACTER,
     },
 };
 
@@ -418,7 +418,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // gameplay owns the character: outside E_GAME_RUN the engine repositions Rico for a teleport,
         // so queuing head-follow targets would fight that (issue #27). The anchor capture above still
         // runs so the pose stays fresh for the auto-recenter rebase on resume.
-        let tuning = BODY_IK_TUNING;
+        let tuning = &CHARACTER.get().body_ik;
         if let Some(skip) = (!headpose::is_active())
             .then_some(BodyIkSkip::HeadposeInactive)
             .or(headpose::anchor().is_none().then_some(BodyIkSkip::NoAnchor))
@@ -486,10 +486,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
             &pos,
             SolveStep::SPINE_HEAD_ONLY,
             Pass::MAIN,
-            tuning.interpolation,
-            tuning.interpolation_rate,
-            tuning.blend_out,
-            tuning.blend_out_rate,
+            EASE_IN,
+            EASE_IN_RATE,
+            BLEND_OUT,
+            BLEND_OUT_RATE,
         );
         character.m_HIK.m_TargetReachT[eff] = reach_t;
         // Reach alone makes the head *arrive* at the target; pull is what propagates that
@@ -586,10 +586,9 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // remains). The aim IK claims only the one arm effector it rotates but needs the whole
         // chain free to swing — per-effector deferral left the other pins clamping aim to the
         // authored sweep cone (~±30°).
-        let defer_to_aim = tuning.defer_while_aiming
-            && character
-                .m_AimFlags
-                .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
+        let defer_to_aim = character
+            .m_AimFlags
+            .intersects(AimState::m_AimingWeapon | AimState::m_AimingGrapple);
         // The procedural body poses the torso itself at the solve gate: at its full weight these
         // targets stand down, and below it the gate fades them by what is left.
         let drive_torso = !torso.is_near_identity() && !defer_to_aim && torso_weight() < 1.0;
@@ -645,10 +644,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     &target,
                     SolveStep::UPPER_BODY,
                     Pass::MAIN,
-                    tuning.interpolation,
-                    tuning.interpolation_rate,
-                    tuning.blend_out,
-                    tuning.blend_out_rate,
+                    EASE_IN,
+                    EASE_IN_RATE,
+                    BLEND_OUT,
+                    BLEND_OUT_RATE,
                 );
                 character.m_HIK.m_TargetReachT[shoulder_effector as usize] = shoulder_reach_t;
                 character.m_HIK.m_TargetPull[shoulder_effector as usize] = shoulder_pull;
@@ -680,10 +679,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                         &axis_v,
                         SolveStep::UPPER_BODY,
                         Pass::MAIN,
-                        tuning.interpolation,
-                        tuning.interpolation_rate,
-                        tuning.blend_out,
-                        tuning.blend_out_rate,
+                        EASE_IN,
+                        EASE_IN_RATE,
+                        BLEND_OUT,
+                        BLEND_OUT_RATE,
                     );
                     character.m_HIK.m_TargetReachR[chest_effector as usize] =
                         (tuning.chest_reach_r * weight).clamp(0.0, 1.0);
@@ -707,7 +706,7 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         // SPINE_HEAD_ONLY step keeps the arms out of the solve entirely, and a standing wrist
         // target would only compete with the game's own grip IK.
         let mut hands_pinned = 0;
-        if tuning.pin_hands && (shoulders_driven > 0 || chest_driven) {
+        if shoulders_driven > 0 || chest_driven {
             let hand_reach_t = (tuning.hand_reach_t * weight).clamp(0.0, 1.0);
             for (hand, hand_effector) in [
                 (Hand::Left, Effector::LEFT_WRIST),
@@ -740,10 +739,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     &target,
                     SolveStep::UPPER_BODY,
                     Pass::MAIN,
-                    tuning.interpolation,
-                    tuning.interpolation_rate,
-                    tuning.blend_out,
-                    tuning.blend_out_rate,
+                    EASE_IN,
+                    EASE_IN_RATE,
+                    BLEND_OUT,
+                    BLEND_OUT_RATE,
                 );
                 character.m_HIK.m_TargetReachT[hand_effector as usize] = hand_reach_t;
                 character.m_HIK.m_TargetPull[hand_effector as usize] = 0.0;
@@ -766,10 +765,10 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
                     RotationAxis::Y,
                     SolveStep::UPPER_BODY,
                     Pass::MAIN,
-                    tuning.interpolation,
-                    tuning.interpolation_rate,
-                    tuning.blend_out,
-                    tuning.blend_out_rate,
+                    EASE_IN,
+                    EASE_IN_RATE,
+                    BLEND_OUT,
+                    BLEND_OUT_RATE,
                 );
                 character.m_HIK.m_TargetReachR[hand_effector as usize] =
                     (tuning.hand_reach_r * weight).clamp(0.0, 1.0);
@@ -789,33 +788,31 @@ pub(crate) unsafe fn capture_anchors_and_queue_body_ik(
         };
 
         let mut reach_r = 0.0;
-        if tuning.rotation_target {
-            // Aim the head's model-space frame at the headpose orientation, mirroring the aim IK's
-            // AddEffectorTargetRotationVector(axis, angle) call. SPINE_HEAD_ONLY for the same
-            // reason as the position target above: turning the head must never recruit the arms.
-            let (axis, angle) = head_delta.to_axis_angle();
-            if angle.abs() > 1.0e-4 && axis.is_finite() {
-                let axis_v = Vector3 {
-                    data: [axis.x, axis.y, axis.z],
-                };
-                character.m_HIK.AddEffectorTargetRotationVector(
-                    effector,
-                    angle,
-                    &axis_v,
-                    SolveStep::SPINE_HEAD_ONLY,
-                    Pass::MAIN,
-                    tuning.interpolation,
-                    tuning.interpolation_rate,
-                    tuning.blend_out,
-                    tuning.blend_out_rate,
-                );
-                reach_r = (tuning.head_reach_r * weight).clamp(0.0, 1.0);
-                character.m_HIK.m_TargetReachR[eff] = reach_r;
-                // Resist is the rotation list's counterpart to pull: the engine copies
-                // `m_TargetResist` into `m_Resist` only for effectors carrying a queued *rotation*
-                // target, so it belongs here rather than beside the position target above.
-                character.m_HIK.m_TargetResist[eff] = (tuning.head_resist * weight).clamp(0.0, 1.0);
-            }
+        // Aim the head's model-space frame at the headpose orientation, mirroring the aim IK's
+        // AddEffectorTargetRotationVector(axis, angle) call. SPINE_HEAD_ONLY for the same
+        // reason as the position target above: turning the head must never recruit the arms.
+        let (axis, angle) = head_delta.to_axis_angle();
+        if angle.abs() > 1.0e-4 && axis.is_finite() {
+            let axis_v = Vector3 {
+                data: [axis.x, axis.y, axis.z],
+            };
+            character.m_HIK.AddEffectorTargetRotationVector(
+                effector,
+                angle,
+                &axis_v,
+                SolveStep::SPINE_HEAD_ONLY,
+                Pass::MAIN,
+                EASE_IN,
+                EASE_IN_RATE,
+                BLEND_OUT,
+                BLEND_OUT_RATE,
+            );
+            reach_r = (tuning.head_reach_r * weight).clamp(0.0, 1.0);
+            character.m_HIK.m_TargetReachR[eff] = reach_r;
+            // Resist is the rotation list's counterpart to pull: the engine copies
+            // `m_TargetResist` into `m_Resist` only for effectors carrying a queued *rotation*
+            // target, so it belongs here rather than beside the position target above.
+            character.m_HIK.m_TargetResist[eff] = (tuning.head_resist * weight).clamp(0.0, 1.0);
         }
 
         let (lean_axis, lean_angle) = lean.to_axis_angle();
@@ -926,8 +923,8 @@ static UNMAPPED_LOGGED: AtomicBool = AtomicBool::new(false);
 static SHOULDERS_DRIVEN: Mutex<[bool; 2]> = Mutex::new([false; 2]);
 
 /// The lowest the view's head may stand: the ground under Rico, from the height over the ground
-/// (water excluded) his body rule system last wrote, plus [`VIEW_FLOOR_CLEARANCE_M`]. `None` while
-/// the reading is missing or not a number.
+/// (water excluded) his body rule system last wrote, plus the body IK tuning's
+/// `view_floor_clearance_m`. `None` while the reading is missing or not a number.
 fn view_floor(character: &Character, world: glam::Mat4) -> Option<f32> {
     // SAFETY: the live local character, read on the thread running its pose pass.
     let rules = unsafe { body_rule_system(character) }?;
@@ -935,9 +932,16 @@ fn view_floor(character: &Character, world: glam::Mat4) -> Option<f32> {
     let ground = world.w_axis.y - over;
     ground
         .is_finite()
-        .then_some(ground + VIEW_FLOOR_CLEARANCE_M)
+        .then_some(ground + CHARACTER.get().body_ik.view_floor_clearance_m)
 }
 
-/// How far above the ground the view's head stays at the least, metres: the eyes hang a little
-/// below and in front of it, and the near plane needs a few centimetres past them.
-const VIEW_FLOOR_CLEARANCE_M: f32 = 0.25;
+/// The effector queue's ease arguments (the `effector_interpolation` and `effector_blend_out`
+/// arguments and their rates, which are the game's defaults). The reach weight snaps rather than
+/// easing in, as the game's own hand pass queues it. It does not ease out either, against the hand
+/// pass's precedent: a blending-out entry keeps steering with the stale pose it was queued with,
+/// which is fine for the game's world-anchored targets but wrong a frame later for these
+/// animation-anchored ones.
+const EASE_IN: bool = false;
+const EASE_IN_RATE: f32 = 3.0;
+const BLEND_OUT: bool = false;
+const BLEND_OUT_RATE: f32 = 1.5;

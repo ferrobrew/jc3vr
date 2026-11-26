@@ -1,0 +1,28 @@
+# The character hooks' tuning: `CharacterTuning` in `src/hooks/character/tuning.rs`, whose fields
+# (and `BodyIkTuning`'s, in `src/hooks/character/body_ik/tuning.rs`) say what each value does. Every
+# key is required and no other is accepted. Lengths are metres and angles degrees; a weight or a
+# share is in `0..1`. The body IK's target offset is in character-model space.
+
+[body_ik]
+head_reach_t = 1.0
+head_reach_r = 0.4
+head_pull = 0.5
+head_resist = 0.0
+lean_share = 0.8
+pivot_drop = 0.0
+lean_max_deg = 45.0
+yaw_share = 0.4
+shoulder_reach_t = 0.9
+shoulder_pull = 0.5
+hand_reach_t = 1.0
+hand_reach_r = 1.0
+hand_resist = 0.0
+chest_reach_r = 0.8
+weight = 1.0
+target_offset = [0.0, 0.0, 0.0]
+view_floor_clearance_m = 0.25
+max_root_step_m = 10.0
+
+[neck]
+twist_start_deg = 60.0
+twist_max_deg = 55.0

@@ -14,7 +14,7 @@ use jc3vr_view::headpose::{
 };
 use parking_lot::Mutex;
 
-use crate::tuning::FRESHNESS;
+use crate::{hooks::character::tuning::CHARACTER, tuning::FRESHNESS};
 
 /// All gameplay modes share this history. A mode switch does not reseed the view from a transient
 /// entry pose; pause, tracking loss, recenter, teleport, and skeleton changes break continuity.
@@ -32,9 +32,9 @@ pub(super) fn capture(
     let now = Instant::now();
     let continuous = state.identity == Some(identity)
         && state.tick.and_then(|tick| tick.checked_add(1)) == Some(tick)
-        && state
-            .root
-            .is_some_and(|root| root.distance(sample.root.w_axis.truncate()) < MAX_ROOT_STEP_M)
+        && state.root.is_some_and(|root| {
+            root.distance(sample.root.w_axis.truncate()) < CHARACTER.get().body_ik.max_root_step_m
+        })
         && state
             .context
             .is_some_and(|previous| previous.continuous(context))
@@ -109,7 +109,6 @@ struct State {
     filter: RotationFilter,
 }
 
-const MAX_ROOT_STEP_M: f32 = 10.0;
 static STATE: Mutex<State> = Mutex::new(State {
     identity: None,
     context: None,

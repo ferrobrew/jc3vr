@@ -49,6 +49,7 @@ pub mod pose;
 pub(crate) mod pose_observer;
 pub(crate) mod signals;
 mod stunt;
+pub mod tuning;
 pub(crate) mod wielded;
 
 pub use acts::resolve_act_id;
