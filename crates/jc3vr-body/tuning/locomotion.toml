@@ -1,0 +1,62 @@
+# The locomotion's tuning: `LocomotionTuning` in
+# crates/jc3vr-body/src/controllers/locomotion/tuning.rs, where each value's meaning is documented.
+# Every key is required and no other is accepted. Units: metres (`_m`), seconds (`_s`), whole
+# milliseconds (`_ms`), metres per second (`_mps`) and per second squared (`_mps2`), degrees
+# (`_deg`); shares and stick lengths are in `0..1`.
+
+[stick]
+direction_min = 0.05
+still_stick = 0.05
+still_speed_mps = 0.05
+min_forward = 0.1
+
+[stick.rates]
+accelerate_mps2 = 10.0
+decelerate_mps2 = 14.0
+
+[acts]
+watchdog_s = 2.5
+release_s = 2.0
+burst_gap_ms = 400
+
+[anchor]
+face_clearance_m = 0.06
+capture_s = 1.5
+blend_s = 0.25
+jump_grace_s = 1.0
+
+[height]
+release_s = 0.1
+smoothing_s = 0.06
+max_lag_m = 0.25
+snap_m = 0.75
+
+[follow]
+smoothing_s = 0.12
+max_speed_mps = 4.0
+return_smoothing_s = 0.12
+escape_m = 0.45
+escape_drop_m = 0.8
+escape_s = 0.4
+escape_return_m = 0.2
+
+[strokes]
+speed_per_metre = 4.5
+decay_s = 2.0
+max_speed_mps = 5.0
+min_speed_mps = 0.3
+palm_cone_deg = 75.0
+catch_mps = 0.6
+turn_gain = 3.0
+turn_smoothing_s = 0.5
+max_turn_deg_s = 90.0
+water_below_eyes_m = 0.2
+velocity_smoothing_s = 0.04
+catch_reach_m = 0.2
+finish_behind_head_m = 0.15
+catch_travel_m = 0.045
+breaststroke_sweep_share = 0.85
+steer_travel_m = 0.5
+palm_against_cos = -0.1
+min_alignment = 0.35
+catch_min_strength = 0.45

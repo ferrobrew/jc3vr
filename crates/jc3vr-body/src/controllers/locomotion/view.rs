@@ -23,7 +23,7 @@ use body_rig::{
 use glam::{Mat4, Vec3};
 use jc3vr_view::headpose::Anchors;
 
-use crate::controllers::body::procedural::authority::Case;
+use crate::controllers::{body::procedural::authority::Case, locomotion::tuning::LOCOMOTION};
 
 /// The neutral standing head, neck, and eye midpoint, in Rico's model space.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -131,7 +131,7 @@ impl HeightFilter {
 
     /// Follow the root height `raw` for one tick of `dt` seconds. `supported` says the body stands
     /// on the ground this tick. Off it, what the smoothing still hides winds down to nothing over
-    /// [`RELEASE_S`], so leaving the ground never jumps the view; a change beyond the snap distance
+    /// the locomotion tuning's `height.release_s`, so leaving the ground never jumps the view; a change beyond the snap distance
     /// (a drop, a teleport) passes at once.
     pub fn step(&mut self, raw: f32, dt: f32, supported: bool) -> HeightPair {
         let previous = self.last.unwrap_or(raw);
@@ -141,6 +141,7 @@ impl HeightFilter {
     }
 
     fn advance(&mut self, raw: f32, dt: f32, supported: bool) -> f32 {
+        let tuning = &LOCOMOTION.get().height;
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         if !raw.is_finite() {
             self.state = HeightState::Idle;
@@ -151,7 +152,7 @@ impl HeightFilter {
             HeightState::Following { height, .. } => height,
             HeightState::Releasing { offset, .. } => raw + offset,
         };
-        if (smoothed - raw).abs() > HEIGHT_SNAP_M {
+        if (smoothed - raw).abs() > tuning.snap_m {
             self.state = HeightState::Idle;
             return raw;
         }
@@ -160,8 +161,8 @@ impl HeightFilter {
                 HeightState::Following { rate, .. } => rate,
                 _ => 0.0,
             };
-            let (mut y, mut rate) = critically_damped(smoothed, rate, raw, HEIGHT_SMOOTHING_S, dt);
-            let lag = MAX_HEIGHT_LAG_M;
+            let (mut y, mut rate) = critically_damped(smoothed, rate, raw, tuning.smoothing_s, dt);
+            let lag = tuning.max_lag_m;
             if (y - raw).abs() > lag {
                 y = raw + (y - raw).clamp(-lag, lag);
                 rate = 0.0;
@@ -171,7 +172,7 @@ impl HeightFilter {
         }
         let (offset, rate) = match self.state {
             HeightState::Releasing { offset, rate } => (offset, rate),
-            _ => (smoothed - raw, (smoothed - raw).abs() / RELEASE_S),
+            _ => (smoothed - raw, (smoothed - raw).abs() / tuning.release_s),
         };
         let offset = offset - offset.signum() * (rate * dt).min(offset.abs());
         self.state = if offset == 0.0 {
@@ -182,20 +183,6 @@ impl HeightFilter {
         raw + offset
     }
 }
-
-/// How long the offset the smoothing hid takes to wind down once the body leaves the ground,
-/// seconds.
-pub const RELEASE_S: f32 = 0.1;
-
-/// The time constant of the smoothing of the root's height while grounded, seconds. Turns a
-/// staircase's steps into a ramp.
-const HEIGHT_SMOOTHING_S: f32 = 0.06;
-
-/// The furthest the smoothed height may trail the root's, metres.
-pub const MAX_HEIGHT_LAG_M: f32 = 0.25;
-
-/// A height change beyond this in one tick is a teleport or a drop, and is taken at once, metres.
-const HEIGHT_SNAP_M: f32 = 0.75;
 
 /// The handover between the animated anchor (`0`) and the stable one (`1`).
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -601,7 +588,7 @@ mod tests {
         for _ in 0..120 {
             raw += 3.0 * DT;
             let pair = filter.step(raw, DT, true);
-            assert!(raw - pair.current <= MAX_HEIGHT_LAG_M + 1e-5);
+            assert!(raw - pair.current <= LOCOMOTION.get().height.max_lag_m + 1e-5);
         }
     }
 

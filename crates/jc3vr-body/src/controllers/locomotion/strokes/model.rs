@@ -5,13 +5,17 @@
 
 use body_rig::smooth::follow_factor;
 use glam::{Vec2, Vec3};
+use serde::Deserialize;
+
+use crate::controllers::locomotion::tuning::LOCOMOTION;
 
 /// The palm's normal in the wrist frame: the fingers run along -Z and the back of the hand faces
 /// +Y, so the palm faces -Y.
 pub const WRIST_PALM: Vec3 = Vec3::NEG_Y;
 
-/// The strokes' tuning.
-#[derive(Debug, Copy, Clone, PartialEq)]
+/// The strokes' tuning, the locomotion tuning's `strokes`.
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct StrokeTuning {
     /// The swim speed a metre of palm-first paddle travel back through the water adds, metres per
     /// second per metre.
@@ -40,21 +44,30 @@ pub struct StrokeTuning {
     /// How far below the eyes a hand is in the water at the surface, metres. Underwater every hand
     /// is.
     pub water_below_eyes_m: f32,
+    /// The time constant the hands' velocities are smoothed over, seconds: long enough to steady a
+    /// tracker's jitter, short enough to keep a stroke's catch crisp.
+    pub velocity_smoothing_s: f32,
+    /// How far ahead of the head a recovering hand must reach to be ready to catch, metres.
+    pub catch_reach_m: f32,
+    /// How far behind the head a hand finishes its stroke and recovers, metres.
+    pub finish_behind_head_m: f32,
+    /// How far a ready hand paddles before its stroke catches the water, metres.
+    pub catch_travel_m: f32,
+    /// The share of each hand's outward sweep a breaststroke (both hands sweeping out ahead of the
+    /// head) counts toward the drive.
+    pub breaststroke_sweep_share: f32,
+    /// How far a hand pushes, metres, to turn the heading all the way to the push's direction:
+    /// about one stroke's pull.
+    pub steer_travel_m: f32,
+    /// A palm whose facing along the hand's motion is below this cosine faces against it and
+    /// pushes nothing.
+    pub palm_against_cos: f32,
+    /// The assistance a palm turned past [`palm_cone_deg`](Self::palm_cone_deg), but not against
+    /// the motion, still gets, `0..1`.
+    pub min_alignment: f32,
+    /// The weakest a catch's haptic plays, `0..1` of its strength.
+    pub catch_min_strength: f32,
 }
-
-/// The strokes' tuning as they ship.
-pub const STROKES: StrokeTuning = StrokeTuning {
-    speed_per_metre: 4.5,
-    decay_s: 2.0,
-    max_speed_mps: 5.0,
-    min_speed_mps: 0.3,
-    palm_cone_deg: 75.0,
-    catch_mps: 0.6,
-    turn_gain: 3.0,
-    turn_smoothing_s: 0.5,
-    max_turn_deg_s: 90.0,
-    water_below_eyes_m: 0.2,
-};
 
 /// One hand as the strokes read it.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -145,7 +158,7 @@ impl StrokeModel {
 
     /// Advance by one tick.
     pub fn step(&mut self, input: &StrokeInput) -> StrokeStep {
-        let config = &STROKES;
+        let config = &LOCOMOTION.get().strokes;
         let dt = if input.dt.is_finite() {
             input.dt.clamp(0.0, MAX_DT)
         } else {
@@ -181,12 +194,13 @@ impl StrokeModel {
             let position = hand.position - input.head;
             let raw = self.last[i].map_or(Vec3::ZERO, |last| (position - last) / dt);
             self.last[i] = Some(position);
-            self.velocity[i] = self.velocity[i].lerp(raw, follow_factor(dt, VELOCITY_SMOOTHING_S));
+            self.velocity[i] =
+                self.velocity[i].lerp(raw, follow_factor(dt, config.velocity_smoothing_s));
             let reach = position.dot(forward);
-            if raw.dot(forward) > min_speed || reach < -FINISH_BEHIND_HEAD_M {
+            if raw.dot(forward) > min_speed || reach < -config.finish_behind_head_m {
                 self.phase[i] = StrokePhase::Recovery;
                 self.velocity[i] = raw;
-            } else if reach >= CATCH_REACH_M && self.phase[i] == StrokePhase::Recovery {
+            } else if reach >= config.catch_reach_m && self.phase[i] == StrokePhase::Recovery {
                 self.phase[i] = StrokePhase::Ready;
             }
         }
@@ -195,7 +209,7 @@ impl StrokeModel {
             input.hands[i].is_some_and(|hand| {
                 wet[i]
                     && self.phase[i] != StrokePhase::Recovery
-                    && (hand.position - input.head).dot(forward) >= CATCH_REACH_M
+                    && (hand.position - input.head).dot(forward) >= config.catch_reach_m
                     && (hand.position - input.head).dot(right) * side > 0.0
                     && self.velocity[i].dot(right) * side > min_speed
             })
@@ -223,19 +237,20 @@ impl StrokeModel {
             let backward = (-velocity.dot(forward)).max(0.0);
             let side = if i == 0 { -1.0 } else { 1.0 };
             let lateral = if breaststroke {
-                (velocity.dot(right) * side).max(0.0) * BREASTSTROKE_SWEEP_SHARE
+                (velocity.dot(right) * side).max(0.0) * config.breaststroke_sweep_share
             } else {
                 0.0
             };
             let drive = (backward + lateral - min_speed).max(0.0);
             let along = hand.palm.normalize_or_zero().dot(velocity / speed);
-            let alignment = if along < -0.1 || hand.palm.length_squared() < 1e-6 {
+            let alignment = if along < config.palm_against_cos || hand.palm.length_squared() < 1e-6
+            {
                 0.0
             } else {
                 ((along - facing) / (1.0 - facing).max(1e-3))
                     .clamp(0.0, 1.0)
                     .sqrt()
-                    .max(0.35)
+                    .max(config.min_alignment)
             };
             // The way the hand pushes the swimmer, level, for the heading: any stroke with its push
             // ahead of the body's side, a sweep to the side included, which the drive above does
@@ -255,10 +270,12 @@ impl StrokeModel {
                         StrokePhase::Loading(travel) => travel,
                         _ => 0.0,
                     } + paddle * dt;
-                    if travel >= CATCH_TRAVEL_M {
+                    if travel >= config.catch_travel_m {
                         self.phase[i] = StrokePhase::Power;
-                        step.caught[i] =
-                            Some((paddle / config.catch_mps.max(0.05)).clamp(0.45, 1.0));
+                        step.caught[i] = Some(
+                            (paddle / config.catch_mps.max(0.05))
+                                .clamp(config.catch_min_strength, 1.0),
+                        );
                     } else {
                         self.phase[i] = StrokePhase::Loading(travel);
                         continue;
@@ -282,7 +299,9 @@ impl StrokeModel {
         };
         let smoothing = follow_factor(dt, config.turn_smoothing_s.max(0.01));
         self.torque += (torque - self.torque) * smoothing;
-        self.steer += (steer_rate(heading_push, forward, right) - self.steer) * smoothing;
+        self.steer += (steer_rate(heading_push, forward, right, config.steer_travel_m)
+            - self.steer)
+            * smoothing;
         let max_turn = config.max_turn_deg_s.max(0.0).to_radians();
         let rate = (-config.turn_gain * self.torque + self.steer).clamp(-max_turn, max_turn);
         step.turn_right = if rate.is_finite() { rate * dt } else { 0.0 };
@@ -293,18 +312,18 @@ impl StrokeModel {
 }
 
 /// The turn toward the way the hands push this tick, radians per second to the right: the push's
-/// angle off `forward`, at a rate that turns the heading through that angle over
-/// [`STEER_TRAVEL_M`] of push. The game swims a swimmer only the way it faces, so a stroke toward
+/// angle off `forward`, at a rate that turns the heading through that angle over `travel_m` of
+/// push. The game swims a swimmer only the way it faces, so a stroke toward
 /// one side turns the heading toward it as it pushes. The hands' pushes are summed first, so a
 /// breaststroke's mirrored sweeps cancel, and a crawl's alternate sweeps cancel in the smoothing.
-fn steer_rate(push: Vec3, forward: Vec3, right: Vec3) -> f32 {
+fn steer_rate(push: Vec3, forward: Vec3, right: Vec3, travel_m: f32) -> f32 {
     let ahead = push.dot(forward);
     let across = push.dot(right);
     let length = push.length();
     if !(length > 0.0 && ahead.is_finite() && across.is_finite()) {
         return 0.0;
     }
-    across.atan2(ahead) * length / STEER_TRAVEL_M
+    across.atan2(ahead) * length / travel_m
 }
 
 /// The velocity the swimmer moves at with the strokes' `speed` joined to `velocity`, the one the
@@ -328,19 +347,6 @@ pub fn propel(velocity: Vec3, direction: Vec3, speed: f32) -> Vec3 {
 
 /// The longest tick that can contain a stroke, seconds. Longer gaps forget the hands' motion.
 const MAX_DT: f32 = 0.1;
-
-/// The time constant the hands' velocities are smoothed over, seconds: long enough to steady a
-/// tracker's jitter, short enough to keep a stroke's catch crisp.
-const VELOCITY_SMOOTHING_S: f32 = 0.04;
-
-const CATCH_REACH_M: f32 = 0.2;
-const FINISH_BEHIND_HEAD_M: f32 = 0.15;
-const CATCH_TRAVEL_M: f32 = 0.045;
-const BREASTSTROKE_SWEEP_SHARE: f32 = 0.85;
-
-/// How far a hand pushes, metres, to turn the heading all the way to the push's direction: about
-/// one stroke's pull.
-const STEER_TRAVEL_M: f32 = 0.5;
 
 #[derive(Debug, Copy, Clone, PartialEq)]
 enum StrokePhase {

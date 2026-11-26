@@ -8,23 +8,18 @@
 //! overshoots, so there is no surge for the view to feel.
 
 use glam::Vec2;
+use serde::Deserialize;
+
+use crate::controllers::locomotion::tuning::LOCOMOTION;
 
 /// The rates of the integrator, in metres per second squared.
-#[derive(Debug, Copy, Clone, PartialEq)]
+#[derive(Debug, Copy, Clone, PartialEq, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Rates {
     /// While the target is at least as fast as the velocity and not behind it.
-    pub accelerate: f32,
+    pub accelerate_mps2: f32,
     /// While the target is slower than the velocity or turned away from it.
-    pub decelerate: f32,
-}
-
-impl Rates {
-    /// The integrator's fixed rates. The deceleration is higher than the acceleration, so stopping
-    /// is crisp.
-    pub const FIXED: Self = Self {
-        accelerate: 10.0,
-        decelerate: 14.0,
-    };
+    pub decelerate_mps2: f32,
 }
 
 /// Move `velocity` toward `target` by at most the applicable rate times `dt`. Non-finite inputs
@@ -39,9 +34,9 @@ pub fn step(velocity: Vec2, target: Vec2, dt: f32, rates: Rates) -> Vec2 {
     let speeding_up =
         target.length_squared() >= velocity.length_squared() && target.dot(velocity) >= 0.0;
     let rate = if speeding_up {
-        rates.accelerate
+        rates.accelerate_mps2
     } else {
-        rates.decelerate
+        rates.decelerate_mps2
     };
     let max_change = rate.max(0.0) * dt;
     let change = target - velocity;
@@ -87,7 +82,10 @@ pub fn to_world(stick: Vec2, forward: Vec2) -> Vec2 {
 /// balanced.
 pub fn target(stick: Vec2, forward: Vec2, game_speed: Option<f32>) -> Vec2 {
     let magnitude = stick.length().min(1.0);
-    if !magnitude.is_finite() || magnitude < STICK_EPSILON || !forward.is_finite() {
+    if !magnitude.is_finite()
+        || magnitude < LOCOMOTION.get().stick.direction_min
+        || !forward.is_finite()
+    {
         return Vec2::ZERO;
     }
     let speed = game_speed.filter(|s| s.is_finite()).unwrap_or(0.0);
@@ -97,16 +95,13 @@ pub fn target(stick: Vec2, forward: Vec2, game_speed: Option<f32>) -> Vec2 {
     to_world(stick / stick.length(), forward) * speed
 }
 
-/// A stick shorter than this has no direction.
-const STICK_EPSILON: f32 = 0.05;
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     const RATES: Rates = Rates {
-        accelerate: 10.0,
-        decelerate: 14.0,
+        accelerate_mps2: 10.0,
+        decelerate_mps2: 14.0,
     };
     const DT: f32 = 1.0 / 30.0;
 
@@ -153,7 +148,7 @@ mod tests {
         let mut velocity = Vec2::ZERO;
         for target in targets.iter().cycle().take(200) {
             let next = step(velocity, *target, DT, RATES);
-            assert!((next - velocity).length() <= RATES.decelerate * DT + 1e-5);
+            assert!((next - velocity).length() <= RATES.decelerate_mps2 * DT + 1e-5);
             velocity = next;
         }
     }
@@ -190,14 +185,14 @@ mod tests {
     fn a_turn_at_constant_speed_is_rate_limited() {
         let velocity = Vec2::new(4.5, 0.0);
         let next = step(velocity, Vec2::new(0.0, 4.5), DT, RATES);
-        assert!(((next - velocity).length() - RATES.accelerate * DT).abs() < 1e-5);
+        assert!(((next - velocity).length() - RATES.accelerate_mps2 * DT).abs() < 1e-5);
     }
 
     #[test]
     fn reversing_uses_the_deceleration() {
         let velocity = Vec2::new(4.5, 0.0);
         let next = step(velocity, Vec2::new(-4.5, 0.0), DT, RATES);
-        assert!(((velocity.x - next.x) - RATES.decelerate * DT).abs() < 1e-5);
+        assert!(((velocity.x - next.x) - RATES.decelerate_mps2 * DT).abs() < 1e-5);
     }
 
     #[test]

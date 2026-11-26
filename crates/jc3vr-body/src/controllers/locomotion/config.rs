@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 pub struct StickConfig {
     /// Replace the animation's root velocity with the stick's, so Rico moves at the game's target
     /// speed for the stick and that speed changes only at fixed rates
-    /// ([`Rates::FIXED`](crate::controllers::locomotion::accel::Rates::FIXED)).
+    /// (the locomotion tuning's `stick.rates`).
     pub enabled: bool,
 }
 

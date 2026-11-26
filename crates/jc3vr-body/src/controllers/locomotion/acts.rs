@@ -27,8 +27,8 @@
 //! receives. The [`Watchdog`] watches for that on foot (the stunt area's acts are queued every tick
 //! the stick is held toward a side with no stunt area, and their replacement is the act the game
 //! itself queues at the same point when no turn is needed, so the watchdog never releases them): the filter normally acts in short bursts (a start,
-//! a stop), so when it has acted without a break for [`WATCHDOG_S`] the watchdog lets every act
-//! through for [`RELEASE_S`] and logs a warning.
+//! a stop), so when it has acted without a break for the locomotion tuning's `acts.watchdog_s` the
+//! watchdog lets every act through for `acts.release_s` and logs a warning.
 
 use std::{
     ffi::CStr,
@@ -44,7 +44,7 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         body::{ik_body, rig::grounded},
-        locomotion::{config::LocomotionConfig, status as locomotion_status},
+        locomotion::{config::LocomotionConfig, status as locomotion_status, tuning::LOCOMOTION},
         mode::{Mode, OnFootVariant, current as current_mode},
     },
     hooks::character::resolve_act_id,
@@ -164,7 +164,7 @@ pub(crate) unsafe fn filter(
             tracing::warn!(
                 target: "controllers",
                 acted_for_s = release.acted_for.as_secs_f32(),
-                release_s = RELEASE_S,
+                release_s = LOCOMOTION.get().acts.release_s,
                 "locomotion: the act filter acted without a break; letting every act through",
             );
             return ActDecision::Pass;
@@ -235,17 +235,18 @@ impl Watchdog {
     /// Record that the filter is about to act at `now`, and decide whether this is a burst that has
     /// gone on too long.
     pub fn record(&mut self, now: Instant) -> Option<Release> {
-        let continues = self
-            .last
-            .is_some_and(|last| now.saturating_duration_since(last) <= BURST_GAP);
+        let tuning = &LOCOMOTION.get().acts;
+        let continues = self.last.is_some_and(|last| {
+            now.saturating_duration_since(last) <= tuning.burst_gap_ms.duration()
+        });
         if !continues {
             self.burst_start = Some(now);
         }
         self.last = Some(now);
         let start = self.burst_start.unwrap_or(now);
         let acted_for = now.saturating_duration_since(start);
-        if acted_for.as_secs_f32() >= WATCHDOG_S {
-            self.released_until = Some(now + Duration::from_secs_f32(RELEASE_S));
+        if acted_for.as_secs_f32() >= tuning.watchdog_s {
+            self.released_until = Some(now + Duration::from_secs_f32(tuning.release_s));
             self.burst_start = None;
             self.last = None;
             Some(Release { acted_for })
@@ -444,16 +445,6 @@ const STUNT_TURNS: [&CStr; 3] = [
     EventIdSymbolTable::ACT_STUNT_TURN_120L,
 ];
 
-/// How long the filter may act without a break before the watchdog decides the animation state
-/// machine is waiting on an act the filter keeps from it, in seconds.
-pub const WATCHDOG_S: f32 = 2.5;
-
-/// How long the watchdog then lets every act through, in seconds.
-pub const RELEASE_S: f32 = 2.0;
-
-/// Acts closer together than this belong to one burst.
-const BURST_GAP: Duration = Duration::from_millis(400);
-
 /// Whether the on-foot scope applies: the headset drives the view, gameplay owns the character,
 /// and the player is on foot on the ground.
 fn applies_on_foot(controllers_enabled: bool) -> bool {
@@ -547,10 +538,11 @@ mod tests {
         }
         let released_at = released_at.expect("the watchdog never released");
         let acted = released_at.duration_since(start).as_secs_f32();
-        assert!((WATCHDOG_S..WATCHDOG_S + 0.1).contains(&acted));
-        let during = released_at + Duration::from_secs_f32(RELEASE_S / 2.0);
+        let tuning = &LOCOMOTION.get().acts;
+        assert!((tuning.watchdog_s..tuning.watchdog_s + 0.1).contains(&acted));
+        let during = released_at + Duration::from_secs_f32(tuning.release_s / 2.0);
         assert!(!dog.admit(during));
-        let after = released_at + Duration::from_secs_f32(RELEASE_S + 0.01);
+        let after = released_at + Duration::from_secs_f32(tuning.release_s + 0.01);
         assert!(dog.admit(after));
         assert_eq!(dog.record(after), None);
     }

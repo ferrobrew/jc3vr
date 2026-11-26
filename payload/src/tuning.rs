@@ -2,6 +2,7 @@
 //! (`docs/mod/tuning.md`). A file added to a crate's `tuning/` directory is listed here; the test
 //! below fails until it is.
 
+use jc3vr_body::controllers::locomotion::tuning::LOCOMOTION;
 use jc3vr_body::{
     controllers::{
         aim::tuning_file::AIM,
@@ -48,6 +49,7 @@ static FILES: &[&dyn AnyTuningFile] = &[
     &AIM,
     &PROCEDURAL,
     &VIEW,
+    &LOCOMOTION,
 ];
 
 #[cfg(test)]

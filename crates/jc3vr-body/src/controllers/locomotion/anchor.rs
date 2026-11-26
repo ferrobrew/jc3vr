@@ -26,6 +26,7 @@ use crate::controllers::{
     },
     locomotion::{
         status as locomotion_status,
+        tuning::LOCOMOTION,
         view::{
             Eligibility, Handover, HeightFilter, MOVEMENT_TASK_GRACE_S, Neutral, NeutralCapture,
             blend, face_clear, face_offset, neck_model_anchors, stable_anchors,
@@ -84,6 +85,7 @@ pub(crate) unsafe fn stabilize(
     model: Neutral,
     dt: f32,
 ) -> Stabilized {
+    let tuning = &LOCOMOTION.get().anchor;
     let controllers_enabled = scheme::enabled();
     let world_scale = VR_CONFIG.lock().world_scale;
     let now = Instant::now();
@@ -107,7 +109,8 @@ pub(crate) unsafe fn stabilize(
     let case = (controllers_enabled && source() == Source::Vr).then(|| {
         let step = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         // SAFETY: the pass's entry, on the thread running it.
-        let mut read = unsafe { tracker.read(character, &locomotion, now, step, JUMP_GRACE_S) };
+        let mut read =
+            unsafe { tracker.read(character, &locomotion, now, step, tuning.jump_grace_s) };
         // A few ticks' jitter in the task's stamp does not hand the view over and back.
         read.movement_task = locomotion.at.is_some_and(|at| {
             now.saturating_duration_since(at).as_secs_f32() <= MOVEMENT_TASK_GRACE_S
@@ -130,7 +133,7 @@ pub(crate) unsafe fn stabilize(
     }
     let in_grace = state
         .grounded_at
-        .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() <= JUMP_GRACE_S);
+        .is_some_and(|at| now.saturating_duration_since(at).as_secs_f32() <= tuning.jump_grace_s);
     let eligible = Eligibility {
         enabled: in_gameplay(),
         ragdoll,
@@ -147,7 +150,7 @@ pub(crate) unsafe fn stabilize(
         && !aiming
         && locomotion.standing_still();
     if measuring {
-        if let Some(neutral) = state.capture.push(model, dt, CAPTURE_S) {
+        if let Some(neutral) = state.capture.push(model, dt, tuning.capture_s) {
             log_neutral(&neutral);
             state.neutral = Some(neutral);
         }
@@ -164,12 +167,14 @@ pub(crate) unsafe fn stabilize(
         .height
         .step(world_t1.w_axis.y, dt, eligible && supported);
     let measured = state.neutral.is_some();
-    let weight = state.handover.step(eligible && measured, dt, BLEND_S);
+    let weight = state
+        .handover
+        .step(eligible && measured, dt, tuning.blend_s);
     // Where a clip carries the head, the eyes are held out in front of its face.
     let posed = case.is_some_and(Case::game_poses_body);
     let head_may_lie = case.is_none_or(Case::head_may_lie);
-    let clear = state.face_clear.step(posed, dt, BLEND_S);
-    let cleared = face_clear(&animated, &model, FACE_CLEARANCE_M * clear);
+    let clear = state.face_clear.step(posed, dt, tuning.blend_s);
+    let cleared = face_clear(&animated, &model, tuning.face_clearance_m * clear);
     state.status = AnchorStatus {
         weight,
         eligible,
@@ -252,7 +257,7 @@ pub(crate) unsafe fn stabilize(
                 .map(|stable| blend(&animated, &neck_model_anchors(stable, world_scale), weight)),
             weight,
             head_may_lie,
-            face_offset: face_offset(&model, FACE_CLEARANCE_M * clear),
+            face_offset: face_offset(&model, tuning.face_clearance_m * clear),
         };
     }
     let Some(stable) = stable_target else {
@@ -292,20 +297,11 @@ pub(crate) struct Stabilized {
     pub face_offset: Vec3,
 }
 
-/// How far in front of the animated face the eyes are held while a clip poses the body, metres: a
-/// few centimetres past the skull's front, so a chest or a shoulder the pose folds toward the face
-/// stays beyond the near plane.
-const FACE_CLEARANCE_M: f32 = 0.06;
-
-/// How long Rico must have stood still for his neutral head to be measured, seconds.
-const CAPTURE_S: f32 = 1.5;
-
-/// How long the anchor takes to hand over between the animated head and the root, seconds.
-const BLEND_S: f32 = 0.25;
-
-/// How long after leaving the ground the anchor stays on the root, seconds, so a jump keeps the view
-/// steady while a long fall hands it back to the animation.
-pub(crate) const JUMP_GRACE_S: f32 = 1.0;
+/// How long after leaving the ground the anchor stays on the root, seconds (the locomotion tuning's
+/// `anchor.jump_grace_s`), which the procedural body's hand-over table reads a jump by too.
+pub(crate) fn jump_grace_s() -> f32 {
+    LOCOMOTION.get().anchor.jump_grace_s
+}
 
 struct State {
     neutral: Option<Neutral>,

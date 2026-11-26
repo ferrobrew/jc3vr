@@ -101,7 +101,7 @@ use crate::{
         },
         facts,
         hands::{active_hands_raw, arm_remaps},
-        locomotion::{anchor::JUMP_GRACE_S, status as locomotion_status},
+        locomotion::{anchor::jump_grace_s, status as locomotion_status},
         mode::{AirborneVariant, Mode, current as current_mode},
     },
     hooks::animation::active_state_type_id,
@@ -325,7 +325,7 @@ unsafe fn run_gate(character: &mut Character, dt: f32) -> bool {
     let read = unsafe {
         state
             .tracker
-            .read(character, &locomotion, now, dt, JUMP_GRACE_S)
+            .read(character, &locomotion, now, dt, jump_grace_s())
     };
     let case = classify_locked(&read, locked);
     state.hips.track(case, &animated, dt);

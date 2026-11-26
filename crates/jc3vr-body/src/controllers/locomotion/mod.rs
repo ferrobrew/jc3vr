@@ -28,6 +28,7 @@ pub mod axis_output;
 pub mod config;
 pub mod speeds;
 pub mod strokes;
+pub mod tuning;
 pub mod view;
 pub mod view_follow;
 
@@ -46,7 +47,7 @@ use parking_lot::Mutex;
 use crate::{
     controllers::{
         body::{procedural::state::animation_moves_body, rig::grounded},
-        locomotion::{accel::Rates, config::LOCOMOTION_CONFIG, speeds::SpeedLog},
+        locomotion::{config::LOCOMOTION_CONFIG, speeds::SpeedLog, tuning::LOCOMOTION},
     },
     tuning::FRESHNESS,
 };
@@ -81,9 +82,12 @@ impl LocomotionStatus {
 
     /// Whether Rico is standing still: no stick, and no motion from the task or from the stick.
     pub fn standing_still(&self) -> bool {
-        self.stick.length() < STILL_STICK
-            && self.task_velocity.length() < STILL_SPEED_MPS
-            && self.velocity.is_none_or(|v| v.length() < STILL_SPEED_MPS)
+        let still = &LOCOMOTION.get().stick;
+        self.stick.length() < still.still_stick
+            && self.task_velocity.length() < still.still_speed_mps
+            && self
+                .velocity
+                .is_none_or(|v| v.length() < still.still_speed_mps)
     }
 }
 
@@ -102,6 +106,7 @@ pub fn status() -> LocomotionStatus {
 /// pass.
 pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     let config = LOCOMOTION_CONFIG.lock().stick;
+    let tuning = &LOCOMOTION.get().stick;
     let now = Instant::now();
     // A committed step of the body rig walks the game's animation through the move stick; its
     // speed is the rig's drive, so its share of the stick moves nothing here.
@@ -143,7 +148,7 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     let forward = unsafe { view_forward(character) };
     let target = accel::target(stick, forward, game_speed);
     let start = accel::coast_limited(start, target, body);
-    let velocity = accel::step(start, target, dt, Rates::FIXED);
+    let velocity = accel::step(start, target, dt, tuning.rates);
     let world = Vector3 {
         data: [velocity.x, task_y, velocity.y],
     };
@@ -154,7 +159,7 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
     if state
         .log_at
         .is_none_or(|at| now.saturating_duration_since(at) >= LOG_INTERVAL)
-        && (velocity != Vec2::ZERO || task_velocity.length() > STILL_SPEED_MPS)
+        && (velocity != Vec2::ZERO || task_velocity.length() > tuning.still_speed_mps)
     {
         state.log_at = Some(now);
         let proxy = unsafe { proxy_velocity(character) };
@@ -171,10 +176,6 @@ pub(crate) unsafe fn after_task(character: &mut Character, dt: f32) {
         );
     }
 }
-
-/// Below these, Rico is standing still.
-const STILL_STICK: f32 = 0.05;
-const STILL_SPEED_MPS: f32 = 0.05;
 
 /// How often the commanded velocity is logged while moving.
 const LOG_INTERVAL: Duration = Duration::from_secs(1);
@@ -222,7 +223,7 @@ unsafe fn stick_vector() -> Vec2 {
 /// committed step.
 fn player_stick(read: Vec2, step: Vec2) -> Vec2 {
     let stick = read - step;
-    if stick.length() < STILL_STICK || !stick.is_finite() {
+    if stick.length() < LOCOMOTION.get().stick.still_stick || !stick.is_finite() {
         Vec2::ZERO
     } else {
         stick.clamp_length_max(1.0)
@@ -272,7 +273,8 @@ unsafe fn proxy_velocity(character: &Character) -> Option<Vec2> {
 unsafe fn view_forward(character: &Character) -> Vec2 {
     let head = headpose::query().orientation * Vec3::NEG_Z;
     let flat = Vec2::new(head.x, head.z);
-    if flat.length_squared() > MIN_FORWARD * MIN_FORWARD && flat.is_finite() {
+    let min_forward = LOCOMOTION.get().stick.min_forward;
+    if flat.length_squared() > min_forward * min_forward && flat.is_finite() {
         return flat.normalize();
     }
     let body = -glam::Mat4::from(character.m_WorldMatrixT1)
@@ -282,6 +284,3 @@ unsafe fn view_forward(character: &Character) -> Vec2 {
         .try_normalize()
         .unwrap_or(Vec2::NEG_Y)
 }
-
-/// The shortest horizontal head forward that still has a heading.
-const MIN_FORWARD: f32 = 0.1;

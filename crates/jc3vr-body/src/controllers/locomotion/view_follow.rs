@@ -21,6 +21,8 @@
 use body_rig::smooth::critically_damped;
 use glam::Vec3;
 
+use crate::controllers::locomotion::tuning::LOCOMOTION;
+
 /// Which head the held view hangs from.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum HeldSource {
@@ -87,10 +89,11 @@ impl HeadFollower {
     }
 
     fn advance(&mut self, source: HeldSource, root: Vec3, animated: Vec3, dt: f32) -> Vec3 {
+        let tuning = &LOCOMOTION.get().follow;
         let shown = self.last.filter(|last| last.is_finite());
         match (source, self.state) {
             (HeldSource::Root, FollowState::Root { offset, rate }) => {
-                let (offset, rate) = damp(offset, rate, Vec3::ZERO, RETURN_SMOOTHING_S, dt);
+                let (offset, rate) = damp(offset, rate, Vec3::ZERO, tuning.return_smoothing_s, dt);
                 self.state = FollowState::Root { offset, rate };
                 root + offset
             }
@@ -103,13 +106,13 @@ impl HeadFollower {
                 self.advance(source, root, animated, dt)
             }
             (HeldSource::Head, FollowState::Head { offset: from, rate }) => {
-                let (offset, rate) = damp(from, rate, animated - root, FOLLOW_SMOOTHING_S, dt);
+                let (offset, rate) = damp(from, rate, animated - root, tuning.smoothing_s, dt);
                 let step = offset - from;
-                let max_step = MAX_FOLLOW_SPEED_MPS * dt;
+                let max_step = tuning.max_speed_mps * dt;
                 let (offset, rate) = if step.length() > max_step {
                     (
                         from + step.normalize() * max_step,
-                        rate.clamp_length_max(MAX_FOLLOW_SPEED_MPS),
+                        rate.clamp_length_max(tuning.max_speed_mps),
                     )
                 } else {
                     (offset, rate)
@@ -135,17 +138,6 @@ fn damp(value: Vec3, rate: Vec3, target: Vec3, smooth_s: f32, dt: f32) -> (Vec3,
     (Vec3::new(x.0, y.0, z.0), Vec3::new(x.1, y.1, z.1))
 }
 
-/// The smoothing of the followed head, seconds: it settles in about a third of a second, so a
-/// get-up's rise is followed and a ragdoll's flail is eased.
-const FOLLOW_SMOOTHING_S: f32 = 0.12;
-
-/// The fastest the followed head moves about the root, metres per second: a ragdoll's first fall
-/// eases in rather than dropping the view.
-const MAX_FOLLOW_SPEED_MPS: f32 = 4.0;
-
-/// The smoothing of the difference left on the way back to the root, seconds.
-const RETURN_SMOOTHING_S: f32 = 0.12;
-
 /// Whether a landing or a one-off has carried Rico's head far enough from the root, for long
 /// enough, that the held view follows it.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]
@@ -166,20 +158,21 @@ impl Escape {
     /// `distance` is how far the animated head is from the neutral head over the root
     /// ([`escape_distance`]). Returns whether the view follows the animated head.
     pub fn step(&mut self, allowed: bool, distance: f32, dt: f32) -> bool {
+        let tuning = &LOCOMOTION.get().follow;
         let dt = if dt.is_finite() { dt.max(0.0) } else { 0.0 };
         if !allowed || !distance.is_finite() {
             *self = Self::new();
             return false;
         }
         if self.escaped {
-            if distance < ESCAPE_RETURN_M {
+            if distance < tuning.escape_return_m {
                 *self = Self::new();
             }
             return self.escaped;
         }
-        if distance > ESCAPE_M {
+        if distance > tuning.escape_m {
             self.away_s += dt;
-            self.escaped = self.away_s >= ESCAPE_S;
+            self.escaped = self.away_s >= tuning.escape_s;
         } else {
             self.away_s = 0.0;
         }
@@ -190,7 +183,7 @@ impl Escape {
     /// ([`escape_distance`]) from the root's, and follows the animated head until it is over the
     /// root again rather than cutting through the body to the root.
     pub fn seed(&mut self, distance: f32) {
-        if distance.is_finite() && distance > ESCAPE_M {
+        if distance.is_finite() && distance > LOCOMOTION.get().follow.escape_m {
             self.escaped = true;
         }
     }
@@ -198,28 +191,15 @@ impl Escape {
 
 /// How far the animated head is from the neutral head over the root for the escape, given the
 /// difference `away` between them, metres: the horizontal distance, or the head's drop scaled so a
-/// drop of [`ESCAPE_DROP_M`] counts as [`ESCAPE_M`], whichever is further. A landing's crouch drops
+/// drop of the locomotion tuning's `follow.escape_drop_m` counts as its `follow.escape_m`,
+/// whichever is further. A landing's crouch drops
 /// the head well short of the drop's threshold; a body lying on the ground does not.
 pub fn escape_distance(away: Vec3) -> f32 {
+    let tuning = &LOCOMOTION.get().follow;
     let horizontal = Vec3::new(away.x, 0.0, away.z).length();
-    let drop = (-away.y).max(0.0) * ESCAPE_M / ESCAPE_DROP_M;
+    let drop = (-away.y).max(0.0) * tuning.escape_m / tuning.escape_drop_m;
     horizontal.max(drop)
 }
-
-/// How far the animated head must be from the root's, horizontally, to count toward the escape,
-/// metres: past a walk's lean and a crouch's forward reach.
-const ESCAPE_M: f32 = 0.45;
-
-/// How far the animated head must drop below the root's to count toward the escape as
-/// [`ESCAPE_M`] does horizontally, metres: below a landing's crouch, above a body lying down.
-const ESCAPE_DROP_M: f32 = 0.8;
-
-/// How long the head must stay that far for the view to follow it, seconds: longer than a landing's
-/// dip.
-const ESCAPE_S: f32 = 0.4;
-
-/// How close the head must come back for the view to return to the root, metres.
-const ESCAPE_RETURN_M: f32 = 0.2;
 
 #[cfg(test)]
 mod tests {
@@ -263,7 +243,7 @@ mod tests {
         let mut last = follow.step(HeldSource::Root, root, head, DT).current;
         for _ in 0..60 {
             let next = follow.step(HeldSource::Head, root, head, DT).current;
-            assert!(next.distance(last) <= MAX_FOLLOW_SPEED_MPS * DT + 1e-5);
+            assert!(next.distance(last) <= LOCOMOTION.get().follow.max_speed_mps * DT + 1e-5);
             last = next;
         }
     }
@@ -292,10 +272,10 @@ mod tests {
 
     #[test]
     fn the_escape_counts_a_long_drop_and_not_a_crouch() {
-        assert!(escape_distance(Vec3::new(0.0, -0.5, 0.0)) < ESCAPE_M);
-        assert!(escape_distance(Vec3::new(0.0, -1.3, 0.0)) > ESCAPE_M);
-        assert!(escape_distance(Vec3::new(0.0, 0.5, 0.5)) > ESCAPE_M);
-        assert!(escape_distance(Vec3::new(0.3, 0.0, 0.0)) < ESCAPE_M);
+        assert!(escape_distance(Vec3::new(0.0, -0.5, 0.0)) < LOCOMOTION.get().follow.escape_m);
+        assert!(escape_distance(Vec3::new(0.0, -1.3, 0.0)) > LOCOMOTION.get().follow.escape_m);
+        assert!(escape_distance(Vec3::new(0.0, 0.5, 0.5)) > LOCOMOTION.get().follow.escape_m);
+        assert!(escape_distance(Vec3::new(0.3, 0.0, 0.0)) < LOCOMOTION.get().follow.escape_m);
     }
 
     #[test]
