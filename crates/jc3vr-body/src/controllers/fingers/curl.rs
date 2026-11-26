@@ -10,8 +10,6 @@ use jc3vr_input::frame::{
     HAND_JOINT_COUNT, Hand, HandFrame, HandInputs, HandJoint, InteractionProfile,
 };
 
-use crate::controllers::fingers::config::FingerSource;
-
 /// A finger of the hand.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Finger {
@@ -70,29 +68,18 @@ impl CurlSource {
     }
 }
 
-/// A hand's curls from the configured source, or `None` when that source has nothing for it (the
-/// joints alone are wanted and the runtime reports none, or the controller is absent).
-pub fn select(
-    setting: FingerSource,
-    hand: Hand,
-    frame: &HandFrame,
-) -> Option<(CurlSource, FingerCurls)> {
+/// A hand's curls from the tracked joints when the runtime reports them, and otherwise estimated
+/// from the inputs; `None` when the controller is absent.
+pub fn select(hand: Hand, frame: &HandFrame) -> Option<(CurlSource, FingerCurls)> {
     if !frame.active {
         return None;
     }
-    let joints = || {
-        frame
-            .joints
-            .as_ref()
-            .and_then(|joints| from_joints(hand, joints))
-            .map(|curls| (CurlSource::Joints, curls))
-    };
-    let estimated = || (CurlSource::Estimate, estimate(&frame.inputs, frame.profile));
-    match setting {
-        FingerSource::Auto => Some(joints().unwrap_or_else(estimated)),
-        FingerSource::Joints => joints(),
-        FingerSource::Estimate => Some(estimated()),
-    }
+    let joints = frame
+        .joints
+        .as_ref()
+        .and_then(|joints| from_joints(hand, joints))
+        .map(|curls| (CurlSource::Joints, curls));
+    Some(joints.unwrap_or_else(|| (CurlSource::Estimate, estimate(&frame.inputs, frame.profile))))
 }
 
 /// The curls from a tracked hand skeleton, or `None` when an orientation they read is not valid.
@@ -304,7 +291,7 @@ mod tests {
             ..HandFrame::default()
         };
         assert_eq!(
-            select(FingerSource::Auto, Hand::Right, &frame),
+            select(Hand::Right, &frame),
             Some((CurlSource::Joints, expected))
         );
     }
@@ -321,10 +308,9 @@ mod tests {
             ..HandFrame::default()
         };
         assert_eq!(
-            select(FingerSource::Auto, Hand::Right, &frame),
+            select(Hand::Right, &frame),
             Some((CurlSource::Estimate, estimate(&frame.inputs, frame.profile)))
         );
-        assert_eq!(select(FingerSource::Joints, Hand::Right, &frame), None);
     }
 
     #[test]
@@ -379,26 +365,15 @@ mod tests {
     }
 
     #[test]
-    fn the_source_setting_selects_or_falls_back() {
+    fn the_joints_win_over_the_estimate_while_the_hand_is_active() {
         let mut frame = HandFrame {
             active: true,
             ..HandFrame::default()
         };
-        let auto = select(FingerSource::Auto, Hand::Right, &frame).unwrap();
-        assert_eq!(auto.0, CurlSource::Estimate);
-        assert!(select(FingerSource::Joints, Hand::Right, &frame).is_none());
+        assert_eq!(select(Hand::Right, &frame).unwrap().0, CurlSource::Estimate);
         frame.joints = Some(skeleton(0.4, 0.0));
-        assert_eq!(
-            select(FingerSource::Auto, Hand::Right, &frame).unwrap().0,
-            CurlSource::Joints
-        );
-        assert_eq!(
-            select(FingerSource::Estimate, Hand::Right, &frame)
-                .unwrap()
-                .0,
-            CurlSource::Estimate
-        );
+        assert_eq!(select(Hand::Right, &frame).unwrap().0, CurlSource::Joints);
         frame.active = false;
-        assert!(select(FingerSource::Estimate, Hand::Right, &frame).is_none());
+        assert!(select(Hand::Right, &frame).is_none());
     }
 }

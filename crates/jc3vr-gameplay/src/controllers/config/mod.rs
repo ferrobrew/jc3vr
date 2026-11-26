@@ -74,8 +74,6 @@ pub struct ControllersConfig {
     pub roomscale: RoomscaleConfig,
     /// Vehicles, mounted guns, the wingsuit, and the parachute.
     pub vehicles: VehiclesConfig,
-    /// Finger curls on the rendered hands.
-    pub fingers: FingersConfig,
     /// The palms' collision with the world.
     pub physical_hands: PhysicalHandsConfig,
     /// The physical grapple: the reel, the tether retract, and the hang swing worked by the grapple
@@ -114,7 +112,6 @@ impl ControllersConfig {
             body: BodyRemapConfig::new(),
             roomscale: RoomscaleConfig::new(),
             vehicles: VehiclesConfig::new(),
-            fingers: FingersConfig::new(),
             physical_hands: PhysicalHandsConfig::new(),
             grapple: PhysicalGrappleConfig::new(),
             haptics: HapticsConfig::new(),

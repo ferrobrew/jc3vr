@@ -8,7 +8,7 @@
 //! - [`grip`]: what each hand holds, as its sources declare it, and the pose for it;
 //! - [`target`]: a hand's target shape for the tick, from its curls and its grip;
 //! - [`pose`]: the shape turned into joint angles and the angles into model-space finger joints;
-//! - [`config`]: the finger-curl settings, and [`tuning`] their fixed tuning.
+//! - [`tuning`]: the fixed tuning.
 //!
 //! The curls are written once per sim tick, at the end of the pose-finalization pass (the post-call
 //! `UpdatePropEffects` detour), with `AnimationController::SetJoint` over the finalized model-space
@@ -26,7 +26,6 @@
 //! hand blends back to the animated fingers. A hand that holds something its source declared
 //! ([`grip::declare`]) takes that thing's grip pose, blended in by how firmly it grips.
 
-pub mod config;
 pub mod curl;
 pub mod grip;
 pub mod pose;
@@ -42,7 +41,6 @@ use parking_lot::Mutex;
 
 use crate::controllers::{
     fingers::{
-        config::FINGERS_CONFIG,
         curl::{CurlSource, Finger},
         grip::{
             SourceLog,
@@ -92,10 +90,9 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let Some(character) = (unsafe { character.as_mut() }).filter(|c| c.m_IsLocalCharacter) else {
         return;
     };
-    let config = *FINGERS_CONFIG.lock();
     let enabled = scheme::enabled();
     let mut state = STATE.lock();
-    if !config.enabled || !enabled || !scheme::is_controllers() {
+    if !enabled || !scheme::is_controllers() {
         *state = FingerState::EMPTY;
         *PUBLISHED.lock() = state.status;
         return;
@@ -113,7 +110,7 @@ pub(crate) unsafe fn after_solve(character: *mut Character) {
     let targets = frame::with_latest(|frame| {
         Hand::BOTH.map(|hand| {
             let f = frame.hand(hand);
-            curl::select(config.source, hand, f).map(|curls| (curls, f.inputs))
+            curl::select(hand, f).map(|curls| (curls, f.inputs))
         })
     })
     .unwrap_or([None; 2]);

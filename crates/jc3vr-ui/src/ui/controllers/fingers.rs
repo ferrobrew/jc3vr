@@ -1,11 +1,7 @@
-//! Finger curls: the grip pose rows, the per-hand readout, and the finger settings.
+//! Finger curls: the grip pose rows and the per-hand readout.
 
 use egui::Ui;
-use jc3vr_body::controllers::fingers::{
-    HandFingersStatus,
-    config::{FingerSource, FingersConfig},
-    curl::Finger,
-};
+use jc3vr_body::controllers::fingers::{HandFingersStatus, curl::Finger};
 use jc3vr_input::frame::Hand;
 
 use crate::{
@@ -47,23 +43,5 @@ pub(super) fn fingers_readout(ui: &mut Ui, status: &[HandFingersStatus; 2], conf
                 ));
             }
         }
-    });
-}
-
-pub(super) fn fingers_settings(ui: &mut Ui, f: &mut FingersConfig) {
-    ui.checkbox(&mut f.enabled, "Finger curls")
-        .on_hover_text("Curl the fingers, and wrap them round what the hand holds.");
-    ui.add_enabled_ui(f.enabled, |ui| {
-        ui.horizontal(|ui| {
-            ui.label("Source");
-            for source in FingerSource::ALL {
-                ui.selectable_value(&mut f.source, source, source.label());
-            }
-        })
-        .response
-        .on_hover_text(
-            "Auto uses hand tracking for a hand the runtime tracks and the estimate from the \
-             inputs otherwise.",
-        );
     });
 }

@@ -15,8 +15,7 @@ use jc3vr_body::{
     controllers::{
         aim::{WORLD_MARKERS_ENABLED, config::AIM_CONFIG},
         body::{BODY_CONFIG, BodyDimensions, config::BODY_REMAP_CONFIG},
-        fingers::config::FINGERS_CONFIG,
-        hands::config::{GRAPPLE_PUMP, HANDS_CONFIG, MOUNTED_AIM_BY_HANDS},
+        hands::config::{HANDS_CONFIG, MOUNTED_AIM_BY_HANDS},
         haptics::config::HAPTICS_CONFIG,
         intent::config::BINDINGS_CONFIG,
         locomotion::config::LOCOMOTION_CONFIG,
@@ -104,7 +103,6 @@ jc3vr_core::test_root! {
         BODY_REMAP_CONFIG => controllers.body,
         ROOMSCALE_CONFIG => controllers.roomscale,
         VEHICLES_CONFIG => controllers.vehicles,
-        FINGERS_CONFIG => controllers.fingers,
         PHYSICAL_HANDS_CONFIG => controllers.physical_hands,
         GRAPPLE_CONFIG => controllers.grapple,
         HAPTICS_CONFIG => controllers.haptics,

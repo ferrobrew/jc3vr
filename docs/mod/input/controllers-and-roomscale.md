@@ -546,7 +546,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 
 `tools/sights/` is a standard-library Python tool that reads the game's archives, derives each hand weapon's sight line from its model, and writes `tools/sights/sights.json`, which the payload embeds ([`tools/sights/README.md`](../../../tools/sights/README.md); the files it reads are in [weapon-data.md](../../engine/gameplay/weapon-data.md)). It regenerates the table without discarding `tuned` entries.
 
-Finger curls on the rendered hands, behind the `fingers` settings, are outside the plan's milestones; [controllers.md, "Finger curls"](controllers.md#finger-curls) describes their state.
+Finger curls on the rendered hands are outside the plan's milestones; [controllers.md, "Finger curls"](controllers.md#finger-curls) describes their state.
 
 ### Unverified in milestone 1
 

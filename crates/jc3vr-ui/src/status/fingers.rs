@@ -24,13 +24,13 @@ fn right_grip() -> Line {
 }
 
 fn grip(hand: Hand) -> Line {
-    let curls = read(&CONTROLLERS_CONFIG, |c| c.fingers.enabled && c.enabled);
+    let curls = read(&CONTROLLERS_CONFIG, |c| c.enabled);
     grip_line(curls, &fingers::status()[hand.index()])
 }
 
 fn grip_line(curls: bool, status: &HandFingersStatus) -> Line {
     if !curls {
-        return Line::off(prose("Finger curls off"));
+        return Line::off(prose("Controllers off"));
     }
     if status.unresolved {
         return Line::failed(prose("Finger bones not found"));
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn the_row_says_why_nothing_is_posed() {
         let status = driven();
-        assert_eq!(grip_line(false, &status).text(), "OFF, FINGER CURLS OFF");
+        assert_eq!(grip_line(false, &status).text(), "OFF, CONTROLLERS OFF");
         let idle = HandFingersStatus::default();
         assert_eq!(grip_line(true, &idle).text(), "WAITING, HAND NOT DRIVEN");
         let broken = HandFingersStatus {

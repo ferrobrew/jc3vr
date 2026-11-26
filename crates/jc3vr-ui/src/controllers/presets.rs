@@ -2,10 +2,7 @@
 //! for the head-tracked gamepad baseline. A preset changes switches only; tuning, sight
 //! calibration, and optional preferences stay as they are.
 
-use jc3vr_body::controllers::{
-    overlay::config::GunReadout,
-    roomscale::config::{Posture, SeatTransition},
-};
+use jc3vr_body::controllers::roomscale::config::{Posture, SeatTransition};
 use jc3vr_gameplay::controllers::config::ControllersConfig;
 
 /// The named controller switch presets shown by the Tools page.
@@ -77,9 +74,6 @@ pub fn apply_preset(c: &mut ControllersConfig, preset: Preset) {
     c.vehicles.driving_view.enabled = on;
     c.vehicles.parachute_handles.enabled = on;
     c.vehicles.ripcord.enabled = on;
-    c.fingers.enabled = on;
-    c.grapple.pull_to_reel = on;
-    c.grapple.pump = on;
 }
 
 /// Whether applying the preset changes any of its owned switches.

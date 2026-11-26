@@ -19,7 +19,6 @@ use jc3vr_body::controllers::{
     clock::TimeScale,
     facts::{mounted, seat::rides_in_seat},
     fingers::{
-        config::FINGERS_CONFIG,
         grip,
         grip::{
             Grip, GripSource,
@@ -746,7 +745,6 @@ pub(super) fn declare_grips(
     wrists: [Option<Pose>; 2],
     cast: &mut dyn FnMut(Vec3, Vec3) -> Option<SurfaceHit>,
 ) {
-    let fit_on = FINGERS_CONFIG.lock().enabled;
     for hand in Hand::BOTH {
         let i = hand.index();
         let Some((source, body)) = pickup.grip(hand) else {
@@ -762,7 +760,6 @@ pub(super) fn declare_grips(
         };
         let fit = body
             .zip(wrists[i])
-            .filter(|_| fit_on)
             .and_then(|(body, wrist)| {
                 let drawn = hands[i].held.map_or(Vec3::ZERO, |h| h.anchor - h.target);
                 let target = FitTarget {

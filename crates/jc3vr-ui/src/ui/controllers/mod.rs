@@ -87,7 +87,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::GripFingers => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
             hands::grip_settings(ui, &mut c.hands);
-            fingers::fingers_settings(ui, &mut c.fingers);
         },
         FeatureId::PhysicalHands => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();
