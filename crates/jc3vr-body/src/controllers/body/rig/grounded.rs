@@ -31,14 +31,17 @@ use body_rig::{
 use glam::{Quat, Vec2, Vec3};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    body::{
-        BodyDimensions,
-        rig::torso::{HIP_SPACING_FRACTION, TorsoEstimate},
+use crate::{
+    controllers::{
+        body::{
+            BodyDimensions,
+            rig::torso::{HIP_SPACING_FRACTION, TorsoEstimate},
+        },
+        intent::hold::Desired,
+        locomotion::axis_output::{read_move, write_move},
+        telemetry::{RigRun, note_rig},
     },
-    intent::hold::Desired,
-    locomotion::axis_output::{read_move, write_move},
-    telemetry::{RigRun, note_rig},
+    tuning::FRESHNESS,
 };
 
 /// One frame's inputs.
@@ -216,7 +219,7 @@ pub fn add_step_walk(desired: &mut Vec<Desired>) {
 pub(crate) fn step_stick() -> Vec2 {
     STEP_STICK
         .lock()
-        .filter(|(_, at)| at.elapsed() <= FRESH_FOR)
+        .filter(|(_, at)| at.elapsed() <= FRESHNESS.get().rig.grounded_ms.duration())
         .map_or(Vec2::ZERO, |(walk, _)| walk)
 }
 
@@ -346,9 +349,6 @@ const SNAP_WAIT: Duration = Duration::from_secs(1);
 /// A spell off the ground longer than this starts the rig again facing the head.
 const RESUME_AFTER: Duration = Duration::from_secs(1);
 
-/// The published frame stops standing for the rig after this long.
-const FRESH_FOR: Duration = Duration::from_millis(250);
-
 /// The player's body as the pure core measures it.
 fn player_body(dimensions: &BodyDimensions) -> PlayerBody {
     PlayerBody::from_heights(dimensions.height, dimensions.eye_height)
@@ -361,10 +361,9 @@ fn arm(yaw: f32) -> Vec2 {
 }
 
 fn fresh(now: Instant) -> Option<Published> {
-    STATE
-        .lock()
-        .latest
-        .filter(|p| now.saturating_duration_since(p.at) <= FRESH_FOR)
+    STATE.lock().latest.filter(|p| {
+        now.saturating_duration_since(p.at) <= FRESHNESS.get().rig.grounded_ms.duration()
+    })
 }
 
 /// Log each change of the step phase at debug level, with what committed it.

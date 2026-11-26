@@ -17,10 +17,13 @@ use glam::{DQuat, Quat, Vec3};
 use jc3vr_view::vr;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    body::{config::BODY_REMAP_CONFIG, estimator::withdraw},
-    roomscale::posture::EffectivePosture,
-    scheme,
+use crate::{
+    controllers::{
+        body::{config::BODY_REMAP_CONFIG, estimator::withdraw},
+        roomscale::posture::EffectivePosture,
+        scheme,
+    },
+    tuning::FRESHNESS,
 };
 
 /// One rendered frame's tracking, in the rig's room frame.
@@ -86,7 +89,9 @@ pub(crate) fn eyes(now: Instant) -> Option<Vec3> {
         .lock()
         .as_ref()
         .and_then(|p| p.eyes)
-        .filter(|(_, at)| now.saturating_duration_since(*at) <= EYES_FRESH_FOR)
+        .filter(|(_, at)| {
+            now.saturating_duration_since(*at) <= FRESHNESS.get().body.estimator_eyes_ms.duration()
+        })
         .map(|(eyes, _)| eyes)
 }
 
@@ -184,9 +189,6 @@ const SUBMIT_HZ: f32 = 30.0;
 
 /// How early a frame may take a submission's due time: a frame's jitter.
 const SUBMIT_EARLY: Duration = Duration::from_millis(2);
-
-/// The eyes stand for the window's position this long after the last frame.
-const EYES_FRESH_FOR: Duration = Duration::from_millis(250);
 
 static STATE: Mutex<Option<Producer>> = Mutex::new(None);
 

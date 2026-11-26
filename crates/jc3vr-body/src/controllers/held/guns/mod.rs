@@ -18,20 +18,19 @@
 
 mod class;
 
-use std::{
-    num::NonZeroUsize,
-    sync::OnceLock,
-    time::{Duration, Instant},
-};
+use std::{num::NonZeroUsize, sync::OnceLock, time::Instant};
 
 use glam::Vec3;
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
 pub use self::class::HeftClass;
-use crate::controllers::{
-    hands::CockpitHand,
-    physics::steps::{current_at, steps},
+use crate::{
+    controllers::{
+        hands::CockpitHand,
+        physics::steps::{current_at, steps},
+    },
+    tuning::FRESHNESS,
 };
 
 /// A gun in a hand, as the weapon handling's input tick read it.
@@ -314,11 +313,6 @@ pub fn apply_targets(hands: &mut [Option<CockpitHand>; 2], head: Vec3) {
     }
 }
 
-/// How long a step's results stay current for a reader between the steps. A publication's
-/// staleness counts steps instead ([`current_at`]), so a hitch of the whole simulation tick never
-/// drops a held gun.
-const STALE_AFTER: Duration = Duration::from_millis(200);
-
 /// What the input tick, the step, and the readers share.
 struct Shared {
     holds: GunHolds,
@@ -341,8 +335,9 @@ impl Shared {
     }
 
     fn stepped_lately(&self, now: Instant) -> bool {
-        self.stepped
-            .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER)
+        self.stepped.is_some_and(|at| {
+            now.saturating_duration_since(at) <= FRESHNESS.get().held.guns_ms.duration()
+        })
     }
 }
 

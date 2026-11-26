@@ -34,7 +34,7 @@ pub(crate) mod target;
 
 use std::{
     sync::atomic::{AtomicBool, Ordering},
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use detours_macro::detour;
@@ -51,12 +51,15 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 pub use crate::controllers::body::firm_ragdoll::stand_in::TargetReport;
-use crate::controllers::{
-    body::firm_ragdoll::{
-        stand_in::StandIn,
-        target::{IkLegs, TargetBones},
+use crate::{
+    controllers::{
+        body::firm_ragdoll::{
+            stand_in::StandIn,
+            target::{IkLegs, TargetBones},
+        },
+        physics::local_player::LocalPlayer,
     },
-    physics::local_player::LocalPlayer,
+    tuning::FRESHNESS,
 };
 
 pub fn hook_library() -> HookLibrary {
@@ -131,9 +134,10 @@ pub(crate) unsafe fn feed(character: &Character, producer: *mut PoseProducer) ->
             .preset()
             .is_some_and(|preset| character.m_CurrentRagdollParamsID == preset)
     };
-    let source = SOURCE
-        .lock()
-        .filter(|source| Instant::now().saturating_duration_since(source.at) <= SOURCE_FRESH);
+    let source = SOURCE.lock().filter(|source| {
+        Instant::now().saturating_duration_since(source.at)
+            <= FRESHNESS.get().body.firm_ragdoll_source_ms.duration()
+    });
     let (Some(source), true, Some(live)) = (source, in_mode, unsafe { producer.as_ref() }) else {
         return producer;
     };
@@ -388,9 +392,6 @@ struct Source {
 }
 
 static SOURCE: Mutex<Option<Source>> = Mutex::new(None);
-
-/// A published source stands this long: a few ticks.
-const SOURCE_FRESH: Duration = Duration::from_millis(250);
 
 static STAND_IN: Mutex<StandIn> = Mutex::new(StandIn::new());
 

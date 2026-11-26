@@ -32,7 +32,10 @@ use std::time::{Duration, Instant};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
-use crate::controllers::{fingers::grip::catalogue::GripPose, grab::cockpit::ControlKind};
+use crate::{
+    controllers::{fingers::grip::catalogue::GripPose, grab::cockpit::ControlKind},
+    tuning::FRESHNESS,
+};
 
 /// What put something in a hand, in the order the declarations win.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -256,17 +259,22 @@ pub fn current(hand: Hand, now: Instant, max_age: Duration) -> Option<Grip> {
 /// not know the finger curls' tick interval.
 pub fn declared(hand: Hand, now: Instant) -> Vec<GripSource> {
     let declared = DECLARED.lock()[hand.index()];
-    fresh(&declared, now, Duration::from_secs_f32(MAX_AGE_S))
-        .map(|grip| grip.source)
-        .collect()
+    fresh(
+        &declared,
+        now,
+        Duration::from_secs_f32(FRESHNESS.get().fingers.grip_max_s),
+    )
+    .map(|grip| grip.source)
+    .collect()
 }
 
 /// How long a declaration lasts after the finger curls' tick interval `dt` in seconds: a few of
 /// their ticks, so that a source ticking at another rate (the input tick, once a frame) is not lost
 /// between two of them, and short enough that a hand let go opens at once.
 pub fn max_age(dt: f32) -> Duration {
+    let tuning = &FRESHNESS.get().fingers;
     let dt = if dt.is_finite() { dt } else { 0.0 };
-    Duration::from_secs_f32((dt * 2.5).clamp(MIN_AGE_S, MAX_AGE_S))
+    Duration::from_secs_f32((dt * tuning.grip_ticks).clamp(tuning.grip_min_s, tuning.grip_max_s))
 }
 
 /// A change of a hand's grip source, for the log.
@@ -330,9 +338,6 @@ impl SourceLog {
 
 /// The shortest gap between two logged changes of one hand's grip source.
 pub(crate) const LOG_INTERVAL: Duration = Duration::from_millis(500);
-
-const MIN_AGE_S: f32 = 0.03;
-const MAX_AGE_S: f32 = 0.15;
 
 type Declarations = [Option<(Grip, Instant)>; GripSource::ALL.len()];
 
@@ -409,10 +414,22 @@ mod tests {
 
     #[test]
     fn a_declaration_lasts_a_few_ticks() {
-        assert_eq!(max_age(0.0), Duration::from_secs_f32(MIN_AGE_S));
-        assert!((max_age(0.016).as_secs_f32() - 0.04).abs() < 1e-6);
-        assert_eq!(max_age(1.0), Duration::from_secs_f32(MAX_AGE_S));
-        assert_eq!(max_age(f32::NAN), Duration::from_secs_f32(MIN_AGE_S));
+        assert_eq!(
+            max_age(0.0),
+            Duration::from_secs_f32(FRESHNESS.get().fingers.grip_min_s)
+        );
+        assert!(
+            (max_age(0.016).as_secs_f32() - 0.016 * FRESHNESS.get().fingers.grip_ticks).abs()
+                < 1e-6
+        );
+        assert_eq!(
+            max_age(1.0),
+            Duration::from_secs_f32(FRESHNESS.get().fingers.grip_max_s)
+        );
+        assert_eq!(
+            max_age(f32::NAN),
+            Duration::from_secs_f32(FRESHNESS.get().fingers.grip_min_s)
+        );
     }
 
     #[test]

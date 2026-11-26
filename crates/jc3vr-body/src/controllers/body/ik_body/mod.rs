@@ -33,7 +33,7 @@ pub(crate) mod probe;
 pub(crate) mod seed;
 pub(crate) mod support;
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use body_rig::{PlayerBody, body::EYES_TO_NECK, fk::FkTuning, ik_weight::IkState};
 use glam::{Quat, Vec2, Vec3};
@@ -47,10 +47,13 @@ pub(crate) use crate::controllers::body::ik_body::{
     effectors::queue,
     gate::{GateInput, prepare},
 };
-use crate::controllers::body::{
-    BodyDimensions, estimator,
-    ik_body::{fk::FkInput, gate::GateState},
-    rig::grounded,
+use crate::{
+    controllers::body::{
+        BodyDimensions, estimator,
+        ik_body::{fk::FkInput, gate::GateState},
+        rig::grounded,
+    },
+    tuning::FRESHNESS,
 };
 
 /// Whether the IK body owns the standing body now: its feet are planted by IK, so the game's
@@ -133,17 +136,14 @@ pub(crate) fn forget() {
 
 /// Whether the last gate ran recently.
 fn fresh(status: &IkStatus) -> bool {
-    status
-        .at
-        .is_some_and(|at| Instant::now().saturating_duration_since(at) <= GATE_FRESH)
+    status.at.is_some_and(|at| {
+        Instant::now().saturating_duration_since(at) <= FRESHNESS.get().body.ik_gate_ms.duration()
+    })
 }
 
 /// The pelvis position's weight from which the root follows the FK pelvis: past half way into the
 /// standing body, so the step commit keeps the root through the start of the blend.
 const ROOT_WEIGHT: f32 = 0.5;
-
-/// How long after the gate last ran its status still stands: a few ticks.
-const GATE_FRESH: Duration = Duration::from_millis(250);
 
 /// The gate's state. Taken by the gate, the effectors, and the readers of the status; nothing is
 /// locked under it.

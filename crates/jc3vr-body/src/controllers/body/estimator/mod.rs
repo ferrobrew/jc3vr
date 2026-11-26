@@ -41,7 +41,7 @@ pub use crate::controllers::body::estimator::{
     executor::{render_tick, shutdown, status as executor_status},
     producer::{Observation, observe, on_recenter},
 };
-use crate::controllers::roomscale::posture::EffectivePosture;
+use crate::{controllers::roomscale::posture::EffectivePosture, tuning::FRESHNESS};
 
 /// The estimator's latest reading of the body, in the cockpit frame as it stands now.
 #[derive(Debug, Copy, Clone, PartialEq)]
@@ -65,12 +65,9 @@ pub struct Estimate {
 impl Estimate {
     /// Whether the estimate is too old to stand for the body.
     pub fn stale(&self) -> bool {
-        self.age > STALE_AFTER
+        self.age > FRESHNESS.get().body.estimate_ms.duration()
     }
 }
-
-/// An estimate older than this is stale for any consumer.
-pub const STALE_AFTER: Duration = Duration::from_millis(500);
 
 /// The latest estimate, whatever its age, while the estimator runs.
 pub fn latest() -> Option<Estimate> {

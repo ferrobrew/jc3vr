@@ -57,7 +57,7 @@ use std::{
         LazyLock,
         atomic::{AtomicU32, Ordering},
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use body_rig::angle::line_yaw;
@@ -105,6 +105,7 @@ use crate::{
         mode::{AirborneVariant, Mode, current as current_mode},
     },
     hooks::animation::active_state_type_id,
+    tuning::FRESHNESS,
 };
 
 /// What the procedural body did at its last gate.
@@ -137,8 +138,9 @@ impl ProceduralStatus {
     /// Whether the local player's gate ran recently: the body is being solved now, not left as it
     /// was when the gate last ran.
     pub fn fresh(&self, now: Instant) -> bool {
-        self.at
-            .is_some_and(|at| now.saturating_duration_since(at) <= GATE_FRESH)
+        self.at.is_some_and(|at| {
+            now.saturating_duration_since(at) <= FRESHNESS.get().body.procedural_gate_ms.duration()
+        })
     }
 }
 
@@ -645,9 +647,6 @@ fn finish_write(
     });
     neutralize_owned_targets(&mut character.m_HIK, weight, &mut state.fade);
 }
-
-/// How long after the gate last ran the body still counts as solved: a few ticks.
-const GATE_FRESH: Duration = Duration::from_millis(500);
 
 /// How upright the written chest must be for the elbow hints, as [`upright_share`] measures it.
 const ELBOW_HINT_UPRIGHT: f32 = 0.5;

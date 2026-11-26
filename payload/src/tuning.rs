@@ -2,6 +2,7 @@
 //! (`docs/mod/tuning.md`). A file added to a crate's `tuning/` directory is listed here; the test
 //! below fails until it is.
 
+use jc3vr_body::tuning::FRESHNESS;
 use jc3vr_core::tuning::{AnyTuningFile, StartupError};
 pub(crate) use jc3vr_core::tuning::{Source, shutdown, tick};
 use jc3vr_tooling::tuning::TOOLING;
@@ -14,7 +15,7 @@ pub(crate) fn init(source: Source) -> Result<(), StartupError> {
 }
 
 /// The tuning files, in no particular order: each loads on its own.
-static FILES: &[&dyn AnyTuningFile] = &[&VEHICLES, &UI, &TOOLING];
+static FILES: &[&dyn AnyTuningFile] = &[&VEHICLES, &UI, &TOOLING, &FRESHNESS];
 
 #[cfg(test)]
 mod tests {

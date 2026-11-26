@@ -9,8 +9,9 @@
 //! clips, animation events, and segments are untouched, because none of them read the blended pose.
 //!
 //! The pose job runs on worker threads, so the masked blenders are published as plain atomics by
-//! the pose-finalization pass ([`publish`]) and expire if it stops publishing ([`MASK_FRESH`]),
-//! which bounds how long a freed blender's address could be honoured.
+//! the pose-finalization pass ([`publish`]) and expire if it stops publishing (the freshness
+//! tuning's `hooks.layer_mask_ms`), which bounds how long a freed blender's address could be
+//! honoured.
 
 use std::{
     ptr,
@@ -18,14 +19,14 @@ use std::{
         LazyLock,
         atomic::{AtomicU64, AtomicUsize, Ordering},
     },
-    time::{Duration, Instant},
+    time::Instant,
 };
 
 use detours_macro::detour;
 use jc3gi::animation::pose_producer::{Blender, QsTransform};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::body::unarmed::MASKABLE_LAYERS;
+use crate::{controllers::body::unarmed::MASKABLE_LAYERS, tuning::FRESHNESS};
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&BLENDER_UPDATE_POSE_BINDER)
@@ -95,9 +96,6 @@ fn blender_update_pose(
     );
 }
 
-/// How long a publication holds. The pose-finalization pass republishes every tick.
-const MASK_FRESH: Duration = Duration::from_millis(250);
-
 static MASKED: [AtomicUsize; MASKABLE_LAYERS.len()] =
     [const { AtomicUsize::new(0) }; MASKABLE_LAYERS.len()];
 static SKIPPED: [AtomicU64; MASKABLE_LAYERS.len()] =
@@ -115,7 +113,7 @@ fn masked_slot(blender: *mut Blender) -> Option<usize> {
         .iter()
         .position(|masked| masked.load(Ordering::Relaxed) == address)?;
     let age_ms = now_ms().saturating_sub(PUBLISHED_AT_MS.load(Ordering::Acquire));
-    (age_ms <= MASK_FRESH.as_millis() as u64).then_some(slot)
+    (age_ms <= FRESHNESS.get().hooks.layer_mask_ms.0).then_some(slot)
 }
 
 fn now_ms() -> u64 {

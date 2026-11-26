@@ -25,6 +25,7 @@ use crate::{
         frames::{self, Divergence, Frames, Implausible, SkeletonLandmarks, divergence},
     },
     hooks::character::body_ik::bone_for_effector,
+    tuning::FRESHNESS,
 };
 
 /// The tracing target for the divergence's once-a-second log. Public so that the debug UI can turn
@@ -89,8 +90,9 @@ impl SkeletonStatus {
     /// Whether the skeleton was read recently enough to place the holsters, which is when its
     /// divergence describes the body now.
     pub fn fresh(&self, now: Instant) -> bool {
-        self.at
-            .is_some_and(|at| now.saturating_duration_since(at) <= SKELETON_FRESH)
+        self.at.is_some_and(|at| {
+            now.saturating_duration_since(at) <= FRESHNESS.get().rig.skeleton_ms.duration()
+        })
     }
 }
 
@@ -146,9 +148,6 @@ pub unsafe fn after_solve(character: *mut Character) {
     }
     log(measured);
 }
-
-/// How old the character's pose may be and still place the holsters.
-const SKELETON_FRESH: Duration = Duration::from_millis(250);
 
 /// The shortest time between two log lines.
 const LOG_INTERVAL: Duration = Duration::from_secs(1);
@@ -228,11 +227,12 @@ impl SkeletonMemory {
 
     /// The skeleton the volumes ride at `now`, in model space, with the character's transform that
     /// carries it: the latest read when it is plausible, else the last plausible one, carried by
-    /// the latest read's transform. `None` while the latest read is older than [`SKELETON_FRESH`],
-    /// since then the character's pose is not being solved, or before any plausible read.
+    /// the latest read's transform. `None` while the latest read is older than the freshness
+    /// tuning's `rig.skeleton_ms`, since then the character's pose is not being solved, or before
+    /// any plausible read.
     fn body(&self, now: Instant) -> Option<(SkeletonLandmarks, Mat4, SkeletonSource)> {
         let latest = self.latest.as_ref()?;
-        if now.saturating_duration_since(latest.at) > SKELETON_FRESH {
+        if now.saturating_duration_since(latest.at) > FRESHNESS.get().rig.skeleton_ms.duration() {
             return None;
         }
         match latest.landmarks.filter(frames::plausible) {
@@ -413,7 +413,14 @@ mod tests {
         memory.record(None, Mat4::IDENTITY, now);
         assert_eq!(memory.body(now), None);
         memory.record(Some(standing()), Mat4::IDENTITY, now);
-        assert!(memory.body(now + SKELETON_FRESH).is_some());
-        assert_eq!(memory.body(now + SKELETON_FRESH * 2), None);
+        assert!(
+            memory
+                .body(now + FRESHNESS.get().rig.skeleton_ms.duration())
+                .is_some()
+        );
+        assert_eq!(
+            memory.body(now + FRESHNESS.get().rig.skeleton_ms.duration() * 2),
+            None
+        );
     }
 }

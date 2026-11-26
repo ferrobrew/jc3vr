@@ -7,11 +7,13 @@
 //! (`controllers::vehicles::driving_view`). A correction the input tick stopped publishing
 //! goes stale, and the view eases back.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use body_rig::smooth::smoothstep;
 use glam::Vec3;
 use parking_lot::Mutex;
+
+use crate::tuning::FRESHNESS;
 
 /// Publish the input tick's correction for the driven seat, cockpit frame, metres, or `None` out
 /// of a measured driver's seat. A leaf slot, taken briefly.
@@ -35,9 +37,9 @@ pub struct FrameInputs {
 /// under the roomscale frame lock; takes only this module's slot.
 pub fn advance(enabled: bool, inputs: FrameInputs, now: Instant) -> Vec3 {
     let mut shared = SHARED.lock();
-    let fresh = shared
-        .published_at
-        .is_some_and(|at| now.saturating_duration_since(at) < STALE_AFTER);
+    let fresh = shared.published_at.is_some_and(|at| {
+        now.saturating_duration_since(at) < FRESHNESS.get().facts.driving_ms.duration()
+    });
     let goal = match shared.target {
         Some(applied) if enabled && inputs.seated && fresh => applied,
         _ => Vec3::ZERO,
@@ -68,9 +70,6 @@ pub fn status() -> EasedCorrection {
 
 /// How long the view takes to ease to a new correction, seconds.
 const BLEND_S: f32 = 1.0;
-
-/// A target older than this is ignored: the input tick stopped publishing, so the view eases back.
-const STALE_AFTER: Duration = Duration::from_millis(500);
 
 /// An eased move from one correction to another, restarted from wherever it is whenever the goal
 /// changes, so a new goal never jumps the view.

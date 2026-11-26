@@ -16,7 +16,10 @@ use body_rig::contact::{SupportFrame, SupportId, SupportMotion};
 use glam::Quat;
 use parking_lot::Mutex;
 
-use crate::controllers::facts::climb::{body_frame, body_identity};
+use crate::{
+    controllers::facts::climb::{body_frame, body_identity},
+    tuning::FRESHNESS,
+};
 
 /// The support the body `body` stands for: the static world for a static body, and the body itself
 /// otherwise, recorded so its frame is read from now on.
@@ -84,7 +87,7 @@ pub(crate) fn frame(support: SupportId, now: Instant) -> Option<SupportFrame> {
     tracked.asked = now;
     let snapshot = tracked.snapshot?;
     let age = now.saturating_duration_since(snapshot.at);
-    (age <= STALE_AFTER).then(|| {
+    (age <= FRESHNESS.get().body.ik_support_ms.duration()).then(|| {
         snapshot
             .frame
             .predict(&snapshot.motion, age.as_secs_f32().min(MAX_PREDICT_S))
@@ -141,10 +144,6 @@ unsafe fn snapshot(support: &Tracked, now: Instant) -> Option<Snapshot> {
 
 /// A support the gate asks about stays tracked this long after it last asked.
 const KEEP_FOR: Duration = Duration::from_secs(2);
-
-/// A snapshot older than this no longer stands for its support: the body has gone, or the probes'
-/// update has stopped running.
-const STALE_AFTER: Duration = Duration::from_millis(250);
 
 /// The furthest a snapshot is carried forward by its velocities, seconds: a few ticks.
 const MAX_PREDICT_S: f32 = 0.1;

@@ -10,7 +10,7 @@ use jc3vr_body::controllers::body::{
     config::BodyRemapConfig,
     firm_ragdoll,
     ik_body::IkBodyConfig,
-    rig::{collision::probe::STALE_AFTER, grounded, root::RootStatus},
+    rig::{collision::probe::stale_after, grounded, root::RootStatus},
 };
 
 use crate::ui::controllers::{vec3, yes_no};
@@ -25,7 +25,7 @@ pub(super) fn rig_readout(ui: &mut Ui, status: &RootStatus) {
     ui.label(format!(
         "Owner: {} · on-foot tick {}",
         s.owner.map_or("none yet", |o| o.label()),
-        yes_no(s.at.is_some_and(|at| now.saturating_duration_since(at) < STALE_AFTER)),
+        yes_no(s.at.is_some_and(|at| now.saturating_duration_since(at) < stale_after())),
     ));
     let grounded = grounded::status();
     match f.rig {
