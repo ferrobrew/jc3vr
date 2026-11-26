@@ -5,11 +5,12 @@
 use egui::Slider;
 use jc3gi::heat_manager::HeatManager;
 use jc3vr_core::director::clean_view::CleanViewScope;
+use jc3vr_gameplay::controllers::{
+    clock::{MAX_TIME_SCALE, MIN_TIME_SCALE},
+    spawn,
+};
 use jc3vr_tooling::{
-    director::{
-        DIRECTOR_CONFIG, heat, keymap, markers, safety, spawn, teleport, teleport::TeleportMode,
-        time,
-    },
+    director::{DIRECTOR_CONFIG, heat, keymap, markers, safety, teleport, teleport::TeleportMode},
     recorder,
     recorder::{Arrangement, HostState, RECORDER_CONFIG, VideoStatus, session_recording},
 };
@@ -154,12 +155,9 @@ fn time_ui(ui: &mut egui::Ui) {
     let mut cfg = DIRECTOR_CONFIG.edit();
     let d = &mut *cfg;
     ui.add(
-        Slider::new(
-            &mut d.time_scale,
-            time::MIN_TIME_SCALE..=time::MAX_TIME_SCALE,
-        )
-        .logarithmic(true)
-        .text("Time scale"),
+        Slider::new(&mut d.time_scale, MIN_TIME_SCALE..=MAX_TIME_SCALE)
+            .logarithmic(true)
+            .text("Time scale"),
     )
     .on_hover_text(
         "The game clock's rate, written into the slow-motion manager's normal speed so the game's \
@@ -173,7 +171,7 @@ fn time_ui(ui: &mut egui::Ui) {
         }
     });
     ui.add(
-        Slider::new(&mut d.slow_motion_scale, time::MIN_TIME_SCALE..=1.0)
+        Slider::new(&mut d.slow_motion_scale, MIN_TIME_SCALE..=1.0)
             .logarithmic(true)
             .text("Slow-motion hotkey rate"),
     );

@@ -33,14 +33,14 @@ use std::{
 
 use anyhow::Context as _;
 use jc3vr_core::session::RecordingFile;
-use jc3vr_render::vr::{CaptureEyeView, CaptureViews, MirrorView};
+use jc3vr_render::vr::{CaptureEyeView, CaptureViews, MirrorDraw, MirrorFrame, MirrorView};
 use parking_lot::Mutex;
 use serde::Serialize;
 
 use crate::{
     director::markers::Marker,
     recorder::{
-        Capture, HostState, MirrorDraw, MirrorFrame,
+        Capture, HostState,
         protocol::{
             HostMessage, LineBuffer, WindowHint, parse_host_line, start_line, stop_line,
             stream_start_line,

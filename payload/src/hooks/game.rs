@@ -49,10 +49,11 @@ use jc3vr_render::{
         dispatch::{DispatchPlan, RenderMode, reset_dispatch_state},
         sun_shadows,
     },
+    testing::visual,
     vr,
     vr::tail,
 };
-use jc3vr_tooling::{diagnostics, testing};
+use jc3vr_tooling::diagnostics;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::config::Config;
@@ -127,14 +128,14 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 
         // A queued visual transition changes render resources and dispatch ownership only after
         // the previous tail and engine dispatch have stopped reading them.
-        if testing::visual::has_pending() {
+        if visual::has_pending() {
             vr::wait_for_frame_tail();
             if let Some(ge) = GraphicsEngine::get() {
                 ge.WaitForCPUDrawToFinish();
                 drain_draw_thread_fragment(ge);
             }
             reset_dispatch_state();
-            testing::visual::process_pending();
+            visual::process_pending();
         }
 
         // Open the single-pass frame: advance the diagnostics' frame ordinal, fold the previous
@@ -352,7 +353,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             && vr_frame.is_some()
             && !tracing_active()
             && render_mode == RenderMode::Native
-            && !testing::visual::requires_inline_tail();
+            && !visual::requires_inline_tail();
 
         // Each eye's post-draw blits it straight into the swapchain when this frame's image is
         // acquired now (see `vr::blit`); under the collapse the one dispatch blits each eye from its
@@ -627,7 +628,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             vr::present_mirror(vr_cfg.mirror_view);
         }
         if !tail_deferred {
-            testing::visual::frame_complete();
+            visual::frame_complete();
         }
         mark(Phase::FrameEnd);
         // The frame role lasts to the end of the render update.

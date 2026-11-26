@@ -9,14 +9,12 @@
 
 use std::time::{Duration, Instant};
 
+use jc3vr_render::recorder::tracking::{self, lookback};
 use parking_lot::Mutex;
 
 use crate::{
     director::markers,
-    recorder::{
-        self, HostState, RECORDER_CONFIG,
-        tracking::{self, lookback},
-    },
+    recorder::{self, HostState, RECORDER_CONFIG},
 };
 
 /// The pair's state for the debug UI.

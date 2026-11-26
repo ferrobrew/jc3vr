@@ -1,7 +1,7 @@
 //! The test tools the capture harness (`tools/rendering`) drives: the visual configurations
 //! ([`visual`]), the staging of a scene for them ([`stage`]), and the benchmark ([`benchmark`]),
 //! started through the request file a script drops into the configuration directory ([`request`]),
-//! which also starts and stops a tracking recording ([`crate::recorder::tracking`]).
+//! which also starts and stops a tracking recording ([`jc3vr_render::recorder::tracking`]).
 //! `testing.enabled` switches the request file and the tracking recorder off.
 //!
 //! [`update`] drives the tools from the top of the game's update on the game thread.
@@ -11,10 +11,8 @@ pub mod request;
 pub(crate) mod stage;
 mod text;
 
-// The visual stage and the benchmark live in the render crate; the old paths keep working until
-// the final cleanup pass.
 pub use config::{TESTING_CONFIG, TestingConfig};
-pub use jc3vr_render::testing::{benchmark, visual};
+use jc3vr_render::testing::{benchmark, visual};
 
 /// Drive the test tools for this frame: the capture harness, the request file, the benchmark, and
 /// the visual stage. Game thread, once per frame from the top of the game's update, after the

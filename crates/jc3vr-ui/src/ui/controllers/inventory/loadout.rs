@@ -15,6 +15,7 @@ use jc3vr_gameplay::controllers::{
         slot_label,
     },
     physical_hands::PhysicalHandsStatus,
+    spawn::SpawnDefinition,
     weapons::{
         c4,
         grenade::stock,
@@ -29,7 +30,6 @@ use jc3vr_gameplay::controllers::{
     },
 };
 use jc3vr_input::frame::Hand;
-use jc3vr_tooling::director::spawn::SpawnDefinition;
 
 /// What the loadout section reads besides the table.
 pub(super) struct LoadoutInputs<'a> {

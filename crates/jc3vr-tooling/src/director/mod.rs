@@ -12,9 +12,8 @@
 //! live game state against the config, which is what makes the settings survive the game's own
 //! resets (a respawn clearing god mode, a mission reset unlocking heat).
 
-use jc3vr_core::config::engine::ConfigSlot;
-pub use jc3vr_core::director::clean_view;
-pub use jc3vr_gameplay::controllers::spawn;
+use jc3vr_core::{config::engine::ConfigSlot, director::clean_view};
+use jc3vr_gameplay::controllers::spawn;
 use serde::{Deserialize, Serialize};
 
 pub mod heat;

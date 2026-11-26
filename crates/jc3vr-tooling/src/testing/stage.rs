@@ -31,13 +31,13 @@ use anyhow::Context as _;
 use glam::Vec3;
 use jc3gi::types::math::Matrix4;
 use jc3vr_gameplay::controllers::spawn::{self, Submission};
+use jc3vr_render::testing::visual::{
+    self, EnvironmentRequest, EnvironmentTable, RequestId, environment,
+};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    director::teleport::{self, TeleportMode},
-    testing::visual::{self, EnvironmentRequest, EnvironmentTable, RequestId, environment},
-};
+use crate::director::teleport::{self, TeleportMode};
 
 /// A checked stage request.
 #[derive(Debug, Clone, PartialEq)]

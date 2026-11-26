@@ -5,14 +5,15 @@
 //! edge between the two (`docs/architecture.md`, "Crate layering"). It owns:
 //!
 //! - [`recorder`]: the video recorder: a take's sidecar, the eye views streamed to the capture
-//!   host, and the session recording's take markers. It also re-exports the render crate's tracking
-//!   recorder at its path.
+//!   host, and the session recording's take markers. The tracking recorder is the render crate's
+//!   ([`jc3vr_render::recorder::tracking`]).
 //! - [`director`]: the directing tools: time control, actor safety, heat, the teleport bookmarks,
-//!   the take markers, and the key bindings that drive them. It also re-exports the core crate's
-//!   clean view and the gameplay crate's spawner at their paths.
+//!   the take markers, and the key bindings that drive them. Its pass also drives the core crate's
+//!   clean view ([`jc3vr_core::director::clean_view`]) and the gameplay crate's spawner
+//!   ([`jc3vr_gameplay::controllers::spawn`]), whose settings it holds.
 //! - [`testing`]: the capture harness's request file, the staging of a scene, its text, and the
-//!   testing settings. It also re-exports the render crate's visual stage and benchmark at their
-//!   paths.
+//!   testing settings. It drives the render crate's visual stage and benchmark
+//!   ([`jc3vr_render::testing`]).
 //! - [`diagnostics`]: the samplers that note the controller subsystems' state, Rico's pose, and
 //!   the bodies around him into a tracking recording.
 //!

@@ -17,6 +17,7 @@ use jc3vr_input::frame::Hand;
 use jc3vr_render::{
     headpose,
     hooks::camera::{eye_point, last_dtf},
+    recorder::tracking::format::debug_label,
     vr::VR_CONFIG,
 };
 use tracking_format::{
@@ -26,8 +27,6 @@ use tracking_format::{
     },
     model::Pose,
 };
-
-use crate::recorder::tracking::format::debug_label;
 
 /// The cockpit's placement in the world, from the rendered eye midpoint the hands compose from
 /// ([`jc3vr_render::controllers::cockpit::CockpitTransform::current`]), and the active camera,

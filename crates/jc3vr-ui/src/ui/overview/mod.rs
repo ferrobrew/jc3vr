@@ -17,7 +17,7 @@ use jc3vr_input::{
 };
 use jc3vr_render::{
     controllers::overlay,
-    recorder::tracking::TrackingStatus,
+    recorder::{tracking, tracking::TrackingStatus},
     vr::{input, input::InputStatus},
 };
 use jc3vr_tooling::recorder;
@@ -62,7 +62,7 @@ impl Snapshot {
             }),
             ownership: debug_ui_capture(),
             video: recorder::status(),
-            tracking: recorder::tracking::status(),
+            tracking: tracking::status(),
             #[cfg(feature = "profiler")]
             profiler: ProfilerCapture {
                 recording: capture::is_recording(),

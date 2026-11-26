@@ -27,13 +27,13 @@ use jc3vr_input::{
     frame::{self, Hand},
     scheme::Scheme,
 };
-use jc3vr_render::vr::input as vr_input;
+use jc3vr_render::{recorder::tracking::format::hand_to_file, vr::input as vr_input};
 use tracking_format::event::{
     AimState, CharacterMotion, ControllerState, GrappleAim, GroundHeight, HandAim, HandLate,
     HandTier, IkState, Label, LateState, RoomscaleState, RootTick, TierState, WeaponAim,
 };
 
-use crate::{diagnostics::world_state, recorder::tracking::format::hand_to_file};
+use crate::diagnostics::world_state;
 
 /// Read every subsystem's status, and the player `character`'s measured motion, into one event.
 pub(super) fn snapshot(character: Option<&Character>) -> ControllerState {

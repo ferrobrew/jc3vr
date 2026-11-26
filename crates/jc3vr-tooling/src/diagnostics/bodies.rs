@@ -24,15 +24,14 @@ use jc3vr_gameplay::controllers::physical_hands::{
     physics,
 };
 use jc3vr_input::frame::Hand;
+use jc3vr_render::recorder::tracking::{
+    events::{self, EventKind},
+    format::hand_to_file,
+};
 use parking_lot::Mutex;
 use tracking_format::{
     event::{BodiesSample, BodyIntro, BodySample, HeldMotion, HeldSample, HoldReport, Label},
     model::Pose,
-};
-
-use crate::recorder::tracking::{
-    events::{self, EventKind},
-    format::hand_to_file,
 };
 
 /// Record the bodies near Rico and what his hands hold, after a simulation step.

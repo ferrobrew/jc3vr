@@ -5,7 +5,7 @@
 //! The frame driver calls [`record`] after the engine's render update, so the late hand snapshot
 //! and the frame's sub-tick fraction it is evaluated at are the ones that frame rendered with.
 //! While a tracking recording or the lookback collects
-//! ([`crate::recorder::tracking::events::collecting`]), each call notes one
+//! ([`jc3vr_render::recorder::tracking::events::collecting`]), each call notes one
 //! [`ControllerState`](tracking_format::event::ControllerState) event, which the recorder stamps on
 //! the frame timeline and writes beside the next frame, and a
 //! [`BodyState`](tracking_format::event::BodyState) event when the body's animation state changed
@@ -31,8 +31,7 @@ use std::time::Instant;
 
 use jc3gi::character::character::Character;
 use jc3vr_gameplay::{controllers::body::procedural, hooks::animation::active_state_type_id};
-
-use crate::recorder::tracking::events::{self, EventKind};
+use jc3vr_render::recorder::tracking::events::{self, EventKind};
 
 /// Register the samplers that observe the game: the pose-finalization observer and the post-step
 /// observer. Call once, before the hooks are installed.

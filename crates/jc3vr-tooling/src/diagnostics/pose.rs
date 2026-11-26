@@ -18,17 +18,17 @@ use jc3vr_core::{
     hooks,
 };
 use jc3vr_gameplay::hooks::character::pose::LivePose;
-use jc3vr_render::headpose::skeleton::SkeletonKey;
+use jc3vr_render::{
+    headpose::skeleton::SkeletonKey,
+    recorder::tracking::events::{self, EventKind},
+};
 use parking_lot::Mutex;
 use tracking_format::{
     event::{BODY_BONES, BoneSet, IkGoal, IkTarget, PoseSample, PoseStage},
     model::Pose,
 };
 
-use crate::{
-    diagnostics::world_state::pose_of,
-    recorder::tracking::events::{self, EventKind},
-};
+use crate::diagnostics::world_state::pose_of;
 
 /// Note the local player's animated pose and the live HumanIK targets, just before the pass's
 /// solves run.

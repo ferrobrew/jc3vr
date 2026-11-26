@@ -8,13 +8,11 @@
 use std::time::{Duration, Instant};
 
 use jc3vr_gameplay::controllers::body::procedural::authority::Case;
+use jc3vr_render::recorder::tracking::events::{self, EventKind};
 use parking_lot::Mutex;
 use tracking_format::event::{BodyState, Label};
 
-use crate::{
-    diagnostics::state_names,
-    recorder::tracking::events::{self, EventKind},
-};
+use crate::diagnostics::state_names;
 
 /// Note the body's state when it changed since the last note, or when the last note is old.
 pub(super) fn note(rule_state: Option<u32>, case: Case, now: Instant) {

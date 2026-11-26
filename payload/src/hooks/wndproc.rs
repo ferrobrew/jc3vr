@@ -60,9 +60,9 @@ fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         return LRESULT(0);
     }
 
-    // F4 toggles the clean view at its scope (`jc3vr_tooling::director::clean_view`): the flat egui debug
-    // overlay leaves the desktop window, and at the everything scope every other overlay goes too.
-    // With no live VR panel, hiding releases editing and showing requests Editing through
+    // F4 toggles the clean view at its scope (`jc3vr_core::director::clean_view`): the flat egui
+    // debug overlay leaves the desktop window, and at the everything scope every other overlay goes
+    // too. With no live VR panel, hiding releases editing and showing requests Editing through
     // device/neutral gates. The consumed key episode remains blocked through its release.
     if (msg == WM_KEYDOWN || msg == WM_SYSKEYDOWN) && wparam.0 == VK_F4.0 as usize {
         consume_desktop_shortcut(wparam.0);

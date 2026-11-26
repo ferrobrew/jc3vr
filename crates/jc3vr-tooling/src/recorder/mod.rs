@@ -44,6 +44,7 @@ use std::{
 };
 
 use jc3vr_core::{config::engine::ConfigSlot, session::CaptureFolder};
+use jc3vr_render::vr::MirrorFrame;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use windows::Win32::Graphics::Direct3D11::{
@@ -73,12 +74,6 @@ pub mod register_render;
 pub mod session_recording;
 mod stream;
 mod take;
-// The tracking recorder and the mirror's frame types live in the render crate; the old paths keep
-// working until the final cleanup pass.
-pub use jc3vr_render::{
-    recorder::tracking,
-    vr::{MirrorDraw, MirrorFrame},
-};
 
 pub use crate::recorder::{
     layout::{Arrangement, MAX_EYE_WIDTH, MIN_EYE_WIDTH},

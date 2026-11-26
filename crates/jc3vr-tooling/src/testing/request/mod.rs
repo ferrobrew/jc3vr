@@ -11,16 +11,20 @@ use std::{
     time::{Duration, Instant},
 };
 
-use jc3vr_render::screenshot::harness::snapshot::{SnapshotError, SnapshotRequest, SnapshotTable};
+use jc3vr_render::{
+    screenshot::harness::snapshot::{SnapshotError, SnapshotRequest, SnapshotTable},
+    testing::{
+        benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},
+        visual,
+    },
+};
 use parking_lot::Mutex;
 use serde::Deserialize;
 
 use crate::testing::{
     TESTING_CONFIG,
-    benchmark::{BenchmarkError, BenchmarkRequest, BenchmarkTable},
     stage::{self, StageRequest, StageTable},
     text::{self, TextError},
-    visual,
 };
 
 /// The request file's name in the configuration directory.
@@ -1023,7 +1027,7 @@ fn act(request: Request) {
         Request::Stage(request) => stage::enqueue(request),
         Request::Snapshot(request) => jc3vr_render::screenshot::harness::snapshot::request(request),
         Request::SnapshotRelease(id) => jc3vr_render::screenshot::harness::snapshot::release(id),
-        Request::Benchmark(request) => crate::testing::benchmark::request(request),
+        Request::Benchmark(request) => jc3vr_render::testing::benchmark::request(request),
         Request::Screenshot {
             id,
             motion,
@@ -1185,8 +1189,8 @@ fn act(request: Request) {
                 None => jc3vr_render::screenshot::harness::request(id, options),
             }
         }
-        Request::Record => crate::recorder::tracking::request_start(),
-        Request::StopRecording => crate::recorder::tracking::request_stop(),
+        Request::Record => jc3vr_render::recorder::tracking::request_start(),
+        Request::StopRecording => jc3vr_render::recorder::tracking::request_stop(),
     }
 }
 
