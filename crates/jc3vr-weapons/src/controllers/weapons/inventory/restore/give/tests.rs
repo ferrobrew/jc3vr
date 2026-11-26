@@ -72,15 +72,14 @@ fn pending_selection_survives_dispatch_and_latest_clear_wins() {
 }
 
 #[test]
-fn explicit_pistol_gives_follow_settings_even_while_input_is_inactive() {
+fn a_given_single_pistol_asks_for_no_twin() {
     let mut grants = Grants::new();
     for socket_free in [false, true] {
         for object in [11, 12, 11] {
             assert_eq!(
                 grants.observe(GrantTick {
-                    enabled: true,
                     slot: Some(object),
-                    single: separate_given_pistol(true, true, true),
+                    single: true,
                     guns: true,
                     stashed: false,
                     socket_free,
@@ -88,16 +87,6 @@ fn explicit_pistol_gives_follow_settings_even_while_input_is_inactive() {
                 }),
                 Grant::Nothing,
             );
-        }
-    }
-    for separate in [false, true] {
-        for enabled in [false, true] {
-            for carry in [false, true] {
-                assert_eq!(
-                    separate_given_pistol(separate, enabled, carry),
-                    separate && enabled && carry,
-                );
-            }
         }
     }
 }

@@ -86,10 +86,8 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                 game,
                 owner,
                 &inventory::TickInputs {
-                    settings: config.weapons.inventory,
                     dominant: config.dominant,
                     wielded,
-                    separate_pistols: config.weapons.separate_pistols,
                 },
             );
             let holder = hold::input_tick(game, wielded, arrival);

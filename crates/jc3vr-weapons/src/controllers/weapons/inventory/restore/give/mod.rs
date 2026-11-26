@@ -48,7 +48,6 @@ use crate::controllers::{
     loadout::{ObjectAddress, Socket, live},
     weapons::{
         c4,
-        config::WEAPONS_CONFIG,
         dual_wield::single,
         grenade::stock,
         hold,
@@ -380,10 +379,6 @@ struct DefinitionNames {
 /// The shipped definitions a give has shown cannot be given, by name.
 static REFUSED: Mutex<Vec<(&'static str, Refusal)>> = Mutex::new(Vec::new());
 
-fn separate_given_pistol(separate: bool, enabled: bool, carry: bool) -> bool {
-    separate && enabled && carry
-}
-
 /// Whether `def` is a hand weapon a socket can be given, and if so whether it is one-handed
 /// (`Some(true)`, for a hip) or not (`Some(false)`, for the back).
 fn giveable(def: &SpawnDefinition) -> Option<bool> {
@@ -679,18 +674,7 @@ unsafe fn adopt(owner: &mut Character) {
         let line = match carried {
             Some(object) => {
                 // SAFETY: the carry set keeps the weapon alive.
-                let separate = WEAPONS_CONFIG.query(|weapons| {
-                    separate_given_pistol(
-                        weapons.separate_pistols,
-                        weapons.inventory.enabled,
-                        weapons.inventory.carry,
-                    )
-                });
-                if separate {
-                    unsafe {
-                        single::designate(&mut *(object as *mut WeaponBase), "a given pistol")
-                    };
-                }
+                unsafe { single::designate(&mut *(object as *mut WeaponBase), "a given pistol") };
                 let landed = match outcome {
                     Outcome::Restored(socket) => socket,
                     _ => pending.socket,

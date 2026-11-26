@@ -506,7 +506,7 @@ The settings are under `weapons` unless named otherwise. The description is in [
 | The action-runs tier | none; always on | Built for the game's reloads, draws, and holsters. |
 | Recoil | `recoil.kick_scale`; the spring tuning is fixed in `controllers::weapons::recoil`, and the game's camera kick is always suppressed while the guns aim by hand | Built. |
 | Haptics | `haptics.enabled`, `haptics.intensity`, and `haptics.game_rumble` ([haptics.md](haptics.md)) | Built. |
-| Separate pistols | `separate_pistols` | Built, as part of the two-handed inventory: each pistol its own weapon, a pistol in each hand ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)). |
+| Separate pistols | none | Built, as part of the two-handed inventory: each pistol its own weapon, a pistol in each hand ([physical-weapons.md, "Separate pistols"](physical-weapons.md#separate-pistols)). |
 | The anchored tier for the grapple line and the hang push | `hands.anchor.enabled`, which also carries the hang push; the swing tuning is fixed in `controllers::hands::anchor` | Built for the reel and hang states. A grapple hand that holds anything (a gun, a prop, a grenade, or a charge) stays free. |
 | The yank gesture | `bindings.yank.enabled`; the detector is fixed at `GRAPPLE_YANK` | Built. It is disarmed while the line carries the character (the reel-in and the hang). |
 | F7 on foot | none | Re-bases yaw and height only out of a vehicle seat, and the rig snaps the pelvis under the neck ([rig.md, "Recentering"](../body/rig.md#recentering)). |

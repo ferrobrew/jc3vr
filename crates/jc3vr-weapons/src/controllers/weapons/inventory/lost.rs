@@ -85,7 +85,6 @@ pub fn speed(last: Option<(Vec3, f32)>, player: Vec3, dt_s: f32) -> f32 {
 
 /// What the adapter is handed each tick.
 pub(crate) struct LostTick {
-    pub enabled: bool,
     pub lost_speed_mps: f32,
     pub rules: LostRules,
     pub player: Vec3,
@@ -109,15 +108,12 @@ pub(crate) unsafe fn input_tick(owner: &mut Character, tick: LostTick) {
         let smoothed = speed(state.last, tick.player, dt_s);
         state.last = Some((tick.player, smoothed));
         state.last_at = Some(now);
-        let fast = tick.enabled && smoothed >= tick.lost_speed_mps;
+        let fast = smoothed >= tick.lost_speed_mps;
         (fast, std::mem::take(&mut state.falling))
     };
     live::set_fast(fast);
     for object in falling {
         unsafe { let_fall(owner, object) };
-    }
-    if !tick.enabled {
-        return;
     }
     let judged: Vec<Lying> = tick.lying.iter().map(|(lying, _)| *lying).collect();
     let lost = judge(&judged, tick.player, &tick.rules);

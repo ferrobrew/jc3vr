@@ -15,7 +15,6 @@ fn weapon() -> Box<MaybeUninit<WeaponBase>> {
 
 fn observed(object: ObjectKey) -> GrantTick {
     GrantTick {
-        enabled: true,
         slot: Some(object),
         single: false,
         guns: true,

@@ -35,7 +35,6 @@
 mod ammo;
 pub(crate) mod carry;
 mod challenges;
-pub mod config;
 mod docked_view;
 pub mod engine;
 pub mod game_view;
@@ -78,13 +77,11 @@ use crate::controllers::{
     loadout::{ItemKind, ObjectAddress, Place, Restored, SlotObject, Socket, TakeSource, live},
     weapons::{
         c4,
-        config::WEAPONS_CONFIG,
         dual_wield::single,
         engine as weapons_engine, grenade,
         hold::{armed, use_item},
         hud_feed::lost_weapons,
         inventory::{
-            config::InventoryConfig,
             engine::ObjectKey,
             game_view::GameInventory,
             lost::LostRules,
@@ -211,24 +208,20 @@ pub fn peek_status() -> Result<Arc<InventoryReadout>, StatusUnavailable> {
 
 /// What the weapon handling hands the inventory each input tick.
 pub(crate) struct TickInputs {
-    pub settings: InventoryConfig,
     /// The dominant hand, whose hip takes a pistol first, and which a weapon the game wields on
     /// its own lands in when it is free.
     pub dominant: Hand,
     /// The weapon the game wields in the hands.
     pub wielded: Option<ObjectKey>,
-    /// Whether the pistols are made separate ([`single`]).
-    pub separate_pistols: bool,
 }
 
 /// Fold one input tick of the game into the loadout table, make the game's slots and hands follow
 /// the table ([`reconcile`]), and act on the pins. Returns the wielded weapon's arrival in a hand,
 /// when it came into one this tick.
 ///
-/// The table runs while the inventory is on and its slots are a projection of the table
-/// (`project_slots`). Switching either off, or the scheme away from the controllers, stops it
-/// ([`stop`]): the table is put back into the game's slots, and the game's own one-weapon model
-/// runs. The weapons the slots cannot hold stay carried, stashed until the table runs again,
+/// The table runs while the weapon handling does. The scheme leaving the controllers stops it
+/// ([`stand_down`]): the table is put back into the game's slots, and the game's own one-weapon
+/// model runs. The weapons the slots cannot hold stay carried, stashed until the table runs again,
 /// which starts it from the slots and brings them back onto their sockets.
 ///
 /// # Safety
@@ -239,28 +232,17 @@ pub(crate) unsafe fn input_tick(
     owner: &mut Character,
     inputs: &TickInputs,
 ) -> Option<live::Arrival> {
-    let on = inputs.settings.enabled && inputs.settings.project_slots;
-    traversal::publish(on);
+    traversal::publish(true);
     // Read before the inventory's lock: each is behind its own subsystem's lock.
     let others = held_others();
-    if on {
-        let slots = unsafe { live_slots(owner) };
-        let spawning = engine::tracked_slots()
-            .any(|slot| owner.m_Inventory.m_WeaponPendingSpawn[slot as usize]);
-        let restore_ready = live::begin_tick(inputs.dominant, &slots, spawning);
-        unsafe { restore::input_tick(game, owner, &inputs.settings, restore_ready) };
-        unsafe { use_item::input_tick(owner) };
-        unsafe { gives::input_tick(game, owner) };
-        unsafe { resume() };
-    } else {
-        // Captured before the stop, whose publication carries it.
-        STATE.lock().game = Some(unsafe { game_view::capture(owner) });
-        unsafe { stop(owner, "the inventory is off", inputs.settings.carry) };
-        return None;
-    }
-    if !inputs.settings.carry && carry::count() > 0 {
-        unsafe { carry::drop_all(owner) };
-    }
+    let slots = unsafe { live_slots(owner) };
+    let spawning =
+        engine::tracked_slots().any(|slot| owner.m_Inventory.m_WeaponPendingSpawn[slot as usize]);
+    let restore_ready = live::begin_tick(inputs.dominant, &slots, spawning);
+    unsafe { restore::input_tick(game, owner, restore_ready) };
+    unsafe { use_item::input_tick(owner) };
+    unsafe { gives::input_tick(game, owner) };
+    unsafe { resume() };
     let mut state = STATE.lock();
     state.status.active = true;
     let player = character_position(owner);
@@ -350,7 +332,6 @@ pub(crate) unsafe fn input_tick(
         lost::input_tick(
             owner,
             lost::LostTick {
-                enabled: inputs.settings.return_lost && inputs.settings.carry,
                 lost_speed_mps: LOST_SPEED_MPS,
                 rules: LOST_RULES,
                 player,
@@ -416,8 +397,6 @@ pub(crate) unsafe fn input_tick(
             game,
             owner,
             &single::Tick {
-                separate: inputs.separate_pistols,
-                settings: &inputs.settings,
                 dominant: inputs.dominant,
                 tracked: &tracked,
             },
@@ -443,8 +422,8 @@ pub(crate) unsafe fn input_tick(
 
 /// Keep the loadout table and the game's slots in step on an input tick the weapon handling does
 /// not run: begin the table's tick from the live slots, restore and reconcile them, and publish the
-/// views, while the inventory is on; stop the table while it is off.
-pub fn maintenance_tick(game: &GameTick<'_>, settings: &InventoryConfig, dominant: Hand) {
+/// views.
+pub fn maintenance_tick(game: &GameTick<'_>, dominant: Hand) {
     if jc3vr_core::is_shutting_down() || !jc3vr_core::hooks::in_gameplay() {
         return;
     }
@@ -452,10 +431,6 @@ pub fn maintenance_tick(game: &GameTick<'_>, settings: &InventoryConfig, dominan
         return;
     };
     let owner = local_player.character_mut();
-    if !(settings.enabled && settings.project_slots) {
-        unsafe { stop(owner, "the inventory is off", settings.carry) };
-        return;
-    }
     let slots = unsafe { live_slots(owner) };
     let spawning =
         engine::tracked_slots().any(|slot| owner.m_Inventory.m_WeaponPendingSpawn[slot as usize]);
@@ -465,7 +440,7 @@ pub fn maintenance_tick(game: &GameTick<'_>, settings: &InventoryConfig, dominan
     }
     STATE.lock().status.active = true;
     traversal::publish(true);
-    unsafe { restore::input_tick(game, owner, settings, ready) };
+    unsafe { restore::input_tick(game, owner, ready) };
     unsafe { resume() };
     unsafe { reconcile::apply(owner) };
     live::publish_status();
@@ -481,21 +456,20 @@ pub fn stand_down(game: &GameTick<'_>) {
         return;
     };
     let owner = local_player.character_mut();
-    let carry = WEAPONS_CONFIG.lock().inventory.carry;
     // SAFETY: as this function's own contract.
     STATE.lock().game = Some(unsafe { game_view::capture(owner) });
-    unsafe { stop(owner, "the controllers are not in use", carry) };
+    unsafe { stop(owner, "the controllers are not in use") };
 }
 
 /// Stop the table (`why` for the log): put it back into the game's slots, so the game's own
 /// one-weapon model takes over with the best of what the player has, and keep the weapons the
-/// slots cannot hold carried and stashed (`keep`) until the table runs again, or let them fall
-/// where they are without `keep`. Does nothing while the table is stopped.
+/// slots cannot hold carried and stashed until the table runs again. Does nothing while the table
+/// is stopped.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
-unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
+unsafe fn stop(owner: &mut Character, why: &str) {
     restore::give::clear_pending();
     unsafe { use_item::stand_down() };
     unsafe { gives::stand_down(owner) };
@@ -512,7 +486,7 @@ unsafe fn stop(owner: &mut Character, why: &str, keep: bool) {
         return;
     }
     STATE.lock().release_all(why);
-    if keep && carry::count() > 0 {
+    if carry::count() > 0 {
         unsafe { carry::set_stashed(true) };
         KEPT_STOPPED.store(true, Ordering::Relaxed);
         tracing::info!(

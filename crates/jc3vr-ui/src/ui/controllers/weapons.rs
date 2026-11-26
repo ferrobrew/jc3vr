@@ -561,12 +561,6 @@ fn assist_readout(ui: &mut Ui, a: &AimStatus) {
 }
 
 pub(super) fn support_settings(ui: &mut Ui, c: &mut ControllersConfig) {
-    let w = &mut c.weapons;
-    ui.checkbox(&mut w.separate_pistols, "Separate pistols")
-        .on_hover_text(
-            "Make the game's pistol pair two weapons, each picked up, held, dropped, reloaded, and \
-             fired on its own. Needs the VR inventory and its carrying.",
-        );
     let brace = &mut c.physical_hands.bodies.brace;
     ui.label("Brace joint rebuild").on_hover_text(
         "How far the bracing palm's frame on a held gun may move before its joint is remade, \

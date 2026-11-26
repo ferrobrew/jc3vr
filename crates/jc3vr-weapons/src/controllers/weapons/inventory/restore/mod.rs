@@ -48,9 +48,7 @@ use parking_lot::Mutex;
 use crate::controllers::weapons::{
     dual_wield::single,
     inventory::{
-        carry,
-        config::InventoryConfig,
-        engine as inventory_engine,
+        carry, engine as inventory_engine,
         engine::kind_of,
         persist::{Fingerprint, MAX_BYTES, RESERVES, Record, SLOTS, Sidecar},
         sidecar, spawn_safety,
@@ -227,8 +225,8 @@ pub(crate) fn on_frontend() {
 /// # Safety
 ///
 /// `save_data` must be the save data the store is given, live for the call.
-pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData, settings: &InventoryConfig) {
-    if jc3vr_core::is_shutting_down() || !(settings.enabled && settings.carry && settings.persist) {
+pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData) {
+    if jc3vr_core::is_shutting_down() {
         return;
     }
     let Some(character) = (unsafe { character_of(save_data) }) else {
@@ -272,10 +270,7 @@ pub(crate) unsafe fn on_store(save_data: *const PlayerSaveData, settings: &Inven
 /// # Safety
 ///
 /// `save_data` must be the save data the load was given, live for the call.
-pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &InventoryConfig) {
-    if !(settings.enabled && settings.carry && settings.persist) {
-        return;
-    }
+pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData) {
     let (outcome, records, slot_pistol_single) = unsafe { read_for_load(save_data) };
     match &outcome {
         LoadOutcome::Accepted { carried, unknown } => tracing::info!(
@@ -305,20 +300,14 @@ pub(crate) unsafe fn on_load(save_data: *const PlayerSaveData, settings: &Invent
 /// # Safety
 ///
 /// `owner` must be the live local player character.
-pub(crate) unsafe fn input_tick(
-    game: &GameTick<'_>,
-    owner: &mut Character,
-    settings: &InventoryConfig,
-    ready: bool,
-) {
+pub(crate) unsafe fn input_tick(game: &GameTick<'_>, owner: &mut Character, ready: bool) {
     if !ready || jc3vr_core::is_shutting_down() || !jc3vr_core::hooks::in_gameplay() {
         return;
     }
-    let enabled = settings.enabled && settings.carry;
     let plan = PLAN
         .lock()
         .take_due(ready, owner as *const Character as usize);
-    if let Some(chosen) = plan.filter(|_| enabled) {
+    if let Some(chosen) = plan {
         single::cover_respawn(chosen.slot_pistol_single);
         // A respawn with the slot's one pistol and no carried twin replicates it onto the empty
         // hip; a load or a mission's give-back keeps what was saved.

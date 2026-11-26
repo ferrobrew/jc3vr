@@ -1,7 +1,6 @@
 //! The status rows for the VR inventory: the weapons it tracks, the ones lying in the world it
 //! keeps from the game's despawn, and the live loadout table written beside it.
 
-use jc3vr_gameplay::controllers::config::CONTROLLERS_CONFIG;
 use jc3vr_weapons::controllers::{
     loadout::{Place, live, slot_label},
     weapons::{
@@ -14,10 +13,7 @@ use jc3vr_weapons::controllers::{
     },
 };
 
-use crate::{
-    controllers::menu::read,
-    status::{Line, Row, Text, prose, text},
-};
+use crate::status::{Line, Row, Text, prose, text};
 
 pub(crate) const TRACKED: Row = Row::new("TRACKED WEAPONS", "Tracked weapons", tracked);
 pub(crate) const CARRIED: Row = Row::new("CARRIED", "Carried", carried);
@@ -29,9 +25,6 @@ pub(crate) const PINNED: Row = Row::new("KEPT IN THE WORLD", "Kept in the world"
 pub(crate) const LOADOUT: Row = Row::new("LOADOUT TABLE", "Loadout table", loadout);
 
 fn tracked() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.inventory.enabled) {
-        return Line::off("");
-    }
     let s = inventory::status();
     if !s.active {
         return Line::waiting(prose("No player yet"));
@@ -51,9 +44,6 @@ fn tracked() -> Line {
 /// The live loadout table: where its items are, and how many weapons it disagrees with the old
 /// handling about.
 fn loadout() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.inventory.enabled) {
-        return Line::off("");
-    }
     let s = live::status();
     let Some(snapshot) = &s.snapshot else {
         return Line::waiting(prose("No player yet"));
@@ -81,12 +71,9 @@ fn loadout() -> Line {
 /// Whether the pistols are two weapons: the slot's pistol, the second pistol of the last pair, and
 /// the counts.
 fn separate_pistols() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.separate_pistols) {
-        return Line::off("");
-    }
     let s = single::status();
     if !s.active {
-        return Line::waiting(prose("Needs track weapons and carry extra weapons"));
+        return Line::waiting(prose("No player yet"));
     }
     let counts = text!(
         s.singles.to_string(),
@@ -113,9 +100,6 @@ fn separate_pistols() -> Line {
 }
 
 fn pinned() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.inventory.enabled) {
-        return Line::off("");
-    }
     let s = inventory::status();
     Line::ok(text!(
         s.pinned().to_string(),
@@ -130,12 +114,6 @@ fn pinned() -> Line {
 }
 
 fn sidecar() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| {
-        let inventory = c.weapons.inventory;
-        inventory.enabled && inventory.carry && inventory.persist
-    }) {
-        return Line::off("");
-    }
     let s = restore::status();
     if s.path.is_none() {
         return Line::failed(prose("No configuration directory"));
@@ -155,12 +133,6 @@ fn sidecar() -> Line {
 }
 
 fn last_load() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| {
-        let inventory = c.weapons.inventory;
-        inventory.enabled && inventory.carry && inventory.persist
-    }) {
-        return Line::off("");
-    }
     let s = restore::status();
     let load = match &s.last_load {
         None => prose("No load yet"),
@@ -211,12 +183,6 @@ fn last_load() -> Line {
 }
 
 fn carried() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| {
-        let inventory = c.weapons.inventory;
-        inventory.enabled && inventory.carry
-    }) {
-        return Line::off("");
-    }
     let s = inventory::status();
     let carried: Vec<Text> = s
         .carried

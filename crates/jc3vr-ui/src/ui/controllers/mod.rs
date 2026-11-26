@@ -105,9 +105,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
         FeatureId::Reload => {
             |ui, _| weapons::reload_feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }
-        FeatureId::Inventory => {
-            |ui, _| inventory::inventory_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
-        }
         FeatureId::WeaponSelection => {
             |ui, _| weapon_selection::selection_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
         }

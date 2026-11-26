@@ -389,11 +389,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
             weapons::stand_down(game);
         }
         if idle != Some(Idle::GamepadScheme) {
-            weapons::inventory::maintenance_tick(
-                game,
-                &config.weapons.inventory,
-                config.acting_hand(),
-            );
+            weapons::inventory::maintenance_tick(game, config.acting_hand());
         }
         // Leaving the controllers puts the loadout table back into the game's slots; a pause of
         // the controllers (the debug panel, a lost frame) keeps it.

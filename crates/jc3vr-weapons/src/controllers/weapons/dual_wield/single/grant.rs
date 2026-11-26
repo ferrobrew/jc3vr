@@ -25,8 +25,6 @@ pub const RESPAWN_COVER_S: f32 = 20.0;
 /// One input tick's view of the dual-wield slot.
 #[derive(Debug, Copy, Clone, PartialEq)]
 pub struct GrantTick {
-    /// Whether the pistols are made separate at all.
-    pub enabled: bool,
     /// The slot's weapon.
     pub slot: Option<usize>,
     /// Whether the slot's weapon is a single pistol already.
@@ -180,18 +178,13 @@ impl Grants {
         self.mission = Some(single);
     }
 
-    /// Forget the slot's weapon and the covers: the pistols are no longer made separate, or the
-    /// world was reset.
+    /// Forget the slot's weapon and the covers: the table stopped, or the world was reset.
     pub fn clear(&mut self) {
         *self = Self::new();
     }
 
     /// Follow the slot for one tick.
     pub fn observe(&mut self, tick: GrantTick) -> Grant {
-        if !tick.enabled {
-            self.clear();
-            return Grant::Nothing;
-        }
         let dt = if tick.dt.is_finite() {
             tick.dt.max(0.0)
         } else {
@@ -327,7 +320,6 @@ mod tests {
 
     fn tick(slot: Option<usize>) -> GrantTick {
         GrantTick {
-            enabled: true,
             slot,
             single: false,
             guns: true,
@@ -534,19 +526,6 @@ mod tests {
                 why: PairWhy::NoSocket
             }
         );
-    }
-
-    #[test]
-    fn switching_off_forgets_everything() {
-        let mut g = Grants::new();
-        g.cover_mission(true);
-        g.observe(tick(Some(PAIR)));
-        let off = GrantTick {
-            enabled: false,
-            ..tick(Some(PAIR))
-        };
-        assert_eq!(g.observe(off), Grant::Nothing);
-        assert_eq!(g, Grants::new());
     }
 
     #[test]

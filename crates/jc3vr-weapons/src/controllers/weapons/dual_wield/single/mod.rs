@@ -70,9 +70,7 @@ use crate::controllers::{
         engine::{credit_reserve, credit_stored, gun_at, hide_gun, slot_of},
         hold,
         hold::rack::paired,
-        inventory::{
-            carry, config::InventoryConfig, engine as inventory_engine, engine::ObjectKey, restore,
-        },
+        inventory::{carry, engine as inventory_engine, engine::ObjectKey, restore},
         reload,
     },
 };
@@ -327,9 +325,6 @@ pub(crate) fn slot_single() -> bool {
 
 /// What the VR inventory hands the single pistols each input tick.
 pub(crate) struct Tick<'a> {
-    /// Whether the pistols are made separate (the setting).
-    pub separate: bool,
-    pub settings: &'a InventoryConfig,
     pub dominant: Hand,
     /// Every weapon the inventory tracks.
     pub tracked: &'a [ObjectKey],
@@ -343,8 +338,7 @@ pub(crate) struct Tick<'a> {
 ///
 /// `owner` must be the live local player character.
 pub(crate) unsafe fn input_tick(game: &GameTick<'_>, owner: &mut Character, tick: &Tick) {
-    let enabled = tick.separate && tick.settings.enabled && tick.settings.carry;
-    ACTIVE.store(enabled, Ordering::Relaxed);
+    ACTIVE.store(true, Ordering::Relaxed);
     for object in set::all() {
         if !tick.tracked.contains(&object) && !paired::retains_single(object) {
             set::remove(object);
@@ -371,7 +365,6 @@ pub(crate) unsafe fn input_tick(game: &GameTick<'_>, owner: &mut Character, tick
         state.slot_single = slot_is_single;
         state.slot_filled = slot_object.is_some();
         state.grants.observe(GrantTick {
-            enabled,
             slot: slot_object,
             single: slot_is_single,
             guns,

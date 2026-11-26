@@ -1,4 +1,4 @@
-//! The VR inventory's feature: its switches, its status rows, and two views, each read from its
+//! The VR inventory's feature: its status rows and two views, each read from its
 //! owner's publication: the live loadout, edited in place, with one dropdown per hand and per body
 //! socket that shows what is there and gives another weapon there ([`loadout`]), and the game's own
 //! inventory ([`game`]). Where the game's slots and the table disagree ([`mismatch`]) the rows are
@@ -12,7 +12,6 @@ use std::{sync::Arc, time::Instant};
 
 use egui::{CollapsingHeader, Ui};
 use jc3vr_body::controllers::fingers::{grip, grip::GripSource};
-use jc3vr_gameplay::controllers::config::WeaponsConfig;
 use jc3vr_input::frame::Hand;
 use jc3vr_physical::controllers::{physical_hands, physical_hands::PhysicalHandsStatus};
 use jc3vr_weapons::controllers::{
@@ -104,32 +103,6 @@ pub(super) fn inventory_view(ui: &mut Ui, view: &InventoryView) {
             Err(reason) => unavailable(ui, *reason),
         });
     pouch_model_readout(ui);
-}
-
-pub(super) fn inventory_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
-    let c = &mut w.inventory;
-    ui.checkbox(&mut c.enabled, "Track the player's weapons");
-    ui.add_enabled_ui(c.enabled, |ui| {
-        ui.checkbox(
-            &mut c.project_slots,
-            "The game's slots follow the hands and the body",
-        )
-        .on_hover_text(
-            "The loadout table alone moves the weapons, and the game's slots, its wielded \
-             weapon, and the weapons armed in the hands follow it. Off, the table is put back \
-             into the slots and the game's own one-weapon model runs.",
-        );
-        ui.checkbox(&mut c.return_lost, "Bring lost weapons back")
-            .on_hover_text(
-                "A weapon that fell out of the world, or that was let go of at speed and left \
-                 behind, comes back to a free socket, else the feet.",
-            );
-        ui.checkbox(&mut c.carry, "Carry weapons beyond the slots on the body");
-        ui.checkbox(
-            &mut c.persist,
-            "Keep the carried weapons across saves and loads",
-        );
-    });
 }
 
 fn unavailable(ui: &mut Ui, reason: StatusUnavailable) {
