@@ -86,6 +86,7 @@ pub mod overlay;
 pub mod physical_hands;
 pub mod physics;
 pub mod presentation;
+mod register_aim;
 mod register_hands;
 mod register_head_pose;
 mod register_lifecycle;
@@ -113,6 +114,7 @@ pub fn install() -> Result<(), RegistrationError> {
     register_vr_frame::register();
     register_render::register();
     register_hands::register();
+    register_aim::register();
     physical_hands::register_body::register();
     vehicles::register_body::register();
     weapons::register_body::register();

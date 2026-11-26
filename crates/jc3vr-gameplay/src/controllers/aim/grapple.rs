@@ -52,7 +52,7 @@ use crate::controllers::{
         raycast::{self, CastOptions},
         targets,
     },
-    weapons::hold::refs::null_weak,
+    physics::refs::null_weak,
 };
 
 /// The grapple hooks, aggregated by [`crate::controllers::aim::hook_library`].

@@ -37,8 +37,11 @@ use crate::controllers::{
         ray::Ray,
         raycast::{self, CastOptions, RayHit},
     },
-    physical_hands::{self, game_object_of},
-    weapons::hold::refs::{Strong, Weak},
+    physics::{
+        bodies::game_object_of,
+        body_pose,
+        refs::{Strong, Weak},
+    },
 };
 
 /// The patch's hooks, aggregated by [`crate::controllers::aim::hook_library`].
@@ -228,7 +231,7 @@ unsafe fn aimed_hit(
         Aimed {
             object,
             weapon: unsafe { is_dropped_weapon(object) }
-                && unsafe { physical_hands::body_pose(info.base.m_BodyId, object) }.is_ok(),
+                && unsafe { body_pose(info.base.m_BodyId, object) }.is_ok(),
             body: info.base.m_BodyId,
             point: start + direction * distance,
             normal: Vec3::from_array(info.base.m_Normal.data),
@@ -285,7 +288,7 @@ unsafe fn find_weapon(
         };
         if let Some(object) = hit.object
             && unsafe { is_dropped_weapon(object) }
-            && unsafe { physical_hands::body_pose(hit.body, object) }.is_ok()
+            && unsafe { body_pose(hit.body, object) }.is_ok()
         {
             return Some((hit, object, length));
         }

@@ -37,16 +37,16 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     aim::{
         TickHands,
+        hooks::hooks,
         ray::{self, Ray},
         sights::{self, ResolvedSight},
     },
     config::AimConfig,
+    facts::mounted,
     hands::late,
-    vehicles,
-    weapons::{
-        dual_wield::single,
-        engine,
-        hold::{self, tick as hold_tick},
+    held::{
+        is_single_pistol,
+        native::{gun_count, gun_ptr},
     },
 };
 
@@ -179,7 +179,8 @@ pub fn character_aim_point(dominant: Hand) -> Option<Vec3> {
 }
 
 /// The weapons' per-tick update from their user, handed the aiming hand's point for the player's
-/// weapons in the hands, and each its own hand's fire input ([`hold_tick::substitute`]).
+/// weapons in the hands, and each its own hand's fire input
+/// ([`AimHooks::substitute_input`](crate::controllers::aim::hooks::AimHooks::substitute_input)).
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::UpdateFromUserPostSim_ParallelBase_ADDRESS)]
 fn update_from_user_post_sim(
     weapon: *mut WeaponBase,
@@ -196,18 +197,19 @@ fn update_from_user_post_sim(
     let Some(w) = (unsafe { weapon.as_mut() }) else {
         return original(aim_position, input);
     };
+    let hooks = hooks();
     // A single pistol fires the gun it shows, whoever uses it.
-    single::pin(w);
+    (hooks.pin_single)(w);
     // Every character's weapons pass through here on the worker threads, so anything that is
     // neither the local player's nor the mounted gun the hands aim is ruled out before any lock.
-    if !(w.m_IsUserLocalPlayer || vehicles::is_mounted_weapon(weapon as usize)) {
+    if !(w.m_IsUserLocalPlayer || mounted::is_mounted_weapon(weapon as usize)) {
         return original(aim_position, input);
     }
     // The shot's hand and the gun aim read the attach bones, which a state task may have moved
     // since the hold last wrote them.
-    unsafe { hold::before_update(w) };
+    unsafe { (hooks.before_update)(w) };
     // The weapon in a hand takes its hand's own fire input in place of the game's.
-    let own = unsafe { input.as_ref() }.and_then(|i| unsafe { hold_tick::substitute(w, i) });
+    let own = unsafe { input.as_ref() }.and_then(|i| unsafe { (hooks.substitute_input)(w, i) });
     let input = own.as_ref().map_or(input, |i| i as *const WeaponInputs);
     match hand_target(w) {
         Some(target) => {
@@ -221,10 +223,10 @@ fn update_from_user_post_sim(
 }
 
 /// The aim point for the gun `weapon` will update next, when `weapon` is the aimed weapon: a
-/// wielded gun's hand, or a mounted gun's handles ([`vehicles::mounted_target`]).
+/// wielded gun's hand, or a mounted gun's handles ([`mounted::target`]).
 fn hand_target(weapon: &WeaponBase) -> Option<Vec3> {
     let address = weapon as *const WeaponBase as usize;
-    if let Some(target) = vehicles::mounted_target(address) {
+    if let Some(target) = mounted::target(address) {
         AIMED.fetch_add(1, Ordering::Relaxed);
         return Some(target);
     }
@@ -267,15 +269,15 @@ static AIMED: AtomicU64 = AtomicU64::new(0);
 static KEPT: AtomicU64 = AtomicU64::new(0);
 
 /// The weapon's guns, in order. A single pistol has one: its first, the only one it shows and
-/// fires ([`single`]).
+/// fires ([`is_single_pistol`]).
 pub(crate) unsafe fn guns(weapon: &WeaponBase) -> impl Iterator<Item = Option<&WeaponData>> {
-    let count = unsafe { engine::gun_count(weapon) };
-    let count = if single::is(weapon as *const WeaponBase as usize) {
+    let count = unsafe { gun_count(weapon) };
+    let count = if is_single_pistol(weapon as *const WeaponBase as usize) {
         count.min(1)
     } else {
         count
     };
-    (0..count).map(move |i| unsafe { engine::gun_at(weapon, i) })
+    (0..count).map(move |i| unsafe { gun_ptr(weapon, i) }.map(|gun| unsafe { gun.as_ref() }))
 }
 
 /// The gun's current fire point in its own frame, or the identity when the cursor is out of range,

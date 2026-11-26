@@ -12,7 +12,9 @@
 //! - [`assist`]: per-hand aim assist over those candidates, and the grapple's, which turns the
 //!   grapple ray onto the valid grapple target nearest it before the game's targeting runs;
 //! - [`sights`]: each weapon's sight correction, looked up from the config and the embedded sight
-//!   table, and the in-headset tool that tunes it.
+//!   table, and the in-headset tool that tunes it;
+//! - [`hooks`]: what the aim hands the weapon handling and the hand bodies above it, and asks of
+//!   them, through the table they register.
 //!
 //! Everything runs from the player aim control's post-simulation update ([`update_post_sim`]), the
 //! simulation-phase update where the game casts its own aim ray. Before the update, the hands are
@@ -32,6 +34,7 @@ pub mod config;
 pub mod grapple;
 pub mod grapple_weapons;
 pub mod gun;
+pub mod hooks;
 pub mod marker_rays;
 pub mod ray;
 pub mod raycast;
@@ -57,24 +60,24 @@ use jc3vr_render::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::{
-    controllers::{
-        aim::{
-            assist::{AssistCorrection, GrappleAssist},
-            config::{AIM_CONFIG, AimConfig},
-            gun::HeldWeapon,
-            ray::Ray,
-            raycast::{CastOptions, RayHit, RaycastError},
-        },
-        hands::{self, config::HANDS_CONFIG, ik, late},
-        mode::{self, Mode},
-        physical_hands, scheme, vehicles,
-        weapons::{
-            c4, collide, grenade,
-            hold::{armed, tick as hold_tick},
-        },
+use crate::controllers::{
+    aim::{
+        assist::{AssistCorrection, GrappleAssist},
+        config::{AIM_CONFIG, AimConfig},
+        gun::HeldWeapon,
+        hooks::hooks,
+        ray::Ray,
+        raycast::{CastOptions, RayHit, RaycastError},
     },
-    grapple::seat::{rides_in_seat, stands_in},
+    facts::{
+        mounted,
+        seat::{rides_in_seat, stands_in},
+    },
+    hands::{self, config::HANDS_CONFIG, ik, late},
+    held::armed_weapon,
+    mode::{self, Mode},
+    physics::grapple_hook,
+    scheme,
 };
 
 /// The nearest a gun's aim point may be to the sight's origin, metres. A nearer hit is pushed out
@@ -150,7 +153,7 @@ pub struct GrappleAim {
     /// grapple's fire), or the seat grapple cast its own ray. While it is not, the point may be
     /// stale, and nothing is drawn at it.
     pub current: bool,
-    /// The aim is the seat grapple's ([`crate::grapple::seat`]), cast by the mod in a vehicle seat.
+    /// The aim is the seat grapple's (`grapple::seat`), cast by the mod in a vehicle seat.
     pub seat: bool,
     /// The aim assist's turn of the ray onto a grapple target, when it made one.
     pub assist: Option<GrappleAssist>,
@@ -203,7 +206,7 @@ pub fn status() -> AimStatus {
 /// set, so the point still counts as set this frame.
 pub fn character_aim_point() -> Option<Vec3> {
     let dominant = scheme::acting_hand();
-    gun::character_aim_point(dominant).or_else(vehicles::mounted_aim_point)
+    gun::character_aim_point(dominant).or_else(mounted::aim_point)
 }
 
 /// A hand's world-space poses for a tick.
@@ -255,21 +258,23 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
         Some(Ok(tick)) => tick,
         Some(Err(idle)) => {
             idle_update(idle);
-            grenade::observe_hands([None; 2]);
-            c4::observe_hands([None; 2]);
+            let hooks = hooks();
+            (hooks.observe_grenade_hands)([None; 2]);
+            (hooks.observe_c4_hands)([None; 2]);
             return original();
         }
         None => return original(),
     };
     let _timing = frame_timing::scope(Slot::Aim);
-    grenade::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
-    c4::observe_hands(tick.hands.map(|h| h.map(|h| h.grip)));
+    let hooks = hooks();
+    (hooks.observe_grenade_hands)(tick.hands.map(|h| h.map(|h| h.grip)));
+    (hooks.observe_c4_hands)(tick.hands.map(|h| h.map(|h| h.grip)));
     if owner.is_some() {
         // SAFETY: the owner is the live local player, in the simulation phase outside the physics
         // step.
-        unsafe { c4::stick::probe() };
+        unsafe { (hooks.probe_c4_stick)() };
         // SAFETY: as above.
-        unsafe { collide::probe() };
+        unsafe { (hooks.probe_collide)() };
     }
 
     let off = tick.dominant.other();
@@ -300,7 +305,7 @@ fn update_post_sim(aim: *mut PlayerAimControl, dt: f32, character: *mut Characte
     };
     let grapple_assist = grapple_assist.map(|(_, assist)| assist);
     unsafe { finish(aim, owner, &tick, grapple_ray, grapple_assist) };
-    physical_hands::after_aim(dt);
+    (hooks.after_aim)(dt);
 }
 
 /// Decide whether the aim acts this update and compose the hands into the world.
@@ -384,7 +389,7 @@ unsafe fn finish(
                 continue;
             }
             // SAFETY: the owner is the live local player character, on the thread updating it.
-            let Some(weapon) = (unsafe { armed::weapon_of(owner, hand) }) else {
+            let Some(weapon) = (unsafe { armed_weapon(owner, hand) }) else {
                 continue;
             };
             let (armed, rays) = unsafe { gun::sight_rays(weapon, tick, cfg) };
@@ -433,7 +438,8 @@ unsafe fn finish(
         }
     });
     gun::publish(held, gun_targets);
-    hold_tick::publish_targets(
+    let hooks = hooks();
+    (hooks.publish_armed_targets)(
         owner as *const Character as usize,
         Hand::BOTH.map(|hand| {
             Some((
@@ -448,9 +454,8 @@ unsafe fn finish(
         _ => None,
     };
     // SAFETY: the owner is the live local player character, on the simulation thread.
-    let mounted = unsafe { owner.IsInMountedGunState() };
-    let body_point = vehicles::passenger::body_aim_point(seat, mounted, gun_targets);
-    vehicles::passenger::note(body_point.is_some());
+    let on_mounted_gun = unsafe { owner.IsInMountedGunState() };
+    let body_point = mounted::seated_body_aim(seat, on_mounted_gun, gun_targets);
     // SAFETY: the aim control is live for its own update, and the original has run.
     if let Some(aim) = unsafe { aim.as_mut() }
         && let Some(point) = body_point
@@ -464,7 +469,8 @@ unsafe fn finish(
     let dominant = tick.dominant;
     // SAFETY: the aim control is live for its own update, and the original has run.
     if let Some(aim) = unsafe { aim.as_mut() }
-        && let Some(point) = grenade::fallback_target(hands[dominant.index()].map(|h| h.target))
+        && let Some(point) =
+            (hooks.grenade_fallback_target)(hands[dominant.index()].map(|h| h.target))
     {
         aim.m_AimPos[TargetType::TARGET_GRENADE as usize] = Vector3 {
             data: point.to_array(),
@@ -472,7 +478,7 @@ unsafe fn finish(
     }
 
     // SAFETY: the live local player's hook, on the thread updating it; the calls only read.
-    let hook = unsafe { crate::grapple::hook::of(owner) };
+    let hook = unsafe { grapple_hook::of(owner) };
     let fire_enabled = hook.is_some_and(|hook| unsafe { hook.GetFireInputEnabled() });
     // SAFETY: as above.
     let seat_range_m = hook
@@ -542,7 +548,7 @@ fn grapple_readout(
     }
 }
 
-/// The seat grapple's readout ([`crate::grapple::seat`]): the off-hand's ray cast by the mod, the
+/// The seat grapple's readout (`grapple::seat`): the off-hand's ray cast by the mod, the
 /// game's targeting not running in a seat, valid while it hits something within the grapple's
 /// range `range_m`.
 fn seat_readout(ray: Ray, hit: Option<RayHit>, range_m: f32) -> GrappleAim {
@@ -580,7 +586,7 @@ const fn slot_flags(slot: SlotFlags, fire_enabled: bool) -> (bool, bool, bool) {
 /// Record an update that aimed nothing, and withdraw the guns' aim points.
 fn idle_update(idle: AimIdle) {
     gun::publish(None, [None; 2]);
-    hold_tick::publish_targets(0, [None; 2]);
+    (hooks().publish_armed_targets)(0, [None; 2]);
     let mut status = STATUS.lock();
     *status = AimStatus {
         idle: Some(idle),
