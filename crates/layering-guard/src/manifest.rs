@@ -15,15 +15,16 @@ use crate::{
     source::{SourceFile, read_sources},
 };
 
-/// The crates whose `hooks` modules hold the engine detours that body, weapons, physical, gameplay,
-/// and the HUD reach only through registrations.
+/// The crates whose `hooks` modules hold the engine detours that body, weapons, physical, vehicles,
+/// gameplay, and the HUD reach only through registrations.
 pub const HOOK_CRATES: [Layer; 2] = [Layer::View, Layer::Render];
 
 /// The layers the view and render crates' `hooks` modules must never name.
-pub const HOOKS_FORBIDDEN: [Layer; 5] = [
+pub const HOOKS_FORBIDDEN: [Layer; 6] = [
     Layer::Body,
     Layer::Weapons,
     Layer::Physical,
+    Layer::Vehicles,
     Layer::Gameplay,
     Layer::Hud,
 ];
@@ -149,7 +150,7 @@ pub fn check_hooks(files: &[SourceFile]) -> Vec<String> {
             {
                 out.push(format!(
                     "{}:{}: {} names the {layer} crate, but the view and render crates' hooks \
-                     reach body, weapons, physical, gameplay, and the HUD only through \
+                     reach body, weapons, physical, vehicles, gameplay, and the HUD only through \
                      registrations; add a registration point in the crate that owns the hook and \
                      fill it from the {layer} crate's install, as the existing `register_*` \
                      modules do",
@@ -289,9 +290,9 @@ fn violation_advice(layer: Layer, dependency: Layer) -> String {
         (layer, dependency),
         (
             Layer::Render,
-            Layer::Gameplay | Layer::Physical | Layer::Weapons | Layer::Body
+            Layer::Gameplay | Layer::Vehicles | Layer::Physical | Layer::Weapons | Layer::Body
         ) | (
-            Layer::Gameplay | Layer::Physical | Layer::Weapons | Layer::Body,
+            Layer::Gameplay | Layer::Vehicles | Layer::Physical | Layer::Weapons | Layer::Body,
             Layer::Render
         )
     ) {
@@ -628,6 +629,45 @@ mod tests {
         let violations = check_manifests(&stack_with(Layer::Physical, physical));
         assert_eq!(violations.len(), 1, "{violations:#?}");
         assert!(violations[0].contains("the physical crate depends on the weapons crate"));
+    }
+
+    #[test]
+    fn vehicles_may_not_depend_on_gameplay_or_render() {
+        let vehicles = r#"
+            [package]
+            name = "jc3vr-vehicles"
+            [dependencies]
+            jc3vr-weapons = { path = "../jc3vr-weapons" }
+            jc3vr-physical = { path = "../jc3vr-physical" }
+            jc3vr-render = { path = "../jc3vr-render" }
+            [dev-dependencies]
+            jc3vr-gameplay = { path = "../jc3vr-gameplay" }
+        "#;
+        let violations = check_manifests(&stack_with(Layer::Vehicles, vehicles));
+        assert_eq!(violations.len(), 2, "{violations:#?}");
+        assert!(violations[0].contains("the vehicles crate depends on the render crate"));
+        assert!(violations[0].contains("but the render and vehicles crates are siblings"));
+        assert!(violations[1].contains("the vehicles crate depends on the gameplay crate"));
+        assert!(
+            violations[1]
+                .contains("it may only depend on core, input, view, body, weapons, physical")
+        );
+    }
+
+    #[test]
+    fn weapons_and_physical_may_not_depend_on_vehicles() {
+        for layer in [Layer::Weapons, Layer::Physical] {
+            let text = format!(
+                "[package]\nname = \"{}\"\n[dependencies]\njc3vr-body = {{ path = \"../jc3vr-body\" }}\n\
+                 [dev-dependencies]\njc3vr-vehicles = {{ path = \"../jc3vr-vehicles\" }}\n",
+                layer.package()
+            );
+            let violations = check_manifests(&stack_with(layer, &text));
+            assert_eq!(violations.len(), 1, "{violations:#?}");
+            assert!(
+                violations[0].contains(&format!("the {layer} crate depends on the vehicles crate"))
+            );
+        }
     }
 
     #[test]

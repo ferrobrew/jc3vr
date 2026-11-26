@@ -7,14 +7,14 @@
 //!
 //! - that every layer has its crate, named for its layer, and that every dependency of each, in
 //!   every section (normal, dev, build, and per-target), points down the order, read by package
-//!   name and by path, so the render crate and the body, weapons, physical, and gameplay crates,
-//!   the weapons and physical crates, and the HUD and tooling crates, have no edge between them,
-//!   only the tooling crate and the crates above it depend on the capture crate, and no layer
-//!   crate depends on the payload;
+//!   name and by path, so the render crate and the body, weapons, physical, vehicles, and gameplay
+//!   crates, the weapons and physical crates, and the HUD and tooling crates, have no edge between
+//!   them, only the tooling crate and the crates above it depend on the capture crate, and no
+//!   layer crate depends on the payload;
 //! - that every layer crate is a workspace member, and that only the payload is a `cdylib` among
 //!   the workspace's members;
 //! - that the view and render crates' `hooks` modules never name the body, weapons, physical,
-//!   gameplay, or HUD crates, which reach them only through registrations.
+//!   vehicles, gameplay, or HUD crates, which reach them only through registrations.
 
 mod layer;
 mod lex;
