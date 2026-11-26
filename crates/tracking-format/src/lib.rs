@@ -1,9 +1,9 @@
 //! The tracking file: a recording of what the OpenXR runtime gave the mod each frame, in the form
-//! the mod published it, so that a replay can publish it again.
+//! the mod published it.
 //!
 //! This crate is the file's data model and codec and nothing else, so that it builds on any host:
-//! the payload records and replays through it, converting between this model and its own types,
-//! and host tools write recordings with it.
+//! the payload records through it, converting between its own types and this model, and host tools
+//! read and write recordings with it.
 //!
 //! # Layout
 //!
@@ -53,7 +53,7 @@
 //! pinned; version 4 writers use the `encode_latest_*` APIs or an explicit [`FrameSchema`].
 //!
 //! The poses are in the cockpit frame, as the mod publishes them (the eye views and the controller
-//! spaces re-based against the recenter baseline): metres, +X right, +Y up, -Z forward. A replay
+//! spaces re-based against the recenter baseline): metres, +X right, +Y up, -Z forward. A reader
 //! therefore needs no baseline of its own. A recenter during the recording is recorded as an event
 //! on the frame it took effect in.
 
