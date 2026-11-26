@@ -256,7 +256,7 @@ pub struct ExtractionTuning {
 }
 
 impl ExtractionTuning {
-    pub const fn new() -> Self {
+    const fn new() -> Self {
         Self {
             grab_radius_m: 0.06,
             pull_m: 0.08,

@@ -5,7 +5,7 @@ use test_case::test_case;
 use super::*;
 use crate::controllers::weapons::reload::tuning::RELOAD;
 
-const CONFIG: ExtractionTuning = ExtractionTuning::new();
+const CONFIG: ExtractionTuning = RELOAD.extraction;
 
 fn sample(holder: Hand, outward_m: f32) -> Sample {
     Sample {
