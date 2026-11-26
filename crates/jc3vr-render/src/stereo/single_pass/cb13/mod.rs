@@ -168,7 +168,7 @@ fn write_meye(rows: &mut [Vector4; STEREO_CB_TOTAL_ROWS], eye: usize, m_eye: gla
 /// The engine `Matrix4` <-> `glam::Mat4` bridge is a transpose, so the math is done in glam
 /// column-vector form and converted back once (see the `Matrix4` doc-comment).
 fn compute_dual_eye_rows(engine: &RenderEngine) -> Option<[Vector4; STEREO_CB_TOTAL_ROWS]> {
-    let center_transform = jc3vr_view::stereo::STEREO_STATE.lock().center_transform?;
+    let center_transform = jc3vr_view::stereo::center_transform()?;
     let center_world = glam::Mat4::from(center_transform);
     let center_campos = engine.m_VPGlobalConstData[4];
 

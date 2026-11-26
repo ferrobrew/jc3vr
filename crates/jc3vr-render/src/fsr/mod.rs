@@ -32,7 +32,7 @@ use jc3gi::{
 use jc3vr_view::{
     fsr::{FSR_CONFIG, jitter},
     hooks::camera::SCENE_NEAR_CLIP_M,
-    stereo::STEREO_STATE,
+    stereo::{center_transform, with_vp_history},
 };
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -144,7 +144,7 @@ impl EyeViewProjections {
     /// This frame's matrices for `eye` under the single-pass collapse, where the render camera stays
     /// centred and each eye's view-projection comes from the VR frame's per-eye parameters.
     fn current(eye: usize) -> Option<Self> {
-        let center = glam::Mat4::from(STEREO_STATE.lock().center_transform?);
+        let center = glam::Mat4::from(center_transform()?);
         let params = jc3vr_view::vr::render_params(eye)?;
         let projection = params.unjittered_projection_reverse_z();
         Some(Self {
@@ -194,13 +194,13 @@ impl EyeMotion {
                 current.map_or(glam::Vec2::ZERO, |current| current.jitter),
             )
         } else {
-            let stereo_state = STEREO_STATE.lock();
-            let history = &stereo_state.vp_history;
-            (
-                history.reprojection_matrices(eye),
-                RecordedViews::of_history(history, eye),
-                history.cur_jitter[eye],
-            )
+            with_vp_history(|history| {
+                (
+                    history.reprojection_matrices(eye),
+                    RecordedViews::of_history(history, eye),
+                    history.cur_jitter[eye],
+                )
+            })
         };
         // The engine's velocity pass encodes the motion against its render camera's own previous
         // view-projection (taken through the single-pass rewrite's map for an eye of the collapse),

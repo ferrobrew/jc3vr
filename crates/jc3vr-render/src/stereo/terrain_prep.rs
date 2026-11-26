@@ -37,7 +37,7 @@ pub(crate) fn stage_centre_camera(
     {
         return None;
     }
-    let center = stereo::STEREO_STATE.lock().center_transform?;
+    let center = stereo::center_transform()?;
     let eye = engine.m_VPGlobalConstData[CAMERA_POSITION_ROW];
     let mut staged = eye;
     staged.data[..3].copy_from_slice(&center.data[12..15]);

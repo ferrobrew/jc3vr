@@ -17,7 +17,7 @@
 use glam::Quat;
 use glam::{Mat4, Vec3, Vec4};
 use jc3gi::camera::camera_manager::CameraManager;
-use jc3vr_view::stereo::STEREO_STATE;
+use jc3vr_view::stereo::center_transform;
 use windows::Win32::Graphics::Direct3D11::D3D11_VIEWPORT;
 
 use crate::stereo::single_pass::collapse_ui_eye_override;
@@ -73,7 +73,7 @@ impl EyeView {
 pub fn current(eye: usize) -> Option<(EyeView, Option<D3D11_VIEWPORT>)> {
     let vr = jc3vr_view::vr::render_params(eye);
     if let Some((viewport, _)) = collapse_ui_eye_override() {
-        let center = STEREO_STATE.lock().center_transform?;
+        let center = center_transform()?;
         let params = vr?;
         let eye_world = params.resolve(Mat4::from(center));
         let view = EyeView::from_eye_world(eye_world, params.unjittered_projection_reverse_z());

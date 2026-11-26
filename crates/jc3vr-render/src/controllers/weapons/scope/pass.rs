@@ -14,7 +14,7 @@ use jc3vr_view::{
         lens_frame,
         lens_frame::{EyeCamera, LensFrame},
     },
-    stereo::{STEREO_STATE, layout::collapse_active},
+    stereo::{center_transform, layout::collapse_active},
 };
 use parking_lot::Mutex;
 use windows::Win32::Graphics::Direct3D11::{D3D11_VIEWPORT, ID3D11DeviceContext};
@@ -187,7 +187,7 @@ static STATE: Mutex<State> = Mutex::new(State {
 
 /// An eye's camera under the collapse, which keeps the render camera centred.
 fn collapse_camera(eye: usize) -> Option<EyeCamera> {
-    let center = STEREO_STATE.lock().center_transform?;
+    let center = center_transform()?;
     let params = jc3vr_view::vr::render_params(eye)?;
     let eye_world = params.resolve(Mat4::from(center));
     // The lens is drawn after FSR has resolved the eye, so it takes the projection without FSR's

@@ -43,7 +43,7 @@ use jc3gi::{
     types::math::{Matrix4, Vector4},
 };
 use jc3vr_view::{
-    stereo::{STEREO_STATE, engine_context::EngineContext},
+    stereo::{center_transform, engine_context::EngineContext},
     vr::render_params,
 };
 use parking_lot::Mutex;
@@ -82,7 +82,7 @@ pub(crate) fn bind_eye_rows(rc: &RenderContext) -> Option<EyeRowsBound> {
     if !REWRITTEN.load(Ordering::Relaxed) {
         return None;
     }
-    let center = glam::Mat4::from(STEREO_STATE.lock().center_transform?);
+    let center = glam::Mat4::from(center_transform()?);
     // SAFETY: the render engine singleton outlives the frame; the block reads the staged rows on this
     // same thread.
     let staged = unsafe { RenderEngine::get() }?.m_VPGlobalConstData;

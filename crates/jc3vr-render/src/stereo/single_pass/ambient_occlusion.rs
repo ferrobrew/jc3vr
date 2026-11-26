@@ -33,7 +33,7 @@ use dxbc_stereo::{
 };
 use jc3gi::types::math::{Matrix4, Vector4};
 use jc3vr_view::{
-    stereo::{STEREO_STATE, engine_context::EngineContext},
+    stereo::{center_transform, engine_context::EngineContext},
     vr::render_params,
 };
 use parking_lot::Mutex;
@@ -102,7 +102,7 @@ pub(crate) fn bind_eye_rows() -> Option<EyeRowsBound> {
         BuiltWith::Exact => AmbientOcclusionSampling::Exact,
         BuiltWith::DoubleWide => AmbientOcclusionSampling::DoubleWide,
     };
-    let center = glam::Mat4::from(STEREO_STATE.lock().center_transform?);
+    let center = glam::Mat4::from(center_transform()?);
     let mut rows = [Vector4::default(); ROWS];
     for eye in 0..2 {
         let params = render_params(eye)?;

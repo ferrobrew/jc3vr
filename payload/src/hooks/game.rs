@@ -44,9 +44,8 @@ use jc3vr_view::{
     hooks::window_focus,
     recorder::tracking,
     stereo::{
-        STEREO_STATE,
         dispatch::{self, DispatchPlan, RenderMode, reset_dispatch_state},
-        layout,
+        enter_dispatch, layout, mark_stereo_frame,
     },
     vr,
     vr::tail,
@@ -319,7 +318,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
         // Start of a frame: every frame renders both eyes, which the render hooks read via
         // `jc3vr_render::stereo`.
         let render_mode = dispatch::mode();
-        STEREO_STATE.lock().active = true;
+        mark_stereo_frame();
 
         // Whether this frame's tail (final drain, blit, mirror, submit) runs on the tail worker
         // instead of inline, overlapping the next frame's sim with the draw thread's last walk and
@@ -389,7 +388,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
 
         // The per-eye camera offset is injected on the render camera in the SetupRenderCamera
         // hook (see hooks::camera and docs/engine/rendering/rendering.md section 2); here we just drive
-        // the dispatches and tag each with its eye index via STEREO_STATE.draw_index.
+        // the dispatches and tag each with its eye index via `enter_dispatch`.
         // Eye 1 reaches the screen (the other's flip is blocked).
         let collapsed = layout::collapse_active();
         let plan = DispatchPlan::new(render_mode, collapsed);
@@ -432,12 +431,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             DRAW_COUNTS.clear();
             graphics_engine::post_effects::reset_post_block_gate();
             TraceState::record(TraceEvent::DrawBegin { eye });
-            {
-                let mut state = STEREO_STATE.lock();
-                state.draw_index = eye;
-                state.dispatch_ordinal = ordinal;
-                state.last_dispatch = plan.last(ordinal);
-            }
+            enter_dispatch(eye, ordinal, plan.last(ordinal));
             // While a VR session runs there is no desktop present at all (the compositor
             // presents), so block the flip for every dispatch; otherwise only the presented eye
             // reaches the game window.

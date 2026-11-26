@@ -20,7 +20,10 @@ use jc3gi::graphics_engine::{
     shadow_manager::ShadowManager,
 };
 use jc3vr_view::{
-    stereo::{STEREO_STATE, config::SinglePassSwitch, is_second_eye},
+    stereo::{
+        ShadowAnchor, config::SinglePassSwitch, is_second_eye, record_shadow_fit_position,
+        shadow_anchor,
+    },
     tuning::VIEW,
     vr::{
         FOVEATION_CONFIG,
@@ -426,7 +429,7 @@ fn shadow_manager_update_render(this: *mut c_void, dt: f32, dtf: f32) -> u64 {
         };
         // The fit bakes the cascade transform relative to this position (`m_TransformF`'s
         // translation); the shadow lookup is re-anchored to it in `set_global_shader_constants`.
-        STEREO_STATE.lock().shadow_fit_position = Some(glam::Vec3::new(
+        record_shadow_fit_position(glam::Vec3::new(
             camera.m_TransformF.data[12],
             camera.m_TransformF.data[13],
             camera.m_TransformF.data[14],
@@ -581,7 +584,7 @@ unsafe fn reenable_passes(passes: &[*mut RenderPass]) {
 fn set_global_shader_constants(this: *mut c_void, ctx: *mut c_void) {
     if let Some(ctx) = unsafe { ctx.cast::<RenderContext>().as_mut() } {
         let anchor_to_fit = config_flags().shadow_anchor_to_fit();
-        let delta = shadow_lookup_delta(&STEREO_STATE.lock(), anchor_to_fit);
+        let delta = shadow_lookup_delta(shadow_anchor(), anchor_to_fit);
         record_shadow_state(ctx, delta);
         apply_shadow_cascade_anchor_fix(ctx, delta);
     }
@@ -593,12 +596,9 @@ fn set_global_shader_constants(this: *mut c_void, ctx: *mut c_void) {
 /// from the render camera's centre, plus, with `anchor_to_fit` (`stereo.shadow_anchor_to_fit`), the centre's offset
 /// from the camera position the fit read. The second gap is published as
 /// [`shadow_fit_gap_m`] for the debug UI.
-fn shadow_lookup_delta(state: &jc3vr_view::stereo::StereoState, anchor_to_fit: bool) -> glam::Vec3 {
-    let to_fit = match (state.center_transform, state.shadow_fit_position) {
-        (Some(center), Some(fit)) => {
-            let center = glam::Vec3::new(center.data[12], center.data[13], center.data[14]);
-            center - fit
-        }
+fn shadow_lookup_delta(anchor: ShadowAnchor, anchor_to_fit: bool) -> glam::Vec3 {
+    let to_fit = match (anchor.center, anchor.fit) {
+        (Some(center), Some(fit)) => center - fit,
         _ => glam::Vec3::ZERO,
     };
     let to_fit = if to_fit.is_finite() {
@@ -608,9 +608,9 @@ fn shadow_lookup_delta(state: &jc3vr_view::stereo::StereoState, anchor_to_fit: b
     };
     SHADOW_FIT_GAP_BITS.store(to_fit.length().to_bits(), Ordering::Relaxed);
     if anchor_to_fit {
-        state.shadow_anchor_delta + to_fit
+        anchor.eye_delta + to_fit
     } else {
-        state.shadow_anchor_delta
+        anchor.eye_delta
     }
 }
 

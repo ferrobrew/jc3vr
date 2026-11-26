@@ -49,7 +49,7 @@ use jc3vr_view::{
         palette_edit::{BodyPaletteEdit, PaletteLayout, player_draw_edits},
         player_draw,
     },
-    stereo::STEREO_STATE,
+    stereo::current_eye_view,
 };
 use re_utilities::hook_library::HookLibrary;
 
@@ -492,11 +492,7 @@ fn light_glow_patch_render_context(rc: &mut RenderContext) -> Option<SavedRender
     if !jc3vr_view::stereo::active() || jc3vr_view::stereo::layout::collapse_active() {
         return None;
     }
-    let stereo = STEREO_STATE.lock();
-    let eye = stereo.draw_index;
-    let view = (*stereo.vp_history.cur_eye_view.get(eye)?)?;
-    let projection_f = (*stereo.vp_history.cur_eye_projection_f.get(eye)?)?;
-    drop(stereo);
+    let (view, projection_f) = current_eye_view()?;
 
     let saved = SavedRenderContextMatrices {
         view: rc.m_View,
