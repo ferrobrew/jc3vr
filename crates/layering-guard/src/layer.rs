@@ -1,4 +1,4 @@
-//! The nine crates the payload is built from and the dependency order between them.
+//! The ten crates the payload is built from and the dependency order between them.
 
 use std::fmt;
 
@@ -9,6 +9,7 @@ pub enum Layer {
     Input,
     View,
     Render,
+    Capture,
     Gameplay,
     Hud,
     Tooling,
@@ -17,11 +18,12 @@ pub enum Layer {
 }
 
 impl Layer {
-    pub const ALL: [Layer; 9] = [
+    pub const ALL: [Layer; 10] = [
         Layer::Core,
         Layer::Input,
         Layer::View,
         Layer::Render,
+        Layer::Capture,
         Layer::Gameplay,
         Layer::Hud,
         Layer::Tooling,
@@ -36,6 +38,7 @@ impl Layer {
             Layer::Input => "input",
             Layer::View => "view",
             Layer::Render => "render",
+            Layer::Capture => "capture",
             Layer::Gameplay => "gameplay",
             Layer::Hud => "hud",
             Layer::Tooling => "tooling",
@@ -74,18 +77,30 @@ impl Layer {
     /// above core but depends on no layer crate, so it stays pure and builds and tests on any host.
     /// Render and gameplay sit side by side on the view crate, so neither may depend on the other:
     /// gameplay reaches the render passes through the registries and cells the view crate holds,
-    /// and a render edit does not rebuild gameplay. HUD and tooling sit side by side between
-    /// gameplay and the UI, so neither may depend on the other.
+    /// and a render edit does not rebuild gameplay. Capture sits on render, beside gameplay, and
+    /// only tooling and the layers above it see it: the render hooks reach the capture tooling
+    /// through the probe tables the capture crate fills, so a capture edit rebuilds neither render
+    /// nor gameplay nor the HUD. HUD and tooling sit side by side between gameplay and the UI, so
+    /// neither may depend on the other.
     pub fn may_depend_on(self, other: Layer) -> bool {
         let below: &[Layer] = match self {
             Layer::Core | Layer::Input => &[],
             Layer::View => &[Layer::Core, Layer::Input],
             Layer::Render | Layer::Gameplay => &[Layer::Core, Layer::Input, Layer::View],
-            Layer::Hud | Layer::Tooling => &[
+            Layer::Capture => &[Layer::Core, Layer::Input, Layer::View, Layer::Render],
+            Layer::Hud => &[
                 Layer::Core,
                 Layer::Input,
                 Layer::View,
                 Layer::Render,
+                Layer::Gameplay,
+            ],
+            Layer::Tooling => &[
+                Layer::Core,
+                Layer::Input,
+                Layer::View,
+                Layer::Render,
+                Layer::Capture,
                 Layer::Gameplay,
             ],
             Layer::Ui => &[
@@ -93,11 +108,12 @@ impl Layer {
                 Layer::Input,
                 Layer::View,
                 Layer::Render,
+                Layer::Capture,
                 Layer::Gameplay,
                 Layer::Hud,
                 Layer::Tooling,
             ],
-            Layer::Payload => &Layer::ALL[..8],
+            Layer::Payload => &Layer::ALL[..9],
         };
         below.contains(&other)
     }
@@ -166,6 +182,18 @@ mod tests {
         assert!(!Layer::View.may_depend_on(Layer::Render));
         assert!(Layer::Hud.may_depend_on(Layer::Render));
         assert!(Layer::Tooling.may_depend_on(Layer::Render));
+    }
+
+    #[test]
+    fn capture_sits_on_render_below_tooling() {
+        assert!(Layer::Capture.may_depend_on(Layer::Render));
+        assert!(Layer::Capture.may_depend_on(Layer::View));
+        assert!(!Layer::Capture.may_depend_on(Layer::Gameplay));
+        for below in [Layer::View, Layer::Render, Layer::Gameplay, Layer::Hud] {
+            assert!(!below.may_depend_on(Layer::Capture), "{below}");
+        }
+        assert!(Layer::Tooling.may_depend_on(Layer::Capture));
+        assert!(Layer::Ui.may_depend_on(Layer::Capture));
     }
 
     #[test]

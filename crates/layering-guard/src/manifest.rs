@@ -287,6 +287,12 @@ fn violation_advice(layer: Layer, dependency: Layer) -> String {
                 into the view crate, as the overlay's inputs and the scope's lens frame are"
             .to_owned();
     }
+    if dependency == Layer::Capture {
+        return "but only the tooling crate and the crates above it see the capture crate; reach \
+                the capture tooling through a probe table this crate keeps and the capture crate \
+                registers into at install, as the single-pass and pipeline probes are"
+            .to_owned();
+    }
     let below: Vec<&str> = Layer::ALL
         .into_iter()
         .filter(|&other| layer.may_depend_on(other))
@@ -493,6 +499,30 @@ mod tests {
         assert_eq!(violations.len(), 1, "{violations:#?}");
         assert!(violations[0].contains("the gameplay crate depends on the render crate"));
         assert!(violations[0].contains("move the registration type or publication cell"));
+    }
+
+    #[test]
+    fn render_and_hud_may_not_depend_on_capture() {
+        let render = r#"
+            [package]
+            name = "jc3vr-render"
+            [dev-dependencies]
+            jc3vr-capture = { path = "../jc3vr-capture" }
+        "#;
+        let hud = r#"
+            [package]
+            name = "jc3vr-hud"
+            [dependencies]
+            jc3vr-capture = { path = "../jc3vr-capture" }
+        "#;
+        let mut manifests = stack_with(Layer::Render, render);
+        manifests.retain(|m| m.dir != "crates/jc3vr-hud");
+        manifests.push(manifest("crates/jc3vr-hud", hud));
+        let violations = check_manifests(&manifests);
+        assert_eq!(violations.len(), 2, "{violations:#?}");
+        assert!(violations[0].contains("the render crate depends on the capture crate"));
+        assert!(violations[0].contains("through a probe table"));
+        assert!(violations[1].contains("the hud crate depends on the capture crate"));
     }
 
     #[test]
