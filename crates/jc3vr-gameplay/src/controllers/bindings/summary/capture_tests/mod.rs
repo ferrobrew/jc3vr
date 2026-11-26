@@ -22,8 +22,7 @@ fn owner_state(guns: [Option<GunOwner>; 2]) -> BeforeFinish {
 
 #[test]
 fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_substitution() {
-    let mut config = ControllersConfig::default();
-    config.weapons.hold.either_hand = false;
+    let config = ControllersConfig::default();
     let hand = config.acting_hand();
     let mode = Mode::OnFoot(OnFootVariant::Ground);
     let settings = WeaponSettings {
@@ -33,11 +32,7 @@ fn capture_revalidates_belt_against_physical_guns_without_per_hand_trigger_subst
     };
     let (lease, guns) = eligible_belt_for_test(&settings);
     let before = owner_state(guns);
-    let gun_triggers = config.weapons.hold.either_hand;
-    let owners = guns.map(|gun| Owner {
-        mode,
-        gun: gun.filter(|_| gun_triggers),
-    });
+    let owners = guns.map(|_| Owner { mode, gun: None });
     assert!(owners.iter().all(|owner| owner.gun.is_none()));
     let ready = Hand::BOTH.map(|physical| physical == hand);
     let row = Row {

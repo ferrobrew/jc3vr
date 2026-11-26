@@ -230,11 +230,10 @@ pub(crate) unsafe fn wielded(owner: &Character) -> Option<usize> {
 
 /// Follow the local player's wielded weapon (`wielded`, from [`wielded`]) for one input tick, after
 /// the table's feed has landed it in a hand (`arrival`, when it came into one this tick), and
-/// publish whether the mod owns its attach bones: while `enabled`. Returns the holding hand.
+/// publish that the mod owns its attach bones. Returns the holding hand.
 pub(crate) fn input_tick(
     game: &GameTick<'_>,
     wielded: Option<usize>,
-    enabled: bool,
     arrival: Option<live::Arrival>,
 ) -> Option<Hand> {
     let mut tick = TICK.lock();
@@ -244,9 +243,9 @@ pub(crate) fn input_tick(
         .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f32());
     tick.last = Some(now);
     drop(tick);
-    ENABLED.store(enabled, Ordering::Relaxed);
+    ENABLED.store(true, Ordering::Relaxed);
     WIELDED.store(wielded.unwrap_or(0), Ordering::Relaxed);
-    if enabled && let Some(arrival) = arrival {
+    if let Some(arrival) = arrival {
         took(arrival);
     }
     act::tick(game, dt);

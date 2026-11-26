@@ -442,8 +442,6 @@ pub(super) unsafe fn choose(ray: &Ray, config: &SnatchSettings) -> Option<Offer>
         Holstered(usize),
         Rack(usize),
     }
-    let hold = &config.hold;
-    let takes_held = hold.either_hand;
     let aimed = grapple_weapons::aimed().and_then(|(aimed, alive)| {
         unsafe { aimed_offer(&aimed, config) }.map(|k| (aimed, k, alive))
     });
@@ -490,19 +488,11 @@ pub(super) unsafe fn choose(ray: &Ray, config: &SnatchSettings) -> Option<Offer>
             Some(rack.weapon) != aimed_weapon && !floor.iter().any(|w| w.object == rack.weapon)
         })
         .collect();
-    let in_hands: Vec<WorldTarget> = if takes_held {
-        steal::targets(|p| p)
-            .into_iter()
-            .filter(|t| matches!(t.kind, TargetKind::Held { .. }))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let holstered = if takes_held {
-        steal::holstered_targets()
-    } else {
-        Vec::new()
-    };
+    let in_hands: Vec<WorldTarget> = steal::targets(|p| p)
+        .into_iter()
+        .filter(|t| matches!(t.kind, TargetKind::Held { .. }))
+        .collect();
+    let holstered = steal::holstered_targets();
     let candidates = aimed
         .iter()
         .map(|(aimed, kind, _)| Candidate {

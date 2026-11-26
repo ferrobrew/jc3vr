@@ -21,13 +21,6 @@ pub enum SocketMove {
     Dock { hand: Hand, socket: Socket },
 }
 
-/// What the player allows a grab at a socket.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct GrabRules {
-    /// Whether a hand may draw a weapon while the other hand holds one.
-    pub both_hands: bool,
-}
-
 /// Why a grab at a socket did nothing.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum SocketRefusal {
@@ -37,8 +30,6 @@ pub enum SocketRefusal {
     Occupied(Socket),
     /// What the hand holds does not fit the socket, or the body has no such socket.
     DoesNotFit(Socket),
-    /// The other hand holds a weapon, and a weapon in each hand is off.
-    OtherHandFull(Socket),
 }
 
 impl fmt::Display for SocketRefusal {
@@ -56,10 +47,6 @@ impl fmt::Display for SocketRefusal {
             SocketRefusal::DoesNotFit(socket) => {
                 write!(f, "socket: what the hand holds does not fit {socket}")
             }
-            SocketRefusal::OtherHandFull(socket) => write!(
-                f,
-                "socket: nothing drawn off {socket}, since the other hand holds a weapon"
-            ),
         }
     }
 }
@@ -71,14 +58,10 @@ pub fn grab(
     snapshot: &LoadoutSnapshot,
     hand: Hand,
     socket: Socket,
-    rules: GrabRules,
 ) -> Result<SocketMove, SocketRefusal> {
     let held = snapshot.held(hand).is_some();
     let docked = snapshot.docked(socket).is_some();
     match (held, docked) {
-        (false, true) if !rules.both_hands && holds_weapon(snapshot, hand.other()) => {
-            Err(SocketRefusal::OtherHandFull(socket))
-        }
         (false, true) => Ok(SocketMove::Draw { socket, hand }),
         (false, false) => Err(SocketRefusal::Empty(socket)),
         (true, true) => Err(SocketRefusal::Occupied(socket)),

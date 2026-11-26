@@ -24,11 +24,7 @@ use jc3vr_input::{
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    loadout::{
-        LoadoutSnapshot,
-        grab::{GrabRules, swaps},
-        live,
-    },
+    loadout::{LoadoutSnapshot, grab::swaps, live},
     weapons::{
         ads,
         begin::place::{CHARGE_MARK_M, Place, held_foregrip, mark_size},
@@ -79,7 +75,6 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     let gameplay = gameplay(mode);
     let pouches_act = pouches(mode);
     let capabilities = Capabilities::of(mode);
-    let holding = config.weapons.hold;
     // SAFETY: the local player, in the game tick.
     let ticked = unsafe {
         LocalPlayer::get(game).map_or(Ticked::default(), |mut player| {
@@ -97,8 +92,8 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                     separate_pistols: config.weapons.separate_pistols,
                 },
             );
-            let holder = hold::input_tick(game, wielded, holding.either_hand, arrival);
-            hold::tick::input_tick(owner, wielded, holding.either_hand);
+            let holder = hold::input_tick(game, wielded, arrival);
+            hold::tick::input_tick(owner, wielded);
             reload::native::refill_armed(owner, &config, capabilities.reload);
             let weapon = engine::held_weapon(owner).map(|w| with_holder(w, holder));
             let guns = engine::in_hands(weapon, Hand::BOTH.map(|h| armed::held_weapon(owner, h)));
@@ -129,9 +124,6 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
                         &SocketInputs {
                             snapshot,
                             free,
-                            rules: GrabRules {
-                                both_hands: holding.either_hand,
-                            },
                             offsets: &inventory::OFFSETS,
                         },
                     )
@@ -259,7 +251,7 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     let place = Place::new(&active);
     // A held foregrip goes first, so that the bracing hand keeps it over anything as near.
     let mut targets = Vec::new();
-    if capabilities.transfer && holding.either_hand {
+    if capabilities.transfer {
         for holder in Hand::BOTH {
             let taker = holder.other();
             let explosive = grenade::safe::in_hand(holder).is_some()
@@ -411,7 +403,6 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
         game,
         &hold::take::TakeInputs {
             active: &active,
-            settings: &holding,
             free,
             gameplay,
         },
@@ -491,9 +482,8 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     // A hand holding something of its own braces nothing and takes nothing from the other hand, so
     // only the lone gun's free hand does.
     let foregrip_hand = braced.and_then(|w| w.holder).map(Hand::other);
-    let handover_allowed = capabilities.transfer
-        && holding.either_hand
-        && lone.is_some_and(|w| hold::owned_holder(w.address).is_some());
+    let handover_allowed =
+        capabilities.transfer && lone.is_some_and(|w| hold::owned_holder(w.address).is_some());
     let on_gun = match (long, braced_geometry, shape) {
         (Some(w), Some(g), Some(shape)) => w.holder.and_then(|holder| {
             Some(GunOnHand {
@@ -651,10 +641,9 @@ pub fn begin_tick(game: &GameTick<'_>, mode: Mode) -> TickStart {
     state.last_volumes = volumes;
     // A hand whose gun the other hand braces keeps it on letting go, so its socket does not call.
     let braced = hold.map(|h| h.holder);
-    let attraction = config.weapons.hold.dock_attraction;
     let tracked = &mut *state;
     let attracted = Hand::BOTH.map(|hand| {
-        let grip = grips[hand.index()].filter(|_| attraction && braced != Some(hand));
+        let grip = grips[hand.index()].filter(|_| braced != Some(hand));
         tracked
             .zones
             .step(hand, &tracked.attractors, grip, &ATTRACTION)

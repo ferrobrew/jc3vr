@@ -608,12 +608,11 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
             false
         }
     };
-    let gun_triggers = config.weapons.hold.either_hand;
     let gun_owners = weapons::capabilities::gun_owners_now();
     controls.armed = gun_owners.map(|gun| gun.is_some() && !in_menu);
     let trigger_owners = gun_owners.map(|gun| TriggerOwner {
         mode: detection.mode,
-        gun: gun.filter(|_| gun_triggers && !in_menu),
+        gun: gun.filter(|_| !in_menu),
     });
     let raw_triggers = Hand::BOTH.map(|hand| {
         let source = original.hand(hand);
@@ -829,10 +828,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
             .filter(|_| config.overlay.markers && !in_menu)
             .map(marker_frame),
     });
-    let view_frame = active
-        .as_ref()
-        .filter(|_| !in_menu)
-        .map(marker_frame);
+    let view_frame = active.as_ref().filter(|_| !in_menu).map(marker_frame);
     physical_hands::grab_view::submit(&targets, view_frame.as_ref());
     if step.crouch_toggle {
         roomscale::toggle_seated_crouch();
@@ -874,7 +870,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         belt_reload = weapons::finish_tick(game, &finish, &mut step.desired);
         let after = weapons::capabilities::gun_owners_now().map(|gun| TriggerOwner {
             mode: detection.mode,
-            gun: gun.filter(|_| gun_triggers),
+            gun,
         });
         let changed = state.trigger_ownership.after_finish(after);
         trigger_changed = changed;
@@ -1020,7 +1016,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
     }
     let final_owners = weapons::capabilities::gun_owners_now().map(|gun| TriggerOwner {
         mode: detection.mode,
-        gun: gun.filter(|_| gun_triggers && !in_menu),
+        gun: gun.filter(|_| !in_menu),
     });
     let late_changed = state.trigger_ownership.after_finish(final_owners);
     trigger_changed =
@@ -1409,7 +1405,6 @@ fn line_attached() -> bool {
 fn snatch_settings(config: &ControllersConfig) -> SnatchSettings {
     SnatchSettings {
         snatch: config.weapons.snatch,
-        hold: config.weapons.hold,
         overlay: config.overlay,
         physical_hands: config.physical_hands,
     }

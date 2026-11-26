@@ -6,12 +6,10 @@ use pretty_assertions::assert_eq;
 
 use super::fixtures::{a_launcher, a_pistol, a_rifle, docked, table, take, weapon};
 use crate::controllers::loadout::{
-    grab::{GrabRules, Release, SocketMove, SocketRefusal, grab, refusing, release, swaps},
+    grab::{Release, SocketMove, SocketRefusal, grab, refusing, release, swaps},
     item::ItemKind,
 };
 
-const BOTH: GrabRules = GrabRules { both_hands: true };
-const ONE: GrabRules = GrabRules { both_hands: false };
 const RIGHT_SHOULDER: Socket = Socket::Shoulder(Hand::Right);
 const LEFT_HIP: Socket = Socket::Hip(Hand::Left);
 
@@ -22,7 +20,7 @@ fn an_empty_hand_draws_what_a_socket_holds() {
     let s = t.snapshot();
     for hand in Hand::BOTH {
         assert_eq!(
-            grab(&s, hand, RIGHT_SHOULDER, BOTH),
+            grab(&s, hand, RIGHT_SHOULDER),
             Ok(SocketMove::Draw {
                 socket: RIGHT_SHOULDER,
                 hand
@@ -30,7 +28,7 @@ fn an_empty_hand_draws_what_a_socket_holds() {
         );
     }
     assert_eq!(
-        grab(&s, Hand::Left, LEFT_HIP, BOTH),
+        grab(&s, Hand::Left, LEFT_HIP),
         Err(SocketRefusal::Empty(LEFT_HIP))
     );
 }
@@ -42,39 +40,29 @@ fn a_hand_docks_its_weapon_on_a_free_socket_that_fits_it() {
     docked(&mut t, Socket::Shoulder(Hand::Left), 2, a_rifle());
     let s = t.snapshot();
     assert_eq!(
-        grab(&s, Hand::Right, RIGHT_SHOULDER, BOTH),
+        grab(&s, Hand::Right, RIGHT_SHOULDER),
         Ok(SocketMove::Dock {
             hand: Hand::Right,
             socket: RIGHT_SHOULDER
         })
     );
     assert_eq!(
-        grab(&s, Hand::Right, LEFT_HIP, BOTH),
+        grab(&s, Hand::Right, LEFT_HIP),
         Err(SocketRefusal::DoesNotFit(LEFT_HIP)),
         "a rifle is too big for a hip"
     );
     assert_eq!(
-        grab(&s, Hand::Right, Socket::Shoulder(Hand::Left), BOTH),
+        grab(&s, Hand::Right, Socket::Shoulder(Hand::Left)),
         Err(SocketRefusal::Occupied(Socket::Shoulder(Hand::Left)))
     );
 }
 
 #[test]
-fn a_weapon_in_each_hand_follows_the_rule() {
+fn a_hand_draws_while_the_other_holds_a_weapon() {
     let mut t = table();
     take(&mut t, Hand::Right, 1, weapon(a_rifle()));
     docked(&mut t, LEFT_HIP, 2, a_pistol());
-    let s = t.snapshot();
-    assert!(grab(&s, Hand::Left, LEFT_HIP, BOTH).is_ok());
-    assert_eq!(
-        grab(&s, Hand::Left, LEFT_HIP, ONE),
-        Err(SocketRefusal::OtherHandFull(LEFT_HIP))
-    );
-    // A prop in the other hand is no weapon.
-    let mut t = table();
-    take(&mut t, Hand::Right, 1, ItemKind::Prop);
-    docked(&mut t, LEFT_HIP, 2, a_pistol());
-    assert!(grab(&t.snapshot(), Hand::Left, LEFT_HIP, ONE).is_ok());
+    assert!(grab(&t.snapshot(), Hand::Left, LEFT_HIP).is_ok());
 }
 
 #[test]
@@ -83,7 +71,7 @@ fn a_prop_fits_no_socket() {
     take(&mut t, Hand::Right, 1, ItemKind::Prop);
     let s = t.snapshot();
     assert_eq!(
-        grab(&s, Hand::Right, RIGHT_SHOULDER, BOTH),
+        grab(&s, Hand::Right, RIGHT_SHOULDER),
         Err(SocketRefusal::DoesNotFit(RIGHT_SHOULDER))
     );
     assert_eq!(

@@ -56,7 +56,6 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     loadout::{GiveSource, Place, live, slot_label},
     weapons::{
-        config::WEAPONS_CONFIG,
         engine::slot_of,
         hold::{
             equip, rack,
@@ -299,14 +298,10 @@ fn is_local(inventory: *const Inventory) -> bool {
     local != 0 && unsafe { inventory.as_ref() }.is_some_and(|i| i.m_Character as usize == local)
 }
 
-/// Whether the table places the gives now: it runs, no reset is under way, no mission holds the
-/// player's weapons (whose give-back the table restores from its cache), and the weapons ride the
-/// hands that took them.
+/// Whether the table places the gives now: it runs, no reset is under way, and no mission holds the
+/// player's weapons (whose give-back the table restores from its cache).
 fn table_places() -> bool {
-    WEAPONS_CONFIG.query(|c| c.hold.either_hand)
-        && live::running()
-        && !live::resetting()
-        && !live::mission_holds()
+    live::running() && !live::resetting() && !live::mission_holds()
 }
 
 /// The slots whose gives the table places: the ones it tracks.

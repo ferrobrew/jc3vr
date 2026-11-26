@@ -560,27 +560,6 @@ fn assist_readout(ui: &mut Ui, a: &AimStatus) {
     ));
 }
 
-pub(super) fn hold_feature_settings(ui: &mut Ui, w: &mut WeaponsConfig) {
-    ui.checkbox(&mut w.hold.either_hand, "Hold weapons in either hand")
-        .on_hover_text(
-            "A weapon rides the hand that drew it, took it, or was handed it, and only that hand's \
-             trigger fires it. Either hand draws while the other holds a weapon, the free hand \
-             takes the held gun at its grip, and a grab takes guns from characters and racks.",
-        );
-    ui.checkbox(&mut w.hold.dock_attraction, "Attract weapons to sockets")
-        .on_hover_text(
-            "A weapon let go of near a free socket that takes it travels into the socket: over \
-             the shoulder for the back, beside the thigh for a hip. In front of the body, or \
-             thrown, it falls.",
-        );
-    ui.checkbox(&mut w.hold.hand_pickup_only, "Pick weapons up only by hand")
-        .on_hover_text(
-            "Hides the game's weapon pickup panel and its button prompt, and the use button no \
-             longer picks a weapon up. A hand's grab picks weapons up. The gamepad scheme keeps \
-             the game's own prompt and button.",
-        );
-}
-
 pub(super) fn support_settings(ui: &mut Ui, c: &mut ControllersConfig) {
     let w = &mut c.weapons;
     ui.checkbox(&mut w.separate_pistols, "Separate pistols")

@@ -251,14 +251,8 @@ pub struct OfferInput<'a> {
 /// The remote target for the grapple hand's grip this tick, if there is one.
 pub fn targets(game: &GameTick<'_>, input: &OfferInput) -> Provided {
     let config = &input.config.snatch;
-    let hold = &input.config.hold;
-    let takes_held = hold.either_hand;
     grapple_weapons::set_enabled(config.enabled);
-    steal::widen_notice(if config.enabled && takes_held {
-        SNATCH.range_m
-    } else {
-        0.0
-    });
+    steal::widen_notice(if config.enabled { SNATCH.range_m } else { 0.0 });
     let mut state = STATE.lock();
     state.status.live = true;
     if !config.enabled || !matches!(state.phase, Phase::Idle) {

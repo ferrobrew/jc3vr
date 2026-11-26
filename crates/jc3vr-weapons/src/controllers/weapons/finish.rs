@@ -38,7 +38,7 @@ use jc3vr_input::{
 use crate::controllers::{
     loadout::{
         Socket, grab,
-        grab::{GrabRules, Release, SocketMove, SocketRefusal},
+        grab::{Release, SocketMove, SocketRefusal},
         live,
     },
     weapons::{
@@ -224,7 +224,6 @@ pub fn finish_tick(
                 };
                 let inputs = hold::take::TakeInputs {
                     active,
-                    settings: &config.weapons.hold,
                     free: [true; 2],
                     gameplay,
                 };
@@ -233,7 +232,7 @@ pub fn finish_tick(
                 GrabOutcome::Take { taken }
             }
             // A draw takes the gun by its grip wherever on it the hand closed.
-            GrabVolume::Socket(socket) => match grab_socket(game, hand, socket, &config) {
+            GrabVolume::Socket(socket) => match grab_socket(game, hand, socket) {
                 Some(outcome) => outcome,
                 None => continue,
             },
@@ -372,7 +371,7 @@ pub fn finish_tick(
                 .and_then(|intent| intent.socket)
                 .is_some_and(|socket| {
                     docked_at(hand, |volume| volume == GrabVolume::Socket(socket)).is_some()
-                        || attraction_for(hand, &config, None).is_some_and(|a| a.socket == socket)
+                        || attraction_for(hand, None).is_some_and(|a| a.socket == socket)
                 });
             // Only a press calls the release off: fingers resting round a force-sensing grip
             // after the press let go are not a hold ([`hold::act::pressed_grips`]).
@@ -390,7 +389,7 @@ pub fn finish_tick(
                 continue;
             }
             let gun = lone.map(|(weapon, _)| weapon);
-            release(game, hand, gun, active.as_ref(), world_scale, &config);
+            release(game, hand, gun, active.as_ref(), world_scale);
         }
     }
     // SAFETY: the local player, in the game tick.
@@ -731,12 +730,7 @@ fn weapon_action_running(gun_hand: Hand) -> bool {
 /// Carry out `hand`'s grab of `socket` as the table decides it: draw the weapon on it into the
 /// empty hand, or dock the hand's weapon there. `None` for a grab that did nothing worth reporting:
 /// a free socket with nothing to put there, or no table to decide against.
-fn grab_socket(
-    game: &GameTick<'_>,
-    hand: Hand,
-    socket: Socket,
-    config: &WeaponSettings,
-) -> Option<GrabOutcome> {
+fn grab_socket(game: &GameTick<'_>, hand: Hand, socket: Socket) -> Option<GrabOutcome> {
     if hold::act::docking()[hand.index()] || hold::act::pending_release(hand).is_some() {
         return None;
     }
@@ -753,11 +747,7 @@ fn grab_socket(
         return Some(GrabOutcome::Socket(outcome));
     }
     let snapshot = live::snapshot_now()?;
-    let settings = &config.weapons.hold;
-    let rules = GrabRules {
-        both_hands: settings.either_hand,
-    };
-    let outcome = match grab::grab(&snapshot, hand, socket, rules) {
+    let outcome = match grab::grab(&snapshot, hand, socket) {
         Ok(SocketMove::Draw { .. }) => match hold::act::draw(game, hand, socket, hold::SNAP_S) {
             Ok(()) => SocketOutcome::Drew,
             Err(refusal) => SocketOutcome::Failed(refusal),
@@ -784,7 +774,6 @@ fn release(
     weapon: Option<engine::HeldWeapon>,
     active: Option<&ActiveHands>,
     world_scale: f32,
-    config: &WeaponSettings,
 ) {
     let Some(snapshot) = live::snapshot_now() else {
         return;
@@ -816,7 +805,7 @@ fn release(
     let over = retry_socket(pending, over);
     let attracted = over
         .is_none()
-        .then(|| attraction_for(hand, config, reserved))
+        .then(|| attraction_for(hand, reserved))
         .flatten()
         .filter(|a| {
             dockable
@@ -976,19 +965,12 @@ fn pass_by_action(game: &GameTick<'_>, hand: Hand) -> bool {
 }
 
 /// The free socket whose attraction takes the weapon `hand` lets go of from outside every socket's
-/// reach, with the attraction on (`weapons.hold.dock_attraction`): the hand's grip as it is drawn
+/// reach: the hand's grip as it is drawn
 /// against the tick's attractors, and the hand's fastest motion just before the release, which
 /// must not be a throw. A hand without motion history counts as still.
 /// The socket `hand`'s release is attracted to, leaving out `reserved`, the socket the other
 /// hand's weapon is already on its way to.
-fn attraction_for(
-    hand: Hand,
-    config: &WeaponSettings,
-    reserved: Option<Socket>,
-) -> Option<attract::Attraction> {
-    if !config.weapons.hold.dock_attraction {
-        return None;
-    }
+fn attraction_for(hand: Hand, reserved: Option<Socket>) -> Option<attract::Attraction> {
     let speed = motion::latest_time()
         .and_then(|latest| {
             let since = latest - f64::from(ATTRACTION.speed_window_s);

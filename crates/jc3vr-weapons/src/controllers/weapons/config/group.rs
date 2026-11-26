@@ -29,7 +29,7 @@ pub struct WeaponsConfig {
     /// Needs the VR inventory and its carrying; without them, or while the second pistol has not
     /// come, the pistols stay the game's pair, one item with a gun in each hand.
     pub separate_pistols: bool,
-    /// Which hand holds the weapon: the hand that drew it, picked it up, or was handed it.
+    /// The hands' hold: whether a gun stays in the hand only while its grip is held.
     pub hold: HoldConfig,
     /// The true reload: eject, load from the belt pouch, and chamber by hand, in place of the
     /// game's timed reload.

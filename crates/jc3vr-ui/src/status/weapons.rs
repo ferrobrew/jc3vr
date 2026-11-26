@@ -151,9 +151,6 @@ fn hand_on_gun(hand: Hand) -> Line {
 }
 
 fn armed() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.hold.either_hand) {
-        return Line::off("");
-    }
     let armed = armed::status();
     let held: Vec<Text> = Hand::BOTH
         .into_iter()
@@ -206,9 +203,6 @@ fn last_refusal() -> Line {
 }
 
 fn takes() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.hold.either_hand) {
-        return Line::off("");
-    }
     let take = hold::status().take;
     Line::ok(text!(
         take.held_targets.to_string(),
@@ -221,9 +215,6 @@ fn takes() -> Line {
 }
 
 fn racks() -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.hold.either_hand) {
-        return Line::off("");
-    }
     let take = hold::status().take;
     Line::ok(text!(
         take.rack_targets.to_string(),
@@ -236,9 +227,6 @@ fn racks() -> Line {
 }
 
 fn hand(hand: Hand) -> Line {
-    if !read(&CONTROLLERS_CONFIG, |c| c.weapons.hold.either_hand) {
-        return Line::off("");
-    }
     let wielded = weapons::status()
         .wielded
         .map(|w| (w.weapon.wielded.slot, w.weapon.wielded.hands));

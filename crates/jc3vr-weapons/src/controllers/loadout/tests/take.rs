@@ -10,19 +10,8 @@ use super::fixtures::*;
 use crate::controllers::loadout::{
     projection::{SlotContent, project},
     table::Place,
-    take::{GameTake, TakeOffer, TakeRoute, TakeRules, route},
+    take::{GameTake, TakeOffer, TakeRoute, route},
     transition::{Take, TakeSource},
-};
-
-const BOTH: TakeRules = TakeRules {
-    either_hand: true,
-    both_hands: true,
-    heavy: true,
-};
-const ONE: TakeRules = TakeRules {
-    either_hand: true,
-    both_hands: false,
-    heavy: true,
 };
 
 fn offer(hand: Option<Hand>, weapon: crate::controllers::loadout::WeaponType) -> TakeOffer {
@@ -42,7 +31,7 @@ fn a_pistol_stolen_with_the_left_hand_leaves_the_right_hand_s_rifle_alone() {
     let hip = docked(&mut t, Socket::Hip(Hand::Right), 1, a_pistol());
     let rifle = take(&mut t, Hand::Right, 2, weapon(a_rifle()));
     let s = t.snapshot();
-    let routed = route(Some(&s), offer(Some(Hand::Left), a_pistol()), BOTH);
+    let routed = route(Some(&s), offer(Some(Hand::Left), a_pistol()));
     assert_eq!(routed, Ok(TakeRoute::Table { hand: Hand::Left }));
     let transitions = t
         .take(Take {
@@ -150,11 +139,11 @@ fn a_take_lands_in_the_grabbing_hand_whatever_the_other_holds() {
     take(&mut t, Hand::Left, 1, weapon(a_rifle()));
     let s = t.snapshot();
     assert_eq!(
-        route(Some(&s), offer(Some(Hand::Right), a_rifle()), BOTH),
+        route(Some(&s), offer(Some(Hand::Right), a_rifle())),
         Ok(TakeRoute::Table { hand: Hand::Right })
     );
     assert_eq!(
-        route(Some(&s), offer(Some(Hand::Left), a_rifle()), BOTH),
+        route(Some(&s), offer(Some(Hand::Left), a_rifle())),
         Err(TakeRefusal::HandFull(Hand::Left))
     );
 }
@@ -164,56 +153,33 @@ fn the_use_item_pickup_takes_a_free_hand_the_dominant_first() {
     let mut t = table();
     let s = t.snapshot();
     assert_eq!(
-        route(Some(&s), offer(None, a_rifle()), BOTH),
+        route(Some(&s), offer(None, a_rifle())),
         Ok(TakeRoute::Table { hand: Hand::Right })
     );
     take(&mut t, Hand::Right, 1, weapon(a_pistol()));
     let s = t.snapshot();
     assert_eq!(
-        route(Some(&s), offer(None, a_rifle()), BOTH),
+        route(Some(&s), offer(None, a_rifle())),
         Ok(TakeRoute::Table { hand: Hand::Left })
     );
     take(&mut t, Hand::Left, 2, weapon(a_pistol()));
     let s = t.snapshot();
     assert_eq!(
-        route(Some(&s), offer(None, a_rifle()), BOTH),
+        route(Some(&s), offer(None, a_rifle())),
         Err(TakeRefusal::BothHandsFull)
     );
 }
 
 #[test]
 fn the_game_takes_what_the_table_cannot_hold() {
-    let mut t = table();
+    let t = table();
     assert_eq!(
-        route(None, offer(Some(Hand::Left), a_rifle()), BOTH),
+        route(None, offer(Some(Hand::Left), a_rifle())),
         Ok(TakeRoute::Game(GameTake::TableStopped))
     );
     let s = t.snapshot();
     assert_eq!(
-        route(
-            Some(&s),
-            offer(Some(Hand::Left), a_rifle()),
-            TakeRules {
-                either_hand: false,
-                both_hands: true,
-                heavy: true,
-            }
-        ),
-        Ok(TakeRoute::Game(GameTake::GameLayout))
-    );
-    assert_eq!(
-        route(
-            Some(&s),
-            offer(Some(Hand::Left), a_launcher()),
-            TakeRules {
-                heavy: false,
-                ..BOTH
-            }
-        ),
-        Ok(TakeRoute::Game(GameTake::Heavy))
-    );
-    assert_eq!(
-        route(Some(&s), offer(Some(Hand::Left), a_launcher()), BOTH),
+        route(Some(&s), offer(Some(Hand::Left), a_launcher())),
         Ok(TakeRoute::Table { hand: Hand::Left }),
         "a heavy weapon is the table's, and leaves the other hand as it is"
     );
@@ -224,15 +190,7 @@ fn the_game_takes_what_the_table_cannot_hold() {
                 swaps: true,
                 ..offer(Some(Hand::Left), a_rifle())
             },
-            BOTH
         ),
         Ok(TakeRoute::Game(GameTake::Swaps))
-    );
-    take(&mut t, Hand::Right, 1, weapon(a_rifle()));
-    let s = t.snapshot();
-    assert_eq!(
-        route(Some(&s), offer(Some(Hand::Left), a_pistol()), ONE),
-        Ok(TakeRoute::Game(GameTake::OneWeapon)),
-        "one weapon at a time swaps through the game's pickup"
     );
 }

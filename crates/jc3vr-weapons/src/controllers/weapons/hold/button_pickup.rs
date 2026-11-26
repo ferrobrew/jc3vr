@@ -34,8 +34,6 @@ use jc3vr_body::controllers::scheme;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::weapons::config::WEAPONS_CONFIG;
-
 /// The button pickup suppression's readout.
 #[derive(Debug, Copy, Clone, PartialEq, Eq, Default)]
 pub struct ButtonPickupStatus {
@@ -59,11 +57,9 @@ pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&UPDATE_WEAPON_HUD_BINDER)
 }
 
-/// Whether the suppression acts now: the switch is on and the controller scheme is in effect.
+/// Whether the suppression acts now: the controller scheme is in effect.
 pub fn suppressing() -> bool {
-    scheme::enabled()
-        && WEAPONS_CONFIG.query(|c| c.hold.hand_pickup_only)
-        && scheme::is_controllers()
+    scheme::enabled() && scheme::is_controllers()
 }
 
 /// Let the use-item clicks of the next [`GRANT_WINDOW`] through: the mod is clicking the action to

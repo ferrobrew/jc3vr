@@ -39,7 +39,6 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     loadout::{Delivery, TakeSource, live, take::TakeRoute},
     weapons::{
-        config::WEAPONS_CONFIG,
         dual_wield::single,
         engine::slot_of,
         grenade::stock,
@@ -182,11 +181,10 @@ fn is_local_player(activator: *mut GameObject) -> bool {
 }
 
 /// Whether the table takes the local player's pickup of `weapon` rather than the game: it runs,
-/// the weapons ride the hands that took them, and the weapon is one the table holds in a hand.
+/// and the weapon is one the table holds in a hand.
 fn table_takes(weapon: &WeaponBase) -> bool {
-    let either_hand = WEAPONS_CONFIG.lock().hold.either_hand;
     let tracked = unsafe { slot_of(weapon) }.is_some_and(inventory_engine::tracks);
-    either_hand && tracked && live::running()
+    tracked && live::running()
 }
 
 #[detour(address = jc3gi::equipment::weapon::WeaponBase::PickupItem_ADDRESS)]

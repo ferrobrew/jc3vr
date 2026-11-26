@@ -63,7 +63,6 @@ use re_utilities::hook_library::HookLibrary;
 use crate::controllers::{
     loadout::{Place, Socket, live},
     weapons::{
-        config::WEAPONS_CONFIG,
         dual_wield::single::{
             grant::{Grant, GrantTick, Grants, OneWhy, TwinState},
             magazine::Dealt,
@@ -705,14 +704,7 @@ unsafe fn share_hands(game: &GameTick<'_>, pair: ObjectKey, twin: ObjectKey) {
         return;
     };
     let other = hand.other();
-    let both_hands = WEAPONS_CONFIG.query(|c| {
-        let hold = c.hold;
-        hold.either_hand
-    });
-    if both_hands
-        && live::in_hand(other).is_none()
-        && !unsafe { hold::take_into(game, other, twin) }
-    {
+    if live::in_hand(other).is_none() && !unsafe { hold::take_into(game, other, twin) } {
         tracing::info!(target: "controllers", "single pistols: the second pistol stays on its hip");
     }
 }

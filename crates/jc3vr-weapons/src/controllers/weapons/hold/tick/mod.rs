@@ -134,19 +134,16 @@ pub fn publish_targets(owner: usize, targets: [Option<(usize, Vec3)>; 2]) {
     });
 }
 
-/// One input tick: publish `per_hand` (the setting), and with it on, hand each armed gun the
-/// wielded weapon's aim mode (the player's, which the game forwards to the selected weapon alone)
-/// and put back the use hints that a gun in a hand still needs.
+/// One input tick: publish that the per-hand tick runs, hand each armed gun the wielded weapon's
+/// aim mode (the player's, which the game forwards to the selected weapon alone), and put back the
+/// use hints that a gun in a hand still needs.
 ///
 /// # Safety
 ///
 /// `owner` must be the live local player character, on the game thread before the world update.
-pub(crate) unsafe fn input_tick(owner: &mut Character, wielded: Option<usize>, per_hand: bool) {
-    PER_HAND.store(per_hand, Ordering::Relaxed);
+pub(crate) unsafe fn input_tick(owner: &mut Character, wielded: Option<usize>) {
+    PER_HAND.store(true, Ordering::Relaxed);
     let stopped = std::mem::take(&mut *STOPPED.lock());
-    if !per_hand {
-        return;
-    }
     let mode = wielded
         .and_then(|w| unsafe { (w as *const WeaponBase).as_ref() })
         .map_or(AimMode::AIM_NORMAL, |w| w.m_AimMode);

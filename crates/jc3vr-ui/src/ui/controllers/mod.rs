@@ -96,9 +96,6 @@ pub(crate) fn controls(id: FeatureId) -> Option<FeatureBody> {
             let mut c = CONTROLLERS_CONFIG.edit();
             physical_hands::impact_sounds_settings(ui, &mut c.physical_hands);
         },
-        FeatureId::Hold => {
-            |ui, _| weapons::hold_feature_settings(ui, &mut CONTROLLERS_CONFIG.edit().weapons)
-        }
         FeatureId::Support => |ui, _| weapons::support_settings(ui, &mut CONTROLLERS_CONFIG.edit()),
         FeatureId::Aim => |ui, _| {
             let mut c = CONTROLLERS_CONFIG.edit();

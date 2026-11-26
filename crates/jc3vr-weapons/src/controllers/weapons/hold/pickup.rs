@@ -51,10 +51,9 @@ use jc3vr_input::frame::Hand;
 use crate::controllers::{
     loadout::{
         Delivery, ObjectAddress, TakeSource, WeaponType, live, slot_label, take,
-        take::{TakeOffer, TakeRoute, TakeRules},
+        take::{TakeOffer, TakeRoute},
     },
     weapons::{
-        config::WEAPONS_CONFIG,
         dual_wield::single,
         engine::{credit_stored, gun_pose, slot_of},
         hold,
@@ -156,7 +155,6 @@ pub unsafe fn preflight(
 pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<TakeRoute, Refusal> {
     let weapon_type =
         unsafe { inventory_engine::weapon_type(weapon) }.ok_or(Refusal::UnknownSlot)?;
-    let hold = WEAPONS_CONFIG.lock().hold;
     let snapshot = live::snapshot_now();
     take::route(
         snapshot.as_ref(),
@@ -164,11 +162,6 @@ pub(crate) unsafe fn route(weapon: &WeaponBase, hand: Option<Hand>) -> Result<Ta
             hand,
             weapon: weapon_type,
             swaps: weapon.m_WeaponNameHash == *EMBEDDED_POWER_CORE,
-        },
-        TakeRules {
-            either_hand: hold.either_hand,
-            both_hands: hold.either_hand,
-            heavy: true,
         },
     )
     .map_err(Refusal::Hands)
@@ -533,13 +526,7 @@ mod tests {
 
     #[test]
     fn a_native_take_checks_animation_permission_before_mutating_inventory() {
-        for reason in [
-            GameTake::TableStopped,
-            GameTake::GameLayout,
-            GameTake::Heavy,
-            GameTake::Swaps,
-            GameTake::OneWeapon,
-        ] {
+        for reason in [GameTake::TableStopped, GameTake::Swaps] {
             let route = TakeRoute::Game(reason);
             assert_eq!(
                 animation_eligibility(route, || false),

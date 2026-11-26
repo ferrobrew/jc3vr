@@ -44,11 +44,7 @@ use jc3vr_view::{controllers::cockpit::CockpitTransform, vr::input::flight_pose}
 use parking_lot::Mutex;
 
 use crate::controllers::{
-    loadout::{
-        LoadoutSnapshot, Place, Socket, grab,
-        grab::{GrabRules, SocketMove},
-        live,
-    },
+    loadout::{LoadoutSnapshot, Place, Socket, grab, grab::SocketMove, live},
     weapons::{
         docks::attachments::{Attachment, Missing, Occupancy, Placement, PoseSource, Sample},
         engine::{grip_points, slot_of},
@@ -111,7 +107,6 @@ pub(crate) struct SocketInputs<'a> {
     pub snapshot: &'a LoadoutSnapshot,
     /// The hands that hold nothing, by [`Hand::index`]: only they draw.
     pub free: [bool; 2],
-    pub rules: GrabRules,
     /// Where a weapon sits on each socket relative to its bone, for a socket the game does not
     /// dock it on.
     pub offsets: &'a Offsets,
@@ -241,16 +236,9 @@ pub(crate) unsafe fn socket_points(owner: &Character, inputs: &SocketInputs) -> 
             for hand in Hand::BOTH {
                 let draws = inputs.free[hand.index()]
                     && if safe_occupant {
-                        matches!(socket, Socket::Hip(_))
-                            && snapshot.held(hand).is_none()
-                            && (inputs.rules.both_hands
-                                || snapshot
-                                    .held(hand.other())
-                                    .and_then(|item| item.kind.weapon())
-                                    .is_none())
+                        matches!(socket, Socket::Hip(_)) && snapshot.held(hand).is_none()
                     } else {
-                        grab::grab(snapshot, hand, socket, inputs.rules)
-                            == Ok(SocketMove::Draw { socket, hand })
+                        grab::grab(snapshot, hand, socket) == Ok(SocketMove::Draw { socket, hand })
                     };
                 if draws {
                     sample.attachments.push(Attachment {

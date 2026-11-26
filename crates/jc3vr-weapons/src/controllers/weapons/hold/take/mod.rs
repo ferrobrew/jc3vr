@@ -30,7 +30,6 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::controllers::weapons::{
-    config::HoldConfig,
     docks, hold,
     hold::{
         STEAL_RADIUS_M, TAKE_RADIUS_M, rack, source,
@@ -157,7 +156,6 @@ pub(crate) unsafe fn measured_handle_point(
 /// What the weapon handling hands the take on each input tick.
 pub(crate) struct TakeInputs<'a> {
     pub active: &'a ActiveHands,
-    pub settings: &'a HoldConfig,
     /// The hands holding no gun, by [`Hand::index`].
     pub free: [bool; 2],
     /// Whether the tick's mode is one the weapon handling acts in.
@@ -166,9 +164,8 @@ pub(crate) struct TakeInputs<'a> {
 
 /// Gather the targets and return their grab volumes.
 pub(crate) fn begin_tick(game: &GameTick<'_>, inputs: &TakeInputs) -> Vec<Candidate> {
-    let settings = inputs.settings;
     rack::tick();
-    let acting = inputs.gameplay && settings.either_hand;
+    let acting = inputs.gameplay;
     let owner = LocalPlayer::get(game).filter(|_| acting);
     let player = owner.as_ref().map(LocalPlayer::frame);
     steal::publish_probe(player.map(|m| m.w_axis.truncate()));

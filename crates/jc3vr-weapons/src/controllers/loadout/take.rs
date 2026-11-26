@@ -5,11 +5,8 @@
 //! hand, or for the game's use-item pickup, which no hand grabs, into a free hand, the dominant
 //! first. The game's pickup, whose equip puts the wielded weapon away and so takes the other hand's
 //! gun, runs only where the table cannot hold the weapon in a hand of its own: while the table does
-//! not run or the weapons keep the game's own layout, for a weapon of the heavy slot while heavy
-//! weapons stay the game's, for the embedded power core (whose pickup spawns and equips another weapon), and
-//! with a weapon in each hand off while the other hand holds one.
+//! not run, and for the embedded power core (whose pickup spawns and equips another weapon).
 
-use jc3gi::character::inventory::WeaponSlot;
 use jc3vr_body::controllers::held::pickup::TakeRefusal;
 use jc3vr_input::frame::Hand;
 
@@ -23,18 +20,6 @@ pub struct TakeOffer {
     pub weapon: WeaponType,
     /// Whether the weapon's pickup gives another weapon in its place (the embedded power core).
     pub swaps: bool,
-}
-
-/// What the player allows a take.
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
-pub struct TakeRules {
-    /// Whether a weapon rides the hand that took it, rather than the game's own layout.
-    pub either_hand: bool,
-    /// Whether a hand may take a weapon while the other hand holds one.
-    pub both_hands: bool,
-    /// Whether the table takes a weapon of the heavy slot, which then docks on the back like a long
-    /// gun, rather than the game's pickup wielding it from its slot.
-    pub heavy: bool,
 }
 
 /// How a take is carried out.
@@ -53,24 +38,15 @@ pub enum TakeRoute {
 pub enum GameTake {
     /// The table does not run.
     TableStopped,
-    /// The weapons keep the game's own layout rather than the hand that took them.
-    GameLayout,
-    /// A weapon of the heavy slot, while heavy weapons stay the game's.
-    Heavy,
     /// A pickup that gives another weapon in its place.
     Swaps,
-    /// The other hand holds a weapon, and a weapon in each hand is off.
-    OneWeapon,
 }
 
 impl GameTake {
     pub const fn label(self) -> &'static str {
         match self {
             GameTake::TableStopped => "the table does not run",
-            GameTake::GameLayout => "the weapons keep the game's layout",
-            GameTake::Heavy => "heavy weapons stay the game's",
             GameTake::Swaps => "its pickup gives another weapon",
-            GameTake::OneWeapon => "a weapon in each hand is off",
         }
     }
 }
@@ -79,17 +55,10 @@ impl GameTake {
 pub fn route(
     snapshot: Option<&LoadoutSnapshot>,
     offer: TakeOffer,
-    rules: TakeRules,
 ) -> Result<TakeRoute, TakeRefusal> {
     let Some(snapshot) = snapshot else {
         return Ok(TakeRoute::Game(GameTake::TableStopped));
     };
-    if !rules.either_hand {
-        return Ok(TakeRoute::Game(GameTake::GameLayout));
-    }
-    if offer.weapon.slot() == WeaponSlot::E_SLOT_HEAVY && !rules.heavy {
-        return Ok(TakeRoute::Game(GameTake::Heavy));
-    }
     if offer.swaps {
         return Ok(TakeRoute::Game(GameTake::Swaps));
     }
@@ -102,11 +71,5 @@ pub fn route(
             Hand::first_free(dominant, free).ok_or(TakeRefusal::BothHandsFull)?
         }
     };
-    let other_weapon = snapshot
-        .held(hand.other())
-        .is_some_and(|item| item.kind.weapon().is_some());
-    if other_weapon && !rules.both_hands {
-        return Ok(TakeRoute::Game(GameTake::OneWeapon));
-    }
     Ok(TakeRoute::Table { hand })
 }
