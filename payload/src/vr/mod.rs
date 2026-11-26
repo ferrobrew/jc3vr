@@ -88,8 +88,10 @@ pub(crate) use blit_region::BlitSource;
 pub use eye_resolution::{engine_render_resolution, native_eye_resolution};
 pub use frame_loop::{EyeImage, EyeView, FrameContext, LocatedFrame, WaitedFrame, frame_wait};
 pub(crate) use frame_loop::{head_tracked, pose_age_totals};
-pub(crate) use mirror::latest_present;
-pub use mirror::{present_mirror, toggle_stereo_pair};
+pub use mirror::{MirrorDraw, MirrorFrame, present_mirror, toggle_stereo_pair};
+pub(crate) use mirror::{
+    MirrorLayers, MirrorObserver, latest_present, register_mirror_layers, register_mirror_observer,
+};
 pub(crate) use participants::{CockpitPositions, FrameParticipants, register_frame_participants};
 pub use participants::{FrameInputs, FrameTelemetry};
 pub use recenter::{

@@ -1,4 +1,5 @@
 pub(crate) mod desktop_input;
+pub(crate) mod register_desktop_overlay;
 mod register_input_capture;
 
 use anyhow::Context as _;

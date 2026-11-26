@@ -61,7 +61,6 @@ use crate::{
         take::{FrameRecord, Record, Take, TakeRequest},
     },
     session::CaptureFolder,
-    vr::MirrorView,
 };
 
 mod convert;
@@ -69,15 +68,19 @@ pub(crate) mod layout;
 mod owners;
 mod pacing;
 pub(crate) mod protocol;
+pub(crate) mod register_render;
 pub(crate) mod register_mark;
 pub(crate) mod session_recording;
 mod stream;
 mod take;
 pub(crate) mod tracking;
 
-pub use crate::recorder::{
-    layout::{Arrangement, MAX_EYE_WIDTH, MIN_EYE_WIDTH},
-    protocol::Region,
+pub use crate::{
+    recorder::{
+        layout::{Arrangement, MAX_EYE_WIDTH, MIN_EYE_WIDTH},
+        protocol::Region,
+    },
+    vr::{MirrorDraw, MirrorFrame},
 };
 
 /// The recorder's settings. Read at the start of a recording; changes apply to the next one.
@@ -184,25 +187,6 @@ pub struct Capture {
     pub encoder: Option<String>,
     /// What the host records the audio from, or why it records none.
     pub audio: Option<String>,
-}
-
-/// The desktop mirror's layout, as the sidecar records it.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct MirrorFrame {
-    pub view: MirrorView,
-    /// The window's client size.
-    pub window: (u32, u32),
-    /// Where each eye's image lands in the window, in on-screen order.
-    pub draws: [Option<MirrorDraw>; 2],
-}
-
-/// One eye's image in the mirror window.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize)]
-pub struct MirrorDraw {
-    pub eye: usize,
-    /// The whole eye image's rectangle (`x, y, width, height`) in window pixels. It extends past the
-    /// window where the mirror crops the image.
-    pub rect: [f32; 4],
 }
 
 /// Start a recording whose folder is stamped `stamp`, so a session recording's tracking half lands

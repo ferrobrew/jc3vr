@@ -21,6 +21,11 @@ pub(crate) fn install() {
     // Registered first, so hook removal attempts them whether or not installation got further.
     stereo::register_unpatch::register();
     debug::register_unpatch::register();
+    // What the layers above the render hooks contribute to the post-draw, the mirror, the camera,
+    // and the flip.
+    crate::hud::register_render::register();
+    crate::recorder::register_render::register();
+    crate::egui_impl::register_desktop_overlay::register();
     // What the input tick reads from the HUD and the recorder, registered before any tick runs.
     hud::pointer::register_pointer::register();
     recorder::register_mark::register();

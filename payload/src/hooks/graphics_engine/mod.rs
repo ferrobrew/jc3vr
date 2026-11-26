@@ -20,6 +20,8 @@ mod declaration_replay;
 // jc3gi (CGraphicsEngine in its own module), hence the module_inception allow.
 #[allow(clippy::module_inception)]
 pub mod graphics_engine;
+// The registrations the post-draw, the UI redirect, and the flip run for the layers above.
+pub(crate) mod post_draw;
 mod render_pass;
 // `shader` is public so the debug UI can read its patched-shader count.
 pub mod shader;
@@ -32,8 +34,8 @@ mod screen;
 
 pub(crate) use post::{post_effects, tone_mapping};
 pub(crate) use render_pass::shadow_fit_gap_m;
-pub(crate) use scene::render_block;
 pub use scene::terrain;
+pub(crate) use scene::{palette_edit, render_block};
 pub(crate) use screen::{clustered_lighting, reconstruction, ss_decal, ssao};
 pub(crate) use single_pass::upload_global_constants;
 

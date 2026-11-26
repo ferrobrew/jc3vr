@@ -80,18 +80,26 @@ use windows::{
 use crate::{
     config::{self, Config, Switch, disable_automatically},
     hooks::graphics_engine::capture::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh},
-    recorder::{MirrorDraw, MirrorFrame},
     vr::{
         MirrorView,
-        mirror::layout::{
-            AspectSize, MirrorFraming, MirrorLayout, Viewport, mirror_layout, mirror_viewport,
+        mirror::{
+            layout::{
+                AspectSize, MirrorFraming, MirrorLayout, Viewport, mirror_layout, mirror_viewport,
+            },
+            participants::{note_mirror, note_present, overlay_srv, panel_srv, records_mirror},
         },
         texture_size,
     },
 };
 
 mod layout;
+mod participants;
 mod stamp;
+
+pub use crate::vr::mirror::participants::{MirrorDraw, MirrorFrame};
+pub(crate) use crate::vr::mirror::participants::{
+    MirrorLayers, MirrorObserver, register_mirror_layers, register_mirror_observer,
+};
 
 /// The committed, precompiled shaders shared with the VR blit and others: the fullscreen-triangle
 /// vertex shader and the plain-sample (no gamma) pixel shader. See the module gamma note.
@@ -290,7 +298,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
                 // With `show_on_mirror` off, the panel stays in the headset only, leaving the desktop
                 // mirror showing the unobstructed scene.
                 if panel.show_on_mirror
-                    && let Some(srv) = crate::hud::egui_panel::panel_srv()
+                    && let Some(srv) = panel_srv()
                 {
                     // Always letterboxed at 1:1 -- a cropped or magnified UI panel would lose its
                     // edges, whatever the eye image's framing.
@@ -307,7 +315,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
                     mirror.draw_overlay(&context.m_Context, &rtv, &srv, overlay);
                 }
             } else if !crate::director::clean_view::hides_desktop()
-                && let Some(srv) = crate::hud::mirror_overlay::overlay_srv()
+                && let Some(srv) = overlay_srv()
             {
                 // The flat overlay texture is window-sized, so stretching it across the whole buffer
                 // is exactly inverted by the present's buffer→window stretch: it lands on the window
@@ -323,7 +331,7 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
         }
 
         present_index = PRESENTS.fetch_add(1, Ordering::Relaxed);
-        stamped = crate::recorder::records_mirror()
+        stamped = records_mirror()
             && Config::lock_query(|c| c.vr.mirror_frame_stamp)
             && mirror.stamp(
                 &context.m_Context,
@@ -341,8 +349,8 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
             .ok()
             .context("vr: the mirror swapchain present failed")?;
     }
-    crate::recorder::note_mirror(recorded_layout(view, &layout, buffer_size, window_size));
-    crate::recorder::note_present(present_index, stamped);
+    note_mirror(recorded_layout(view, &layout, buffer_size, window_size));
+    note_present(present_index, stamped);
     Ok(())
 }
 

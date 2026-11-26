@@ -22,14 +22,12 @@ use windows::Win32::{
 
 use crate::{
     config::Config,
-    controllers::{overlay, weapons::scope},
     debug::trace::{TraceEvent, TraceState},
     frame_timing::{self, Slot},
-    hooks::graphics_engine::capture::{
-        EGUI_DEBUG_RENDER_STATE, eye_capture_fresh, mark_eye_capture, previews_visible,
+    hooks::graphics_engine::{
+        capture::{EGUI_DEBUG_RENDER_STATE, eye_capture_fresh, mark_eye_capture, previews_visible},
+        post_draw,
     },
-    hud,
-    hud::egui_panel::draw_quad,
     screenshot::CaptureSource,
     stereo::single_pass::{collapse_active, set_collapse_ui_eye},
     vr::BlitSource,
@@ -55,8 +53,8 @@ pub(super) fn hook_library() -> HookLibrary {
 /// The first is whether `render_engine_post_draw` runs apart from `crate::update`, which is what this
 /// hook's shared state has to assume. `crate::update` takes the `EguiState` lock and then
 /// `crate::hooks::graphics_engine::capture::EGUI_DEBUG_RENDER_STATE` inside it, so `render_engine_post_draw` does not hold
-/// `EGUI_DEBUG_RENDER_STATE` across `hud::egui_panel::draw_quad` and `hud::mirror_overlay::render`,
-/// both of which take the `EguiState` lock: it clones the captures under a brief lock, as everywhere
+/// `EGUI_DEBUG_RENDER_STATE` across the registered post-draw layers and passes, of which the debug
+/// panel and the mirror overlay take the `EguiState` lock: it clones the captures under a brief lock, as everywhere
 /// else. Two blocking mutexes in opposite orders deadlock if and only if the two sides run on
 /// different threads.
 ///
@@ -294,7 +292,7 @@ unsafe fn maintain_ui_redirect(
         }
         let _ui_lock = UiCriticalSectionGuard::enter((*manager).m_DeferredRenderLock);
         let _context_lock = UiCriticalSectionGuard::enter(context.m_Mutex);
-        hud::tick(
+        post_draw::maintain_ui_redirect(
             device,
             u32::from(back_buffer.m_Width),
             u32::from(back_buffer.m_Height),
@@ -330,13 +328,7 @@ fn graphics_flip(device: *mut Device) -> u64 {
         return 0;
     }
 
-    if let Some(egui_state) = crate::egui_impl::EguiState::get().as_mut() {
-        // Hide the debug overlay while the clean view is on (the deferred mirror-overlay path in
-        // `crate::hud::mirror_overlay` honours the same switch).
-        if !crate::director::clean_view::hides_desktop() {
-            egui_state.render();
-        }
-    }
+    post_draw::draw_desktop_overlay();
     tracing::trace!(target: "frameloop", "graphics_flip: calling original");
     let r = GRAPHICS_FLIP.get().unwrap().call(device);
     tracing::trace!(target: "frameloop", "graphics_flip: original returned");
@@ -423,7 +415,7 @@ fn mod_post_draw(context: *mut Context) {
             Some(pending)
         });
         if let Some(pending) = pending
-            && hud::redirect_applied()
+            && post_draw::ui_redirect_applied()
         {
             (*pending.manager).SyncRender();
             (*pending.manager).Submit();
@@ -434,8 +426,8 @@ fn mod_post_draw(context: *mut Context) {
         // Clone (AddRef) the per-eye capture textures under a brief EGUI lock, released before the
         // context work below, mirroring the lock discipline of the other consumers of these captures
         // (`vr::blit::submit` and `vr::mirror::present_mirror_inner`). Held
-        // across the body instead, this deadlocks: the panel and mirror-overlay draws below take the
-        // `EguiState` lock, while `crate::update` takes `EguiState` and then this one inside it. One
+        // across the body instead, this deadlocks: the debug panel and the mirror overlay drawn below
+        // take the `EguiState` lock, while `crate::update` takes `EguiState` and then this one inside it. One
         // acquisition, not one per eye, so the collapse's two half-copies cannot straddle a resize
         // that rebuilds the pair.
         let eye_textures: [Option<ID3D11Texture2D>; 2] = {
@@ -445,10 +437,10 @@ fn mod_post_draw(context: *mut Context) {
         let index = crate::stereo::draw_index();
         // The frame's last near dispatch: after it, every eye image of the frame is final.
         let last_near_dispatch = crate::stereo::last_near_dispatch();
-        // The world-space overlay's producers, once per frame, outside the context lock: they read
-        // the controller subsystems' published state under those subsystems' own locks.
-        overlay::tick(index);
-        scope::tick(index);
+        // The dispatch ticks (the world-space overlay's producers and the scope lens's plan, each
+        // acting once per frame), outside the context lock: they read the controller subsystems'
+        // published state under those subsystems' own locks.
+        post_draw::run_dispatch_ticks(index);
 
         EnterCriticalSection(context.m_Mutex);
 
@@ -460,56 +452,36 @@ fn mod_post_draw(context: *mut Context) {
             graphics_engine.m_BackBufferLinear.as_ref(),
         ) {
             // The scope lens reads the eyes' images as the scene left them, before the overlay.
-            scope::capture(&context.m_Context, device, back_buffer, index);
-            // The interactive egui debug panel (issue #24) is an independent floating surface drawn
-            // right after the gameplay HUD. Under collapse the render camera is centered and the
-            // target is double-wide, so draw both world-locked overlays once per eye into each half
-            // with that eye's own VP (see `single_pass::collapse_ui_eye_override`); otherwise the
-            // per-dispatch single draw carries the eye implicitly. The world-space overlay draws
-            // first, and the scope lens over it, so the panels sit on top of both.
+            post_draw::capture_scene(&context.m_Context, device, back_buffer, index);
+            // The eye layers, in `post_draw::EyeLayer` order: the world-space overlay, the scope
+            // lens over it, then the HUD panel, the egui debug panel (issue #24), the controls
+            // summary, and the restart notice on top. Under collapse the render camera is centered
+            // and the target is double-wide, so draw the world-locked layers once per eye into each
+            // half with that eye's own VP (see `single_pass::collapse_ui_eye_override`); otherwise
+            // the per-dispatch single draw carries the eye implicitly.
             #[cfg(feature = "profiler")]
             let overlays_gpu = crate::profiler::gpu::detail_interval("mod: HUD and overlays");
             if collapse_active() {
                 for eye in 0..2 {
                     set_collapse_ui_eye(Some(eye));
-                    overlay::draw(&context.m_Context, device, back_buffer, eye);
-                    scope::draw(&context.m_Context, device, back_buffer, eye);
-                    hud::draw_quad(&context.m_Context, device, back_buffer, eye);
-                    draw_quad(&context.m_Context, device, back_buffer, eye);
-                    hud::summary_panel::draw(&context.m_Context, device, back_buffer, eye);
-                    hud::restart_notice::draw(&context.m_Context, device, back_buffer, eye);
+                    post_draw::draw_eye_layers(&context.m_Context, device, back_buffer, eye);
                 }
                 set_collapse_ui_eye(None);
             } else {
-                overlay::draw(&context.m_Context, device, back_buffer, index);
-                scope::draw(&context.m_Context, device, back_buffer, index);
-                hud::draw_quad(&context.m_Context, device, back_buffer, index);
-                draw_quad(&context.m_Context, device, back_buffer, index);
-                hud::summary_panel::draw(&context.m_Context, device, back_buffer, index);
-                hud::restart_notice::draw(&context.m_Context, device, back_buffer, index);
+                post_draw::draw_eye_layers(&context.m_Context, device, back_buffer, index);
             }
             #[cfg(feature = "profiler")]
             drop(overlays_gpu);
-            // Redirect the flat mirror overlay into an offscreen texture (consuming this frame's egui
-            // output) so the desktop mirror can composite it from the deferred frame tail's thread.
-            // A no-op unless a session renders, the mirror is on, and the panel is off. See
-            // `crate::hud::mirror_overlay`.
+            // The frame passes, in `post_draw::FramePass` order: the flat mirror overlay rendered
+            // offscreen (consuming this frame's egui output) so the desktop mirror can composite it
+            // from the deferred frame tail's thread, then the learned body estimator's GPU pass.
             //
-            // It renders on the frame's last near dispatch rather than eye 0's: with the tail
+            // They run on the frame's last near dispatch rather than eye 0's: with the tail
             // deferred, the game thread waits on eye 0's walk but not on the last one, which the
             // tail drains before it composites the mirror. Nothing per-eye reads the overlay, and
-            // the floating panel, which consumes the same egui output, is off whenever this runs.
+            // the floating panel, which consumes the same egui output, is off whenever it renders.
             if last_near_dispatch {
-                hud::mirror_overlay::render(&context.m_Context, device, back_buffer);
-            }
-            // The learned body estimator's GPU pass, once per frame: it takes the window the game
-            // thread posted and collects finished estimates without waiting.
-            if last_near_dispatch {
-                let _timing = frame_timing::scope(Slot::BodyEstimator);
-                crate::controllers::body::estimator::render_tick(
-                    &context.m_Context,
-                    &device.m_Device,
-                );
+                post_draw::run_frame_passes(&context.m_Context, device, back_buffer);
             }
         }
 
@@ -603,20 +575,20 @@ fn mod_post_draw(context: *mut Context) {
             // The recorder's sidecar line for the frame, on its last near dispatch, when every eye
             // image of the frame is final, and a streamed take's eye-view capture, which needs both
             // eyes' captures to hold the frame. Both are no-ops unless recording.
-            if last_near_dispatch {
-                let frame = crate::recorder::frame_rendered();
+            if last_near_dispatch && let Some(recorder) = post_draw::eye_frame_recorder() {
+                let frame = (recorder.frame_rendered)();
                 match (graphics_engine.m_Device.as_ref(), &eye_textures) {
                     (Some(device), [Some(left), Some(right)])
                         if eye_capture_fresh(0) && eye_capture_fresh(1) =>
                     {
-                        crate::recorder::capture_frame(
+                        (recorder.capture_frame)(
                             &device.m_Device,
                             &context.m_Context,
                             [left, right],
                             frame,
                         );
                     }
-                    _ => crate::recorder::release_capture(),
+                    _ => (recorder.release_capture)(),
                 }
             }
 
@@ -690,7 +662,7 @@ fn eye_capture_wanted(eye: usize) -> bool {
         || crate::screenshot::is_requested()
         || crate::screenshot::harness::wants_eyes()
         || previews_visible()
-        || crate::recorder::wants_eye_captures()
+        || post_draw::recorder_wants_eye_captures()
 }
 
 /// Last-seen thread id for [`render_engine_post_draw`]. See [`log_hook_thread`].
