@@ -25,52 +25,6 @@ pub fn egui_debug_hud(ui: &mut egui::Ui, renderer: &mut egui_directx11::Renderer
             &mut hud.redirect,
             "Redirect HUD into our texture (drops it from the scene composite)",
         );
-        ui.add_enabled_ui(hud.redirect, |ui| {
-            ui.checkbox(&mut hud.quad, "Draw the HUD as a floating quad per eye");
-            ui.checkbox(
-                &mut hud.depth_shift.enabled,
-                "Dynamic distance: bring the panel nearer while riding a vehicle",
-            );
-            ui.checkbox(
-                &mut hud.world_markers.enabled,
-                "World markers: draw on-screen markers at their world points instead of on the panel",
-            );
-            ui.checkbox(
-                &mut hud.grab_hint.enabled,
-                "Grab hint: the icon of what a hand near a body slot would take",
-            );
-            ui.checkbox(
-                &mut hud.lost_weapons.enabled,
-                "Lost weapons: the icon of each weapon let go of, above where it lies",
-            );
-            ui.add_enabled_ui(hud.atlas.enabled, |ui| {
-                let atlas = &mut hud.atlas;
-                ui.checkbox(&mut atlas.ammo.enabled, "Ammunition counter above each gun hand");
-                ui.checkbox(
-                    &mut atlas.cross.enabled,
-                    "Weapon selection cross at the hand steering the weapon wheel",
-                );
-                ui.checkbox(
-                    &mut atlas.tether.enabled,
-                    "Tether readout above the off-hand's forearm",
-                );
-                ui.checkbox(
-                    &mut atlas.wrist.enabled,
-                    "Health and heat on the inside of the off-hand's wrist",
-                );
-            })
-            .response
-            .on_disabled_hover_text("Turn on HUD on the hands in the pause menu's VR display page.");
-        });
-        ui.separator();
-        ui.checkbox(
-            &mut hud.egui_panel.controller_pointer,
-            "Point at the VR debug panel with the controllers",
-        )
-        .on_hover_text(
-            "The trigger clicks, B right-clicks, and the stick scrolls. The grip grabs the panel, \
-             and the stick then pushes and pulls it.",
-        );
         hud.redirect
     };
 

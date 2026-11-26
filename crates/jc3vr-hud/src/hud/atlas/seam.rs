@@ -264,7 +264,7 @@ fn drift_index(clip: AtlasClip) -> Option<usize> {
 /// not the gameplay HUD or is hidden, or the applied redirect does not lay the HUD out inside the
 /// stage yet (the cells would land on the edge containers).
 fn active_layout(cfg: &HudConfig) -> Option<(AtlasLayout, StageFrame)> {
-    if !(cfg.atlas.enabled && cfg.redirect && cfg.quad) {
+    if !(cfg.atlas.enabled && cfg.redirect) {
         return None;
     }
     if crate::hud::current_mode() != HudMode::Hud {
@@ -283,26 +283,24 @@ fn active_layout(cfg: &HudConfig) -> Option<(AtlasLayout, StageFrame)> {
     let (width, height) = applied.texture;
     let frame = StageFrame::new(stage, width as f32 / height.max(1) as f32)?;
     let controllers = scheme::is_controllers();
-    let atlas = &cfg.atlas;
-    let markers = &cfg.world_markers;
     let request = LayoutRequest {
         stage,
         frame,
         gutter: GUTTER_PX,
-        ammo: (atlas.ammo.enabled && controllers).then_some(AMMO),
-        heat: (atlas.wrist.enabled && controllers).then_some(HEAT),
-        cross: (atlas.cross.enabled && controllers)
+        ammo: controllers.then_some(AMMO),
+        heat: controllers.then_some(HEAT),
+        cross: controllers
             .then(|| extents_from_edges(hud.m_SelectionWheelBB.data, CROSS_MARGIN_PX))
             .flatten()
             .map(|extents| PartRequest {
                 extents,
                 max_scale: CROSS_MAX_SCALE,
             }),
-        tether: (atlas.tether.enabled && controllers).then_some(TETHER),
+        tether: controllers.then_some(TETHER),
         aim: Some(AIM),
-        grenades: (atlas.wrist.enabled && controllers).then_some(GRENADES),
-        label: markers.enabled.then_some(world_markers::LABEL_CROP),
-        marker: markers.enabled.then_some(world_markers::CROP),
+        grenades: controllers.then_some(GRENADES),
+        label: Some(world_markers::LABEL_CROP),
+        marker: Some(world_markers::CROP),
         max_markers: world_markers::MAX_MARKERS,
     };
     Some((layout(&request)?, frame))

@@ -23,7 +23,6 @@ use windows::Win32::System::Threading::{EnterCriticalSection, LeaveCriticalSecti
 use crate::hud::{
     HudMode,
     atlas::layout::{AtlasLayout, MarkerSlots},
-    config::WorldMarkersConfig,
     scaleform::value_display_info,
     world_markers::{
         CaptureLayout, MAX_MARKERS, MarkerRecord,
@@ -57,14 +56,14 @@ pub(crate) struct Projection<'a> {
 }
 
 /// Classify a point of interest's projection for the world markers. Called from the `Get2DInfo`
-/// detour after the original; a no-op outside `UpdatePOIs` or with the prototype off.
+/// detour after the original; a no-op outside `UpdatePOIs`.
 ///
 /// A point the panel projection put off screen (an edge arrow) but that is inside the headset's field of view
 /// is reclassified on screen and its stage position clamped into the safe area, so the HUD draws
 /// its on-screen icon there for the crop. The final classification is recorded by world point for
 /// the capture seam.
-pub(crate) fn classify(projection: Projection<'_>, cfg: &WorldMarkersConfig) {
-    if !cfg.enabled || !IN_UPDATE_POIS.with(Cell::get) {
+pub(crate) fn classify(projection: Projection<'_>) {
+    if !IN_UPDATE_POIS.with(Cell::get) {
         return;
     }
     if *projection.out_pos != ScreenPos::SCREEN_POS_ONSCREEN
@@ -94,9 +93,9 @@ pub(crate) fn classify(projection: Projection<'_>, cfg: &WorldMarkersConfig) {
 ///
 /// # Safety
 /// Must be called from the `MovieImpl::Capture` detour for the main movie.
-pub(crate) unsafe fn on_capture(cfg: &WorldMarkersConfig, atlas: Option<&AtlasLayout>) {
+pub(crate) unsafe fn on_capture(atlas: Option<&AtlasLayout>) {
     MOVES.lock().clear();
-    let collected = if cfg.enabled && crate::hud::current_mode() == HudMode::Hud {
+    let collected = if crate::hud::current_mode() == HudMode::Hud {
         // SAFETY: forwarded from the caller.
         unsafe { collect(atlas) }
     } else {

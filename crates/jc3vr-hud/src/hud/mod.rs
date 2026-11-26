@@ -130,12 +130,11 @@ pub fn current_mode() -> HudMode {
 }
 
 /// Whether the mod's quads placed in the world (the anchored readouts, the grab hint, the lost
-/// weapon markers, and the world markers) can draw this frame: the HUD is redirected and drawn as a
-/// quad, the game is in its gameplay HUD, and the clean view does not hide everything. Each part
-/// adds its own switch, and those that need the controllers add the scheme.
+/// weapon markers, and the world markers) can draw this frame: the HUD is redirected onto the
+/// floating panel, the game is in its gameplay HUD, and the clean view does not hide everything.
+/// The parts that need the controllers add the scheme.
 pub(crate) fn world_quads_active(cfg: &HudConfig) -> bool {
     cfg.redirect
-        && cfg.quad
         && current_mode() == HudMode::Hud
         && !jc3vr_core::director::clean_view::hides_everything()
 }
@@ -343,7 +342,7 @@ fn hud_target_size(
 pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Texture, eye: usize) {
     let cfg = *HUD_CONFIG.lock();
     let mut hud = HUD_STATE.lock();
-    if !cfg.redirect || !cfg.quad || hud.redirected_size().is_none() {
+    if !cfg.redirect || hud.redirected_size().is_none() {
         hud.clear_panel_corners();
         publish_panel(None);
         return;
@@ -370,11 +369,7 @@ pub fn draw_quad(context: &ID3D11DeviceContext, device: &Device, target: &Textur
         // Dynamic panel distance: ease the panel toward the near field while riding a vehicle
         // (see `depth`). The base (far) distance is the configured one; full-screen UI always
         // reads far.
-        let panel_distance = if cfg.depth_shift.enabled {
-            hud.depth_distance(mode, cfg.distance)
-        } else {
-            cfg.distance
-        };
+        let panel_distance = hud.depth_distance(mode, cfg.distance);
         let params_at = |distance: f32| quad::PanelParams {
             pos,
             rot,
