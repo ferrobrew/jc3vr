@@ -34,7 +34,6 @@ util core
 controllers::frame input
 controllers::haptics::mixer input
 controllers::motion input
-controllers::scheme input
 input_core input
 ui::capture input
 

@@ -67,12 +67,13 @@ impl Layer {
 
     /// Whether this layer's crate may depend on `other`'s.
     ///
-    /// Each crate may depend on any crate below it. HUD and tooling sit side by side between
-    /// gameplay and the UI, so neither may depend on the other.
+    /// Each crate may depend on any crate below it, with one exception: input sits directly above
+    /// core but depends on no layer crate, so it stays pure and builds and tests on any host. HUD
+    /// and tooling sit side by side between gameplay and the UI, so neither may depend on the
+    /// other.
     pub fn may_depend_on(self, other: Layer) -> bool {
         let below: &[Layer] = match self {
-            Layer::Core => &[],
-            Layer::Input => &[Layer::Core],
+            Layer::Core | Layer::Input => &[],
             Layer::Render => &[Layer::Core, Layer::Input],
             Layer::Gameplay => &[Layer::Core, Layer::Input, Layer::Render],
             Layer::Hud | Layer::Tooling => {
@@ -144,6 +145,14 @@ mod tests {
         assert!(!Layer::Tooling.may_depend_on(Layer::Hud));
         assert!(Layer::Ui.may_depend_on(Layer::Hud));
         assert!(Layer::Ui.may_depend_on(Layer::Tooling));
+    }
+
+    #[test]
+    fn input_depends_on_no_layer() {
+        for layer in Layer::ALL {
+            assert!(!Layer::Input.may_depend_on(layer), "{layer}");
+        }
+        assert!(Layer::Render.may_depend_on(Layer::Input));
     }
 
     #[test]
