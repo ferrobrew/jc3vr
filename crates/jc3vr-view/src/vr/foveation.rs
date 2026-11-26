@@ -372,10 +372,6 @@ struct Foveation {
     params_cb: ID3D11Buffer,
     /// The mask bit the current `mask_state` was built for; a config change rebuilds it.
     mask_state_bit: u32,
-    /// Depth-stencil view over the main depth surface, keyed by its texture pointer.
-    dsv_cache: Option<(usize, ID3D11DepthStencilView)>,
-    /// Render-target view over the main colour buffer, keyed by its texture pointer.
-    rtv_cache: Option<(usize, ID3D11RenderTargetView)>,
     /// The fill-in colour copy: a scratch texture and its SRV, rebuilt on a size/pointer change.
     copy: Option<FillCopy>,
 }
@@ -440,8 +436,6 @@ impl Foveation {
                 rasterizer,
                 params_cb,
                 mask_state_bit,
-                dsv_cache: None,
-                rtv_cache: None,
                 copy: None,
             })
         }
@@ -462,7 +456,7 @@ impl Foveation {
             self.fill_state = unsafe { create_fill_state(&device.m_Device, params.mask_bit)? };
             self.mask_state_bit = params.mask_bit;
         }
-        let (dsv, width, height) = self.main_depth(device)?;
+        let (dsv, width, height) = self.main_depth()?;
         unsafe {
             let backup = capture_state(context);
             self.update_params(context, params, width, height);
@@ -492,11 +486,11 @@ impl Foveation {
             self.mask_state_bit = params.mask_bit;
         }
         let dsv = if stenciled {
-            Some(self.main_depth(device)?.0)
+            Some(self.main_depth()?.0)
         } else {
             None
         };
-        let (rtv, color_tex, width, height, format) = self.main_color(device)?;
+        let (rtv, color_tex, width, height, format) = self.main_color()?;
         let srv = self.ensure_copy(device, &color_tex, width, height, format)?;
         unsafe {
             // Snapshot the shaded colour so the fill can read neighbours while writing the same buffer.
@@ -578,45 +572,30 @@ impl Foveation {
         }
     }
 
-    /// Get (creating and caching, rebuilding on a texture change) the depth-stencil view over the engine's
-    /// main depth surface, with its pixel dimensions.
-    fn main_depth(
-        &mut self,
-        device: &Device,
-    ) -> anyhow::Result<(ID3D11DepthStencilView, u32, u32)> {
+    /// The depth-stencil view over the engine's main depth surface, with its pixel dimensions.
+    fn main_depth(&self) -> anyhow::Result<(ID3D11DepthStencilView, u32, u32)> {
         let ge = unsafe { jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() }
             .context("foveation: the graphics engine is unavailable")?;
         let tex = unsafe { ge.m_MainDepthTexture.as_ref() }
             .context("foveation: the main depth texture is unavailable")?;
-        let ptr = ge.m_MainDepthTexture as usize;
         let dsv = view_ptr::<ID3D11DepthStencilView>(addr_of!(tex.m_DSV))
             .context("foveation: the main depth texture has no depth-stencil view")?;
-        if self.dsv_cache.as_ref().map(|(p, _)| *p) != Some(ptr) {
-            self.dsv_cache = Some((ptr, dsv.clone()));
-        }
-        let _ = device;
         Ok((dsv, u32::from(tex.m_Width), u32::from(tex.m_Height)))
     }
 
-    /// Get (creating and caching, rebuilding on a texture change) the render-target view over the engine's
-    /// main colour buffer, the colour texture itself, its dimensions, and its `DXGI_FORMAT`.
+    /// The render-target view over the engine's main colour buffer, the colour texture itself, its
+    /// dimensions, and its `DXGI_FORMAT`.
     fn main_color(
-        &mut self,
-        device: &Device,
+        &self,
     ) -> anyhow::Result<(ID3D11RenderTargetView, ID3D11Texture2D, u32, u32, i32)> {
         let ge = unsafe { jc3gi::graphics_engine::graphics_engine::GraphicsEngine::get() }
             .context("foveation: the graphics engine is unavailable")?;
         let tex = unsafe { ge.m_MainColorBuffer.as_ref() }
             .context("foveation: the main colour buffer is unavailable")?;
-        let ptr = ge.m_MainColorBuffer as usize;
         let rtv = view_ptr::<ID3D11RenderTargetView>(addr_of!(tex.m_RTV))
             .context("foveation: the main colour buffer has no render-target view")?;
         let color_tex = resource_as_texture(addr_of!(tex.m_Texture))
             .context("foveation: the main colour buffer has no backing texture")?;
-        if self.rtv_cache.as_ref().map(|(p, _)| *p) != Some(ptr) {
-            self.rtv_cache = Some((ptr, rtv.clone()));
-        }
-        let _ = device;
         Ok((
             rtv,
             color_tex,
