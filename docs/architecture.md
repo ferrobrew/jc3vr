@@ -86,7 +86,6 @@ The payload's top-level modules group by the domain they serve. Detours live in 
 | Debug UI and status | `ui`, `egui_impl`, `status`, `debug`, `director` | The egui debug UI, the status rows, the render trace, and the directing tools | [mod/debug-ui.md](mod/debug-ui.md), [mod/status.md](mod/status.md), [mod/rendering/render-trace.md](mod/rendering/render-trace.md), [mod/trailer-tooling.md](mod/trailer-tooling.md) |
 | Diagnostics and output | `session`, `logging`, `frame_timing`, `profiler`, `screenshot`, `image_writer`, `recorder`, `testing` | The session folder, logs, the always-on frame breakdown, the profiler, screenshots, the video and tracking recorders, and the capture harness's in-game side | [mod/sessions.md](mod/sessions.md), [mod/performance/frame-timing.md](mod/performance/frame-timing.md), [mod/performance/profiler.md](mod/performance/profiler.md), [mod/capture.md](mod/capture.md), [mod/testing/recorder.md](mod/testing/recorder.md) |
 
-## Reading order
 ## Crate layering
 
 The payload is being split into eight crates, each of which may depend only on the crates below it. From the bottom: `jc3vr-core` (lifecycle, the config engine, hook plumbing, frame slots, timing, and the profiler core), `jc3vr-input` (the pure controller frame types, motion, the scheme, the haptic mix, and the input-capture policy), `jc3vr-render` (the OpenXR runtime, the head pose, stereo, FSR, the far field, the engine-pipeline hooks, and the render diagnostics), `jc3vr-gameplay` (the controllers, the grapple, and the character, animation, input, equipment, and sim detours), then `jc3vr-hud` and `jc3vr-tooling` side by side (neither may use the other), `jc3vr-ui` (the debug UI, the status rows, and the pause menu), and on top `jc3vr_payload`, the only `cdylib`, which holds the entry points, the frame driver, the window procedure, and the settings aggregate. Until a module is cut out into its crate it stays in `payload/src`, and a lower module reaches a higher one through a registration the higher one installs rather than by naming it.
@@ -95,6 +94,7 @@ The payload is being split into eight crates, each of which may depend only on t
 
 The second test reads the payload's manifest and every `crates/jc3vr-*/Cargo.toml`, and checks each crate's name, that only the payload is a `cdylib`, and that its dependencies on other layer crates point downward, which catches an acyclic but wrong edge such as HUD on tooling. It also checks that the render crate's `hooks` module never names the gameplay or HUD crates. It checks whichever layer crates exist, so it passes vacuously until the first cut and takes over as the crates appear. Each cut empties a part of `payload/src` that the first test then no longer sees; once the last cut lands, the table and the allowlist are deleted along with the first test.
 
+## Reading order
 
 1. [CONTRIBUTING.md](../CONTRIBUTING.md): the workspace rules, the pyxis workflow, and the build, test, and lint commands.
 2. This page, then [mod/vr-runtime.md](mod/vr-runtime.md) and [mod/threading.md](mod/threading.md) for the frame loop and the thread model in detail.
