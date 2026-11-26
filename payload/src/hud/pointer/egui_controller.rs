@@ -904,7 +904,6 @@ mod tests {
                     observed_at: Instant::now(),
                     frame_sequence: Some(sequence),
                 }],
-                replay: false,
                 frame: Some(&frame),
                 context: (32 << 8) | ActionSetKind::Ui as u64,
                 gameplay: true,
@@ -1003,7 +1002,6 @@ mod tests {
         };
         policy.step(TickInput {
             publications: vec![neutral],
-            replay: false,
             frame: Some(&frame),
             context: 5,
             gameplay: true,
@@ -1022,7 +1020,6 @@ mod tests {
             .collect();
         let tick = policy.step(TickInput {
             publications,
-            replay: false,
             frame: Some(&frame),
             context: 5,
             gameplay: true,

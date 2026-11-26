@@ -1,4 +1,4 @@
-//! Ordered live/replay input shared by gameplay, system commands, and controller pointers.
+//! Ordered live input shared by gameplay, system commands, and controller pointers.
 
 #[cfg(test)]
 use std::time::Duration;
@@ -42,7 +42,6 @@ mod evaluation;
 
 pub(crate) struct TickInput<'a> {
     pub(crate) publications: Vec<Publication>,
-    pub(crate) replay: bool,
     pub(crate) frame: Option<&'a ControllerFrame>,
     pub(crate) context: u64,
     pub(crate) gameplay: bool,
@@ -57,7 +56,6 @@ pub(crate) struct TickInput<'a> {
 pub(crate) struct Runtime {
     policy: Option<PolicyA>,
     config: Option<PolicyAConfig>,
-    replay: bool,
     epoch: u64,
     last_observed: Option<Instant>,
     last_frame: Option<u64>,
@@ -66,8 +64,6 @@ pub(crate) struct Runtime {
     routes: Vec<Route>,
     raw: [Delivery; CONTROLS],
     claims: u32,
-    replay_groups: VecDeque<InputGroup>,
-    replay_ready: bool,
     raw_neutral: [bool; CONTROLS],
     reset_serial: u64,
     watermark: Option<(InputStamp, GroupOrder)>,
@@ -91,34 +87,22 @@ impl Runtime {
         self.reset(ResetReason::MaskedObservation);
     }
 
-    pub(crate) fn cancel_publications(&mut self, replay: bool, publications: Vec<Publication>) {
-        if !replay {
-            for publication in publications {
-                if let InputRecord::Group(group) = publication.record {
-                    history::record_policy(recording::cancelled(&group, self.config, 0, false));
-                }
+    pub(crate) fn cancel_publications(&mut self, publications: Vec<Publication>) {
+        for publication in publications {
+            if let InputRecord::Group(group) = publication.record {
+                history::record_policy(recording::cancelled(&group, self.config, 0, false));
             }
         }
         self.cancel();
     }
 
     pub(crate) fn step(&mut self, input: TickInput<'_>) -> Tick {
-        let config = if input.replay {
-            if self.replay { self.config } else { None }
-        } else {
-            input.config.policy_a()
-        };
-        if self.config != config || self.replay != input.replay {
-            let clock_changed = self.replay != input.replay;
+        let config = input.config.policy_a();
+        if self.config != config {
             let watermark = self.watermark;
             self.config = config;
-            self.replay = input.replay;
             self.invalidate();
-            if clock_changed {
-                self.epoch = 1;
-            } else {
-                self.watermark = watermark;
-            }
+            self.watermark = watermark;
             self.policy =
                 config.and_then(|config| PolicyA::new(config, ClockEpoch(self.epoch.max(1))).ok());
             self.epoch = self.epoch.max(1);
@@ -140,23 +124,10 @@ impl Runtime {
             let reset_before = self.reset_serial;
             match publication.record {
                 InputRecord::Discontinuity { .. } => {
-                    self.replay_groups.clear();
-                    self.replay_ready = false;
                     self.reset(ResetReason::InvalidHistory);
                     tick.commands.clear();
                 }
-                InputRecord::Policy(expected) if input.replay => {
-                    self.replay_policy(expected, input.config, &mut tick);
-                }
                 InputRecord::Policy(_) => {}
-                InputRecord::Group(group) if input.replay => {
-                    if self.replay_groups.len() >= HISTORY_CAPACITY {
-                        self.replay_groups.clear();
-                        self.replay_ready = false;
-                        self.reset(ResetReason::InvalidHistory);
-                    }
-                    self.replay_groups.push_back(group);
-                }
                 InputRecord::Group(group) => {
                     if !input.usable
                         || input.frame.is_none()
@@ -185,7 +156,6 @@ impl Runtime {
                                 context: input.context,
                                 gameplay: input.gameplay,
                                 config: input.config,
-                                expected: None,
                             },
                             &mut tick,
                         );
@@ -201,19 +171,11 @@ impl Runtime {
             }
             tick.claims |= self.claims;
         }
-        // A group without its final decision cannot extend an accepted hold. Keep bounded stamp
-        // candidates for a later record, but require validated neutral before resuming dispatch.
-        if input.replay && !self.replay_groups.is_empty() {
-            self.replay_ready = false;
-            self.reset(ResetReason::InvalidHistory);
-            tick.commands.clear();
-        }
         if !input.usable
             || input.frame.is_none()
-            || !input.replay
-                && input
-                    .frame
-                    .is_some_and(|frame| Some(frame.sequence) != self.last_frame)
+            || input
+                .frame
+                .is_some_and(|frame| Some(frame.sequence) != self.last_frame)
             || self.raw.iter().any(|delivery| delivery.overflowed)
             || self.routes.iter().any(|route| route.delivery.overflowed)
         {
@@ -259,8 +221,6 @@ impl Runtime {
         self.last_frame = None;
         self.last_observed = None;
         self.consumer_context = None;
-        self.replay_groups.clear();
-        self.replay_ready = false;
         self.watermark = None;
     }
 
@@ -279,7 +239,6 @@ impl Runtime {
     fn reset(&mut self, reason: ResetReason) {
         self.reset_serial = self.reset_serial.wrapping_add(1);
         self.raw_neutral = [true; CONTROLS];
-        self.replay_ready = false;
         if let Some(policy) = &mut self.policy {
             policy.reset(ResetRequest { reason });
         }

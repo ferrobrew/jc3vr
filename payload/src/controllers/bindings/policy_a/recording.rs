@@ -1,7 +1,5 @@
 //! Conversion of resolved protected decisions to the versioned recording wire.
 
-use std::time::Duration;
-
 use tracking_format::input::{
     InputGroup,
     policy::{
@@ -21,17 +19,6 @@ pub(super) fn timing(config: Option<PolicyAConfig>) -> Option<PolicyATiming> {
         recenter_hold_ns: config.recenter_hold.as_nanos() as u64,
         suppress_developer_chords_in_vehicles: config.suppress_developer_chords_in_vehicles,
     })
-}
-
-pub(super) fn config(timing: Option<PolicyATiming>) -> Option<PolicyAConfig> {
-    timing
-        .filter(|timing| timing.is_valid())
-        .map(|timing| PolicyAConfig {
-            recenter_join: Duration::from_nanos(timing.recenter_join_ns),
-            panel_join: Duration::from_nanos(timing.panel_join_ns),
-            recenter_hold: Duration::from_nanos(timing.recenter_hold_ns),
-            suppress_developer_chords_in_vehicles: timing.suppress_developer_chords_in_vehicles,
-        })
 }
 
 pub(super) fn cancelled(

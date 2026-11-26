@@ -108,7 +108,6 @@ pub(super) fn fixture_mode(entries: &[(ActionId, &[&str])], mode: SemanticSet) -
                 frame_sequence: Some(frame.sequence),
                 record: InputRecord::Group(group),
             }],
-            replay: false,
             frame: Some(&frame),
             context,
             gameplay: true,

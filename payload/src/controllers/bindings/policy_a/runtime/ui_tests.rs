@@ -66,7 +66,6 @@ fn menu_tick(runtime: &mut Runtime, sequence: u64, select: bool, source: &str) -
             frame_sequence: Some(sequence),
             record: InputRecord::Group(sample),
         }],
-        replay: false,
         frame: Some(&frame),
         context: 5,
         gameplay: false,

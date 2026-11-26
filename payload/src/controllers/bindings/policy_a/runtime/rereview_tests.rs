@@ -1,9 +1,6 @@
 use tracking_format::{
     Header, StartMarker, decode, encode_input, encode_input_preamble,
-    input::{
-        CapturedInput,
-        replay::{InputReplay, PreparedInput},
-    },
+    input::CapturedInput,
 };
 
 use super::*;
@@ -63,8 +60,7 @@ fn publish_configured(
         },
         true,
     );
-    let (replay, publications) = history::take_gameplay();
-    assert!(!replay);
+    let publications = history::take_gameplay();
     let frame = ControllerFrame {
         sequence: template.stamp.sequence,
         display_time_ns: 0,
@@ -75,7 +71,6 @@ fn publish_configured(
     };
     runtime.step(TickInput {
         publications,
-        replay: false,
         frame: Some(&frame),
         context: 0,
         gameplay: true,
@@ -83,24 +78,6 @@ fn publish_configured(
         config,
         dominant: Hand::Right,
     })
-}
-
-fn scheduled(records: &[CapturedInput], deadlines: &[u64]) -> Vec<SystemCommand> {
-    history::begin_replay(true);
-    let prepared = PreparedInput::new(records);
-    let mut cursor = InputReplay::default();
-    let mut runtime = Runtime::default();
-    let mut commands = Vec::new();
-    for &deadline in deadlines {
-        let range = cursor.advance(&prepared, deadline);
-        history::publish_replayed(&records[range]);
-        let (is_replay, publications) = history::take_gameplay();
-        assert!(is_replay);
-        commands.extend(replay(&mut runtime, publications).commands);
-    }
-    assert!(cursor.finished(records.len()));
-    history::end_replay();
-    commands
 }
 
 #[test]
@@ -138,9 +115,8 @@ fn capture_transaction_excludes_foreign_policy_publications() {
 }
 
 #[test]
-fn actual_capture_deadlines_between_group_and_policy_preserve_complete_units() {
+fn actual_capture_writes_each_group_before_its_policy() {
     let _serial = history::TEST_LOCK.lock();
-    history::end_replay();
     history::take_gameplay();
     history::begin_capture();
     let command = GlobalAction::RecenterView.id();
@@ -158,35 +134,12 @@ fn actual_capture_deadlines_between_group_and_policy_preserve_complete_units() {
     }
     let records = captured_wire(history::take_capture());
     assert_eq!(records.len(), 10);
-    let prepared = PreparedInput::new(&records);
     for pair in records.as_chunks::<2>().0 {
         assert!(pair[0].capture_time_ns < pair[1].capture_time_ns);
-        let mut cursor = InputReplay::default();
-        let before = cursor.advance(&prepared, pair[1].capture_time_ns - 1);
-        assert!(!records[before].iter().any(|entry| matches!(&entry.record, InputRecord::Group(group) if matches!(&pair[0].record, InputRecord::Group(expected) if group.stamp == expected.stamp))));
-    }
-    let mut deadlines = records
-        .iter()
-        .flat_map(|entry| {
-            [
-                entry.capture_time_ns.saturating_sub(1),
-                entry.capture_time_ns,
-            ]
-        })
-        .collect::<Vec<_>>();
-    deadlines.sort_unstable();
-    deadlines.dedup();
-    deadlines.push(u64::MAX);
-    assert_eq!(
-        scheduled(&records, &deadlines),
-        [SystemCommand::Recenter; 2]
-    );
-    for split in 0..records.len() {
-        assert_eq!(
-            scheduled(&records, &[records[split].capture_time_ns, u64::MAX]),
-            [SystemCommand::Recenter; 2],
-            "split {split}"
-        );
+        assert!(matches!(
+            (&pair[0].record, &pair[1].record),
+            (InputRecord::Group(group), InputRecord::Policy(policy)) if group.stamp == policy.stamp
+        ));
     }
 }
 
@@ -390,7 +343,6 @@ fn every_reset_discards_earlier_commands_and_accepted_edges_in_the_drain() {
                     record: InputRecord::Group(reset),
                 },
             ],
-            replay: false,
             frame: Some(&frame),
             context: 0,
             gameplay: true,
@@ -407,53 +359,6 @@ fn every_reset_discards_earlier_commands_and_accepted_edges_in_the_drain() {
                 .any(|(_, _, intent)| intent.button.pressed)
         );
     }
-}
-
-#[test]
-fn replay_neutral_recovery_retains_full_sync_and_group_order_watermark() {
-    let trace = [
-        group(1, 1, [false; CONTROLS], &[]),
-        group(2, 2, [false; CONTROLS], &[]),
-    ];
-    let records = captured_trace(&trace);
-    for damage in 0..3 {
-        let mut runtime = Runtime::default();
-        replay(&mut runtime, records[..2].to_vec());
-        assert!(runtime.replay_ready);
-        let watermark = runtime.watermark;
-        runtime.reset(ResetReason::InvalidHistory);
-        runtime.replay_ready = false;
-        let mut next = records[2..].to_vec();
-        if let InputRecord::Group(group) = &mut next[0].record {
-            group.stamp.sync = if damage == 0 { 0 } else { 1 };
-            if damage == 2 {
-                group.order = GroupOrder::ObservedGroup;
-            }
-        }
-        let stamp = match &next[0].record {
-            InputRecord::Group(group) => group.stamp,
-            _ => unreachable!(),
-        };
-        if let InputRecord::Policy(policy) = &mut next[1].record {
-            policy.stamp = stamp;
-            policy.outcome = PolicyOutcome::NeutralBoundary;
-        }
-        assert!(replay(&mut runtime, next).commands.is_empty());
-        assert!(!runtime.replay_ready, "damage {damage}");
-        assert_eq!(runtime.watermark, watermark);
-    }
-}
-
-#[test]
-fn rejected_neutral_priming_never_marks_replay_ready() {
-    let mut records = captured_trace(&[group(1, 1, [false; CONTROLS], &[])]);
-    if let InputRecord::Policy(policy) = &mut records[1].record {
-        policy.context = 5;
-    }
-    let mut runtime = Runtime::default();
-    assert!(replay(&mut runtime, records).commands.is_empty());
-    assert!(!runtime.replay_ready);
-    assert!(runtime.watermark.is_none());
 }
 
 #[test]
@@ -515,7 +420,6 @@ fn neutral_boundary_requires_complete_active_attributable_route_inventory() {
 #[test]
 fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutral() {
     let _serial = history::TEST_LOCK.lock();
-    history::end_replay();
     history::take_gameplay();
     let command = GlobalAction::RecenterView.id();
     let merged = OnFootAction::Detonate.id();
@@ -597,19 +501,5 @@ fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutr
         );
         capture.extend(history::take_capture());
         assert_eq!(runtime.reset_serial, serial);
-        let records = captured_wire(capture);
-        let mut deadlines = records
-            .iter()
-            .flat_map(|entry| {
-                [
-                    entry.capture_time_ns.saturating_sub(1),
-                    entry.capture_time_ns,
-                ]
-            })
-            .collect::<Vec<_>>();
-        deadlines.sort_unstable();
-        deadlines.dedup();
-        deadlines.push(u64::MAX);
-        assert_eq!(scheduled(&records, &deadlines), [SystemCommand::Recenter]);
     }
 }

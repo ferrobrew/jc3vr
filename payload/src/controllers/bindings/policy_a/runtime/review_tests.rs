@@ -222,126 +222,7 @@ fn independent_direct_commands_survive_and_unknown_component_is_unavailable() {
 }
 
 #[test]
-fn replay_checks_direct_decision_before_dispatch_and_recovers_only_at_neutral() {
-    let command = GlobalAction::RecenterView.id();
-    let trace = [
-        group(
-            1,
-            1,
-            [false; CONTROLS],
-            &[(command, false, paths(&[RIGHT_SQUEEZE]))],
-        ),
-        group(
-            2,
-            2,
-            [false; CONTROLS],
-            &[(command, true, paths(&[RIGHT_SQUEEZE]))],
-        ),
-    ];
-    let original = captured_trace(&trace);
-    let mut changed = original.clone();
-    if let InputRecord::Group(group) = &mut changed[2].record {
-        let sample = group
-            .samples
-            .iter_mut()
-            .find(|sample| {
-                sample.route
-                    == InputRoute::Semantic {
-                        set: command.set.index() as u8,
-                        action: command.index as u16,
-                        hand: 1,
-                    }
-            })
-            .unwrap();
-        sample.down = false;
-        sample.value = ValueBits::Bool(false);
-    }
-    let mut runtime = Runtime::default();
-    assert!(replay(&mut runtime, changed).commands.is_empty());
-    assert!(!runtime.replay_ready);
-    let mut runtime = Runtime::default();
-    assert_eq!(
-        replay(&mut runtime, original).commands,
-        [SystemCommand::Recenter]
-    );
-}
-
-#[test]
-fn replay_gap_missing_tail_duplicate_and_out_of_order_cancel_holds_and_resync() {
-    let trace = [
-        group(1, 1, [false; CONTROLS], &[]),
-        group(10, 2, [false, true, false, false], &[]),
-        group(120, 3, [false, true, false, false], &[]),
-        group(130, 4, [false; CONTROLS], &[]),
-        group(140, 5, [true, false, false, false], &[]),
-        group(150, 6, [true, false, true, false], &[]),
-    ];
-    let original = captured_trace(&trace);
-    for damage in 0..4 {
-        let mut records = original.clone();
-        match damage {
-            0 => {
-                records.remove(3);
-            }
-            1 => {
-                records.insert(4, records[3].clone());
-            }
-            2 => {
-                records.swap(3, 5);
-            }
-            _ => {
-                records[2].record =
-                    InputRecord::Group(group(10, 2, [false, true, false, false], &[]));
-                records.remove(3);
-            }
-        }
-        let mut runtime = Runtime::default();
-        let tick = replay(&mut runtime, records);
-        assert_eq!(
-            tick.commands,
-            [SystemCommand::TogglePanel],
-            "damage {damage}"
-        );
-    }
-    let mut runtime = Runtime::default();
-    replay(&mut runtime, original[..6].to_vec());
-    let missing = replay(&mut runtime, vec![original[6].clone()]);
-    assert!(!missing.raw[1].held());
-    assert!(missing.commands.is_empty());
-}
-
-#[test]
-fn malformed_policy_and_skipped_group_outcomes_never_dispatch_before_boundary() {
-    let command = GlobalAction::RecenterView.id();
-    let trace = [
-        group(
-            1,
-            1,
-            [false; CONTROLS],
-            &[(command, false, paths(&[RIGHT_SQUEEZE]))],
-        ),
-        group(
-            2,
-            2,
-            [false; CONTROLS],
-            &[(command, true, paths(&[RIGHT_SQUEEZE]))],
-        ),
-    ];
-    for damage in 0..5 {
-        let mut records = captured_trace(&trace);
-        if let InputRecord::Policy(policy) = &mut records[3].record {
-            match damage {
-                0 => policy.version += 1,
-                1 => policy.action_schema += 1,
-                2 => policy.timing.as_mut().unwrap().panel_join_ns = 0,
-                3 => policy.commands ^= 2,
-                _ => policy.direct[1].sources ^= 1,
-            }
-        }
-        let mut runtime = Runtime::default();
-        assert!(replay(&mut runtime, records).commands.is_empty());
-        assert!(!runtime.replay_ready);
-    }
+fn rejected_and_stale_groups_record_their_policy_outcome() {
     let _serial = history::TEST_LOCK.lock();
     for damage in 0..3 {
         history::begin_capture();
@@ -371,7 +252,6 @@ fn malformed_policy_and_skipped_group_outcomes_never_dispatch_before_boundary() 
                 frame_sequence: Some(1),
                 record: InputRecord::Group(rejected),
             }],
-            replay: false,
             frame: Some(&frame),
             context: 0,
             gameplay: true,

@@ -1,11 +1,8 @@
-//! Policy evaluation, recording, and verification of recorded replay decisions.
+//! Policy evaluation and its recording.
 
 use std::time::Duration;
 
-use tracking_format::input::{
-    GroupOrder, InputGroup, InputStamp,
-    policy::{PolicyEvaluation, PolicyOutcome},
-};
+use tracking_format::input::{GroupOrder, InputGroup, InputStamp};
 
 #[cfg(test)]
 use crate::controllers::bindings::policy_a::InputEvidence;
@@ -34,116 +31,9 @@ pub(super) struct EvaluationInput<'a> {
     pub(super) context: u64,
     pub(super) gameplay: bool,
     pub(super) config: &'a BindingsConfig,
-    pub(super) expected: Option<PolicyEvaluation>,
 }
 
 impl Runtime {
-    pub(super) fn replay_policy(
-        &mut self,
-        expected: PolicyEvaluation,
-        config: &BindingsConfig,
-        tick: &mut Tick,
-    ) {
-        let cancellation = !expected.is_valid()
-            || expected.action_schema != SCHEMA_VERSION
-            || self
-                .replay_groups
-                .front()
-                .is_none_or(|group| group.stamp != expected.stamp)
-            || self.config != recording::config(expected.timing)
-            || expected.outcome != PolicyOutcome::Evaluated;
-        if cancellation {
-            tick.commands.clear();
-        }
-        if !expected.is_valid() || expected.action_schema != SCHEMA_VERSION {
-            self.replay_ready = false;
-            self.reset(ResetReason::InvalidHistory);
-            return;
-        }
-        let Some(index) = self
-            .replay_groups
-            .iter()
-            .position(|group| group.stamp == expected.stamp)
-        else {
-            self.replay_ready = false;
-            self.reset(ResetReason::InvalidHistory);
-            return;
-        };
-        if index != 0 {
-            self.replay_ready = false;
-            self.reset(ResetReason::InvalidHistory);
-        }
-        for _ in 0..index {
-            self.replay_groups.pop_front();
-        }
-        let Some(group) = self.replay_groups.pop_front() else {
-            return;
-        };
-        let next_config = recording::config(expected.timing);
-        if self.config != next_config {
-            self.config = next_config;
-            self.replay_ready = false;
-            self.reset(ResetReason::BindingChanged);
-        }
-        if matches!(
-            expected.outcome,
-            PolicyOutcome::Cancelled | PolicyOutcome::UnavailablePrefix
-        ) {
-            self.replay_ready = false;
-            self.reset(ResetReason::InvalidHistory);
-            return;
-        }
-        if !self.replay_ready || expected.outcome == PolicyOutcome::NeutralBoundary {
-            if !ordered_after(self.watermark, &group) {
-                self.reset(ResetReason::InvalidHistory);
-                return;
-            }
-            if !expected.neutral || !group_neutral(&group, config, self.dominant) {
-                self.reset(ResetReason::InvalidHistory);
-                return;
-            }
-            self.policy = self
-                .config
-                .and_then(|config| PolicyA::new(config, ClockEpoch(group.stamp.epoch)).ok());
-            self.routes.clear();
-            self.raw = Default::default();
-            self.claims = 0;
-            self.interpretation = None;
-            self.epoch = group.stamp.epoch;
-            // A validated boundary establishes state only. It cannot dispatch recorded commands.
-            let serial = self.reset_serial;
-            self.observe(
-                &group,
-                EvaluationInput {
-                    context: expected.context,
-                    gameplay: expected.gameplay,
-                    config,
-                    expected: None,
-                },
-                &mut Tick::default(),
-            );
-            self.replay_ready = self.reset_serial == serial
-                && self.watermark == Some((group.stamp, group.order))
-                && self.interpretation
-                    == Some((
-                        group.binding_generation,
-                        expected.context,
-                        expected.gameplay,
-                    ));
-            return;
-        }
-        self.observe(
-            &group,
-            EvaluationInput {
-                context: expected.context,
-                gameplay: expected.gameplay,
-                config,
-                expected: Some(expected),
-            },
-            tick,
-        );
-    }
-
     pub(super) fn observe(
         &mut self,
         group: &InputGroup,
@@ -154,7 +44,6 @@ impl Runtime {
             context,
             gameplay,
             config,
-            expected,
         } = input;
         let mut evaluation = recording::cancelled(group, self.config, context, gameplay);
         if group.action_schema != SCHEMA_VERSION
@@ -166,18 +55,14 @@ impl Runtime {
         {
             self.reset(ResetReason::BindingUnresolved);
             tick.commands.clear();
-            if !self.replay {
-                history::record_policy(evaluation);
-            }
+            history::record_policy(evaluation);
             return;
         }
         if group.stamp.epoch != self.epoch {
             if group.stamp.epoch < self.epoch {
                 self.reset(ResetReason::InvalidHistory);
                 tick.commands.clear();
-                if !self.replay {
-                    history::record_policy(evaluation);
-                }
+                history::record_policy(evaluation);
                 return;
             }
             self.epoch = group.stamp.epoch;
@@ -189,9 +74,7 @@ impl Runtime {
         if !ordered_after(self.watermark, group) {
             self.reset(ResetReason::InvalidHistory);
             tick.commands.clear();
-            if !self.replay {
-                history::record_policy(evaluation);
-            }
+            history::record_policy(evaluation);
             return;
         }
         self.watermark = Some((group.stamp, group.order));
@@ -212,9 +95,7 @@ impl Runtime {
         let Some(policy) = &mut self.policy else {
             self.reset(ResetReason::BindingUnresolved);
             tick.commands.clear();
-            if !self.replay {
-                history::record_policy(evaluation);
-            }
+            history::record_policy(evaluation);
             return;
         };
         let decision = policy.observe_available(
@@ -303,20 +184,9 @@ impl Runtime {
             evaluation.commands = commands
                 .iter()
                 .fold(0, |bits, command| bits | command_bit(*command));
-            if expected.is_none_or(|expected| expected == evaluation) {
-                tick.commands.extend(commands);
-            }
+            tick.commands.extend(commands);
         }
-        if expected.is_some_and(|expected| expected != evaluation) {
-            tracing::warn!(target: "controllers", ?expected, ?evaluation, "input replay: final decision mismatch");
-            self.replay_ready = false;
-            self.reset(ResetReason::InvalidHistory);
-            tick.commands.clear();
-            return;
-        }
-        if !self.replay {
-            history::record_policy(evaluation);
-        }
+        history::record_policy(evaluation);
     }
 }
 

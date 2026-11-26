@@ -253,10 +253,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
         state.publish_recovery();
         frame::take_edges();
         semantic_frame::take();
-        let (replay, publications) = history::take_gameplay();
+        let publications = history::take_gameplay();
         INPUT_POLICY.lock().step(TickInput {
             publications,
-            replay,
             frame: None,
             context: 0,
             gameplay: false,
@@ -300,10 +299,9 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
     // replayed then.
     let mut edges = frame::take_edges();
     let (semantic, semantic_edges) = semantic_frame::take();
-    let (replay, publications) = history::take_gameplay();
+    let publications = history::take_gameplay();
     let mut routed = INPUT_POLICY.lock().step(TickInput {
         publications,
-        replay,
         frame: frame.as_ref(),
         context: policy_context(detection.mode),
         gameplay: idle.is_none(),
@@ -1266,10 +1264,8 @@ const RETARGET_M: f32 = 2.0;
 static CAPTURE_WAIT: Mutex<CaptureWait> = Mutex::new(CaptureWait::new());
 
 fn cancel_capture_routes(poll: DevicePoll, sink: &mut Vec<Segment>) {
-    let (replay, publications) = history::take_gameplay();
-    INPUT_POLICY
-        .lock()
-        .cancel_publications(replay, publications);
+    let publications = history::take_gameplay();
+    INPUT_POLICY.lock().cancel_publications(publications);
     PANEL_RECOVERY.lock().suspend();
     frame::take_edges();
     semantic_frame::take();

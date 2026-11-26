@@ -164,7 +164,6 @@ fn evaluate_in(
             frame_sequence: Some(frame.sequence),
             record: InputRecord::Group(group),
         }],
-        replay: false,
         frame: Some(&frame),
         context,
         gameplay,
@@ -218,28 +217,6 @@ fn batch(runtime: &mut Runtime, groups: &[InputGroup]) -> Tick {
                 record: InputRecord::Group(group.clone()),
             })
             .collect(),
-        replay: false,
-        frame: Some(&frame),
-        context: 0,
-        gameplay: true,
-        usable: true,
-        config: &BindingsConfig::new(),
-        dominant: Hand::Right,
-    })
-}
-
-fn replay(runtime: &mut Runtime, publications: Vec<Publication>) -> Tick {
-    let frame = ControllerFrame {
-        sequence: 1,
-        display_time_ns: 0,
-        published_at: Instant::now(),
-        focused: true,
-        action_set: ActionSetKind::OnFoot,
-        hands: Default::default(),
-    };
-    runtime.step(TickInput {
-        publications,
-        replay: true,
         frame: Some(&frame),
         context: 0,
         gameplay: true,
@@ -725,39 +702,6 @@ fn a_committed_single_is_not_withdrawn_for_a_late_partner() {
     );
     assert!(late.commands.is_empty());
     assert!(button(&late, id).down);
-}
-
-#[test]
-fn replay_uses_recorded_policy_timing_before_dispatch() {
-    let config = BindingsConfig::new();
-    let groups = [
-        group(1, 1, [false; CONTROLS], &[]),
-        group(10, 2, [true, false, false, false], &[]),
-        group(20, 3, [true, false, true, false], &[]),
-    ];
-    let publications = captured_trace(&groups);
-    let mut runtime = Runtime::default();
-    let mut changed = config;
-    changed.panel_chord_window_s = 0.001;
-    let frame = ControllerFrame {
-        sequence: 1,
-        display_time_ns: 0,
-        published_at: Instant::now(),
-        focused: true,
-        action_set: ActionSetKind::OnFoot,
-        hands: Default::default(),
-    };
-    let tick = runtime.step(TickInput {
-        publications,
-        replay: true,
-        frame: Some(&frame),
-        context: 0,
-        gameplay: true,
-        usable: true,
-        config: &changed,
-        dominant: Hand::Right,
-    });
-    assert_eq!(tick.commands, [SystemCommand::TogglePanel]);
 }
 
 #[test]

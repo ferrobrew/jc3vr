@@ -242,36 +242,17 @@ fn unavailable_unused_raw_control_does_not_cancel_a_disjoint_chord() {
 }
 
 #[test]
-fn captured_loss_round_trips_and_replay_matches_live_commands() {
+fn captured_loss_round_trips_through_the_recording() {
     let trace = chord_loss_trace();
     let publications = captured_trace(&trace);
     let records = rereview_tests::captured_wire(publications);
     assert!(records.iter().any(|record| matches!(&record.record, InputRecord::Group(group) if group.stamp.sequence == 3 && !group.samples[2].active)));
-    let mut runtime = Runtime::default();
-    let mut commands = Vec::new();
-    for pair in records.chunks(2) {
-        commands.extend(
-            replay(
-                &mut runtime,
-                pair.iter()
-                    .map(|captured| Publication {
-                        observed_at: Instant::now(),
-                        frame_sequence: None,
-                        record: captured.record.clone(),
-                    })
-                    .collect(),
-            )
-            .commands,
-        );
-    }
-    assert_eq!(commands, [SystemCommand::TogglePanel]);
 }
 
 #[test]
-fn queued_live_publications_keep_middle_loss_through_capture_and_replay() {
+fn queued_live_publications_keep_middle_loss_through_capture() {
     let _flight = crate::vr::input::flight_pose::test_guard();
     let _serial = history::TEST_LOCK.lock();
-    history::end_replay();
     history::take_gameplay();
     history::begin_capture();
     let trace = chord_loss_trace();
@@ -297,11 +278,10 @@ fn queued_live_publications_keep_middle_loss_through_capture_and_replay() {
         action_set: ActionSetKind::OnFoot,
         hands: hands(),
     };
-    let (_, publications) = history::take_gameplay();
+    let publications = history::take_gameplay();
     assert_eq!(publications.len(), 5);
     let tick = runtime.step(TickInput {
         publications,
-        replay: false,
         frame: Some(&frame),
         context: 0,
         gameplay: true,
@@ -320,19 +300,6 @@ fn queued_live_publications_keep_middle_loss_through_capture_and_replay() {
     }
     let records = rereview_tests::captured_wire(history::take_capture());
     assert!(records.iter().any(|record| matches!(&record.record, InputRecord::Group(group) if group.stamp.sequence == 3 && !group.samples[2].active)));
-    let mut replayed = Runtime::default();
-    let publications = records
-        .into_iter()
-        .map(|captured| Publication {
-            observed_at: Instant::now(),
-            frame_sequence: None,
-            record: captured.record,
-        })
-        .collect();
-    assert_eq!(
-        replay(&mut replayed, publications).commands,
-        [SystemCommand::TogglePanel]
-    );
 }
 
 #[test]
@@ -439,7 +406,6 @@ fn analog_grapple_without_default_uses_sampler_hysteresis_through_policy_and_tab
                     frame_sequence: Some(frame.sequence),
                     record: InputRecord::Group(group),
                 }],
-                replay: false,
                 frame: Some(&frame),
                 context: mode.action_set().index() as u64,
                 gameplay: true,
