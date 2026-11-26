@@ -11,7 +11,7 @@
 //!
 //! The lock is not reentrant, and every slot shares it, so a thread that locks the configuration
 //! while it holds a guard deadlocks. That includes two guards in one statement
-//! (`HUD.lock().distance > VR.lock().far_clip`), whose temporaries live to the statement's end.
+//! (`HUD.lock().distance > VR.lock().world_scale`), whose temporaries live to the statement's end.
 //! The rule: take one guard per scope, read every part needed through it, and drop it before
 //! anything else locks the configuration. To read parts of different slots together, lock the
 //! slot that holds them both, or copy the first part out (`let distance = HUD.lock().distance;`)

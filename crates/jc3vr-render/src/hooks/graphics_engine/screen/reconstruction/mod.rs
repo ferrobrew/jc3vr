@@ -48,10 +48,12 @@ use std::{
 };
 
 use detours_macro::detour;
-use jc3gi::{graphics_engine::graphics_engine::HContext_t, types::math::Matrix4};
+use jc3gi::{
+    camera::camera::Camera, graphics_engine::graphics_engine::HContext_t, types::math::Matrix4,
+};
 use jc3vr_view::{
     stereo::{config::STEREO_CONFIG, engine_context::EngineContext},
-    vr::{EyeRenderParams, VR_CONFIG, render_params},
+    vr::{EyeRenderParams, render_params},
 };
 use re_utilities::hook_library::HookLibrary;
 use windows::Win32::{
@@ -429,7 +431,7 @@ fn perspective_fov_inverse(
 /// main-camera planes (an auxiliary camera -- e.g. a reflection -- whose own symmetric rebuild is
 /// already correct).
 fn offaxis_inverse(near: f32, far: f32) -> Option<Matrix4> {
-    let far_fallback = VR_CONFIG.lock().far_clip;
+    let far_fallback = Camera::DEFAULT_FAR_PLANE;
     // A per-eye half run reconstructs for *its* eye, not for the collapse's single dispatch index
     // (which is always eye 0); everything else keeps reading the dispatch's own eye.
     let half = PER_EYE.get();
@@ -760,7 +762,6 @@ pub(super) fn with_immediate_context<R>(f: impl FnOnce(&ID3D11DeviceContext) -> 
 
 #[cfg(test)]
 mod tests {
-    use jc3gi::camera::camera::Camera;
     use jc3vr_view::vr::projection::{Fov, OffAxisProjection};
 
     use super::*;

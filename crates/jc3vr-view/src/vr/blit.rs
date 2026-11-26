@@ -68,10 +68,9 @@ use crate::{
     hooks::graphics_engine::capture::EGUI_DEBUG_RENDER_STATE,
     stereo::dispatch,
     vr::{
-        EyeImage, FrameContext, VrConfig,
+        EyeImage, FrameContext,
         blit_region::{BlitSource, SourceRegion, params_words},
         blit_timer::TailBlitTimer,
-        config::BlitGamma,
         foveation::{capture_state, restore_state},
     },
 };
@@ -94,14 +93,14 @@ static VR_BLIT: Mutex<Option<VrBlit>> = Mutex::new(None);
 /// Acquire the swapchain image, blit both captured eyes into their slices, release, and submit the
 /// frame. Consumes the [`FrameContext`], releasing the submit side. The frame is always
 /// ended -- on any blit failure it submits an empty frame rather than leaving the compositor waiting.
-pub fn present_and_submit(mut frame: FrameContext, cfg: &VrConfig) {
+pub fn present_and_submit(mut frame: FrameContext) {
     if !frame.should_render() {
         disarm_direct();
         end(frame);
         return;
     }
 
-    let submitted = submit(&mut frame, cfg);
+    let submitted = submit(&mut frame);
     // The frame's view over the back buffer goes whatever happened, before a resize can need the
     // buffer free.
     if let Some(blit) = VR_BLIT.lock().as_mut() {
@@ -137,11 +136,9 @@ pub fn fade_level() -> f32 {
 /// where it is measured as `vr_swapchain_wait`; the image is the runtime's oldest and is normally
 /// free already. A failed acquire leaves the route disarmed, and the submit retries the acquire and
 /// blits from the captures, as it does with the route off.
-pub fn arm_direct(frame: &mut FrameContext, cfg: &VrConfig) {
+pub fn arm_direct(frame: &mut FrameContext) {
     let (target, arm) = if dispatch::mode().selected_eye().is_some() {
         (None, DirectArm::NotArmed)
-    } else if !cfg.direct_eye_blit {
-        (None, DirectArm::ConfigOff)
     } else if GAVE_UP.load(Ordering::Relaxed) {
         (None, DirectArm::GaveUp)
     } else {
@@ -149,7 +146,7 @@ pub fn arm_direct(frame: &mut FrameContext, cfg: &VrConfig) {
             Ok(()) => {
                 let target = frame.eye_image(0).map(|image| DirectTarget {
                     image,
-                    linearize: matches!(cfg.blit_srgb_gamma, BlitGamma::Linearize),
+                    linearize: true,
                     blitted: [false; 2],
                 });
                 let arm = if target.is_some() {
@@ -199,8 +196,6 @@ pub struct DirectStatus {
 pub enum DirectArm {
     /// The image was acquired and published for the eyes' post-draws.
     Armed = 1,
-    /// `vr.direct_eye_blit` is off.
-    ConfigOff,
     /// An earlier failure turned the route off for the session.
     GaveUp,
     /// Acquiring the swapchain image failed this frame.
@@ -214,7 +209,6 @@ pub enum DirectArm {
 pub fn direct_status() -> DirectStatus {
     let arm = match LAST_ARM.load(Ordering::Relaxed) {
         1 => Some(DirectArm::Armed),
-        2 => Some(DirectArm::ConfigOff),
         3 => Some(DirectArm::GaveUp),
         4 => Some(DirectArm::AcquireFailed),
         5 => Some(DirectArm::NotArmed),
@@ -524,7 +518,7 @@ fn end(frame: FrameContext) {
 
 /// The acquire → blit → release body, factored out so [`present_and_submit`] can end the frame on
 /// either success or failure.
-fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
+fn submit(frame: &mut FrameContext) -> anyhow::Result<()> {
     // Clone (AddRef) the captured eye textures under a brief EGUI lock, dropped before the blit
     // state / context work, so the context work never nests under the capture lock.
     let render_mode = dispatch::mode();
@@ -554,7 +548,7 @@ fn submit(frame: &mut FrameContext, cfg: &VrConfig) -> anyhow::Result<()> {
     let context =
         unsafe { device.m_Context.as_ref() }.context("vr: the graphics context is unavailable")?;
 
-    let linearize = matches!(cfg.blit_srgb_gamma, BlitGamma::Linearize);
+    let linearize = true;
     let brightness = 1.0 - fade_level();
 
     // Both eyes' immediate-context work runs under one critical-section hold, serialized with the

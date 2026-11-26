@@ -143,7 +143,6 @@ pub(crate) mod tests {
     use std::cell::RefCell;
 
     use jc3vr_core::config::engine::{Snapshot, store};
-    use jc3vr_view::vr::FOVEATION_CONFIG;
 
     use super::*;
     use crate::pause_menu::model::page::{Item, Page};
@@ -160,13 +159,10 @@ pub(crate) mod tests {
             let mut config = TEST_CONFIG.with_borrow(Snapshot::clone);
             let mut resets = Vec::new();
             store::schema().validate(config.root_mut(), &mut resets);
-            if let Some(reset) = resets.first() {
-                return Err(format!("{}: {}", reset.path, reset.reason));
+            match resets.first() {
+                Some(reset) => Err(format!("{}: {}", reset.path, reset.reason)),
+                None => Ok(()),
             }
-            config
-                .part(&FOVEATION_CONFIG)
-                .validate()
-                .map_err(|e| e.to_string())
         };
         for item in &page.items {
             match item {

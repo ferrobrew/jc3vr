@@ -38,8 +38,8 @@
 pub mod projection;
 
 pub use config::{
-    BlitGamma, FOVEATION_CONFIG, FoveationConfig, FoveationConfigError, FreezeMode, MirrorView,
-    ProjectionConvention, VR_CONFIG, VrConfig,
+    FOVEATION_CONFIG, FoveationConfig, FreezeMode, MirrorView, ProjectionConvention, VR_CONFIG,
+    VrConfig,
 };
 pub use frame::{
     CaptureEyeView, CaptureViews, EyeRenderParams, begin_render_frame, capture_views,

@@ -55,9 +55,6 @@ fn session() -> Line {
 }
 
 fn direct_blit() -> Line {
-    if !read(&VR_CONFIG, |c| c.direct_eye_blit) {
-        return Line::off("");
-    }
     direct_blit_line(vr::direct_status())
 }
 
@@ -231,7 +228,6 @@ fn direct_blit_line(status: DirectStatus) -> Line {
             (_, Some(false)) => Line::off(prose("Buffer unreadable")),
             (eyes, _) => Line::waiting(text!(eyes.to_string(), " of 2 eyes")),
         },
-        Some(DirectArm::ConfigOff) => Line::off(""),
         Some(DirectArm::GaveUp) => Line::failed(prose("See log")),
         Some(DirectArm::AcquireFailed) => Line::waiting(prose("Acquire failed")),
         Some(DirectArm::NotArmed) => Line::off(prose("Single-pass or mono")),

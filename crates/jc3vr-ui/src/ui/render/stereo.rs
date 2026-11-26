@@ -45,15 +45,11 @@ pub(super) fn section(ui: &mut egui::Ui, cfg: &mut impl Parts) {
         .on_hover_text("The history's share once the pixel moves 16 pixels a frame or more");
         ui.add(egui::Slider::new(&mut taa.clip_gamma_rest, 0.5..=3.0).text("TAA clip box at rest"))
             .on_hover_text("The colour box's half-size in standard deviations, pixel still");
-        ui.add(egui::Slider::new(&mut taa.clip_gamma, 0.5..=3.0).text("TAA clip box in motion"))
-            .on_hover_text("The colour box's half-size in standard deviations, pixel moving");
         ui.add(
             egui::Slider::new(&mut taa.current_sharpness, 0.5..=16.0)
                 .text("TAA current-frame sharpness"),
         )
         .on_hover_text("The falloff of the kernel that unjitters the current frame");
-        ui.add(egui::Slider::new(&mut taa.depth_tolerance, 0.01..=0.5).text("TAA depth tolerance"))
-            .on_hover_text("The relative depth slack before a history counts as disoccluded");
     }
     ui.checkbox(
         &mut cfg.part_mut(&FSR_CONFIG).jitter,

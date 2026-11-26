@@ -59,7 +59,7 @@ fn changed_settings_round_trip() {
     original.controllers.dominant_hand = Hand::Left;
     original.fsr.sharpen = true;
     // Values JSON could not carry, in settings no validation covers.
-    original.vr.far_clip = f32::INFINITY;
+    original.vr.world_scale = f32::INFINITY;
     original.exposure.forced_value = f32::NAN;
 
     let text = toml::to_string(&original).unwrap();
@@ -517,7 +517,7 @@ fn a_snapshot_serializes_exactly_as_the_config_does() {
     config.controllers.hands.grip.position_m = Vec3::new(0.01, 0.07, 0.0);
     config.controllers.dominant_hand = Hand::Left;
     config.fsr.sharpen = true;
-    config.vr.far_clip = f32::INFINITY;
+    config.vr.world_scale = f32::INFINITY;
     let snapshot = Snapshot::of(&config);
 
     assert_eq!(

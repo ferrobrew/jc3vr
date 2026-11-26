@@ -109,17 +109,13 @@ pub struct TaaConfig {
     /// the motion between the two.
     pub motion_history_weight: f32,
     /// The half-size, in standard deviations, of the current neighbourhood's colour box the history
-    /// is clipped to while the pixel moves.
-    pub clip_gamma: f32,
-    /// The same at rest, where a wider box keeps sub-pixel detail the current frame's
+    /// is clipped to at rest, wider than in motion to keep sub-pixel detail the current frame's
     /// neighbourhood misses at some jitter offsets.
     pub clip_gamma_rest: f32,
     /// The falloff of the kernel that reconstructs the current colour at the pixel's unjittered
     /// centre from its neighbourhood: a neighbour `d` pixels from that centre weighs
     /// `exp(-current_sharpness * d^2)`.
     pub current_sharpness: f32,
-    /// The relative slack of the depth test that rejects a disoccluded history.
-    pub depth_tolerance: f32,
 }
 
 impl TaaConfig {
@@ -127,10 +123,8 @@ impl TaaConfig {
         Self {
             history_weight: 0.9,
             motion_history_weight: 0.4,
-            clip_gamma: 1.0,
             clip_gamma_rest: 1.5,
             current_sharpness: 4.0,
-            depth_tolerance: 0.1,
         }
     }
 }

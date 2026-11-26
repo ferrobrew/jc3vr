@@ -1,7 +1,7 @@
 //! Persisting the action handles across inject cycles.
 //!
 //! The mod keeps the OpenXR instance and session alive across an uninject and reinject
-//! ([`crate::vr::VrConfig::persist_instance`]). Action sets can be attached to a session only once,
+//! (`crate::vr::persist`). Action sets can be attached to a session only once,
 //! so the reinjected payload cannot create and attach a fresh set to the persisted session: it must
 //! re-wrap the handles of the set it attached before. Like the instance and session handles, they
 //! are stashed in the game process's environment, which outlives the payload DLL.

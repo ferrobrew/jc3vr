@@ -343,12 +343,10 @@ fn actual_runtime_dispatch_renders_controls_then_live_status_without_a_renderer(
             "Native per-eye resolution",
             "Desktop mirror",
             "Mod-owned back buffer",
-            "Direct eye blit",
         ] {
             assert!(position(control) < position("Live status"), "{control}");
         }
         for readout in [
-            "Session:",
             "Runtime:",
             "Per-eye resolution:",
             "Headpose source:",

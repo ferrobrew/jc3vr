@@ -30,12 +30,6 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
                      the left). F10 toggles between this and the last single eye.",
                     );
             });
-            ui.checkbox(&mut cfg.mirror_frame_stamp, "Frame stamp while capturing")
-                .on_hover_text(
-                    "While a capture take runs, draw the mirror's present counter as black and \
-                     white blocks in the window's bottom-left corner; the take's frames.jsonl \
-                     logs the same counter per present.",
-                );
         });
     });
     ui.checkbox(&mut cfg.own_back_buffer, "Mod-owned back buffer")
@@ -44,13 +38,6 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
              of following the per-eye render resolution. Makes the desktop mirror's present 1:1 and \
              stops single-pass double-wide forcing a 2x-width swapchain. Takes effect on the next \
              resize, which toggling this issues.",
-        );
-    ui.checkbox(&mut cfg.direct_eye_blit, "Direct eye blit")
-        .on_hover_text(
-            "Blit each eye straight from the engine's back buffer into the headset swapchain on \
-             the eye's own draw, skipping the full-size copy into the eye capture unless the \
-             mirror, a screenshot, the recorder, or the previews need that eye. Off copies every \
-             eye and blits at the frame submit.",
         );
     ui.checkbox(
         &mut cfg.overlap_render_update,
@@ -80,7 +67,6 @@ pub fn egui_debug_vr(ui: &mut egui::Ui) {
 pub(crate) fn status(ui: &mut egui::Ui) {
     let status = vr::status();
 
-    ui.label(format!("Session: {}", session_label(&status)));
     ui.label(match &status.runtime_name {
         Some(name) => format!("Runtime: {name}"),
         None => "Runtime: (none)".to_string(),
@@ -159,20 +145,3 @@ fn draw_mask(ui: &mut egui::Ui, mask: &EyeMask) {
 
 /// The preview box's width in points.
 const MASK_PREVIEW_WIDTH: f32 = 160.0;
-
-/// A human-readable label for the runtime's current session state.
-fn session_label(status: &vr::VrStatus) -> &'static str {
-    if status.busy {
-        // The runtime lock was held by the frame tail; the rest of the snapshot is not meaningful.
-        return "(busy -- the frame tail holds the runtime lock)";
-    }
-    if !status.enabled {
-        "disabled (flatscreen stereo)"
-    } else if status.running {
-        "running"
-    } else if status.instance_up {
-        "instance up, session idle"
-    } else {
-        "no runtime (retrying)"
-    }
-}

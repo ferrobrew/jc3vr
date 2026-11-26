@@ -350,7 +350,6 @@ unsafe fn present_mirror_inner(view: MirrorView) -> anyhow::Result<()> {
 
         present_index = PRESENTS.fetch_add(1, Ordering::Relaxed);
         stamped = records_mirror()
-            && VR_CONFIG.query(|c| c.mirror_frame_stamp)
             && mirror.stamp(
                 &context.m_Context,
                 &rtv,

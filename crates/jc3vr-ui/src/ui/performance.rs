@@ -30,8 +30,6 @@ pub fn egui_debug_performance(ui: &mut egui::Ui) {
         ui.separator();
         ui.label(format!("FPS: {}", clock.m_FPS));
         ui.label(format!("SPF: {}", clock.m_SPF));
-        ui.label(format!("Real FPS: {}", clock.m_RealFPS));
-        ui.label(format!("Real SPF: {}", clock.m_RealSPF));
         ui.label(format!("Update speed: {}", clock.m_UpdateSpeed));
         ui.label(format!("Force to FPS: {}", clock.m_ForceToThisFPS));
         ui.label(format!("Force to SPF: {}", clock.m_ForceToThisSPF));

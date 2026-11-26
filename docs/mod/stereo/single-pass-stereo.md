@@ -908,7 +908,7 @@ with its actual default.
 | `single_pass.uniform_viewport_slots` | On | Puts both viewport slots back to one region once the G-buffer range ends, so a patched shader's instance parity is a no-op in the passes that are not eye-split. |
 | `single_pass.viewport_bind_cache` | On | Skips a routed draw's viewport bind when the two slots already hold what it wants (see "The viewport record"). Applies at once. |
 | `single_pass.skip_unread_effect_depth_copy` | On | Skips the engine's per-dispatch copy of the reflection-proxy depth into the effect depth-history slots ([`EffectInfo::m_DepthTexture`](https://ferrobrew.github.io/pyxis/#/JustCause3_Steam_20206564/item/graphics_engine::graphics_engine::EffectInfo##field-m_DepthTexture)), which nothing in the game reads; the slots' lifecycle state still advances. About 0.5 ms of GPU time at the headset's size ([frame-budget.md](../performance/frame-budget.md#toward-120-hz-runs-338-and-339)). Applies at once. |
-| `single_pass.collapse_direct_blit` | On | Blits each eye into its swapchain slice from its half of the double-wide back buffer in the post-draw (the direct route of `vr.direct_eye_blit`), copying the half into its eye capture only for a reader of the capture. Off copies both halves and blits the copies at the frame submit. Applies from the next frame. |
+| `single_pass.collapse_direct_blit` | On | Blits each eye into its swapchain slice from its half of the double-wide back buffer in the post-draw (the direct route of the per-eye blit), copying the half into its eye capture only for a reader of the capture. Off copies both halves and blits the copies at the frame submit. Applies from the next frame. |
 
 ### Per-eye fullscreen and screen-space passes
 

@@ -242,7 +242,7 @@ fn run_tail(job: TailJob) {
         #[cfg(feature = "profiler")]
         puffin::profile_scope!("VR present + submit (tail)");
         let _timing = frame_timing::scope(Slot::Submit);
-        crate::vr::present_and_submit(job.frame, &job.vr_cfg);
+        crate::vr::present_and_submit(job.frame);
     }
     log_vr_frame_health(should_render);
 }

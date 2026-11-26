@@ -10,7 +10,7 @@
 //! source.
 
 use glam::{Quat, Vec2, Vec3};
-use jc3gi::types::math::Matrix4;
+use jc3gi::{camera::camera::Camera, types::math::Matrix4};
 use jc3vr_core::render_frame::RenderFrameSlot;
 use parking_lot::Mutex;
 
@@ -448,7 +448,8 @@ fn render_frame(
     // top of that to hide edge pop-in under fast motion; the eye-shift margin and the padding are both
     // applied on the vertical axis too (flying pitch shifts the eyes vertically). Written standard-depth
     // to match the cull camera's `m_ProjectionF`.
-    let (near_clip, far_clip) = crate::hooks::camera::main_camera_planes_or(cfg.far_clip);
+    let (near_clip, far_clip) =
+        crate::hooks::camera::main_camera_planes_or(Camera::DEFAULT_FAR_PLANE);
     let ipd = (pos1 - pos0).length();
     let margin = 0.5 * ipd / near_clip.max(1e-3);
     let pad = 1.0 + CULL_FOV_PADDING;
@@ -515,7 +516,7 @@ fn render_frame(
             // inter-eye cant (symmetric); the camera hook applies it locally so each eye renders at the
             // orientation it is submitted with.
             orientation_delta: center_orientation.inverse() * quat(eye.pose.orientation),
-            convention: cfg.projection_convention,
+            convention: ProjectionConvention::EnginePreReverseZ,
             jitter: None,
         }
     };

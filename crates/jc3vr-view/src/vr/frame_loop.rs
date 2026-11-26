@@ -11,6 +11,7 @@ use std::{
 };
 
 use anyhow::Context as _;
+use jc3gi::camera::camera::Camera;
 use jc3vr_core::{frame_timing, frame_timing::Slot};
 use jc3vr_input::frame as controller_frame;
 use openxr as xr;
@@ -411,7 +412,8 @@ impl VrState {
             session.frame_wait.wait().context("vr: wait_frame failed")?
         };
 
-        let (near_clip, far_clip) = crate::hooks::camera::main_camera_planes_or(cfg.far_clip);
+        let (near_clip, far_clip) =
+            crate::hooks::camera::main_camera_planes_or(Camera::DEFAULT_FAR_PLANE);
 
         let mut eyes = [EyeView {
             pose: xr::Posef::IDENTITY,

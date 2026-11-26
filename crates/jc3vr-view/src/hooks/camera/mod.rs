@@ -130,14 +130,13 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
     let jitter = jitter && !fsr_enabled && !stereo_active;
 
     // The VR per-eye off-axis projection and world offset (docs/mod/vr-runtime.md blockers 1 & 3).
-    // Fetch this eye's parameters once; `None` on flatscreen frames. Under the preferred convention,
-    // write the standard-depth off-axis projection into `m_Projection` *before* SetupRenderCamera so
+    // Fetch this eye's parameters once; `None` on flatscreen frames. Write the standard-depth
+    // off-axis projection into `m_Projection` *before* SetupRenderCamera so
     // the engine applies its reverse-Z remap and TAA jitter to it exactly once (§2.7).
     let vr_eye = is_render_camera
         .then(|| crate::vr::render_params(crate::stereo::draw_index()))
         .flatten();
     if let Some(vr) = vr_eye
-        && vr.convention == crate::vr::ProjectionConvention::EnginePreReverseZ
         && let Some(camera) = unsafe { camera.as_mut() }
     {
         camera.m_Projection = vr.projection_standard;
@@ -187,13 +186,10 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         {
             let mut stereo = STEREO_STATE.lock();
             let index = stereo.draw_index;
-            // Under the preferred convention the projection is already the eye's, jittered for
-            // FSR; the snapshot takes it without the jitter, as the history holds every matrix.
+            // The projection is already the eye's, jittered for FSR; the snapshot takes it without
+            // the jitter, as the history holds every matrix.
             let center = match vr_eye {
-                Some(vr)
-                    if vr.jitter.is_some()
-                        && vr.convention == crate::vr::ProjectionConvention::EnginePreReverseZ =>
-                {
+                Some(vr) if vr.jitter.is_some() => {
                     camera.m_View * vr.unjittered_camera_projection()
                 }
                 _ => camera.m_ViewProjectionF,
@@ -226,13 +222,6 @@ fn setup_render_camera(camera: *mut Camera, jitter: bool) -> *mut c_void {
         } else if let Some(vr) = vr_eye {
             unsafe {
                 if let Some(camera) = camera.as_mut() {
-                    // Fallback convention: write the already-reverse-Z'd off-axis projection now
-                    // (after SetupRenderCamera, so the engine does not re-reverse it); the VP rebuild
-                    // below picks it up. TAA jitter is not applied on this path.
-                    if vr.convention == crate::vr::ProjectionConvention::ManualReverseZ {
-                        camera.m_Projection = vr.projection_reverse_z;
-                        camera.m_ProjectionF = vr.projection_reverse_z;
-                    }
                     let center = glam::Mat4::from(camera.m_TransformF);
                     let delta = vr.world_offset(center);
                     let transform = vr.resolve(center);

@@ -61,8 +61,8 @@ The design above is implemented, on by default, across:
   bit after the last, and runs the fill-in (see "Which passes skip the dropped pixels"). The foveal centre comes from the eye's
   `projection_standard` principal point (`foveal_center_uv`), so canted/off-axis eyes fovea about their
   true optical centre, not screen centre.
-- **config + UI** — `foveation.{enabled, inner_fraction, outer_fraction, max_drop, mask_bit,
-  debug_show_mask}` (`config.rs`); the radii, the drop, and the mask view are in the debug UI's
+- **config + UI** — `foveation.{enabled, debug_show_mask}` (`config.rs`), with the radii, the
+  drop, and the stencil bit as constants in `foveation.rs`; the mask view is in the debug UI's
   Foveation feature, and `enabled` (default **true**) is the pause menu's FOVEATED RENDERING. Four
   switches, all on, sit with the single-pass switches so the harness can compare them within one
   schedule, but gate multipass as well: `single_pass.foveation_gbuffer`, `foveation_lighting`,

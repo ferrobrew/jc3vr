@@ -10,7 +10,7 @@ use std::path::PathBuf;
 use egui::{Response, RichText, Ui};
 #[cfg(feature = "profiler")]
 use jc3vr_core::profiler::capture;
-use jc3vr_core::{frame_timing, session};
+use jc3vr_core::session;
 use jc3vr_input::{
     capture::{OwnershipBlocker, OwnershipSnapshot, PanelMode, debug_ui_capture},
     frame,
@@ -45,7 +45,6 @@ struct Snapshot {
     tracking: TrackingStatus,
     #[cfg(feature = "profiler")]
     profiler: ProfilerCapture,
-    timing: Option<frame_timing::Report>,
     overlay: overlay::pass::OverlayStatus,
     sections: Vec<StatusSection>,
     session: Option<session::Location>,
@@ -69,7 +68,6 @@ impl Snapshot {
                 progress: capture::progress(),
                 last_result: capture::last_result(),
             },
-            timing: frame_timing::latest(),
             overlay: overlay::pass::status(),
             sections: status::read_all().collect(),
             session: session::location(),
@@ -86,7 +84,7 @@ impl Snapshot {
         ];
         #[cfg(feature = "profiler")]
         rows.push(profiler_row(&self.profiler));
-        rows.extend([timing_row(self.timing.as_ref()), overlay_row(&self.overlay)]);
+        rows.push(overlay_row(&self.overlay));
         for (section, title, lines) in &self.sections {
             rows.extend(lines.iter().map(|(label, line)| Row {
                 id: RowId::Feature { section, label },
@@ -132,7 +130,6 @@ enum RowId {
     Tracking,
     #[cfg(feature = "profiler")]
     Profiler,
-    Timing,
     Overlay,
     Feature {
         section: &'static str,
@@ -390,30 +387,6 @@ fn profiler_row(profiler: &ProfilerCapture) -> Row {
         active_capture: profiler.recording,
         detail: format!("{activity}; {progress}."),
         note,
-    }
-}
-
-fn timing_row(timing: Option<&frame_timing::Report>) -> Row {
-    Row {
-        id: RowId::Timing,
-        group: "Capture and tools",
-        label: "Performance monitor",
-        state: RowState::Health(if timing.is_some() {
-            Health::Ok
-        } else {
-            Health::Waiting
-        }),
-        active_capture: false,
-        detail: timing.map_or_else(
-            || "Collecting; no complete timing window is available.".to_owned(),
-            |report| {
-                format!(
-                    "Last complete window: {:.2} s; game frames: {}.",
-                    report.window_s, report.totals.frames,
-                )
-            },
-        ),
-        note: None,
     }
 }
 

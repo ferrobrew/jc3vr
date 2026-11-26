@@ -23,7 +23,10 @@ use jc3vr_view::{
     stereo::{STEREO_STATE, config::STEREO_CONFIG, is_second_eye},
     vr::{
         FOVEATION_CONFIG,
-        foveation::{EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams},
+        foveation::{
+            EyeLayout, FORCE_STENCIL_TEST, FoveatedPasses, FoveationParams, INNER_FRACTION,
+            MASK_BIT, MAX_DROP, OUTER_FRACTION, packed_stencil_test,
+        },
     },
 };
 use re_utilities::hook_library::HookLibrary;
@@ -285,18 +288,12 @@ fn foveation_plan(first: i32, last: i32) -> Option<FoveationPlan> {
     if !cfg.enabled {
         return None;
     }
-    if let Err(e) = cfg.validate() {
-        tracing::warn!("foveation disabled: {e}");
-        return None;
-    }
     if !(first..last).any(|pass| passes.contains(pass) || passes.fill_before() == Some(pass)) {
         return None;
     }
     let layout = foveation_layout()?;
-    jc3vr_view::vr::foveation::STENCIL_TEST_BITS.store(
-        jc3vr_view::vr::foveation::packed_stencil_test(cfg.mask_bit),
-        Ordering::Relaxed,
-    );
+    jc3vr_view::vr::foveation::STENCIL_TEST_BITS
+        .store(packed_stencil_test(MASK_BIT), Ordering::Relaxed);
     Some(FoveationPlan {
         passes,
         params: foveation_params(&cfg, layout, quads),
@@ -328,10 +325,10 @@ fn foveation_params(
 ) -> FoveationParams {
     FoveationParams {
         layout,
-        inner_fraction: cfg.inner_fraction,
-        outer_fraction: cfg.outer_fraction,
-        max_drop: cfg.max_drop,
-        mask_bit: cfg.mask_bit,
+        inner_fraction: INNER_FRACTION,
+        outer_fraction: OUTER_FRACTION,
+        max_drop: MAX_DROP,
+        mask_bit: MASK_BIT,
         debug_show_mask: cfg.debug_show_mask,
         cell_px: if quads { 2 } else { 1 },
     }

@@ -1,13 +1,12 @@
 //! VR runtime configuration. See [`crate::vr`] and `docs/mod/vr-runtime.md`.
 
-use jc3gi::camera::camera::Camera;
 use jc3vr_core::config::engine::ConfigSlot;
 use serde::{Deserialize, Serialize};
 
 /// Which depth convention the per-eye off-axis projection is written in, and where in the
 /// `SetupRenderCamera` sequence it lands (`docs/engine/rendering/rendering.md` §2.7, `docs/mod/vr-runtime.md` blocker 1).
-/// The coordinate/depth conventions are the least-verifiable part of the pipeline without a headset,
-/// so this is a runtime tweakable rather than a compile-time choice.
+/// The headset path always writes [`EnginePreReverseZ`](Self::EnginePreReverseZ); the other form
+/// describes per-eye parameters built outside the camera hook (the overlay's own views).
 #[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ProjectionConvention {
     /// **Preferred and verified-correct.** Write a standard (non-reverse-Z) off-axis projection into
@@ -54,29 +53,6 @@ pub enum FreezeMode {
     /// measuring content that mis-renders only *in motion*: the view is a fixed world-space pose that
     /// can be stepped by an exact amount and returned to.
     FullCamera,
-}
-
-/// How the per-eye blit bridges the game's captured back-buffer colour into the OpenXR swapchain.
-///
-/// The captured eye texture is a `CopyResource` of `m_BackBufferLinear` as `R8G8B8A8_UNORM`
-/// (non-sRGB); the game presents those same bytes to a non-sRGB desktop swapchain and they look
-/// correct, so the stored bytes are **display-referred** (already sRGB-encoded). The negotiated
-/// OpenXR swapchain is `_SRGB`, so writing through its render-target view applies a hardware
-/// linear→sRGB encode. To reproduce the original bytes the shader must therefore **linearize** the
-/// sampled colour first, so the hardware re-encode cancels it out ([`Linearize`](Self::Linearize),
-/// the default). If the swapchain ends up non-sRGB, or the captured content turns out to be genuine
-/// linear despite the copy, [`Passthrough`](Self::Passthrough) samples and writes the colour
-/// unchanged. Colours cannot be eyeballed without a headset, so this stays switchable at runtime.
-#[derive(Copy, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum BlitGamma {
-    /// Decode the sampled display-referred colour to linear before writing, so the `_SRGB`
-    /// render-target's hardware encode reproduces the original bytes. The correct default for a
-    /// display-referred source into an `_SRGB` target.
-    #[default]
-    Linearize,
-    /// Sample and write the colour unchanged. Correct for a genuine-linear source, or a non-sRGB
-    /// target that applies no encode.
-    Passthrough,
 }
 
 /// What the desktop mirror draws into the game window.
@@ -128,8 +104,8 @@ pub static VR_CONFIG: ConfigSlot<VrConfig> = ConfigSlot::new("vr");
 #[derive(Clone, Serialize, Deserialize)]
 pub struct VrConfig {
     /// Master switch: bring up the OpenXR session and render to the HMD. Off leaves the mod in
-    /// flatscreen stereo (and tears any live runtime down). While on, bring-up is retried on the
-    /// [`retry_interval_secs`](VrConfig::retry_interval_secs) cadence until it succeeds.
+    /// flatscreen stereo (and tears any live runtime down). While on, a failed bring-up is retried
+    /// every ten seconds until it succeeds.
     pub enabled: bool,
     /// Per-eye swapchain resolution scale, applied to the runtime's recommended width/height. `1.0`
     /// is the runtime's recommendation; lower trades sharpness for fill rate. Clamped to a small
@@ -141,30 +117,11 @@ pub struct VrConfig {
     /// `None`, the default, takes the runtime's.
     #[serde(default)]
     pub recommended_size_override: Option<[u32; 2]>,
-    /// How often, in seconds, to retry OpenXR bring-up after a failure while
-    /// [`enabled`](VrConfig::enabled). The mod runs in flatscreen stereo between attempts.
-    pub retry_interval_secs: u64,
     /// World scale: metres of head/IPD motion per engine unit (`1.0` = 1:1). Kept here so the render wiring and the camera path share one knob.
     pub world_scale: f32,
     /// Override path to the OpenXR loader DLL. `None` loads `openxr_loader.dll` next to the payload
     /// DLL, falling back to the platform default search path.
     pub loader_path: Option<String>,
-    /// Fallback far clip plane, in metres, for the per-eye off-axis projection, used only until the
-    /// first camera update publishes the engine's live plane. The mod reads the active camera's actual
-    /// `m_Far` each frame as the source of truth (see
-    /// [`crate::hooks::camera::main_camera_planes_or`]) — the game renders a finite-far reverse-Z
-    /// frustum and sets its own runtime far, so matching the live value keeps the eyes, the cull
-    /// frustum, and the depth reconstruction consistent and the horizon unclipped. This default
-    /// (`[Camera::DEFAULT_FAR_PLANE]`) mirrors the engine's `Camera` constructor value for the bootstrap frame.
-    pub far_clip: f32,
-    /// Which depth convention the per-eye off-axis projection is written in (see
-    /// [`ProjectionConvention`]). Defaults to the preferred pre-`SetupRenderCamera` write.
-    #[serde(default)]
-    pub projection_convention: ProjectionConvention,
-    /// How the per-eye blit bridges the captured colour into the `_SRGB` swapchain (see
-    /// [`BlitGamma`]). Defaults to linearizing the display-referred capture.
-    #[serde(default)]
-    pub blit_srgb_gamma: BlitGamma,
     /// Render each eye at the HMD-recommended per-eye resolution (× [`resolution_scale`]) rather than
     /// the desktop display size, by driving the engine's own deferred resize (see
     /// [`crate::vr::resolution`]). On by default; disabled automatically at runtime if the resize
@@ -184,34 +141,6 @@ pub struct VrConfig {
     /// [`MirrorView`]). F10 toggles between the stereo pair and the last single eye.
     #[serde(default)]
     pub mirror_view: MirrorView,
-    /// While a capture take runs, stamp the mirror's present counter into the window's corner as a
-    /// strip of black and white blocks, which the take's sidecar logs per present (see
-    /// [`crate::vr::mirror`]), so a recording shows whether a repeated frame comes from the mod or
-    /// from downstream. On by default.
-    #[serde(default = "default_true")]
-    pub mirror_frame_stamp: bool,
-    /// Persist the OpenXR **instance and session** across inject/uninject cycles instead of destroying
-    /// them on teardown. The runtime allows only a small number of instances *and* sessions per
-    /// process (often one each), and Proton's own startup VR probe contends for that budget, so a
-    /// reinject that creates fresh ones fails with `XR_ERROR_LIMIT_REACHED`. With this on, teardown
-    /// stashes both handles in the game process's environment and leaks the wrappers (the handles stay
-    /// valid for the process lifetime), *without* ending the session — an ended session cannot be
-    /// resumed — and a reinject re-wraps both rather than creating new ones, so VR comes back on
-    /// reinject without a game relaunch. The swapchain and reference space are recreated on the reused
-    /// session. On by default; a stale handle falls back to a fresh create, and a genuine stop
-    /// (`enabled` off, or a lost session) destroys everything and clears the stashes.
-    #[serde(default = "default_true")]
-    pub persist_instance: bool,
-    /// Recenter automatically when gameplay control returns to the player. Injecting VR before the
-    /// scripted resume-from-menu animation (Rico standing up from the car) leaves the rig at an
-    /// offset from the camera, and a fresh session's neutral is wherever the head was at session
-    /// start rather than where the player actually is. With this on, the mod arms while the game is in
-    /// the frontend / loading / has no local player, and fires a single [`recenter`](crate::vr::recenter)
-    /// once gameplay is running and the player's head has settled (the entry animation has finished),
-    /// so the neutral snaps to the player's real pose without a manual F7. It does not fire on
-    /// in-session transitions like exiting a vehicle (the character stays present through those).
-    #[serde(default = "default_true")]
-    pub auto_recenter_on_gameplay: bool,
     /// Substitute a mod-owned render target for the engine's swapchain-derived back buffer, so the
     /// render resolution and the DXGI swapchain size stop being the same number (see
     /// [`crate::vr::back_buffer`] and `docs/mod/stereo/swapchain-ownership.md`).
@@ -226,13 +155,6 @@ pub struct VrConfig {
     /// (with the engine's own objects rebuilt over the live swapchain) on session end and on eject.
     #[serde(default = "default_true")]
     pub own_back_buffer: bool,
-    /// Blit each eye's finished image into its swapchain slice from the eye's own post-draw, instead
-    /// of copying it into the eye capture there and blitting the capture at the frame submit (see
-    /// [`crate::vr::blit`]). Saves a full-size copy per eye whenever nothing else reads that eye's
-    /// capture; the swapchain image is acquired at the top of the render update instead of at the
-    /// submit. On by default; off restores the copy-then-blit path everywhere.
-    #[serde(default = "default_true")]
-    pub direct_eye_blit: bool,
     /// Overlap the next frame's runtime wait, view location, and render update with the previous
     /// frame's draw task and frame tail, instead of starting them once the tail has submitted (see
     /// `docs/mod/threading.md`). The next frame then blocks on the tail only where it begins its
@@ -267,20 +189,12 @@ impl VrConfig {
             enabled: true,
             resolution_scale: 1.0,
             recommended_size_override: None,
-            retry_interval_secs: 10,
             world_scale: 1.0,
             loader_path: None,
-            far_clip: Camera::DEFAULT_FAR_PLANE,
-            projection_convention: ProjectionConvention::EnginePreReverseZ,
-            blit_srgb_gamma: BlitGamma::Linearize,
             native_resolution: true,
             mirror: true,
             mirror_view: MirrorView::Left,
-            mirror_frame_stamp: true,
-            persist_instance: true,
-            auto_recenter_on_gameplay: true,
             own_back_buffer: true,
-            direct_eye_blit: true,
             overlap_render_update: true,
             large_cache_cores: true,
             freeze_mode: FreezeMode::Off,
@@ -307,19 +221,6 @@ pub static FOVEATION_CONFIG: ConfigSlot<FoveationConfig> = ConfigSlot::new("fove
 pub struct FoveationConfig {
     /// Master toggle.
     pub enabled: bool,
-    /// Foveal radius as a fraction of the half-diagonal from the per-eye foveal centre: inside this the
-    /// scene renders at full rate (no pixels dropped).
-    pub inner_fraction: f32,
-    /// Radius (same units as [`inner_fraction`](Self::inner_fraction)) at which the peripheral drop
-    /// reaches [`max_drop`](Self::max_drop); the drop ramps from zero at the inner radius to the max here.
-    pub outer_fraction: f32,
-    /// The maximum fraction of peripheral pixels dropped (and reconstructed), reached at
-    /// [`outer_fraction`](Self::outer_fraction) and beyond. `0.5` drops half the far periphery.
-    pub max_drop: f32,
-    /// The stencil bit the mask tags dropped pixels with. Default bit 7: the engine's own
-    /// stencil use is bits 0, 1, 5, 6, so bit 7 is free; change it if an effect corrupts with foveation
-    /// on (a data-driven pass may write it).
-    pub mask_bit: u32,
     /// Diagnostic: paint the dropped peripheral pixels magenta (in the fill-in pass) instead of
     /// reconstructing them, so the mask is directly visible. Off by default.
     pub debug_show_mask: bool,
@@ -328,46 +229,13 @@ impl FoveationConfig {
     pub const fn new() -> Self {
         Self {
             enabled: true,
-            inner_fraction: 0.35,
-            outer_fraction: 0.55,
-            max_drop: 0.8,
-            mask_bit: 0x80,
             debug_show_mask: false,
         }
-    }
-
-    /// Validate the foveation configuration: the mask bit must be a single set bit (a power of
-    /// two).
-    pub fn validate(&self) -> Result<(), FoveationConfigError> {
-        if self.mask_bit == 0 || (self.mask_bit & (self.mask_bit - 1)) != 0 {
-            return Err(FoveationConfigError::MaskNotPowerOfTwo {
-                mask_bit: self.mask_bit,
-            });
-        }
-        Ok(())
     }
 }
 impl Default for FoveationConfig {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-/// A configuration error found by [`FoveationConfig::validate`].
-#[derive(Debug)]
-pub enum FoveationConfigError {
-    /// The stencil mask bit is zero or not a single set bit.
-    MaskNotPowerOfTwo { mask_bit: u32 },
-}
-
-impl std::fmt::Display for FoveationConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FoveationConfigError::MaskNotPowerOfTwo { mask_bit } => write!(
-                f,
-                "foveation: mask_bit ({mask_bit:#x}) must be a single set bit (a power of two)"
-            ),
-        }
     }
 }
 
@@ -399,25 +267,5 @@ mod tests {
         assert!(MirrorView::Left.shows_eye(0) && !MirrorView::Left.shows_eye(1));
         assert!(!MirrorView::Right.shows_eye(0) && MirrorView::Right.shows_eye(1));
         assert!(MirrorView::StereoPair.shows_eye(0) && MirrorView::StereoPair.shows_eye(1));
-    }
-
-    #[test]
-    fn foveation_config_validate_accepts_defaults() {
-        let cfg = FoveationConfig::new();
-        assert!(cfg.validate().is_ok());
-    }
-
-    #[test]
-    fn foveation_config_validate_rejects_zero_mask_bit() {
-        let mut cfg = FoveationConfig::new();
-        cfg.mask_bit = 0;
-        assert!(cfg.validate().is_err());
-    }
-
-    #[test]
-    fn foveation_config_validate_rejects_non_power_of_two_mask_bit() {
-        let mut cfg = FoveationConfig::new();
-        cfg.mask_bit = 0x60;
-        assert!(cfg.validate().is_err());
     }
 }

@@ -18,7 +18,6 @@ use crate::{
     headpose::xr::{bank, on_recenter, pending_bank, stepping},
     recorder::tracking::format::RecenterEvent,
     vr::{
-        VR_CONFIG,
         convert::{posef, quat, vec3},
         input::{
             flight_pose,
@@ -378,9 +377,6 @@ pub fn auto_recenter_tick() {
     service_requested_recenter();
     service_follow_bank();
     service_seat_yaw();
-    if !VR_CONFIG.query(|c| c.auto_recenter_on_gameplay) {
-        return;
-    }
     let in_gameplay = jc3vr_core::hooks::in_gameplay();
     let has_character =
         unsafe { jc3gi::character::character::Character::GetLocalPlayerCharacter().as_ref() }

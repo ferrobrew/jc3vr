@@ -48,7 +48,7 @@ fn non_default() -> Config {
     config.fsr.sharpness = 0.07;
     config.hud.distance = 1.37;
     config.vr.mirror_view = MirrorView::StereoPair;
-    config.vr.far_clip = f32::INFINITY;
+    config.vr.world_scale = f32::INFINITY;
     config
 }
 
@@ -92,9 +92,9 @@ sharpness = 0.07
 distance = 1.37
 
 [vr]
-far_clip = inf
 loader_path = "C:/openxr/openxr_loader.dll"
 mirror_view = "StereoPair"
+world_scale = inf
 "#;
 
 /// A file with a bad value of every kind the load handles: an unknown setting, a value of the

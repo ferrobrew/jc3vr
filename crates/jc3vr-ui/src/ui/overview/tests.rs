@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use jc3vr_core::frame_timing::Totals;
 use jc3vr_input::capture::EditCapture;
 
 use super::*;
@@ -65,7 +64,6 @@ fn needs_attention_keeps_active_waiting_and_unavailable_but_not_idle_or_off() {
     let mut snapshot = fixture();
     snapshot.controllers = None;
     snapshot.ownership = None;
-    snapshot.timing = None;
     snapshot.video.recording = true;
     snapshot.sections = vec![(
         "features",
@@ -84,7 +82,6 @@ fn needs_attention_keeps_active_waiting_and_unavailable_but_not_idle_or_off() {
     assert!(attention.iter().any(|row| row.label == "Waiting"));
     assert!(attention.iter().any(|row| row.id == RowId::Controllers));
     assert!(attention.iter().any(|row| row.id == RowId::Ownership));
-    assert!(attention.iter().any(|row| row.id == RowId::Timing));
     assert!(!attention.iter().any(|row| row.label == "Healthy idle"));
     assert!(!attention.iter().any(|row| row.label == "Disabled"));
     assert!(!attention.iter().any(|row| row.id == RowId::Tracking));
@@ -232,15 +229,11 @@ fn tracking_errors_dropped_frames_and_activity_remain_separate() {
 }
 
 #[test]
-fn timing_collecting_and_overlay_last_report_do_not_claim_current_visualization_activity() {
+fn overlay_last_report_does_not_claim_current_visualization_activity() {
     let mut snapshot = fixture();
-    snapshot.timing = None;
     snapshot.overlay.drawn = 17;
     snapshot.overlay.frames = 12;
     let rows = snapshot.rows();
-    let timing = find(&rows, RowId::Timing);
-    assert_eq!(timing.state, RowState::Health(Health::Waiting));
-    assert!(timing.detail.contains("Collecting"));
     let overlay = find(&rows, RowId::Overlay);
     assert!(!overlay.active_capture);
     assert!(
@@ -343,7 +336,6 @@ fn idle_profiler_result_does_not_establish_capture_activity() {
         Some("Last trace written: profiles/completed.json"),
     );
     assert!(!attention(&rows).iter().any(|row| row.id == RowId::Profiler));
-    assert!(tools.iter().any(|row| row.id == RowId::Timing));
 }
 
 #[cfg(feature = "profiler")]
@@ -369,7 +361,6 @@ fn recording_profiler_is_active_and_needs_attention_with_independent_progress_an
         Some("Last trace written: profiles/previous.json"),
     );
     assert_eq!(attention(&rows)[0].id, RowId::Profiler);
-    assert!(!find(&rows, RowId::Timing).active_capture);
 
     snapshot.profiler.progress = None;
     let rows = snapshot.rows();
@@ -448,10 +439,6 @@ fn fixture() -> Snapshot {
         tracking: TrackingStatus::default(),
         #[cfg(feature = "profiler")]
         profiler: ProfilerCapture::default(),
-        timing: Some(frame_timing::Report {
-            window_s: 1.0,
-            totals: Totals::default(),
-        }),
         overlay: overlay::pass::OverlayStatus {
             frames: 1,
             ..Default::default()

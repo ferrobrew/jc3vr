@@ -352,7 +352,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
                     && direct_route
                     && render_mode.selected_eye().is_none() =>
             {
-                vr::arm_direct(frame, &vr_cfg);
+                vr::arm_direct(frame);
             }
             _ => vr::disarm_direct(),
         }
@@ -544,7 +544,7 @@ fn game_update_render(game: *mut Game, update_contexts: *mut UpdateContexts) {
             let should_render = frame.should_render();
             {
                 let _timing = frame_timing::scope(Slot::Submit);
-                vr::present_and_submit(frame, &vr_cfg);
+                vr::present_and_submit(frame);
             }
             tail::log_vr_frame_health(should_render);
         }

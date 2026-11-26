@@ -1,6 +1,15 @@
 //! Persisting the OpenXR instance and session across inject/uninject cycles: the handle stashes in the
 //! game process environment, the reuse-or-create acquire paths bring-up runs, and the leak-on-persist
-//! teardown paths. See [`VrConfig::persist_instance`] for why the runtime forces this.
+//! teardown paths.
+//!
+//! The runtime allows only a small number of instances *and* sessions per process (often one each),
+//! and Proton's own startup VR probe contends for that budget, so a reinject that creates fresh ones
+//! fails with `XR_ERROR_LIMIT_REACHED`. Teardown on uninject therefore stashes both handles in the
+//! game process's environment and leaks the wrappers (the handles stay valid for the process
+//! lifetime), *without* ending the session -- an ended session cannot be resumed -- and a reinject
+//! re-wraps both rather than creating new ones. The swapchain and reference space are recreated on
+//! the reused session. A stale handle falls back to a fresh create, and a genuine stop (`vr.enabled`
+//! off, or a lost session) destroys everything and clears the stashes.
 
 use anyhow::Context as _;
 use openxr as xr;
@@ -8,15 +17,14 @@ use openxr::sys::Handle as _;
 
 use crate::vr::{VrConfig, input::semantic::SCHEMA_VERSION, session::Session, stage};
 
-/// Acquire an OpenXR instance: reuse a persisted handle if `persist` is set and one is stashed and
+/// Acquire an OpenXR instance: reuse a persisted handle if one is stashed and
 /// still live, otherwise create a fresh one. A stashed handle that fails to re-wrap or validate (the
 /// runtime dropped it) is cleared and falls back to a fresh create.
 pub(super) fn acquire_instance(
     entry: &xr::Entry,
     extensions: &xr::ExtensionSet,
-    persist: bool,
 ) -> anyhow::Result<xr::Instance> {
-    if persist && let Some(raw) = stashed_handle(INSTANCE_STASH_VAR) {
+    if let Some(raw) = stashed_handle(INSTANCE_STASH_VAR) {
         // A persisted instance keeps the extensions it was created with; loading the function table
         // of one it lacks fails, so re-wrap with the optional extensions it recorded (an instance
         // stashed by a payload that did not record them had none).
@@ -42,7 +50,7 @@ pub(super) fn acquire_instance(
 /// Persist an OpenXR instance across inject cycles: stash its handle in the game process's
 /// environment and leak the wrapper so its `Drop` never calls `xrDestroyInstance`, keeping the handle
 /// live for the process lifetime for a later reinject to reuse. Consumes the instance so the two
-/// halves (stash the handle, suppress the destroy) cannot be split. See [`VrConfig::persist_instance`].
+/// halves (stash the handle, suppress the destroy) cannot be split.
 pub(super) fn stash_instance(instance: xr::Instance) {
     stash_handle(INSTANCE_STASH_VAR, instance.as_raw().into_raw());
     stash_handle(
@@ -56,7 +64,7 @@ pub(super) fn stash_instance(instance: xr::Instance) {
     std::mem::forget(instance);
 }
 
-/// Acquire an OpenXR session: reuse a persisted session if `cfg.persist_instance` is set and one is
+/// Acquire an OpenXR session: reuse a persisted session if one is
 /// stashed and still valid, otherwise create a fresh one. A stale stashed session is cleared and
 /// falls back to a fresh create.
 pub(super) fn acquire_session(
@@ -64,9 +72,7 @@ pub(super) fn acquire_session(
     system: xr::SystemId,
     cfg: &VrConfig,
 ) -> anyhow::Result<(Session, xr::FrameStream<xr::D3D11>)> {
-    if cfg.persist_instance
-        && let Some(raw) = stashed_handle(SESSION_STASH_VAR)
-    {
+    if let Some(raw) = stashed_handle(SESSION_STASH_VAR) {
         match unsafe { reuse_session(instance, raw) } {
             Ok(session) => {
                 tracing::info!(target: "vr", handle = format_args!("{raw:#x}"), "reused the persisted OpenXR session");
@@ -113,7 +119,7 @@ pub(super) fn clear_persisted() {
 }
 
 /// The Windows process environment variables that persist the OpenXR instance and session handles
-/// across inject/uninject cycles (see [`VrConfig::persist_instance`]). The payload DLL unmaps on
+/// across inject/uninject cycles. The payload DLL unmaps on
 /// uninject, so a payload static cannot survive; the game process's environment block does. The
 /// runtime allows only a small number of instances *and* sessions per process, so a reinject must
 /// reuse both rather than create new ones.
@@ -180,7 +186,7 @@ fn clear_handle(var: windows::core::PCWSTR) {
 }
 
 /// Re-wrap a persisted OpenXR instance handle: load the extension function table for it and confirm
-/// it is live. See [`VrConfig::persist_instance`].
+/// it is live.
 ///
 /// # Safety
 /// `raw` must be an instance handle that was created with `extensions` and has not been destroyed.

@@ -135,22 +135,15 @@ pub fn wait_for_frame_tail() {
     drop(submit::lock_submit());
 }
 
-/// A snapshot of the VR runtime state for the debug UI ([`crate::ui::vr`]).
+/// A snapshot of the VR runtime for the debug UI's runtime page. The session state itself is
+/// [`PublishedStatus`], which the status page reads.
 pub struct VrStatus {
-    /// Whether `vr.enabled` is set (the master switch). Off leaves the mod in flatscreen stereo.
-    pub enabled: bool,
-    /// Whether an OpenXR instance is currently up (bring-up succeeded).
-    pub instance_up: bool,
-    /// Whether a session is currently running (READY..STOPPING).
-    pub running: bool,
-    /// The runtime name reported at bring-up, or `None` while torn down.
+    /// The runtime name reported at bring-up, or `None` while torn down or while the runtime state
+    /// is busy.
     pub runtime_name: Option<String>,
     /// The effective per-eye render resolution (recommended × `resolution_scale`) while a session is
     /// running, or `None` otherwise.
     pub eye_resolution: Option<(u32, u32)>,
-    /// Whether the runtime state was busy and this snapshot is stale (every field but `enabled` is a
-    /// carried-over default). The debug UI says so rather than pretending.
-    pub busy: bool,
 }
 
 /// Snapshot the VR runtime state for the debug UI. Locks the config and the runtime state briefly.
@@ -161,24 +154,16 @@ pub fn status() -> VrStatus {
     // `lock_state`). A stale readout for one frame is not worth a deadlock.
     let Some(state) = VR_STATE.try_lock() else {
         return VrStatus {
-            enabled: cfg.enabled,
-            instance_up: false,
-            running: false,
             runtime_name: None,
             eye_resolution: None,
-            busy: true,
         };
     };
     VrStatus {
-        enabled: cfg.enabled,
-        instance_up: state.instance.is_some(),
-        running: state.is_running(),
         runtime_name: state.runtime_name.clone(),
         eye_resolution: state
             .is_running()
             .then(|| state.eye_resolution(&cfg))
             .flatten(),
-        busy: false,
     }
 }
 
@@ -207,18 +192,20 @@ pub fn published_status() -> PublishedStatus {
     }
 }
 
+/// How often, in seconds, OpenXR bring-up is retried after a failure while `vr.enabled` is on. The
+/// mod runs in flatscreen stereo between attempts.
+const RETRY_INTERVAL_SECS: u64 = 10;
+
 /// Tear the runtime down and clear all state. Idempotent. Registered with [`jc3vr_core::lifecycle`], so it
-/// runs on uninject — where, if [`VrConfig::persist_instance`] is set, the instance and session are
-/// kept alive (their handles stashed in the game process environment, the wrappers leaked) for a
-/// reinject to reuse, sidestepping the runtime's per-process instance/session budget. Otherwise
-/// everything is destroyed.
+/// runs on uninject — where the instance and session are kept alive (their handles stashed in the
+/// game process environment, the wrappers leaked) for a reinject to reuse, sidestepping the
+/// runtime's per-process instance/session budget (see [`crate::vr::persist`]).
 pub fn uninstall() {
-    let persist = VR_CONFIG.lock().persist_instance;
     let mut state = lock_state();
     if state.instance.is_some() {
-        tracing::info!(target: "vr", persist, "uninstalling the OpenXR runtime");
+        tracing::info!(target: "vr", "uninstalling the OpenXR runtime");
     }
-    state.teardown(persist);
+    state.teardown(true);
 }
 
 /// Lock the runtime state, blocking.
@@ -377,7 +364,7 @@ impl VrState {
     fn try_bring_up(&mut self, cfg: &VrConfig) {
         let now = Instant::now();
         if let Some(last) = self.last_attempt
-            && now.duration_since(last).as_secs() < cfg.retry_interval_secs
+            && now.duration_since(last).as_secs() < RETRY_INTERVAL_SECS
         {
             return;
         }
@@ -403,11 +390,11 @@ impl VrState {
             tracing::warn!(
                 target: "vr",
                 "OpenXR bring-up failed (staying in flatscreen stereo, retrying in {}s): {e:#}",
-                cfg.retry_interval_secs,
+                RETRY_INTERVAL_SECS,
             );
-            // Keep any successfully-reused/created handles for the next retry when persistence is on;
-            // a stale stashed handle was already cleared by the acquire path.
-            self.teardown(cfg.persist_instance);
+            // Keep any successfully-reused/created handles for the next retry; a stale stashed
+            // handle was already cleared by the acquire path.
+            self.teardown(true);
         }
     }
 
@@ -434,7 +421,7 @@ impl VrState {
             available.ext_hand_tracking && available.ext_hand_joints_motion_range;
         // The hidden-area mesh, queried and shown in the debug UI (`crate::vr::visibility_mask`).
         extensions.khr_visibility_mask = available.khr_visibility_mask;
-        let instance = acquire_instance(&entry, &extensions, cfg.persist_instance)?;
+        let instance = acquire_instance(&entry, &extensions)?;
         // A persisted instance keeps the extensions it was created with.
         visibility_mask::set_supported(instance.exts().khr_visibility_mask.is_some());
 
