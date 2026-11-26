@@ -705,13 +705,9 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         && aim::status().grapple.is_some_and(|aim| {
             aim.valid && aim.current && aim.point.distance(lock_status.hook) > RETARGET_M
         });
-    let mut step = state.bindings.step(
-        detection.mode,
-        &controls,
-        &semantic_input,
-        real_dt,
-        &config.bindings,
-    );
+    let mut step = state
+        .bindings
+        .step(detection.mode, &controls, &semantic_input, real_dt);
     let enter_from_hang = heli_hang::step(&mut step.desired);
     grapple::physical::lock::lock_tick(
         game,
