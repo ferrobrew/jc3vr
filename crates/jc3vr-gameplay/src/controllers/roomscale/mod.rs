@@ -34,6 +34,7 @@ pub mod teleport;
 
 use std::{
     collections::HashSet,
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
@@ -65,6 +66,7 @@ use crate::{
             },
         },
         config::{Posture, RoomscaleConfig},
+        facts::driving,
         locomotion,
         mode::{Mode, current as current_mode},
         roomscale::{
@@ -78,7 +80,6 @@ use crate::{
             seat::{SEAT_FADE_HOLD_S, SeatEvent, SeatTracker},
             seated::{SEATED_REFERENCE, SeatedReference, SeatedReferenceStatus},
         },
-        vehicles::driving_view,
     },
     hooks::animation::active_state_type_id,
 };
@@ -86,6 +87,17 @@ use crate::{
 /// The roomscale hooks, aggregated by [`crate::controllers::hook_library`].
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_hook_library(teleport::hook_library())
+}
+
+/// Register the wingsuit's take-off from the ground, which the frame half ticks after the seat
+/// phase in gameplay, with whether the take-off follows the head ([`TAKE_OFF_TO_HEAD`]). One
+/// take-off: a second registration is refused and logged.
+///
+/// The take-off is called on the game thread, outside the world update.
+pub fn register_take_off(tick: unsafe fn(bool)) {
+    if TAKE_OFF.set(tick).is_err() {
+        tracing::error!("roomscale: a take-off is already registered; keeping the first");
+    }
 }
 
 /// The cockpit positions to compose the two sides of the pose pair with.
@@ -266,8 +278,10 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
         // SAFETY: the game thread, outside the world update.
         unsafe { seat_tick(&mut frame, &config, now) };
         let take_off = *TAKE_OFF_TO_HEAD.lock();
-        // SAFETY: as above.
-        unsafe { crate::controllers::vehicles::take_off::tick(take_off) };
+        if let Some(tick) = TAKE_OFF.get() {
+            // SAFETY: as above.
+            unsafe { tick(take_off) };
+        }
     } else {
         frame.seat = SeatTracker::default();
         frame.seat_fade_release = None;
@@ -313,9 +327,9 @@ pub fn compose_cockpit(inputs: &FrameInputs) -> ComposedCockpit {
     // Added last, so the posture, the seated reference, the crouch, and the rig never see it.
     // A driving state missing from the seat tables reads as out, so only a transition holds the
     // correction back.
-    let driving_view = driving_view::advance(
+    let driving_view = driving::advance(
         driving_view_on,
-        driving_view::FrameInputs {
+        driving::FrameInputs {
             seated: !matches!(
                 seat,
                 SeatPhase::Entering | SeatPhase::Shuffle | SeatPhase::Exiting
@@ -611,6 +625,8 @@ struct FrameState {
 
 /// The source of the composition [`compose_frame`] returned, until [`publish_composition`] takes it.
 static STAGED_SOURCE: Mutex<Option<FrameSourceSnapshot>> = Mutex::new(None);
+
+static TAKE_OFF: OnceLock<unsafe fn(bool)> = OnceLock::new();
 
 static FRAME: Mutex<FrameState> = Mutex::new(FrameState {
     last_at: None,

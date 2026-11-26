@@ -71,6 +71,7 @@ pub mod parachute_rig;
 pub mod passenger;
 pub mod physical;
 pub mod rail;
+pub(crate) mod register_body;
 pub mod ripcord;
 mod ripcord_tick;
 mod speed;

@@ -113,6 +113,9 @@ pub fn install() -> Result<(), RegistrationError> {
     register_vr_frame::register();
     register_render::register();
     register_hands::register();
+    physical_hands::register_body::register();
+    vehicles::register_body::register();
+    weapons::register_body::register();
     register_lifecycle::register()
 }
 

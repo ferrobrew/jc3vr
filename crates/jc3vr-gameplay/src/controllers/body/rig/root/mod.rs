@@ -17,7 +17,8 @@
 //!
 //! - keeps the teleport and warp bookkeeping (a teleport clears the ledger);
 //! - replaces the clip's velocity with the stick's ([`after_task`]) and adds the palms' push
-//!   ([`physical_hands::push_body`]), which together are the task's movement;
+//!   (registered by the physical hands, [`register_palm_push`]), which together are the task's
+//!   movement;
 //! - picks the root's owner ([`owner::select`]), and while the player owns it adds the step drive's
 //!   velocity through the engine's world-velocity accessors (the proxy's wanted velocity is
 //!   character-local) and submits the split to the ledger;
@@ -47,6 +48,7 @@ mod tests;
 
 use std::{
     ffi::c_void,
+    sync::OnceLock,
     time::{Duration, Instant},
 };
 
@@ -96,8 +98,8 @@ use crate::controllers::{
     },
     clock::TimeScale,
     config::RoomscaleConfig,
+    facts::climb,
     locomotion::{after_task, config::LOCOMOTION_CONFIG},
-    physical_hands::{self, climb},
     roomscale::{
         self, SeatPhase,
         config::ROOMSCALE_CONFIG,
@@ -110,6 +112,18 @@ use crate::controllers::{
 
 pub(crate) fn hook_library() -> HookLibrary {
     HookLibrary::new().with_static_binder(&LOCOMOTION_TASK_UPDATE_BINDER)
+}
+
+/// Register the palms' push off what they press into, which the simulation half adds to the
+/// character's wanted velocity after the stick's and before the step drive reads it. One push: a
+/// second registration is refused and logged.
+///
+/// The push is called on the simulation thread, from the locomotion task's post-call detour, with
+/// the local player's character.
+pub fn register_palm_push(push: unsafe fn(&mut Character)) {
+    if PALM_PUSH.set(push).is_err() {
+        tracing::error!("rig: a palm push is already registered; keeping the first");
+    }
 }
 
 /// One rendered frame's inputs to the frame half.
@@ -574,6 +588,8 @@ impl Sim {
 
 static SIM: Mutex<Sim> = Mutex::new(Sim::new());
 
+static PALM_PUSH: OnceLock<unsafe fn(&mut Character)> = OnceLock::new();
+
 #[detour(address = jc3gi::input::locomotion::NStateTask_MovementLocomotionTask::Update_ADDRESS)]
 fn locomotion_task_update(ctx: *mut StateContext, properties: *mut c_void, state: *mut c_void) {
     LOCOMOTION_TASK_UPDATE
@@ -669,7 +685,9 @@ unsafe fn after_locomotion(character: &mut Character, dt: f32) {
     let task = horizontal(unsafe { wanted_velocity(character) });
     unsafe { after_task(character, dt) };
     let stick = horizontal(unsafe { wanted_velocity(character) });
-    unsafe { physical_hands::push_body(character) };
+    if let Some(push) = PALM_PUSH.get() {
+        unsafe { push(character) };
+    }
     let palms = horizontal(unsafe { wanted_velocity(character) }) - stick;
 
     let owner = owner::select(&OwnerInput {

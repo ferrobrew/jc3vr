@@ -72,6 +72,7 @@ pub mod physics;
 pub mod pickup;
 pub mod push;
 pub(crate) mod query;
+pub(crate) mod register_body;
 pub(crate) mod remote;
 mod seated;
 pub mod shove;

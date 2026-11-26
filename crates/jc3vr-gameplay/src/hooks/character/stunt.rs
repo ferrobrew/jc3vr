@@ -1,10 +1,69 @@
-//! Keep native below-vehicle attachment from snapping a current physical handhold onto a roof.
+//! Keep native below-vehicle attachment from snapping a current physical handhold onto a roof, and
+//! tell the subsystems that hold Havok bodies when the world destroys some.
+//!
+//! The subsystems register what they need at installation: the refusals of the automatic entry
+//! into a vehicle's stunt area below the player ([`register_auto_attach_blocker`]), asked in
+//! [`AutoAttachBlocker`] order, and the observer of a body destruction
+//! ([`register_bodies_destroying`]), called before the world destroys them.
+
+use std::sync::OnceLock;
 
 use detours_macro::detour;
 use jc3gi::{character::character::Character, physics::hknpWorld};
 use re_utilities::hook_library::HookLibrary;
 
-use crate::controllers::{physical_hands::climb::native, vehicles::rail};
+/// The refusals of the automatic entry into a vehicle's stunt area below the player, in the order
+/// they are asked.
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum AutoAttachBlocker {
+    /// A physical handhold the player climbs by.
+    PhysicalClimb,
+    /// The vehicle rail holding the player.
+    VehicleRail,
+}
+
+impl AutoAttachBlocker {
+    const COUNT: usize = 2;
+
+    const fn index(self) -> usize {
+        match self {
+            AutoAttachBlocker::PhysicalClimb => 0,
+            AutoAttachBlocker::VehicleRail => 1,
+        }
+    }
+}
+
+/// A refusal of the automatic attachment ([`register_auto_attach_blocker`]): whether the attachment
+/// of the character is refused.
+pub type BlocksAutoAttach = unsafe fn(*const Character) -> bool;
+
+/// Register `blocker`'s refusal: called with the character the engine is about to attach, it
+/// returns whether the attachment is refused. One per blocker: a second registration is refused
+/// and logged.
+///
+/// The refusal is called from the detour on the attachment, while the native caller keeps the
+/// character and its proxy member alive; it may read only members of that character.
+pub fn register_auto_attach_blocker(blocker: AutoAttachBlocker, blocks: BlocksAutoAttach) {
+    if BLOCKERS[blocker.index()].set(blocks).is_err() {
+        tracing::error!(
+            ?blocker,
+            "character: an auto-attach blocker is already registered; keeping the first"
+        );
+    }
+}
+
+/// Register the observer of a body destruction: called with the world and the bodies' ids before
+/// the world destroys them. One observer: a second registration is refused and logged.
+///
+/// The observer runs on the thread destroying the bodies, inside the world's destruction call;
+/// `ids` points at `count` ids, or is null or `count` is not positive.
+pub fn register_bodies_destroying(observer: unsafe fn(*mut hknpWorld, *const u32, i32)) {
+    if BODIES_DESTROYING.set(observer).is_err() {
+        tracing::error!(
+            "character: a body destruction observer is already registered; keeping the first"
+        );
+    }
+}
 
 pub(super) fn hook_library() -> HookLibrary {
     HookLibrary::new()
@@ -12,11 +71,20 @@ pub(super) fn hook_library() -> HookLibrary {
         .with_static_binder(&DESTROY_BODIES_BINDER)
 }
 
+static BLOCKERS: [OnceLock<BlocksAutoAttach>; AutoAttachBlocker::COUNT] =
+    [const { OnceLock::new() }; AutoAttachBlocker::COUNT];
+
+static BODIES_DESTROYING: OnceLock<unsafe fn(*mut hknpWorld, *const u32, i32)> = OnceLock::new();
+
 #[detour(address = jc3gi::character::character::Character::AutoAttachToStuntAreaOnVehicleBelow_ADDRESS)]
 fn auto_attach_below(character: *mut Character) -> bool {
     // The engine's ground-body support also advertises a vehicle below a physical grip. Only
     // this automatic entry is suppressed; ordinary grapple hang and explicit interactions remain native.
-    if unsafe { native::blocks(character) } || rail::blocks_auto_attach(character) {
+    let blocked = BLOCKERS
+        .iter()
+        .filter_map(OnceLock::get)
+        .any(|blocks| unsafe { blocks(character) });
+    if blocked {
         return false;
     }
     AUTO_ATTACH_BELOW.get().unwrap().call(character)
@@ -24,13 +92,9 @@ fn auto_attach_below(character: *mut Character) -> bool {
 
 #[detour(address = jc3gi::physics::hknpWorld::destroyBodies_ADDRESS)]
 fn destroy_bodies(world: *mut hknpWorld, ids: *const u32, count: i32, activation_mode: i32) {
-    if !ids.is_null() && count > 0 {
-        for i in 0..count as usize {
-            let body = unsafe { *ids.add(i) };
-            crate::controllers::physical_hands::climb::lifetime::destroyed(world as usize, body);
-        }
+    if let Some(observer) = BODIES_DESTROYING.get() {
+        unsafe { observer(world, ids, count) };
     }
-    unsafe { crate::controllers::physical_hands::carry_bodies_destroying(world, ids, count) };
     DESTROY_BODIES
         .get()
         .unwrap()

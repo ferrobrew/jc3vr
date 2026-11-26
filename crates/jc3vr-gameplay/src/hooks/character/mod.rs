@@ -20,6 +20,10 @@
 //!   hand-over table;
 //! - the `SECONDARY` hand pass's entry, where the game's secondary hand targets are switched off
 //!   ([`hands::ik::before_secondary`]).
+//! - [`magazine`]: the deferred magazine detachments at the serial post-physics entry, consumed by
+//!   the weapon handling's registered consumer;
+//! - `stunt`: the refusals of the automatic entry into a vehicle's stunt area below the player, and
+//!   the observer of a body destruction, which the subsystems register.
 
 use std::time::Instant;
 
@@ -52,7 +56,11 @@ pub(crate) use acts::resolve_act_id;
 pub use body_ik::body_ik_status;
 pub use config::BodyIkConfig;
 
-pub use crate::hooks::character::pose_observer::{PoseObserver, register_pose_observer};
+pub use crate::hooks::character::{
+    magazine::register_serial_consumer,
+    pose_observer::{PoseObserver, register_pose_observer},
+    stunt::{AutoAttachBlocker, register_auto_attach_blocker, register_bodies_destroying},
+};
 
 pub fn hook_library() -> HookLibrary {
     HookLibrary::new()
