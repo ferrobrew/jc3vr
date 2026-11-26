@@ -21,14 +21,13 @@
 
 use std::{ffi::c_void, fmt, mem::MaybeUninit, num::NonZeroUsize};
 
-use glam::{Affine3A, Mat3A, Vec3, Vec3A};
+use glam::{Affine3A, Vec3};
 use jc3gi::{
     havok::{
-        hkMemoryRouter, hkReferencedObject, hkTransformf, hknpConstraintCinfo,
-        hkpBallAndSocketConstraintData, hkpFixedConstraintData,
+        hkMemoryRouter, hkReferencedObject, hknpConstraintCinfo, hkpBallAndSocketConstraintData,
+        hkpFixedConstraintData,
     },
     physics::{hknpConstraint, hknpConstraintManager, hknpWorld},
-    types::vector_math::AlignedVector3,
 };
 use jc3vr_input::frame::Pose;
 use windows::Win32::System::Threading::TlsGetValue;
@@ -38,6 +37,7 @@ use crate::controllers::physical_hands::{
     physics::body::release,
     world::World,
 };
+pub use crate::controllers::physics::havok::{affine, transform, vector};
 
 /// Why a joint could not be made.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -270,37 +270,6 @@ impl Joint {
 /// constraint holds the hand's frame on the object.
 pub fn pivot_in(object: Affine3A, hand: Affine3A) -> Affine3A {
     object.inverse() * hand
-}
-
-/// A Havok transform as an affine transform: its rotation's columns are the images of the local
-/// axes.
-pub fn affine(t: &hkTransformf) -> Affine3A {
-    let [x, y, z] = t.m_rotation.map(|c| Vec3A::from_array(c.data));
-    Affine3A {
-        matrix3: Mat3A::from_cols(x, y, z),
-        translation: Vec3A::from_array(t.m_translation.data),
-    }
-}
-
-/// A vector as a Havok vector, its padding lane zero.
-pub fn vector(v: Vec3) -> AlignedVector3 {
-    AlignedVector3 {
-        data: v.to_array(),
-        _w: 0.0,
-    }
-}
-
-/// An affine transform as a Havok transform.
-pub fn transform(a: Affine3A) -> hkTransformf {
-    let column = |v: Vec3A| vector(Vec3::from(v));
-    hkTransformf {
-        m_rotation: [
-            column(a.matrix3.x_axis),
-            column(a.matrix3.y_axis),
-            column(a.matrix3.z_axis),
-        ],
-        m_translation: column(a.translation),
-    }
 }
 
 fn coincident_pivots(hand: Affine3A, object: Affine3A, contact: Affine3A) -> (Affine3A, Affine3A) {

@@ -13,6 +13,7 @@ use body_rig::{geometry::point_velocity, rotation::angular_velocity, smooth::fol
 use glam::{Quat, Vec3};
 use jc3vr_input::frame::Pose;
 
+pub use crate::controllers::physics::bodies::mass_of;
 use crate::controllers::{
     clock::TimeScale,
     physical_hands::{
@@ -235,11 +236,6 @@ pub fn can_take(kind: &TargetKind, mass_kg: f32, config: &PickupTuning) -> bool 
         TargetKind::Articulated { .. } => can_hold_articulated(mass_kg, config),
         _ => can_hold(mass_kg, config),
     }
-}
-
-/// The mass of a body whose inverse mass is `inverse_mass`, or `None` for an infinite mass.
-pub fn mass_of(inverse_mass: f32) -> Option<f32> {
-    (inverse_mass.is_finite() && inverse_mass > 0.0).then(|| 1.0 / inverse_mass)
 }
 
 /// The velocity a body's grab point leaves the hand with: the hand's own, scaled and capped.
@@ -507,8 +503,6 @@ mod tests {
             config.max_mass_kg * 2.0,
             &config
         ));
-        assert_eq!(mass_of(0.5), Some(2.0));
-        assert_eq!(mass_of(0.0), None);
     }
 
     const TICK: f32 = 1.0 / 30.0;

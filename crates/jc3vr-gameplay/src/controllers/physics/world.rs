@@ -1,4 +1,4 @@
-//! The physics system's Havok world, as the physical hands reach it.
+//! The physics system's Havok world, lent out for one call at a time.
 //!
 //! The world is the engine's, so a `'static` reference to it would let two callers hold a shared
 //! and a mutable reference at once. [`World`] holds the pointer instead, and lends the world out

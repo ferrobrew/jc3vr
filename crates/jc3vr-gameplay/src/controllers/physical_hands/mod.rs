@@ -7,7 +7,7 @@
 //! - [`shove`]: a palm's soft contact with a loose body, and how much the body gives;
 //! - [`pickup`]: taking hold of loose objects and picking up weapons with the grip, with the pure
 //!   grip in [`grasp`] and the solver that carries what the hands hold in [`hold`];
-//! - [`rigid`]: a rigid body's response to impulses;
+//! - [`rigid`]: a rigid body's response to impulses (in [`crate::controllers::physics`]);
 //! - [`touch`]: what the contacts do to the world: knocks, shoves, and pressure pulses;
 //! - [`physics`]: the hand bodies, which replace the palms' probes for the hands they drive;
 //! - [`characters`]: taking hold of characters, and pulling a seated one out through an open door
@@ -18,7 +18,8 @@
 //! - [`stunt`]: stunt positions on vehicles, entered and let go of with the grip;
 //! - [`doors`]: opening vehicle doors by hand, a latched one gripped at its handle area;
 //! - [`grab_view`]: the grab view, a diagnostic of what the grip and the reach saw;
-//! - [`world`]: the Havok world, lent out for one call at a time;
+//! - [`world`]: the Havok world, lent out for one call at a time (in
+//!   [`crate::controllers::physics`]);
 //! - [`config`]: the settings, and [`tuning`] the palms' fixed tuning.
 //!
 //! A hand its body drives ([`physics::drives`]) meets the world through its body. Otherwise, the
@@ -72,7 +73,6 @@ pub mod pickup;
 pub mod push;
 pub(crate) mod query;
 pub(crate) mod remote;
-pub mod rigid;
 mod seated;
 pub mod shove;
 pub mod sounds;
@@ -83,16 +83,13 @@ mod tick;
 mod touch;
 pub mod tuning;
 pub mod vault;
-mod world;
 
 mod status;
 
 use std::num::NonZeroUsize;
 
-pub use bodies::BodyError;
-pub(crate) use bodies::{BodyState, game_object_of, physics_object_of};
 pub use config::PhysicalHandsConfig;
-use glam::{Quat, Vec3};
+use glam::Vec3;
 use jc3gi::{character::character::Character, physics::hknpWorld, types::math::Vector3};
 use state::{STALE_AFTER, State};
 pub use status::{HandStatus, Idle, PhysicalHandsStatus, ShoveReport, status};
@@ -102,7 +99,12 @@ pub(crate) use targets::test_support::DoorProvider;
 pub(crate) use targets::{DoorEligibility, targets};
 pub use tick::{after_aim, free_hands, main_thread_tick, mode_acts};
 
-use crate::controllers::physical_hands::config::PHYSICAL_HANDS_CONFIG;
+pub use crate::controllers::physics::{bodies::BodyError, rigid};
+pub(crate) use crate::controllers::physics::{
+    bodies::{BodyState, game_object_of, physics_object_of},
+    body_mass_kg, body_pose, body_state, line_body, set_body_velocities,
+};
+use crate::controllers::{physical_hands::config::PHYSICAL_HANDS_CONFIG, physics::world};
 
 pub(crate) mod lifetime;
 
@@ -196,67 +198,6 @@ pub fn apply(cockpit: &mut [Option<CockpitHand>; 2], at: DrawTime) {
 ///
 /// `character` must be the live local player character, after the locomotion task wrote its
 /// velocity.
-/// Give the dynamic body `body` the velocities `linear` and `angular`, world space, after checking
-/// it still belongs to `owner`: a dropped weapon leaving the hand with the hand's motion.
-///
-/// # Safety
-///
-/// The main thread, outside the physics step.
-#[track_caller]
-pub(crate) unsafe fn set_body_velocities(
-    body: u32,
-    owner: NonZeroUsize,
-    linear: Vec3,
-    angular: Vec3,
-) -> Result<(), BodyError> {
-    unsafe { bodies::drive(body, owner, rigid::Velocities { linear, angular }) }
-}
-
-/// The dynamic body `body`'s centre of mass and orientation, game space, after checking it still
-/// belongs to `owner`: a live grenade or a dropped magazine near the hands, which a body still
-/// owned by it proves alive.
-///
-/// # Safety
-///
-/// The main thread, outside the physics step.
-pub(crate) unsafe fn body_pose(body: u32, owner: NonZeroUsize) -> Result<(Vec3, Quat), BodyError> {
-    let state = unsafe { bodies::read(body, owner) }?;
-    Ok((state.pose.centre, state.pose.orientation))
-}
-
-/// The dynamic body `body`'s state, game space, after checking it still belongs to `owner`: a
-/// weapon the grapple's snatch pulls in.
-///
-/// # Safety
-///
-/// The main thread, outside the physics step.
-pub(crate) unsafe fn body_state(body: u32, owner: NonZeroUsize) -> Result<BodyState, BodyError> {
-    unsafe { bodies::read(body, owner) }
-}
-
-/// The dynamic body `body`'s owner and state, whoever owns it: a body the engine named, such as
-/// the one behind the grapple hook's point or the player's own proxy body, rather than one taken
-/// from an object. `None` for a freed body or one that is not dynamic.
-///
-/// # Safety
-///
-/// The main thread, outside the physics step.
-pub(crate) unsafe fn line_body(body: u32) -> Option<(NonZeroUsize, BodyState)> {
-    let owner = unsafe { bodies::owner_of(body) }?;
-    let state = unsafe { bodies::read(body, owner) }.ok()?;
-    Some((owner, state))
-}
-
-/// The mass of the dynamic body `body`, whatever owns it, kilograms: the player's own proxy body,
-/// which no object owns as a hand's targets are owned.
-///
-/// # Safety
-///
-/// The main thread, outside the physics step.
-pub(crate) unsafe fn body_mass_kg(body: u32) -> Option<f32> {
-    unsafe { bodies::mass_kg(body) }
-}
-
 pub(crate) unsafe fn push_body(character: &mut Character) {
     let enabled = PHYSICAL_HANDS_CONFIG.query(|c| c.enabled && c.push);
     let palms = if enabled {
