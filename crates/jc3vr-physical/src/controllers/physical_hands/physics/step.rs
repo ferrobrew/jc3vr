@@ -10,10 +10,7 @@ use jc3vr_body::controllers::{
     clock::TimeScale,
     held::guns as held_guns,
     mode,
-    physics::{
-        GRAVITY_MPS2,
-        steps::{count_step, current_at},
-    },
+    physics::{GRAVITY_MPS2, steps},
 };
 use jc3vr_input::frame::{Hand, Pose};
 
@@ -24,7 +21,6 @@ use crate::controllers::physical_hands::{
     physics::{
         PHYSICS,
         body::{BodyShape, BodySpec, Capsule, HandBody, player_system_group},
-        contact,
         drive::{DriveTuning, Goal, JoinedLoad, PushTuning, contact_gain, lag_push, smooth_push},
         guns,
         guns::step::GunStep,
@@ -49,11 +45,10 @@ pub unsafe fn step() {
     let physics = PHYSICS.get();
     // SAFETY: the physics step runs while the game runs.
     let time_scale = unsafe { TimeScale::current() };
-    let step_number = count_step();
+    let step_number = steps::count_step();
+    let step_window = steps::window();
     let step_s = step_seconds();
-    contact::step_tick();
     let mut hands = HANDS.lock();
-    hands.steps += 1;
     hands.placed = [false; 2];
     let reason = if !jc3vr_core::hooks::in_gameplay() {
         Some("the game left gameplay")
@@ -70,7 +65,7 @@ pub unsafe fn step() {
         guns::step::stand_down();
         let mut shared = SHARED.lock();
         shared.status.destroyed += destroyed;
-        shared.status.steps = hands.steps;
+        shared.status.steps = step_number.count();
         shared.status.hands = [HandBodyStatus::default(); 2];
         shared.status.push = Vec2::ZERO;
         shared.push = Vec2::ZERO;
@@ -106,7 +101,7 @@ pub unsafe fn step() {
             std::mem::take(&mut shared.rig_moves),
             shared
                 .park_now
-                .filter(|(at, _)| current_at(Some(*at), step_number))
+                .filter(|(at, _)| step_window.holds(*at, step_number))
                 .map_or([false; 2], |(_, park)| park),
             shared
                 .follow_through
@@ -115,13 +110,13 @@ pub unsafe fn step() {
         )
     };
     // Staleness counts steps, not time, so a hitch of the whole simulation tick drops no hold.
-    let fresh = current_at(published_step, step_number);
+    let fresh = step_window.holds(published_step, step_number);
     let detection = mode::current();
     let ordinary = mode_acts(detection);
     let pins = if fresh && ordinary { pins } else { [None; 2] };
     // The hands on a gun act to hold it, with a holding hand's strength.
     let gun_holds = if fresh && guns::mode_allows_bodies(detection) {
-        guns::holds_for_step(step_number)
+        guns::holds_for_step(step_number.count())
     } else {
         held_guns::GunHolds::default()
     };
@@ -143,7 +138,7 @@ pub unsafe fn step() {
     let lead_s = age_s * time_scale.get() + step_s;
     // The carrier moves with the steps alone: its part is led by the steps since the palms were
     // published, and this step.
-    let steps_since = published_step.map_or(0, |at| step_number.saturating_sub(at));
+    let steps_since = published_step.map_or(0, |at| step_number.steps_since(at));
     let carrier_lead_s =
         ((steps_since as f32 + 1.0) * step_s).min(physics.step.max_lead_s + step_s);
     // SAFETY: forwarded from the caller.
@@ -461,7 +456,7 @@ pub unsafe fn step() {
     shared.push = push;
     shared.stepped = Some(now);
     let status = &mut shared.status;
-    status.steps = hands.steps;
+    status.steps = step_number.count();
     status.system_group = group;
     status.hands = statuses;
     status.push = push;

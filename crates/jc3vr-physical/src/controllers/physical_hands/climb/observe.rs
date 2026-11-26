@@ -9,6 +9,7 @@ use jc3vr_body::controllers::{
     haptics, mode,
     mode::{Mode, OnFootVariant},
 };
+use jc3vr_core::published::Step;
 use jc3vr_input::{
     frame::Hand,
     haptics::cues::{self, Sustain},
@@ -97,7 +98,7 @@ pub fn observe(observed: Observed) {
         state.palms = palms;
         state.pressing = pressing;
         state.published = player.is_some().then(Instant::now);
-        state.publishes = state.publishes.wrapping_add(1);
+        state.published_step = Some(Step::now());
         for hand in Hand::BOTH {
             state.status.hands[hand.index()].reach = reaches[hand.index()];
         }

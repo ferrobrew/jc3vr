@@ -2,7 +2,6 @@
 //! overlay, for seeing what the hand bodies, the held guns, and the player's capsule meet. A
 //! diagnostic, off by default; the design is in `docs/mod/input/collider-view.md`.
 //!
-//! - [`callback`]: a pre-simulation callback that counts the physics steps;
 //! - [`scan`]: the read of the world after a step, on the game thread outside the step;
 //! - [`model`]: the snapshot it fills, and the pure geometry over it;
 //! - [`draw`]: the primitives within a budget;
@@ -10,13 +9,13 @@
 //! - [`config`]: the settings;
 //! - the tuning, in [`crate::controllers::physical_hands::views`].
 //!
-//! Geometry discovery runs once per physics step. After the engine's render update, retained body
+//! Geometry discovery runs once per physics step, read off the step clock
+//! ([`jc3vr_core::published::Step`]). After the engine's render update, retained body
 //! transforms are refreshed and drawn at their current collision poses, independently of the mesh's
 //! render interpolation. The same-frame mesh/body comparison reports that difference rather than
 //! moving the outline to conceal it. The view's state is a game-thread lock; the overlay store and
 //! status use leaf locks, and the status may be read from any thread.
 
-mod callback;
 pub mod config;
 pub mod draw;
 pub mod model;
@@ -30,6 +29,7 @@ use std::{
 
 use glam::Vec3;
 use jc3vr_body::controllers::{hands::late, held::guns};
+use jc3vr_core::published::Step;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::{
     controllers::overlay::{
@@ -57,9 +57,7 @@ use crate::controllers::physical_hands::{
 pub struct ColliderViewStatus {
     /// Whether the view is switched on.
     pub enabled: bool,
-    /// Whether the step counter is registered with the physics system.
-    pub registered: bool,
-    /// The physics steps counted since the payload loaded.
+    /// The physics steps begun since the payload loaded, on the step clock ([`Step`]).
     pub steps: u64,
     /// The reads of the world since the payload loaded.
     pub reads: u64,
@@ -126,22 +124,6 @@ pub fn toggle() {
     tracing::info!(enabled = view.enabled, "collider view: toggled");
 }
 
-/// Register the step counter while the view is on, and remove it while it is off. Called once
-/// per frame on the game thread, ahead of the game's update.
-pub fn frame_tick() {
-    let wanted =
-        !jc3vr_core::is_shutting_down() && PHYSICAL_HANDS_CONFIG.query(|c| c.collider_view.enabled);
-    // SAFETY: the game thread, ahead of the game's update, which fires the callbacks.
-    let registered = unsafe { callback::reconcile(wanted) };
-    if registered && !CLEANUP_REGISTERED.swap(true, Ordering::AcqRel) {
-        jc3vr_core::lifecycle::on_cleanup(|_renderer| {
-            // SAFETY: the shutdown cleanups run on the game thread, outside the game's update.
-            unsafe { callback::unregister() };
-        });
-    }
-    STATUS.lock().registered = registered;
-}
-
 /// Discover geometry after a step and submit current collision poses after the mesh render updates.
 /// The render fraction identifies the mesh sample; collision geometry is not interpolated by it.
 ///
@@ -157,7 +139,6 @@ pub unsafe fn render_tick(dtf: f32) {
             let mut status = STATUS.lock();
             *status = ColliderViewStatus {
                 enabled,
-                registered: status.registered,
                 steps: status.steps,
                 reads: status.reads,
                 ..ColliderViewStatus::default()
@@ -168,7 +149,7 @@ pub unsafe fn render_tick(dtf: f32) {
     WAS_ACTIVE.store(true, Ordering::Relaxed);
 
     let tuning = &VIEWS.get().collider_view;
-    let steps = callback::steps();
+    let steps = Step::now().count();
     let head = headpose::query();
     let read = {
         let state = STATE.lock();
@@ -368,7 +349,6 @@ static STATE: Mutex<State> = Mutex::new(State::EMPTY);
 
 static STATUS: Mutex<ColliderViewStatus> = Mutex::new(ColliderViewStatus {
     enabled: false,
-    registered: false,
     steps: 0,
     reads: 0,
     scanned: 0,
@@ -394,8 +374,6 @@ static FLASHES: Mutex<Vec<(Instant, Vec3, u32, f32)>> = Mutex::new(Vec::new());
 
 /// Whether the view drew last frame, so that switching it off clears its slot once.
 static WAS_ACTIVE: AtomicBool = AtomicBool::new(false);
-
-static CLEANUP_REGISTERED: AtomicBool = AtomicBool::new(false);
 
 /// The mod's bodies and joints, from the hand bodies' and the held guns' readouts.
 fn mod_ids() -> ModIds {

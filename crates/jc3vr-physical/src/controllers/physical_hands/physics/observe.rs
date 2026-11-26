@@ -8,10 +8,8 @@ use std::{
 };
 
 use glam::Vec3;
-use jc3vr_body::controllers::{
-    clock::TimeScale, hands::CockpitHand, haptics, held, held::guns, physics::steps::steps,
-};
-use jc3vr_core::game_tick::GameTick;
+use jc3vr_body::controllers::{clock::TimeScale, hands::CockpitHand, haptics, held, held::guns};
+use jc3vr_core::{game_tick::GameTick, published::Step};
 use jc3vr_input::{
     frame::{Hand, Pose},
     haptics::cues::Sustain,
@@ -90,7 +88,7 @@ pub fn frame_tick(game: &GameTick<'_>) {
 pub fn observe(dt: f32) {
     let now = Instant::now();
     let acting = acting_palms();
-    let step = steps();
+    let step = Step::now();
     let park_now = acting.as_ref().map(|a| (step, a.park_now));
     let tracked = acting.as_ref().map_or([None; 2], |a| a.tracked);
     let palms = acting

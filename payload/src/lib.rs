@@ -289,7 +289,6 @@ fn update() {
         // SAFETY: the top of the game's update is a serial point: the update has not started, so
         // no engine thread mutates the world's game objects.
         unsafe { GameTick::enter(physical_hands::physics::frame_tick) };
-        physical_hands::collider_view::frame_tick();
 
         // The per-eye captures feed the VR blit, the desktop mirror, the recorder, and the screenshots.
         // Driven here rather than from inside the egui closure below: they are what VR submits, and

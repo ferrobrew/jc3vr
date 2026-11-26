@@ -90,7 +90,6 @@ pub(super) struct Hands {
     /// When each hand stopped acting.
     pub missing_since: [Option<Instant>; 2],
     resets: [u64; 2],
-    pub steps: u64,
     pub last_log: Option<Instant>,
 }
 
@@ -104,7 +103,6 @@ pub(super) static HANDS: Mutex<Hands> = Mutex::new(Hands {
     palms: [None; 2],
     missing_since: [None; 2],
     resets: [0; 2],
-    steps: 0,
     last_log: None,
 });
 

@@ -75,7 +75,8 @@ pub struct HandBodiesStatus {
 pub struct CallbackStatus {
     /// Whether the callback is registered with the physics system.
     pub registered: bool,
-    /// Times the callback has fired.
+    /// Times the callback has fired: the physics steps it began on the step clock
+    /// ([`jc3vr_core::published::Step`]).
     pub fires: u64,
     /// The game thread's id, as the registration saw it; zero before it.
     pub game_thread: u32,

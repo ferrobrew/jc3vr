@@ -492,7 +492,7 @@ fn collider_view_line(status: &ColliderViewStatus, key: Option<String>) -> Line 
     {
         return Line::failed(prose("See log")).with_note(error.clone());
     }
-    if !status.registered || status.reads == 0 {
+    if status.reads == 0 {
         return Line::waiting(prose("No physics step yet"));
     }
     let detail = text!(
@@ -538,13 +538,11 @@ mod tests {
         );
         let waiting = ColliderViewStatus {
             enabled: true,
-            registered: true,
             ..ColliderViewStatus::default()
         };
         assert_eq!(collider_view_line(&waiting, None).health, Health::Waiting);
         let drawing = ColliderViewStatus {
             enabled: true,
-            registered: true,
             reads: 3,
             in_range: 40,
             primitives: 1200,

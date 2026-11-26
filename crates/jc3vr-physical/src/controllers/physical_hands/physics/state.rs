@@ -5,11 +5,8 @@
 use std::{sync::atomic::AtomicBool, time::Instant};
 
 use glam::{Quat, Vec2, Vec3};
-// The step counter moved down to the physics substrate; re-exported here so the hand bodies keep
-// their paths until the crate cut.
-use jc3vr_body::{
-    controllers::hands, controllers::hands::CockpitHand, controllers::mode, controllers::scheme,
-};
+use jc3vr_body::controllers::{hands, hands::CockpitHand, mode, scheme};
+use jc3vr_core::published::Step;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
@@ -38,7 +35,7 @@ pub fn status() -> HandBodiesStatus {
 pub fn callback_status() -> CallbackStatus {
     CallbackStatus {
         registered: callback::registered(),
-        fires: callback::fires(),
+        fires: Step::now().count(),
         game_thread: callback::registering_thread(),
         firing_thread: callback::firing_thread(),
         listening: Hand::BOTH.map(contact::listening),
@@ -164,12 +161,12 @@ pub(super) struct Shared {
     /// moved it onto the gun.
     pub(super) tracked: [Option<Vec3>; 2],
     /// Which hands stopped acting on purpose, and park at once, and the step that was published
-    /// at ([`steps`]).
-    pub(super) park_now: Option<(u64, [bool; 2])>,
+    /// at.
+    pub(super) park_now: Option<(Step, [bool; 2])>,
     /// When the targets were published; `None` while no hand acts.
     pub(super) published: Option<Instant>,
-    /// The step the targets were published at ([`steps`]); `None` while no hand acts.
-    pub(super) published_step: Option<u64>,
+    /// The step the targets were published at; `None` while no hand acts.
+    pub(super) published_step: Option<Step>,
     pub(super) world_scale: f32,
     pub(super) trackers: [(VelocityTracker, AngularTracker); 2],
     /// The motion of the frame that carries the palms.

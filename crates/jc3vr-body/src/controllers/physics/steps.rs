@@ -1,29 +1,35 @@
-//! The physics steps counted as the hand bodies' pre-simulation callback runs them, and how long a
-//! publication stamped with one stays current.
+//! The physics-step clock's one writer, and how long a publication stamped on it stays current.
+//!
+//! The clock is core's [`Step`]. The hand bodies' pre-simulation callback is registered whenever
+//! the physics system exists and fires once at the start of every step, so it alone begins the
+//! steps, through [`count_step`]; a second caller would make the clock run fast.
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use jc3vr_core::published::{Step, StepWindow};
 
 use crate::tuning::FRESHNESS;
 
 /// The physics steps run so far, for stamping a publication.
 #[inline]
 pub fn steps() -> u64 {
-    STEPS.load(Ordering::Acquire)
+    Step::now().count()
 }
 
-/// Count a physics step, returning its number. Called once at the start of each step.
-pub fn count_step() -> u64 {
-    STEPS.fetch_add(1, Ordering::AcqRel) + 1
+/// Begin a physics step, returning its reading. Called once at the start of each step, by the hand
+/// bodies' pre-simulation callback only.
+pub fn count_step() -> Step {
+    Step::begin()
 }
 
-/// Whether a publication stamped at step `published` is still current at step `now`: no more
-/// than the freshness tuning's `physics.stale_steps` have run since.
+/// How many steps a publication for the next step stays current: the freshness tuning's
+/// `physics.stale_steps`.
+pub fn window() -> StepWindow {
+    StepWindow::new(FRESHNESS.get().physics.stale_steps)
+}
+
+/// Whether a publication stamped at step `published` is still current at step `now` ([`window`]).
 pub fn current_at(published: Option<u64>, now: u64) -> bool {
-    published.is_some_and(|at| now.saturating_sub(at) <= FRESHNESS.get().physics.stale_steps)
+    window().holds(published.map(Step::from_count), Step::from_count(now))
 }
-
-/// The physics steps run since the payload loaded.
-static STEPS: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 mod tests {

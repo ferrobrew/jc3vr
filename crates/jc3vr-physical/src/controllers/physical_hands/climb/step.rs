@@ -6,6 +6,7 @@ use std::time::Instant;
 use glam::{Quat, Vec3};
 use jc3gi::character::character::Character;
 use jc3vr_body::controllers::physics::GRAVITY_MPS2;
+use jc3vr_core::published::Step;
 use jc3vr_input::frame::Hand;
 use jc3vr_view::headpose::teleport;
 
@@ -47,12 +48,6 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
         state.finish_climb();
         state.player = player;
     }
-    if state.publishes == state.stepped_publish {
-        state.stale_steps = state.stale_steps.saturating_add(1);
-    } else {
-        state.stale_steps = 0;
-        state.stepped_publish = state.publishes;
-    }
     // The game holds the player in a stunt position: it moves the player with the vehicle, so the
     // grips hold the hands where they took hold and move nothing. Grips taken before it did were
     // taken for a body it has since moved, so they let go.
@@ -69,7 +64,10 @@ pub unsafe fn step(bodies: [Option<(Vec3, Quat)>; 2]) -> [Option<Goal>; 2] {
         .is_none_or(|at| Instant::now().saturating_duration_since(at) > climb.stale_after())
     {
         Some("the hand input stopped publishing")
-    } else if state.stale_steps > climb.max_stale_steps {
+    } else if !climb
+        .publish_window()
+        .holds(state.published_step, Step::now())
+    {
         Some("the hands stopped publishing")
     } else {
         None

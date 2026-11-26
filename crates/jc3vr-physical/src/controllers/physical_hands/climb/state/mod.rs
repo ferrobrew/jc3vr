@@ -15,6 +15,7 @@ use jc3vr_body::controllers::{
     mode,
     mode::{AirborneVariant, Mode, OnFootVariant},
 };
+use jc3vr_core::published::Step;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
@@ -307,9 +308,8 @@ pub(super) struct State {
     /// Counts the recenters and snap turns that moved the rig under the palms.
     pub(super) rig_epoch: u64,
     pub(super) published: Option<Instant>,
-    pub(super) publishes: u64,
-    pub(super) stepped_publish: u64,
-    pub(super) stale_steps: u32,
+    /// The physics step the palms' tick last ran at, whether or not it published a player.
+    pub(super) published_step: Option<Step>,
     pub(super) stepped: Option<Instant>,
     pub(super) climbing: bool,
     pub(super) mantle: Option<Mantle>,
@@ -549,9 +549,7 @@ impl State {
             rig: None,
             rig_epoch: 0,
             published: None,
-            publishes: 0,
-            stepped_publish: 0,
-            stale_steps: 0,
+            published_step: None,
             stepped: None,
             climbing: false,
             mantle: None,

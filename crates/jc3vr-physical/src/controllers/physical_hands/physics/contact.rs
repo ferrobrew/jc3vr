@@ -38,6 +38,7 @@ use jc3gi::{
     havok::{hknpContactImpulseEvent, hknpContactJacobianUtil},
     physics::{PfxInstance, PfxRigidBody, PfxRigidBodyVftable},
 };
+use jc3vr_core::published::Step;
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use windows::Win32::System::Threading::GetCurrentThreadId;
@@ -186,18 +187,12 @@ pub(super) fn listening(source: impl Into<Source>) -> bool {
     WRAPPERS[source.into().index()].load(Ordering::Acquire) != 0
 }
 
-/// Count a pre-simulation step, which ends the mutes ([`mute_for`]) that run out with it. Called
-/// at the top of each step.
-pub(super) fn step_tick() {
-    STEP.fetch_add(1, Ordering::Relaxed);
-}
-
-/// Ignore `hand`'s contacts for the next `steps` steps: after its body is put somewhere rather
-/// than moved there (made, added, placed, or carried by the rig), where it may start inside what
-/// it meets and the contact would be a blow it never swung, and while it is held in place. `steps`
-/// counts steps at the game's 30 Hz tick.
+/// Ignore `hand`'s contacts for the next `steps` physics steps ([`Step`]): after its body is put
+/// somewhere rather than moved there (made, added, placed, or carried by the rig), where it may
+/// start inside what it meets and the contact would be a blow it never swung, and while it is held
+/// in place. `steps` counts steps at the game's 30 Hz tick.
 pub(super) fn mute_for(source: impl Into<Source>, steps: u64) {
-    let until = STEP.load(Ordering::Relaxed).saturating_add(steps);
+    let until = Step::now().count().saturating_add(steps);
     MUTED_UNTIL[source.into().index()].fetch_max(until, Ordering::Relaxed);
 }
 
@@ -246,9 +241,6 @@ fn is_own_body(body: u32) -> bool {
 /// Each source body's position and velocity for the coming step.
 static MOTION: Mutex<[Option<(Vec3, Vec3)>; SOURCES]> = Mutex::new([None; SOURCES]);
 
-/// The pre-simulation steps counted so far.
-static STEP: AtomicU64 = AtomicU64::new(0);
-
 /// The step until which each source's contacts are ignored.
 static MUTED_UNTIL: [AtomicU64; SOURCES] = [const { AtomicU64::new(0) }; SOURCES];
 
@@ -293,7 +285,7 @@ unsafe fn record(
     else {
         return;
     };
-    if STEP.load(Ordering::Relaxed) < MUTED_UNTIL[source.index()].load(Ordering::Relaxed) {
+    if Step::now().count() < MUTED_UNTIL[source.index()].load(Ordering::Relaxed) {
         return;
     }
     let points = if event.m_contactJacobian.is_null() {

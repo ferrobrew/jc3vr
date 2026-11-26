@@ -5,6 +5,7 @@ use std::time::Duration;
 
 use jc3vr_core::{
     config::engine::{Invalid, nonnegative, positive, range},
+    published::StepWindow,
     tuning::Tuning,
 };
 use serde::Deserialize;
@@ -114,6 +115,12 @@ impl HandClimbTuning {
     /// [`HandClimbTuning::stale_after_ms`] as a duration.
     pub fn stale_after(&self) -> Duration {
         Duration::from_millis(self.stale_after_ms)
+    }
+
+    /// How many physics steps the palms' tick's last run stays current for a step: the step after
+    /// it takes it, and [`HandClimbTuning::max_stale_steps`] more may run without another.
+    pub fn publish_window(&self) -> StepWindow {
+        StepWindow::new(u64::from(self.max_stale_steps) + 1)
     }
 
     fn validate(&self) -> Result<(), Invalid> {

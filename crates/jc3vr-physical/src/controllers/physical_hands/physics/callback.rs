@@ -12,7 +12,7 @@
 
 use std::sync::{
     OnceLock,
-    atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
 };
 
 use jc3gi::{
@@ -94,17 +94,11 @@ pub(super) fn firing_thread() -> u32 {
     FIRING_THREAD.load(Ordering::Relaxed)
 }
 
-/// How many times the callback has fired since the payload loaded.
-pub(super) fn fires() -> u64 {
-    FIRES.load(Ordering::Relaxed)
-}
-
 static RAIL_STEP: OnceLock<unsafe fn()> = OnceLock::new();
 static REGISTERED: AtomicBool = AtomicBool::new(false);
 static REGISTERING_THREAD: AtomicU32 = AtomicU32::new(0);
 static FIRST_FIRE: AtomicBool = AtomicBool::new(true);
 static FIRING_THREAD: AtomicU32 = AtomicU32::new(0);
-static FIRES: AtomicU64 = AtomicU64::new(0);
 
 /// The engine-facing object: a pointer to its virtual table, and nothing the engine writes.
 #[repr(C)]
@@ -132,7 +126,6 @@ unsafe extern "system" fn pre_simulation(
     _world: *mut hknpWorld,
     _dt: f32,
 ) {
-    FIRES.fetch_add(1, Ordering::Relaxed);
     // SAFETY: reads the calling thread's own id.
     FIRING_THREAD.store(unsafe { GetCurrentThreadId() }, Ordering::Relaxed);
     if FIRST_FIRE.swap(false, Ordering::Relaxed) {
