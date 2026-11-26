@@ -2386,6 +2386,7 @@ dependencies = [
  "jc3vr-input",
  "jc3vr-physical",
  "jc3vr-view",
+ "jc3vr-weapons",
  "openxr",
  "parking_lot",
  "pretty_assertions",
@@ -2420,6 +2421,7 @@ dependencies = [
  "jc3vr-input",
  "jc3vr-render",
  "jc3vr-view",
+ "jc3vr-weapons",
  "parking_lot",
  "re-utilities",
  "serde",
@@ -2538,6 +2540,7 @@ dependencies = [
  "jc3vr-render",
  "jc3vr-tooling",
  "jc3vr-view",
+ "jc3vr-weapons",
  "jiff",
  "openxr",
  "parking_lot",
@@ -2580,6 +2583,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "jc3vr-weapons"
+version = "0.1.0"
+dependencies = [
+ "body-rig",
+ "detours-macro",
+ "glam",
+ "jc3gi",
+ "jc3vr-body",
+ "jc3vr-core",
+ "jc3vr-input",
+ "jc3vr-view",
+ "parking_lot",
+ "pretty_assertions",
+ "proptest",
+ "re-utilities",
+ "serde",
+ "serde_json",
+ "smol_str",
+ "test-case",
+ "toml 1.1.6+spec-1.1.0",
+ "tracing",
+ "tracking-format",
+]
+
+[[package]]
 name = "jc3vr_injector"
 version = "0.1.0"
 dependencies = [
@@ -2615,6 +2643,7 @@ dependencies = [
  "jc3vr-tooling",
  "jc3vr-ui",
  "jc3vr-view",
+ "jc3vr-weapons",
  "jiff",
  "pretty_assertions",
  "puffin 0.20.0 (git+https://github.com/EmbarkStudios/puffin?rev=d06bed0fcb8c8e4c78643d4ead7cf1de9b76fd3b)",

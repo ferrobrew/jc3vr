@@ -1,0 +1,41 @@
+[package]
+name = "jc3vr-weapons"
+version = "0.1.0"
+edition = "2024"
+description = "The weapons layer of the payload: physical weapon handling (the holsters and grab volumes, the foregrip, the reloads, the grenades and C4, recoil, the dual-wield split, and the weapon wheel) and the loadout table, built on the body layer."
+publish = false
+
+[features]
+# Test fixtures the gameplay crate's tests rely on: the reload steps' belt eligibility on one gun
+# in the dominant hand.
+test-support = []
+
+[dependencies]
+glam = { workspace = true }
+jc3gi = { path = "../../jc3gi" }
+jc3vr-core = { path = "../jc3vr-core" }
+jc3vr-input = { path = "../jc3vr-input" }
+jc3vr-view = { path = "../jc3vr-view" }
+# The body layer below: the body-bound subsystems, the shared vocabulary, the held-item facts, and
+# the physics substrate the weapon handling builds on.
+jc3vr-body = { path = "../jc3vr-body" }
+# The weapon handling's detours. The detour macro emits `::re_utilities` paths, so a crate that
+# defines detours depends on `re-utilities` directly.
+re-utilities = { workspace = true }
+detours-macro = { workspace = true }
+tracking-format = { path = "../tracking-format" }
+body-rig = { path = "../body-rig", features = ["serde"] }
+tracing = "0.1"
+parking_lot = "0.12.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+smol_str = "0.3.6"
+toml = "1.1.6"
+
+[dev-dependencies]
+jc3vr-body = { path = "../jc3vr-body", features = ["test-support"] }
+jc3vr-core = { path = "../jc3vr-core", features = ["test-support"] }
+jc3vr-view = { path = "../jc3vr-view", features = ["test-support"] }
+pretty_assertions = "1.4.1"
+proptest = "1.11.0"
+test-case = "3.3.1"

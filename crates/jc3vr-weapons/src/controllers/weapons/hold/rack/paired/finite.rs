@@ -1,0 +1,736 @@
+//! A finite native pair supplies one initialized copy and the original actor, never two copies.
+//!
+//! On the rack every gun of a weapon takes the weapon's placement rule's one transform, so a
+//! pair's two pistols are drawn on top of each other and the shelf shows one. While neither is
+//! claimed, the second is drawn a pistol's thickness along its own up axis ([`stack_offset`]), with
+//! its grab points moved with it, so both show.
+
+use std::time::Instant;
+
+use glam::{Mat4, Vec3};
+use jc3gi::{
+    character::{character::Character, inventory::WeaponSlot},
+    equipment::weapon::{WeaponBase, WeaponState},
+};
+use jc3vr_body::controllers::{
+    held::{native::object_of, pickup::Refusal},
+    physics::{
+        characters::character_object,
+        refs::{Strong, Weak},
+    },
+};
+use jc3vr_input::frame::Hand;
+use parking_lot::Mutex;
+
+use crate::controllers::{
+    loadout::take::TakeRoute,
+    weapons::{
+        dual_wield::{single, single::magazine},
+        engine::gun_at_mut,
+        hold::{
+            rack::{
+                paired,
+                paired::{
+                    COPY_WAIT, Claim, ClaimKind, MAX_SOURCES, Member, SOURCE_GRACE, Stage, gun,
+                    member_points,
+                },
+            },
+            source::SourceRefusal,
+            world::{TargetKind, WorldTarget},
+        },
+        inventory::{engine, gives},
+    },
+};
+
+/// Offer each real native gun while keeping a finite source's actor at its placement rule.
+///
+/// # Safety
+///
+/// The source and owner are live on the game thread before the world update.
+pub(super) unsafe fn targets(
+    owner: &Character,
+    weapon: &WeaponBase,
+    alive: Strong,
+    to_cockpit: &impl Fn(glam::Vec3) -> glam::Vec3,
+    out: &mut Vec<WorldTarget>,
+) -> bool {
+    let address = weapon as *const WeaponBase as usize;
+    let busy = gives::member_pending();
+    let mut state = STATE.lock();
+    let at = match state.iter().position(|s| s.address == address) {
+        Some(at) => at,
+        None => {
+            if !unsafe { paired::qualifies(weapon) } || single::is(address) {
+                return false;
+            }
+            if state.len() >= MAX_SOURCES {
+                return true;
+            }
+            let Some(generation) = paired::next_generation() else {
+                return true;
+            };
+            state.push(Source {
+                address,
+                generation,
+                alive: Some(alive),
+                weak: unsafe { engine::weak_to(weapon) },
+                seen: Instant::now(),
+                copy: Stage::Empty,
+                claims: Claims::default(),
+                pickup_started: false,
+            });
+            state.len() - 1
+        }
+    };
+    let source = &mut state[at];
+    if !source.observe(Weak::lock) {
+        return true;
+    }
+    if weapon.m_InfinitePickup || weapon.m_State != WeaponState::E_WS_WEAPON_RACK {
+        return !single::is(address);
+    }
+    if let Some(taken) = source.claims.first {
+        unsafe { show_remaining(source, taken) };
+    }
+    let ready = source.claims.first.is_some() || matches!(source.copy, Stage::Ready(_));
+    let offset = (ready && source.claims.first.is_none())
+        .then(|| unsafe { gun(weapon, 1) })
+        .flatten()
+        .map(|second| {
+            Mat4::from(second.m_WorldMatrixT1)
+                .y_axis
+                .truncate()
+                .normalize_or_zero()
+                * STACK_M
+        })
+        .filter(|offset| offset.is_finite() && *offset != Vec3::ZERO);
+    {
+        let mut stacked = STACKED.lock();
+        stacked.retain(|(stacked, _)| *stacked != address);
+        if let Some(offset) = offset {
+            stacked.push((address, offset));
+        }
+    }
+    if ready {
+        for index in 0..2 {
+            if !source.claims.available(index) {
+                continue;
+            }
+            let Some((mut points, mut pose)) =
+                (unsafe { gun(weapon, index) }).and_then(member_points)
+            else {
+                continue;
+            };
+            if let Some(offset) = offset.filter(|_| index == 1) {
+                points = points.map(|point| point + offset);
+                pose.position += offset;
+            }
+            out.push(WorldTarget {
+                kind: TargetKind::RackMember {
+                    weapon: address,
+                    generation: source.generation,
+                    member: index as u8,
+                },
+                weapon: address,
+                slot: WeaponSlot::E_SLOT_DUAL_WIELD,
+                points: points.map(to_cockpit),
+                gun: pose,
+            });
+        }
+    }
+    let request = if !busy
+        && source.needs_copy()
+        && !owner.m_Inventory.m_WeaponPendingSpawn[WeaponSlot::E_SLOT_DUAL_WIELD as usize]
+    {
+        let member = source.callback();
+        source.copy = Stage::Waiting { at: Instant::now() };
+        Some(member)
+    } else {
+        None
+    };
+    drop(state);
+    if let Some(member) = request {
+        let tag = unsafe { (*object_of(address as *const WeaponBase)).GetUniqueSpawnTagIndex() };
+        unsafe { gives::request_member_copy(owner, member, tag) };
+        tracing::info!(target: "controllers", source = address, generation = member.generation,
+            "rack: requested the finite pair's only initialized copy");
+    }
+    true
+}
+
+pub(super) fn retains_single(object: usize) -> bool {
+    STATE
+        .lock()
+        .iter()
+        .any(|s| s.address == object && s.retains_single(Weak::lock))
+}
+
+pub(super) fn owns(member: Member) -> bool {
+    STATE.lock().iter().any(|s| s.matches(member))
+}
+
+pub(super) fn member_for(source: usize, preferred: u8) -> Option<Member> {
+    let state = STATE.lock();
+    let source = state.iter().find(|s| s.address == source)?;
+    paired::pick(preferred, |index| source.claims.available(index)).map(|index| Member {
+        source: source.address,
+        generation: source.generation,
+        index: index as u8,
+    })
+}
+
+pub(super) fn ready(member: Member) -> bool {
+    STATE.lock().iter().any(|s| {
+        s.matches(member)
+            && s.claims.available(member.index as usize)
+            && (s.claims.first.is_some() || matches!(s.copy, Stage::Ready(_)))
+    })
+}
+
+pub(super) fn waiting(member: Member) -> bool {
+    STATE
+        .lock()
+        .iter()
+        .any(|s| s.matches(member) && member.index == 0 && matches!(s.copy, Stage::Waiting { .. }))
+}
+
+/// Store the empty initialized actor without crediting its spawned default ammunition.
+///
+/// # Safety
+///
+/// The actor is live on the game thread before the world update.
+pub(super) unsafe fn staged(member: Member, actor: Strong) {
+    let weapon = unsafe { &mut *engine::weapon_of(&actor) };
+    unsafe { single::designate(weapon, "a finite rack member") };
+    if !single::is(weapon as *mut WeaponBase as usize) || !unsafe { paired::whole_pair(weapon) } {
+        single::undesignate(weapon as *mut WeaponBase as usize);
+        unsafe { weapon.Despawn() };
+        return;
+    }
+    unsafe { weapon.SetMagazineAmmo(0) };
+    weapon.m_StoredNonMagazineAmmo = 0;
+    unsafe { weapon.SetState(WeaponState::E_WS_WEAPON_RACK, true) };
+    unsafe { weapon.SetVisible(false, false, false) };
+    let mut state = STATE.lock();
+    if let Some(source) = state.iter_mut().find(|s| s.matches(member))
+        && member.index == 0
+        && matches!(source.copy, Stage::Waiting { .. })
+    {
+        source.copy.supply(actor);
+        return;
+    }
+    drop(state);
+    single::undesignate(weapon as *mut WeaponBase as usize);
+    unsafe { weapon.Despawn() };
+}
+
+/// Claim the staged copy first, then the remaining original: the first claim splits the source's
+/// ammunition between the two, and the last starts the original's native pickup, which tells its
+/// placement rule, once.
+///
+/// # Safety
+///
+/// The source and local player are live on the game thread before the world update.
+pub(super) unsafe fn claim(
+    owner: &Character,
+    hand: Hand,
+    member: Member,
+) -> Result<(Claim, (WeaponSlot, TakeRoute)), SourceRefusal> {
+    let (actor, first, pickup_started) = {
+        let mut state = STATE.lock();
+        let source = state
+            .iter_mut()
+            .find(|s| s.matches(member))
+            .ok_or(SourceRefusal::Gone)?;
+        if !source.claims.available(member.index as usize)
+            || (source.claims.first.is_some() && !single::is(source.address))
+        {
+            return Err(SourceRefusal::Gone);
+        }
+        let first = source.claims.first.is_none();
+        let actor = if first {
+            source.copy.take().ok_or(SourceRefusal::CopyPending)?
+        } else {
+            source.weak.lock().ok_or(SourceRefusal::Gone)?
+        };
+        (actor, first, source.pickup_started)
+    };
+    let weapon = unsafe { &mut *engine::weapon_of(&actor) };
+    if !single::is(weapon as *mut WeaponBase as usize) {
+        unsafe { single::designate(weapon, "a finite rack member") };
+    }
+    let admitted = if single::is(weapon as *mut WeaponBase as usize) {
+        unsafe { paired::admit(owner, weapon, hand) }
+    } else {
+        Err(Refusal::NotTaken)
+    };
+    let prepared = admitted.and_then(|admitted| {
+        let kind = if first {
+            unsafe { split(member, weapon, &mut *(member.source as *mut WeaponBase)) }?
+        } else {
+            if pickup_started {
+                // A failed carry already sent the native source's pickup event.
+                unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
+            } else if weapon.m_State == WeaponState::E_WS_WEAPON_RACK {
+                // Takes the last pistol out of the rack state and tells its placement rule.
+                unsafe { weapon.PickupStart(character_object(owner)) };
+            }
+            ClaimKind::FiniteFinal {
+                started: weapon.m_State != WeaponState::E_WS_WEAPON_RACK,
+            }
+        };
+        Ok((kind, admitted))
+    });
+    match prepared {
+        Ok((kind, admitted)) => Ok((Claim::new(member, actor, kind), admitted)),
+        Err(refusal) => {
+            if first && let Some(source) = STATE.lock().iter_mut().find(|s| s.matches(member)) {
+                source.copy.complete(actor, false);
+            }
+            Err(SourceRefusal::Take(refusal))
+        }
+    }
+}
+
+/// Settle a finite pair's claim (`kind`, of `actor` for `member`) after its take.
+///
+/// # Safety
+///
+/// The game thread, before the world update.
+pub(super) unsafe fn settle(member: Member, actor: Strong, kind: ClaimKind, accepted: bool) {
+    let weapon = unsafe { &mut *engine::weapon_of(&actor) };
+    let index = member.index as usize;
+    if let ClaimKind::FiniteFirst { magazine, stored } = kind
+        && !accepted
+    {
+        // Give the original its whole ammunition back, as one pair again.
+        let original = unsafe { &mut *(member.source as *mut WeaponBase) };
+        unsafe { original.SetMagazineAmmo(magazine) };
+        original.m_StoredNonMagazineAmmo = stored;
+        single::undesignate(member.source);
+        unsafe { original.SetVisible(true, false, false) };
+        unsafe { weapon.SetMagazineAmmo(0) };
+        weapon.m_StoredNonMagazineAmmo = 0;
+    }
+    let mut state = STATE.lock();
+    let Some(source) = state.iter_mut().find(|s| s.matches(member)) else {
+        return;
+    };
+    match kind {
+        ClaimKind::FiniteFirst { .. } if accepted => {
+            source.claims.accept(index);
+            source.copy.complete(actor, true);
+            unsafe { show_remaining(source, index) };
+        }
+        ClaimKind::FiniteFirst { .. } => {
+            unsafe { weapon.SetState(WeaponState::E_WS_WEAPON_RACK, true) };
+            unsafe { weapon.SetVisible(false, false, false) };
+            source.copy.complete(actor, false);
+        }
+        ClaimKind::FiniteFinal { started } => {
+            source.pickup_started |= started;
+            if accepted {
+                source.claims.accept(index);
+            } else if started {
+                // The source event cannot be rolled back; a failed final carry leaves one loose
+                // gun.
+                unsafe { weapon.SetState(WeaponState::E_WS_DROPPED, true) };
+                unsafe { weapon.SetVisible(true, false, false) };
+                unsafe { single::hide_extra(weapon) };
+            }
+        }
+        ClaimKind::Unlimited => return,
+    }
+    if accepted {
+        tracing::info!(target: "controllers", source = member.source, generation = member.generation,
+            member = member.index, original = matches!(kind, ClaimKind::FiniteFinal { .. }),
+            "rack: took a finite native member");
+    }
+}
+
+/// The offset the second pistol of the finite rack source `weapon` is drawn at while neither is
+/// claimed, world space, or `None`. Read by the weapon's and its parts' render updates.
+pub(crate) fn stack_offset(weapon: usize) -> Option<Vec3> {
+    STACKED
+        .lock()
+        .iter()
+        .find(|(stacked, _)| *stacked == weapon)
+        .map(|(_, offset)| *offset)
+}
+
+/// The finite rack sources whose second pistol is drawn apart, with its offset.
+static STACKED: Mutex<Vec<(usize, Vec3)>> = Mutex::new(Vec::new());
+
+/// How far the second pistol is drawn from the first, metres: a pistol's thickness, a little more.
+const STACK_M: f32 = 0.045;
+
+pub(super) fn tick() {
+    let mut state = STATE.lock();
+    let mut retired = Vec::new();
+    let mut at = 0;
+    while at < state.len() {
+        let source = &mut state[at];
+        if source.claims.finished || source.weak.lock().is_none() {
+            retired.push(state.swap_remove(at));
+            continue;
+        }
+        if source.seen.elapsed() >= SOURCE_GRACE {
+            if source.claims.first.is_some() {
+                source.alive = None;
+            } else {
+                retired.push(state.swap_remove(at));
+                continue;
+            }
+        }
+        if matches!(source.copy, Stage::Waiting { at } if at.elapsed() >= COPY_WAIT) {
+            source.copy = Stage::Failed;
+            tracing::warn!(target: "controllers", "rack: the finite pair's copy did not arrive");
+        }
+        at += 1;
+    }
+    STACKED
+        .lock()
+        .retain(|(stacked, _)| state.iter().any(|source| source.address == *stacked));
+    drop(state);
+    for source in retired {
+        unsafe { retire(source) };
+    }
+}
+
+pub(super) fn clear() {
+    STACKED.lock().clear();
+    let sources = clear_sources(&mut STATE.lock(), Weak::lock);
+    for source in sources {
+        unsafe { retire(source) };
+    }
+}
+
+struct Source<T = Strong, W = Weak> {
+    address: usize,
+    generation: u64,
+    alive: Option<T>,
+    weak: W,
+    seen: Instant,
+    copy: Stage<T>,
+    claims: Claims,
+    pickup_started: bool,
+}
+
+impl<T, W> Source<T, W> {
+    fn observe(&mut self, lock: impl FnOnce(&W) -> Option<T>) -> bool {
+        self.seen = Instant::now();
+        if self.alive.is_none() {
+            self.alive = lock(&self.weak);
+        }
+        self.alive.is_some()
+    }
+
+    fn needs_copy(&self) -> bool {
+        self.claims.first.is_none() && matches!(self.copy, Stage::Empty)
+    }
+
+    fn retains_single(&self, lock: impl FnOnce(&W) -> Option<T>) -> bool {
+        self.claims.first.is_some() && !self.claims.finished && lock(&self.weak).is_some()
+    }
+
+    fn matches(&self, member: Member) -> bool {
+        member.index < 2 && self.address == member.source && self.generation == member.generation
+    }
+
+    fn callback(&self) -> Member {
+        Member {
+            source: self.address,
+            generation: self.generation,
+            index: 0,
+        }
+    }
+}
+
+fn clear_sources<T, W>(
+    sources: &mut Vec<Source<T, W>>,
+    lock: impl Fn(&W) -> Option<T>,
+) -> Vec<Source<T, W>> {
+    let mut retired = Vec::new();
+    let mut at = 0;
+    while at < sources.len() {
+        // The remaining native actor stays at its placement rule, so its claim must outlive
+        // observation without keeping the actor alive through streaming destruction.
+        sources[at].alive = None;
+        if sources[at].retains_single(&lock) {
+            at += 1;
+        } else {
+            retired.push(sources.swap_remove(at));
+        }
+    }
+    retired
+}
+
+#[derive(Default)]
+struct Claims {
+    first: Option<usize>,
+    finished: bool,
+}
+
+impl Claims {
+    fn available(&self, index: usize) -> bool {
+        index < 2 && !self.finished && self.first != Some(index)
+    }
+
+    fn accept(&mut self, index: usize) {
+        if self.available(index) {
+            if self.first.is_none() {
+                self.first = Some(index);
+            } else {
+                self.finished = true;
+            }
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+struct Allocation {
+    magazines: [i32; 2],
+    stored: i32,
+}
+
+impl Allocation {
+    fn new(magazine: i32, stored: i32, tuned: i32) -> Option<Self> {
+        if magazine < 0 || stored < 0 {
+            return None;
+        }
+        let dealt = magazine::split(magazine, tuned);
+        Some(Self {
+            magazines: [dealt.slot, dealt.twin],
+            stored: stored.checked_add(dealt.over)?,
+        })
+    }
+}
+
+static STATE: Mutex<Vec<Source>> = Mutex::new(Vec::new());
+
+/// Split the original's ammunition between the staged `copy` and the `original` for a first claim
+/// of `member`, the copy carrying the claimed gun's share, and place the copy at that gun. Returns
+/// the claim's kind, with the original's ammunition before the split.
+unsafe fn split(
+    member: Member,
+    copy: &mut WeaponBase,
+    original: &mut WeaponBase,
+) -> Result<ClaimKind, Refusal> {
+    let allocation = Allocation::new(
+        original.m_MagazineAmmo,
+        original.m_StoredNonMagazineAmmo,
+        unsafe { original.GetMagazineSize() },
+    )
+    .ok_or(Refusal::NotTaken)?;
+    let magazine = original.m_MagazineAmmo;
+    let stored = original.m_StoredNonMagazineAmmo;
+    let index = member.index as usize;
+    let matrix = unsafe { gun(original, index) }
+        .ok_or(Refusal::NotTaken)?
+        .m_WorldMatrixT1;
+    if !unsafe { single::designate(original, "the remaining finite rack member") } {
+        return Err(Refusal::NotTaken);
+    }
+    if let Some(data) = unsafe { gun_at_mut(copy, 0) } {
+        data.m_WorldMatrixT0 = matrix;
+        data.m_WorldMatrixT1 = matrix;
+    }
+    unsafe { original.SetMagazineAmmo(allocation.magazines[1 - index]) };
+    original.m_StoredNonMagazineAmmo = allocation.stored;
+    unsafe { copy.SetMagazineAmmo(allocation.magazines[index]) };
+    copy.m_StoredNonMagazineAmmo = 0;
+    copy.m_InfinitePickup = false;
+    unsafe { copy.SetState(WeaponState::E_WS_DROPPED, true) };
+    Ok(ClaimKind::FiniteFirst { magazine, stored })
+}
+
+unsafe fn show_remaining(source: &Source, taken: usize) {
+    let weapon = unsafe { &mut *(source.address as *mut WeaponBase) };
+    if taken == 0 {
+        let Some(matrix) = (unsafe { gun(weapon, 1) }).map(|g| g.m_WorldMatrixT1) else {
+            return;
+        };
+        if let Some(data) = unsafe { gun_at_mut(weapon, 0) } {
+            data.m_WorldMatrixT0 = matrix;
+            data.m_WorldMatrixT1 = matrix;
+        }
+    }
+    unsafe { weapon.SetVisible(true, false, false) };
+    unsafe { single::hide_extra(weapon) };
+}
+
+unsafe fn retire(source: Source) {
+    let alive = source.weak.lock();
+    if let Some(alive) = alive.as_ref() {
+        let weapon = unsafe { &mut *engine::weapon_of(alive) };
+        if weapon.m_State == WeaponState::E_WS_WEAPON_RACK && !source.claims.finished {
+            if let Some(taken) = source.claims.first {
+                unsafe { show_remaining(&source, taken) };
+            } else {
+                unsafe { weapon.SetVisible(true, false, false) };
+            }
+        }
+    } else {
+        single::undesignate(source.address);
+    }
+    if let Stage::Ready(actor) = source.copy {
+        single::undesignate(engine::weapon_of(&actor) as usize);
+        unsafe { (*engine::weapon_of(&actor)).Despawn() };
+    }
+    drop(source.alive);
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::{Arc, Weak as TestWeak};
+
+    use super::*;
+
+    #[test]
+    fn partial_source_survives_clear_and_reobservation_without_another_copy() {
+        for first in [0, 1] {
+            let native = Arc::new(());
+            let copy = Arc::new(());
+            let mut source = test_source(&native, Stage::Ready(copy));
+            let callback = source.callback();
+            let taken = source.copy.take().unwrap();
+            assert!(!Arc::ptr_eq(&taken, &native));
+            source.claims.accept(first);
+            source.copy.complete(taken, true);
+            let mut sources = vec![source];
+
+            for _ in 0..3 {
+                assert!(clear_sources(&mut sources, TestWeak::upgrade).is_empty());
+                assert_eq!(sources.len(), 1);
+                assert!(sources[0].alive.is_none());
+                assert_eq!(Arc::strong_count(&native), 1);
+                assert!(sources[0].retains_single(TestWeak::upgrade));
+                assert!(sources[0].matches(callback));
+                assert!(!sources[0].needs_copy());
+            }
+
+            let source = sources
+                .iter_mut()
+                .find(|s| s.address == callback.source)
+                .unwrap();
+            assert!(source.observe(TestWeak::upgrade));
+            assert!(Arc::ptr_eq(source.alive.as_ref().unwrap(), &native));
+            assert_eq!(source.generation, callback.generation);
+            assert!(!source.needs_copy());
+            assert!(!source.claims.available(first));
+            assert!(source.claims.available(1 - first));
+            let remaining = source.weak.upgrade().unwrap();
+            assert!(Arc::ptr_eq(&remaining, &native));
+            source.claims.accept(1 - first);
+            assert!(!source.claims.available(0) && !source.claims.available(1));
+            assert_eq!(clear_sources(&mut sources, TestWeak::upgrade).len(), 1);
+            assert!(sources.is_empty());
+        }
+    }
+
+    #[test]
+    fn cleared_partial_source_expires_without_pinning_the_native_actor() {
+        let native = Arc::new(());
+        let mut source = test_source(&native, Stage::Taken);
+        source.claims.accept(0);
+        let mut sources = vec![source];
+        assert!(clear_sources(&mut sources, TestWeak::upgrade).is_empty());
+        assert_eq!(Arc::strong_count(&native), 1);
+        drop(native);
+        assert!(!sources[0].retains_single(TestWeak::upgrade));
+        assert!(!sources[0].observe(TestWeak::upgrade));
+        assert_eq!(clear_sources(&mut sources, TestWeak::upgrade).len(), 1);
+        assert!(sources.is_empty());
+    }
+
+    #[test]
+    fn clear_retires_an_unclaimed_source_and_its_staged_copy() {
+        let native = Arc::new(());
+        let copy = Arc::new(());
+        let mut sources = vec![test_source(&native, Stage::Ready(Arc::clone(&copy)))];
+        let retired = clear_sources(&mut sources, TestWeak::upgrade);
+        assert!(sources.is_empty());
+        assert_eq!(retired.len(), 1);
+        assert!(retired[0].alive.is_none());
+        assert_eq!(Arc::strong_count(&native), 1);
+        drop(retired);
+        assert_eq!(Arc::strong_count(&copy), 1);
+    }
+
+    fn test_source(native: &Arc<()>, copy: Stage<Arc<()>>) -> Source<Arc<()>, TestWeak<()>> {
+        Source {
+            address: Arc::as_ptr(native) as usize,
+            generation: 17,
+            alive: Some(Arc::clone(native)),
+            weak: Arc::downgrade(native),
+            seen: Instant::now(),
+            copy,
+            claims: Claims::default(),
+            pickup_started: false,
+        }
+    }
+
+    #[test]
+    fn finite_ammunition_is_conserved_including_native_extra_rounds() {
+        for tuned in [0, 1, 15, 24, 60] {
+            for magazine in 0..100 {
+                for stored in [0, 3, 91] {
+                    let allocation = Allocation::new(magazine, stored, tuned).unwrap();
+                    assert_eq!(
+                        allocation.magazines.iter().sum::<i32>() + allocation.stored,
+                        magazine + stored
+                    );
+                    assert!(
+                        allocation
+                            .magazines
+                            .iter()
+                            .all(|&n| n <= magazine::capacity(tuned))
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn either_order_consumes_exactly_two_members() {
+        for first in [0, 1] {
+            let mut claims = Claims::default();
+            claims.accept(first);
+            assert!(!claims.available(first));
+            assert!(claims.available(1 - first));
+            claims.accept(first);
+            assert!(!claims.finished);
+            claims.accept(1 - first);
+            assert!(claims.finished);
+            assert!(!claims.available(0));
+            assert!(!claims.available(1));
+        }
+    }
+
+    #[test]
+    fn refused_first_take_keeps_one_copy_and_both_members() {
+        let claims = Claims::default();
+        let mut copy = Stage::Waiting { at: Instant::now() };
+        assert!(copy.supply(101));
+        let actor = copy.take().unwrap();
+        assert!(copy.take().is_none());
+        copy.complete(actor, false);
+        assert!(matches!(copy, Stage::Ready(101)));
+        assert!(claims.available(0) && claims.available(1));
+        assert!(Allocation::new(-1, 3, 24).is_none());
+        assert!(Allocation::new(30, i32::MAX, 24).is_none());
+    }
+
+    #[test]
+    fn partial_sources_cannot_reclaim_taken_or_invalid_members() {
+        let mut claims = Claims::default();
+        claims.accept(1);
+        assert!(!claims.available(1));
+        assert!(claims.available(0));
+        assert!(!claims.available(2));
+        assert!(!claims.available(usize::MAX));
+        let allocation = Allocation::new(13, 27, 24).unwrap();
+        assert_eq!(allocation.magazines, [12, 1]);
+        assert_eq!(allocation.stored, 27);
+    }
+}

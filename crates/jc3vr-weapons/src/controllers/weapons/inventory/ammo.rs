@@ -1,0 +1,230 @@
+//! The ammunition auto-pickup, for every weapon in the loadout table. The design is the two-handed
+//! inventory's "No automatic moves" (`docs/mod/input/two-handed-inventory.md`), the engine side in
+//! `docs/engine/gameplay/item-pickup.md`.
+//!
+//! A weapon lying in the world gives its stored rounds to the reserve when the player walks over it
+//! only while the player's inventory holds a weapon of the same ammunition type
+//! ([`Inventory::HasWeaponWithAmmoType`]), which reads the slots alone; its one caller, the
+//! pickup's automatic credit, credits the rounds itself. So the detour also answers yes for the
+//! local player's inventory when a weapon the table has on the body, in a hand or on a socket, is
+//! of that type. The types are published once per input tick as a mask, which the detour reads
+//! without a lock, since the credit runs wherever the pickup interaction activates.
+//!
+//! A weapon locker refills the reserve through the player's `ply.ammo.givemax` event, which the
+//! player answers with [`Inventory::GiveMaxAmmo`]: every reserve is set to its cap, written
+//! directly rather than through [`Inventory::SetAmmoCount`]. The event is sent by name from the
+//! game's data, so what makes a locker send it is not in the code. Every way the local player's
+//! reserve rises is logged at info level: through the setter, through the refill (with the
+//! reserves before and after), and any rise neither made ([`watch`]), as are the pickup's
+//! automatic credits ([`WeaponBase::ShouldAutoPickup`]) with the weapon's stored rounds, so a
+//! session at a locker shows whether the refill ran.
+
+use std::sync::atomic::{AtomicU32, Ordering};
+
+use detours_macro::detour;
+use jc3gi::{
+    character::{character::Character, inventory::Inventory},
+    equipment::weapon::{AmmunitionType, WeaponBase},
+    game::GameObject,
+};
+use jc3vr_body::controllers::{hands::ik, physics::characters::character_object};
+use parking_lot::Mutex;
+use re_utilities::hook_library::HookLibrary;
+
+use crate::controllers::{
+    loadout::{Place, live},
+    weapons::inventory::carry,
+};
+
+pub(super) fn hook_library() -> HookLibrary {
+    HookLibrary::new()
+        .with_static_binder(&HAS_WEAPON_WITH_AMMO_TYPE_BINDER)
+        .with_static_binder(&SET_AMMO_COUNT_BINDER)
+        .with_static_binder(&GIVE_MAX_AMMO_BINDER)
+        .with_static_binder(&SHOULD_AUTO_PICKUP_BINDER)
+}
+
+/// Publish the ammunition types of the weapons the table has on the body. Called each input tick
+/// while the table runs, after the reconcile, when every such weapon is kept alive by a slot or
+/// the carry set.
+///
+/// # Safety
+///
+/// `slots` must be the local player's live slot weapons, on the game thread before the world
+/// update.
+pub(crate) unsafe fn publish(slots: &[usize]) {
+    let mut mask = 0;
+    for (object, place) in live::bound() {
+        let object = object.get();
+        if matches!(place, Place::World(_)) || !(carry::contains(object) || slots.contains(&object))
+        {
+            continue;
+        }
+        // SAFETY: a slot or the carry set keeps the weapon alive.
+        let weapon = unsafe { &*(object as *const WeaponBase) };
+        // Read as the raw value: an unset type is out of the enum's range.
+        let raw = unsafe { (&raw const weapon.m_AmmunitionType).cast::<i32>().read() };
+        if let Some(bit) = bit(raw) {
+            mask |= bit;
+        }
+    }
+    MASK.store(mask, Ordering::Relaxed);
+}
+
+/// Log any rise of the local player's reserves, in `inventory`, that neither the setter nor the
+/// refill made, since the last tick. Called each input tick while the table runs.
+pub(crate) fn watch(inventory: &Inventory) {
+    let now = inventory.m_Ammunition;
+    let mut seen = SEEN.lock();
+    if let Some(before) = *seen {
+        for (ammo_type, (before, after)) in before.iter().zip(&now).enumerate() {
+            if after > before {
+                tracing::info!(
+                    target: "controllers",
+                    ammo_type,
+                    before,
+                    after,
+                    "ammo: the local player's reserve rose outside the setter and the refill"
+                );
+            }
+        }
+    }
+    *seen = Some(now);
+}
+
+/// Forget the published types. Called when the table stops.
+pub(crate) fn clear() {
+    MASK.store(0, Ordering::Relaxed);
+}
+
+/// The ammunition types of the weapons the table has on the body, one bit per type.
+static MASK: AtomicU32 = AtomicU32::new(0);
+
+/// The mask's bit for the raw ammunition type `raw`, for the types a reserve holds.
+fn bit(raw: i32) -> Option<u32> {
+    (0..AmmunitionType::NOF_AMMO_TYPES as i32)
+        .contains(&raw)
+        .then(|| 1 << raw)
+}
+
+/// The ammunition type is taken as the raw value, so that one the enum does not name is not
+/// misread.
+#[detour(address = jc3gi::character::inventory::Inventory::HasWeaponWithAmmoType_ADDRESS)]
+fn has_weapon_with_ammo_type(inventory: *const Inventory, ammo_type: i32) -> bool {
+    if HAS_WEAPON_WITH_AMMO_TYPE
+        .get()
+        .unwrap()
+        .call(inventory, ammo_type)
+    {
+        return true;
+    }
+    let local = ik::local_character();
+    // SAFETY: the check is given a live inventory.
+    let is_local = local != 0
+        && unsafe { inventory.as_ref() }.is_some_and(|i| i.m_Character as usize == local);
+    is_local && bit(ammo_type).is_some_and(|bit| MASK.load(Ordering::Relaxed) & bit != 0)
+}
+
+/// The ammunition type is taken as the raw value, as in [`has_weapon_with_ammo_type`].
+#[detour(address = jc3gi::character::inventory::Inventory::SetAmmoCount_ADDRESS)]
+fn set_ammo_count(inventory: *mut Inventory, ammo_type: i32, count: i32, save_game: bool) {
+    // SAFETY: the setter is given a live inventory.
+    let before = unsafe { inventory.as_ref() }
+        .filter(|i| {
+            let local = ik::local_character();
+            local != 0 && i.m_Character as usize == local
+        })
+        .and_then(|i| {
+            usize::try_from(ammo_type)
+                .ok()
+                .and_then(|index| i.m_Ammunition.get(index).copied())
+        });
+    SET_AMMO_COUNT
+        .get()
+        .unwrap()
+        .call(inventory, ammo_type, count, save_game);
+    if let Some(before) = before {
+        note_seen(inventory);
+        // SAFETY: as above.
+        let after = unsafe { inventory.as_ref() }.and_then(|i| {
+            usize::try_from(ammo_type)
+                .ok()
+                .and_then(|index| i.m_Ammunition.get(index).copied())
+        });
+        if let Some(after) = after.filter(|after| *after > before) {
+            tracing::info!(
+                target: "controllers",
+                ammo_type,
+                before,
+                after,
+                "ammo: the local player's reserve rose"
+            );
+        }
+    }
+}
+
+#[detour(address = jc3gi::character::inventory::Inventory::GiveMaxAmmo_ADDRESS)]
+fn give_max_ammo(inventory: *mut Inventory) {
+    // SAFETY: the refill is given a live inventory.
+    let before = unsafe { inventory.as_ref() }
+        .filter(|i| {
+            let local = ik::local_character();
+            local != 0 && i.m_Character as usize == local
+        })
+        .map(|i| i.m_Ammunition);
+    GIVE_MAX_AMMO.get().unwrap().call(inventory);
+    if let Some(before) = before {
+        note_seen(inventory);
+        // SAFETY: as above.
+        let after = unsafe { inventory.as_ref() }.map(|i| i.m_Ammunition);
+        tracing::info!(
+            target: "controllers",
+            ?before,
+            ?after,
+            "ammo: the game refilled every reserve to its cap (a locker's give-max-ammo event)"
+        );
+    }
+}
+
+/// Note the local player's reserves as the setters left them, so the watch counts only rises
+/// they did not make.
+fn note_seen(inventory: *const Inventory) {
+    // SAFETY: the setters' own live inventory.
+    if let Some(inventory) = unsafe { inventory.as_ref() } {
+        *SEEN.lock() = Some(inventory.m_Ammunition);
+    }
+}
+
+/// The local player's reserves as last seen by the watch or left by a setter.
+static SEEN: Mutex<Option<[i32; RESERVES]>> = Mutex::new(None);
+
+/// How many reserves the inventory keeps, one per ammunition type.
+const RESERVES: usize = AmmunitionType::NOF_AMMO_TYPES as usize;
+
+#[detour(address = jc3gi::equipment::weapon::WeaponBase::ShouldAutoPickup_ADDRESS)]
+fn should_auto_pickup(weapon: *mut WeaponBase, activator: *mut GameObject) -> bool {
+    // SAFETY: the interaction passes a live weapon.
+    let stored = unsafe { weapon.as_ref() }.map(|w| w.m_StoredNonMagazineAmmo);
+    let credits = SHOULD_AUTO_PICKUP.get().unwrap().call(weapon, activator);
+    let local = ik::local_character();
+    if local != 0 && activator == character_object(local as *const Character) && credits {
+        tracing::info!(
+            target: "controllers",
+            stored = stored.unwrap_or(0),
+            "ammo: a weapon's pickup credited its stored rounds to the local player"
+        );
+    }
+    credits
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn only_a_reserve_s_types_have_a_bit() {
+        assert_eq!(bit(0), Some(1));
+        assert_eq!(bit(AmmunitionType::NOF_AMMO_TYPES as i32), None);
+        assert_eq!(bit(-1), None);
+    }
+}
