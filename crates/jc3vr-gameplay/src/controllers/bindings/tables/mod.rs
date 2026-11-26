@@ -51,7 +51,7 @@ use jc3vr_body::controllers::{
         latch::{GripLatch, LatchTick},
     },
     intent::{
-        config::BindingsConfig,
+        config::{CROUCH_FLICK, LONG_PRESS_S, MENU_STICK_PUSH},
         controls::{ButtonControl, Controls},
         grapple_button::{
             GrappleButton, GrappleContext, GrapplePermissions, GrappleTick, LockButton,
@@ -339,7 +339,6 @@ impl Bindings {
         controls: &Controls,
         input: &SemanticInput,
         dt: f32,
-        config: &BindingsConfig,
     ) -> Step {
         let chord = match mode {
             Mode::OnFoot(_) => SightChord::of(controls),
@@ -377,7 +376,7 @@ impl Bindings {
         );
         for hand in Hand::BOTH {
             let i = hand.index();
-            menu::step(&mut self.menu[i], &intents, hand, config.menu_stick_push);
+            menu::step(&mut self.menu[i], &intents, hand, MENU_STICK_PUSH);
             menu::step_pad(&mut self.pads[i], &intents, hand);
         }
         let (immediate_exit, exit_click) = if let Mode::Vehicle(seat) = mode {
@@ -394,7 +393,7 @@ impl Bindings {
             self.exit = ExitLatch::new();
             (false, false)
         };
-        let mut timed = self.step_timers(mode, &ctx, &intents, dt, config.long_press_s);
+        let mut timed = self.step_timers(mode, &ctx, &intents, dt, LONG_PRESS_S);
         if immediate_exit {
             for latch in &mut timed {
                 for (_, press) in latch.presses.iter_mut().flatten() {
@@ -513,12 +512,8 @@ impl Bindings {
                 self.system_routes.push((pause, hand));
             }
         }
-        self.system.step(
-            &mut out.desired,
-            intents.button(pause),
-            dt,
-            config.long_press_s,
-        );
+        self.system
+            .step(&mut out.desired, intents.button(pause), dt, LONG_PRESS_S);
         if self.system.held.is_none() {
             self.system_routes.clear();
         }
@@ -535,7 +530,7 @@ impl Bindings {
             && flick_down(
                 &mut self.crouch_flicked,
                 intents.raw(OnFootAction::CrouchFlick.id()),
-                config.crouch_flick,
+                CROUCH_FLICK,
             );
         let select = OnFootAction::WeaponSelectPress.id();
         let wheel = Hand::BOTH.map(|hand| WheelPress {

@@ -11,7 +11,7 @@ fn pointer_suppresses_only_its_hand_in_either_layout() {
             off.trigger_press = down();
         });
         c.pointer_hand = Some(dominant);
-        let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
         let (owned, other) = match dominant {
             Hand::Left => (GUI_PAGE_PREV, GUI_PAGE_NEXT),
             Hand::Right => (GUI_PAGE_NEXT, GUI_PAGE_PREV),
@@ -36,10 +36,10 @@ fn an_unclaimed_pointer_trigger_pages_in_both_directions_with_the_grip_modifier(
                 (Hand::Left, false) | (Hand::Right, true) => GUI_PAGE_PREV,
                 _ => GUI_PAGE_NEXT,
             };
-            let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
             assert_eq!(wants(&step, MapKind::Ui, expected), Some(Want::Hold(1.0)));
             c.pointer_hand = Some(hand);
-            let claimed = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+            let claimed = Bindings::default().sim_step(Mode::Ui, &c, DT);
             assert_eq!(wants(&claimed, MapKind::Ui, expected), None);
         }
     }
@@ -54,7 +54,7 @@ fn the_other_trigger_with_its_grip_turns_the_pointers_page() {
             off.trigger = 1.0;
         });
         c.pointer_hand = Some(dominant);
-        let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
         let (pointers_page, own_page) = match dominant {
             Hand::Left => (GUI_PAGE_PREV, GUI_PAGE_NEXT),
             Hand::Right => (GUI_PAGE_NEXT, GUI_PAGE_PREV),
@@ -76,7 +76,7 @@ fn either_hand_confirms_and_goes_back_in_either_layout() {
                 ..Default::default()
             };
             c.hands[hand.index()].a = down();
-            let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
             assert_eq!(wants(&step, MapKind::Ui, GUI_OK), Some(Want::Hold(1.0)));
             assert_eq!(wants(&step, MapKind::Ui, GUI_CANCEL), None);
             assert_eq!(wants(&step, MapKind::Ui, GUI_SPECIAL_BUTTON), None);
@@ -87,7 +87,7 @@ fn either_hand_confirms_and_goes_back_in_either_layout() {
                 ..Default::default()
             };
             c.hands[hand.index()].b = down();
-            let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
             assert_eq!(wants(&step, MapKind::Ui, GUI_CANCEL), Some(Want::Hold(1.0)));
             assert_eq!(wants(&step, MapKind::Ui, GUI_OK), None);
             assert_eq!(wants(&step, MapKind::Ui, GUI_USE_BUTTON), None);
@@ -103,7 +103,7 @@ fn the_grip_turns_a_and_b_into_the_gamepads_x_and_y() {
         h.grip = down();
         h.a = down();
         h.b = down();
-        let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
         assert_eq!(
             wants(&step, MapKind::Ui, GUI_SPECIAL_BUTTON),
             Some(Want::Hold(1.0))
@@ -122,7 +122,7 @@ fn the_grips_alone_step_no_tabs() {
     let mut c = Controls::default();
     c.hands[0].grip = down();
     c.hands[1].grip = down();
-    let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+    let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
     assert!(step.desired.is_empty());
 }
 
@@ -131,7 +131,7 @@ fn a_press_keeps_the_grip_it_began_with() {
     let mut b = Bindings::default();
     let mut c = Controls::default();
     c.hands[1].a = down();
-    b.sim_step(Mode::Ui, &c, DT, &CONFIG);
+    b.sim_step(Mode::Ui, &c, DT);
     // Squeezing the grip mid-press does not turn the confirm into the X button.
     c.hands[1].a = ButtonControl {
         down: true,
@@ -139,7 +139,7 @@ fn a_press_keeps_the_grip_it_began_with() {
         released: false,
     };
     c.hands[1].grip = down();
-    let step = b.sim_step(Mode::Ui, &c, DT, &CONFIG);
+    let step = b.sim_step(Mode::Ui, &c, DT);
     assert_eq!(wants(&step, MapKind::Ui, GUI_OK), Some(Want::Hold(1.0)));
     assert_eq!(wants(&step, MapKind::Ui, GUI_SPECIAL_BUTTON), None);
 }
@@ -157,7 +157,7 @@ fn stick(hand: Hand, x: f32, y: f32, grip: bool) -> Controls {
 
 /// The UI actions wanted for one tick of `controls` on fresh bindings, sorted.
 fn ui_actions(controls: &Controls) -> Vec<Action> {
-    let step = Bindings::default().sim_step(Mode::Ui, controls, DT, &CONFIG);
+    let step = Bindings::default().sim_step(Mode::Ui, controls, DT);
     let mut actions: Vec<_> = step
         .desired
         .iter()
@@ -198,20 +198,20 @@ fn a_held_stick_holds_its_step_for_the_game_to_repeat() {
     let mut b = Bindings::default();
     let c = stick(Hand::Left, 0.0, -0.9, false);
     for _ in 0..30 {
-        let step = b.sim_step(Mode::Ui, &c, DT, &CONFIG);
+        let step = b.sim_step(Mode::Ui, &c, DT);
         assert_eq!(
             wants(&step, MapKind::Ui, GUI_LSTICK_DOWN),
             Some(Want::Hold(1.0))
         );
     }
     // Easing off past half the push still holds the step; resting lets go.
-    let eased = stick(Hand::Left, 0.0, -CONFIG.menu_stick_push * 0.6, false);
-    let step = b.sim_step(Mode::Ui, &eased, DT, &CONFIG);
+    let eased = stick(Hand::Left, 0.0, -MENU_STICK_PUSH * 0.6, false);
+    let step = b.sim_step(Mode::Ui, &eased, DT);
     assert_eq!(
         wants(&step, MapKind::Ui, GUI_LSTICK_DOWN),
         Some(Want::Hold(1.0))
     );
-    let step = b.sim_step(Mode::Ui, &Controls::default(), DT, &CONFIG);
+    let step = b.sim_step(Mode::Ui, &Controls::default(), DT);
     assert!(step.desired.is_empty());
 }
 
@@ -232,12 +232,12 @@ fn with_its_grip_held_a_sticks_sideways_push_steps_the_tabs() {
 #[test]
 fn a_tab_push_stays_a_tab_push_when_the_grip_lets_go() {
     let mut b = Bindings::default();
-    let step = b.sim_step(Mode::Ui, &stick(Hand::Right, 0.9, 0.0, true), DT, &CONFIG);
+    let step = b.sim_step(Mode::Ui, &stick(Hand::Right, 0.9, 0.0, true), DT);
     assert_eq!(
         wants(&step, MapKind::Ui, GUI_TAB_NEXT),
         Some(Want::Hold(1.0))
     );
-    let step = b.sim_step(Mode::Ui, &stick(Hand::Right, 0.9, 0.0, false), DT, &CONFIG);
+    let step = b.sim_step(Mode::Ui, &stick(Hand::Right, 0.9, 0.0, false), DT);
     assert_eq!(
         wants(&step, MapKind::Ui, GUI_TAB_NEXT),
         Some(Want::Hold(1.0))
@@ -263,9 +263,9 @@ fn clicked(step: &Step, action: Action) -> bool {
 #[test]
 fn a_short_system_press_opens_the_commlink_on_release() {
     let mut b = Bindings::default();
-    let step = b.sim_step(ON_FOOT, &system(true, true, false), DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &system(true, true, false), DT);
     assert!(step.desired.is_empty());
-    let step = b.sim_step(ON_FOOT, &system(false, false, true), DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &system(false, false, true), DT);
     assert!(clicked(&step, GUI_PDA));
     assert!(!clicked(&step, GUI_PAUSE));
 }
@@ -273,8 +273,8 @@ fn a_short_system_press_opens_the_commlink_on_release() {
 #[test]
 fn a_tap_between_ticks_still_opens_the_commlink() {
     let mut b = Bindings::default();
-    b.sim_step(ON_FOOT, &system(false, true, true), DT, &CONFIG);
-    let step = b.sim_step(ON_FOOT, &Controls::default(), DT, &CONFIG);
+    b.sim_step(ON_FOOT, &system(false, true, true), DT);
+    let step = b.sim_step(ON_FOOT, &Controls::default(), DT);
     assert!(clicked(&step, GUI_PDA));
 }
 
@@ -282,22 +282,22 @@ fn a_tap_between_ticks_still_opens_the_commlink() {
 fn a_long_system_press_pauses_once() {
     let mut b = Bindings::default();
     let held = system(true, false, false);
-    let ticks = (CONFIG.long_press_s / DT).ceil() as usize + 1;
+    let ticks = (LONG_PRESS_S / DT).ceil() as usize + 1;
     let mut pauses = 0;
     for _ in 0..ticks * 2 {
-        let step = b.sim_step(ON_FOOT, &held, DT, &CONFIG);
+        let step = b.sim_step(ON_FOOT, &held, DT);
         pauses += usize::from(clicked(&step, GUI_PAUSE));
     }
     assert_eq!(pauses, 1);
-    let step = b.sim_step(ON_FOOT, &system(false, false, true), DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &system(false, false, true), DT);
     assert!(!clicked(&step, GUI_PDA));
 }
 
 #[test]
 fn the_system_button_works_in_menus() {
     let mut b = Bindings::default();
-    b.sim_step(Mode::Ui, &system(true, true, false), DT, &CONFIG);
-    let step = b.sim_step(Mode::Ui, &Controls::default(), DT, &CONFIG);
+    b.sim_step(Mode::Ui, &system(true, true, false), DT);
+    let step = b.sim_step(Mode::Ui, &Controls::default(), DT);
     assert!(clicked(&step, GUI_PDA));
 }
 
@@ -309,7 +309,7 @@ fn with_trackpads_either_hands_halves_page_and_the_grips_do_not() {
             off.grip = down();
         });
         c.trackpad_paging = true;
-        let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
         assert_eq!(wants(&step, MapKind::Ui, GUI_TAB_PREV), None);
         assert_eq!(wants(&step, MapKind::Ui, GUI_TAB_NEXT), None);
 
@@ -320,7 +320,7 @@ fn with_trackpads_either_hands_halves_page_and_the_grips_do_not() {
                 ..Default::default()
             };
             c.hands[hand.index()].trackpad_left = down();
-            let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
             assert_eq!(
                 wants(&step, MapKind::Ui, GUI_TAB_PREV),
                 Some(Want::Hold(1.0))
@@ -333,7 +333,7 @@ fn with_trackpads_either_hands_halves_page_and_the_grips_do_not() {
                 ..Default::default()
             };
             c.hands[hand.index()].trackpad_right = down();
-            let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
             assert_eq!(
                 wants(&step, MapKind::Ui, GUI_TAB_NEXT),
                 Some(Want::Hold(1.0))
@@ -348,7 +348,7 @@ fn without_trackpads_the_trackpad_halves_page_nothing() {
     let mut c = Controls::default();
     c.hands[0].trackpad_left = down();
     c.hands[1].trackpad_right = down();
-    let step = Bindings::default().sim_step(Mode::Ui, &c, DT, &CONFIG);
+    let step = Bindings::default().sim_step(Mode::Ui, &c, DT);
     assert!(step.desired.is_empty());
 }
 
@@ -358,6 +358,6 @@ fn the_tables_consume_accepted_clicks_without_recognizing_a_second_chord() {
         dom.stick_click = down();
         off.stick_click = down();
     });
-    let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = Bindings::default().sim_step(ON_FOOT, &c, DT);
     assert_eq!(player(&step, DETONATE_EXPLOSIVE), Some(Want::Hold(1.0)));
 }

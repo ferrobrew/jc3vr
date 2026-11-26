@@ -11,7 +11,10 @@ use jc3vr_view::vr::input::{
 
 use crate::controllers::{
     grab::GrabVolume,
-    intent::{config::BindingsConfig, grapple_button::GrappleContext},
+    intent::{
+        config::{BindingsConfig, TRIGGER_DEADZONE},
+        grapple_button::GrappleContext,
+    },
 };
 
 /// One digital input over the tick.
@@ -148,7 +151,7 @@ impl Controls {
             let hand = frame.hand(which);
             let button = |b| ButtonControl::of(hand, edges, which, b);
             HandControls {
-                trigger: scalar_deadzone(hand.inputs.trigger, config.trigger_deadzone),
+                trigger: scalar_deadzone(hand.inputs.trigger, TRIGGER_DEADZONE),
                 trigger_press: button(Button::TriggerPress),
                 grip: button(Button::SqueezePress),
                 hold: button(Button::SqueezePress),

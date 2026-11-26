@@ -45,7 +45,7 @@ fn the_semantic_tables_want_what_the_raw_tables_wanted() {
         |mode: &Mode| matches!(mode, Mode::Vehicle(seat) if seat.class == VehicleClass::Mech);
     for mode in all_modes().into_iter().filter(|m| !mech(m)) {
         for (dominant, ctx) in all_contexts() {
-            for (name, config, ticks) in sequences(mode, dominant, &ctx) {
+            for (name, ticks) in sequences(mode, dominant, &ctx) {
                 // In a menu a trigger pulled with its grip held turns the other page, which the
                 // raw tables did not do, so the pages of a gripped sequence are left out.
                 let gripped_menu = mode == Mode::Ui && name.ends_with("grip true");
@@ -69,13 +69,10 @@ fn the_semantic_tables_want_what_the_raw_tables_wanted() {
                     let input =
                         simulate(controls, SemanticSet::of(mode.action_set()), legacy_layout);
                     let want = pages(in_order(
-                        normalise(old.step(mode, controls, *dt, &config), mode),
+                        normalise(old.step(mode, controls, *dt), mode),
                         mode,
                     ));
-                    let got = pages(in_order(
-                        new.step(mode, controls, &input, *dt, &config),
-                        mode,
-                    ));
+                    let got = pages(in_order(new.step(mode, controls, &input, *dt), mode));
                     assert_eq!(
                         got, want,
                         "{mode:?}, {dominant:?}-handed, {ctx:?}: {name}, tick {i}"
@@ -145,7 +142,7 @@ fn normalise(mut step: Step, mode: Mode) -> Step {
     step
 }
 
-type Sequence = (String, BindingsConfig, Vec<(Controls, f32)>);
+type Sequence = (String, Vec<(Controls, f32)>);
 
 /// The press sequences for one mode and context: every input of each hand pressed, held, and
 /// released alone and with that hand's grip, taps between ticks, the sticks and trackpads each
@@ -161,8 +158,8 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
         ..Default::default()
     };
     let mut out: Vec<Sequence> = Vec::new();
-    let mut add = |name: String, config: BindingsConfig, ticks: Vec<(Controls, f32)>| {
-        out.push((name, config, ticks));
+    let mut add = |name: String, ticks: Vec<(Controls, f32)>| {
+        out.push((name, ticks));
     };
 
     type Setter = fn(&mut HandControls, ButtonControl);
@@ -207,11 +204,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
                         (c, DT)
                     })
                     .collect();
-                add(
-                    format!("{name} on {hand:?}, grip {with_grip}"),
-                    CONFIG,
-                    ticks,
-                );
+                add(format!("{name} on {hand:?}, grip {with_grip}"), ticks);
             }
         }
         // The grip squeezed mid-press, and let go mid-press.
@@ -233,7 +226,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
             (c, DT)
         })
         .collect();
-        add(format!("grip mid-press on {hand:?}"), CONFIG, ticks);
+        add(format!("grip mid-press on {hand:?}"), ticks);
         // An analog trigger below and past its press.
         let ticks = [0.03, 0.3, 0.6, 1.0, 0.4, 0.0]
             .into_iter()
@@ -245,7 +238,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
                 (c, DT)
             })
             .collect();
-        add(format!("trigger pull on {hand:?}"), CONFIG, ticks);
+        add(format!("trigger pull on {hand:?}"), ticks);
         // The stick each way, and swung round, with and without the grip.
         for with_grip in [false, true] {
             let ticks = [
@@ -271,11 +264,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
                 (c, DT)
             })
             .collect();
-            add(
-                format!("stick on {hand:?}, grip {with_grip}"),
-                CONFIG,
-                ticks,
-            );
+            add(format!("stick on {hand:?}, grip {with_grip}"), ticks);
         }
         // A grip press in a grab volume, held as the hand leaves it, and a fresh press outside.
         if mode != Mode::Ui {
@@ -302,23 +291,21 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
                     (c, DT)
                 })
                 .collect();
-                add(format!("grab {volume:?} on {hand:?}"), CONFIG, ticks);
+                add(format!("grab {volume:?} on {hand:?}"), ticks);
             }
         }
-        // A lone stick click, under the chord window and without it.
-        for (config, label) in [(CONFIG, "no window"), (CHORD_CONFIG, "window")] {
-            let mut ticks: Vec<_> = std::iter::once(PRESS)
-                .chain(std::iter::repeat_n(HELD, 15))
-                .chain([RELEASE, UP, TAP, UP, UP])
-                .map(|click| {
-                    let mut c = base;
-                    c.hands[hand.index()].stick_click = click;
-                    (c, DT)
-                })
-                .collect();
-            ticks.push((base, DT));
-            add(format!("stick click on {hand:?}, {label}"), config, ticks);
-        }
+        // A lone stick click.
+        let mut ticks: Vec<_> = std::iter::once(PRESS)
+            .chain(std::iter::repeat_n(HELD, 15))
+            .chain([RELEASE, UP, TAP, UP, UP])
+            .map(|click| {
+                let mut c = base;
+                c.hands[hand.index()].stick_click = click;
+                (c, DT)
+            })
+            .collect();
+        ticks.push((base, DT));
+        add(format!("stick click on {hand:?}"), ticks);
     }
     // Both stick clicks: the recenter chord.
     let ticks = std::iter::once([PRESS, UP])
@@ -332,7 +319,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
             (c, DT)
         })
         .collect();
-    add("stick click chord".into(), CHORD_CONFIG, ticks);
+    add("stick click chord".into(), ticks);
     // A long system press.
     let ticks = std::iter::once(PRESS)
         .chain(std::iter::repeat_n(HELD, 30))
@@ -343,7 +330,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
             (c, DT)
         })
         .collect();
-    add("long system press".into(), CONFIG, ticks);
+    add("long system press".into(), ticks);
     // The yank, with and without the grapple grip.
     let ticks = [
         (true, UP),
@@ -360,7 +347,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
         (c, DT)
     })
     .collect();
-    add("yank".into(), CONFIG, ticks);
+    add("yank".into(), ticks);
     // The sight chord: both grips, then the dominant A.
     let ticks = [
         (PRESS, UP, UP),
@@ -382,7 +369,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
         (c, DT)
     })
     .collect();
-    add("sight chord".into(), CONFIG, ticks);
+    add("sight chord".into(), ticks);
     // The wingsuit's flick into a press, and a stick held over before the press.
     for (name, sticks) in [
         (
@@ -408,7 +395,7 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
         held.hands[dominant.index()].a = HELD;
         ticks.push((held, DT));
         ticks.push((base, DT));
-        add(format!("wingsuit {name}"), CONFIG, ticks);
+        add(format!("wingsuit {name}"), ticks);
     }
     // Everything at once, each trackpad on its own half, the sticks pushed.
     for grip in [UP, HELD] {
@@ -450,7 +437,6 @@ fn sequences(mode: Mode, dominant: Hand, ctx: &TableCtx) -> Vec<Sequence> {
         }
         add(
             format!("everything, grip {}", grip.down),
-            CONFIG,
             vec![(pressed, DT), (c, DT), (c, DT), (base, DT)],
         );
     }

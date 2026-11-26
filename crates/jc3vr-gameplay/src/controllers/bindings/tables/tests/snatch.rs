@@ -26,7 +26,7 @@ fn ordinary_held_weapon_first_attachment_and_b_first_tether_keep_the_native_hold
     let mut bindings = Bindings::new();
     let mut c = controls(Hand::Right, |_, off| off.b = down());
     let owned = bindings.claim_snatch(c.off().b, false, true, false);
-    let first = bindings.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let first = bindings.sim_step(ON_FOOT, &c, DT);
     let holds = ButtonHolds::routed(first.grapple_held, owned);
     assert!(holds.ordinary);
     assert!(!holds.modifier);
@@ -40,7 +40,7 @@ fn ordinary_held_weapon_first_attachment_and_b_first_tether_keep_the_native_hold
         ..Default::default()
     };
     let owned = bindings.claim_snatch(c.off().b, true, true, false);
-    let attached = bindings.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let attached = bindings.sim_step(ON_FOOT, &c, DT);
     let holds = ButtonHolds::routed(attached.grapple_held, owned);
     assert!(!owned, "B before grip remains an ordinary episode");
     assert!(holds.ordinary);
@@ -51,7 +51,7 @@ fn ordinary_held_weapon_first_attachment_and_b_first_tether_keep_the_native_hold
     );
     assert!(player(&attached, FIRE_GRAPPLE).is_some());
     c.hands[Hand::Left.index()].b = release();
-    let released = bindings.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let released = bindings.sim_step(ON_FOOT, &c, DT);
     assert!(!released.grapple_held);
     assert!(should_reel_weapon(
         true,
@@ -65,7 +65,7 @@ fn route_changes_consume_old_release_then_common_neutral_restores_normal_grapple
         let mut bindings = Bindings::new();
         let mut c = controls(Hand::Right, |_, off| off.b = down());
         assert!(bindings.claim_snatch(c.off().b, true, true, false));
-        assert!(player(&bindings.sim_step(ON_FOOT, &c, DT, &CONFIG), FIRE_GRAPPLE).is_none());
+        assert!(player(&bindings.sim_step(ON_FOOT, &c, DT), FIRE_GRAPPLE).is_none());
         bindings.reset_preserving_snatch();
         let layout: fn(SemanticSet, usize) -> Option<DefaultBinding> = if change == 1 {
             rebound
@@ -86,7 +86,7 @@ fn route_changes_consume_old_release_then_common_neutral_restores_normal_grapple
         let input = simulate(&c, SemanticSet::of(mode.action_set()), layout);
         let button = crate::controllers::bindings::grapple_button(&input, mode);
         assert!(bindings.claim_snatch(button, false, change != 2, false));
-        assert!(player(&bindings.step(mode, &c, &input, DT, &CONFIG), FIRE_GRAPPLE).is_none());
+        assert!(player(&bindings.step(mode, &c, &input, DT), FIRE_GRAPPLE).is_none());
         for hand in &mut c.hands {
             hand.b = release();
             hand.a = release();
@@ -94,14 +94,14 @@ fn route_changes_consume_old_release_then_common_neutral_restores_normal_grapple
         let input = simulate(&c, SemanticSet::OnFoot, layout);
         let button = crate::controllers::bindings::grapple_button(&input, ON_FOOT);
         assert!(bindings.claim_snatch(button, false, true, false));
-        let released = bindings.step(ON_FOOT, &c, &input, DT, &CONFIG);
+        let released = bindings.step(ON_FOOT, &c, &input, DT);
         assert!(player(&released, FIRE_GRAPPLE).is_none());
         assert!(player(&released, RELEASE_GRAPPLE).is_none());
         assert!(player(&released, RETRACT_GRAPPLE).is_none());
         c.hands = Default::default();
         let input = simulate(&c, SemanticSet::OnFoot, layout);
         assert!(!bindings.claim_snatch(ButtonControl::default(), false, true, true));
-        bindings.step(ON_FOOT, &c, &input, DT, &CONFIG);
+        bindings.step(ON_FOOT, &c, &input, DT);
         if change == 1 {
             c.hands[new_hand].a = down();
         } else {
@@ -110,13 +110,7 @@ fn route_changes_consume_old_release_then_common_neutral_restores_normal_grapple
         let input = simulate(&c, SemanticSet::OnFoot, layout);
         let button = crate::controllers::bindings::grapple_button(&input, ON_FOOT);
         assert!(!bindings.claim_snatch(button, false, true, false));
-        assert!(
-            player(
-                &bindings.step(ON_FOOT, &c, &input, DT, &CONFIG),
-                FIRE_GRAPPLE
-            )
-            .is_some()
-        );
+        assert!(player(&bindings.step(ON_FOOT, &c, &input, DT), FIRE_GRAPPLE).is_some());
     }
 }
 
@@ -130,7 +124,7 @@ fn a_grip_held_for_the_catch_closes_on_nothing_then_holds_what_it_caught() {
         dom.grab_volume = Some(GrabVolume::Socket(Socket::Hip(Hand::Left)));
         dom.catch_reserved = true;
     });
-    let step = b.sim_step(ON_FOOT, &press, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &press, DT);
     assert_eq!(step.grabs, [None; 2], "the reserved grip takes nothing");
     assert!(step.desired.is_empty(), "{:?}", step.desired);
     assert!(matches!(
@@ -147,7 +141,7 @@ fn a_grip_held_for_the_catch_closes_on_nothing_then_holds_what_it_caught() {
         dom.grab_slow = true;
         dom.catch_reserved = true;
     });
-    assert_eq!(b.sim_step(ON_FOOT, &held, DT, &CONFIG).grabs, [None; 2]);
+    assert_eq!(b.sim_step(ON_FOOT, &held, DT).grabs, [None; 2]);
     // The hand caught the target: its grip holds it, and the hand takes nothing more it comes to.
     b.hold_catch(Hand::Right, caught);
     assert_eq!(
@@ -162,7 +156,7 @@ fn a_grip_held_for_the_catch_closes_on_nothing_then_holds_what_it_caught() {
         dom.grab_volume = Some(GrabVolume::Socket(Socket::Hip(Hand::Left)));
         dom.grab_slow = true;
     });
-    assert_eq!(b.sim_step(ON_FOOT, &after, DT, &CONFIG).grabs, [None; 2]);
+    assert_eq!(b.sim_step(ON_FOOT, &after, DT).grabs, [None; 2]);
     assert_eq!(
         b.grip_latches()[Hand::Right.index()],
         GripLatch::Grab(caught)
@@ -176,7 +170,7 @@ fn a_catch_never_overrides_a_grip_that_holds_something_else() {
         dom.grip = down();
         dom.grab_volume = Some(GrabVolume::Socket(Socket::Hip(Hand::Left)));
     });
-    b.sim_step(ON_FOOT, &press, DT, &CONFIG);
+    b.sim_step(ON_FOOT, &press, DT);
     b.hold_catch(Hand::Right, GrabVolume::Snatch(RemoteKind::Weapon));
     assert_eq!(
         b.grip_latches()[Hand::Right.index()],
@@ -192,7 +186,7 @@ fn a_grip_held_for_the_catch_still_takes_the_snatch_line() {
         dom.grab_volume = Some(GrabVolume::GrappleLine);
         dom.catch_reserved = true;
     });
-    let step = b.sim_step(ON_FOOT, &press, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &press, DT);
     assert_eq!(
         step.grabs[Hand::Right.index()],
         Some(GrabVolume::GrappleLine)

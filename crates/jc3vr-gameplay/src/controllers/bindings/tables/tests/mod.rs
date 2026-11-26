@@ -3,7 +3,10 @@
 use glam::Vec2;
 use jc3gi::input::input_action_map::Action::{self, *};
 use jc3vr_body::controllers::{
-    intent::controls::HandControls,
+    intent::{
+        config::{BindingsConfig, LONG_PRESS_S, MENU_STICK_PUSH},
+        controls::HandControls,
+    },
     mode::{OnFootVariant, VehicleSeat},
 };
 use jc3vr_input::semantic::SemanticSet;
@@ -14,14 +17,7 @@ use super::*;
 use crate::controllers::bindings::intents::simulate::simulate;
 
 const DT: f32 = 1.0 / 30.0;
-/// The table inputs are already accepted; chord timing does not change their interpretation.
-const CONFIG: BindingsConfig = BindingsConfig {
-    stick_chord_window_s: 0.0,
-    panel_chord_window_s: 0.0,
-    ..BindingsConfig::new()
-};
-/// The default timing also leaves already-accepted table inputs unchanged.
-const CHORD_CONFIG: BindingsConfig = BindingsConfig::new();
+const CONFIG: BindingsConfig = BindingsConfig::new();
 const ON_FOOT: Mode = Mode::OnFoot(OnFootVariant::Ground);
 
 fn down() -> ButtonControl {
@@ -56,19 +52,13 @@ fn controls(dominant: Hand, set: impl FnOnce(&mut HandControls, &mut HandControl
 
 impl Bindings {
     /// Step the tables with the semantic input the shipped default bindings make of `controls`.
-    fn sim_step(
-        &mut self,
-        mode: Mode,
-        controls: &Controls,
-        dt: f32,
-        config: &BindingsConfig,
-    ) -> Step {
+    fn sim_step(&mut self, mode: Mode, controls: &Controls, dt: f32) -> Step {
         let input = simulate(
             controls,
             SemanticSet::of(mode.action_set()),
             default_binding,
         );
-        self.step(mode, controls, &input, dt, config)
+        self.step(mode, controls, &input, dt)
     }
 }
 

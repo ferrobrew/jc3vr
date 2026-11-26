@@ -12,7 +12,7 @@
 
 use std::time::{Duration, Instant};
 
-use jc3vr_body::controllers::intent::config::BindingsConfig;
+use jc3vr_body::controllers::intent::config::{BindingsConfig, TRIGGER_DEADZONE};
 use jc3vr_input::frame::{Button, ButtonSet, ControllerFrame, Edges, Hand, HandFrame};
 use jc3vr_view::{
     headpose::config::{VrTurnConfig, VrTurnMode},
@@ -93,7 +93,7 @@ impl NeutralPolicy {
         stick_neutral[dominant.other().index()] = move_deadzone.max(STICK_NEUTRAL_FLOOR);
         Self {
             trigger_release: input.trigger_press.release,
-            trigger_deadzone: bindings.trigger_deadzone.clamp(0.0, 0.99),
+            trigger_deadzone: TRIGGER_DEADZONE,
             input: *input,
             stick_neutral,
         }
@@ -534,7 +534,6 @@ mod tests {
         input.trigger_press.release = 0.4;
         input.squeeze_press.release = 0.6;
         let mut bindings = BindingsConfig::new();
-        bindings.trigger_deadzone = 0.35;
         bindings.move_deadzone = 0.3;
         let mut turn = VrTurnConfig::new();
         turn.deadzone = 0.3;
@@ -542,7 +541,7 @@ mod tests {
         let mut sample = published(1, [true, false], [0.0; 2]);
         let hand = &mut sample.hands[0];
         hand.profile = InteractionProfile::OculusTouch;
-        hand.inputs.trigger = 0.3;
+        hand.inputs.trigger = 0.04;
         hand.inputs.squeeze = 0.5;
         hand.inputs.thumbstick = Vec2::new(0.2, 0.0);
         hand.inputs.trackpad = Vec2::ONE;
@@ -553,7 +552,7 @@ mod tests {
         hand.inputs.squeeze = 0.5;
         hand.inputs.trigger = input.trigger_press.release;
         assert!(!neutral(hand, &config, Hand::Left));
-        hand.inputs.trigger = 0.3;
+        hand.inputs.trigger = 0.04;
         hand.inputs.thumbstick = Vec2::X;
         assert!(!neutral(hand, &config, Hand::Left));
         hand.inputs.thumbstick = Vec2::ZERO;

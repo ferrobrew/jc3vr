@@ -4,7 +4,7 @@
 use std::collections::BTreeSet;
 
 use jc3vr_vehicles::controllers::vehicles::{
-    config::WingsuitGesturesConfig,
+    tuning::WingsuitGesturesTuning,
     wingsuit_gestures::{
         FlightPose, GestureInput, HandClaims, Stage, WingsuitGestures, desired_for,
     },
@@ -77,7 +77,7 @@ fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
         }
         _ => return BTreeSet::new(),
     };
-    let config = WingsuitGesturesConfig::new();
+    let config = WingsuitGesturesTuning::new();
     let neutral = FlightPose {
         lateral: [0.0; 2],
         reach: [1.0 / 3.0; 2],
@@ -149,7 +149,7 @@ fn gesture_actions(mode: Mode) -> BTreeSet<Action> {
 fn the_dominant_upper_button_enters_and_the_right_a_held_exits() {
     for dominant in Hand::BOTH {
         let c = controls(dominant, |dom, _| dom.b = down());
-        let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(ON_FOOT, &c, DT);
         assert_eq!(player(&step, ENTER_VEHICLE), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, RELOAD), None);
         let mut a = Controls {
@@ -167,7 +167,7 @@ fn the_dominant_upper_button_enters_and_the_right_a_held_exits() {
                 driver: true,
             });
             // The dominant upper button fires in a vehicle; it neither exits nor burns nitrous.
-            let step = Bindings::default().sim_step(seat, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(seat, &c, DT);
             assert_eq!(player(&step, EXIT_VEHICLE), None, "{class:?}");
             assert_eq!(player(&step, USE_VEHICLE_MOD), None, "{class:?}");
             assert_eq!(
@@ -178,8 +178,7 @@ fn the_dominant_upper_button_enters_and_the_right_a_held_exits() {
             let mut b = Bindings::default();
             let mut exited = false;
             for _ in 0..30 {
-                exited |= player(&b.sim_step(seat, &a, DT, &CONFIG), EXIT_VEHICLE)
-                    == Some(Want::Hold(1.0));
+                exited |= player(&b.sim_step(seat, &a, DT), EXIT_VEHICLE) == Some(Want::Hold(1.0));
             }
             assert!(exited, "{class:?}");
         }
@@ -201,7 +200,7 @@ fn the_off_hand_trackpad_selects_no_weapon_slot_by_default() {
             off.trackpad_left = down();
             off.trackpad = pad;
         });
-        let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(ON_FOOT, &c, DT);
         let selected: Vec<_> = step
             .desired
             .iter()

@@ -54,7 +54,7 @@ fn wheel_held_grip_fire_is_absent_before_row_merge_and_returns_after_release() {
                 released: true,
             };
         }
-        let step = bindings.step(mode, &controls, &f.input, 0.01, &BindingsConfig::new());
+        let step = bindings.step(mode, &controls, &f.input, 0.01);
         let routes = permitted_routes(
             &bindings,
             mode,
@@ -120,7 +120,7 @@ fn current_rows_match_execution_for_grip_trigger_aggregate_and_ready_other_hand(
                 [TriggerMask::default(); 2]
             };
             trigger_ownership::mask_routes(&mut f.input, MODE, triggers);
-            let step = bindings.step(MODE, &controls, &f.input, 0.01, &BindingsConfig::new());
+            let step = bindings.step(MODE, &controls, &f.input, 0.01);
             let routes =
                 permitted_routes(&bindings, MODE, &controls, &f.input, &f.policy, triggers);
             let ctx = DescribeCtx {

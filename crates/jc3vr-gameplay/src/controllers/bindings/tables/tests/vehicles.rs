@@ -26,14 +26,14 @@ fn vehicle_stunt_routes_physical_right_a_in_land_helicopter_and_plane_modes() {
             };
             c.hands[Hand::Right.index()].a = down();
             let mut b = Bindings::default();
-            let pressed = b.sim_step(mode, &c, DT, &CONFIG);
+            let pressed = b.sim_step(mode, &c, DT);
             assert_eq!(
                 player(&pressed, STUNT_JUMP),
                 None,
                 "a stunt waits for the release"
             );
             c.hands[Hand::Right.index()].a = up();
-            let step = b.sim_step(mode, &c, DT, &CONFIG);
+            let step = b.sim_step(mode, &c, DT);
             assert_eq!(
                 player(&step, STUNT_JUMP),
                 Some(Want::Hold(1.0)),
@@ -46,9 +46,9 @@ fn vehicle_stunt_routes_physical_right_a_in_land_helicopter_and_plane_modes() {
             };
             c.hands[Hand::Left.index()].a = down();
             let mut b = Bindings::default();
-            b.sim_step(mode, &c, DT, &CONFIG);
+            b.sim_step(mode, &c, DT);
             c.hands[Hand::Left.index()].a = up();
-            let step = b.sim_step(mode, &c, DT, &CONFIG);
+            let step = b.sim_step(mode, &c, DT);
             assert_eq!(
                 player(&step, STUNT_JUMP),
                 None,
@@ -75,7 +75,7 @@ fn a_verified_unavailable_stunt_exits_once_on_press_and_never_bails_or_stunts() 
         let mut c = controls(Hand::Right, |dom, _| dom.a = down());
         c.stunt_available = Some(false);
         c.bail = true;
-        let first = bindings.sim_step(mode, &c, DT, &CONFIG);
+        let first = bindings.sim_step(mode, &c, DT);
         assert_eq!(player(&first, EXIT_VEHICLE), Some(Want::Click), "{class:?}");
         for action in [STUNT_JUMP, JUMP, OPEN_PARACHUTE, MECH_JUMP] {
             assert_eq!(player(&first, action), None);
@@ -86,13 +86,13 @@ fn a_verified_unavailable_stunt_exits_once_on_press_and_never_bails_or_stunts() 
         };
         c.stunt_available = Some(true);
         for _ in 0..60 {
-            let held = bindings.sim_step(mode, &c, DT, &CONFIG);
+            let held = bindings.sim_step(mode, &c, DT);
             for action in [EXIT_VEHICLE, STUNT_JUMP, OPEN_PARACHUTE, MECH_JUMP] {
                 assert_eq!(player(&held, action), None);
             }
         }
         c.hands[Hand::Right.index()].a = up();
-        let released = bindings.sim_step(mode, &c, DT, &CONFIG);
+        let released = bindings.sim_step(mode, &c, DT);
         assert_eq!(player(&released, STUNT_JUMP), None);
         assert_eq!(player(&released, EXIT_VEHICLE), None);
     }
@@ -107,33 +107,30 @@ fn unavailable_vehicle_stunt_does_not_replace_the_mechs_tap_jump_or_hold_exit() 
     let mut c = controls(Hand::Right, |dom, _| dom.a = down());
     c.stunt_available = Some(false);
     let mut bindings = Bindings::new();
-    let pressed = bindings.sim_step(mode, &c, DT, &CONFIG);
+    let pressed = bindings.sim_step(mode, &c, DT);
     assert_eq!(player(&pressed, EXIT_VEHICLE), None);
     c.hands[Hand::Right.index()].a = up();
-    let tapped = bindings.sim_step(mode, &c, DT, &CONFIG);
+    let tapped = bindings.sim_step(mode, &c, DT);
     assert_eq!(player(&tapped, MECH_JUMP), Some(Want::Hold(1.0)));
     assert_eq!(player(&tapped, EXIT_VEHICLE), None);
 
     let mut bindings = Bindings::new();
     c.hands[Hand::Right.index()].a = down();
-    assert_eq!(
-        player(&bindings.sim_step(mode, &c, DT, &CONFIG), EXIT_VEHICLE),
-        None
-    );
+    assert_eq!(player(&bindings.sim_step(mode, &c, DT), EXIT_VEHICLE), None);
     c.hands[Hand::Right.index()].a = ButtonControl {
         down: true,
         ..Default::default()
     };
     let mut exits = 0;
     for _ in 0..60 {
-        let held = bindings.sim_step(mode, &c, DT, &CONFIG);
+        let held = bindings.sim_step(mode, &c, DT);
         exits += usize::from(player(&held, EXIT_VEHICLE).is_some());
         assert_eq!(player(&held, MECH_JUMP), None);
         assert_eq!(player(&held, OPEN_PARACHUTE), None);
     }
     assert_eq!(exits, 1);
     c.hands[Hand::Right.index()].a = up();
-    let released = bindings.sim_step(mode, &c, DT, &CONFIG);
+    let released = bindings.sim_step(mode, &c, DT);
     assert_eq!(player(&released, MECH_JUMP), None);
     assert_eq!(player(&released, EXIT_VEHICLE), None);
 }
@@ -148,13 +145,10 @@ fn stunt_feasibility_is_latched_and_unknown_retains_the_original_tap_behavior() 
         let mut bindings = Bindings::new();
         let mut c = controls(Hand::Right, |dom, _| dom.a = down());
         c.stunt_available = available;
-        assert_eq!(
-            player(&bindings.sim_step(mode, &c, DT, &CONFIG), EXIT_VEHICLE),
-            None
-        );
+        assert_eq!(player(&bindings.sim_step(mode, &c, DT), EXIT_VEHICLE), None);
         c.stunt_available = Some(false);
         c.hands[Hand::Right.index()].a = up();
-        let released = bindings.sim_step(mode, &c, DT, &CONFIG);
+        let released = bindings.sim_step(mode, &c, DT);
         assert_eq!(player(&released, STUNT_JUMP), Some(Want::Hold(1.0)));
         assert_eq!(player(&released, EXIT_VEHICLE), None);
     }
@@ -174,10 +168,10 @@ fn the_car_reads_left_a_for_handbrake_and_right_a_for_stunt() {
         c.hands[Hand::Left.index()].a = down();
         c.hands[Hand::Right.index()].a = down();
         let mut b = Bindings::default();
-        let step = b.sim_step(mode, &c, DT, &CONFIG);
+        let step = b.sim_step(mode, &c, DT);
         assert_eq!(player(&step, HANDBRAKE), Some(Want::Hold(1.0)));
         c.hands[Hand::Right.index()].a = up();
-        let step = b.sim_step(mode, &c, DT, &CONFIG);
+        let step = b.sim_step(mode, &c, DT);
         assert_eq!(player(&step, STUNT_JUMP), Some(Want::Hold(1.0)));
     }
 }
@@ -212,10 +206,10 @@ fn the_right_a_taps_for_the_stunt_and_holds_to_exit() {
                 };
                 // A short press: no exit, the stunt on the release.
                 let mut b = Bindings::default();
-                let first = b.sim_step(mode, &held, DT, &CONFIG);
+                let first = b.sim_step(mode, &held, DT);
                 assert_eq!(player(&first, EXIT_VEHICLE), None);
                 assert_eq!(player(&first, STUNT_JUMP), None);
-                let last = b.sim_step(mode, &released, DT, &CONFIG);
+                let last = b.sim_step(mode, &released, DT);
                 assert_eq!(player(&last, STUNT_JUMP), Some(Want::Hold(1.0)), "{mode:?}");
                 assert_eq!(player(&last, EXIT_VEHICLE), None);
                 // A long press: the gamepad's Y on the one tick the press becomes long, and no
@@ -223,10 +217,10 @@ fn the_right_a_taps_for_the_stunt_and_holds_to_exit() {
                 let mut b = Bindings::default();
                 let mut t = 0.0;
                 let mut exits = 0;
-                while t < CONFIG.long_press_s * 4.0 {
-                    let step = b.sim_step(mode, &held, DT, &CONFIG);
+                while t < LONG_PRESS_S * 4.0 {
+                    let step = b.sim_step(mode, &held, DT);
                     let exit = player(&step, EXIT_VEHICLE).is_some();
-                    let becomes_long = t >= CONFIG.long_press_s && t - DT < CONFIG.long_press_s;
+                    let becomes_long = t >= LONG_PRESS_S && t - DT < LONG_PRESS_S;
                     assert_eq!(exit, becomes_long, "{mode:?} at {t} s");
                     for action in [ENTER_VEHICLE, BTN_Y] {
                         assert_eq!(player(&step, action).is_some(), exit, "{action:?} at {t} s");
@@ -236,7 +230,7 @@ fn the_right_a_taps_for_the_stunt_and_holds_to_exit() {
                     t += DT;
                 }
                 assert_eq!(exits, 1, "{mode:?}");
-                let last = b.sim_step(mode, &released, DT, &CONFIG);
+                let last = b.sim_step(mode, &released, DT);
                 assert_eq!(player(&last, STUNT_JUMP), None);
                 assert_eq!(player(&last, EXIT_VEHICLE), None);
             }
@@ -258,15 +252,15 @@ fn long_exit(mode: Mode, mut bail: impl FnMut(f32, bool) -> bool) -> Vec<(f32, b
     let mut ticks = Vec::new();
     let mut t = 0.0;
     let mut step = |b: &mut Bindings, c: &mut Controls, t: f32| {
-        c.bail = bail(t, b.exit_press_long(seat, CONFIG.long_press_s));
-        let step = b.sim_step(mode, c, DT, &CONFIG);
+        c.bail = bail(t, b.exit_press_long(seat, LONG_PRESS_S));
+        let step = b.sim_step(mode, c, DT);
         (
             t,
             player(&step, OPEN_PARACHUTE).is_some(),
             player(&step, EXIT_VEHICLE).is_some() || player(&step, BTN_Y).is_some(),
         )
     };
-    while t < CONFIG.long_press_s * 4.0 {
+    while t < LONG_PRESS_S * 4.0 {
         ticks.push(step(&mut b, &mut c, t));
         t += DT;
     }
@@ -290,7 +284,7 @@ fn a_long_right_a_that_bails_holds_open_parachute() {
         let (last, held) = ticks.split_last().expect("ticks");
         for &(t, parachute, exit) in held {
             assert!(!exit, "{mode:?} exits at {t} s");
-            assert_eq!(parachute, t >= CONFIG.long_press_s, "{mode:?} at {t} s");
+            assert_eq!(parachute, t >= LONG_PRESS_S, "{mode:?} at {t} s");
         }
         assert_eq!(*last, (last.0, false, false), "{mode:?} on the release");
     }
@@ -310,7 +304,7 @@ fn a_latched_bail_survives_release_and_cancels_on_a_context_change() {
     };
     c.hands[Hand::Right.index()].a = down();
     for _ in 0..60 {
-        let step = bindings.sim_step(mode, &c, DT, &CONFIG);
+        let step = bindings.sim_step(mode, &c, DT);
         assert!(player(&step, EXIT_VEHICLE).is_none());
         assert!(player(&step, BTN_Y).is_none());
         if player(&step, OPEN_PARACHUTE).is_some() {
@@ -321,15 +315,15 @@ fn a_latched_bail_survives_release_and_cancels_on_a_context_change() {
     c.hands[Hand::Right.index()].a = up();
     c.bail = false;
     for _ in 0..10 {
-        let step = bindings.sim_step(mode, &c, DT, &CONFIG);
+        let step = bindings.sim_step(mode, &c, DT);
         assert!(player(&step, OPEN_PARACHUTE).is_some());
         assert!(player(&step, EXIT_VEHICLE).is_none());
         assert!(player(&step, BTN_Y).is_none());
     }
     for _ in 0..5 {
-        bindings.sim_step(mode, &c, DT, &CONFIG);
+        bindings.sim_step(mode, &c, DT);
     }
-    assert!(player(&bindings.sim_step(mode, &c, DT, &CONFIG), OPEN_PARACHUTE).is_none());
+    assert!(player(&bindings.sim_step(mode, &c, DT), OPEN_PARACHUTE).is_none());
 
     let exit = exit_action(seat.class);
     let mut timed = [TimedLatch::default(); 2];
@@ -367,7 +361,7 @@ fn a_long_right_a_that_does_not_bail_exits() {
 /// on the way from `from` to `to` just after it becomes long.
 fn crossing(from: f32, to: f32) -> impl Fn(f32) -> f32 {
     move |t| {
-        if t < CONFIG.long_press_s + DT * 1.5 {
+        if t < LONG_PRESS_S + DT * 1.5 {
             from
         } else {
             to
@@ -419,7 +413,7 @@ fn the_bail_or_the_exit_is_chosen_once_per_press() {
         let ticks = run(speed);
         let (_, held) = ticks.split_last().expect("ticks");
         for &(t, parachute, exit) in held {
-            let long = t >= CONFIG.long_press_s;
+            let long = t >= LONG_PRESS_S;
             assert_eq!(parachute, bails && long, "{name}: the parachute at {t} s");
             if bails {
                 assert!(!exit, "{name}: an exit at {t} s");
@@ -484,13 +478,13 @@ fn a_long_hold_writes_the_exit_as_a_tap() {
             .map(|w| w.phase)
     };
     let mut phases = Vec::new();
-    let ticks = (CONFIG.long_press_s * 4.0 / DT) as usize;
+    let ticks = (LONG_PRESS_S * 4.0 / DT) as usize;
     for _ in 0..ticks {
-        let step = b.sim_step(mode, &c, DT, &CONFIG);
+        let step = b.sim_step(mode, &c, DT);
         phases.extend(exit(&tracker.resolve(&step.desired, DT)));
     }
     c.hands[Hand::Right.index()].a = up();
-    let step = b.sim_step(mode, &c, DT, &CONFIG);
+    let step = b.sim_step(mode, &c, DT);
     phases.extend(exit(&tracker.resolve(&step.desired, DT)));
     assert_eq!(
         phases,
@@ -531,7 +525,7 @@ fn the_upper_faces_fire_the_vehicle_weapons_unless_the_hand_holds_a_gun() {
                     c.armed = armed;
                     let mut b = Bindings::default();
                     for _ in 0..3 {
-                        let step = b.sim_step(mode, &c, DT, &CONFIG);
+                        let step = b.sim_step(mode, &c, DT);
                         let dom_armed = armed[dominant.index()];
                         let off_armed = armed[dominant.other().index()];
                         assert_eq!(
@@ -573,7 +567,7 @@ fn the_grips_fire_nothing_in_a_vehicle() {
                 dom.grip = down();
                 off.grip = down();
             });
-            let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(mode, &c, DT);
             assert!(step.desired.is_empty(), "{mode:?}: {:?}", step.desired);
         }
     }
@@ -593,7 +587,7 @@ fn the_car_uses_triggers_as_throttle() {
         off.a = down();
         off.stick_click = down();
     });
-    let step = b.sim_step(car, &c, DT, &CONFIG);
+    let step = b.sim_step(car, &c, DT);
     assert_eq!(player(&step, ACCELERATE), Some(Want::Analog(0.6)));
     assert_eq!(player(&step, TURN_LEFT), Some(Want::Analog(0.4)));
     assert_eq!(player(&step, TURN_RIGHT), None);
@@ -606,7 +600,7 @@ fn the_car_uses_triggers_as_throttle() {
     // The off-hand's upper face fires the secondary weapon alone, not the grapple.
     let mut b = Bindings::default();
     let face = controls(Hand::Right, |_, off| off.b = down());
-    let step = b.sim_step(car, &face, DT, &CONFIG);
+    let step = b.sim_step(car, &face, DT);
     assert_eq!(
         player(&step, FIRE_VEHICLE_WEAPON_SECONDARY),
         Some(Want::Hold(1.0))
@@ -629,7 +623,7 @@ fn the_vehicle_grapple_stays_on_the_offhand_click_not_the_secondary_weapon_butto
             });
             let mut click = controls(dominant, |_, off| off.stick_click = down());
             click.grapple.seated = true;
-            let step = Bindings::default().sim_step(mode, &click, DT, &CONFIG);
+            let step = Bindings::default().sim_step(mode, &click, DT);
             assert_eq!(
                 step.grapple_seat_fire,
                 Some(SeatRequest::Press),
@@ -638,7 +632,7 @@ fn the_vehicle_grapple_stays_on_the_offhand_click_not_the_secondary_weapon_butto
             assert_eq!(player(&step, FIRE_GRAPPLE), None);
             let mut face = controls(dominant, |_, off| off.b = down());
             face.grapple.seated = true;
-            let step = Bindings::default().sim_step(mode, &face, DT, &CONFIG);
+            let step = Bindings::default().sim_step(mode, &face, DT);
             assert_eq!(step.grapple_seat_fire, None);
             assert_eq!(
                 player(&step, FIRE_VEHICLE_WEAPON_SECONDARY),
@@ -674,7 +668,7 @@ fn rejected_suit_deployment_keeps_the_physical_grapple_episode_spent_across_mode
         c.grapple.tethers = true;
         bindings.claim_snatch(held, false, true, false);
         assert!(!bindings.physical_grapple_held(true));
-        let step = bindings.sim_step(mode, &c, DT, &CONFIG);
+        let step = bindings.sim_step(mode, &c, DT);
         assert!(!step.grapple_held);
         assert_eq!(step.grapple_seat_fire, None);
         assert_eq!(player(&step, FIRE_GRAPPLE), None);
@@ -702,7 +696,7 @@ fn the_mech_punches_jumps_and_fires_at_the_gamepads_places() {
         off.trigger_press = down();
         off.stick = Vec2::new(0.0, 1.0);
     });
-    let step = Bindings::default().sim_step(mech(true), &c, DT, &CONFIG);
+    let step = Bindings::default().sim_step(mech(true), &c, DT);
     for action in [
         MECH_FIRE_RIGHT_HAND_WEAPON,
         MECH_FIRE_GRAVITY_WEAPON_PRIMARY,
@@ -715,13 +709,11 @@ fn the_mech_punches_jumps_and_fires_at_the_gamepads_places() {
         mech(true),
         &controls(Hand::Right, |dom, _| dom.a = down()),
         DT,
-        &CONFIG,
     );
     let jump = b.sim_step(
         mech(true),
         &controls(Hand::Right, |dom, _| dom.a = up()),
         DT,
-        &CONFIG,
     );
     assert_eq!(player(&jump, MECH_JUMP), Some(Want::Hold(1.0)));
     // The stick walks it forward, as the mech's move reads the plane's pitch.
@@ -733,14 +725,14 @@ fn the_mech_punches_jumps_and_fires_at_the_gamepads_places() {
         dom.b = down();
         off.b = down();
     });
-    let step = Bindings::default().sim_step(mech(true), &faces, DT, &CONFIG);
+    let step = Bindings::default().sim_step(mech(true), &faces, DT);
     assert_eq!(player(&step, MECH_PUNCH), Some(Want::Hold(1.0)));
     assert_eq!(
         player(&step, MECH_FIRE_GRAVITY_WEAPON_SECONDARY),
         Some(Want::Hold(1.0))
     );
     // Out of the driver's seat the mech's own actions are not the player's.
-    let step = Bindings::default().sim_step(mech(false), &c, DT, &CONFIG);
+    let step = Bindings::default().sim_step(mech(false), &c, DT);
     assert_eq!(player(&step, MECH_FIRE_RIGHT_HAND_WEAPON), None);
 }
 
@@ -766,7 +758,7 @@ fn a_double_tap_on_a_motorcycle_releases_tethers_without_changing_the_throttle()
     let mut bindings = Bindings::default();
     let released: Vec<Step> = [down(), up, down(), up]
         .into_iter()
-        .map(|b| bindings.sim_step(car, &tick(b), DT, &CONFIG))
+        .map(|b| bindings.sim_step(car, &tick(b), DT))
         .collect();
     for action in [VEHICLE_RELEASE_GRAPPLE, RELEASE_GRAPPLE] {
         assert!(
@@ -792,7 +784,7 @@ fn the_plane_pitches_down_on_stick_forward() {
         driver: true,
     });
     let c = controls(Hand::Right, |_, off| off.stick = Vec2::new(0.0, 1.0));
-    let step = b.sim_step(plane, &c, DT, &CONFIG);
+    let step = b.sim_step(plane, &c, DT);
     assert_eq!(player(&step, PLANE_PITCH_DOWN), Some(Want::Analog(1.0)));
     assert_eq!(player(&step, PLANE_PITCH_UP), None);
 }
@@ -801,12 +793,12 @@ fn the_plane_pitches_down_on_stick_forward() {
 fn a_flicked_a_in_the_wingsuit_opens_the_parachute_and_never_evades() {
     let mut b = Bindings::default();
     let wingsuit = Mode::Airborne(AirborneVariant::Wingsuit);
-    b.sim_step(wingsuit, &Controls::default(), DT, &CONFIG);
+    b.sim_step(wingsuit, &Controls::default(), DT);
     let flick = controls(Hand::Right, |dom, off| {
         dom.a = down();
         off.stick = Vec2::new(0.9, 0.0);
     });
-    let step = b.sim_step(wingsuit, &flick, DT, &CONFIG);
+    let step = b.sim_step(wingsuit, &flick, DT);
     assert_eq!(player(&step, OPEN_PARACHUTE), Some(Want::Hold(1.0)));
     assert_eq!(player(&step, WINGSUIT_EVADE), None);
 }
@@ -821,7 +813,7 @@ fn the_wingsuit_triggers_keep_physical_sides_and_grips_fire_no_rockets() {
                 ..Default::default()
             };
             c.hands[hand.index()].trigger_press = down();
-            let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(mode, &c, DT);
             let (own, other) = if hand == Hand::Left {
                 (FIRE_WINGSUIT_WEAPON_MAIN, FIRE_WINGSUIT_WEAPON_SECONDARY)
             } else {
@@ -841,7 +833,7 @@ fn the_wingsuit_triggers_keep_physical_sides_and_grips_fire_no_rockets() {
                 ..Default::default()
             };
             c.hands[hand.index()].grip = down();
-            let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(mode, &c, DT);
             assert_eq!(player(&step, FIRE_WINGSUIT_WEAPON_SECONDARY), None);
         }
     }
@@ -856,7 +848,7 @@ fn the_wingsuit_uses_physical_right_b_for_boost_and_a_for_canopy() {
             ..Default::default()
         };
         c.hands[Hand::Right.index()].b = down();
-        let step = Bindings::default().sim_step(wingsuit, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(wingsuit, &c, DT);
         assert_eq!(player(&step, WINGSUIT_BOOST), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, OPEN_WINGSUIT), None);
         assert_eq!(player(&step, FIRE_GRAPPLE), None);
@@ -866,12 +858,12 @@ fn the_wingsuit_uses_physical_right_b_for_boost_and_a_for_canopy() {
             ..Default::default()
         };
         c.hands[Hand::Right.index()].a = down();
-        let step = Bindings::default().sim_step(wingsuit, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(wingsuit, &c, DT);
         assert_eq!(player(&step, OPEN_PARACHUTE), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, OPEN_WINGSUIT), None);
 
         let click = controls(dominant, |dom, _| dom.stick_click = down());
-        let step = Bindings::default().sim_step(wingsuit, &click, DT, &CONFIG);
+        let step = Bindings::default().sim_step(wingsuit, &click, DT);
         assert_eq!(player(&step, WINGSUIT_BOOST), None);
     }
 }
@@ -885,7 +877,7 @@ fn the_wingsuit_holds_the_air_brake_on_the_physical_left_a() {
             ..Default::default()
         };
         c.hands[Hand::Left.index()].a = down();
-        let step = Bindings::default().sim_step(wingsuit, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(wingsuit, &c, DT);
         assert_eq!(player(&step, CANCEL), Some(Want::Hold(1.0)), "{dominant:?}");
         assert_eq!(
             player(&step, WINGSUIT_AIRBRAKE),
@@ -906,7 +898,7 @@ fn falling_and_the_parachute_keep_the_hand_weapon_bindings() {
     });
     for variant in [AirborneVariant::Falling, AirborneVariant::Parachute] {
         let mut b = Bindings::default();
-        let step = b.sim_step(Mode::Airborne(variant), &c, DT, &CONFIG);
+        let step = b.sim_step(Mode::Airborne(variant), &c, DT);
         for action in [FIRE_RIGHT, R2, RELOAD, DETONATE_EXPLOSIVE] {
             assert_eq!(player(&step, action), Some(Want::Hold(1.0)), "{action:?}");
         }
@@ -924,7 +916,7 @@ fn the_wingsuit_fires_its_own_weapons_and_boosts() {
         off.trigger_press = down();
         dom.b = down();
     });
-    let step = b.sim_step(Mode::Airborne(AirborneVariant::Wingsuit), &c, DT, &CONFIG);
+    let step = b.sim_step(Mode::Airborne(AirborneVariant::Wingsuit), &c, DT);
     for action in [
         FIRE_WINGSUIT_WEAPON_MAIN,
         FIRE_WINGSUIT_WEAPON_SECONDARY,
@@ -943,18 +935,18 @@ fn dual_wielding_in_the_air_moves_the_off_trigger_to_its_pistol() {
         let mode = Mode::Airborne(variant);
         let mut b = Bindings::default();
         let mut c = controls(Hand::Right, |_, off| off.trigger_press = down());
-        let step = b.sim_step(mode, &c, DT, &CONFIG);
+        let step = b.sim_step(mode, &c, DT);
         assert_eq!(player(&step, RETRACT_GRAPPLE), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, FIRE_RIGHT), None);
 
         c.dual_wield = true;
-        let step = b.sim_step(mode, &c, DT, &CONFIG);
+        let step = b.sim_step(mode, &c, DT);
         assert_eq!(player(&step, FIRE_RIGHT), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, RETRACT_GRAPPLE), None);
 
         let mut c = controls(Hand::Right, |_, off| off.stick_click = down());
         c.dual_wield = true;
-        let step = b.sim_step(mode, &c, DT, &CONFIG);
+        let step = b.sim_step(mode, &c, DT);
         assert_eq!(player(&step, RETRACT_GRAPPLE), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, FIRE_RIGHT), None);
     }
@@ -968,10 +960,10 @@ fn a_dual_wielding_passenger_fires_from_either_trigger() {
     });
     let mut b = Bindings::default();
     let mut c = controls(Hand::Left, |_, off| off.trigger_press = down());
-    let step = b.sim_step(mode, &c, DT, &CONFIG);
+    let step = b.sim_step(mode, &c, DT);
     assert_eq!(player(&step, FIRE_RIGHT), None);
     c.dual_wield = true;
-    let step = b.sim_step(mode, &c, DT, &CONFIG);
+    let step = b.sim_step(mode, &c, DT);
     assert_eq!(player(&step, FIRE_RIGHT), Some(Want::Hold(1.0)));
 }
 

@@ -436,7 +436,7 @@ fn analog_grapple_without_default_uses_sampler_hysteresis_through_policy_and_tab
                 );
                 assert!(!reserved.get(id).unwrap().hands[1].button.held());
             }
-            let step = bindings.step(mode, &controls, &input, 0.01, &BindingsConfig::new());
+            let step = bindings.step(mode, &controls, &input, 0.01);
             assert_eq!(step.grapple_held, down);
             if index == 2 || index == 3 {
                 assert!(

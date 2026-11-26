@@ -428,13 +428,9 @@ fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutr
             (merged, semantic, paths(&[RS, RIGHT_SQUEEZE])),
         ]
     };
-    for state in 0..3 {
+    for state in 0..2 {
         let mut runtime = Runtime::default();
-        let mut config = BindingsConfig::new();
-        if state == 1 {
-            config.stick_chord_window_s = 0.000_000_001;
-            config.panel_chord_window_s = 0.000_000_001;
-        }
+        let config = BindingsConfig::new();
         publish_configured(
             &mut runtime,
             group(1, 1, [false; CONTROLS], &sample(false, false)),
@@ -445,7 +441,7 @@ fn actual_capture_mid_pending_single_and_chord_waits_for_direct_and_merged_neutr
             group(10, 2, [false, true, false, false], &sample(true, true)),
             &config,
         );
-        let held = if state == 2 {
+        let held = if state == 1 {
             [true, true, false, false]
         } else {
             [false, true, false, false]

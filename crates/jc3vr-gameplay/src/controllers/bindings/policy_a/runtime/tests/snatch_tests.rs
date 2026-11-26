@@ -225,7 +225,7 @@ fn snatch_mixed_face_trigger_uses_whole_action_mask_and_keeps_other_hand_alterna
         let routes = grapple_routes(&bindings, MODE, &controls, &f.input, &f.policy, triggers);
         assert!(!routes.contains(&(id, Hand::Right)));
         trigger_ownership::mask_routes(&mut f.input, MODE, triggers);
-        let step = bindings.step(MODE, &controls, &f.input, 0.01, &BindingsConfig::new());
+        let step = bindings.step(MODE, &controls, &f.input, 0.01);
         assert_eq!(step.grapple_held, alternative);
         assert_eq!(
             step.desired
@@ -260,7 +260,7 @@ fn snatch_mixed_grip_face_uses_latched_grip_mask() {
         released: false,
     };
     controls.hands[0].grab_volume = Some(GrabVolume::Socket(Socket::Hip(Hand::Left)));
-    let step = bindings.step(MODE, &controls, &f.input, 0.01, &BindingsConfig::new());
+    let step = bindings.step(MODE, &controls, &f.input, 0.01);
     assert!(bindings.grip_latches()[0].grabbing());
     assert!(!step.grapple_held);
     assert!(
@@ -302,7 +302,7 @@ fn snatch_separate_action_alternative_survives_another_actions_aggregate_mask() 
     let routes = grapple_routes(&bindings, MODE, &controls, &f.input, &f.policy, triggers);
     assert_eq!(routes, vec![(OnFootAction::FireGrapple.id(), Hand::Left)]);
     trigger_ownership::mask_routes(&mut f.input, MODE, triggers);
-    let step = bindings.step(MODE, &controls, &f.input, 0.01, &BindingsConfig::new());
+    let step = bindings.step(MODE, &controls, &f.input, 0.01);
     assert!(step.grapple_held);
     assert!(
         step.desired

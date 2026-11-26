@@ -10,7 +10,7 @@ pub mod sink;
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     intent::{
-        config::BindingsConfig,
+        config::{CROUCH_FLICK, LONG_PRESS_S, MENU_STICK_PUSH},
         controls::{ButtonControl, Controls},
         hold::{Desired, MapKind, Target, Want},
     },
@@ -62,15 +62,9 @@ impl Bindings {
     }
 
     /// Evaluate the tables for `mode`.
-    pub fn step(
-        &mut self,
-        mode: Mode,
-        controls: &Controls,
-        dt: f32,
-        config: &BindingsConfig,
-    ) -> Step {
+    pub fn step(&mut self, mode: Mode, controls: &Controls, dt: f32) -> Step {
         for (latch, hand) in self.menu.iter_mut().zip(&controls.hands) {
-            menu::step(latch, hand, config.menu_stick_push);
+            menu::step(latch, hand, MENU_STICK_PUSH);
         }
         let chord = match mode {
             Mode::OnFoot(_) => SightChord::of(controls),
@@ -120,12 +114,12 @@ impl Bindings {
             self.evade_press = None;
         }
         self.system
-            .step(&mut out.desired, system(controls), dt, config.long_press_s);
+            .step(&mut out.desired, system(controls), dt, LONG_PRESS_S);
         let crouch_toggle = matches!(mode, Mode::OnFoot(_))
             && flick_down(
                 &mut self.crouch_flicked,
                 controls.dom().stick_raw.y,
-                config.crouch_flick,
+                CROUCH_FLICK,
             );
         Step {
             desired: out.desired,

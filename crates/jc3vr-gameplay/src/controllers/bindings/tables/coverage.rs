@@ -7,7 +7,7 @@ use glam::Vec2;
 use jc3gi::input::input_action_map::Action;
 use jc3vr_body::controllers::{
     intent::{
-        config::BindingsConfig,
+        config::{LONG_PRESS_S, STICK_CHORD_WINDOW_S},
         controls::{ButtonControl, Controls, HandControls},
     },
     mode::{AirborneVariant, Mode, OnFootVariant, VehicleClass, VehicleSeat},
@@ -90,7 +90,6 @@ pub fn injected_with(
     ctx: TableCtx,
     layout: Layout,
 ) -> BTreeSet<Action> {
-    let config = BindingsConfig::new();
     let base = Controls {
         dominant,
         dual_wield: ctx.dual_wield,
@@ -131,7 +130,7 @@ pub fn injected_with(
         let mut bindings = Bindings::new();
         for (controls, dt) in ticks {
             let input = simulate(controls, set, layout);
-            let step = bindings.step(mode, controls, &input, *dt, &config);
+            let step = bindings.step(mode, controls, &input, *dt);
             actions.extend(step.desired.iter().map(|d| d.target.action));
         }
     };
@@ -164,12 +163,12 @@ pub fn injected_with(
     for hand in Hand::BOTH {
         let mut click = base;
         click.hands[hand.index()].stick_click = DOWN;
-        run(&[(click, DT), (click, config.stick_chord_window_s * 2.0)]);
+        run(&[(click, DT), (click, STICK_CHORD_WINDOW_S * 2.0)]);
     }
     let mut system = base;
     system.hands[0].system = DOWN;
     run(&[(system, DT), (base, DT)]);
-    run(&[(system, DT), (system, config.long_press_s * 2.0)]);
+    run(&[(system, DT), (system, LONG_PRESS_S * 2.0)]);
     actions
 }
 

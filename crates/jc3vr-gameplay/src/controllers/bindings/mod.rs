@@ -75,6 +75,7 @@ use jc3vr_body::controllers::{
     hands::tiers,
     haptics, intent,
     intent::{
+        config::{LONG_PRESS_S, TRIGGER_DEADZONE},
         controls::{ButtonControl, ClosedHand, Controls},
         finish::FinishInputs,
         grapple_button::GrappleContext,
@@ -588,9 +589,7 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
         Mode::Vehicle(seat) => {
             let mounted_gun = LocalPlayer::get(game).is_some_and(|p| p.in_mounted_gun_state());
             let seat_bails = bails_by_parachute(seat, mounted_gun);
-            let press_long = state
-                .bindings
-                .exit_press_long(seat, config.bindings.long_press_s);
+            let press_long = state.bindings.exit_press_long(seat, LONG_PRESS_S);
             state.bail.step(BailTick {
                 seat_bails,
                 speed_mps: seat_bails
@@ -624,11 +623,10 @@ fn tick(game: &GameTick<'_>, dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>)
                 && !controls.masked_hands[hand.index()],
         }
     });
-    let trigger_blocked = state.trigger_ownership.observe(
-        trigger_owners,
-        raw_triggers,
-        config.bindings.trigger_deadzone,
-    );
+    let trigger_blocked =
+        state
+            .trigger_ownership
+            .observe(trigger_owners, raw_triggers, TRIGGER_DEADZONE);
     let trigger_routes = semantic_input.clone();
     state.bindings.cancel_trigger_gestures(trigger_blocked);
     trigger_ownership::mask_routes(

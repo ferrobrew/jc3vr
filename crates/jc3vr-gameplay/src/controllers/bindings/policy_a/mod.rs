@@ -17,7 +17,9 @@ pub(crate) mod runtime;
 
 use std::{error::Error, fmt, time::Duration};
 
-use jc3vr_body::controllers::intent::config::BindingsConfig;
+use jc3vr_body::controllers::intent::config::{
+    PANEL_CHORD_WINDOW_S, RECENTER_HOLD_S, STICK_CHORD_WINDOW_S,
+};
 
 /// How many physical controls the arbiter covers, the recorded decision's width.
 pub(crate) const CONTROLS: usize = tracking_format::input::policy::PROTECTED_CONTROLS;
@@ -92,29 +94,17 @@ pub(crate) struct PolicyAConfig {
     pub(crate) suppress_developer_chords_in_vehicles: bool,
 }
 
-/// The policy's effective timings from the bindings' settings. Invalid live edits withhold
-/// protected input rather than silently substituting a different join window. The developer
+/// The policy's timings: the chord windows and the recenter hold of the bindings
+/// ([`STICK_CHORD_WINDOW_S`], [`PANEL_CHORD_WINDOW_S`], [`RECENTER_HOLD_S`]). The developer
 /// chords are always withheld in a vehicle; a recording from before that was fixed replays with
 /// them, through the recorded timing.
-pub(crate) fn effective_config(bindings: &BindingsConfig) -> Option<PolicyAConfig> {
-    let recenter_join = Duration::try_from_secs_f32(bindings.stick_chord_window_s).ok()?;
-    let panel_join = Duration::try_from_secs_f32(bindings.panel_chord_window_s).ok()?;
-    let recenter_hold = Duration::try_from_secs_f32(bindings.recenter_hold_s).ok()?;
-    for duration in [recenter_join, panel_join, recenter_hold] {
-        u64::try_from(duration.as_nanos()).ok()?;
-    }
-    (!recenter_join.is_zero()
-        && recenter_join <= Duration::from_secs(1)
-        && !panel_join.is_zero()
-        && panel_join <= Duration::from_secs(1)
-        && !recenter_hold.is_zero()
-        && recenter_hold <= Duration::from_secs(60))
-    .then_some(PolicyAConfig {
-        recenter_join,
-        panel_join,
-        recenter_hold,
+pub(crate) fn effective_config() -> PolicyAConfig {
+    PolicyAConfig {
+        recenter_join: Duration::from_secs_f32(STICK_CHORD_WINDOW_S),
+        panel_join: Duration::from_secs_f32(PANEL_CHORD_WINDOW_S),
+        recenter_hold: Duration::from_secs_f32(RECENTER_HOLD_S),
         suppress_developer_chords_in_vehicles: true,
-    })
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

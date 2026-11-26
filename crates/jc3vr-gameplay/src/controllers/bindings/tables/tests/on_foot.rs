@@ -9,7 +9,7 @@ use crate::controllers::bindings::tables::declare::WEAPON_SELECT;
 #[test]
 fn nothing_pressed_wants_nothing() {
     let mut b = Bindings::default();
-    let step = b.sim_step(ON_FOOT, &Controls::default(), DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &Controls::default(), DT);
     assert!(step.desired.is_empty());
     assert_eq!(step.body_turn, 0.0);
 }
@@ -21,7 +21,7 @@ fn on_foot_face_buttons_follow_the_plan() {
         dom.a = down();
         off.b = down();
     });
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     for action in [JUMP, OPEN_PARACHUTE, STUNT_JUMP, FIRE_GRAPPLE, L1] {
         assert_eq!(player(&step, action), Some(Want::Hold(1.0)), "{action:?}");
     }
@@ -41,7 +41,7 @@ fn the_dominant_stick_click_only_detonates() {
             Mode::Airborne(AirborneVariant::Parachute),
         ] {
             let mut b = Bindings::default();
-            let step = b.sim_step(mode, &c, DT, &CONFIG);
+            let step = b.sim_step(mode, &c, DT);
             assert_eq!(
                 player(&step, DETONATE_EXPLOSIVE),
                 Some(Want::Hold(1.0)),
@@ -70,7 +70,7 @@ fn the_dominant_hand_mirrors_the_layout() {
     assert!(right_handed.hands[1].trigger_press.down);
     assert!(left_handed.hands[0].trigger_press.down);
     for c in [right_handed, left_handed] {
-        let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+        let step = b.sim_step(ON_FOOT, &c, DT);
         assert_eq!(player(&step, FIRE_RIGHT), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
         b = Bindings::default();
@@ -81,13 +81,13 @@ fn the_dominant_hand_mirrors_the_layout() {
 fn the_move_stick_splits_into_half_axes_and_rotates() {
     let mut b = Bindings::default();
     let mut c = controls(Hand::Right, |_, off| off.stick = Vec2::new(0.0, 0.5));
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert_eq!(player(&step, MOVE_FORWARD), Some(Want::Analog(0.5)));
     assert_eq!(player(&step, MOVE_BACKWARD), None);
     assert_eq!(player(&step, MOVE_ALL), Some(Want::Analog(0.5)));
 
     c.move_rotation = std::f32::consts::FRAC_PI_2;
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     let Some(Want::Analog(left)) = player(&step, MOVE_LEFT) else {
         panic!("no left move");
     };
@@ -105,12 +105,12 @@ fn the_right_stick_turns_the_body_on_foot_but_yaws_a_helicopter() {
         dom.stick_raw = Vec2::new(0.8, 0.0);
         dom.stick = Vec2::new(0.76, 0.0);
     });
-    assert_eq!(b.sim_step(ON_FOOT, &c, DT, &CONFIG).body_turn, 0.8);
+    assert_eq!(b.sim_step(ON_FOOT, &c, DT).body_turn, 0.8);
     let heli = Mode::Vehicle(VehicleSeat {
         class: VehicleClass::Helicopter,
         driver: true,
     });
-    let step = b.sim_step(heli, &c, DT, &CONFIG);
+    let step = b.sim_step(heli, &c, DT);
     assert_eq!(step.body_turn, 0.0);
     assert_eq!(player(&step, HELI_TURN_RIGHT), Some(Want::Analog(0.76)));
 }
@@ -122,7 +122,7 @@ fn a_grip_press_in_reach_grabs_once_and_holds_through_the_press() {
         off.grip = down();
         off.grab_volume = Some(GrabVolume::Socket(Socket::Hip(Hand::Left)));
     });
-    let step = b.sim_step(ON_FOOT, &grab, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &grab, DT);
     assert!(step.desired.is_empty(), "{:?}", step.desired);
     assert_eq!(
         step.grabs[Hand::Left.index()],
@@ -137,7 +137,7 @@ fn a_grip_press_in_reach_grabs_once_and_holds_through_the_press() {
         c.grab_slow = true;
     };
     let left_volume = controls(Hand::Right, |_, off| held(off));
-    let step = b.sim_step(ON_FOOT, &left_volume, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &left_volume, DT);
     assert!(step.desired.is_empty());
     assert_eq!(step.grabs, [None; 2]);
 }
@@ -146,7 +146,7 @@ fn a_grip_press_in_reach_grabs_once_and_holds_through_the_press() {
 fn an_empty_grip_on_foot_is_a_fist_that_takes_what_it_comes_to() {
     let mut b = Bindings::default();
     let fist = controls(Hand::Right, |_, off| off.grip = down());
-    let step = b.sim_step(ON_FOOT, &fist, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &fist, DT);
     assert!(
         step.desired.is_empty(),
         "a fist fires nothing: {:?}",
@@ -162,7 +162,7 @@ fn an_empty_grip_on_foot_is_a_fist_that_takes_what_it_comes_to() {
         off.grab_volume = Some(GrabVolume::GrenadePouch);
         off.grab_slow = true;
     });
-    let step = b.sim_step(ON_FOOT, &on_pouch, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &on_pouch, DT);
     assert_eq!(
         step.grabs[Hand::Left.index()],
         Some(GrabVolume::GrenadePouch)
@@ -181,9 +181,9 @@ fn a_tap_between_ticks_in_a_volume_grabs_once() {
         };
         dom.grab_volume = Some(GrabVolume::Foregrip);
     });
-    let step = b.sim_step(ON_FOOT, &tap, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &tap, DT);
     assert_eq!(step.grabs[Hand::Right.index()], Some(GrabVolume::Foregrip));
-    let step = b.sim_step(ON_FOOT, &Controls::default(), DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &Controls::default(), DT);
     assert_eq!(step.grabs, [None; 2]);
 }
 
@@ -191,10 +191,10 @@ fn a_tap_between_ticks_in_a_volume_grabs_once() {
 fn the_stick_click_cycles_weapons_only_as_the_fallback() {
     let mut b = Bindings::default();
     let mut c = controls(Hand::Right, |_, off| off.stick_click = down());
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert_eq!(player(&step, NEXT_WEAPON), None);
     c.weapon_cycle = true;
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert_eq!(player(&step, NEXT_WEAPON), Some(Want::Click));
 }
 
@@ -202,19 +202,19 @@ fn the_stick_click_cycles_weapons_only_as_the_fallback() {
 fn dual_wielding_moves_the_off_trigger_to_its_pistol_and_retract_to_the_stick_click() {
     let mut b = Bindings::default();
     let mut c = controls(Hand::Right, |_, off| off.trigger_press = down());
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert_eq!(player(&step, RETRACT_GRAPPLE), Some(Want::Hold(1.0)));
     assert_eq!(player(&step, FIRE_RIGHT), None);
 
     c.dual_wield = true;
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert_eq!(player(&step, FIRE_RIGHT), Some(Want::Hold(1.0)));
     assert_eq!(player(&step, RETRACT_GRAPPLE), None);
 
     let mut c = controls(Hand::Right, |_, off| off.stick_click = down());
     c.dual_wield = true;
     c.weapon_cycle = true;
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert_eq!(player(&step, RETRACT_GRAPPLE), Some(Want::Hold(1.0)));
     assert_eq!(player(&step, NEXT_WEAPON), None);
 }
@@ -226,10 +226,10 @@ fn a_yank_presses_the_grapple_for_one_tick() {
         yank: true,
         ..Default::default()
     };
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert_eq!(player(&step, FIRE_GRAPPLE), Some(Want::Hold(1.0)));
     c.yank = false;
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert_eq!(player(&step, FIRE_GRAPPLE), None);
 }
 
@@ -253,7 +253,7 @@ fn the_sight_chord_captures_without_jumping_or_grappling() {
         dom.a = down();
     });
     c.sight_chord = true;
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert!(step.sight_capture);
     assert_eq!(player(&step, JUMP), None);
     assert_eq!(player(&step, FIRE_GRAPPLE), None);
@@ -271,7 +271,7 @@ fn the_sight_chord_captures_only_on_the_press() {
         };
     });
     c.sight_chord = true;
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert!(!step.sight_capture);
     assert_eq!(player(&step, JUMP), None);
 }
@@ -284,7 +284,7 @@ fn a_disarmed_sight_chord_leaves_the_bindings_alone() {
         off.grip = down();
         dom.a = down();
     });
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert!(!step.sight_capture);
     assert_eq!(player(&step, JUMP), Some(Want::Hold(1.0)));
     // The grips are fists, which fire nothing.
@@ -306,12 +306,12 @@ fn the_sight_chord_keeps_the_foregrip() {
         c
     };
     let mut b = Bindings::default();
-    let step = b.sim_step(ON_FOOT, &chord(true), DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &chord(true), DT);
     assert_eq!(step.grabs, [None; 2]);
     assert_eq!(player(&step, FIRE_GRAPPLE), None);
     // Without the chord armed, the same press is a foregrip grab.
     let mut b = Bindings::default();
-    let step = b.sim_step(ON_FOOT, &chord(false), DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &chord(false), DT);
     assert_eq!(step.grabs[Hand::Left.index()], Some(GrabVolume::Foregrip));
 }
 
@@ -323,7 +323,7 @@ fn the_sight_chord_needs_both_grips() {
     });
     c.hands[1].a = down();
     c.sight_chord = true;
-    let step = b.sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = b.sim_step(ON_FOOT, &c, DT);
     assert!(!step.sight_capture);
     assert_eq!(player(&step, JUMP), Some(Want::Hold(1.0)));
 }
@@ -332,14 +332,14 @@ fn the_sight_chord_needs_both_grips() {
 fn the_use_button_steps_off_ledges_and_keeps_a_ragdoll() {
     for dominant in Hand::BOTH {
         let mut c = controls(dominant, |dom, _| dom.b = down());
-        let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
+        let step = Bindings::default().sim_step(ON_FOOT, &c, DT);
         assert_eq!(player(&step, BYPASS_FALL_PREVENTION), Some(Want::Hold(1.0)));
         assert_eq!(player(&step, ENTER_VEHICLE), Some(Want::Hold(1.0)));
         // Cancel only while a ragdoll: elsewhere it cancels other things.
         assert_eq!(player(&step, CANCEL), None);
         c.ragdolling = true;
         for mode in [ON_FOOT, Mode::Airborne(AirborneVariant::Falling)] {
-            let step = Bindings::default().sim_step(mode, &c, DT, &CONFIG);
+            let step = Bindings::default().sim_step(mode, &c, DT);
             assert_eq!(player(&step, CANCEL), Some(Want::Hold(1.0)), "{mode:?}");
         }
     }
@@ -361,7 +361,7 @@ fn the_right_b_held_skips_a_cutscene_outside_the_menus() {
             }),
         ] {
             let mut b = Bindings::default();
-            let step = b.sim_step(mode, &c, DT, &CONFIG);
+            let step = b.sim_step(mode, &c, DT);
             assert_eq!(
                 wants(&step, MapKind::Ui, SKIP_CUTSCENE),
                 Some(Want::Hold(1.0)),
@@ -369,12 +369,12 @@ fn the_right_b_held_skips_a_cutscene_outside_the_menus() {
             );
         }
         let mut b = Bindings::default();
-        let step = b.sim_step(Mode::Ui, &c, DT, &CONFIG);
+        let step = b.sim_step(Mode::Ui, &c, DT);
         assert_eq!(wants(&step, MapKind::Ui, SKIP_CUTSCENE), None);
     }
     // The left B is not the skip.
     let c = controls(Hand::Right, |_, off| off.b = down());
-    let step = Bindings::default().sim_step(ON_FOOT, &c, DT, &CONFIG);
+    let step = Bindings::default().sim_step(ON_FOOT, &c, DT);
     assert_eq!(wants(&step, MapKind::Ui, SKIP_CUTSCENE), None);
 }
 

@@ -153,7 +153,6 @@ fn commlink_remap_uses_accepted_press_and_existing_native_toggle_targets() {
             &Controls::default(),
             &input,
             0.01,
-            &BindingsConfig::new(),
         );
         let toggles: Vec<_> = step
             .desired

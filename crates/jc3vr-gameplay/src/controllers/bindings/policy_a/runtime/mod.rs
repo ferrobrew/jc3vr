@@ -4,7 +4,10 @@
 use std::time::Duration;
 use std::{collections::VecDeque, time::Instant};
 
-use jc3vr_body::controllers::intent::{config::BindingsConfig, controls::ButtonControl};
+use jc3vr_body::controllers::intent::{
+    config::{BindingsConfig, TRIGGER_DEADZONE},
+    controls::ButtonControl,
+};
 use jc3vr_input::{
     frame::{Button, ControllerFrame, Edges, Hand, MAX_FRAME_AGE},
     semantic::{
@@ -99,7 +102,7 @@ impl Runtime {
     }
 
     pub(crate) fn step(&mut self, input: TickInput<'_>) -> Tick {
-        let config = policy_a::effective_config(input.config);
+        let config = Some(policy_a::effective_config());
         if self.config != config {
             let watermark = self.watermark;
             self.config = config;
@@ -688,7 +691,7 @@ fn neutral_value(value: ValueBits, config: &BindingsConfig) -> bool {
         ValueBits::Bool(value) => !value,
         ValueBits::Float(value) => {
             f32::from_bits(value).is_finite()
-                && f32::from_bits(value).abs() <= config.trigger_deadzone.min(config.move_deadzone)
+                && f32::from_bits(value).abs() <= TRIGGER_DEADZONE.min(config.move_deadzone)
         }
         ValueBits::Vec2(value) => value.into_iter().all(|value| {
             f32::from_bits(value).is_finite() && f32::from_bits(value).abs() <= config.move_deadzone

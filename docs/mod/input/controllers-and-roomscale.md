@@ -229,7 +229,7 @@ Every vehicle class shares one scheme. The grips carry nothing binary: they grip
 | Motorcycle lean and tilt | L stick; handlebar lean |
 | Motorcycle throttle | R trigger; twisting the handlebars' right grip forward |
 
-A gun takes over its hand's vehicle weapon action, not a button: rebinding `fire_primary` or `fire_secondary` in the runtime moves the vehicle weapon and the held gun together. In the driver's seat the triggers stay the pedals with a gun in either hand. The exit is a tap of the gamepad's Y at the moment the press becomes long (`controllers.bindings.long_press_s`), however long the press goes on, since the game exits only on a release of Y that was held briefly ([input.md, "Leaving and changing seats"](../../engine/gameplay/input.md#leaving-and-changing-seats)). The game's hold of Y, which moves to the gunner seat or the cargo bay where there is one, is not offered: it would have to be told apart from the exit before the exit is sent, and a player holding the button to exit holds it well past the game's hold time.
+A gun takes over its hand's vehicle weapon action, not a button: rebinding `fire_primary` or `fire_secondary` in the runtime moves the vehicle weapon and the held gun together. In the driver's seat the triggers stay the pedals with a gun in either hand. The exit is a tap of the gamepad's Y at the moment the press becomes long (`intent::config::LONG_PRESS_S`), however long the press goes on, since the game exits only on a release of Y that was held briefly ([input.md, "Leaving and changing seats"](../../engine/gameplay/input.md#leaving-and-changing-seats)). The game's hold of Y, which moves to the gunner seat or the cargo bay where there is one, is not offered: it would have to be told apart from the exit before the exit is sent, and a player holding the button to exit holds it well past the game's hold time.
 
 #### Helicopter
 
@@ -473,7 +473,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 | Scheme selection | `enabled`; the controller scheme is in effect while a controller is active | Built. |
 | Body dimensions and remap | the settings file's `[body]` section; `body.remap_hands` (on), `body.remap_head` (on) | Built. The head remap feeds the view through the posture (milestone 2). |
 | Mode detection | none (`mode::DEBOUNCE_TICKS`) | Built. The headpose sim keeps its own on-foot test. |
-| Bindings and injection | `bindings.enabled`, `bindings.move_deadzone`, `bindings.trigger_deadzone`, `bindings.long_press_s`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. An off-hand grip press inside a grab volume (milestone 3) grabs, and elsewhere fires the grapple. Falling and under the parachute the dominant hand keeps the on-foot fire, reload, and grenade bindings. The wingsuit's evade is unbound. |
+| Bindings and injection | `bindings.move_deadzone`, `dominant_hand`, `locomotion.direction` (`Head` or `OffHand`) | Built for every mode. An off-hand grip press inside a grab volume (milestone 3) grabs, and elsewhere fires the grapple. Falling and under the parachute the dominant hand keeps the on-foot fire, reload, and grenade bindings. The wingsuit's evade is unbound. |
 | Gamepad semantics | none; always on under the controller scheme | Built. |
 | Aim-state pin and mental-state cuts | The arm aim IK skip, the pins, the neutral aim point, the wall-block clear, and the mental-state cuts act whenever the controller scheme is in effect | Built, except the strafe reference correction (see "The aim-state pin"). |
 | Hands | `hands.ik`, `hands.late_update`, `hands.grip`; the tier table is fixed at `HandTierTable::PLAN` | The free and yielded tiers are built; milestones 3 and 4 add the action-runs and anchored tiers. A state assigned a tier that is not built for it yields. A left-handed layout mirrors the bindings but does not move a single gun to the left hand: the gun stays on the attach bone the game gives it, and the pouches are laid out around whichever hand holds it rather than the dominant hand. Swapping a single gun's attach bone to the dominant hand, as the dual-wield layout already does for the pistols, is a future item; it needs the two-handed weapons' foregrip geometry and the sight corrections checked for the mirrored hold. The grapple wire's render-time correction and elbow pole hints are not built. |
@@ -483,7 +483,7 @@ A setting marked "off" below is off by default and has to be switched on to test
 
 ### Milestone 2: posture and roomscale
 
-The settings are under `roomscale`, except the seated crouch flick (`bindings.crouch_flick`) and the head remap (`body.remap_head`). The description is in [controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale).
+The settings are under `roomscale`, except the head remap (`body.remap_head`). The description is in [controllers.md, "Posture and roomscale"](controllers.md#posture-and-roomscale).
 
 | Part | Settings | State |
 |---|---|---|
