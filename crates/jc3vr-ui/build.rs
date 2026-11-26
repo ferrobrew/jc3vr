@@ -15,7 +15,7 @@ fn main() {
 /// stamp, or an empty one when there is none.
 fn embed_checklist() {
     let sessions = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/sessions");
-    println!("cargo:rerun-if-changed={}", sessions.display());
+    println!("cargo:rerun-if-changed=build.rs");
     let newest = newest_checklist(&sessions);
     let (session, text) = match &newest {
         Some((session, path)) => {
@@ -33,6 +33,10 @@ fn embed_checklist() {
 }
 
 /// The newest session directory holding a `next-session.md`, by its stamp, and that file.
+///
+/// Only the chosen checklist is watched, so an edit to any other session note leaves the build
+/// alone. A newer session's checklist is picked up once the build script reruns, which touching
+/// this file or a clean build does.
 fn newest_checklist(sessions: &Path) -> Option<(String, PathBuf)> {
     let mut found: Vec<(String, PathBuf)> = fs::read_dir(sessions)
         .ok()?
