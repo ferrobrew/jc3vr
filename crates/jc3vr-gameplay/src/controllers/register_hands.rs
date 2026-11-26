@@ -1,7 +1,9 @@
 //! Registers the systems above the hands with the hands: the hand composition's stages in their
 //! order, the observers of each world weapon at its render update, the hand bodies' post-step
 //! sample taken before each rendered frame's composition, the weapon handling's held-item source
-//! ([`jc3vr_body::controllers::held`]), and the grapple's pump of the hang swing the anchor drives.
+//! ([`jc3vr_body::controllers::held`]) and its held guns' support and weight targets, which the
+//! hand bodies' drive applies ([`jc3vr_body::controllers::held::guns`]), and the grapple's pump of
+//! the hang swing the anchor drives.
 //!
 //! The hands do real work in each of these every frame, so the install refuses to finish with one
 //! missing: [`register`] panics naming it.
@@ -17,6 +19,7 @@ use jc3vr_body::controllers::{
         stages::{HandComposition, HandStage, HandStageFn},
     },
     held,
+    held::guns,
 };
 
 use crate::{
@@ -38,6 +41,7 @@ pub(super) fn register() {
     late::register_weapon_observer(WeaponObserver::Mounted, vehicles::mounted::observe);
     late::register_post_step_sample(post_step_sample);
     weapons::register_held::register();
+    guns::register_targets(gun_bodies::apply);
     anchor::register_hang_pump(swing::HANG_PUMP);
     let missing = missing();
     assert!(
@@ -63,9 +67,8 @@ fn vehicle_controls(c: &mut HandComposition) {
 }
 
 fn gun_targets(c: &mut HandComposition) {
-    c.physical = gun_bodies::physical_hands();
-    let heft = WEAPONS_CONFIG.query(|w| w.heft);
-    gun_bodies::apply(&mut c.hands, c.head.position, &heft);
+    c.physical = guns::physical_hands();
+    guns::apply_targets(&mut c.hands, c.head.position);
 }
 
 fn aim_down_sights(c: &mut HandComposition) {
@@ -111,6 +114,9 @@ fn missing() -> String {
     }
     if !held::is_registered() {
         missing.push_str("\n- the held-item source");
+    }
+    if !guns::targets_registered() {
+        missing.push_str("\n- the held guns' support and weight targets");
     }
     if !anchor::hang_pump_registered() {
         missing.push_str("\n- the grapple's hang pump");

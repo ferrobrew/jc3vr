@@ -17,25 +17,22 @@ use jc3vr_input::frame::Hand;
 use jc3vr_view::controllers::cockpit::CockpitTransform;
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    physical_hands::{
-        PhysicalHandsConfig, STATE, free_hands,
-        grasp::{AngularTracker, VelocityTracker},
-        mode_acts,
-        palm::PalmBox,
-        physics::{
-            callback,
-            config::HandBodyTuning,
-            contact,
-            drive::{DriveTuning, Goal},
-            guns,
-            render::{OffsetTimeline, RenderOffset},
-            types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
-        },
-        pickup::PICKUP,
-        tuning::PALMS,
+use crate::controllers::physical_hands::{
+    PhysicalHandsConfig, STATE, free_hands,
+    grasp::{AngularTracker, VelocityTracker},
+    mode_acts,
+    palm::PalmBox,
+    physics::{
+        callback,
+        config::HandBodyTuning,
+        contact,
+        drive::{DriveTuning, Goal},
+        guns,
+        render::{OffsetTimeline, RenderOffset},
+        types::{BodyPhase, CallbackStatus, HandBodiesStatus, HandBodyStatus, HoldTarget},
     },
-    weapons::config::WEAPONS_CONFIG,
+    pickup::PICKUP,
+    tuning::PALMS,
 };
 
 pub fn status() -> HandBodiesStatus {
@@ -337,11 +334,7 @@ pub(super) fn acting_palms(config: &PhysicalHandsConfig) -> Option<ActingPalms> 
     };
     let tracked_hands = active.hands;
     if guns::enabled(config) {
-        guns::targets::apply_physical(
-            &mut active.hands,
-            active.head.position,
-            &WEAPONS_CONFIG.query(|c| c.heft),
-        );
+        guns::targets::apply_physical(&mut active.hands, active.head.position);
     }
     let xf = CockpitTransform::current(active.head.position, active.world_scale);
     let palm_of = |cockpit: CockpitHand| {
