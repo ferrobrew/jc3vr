@@ -1,7 +1,7 @@
 //! The calibration flow: its steps, the capture that samples a live measurement, and what went
 //! wrong.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use jc3vr_input::frame::Hand;
 
@@ -13,16 +13,10 @@ use crate::controllers::{
             check_eye_height, check_seated_eye_height, derive, derive_seated,
             height_from_eye_height, height_from_grip_span, keeping_seated_eye_height,
         },
+        tuning::BODY,
     },
     roomscale::{config::Posture, posture::DetectedPosture},
 };
-
-/// How long the flow waits after MEASURE is selected, so that the player can take the pose.
-pub const COUNTDOWN: Duration = Duration::from_secs(3);
-/// How long the flow samples once the countdown ends.
-pub const SAMPLE_WINDOW: Duration = Duration::from_secs(1);
-/// The fewest samples a capture needs to count.
-pub const MIN_SAMPLES: u32 = 5;
 
 /// Why a live measurement is not available.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -115,7 +109,8 @@ impl std::fmt::Display for Notice {
             Notice::TooFewSamples { cause } => {
                 write!(
                     f,
-                    "body calibration: fewer than {MIN_SAMPLES} samples in the window"
+                    "body calibration: fewer than {} samples in the window",
+                    BODY.get().calibration.min_samples
                 )?;
                 match cause {
                     Some(cause) => write!(f, ": {cause}"),
@@ -318,7 +313,7 @@ impl Calibration {
         }
         self.notice = None;
         self.capture = Capture::Countdown {
-            ends: now + COUNTDOWN,
+            ends: now + BODY.get().calibration.countdown_ms.duration(),
         };
         true
     }
@@ -334,7 +329,7 @@ impl Calibration {
             Capture::Countdown { ends } => {
                 if now >= *ends {
                     self.capture = Capture::Sampling {
-                        ends: now + SAMPLE_WINDOW,
+                        ends: now + BODY.get().calibration.sample_window_ms.duration(),
                         samples: Samples::default(),
                     };
                 }
@@ -427,7 +422,7 @@ impl Calibration {
 
     /// Take a finished sampling window's value and move on if it is plausible.
     fn finish(&mut self, samples: Samples) -> bool {
-        if samples.count < MIN_SAMPLES {
+        if samples.count < BODY.get().calibration.min_samples {
             self.raise(Notice::TooFewSamples {
                 cause: samples.missed,
             });
@@ -514,16 +509,26 @@ impl Samples {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
     use super::*;
     use crate::controllers::body::calibration::{
         EYE_HEIGHT_RATIO, span_out_of_proportion,
         tests::{SEATED_EYE_HEIGHT, player, seated_player},
     };
 
+    fn countdown() -> Duration {
+        BODY.get().calibration.countdown_ms.duration()
+    }
+
+    fn sample_window() -> Duration {
+        BODY.get().calibration.sample_window_ms.duration()
+    }
+
     /// Run a capture from MEASURE to the end of its sampling window with a constant value.
     fn capture(calibration: &mut Calibration, t0: Instant, value: f32) -> bool {
         assert!(calibration.measure(t0, Ok(value)));
-        let sampling = t0 + COUNTDOWN;
+        let sampling = t0 + countdown();
         assert!(!calibration.tick(sampling, Ok(value)));
         assert_eq!(
             calibration.capture_status(sampling),
@@ -531,7 +536,7 @@ mod tests {
         );
         let mut changed = false;
         for i in 1..=10 {
-            let now = sampling + SAMPLE_WINDOW * i / 10;
+            let now = sampling + sample_window() * i / 10;
             changed |= calibration.tick(now, Ok(value));
         }
         changed
@@ -567,9 +572,12 @@ mod tests {
         calibration.start(Stance::Standing, None);
         assert_eq!(calibration.capture_status(t0), CaptureStatus::Idle);
         calibration.measure(t0, Ok(1.6));
-        assert_eq!(calibration.capture_status(t0), CaptureStatus::Countdown(3));
         assert_eq!(
-            calibration.capture_status(t0 + Duration::from_millis(2500)),
+            calibration.capture_status(t0),
+            CaptureStatus::Countdown(countdown().as_secs_f32().ceil() as u32)
+        );
+        assert_eq!(
+            calibration.capture_status(t0 + countdown() - Duration::from_millis(500)),
             CaptureStatus::Countdown(1)
         );
         // A lost measurement during the countdown is tolerated.
@@ -614,12 +622,12 @@ mod tests {
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         calibration.measure(t0, Ok(1.6));
-        let start = t0 + COUNTDOWN;
+        let start = t0 + countdown();
         calibration.tick(start, Ok(1.6));
         let lost = Unavailable::HeadNotTracked;
         for i in 1..=10 {
             let live = if i % 2 == 0 { Err(lost) } else { Ok(1.6) };
-            let now = start + SAMPLE_WINDOW * i / 10;
+            let now = start + sample_window() * i / 10;
             assert_eq!(calibration.tick(now, live), i == 10);
         }
         assert_eq!(calibration.step(), Step::Span);
@@ -633,11 +641,11 @@ mod tests {
         calibration.start(Stance::Standing, None);
         capture(&mut calibration, t0, player().eye_height);
         calibration.measure(t0, Ok(1.6));
-        let start = t0 + COUNTDOWN;
+        let start = t0 + countdown();
         calibration.tick(start, Ok(1.6));
         let lost = Unavailable::ControllerLost(Hand::Left);
         for i in 1..=10 {
-            assert!(!calibration.tick(start + SAMPLE_WINDOW * i / 10, Err(lost)));
+            assert!(!calibration.tick(start + sample_window() * i / 10, Err(lost)));
         }
         assert_eq!(
             calibration.notice(),
@@ -653,8 +661,8 @@ mod tests {
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         calibration.measure(t0, Ok(1.6));
-        calibration.tick(t0 + COUNTDOWN, Ok(1.6));
-        assert!(!calibration.tick(t0 + COUNTDOWN + SAMPLE_WINDOW, Ok(1.6)));
+        calibration.tick(t0 + countdown(), Ok(1.6));
+        assert!(!calibration.tick(t0 + countdown() + sample_window(), Ok(1.6)));
         assert_eq!(
             calibration.notice(),
             Some(&Notice::TooFewSamples { cause: None })
@@ -865,12 +873,12 @@ mod tests {
         let mut calibration = Calibration::new();
         calibration.start(Stance::Standing, None);
         calibration.measure(t0, Ok(1.0));
-        let start = t0 + COUNTDOWN;
+        let start = t0 + countdown();
         calibration.tick(start, Ok(1.66));
         for (i, value) in [1.66, 1.70, 1.66, 1.70, 1.66, 1.70].into_iter().enumerate() {
             calibration.tick(start + Duration::from_millis(100 * i as u64), Ok(value));
         }
-        assert!(calibration.tick(start + SAMPLE_WINDOW, Ok(1.68)));
+        assert!(calibration.tick(start + sample_window(), Ok(1.68)));
         assert!((calibration.eye_height().unwrap() - 1.68).abs() < 0.005);
 
         let span = player().grip_span;
@@ -880,7 +888,7 @@ mod tests {
         for i in 2..8 {
             calibration.tick(start + Duration::from_millis(100 * i), Ok(span - 0.1));
         }
-        assert!(calibration.tick(start + SAMPLE_WINDOW, Ok(span - 0.1)));
+        assert!(calibration.tick(start + sample_window(), Ok(span - 0.1)));
         let body = calibration.result().unwrap().unwrap();
         let expected = arm_span_from_grip_span(span, height_from_eye_height(1.68));
         assert!((body.arm_span - expected).abs() < 0.005);

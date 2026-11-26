@@ -1,0 +1,16 @@
+# The body's tuning: `BodyTuning` in crates/jc3vr-body/src/controllers/body/tuning.rs, where each
+# value's meaning is documented. Units: seconds (`_s`), whole milliseconds (`_ms`), and hertz
+# (`_hz`).
+
+[calibration]
+countdown_ms = 3000
+sample_window_ms = 1000
+min_samples = 5
+
+[firm_ragdoll]
+blend_in_s = 0.15
+blend_out_s = 0.2
+
+[estimator]
+submit_hz = 30.0
+submit_early_ms = 2
