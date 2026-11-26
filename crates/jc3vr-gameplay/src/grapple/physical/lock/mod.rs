@@ -63,7 +63,7 @@ use jc3vr_body::{
     controllers::{
         facts, haptics,
         intent::{grapple_button::LockButton, yank::HandLine},
-        physics::{GRAVITY_MPS2, grapple_hook as hook},
+        physics::{GRAVITY_MPS2, characters::character_position, grapple_hook as hook},
     },
     hooks::input::air,
 };
@@ -79,7 +79,7 @@ use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 
 use crate::{
-    controllers::{physical_hands::remote, weapons::engine::character_position},
+    controllers::physical_hands::remote,
     grapple::{
         physical::{
             config::{GRAPPLE_CONFIG, LockConfig, PhysicalGrappleTuning, SwingTuning},

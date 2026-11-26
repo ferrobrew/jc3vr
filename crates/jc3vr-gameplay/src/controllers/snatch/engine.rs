@@ -22,6 +22,7 @@ use jc3vr_body::controllers::{
     physics,
     physics::{
         bodies::game_object_of,
+        characters::character_position,
         grapple_hook as hook,
         grapple_hook::{BodyHit, CustomOwner, local_hook},
         refs::{Strong, null_weak},
@@ -438,7 +439,7 @@ pub(super) unsafe fn on_mount(address: NonZeroUsize) -> bool {
 /// The game thread, before the world update.
 pub(super) unsafe fn player_position() -> Option<Vec3> {
     let character = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
-    let position = engine::character_position(character);
+    let position = character_position(character);
     position.is_finite().then_some(position)
 }
 

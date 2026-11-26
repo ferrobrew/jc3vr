@@ -21,12 +21,10 @@ use jc3vr_body::controllers::{
     physics,
     physics::{
         bodies::{BodyState, game_object_of},
-        characters::proxy_body,
+        characters::{character_position, proxy_body},
         grapple_hook as hook,
     },
 };
-
-use crate::controllers::weapons::engine::character_position;
 
 /// The far end's proxy of `hook`'s active wire while the hook reels in along it, the far end is
 /// attached, and what it is attached to is live.

@@ -16,10 +16,12 @@ use jc3gi::{
     game::GameObject,
     physics::PhysicsGameObject,
 };
-use jc3vr_body::controllers::{aim::targets::weak_target, physics::refs::Weak};
+use jc3vr_body::controllers::{
+    aim::targets::weak_target, held::native::object_of, physics::refs::Weak,
+};
 
 use crate::controllers::weapons::{
-    c4::placed::ChargeIdentity as Identity, engine, grenade::catch::body_of,
+    c4::placed::ChargeIdentity as Identity, grenade::catch::body_of,
 };
 
 /// A placed charge's allocation identity and weak lifetime during retrieval.
@@ -121,7 +123,7 @@ unsafe fn active(charge: usize) -> Option<*mut PlantedExplosive> {
     let player = unsafe { Character::GetLocalPlayerCharacter().as_ref() }?;
     let slot = WeaponSlot::E_SLOT_PLANTED_EXPLOSIVE as usize;
     let base = unsafe { player.m_Inventory.m_Weapons.get(slot)?.px.as_ref() }?;
-    let object = engine::object_of(base);
+    let object = object_of(base);
     if !unsafe { (*object).IsType(PlantedExplosiveWeapon::TYPE_ID()) } {
         return None;
     }

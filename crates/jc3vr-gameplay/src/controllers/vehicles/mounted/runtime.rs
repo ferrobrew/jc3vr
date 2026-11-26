@@ -19,12 +19,12 @@ use jc3gi::{
 };
 use jc3vr_body::controllers::{
     hands,
-    held::native::weapon_at,
+    held::native::{object_of, weapon_at},
     intent::{
         finish::FinishInputs,
         hold::{Desired, MapKind, Target, Want},
     },
-    physics::{bodies::physics_object_of, refs::Weak},
+    physics::{bodies::physics_object_of, characters::character_object, refs::Weak},
     scheme,
 };
 use jc3vr_input::frame::Hand;
@@ -47,10 +47,7 @@ use crate::controllers::{
         },
         summary as vehicles_summary,
     },
-    weapons::{
-        engine::{character_object, object_of},
-        hold::{armed, pickup},
-    },
+    weapons::hold::{armed, pickup},
 };
 
 /// Record a mounted weapon the late weapon update saw, so the next input tick can find it.

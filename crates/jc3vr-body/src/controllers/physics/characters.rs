@@ -1,17 +1,52 @@
-//! The character grabs' engine side: a character's proxy body, which tells its capsule from its
-//! ragdoll's bodies, whether the player's faction is hostile to it, whether it is dead, whether
-//! the game protects it, whether its state keeps it out of its ragdoll, and the ragdoll that takes
-//! a seated character, such as a mounted gun's gunner, out of their seat.
+//! The character grabs' engine side: the local player character, a character's place and its
+//! `CGameObject` subobject, a character's proxy body, which tells its capsule from its ragdoll's
+//! bodies, whether the player's faction is hostile to it, whether it is dead, whether the game
+//! protects it, whether its state keeps it out of its ragdoll, and the ragdoll that takes a seated
+//! character, such as a mounted gun's gunner, out of their seat.
 //!
 //! Every function here runs on the game thread outside the physics step.
 
+use glam::{Mat4, Vec3};
 use jc3gi::{
     aim::target::FactionRelation, animation::symbol_table::EventIdSymbolTable,
-    character::character::Character, faction::GetRelation, physics::PfxCharacterInstance,
-    state::StateBitFlag,
+    character::character::Character, faction::GetRelation, game::GameObject,
+    physics::PfxCharacterInstance, state::StateBitFlag,
 };
 
 use crate::{controllers::aim_state::StateBit, hooks::character::acts::resolve_act_id};
+
+/// The local player character.
+///
+/// # Safety
+///
+/// Game thread, before the world update.
+#[inline]
+pub unsafe fn local_player() -> Option<&'static mut Character> {
+    unsafe { Character::GetLocalPlayerCharacter().as_mut() }
+}
+
+/// `character`'s `CGameObject` subobject, as a weapon's holder names it and the pickups take it
+/// as their activator.
+#[inline]
+pub fn character_object(character: *const Character) -> *mut GameObject {
+    character
+        .cast::<u8>()
+        .wrapping_add(Character::GAME_OBJECT_BASE_OFFSET as usize)
+        .cast::<GameObject>()
+        .cast_mut()
+}
+
+/// `character`'s world transform, as its last simulation tick placed it.
+#[inline]
+pub fn character_frame(character: &Character) -> Mat4 {
+    Mat4::from(character.m_WorldMatrixT1)
+}
+
+/// `character`'s world position: the translation of its world transform ([`character_frame`]).
+#[inline]
+pub fn character_position(character: &Character) -> Vec3 {
+    character_frame(character).w_axis.truncate()
+}
 
 /// Why the game keeps a character out of a hand's grab.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]

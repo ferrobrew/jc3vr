@@ -39,13 +39,11 @@ use jc3gi::input::input_action_map::Action::{WINGSUIT_AIRBRAKE, WINGSUIT_EVADE};
 use jc3vr_body::controllers::{
     intent::hold::{Desired, MapKind, Target, Want},
     locomotion::axis_output::write_move,
+    physics::characters::local_player,
 };
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    vehicles::{config::WingsuitEvadeConfig, types::ArmReadout},
-    weapons::engine,
-};
+use crate::controllers::vehicles::{config::WingsuitEvadeConfig, types::ArmReadout};
 
 /// Which way a throw rolls the body: the side the arms banked toward, and the arms' pitch past the
 /// diagonal threshold, if any.
@@ -407,8 +405,7 @@ fn pitch_of(pitch: f32, threshold: f32) -> Option<Pitch> {
 /// On the game thread, before the world update.
 unsafe fn flying_boost_suit() -> bool {
     unsafe {
-        engine::local_player()
-            .is_some_and(|owner| owner.HasBoostWingsuit() && owner.IsUsingWingsuit())
+        local_player().is_some_and(|owner| owner.HasBoostWingsuit() && owner.IsUsingWingsuit())
     }
 }
 

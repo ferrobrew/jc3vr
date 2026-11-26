@@ -10,7 +10,6 @@ use jc3gi::{
         AmmunitionType, ModelAttachementWeaponComponent, WeaponBase, WeaponData, WeaponGripHand,
         WeaponState,
     },
-    game::GameObject,
     graphics_engine::model_instance::ModelInstanceFlags,
     types::math::Matrix4,
 };
@@ -18,6 +17,12 @@ use jc3vr_body::controllers::{
     aim::{config::AimConfig, gun, ray, sights},
     hands::{ik::TickTarget, late, pose as hand_pose},
     held::native::{gun_count, gun_ptr},
+};
+// The character and weapon object accessors are the physics substrate's and the held-item seam's;
+// the weapon handling names them here beside its own engine reads.
+pub(crate) use jc3vr_body::controllers::{
+    held::native::object_of,
+    physics::characters::{character_object, character_position, local_player},
 };
 use jc3vr_input::frame::{Hand, Pose};
 
@@ -121,36 +126,6 @@ pub(crate) unsafe fn slot_of(weapon: &WeaponBase) -> Option<WeaponSlot> {
 /// `weapon` must be live.
 pub(crate) unsafe fn is_hand_grenade(weapon: &WeaponBase) -> bool {
     (unsafe { slot_of(weapon) }) == Some(WeaponSlot::E_SLOT_HAND_GRENADE)
-}
-
-/// `weapon`'s `CGameObject` subobject, the object that references, holders, and spawn calls name
-/// it by.
-pub(crate) fn object_of(weapon: *const WeaponBase) -> *mut GameObject {
-    weapon
-        .cast::<u8>()
-        .wrapping_add(WeaponBase::GAME_OBJECT_BASE_OFFSET as usize)
-        .cast::<GameObject>()
-        .cast_mut()
-}
-
-/// `character`'s `CGameObject` subobject, as a weapon's holder names it and the pickups take it
-/// as their activator.
-pub(crate) fn character_object(character: *const Character) -> *mut GameObject {
-    character
-        .cast::<u8>()
-        .wrapping_add(Character::GAME_OBJECT_BASE_OFFSET as usize)
-        .cast::<GameObject>()
-        .cast_mut()
-}
-
-/// `character`'s world transform, as its last simulation tick placed it.
-pub(crate) fn character_frame(character: &Character) -> Mat4 {
-    Mat4::from(character.m_WorldMatrixT1)
-}
-
-/// `character`'s world position: the translation of its world transform ([`character_frame`]).
-pub(crate) fn character_position(character: &Character) -> Vec3 {
-    character_frame(character).w_axis.truncate()
 }
 
 /// The world pose of `weapon`'s first gun, without its scale ([`gun_data_pose`]).
@@ -360,15 +335,6 @@ pub(crate) unsafe fn credit_stored(owner: &mut Character, weapon: &mut WeaponBas
     unsafe { credit_reserve(owner, weapon, stored) };
 }
 
-/// The local player character.
-///
-/// # Safety
-///
-/// Game thread, before the world update.
-pub unsafe fn local_player() -> Option<&'static mut Character> {
-    unsafe { Character::GetLocalPlayerCharacter().as_mut() }
-}
-
 /// The weapon `owner` wields in the hands.
 ///
 /// # Safety
@@ -501,8 +467,6 @@ pub(crate) fn slot_from_raw(slot: i32) -> Option<WeaponSlot> {
 
 #[cfg(test)]
 mod tests {
-    use jc3vr_body::controllers::held::native::weapon_at;
-
     use super::*;
 
     fn gun(address: usize, slot: WeaponSlot, hand: Hand) -> HeldWeapon {
@@ -607,12 +571,5 @@ mod tests {
         }
         assert_eq!(slot_from_raw(-1), None);
         assert_eq!(slot_from_raw(WeaponSlot::E_NONE as i32), None);
-    }
-
-    #[test]
-    fn the_object_casts_round_trip_and_keep_null() {
-        let weapon = 0x1000 as *const WeaponBase;
-        assert_eq!(weapon_at(object_of(weapon)).cast_const(), weapon);
-        assert!(weapon_at(std::ptr::null()).is_null());
     }
 }

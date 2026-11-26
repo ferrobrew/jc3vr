@@ -48,7 +48,7 @@ use jc3gi::{
     types::math::Vector3,
 };
 use jc3vr_body::{
-    controllers::{facts::airframe, scheme},
+    controllers::{facts::airframe, physics::characters::character_position, scheme},
     hooks::animation::{active_state_type_id, body_rule_system},
 };
 use jc3vr_core::hash::hashlittle;
@@ -61,7 +61,6 @@ use crate::controllers::{
         config::{RailConfig, VEHICLES_CONFIG},
         rail::solve::{RailLine, RailMotion, RailStep, step, walk_from},
     },
-    weapons::engine::character_position,
 };
 
 pub(super) fn hook_library() -> HookLibrary {
