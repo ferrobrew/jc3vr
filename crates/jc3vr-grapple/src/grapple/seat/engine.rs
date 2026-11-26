@@ -51,6 +51,14 @@ pub struct Target {
 }
 
 impl Target {
+    /// The target at `at`, a point along the grapple's aim: the world hit a ray from the aim's
+    /// origin toward it meets close to it, passing through the local player and the vehicle it
+    /// rides, with the physics body there. `None` when the point is not finite, the grapple has no aim, or the ray meets
+    /// nothing near the point.
+    ///
+    /// # Safety
+    ///
+    /// The game thread: it reads the local player and casts through the physics world.
     pub unsafe fn capture(at: Vec3) -> Option<Self> {
         if !at.is_finite() {
             return None;
