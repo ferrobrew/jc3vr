@@ -110,12 +110,15 @@ the frame bars.
 
 - `payload/src/profiler/mod.rs` — the switchboard: the per-frame `new_frame`, the enable state,
   and the dynamic-scope registry for engine-supplied names.
-- `payload/src/profiler/gpu/` — the GPU timestamp ring, the busy/starved decomposition, and the
-  puffin GPU-lane reporting.
+- `payload/src/profiler/gpu/` — the GPU timestamp ring, the render-pass scopes, the busy/starved
+  decomposition, and the puffin GPU-lane reporting. It registers its own shutdown cleanup at its
+  first dispatch.
 - `payload/src/profiler/blocks.rs` — the per-render-block-type draw counters.
 - `payload/src/profiler/capture.rs` — the 5 s capture state machine (a puffin frame sink).
 - `payload/src/profiler/chrome_trace.rs` — puffin frames → Chrome trace-event JSON.
 - `payload/src/profiler/ui.rs` — the Performance-tab collapsible.
+
+The core (`mod.rs`, `blocks.rs`, `capture.rs`, and `chrome_trace.rs`) does not call into `gpu` or `ui`: `gpu` is the render half and `ui` the debug UI's half, and each depends on the core only.
 - `payload/src/hooks/profiler.rs` — the profiler-only detours (`DrawGBuffer`,
   `RenderEngine::Draw`, `ChangeRenderBlockType`); seams the mod already hooks
   for other reasons are instrumented inline in those hooks under `#[cfg(feature = "profiler")]`,

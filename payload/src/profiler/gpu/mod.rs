@@ -59,13 +59,27 @@ mod lane;
 mod queries;
 mod stats;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::{
+    ffi::CStr,
+    sync::{
+        Once,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 
-use jc3gi::graphics_engine::graphics_engine::{GraphicsEngine, HContext_t, HTimeStampQuery_t};
+use jc3gi::graphics_engine::{
+    graphics_engine::{GraphicsEngine, HContext_t, HTimeStampQuery_t},
+    render_engine::GetRenderPassName_ADDRESS,
+    render_pass::RenderPass,
+};
 use parking_lot::Mutex;
 use puffin::ScopeId;
 
-use crate::profiler::gpu::queries::{DispatchLane, GpuProfiler, IntervalLabel, SendPtr};
+use crate::profiler::{
+    EngineScope,
+    gpu::queries::{DispatchLane, GpuProfiler, IntervalLabel, SendPtr},
+    named_scope_id,
+};
 pub use crate::profiler::gpu::stats::summary;
 
 /// The coarse render seams bracketed on the GPU timeline, in draw order.
@@ -166,6 +180,8 @@ pub unsafe fn begin_dispatch(ctx: *mut HContext_t) {
         DispatchLane::Eye1
     };
 
+    // Outside `STATE`'s lock, so the cleanup registry's lock is never taken under it.
+    ensure_cleanup_registered();
     let mut guard = STATE.lock();
     let state = guard.get_or_insert_with(GpuProfiler::new);
     if state.device.0.is_null() {
@@ -276,6 +292,52 @@ pub fn pass_interval(scope: ScopeId, name: &'static str) -> Option<IntervalGuard
     interval(IntervalLabel::Pass(scope, name))
 }
 
+/// Opens the CPU scope *and* the GPU timestamp interval for the render pass `pass` is drawing,
+/// both named after it through the engine's own pass-name table. The pair is what makes a
+/// dispatch's GPU span decomposable into work and starvation (see the module docs).
+///
+/// Returns `None` while neither scope collection nor a benchmark run wants the passes, or the name
+/// is unavailable.
+///
+/// # Safety
+/// `pass` must be null or a live [`RenderPass`] whose `m_Index` is its render-pass id.
+pub unsafe fn pass_scope(pass: *mut RenderPass) -> Option<PassScope> {
+    if !passes_wanted() || pass.is_null() {
+        return None;
+    }
+    // Call the pass-name lookup through a raw `i32` signature rather than the generated
+    // `RenderPassId` enum: `m_Index` can hold an unnamed id (a pass id outside the named range)
+    // that is not a valid enum discriminant, and transmuting such a value into the enum would be
+    // undefined behaviour. The engine's lookup returns `"NONE"` for those.
+    // The engine's names are static strings in its image, which outlives the payload.
+    let name: &'static str = unsafe {
+        let index = i32::from((*pass).m_Index);
+        let lookup: unsafe extern "system" fn(i32) -> *const u8 =
+            std::mem::transmute(GetRenderPassName_ADDRESS);
+        let ptr = lookup(index);
+        if ptr.is_null() {
+            return None;
+        }
+        CStr::from_ptr(ptr.cast()).to_str().ok()?
+    };
+    let id = named_scope_id(name)?;
+    Some(PassScope {
+        gpu: pass_interval(id, name),
+        cpu: EngineScope::begin(id, ""),
+    })
+}
+
+/// A render pass's paired CPU scope and GPU interval. The GPU end timestamp is recorded first on
+/// drop (field order), so it lands inside the CPU scope rather than straddling its close.
+#[expect(
+    dead_code,
+    reason = "both fields are held only for the timestamps and stream records their drops write"
+)]
+pub struct PassScope {
+    gpu: Option<IntervalGuard>,
+    cpu: Option<EngineScope>,
+}
+
 /// Brackets a named stretch of GPU work that is not a render pass (one post effect, one of the
 /// mod's own passes) with a timestamp pair on the enclosing dispatch's context. The lane shows it,
 /// and a benchmark run that times passes totals it, but the work-and-holes subdivision does not
@@ -285,7 +347,7 @@ pub fn detail_interval(name: &'static str) -> Option<IntervalGuard> {
     if !passes_wanted() {
         return None;
     }
-    let scope = crate::profiler::named_scope_id(name)?;
+    let scope = named_scope_id(name)?;
     interval(IntervalLabel::Detail(scope, name))
 }
 
@@ -341,8 +403,9 @@ impl Drop for IntervalGuard {
 /// so the profiler works normally across an eject/reinject cycle rather than reusing handles that
 /// died with the device.
 ///
-/// Registered with [`crate::lifecycle::on_cleanup`]; see `profiler::ensure_gpu_cleanup_registered`
-/// for why that call site runs exactly once.
+/// Registered with [`crate::lifecycle::on_cleanup`] by [`ensure_cleanup_registered`] when the first
+/// dispatch would build the state, so there is a cleanup exactly when there can be queries to
+/// destroy.
 pub fn teardown() {
     let mut guard = STATE.lock();
     let Some(state) = guard.take() else {
@@ -353,6 +416,15 @@ pub fn teardown() {
 }
 
 static STATE: Mutex<Option<GpuProfiler>> = Mutex::new(None);
+
+/// Registers [`teardown`] with the shutdown cleanups once. The layer has no install step of its
+/// own, so its first dispatch registers it; the `Once` keeps the later dispatches to an atomic load.
+fn ensure_cleanup_registered() {
+    static REGISTER: Once = Once::new();
+    REGISTER.call_once(|| {
+        crate::lifecycle::on_cleanup(|_renderer| teardown());
+    });
+}
 
 /// The per-dispatch cap on pass intervals, bounding the timestamp-query pool (each interval is two
 /// queries, and up to [`queries::MAX_PENDING`] dispatches are in flight). Comfortably above the

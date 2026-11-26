@@ -13,6 +13,12 @@
 //! dispatch (two per frame in stereo, three on far-field share frames). puffin keeps one scope
 //! stream per thread, so main-thread and draw-thread scopes land in separate lanes; the GPU layer
 //! reports a third, synthetic "GPU" lane.
+//!
+//! The module splits along its consumers. The core (this module, [`blocks`], [`capture`], and
+//! [`chrome_trace`]) holds the scopes, the frame advance, and the trace capture, and calls into
+//! neither half above it. [`gpu`] is the render half: the timestamp lane over the draw thread's
+//! dispatches and the render-pass scopes. [`ui`] is the debug UI's half, the Performance tab's
+//! panel.
 
 pub mod blocks;
 pub mod capture;
@@ -20,16 +26,17 @@ pub mod chrome_trace;
 pub mod gpu;
 pub mod ui;
 
+// The render-pass hook names these at their former home in the core.
+pub(crate) use crate::profiler::gpu::{PassScope, pass_scope};
+
 use std::{
     collections::HashMap,
-    ffi::CStr,
     sync::{
         Once,
         atomic::{AtomicBool, Ordering},
     },
 };
 
-use jc3gi::graphics_engine::{render_engine::GetRenderPassName_ADDRESS, render_pass::RenderPass};
 use parking_lot::Mutex;
 use puffin::{GlobalProfiler, ScopeDetails, ScopeId, ThreadProfiler};
 
@@ -80,7 +87,6 @@ pub(crate) fn apply_scopes_on() {
 pub fn new_frame() {
     label_thread("game");
     install_details_sink();
-    ensure_gpu_cleanup_registered();
     // Advance the frame even while collection is off: a stream flushed just as collection was
     // toggled off would otherwise sit parked in the profiler and be glued onto the front of the
     // next enabled frame, minutes later, ruining its range (and a capture's timestamp base).
@@ -151,17 +157,6 @@ fn install_details_sink() {
     });
 }
 
-/// Registers the GPU layer's shutdown cleanup once. The module has no dedicated `install` entry
-/// point that the payload's startup path calls, so this piggybacks on [`new_frame`], which already
-/// runs exactly once per real frame from the very first frame on; a `Once` still guards it in case
-/// a future caller invokes `new_frame` from more than one place.
-fn ensure_gpu_cleanup_registered() {
-    static REGISTER: Once = Once::new();
-    REGISTER.call_once(|| {
-        crate::lifecycle::on_cleanup(|_renderer| gpu::teardown());
-    });
-}
-
 /// A registry of puffin scope ids for engine-supplied names that only exist at runtime (render
 /// pass names, render-block-type names). Keyed by the name text: the set of distinct names is
 /// small and fixed, so a single registration per name amortizes to nothing.
@@ -172,52 +167,6 @@ static NAMED_SCOPES: Mutex<Option<HashMap<String, ScopeId>>> = Mutex::new(None);
 pub fn scope_for_name(name: &str) -> Option<EngineScope> {
     let id = named_scope_id(name)?;
     EngineScope::begin(id, "")
-}
-
-/// Opens the CPU scope *and* the GPU timestamp interval for the render pass `pass` is drawing,
-/// both named after it through the engine's own pass-name table. The pair is what makes a
-/// dispatch's GPU span decomposable into work and starvation (see [`gpu`]).
-///
-/// Returns `None` while neither scope collection nor a benchmark run wants the passes, or the name
-/// is unavailable.
-///
-/// # Safety
-/// `pass` must be null or a live [`RenderPass`] whose `m_Index` is its render-pass id.
-pub unsafe fn pass_scope(pass: *mut RenderPass) -> Option<PassScope> {
-    if !gpu::passes_wanted() || pass.is_null() {
-        return None;
-    }
-    // Call the pass-name lookup through a raw `i32` signature rather than the generated
-    // `RenderPassId` enum: `m_Index` can hold an unnamed id (a pass id outside the named range)
-    // that is not a valid enum discriminant, and transmuting such a value into the enum would be
-    // undefined behaviour. The engine's lookup returns `"NONE"` for those.
-    // The engine's names are static strings in its image, which outlives the payload.
-    let name: &'static str = unsafe {
-        let index = i32::from((*pass).m_Index);
-        let lookup: unsafe extern "system" fn(i32) -> *const u8 =
-            std::mem::transmute(GetRenderPassName_ADDRESS);
-        let ptr = lookup(index);
-        if ptr.is_null() {
-            return None;
-        }
-        CStr::from_ptr(ptr.cast()).to_str().ok()?
-    };
-    let id = named_scope_id(name)?;
-    Some(PassScope {
-        gpu: gpu::pass_interval(id, name),
-        cpu: EngineScope::begin(id, ""),
-    })
-}
-
-/// A render pass's paired CPU scope and GPU interval. The GPU end timestamp is recorded first on
-/// drop (field order), so it lands inside the CPU scope rather than straddling its close.
-#[expect(
-    dead_code,
-    reason = "both fields are held only for the timestamps and stream records their drops write"
-)]
-pub struct PassScope {
-    gpu: Option<gpu::IntervalGuard>,
-    cpu: Option<EngineScope>,
 }
 
 pub(crate) fn named_scope_id(name: &str) -> Option<ScopeId> {
