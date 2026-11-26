@@ -19,13 +19,13 @@ use crate::controllers::physical_hands::{
     collider_view::{model::Aabb, nearby},
     contact::{Surface, SurfaceHit},
     doors,
-    doors::acquisition::PanelReach,
+    doors::{acquisition::PanelReach, tuning::DOORS},
     engine as hand_engine,
     grab_view::model::{RayOutcome, ReachRay},
     grasp,
     palm::PalmBox,
     pickup::{
-        PickupTuning,
+        PICKUP, PickupTuning,
         diagnostics::scan::{Branch, Scan, ScanEntry, ScanResult},
     },
     world::World,
@@ -36,8 +36,11 @@ pub(crate) struct ReachObservations<'a> {
     pub notes: &'a mut Vec<String>,
     pub rays: Option<&'a mut Vec<ReachRay>>,
     pub scan: &'a mut Scan,
-    /// The vehicles the rays hit, at most [`MAX_HIT_VEHICLES`], for the door scan: a vehicle the
-    /// game's target system does not keep, such as a parked car, still has its doors offered.
+    /// The vehicles the rays hit, at most [`ReachLimits::max_hit_vehicles`], for the door scan: a
+    /// vehicle the game's target system does not keep, such as a parked car, still has its doors
+    /// offered.
+    ///
+    /// [`ReachLimits::max_hit_vehicles`]: crate::controllers::physical_hands::pickup::tuning::ReachLimits::max_hit_vehicles
     pub vehicles: &'a mut Vec<NonZeroUsize>,
 }
 
@@ -81,18 +84,19 @@ pub(crate) unsafe fn floor_weapons(hands: &[Vec3], radius: f32) -> Vec<FloorWeap
         return Vec::new();
     };
     let world_id = world.world() as *const _ as usize;
+    let tuning = &PICKUP.get().floor_weapons;
     let mut scan = FLOOR_SCAN.lock();
     if scan.world != world_id {
         scan.world = world_id;
         scan.next = 0;
         scan.bodies.clear();
     }
-    let discovery_radius = radius + spread + 1.0;
+    let discovery_radius = radius + spread + tuning.discovery_margin_m;
     let next = scan.next;
     let result = unsafe {
-        nearby::walk_dynamic(next, 2048, |body, bounds| {
+        nearby::walk_dynamic(next, tuning.walk_budget, |body, bounds| {
             if bounds.distance(*first) <= discovery_radius
-                && scan.bodies.len() < 256
+                && scan.bodies.len() < tuning.max_bodies
                 && !scan.bodies.contains(&body)
                 && let Some(object) = bodies::owner_of(body)
                 && (hand_engine::is_character(object)
@@ -291,7 +295,7 @@ pub(crate) unsafe fn reach_with(
             let hit = cast_floor(from, to)?;
             surface_visible(from, &hit, cast(from, to).as_ref()).then_some(hit)
         }) else {
-            if judged.notes.len() < MAX_REACH_NOTES {
+            if judged.notes.len() < tuning.pickup.reach.max_notes {
                 judged.notes.push(format!(
                     "a nearby dynamic body, body {}: no unobstructed surface in reach",
                     weapon.body
@@ -338,7 +342,7 @@ pub(crate) unsafe fn reach_with(
             mass_kg: None,
             result: ScanResult::Offered,
         });
-        if judged.notes.len() < MAX_REACH_NOTES {
+        if judged.notes.len() < tuning.pickup.reach.max_notes {
             judged.notes.push(format!(
                 "a nearby dynamic body, body {}: in surface reach",
                 reach.body
@@ -456,12 +460,6 @@ fn floor_reach(
     None
 }
 
-/// The most notes one hand's reach keeps per tick.
-const MAX_REACH_NOTES: usize = 8;
-
-/// The most vehicles one hand's rays hand the door scan per tick.
-pub(crate) const MAX_HIT_VEHICLES: usize = 4;
-
 /// What the reach's hits have come to so far.
 struct Judged<'a> {
     /// The bodies already noted: the rays fan out from one palm, so most hit the same body.
@@ -511,8 +509,9 @@ unsafe fn judge(
         judged.seen.push((object, body));
     }
     let notes = &mut *judged.notes;
+    let max_notes = config.reach.max_notes;
     let mut note = |why: String| {
-        if first && notes.len() < MAX_REACH_NOTES {
+        if first && notes.len() < max_notes {
             notes.push(why);
         }
     };
@@ -563,7 +562,7 @@ unsafe fn judge(
     // SAFETY: forwarded from the caller; the hit was found this tick.
     if unsafe { bodies::is_type(object, Vehicle::TYPE_ID()) }
         && !judged.vehicles.contains(&object)
-        && judged.vehicles.len() < MAX_HIT_VEHICLES
+        && judged.vehicles.len() < config.reach.max_hit_vehicles
     {
         judged.vehicles.push(object);
     }
@@ -579,8 +578,8 @@ unsafe fn judge(
             hit,
             palm.centre,
             PanelReach {
-                box_m: doors::REACH_M * world_scale,
-                handle_m: doors::HANDLE_REACH_M * world_scale,
+                box_m: DOORS.get().grip.box_reach_m * world_scale,
+                handle_m: DOORS.get().grip.handle_reach_m * world_scale,
             },
             judged.scan,
         )
@@ -711,7 +710,7 @@ mod tests {
 
     #[test]
     fn nearby_floor_probes_use_the_injected_layer_without_engine_reads() {
-        let pickup = PICKUP;
+        let pickup = *PICKUP.get();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,
@@ -755,7 +754,7 @@ mod tests {
 
     #[test]
     fn nearby_character_surface_requires_the_exact_body_and_owner() {
-        let pickup = PICKUP;
+        let pickup = *PICKUP.get();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,
@@ -790,7 +789,7 @@ mod tests {
 
     #[test]
     fn floor_surface_reach_does_not_depend_on_the_five_wrist_directions() {
-        let pickup = PICKUP;
+        let pickup = *PICKUP.get();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,
@@ -841,7 +840,7 @@ mod tests {
 
     #[test]
     fn a_diagonal_probe_cannot_extend_reach_beyond_the_palm_surface() {
-        let pickup = PICKUP;
+        let pickup = *PICKUP.get();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,
@@ -896,7 +895,7 @@ mod tests {
 
     #[test]
     fn a_broadphase_box_is_not_a_hit_and_another_body_cannot_validate_the_weapon() {
-        let pickup = PICKUP;
+        let pickup = *PICKUP.get();
         let tuning = ReachTuning {
             world_scale: 1.0,
             pickup: &pickup,

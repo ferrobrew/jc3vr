@@ -10,7 +10,10 @@ use parking_lot::Mutex;
 
 use crate::controllers::physical_hands::{
     articulated, characters, physics,
-    pickup::state::{HeldKind, PickupState},
+    pickup::{
+        PICKUP,
+        state::{HeldKind, PickupState},
+    },
 };
 
 /// Damp each assembly the hands hold once, however many hands hold it, over a tick of `dt`
@@ -23,6 +26,7 @@ pub(super) unsafe fn damp_held(state: &PickupState, dt: f32) {
     let mut ragdolls: [Option<NonZeroUsize>; 2] = [None; 2];
     let mut assemblies: [Option<u32>; 2] = [None; 2];
     let hand_bodies = physics::status().hands.map(|h| h.body_id);
+    let per_s = PICKUP.get().assembly_damping_per_s;
     let mut noted = NOTED.lock();
     for hand in Hand::BOTH {
         let i = hand.index();
@@ -43,9 +47,7 @@ pub(super) unsafe fn damp_held(state: &PickupState, dt: f32) {
         }
         assemblies[i] = Some(held.body);
         // SAFETY: forwarded from the caller.
-        let damping = unsafe {
-            articulated::damp_assembly(held.body, hand_bodies, ASSEMBLY_DAMPING_PER_S, dt)
-        };
+        let damping = unsafe { articulated::damp_assembly(held.body, hand_bodies, per_s, dt) };
         if noted[i] != Some(held.body) {
             noted[i] = Some(held.body);
             tracing::info!(
@@ -59,10 +61,6 @@ pub(super) unsafe fn damp_held(state: &PickupState, dt: f32) {
         }
     }
 }
-
-/// How fast a held articulated object's motion within its assembly dies down, per second: the
-/// rate a held ragdoll's bones are damped at.
-const ASSEMBLY_DAMPING_PER_S: f32 = 4.0;
 
 /// The body each hand's articulated hold was last logged for, so each hold is logged once.
 static NOTED: Mutex<[Option<u32>; 2]> = Mutex::new([None; 2]);

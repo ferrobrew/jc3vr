@@ -16,10 +16,10 @@ use jc3vr_input::frame::Pose;
 use super::*;
 use crate::controllers::physical_hands::{
     characters::{Regrip, Seize},
-    doors::{Latch, config::TEARING, tearing::TearGrip},
+    doors::{Latch, tearing::TearGrip, tuning::DOORS},
     grasp::Grip,
     pickup::{
-        PICKUP,
+        HandStrength, PICKUP,
         diagnostics::InputState,
         state::{Held, HeldKind},
         tick,
@@ -129,7 +129,7 @@ fn stale_input_cancellation_discards_a_queued_entry_click() {
     let mut state = PickupState::new();
     state.hijack_clicks = [true; 2];
     // SAFETY: stale input clears all owners before any native access.
-    unsafe { tick::tick(&mut state, tick_inputs(), &PICKUP) };
+    unsafe { tick::tick(&mut state, tick_inputs(), PICKUP.get()) };
     let mut desired = Vec::new();
     produce(&mut state, false, [None; 2], &mut desired);
     assert!(desired.is_empty());
@@ -208,7 +208,7 @@ fn produce_hands(
 fn consume_without_native(state: &mut PickupState) {
     state.input_at = Some(Instant::now());
     // SAFETY: generated releases remove all owners; no palms means no throws or shoves.
-    unsafe { tick::tick(state, tick_inputs(), &PICKUP) };
+    unsafe { tick::tick(state, tick_inputs(), PICKUP.get()) };
 }
 
 fn tick_inputs() -> TickInputs {
@@ -216,10 +216,11 @@ fn tick_inputs() -> TickInputs {
         palms: [None; 2],
         space: None,
         joints: JointInputs::default(),
+        strength: HandStrength::full(),
         dt: 0.01,
         time_scale: 1.0,
         unlatch_pull_m: 0.05,
-        tearing: TEARING,
+        tearing: DOORS.get().tearing,
         world_scale: 1.0,
         reaches: [None; 2],
         carrier_velocity: None,

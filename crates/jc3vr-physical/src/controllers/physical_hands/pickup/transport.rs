@@ -3,6 +3,8 @@ use glam::{Quat, Vec3};
 use jc3vr_body::controllers::physics::rigid::Velocities;
 use jc3vr_input::frame::Pose;
 
+use crate::controllers::physical_hands::pickup::tuning::TransportTuning;
+
 #[derive(Debug, Copy, Clone, Default)]
 pub(super) struct Transport {
     previous: Velocities,
@@ -19,6 +21,7 @@ impl Transport {
         current: Option<(Pose, Vec3)>,
         dt: f32,
         share: f32,
+        limits: &TransportTuning,
     ) -> Self {
         let Some((now, linear)) = current.filter(|(pose, v)| finite_pose(*pose) && v.is_finite())
         else {
@@ -45,11 +48,12 @@ impl Transport {
             (now.orientation.normalize() * before.orientation.normalize().inverse()).normalize();
         let angular = angular_velocity(before.orientation, now.orientation, dt)
             .unwrap_or(Vec3::ZERO)
-            .clamp_length_max(30.0);
+            .clamp_length_max(limits.max_angular_speed_rps);
         Self {
             previous,
             current: Velocities {
-                linear: ((now.position - before.position) / dt).clamp_length_max(150.0),
+                linear: ((now.position - before.position) / dt)
+                    .clamp_length_max(limits.max_linear_speed_mps),
                 angular,
             },
             rotation,
@@ -105,6 +109,11 @@ fn finite_pose(pose: Pose) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::controllers::physical_hands::pickup::PICKUP;
+
+    fn limits() -> &'static TransportTuning {
+        &PICKUP.get().transport
+    }
 
     fn pose(position: Vec3, orientation: Quat) -> Pose {
         Pose {
@@ -122,6 +131,7 @@ mod tests {
             Some((now, Vec3::X * 10.0)),
             0.1,
             1.0,
+            limits(),
         );
         let centre = now.position + now.orientation * Vec3::Z;
         let carried = transport.carry(centre, Velocities::default());
@@ -145,6 +155,7 @@ mod tests {
             Some((pose(Vec3::X, Quat::IDENTITY), frame.linear)),
             0.1,
             1.0,
+            limits(),
         );
         assert_eq!(transport.carry(Vec3::Z, velocity), velocity);
     }
@@ -154,9 +165,21 @@ mod tests {
         let now = pose(Vec3::ZERO, Quat::IDENTITY);
         let velocity = Velocities::default();
         for transport in [
-            Transport::between(None, Some((now, Vec3::X)), 0.1, 1.0),
-            Transport::between(Some((now, velocity)), Some((now, Vec3::X)), 0.1, 0.0),
-            Transport::between(Some((now, velocity)), Some((now, Vec3::X)), f32::NAN, 1.0),
+            Transport::between(None, Some((now, Vec3::X)), 0.1, 1.0, limits()),
+            Transport::between(
+                Some((now, velocity)),
+                Some((now, Vec3::X)),
+                0.1,
+                0.0,
+                limits(),
+            ),
+            Transport::between(
+                Some((now, velocity)),
+                Some((now, Vec3::X)),
+                f32::NAN,
+                1.0,
+                limits(),
+            ),
         ] {
             assert_eq!(transport.carry(Vec3::ZERO, velocity), velocity);
         }

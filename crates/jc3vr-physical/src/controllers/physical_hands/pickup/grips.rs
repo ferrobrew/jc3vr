@@ -12,7 +12,7 @@ use jc3vr_input::frame::Hand;
 
 use crate::controllers::physical_hands::{
     characters,
-    characters::{GunnerOut, Regrip, SeatOut, Seize, SeizeStep},
+    characters::{GunnerOut, Regrip, SeatOut, Seize, SeizeStep, tuning::CHARACTERS},
     doors,
     doors::LatchStep,
     grasp,
@@ -36,6 +36,7 @@ pub(super) unsafe fn keep_latch(
     hand: Hand,
     palm: Option<PalmMotion>,
     unlatch_pull_m: f32,
+    config: &PickupTuning,
     outcome: &mut TickOutcome,
 ) {
     let i = hand.index();
@@ -117,7 +118,8 @@ pub(super) unsafe fn keep_latch(
                         bodies::BodyError::NoBody
                             | bodies::BodyError::NotDynamic
                             | bodies::BodyError::BadMotion
-                    ) && now.saturating_duration_since(opening_at).as_secs_f32() < 0.3
+                    ) && now.saturating_duration_since(opening_at).as_secs_f32()
+                        < config.unlatch_settle_s
                     {
                         let world = unsafe { doors::engine::vehicle_frame(latch.door.vehicle) };
                         state.latches[i] = Some(latch);
@@ -186,7 +188,8 @@ pub(super) unsafe fn keep_seize(
         return;
     }
     // SAFETY: forwarded from the caller.
-    match unsafe { seize.step(palm, characters::YANK_M * world_scale) } {
+    let tuning = &CHARACTERS.get().characters;
+    match unsafe { seize.step(palm, tuning.yank_m * world_scale) } {
         SeizeStep::Pin(pin) => outcome.pins[i] = Some(pin),
         SeizeStep::Yank { at, direction } => {
             state.seizes[i] = None;
@@ -270,7 +273,7 @@ pub(super) unsafe fn keep_seize(
                     at,
                     direction,
                     force: ShoveForce::Yank {
-                        strength: characters::YANK_STRENGTH,
+                        strength: tuning.yank_strength,
                     },
                 });
                 outcome.yanks += 1;
@@ -323,7 +326,7 @@ pub(super) fn shove_on_release(hand: Hand, seize: &Seize, palm: &PalmMotion) {
     let speed_mps = palm.velocity.length();
     if seize.target.seated.is_some()
         || !speed_mps.is_finite()
-        || speed_mps < characters::SHOVE_MIN_SPEED_MPS
+        || speed_mps < CHARACTERS.get().characters.shove_min_speed_mps
     {
         return;
     }

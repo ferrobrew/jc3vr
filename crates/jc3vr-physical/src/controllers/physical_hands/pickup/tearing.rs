@@ -8,9 +8,9 @@ use jc3vr_body::controllers::physics::bodies;
 
 use crate::controllers::physical_hands::{
     doors::{
-        config::TearTuning,
         engine as door_engine,
         tearing::{self, Acquisition, Gesture, TearGrip, TearResult},
+        tuning::TearTuning,
     },
     grasp::PalmMotion,
     pickup::{
@@ -313,11 +313,11 @@ mod tests {
 
     use super::*;
     use crate::controllers::physical_hands::{
-        doors::config::TEARING,
+        doors::tuning::DOORS,
         grasp::Grip,
         hold,
-        hold::HandHold,
-        pickup::{HeldReport, PICKUP, PickupTuning, tick::carry_tuning},
+        hold::{HandHold, HoldTuning},
+        pickup::{HandStrength, HeldReport, PICKUP, tick::carry_tuning},
     };
 
     fn held() -> Held {
@@ -411,7 +411,7 @@ mod tests {
                 dt: 0.02,
                 world_scale: 1.0,
             },
-            &TEARING,
+            &DOORS.get().tearing,
             &mut out,
             &mut engine,
         );
@@ -432,10 +432,10 @@ mod tests {
             mass_kg: Some(10.0),
             inverse_inertia: Vec3::ONE,
         };
-        let config = PickupTuning {
-            hand_force_n: 350.0,
-            gravity_mps2: 0.0,
-            ..PICKUP
+        let config = *PICKUP.get();
+        let strength = HandStrength {
+            force_n: 350.0,
+            ..HandStrength::full()
         };
         let palm = PalmMotion {
             pose: Pose::default(),
@@ -459,7 +459,10 @@ mod tests {
             &body.rigid(),
             holds,
             dt,
-            &carry_tuning(&door, &holds, &config),
+            &HoldTuning {
+                gravity: Vec3::ZERO,
+                ..carry_tuning(&door, &holds, &config, strength)
+            },
         );
         assert!(
             (solution.velocities.linear.x - 1.4).abs() < 0.001,
@@ -469,7 +472,7 @@ mod tests {
         // observation before the drive sees it.
         let tuning = TearTuning {
             yank_speed_mps: 1.8,
-            ..TEARING
+            ..DOORS.get().tearing
         };
         assert!((3.0 - solution.velocities.linear.x) < tuning.yank_speed_mps);
         let commanded = bodies::BodyState {
@@ -622,7 +625,7 @@ mod tests {
                         dt: 0.02,
                         world_scale: scale,
                     },
-                    &TEARING,
+                    &DOORS.get().tearing,
                     &mut out,
                     &mut engine,
                 );

@@ -23,11 +23,11 @@
 //! carried, not attached: each tick its body is given the velocities that carry the grab point to
 //! where the hand holds it and turn the body as the hand turns, within the hands' strength
 //! ([`crate::controllers::physical_hands::hold`]), and it is let go with the hand's velocity, so
-//! that it is thrown. One hand carries what weighs less than [`PickupTuning::hand_force_n`], and
-//! two hands twice that; a character's ragdoll, which the hand drags by one of its bones, carries
-//! with `characters::RAGDOLL_CARRY_STRENGTH` times that pull. A hand that holds what it cannot
-//! lift drags it, and a body hinged to the world swings about its hinge. A hand that holds
-//! something does not probe, push off surfaces, or strike.
+//! that it is thrown. One hand carries what weighs less than [`HandStrength::force_n`], and two
+//! hands twice that; a character's ragdoll, which the hand drags by one of its bones, carries with
+//! the characters' tuning's `characters.ragdoll_carry_strength` times that pull. A hand that holds
+//! what it cannot lift drags it, and a body hinged to the world swings about its hinge. A hand
+//! that holds something does not probe, push off surfaces, or strike.
 //!
 //! The module is split by concern: [`state`] holds the pickups' state across ticks, [`reach`] what
 //! a hand could take, and [`tick`] the simulation tick that drives it; [`grips`] holds the grips a
@@ -43,7 +43,7 @@ mod state;
 mod tearing;
 mod tick;
 mod transport;
-mod tuning;
+pub mod tuning;
 
 use std::time::Instant;
 
@@ -67,7 +67,7 @@ use jc3vr_input::{frame::Hand, haptics::cues::Event};
 pub(super) use reach::{REACH_DIRECTIONS, ReachObservations, ReachTuning, floor_weapons, reach};
 pub(super) use state::{Held, HeldKind, PickupState, Request};
 pub(super) use tick::{JointInputs, TickInputs, TickOutcome, tick};
-pub use tuning::{PICKUP, PickupTuning};
+pub use tuning::{HandStrength, PICKUP, PickupTuning};
 
 use crate::controllers::physical_hands::{STATE, grab_view};
 

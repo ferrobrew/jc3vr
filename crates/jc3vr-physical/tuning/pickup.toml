@@ -1,0 +1,35 @@
+# The pickups' tuning: `PickupTuning` in `src/controllers/physical_hands/pickup/tuning.rs`, whose
+# fields say what each value does. Every key is required and no other is accepted. Lengths are
+# metres, masses kilograms, angles radians, and times seconds; a share is a fraction in `0..1`.
+
+reach_m = 0.18
+max_mass_kg = 1500.0
+stiffness_per_s = 18.0
+max_speed_mps = 20.0
+angular_stiffness_per_s = 14.0
+max_angular_speed_rps = 20.0
+two_hand_angular_share = 0.25
+keep_out_radius_m = 0.3
+break_distance_m = 0.6
+tear_distance_m = 1.0
+stuck_speed_mps = 0.1
+stuck_s = 0.4
+carrier_motion_share = 1.0
+throw_scale = 1.0
+max_throw_speed_mps = 25.0
+max_articulated_mass_kg = 20000.0
+assembly_damping_per_s = 4.0
+unlatch_settle_s = 0.3
+
+[transport]
+max_angular_speed_rps = 30.0
+max_linear_speed_mps = 150.0
+
+[reach]
+max_notes = 8
+max_hit_vehicles = 4
+
+[floor_weapons]
+discovery_margin_m = 1.0
+walk_budget = 2048
+max_bodies = 256

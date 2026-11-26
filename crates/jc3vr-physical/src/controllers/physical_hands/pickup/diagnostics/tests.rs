@@ -3,19 +3,20 @@ use std::{num::NonZeroUsize, time::Instant};
 use glam::{Quat, Vec3};
 use jc3vr_body::controllers::{
     grab::{GripTarget, Mark, MarkAt, PickupKind, target::Tier, world_reach::TargetKind},
-    physics::rigid::BodyPose,
+    physics::{GRAVITY_MPS2, rigid::BodyPose},
 };
 use jc3vr_input::frame::Pose;
 
 use super::*;
 use crate::controllers::physical_hands::{
-    characters::RAGDOLL_CARRY_STRENGTH,
+    characters::tuning::CHARACTERS,
+    doors::tuning::DOORS,
     grasp::PalmMotion,
     hold,
     hold::{HandHold, HoldTuning},
     palm::PalmBox,
     pickup::{
-        PICKUP, ReachObservations, ReachTuning,
+        HandStrength, PICKUP, ReachObservations, ReachTuning,
         reach::reach_with,
         state::{Held, HeldKind, PickupState, Request},
         tick,
@@ -191,16 +192,17 @@ fn queue_replacement_and_no_palm_consumer_preserve_the_actual_request_key() {
                 palms: [None; 2],
                 space: None,
                 joints: JointInputs::default(),
+                strength: HandStrength::full(),
                 dt: 0.01,
                 time_scale: 1.0,
                 unlatch_pull_m: 0.05,
-                tearing: crate::controllers::physical_hands::doors::config::TEARING,
+                tearing: DOORS.get().tearing,
                 world_scale: 1.0,
                 reaches: [None; 2],
                 carrier_velocity: None,
                 carrier_pose: None,
             },
-            &PICKUP,
+            PICKUP.get(),
         )
     };
     assert_eq!(record(key).consumer, ConsumerResult::NoPalm);
@@ -241,16 +243,17 @@ fn an_evicted_observed_request_consumes_the_same_target_as_a_remote_grab() {
                     palms: [None; 2],
                     space: None,
                     joints: JointInputs::default(),
+                    strength: HandStrength::full(),
                     dt: 0.01,
                     time_scale: 1.0,
                     unlatch_pull_m: 0.05,
-                    tearing: crate::controllers::physical_hands::doors::config::TEARING,
+                    tearing: DOORS.get().tearing,
                     world_scale: 1.0,
                     reaches: [None; 2],
                     carrier_velocity: None,
                     carrier_pose: None,
                 },
-                &PICKUP,
+                PICKUP.get(),
             )
         }
     };
@@ -271,7 +274,7 @@ fn an_evicted_observed_request_consumes_the_same_target_as_a_remote_grab() {
 
 #[test]
 fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
-    let config = PICKUP;
+    let config = *PICKUP.get();
     let grab = |joined| BodyGrab {
         hand: Hand::Left,
         reach: target(),
@@ -298,7 +301,14 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
         let mut state = PickupState::new();
         let mut outcome = TickOutcome::default();
         assert_eq!(
-            take_body(&mut state, grab(joined), Ok(body), &config, &mut outcome),
+            take_body(
+                &mut state,
+                grab(joined),
+                Ok(body),
+                &config,
+                HandStrength::full(),
+                &mut outcome
+            ),
             ConsumerResult::BodyAccepted { joined: false }
         );
         assert!(outcome.taken[0]);
@@ -316,7 +326,8 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
                     ..body
                 }),
                 &config,
-                &mut outcome
+                HandStrength::full(),
+                &mut outcome,
             ),
             ConsumerResult::FixedOrTooHeavy
         );
@@ -334,7 +345,14 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
         let mut state = PickupState::new();
         let mut outcome = TickOutcome::default();
         assert_eq!(
-            take_body(&mut state, grab(false), Err(error), &config, &mut outcome),
+            take_body(
+                &mut state,
+                grab(false),
+                Err(error),
+                &config,
+                HandStrength::full(),
+                &mut outcome
+            ),
             ConsumerResult::BodyRefused(error)
         );
         assert!(!state.holding(Hand::Left));
@@ -344,7 +362,7 @@ fn real_body_consumer_acceptance_and_refusal_match_the_state_transition() {
 
 #[test]
 fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
-    let config = PICKUP;
+    let config = *PICKUP.get();
     let mut state = PickupState::new();
     let mut outcome = TickOutcome::default();
     let body = BodyState {
@@ -383,7 +401,8 @@ fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
                 },
                 Ok(body),
                 &config,
-                &mut outcome
+                HandStrength::full(),
+                &mut outcome,
             ),
             ConsumerResult::BodyAccepted { joined: false }
         );
@@ -403,14 +422,19 @@ fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
             angular_velocity: Vec3::ZERO,
         })
     });
-    let assisted = tick::carry_tuning(&held, &holds, &config);
-    assert_eq!(assisted.hand_force_n, config.hand_force_n);
+    let assisted = tick::carry_tuning(&held, &holds, &config, HandStrength::full());
+    assert_eq!(assisted.hand_force_n, HandStrength::full().force_n);
     let driven = hold::solve(&body.rigid(), holds, 1.0 / 60.0, &assisted);
-    assert!(driven.velocities.linear.y > config.gravity_mps2 / 60.0);
+    assert!(driven.velocities.linear.y > GRAVITY_MPS2 / 60.0);
     for kind in [HeldKind::Articulated, HeldKind::Door] {
         assert_eq!(
-            tick::carry_tuning(&Held { kind, ..held }, &holds, &config),
-            HoldTuning::of(&config)
+            tick::carry_tuning(
+                &Held { kind, ..held },
+                &holds,
+                &config,
+                HandStrength::full()
+            ),
+            HoldTuning::of(&config, HandStrength::full())
         );
     }
     // A ragdoll carries with the scoped strength, above the hand's own, and every kind but a
@@ -422,14 +446,15 @@ fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
         },
         &holds,
         &config,
+        HandStrength::full(),
     );
     assert_eq!(
         ragdoll.hand_force_n,
-        config.hand_force_n * RAGDOLL_CARRY_STRENGTH
+        HandStrength::full().force_n * CHARACTERS.get().characters.ragdoll_carry_strength
     );
     assert_eq!(
         ragdoll.hand_torque_nm,
-        config.hand_torque_nm * RAGDOLL_CARRY_STRENGTH
+        HandStrength::full().torque_nm * CHARACTERS.get().characters.ragdoll_carry_strength
     );
     for kind in [
         HeldKind::Prop,
@@ -442,8 +467,8 @@ fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
     }
     state.held[0] = None;
     assert_eq!(
-        tick::carry_tuning(&held, &[None, holds[1]], &config),
-        HoldTuning::of(&config)
+        tick::carry_tuning(&held, &[None, holds[1]], &config, HandStrength::full()),
+        HoldTuning::of(&config, HandStrength::full())
     );
     state.drop_all();
     assert_eq!(state.held, [None; 2]);
@@ -453,7 +478,7 @@ fn actual_prop_consumer_acquires_both_barrel_sides_with_the_shared_strength() {
 #[test]
 fn the_actual_ray_scan_records_misses_without_engine_reads() {
     let mut scan = scan::Scan::new();
-    let pickup = PICKUP;
+    let pickup = *PICKUP.get();
     let tuning = ReachTuning {
         floor_weapons: &[],
         world_scale: 1.0,

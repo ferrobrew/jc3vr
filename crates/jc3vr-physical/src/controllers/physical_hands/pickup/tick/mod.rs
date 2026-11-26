@@ -7,14 +7,14 @@ use glam::Vec3;
 use jc3gi::vehicle::vehicle::DoorSlot;
 use jc3vr_body::controllers::{
     grab::world_reach::{Reach, TargetKind},
-    physics::{bodies, rigid::Velocities},
+    physics::{GRAVITY_MPS2, bodies, rigid::Velocities},
     telemetry::{Released, Thrown, note_release, note_throw},
 };
 use jc3vr_input::frame::{Hand, Pose};
 
 use crate::controllers::physical_hands::{
-    STALE_AFTER, carry_collision, characters,
-    characters::{Regrip, Seize},
+    carry_collision, characters,
+    characters::{Regrip, Seize, tuning::CHARACTERS},
     doors,
     doors::Latch,
     grasp,
@@ -24,7 +24,7 @@ use crate::controllers::physical_hands::{
     physics,
     physics::{HoldTarget, Shove, ShoveForce, drawn_body},
     pickup::{
-        HeldReport, PickupTuning, damping, diagnostics,
+        HandStrength, HeldReport, PickupTuning, damping, diagnostics,
         diagnostics::{ConsumerResult, DriveRecord},
         grips::{keep_latch, keep_regrip, keep_seize, shove_on_release},
         held_ragdolls,
@@ -33,6 +33,7 @@ use crate::controllers::physical_hands::{
         tearing::{Frame as TearFrame, Observation},
         transport::Transport,
     },
+    stale_after,
 };
 
 /// What the hand bodies tell a pickup tick about the joints.
@@ -53,13 +54,15 @@ pub(crate) struct TickInputs {
     /// The player's body, which a carried object is kept out of.
     pub space: Option<PlayerKeepOut>,
     pub joints: JointInputs,
+    /// Each hand's strength on what it holds.
+    pub strength: HandStrength,
     /// The tick's length, seconds of game time.
     pub dt: f32,
     /// The game's time scale, game seconds per real second: below one in slow motion.
     pub time_scale: f32,
     /// How far a hand gripping a latched door pulls it before the latch gives, world metres.
     pub unlatch_pull_m: f32,
-    pub tearing: doors::config::TearTuning,
+    pub tearing: doors::tuning::TearTuning,
     /// The VR world scale.
     pub world_scale: f32,
     /// What each hand reaches this tick, from which a hand that yanked a character takes hold of
@@ -272,6 +275,7 @@ unsafe fn tick_with(
         palms,
         space,
         joints,
+        strength,
         dt,
         time_scale,
         unlatch_pull_m,
@@ -300,6 +304,7 @@ unsafe fn tick_with(
         carrier_pose.zip(carrier_velocity),
         dt,
         config.carrier_motion_share,
+        &config.transport,
     );
     state.carrier_velocity = if carrier_pose.is_some() {
         carrier_velocity.map(|_| transport.linear())
@@ -322,7 +327,7 @@ unsafe fn tick_with(
     let now = Instant::now();
     let input_fresh = state
         .input_at
-        .is_some_and(|at| now.saturating_duration_since(at) <= STALE_AFTER);
+        .is_some_and(|at| now.saturating_duration_since(at) <= stale_after());
     if !input_fresh {
         // The bindings stopped reading the grips: no release will come.
         state.drop_all();
@@ -352,7 +357,7 @@ unsafe fn tick_with(
                     // A joined object leaves with the velocity the hand gave it, except a
                     // ragdoll, which the last hand throws as a carried one is thrown.
                     if held.throws_on_release(shared) {
-                        match throw(engine, &held, palms[i], config) {
+                        match throw(engine, &held, palms[i], config, strength) {
                             Ok(Some((speed, velocities))) => {
                                 outcome.throw = Some(speed);
                                 outcome.thrown[i] = Some(velocities);
@@ -459,6 +464,7 @@ unsafe fn tick_with(
                                     },
                                     body,
                                     config,
+                                    strength,
                                     &mut outcome,
                                 );
                                 record(result);
@@ -510,6 +516,7 @@ unsafe fn tick_with(
                     },
                     body,
                     config,
+                    strength,
                     &mut outcome,
                 );
                 if matches!(result, ConsumerResult::BodyAccepted { .. })
@@ -587,7 +594,7 @@ unsafe fn tick_with(
         // SAFETY: forwarded from the caller.
         unsafe { keep_seize(state, hand, palms[i], world_scale, &mut outcome) };
         // SAFETY: forwarded from the caller.
-        unsafe { keep_latch(state, hand, palms[i], unlatch_pull_m, &mut outcome) };
+        unsafe { keep_latch(state, hand, palms[i], unlatch_pull_m, config, &mut outcome) };
         if state.held[i].is_none()
             && state.latches[i].is_none()
             && state.seizes[i].is_none()
@@ -666,7 +673,7 @@ unsafe fn tick_with(
         let mut liftable = lifts_count(
             &held,
             hands,
-            &carry_tuning(&held, &holds, config).in_real_time(time_scale),
+            &carry_tuning(&held, &holds, config, strength).in_real_time(time_scale),
         );
         let mut moving = body.rigid();
         let transported = held.kind.carrier_transport(joined, liftable);
@@ -697,7 +704,7 @@ unsafe fn tick_with(
                 liftable = lifts_count(
                     &held,
                     hands,
-                    &carry_tuning(&held, &holds, config).in_real_time(time_scale),
+                    &carry_tuning(&held, &holds, config, strength).in_real_time(time_scale),
                 );
                 outcome.released[k] = true;
                 outcome.lost += 1;
@@ -708,7 +715,7 @@ unsafe fn tick_with(
             state.set_strain(hand, &held, strain);
         }
         // The holds the strain left, solved in real time; a joint takes the game-time strength.
-        let game_tuning = carry_tuning(&held, &holds, config);
+        let game_tuning = carry_tuning(&held, &holds, config, strength);
         let tuning = game_tuning.in_real_time(time_scale);
         let hands = holds.iter().flatten().count();
         let assembly = assembly_hands(&state.held, &held, hands);
@@ -925,6 +932,7 @@ pub(super) fn take_body(
     grab: BodyGrab,
     body: Result<bodies::BodyState, bodies::BodyError>,
     config: &PickupTuning,
+    strength: HandStrength,
     outcome: &mut TickOutcome,
 ) -> ConsumerResult {
     let BodyGrab {
@@ -968,7 +976,7 @@ pub(super) fn take_body(
                     let strain = grasp::Strain::acquired(
                         relative.length(),
                         mass_kg,
-                        carry_force_n(kind, config),
+                        carry_force_n(kind, strength),
                     );
                     if let Some(held) = state.held[i] {
                         state.set_strain(hand, &held, strain);
@@ -1045,7 +1053,7 @@ fn topple(hand: Hand, seize: Seize, at: Vec3, direction: Vec3, outcome: &mut Tic
         at,
         direction,
         force: ShoveForce::Yank {
-            strength: characters::TOPPLE_STRENGTH,
+            strength: CHARACTERS.get().characters.topple_strength,
         },
     });
     outcome.yanks += 1;
@@ -1104,12 +1112,12 @@ fn carrier_change(previous: Option<Vec3>, now: Option<Vec3>, config: &PickupTuni
         .clamp_length_max(config.max_speed_mps.max(0.0))
 }
 
-/// The pull of one hand on `held`: the pickup's hand force, and the scoped ragdoll carry for a
-/// body of a character's ragdoll, which drags the whole body hanging from the bone.
-fn carry_force_n(kind: HeldKind, config: &PickupTuning) -> f32 {
-    let force = config.hand_force_n.max(0.0);
+/// The pull of one hand of `strength` on `held`: the hand's force, and the scoped ragdoll carry
+/// for a body of a character's ragdoll, which drags the whole body hanging from the bone.
+fn carry_force_n(kind: HeldKind, strength: HandStrength) -> f32 {
+    let force = strength.force_n.max(0.0);
     match kind {
-        HeldKind::Ragdoll => force * characters::RAGDOLL_CARRY_STRENGTH,
+        HeldKind::Ragdoll => force * CHARACTERS.get().characters.ragdoll_carry_strength,
         _ => force,
     }
 }
@@ -1118,16 +1126,17 @@ pub(super) fn carry_tuning(
     held: &Held,
     holds: &[Option<HandHold>; 2],
     config: &PickupTuning,
+    strength: HandStrength,
 ) -> HoldTuning {
     let mut tuning = if held.kind == HeldKind::Prop {
-        HoldTuning::carrying(config, held.mass_kg, holds)
+        HoldTuning::carrying(config, strength, held.mass_kg, holds)
     } else {
-        HoldTuning::of(config)
+        HoldTuning::of(config, strength)
     };
     if held.kind == HeldKind::Ragdoll {
-        let strength = characters::RAGDOLL_CARRY_STRENGTH;
-        tuning.hand_force_n *= strength;
-        tuning.hand_torque_nm *= strength;
+        let scale = CHARACTERS.get().characters.ragdoll_carry_strength;
+        tuning.hand_force_n *= scale;
+        tuning.hand_torque_nm *= scale;
     }
     tuning
 }
@@ -1166,13 +1175,11 @@ fn record_drive(state: &PickupState, index: usize, held: &Held, drive: DriveReco
     }
 }
 
-/// Whether the last hand lets go of `held` as a throw: what it can lift with the pull it has on
-/// it, so a ragdoll within the scoped ragdoll carry is thrown as a prop is.
-fn can_throw(held: &Held, config: &PickupTuning) -> bool {
+/// Whether the last hand, of `strength`, lets go of `held` as a throw: what it can lift with the
+/// pull it has on it, so a ragdoll within the scoped ragdoll carry is thrown as a prop is.
+fn can_throw(held: &Held, strength: HandStrength) -> bool {
     let mass = held.mass_kg;
-    mass.is_finite()
-        && mass > 0.0
-        && mass * config.gravity_mps2.max(0.0) <= carry_force_n(held.kind, config)
+    mass.is_finite() && mass > 0.0 && mass * GRAVITY_MPS2 <= carry_force_n(held.kind, strength)
 }
 
 /// The velocities `held` leaves with when the palm lets go of it at its grab point, and the speed
@@ -1184,8 +1191,9 @@ fn release_velocities(
     body: &bodies::BodyState,
     palm: &PalmMotion,
     config: &PickupTuning,
+    strength: HandStrength,
 ) -> Option<(f32, Velocities)> {
-    if !can_throw(held, config) {
+    if !can_throw(held, strength) {
         return None;
     }
     let anchor = held.grip.anchor(body.pose);
@@ -1211,12 +1219,13 @@ fn throw(
     held: &Held,
     palm: Option<PalmMotion>,
     config: &PickupTuning,
+    strength: HandStrength,
 ) -> Result<Option<(f32, Velocities)>, bodies::BodyError> {
     let body = engine.read(held.body, held.object)?;
     let Some(palm) = palm else {
         return Ok(None);
     };
-    let Some((speed, velocities)) = release_velocities(held, &body, &palm, config) else {
+    let Some((speed, velocities)) = release_velocities(held, &body, &palm, config, strength) else {
         return Ok(None);
     };
     engine.release_joints(held);
