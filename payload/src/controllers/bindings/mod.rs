@@ -52,6 +52,7 @@ pub mod hold;
 pub mod inject;
 pub mod intents;
 mod loss;
+pub(crate) mod pointer;
 pub(crate) mod policy_a;
 mod rail;
 mod recovery;
@@ -93,6 +94,10 @@ use crate::{
             grapple_button::GrappleContext,
             hold::{ActionWrite, Desired, DevicePoll, HoldTracker, MapKind, Target, Want},
             intents::{Intent, SemanticInput},
+            pointer::{
+                clear_controller, owns_menu_trigger, toggle_panel, update_controller,
+                update_egui_controller,
+            },
             policy_a::{
                 SystemCommand,
                 runtime::{GroupBlocker, Runtime, TickInput},
@@ -118,10 +123,7 @@ use crate::{
         physical_hands, roomscale, scheme, snatch, vehicles, weapons,
     },
     grapple, headpose,
-    hud::{
-        egui_panel,
-        pointer::{clear_controller, owns_menu_trigger, update_controller, update_egui_controller},
-    },
+    input_core::capture::desktop_input_observation,
     ui::capture::{CaptureUpdate, OwnershipBlocker},
     vr::{
         self,
@@ -194,7 +196,7 @@ fn tick(dt: f32, poll: DevicePoll, sink: &mut Vec<Segment>) -> Option<f32> {
             c.body,
         )
     });
-    let desktop = crate::egui_impl::desktop_input_observation();
+    let desktop = desktop_input_observation();
     let raw_frame = frame::latest();
     let source_neutral = raw_frame
         .as_ref()
@@ -1179,13 +1181,13 @@ fn system_command(command: SystemCommand) {
             haptics::play_hands(Hand::BOTH, Event::Chord);
         }
         SystemCommand::TogglePanel => {
-            let enabled = egui_panel::toggle();
+            let enabled = toggle_panel();
             tracing::info!(target: "controllers", enabled, "controller input: toggled the debug panel");
             haptics::play(Hand::Right, Event::Chord);
         }
         SystemCommand::Mark => {
             tracing::info!(target: "controllers", "controller input: take marker");
-            crate::recorder::session_recording::mark();
+            crate::session::request_mark();
             haptics::play_hands(Hand::BOTH, Event::Chord);
         }
     }

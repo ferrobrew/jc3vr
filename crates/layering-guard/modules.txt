@@ -61,6 +61,7 @@ hooks::draw_count render
 hooks::graphics_engine render
 hooks::profiler render
 hooks::window_focus render
+hud::pointer::panel render
 hud::render_camera_pose render
 image_writer render
 profiler::gpu render

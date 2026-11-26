@@ -42,23 +42,23 @@ use glam::{Vec2, Vec3};
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
-        bindings::intents::Intent,
+        bindings::{
+            intents::Intent,
+            pointer::{
+                EguiPointerSettings, PointerHud,
+                controller::{ControllerState, TriggerSample},
+                egui_grab::{GrabSample, GrabStep, GrabTracker},
+                registered_hud,
+            },
+        },
         frame::{Button, ControllerFrame, Edges, Hand, Pose},
         overlay::{
             primitive::{Anchor, DepthMode, HandPose, Primitive, Rgba, Source},
             store,
         },
     },
-    hud::{
-        egui_panel,
-        pointer::{
-            controller::{ControllerState, TriggerSample},
-            egui_grab::{GrabSample, GrabStep, GrabTracker},
-            panel::{PanelHit, aim_at_egui_panel, intersect_panel},
-        },
-    },
+    hud::pointer::panel::{PanelHit, aim_at_egui_panel, intersect_panel},
 };
 
 /// One input tick of the controller pointer, as the egui pump consumes it.
@@ -90,41 +90,42 @@ pub(crate) fn update_egui_controller(
     select: [Intent; 2],
 ) {
     let now = Instant::now();
-    let (enabled, slop) = Config::lock_query(|c| {
-        let panel = &c.hud.egui_panel;
-        (
-            panel.controller_pointer,
-            ClickSlop {
-                radius: CLICK_SLOP,
-                aspect: panel.aspect,
-            },
-        )
-    });
-    let samples = input
-        .filter(|(frame, _)| enabled && frame.is_fresh_at(now) && egui_panel::accepts_edit_input())
-        .map(|(frame, edges)| {
-            Hand::BOTH.map(|hand| {
+    let hud = registered_hud();
+    let settings = hud.map(|hud| (hud.egui_pointer)());
+    let samples = hud
+        .zip(settings)
+        .zip(input)
+        .filter(|((hud, settings), (frame, _))| {
+            settings.enabled && frame.is_fresh_at(now) && (hud.panel_accepts_edit_input)()
+        })
+        .map(|((hud, settings), (frame, edges))| {
+            let samples = Hand::BOTH.map(|hand| {
                 let mut sample = sample(frame, edges, hand);
                 let select = select[hand.index()];
                 sample.trigger = TriggerSample::from(select.button);
                 sample.trigger_value = select.raw;
                 sample
-            })
+            });
+            (hud, settings, samples)
         });
-    let placed = egui_panel::is_placed();
+    let placed = hud.is_some_and(|hud| (hud.panel_is_placed)());
     let mut state = STATE.lock();
-    let Some(mut samples) = samples else {
+    let Some((hud, EguiPointerSettings { aspect, .. }, mut samples)) = samples else {
         let grabbed = state.grab.hand().is_some();
         if state.hand.is_some() || grabbed {
             *state = EguiControllerState::new();
             push(ControllerUpdate::GONE);
         }
         drop(state);
-        if grabbed {
-            egui_panel::end_grab();
+        if let Some(hud) = hud.filter(|_| grabbed) {
+            (hud.end_grab)();
         }
         store::clear(Source::PanelPointer);
         return;
+    };
+    let slop = ClickSlop {
+        radius: CLICK_SLOP,
+        aspect,
     };
     let dt = state.last_tick.map_or(0.0, |last| {
         now.saturating_duration_since(last).as_secs_f32()
@@ -143,7 +144,7 @@ pub(crate) fn update_egui_controller(
     });
     let (hand, update, laser) = state.step(&samples, dominant, slop, dt, now);
     drop(state);
-    apply_grab(grab, &samples, push_rate, dt);
+    apply_grab(hud, grab, &samples, push_rate, dt);
     push(update);
     draw_laser(hand, laser);
 }
@@ -242,18 +243,24 @@ static STATE: Mutex<EguiControllerState> = Mutex::new(EguiControllerState::new()
 
 /// Carry the tick's grab to the panel's placement: take hold with the hand's aim pose, move the
 /// held panel with the hand and push it along the ray at `push_rate` for `dt` seconds, or let go.
-fn apply_grab(grab: GrabStep, samples: &[HandSample; 2], push_rate: f32, dt: f32) {
+fn apply_grab(
+    hud: &PointerHud,
+    grab: GrabStep,
+    samples: &[HandSample; 2],
+    push_rate: f32,
+    dt: f32,
+) {
     match grab {
         GrabStep::Idle => {}
         GrabStep::Begin(hand) => {
             if let Some(aim) = samples[hand.index()].aim {
-                egui_panel::begin_grab(hand, aim);
+                (hud.begin_grab)(hand, aim);
             }
         }
         GrabStep::Hold(hand) => {
-            egui_panel::hold_grab(hand, samples[hand.index()].aim, push_rate, dt);
+            (hud.hold_grab)(hand, samples[hand.index()].aim, push_rate, dt);
         }
-        GrabStep::Release(_) => egui_panel::end_grab(),
+        GrabStep::Release(_) => (hud.end_grab)(),
     }
 }
 

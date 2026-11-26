@@ -9,9 +9,8 @@ use parking_lot::Mutex;
 
 use crate::{
     controllers::{
-        cockpit::CockpitTransform,
+        cockpit::{CockpitTransform, body_of_head},
         frame::{MAX_FRAME_AGE, Pose},
-        hands::pose::body_of_head,
     },
     headpose::xr::CockpitPose,
 };

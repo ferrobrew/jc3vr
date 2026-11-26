@@ -6,7 +6,7 @@
 //! lasts while the grip is held and the hand stays tracked, and ends when either stops. The
 //! placement the grab moves lives in [`crate::hud::egui_panel`].
 
-use crate::{controllers::frame::Hand, hud::pointer::controller::TriggerSample};
+use crate::controllers::{bindings::pointer::controller::TriggerSample, frame::Hand};
 
 /// What one hand offers the grab on one tick.
 #[derive(Debug, Copy, Clone, PartialEq, Default)]

@@ -116,6 +116,12 @@ impl CockpitTransform {
     }
 }
 
+/// The body-frame rotation behind a composed head pose: the head's world orientation with its
+/// cockpit orientation divided out.
+pub fn body_of_head(head_world: Quat, head_cockpit: Quat) -> Quat {
+    (head_world * head_cockpit.inverse()).normalize()
+}
+
 /// The smallest world scale the transform divides by.
 pub const MIN_WORLD_SCALE: f32 = 1e-3;
 

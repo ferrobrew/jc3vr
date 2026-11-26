@@ -41,7 +41,7 @@ use crate::{
 };
 pub(crate) use crate::{
     egui_impl::desktop_input::{consume_desktop_shortcut, observe_desktop_message},
-    input_core::capture::{DebugUiInput, debug_ui_capture, desktop_input_observation},
+    input_core::capture::{DebugUiInput, debug_ui_capture},
 };
 
 /// Queue a UI request without re-entering the renderer lock from an egui callback.

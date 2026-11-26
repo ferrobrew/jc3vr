@@ -23,6 +23,7 @@
 use body_rig::rotation::shortest;
 use glam::{EulerRot, Mat3, Quat, Vec3};
 
+pub(crate) use crate::controllers::cockpit::body_of_head;
 use crate::controllers::{
     config::GripOffset,
     frame::{Hand, Pose},
@@ -108,12 +109,6 @@ pub fn grip_to_wrist(hand: Hand, offset: &GripOffset) -> Pose {
         position,
         orientation: Quat::from_mat3(&rotation).normalize(),
     }
-}
-
-/// The body-frame rotation behind a composed head pose: the head's world orientation with its
-/// cockpit orientation divided out.
-pub fn body_of_head(head_world: Quat, head_cockpit: Quat) -> Quat {
-    (head_world * head_cockpit.inverse()).normalize()
 }
 
 /// The character's wrist frame orientation, in the space the bone positions are given in, from

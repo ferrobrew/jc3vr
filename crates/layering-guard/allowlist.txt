@@ -10,9 +10,7 @@ payload/src/controllers/aim/mod.rs -> hud
 payload/src/controllers/aim/mod.rs -> payload
 payload/src/controllers/aim/sights/tuning.rs -> payload
 payload/src/controllers/aim_state.rs -> payload
-payload/src/controllers/bindings/mod.rs -> hud
 payload/src/controllers/bindings/mod.rs -> payload
-payload/src/controllers/bindings/mod.rs -> tooling
 payload/src/controllers/body/estimator/executor.rs -> payload
 payload/src/controllers/body/estimator/producer.rs -> payload
 payload/src/controllers/body/ik_body/mod.rs -> payload
@@ -171,8 +169,7 @@ payload/src/hud/lost_weapons.rs -> payload
 payload/src/hud/mark_labels.rs -> payload
 payload/src/hud/mirror_overlay.rs -> payload
 payload/src/hud/mod.rs -> payload
-payload/src/hud/pointer/controller.rs -> payload
-payload/src/hud/pointer/egui_controller.rs -> payload
+payload/src/hud/pointer/register_pointer.rs -> payload
 payload/src/hud/state/resources/mod.rs -> payload
 payload/src/hud/summary_panel.rs -> payload
 payload/src/hud/target.rs -> payload

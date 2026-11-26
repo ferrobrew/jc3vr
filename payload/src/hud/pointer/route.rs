@@ -14,7 +14,7 @@
 
 use parking_lot::Mutex;
 
-use crate::hud::{cursor, pointer::controller::ControllerPointer};
+use crate::{controllers::bindings::pointer::ControllerPointer, hud::cursor};
 
 /// The source selected for one game-UI mouse delivery.
 #[derive(Debug, Copy, Clone, PartialEq)]

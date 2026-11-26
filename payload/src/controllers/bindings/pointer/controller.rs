@@ -11,18 +11,17 @@ use std::time::Instant;
 use parking_lot::Mutex;
 
 use crate::{
-    config::Config,
     controllers::{
-        bindings::{controls::ButtonControl, intents::Intent},
+        bindings::{
+            controls::ButtonControl,
+            intents::Intent,
+            pointer::{aim_hold::AimHold, registered_hud},
+        },
         frame::{ActionSetKind, ControllerFrame, Hand, MAX_FRAME_AGE},
         scheme,
     },
     headpose,
-    hud::pointer::{
-        aim_hold::AimHold,
-        panel::{PanelHit, aim_at_panel, intersect_panel},
-        route,
-    },
+    hud::pointer::panel::{PanelHit, aim_at_panel, intersect_panel},
 };
 
 /// The controller-owned game-UI pointer for this tick.
@@ -75,7 +74,10 @@ pub fn update_controller(
         .flatten()
         .and_then(|(ray, corners)| intersect_panel(ray, &corners));
     let (hit, trigger_down) = state.aim(hit, trigger_down, select.raw);
-    state.suppress_desktop_press(route::desktop_capture(), trigger_down);
+    state.suppress_desktop_press(
+        registered_hud().is_some_and(|hud| (hud.desktop_capture)()),
+        trigger_down,
+    );
     state.step(hit, trigger_down, hand, now)
 }
 
@@ -139,7 +141,7 @@ impl TriggerSample {
 }
 
 fn native_pointer_enabled() -> bool {
-    Config::lock_query(|c| c.hud.redirect && c.hud.quad)
+    registered_hud().is_some_and(|hud| (hud.native_pointer_enabled)())
 }
 
 /// One pointing hand's press state against a panel. The game-UI pointer keeps one in

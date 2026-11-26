@@ -25,6 +25,7 @@
 //! created when its first artifact is written, so a run only materializes the folders it uses. The
 //! same layout is described for readers of the output in `docs/mod/sessions.md`.
 
+mod mark;
 mod root;
 pub(crate) mod wine;
 
@@ -33,6 +34,7 @@ use std::{
     sync::OnceLock,
 };
 
+pub(crate) use crate::session::mark::{request_mark, set_mark_handler};
 pub use crate::session::root::{ENV_VAR, Source};
 use crate::session::root::{Resolution, RootError};
 
