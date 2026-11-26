@@ -375,7 +375,7 @@ enabled = false
 debug_gizmos = true
 [controllers.physical_hands.climb]
 enabled = false
-[hud.world_markers]
+[hud.atlas]
 enabled = false
 "#;
         let mut file: Table = toml::from_str(text).unwrap();

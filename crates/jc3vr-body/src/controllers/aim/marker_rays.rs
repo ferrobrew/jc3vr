@@ -33,17 +33,14 @@ pub struct Timed {
     pub at: Instant,
 }
 
-/// Cast the pending markers' rays, while the world markers are `enabled`. Call from the player aim
-/// control's simulation update for the local player character.
+/// Cast the pending markers' rays. Call from the player aim control's simulation update for the
+/// local player character.
 ///
 /// # Safety
 /// `owner` must be the live local player character, on the simulation thread outside the physics
 /// step.
-pub(crate) unsafe fn resolve_rays(owner: &Character, enabled: bool) {
+pub(crate) unsafe fn resolve_rays(owner: &Character) {
     let _timing = jc3vr_core::frame_timing::scope(jc3vr_core::frame_timing::Slot::WorldMarkers);
-    if !enabled {
-        return;
-    }
     let requests = std::mem::take(&mut *REQUESTS.lock());
     if requests.is_empty() {
         return;

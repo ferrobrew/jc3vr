@@ -66,10 +66,8 @@ pub(crate) fn draw(
     let mut state = STATE.lock();
     if jc3vr_view::stereo::dispatch::first_ui_eye(eye) {
         let cfg = *HUD_CONFIG.lock();
-        let active = cfg.grab_hint.enabled
-            && world_quads_active(&cfg)
-            && gameplay_hints_active()
-            && scheme::is_controllers();
+        let active =
+            world_quads_active(&cfg) && gameplay_hints_active() && scheme::is_controllers();
         if !active {
             feed::clear();
         }

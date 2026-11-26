@@ -66,7 +66,7 @@ fn convert_3d_coords_default(
     out_x: *mut f32,
     out_y: *mut f32,
 ) -> bool {
-    let panel_enabled = HUD_CONFIG.query(|c| c.redirect && c.quad);
+    let panel_enabled = HUD_CONFIG.query(|c| c.redirect);
 
     // Only the frame's first call projects the aim position; claiming the frame's recording before
     // reading the point keeps the later calls (the attach point, the grip-radius sample) out of it.
@@ -139,7 +139,7 @@ fn movie_capture(this: *mut MovieImpl, if_changed: bool) -> u64 {
             // The atlas moves its parts into their cells for this capture only, and the world
             // markers move into the atlas's marker cells.
             let atlas = crate::hud::atlas::begin_capture(&hud);
-            crate::hud::world_markers::on_capture(&hud.world_markers, atlas.as_ref());
+            crate::hud::world_markers::on_capture(atlas.as_ref());
             crate::hud::anchored::sample_status(&hud);
         }
     }
@@ -179,8 +179,7 @@ fn get_2d_info(
     a10: bool,
     offset: Vector2,
 ) {
-    let (panel_enabled, world_markers) =
-        HUD_CONFIG.query(|c| (c.redirect && c.quad, c.world_markers));
+    let panel_enabled = HUD_CONFIG.query(|c| c.redirect);
     let aspect = current_aspect();
     let panel = panel_enabled.then(compute_panel_vp).flatten();
     let (vp, camera) = panel
@@ -228,18 +227,15 @@ fn get_2d_info(
             out_y.as_mut(),
             out_pos.as_mut(),
         ) {
-            crate::hud::world_markers::classify(
-                crate::hud::world_markers::Projection {
-                    manager,
-                    world: glam::Vec3::from(world.data),
-                    camera,
-                    margin,
-                    out_x,
-                    out_y,
-                    out_pos,
-                },
-                &world_markers,
-            );
+            crate::hud::world_markers::classify(crate::hud::world_markers::Projection {
+                manager,
+                world: glam::Vec3::from(world.data),
+                camera,
+                margin,
+                out_x,
+                out_y,
+                out_pos,
+            });
         }
     }
 }

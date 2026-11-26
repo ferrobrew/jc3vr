@@ -89,7 +89,6 @@ slots! {
     jc3vr_view::vr::input::config::HAPTICS_ENABLED = controllers.haptics.enabled,
     jc3vr_view::vr::input::config::HAPTICS_INTENSITY = controllers.haptics.intensity,
     jc3vr_body::controllers::scheme::CONTROLLERS_ENABLED = controllers.enabled,
-    jc3vr_body::controllers::aim::WORLD_MARKERS_ENABLED = hud.world_markers.enabled,
     jc3vr_view::vr::PANEL_ENABLED = hud.egui_panel.enabled,
     jc3vr_view::vr::PANEL_ON_MIRROR = hud.egui_panel.show_on_mirror,
     jc3vr_view::vr::PANEL_RESOLUTION = hud.egui_panel.resolution,
