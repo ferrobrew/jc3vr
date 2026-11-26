@@ -7,8 +7,8 @@
 //! - [`math`]: the pure parts: the mass, the seat and the deviation from it, the axes, and the shot.
 //!
 //! The guns in the hands, the shots, and what each step reports back to the hands, the rigid grip,
-//! and the foregrip are the weapon handling's ([`crate::controllers::weapons::gun_bodies`]); this
-//! module re-exports the readout's types at their old paths until the crate cut.
+//! and the foregrip are the store the weapon handling publishes into
+//! ([`jc3vr_body::controllers::held::guns`]); this module re-exports the readout's types.
 //!
 //! A gun's own body is in the world only while the weapon lies dropped or is mounted
 //! ([`WeaponData::m_PfxInstance`]), and it belongs to the weapon, which the game may destroy at any
@@ -45,28 +45,28 @@
 //! and steadies with support.
 //!
 //! [`WeaponData::m_PfxInstance`]: jc3gi::equipment::weapon::WeaponData::m_PfxInstance
-//! [`publish`]: crate::controllers::weapons::gun_bodies::publish
-//! [`deviation`]: crate::controllers::weapons::gun_bodies::deviation
-//! [`queue_shot`]: crate::controllers::weapons::gun_bodies::queue_shot
-//! [`take_support_break`]: crate::controllers::weapons::gun_bodies::take_support_break
+//! [`publish`]: jc3vr_body::controllers::held::guns::publish
+//! [`deviation`]: jc3vr_body::controllers::held::guns::deviation
+//! [`queue_shot`]: jc3vr_body::controllers::held::guns::queue_shot
+//! [`take_support_break`]: jc3vr_body::controllers::held::guns::take_support_break
 
 mod engine;
 pub mod math;
 pub(super) mod step;
 pub(crate) mod targets;
 
+pub use jc3vr_body::controllers::held::guns::{
+    BraceContact, GunBodyStatus, GunHolds, GunsStatus, HeldGun, MassSource, physical_hands, status,
+};
+pub(super) use jc3vr_body::controllers::held::guns::{carried_mass, count_contact, mass};
 use jc3vr_body::controllers::{
+    held::guns as held_guns,
     mode::{AirborneVariant, Detection, Mode, OnFootVariant},
     physics::steps::steps,
 };
 
-pub use crate::controllers::weapons::gun_bodies::{
-    BraceContact, GunBodyStatus, GunHolds, GunsStatus, HeldGun, MassSource, physical_hands, status,
-};
-pub(super) use crate::controllers::weapons::gun_bodies::{carried_mass, count_contact, mass};
-use crate::controllers::{
-    physical_hands::{PhysicalHandsConfig, physics::state::enabled as hand_bodies_enabled},
-    weapons::gun_bodies,
+use crate::controllers::physical_hands::{
+    PhysicalHandsConfig, physics::state::enabled as hand_bodies_enabled,
 };
 
 /// Whether held guns are bodies: whenever the hand bodies are.
@@ -87,7 +87,7 @@ pub(super) fn holds_for_step(config: &PhysicalHandsConfig, step: u64) -> GunHold
     if !enabled(config) {
         return GunHolds::default();
     }
-    gun_bodies::holds_at(step).unwrap_or_default()
+    held_guns::holds_at(step).unwrap_or_default()
 }
 
 /// The hands that act because they hold or brace a gun, from the last publication: their bodies
@@ -96,7 +96,7 @@ pub(crate) fn acting_hands(config: &PhysicalHandsConfig) -> [bool; 2] {
     if !enabled(config) {
         return [false; 2];
     }
-    gun_bodies::holds_at(steps()).map_or([false; 2], |h| h.hands())
+    held_guns::holds_at(steps()).map_or([false; 2], |h| h.hands())
 }
 
 #[cfg(test)]

@@ -1,6 +1,8 @@
 //! The weight's fixed tuning, by weapon class, and the one feature switch each weight has from the
 //! configuration ([`HeftConfig`]).
 
+use jc3vr_body::controllers::held::guns::HeftClass;
+
 use crate::controllers::weapons::config::HeftConfig;
 
 /// The weight's tuning with both weights switched on.
@@ -85,6 +87,15 @@ impl Heft {
             ..HEFT
         }
     }
+
+    /// The one-handed tuning of a gun of `class`.
+    pub fn tuning(&self, class: HeftClass) -> HeftTuning {
+        match class {
+            HeftClass::Sidearm | HeftClass::Smg => self.sidearm,
+            HeftClass::Rifle => self.rifle,
+            HeftClass::Heavy => self.heavy,
+        }
+    }
 }
 
 /// The weight of a long gun braced in both hands, on the foregrip: the gun follows where the hands
@@ -106,6 +117,18 @@ pub struct BracedHeft {
     pub rifle: BracedTuning,
     /// Launchers, miniguns, and the other heavy and special weapons, the heaviest.
     pub heavy: BracedTuning,
+}
+
+impl BracedHeft {
+    /// The braced tuning of a gun of `class`, before its strength.
+    pub fn tuning(&self, class: HeftClass) -> BracedTuning {
+        match class {
+            HeftClass::Sidearm => BracedTuning::NONE,
+            HeftClass::Smg => self.smg,
+            HeftClass::Rifle => self.rifle,
+            HeftClass::Heavy => self.heavy,
+        }
+    }
 }
 
 /// One weapon class's braced weight.

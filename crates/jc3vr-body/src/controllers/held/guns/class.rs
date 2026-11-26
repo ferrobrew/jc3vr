@@ -1,8 +1,7 @@
-//! The weight class a weapon's tuning comes from.
+//! The weight class a weapon's tuning comes from: the weapon handling's weight of a long gun tunes
+//! each class, and the hand bodies take a held gun's fallback mass and limits by it.
 
 use jc3gi::equipment::weapon::WeaponClass;
-
-use crate::controllers::weapons::heft::{BracedHeft, BracedTuning, Heft, HeftTuning};
 
 /// The weight class a weapon's one-handed tuning comes from.
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -74,25 +73,6 @@ impl HeftClass {
             HeftClass::Smg => "SMG",
             HeftClass::Rifle => "rifle",
             HeftClass::Heavy => "heavy",
-        }
-    }
-
-    /// This class's one-handed tuning in `config`.
-    pub fn tuning(self, config: &Heft) -> HeftTuning {
-        match self {
-            HeftClass::Sidearm | HeftClass::Smg => config.sidearm,
-            HeftClass::Rifle => config.rifle,
-            HeftClass::Heavy => config.heavy,
-        }
-    }
-
-    /// This class's braced tuning in `config`, before its strength.
-    pub fn braced(self, config: &BracedHeft) -> BracedTuning {
-        match self {
-            HeftClass::Sidearm => BracedTuning::NONE,
-            HeftClass::Smg => config.smg,
-            HeftClass::Rifle => config.rifle,
-            HeftClass::Heavy => config.heavy,
         }
     }
 }

@@ -26,6 +26,8 @@
 //! - [`placement`]: the rigid grip's reads during the inventory's placement pass: a snap moving a
 //!   gun between a socket and the hand ([`SnapView`]), a slide through the hand onto the grip
 //!   ([`GripSlide`]), the gun body's stray from its seat, and the record of the placed grip;
+//! - [`guns`]: the held guns the hand bodies make bodies of, as the weapon handling publishes
+//!   them, and what the bodies' step reports back;
 //! - [`native`]: the native weapon object's accessors both sides read;
 //! - [`pickup`]: the hand-off of a weapon a hand reaches in the world to the weapon handling's take,
 //!   through a sink the weapon handling registers apart from its source.
@@ -39,6 +41,7 @@ use jc3gi::{
 };
 use jc3vr_input::frame::{Hand, Pose};
 
+pub mod guns;
 pub mod native;
 pub mod pickup;
 pub mod placement;

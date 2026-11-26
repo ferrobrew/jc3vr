@@ -36,7 +36,6 @@
 //! [`WeaponBase::m_Class`]: jc3gi::equipment::weapon::WeaponBase::m_Class
 //! [`WeaponBase::GetCurrentScatterValue`]: jc3gi::equipment::weapon::WeaponBase::GetCurrentScatterValue
 
-mod class;
 mod pose;
 #[cfg(test)]
 mod test_support;
@@ -50,18 +49,16 @@ use body_rig::rotation::{angle, clamp_angle};
 use detours_macro::detour;
 use glam::{FloatExt, Quat, Vec2, Vec3};
 use jc3gi::equipment::weapon::WeaponBase;
+pub use jc3vr_body::controllers::held::guns::HeftClass;
 use jc3vr_body::controllers::{hands::CockpitHand, scheme};
 use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 use re_utilities::hook_library::HookLibrary;
 #[cfg(test)]
-pub(crate) use test_support::TestWeight;
+use test_support::TestWeight;
 
 use self::pose::{Weight, sway, unbraced_share};
-pub use self::{
-    class::HeftClass,
-    tuning::{BracedHeft, BracedTuning, Heft, HeftTuning},
-};
+pub use self::tuning::{BracedHeft, BracedTuning, Heft, HeftTuning};
 use crate::controllers::weapons::{config::WEAPONS_CONFIG, foregrip, recoil::Motion};
 
 pub(super) fn hook_library() -> HookLibrary {
@@ -207,7 +204,7 @@ pub fn one_hand_kick(hand: Hand) -> f32 {
     let config = Heft::of(&WEAPONS_CONFIG.query(|c| c.heft));
     let target = STATE.lock().hands[hand.index()].target.map(|(t, _)| t);
     match target {
-        Some(t) if config.enabled => t.class.tuning(&config).kick_scale,
+        Some(t) if config.enabled => config.tuning(t.class).kick_scale,
         _ => 1.0,
     }
 }
@@ -229,7 +226,7 @@ pub fn spread_scale(weapon: usize) -> f32 {
     };
     let share = unbraced_share(foregrip::two_hand_grip(), target.hand);
     // The share is clamped to `0..=1` where it is made.
-    1.0_f32.lerp(target.class.tuning(&config).spread_scale, share)
+    1.0_f32.lerp(config.tuning(target.class).spread_scale, share)
 }
 
 /// How long a published weapon stays in effect without a new input tick.
@@ -410,7 +407,7 @@ mod tests {
     use crate::controllers::weapons::{
         foregrip,
         heft::{
-            BracedTuning, Heft, HeftTuning,
+            BracedHeft, BracedTuning, Heft, HeftTuning, TestWeight,
             pose::{RotSpring, Weight, WeightedPose, sway, unbraced_share, weighted_pose},
             tuning::HEFT,
         },
@@ -954,5 +951,66 @@ mod tests {
             .duration_since(start)
             .as_secs_f32();
         assert!((total - elapsed).abs() < 1e-4, "{total} against {elapsed}");
+    }
+
+    /// A hand at `position` with the identity orientation in every frame.
+    fn square_hand(position: Vec3) -> CockpitHand {
+        let pose = Pose {
+            position,
+            orientation: Quat::IDENTITY,
+        };
+        CockpitHand {
+            wrist: pose,
+            grip: pose,
+            aim: pose,
+        }
+    }
+
+    #[test]
+    fn a_heavy_gun_in_either_hand_droops_about_the_grip_and_lifts_braced() {
+        let config = HEFT;
+        for holder in Hand::BOTH {
+            let mut spring = TestWeight::default();
+            let mut shown = square_hand(Vec3::new(0.0, -0.2, -0.6));
+            for frame in 0..90 {
+                let t = frame as f32 / 90.0;
+                let yaw = Quat::from_rotation_y(t * 0.3);
+                let mut raw = square_hand(Vec3::new(
+                    (holder.index() as f32 * 2.0 - 1.0) * 0.2 + t * 0.1,
+                    -0.2,
+                    -0.6,
+                ));
+                raw.wrist.orientation = yaw;
+                raw.grip.orientation = yaw;
+                shown = spring.apply(raw, HeftClass::Heavy, 1.0, &config, t);
+                assert_eq!(shown.grip.position, raw.grip.position);
+                assert!((shown.wrist.orientation * Vec3::NEG_Z).y < -0.1);
+            }
+            let one_hand_pitch = (shown.wrist.orientation * Vec3::NEG_Z).y;
+            for frame in 0..90 {
+                shown = spring.apply(
+                    square_hand(Vec3::new(0.0, -0.2, -0.6)),
+                    HeftClass::Heavy,
+                    0.0,
+                    &config,
+                    1.0 + frame as f32 / 90.0,
+                );
+            }
+            assert!((shown.wrist.orientation * Vec3::NEG_Z).y > one_hand_pitch + 0.1);
+            let disabled = Heft {
+                enabled: false,
+                braced: BracedHeft {
+                    enabled: false,
+                    ..config.braced
+                },
+                ..config
+            };
+            let raw = square_hand(Vec3::new(0.0, -0.2, -0.6));
+            let mut no_weight = TestWeight::default();
+            assert_eq!(
+                no_weight.apply(raw, HeftClass::Heavy, 1.0, &disabled, 0.0),
+                raw
+            );
+        }
     }
 }

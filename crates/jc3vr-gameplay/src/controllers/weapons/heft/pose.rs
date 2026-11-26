@@ -55,13 +55,14 @@ impl Weight {
     /// the foregrip engages.
     pub fn of(class: HeftClass, config: &Heft, share: f32) -> Self {
         let one = if config.enabled {
-            class.tuning(config)
+            config.tuning(class)
         } else {
             HeftTuning::NONE
         };
         let braced = if config.braced.enabled {
-            class
-                .braced(&config.braced)
+            config
+                .braced
+                .tuning(class)
                 .at_strength(config.braced.strength)
         } else {
             BracedTuning::NONE

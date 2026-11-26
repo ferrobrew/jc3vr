@@ -4,16 +4,13 @@
 
 use body_rig::rotation::{angle, angle_between, angular_velocity, clamp_angle};
 use glam::{Mat4, Vec3};
-use jc3vr_body::controllers::hands::pose as hand_pose;
+pub use jc3vr_body::controllers::held::guns::MassSource;
+use jc3vr_body::controllers::{hands::pose as hand_pose, held::guns::HeftClass};
 use jc3vr_input::frame::Pose;
 
-pub use crate::controllers::weapons::gun_bodies::MassSource;
-use crate::controllers::{
-    physical_hands::physics::{
-        config::{BraceConfig, GunClassValues, HeldGunsTuning},
-        guns::BraceContact,
-    },
-    weapons::heft::HeftClass,
+use crate::controllers::physical_hands::physics::{
+    config::{BraceConfig, GunClassValues, HeldGunsTuning},
+    guns::BraceContact,
 };
 
 /// The support palm seated on its selected region on the actual gun body, preserving the tracked

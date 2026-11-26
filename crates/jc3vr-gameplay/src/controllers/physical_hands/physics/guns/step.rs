@@ -15,29 +15,27 @@ use std::time::Instant;
 use body_rig::{geometry::point_velocity, rotation::angle};
 use glam::Vec3;
 use jc3gi::physics::CustomGroupCollisionFilter;
+use jc3vr_body::controllers::held::{guns as held_guns, guns::StepRecord};
 use jc3vr_input::frame::{Hand, Pose};
 use parking_lot::Mutex;
 
-use crate::controllers::{
-    physical_hands::physics::{
-        body::{BodyError, BodyShape, BodySpec, HandBody},
-        config::{BraceConfig, HeldGunsTuning},
-        contact::{self, Source},
-        drive::BodyMotion,
-        guns::{
-            GunBodyStatus, GunHolds, HeldGun,
-            engine::{GunError, GunSource, check_own_body, read_source},
-            math::{
-                BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
-                brace_palm, clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit,
-                seat, seated, settled, shot_impulse, strayed,
-            },
+use crate::controllers::physical_hands::physics::{
+    body::{BodyError, BodyShape, BodySpec, HandBody},
+    config::{BraceConfig, HeldGunsTuning},
+    contact::{self, Source},
+    drive::BodyMotion,
+    guns::{
+        GunBodyStatus, GunHolds, HeldGun,
+        engine::{GunError, GunSource, check_own_body, read_source},
+        math::{
+            BRACE_BREAK_STEPS, GunAxes, MAX_GRIP_SEAT_M, MassSource, brace_broken, brace_due,
+            brace_palm, clamp_velocity, class_value, deviation, gun_mass, intended_seat, limit,
+            seat, seated, settled, shot_impulse, strayed,
         },
-        joint::Joint,
-        lifecycle::{Hands, PLACED_MUTE_STEPS},
-        types::BodyPhase,
     },
-    weapons::gun_bodies::{self, StepRecord},
+    joint::Joint,
+    lifecycle::{Hands, PLACED_MUTE_STEPS},
+    types::BodyPhase,
 };
 
 /// A holding hand's gun body.
@@ -93,7 +91,7 @@ pub(crate) struct GunStep<'a> {
 /// The thread that steps the physics world, outside the step.
 pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
     let now = Instant::now();
-    let shots = gun_bodies::take_shots();
+    let shots = held_guns::take_shots();
     let mut statuses = [None; 2];
     let mut deviations = [None; 2];
     let mut broken = [false; 2];
@@ -178,7 +176,7 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
             }
         }
     }
-    gun_bodies::record_step(StepRecord {
+    held_guns::record_step(StepRecord {
         at: now,
         statuses,
         deviations,
@@ -194,7 +192,7 @@ pub(crate) unsafe fn step(hands: &mut Hands, input: GunStep<'_>) {
 /// Forget the last step's gun bodies and the shots queued, for a step that acts on no hand (the
 /// hand bodies off, or the game out of gameplay), whose bodies, guns included, it destroys.
 pub(crate) fn stand_down() {
-    gun_bodies::stand_down();
+    held_guns::stand_down();
 }
 
 /// Destroy every gun body that hangs from `hand`'s body: the gun it holds, with its joints, and
@@ -208,7 +206,7 @@ pub(crate) unsafe fn drop_hand(guns: &mut [Option<GunSlot>; 2], hand: Hand, reas
     if let Some(slot) = guns[hand.index()].take() {
         // SAFETY: forwarded from the caller.
         let destroyed = unsafe { destroy_slot(slot, hand, reason) };
-        gun_bodies::count_destroyed(u64::from(destroyed));
+        held_guns::count_destroyed(u64::from(destroyed));
     }
     if let Some(slot) = guns[hand.other().index()].as_mut()
         && let Some(brace) = slot.brace.take()

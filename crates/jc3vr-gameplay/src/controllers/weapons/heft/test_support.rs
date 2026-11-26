@@ -1,4 +1,4 @@
-//! Local access to the runtime weight response for physical-target regression tests.
+//! Local access to the runtime weight response for the weight's regression tests.
 
 use glam::Vec3;
 use jc3vr_body::controllers::hands::CockpitHand;
@@ -9,12 +9,12 @@ use crate::controllers::weapons::{
 };
 
 #[derive(Default)]
-pub(crate) struct TestWeight {
+pub(super) struct TestWeight {
     hand: Option<HandHeft>,
 }
 
 impl TestWeight {
-    pub(crate) fn apply(
+    pub(super) fn apply(
         &mut self,
         hand: CockpitHand,
         class: HeftClass,

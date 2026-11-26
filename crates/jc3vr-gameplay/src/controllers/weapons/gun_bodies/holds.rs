@@ -10,17 +10,11 @@ use jc3vr_body::controllers::{
     aim::gun,
     hands,
     hands::{CockpitHand, grip, pose::PALM_CENTRE_M},
+    held::guns::{BraceContact, GunHolds, HeftClass, HeldGun},
 };
 use jc3vr_input::frame::Hand;
 
-use crate::controllers::weapons::{
-    foregrip,
-    foregrip::GripGeometry,
-    gun_bodies::{BraceContact, GunHolds, HeldGun},
-    heft::HeftClass,
-    hold::act,
-    regions,
-};
+use crate::controllers::weapons::{foregrip, foregrip::GripGeometry, hold::act, regions};
 
 /// Read the guns in the hands: each hand whose gun the rigid grip pinned lately, of one of
 /// `weapons` (the wielded weapon and the second weapon, each with its weight class), with no slide
