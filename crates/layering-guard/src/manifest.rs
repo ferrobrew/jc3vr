@@ -15,12 +15,12 @@ use crate::{
     source::{SourceFile, read_sources},
 };
 
-/// The crates whose `hooks` modules hold the engine detours that gameplay and the HUD reach only
-/// through registrations.
+/// The crates whose `hooks` modules hold the engine detours that body, gameplay, and the HUD reach
+/// only through registrations.
 pub const HOOK_CRATES: [Layer; 2] = [Layer::View, Layer::Render];
 
 /// The layers the view and render crates' `hooks` modules must never name.
-pub const HOOKS_FORBIDDEN: [Layer; 2] = [Layer::Gameplay, Layer::Hud];
+pub const HOOKS_FORBIDDEN: [Layer; 3] = [Layer::Body, Layer::Gameplay, Layer::Hud];
 
 /// Where the layering and the reasons for it are documented, for messages.
 const LAYERING_DOC: &str = "docs/architecture.md, \"Crate layering\"";
@@ -143,7 +143,7 @@ pub fn check_hooks(files: &[SourceFile]) -> Vec<String> {
             {
                 out.push(format!(
                     "{}:{}: {} names the {layer} crate, but the view and render crates' hooks \
-                     reach gameplay and the HUD only through registrations; add a registration \
+                     reach body, gameplay, and the HUD only through registrations; add a registration \
                      point in the crate that owns the hook and fill it from the {layer} crate's \
                      install, as the existing `register_*` modules do",
                     file.path,
@@ -280,12 +280,19 @@ fn violation_advice(layer: Layer, dependency: Layer) -> String {
     }
     if matches!(
         (layer, dependency),
-        (Layer::Render, Layer::Gameplay) | (Layer::Gameplay, Layer::Render)
+        (Layer::Render, Layer::Gameplay | Layer::Body)
+            | (Layer::Gameplay | Layer::Body, Layer::Render)
     ) {
-        return "but the render and gameplay crates are siblings on the view crate with no edge \
-                between them; move the registration type or publication cell they share down \
-                into the view crate, as the overlay's inputs and the scope's lens frame are"
-            .to_owned();
+        let other = if layer == Layer::Render {
+            dependency
+        } else {
+            layer
+        };
+        return format!(
+            "but the render and {other} crates are siblings on the view crate with no edge \
+             between them; move the registration type or publication cell they share down \
+             into the view crate, as the overlay's inputs and the scope's lens frame are"
+        );
     }
     if dependency == Layer::Capture {
         return "but only the tooling crate and the crates above it see the capture crate; reach \
@@ -523,6 +530,37 @@ mod tests {
         assert!(violations[0].contains("the render crate depends on the capture crate"));
         assert!(violations[0].contains("through a probe table"));
         assert!(violations[1].contains("the hud crate depends on the capture crate"));
+    }
+
+    #[test]
+    fn render_may_not_depend_on_body() {
+        let render = r#"
+            [package]
+            name = "jc3vr-render"
+            [dependencies]
+            jc3vr-view = { path = "../jc3vr-view" }
+            jc3vr-body = { path = "../jc3vr-body" }
+        "#;
+        let violations = check_manifests(&stack_with(Layer::Render, render));
+        assert_eq!(violations.len(), 1, "{violations:#?}");
+        assert!(violations[0].contains("the render crate depends on the body crate"));
+        assert!(violations[0].contains("but the render and body crates are siblings"));
+    }
+
+    #[test]
+    fn body_may_not_depend_on_gameplay() {
+        let body = r#"
+            [package]
+            name = "jc3vr-body"
+            [dependencies]
+            jc3vr-view = { path = "../jc3vr-view" }
+            [dev-dependencies]
+            jc3vr-gameplay = { path = "../jc3vr-gameplay" }
+        "#;
+        let violations = check_manifests(&stack_with(Layer::Body, body));
+        assert_eq!(violations.len(), 1, "{violations:#?}");
+        assert!(violations[0].contains("the body crate depends on the gameplay crate"));
+        assert!(violations[0].contains("it may only depend on core, input, view"));
     }
 
     #[test]

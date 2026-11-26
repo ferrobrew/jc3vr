@@ -1,4 +1,4 @@
-//! The ten crates the payload is built from and the dependency order between them.
+//! The eleven crates the payload is built from and the dependency order between them.
 
 use std::fmt;
 
@@ -10,6 +10,7 @@ pub enum Layer {
     View,
     Render,
     Capture,
+    Body,
     Gameplay,
     Hud,
     Tooling,
@@ -18,12 +19,13 @@ pub enum Layer {
 }
 
 impl Layer {
-    pub const ALL: [Layer; 10] = [
+    pub const ALL: [Layer; 11] = [
         Layer::Core,
         Layer::Input,
         Layer::View,
         Layer::Render,
         Layer::Capture,
+        Layer::Body,
         Layer::Gameplay,
         Layer::Hud,
         Layer::Tooling,
@@ -39,6 +41,7 @@ impl Layer {
             Layer::View => "view",
             Layer::Render => "render",
             Layer::Capture => "capture",
+            Layer::Body => "body",
             Layer::Gameplay => "gameplay",
             Layer::Hud => "hud",
             Layer::Tooling => "tooling",
@@ -75,9 +78,11 @@ impl Layer {
     ///
     /// Each crate may depend on any crate below it, with three exceptions. Input sits directly
     /// above core but depends on no layer crate, so it stays pure and builds and tests on any host.
-    /// Render and gameplay sit side by side on the view crate, so neither may depend on the other:
-    /// gameplay reaches the render passes through the registries and cells the view crate holds,
-    /// and a render edit does not rebuild gameplay. Capture sits on render, beside gameplay, and
+    /// Render sits side by side with body and gameplay on the view crate, so render and those two
+    /// may not depend on each other: they reach the render passes through the registries and cells
+    /// the view crate holds, and a render edit rebuilds neither. Gameplay sits on body, which holds
+    /// the subsystems it builds on and fills through registrations. Capture sits on render, beside
+    /// body and gameplay, and
     /// only tooling and the layers above it see it: the render hooks reach the capture tooling
     /// through the probe tables the capture crate fills, so a capture edit rebuilds neither render
     /// nor gameplay nor the HUD. HUD and tooling sit side by side between gameplay and the UI, so
@@ -86,13 +91,15 @@ impl Layer {
         let below: &[Layer] = match self {
             Layer::Core | Layer::Input => &[],
             Layer::View => &[Layer::Core, Layer::Input],
-            Layer::Render | Layer::Gameplay => &[Layer::Core, Layer::Input, Layer::View],
+            Layer::Render | Layer::Body => &[Layer::Core, Layer::Input, Layer::View],
             Layer::Capture => &[Layer::Core, Layer::Input, Layer::View, Layer::Render],
+            Layer::Gameplay => &[Layer::Core, Layer::Input, Layer::View, Layer::Body],
             Layer::Hud => &[
                 Layer::Core,
                 Layer::Input,
                 Layer::View,
                 Layer::Render,
+                Layer::Body,
                 Layer::Gameplay,
             ],
             Layer::Tooling => &[
@@ -101,6 +108,7 @@ impl Layer {
                 Layer::View,
                 Layer::Render,
                 Layer::Capture,
+                Layer::Body,
                 Layer::Gameplay,
             ],
             Layer::Ui => &[
@@ -109,11 +117,12 @@ impl Layer {
                 Layer::View,
                 Layer::Render,
                 Layer::Capture,
+                Layer::Body,
                 Layer::Gameplay,
                 Layer::Hud,
                 Layer::Tooling,
             ],
-            Layer::Payload => &Layer::ALL[..9],
+            Layer::Payload => &Layer::ALL[..10],
         };
         below.contains(&other)
     }
@@ -189,11 +198,29 @@ mod tests {
         assert!(Layer::Capture.may_depend_on(Layer::Render));
         assert!(Layer::Capture.may_depend_on(Layer::View));
         assert!(!Layer::Capture.may_depend_on(Layer::Gameplay));
-        for below in [Layer::View, Layer::Render, Layer::Gameplay, Layer::Hud] {
+        for below in [
+            Layer::View,
+            Layer::Render,
+            Layer::Body,
+            Layer::Gameplay,
+            Layer::Hud,
+        ] {
             assert!(!below.may_depend_on(Layer::Capture), "{below}");
         }
         assert!(Layer::Tooling.may_depend_on(Layer::Capture));
         assert!(Layer::Ui.may_depend_on(Layer::Capture));
+    }
+
+    #[test]
+    fn body_sits_between_view_and_gameplay_beside_render() {
+        assert!(Layer::Body.may_depend_on(Layer::View));
+        assert!(Layer::Gameplay.may_depend_on(Layer::Body));
+        assert!(!Layer::Body.may_depend_on(Layer::Gameplay));
+        assert!(!Layer::Body.may_depend_on(Layer::Render));
+        assert!(!Layer::Render.may_depend_on(Layer::Body));
+        assert!(Layer::Hud.may_depend_on(Layer::Body));
+        assert!(Layer::Tooling.may_depend_on(Layer::Body));
+        assert!(Layer::Ui.may_depend_on(Layer::Body));
     }
 
     #[test]
