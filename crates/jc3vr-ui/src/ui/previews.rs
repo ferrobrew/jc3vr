@@ -1,16 +1,20 @@
 //! The Previews and performance feature's controls: the per-eye pipeline thumbnails, the fusable
 //! stereo pair, and the live render-target views, all fed by the capture state in
-//! [`crate::ui::render`]. The performance readout is in [`crate::ui::performance`].
+//! [`jc3vr_render::hooks::graphics_engine::capture`]. The performance readout is in
+//! [`crate::ui::performance`].
 
 use std::sync::atomic::Ordering;
 
+use jc3vr_render::hooks::graphics_engine::capture::{
+    self, EGUI_DEBUG_RENDER_STATE, EguiDebugRenderState,
+};
 use parking_lot::Mutex;
 use windows::core::Interface;
 
-use crate::ui::render::{EGUI_DEBUG_RENDER_STATE, EguiDebugRenderState, STEREO_CROSS_EYED};
+use crate::ui::render::STEREO_CROSS_EYED;
 
 /// Labels for the post-effect stages captured per eye, in chain order (indices
-/// [`crate::ui::render::POST_STAGE_DOF`] and [`crate::ui::render::POST_STAGE_MB`]).
+/// [`capture::POST_STAGE_DOF`] and [`capture::POST_STAGE_MB`]).
 const POST_STAGE_LABELS: [&str; 2] = ["after DoF", "after MB"];
 
 /// Preview thumbnail width (px); user-controllable via a slider.
@@ -21,7 +25,7 @@ pub fn egui_debug_previews(ui: &mut egui::Ui, renderer: &mut egui_directx11::Ren
     // nobody has open does not cost a full-size `CopyResource` per stage per eye on every frame.
     // Marked here rather than on tab selection because `egui_dock` has no "closed" event -- a tab
     // that stops being drawn simply stops calling this.
-    crate::ui::render::mark_previews_visible();
+    capture::mark_previews_visible();
 
     let preview_width = {
         let mut w = PREVIEW_WIDTH.lock();

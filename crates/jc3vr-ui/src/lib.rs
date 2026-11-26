@@ -21,9 +21,8 @@
 //!
 //! Only the payload names this crate, so an item is `pub` exactly when the payload's frame driver,
 //! shutdown, or composition names it: the debug window and the banners ([`ui::egui_debug_window`],
-//! [`ui::startup_banner`], and [`ui::restart_banner`]), the per-eye capture state the frame driver
-//! prepares ([`ui::render`], which re-exports the render crate's capture), the layout writer's
-//! shutdown ([`ui::layout::shutdown`]), and the pause menu's detours
+//! [`ui::startup_banner`], and [`ui::restart_banner`]), the layout writer's shutdown
+//! ([`ui::layout::shutdown`]), and the pause menu's detours
 //! ([`pause_menu::hook_library`]), which the payload enables in its own order with the other
 //! layers'. Everything else keeps its crate-private visibility.
 //!

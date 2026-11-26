@@ -12,11 +12,6 @@ mod single_pass;
 mod stereo;
 
 use jc3vr_core::config::engine::{Parts, edit_parts};
-pub use jc3vr_render::hooks::graphics_engine::capture::{
-    EGUI_DEBUG_RENDER_STATE, EguiDebugRenderState, POST_STAGE_DOF, POST_STAGE_MB,
-    capture_main_color, capture_post_stage, eye_capture_fresh, install, mark_eye_capture,
-    mark_previews_visible, previews_visible,
-};
 use jc3vr_render::{hooks::graphics_engine::config::POST_FX_CONFIG, vr::FOVEATION_CONFIG};
 
 use crate::ui::{catalog::FeatureId, dispatch::FeatureBody};
