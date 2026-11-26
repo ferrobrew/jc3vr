@@ -103,7 +103,15 @@ pub fn follow_share(previous: f32, target: f32, dt: f32, time_constant_s: f32) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::controllers::fingers::{curl::Finger, grip::catalogue::GripPose, tuning::FINGERS};
+    use crate::controllers::fingers::{
+        curl::Finger,
+        grip::catalogue::GripPose,
+        tuning::{FINGERS_TUNING, FingerTuning},
+    };
+
+    fn fingers() -> FingerTuning {
+        FINGERS_TUNING.get().curls
+    }
 
     fn open() -> FingerCurls {
         FingerCurls::default()
@@ -123,7 +131,7 @@ mod tests {
 
     #[test]
     fn no_share_keeps_the_measured_curls_and_the_whole_share_takes_the_pose() {
-        let config = FINGERS;
+        let config = fingers();
         let measured = FingerCurls {
             curl: [0.1, 0.2, 0.3, 0.4, 0.5],
             splay: [0.0, 0.1, 0.0, -0.1, -0.2],
@@ -144,7 +152,7 @@ mod tests {
 
     #[test]
     fn the_trigger_finger_rests_on_the_trigger_follows_it_and_points_off_it() {
-        let config = FINGERS;
+        let config = fingers();
         let pose = GripPose::PistolGrip.shape();
         let FingerRole::Trigger { rest, pulled } = pose.roles[1] else {
             panic!("the pistol grip has a trigger finger");
@@ -163,7 +171,7 @@ mod tests {
 
     #[test]
     fn a_tracked_finger_the_pose_leaves_free_stays_live() {
-        let config = FINGERS;
+        let config = fingers();
         let pose = GripPose::Cylinder { diameter_m: 0.035 }.shape();
         assert_eq!(pose.roles[0], FingerRole::LiveWhenTracked);
         let measured = FingerCurls {
@@ -186,7 +194,7 @@ mod tests {
 
     #[test]
     fn a_contact_fit_replaces_the_posed_curl() {
-        let config = FINGERS;
+        let config = fingers();
         let pose = GripPose::Wrap.shape();
         let measured = open();
         let mut i = inputs(&measured, &pose, 1.0);
@@ -200,7 +208,7 @@ mod tests {
 
     #[test]
     fn the_share_follows_the_grip() {
-        let config = FINGERS.grip;
+        let config = fingers().grip;
         assert_eq!(firmness_share(Firmness::Held, 0.0, &config), 1.0);
         let light = firmness_share(Firmness::Grip, 0.0, &config);
         assert_eq!(light, config.light_share);

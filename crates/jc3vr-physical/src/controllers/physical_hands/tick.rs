@@ -26,7 +26,7 @@ use jc3vr_body::controllers::{
             contact as finger_contact,
             contact::{CastHit, FitTarget},
         },
-        tuning::FINGERS,
+        tuning::FINGERS_TUNING,
     },
     hands,
     hands::tiers,
@@ -706,7 +706,8 @@ pub(super) fn declare_grips(
                 },
                 pose,
             };
-            finger_contact::fit_contacts(hand, target, &FINGERS, &mut |from, to| {
+            let fingers = &FINGERS_TUNING.get().curls;
+            finger_contact::fit_contacts(hand, target, fingers, &mut |from, to| {
                 let hit = cast(from, to)?;
                 let (Surface::Solid { body, .. } | Surface::Character { body, .. }) = hit.surface;
                 let length = from.distance(to).max(1e-6);

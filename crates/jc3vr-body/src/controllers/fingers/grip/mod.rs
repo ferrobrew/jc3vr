@@ -33,7 +33,10 @@ use jc3vr_input::frame::Hand;
 use parking_lot::Mutex;
 
 use crate::{
-    controllers::{fingers::grip::catalogue::GripPose, grab::cockpit::ControlKind},
+    controllers::{
+        fingers::{grip::catalogue::GripPose, tuning::FINGERS_TUNING},
+        grab::cockpit::ControlKind,
+    },
     tuning::FRESHNESS,
 };
 
@@ -137,7 +140,9 @@ impl GripSource {
     }
 
     /// The pose a hand takes on what this source puts in it.
-    pub const fn pose(self) -> GripPose {
+    pub fn pose(self) -> GripPose {
+        let diameters = &FINGERS_TUNING.get().diameters;
+        let bar = |diameter_m| GripPose::Cylinder { diameter_m };
         match self {
             GripSource::Magazine => GripPose::MagazinePinch,
             GripSource::Grenade => GripPose::GrenadePalm,
@@ -146,17 +151,17 @@ impl GripSource {
             GripSource::Foregrip => GripPose::Foregrip,
             GripSource::Character => GripPose::CollarGrab,
             GripSource::Door => GripPose::DoorHandle,
-            GripSource::Articulated => GripPose::Cylinder { diameter_m: 0.04 },
+            GripSource::Articulated => bar(diameters.articulated_m),
             GripSource::Pickup => GripPose::Wrap,
-            GripSource::Stunt => GripPose::Cylinder { diameter_m: 0.05 },
+            GripSource::Stunt => bar(diameters.stunt_m),
             GripSource::Climb => GripPose::LedgeHook,
-            GripSource::Wheel => GripPose::Cylinder { diameter_m: 0.035 },
-            GripSource::Handlebars => GripPose::Cylinder { diameter_m: 0.032 },
-            GripSource::Stick => GripPose::Cylinder { diameter_m: 0.038 },
-            GripSource::Lever => GripPose::Cylinder { diameter_m: 0.04 },
-            GripSource::ParachuteHandle => GripPose::Cylinder { diameter_m: 0.025 },
-            GripSource::MountedGun => GripPose::Cylinder { diameter_m: 0.035 },
-            GripSource::GrappleLine => GripPose::Cylinder { diameter_m: 0.015 },
+            GripSource::Wheel => bar(diameters.wheel_m),
+            GripSource::Handlebars => bar(diameters.handlebars_m),
+            GripSource::Stick => bar(diameters.stick_m),
+            GripSource::Lever => bar(diameters.lever_m),
+            GripSource::ParachuteHandle => bar(diameters.parachute_handle_m),
+            GripSource::MountedGun => bar(diameters.mounted_gun_m),
+            GripSource::GrappleLine => bar(diameters.grapple_line_m),
             GripSource::Surface => GripPose::FlatPalm,
         }
     }
@@ -204,7 +209,7 @@ pub struct Grip {
 impl Grip {
     /// The source's default pose and firmness, at the whole share, with no fit.
     #[inline]
-    pub const fn new(source: GripSource) -> Self {
+    pub fn new(source: GripSource) -> Self {
         Self {
             source,
             pose: source.pose(),
