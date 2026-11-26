@@ -72,6 +72,7 @@ pub mod passenger;
 pub mod physical;
 pub mod rail;
 pub(crate) mod register_body;
+pub(crate) mod register_mounted;
 pub mod ripcord;
 mod ripcord_tick;
 mod speed;
